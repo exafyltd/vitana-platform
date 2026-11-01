@@ -43,6 +43,7 @@ import {
   type ServiceResult,
 } from './partner-onboarding-service';
 import { createOrgProduct, findOrgMerchant, upsertOrgMerchant } from './partner-setup';
+import { STEP_KEYS, stepOwner, type StepKey, type StepOwner } from './partner-onboarding-checklist';
 import { BUSINESS_CATEGORIES, catalogueVerticalForCategory, isBusinessCategory } from './commerce-ai-setup';
 import { loadOrg, type Supa } from '../routes/partner-onboarding';
 import { supplierCatalogCheckView } from '../routes/vcaop-portal-my-products';
@@ -63,6 +64,7 @@ const INSTRUCTIONS = [
   'Start with get_onboarding_status. Create the business with create_business, fill the company details with update_business,',
   'add their products or services with add_product (everything is saved as a hidden draft until the business is reviewed),',
   'Every status carries next_action: it says which tool to call next, or what only the supplier can do and the one link for it.',
+  'Each open step has an owner: assistant (you can do it now), supplier (only the supplier can — give them the link), vitanaland (nothing to do; Vitanaland is reviewing it).',
   'Use check_verification to run the automatic business checks and connect_store to link their online shop; both are safe to repeat.',
   'When every step is done, ask the supplier to confirm and call submit_for_verification with confirmed=true.',
   'Infer what you can from what the supplier tells you or from their website; ask only for what you cannot determine.',
@@ -319,9 +321,6 @@ export function fromService(r: ServiceResult, shape: (body: Record<string, any>)
 
 // ==================== Shaping (what the assistant reads) ====================
 
-/** Steps the supplier does on Vitanaland itself, never through the assistant. */
-const ON_SCREEN_STEPS = new Set(['terms', 'dpa', 'billing_mandate', 'results_channel', 'tracking_test']);
-
 const STEP_TOOLS: Record<string, string> = {
   company: 'update_business',
   verification: 'check_verification',
@@ -355,6 +354,29 @@ const STEP_SUPPLIER_ACTIONS: Record<string, string> = {
 };
 
 /**
+ * VTID-05238: the fixed owner of a step, independent of its current state —
+ * `stepOwner` on a synthetic open required step. For `verification` the owner
+ * varies with its open codes, so this returns null for it (it is never a
+ * supplier-only, on-screen step).
+ */
+function fixedOwner(key: StepKey): StepOwner | null {
+  if (key === 'verification') return null;
+  return stepOwner({ key, required: true, status: 'todo' });
+}
+
+/**
+ * VTID-05238 (R2-F1): the steps the supplier does on Vitanaland itself, never
+ * through the assistant — derived from the checklist module as "a step whose
+ * fixed owner is `supplier` AND which has a supplier action here". That is
+ * exactly today's five keys (terms, dpa, billing_mandate, results_channel,
+ * tracking_test); `team` (fixed owner supplier, no supplier action) is
+ * deliberately excluded so its MCP shape stays byte for byte as today.
+ */
+export const ON_SCREEN_STEPS: ReadonlySet<string> = new Set(
+  STEP_KEYS.filter((key) => fixedOwner(key) === 'supplier' && key in STEP_SUPPLIER_ACTIONS),
+);
+
+/**
  * VTID-04941: what to do next, in one object. Wraps next_step: the tool the
  * assistant can call, or what only the supplier can do and the link for it.
  */
@@ -362,30 +384,41 @@ export function nextAction(
   checklist: {
     next_step?: string | null;
     complete?: boolean;
-    steps?: Array<{ key: string; required?: boolean; status?: string; detail?: { source?: unknown } | null; missing?: string[] }>;
+    steps?: Array<{ key: string; required?: boolean; status?: string; detail?: { source?: unknown } | null; missing?: string[]; owner?: StepOwner }>;
   } | null,
   typeless: boolean,
   link: string,
-): { step: string | null; tool: string | null; supplier_action: string | null; link: string | null } {
-  if (typeless) return { step: 'business_type', tool: 'update_business', supplier_action: null, link: null };
-  if (!checklist) return { step: null, tool: null, supplier_action: null, link: null };
+): { step: string | null; tool: string | null; supplier_action: string | null; link: string | null; owner: StepOwner | null } {
+  // VTID-05238: the owner of the step named here. The typeless pseudo-step
+  // business_type and the "checklist complete" case (tool submit_for_verification)
+  // are the assistant's; no step and no tool → null (R1-F3). For a checklist
+  // step we read the owner buildChecklist already set, falling back to its
+  // fixed owner.
+  const stepOwnerFor = (key: string): StepOwner | null => {
+    const fromChecklist = checklist?.steps?.find((s) => s.key === key)?.owner;
+    if (fromChecklist) return fromChecklist;
+    return (STEP_KEYS as readonly string[]).includes(key) ? fixedOwner(key as StepKey) : null;
+  };
+
+  if (typeless) return { step: 'business_type', tool: 'update_business', supplier_action: null, link: null, owner: 'assistant' };
+  if (!checklist) return { step: null, tool: null, supplier_action: null, link: null, owner: null };
   // VTID-05153: products the catalogue check returned are fixed next, unless
   // a required step before the catalogue is still open.
   const steps = checklist.steps ?? [];
   const catIdx = steps.findIndex((s) => s.key === 'catalogue');
   if (catIdx >= 0 && steps[catIdx].missing?.includes('catalogue_fixes')) {
     const earlierOpen = steps.slice(0, catIdx).some((s) => s.required && s.status !== 'done');
-    if (!earlierOpen) return { step: 'catalogue', tool: 'update_product', supplier_action: CATALOGUE_FIXES_ACTION, link: null };
+    if (!earlierOpen) return { step: 'catalogue', tool: 'update_product', supplier_action: CATALOGUE_FIXES_ACTION, link: null, owner: stepOwnerFor('catalogue') };
   }
-  if (checklist.complete) return { step: null, tool: 'submit_for_verification', supplier_action: null, link: null };
+  if (checklist.complete) return { step: null, tool: 'submit_for_verification', supplier_action: null, link: null, owner: 'assistant' };
   const step = checklist.next_step ?? null;
-  if (!step) return { step: null, tool: null, supplier_action: null, link: null };
+  if (!step) return { step: null, tool: null, supplier_action: null, link: null, owner: null };
   if (step === 'mapping' && isCatalogueMapping(checklist.steps?.find((s) => s.key === 'mapping'))) {
-    return { step, tool: 'add_product', supplier_action: CATALOGUE_MAPPING_ACTION, link: null };
+    return { step, tool: 'add_product', supplier_action: CATALOGUE_MAPPING_ACTION, link: null, owner: stepOwnerFor(step) };
   }
   const tool = STEP_TOOLS[step] ?? null;
   const supplierAction = STEP_SUPPLIER_ACTIONS[step] ?? (tool ? null : 'Finish this step on Vitanaland.');
-  return { step, tool, supplier_action: supplierAction, link: supplierAction ? link : null };
+  return { step, tool, supplier_action: supplierAction, link: supplierAction ? link : null, owner: stepOwnerFor(step) };
 }
 
 /** VTID-05209: where a suggested value came from, in plain words for the assistant. */
@@ -466,6 +499,8 @@ export function shapeStatus(body: Record<string, any>, portalUrl: string, sugges
       step: st.key,
       required: st.required,
       status: st.status,
+      // VTID-05238: who can finish this open step (buildChecklist set it).
+      ...(st.owner ? { owner: st.owner } : {}),
       ...(st.missing?.length ? { missing: st.missing } : {}),
       // VTID-04933: what the Vitanaland reviewer asked the supplier to change.
       ...(typeof st.detail?.review_note?.reason === 'string' ? { review_note: st.detail.review_note.reason } : {}),

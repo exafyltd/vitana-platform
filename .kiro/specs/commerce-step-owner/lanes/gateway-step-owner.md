@@ -1,6 +1,6 @@
 ---
 lane: gateway-step-owner
-state: ready
+state: executing
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -12,7 +12,9 @@ paths:
   - services/gateway/src/services/commerce-mcp.ts
   - services/gateway/test/**
   - docs/validation/**
-updated: 2026-10-19T13:36Z
+claimed_by: kiro-exafy-202611010008-8355
+branch: kiro/rebuild/commerce-step-owner/gateway-step-owner
+updated: 2026-11-01T00:20Z
 vtid: VTID-05238
 ---
 # Lane: gateway-step-owner (repo vitana-platform)
@@ -24,3 +26,5 @@ Lane created with the plan.
 
 ### 2026-10-19T13:36Z · ci-plan-spar · ready (VTID allocated)
 VTID-05238 allocated after policy approval (converged-auto-v1).
+### 2026-11-01T00:20Z · kiro-exafy-202611010008-8355 · ready → executing
+Rebuild of PR #4198 under one session (owner decision 2026-10-26 on #4377: do not merge #4198, rebuild). #4198 had commits from 5 sessions, which the one-session-per-lane rule on `main` rejects, and its branch cannot be fixed without a history rewrite. This branch takes the final tree diff of `origin/main...origin/kiro/commerce-step-owner/gateway-step-owner` (T1–T4: `stepOwner` + additive `owner` in `partner-onboarding-checklist.ts`, `owner` on `shapeStatus`/`next_action` + `ON_SCREEN_STEPS` in `commerce-mcp.ts`, suite `test/vtid-05238-step-owner.test.ts`, the `docs/validation/VTID-05238/` pack) as one commit from this session, on a fresh branch from `main` (`kiro/rebuild/commerce-step-owner/gateway-step-owner`, because the old lane-form branch keeps #4198's commits and is not force-pushed). The lane log entries of #4198 are not carried over; the review on #4198 (head `361885098`) does not apply to this head, so the lane needs a fresh review. Local checks: see the commit message.

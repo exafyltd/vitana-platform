@@ -35,6 +35,14 @@ export type StepKey = (typeof STEP_KEYS)[number];
 export const STEP_STATUSES = ['todo', 'in_progress', 'done', 'failed', 'not_required'] as const;
 export type StepStatus = (typeof STEP_STATUSES)[number];
 
+/**
+ * VTID-05238 — who can finish an open step: the supplier's AI assistant
+ * (`assistant`), only the supplier themselves (`supplier`), or a Vitanaland
+ * admin review (`vitanaland`). A done, not-required or not-required-by-type
+ * step has no owner (`stepOwner` returns null).
+ */
+export type StepOwner = 'assistant' | 'supplier' | 'vitanaland';
+
 /** Steps the engine can decide itself; a stored row never overrides them. */
 export const DERIVED_STEPS: readonly StepKey[] = ['account', 'company', 'terms', 'team'];
 
@@ -163,6 +171,11 @@ export interface ChecklistStep {
   /** What is missing, as machine-readable codes the client translates. */
   missing?: string[];
   detail?: Record<string, unknown>;
+  /**
+   * VTID-05238: who can finish this step when it is open. Set by
+   * `buildChecklist` on every open required step; absent otherwise.
+   */
+  owner?: StepOwner;
 }
 
 export interface Checklist {
@@ -202,6 +215,107 @@ export function verificationIsStale(detail: Record<string, unknown> | null | und
     (f.country ?? null) !== (org.country ?? null) ||
     (f.vat_id ?? null) !== (org.vat_id ?? null)
   );
+}
+
+/** VTID-05238: steps whose owner is fixed to the supplier regardless of state. */
+const SUPPLIER_STEPS: ReadonlySet<StepKey> = new Set<StepKey>([
+  'account',
+  'terms',
+  'dpa',
+  'billing_mandate',
+  'results_channel',
+  'tracking_test',
+  'team',
+]);
+
+/** VTID-05238: steps whose owner is fixed to the assistant. */
+const ASSISTANT_STEPS: ReadonlySet<StepKey> = new Set<StepKey>(['company', 'catalogue', 'mapping']);
+
+/**
+ * VTID-05238: verification codes the assistant can resolve itself
+ * (`update_business`, `check_verification`). `website` is prepended when the
+ * org has no website host (partner-onboarding-service.ts:720, R1-F2).
+ */
+const ASSISTANT_VERIFICATION_CODES: ReadonlySet<string> = new Set([
+  'website',
+  'vat_id',
+  'vat_invalid',
+  'email_check_unavailable',
+  'domain_check_unavailable',
+  'vat_check_unavailable',
+]);
+
+/** VTID-05238: verification codes only the supplier can resolve. */
+const SUPPLIER_VERIFICATION_CODES: ReadonlySet<string> = new Set(['email_not_verified', 'domain_proof']);
+
+/**
+ * VTID-05238 — who can finish an open step. Pure: no I/O, no lifecycle. Null
+ * for a step that is `done`, `not_required`, or not required for the type.
+ *
+ * - `company`, `catalogue` (incl. a catalogue step carrying `catalogue_fixes`),
+ *   `mapping` → `assistant`.
+ * - `terms`, `dpa`, `billing_mandate`, `results_channel`, `tracking_test`,
+ *   `team`, `account` → `supplier`.
+ * - `verification`, first match wins:
+ *     1. `step.missing` contains `facts_changed` → `assistant` (re-run the
+ *        checks on the new facts). `step.detail.missing` is ignored here: on a
+ *        stale verification `buildChecklist` keeps the stored row's `detail`
+ *        (lines ~258–267), so its codes describe the old facts (R1-F1).
+ *     2. `step.detail.review_note` present → `supplier`.
+ *     3. the codes in `step.missing` ∪ `step.detail.missing`:
+ *        a. any supplier code (`email_not_verified`, `domain_proof`) →
+ *           `supplier`.
+ *        b. any unknown code (not supplier/assistant/`business_verification*`/
+ *           `licence*`) → `supplier`, so a brand-new check never silently
+ *           claims the AI can do it — this is checked BEFORE the assistant
+ *           codes, so `['vat_id','some_new_check']` → `supplier` (R2-F2).
+ *        c. any assistant code (`website`, `vat_id`, `vat_invalid`,
+ *           `*_check_unavailable`) → `assistant`.
+ *        d. any `business_verification*`/`licence*` code → `vitanaland`.
+ *     4. no codes: `in_progress` → `vitanaland` (a review is under way);
+ *        `todo`/`failed` → `assistant` — a never-checked step with no codes
+ *        means "run the checks", which is the assistant's job (R2-F1). So
+ *        `vitanaland` applies only to a `business_verification*`/`licence*`
+ *        code or to `in_progress` with no code, never to an empty todo/failed.
+ */
+export function stepOwner(step: ChecklistStep): StepOwner | null {
+  if (!step.required) return null;
+  if (step.status === 'done' || step.status === 'not_required') return null;
+
+  if (ASSISTANT_STEPS.has(step.key)) return 'assistant';
+  if (SUPPLIER_STEPS.has(step.key)) return 'supplier';
+
+  if (step.key === 'verification') {
+    const own = step.missing ?? [];
+    // 1. facts changed: the assistant re-runs the checks; stale detail ignored.
+    if (own.includes('facts_changed')) return 'assistant';
+    // 2. a reviewer asked the supplier for a change.
+    const reviewNote = (step.detail as Record<string, unknown> | undefined)?.review_note;
+    if (reviewNote != null) return 'supplier';
+    // 3./4. the open codes decide.
+    const detailMissing = Array.isArray((step.detail as Record<string, unknown> | undefined)?.missing)
+      ? ((step.detail as Record<string, unknown>).missing as unknown[]).filter((c): c is string => typeof c === 'string')
+      : [];
+    const codes = [...own, ...detailMissing];
+    // a. a supplier code: only the supplier can resolve it.
+    if (codes.some((c) => SUPPLIER_VERIFICATION_CODES.has(c))) return 'supplier';
+    // b. an unknown code takes precedence over an assistant code, so a new
+    //    check never silently claims the AI can do it (R2-F2). business_
+    //    verification*/licence* are known-vitanaland, not unknown.
+    const isVitanalandCode = (c: string) => /^(business_verification|licence)/.test(c);
+    const known = new Set([...SUPPLIER_VERIFICATION_CODES, ...ASSISTANT_VERIFICATION_CODES]);
+    const unknownCode = codes.find((c) => !known.has(c) && !isVitanalandCode(c));
+    if (unknownCode) return 'supplier';
+    // c. an assistant code: the assistant can resolve it.
+    if (codes.some((c) => ASSISTANT_VERIFICATION_CODES.has(c))) return 'assistant';
+    // d. a business_verification*/licence* code → Vitanaland review.
+    if (codes.some(isVitanalandCode)) return 'vitanaland';
+    // No codes at all: an in_progress review is Vitanaland's; a never-checked
+    // todo/failed means "run the checks", which is the assistant's job (R2-F1).
+    return step.status === 'in_progress' ? 'vitanaland' : 'assistant';
+  }
+
+  return null;
 }
 
 export function buildChecklist(input: ChecklistInput): Checklist {
@@ -282,6 +396,10 @@ export function buildChecklist(input: ChecklistInput): Checklist {
     const step: ChecklistStep = { key, required: isRequired, status };
     if (missing) step.missing = missing;
     if (detail) step.detail = detail;
+    // VTID-05238: additive owner on every open required step. No other field
+    // changes; a done/not_required/not-required step gets none.
+    const owner = stepOwner(step);
+    if (owner) step.owner = owner;
     return step;
   });
 
