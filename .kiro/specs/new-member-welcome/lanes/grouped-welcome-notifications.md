@@ -1,16 +1,15 @@
 ---
 lane: grouped-welcome-notifications
-state: verified
+state: parked
 next_actor: kiro
 vtid: VTID-05208
-seat: jtadic
-claimed_by: kiro-jtadic-202610291040-a0e6
+seat: exafyltd
 area: messenger
 depends_on: []
 branch: kiro/new-member-welcome/grouped-welcome-notifications
 pr: https://github.com/exafyltd/vitana-platform/pull/4153
-updated: 2026-10-30T13:48Z
-parked_from: in-review
+updated: 2026-11-01T12:38Z
+parked_from: verified
 ---
 # Grouped greeting-DM notifications
 
@@ -3487,3 +3486,5 @@ reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 PR: https://github.com/exafyltd/vitana-platform/pull/4511
 Findings: non-blocking: CI on the current head was not verifiable by the reviewer; the land step confirms required checks are green on this head. Head 2b16082bb6 is a merge of main 85d95454d2 (with the merged sibling record #4510) into the previously accepted 33d390dfd6; the PR's own diff is unchanged (lane file + docs/validation/VTID-05208 only).
 Next: the land step merges under §7b
+### 2026-11-01T12:38Z · pm-agent · verified → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
