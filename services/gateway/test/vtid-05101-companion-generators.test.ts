@@ -194,9 +194,15 @@ describe('VTID-05101: every moment', () => {
     const rich = ctx({
       vitanaIndex: { total: 500, tier: 'Early', trend_7d: 1, points_to_really_good: 1, weakest_pillar: { name: 'sleep' }, strongest_pillar: { name: 'mind' } } as any,
       journey: GUIDED, diaryLastEntryDate: '2026-10-15', activeDays: 9,
+      // VTID-05366: every enrichment card eligible, so each enrichment moment builds.
+      eligibleEnrichmentCardTypes: new Set(ENRICHMENT_ALL),
     });
-    expect(COMPANION_MOMENTS.map((m) => m.key)).toEqual(
-      ['morning_greeting', 'vitana_index', 'guided_journey_step', 'diary_nudge', 'feature_tip', 'invite_friend']);
+    expect(COMPANION_MOMENTS.map((m) => m.key)).toEqual([
+      'morning_greeting', 'vitana_index', 'guided_journey_step', 'diary_nudge', 'feature_tip', 'invite_friend',
+      // VTID-05366: the 11 profile-enrichment moments, E1 → E11.
+      'enrichment_e1', 'enrichment_e2', 'enrichment_e3', 'enrichment_e4', 'enrichment_e5', 'enrichment_e6',
+      'enrichment_e7', 'enrichment_e8', 'enrichment_e9', 'enrichment_e10', 'enrichment_e11',
+    ]);
     expect(COMPANION_MOMENTS.slice(0, MOMENTS.length)).toEqual(MOMENTS);
     for (const m of COMPANION_MOMENTS) {
       const c = m.build(rich);
@@ -209,6 +215,8 @@ describe('VTID-05101: every moment', () => {
     }
     expect(Object.fromEntries(COMPANION_MOMENTS.map((m) => [m.key, m.build(rich)!.cardType]))).toEqual({
       morning_greeting: 'F4', vitana_index: 'F2', guided_journey_step: 'F1', diary_nudge: 'F3', feature_tip: 'F8', invite_friend: 'F7',
+      enrichment_e1: 'E1', enrichment_e2: 'E2', enrichment_e3: 'E3', enrichment_e4: 'E4', enrichment_e5: 'E5', enrichment_e6: 'E6',
+      enrichment_e7: 'E7', enrichment_e8: 'E8', enrichment_e9: 'E9', enrichment_e10: 'E10', enrichment_e11: 'E11',
     });
   });
 });
@@ -325,9 +333,19 @@ function deps(db: ReturnType<typeof fakeDb>, over: Record<string, unknown> = {})
     fetchIndex: jest.fn(async () => null),
     compose: jest.fn(async () => ({ ok: true as const, text: 'Guten Morgen!', model: 'eu.anthropic.claude-sonnet-4-6' })),
     locales: jest.fn(async (_sb: unknown, ids: string[]) => new Map(ids.map((i) => [i, 'de']))),
+    // VTID-05366: these tests are about the Phase 3 moments; members are fully set
+    // up so the enrichment moments (pinned in vtid-05366-companion-enrichment-moments)
+    // stay out of the way.
+    enrichment: jest.fn(async (_sb: unknown, ids: string[]) => ({
+      completions: new Map(ids.map((id) => [id, new Map(ENRICHMENT_ALL.map((t) => [t, true]))])),
+      dismissals: new Map(ids.map((id) => [id, []])),
+      unavailable: [],
+    })),
     ...over,
   };
 }
+
+const ENRICHMENT_ALL = ['E1', 'E2', 'E3', 'E4', 'E5', 'E6', 'E7', 'E8', 'E9', 'E10', 'E11'] as const;
 
 const momentOf = (db: ReturnType<typeof fakeDb>, id: string) => db.ledger.find((r) => r.user_id === id && r.local_date === TODAY);
 
