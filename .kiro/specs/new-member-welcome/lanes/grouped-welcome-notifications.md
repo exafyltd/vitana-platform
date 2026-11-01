@@ -8,7 +8,7 @@ area: messenger
 depends_on: []
 branch: kiro/new-member-welcome/grouped-welcome-notifications
 pr: https://github.com/exafyltd/vitana-platform/pull/4153
-updated: 2026-11-01T12:38Z
+updated: 2026-11-01T12:43Z
 parked_from: verified
 ---
 # Grouped greeting-DM notifications
@@ -3487,4 +3487,6 @@ PR: https://github.com/exafyltd/vitana-platform/pull/4511
 Findings: non-blocking: CI on the current head was not verifiable by the reviewer; the land step confirms required checks are green on this head. Head 2b16082bb6 is a merge of main 85d95454d2 (with the merged sibling record #4510) into the previously accepted 33d390dfd6; the PR's own diff is unchanged (lane file + docs/validation/VTID-05208 only).
 Next: the land step merges under §7b
 ### 2026-11-01T12:38Z · pm-agent · verified → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
+### 2026-11-01T12:43Z · pm-agent · update
 park (stale_claim); claim released; Claude unavailable → exafyltd
