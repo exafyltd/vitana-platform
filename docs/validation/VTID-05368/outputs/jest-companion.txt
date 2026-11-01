@@ -1,0 +1,4 @@
+# npx jest --runInBand test/vtid-05368-messenger-companion-verification.test.ts, Windows local worktree
+# summary lines only (full console output omitted: mock-noise warnings)
+PASS test/vtid-05368-messenger-companion-verification.test.ts (14.472 s)
+Tests:       6 passed, 6 total

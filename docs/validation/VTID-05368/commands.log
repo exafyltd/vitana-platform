@@ -1,0 +1,6 @@
+# VTID-05368 messenger-companion-verification — local only; no production, staging or database access of any kind
+# Head under test: fd443b0e7f (lane branch). The suite was run from the lane 2 worktree at da9b13974c, whose
+# services/gateway/src/services/companion/** and companion tests are identical to fd443b0e7f (git diff --stat empty);
+# the test file was temp-copied in and removed afterwards.
+cd services/gateway && npx jest --runInBand test/vtid-05368-messenger-companion-verification.test.ts   # 6/6 passed — outputs/jest-companion.txt
+cd services/gateway && NODE_OPTIONS=--max-old-space-size=8192 npx tsc --noEmit -p .   # 2 pre-existing TS2664 (server-timing.ts, latency-tracker.ts), 0 in touched files — outputs/tsc.txt
