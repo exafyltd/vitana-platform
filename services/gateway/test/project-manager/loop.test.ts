@@ -46,7 +46,7 @@ function observer(seen: PmMode[]) {
 function actDeps(acquired: string[]): ActDeps {
   return {
     safeMerge: async () => { throw new Error('no merge expected'); },
-    laneWriter: { write: async () => undefined },
+    laneWriter: { write: async () => 'written' as const },
     gate2Poster: { post: async () => undefined },
     gate2Evidence: { resolve: async () => ({ verified_commit: '', production_commit: '', commits: [] }) },
     lease: { acquire: async (h: string) => { acquired.push(h); return { acquired: true, holder: h, expires_at: 'x' }; } },

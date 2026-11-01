@@ -1,0 +1,131 @@
+
+> @vitana/gateway@1.0.1 test:operator
+> jest test/vtid-04465-operator-pipeline-regression.test.ts
+
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in C:/Users/dstev/vitana-platform-1/.worktrees/pm-r2-lane/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    Γ£à Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+FAIL test/vtid-04465-operator-pipeline-regression.test.ts (127.071 s)
+  Golden path: an operator request becomes a merged, deployed, verified change
+    ΓêÜ console turn ΓåÆ VTID ΓåÆ execution ΓåÆ agent ΓåÆ held PR ΓåÆ approve ΓåÆ CI ΓåÆ merge ΓåÆ deploy ΓåÆ verify ΓåÆ ledger closed (9274 ms)
+  Safety: only a verified exafy_admin (or the machine credential) can queue an execution
+    ΓêÜ an anonymous console request is refused before any VTID, finding or execution exists (653 ms)
+    ΓêÜ a signed-in member who is not an exafy admin is refused (autopilot_run_task and autopilot_execute_task) (704 ms)
+    ΓêÜ an anonymous request that reuses an admin's thread does not inherit the admin marker (698 ms)
+    ΓêÜ a wrong machine token is not a credential (382 ms)
+    ΓêÜ a verified exafy_admin JWT queues the same execution the machine credential does (259 ms)
+  Safety: an LLM provider outage stops the loop instead of feeding it
+    ΓêÜ both providers failing on the first call fails the execution with the outage error (1587 ms)
+    ΓêÜ after one outage failure the next tick claims at most one execution (a probe) (2087 ms)
+    ΓêÜ three outage failures in a row: the next tick claims nothing ΓÇö no retry storm (1993 ms)
+  Safety: a run that exhausts the turn cap is snoozed, not re-approved
+    ΓêÜ auto-approve ΓåÆ agent reads until the cap ΓåÆ failure ΓåÆ the next auto-approve pass snoozes the finding (874 ms)
+  CI failure on an agent PR: the fix continues on the same PR
+    ΓêÜ red CI ΓåÆ triage ΓåÆ fix-mode child on the SAME branch ΓåÆ no second PR ΓåÆ green ΓåÆ merged ΓåÆ parent self_healed (2356 ms)
+    ΓêÜ VTID-04472 ΓÇö the VTID of a fix-mode lineage closes as success when the fix lands (it used to close as failed at the first red CI) (3346 ms)
+  VTID-04636 ΓÇö the self-healing reconciler judges a fix-mode VTID by its lineage
+    ΓêÜ leaves the VTID open while the child is in CI, then closes it success (live: VTID-04608/04614 closed failed) (5506 ms)
+  Safety: an execution claimed by one environment is left alone by the other
+    ΓêÜ staging's CI watcher ignores a production-claimed PR; production's merges it (776 ms)
+    ΓêÜ a legacy row with no claim stamp stays visible to every environment (420 ms)
+    ΓêÜ staging's running-watchdog does not reclaim a stale run production owns; it does reclaim its own (590 ms)
+    ΓêÜ the production gateway does not claim a queued execution; staging does (1493 ms)
+    ΓêÜ production claims only with DEV_AUTOPILOT_PROD_CLAIM_ENABLED=true (exact) (181 ms)
+  Safety: cancelling a running execution stops it ΓÇö nothing pushed, nothing retried
+    ΓêÜ the operator cancels from the console mid-run; the agent stops at its next boundary (673 ms)
+  Safety: a prior PR the bridge closed unmerged does not block the finding's retry
+    ΓêÜ red CI on a single-shot PR ΓåÆ bridge closes it and stamps pr_closed_unmerged_at ΓåÆ the retry runs and opens a new PR (1141 ms)
+  Safety: the kill switch stops claiming and the watchers
+    ΓêÜ an armed kill switch: a queued execution is not claimed and a green PR is not merged (938 ms)
+  Merge: a green PR while main keeps moving (VTID-04612)
+    ΓêÜ main moved but touched none of the PR files ΓåÆ merged on its green CI, no branch update (576 ms)
+    ΓêÜ main touched a file the PR changes ΓåÆ the branch is updated and the PR waits for CI on the new head (301 ms)
+  Console turn: several rounds of tools until the model answers (VTID-04628)
+    ΓêÜ a failed tool call is corrected in the next round and the answer comes from the second result (837 ms)
+    ΓêÜ OPERATOR_MAX_TOOL_ROUNDS=1 keeps the single round: tools once, then the tool-less final call (280 ms)
+    ΓêÜ the round budget ends a model that keeps calling tools: the tool-less final call answers (415 ms)
+  Verification: sporadic unrelated errors do not revert a deployed change (VTID-04625)
+    ΓêÜ the 2026-09-26 revert case: telemetry and two stray errors ΓåÆ completed, not reverted (975 ms)
+    ΓêÜ a new error type firing 3 times after the deploy still fails verification (900 ms)
+  Runner checks: a Command Hub frontend change runs the suites that read the asset (VTID-04617)
+    ├ù the runner jest targets include every suite that names app.js, not only the paired ones (1278 ms)
+  Phase C: an autopilot PR never merges over an open PR that changes the same files (VTID-05146)
+    ΓêÜ overlap hold entry and release: held while the human PR is open, released and merged once it closes (991 ms)
+    ΓêÜ an open PR on other files does not hold the merge (324 ms)
+    ΓêÜ before the claim: a plan whose files an open PR changes is held, not run; released to cooling when the PR closes (402 ms)
+    ΓêÜ overlap hold timeout: past overlap_hold_max_hours the execution fails, its PR is closed with a comment, nothing merges (499 ms)
+    ΓêÜ frozen_scope rejection at approval: a plan touching a frozen path is never approved (139 ms)
+    ΓêÜ frozen_scope block at merge: an open autopilot PR touching a frozen path is held, never merged (558 ms)
+    ΓêÜ pre-merge LLM review fail-closed: a review that cannot run (twice) blocks the merge (231 ms)
+  Contract: the emulated one-in-flight-execution index matches the migration
+    ΓêÜ the fake refuses a second in-flight execution for a finding with the same statuses the real index covers (2945 ms)
+  Kiro writes: held until the user answers in the thread (VTID-05006)
+    ΓêÜ Allow: the card appears for the thread, the answer lands, the real executor runs, OASIS records it (1342 ms)
+    ΓêÜ Deny: nothing runs (1130 ms)
+    ΓêÜ no open VTID: refused before anyone is asked (114 ms)
+    ΓêÜ vitana-v1 push under Allow: one commit on the kiro branch, v1 token only, platform repo untouched (1180 ms)
+    ΓêÜ vitana-v1 push into supabase/: refused before anyone is asked (130 ms)
+    ΓêÜ writes switched off: the write tools are not offered and a call is unknown (153 ms)
+  Kiro thread memory: a reopened session gets the thread back (VTID-05018)
+    ΓêÜ 6 h later in the same thread: Kiro's first prompt carries the earlier turns (no tool rows), then the message (300 ms)
+    ΓêÜ another user's thread is not restored into this user's session (515 ms)
+  Kiro early stops and lost workspaces are visible (VTID-05064)
+    ΓêÜ a refused turn is recorded as refused; the thread row existed before the turn ended; the next session is told (506 ms)
+  Kiro model pick: a reopened session keeps the developer's model (VTID-05060)
+    ΓêÜ the developer's last pick is re-applied before the first prompt of the new session (349 ms)
+    ΓêÜ no pick on record (or another user's pick) changes nothing: Kiro's own default stays (498 ms)
+  Kiro runs (VTID-05065)
+    ΓêÜ start ΓåÆ 202 at once; the stream carries the whole turn in seq order and ends on the terminal status; row, events and OASIS agree (523 ms)
+    ΓêÜ a dropped stream reattaches with after_seq (nothing lost, nothing twice); a second listener sees the same events; a finished run replays from the store (687 ms)
+    ΓêÜ an approval card is persisted on the run, shown to two listeners, and answered from the second through the existing route (446 ms)
+    ΓêÜ an approval nobody answers times out, the turn ends refused, and the record says the approval expired first (514 ms)
+    ΓêÜ an answer written from another gateway task reaches Kiro through the owning task's control tick (370 ms)
+    ΓêÜ the existing permission route answers a card waiting in a run on another gateway task (written onto the run record) (285 ms)
+    ΓêÜ a cancel written from another gateway task stops the run through the owning task's control tick (761 ms)
+    ΓêÜ the heartbeat is ONE update over this task's unfinished runs; other tasks' rows are untouched (471 ms)
+    ΓêÜ Kiro's own MCP read tool (recorded title, kind other) runs without a card; a write tool still asks (728 ms)
+    ΓêÜ a run sent while one runs is queued, starts by itself when the first ends; a third queued run is refused (queue_full) (432 ms)
+    ΓêÜ cancel: a queued run is cancelled at once; a running run ends cancelled through Kiro's own cancel; only the owner may cancel (583 ms)
+    ΓêÜ graceful shutdown marks this task's running run interrupted at once (one OASIS event), the stream ends, and a late turn end changes nothing (506 ms)
+    ΓêÜ a run whose row another task already ended (its sweep) is never overwritten by the late finish here (570 ms)
+    ΓêÜ the sweep marks another task's stale run interrupted exactly once (guarded update, one OASIS event); fresh and finished runs are untouched (278 ms)
+    ΓêÜ continue after interrupted: a new run on the same thread opens a new session with the thread's history (412 ms)
+    ΓêÜ owner checks: unauthenticated 401 JSON, a non-admin 403, another admin cannot read, stream, list or use the thread; bad ids 400 (648 ms)
+    ΓêÜ a run with a pasted image reaches Kiro as image blocks; without image input Kiro gets one text line and the console is told (531 ms)
+    ΓêÜ the old /chat/stream path runs through a run and still sends only the frames it always sent (484 ms)
+  Operator turn with a pasted image (VTID-05067)
+    ΓêÜ the image is stored, attached by media id, and handed to the model; another admin's image is refused (220 ms)
+  Kiro runs survive a gateway deploy (VTID-05068)
+    ΓêÜ a deploy mid-run: the old task lets the session go, the new task reattaches it, and the run completes with contiguous seq, one reply and no interrupted event (589 ms)
+    ΓêÜ an approval card open at the deploy is shown again by the reattached session and answered there (504 ms)
+    ΓêÜ the runner refuses the reattach (session gone, or token rejected): the run is interrupted exactly as in Phase 1 (770 ms)
+    ΓêÜ a crashed task (no drain): once its heartbeat is stale the run is reattached inside the window; past the window it is interrupted as before (492 ms)
+
+  ΓùÅ Runner checks: a Command Hub frontend change runs the suites that read the asset (VTID-04617) ΓÇ║ the runner jest targets include every suite that names app.js, not only the paired ones
+
+    expect(received).toContain(expected) // indexOf
+
+    Expected substring: "test/command-hub/cache-bust-pin.test.ts"
+    Received string:    "services/gateway app\\.(test|spec)\\.[jt]sx?$ test/ch-reason-meta.test.ts test\\command-hub\\cache-bust-pin.test.ts"
+
+      1158 |     const runnerJest = checks.log.filter((c) => c.kind === 'runner:jest').map((c) => String(c.target));
+      1159 |     expect(runnerJest).toHaveLength(1);
+    > 1160 |     expect(runnerJest[0]).toContain('test/command-hub/cache-bust-pin.test.ts');
+           |                           ^
+      1161 |     expect(runnerJest[0]).toContain('test/ch-reason-meta.test.ts');
+      1162 |     expect(runnerJest[0]).not.toContain('unrelated.test.ts');
+      1163 |   });
+
+      at Object.<anonymous> (test/vtid-04465-operator-pipeline-regression.test.ts:1160:27)
+
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 70 passed, 71 total
+Snapshots:   0 total
+Time:        128.917 s
+Ran all test suites matching /test\\vtid-04465-operator-pipeline-regression.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

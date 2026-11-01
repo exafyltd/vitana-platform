@@ -239,7 +239,8 @@ describe('reassignDecision — stale ready / stale review', () => {
   });
 
   it('ready >24h, no automation → reassign to next seat for area', () => {
-    const lane = mergeableLane({ state: 'ready', seat: 'jtadic', area: 'backoffice', state_since: ISO(NOW - HOURS(30)), seat_ran_automation_in_window: false });
+    // VTID-05414: reviewer_seat is not the next seat (a target equal to it is skipped, reassign-seat.test.ts).
+    const lane = mergeableLane({ state: 'ready', seat: 'jtadic', reviewer_seat: 'hotmail', area: 'backoffice', state_since: ISO(NOW - HOURS(30)), seat_ran_automation_in_window: false });
     const d = reassignDecision(lane, stateWith([lane], rotations), NOW);
     expect(d).toMatchObject({ kind: 'reassign', target: 'lane', to_actor: 'exafyltd', reason: 'stale_ready' });
   });
