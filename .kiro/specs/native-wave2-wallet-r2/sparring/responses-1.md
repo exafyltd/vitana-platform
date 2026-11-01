@@ -1,0 +1,6 @@
+# Responses — round 1 (native-wave2-wallet-r2)
+```json
+[{"finding_id": "R1-F1", "disposition": "accepted", "rationale": "The redeem twin goes in the existing (public) group: apps/mobile/app/(public)/redeem.tsx. That group (Stack, headerShown false, no shell chrome) already holds the native /reset-password and /logout twins, which sit in the same web 'Public Routes - No Auth Required' block as /redeem (src/App.tsx:849). Not a bare app/redeem.tsx and not app/(app)/. Because the wallet-rewards lane file already declares apps/mobile/app/(app)/redeem.tsx and a _plan commit may not edit an existing lane file (queue.mjs validateRange), the redeem port moves to a new lane wallet-redeem (lanes/wallet-redeem.md, paths include apps/mobile/app/(public)/redeem.tsx and src/screens/wallet-redeem/**). Plan decision 1, 2a, the lane table and the row partition (8 + 3 + 1 + 2 = 14) are updated; tasks.md has the new wallet-redeem section and wallet-rewards drops /redeem (3 rows). design.md and requirements.md carry an amendment note.", "deferred_to": ""}]
+```
+Summary note (14 rows): the partner reached 2 of the 14 rows; the full count is in requirements.md R0.2–R0.4 and was
+measured with `node -e` over the committed ledger (plan "Measured state").

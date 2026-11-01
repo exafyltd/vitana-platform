@@ -1,4 +1,5 @@
 # Design — Native Wave 2: Wallet screen ports (native-wave2-wallet-r2)
+> **Amendment (r2 sparring R1-F1, plan decision 2a):** `/redeem` is its own lane `wallet-redeem` (`apps/mobile/app/(public)/redeem.tsx`, `apps/mobile/src/screens/wallet-redeem/**`, 1 row); `wallet-rewards` keeps the 3 rewards rows. Partition 8 + 3 + 1 + 2 = 14. Where this file still says three lanes, `wallet-rewards` 4 rows or `(app)/redeem.tsx`, `plan.md` and `tasks.md` govern.
 
 How the three lanes port the `wallet` ledger cluster to native. Follows
 `docs/programs/native-app/NATIVE-APP-PLAN.md` §3 (architecture) and §4 (parity method), the N3 shell and N2 UI kit

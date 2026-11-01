@@ -1,6 +1,6 @@
 # Tasks — Native Wave 2: Wallet screen ports
 
-Three lanes, disjoint `paths`. Design: `design.md` and `requirements.md` in this folder are authoritative — follow
+Four lanes, disjoint `paths` (`wallet-redeem` added by r2 sparring R1-F1, plan decision 2a). Design: `design.md` and `requirements.md` in this folder are authoritative — follow
 them exactly; anything outside them is a plan change (log it, set `next_actor: kiro` and re-spar). VTIDs are assigned
 by CI after PLAN-SPAR converges; do not start a lane before its `vtid:` is set in `lanes/<id>.md`. All commands run
 from `apps/mobile/` unless noted; `assertNotProduction()` and the no-production-profile rule make every command
@@ -73,11 +73,10 @@ owns the core extraction** of `src/lib/exchangeRates.ts` (decision 4).
 
 <!-- lane: wallet-rewards -->
 ## Lane `wallet-rewards` · executor Kiro · seat exafyltd → reviewer_seat hotmail
-Ports (4 ledger rows): `WALLET.REWARDS /wallet/rewards`, `WALLET.REWARDS_EARN_MORE /wallet/rewards?tab=earn`,
-`WALLET.REWARDS_SHOP /wallet/rewards?tab=shop`, `/redeem`. depends_on: none. Web sources
-`src/pages/wallet/Rewards.tsx` (137 lines, route `src/App.tsx:1573-1577`), `src/pages/RedeemVoucher.tsx` (206 lines,
-route `src/App.tsx:849`).
-
+Ports (3 ledger rows): `WALLET.REWARDS /wallet/rewards`, `WALLET.REWARDS_EARN_MORE /wallet/rewards?tab=earn`,
+`WALLET.REWARDS_SHOP /wallet/rewards?tab=shop`. depends_on: none. Web source `src/pages/wallet/Rewards.tsx` (137
+lines, route `src/App.tsx:1573-1577`). `/redeem` moved to lane `wallet-redeem` (plan decision 2a); this section
+governs where the lane file still names `/redeem` or 4 rows.
 - [ ] 1. Native rewards `apps/mobile/app/(app)/wallet/rewards.tsx` +
   `apps/mobile/src/screens/wallet-rewards/RewardsScreen.tsx`: twin of `Rewards.tsx`, `earn`/`shop` tabs via the `tab`
   search param. **Preserve the `isIAPRestricted` branch on the shop purchase affordance exactly** (R3.2): shop
@@ -85,33 +84,54 @@ route `src/App.tsx:849`).
   only; no web import.
   Files: `apps/mobile/app/(app)/wallet/rewards.tsx`, `apps/mobile/src/screens/wallet-rewards/**`.
   Verify: `npm test` + `npm run typecheck` green.
-- [ ] 2. Native redeem `apps/mobile/app/(app)/redeem.tsx` +
-  `apps/mobile/src/screens/wallet-rewards/RedeemScreen.tsx`: twin of `RedeemVoucher.tsx` — voucher code entry, lookup
-  (`useVoucherByCode` equivalent, re-implemented natively), claim (`useClaimVoucher`). A code-claim, **not a purchase
-  → ungated** (no IAP concern); do not add a gate.
-  Files: `apps/mobile/app/(app)/redeem.tsx`, `apps/mobile/src/screens/wallet-rewards/**`.
-  Verify: `npm test` + `npm run typecheck` green.
-- [ ] 3. i18n + RTL (as wallet-home task 4) for rewards + redeem.
+- [ ] 2. i18n + RTL (as wallet-home task 4) for rewards.
   Files: `src/i18n/*/walletRewardsNative.json` (DE first), `apps/mobile/src/screens/wallet-rewards/**`.
   Verify: `npm run typecheck`; `npm test` no-raw-text / no-physical-direction tests pass.
-- [ ] 4. Unit tests (fake gateway / fixtures): rewards earn/shop tab switch; **shop purchase gated on iOS, shown off
-  iOS (parity assertion)**; redeem code valid / invalid / already-claimed / error. React 19 `ReactElement`.
+- [ ] 3. Unit tests (fake gateway / fixtures): rewards earn/shop tab switch; **shop purchase gated on iOS, shown off
+  iOS (parity assertion)**. React 19 `ReactElement`.
   Files: `apps/mobile/tests/wallet-rewards/**`, `apps/mobile/src/screens/wallet-rewards/__tests__/**`.
   Verify: `npm test`; `APP_PROFILE=development npm run bundle`;
   `APP_PROFILE=development EXPO_OFFLINE=1 npm run deps:check` green.
-- [ ] 5. Flip the lane's 4 parity rows (`WALLET.REWARDS`, `WALLET.REWARDS_EARN_MORE`, `WALLET.REWARDS_SHOP`,
-  `/redeem`) to `native`; `--sync` then `--check`.
+- [ ] 4. Flip the lane's 3 parity rows (`WALLET.REWARDS`, `WALLET.REWARDS_EARN_MORE`, `WALLET.REWARDS_SHOP`) to
+  `native`; `--sync` then `--check`.
   Files: `apps/mobile/parity/ledger.json` (wallet-rewards rows only), `docs/validation/<VTID>/{scope,staging-tests}.json`.
   Verify (repo root): `node scripts/native/parity-ledger.mjs --check` green.
-- [ ] 6. **(depends-on-owner / G1 — `next_actor: owner`)** Maestro `apps/mobile/maestro/wallet-rewards/*.yaml` +
-  sim/emulator screenshots + parity vs 390×844 staging `/wallet/rewards` and `/redeem` (read-only; no purchase
-  attempted). Blocked until G1 (+ macOS/G3 for iOS).
+- [ ] 5. **(depends-on-owner / G1 — `next_actor: owner`)** Maestro `apps/mobile/maestro/wallet-rewards/*.yaml` +
+  sim/emulator screenshots + parity vs 390×844 staging `/wallet/rewards` (read-only; no purchase attempted). Blocked
+  until G1 (+ macOS/G3 for iOS).
   Files: `apps/mobile/maestro/wallet-rewards/**`, `docs/validation/<VTID>/staging-tests.json`.
-- [ ] 7. PR: branch `kiro/native-wave2-wallet-r2/wallet-rewards`, title
-  `VTID-xxxxx (native-wave2-wallet-r2/wallet-rewards): native rewards + redeem port (iOS IAP gates preserved)`; trailers
+- [ ] 6. PR: branch `kiro/native-wave2-wallet-r2/wallet-rewards`, title
+  `VTID-xxxxx (native-wave2-wallet-r2/wallet-rewards): native rewards port (iOS IAP gates preserved)`; trailers
   `Collab-Session`, `Collab-Lane: native-wave2-wallet-r2/wallet-rewards`; lane → `in-review`, `next_actor: kiro`. No
   merge/deploy/live write.
-
+<!-- lane: wallet-redeem -->
+## Lane `wallet-redeem` · executor Kiro · seat exafyltd → reviewer_seat hotmail
+Ports (1 ledger row): the exclusion route `/redeem`. depends_on: none. Web source `src/pages/RedeemVoucher.tsx` (206
+lines, route `src/App.tsx:849`, in the "Public Routes - No Auth Required" block, no `AuthGuard`). Plan decision 2a.
+- [ ] 1. Native redeem `apps/mobile/app/(public)/redeem.tsx` + `apps/mobile/src/screens/wallet-redeem/RedeemScreen.tsx`:
+  twin of `RedeemVoucher.tsx` — voucher code entry, lookup (`useVoucherByCode` equivalent, re-implemented natively),
+  claim (`useClaimVoucher`). In the `(public)` group (no shell chrome, no auth), never under `app/(app)/`. A
+  code-claim, **not a purchase → ungated** (no IAP concern); do not add a gate.
+  Files: `apps/mobile/app/(public)/redeem.tsx`, `apps/mobile/src/screens/wallet-redeem/**`.
+  Verify: `npm test` + `npm run typecheck` green.
+- [ ] 2. i18n + RTL (as wallet-home task 4) for redeem.
+  Files: `src/i18n/*/walletRedeemNative.json` (DE first), `apps/mobile/src/screens/wallet-redeem/**`.
+  Verify: `npm run typecheck`; `npm test` no-raw-text / no-physical-direction tests pass.
+- [ ] 3. Unit tests (fake gateway / fixtures): redeem code valid / invalid / already-claimed / error; **renders without
+  an authenticated session** (decision 2a). React 19 `ReactElement`.
+  Files: `apps/mobile/tests/wallet-redeem/**`, `apps/mobile/src/screens/wallet-redeem/__tests__/**`.
+  Verify: `npm test`; `APP_PROFILE=development npm run bundle`;
+  `APP_PROFILE=development EXPO_OFFLINE=1 npm run deps:check` green.
+- [ ] 4. Flip the `/redeem` parity row to `native`; `--sync` then `--check`.
+  Files: `apps/mobile/parity/ledger.json` (the `/redeem` row only), `docs/validation/<VTID>/{scope,staging-tests}.json`.
+  Verify (repo root): `node scripts/native/parity-ledger.mjs --check` green.
+- [ ] 5. **(depends-on-owner / G1 — `next_actor: owner`)** Maestro `apps/mobile/maestro/wallet-redeem/*.yaml` +
+  sim/emulator screenshots + parity vs 390×844 staging `/redeem` (read-only; no voucher claimed). Blocked until G1.
+  Files: `apps/mobile/maestro/wallet-redeem/**`, `docs/validation/<VTID>/staging-tests.json`.
+- [ ] 6. PR: branch `kiro/native-wave2-wallet-r2/wallet-redeem`, title
+  `VTID-xxxxx (native-wave2-wallet-r2/wallet-redeem): native public voucher redeem port`; trailers `Collab-Session`,
+  `Collab-Lane: native-wave2-wallet-r2/wallet-redeem`; lane → `in-review`, `next_actor: kiro`. No merge/deploy/live
+  write.
 <!-- lane: wallet-subscriptions -->
 ## Lane `wallet-subscriptions` · executor Kiro · seat exafyltd → reviewer_seat hotmail
 Ports (2 ledger rows): `WALLET.SUBSCRIPTIONS /wallet/subscriptions`, `/profile/subscriptions`. depends_on: none. Web

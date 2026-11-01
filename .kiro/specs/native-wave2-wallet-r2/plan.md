@@ -39,11 +39,12 @@ registry/manifest change — only native route files and parity-row status flips
   `apps/mobile/README.md`. The native app has no production profile; `assertNotProduction()` refuses prod/staging hosts.
 
 ## Decisions (made by Kiro as planner under the owner's "finish the native apps" instruction; sparring may revise)
-1. **Three disjoint lanes split by page-file cluster.** `wallet-home` (`Wallet.tsx` + `Balance.tsx` — the hub +
-   balance, **8 rows**), `wallet-rewards` (`Rewards.tsx` + `RedeemVoucher.tsx` — rewards + redeem, **4 rows**),
-   `wallet-subscriptions` (`Subscriptions.tsx` + `MobileSubscriptions.tsx` — subscriptions, **2 rows**). The three
-   touch disjoint route files and component folders, build/review independently, each leaves the app buildable.
-   8 + 4 + 2 = 14 — the exact `wallet`-lane row count (0 overlap, 0 orphan).
+1. **Four disjoint lanes split by page-file cluster and auth boundary.** `wallet-home` (`Wallet.tsx` + `Balance.tsx`
+   — the hub + balance, **8 rows**), `wallet-rewards` (`Rewards.tsx` — rewards, **3 rows**), `wallet-redeem`
+   (`RedeemVoucher.tsx` — the public voucher redemption, **1 row**, decision 2a), `wallet-subscriptions`
+   (`Subscriptions.tsx` + `MobileSubscriptions.tsx` — subscriptions, **2 rows**). The four touch disjoint route files
+   and component folders, build/review independently, each leaves the app buildable. 8 + 3 + 1 + 2 = 14 — the exact
+   `wallet`-lane row count (0 overlap, 0 orphan).
 2. **No new wallet route (NEVER rule 26; program §3 Wallet line).** Every native route file maps to an existing
    `App.tsx` route verified on `origin/main` (`/wallet`, `/wallet/balance`, `/wallet/rewards`, `/wallet/subscriptions`,
    `/redeem`, `/profile/subscriptions`). A native Expo Router file is not an `App.tsx` route, so the "new page needs
@@ -53,13 +54,21 @@ registry/manifest change — only native route files and parity-row status flips
    "Public Routes - No Auth Required" block in `src/App.tsx` (line 849), with **no `AuthGuard`**, whereas every other
    wallet-lane route (`/wallet`, `/wallet/balance`, `/wallet/rewards`, `/wallet/subscriptions`) is wrapped in
    `AuthGuard`. The parity guarantee covers the auth boundary, not just IAP gates: to avoid silently narrowing access
-   (requiring auth where web does not), the `wallet-rewards` lane places the native `RedeemVoucher` screen in the
-   **public/unauthenticated** Expo Router group (the native equivalent of being outside `(app)` — e.g. the public
-   `app/redeem.tsx` route segment, not under `app/(app)/`), so an unauthenticated member can reach it exactly as on
-   web. No parity-ledger exception is needed because the boundary is preserved, not changed. The `wallet-rewards`
-   lane file records this placement explicitly and a unit/routing test asserts the redeem screen renders without an
-   authenticated session. (The other three wallet routes stay inside the authenticated group, matching their
-   `AuthGuard` web wrappers.)
+   (requiring auth where web does not), the native `RedeemVoucher` twin goes in the existing **`(public)` layout
+   group: `apps/mobile/app/(public)/redeem.tsx`** (r2 sparring R1-F1). That group is the native home of the web's
+   "Public Routes - No Auth Required" block: `apps/mobile/app/(public)/_layout.tsx` is a `Stack` with
+   `headerShown: false` and no shell chrome, and it already holds the native twins of `/reset-password` and
+   `/logout`, which sit in the same web block as `/redeem`. Not a bare top-level `app/redeem.tsx` (root layout only)
+   and not under `app/(app)/` (authenticated). No parity-ledger exception is needed because the boundary is
+   preserved, not changed. A unit/routing test asserts the redeem screen renders without an authenticated session.
+   (The other three wallet routes stay inside the authenticated group, matching their `AuthGuard` web wrappers.)
+   **The redeem port is its own lane, `wallet-redeem`.** The `wallet-rewards` lane file was declared with
+   `apps/mobile/app/(app)/redeem.tsx` in its `paths`, and a `_plan` commit may not edit a lane file once created
+   (`queue.mjs` validateRange), so Lane scope would refuse the `(public)` route file in a `wallet-rewards` PR.
+   `wallet-redeem` declares `apps/mobile/app/(public)/redeem.tsx` and `apps/mobile/src/screens/wallet-redeem/**`.
+   `wallet-rewards` no longer ports `/redeem`: where its lane file still names `/redeem`, `(app)/redeem.tsx` or 4
+   rows, this plan block and its `tasks.md` section (3 rows) govern, and the unused `(app)/redeem.tsx` path entry
+   creates nothing.
 3. **iOS-IAP gating preserved 1:1 — a parity port, not a gating change (decision 5 / R3).** Each surface's current
    `isIAPRestricted()` branches are mirrored one-for-one; no gate is added, removed, widened or narrowed. Verified
    per surface on `origin/main`: `Wallet.tsx` **gated** (hides add-funds/buy/withdraw/deposit + quick-exchange on iOS),
@@ -93,12 +102,13 @@ registry/manifest change — only native route files and parity-row status flips
 | Lane | Seat → reviewer | Scope (web destinations) | depends_on |
 |---|---|---|---|
 | `wallet-home` | exafyltd → hotmail | `/wallet` (OVERVIEW + WALLET_POPUP overlay + `?tab=actions\|activity`), `/wallet/balance` (+ `?tab=membership\|optimization\|tokens`) — **8 rows**; **owns the core extraction** of `exchangeRates` | — |
-| `wallet-rewards` | exafyltd → hotmail | `/wallet/rewards` (+ `?tab=earn\|shop`), `/redeem` — **4 rows** | — |
+| `wallet-rewards` | exafyltd → hotmail | `/wallet/rewards` (+ `?tab=earn\|shop`) — **3 rows** | — |
+| `wallet-redeem` | exafyltd → hotmail | `/redeem` (public, `app/(public)/redeem.tsx`) — **1 row** | — |
 | `wallet-subscriptions` | exafyltd → hotmail | `/wallet/subscriptions`, `/profile/subscriptions` (mobile = `MobileSubscriptions` storefront) — **2 rows** | — |
-Exact `paths` globs are in each `lanes/<id>.md`; the 14 parity rows partition **8 (wallet-home) + 4 (wallet-rewards)
-+ 2 (wallet-subscriptions)** with 0 overlap and 0 orphan. The query-string variants are the same route file read by
+Exact `paths` globs are in each `lanes/<id>.md`; the 14 parity rows partition **8 (wallet-home) + 3 (wallet-rewards)
++ 1 (wallet-redeem) + 2 (wallet-subscriptions)** with 0 overlap and 0 orphan. The query-string variants are the same route file read by
 the search param (exact `shapeOf` match, query dropped — `parity-ledger.mjs:60`), and each lane flips **every** one of
-its rows to `native`, not only the base rows. All three lanes have no inter-lane dependency (disjoint page files and
+its rows to `native`, not only the base rows. All four lanes have no inter-lane dependency (disjoint page files and
 a single core-extraction owner) and run in parallel.
 
 ## Test plan
@@ -146,4 +156,3 @@ a single core-extraction owner) and run in parallel.
 - macOS minutes / G3 for iOS-on-device screenshots (program STATUS row 8b) — not needed for the JS build.
 <!-- plan:end -->
 
-<!-- re-trigger after PLAN-SPAR repair; 2026-10-28T09:53:01.1255134+01:00 -->
