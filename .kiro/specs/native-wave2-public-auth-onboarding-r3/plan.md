@@ -48,7 +48,7 @@ against production.**
   (281), `src/pages/Logout.tsx` (89), `src/pages/InviteLanding.tsx` (17), `src/pages/Apply.tsx` (819),
   `src/pages/onboarding/OnboardingWelcome.tsx` (224), `src/pages/legal/MaxinaSupport.tsx` (240),
   `src/pages/DownloadFlyer.tsx` (233, kept exception), `src/pages/MaxinaAppRedirect.tsx` (279, kept exception); routes
-  at `src/App.tsx:819` (`/`), `:825` (`/auth/confirmed`), `:829` (`/oauth/complete`), `:832-833`
+  at `src/App.tsx:818` (`/`), `:819` (`/_intro/:tenantSlug`), `:825` (`/auth/confirmed`), `:829` (`/oauth/complete`), `:832-833`
   (`/maxina|alkalma/confirmed`), `:844` (`/reset-password`), `:845-846` (`/privacy`, `/terms`), `:848`
   (`/maxina_support`), `:850` (`/logout`), `:868` (`/apply`), `:876` (`/maxina`), `:877` (`/i/:code`), `:878`
   (`/alkalma`), `:837` (`/onboarding/welcome`, AuthGuard), `:1860` (`/oauth/consent`, AuthGuard), `:2337`
