@@ -1,8 +1,7 @@
 ---
 lane: suite
-state: executing
+state: parked
 next_actor: kiro
-claimed_by: kiro-exafyltd-202610311258-09ed
 branch: kiro/sv-05308-coverage/suite
 depends_on: []
 executor: kiro
@@ -13,8 +12,9 @@ reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 repos: [exafyltd/vitana-platform]
 paths:
   - docs/validation/VTID-*/**
-updated: 2026-10-31T12:40Z
+updated: 2026-11-01T03:35Z
 vtid: VTID-05406
+parked_from: executing
 ---
 # Lane: suite (repo vitana-platform)
 Tasks in `tasks.md`. `docs/validation/**` only, not a governance path. VTID allocated by PLAN-SPAR.
@@ -71,3 +71,5 @@ PR: https://github.com/exafyltd/vitana-platform/pull/4533
 Findings: non-blocking only; the diff against main is the same 10 files, checks were queued at review time, land only when green (reviewer workflow wf_d26bbe5481943f31)
 Stored by the landing session on the agent's behalf (lane-land.md step 2), parent session kiro-ide-202610272306-27b0.
 Next: land under §7b
+### 2026-11-01T03:35Z · pm-agent · executing → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
