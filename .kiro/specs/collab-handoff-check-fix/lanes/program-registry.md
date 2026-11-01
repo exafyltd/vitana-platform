@@ -15,7 +15,7 @@ paths:
   - docs/programs/standalone/program.md
   - scripts/collab/program-registry.test.mjs
   - docs/validation/VTID-*/**
-updated: 2026-10-31T23:47Z
+updated: 2026-11-01T03:53Z
 vtid: VTID-05364
 parked_from: ready
 ---
@@ -1735,4 +1735,6 @@ reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
 ### 2026-10-31T23:43Z · pm-agent · update
 reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
 ### 2026-10-31T23:47Z · pm-agent · ready → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
+### 2026-11-01T03:53Z · pm-agent · update
 park (stale_claim); claim released; Claude unavailable → exafyltd
