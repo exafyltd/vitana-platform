@@ -4,6 +4,7 @@ state: executing
 next_actor: kiro
 claimed_by: kiro-exafyltd-202610312303-3dad
 branch: kiro/pm-reassign-idempotent-r3/reassign-noop-r3
+pr: https://github.com/exafyltd/vitana-platform/pull/4556
 depends_on: []
 executor: kiro
 seat: exafyltd
@@ -39,3 +40,7 @@ VTID-05421 allocated after policy approval (converged-auto-v1).
 Claimed. Code moved from #4532 (r2, VTID-05414, same content; red on base 11 failed, green on head 220/220, recorded
 there); pins file regenerated (one line, `PM_AGENT_ENABLED` staging `"false"`); the flag registry pins test passes.
 Evidence in `docs/validation/VTID-05421/`.
+
+### 2026-11-01T04:40Z · kiro-exafyltd-202610312303-3dad · executing (PR ready for review)
+PR https://github.com/exafyltd/vitana-platform/pull/4556 (head 12879a98). Next: reviewer agent
+agent:vitana-lane-reviewer. #4532 (r2) closed as superseded, branch kept.
