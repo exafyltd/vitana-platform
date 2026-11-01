@@ -1,0 +1,4 @@
+# cd services/gateway && npx tsc --noEmit -p .  (exit 2)
+# 2 pre-existing TS2664 baseline errors, none in touched files
+src/middleware/server-timing.ts(36,16): error TS2664: Invalid module name in augmentation, module 'express-serve-static-core' cannot be found.
+src/orb/live/latency-tracker.ts(236,16): error TS2664: Invalid module name in augmentation, module 'express-serve-static-core' cannot be found.
