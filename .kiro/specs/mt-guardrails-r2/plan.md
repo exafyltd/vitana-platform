@@ -22,6 +22,11 @@ Author: Kiro, seat `hotmail`, session `kiro-hotmail-202611011402-f523`. Premises
   agent:vitana-lane-reviewer` may change on a reviewer-agent accept (`collaboration.md` §3a); none of lane 6's files is
   a protected gate file. Lane 6 is therefore `executor: kiro`, seat `hotmail`. Every lane is reviewed by the reviewer
   agent (`reviewer_seat` seats from the old spec are replaced).
+- **Premise files** (all on `origin/main` `62990ce285`, for the read_file evidence floor): `docs/MULTI-TENANT-PLAN.md`
+  (WS0, D11, D13), `.github/workflows/MIGRATION-DRIFT-CHECK.yml:85`, `docs/SUPABASE-SECURITY-ADVISOR-AUDIT-2026-08-28.md:58`,
+  `scripts/collab/queue.mjs:86-87` (`GOVERNANCE_PATHS`), `scripts/collab/protected-gate-files.json`,
+  `supabase/migrations/` (replay source), `services/gateway/package.json` (test scripts).
+
 ## Problem
 WS0 is the M0 blocker (`docs/MULTI-TENANT-PLAN.md` §6 "WS0 Guard rails & test env", §7 M0): the
 guardrails that must exist before any isolation work. Verified against platform `origin/main`
