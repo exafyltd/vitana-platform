@@ -23,6 +23,10 @@ channels) is tracked by `mt-guardrails-r2` (the WS0 route inventory and the unau
 S-H residual cleanup (sparring R1-F1).
 
 ## 2. Today (evidence, vitana-v1@58c76c956 unless stated; the companion pin is declared as `spar_refs` in `handoff.md`, R1-F2)
+Every premise below can be read at that pin: vitana-v1 `supabase/functions/linkedin-import/index.ts`,
+`supabase/config.toml`, `src/lib/edge-functions-caller-identity.s4.test.ts`, `package.json`, `vitest.config.ts`,
+`scripts/check-edge-data-client.mjs` and `.github/workflows/SUPABASE-FUNCTIONS-RETIRE.yml`; vitana-platform
+`docs/MULTI-TENANT-PLAN.md:44,46` (S-H, S-J).
 - `supabase/functions/linkedin-import/index.ts` still exists; VTID-05049 auth-gated it and flagged it for removal
   (`:4` imports `requireUser`, `:6-8` the removal comment). `social-media-import` replaced it.
 - No caller: `git grep linkedin-import -- src supabase/functions ':!supabase/functions/linkedin-import'` hits only the

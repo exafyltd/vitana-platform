@@ -7,7 +7,7 @@ next_actor: kiro
 state: drafted
 spar_refs:
   - exafyltd/vitana-v1: 58c76c9566dc035fe506a304e42c8700a110bcb5
-updated: 2026-11-01T16:01Z
+updated: 2026-11-01T16:20Z
 ---
 # Handoff — mt-track-s-r2
 Re-plan of `mt-track-s` (PR #4165, closed 2026-10-28; session `d0c274cd` escalated at the round cap). Closes the last
@@ -30,3 +30,7 @@ commits. The answers are:
 - R1-F1: the plan is relabelled to the S-H residual. S-J stays open, tracked by `mt-guardrails-r2`.
 - R1-F2: the vitana-v1 pin is declared as `spar_refs`.
 - R1-F3: the gate keeps `LEGACY` exact, and a migrated legacy key fails.
+
+### 2026-11-01T16:20Z · kiro-hotmail-202611011452-6d16 · drafted (session 1 escalated on the evidence floor)
+PLAN-SPAR session `04a4b4f3` escalated in round 1 with `evidence_floor_not_met` and no findings. The partner did not read
+any file. `plan.md` §2 now names the files behind each premise, and this push starts session 2.
