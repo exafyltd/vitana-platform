@@ -248,13 +248,32 @@ export interface ScanRunSummary {
   results: Array<{ user_id: string; inserted: number; retired: number; picks: string[]; dropped: number }>;
 }
 
+export interface CommunityScanOptions {
+  now?: Date;
+  dryRun?: boolean;
+  onlyUserId?: string;
+  maxMembers?: number;
+  /**
+   * VTID-05268 (mt-jobs): scan only the members whose PRIMARY tenant is this
+   * one, so per-tenant passes partition today's platform-wide set (each
+   * member once, under their primary tenant). Absent ⇒ platform-wide (today).
+   */
+  tenantId?: string;
+  /**
+   * VTID-05268: the tenant's `tenant_settings.timezone`, used as the final
+   * default of the per-member clock in a tenant pass (instead of
+   * DEFAULT_USER_TIMEZONE). Absent ⇒ today's default.
+   */
+  tenantTimezone?: string;
+}
+
 /**
  * One tick. `onlyUserId` scans a single member regardless of the hour (for
  * an operator check); `dryRun` writes nothing.
  */
 export async function runCommunityScan(
   sb: SupabaseClient,
-  opts: { now?: Date; dryRun?: boolean; onlyUserId?: string; maxMembers?: number } = {},
+  opts: CommunityScanOptions = {},
 ): Promise<ScanRunSummary> {
   const now = opts.now ?? new Date();
   const enabled = isScanEnabled();
@@ -266,7 +285,9 @@ export async function runCommunityScan(
   if (opts.onlyUserId) {
     memberIds = [opts.onlyUserId];
   } else {
-    const members = await rows<{ user_id: string }>(sb.from('user_tenants').select('user_id').eq('is_primary', true).limit(5000));
+    let q = sb.from('user_tenants').select('user_id').eq('is_primary', true);
+    if (opts.tenantId) q = q.eq('tenant_id', opts.tenantId);
+    const members = await rows<{ user_id: string }>(q.limit(5000));
     memberIds = [...new Set(members.map((m) => m.user_id))];
   }
   memberIds = memberIds.filter((id) => id && !excluded.has(id));
@@ -286,7 +307,14 @@ export async function runCommunityScan(
   for (const f of factTz) if (f.fact_value && !tzOf.has(f.user_id)) tzOf.set(f.user_id, f.fact_value);
   for (const r of reminderTz) if (r.user_tz && !tzOf.has(r.user_id)) tzOf.set(r.user_id, r.user_tz);
   const { resolveUserTimezone } = await import('../guide/user-timezone');
-  const due = opts.onlyUserId ? memberIds : memberIds.filter((id) => isDue(now, resolveUserTimezone(tzOf.get(id) ?? null)));
+  // VTID-05268: in a tenant pass the tenant's timezone replaces the platform
+  // default at the end of the same chain (no member tz, empty or 'UTC').
+  const memberTz = (raw: string | null): string => {
+    const t = raw?.trim();
+    if (opts.tenantTimezone && (!t || t.toUpperCase() === 'UTC')) return opts.tenantTimezone;
+    return resolveUserTimezone(raw);
+  };
+  const due = opts.onlyUserId ? memberIds : memberIds.filter((id) => isDue(now, memberTz(tzOf.get(id) ?? null)));
   const batch = due.slice(0, opts.maxMembers ?? 500);
 
   const { bulkGetUserLocales } = await import('../../i18n/server-locale');
@@ -318,4 +346,64 @@ export async function runCommunityScan(
     retired_templates: [...retiredTemplates].sort(),
     results,
   };
+}
+
+export interface TenantScanPass {
+  tenant_id: string;
+  members_considered: number;
+  members_due: number;
+  members_scanned: number;
+  rows_inserted: number;
+}
+
+export interface TenantScanTickSummary extends ScanRunSummary {
+  per_tenant: TenantScanPass[];
+}
+
+/**
+ * VTID-05268 (mt-jobs): one tick over the active tenants (MT_RESOLUTION_V2 on).
+ * One runCommunityScan pass per tenant, in sequence, each over that tenant's
+ * primary members with that tenant's timezone. The top-level fields keep
+ * today's names and types (counts summed) and `per_tenant` is added.
+ */
+export async function runCommunityScanForTenants(
+  sb: SupabaseClient,
+  tenants: Array<{ tenantId: string; timezone: string }>,
+  opts: Omit<CommunityScanOptions, 'tenantId' | 'tenantTimezone' | 'onlyUserId'> = {},
+): Promise<TenantScanTickSummary> {
+  const enabled = isScanEnabled();
+  const total: TenantScanTickSummary = {
+    enabled,
+    dry_run: opts.dryRun === true || !enabled,
+    members_considered: 0,
+    members_due: 0,
+    members_scanned: 0,
+    rows_inserted: 0,
+    rows_retired: 0,
+    retired_templates: [],
+    results: [],
+    per_tenant: [],
+  };
+  const retiredTemplates = new Set<string>();
+  for (const t of tenants) {
+    const s = await runCommunityScan(sb, { ...opts, tenantId: t.tenantId, tenantTimezone: t.timezone });
+    total.enabled = s.enabled;
+    total.dry_run = s.dry_run;
+    total.members_considered += s.members_considered;
+    total.members_due += s.members_due;
+    total.members_scanned += s.members_scanned;
+    total.rows_inserted += s.rows_inserted;
+    total.rows_retired += s.rows_retired;
+    for (const r of s.retired_templates) retiredTemplates.add(r);
+    total.results.push(...s.results);
+    total.per_tenant.push({
+      tenant_id: t.tenantId,
+      members_considered: s.members_considered,
+      members_due: s.members_due,
+      members_scanned: s.members_scanned,
+      rows_inserted: s.rows_inserted,
+    });
+  }
+  total.retired_templates = [...retiredTemplates].sort();
+  return total;
 }

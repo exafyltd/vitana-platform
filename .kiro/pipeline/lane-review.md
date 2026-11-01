@@ -9,12 +9,14 @@ from the lane's own session.
 `claude-sonnet-5.5` → `claude-opus-5.5` → `claude-sonnet-4.5`, in that order (`REVIEWER_AGENT_MODELS` in
 `services/gateway/src/services/project-manager/governance.ts`; mirrored in `scripts/ci/kiro-steering/guard.cjs`).
 A Kiro workflow step takes exactly one `modelId`, and a step whose pinned model cannot be served **fails** at its
-first model call (it never returns a `model_unavailable` line; in a sequence that failure would end the slot). So
+first model call (in a sequence that failure would end the slot). So
 every lane slot runs its three review steps as the branches of **one `parallel` with `joinPolicy: "any"`**
 (`reviews-N`), one branch per chain model: `review-N` (`claude-sonnet-5.5`), `review-N-b` (`claude-opus-5.5`),
 `review-N-c` (`claude-sonnet-4.5`). The engine's `any` join completes on the first branch that completes and aborts
 the others; a failed branch is ignored; the parallel fails only when all three fail. The pin, not the agent's
-self-report, guarantees the model; the step prompt names it and the agent reports exactly that id.
+self-report, guarantees the model. Every review step's prompt starts with exactly
+`Reviewer chain model for this step: <modelId>. ` (its own `modelId`, once per prompt; the steering guard enforces
+it), and the agent keys on that line and reports exactly that id.
 Each branch is `[review step, store watch]`: the command watch `node scripts/collab/store-review.cjs` copies that
 step's output to `RUN/reviews/<LANE>-<head7>.out-<model>.md` (the reviewer stays read-only). The land step reads
 those files, never `{{review-…output}}` directly, because a failed or aborted branch has no captured output and a
@@ -65,7 +67,9 @@ hardcoded spoken strings; i18n / design / RTL if UI is touched; protected gate f
    `Collab-Session: <reviewer session>`, `Collab-Review: <slug>/<LANE>`, `Collab-Verdict: accept|changes`,
    `Collab-Reviewer: agent:vitana-lane-reviewer (<model>)` (the same chain model as the JSON),
    `Collab-Reviewed-Head: <40-hex>`. `Collab-Review` keeps the lane key; the verdict is only in `Collab-Verdict`.
-3. When the step's prompt names no chain model, or names one outside the chain → only
+3. The prompt's line `Reviewer chain model for this step: <id>` is the authoritative pin: a chain-model `<id>` is the
+   agent's model (no introspection; other chain-model names elsewhere in the prompt are not a conflict). Only when
+   that line is missing, or names a model outside the chain → only
    `{"error":"model_unavailable","required":["claude-sonnet-5.5","claude-opus-5.5","claude-sonnet-4.5"],"agent":"vitana-lane-reviewer"}`.
    That is "no review on this model" (the store watch writes nothing for it).
    A verdict whose `model` is not the model in its `.out-<model>.md` file name (the pin of the step that produced

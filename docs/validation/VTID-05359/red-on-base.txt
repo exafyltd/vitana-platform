@@ -1,0 +1,32 @@
+# VTID-05359 red on base
+Base: origin/main 499ad9fcead42aa504a9518dc0c357e19feb20f8 (git archive into a temp dir), with only the new scripts/ci/kiro-steering/guard.cjs + guard.test.cjs copied in (plan section 5).
+Command: node --test scripts/ci/kiro-steering/guard.test.cjs  ->  exit 1, tests 66, pass 58, fail 8
+Failing tests (the new contract is unmet on base: 18/18 prompts lack the model line, the agent, lane-review.md and driver.md lack the label):
+- this repository passes
+- agents: the shipped reviewer agent, workflow, hook and runbooks pass   (T-A)
+- review prompts: every shipped reviewer step opens with "Reviewer chain model for this step: <its modelId>. " once (T-E)
+- review prompts: a model line naming another chain model fails (T-B)
+- review prompts: a prompt without the model line fails (T-C)
+- review prompts: a prompt carrying the label twice fails (T-D)
+- review prompts: the agent, lane-review.md and driver.md keep the label; driver.md is required (T-F)
+- workflow: the steering entry point may only name pipeline files that exist (driver.md exists)
+
+First assertion detail (base errors reported by checkAgents):
+actual: '.kiro/agents/vitana-lane-reviewer.md: prompt is missing Reviewer chain model for this step: 
+.kiro/workflows/vitana-pipeline.workflow.json: review step review-1 prompt must start with "Reviewer chain model for this step: claude-sonnet-5.5. "
+.kiro/workflows/vitana-pipeline.workflow.json: review step review-1-b prompt must start with "Reviewer chain model for this step: claude-opus-5.5. "
+.kiro/workflows/vitana-pipeline.workflow.json: review step review-1-c prompt must start with "Reviewer chain model for this step: claude-sonnet-4.5. "
+.kiro/workflows/vitana-pipeline.workflow.json: review step review-2 prompt must start with "Reviewer chain model for this step: claude-sonnet-5.5. "
+.kiro/workflows/vitana-pipeline.workflow.json: review step review-2-b prompt must start with "Reviewer chain model for this step: claude-opus-5.5. "
+.kiro/workflows/vitana-pipeline.workflow.json: review step review-2-c prompt must start with "Reviewer chain model for this step: claude-sonnet-4.5. "
+.kiro/workflows/vitana-pipeline.workflow.json: review step review-3 prompt must start with "Reviewer chain model for this step: claude-sonnet-5.5. "
+.kiro/workflows/vitana-pipeline.workflow.json: review step review-3-b prompt must start with "Reviewer chain model for this step: claude-opus-5.5. "
+.kiro/workflows/vitana-pipeline.workflow.json: review step review-3-c prompt must start with "Reviewer chain model for this step: claude-sonnet-4.5. "
+.kiro/workflows/vitana-pipeline.workflow.json: review step review-4 prompt must start with "Reviewer chain model for this step: claude-sonnet-5.5. "
+.kiro/workflows/vitana-pipeline.workflow.json: review step review-4-b prompt must start with "Reviewer chain model for this step: claude-opus-5.5. "
+.kiro/workflows/vitana-pipeline.workflow.json: review step review-4-c prompt must start with "Reviewer chain model for this step: claude-sonnet-4.5. "
+.kiro/workflows/vitana-pipeline.workflow.json: review step review-5 prompt must start with "Reviewer chain model for this step: claude-sonnet-5.5. "
+.kiro/workflows/vitana-pipeline.workflow.json: review step review-5-b prompt must start with "Reviewer chain model for this step: claude-opus-5.5. "
+.kiro/workflows/vitana-pipeline.workflow.json: review step review-5-c prompt must start with "Reviewer chain model for this step: claude-sonnet-4.5. "
+.kiro/workflows/vitana-pipeline.workflow.json: review step review-6 prompt must start with "Reviewer chain model for this step: claude-sonnet-5.5. "
+.kiro/workflows/vitana-pipeline.workflow.json: review step review-6-b prompt must start

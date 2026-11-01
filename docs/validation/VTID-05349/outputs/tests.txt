@@ -1,0 +1,106 @@
+TAP version 13
+# Subtest: parseMounts maps every require/import form in index.ts to its route file
+ok 1 - parseMounts maps every require/import form in index.ts to its route file
+  ---
+  duration_ms: 1.724221
+  type: 'test'
+  ...
+# Subtest: parseHandlers, pathMatches and mostSpecific pick the literal handler over params and wildcards
+ok 2 - parseHandlers, pathMatches and mostSpecific pick the literal handler over params and wildcards
+  ---
+  duration_ms: 0.676794
+  type: 'test'
+  ...
+# Subtest: parseAtlas reads keys, regex route patterns with escaped slashes, and string arrays
+ok 3 - parseAtlas reads keys, regex route patterns with escaped slashes, and string arrays
+  ---
+  duration_ms: 0.828286
+  type: 'test'
+  ...
+# Subtest: globExists handles plain paths, * in a segment, ** and trailing-slash directories
+ok 4 - globExists handles plain paths, * in a segment, ** and trailing-slash directories
+  ---
+  duration_ms: 1.476009
+  type: 'test'
+  ...
+# Subtest: deadRefs reports unresolved backticked repo paths and skips placeholders and generated output
+ok 5 - deadRefs reports unresolved backticked repo paths and skips placeholders and generated output
+  ---
+  duration_ms: 0.433933
+  type: 'test'
+  ...
+# Subtest: resolveSpec resolves relative, .js-for-.ts and @/ specifiers to repo files
+ok 6 - resolveSpec resolves relative, .js-for-.ts and @/ specifiers to repo files
+  ---
+  duration_ms: 0.789545
+  type: 'test'
+  ...
+# Subtest: route: mount → most specific handler file:line, atlas domain, tests naming it (fixture repo)
+ok 7 - route: mount → most specific handler file:line, atlas domain, tests naming it (fixture repo)
+  ---
+  duration_ms: 41.049519
+  type: 'test'
+  ...
+# Subtest: domain, uses and why answer with file:line from the fixture sources
+ok 8 - domain, uses and why answer with file:line from the fixture sources
+  ---
+  duration_ms: 26.525067
+  type: 'test'
+  ...
+# Subtest: vtid: commits, spec files with state, validation folder; PR search is injectable
+ok 9 - vtid: commits, spec files with state, validation folder; PR search is injectable
+  ---
+  duration_ms: 43.177534
+  type: 'test'
+  ...
+# Subtest: screen (vitana-v1 fixture): App.tsx route → lazy page file, registry, manifest, parity, exclusion, redirect
+ok 10 - screen (vitana-v1 fixture): App.tsx route → lazy page file, registry, manifest, parity, exclusion, redirect
+  ---
+  duration_ms: 67.908458
+  type: 'test'
+  ...
+# Subtest: check: a short form of a live file is not dead; a full path to a deleted file is (rule files)
+ok 11 - check: a short form of a live file is not dead; a full path to a deleted file is (rule files)
+  ---
+  duration_ms: 32.010383
+  type: 'test'
+  ...
+# Subtest: check: docs/CONTEXT-MAP.md has no dead link and names only real commands
+ok 12 - check: docs/CONTEXT-MAP.md has no dead link and names only real commands
+  ---
+  duration_ms: 68.018088
+  type: 'test'
+  ...
+# Subtest: check: a dead context-map link is an error; a vitana-v1 link without that checkout is info
+ok 13 - check: a dead context-map link is an error; a vitana-v1 link without that checkout is info
+  ---
+  duration_ms: 7.656409
+  type: 'test'
+  ...
+# Subtest: check: stale atlas pointers and route patterns are warnings with the atlas line
+ok 14 - check: stale atlas pointers and route patterns are warnings with the atlas line
+  ---
+  duration_ms: 5.498625
+  type: 'test'
+  ...
+# Subtest: check: atlas directory, glob and ../ pointers resolve against src, services/gateway, repo root (R2-F1)
+ok 15 - check: atlas directory, glob and ../ pointers resolve against src, services/gateway, repo root (R2-F1)
+  ---
+  duration_ms: 5.681696
+  type: 'test'
+  ...
+# Subtest: main: usage on a bad command, exit codes, JSON output, sibling vitana-v1 discovery
+ok 16 - main: usage on a bad command, exit codes, JSON output, sibling vitana-v1 discovery
+  ---
+  duration_ms: 76.039319
+  type: 'test'
+  ...
+1..16
+# tests 16
+# suites 0
+# pass 16
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 461.652433

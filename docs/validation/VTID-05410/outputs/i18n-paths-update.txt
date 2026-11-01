@@ -1,0 +1,23 @@
+# Why: vitana-v1 I18N-PROPAGATE (VTID-03509, "no language left behind") propagates a German-source change INTO the PR:
+#   stage 1 commits src/i18n/en + i18n-source-stamps/en.json; stage 2 commits src/i18n (every locale) + i18n-source-stamps.
+#   Seen on exafyltd/vitana-v1#1520: commit b27354288 by github-actions[bot] "chore(i18n): propagate DE source change to EN pivot (VTID-03509)".
+#   The blocking i18n check requires every locale to follow the German source before merge, so the lane must own
+#   the newsCard namespace in all 11 locales and the per-locale source stamps.
+# Change: in lane new-member-welcome/say-hello-composer replace
+#     src/i18n/de/newsCard.json, src/i18n/en/newsCard.json
+#   with
+#     src/i18n/*/newsCard.json, i18n-source-stamps/*.json
+#   (one namespace only; precedent: VTID-05206 #1441 shipped its strings in all 11 locales).
+# Unrelated EN-pivot drift the bot also carried (src/i18n/en/{inbox,screens,vcal}.json) comes from main and is NOT
+# added to the lane; it is cleared by main's own I18N-PROPAGATE run and netted out by merging main into the PR.
+
+# Revision (before merge, same PR): `src/i18n/*/newsCard.json` is widened to `src/i18n/*/*.json`.
+# Reason, from evidence: I18N-PROPAGATE stage 1 runs `git add src/i18n/en ...` and stage 2 `git add src/i18n ...`, so the bot
+# commits into the PR whatever EN/locale drift main carries, not only this PR's namespace. On #1520 its EN commit b27354288
+# also touched src/i18n/en/{inbox,screens,vcal}.json (it drops empty `_pending_review: {}` markers and one resolved
+# `_pending_review.chat` flag). main's own scheduled run (41042629350, success) committed nothing, so that drift stays on main
+# and comes along with every PR that edits the German source. Precedent with the same bot: exafyltd/vitana-v1#1438, whose
+# bot commits 85fa20d47 / 424edc439 touched admin, billing, notificationControls, spotlightMember and screens in several locales.
+# Condition the reviewer checks on the feature PR: commits with `Collab-Lane: new-member-welcome/say-hello-composer` touch
+# ONLY src/i18n/{de,en}/newsCard.json under src/i18n; every other src/i18n/** and i18n-source-stamps/** change comes from a
+# github-actions[bot] "propagate ... (VTID-03509)" commit. No hand edit of another namespace.
