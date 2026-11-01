@@ -142,22 +142,28 @@ describe('VTID-05367: fetchEnrichmentCompletions (bulk, per page)', () => {
     expect(r.dismissals.get(EMPTY)).toEqual([{ card_type: 'E8', dismissed_at: '2026-10-17T06:15:00Z', cooldown_days: 7 }]);
   });
 
-  it('R2-F2: a failing source is reported in `unavailable` and never throws', async () => {
+  it('R2-F2: a failing source never throws — it is reported and NO member gets enrichment state (empty maps)', async () => {
     const r = await fetchEnrichmentCompletions(fakeSb(enrichmentTables(), new Set(['profiles'])), [FULL, EMPTY]);
     expect(r.unavailable).toEqual(['enrichment_profiles']);
-    // The other sources still applied; the profile-backed cards fall back to false.
-    expect(r.completions.get(FULL)!.get('E1')).toBe(false);
-    expect(r.completions.get(FULL)!.get('E3')).toBe(true);
+    // Unknown state must never look "not done": nothing for anyone this tick.
+    expect(r.completions.size).toBe(0);
+    expect(r.dismissals.size).toBe(0);
   });
 
-  it('R2-F2: every source failing still resolves (all false, every label reported)', async () => {
+  it('R2-F2: a failing dismissal read alone also yields no state (cooldowns cannot be honoured)', async () => {
+    const r = await fetchEnrichmentCompletions(fakeSb(enrichmentTables(), new Set(['user_enrichment_cards'])), [EMPTY]);
+    expect(r.unavailable).toEqual(['enrichment_dismissals']);
+    expect(r.completions.size).toBe(0);
+  });
+
+  it('R2-F2: every source failing still resolves (every label reported, empty maps)', async () => {
     const all = new Set(['profiles', 'profile_posts', 'social_connections', 'connected_app_settings', 'contacts', 'user_device_tokens', 'user_enrichment_cards']);
     const r = await fetchEnrichmentCompletions(fakeSb(enrichmentTables(), all), [FULL]);
     expect(r.unavailable.sort()).toEqual([
       'enrichment_calendar', 'enrichment_contacts', 'enrichment_device_tokens', 'enrichment_dismissals',
       'enrichment_posts', 'enrichment_profiles', 'enrichment_social',
     ]);
-    for (const t of ENRICHMENT_CARD_TYPES) expect(r.completions.get(FULL)!.get(t)).toBe(false);
+    expect(r.completions.size).toBe(0);
   });
 });
 
@@ -243,6 +249,26 @@ describe('VTID-05367: the tick puts the eligible enrichment set on MemberContext
     const dismissed = new Date(NOW.getTime() - 8 * DAY_MS).toISOString();
     const { eligible } = await eligibleSeenByCompose(NOW, dismissed);
     expect(eligible).toContain('E8');
+  });
+
+  it('R2-F2: when a source fails, the tick still runs and the member gets NO eligible enrichment card', async () => {
+    let seen: MemberContext | null = null;
+    const r = await runCompanionTick({
+      sb: tickSb(tickTables()),
+      now: NOW,
+      config: shadowConfig,
+      emit: jest.fn(async () => ({ ok: true })) as any,
+      pacer: jest.fn(async () => ({ allow: true, reason: 'ok' as const })) as any,
+      fetchIndex: jest.fn(async () => null),
+      compose: jest.fn(async (c: MemberContext) => { seen = c; return { ok: true as const, text: 'Hallo Mila!', model: 'm' }; }) as any,
+      locales: jest.fn(async (_sb: unknown, ids: string[]) => new Map(ids.map((i) => [i, 'de']))),
+      signals: jest.fn(async (_sb: unknown, ids: string[]) => ({ by: new Map(ids.map((i) => [i, {}])), unavailable: [] })) as any,
+      // The REAL seam, over a database whose profiles read fails.
+      enrichment: (_sb: unknown, ids: string[]) => fetchEnrichmentCompletions(fakeSb(enrichmentTables(), new Set(['profiles'])), ids),
+    });
+    expect(r).toMatchObject({ ok: true, decided: 1, enrichment_unavailable: ['enrichment_profiles'] });
+    expect(seen).not.toBeNull();
+    expect([...((seen as unknown as MemberContext).eligibleEnrichmentCardTypes ?? [])]).toEqual([]);
   });
 
   it('reports the enrichment seam\'s unavailable sources in their own enrichment_unavailable field', async () => {
