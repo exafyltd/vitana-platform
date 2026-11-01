@@ -1,0 +1,18 @@
+# npx jest --runInBand (7 companion suites) on 8b82860435, Windows local worktree
+# summary lines only (full console output omitted: mock-noise warnings)
+PASS test/companion-qa.test.ts (34.098 s)
+PASS test/vtid-05171-companion-wiring.test.ts (13.672 s)
+FAIL test/vtid-05099-companion-messages.test.ts (19.7 s)
+PASS test/vtid-05099-proactive-match-daily-limit.test.ts
+PASS test/vtid-05367-companion-enrichment-signals.test.ts
+PASS test/vtid-05101-companion-generators.test.ts
+PASS test/vtid-05100-companion-delivery.test.ts (7.751 s)
+Test Suites: 1 failed, 6 passed, 7 total
+Tests:       1 failed, 168 passed, 169 total
+
+# the one failure: vtid-05099 "the tick needs the internal token..." exceeded the 5000 ms jest timeout (5509 ms, first supertest app load, cold module cache) - not an assertion failure
+# rerun alone: npx jest --runInBand test/vtid-05099-companion-messages.test.ts
+PASS test/vtid-05099-companion-messages.test.ts (22.341 s)
+Test Suites: 1 passed, 1 total
+Tests:       33 passed, 33 total
+# CI "Gateway Service Tests" on PR #4519 head 8b82860435: pass

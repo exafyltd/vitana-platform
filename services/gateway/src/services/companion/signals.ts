@@ -14,6 +14,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import * as repo from './companion-repository';
 import { FEATURE_TIP_ANTI_REPEAT, SIGNAL_LOOKBACK_DAYS, type JourneySignal, type MemberContext } from './moments';
+import { computeCompletions, type EnrichmentFacts } from '../enrichment/completion-resolver';
+import { ENRICHMENT_CARD_TYPES, type EnrichmentCardType, type EnrichmentDismissRow } from '../enrichment/card-catalog';
 
 const DAY_MS = 86_400_000;
 
@@ -67,6 +69,112 @@ export const fetchMemberSignals: FetchSignals = async (sb, ids, now) => {
   } else unavailable.push('active_days');
 
   return { by, unavailable };
+};
+
+// ── VTID-05367 (messenger-vitana-cards-v2): bulk enrichment completion + dismissal ──
+
+export interface EnrichmentCompletions {
+  /** Per member: E1–E11 completion. ALWAYS all 11 keys (false-initialized) so
+   *  eligibleEnrichmentCards' `=== false` test treats a member with no source
+   *  row as incomplete/eligible, never as unknown/absent. */
+  completions: Map<string, Map<EnrichmentCardType, boolean>>;
+  /** Per member: `user_enrichment_cards` dismissal rows (for the 7-day cooldown). */
+  dismissals: Map<string, EnrichmentDismissRow[]>;
+  unavailable: string[];
+}
+
+export type FetchEnrichmentCompletions =
+  (sb: SupabaseClient, ids: string[]) => Promise<EnrichmentCompletions>;
+
+/** All E1–E11 false — the base every member starts from (R1-F3: never absent). */
+function allIncomplete(): Map<EnrichmentCardType, boolean> {
+  return new Map(ENRICHMENT_CARD_TYPES.map((t) => [t, false]));
+}
+
+/**
+ * Bulk completion + dismissal for a page of members. Mirrors
+ * `fetchMemberSignals`: every source read is in `Promise.allSettled`, a failed
+ * source is named in `unavailable` and leaves its facts at the default — it
+ * NEVER throws, so one bad query cannot abort the tick's `Promise.all`.
+ * Reuses the pure `computeCompletions` so the rules match the HTTP route.
+ */
+export const fetchEnrichmentCompletions: FetchEnrichmentCompletions = async (sb, ids) => {
+  const unavailable: string[] = [];
+  // Per-member raw facts, seeded so a member with no rows is fully incomplete.
+  const facts = new Map<string, EnrichmentFacts>(
+    ids.map((id) => [id, {
+      profile: null,
+      hasPost: false,
+      activeSocialProviders: [],
+      hasEnabledCalendar: false,
+      hasContact: false,
+      hasActiveDeviceToken: false,
+    }]),
+  );
+  const dismissals = new Map<string, EnrichmentDismissRow[]>(ids.map((id) => [id, []]));
+
+  const [profiles, posts, social, calendar, contacts, tokens, dismissRows] = await Promise.allSettled([
+    repo.fetchProfileEnrichmentFieldsBulk(sb, ids),
+    repo.fetchMembersWithAnyPost(sb, ids),
+    repo.fetchActiveSocialConnectionsBulk(sb, ids),
+    repo.fetchMembersWithEnabledCalendar(sb, ids),
+    repo.fetchMembersWithAnyContact(sb, ids),
+    repo.fetchMembersWithActiveDeviceToken(sb, ids),
+    repo.fetchEnrichmentDismissalsBulk(sb, ids),
+  ]);
+
+  if (profiles.status === 'fulfilled') {
+    for (const r of profiles.value) {
+      const f = facts.get(r.user_id);
+      if (f) f.profile = {
+        avatar_url: r.avatar_url, bio: r.bio, location: r.location,
+        cover_url: r.cover_url, universal_intent_cover_url: r.universal_intent_cover_url, interests: r.interests,
+      };
+    }
+  } else unavailable.push('enrichment_profiles');
+
+  if (posts.status === 'fulfilled') {
+    for (const r of posts.value) { const f = facts.get(r.user_id); if (f) f.hasPost = true; }
+  } else unavailable.push('enrichment_posts');
+
+  if (social.status === 'fulfilled') {
+    for (const r of social.value) { const f = facts.get(r.user_id); if (f) f.activeSocialProviders.push(r.provider); }
+  } else unavailable.push('enrichment_social');
+
+  if (calendar.status === 'fulfilled') {
+    for (const r of calendar.value) { const f = facts.get(r.user_id); if (f) f.hasEnabledCalendar = true; }
+  } else unavailable.push('enrichment_calendar');
+
+  if (contacts.status === 'fulfilled') {
+    for (const r of contacts.value) { const f = facts.get(r.user_id); if (f) f.hasContact = true; }
+  } else unavailable.push('enrichment_contacts');
+
+  if (tokens.status === 'fulfilled') {
+    for (const r of tokens.value) { const f = facts.get(r.user_id); if (f) f.hasActiveDeviceToken = true; }
+  } else unavailable.push('enrichment_device_tokens');
+
+  if (dismissRows.status === 'fulfilled') {
+    for (const r of dismissRows.value) {
+      dismissals.get(r.user_id)?.push({ card_type: r.card_type, dismissed_at: r.dismissed_at, cooldown_days: r.cooldown_days });
+    }
+  } else unavailable.push('enrichment_dismissals');
+
+  // R2-F2: a failed source means we do NOT know what the member has done (or
+  // dismissed). Offering a card on unknown state could tell a member to add a
+  // photo they already have, so on ANY failure no member gets enrichment state
+  // this tick: empty maps → eligibleEnrichmentCards (=== false) offers nothing,
+  // the tick continues with the other moments, and the sources are reported.
+  if (unavailable.length > 0) {
+    return { completions: new Map(), dismissals: new Map(), unavailable };
+  }
+
+  const completions = new Map<string, Map<EnrichmentCardType, boolean>>();
+  for (const id of ids) {
+    const f = facts.get(id);
+    completions.set(id, f ? computeCompletions(f) : allIncomplete());
+  }
+
+  return { completions, dismissals, unavailable };
 };
 
 /** The MemberContext fields a member's raw signals and ledger rows give the moments. */
