@@ -15,6 +15,7 @@ specs:
   - vitana-platform:native-wave2-memory-diary
   - vitana-platform:native-wave2-profile-settings
   - vitana-platform:native-wave2-public-auth-onboarding
+  - vitana-platform:native-wave2-public-auth-onboarding-r2
   - vitana-platform:native-wave2-role-modes
   - vitana-platform:native-wave2-sharing-business
   - vitana-platform:native-wave2-wallet
