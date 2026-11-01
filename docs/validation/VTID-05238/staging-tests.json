@@ -1,0 +1,14 @@
+{
+  "vtid": "VTID-05238",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "partner onboarding status route is mounted and requires a login", "path": "/api/v1/partner-onboarding/00000000-0000-4000-8000-000000000000", "expect_status": 401, "expect_content_type": "application/json" },
+    { "kind": "http", "name": "build-info answers JSON (the runner confirms the verified commit from it)", "path": "/api/v1/admin/build-info", "expect_status": 200, "expect_content_type": "application/json" },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-05238-step-owner.test.ts test/commerce-mcp.test.ts test/vtid-04478-partner-onboarding-checklist.test.ts test/vtid-04953-checklist-policy.test.ts test/partner-onboarding.test.ts",
+      "cwd": "services/gateway",
+      "reason": "The per-step owner and the Commerce MCP status shape are pure and proven by Jest over mocked Supabase; the read-only staging suite has no signed-in gateway probe (staging shares the production database). These suites pin the stepOwner table per step key and verification code, the stale-row case (R1-F1), the website code (R1-F2), that buildChecklist adds only owner, that shapeStatus carries owner on steps and next_action while done_on_vitanaland/link/tool/supplier_action stay byte for byte, the typeless/complete/empty next_action.owner cases, and that the derived ON_SCREEN_STEPS equals exactly the five supplier-action keys (R2-F1)."
+    }
+  ]
+}

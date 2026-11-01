@@ -1,6 +1,6 @@
 ---
 lane: gateway-step-owner
-state: ready
+state: executing
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -12,7 +12,9 @@ paths:
   - services/gateway/src/services/commerce-mcp.ts
   - services/gateway/test/**
   - docs/validation/**
-updated: 2026-10-19T13:36Z
+claimed_by: kiro-exafy-202611010008-8355
+branch: kiro/rebuild-r2/commerce-step-owner/gateway-step-owner
+updated: 2026-11-01T13:45Z
 vtid: VTID-05238
 ---
 # Lane: gateway-step-owner (repo vitana-platform)
@@ -24,3 +26,24 @@ Lane created with the plan.
 
 ### 2026-10-19T13:36Z · ci-plan-spar · ready (VTID allocated)
 VTID-05238 allocated after policy approval (converged-auto-v1).
+### 2026-11-01T00:20Z · kiro-exafy-202611010008-8355 · ready → executing
+Rebuild of PR #4198 under one session (owner decision 2026-10-26 on #4377: do not merge #4198, rebuild). #4198 had commits from 5 sessions, which the one-session-per-lane rule on `main` rejects, and its branch cannot be fixed without a history rewrite. This branch takes the final tree diff of `origin/main...origin/kiro/commerce-step-owner/gateway-step-owner` (T1–T4: `stepOwner` + additive `owner` in `partner-onboarding-checklist.ts`, `owner` on `shapeStatus`/`next_action` + `ON_SCREEN_STEPS` in `commerce-mcp.ts`, suite `test/vtid-05238-step-owner.test.ts`, the `docs/validation/VTID-05238/` pack) as one commit from this session, on a fresh branch from `main` (`kiro/rebuild/commerce-step-owner/gateway-step-owner`, because the old lane-form branch keeps #4198's commits and is not force-pushed). The lane log entries of #4198 are not carried over; the review on #4198 (head `361885098`) does not apply to this head, so the lane needs a fresh review. Local checks: see the commit message.
+
+### 2026-11-01T03:14Z · kiro-exafy-202611010008-8355 · executing (red-to-green evidence)
+Reviewer finding on #4547 (no red-to-green evidence): ran the new and changed suites on origin/main source with this PR's tests on top (53 of 73 fail: `stepOwner` missing, `owner` missing) and on the head (73/73 pass). Saved as `docs/validation/VTID-05238/outputs/red-on-base.txt` and `green-on-head.txt`; commands in `commands.log`.
+### 2026-11-01T13:45Z · kiro-exafy-202611010008-8355 · executing (rebuild r2)
+Second rebuild under one session, replacing PR #4547 (which replaced #4198). Lane scope on #4547 rejected two earlier review entries in its history that carried agent-vitana-lane-reviewer-… session ids, while this lane's reviewer_seat is exafyltd. Dropping them needs a force-push, which is not allowed. This branch, `kiro/rebuild-r2/commerce-step-owner/gateway-step-owner`, is fresh from main and holds the tree diff of #4547 at 5bef0e6b as one commit, with no review entries. The lane needs a fresh review on this head, with the entry in the legacy-seat form `kiro-exafyltd-…` (collaboration.md §3).
+### 2026-11-01T13:48Z · kiro-exafyltd-202611011348-0894 · review
+review: accept
+head: 993fc6c454d7d6ed34b2d15f979019a115b10d2d
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4562
+Findings: no blocking findings; code and evidence match the accept at 06f6fc6e (reviewer workflow wf_266ebe4e54334ca2, session sess_39e7d723-d3c8-4e37-abfb-294b036bbd20). Note: outputs/tsc-noemit.txt is empty because tsc --noEmit exited 0 with no diagnostics (commands.log lines 14-15 already record this). Session id in the legacy-seat form kiro-<reviewer_seat>-… (collaboration.md §3). Committed by the land step of kiro-ide-202610272306-27b0 on the agent's behalf.
+Next: land (merge under §7b PM rule, applied by the plan driver).
+### 2026-11-01T23:11Z · kiro-exafyltd-202611012311-62c9 · review
+review: accept
+head: 629997982f4348f53fc23063798611ea34f4fedb
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4562
+Findings: no blocking findings; non-blocking: the code diff against main is unchanged (commerce-mcp.ts +47/-12, partner-onboarding-checklist.ts +118); none of the 7 main commits merged by update-branch touch those files; CI was still queued at review time (reviewer workflow wf_bd65b97bcb4545d7, session sess_112bacd6-8694-41f4-807d-e1f46deaea26). Session id in the legacy-seat form kiro-<reviewer_seat>-… (collaboration.md §3). Committed by the land step of kiro-ide-202610272306-27b0 on the agent's behalf.
+Next: land (merge under §7b PM rule, applied by the plan driver) once every required check is green on this head.
