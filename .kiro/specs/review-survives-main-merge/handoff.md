@@ -4,8 +4,10 @@ author: kiro
 author_seat: hotmail
 executor: kiro
 next_actor: kiro
-state: drafted
-updated: 2026-11-01T01:55Z
+state: approved
+updated: 2026-11-01T13:40Z
+sparring_record: .kiro/specs/review-survives-main-merge/sparring/verdict.md
+vtids: [VTID-05438, VTID-05439]
 ---
 # Handoff — review-survives-main-merge
 Every merge to `main` voids the reviewer-agent accept of every waiting PR, because §3 only lets entry-only commits
@@ -29,3 +31,6 @@ copy, so the rule text is not mirrored there (plan premise 7). Next: PLAN-SPAR s
 Round 1 answered (`sparring/responses-1.md`): PM path scoped out explicitly (follow-up `pm-review-survives-main-merge`,
 deferred), governance paths void the review on a merge, new lane `lane-land-repo` makes `lane-land.md` step 3d
 pass `--repo`.
+
+### 2026-11-01T13:40Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 2 lane(s) got a VTID and are handed to Kiro.

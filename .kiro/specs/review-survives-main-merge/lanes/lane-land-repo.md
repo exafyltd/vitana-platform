@@ -12,7 +12,8 @@ repos: [exafyltd/vitana-platform]
 paths:
   - .kiro/pipeline/lane-land.md
   - docs/validation/VTID-*/**
-updated: 2026-11-01T11:45Z
+updated: 2026-11-01T13:40Z
+vtid: VTID-05439
 ---
 # Lane: lane-land-repo (repo vitana-platform)
 Plan § Change 4a, task T6 in `tasks.md`: `.kiro/pipeline/lane-land.md` step 3d passes `--repo` to
@@ -22,3 +23,6 @@ convergence.
 ## Log
 ### 2026-11-01T11:45Z · kiro-hotmail-202611010146-1707 · ready
 Lane created with the plan (sparring round 1).
+
+### 2026-11-01T13:40Z · ci-plan-spar · ready (VTID allocated)
+VTID-05439 allocated after policy approval (converged-auto-v1).
