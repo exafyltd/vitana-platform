@@ -83,7 +83,10 @@ plan knows of; the lane updates from `main` before landing.
     palette class and that the `lucide-shield` icon carries `text-muted-foreground`;
   - repeats both renders with `dir="rtl"` on the container and expects the same.
   The scope of the AppLayout assertion is the sidebar header, because the out-of-scope avatar fallback classes
-  (`:351`, `:376`) live elsewhere in the same component.
+  (`:351`, `:376`) live elsewhere in the same component. `SidebarHeader` renders `data-sidebar="header"`
+  (`src/components/ui/sidebar.tsx:373`). Each test first asserts that the scoping element (`header`,
+  `[data-sidebar="header"]`) and the target element (`span.animate-pulse.rounded-full`, `svg.lucide-shield`) are
+  non-null, so a missing element fails loudly and never passes vacuously.
   Commit order: the test first (fails on `origin/main` on both components), then the two swaps (passes). The red run
   and the green run are logged in `docs/validation/<VTID>/commands.log`.
 - `npx vitest run src/components/chrome-colour-tokens.test.tsx` and the regression net
