@@ -4,9 +4,9 @@ author: kiro
 author_seat: exafy
 executor: kiro
 next_actor: kiro
-state: drafted
-updated: 2026-11-01T06:15Z
-sparring_record:
+state: sparred
+updated: 2026-11-01T08:09Z
+sparring_record: .kiro/specs/staging-coverage-6028392a/sparring/verdict.md
 vtids: []
 ---
 # Handoff — staging-coverage-6028392a
@@ -23,3 +23,6 @@ Lanes:
 Spec written from origin/main `1654c774` (live.ts:1013/1096/1130/1138/1783/2017/2077, index.ts:1337, lib.cjs
 parseCommitCoverage/planRange/validateHttpTest). Pushed as `plan(staging-coverage-6028392a)` PR for PLAN-SPAR. No VTID
 allocated by this session. Next: PLAN-SPAR round 1.
+
+### 2026-11-01T08:09Z · ci-plan-spar · drafted → sparred
+Converged; approved by policy converged-auto-v1. 0 lane(s) got a VTID and are handed to Kiro.
