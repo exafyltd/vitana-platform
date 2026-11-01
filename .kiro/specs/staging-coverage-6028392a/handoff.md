@@ -4,10 +4,10 @@ author: kiro
 author_seat: exafy
 executor: kiro
 next_actor: kiro
-state: sparred
-updated: 2026-11-01T08:09Z
+state: approved
+updated: 2026-11-01T10:08Z
 sparring_record: .kiro/specs/staging-coverage-6028392a/sparring/verdict.md
-vtids: []
+vtids: [VTID-05437]
 ---
 # Handoff — staging-coverage-6028392a
 Retroactive plan for the live-room notification fix that merged without a VTID in #4539
@@ -26,3 +26,6 @@ allocated by this session. Next: PLAN-SPAR round 1.
 
 ### 2026-11-01T08:09Z · ci-plan-spar · drafted → sparred
 Converged; approved by policy converged-auto-v1. 0 lane(s) got a VTID and are handed to Kiro.
+
+### 2026-11-01T10:08Z · ci-plan-spar · sparred → approved
+Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.

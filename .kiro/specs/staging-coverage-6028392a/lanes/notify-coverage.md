@@ -1,7 +1,7 @@
 ---
 lane: notify-coverage
 state: ready
-next_actor: owner
+next_actor: kiro
 depends_on: []
 executor: kiro
 seat: exafy
@@ -14,7 +14,8 @@ pr:
 paths:
   - docs/validation/**
   - services/gateway/test/vtid-*-live-notify-only-when-live.test.ts
-updated: 2026-11-01T09:40Z
+updated: 2026-11-01T10:08Z
+vtid: VTID-05437
 ---
 # Lane: notify-coverage
 Adds a jest test proving the #4539 go-live notification behaviour, the read-only staging suite, the
@@ -26,3 +27,6 @@ Lane created with the plan. No VTID yet (CI allocates on convergence).
 ### 2026-11-01T09:40Z · kiro-exafy-202611010615-d1ef · ready
 Removed the empty `vtid:` key: the front-matter parser reads it as `[]`, so the converged run counted this lane as
 already allocated ("0 lane(s) got a VTID"). The next PLAN-SPAR run allocates it (allocate_retry).
+
+### 2026-11-01T10:08Z · ci-plan-spar · ready (VTID allocated)
+VTID-05437 allocated after policy approval (converged-auto-v1).
