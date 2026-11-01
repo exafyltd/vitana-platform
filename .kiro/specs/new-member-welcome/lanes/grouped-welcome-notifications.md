@@ -8,7 +8,7 @@ area: messenger
 depends_on: []
 branch: kiro/new-member-welcome/grouped-welcome-notifications
 pr: https://github.com/exafyltd/vitana-platform/pull/4153
-updated: 2026-11-01T12:43Z
+updated: 2026-11-01T12:46Z
 parked_from: verified
 ---
 # Grouped greeting-DM notifications
@@ -3489,4 +3489,6 @@ Next: the land step merges under §7b
 ### 2026-11-01T12:38Z · pm-agent · verified → parked
 park (stale_claim); claim released; Claude unavailable → exafyltd
 ### 2026-11-01T12:43Z · pm-agent · update
+park (stale_claim); claim released; Claude unavailable → exafyltd
+### 2026-11-01T12:46Z · pm-agent · update
 park (stale_claim); claim released; Claude unavailable → exafyltd
