@@ -1,6 +1,6 @@
 ---
 lane: land-guard-merge
-state: ready
+state: in-review
 next_actor: kiro
 branch: kiro/review-survives-main-merge/land-guard-merge
 depends_on: []
@@ -14,7 +14,7 @@ paths:
   - scripts/collab/land-guard.test.mjs
   - .claude/rules/collaboration.md
   - docs/validation/VTID-*/**
-updated: 2026-11-01T13:40Z
+updated: 2026-11-01T22:30Z
 vtid: VTID-05438
 ---
 # Lane: land-guard-merge (repo vitana-platform)
@@ -27,3 +27,5 @@ Lane created with the plan.
 
 ### 2026-11-01T13:40Z · ci-plan-spar · ready (VTID allocated)
 VTID-05438 allocated after policy approval (converged-auto-v1).
+### 2026-11-01T22:30Z · kiro-exafy-202611012120-06ba · in-review
+Built T1-T4 (VTID-05438): `mergeKeepsReview`, `localAfter`, `--repo` on review/merge with the origin check, §3 sentence. Red on base saved; land-guard tests green locally (21 pass, 1 POSIX-only skip). Next: reviewer agent `vitana-lane-reviewer`.
