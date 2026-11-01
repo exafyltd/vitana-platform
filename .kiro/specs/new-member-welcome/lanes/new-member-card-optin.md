@@ -8,7 +8,7 @@ area: frontend
 depends_on: []
 branch: kiro/new-member-welcome/new-member-card-optin
 pr: https://github.com/exafyltd/vitana-v1/pull/1441
-updated: 2026-11-01T12:39Z
+updated: 2026-11-01T12:43Z
 parked_from: verified
 ---
 # New-member card opt-in + feed source
@@ -101,4 +101,6 @@ PR: https://github.com/exafyltd/vitana-platform/pull/4510
 Findings: non-blocking — commands.log last line is a placeholder, not a real command record; verified-acceptance.md has no recorded outputs and its AC-2 names branch deps-verified; the earlier NEVER 45 finding (service_bot_accounts / notification_test_actors not excluded from the new-member listings) is unchanged and is being fixed in plan welcome-finish before production; CI on this head was not readable by the reviewer, the land step confirmed 11/11 green. Head 53a4474436 is a merge of main a206af8ab9 into the previously accepted 78db76e483; the PR's own diff is unchanged (lane file + docs/validation/VTID-05206 only; front matter changes only state and updated).
 Next: the land step merges under §7b; then the lane can move verified → done.
 ### 2026-11-01T12:39Z · pm-agent · verified → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
+### 2026-11-01T12:43Z · pm-agent · update
 park (stale_claim); claim released; Claude unavailable → exafyltd
