@@ -1,6 +1,6 @@
 ---
 lane: memory
-state: in-review
+state: done
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -21,7 +21,7 @@ paths:
   - apps/mobile/parity/ledger.json
   - src/i18n/*/memoryNative.json
   - docs/validation/**
-updated: 2026-11-01T18:00Z
+updated: 2026-11-01T23:15Z
 vtid: VTID-05427
 claimed_by: kiro-exafyltd-202611011658-9f52
 branch: kiro/native-wave2-memory-diary-r2/memory
@@ -89,3 +89,7 @@ PR: https://github.com/exafyltd/vitana-v1/pull/1544
 Findings: non-blocking: packages/core/src/extracted/*.generated.ts sha headers regenerated (same fix as #1545; verification.md wrongly says core untouched); non-blocking: device-runtime parity deferred to G1 by plan; non-blocking: documented body deviations (text-only Add Memory, Recall empty-state tabs, share-sheet export) per plan decisions
 Next: the land step merges under §7b
 Stored by the landing session kiro-exafyltd-202611011658-9f52 on the agent's behalf (lane-land.md step 2).
+### 2026-11-01T23:15Z · kiro-exafyltd-202611011658-9f52 · in-review → verified
+Accepted by agent:vitana-lane-reviewer on head `836b21d0b28659ea1b594af845d952286a245fec` (review entry above); every required check green, up to date with main.
+### 2026-11-01T23:15Z · kiro-exafyltd-202611011658-9f52 · verified → done
+merge: ec8682fec4ea06072b80c8a7ece1e729a3de4135 · authority: §7b PM rule (applied by the plan driver while the PM is not live), squash. Staging: AWS Stage Deploy Community App rolled ec8682f; its STAGING-VERIFY trigger step hit the shared GitHub rate limit, STAGING-VERIFY dispatched: https://github.com/exafyltd/vitana-platform/actions/runs/41361100265.
