@@ -17,7 +17,8 @@ paths:
   - apps/mobile/parity/ledger.json
   - src/i18n/*/deleteAccountNative.json
   - docs/validation/**
-updated: 2026-11-01T01:17Z
+updated: 2026-11-01T03:04Z
+vtid: VTID-05428
 ---
 # Public delete-account port — `/delete-account` in the `(public)` group
 Plan: `.kiro/specs/native-wave2-profile-settings-r2/` — `plan.md` (plan block, decision 1a) and the `tasks.md` section
@@ -46,3 +47,6 @@ Supabase/AWS, no test against production, no delete request ever sent; staging s
 ### 2026-11-01T01:17Z · kiro-exafyltd-202611010001-7819 · ready
 Lane created with the plan (r2 sparring R1-F1: `/delete-account` moved out of `settings` into its own lane, in the
 `(public)` group).
+
+### 2026-11-01T03:04Z · ci-plan-spar · ready (VTID allocated)
+VTID-05428 allocated after policy approval (converged-auto-v1).

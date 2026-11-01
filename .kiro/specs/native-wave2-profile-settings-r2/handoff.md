@@ -3,11 +3,13 @@ slug: native-wave2-profile-settings-r2
 author: kiro
 executor: kiro
 next_actor: kiro
-state: drafted
+state: approved
 author_seat: exafyltd
-updated: 2026-11-01T02:14Z
+updated: 2026-11-01T03:04Z
 spar_refs:
   - exafyltd/vitana-v1: main
+sparring_record: .kiro/specs/native-wave2-profile-settings-r2/sparring/verdict.md
+vtids: [VTID-05428, VTID-05429, VTID-05430, VTID-05431, VTID-05432]
 ---
 # Handoff — Native Wave 2: Profile / Settings / Support / Connectors screen ports
 Wave 2 screen-port batch of the Maxina native app program (`docs/programs/native-app/NATIVE-APP-PLAN.md`,
@@ -26,3 +28,6 @@ Holder of the `native-wave2-profile-settings-r2/_plan` claim. Re-plan of `native
 R1-F1 accepted: `/delete-account` stays public natively, as `apps/mobile/app/(public)/delete-account.tsx` in a new lane `delete-account` (the `settings` lane file cannot be edited by a `_plan` commit). Now 4 lanes: 5 + 17 + 1 + 14 = 37 rows. Answers: `sparring/responses-1.md`.
 ### 2026-11-01T02:14Z · kiro-exafyltd-202611010001-7819 · drafted (sparring round 2 answered)
 R2-F1 accepted: `/u/:identifier` and `/profile/:id` stay public natively, in a new lane `public-profile` in `(public)` (shell chosen by session). Now 5 lanes: 2 + 3 + 17 + 1 + 14 = 37 rows. Answers: `sparring/responses-2.md`.
+
+### 2026-11-01T03:04Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 5 lane(s) got a VTID and are handed to Kiro.

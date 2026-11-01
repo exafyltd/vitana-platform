@@ -18,7 +18,8 @@ paths:
   - apps/mobile/parity/ledger.json
   - src/i18n/*/publicProfileNative.json
   - docs/validation/**
-updated: 2026-11-01T02:14Z
+updated: 2026-11-01T03:04Z
+vtid: VTID-05430
 ---
 # Public profile + legacy redirect port — `/u/:identifier` and `/profile/:id` in the `(public)` group
 Plan: `.kiro/specs/native-wave2-profile-settings-r2/` — `plan.md` (plan block, decision 1b) and the `tasks.md` section
@@ -49,3 +50,6 @@ Supabase/AWS, no test against production; staging specs are read-only.
 ### 2026-11-01T02:14Z · kiro-exafyltd-202611010001-7819 · ready
 Lane created with the plan (r2 sparring R2-F1: `/u/:identifier` and `/profile/:id` moved out of `profile` into
 their own lane, in the `(public)` group).
+
+### 2026-11-01T03:04Z · ci-plan-spar · ready (VTID allocated)
+VTID-05430 allocated after policy approval (converged-auto-v1).
