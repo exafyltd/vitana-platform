@@ -37,7 +37,9 @@ import { deliverCompanionMessage, type DeliveryInput, type DeliveryResult } from
 import { localTime, minusDays } from './local-time';
 import { pickMoment, type MemberContext, type MomentCandidate } from './moments';
 import { backoffDecision } from './backoff';
-import { fetchMemberSignals, memberSignals, type FetchSignals } from './signals';
+import { fetchMemberSignals, memberSignals, fetchEnrichmentCompletions, type FetchSignals, type FetchEnrichmentCompletions } from './signals';
+import { eligibleEnrichmentCards } from '../enrichment/card-catalog';
+import { unavailableEnrichmentCards } from '../enrichment/card-availability';
 
 const VTID = 'VTID-05099';
 // VTID-05101: long enough for the weekly back-off (7 unreplied sends at a
@@ -61,6 +63,8 @@ export interface CompanionTickResult {
   skipped?: Record<string, number>;
   /** VTID-05101: signal sources that could not be read this tick (their moments did not fire). */
   signals_unavailable?: string[];
+  /** VTID-05367: enrichment completion/dismissal sources that could not be read (their E-cards did not fire). */
+  enrichment_unavailable?: string[];
   error?: string;
 }
 
@@ -78,6 +82,8 @@ export interface CompanionTickDeps {
   staffIds?: (sb: SupabaseClient, members: repo.MemberRow[]) => Promise<Set<string>>;
   /** VTID-05101: Phase 3 member signals, one batch per page of members. */
   signals?: FetchSignals;
+  /** VTID-05367: bulk enrichment completion + dismissal, one batch per page. */
+  enrichment?: FetchEnrichmentCompletions;
 }
 
 export async function runCompanionTick(deps: CompanionTickDeps): Promise<CompanionTickResult> {
@@ -94,6 +100,7 @@ export async function runCompanionTick(deps: CompanionTickDeps): Promise<Compani
   const deliver = deps.deliver ?? ((input: DeliveryInput) => deliverCompanionMessage(input, { sb }));
   const staffIds = deps.staffIds ?? repo.fetchStaffMemberIds;
   const fetchSignals = deps.signals ?? fetchMemberSignals;
+  const fetchEnrichment = deps.enrichment ?? fetchEnrichmentCompletions;
 
   const excluded = await fetchExcludedTestServiceAccountIdsStrict(sb);
   if (!excluded.ok) return { ok: false, mode: config.mode, reason: 'exclusion_unavailable', error: excluded.error };
@@ -124,18 +131,26 @@ export async function runCompanionTick(deps: CompanionTickDeps): Promise<Compani
   let sent = 0;
   let sendFailed = 0;
   let signalsUnavailable: string[] = [];
+  let enrichmentUnavailable: string[] = [];
 
   if (inWindow.length > 0) {
     const ids = inWindow.map((m) => m.user_id);
     const earliest = inWindow.map((m) => m.date).sort()[0];
-    const [prefs, ledger, onboarding, localeMap, signals] = await Promise.all([
+    const [prefs, ledger, onboarding, localeMap, signals, enrichment] = await Promise.all([
       repo.fetchPreferences(sb, ids),
       repo.fetchRecentLedger(sb, ids, minusDays(earliest, LEDGER_LOOKBACK_DAYS)),
       repo.fetchOnboardingTouches(sb, ids, earliest),
       locales(sb, ids),
       fetchSignals(sb, ids, now),
+      fetchEnrichment(sb, ids),
     ]);
     signalsUnavailable = signals.unavailable;
+    enrichmentUnavailable = enrichment.unavailable;
+    // VTID-05367: enrichment cards unavailable on this stack (E6/E7 while Meta
+    // OAuth is unset). Computed once per tick; passed as the 5th arg below so
+    // an unconfigured card is never offered (the TS default would silently
+    // enable it — R2-F3).
+    const unavailableCards = unavailableEnrichmentCards();
     const prefBy = new Map(prefs.map((p) => [p.user_id, p]));
     const ledgerBy = new Map<string, repo.LedgerRow[]>();
     for (const r of ledger) {
@@ -179,6 +194,15 @@ export async function runCompanionTick(deps: CompanionTickDeps): Promise<Compani
       let index: VitanaIndexSnapshot | null = null;
       try { index = await fetchIndex(sb, m.user_id); } catch { index = null; }
 
+      // VTID-05367: which enrichment cards this member should be offered, with
+      // the tick's real `now` (Moment.build has no Date — R3-F1). Completion is
+      // false-initialized (R1-F3) so a member with no source rows is eligible.
+      const completions = enrichment.completions.get(m.user_id) ?? new Map();
+      const dismissRows = enrichment.dismissals.get(m.user_id) ?? [];
+      const eligibleEnrichmentCardTypes = new Set(
+        eligibleEnrichmentCards(completions, dismissRows, 'messenger', now, unavailableCards).map((c) => c.card_type),
+      );
+
       const ctx: MemberContext = {
         userId: m.user_id,
         tenantId: m.tenant_id,
@@ -192,6 +216,7 @@ export async function runCompanionTick(deps: CompanionTickDeps): Promise<Compani
         },
         vitanaIndex: index,
         lastUsed,
+        eligibleEnrichmentCardTypes,
         ...memberSignals(signals.by.get(m.user_id), rows, m.date),
       };
       const moment = pickMoment(ctx);
@@ -244,6 +269,7 @@ export async function runCompanionTick(deps: CompanionTickDeps): Promise<Compani
     ...(isSendMode(config.mode) ? { sent, send_failed: sendFailed } : {}),
     moments, skipped,
     ...(signalsUnavailable.length > 0 ? { signals_unavailable: signalsUnavailable } : {}),
+    ...(enrichmentUnavailable.length > 0 ? { enrichment_unavailable: enrichmentUnavailable } : {}),
   };
   // One aggregate event per tick that decided something — never one per member,
   // and nothing for a tick that found no one (OASIS: decisions, not polling).
