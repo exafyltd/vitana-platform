@@ -26,6 +26,7 @@ import { runCompanionTick } from '../src/services/companion/companion-service';
 import type { CompanionConfig } from '../src/services/companion/config';
 import type { MemberContext } from '../src/services/companion/moments';
 import { ENRICHMENT_CARD_TYPES } from '../src/services/enrichment/card-catalog';
+import { loadEnrichmentCardState } from '../src/services/enrichment/completion-resolver';
 
 const T = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const FULL = '11111111-1111-4111-8111-111111111111';
@@ -48,6 +49,7 @@ function fakeSb(tables: Record<string, any[]>, failing: Set<string> = new Set())
     const filters: Array<(r: any) => boolean> = [];
     let range: [number, number] | null = null;
     let head = false;
+    let single = false;
     const q: any = {
       select: (_c: string, o?: { head?: boolean }) => { head = !!o?.head; return q; },
       order: () => q,
@@ -57,11 +59,14 @@ function fakeSb(tables: Record<string, any[]>, failing: Set<string> = new Set())
       not: (c: string, _op: string, _v: null) => { filters.push((r) => r[c] !== null && r[c] !== undefined); return q; },
       gte: (c: string, v: any) => { filters.push((r) => String(r[c]) >= String(v)); return q; },
       in: (c: string, vs: unknown[]) => { filters.push((r) => vs.includes(r[c])); return q; },
+      gt: (c: string, v: any) => { filters.push((r) => String(r[c]) > String(v)); return q; },
       range: (a: number, b: number) => { range = [a, b]; return q; },
+      maybeSingle: () => { single = true; return q; },
       then: (ok: any, ko: any) => {
         if (failing.has(table)) return Promise.resolve({ data: null, error: { message: `${table} down` } }).then(ok, ko);
         let rows = (tables[table] ?? []).filter((r) => filters.every((f) => f(r)));
         if (range) rows = rows.slice(range[0], range[1] + 1);
+        if (single) return Promise.resolve({ data: rows[0] ?? null, error: null }).then(ok, ko);
         return Promise.resolve(head ? { count: rows.length, data: null, error: null } : { data: rows, error: null }).then(ok, ko);
       },
     };
@@ -134,6 +139,37 @@ describe('VTID-05367: fetchEnrichmentCompletions (bulk, per page)', () => {
     expect(empty.get('E7')).toBe(false);
     expect(empty.get('E8')).toBe(false);
     expect(empty.get('E10')).toBe(false);
+  });
+
+  it('task 5: the bulk reads give exactly what the per-member resolver gives, member by member', async () => {
+    const PARTIAL = '33333333-3333-4333-8333-333333333333';
+    const t = enrichmentTables();
+    // A mixed member: photo + short bio + calendar, nothing else.
+    t.profiles.push({ user_id: PARTIAL, avatar_url: 'p', bio: 'short', location: null, cover_url: null,
+      universal_intent_cover_url: 'cover-lib', interests: [] });
+    t.connected_app_settings.push({ user_id: PARTIAL, app_id: 'outlook-calendar', enabled: true });
+    // Rows only the allowlists filter out: a non-calendar app and a non-Meta provider must not count.
+    t.connected_app_settings.push({ user_id: EMPTY, app_id: 'notion', enabled: true });
+    t.social_connections.push({ user_id: EMPTY, provider: 'tiktok', is_active: true, disconnected_at: null });
+    t.user_enrichment_cards.push({ user_id: PARTIAL, card_type: 'E3', dismissed_at: '2026-10-19T00:00:00Z', cooldown_days: 7 });
+    const sb = fakeSb(t);
+    const ids = [FULL, EMPTY, PARTIAL];
+
+    const bulk = await fetchEnrichmentCompletions(sb, ids);
+    expect(bulk.unavailable).toEqual([]);
+    for (const id of ids) {
+      const one = await loadEnrichmentCardState(sb, id, NOW);
+      expect(Object.fromEntries(bulk.completions.get(id)!)).toEqual(Object.fromEntries(one.completions));
+      // The fake ignores select column lists, so compare on the three columns the real query selects.
+      const cols = (r: any) => ({ card_type: r.card_type, dismissed_at: r.dismissed_at, cooldown_days: r.cooldown_days });
+      expect(bulk.dismissals.get(id)).toEqual(one.dismissals.map(cols));
+    }
+    // And the allowlists really bit: EMPTY stays undone on calendar and both Meta cards.
+    expect(bulk.completions.get(EMPTY)!.get('E8')).toBe(false);
+    expect(bulk.completions.get(EMPTY)!.get('E6')).toBe(false);
+    expect(bulk.completions.get(EMPTY)!.get('E7')).toBe(false);
+    expect(bulk.completions.get(PARTIAL)!.get('E8')).toBe(true);
+    expect(bulk.completions.get(PARTIAL)!.get('E11')).toBe(true);
   });
 
   it('groups user_enrichment_cards dismissal rows per member', async () => {
