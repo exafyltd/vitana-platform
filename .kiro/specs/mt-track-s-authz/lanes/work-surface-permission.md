@@ -15,7 +15,8 @@ paths:
   - services/gateway/src/routes/conversation.ts
   - services/gateway/test/mt-track-s-authz-work-surface.test.ts
   - docs/validation/**
-updated: 2026-11-01T20:10Z
+updated: 2026-11-01T20:54Z
+vtid: VTID-05453
 ---
 # Lane: work-surface-permission (repo vitana-platform)
 Tasks in `tasks.md`. A declared ORB work surface is served only to a caller with a permitted role for it (else the
@@ -25,3 +26,6 @@ VTID from PLAN-SPAR; never by hand.
 ## Log
 ### 2026-11-01T20:10Z · kiro-202611011939-b712 · ready
 Lane created with the plan.
+
+### 2026-11-01T20:54Z · ci-plan-spar · ready (VTID allocated)
+VTID-05453 allocated after policy approval (converged-auto-v1).

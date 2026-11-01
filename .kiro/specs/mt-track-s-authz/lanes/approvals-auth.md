@@ -15,7 +15,8 @@ paths:
   - services/gateway/src/routes/orb-tool.ts
   - services/gateway/test/mt-track-s-authz-approvals-auth.test.ts
   - docs/validation/**
-updated: 2026-11-01T20:10Z
+updated: 2026-11-01T20:54Z
+vtid: VTID-05452
 ---
 # Lane: approvals-auth (repo vitana-platform)
 Tasks in `tasks.md`. `requireServiceOrAdmin` on the three `/api/v1/approvals` POST routes, the feed-approve branch
@@ -24,3 +25,6 @@ check, and the developer voice tools forwarding the caller's own token. VTID fro
 ## Log
 ### 2026-11-01T20:10Z · kiro-202611011939-b712 · ready
 Lane created with the plan.
+
+### 2026-11-01T20:54Z · ci-plan-spar · ready (VTID allocated)
+VTID-05452 allocated after policy approval (converged-auto-v1).

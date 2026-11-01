@@ -3,8 +3,10 @@ slug: mt-track-s-authz
 author: kiro
 executor: kiro
 next_actor: kiro
-state: drafted
-updated: 2026-11-01T20:20Z
+state: approved
+updated: 2026-11-01T20:54Z
+sparring_record: .kiro/specs/mt-track-s-authz/sparring/verdict.md
+vtids: [VTID-05452, VTID-05453]
 ---
 # Handoff — mt-track-s-authz
 Track S slice of the multi-tenant programme (`docs/MULTI-TENANT-PLAN.md` §3), from the Integrated Architecture
@@ -31,3 +33,6 @@ Session `51e287cf` round 1: three major, two minor findings, no blocker. R1-F1, 
 `fetchPermittedRoles` contract with a guarded call site); R1-F3 deferred to follow-up F1 above; R1-F5 rejected with the
 pinned lines quoted. Answers in `sparring/responses-1.md`. Correction: the drafted entry above carries 20:10Z; the
 commit was made at 19:53Z.
+
+### 2026-11-01T20:54Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 2 lane(s) got a VTID and are handed to Kiro.
