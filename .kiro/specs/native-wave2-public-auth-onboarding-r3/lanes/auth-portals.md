@@ -32,7 +32,8 @@ paths:
   - packages/core/extract.json
   - packages/core/src/**
   - scripts/native/mobile-ci-paths.generated.json
-updated: 2026-11-01T17:25Z
+updated: 2026-11-01T18:20Z
+vtid: VTID-05449
 ---
 # Portals / OAuth / reset / confirm port — `/maxina`, `/alkalma`, `/:tenantSlug`, confirm ×3, OAuth ×2, reset, logout
 Plan: `.kiro/specs/native-wave2-public-auth-onboarding-r3/` — `plan.md` (plan block) and the `tasks.md` section marked
@@ -81,3 +82,6 @@ native app has no production profile.
 ## Log
 ### 2026-11-01T17:25Z · kiro-exafyltd-202611011658-9f52 · ready
 Lane created with the plan (re-plan of `native-wave2-public-auth-onboarding-r2/auth-portals`, PR #4545); `paths` widened to the shared native-infra files.
+
+### 2026-11-01T18:20Z · ci-plan-spar · ready (VTID allocated)
+VTID-05449 allocated after policy approval (converged-auto-v1).

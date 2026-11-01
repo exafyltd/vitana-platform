@@ -28,7 +28,8 @@ paths:
   - packages/core/extract.json
   - packages/core/src/**
   - scripts/native/mobile-ci-paths.generated.json
-updated: 2026-11-01T17:25Z
+updated: 2026-11-01T18:20Z
+vtid: VTID-05451
 ---
 # Public landing / legal / invite / apply port — the signed-out `PublicAppShell` branch (+ 2 kept-exception rows)
 Plan: `.kiro/specs/native-wave2-public-auth-onboarding-r3/` — `plan.md` (plan block) and the `tasks.md` section marked
@@ -70,3 +71,6 @@ production profile.
 ## Log
 ### 2026-11-01T17:25Z · kiro-exafyltd-202611011658-9f52 · ready
 Lane created with the plan (re-plan of `native-wave2-public-auth-onboarding-r2/public-legal`, PR #4545); `paths` widened to the shared native-infra files.
+
+### 2026-11-01T18:20Z · ci-plan-spar · ready (VTID allocated)
+VTID-05451 allocated after policy approval (converged-auto-v1).

@@ -3,11 +3,13 @@ slug: native-wave2-public-auth-onboarding-r3
 author: kiro
 executor: kiro
 next_actor: kiro
-state: drafted
+state: approved
 author_seat: exafyltd
-updated: 2026-11-01T17:25Z
+updated: 2026-11-01T18:20Z
 spar_refs:
   - exafyltd/vitana-v1: main
+sparring_record: .kiro/specs/native-wave2-public-auth-onboarding-r3/sparring/verdict.md
+vtids: [VTID-05449, VTID-05450, VTID-05451]
 ---
 # Handoff — Native Wave 2: Public / Auth / Onboarding / Legal screen ports
 Wave 2 public/auth/onboarding/legal screen-port batch of the native Maxina app program
@@ -27,3 +29,6 @@ Re-plan of `native-wave2-public-auth-onboarding-r2` (PR #4545) under a new slug;
 Holder of the `native-wave2-public-auth-onboarding-r3/_plan` claim. Re-plan of `native-wave2-public-auth-onboarding-r2` (PR #4545), because both sparring sessions of `native-wave2-public-auth-onboarding-r2` escalated on the partner's evidence floor (`evidence_floor_not_met`, 0 premise checks, 0 findings — a partner-side failure, not a plan finding) and the plan was parked; it is the converged plan of `native-wave2-public-auth-onboarding` (PR #4275). Copied the plan, tasks, requirements, design and lane files from the old PR head; lane `vtid` keys removed (CI allocates on convergence), lane `paths` widened to the shared native-infra files a screen port produces, lane logs restarted, sparring rounds left on the old PR. One commit, one session. No VTID allocated, no product code changed, no live system touched. Next: PLAN-SPAR spars the `plan(native-wave2-public-auth-onboarding-r3)` PR; this session answers each round in `sparring/responses-<n>.md`.
 ### 2026-11-01T17:59Z · kiro-exafyltd-202611011658-9f52 · drafted (sparring round 1 answered)
 R1-F1 accepted: route line catalog corrected (`/` at App.tsx:818, `/_intro/:tenantSlug` at :819). Answers: `sparring/responses-1.md`.
+
+### 2026-11-01T18:20Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 3 lane(s) got a VTID and are handed to Kiro.
