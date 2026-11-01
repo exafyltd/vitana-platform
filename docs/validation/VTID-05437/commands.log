@@ -1,0 +1,20 @@
+# VTID-05437 — commands and results (lane notify-coverage, base origin/main 1654c774)
+
+## Red: new test against live.ts of 6028392a^1 (before #4539), then restored
+git show 6028392a^1:services/gateway/src/routes/live.ts > src/routes/live.ts
+npx jest test/vtid-05437-live-notify-only-when-live.test.ts   -> Tests: 4 failed, 2 passed, 6 total
+  (failing: scheduled create notifies nobody; live create; lobby create; host start via /enter notifies)
+git checkout -- src/routes/live.ts
+
+## Green on the lane head (live.ts unchanged)
+npx jest test/vtid-05437-live-notify-only-when-live.test.ts test/vtid-04905-live-enter-exit.test.ts
+  -> 2 suites passed, Tests: 35 passed, 35 total
+node --test scripts/ci/staging-verify/lib.test.cjs              -> 66 pass, 0 fail
+validateManifest(docs/validation/VTID-05437/staging-tests.json) -> {"ok":true,"errors":[]}
+parseCommitCoverage(commit-coverage.json)                       -> 6028392a12f3... -> VTID-05437, 0 errors
+
+## tsc
+npx tsc --noEmit (services/gateway, node_modules junctioned from the main checkout)
+  -> 2 errors TS2664 "module 'express-serve-static-core' cannot be found" in src/middleware/server-timing.ts and
+     src/orb/live/latency-tracker.ts: local module-resolution artefact of the junction, files untouched by this lane;
+     the gateway CI typecheck on the PR is the authority.
