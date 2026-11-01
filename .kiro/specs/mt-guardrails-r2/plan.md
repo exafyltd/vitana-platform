@@ -56,9 +56,11 @@ guardrails that must exist before any isolation work. Verified against platform 
    WS0 adds one (its §Notes, plan §8).
 Already in place (build on, do not re-plan): `ci_tenant_isolation_health()` (VTID-05149, migration
 `20261014000300`, applied) wired report-only into `MORNING-SYSTEM-HEALTH-CHECK.yml` row 21b — WS0's
-*production* isolation monitoring is DONE, except row 21b binds `SUPABASE_URL` directly (`:546`)
-where rows 5–12/21 use `vars.DATA_REST_URL || secrets.SUPABASE_URL` (ci-wiring folds the one-line
-fix). `isHealthTable()` (CROSS-SPEC O1) does not exist yet; until mt-identity ships it, lane 2's shared
+*production* isolation monitoring is DONE. Row 21b binds `SUPABASE_URL` directly (`:546`) while rows
+5–12/21 use `vars.DATA_REST_URL || secrets.SUPABASE_URL`; that difference is CORRECT and stays
+(s2 R1-F1): `ci_tenant_isolation_health()` reads Supabase-only tenant tables, so after the Aurora flip the
+RPC would 404 on `DATA_REST_URL` and row 21b would report INFO forever (`:556-558`), hiding the signal.
+ci-wiring only adds a comment at `:546` saying why this row deliberately does not follow the flip. `isHealthTable()` (CROSS-SPEC O1) does not exist yet; until mt-identity ships it, lane 2's shared
 constant from `docs/MULTI-TENANT-PLAN.md` §2 is the health-table list.
 ## Fix (per lane)
 1. **`local-test-stack`** (kiro, seat hotmail, repo platform) — committed D11 local-stack config
@@ -66,7 +68,11 @@ constant from `docs/MULTI-TENANT-PLAN.md` §2 is the health-table list.
    `CANARY_A_<uuid>` marker in representative T_A rows. Schema from a replay of `supabase/migrations/*.sql` in timestamp
    order on the pinned image (`scripts/mt/stack/replay.sh`), with a committed skip-list
    (`supabase/tests/local-stack/replay-skip.json`: file, error line, reason) of migrations that fail on a fresh
-   database. Task 1 is a spike: boot the image with `up.sh`, run the replay, and record that the 18 tenant tables of
+   database. Task 1 is a spike: boot the image with `up.sh`, run
+   `SELECT name, default_version FROM pg_available_extensions WHERE name = 'pgtap'` and
+   `CREATE EXTENSION IF NOT EXISTS pgtap` and record both results (s2 R1-F3; fallback if absent: build pgTAP from
+   its pinned GitHub release tag inside the container, recorded in the pin table, and continue), run the replay, and
+   record that the 18 tenant tables of
    `docs/MULTI-TENANT-PLAN.md` §2, the health tables, `tenants` and `user_tenants` exist; if they do not, the lane
    stops and is raised. A `make`/npm entry brings the
    stack up for the isolation-suite, inventory and contract lanes. **Install:** the "Pinned versions"
@@ -137,9 +143,9 @@ constant from `docs/MULTI-TENANT-PLAN.md` §2 is the health-table list.
    `scripts/ci/sql-tests/run-mt-isolation-test.sh`; its `paths:` copies the
    glob form of `SQL-HEALTH-STORE.yml` (not `SQL-TENANT-FOUNDATION.yml`'s file list) and its PGHOST
    is only the service container, never a live endpoint (496d R1-F2/F3). Adds the MIGRATION-QUEUE
-   check (file shape, apply order, one row per migration file) replacing the review rule, and folds the
-   one-line fix aligning `MORNING-SYSTEM-HEALTH-CHECK.yml` row 21b's `SUPABASE_URL` to
-   `vars.DATA_REST_URL || secrets.SUPABASE_URL` (rows 5–12/21). Governance path, not a protected gate file →
+   check (file shape, apply order, one row per migration file) replacing the review rule, and adds a comment
+   at `MORNING-SYSTEM-HEALTH-CHECK.yml:546` explaining why row 21b keeps `secrets.SUPABASE_URL` (the RPC reads
+   Supabase-only tenant tables; s2 R1-F1). The binding itself is not changed. Governance path, not a protected gate file →
    `executor: kiro` with the reviewer agent. Depends on lanes 2–5.
 ## Pinned versions (496d R2-F1 — lanes 1 and 6 copy these strings verbatim)
 | What | Exact value | Why this value |
@@ -147,7 +153,7 @@ constant from `docs/MULTI-TENANT-PLAN.md` §2 is the health-table list.
 | Postgres image | `supabase/postgres:17.4.1.074` | the version production reports (`supabase-postgres-17.4.1.074`, `docs/SUPABASE-SECURITY-ADVISOR-AUDIT-2026-08-28.md:60`); ships `pgtap`, `auth`, `storage`, `realtime`. The same audit flags it `vulnerable_postgres_version` (patches outstanding, `:58`); it is pinned only for parity of a throwaway local stack that holds no real data and reaches no live endpoint. The digest guards a re-push, not an upstream vulnerability; the upgrade path is a change to this table (R3-F3) |
 | Image index digest (recorded, checked by the smoke test) | `sha256:dc436b5b4ebeb0f3bdf6d8dda2b390cc094e14d24cd434d5fe02840459e67670` | Docker Hub digest of that tag; the tag is the pin, the digest guards a re-push |
 | `pg_prove` apt package | `libtap-parser-sourcehandler-pgtap-perl=3.36-2` | the Ubuntu 24.04 (noble, universe) published version |
-| Runner / host OS | CI `runs-on: ubuntu-24.04` (not `ubuntu-latest`); locally `scripts/mt/stack/` runs `pg_prove` inside an `ubuntu:24.04` container with the same apt pin | the apt version above exists only on noble, so the OS is pinned too |
+| Runner / host OS | CI `runs-on: ubuntu-24.04` (not `ubuntu-latest`); locally `scripts/mt/stack/` runs `pg_prove` inside an `ubuntu:24.04` container with the same apt pin | the apt version above exists only on noble, so the OS is pinned too. Review trigger (s2 R1-F2): when GitHub announces the ubuntu-24.04 runner deprecation, or `ubuntu-latest` moves past 24.04, re-pin the OS and the apt version together in this table and in `docs/multitenancy/LOCAL-STACK.md` |
 Lane 1 records these four values once in `docs/multitenancy/LOCAL-STACK.md`; lane 6 uses the same
 literals. A bump changes this table first (a plan change), then both lanes in one PR each.
 ## Migrations

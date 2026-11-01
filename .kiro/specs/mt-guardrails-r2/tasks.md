@@ -148,8 +148,9 @@ Allowed paths:
       `scripts/ci/sql-tests/run-mt-isolation-test.sh` and gates it with `report-gate.mjs --expect
       '^PASS mt-isolation'`; the shape test asserts these literals; `paths:` uses the glob form of
       `SQL-HEALTH-STORE.yml`; PGHOST is only the local container started by `up.sh`, never a live endpoint; wire a shrinking baseline
-      (the drift-check pattern). Fold the row-21b fix: align `MORNING-SYSTEM-HEALTH-CHECK.yml` row 21b's
-      `SUPABASE_URL` binding to `vars.DATA_REST_URL || secrets.SUPABASE_URL` (matching rows 5—12/21).
+      (the drift-check pattern). Row 21b of `MORNING-SYSTEM-HEALTH-CHECK.yml` KEEPS
+      `secrets.SUPABASE_URL` (s2 R1-F1: `ci_tenant_isolation_health()` reads Supabase-only tables); add a comment at `:546`
+      saying why it does not follow the Aurora flip. Acceptance: the binding is unchanged and the comment is present.
 Acceptance: `node --test scripts/ci/mt/*.test.mjs` green; the workflow runs report-only on its own PR;
 the queue check flags a malformed row and passes the current file. Governance path, not a protected gate file (`executor: kiro`, seat
 `hotmail`, reviewer agent). Depends on `local-test-stack`, `generated-inventories`, `isolation-suite`,

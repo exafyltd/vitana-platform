@@ -5,7 +5,7 @@ author_seat: hotmail
 executor: kiro
 next_actor: kiro
 state: drafted
-updated: 2026-11-01T16:32Z
+updated: 2026-11-01T16:45Z
 ---
 # Handoff — mt-guardrails-r2
 Re-plan of `mt-guardrails` (PR #4162, closed 2026-10-28; session `496d49e4` escalated at the round cap). WS0 guard
@@ -39,3 +39,9 @@ this session could not answer sparring rounds there. The plan moves unchanged to
 ### 2026-11-01T16:32Z · kiro-hotmail-202611011452-6d16 · drafted (session 1 escalated on the evidence floor)
 PLAN-SPAR session `00a5b19f` escalated in round 1 with `evidence_floor_not_met` and no findings. The partner read no
 file. The plan now names the premise files, and this push starts session 2.
+
+### 2026-11-01T16:45Z · kiro-hotmail-202611011452-6d16 · drafted (session 2 round 1 answered)
+Session `c30d4bc1` round 1 is answered in `sparring/s2-responses-1.md`:
+- R1-F1: row 21b keeps `secrets.SUPABASE_URL` and gets a comment instead.
+- R1-F2: a runner re-pin trigger is recorded.
+- R1-F3: the spike checks for pgtap and documents a fallback.
