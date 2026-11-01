@@ -1,0 +1,11 @@
+# VTID-05366 companion-enrichment-moments — local only; no production, staging or database access of any kind
+# Head under test: 1aed96c5bb (merge of origin/main 900d76c485 into the lane branch; tree identical to the run)
+cd services/gateway && npx jest --runInBand test/vtid-05366-companion-enrichment-moments.test.ts   # 15/15 passed — outputs/jest-companion.txt
+cd services/gateway && npx jest --runInBand test/vtid-05367-companion-enrichment-signals.test.ts   # 14/14 passed — outputs/jest-companion.txt
+cd services/gateway && npx jest --runInBand test/vtid-05099-companion-messages.test.ts   # 33/33 passed — outputs/jest-companion.txt
+cd services/gateway && npx jest --runInBand test/vtid-05099-proactive-match-daily-limit.test.ts   # 5/5 passed — outputs/jest-companion.txt
+cd services/gateway && npx jest --runInBand test/vtid-05100-companion-delivery.test.ts   # 24/24 passed — outputs/jest-companion.txt
+cd services/gateway && npx jest --runInBand test/vtid-05101-companion-generators.test.ts   # 27/27 passed (17-moment contract) — outputs/jest-companion.txt
+cd services/gateway && NODE_OPTIONS=--max-old-space-size=8192 npx tsc --noEmit -p .   # 2 pre-existing TS2664 (server-timing.ts, latency-tracker.ts), 0 in touched files — outputs/tsc.txt
+node scripts/ci/validator-path-guard.cjs --pr-body-check <PR body>   # every required declaration present
+node scripts/ci/validator-path-guard.cjs <changed files> gateway_backend <PR body>   # APPROVED: all in-remit files

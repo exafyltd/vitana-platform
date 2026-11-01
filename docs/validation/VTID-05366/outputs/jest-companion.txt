@@ -1,0 +1,15 @@
+# npx jest --runInBand <file>, one suite per run, serially, on 1aed96c5bb, Windows local worktree
+# summary lines only (full console output omitted: mock-noise warnings)
+PASS test/vtid-05366-companion-enrichment-moments.test.ts (9.146 s)
+Tests:       15 passed, 15 total
+PASS test/vtid-05367-companion-enrichment-signals.test.ts
+Tests:       14 passed, 14 total
+PASS test/vtid-05099-companion-messages.test.ts (20.784 s)
+Tests:       33 passed, 33 total
+PASS test/vtid-05099-proactive-match-daily-limit.test.ts
+Tests:       5 passed, 5 total
+PASS test/vtid-05100-companion-delivery.test.ts (7.635 s)
+Tests:       24 passed, 24 total
+PASS test/vtid-05101-companion-generators.test.ts
+Tests:       27 passed, 27 total
+# total: 6 suites, 118/118 passed
