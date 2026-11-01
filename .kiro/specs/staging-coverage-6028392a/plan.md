@@ -17,7 +17,7 @@ waits on it for Gate 2. No open PR, lane or spec names #4539 or `6028392a` (chec
 - New `notifyRoomWentLive(roomId, hostId, sessionTitle?)` (`live.ts:1013`) holds both go-live notifications:
   followers (`repo.fetchLiveRoomAttendeesExcluding` → `notifyLiveRoomLocalized(..., 'live_room_starting', ...)`) and
   "Notify me" subscribers (`repo.fetchLiveStreamSubscribersExcluding` → `notifyUserAsync(..., 'live_room_starting',
-  notif.live_going_live.*)`, `live.ts:1072`). Host excluded from both.
+  notif.live_going_live.*)`, `live.ts:1066-1070`, fan-out log line `:1072`). Host excluded from both.
 - `POST /rooms/:id/sessions` calls it only when `result.status !== 'scheduled'` (`live.ts:2077-2080`). Before, the
   follower notification went out on every session create, including scheduled ones, so the push said "starting" while
   a tap returned `NOT_LIVE`.
