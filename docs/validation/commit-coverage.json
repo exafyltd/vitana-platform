@@ -12,6 +12,12 @@
       "vtid": "VTID-05335",
       "reason": "plan(reviewer-model-fallback) #4295 merged the three-model reviewer fallback chain (governance.ts REVIEWER_AGENT_MODELS / AGENT_REVIEWER_VALUES / isAgentReview) without a VTID; VTID-05335's staging-tests.json runs the governance jest suite that pins exactly that chain behaviour, so STAGING-VERIFY lists 91d26a15 as covered instead of missing (rule 47).",
       "approved_by": "owner, 2026-10-21 reviewer fallback instruction; converged-auto-v1 docs/validation/VTID-05335/plan-sparring.md (session a64cc2b2, plan hash e94a76d9..., approved 2026-10-22T13:36:26.068+00:00)"
+    },
+    {
+      "sha": "6028392a12f3449a51cea7b77fe2fb64f4aaee92",
+      "vtid": "VTID-05437",
+      "reason": "fix(live) #4539 moved the go-live notifications into notifyRoomWentLive (services/gateway/src/routes/live.ts) and sends them only when a session is really running, without a VTID; VTID-05437's staging-tests.json runs the jest test that pins exactly that behaviour (fails on 6028392a^1), so STAGING-VERIFY lists 6028392a as covered instead of missing (rule 47).",
+      "approved_by": "converged-auto-v1 docs/validation/VTID-05437/plan-sparring.md (session ffd45970, plan hash c3ad4967..., approved 2026-11-01T08:07:25.639+00:00); owner backlog instruction 2026-10-28"
     }
   ]
 }

@@ -1,0 +1,42 @@
+{
+  "vtid": "VTID-05437",
+  "service": "gateway",
+  "note": "Read-only. Covers the already-merged live-room go-live notification fix of #4539 (commit 6028392a, services/gateway/src/routes/live.ts notifyRoomWentLive). The notifications are writes to production data and cannot run on staging (rule 48), so the proof of the behaviour is the jest suite below; the HTTP checks only prove the live router carrying the change loaded and its auth gate still rejects before the handler. Nothing targets production.",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "gateway alive after deploy",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/alive",
+      "expect_status": 200,
+      "reason": "read-only GET: the build carrying the live.ts change boots and serves"
+    },
+    {
+      "kind": "http",
+      "name": "live router health serves",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/api/v1/live/health",
+      "expect_status": 200,
+      "expect_json": { "ok": true, "service": "live-gateway" },
+      "reason": "read-only GET of the public live health route (live.ts GET /health, mounted at /api/v1/live): proves the live router carrying #4539 loaded on the deployed commit"
+    },
+    {
+      "kind": "http",
+      "name": "enter rejects an invalid bearer before the handler",
+      "target": "gateway",
+      "method": "POST",
+      "path": "/api/v1/live/rooms/00000000-0000-4000-8000-000000000000/enter",
+      "rejected_probe": true,
+      "expect_status": 401,
+      "reason": "rejected probe: requireAuth on POST /rooms/:id/enter refuses an invalid bearer before the handler that now calls notifyRoomWentLive runs"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-05437-live-notify-only-when-live.test.ts test/vtid-04905-live-enter-exit.test.ts",
+      "cwd": "services/gateway",
+      "reason": "Write-path proof of #4539: a scheduled session create sends no go-live push, a live/lobby create and a successful host start via /enter notify followers and Notify-me subscribers (never the host), a refused host start and a viewer entry send none; plus the existing live enter/exit suite."
+    }
+  ]
+}
