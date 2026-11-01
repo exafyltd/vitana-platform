@@ -10,8 +10,9 @@ depends_on: [local-test-stack, generated-inventories]
 paths:
   - scripts/ci/sql-tests/mt-isolation.test.sql
   - scripts/ci/sql-tests/run-mt-isolation-test.sh
-updated: 2026-11-01T15:30Z
+updated: 2026-11-01T17:06Z
 repos: [exafyltd/vitana-platform]
+vtid: VTID-05446
 ---
 # Isolation suite (pgTAP) — mt-guardrails-r2/isolation-suite (repo vitana-platform)
 Plan: `.kiro/specs/mt-guardrails-r2/plan.md` (authoritative) and the `isolation-suite` section of
@@ -49,3 +50,6 @@ Branch `kiro/mt-guardrails-r2/isolation-suite`; PR title `VTID-xxxxx
 ## Log
 ### 2026-11-01T15:30Z · kiro-hotmail-202611011402-f523 · ready
 Lane created with the re-plan `mt-guardrails-r2` (carried from `mt-guardrails`).
+
+### 2026-11-01T17:06Z · ci-plan-spar · ready (VTID allocated)
+VTID-05446 allocated after policy approval (converged-auto-v1).

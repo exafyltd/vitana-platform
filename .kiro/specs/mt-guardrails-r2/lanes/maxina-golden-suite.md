@@ -11,8 +11,9 @@ paths:
   - services/gateway/test/mt-maxina-golden.test.ts
   - services/gateway/test/golden/**
   - scripts/mt/golden/**
-updated: 2026-11-01T15:30Z
+updated: 2026-11-01T17:06Z
 repos: [exafyltd/vitana-platform]
+vtid: VTID-05448
 ---
 # Maxina golden suite + v1-golden-edge fixture — mt-guardrails-r2/maxina-golden-suite (repo vitana-platform)
 
@@ -38,3 +39,6 @@ Branch `kiro/mt-guardrails-r2/maxina-golden-suite`; PR title `VTID-xxxxx
 ## Log
 ### 2026-11-01T15:30Z · kiro-hotmail-202611011402-f523 · ready
 Lane created with the re-plan `mt-guardrails-r2` (carried from `mt-guardrails`).
+
+### 2026-11-01T17:06Z · ci-plan-spar · ready (VTID allocated)
+VTID-05448 allocated after policy approval (converged-auto-v1).

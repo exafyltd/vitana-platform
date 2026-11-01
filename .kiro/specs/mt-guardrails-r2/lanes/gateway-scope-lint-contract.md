@@ -13,8 +13,9 @@ paths:
   - services/gateway/test/mt-route-inventory.test.ts
   - services/gateway/test/mt-contract-canary.test.ts
   - services/gateway/test/mt/**
-updated: 2026-11-01T15:30Z
+updated: 2026-11-01T17:06Z
 repos: [exafyltd/vitana-platform]
+vtid: VTID-05444
 ---
 # Gateway tenant-scope lint + contract/route tests — mt-guardrails-r2/gateway-scope-lint-contract (repo vitana-platform)
 
@@ -38,3 +39,6 @@ id>` and `Collab-Lane: mt-guardrails-r2/gateway-scope-lint-contract`. When the P
 ## Log
 ### 2026-11-01T15:30Z · kiro-hotmail-202611011402-f523 · ready
 Lane created with the re-plan `mt-guardrails-r2` (carried from `mt-guardrails`).
+
+### 2026-11-01T17:06Z · ci-plan-spar · ready (VTID allocated)
+VTID-05444 allocated after policy approval (converged-auto-v1).

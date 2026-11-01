@@ -12,8 +12,9 @@ paths:
   - supabase/tests/local-stack/**
   - scripts/mt/stack/**
   - docs/multitenancy/LOCAL-STACK.md
-updated: 2026-11-01T15:30Z
+updated: 2026-11-01T17:06Z
 repos: [exafyltd/vitana-platform]
+vtid: VTID-05447
 ---
 # D11 local Supabase stack + fixtures — mt-guardrails-r2/local-test-stack (repo vitana-platform)
 Plan: `.kiro/specs/mt-guardrails-r2/plan.md` (authoritative) and the `local-test-stack` section of
@@ -38,3 +39,6 @@ system. Acceptance (R3-F3): beside the pins, `LOCAL-STACK.md` records the `vulne
 ## Log
 ### 2026-11-01T15:30Z · kiro-hotmail-202611011402-f523 · ready
 Lane created with the re-plan `mt-guardrails-r2` (carried from `mt-guardrails`).
+
+### 2026-11-01T17:06Z · ci-plan-spar · ready (VTID allocated)
+VTID-05447 allocated after policy approval (converged-auto-v1).

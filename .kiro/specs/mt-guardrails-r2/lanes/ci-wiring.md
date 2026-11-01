@@ -12,8 +12,9 @@ paths:
   - .github/workflows/SQL-MT-ISOLATION.yml
   - .github/workflows/MORNING-SYSTEM-HEALTH-CHECK.yml
   - scripts/ci/mt/**
-updated: 2026-11-01T15:30Z
+updated: 2026-11-01T17:06Z
 repos: [exafyltd/vitana-platform]
+vtid: VTID-05443
 ---
 # CI wiring + MIGRATION-QUEUE check — mt-guardrails-r2/ci-wiring (governance, repo vitana-platform)
 Plan: `.kiro/specs/mt-guardrails-r2/plan.md` (authoritative) and the `ci-wiring` section of `tasks.md`
@@ -48,3 +49,6 @@ fails loudly if it does not come up; no `services:` container, no silently skipp
 ## Log
 ### 2026-11-01T15:30Z · kiro-hotmail-202611011402-f523 · ready
 Lane created with the re-plan `mt-guardrails-r2` (carried from `mt-guardrails`).
+
+### 2026-11-01T17:06Z · ci-plan-spar · ready (VTID allocated)
+VTID-05443 allocated after policy approval (converged-auto-v1).
