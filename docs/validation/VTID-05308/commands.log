@@ -38,3 +38,5 @@ source + schema + static-serving semantics above.
   Build Gate (npm ci && npm run build in services/gateway) runs the same gateway
   source as origin/main — this PR changes no gateway source, only docs — so the
   build outcome is determined by main (all other PR checks are green on base).
+
+## sv-05308-coverage (VTID-05406): added docs/validation/VTID-05308/staging-tests.json so STAGING-VERIFY stops reporting VTID-05308 as a missing change suite (rule 47). Read-only; the two referenced jest suites pass 32/32.

@@ -1,0 +1,2 @@
+red-on-base (file absent): loadManifest = null (RED)
+green (file present): loadManifest = VTID-05308 gateway tests 2
