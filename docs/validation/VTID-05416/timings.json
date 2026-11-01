@@ -1,0 +1,117 @@
+{
+  "schema": "vitana.plan-timings/v1",
+  "plan_slug": "spotlight-card-proportion",
+  "vtid": "VTID-05416",
+  "vtids": [
+    "VTID-05416",
+    "VTID-05417",
+    "VTID-05418",
+    "VTID-05419",
+    "VTID-05420"
+  ],
+  "generated_at": "2026-11-01T21:02:33Z",
+  "generated_by": "kiro (staging step of workflow wf_7ff5edc0100bbb08, session kiro-202610152203-0347)",
+  "plan_pr_opened_at": "2026-10-31T21:14:13Z",
+  "converged_at": "2026-10-31T23:42:50.798Z",
+  "policy_approved_at": "2026-10-31T23:42:50.798Z",
+  "vtids_allocated_at": "2026-10-31T23:46:00Z",
+  "plan_merged_at": "2026-11-01T00:35:41Z",
+  "gate2_sent_at": null,
+  "convergence_ms": 8917798,
+  "vtid_ms": 189202,
+  "plan_merge_ms": 2981000,
+  "lanes": [
+    {
+      "lane": "layout-core",
+      "vtid": "VTID-05420",
+      "claimed_at": "2026-11-01T00:39:00Z",
+      "pr_opened_at": "2026-11-01T01:10:56Z",
+      "accepted_at": "2026-11-01T02:20:24Z",
+      "merged_at": "2026-11-01T11:02:47Z",
+      "staging_verified_at": null,
+      "build_ms": 1916000,
+      "review_ms": 4168000,
+      "merge_ms": 31343000,
+      "review_rounds": 0,
+      "ci_fix_attempts": 1
+    },
+    {
+      "lane": "events",
+      "vtid": "VTID-05417",
+      "claimed_at": "2026-11-01T11:26:16Z",
+      "pr_opened_at": "2026-11-01T11:49:23Z",
+      "accepted_at": "2026-11-01T12:04:12Z",
+      "merged_at": "2026-11-01T13:38:34Z",
+      "staging_verified_at": null,
+      "build_ms": 1387000,
+      "review_ms": 889000,
+      "merge_ms": 5662000,
+      "review_rounds": 0,
+      "ci_fix_attempts": 0
+    },
+    {
+      "lane": "discover",
+      "vtid": "VTID-05416",
+      "claimed_at": "2026-11-01T11:05:00Z",
+      "pr_opened_at": "2026-11-01T12:11:20Z",
+      "accepted_at": "2026-11-01T12:15:05Z",
+      "merged_at": "2026-11-01T13:38:53Z",
+      "staging_verified_at": null,
+      "build_ms": 3980000,
+      "review_ms": 225000,
+      "merge_ms": 5028000,
+      "review_rounds": 0,
+      "ci_fix_attempts": 0
+    },
+    {
+      "lane": "find-a-match",
+      "vtid": "VTID-05418",
+      "claimed_at": "2026-11-01T11:20:00Z",
+      "pr_opened_at": "2026-11-01T12:01:52Z",
+      "accepted_at": "2026-11-01T15:09:55Z",
+      "merged_at": "2026-11-01T16:23:19Z",
+      "staging_verified_at": null,
+      "build_ms": 2512000,
+      "review_ms": 11283000,
+      "merge_ms": 4404000,
+      "review_rounds": 0,
+      "ci_fix_attempts": 0
+    },
+    {
+      "lane": "health",
+      "vtid": "VTID-05419",
+      "claimed_at": "2026-11-01T11:05:00Z",
+      "pr_opened_at": "2026-11-01T13:26:38Z",
+      "accepted_at": "2026-11-01T13:44:41Z",
+      "merged_at": "2026-11-01T16:23:22Z",
+      "staging_verified_at": null,
+      "build_ms": 8498000,
+      "review_ms": 1083000,
+      "merge_ms": 9521000,
+      "review_rounds": 0,
+      "ci_fix_attempts": 0
+    }
+  ],
+  "staging_verify_ms": null,
+  "approved_to_verified_ms": null,
+  "merge_conflict_count": 0,
+  "staging_verify_failure_count": 4,
+  "staging_verify_runs": {
+    "failed": [
+      "https://github.com/exafyltd/vitana-platform/actions/runs/41305262402",
+      "https://github.com/exafyltd/vitana-platform/actions/runs/41318447149",
+      "https://github.com/exafyltd/vitana-platform/actions/runs/41325153878",
+      "https://github.com/exafyltd/vitana-platform/actions/runs/41329713260"
+    ],
+    "superseded": [
+      "https://github.com/exafyltd/vitana-platform/actions/runs/41328217725"
+    ]
+  },
+  "sources_unavailable": [
+    "staging_verified_at / staging_verify_ms / approved_to_verified_ms: no STAGING-VERIFY has passed on a commit containing all five lanes yet. 035800a7 (all lanes) failed VTID-05416 and VTID-05419 (Spotlight 0.4927 of the layout at 1400x900, cap 0.45; root cause in layout-core SpotlightGrid breakpoints). Fix-forward exafyltd/vitana-v1#1552 (VTID-05420) is open. Left null rather than guessed.",
+    "gate2_sent_at: Gate 2 has not been sent.",
+    "vtids_allocated_at: minute precision from the ci-plan-spar lane-file log entries (2026-10-31T23:46Z); the allocator row timestamp was not read (no live reads).",
+    "lane claimed_at: lane_started timing of the build that produced the merged PR (find-a-match also logged 00:45:18Z, then waited for layout-core; the 11:20:00Z build start is used)."
+  ],
+  "note": "staging_verify_failure_count counts the 4 failed STAGING-VERIFY runs on this plan's merge commits (3ac1f5b, 8161711, 58c76c9, 035800a). The colour-batch reds in them (VTID-05286..05289) belong to plan desktop-spotlight-finish; this plan's own reds are VTID-05416 and VTID-05419 on 035800a. review_rounds counts change requests (none); re-accepts after gh pr update-branch are not rounds."
+}
