@@ -3,14 +3,14 @@ lane: generated-inventories
 state: ready
 next_actor: kiro
 executor: kiro
-seat: hotmail
+seat: exafyltd
 reviewer_seat: agent:vitana-lane-reviewer
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 depends_on: [local-test-stack]
 paths:
   - scripts/mt/inventory/**
   - scripts/mt/lint/**
-updated: 2026-11-01T17:06Z
+updated: 2026-11-01T21:40Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05445
 ---
@@ -38,3 +38,5 @@ Lane created with the re-plan `mt-guardrails-r2` (carried from `mt-guardrails`).
 
 ### 2026-11-01T17:06Z · ci-plan-spar · ready (VTID allocated)
 VTID-05445 allocated after policy approval (converged-auto-v1).
+### 2026-11-01T21:40Z · pm-agent · update
+reassign lane hotmail→exafyltd (stale_ready, Claude unavailable)
