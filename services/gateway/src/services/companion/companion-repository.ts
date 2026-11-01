@@ -166,6 +166,84 @@ export function fetchActiveDaysSince(sb: SupabaseClient, ids: string[], sinceDat
     30);
 }
 
+// ── VTID-05367 (messenger-vitana-cards-v2): bulk enrichment completion + dismissal ──
+// Per-member reads in enrichment/completion-resolver-repository.ts are one
+// query per member; the companion tick needs them per PAGE of members, so these
+// mirror fetchJourneyStates / fetchActiveDaysSince (one IN-clause per source
+// table). The compute stays in enrichment/completion-resolver.ts
+// (computeCompletions) and card-catalog.ts (eligibleEnrichmentCards) — these
+// functions only read.
+
+/** E1/E2/E4/E5/E11 — profile enrichment fields, one row per member (missing row = absent). */
+export function fetchProfileEnrichmentFieldsBulk(sb: SupabaseClient, ids: string[]) {
+  return inChunks<{
+    user_id: string;
+    avatar_url: string | null;
+    bio: string | null;
+    location: string | null;
+    cover_url: string | null;
+    universal_intent_cover_url: string | null;
+    interests: string[] | null;
+  }>(
+    ids,
+    (p) => sb.from('profiles')
+      .select('user_id, avatar_url, bio, location, cover_url, universal_intent_cover_url, interests').in('user_id', p),
+    'enrichment_profiles');
+}
+
+/** E3 — members with at least one post (distinct user_ids). */
+export function fetchMembersWithAnyPost(sb: SupabaseClient, ids: string[]) {
+  return inChunksPaged<{ user_id: string }>(
+    ids,
+    (p, from, to) => sb.from('profile_posts').select('user_id').in('user_id', p)
+      .order('user_id', { ascending: true }).range(from, to),
+    'enrichment_posts');
+}
+
+/** E6/E7 — active Instagram/Facebook connections (is_active, not disconnected). */
+export function fetchActiveSocialConnectionsBulk(sb: SupabaseClient, ids: string[]) {
+  return inChunks<{ user_id: string; provider: string }>(
+    ids,
+    (p) => sb.from('social_connections').select('user_id, provider')
+      .in('user_id', p).in('provider', ['instagram', 'facebook']).eq('is_active', true).is('disconnected_at', null),
+    'enrichment_social');
+}
+
+/** E8 — members with an enabled calendar app. */
+export function fetchMembersWithEnabledCalendar(sb: SupabaseClient, ids: string[]) {
+  return inChunks<{ user_id: string }>(
+    ids,
+    (p) => sb.from('connected_app_settings').select('user_id')
+      .in('user_id', p).in('app_id', ['google-calendar', 'outlook-calendar', 'apple-calendar']).eq('enabled', true),
+    'enrichment_calendar');
+}
+
+/** E9 — members with at least one imported contact. */
+export function fetchMembersWithAnyContact(sb: SupabaseClient, ids: string[]) {
+  return inChunksPaged<{ user_id: string }>(
+    ids,
+    (p, from, to) => sb.from('contacts').select('user_id').in('user_id', p)
+      .order('user_id', { ascending: true }).range(from, to),
+    'enrichment_contacts');
+}
+
+/** E10 — members with a live FCM token (not revoked). */
+export function fetchMembersWithActiveDeviceToken(sb: SupabaseClient, ids: string[]) {
+  return inChunks<{ user_id: string }>(
+    ids,
+    (p) => sb.from('user_device_tokens').select('user_id')
+      .in('user_id', p).is('revoked_at', null).not('fcm_token', 'is', null),
+    'enrichment_device_tokens');
+}
+
+/** `user_enrichment_cards` dismissal rows for the page (one query per chunk). */
+export function fetchEnrichmentDismissalsBulk(sb: SupabaseClient, ids: string[]) {
+  return inChunks<{ user_id: string; card_type: string; dismissed_at: string | null; cooldown_days: number | null }>(
+    ids,
+    (p) => sb.from('user_enrichment_cards').select('user_id, card_type, dismissed_at, cooldown_days').in('user_id', p),
+    'enrichment_dismissals');
+}
+
 /** Onboarding coach touches already SENT (VTID-04892) — one Vitana touch a day, whoever sends it. */
 export function fetchOnboardingTouches(sb: SupabaseClient, ids: string[], sinceDate: string) {
   return inChunks<{ user_id: string; local_day: string }>(
