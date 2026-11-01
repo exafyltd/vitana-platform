@@ -8,6 +8,7 @@ specs:
   - vitana-platform:native-wave2-ai-pages
   - vitana-platform:native-wave2-discover-commerce
   - vitana-platform:native-wave2-events-calendar
+  - vitana-platform:native-wave2-events-calendar-r2
   - vitana-platform:native-wave2-health-biology
   - vitana-platform:native-wave2-home-feed-news
   - vitana-platform:native-wave2-home-feed-news-r2
