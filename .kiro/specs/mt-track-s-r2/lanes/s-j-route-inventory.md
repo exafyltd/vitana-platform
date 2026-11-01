@@ -15,7 +15,8 @@ paths:
   - scripts/check-edge-function-auth.mjs
   - package.json
   - docs/validation/**
-updated: 2026-11-01T15:00Z
+updated: 2026-11-01T16:59Z
+vtid: VTID-05442
 ---
 # Lane: s-j-route-inventory (repo vitana-v1)
 Tasks in `tasks.md`. Remove the dead `linkedin-import` edge function and add the edge-function auth gate. VTID from
@@ -24,3 +25,6 @@ PLAN-SPAR; never by hand.
 ## Log
 ### 2026-11-01T15:00Z · kiro-hotmail-202611011402-f523 · ready
 Lane created with the plan.
+
+### 2026-11-01T16:59Z · ci-plan-spar · ready (VTID allocated)
+VTID-05442 allocated after policy approval (converged-auto-v1).

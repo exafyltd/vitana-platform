@@ -11,7 +11,8 @@ repos: [exafyltd/vitana-v1]
 paths:
   - .github/workflows/SUPABASE-FUNCTIONS-RETIRE.yml
   - docs/validation/**
-updated: 2026-11-01T15:00Z
+updated: 2026-11-01T16:59Z
+vtid: VTID-05441
 ---
 # Lane: s-j-retire-allowlist (repo vitana-v1)
 Tasks in `tasks.md`. One `ALLOWLIST` line in the retire workflow. Governance path (`.github/**`), not a protected gate
@@ -21,3 +22,6 @@ PLAN-SPAR; never by hand.
 ## Log
 ### 2026-11-01T15:00Z · kiro-hotmail-202611011402-f523 · ready
 Lane created with the plan.
+
+### 2026-11-01T16:59Z · ci-plan-spar · ready (VTID allocated)
+VTID-05441 allocated after policy approval (converged-auto-v1).
