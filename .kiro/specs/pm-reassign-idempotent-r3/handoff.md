@@ -4,8 +4,10 @@ author: kiro
 author_seat: exafyltd
 executor: kiro
 next_actor: kiro
-state: drafted
-updated: 2026-10-31T23:05Z
+state: approved
+updated: 2026-11-01T01:13Z
+sparring_record: .kiro/specs/pm-reassign-idempotent-r3/sparring/verdict.md
+vtids: [VTID-05421]
 ---
 # Handoff — pm-reassign-idempotent-r3
 Planner and driver: Kiro seat `exafyltd` (session kiro-exafyltd-202610312303-3dad). Plan: `plan.md`. Lane:
@@ -16,3 +18,6 @@ Owner instruction 2026-10-28 ("you decide and get everything done"): the r2 lane
 the regenerated `conversation-flag-pins.generated.ts` (required by r2 task R3) is outside its lane paths, and no Kiro
 route widens an existing lane's paths. Re-planned under a new slug with that one file added. Pushed as a `plan(` PR.
 No VTID allocated.
+
+### 2026-11-01T01:13Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.
