@@ -1,6 +1,6 @@
 ---
 lane: events
-state: ready
+state: in-review
 next_actor: kiro
 depends_on: [layout-core]
 executor: kiro
@@ -16,7 +16,9 @@ paths:
   - tests/e2e/staging/vtid-05110-social-spotlight.staging.spec.ts
   - tests/e2e/staging/vtid-*-events-spotlight-grid.staging.spec.ts
   - docs/validation/VTID-*/**
-updated: 2026-10-31T23:46Z
+claimed_by: kiro-exafyltd-202610311330-7ae2
+pr: https://github.com/exafyltd/vitana-v1/pull/1535
+updated: 2026-11-01T11:49Z
 branch: kiro/spotlight-card-proportion/events
 vtid: VTID-05417
 ---
@@ -33,3 +35,10 @@ Created and held.
 
 ### 2026-10-31T23:46Z · ci-plan-spar · ready (VTID allocated)
 VTID-05417 allocated after policy approval (converged-auto-v1).
+
+### 2026-11-01T11:35Z · kiro-exafyltd-202610311330-7ae2 · ready → executing
+Claimed (claim ref commit ec5a53be). Built once `layout-core` landed on vitana-v1 `main` (3ac1f5bb8, 11:02:47Z).
+
+### 2026-11-01T11:49Z · kiro-exafyltd-202610311330-7ae2 · executing → in-review
+PR: https://github.com/exafyltd/vitana-v1/pull/1535, head 8581372d210f1756f115582c62c3b30405ca6031. Red on base 3ac1f5bb8 (6 failed, 17 passed); head social-spotlight.vtid-05110 23/23; build ok; ESLint 0 new. Evidence in vitana-v1 `docs/validation/VTID-05417/`.
+Next: agent:vitana-lane-reviewer reviews the PR head.
