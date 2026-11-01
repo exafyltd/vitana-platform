@@ -15,7 +15,7 @@ paths:
   - scripts/collab/kiro-web-session.mjs
   - scripts/collab/kiro-web-session.test.mjs
   - docs/validation/VTID-*/**
-updated: 2026-11-01T13:37Z
+updated: 2026-11-01T13:41Z
 branch: kiro/guard-required-only-preflight/guard-required-only
 vtid: VTID-05413
 parked_from: executing
@@ -45,4 +45,6 @@ PR: https://github.com/exafyltd/vitana-platform/pull/4509
 Findings: non-blocking: CI check state on this head could not be read by the reviewer (GraphQL not supported, gh api not allowed); the land step must confirm every required check green on the current head. non-blocking: report-only detection in checkPush (/^FAIL /m under --required-only exit 0) is sound; no change needed.
 Next: the land step merges under §7b
 ### 2026-11-01T13:37Z · pm-agent · executing → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
+### 2026-11-01T13:41Z · pm-agent · update
 park (stale_claim); claim released; Claude unavailable → exafyltd
