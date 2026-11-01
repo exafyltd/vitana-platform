@@ -22,7 +22,8 @@ paths:
   - apps/mobile/parity/ledger.json
   - src/i18n/*/walletRewardsNative.json
   - docs/validation/**
-updated: 2026-11-01T00:05Z
+updated: 2026-11-01T02:06Z
+vtid: VTID-05424
 ---
 # Rewards + redeem port — `/wallet/rewards` (+ earn/shop tabs) and `/redeem`
 Plan: `.kiro/specs/native-wave2-wallet-r2/` — `plan.md` (plan block) and the `tasks.md` section marked
@@ -63,3 +64,6 @@ new wallet route (NEVER rule 26); no `isIAPRestricted` gate behaviour change.
 ## Log
 ### 2026-11-01T00:05Z · kiro-exafyltd-202611010001-e4d4 · ready
 Lane created with the plan (re-plan of `native-wave2-wallet/wallet-rewards`, PR #4332).
+
+### 2026-11-01T02:06Z · ci-plan-spar · ready (VTID allocated)
+VTID-05424 allocated after policy approval (converged-auto-v1).

@@ -21,7 +21,8 @@ paths:
   - apps/mobile/parity/ledger.json
   - src/i18n/*/walletRedeemNative.json
   - docs/validation/**
-updated: 2026-11-01T01:12Z
+updated: 2026-11-01T02:06Z
+vtid: VTID-05423
 ---
 # Public voucher redeem port — `/redeem` in the `(public)` group
 Plan: `.kiro/specs/native-wave2-wallet-r2/` — `plan.md` (plan block, decision 2a) and the `tasks.md` section marked
@@ -58,3 +59,6 @@ has no production profile; no new wallet route (NEVER rule 26).
 ### 2026-11-01T01:12Z · kiro-exafyltd-202611010001-e4d4 · ready
 Lane created with the plan (r2 sparring R1-F1: `/redeem` moved out of `wallet-rewards` into its own lane, in the
 `(public)` group).
+
+### 2026-11-01T02:06Z · ci-plan-spar · ready (VTID allocated)
+VTID-05423 allocated after policy approval (converged-auto-v1).
