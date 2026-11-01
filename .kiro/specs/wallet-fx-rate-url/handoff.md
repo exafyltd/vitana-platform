@@ -4,10 +4,12 @@ author: kiro
 author_seat: exafyltd
 executor: kiro
 next_actor: kiro
-state: drafted
+state: approved
 spar_refs:
   - exafyltd/vitana-v1: main
-updated: 2026-11-01T13:56Z
+updated: 2026-11-01T16:15Z
+sparring_record: .kiro/specs/wallet-fx-rate-url/sparring/verdict.md
+vtids: [VTID-05440]
 ---
 # Handoff — wallet-fx-rate-url
 The wallet's live EUR/USD rate (`src/hooks/useEurUsdRate.ts`) calls `api.frankfurter.app`, which now redirects to
@@ -23,3 +25,6 @@ Lanes:
 Written for the owner backlog-cleanup task (workflow `wf_0c8b8d8455073ad2`) from STAGING-VERIFY run 41300076673 and a
 read-only investigation (vitana-v1 `origin/main` `58c76c956`, vitana-platform `62990ce285`). Next: PLAN-SPAR spars
 this PR.
+
+### 2026-11-01T16:15Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.

@@ -15,7 +15,8 @@ paths:
   - src/hooks/useEurUsdRate.test.ts
   - tests/e2e/staging/vtid-*-wallet-fx-rate.staging.spec.ts
   - docs/validation/VTID-*/**
-updated: 2026-11-01T13:56Z
+updated: 2026-11-01T16:15Z
+vtid: VTID-05440
 ---
 # Lane: fx-url (repo vitana-v1)
 Repo: **exafyltd/vitana-v1** (paths are relative to that repo). Tasks T1–T5 in `tasks.md`.
@@ -25,3 +26,6 @@ no live writes, no wallet route added. `docs/validation/VTID-*/**` means this la
 ## Log
 ### 2026-11-01T13:56Z · kiro-exafyltd-202611011353-f644 · ready
 Lane created with the plan.
+
+### 2026-11-01T16:15Z · ci-plan-spar · ready (VTID allocated)
+VTID-05440 allocated after policy approval (converged-auto-v1).
