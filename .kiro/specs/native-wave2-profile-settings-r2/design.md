@@ -1,4 +1,5 @@
 # Design — Native Wave 2: Profile / Settings / Support / Connectors screen ports (native-wave2-profile-settings-r2)
+> **Amendment (r2 sparring R1-F1, plan decision 1a):** `/delete-account` is its own lane `delete-account` (`apps/mobile/app/(public)/delete-account.tsx`, `apps/mobile/src/screens/delete-account/**`, 1 row); `settings` keeps 17 rows in 4 files. Partition 5 + 17 + 1 + 14 = 37. Where this file still says three lanes, settings 18 rows or `(app)/delete-account.tsx`, `plan.md` and `tasks.md` govern.
 How the three lanes port the `profile-settings-support` ledger cluster to native. Follows
 `docs/programs/native-app/NATIVE-APP-PLAN.md` §3 (architecture) and §4 (parity method), the N3 shell and N2 UI kit
 already on main, and `apps/mobile/README.md`. Nothing here changes the program plan or the design contract.

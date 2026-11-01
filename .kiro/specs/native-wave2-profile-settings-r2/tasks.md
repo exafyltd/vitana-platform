@@ -1,5 +1,5 @@
 # Tasks — Native Wave 2: Profile / Settings / Support / Connectors screen ports
-Three lanes, disjoint `paths`. Design: `design.md` and `requirements.md` in this folder are authoritative — follow
+Four lanes, disjoint `paths` (`delete-account` added by r2 sparring R1-F1, plan decision 1a). Design: `design.md` and `requirements.md` in this folder are authoritative — follow
 them exactly; anything outside them is a plan change (log it, set `next_actor: claude`). VTIDs are assigned by CI
 after PLAN-SPAR converges; do not start a lane before its `vtid:` is set in `lanes/<id>.md`. All commands run from
 `apps/mobile/` unless noted; `assertNotProduction()` and the no-production-profile rule make every command offline.
@@ -63,13 +63,13 @@ exclusion `/profile/:id`. depends_on: none. Web sources `src/pages/EditProfilePa
   `hotmail`). Never merge, deploy or write to a live system (protocol §7a).
 <!-- lane: settings -->
 ## Lane `settings` · executor Kiro · seat exafyltd → reviewer_seat hotmail
-Ports (18 ledger rows → 5 route files): `SETTINGS.OVERVIEW /settings` + the 13 `?mode=` section rows
+Ports (17 ledger rows → 4 route files; `/delete-account` moved to lane `delete-account`, plan decision 1a — this
+section governs where the lane file still names it): `SETTINGS.OVERVIEW /settings` + the 13 `?mode=` section rows
 (`NOTIFICATIONS`, `PRIVACY` +`.visibility`/`.data`/`.security`, `PREFERENCES` +`.appearance`/`.language`, `BILLING`
 +`.plan`/`.payment`/`.invoices`/`.creator`), `SETTINGS.PREFERENCES_ACCESSIBILITY /settings/preferences?section=`,
-`SETTINGS.LIMITATIONS /settings/limitations`, `SETTINGS.TENANT_ROLE /settings/tenant-role`, and the exclusion
-`/delete-account`. depends_on: none. Web sources `src/pages/MobileSettings.tsx` (603 lines; `VALID_SECTIONS`
+`SETTINGS.LIMITATIONS /settings/limitations`, `SETTINGS.TENANT_ROLE /settings/tenant-role`. depends_on: none. Web sources `src/pages/MobileSettings.tsx` (603 lines; `VALID_SECTIONS`
 `:39-44`; router `src/App.tsx:689-692`, sections `:1414-1467`), `src/pages/settings/Limitations.tsx` (491),
-`src/pages/settings/TenantRole.tsx` (388), `src/pages/legal/DeleteAccount.tsx` (route `src/App.tsx:847`).
+`src/pages/settings/TenantRole.tsx` (388).
 - [ ] 1. Unified settings screen `apps/mobile/app/(app)/settings/index.tsx` +
   `apps/mobile/src/screens/settings/SettingsScreen.tsx`: mobile-web twin of `MobileSettings.tsx` — read the `mode`
   search param, render the matching section with the same `switch` the web uses (`VALID_SECTIONS`:
@@ -87,33 +87,60 @@ Ports (18 ledger rows → 5 route files): `SETTINGS.OVERVIEW /settings` + the 13
   Files: `apps/mobile/app/(app)/settings/preferences.tsx`, `apps/mobile/app/(app)/settings/limitations.tsx`,
   `apps/mobile/app/(app)/settings/tenant-role.tsx`, `apps/mobile/src/screens/settings/**`.
   Verify: `npm test` + `npm run typecheck` green.
-- [ ] 3. Account deletion `apps/mobile/app/(app)/delete-account.tsx` + `src/screens/settings/DeleteAccountScreen.tsx`:
-  twin of `src/pages/legal/DeleteAccount.tsx` — the confirm UI; the delete request is **built and asserted against a
-  mocked gateway, never fired** (destructive write, requirements R5.1/R5.2).
-  Files: `apps/mobile/app/(app)/delete-account.tsx`, `apps/mobile/src/screens/settings/**`.
-  Verify: `npm test` + `npm run typecheck` green.
+- [ ] 3. (moved: account deletion is lane `delete-account`, below; no `apps/mobile/app/(app)/delete-account.tsx`.)
 - [ ] 4. i18n + RTL (as profile task 3) across all settings screens; new keys DE-first
   (`src/i18n/de/settingsNative.json`) then the other ten; reuse the existing `screens.mobilesettings.*` keys.
   Files: `src/i18n/*/settingsNative.json` (DE first), `apps/mobile/src/screens/settings/**`.
   Verify: `npm run typecheck`; `npm test` no-raw-text / no-physical-direction tests pass.
 - [ ] 5. Unit tests (fake gateway / fixtures, no network): each `?mode=` section renders (13 modes); a toggle/action
   per section **builds the right request against a mocked gateway and fires nothing**; preferences `?section=`
-  fallback; limitations + tenant-role loaded / empty / error; delete-account confirm builds the delete request
-  (mocked). React 19 `ReactElement`.
+  fallback; limitations + tenant-role loaded / empty / error. React 19 `ReactElement`.
   Files: `apps/mobile/tests/settings/**`, `apps/mobile/src/screens/settings/__tests__/**`.
   Verify: `npm test`; `APP_PROFILE=development npm run bundle`;
   `APP_PROFILE=development EXPO_OFFLINE=1 npm run deps:check` green.
-- [ ] 6. Flip the 18 parity rows to `native`; `--sync` then `--check`.
+- [ ] 6. Flip the 17 parity rows to `native`; `--sync` then `--check`.
   Files: `apps/mobile/parity/ledger.json` (settings rows only), `docs/validation/<VTID>/{scope,staging-tests}.json`.
   Verify (repo root): `node scripts/native/parity-ledger.mjs --check` green.
 - [ ] 7. **(depends-on-owner / G1 — `next_actor: owner`)** Device-runtime parity on the **isolated G1 environment
   only**: Maestro `apps/mobile/maestro/settings/*.yaml` + sim/emulator screenshots + parity vs the 390×844 read-only
-  staging `/settings` (each mode), `/settings/limitations`, `/settings/tenant-role`, `/delete-account`. Blocked until
+  staging `/settings` (each mode), `/settings/limitations`, `/settings/tenant-role`. Blocked until
   G1 (+ macOS/G3 for iOS).
   Files: `apps/mobile/maestro/settings/**`, `docs/validation/<VTID>/staging-tests.json`.
 - [ ] 8. PR: branch `kiro/native-wave2-profile-settings-r2/settings`, title
-  `VTID-xxxxx (native-wave2-profile-settings-r2/settings): native settings / limitations / tenant-role / delete-account
+  `VTID-xxxxx (native-wave2-profile-settings-r2/settings): native settings / limitations / tenant-role
   port`; trailers `Collab-Session`, `Collab-Lane: native-wave2-profile-settings-r2/settings`; lane → `in-review`,
+  `next_actor: kiro`. No merge/deploy/live write.
+<!-- lane: delete-account -->
+## Lane `delete-account` · executor Kiro · seat exafyltd → reviewer_seat hotmail
+Ports (1 ledger row → 1 route file): the exclusion `/delete-account`. depends_on: none. Web source
+`src/pages/legal/DeleteAccount.tsx` (route `src/App.tsx:847`, "Public Routes - No Auth Required", no `AuthGuard`).
+Plan decision 1a.
+- [ ] 1. Account deletion `apps/mobile/app/(public)/delete-account.tsx` +
+  `apps/mobile/src/screens/delete-account/DeleteAccountScreen.tsx`: twin of `DeleteAccount.tsx` in the `(public)` group
+  (no `AuthGate`), never under `app/(app)/`. It reads the session itself: signed out → the web's signed-out view,
+  signed in → the info → confirm (typed check) → dialog flow. The delete request is **built and asserted against a
+  mocked gateway, never fired** (destructive write, requirements R5.1/R5.2).
+  Files: `apps/mobile/app/(public)/delete-account.tsx`, `apps/mobile/src/screens/delete-account/**`.
+  Verify: `npm test` + `npm run typecheck` green.
+- [ ] 2. i18n + RTL (as profile task 3); new keys DE-first (`src/i18n/de/deleteAccountNative.json`) then the other
+  ten; reuse the existing `screens.legal.*` keys.
+  Files: `src/i18n/*/deleteAccountNative.json` (DE first), `apps/mobile/src/screens/delete-account/**`.
+  Verify: `npm run typecheck`; `npm test` no-raw-text / no-physical-direction tests pass.
+- [ ] 3. Unit tests (fake gateway / fixtures, no network): **renders signed out (no session) and signed in**; the
+  confirm step builds the delete request against a mocked gateway and fires nothing. React 19 `ReactElement`.
+  Files: `apps/mobile/tests/delete-account/**`, `apps/mobile/src/screens/delete-account/__tests__/**`.
+  Verify: `npm test`; `APP_PROFILE=development npm run bundle`;
+  `APP_PROFILE=development EXPO_OFFLINE=1 npm run deps:check` green.
+- [ ] 4. Flip the `/delete-account` parity row to `native`; `--sync` then `--check`.
+  Files: `apps/mobile/parity/ledger.json` (that row only), `docs/validation/<VTID>/{scope,staging-tests}.json`.
+  Verify (repo root): `node scripts/native/parity-ledger.mjs --check` green.
+- [ ] 5. **(depends-on-owner / G1 — `next_actor: owner`)** Maestro `apps/mobile/maestro/delete-account/*.yaml` +
+  sim/emulator screenshots + parity vs the 390×844 read-only staging `/delete-account` (never confirmed). Blocked
+  until G1.
+  Files: `apps/mobile/maestro/delete-account/**`, `docs/validation/<VTID>/staging-tests.json`.
+- [ ] 6. PR: branch `kiro/native-wave2-profile-settings-r2/delete-account`, title
+  `VTID-xxxxx (native-wave2-profile-settings-r2/delete-account): native public delete-account port`; trailers
+  `Collab-Session`, `Collab-Lane: native-wave2-profile-settings-r2/delete-account`; lane → `in-review`,
   `next_actor: kiro`. No merge/deploy/live write.
 <!-- lane: support-connectors -->
 ## Lane `support-connectors` · executor Kiro · seat exafyltd → reviewer_seat hotmail

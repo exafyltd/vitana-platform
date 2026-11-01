@@ -1,4 +1,5 @@
 # Requirements — Native Wave 2: Profile / Settings / Support / Connectors screen ports (native-wave2-profile-settings-r2)
+> **Amendment (r2 sparring R1-F1, plan decision 1a):** `/delete-account` is its own lane `delete-account` (`apps/mobile/app/(public)/delete-account.tsx`, `apps/mobile/src/screens/delete-account/**`, 1 row); `settings` keeps 17 rows in 4 files. Partition 5 + 17 + 1 + 14 = 37. Where this file still says three lanes, settings 18 rows or `(app)/delete-account.tsx`, `plan.md` and `tasks.md` govern.
 Wave 2 screen-port batch of the Maxina native app program
 (`docs/programs/native-app/NATIVE-APP-PLAN.md`, program VTID-05021). Port the profile, settings, support and
 connectors screens that the parity ledger assigns to the `profile-settings-support` lane to the native app
