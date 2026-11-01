@@ -1,4 +1,4 @@
-# Requirements — mt-data-cleanup (WS2)
+# Requirements — mt-data-cleanup (WS2) — mt-data-cleanup-r2 (re-plan)
 
 Program: `docs/MULTI-TENANT-PLAN.md` v5.1 §6 WS2 (owner-approved 2026-10-10; decision register at its end). This
 spec is the Kiro-readable hand-off of the WS2 data-cleanup slice. It links the program's records instead of copying
@@ -7,7 +7,7 @@ them.
 ## Program position
 - **Predecessors (done / in flight):** VTID-05147 (S-M membership/role lockdown), VTID-05149 (A: `tenants.is_default`
   /`is_platform`, signup default tenant, `TenantContext`, `ci_tenant_isolation_health()`), VTID-05150 (B), VTID-05151
-  (C) — all in production (`docs/multitenancy/MIGRATION-QUEUE.md`). **mt-identity** (WS1) supplies the canonical
+  (C) — all in production (`docs/multitenancy/MIGRATION-QUEUE.md`). **mt-identity-r2** (WS1) supplies the canonical
   `user_tenants` this spec reads; its `membership-unification` lane is a hard predecessor of this spec's lane 1.
 - **Successor:** WS3 community isolation + Network layer (`mt-community-isolation`) relies on
   `profiles.tenant_id` being backfilled (R3) and the orphan rows resolved (R1) before it adds `tenant_id` + RLS to
@@ -16,7 +16,7 @@ them.
 ## Goal
 Resolve every orphan / mis-tenanted row left by the single-tenant era without ever remapping test data or ambiguous
 rows to Maxina, snapshot everything before moving it, stop the legacy writers re-creating `…0001` rows, and pin
-the hot tenant tables' existing `tenant_id NOT NULL` — all as DB migrations applied by Claude, with read-only counting SQL written for Claude to run
+the hot tenant tables' existing `tenant_id NOT NULL` — all as DB migrations applied by Kiro on the owner's approval (§7d), with read-only counting SQL run read-only as the RUN-MIGRATION pre/post-checks
 (Kiro never runs SQL).
 
 ## R1 — Orphan analysis, snapshot, remap and quarantine (lane `orphan-analysis-and-quarantine`)
@@ -30,7 +30,7 @@ the hot tenant tables' existing `tenant_id NOT NULL` — all as DB migrations ap
 4. THE SYSTEM SHALL set bot-sent rows (`sender_id = …0001`) to the **recipient's** tenant (derived from the DM
    peer / group), never to the dev tenant and never to quarantine.
 5. THE SYSTEM SHALL remap every remaining orphan row to its owner's **canonical primary `user_tenants`** tenant
-   (mt-identity `membership-unification`).
+   (mt-identity-r2 `membership-unification`).
 6. WHEN a row's owner has **0 or 2+ memberships**, or a cross-tenant DM cannot be attributed, THE SYSTEM SHALL place
    the row in `mt_orphan_quarantine` with its source table, original values and a reason, and SHALL NOT default it to
    Maxina.
@@ -60,11 +60,11 @@ the hot tenant tables' existing `tenant_id NOT NULL` — all as DB migrations ap
 
 ## Non-functional (all lanes)
 - Production is read-only for Kiro and every test (rules 31/31b/48); DB changes are migration files in the lane PR,
-  applied by Claude. Read-only counting/verification SQL is delivered for Claude under `docs/validation/<vtid>/`.
+  applied by Kiro on the owner's approval (§7d). Read-only counting/verification SQL is run read-only as the RUN-MIGRATION pre/post-checks under `docs/validation/<vtid>/`.
 - Test/service/platform accounts stay invisible to members (rules 43–45): quarantine must not surface a `…0099`/bot
   row into any live tenant's member-facing data.
 - No AI call, no spoken wording, no i18n string, no new route — DB only.
 
 ## Not in this slice
-mt-identity (dependency), the `DEV_IDENTITY`/slug-map CODE cleanup (mt-identity `tenant-db-and-slug-cleanup`), WS3
+mt-identity-r2 (dependency), the `DEV_IDENTITY`/slug-map CODE cleanup (mt-identity-r2 `tenant-db-and-slug-cleanup`), WS3
 community `tenant_id`/RLS/`profiles.tenant_id NOT NULL`, purging the quarantine table (later owner-approved step).
