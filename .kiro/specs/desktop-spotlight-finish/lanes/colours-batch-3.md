@@ -71,3 +71,21 @@ The prior VTID came from session 5fbb73a2, which converged on a vitana-platform 
 mechanism, so the partner never read vitana-v1 (handoff log 2026-10-21T09:43Z). Cleared `vtid:` and set
 `next_actor: claude`; the re-spar (vitana-v1 now declared in handoff `spar_refs:`) re-converges and CI auto-allocates a
 fresh VTID bound to the new sparring record. No live system touched.
+### 2026-11-01T01:22Z · agent-vitana-lane-reviewer-202611010120-8172 · review
+review: accept
+head: b0abd4e90d7e5803fd70792eb3f186140ef2cbfc
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+PR: https://github.com/exafyltd/vitana-v1/pull/1529
+Findings: non-blocking only. Staging-spec fix-forward: the spec waits for the first visible #root element instead of the hidden toast viewport.
+Stored by the land step (parent session kiro-ide-202610272306-27b0) on the agent's behalf (`lane-land.md` step 2) in vitana-platform, where this lane's spec lives; the review ran as a separate read-only agent session.
+Next: none for the reviewer; merge under collaboration.md §7b once checks are green.
+### 2026-11-01T03:10Z · agent-vitana-lane-reviewer-202611010310-0cb8 · review
+review: accept
+head: ce6de5e40fc0f716f33b2c7cfe94cf223b8520b0
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+PR: https://github.com/exafyltd/vitana-v1/pull/1529
+Findings: non-blocking only (reviewer session sess_0cb8f4a7-3cc8-4f5a-b8db-27c53fbdae8c, workflow wf_0b9af3863811b60f): the :visible narrowing does not weaken the test; land only once CI is green. The head after update-branch adds only main's commits on top of the earlier accept at b0abd4e9.
+Stored by the land step (parent session kiro-ide-202610272306-27b0) on the agent's behalf (`lane-land.md` step 2) in vitana-platform, where this lane's spec lives; the review ran as a separate read-only agent session.
+Next: none for the reviewer; merge under collaboration.md §7b once checks are green.
+### 2026-11-01T04:06Z · kiro-ide-202610272306-27b0 · merged
+PR https://github.com/exafyltd/vitana-v1/pull/1529 squash-merged by land-guard under collaboration.md §7b (PM merge rule, applied by the plan driver while the PM is not live), no `--admin`: merge commit 48fc452f271429396fc68d09e123a5095ba5e4e0 (mergedAt 2026-11-01T04:06:46Z), reviewed head ce6de5e4.
