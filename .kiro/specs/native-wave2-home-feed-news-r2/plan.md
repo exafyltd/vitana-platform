@@ -26,14 +26,20 @@ no `App.tsx` route, no registry/manifest change — only native route files and 
   `PostDetail.tsx` (158), `Search.tsx` (492), `MatchesPage.tsx` (183), `IntentBoard.tsx` (225), `MyIntents.tsx` (202),
   `IntentMatchDetail.tsx` (192), `community/Groups.tsx` (272), `community/GroupDetail.tsx` (234),
   `community/Members.tsx` (332), `community/OpenAsks.tsx` (289), `community/FindPartner.tsx` (780); feed modules
-  `lib/feed-compose.ts` (98), `lib/news-feed-ranker.ts` (351), `hooks/useNewsFeed.ts` (306),
+  `lib/feed-compose.ts` (98), `lib/news-feed-ranker.ts` (379 at `origin/main`, re-measured for s2 R1-F1), `hooks/useNewsFeed.ts` (306),
   `hooks/useAllNewsFeed.ts` (676); card twin `components/crossover/NewsArticleCard.tsx` (187); routes at
   `src/App.tsx:946-1016` (home/news/post), `:1226-1287` (groups/members/open-asks/find-partner),
   `:1488-1526` (search/matches/intents). (R1-F2: these line counts are an **approximate** snapshot for
   scoping — a few files have grown since, e.g. `news-feed-ranker.ts`/`useAllNewsFeed.ts`/`FindPartner.tsx`;
   exact counts are not load-bearing. The ONE load-bearing check — that `feed-compose.ts` is IO-free — is
   confirmed at the pinned commit: ~110 lines, a single `import type { FeedItem, FeedItemKind } from
-  "@/lib/news-feed-ranker"`, no runtime import anywhere including the tail, so it extracts as class A.)
+  "@/lib/news-feed-ranker"`, no runtime import anywhere including the tail, so it extracts as class A. The same check
+  for `news-feed-ranker.ts`, the other extracted module, re-run on `exafyltd/vitana-v1` `origin/main` for s2 R1-F1:
+  379 lines; its only imports are `import type { MatchReason } from "@/lib/matchReason"` (`:23`) and `import type
+  { PostAttachedRef } from "@/lib/post-attachment"` (`:24`); no other `import`, `require`, dynamic import, `fetch`,
+  `supabase`, `window`, `document` or `localStorage` anywhere in the file, and lines 341-379 are the pure
+  `MOTIVATION_RULES` / `motivationKeyFor` / `reasonKeyFor` helpers. So it is class A too; `core-closure --check` in
+  the `home` PR stays the gate if that changes before the lane lands.)
 - Wave 1 is on main: N3 shell + resolver route (`apps/mobile/app/(app)/[...path].tsx`, VTID-05186), N2 UI kit
   (`@vitana/ui`, VTID-05176), N1 `@vitana/core`/`@vitana/tokens` (VTID-05183). Prop map, ports and conventions in
   `apps/mobile/README.md`. The native app has no production profile; `assertNotProduction()` refuses prod/staging hosts.
@@ -68,7 +74,18 @@ no `App.tsx` route, no registry/manifest change — only native route files and 
    `useNewsFeed`/`useAllNewsFeed` are NOT moved into core** either — they runtime-import `supabase/client.ts`
    (`useAllNewsFeed.ts:18`, `useNewsFeed.ts:10`) and would fail the same closure gate; instead the `home` lane
    **re-implements the fetching natively** (native Supabase client + native auth context) and consumes
-   `composeFeed`/`rankFeed` from core. So the core extraction is two pure modules, with `core-closure --write`/`--check`
+   `composeFeed`/`rankFeed` from core. **Scope of that re-implementation (s2 R1-F2)** — every runtime dependency of
+   the two web hooks has a native substitute in the `home` lane: the Supabase queries (`supabase/client`) and
+   realtime channels (`supabase/realtime` `realtimeChannel`/`removeRealtimeChannel`) on the native client; query-cache
+   persistence (`query-persist` `persistQueryCacheNow`) via the native TanStack persister or an explicit no-op where
+   the native app has none; post-attachment resolution (`post-attachment` `attachedRefOf`, pure); the session
+   (`AuthProvider`) and the language filter (`LanguageContext`) from the native providers; toasts (`i18n-toast` `t`)
+   through the native i18n; feed preferences (`newsFeedPreferencesStore`) as a native store; matches
+   (`useRealMatches`) and the longevity feed (`useNewsFeed` `useLongevityNewsFeed`) as native hooks; the gateway calls
+   (`gateway-base` `GATEWAY_API_URL`) through the native gateway port; and the new-member greeting state
+   (`new-member-greeted` `fetchGreetedMemberIds`) and `community-intro` `COMMUNITY_INTRO_COLUMN`. Imports verified at
+   `useAllNewsFeed.ts:15-24` and `useNewsFeed.ts:9-15`. This is the largest part of the `home` lane and is sized as
+   such in its `tasks.md` section (task 2a). So the core extraction is two pure modules, with `core-closure --write`/`--check`
    passing and no class-B file reachable. (Supersedes both the earlier "one re-export line per module" and the
    over-scoped "transitive modules each get a re-export PR" wording.) **The core-extraction work is owned by the
    `home` lane (R2-F1), no separate lane.** The home lane PR adds `packages/core/src/feed-compose.ts` and

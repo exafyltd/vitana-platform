@@ -12,13 +12,17 @@ Ports: `HOME.OVERVIEW /home`, `HOME.NEWS_ALL /home?tab=all`, `HOME.NEWS_COMMUNIT
 `/home/compose`, `/home/comments`, `/home/notif` (8 ledger rows under `"lane": "home-feed"`). depends_on: `news`
 (for the `NewsArticleCard` native twin, design §2b/decision 3). Web source `src/pages/Home.tsx` (970 lines).
 
-- [ ] 1. Re-export the feed-composition and feed-hook modules through `@vitana/core`: add manifest lines for
-  `src/lib/feed-compose.ts`, `src/lib/news-feed-ranker.ts`, `src/hooks/useNewsFeed.ts`,
-  `src/hooks/useAllNewsFeed.ts`, `src/hooks/useEnrichmentCards.ts` and `src/components/vitana/vitana-card-catalog.ts`
-  (only the pure/class-A ones; a DOM-coupled one gets a thin native-safe wrapper instead), each with a re-export in
-  `packages/core/src/**`, then `node scripts/native/core-closure.mjs --write`.
+- [ ] 1. Re-export the two pure feed modules through `@vitana/core` (plan decision 2): manifest lines and re-exports
+  in `packages/core/src/**` for `src/lib/feed-compose.ts` and `src/lib/news-feed-ranker.ts` only (the feed hooks are
+  re-implemented natively, task 2a), then `node scripts/native/core-closure.mjs --write`.
   Files: `packages/core/manifest.json`, `packages/core/src/**`, `packages/core/closure.generated.json`.
   Verify (repo root): `node scripts/native/core-closure.mjs --check` passes; `apps/mobile` → `npm run typecheck` green.
+- [ ] 2a. Native feed fetching (plan decision 2, s2 R1-F2): native twins of `useAllNewsFeed` / `useNewsFeed` in
+  `apps/mobile/src/screens/home/**` covering Supabase queries + realtime channels, query-cache persistence (or an
+  explicit no-op), `attachedRefOf`, session and language filter, toasts via native i18n, feed preferences, matches,
+  the longevity feed, gateway calls through the native port, and new-member greeting state; all fixture-tested.
+  Files: `apps/mobile/src/screens/home/**`, `apps/mobile/src/ports/**`.
+  Verify: `npm test` + `npm run typecheck` green.
 - [ ] 2. Native Home screen on the N3 shell: `apps/mobile/src/screens/home/HomeScreen.tsx` renders the composed
   `FeedItem[]` (from the core compose/rank modules) in a `FlatList` of `VCard`s, one native card component per item
   kind (article twin from the `news` lane via a port, community post, enrichment card, server card, new-member card),
