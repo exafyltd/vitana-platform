@@ -1,0 +1,44 @@
+# VTID-05364 commands (collab-handoff-check-fix/program-registry)
+Base: origin/main cf009eca8fe8c1bb4febb218fdb1a46deb6b4926. Session kiro-exafy-202610281324-f088.
+
+## Slug sources (git ls-tree -d --name-only <rev> .kiro/specs/), 2026-10-28T14:00Z
+native-wave2-home-feed-news         main cf009eca8f
+desktop-spotlight-finish            main cf009eca8f
+sparring-floor-retry                main cf009eca8f
+native-wave2-role-modes             #4434 c682795303f48e75dd72eb63df745b01752f2ae1 (open)
+native-wave2-ai-pages               #4430 6cd250fd2dca491c408b4ae3d1276ac3077063c7 (open)
+native-wave2-sharing-business       #4349 0692d94de99b69522ebd3c4afca144fe9461136b (open)
+native-wave2-wallet                 #4332 6d3ea21ccfb55838d2da3bfb6c9d5a251a405cb8 (open)
+native-wave2-memory-diary           #4322 33389664dfbc745b447d84f444acc491eb2d95a0 (open)
+native-wave2-profile-settings       #4278 dfe860fd4d5545a01946571be264094fa6758bf8 (open)
+native-wave2-discover-commerce      #4276 7f174b068566e21c2ff5606b8d6a1313104dcd10 (open)
+native-wave2-public-auth-onboarding #4275 1670272e143f4870d75d16b5f0c038044991b04a (open)
+native-wave2-events-calendar        #4271 d0479b2c8932c5153592be7d3bfb6faad6a8145a (open)
+i18n-propagate-stale-write          #4157 aa90dbe45b3b89f0fc7e03aea6311e50256b8e2a (open)
+native-wave2-inbox-chat-calls       #4269 f9dec05b8634fa4b38bb07f4a3bd011825095fe6 (closed; named by plan.md item 5)
+native-wave2-journey-autopilot      #4270 f982bfab59d95c8c8cb91083f7143ce26670c303 (closed; named by plan.md item 5)
+native-wave2-health-biology         #4272 593d9736f43b1f2c3f1ac991e5f6acac78432909 (closed; named by plan.md item 5)
+P2 re-check of open native-wave2-* plan PRs at build time: the list above (#4434 role-modes is new since the plan and is
+included, plan item 5 "every native-wave2-* spec ... with an open plan( PR"). No spec above is listed by another
+programme on main (git grep on docs/programs: no match).
+
+## P1 red on base
+node --test scripts/collab/program-registry.test.mjs   (HEAD = base)  → FAIL, see red-on-base.txt
+
+## P1 green on head (6f335c07c6)
+node --test scripts/collab/program-registry.test.mjs   → tests 4, pass 4, fail 0
+
+## Collab suite (Windows, linked worktree)
+node --test scripts/collab/*.test.mjs   → tests 225, pass 222, fail 3
+The 3 failures are Kiro Web / Windows-worktree tests and fail identically on base cf009eca8f
+(node --test scripts/collab/kiro-web-session.test.mjs scripts/collab/kiro-web-steering.test.mjs → 33 tests, 30 pass, 3 fail):
+  - kiro-web-session: parseCommand finds every push form with repo dir, branch and source
+  - kiro-web-session: from a linked worktree the workspace is the main checkout's parent, and worktrees are never taken as repos
+  - kiro-web-steering: case 6: the real checkout(s) generate a clean set
+CI (Linux) is the arbiter for those.
+
+## P3 — #4373's spec against the registry
+#4373 head 1aba8339d7d5b70375169c032ac23686b85420b6 (merged), touched spec .kiro/specs/native-wave2-home-feed-news
+validatePrograms + validateRegistry (programme part), registry at #4373's merge-base 3d3b4e6f17:
+  1 problem: .kiro/specs/native-wave2-home-feed-news: not listed by any docs/programs/<id>/program.md
+same check, registry at this lane's head: 0 problems
