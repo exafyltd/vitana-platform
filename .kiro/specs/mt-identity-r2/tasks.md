@@ -156,7 +156,8 @@ Allowed paths:
       `services/orb-memory-bridge.ts:66-71` `DEV_IDENTITY` (`DEV_TENANT_SLUG`, default `vitana`, registry-resolved).
       Resolve through `TenantContext` + the DB registry.
 - [ ] T3b Add `bySlug` + `getTenantIdBySlug(slug)` to `tenant-context.ts` (`loadTenantFlags()` `:70` builds only
-      `byId`). `dev-auth.ts:491` uses it (unknown slug → 400 with the live slug list; registry unavailable → 503).
+      `byId`); keyed by the lowercased slug, empty slugs skipped, input lowercased (contract shared with
+      `mt-packs-r2` `persona-pack`). `dev-auth.ts:491` uses it (unknown slug → 400 with the live slug list; registry unavailable → 503).
       `me.ts:270,408` use `(await getTenantMeta(id))?.slug ?? null`. Jest `mt-identity-tenant-slug-lookup.test.ts`:
       both directions round-trip, unknown → null.
 - [ ] T3c (R3-F1) `dev-auth.ts:364`: resolve the tenant as the body's `tenant_id`, then `DEV_TENANT_ID`, then

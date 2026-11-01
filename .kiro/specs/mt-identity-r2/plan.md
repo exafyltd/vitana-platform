@@ -175,7 +175,9 @@ purpose (owner D14) and is not part of this spec.
    - (a) Remove the two four-entry slug maps (`me.ts:15`+`:23`, `dev-auth.ts:26`) and resolve through the DB
      registry instead.
      - Add a `bySlug` map in `loadTenantFlags()` (`tenant-context.ts:70`), built from the already-fetched `slug`
-       column, and export `getTenantIdBySlug(slug): Promise<string | null>`.
+       column, and export `getTenantIdBySlug(slug): Promise<string | null>`. Contract (also used by
+       `mt-packs-r2` `persona-pack`): the map is keyed by the lowercased slug, rows with an empty slug are skipped,
+       and `getTenantIdBySlug` lowercases its input; platform-tenant filtering is the caller's (`getTenantMeta`).
      - `dev-auth.ts:491` uses it. An unknown slug returns the same 400 with the live slug list; an unavailable
        registry returns 503.
      - `me.ts:270,408` use `(await getTenantMeta(id))?.slug ?? null`.
