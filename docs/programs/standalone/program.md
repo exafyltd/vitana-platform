@@ -59,6 +59,7 @@ specs:
   - vitana-platform:i18n-propagate-stale-write
   - vitana-platform:sparring-floor-retry
   - vitana-platform:ci-dockerhub-mirror
+  - vitana-platform:github-api-quota
 docs:
   - vitana-platform:.kiro/specs/pm-agent/plan-sparring.md
   - vitana-platform:.kiro/specs/claude-sessions-handover/handoff.md
