@@ -643,43 +643,6 @@ router.post('/rooms/:id/start', async (req: Request, res: Response) => {
     console.warn(`[VTID-01228] community_live_streams sync (start) failed: ${err.message}`);
   }
 
-  // Notify everyone who tapped "Notify me" on this scheduled session that it's now live.
-  // Audience comes from live_stream_subscribers (the persistent Notify list); titles/bodies
-  // are localized per-recipient via the gateway i18n catalog (PR #2269 server-side i18n rule).
-  try {
-    const credsN = getSupabaseCredentials();
-    if (credsN) {
-      const { createClient } = await import('@supabase/supabase-js');
-      const supaN = createClient(credsN.url, credsN.key);
-      let hostId = '';
-      try { hostId = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString()).sub; } catch {}
-
-      const { data: stream } = await repo.fetchLiveStreamTitleTenant(supaN, roomId);
-
-      const tenantId = (stream as any)?.tenant_id;
-      if (tenantId) {
-        const { data: subs } = await repo.fetchLiveStreamSubscribersExcluding(supaN, roomId, hostId);
-
-        const subscriberIds = [...new Set((subs || []).map((s: any) => s.user_id as string))];
-        if (subscriberIds.length > 0) {
-          const locales = await bulkGetUserLocales(supaN, subscriberIds);
-          const streamTitle = (stream as any)?.title || '';
-          for (const uid of subscriberIds) {
-            const lc = locales.get(uid);
-            notifyUserAsync(uid, tenantId, 'live_room_starting', {
-              title: tt('notif.live_going_live.title', lc),
-              body: tt('notif.live_going_live.body', lc, { title: streamTitle }),
-              data: { url: liveRoomViewUrl(roomId), room_id: roomId, entity_id: roomId },
-            }, supaN);
-          }
-          console.log(`[Notifications] live go-live fan-out → ${subscriberIds.length} subscriber(s) for ${roomId}`);
-        }
-      }
-    }
-  } catch (err: any) {
-    console.warn(`[Notifications] live go-live dispatch error: ${err.message}`);
-  }
-
   console.log(`[VTID-01090] Live room started: ${roomId}`);
 
   // VTID-03107: Surface session budget so the frontend SessionTimer can
@@ -1042,6 +1005,80 @@ const ENTER_ERROR_STATUS: Record<string, number> = {
 };
 
 /**
+ * Tells followers and "Notify me" subscribers that a room is live now.
+ * Call only when the session is actually running. Sending earlier makes the
+ * push say the room is starting or filling up while the viewer still gets
+ * NOT_LIVE when they tap it.
+ */
+async function notifyRoomWentLive(roomId: string, hostId: string, sessionTitle?: string): Promise<void> {
+  // Followers: members who attended an earlier session of this room.
+  // VTID-04905 (B9): live_room_attendance, catalog texts, room deep link.
+  try {
+    const creds2 = getSupabaseCredentials();
+    if (creds2) {
+      const { createClient } = await import('@supabase/supabase-js');
+      const supa = createClient(creds2.url, creds2.key);
+
+      // Look up room title and find followers (anyone who joined/RSVP'd)
+      const { data: room } = await repo.fetchLiveRoomTitleTenant(supa, roomId);
+
+      if (room?.tenant_id) {
+        const { data: followers, error: followersErr } = await repo.fetchLiveRoomAttendeesExcluding(supa, roomId, hostId);
+        if (followersErr) {
+          console.warn(`[Notifications] fetchLiveRoomAttendeesExcluding error (live_room_starting will not send): ${followersErr.message}`);
+        }
+
+        await notifyLiveRoomLocalized(
+          supa,
+          (followers || []).map((f: any) => f.user_id),
+          room.tenant_id,
+          'live_room_starting',
+          { title: 'notif.live_room_starting.title', body: 'notif.live_room_starting.body' },
+          roomId,
+          sessionTitle || room.title,
+        );
+      }
+    }
+  } catch (err: any) {
+    console.warn(`[Notifications] live_room_starting dispatch error: ${err.message}`);
+  }
+
+  // "Notify me" subscribers: audience from live_stream_subscribers; titles/bodies
+  // are localized per-recipient via the gateway i18n catalog (PR #2269 server-side i18n rule).
+  try {
+    const credsN = getSupabaseCredentials();
+    if (credsN) {
+      const { createClient } = await import('@supabase/supabase-js');
+      const supaN = createClient(credsN.url, credsN.key);
+
+      const { data: stream } = await repo.fetchLiveStreamTitleTenant(supaN, roomId);
+
+      const tenantId = (stream as any)?.tenant_id;
+      if (tenantId) {
+        const { data: subs } = await repo.fetchLiveStreamSubscribersExcluding(supaN, roomId, hostId);
+
+        const subscriberIds = [...new Set((subs || []).map((s: any) => s.user_id as string))];
+        if (subscriberIds.length > 0) {
+          const locales = await bulkGetUserLocales(supaN, subscriberIds);
+          const streamTitle = (stream as any)?.title || '';
+          for (const uid of subscriberIds) {
+            const lc = locales.get(uid);
+            notifyUserAsync(uid, tenantId, 'live_room_starting', {
+              title: tt('notif.live_going_live.title', lc),
+              body: tt('notif.live_going_live.body', lc, { title: streamTitle }),
+              data: { url: liveRoomViewUrl(roomId), room_id: roomId, entity_id: roomId },
+            }, supaN);
+          }
+          console.log(`[Notifications] live go-live fan-out → ${subscriberIds.length} subscriber(s) for ${roomId}`);
+        }
+      }
+    }
+  } catch (err: any) {
+    console.warn(`[Notifications] live go-live dispatch error: ${err.message}`);
+  }
+}
+
+/**
  * POST /rooms/:id/enter -> POST /api/v1/live/rooms/:id/enter
  *
  * VTID-04905 (B5/B6): the only way into a live room's video.
@@ -1097,6 +1134,8 @@ router.post('/rooms/:id/enter', requireAuth, async (req: Request, res: Response)
         return res.status(code).json({ ok: false, error: started.error, message: started.message });
       }
       await syncListingLive(roomId);
+      // The room is live now: this is the moment followers should hear about it.
+      await notifyRoomWentLive(roomId, identity.user_id);
       stateResult = await sessionManager.getState(roomId, token);
       if (!stateResult.ok || !stateResult.data?.room || !stateResult.data?.session) {
         return res.status(502).json({ ok: false, error: stateResult.error || 'STATE_RELOAD_FAILED' });
@@ -2033,39 +2072,12 @@ router.post('/rooms/:id/sessions', optionalAuth, sessionCreateLimiter, async (re
 
   console.log(`[VTID-01228] Session created: ${result.sessionId} (${result.status})`);
 
-  // Notify room followers that the room is going live
-  try {
-    const creds2 = getSupabaseCredentials();
-    if (creds2) {
-      const { createClient } = await import('@supabase/supabase-js');
-      const supa = createClient(creds2.url, creds2.key);
-      let hostId = '';
-      try { hostId = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString()).sub; } catch {}
-
-      // Look up room title and find followers (anyone who joined/RSVP'd)
-      const { data: room } = await repo.fetchLiveRoomTitleTenant(supa, roomId);
-
-      if (room?.tenant_id) {
-        // Members who attended an earlier session of this room (followers).
-        // VTID-04905 (B9): live_room_attendance, catalog texts, room deep link.
-        const { data: followers, error: followersErr } = await repo.fetchLiveRoomAttendeesExcluding(supa, roomId, hostId);
-        if (followersErr) {
-          console.warn(`[Notifications] fetchLiveRoomAttendeesExcluding error (live_room_starting will not send): ${followersErr.message}`);
-        }
-
-        await notifyLiveRoomLocalized(
-          supa,
-          (followers || []).map((f: any) => f.user_id),
-          room.tenant_id,
-          'live_room_starting',
-          { title: 'notif.live_room_starting.title', body: 'notif.live_room_starting.body' },
-          roomId,
-          validation.data.session_title || room.title,
-        );
-      }
-    }
-  } catch (err: any) {
-    console.warn(`[Notifications] live_room_starting dispatch error: ${err.message}`);
+  // Notify followers and "Notify me" subscribers only when the room is actually running.
+  // A scheduled session sends them later, when the host starts it (see /rooms/:id/enter).
+  if (result.status !== 'scheduled') {
+    let hostId = '';
+    try { hostId = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString()).sub; } catch {}
+    await notifyRoomWentLive(roomId, hostId, validation.data.session_title);
   }
 
   // VTID-01228: Sync to community_live_streams so other users see this room in the listing.

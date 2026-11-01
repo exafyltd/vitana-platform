@@ -19,7 +19,9 @@ has E1–E11 = false (eligible), never absent. The rules are the shared pure `co
 TEST: services/gateway/test/vtid-05367-companion-enrichment-signals.test.ts
 
 AC-3 The seam never throws (R2-F2): every read is in `Promise.allSettled`; a failed source is named in the tick result's
-new `enrichment_unavailable` field (kept apart from `signals_unavailable`) and the tick continues.
+new `enrichment_unavailable` field (kept apart from `signals_unavailable`) and the tick continues. On ANY failed source
+no member gets enrichment state that tick (empty maps), so unknown state can never look "not done" and no enrichment
+card is offered; the other moments run as usual.
 TEST: services/gateway/test/vtid-05367-companion-enrichment-signals.test.ts
 
 AC-4 The tick computes `eligibleEnrichmentCardTypes` per member with the real tick `now` (R3-F1) through

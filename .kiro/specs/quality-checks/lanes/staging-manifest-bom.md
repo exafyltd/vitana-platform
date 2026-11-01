@@ -1,6 +1,6 @@
 ---
 lane: staging-manifest-bom
-state: executing
+state: done
 next_actor: kiro
 claimed_by: kiro-jtadic-202610271220-68a5
 branch: kiro/quality-checks/staging-manifest-bom
@@ -16,7 +16,8 @@ paths:
   - scripts/ci/staging-verify/run.mjs
   - scripts/ci/staging-verify/lib.test.cjs
   - docs/validation/VTID-*/**
-updated: 2026-10-27T13:03Z
+pr: https://github.com/exafyltd/vitana-platform/pull/4408
+updated: 2026-10-28T12:02Z
 vtid: VTID-05347
 ---
 # Lane: staging-manifest-bom (repo vitana-platform)
@@ -52,3 +53,12 @@ PR: https://github.com/exafyltd/vitana-platform/pull/4408
 Findings: none blocking.
 Stored by the land step (parent session kiro-ide-202610272306-27b0) on the agent's behalf (`lane-land.md` step 2); the review ran as a separate read-only agent session.
 Next: the land step merges under collaboration.md §7b once the required checks are green on the up-to-date head.
+
+### 2026-10-28T11:30Z · kiro-jtadic-202610271220-68a5 · executing → in-review
+PR #4408 in review. Self-review `changes` on `84a0f749`; accepted on `0f24a3b4` by `agent-vitana-lane-reviewer-202610280846-2934`, requested by `kiro-ide-202610272306-27b0`.
+
+### 2026-10-28T11:50Z · kiro-jtadic-202610271220-68a5 · in-review → verified
+Accepted on `0f24a3b4`; every required check green on `3c8e062f`; squash-merged `28aaab23` (#4408). Deploys nothing: verified by its tests (88/88) and by STAGING-TESTS-REQUIRED `check-pr` on every later PR.
+
+### 2026-10-28T12:02Z · kiro-jtadic-202610271220-68a5 · verified → done
+Merged and verified; nothing deploys (plan §3). Done.

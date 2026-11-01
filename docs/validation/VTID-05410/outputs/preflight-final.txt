@@ -1,0 +1,15 @@
+# preflight on head 640807e6ffa15cd62754eaf1da6953378f2f4aaf (the evidence commit; this file is committed in the follow-up commit), exit 0
+$ node scripts/collab/preflight.mjs --repo /projects/sandbox/vitana-platform --base origin/main --head HEAD --branch kiro/say-hello-lane-reassign/reassign --title 'VTID-05410 (say-hello-lane-reassign/reassign): reassign say-hello-composer to seat jtadic via lane_admin'
+preflight vitana-platform /projects/sandbox/vitana-platform
+  base 4de4e62c2849fa31fafc6c7e271fc9fb0fdf947b  head 640807e6ffa15cd62754eaf1da6953378f2f4aaf  branch kiro/say-hello-lane-reassign/reassign
+
+PASS  Collab tests [required]
+PASS  Collab handoff [required]
+PASS  Lane scope [required]
+PASS  PR-GATE scope [report-only in CI (until config.enforce=true)]
+PASS  PR-GATE sparring [report-only in CI (until config.enforce=true)]
+PASS  PR-GATE weakening [report-only in CI (until config.enforce=true)]
+PASS  PR-GATE red-green [report-only in CI (until config.enforce=true)]
+PASS  Kiro steering [report-only in CI (until config.enforce=true)]
+
+preflight: every check passed
