@@ -1,0 +1,160 @@
+Γ£ö evidence: missing files are named; committed or staged files count (6.9057ms)
+Γ£ö review: same head counts; entry-only commits after it count; a code commit does not (2.2464ms)
+Γ£ö checks: latest attempt per name decides; pending and empty never pass (1.0744ms)
+Γ£ö merge: refuses on a stale review, red or pending checks, or a PR behind its base (0.6917ms)
+Γ£ö merge: protected gate files are detected with queue.mjs glob semantics (1.9176ms)
+Γ£ö release: a lane only when done/parked; _plan only when the plan and every lane are (0.9841ms)
+Γ£ö CLI: release of a verified lane exits 1 and leaves the claim ref in place (15135.0269ms)
+Γ£ö CLI: evidence passes on this repository for a VTID whose evidence is committed (no buffer overflow on a large tree) (7084.7253ms)
+Γ£ö review: with the lane key only that lane file (and its handoff for pm-agent) counts (1.0098ms)
+Γ£ö checks: a queued re-run without started_at keeps the check pending (0.7314ms)
+Γ£ö CLI: release of a done lane exits 0 and frees the claim; a staged deletion is not evidence (29534.567ms)
+Γ£û mergeKeepsReview: each condition is checked and named (1.9521ms)
+Γ£û reviewCurrent: a merge commit counts only when it keeps the review and the PR diff is the same (4.2638ms)
+Γ£û local walk (a): a clean merge of main that leaves the PR diff unchanged keeps the review (23572.2251ms)
+Γ£û local walk (b): main changes a PR file without conflict ΓåÆ refused, the PR diff changed (16704.1542ms)
+Γ£û local walk (c): a conflict resolved by hand ΓåÆ refused, not Git's automatic merge (12956.7799ms)
+Γ£û local walk (d): a clean merge with an extra edit in the merge commit ΓåÆ refused, tree differs (17335.4321ms)
+Γ£û local walk (e/e2): a merge that brings in a protected gate file or a governance path ΓåÆ refused (17153.5468ms)
+Γ£û local walk (f): a merge of a branch that is not on main ΓåÆ refused (11081.7716ms)
+Γ£û local walk (g): the PR rebased onto main after the review ΓåÆ refused, not an ancestor (18565.2879ms)
+Γ£û local walk (h): a clean merge then a review entry keeps the review; a later code commit voids it (13865.2485ms)
+∩╣ú CLI (j): review --repo walks the local checkout and checks the origin URL (2.1398ms) # stub gh needs a POSIX shebang
+Γä╣ tests 22
+Γä╣ suites 0
+Γä╣ pass 11
+Γä╣ fail 10
+Γä╣ cancelled 0
+Γä╣ skipped 1
+Γä╣ todo 0
+Γä╣ duration_ms 183931.1781
+
+Γ£û failing tests:
+
+test at scripts\collab\land-guard.test.mjs:139:1
+Γ£û mergeKeepsReview: each condition is checked and named (1.9521ms)
+  TypeError: lg.mergeKeepsReview is not a function
+      at TestContext.<anonymous> (file:///C:/Users/dstev/vitana-platform-1/.worktrees/rsm-lgm3/scripts/collab/land-guard.test.mjs:141:19)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1106:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:788:18)
+      at Test.postRun (node:internal/test_runner/test:1235:19)
+      at Test.run (node:internal/test_runner/test:1163:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7)
+
+test at scripts\collab\land-guard.test.mjs:150:1
+Γ£û reviewCurrent: a merge commit counts only when it keeps the review and the PR diff is the same (4.2638ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  false !== true
+  
+      at TestContext.<anonymous> (file:///C:/Users/dstev/vitana-platform-1/.worktrees/rsm-lgm3/scripts/collab/land-guard.test.mjs:154:10)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1106:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:788:18)
+      at Test.postRun (node:internal/test_runner/test:1235:19)
+      at Test.run (node:internal/test_runner/test:1163:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at scripts\collab\land-guard.test.mjs:191:1
+Γ£û local walk (a): a clean merge of main that leaves the PR diff unchanged keeps the review (23572.2251ms)
+  TypeError: lg.localAfter is not a function
+      at Object.check (file:///C:/Users/dstev/vitana-platform-1/.worktrees/rsm-lgm3/scripts/collab/land-guard.test.mjs:188:69)
+      at TestContext.<anonymous> (file:///C:/Users/dstev/vitana-platform-1/.worktrees/rsm-lgm3/scripts/collab/land-guard.test.mjs:195:15)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1106:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:788:18)
+      at Test.postRun (node:internal/test_runner/test:1235:19)
+      at Test.run (node:internal/test_runner/test:1163:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7)
+
+test at scripts\collab\land-guard.test.mjs:198:1
+Γ£û local walk (b): main changes a PR file without conflict ΓåÆ refused, the PR diff changed (16704.1542ms)
+  TypeError: lg.localAfter is not a function
+      at Object.check (file:///C:/Users/dstev/vitana-platform-1/.worktrees/rsm-lgm3/scripts/collab/land-guard.test.mjs:188:69)
+      at TestContext.<anonymous> (file:///C:/Users/dstev/vitana-platform-1/.worktrees/rsm-lgm3/scripts/collab/land-guard.test.mjs:202:15)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1106:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:788:18)
+      at Test.postRun (node:internal/test_runner/test:1235:19)
+      at Test.run (node:internal/test_runner/test:1163:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7)
+
+test at scripts\collab\land-guard.test.mjs:206:1
+Γ£û local walk (c): a conflict resolved by hand ΓåÆ refused, not Git's automatic merge (12956.7799ms)
+  TypeError: lg.localAfter is not a function
+      at Object.check (file:///C:/Users/dstev/vitana-platform-1/.worktrees/rsm-lgm3/scripts/collab/land-guard.test.mjs:188:69)
+      at TestContext.<anonymous> (file:///C:/Users/dstev/vitana-platform-1/.worktrees/rsm-lgm3/scripts/collab/land-guard.test.mjs:212:15)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1106:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:788:18)
+      at Test.postRun (node:internal/test_runner/test:1235:19)
+      at Test.run (node:internal/test_runner/test:1163:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7)
+
+test at scripts\collab\land-guard.test.mjs:216:1
+Γ£û local walk (d): a clean merge with an extra edit in the merge commit ΓåÆ refused, tree differs (17335.4321ms)
+  TypeError: lg.localAfter is not a function
+      at Object.check (file:///C:/Users/dstev/vitana-platform-1/.worktrees/rsm-lgm3/scripts/collab/land-guard.test.mjs:188:69)
+      at TestContext.<anonymous> (file:///C:/Users/dstev/vitana-platform-1/.worktrees/rsm-lgm3/scripts/collab/land-guard.test.mjs:222:15)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1106:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:788:18)
+      at Test.postRun (node:internal/test_runner/test:1235:19)
+      at Test.run (node:internal/test_runner/test:1163:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7)
+
+test at scripts\collab\land-guard.test.mjs:226:1
+Γ£û local walk (e/e2): a merge that brings in a protected gate file or a governance path ΓåÆ refused (17153.5468ms)
+  TypeError: lg.localAfter is not a function
+      at Object.check (file:///C:/Users/dstev/vitana-platform-1/.worktrees/rsm-lgm3/scripts/collab/land-guard.test.mjs:188:69)
+      at TestContext.<anonymous> (file:///C:/Users/dstev/vitana-platform-1/.worktrees/rsm-lgm3/scripts/collab/land-guard.test.mjs:231:17)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1106:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:788:18)
+      at Test.postRun (node:internal/test_runner/test:1235:19)
+      at Test.run (node:internal/test_runner/test:1163:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7)
+
+test at scripts\collab\land-guard.test.mjs:236:1
+Γ£û local walk (f): a merge of a branch that is not on main ΓåÆ refused (11081.7716ms)
+  TypeError: lg.localAfter is not a function
+      at Object.check (file:///C:/Users/dstev/vitana-platform-1/.worktrees/rsm-lgm3/scripts/collab/land-guard.test.mjs:188:69)
+      at TestContext.<anonymous> (file:///C:/Users/dstev/vitana-platform-1/.worktrees/rsm-lgm3/scripts/collab/land-guard.test.mjs:243:15)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1106:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:788:18)
+      at Test.postRun (node:internal/test_runner/test:1235:19)
+      at Test.run (node:internal/test_runner/test:1163:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7)
+
+test at scripts\collab\land-guard.test.mjs:247:1
+Γ£û local walk (g): the PR rebased onto main after the review ΓåÆ refused, not an ancestor (18565.2879ms)
+  TypeError: lg.localAfter is not a function
+      at Object.check (file:///C:/Users/dstev/vitana-platform-1/.worktrees/rsm-lgm3/scripts/collab/land-guard.test.mjs:188:69)
+      at TestContext.<anonymous> (file:///C:/Users/dstev/vitana-platform-1/.worktrees/rsm-lgm3/scripts/collab/land-guard.test.mjs:251:15)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1106:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:788:18)
+      at Test.postRun (node:internal/test_runner/test:1235:19)
+      at Test.run (node:internal/test_runner/test:1163:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7)
+
+test at scripts\collab\land-guard.test.mjs:255:1
+Γ£û local walk (h): a clean merge then a review entry keeps the review; a later code commit voids it (13865.2485ms)
+  TypeError: lg.localAfter is not a function
+      at Object.check (file:///C:/Users/dstev/vitana-platform-1/.worktrees/rsm-lgm3/scripts/collab/land-guard.test.mjs:188:69)
+      at TestContext.<anonymous> (file:///C:/Users/dstev/vitana-platform-1/.worktrees/rsm-lgm3/scripts/collab/land-guard.test.mjs:261:16)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1106:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:788:18)
+      at Test.postRun (node:internal/test_runner/test:1235:19)
+      at Test.run (node:internal/test_runner/test:1163:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7)
