@@ -3,7 +3,7 @@ lane: gateway-scope-lint-contract
 state: ready
 next_actor: kiro
 executor: kiro
-seat: jtadic
+seat: exafyltd
 reviewer_seat: agent:vitana-lane-reviewer
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 depends_on: [generated-inventories]
@@ -13,7 +13,7 @@ paths:
   - services/gateway/test/mt-route-inventory.test.ts
   - services/gateway/test/mt-contract-canary.test.ts
   - services/gateway/test/mt/**
-updated: 2026-11-01T17:06Z
+updated: 2026-11-01T21:40Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05444
 ---
@@ -42,3 +42,5 @@ Lane created with the re-plan `mt-guardrails-r2` (carried from `mt-guardrails`).
 
 ### 2026-11-01T17:06Z · ci-plan-spar · ready (VTID allocated)
 VTID-05444 allocated after policy approval (converged-auto-v1).
+### 2026-11-01T21:40Z · pm-agent · update
+reassign lane jtadic→exafyltd (stale_ready, Claude unavailable)
