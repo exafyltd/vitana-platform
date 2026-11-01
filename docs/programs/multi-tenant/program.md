@@ -8,6 +8,7 @@ specs:
   - vitana-platform:multi-tenant
   - vitana-platform:mt-jobs
   - vitana-platform:mt-launch
+  - vitana-platform:mt-track-s-r2
   - vitana-platform:mt-guardrails-r2
 docs:
   - vitana-platform:docs/MULTI-TENANT-PLAN.md
