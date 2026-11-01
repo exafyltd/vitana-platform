@@ -39,11 +39,47 @@ function setKey(fm: string, key: string, value: string | null): string {
   return `${fm}\n${key}: ${value}`;
 }
 
+function fmKey(fm: string, key: string): string | undefined {
+  return new RegExp(`^${key}:\\s*(.*)$`, 'm').exec(fm)?.[1]?.trim();
+}
+
+const mapActor = (a: string) => (LANE_ACTORS.includes(a) ? a : 'kiro');
+
+/**
+ * VTID-05414: true when `text` already has everything `change` would set — the
+ * front-matter keys (`state`, mapped `next_actor`, `seat`, `claimed_by` on
+ * `release_claim`) and, as the newest log entry's body, `change.log`. Never
+ * compares `updated:` or the log heading timestamp. Pure; runs before
+ * `applyLaneChange`.
+ */
+export function laneChangeIsNoop(text: string, change: LaneFileChange): boolean {
+  const m = FM_RE.exec(text);
+  if (!m) return false;
+  const fm = m[1].replace(/\r/g, '');
+  if (change.state !== undefined && change.state !== (fmKey(fm, 'state') ?? '')) return false;
+  if (change.next_actor && mapActor(change.next_actor) !== fmKey(fm, 'next_actor')) return false;
+  if (change.seat !== undefined && change.seat !== fmKey(fm, 'seat')) return false;
+  if (change.release_claim && fmKey(fm, 'claimed_by') !== undefined) return false;
+  const rest = text.slice(m[0].length).replace(/\r/g, '');
+  const at = rest.lastIndexOf('\n### ');
+  if (at < 0) return false;
+  const entry = rest.slice(at + 1);
+  const nl = entry.indexOf('\n');
+  const body = nl < 0 ? '' : entry.slice(nl + 1);
+  return body.trim() === change.log.trim();
+}
+
 /** Apply a PM lane change to a lane file's text (pure). */
 export function applyLaneChange(text: string, change: LaneFileChange, nowIso: string): string {
   const m = FM_RE.exec(text);
   if (!m) throw new Error(`lane file ${change.slug}/${change.lane} has no front matter`);
   let fm = m[1].replace(/\r/g, '');
+  // VTID-05414: never introduce seat == reviewer_seat (queue.mjs validateLane rejects it). A
+  // lane that already has it still takes other PM writes.
+  const reviewerSeat = fmKey(fm, 'reviewer_seat');
+  if (change.seat !== undefined && change.seat !== fmKey(fm, 'seat') && reviewerSeat && change.seat === reviewerSeat) {
+    throw new Error('invalid lane change: seat equals reviewer_seat');
+  }
   const oldState = /^state:\s*(.*)$/m.exec(fm)?.[1]?.trim() ?? '';
   if (change.state !== undefined && change.state !== oldState) {
     fm = setKey(fm, 'state', change.state);
@@ -51,7 +87,7 @@ export function applyLaneChange(text: string, change: LaneFileChange, nowIso: st
   }
   // A lane's next_actor is claude|kiro|owner (queue.mjs validateLane); a seat
   // (e.g. the exceptions seat) is a Kiro actor — the seat itself goes in `seat`.
-  if (change.next_actor) fm = setKey(fm, 'next_actor', LANE_ACTORS.includes(change.next_actor) ? change.next_actor : 'kiro');
+  if (change.next_actor) fm = setKey(fm, 'next_actor', mapActor(change.next_actor));
   if (change.seat !== undefined) fm = setKey(fm, 'seat', change.seat);
   if (change.release_claim) fm = setKey(fm, 'claimed_by', null);
   fm = setKey(fm, 'updated', isoMinute(nowIso));
@@ -88,7 +124,7 @@ export class GithubRepoFileWriter implements LaneFileWriter {
     return new Date((this.opts.now ?? Date.now)()).toISOString();
   }
 
-  async write(change: LaneFileChange): Promise<void> {
+  async write(change: LaneFileChange): Promise<'written' | 'noop'> {
     const repo = change.repo ?? PLATFORM;
     const path = laneFilePath(change.slug, change.lane);
     if (change.target === 'pr_branch') {
@@ -97,16 +133,24 @@ export class GithubRepoFileWriter implements LaneFileWriter {
       const head = await this.client.pullHead(repo, n);
       const cur = await this.client.file(repo, path, head.ref);
       if (!cur) throw new Error(`${path} not on ${head.ref}`);
+      if (laneChangeIsNoop(cur.text, change)) return 'noop';
       const next = applyLaneChange(cur.text, change, this.nowIso());
       await this.client.put(repo, path, head.ref, next, cur.sha, commitMessage(`pm: ${change.slug}/${change.lane} ${change.state ?? 'update'}`, `${change.slug}/${change.lane}`));
-      return;
+      return 'written';
     }
-    const branch = await this.ensureBookkeepingBranch(repo, change.slug);
-    const cur = await this.client.file(repo, path, branch);
-    if (!cur) throw new Error(`${path} not on ${branch}`);
+    // VTID-05414: read the bookkeeping branch when it exists (else main) and decide the
+    // no-op before any ref, commit or PR is created.
+    const branch = `pm-agent/${change.slug}`;
+    const exists = (await this.client.refSha(repo, branch)) != null;
+    const ref = exists ? branch : 'main';
+    const cur = await this.client.file(repo, path, ref);
+    if (!cur) throw new Error(`${path} not on ${ref}`);
+    if (laneChangeIsNoop(cur.text, change)) return 'noop';
     const next = applyLaneChange(cur.text, change, this.nowIso());
+    if (!exists) await this.ensureBookkeepingBranch(repo, change.slug);
     await this.client.put(repo, path, branch, next, cur.sha, commitMessage(`pm: ${change.slug}/${change.lane} ${change.state ?? 'update'}`, `${change.slug}/_plan`));
     await this.ensureBookkeepingPull(repo, change.slug, branch);
+    return 'written';
   }
 
   /** W2 for a non-lane file (e.g. `docs/validation/<plan VTID>/timings.json`). */

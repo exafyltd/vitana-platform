@@ -1,7 +1,9 @@
 ---
 lane: reassign-noop-r3
-state: ready
+state: executing
 next_actor: kiro
+claimed_by: kiro-exafyltd-202610312303-3dad
+branch: kiro/pm-reassign-idempotent-r3/reassign-noop-r3
 depends_on: []
 executor: kiro
 seat: exafyltd
@@ -18,7 +20,7 @@ paths:
   - .github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml
   - services/gateway/src/services/conversation/conversation-flag-pins.generated.ts
   - docs/validation/VTID-*/**
-updated: 2026-11-01T01:13Z
+updated: 2026-11-01T04:30Z
 vtid: VTID-05421
 ---
 # reassign-noop-r3 — idempotent PM stale-review reassignment (re-plan, generated pins file in paths)
@@ -32,3 +34,8 @@ Lane created with the plan.
 
 ### 2026-11-01T01:13Z · ci-plan-spar · ready (VTID allocated)
 VTID-05421 allocated after policy approval (converged-auto-v1).
+
+### 2026-11-01T04:30Z · kiro-exafyltd-202610312303-3dad · ready → executing
+Claimed. Code moved from #4532 (r2, VTID-05414, same content; red on base 11 failed, green on head 220/220, recorded
+there); pins file regenerated (one line, `PM_AGENT_ENABLED` staging `"false"`); the flag registry pins test passes.
+Evidence in `docs/validation/VTID-05421/`.
