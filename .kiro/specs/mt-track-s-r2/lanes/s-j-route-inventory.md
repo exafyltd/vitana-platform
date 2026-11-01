@@ -4,7 +4,7 @@ state: ready
 next_actor: kiro
 depends_on: []
 executor: kiro
-seat: hotmail
+seat: exafyltd
 reviewer_seat: agent:vitana-lane-reviewer
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 repos: [exafyltd/vitana-v1]
@@ -15,7 +15,7 @@ paths:
   - scripts/check-edge-function-auth.mjs
   - package.json
   - docs/validation/**
-updated: 2026-11-01T16:59Z
+updated: 2026-11-01T21:12Z
 vtid: VTID-05442
 ---
 # Lane: s-j-route-inventory (repo vitana-v1)
@@ -28,3 +28,5 @@ Lane created with the plan.
 
 ### 2026-11-01T16:59Z · ci-plan-spar · ready (VTID allocated)
 VTID-05442 allocated after policy approval (converged-auto-v1).
+### 2026-11-01T21:12Z · pm-agent · update
+reassign lane hotmail→exafyltd (stale_ready, Claude unavailable)
