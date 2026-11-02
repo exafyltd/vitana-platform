@@ -15,7 +15,10 @@ vitana-v1 PR jobs waited a median of 90 to 100 minutes for a runner. This plan a
 `cancel-in-progress` to the PR-triggered workflows that lack one, so a newer push cancels the older run of the same PR.
 
 ## Today (file:line evidence on origin/main)
-- Platform: 37 of 45 PR-triggered workflows have no `concurrency:` block (the gates `PHASE-2B-NAMING-ENFORCEMENT`,
+- Platform: 38 of 45 PR-triggered workflows have no `concurrency:` block. The earlier count of 37 missed
+  `ENFORCE-FRONTEND-CANONICAL-SOURCE`, whose `on:` is list-form. Seven have a block already, including `UNIT.yml`,
+  `TEST-SUITE.yml` and `PHASE-2B-DOC-GATE.yml` (added by VTID-05353), which this plan does not touch (R1-F2). The gates
+  without a block include `PHASE-2B-NAMING-ENFORCEMENT`,
   `STAGING-TESTS-REQUIRED`, `ENFORCE-FRONTEND-CANONICAL-SOURCE`, `VALIDATOR-CHECK`, 21 `SQL-*`, and others).
 - v1: 6 of 11 PR-triggered workflows have none (`i18n-check.yml`, `STAGING-TESTS-REQUIRED.yml`, 4 `SQL-*`).
 - `PR-GATE.yml` in both repos already has `cancel-in-progress: true` per PR and is not changed here.
@@ -53,6 +56,10 @@ whose `headSha` is no longer an open PR head), and queue-to-start time of PR-GAT
 VALIDATOR-CHECK and UNIT-TESTS, sampled from `gh api repos/.../actions/runs/<id>/jobs` (`created_at` to `started_at`).
 
 ## Risks
+- Push-triggered runs to feature branches still queue. `VCAOP-CICD.yml` and `VCAOP-GUARDRAILS-CI.yml` run on pushes
+  to `claude/**` and `feature/vcaop`. The block sets `cancel-in-progress` only for `pull_request` events, so rapid
+  pushes to those branches do not cancel each other. This is deliberate: a push-triggered run can be a main-branch or
+  manual run that must finish (R1-F3).
 - A cancelled superseded run reports nothing for its old SHA. The newest run for the PR reports the required check
   name, so the merge gate still sees one result per check on the head.
 - A required check that is cancelled mid-run and not re-created would block a merge. The group key is per PR and the

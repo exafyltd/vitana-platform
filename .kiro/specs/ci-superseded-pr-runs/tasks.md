@@ -22,7 +22,8 @@ Acceptance:
 <!-- lane: platform-superseded-concurrency -->
 Repo `exafyltd/vitana-platform`. Code starts only after the VTID is allocated.
 - [ ] T1 Add the concurrency block (plan § Change 1) to the 38 PR-triggered workflows listed in the lane file.
-      `PR-GATE.yml`, `PLAN-SPAR.yml` and `AWS-PROD-*.yml` are not touched.
+      `PR-GATE.yml`, `PLAN-SPAR.yml`, `AWS-PROD-*.yml`, and the three that already have a block (`UNIT.yml`,
+      `TEST-SUITE.yml`, `PHASE-2B-DOC-GATE.yml`) are not touched.
 - [ ] T2 Check every changed file: `on:` unchanged, one `concurrency:` block, names/jobs/steps byte-identical.
 - [ ] T3 Run the `scripts/collab` Node tests; save output to `docs/validation/<VTID>/commands.log`.
 - [ ] T4 `docs/validation/<VTID>/staging-tests.json`: one `kind: "existing"` test with a `ref` the validator accepts.
