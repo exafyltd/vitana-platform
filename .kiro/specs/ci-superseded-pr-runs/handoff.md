@@ -4,9 +4,10 @@ author: kiro
 author_seat: exafyltd
 executor: kiro
 next_actor: kiro
-state: drafted
-updated: 2026-11-02T15:10Z
-vtids: []
+state: approved
+updated: 2026-11-02T16:31Z
+vtids: [VTID-05513, VTID-05514]
+sparring_record: .kiro/specs/ci-superseded-pr-runs/sparring/verdict.md
 ---
 # Handoff — ci-superseded-pr-runs
 
@@ -20,3 +21,6 @@ platform commit `f0a213e490`. Lane commits are rebuilt with the lane trailers af
 ## Log
 ### 2026-11-02T15:10Z · kiro-exafyltd-202611021510-092e · drafted
 Written on the owner's approval (2 Nov 2026) to cancel superseded PR runs. Protected gate files are excluded.
+
+### 2026-11-02T16:31Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 2 lane(s) got a VTID and are handed to Kiro.

@@ -49,7 +49,8 @@ paths:
   - .github/workflows/VCAOP-GUARDRAILS-CI.yml
   - .github/workflows/VOICE-PIPELINE-PARITY-SCANNER.yml
   - .github/workflows/VOICE-TOOLS-MANIFEST-RECONCILE.yml
-updated: 2026-11-02T15:20Z
+updated: 2026-11-02T16:31Z
+vtid: VTID-05513
 ---
 
 # Lane: platform-superseded-concurrency (repo exafyltd/vitana-platform)
@@ -59,3 +60,6 @@ Adds the superseded-run concurrency block to 38 PR-triggered workflows in vitana
 ## Log
 ### 2026-11-02T15:20Z · kiro-exafyltd-202611021510-092e · ready
 Lane created with the plan. Paths are the exact files changed by the prepared commit.
+
+### 2026-11-02T16:31Z · ci-plan-spar · ready (VTID allocated)
+VTID-05513 allocated after policy approval (converged-auto-v1).
