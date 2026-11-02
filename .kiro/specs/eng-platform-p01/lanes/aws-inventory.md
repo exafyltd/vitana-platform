@@ -4,7 +4,7 @@ state: ready
 next_actor: kiro
 depends_on: []
 executor: kiro
-seat: exafy
+seat: exafyltd
 reviewer_seat: agent:vitana-lane-reviewer
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 repos: [exafyltd/vitana-platform]
@@ -12,7 +12,7 @@ paths:
   - scripts/aws/inventory-readonly.sh
   - services/gateway/test/eng-platform-inventory-readonly.test.ts
   - docs/validation/**
-updated: 2026-11-02T17:02Z
+updated: 2026-11-02T21:51Z
 vtid: VTID-05515
 ---
 # Lane: aws-inventory (repo vitana-platform)
@@ -24,3 +24,5 @@ Lane created with the plan.
 
 ### 2026-11-02T17:02Z · ci-plan-spar · ready (VTID allocated)
 VTID-05515 allocated after policy approval (converged-auto-v1).
+### 2026-11-02T21:51Z · pm-agent · update
+reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
