@@ -1,0 +1,7 @@
+# VTID-05367 companion-enrichment-signals — local only; no production, staging or database access of any kind
+# Head under test: 8b82860435 (reviewer accept at f281df85; lane-file-only commit on top)
+cd services/gateway && npx jest --runInBand test/vtid-05367-companion-enrichment-signals.test.ts test/vtid-05099-companion-messages.test.ts test/vtid-05099-proactive-match-daily-limit.test.ts test/vtid-05100-companion-delivery.test.ts test/vtid-05101-companion-generators.test.ts test/vtid-05171-companion-wiring.test.ts test/companion-qa.test.ts   # 7 suites, 168/169 passed; 1 jest 5000 ms timeout (cold app load), not an assertion — outputs/jest-companion.txt
+cd services/gateway && npx jest --runInBand test/vtid-05099-companion-messages.test.ts   # rerun alone: 33/33 passed — outputs/jest-companion.txt
+cd services/gateway && npx tsc --noEmit -p .   # 2 pre-existing TS2664 (server-timing.ts, latency-tracker.ts), 0 in touched files — outputs/tsc.txt
+node scripts/ci/validator-path-guard.cjs --pr-body-check <PR body>   # every required declaration present
+node scripts/ci/validator-path-guard.cjs <changed files> gateway_backend <PR body>   # APPROVED: 7 in-remit files
