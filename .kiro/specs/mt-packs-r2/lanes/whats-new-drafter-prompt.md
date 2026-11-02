@@ -9,8 +9,9 @@ reviewer_seat: agent:vitana-lane-reviewer
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 paths:
   - .github/workflows/WHATS-NEW-DRAFT.yml
-updated: 2026-11-01T15:40Z
+updated: 2026-11-02T16:24Z
 repos: [exafyltd/vitana-v1]
+vtid: VTID-05500
 ---
 # whats-new-drafter-prompt — brand-neutral What's New drafter prompt (repo vitana-v1) — mt-packs-r2
 
@@ -31,3 +32,6 @@ Rules (§7a): no VTID allocation, no merge outside §7b, no workflow dispatch, n
 ### 2026-11-01T15:40Z · kiro-hotmail-202611011452-6d16 · created → ready
 Re-plan of `mt-packs/whats-new-drafter-prompt`. The executor moves from claude to kiro under §3a, with the reviewer
 agent.
+
+### 2026-11-02T16:24Z · ci-plan-spar · ready (VTID allocated)
+VTID-05500 allocated after policy approval (converged-auto-v1).

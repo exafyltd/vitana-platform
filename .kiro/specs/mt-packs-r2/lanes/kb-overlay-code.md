@@ -13,8 +13,9 @@ paths:
   - services/gateway/src/services/guided-journey/checklist-regenerate.ts
   - services/gateway/src/orb/live/instruction/live-system-instruction.ts
   - services/gateway/test/mt-packs-kb-overlay-*.test.ts
-updated: 2026-11-01T15:40Z
+updated: 2026-11-02T16:24Z
 repos: [exafyltd/vitana-platform]
+vtid: VTID-05497
 ---
 # kb-overlay-code — KB baseline + tenant overlay resolution (repo vitana-platform)
 
@@ -42,3 +43,6 @@ merge/approve/deploy/workflow dispatch, no Supabase or AWS writes. Work only ins
 ## Log
 ### 2026-11-01T15:40Z · kiro-hotmail-202611011452-6d16 · created → ready
 Re-plan of `mt-packs/kb-overlay-code`. No scope change; lane follows today's §3a/§7 rules.
+
+### 2026-11-02T16:24Z · ci-plan-spar · ready (VTID allocated)
+VTID-05497 allocated after policy approval (converged-auto-v1).

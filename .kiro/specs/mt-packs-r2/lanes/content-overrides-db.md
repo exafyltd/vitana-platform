@@ -12,8 +12,9 @@ paths:
   - supabase/tests/mt/mt_packs_tenant_content_overrides.sql
   - scripts/ci/migration-drift-baseline.json
   - docs/multitenancy/MIGRATION-QUEUE.md
-updated: 2026-11-01T15:40Z
+updated: 2026-11-02T16:24Z
 repos: [exafyltd/vitana-platform]
+vtid: VTID-05495
 ---
 # content-overrides-db — WS5 `tenant_content_overrides` (DB) — mt-packs-r2
 
@@ -36,3 +37,6 @@ PR title `VTID-xxxxx (mt-packs-r2/content-overrides-db): …`. Trailers `Collab-
 ## Log
 ### 2026-11-01T15:40Z · kiro-hotmail-202611011452-6d16 · created → ready
 New lane in the re-plan. It creates the WS5 publish target that `mt-launch` depends on.
+
+### 2026-11-02T16:24Z · ci-plan-spar · ready (VTID allocated)
+VTID-05495 allocated after policy approval (converged-auto-v1).

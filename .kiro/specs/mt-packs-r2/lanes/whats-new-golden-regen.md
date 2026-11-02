@@ -9,8 +9,9 @@ reviewer_seat: agent:vitana-lane-reviewer
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 paths:
   - services/gateway/test/golden/v1-golden-edge.*
-updated: 2026-11-01T15:40Z
+updated: 2026-11-02T16:24Z
 repos: [exafyltd/vitana-platform]
+vtid: VTID-05501
 ---
 # whats-new-golden-regen — regenerate the v1-golden-edge fixture (repo vitana-platform) — mt-packs-r2
 
@@ -35,3 +36,6 @@ Rules (§7a):
 ### 2026-11-01T15:40Z · kiro-hotmail-202611011452-6d16 · created → ready
 Re-plan of `mt-packs/whats-new-golden-regen`. The executor moves from claude to kiro. This lane waits for
 `mt-guardrails-r2` `maxina-golden-suite`.
+
+### 2026-11-02T16:24Z · ci-plan-spar · ready (VTID allocated)
+VTID-05501 allocated after policy approval (converged-auto-v1).

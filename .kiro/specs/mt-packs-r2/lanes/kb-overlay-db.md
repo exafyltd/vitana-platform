@@ -12,8 +12,9 @@ paths:
   - supabase/tests/mt/mt_packs_knowledge_docs_tenant_id.sql
   - scripts/ci/migration-drift-baseline.json
   - docs/multitenancy/MIGRATION-QUEUE.md
-updated: 2026-11-01T15:40Z
+updated: 2026-11-02T16:24Z
 repos: [exafyltd/vitana-platform]
+vtid: VTID-05498
 ---
 # kb-overlay-db — knowledge_docs tenant overlay column (repo vitana-platform)
 
@@ -48,3 +49,6 @@ When the PR is open: set `state: in-review`, `next_actor: kiro`, `pr: <url>`, ap
 ## Log
 ### 2026-11-01T15:40Z · kiro-hotmail-202611011452-6d16 · created → ready
 Re-plan of `mt-packs/kb-overlay-db`. Version day-shifted to `20261102080000`.
+
+### 2026-11-02T16:24Z · ci-plan-spar · ready (VTID allocated)
+VTID-05498 allocated after policy approval (converged-auto-v1).

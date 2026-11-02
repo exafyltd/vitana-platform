@@ -12,8 +12,9 @@ paths:
   - services/gateway/src/services/notification-controls/**
   - services/gateway/src/i18n/**
   - services/gateway/test/mt-packs-brand-templating-*.test.ts
-updated: 2026-11-01T15:40Z
+updated: 2026-11-02T16:24Z
 repos: [exafyltd/vitana-platform]
+vtid: VTID-05494
 ---
 # brand-content-templating — {{brand}} for push/email/tips/tt() (repo vitana-platform)
 
@@ -36,3 +37,6 @@ trailers `Collab-Session: <id>` / `Collab-Lane: mt-packs-r2/brand-content-templa
 ## Log
 ### 2026-11-01T15:40Z · kiro-hotmail-202611011452-6d16 · created → ready
 Re-plan of `mt-packs/brand-content-templating`. No scope change; lane follows today's §3a/§7 rules.
+
+### 2026-11-02T16:24Z · ci-plan-spar · ready (VTID allocated)
+VTID-05494 allocated after policy approval (converged-auto-v1).

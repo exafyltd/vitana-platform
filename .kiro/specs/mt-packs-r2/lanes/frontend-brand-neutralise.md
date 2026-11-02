@@ -16,8 +16,9 @@ paths:
   - src/whats-new/entries/**
   - i18n-source-stamps/**
   - docs/SCREEN_INVENTORY.md
-updated: 2026-11-01T15:40Z
+updated: 2026-11-02T16:24Z
 repos: [exafyltd/vitana-v1]
+vtid: VTID-05496
 ---
 # frontend-brand-neutralise — i18n brand neutralisation + widget + What's New (repo vitana-v1)
 
@@ -47,3 +48,6 @@ trailers `Collab-Session: <id>` / `Collab-Lane: mt-packs-r2/frontend-brand-neutr
 ## Log
 ### 2026-11-01T15:40Z · kiro-hotmail-202611011452-6d16 · created → ready
 Re-plan of `mt-packs/frontend-brand-neutralise`. No scope change; lane follows today's §3a/§7 rules.
+
+### 2026-11-02T16:24Z · ci-plan-spar · ready (VTID allocated)
+VTID-05496 allocated after policy approval (converged-auto-v1).

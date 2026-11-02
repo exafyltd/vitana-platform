@@ -19,8 +19,9 @@ paths:
   - services/gateway/test/orb/live/characterization/no-hardcoded-spoken-wording.test.ts
   - services/gateway/test/orb/instruction/first-time-welcome.test.ts
   - services/gateway/test/mt-packs-persona-*.test.ts
-updated: 2026-11-01T15:40Z
+updated: 2026-11-02T16:24Z
 repos: [exafyltd/vitana-platform]
+vtid: VTID-05499
 ---
 # persona-pack — persona split + runtime getEffectiveConfig (repo vitana-platform)
 
@@ -51,3 +52,6 @@ merge/approve/deploy/workflow dispatch, no Supabase or AWS writes. Work only ins
 ### 2026-11-01T15:40Z · kiro-hotmail-202611011452-6d16 · created → ready
 Re-plan of `mt-packs/persona-pack`. Answers R3-F1 (a scoped guard block; the live short-gap pool stays) and R3-F2 (the slug lookup comes from
 `mt-identity-r2` T3b, so `tenant-context.ts` is dropped from `paths`).
+
+### 2026-11-02T16:24Z · ci-plan-spar · ready (VTID allocated)
+VTID-05499 allocated after policy approval (converged-auto-v1).

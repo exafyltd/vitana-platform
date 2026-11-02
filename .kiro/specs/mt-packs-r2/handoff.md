@@ -4,8 +4,10 @@ author: kiro
 author_seat: hotmail
 executor: kiro
 next_actor: kiro
-state: drafted
-updated: 2026-11-01T15:40Z
+state: approved
+updated: 2026-11-02T16:24Z
+sparring_record: .kiro/specs/mt-packs-r2/sparring/verdict.md
+vtids: [VTID-05494, VTID-05495, VTID-05496, VTID-05497, VTID-05498, VTID-05499, VTID-05500, VTID-05501]
 ---
 # Handoff — mt-packs-r2
 Re-plan of `mt-packs` (branch `kiro/mt-packs/plan`; PLAN-SPAR session `eb308b4e` escalated at the round cap). WS5
@@ -28,3 +30,6 @@ as escalated.
 - The two What's New lanes move to `executor: kiro`.
 
 The plan PR opens when PLAN-SPAR capacity allows (`collaboration.md` §8a).
+
+### 2026-11-02T16:24Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 8 lane(s) got a VTID and are handed to Kiro.
