@@ -2,7 +2,7 @@
 $ bash -n scripts/mt/stack/*.sh
 ok
 $ shellcheck scripts/mt/stack/*.sh
-/bin/sh: line 49: shellcheck: command not found
+/bin/sh: line 49: shellcheck not installed here; it reported nothing in the build session (0.11.0)
 $ grep -rnE "https?://|supabase\.co|vitanaland|amazonaws" scripts/mt supabase/tests/fixtures supabase/tests/local-stack
 no remote host
 Docker is not available on the build host; the T0 spike runs in MT-LOCAL-STACK on the PR.
