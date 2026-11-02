@@ -4,6 +4,31 @@ change_class: standard
 # plan(mt-m3): M3 generally-provisionable — custom domains, tenant switching UI, monitoring, ERP bootstrap, offboarding runbook — mt-m3-r2 (re-plan)
 
 <!-- plan:begin -->
+## Round 1 answers (session `2c303e22`)
+Re-verified on platform `origin/main` `e79092087b` and vitana-v1 `58c76c956` on 2026-11-02.
+- **R1-F1** (no negative membership cache on the host arm): accepted. `lookupTenantMembership` caches only `member`
+  (`auth-supabase-jwt.ts:531-557`; `not_member` returns at `:546` without a cache write). The host arm adds a
+  separate, bounded **host-arm negative cache** in `auth-supabase-jwt.ts`: key `${userId}:${tenantId}`, value
+  `not_member` only, TTL 15 s, at most 10 000 entries (oldest evicted first). `unavailable` is never cached, so a
+  transient DB error is retried on the next request. `clearTenantMembershipCache()` also clears it.
+  `lookupTenantMembership` and the token arm are unchanged: the token arm still never caches a negative, so a member
+  who has just joined is never refused by a stale entry. The negative entry only makes the host arm contribute
+  nothing; resolution then falls through to the token arm as before, so it cannot grant or deny data access.
+  The per-request DB budget is written in Fix #2 below.
+- **R1-F2** (v1 and migration premises not verified): accepted; all verified, no premise is stale:
+  - `tenant_settings_merge_feature_flags()` is at `20261014000400_…:176-194` (Fix #5 cited `:175-193`, off by
+    one; corrected). Its governed-key drop is `coalesce(p_flags,'{}') - 'jev'` when `p_allow_governed` is false (`:186`), with a
+    top-level `||` merge (`:190`).
+  - `provision_tenant` writes `tenant_settings` with `ON CONFLICT (tenant_id) DO NOTHING` (`20261014000500_…:154-165`).
+  - v1 `src/lib/tenant-registry.ts:219` calls `rpc('resolve_tenant', { p_slug: slug }, { get: true })`. That is the
+    only named `{p_slug}` call, and with no DEFAULT on the 2-arg overload it binds the 1-arg function.
+  - v1 `useTenant.tsx` `setTenantBySlug` `:170`, RPC `switch_to_tenant_by_slug` `:190`, `refreshSession()` `:208`;
+    `App.tsx:2157-2158` `/admin/system/tenants` with `requiredRole="admin"`; `TenantManagement.tsx:150` exafy-admin
+    switcher; `permissions.ts:24` `canSwitchTenant`; `src/pages/portals/TenantPortal.tsx:178-193` (join, then switch);
+    AASA appID `62Q26QSEJW.com.exafy.maxina` with `paths: ["*"]`.
+- **Stale task corrected:** `tasks.md` H2 still said `unavailable` → 503. It now says the host arm falls through,
+  matching R3-F1.
+
 ## Re-plan answers (session `8a83bc72` round 3)
 Re-plan of `mt-m3` (branch `kiro/mt-m3/plan`; PLAN-SPAR session `8a83bc72` escalated at the round cap). Every premise
 was re-verified on platform `origin/main` `62990ce285` and vitana-v1 `58c76c956` on 2026-11-01.
@@ -106,7 +131,14 @@ Dark by default via `MT_RESOLUTION_V2` + `tenant_settings.feature_flags.mt.*` un
    so the default path-slug case pays nothing; results (hits AND misses) go in a bounded host→tenant cache with the
    60s TTL of `tenantMetaCache` (`tenant-context.ts:66-86`); the RPC uses the existing `abortAfter(AUTH_LOOKUP_TIMEOUT_MS)`
    (`:71`) — timeout/error → logged, host arm yields nothing, next arm runs (context only; data still needs membership).
-   Depends on `tenant-domains-db`.
+   **Host-arm negative cache (R1-F1):** a separate bounded map (`not_member` only, 15 s TTL, max 10 000 entries,
+   oldest evicted; `unavailable` never cached; cleared by `clearTenantMembershipCache()`); `lookupTenantMembership`
+   itself is unchanged. **Per-request DB calls added by the host arm** (on top of today's token/primary arm calls):
+   flag off, platform host, or no identity (`getTenantContext` returns at `:638` before any arm) → 0; custom host,
+   member → at most 1 `resolve_tenant` RPC per host per 60 s and 1 membership query per user×tenant per 60 s, else 0;
+   custom host, non-member → at most 1 membership query per user×tenant per 15 s, else 0, then the unchanged token arm;
+   lookup `unavailable` → 1 query per request (not cached, same as the token arm today), bounded by
+   `AUTH_LOOKUP_TIMEOUT_MS`. Depends on `tenant-domains-db`.
 3. **`tenant-switcher-ui` (vitana-v1, frontend).** A member-facing community switcher for members of ≥2 tenants: list
    the member's own memberships from `useMemberships()` (`list_my_memberships`, not the public registry — registry only
    resolves slug/brand for display), call the existing `setTenantBySlug()` (reuse `switch_to_tenant_by_slug` +
@@ -126,7 +158,7 @@ Dark by default via `MT_RESOLUTION_V2` + `tenant_settings.feature_flags.mt.*` un
    '{erp,bootstrap_requested}', 'true'::jsonb, true) WHERE tenant_id = v_tid AND NOT (feature_flags #>
    '{erp,bootstrap_requested}' = 'true'::jsonb)`, so first-run and re-run both end with the flag set exactly once.
    `erp` becomes a **governed key** like `jev`: the same migration re-creates `tenant_settings_merge_feature_flags()`
-   (`20261014000400_…:175-193`, top-level `||` merge) dropping `- 'jev' - 'erp'` for `p_allow_governed = false`, so a
+   (`20261014000400_…:176-194`, top-level `||` merge) dropping `- 'jev' - 'erp'` for `p_allow_governed = false`, so a
    tenant-admin PUT cannot replace/erase it (rollback restores the `jev`-only body).
    (b) add `ci_tenant_isolation_health_by_tenant()` returning the existing counts grouped per tenant; expand/contract,
    rollback, pre/post checks, QUEUE rows; `ci_tenant_isolation_health()` unchanged (reused).
@@ -166,7 +198,7 @@ until apply. Expand/contract; `lock_timeout` + retries; applied by Kiro via RUN-
   re-run; a `p_allow_governed=false` merge sending `erp` does not erase it; `ci_tenant_isolation_health_by_tenant()`
   sums to `ci_tenant_isolation_health()`.
 - Jest/Vitest (gateway): host arm runs before token/primary; contract test: the host tenant_id goes through
-  `lookupTenantMembership` (repeat hits its cache, no other membership query; `not_member` / `unavailable` → falls through to token/primary, `res.status` never called — R3-F1); the
+  `lookupTenantMembership` (repeat hits its cache, no other membership query; `not_member` / `unavailable` → falls through to token/primary, `res.status` never called — R3-F1); a repeated non-member request on the same host within 15 s makes no second membership query, one after 15 s does, an `unavailable` result is retried on the next request, and the token arm still never caches a negative (R1-F1); the
   `/health/tenant-isolation` route is admin-gated (401/403 without admin) and `/health` keys unchanged (R3-F2);
   no lookup for a platform host or flag off; host-cache hit skips the RPC; timeout falls through; per-tenant health + ERP-flag shape, no ERP bridge call. `npm run test:support` +
   `npm run test:operator` stay green (42c/42e) if touched.

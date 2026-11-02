@@ -54,13 +54,22 @@ also creates `docs/validation/<vtid>/`.
       `localhost`, staging/ALB hosts); bounded host→tenant cache (hits and misses) with the 60s `tenantMetaCache` TTL
       (`tenant-context.ts:66-86`); RPC under `abortAfter(AUTH_LOOKUP_TIMEOUT_MS)` (`:71`); timeout/error → logged, the
       host arm yields nothing and the next arm runs.
+- [ ] H1c Host-arm negative cache (R1-F1), in `auth-supabase-jwt.ts`: a separate bounded map keyed
+      `${userId}:${tenantId}` holding `not_member` only, TTL 15 s, max 10 000 entries (oldest evicted);
+      `unavailable` is never cached; `clearTenantMembershipCache()` clears it too. `lookupTenantMembership` and the
+      token arm are unchanged (no negative caching there). Document the per-request DB-call budget of plan Fix #2 in
+      the lane's `docs/validation/<vtid>/`.
 - [ ] H2 Membership still required for data: re-check the host-resolved tenant through the existing VTID-05043
-      `lookupTenantMembership(user_id, tenant_id)` (`:531`; positive cached 60s, negatives never cached), exafy_admin
-      skip as at `:640`; `not_member` → the existing join posture, `unavailable` → fail-closed 503 as in
-      `applyTenantMembershipResult` (`:656-680`). No new membership RPC, never a silent default.
+      `lookupTenantMembership(user_id, tenant_id)` (`:531`; positive cached 60s; the host arm's own 15 s negative
+      cache from H1c), exafy_admin skip as at `:640`; `not_member` or `unavailable` → the host arm contributes nothing
+      and resolution falls through to the token then primary arm (`getTenantContext` returns `TenantContext | null` and
+      never writes a response, R3-F1); the join posture stays in the frontend. No new membership RPC, never a silent
+      default.
 - [ ] H3 Jest/Vitest: host arm precedence over token/primary; no data without membership (contract test: the
       host-resolved tenant_id is passed to `lookupTenantMembership`, a repeat hits its cache, no other membership query); flag-off path byte-identical to
-      today; no RPC for a platform host; cache hit skips the RPC; timeout falls through to the next arm. `npm run test:support` + `npm run test:operator` stay green if touched.
+      today; no RPC for a platform host; cache hit skips the RPC; timeout falls through to the next arm; a repeated
+      non-member request within 15 s makes no second membership query and one after 15 s does; `unavailable` is
+      retried on the next request; the token arm still caches no negative (R1-F1). `npm run test:support` + `npm run test:operator` stay green if touched.
 - [ ] H4 `docs/validation/<vtid>/`: `scope.json`, `staging-tests.json` (read-only), plan-sparring copy.
 
 Acceptance: dark behind the flag; tests green; depends on `tenant-domains-db`. No live writes. PR title
