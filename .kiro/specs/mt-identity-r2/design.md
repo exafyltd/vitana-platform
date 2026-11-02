@@ -69,7 +69,7 @@ Hook function emits `tenant_id_shadow` only, fail-open, single indexed lookup, s
 table for the soak. No auth-config change here. The go-live lane (owner-applied) is separate.
 
 ### role-source-and-bootstrap (DB)
-Single role source of truth (proposed `user_tenants.active_role`; the open question is in plan.md); others derive.
+Selected role: `user_tenants.active_role` (canonical; `role_preferences` derives). Grants: `user_permitted_roles`, a separate admin-written store, never derived from the selected role (directive §5).
 `bootstrap_admin_user` rewritten to key on `tenants.is_default` and write canonical `user_tenants`.
 
 ### tenant-db-and-slug-cleanup (CODE, gateway)

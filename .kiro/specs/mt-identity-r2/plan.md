@@ -162,7 +162,10 @@ purpose (owner D14) and is not part of this spec.
      service_role; ALTER TABLE … ENABLE ROW LEVEL SECURITY` with no policy.
    - Migrations only; no auth config in this lane.
 4. **role-source-and-bootstrap (DB, depends on membership-unification).**
-   - One role source of truth, `user_tenants.active_role`; the other role sources derive from it.
+   - Two stores, never merged (directive §5; `require-tenant-admin.ts:4-8` checks both). The **selected role** is
+     `user_tenants.active_role`; `role_preferences` derives from it. The **permitted grants** stay a separate store
+     (`user_permitted_roles`), written only by admin tools and the service role, never derived from `active_role`.
+     A selected role never widens authorization: every gate keeps checking the grants.
    - Redefine `bootstrap_admin_user` (the last definition is vitana-v1 `20250915132930_…:166`) to key on
      `tenants.is_default` and to write canonical `user_tenants` through the dual-write path.
    - The new definition is a platform migration (shared database), keeping the same signature
@@ -307,6 +310,6 @@ rather than approve as escalated. No new owner decision proposed.
 <!-- plan:end -->
 
 ## Open questions for sparring
-- Role source of truth: the role-source lane makes `user_tenants.active_role` canonical and derives
-  `role_preferences` / `user_permitted_roles` from it. Is there a consumer that needs one of the others as a primary
+- Role source of truth: the role-source lane makes `user_tenants.active_role` the canonical selected role and
+  derives `role_preferences` from it; `user_permitted_roles` stays the separate, admin-written grant store. Is there a consumer that needs one of the others as a primary
   write path? Cross-check with mt-tenant-admin's role work.

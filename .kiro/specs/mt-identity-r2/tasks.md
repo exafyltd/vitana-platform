@@ -106,8 +106,9 @@ Allowed paths:
 - `supabase/migrations/20261102033000_vtid_xxxxx_role_source_rollback.sql`
 - `supabase/tests/mt_identity_roles_*.sql`
 
-- [ ] R1 Make `user_tenants.active_role` the one role source of truth and derive the others from it; expand/contract,
-      snapshot first.
+- [ ] R1 Make `user_tenants.active_role` the one source of the selected role and derive `role_preferences` from it;
+      keep `user_permitted_roles` a separate grant store written only by admin tools / service role (no trigger
+      derives it from `active_role`); expand/contract, snapshot first.
 - [ ] R2 Redefine `bootstrap_admin_user` (last definition: vitana-v1 `20250915132930_…:166`) to key on
       `tenants.is_default` (no `name = 'Maxina'` / `name IN (…)`) and write canonical `user_tenants` through the
       dual-write path. Keep the signature (`p_user_id`, `p_user_email`).
@@ -117,6 +118,8 @@ Allowed paths:
 Acceptance:
 - Change types: Database.
 - `npm run test:roles` (42h) is green.
+- pgTAP: a member who sets `active_role = 'admin'` gains no row in `user_permitted_roles`, and `requireTenantAdmin`
+  still refuses them; `authenticated` has no write grant on `user_permitted_roles`.
 - pgTAP: `bootstrap_admin_user` grants admin in the `is_default` tenant with no tenant-name pin. The rollback restores
   the previous body.
 - The migrations apply and roll back clean on the local stack. Nothing is applied from the PR.

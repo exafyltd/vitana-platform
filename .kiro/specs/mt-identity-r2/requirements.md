@@ -50,8 +50,11 @@ WS1 work after VTID-05149. It links the program's records instead of copying the
 4. THE hook GO-LIVE and its auth-config enablement SHALL NOT be in this spec (owner-applied later, D14).
 
 ### R4 — One role source + bootstrap fix (lane `role-source-and-bootstrap`)
-1. THE SYSTEM SHALL have a single role source of truth with the other role stores derived from it.
-2. `bootstrap_admin_user` SHALL key on `tenants.is_default` (not `name = 'Maxina'`) and write canonical `user_tenants`.
+1. THE SYSTEM SHALL have a single source for the selected role (`user_tenants.active_role`) with `role_preferences`
+   derived from it.
+2. THE SYSTEM SHALL keep permitted grants (`user_permitted_roles`) as a separate store written only by admin tools or
+   the service role; the selected role SHALL NOT change authorization.
+3. `bootstrap_admin_user` SHALL key on `tenants.is_default` (not `name = 'Maxina'`) and write canonical `user_tenants`.
 
 ### R5 — tenantDb, health exclusion, slug cleanup (lane `tenant-db-and-slug-cleanup`)
 1. THE SYSTEM SHALL provide `tenantDb(ctx)` injecting the tenant predicate for a schema-derived `TENANT_TABLES` list.
