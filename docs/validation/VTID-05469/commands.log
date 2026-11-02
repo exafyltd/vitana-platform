@@ -1,0 +1,8 @@
+# VTID-05469 commands
+$ bash -n scripts/mt/stack/*.sh
+ok
+$ shellcheck scripts/mt/stack/*.sh
+/bin/sh: line 49: shellcheck: command not found
+$ grep -rnE "https?://|supabase\.co|vitanaland|amazonaws" scripts/mt supabase/tests/fixtures supabase/tests/local-stack
+no remote host
+Docker is not available on the build host; the T0 spike runs in MT-LOCAL-STACK on the PR.
