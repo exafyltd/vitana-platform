@@ -8,6 +8,9 @@
   "sparring_record": ".kiro/specs/eng-platform-p01/sparring/verdict.md",
   "weakens_tests": [],
   "red_green_exempt": [
-    "docs only"
+    {
+      "file": "docs/ENGINEERING-PLATFORM-PLAN.md",
+      "reason": "documentation only, no behaviour to test"
+    }
   ]
 }
