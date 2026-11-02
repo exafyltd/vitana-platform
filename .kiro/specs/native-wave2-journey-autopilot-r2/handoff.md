@@ -3,11 +3,13 @@ slug: native-wave2-journey-autopilot-r2
 author: kiro
 executor: kiro
 next_actor: kiro
-state: drafted
+state: approved
 author_seat: exafyltd
-updated: 2026-11-01T17:10Z
+updated: 2026-11-02T07:38Z
 spar_refs:
   - exafyltd/vitana-v1: main
+sparring_record: .kiro/specs/native-wave2-journey-autopilot-r2/sparring/verdict.md
+vtids: [VTID-05460, VTID-05461]
 ---
 # Handoff — Native Wave 2: Journey / Guided mode / Autopilot screen ports
 Wave 2 screen-port batch of the native Maxina app program (`docs/programs/native-app/NATIVE-APP-PLAN.md`,
@@ -25,3 +27,6 @@ Holder of the `native-wave2-journey-autopilot-r2/_plan` claim. Re-plan of `nativ
 Session 1 (`956224d9-3983-441e-aa39-a7b163ee3a21`) escalated with zero findings (`evidence_floor_not_met`, partner read_file calls hit the shared GitHub rate limit). Added one line to the plan block so PLAN-SPAR opens the re-plan session; no plan content changed.
 ### 2026-11-02T06:38Z · kiro-exafyltd-202611011658-9f52 · drafted (session-2 round 1 answered)
 s2 round 1 had no findings; empty answer pushed so PLAN-SPAR runs the next round. Answers: `sparring/s2-responses-1.md`.
+
+### 2026-11-02T07:38Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 2 lane(s) got a VTID and are handed to Kiro.
