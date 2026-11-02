@@ -9,8 +9,9 @@ reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 paths:
   - services/gateway/src/services/plan-sparring/**
   - services/gateway/test/plan-sparring-token-efficiency.test.ts
-updated: 2026-11-01T15:48Z
+updated: 2026-11-02T16:12Z
 repos: [exafyltd/vitana-platform]
+vtid: VTID-05481
 ---
 # partner-budget — sparring-token-efficiency-r2
 
@@ -28,3 +29,6 @@ Rules (§7a): no VTID allocation, no merge outside §7b, no live write. Branch `
 ## Log
 ### 2026-11-01T15:48Z · kiro-hotmail-202611011452-6d16 · created → ready
 Created by the re-plan (the protected-path split).
+
+### 2026-11-02T16:12Z · ci-plan-spar · ready (VTID allocated)
+VTID-05481 allocated after policy approval (converged-auto-v1).

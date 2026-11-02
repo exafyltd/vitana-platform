@@ -4,8 +4,10 @@ author: kiro
 author_seat: hotmail
 executor: kiro
 next_actor: kiro
-state: drafted
-updated: 2026-11-01T15:48Z
+state: approved
+updated: 2026-11-02T16:12Z
+sparring_record: .kiro/specs/sparring-token-efficiency-r2/sparring/verdict.md
+vtids: [VTID-05480, VTID-05481, VTID-05482]
 ---
 # Handoff — sparring-token-efficiency-r2
 Re-plan of `sparring-token-efficiency` (branch `kiro/sparring-token-efficiency/plan`; PLAN-SPAR session `b2df0328`
@@ -28,3 +30,6 @@ as escalated.
     at merge time.
 
 The plan PR opens when PLAN-SPAR capacity allows (`collaboration.md` §8a).
+
+### 2026-11-02T16:12Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 3 lane(s) got a VTID and are handed to Kiro.
