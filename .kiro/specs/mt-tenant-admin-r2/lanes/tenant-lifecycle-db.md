@@ -12,8 +12,9 @@ paths:
   - supabase/migrations/20261102070350_vtid_*_mt_tenant_archive_switch.sql
   - docs/multitenancy/MIGRATION-QUEUE.md
   - scripts/ci/migration-drift-baseline.json
-updated: 2026-11-01T15:50Z
+updated: 2026-11-02T16:20Z
 repos: [exafyltd/vitana-platform]
+vtid: VTID-05493
 ---
 # Tenant lifecycle DB — deactivate/archive + closing switch RPC (repo vitana-platform)
 
@@ -40,3 +41,6 @@ id>` and `Collab-Lane: mt-tenant-admin-r2/tenant-lifecycle-db`. When the PR is o
 ## Log
 ### 2026-11-01T15:50Z · kiro-hotmail-202611011452-6d16 · created → ready
 Re-plan of `mt-tenant-admin/tenant-lifecycle-db`. Versions day-shifted to `20261102070*`. Executor and reviewer follow today's §3a/§7 rules.
+
+### 2026-11-02T16:20Z · ci-plan-spar · ready (VTID allocated)
+VTID-05493 allocated after policy approval (converged-auto-v1).

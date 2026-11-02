@@ -13,8 +13,9 @@ paths:
   - supabase/migrations/20261102070600_vtid_*_mt_moderator_tenant_scope.sql
   - docs/multitenancy/MIGRATION-QUEUE.md
   - scripts/ci/migration-drift-baseline.json
-updated: 2026-11-01T15:50Z
+updated: 2026-11-02T16:20Z
 repos: [exafyltd/vitana-platform]
+vtid: VTID-05491
 ---
 # Tenant-admin moderation DB — P2/P3 + moderator tenant-scope (repo vitana-platform)
 
@@ -42,3 +43,6 @@ release the claim.
 ## Log
 ### 2026-11-01T15:50Z · kiro-hotmail-202611011452-6d16 · created → ready
 Re-plan of `mt-tenant-admin/tenant-admin-moderation-db`. Versions day-shifted to `20261102070*`. Executor and reviewer follow today's §3a/§7 rules.
+
+### 2026-11-02T16:20Z · ci-plan-spar · ready (VTID allocated)
+VTID-05491 allocated after policy approval (converged-auto-v1).

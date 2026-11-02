@@ -4,8 +4,10 @@ author: kiro
 author_seat: hotmail
 executor: kiro
 next_actor: kiro
-state: drafted
-updated: 2026-11-01T15:50Z
+state: approved
+updated: 2026-11-02T16:20Z
+sparring_record: .kiro/specs/mt-tenant-admin-r2/sparring/verdict.md
+vtids: [VTID-05489, VTID-05490, VTID-05491, VTID-05492, VTID-05493]
 ---
 # Handoff — mt-tenant-admin-r2
 Re-plan of `mt-tenant-admin` (branch `kiro/mt-tenant-admin/plan`; PLAN-SPAR session `03698d49` escalated at the round
@@ -30,3 +32,6 @@ as escalated.
   owner's approval (§7d).
 
 The plan PR opens when PLAN-SPAR capacity allows (`collaboration.md` §8a).
+
+### 2026-11-02T16:20Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 5 lane(s) got a VTID and are handed to Kiro.

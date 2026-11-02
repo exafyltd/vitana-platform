@@ -15,8 +15,9 @@ paths:
   - services/gateway/src/frontend/command-hub/app.js
   - services/gateway/test/mt-tenant-admin-command-hub-*.test.ts
   - scripts/ci/command-hub-ownership-guard.js
-updated: 2026-11-01T15:50Z
+updated: 2026-11-02T16:20Z
 repos: [exafyltd/vitana-platform]
+vtid: VTID-05489
 ---
 # Command Hub tenant module — NEW module, no big app.js edits (repo vitana-platform)
 
@@ -52,3 +53,6 @@ mt-tenant-admin-r2/command-hub-tenant-module`. When the PR is open: set `state: 
 ## Log
 ### 2026-11-01T15:50Z · kiro-hotmail-202611011452-6d16 · created → ready
 Re-plan of `mt-tenant-admin/command-hub-tenant-module`. Versions day-shifted to `20261102070*`. Executor and reviewer follow today's §3a/§7 rules.
+
+### 2026-11-02T16:20Z · ci-plan-spar · ready (VTID allocated)
+VTID-05489 allocated after policy approval (converged-auto-v1).

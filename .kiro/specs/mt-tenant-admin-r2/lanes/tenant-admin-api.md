@@ -20,8 +20,9 @@ paths:
   - services/gateway/src/routes/admin-autopilot.ts
   - services/gateway/src/services/community-marketplace/community-marketplace-repository.ts
   - services/gateway/test/mt-tenant-admin-*.test.ts
-updated: 2026-11-01T15:50Z
+updated: 2026-11-02T16:20Z
 repos: [exafyltd/vitana-platform]
+vtid: VTID-05490
 ---
 # Tenant-admin gateway API — scoped reads + shared tenant resolver, readiness, lifecycle (repo vitana-platform)
 
@@ -68,3 +69,6 @@ system (staging tests read-only, rule 48). Work only inside the allowed paths. B
 ### 2026-11-01T15:50Z · kiro-hotmail-202611011452-6d16 · created → ready
 Re-plan of `mt-tenant-admin/tenant-admin-api`. Answers R3-F1 (the flag-aware `resolveScopedTenant`) and R3-F2 (a structural guard test with a shrink-only baseline).
 The lane path is corrected to `services/gateway/src/index.ts`.
+
+### 2026-11-02T16:20Z · ci-plan-spar · ready (VTID allocated)
+VTID-05490 allocated after policy approval (converged-auto-v1).

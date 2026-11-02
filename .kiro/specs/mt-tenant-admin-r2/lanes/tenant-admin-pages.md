@@ -23,8 +23,9 @@ paths:
   - tests/e2e/staging/mt-tenant-admin-*.staging.spec.ts
   - docs/SCREEN_INVENTORY.md
   - i18n-source-stamps/**
-updated: 2026-11-01T15:50Z
+updated: 2026-11-02T16:20Z
 repos: [exafyltd/vitana-v1]
+vtid: VTID-05492
 ---
 # Tenant-admin pages + invitation accept — vitana-v1 (repo vitana-v1)
 
@@ -63,3 +64,6 @@ is open: set `state: in-review`, `next_actor: kiro`, `pr: <url>`, append a log e
 ## Log
 ### 2026-11-01T15:50Z · kiro-hotmail-202611011452-6d16 · created → ready
 Re-plan of `mt-tenant-admin/tenant-admin-pages`. `/admin/init-events` is already mounted unguarded at `App.tsx:2217`, so the lane now wraps it in the admin guard.
+
+### 2026-11-02T16:20Z · ci-plan-spar · ready (VTID allocated)
+VTID-05492 allocated after policy approval (converged-auto-v1).
