@@ -15,7 +15,7 @@ paths:
   - services/gateway/src/routes/conversation.ts
   - services/gateway/test/mt-track-s-authz-work-surface.test.ts
   - docs/validation/**
-updated: 2026-11-02T10:55Z
+updated: 2026-11-02T11:01Z
 vtid: VTID-05453
 ---
 # Lane: work-surface-permission (repo vitana-platform)
@@ -30,4 +30,6 @@ Lane created with the plan.
 ### 2026-11-01T20:54Z · ci-plan-spar · ready (VTID allocated)
 VTID-05453 allocated after policy approval (converged-auto-v1).
 ### 2026-11-02T10:55Z · pm-agent · update
+reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
+### 2026-11-02T11:01Z · pm-agent · update
 reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
