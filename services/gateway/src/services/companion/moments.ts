@@ -15,6 +15,7 @@
  */
 import type { VitanaIndexSnapshot } from '../user-context-profiler';
 import { FEATURE_TIPS, type FeatureTip } from '../../data/feature-tips';
+import { ENRICHMENT_CARD_TIPS } from '../../data/enrichment-card-tips';
 
 export type CompanionTopic = 'health' | 'community' | 'business';
 
@@ -38,6 +39,16 @@ export interface MemberContext {
   activeDays?: number | null;
   /** tip_key of feature tips already used inside the ledger lookback, newest first. */
   recentFeatureTips?: string[];
+  /**
+   * VTID-05367 (messenger-vitana-cards-v2): the enrichment cards (E1–E11) this
+   * member should be offered, pre-computed in the tick loop with the real
+   * `now` via `eligibleEnrichmentCards(completions, dismissRows, 'messenger',
+   * now, unavailableEnrichmentCards())` — incomplete AND not cooling down AND
+   * available. Moments read this set (membership check) and never call the
+   * resolver or build a `Date` from `localDate`. Absent = no enrichment moment
+   * fires (the enrichment lane adds the E-moments; VTID-05366).
+   */
+  eligibleEnrichmentCardTypes?: ReadonlySet<string>;
 }
 
 export interface JourneySignal {
@@ -272,9 +283,78 @@ export const inviteFriend: Moment = {
   },
 };
 
-/** Every moment the engine ranks (Phase 1 + Phase 3). */
+// ── VTID-05366 (plan messenger-vitana-cards-v2): profile-enrichment moments ──
+// One moment per enrichment card E1–E11. A moment fires ONLY when the tick has
+// put the card in `ctx.eligibleEnrichmentCardTypes` — the member has not done
+// it, has not dismissed it in the last 7 days, and its action works on this
+// stack (E6/E7 need the Meta OAuth client). Moments never call the resolver and
+// never build a Date (the tick computed the set with the real `now`).
+//
+// Priorities 39 → 29 sit BELOW every health/habit moment (diary_nudge 40–50,
+// vitana_index 50–70, guided_journey_step 65) and ABOVE feature_tip (20) /
+// invite_friend (15): a concrete setup step beats a generic tip on a quiet
+// day, never a member's daily health card. This is the companion scale (higher
+// wins) — NOT eligibleEnrichmentCards' 1-based catalog priority.
+
+export const ENRICHMENT_MOMENT_INTENT =
+  'Greet the member by first name for the morning. In one or two short, warm sentences, invite them to take ' +
+  'one small step to complete their Vitanaland profile, described by card_title and card_description in the ' +
+  'facts, in your own words and without any pressure, and say briefly how it helps them connect with the ' +
+  'community. Mention that the card below takes them straight there.';
+
+interface EnrichmentMomentSpec {
+  card: 'E1' | 'E2' | 'E3' | 'E4' | 'E5' | 'E6' | 'E7' | 'E8' | 'E9' | 'E10' | 'E11';
+  topic: CompanionTopic | null;
+  priority: number;
+  repeatAfterDays: number;
+}
+
+/** Plan §2 table: topic, priority (29–39, card order) and repeat window per card. */
+export const ENRICHMENT_MOMENT_SPECS: readonly EnrichmentMomentSpec[] = [
+  { card: 'E1', topic: null, priority: 39, repeatAfterDays: 4 },
+  { card: 'E2', topic: null, priority: 38, repeatAfterDays: 4 },
+  { card: 'E3', topic: 'community', priority: 37, repeatAfterDays: 7 },
+  { card: 'E4', topic: null, priority: 36, repeatAfterDays: 4 },
+  { card: 'E5', topic: null, priority: 35, repeatAfterDays: 4 },
+  { card: 'E6', topic: 'community', priority: 34, repeatAfterDays: 7 },
+  { card: 'E7', topic: 'community', priority: 33, repeatAfterDays: 7 },
+  { card: 'E8', topic: null, priority: 32, repeatAfterDays: 7 },
+  { card: 'E9', topic: null, priority: 31, repeatAfterDays: 7 },
+  { card: 'E10', topic: null, priority: 30, repeatAfterDays: 7 },
+  { card: 'E11', topic: null, priority: 29, repeatAfterDays: 4 },
+];
+
+/** Stable moment key for an enrichment card (the ledger's moment_key). */
+export const enrichmentMomentKey = (card: string): string => `enrichment_${card.toLowerCase()}`;
+
+function enrichmentMoment(spec: EnrichmentMomentSpec): Moment {
+  const key = enrichmentMomentKey(spec.card);
+  return {
+    key,
+    build: (ctx) => {
+      if (!ctx.eligibleEnrichmentCardTypes?.has(spec.card)) return null;
+      const tip = ENRICHMENT_CARD_TIPS[spec.card];
+      return {
+        momentKey: key,
+        cardType: spec.card,
+        topic: spec.topic,
+        intent: ENRICHMENT_MOMENT_INTENT,
+        // English source data for the model (it writes in the member's
+        // language); the card face itself comes from the catalog on the client.
+        facts: { card_type: spec.card, card_title: tip.title.en, card_description: tip.description.en },
+        priority: spec.priority,
+        repeatAfterDays: spec.repeatAfterDays,
+      };
+    },
+  };
+}
+
+/** The 11 enrichment moments, E1 → E11. */
+export const ENRICHMENT_MOMENTS: Moment[] = ENRICHMENT_MOMENT_SPECS.map(enrichmentMoment);
+
+/** Every moment the engine ranks (Phase 1 + Phase 3 + enrichment, VTID-05366). */
 export const COMPANION_MOMENTS: Moment[] = [
-  ...MOMENTS, guidedJourneyStep, diaryNudge, featureTip, inviteFriend,
+  ...MOMENTS, guidedJourneyStep, diaryNudge, featureTip, inviteFriend, ...ENRICHMENT_MOMENTS,
 ];
 
 const DAY_MS = 86_400_000;
