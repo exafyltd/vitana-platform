@@ -1,0 +1,10 @@
+{
+  "vtid": "VTID-05515",
+  "tests": [
+    {
+      "kind": "existing",
+      "ref": "cd services/gateway && npx jest test/eng-platform-inventory-readonly.test.ts",
+      "reason": "local owner-run script, deploys nothing"
+    }
+  ]
+}

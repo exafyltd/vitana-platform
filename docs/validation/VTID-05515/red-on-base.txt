@@ -1,0 +1,6 @@
+    ✕ runs in strict mode
+    ✕ refuses to run against any account but 472838866351 (1 ms)
+    ✕ only calls describe-*, list-* and get-* APIs through run()
+    ✕ calls aws directly only for get-caller-identity and inside run()
+    ✕ never reads secret values, decrypts parameters, uploads or mutates
+Tests:       5 failed, 5 total
