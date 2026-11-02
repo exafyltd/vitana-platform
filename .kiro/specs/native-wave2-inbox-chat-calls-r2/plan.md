@@ -64,6 +64,11 @@ stream) and the live WebRTC call — is marked depends-on-owner (G1). No redesig
   confirmed: `useMessages.ts`, `useChatApi.ts`, `useTypingIndicators.ts`, `useChatUnreadCount.ts`,
   `useRealtimeRelayStream.ts`, `useCallState.ts`, `useWebRTC.ts` all runtime-import
   `@/integrations/supabase/client.ts`, so none can enter `@vitana/core`.)
+  The list is the load-bearing sample, not the full inventory. `src/pages/Messages.tsx:28-35` also imports the inbox
+  data hooks `useHybridMessages` (which delegates to `useGlobalMessages` / `useTenantMessages`), `useChatGroupsAsThreads`,
+  `useChatUnreadCount`, `markGroupRead` (from `useChatApi`), `useUnreadSync` and `useProgressiveCount`; all are class B or
+  sit on class-B hooks and are re-implemented natively behind the inbox/chat ports, and the `conversation-chat` and
+  `inbox-list` lanes scope them explicitly.
 - Wave 1 is on main: N3 shell + resolver route (`apps/mobile/app/(app)/[...path].tsx`, VTID-05186), N2 UI kit
   (`@vitana/ui`, VTID-05176), N1 `@vitana/core`/`@vitana/tokens` (VTID-05183). Prop map, ports and conventions in
   `apps/mobile/README.md`. The native app has no production profile; `assertNotProduction()` refuses prod/staging
@@ -151,7 +156,11 @@ lanes run in parallel (no `depends_on`).
 ## Compliance (encoded in requirements.md / design.md)
 - **Member-listing exclusion (NEVER rule 45):** the new-conversation picker (`NewConversationPopup`), create-group
   search (`CreateGroupPopup.tsx:51`), and group-members modal (`GroupMembersModal.tsx:161`) exclude
-  `service_bot_accounts` + `notification_test_actors` — inherited by reusing the web search query, not re-implemented.
+  `service_bot_accounts` + `notification_test_actors`. The exclusion lives server-side in the RPCs the web calls
+  (`supabase.rpc('search_global_directory', { search_term })` / `search_tenant_directory({ search_term, tenant_id_param })`,
+  `CreateGroupPopup.tsx:51`, `GroupMembersModal.tsx:161`). The native member search **must call those same two RPCs**
+  (never a raw table query), and each lane that ships a member search adds a unit test asserting the native search
+  issues exactly those RPC calls with those parameters, so a refactor cannot silently drop the exclusion.
 - **Never write to production (absolute rule):** chat/calls never send, post, open a real call, or write
   presence/typing to a live system; tests are fixture / fake-gateway only; staging specs are read-only.
 - **Device-runtime for realtime/calls deferred to G1:** explicitly, because none of presence, typing, the live
