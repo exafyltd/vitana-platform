@@ -8,6 +8,7 @@ specs:
   - vitana-platform:multi-tenant
   - vitana-platform:mt-jobs
   - vitana-platform:mt-launch
+  - vitana-platform:mt-m3-r2
   - vitana-platform:mt-identity-r2
   - vitana-platform:mt-track-s-authz
   - vitana-platform:mt-track-s-r2
