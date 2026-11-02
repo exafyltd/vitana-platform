@@ -1,0 +1,10 @@
+{
+  "vtid": "VTID-05518",
+  "tests": [
+    {
+      "kind": "existing",
+      "ref": "cd services/gateway && npx jest test/eng-platform-stage-oidc-workflows.test.ts test/vtid-05009-provision-pack-token-workflow.test.ts",
+      "reason": "OIDC path inert until the owner sets the role variables; the merge redeploys staging on the unchanged key path"
+    }
+  ]
+}
