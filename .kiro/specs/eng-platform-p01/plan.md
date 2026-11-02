@@ -53,17 +53,19 @@ database is a dependency of backend previews, not part of this program.
   admin actions are run by the owner (`scripts/aws/setup-kiro-runner.sh` header).
 - **Tests that read workflow or script text** already exist and are the pattern for this plan:
   `services/gateway/test/operator-agent-task-role-grants-script.test.ts` (script text),
-  `services/gateway/test/vtid-05009-provision-pack-token-workflow.test.ts:21` (pins
-  `secrets.AWS_STAGING_ACCESS_KEY_ID` in `AWS-PROVISION-DEV-MEMORY-PACK-TOKEN.yml`; the fallback below keeps that
-  string, so it stays green), vitana-v1 `src/lib/supabase-functions-retire.vtid-05008.test.ts` (workflow text, Vitest).
+  `services/gateway/test/vtid-05009-provision-pack-token-workflow.test.ts:19-25` (pins
+  `secrets.AWS_STAGING_ACCESS_KEY_ID`, and at `:24` asserts the file has **no** `id-token: write`, to keep that
+  workflow staging-only with no prod role), vitana-v1 `src/lib/supabase-functions-retire.vtid-05008.test.ts` (workflow text, Vitest).
 
 ## 3. Interfaces (fixed here, not by the lanes)
 - Repository **variables** (not secrets; an ARN is not a credential): vitana-platform `AWS_STAGING_ROLE_ARN`,
   `AWS_DRIFT_ROLE_ARN`; vitana-v1 `AWS_STAGING_ROLE_ARN`, `AWS_PREVIEW_ROLE_ARN`.
 - IAM roles (account `472838866351`, created only by the owner running lane `oidc-roles`' script):
   - `vitana-gha-staging-deploy`: trust `sub` exactly `repo:exafyltd/vitana-platform:ref:refs/heads/main` or
-    `repo:exafyltd/vitana-v1:ref:refs/heads/main`; permissions = the managed and inline policies attached to IAM user
-    `claude-staging-validation` at the time the script runs (same reach as today, no new grant).
+    `repo:exafyltd/vitana-v1:ref:refs/heads/main`; permissions = the effective policies of IAM user
+    `claude-staging-validation` at the time the script runs: its attached managed and inline policies **and** those of
+    every IAM group it belongs to (`list-groups-for-user` → `list-attached-group-policies` / `list-group-policies`).
+    A permissions boundary on the user is copied as the role's boundary. Same reach as today, no new grant.
   - `vitana-gha-v1-preview`: trust `sub` exactly `repo:exafyltd/vitana-v1:pull_request`; permissions only
     `s3:PutObject/GetObject/DeleteObject/ListBucket` on `vitana-pr-previews` (`PREVIEW-DEPLOY-FRONTEND.yml:50`) and
     `cloudfront:CreateInvalidation` on the preview distribution.
@@ -91,7 +93,7 @@ OIDC), mapping of today's gates (PLAN-SPAR, PR-GATE, land-guard, STAGING-VERIFY,
 `get-parameter --with-decryption`: secret names and metadata only); writes JSON plus a `summary.md` into a local
 `--out` directory (default `./aws-inventory-<UTC date>`), never to S3 or any remote. Covers: Organizations (if
 permitted), VPCs/subnets/SGs/endpoints, IAM roles with trust policies and OIDC providers, IAM users with access-key
-age, ECR repos and tag mutability, ECS clusters/services/task-def families, RDS/Aurora, ElastiCache, ALBs and
+age, attached/inline policies, group memberships (with each group's attached/inline policies) and permissions boundary, ECR repos and tag mutability, ECS clusters/services/task-def families, RDS/Aurora, ElastiCache, ALBs and
 listener rules, S3 buckets (name, region, encryption, public-access block), Secrets Manager names, CloudTrail/Config/
 Security Hub status, Cost Explorer last-30-days by service (if permitted). Any denied call is recorded and skipped.
 ### Lane `oidc-roles` (vitana-platform, executor kiro, seat exafy)
@@ -103,13 +105,19 @@ replaces it with the §3 one only on `--apply`. Same account/region guard as `aw
 key, never deletes the IAM user (that is the owner's follow-up after OIDC runs green, §8).
 ### Lane `stage-oidc-platform` (vitana-platform, executor kiro, seat exafy)
 `paths`: the eight vitana-platform workflows of §2 (static-key list), `.github/workflows/MIGRATION-DRIFT-CHECK.yml`,
-`services/gateway/test/eng-platform-stage-oidc-workflows.test.ts`, `docs/validation/**`. Each credential step takes
+`services/gateway/test/eng-platform-stage-oidc-workflows.test.ts`,
+`services/gateway/test/vtid-05009-provision-pack-token-workflow.test.ts`, `docs/validation/**`. Each credential step takes
 the §3 shape with `AWS_STAGING_ROLE_ARN`; `id-token: write` added to each file's `permissions`. In
 `AWS-PROVISION-APPILIX-SECRETS.yml` only the staging leg changes; its prod leg is untouched. `MIGRATION-DRIFT-CHECK.yml`
 aurora branch: `role-to-assume: ${{ vars.AWS_DRIFT_ROLE_ARN || secrets.AWS_PROD_ROLE_ARN }}`, and when
 `AWS_DRIFT_ROLE_ARN` is set the Data API `--secret-arn` is the `vitana/aurora/prod/claude-readonly` secret (resolved by
 `describe-secret`) instead of the master secret; unset → both unchanged.
 No `AWS-PROD-*` file is edited.
+`vtid-05009-provision-pack-token-workflow.test.ts:24` (`not.toContain('id-token: write')`) guards "staging only, no
+prod role" for `AWS-PROVISION-DEV-MEMORY-PACK-TOKEN.yml`; OIDC needs `id-token: write`, so that one assertion is
+replaced by a stricter check of the same intent: every `role-to-assume` in the file is exactly
+`${{ vars.AWS_STAGING_ROLE_ARN }}` (and the existing `not.toContain('AWS_PROD_ROLE_ARN')` / `vitana/gateway/prod/`
+assertions stay). No other assertion in that file changes. Sparring R1-F1.
 ### Lane `stage-oidc-v1` (vitana-v1, executor kiro, seat exafyltd)
 `paths`: `.github/workflows/AWS-STAGE-DEPLOY-FRONTEND.yml`, `.github/workflows/PREVIEW-DEPLOY-FRONTEND.yml`,
 `.github/workflows/PREVIEW-TEARDOWN-FRONTEND.yml`, `src/lib/eng-platform-stage-oidc.test.ts`, `docs/validation/**`.
@@ -132,12 +140,16 @@ behaviour until the owner sets the variables, so merge order does not matter; th
   uses `StringEquals` only, every `sub` equals one of the §3 values (no `*`), `aud` is `sts.amazonaws.com`; the
   preview and drift permission JSON contain no `"Action": "*"` / `"Resource": "*"`; the script defaults to dry-run
   (`--apply` absent → no `create-role`/`update-assume-role-policy`/`put-role-policy` call is reached; asserted on the
-  script's control flow text) and never contains `create-access-key` or `delete-user`.
+  script's control flow text), never contains `create-access-key` or `delete-user`, and reads group-inherited
+  policies (`list-groups-for-user`, `list-attached-group-policies`, `list-group-policies`) and the user's
+  permissions boundary (sparring R1-F2).
 - `stage-oidc-platform`: `npx jest test/eng-platform-stage-oidc-workflows.test.ts` — red on base; green after: in each
   of the nine files every `configure-aws-credentials` step that used the static keys carries `vars.AWS_STAGING_ROLE_ARN`
   (or `vars.AWS_DRIFT_ROLE_ARN` for drift) and the `!vars.… &&` key guard, `permissions` has `id-token: write`, the
   `AWS-PROVISION-APPILIX-SECRETS.yml` prod leg is byte-identical to base, every file still parses as YAML.
-  `vtid-05009-provision-pack-token-workflow.test.ts` stays green unchanged.
+  `vtid-05009-provision-pack-token-workflow.test.ts` with its `:24` assertion replaced as in §4: red on base for the
+  new check (no `role-to-assume` at all on base → the "only the staging role variable" check fails because the
+  staging role variable is absent), green after; its other assertions unchanged and green.
 - `stage-oidc-v1`: `npx vitest run src/lib/eng-platform-stage-oidc.test.ts` — same assertions for the three files.
 - `program-doc`: no test (docs only); the reviewer checks every `file:line` it cites resolves on `origin/main`.
 

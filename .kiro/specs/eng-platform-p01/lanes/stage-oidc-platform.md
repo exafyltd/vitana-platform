@@ -19,6 +19,7 @@ paths:
   - .github/workflows/I18N-DB-SEED.yml
   - .github/workflows/MIGRATION-DRIFT-CHECK.yml
   - services/gateway/test/eng-platform-stage-oidc-workflows.test.ts
+  - services/gateway/test/vtid-05009-provision-pack-token-workflow.test.ts
   - docs/validation/**
 updated: 2026-11-02T14:55Z
 ---

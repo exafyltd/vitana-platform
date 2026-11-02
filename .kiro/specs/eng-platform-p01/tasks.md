@@ -24,7 +24,7 @@ Authoritative plan: `plan.md`. VTIDs from CI PLAN-SPAR. Branch `kiro/eng-platfor
 ## Lane `aws-inventory` (vitana-platform)
 - [ ] I1 Write the test `services/gateway/test/eng-platform-inventory-readonly.test.ts` (plan §6); record it red on base.
 - [ ] I2 Write `scripts/aws/inventory-readonly.sh` per plan §4 (account/region guard, read-only verbs only, local
-      `--out`, denied calls recorded and skipped, `--help`).
+      `--out`, denied calls recorded and skipped, `--help`; IAM users with groups, group policies and boundary).
 - [ ] I3 Real runs: `--help`; a run without credentials stops at the account guard with a non-zero exit.
 - [ ] I4 Evidence: red/green test output, both runs, `staging-tests.json` with the Jest file as `existing`.
 
@@ -45,7 +45,8 @@ Authoritative plan: `plan.md`. VTIDs from CI PLAN-SPAR. Branch `kiro/eng-platfor
 - [ ] O2 Write `scripts/aws/iam/eng-platform-oidc-{staging-deploy,v1-preview,drift-readonly,prod-deploy}-trust.json`
       and `eng-platform-oidc-{v1-preview,drift-readonly}-policy.json` with exactly the §3 values.
 - [ ] O3 Write `scripts/aws/setup-github-oidc-roles.sh`: dry-run default, `--apply`, `--narrow-prod-trust <role>`,
-      staging role permissions copied from `claude-staging-validation` at run time, account/region guard.
+      staging role permissions copied from `claude-staging-validation` at run time (user policies, group policies,
+      permissions boundary), account/region guard.
 - [ ] O4 Real run: `--help`; dry-run without credentials stops at the guard.
 - [ ] O5 Evidence: red/green, runs, `staging-tests.json` (`existing`: the Jest file).
 
@@ -67,6 +68,8 @@ Authoritative plan: `plan.md`. VTIDs from CI PLAN-SPAR. Branch `kiro/eng-platfor
       `id-token: write` to each `permissions`; only the staging leg of `AWS-PROVISION-APPILIX-SECRETS.yml`.
 - [ ] S3 `MIGRATION-DRIFT-CHECK.yml` aurora steps: `vars.AWS_DRIFT_ROLE_ARN || secrets.AWS_PROD_ROLE_ARN`; with the
       variable set, `--secret-arn` = the `vitana/aurora/prod/claude-readonly` secret, never the master secret.
+- [ ] S3b `vtid-05009-provision-pack-token-workflow.test.ts`: replace only the `:24` `id-token` assertion with "every
+      `role-to-assume` is `${{ vars.AWS_STAGING_ROLE_ARN }}`" (plan §4); every other assertion unchanged.
 - [ ] S4 Parse every changed workflow; run the full `services/gateway` Jest file set that reads these workflows
       (`vtid-05009-provision-pack-token-workflow`, `vtid-04324-ecs-scale-allowlist`) unchanged and green.
 - [ ] S5 Evidence: red/green, YAML parse output, `staging-tests.json` (`existing`: the Jest file).
