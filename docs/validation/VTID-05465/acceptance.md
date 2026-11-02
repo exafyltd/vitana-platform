@@ -2,7 +2,7 @@
 
 Base: `origin/main` 50e55fd3a4 (exafyltd/vitana-platform). Plan: `.kiro/specs/mt-identity-r2/plan.md` §Fix 1,
 `tasks.md` group `helpers-and-policy-rewrite` (H1–H4). Evidence files in this folder: `red.txt`, `green.txt`,
-`commands.log`, `pre-check.sql`, `post-check.sql`, `migration-queue-rows.md`.
+`commands.log`, `pre-check.sql`, `post-check.sql`, `migration-queue-rows.md`, and `outputs/` (raw Jest and PGlite output).
 
 ## Plan amendment 1 (2026-11-02)
 
@@ -16,6 +16,41 @@ resolved tenant, and the only change is the helper:
 global-defaults term. The Jest test checks that each rewritten policy equals its original with only the helper
 swapped. The `tasks.md` acceptance bullets below were written before the amendment; they are read through it (the
 "cannot read a_admin's rows" and "`is_member` policies" wording is replaced by "today's audience").
+
+## Acceptance criteria
+
+AC-1: The change types are Database (2 migrations and 1 rollback) and Tooling/docs (the lint script, the Jest test, the pgTAP files and this folder). Status: met.
+TEST: `git diff --name-only origin/main...HEAD` lists only the supabase/migrations, supabase/tests, scripts/ci, services/gateway/test and docs/validation/VTID-05465 paths.
+
+AC-2: On event_attendance and live_room_attendance the rewritten policies keep today's audience. a_member still reads a_admin's row and exactly the 2 tenant A rows, b_member reads nothing of tenant A, and a non-member reads nothing. Status: met on a throwaway Postgres (see AC-8).
+TEST: supabase/tests/mt_identity_helpers_rls.test.sql §2, run on PGlite (outputs/pglite-apply-rollback-reapply.txt, line "pgTAP rls (after rewrite)").
+
+AC-3: On the 7 health tables a_member reads 0 of a_admin's rows, and their policies are not rewritten. Status: met on a throwaway Postgres.
+TEST: supabase/tests/mt_identity_helpers_rls.test.sql §2b, in the same PGlite run.
+
+AC-4: On the 15 shared tables only members of the resolved tenant get access (the d42 global-defaults term aside). SELECT, INSERT, UPDATE and DELETE checks pass, all 32 policies use tenant_id_for_policies(), and none uses is_member() or a new user_id / auth.uid() term. Status: met.
+TEST: supabase/tests/mt_identity_helpers_rls.test.sql §3 to §5 (same PGlite run), and services/gateway/test/mt-identity-bare-policy-lint.test.ts, test "rewrites every recounted policy to tenant_id_for_policies() and nothing else".
+
+AC-5: Same audience as origin/main. With the helpers applied and the rewrite not applied, the behaviour assertions of §2 to §4 pass on origin/main's policies, and only the structural assertions fail. Status: met.
+TEST: the pgTAP run on origin/main policies recorded in docs/validation/VTID-05465/red.txt (section "pgTAP suite on origin/main policies").
+
+AC-6: The rewrite and rollback migrations do not name access_audit_log, consents, retrieval_traces, role_sessions or user_roles. Status: met.
+TEST: services/gateway/test/mt-identity-bare-policy-lint.test.ts, test "rewrites every recounted policy to tenant_id_for_policies() and nothing else" (NO_POLICY_TABLES check).
+
+AC-7: The lint reads 0 bare policies on this branch and 32 on origin/main, and the Jest test is red on origin/main and green here. Status: met.
+TEST: `npx jest test/mt-identity-bare-policy-lint.test.ts` in services/gateway (7 of 7 pass, outputs/jest-green.txt), `node scripts/ci/bare-policy-lint.mjs` (exit 0), and the red run in outputs/jest-red-origin-main.txt.
+
+AC-8: The migrations apply, re-apply, roll back and re-apply clean on a throwaway in-process Postgres (PGlite 0.5.14) with the fixture. The refusals and the absent-table skips hold. Status: partly met. The D11 Supabase local stack was not available (no Docker or Postgres here), so a run on that stack is still open.
+TEST: outputs/pglite-apply-rollback-reapply.txt (PGlite run of supabase/tests/mt_identity_helpers_fixture.sql, the two migrations, the rollback and the pgTAP files).
+
+AC-9: The PR lists the recount: 32 bare policies on 15 tables in the 673 migration files at origin/main 50e55fd3a4. Status: met.
+TEST: `node scripts/ci/bare-policy-lint.mjs` over origin/main 50e55fd3a4, recorded in docs/validation/VTID-05465/red.txt.
+
+AC-10: Nothing is applied from this PR. The migrations are files only, and the MIGRATION-QUEUE rows are in migration-queue-rows.md. Status: met.
+TEST: `git diff --name-only origin/main...HEAD` (no change outside the listed paths), and docs/validation/VTID-05465/commands.log (no database, gateway, Supabase or AWS endpoint contacted).
+
+AC-11: The PR title starts with `VTID-05465 (mt-identity-r2/helpers-and-policy-rewrite):`. Status: met.
+TEST: `node scripts/ci/validate-pr-locally.cjs --title "<PR title>" --body-file <PR body file> --base main` passes the Merge Deploy Gate (the title contains the VTID).
 
 ## Acceptance bullets → evidence
 
