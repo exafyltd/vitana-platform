@@ -15,8 +15,9 @@ paths:
   - .github/workflows/MT-LOCAL-STACK.yml
   - package.json
   - pnpm-lock.yaml
-updated: 2026-11-02T20:00Z
+updated: 2026-11-02T20:43Z
 repos: [exafyltd/vitana-platform]
+vtid: VTID-05520
 ---
 # D11 local stack on PGlite — mt-guardrails-r2/local-test-stack-pglite (repo vitana-platform)
 
@@ -25,3 +26,6 @@ This lane builds the D11 local stack in-process on PGlite, one database per test
 ## Log
 ### 2026-11-02T20:00Z · kiro-hotmail-202611011452-6d16 · ready
 Created by plan amendment 2 (owner decision, 2026-11-02). No VTID yet.
+
+### 2026-11-02T20:43Z · ci-plan-spar · ready (VTID allocated)
+VTID-05520 allocated after policy approval (converged-auto-v1).
