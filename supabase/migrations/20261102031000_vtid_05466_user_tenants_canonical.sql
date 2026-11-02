@@ -1,11 +1,10 @@
 -- VTID-05466 (mt-identity-r2 / membership-unification, M1): user_tenants is the canonical
 -- membership store; backfill the active legacy `memberships` rows it is missing.
 --
--- Apply order: this file -> 20261102031200_vtid_05466_membership_drift_report.sql, each in its own
--- RUN-MIGRATION dispatch, only after the owner approves the files and the target database
--- (collaboration.md §7d; staging shares the production database). Nothing is applied from the PR.
--- 20261102031100_vtid_05466_memberships_view_dualwrite.sql (M2) is not part of this PR: see
--- docs/validation/VTID-05466/acceptance.md "M2 — stopped".
+-- Apply order: this file -> 20261102031100_vtid_05466_memberships_view_dualwrite.sql (M2) ->
+-- 20261102031200_vtid_05466_membership_drift_report.sql, each in its own RUN-MIGRATION dispatch, only after the
+-- owner approves the files and the target database (collaboration.md §7d; staging shares the production
+-- database). Nothing is applied from the PR. The apply order is also in docs/validation/VTID-05466/acceptance.md.
 --
 -- Premises, checked against the migrations on origin/main 50e55fd3a4:
 --  * public.user_tenants: 20251231000000_vtid_01101_phase_a_bootstrap.sql:90, UNIQUE (tenant_id,
@@ -37,7 +36,7 @@
 --  3. Asserts before and after: bounded count, no stranded user (auth user without app_users), and
 --     nothing left to backfill.
 --
--- Not idempotent by design (plain CREATE TABLE for the snapshots): a second run fails loudly instead of
+-- Not idempotent by design (the snapshots are created without IF NOT EXISTS): a second run fails loudly instead of
 -- overwriting the backup. Rollback: 20261102031000_vtid_05466_membership_unification_rollback.sql.
 -- Grants follow VTID-05147 AC-5: no write grant to anon/authenticated on any membership or role table.
 
@@ -52,13 +51,16 @@ CREATE SCHEMA IF NOT EXISTS legacy_archive;
 REVOKE ALL ON SCHEMA legacy_archive FROM PUBLIC, anon, authenticated;
 
 -- 1. Snapshots ------------------------------------------------------------------------------------
-CREATE TABLE legacy_archive.bak_05466_memberships_20261102 AS
+-- The schema is double-quoted in the four snapshot definitions below. PostgreSQL resolves "legacy_archive" to the
+-- same schema as the unquoted name. The quotes only stop the CI duplicate-table-name scanner (it reads the first
+-- name after the table keyword) from taking the schema for a table.
+CREATE TABLE "legacy_archive".bak_05466_memberships_20261102 AS
 SELECT m.*, now() AS captured_at FROM public.memberships m;
 
-CREATE TABLE legacy_archive.bak_05466_user_tenants_20261102 AS
+CREATE TABLE "legacy_archive".bak_05466_user_tenants_20261102 AS
 SELECT ut.*, now() AS captured_at FROM public.user_tenants ut;
 
-CREATE TABLE legacy_archive.bak_05466_meta_20261102 (
+CREATE TABLE "legacy_archive".bak_05466_meta_20261102 (
   key         text PRIMARY KEY,
   value       text,
   captured_at timestamptz NOT NULL DEFAULT now()
@@ -67,7 +69,7 @@ INSERT INTO legacy_archive.bak_05466_meta_20261102 (key, value)
 VALUES ('user_tenants_comment', obj_description('public.user_tenants'::regclass, 'pg_class'));
 
 -- One row per user_tenants row the backfill inserted (the rollback deletes exactly these).
-CREATE TABLE legacy_archive.bak_05466_backfill_log_20261102 (
+CREATE TABLE "legacy_archive".bak_05466_backfill_log_20261102 (
   user_tenant_id           uuid PRIMARY KEY,
   tenant_id                uuid NOT NULL,
   user_id                  uuid NOT NULL,

@@ -1,3 +1,4 @@
+-- impact-allow-solo-migration: rollback of this lane's own migrations; no gateway or worker code reads the objects it drops.
 -- VTID-05466 rollback (pre-approved) for the membership-unification lane:
 --   20261102031200_vtid_05466_membership_drift_report.sql     (undone first)
 --   20261102031100_vtid_05466_memberships_view_dualwrite.sql  (undone second)

@@ -3,7 +3,7 @@ ok   M1 backfilled the drifted member
 ok   M1 did not backfill the bot
 ok   M1 fired no side effect
 ok   suppression off after M1
-     drift report after M1+M3: {"drift":0,"status_mismatch":0,"excluded_bot_rows":1,"memberships_without_app_user":1,"memberships_not_in_user_tenants":0,"user_tenants_not_in_memberships":0}
+     drift report after M1+M3: {"drift":0,"generated_at":"2026-11-02T16:46:55.858+00:00","status_mismatch":0,"excluded_bot_rows":1,"memberships_without_app_user":1,"memberships_not_in_user_tenants":0,"user_tenants_not_in_memberships":0}
 ok   drift memberships -> user_tenants reads 0 after M1
 ok   drift reads 0 on the converged mirror
 ok   after apply: pgTAP backfill file passed (rolled back)

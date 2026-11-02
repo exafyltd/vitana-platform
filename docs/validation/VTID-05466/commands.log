@@ -62,3 +62,19 @@ $ node -e "validateManifest(staging-tests.json)" (scripts/ci/staging-verify/lib.
   services/gateway/node_modules; the lane changes no gateway code, CI runs the suite.
 - Live recount (M1 "re-verify the counts read-only"): forbidden from a session tool; it is live-before.sql,
   run in the RUN-MIGRATION pre-check after the owner's approval.
+
+# CI fixes on head 001b7bd049 (impact scan, validate-pr). Scratch tools live outside the repository, in
+# /projects/sandbox/pglite-05466 (PGlite 0.5.14 install); nothing from it is committed.
+$ IMPACT_SCAN_BASE=origin/main node scripts/ci/dev-autopilot-impact-scan.mjs
+  -> edited tree: blocker=0 warning=0, exit 0. The generated dev-autopilot-impact-findings.json was deleted, not committed.
+$ scratch rule run: duplicate-table-name + migration-requires-code-touch check() on the HEAD migrations and on the edited tree
+  -> HEAD: 5 blockers (`for` from the comment; `legacy_archive` x4 from schema-qualified CREATE TABLE) + 1 warning, the same
+     set CI reported. Edited tree: 0 findings.
+$ node docs/validation/VTID-05466/pglite-migration-check.mjs <worktree>   (PGlite 0.5.14, PostgreSQL 18.6, in memory)
+  -> ALL OK, 24 checks. outputs/pglite-apply.txt, pglite-rollback.txt, pglite-reapply.txt and pgtap.txt are the lines of
+     outputs/pglite-migration-check.txt grouped by phase (the pgTAP lines are the 6 "pgTAP" lines).
+$ scratch catalog fingerprint: apply, no-op rollback, rollback, re-apply; original SQL (HEAD) vs edited SQL
+  -> tables, columns, constraints, indexes, functions, triggers, policies, grants, comments and row counts identical at every step.
+$ node scripts/ci/validate-pr-locally.cjs --title "VTID-05466 (mt-identity-r2/membership-unification): ..." --body-file <PR body> --base main
+  -> APPROVED: Acceptance mapping OK, CSP scan clean, OASIS_IMPACT=no. The script builds origin/<base> itself, so
+     `--base origin/main` fails with "couldn't find remote ref origin/main"; `--base main` is the same base.
