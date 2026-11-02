@@ -26,7 +26,8 @@ paths:
   - tests/e2e/staging/vtid-05206-community-intro.staging.spec.ts
   - tests/e2e/staging/vtid-*-community-intro-choice.staging.spec.ts
   - docs/validation/VTID-*/**
-updated: 2026-10-30T17:30Z
+updated: 2026-11-02T15:59Z
+vtid: VTID-05475
 ---
 # Lane `explicit-intro-choice`
 Plan: `.kiro/specs/welcome-finish-r2/` — `plan.md` and the `tasks.md` section `<!-- lane: explicit-intro-choice -->` are authoritative.
@@ -36,3 +37,6 @@ The migration file merges with this lane; **applying it is an owner stop** (`col
 ## Log
 ### 2026-10-30T17:30Z · kiro-jtadic-202610291040-a0e6 · created → ready
 Lane drafted with the plan, for the owner's final decision of 2026-10-30 (explicit choice, supersedes D1).
+
+### 2026-11-02T15:59Z · ci-plan-spar · ready (VTID allocated)
+VTID-05475 allocated after policy approval (converged-auto-v1).

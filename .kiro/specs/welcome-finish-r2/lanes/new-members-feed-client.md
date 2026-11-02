@@ -17,7 +17,8 @@ paths:
   - src/hooks/useNewMembersFeed.test.ts
   - tests/e2e/staging/vtid-*-new-members-feed.staging.spec.ts
   - docs/validation/VTID-*/**
-updated: 2026-10-30T15:00Z
+updated: 2026-11-02T15:59Z
+vtid: VTID-05478
 ---
 # Lane `new-members-feed-client`
 Plan: `.kiro/specs/welcome-finish-r2/` — `plan.md` and the `tasks.md` section `<!-- lane: new-members-feed-client -->` are authoritative.
@@ -26,3 +27,6 @@ VTID: assigned by CI after PLAN-SPAR converges; do not start before `vtid:` is s
 ## Log
 ### 2026-10-30T15:00Z · kiro-jtadic-202610291040-a0e6 · created → ready
 Lane drafted with the plan.
+
+### 2026-11-02T15:59Z · ci-plan-spar · ready (VTID allocated)
+VTID-05478 allocated after policy approval (converged-auto-v1).
