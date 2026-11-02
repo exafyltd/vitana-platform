@@ -24,6 +24,10 @@ paths:
   - src/pages/health/WellnessServices.tsx
   - src/pages/memory/Diary.tsx
   - src/pages/memory/Recall.tsx
+  - src/components/AppLayout.tsx
+  - src/components/AppLayout.colours.test.ts
+  - src/components/ui/notification-badge.tsx
+  - src/components/ui/notification-badge.colours.test.tsx
   - tests/e2e/staging/vtid-*-colours-batch-2.staging.spec.ts
   - scripts/ci/pr-gate/baseline/design.json
   - scripts/ci/pr-gate/baseline/eslint.json
@@ -67,3 +71,11 @@ The prior VTID came from session 5fbb73a2, which converged on a vitana-platform 
 mechanism, so the partner never read vitana-v1 (handoff log 2026-10-21T09:43Z). Cleared `vtid:` and set
 `next_actor: claude`; the re-spar (vitana-v1 now declared in handoff `spar_refs:`) re-converges and CI auto-allocates a
 fresh VTID bound to the new sparring record. No live system touched.
+
+### 2026-11-01T23:20Z · kiro-exafyltd-202611012315-da6e · paths widened for the VTID-05286 fix-forward
+STAGING-VERIFY run 41329713260 (community-app @ 035800a7) failed this lane's spec on /comm, /comm/groups,
+/comm/live-rooms and /sharing/campaigns with `raw palette class … lucide lucide-shield h-3 w-3 text-slate-400`: the
+leak is the app chrome (`AppLayout.tsx` tenant-name Shield icon, the sidebar avatar fallback, and the shared
+`NotificationBadge`), not a screen of this batch. Added `src/components/AppLayout.tsx`,
+`src/components/ui/notification-badge.tsx` and their colour tests so the fix-forward (colour-token swap only, existing
+tokens, no structural change) passes Lane scope. Owner-ref: owner-approved round-2 fix-forward brief.

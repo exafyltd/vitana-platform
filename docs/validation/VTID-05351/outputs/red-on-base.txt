@@ -1,0 +1,9 @@
+# red on origin/main 94b5cd2600 — scripts/collab/queue.test.mjs with base queue.mjs
+# tests 58
+# pass 53
+# fail 5
+not ok 54 - transitionChain: valid lane chains (both merge-sha conventions, changes loop, intermediate parked)
+not ok 55 - transitionChain: valid plan chain, one entry per edge; plan → done needs every lane done
+not ok 56 - transitionChain: invalid chains each fail with their own error
+not ok 57 - validate: a closing-record PR may carry executing → in-review → verified → done; authorization still applies
+not ok 58 - validate: a chain whose accept entry has no Collab-Review commit fails; a single legal edge needs no new evidence
