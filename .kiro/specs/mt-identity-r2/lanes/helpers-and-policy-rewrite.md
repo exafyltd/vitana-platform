@@ -14,8 +14,9 @@ paths:
   - scripts/ci/bare-policy-lint.mjs
   - services/gateway/test/mt-identity-bare-policy-lint.test.ts
   - supabase/tests/mt_identity_helpers_*.sql
-updated: 2026-11-01T15:00Z
+updated: 2026-11-02T13:05Z
 repos: [exafyltd/vitana-platform]
+vtid: VTID-05465
 ---
 # helpers-and-policy-rewrite — tenant_id_for_policies() + is_member() + the bare-policy rewrite (DB)
 
@@ -49,3 +50,6 @@ Rules (`collaboration.md` §7a):
 ### 2026-11-01T15:00Z · kiro-hotmail-202611011452-6d16 · created → ready
 Re-plan of `mt-identity/helpers-and-policy-rewrite`. The bare-policy set was re-counted on `62990ce285` (32 on 15
 tables). Executor and reviewer follow today's §3a and §7 rules.
+
+### 2026-11-02T13:05Z · ci-plan-spar · ready (VTID allocated)
+VTID-05465 allocated after policy approval (converged-auto-v1).

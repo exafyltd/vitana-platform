@@ -13,8 +13,9 @@ paths:
   - supabase/migrations/20261102033100_vtid_*_fix_bootstrap_admin_user.sql
   - supabase/migrations/20261102033000_vtid_*_role_source_rollback.sql
   - supabase/tests/mt_identity_roles_*.sql
-updated: 2026-11-01T15:00Z
+updated: 2026-11-02T13:05Z
 repos: [exafyltd/vitana-platform]
+vtid: VTID-05467
 ---
 # role-source-and-bootstrap — one role source + fix bootstrap_admin_user (DB)
 
@@ -39,3 +40,6 @@ title `VTID-xxxxx (mt-identity-r2/role-source-and-bootstrap): …`. Trailers `Co
 ### 2026-11-01T15:00Z · kiro-hotmail-202611011452-6d16 · created → ready
 Re-plan of `mt-identity/role-source-and-bootstrap`. Corrected the `bootstrap_admin_user` source to its last
 definition (vitana-v1 `20250915132930`).
+
+### 2026-11-02T13:05Z · ci-plan-spar · ready (VTID allocated)
+VTID-05467 allocated after policy approval (converged-auto-v1).

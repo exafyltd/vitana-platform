@@ -13,8 +13,9 @@ paths:
   - supabase/migrations/20261102031200_vtid_*_membership_drift_report.sql
   - supabase/migrations/20261102031000_vtid_*_membership_unification_rollback.sql
   - supabase/tests/mt_identity_membership_*.sql
-updated: 2026-11-01T15:00Z
+updated: 2026-11-02T13:05Z
 repos: [exafyltd/vitana-platform]
+vtid: VTID-05466
 ---
 # membership-unification — user_tenants canonical, memberships → view, dual-write + drift report (DB)
 
@@ -41,3 +42,6 @@ approval of the files and the target database (§7d). Branch `kiro/mt-identity-r
 ### 2026-11-01T15:00Z · kiro-hotmail-202611011452-6d16 · created → ready
 Re-plan of `mt-identity/membership-unification`. The trigger names and suppression guard were re-verified on
 `62990ce285`.
+
+### 2026-11-02T13:05Z · ci-plan-spar · ready (VTID allocated)
+VTID-05466 allocated after policy approval (converged-auto-v1).

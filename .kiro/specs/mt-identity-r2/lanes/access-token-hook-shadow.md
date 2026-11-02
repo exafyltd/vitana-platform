@@ -12,8 +12,9 @@ paths:
   - supabase/migrations/20261102032100_vtid_*_tenant_claim_mismatch_log.sql
   - supabase/migrations/20261102032000_vtid_*_access_token_hook_shadow_rollback.sql
   - supabase/tests/mt_identity_hook_*.sql
-updated: 2026-11-01T15:00Z
+updated: 2026-11-02T13:05Z
 repos: [exafyltd/vitana-platform]
+vtid: VTID-05464
 ---
 # access-token-hook-shadow — custom access-token hook in SHADOW only (DB)
 
@@ -40,3 +41,6 @@ title `VTID-xxxxx (mt-identity-r2/access-token-hook-shadow): …`. Trailers `Col
 ## Log
 ### 2026-11-01T15:00Z · kiro-hotmail-202611011452-6d16 · created → ready
 Re-plan of `mt-identity/access-token-hook-shadow`. Re-verified that no hook exists in the current migrations.
+
+### 2026-11-02T13:05Z · ci-plan-spar · ready (VTID allocated)
+VTID-05464 allocated after policy approval (converged-auto-v1).

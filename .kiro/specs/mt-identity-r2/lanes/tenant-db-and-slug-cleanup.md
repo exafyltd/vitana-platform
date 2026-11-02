@@ -29,8 +29,9 @@ paths:
   - services/gateway/test/mt-identity-primary-tenant-readers.test.ts
   - services/gateway/test/mt-identity-tenant-slug-lookup.test.ts
   - services/gateway/test/mt-identity-presence-tenant.test.ts
-updated: 2026-11-01T15:00Z
+updated: 2026-11-02T13:05Z
 repos: [exafyltd/vitana-platform]
+vtid: VTID-05468
 ---
 # tenant-db-and-slug-cleanup — tenantDb/TENANT_TABLES, canonical isHealthTable()/healthDb, slug cleanup (CODE)
 
@@ -66,3 +67,6 @@ Rules (§7a): no VTID allocation, no merge outside §7b, no deploy and no live w
 ### 2026-11-01T15:00Z · kiro-hotmail-202611011452-6d16 · created → ready
 Re-plan of `mt-identity/tenant-db-and-slug-cleanup`. Answers R3-F1 (the dev-auth 503 guard) and R3-F2 (presence
 tests). All cited sites were re-verified on `62990ce285`.
+
+### 2026-11-02T13:05Z · ci-plan-spar · ready (VTID allocated)
+VTID-05468 allocated after policy approval (converged-auto-v1).
