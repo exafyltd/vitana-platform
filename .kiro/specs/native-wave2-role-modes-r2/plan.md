@@ -147,4 +147,5 @@ decomposition, re-verified against `exafyltd/vitana-v1` `origin/main` `apps/mobi
 sibling spec `native-wave2-home-feed-news` structure exactly. No VTID allocated (CI PLAN-SPAR allocates lane VTIDs on
 convergence); no app code written; no live system touched. PLAN-SPAR is live on main (commit `55cc5bbadc`) and the
 `spar_refs` entry lets the partner read the frontend repo to verify these premises.
+Programme registration (sparring R1-F1): this plan PR itself lists `vitana-platform:native-wave2-role-modes-r2` under `specs:` in `docs/programs/native-app/program.md` (the first commit of this PR), so the spec is registered before any lane PR; Collab handoff on main checks it.
 <!-- plan:end -->
