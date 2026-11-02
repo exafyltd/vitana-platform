@@ -1,0 +1,16 @@
+preflight vitana-platform C:\Users\dstev\vitana-platform-1\.worktrees\chcf-pr
+  base a8d36bad3b2cb1ab1826b20db1461e86032afc4b  head ba5bbd9f0f4ad9920c2596e31683a1ec661674cc  branch kiro/collab-handoff-check-fix/program-registry
+
+SKIP  Collab tests [required]
+      --no-tests
+PASS  Collab handoff [required]
+PASS  Lane scope [required]
+PASS  PR-GATE scope [report-only in CI (until config.enforce=true)]
+PASS  PR-GATE sparring [report-only in CI (until config.enforce=true)]
+PASS  PR-GATE weakening [report-only in CI (until config.enforce=true)]
+PASS  PR-GATE red-green [report-only in CI (until config.enforce=true)]
+PASS  Kiro steering [report-only in CI (until config.enforce=true)]
+
+preflight: every check passed
+
+exit=0

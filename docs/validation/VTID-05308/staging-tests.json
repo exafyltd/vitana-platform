@@ -1,0 +1,22 @@
+{
+  "vtid": "VTID-05308",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "community members still requires auth (read-only probe; VTID-05308 changed no route)",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/api/v1/community/members",
+      "rejected_probe": true,
+      "expect_status": 401,
+      "reason": "VTID-05308 (#4423) changed only a test file, a loop-catalog entry and a staging-tests.json; it mounts no route and writes nothing. This rejected probe is the mandatory read-only staging check."
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/loop-catalog.test.ts test/vtid-04868-plan-sparring-session-layer.test.ts",
+      "cwd": "services/gateway",
+      "reason": "The two suites #4423 fixed: loop-catalog.test.ts (loop-ownership catalog, after CI-HEALTH.yml was registered) and vtid-04868-plan-sparring-session-layer.test.ts (CLAUDE.md rule 51-55 text, after the VTID-05280 trim). Both are source/text checks with no network and no write, proven in CI, never on staging."
+    }
+  ]
+}

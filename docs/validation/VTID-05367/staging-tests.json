@@ -1,0 +1,29 @@
+{
+ "vtid": "VTID-05367",
+ "service": "gateway",
+ "tests": [
+  {
+   "kind": "http",
+   "name": "gateway alive after the change",
+   "path": "/alive",
+   "expect_status": 200
+  },
+  {
+   "kind": "http",
+   "name": "companion messages stay disabled on staging (read-only GET, no member data)",
+   "path": "/api/v1/companion/status",
+   "expect_status": 200,
+   "expect_json": {
+    "ok": true,
+    "mode": "disabled-on-staging",
+    "env": "staging"
+   }
+  },
+  {
+   "kind": "existing",
+   "ref": "npx jest test/vtid-05367-companion-enrichment-signals.test.ts test/vtid-05099-companion-messages.test.ts test/vtid-05099-proactive-match-daily-limit.test.ts test/vtid-05100-companion-delivery.test.ts test/vtid-05101-companion-generators.test.ts test/vtid-05171-companion-wiring.test.ts test/companion-qa.test.ts",
+   "cwd": "services/gateway",
+   "reason": "The change is the companion tick's bulk enrichment reads and the eligible-card set on MemberContext. The tick never runs on staging (the engine answers disabled-on-staging, staging shares the production database, rule 48), so the behaviour is proven offline: vtid-05367 pins false-initialized completion for a member with no rows, the per-member rules (inactive/disconnected social, disabled calendar, revoked tokens do not count), dismissal rows grouped per member, a failing source reported in enrichment_unavailable without throwing (one and all sources down), E6/E7 hidden while the Meta OAuth client is unset and shown when set, and an E8 dismissal hidden at +3 days and back at +8 days (the tick's real now). The existing companion suites prove nothing else changed."
+  }
+ ]
+}
