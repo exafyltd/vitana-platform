@@ -92,7 +92,10 @@ not create `admin-invitations.ts` and does not edit the existing route.
 - [ ] A6 Jest in `services/gateway/test/mt-tenant-admin-*.test.ts`: scoped reads (b_admin sees 0 T_A rows); **an
       exafy-admin still sees cross-tenant rows on the new scoped endpoints**; both resolvers unit-tested;
       `mt-tenant-admin-scope-helper.test.ts` guard (fails on a direct `identity.tenant_id` / `identity?.tenant_id` /
-      `targetTenantId` read in ANY non-test `src/**/*.ts` importing `middleware/require-tenant-admin`,
+      `targetTenantId` read in ANY non-test `src/**/*.ts` importing `middleware/require-tenant-admin`, in dotted,
+      bracket (`identity['tenant_id']`), destructured (`const { tenant_id } = req.identity`) or aliased
+      (`const { identity } = req`, `const id = req.identity`) form, with one inline fixture per form asserted flagged
+      and one clean helper-only fixture asserted passing — R1-F3;
       except a committed shrink-only `LEGACY_DIRECT_READ` baseline; fails also when a baseline file is clean but still
       listed — R3-F2); target tenant kept in a module-private `WeakMap<Request,string>` read only by the helpers (the
       `:160` `(req as any).targetTenantId` write kept one release for the baseline files); backfill regressions (`admin-autopilot.ts`
@@ -158,7 +161,9 @@ Allowed paths: `src/pages/admin/InvitationAccept.tsx`, `src/pages/admin/tenant-a
       pattern at `:2192`), no new mount; previously planned as: mount it in `App.tsx` under the admin
       `RouteGuard` at its existing path `/admin/init-events`, the same way the other `/admin/*` pages are (guard, never
       remove). The gateway fixture entry (`e2e/fixtures/routes.ts:193`, `ADMIN_ROUTES`) already lists it as admin-only
-      and is NOT edited. Vitest: the route renders only through the admin guard.
+      and is NOT edited. Vitest: the route renders only through the admin guard. Lines verified on vitana-v1
+      `origin/main` `c3d71c83e7` (R1-F1); re-read them on the lane's base first — moved → wrap at the new line;
+      removed or already guarded → record it in the lane log and make no `/admin/init-events` change.
 - [ ] P3 Scoped tenant-admin pages (moderation, signups, notifications, users, audit) under
       `src/pages/admin/tenant-admin/**` + `src/components/admin/tenant-admin/**`, consuming the scoped reads; Spotlight
       tokens, logical start/end, skeletons.

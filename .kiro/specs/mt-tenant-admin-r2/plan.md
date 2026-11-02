@@ -4,6 +4,34 @@ change_class: standard
 # mt-tenant-admin — provisioning rest, scoped tenant-admin, invitation accept, deactivate/archive (WS4) — mt-tenant-admin-r2 (re-plan)
 
 <!-- plan:begin -->
+## Round 1 answers (session `2bb76919`)
+- **R1-F1** (vitana-v1 premises unverifiable): accepted. Every vitana-v1 premise was re-read on vitana-v1
+  `origin/main` `c3d71c83e740893169957fc8ff72ab70133eeeda` (2026-11-02); the pinned ref is now named here.
+  - `src/pages/admin/InitEvents.tsx` exists.
+  - `src/App.tsx:433`: `const InitEvents = lazy(() => import("./pages/admin/InitEvents"));`
+  - `src/App.tsx:2216-2217`, under the comment `{/* Legacy admin routes — redirects for backward compatibility */}`:
+    `<Route path="/admin/init-events" element={<InitEvents />} />` (no guard).
+  - `src/App.tsx:2192-2193`, the sibling pattern: `<Route path="/admin/device-preview" element={` then
+    `<AuthGuard><ProtectedRoute requiredRole="admin"><AdminDevicePreview /></ProtectedRoute></AuthGuard>`.
+
+  The tenant-admin-pages lane re-reads these lines on its own base before editing. If the route has moved, the lane
+  wraps it at its new line; if it has been removed or already guarded, the lane records that and makes no
+  `/admin/init-events` change.
+- **R1-F2** (migration range typo): accepted. The range is `20261102070000`–`20261102075959` (§Migrations).
+- **R1-F3** (the guard misses destructured, bracket and aliased reads): accepted. The structural guard in
+  `mt-tenant-admin-scope-helper.test.ts` flags, in every non-baseline file it globs, each of these forms:
+  - dotted `identity.tenant_id` / `identity?.tenant_id`;
+  - bracket `identity['tenant_id']`, `identity?.["tenant_id"]`;
+  - destructured `tenant_id` from an expression that mentions `identity` (`const { tenant_id } = req.identity`,
+    `const { tenant_id: t } = (req as AuthenticatedRequest).identity`);
+  - an alias of identity: `identity` destructured out of `req` (`const { identity } = req`) or assigned to a local
+    (`const id = req.identity`, `= (req as AuthenticatedRequest).identity`);
+  - any `targetTenantId` token.
+
+  A converted file therefore never touches `identity` except through the two helpers. The test carries one inline
+  fixture string per form and asserts each is flagged, plus one clean helper-only fixture that passes, so the
+  detector itself is tested. No ESLint rule is added (the Jest guard is the one mechanism).
+
 ## Re-plan answers (session `03698d49` round 3)
 Re-plan of `mt-tenant-admin` (branch `kiro/mt-tenant-admin/plan`; PLAN-SPAR session `03698d49` escalated at the round
 cap). Every premise was re-verified on platform `origin/main` `62990ce285` and vitana-v1 `58c76c956` on 2026-11-01.
@@ -138,7 +166,8 @@ read-only):
   and add the `tenant_id` predicate only when non-null. A Jest guard test
   (`services/gateway/test/mt-tenant-admin-scope-helper.test.ts`) is STRUCTURAL (R3-F2): it globs every non-test
   `services/gateway/src/**/*.ts` importing `middleware/require-tenant-admin` and fails if any reads `identity.tenant_id`,
-  `identity?.tenant_id` or `targetTenantId` directly, except files in a committed shrink-only `LEGACY_DIRECT_READ`
+  `identity?.tenant_id` or `targetTenantId` directly — dotted, bracket, destructured or through an alias of
+  `identity` (R1-F3, forms listed in the round-1 answers) — except files in a committed shrink-only `LEGACY_DIRECT_READ`
   baseline (fails too when a baseline file is clean but still listed). The target tenant is kept in a module-private
   `WeakMap<Request, string>` read only by the helpers; the `:160` `(req as any).targetTenantId` write stays one release for
   the baseline files.
@@ -194,7 +223,7 @@ read-only):
   in one repo, one PR.
 
 ## Migrations
-Range `20261102070000`–`20261101075959` (NN=07). Files, all with a paired rollback under the lane's
+Range `20261102070000`–`20261102075959` (NN=07). Files, all with a paired rollback under the lane's
 `docs/validation/<vtid>/` and read-only pre/post checks:
 - `20261102070100_vtid_xxxxx_mt_tenant_admin_p2_moderation.sql` (+ rollback) — tenant-admin-moderation-db.
 - `20261102070150_vtid_xxxxx_mt_tenant_admin_p3_moderation.sql` (+ rollback) — tenant-admin-moderation-db.
