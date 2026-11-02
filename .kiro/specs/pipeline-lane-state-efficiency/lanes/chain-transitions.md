@@ -14,7 +14,7 @@ paths:
   - scripts/collab/queue.mjs
   - scripts/collab/queue.test.mjs
   - docs/validation/VTID-*/**
-updated: 2026-11-02T04:11Z
+updated: 2026-11-02T04:17Z
 vtid: VTID-05351
 parked_from: in-review
 ---
@@ -845,4 +845,6 @@ park (stale_claim); claim released; Claude unavailable → exafyltd
 ### 2026-11-02T04:05Z · pm-agent · update
 park (stale_claim); claim released; Claude unavailable → exafyltd
 ### 2026-11-02T04:11Z · pm-agent · update
+park (stale_claim); claim released; Claude unavailable → exafyltd
+### 2026-11-02T04:17Z · pm-agent · update
 park (stale_claim); claim released; Claude unavailable → exafyltd
