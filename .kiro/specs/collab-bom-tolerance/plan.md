@@ -19,7 +19,8 @@ change. Make the validator read a file that starts with a UTF-8 BOM, without cha
    (`:215`) turn `null` into `no front matter`.
 2. `validateRange` (`:787-797`) validates every handoff/lane file present at head for each touched slug, so an
    unchanged sibling lane file is validated too. `showFile` and `catFileBatch` decode blobs with
-   `toString('utf8')` (`:744`), which keeps a leading BOM as U+FEFF, so the anchor `^---` fails.
+   UTF-8 (`showFile` `:486` through `git()` `encoding: 'utf8'` `:445`; `catFileBatch` `:476`; `commitFileReader`
+   `:745`), which keeps a leading BOM as U+FEFF, so the anchor `^---` fails.
 3. A scan of every `.kiro/specs/**/{handoff,lanes/*}.md` blob on `origin/main` finds a BOM in exactly eight files, all
    in `desktop-spotlight-finish/lanes/`: `colours-backoffice`, `colours-batch-2`..`-5`, `commerce-shell`, `sizes`,
    `skeletons`. They landed with commit `fd689346dc` (2026-10-21, `Collab-Lane: desktop-spotlight-finish/_plan`).
@@ -76,6 +77,15 @@ plan branch. Until that `_plan` PR lands, the records PRs #4568-#4572 stay red o
 - Lane: `node --test scripts/collab/queue.test.mjs` fails on `origin/main` only on the BOM assertion and passes in full
   on the lane head; outputs in `docs/validation/<VTID>/red-on-base.txt` and `commands.log`.
 - `node scripts/collab/queue.mjs validate --base origin/main --head HEAD` exits 0 on the lane head.
-- No deploy: the change is CI tooling only, so there is no staging suite and no Gate 2; it is done when merged with
-  green checks.
+- `node scripts/collab/queue.mjs scope-check --base origin/main --head HEAD` exits 0 on the lane head; its output
+  (including the `declares no paths … the Project Manager never merges it` warning, `queue.mjs:992`) goes to
+  `commands.log` as evidence for the §3a merge path.
+- No deploy: the change is CI tooling only, so there is no staging suite and no Gate 2.
+## Merge (§3a protected gate file)
+Neither this plan PR nor the `bom-strip` lane PR merges through the Project Manager: `governanceMergeAllowed`
+(`services/gateway/src/services/project-manager/governance.ts:185`) always refuses `protected_gate_file` for
+`scripts/collab/queue.mjs`. Each merges only when (1) the owner's instruction naming `collab-bom-tolerance` is recorded
+in the lane log (or the handoff log, for the plan PR), (2) the reviewer agent `vitana-lane-reviewer` has accepted the
+current head, and (3) every required check is green on that head. Never on a reviewer-agent accept alone, never
+`--admin`. The change is done when the lane PR is merged that way with green checks.
 <!-- plan:end -->

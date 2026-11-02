@@ -7,7 +7,7 @@ Repo `exafyltd/vitana-platform`. Code starts only after the VTID is allocated (p
 - [ ] T2 `scripts/collab/queue.mjs` `parseFrontMatter`: strip one leading U+FEFF before the `^---` match (plan
       § Change 1). No other line changes.
 - [ ] T3 Green on head: `node --test scripts/collab/queue.test.mjs` passes in full; `node scripts/collab/queue.mjs
-      validate --base origin/main --head HEAD` exits 0. Commands and summaries in `docs/validation/<VTID>/commands.log`.
+      validate --base origin/main --head HEAD` and `scope-check --base origin/main --head HEAD` exit 0. Commands and summaries in `docs/validation/<VTID>/commands.log`.
 - [ ] T4 PR titled `VTID-xxxxx (collab-bom-tolerance/bom-strip): …`; every required check green on its head;
       reviewer-agent accept on the head; merge only on the owner's instruction naming the plan (§3a).
 Acceptance:
