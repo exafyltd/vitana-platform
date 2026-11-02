@@ -191,18 +191,32 @@ describe('VTID-05368: the Messenger companion DM carries the personalized enrich
     expect(db.ledger.find((x) => x.user_id === DONE)?.mode).toBe('shadow');
   });
 
-  it('never offers Connect Instagram/Facebook while the Meta OAuth client is unset', async () => {
+  // NEW has done everything except the two social connects (E6 Instagram, E7 Facebook).
+  function seedOnlySocialMissing(): Record<string, any[]> {
     const t = seed();
-    // NEW has done everything except the two social connects.
     t.profiles[0] = { ...t.profiles[1], user_id: NEW, first_name: 'Nina' };
     t.profile_posts.push({ user_id: NEW });
     t.connected_app_settings.push({ user_id: NEW, app_id: 'google-calendar', enabled: true });
     t.contacts.push({ user_id: NEW });
     t.user_device_tokens.push({ user_id: NEW, revoked_at: null, fcm_token: 'tok2' });
-    const db = fakeDb(t);
+    return t;
+  }
+
+  it('never offers Connect Instagram/Facebook while the Meta OAuth client is unset', async () => {
+    const db = fakeDb(seedOnlySocialMissing());
     const { d, delivered } = deps(db, 'live');
     await runCompanionTick(d as any);
     const toNew = delivered.find((x) => x.userId === NEW)!;
     expect(['E6', 'E7']).not.toContain(toNew.cardType);
+  });
+
+  it('offers Connect Instagram (E6) once the Meta OAuth client is set (the gate is what hides it above)', async () => {
+    for (const k of META_ENV) process.env[k] = `test-${k.toLowerCase()}`;
+    const db = fakeDb(seedOnlySocialMissing());
+    const { d, delivered } = deps(db, 'live');
+    await runCompanionTick(d as any);
+    const toNew = delivered.filter((x) => x.userId === NEW);
+    expect(toNew).toHaveLength(1);
+    expect(toNew[0]).toMatchObject({ momentKey: 'enrichment_e6', cardType: 'E6' });
   });
 });

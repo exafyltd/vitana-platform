@@ -23,11 +23,13 @@ AC-4 One card per member per local day: a second tick the same day sends nothing
 TEST: services/gateway/test/vtid-05368-messenger-companion-verification.test.ts
 
 AC-5 Staff mode sends the enrichment card to staff members only; everyone else keeps the shadow behaviour. E6/E7 are
-never offered while the Meta OAuth client is unset.
+never offered while the Meta OAuth client is unset, and the same member is offered E6 once it is set (proves the gate).
 TEST: services/gateway/test/vtid-05368-messenger-companion-verification.test.ts
 
 AC-6 Staging, read-only: `/alive` 200 and `GET /api/v1/companion/status` → `mode: disabled-on-staging`.
-TEST: services/gateway/test/vtid-05100-companion-delivery.test.ts
+TEST: docs/validation/VTID-05368/staging-tests.json (STAGING-VERIFY checks against the deployed staging gateway).
+Offline support only: services/gateway/test/vtid-05100-companion-delivery.test.ts covers the config resolution that
+yields `disabled-on-staging`, not the HTTP endpoint.
 
 Decisions taken (inside the approved plan, most conservative option):
 - The default pacer is exercised through a module mock of `canSurfaceProactively` (not an injected `pacer` dep), so the
