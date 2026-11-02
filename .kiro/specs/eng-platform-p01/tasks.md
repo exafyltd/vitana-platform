@@ -65,7 +65,8 @@ Authoritative plan: `plan.md`. VTIDs from CI PLAN-SPAR. Branch `kiro/eng-platfor
 - [ ] S1 Write `services/gateway/test/eng-platform-stage-oidc-workflows.test.ts` (plan §6); record it red on base.
 - [ ] S2 Apply the §3 credential shape with `AWS_STAGING_ROLE_ARN` to the eight static-key workflows of plan §2, and
       `id-token: write` to each `permissions`; only the staging leg of `AWS-PROVISION-APPILIX-SECRETS.yml`.
-- [ ] S3 `MIGRATION-DRIFT-CHECK.yml` aurora step: `vars.AWS_DRIFT_ROLE_ARN || secrets.AWS_PROD_ROLE_ARN`.
+- [ ] S3 `MIGRATION-DRIFT-CHECK.yml` aurora steps: `vars.AWS_DRIFT_ROLE_ARN || secrets.AWS_PROD_ROLE_ARN`; with the
+      variable set, `--secret-arn` = the `vitana/aurora/prod/claude-readonly` secret, never the master secret.
 - [ ] S4 Parse every changed workflow; run the full `services/gateway` Jest file set that reads these workflows
       (`vtid-05009-provision-pack-token-workflow`, `vtid-04324-ecs-scale-allowlist`) unchanged and green.
 - [ ] S5 Evidence: red/green, YAML parse output, `staging-tests.json` (`existing`: the Jest file).
