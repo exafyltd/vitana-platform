@@ -76,7 +76,12 @@ product with its own identity and Maxina's behaviour cannot be golden-tested as 
    replaces `base_identity` WHOLESALE** -- `ai-personality-service.ts:688`
    `merged.base_identity = tenantConfig.system_prompt_override` overwrites the entire string, including the
    fixed Vitana name/pronunciation/three-names/safety rules, not just the tenant block, so the fixed Vitana
-   identity is NOT structurally protected by today's merge. The orb profile already carries
+   identity is NOT structurally protected by today's merge. **A second channel (R1-F1):** `:699-701`
+   `Object.assign(merged, tenantConfig.extra_config)` copies EVERY key of the tenant's `extra_config` onto the merged
+   object, so it can overwrite any field, including FIXED fields (`general_behavior`, `greeting_rules`, …) and the
+   new `pack_facts`. `extra_config` is written by `PUT /tenant-admin/.../assistant/:surfaceKey`
+   (`routes/tenant-admin/assistant-config.ts:97-104`, no shape check) and by the admin KB assistant tool
+   (`services/orb-tools/admin-kb-assistant-tools.ts:288`, any object). The orb profile already carries
    `personaKey: PersonalitySurfaceKey | null` (`orb/profile/role-registry.ts:40`, `assistant-profile.ts:63`);
    `orb/live/surface.ts` imports `PersonalitySurfaceKey` (`:16`) and documents the voice_live overlay (`:63`).
    The live instruction builders do not call `getEffectiveConfig` per tenant. The sync read they use today is
@@ -179,6 +184,19 @@ unless the lane names an exception; Maxina renders byte-identical (golden equali
   default (`MAXINA_PACK_FACTS`, `communityName: 'Maxina'`). `handleLiveSessionStart` sets
   `session.packFacts = getEffectiveConfigSync('voice_live', tenantId).pack_facts ?? MAXINA_PACK_FACTS` right after
   the prewarm (tenantId = the JWT tenant, or `anonTenantId`, or null → Maxina).
+  **Both override channels are closed for the new fields (R1-F1).** `getEffectiveConfig` and its two
+  `tenant_assistant_config` merges (`:687`, `:699-701`) stay unchanged (the tenant-admin route reads them), so the
+  lane closes them at the reader: (1) the FIXED block reads its fields only from the GLOBAL config
+  (`getPersonalityConfigSync('voice_live')`, no tenant dimension) or from code, never from the tenant-merged object,
+  so neither `system_prompt_override` nor an `extra_config` key such as `base_identity`/`general_behavior` can change
+  it; (2) `pack_facts` is never trusted as returned: `session.packFacts` is set through a new pure
+  `parsePackFacts(raw): PackFacts | null` (in `ai-personality-service.ts` beside the `PackFacts` type) that keeps only
+  the known `PackFacts` keys, requires each to be a string after trim, caps lengths (`communityName` ≤ 64 chars, other
+  facts ≤ 500), drops control characters and newlines, and returns null for anything else (non-object, missing or
+  empty `communityName`); null → `MAXINA_PACK_FACTS` (today's output). The only source of a tenant's `pack_facts` is
+  its own `tenant_assistant_config` row (written through the tenant-admin-gated route above for that tenant); the
+  parser makes that row data, not instructions, and the facts land only inside the TENANT block's English INTENTS.
+  With the flag off nothing reads `pack_facts`, so today's behaviour is unchanged.
   **F4 welcome:** `buildFirstTimeWelcomeLine` (`greeting-pools.ts:177-187`) is dead (no `src/` caller; `orb-live.ts:413`
   import only) and is a rule-41 violation, so it is DELETED together with its import and
   `test/orb/instruction/first-time-welcome.test.ts` (which asserts the removed literal). The live first-time welcome
@@ -254,7 +272,10 @@ unless the lane names an exception; Maxina renders byte-identical (golden equali
 ## Tests
 - `persona-pack`: Jest — assembled instruction/intents rendered with Maxina config are byte-identical to
   today (Maxina golden suite); a second fixture tenant's facts produce its block; the FIXED Vitana block
-  survives a tenant `system_prompt_override`; the extracted `anonymous-system-instruction.ts` passes a
+  survives a tenant `system_prompt_override` AND a tenant `extra_config` that sets FIXED keys (`base_identity`,
+  `general_behavior`); `extra_config` `{ pack_facts: <bogus> }` (non-object, unknown keys, non-string values,
+  over-length or newline-laden `communityName`, missing `communityName`) yields a tenant block from the parsed facts
+  only, or the Maxina default when nothing valid remains, with the FIXED block unchanged (R1-F1); the extracted `anonymous-system-instruction.ts` passes a
   behaviour-identity snapshot for Maxina and renders a fixture tenant's facts when a validated slug resolves a
   `tenantId`; `getTenantIdBySlug` returns null for unknown/malformed/platform slugs and the anonymous session
   ignores `tenant_slug` when a JWT is present; `getEffectiveConfigSync` returns the tenant-merged config after
@@ -299,6 +320,10 @@ with mt-guardrails. Creating a real tenant pack is a later owner-approved step (
 - The existing tenant override overwrites `base_identity` wholesale (`ai-personality-service.ts:687`), which
   could drop the fixed Vitana identity under a tenant pack. Mitigation: the split assembles the fixed block
   from code outside the override path; a test asserts the three-names/safety block survives a tenant override.
+- `extra_config` is merged with `Object.assign` (`ai-personality-service.ts:699-701`) and can set any key,
+  including `pack_facts` and FIXED fields (R1-F1). Mitigation: the FIXED block reads only the global config or code,
+  and `pack_facts` passes `parsePackFacts` (allowlisted keys, string-only, length caps, no newlines; invalid → Maxina
+  default); tests cover a bogus `extra_config.pack_facts` and `extra_config` FIXED keys.
 - Extracting `buildAnonymousSystemInstruction` from `orb-live.ts` (hot file) could drift the anonymous prompt.
   Mitigation: the extraction is a verbatim behaviour-identical move gated by a snapshot test BEFORE any
   tenant-parameterisation; the `orb-live.ts` edit is a ~3-line import+call swap within the §8 cap.

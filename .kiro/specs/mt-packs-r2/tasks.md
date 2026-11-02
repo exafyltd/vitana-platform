@@ -45,6 +45,12 @@ Allowed paths:
       identifier `:413`, +1 `communityName: session.packFacts.communityName,` line in each of the three
       `GreetingDecisionContext` literals (`:10917`, `:11297`, `:11584`). After the prewarm set
       `session.packFacts = getEffectiveConfigSync('voice_live', tenantId).pack_facts ?? MAXINA_PACK_FACTS`.
+- [ ] P3a (R1-F1) Close the `extra_config` channel (`ai-personality-service.ts:699-701`) for the new fields without
+      changing `getEffectiveConfig`: the FIXED block reads only `getPersonalityConfigSync('voice_live')` (global) or
+      code, never the tenant-merged object; `session.packFacts` = `parsePackFacts(getEffectiveConfigSync('voice_live',
+      tenantId).pack_facts) ?? MAXINA_PACK_FACTS`, where the new pure `parsePackFacts` (in `ai-personality-service.ts`)
+      keeps only known `PackFacts` keys, string values after trim, `communityName` ≤ 64 chars, other facts ≤ 500, no
+      control characters or newlines, and returns null on a non-object or missing/empty `communityName`.
 - [ ] P3b Delete the dead rule-41 violation `buildFirstTimeWelcomeLine` (`greeting-pools.ts:177-187`; no `src/`
       caller, `orb-live.ts:413` import only) and `test/orb/instruction/first-time-welcome.test.ts`. In the PURE
       `computeGreetingDecision`: add optional `communityName?: string | null` to `GreetingDecisionContext` (`:238`)
@@ -59,7 +65,10 @@ Allowed paths:
       every assembled surface (live, anonymous, welcome intent) byte-identical to Maxina today.
 - [ ] P5 Tests `services/gateway/test/mt-packs-persona-*.test.ts`: Maxina golden byte-identity of the FULL output
       of both builders + the welcome intent; a fixture tenant's facts produce its block; the FIXED Vitana block
-      survives a tenant `system_prompt_override`; `getEffectiveConfigSync` after prewarm / without tenant /
+      survives a tenant `system_prompt_override` and a tenant `extra_config` setting FIXED keys (`base_identity`,
+      `general_behavior`); `extra_config` `{ pack_facts: <bogus> }` (non-object, unknown keys, non-string values,
+      over-length/newline `communityName`, missing `communityName`) → parsed facts only or the Maxina default, FIXED
+      block unchanged (R1-F1); `getEffectiveConfigSync` after prewarm / without tenant /
       expired; `getTenantIdBySlug` null for unknown/malformed/platform slugs; a JWT session ignores
       `tenant_slug`; the extracted anonymous builder snapshot is behaviour-identical for Maxina and renders a
       fixture tenant on a validated slug; the extended rule-41 guard; no `{{brand}}` in spoken strings;
