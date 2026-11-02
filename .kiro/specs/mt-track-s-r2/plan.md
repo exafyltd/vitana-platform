@@ -88,6 +88,14 @@ forbade. The rules on `main` now differ:
 `paths`: `.github/workflows/SUPABASE-FUNCTIONS-RETIRE.yml`, `docs/validation/**`. One change: add `linkedin-import` to
 `ALLOWLIST`. It depends on the first lane because the workflow's own guard refuses a name whose folder still exists.
 The lane ends at merge. The dispatch is the owner-approved plan-driver step of §3, not part of this lane.
+**Superseded, never built (2026-11-02):** `src/lib/supabase-functions-retire.vtid-05008.test.ts` pins `ALLOWLIST` to
+exactly its `RETIRED` names, so the one-line workflow change alone fails two of its cases (verified on the lane head
+`f2fbc69d5`). The lane's `paths` cannot include that test, so the work moves to lane `s-j-retire-allowlist-v2`.
+### Lane `s-j-retire-allowlist-v2` (executor kiro, seat hotmail, reviewer_seat agent:vitana-lane-reviewer, depends_on s-j-route-inventory)
+`paths`: `.github/workflows/SUPABASE-FUNCTIONS-RETIRE.yml`, `src/lib/supabase-functions-retire.vtid-05008.test.ts`,
+`docs/validation/**`. Two changes in one PR: add `linkedin-import` to `ALLOWLIST`, and add it to the test's `RETIRED`
+list (extending the list weakens no assertion; every other case is unchanged). Same end point as the superseded lane:
+merge; the dispatch stays the owner-approved plan-driver step of §3.
 
 ## 5. Interfaces and shared files
 No file is shared between the lanes. No hot file (no migration, no `App.tsx`, no registry, no i18n).
@@ -98,8 +106,9 @@ No file is shared between the lanes. No hot file (no migration, no `App.tsx`, no
   with no caller-auth import (temporary, not committed), on a `LEGACY` key whose folder is missing, and on a `LEGACY`
   key whose function already satisfies the rule (planted the same way, R1-F3). Full `npm test`
   green (the gate runs inside `"test"`). Commands and outputs in `docs/validation/<VTID>/`.
-- `s-j-retire-allowlist`: the workflow file still parses (`python3 -c 'import yaml…'` or `actionlint` if present) and
-  `ALLOWLIST` contains `linkedin-import`; red on base = absent.
+- `s-j-retire-allowlist-v2`: `npx vitest run src/lib/supabase-functions-retire.vtid-05008.test.ts` with
+  `linkedin-import` in `RETIRED`: red on base (allowlist lacks it), green after. The same command is the lane's
+  `existing` staging ref. (`s-j-retire-allowlist` is superseded and has no test.)
 - No pgTAP, contract or golden suite: no DB change, no shared instruction surface.
 
 ## 7. Staging verification
