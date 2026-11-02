@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-05463",
+  "kind": "infra",
+  "paths": [
+    ".github/workflows/SUPABASE-FUNCTIONS-RETIRE.yml",
+    "src/lib/supabase-functions-retire.vtid-05008.test.ts",
+    "docs/validation/VTID-05463/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05463/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

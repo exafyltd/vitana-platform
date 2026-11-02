@@ -1,0 +1,48 @@
+12:54:14 PM [vite] warning: `optimizeDeps.esbuildOptions` option was specified by "vite:react-swc" plugin. This option is deprecated, please use `optimizeDeps.rolldownOptions` instead.
+
+ RUN  v4.1.10 /projects/sandbox/wt-ra2
+
+ ❯ src/lib/supabase-functions-retire.vtid-05008.test.ts (6 tests | 1 failed) 369ms
+     × is exactly the eight retired memory functions 6ms
+     ✓ never names a function the repo still ships 1ms
+     ✓ never names a function something still calls  359ms
+     ✓ the caller pattern catches a call split across lines and ignores lookalike names 1ms
+     ✓ refuses to run from any ref but main 0ms
+     ✓ runs only on manual dispatch with a reason, and re-checks callers before deleting 0ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/lib/supabase-functions-retire.vtid-05008.test.ts > SUPABASE-FUNCTIONS-RETIRE allowlist > is exactly the eight retired memory functions
+AssertionError: expected [ 'ai-chat', …(7) ] to deeply equal [ 'ai-chat', …(8) ]
+
+- Expected
++ Received
+
+@@ -2,10 +2,9 @@
+    "ai-chat",
+    "analyze-visual-context",
+    "extract-diary-insights",
+    "extract-user-interests",
+    "generate-memory-embedding",
+-   "linkedin-import",
+    "refresh-memory-metadata",
+    "reinforce-memory",
+    "search-memories",
+  ]
+
+ ❯ src/lib/supabase-functions-retire.vtid-05008.test.ts:47:32
+     45| describe('SUPABASE-FUNCTIONS-RETIRE allowlist', () => {
+     46|   it('is exactly the eight retired memory functions', () => {
+     47|     expect(allowlist().sort()).toEqual([...RETIRED].sort());
+       |                                ^
+     48|   });
+     49|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 5 passed (6)
+   Start at  12:54:15
+   Duration  2.58s (transform 207ms, setup 441ms, import 16ms, tests 369ms, environment 1.62s)
+

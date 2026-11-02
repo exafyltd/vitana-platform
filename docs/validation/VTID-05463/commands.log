@@ -1,0 +1,5 @@
+# VTID-05463 commands
+$ npx vitest run src/lib/supabase-functions-retire.vtid-05008.test.ts   # base (pre-#1555 main) + RETIRED entry only
+Tests  1 failed | 5 passed (6)   -> red.txt
+$ npx vitest run src/lib/supabase-functions-retire.vtid-05008.test.ts   # origin/main after #1555 + both changes
+Tests  6 passed (6)              -> green.txt
