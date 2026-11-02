@@ -4,10 +4,12 @@ author: kiro
 author_seat: exafy
 executor: kiro
 next_actor: kiro
-state: drafted
+state: approved
 spar_refs:
   - exafyltd/vitana-v1: 5c75715e16ce360e2d96df28790f480e4582583f
-updated: 2026-11-02T15:20Z
+updated: 2026-11-02T17:02Z
+sparring_record: .kiro/specs/eng-platform-p01/sparring/verdict.md
+vtids: [VTID-05515, VTID-05516, VTID-05517, VTID-05518, VTID-05519]
 ---
 # Handoff — eng-platform-p01
 First slice of the engineering-platform program (self-hosted GitLab on AWS): the program document, a read-only AWS
@@ -25,3 +27,6 @@ forbids `id-token: write`) and R1-F2 (minor: group-inherited IAM policies). Both
 §2-§6, `tasks.md` and lane `stage-oidc-platform`'s paths. The answer commit on #4620 edited a lane file under the
 `_plan` trailer, which Collab handoff rejects per commit; history is never rewritten, so the plan moves to branch
 `kiro/eng-platform-p01/_plan` and a new PR, and #4620 is closed.
+
+### 2026-11-02T17:02Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 5 lane(s) got a VTID and are handed to Kiro.
