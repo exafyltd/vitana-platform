@@ -25,7 +25,8 @@ paths:
   - src/i18n/*/callsNative.json
   - docs/validation/**
   - packages/core/extract.json
-updated: 2026-11-01T17:10Z
+updated: 2026-11-02T07:32Z
+vtid: VTID-05458
 ---
 # Conversation / chat + 1:1 calls port — DM, group, deep-links, embedded WebRTC calling
 Plan: `.kiro/specs/native-wave2-inbox-chat-calls-r2/` — `plan.md` (plan block) and the `tasks.md` section marked
@@ -89,3 +90,6 @@ no presence/typing write); staging specs are read-only; the native app has no pr
 ## Log
 ### 2026-11-01T17:10Z · kiro-exafyltd-202611011658-9f52 · ready
 Lane created with the plan (re-plan of `native-wave2-inbox-chat-calls/conversation-chat`, PR #4269); `paths` widened to the shared native-infra files.
+
+### 2026-11-02T07:32Z · ci-plan-spar · ready (VTID allocated)
+VTID-05458 allocated after policy approval (converged-auto-v1).

@@ -3,11 +3,13 @@ slug: native-wave2-inbox-chat-calls-r2
 author: kiro
 executor: kiro
 next_actor: kiro
-state: drafted
+state: approved
 author_seat: exafyltd
-updated: 2026-11-01T17:10Z
+updated: 2026-11-02T07:32Z
 spar_refs:
   - exafyltd/vitana-v1: main
+sparring_record: .kiro/specs/native-wave2-inbox-chat-calls-r2/sparring/verdict.md
+vtids: [VTID-05458, VTID-05459]
 ---
 # Handoff — Native Wave 2: Inbox / Chat / Calls screen ports
 Wave 2 screen-port batch of the native Maxina app program (`docs/programs/native-app/NATIVE-APP-PLAN.md`, program
@@ -25,3 +27,6 @@ Holder of the `native-wave2-inbox-chat-calls-r2/_plan` claim. Re-plan of `native
 Session 1 (`b722bdfa-2478-4cce-8030-0f2c374fafd3`) escalated with zero findings (`evidence_floor_not_met`, partner read_file calls hit the shared GitHub rate limit). Added one line to the plan block so PLAN-SPAR opens the re-plan session; no plan content changed.
 ### 2026-11-02T06:38Z · kiro-exafyltd-202611011658-9f52 · drafted (session-2 round 1 answered)
 s2 R1-F1 accepted (native member search calls the same two directory RPCs, with a test); s2 R1-F2 accepted (full class-B inbox hook inventory). Answers: `sparring/s2-responses-1.md`.
+
+### 2026-11-02T07:32Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 2 lane(s) got a VTID and are handed to Kiro.
