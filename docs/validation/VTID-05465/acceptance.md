@@ -76,6 +76,7 @@ pgTAP file passes 5 of 5 (`outputs/live-body-guard-green.txt`). Static check, re
 guard` (`outputs/jest-live-body-guard-red.txt`, `-green.txt`). The NOTICE lines and the pre-check reads on both bodies:
 `outputs/pre-post-check-fixture.txt`. Status: met on PGlite with the shim. The live status is unverified: if pre-check
 section 5 shows a false marker on the target, the rewrite refuses and **the lane is parked for an owner decision**.
+TEST: supabase/tests/mt_identity_helpers_live_body_guard.test.sql on PGlite (outputs/pglite-apply-rollback-reapply.txt: the guard refuses the old-body fixture, then the rewrite runs on the 20260218 fixture), and `npx jest test/mt-identity-bare-policy-lint.test.ts` in services/gateway (outputs/jest-green.txt).
 
 ## Acceptance bullets → evidence
 
