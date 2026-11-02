@@ -1,7 +1,10 @@
 ---
 lane: jobs-community-scan-tenant
-state: ready
+state: executing
 next_actor: kiro
+claimed_by: kiro-jtadic-202610311258-c895
+branch: kiro/mt-jobs/jobs-community-scan-tenant
+pr: https://github.com/exafyltd/vitana-platform/pull/4319
 depends_on: [jobs-tenant-loop]
 executor: kiro
 seat: jtadic
@@ -12,7 +15,7 @@ paths:
   - services/gateway/src/services/memory-embedding-backfill-loop.ts
   - services/gateway/test/vtid-05268-community-scan-tenant.test.ts
   - docs/validation/VTID-05268/**
-updated: 2026-10-22T19:50Z
+updated: 2026-10-31T12:55Z
 vtid: VTID-05268
 ---
 # jobs-community-scan-tenant — community scan & memory backfill per active tenant (repo vitana-platform)
@@ -63,3 +66,6 @@ reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 PR: https://github.com/exafyltd/vitana-platform/pull/4319
 Findings: no blocking findings. Entry committed by the land step (parent session kiro-ide-202610272306-27b0) on the reviewer agent's behalf. The two commits after the reviewed head (d7e28d137a, 1f2d360aa8) only merge origin/main.
 Next: kiro — land under collaboration.md §7b (PM rule applied by the plan driver).
+### 2026-10-31T12:55Z · kiro-jtadic-202610311258-c895 · ready → executing (§7b closing record)
+merge: 1f0a8cf669d7ab3e8384f5117ea808650cff3d40 · authority: §7b PM rule. exafyltd/vitana-platform#4319 (head `c29171fdac` reviewed, accepted by agent:vitana-lane-reviewer (claude-sonnet-5.5) above), squash-merged by the land step of parent session kiro-ide-202610272306-27b0 under §7b. The land step left the lane at `ready`; this record starts the one-hop closing chain (executing → in-review → verified → done). Stale claim of kiro-hotmail-202610211107-9463 (2026-10-22) broken with `queue.mjs release --stale`.
+Staging: deploy run 40694621241 passed. STAGING-VERIFY run 40696019445 failed on the range, not on this lane: 34/34 tests passed incl. the VTID-05268 suite (12/12); the only failure is rule 47 "missing change suite" for `3d3b4e6f1747` (VTID-05308, #4423), fixed forward by exafyltd/vitana-platform#4492 (VTID-05406). `done` waits for a STAGING-VERIFY pass that covers 1f0a8cf.

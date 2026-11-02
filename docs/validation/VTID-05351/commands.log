@@ -1,0 +1,21 @@
+# VTID-05351 commands (kiro-exafyltd-202610271503-9458, 2026-10-27T15:53:51Z), base origin/main 94b5cd2600
+$ node --test scripts/collab/queue.test.mjs   (with origin/main queue.mjs)
+# tests 58
+# pass 53
+# fail 5
+$ node --test scripts/collab/queue.test.mjs   (head, after review fix)
+# tests 58
+# pass 58
+# fail 0
+$ node --test scripts/collab/*.test.mjs   (head)
+# tests 182
+# pass 181
+# fail 0
+# skipped 1
+$ mutation checks (each safeguard disabled alone → queue.test.mjs fails)
+commit backing → fail 2; merge sha → fail 1; append-only → fail 1; parked_from tracking → fail 2; time order → fail 1; PR reference → fail 1
+$ review fix (changes on cb0d8cd2): backing commit must be review-only (no Collab-Lane), from an authorized reviewer, not a builder session, and must have appended that exact entry; review entries only from '· review' headers
+unauthorized reviewer → fail 1; entry not appended by the backing commit → fail 1; any body counts as a review → fail 1; builder backs its own review → fail 1; no backing at all → fail 3
+$ replay (task C4): see outputs/replay-owner-autonomy.txt — origin/main refuses, head accepts, head refuses without the Collab-Review commit
+$ review hardening (non-blocking on 8034e629): a review entry appended by a review commit must appear exactly once at the head
+survival rule off → fail 1; queue tests 58/58; Collab tests 181/181 (1 skipped); real-data replay unchanged (accepts; refuses without its Collab-Review commit)
