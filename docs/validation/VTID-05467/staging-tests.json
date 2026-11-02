@@ -1,0 +1,14 @@
+{
+  "vtid": "VTID-05467",
+  "service": "gateway",
+  "not_verified_on_staging": true,
+  "not_verified_on_staging_reason": "This lane adds migration files and pgTAP files only, and changes no gateway code. Nothing is applied from the PR: each file is applied later through RUN-MIGRATION.yml after the owner approves the files and the target database (collaboration.md §7d). Staging shares the production database, so the staging deploy runs no code that reads anything new. The plan names no staging suite for this lane. The SQL is proven by the pgTAP files (supabase test db on the local stack) and by the PGlite run in docs/validation/VTID-05467/outputs/, and after apply by the read-only post-apply-checks.sql.",
+  "tests": [
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04560-role-separation-regression.test.ts",
+      "cwd": "services/gateway",
+      "reason": "The plan names `npm run test:roles` (42h) for this lane, and that script runs this file (services/gateway/package.json:29). It reads the historical migrations 20260925120000 and 20260926150000 by name, which this lane does not change, so it guards the role functions as shipped and does not prove the new migrations."
+    }
+  ]
+}

@@ -1,0 +1,79 @@
+Phase 8: tenants keyed by id. Red on base, then apply, then the pgTAP files.
+--- R2 bootstrap on base (id variant)
+ok 1 - the database has a default tenant (tenants.is_default)
+ok 2 - the signature is unchanged
+not ok 3 - the body pins no tenant name
+not ok 4 - the body keys on tenants.is_default
+ok 5 - a non-exafy caller cannot bootstrap [P0001: Only exafy_admin can bootstrap admin users]
+not ok 6 - an exafy admin bootstraps a user into the default tenant [42704: type "tenant_role" does not exist]
+not ok 7 - the grant is a memberships admin row in the default tenant [have NULL, want admin]
+not ok 8 - the grant is active [have NULL, want active]
+not ok 9 - the canonical user_tenants row exists at once, not only at commit [have 0, want 1]
+not ok 10 - the bootstrap sets no selected role [have NULL, want community]
+not ok 11 - the derived preference row follows the canonical row [have NULL, want community]
+ok 12 - no membership is written in any other tenant (no name pin)
+not ok 13 - the target is flagged exafy_admin [have NULL, want true]
+not ok 14 - the default tenant becomes the active tenant [have NULL, want 4a2d8f73-6e8f-4192-b3fe-55108a0fb204]
+not ok 15 - the success is audited against the default tenant
+ok 16 - the default tenant was renamed in this test, so the grant did not depend on its name
+not ok 17 - a second bootstrap of an admin is refused [42704: type "tenant_role" does not exist]
+not ok 18 - a target with no app_users row is refused [42704: type "tenant_role" does not exist]
+ok 19 - an unknown target user is refused [P0001: Target user does not exist: nobody-05467@example.test]
+ok 20 - a refused bootstrap writes no membership or user_tenants row
+SUMMARY planned=20 ran=20 failed=13
+(red run, expected to fail: it fails)
+--- R1 single_source after apply (id variant)
+ok 1 - the derivation trigger is on user_tenants and enabled
+ok 2 - the derivation function exists and is not executable by anon or authenticated
+ok 3 - authenticated has no write privilege on user_tenants
+ok 4 - authenticated has no write privilege on role_preferences
+ok 5 - authenticated has no write privilege on user_permitted_roles (the grant store)
+ok 6 - authenticated has no write privilege on user_active_roles
+ok 7 - a new membership derives its preference row from active_role
+ok 8 - a change of active_role is derived into role_preferences
+ok 9 - the derivation follows the selected role, admin included
+ok 10 - setting active_role to admin derives no grant row
+ok 11 - the permitted set of M in the tenant has no admin, so the gate refuses M while active_role is admin
+ok 12 - a selected role outside the preference check is refused (the derivation fails closed) [23514: new row for relation "role_preferences" violates check constraint "role_preferences_role_check"]
+ok 13 - a refused change leaves the selected role as it was
+ok 14 - a member cannot select admin through the switch (no grant) [P0001: Role not granted for this tenant]
+ok 15 - a user with a grant but no membership cannot switch in the tenant [42501: Not a member of this tenant]
+ok 16 - an exafy admin with no membership row in the tenant gets no write (the switch needs a canonical row) [42501: Not a member of this tenant]
+ok 17 - a permitted member selects a role through set_role_preference
+ok 18 - set_role_preference writes the selected role to user_tenants
+ok 19 - the preference row follows the switch
+ok 20 - the Command Hub copy (user_active_roles) is still written in the same transaction
+ok 21 - the switch is audited as a user_role_switch
+ok 22 - me_set_active_role in a permitted tenant returns ok
+ok 23 - me_set_active_role writes the selected role to user_tenants
+ok 24 - the preference row follows the Command Hub switch
+ok 25 - me_set_active_role still writes the Command Hub copy
+ok 26 - me_set_active_role refuses a permitted user with no membership row in the tenant
+ok 27 - a refused Command Hub switch writes no user_active_roles row
+ok 28 - a refused Command Hub switch writes no preference row
+SUMMARY planned=28 ran=28 failed=0
+PASS  R1 single_source after apply (id variant): every planned assertion ran and passed
+--- R2 bootstrap after apply (id variant)
+ok 1 - the database has a default tenant (tenants.is_default)
+ok 2 - the signature is unchanged
+ok 3 - the body pins no tenant name
+ok 4 - the body keys on tenants.is_default
+ok 5 - a non-exafy caller cannot bootstrap [P0001: Only exafy_admin can bootstrap admin users]
+ok 6 - an exafy admin bootstraps a user into the default tenant
+ok 7 - the grant is a memberships admin row in the default tenant
+ok 8 - the grant is active
+ok 9 - the canonical user_tenants row exists at once, not only at commit
+ok 10 - the bootstrap sets no selected role
+ok 11 - the derived preference row follows the canonical row
+ok 12 - no membership is written in any other tenant (no name pin)
+ok 13 - the target is flagged exafy_admin
+ok 14 - the default tenant becomes the active tenant
+ok 15 - the success is audited against the default tenant
+ok 16 - the default tenant was renamed in this test, so the grant did not depend on its name
+ok 17 - a second bootstrap of an admin is refused [P0001: User u-05467@example.test is already an admin]
+ok 18 - a target with no app_users row is refused [P0001: Target user has no app_users row: z-05467@example.test]
+ok 19 - an unknown target user is refused [P0001: Target user does not exist: nobody-05467@example.test]
+ok 20 - a refused bootstrap writes no membership or user_tenants row
+SUMMARY planned=20 ran=20 failed=0
+PASS  R2 bootstrap after apply (id variant): every planned assertion ran and passed
+PASS  both pgTAP files pass on the id variant

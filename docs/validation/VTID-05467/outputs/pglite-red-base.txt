@@ -1,0 +1,55 @@
+Phase 1: the new pgTAP files on the base (previous bodies). Failures here are the expected red run.
+--- R1 single_source on base
+not ok 1 - the derivation trigger is on user_tenants and enabled
+not ok 2 - the derivation function exists and is not executable by anon or authenticated
+ok 3 - authenticated has no write privilege on user_tenants
+ok 4 - authenticated has no write privilege on role_preferences
+ok 5 - authenticated has no write privilege on user_permitted_roles (the grant store)
+ok 6 - authenticated has no write privilege on user_active_roles
+not ok 7 - a new membership derives its preference row from active_role [have NULL, want community]
+not ok 8 - a change of active_role is derived into role_preferences [have NULL, want professional]
+not ok 9 - the derivation follows the selected role, admin included [have NULL, want admin]
+ok 10 - setting active_role to admin derives no grant row
+ok 11 - the permitted set of M in the tenant has no admin, so the gate refuses M while active_role is admin
+not ok 12 - a selected role outside the preference check is refused (the derivation fails closed) [no error raised]
+not ok 13 - a refused change leaves the selected role as it was [have bogus, want admin]
+ok 14 - a member cannot select admin through the switch (no grant) [P0001: Role not granted for this tenant]
+ok 15 - a user with a grant but no membership cannot switch in the tenant [42501: Not a member of this tenant]
+not ok 16 - an exafy admin with no membership row in the tenant gets no write (the switch needs a canonical row) [no error raised]
+ok 17 - a permitted member selects a role through set_role_preference
+not ok 18 - set_role_preference writes the selected role to user_tenants [have community, want developer]
+ok 19 - the preference row follows the switch
+ok 20 - the Command Hub copy (user_active_roles) is still written in the same transaction
+ok 21 - the switch is audited as a user_role_switch
+ok 22 - me_set_active_role in a permitted tenant returns ok
+not ok 23 - me_set_active_role writes the selected role to user_tenants [have community, want developer]
+ok 24 - the preference row follows the Command Hub switch
+ok 25 - me_set_active_role still writes the Command Hub copy
+not ok 26 - me_set_active_role refuses a permitted user with no membership row in the tenant [have NULL, want NOT_A_MEMBER]
+not ok 27 - a refused Command Hub switch writes no user_active_roles row [have 1, want 0]
+not ok 28 - a refused Command Hub switch writes no preference row [have 1, want 0]
+SUMMARY planned=28 ran=28 failed=13
+(red run, expected to fail: it fails)
+--- R2 bootstrap on base
+ok 1 - the database has a default tenant (tenants.is_default)
+ok 2 - the signature is unchanged
+not ok 3 - the body pins no tenant name
+not ok 4 - the body keys on tenants.is_default
+ok 5 - a non-exafy caller cannot bootstrap [P0001: Only exafy_admin can bootstrap admin users]
+not ok 6 - an exafy admin bootstraps a user into the default tenant [42703: column "id" does not exist]
+not ok 7 - the grant is a memberships admin row in the default tenant [have NULL, want admin]
+not ok 8 - the grant is active [have NULL, want active]
+not ok 9 - the canonical user_tenants row exists at once, not only at commit [have 0, want 1]
+not ok 10 - the bootstrap sets no selected role [have NULL, want community]
+not ok 11 - the derived preference row follows the canonical row [have NULL, want community]
+ok 12 - no membership is written in any other tenant (no name pin)
+not ok 13 - the target is flagged exafy_admin [have NULL, want true]
+not ok 14 - the default tenant becomes the active tenant [have NULL, want cdd99b53-61fd-4fc8-ac78-d7a61afaf9bb]
+not ok 15 - the success is audited against the default tenant
+ok 16 - the default tenant was renamed in this test, so the grant did not depend on its name
+not ok 17 - a second bootstrap of an admin is refused [42703: column "id" does not exist]
+not ok 18 - a target with no app_users row is refused [42703: column "id" does not exist]
+ok 19 - an unknown target user is refused [P0001: Target user does not exist: nobody-05467@example.test]
+ok 20 - a refused bootstrap writes no membership or user_tenants row
+SUMMARY planned=20 ran=20 failed=13
+(red run, expected to fail: it fails)

@@ -1,0 +1,6 @@
+before rollback, switched member: {"selected":"developer","preference":"developer"}
+after rollback:         {"selected":"community","preference":"developer","legacy_selected":"community","legacy_preference":"professional"}
+PASS  rollback restores the apply-time selected role of the switched member
+PASS  rollback keeps the preference row the switch wrote
+PASS  rollback leaves the legacy disagreement exactly as it was at apply
+PASS  rollback restores the catalog exactly: previous bodies verbatim, ACLs, trigger and function removed, snapshots dropped
