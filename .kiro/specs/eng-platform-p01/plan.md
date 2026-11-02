@@ -119,8 +119,8 @@ the role variable as an alternative to the keys. `AWS-PROD-DEPLOY-FRONTEND.yml` 
 
 ## 5. Parallelism, shared and hot files
 All five lanes are independent: no file is shared, no hot file, no migration. `depends_on` is empty for every lane;
-the role/variable contract of §3 is the only interface and is fixed by this plan. Every workflow lane is inert until
-the owner sets the variables, so merge order does not matter.
+the role/variable contract of §3 is the only interface and is fixed by this plan. Every workflow lane keeps today's
+behaviour until the owner sets the variables, so merge order does not matter; their merges redeploy staging (§7).
 
 ## 6. Tests (each red on base)
 - `aws-inventory`: `npx jest test/eng-platform-inventory-readonly.test.ts` (in `services/gateway`) — red on base (script
@@ -142,12 +142,18 @@ the owner sets the variables, so merge order does not matter.
 - `program-doc`: no test (docs only); the reviewer checks every `file:line` it cites resolves on `origin/main`.
 
 ## 7. Staging verification
-`aws-inventory`, `oidc-roles`, `program-doc` deploy nothing. The workflow lanes are inert until a variable is set:
-the merge commit of `stage-oidc-platform` triggers `AWS-STAGE-DEPLOY-GATEWAY.yml` only if gateway paths change (they do
-not), so the next ordinary staging deploy proves the unchanged key path. Each lane's
-`docs/validation/<VTID>/staging-tests.json` holds a read-only `existing` ref (its Jest/Vitest file). The OIDC path is
-verified after the owner's §8 step 2 by the next staging deploy run, linked in `handoff.md`; until then each lane says
-"not verified on staging: OIDC role not created yet (owner step)".
+`aws-inventory`, `oidc-roles` and `program-doc` deploy nothing. The two workflow lanes **do** trigger staging deploys:
+each `AWS-STAGE-DEPLOY-*` workflow lists its own file in its `push` paths (vitana-platform `AWS-STAGE-DEPLOY-GATEWAY.yml:39`,
+`-ERP-BRIDGE.yml:30`, `-KIRO-RUNNER.yml:28`, `-POSTGREST-AURORA-PROXY.yml:40`; vitana-v1
+`AWS-STAGE-DEPLOY-FRONTEND.yml:54`), so the merge commit redeploys those services to staging from `main` on the
+**unchanged key path** (variables unset). That run is the staging proof that the fallback is byte-for-byte today's
+behaviour: each deploy's own smoke gate (`/api/v1/admin/health` env=staging and build-info commit) must pass, and
+STAGING-VERIFY runs on the merge commit. Only one lane's deploys run at a time (common rule 11): `stage-oidc-platform`
+and `stage-oidc-v1` touch different repos and services, so they may land in either order, never in the same minute
+as another staging deploy of the same service. Each lane's `docs/validation/<VTID>/staging-tests.json` holds a
+read-only `existing` ref (its Jest/Vitest file). The OIDC path is verified after the owner's §8 step 2 by the next
+staging deploy run, linked in `handoff.md`; until then each lane says "not verified on staging (OIDC path): role not
+created yet (owner step)".
 
 ## 8. Rollout (owner steps after merge, asked once with Gate 2)
 1. Run `scripts/aws/inventory-readonly.sh` with a ReadOnlyAccess identity; commit nothing secret, Kiro files the
