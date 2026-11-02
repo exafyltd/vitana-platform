@@ -8,7 +8,7 @@ Base: `origin/main` 50e55fd3a4 (exafyltd/vitana-platform). Plan: `.kiro/specs/mt
 
 This lane implements `plan.md` lane 1 as amended ("Amendment 1", build finding). The bare policies do not fail closed
 today: `current_tenant_id()` falls back to `app_metadata.active_tenant_id` and then to the caller's `user_tenants`
-row (premise table below). So every one of the 32 policies keeps today's audience, the members of the caller's one
+row (premise table below). That premise is unverified against the live database (AC-12). If the 20260218 body is live, every one of the 32 policies keeps today's audience, the members of the caller's one
 resolved tenant, and the only change is the helper:
 `tenant_id = current_tenant_id()` → `tenant_id = (select public.tenant_id_for_policies())`. No policy gains a
 `user_id = auth.uid()` term and no policy uses `is_member()`. `is_member()` is still created, for later lanes.
@@ -16,6 +16,18 @@ resolved tenant, and the only change is the helper:
 global-defaults term. The Jest test checks that each rewritten policy equals its original with only the helper
 swapped. The `tasks.md` acceptance bullets below were written before the amendment; they are read through it (the
 "cannot read a_admin's rows" and "`is_member` policies" wording is replaced by "today's audience").
+
+## Fix-forward 1 (reviewer finding, `review: changes` on 28232f2bb7)
+
+- Blocking: the rewrite now refuses to run unless the live `current_tenant_id()` has the 20260218 body's three markers
+  (guard in `DO $pre$`, AC-12). The NOTICE lines print the first 200 characters of the live body and each marker.
+- The premise that today's bare policies admit the members of the caller's resolved tenant is no longer stated as fact.
+  It is unverified until `pre-check.sql` section 5 is read on the target. If the old body is live, the lane is parked
+  for an owner decision.
+- Non-blocking: `pre-check.sql` section 6 counts the members whose resolved tenant changes; `post-check.sql` check 2 is
+  scoped to the 32 policies, check 3 is derived from pre-check section 1; AC-8 records the PGlite-plus-shim status.
+- Fixture: `auth.users` rows carry `app_metadata.active_tenant_id`, so section 6 can run on the fixture; the old-body
+  fixture and the guard pgTAP file are new.
 
 ## Acceptance criteria
 
@@ -28,10 +40,10 @@ TEST: supabase/tests/mt_identity_helpers_rls.test.sql §2, run on PGlite (output
 AC-3: On the 7 health tables a_member reads 0 of a_admin's rows, and their policies are not rewritten. Status: met on a throwaway Postgres.
 TEST: supabase/tests/mt_identity_helpers_rls.test.sql §2b, in the same PGlite run.
 
-AC-4: On the 15 shared tables only members of the resolved tenant get access (the d42 global-defaults term aside). SELECT, INSERT, UPDATE and DELETE checks pass, all 32 policies use tenant_id_for_policies(), and none uses is_member() or a new user_id / auth.uid() term. Status: met.
+AC-4: On the 15 shared tables only members of the resolved tenant get access (the d42 global-defaults term aside), if the live current_tenant_id() is the 20260218 body. SELECT, INSERT, UPDATE and DELETE checks pass, all 32 policies use tenant_id_for_policies(), and none uses is_member() or a new user_id / auth.uid() term. Status: met on the fixture, which copies the 20260218 body. The live audience is unverified: the premise is not confirmed on the target (AC-12; premises table, row "Browser JWTs carry no top-level tenant_id").
 TEST: supabase/tests/mt_identity_helpers_rls.test.sql §3 to §5 (same PGlite run), and services/gateway/test/mt-identity-bare-policy-lint.test.ts, test "rewrites every recounted policy to tenant_id_for_policies() and nothing else".
 
-AC-5: Same audience as origin/main. With the helpers applied and the rewrite not applied, the behaviour assertions of §2 to §4 pass on origin/main's policies, and only the structural assertions fail. Status: met.
+AC-5: Same audience as origin/main, if the live body is the 20260218 body (unverified, see AC-12). With the helpers applied and the rewrite not applied, the behaviour assertions of §2 to §4 pass on origin/main's policies, and only the structural assertions fail. Status: met on the fixture. Equal audience on the live database is not established.
 TEST: the pgTAP run on origin/main policies recorded in docs/validation/VTID-05465/red.txt (section "pgTAP suite on origin/main policies").
 
 AC-6: The rewrite and rollback migrations do not name access_audit_log, consents, retrieval_traces, role_sessions or user_roles. Status: met.
@@ -40,7 +52,7 @@ TEST: services/gateway/test/mt-identity-bare-policy-lint.test.ts, test "rewrites
 AC-7: The lint reads 0 bare policies on this branch and 32 on origin/main, and the Jest test is red on origin/main and green here. Status: met.
 TEST: `npx jest test/mt-identity-bare-policy-lint.test.ts` in services/gateway (7 of 7 pass, outputs/jest-green.txt), `node scripts/ci/bare-policy-lint.mjs` (exit 0), and the red run in outputs/jest-red-origin-main.txt.
 
-AC-8: The migrations apply, re-apply, roll back and re-apply clean on a throwaway in-process Postgres (PGlite 0.5.14) with the fixture. The refusals and the absent-table skips hold. Status: partly met. The D11 Supabase local stack was not available (no Docker or Postgres here), so a run on that stack is still open.
+AC-8: The migrations apply, re-apply, roll back and re-apply clean on a throwaway in-process Postgres (PGlite 0.5.14) with the fixture. The refusals and the absent-table skips hold. Status: partly met. The run uses PGlite with a minimal pgTAP shim (`no_plan`, `ok`, `is`, `finish`), not the D11 Supabase local stack with real pgTAP. Real pgTAP is still pending, and no CI runner exists for these files. The D11 stack was not available (no Docker or Postgres here). Before the apply request, the owner waives this or the files run on the D11 stack with real pgTAP.
 TEST: outputs/pglite-apply-rollback-reapply.txt (PGlite run of supabase/tests/mt_identity_helpers_fixture.sql, the two migrations, the rollback and the pgTAP files).
 
 AC-9: The PR lists the recount: 32 bare policies on 15 tables in the 673 migration files at origin/main 50e55fd3a4. Status: met.
@@ -52,6 +64,19 @@ TEST: `git diff --name-only origin/main...HEAD` (no change outside the listed pa
 AC-11: The PR title starts with `VTID-05465 (mt-identity-r2/helpers-and-policy-rewrite):`. Status: met.
 TEST: `node scripts/ci/validate-pr-locally.cjs --title "<PR title>" --body-file <PR body file> --base main` passes the Merge Deploy Gate (the title contains the VTID).
 
+AC-12: The rewrite refuses to run on the old `current_tenant_id()` body (20251229). The guard in `DO $pre$` reads
+`pg_get_functiondef('public.current_tenant_id()')` and requires all three markers of the 20260218 body: marker 1
+`v_jwt_claims->'app_metadata'->>'active_tenant_id'`, marker 2 `FROM public.user_tenants`, marker 3 `WHERE user_id =
+auth.uid()`. The 20251229 body has none of them (the file has no `app_metadata` at all). Test: the rewrite file is run on
+the old-body fixture (`supabase/tests/mt_identity_helpers_live_body_guard_fixture.sql`), and the pgTAP file
+`supabase/tests/mt_identity_helpers_live_body_guard.test.sql` asserts the state after the refused apply. Red on the
+previous head: the rewrite committed on the old body and the 32 policies read `tenant_id_for_policies()`
+(`outputs/live-body-guard-red.txt`: "have 0, want 32"). Green on this head: the rewrite raises the guard message and the
+pgTAP file passes 5 of 5 (`outputs/live-body-guard-green.txt`). Static check, red then green: Jest `VTID-05465 live-body
+guard` (`outputs/jest-live-body-guard-red.txt`, `-green.txt`). The NOTICE lines and the pre-check reads on both bodies:
+`outputs/pre-post-check-fixture.txt`. Status: met on PGlite with the shim. The live status is unverified: if pre-check
+section 5 shows a false marker on the target, the rewrite refuses and **the lane is parked for an owner decision**.
+
 ## Acceptance bullets → evidence
 
 | Acceptance bullet (tasks.md) | Evidence | Status |
@@ -60,10 +85,10 @@ TEST: `node scripts/ci/validate-pr-locally.cjs --title "<PR title>" --body-file 
 | pgTAP (read through amendment 1): the attendance policies keep today's audience | `supabase/tests/mt_identity_helpers_rls.test.sql` §2: on `event_attendance` and `live_room_attendance` a_member still reads a_admin's row, as today, and reads exactly the 2 tenant A rows; b_member reads nothing of tenant A; a member of A (resolved) and B reads nothing of tenant B; a non-member reads nothing | met (throwaway Postgres, see note) |
 | … and, read-only, on the health tables | same file §2b: the 7 health tables, a_member reads 0 of a_admin's rows; their policies are not rewritten | met (throwaway Postgres) |
 | Shared policies on all 15 tables admit the members of the resolved tenant only | §3: SELECT on the 11 tables with a SELECT policy: a_member reads A, b_member reads B and nothing of A, a member of A (resolved) and B reads A and nothing of B, a non-member reads nothing (d42 global defaults aside); with a top-level `tenant_id` claim for B, B is the resolved tenant instead. §4: INSERT (b_member into A → 42501, a_member → ok, the A+B member into B → 42501), UPDATE (b_member 0 rows, a_member 1, moving a row to B → 42501), DELETE (b_member 0, a_member 1). §5: 32 policies on `tenant_id_for_policies()`, 0 on `is_member()`, 0 with a new `user_id` / `auth.uid()` term. | met |
-| Same audience as origin/main | The same pgTAP file on origin/main's policies (helpers applied, rewrite not applied): every behaviour assertion of §2–§4 passes; only the 4 structural assertions of §5–§6 fail (red.txt). | met |
+| Same audience as origin/main | The same pgTAP file on origin/main's policies (helpers applied, rewrite not applied): every behaviour assertion of §2–§4 passes; only the 4 structural assertions of §5–§6 fail (red.txt). | met on the fixture. Live audience unverified (premises table, AC-12); if the old body is live, the rewrite refuses and the lane is parked for an owner decision. |
 | The 5 no-policy tables are not asserted | No test or migration names `access_audit_log`, `consents`, `retrieval_traces`, `role_sessions`, `user_roles` (Jest asserts it) | met |
 | The lint reads 0, and its red run on origin/main is recorded | `node scripts/ci/bare-policy-lint.mjs` → 0 (green.txt); on origin/main → 32 on 15 tables (red.txt); Jest `reads ZERO …` red → green | met |
-| The migrations apply and roll back clean on the local stack | Applied, re-applied, rolled back and re-applied on a throwaway in-process Postgres (PGlite 0.5.14) with the fixture; pgTAP 160 + 10 + 160 assertions pass; refusals on missing helpers and on live drift; absent tables skipped (green.txt). **Not run on the D11 Supabase local stack** (no Docker/Postgres here). | partly met — needs a run on the D11 stack |
+| The migrations apply and roll back clean on the local stack | Applied, re-applied, rolled back and re-applied on a throwaway in-process Postgres (PGlite 0.5.14) with the fixture; pgTAP 160 + 10 + 160 assertions pass; refusals on missing helpers and on live drift; absent tables skipped (green.txt). **Not run on the D11 Supabase local stack** (no Docker/Postgres here). | partly met — PGlite with a pgTAP shim; real pgTAP and the D11 stack are still pending |
 | The PR lists the recount output | Recount table below (+ red.txt) | met |
 | Nothing is applied from the PR; applying is a later owner-approved `RUN-MIGRATION.yml` run (§7d) | Files only; no database contacted (commands.log). Queue rows in `migration-queue-rows.md` | met |
 | PR title `VTID-05465 (mt-identity-r2/helpers-and-policy-rewrite): …` | set by the caller when the PR is opened | caller |
@@ -118,8 +143,8 @@ Writers (member JWT, vitana-v1 `origin/main` c3d71c83e, `git grep "from('<table>
 | No `is_member()` / `tenant_id_for_policies()` exists | **true** |
 | `user_tenants` has `UNIQUE (tenant_id, user_id)` (`20251231000000_vtid_01101_phase_a_bootstrap.sql:98`) | **true** |
 | Migration range `20261102030000`–`035959` is free | **true** (newest is `20261101110100`) |
-| "Browser JWTs carry no top-level `tenant_id`, so `current_tenant_id()` returns NULL"; bare policies "fail closed while the claim is NULL" (plan §Problem 1–2) | **false.** The last definition of `current_tenant_id()` (`20260218000000_fix_maxina_signup_tenant_association.sql:33-103`) falls back to `app_metadata.active_tenant_id` and then to the caller's `user_tenants` row (`:78-96`), and members can read their own `user_tenants` rows (`…01101…:111`). So the bare policies already admit every member of the caller's resolved tenant today. The fixture mirrors this, and the red run shows it: on the main policies a_member reads a_admin's attendance rows. |
-| The rewrite causes no visible change | **true after amendment 1**, with one residual. Each policy keeps its predicate and only `current_tenant_id()` becomes `(select tenant_id_for_policies())`, so the audience is the caller's one resolved tenant, as today (pgTAP §2–§4 pass on both). Residual: the two helpers resolve the tenant from different inputs. `current_tenant_id()` reads, in order, the `request.tenant_id` setting, the top-level `tenant_id` / `tenant` claim, `app_metadata.active_tenant_id`, then the caller's `is_primary` row, then any row. `tenant_id_for_policies()` (plan N2) reads the top-level `tenant_id` claim only when the caller is a member of it, then the primary row (`is_primary desc, created_at, tenant_id`). Browser JWTs carry no top-level claim, so for a member of one tenant both resolve the same tenant. They can differ for a member of two or more tenants whose `app_metadata.active_tenant_id` names a non-primary tenant, and for a caller whose `app_metadata.active_tenant_id` names a tenant they are not a member of (today admitted, after the rewrite not). A behaviour-preserving alternative is to let `tenant_id_for_policies()` also read `app_metadata.active_tenant_id` when the caller is a member of it. It is not implemented, because it changes the helper the converged plan defines (N2). `pre-check.sql` does not measure how many members are affected; that needs a read-only count on the target before the apply. |
+| "Browser JWTs carry no top-level `tenant_id`, so `current_tenant_id()` returns NULL"; bare policies "fail closed while the claim is NULL" (plan §Problem 1–2) | **Unverified: the migration text says the opposite, and the docs say the live body is the 20251229 one.** The last definition of `current_tenant_id()` (`20260218000000_fix_maxina_signup_tenant_association.sql:33-103`) falls back to `app_metadata.active_tenant_id` and then to the caller's `user_tenants` row (`:78-96`), and members can read their own `user_tenants` rows (`…01101…:111`). So the bare policies already admit every member of the caller's resolved tenant today. The fixture mirrors this, and the red run shows it: on the main policies a_member reads a_admin's attendance rows. **Whether the live database runs this body is not verified, and the docs say it does not run the 20260218 body.** `docs/MULTI-TENANT-PLAN.md:24` (verified 2026-10-06) says the live `current_tenant_id()` reads only the top-level JWT claims and returns NULL for browser JWTs. `docs/DATABASE_SCHEMA.md:3320-3322` and `:3646-3647` say the 20260218 fix was never applied live, and `docs/CHANGELOG.md:30` (VTID-04655) says `current_tenant_id()` never sees a tenant in a Supabase JWT. If the 20251229 body (`20251229000000_vtid_01051_me_active_role_fix.sql:15-58`) is live, browsers resolve no tenant today, and the rewrite would open all 32 policies to every member of the caller's primary tenant. The guard in `DO $pre$` (AC-12) therefore refuses unless the live body has the 20260218 markers. Read the live body with `pre-check.sql` section 5 before any apply request. **If the old body is live, the lane is parked for an owner decision.** Plan amendment 1 rests on the same premise (`.kiro/specs/mt-identity-r2/plan.md`). |
+| The rewrite causes no visible change | **Not established.** On the 20260218 body, amendment 1 keeps today's audience for the fixture (the behaviour assertions pass on both policy sets), but for some members the resolved tenant changes, which is a visible change for them. Each policy keeps its predicate and only `current_tenant_id()` becomes `(select tenant_id_for_policies())`, so the audience is the caller's one resolved tenant, as today (pgTAP §2–§4 pass on both). The residual: the two helpers resolve the tenant from different inputs. `current_tenant_id()` reads, in order, the `request.tenant_id` setting, the top-level `tenant_id` / `tenant` claim, `app_metadata.active_tenant_id`, then the caller's `is_primary` row, then any row. `tenant_id_for_policies()` (plan N2) reads the top-level `tenant_id` claim only when the caller is a member of it, then the primary row (`is_primary desc, created_at, tenant_id`). Browser JWTs carry no top-level claim, so for a member of one tenant both resolve the same tenant. They can differ for a member of two or more tenants whose `app_metadata.active_tenant_id` names a non-primary tenant, and for a caller whose `app_metadata.active_tenant_id` names a tenant they are not a member of (today admitted, after the rewrite not). A behaviour-preserving alternative is to let `tenant_id_for_policies()` also read `app_metadata.active_tenant_id` when the caller is a member of it. It is not implemented, because it changes the helper the converged plan defines (N2). Not counted by the first version of this file. `pre-check.sql` section 6 now counts the affected members on the target: members whose `app_metadata.active_tenant_id` is not their primary row (the non-primary and non-member cases), callers with that tenant but no `user_tenants` row, and section 6b, members with several memberships and no primary row. The fixture run gives 1, 1, 0 and 0 (`outputs/pre-post-check-fixture.txt`). The apply request quotes the live counts, and the owner accepts the change for those members. Request-scoped inputs (`request.tenant_id`, the top-level `tenant` / `tenant_id` JWT claims) are not in the database, so section 6 does not count them. |
 | The 15 tables exist in production | **not all.** `scripts/ci/migration-drift-baseline.json` (2026-08-04) lists 8 of them as declared but absent in production: community_groups, community_meetups, d42_domain_weights, products_catalog, services_catalog, match_targets, social_alignment_signals, topic_registry. The rewrite and the rollback skip an absent table with a NOTICE. `pre-check.sql` shows which tables are present. |
 
 ## Decisions taken (conservative options inside the plan)
@@ -142,3 +167,7 @@ Writers (member JWT, vitana-v1 `origin/main` c3d71c83e, `git grep "from('<table>
    in the lane paths.
 7. The pgTAP files have no CI runner. A `scripts/ci/test-*.sh` runner, like `test-vtid-05147-s-m-lockdown.sh`, would
    be outside the lane paths. The run order is in the fixture header.
+8. The live-body guard is tested by running the rewrite file itself, on the old-body fixture (PGlite), not by a copy of
+   the guard. The pgTAP file asserts the state after the refused apply, not the error text, because pgTAP cannot run a
+   migration file; the runner order is in its header. The guard also has a static Jest test, because the pgTAP files
+   have no CI runner. The guard reads `pg_get_functiondef` and not a comment, so a comment edit cannot change its result.

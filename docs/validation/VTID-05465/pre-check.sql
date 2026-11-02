@@ -71,3 +71,64 @@ WHERE schemaname = 'public'
   AND coalesce(qual, '') || ' ' || coalesce(with_check, '') !~ '(auth\.uid|current_user_id|is_member|is_tenant_admin|auth\.role)\('
   AND NOT roles <@ ARRAY['service_role', 'postgres', 'supabase_admin']::name[]
 ORDER BY 1, 2;
+
+-- 5. The live current_tenant_id() body, read the way the guard in 20261102030100 reads it (DO $pre$). The rewrite runs
+--    only if all three markers are true, and the migration prints the same values as NOTICE lines. A false marker means
+--    the live body is not the 20260218 body. The docs describe the 20251229 body as the live one. The migration then
+--    refuses, and the lane is parked for an owner decision (acceptance.md, premises table). Read only.
+WITH f AS (SELECT pg_get_functiondef('public.current_tenant_id()'::regprocedure) AS def)
+SELECT left(def, 200) AS live_body_first_200,
+       position('v_jwt_claims->''app_metadata''->>''active_tenant_id''' IN def) > 0 AS marker_1_app_metadata_fallback,
+       position('FROM public.user_tenants' IN def) > 0 AS marker_2_user_tenants_fallback,
+       position('WHERE user_id = auth.uid()' IN def) > 0 AS marker_3_own_membership_lookup
+FROM f;
+
+-- 6. Read-only count: members whose resolved tenant changes under the rewrite (reviewer note (a); acceptance.md, premises
+--    table, row "The rewrite causes no visible change"). Under the 20260218 body, a browser JWT resolves to
+--    app_metadata.active_tenant_id when that is set, else to the primary user_tenants row. After the rewrite, the helper
+--    resolves to the primary row (tenant_id_for_policies(): is_primary desc, created_at, tenant_id), because browser JWTs
+--    carry no top-level tenant_id claim. Counted from auth.users.raw_app_meta_data and user_tenants. Not counted: the
+--    request.tenant_id setting and the top-level tenant / tenant_id JWT claims, which exist per request, not in the
+--    database. Review the counts before the apply request. A live database may show non-zero counts.
+WITH au AS (
+  SELECT u.id AS user_id,
+         CASE WHEN u.raw_app_meta_data ->> 'active_tenant_id'
+                   ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+              THEN (u.raw_app_meta_data ->> 'active_tenant_id')::uuid
+         END AS app_active
+  FROM auth.users u
+),
+primary_row AS (
+  SELECT DISTINCT ON (ut.user_id) ut.user_id, ut.tenant_id AS primary_tenant
+  FROM public.user_tenants ut
+  ORDER BY ut.user_id, ut.is_primary DESC, ut.created_at, ut.tenant_id
+),
+differ AS (
+  SELECT au.user_id, au.app_active, pr.primary_tenant,
+         EXISTS (SELECT 1 FROM public.user_tenants ut
+                 WHERE ut.user_id = au.user_id AND ut.tenant_id = au.app_active) AS active_is_membership
+  FROM au
+  LEFT JOIN primary_row pr ON pr.user_id = au.user_id
+  WHERE au.app_active IS NOT NULL
+    AND au.app_active IS DISTINCT FROM pr.primary_tenant
+)
+SELECT count(*) FILTER (WHERE primary_tenant IS NULL) AS active_set_no_membership_row,
+       count(*) FILTER (WHERE primary_tenant IS NOT NULL AND active_is_membership) AS active_set_non_primary_membership,
+       count(*) FILTER (WHERE primary_tenant IS NOT NULL AND NOT active_is_membership) AS active_set_not_a_membership,
+       count(*) AS total_resolving_differently
+FROM differ;
+
+-- 6b. Read-only: members with more than one membership, no is_primary row and no app_metadata.active_tenant_id. Today's
+--     fallback takes an arbitrary row (LIMIT 1, no ORDER BY); the rewritten helper takes the earliest membership.
+SELECT count(*) AS multi_membership_no_primary_no_active_tenant
+FROM (
+  SELECT ut.user_id
+  FROM public.user_tenants ut
+  GROUP BY ut.user_id
+  HAVING count(*) > 1 AND NOT bool_or(ut.is_primary)
+) m
+WHERE NOT EXISTS (
+  SELECT 1 FROM auth.users u
+  WHERE u.id = m.user_id
+    AND u.raw_app_meta_data ->> 'active_tenant_id' IS NOT NULL
+);

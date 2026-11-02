@@ -9,7 +9,8 @@
 -- origin/main 50e55fd3a4, last definition wins): 32 policies on 15 tables, the
 -- same set as the 2026-11-01 recount.
 --
--- Plan amendment 1 (2026-11-02): the bare policies do not fail closed today.
+-- Plan amendment 1 (2026-11-02): the bare policies do not fail closed today, if the live current_tenant_id() is the
+-- 20260218 body. That is not verified against the live database; the live-body guard in DO $pre$ checks it.
 -- current_tenant_id() (20260218000000_fix_maxina_signup_tenant_association.sql:33-103)
 -- falls back to app_metadata.active_tenant_id and then to the caller's
 -- user_tenants row, so each policy already admits the members of the caller's
@@ -34,6 +35,8 @@
 -- Guards, all in this one transaction:
 --   * the helpers of 20261102030000_vtid_05465_tenant_id_for_policies_is_member.sql
 --     must exist;
+--   * the live current_tenant_id() body must be the 20260218 body (three markers, DO $pre$). On the 20251229 body
+--     the migration refuses, so the rewrite never runs there (acceptance.md, AC-12);
 --   * a table that is absent on the target is skipped with a NOTICE (8 of the 15
 --     are listed in scripts/ci/migration-drift-baseline.json as declared but
 --     absent in production);
@@ -56,11 +59,46 @@ DO $pre$
 DECLARE
   r record;
   p record;
+  v_def text;
+  v_ok_app_metadata boolean;
+  v_ok_user_tenants boolean;
+  v_ok_own_lookup boolean;
 BEGIN
   IF to_regprocedure('public.is_member(uuid)') IS NULL
      OR to_regprocedure('public.tenant_id_for_policies()') IS NULL THEN
     RAISE EXCEPTION 'VTID-05465: apply 20261102030000_vtid_05465_tenant_id_for_policies_is_member.sql first';
   END IF;
+
+  -- Live-body guard (VTID-05465 review, 2026-11-02). The rewrite is correct only if the live current_tenant_id()
+  -- is the 20260218 body (20260218000000_fix_maxina_signup_tenant_association.sql:33-103). That body falls back to
+  -- app_metadata.active_tenant_id and then to the caller's user_tenants row, so today's bare policies admit the
+  -- members of the caller's resolved tenant. The 20251229 body (20251229000000_vtid_01051_me_active_role_fix.sql:15-58)
+  -- reads only the request.tenant_id setting and the top-level tenant_id / tenant claims. A browser JWT carries neither,
+  -- so that body resolves to NULL and the bare policies admit nothing. The docs say the 20251229 body is the one live
+  -- (docs/MULTI-TENANT-PLAN.md:24, docs/DATABASE_SCHEMA.md:3320-3322). If so, the rewrite would open every one of the
+  -- 32 policies to every member of the caller's primary tenant. The guard reads the live definition and refuses unless
+  -- all three markers below match. Each marker is a code fragment that the 20260218 body contains and the 20251229 body
+  -- does not (the 20251229 file has no "app_metadata" at all). Comments are not markers: a comment edit does not
+  -- change behaviour. The markers:
+  --   marker 1  v_jwt_claims->'app_metadata'->>'active_tenant_id'   the app_metadata fallback
+  --   marker 2  FROM public.user_tenants                             the membership fallback
+  --   marker 3  WHERE user_id = auth.uid()                           the caller's own membership lookup
+  -- The NOTICE lines print the first 200 characters of the live body and each marker's result.
+  IF to_regprocedure('public.current_tenant_id()') IS NULL THEN
+    RAISE EXCEPTION 'VTID-05465: public.current_tenant_id() does not exist; refusing the rewrite';
+  END IF;
+  v_def := pg_get_functiondef('public.current_tenant_id()'::regprocedure);
+  v_ok_app_metadata := position('v_jwt_claims->''app_metadata''->>''active_tenant_id''' IN v_def) > 0;
+  v_ok_user_tenants := position('FROM public.user_tenants' IN v_def) > 0;
+  v_ok_own_lookup := position('WHERE user_id = auth.uid()' IN v_def) > 0;
+  RAISE NOTICE 'VTID-05465 live current_tenant_id() body, first 200 characters: %', left(v_def, 200);
+  RAISE NOTICE 'VTID-05465 live-body marker 1 (app_metadata.active_tenant_id fallback) matched: %', v_ok_app_metadata;
+  RAISE NOTICE 'VTID-05465 live-body marker 2 (user_tenants fallback) matched: %', v_ok_user_tenants;
+  RAISE NOTICE 'VTID-05465 live-body marker 3 (own membership lookup) matched: %', v_ok_own_lookup;
+  IF NOT (v_ok_app_metadata AND v_ok_user_tenants AND v_ok_own_lookup) THEN
+    RAISE EXCEPTION 'VTID-05465: the live current_tenant_id() is not the 20260218 body (markers %, %, %); refusing the rewrite. The lane is parked for an owner decision (docs/validation/VTID-05465/acceptance.md)', v_ok_app_metadata, v_ok_user_tenants, v_ok_own_lookup;
+  END IF;
+
   FOR r IN SELECT * FROM (VALUES
         ('community_groups', 'community_groups_insert', 'INSERT'),
         ('community_groups', 'community_groups_update', 'UPDATE'),

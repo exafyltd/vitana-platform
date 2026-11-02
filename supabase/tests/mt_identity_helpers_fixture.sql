@@ -714,6 +714,21 @@ SELECT ('00000000-0000-0000-0000-' || lpad(to_hex(g % 50), 12, '0'))::uuid,
 FROM generate_series(1, 5000) g
 ON CONFLICT (tenant_id, user_id) DO NOTHING;
 
+-- auth.users, only the two columns the membership count in pre-check.sql (section 6) reads. app_metadata.active_tenant_id
+-- is what the 20260218 body falls back to. ab_member's active tenant is its non-primary membership (B). User ...0d5405
+-- has no user_tenants row: today's body still admits it to tenant A, the rewritten helper returns NULL.
+CREATE TABLE IF NOT EXISTS auth.users (
+  id UUID PRIMARY KEY,
+  raw_app_meta_data JSONB NOT NULL DEFAULT '{}'::jsonb
+);
+INSERT INTO auth.users (id, raw_app_meta_data) VALUES
+  ('00000000-0000-0000-0000-0000000a5401', '{"active_tenant_id": "0000000a-0000-0000-0000-000000005465"}'),
+  ('00000000-0000-0000-0000-0000000a5402', '{"active_tenant_id": "0000000a-0000-0000-0000-000000005465"}'),
+  ('00000000-0000-0000-0000-0000000b5403', '{"active_tenant_id": "0000000b-0000-0000-0000-000000005465"}'),
+  ('00000000-0000-0000-0000-0000000c5404', '{"active_tenant_id": "0000000b-0000-0000-0000-000000005465"}'),
+  ('00000000-0000-0000-0000-0000000d5405', '{"active_tenant_id": "0000000a-0000-0000-0000-000000005465"}')
+ON CONFLICT (id) DO NOTHING;
+
 -- One row per tenant on every tenant-shared table.
 INSERT INTO public.community_groups (tenant_id) VALUES ('0000000a-0000-0000-0000-000000005465'), ('0000000b-0000-0000-0000-000000005465');
 INSERT INTO public.community_meetups (tenant_id) VALUES ('0000000a-0000-0000-0000-000000005465'), ('0000000b-0000-0000-0000-000000005465');

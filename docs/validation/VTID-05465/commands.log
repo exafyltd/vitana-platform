@@ -70,3 +70,15 @@ PGlite (/projects/sandbox/pglite-05465): node run.mjs                           
     (only the structural ones; every audience assertion passes on main = same audience)
   node checks.mjs (pre/post-check)                                                     -> 32 present, 0 bare left, 32 rewritten
 No database, gateway, Supabase or AWS endpoint was contacted. Nothing was applied. No commit, no push.
+
+## fix-forward 1 (reviewer finding: live-body guard, section 6 count, post-check scope, AC-8 status)
+In-process PGlite only (WASM, no network, no server database). Harness outside the repo: /projects/sandbox/pglite-05465.
+  node guard.mjs            red, before the guard in 20261102030100: rewrite COMMITTED on the old body; pgTAP FAIL "have 0, want 32"
+                            (outputs/live-body-guard-red.txt)
+  npx jest test/mt-identity-bare-policy-lint.test.ts  red, before the guard: 7 passed, 1 failed (outputs/jest-live-body-guard-red.txt)
+  node guard.mjs            green, after the guard: rewrite REFUSED (markers f, f, f); pgTAP 5 assertions ok (outputs/live-body-guard-green.txt)
+  node run.mjs              positive path on the 20260218 body: every step PASS, rls 160 / rollback 10 / rls 160 (outputs/pglite-run-after-guard.txt)
+  npx jest test/mt-identity-bare-policy-lint.test.ts  green: 8 of 8 (outputs/jest-live-body-guard-green.txt)
+  node scripts/ci/bare-policy-lint.mjs                 exit 0, 0 bare
+  node checks2.mjs          pre-check and post-check on the fixture in both states, incl. NOTICE lines (outputs/pre-post-check-fixture.txt)
+No live database, gateway, Supabase or AWS endpoint was contacted. Nothing was applied.

@@ -168,6 +168,21 @@ describe('VTID-05465 helpers and rewrite migrations', () => {
   });
 });
 
+describe('VTID-05465 live-body guard', () => {
+  it('reads the live current_tenant_id() body in DO $pre$ and raises before any policy is touched unless the three 20260218 markers match', () => {
+    const sql = fs.readFileSync(REWRITE, 'utf8');
+    const pre = /DO \$pre\$([\s\S]*?)\$pre\$;/.exec(sql);
+    expect(pre).not.toBeNull();
+    const guard = pre![1];
+    expect(guard).toContain("pg_get_functiondef('public.current_tenant_id()'::regprocedure)");
+    expect(guard).toContain("position('v_jwt_claims->''app_metadata''->>''active_tenant_id''' IN v_def)");
+    expect(guard).toContain("position('FROM public.user_tenants' IN v_def)");
+    expect(guard).toContain("position('WHERE user_id = auth.uid()' IN v_def)");
+    expect(guard).toMatch(/IF NOT \(v_ok_app_metadata AND v_ok_user_tenants AND v_ok_own_lookup\) THEN\s+RAISE EXCEPTION/);
+    expect(guard.indexOf('IF NOT (v_ok_app_metadata')).toBeLessThan(guard.indexOf('FOR r IN'));
+  });
+});
+
 describe('VTID-05465 lint parser', () => {
   let dir: string;
   beforeAll(() => {
