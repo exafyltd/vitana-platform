@@ -19,8 +19,9 @@ paths:
   - docs/validation/VTID-*/**
   - docs/SCREEN_INVENTORY.md
   - i18n-source-stamps/**
-updated: 2026-11-01T15:43Z
+updated: 2026-11-02T16:28Z
 repos: [exafyltd/vitana-v1]
+vtid: VTID-05509
 ---
 # Wizard polish, price-display de-hardcoding, offboarding runbook — mt-m3 (repo vitana-v1)
 
@@ -41,3 +42,6 @@ trailers `Collab-Session` / `Collab-Lane: mt-m3-r2/wizard-price-polish`. When th
 ## Log
 ### 2026-11-01T15:43Z · kiro-hotmail-202611011452-6d16 · created → ready
 Re-plan of `mt-m3/wizard-price-polish`. Versions day-shifted to `20261102140*`. Executor and reviewer follow today's §3a/§7 rules.
+
+### 2026-11-02T16:28Z · ci-plan-spar · ready (VTID allocated)
+VTID-05509 allocated after policy approval (converged-auto-v1).

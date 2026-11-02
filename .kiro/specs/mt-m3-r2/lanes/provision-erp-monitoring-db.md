@@ -14,8 +14,9 @@ paths:
   - supabase/migrations/20261102141100_vtid_*_mt_isolation_health_by_tenant_rollback.sql
   - docs/multitenancy/MIGRATION-QUEUE.md
   - scripts/ci/migration-drift-baseline.json
-updated: 2026-11-01T15:43Z
+updated: 2026-11-02T16:28Z
 repos: [exafyltd/vitana-platform]
+vtid: VTID-05506
 ---
 # ERP bootstrap request + per-tenant isolation health — mt-m3 (repo vitana-platform)
 
@@ -39,3 +40,6 @@ no Supabase/AWS writes (DB applies are Kiro via RUN-MIGRATION, only on the owner
 ## Log
 ### 2026-11-01T15:43Z · kiro-hotmail-202611011452-6d16 · created → ready
 Re-plan of `mt-m3/provision-erp-monitoring-db`. Versions day-shifted to `20261102140*`. Executor and reviewer follow today's §3a/§7 rules.
+
+### 2026-11-02T16:28Z · ci-plan-spar · ready (VTID allocated)
+VTID-05506 allocated after policy approval (converged-auto-v1).

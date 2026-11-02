@@ -14,8 +14,9 @@ paths:
   - supabase/migrations/20261102140100_vtid_*_mt_resolve_tenant_host_rollback.sql
   - docs/multitenancy/MIGRATION-QUEUE.md
   - scripts/ci/migration-drift-baseline.json
-updated: 2026-11-01T15:43Z
+updated: 2026-11-02T16:28Z
 repos: [exafyltd/vitana-platform]
+vtid: VTID-05507
 ---
 # tenant_domains table + resolve_tenant host arm — mt-m3 (repo vitana-platform)
 
@@ -38,3 +39,6 @@ append a log entry, release the claim.
 ## Log
 ### 2026-11-01T15:43Z · kiro-hotmail-202611011452-6d16 · created → ready
 Re-plan of `mt-m3/tenant-domains-db`. Versions day-shifted to `20261102140*`. Executor and reviewer follow today's §3a/§7 rules.
+
+### 2026-11-02T16:28Z · ci-plan-spar · ready (VTID allocated)
+VTID-05507 allocated after policy approval (converged-auto-v1).

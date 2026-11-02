@@ -11,8 +11,9 @@ paths:
   - services/gateway/src/services/tenancy/tenant-context.ts
   - services/gateway/src/middleware/auth-supabase-jwt.ts
   - services/gateway/test/mt-m3-host-resolution*.test.ts
-updated: 2026-11-01T15:43Z
+updated: 2026-11-02T16:28Z
 repos: [exafyltd/vitana-platform]
+vtid: VTID-05502
 ---
 # Gateway host arm in TenantContext — mt-m3 (repo vitana-platform)
 
@@ -35,3 +36,6 @@ PR is open: set `state: in-review`, `next_actor: kiro`, `pr: <url>`, append a lo
 ## Log
 ### 2026-11-01T15:43Z · kiro-hotmail-202611011452-6d16 · created → ready
 Re-plan of `mt-m3/host-resolution-gw`. Answers R3-F1: on the host arm, `not_member` and `unavailable` fall through to the token arm. No 503 from `getTenantContext`.
+
+### 2026-11-02T16:28Z · ci-plan-spar · ready (VTID allocated)
+VTID-05502 allocated after policy approval (converged-auto-v1).

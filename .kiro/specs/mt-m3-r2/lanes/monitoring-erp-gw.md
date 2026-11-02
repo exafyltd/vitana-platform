@@ -10,8 +10,9 @@ reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 paths:
   - services/gateway/src/routes/admin-health.ts
   - services/gateway/test/mt-m3-monitoring-erp*.test.ts
-updated: 2026-11-01T15:43Z
+updated: 2026-11-02T16:28Z
 repos: [exafyltd/vitana-platform]
+vtid: VTID-05503
 ---
 # Per-tenant health surface + ERP-request display — mt-m3 (repo vitana-platform)
 
@@ -30,3 +31,6 @@ PR is open: set `state: in-review`, `next_actor: kiro`, `pr: <url>`, append a lo
 ## Log
 ### 2026-11-01T15:43Z · kiro-hotmail-202611011452-6d16 · created → ready
 Re-plan of `mt-m3/monitoring-erp-gw`. Answers R3-F2: a new route `/health/tenant-isolation` behind `requireAdminAuth`. The public routes are unchanged.
+
+### 2026-11-02T16:28Z · ci-plan-spar · ready (VTID allocated)
+VTID-05503 allocated after policy approval (converged-auto-v1).
