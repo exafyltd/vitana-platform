@@ -20,11 +20,12 @@ Allowed paths:
       seed for existing network merchants (D7); expand only.
 - [ ] D2 `products.distribution` column (expand/contract: DEFAULT 'community' → backfill → drop default), CHECK.
 - [ ] D3 `partner_tenant.tenant_id` free-text → UUID/NULL backfill; snapshot `bak_*` first; unresolvable → NULL.
-- [ ] D4 Replace `products_select`/`merchants_select` RLS (`...foundation.sql:729/:735`, today `is_active = TRUE`
+- [ ] D4 Replace `products_select`/`merchants_select` RLS (`merchants_select` `...foundation.sql:729`, `products_select` `:735`, today `is_active = TRUE`
       only) with tenant-scoped policies (`is_active AND (distribution='network' OR EXISTS active
       supplier_tenant_relationships for current_tenant_id())`), guarded by a new `discover_tenant_gate_enabled()`
-      (STABLE SECURITY DEFINER, `SET search_path = public, pg_catalog`, false when tenant NULL / no row) so gate off ⇒
-      identical to `is_active` only, gate on + NULL tenant ⇒ network rows only (R1-F2, R3-F2); no `is_member()`. NO
+      (STABLE SECURITY DEFINER, `SET search_path = public, pg_catalog`, per-tenant flag for a non-NULL tenant, false when that tenant has no row; for a NULL tenant true iff ANY
+      `tenant_settings` row has the gate on — round-2 R1-F1) so every gate off ⇒ identical to `is_active` only, gate on
+      anywhere + NULL tenant ⇒ network rows only (R1-F2, R3-F2); no `is_member()`. NO
       `product_orders` column — D26 reuses the existing `product_orders.tenant_id` (R1-F3); `credit-recommender`
       selecting it is the `supplier-onboarding-communities` S4 code change, not a DB task.
 - [ ] D5 rollback files, `live-before.sql`/`post-apply-checks.sql`, `lock_timeout`+retries, MIGRATION-QUEUE rows at
@@ -207,6 +208,11 @@ an acceptance each, answered in `plan.md` "Re-plan answers".
   Lane: `supplier-relationships-db`.
   Acceptance: pgTAP `has_function('public','discover_tenant_gate_enabled')`. With the gate off, the result equals the
   `is_active`-only result. There is no dependency on `mt-identity-r2`. It is red on `origin/main`.
+- Round-2 R1-F1 [major]: `discover_tenant_gate_enabled()` returned false for a NULL tenant, contradicting the
+  "gate on + NULL tenant → network only" pgTAP test.
+  Lane: `supplier-relationships-db`.
+  Acceptance: pgTAP — gate on for one tenant + NULL `current_tenant_id()` → helper true, only `network` rows; all
+  gates off + NULL tenant → helper false, `is_active`-only result. It is red on `origin/main`.
 - R3-F3 [minor]: `discover-recommendations-repository.ts:22-23` reads a product by id + `is_active` only.
   Lane: `discover-shared-predicate`.
   Acceptance: a T_B recommender minting for a T_A-only product gets 404. It is red on `origin/main`.
