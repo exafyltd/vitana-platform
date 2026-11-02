@@ -254,9 +254,19 @@ function deps(db: ReturnType<typeof fakeDb>, over: Record<string, unknown> = {})
     fetchIndex: jest.fn(async () => INDEX),
     compose: jest.fn(async () => ({ ok: true as const, text: 'Guten Morgen Dragan!', model: 'eu.anthropic.claude-sonnet-4-6' })),
     locales: jest.fn(async (_sb: unknown, ids: string[]) => new Map(ids.map((i) => [i, 'de']))),
+    // VTID-05366: these tests are about the Phase 1 moments; members are fully set
+    // up so the enrichment moments (pinned in vtid-05366-companion-enrichment-moments)
+    // stay out of the way.
+    enrichment: jest.fn(async (_sb: unknown, ids: string[]) => ({
+      completions: new Map(ids.map((id) => [id, new Map(ENRICHMENT_ALL.map((t) => [t, true]))])),
+      dismissals: new Map(ids.map((id) => [id, []])),
+      unavailable: [],
+    })),
     ...over,
   };
 }
+
+const ENRICHMENT_ALL = ['E1', 'E2', 'E3', 'E4', 'E5', 'E6', 'E7', 'E8', 'E9', 'E10', 'E11'] as const;
 
 describe('VTID-05099: the shadow tick', () => {
   beforeEach(() => mockStrict.mockResolvedValue({ ok: true, ids: new Set([C]) }));
