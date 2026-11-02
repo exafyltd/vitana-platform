@@ -82,17 +82,18 @@ the in-flight **`health-native`** spec (`vitana-platform:.kiro/specs/health-nati
   ingest. If the module export is not yet on main when a lane needs it, the lane renders the affordance against a
   typed stub behind the same ingest-off flag and records the dependency in its log (`next_actor: kiro`), exactly as
   N5a itself stubbed N3/N4 before they landed. **The stub is a pinned interface with a contract test (R1-F5):** the
-  `n5a-health-sync` **module code is already merged to vitana-v1 `main`** (#1398 → `8fea5e652`, 2026-10-14), but its
-  ingest contract is owner-blocked on C1 (#4107) / D10 (the `d10-consents` migration) with no near-term timeline, and
-  `n5a-health-sync.md:16-19` records that the remaining Kiro work is to **re-vendor the Health Sync contract from C1's
-  merge commit** (not from the #1398 branch). So `health-hub` does not write an ad-hoc stub — it vendors the module's
-  public read-only-until-enabled entry **signature** from the N5a export **as landed on `vitana-v1` main**
-  (`8fea5e652`, verified against the live file in the fresh vitana-v1-pinned sparring session), encodes it as an
-  explicit TypeScript `interface` the stub implements, and adds a **contract test** that imports both the stub and —
-  through the real module path — the N5a export and asserts structural compatibility (a type-level assignability
-  assertion plus a runtime shape check). The test compiles against the stub today and exercises the real export the
-  moment the ingest flag can turn on; if the N5a entry changes shape in between, the contract test fails in NATIVE-CI
-  rather than shipping a silently broken delegate call. The lane log records a `next_actor: kiro` task to
+  `n5a-health-sync` **module is NOT on vitana-v1 `main`** (verified at `a994fcf`: `apps/mobile/src/` has no `health-sync`
+  directory and `src/ports/` no health-sync port; `8fea5e652` is the merge-from-main commit on the unmerged #1398 branch
+  `claude/health-data-integration-plan-dbxyld-n5a`, not a `main` commit). Its ingest contract is owner-blocked on C1
+  (#4107) / D10 (the `d10-consents` migration), and `n5a-health-sync.md:16-19` records that the remaining work is to
+  **re-vendor the Health Sync contract from C1's merge commit**. So `health-hub` writes the **pinned interface** itself:
+  `apps/mobile/src/ports/health-sync.ts` declares the module's public read-only-until-enabled entry signature as an
+  explicit TypeScript `interface` (the shape on the #1398 branch head, file and line cited in the lane evidence), the
+  stub implements it, and a **contract test runs in stub-only mode today**: it asserts the stub satisfies the interface
+  (type-level assignability + runtime shape check). The real-import assertion is **conditional**: it activates in the
+  N5a lane, which must make its export satisfy `ports/health-sync.ts` (a type-level assertion in that PR), so a shape
+  change fails NATIVE-CI rather than shipping a silently broken delegate call. No path that does not exist on `main` is
+  imported. The lane log records a `next_actor: kiro` task to
   **re-pin the vendored signature to C1's merge commit** once C1 lands and the contract is re-vendored, so the stub
   and the contract test track the final contract shape, not an interim one.
   The standalone **Connected Apps** settings screen
