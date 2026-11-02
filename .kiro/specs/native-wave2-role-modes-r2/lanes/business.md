@@ -23,7 +23,8 @@ paths:
   - apps/mobile/parity/ledger.json
   - src/i18n/*/businessNative.json
   - docs/validation/**
-updated: 2026-11-02T11:03Z
+updated: 2026-11-02T21:38Z
+vtid: VTID-05524
 ---
 # Business / commerce-mode port — the 11 commerce ledger rows; owns the one new class-A core extraction
 Plan: `.kiro/specs/native-wave2-role-modes-r2/` — `plan.md` (plan block) and the `tasks.md` section marked
@@ -72,3 +73,6 @@ Supabase/AWS, no test against production; staging specs are read-only; the nativ
 ## Log
 ### 2026-11-02T11:03Z · kiro-exafyltd-202611011658-9f52 · ready
 Lane created with the plan (re-plan of `native-wave2-role-modes/business`, PR #4434); `paths` widened to the shared native-infra files.
+
+### 2026-11-02T21:38Z · ci-plan-spar · ready (VTID allocated)
+VTID-05524 allocated after policy approval (converged-auto-v1).
