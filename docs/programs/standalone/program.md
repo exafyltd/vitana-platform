@@ -28,6 +28,7 @@ specs:
   - vitana-platform:pm-reassign-idempotent-r3
   - vitana-platform:matches-scroll-end
   - vitana-platform:spotlight-commit-coverage
+  - vitana-platform:wallet-fx-rate-url
   - vitana-platform:profile-posts-full-width
   - vitana-platform:staging-verify-runner-fix
   - vitana-platform:guard-required-only-preflight
@@ -59,6 +60,7 @@ specs:
   - vitana-platform:i18n-propagate-stale-write
   - vitana-platform:sparring-floor-retry
   - vitana-platform:ci-dockerhub-mirror
+  - vitana-platform:review-survives-main-merge
 docs:
   - vitana-platform:.kiro/specs/pm-agent/plan-sparring.md
   - vitana-platform:.kiro/specs/claude-sessions-handover/handoff.md
@@ -114,3 +116,4 @@ belong to none of the named programmes are listed here until the owner assigns t
 - `vitana-platform:operating-workflow` — one authoritative operating policy, central review independence, durable driver record, CI activity guard, proportional path, workflow metrics
 - `vitana-platform:reviewer-session-id-permission` — the reviewer agent generates its own reviewer session id via the existing queue.mjs command (narrowest shell permission; protected gate file, owner-authorized)
 - `vitana-platform:ci-dockerhub-mirror` — vitana-v1 PR CI pulls its Postgres service image from Docker Hub, not the capped ECR Public mirror
+- `vitana-platform:review-survives-main-merge` — a reviewer-agent accept stays current across a clean, conflict-free merge of `main` into the PR (`land-guard.mjs`, collaboration §3)
