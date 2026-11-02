@@ -22,7 +22,8 @@ paths:
   - packages/core/extract.json
   - packages/core/src/**
   - scripts/native/mobile-ci-paths.generated.json
-updated: 2026-11-01T23:17Z
+updated: 2026-11-02T07:31Z
+vtid: VTID-05456
 ---
 # Pillars / conditions / education / plans / services-hub port
 Plan: `.kiro/specs/native-wave2-health-biology-r3/` — `plan.md` (plan block) and the `tasks.md` section marked
@@ -73,3 +74,6 @@ class-B modules are NEVER moved into core.
 ## Log
 ### 2026-11-01T23:17Z · kiro-exafyltd-202611011658-9f52 · ready
 Lane created with the plan (re-plan of `native-wave2-health-biology-r2/health-plans-services`, PR #4577); `paths` widened to the shared native-infra files.
+
+### 2026-11-02T07:31Z · ci-plan-spar · ready (VTID allocated)
+VTID-05456 allocated after policy approval (converged-auto-v1).
