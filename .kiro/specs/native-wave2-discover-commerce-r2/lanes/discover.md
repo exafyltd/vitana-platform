@@ -27,7 +27,8 @@ paths:
   - src/i18n/*/discoverCommerceNative.json
   - docs/validation/**
   - packages/core/extract.json
-updated: 2026-11-01T17:10Z
+updated: 2026-11-02T16:30Z
+vtid: VTID-05510
 ---
 # Discover + shop port — `/discover` (+ tabs), `/shop` (immersive video feed), the discover sub-catalogues
 Plan: `.kiro/specs/native-wave2-discover-commerce-r2/` — `plan.md` (plan block) and the `tasks.md` section marked
@@ -83,3 +84,6 @@ Supabase/AWS, no test against production; staging specs are read-only; the nativ
 ## Log
 ### 2026-11-01T17:10Z · kiro-exafyltd-202611011658-9f52 · ready
 Lane created with the plan (re-plan of `native-wave2-discover-commerce/discover`, PR #4276); `paths` widened to the shared native-infra files.
+
+### 2026-11-02T16:30Z · ci-plan-spar · ready (VTID allocated)
+VTID-05510 allocated after policy approval (converged-auto-v1).
