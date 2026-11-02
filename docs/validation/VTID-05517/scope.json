@@ -1,0 +1,13 @@
+{
+  "vtid": "VTID-05517",
+  "kind": "docs",
+  "paths": [
+    "docs/ENGINEERING-PLATFORM-PLAN.md",
+    "docs/validation/VTID-05517/**"
+  ],
+  "sparring_record": ".kiro/specs/eng-platform-p01/sparring/verdict.md",
+  "weakens_tests": [],
+  "red_green_exempt": [
+    "docs only"
+  ]
+}

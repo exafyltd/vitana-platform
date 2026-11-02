@@ -1,0 +1,10 @@
+{
+  "vtid": "VTID-05517",
+  "tests": [
+    {
+      "kind": "existing",
+      "ref": "n/a",
+      "reason": "docs only, deploys nothing"
+    }
+  ]
+}
