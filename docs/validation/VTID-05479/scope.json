@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-05479",
+  "kind": "docs",
+  "paths": [
+    "docs/multitenancy/MIGRATION-QUEUE.md",
+    "scripts/ci/migration-drift-baseline.json",
+    "docs/validation/VTID-05479/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05479/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

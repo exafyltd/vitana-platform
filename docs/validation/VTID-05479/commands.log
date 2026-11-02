@@ -1,0 +1,9 @@
+# VTID-05479 commands (run on the lane branch, 2026-11-02)
+$ grep -c "^| 1[2-9] |\|^| 20 |" docs/multitenancy/MIGRATION-QUEUE.md
+9
+$ node -e "const b=require('./scripts/ci/migration-drift-baseline.json');console.log(b.count,b.known_missing_tables.length)"
+110 110
+$ git diff --name-only origin/main...HEAD
+docs/multitenancy/MIGRATION-QUEUE.md
+scripts/ci/migration-drift-baseline.json
+docs/validation/VTID-05479/...
