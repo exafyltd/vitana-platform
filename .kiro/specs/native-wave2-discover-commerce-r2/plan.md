@@ -155,11 +155,11 @@ Legacy `/cart`: web `src/App.tsx:1087` redirects `/cart` to `/universal-cart`; `
 redirect in `apps/mobile/src/navigation/resolve.ts` so a `/cart` deep link opens the native universal cart.
 Unlisted route `/discover/ai-picks` (sparring R1-F1): web `src/App.tsx:1034` routes it to `AIPicksPage`
 (`src/pages/AIPicksPage.tsx`), but it has no parity-ledger row because it is not in `screens.json` (the ledger is
-built from the registry plus App.tsx, and `parity-ledger.mjs --sync` creates no row for it). It is reached from the
-Picks for You section (`src/components/discover/AIPicksSection.tsx:132`). The `discover` lane ports it natively as
-`apps/mobile/app/(app)/discover/ai-picks.tsx` (same content and calls as the web page), routes the section's
-'see all' link to it, and adds a cold-start test, so no reachable discover destination is left Unported. No ledger
-row is added (ledger rows come from the registry; adding a registry entry is out of this plan's scope).
+built from the registry plus App.tsx, and `parity-ledger.mjs --sync` creates no row for it). It is reached from the Picks for You section (`src/components/discover/MobileDiscoverView.tsx:98`). The `discover` lane's paths do not list
+a route file for it, so the lane maps `/discover/ai-picks` in `apps/mobile/src/navigation/resolve.ts` (in its paths) to
+the native Discover screen on its AI Picks tab (`DISCOVER.AI_PICKS`, `/discover?tab=suggested`), with a cold-start test,
+so the link never lands on the Unported fallback. A dedicated native `AIPicksPage` twin is a recorded follow-up (needs a
+lane-paths amendment); no ledger row is added (ledger rows come from the registry).
 <!-- plan:end -->
 
 <!-- cross-repo plan; vitana-v1 read via spar_refs. fresh session after PLAN-SPAR repair; 2026-10-28T09:49:52.3357947+01:00 -->
