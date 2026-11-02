@@ -25,7 +25,13 @@ paths:
   - docs/SCREEN_INVENTORY.md
   - docs/design-system/SPOTLIGHT_RULES.md
   - docs/validation/VTID-*/**
-updated: 2026-10-31T23:46Z
+  - src/components/spotlight/tier-b/VitanaIndexHeroCard.tsx
+  - src/pages/spotlight-tier-b.vtid-05111.test.tsx
+  - tests/e2e/staging/vtid-05416-discover-spotlight-grid.staging.spec.ts
+  - tests/e2e/staging/vtid-05417-events-spotlight-grid.staging.spec.ts
+  - tests/e2e/staging/vtid-05418-find-match-spotlight-grid.staging.spec.ts
+  - tests/e2e/staging/vtid-05419-health-spotlight-grid.staging.spec.ts
+updated: 2026-11-02T11:27Z
 branch: kiro/spotlight-card-proportion/layout-core
 vtid: VTID-05420
 ---
@@ -42,3 +48,9 @@ Created and held.
 
 ### 2026-10-31T23:46Z · ci-plan-spar · ready (VTID allocated)
 VTID-05420 allocated after policy approval (converged-auto-v1).
+
+### 2026-11-02T11:27Z · kiro-202610152203-0347 · paths widened (STAGING-VERIFY round-2 fix-forward)
+STAGING-VERIFY run 41329713260 failed 52/58 (Spotlight width, flat media, fold overflow). The round-2 fix
+(vitana-v1 #1557) touches the Health Spotlight art (`VitanaIndexHeroCard.tsx`), its unit test and the four grid
+staging specs written by the page lanes, whose lanes are already merged. Those six paths move to this lane so the
+fix lands as one PR. No new behaviour beyond the approved plan.
