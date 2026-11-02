@@ -18,12 +18,13 @@ Acceptance: pgTAP green locally; migration files lint; MIGRATION-QUEUE updated i
 <!-- lane: messaging-send-gateway -->
 ## messaging-send-gateway — route sends through the RPCs + writer lint (VTID: allocated by PLAN-SPAR, Kiro, repo vitana-platform)
 
-Allowed paths: `services/gateway/src/routes/chat.ts`, `services/gateway/src/routes/chat-repository.ts`, `services/gateway/src/services/orb-tools-shared.ts`, `services/gateway/src/services/intents-share-repository.ts`, `services/gateway/src/services/chat-groups-repository.ts`, `services/gateway/src/services/upstream-message-handler-repository.ts`, `services/gateway/src/services/chat-writer-inventory.ts`, `services/gateway/test/mt-network-messaging-send-gateway.test.ts`, `services/gateway/test/mt-network-chat-writer-lint.test.ts`
+Allowed paths: the `paths` of `lanes/messaging-send-gateway.md`, plus `services/gateway/src/services/orb-tools/calendar-social-tools.ts` (member-on-behalf insert at `:390-392`, round-1 R1-F1), which the builder adds to the lane file's `paths` in the lane's first commit.
 
 - [ ] 1 Rewrite `/send` (`chat.ts:54`) to call `send_message()` with a per-request user-JWT client (not service role).
 - [ ] 2 Route ORB voice send/share-link, intent share, gateway group send and the ORB live bridge through `send_message_as(req.identity.user_id, …)`.
 - [ ] 3 Thread identity `(scope, tenant_id if community, peer)` in the recent-conversations path.
-- [ ] 4 Generated writer inventory + lint test: `chat_messages`/`global_messages` inserts only inside the two RPCs plus the system-writer allowlist (`/vitana-reply` `chat.ts:281`, welcome-chat, notification bots), all `scope='community'`.
+- [ ] 4 Generated writer inventory + lint test: `chat_messages`/`global_messages` inserts only inside the two RPCs plus the system-writer allowlist (`/vitana-reply` `chat.ts:441` → `insertVitanaReplyMessage` `chat-repository.ts:92-93`, companion `companion-repository.ts:400`, proactive-match, welcome-chat, welcome-team — the full classified list is in plan.md "Round 1 answers" R1-F1), all `scope='community'`.
+- [ ] 4a The lint regenerates the insert inventory by grep at test time and fails on any unclassified hit (member-on-behalf vs system writer, plan.md R1-F1).
 - [ ] 5 Jest/contract: ORB voice send to a non-`network_visible` member of another tenant refused; intent share to a "nobody" recipient refused.
 
 Acceptance: `npm test` (gateway) green incl. writer lint; `npm run test:support` green; dark behind `mt.network_enabled`.
@@ -46,7 +47,7 @@ Acceptance: pgTAP green; migration lints; rollback present; queue position noted
 
 Allowed paths: `src/pages/Messages.tsx`, `src/hooks/useGlobalMessages.ts`, `src/hooks/useHybridMessages.ts`, `src/hooks/useTenantMessages.ts`, `src/components/messages/**`, `src/components/NewConversationPopup.tsx`, `src/i18n/de/inbox.json`, `src/i18n/en/inbox.json`, `src/hooks/useGlobalMessages.scope.test.ts`, `tests/e2e/staging/mt-network-messenger.staging.spec.ts`, `docs/SCREEN_INVENTORY.md`
 
-- [ ] 1 Replace the inverted `inboxModes` (`Messages.tsx:153-154`) with scope values `community`/`network` + correct DE-first labels; default `community`, remembered per surface.
+- [ ] 1 Replace the inverted `inboxModes` (`Messages.tsx:154-157`) with scope values `community`/`network` + correct DE-first labels; default `community`, remembered per surface.
 - [ ] 2 Remove `useHybridMessages` role routing + the legacy `tenant` context; fold the professional channel into community role-gated threads.
 - [ ] 3 `useGlobalMessages` thread dedup → `(scope, tenant_id if community, peer)`.
 - [ ] 4 One-time network-visibility prompt (recorded golden exception); Spotlight tokens; RTL logical props; i18n DE-first.
@@ -71,7 +72,7 @@ Acceptance: pgTAP green; migration lints; rollback restores exact counts; queue 
 
 Allowed paths: `supabase/migrations/20261102053***_*.sql`, `supabase/tests/mt-network-matching-scope.pgtap.sql`
 
-- [ ] 1 Add `daily_matches.scope` (+ tenant context) and backfill per D15, respecting the existing unique key `(tenant_id,user_id,match_date,match_type,target_id)`. (v1 `daily_matches` `20251111124306`, not platform `matches_daily` — R1-F1/F2.)
+- [ ] 1 Add `daily_matches.scope` (+ tenant context) and backfill per D15, (v1 `daily_matches` has no tenant column and no unique key, `20251111124306:2-13`: add `scope` + nullable `tenant_id`, add no unique key; the key `(tenant_id,user_id,match_date,match_type,target_id)` is the platform `matches_daily`'s — round-1 R1-F2, session `0725552c`). (v1 `daily_matches` `20251111124306`, not platform `matches_daily` — R1-F1/F2.)
 - [ ] 2 Intent matchers (`compute_intent_matches`, v1 `20260501*`) `p_visibility` default `'public'` → caller scope; `community`→tenant branch, `network`→public restricted to `network_visible`. (`resolve_recipient_candidates` scope lives in `orb-recipient-scope-gateway`.)
 - [ ] 3 Remove Vitana Index inputs from matching; `daily_matches.match_reasons` carries no health-derived code (D25); register the v1 recompute (`generate-daily-matches`) + intent matchers in the lineage-guard inventory.
 - [ ] 4 Rollback + read-only pre/post checks in the PR; pgTAP + a `match_reasons` no-health-code test; note the platform MIGRATION-QUEUE position in the PR body (platform follow-up).
