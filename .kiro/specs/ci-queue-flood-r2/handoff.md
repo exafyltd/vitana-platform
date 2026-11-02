@@ -3,8 +3,10 @@ slug: ci-queue-flood-r2
 author: kiro
 executor: kiro
 next_actor: kiro
-state: drafted
-updated: 2026-11-02T20:55Z
+state: sparred
+updated: 2026-11-02T21:44Z
+sparring_record: .kiro/specs/ci-queue-flood-r2/sparring/verdict.md
+reason: lanes_missing
 ---
 
 # ci-queue-flood-r2: handoff
@@ -16,3 +18,6 @@ updated: 2026-11-02T20:55Z
 Replaces `ci-queue-flood` (plan PR #4607), whose round 1 escalated with `evidence_floor_not_met`. That reason is not
 retryable on main, so the old chain stays open as the record. Owner instruction 2026-11-02: "fix it, execute this fix",
 then "you decide and continue". Next actor: CI PLAN-SPAR.
+
+### 2026-11-02T21:44Z · ci-plan-spar · drafted → sparred
+Converged; approved by policy converged-auto-v1. No lane files yet; add them in a `_plan` commit on this PR and the next PLAN-SPAR run allocates their VTIDs.
