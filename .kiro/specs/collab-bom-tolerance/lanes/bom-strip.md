@@ -9,7 +9,8 @@ seat: exafy
 area: platform
 reviewer_seat: agent:vitana-lane-reviewer
 repos: [exafyltd/vitana-platform]
-updated: 2026-11-01T23:15Z
+updated: 2026-11-02T11:22Z
+vtid: VTID-05462
 ---
 # Lane: bom-strip (repo vitana-platform)
 Tasks T1-T4 in `tasks.md`. **Paths (authoritative for the build, not declared in front matter):**
@@ -23,3 +24,6 @@ every required check green. Never on a reviewer-agent accept alone; the Project 
 ## Log
 ### 2026-11-01T23:15Z · kiro-exafyltd-202611012315-0b54 · ready
 Lane created with the plan.
+
+### 2026-11-02T11:22Z · ci-plan-spar · ready (VTID allocated)
+VTID-05462 allocated after policy approval (converged-auto-v1).
