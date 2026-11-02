@@ -34,6 +34,12 @@ database is a dependency of backend previews, not part of this program.
   `AWS-PROVISION-APPILIX-SECRETS.yml:106` (staging leg), `AWS-PROVISION-DEV-MEMORY-PACK-TOKEN.yml:44`,
   `AWS-STAGE-DEPLOY-ERP-BRIDGE.yml:95`, `AWS-STAGE-DEPLOY-GATEWAY.yml:205`, `AWS-STAGE-DEPLOY-KIRO-RUNNER.yml:106`,
   `AWS-STAGE-DEPLOY-POSTGREST-AURORA-PROXY.yml:92`, `I18N-DB-SEED.yml:116`; vitana-v1 `AWS-STAGE-DEPLOY-FRONTEND.yml:150`.
+  This list is complete: `grep -rl AWS_STAGING_ACCESS_KEY_ID .github/` returns exactly these 8 files in vitana-platform
+  (0 hits in `AWS-STAGING-VALIDATION.yml`, `AWS-OPS-ECS-SCALE-UNGOVERNED.yml`, `AWS-REHEARSAL-AURORA-CLONE.yml`), and
+  in vitana-v1 the 3 files above plus `AWS-PROD-DEPLOY-FRONTEND.yml`. Lane tests find the files by this grep, not by
+  a fixed list (sparring R1-F1). `ALERT-APP-USERS-IDENTITY-DRIFT.yml` reads **production** Aurora with the
+  `claude-readonly` secret over the Data API (`:59-60`; its permission on the staging keys is marked unverified at
+  `:34-42`), so it moves to the read-only drift role, not the staging deploy role (sparring R1-F3).
   None of these files grants `id-token: write` except `AWS-PROVISION-APPILIX-SECRETS.yml:84` (its prod leg).
   `AWS-STAGE-DEPLOY-KIRO-RUNNER.yml:29` also triggers on `pull_request`, but its AWS job is skipped there (`:92`).
 - **The documented OIDC trust is repo-wide.** `scripts/aws/README.md:49-54` scopes the role trust with
@@ -41,7 +47,7 @@ database is a dependency of backend previews, not part of this program.
   `AWS_PROD_ROLE_ARN` is not in git (`.claude/rules/infrastructure.md` §1b points to `docs/AWS-PRODUCTION-BUILD-LOG.md`).
 - **The prod role and the Aurora master secret are used from a PR trigger.** `MIGRATION-DRIFT-CHECK.yml:24-29` runs on
   `pull_request`; its aurora branch assumes `secrets.AWS_PROD_ROLE_ARN` (`:126-131`), then reads the cluster's
-  **master user** secret (`MasterUserSecret.SecretArn`, `:143-144`) and queries through the RDS Data API (`:147-149`).
+  **master user** secret (`MasterUserSecret.SecretArn`, `:144-145`) and queries through the RDS Data API (`:148-150`).
   A read-only DB identity already exists: `vitana/aurora/prod/claude-readonly`, described as an RDS Data API secret
   (`scripts/aws/setup-operator-sql-readonly-secret.sh:11`, read at `:49`). `pg_class`/`pg_namespace`, the only
   objects the drift query reads (`:145`), are readable by any role. Every other `AWS_PROD_ROLE_ARN` workflow is
@@ -69,7 +75,8 @@ database is a dependency of backend previews, not part of this program.
   - `vitana-gha-v1-preview`: trust `sub` exactly `repo:exafyltd/vitana-v1:pull_request`; permissions only
     `s3:PutObject/GetObject/DeleteObject/ListBucket` on `vitana-pr-previews` (`PREVIEW-DEPLOY-FRONTEND.yml:50`) and
     `cloudfront:CreateInvalidation` on the preview distribution.
-  - `vitana-gha-drift-readonly`: trust `sub` `repo:exafyltd/vitana-platform:pull_request` or `…:ref:refs/heads/main`;
+  - `vitana-gha-drift-readonly` (used by `MIGRATION-DRIFT-CHECK.yml` and `ALERT-APP-USERS-IDENTITY-DRIFT.yml`): trust
+    `sub` `repo:exafyltd/vitana-platform:pull_request` or `…:ref:refs/heads/main`;
     permissions only `rds:DescribeDBClusters` and `rds-data:ExecuteStatement` on cluster `vitana-aurora-prod`, and
     `secretsmanager:DescribeSecret` / `GetSecretValue` on `vitana/aurora/prod/claude-readonly-*`. It has no access to
     the master user secret.
@@ -107,7 +114,8 @@ key, never deletes the IAM user (that is the owner's follow-up after OIDC runs g
 `paths`: the eight vitana-platform workflows of §2 (static-key list), `.github/workflows/MIGRATION-DRIFT-CHECK.yml`,
 `services/gateway/test/eng-platform-stage-oidc-workflows.test.ts`,
 `services/gateway/test/vtid-05009-provision-pack-token-workflow.test.ts`, `docs/validation/**`. Each credential step takes
-the §3 shape with `AWS_STAGING_ROLE_ARN`; `id-token: write` added to each file's `permissions`. In
+the §3 shape with `AWS_STAGING_ROLE_ARN`, except `ALERT-APP-USERS-IDENTITY-DRIFT.yml`, which takes it with
+`AWS_DRIFT_ROLE_ARN` (production read-only data, sparring R1-F3); `id-token: write` added to each file's `permissions`. In
 `AWS-PROVISION-APPILIX-SECRETS.yml` only the staging leg changes; its prod leg is untouched. `MIGRATION-DRIFT-CHECK.yml`
 aurora branch: `role-to-assume: ${{ vars.AWS_DRIFT_ROLE_ARN || secrets.AWS_PROD_ROLE_ARN }}`, and when
 `AWS_DRIFT_ROLE_ARN` is set the Data API `--secret-arn` is the `vitana/aurora/prod/claude-readonly` secret (resolved by
@@ -184,6 +192,9 @@ prod trust JSON the script printed in step 3.
 - The `claude-readonly` secret is documented as a Data API secret (`setup-operator-sql-readonly-secret.sh:11`); the first
   `MIGRATION-DRIFT-CHECK` dispatch with `target=aurora` after step 2 proves it, and unsetting `AWS_DRIFT_ROLE_ARN`
   restores today's path.
+- If `claude-staging-validation` holds production data-plane permissions (rds-data / `claude-readonly`), the copied
+  staging role inherits them. The inventory (`aws-inventory`) lists the user's effective policies before the owner runs
+  `--apply`; the program document records the result, and narrowing the staging role is a Phase 3 item.
 - The staging role copies the IAM user's permissions, which may be broad: no new reach, but not narrower either;
   narrowing is a Phase 3 item informed by the inventory.
 - Narrowing the prod trust can break an unknown caller: the script prints the live trust first, and the inventory lists
