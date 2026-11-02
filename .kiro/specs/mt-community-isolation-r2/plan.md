@@ -3,6 +3,14 @@ change_class: standard
 ---
 # Community isolation (WS3 Community part) — tenant_id + RLS + tenant-scoped reads
 <!-- plan:begin -->
+## Round 1 answers (PLAN-SPAR session `e768aae5`)
+- **R1-F1** accepted: the `.or()` sanitisation in `resolvePersonByName` is unconditional (not behind the
+  `community_scope` flag); only the tenant predicate is flag-gated. See fix (e) and G2a.
+- **R1-F2** accepted: `resolveAuthorPost` (`p0-gap-tools.ts:483`) gains `id`, passed by `tool_like_post` (`:512`) and
+  `tool_comment_on_post` (`:555`), its only callers. See fix (e) and G2.
+- **R1-F3** accepted: `BuildPersonContextInput.tenant_id` is at `person-context-builder.ts:36`.
+- **R1-F4** accepted: `p_global: false` is at `users-resolve-repository.ts:27`.
+
 ## Re-plan answers (session `ed136e24` round 3)
 Re-plan of `mt-community-isolation` (branch `kiro/mt-community-isolation/plan`; PLAN-SPAR session `ed136e24`
 escalated at the round cap). Every premise was re-verified on platform `origin/main` `62990ce285` and vitana-v1
@@ -17,12 +25,19 @@ escalated at the round cap). Every premise was re-verified on platform `origin/m
   - The function also gains a `tenantId` parameter. Its three callers pass the verified active tenant:
     `intent-find-match.ts:277` (`id.tenant_id`), `orb-tools/p0-gap-tools.ts:71` (`resolveMember`, which now receives
     `id` from `tool_follow_member` `:90`, `tool_unfollow_member` `:127` and `resolveAuthorPost` `:488`), and
-    `person-context-builder.ts:52` (`BuildPersonContextInput.tenant_id`, `:31`).
-  - While touching this query, the lane also strips the PostgREST `.or()` reserved characters `,()*:."\` from the
-    term. Today only `%` and `_` are stripped (`:652`), so a hint containing a comma can add filter clauses.
+    `person-context-builder.ts:52` (`BuildPersonContextInput.tenant_id`, `:36`).
+  - `resolveAuthorPost` (`p0-gap-tools.ts:483`) is private; it gains an `id: OrbToolIdentity` parameter and passes it
+    to `resolveMember`. Its only two callers pass their own `id` through: `tool_like_post` (`:502`, call at `:512`)
+    and `tool_comment_on_post` (`:542`, call at `:555`). No other function in the file calls `resolveMember` or
+    `resolveAuthorPost` (R1-F2).
+  - The lane also strips the PostgREST `.or()` reserved characters `,()*:."\` from the term. Today only `%` and `_`
+    are stripped (`:652`), so a hint containing a comma can add filter clauses. **This sanitisation is unconditional:
+    it applies whether `feature_flags.mt.community_scope` is on or off**, so the injection is closed on the lane's
+    first deploy. Only the `.in('user_id', memberIds)` tenant predicate depends on the flag (R1-F1).
   - Test: with the flag on, a name that matches one member of tenant A and one of tenant B returns only the
-    tenant-A member for a tenant-A viewer. A hint containing `,` or `)` adds no clause. Both are red on
-    `origin/main`.
+    tenant-A member for a tenant-A viewer. A hint containing `,` or `)` adds no clause, **with the flag off and with
+    it on**. Both are red on `origin/main`. A test also calls `tool_like_post` and `tool_comment_on_post` and asserts
+    the tenant reaches `resolvePersonByName` (R1-F2).
 - **R3-F2** (no predicate for `user_matches`' two-column OR): accepted. `user_id_1`/`user_id_2` are added to the (M)
   enumeration, and the rule is fixed: the viewer's own column is fixed and the **other** column must be in
   `memberIds`.
@@ -36,7 +51,7 @@ escalated at the round cap). Every premise was re-verified on platform `origin/m
 - **Line corrections from the re-verification:**
   - `founding_members.tenant_id NOT NULL` is at `:45`, and the advisory lock is at `:118`.
   - The `discovery-tools.ts` posts lane is at `:188` (`fetchPeople` at `:195`), and the events lane is at `:216`.
-  - `p_global: false` is at `users-resolve-repository.ts:28`.
+  - `p_global: false` is at `users-resolve-repository.ts:27`.
   - `social-context-builder.ts` passes `input.tenant_id` at `:92` and `:96`.
   - The superlatives repository is `services/voice-tools/superlatives-repository.ts`.
   - None of the class (i)/(ii) content tables has a `tenant_id` column today, and no migration in either repo adds
@@ -72,7 +87,7 @@ rewrite, Network groups — is a sibling spec, out of scope here). Verified read
    (`services/orb-tools/discovery-tools.ts`) **only** the people (`:172`), posts (`:188`) and events
    (`:216 searchUpcomingEventsForGlobalSearch`) lanes. Already tenant-scoped (no change): `global_search`'s
    groups/products/services lanes (gated on `id.tenant_id`, `:225+`) and `resolve_recipient_candidates`
-   (`users-resolve-repository.ts:28` passes `p_global:false`; the RPC resolves the actor's tenant and
+   (`users-resolve-repository.ts:27` passes `p_global:false`; the RPC resolves the actor's tenant and
    `p_global DEFAULT false` restricts to it,
    `supabase/migrations/20260812140200_VTID_03623_resolver_drift_fix_chat_peer_flag.sql`).
 2. **`daily_matches` candidate pool is cross-tenant.** The visible pool is read from `profiles`
@@ -247,7 +262,8 @@ after the WS1 resolver/membership migrations, in the order community tables → 
   is threaded; `tool_global_search` people/posts/events lanes scoped while groups/products/services are
   unchanged; a read-only test asserts `resolve_recipient_candidates` stays tenant-scoped (no code change);
   `resolvePersonByName` with the flag on returns only an active-tenant member when the name matches members of two
-  tenants, and a hint with `,` or `)` adds no `.or()` clause (R3-F1); `fetchMatches` never returns a cross-tenant
+  tenants, and a hint with `,` or `)` adds no `.or()` clause with the flag off or on (R3-F1, R1-F1);
+  `tool_like_post` / `tool_comment_on_post` pass the tenant through `resolveAuthorPost` (R1-F2); `fetchMatches` never returns a cross-tenant
   `user_matches` counterpart whichever column holds the viewer, and returns a same-tenant one from both orders (R3-F2);
   the `connect-people` daily-match deliver / nudge / mutual-accept introduction paths surface only
   same-tenant `matched_user_id`s; `fetchPeople` with `scope` drops non-member ids at every listed

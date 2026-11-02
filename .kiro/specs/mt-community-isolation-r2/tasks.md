@@ -137,7 +137,8 @@ VTID: allocated by PLAN-SPAR after approval.
       `fetchEventTitles`, `fetchInterests`, `resolvePersonByName`, `fetchPersonById`) and update every
       importer (`social-memory/**` incl. `person-context-builder.ts:52`, `routes/memory-social.ts`,
       `intent-find-match.ts:277`, `orb-tools/p0-gap-tools.ts:71` (`resolveMember` gets `id` from `:90`, `:127`,
-      `:488`), `discovery-tools.ts` incl. `tool_browse_news_feed`).
+      `:488`; the private `resolveAuthorPost` (`:483`) gains `id` and gets it from `tool_like_post` `:512` and
+      `tool_comment_on_post` `:555`, R1-F2), `discovery-tools.ts` incl. `tool_browse_news_feed`).
       `fetchPeople(userIds, scope?)` intersects with `scope.memberIds` before `.in(...)`; pass it from
       `fetchFollowEdges`, `fetchMatches`, `fetchPersonById`,
       `discovery-tools.ts:195,:368`, `community-activity-builder.ts:107`, `social-context-builder.ts:161`;
@@ -147,7 +148,8 @@ VTID: allocated by PLAN-SPAR after approval.
 - [ ] G2a (R3-F1) `resolvePersonByName` (`social-memory-repository.ts:649`) scopes its OWN `profiles` `.or()` query:
       with the flag on, `.in('user_id', chunk)` per 200-id chunk of `memberIds` before `.limit(5)`, hits merged
       before `best` is chosen. Strip the PostgREST `.or()` reserved characters `,()*:."\` from the term (today only
-      `%`/`_`, `:652`).
+      `%`/`_`, `:652`) **unconditionally, with the flag off as well as on** (R1-F1); only the `.in('user_id', …)`
+      predicate is flag-gated.
 - [ ] G2b (R3-F2) `fetchMatches` (`:169`): `user_matches` read as two queries per chunk,
       `.eq('user_id_1', viewer).in('user_id_2', chunk)` and `.eq('user_id_2', viewer).in('user_id_1', chunk)`, each
       with the existing order/limit, merged, re-sorted by `matched_at`, cut to `limit`; the `daily_matches` half is
