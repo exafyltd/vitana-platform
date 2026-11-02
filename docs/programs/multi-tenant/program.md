@@ -9,6 +9,7 @@ specs:
   - vitana-platform:mt-jobs
   - vitana-platform:mt-launch
   - vitana-platform:mt-frontend-brand-r3
+  - vitana-platform:mt-tenant-admin-r2
   - vitana-platform:mt-m3-r2
   - vitana-platform:mt-identity-r2
   - vitana-platform:mt-track-s-authz
