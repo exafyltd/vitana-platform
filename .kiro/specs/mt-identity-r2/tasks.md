@@ -7,6 +7,24 @@ Every lane: `executor: kiro`, reviewed by `agent:vitana-lane-reviewer`; commits 
 `Collab-Lane: mt-identity-r2/<lane>`. Migrations are applied by Kiro through `RUN-MIGRATION.yml` only after the owner
 approves the files and the target database (`collaboration.md` §7d).
 
+<!-- lane: migration-records -->
+## migration-records — MIGRATION-QUEUE rows and drift-baseline entries for every slice (repo vitana-platform)
+Allowed paths: `docs/multitenancy/MIGRATION-QUEUE.md`, `scripts/ci/migration-drift-baseline.json`, `docs/validation/**`.
+The DB lanes' tasks need these rows, but both files are hot and outside the DB lanes' paths (Amendment 1), so one
+lane writes them for all four slices and **merges before any DB lane**.
+- [ ] Q1 One MIGRATION-QUEUE row per migration file of the four DB lanes (helpers, membership, hook shadow,
+      role/bootstrap), after the existing rows, in timestamp order, each with its rollback file, prerequisite and
+      status `pending owner approval`.
+- [ ] Q2 Add every table those migrations CREATE (`tenant_claim_mismatch_log`, `membership_drift_reports`, and any
+      other the lanes add; the `legacy_archive.bak_*` snapshots too if the check counts them) to
+      `known_missing_tables`, each with a comment line naming VTID and "pending owner-approved apply", so
+      MIGRATION-DRIFT-CHECK passes until the owner applies them; `count` updated.
+Acceptance:
+- Change types: Database (records only), Tooling/docs.
+- `node scripts/ci/check-migration-drift.cjs` unit tests (if any) green; the baseline JSON parses; no migration file in
+  this PR; no apply.
+- PR title `VTID-xxxxx (mt-identity-r2/migration-records): …`.
+
 <!-- lane: helpers-and-policy-rewrite -->
 ## helpers-and-policy-rewrite — tenant_id_for_policies() + is_member() + bare-policy rewrite (repo vitana-platform)
 
@@ -59,8 +77,9 @@ Allowed paths:
 - [ ] M1 Backfill the drifted memberships-only rows into `user_tenants` (expand/contract, snapshot first), with
       `membership_side_effects_suppressed()` true for the backfill transaction (N1). Exclude the bot user `…0001`
       and every `service_bot_accounts` user from the backfill and the drift counts. Re-verify the counts read-only.
-- [ ] M2 Replace `memberships` with a view over `user_tenants`. The dual-write trigger keeps legacy writers working
-      and writes `ON CONFLICT (tenant_id, user_id) DO NOTHING`.
+- [ ] M2 (Amendment 1) `memberships` stays a table. In `…031100_memberships_view_dualwrite.sql`, a DEFERRABLE
+      INITIALLY DEFERRED AFTER INSERT trigger writes `user_tenants … ON CONFLICT (tenant_id, user_id) DO NOTHING` for
+      active non-bot rows, side effects suppressed, `active_role 'community'`; no grant is written or derived.
 - [ ] M3 Nightly drift report (reads 0 when converged); rollback migration; MIGRATION-QUEUE rows and read-only checks
       in `docs/validation/<vtid>/`.
 
