@@ -10,6 +10,25 @@ Bedrock prompt caching + a per-session token budget for the Plan Sparring partne
 account-wide Bedrock tokens-per-day pool.
 
 <!-- plan:begin -->
+## Round 1 answers (session `9315851c`)
+Premises re-checked on platform `origin/main` `e79092087b`.
+- **R1-F1** (adaptive cap under-specified): accepted. T0 is a one-time, read-only measurement before the build (task
+  P0), not a per-turn runtime analysis: it fixes the code default of `resolvePartnerMaxOutputTokens()` at 8,000 or
+  12,000. `PartnerPassInput` (`partner.ts:93-101`) gains `maxTokens?: number`. `runPartnerPass` resolves
+  `const effectiveMaxTokens = input.maxTokens ?? resolvePartnerMaxOutputTokens()` once per pass (env override,
+  clamped 2,000..16,000) and uses it in both the `invoke` closure (replacing the constant at `partner.ts:159`) and the
+  budget check `spent + effectiveMaxTokens × 5 > budget`. The service does not pass `maxTokens` today; the field is
+  for tests and a later caller. T-e asserts the opt equals `effectiveMaxTokens`, and T-f uses an injected
+  `maxTokens` in the headroom term.
+- **R1-F2** (`BedrockInvokeRequest` has no `prompt_cache`): accepted. `BedrockInvokeRequest` (`bedrock.ts:71-98`)
+  gains `prompt_cache?: boolean`, named as a change site of lane `llm-cache-telemetry` (L2). `bedrockAdapter`'s
+  `invokeBedrock` call (`llm-router.ts:1041`) adds `...(promptCache ? { prompt_cache: true } : {})`, and
+  `buildBedrockRequestBody` reads `req.prompt_cache`.
+- **R1-F3** (`runProviderCall` not named): accepted. `promptCache?: boolean` is added to `AdapterCallArgs`
+  (`llm-router.ts:271`); `runProviderCall` (`:1276`) adds `promptCache: opts.promptCache` to its `adapter.call({...})`
+  spread (`:1311`); `bedrockAdapter.call` (`:997`) destructures it. The preflight `adapter.call` (`:1135`) is left
+  unchanged (no opt, so the body stays byte-identical).
+
 ## Re-plan answers (session `b2df0328` round 3)
 Re-plan of `sparring-token-efficiency` (branch `kiro/sparring-token-efficiency/plan`; PLAN-SPAR session `b2df0328`
 escalated at the round cap). Every premise was re-verified on platform `origin/main` `62990ce285` on 2026-11-01, and
@@ -109,9 +128,11 @@ parts of items 1-4); see Re-plan answers for the split:
 1. Prompt caching, Bedrock-only, default ON for `plan_sparring` only.
    - `llm-defaults.ts`: `planSparringPromptCacheEnabled()` reads `PLAN_SPARRING_PROMPT_CACHE`. Unset means on;
      `off|false|0` means off (a kill switch through task-def env, no code change).
-   - `LLMRouterOpts.promptCache?: boolean` and `AdapterCallArgs.promptCache` are passed through `callViaRouter`
-     (:1169-). The partner passes `promptCache: true` only on Bedrock tiers (`primary`, `bedrock_fallback`), never on the
-     DeepSeek tier. Only `bedrockAdapter` honours them and sets `prompt_cache: true` on `BedrockInvokeRequest`. Every
+   - `LLMRouterOpts.promptCache?: boolean` and `AdapterCallArgs.promptCache` (`:271`) are passed through
+     `callViaRouter` (:1169-) and `runProviderCall` (:1276, its `adapter.call` spread :1311), and destructured in
+     `bedrockAdapter.call` (:997) (R1-F3). The partner passes `promptCache: true` only on Bedrock tiers (`primary`, `bedrock_fallback`), never on the
+     DeepSeek tier. Only `bedrockAdapter` honours them and sets `prompt_cache: true` on `BedrockInvokeRequest`. `BedrockInvokeRequest` (`bedrock.ts:71-98`) gains
+     `prompt_cache?: boolean` (R1-F2). Every
      other adapter ignores them. No other stage sets the opt.
    - `buildBedrockRequestBody` (pure) with `prompt_cache`:
      (a) `system` becomes `[{ type: 'text', text, cache_control: { type: 'ephemeral' } }]`. The cache prefix order
@@ -146,8 +167,9 @@ parts of items 1-4); see Re-plan answers for the split:
      forwards them from `result.usage`, so `llm.call.completed` shows the real quota cost of cached turns.
 3. Right-size output and tool results.
    - `PARTNER_MAX_OUTPUT_TOKENS` 16_000 → 8_000 by default. `PLAN_SPARRING_MAX_OUTPUT_TOKENS` overrides it, clamped
-     to 2_000..16_000. T0 reads the stored `model_log` output_tokens read-only. If any ok turn used more than 6,000,
-     the default becomes 12_000.
+     to 2_000..16_000. T0 (task P0, once, before the build) reads the stored `model_log` output_tokens read-only. If
+     any ok turn used more than 6,000, the code default becomes 12_000. `PartnerPassInput.maxTokens?` overrides it;
+     `runPartnerPass` uses one `effectiveMaxTokens` in `invoke` and in the budget check (R1-F1).
    - `TOOL_RESULT_MAX_CHARS` 20_000 → 12_000 and `READ_FILE_MAX_LINES` 400 → 250 (now exported for the test;
      today it is a module-private `const`, github-tools.ts :23). The truncation hint stays, so the
      partner reads narrower ranges. The evidence floor counts reads, not size, and is unchanged. Old tool results are
@@ -158,7 +180,7 @@ parts of items 1-4); see Re-plan answers for the split:
    - `PartnerPassInput` gains `priorQuotaTokens` and `tokenBudget`. The service passes 0 for round 1 (:314) and the
      sum of `quota_tokens` (falling back to `input + 5 × output` for older Bedrock entries, 0 for DeepSeek) over
      `session.model_log` for later rounds (:404).
-   - Before every `invoke(prompt, tier)` in the tier loop, for every tier: if `spent + maxTokens × 5 > budget`, end the pass
+   - Before every `invoke(prompt, tier)` in the tier loop, for every tier: if `spent + effectiveMaxTokens × 5 > budget`, end the pass
      with `fail('token_budget', …)`. No further model call is made. The check is logged.
    - Throttled calls: a Bedrock throttle is rejected before the model runs, and the error path returns no usage
      (`llm-router.ts` bedrockAdapter `!result.ok` branch), so its modelLog entry records 0 tokens and adds 0 to

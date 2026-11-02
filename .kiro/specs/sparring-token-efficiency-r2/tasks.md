@@ -21,11 +21,13 @@ Allowed paths:
 - [ ] L1: `llm-defaults.ts`: add `planSparringPromptCacheEnabled()`, `resolvePartnerMaxOutputTokens()`,
   `resolvePlanSparringSessionTokenBudget()` and `CLAUDE_OUTPUT_BURNDOWN`.
   Acceptance: env parsing and clamps are unit-tested, and `NO_FALLBACK_STAGES` is unchanged.
-- [ ] L2: `providers/bedrock.ts`: add `prompt_cache` to the request, place the markers in `buildBedrockRequestBody`
+- [ ] L2: `providers/bedrock.ts`: add `prompt_cache?: boolean` to `BedrockInvokeRequest` (`:71-98`, R1-F2), place the markers in `buildBedrockRequestBody`
   (`:267`), and add `parseBedrockUsage` with the cache fields.
   Acceptance: T-a, T-b and T-c pass.
 - [ ] L3: `llm-router.ts`:
-  - Pass `promptCache` through `callViaRouter` (`:1169`).
+  - Pass `promptCache` through `callViaRouter` (`:1169`): add it to `AdapterCallArgs` (`:271`), to the
+    `adapter.call` spread in `runProviderCall` (`:1276`, `:1311`) and to the `bedrockAdapter.call` destructure
+    (`:997`); set `prompt_cache: true` on the `invokeBedrock` call (`:1041`) only when set (R1-F2, R1-F3).
   - Map the cache usage in `bedrockAdapter` (`:997`, usage `:1064`).
   - Forward the cache tokens to `completeLLMCallDetached` (`:1346`).
   - Add them as optional fields to `CompleteLLMCallResult` and `buildLLMCallCompleted` (`:170`, literal `:184`).
@@ -55,7 +57,9 @@ Allowed paths:
   - `promptCache` only on the `primary` and `bedrock_fallback` tiers.
   - The single `modelLog.push` (`partner.ts:181`) fills `cache_read_tokens`, `cache_write_tokens` and
     `quota_tokens`. `quota_tokens` is 0 for `provider !== 'bedrock'`.
-  - The budget check runs before every `invoke(prompt, tier)`.
+  - `PartnerPassInput.maxTokens?`; one `effectiveMaxTokens = input.maxTokens ?? resolvePartnerMaxOutputTokens()`
+    per pass, used in `invoke` (replacing the constant) and in the budget check (R1-F1).
+  - The budget check `spent + effectiveMaxTokens × 5 > budget` runs before every `invoke(prompt, tier)`.
   - `READ_FILE_MAX_LINES = 250`, exported.
   - `TOOL_RESULT_MAX_CHARS = 12_000`.
   - The `token_budget` reason, and `RETRYABLE_REASONS` exported with it.
