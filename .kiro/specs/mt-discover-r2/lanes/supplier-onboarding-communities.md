@@ -16,8 +16,9 @@ paths:
   - services/gateway/src/routes/click-redirect.ts
   - services/gateway/test/vtid-*-supplier-onboarding-communities.test.ts
   - services/gateway/test/vtid-*-referral-tenant-attribution.test.ts
-updated: 2026-11-01T15:57Z
+updated: 2026-11-02T16:20Z
 repos: [exafyltd/vitana-platform]
+vtid: VTID-05487
 ---
 # supplier-onboarding-communities — "which communities" + platform/commerce path + attribution (VTID allocated by PLAN-SPAR, repo vitana-platform)
 
@@ -40,3 +41,6 @@ the claim. Supplier screens follow the Commerce UX contract — but the UI itsel
 ## Log
 ### 2026-11-01T15:57Z · kiro-hotmail-202611011452-6d16 · created → ready
 Re-plan of `mt-discover/supplier-onboarding-communities`. Versions day-shifted to `20261102120*`. Reviewer agent.
+
+### 2026-11-02T16:20Z · ci-plan-spar · ready (VTID allocated)
+VTID-05487 allocated after policy approval (converged-auto-v1).

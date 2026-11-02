@@ -15,8 +15,9 @@ paths:
   - docs/multitenancy/MIGRATION-QUEUE.md
   - scripts/ci/migration-drift-baseline.json
   - services/gateway/test/vtid-*-supplier-tenant-relationships.test.ts
-updated: 2026-11-01T15:57Z
+updated: 2026-11-02T16:20Z
 repos: [exafyltd/vitana-platform]
+vtid: VTID-05488
 ---
 # supplier-relationships-db — tenant↔supplier + offering distribution (VTID allocated by PLAN-SPAR, repo vitana-platform)
 
@@ -41,3 +42,6 @@ not-yet-live tables go in `scripts/ci/migration-drift-baseline.json`, removed in
 ## Log
 ### 2026-11-01T15:57Z · kiro-hotmail-202611011452-6d16 · created → ready
 Re-plan of `mt-discover/supplier-relationships-db`. Versions day-shifted to `20261102120*`. Reviewer agent.
+
+### 2026-11-02T16:20Z · ci-plan-spar · ready (VTID allocated)
+VTID-05488 allocated after policy approval (converged-auto-v1).

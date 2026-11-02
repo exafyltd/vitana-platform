@@ -21,8 +21,9 @@ paths:
   - tests/e2e/staging/vtid-*-discover-scope.staging.spec.ts
   - docs/SCREEN_INVENTORY.md
   - i18n-source-stamps/**
-updated: 2026-11-01T15:57Z
+updated: 2026-11-02T16:20Z
 repos: [exafyltd/vitana-v1]
+vtid: VTID-05485
 ---
 # discover-mode-ui — Discover Community/Network control + supplier UI (VTID allocated by PLAN-SPAR, repo vitana-v1)
 
@@ -47,3 +48,6 @@ those three updates are in this lane). Dark behind `mt.network_enabled`. This la
 ## Log
 ### 2026-11-01T15:57Z · kiro-hotmail-202611011452-6d16 · created → ready
 Re-plan of `mt-discover/discover-mode-ui`. Versions day-shifted to `20261102120*`. Reviewer agent.
+
+### 2026-11-02T16:20Z · ci-plan-spar · ready (VTID allocated)
+VTID-05485 allocated after policy approval (converged-auto-v1).
