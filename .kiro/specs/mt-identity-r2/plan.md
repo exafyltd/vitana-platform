@@ -124,8 +124,17 @@ purpose (owner D14) and is not part of this spec.
      outer `tenant_id`, so it runs once per row. That is acceptable because it is one probe of the unique index per
      call. An EXPLAIN check bounds the per-row cost on the largest tenant-shared table (`live_rooms`).
    - Rewrite each of the **32 policies on the 15 tables above**:
-     - User-private policies become `user_id = auth.uid() AND tenant_id = (select tenant_id_for_policies())`.
-     - Tenant-shared policies become `(select is_member(tenant_id))`, keeping any extra predicate:
+     - **Amendment 1 (2026-11-02, build finding):** the premise that bare policies fail closed today is false.
+       `current_tenant_id()` (`20260218000000_fix_maxina_signup_tenant_association.sql:33-103`) falls back to
+       `app_metadata.active_tenant_id` and then to the caller's `user_tenants` row (`:78-96`), so every bare policy
+       already admits each member of the caller's resolved tenant. The rewrite therefore keeps today's audience on
+       every policy, reads included: it only replaces the predicate with `tenant_id = (select
+       tenant_id_for_policies())` (one resolved tenant, as today). It does not add `user_id = auth.uid()` (that would
+       hide `/admin/live/attendance` rows from tenant admins who are not `exafy_admin`) and does not use
+       `is_member(tenant_id)` in a policy (that would widen a two-tenant member's reads to the second tenant).
+       `is_member()` is still created for later lanes. Narrowing user-private reads and multi-tenant reads are later,
+       separately sparred decisions.
+     - Extra predicates stay, with the new tenant term:
        `community_listings` keeps its `status IN (…)` term, and `d42_domain_weights` keeps its `OR tenant_id = '…0001'`
        global-defaults term.
      - Classification rule: a table with a `user_id` owner column is user-private, otherwise tenant-shared. All four
@@ -142,7 +151,15 @@ purpose (owner D14) and is not part of this spec.
      PR, not this plan.
 2. **membership-unification (DB).** `user_tenants` (with `is_primary`/`active_role`) becomes canonical.
    - Backfill the drifted rows, after a read-only recount at implementation.
-   - `memberships` becomes a view over `user_tenants`, with a dual-write trigger for legacy writers.
+   - **Amendment 1 (2026-11-02, build finding, replaces "memberships becomes a view"):** `memberships` stays a
+     table in this lane. `memberships.role` is a grant store, read by `set_role_preference`,
+     `get_my_permitted_roles`, gateway `permitted-roles.ts` and about 50 RLS policies on 34 tables; a view deriving
+     `role` from `active_role` would turn the selected role into a grant (directive §5), `DROP TABLE` fails on those
+     policies, and `switch_to_tenant_by_slug`'s `INSERT … ON CONFLICT (user_id, tenant_id)` errors against an
+     INSTEAD OF view. The file `…031100_memberships_view_dualwrite.sql` (name kept, it is the lane's path) adds a
+     DEFERRABLE INITIALLY DEFERRED AFTER INSERT trigger on `memberships` that writes `user_tenants … ON CONFLICT
+     (tenant_id, user_id) DO NOTHING` for active, non-bot rows, with side effects suppressed and `active_role
+     'community'`; it never writes a grant. The view cutover is a later, separately sparred lane.
    - A nightly drift report reads 0 once the two are converged.
    - The steady-state dual-write trigger body (not only the backfill) writes `INSERT INTO user_tenants … ON CONFLICT
      (tenant_id, user_id) DO NOTHING`. A legacy re-insert of an existing `memberships` row is then a no-op and never
