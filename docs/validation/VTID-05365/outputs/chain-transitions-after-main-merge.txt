@@ -1,0 +1,11 @@
+✔ VTID-05276 T14: the registry accepts the reviewer agent as reviewer_seat (5645.8298ms)
+✔ validate: a closing-record PR may carry executing → in-review → verified → done; authorization still applies (10123.2829ms)
+✔ validate: a chain whose accept entry has no Collab-Review commit fails; a single legal edge needs no new evidence (19512.1302ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 3
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 35498.1501
