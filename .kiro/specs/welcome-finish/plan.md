@@ -4,7 +4,7 @@ change_class: standard
 # Plan — welcome-finish
 
 Author: Kiro, session `kiro-jtadic-202610291040-a0e6`, seat `jtadic`. Repos: `exafyltd/vitana-platform` (1 lane) and
-`exafyltd/vitana-v1` (3 lanes). Premises pinned to platform `origin/main` `cf009eca8f`, vitana-v1 `847a9f686`.
+`exafyltd/vitana-v1` (3 lanes). Premises pinned to platform `origin/main` `dfb7c9d40a`, vitana-v1 `origin/main` `e530abd0d8`.
 Parent plan: `new-member-welcome` (four lanes, VTID-05205..05208). This plan adds only what that plan's lanes cannot
 carry because the files are outside their `paths`.
 
@@ -22,22 +22,24 @@ affirmative choice is recorded. … Keep the three private team welcome messages
 setting."*
 
 ## 2. Today
-0. `community_intro_opt_in` is `boolean NOT NULL DEFAULT true`
-   (`vitana-v1/supabase/migrations/20261016110000_vtid_05206_community_intro_opt_in.sql:36-37`, applied). Read-only
+0. `community_intro_opt_in` is `boolean NOT NULL` with an effective `DEFAULT true`: added with `DEFAULT false` for
+   existing rows (`vitana-v1/supabase/migrations/20261016110000_vtid_05206_community_intro_opt_in.sql:29-30`), then
+   `SET DEFAULT true` for new rows (`:33-34`, applied). Read-only
    check 2026-10-30: 251 rows false (all created before the rollout), 2 rows true, created 14:23Z and 15:12Z with
    `updated_at = created_at`, so never touched after creation: no recorded choice, they are included only by the default.
    The column alone cannot tell a chosen "yes" from the default, so a choice marker is needed.
-   Registration (`OnboardingNameForm.tsx:44`) pre-selects the switch on and writes only an explicit "no" (`:167-172`);
-   Settings (`CommunityIntroToggle.tsx`, mounted at `Privacy.tsx:76,293` and `MobileSettings.tsx:303`) writes
-   `community_intro_opt_in` through `community-intro.ts:27`.
-   The two readers already require `= true` and need no change: the feed filter (`useAllNewsFeed.ts`, `useNewsFeed.ts`,
+   Registration (`src/components/onboarding/OnboardingNameForm.tsx:44`) pre-selects the switch on and writes only an explicit "no" (`:167-172`);
+   Settings (`src/components/settings/CommunityIntroToggle.tsx`, mounted at `src/pages/settings/Privacy.tsx:76,293` and `src/pages/MobileSettings.tsx:303`) writes
+   `community_intro_opt_in` through `src/lib/community-intro.ts:27-33`.
+   The two readers already require `= true` and need no change: the feed filter (`useAllNewsFeed.ts:205`, `useNewsFeed.ts:202`,
    and the endpoint of this plan) and the greeting guard (`new-member-greeting-guard.ts:92` reads the row per call
-   via `:184`, so a withdrawal removes Say Hello eligibility on the next call).
-1. Greeting suggestion and greeting send already exclude test/service accounts, fail closed:
-   `services/gateway/src/routes/new-member-greeting.ts:108-110` and `services/gateway/src/services/new-member-greeting-guard.ts:240-242`
-   (`fetchExcludedTestServiceAccountIdsStrict`, `lib/excluded-test-service-accounts.ts:49`). Not changed here.
-2. The new-member **feed listing does not** exclude them: `vitana-v1/src/hooks/useAllNewsFeed.ts:198-207` and
-   `src/hooks/useNewsFeed.ts:196-205` read `global_community_profiles` straight from the browser with
+   via `:184`; this file is on the open Say Hello branch #4503, not yet on `main`, so a withdrawal removes Say Hello eligibility on the next call).
+1. Greeting suggestion and greeting send already exclude test/service accounts, fail closed, on the open Say Hello
+   branch (PR #4503, not yet on `main`): `services/gateway/src/routes/new-member-greeting.ts:108-110` and
+   `services/gateway/src/services/new-member-greeting-guard.ts:240-242`. The helper itself is on `main`
+   (`fetchExcludedTestServiceAccountIdsStrict`, `services/gateway/src/lib/excluded-test-service-accounts.ts:49`). Not changed here.
+2. The new-member **feed listing does not** exclude them: `vitana-v1/src/hooks/useAllNewsFeed.ts:202-208` and
+   `src/hooks/useNewsFeed.ts:198-206` read `global_community_profiles` straight from the browser with
    `is_visible=true`, `community_intro_opt_in=true`, last 7 days. NEVER 45 requires that a surface that lists members to
    a real member excludes `service_bot_accounts` and `notification_test_actors`. The browser cannot read those tables
    (they are service-side allowlists); the existing client-side pattern for this is a SECURITY DEFINER database function
@@ -46,7 +48,7 @@ setting."*
 3. Frontend check `NATIVE-CI` job "Parity ledger, core/tokens generators + native script tests" fails on the Say Hello PR
    (vitana-v1 #1520, run 41066162293) at `node scripts/native/gen-core-extract.mjs --check`: "out of date:
    packages/core/src/extracted/news-feed-ranker.generated.ts, …/feed-compose.generated.ts". **Confirmed pre-existing on
-   `main` `847a9f686`**: the same command on a clean checkout of main prints the same message (`--check` exit 1). The
+   vitana-v1 `main` (premise first checked at `847a9f686`)**: the same command on a clean checkout of main prints the same message (`--check` exit 1). The
    scheduled NATIVE-CI run on main (41047702166) was green only because that job is skipped on schedule runs. The
    regenerated diff is two header lines (the `sha256` of the source file in the generated header comment).
 
