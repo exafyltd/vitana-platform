@@ -3,14 +3,14 @@ lane: isolation-suite
 state: ready
 next_actor: kiro
 executor: kiro
-seat: hotmail
+seat: exafyltd
 reviewer_seat: agent:vitana-lane-reviewer
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 depends_on: [local-test-stack, generated-inventories]
 paths:
   - scripts/ci/sql-tests/mt-isolation.test.sql
   - scripts/ci/sql-tests/run-mt-isolation-test.sh
-updated: 2026-11-01T17:06Z
+updated: 2026-11-02T00:12Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05446
 ---
@@ -53,3 +53,47 @@ Lane created with the re-plan `mt-guardrails-r2` (carried from `mt-guardrails`).
 
 ### 2026-11-01T17:06Z · ci-plan-spar · ready (VTID allocated)
 VTID-05446 allocated after policy approval (converged-auto-v1).
+### 2026-11-01T21:40Z · pm-agent · update
+reassign lane hotmail→exafyltd (stale_ready, Claude unavailable)
+### 2026-11-01T21:46Z · pm-agent · update
+reassign lane hotmail→exafyltd (stale_ready, Claude unavailable)
+### 2026-11-01T21:52Z · pm-agent · update
+reassign lane hotmail→exafyltd (stale_ready, Claude unavailable)
+### 2026-11-01T21:58Z · pm-agent · update
+reassign lane hotmail→exafyltd (stale_ready, Claude unavailable)
+### 2026-11-01T22:04Z · pm-agent · update
+reassign lane hotmail→exafyltd (stale_ready, Claude unavailable)
+### 2026-11-01T22:10Z · pm-agent · update
+reassign lane hotmail→exafyltd (stale_ready, Claude unavailable)
+### 2026-11-01T22:16Z · pm-agent · update
+reassign lane hotmail→exafyltd (stale_ready, Claude unavailable)
+### 2026-11-01T22:22Z · pm-agent · update
+reassign lane hotmail→exafyltd (stale_ready, Claude unavailable)
+### 2026-11-01T22:42Z · pm-agent · update
+reassign lane hotmail→exafyltd (stale_ready, Claude unavailable)
+### 2026-11-01T22:48Z · pm-agent · update
+reassign lane hotmail→exafyltd (stale_ready, Claude unavailable)
+### 2026-11-01T22:54Z · pm-agent · update
+reassign lane hotmail→exafyltd (stale_ready, Claude unavailable)
+### 2026-11-01T23:00Z · pm-agent · update
+reassign lane hotmail→exafyltd (stale_ready, Claude unavailable)
+### 2026-11-01T23:06Z · pm-agent · update
+reassign lane hotmail→exafyltd (stale_ready, Claude unavailable)
+### 2026-11-01T23:12Z · pm-agent · update
+reassign lane hotmail→exafyltd (stale_ready, Claude unavailable)
+### 2026-11-01T23:18Z · pm-agent · update
+reassign lane hotmail→exafyltd (stale_ready, Claude unavailable)
+### 2026-11-01T23:24Z · pm-agent · update
+reassign lane hotmail→exafyltd (stale_ready, Claude unavailable)
+### 2026-11-01T23:42Z · pm-agent · update
+reassign lane hotmail→exafyltd (stale_ready, Claude unavailable)
+### 2026-11-01T23:48Z · pm-agent · update
+reassign lane hotmail→exafyltd (stale_ready, Claude unavailable)
+### 2026-11-01T23:54Z · pm-agent · update
+reassign lane hotmail→exafyltd (stale_ready, Claude unavailable)
+### 2026-11-02T00:00Z · pm-agent · update
+reassign lane hotmail→exafyltd (stale_ready, Claude unavailable)
+### 2026-11-02T00:06Z · pm-agent · update
+reassign lane hotmail→exafyltd (stale_ready, Claude unavailable)
+### 2026-11-02T00:12Z · pm-agent · update
+reassign lane hotmail→exafyltd (stale_ready, Claude unavailable)
