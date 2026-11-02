@@ -7,9 +7,9 @@ next_actor: kiro
 state: approved
 spar_refs:
   - exafyltd/vitana-v1: 58c76c9566dc035fe506a304e42c8700a110bcb5
-updated: 2026-11-01T16:59Z
+updated: 2026-11-02T12:21Z
 sparring_record: .kiro/specs/mt-track-s-r2/sparring/verdict.md
-vtids: [VTID-05441, VTID-05442]
+vtids: [VTID-05441, VTID-05442, VTID-05463]
 ---
 # Handoff — mt-track-s-r2
 Re-plan of `mt-track-s` (PR #4165, closed 2026-10-28; session `d0c274cd` escalated at the round cap). Closes the last
@@ -43,3 +43,6 @@ added to `plan.md` §7.
 
 ### 2026-11-01T16:59Z · ci-plan-spar · drafted → approved
 Converged; approved by policy converged-auto-v1. 2 lane(s) got a VTID and are handed to Kiro.
+
+### 2026-11-02T12:21Z · ci-plan-spar · approved (late lane VTID)
+Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.
