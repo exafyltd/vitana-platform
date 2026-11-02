@@ -14,7 +14,8 @@ paths:
   - src/hooks/useTenant.tsx
   - src/hooks/useTenant.theme.test.tsx
   - tests/e2e/staging/vtid-*-theme-tokens.staging.spec.ts
-updated: 2026-11-01T15:45Z
+updated: 2026-11-02T16:13Z
+vtid: VTID-05484
 ---
 # theme-tokens-r3 — tenant theme renders via runtime HSL overrides (repo vitana-v1)
 
@@ -35,3 +36,6 @@ Shared files: none.
 ## Log
 ### 2026-11-01T15:45Z · kiro-hotmail-202611011452-6d16 · created → ready
 Re-plan of `mt-frontend-brand-r2/theme-tokens-r2` under the new slug. Answers R3-F1 (no `--ring`) and R3-F2 (the cleanup removes exactly the keys it set).
+
+### 2026-11-02T16:13Z · ci-plan-spar · ready (VTID allocated)
+VTID-05484 allocated after policy approval (converged-auto-v1).

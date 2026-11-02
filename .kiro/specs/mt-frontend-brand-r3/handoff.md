@@ -4,10 +4,12 @@ author: kiro
 author_seat: hotmail
 executor: kiro
 next_actor: kiro
-state: drafted
+state: approved
 spar_refs:
   - exafyltd/vitana-v1: 58c76c9566dc035fe506a304e42c8700a110bcb5
-updated: 2026-11-01T15:45Z
+updated: 2026-11-02T16:13Z
+sparring_record: .kiro/specs/mt-frontend-brand-r3/sparring/verdict.md
+vtids: [VTID-05483, VTID-05484]
 ---
 # Handoff — mt-frontend-brand-r3 (re-plan of Amendment 1 of mt-frontend-brand: brand-surface paths and theme-tokens approach)
 Re-plan of `mt-frontend-brand-r2` (branch `kiro/mt-frontend-brand/plan-amend-1`; PLAN-SPAR session `c351f749` escalated at the
@@ -26,3 +28,6 @@ as escalated.
 - The superseded `mt-frontend-brand` lanes (`brand-surface`, `theme-tokens`) are left to that plan's driver.
 
 The plan PR opens when PLAN-SPAR capacity allows (`collaboration.md` §8a).
+
+### 2026-11-02T16:13Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 2 lane(s) got a VTID and are handed to Kiro.
