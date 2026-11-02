@@ -1,0 +1,77 @@
+# VTID-05464 static checks (no database connection; no PostgreSQL on this host)
+# worktree: /projects/sandbox/wt-id-access-token-hook-shadow
+# HEAD before the lane commit: 312787a688   origin/main: 058251d550
+# run at (UTC): 2026-11-02T16:44:51Z
+
+## 1. Grammar parse, libpg-query 18.2.2 (PostgreSQL 18 parser, PL/pgSQL bodies and DO blocks)
+$ node parse-check.cjs <3 migrations> <2 pgTAP files>
+OK supabase/migrations/20261102032000_vtid_05464_access_token_hook_shadow.sql: 10 statements, 3 PL/pgSQL bodies parsed
+OK supabase/migrations/20261102032100_vtid_05464_tenant_claim_mismatch_log.sql: 12 statements, 2 PL/pgSQL bodies parsed
+OK supabase/migrations/20261102032000_vtid_05464_access_token_hook_shadow_rollback.sql: 5 statements, 1 PL/pgSQL bodies parsed
+OK supabase/tests/mt_identity_hook_fixture.sql: 8 statements, 1 PL/pgSQL bodies parsed
+OK supabase/tests/mt_identity_hook_shadow.test.sql: 56 statements, 0 PL/pgSQL bodies parsed
+exit=0
+
+## 2. PR-GATE lintMigration (scripts/ci/pr-gate/lib.mjs). [] means no problem.
+20261102032000_vtid_05464_access_token_hook_shadow.sql []
+20261102032100_vtid_05464_tenant_claim_mismatch_log.sql []
+20261102032000_vtid_05464_access_token_hook_shadow_rollback.sql []
+exit=0
+
+## 3. Impact rule duplicate-table-name (scripts/ci/impact-rules/duplicate-table-name.mjs). It reads raw SQL, comments included.
+findings: 0
+exit=0
+
+## 4. Declared and dropped tables per migration (check-migration-drift.cjs parseMigrationSql, comments stripped).
+## The comparison with the live database needs a snapshot and was not run here. tenant_claim_mismatch_log is
+## expected to be reported as declared-but-missing by the drift check until the migration-records lane lands.
+20261102032000_vtid_05464_access_token_hook_shadow.sql declared=[] dropped=[]
+20261102032100_vtid_05464_tenant_claim_mismatch_log.sql declared=["tenant_claim_mismatch_log"] dropped=[]
+20261102032000_vtid_05464_access_token_hook_shadow_rollback.sql declared=[] dropped=["tenant_claim_mismatch_log"]
+exit=0
+
+## 5. Comment hygiene. Comment lines that contain create/alter/drop table or a schema-qualified name (the impact scanner reads raw SQL).
+20261102032000_vtid_05464_access_token_hook_shadow.sql: none
+20261102032100_vtid_05464_tenant_claim_mismatch_log.sql: none
+20261102032000_vtid_05464_access_token_hook_shadow_rollback.sql: none
+## 5b. Real CREATE / ALTER / DROP TABLE statements (not comments), for reference:
+20261102032100_vtid_05464_tenant_claim_mismatch_log.sql:31:CREATE TABLE IF NOT EXISTS public.tenant_claim_mismatch_log (
+20261102032100_vtid_05464_tenant_claim_mismatch_log.sql:51:ALTER TABLE public.tenant_claim_mismatch_log ENABLE ROW LEVEL SECURITY;
+20261102032000_vtid_05464_access_token_hook_shadow_rollback.sql:39:  DROP TABLE IF EXISTS public.tenant_claim_mismatch_log;
+
+## 6. Hook stays SHADOW: no Auth config, function, workflow or code outside the lane's own files mentions the hook.
+none
+
+## 7. Diff scope. Committed PR diff (origin/main...HEAD):
+docs/validation/VTID-05464/acceptance.md
+docs/validation/VTID-05464/commands.log
+docs/validation/VTID-05464/plan-sparring.md
+docs/validation/VTID-05464/post-check.sql
+docs/validation/VTID-05464/scope.json
+docs/validation/VTID-05464/staging-tests.json
+supabase/migrations/20261102032000_vtid_05464_access_token_hook_shadow.sql
+supabase/migrations/20261102032000_vtid_05464_access_token_hook_shadow_rollback.sql
+supabase/migrations/20261102032100_vtid_05464_tenant_claim_mismatch_log.sql
+supabase/tests/mt_identity_hook_fixture.sql
+supabase/tests/mt_identity_hook_shadow.test.sql
+## 7b. Committed PR diff outside supabase/ and docs/validation/VTID-05464/ (expect none):
+none
+## 7c. Working tree at check time (what the lane commit adds):
+ M docs/validation/VTID-05464/acceptance.md
+ M supabase/migrations/20261102032000_vtid_05464_access_token_hook_shadow.sql
+ M supabase/migrations/20261102032000_vtid_05464_access_token_hook_shadow_rollback.sql
+?? docs/validation/VTID-05464/outputs/
+
+## 8. pgTAP was not run. Postgres tools on PATH (none expected):
+psql: absent
+pg_ctl: absent
+initdb: absent
+pg_prove: absent
+postgres: absent
+docker info: Error: could not find a working conmon binary (configured options: [/usr/libexec/podman/conmon /usr/local/libexec/podman/conmon /usr/local/lib/podman/conmon /usr/bin/conmon /usr/sbin/conmon /usr/local/bin/conmon /usr/local/sbin/conmon /run/current-system/sw/bin/conmon]: invalid argument)
+pgTAP assertions in mt_identity_hook_shadow.test.sql (plan(36)):
+36
+
+## 9. Every test name quoted in an acceptance.md TEST: line exists in the pgTAP file.
+quoted test names checked: 33  not found: 0
+exit=0

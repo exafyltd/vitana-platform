@@ -18,9 +18,9 @@
 -- local stack) would run it right after the hook is created. It therefore acts
 -- only when the log table of 20261102032100 exists, i.e. when both forward
 -- files are applied; otherwise it does nothing and says so. To roll back a
--- database where only 20261102032000 was applied, run
---   DROP FUNCTION IF EXISTS public.custom_access_token_hook_shadow(jsonb);
--- (docs/validation/VTID-05464/acceptance.md, "Rollback").
+-- database where only 20261102032000 was applied, drop the hook function on
+-- its own. The exact statement is in docs/validation/VTID-05464/acceptance.md,
+-- "Rollback".
 --
 -- Idempotent: a second run finds nothing to drop.
 

@@ -16,9 +16,9 @@
 --    `tenant_id`, `tenant` and app_metadata.active_tenant_id) resolves exactly
 --    as before even once the hook is enabled.
 --  * Records every disagreement between the preference and the memberships in
---    public.tenant_claim_mismatch_log (20261102032100) for the 7-day soak. The
---    write runs in its own exception block: a missing table, a lock wait or any
---    other failure there drops the log row, never the token.
+--    the tenant_claim_mismatch_log table (migration 20261102032100) for the
+--    7-day soak. The write runs in its own exception block: a missing table, a
+--    lock wait or any other failure there drops the log row, never the token.
 --  * Fails open: any error returns the original event unchanged.
 --
 -- What it does NOT do: it is not enabled. Pointing Supabase Auth's
