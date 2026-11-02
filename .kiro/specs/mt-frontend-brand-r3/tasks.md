@@ -73,9 +73,10 @@ Allowed paths:
 - `src/hooks/useTenant.theme.test.tsx`
 - `tests/e2e/staging/vtid-*-theme-tokens.staging.spec.ts`
 
-- [ ] TT1 `tenant-theme.ts` + test: `hexToHslTriplet` (`#FF7BAC` → `"339.4 100% 74.1%"`-style, `#fff`, invalid → null);
-      `tenantThemeVars` → `{}` for Maxina, null and no-accent tenants; `--primary`, `--ring`, `--primary-foreground`
-      for `acme`.
+- [ ] TT1 `tenant-theme.ts` + test: `hexToHslTriplet` (`#FF7BAC` → `"339.4 100% 74.1%"`-style; `#rrggbb` only, the
+      same pattern as `safeHex`, so `#fff` and other invalid input → null);
+      `tenantThemeVars` → `{}` for Maxina, null and no-accent tenants; keys exactly `['--primary',
+      '--primary-foreground']` for `acme` (no `--ring`, R3-F1).
 - [ ] TT2 `useTenant.tsx` effect: keep the `--brand-*` writes; apply `tenantThemeVars` after them; `removeProperty`
       exactly those keys on cleanup / tenant change; update the "nothing consumes them yet — C2" comment
       (`useTenant.tsx:123`). Test pattern: `src/hooks/useTenant.registry.test.tsx`.

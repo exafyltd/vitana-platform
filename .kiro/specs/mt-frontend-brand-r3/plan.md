@@ -171,7 +171,9 @@ plan), rebuilt so Lane scope can pass:
 **Lane `theme-tokens-r3` (kiro, seat exafyltd, vitana-v1).** Runtime HSL overrides for non-default tenants only; no CSS
 change:
 - New `src/lib/tenant-theme.ts`:
-  - `hexToHslTriplet(hex)` converts `#rgb`/`#rrggbb` to `"H S% L%"` (one decimal) and returns null when invalid.
+  - `hexToHslTriplet(hex)` converts `#rrggbb` only to `"H S% L%"` (one decimal) and returns null for anything else,
+    `#rgb` included. It accepts exactly what `safeHex` accepts (`tenant-registry.ts:115-116`), so `--primary` and
+    `--brand-accent` are set for the same tenants (s1 R1-F2).
   - `tenantThemeVars(tenant)` returns `{}` for a missing tenant, slug `maxina` or no valid `brandAccent`
     (`tenant-registry.ts:107`). Otherwise it returns `--primary` from `brandAccent` (never `--ring`, R3-F1), and
     `--primary-foreground` from a valid `brandFg` (`:109`).
@@ -218,7 +220,8 @@ None.
     stamps/register green.
   - `src/App.tsx` diff = one import + one `useTenantMeta();`.
 - **`theme-tokens-r3`:**
-  - `tenant-theme.test.ts`: triplet conversion, `{}` for Maxina/null/no accent, 3 vars for `acme`.
+  - `tenant-theme.test.ts`: triplet conversion (`#rrggbb`; `#rgb` → null), `{}` for Maxina/null/no accent, and for
+    `acme` the keys are exactly `['--primary', '--primary-foreground']` (no `--ring`, R3-F1; s1 R1-F1).
   - `useTenant.theme.test.tsx` (jsdom, mocked registry/Supabase, following `src/hooks/useTenant.registry.test.tsx`):
     Maxina leaves inline `--primary` empty, `acme` gets the triplet (fails on main), acme → Maxina clears it, and the
     `--brand-*` writes are unchanged.
