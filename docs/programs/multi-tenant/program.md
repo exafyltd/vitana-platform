@@ -11,6 +11,7 @@ specs:
   - vitana-platform:mt-track-s-authz
   - vitana-platform:mt-track-s-r2
   - vitana-platform:mt-guardrails-r2
+  - vitana-platform:ia-architecture-map-r2
 docs:
   - vitana-platform:docs/MULTI-TENANT-PLAN.md
   - vitana-platform:.kiro/specs/multi-tenant/plan-sparring.md
@@ -28,3 +29,7 @@ Programme registry entry (VTID-05215). Links only; the plan is the source of tru
 - Spec: `vitana-platform:.kiro/specs/mt-jobs/` (WS6: crons, heartbeat and automation events loop over every active tenant)
 - Spec: `vitana-platform:.kiro/specs/mt-track-s-authz/` (Track S: server-side authorization for the approvals
   actions, the ORB work surfaces and the text-path role; from the Integrated Architecture assessment)
+
+## WS-IA: Integrated Architecture (companion workstream; the exit criteria above are unchanged)
+- Spec: `vitana-platform:.kiro/specs/ia-architecture-map-r2/` (the architecture map, and the order of the later IA plans
+  relative to the multi-tenant plans, its `plan.md` §4)
