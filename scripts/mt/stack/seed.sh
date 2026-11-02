@@ -2,7 +2,9 @@
 # mt-guardrails-r2 / local-test-stack: load the synthetic fixtures
 # (supabase/tests/fixtures/*.sql, filename order, one transaction per file)
 # into the local stack. The fixtures are idempotent: running this twice leaves
-# the same rows.
+# the same rows. Each fixture checks its tables with to_regclass: a missing
+# required table (public.tenants, public.user_tenants, auth.users) fails the
+# load; a missing optional table is skipped with a NOTICE.
 set -euo pipefail
 
 CONTAINER="${MT_STACK_CONTAINER:-mt-local-stack}"

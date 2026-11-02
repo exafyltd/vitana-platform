@@ -46,8 +46,8 @@ does not ship it.
 | Script | What it does |
 |---|---|
 | `up.sh [--seed]` | Pulls the pinned image, checks that its `RepoDigests` contain the pinned digest, removes any old `mt-local-stack` container, starts a fresh one on `127.0.0.1:54329`, and waits (bounded, `MT_STACK_BOOT_TIMEOUT`, default 180 s) for `pg_isready -h 127.0.0.1 -U postgres` plus a `SELECT 1` via `docker exec`. Exits non-zero on a digest mismatch or a timeout. `--seed` then runs `replay.sh` (strict) and `seed.sh`. |
-| `replay.sh [--discover]` | Applies the top-level `supabase/migrations/*.sql` files in filename (timestamp) order, one file per transaction (`psql --single-transaction -v ON_ERROR_STOP=1`), skipping the files on the skip-list. Afterwards it tries every skipped file once more; one that now applies is a stale skip. Default mode stops at the first failure; `--discover` records every failure and continues. Writes `$OUT_DIR/replay-report.json` and one log per file in `$OUT_DIR/replay-logs/`. |
-| `seed.sh` | Loads `supabase/tests/fixtures/*.sql` in filename order, one transaction per file. Idempotent. |
+| `replay.sh [--discover]` | Applies the top-level `supabase/migrations/*.sql` files in filename (timestamp) order, one file per transaction (`psql --single-transaction -v ON_ERROR_STOP=1`), skipping the files on the skip-list. A file containing `CREATE`/`DROP INDEX CONCURRENTLY`, `REINDEX … CONCURRENTLY`, `ALTER TYPE … ADD VALUE` or `VACUUM` runs without the wrapping transaction (still `ON_ERROR_STOP=1`), because PostgreSQL refuses those statements inside a transaction block. Afterwards it tries every skipped file once more; one that now applies is a stale skip. Default mode stops at the first failure; `--discover` records every failure, continues, and then retries the failed files in timestamp order, pass after pass, until a pass applies nothing new (at most `MT_REPLAY_MAX_PASSES`, default 5, passes in all); each file keeps the error of its last attempt. Writes `$OUT_DIR/replay-report.json` (`passes`, `applied_after_pass_1`, and per failed file its final `error` and `attempts`) and one log per file and pass in `$OUT_DIR/replay-logs/`. |
+| `seed.sh` | Loads `supabase/tests/fixtures/*.sql` in filename order, one transaction per file. Idempotent. A missing required table (`public.tenants`, `public.user_tenants`, `auth.users`) fails the load; an insert into any other table runs only when `to_regclass` finds it. |
 | `smoke.sh` | The T0 spike and T5 smoke test, below. |
 | `down.sh` | Removes the container and its data. |
 
@@ -93,7 +93,11 @@ job's log and artifact.
 (`0b000000-0000-4000-8000-00000000000b`); members `a_member`, `a_admin`, `b_member`, `b_admin`, `ab_dual` (in both
 tenants) in `auth.users`, `app_users` and `user_tenants`; the marker `CANARY_A_0a000000-0000-4000-8000-00000000ca01` in
 T_A rows only (the T_A tenant name, and a `community_groups` row when that table exists). Every INSERT is
-`ON CONFLICT DO NOTHING`.
+`ON CONFLICT DO NOTHING`. The file first checks `public.tenants`, `public.user_tenants` and `auth.users` and raises an
+exception naming any that is missing. Inserts into the optional tables (`app_users`, `community_groups`) are guarded
+with `to_regclass` and print a NOTICE when the table is absent.
+
+The replay spike and the categorisation of its failures are in `docs/validation/VTID-05469/spike.md`.
 
 ## Skip-list format (`supabase/tests/local-stack/replay-skip.json`)
 

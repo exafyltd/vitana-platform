@@ -6,3 +6,14 @@ $ shellcheck scripts/mt/stack/*.sh
 $ grep -rnE "https?://|supabase\.co|vitanaland|amazonaws" scripts/mt supabase/tests/fixtures supabase/tests/local-stack
 no remote host
 Docker is not available on the build host; the T0 spike runs in MT-LOCAL-STACK on the PR.
+
+# Fix-forward attempt 1 (after the first MT-LOCAL-STACK run: 210 replay failures, 13 required tables missing)
+$ for f in scripts/mt/stack/*.sh; do bash -n "$f"; done
+ok (down.sh, replay.sh, seed.sh, smoke.sh, up.sh)
+$ replay.sh --discover / strict against a mock docker (5 synthetic migrations: two order-dependent, one always failing, one CREATE INDEX CONCURRENTLY)
+discover: passes=4 applied=4 applied_after_pass_1=2 failed=1 (attempts 4), exit 0; CONCURRENTLY file applied in pass 1 without --single-transaction
+strict: stops at the first failure, exit 1
+$ grep -Eil '<needs_no_txn pattern>' supabase/migrations/*.sql
+20260205000000_fix_oasis_events_disk_io_indexes.sql 20260913000000_vtid_03832_vitana_role_add_values.sql 20260913000001_vtid_03832_tenant_role_add_values.sql 20260916150000_vtid_03972_widen_oasis_events_retention.sql
+$ static categorisation of the 210 failures (first ERROR line per file, creators looked up in both repos' committed migrations)
+tooling 5, vitana-v1 schema 60, broken/drifted 145 (migration drift 117, pinned-image environment gap 28); see spike.md
