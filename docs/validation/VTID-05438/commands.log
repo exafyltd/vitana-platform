@@ -1,0 +1,11 @@
+# VTID-05438 commands (session kiro-exafy-202611012120-06ba, Windows, node v24.11.1, git 2.52)
+$ node --test scripts/collab/land-guard.test.mjs   # on origin/main e79092087b + the new tests only (T1)
+  -> tests 22, pass 11, fail 10, skipped 1. New cases fail with "lg.mergeKeepsReview is not a function" /
+     "lg.localAfter is not a function" (the export is missing). Output: red-on-base.txt
+$ node --test scripts/collab/land-guard.test.mjs   # on the lane head (T4)
+  -> tests 22, pass 21, fail 0, skipped 1 (CLI (j): the stub gh is a POSIX shebang script, runs on CI ubuntu)
+$ node --test scripts/collab/*.test.mjs
+  -> not completed locally: drive C: ran out of space (0 MB free) during the run, so fixture git repos failed to
+     create; failures seen were in unrelated files (DRIVER-WAKE.yml and others outside this sparse checkout). The
+     PR's unit/Lane scope checks run the whole collab suite on ubuntu; their result on the PR head is the record.
+$ git diff --check   -> clean; files UTF-8 without BOM, LF.
