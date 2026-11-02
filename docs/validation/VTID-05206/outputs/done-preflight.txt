@@ -1,0 +1,13 @@
+preflight vitana-platform /projects/sandbox/wt-done-card-optin
+  base cf009eca8fe8c1bb4febb218fdb1a46deb6b4926  head a3fda9185c8b5d2e41e5cc11efd4466650141a3d  branch kiro/close/new-member-welcome/new-member-card-optin-done
+
+PASS  Collab tests [required]
+PASS  Collab handoff [required]
+PASS  Lane scope [required]
+PASS  PR-GATE scope [report-only in CI (until config.enforce=true)]
+PASS  PR-GATE sparring [report-only in CI (until config.enforce=true)]
+PASS  PR-GATE weakening [report-only in CI (until config.enforce=true)]
+PASS  PR-GATE red-green [report-only in CI (until config.enforce=true)]
+PASS  Kiro steering [report-only in CI (until config.enforce=true)]
+
+preflight: every check passed
