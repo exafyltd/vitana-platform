@@ -4,7 +4,7 @@ state: ready
 next_actor: kiro
 depends_on: []
 executor: kiro
-seat: exafy
+seat: exafyltd
 reviewer_seat: agent:vitana-lane-reviewer
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 repos: [exafyltd/vitana-platform]
@@ -21,7 +21,7 @@ paths:
   - services/gateway/test/eng-platform-stage-oidc-workflows.test.ts
   - services/gateway/test/vtid-05009-provision-pack-token-workflow.test.ts
   - docs/validation/**
-updated: 2026-11-02T17:02Z
+updated: 2026-11-02T21:51Z
 vtid: VTID-05518
 ---
 # Lane: stage-oidc-platform (repo vitana-platform)
@@ -33,3 +33,5 @@ Lane created with the plan.
 
 ### 2026-11-02T17:02Z · ci-plan-spar · ready (VTID allocated)
 VTID-05518 allocated after policy approval (converged-auto-v1).
+### 2026-11-02T21:51Z · pm-agent · update
+reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
