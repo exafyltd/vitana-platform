@@ -70,3 +70,11 @@ Closing record for the merged lane (plan `say-hello-lane-reassign` §4); no code
 - nothing is sent from staging (`disabled-on-staging`); sending, timing, retries, send-once and reply routing are covered by
   `test/vtid-05205-welcome-team.test.ts` (36 tests). Go-live (`WELCOME_TEAM_MODE=live` etc. in production) is a separate owner/release step and is NOT done.
 next_actor: kiro (independent review by vitana-lane-reviewer, then verified).
+
+### 2026-11-02T12:41Z · agent-vitana-lane-reviewer-202611021241-3a7d · review
+review: accept
+head: 7df1f09600f3dd888f02abcde395948fb243410a
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4515
+Findings: (non-blocking) CI not readable by the reviewer, so the land step must confirm all checks green on the current head; (non-blocking) DB facts in sender-mapping.txt rest on the orchestrator's read-only query, and the ids match config.ts:60-64 (Mariia @mariia04 67c971fc-48f3-49ce-aaa8-cddb6fa9e63a, Jovana @jovana4 c7d3260d-8311-4a0b-ab1c-53928a37caec, Alex @dragan1 0adc6ff6-acb0-4dca-99d0-295211a40e3e); (non-blocking) lane service code read partly (config, header, mode gate, cohort filter: configurable schedule config.ts:87-98, recipient-language fallback, send-once via welcome_team_claims RPCs, no retroactive sends via created_at >= rolloutAt welcome-team-service.ts:160, replies to the sender's own inbox, disabled-on-staging config.ts:102-103), tests not run, next hop should rely on green CI; (non-blocking) claim ref collab-claim/new-member-welcome/team-welcome-backend (0ee9d1da46) is this session's takeover claim, release only after closing records are on main
+Next: the land step merges under §7b after all checks are green on the current head; the next hop records in-review → verified citing this review
