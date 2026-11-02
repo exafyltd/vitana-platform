@@ -99,7 +99,8 @@ WS1 (`:108`). VTID-05149 already shipped `tenants.is_default`/`is_platform`, the
    excluded.
 5. Two kinds of fake tenant id are live.
    - (a) Two four-entry slug maps (`…0001`–`…0004` = vitana/maxina/alkalma/earthlings). One is in `routes/me.ts`:
-     `TENANT_SLUGS` id→slug at `:15`, read at `:270,408`, and `SLUG_TO_TENANT_ID` at `:23`. The other is
+     `TENANT_SLUGS` id→slug at `:15`, read at `:270,408`, and `SLUG_TO_TENANT_ID` at `:23`, which has no reader in
+     `me.ts` (dead code; `git grep` on `origin/main` finds only its declaration, R1-F1). The other is
      `routes/dev-auth.ts:26` `SLUG_TO_TENANT_ID`, read at `:491`.
    - (b) A dev-sandbox constant: `services/orb-memory-bridge.ts:66` `DEV_IDENTITY` (user `…0099`), pinned to
      `TENANT_ID='…0001'`/`TENANT_SLUG='vitana'`.
@@ -188,7 +189,10 @@ purpose (owner D14) and is not part of this spec.
      that defaults to `vitana` and resolves through the registry. The pinned dev user `…0099` stays.
    - (c) `dev-auth.ts:364` resolves its tenant in this order: the body's `tenant_id`, then `DEV_TENANT_ID`, then
      `await getDefaultTenantId()`. If nothing resolves for a bootstrap role, it returns
-     `503 REGISTRY_UNAVAILABLE` before bootstrap and before mint (R3-F1). No `…0001` literal remains in `me.ts`,
+     `503 REGISTRY_UNAVAILABLE` before bootstrap and before mint (R3-F1). Latency (R1-F2): (a) and (c) add a registry
+     read to the dev-sandbox `/dev/auth/token` path (gated by `isDevSandbox()`); on a cold task the first call can
+     wait up to the 2.5 s `TENANT_META_TIMEOUT_MS` (`tenant-context.ts:66`), then the 60 s cache serves it. The lane PR
+     states this new DB dependency. No `…0001` literal remains in `me.ts`,
      `dev-auth.ts` or `orb-memory-bridge.ts`.
    - (d) Move the last `fetchPrimaryTenantForUser` callers to `resolvePrimaryTenant()` (`tenant-context.ts:43`),
      behind `isMtResolutionV2Enabled()`:
