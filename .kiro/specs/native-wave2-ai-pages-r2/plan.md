@@ -124,4 +124,5 @@ dependency, so all three run in parallel.
 - The live voice-to-voice ORB session (explicitly out of scope) stays a separate program track / audio spike;
   this plan ports only the voice-*settings* tab under `ASSISTANT.VOICE`.
 - macOS minutes / G3 for iOS-on-device screenshots (program STATUS row 8b) — not needed for the JS build.
+Programme registration (sparring R1-F1): this plan PR itself lists `vitana-platform:native-wave2-ai-pages-r2` under `specs:` in `docs/programs/native-app/program.md` (the first commit of this PR), so the spec is registered before any lane PR; Collab handoff on main checks it.
 <!-- plan:end -->
