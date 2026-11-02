@@ -1,6 +1,6 @@
 ---
 lane: s-j-route-inventory
-state: ready
+state: executing
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -15,8 +15,11 @@ paths:
   - scripts/check-edge-function-auth.mjs
   - package.json
   - docs/validation/**
-updated: 2026-11-01T16:59Z
+updated: 2026-11-02T06:59Z
 vtid: VTID-05442
+claimed_by: kiro-hotmail-202611011452-6d16
+branch: kiro/mt-track-s-r2/s-j-route-inventory
+pr: https://github.com/exafyltd/vitana-v1/pull/1555
 ---
 # Lane: s-j-route-inventory (repo vitana-v1)
 Tasks in `tasks.md`. Remove the dead `linkedin-import` edge function and add the edge-function auth gate. VTID from
@@ -28,3 +31,11 @@ Lane created with the plan.
 
 ### 2026-11-01T16:59Z · ci-plan-spar · ready (VTID allocated)
 VTID-05442 allocated after policy approval (converged-auto-v1).
+### 2026-11-02T06:59Z · kiro-hotmail-202611011452-6d16 · ready → executing
+Built in vitana-v1, PR exafyltd/vitana-v1#1555 (head `5e8eab60d`):
+- `linkedin-import` and its config block are removed.
+- The s4 test drops only its `linkedin-import` references.
+- `scripts/check-edge-function-auth.mjs` is added and wired into `npm test`.
+
+It was red on base and is green after, and three planted cases fail as intended. `npm test`: 3,908 tests passed. Evidence:
+`docs/validation/VTID-05442/` in vitana-v1. Next: the reviewer agent reviews #1555.
