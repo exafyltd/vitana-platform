@@ -7,7 +7,7 @@ next_actor: kiro
 state: drafted
 updated: 2026-11-02T13:30Z
 spar_refs:
-  - exafyltd/vitana-v1: e530abd0d82314092f4c4569e3582383bc1c7c8e
+  - exafyltd/vitana-v1: 5c75715e16ce360e2d96df28790f480e4582583f
 ---
 # Handoff — welcome-finish-r2
 

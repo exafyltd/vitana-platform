@@ -4,7 +4,7 @@ change_class: standard
 # Plan — welcome-finish-r2
 
 Author: Kiro, session `kiro-jtadic-202610291040-a0e6`, seat `jtadic`. Repos: `exafyltd/vitana-platform` (1 lane) and
-`exafyltd/vitana-v1` (3 lanes). Premises pinned to platform `origin/main` `8cdd89d03cb6f1217ffdade83ab982cbea19796b` (`exafyltd/vitana-platform`) and vitana-v1 `origin/main` `e530abd0d82314092f4c4569e3582383bc1c7c8e`
+`exafyltd/vitana-v1` (3 lanes). Premises pinned to platform `origin/main` `6d2dbf53cf7ecbbb9c0b57c3c9597b63f2611ec2` (`exafyltd/vitana-platform`) and vitana-v1 `origin/main` `5c75715e16ce360e2d96df28790f480e4582583f`
 (`exafyltd/vitana-v1`, declared in `handoff.md` `spar_refs`). Every premise below is written `repo path:line`, checked on those SHAs.
 Supersedes plan welcome-finish (#4512; both sparring sessions failed the evidence floor because vitana-v1 had no pinned ref).
 Premises about the Say Hello greeting route and guard are labelled "on open PR #4503 branch kiro/new-member-welcome/say-hello-composer, not on main": they do not exist at the pinned platform SHA and are not read as evidence.
@@ -46,7 +46,7 @@ setting."*
    `is_visible=true`, `community_intro_opt_in=true`, last 7 days. NEVER 45 requires that a surface that lists members to
    a real member excludes `service_bot_accounts` and `notification_test_actors`. The browser cannot read those tables
    (they are service-side allowlists); the existing client-side pattern for this is a SECURITY DEFINER database function
-   (`search_mention_candidates`, exafyltd/vitana-v1 migration `20261006140000`), which would need a migration applied to the
+   (`search_mention_candidates`, `exafyltd/vitana-v1 supabase/migrations/20261006140000_vtid_04926_mentions.sql:22-24`, which also restricts to users sharing a tenant via `user_tenants`, `:50-51`), which would need a migration applied to the
    shared database (owner stop, `collaboration.md` §7d).
 3. Frontend check `NATIVE-CI` job "Parity ledger, core/tokens generators + native script tests" fails on the Say Hello PR
    (exafyltd/vitana-v1 #1520, run 41066162293) at `node scripts/native/gen-core-extract.mjs --check`: "out of date:
@@ -58,8 +58,13 @@ setting."*
 ## 3. Interfaces between lanes
 `GET /api/v1/community/new-members?limit=<1..5>` (platform, `requireAuth` + `requireTenant`):
 - 200 `{ ok: true, members: [{ user_id, display_name, avatar_url, bio, created_at }] }`, newest first; rows exactly as the
-  browser query returns today (`is_visible=true`, `community_intro_opt_in=true`, `created_at >= now-7d`, member's tenant),
-  minus every id in `fetchExcludedTestServiceAccountIdsStrict`, minus the caller.
+  browser query returns today (`is_visible=true`, `community_intro_opt_in=true`, `created_at >= now-7d`), **no tenant
+  filter**: `global_community_profiles` has no `tenant_id` column (`exafyltd/vitana-v1 supabase/migrations/20250917153624_22b8e9be-eb29-477c-974b-87a609943321.sql:5-16`)
+  and its SELECT policy is `is_community_user() AND is_visible` (`:165-167`, not tenant-scoped; no later migration adds a
+  tenant column or policy), so every community member sees the same rows today and the service-role endpoint returns exactly
+  that set, no more (it mirrors the browser query; the gateway only adds the exclusions). `requireTenant` stays as the auth
+  gate only, as in `exafyltd/vitana-platform services/gateway/src/routes/community-members.ts:78` (`/community/members`, the
+  same global directory pattern with `fetchExcludedTestServiceAccountIds`; the new route uses the strict variant, fail closed). Minus every id in `fetchExcludedTestServiceAccountIdsStrict`, minus the caller.
 - 503 `{ ok: false, error: 'exclusion_lookup_failed' }` when the exclusion lookup fails (fail closed: a read surface that
   lists people to members must not show a possibly-test account); 401/403 by the existing middleware; JSON content type.
 - The v1 hooks call it with the member's bearer token (`VITE_GATEWAY_URL`); on any non-200 or network error they show
@@ -86,7 +91,12 @@ setting."*
   before/after and raises if a row with a recorded choice changed or any row without one is still true; idempotent,
   one transaction, no change to RLS, policies, grants, triggers, REPLICA IDENTITY or publication (the owner policy
   "Users can manage their own global profile" already lets the member write both columns). App: `community-intro.ts`
-  `setCommunityIntroOptIn` writes `{ community_intro_opt_in, community_intro_choice_at: now }`; `OnboardingNameForm`
+  `setCommunityIntroOptIn` writes `{ community_intro_opt_in, community_intro_choice_at: now }` and is **backward
+  compatible with the migration not yet applied** (sparring R1-F1): if PostgREST answers with an unknown-column error
+  (`error.code` `PGRST204`, or `42703`; supabase-js returns it as `error.code`/`error.message` on the result; same
+  pattern as `exafyltd/vitana-platform services/gateway/src/routes/chat-repository.ts:101-119`) the call retries once writing
+  only `community_intro_opt_in`, so the Settings toggle keeps working before and after the apply; any other error is
+  thrown as today. The registration buttons use the same function; `OnboardingNameForm`
   replaces the pre-selected switch with two buttons “Yes, introduce me 👋” / “Not now”, **neither selected**; choosing
   one records it, submitting without choosing records nothing (opt-in stays false) and never blocks registration;
   `CommunityIntroToggle` keeps the switch (default off) and records the choice on every change (so withdrawal =
@@ -105,10 +115,11 @@ an unauthenticated probe expecting 401 JSON on the new route (proves the revisio
 Playwright spec signs in and asserts the card list renders no account from the exclusion lists that exist on staging
 and that the request goes to the gateway route; real listings of test data are unit-tested. `explicit-intro-choice` staging proof (read-only, signs in as the test
 account, never flips a switch): the Privacy screen shows the switch OFF and the registration copy is not reachable on
-staging without registering, so the form, the writes and the backfill are proven only by vitest and PGlite. **The new
-writes need the migration applied** (staging shares the production database): until the owner approves applying it, the
-column does not exist, a save fails with the existing "could not be saved" toast (fail safe, nobody is introduced) and
-new signups still take the old default true. Applying the migration is an owner stop (§7d); the file merges with the lane.
+staging without registering, so the form, the writes and the backfill are proven only by vitest and PGlite. **Before the migration is applied** (staging shares the production database) the
+column does not exist: the fallback write above keeps the Settings toggle and the registration buttons working (they
+write only `community_intro_opt_in`, no marker), and new signups keep the old default true (an explicit "Not now" is
+still written as false). "Nobody is introduced until they choose Yes" holds for new signups only after the owner approves
+and applies the migration (owner stop, §7d); the lane's PR says so. Applying the migration is an owner stop (§7d); the file merges with the lane.
 
 ## 6. Risks
 - Fail-closed makes the card disappear when the allowlist tables error; accepted (rare) and logged.
@@ -120,6 +131,9 @@ new signups still take the old default true. Applying the migration is an owner 
 - A stale (cached) old bundle writes `community_intro_opt_in` without the marker: for `true` the member is included
   without a recorded marker. Accepted (rare, short window after deploy, member's own act); the marker is an audit field,
   not a read filter, so no member is hidden because of it.
+- Window before the migration is applied: the app writes without the marker (fallback) and new signups still default to
+  true; accepted, bounded by the owner stop, and stated in the PR. The fallback is covered by tests for both paths
+  (column present: both columns written; PGRST204 and 42703: retry with `community_intro_opt_in` only; other error: thrown).
 - The 2 default-true rows lose automatic inclusion; they can choose Yes later (authorized by the owner).
 
 ## 7. Unchanged
