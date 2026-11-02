@@ -132,10 +132,15 @@ Allowed paths: `services/gateway/src/services/d46-anticipatory-guidance-engine.t
 - [ ] E3 Jest `test/mt-data-cleanup-engine-tenant.test.ts`: per engine, authenticated caller with primary tenant T_A
       inserts `tenant_id = T_A`; unresolvable tenant and `…0001` context insert nothing and return
       `TENANT_UNRESOLVED`; dev-sandbox branch unchanged. The d46 case is recorded red on `origin/main`.
+- [ ] E4 (R1-F1) d48 route `routes/opportunity-surfacing.ts`: not edited. Its `extractUserContext()` (`:75-93`)
+      returns `null` outside `isDevSandbox()`, so `POST /surface` is 401 (`:138-145`). Add a Jest case in
+      `test/mt-data-cleanup-engine-tenant.test.ts`: bearer token + non-dev-sandbox env → 401 and the d48 engine is
+      never called. JWT decoding for the route is out of scope (it would enable a route that is 401 in production
+      today); the engine guard (E2) is the backstop for the dev-sandbox `…0001`.
 
 Acceptance:
 - Change types: Backend.
-- E3 green and red-first; full gateway Jest suite, `npm run test:support` (42c) and `npm run test:operator` (42e)
+- E3 green and red-first; E4 green (route file unchanged); full gateway Jest suite, `npm run test:support` (42c) and `npm run test:operator` (42e)
   green; no test weakened; no live write.
 - PR title `VTID-xxxxx (mt-data-cleanup-r2/engine-tenant-fallbacks): …`; trailers `Collab-Session` /
   `Collab-Lane: mt-data-cleanup-r2/engine-tenant-fallbacks`.

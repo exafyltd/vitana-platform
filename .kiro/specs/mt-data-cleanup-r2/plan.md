@@ -171,6 +171,16 @@ ships its SQL under `docs/validation/<vtid>/`.
    explicit request context; empty or `…0001` → no insert, `TENANT_UNRESOLVED`. Fixes `d46-anticipatory-guidance-engine.ts:153`
    (tenant never reassigned on the authenticated path), `d48-opportunity-surfacing-engine.ts` insert (`:894`, `:917`)
    and `d49-risk-mitigation-engine.ts:519`. Dev-sandbox branches unchanged (still `isDevSandbox()`-gated).
+   - **d48 route (R1-F1, round 1):** the d48 tenant source is `routes/opportunity-surfacing.ts`. Its
+     `extractUserContext()` (`:75-93`) never decodes the bearer token (`:81`) and keeps its own `DEV_IDENTITY`
+     (`:54-57`). Outside `isDevSandbox()` it returns `null` (`:92`), so `POST /surface` answers 401 (`:138-145`) and
+     never reaches the engine insert. Inside dev-sandbox it passes `…0001` (`:87-88`), which the engine guard then
+     rejects outside `isDevSandbox()`. This plan therefore does **not** add JWT decoding to the route: wiring it to
+     `requireAuth` + `getTenantContext()` (`auth-supabase-jwt.ts:635`) would turn on a route that is 401 in
+     production today, a behaviour change outside this data-cleanup plan. Lane 5 instead pins today's route
+     behaviour with a Jest case (bearer token, non-dev-sandbox env → 401, engine never called) and relies on the
+     engine guard as the backstop. The route file stays in lane 5's `paths` but is not edited. Enabling the route
+     for authenticated members is a separate plan.
 
 ## Migrations
 Lane version range `20261102040000`–`20261102045959` (NN=04; day-shifted, Re-plan answers). The executor renumbers if a later migration exists at
@@ -202,7 +212,9 @@ the zero-orphan state that 1 and 3 produce).
 - **Snapshot/rollback drill** in pgTAP: apply forward, assert moved counts, apply rollback, assert original counts.
 - **Jest (gateway, lane 5, R3-F2):** d46/d48/d49 called on the authenticated path with a caller whose primary tenant
   is T_A insert with `tenant_id = T_A`; with no resolvable tenant (and with request context `…0001`) they insert
-  nothing and return `TENANT_UNRESOLVED`; the dev-sandbox branch is unchanged. The d46 case is red on `origin/main`
+  nothing and return `TENANT_UNRESOLVED`; the dev-sandbox branch is unchanged. `POST /api/v1/opportunities/surface`
+  with a bearer token in a non-dev-sandbox env returns 401 and never calls the d48 engine (R1-F1, pins today's
+  behaviour; green on `origin/main` too). The d46 case is red on `origin/main`
   (it inserts `…0001`). `npm run test:support` (42c) and `npm run test:operator` (42e) stay green.
 - **Bot-row class (R3-F1) in pgTAP:** a fixture row `sender_id = …0001 AND tenant_id = …0001` lands in
   `mt_orphan_quarantine` with reason `bot_sender_dev_tenant`; a bot row with a real tenant is untouched; the
