@@ -62,3 +62,39 @@ $ git show origin/main:scripts/collab/preflight.mjs | diff -q - /projects/sandbo
 - npm run test:roles (services/gateway has no node_modules in this worktree; no gateway file changed).
 - RUN-MIGRATION, any dispatch, any live read or write: not allowed for this lane before owner approval (collaboration.md §7d).
 - The post-commit impact scan, preflight and validate-pr-locally run are recorded after the first commit (see the lane report).
+
+# 8. After the first commit (8d7b8d57fc), the checks on the committed head
+# (The grep patterns in sections 2 and 3 are summaries of the searches run; the full result set is the repository state
+#  they describe. Premise facts are cited with file:line in acceptance.md.)
+
+$ node /projects/sandbox/vitana-platform/scripts/collab/preflight.mjs --repo . --base origin/main --head HEAD \
+    --branch kiro/mt-identity-r2/role-source-and-bootstrap --title "VTID-05467 (mt-identity-r2/role-source-and-bootstrap): one selected-role source and the bootstrap fix"
+  -> head 8d7b8d57fc: exit 1. FAIL PR-GATE sparring: docs/validation/VTID-05467/plan-sparring.md has no owner-approval line
+     (scripts/ci/pr-gate/lib.mjs:157 requires /owner approval/i). Fixed by a new commit, not an amendment.
+  -> head 61be2d39f2: exit 0. PASS Collab tests, Collab handoff, Lane scope, PR-GATE scope, PR-GATE sparring,
+     PR-GATE weakening, PR-GATE red-green, Kiro steering. "preflight: every check passed"
+
+$ IMPACT_SCAN_BASE=origin/main node scripts/ci/dev-autopilot-impact-scan.mjs
+  -> changed=23, findings: blocker=0 warning=0 info=0 total=0. The generated dev-autopilot-impact-findings.json was deleted.
+
+$ node scripts/ci/validate-pr-locally.cjs --title "VTID-05467 (mt-identity-r2/role-source-and-bootstrap): one selected-role source and the bootstrap fix" \
+    --body-file <scratch PR body> --base main
+  -> with VALIDATION_PROFILE: database: exit 21, "unknown VALIDATION_PROFILE=database" (known: command_hub_frontend, gateway_backend)
+  -> with VALIDATION_PROFILE: gateway_backend (the profile the membership lane uses for migration-only lanes): exit 0, APPROVED.
+     Acceptance mapping OK. CSP scan clean. OASIS_IMPACT=no. Build Gate skipped (--build not given).
+     NOT JUDGED: the five files under supabase/migrations and supabase/tests. The validator says those trees have no governance
+     gate of their own (see VTID-03696). They are covered here by the pgTAP files, the PGlite run and CI's drift check.
+
+$ node lockdown-sim.mjs (scratch) replays the offender rules of services/gateway/test/vtid-05147-s-m-membership-role-lockdown.test.ts
+  (lines ~96-150: no later migration gives members writes on the role tables back; no policy recreated; set_role_preference keeps
+  "Not a member of this tenant") on the three lane migrations -> 0 offenders.
+
+$ git grep -l -E "supabase[/\\]migrations" origin/main -- services/gateway/test services/gateway/src (test files)
+  -> 116 files name the migrations directory, most of them as an include or deny pattern. Gateway tests that read migrations by
+     name pin historical files (for example vtid-05147-s-m-membership-role-lockdown.test.ts reads 20261013233000).
+     services/gateway/test/loop-catalog.test.ts concatenates every migration to check catalog contents; this lane removes no
+     name from them. The full gateway Jest suite was NOT run (no node_modules in this worktree).
+
+# Final state
+- Commits: 8d7b8d57fc (migrations, pgTAP, evidence) and 61be2d39f2 (owner-approval line). Local only; nothing pushed.
+- Preflight on 61be2d39f2: every check passed.
