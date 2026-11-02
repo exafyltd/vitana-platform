@@ -1,6 +1,6 @@
 ---
 lane: s-j-retire-allowlist-v2
-state: ready
+state: executing
 next_actor: kiro
 depends_on: [s-j-route-inventory]
 executor: kiro
@@ -12,7 +12,9 @@ paths:
   - .github/workflows/SUPABASE-FUNCTIONS-RETIRE.yml
   - src/lib/supabase-functions-retire.vtid-05008.test.ts
   - docs/validation/**
-updated: 2026-11-02T12:21Z
+claimed_by: kiro-hotmail-202611011452-6d16
+branch: kiro/mt-track-s-r2/s-j-retire-allowlist-v2
+updated: 2026-11-02T16:40Z
 vtid: VTID-05463
 ---
 # Lane: s-j-retire-allowlist-v2 (repo vitana-v1)
@@ -26,3 +28,6 @@ Created through `_plan`; the old lane's one-line change fails `src/lib/supabase-
 
 ### 2026-11-02T12:21Z · ci-plan-spar · ready (VTID allocated)
 VTID-05463 allocated after policy approval (converged-auto-v1).
+
+### 2026-11-02T16:40Z · kiro-hotmail-202611011452-6d16 · ready → executing
+Claimed through queue.mjs claim. Code: exafyltd/vitana-v1 branch kiro/mt-track-s-r2/s-j-retire-allowlist-v2.
