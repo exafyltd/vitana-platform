@@ -1,0 +1,35 @@
+# Tables smoke.sh requires after the replay (to_regclass must be non-null).
+# One name per line; a bare name means schema public. '#' starts a comment.
+# Source: docs/MULTI-TENANT-PLAN.md §2 (18 tenant tables with bare policies,
+# and the health tables), plus the membership tables and auth.users.
+
+# Membership and auth
+auth.users
+tenants
+user_tenants
+
+# The 18 tenant tables of docs/MULTI-TENANT-PLAN.md §2 (tenants is listed above)
+access_audit_log
+community_groups
+community_listings
+community_meetups
+consents
+d42_domain_weights
+event_attendance
+live_highlights
+live_room_attendance
+live_rooms
+products_catalog
+relationship_edges
+retrieval_traces
+role_sessions
+services_catalog
+tenant_catalog_overrides
+user_roles
+
+# Health tables of docs/MULTI-TENANT-PLAN.md §2
+health_features_daily
+biomarker_results
+wearable_samples
+partner_health_test_orders
+data_sharing_consents
