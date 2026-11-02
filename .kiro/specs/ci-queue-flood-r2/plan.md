@@ -69,7 +69,7 @@ escalation record.
     group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
     cancel-in-progress: ${{ github.event_name == 'pull_request' }}
   ```
-  This is the expression TEST-SUITE.yml already uses. Pushes to `main` are never cancelled.
+  The `cancel-in-progress` line is the expression TEST-SUITE.yml uses. Its `group` key differs: TEST-SUITE.yml groups by `test-suite-${{ github.event_name }}-${{ github.ref }}`, while this group keys each PR's runs by workflow name and PR number, so a newer run of the same PR cancels the older one. Pushes to `main` are never cancelled.
 - STAGING-TESTS-REQUIRED.yml: keep `fetch-depth: 0` (line 28), because `check-pr` diffs base against head. Keep
   `timeout-minutes: 5`.
 - PHASE-2B-NAMING-ENFORCEMENT.yml: remove `fetch-depth: 0` (line 18). Add `timeout-minutes` to the job.
