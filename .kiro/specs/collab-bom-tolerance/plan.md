@@ -30,6 +30,19 @@ change. Make the validator read a file that starts with a UTF-8 BOM, without cha
    from `lanes without a handoff.md` (`:797`).
 5. Existing test `queue.test.mjs:28-32` covers scalars, lists, comments and the no-front-matter case; nothing covers a
    BOM.
+## Premises to check (each is one file read on `origin/main`)
+- P1 `scripts/collab/queue.mjs` lines 151-171: `parseFrontMatter` and its `^---` regex on `String(text || '')`.
+- P2 `scripts/collab/queue.mjs` lines 195-216: `validatePlan` / `validateLane` return `['no front matter']` on `null`.
+- P3 `scripts/collab/queue.mjs` lines 786-797: `validateRange` validates every spec file at head for a touched slug and
+  pushes `lanes without a handoff.md`.
+- P4 `scripts/collab/queue.mjs` lines 238-241: `validateLane` refuses an `executor: kiro` lane whose `paths` reach a
+  protected gate file.
+- P5 `scripts/collab/protected-gate-files.json`: lists `scripts/collab/queue.mjs`.
+- P6 `.kiro/specs/desktop-spotlight-finish/lanes/colours-backoffice.md`: first bytes `EF BB BF 2D 2D 2D`; no
+  `.kiro/specs/desktop-spotlight-finish/handoff.md` exists.
+- P7 `.kiro/specs/kiro-lane-admin/lanes/enforcement.md`: the precedent lane with protected paths in its body, not in
+  `paths:`.
+- P8 `scripts/collab/queue.test.mjs` lines 28-32: the existing `parseFrontMatter` test.
 ## Change (lane `bom-strip`, vitana-platform)
 1. `scripts/collab/queue.mjs` `parseFrontMatter`: before the match, remove one leading U+FEFF from the input string
    (`String(text || '').replace(/^\uFEFF/, '')`). The regex, the key/list parsing and the return shape stay
