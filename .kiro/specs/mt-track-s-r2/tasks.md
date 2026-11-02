@@ -48,6 +48,24 @@ Authoritative plan: `plan.md`. VTIDs from CI PLAN-SPAR. Both lanes in `exafyltd/
 - Staging proof: not verified on staging: a workflow edit deploys nothing; CI YAML check referenced as `existing`.
 - The diff is one line in `ALLOWLIST` plus `docs/validation/**`; no workflow run is dispatched by the lane.
 
+<!-- lane: s-j-retire-allowlist-v2 -->
+## Lane `s-j-retire-allowlist-v2` (supersedes `s-j-retire-allowlist`, which is never built)
+- [ ] R1 Add `linkedin-import` to `ALLOWLIST` in `.github/workflows/SUPABASE-FUNCTIONS-RETIRE.yml` (`:42-45`). Nothing
+      else in the workflow changes.
+- [ ] R2 Add `linkedin-import` to `RETIRED` in `src/lib/supabase-functions-retire.vtid-05008.test.ts`; no other test
+      line changes.
+- [ ] R3 Evidence: the test red on base with the new `RETIRED` entry, green after; `staging-tests.json` with
+      `existing` ref `npx vitest run src/lib/supabase-functions-retire.vtid-05008.test.ts`.
+- [ ] R4 The lane never dispatches the workflow (plan §3).
+
+**Acceptance**
+- Change types: Infrastructure/CI.
+- Outcome: the retire workflow accepts `linkedin-import` once its folder is gone; nothing is deleted by this lane.
+- Contract: `ALLOWLIST` is a space-separated list; the workflow's guards (main-only, folder absent, no caller) are
+  untouched; the test's other five cases are unchanged.
+- Staging proof: not verified on staging: a workflow edit deploys nothing; the Vitest suite is referenced as `existing`.
+- The diff is one `ALLOWLIST` entry, one `RETIRED` entry and `docs/validation/**`; no workflow run is dispatched.
+
 ## Escalation carry-over (from `mt-track-s`, session `d0c274cd`, round 3)
 - R3-F1 [blocker], verbatim: "The s-j-retire-function lane plan assigns the SUPABASE-FUNCTIONS-RETIRE.yml workflow
   dispatch to Claude Code during lane execution."
