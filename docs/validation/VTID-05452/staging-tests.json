@@ -1,31 +1,9 @@
 {
   "vtid": "VTID-05452",
-  "lane": "mt-track-s-authz/approvals-auth",
-  "read_only": true,
-  "probes": [
-    {
-      "name": "approve-without-bearer",
-      "method": "POST",
-      "url": "https://preview-aws-gateway.vitanaland.com/api/v1/approvals/appr_invalid/approve",
-      "body": {},
-      "expect_status": 401,
-      "expect_content_type": "application/json",
-      "base_status": 400,
-      "note": "Staging only. Base answers 400 at input validation; the fixed build must answer 401 before the handler runs."
-    },
-    {
-      "name": "feed-approve-without-bearer",
-      "method": "POST",
-      "url": "https://preview-aws-gateway.vitanaland.com/api/v1/approvals/feed/approve",
-      "body": {},
-      "expect_status": 401,
-      "expect_content_type": "application/json",
-      "base_status": 400,
-      "note": "Staging only. Same contract as above."
-    }
-  ],
-  "unit_suites": [
-    "services/gateway/test/mt-track-s-authz-approvals-auth.test.ts",
-    "services/gateway/test/vtid-05047-cicd-routes-auth.test.ts"
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "approve without a bearer is refused before the handler (401)", "method": "POST", "path": "/api/v1/approvals/appr_invalid/approve", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "http", "name": "feed approve without a bearer is refused before the handler (401)", "method": "POST", "path": "/api/v1/approvals/feed/approve", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "existing", "ref": "npx jest test/mt-track-s-authz-approvals-auth.test.ts test/vtid-05047-cicd-routes-auth.test.ts", "cwd": "services/gateway", "reason": "pins the three POST gates, the branch_mismatch check, the voice token forwarding and the existing CI-route auth" }
   ]
 }
