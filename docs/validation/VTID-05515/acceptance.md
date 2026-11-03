@@ -7,4 +7,5 @@ TEST: jest ("only calls describe-*, list-* and get-* APIs through run()", "calls
 AC-3 No secret value, decrypted parameter, upload or mutating verb.
 TEST: jest ("never reads secret values, decrypts parameters, uploads or mutates").
 AC-4 IAM users are listed with access keys, groups, group policies and boundary (sparring R1-F2 of session 8cc4dc48).
+TEST: jest ("lists IAM users with their groups, group policies and permissions boundary").
 Staging proof: not verified on staging: a local script the owner runs, deploys nothing; covered by the Jest file and the real runs.

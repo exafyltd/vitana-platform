@@ -17,3 +17,4 @@ WHO RUNS IT: the owner (or anyone the owner hands a read-only identity to), e.g.
 $ (no AWS credentials) bash scripts/aws/inventory-readonly.sh
 refusing to run: caller account is '<no credentials>', expected 472838866351
 exit=4
+Tests:       6 passed, 6 total

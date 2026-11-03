@@ -58,4 +58,10 @@ describe('inventory-readonly.sh', () => {
     }
     expect(body).not.toMatch(/\s(put|create|delete|update|modify|tag|attach|detach|start|stop|run)-[a-z]/);
   });
+
+  it('lists IAM users with their groups, group policies and permissions boundary (sparring R1-F2)', () => {
+    for (const call of ['list-access-keys', 'list-groups-for-user', 'list-attached-group-policies', 'list-group-policies', 'iam get-user']) {
+      expect(text).toContain(call);
+    }
+  });
 });
