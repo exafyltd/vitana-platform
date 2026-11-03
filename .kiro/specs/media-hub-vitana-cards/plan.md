@@ -26,8 +26,24 @@ Everything else on the screen (search, Shorts / Music / Podcasts tabs, upload, t
 5. The staging spec pattern for an authenticated screen is `tests/e2e/staging/vtid-05330-profile-posts-full-width.staging.spec.ts`
    (sign-in with `TEST_USER_EMAIL` / `TEST_USER_PASSWORD`, read-only via `./staging-guard`).
 
+## Premises, checked in `exafyltd/vitana-v1` at `6b9137ac5` (sparring round 1, R1-F1)
+Checked with `git show origin/main:<path>` and `grep` on that commit:
+- `src/pages/community/MediaHub.tsx:2` → `import { EnrichmentCardStrip } from "@/components/vitana/EnrichmentCardStrip";`
+- `src/pages/community/MediaHub.tsx:875` → `<EnrichmentCardStrip screen="community" layout="carousel" className={isMobile ? "mt-2 mb-2" : "mb-4"} />`
+- `src/components/media/spotlight/MediaHubSpotlight.tsx` contains no `EnrichmentCardStrip`.
+- `src/components/vitana/EnrichmentCardStrip.tsx` exists and is the only definition of the strip.
+- The route `/comm/media-hub` is `src/App.tsx:1263` → `MediaHub`.
+
+## Repo of each change (sparring R1-F4)
+- **Change 1 — repo `exafyltd/vitana-v1`:** the file edit in `MediaHub.tsx`.
+- **Change 2 — repo `exafyltd/vitana-v1`:** the staging spec goes in `tests/e2e/staging/`, the folder the vitana-v1
+  staging specs use (for example `tests/e2e/staging/smoke.staging.spec.ts`). Its `./staging-guard` import is copied in by
+  the STAGING-VERIFY runner, the same way the existing vitana-v1 specs use it.
+- **Change 3 — repo `exafyltd/vitana-v1`:** the validation evidence goes in `docs/validation/<VTID>/` of vitana-v1.
+- The plan spec itself lives in `exafyltd/vitana-platform`, because PLAN-SPAR only runs there. No product code changes there.
+
 ## Change
-- **Change 1 (lane `media-hub-cards`):** delete line 875 and the import on line 2 of `src/pages/community/MediaHub.tsx`.
+- **Change 1 (lane `media-hub-cards`, repo `exafyltd/vitana-v1`):** delete line 875 and the import on line 2 of `src/pages/community/MediaHub.tsx`.
   No other line changes. The gateway keeps generating the `community` cards; nothing else on the app requests them
   (`screen="community"` has one mount). Removing the server side is a separate follow-up, not part of this plan.
 - **Change 2 (same lane):** a read-only staging spec `tests/e2e/staging/media-hub-vitana-cards.staging.spec.ts` that
