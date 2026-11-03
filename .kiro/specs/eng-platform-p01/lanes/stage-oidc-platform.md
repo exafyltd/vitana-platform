@@ -1,6 +1,6 @@
 ---
 lane: stage-oidc-platform
-state: ready
+state: parked
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -21,8 +21,9 @@ paths:
   - services/gateway/test/eng-platform-stage-oidc-workflows.test.ts
   - services/gateway/test/vtid-05009-provision-pack-token-workflow.test.ts
   - docs/validation/**
-updated: 2026-11-03T14:43Z
+updated: 2026-11-03T15:05Z
 vtid: VTID-05518
+parked_from: ready
 ---
 # Lane: stage-oidc-platform (repo vitana-platform)
 Tasks in `tasks.md`. VTID from PLAN-SPAR; never by hand.
@@ -269,3 +270,5 @@ reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
 reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
 ### 2026-11-03T14:43Z · pm-agent · update
 reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
+### 2026-11-03T15:05Z · pm-agent · ready → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
