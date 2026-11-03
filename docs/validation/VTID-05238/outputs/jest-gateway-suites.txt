@@ -1,0 +1,414 @@
+npm warn Unknown env config "node-linker". This will stop working in the next major version of npm.
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04478-partner-onboarding-checklist.test.ts
+  required steps per partner type (spec §6.1)
+    ✓ matches the spec table (39 ms)
+    ✓ never requires the optional team step (1 ms)
+  buildChecklist
+    ✓ starts a new shop at the company step, not ready to submit (1 ms)
+    ✓ names the missing company facts and needs a VAT id only inside the EU (1 ms)
+    ✓ marks terms done only for the version in force (1 ms)
+    ✓ reads stored rows only for non-derived steps (1 ms)
+    ✓ marks steps a type does not need as not_required, and team from the member count
+    ✓ is complete only when every required step is done
+  engine decision
+    ✓ sends a submitted org with open steps to needs_action and names them (1 ms)
+    ✓ plans only allowed transitions, and nothing from other states (9 ms)
+  parity with the migration
+    ✓ stores exactly the non-derived steps (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04953-checklist-policy.test.ts
+  B4 — service provider requirements
+    ✓ drops tracking_test and billing_mandate for service providers only (2 ms)
+    ✓ shows them as not_required on a service provider checklist (1 ms)
+  B3 — mapping without an external catalogue connection
+    ✓ is done with one complete offering, todo without one (1 ms)
+    ✓ ignores a stale stored mapping row when there is no connection (1 ms)
+    ✓ keeps the stored row as the source of truth when a connection exists
+    ✓ a service provider with verification, a catalogue and one complete offering is complete
+    ✓ without verification only verification stays open (the EXAFY case before approval) (1 ms)
+  isCompleteOffering
+    ✓ accepts every field ProductSchema requires, listed or not (1 ms)
+    ✓ rejects an offering with no title
+    ✓ rejects an offering with no price (1 ms)
+    ✓ rejects an offering with bad currency (1 ms)
+    ✓ rejects an offering with no link
+    ✓ rejects an offering with no origin country
+    ✓ rejects an offering with ships nowhere
+
+  console.warn
+    [VTID-04895] partner terms unreadable, treating as not published: Unexpected table in test: partner_terms_versions
+
+      101 |     return row as PublishedTerms;
+      102 |   } catch (e) {
+    > 103 |     console.warn(`[VTID-04895] partner terms unreadable, treating as not published: ${e instanceof Error ? e.message : String(e)}`);
+          |             ^
+      104 |     return null;
+      105 |   }
+      106 | }
+
+      at loadCurrentTerms (src/services/partner-terms.ts:103:13)
+      at loadChecklist (src/routes/partner-onboarding.ts:186:46)
+      at respondWithState (src/routes/partner-onboarding.ts:229:24)
+
+  console.warn
+    [VTID-04895] terms acceptance refused for org org-1: delegated session
+
+      402 |   const delegation = await requestDelegation(supabase, (req as AuthenticatedRequest).auth_raw_claims as Record<string, unknown> | undefined);
+      403 |   if (delegation !== 'direct') {
+    > 404 |     console.warn(`[VTID-04895] terms acceptance refused for org ${orgId}: ${delegation} session`);
+          |             ^
+      405 |     return res.status(403).json({
+      406 |       ok: false,
+      407 |       error: 'TERMS_ACCEPTANCE_REQUIRES_SUPPLIER',
+
+      at src/routes/partner-onboarding.ts:404:13
+
+  console.warn
+    [VTID-04895] terms acceptance refused for org org-1: delegated session
+
+      402 |   const delegation = await requestDelegation(supabase, (req as AuthenticatedRequest).auth_raw_claims as Record<string, unknown> | undefined);
+      403 |   if (delegation !== 'direct') {
+    > 404 |     console.warn(`[VTID-04895] terms acceptance refused for org ${orgId}: ${delegation} session`);
+          |             ^
+      405 |     return res.status(403).json({
+      406 |       ok: false,
+      407 |       error: 'TERMS_ACCEPTANCE_REQUIRES_SUPPLIER',
+
+      at src/routes/partner-onboarding.ts:404:13
+
+  console.warn
+    [VTID-04895] terms acceptance refused for org org-1: unknown session
+
+      402 |   const delegation = await requestDelegation(supabase, (req as AuthenticatedRequest).auth_raw_claims as Record<string, unknown> | undefined);
+      403 |   if (delegation !== 'direct') {
+    > 404 |     console.warn(`[VTID-04895] terms acceptance refused for org ${orgId}: ${delegation} session`);
+          |             ^
+      405 |     return res.status(403).json({
+      406 |       ok: false,
+      407 |       error: 'TERMS_ACCEPTANCE_REQUIRES_SUPPLIER',
+
+      at src/routes/partner-onboarding.ts:404:13
+
+PASS test/partner-onboarding.test.ts
+  mount
+    ✓ 401 JSON without a token (59 ms)
+  POST /start
+    ✓ requires an account email (7 ms)
+    ✓ rejects an unknown partner type (4 ms)
+    ✓ creates a draft org with the caller as org_admin and emits onboarding_started (10 ms)
+    ✓ returns the existing draft for the same user and type instead of creating another (6 ms)
+  GET /:orgId
+    ✓ is org_admin only (4 ms)
+    ✓ returns the org and its checklist (4 ms)
+  PATCH /:orgId/company
+    ✓ stores normalised facts while the org is a draft (5 ms)
+    ✓ is locked once the org is submitted or live (6 ms)
+    ✓ rejects an invalid fact (4 ms)
+  POST /:orgId/terms/accept
+    ✓ 503 when no terms are published (4 ms)
+    ✓ the terms table missing (migration not applied yet) reads as not published, never an error (30 ms)
+    ✓ refuses an OAuth client_id claim (assistant token): only the supplier accepts, never an assistant (7 ms)
+    ✓ refuses a session created for an OAuth client: only the supplier accepts, never an assistant (4 ms)
+    ✓ refuses a token without a session: only the supplier accepts, never an assistant (5 ms)
+    ✓ 409 when the text accepted is not the text published (content hash) (12 ms)
+    ✓ 400 for shown_locale "en+de": not a language this version carries (3 ms)
+    ✓ 400 for shown_locale "pt": not a language this version carries (3 ms)
+    ✓ 400 for shown_locale "zh-CN": not a language this version carries (2 ms)
+    ✓ 400 for shown_locale "fr": not a language this version carries (2 ms)
+    ✓ 400 for shown_locale "": not a language this version carries (4 ms)
+    ✓ 400 for shown_locale "DE": not a language this version carries (3 ms)
+    ✓ accepting while de is on screen binds the same German hash (3 ms)
+    ✓ accepting while en is on screen binds the same German hash (2 ms)
+    ✓ accepting while pt-BR is on screen binds the same German hash (2 ms)
+    ✓ accepting while ar is on screen binds the same German hash (3 ms)
+    ✓ a version published between reading and accepting is refused by the database as stale (409) (3 ms)
+    ✓ 409 when accepting a version other than the one in force (2 ms)
+    ✓ records who accepted which version, with IP and user agent, and emits terms_accepted (4 ms)
+    ✓ treats a second acceptance of the same version as already done (3 ms)
+  GET /:orgId/terms (VTID-04895)
+    ✓ nothing published (10 ms)
+    ✓ shows the caller language, the binding German text, the version and its German hash (5 ms)
+    ✓ German when the caller language has no translation (never English); Arabic is right-to-left (7 ms)
+    ✓ an acceptance of an earlier version with the same baseline (editorial update) still counts (6 ms)
+    ✓ an acceptance of an older baseline (material update) needs re-acceptance; the org stays as it is (4 ms)
+  POST /:orgId/submit
+    ✓ 409 with the missing prerequisites and no transition (3 ms)
+    ✓ moves draft -> submitted -> verifying -> needs_action and names the open steps (6 ms)
+    ✓ goes live with no admin call when every required step is done (4 ms)
+    ✓ re-submits from needs_action (3 ms)
+    ✓ refuses from a state that cannot submit (2 ms)
+    ✓ stops with 409 when another request moved the org first (3 ms)
+  POST /:orgId/detect (VTID-04481)
+    ✓ 400 when neither the body nor the org has a website (7 ms)
+    ✓ refuses a non-http(s) website before any fetch (3 ms)
+    ✓ is org_admin only (3 ms)
+    ✓ detects, keeps the result on the org, suggests a name and writes no company facts (5 ms)
+    ✓ 422 with the reason when the detector refuses the URL, and records nothing (3 ms)
+
+PASS test/vtid-04940-commerce-mcp-supplier-data.test.ts
+  cleanText
+    ✓ strips control, bidi and zero-width characters (5 ms)
+    ✓ single-line fields lose newlines and tabs, multiline keeps newlines
+    ✓ caps the length with an ellipsis (1 ms)
+    ✓ non-strings and blanks become null
+  supplier text stays inside supplier_data
+    ✓ shapeStatus: the injected business name is only reachable under supplier_data (2 ms)
+    ✓ shapeProduct: title, url and image are supplier_data; price and state are ours (1 ms)
+    ✓ every tool that returns supplier text also returns the note (1 ms)
+    ✓ the server instructions tell the assistant about supplier_data (1 ms)
+  result size
+    ✓ list_products sends at most MAX_LIST_ITEMS and says it truncated (1 ms)
+    ✓ a very long product title is capped in the result (1 ms)
+  tool catalogue (what the Directory review reads)
+    ✓ the exact tool names
+    ✓ get_onboarding_status has a title, a description and a read-only or destructive hint (1 ms)
+    ✓ create_business has a title, a description and a read-only or destructive hint (2 ms)
+    ✓ update_business has a title, a description and a read-only or destructive hint
+    ✓ add_product has a title, a description and a read-only or destructive hint (1 ms)
+    ✓ list_products has a title, a description and a read-only or destructive hint
+    ✓ update_product has a title, a description and a read-only or destructive hint (1 ms)
+    ✓ check_verification has a title, a description and a read-only or destructive hint (1 ms)
+    ✓ connect_store has a title, a description and a read-only or destructive hint (2 ms)
+    ✓ submit_for_verification has a title, a description and a read-only or destructive hint
+    ✓ the read-only tools are exactly the two readers (1 ms)
+
+PASS test/vtid-05238-step-owner.test.ts
+  stepOwner — null cases
+    ✓ a done step has no owner (4 ms)
+    ✓ a not_required step has no owner
+    ✓ a step not required for the type has no owner (1 ms)
+  stepOwner — fixed owners per step key
+    ✓ company → assistant
+    ✓ catalogue → assistant (1 ms)
+    ✓ mapping → assistant
+    ✓ terms → supplier
+    ✓ dpa → supplier (1 ms)
+    ✓ billing_mandate → supplier
+    ✓ results_channel → supplier (1 ms)
+    ✓ tracking_test → supplier
+    ✓ team → supplier
+    ✓ account → supplier
+    ✓ catalogue carrying catalogue_fixes is still the assistant
+  stepOwner — verification, first match wins
+    ✓ facts_changed in missing → assistant, ignoring stale detail.missing (R1-F1)
+    ✓ review_note present → supplier
+    ✓ review_note wins over an assistant code in detail.missing
+    ✓ supplier code email_not_verified → supplier
+    ✓ supplier code domain_proof → supplier
+    ✓ assistant code website → assistant (1 ms)
+    ✓ assistant code vat_id → assistant
+    ✓ assistant code vat_invalid → assistant
+    ✓ assistant code email_check_unavailable → assistant
+    ✓ assistant code domain_check_unavailable → assistant
+    ✓ assistant code vat_check_unavailable → assistant
+    ✓ website (R1-F2) in detail.missing → assistant (1 ms)
+    ✓ a supplier code and an assistant code together → supplier (first match wins)
+    ✓ Vitanaland-only code business_verification_pending → vitanaland
+    ✓ Vitanaland-only code business_verification → vitanaland
+    ✓ Vitanaland-only code licence → vitanaland (1 ms)
+    ✓ Vitanaland-only code licence_missing → vitanaland
+    ✓ in_progress with no code → vitanaland
+    ✓ an unknown code → supplier (a new check never silently claims the AI can do it)
+    ✓ a never-checked verification (todo, no codes) → assistant, not vitanaland (R2-F1)
+    ✓ an unknown code alongside an assistant code → supplier (unknown wins, R2-F2) (1 ms)
+    ✓ union of step.missing and detail.missing is considered when facts_changed is absent
+  buildChecklist — owner is additive only
+    ✓ sets owner on every open required step and nothing else (6 ms)
+    ✓ changes no field other than owner (compared to a run with owner stripped) (2 ms)
+    ✓ a done step (account) carries no owner (1 ms)
+    ✓ a stale verification row → owner assistant, old detail codes ignored (R1-F1 end to end)
+    ✓ verification with a website missing code → owner assistant (R1-F2) (1 ms)
+  shapeStatus — owner on open steps and byte-for-byte fields
+    ✓ carries owner on each open step (1 ms)
+    ✓ keeps every existing field and only adds owner (1 ms)
+    ✓ a step with no owner (done) carries no owner field
+  next_action.owner
+    ✓ owner of the next_action.step
+    ✓ typeless business_type pseudo-step → assistant
+    ✓ checklist complete (submit_for_verification) → assistant
+    ✓ no step and no tool → null owner (1 ms)
+    ✓ a supplier next step carries owner supplier and keeps supplier_action/link
+  ON_SCREEN_STEPS / STEP_TOOLS consistency (R2-F1)
+    ✓ ON_SCREEN_STEPS is exactly the five supplier-action keys — team excluded
+    ✓ every ON_SCREEN_STEPS key has fixed owner supplier (1 ms)
+    ✓ team keeps today byte-for-byte MCP shape (no done_on_vitanaland)
+
+PASS test/vtid-04941-commerce-mcp-automation.test.ts
+  nextAction
+    ✓ a typeless business is asked for its type through update_business (7 ms)
+    ✓ company → the assistant calls update_business (1 ms)
+    ✓ verification → the assistant calls check_verification
+    ✓ catalogue → the assistant calls add_product
+    ✓ mapping → the assistant calls connect_store (1 ms)
+    ✓ terms → only the supplier can do it, with the portal link
+    ✓ tracking_test → only the supplier can do it, with the portal link (1 ms)
+    ✓ billing_mandate → only the supplier can do it, with the portal link
+    ✓ dpa → only the supplier can do it, with the portal link (1 ms)
+    ✓ results_channel → only the supplier can do it, with the portal link
+    ✓ a complete checklist points at submit_for_verification
+    ✓ shapeStatus keeps next_step and adds next_action; verification and mapping are no longer on-screen-only (1 ms)
+  check_verification
+    ✓ runs the service as the signed-in user with a 10 s budget and returns status plus the verification (2 ms)
+    ✓ a partial result keeps its retry hint
+    ✓ needs an organization id; a service refusal becomes a structured error (1 ms)
+  connect_store
+    ✓ recognised shop: starts an idempotent connection and returns the portal link, never an OAuth URL (1 ms)
+    ✓ an existing connection is reported as reused (1 ms)
+    ✓ an unrecognised platform starts nothing and sends the supplier to Vitanaland
+    ✓ no website → prerequisites_missing; unreachable site → unavailable (1 ms)
+    ✓ needs an organization id
+  tool catalogue
+    ✓ the two new tools are write tools, not destructive, and idempotent (1 ms)
+
+PASS test/vtid-05209-company-suggestions.test.ts
+  countryFromHost
+    ✓ kraeuterhaus.de → DE (4 ms)
+    ✓ shop.example.at → AT
+    ✓ example.co.uk → GB (1 ms)
+    ✓ shop.example.co.uk → GB
+    ✓ example.uk → GB
+    ✓ www.example.com.au → AU
+    ✓ EXAMPLE.FR → FR
+    ✓ example.com → null
+    ✓ example.eu → null (1 ms)
+    ✓ example.io → null
+    ✓ example.co → null
+    ✓ example.ai → null (1 ms)
+    ✓ example.shop → null
+    ✓ localhost → null
+    ✓ null → null
+  countryFromVatId
+    ✓ DE123456789 → DE (1 ms)
+    ✓ de 123 456 789 → DE
+    ✓ ATU12345678 → AT
+    ✓ EL123456789 → GR
+    ✓ GB123456789 → null (1 ms)
+    ✓ 123456789 → null
+    ✓  → null
+    ✓ null → null
+  inferCompanyFacts
+    ✓ saved values always win (1 ms)
+    ✓ confirmed business email → website and, with no website known, its country (1 ms)
+    ✓ free-mail or unconfirmed email gives nothing
+    ✓ VAT prefix and website domain agreeing → the VAT source
+    ✓ reliable sources that disagree → no country (the supplier is asked) (1 ms)
+    ✓ a known website decides over the email domain; a .com website gives no country
+    ✓ a typed website without a scheme is read
+    ✓ an invalid saved country is not treated as saved (1 ms)
+  GET /company-suggestions (registration, no business yet)
+    ✓ 401 without a token (18 ms)
+    ✓ is reachable — not captured by GET /:orgId — and returns plain facts only (6 ms)
+    ✓ uses the website the supplier is typing (4 ms)
+    ✓ an unavailable email lookup gives no email-based suggestion (4 ms)
+  GET /:orgId/company-suggestions (business profile)
+    ✓ 403 for a caller who is not an admin of that business (3 ms)
+    ✓ saved values win and are not re-derived; the email is not read when both are saved (9 ms)
+    ✓ missing country: suggested from the saved VAT ID; read-only (2 ms)
+    ✓ saved VAT and website disagree → no country (2 ms)
+  Commerce MCP status: suggested values
+    ✓ adds suggested values and a confirm-first hint while country/website are missing (1 ms)
+    ✓ never suggests over a saved value
+    ✓ without suggestions the status is unchanged (existing callers) (1 ms)
+  Commerce MCP: every status-shaped response carries the suggestion
+    ✓ no handler calls shapeStatus without the suggestion argument (1 ms)
+
+PASS test/commerce-mcp.test.ts (6.38 s)
+  switch and discovery
+    ✓ off by default: /mcp and the metadata answer 404 (36 ms)
+    ✓ protected-resource metadata names this endpoint and Supabase Auth (7 ms)
+    ✓ staging links point at the staging app
+  sign-in
+    ✓ no token → 401 with the metadata link (3 ms)
+    ✓ an invalid or expired token → 401 (3 ms)
+    ✓ the user is never an exafy_admin over MCP, whatever the token says (3 ms)
+  MCP protocol
+    ✓ initialize negotiates the version and declares tools (5 ms)
+    ✓ notifications get 202 and no body; ping answers (4 ms)
+    ✓ tools/list names the onboarding tools; accepting terms is not one (3 ms)
+    ✓ unknown method and unknown tool are JSON-RPC errors; GET is 405 (5 ms)
+    ✓ a batch answers each request (1 ms)
+  tools
+    ✓ create_business goes through the onboarding service as the signed-in user (3 ms)
+    ✓ mapping without a connection points at a complete offering, never at connect_store (VTID-04953) (4 ms)
+    ✓ get_onboarding_status passes on the reviewer's request and an admin approval (VTID-04933) (4 ms)
+    ✓ submit_for_verification needs the supplier to confirm (3 ms)
+    ✓ a company change that voids a passed verification needs confirmation (4 ms)
+    ✓ a legal-name change before verification needs no confirmation (2 ms)
+    ✓ service refusals become structured errors (3 ms)
+    ✓ list_products returns plain prices and whether they are live (5 ms)
+    ✓ update_product maps plain fields onto the product patch (2 ms)
+    ✓ add_product needs the company country first (2 ms)
+  audit and limits
+    ✓ every tool call is audited with field names, never values (2 ms)
+    ✓ a per-user budget answers 429 (4 ms)
+  VTID-04968 client approval
+    ✓ refuses a client that is not approved, audits it, and runs no tool (2 ms)
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 8 passed, 8 total
+Tests:       232 passed, 232 total
+Snapshots:   0 total
+Time:        7.428 s
+Ran all test suites matching /test\/vtid-05238-step-owner.test.ts|test\/commerce-mcp.test.ts|test\/vtid-04941-commerce-mcp-automation.test.ts|test\/vtid-04478-partner-onboarding-checklist.test.ts|test\/vtid-04953-checklist-policy.test.ts|test\/partner-onboarding.test.ts|test\/vtid-05209-company-suggestions.test.ts|test\/vtid-04940-commerce-mcp-supplier-data.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

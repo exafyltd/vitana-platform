@@ -34,15 +34,18 @@ beforeEach(() => jest.clearAllMocks());
 
 describe('nextAction', () => {
   test('a typeless business is asked for its type through update_business', () => {
-    expect(nextAction(null, true, link)).toEqual({ step: 'business_type', tool: 'update_business', supplier_action: null, link: null });
+    // VTID-05238: next_action now carries owner (assistant for the typeless pseudo-step).
+    expect(nextAction(null, true, link)).toEqual({ step: 'business_type', tool: 'update_business', supplier_action: null, link: null, owner: 'assistant' });
   });
   test.each([
-    ['company', 'update_business'],
-    ['verification', 'check_verification'],
-    ['catalogue', 'add_product'],
-    ['mapping', 'connect_store'],
-  ])('%s → the assistant calls %s', (step, tool) => {
-    expect(nextAction({ next_step: step, complete: false }, false, link)).toEqual({ step, tool, supplier_action: null, link: null });
+    ['company', 'update_business', 'assistant'],
+    ['verification', 'check_verification', null],
+    ['catalogue', 'add_product', 'assistant'],
+    ['mapping', 'connect_store', 'assistant'],
+  ])('%s → the assistant calls %s', (step, tool, owner) => {
+    // VTID-05238: owner comes from the step's owner (none on these bare checklists) or its fixed owner;
+    // verification's owner varies with its codes, so with no codes here it is null.
+    expect(nextAction({ next_step: step as string, complete: false }, false, link)).toEqual({ step, tool, supplier_action: null, link: null, owner });
   });
   test.each(['terms', 'tracking_test', 'billing_mandate', 'dpa', 'results_channel'])('%s → only the supplier can do it, with the portal link', (step) => {
     const a = nextAction({ next_step: step, complete: false }, false, link);
