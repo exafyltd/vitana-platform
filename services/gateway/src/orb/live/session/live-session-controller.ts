@@ -31,8 +31,16 @@ import { handleContextUpdateMessage } from './context-update';
 import { resolveOperatorThreadIdForVoice } from './command-hub-voice-thread';
 import type { Response } from 'express';
 import { resolveOrbSurface, isWorkSurface } from '../surface';
-import { resolveAssistantProfile, profileTelemetry, clampRoleToProfile } from '../../profile/assistant-profile';
+import {
+  resolveAssistantProfile,
+  profileTelemetry,
+  clampRoleToProfile,
+  verifyWorkSurfaceProfile,
+  needsWorkSurfacePermit,
+  type AssistantProfile,
+} from '../../profile/assistant-profile';
 import { buildWorkSurfaceContextSection } from '../../profile/session-profile';
+import { fetchPermittedRoles } from '../../../lib/permitted-roles';
 import type WebSocket from 'ws';
 import WebSocketPkg from 'ws';
 import { randomUUID } from 'crypto';
@@ -979,6 +987,24 @@ This is your first spoken turn this session. Subsequent turns follow the
 normal conversation flow.`;
 }
 
+/**
+ * VTID-05453: the profile a session is served. A declared work surface is kept
+ * only for a signed-in caller who holds a permitted role for it. An unreadable
+ * permitted set, or a read that rejects, is served the member surface.
+ */
+async function verifiedSessionProfile(
+  req: AuthenticatedRequest,
+  declared: AssistantProfile,
+  isAnonymous: boolean,
+): Promise<AssistantProfile> {
+  const isExafyAdmin = !!req.identity?.exafy_admin;
+  if (!needsWorkSurfacePermit(declared, { isAnonymous, isExafyAdmin })) return declared;
+  const { getSupabase } = await import('../../../lib/supabase');
+  const permitted = await fetchPermittedRoles(getSupabase(), req.identity?.user_id ?? '', req.identity?.tenant_id ?? '')
+    .catch(() => ({ roles: null }));
+  return verifyWorkSurfaceProfile(declared, { isExafyAdmin, permittedRoles: permitted.roles });
+}
+
 export async function handleLiveSessionStart(
   req: AuthenticatedRequest,
   res: Response,
@@ -1178,18 +1204,21 @@ export async function handleLiveSessionStart(
   // context, greeting or upstream setup is built. The screen declares its
   // surface and view role (widget init/updateContext); the verified token
   // confirms it. Every consumer reads session.assistantProfile from here on.
-  const assistantProfile = resolveAssistantProfile({
+  const declaredAssistantProfile = resolveAssistantProfile({
     declaredSurface: (body as any).surface,
     declaredViewRole: (body as any).view_role,
     currentRoute: typeof (body as any).current_route === 'string' ? (body as any).current_route : null,
     isAnonymous: isAnonymousSession,
     isExafyAdmin: !!req.identity?.exafy_admin,
   });
+  // VTID-05453: a declared work surface the caller may not open is served the member surface.
+  const assistantProfile = await verifiedSessionProfile(req, declaredAssistantProfile, isAnonymousSession);
+  const workSurfaceRefused = declaredAssistantProfile.isWorkSurface && !assistantProfile.isWorkSurface;
   emitOasisEvent({
     vtid: 'VTID-04560',
     type: 'orb.session.profile.resolved',
     source: 'orb-live',
-    status: assistantProfile.resolution === 'unverified' ? 'warning' : 'info',
+    status: workSurfaceRefused || assistantProfile.resolution === 'unverified' ? 'warning' : 'info',
     message: `assistant profile: surface=${assistantProfile.surface} role=${assistantProfile.role ?? 'pending'} (${assistantProfile.resolution})`,
     payload: {
       session_id: sessionId,
@@ -1451,11 +1480,15 @@ export async function handleLiveSessionStart(
 
     const bodyRoute = typeof (body as any).current_route === 'string' ? (body as any).current_route : '';
     // VTID-04414 (WS-1.3): one role rule for every path that builds the voice context.
-    const brainRole = resolveBrainRole({
-      isMobile: clientContext.isMobile,
-      route: bodyRoute,
-      identityRole: (bootstrapIdentity as any).active_role || null,
-    });
+    // VTID-05453: a refused work surface still names its route, and that route
+    // must not lift the member brain to the work role; the member-clamped role decides.
+    const brainRole = workSurfaceRefused
+      ? clampRoleToProfile(assistantProfile, (bootstrapIdentity as any).active_role || null) ?? 'community'
+      : resolveBrainRole({
+          isMobile: clientContext.isMobile,
+          route: bodyRoute,
+          identityRole: (bootstrapIdentity as any).active_role || null,
+        });
 
     // VTID-04399 (WS-1.2): read the user's stored core context in parallel
     // with the fresh build. The stream-open gate uses it only if the fresh
@@ -1563,7 +1596,8 @@ export async function handleLiveSessionStart(
         // the session so a reconnect rebuild re-applies them.
         const contextExtras = {
           autopilotOffer: autopilotOffer || null,
-          adminBriefing: adminBriefing || null,
+          // VTID-05453: a member session never holds the admin briefing.
+          adminBriefing: isAdminRole(resolvedRole) ? adminBriefing || null : null,
         };
         const resolvedIsAdmin = isAdminRole(resolvedRole);
         if (resolvedRole === 'community' && autopilotOffer) {
@@ -2038,10 +2072,13 @@ export async function handleLiveSessionStart(
 
   // VTID-04309: bind a Command Hub voice session to the Operator Console
   // thread on screen (validated UUID, command-hub surface only).
-  const operatorThreadId = resolveOperatorThreadIdForVoice(
-    (body as any).operator_thread_id,
-    typeof (body as any).current_route === 'string' ? (body as any).current_route : null,
-  );
+  // VTID-05453: only a session the profile serves as the Command Hub binds to the thread.
+  const operatorThreadId = assistantProfile.surface === 'command-hub'
+    ? resolveOperatorThreadIdForVoice(
+        (body as any).operator_thread_id,
+        typeof (body as any).current_route === 'string' ? (body as any).current_route : null,
+      )
+    : null;
   if (operatorThreadId) session.operator_thread_id = operatorThreadId;
 
   // VTID-02020: pin the conversation_id + mark resumed-from-history

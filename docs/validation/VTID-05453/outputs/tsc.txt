@@ -1,0 +1,3 @@
+cd services/gateway && npx tsc --noEmit
+Head: kiro/mt-track-s-authz/work-surface-permission on origin/main 4dc5b302bf (lane changes uncommitted at the time of this run).
+Result: exit 0, no diagnostics (tsc prints nothing on success).
