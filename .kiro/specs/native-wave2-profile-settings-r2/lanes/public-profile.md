@@ -1,6 +1,6 @@
 ---
 lane: public-profile
-state: ready
+state: in-review
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -18,8 +18,11 @@ paths:
   - apps/mobile/parity/ledger.json
   - src/i18n/*/publicProfileNative.json
   - docs/validation/**
-updated: 2026-11-01T03:04Z
+updated: 2026-11-01T17:37Z
 vtid: VTID-05430
+claimed_by: kiro-exafyltd-202611011658-9f52
+branch: kiro/native-wave2-profile-settings-r2/public-profile
+pr: https://github.com/exafyltd/vitana-v1/pull/1541
 ---
 # Public profile + legacy redirect port — `/u/:identifier` and `/profile/:id` in the `(public)` group
 Plan: `.kiro/specs/native-wave2-profile-settings-r2/` — `plan.md` (plan block, decision 1b) and the `tasks.md` section
@@ -53,3 +56,7 @@ their own lane, in the `(public)` group).
 
 ### 2026-11-01T03:04Z · ci-plan-spar · ready (VTID allocated)
 VTID-05430 allocated after policy approval (converged-auto-v1).
+### 2026-11-01T17:08Z · kiro-exafyltd-202611011658-9f52 · ready → executing
+Claimed by kiro-exafyltd-202611011658-9f52 (Kiro Web driver, seat exafyltd); built by a delegated builder under this session on vitana-v1 branch `kiro/native-wave2-profile-settings-r2/public-profile`.
+### 2026-11-01T17:37Z · kiro-exafyltd-202611011658-9f52 · executing → in-review
+PR https://github.com/exafyltd/vitana-v1/pull/1541. Evidence: vitana-v1 `docs/validation/VTID-05430/` (commands.log, red-on-base, verification.md, staging-tests.json).
