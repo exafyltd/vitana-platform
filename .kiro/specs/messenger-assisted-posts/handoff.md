@@ -3,9 +3,10 @@ slug: messenger-assisted-posts
 author: kiro
 author_seat: exafy
 executor: kiro
-next_actor: kiro
-state: drafted
-updated: 2026-11-03T13:30Z
+next_actor: claude
+state: parked
+updated: 2026-11-03T16:00Z
+parked_from: drafted
 ---
 
 Assisted posting inside the Vitana Messenger conversation: a member receives a "Make a Post" invitation, chooses one
@@ -20,3 +21,6 @@ checks; migrations are approved by the owner before they touch the shared databa
 Created the planning spec: requirements, design, tasks (five lanes), plan, and five lane files (all `ready`, path-free
 until executing). Next: push `plan(messenger-assisted-posts)` so CI PLAN-SPAR spars it. Sparring responses are answered
 in `sparring/responses-<n>.md`. VTIDs come only from CI policy approval.
+
+### 2026-11-03T16:00Z · ci-plan-spar · drafted → parked
+Not converged after 2 sparring sessions (evidence_floor_not_met). Parked with the open findings in sparring/.
