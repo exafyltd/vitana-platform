@@ -36,3 +36,6 @@ commit was made at 19:53Z.
 
 ### 2026-11-01T20:54Z · ci-plan-spar · drafted → approved
 Converged; approved by policy converged-auto-v1. 2 lane(s) got a VTID and are handed to Kiro.
+
+### 2026-11-03T13:45Z · kiro-hotmail-202611011452-6d16 · takeover
+Took over the driver from kiro-202611011939-b712 (heartbeat stale since 2026-11-01T20:27Z; takeover recorded by plan-driver heartbeat). The _plan and approvals-auth claims follow that session's release. Amendment 1 adds services/gateway/test/orb-tools/developer-tools.test.ts to the approvals-auth lane paths; PR #4606 fails Lane scope without it. WS-IA (ia-architecture-map-r2) is NOT taken: kiro-202611011939-b712 keeps it.
