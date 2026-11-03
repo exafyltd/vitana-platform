@@ -48,6 +48,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write # eng-platform-p01: OIDC for the staging AWS role
 
 env:
   # A handful of rows apart is expected transient lag if CDC is healthy;
@@ -67,8 +68,10 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_STAGING_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_STAGING_SECRET_ACCESS_KEY }}
+          # eng-platform-p01: OIDC when vars.AWS_DRIFT_ROLE_ARN is set; the static keys only while it is unset.
+          role-to-assume: ${{ vars.AWS_DRIFT_ROLE_ARN }}
+          aws-access-key-id: ${{ !vars.AWS_DRIFT_ROLE_ARN && secrets.AWS_STAGING_ACCESS_KEY_ID || '' }}
+          aws-secret-access-key: ${{ !vars.AWS_DRIFT_ROLE_ARN && secrets.AWS_STAGING_SECRET_ACCESS_KEY || '' }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Query Aurora app_users count (RDS Data API)
