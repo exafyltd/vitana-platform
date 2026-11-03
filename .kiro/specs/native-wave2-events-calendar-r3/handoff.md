@@ -3,11 +3,13 @@ slug: native-wave2-events-calendar-r3
 author: kiro
 executor: kiro
 next_actor: kiro
-state: drafted
+state: approved
 author_seat: exafyltd
-updated: 2026-11-02T19:09Z
+updated: 2026-11-03T17:45Z
 spar_refs:
   - exafyltd/vitana-v1: main
+sparring_record: .kiro/specs/native-wave2-events-calendar-r3/sparring/verdict.md
+vtids: [VTID-05530, VTID-05531, VTID-05532]
 ---
 # Handoff — Native Wave 2: Events / Meetups / Calendar / Reminders / Live-rooms screen ports
 Second Wave 2 screen-port batch of the native Maxina app program (`docs/programs/native-app/NATIVE-APP-PLAN.md`,
@@ -25,3 +27,6 @@ Re-plan of `native-wave2-events-calendar-r2` (PR #4605) under a new slug; both s
 Holder of the `native-wave2-events-calendar-r3/_plan` claim. Re-plan of `native-wave2-events-calendar-r2` (PR #4605), because both sparring sessions of `native-wave2-events-calendar-r2` (PR #4605) escalated on round 1 with `evidence_floor_not_met` (0 premise checks, 0 findings) while the shared GitHub API quota was low, so the partner's read_file calls failed; PLAN-SPAR parked it. It is the plan of `native-wave2-events-calendar` (PR #4271). Copied the plan, tasks, requirements, design and lane files from the old PR head; lane `vtid` keys removed (CI allocates on convergence), lane `paths` widened to the shared native-infra files a screen port produces, lane logs restarted, sparring rounds left on the old PR. One commit, one session. No VTID allocated, no product code changed, no live system touched. Next: PLAN-SPAR spars the `plan(native-wave2-events-calendar-r3)` PR; this session answers each round in `sparring/responses-<n>.md`.
 ### 2026-11-03T12:21Z · kiro-exafyltd-202611011658-9f52 · drafted (re-plan session)
 Session 1 (`ea0f4764-44af-4794-a03d-3136f2ebb742`) escalated with zero findings (`evidence_floor_not_met`). One plan-block line added to open the re-plan session; no plan content changed.
+
+### 2026-11-03T17:45Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 3 lane(s) got a VTID and are handed to Kiro.
