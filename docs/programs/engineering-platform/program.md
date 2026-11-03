@@ -6,6 +6,7 @@ priority: 3
 repos: [vitana-platform, vitana-v1]
 specs:
   - vitana-platform:eng-platform-p01
+  - vitana-platform:eng-platform-p02
 docs:
   - vitana-platform:docs/ENGINEERING-PLATFORM-PLAN.md
 exit_criteria:
