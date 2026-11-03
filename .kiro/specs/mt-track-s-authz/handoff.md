@@ -36,3 +36,9 @@ commit was made at 19:53Z.
 
 ### 2026-11-01T20:54Z · ci-plan-spar · drafted → approved
 Converged; approved by policy converged-auto-v1. 2 lane(s) got a VTID and are handed to Kiro.
+
+### 2026-11-03T15:05Z · kiro-hotmail-202611011452-6d16 · amendment wsp-1
+Lane work-surface-permission-v2 supersedes work-surface-permission (VTID-05453, seat exafy). Reason: the exafy lane's
+paths cannot be amended from another seat, and `services/gateway/test/routes/orb-livekit.test.ts` pins the previous
+contract in three assertions (rule 42h, OPEN-1). The v2 lane carries the same work with that test in scope. PR #4654
+(draft, head `5a7406dde6`) closes when v2 merges.
