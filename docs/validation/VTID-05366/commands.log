@@ -1,0 +1,19 @@
+# VTID-05366 companion-enrichment-moments — local only; no production, staging or database access of any kind
+# Rebuilt as ONE lane commit on origin/main e79092087b (the earlier branch of PR #4536 was stacked on lane 1 and named two lanes).
+# Code under test: tree bf113915ce = lane net diff (900d76c485..da9b13974c, 10 files) applied on e79092087b.
+# Base-red (moments.ts swapped to origin/main e79092087b, this lane's tests kept):
+cd services/gateway && npx jest --runInBand test/vtid-05366-companion-enrichment-moments.test.ts   # BASE RED: 12 failed, 3 passed (ENRICHMENT_MOMENTS / enrichment_e* missing)
+cd services/gateway && npx jest --runInBand test/vtid-05101-companion-generators.test.ts   # BASE RED: 1 failed, 26 passed (17-moment contract)
+# Green on the lane tree, one suite per run, serially:
+cd services/gateway && npx jest --runInBand test/vtid-05366-companion-enrichment-moments.test.ts   # 15/15 passed — outputs/jest-companion.txt
+cd services/gateway && npx jest --runInBand test/vtid-05367-companion-enrichment-signals.test.ts   # 14/14 passed — outputs/jest-companion.txt
+cd services/gateway && npx jest --runInBand test/vtid-05099-companion-messages.test.ts   # 33/33 passed — outputs/jest-companion.txt
+cd services/gateway && npx jest --runInBand test/vtid-05099-proactive-match-daily-limit.test.ts   # 5/5 passed — outputs/jest-companion.txt
+cd services/gateway && npx jest --runInBand test/vtid-05100-companion-delivery.test.ts   # 24/24 passed — outputs/jest-companion.txt
+cd services/gateway && npx jest --runInBand test/vtid-05101-companion-generators.test.ts   # 27/27 passed (17-moment contract) — outputs/jest-companion.txt
+cd services/gateway && npx jest --runInBand test/vtid-05171-companion-wiring.test.ts   # 28/28 passed — outputs/jest-companion.txt
+cd services/gateway && npx jest --runInBand test/companion-qa.test.ts   # 38/38 passed — outputs/jest-companion.txt
+# total 8 suites, 184/184
+cd services/gateway && NODE_OPTIONS=--max-old-space-size=8192 npx tsc --noEmit -p .   # exit 2: only the 2 pre-existing TS2664 (server-timing.ts, latency-tracker.ts), 0 in touched files — outputs/tsc.txt
+node scripts/collab/queue.mjs validate --base <origin/main> --head HEAD --branch <lane branch>   # exit 0 (one lane, one session)
+node scripts/collab/queue.mjs scope-check --repo . --base <origin/main> --head HEAD --branch <lane branch> --plan-repo exafyltd/vitana-platform   # exit 0

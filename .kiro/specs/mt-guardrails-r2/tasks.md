@@ -35,6 +35,17 @@ Acceptance: the up+seed script runs green locally and in a CI service container;
 installed and version-pinned; no call to any live system; fixtures idempotent. PR title
 `VTID-xxxxx (mt-guardrails-r2/local-test-stack): —`; commits carry `Collab-Session` /
 `Collab-Lane: mt-guardrails-r2/local-test-stack`.
+<!-- lane: local-test-stack-v2 -->
+## local-test-stack-v2 — supersedes local-test-stack (never built); same T0–T5 and acceptance (repo vitana-platform)
+Allowed paths: `supabase/tests/fixtures/**`, `supabase/tests/local-stack/**`, `scripts/mt/stack/**`,
+`docs/multitenancy/LOCAL-STACK.md`, `.github/workflows/MT-LOCAL-STACK.yml`.
+- [ ] T0–T5 exactly as in the `local-test-stack` group above (pins, replay, skip-list, fixtures, smoke).
+- [ ] T6 `.github/workflows/MT-LOCAL-STACK.yml`: `on: pull_request` with a path filter on the paths above,
+      `runs-on: ubuntu-24.04`, `permissions: contents: read`, no secrets, runs `scripts/mt/stack/smoke.sh`. The T0
+      spike is read from this job's log on the lane PR.
+Acceptance: everything in the `local-test-stack` acceptance, and `MT-LOCAL-STACK` is green on the PR head with the
+smoke output (required tables present, pgtap present, skip-list entries still failing) recorded in
+`docs/validation/<vtid>/`. No secret, no live endpoint.
 <!-- lane: generated-inventories -->
 ## generated-inventories — generated inventories + DB lint (repo vitana-platform)
 Allowed paths:

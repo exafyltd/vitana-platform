@@ -147,6 +147,17 @@ constant from `docs/MULTI-TENANT-PLAN.md` §2 is the health-table list.
    at `MORNING-SYSTEM-HEALTH-CHECK.yml:546` explaining why row 21b keeps `secrets.SUPABASE_URL` (the RPC reads
    Supabase-only tenant tables; s2 R1-F1). The binding itself is not changed. Governance path, not a protected gate file →
    `executor: kiro` with the reviewer agent. Depends on lanes 2–5.
+**Lane 1 superseded by `local-test-stack-v2` (2026-11-02, never built).** Task 1 is a spike that needs `docker run`
+to boot the pinned image, and the session hosts that build lanes have no container runtime (Kiro Web: podman
+"could not find a working conmon binary"; no `psql`/`pg_prove`). The lane's `paths` hold no workflow, so its own PR
+cannot run the spike either. `local-test-stack-v2` has the same tasks, acceptance, pins and end point, plus one file:
+`.github/workflows/MT-LOCAL-STACK.yml`, a `pull_request` job (`runs-on: ubuntu-24.04`, path filter on the lane's
+`paths`, `permissions: contents: read`, no secrets, no network target other than Docker Hub and the Ubuntu archive)
+that runs `scripts/mt/stack/smoke.sh`. The spike result (pgtap availability, replay failures, required tables) is
+read from that job's log and committed as the skip-list and `docs/validation/<vtid>/` evidence. `ci-wiring` may later
+fold the job into `MT-GUARDRAILS.yml` and delete this file; until then it is the "CI service container" run that the
+acceptance names. `generated-inventories`, `isolation-suite` and `ci-wiring` keep `depends_on: local-test-stack`: once `local-test-stack-v2` merges, the old lane is closed `done` (superseded by v2, merge SHA recorded) by a commit under its own `Collab-Lane`, so those dependencies resolve with no lane-file edit from `_plan`.
+
 ## Pinned versions (496d R2-F1 — lanes 1 and 6 copy these strings verbatim)
 | What | Exact value | Why this value |
 |---|---|---|

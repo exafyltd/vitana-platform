@@ -1,0 +1,29 @@
+{
+ "vtid": "VTID-05366",
+ "service": "gateway",
+ "tests": [
+  {
+   "kind": "http",
+   "name": "gateway alive after the change",
+   "path": "/alive",
+   "expect_status": 200
+  },
+  {
+   "kind": "http",
+   "name": "companion messages stay disabled on staging (read-only GET, no member data)",
+   "path": "/api/v1/companion/status",
+   "expect_status": 200,
+   "expect_json": {
+    "ok": true,
+    "mode": "disabled-on-staging",
+    "env": "staging"
+   }
+  },
+  {
+   "kind": "existing",
+   "ref": "npx jest test/vtid-05366-companion-enrichment-moments.test.ts test/vtid-05367-companion-enrichment-signals.test.ts test/vtid-05099-companion-messages.test.ts test/vtid-05099-proactive-match-daily-limit.test.ts test/vtid-05100-companion-delivery.test.ts test/vtid-05101-companion-generators.test.ts test/vtid-05171-companion-wiring.test.ts test/companion-qa.test.ts",
+   "cwd": "services/gateway",
+   "reason": "The change adds the 11 enrichment moments the companion tick ranks. The tick never runs on staging (the engine answers disabled-on-staging, staging shares the production database, rule 48), so the behaviour is proven offline: vtid-05366 pins the absolute priorities E1=39..E11=29, the topics and repeat windows, that a non-eligible card never fires, that a community-off member never gets E3/E6/E7, that the Index, a lapsed diary and the Guided Journey always win, that E11 still beats feature_tip/invite, that the intent is a rule-41 instruction with the card copy as facts and the DM card carries numbers only, and end to end through the tick with the real bulk reads (empty member gets E1, no E6/E7 without Meta OAuth, a dismissed card is skipped). The VTID-05101 every-moment contract covers all 17 moments."
+  }
+ ]
+}

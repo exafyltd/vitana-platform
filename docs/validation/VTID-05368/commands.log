@@ -1,0 +1,12 @@
+# VTID-05368 messenger-companion-verification: local only; no production, staging or database access of any kind
+# Tree under test: origin/main 0f4404f07c (lanes 1 and 2 merged) + this lane's test and docs only, in worktree
+# .worktrees/mvc2-signals on branch kiro/messenger-vitana-cards-v2/r2/messenger-companion-verification. One suite per run, serially.
+cd services/gateway && npx jest --runInBand test/vtid-05368-messenger-companion-verification.test.ts   # 7/7 passed
+cd services/gateway && npx jest --runInBand test/vtid-05366-companion-enrichment-moments.test.ts       # 15/15 passed
+cd services/gateway && npx jest --runInBand test/vtid-05367-companion-enrichment-signals.test.ts       # 14/14 passed
+cd services/gateway && npx jest --runInBand test/vtid-05099-companion-messages.test.ts                 # 33/33 passed
+cd services/gateway && npx jest --runInBand test/vtid-05099-proactive-match-daily-limit.test.ts        # 5/5 passed
+cd services/gateway && npx jest --runInBand test/vtid-05100-companion-delivery.test.ts                 # 24/24 passed
+cd services/gateway && npx jest --runInBand test/vtid-05101-companion-generators.test.ts               # 27/27 passed
+# total 7 suites, 125/125 passed: outputs/jest-companion.txt
+cd services/gateway && NODE_OPTIONS=--max-old-space-size=8192 npx tsc --noEmit -p .   # exit 2: 2 pre-existing TS2664 (server-timing.ts, latency-tracker.ts), 0 in touched files: outputs/tsc.txt

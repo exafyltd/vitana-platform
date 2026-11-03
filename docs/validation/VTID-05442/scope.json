@@ -1,0 +1,11 @@
+{
+  "vtid": "VTID-05442",
+  "kind": "docs",
+  "paths": [
+    ".kiro/specs/mt-track-s-r2/lanes/s-j-route-inventory.md",
+    "docs/validation/VTID-05442/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05442/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

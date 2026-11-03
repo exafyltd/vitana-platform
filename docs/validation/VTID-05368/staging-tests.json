@@ -1,0 +1,29 @@
+{
+ "vtid": "VTID-05368",
+ "service": "gateway",
+ "tests": [
+  {
+   "kind": "http",
+   "name": "gateway alive after the change",
+   "path": "/alive",
+   "expect_status": 200
+  },
+  {
+   "kind": "http",
+   "name": "companion messages stay disabled on staging (read-only GET, no member data)",
+   "path": "/api/v1/companion/status",
+   "expect_status": 200,
+   "expect_json": {
+    "ok": true,
+    "mode": "disabled-on-staging",
+    "env": "staging"
+   }
+  },
+  {
+   "kind": "existing",
+   "ref": "npx jest test/vtid-05368-messenger-companion-verification.test.ts test/vtid-05366-companion-enrichment-moments.test.ts test/vtid-05367-companion-enrichment-signals.test.ts test/vtid-05100-companion-delivery.test.ts test/vtid-05101-companion-generators.test.ts",
+   "cwd": "services/gateway",
+   "reason": "A real Vitana DM is a write to the production database that staging shares, so no send runs on staging (rule 48) and the engine answers disabled-on-staging. The send path is proven offline in vtid-05368: in live mode a member who set nothing up gets exactly one DM whose metadata.card is { kind: 'vitana_card', v: 1, card_type: 'E1', params: {} } and a set-up member gets the morning greeting (F4), never an enrichment card; the default pacer is canSurfaceProactively(member, 'messenger_companion'), once per member, and a paused member gets nothing; a second tick the same local day sends nothing (already_today); staff mode sends the card to staff only; E6/E7 are never offered while the Meta OAuth client is unset."
+  }
+ ]
+}

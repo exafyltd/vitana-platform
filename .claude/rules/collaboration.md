@@ -100,8 +100,15 @@ A new plan starts at `drafted`, a new lane at `ready`.
   `### <ISO time> · <session> · review`, then `review: accept|changes`, `head: <sha>`,
   `reviewer: agent:vitana-lane-reviewer (<model>)`, PR link, findings summary, next actor. The reviewer
   session is never a session in the lane's executing log. An entry counts for the **current head** when
-  `Collab-Reviewed-Head` equals the PR head, or every commit after it only appends review entries to this lane file
-  (front matter unchanged) or is a `pm-agent` lane-state commit.
+  `Collab-Reviewed-Head` equals the PR head, or every commit after it either only appends review entries to this lane
+  file (front matter unchanged), is a `pm-agent` lane-state commit, or is a **clean merge of `main`**: a two-parent
+  merge whose second parent is on `origin/main`, whose tree equals Git's automatic merge of its parents (no conflict
+  resolution, no extra edits), that changes no protected gate file, and after which the PR's own diff
+  (`git diff <merge-base> <head>` over the PR's paths) is byte-identical to its diff at the reviewed head. A rebase, a
+  conflict resolution or any change to the PR's own diff needs a new review; required checks must be green on the final
+  head; a merge that brings in a change to a governance path or protected gate file (§3a) still needs a new review.
+  `land-guard.mjs review|merge --repo` enforces this for merges by the plan driver; the Project Manager does not apply
+  the clean-merge clause yet, so on the PM path a merge of `main` still needs a new review.
 - Branch per lane: `<kiro|claude>/<slug>/<lane-id>` (a cloud session whose branch name is assigned by the harness
   keeps it; the trailers then carry the match). PR title: `VTID-xxxxx (<slug>/<lane-id>): …`; PR body names the
   session id. **Match a PR to its lane only by these keys — never by recency or "the last thing Kiro did".**

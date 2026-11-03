@@ -1,0 +1,5 @@
+# red on origin/main 702299bc42: npx jest test/project-manager/github-app-token.test.ts
+  ● Test suite failed to run
+    Cannot find module '../../src/services/project-manager/github-app-token' from 'test/project-manager/github-app-token.test.ts'
+Test Suites: 1 failed, 1 total
+Tests:       0 total

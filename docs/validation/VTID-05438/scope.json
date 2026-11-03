@@ -1,0 +1,13 @@
+{
+  "vtid": "VTID-05438",
+  "kind": "infra",
+  "paths": [
+    "scripts/collab/land-guard.mjs",
+    "scripts/collab/land-guard.test.mjs",
+    ".claude/rules/collaboration.md",
+    "docs/validation/VTID-05438/**"
+  ],
+  "sparring_record": ".kiro/specs/review-survives-main-merge/sparring/verdict.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}
