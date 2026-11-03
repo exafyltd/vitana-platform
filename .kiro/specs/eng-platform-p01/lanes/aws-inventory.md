@@ -12,7 +12,7 @@ paths:
   - scripts/aws/inventory-readonly.sh
   - services/gateway/test/eng-platform-inventory-readonly.test.ts
   - docs/validation/**
-updated: 2026-11-03T15:04Z
+updated: 2026-11-03T15:10Z
 vtid: VTID-05515
 parked_from: ready
 ---
@@ -262,4 +262,6 @@ reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
 ### 2026-11-03T14:42Z · pm-agent · update
 reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
 ### 2026-11-03T15:04Z · pm-agent · ready → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
+### 2026-11-03T15:10Z · pm-agent · update
 park (stale_claim); claim released; Claude unavailable → exafyltd
