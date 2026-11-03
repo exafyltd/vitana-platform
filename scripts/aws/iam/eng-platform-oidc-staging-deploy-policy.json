@@ -61,12 +61,25 @@
       ]
     },
     {
+      "Sid": "TagNewStagingServiceOnCreate",
+      "Effect": "Allow",
+      "Action": [
+        "ecs:TagResource"
+      ],
+      "Resource": "arn:aws:ecs:eu-central-1:472838866351:service/Vitana-ECS-Cluster/vitana-community-app-staging",
+      "Condition": {
+        "StringEquals": {
+          "ecs:CreateAction": "CreateService"
+        }
+      }
+    },
+    {
       "Sid": "PassTaskRolesToEcsOnly",
       "Effect": "Allow",
       "Action": [
         "iam:PassRole"
       ],
-      "Resource": "arn:aws:iam::472838866351:role/vitana-*",
+      "Resource": "${STAGING_TASK_ROLE_ARNS}",
       "Condition": {
         "StringEquals": {
           "iam:PassedToService": "ecs-tasks.amazonaws.com"
@@ -74,14 +87,20 @@
       }
     },
     {
-      "Sid": "DescribeStagingSecrets",
+      "Sid": "DescribeSecretsTheStagingDeploysWire",
       "Effect": "Allow",
       "Action": [
         "secretsmanager:DescribeSecret"
       ],
       "Resource": [
         "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/*/staging/*",
-        "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/supabase/staging/*"
+        "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/supabase/prod/anon-key-*",
+        "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/supabase/prod/jwt-secret-*",
+        "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/supabase/prod/service-role-key-*",
+        "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/aurora/prod/database-url-*",
+        "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/aurora/prod/postgrest-authenticator-uri-*",
+        "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/github/pat-*",
+        "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/gateway/appilix-*"
       ]
     },
     {

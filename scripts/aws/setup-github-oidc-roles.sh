@@ -99,7 +99,22 @@ put_inline() {
 # role). Copying them would move a privilege-escalation path onto the new role (inventory 2026-11-03).
 STAGING_ROLE="vitana-gha-staging-deploy"
 ensure_role "$STAGING_ROLE" "$IAM_DIR/eng-platform-oidc-staging-deploy-trust.json"
-put_inline "$STAGING_ROLE" "eng-platform-staging-deploy" "$(cat "$IAM_DIR/eng-platform-oidc-staging-deploy-policy.json")"
+# PassRole is limited to the task and execution roles the five staging services run with today, read from their live
+# task definitions (never a vitana-* wildcard, which would also match prod task roles).
+CLUSTER="Vitana-ECS-Cluster"
+ROLE_ARNS="[]"
+for svc in vitana-gateway vitana-kiro-runner vitana-erp-bridge vitana-postgrest-aurora-proxy vitana-community-app-staging; do
+  td="$(aws ecs describe-services --region eu-central-1 --cluster "$CLUSTER" --services "$svc" --query 'services[0].taskDefinition' --output text 2>/dev/null || true)"
+  if [ -z "$td" ] || [ "$td" = "None" ]; then say "staging service $svc not found: no task role read for it"; continue; fi
+  roles="$(aws ecs describe-task-definition --region eu-central-1 --task-definition "$td" --query 'taskDefinition.[taskRoleArn,executionRoleArn]' --output json)"
+  ROLE_ARNS="$(jq -c --argjson r "$roles" '. + ($r | map(select(. != null))) | unique' <<<"$ROLE_ARNS")"
+done
+if [ "$ROLE_ARNS" = "[]" ]; then echo "refusing: no staging task role could be read" >&2; exit 6; fi
+case "$ROLE_ARNS" in *awsdr*|*-prod-*) echo "refusing: a staging service runs with a prod-named role: $ROLE_ARNS" >&2; exit 7 ;; esac
+say "PassRole limited to: $ROLE_ARNS"
+STAGING_POLICY="$(jq -c --argjson r "$ROLE_ARNS" '(.Statement[] | select(.Sid == "PassTaskRolesToEcsOnly") | .Resource) = $r' \
+  "$IAM_DIR/eng-platform-oidc-staging-deploy-policy.json")"
+put_inline "$STAGING_ROLE" "eng-platform-staging-deploy" "$STAGING_POLICY"
 # Two existing, already-scoped managed policies the staging workflows need: Bedrock for I18N-DB-SEED, and the
 # Appilix staging secrets for AWS-PROVISION-APPILIX-SECRETS.
 for arn in "arn:aws:iam::$EXPECTED_ACCOUNT:policy/BedrockInvokeAnthropicEU" \

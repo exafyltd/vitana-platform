@@ -98,6 +98,14 @@ describe('setup-github-oidc-roles.sh', () => {
     expect(body).toContain('eng-platform-oidc-staging-deploy-policy.json');
   });
 
+  it('fills PassRole from the five staging services and refuses a prod-named role', () => {
+    const body = code.join('\n');
+    expect(body).toContain('for svc in vitana-gateway vitana-kiro-runner vitana-erp-bridge vitana-postgrest-aurora-proxy vitana-community-app-staging; do');
+    expect(body).toContain("taskDefinition.[taskRoleArn,executionRoleArn]");
+    expect(body).toMatch(/case "\$ROLE_ARNS" in \*awsdr\*\|\*-prod-\*\)[^\n]*exit 7/);
+    expect(body).toContain('"PassTaskRolesToEcsOnly"');
+  });
+
   it('never creates access keys, deletes users or keys, or uses a wildcard trust', () => {
     const body = code.join('\n');
     for (const bad of ['create-access-key', 'delete-user', 'delete-access-key', 'update-access-key', 'StringLike']) {
@@ -127,6 +135,36 @@ describe('staging deploy policy', () => {
     expect(actions.filter((a) => a.startsWith('iam:'))).toEqual(['iam:PassRole']);
     const pass = st.find((s) => asList(s.Action).includes('iam:PassRole'));
     expect(pass.Condition).toEqual({ StringEquals: { 'iam:PassedToService': 'ecs-tasks.amazonaws.com' } });
+    // Filled at run time from the staging services' live task definitions; never a wildcard.
+    expect(pass.Resource).toBe('${STAGING_TASK_ROLE_ARNS}');
     expect(actions).not.toContain('secretsmanager:GetSecretValue');
   });
+
+  // Reviewer finding (2026-11-03): the staging deploys also DescribeSecret a few prod-named secrets to wire their
+  // ARNs into task definitions (metadata only). Every literal secret name the staging workflows touch must be covered,
+  // found by grep so a new one cannot slip past.
+  it('covers every secret name the staging workflows describe, create or write', () => {
+    const WF = path.join(ROOT, '.github/workflows');
+    const files = ['AWS-PROVISION-APPILIX-SECRETS.yml', 'AWS-PROVISION-DEV-MEMORY-PACK-TOKEN.yml', 'AWS-STAGE-DEPLOY-ERP-BRIDGE.yml',
+      'AWS-STAGE-DEPLOY-GATEWAY.yml', 'AWS-STAGE-DEPLOY-KIRO-RUNNER.yml', 'AWS-STAGE-DEPLOY-POSTGREST-AURORA-PROXY.yml', 'I18N-DB-SEED.yml'];
+    const names = new Set<string>();
+    for (const f of files) {
+      // Comment lines are documentation, and the vitana/gateway-awsdr/* names belong to the Appilix workflow's prod leg,
+      // which runs on AWS_PROD_ROLE_ARN, not on this role.
+      const text = fs.readFileSync(path.join(WF, f), 'utf8').split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
+      for (const m of text.matchAll(/\bvitana\/[a-z0-9_-]+(?:\/[a-z0-9_-]+)*/g)) {
+        if (/^vitana\/(gateway|community-app|kiro-runner|erp-bridge|postgrest-aurora-proxy)$/.test(m[0])) continue; // ECR repo names
+        if (m[0].startsWith('vitana/gateway-awsdr/')) continue;
+        if (m[0].split('/').length < 3 && m[0] !== 'vitana/github/pat') continue;
+        names.add(m[0]);
+      }
+    }
+    expect(names.size).toBeGreaterThan(10);
+    const res = st.filter((s) => asList(s.Action).includes('secretsmanager:DescribeSecret')).flatMap((s) => asList(s.Resource))
+      .map((r) => new RegExp('^' + r.replace(/^arn:aws:secretsmanager:[^:]+:\d+:secret:/, '').replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$'));
+    // A bare prefix such as vitana/gateway/staging comes from a name built at run time (NAME="vitana/gateway/staging/<suffix>").
+    const missing = [...names].filter((n) => !res.some((re) => re.test(n) || re.test(n + '-x') || re.test(n + '/x')));
+    expect(missing).toEqual([]);
+  });
 });
+
