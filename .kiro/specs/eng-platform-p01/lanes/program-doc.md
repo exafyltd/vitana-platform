@@ -1,6 +1,6 @@
 ---
 lane: program-doc
-state: ready
+state: parked
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -11,8 +11,9 @@ repos: [exafyltd/vitana-platform]
 paths:
   - docs/ENGINEERING-PLATFORM-PLAN.md
   - docs/validation/**
-updated: 2026-11-03T14:36Z
+updated: 2026-11-03T14:43Z
 vtid: VTID-05517
+parked_from: ready
 ---
 # Lane: program-doc (repo vitana-platform)
 Tasks in `tasks.md`. VTID from PLAN-SPAR; never by hand.
@@ -257,3 +258,5 @@ reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
 reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
 ### 2026-11-03T14:36Z · pm-agent · update
 reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
+### 2026-11-03T14:43Z · pm-agent · ready → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
