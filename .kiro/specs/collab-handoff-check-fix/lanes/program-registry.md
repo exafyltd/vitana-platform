@@ -15,7 +15,7 @@ paths:
   - docs/programs/standalone/program.md
   - scripts/collab/program-registry.test.mjs
   - docs/validation/VTID-*/**
-updated: 2026-11-03T10:26Z
+updated: 2026-11-03T10:32Z
 vtid: VTID-05364
 parked_from: ready
 ---
@@ -2615,4 +2615,6 @@ park (stale_claim); claim released; Claude unavailable → exafyltd
 ### 2026-11-03T10:20Z · pm-agent · update
 park (stale_claim); claim released; Claude unavailable → exafyltd
 ### 2026-11-03T10:26Z · pm-agent · update
+park (stale_claim); claim released; Claude unavailable → exafyltd
+### 2026-11-03T10:32Z · pm-agent · update
 park (stale_claim); claim released; Claude unavailable → exafyltd
