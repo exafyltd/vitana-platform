@@ -1,6 +1,6 @@
 ---
 lane: public-profile
-state: in-review
+state: done
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -18,7 +18,7 @@ paths:
   - apps/mobile/parity/ledger.json
   - src/i18n/*/publicProfileNative.json
   - docs/validation/**
-updated: 2026-11-01T17:37Z
+updated: 2026-11-03T16:13Z
 vtid: VTID-05430
 claimed_by: kiro-exafyltd-202611011658-9f52
 branch: kiro/native-wave2-profile-settings-r2/public-profile
@@ -69,3 +69,7 @@ PR: https://github.com/exafyltd/vitana-v1/pull/1541
 Findings: non-blocking: lane diff vs main (5c75715e1) has the same patch-id df57dc80 as at accepted a5ff7204a (36 files), no conflict markers, merge only brings in the 5 desktop-spotlight-finish commits, nothing dropped; non-blocking: all checks on this head still queued, land merges only when all green (known main-red gen-core-extract and Option C Lane scope false positive stay non-blocking if the only reds)
 Next: the land step merges under §7b once all checks are green
 Stored by the landing session kiro-exafyltd-202611011658-9f52 on the agent's behalf (lane-land.md step 2).
+### 2026-11-03T16:13Z · kiro-exafyltd-202611011658-9f52 · in-review → verified
+Accepted by agent:vitana-lane-reviewer on head `6efd9921dbf391301165e5fccbfaed1b86a484ed` (review entry above); every required check green, up to date with main.
+### 2026-11-03T16:13Z · kiro-exafyltd-202611011658-9f52 · verified → done
+merge: e1ab28b1f75a24924365cbc474d0a5f8f879b73a · authority: §7b PM rule (applied by the plan driver while the PM is not live), squash. Staging: AWS Stage Deploy Community App rolled e1ab28b (https://github.com/exafyltd/vitana-v1/actions/runs/41477645318); its STAGING-VERIFY trigger step failed, STAGING-VERIFY dispatched (queued): https://github.com/exafyltd/vitana-platform/actions/runs/41671423575.
