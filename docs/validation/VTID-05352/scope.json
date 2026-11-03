@@ -1,0 +1,14 @@
+{
+  "vtid": "VTID-05352",
+  "kind": "feature",
+  "paths": [
+    "services/gateway/src/services/project-manager/github-app-token.ts",
+    "services/gateway/src/services/project-manager/github-rest.ts",
+    "services/gateway/test/project-manager/github-app-token.test.ts",
+    "docs/project-manager/**",
+    "docs/validation/VTID-05352/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05352/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}
