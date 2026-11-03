@@ -25,6 +25,8 @@ const TRUSTS: Record<string, string[]> = {
   'eng-platform-oidc-prod-deploy-trust.json': ['repo:exafyltd/vitana-platform:ref:refs/heads/main'],
 };
 const POLICIES = ['eng-platform-oidc-v1-preview-policy.json', 'eng-platform-oidc-drift-readonly-policy.json'];
+// Actions AWS only grants on Resource "*" (no resource-level permission) — the only wildcard resources allowed.
+const STAR_OK = new Set(['ecr:GetAuthorizationToken','ecs:DescribeServices','ecs:DescribeTaskDefinition','ecs:DescribeTasks','ecs:DescribeClusters','ecs:ListServices','ecs:ListTasks','ecs:RegisterTaskDefinition']);
 
 const read = (f: string) => JSON.parse(fs.readFileSync(path.join(IAM, f), 'utf8'));
 const asList = (v: unknown): string[] => (Array.isArray(v) ? (v as string[]) : [v as string]);
@@ -88,10 +90,12 @@ describe('setup-github-oidc-roles.sh', () => {
     }
   });
 
-  it('copies group-inherited policies and the permissions boundary of the static-key user (sparring R1-F2)', () => {
-    for (const call of ['list-groups-for-user', 'list-attached-group-policies', 'list-group-policies', 'get-group-policy', 'PermissionsBoundary']) {
-      expect(text).toContain(call);
+  it('gives the staging role an explicit policy and never copies the static-key user', () => {
+    const body = code.join('\n');
+    for (const call of ['list-attached-user-policies', 'list-user-policies', 'get-user-policy', 'list-groups-for-user']) {
+      expect(body).not.toContain(call);
     }
+    expect(body).toContain('eng-platform-oidc-staging-deploy-policy.json');
   });
 
   it('never creates access keys, deletes users or keys, or uses a wildcard trust', () => {
@@ -99,5 +103,30 @@ describe('setup-github-oidc-roles.sh', () => {
     for (const bad of ['create-access-key', 'delete-user', 'delete-access-key', 'update-access-key', 'StringLike']) {
       expect(body).not.toContain(bad);
     }
+  });
+});
+
+describe('staging deploy policy', () => {
+  const doc = read('eng-platform-oidc-staging-deploy-policy.json');
+  const st = doc.Statement as any[];
+
+  it('uses Resource "*" only for actions AWS cannot scope', () => {
+    for (const s of st) if (asList(s.Resource).includes('*')) for (const a of asList(s.Action)) expect(STAR_OK.has(a)).toBe(true);
+  });
+
+  it('deploys only the five staging ECS services, never a prod (-awsdr) service', () => {
+    const res = st.filter((s) => asList(s.Action).some((a) => a === 'ecs:UpdateService')).flatMap((s) => asList(s.Resource));
+    expect(res.map((r) => r.split('/').pop()).sort()).toEqual(
+      ['vitana-community-app-staging', 'vitana-erp-bridge', 'vitana-gateway', 'vitana-kiro-runner', 'vitana-postgrest-aurora-proxy'],
+    );
+    for (const r of res) expect(r).not.toMatch(/awsdr/);
+  });
+
+  it('has no IAM action except PassRole to ECS tasks, and cannot read secret values', () => {
+    const actions = st.flatMap((s) => asList(s.Action));
+    expect(actions.filter((a) => a.startsWith('iam:'))).toEqual(['iam:PassRole']);
+    const pass = st.find((s) => asList(s.Action).includes('iam:PassRole'));
+    expect(pass.Condition).toEqual({ StringEquals: { 'iam:PassedToService': 'ecs-tasks.amazonaws.com' } });
+    expect(actions).not.toContain('secretsmanager:GetSecretValue');
   });
 });

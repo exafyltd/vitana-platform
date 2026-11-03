@@ -7,10 +7,10 @@
 # DRY-RUN BY DEFAULT: without --apply the script only reads (get-role, list-*-policies) and prints what it would do.
 #
 # ROLES (trust and permission files in scripts/aws/iam/eng-platform-oidc-*.json, StringEquals on sub and aud only):
-#   vitana-gha-staging-deploy  sub = vitana-platform main | vitana-v1 main. Permissions = a copy of the effective
-#                              policies of IAM user claude-staging-validation when the script runs: its managed and
-#                              inline policies, those of its groups, and its permissions boundary (same reach as the
-#                              static keys it replaces, nothing new).
+#   vitana-gha-staging-deploy  sub = vitana-platform main | vitana-v1 main. Permissions = eng-platform-oidc-staging-
+#                              deploy-policy.json (push to the 5 staging ECR repos, deploy only the 5 staging ECS
+#                              services) plus BedrockInvokeAnthropicEU and vitana-appilix-secrets-staging. It does NOT
+#                              copy IAM user claude-staging-validation, which is over-privileged.
 #   vitana-gha-v1-preview      sub = vitana-v1 pull_request. Preview bucket vitana-pr-previews + one CloudFront
 #                              distribution invalidation (needs --preview-distribution-id).
 #   vitana-gha-drift-readonly  sub = vitana-platform pull_request | main. Data API on vitana-aurora-prod with the
@@ -34,7 +34,7 @@ PREVIEW_DIST=""
 PROD_ROLE=""
 HERE="$(cd "$(dirname "$0")" && pwd)"
 IAM_DIR="$HERE/iam"
-STAGING_USER="claude-staging-validation"
+STAGING_USER="claude-staging-validation"  # only named in the closing instructions
 
 usage() { sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'; }
 
@@ -93,36 +93,20 @@ put_inline() {
   fi
 }
 
-# --- 1. staging deploy role: same permissions as the static-key user ------------------------------------------------
+# --- 1. staging deploy role: an explicit, staging-only policy -------------------------------------------------------
+# NOT a copy of IAM user claude-staging-validation: that user also carries ECS/ECR/ELB full access, account-wide
+# ReadOnlyAccess and leftover "-temp" policies (secret writes, DMS, and iam:CreateRole/PutRolePolicy on the prod deploy
+# role). Copying them would move a privilege-escalation path onto the new role (inventory 2026-11-03).
 STAGING_ROLE="vitana-gha-staging-deploy"
 ensure_role "$STAGING_ROLE" "$IAM_DIR/eng-platform-oidc-staging-deploy-trust.json"
-for arn in $(aws iam list-attached-user-policies --user-name "$STAGING_USER" --query 'AttachedPolicies[].PolicyArn' --output text); do
-  say "attach managed policy $arn (copied from user $STAGING_USER)"
+put_inline "$STAGING_ROLE" "eng-platform-staging-deploy" "$(cat "$IAM_DIR/eng-platform-oidc-staging-deploy-policy.json")"
+# Two existing, already-scoped managed policies the staging workflows need: Bedrock for I18N-DB-SEED, and the
+# Appilix staging secrets for AWS-PROVISION-APPILIX-SECRETS.
+for arn in "arn:aws:iam::$EXPECTED_ACCOUNT:policy/BedrockInvokeAnthropicEU" \
+           "arn:aws:iam::$EXPECTED_ACCOUNT:policy/vitana-appilix-secrets-staging"; do
+  say "attach managed policy $arn"
   if [ "$APPLY" = 1 ]; then aws iam attach-role-policy --role-name "$STAGING_ROLE" --policy-arn "$arn"; fi
 done
-for pname in $(aws iam list-user-policies --user-name "$STAGING_USER" --query 'PolicyNames[]' --output text); do
-  doc="$(aws iam get-user-policy --user-name "$STAGING_USER" --policy-name "$pname" --query PolicyDocument --output json)"
-  put_inline "$STAGING_ROLE" "$pname" "$doc"
-done
-# Group-inherited permissions (sparring R1-F2): the user's effective reach includes every group it belongs to.
-for grp in $(aws iam list-groups-for-user --user-name "$STAGING_USER" --query 'Groups[].GroupName' --output text); do
-  for arn in $(aws iam list-attached-group-policies --group-name "$grp" --query 'AttachedPolicies[].PolicyArn' --output text); do
-    say "attach managed policy $arn (from group $grp of $STAGING_USER)"
-    if [ "$APPLY" = 1 ]; then aws iam attach-role-policy --role-name "$STAGING_ROLE" --policy-arn "$arn"; fi
-  done
-  for pname in $(aws iam list-group-policies --group-name "$grp" --query 'PolicyNames[]' --output text); do
-    doc="$(aws iam get-group-policy --group-name "$grp" --policy-name "$pname" --query PolicyDocument --output json)"
-    put_inline "$STAGING_ROLE" "group-$grp-$pname" "$doc"
-  done
-done
-# A permissions boundary on the user caps its reach; the role gets the same cap.
-BOUNDARY="$(aws iam get-user --user-name "$STAGING_USER" --query 'User.PermissionsBoundary.PermissionsBoundaryArn' --output text)"
-if [ -n "$BOUNDARY" ] && [ "$BOUNDARY" != "None" ]; then
-  say "permissions boundary $BOUNDARY on $STAGING_ROLE (copied from $STAGING_USER)"
-  if [ "$APPLY" = 1 ]; then
-    aws iam put-role-permissions-boundary --role-name "$STAGING_ROLE" --permissions-boundary "$BOUNDARY"
-  fi
-fi
 
 # --- 2. vitana-v1 PR preview role ------------------------------------------------------------------------------------
 PREVIEW_ROLE="vitana-gha-v1-preview"

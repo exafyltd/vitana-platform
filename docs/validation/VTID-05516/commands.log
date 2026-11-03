@@ -19,3 +19,7 @@ red on base: red-on-base.txt
 $ (no AWS credentials) bash scripts/aws/setup-github-oidc-roles.sh
 refusing to run: caller account is '<no credentials>', expected 472838866351
 exit=4
+
+## 2026-11-03T13:12:51Z staging role: explicit policy instead of copying claude-staging-validation
+$ npx jest test/eng-platform-oidc-roles.test.ts
+Tests:       14 passed, 14 total
