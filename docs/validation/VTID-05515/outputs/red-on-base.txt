@@ -1,0 +1,8 @@
+    ✕ runs in strict mode
+    ✕ refuses to run against any account but 472838866351
+    ✕ only calls describe-*, list-* and get-* APIs through run()
+    ✕ calls aws directly only for get-caller-identity and inside run()
+    ✕ never reads secret values, decrypts parameters, uploads or mutates
+    ✕ lists IAM users with their groups, group policies and permissions boundary (sparring R1-F2)
+    ✕ has no flag that changes the guarded account (reviewer finding 2026-11-03)
+Tests:       7 failed, 7 total
