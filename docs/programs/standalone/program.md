@@ -28,6 +28,7 @@ specs:
   - vitana-platform:pm-reassign-idempotent-r2
   - vitana-platform:pm-reassign-idempotent-r3
   - vitana-platform:matches-scroll-end
+  - vitana-platform:messenger-assisted-posts
   - vitana-platform:spotlight-commit-coverage
   - vitana-platform:wallet-fx-rate-url
   - vitana-platform:profile-posts-full-width
