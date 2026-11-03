@@ -1,0 +1,5 @@
+PASS main fixture (20260218 body)
+PASS old-body fixture (20251229 body) committed
+PASS apply helpers
+STEP rewrite: COMMITTED on the old body (no refusal)
+FAIL pgTAP live-body guard: not ok - refused: all 32 rewrite-set policies still read current_tenant_id() (have 0, want 32)

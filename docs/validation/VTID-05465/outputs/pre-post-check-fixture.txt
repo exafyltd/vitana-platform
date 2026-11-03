@@ -1,0 +1,28 @@
+== A: 20260218 body live (main fixture as shipped) ==
+pre s1 rewrite-set rows with policy_present=true: [{"n":32}]
+pre s5 live body markers: [{"live_body_first_200":"CREATE OR REPLACE FUNCTION public.current_tenant_id()\n RETURNS uuid\n LANGUAGE plpgsql\n STABLE\nAS $function$\nDECLARE\n    v_tenant_id UUID;\n    v_jwt_claims JSONB;\nBEGIN\n    -- Priority 1: Request conte","marker_1_app_metadata_fallback":true,"marker_2_user_tenants_fallback":true,"marker_3_own_membership_lookup":true}]
+pre s6 members resolving differently: [{"active_set_no_membership_row":1,"active_set_non_primary_membership":1,"active_set_not_a_membership":0,"total_resolving_differently":2}]
+pre s6b multi-membership, no primary, no active tenant: [{"multi_membership_no_primary_no_active_tenant":0}]
+A: rewrite applied (guard passed on the 20260218 body)
+post s1 helpers: [{"fn":"is_member(uuid)","security_definer":true,"stable":true,"authenticated_exec":true,"anon_exec":false},{"fn":"tenant_id_for_policies()","security_definer":true,"stable":true,"authenticated_exec":true,"anon_exec":false}]
+post s2 bare policies left in the rewrite set (expect 0): []
+post s3 summary (expect 32/32/0): [{"rewrite_set_live":32,"rewritten_on_helper":32,"on_is_member":0}]
+post s4 current_tenant_id md5: [{"current_tenant_id_md5":"f0491929b9d38c9bc1e3541d92b51c7d"}]
+== B: 20251229 body live (old body) ==
+pre s5 live body markers: [{"live_body_first_200":"CREATE OR REPLACE FUNCTION public.current_tenant_id()\n RETURNS uuid\n LANGUAGE plpgsql\n STABLE\nAS $function$\nDECLARE\n    v_tenant_id UUID;\n    v_jwt_claims JSONB;\nBEGIN\n    -- Try request context first","marker_1_app_metadata_fallback":false,"marker_2_user_tenants_fallback":false,"marker_3_own_membership_lookup":false}]
+pre s6 members resolving differently: [{"active_set_no_membership_row":1,"active_set_non_primary_membership":1,"active_set_not_a_membership":0,"total_resolving_differently":2}]
+B: rewrite refused: VTID-05465: the live current_tenant_id() is not the 20260218 body (markers f, f, f); refusing the rewrite. The lane is parked for an owner decision (docs/validation/VTID-05465/acceptance.md)
+B: NOTICE lines printed by the migration:
+  VTID-05465 live current_tenant_id() body, first 200 characters: CREATE OR REPLACE FUNCTION public.current_tenant_id()
+ RETURNS uuid
+ LANGUAGE plpgsql
+ STABLE
+AS $function$
+DECLARE
+    v_tenant_id UUID;
+    v_jwt_claims JSONB;
+BEGIN
+    -- Try request context first
+  VTID-05465 live-body marker 1 (app_metadata.active_tenant_id fallback) matched: f
+  VTID-05465 live-body marker 2 (user_tenants fallback) matched: f
+  VTID-05465 live-body marker 3 (own membership lookup) matched: f

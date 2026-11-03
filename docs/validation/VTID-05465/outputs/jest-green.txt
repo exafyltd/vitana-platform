@@ -1,0 +1,71 @@
+# VTID-05465: Jest test and bare-policy lint on the PR branch (green). Raw output, not edited.
+# HEAD at run time: 3e787184e4 (kiro/mt-identity-r2/helpers-and-policy-rewrite).
+
+## cd services/gateway && NODE_ENV=test npx jest test/mt-identity-bare-policy-lint.test.ts
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/wt-id-helpers-and-policy-rewrite/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/mt-identity-bare-policy-lint.test.ts
+  VTID-05465 N3 bare-policy lint
+    ✓ reads ZERO bare current_tenant_id() policies over supabase/migrations (712 ms)
+    ✓ the rollback restores exactly the recount set (32 policies on 15 tables) (709 ms)
+  VTID-05465 helpers and rewrite migrations
+    ✓ ships tenant_id_for_policies() and is_member(uuid) as STABLE SECURITY DEFINER and leaves current_tenant_id() alone (3 ms)
+    ✓ rewrites every recounted policy to tenant_id_for_policies() and nothing else (amendment 1) (147 ms)
+    ✓ the rollback recreates each policy exactly as the migration that created it, and the rewrite only swaps the helper (835 ms)
+  VTID-05465 lint parser
+    ✓ counts only bare policies left after drops, re-definitions and DO blocks (55 ms)
+    ✓ applies a paired _rollback.sql only when asked (59 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       7 passed, 7 total
+Snapshots:   0 total
+Time:        3.252 s
+Ran all test suites matching /test\/mt-identity-bare-policy-lint.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
+exit=0
+
+## node scripts/ci/bare-policy-lint.mjs
+bare-policy-lint: 0 bare current_tenant_id() policies on 0 tables (824 policies in 675 files; allowlisted 0)
+exit=0
+
+## node scripts/ci/bare-policy-lint.mjs --include-rollbacks (the rollback restores the 32)
+bare-policy-lint: 32 bare current_tenant_id() policies on 15 tables (824 policies in 676 files; allowlisted 0)
+  community_groups.community_groups_delete [DELETE] 20261102030100_vtid_05465_bare_policy_rewrite_rollback.sql:52
+  community_groups.community_groups_insert [INSERT] 20261102030100_vtid_05465_bare_policy_rewrite_rollback.sql:36
+  community_groups.community_groups_update [UPDATE] 20261102030100_vtid_05465_bare_policy_rewrite_rollback.sql:44
+  community_listings.community_listings_select_public [SELECT] 20261102030100_vtid_05465_bare_policy_rewrite_rollback.sql:104
+  community_meetups.community_meetups_delete [DELETE] 20261102030100_vtid_05465_bare_policy_rewrite_rollback.sql:86
+  community_meetups.community_meetups_insert [INSERT] 20261102030100_vtid_05465_bare_policy_rewrite_rollback.sql:70
+  community_meetups.community_meetups_update [UPDATE] 20261102030100_vtid_05465_bare_policy_rewrite_rollback.sql:78
+  d42_domain_weights.d42_domain_weights_select [SELECT] 20261102030100_vtid_05465_bare_policy_rewrite_rollback.sql:119
+  event_attendance.event_attendance_select [SELECT] 20261102030100_vtid_05465_bare_policy_rewrite_rollback.sql:134
+  live_highlights.live_highlights_select [SELECT] 20261102030100_vtid_05465_bare_policy_rewrite_rollback.sql:150
+  live_room_attendance.live_room_attendance_select [SELECT] 20261102030100_vtid_05465_bare_policy_rewrite_rollback.sql:166
+  live_rooms.live_rooms_insert [INSERT] 20261102030100_vtid_05465_bare_policy_rewrite_rollback.sql:188
+  live_rooms.live_rooms_select [SELECT] 20261102030100_vtid_05465_bare_policy_rewrite_rollback.sql:182
+  live_rooms.live_rooms_update [UPDATE] 20261102030100_vtid_05465_bare_policy_rewrite_rollback.sql:194
+  match_targets.match_targets_insert_policy [INSERT] 20261102030100_vtid_05465_bare_policy_rewrite_rollback.sql:274
+  match_targets.match_targets_select_policy [SELECT] 20261102030100_vtid_05465_bare_policy_rewrite_rollback.sql:269
+  match_targets.match_targets_update_policy [UPDATE] 20261102030100_vtid_05465_bare_policy_rewrite_rollback.sql:279
+  products_catalog.products_catalog_insert [INSERT] 20261102030100_vtid_05465_bare_policy_rewrite_rollback.sql:217
+  products_catalog.products_catalog_select [SELECT] 20261102030100_vtid_05465_bare_policy_rewrite_rollback.sql:211
+  relationship_nodes.relationship_nodes_delete [DELETE] 20261102030100_vtid_05465_bare_policy_rewrite_rollback.sql:313
+  relationship_nodes.relationship_nodes_insert [INSERT] 20261102030100_vtid_05465_bare_policy_rewrite_rollback.sql:300
+  relationship_nodes.relationship_nodes_select [SELECT] 20261102030100_vtid_05465_bare_policy_rewrite_rollback.sql:294
+  relationship_nodes.relationship_nodes_update [UPDATE] 20261102030100_vtid_05465_bare_policy_rewrite_rollback.sql:306
+  services_catalog.services_catalog_insert [INSERT] 20261102030100_vtid_05465_bare_policy_rewrite_rollback.sql:239
+  services_catalog.services_catalog_select [SELECT] 20261102030100_vtid_05465_bare_policy_rewrite_rollback.sql:233
+  social_alignment_signals.social_alignment_signals_insert [INSERT] 20261102030100_vtid_05465_bare_policy_rewrite_rollback.sql:335
+  social_alignment_signals.social_alignment_signals_select [SELECT] 20261102030100_vtid_05465_bare_policy_rewrite_rollback.sql:329
+  tenant_catalog_overrides.tenant_catalog_overrides_select [SELECT] 20261102030100_vtid_05465_bare_policy_rewrite_rollback.sql:255
+  topic_registry.topic_registry_delete [DELETE] 20261102030100_vtid_05465_bare_policy_rewrite_rollback.sql:370
+  topic_registry.topic_registry_insert [INSERT] 20261102030100_vtid_05465_bare_policy_rewrite_rollback.sql:357
+  topic_registry.topic_registry_select [SELECT] 20261102030100_vtid_05465_bare_policy_rewrite_rollback.sql:351
+  topic_registry.topic_registry_update [UPDATE] 20261102030100_vtid_05465_bare_policy_rewrite_rollback.sql:363
+exit=1
