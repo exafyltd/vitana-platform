@@ -1,6 +1,6 @@
 ---
 lane: new-members-feed-api
-state: ready
+state: executing
 next_actor: kiro
 depends_on: []
 executor: kiro
