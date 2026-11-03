@@ -21,7 +21,7 @@ paths:
   - services/gateway/test/eng-platform-stage-oidc-workflows.test.ts
   - services/gateway/test/vtid-05009-provision-pack-token-workflow.test.ts
   - docs/validation/**
-updated: 2026-11-03T19:38Z
+updated: 2026-11-03T19:45Z
 vtid: VTID-05518
 parked_from: ready
 ---
@@ -329,4 +329,6 @@ park (stale_claim); claim released; Claude unavailable → exafyltd
 ### 2026-11-03T19:33Z · pm-agent · update
 park (stale_claim); claim released; Claude unavailable → exafyltd
 ### 2026-11-03T19:38Z · pm-agent · update
+park (stale_claim); claim released; Claude unavailable → exafyltd
+### 2026-11-03T19:45Z · pm-agent · update
 park (stale_claim); claim released; Claude unavailable → exafyltd
