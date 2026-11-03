@@ -4,6 +4,7 @@ via the manifest/closure process, `apps/mobile/parity/ledger.json`, DE-first i18
 backend, no gateway change, no migration). Spec: `requirements.md`, `design.md`, `tasks.md`, `lanes/*.md` in this
 folder. Program: `docs/programs/native-app/NATIVE-APP-PLAN.md` (VTID-05021), §5 Wave 2.
 <!-- plan:begin -->
+Sparring note (2026-11-03T12:21Z): session 1 (`ea0f4764`) escalated on round 1 with `evidence_floor_not_met` (0 premise checks), a partner-side failure; this line opens the re-plan session. No plan content changed.
 
 Re-plan note (2026-11-02T19:09Z): this is the plan of `native-wave2-events-calendar-r2` (PR #4605) under a new slug, because both sparring sessions of `native-wave2-events-calendar-r2` (PR #4605) escalated on round 1 with `evidence_floor_not_met` (0 premise checks, 0 findings) while the shared GitHub API quota was low, so the partner's read_file calls failed; PLAN-SPAR parked it. It is the plan of `native-wave2-events-calendar` (PR #4271). Content unchanged except the slug and the lane `paths`, which now also list the shared native-infra files every screen port produces (`apps/mobile/src/ports/**`, `apps/mobile/src/navigation/resolve.ts`, `packages/core/{manifest,closure.generated,extract}.json`, `packages/core/src/**`, `scripts/native/mobile-ci-paths.generated.json`, `apps/mobile/parity/ledger.json`). Those files are shared between the lanes of this plan and land serialized (collaboration.md §8a).
 
