@@ -1,0 +1,56 @@
+# VTID-05238 — local verification commands (gateway-step-owner lane)
+# Review-finding fix pass (PR #4198). Run from services/gateway.
+# Captured output lives under docs/validation/VTID-05238/outputs/.
+
+## Environment
+node --version            # v22.23.3
+pnpm --version            # 9.0.0
+# Dependencies installed with a flat (hoisted) node_modules so the type graph
+# matches CI (pnpm's default isolated layout left @types/express-serve-static-core
+# and @supabase/postgrest-js unresolvable for module augmentation / type portability):
+#   npm_config_node_linker=hoisted pnpm install --frozen-lockfile
+
+## 1. TypeScript — must be clean
+npx tsc --noEmit
+# -> exit 0, no output. Captured: outputs/tsc-noemit.txt (empty = clean).
+
+## 2. Jest — touched + dependent gateway suites
+npx jest \
+  test/vtid-05238-step-owner.test.ts \
+  test/commerce-mcp.test.ts \
+  test/vtid-04941-commerce-mcp-automation.test.ts \
+  test/vtid-04478-partner-onboarding-checklist.test.ts \
+  test/vtid-04953-checklist-policy.test.ts \
+  test/partner-onboarding.test.ts \
+  test/vtid-05209-company-suggestions.test.ts \
+  test/vtid-04940-commerce-mcp-supplier-data.test.ts
+# Captured: outputs/jest-gateway-suites.txt
+
+## Result summary
+# Test Suites: 8 passed, 8 total
+# Tests:       232 passed, 232 total   (author's 230 + 2 new review-finding tests)
+# PASS test/vtid-05238-step-owner.test.ts   (52 tests, incl. the 2 new cases)
+# PASS test/commerce-mcp.test.ts
+# PASS test/vtid-04941-commerce-mcp-automation.test.ts
+# PASS test/vtid-04478-partner-onboarding-checklist.test.ts
+# PASS test/vtid-04953-checklist-policy.test.ts
+# PASS test/partner-onboarding.test.ts
+# PASS test/vtid-05209-company-suggestions.test.ts
+# PASS test/vtid-04940-commerce-mcp-supplier-data.test.ts
+#
+# New tests added for the two review findings:
+#   - "a never-checked verification (todo, no codes) -> assistant, not vitanaland (R2-F1)"
+#   - "an unknown code alongside an assistant code -> supplier (unknown wins, R2-F2)"
+
+## Red-to-green evidence (rebuild PR #4547, session kiro-exafy-202611010008-8355, 2026-11-01T03:14Z)
+# RED: origin/main source (8bbc3f18ef) with this PR's test files on top. In the worktree at the PR head:
+git checkout origin/main -- services/gateway/src/services/commerce-mcp.ts services/gateway/src/services/partner-onboarding-checklist.ts
+cd services/gateway && npx jest test/vtid-05238-step-owner.test.ts test/vtid-04941-commerce-mcp-automation.test.ts
+# -> exit 1. Test Suites: 2 failed, 2 total. Tests: 53 failed, 20 passed, 73 total. Full output: outputs/red-on-base.txt
+#    vtid-05238-step-owner: the stepOwner cases fail with "TypeError: stepOwner is not a function" (the export does not
+#    exist on main) and the shapeStatus/next_action cases fail on the missing owner field; vtid-04941: the nextAction
+#    expectations fail on the missing "owner" key (expected "assistant", received no key).
+# GREEN: the PR head source restored:
+git checkout HEAD -- services/gateway/src/services/commerce-mcp.ts services/gateway/src/services/partner-onboarding-checklist.ts
+cd services/gateway && npx jest test/vtid-05238-step-owner.test.ts test/vtid-04941-commerce-mcp-automation.test.ts
+# -> exit 0. Test Suites: 2 passed, 2 total. Tests: 73 passed, 73 total. Full output: outputs/green-on-head.txt
