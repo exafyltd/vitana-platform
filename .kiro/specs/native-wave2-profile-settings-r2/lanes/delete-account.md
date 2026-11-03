@@ -1,6 +1,6 @@
 ---
 lane: delete-account
-state: in-review
+state: done
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -17,7 +17,7 @@ paths:
   - apps/mobile/parity/ledger.json
   - src/i18n/*/deleteAccountNative.json
   - docs/validation/**
-updated: 2026-11-01T18:04Z
+updated: 2026-11-03T16:12Z
 vtid: VTID-05428
 claimed_by: kiro-exafyltd-202611011658-9f52
 branch: kiro/native-wave2-profile-settings-r2/delete-account
@@ -66,3 +66,7 @@ PR: https://github.com/exafyltd/vitana-v1/pull/1547
 Findings: non-blocking: Maestro/device parity and real OAuth deferred to G1 (task 5, next_actor owner). Re-review after merging main (memory ec8682f, diary 514e06a, #1552) into the accepted head 6fb15909: the lane diff vs origin/main is unchanged (26 files, +1110/-1, all within lane paths). Its three-dot diff differs from the accepted head's only in context lines of the resolve.ts hunk. In resolve.ts, '/delete-account' sits between '/comm/open-asks' and '/daily-diary'. The file has no duplicate route lines and no conflict markers, and keeps every main route (main has 31 route lines, the head has 32, the extra one being '/delete-account'). The '/daily-diary' and '/memory*' routes from main are kept. The delete-account test file and i18n files are byte-identical to the accepted head. All 20 check runs on the head are complete: 15 success, 5 skipped (fanout, collect, pivot, extraction dependency analysis, plus one more skipped job). Lane scope, pr-gate, the parity ledger/generators job (the stale gen-core-extract red from the accepted head is now green after main's fix), apps/mobile typecheck/test/bundle, ESLint native, i18n, Vitest and preview-e2e are all green. The PR's mergeable state is clean.
 Next: the land step merges under §7b
 Stored by the landing session kiro-exafyltd-202611011658-9f52 on the agent's behalf (lane-land.md step 2).
+### 2026-11-03T16:12Z · kiro-exafyltd-202611011658-9f52 · in-review → verified
+Accepted by agent:vitana-lane-reviewer on head `2c529e7780880660fc44500b32cde3d5b42ff176` (review entry above); every required check green, up to date with main.
+### 2026-11-03T16:12Z · kiro-exafyltd-202611011658-9f52 · verified → done
+merge: 6bea4890812195ab56284c411b9c8b8c4ce21a97 · authority: §7b PM rule (applied by the plan driver while the PM is not live), squash. Staging: AWS Stage Deploy Community App rolled 6bea489 (https://github.com/exafyltd/vitana-v1/actions/runs/41421479628). STAGING-VERIFY https://github.com/exafyltd/vitana-platform/actions/runs/41433483490 failed 70/74, all four reds web colour specs (raw palette class lucide-shield text-slate-400 on /comm, /discover, /settings, /memory/diary; web app chrome outside this lane, fixed on main by e530abd #1556). Re-dispatches https://github.com/exafyltd/vitana-platform/actions/runs/41442050124 (cancelled after 75 min) and https://github.com/exafyltd/vitana-platform/actions/runs/41671439422 (superseded in the community-app concurrency queue) did not complete; STAGING-VERIFY on this SHA is pending. The later run on b74d3ba, which contains 6bea489, passed: https://github.com/exafyltd/vitana-platform/actions/runs/41525408839.
