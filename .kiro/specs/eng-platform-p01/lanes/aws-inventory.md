@@ -1,6 +1,6 @@
 ---
 lane: aws-inventory
-state: ready
+state: parked
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -12,8 +12,9 @@ paths:
   - scripts/aws/inventory-readonly.sh
   - services/gateway/test/eng-platform-inventory-readonly.test.ts
   - docs/validation/**
-updated: 2026-11-03T14:42Z
+updated: 2026-11-03T15:04Z
 vtid: VTID-05515
+parked_from: ready
 ---
 # Lane: aws-inventory (repo vitana-platform)
 Tasks in `tasks.md`. VTID from PLAN-SPAR; never by hand.
@@ -260,3 +261,5 @@ reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
 reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
 ### 2026-11-03T14:42Z · pm-agent · update
 reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
+### 2026-11-03T15:04Z · pm-agent · ready → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
