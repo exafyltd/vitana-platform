@@ -113,4 +113,26 @@ Each new behaviour gets its test first, recorded red on `origin/main`, then gree
 Existing `profile_posts` schema and RLS, the composer's own publish flow, the notification preferences, the Autopilot
 scanners other than the one added, the existing analytics pipeline, and every production configuration.
 
+## 10. Premise register (re-plan after round-1 evidence floor)
+
+Round 1 ended with `evidence_floor_not_met`: the partner recorded no read-file premise checks. This revision lists each
+premise with its location so the partner can verify it directly. Repository and commit are the pinned `origin/main`
+(vitana-platform `d398754f17`, vitana-v1 `6b9137ac5`).
+
+| # | Premise | Location to read |
+|---|---|---|
+| P1 | Vitana bot user id is a fixed constant and `isVitanaBot` compares against it | `vitana-v1/src/lib/vitanaBotIdentity.ts:10-21` |
+| P2 | Card registry maps card type strings to components through `getVitanaCardComponent` | `vitana-v1/src/components/vitana/card-registry.tsx:55-84` |
+| P3 | The composer writes posts with a direct client insert into `profile_posts` using a client-generated id | `vitana-v1/src/hooks/useProfilePosts.ts:45-58` |
+| P4 | `profile_posts` table definition (id, user_id, content, image_url, is_public) | `vitana-v1/supabase/migrations/20260210135042_9aec11fb-ddef-4e88-b937-0e3c8f87c210.sql:3-15` |
+| P5 | Post insert fires `trg_notify_community_post` (AFTER INSERT) | `vitana-v1/supabase/migrations/20260630120000_notify_on_community_publish.sql:52-53` |
+| P6 | Community-autopilot local-hour gate `SCAN_LOCAL_HOURS = {7, 17}` and `isDue(now, tz)` | `vitana-platform/services/gateway/src/services/community-autopilot/scan-runner.ts:23` and `:37` |
+| P7 | Feature flags resolve through `isFeatureLive(name)` reading `FEATURE_<NAME>_ENV` | `vitana-platform/services/gateway/src/services/feature-flags.ts:81` |
+| P8 | Analytics ingest endpoint `POST /events/batch` | `vitana-platform/services/gateway/src/routes/product-analytics.ts:96` |
+
+Decision taken in this revision: the consolidated migration for the three new tables is placed in
+`vitana-platform/supabase/migrations/` because the gateway services and the invitation scanner that own those tables
+live in vitana-platform. It references `profile_posts` by id only, adds no foreign key into vitana-v1 tables, and
+changes no vitana-v1 migration.
+
 <!-- plan:end -->
