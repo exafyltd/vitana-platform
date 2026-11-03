@@ -1,0 +1,10 @@
+# VTID-05352 commands (kiro-exafyltd-202610271503-9458, 2026-10-27T17:43:31Z), base origin/main 702299bc42
+$ npx jest test/project-manager/github-app-token.test.ts   (base: module missing)
+Test Suites: 1 failed, 1 total
+Tests:       0 total
+$ npx jest test/project-manager   (head)
+Tests:       208 passed, 208 total
+$ npx jest test/vtid-04465-operator-pipeline-regression.test.ts   (head)
+Tests:       71 passed, 71 total
+$ npx tsc --noEmit -p services/gateway   (head) exit 0
+$ validateManifest(staging-tests.json) → ok
