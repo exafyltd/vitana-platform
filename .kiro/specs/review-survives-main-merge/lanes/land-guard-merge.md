@@ -1,12 +1,12 @@
 ---
 lane: land-guard-merge
-state: executing
+state: parked
 next_actor: kiro
 branch: kiro/review-survives-main-merge/land-guard-merge
 depends_on: []
 executor: kiro
 reviewer_seat: agent:vitana-lane-reviewer
-seat: exafy
+seat: exafyltd
 area: platform
 repos: [exafyltd/vitana-platform]
 paths:
@@ -14,8 +14,9 @@ paths:
   - scripts/collab/land-guard.test.mjs
   - .claude/rules/collaboration.md
   - docs/validation/VTID-*/**
-updated: 2026-11-01T22:30Z
+updated: 2026-11-03T22:24Z
 vtid: VTID-05438
+parked_from: executing
 ---
 # Lane: land-guard-merge (repo vitana-platform)
 Tasks T1–T5 in `tasks.md`. `collaboration.md` and `land-guard.mjs` are treated as protected gate files for this plan
@@ -58,3 +59,5 @@ reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 PR: https://github.com/exafyltd/vitana-platform/pull/4599
 Findings: no blocking findings; non-blocking: the main merge bd741c10 brought only main's #4598 (VTID-05368 test + docs + lane file); protected files covered by the owner instruction 'merge review-survives-main-merge' (2026-11-01, Kiro session kiro-ide-202610272306-27b0); CI was pending (8 of 11) at review time. Reviewer workflow wf_03870425313f5a18 (session sess_e8c4a025-dde9-43a1-ac4d-360ef11d6a4d).
 Next: the land step merges under §7b once every required check is green on this head and it is 0 behind main.
+### 2026-11-03T22:24Z · pm-agent · executing → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
