@@ -1,6 +1,6 @@
 ---
 lane: settings
-state: ready
+state: in-review
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -21,8 +21,11 @@ paths:
   - apps/mobile/parity/ledger.json
   - src/i18n/*/settingsNative.json
   - docs/validation/**
-updated: 2026-11-01T03:04Z
+updated: 2026-11-01T18:03Z
 vtid: VTID-05431
+claimed_by: kiro-exafyltd-202611011658-9f52
+branch: kiro/native-wave2-profile-settings-r2/settings
+pr: https://github.com/exafyltd/vitana-v1/pull/1546
 ---
 # Settings port — the `MobileSettings` `?mode=` hub + `/settings/preferences`, `/settings/limitations`, `/settings/tenant-role`, `/delete-account`
 Plan: `.kiro/specs/native-wave2-profile-settings-r2/` — `plan.md` (plan block) and the `tasks.md` section marked
@@ -81,3 +84,7 @@ Lane created with the plan (re-plan of `native-wave2-profile-settings/settings`,
 
 ### 2026-11-01T03:04Z · ci-plan-spar · ready (VTID allocated)
 VTID-05431 allocated after policy approval (converged-auto-v1).
+### 2026-11-01T17:08Z · kiro-exafyltd-202611011658-9f52 · ready → executing
+Claimed by kiro-exafyltd-202611011658-9f52 (Kiro Web driver, seat exafyltd); built by a delegated builder under this session on vitana-v1 branch `kiro/native-wave2-profile-settings-r2/settings`.
+### 2026-11-01T18:03Z · kiro-exafyltd-202611011658-9f52 · executing → in-review
+PR https://github.com/exafyltd/vitana-v1/pull/1546. Evidence: vitana-v1 `docs/validation/VTID-05431/` (commands.log, red-on-base, verification.md, staging-tests.json).
