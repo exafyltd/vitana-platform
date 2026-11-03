@@ -39,3 +39,6 @@ Converged; approved by policy converged-auto-v1. 2 lane(s) got a VTID and are ha
 
 ### 2026-11-03T13:45Z · kiro-hotmail-202611011452-6d16 · takeover
 Took over the driver from kiro-202611011939-b712 (heartbeat stale since 2026-11-01T20:27Z; takeover recorded by plan-driver heartbeat). The _plan and approvals-auth claims follow that session's release. Amendment 1 adds services/gateway/test/orb-tools/developer-tools.test.ts to the approvals-auth lane paths; PR #4606 fails Lane scope without it. WS-IA (ia-architecture-map-r2) is NOT taken: kiro-202611011939-b712 keeps it.
+
+### 2026-11-03T13:55Z · kiro-hotmail-202611011452-6d16 · stale claims released (--stale)
+Released and re-claimed under queue.mjs release --stale (both claims older than 24 h; holder kiro-202611011939-b712 did not release after the takeover entry): collab-claim/mt-track-s-authz/_plan (since 2026-11-01T19:49Z) and collab-claim/mt-track-s-authz/approvals-auth (since 2026-11-02T10:53Z). Both now held by kiro-hotmail-202611011452-6d16. The lane's developer-tools test moves into the lane test file (option C), recorded in the approvals-auth lane commit.
