@@ -1,0 +1,36 @@
+{
+  "vtid": "VTID-05453",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "existing",
+      "ref": "npx jest test/mt-track-s-authz-work-surface.test.ts",
+      "cwd": "services/gateway",
+      "reason": "VTID-05453 change suite: per-screen permission, session start, LiveKit mint, text path and the source contracts of the three routes. Pure functions and in-memory fixtures only; nothing writes to a database (CLAUDE.md rule 48)."
+    },
+    {
+      "kind": "existing",
+      "ref": "npm run test:roles",
+      "cwd": "services/gateway",
+      "reason": "CLAUDE.md rule 42h: the role separation regression suite must stay green, unedited, for the profile resolver and the session start."
+    },
+    {
+      "kind": "existing",
+      "ref": "npm run test:support",
+      "cwd": "services/gateway",
+      "reason": "CLAUDE.md rule 42c: the customer support pipeline suite, which runs the conversation and tool paths this change touches."
+    },
+    {
+      "kind": "existing",
+      "ref": "npm run test:operator",
+      "cwd": "services/gateway",
+      "reason": "CLAUDE.md rule 42e: the operator pipeline suite, which must stay green for any change in the Command Hub voice path."
+    },
+    {
+      "kind": "existing",
+      "ref": "npm run test:voice-identity",
+      "cwd": "services/gateway",
+      "reason": "Voice payload identity snapshots of the session start path (VTID-04542): the connect-time payload and the instruction stay byte-identical for the member and admin fixtures."
+    }
+  ]
+}

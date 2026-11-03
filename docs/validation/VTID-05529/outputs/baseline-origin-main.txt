@@ -1,0 +1,10 @@
+Baseline on origin/main 4dc5b302bf (temporary detached worktree, node_modules shared from the lane worktree), run: npx jest test/providers/storage-provider.test.ts test/vtid-04226-eventbridge-test-contract-schedules.test.ts test/routes/orb-livekit.test.ts
+Result: storage-provider FAIL (1 test, AWS region env), vtid-04226 FAIL (1 test, openssl missing), orb-livekit PASS (all).
+
+FAIL test/vtid-04226-eventbridge-test-contract-schedules.test.ts
+    ✕ the token provisioning script is dry-run by default and never defaults to prod (11 ms)
+FAIL test/providers/storage-provider.test.ts
+    ✕ builds a plain, unsigned public URL — same shape as Supabase getPublicUrl() (3 ms)
+PASS test/routes/orb-livekit.test.ts
+Test Suites: 2 failed, 1 passed, 3 total
+Tests:       2 failed, 130 passed, 132 total

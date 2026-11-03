@@ -828,6 +828,8 @@ describe('orb-livekit routes', () => {
     it('VTID-04776: a phone showing the admin screens gets the admin Vitana — the device does not decide', async () => {
       const uid = freshUserId();
       const token = await signToken({ sub: uid });
+      // VTID-05453: the admin surface is served to a caller who holds a permitted admin role.
+      chainFor('user_permitted_roles').mockResolvedValueOnce({ data: [{ role: 'admin' }], error: null });
       mockActiveProviderRow('livekit');
       setLiveKitEnv();
       const res = await request(app)
@@ -847,6 +849,8 @@ describe('orb-livekit routes', () => {
       for (const ua of ['Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0)', 'Mozilla/5.0 (Linux; Android 14) Mobile']) {
         mockAccessTokenCtor.mockClear();
         const token = await signToken({ sub: freshUserId() });
+        // VTID-05453: the backoffice surface is served to a caller who holds a permitted backoffice role.
+        chainFor('user_permitted_roles').mockResolvedValueOnce({ data: [{ role: 'backoffice' }], error: null });
         mockActiveProviderRow('livekit');
         setLiveKitEnv();
         const res = await request(app)
@@ -1107,6 +1111,8 @@ describe('orb-livekit routes', () => {
         undefined,
         null,
         true,
+        // VTID-05453: the surface the instruction is built for (the verified one; anonymous is the member surface).
+        'vitanaland',
       );
       // Anonymous → decision-context + wake-brief compile is skipped entirely.
       expect(res.body.decision_context).toBeNull();

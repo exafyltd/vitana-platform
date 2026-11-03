@@ -1,0 +1,20 @@
+Full gateway jest suite (cd services/gateway && npx jest), run at the final head of kiro/mt-track-s-authz/work-surface-permission (based on origin/main 4dc5b302bf).
+Summary lines:
+Test Suites: 3 failed, 3 skipped, 1745 passed, 1748 of 1751 total
+Tests:       5 failed, 54 skipped, 6 todo, 29081 passed, 29146 total
+Snapshots:   126 passed, 126 total
+
+Failing suites:
+FAIL test/providers/storage-provider.test.ts
+FAIL test/routes/orb-livekit.test.ts
+FAIL test/vtid-04226-eventbridge-test-contract-schedules.test.ts
+
+Failing tests:
+  ● orb-livekit routes › GET /orb/context-bootstrap › anonymous request resolves lang from Accept-Language and renders a system instruction
+  ● orb-livekit routes › POST /orb/livekit/token › VTID-04776: a phone showing the admin screens gets the admin Vitana — the device does not decide
+  ● orb-livekit routes › POST /orb/livekit/token › VTID-04776: the same declaration resolves the same role on desktop and mobile
+  ● VTID-03765 s3BucketName / s3PublicUrl › builds a plain, unsigned public URL — same shape as Supabase getPublicUrl()
+  ● VTID-04226: scripts parse and dry-run › the token provisioning script is dry-run by default and never defaults to prod
+
+Not failures: the 'foo › returns the right value' header is fixture output printed by test/vtid-04800-ci-failure-routing.test.ts.
+Environment failures (also fail on origin/main 4dc5b302bf, verified in a temporary worktree): storage-provider (AWS region env), vtid-04226 (openssl not installed in this sandbox).

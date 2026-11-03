@@ -46,8 +46,11 @@ import { recordVoiceSessionStart, uuidOrNull } from '../services/voice-session-f
 import {
   resolveAssistantProfile,
   clampRoleToProfile,
+  needsWorkSurfacePermit,
+  verifyWorkSurfaceProfile,
   type AssistantProfile,
 } from '../orb/profile/assistant-profile';
+import { fetchPermittedRoles } from '../lib/permitted-roles';
 // §11 conversation-flow architecture: the single session-end memory-commit step.
 // The LiveKit agent POSTs its transcript here on teardown so the SAME extraction
 // the Vertex path runs also runs for LiveKit (it ran NOTHING before).
@@ -697,6 +700,28 @@ export function resolveLiveKitProfile(input: {
   return { profile, role: clampRoleToProfile(profile, input.storedRole) ?? 'community' };
 }
 
+/**
+ * VTID-05453: the profile the mint serves. A declared work surface is kept only
+ * for a signed-in caller who holds a permitted role for it; an unreadable
+ * permitted set, or a read that rejects, is served the member surface. The
+ * exafy_admin claim, anonymous sessions and commerce read nothing.
+ */
+export async function resolveLiveKitServedProfile(input: {
+  body: Pick<MintTokenBody, 'surface' | 'view_role' | 'current_route'>;
+  isAnonymous: boolean;
+  isExafyAdmin: boolean;
+  storedRole: string | null | undefined;
+  userId: string | null;
+  tenantId: string | null;
+}): Promise<{ profile: AssistantProfile; role: string }> {
+  const declared = resolveLiveKitProfile(input);
+  if (!needsWorkSurfacePermit(declared.profile, input)) return declared;
+  const permitted = await fetchPermittedRoles(getSupabase(), input.userId ?? '', input.tenantId ?? '')
+    .catch(() => ({ roles: null }));
+  const profile = verifyWorkSurfaceProfile(declared.profile, { isExafyAdmin: false, permittedRoles: permitted.roles });
+  return { profile, role: clampRoleToProfile(profile, input.storedRole) ?? 'community' };
+}
+
 router.post(
   '/orb/livekit/token',
   optionalAuth,
@@ -737,11 +762,14 @@ router.post(
     // longer decides the role — the screen does (resolveLiveKitProfile).
     const ua = String(req.headers['user-agent'] || '').toLowerCase();
     const isMobile = /iphone|android|appilix|webview|mobile/.test(ua);
-    const { profile: assistantProfile, role } = resolveLiveKitProfile({
+    // VTID-05453: a declared work surface is served only to a caller who holds a permitted role for it.
+    const { profile: assistantProfile, role } = await resolveLiveKitServedProfile({
       body,
       isAnonymous,
       isExafyAdmin: req.identity?.exafy_admin === true,
       storedRole: req.identity?.role ?? null,
+      userId: req.identity?.user_id ?? null,
+      tenantId: req.identity?.tenant_id ?? null,
     });
 
     const orbSessionId = `orb-${randomUUID()}`;
@@ -1062,6 +1090,16 @@ router.get(
       }
       return null;
     })();
+    // VTID-05453: the surface the instruction is built for. A work surface named by the route is kept only for a
+    // caller who holds its permitted role; otherwise the instruction is the member Vitana's.
+    const { profile: servedProfile } = await resolveLiveKitServedProfile({
+      body: { current_route: currentRoute ?? undefined },
+      isAnonymous: !req.identity,
+      isExafyAdmin: req.identity?.exafy_admin === true,
+      storedRole: role,
+      userId,
+      tenantId,
+    });
 
     // VTID-03035 + VTID-03036: two-layer cache hit short-circuit.
     //  - L1 in-memory (per Cloud Run instance) — ~0ms when hit
@@ -1752,6 +1790,7 @@ router.get(
                              // blocks are dead text on every per-turn LLM
                              // call. omitGreetingPolicy=true drops them
                              // (~107 KB → ~70 KB system_instruction).
+        servedProfile.surface,   // VTID-05453: the verified surface (no route-derived persona for a refused caller).
       );
       }
     } catch (exc) {
@@ -1987,6 +2026,7 @@ normal conversation flow.`;
           envContext ?? undefined,
           req.identity?.vitana_id ?? null,
           true,
+          servedProfile.surface,
         );
         // Append the directive OUTSIDE the bootstrap-cap region — this is what
         // keeps it from ever being trimmed for heavy-context users.

@@ -90,6 +90,8 @@ import * as repo from './conversation-repository';
 import { requireAuth } from '../middleware/auth-supabase-jwt';
 import type { AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import { bindConversationBodyIdentity, bindConversationQueryIdentity } from './conversation-identity';
+import { isPlainTurnRole, servedTurnRole } from '../orb/profile/assistant-profile';
+import { resolveEffectiveRole } from './orb-live';
 
 import { withDependencyHealth } from '../services/dependency-probe';
 const router = Router();
@@ -186,6 +188,25 @@ function getOrCreateThread(
   return newThread;
 }
 
+/**
+ * VTID-05453: the role a text turn serves. The body's `role` is a request. It is
+ * served only as the caller's effective role allows (resolveEffectiveRole, clamped
+ * to the permitted set), or to exafy_admin. The effective role is read only for a
+ * non-exafy caller who names a role other than 'user' or 'community'.
+ */
+async function turnRoleServed(
+  req: AuthenticatedRequest,
+  requested: string,
+  userId: string,
+  tenantId: string,
+): Promise<string> {
+  const isExafyAdmin = req.identity?.exafy_admin === true;
+  const effectiveRole = isExafyAdmin || isPlainTurnRole(requested) || !tenantId
+    ? null
+    : await resolveEffectiveRole(userId, tenantId, { exafyAdmin: false }).catch(() => null);
+  return servedTurnRole(requested, { isExafyAdmin, effectiveRole });
+}
+
 // =============================================================================
 // POST /turn - Process a conversation turn
 // =============================================================================
@@ -213,7 +234,7 @@ router.post('/turn', requireAuth, bindConversationBodyIdentity(), async (req: Re
     }
 
     const input = validation.data;
-    const { channel, tenant_id, user_id, role, message, ui_context, vtid, options } = input;
+    const { channel, tenant_id, user_id, role: requestedRole, message, ui_context, vtid, options } = input;
 
     // =========================================================================
     // VTID-DEV-ASSIST: STRICT ROLE ENFORCEMENT for developer_assistant channel
@@ -241,7 +262,7 @@ router.post('/turn', requireAuth, bindConversationBodyIdentity(), async (req: Re
       const allowedDevRoles = ['developer', 'admin'];
       if (!verifiedRole || !allowedDevRoles.includes(verifiedRole)) {
         console.warn(
-          `[VTID-DEV-ASSIST] ACCESS DENIED: user=${user_id} claimed_role=${role} verified_role=${verifiedRole} channel=developer_assistant`
+          `[VTID-DEV-ASSIST] ACCESS DENIED: user=${user_id} claimed_role=${requestedRole} verified_role=${verifiedRole} channel=developer_assistant`
         );
 
         await emitOasisEvent({
@@ -254,7 +275,7 @@ router.post('/turn', requireAuth, bindConversationBodyIdentity(), async (req: Re
             request_id: requestId,
             user_id,
             tenant_id,
-            claimed_role: role,
+            claimed_role: requestedRole,
             verified_role: verifiedRole,
           },
         }).catch(() => {});
@@ -268,6 +289,9 @@ router.post('/turn', requireAuth, bindConversationBodyIdentity(), async (req: Re
 
       console.log(`[VTID-DEV-ASSIST] Access granted: user=${user_id} verified_role=${verifiedRole}`);
     }
+
+    // VTID-05453: every later use of the role (brain, prompt, tool catalog, actor) is the served role.
+    const role = await turnRoleServed(req as AuthenticatedRequest, requestedRole, user_id, tenant_id);
 
     // VITANA-BRAIN: If brain flag is enabled, delegate entirely to brain and return early
     const { isVitanaBrainEnabled } = await import('../services/system-controls-service');
@@ -848,6 +872,9 @@ router.post('/stream', requireAuth, bindConversationBodyIdentity(), async (req: 
       }
     }
 
+    // VTID-05453: the role this stream serves (see turnRoleServed).
+    const servedRole = await turnRoleServed(req as AuthenticatedRequest, input.role, input.user_id, input.tenant_id);
+
     // Set SSE headers
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
@@ -868,7 +895,7 @@ router.post('/stream', requireAuth, bindConversationBodyIdentity(), async (req: 
     const memoryContext = await buildAssistantMemoryContext({
       tenant_id: input.tenant_id,
       user_id: input.user_id,
-      role: input.role,
+      role: servedRole,
       channel: input.channel,
       message: input.message.text,
       thread_id: thread.thread_id,
@@ -915,7 +942,7 @@ Instructions:
         systemInstruction,
         conversationHistory: [],
         threadId: thread.thread_id,
-        userRole: input.role,
+        userRole: servedRole,
       });
 
       // Send text chunks (simulate streaming)
