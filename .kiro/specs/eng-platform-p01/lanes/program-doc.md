@@ -11,7 +11,7 @@ repos: [exafyltd/vitana-platform]
 paths:
   - docs/ENGINEERING-PLATFORM-PLAN.md
   - docs/validation/**
-updated: 2026-11-03T14:43Z
+updated: 2026-11-03T15:05Z
 vtid: VTID-05517
 parked_from: ready
 ---
@@ -259,4 +259,6 @@ reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
 ### 2026-11-03T14:36Z · pm-agent · update
 reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
 ### 2026-11-03T14:43Z · pm-agent · ready → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
+### 2026-11-03T15:05Z · pm-agent · update
 park (stale_claim); claim released; Claude unavailable → exafyltd
