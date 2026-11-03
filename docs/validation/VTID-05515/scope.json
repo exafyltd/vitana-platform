@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-05515",
+  "kind": "infra",
+  "paths": [
+    "scripts/aws/inventory-readonly.sh",
+    "services/gateway/test/eng-platform-inventory-readonly.test.ts",
+    "docs/validation/VTID-05515/**"
+  ],
+  "sparring_record": ".kiro/specs/eng-platform-p01/sparring/verdict.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}
