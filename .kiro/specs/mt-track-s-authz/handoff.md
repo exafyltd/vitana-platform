@@ -36,3 +36,6 @@ commit was made at 19:53Z.
 
 ### 2026-11-01T20:54Z · ci-plan-spar · drafted → approved
 Converged; approved by policy converged-auto-v1. 2 lane(s) got a VTID and are handed to Kiro.
+
+### 2026-11-03T14:20Z · kiro-hotmail-202611011452-6d16 · amendment 1
+Lane approvals-auth-v2 supersedes approvals-auth (VTID-05452). Reason: the approvals-auth lane belongs to seat exafy and its paths cannot be amended from another seat. The v2 lane carries the same work with developer-tools.test.ts in scope. PR #4606 closes when v2 merges.

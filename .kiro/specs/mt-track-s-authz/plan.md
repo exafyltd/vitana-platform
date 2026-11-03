@@ -178,4 +178,6 @@ Staging (read-only, `docs/validation/<VTID>/staging-tests.json`):
 No migration, flag, RLS policy or tenant code (`tenant-context.ts`, auth middleware) changes. `resolveAssistantProfile`,
 the member-surface clamp, `ROLE_REGISTRY`, `resolveEffectiveRole`, `fetchPermittedRoles` and the cicd router are
 unchanged. Production is reached only by PUBLISH after Gate 2.
+
+**Amendment 1 (2026-11-03, kiro-hotmail-202611011452-6d16).** `approvals-auth` (VTID-05452) is superseded by lane `approvals-auth-v2`. Its paths cannot be amended from another seat, because lane permissions come from the base revision and the lane belongs to seat exafy. `services/gateway/test/orb-tools/developer-tools.test.ts` is on main (e319c82ea5) and the approvals work changes it, so it must be in the lane's paths. The v2 lane carries the same tasks and acceptance plus that test path. PR #4606 (the approvals branch) is the code base of v2 and closes when v2 merges. `approvals-auth` is not built by its seat. `work-surface-permission` is unchanged.
 <!-- plan:end -->
