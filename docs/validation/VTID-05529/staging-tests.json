@@ -1,12 +1,12 @@
 {
-  "vtid": "VTID-05453",
+  "vtid": "VTID-05529",
   "service": "gateway",
   "tests": [
     {
       "kind": "existing",
       "ref": "npx jest test/mt-track-s-authz-work-surface.test.ts",
       "cwd": "services/gateway",
-      "reason": "VTID-05453 change suite: per-screen permission, session start, LiveKit mint, text path and the source contracts of the three routes. Pure functions and in-memory fixtures only; nothing writes to a database (CLAUDE.md rule 48)."
+      "reason": "VTID-05529 change suite: per-screen permission, session start, LiveKit mint, text path and the source contracts of the three routes. Pure functions and in-memory fixtures only; nothing writes to a database (CLAUDE.md rule 48)."
     },
     {
       "kind": "existing",
