@@ -58,6 +58,7 @@ specs:
   - vitana-platform:reviewer-session-id-permission
   - vitana-platform:kiro-lane-admin
   - vitana-platform:say-hello-lane-reassign
+  - vitana-platform:welcome-finish-r2
   - vitana-platform:i18n-propagate-stale-write
   - vitana-platform:sparring-floor-retry
   - vitana-platform:ci-dockerhub-mirror
