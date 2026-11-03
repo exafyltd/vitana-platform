@@ -1,20 +1,19 @@
-# VTID-05515 commands (2026-11-02T19:15:12Z, Linux, node v22.23.4)
-$ npx jest test/eng-platform-inventory-readonly.test.ts
-    ✓ runs in strict mode (21 ms)
+# VTID-05515 commands (2026-11-03T13:33:13Z, Linux, node v22.23.4)
+red on base (origin/main, script absent): outputs/red-on-base.txt
+
+$ cd services/gateway && npx jest test/eng-platform-inventory-readonly.test.ts --verbose
+    ✓ runs in strict mode (13 ms)
     ✓ refuses to run against any account but 472838866351 (1 ms)
-    ✓ only calls describe-*, list-* and get-* APIs through run() (6 ms)
-    ✓ calls aws directly only for get-caller-identity and inside run() (1 ms)
+    ✓ only calls describe-*, list-* and get-* APIs through run() (4 ms)
+    ✓ calls aws directly only for get-caller-identity and inside run()
     ✓ never reads secret values, decrypts parameters, uploads or mutates (1 ms)
-Test Suites: 1 passed, 1 total
-Tests:       5 passed, 5 total
+    ✓ lists IAM users with their groups, group policies and permissions boundary (sparring R1-F2) (1 ms)
+    ✓ has no flag that changes the guarded account (reviewer finding 2026-11-03)
+Tests:       7 passed, 7 total
 
-red on base: red-on-base.txt
-
-$ bash scripts/aws/inventory-readonly.sh --help | head -3
-inventory-readonly.sh — read-only inventory of the Vitana AWS estate (plan eng-platform-p01, lane aws-inventory).
-
-WHO RUNS IT: the owner (or anyone the owner hands a read-only identity to), e.g. with the AWS managed policy
+$ bash scripts/aws/inventory-readonly.sh --account 123
+unknown argument: --account
+exit=2
 $ (no AWS credentials) bash scripts/aws/inventory-readonly.sh
 refusing to run: caller account is '<no credentials>', expected 472838866351
 exit=4
-Tests:       6 passed, 6 total

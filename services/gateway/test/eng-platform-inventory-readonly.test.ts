@@ -60,8 +60,19 @@ describe('inventory-readonly.sh', () => {
   });
 
   it('lists IAM users with their groups, group policies and permissions boundary (sparring R1-F2)', () => {
-    for (const call of ['list-access-keys', 'list-groups-for-user', 'list-attached-group-policies', 'list-group-policies', 'iam get-user']) {
-      expect(text).toContain(call);
-    }
+    const body = code.join('\n');
+    expect(body).toMatch(/run iam\/users "\$u-access-keys" iam list-access-keys --user-name "\$u"/);
+    expect(body).toMatch(/run iam\/users "\$u-groups" iam list-groups-for-user --user-name "\$u"/);
+    expect(body).toMatch(/run iam\/users "\$u-user" iam get-user --user-name "\$u"/);
+    expect(body).toMatch(/run iam\/groups "\$g-attached-policies" iam list-attached-group-policies --group-name "\$g"/);
+    expect(body).toMatch(/run iam\/groups "\$g-inline-policies" iam list-group-policies --group-name "\$g"/);
+    // The boundary is reported, not only fetched.
+    expect(body).toContain('## IAM users: groups and permissions boundary');
+    expect(body).toContain('.User.PermissionsBoundary.PermissionsBoundaryArn');
+  });
+
+  it('has no flag that changes the guarded account (reviewer finding 2026-11-03)', () => {
+    expect(text).not.toContain('--account');
+    expect(text).toMatch(/^readonly EXPECTED_ACCOUNT="472838866351"$/m);
   });
 });

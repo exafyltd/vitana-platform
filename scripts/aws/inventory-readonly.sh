@@ -12,10 +12,10 @@
 # account or region is a hard stop). A denied or failing call is recorded in summary.md and skipped; the run goes on.
 #
 # USAGE:
-#   scripts/aws/inventory-readonly.sh [--out DIR] [--region REGION] [--account ID]
+#   scripts/aws/inventory-readonly.sh [--out DIR] [--region REGION]
 #     --out      output directory (default ./aws-inventory-<UTC date>)
 #     --region   default eu-central-1
-#     --account  default 472838866351
+#   The account is fixed (472838866351, CLAUDE.md IF-THEN 11); there is no override.
 #   Exit 0 when the run completed (denied calls included); non-zero when a guard failed.
 #
 # OUTPUT LAYOUT: <out>/<area>/<name>.json for each call, <out>/summary.md (counts, denied calls, key findings:
@@ -23,7 +23,7 @@
 
 set -euo pipefail
 
-EXPECTED_ACCOUNT="472838866351"
+readonly EXPECTED_ACCOUNT="472838866351"
 REGION="eu-central-1"
 OUT=""
 
@@ -33,7 +33,6 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --out) OUT="${2:?--out needs a directory}"; shift 2 ;;
     --region) REGION="${2:?--region needs a value}"; shift 2 ;;
-    --account) EXPECTED_ACCOUNT="${2:?--account needs a value}"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -186,7 +185,16 @@ count() { [ -f "$1" ] && jq -r "$2" "$1" 2>/dev/null || echo "n/a"; }
   echo "## IAM users with access keys"
   for f in "$OUT"/iam/users/*-access-keys.json; do
     [ -f "$f" ] || continue
-    jq -r '.AccessKeyMetadata[] | "- \(.UserName): key …\(.AccessKeyId[-4:]) \(.Status), created \(.CreateDate)"' "$f"
+    jq -r '.AccessKeyMetadata[] | "- \(.UserName): key …\(.AccessKeyId[-4:]) \(.Status), created \(.CreateDate)"' "$f" || echo "- $f: unreadable"
+  done
+  echo
+  echo "## IAM users: groups and permissions boundary"
+  for f in "$OUT"/iam/users/*-user.json; do
+    [ -f "$f" ] || continue
+    u="$(basename "$f" -user.json)"
+    g="$(jq -r '[.Groups[].GroupName] | join(", ")' "$OUT/iam/users/$u-groups.json" 2>/dev/null || echo "n/a")"
+    b="$(jq -r '.User.PermissionsBoundary.PermissionsBoundaryArn // "none"' "$f" 2>/dev/null || echo "n/a")"
+    echo "- $u: groups [${g:-none}], boundary $b"
   done
   echo
   echo "## Roles trusting a web identity (OIDC)"
