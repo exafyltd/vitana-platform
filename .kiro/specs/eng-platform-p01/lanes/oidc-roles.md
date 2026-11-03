@@ -1,6 +1,6 @@
 ---
 lane: oidc-roles
-state: ready
+state: parked
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -13,8 +13,9 @@ paths:
   - scripts/aws/iam/eng-platform-oidc-*.json
   - services/gateway/test/eng-platform-oidc-roles.test.ts
   - docs/validation/**
-updated: 2026-11-03T14:43Z
+updated: 2026-11-03T15:04Z
 vtid: VTID-05516
+parked_from: ready
 ---
 # Lane: oidc-roles (repo vitana-platform)
 Tasks in `tasks.md`. VTID from PLAN-SPAR; never by hand.
@@ -261,3 +262,5 @@ reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
 reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
 ### 2026-11-03T14:43Z · pm-agent · update
 reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
+### 2026-11-03T15:04Z · pm-agent · ready → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
