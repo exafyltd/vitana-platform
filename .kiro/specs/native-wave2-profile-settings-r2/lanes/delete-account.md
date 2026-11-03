@@ -1,6 +1,6 @@
 ---
 lane: delete-account
-state: ready
+state: in-review
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -17,8 +17,11 @@ paths:
   - apps/mobile/parity/ledger.json
   - src/i18n/*/deleteAccountNative.json
   - docs/validation/**
-updated: 2026-11-01T03:04Z
+updated: 2026-11-01T18:04Z
 vtid: VTID-05428
+claimed_by: kiro-exafyltd-202611011658-9f52
+branch: kiro/native-wave2-profile-settings-r2/delete-account
+pr: https://github.com/exafyltd/vitana-v1/pull/1547
 ---
 # Public delete-account port — `/delete-account` in the `(public)` group
 Plan: `.kiro/specs/native-wave2-profile-settings-r2/` — `plan.md` (plan block, decision 1a) and the `tasks.md` section
@@ -50,3 +53,7 @@ Lane created with the plan (r2 sparring R1-F1: `/delete-account` moved out of `s
 
 ### 2026-11-01T03:04Z · ci-plan-spar · ready (VTID allocated)
 VTID-05428 allocated after policy approval (converged-auto-v1).
+### 2026-11-01T17:08Z · kiro-exafyltd-202611011658-9f52 · ready → executing
+Claimed by kiro-exafyltd-202611011658-9f52 (Kiro Web driver, seat exafyltd); built by a delegated builder under this session on vitana-v1 branch `kiro/native-wave2-profile-settings-r2/delete-account`.
+### 2026-11-01T18:04Z · kiro-exafyltd-202611011658-9f52 · executing → in-review
+PR https://github.com/exafyltd/vitana-v1/pull/1547. Evidence: vitana-v1 `docs/validation/VTID-05428/` (commands.log, red-on-base, verification.md, staging-tests.json).
