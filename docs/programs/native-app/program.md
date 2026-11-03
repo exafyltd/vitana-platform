@@ -5,6 +5,7 @@ status: active
 priority: 3
 repos: [vitana-v1, vitana-platform]
 specs:
+  - vitana-platform:native-shell-fixes
   - vitana-platform:native-wave2-ai-pages
   - vitana-platform:native-wave2-ai-pages-r2
   - vitana-platform:native-wave2-discover-commerce
