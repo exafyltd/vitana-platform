@@ -43,7 +43,7 @@ step — the Daily.co live-rooms join in particular — is marked depends-on-own
 web screen, no `App.tsx` route, no registry / manifest / `screens.json` / `exclusions.json` change — only native route
 files and parity-row status flips.
 ## Measured state (worktree = origin/main, parity ledger `apps/mobile/parity/ledger.json` version 2)
-- **22 rows** carry `"lane": "events-calendar"`, **all `status: "not_started"`** (14 `screen`, 3 `overlay`, 6
+- **22 rows** carry `"lane": "events-calendar"`, **all `status: "not_started"`** (13 `screen`, 3 `overlay`, 6
   exclusion `route`, incl. the one `overlay` for `/calendar`); **435 rows total**. Counted with `node -e` over the
   committed ledger (the `--report` CLI needs `typescript`, not installed in this worktree). The 22 rows and their web
   paths are listed in `requirements.md` R0.2–R0.4.
@@ -91,7 +91,7 @@ files and parity-row status flips.
    the pinned commit for `src/pages/Calendar.tsx`, `src/pages/community/LiveRooms.tsx`,
    `src/pages/community/LiveRoomViewer.tsx`, `src/components/CreateEventPopup.tsx`,
    `src/components/CreateMeetupPopup.tsx`, `src/components/EditMeetupPopup.tsx`. **A class-B module is NEVER moved into
-   `@vitana/core`** — it would make `core-closure.mjs --check` fail (`core-closure.mjs:150`, `m.own !== 'A'`) because
+   `@vitana/core`** — it would make `core-closure.mjs --check` fail (`core-closure.mjs:153`, `m.own !== 'A'`) because
    `supabase/client.ts` pulls `import.meta.env` / `localStorage` / the prod Supabase URL into the closure. Instead
    each lane **re-implements the fetching natively** (native Supabase client + native auth context, the Wave 1
    pattern) and consumes only the pure helpers from core. Candidate pure helpers per lane (final set confirmed by
@@ -146,7 +146,7 @@ files and parity-row status flips.
 ## Lanes (all `ready`, executor kiro; seat → reviewer_seat; `vtid:` filled by CI on convergence)
 | Lane | Seat → reviewer | Scope (web destinations) | depends_on |
 |---|---|---|---|
-| `events-meetups` | exafyltd → hotmail | events/meetups hub `/comm/events-meetups` (+ `?tab=hot\|today\|upcoming\|following`), `COMM.OVERVIEW`, event + meetup drawers, and the 4 public/game exclusion routes `/community/event-game`, `/e/:slug`, `/e/game/:slug`, `/pub/events/:id` (**12 rows**) | — |
+| `events-meetups` | exafyltd → hotmail | events/meetups hub `/comm/events-meetups` (+ `?tab=hot\|today\|upcoming\|following`), `COMM.OVERVIEW`, event + meetup drawers, and the 4 public/game exclusion routes `/community/event-game`, `/e/:slug`, `/e/game/:slug`, `/pub/events/:id` (**12 rows**; `COMM.OVERVIEW` and `COMM.EVENTS_HOT` share the web_path `/comm/events-meetups?tab=hot`, so the one native hot-tab screen flips both rows together and the parity check covers both keys) | — |
 | `calendar-reminders` | exafyltd → hotmail | `/calendar` (+ `/calendar/entry/:entryId`), `/reminders` (+ `/reminders/fire/:fireId`) — the calendar overlay + reminders screen and their deep-link routes (**4 rows**); **the date/time locale-helper rule is load-bearing here** | — |
 | `live-rooms` | exafyltd → hotmail | `/comm/live-rooms` (+ `?tab=all\|live\|past\|scheduled`) and `/comm/live-rooms/:roomId/view` — the live-rooms list + viewer (Daily.co); device-runtime join is G1-deferred (**6 rows**) | — |
 Exact `paths` globs are in each `lanes/<id>.md`; the 22 parity rows partition **12 (events-meetups) + 4

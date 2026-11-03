@@ -34,7 +34,7 @@ Unlike the home-feed cluster (whose compose/rank modules were pure), the events-
 are class-B**: `src/pages/Calendar.tsx`, `src/pages/community/LiveRooms.tsx`, `src/pages/community/LiveRoomViewer.tsx`,
 `src/components/CreateEventPopup.tsx`, `src/components/CreateMeetupPopup.tsx`, `src/components/EditMeetupPopup.tsx` all
 runtime-import `@/integrations/supabase/client.ts`. **None of them is moved into `@vitana/core`** — the closure gate
-(`core-closure.mjs:150`, `m.own !== 'A'`) fails if a class-B file is reachable, because `supabase/client.ts` pulls
+(`core-closure.mjs:153`, `m.own !== 'A'`) fails if a class-B file is reachable, because `supabase/client.ts` pulls
 `import.meta.env` / `localStorage` / the prod Supabase URL into the closure. The lanes therefore **re-implement the
 data fetching natively** (native Supabase client + native auth context, the Wave 1 pattern) and extract only the pure,
 IO-free helpers. Candidate pure helpers (final set confirmed mechanically by `core-closure --write`/`--check` in each
