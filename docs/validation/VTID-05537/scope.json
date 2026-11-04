@@ -8,7 +8,7 @@
     "scripts/eng/testing/fake-fetch.test.mjs",
     "docs/validation/VTID-05537/**"
   ],
-  "sparring_record": ".kiro/specs/eng-gitlab-m2/sparring/verdict.md",
+  "sparring_record": "docs/validation/VTID-05537/plan-sparring.md",
   "weakens_tests": [],
   "red_green_exempt": []
 }
