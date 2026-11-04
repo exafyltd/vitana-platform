@@ -4,9 +4,10 @@ author: kiro
 author_seat: exafyltd
 executor: kiro
 next_actor: kiro
-state: drafted
-updated: 2026-11-04T09:40Z
-vtids: []
+state: approved
+updated: 2026-11-04T10:50Z
+vtids: [VTID-05533]
+sparring_record: .kiro/specs/staging-pm-pause/sparring/verdict.md
 ---
 # Handoff — staging-pm-pause
 
@@ -17,3 +18,6 @@ The lane changes one line in `.github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml`. P
 ### 2026-11-04T09:40Z · kiro-exafyltd-202611021510-092e · drafted
 Written on the owner's approval to pause the staging PM and make the pause durable. The running staging task is
 switched by the owner (see plan § Owner action).
+
+### 2026-11-04T10:50Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.

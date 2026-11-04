@@ -12,7 +12,8 @@ reviewer_seat: agent:vitana-lane-reviewer
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 paths:
   - .github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml
-updated: 2026-11-04T09:40Z
+updated: 2026-11-04T10:50Z
+vtid: VTID-05533
 ---
 # Lane: staging-pm-pause (repo exafyltd/vitana-platform)
 
@@ -21,3 +22,6 @@ Changes one line: `PM_MODE` `live` → `off` in the staging gateway deploy (plan
 ## Log
 ### 2026-11-04T09:40Z · kiro-exafyltd-202611021510-092e · ready
 Lane created with the plan.
+
+### 2026-11-04T10:50Z · ci-plan-spar · ready (VTID allocated)
+VTID-05533 allocated after policy approval (converged-auto-v1).
