@@ -68,8 +68,11 @@ timer. Measurement comes first so the owner can see which cause applies on a rea
    read-only (platform `CLAUDE.md`, Staging Verification Gate, rule 48). Before the lane is marked verified, the session
    reads the suite and confirms it makes no non-GET request.
 5. **Branch and trailers.** A new lane branch `kiro/group-chat-realtime-status/groupchat-realtime` is cut from
-   `origin/main`. Its first commit is the cherry-pick of `90142e0c5`, and every later commit carries
-   `Collab-Session` and `Collab-Lane: group-chat-realtime-status/groupchat-realtime`. The new PR's title carries the VTID.
+   `origin/main`. Every commit on that branch carries `Collab-Session` and
+   `Collab-Lane: group-chat-realtime-status/groupchat-realtime`, including the cherry-pick of `90142e0c5`. The cherry-pick
+   is made with `git cherry-pick --no-commit 90142e0c5` followed by `git commit` with the two trailers, so the commit
+   that lands on the lane branch is the one that carries them. The `queue.mjs` Collab handoff check requires this on every
+   commit (`scripts/collab/queue.mjs:841`). The new PR's title carries the VTID.
    PR #1560 and its branch stay unchanged (no rewrite of pushed history). PR #1560 is closed as superseded once the new PR
    is open.
 
