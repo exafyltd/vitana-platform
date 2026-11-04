@@ -5691,11 +5691,9 @@ async function executeDevApproveItem(
     const gatewayPort = process.env.PORT || '8080';
     const resp = await fetch(`http://localhost:${gatewayPort}/api/v1/approvals/${args.approval_id}/approve`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: SUPABASE_SERVICE_ROLE!,
-        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
-      },
+      // VTID-05528: /api/v1/approvals/:id/approve is requireServiceOrAdmin — send the
+      // gateway service token, not the Supabase service key (same as VTID-05048 above).
+      headers: { 'Content-Type': 'application/json', ...gatewayServiceAuthHeader() },
     });
 
     const result = await resp.json() as any;
@@ -5728,11 +5726,9 @@ async function executeDevRejectItem(
     const gatewayPort = process.env.PORT || '8080';
     const resp = await fetch(`http://localhost:${gatewayPort}/api/v1/approvals/${args.approval_id}/reject`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: SUPABASE_SERVICE_ROLE!,
-        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
-      },
+      // VTID-05528: /api/v1/approvals/:id/reject is requireServiceOrAdmin — send the
+      // gateway service token, not the Supabase service key (same as VTID-05048 above).
+      headers: { 'Content-Type': 'application/json', ...gatewayServiceAuthHeader() },
       body: JSON.stringify({ reason: args.reason || 'Rejected via developer assistant' }),
     });
 
