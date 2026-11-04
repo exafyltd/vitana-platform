@@ -1,0 +1,72 @@
+# VTID-05465 red evidence (mt-identity-r2 / helpers-and-policy-rewrite)
+# base: origin/main 50e55fd3a4 (exafyltd/vitana-platform). Test written before the migrations.
+
+## Re-run 2026-11-02 for plan amendment 1, in a throwaway detached worktree at origin/main 50e55fd3a4
+## (removed afterwards), with the amended test file copied in.
+
+## Run 1: test file only, no lint script and no migrations (= origin/main + the new test)
+## cwd services/gateway: npx jest test/mt-identity-bare-policy-lint.test.ts -> exit 1
+    ✕ reads ZERO bare current_tenant_id() policies over supabase/migrations (33 ms)
+    ✕ the rollback restores exactly the recount set (32 policies on 15 tables) (23 ms)
+    ✕ ships tenant_id_for_policies() and is_member(uuid) as STABLE SECURITY DEFINER and leaves current_tenant_id() alone
+    ✕ rewrites every recounted policy to tenant_id_for_policies() and nothing else (amendment 1) (26 ms)
+    ✕ the rollback recreates each policy exactly as the migration that created it, and the rewrite only swaps the helper (25 ms)
+    ✕ counts only bare policies left after drops, re-definitions and DO blocks (23 ms)
+    ✕ applies a paired _rollback.sql only when asked (22 ms)
+Tests:       7 failed, 7 total
+(cause: Cannot find module scripts/ci/bare-policy-lint.mjs; ENOENT on the migration files)
+
+## Run 2: lint script added, no migrations yet; the lint reports the origin/main set
+## cwd services/gateway: npx jest test/mt-identity-bare-policy-lint.test.ts -> exit 1
+    ✕ reads ZERO bare current_tenant_id() policies over supabase/migrations (384 ms)
+    ✓ the rollback restores exactly the recount set (32 policies on 15 tables) (371 ms)
+    ✕ ships tenant_id_for_policies() and is_member(uuid) as STABLE SECURITY DEFINER and leaves current_tenant_id() alone (1 ms)
+    ✕ rewrites every recounted policy to tenant_id_for_policies() and nothing else (amendment 1) (26 ms)
+    ✕ the rollback recreates each policy exactly as the migration that created it, and the rewrite only swaps the helper (400 ms)
+    ✓ counts only bare policies left after drops, re-definitions and DO blocks (30 ms)
+    ✓ applies a paired _rollback.sql only when asked (33 ms)
+Tests:       4 failed, 3 passed, 7 total
+
+## Lint over origin/main migrations (the 3 vtid_05465 files excluded): node scripts/ci/bare-policy-lint.mjs -> exit 1
+bare-policy-lint: 32 bare current_tenant_id() policies on 15 tables (824 policies in 673 files; allowlisted 0)
+  community_groups.community_groups_delete [DELETE] 20251231100000_vtid_01084_community_personalization_v1.sql:177
+  community_groups.community_groups_insert [INSERT] 20251231100000_vtid_01084_community_personalization_v1.sql:161
+  community_groups.community_groups_update [UPDATE] 20251231100000_vtid_01084_community_personalization_v1.sql:169
+  community_listings.community_listings_select_public [SELECT] 20260727090000_bootstrap_community_marketplace.sql:225
+  community_meetups.community_meetups_delete [DELETE] 20251231100000_vtid_01084_community_personalization_v1.sql:223
+  community_meetups.community_meetups_insert [INSERT] 20251231100000_vtid_01084_community_personalization_v1.sql:207
+  community_meetups.community_meetups_update [UPDATE] 20251231100000_vtid_01084_community_personalization_v1.sql:215
+  d42_domain_weights.d42_domain_weights_select [SELECT] 20260102000000_vtid_01136_context_fusion_engine.sql:204
+  event_attendance.event_attendance_select [SELECT] 20251231000001_vtid_01090_live_rooms_events_graph.sql:253
+  live_highlights.live_highlights_select [SELECT] 20251231000001_vtid_01090_live_rooms_events_graph.sql:314
+  live_room_attendance.live_room_attendance_select [SELECT] 20251231000001_vtid_01090_live_rooms_events_graph.sql:190
+  live_rooms.live_rooms_insert [INSERT] 20251231000001_vtid_01090_live_rooms_events_graph.sql:134
+  live_rooms.live_rooms_select [SELECT] 20251231000001_vtid_01090_live_rooms_events_graph.sql:128
+  live_rooms.live_rooms_update [UPDATE] 20251231000001_vtid_01090_live_rooms_events_graph.sql:140
+  match_targets.match_targets_insert_policy [INSERT] 20251231000001_vtid_01088_matchmaking_engine.sql:242
+  match_targets.match_targets_select_policy [SELECT] 20251231000001_vtid_01088_matchmaking_engine.sql:238
+  match_targets.match_targets_update_policy [UPDATE] 20251231000001_vtid_01088_matchmaking_engine.sql:246
+  products_catalog.products_catalog_insert [INSERT] 20251231100000_vtid_01092_services_products_memory.sql:165
+  products_catalog.products_catalog_select [SELECT] 20251231100000_vtid_01092_services_products_memory.sql:159
+  relationship_nodes.relationship_nodes_delete [DELETE] 20251231000001_vtid_01087_relationship_graph_memory.sql:153
+  relationship_nodes.relationship_nodes_insert [INSERT] 20251231000001_vtid_01087_relationship_graph_memory.sql:140
+  relationship_nodes.relationship_nodes_select [SELECT] 20251231000001_vtid_01087_relationship_graph_memory.sql:134
+  relationship_nodes.relationship_nodes_update [UPDATE] 20251231000001_vtid_01087_relationship_graph_memory.sql:146
+  services_catalog.services_catalog_insert [INSERT] 20251231100000_vtid_01092_services_products_memory.sql:152
+  services_catalog.services_catalog_select [SELECT] 20251231100000_vtid_01092_services_products_memory.sql:146
+  social_alignment_signals.social_alignment_signals_insert [INSERT] 20260103000001_vtid_01141_d47_social_alignment_engine.sql:293
+  social_alignment_signals.social_alignment_signals_select [SELECT] 20260103000001_vtid_01141_d47_social_alignment_engine.sql:286
+  tenant_catalog_overrides.tenant_catalog_overrides_select [SELECT] 20260416120000_vtid_02000_marketplace_foundation.sql:809
+  topic_registry.topic_registry_delete [DELETE] 20251231000001_vtid_01093_topics_layer.sql:94
+  topic_registry.topic_registry_insert [INSERT] 20251231000001_vtid_01093_topics_layer.sql:81
+  topic_registry.topic_registry_select [SELECT] 20251231000001_vtid_01093_topics_layer.sql:73
+  topic_registry.topic_registry_update [UPDATE] 20251231000001_vtid_01093_topics_layer.sql:87
+
+## pgTAP suite on origin/main policies (throwaway in-process Postgres, PGlite 0.5.14; fixture + helpers, rewrite NOT applied)
+## Amendment 1: the behaviour assertions (sections 2-4) all pass on origin/main's policies, i.e. the audience is the
+## same before and after. Only the structural assertions (helper name, plan shape) fail.
+helpers applied, rewrite NOT applied (origin/main policies): 160 assertions, 4 not ok
+  not ok - no bare current_tenant_id() policy is left (have 32, want 0)
+  not ok - 32 policies filter on tenant_id_for_policies() (have 0, want 32)
+  not ok - live_rooms: tenant_id_for_policies() runs once per statement (InitPlan)
+  not ok - event_attendance: tenant_id_for_policies() runs once per statement (InitPlan)
