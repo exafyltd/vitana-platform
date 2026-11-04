@@ -1,0 +1,24 @@
+# VTID-05465: apply, rollback and re-apply on a throwaway in-process Postgres (PGlite 0.5.14, WASM). Raw output, not edited.
+# HEAD at run time: 3e787184e4. Files run: supabase/tests/*.sql and supabase/migrations/20261102030*.
+# No network and no live or shared database. The pgTAP functions come from a minimal local shim (no pgTAP here).
+# Harness, not committed: /projects/sandbox/pglite-05465/run.mjs
+
+PASS fixture
+PASS apply helpers
+PASS apply rewrite
+PASS re-apply helpers (idempotent)
+PASS re-apply rewrite (idempotent)
+PASS pgTAP rls (after rewrite)
+  160 assertions ok
+PASS apply rollback
+PASS pgTAP rollback
+  10 assertions ok
+PASS re-apply helpers after rollback
+PASS re-apply rewrite after rollback
+PASS pgTAP rls (after rollback + re-apply)
+  160 assertions ok
+PASS rewrite without helpers refuses: VTID-05465: apply 20261102030000_vtid_05465_tenant_id_for_policies_is_member.sql first
+PASS live drift refuses: VTID-05465: policy live_rooms.live_rooms_insert is not live; refusing (live drift)
+PASS rewrite skips absent tables (match_targets, topic_registry dropped first)
+PASS rollback skips absent tables
+exit=0

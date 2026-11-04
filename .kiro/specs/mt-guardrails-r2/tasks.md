@@ -46,6 +46,50 @@ Allowed paths: `supabase/tests/fixtures/**`, `supabase/tests/local-stack/**`, `s
 Acceptance: everything in the `local-test-stack` acceptance, and `MT-LOCAL-STACK` is green on the PR head with the
 smoke output (required tables present, pgtap present, skip-list entries still failing) recorded in
 `docs/validation/<vtid>/`. No secret, no live endpoint.
+<!-- lane: local-test-stack-pglite -->
+## local-test-stack-pglite — D11 local stack on PGlite, fixtures and CI (repo vitana-platform)
+Replaces `local-test-stack` and `local-test-stack-v2` (superseded by Amendment 2 in `plan.md`; never built). It runs
+in-process on PGlite: no Docker, no network, no secrets, no production dump, no live call. Real pgTAP is replaced by
+PGlite plus a pgTAP-compatible assertion shim. Task IDs P1–P4 belong to this group only.
+Allowed paths:
+- `supabase/tests/fixtures/**`
+- `supabase/tests/local-stack/**`
+- `scripts/mt/stack/**`
+- `docs/multitenancy/LOCAL-STACK.md`
+- `.github/workflows/MT-LOCAL-STACK.yml`
+- `package.json`
+- `pnpm-lock.yaml`
+- [ ] P1 PGlite fixture loader and stub `auth` schema in `scripts/mt/stack/`: one in-process database per test file.
+      The stub holds `auth.users`, the functions `auth.uid()` and `auth.jwt()`, and the roles `anon`, `authenticated`
+      and `service_role`. Nothing else (Amendment 2, decision 4).
+- [ ] P2 Apply the lanes' migrations in timestamp order: the files in `supabase/migrations/` that create the tables the
+      lanes under test need. Per-file skips go in `supabase/tests/local-stack/replay-skip.json` (`file`, `reason`).
+      Every table listed in `supabase/tests/local-stack/required-tables.txt` must exist afterwards. If one does not,
+      the lane stops and is raised.
+- [ ] P3 Seed the synthetic fixtures from `supabase/tests/fixtures/` idempotently: tenants T_A and T_B; members
+      a_member, a_admin, b_member, b_admin and ab_dual; `CANARY_A_<uuid>` markers in representative T_A rows. Users
+      go into the stub `auth.users`, never `CREATE TABLE auth.users`.
+- [ ] P4 Run the suites through the pgTAP-compatible shim on PGlite, in CI through
+      `.github/workflows/MT-LOCAL-STACK.yml`, with no Docker step.
+Acceptance:
+- Change types: Infrastructure/CI, Tooling/docs.
+- Outcome: the `MT-LOCAL-STACK` CI job runs the suites on PGlite with no Docker and is green on the lane's PR. A
+  developer runs the same suites locally. Real pgTAP is not used; the shim is the test harness, and this acceptance
+  says so.
+- States: n/a: no screen. A missing required table fails the job and names the table.
+- Surfaces: n/a: no screen. Callers are the `MT-LOCAL-STACK` job and a local run.
+- Locales: n/a: no user-visible string.
+- Accessibility: n/a: no UI.
+- Contract: the inputs (migration files, `replay-skip.json`, `required-tables.txt`, fixtures) and the outputs (pass or
+  fail, with the failing file or table) are documented in `docs/multitenancy/LOCAL-STACK.md`, with `file:line` for the
+  loader.
+- Staging proof: not verified on staging: the lane changes no runtime surface and deploys nothing (plan, "Staging
+  verification"). The covering tests are the lane's jest or node tests and the `MT-LOCAL-STACK` run on the PR head.
+- Owner acceptance: `npm test`-style jest or node test green on PGlite in CI with no Docker. No live call, no secret.
+  The PGlite version is exact in `package.json` and `pnpm-lock.yaml`. Each isolation claim in
+  `docs/multitenancy/LOCAL-STACK.md` names what it does not cover.
+PR title `VTID-xxxxx (mt-guardrails-r2/local-test-stack-pglite): —`; trailers `Collab-Session` and
+`Collab-Lane: mt-guardrails-r2/local-test-stack-pglite`.
 <!-- lane: generated-inventories -->
 ## generated-inventories — generated inventories + DB lint (repo vitana-platform)
 Allowed paths:

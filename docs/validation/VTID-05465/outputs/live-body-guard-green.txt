@@ -1,0 +1,5 @@
+PASS main fixture (20260218 body)
+PASS old-body fixture (20251229 body) committed
+PASS apply helpers
+STEP rewrite: REFUSED: VTID-05465: the live current_tenant_id() is not the 20260218 body (markers f, f, f); refusing the rewrite. The lane is parked for an owner decision (docs/validation/VTID-05465/acceptance.md)
+PASS pgTAP live-body guard: 5 assertions ok

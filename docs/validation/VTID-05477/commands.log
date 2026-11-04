@@ -1,0 +1,36 @@
+$ npx jest test/vtid-05477-new-members-feed.test.ts
+    ✓ excludes service bots and test actors, and still fills the limit with real members (3 ms)
+    ✓ excludes the caller (2 ms)
+    ✓ excludes a member who has not opted in or withdrew the opt-in on the next call (3 ms)
+    ✓ excludes hidden profiles and members older than 7 days (2 ms)
+    ✓ clamps the limit to 1..5 and defaults to 5 (10 ms)
+    ✓ fails closed with 503 exclusion_lookup_failed when service_bot_accounts cannot be read (4 ms)
+    ✓ fails closed with 503 exclusion_lookup_failed when notification_test_actors cannot be read (2 ms)
+    ✓ does not filter by tenant (mirrors the browser query) (2 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       11 passed, 11 total
+Snapshots:   0 total
+Time:        0.588 s
+Ran all test suites matching /test\/vtid-05477-new-members-feed.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
+exit=0
+$ npm run test:roles
+    ✓ the admin opener carries the insights as its facts
+    ✓ the admin instruction says the briefing is already loaded, so the no-tool opener has no conflict (1 ms)
+  VTID-04655 me_set_active_role writes role_preferences for a real Supabase token
+    ✓ the preference tenant falls back to the token claim, then the primary membership, members only
+    ✓ the backfill only repairs single-membership users (user_active_roles carries no tenant) (1 ms)
+    ✓ authorization is unchanged: still current_tenant_id() + check_role_permitted, exafy-admin otherwise
+  VTID-04656 the live eval sends thread ids the chat route accepts
+    ✓ the eval script sends a UUID, which is what the route validates
+
+Test Suites: 1 passed, 1 total
+Tests:       105 passed, 105 total
+Snapshots:   0 total
+Time:        7.867 s
+Ran all test suites matching /test\/vtid-04560-role-separation-regression.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
+exit=0
+$ npx tsc --noEmit
+exit=0

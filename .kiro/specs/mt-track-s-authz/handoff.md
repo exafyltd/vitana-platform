@@ -4,9 +4,9 @@ author: kiro
 executor: kiro
 next_actor: kiro
 state: approved
-updated: 2026-11-01T20:54Z
+updated: 2026-11-03T16:40Z
 sparring_record: .kiro/specs/mt-track-s-authz/sparring/verdict.md
-vtids: [VTID-05452, VTID-05453]
+vtids: [VTID-05452, VTID-05453, VTID-05528, VTID-05529]
 ---
 # Handoff — mt-track-s-authz
 Track S slice of the multi-tenant programme (`docs/MULTI-TENANT-PLAN.md` §3), from the Integrated Architecture
@@ -36,3 +36,8 @@ commit was made at 19:53Z.
 
 ### 2026-11-01T20:54Z · ci-plan-spar · drafted → approved
 Converged; approved by policy converged-auto-v1. 2 lane(s) got a VTID and are handed to Kiro.
+
+updated: 2026-11-03T16:40Z
+sparring_record: .kiro/specs/mt-track-s-authz/sparring/verdict.md
+vtids: [VTID-05452, VTID-05453, VTID-05528, VTID-05529]
+Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.

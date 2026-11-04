@@ -1,0 +1,16 @@
+{
+  "vtid": "VTID-05465",
+  "kind": "feature",
+  "paths": [
+    "supabase/migrations/20261102030000_vtid_05465_tenant_id_for_policies_is_member.sql",
+    "supabase/migrations/20261102030100_vtid_05465_bare_policy_rewrite.sql",
+    "supabase/migrations/20261102030100_vtid_05465_bare_policy_rewrite_rollback.sql",
+    "scripts/ci/bare-policy-lint.mjs",
+    "services/gateway/test/mt-identity-bare-policy-lint.test.ts",
+    "supabase/tests/mt_identity_helpers_*.sql",
+    "docs/validation/VTID-05465/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05465/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

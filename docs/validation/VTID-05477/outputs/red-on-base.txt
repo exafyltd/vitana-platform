@@ -1,0 +1,12 @@
+      85 | function app() {
+      86 |   const a = express();
+
+      at Resolver._throwModNotFoundError (node_modules/jest-resolve/build/resolver.js:427:11)
+      at Object.<anonymous> (test/vtid-05477-new-members-feed.test.ts:83:16)
+
+Test Suites: 1 failed, 1 total
+Tests:       0 total
+Snapshots:   0 total
+Time:        0.556 s
+Ran all test suites matching /test\/vtid-05477-new-members-feed.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
