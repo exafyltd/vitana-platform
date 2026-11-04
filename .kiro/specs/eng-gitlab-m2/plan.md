@@ -5,7 +5,7 @@ change_class: standard
 
 Author: Kiro, seat `exafy`, session `kiro-exafy-202611021438-cff7` (Kiro Web). Premises pinned to vitana-platform
 `origin/main` `3dc28e5fa74f314b2193ef11a141a8bcc0d8d85c` and vitana-v1 `origin/main`
-`02c75006d36b54af0fa4be52d4b3501ef6251d5d` (declared as `spar_refs` in `handoff.md`). Builds on plan `eng-gitlab-m1`
+`02c75006d36b54af0fa4be52d4b3501ef6251d5d` (the vitana-platform premise is the base commit of this PR; vitana-v1 is only read). Builds on plan `eng-gitlab-m1`
 (GitLab, one runner, mirror; PR #4666, not merged when this was written). A lane here that extends a file of M1 starts
 when the M1 lane that owns that file is `done` (§4).
 
