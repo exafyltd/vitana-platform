@@ -83,7 +83,8 @@ scripts/eng/testing/*.test.mjs` (dependency-free; `UNIT.yml` runs them on every 
 ## Lane `merge-bot` (vitana-platform)
 - [ ] B1 Write `scripts/eng/gitlab-land.test.mjs` on temporary git repositories and the fake `fetch`; record it red on base.
 - [ ] B2 `scripts/eng/gitlab-land.mjs`: `run`, `merge`, `status`, `--dry-run`; imports the `land-guard.mjs` and `queue.mjs`
-      functions unchanged.
+      functions unchanged; exports `jobToCheckRun(job)` implementing the status table of plan §3.4 (every documented GitLab
+      job status, `allow_failure`, unknown status fails closed) and the rule that a `required_jobs` name must map to `success`.
 - [ ] B3 `host/units/vitana-land.service` and `.timer` with `flock`, `Nice`, `CPUQuota`, `MemoryMax`.
 - [ ] B4 Evidence: tests red then green; a dry-run transcript; the table showing the same verdicts as `mergeDecision`;
       `git diff` showing `land-guard.mjs` and `queue.mjs` untouched.
@@ -97,23 +98,26 @@ scripts/eng/testing/*.test.mjs` (dependency-free; `UNIT.yml` runs them on every 
   after the review (the review no longer counts); a comment already written (not repeated).
 - Surfaces: merge requests of the projects with `landing:true`; no human screen.
 - Locales: n/a. Accessibility: n/a.
-- Contract: plan §3.4; the GitLab requests it makes (merge requests, pipelines and jobs, commits, project events, notes,
-  merge) are listed in the test with their paths; the merge request is pinned by `sha`.
+- Contract: plan §3.4, including its job-status table; the GitLab requests it makes (merge requests, pipelines and jobs,
+  commits, project events, notes, merge) are listed in the test with their paths; the merge request is pinned by `sha`.
 - Staging proof: not verified on staging: separate account, no product path. Proof: the tests and rehearsal A4.
 - No token in a log line; any error lands nothing.
 
 <!-- lane: scm-webhook -->
 ## Lane `scm-webhook` (vitana-platform)
 - [ ] W1 Write `services/gateway/test/routes/internal-gitlab-webhook.test.ts` and the mapper tests; record them red on base.
-- [ ] W2 Route `internal-gitlab-webhook.ts`, mapper under `services/gitlab-events/`, the `CicdEventType` additions, the
-      mount in `index.ts` with `express.raw` before `express.json()`.
+- [ ] W2 Route `internal-gitlab-webhook.ts` (maps `webhook-id|timestamp|signature` to `verifySvix`'s `id|timestamp|signature`
+      with `headerValue`; `webhook-signature.ts` is not edited), mapper under `services/gitlab-events/`, the five
+      `CicdEventType` additions of plan §3.5 (`scm.gitlab.merge_request.opened|merged|closed`,
+      `scm.gitlab.pipeline.succeeded|failed`), the mount in `index.ts` with `express.raw` before `express.json()`.
 - [ ] W3 `AWS-STAGE-DEPLOY-GATEWAY.yml`: tolerant resolution of `vitana/gateway/staging/gitlab-webhook-signing-token` into
       `GITLAB_WEBHOOK_SIGNING_TOKEN` (absent: not wired, the deploy never fails; no `secrets.` in an `if:`).
 - [ ] W4 `scripts/aws/setup-gitlab-webhook-secret.sh` (dry run by default; `--apply` copies the value from the engineering
       account).
 - [ ] W5 `docs/validation/<VTID>/staging-tests.json` with the read-only probe; typecheck and the gateway tests.
-- [ ] W6 Check that the lifecycle mapper (`autopilot-event-mapper.ts`) ignores a repeated event for the same VTID and merge
-      request; record the result in the evidence.
+- [ ] W6 Test that no rule of `autopilot-event-mapper.ts` lists a topic starting `scm.gitlab.` (so no GitLab event moves a
+      VTID's state in this milestone) and that the route emits none of the existing `cicd.*` topics; the file itself is not
+      edited. Record the result in the evidence.
 
 **Acceptance**
 - Change types: Backend, Integration, Infrastructure/CI.
@@ -121,10 +125,12 @@ scripts/eng/testing/*.test.mjs` (dependency-free; `UNIT.yml` runs them on every 
   replayed one is refused. Nothing changes for members.
 - States: key missing (500 JSON `not_configured`); bad signature (401); stale timestamp (401); duplicate id (200, no second
   event); unknown event (202); malformed JSON (400); body too large (413).
-- Surfaces: callers: GitLab project webhooks (from cutover). Consumers: the OASIS event feed and the VTID lifecycle mapper.
+- Surfaces: callers: GitLab project webhooks (from cutover). Consumers: the OASIS event feed only; the VTID lifecycle
+  mapper and the Command Hub's reading of `cicd.*` topics are not changed, so no GitLab event moves a VTID.
 - Locales: n/a (machine route). Accessibility: n/a.
 - Contract: request headers `webhook-id`, `webhook-timestamp`, `webhook-signature`, raw JSON body; replies always JSON; no
-  JWT, the signature is the gate; `file:line` of the route, the mount and the verifier on both sides in the PR body.
+  JWT, the signature is the gate; the five topics and the event-to-topic table of plan §3.5; `file:line` of the route, the
+  mount and the verifier on both sides in the PR body.
 - Staging proof: an unsigned `POST` answers JSON 401 or 500 `not_configured`, never 404 or HTML. Not verified on staging with
   a real event: it would write OASIS rows to the shared database; the mapper is covered by Jest and goes live at cutover.
 - Sibling sweep: `AWS-PROD-DEPLOY-GATEWAY.yml` is intentionally unchanged (protected gate file; no hook exists before

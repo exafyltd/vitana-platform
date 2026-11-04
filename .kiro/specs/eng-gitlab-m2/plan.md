@@ -132,8 +132,27 @@ tick:
   (`Collab-Review`, `Collab-Reviewer: agent:vitana-lane-reviewer (…)`, `Collab-Reviewed-Head`); it must have been pushed by
   `agent-reviewer` (project events: `push_data.commit_from..commit_to` contains it); `reviewCurrent` decides whether it
   still counts for the head.
-- Checks: the jobs of the pipeline for exactly the head SHA, mapped to `checksVerdict` (an `allow_failure` failure counts
-  as neutral); every name in the project's `required_jobs` must exist in it.
+- Checks: the jobs of the pipeline for exactly the head SHA (`GET …/pipelines/:id/jobs`, which returns the latest attempt of
+  each job and leaves out retried ones unless asked). `checksVerdict` reads GitHub check runs (`land-guard.mjs:85`: `name`,
+  `id`, `started_at`, `status`, `conclusion`, with `OK_CONCLUSIONS` = success, skipped, neutral at `land-guard.mjs:32`), so
+  one pure, exported function `jobToCheckRun(job)` in `gitlab-land.mjs` turns each GitLab job into that shape
+  (`name` = job name, `id` = job id, `started_at` = the job's). The table is complete for the job statuses GitLab documents:
+
+  | GitLab job `status` | `allow_failure` | check run `status` / `conclusion` | `checksVerdict` |
+  |---|---|---|---|
+  | `success` | any | completed / success | pass |
+  | `failed` | false | completed / failure | fail |
+  | `failed` | true | completed / neutral | pass |
+  | `canceled` | any | completed / cancelled | fail |
+  | `skipped` | any | completed / skipped | pass |
+  | `manual` | true (optional job) | completed / neutral | pass |
+  | `manual` | false (blocking job, waits for a person) | queued | pending |
+  | `created`, `pending`, `scheduled`, `preparing`, `waiting_for_resource`, `waiting_for_callback` | any | queued | pending |
+  | `running`, `canceling` | any | in_progress | pending |
+  | any other value | any | queued, and one log line | pending (fails closed) |
+
+  Every name in the project's `required_jobs` must be present and map to `success`: a required job that is absent,
+  skipped, neutral or still running does not pass. A pipeline with no jobs yet is pending (`checksVerdict([])`).
 - Behind `main`: it merges `origin/main` into the source branch (author `bot-land`, trailer `Collab-Session`), pushes,
   and waits for the next tick. While the oldest eligible merge request waits for its pipeline, no other merge request of
   that project is updated (at most 60 minutes, then it loses its turn); a merge request that needs a human (no review,
@@ -146,14 +165,34 @@ tick:
 
 ### 3.5 Gateway route (lane `scm-webhook`)
 - `POST /api/v1/internal/gitlab/webhook`, mounted with `express.raw` before `express.json()` (as
-  `index.ts` does for the vendor webhooks), verifying GitLab's Standard Webhooks signature (`webhook-id`,
-  `webhook-timestamp`, `webhook-signature`, key `GITLAB_WEBHOOK_SIGNING_TOKEN` in `whsec_<base64>` form) with the existing
-  `verifySvix` of `connectors/runtime/webhook-signature.ts`: fails closed (no key: 500 `not_configured`), 401 on a bad,
-  missing or stale signature, JSON replies only.
-- Maps `merge_request` (open, merge, close) and `pipeline` (failed, success) events to OASIS events: the neutral topics
-  that already drive the VTID lifecycle (`cicd.pr.created`, `cicd.merge.success`, `cicd.ci.failed`) where they fit, and
-  new `scm.gitlab.*` topics for the rest, added to `CicdEventType`. The VTID comes from the title. Every other event is
-  acknowledged and ignored (202). Retries are dropped by `webhook-id`.
+  `index.ts` does for the vendor webhooks), verifying GitLab's Standard Webhooks signature with the existing `verifySvix`
+  of `connectors/runtime/webhook-signature.ts:59`. The signing key is `GITLAB_WEBHOOK_SIGNING_TOKEN` in `whsec_<base64>`
+  form. `verifySvix` takes its inputs as `{ id, timestamp, signature }` and never reads a header name, so the route maps
+  the headers itself, as the Vital connector does for `svix-*` (`connectors/wearable/vital.ts:186-191`):
+  `id: headerValue(req.headers['webhook-id'])`, `timestamp: headerValue(req.headers['webhook-timestamp'])`,
+  `signature: headerValue(req.headers['webhook-signature'])`. The shared verifier is not edited. Fails closed (no key: 500
+  `not_configured`), 401 on a bad, missing or stale signature, JSON replies only. A request that carries only `svix-*`
+  headers is refused.
+- Maps `merge_request` and `pipeline` events to five new OASIS topics, all added to `CicdEventType`
+  (`services/gateway/src/types/cicd.ts:139`, the closed union that `CicdOasisEvent.type` requires, `cicd.ts:1220`):
+
+  | GitLab event | `object_attributes` value | OASIS topic |
+  |---|---|---|
+  | `merge_request` | `action` = `open` or `reopen` | `scm.gitlab.merge_request.opened` |
+  | `merge_request` | `action` = `merge` | `scm.gitlab.merge_request.merged` |
+  | `merge_request` | `action` = `close` | `scm.gitlab.merge_request.closed` |
+  | `pipeline` | `status` = `success` | `scm.gitlab.pipeline.succeeded` |
+  | `pipeline` | `status` = `failed` | `scm.gitlab.pipeline.failed` |
+
+  No existing topic is reused. Of the three names the first draft listed, only `cicd.merge.success` is in the union
+  (`cicd.pr.created` and `cicd.ci.failed` are strings that `autopilot-event-mapper.ts:269,454` reads but typed code cannot
+  emit), and `cicd.merge.success` is the Command Hub's own "merged" signal: `board-adapter.ts:353` turns it into a
+  COMPLETED board card and `gemini-operator.ts:3210` reads it as "PR merged". A GitLab event must not complete a real VTID.
+  The lifecycle mapper `autopilot-event-mapper.ts` is not edited and has no rule for `scm.gitlab.*`, so in this milestone
+  no GitLab event moves a VTID's state (a test asserts it); that mapping belongs to the vitana-v1 cutover (§10). The VTID is
+  the first `VTID-\d{5}` in the merge request title (`merge_request` events), or in `merge_request.title` and then
+  `commit.title` (`pipeline` events); with none, the event is acknowledged and ignored (202). Every other event or action
+  is acknowledged and ignored (202). Retries are dropped by `webhook-id`.
 - Staging gets the key from the Secrets Manager secret `vitana/gateway/staging/gitlab-webhook-signing-token` when it
   exists (absent: not wired, the deploy never fails), in `AWS-STAGE-DEPLOY-GATEWAY.yml`. Production is not wired in this
   milestone: no real project has a hook yet, and `AWS-PROD-*` workflows are protected gate files.
@@ -215,10 +254,15 @@ shared script. Cross-lane names (secrets, ASG, security groups, namespace, paths
   a builder, with an old head that changed code, with a red or missing required job; skips on pending; updates a behind
   branch by merge and does not land it in the same tick; does not touch a second merge request after a landing; refuses a
   protected gate file and comments once; `--dry-run` writes nothing; a table of inputs gives the same verdicts as
-  `mergeDecision` itself.
-- `scm-webhook`: `services/gateway/test/routes/internal-gitlab-webhook.test.ts` (valid signature 200; bad 401; stale
-  timestamp 401; no key 500 with JSON; duplicate `webhook-id` emits once; each mapped event; unknown event 202; the raw
-  parser sits before the JSON parser in `index.ts`), and `docs/validation/<VTID>/staging-tests.json`.
+  `mergeDecision` itself; `jobToCheckRun` is tested row by row against the §3.4 table (every documented status, both
+  values of `allow_failure` where the table distinguishes them, and an unknown status), each result then run through the
+  real `checksVerdict`; a required job that is skipped, neutral or absent does not pass.
+- `scm-webhook`: `services/gateway/test/routes/internal-gitlab-webhook.test.ts` (valid signature with the `webhook-*`
+  headers 200; bad 401; stale timestamp 401; `svix-*` headers only 401; no key 500 with JSON; duplicate `webhook-id` emits
+  once; each of the five mapped events emits its topic from the §3.5 table; an event with no VTID, an unknown event and an
+  unmapped action answer 202 and emit nothing; the raw parser sits before the JSON parser in `index.ts`), a compile-time
+  check that the five topics are members of `CicdEventType` (the route file typechecks with them), a test that no rule of
+  `autopilot-event-mapper.ts` lists a topic starting `scm.gitlab.`, and `docs/validation/<VTID>/staging-tests.json`.
 - `monitoring`: `scripts/eng/monitoring-structure.test.mjs`, `scripts/eng/ci-metrics.test.mjs` (a failed API read publishes a
   failure metric and no zeros).
 - `rehearsal`: `scripts/eng/rehearse.test.mjs` (plan of 12 merge requests; refuses an unmarked or mirrored project; report
@@ -259,7 +303,8 @@ estimate from the AWS price list into its evidence. The monitoring lane's budget
   `%{title}` template on both commit kinds, which also satisfies STAGING-VERIFY.
 - A human Maintainer can bypass the bot. Only the bot and the owner are Maintainers; the settings sync reports any other.
 - A lost `200` can make GitLab resend an event; dedupe by `webhook-id` is per gateway task, so a duplicate is possible
-  across tasks. The topics are keyed by VTID and merge request, and the lane checks that the lifecycle mapper ignores a repeat.
+  across tasks. No GitLab topic drives the VTID lifecycle in this milestone (§3.5), so a duplicate adds one informational
+  OASIS row and moves no state.
 - Spot interruptions fail a job; the central CI retries it once.
 - No Docker-in-Docker and no image builds in CI yet (no privileged containers, no socket mount). Jobs that build images wait
   for a rootless builder in milestone 3.
@@ -284,9 +329,11 @@ event is not sent to staging: it would write OASIS rows, so the mapper is covere
 | A9 | The cost estimate and the first week's AWS cost are written next to each other | fleet evidence, owner |
 
 ## 10. Unchanged and later
-GitHub Actions, every deploy workflow, production, the gateway except the one new route, production DNS, M1's files,
+GitHub Actions, every deploy workflow, production, the gateway except the one new route and the five new topic names,
+`autopilot-event-mapper.ts` and the Command Hub's reading of `cicd.*` topics, production DNS, M1's files,
 `eng-platform-p02` (paused). Later: the vitana-v1 cutover (mirror direction flips for that project, hook turned on,
-production wiring of the secret), the gateway's provider abstraction for the Project Manager, deploy jobs with GitLab OIDC
+production wiring of the secret, and the lifecycle rules that let `scm.gitlab.*` topics move a VTID's state, which are
+deferred here on purpose), the gateway's provider abstraction for the Project Manager, deploy jobs with GitLab OIDC
 into AWS on a trusted runner, rootless image builds, per-merge-request previews, a batch merge queue, retiring the legacy
 runner, RDS and a second GitLab node.
 <!-- plan:end -->
