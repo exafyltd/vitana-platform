@@ -12,7 +12,7 @@ paths:
   - infra/gitlab-engineering/**
   - scripts/eng/gitlab-m1-structure.test.mjs
   - docs/validation/**
-updated: 2026-11-04T23:27Z
+updated: 2026-11-04T23:33Z
 vtid: VTID-05544
 ---
 # Lane: gitlab-infra (repo vitana-platform)
@@ -27,4 +27,6 @@ Plan rewritten to describe what runs. The second lane (`gitlab-ci`) is dropped: 
 ### 2026-11-04T20:33Z · ci-plan-spar · ready (VTID allocated)
 VTID-05544 allocated after policy approval (converged-auto-v1).
 ### 2026-11-04T23:27Z · pm-agent · update
+reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
+### 2026-11-04T23:33Z · pm-agent · update
 reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
