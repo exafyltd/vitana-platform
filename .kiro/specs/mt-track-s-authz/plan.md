@@ -178,4 +178,14 @@ Staging (read-only, `docs/validation/<VTID>/staging-tests.json`):
 No migration, flag, RLS policy or tenant code (`tenant-context.ts`, auth middleware) changes. `resolveAssistantProfile`,
 the member-surface clamp, `ROLE_REGISTRY`, `resolveEffectiveRole`, `fetchPermittedRoles` and the cicd router are
 unchanged. Production is reached only by PUBLISH after Gate 2.
+
+**Amendment wsp-1 (2026-11-03, kiro-hotmail-202611011452-6d16; label `mt-track-s-authz-wsp-amend-1`).** Lane
+`work-surface-permission` (seat exafy, VTID-05453) is superseded by lane `work-surface-permission-v2` (seat hotmail).
+Lane permissions come from the base revision, so another seat cannot add `services/gateway/test/routes/orb-livekit.test.ts`
+to the exafy lane's paths. The v2 lane carries the same tasks and acceptance, with that test file in scope. Its change
+is the contract change named in rule 42h: a caller without a permitted role who declares admin or backoffice is served
+the member surface. The three assertions that pinned the old contract (two VTID-04776 mint cases and the
+context-bootstrap instruction call; OPEN-1 in the superseded lane's acceptance) are updated, and no denial expectation
+changes. The superseded lane's code is on PR #4654 (draft, head `5a7406dde6`), which closes when v2 merges.
+`approvals-auth` and `approvals-auth-v2` are unchanged by this amendment.
 <!-- plan:end -->
