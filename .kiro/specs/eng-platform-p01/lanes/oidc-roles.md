@@ -13,7 +13,7 @@ paths:
   - scripts/aws/iam/eng-platform-oidc-*.json
   - services/gateway/test/eng-platform-oidc-roles.test.ts
   - docs/validation/**
-updated: 2026-11-04T04:49Z
+updated: 2026-11-04T05:19Z
 vtid: VTID-05516
 parked_from: ready
 ---
@@ -431,4 +431,6 @@ park (stale_claim); claim released; Claude unavailable → exafyltd
 ### 2026-11-04T04:43Z · pm-agent · update
 park (stale_claim); claim released; Claude unavailable → exafyltd
 ### 2026-11-04T04:49Z · pm-agent · update
+park (stale_claim); claim released; Claude unavailable → exafyltd
+### 2026-11-04T05:19Z · pm-agent · update
 park (stale_claim); claim released; Claude unavailable → exafyltd
