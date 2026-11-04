@@ -167,3 +167,34 @@ describe('developer voice tools carry the caller token (dev_approve_pr / dev_rej
     expect(init.headers.Authorization).toBe('Bearer dev-jwt-05452');
   });
 });
+
+import { __executeLiveApiToolForTest } from '../src/routes/orb-live';
+
+describe('voice approve on the generic live path (VTID-05528)', () => {
+  it('a voice session holding the member bearer approves as that member', async () => {
+    process.env.SUPABASE_URL = 'https://example.supabase.test';
+    process.env.SUPABASE_SERVICE_ROLE = 'svc-role-test';
+    // The WS and SSE start paths store the bearer that verified to the session owner.
+    const session = {
+      sessionId: 'live-05528',
+      identity: { user_id: 'dev-1', tenant_id: 't-1', role: 'developer', exafy_admin: false },
+      callerAccessToken: 'dev-jwt-05528',
+      lang: 'en',
+      inputTranscriptBuffer: '',
+      turn_count: 1,
+      createdAt: new Date(),
+    } as unknown as Parameters<typeof __executeLiveApiToolForTest>[0];
+
+    const out = await __executeLiveApiToolForTest(session, 'dev_approve_pr', {
+      approval_id: 'appr_VTID-01234_abc',
+      confirm: true,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, { headers: Record<string, string> }];
+    expect(url).toContain('/api/v1/approvals/appr_VTID-01234_abc/approve');
+    expect(init.headers.Authorization).toBe('Bearer dev-jwt-05528');
+    expect(out.success).toBe(true);
+    expect(out.result).not.toContain('signed-in admin session');
+  });
+});
