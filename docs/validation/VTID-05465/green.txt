@@ -1,0 +1,48 @@
+# VTID-05465 green evidence (plan amendment 1, re-run 2026-11-02)
+# Working tree on origin/main 50e55fd3a4 + this lane's files (uncommitted at run time).
+
+## cwd services/gateway: npx jest test/mt-identity-bare-policy-lint.test.ts -> exit 0
+    ✓ reads ZERO bare current_tenant_id() policies over supabase/migrations (386 ms)
+    ✓ the rollback restores exactly the recount set (32 policies on 15 tables) (371 ms)
+    ✓ ships tenant_id_for_policies() and is_member(uuid) as STABLE SECURITY DEFINER and leaves current_tenant_id() alone (2 ms)
+    ✓ rewrites every recounted policy to tenant_id_for_policies() and nothing else (amendment 1) (87 ms)
+    ✓ the rollback recreates each policy exactly as the migration that created it, and the rewrite only swaps the helper (454 ms)
+    ✓ counts only bare policies left after drops, re-definitions and DO blocks (27 ms)
+    ✓ applies a paired _rollback.sql only when asked (35 ms)
+Test Suites: 1 passed, 1 total
+Tests:       7 passed, 7 total
+
+## node scripts/ci/bare-policy-lint.mjs -> exit 0
+bare-policy-lint: 0 bare current_tenant_id() policies on 0 tables (824 policies in 675 files; allowlisted 0)
+## node scripts/ci/bare-policy-lint.mjs --include-rollbacks -> exit 1
+bare-policy-lint: 32 bare current_tenant_id() policies on 15 tables (824 policies in 676 files; allowlisted 0)
+
+## lintMigration (scripts/ci/pr-gate/lib.mjs) on the 3 SQL files
+20261102030000_vtid_05465_tenant_id_for_policies_is_member.sql []
+20261102030100_vtid_05465_bare_policy_rewrite.sql []
+20261102030100_vtid_05465_bare_policy_rewrite_rollback.sql []
+
+## SQL run on a throwaway in-process Postgres (PGlite 0.5.14, WASM, no network, no shared or live database)
+## pgTAP functions used (no_plan, ok, is, finish) provided by a minimal local shim, because pgTAP and Docker are not available here
+PASS fixture
+PASS apply helpers
+PASS apply rewrite
+PASS re-apply helpers (idempotent)
+PASS re-apply rewrite (idempotent)
+PASS pgTAP rls (after rewrite)
+  160 assertions ok
+PASS apply rollback
+PASS pgTAP rollback
+  10 assertions ok
+PASS re-apply helpers after rollback
+PASS re-apply rewrite after rollback
+PASS pgTAP rls (after rollback + re-apply)
+  160 assertions ok
+PASS rewrite without helpers refuses: VTID-05465: apply 20261102030000_vtid_05465_tenant_id_for_policies_is_member.sql first
+PASS live drift refuses: VTID-05465: policy live_rooms.live_rooms_insert is not live; refusing (live drift)
+PASS rewrite skips absent tables (match_targets, topic_registry dropped first)
+PASS rollback skips absent tables
+
+## pre-check.sql / post-check.sql on the fixture
+pre: rewrite-set rows 32 present 32 | user_id tables event_attendance,live_room_attendance | bare live 32
+post: helpers is_member(uuid) + tenant_id_for_policies() SECURITY DEFINER, STABLE, authenticated EXECUTE yes, anon no | bare left 0 | rewritten 32
