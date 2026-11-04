@@ -1,0 +1,36 @@
+# VTID-05537 commands (2026-11-04, Linux, node v22.23.4; seat exafy, session kiro-exafy-202611021438-cff7)
+base: origin/main ab0f5ad0b1 (the merge of the eng-gitlab-m2 plan). Worktree: .worktrees/eng-gitlab-m2-gitlab-client
+
+# 1. Red on base: both test files, no implementation present. Output: outputs/red-on-base.txt
+$ node --test scripts/eng/gitlab-api.test.mjs scripts/eng/testing/fake-fetch.test.mjs
+tests 2, pass 0, fail 2 (ERR_MODULE_NOT_FOUND: scripts/eng/gitlab-api.mjs and scripts/eng/testing/fake-fetch.mjs do not exist)
+
+# 2. Green with the implementation. Output: outputs/green.txt
+$ node --test scripts/eng/gitlab-api.test.mjs scripts/eng/testing/fake-fetch.test.mjs
+tests 64, pass 64, fail 0 (gitlab-api.test.mjs 48, fake-fetch.test.mjs 16), duration about 0.2 s
+
+# 3. Mutation run: each of 82 deliberate breakages applied alone to a scratch copy; the tests must fail (or hang, cut by a 90 s timeout).
+#    Script: outputs/mutate-gitlab-client.sh   Output: outputs/mutation-run.txt
+$ bash outputs/mutate-gitlab-client.sh <worktree>
+mutations: 82   not caught: 0   (two of them, "retries never stop" and "pagination ignores maxPages", are caught by the timeout)
+First run: 81 mutations, 7 not caught (token redaction without the GitLab token shape, a Link outside the API path, caller-supplied
+Authorization, the fields of network and timeout retry log lines, request() honouring okStatuses, the fake answering 204 with a body, and
+the short-token rule that the 8-character minimum came from). A test was added for each; the second run is the one above.
+
+# 4. The whole script test set exactly as .github/workflows/UNIT.yml:21-25 runs it (no install)
+$ FILES=$(find scripts -path '*/node_modules' -prune -o \( -name '*.test.cjs' -o -name '*.test.mjs' \) -print | sort); node --test $FILES
+33 files; tests 575, pass 574, fail 0, cancelled 0, skipped 1 (not in this lane); about 9.7 s, well inside the workflow's 10-minute limit.
+
+# 5. Scope file made with the helper the gate documents
+$ node scripts/ci/pr-gate/vtid-scope.mjs init VTID-05537 --kind feature --paths "scripts/eng/gitlab-api.mjs,scripts/eng/gitlab-api.test.mjs,scripts/eng/testing/fake-fetch.mjs,scripts/eng/testing/fake-fetch.test.mjs,docs/validation/VTID-05537/**" --sparring-record .kiro/specs/eng-gitlab-m2/sparring/verdict.md
+wrote docs/validation/VTID-05537/scope.json
+
+# 6. Facts the tests rest on, each checked
+- Node's fetch follows redirects by default and delivers a custom header to the new origin. Run: outputs/redirect-check.mjs, output outputs/redirect-check.txt.
+  redirect=follow: the second origin received the request with the PRIVATE-TOKEN header; redirect=manual: status 302 returned, zero requests to the second origin.
+  (Node strips Authorization across origins but not other headers, so the client passes redirect: 'manual' and treats a 3xx as an error.)
+- GitLab REST pagination (https://docs.gitlab.com/api/rest/): offset pagination takes page and per_page (max 100) and answers x-next-page; keyset pagination answers a
+  Link header with rel="next"; the last page has no next. GitLab builds Link URLs from its configured external_url, so a client that talks to http://127.0.0.1 would see a
+  Link on another origin and the client refuses it (fail closed). Offset pagination, which every lane of the plan uses, does not depend on Link.
+- GitLab rate limiting answers 429 with a Retry-After header (GitLab support documentation on 429 errors); the client reads Retry-After in seconds or as an HTTP date and
+  otherwise backs off exponentially.

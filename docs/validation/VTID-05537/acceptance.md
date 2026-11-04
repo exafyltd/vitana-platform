@@ -1,0 +1,32 @@
+# VTID-05537 acceptance (eng-gitlab-m2/gitlab-client)
+Change types: Tooling/docs.
+Outcome: the other lanes (settings sync, merge bot, metrics job, rehearsal) can talk to GitLab and test every call without a network and without a token: `scripts/eng/gitlab-api.mjs` (`createClient`, `request`, `raw`, `paginate`, `get/post/put/patch/del`, `GitLabApiError`, `redact`, `projectId`) and `scripts/eng/testing/fake-fetch.mjs` (`fakeFetch`).
+
+AC-1 429 and 5xx are retried with back-off and a cap; 429 honours Retry-After (seconds, HTTP date, capped by maxDelayMs); back-off doubles from baseDelayMs up to maxDelayMs with jitter; a server that keeps failing gives an error after retries + 1 attempts that carries the last status and the attempt count.
+TEST: gitlab-api.test.mjs "429 with Retry-After in seconds…", "Retry-After as an HTTP date…", "back-off without Retry-After doubles…", "retries are capped…".
+AC-2 Other 4xx (400, 401, 403, 404, 405, 409, 422) are not retried: one call, the status in the error.
+TEST: "other 4xx are not retried".
+AC-3 A write is not repeated by accident: POST and PATCH are retried on 429 only (a refused request), never on 5xx, network errors or timeouts; PUT, DELETE, GET and HEAD are retried on 5xx; `retryUnsafe: true` opts a client in.
+TEST: "a write is not repeated by accident…", "PUT and DELETE are idempotent…", "retryUnsafe: true…", "a timeout becomes an error…".
+AC-4 A timeout is an error with code `timeout`, not a hang; the per-call `timeoutMs` overrides the client default; network errors are retried for safe methods and end as code `network` with the system code.
+TEST: "a timeout becomes an error…", "a per-call timeoutMs overrides…", "a network error on a GET is retried…", "log events for network errors and timeouts…". An error thrown by fetch that is not a network error is rethrown unchanged ("an error thrown by fetch that is not a network error…").
+AC-5 An empty body (204, empty 200) is `null`; a non-JSON success body is an error `invalid_json` with a short excerpt; `expect: 'text'` returns text; `raw` returns status, headers and data and accepts the statuses in `okStatuses`, while `request` never does.
+TEST: "empty bodies…", "expect: \"text\"…", "raw returns status, headers and data…", "request never returns the body of a status it did not accept…".
+AC-6 `paginate` follows `X-Next-Page` over three pages, keeps the query on every page, returns `[]` for an empty list, stops at `maxPages`, refuses a page that is not a list, follows a keyset `Link` only on the same origin and inside the API path, and `X-Next-Page` wins over `Link`.
+TEST: the nine `paginate:` tests.
+AC-7 The token is sent in the `PRIVATE-TOKEN` header to one origin only: a path must be a plain path (no URL, no `//`, no dot segments, no query or fragment), a Link to another origin is refused, redirects are never followed (`redirect: 'manual'`; a 3xx is an error that does not copy the Location), a caller cannot replace `PRIVATE-TOKEN` or add `Authorization`, `Job-Token`, `Deploy-Token`, `Cookie`, `Host` or `Content-Length`, and plain http is accepted only for localhost, 127.0.0.1 and ::1.
+TEST: "request: the token goes in the PRIVATE-TOKEN header only…", "a redirect is never followed…", "a path must start with one slash…", "paginate: a Link to another origin is refused…", "a caller cannot replace the token header…", "plain http is allowed only for the machine itself…".
+AC-8 The token appears in no error message, stack, `String(e)`, `JSON.stringify(e)`, own property, body excerpt or log line, also when the server echoes it, and also for a token with no GitLab shape (the 20-character bootstrap token). The error carries status, method and the path without its query string; a long body is cut to 300 characters.
+TEST: "the token appears nowhere…", "a token without a GitLab shape…", "redact removes…", "the error carries status, method and path…", "a long body is cut to a short excerpt", "the client object does not expose the token", "log receives retry events…".
+AC-9 Configuration is checked when the client is created (token of at least 8 printable characters, https base URL without credentials, numeric limits, functions); nothing is sent for a bad method, path, query value or a GET with a body.
+TEST: "configuration is checked when the client is created", "a path must start with one slash…", "the method must be one of…", "a GET with a body is refused…", "a query value that is an object is refused…".
+AC-10 The fake fetch records every call (method, url, path, query, lower-cased headers, parsed JSON body, signal, redirect mode), chooses the most recently registered matching route, answers a sequence in order and fails loudly when it is used up or when no route matches, can hang until aborted or fail like a dropped connection, builds real `Response` objects, and answers 204/205/304 without a body. `writes()`, `assertNoWrites()`, `mark()` and `since()` let a test assert "the second apply made no write".
+TEST: fake-fetch.test.mjs, 16 tests.
+
+Dependency-free Node 20: the two modules import nothing; `UNIT.yml` runs both test files with `node --test` and no install (checked: the full set of the 33 script test files passes, 575 tests, 0 failures).
+
+Red on base: `docs/validation/VTID-05537/outputs/red-on-base.txt`. Both test files fail on `origin/main` because the modules they test do not exist (ERR_MODULE_NOT_FOUND), which is the only possible red for a new module.
+Mutation run: `outputs/mutation-run.txt` (script `outputs/mutate-gitlab-client.sh`): 82 deliberate breakages of the client and the fake, one at a time in a scratch copy; every one makes at least one test fail or hang. The first run left 7 survivors; each is now killed by a test added in this PR.
+
+Decisions taken inside the plan (for Gate 2): POST and PATCH are retried on 429 only (plan §3.7 says "retry on 429 and 5xx"; a repeated POST could post a second comment or create a second object); redirects are never followed; a token shorter than 8 characters is refused (it cannot be redacted safely); a keyset `Link` on another origin than `baseUrl` is refused even when it is GitLab's own `external_url` (a client on the GitLab host that uses `http://127.0.0.1` therefore paginates by offset, which is all the plan's lanes need).
+Staging proof: not verified on staging: deploys nothing. Proven by its tests; the first real calls are the rehearsal (acceptance A1-A8 of the plan).

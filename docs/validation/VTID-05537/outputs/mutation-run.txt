@@ -1,0 +1,84 @@
+caught   token in Authorization header  <- request: the token goes in the PRIVATE-TOKEN header only; th|a caller cannot replace the token header or add another cred|paginate: follows a keyset Link header on the same origin wh
+caught   token also in the URL  <- request: the token goes in the PRIVATE-TOKEN header only; th|a base URL with a trailing slash or with /api/v4 already in |a base URL on a sub path keeps the sub path
+caught   redirects followed  <- a redirect is never followed: fetch is told not to, and a 3x
+caught   3xx accepted as success  <- a redirect is never followed: fetch is told not to, and a 3x
+caught   all 4xx retried  <- other 4xx are not retried: one call, the status in the error
+caught   404 retried  <- other 4xx are not retried: one call, the status in the error
+caught   POST retried on 5xx  <- a write is not repeated by accident: POST and PATCH are retr|a timeout becomes an error with code timeout, not a hang; a 
+caught   PUT not treated as idempotent  <- PUT and DELETE are idempotent and are retried on 5xx; GET an
+caught   429 not retried for writes  <- a write is not repeated by accident: POST and PATCH are retr
+caught   retries never stop  <- (hung, timed out)
+caught   retry cap off by one  <- back-off without Retry-After doubles from baseDelayMs, is ca|retries are capped: a server that keeps failing gives an err|a token without a GitLab shape (the 20-character bootstrap t
+caught   Retry-After ignored  <- 429 with Retry-After in seconds: waits that long once, then |Retry-After as an HTTP date is read against the injected clo|a write is not repeated by accident: POST and PATCH are retr
+caught   Retry-After not capped  <- Retry-After as an HTTP date is read against the injected clo
+caught   Retry-After date ignored  <- Retry-After as an HTTP date is read against the injected clo
+caught   back-off constant  <- back-off without Retry-After doubles from baseDelayMs, is ca
+caught   back-off not capped  <- back-off without Retry-After doubles from baseDelayMs, is ca
+caught   jitter ignored  <- back-off without Retry-After doubles from baseDelayMs, is ca
+caught   error path keeps the query  <- the error carries status, method and path without the query |log receives retry events with method, path without the quer|log events for network errors and timeouts carry exactly met
+caught   token redaction removed  <- a token without a GitLab shape (the 20-character bootstrap t
+caught   token shapes not redacted  <- the token appears nowhere: not in messages, stacks, JSON, ex|redact removes the configured token and any GitLab token sha
+caught   bearer not redacted  <- the token appears nowhere: not in messages, stacks, JSON, ex|redact removes the configured token and any GitLab token sha
+caught   body excerpt not redacted  <- the token appears nowhere: not in messages, stacks, JSON, ex|a token without a GitLab shape (the 20-character bootstrap t
+caught   message detail not redacted  <- the token appears nowhere: not in messages, stacks, JSON, ex|a token without a GitLab shape (the 20-character bootstrap t
+caught   excerpt not cut  <- a long body is cut to a short excerpt
+caught   detail not cut  <- a long body is cut to a short excerpt
+caught   non-JSON success body returned as text  <- empty bodies: 204 and an empty 200 give null; a non-JSON suc|the token appears nowhere: not in messages, stacks, JSON, ex
+caught   empty body returns empty string  <- a JSON body is serialised with its content type; POST, PUT a|empty bodies: 204 and an empty 200 give null; a non-JSON suc|PUT and DELETE are idempotent and are retried on 5xx; GET an
+caught   pagination stops after the first page  <- paginate: three pages in order, per_page 100, one request pe|paginate: a server that never stops is cut off at maxPages|paginate: X-Next-Page wins over a Link header
+caught   pagination ignores maxPages  <- (hung, timed out)
+caught   Link origin not checked  <- paginate: a Link to another origin is refused and the token 
+caught   Link path prefix not checked  <- paginate: a Link on the same origin but outside the API path
+caught   Link preferred over X-Next-Page  <- paginate: three pages in order, per_page 100, one request pe|paginate: a server that never stops is cut off at maxPages|paginate: X-Next-Page wins over a Link header
+caught   non-array page accepted  <- paginate: a page that is not an array is an error naming the
+caught   perPage not sent  <- paginate: three pages in order, per_page 100, one request pe|paginate: perPage and other query parameters are kept on eve
+caught   timeout never fires  <- a timeout becomes an error with code timeout, not a hang; a |a per-call timeoutMs overrides the client default; the abort|the error carries status, method and path without the query 
+caught   signal not passed to fetch  <- a timeout becomes an error with code timeout, not a hang; a |a per-call timeoutMs overrides the client default; the abort|the error carries status, method and path without the query 
+caught   per-call timeout ignored  <- a per-call timeoutMs overrides the client default; the abort
+caught   timeouts retried for POST  <- a write is not repeated by accident: POST and PATCH are retr|a timeout becomes an error with code timeout, not a hang; a 
+caught   network errors not retried  <- a network error on a GET is retried and then succeeds; after|a timeout becomes an error with code timeout, not a hang; a |log events for network errors and timeouts carry exactly met
+caught   every fetch error treated as network  <- an error thrown by fetch that is not a network error is a bu
+caught   network code lost  <- a network error on a GET is retried and then succeeds; after
+caught   caller overrides the token header  <- a caller cannot replace the token header or add another cred
+caught   caller sets Authorization  <- a caller cannot replace the token header or add another cred
+caught   absolute URL accepted as path  <- a path must start with one slash and must not be a URL: the 
+caught   dot segments accepted  <- a path must start with one slash and must not be a URL: the 
+caught   double slash accepted  <- a path must start with one slash and must not be a URL: the 
+caught   http allowed for any host  <- configuration is checked when the client is created|plain http is allowed only for the machine itself (the setti
+caught   credentials in baseUrl allowed  <- configuration is checked when the client is created
+caught   short token accepted  <- scripts/eng/gitlab-api.test.mjs
+caught   token with spaces accepted  <- scripts/eng/gitlab-api.test.mjs
+caught   GET with a body accepted  <- a GET with a body is refused: the caller made a mistake
+caught   unknown method accepted  <- the method must be one of the HTTP methods the client knows
+caught   query arrays without []  <- query: arrays become key[]=v, null and undefined are skipped|paginate: perPage and other query parameters are kept on eve
+caught   null query values sent  <- query: arrays become key[]=v, null and undefined are skipped
+caught   object query values sent  <- a query value that is an object is refused instead of being 
+caught   dates sent as local text  <- query: arrays become key[]=v, null and undefined are skipped
+caught   projectId not encoded  <- projectId encodes a path with slashes for use in a URL
+caught   baseUrl without api prefix  <- request: the token goes in the PRIVATE-TOKEN header only; th|a base URL with a trailing slash or with /api/v4 already in |a base URL on a sub path keeps the sub path
+caught   api prefix doubled  <- a base URL with a trailing slash or with /api/v4 already in 
+caught   user agent missing  <- request: the token goes in the PRIVATE-TOKEN header only; th
+caught   no accept header  <- request: the token goes in the PRIVATE-TOKEN header only; th
+caught   content type missing  <- a JSON body is serialised with its content type; POST, PUT a
+caught   log carries the full URL  <- log receives retry events with method, path without the quer
+caught   log carries the headers  <- log events for network errors and timeouts carry exactly met
+caught   okStatuses ignored by raw  <- raw returns status, headers and data, and does not throw for|request never returns the body of a status it did not accept
+caught   request honours okStatuses  <- request never returns the body of a status it did not accept
+caught   expect text ignored  <- expect: "text" returns the text as it is, also when it is no
+caught   attempts not reported  <- retries are capped: a server that keeps failing gives an err
+caught   bad config not checked (retries)  <- configuration is checked when the client is created
+caught   bad config not checked (timeout)  <- configuration is checked when the client is created
+caught   sleep not injectable  <- configuration is checked when the client is created
+caught   fake: first route wins  <- the most recently registered matching route wins, so a test 
+caught   fake: exhausted sequence repeats  <- a sequence answers in order and an exhausted sequence fails 
+caught   fake: unmatched answers 404  <- route match by exact path, by RegExp and by function; the qu|a route can require a subset of the query; the method must m|an unmatched call throws an error that names the method and 
+caught   fake: query not matched  <- a route can require a subset of the query; the method must m
+caught   fake: PUT counted as safe  <- writes() lists the calls that are not GET or HEAD; mark() an
+caught   fake: hang ignores abort  <- a timeout becomes an error with code timeout, not a hang; a |a per-call timeoutMs overrides the client default; the abort|the error carries status, method and path without the query 
+caught   fake: network error not a TypeError  <- networkError rejects like Node fetch does: a TypeError whose
+caught   fake: headers not lower-cased  <- records method, url, path, query, lower-cased headers and a 
+caught   fake: JSON body not parsed  <- a JSON body is serialised with its content type; POST, PUT a|records method, url, path, query, lower-cased headers and a |a response can be a function of the call
+caught   fake: calls not recorded when unmatched  <- request: the token goes in the PRIVATE-TOKEN header only; th|a base URL with a trailing slash or with /api/v4 already in |a base URL on a sub path keeps the sub path
+caught   fake: 204 keeps a body  <- a status that cannot carry a body is answered without one ev
+
+mutations: 82   not caught: 0

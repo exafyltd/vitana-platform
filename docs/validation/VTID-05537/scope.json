@@ -1,0 +1,14 @@
+{
+  "vtid": "VTID-05537",
+  "kind": "feature",
+  "paths": [
+    "scripts/eng/gitlab-api.mjs",
+    "scripts/eng/gitlab-api.test.mjs",
+    "scripts/eng/testing/fake-fetch.mjs",
+    "scripts/eng/testing/fake-fetch.test.mjs",
+    "docs/validation/VTID-05537/**"
+  ],
+  "sparring_record": ".kiro/specs/eng-gitlab-m2/sparring/verdict.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

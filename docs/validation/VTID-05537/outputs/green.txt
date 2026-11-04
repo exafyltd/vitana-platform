@@ -1,0 +1,394 @@
+TAP version 13
+# Subtest: request: the token goes in the PRIVATE-TOKEN header only; the URL is under /api/v4 and has no credential
+ok 1 - request: the token goes in the PRIVATE-TOKEN header only; the URL is under /api/v4 and has no credential
+  ---
+  duration_ms: 19.32667
+  type: 'test'
+  ...
+# Subtest: a base URL with a trailing slash or with /api/v4 already in it gives the same requests
+ok 2 - a base URL with a trailing slash or with /api/v4 already in it gives the same requests
+  ---
+  duration_ms: 1.789314
+  type: 'test'
+  ...
+# Subtest: a base URL on a sub path keeps the sub path
+ok 3 - a base URL on a sub path keeps the sub path
+  ---
+  duration_ms: 0.503899
+  type: 'test'
+  ...
+# Subtest: query: arrays become key[]=v, null and undefined are skipped, numbers, booleans and dates are written as text
+ok 4 - query: arrays become key[]=v, null and undefined are skipped, numbers, booleans and dates are written as text
+  ---
+  duration_ms: 1.067926
+  type: 'test'
+  ...
+# Subtest: a query value that is an object is refused instead of being sent as [object Object]
+ok 5 - a query value that is an object is refused instead of being sent as [object Object]
+  ---
+  duration_ms: 0.31333
+  type: 'test'
+  ...
+# Subtest: a JSON body is serialised with its content type; POST, PUT and DELETE shortcuts use the right method
+ok 6 - a JSON body is serialised with its content type; POST, PUT and DELETE shortcuts use the right method
+  ---
+  duration_ms: 2.172908
+  type: 'test'
+  ...
+# Subtest: a GET with a body is refused: the caller made a mistake
+ok 7 - a GET with a body is refused: the caller made a mistake
+  ---
+  duration_ms: 0.219774
+  type: 'test'
+  ...
+# Subtest: a caller cannot replace the token header or add another credential; other headers pass through
+ok 8 - a caller cannot replace the token header or add another credential; other headers pass through
+  ---
+  duration_ms: 0.387129
+  type: 'test'
+  ...
+# Subtest: projectId encodes a path with slashes for use in a URL
+ok 9 - projectId encodes a path with slashes for use in a URL
+  ---
+  duration_ms: 0.489343
+  type: 'test'
+  ...
+# Subtest: empty bodies: 204 and an empty 200 give null; a non-JSON success body is an error, not a crash
+ok 10 - empty bodies: 204 and an empty 200 give null; a non-JSON success body is an error, not a crash
+  ---
+  duration_ms: 1.214598
+  type: 'test'
+  ...
+# Subtest: expect: "text" returns the text as it is, also when it is not JSON
+ok 11 - expect: "text" returns the text as it is, also when it is not JSON
+  ---
+  duration_ms: 0.46471
+  type: 'test'
+  ...
+# Subtest: raw returns status, headers and data, and does not throw for a status listed in okStatuses
+ok 12 - raw returns status, headers and data, and does not throw for a status listed in okStatuses
+  ---
+  duration_ms: 0.856945
+  type: 'test'
+  ...
+# Subtest: a redirect is never followed: fetch is told not to, and a 3xx answer is an error that does not repeat the Location
+ok 13 - a redirect is never followed: fetch is told not to, and a 3xx answer is an error that does not repeat the Location
+  ---
+  duration_ms: 0.46231
+  type: 'test'
+  ...
+# Subtest: paginate: three pages in order, per_page 100, one request per page and none after the last
+ok 14 - paginate: three pages in order, per_page 100, one request per page and none after the last
+  ---
+  duration_ms: 1.235592
+  type: 'test'
+  ...
+# Subtest: paginate: perPage and other query parameters are kept on every page; an empty first page gives []
+ok 15 - paginate: perPage and other query parameters are kept on every page; an empty first page gives []
+  ---
+  duration_ms: 1.639146
+  type: 'test'
+  ...
+# Subtest: paginate: a page that is not an array is an error naming the path
+ok 16 - paginate: a page that is not an array is an error naming the path
+  ---
+  duration_ms: 0.29518
+  type: 'test'
+  ...
+# Subtest: paginate: a server that never stops is cut off at maxPages
+ok 17 - paginate: a server that never stops is cut off at maxPages
+  ---
+  duration_ms: 0.671078
+  type: 'test'
+  ...
+# Subtest: paginate: follows a keyset Link header on the same origin when there is no X-Next-Page
+ok 18 - paginate: follows a keyset Link header on the same origin when there is no X-Next-Page
+  ---
+  duration_ms: 0.595745
+  type: 'test'
+  ...
+# Subtest: paginate: a Link to another origin is refused and the token is never sent there
+ok 19 - paginate: a Link to another origin is refused and the token is never sent there
+  ---
+  duration_ms: 0.404558
+  type: 'test'
+  ...
+# Subtest: paginate: a Link on the same origin but outside the API path is refused too
+ok 20 - paginate: a Link on the same origin but outside the API path is refused too
+  ---
+  duration_ms: 0.27168
+  type: 'test'
+  ...
+# Subtest: paginate: a relative Link is read against the base URL and stays inside the API path
+ok 21 - paginate: a relative Link is read against the base URL and stays inside the API path
+  ---
+  duration_ms: 0.371137
+  type: 'test'
+  ...
+# Subtest: paginate: X-Next-Page wins over a Link header
+ok 22 - paginate: X-Next-Page wins over a Link header
+  ---
+  duration_ms: 0.447947
+  type: 'test'
+  ...
+# Subtest: 429 with Retry-After in seconds: waits that long once, then succeeds
+ok 23 - 429 with Retry-After in seconds: waits that long once, then succeeds
+  ---
+  duration_ms: 0.585705
+  type: 'test'
+  ...
+# Subtest: Retry-After as an HTTP date is read against the injected clock, and is capped by maxDelayMs
+ok 24 - Retry-After as an HTTP date is read against the injected clock, and is capped by maxDelayMs
+  ---
+  duration_ms: 0.74439
+  type: 'test'
+  ...
+# Subtest: back-off without Retry-After doubles from baseDelayMs, is capped by maxDelayMs, and jitter halves it at most
+ok 25 - back-off without Retry-After doubles from baseDelayMs, is capped by maxDelayMs, and jitter halves it at most
+  ---
+  duration_ms: 1.353438
+  type: 'test'
+  ...
+# Subtest: retries are capped: a server that keeps failing gives an error after retries + 1 attempts with the last status
+ok 26 - retries are capped: a server that keeps failing gives an error after retries + 1 attempts with the last status
+  ---
+  duration_ms: 1.289191
+  type: 'test'
+  ...
+# Subtest: other 4xx are not retried: one call, the status in the error
+ok 27 - other 4xx are not retried: one call, the status in the error
+  ---
+  duration_ms: 2.354775
+  type: 'test'
+  ...
+# Subtest: a write is not repeated by accident: POST and PATCH are retried on 429 only, not on 5xx or network errors
+ok 28 - a write is not repeated by accident: POST and PATCH are retried on 429 only, not on 5xx or network errors
+  ---
+  duration_ms: 0.969712
+  type: 'test'
+  ...
+# Subtest: PUT and DELETE are idempotent and are retried on 5xx; GET and HEAD too
+ok 29 - PUT and DELETE are idempotent and are retried on 5xx; GET and HEAD too
+  ---
+  duration_ms: 0.289736
+  type: 'test'
+  ...
+# Subtest: retryUnsafe: true lets a caller opt a POST into 5xx retries
+ok 30 - retryUnsafe: true lets a caller opt a POST into 5xx retries
+  ---
+  duration_ms: 0.224079
+  type: 'test'
+  ...
+# Subtest: a network error on a GET is retried and then succeeds; after the cap it is an error with code network and the system code
+ok 31 - a network error on a GET is retried and then succeeds; after the cap it is an error with code network and the system code
+  ---
+  duration_ms: 0.594653
+  type: 'test'
+  ...
+# Subtest: an error thrown by fetch that is not a network error is a bug of the caller: rethrown unchanged, not retried
+ok 32 - an error thrown by fetch that is not a network error is a bug of the caller: rethrown unchanged, not retried
+  ---
+  duration_ms: 0.312169
+  type: 'test'
+  ...
+# Subtest: a timeout becomes an error with code timeout, not a hang; a GET is retried after a timeout, a POST is not
+ok 33 - a timeout becomes an error with code timeout, not a hang; a GET is retried after a timeout, a POST is not
+  ---
+  duration_ms: 60.819628
+  type: 'test'
+  ...
+# Subtest: a per-call timeoutMs overrides the client default; the abort signal reaches fetch
+ok 34 - a per-call timeoutMs overrides the client default; the abort signal reaches fetch
+  ---
+  duration_ms: 19.8577
+  type: 'test'
+  ...
+# Subtest: the error carries status, method and path without the query string, and the GitLab message
+ok 35 - the error carries status, method and path without the query string, and the GitLab message
+  ---
+  duration_ms: 0.643648
+  type: 'test'
+  ...
+# Subtest: the token appears nowhere: not in messages, stacks, JSON, excerpts or log lines, also when the server echoes it
+ok 36 - the token appears nowhere: not in messages, stacks, JSON, excerpts or log lines, also when the server echoes it
+  ---
+  duration_ms: 1.005555
+  type: 'test'
+  ...
+# Subtest: a token without a GitLab shape (the 20-character bootstrap token) is redacted too, in errors and in excerpts
+ok 37 - a token without a GitLab shape (the 20-character bootstrap token) is redacted too, in errors and in excerpts
+  ---
+  duration_ms: 0.419835
+  type: 'test'
+  ...
+# Subtest: redact removes the configured token and any GitLab token shape, and keeps the rest
+ok 38 - redact removes the configured token and any GitLab token shape, and keeps the rest
+  ---
+  duration_ms: 0.078414
+  type: 'test'
+  ...
+# Subtest: a long body is cut to a short excerpt
+ok 39 - a long body is cut to a short excerpt
+  ---
+  duration_ms: 0.525722
+  type: 'test'
+  ...
+# Subtest: log receives retry events with method, path without the query, status, attempt and delay, and nothing else
+ok 40 - log receives retry events with method, path without the query, status, attempt and delay, and nothing else
+  ---
+  duration_ms: 0.369483
+  type: 'test'
+  ...
+# Subtest: log events for network errors and timeouts carry exactly method, path, status 0, code, attempt and delay
+ok 41 - log events for network errors and timeouts carry exactly method, path, status 0, code, attempt and delay
+  ---
+  duration_ms: 21.674343
+  type: 'test'
+  ...
+# Subtest: request never returns the body of a status it did not accept, even if okStatuses is passed; raw does accept it
+ok 42 - request never returns the body of a status it did not accept, even if okStatuses is passed; raw does accept it
+  ---
+  duration_ms: 0.387773
+  type: 'test'
+  ...
+# Subtest: configuration is checked when the client is created
+ok 43 - configuration is checked when the client is created
+  ---
+  duration_ms: 0.604549
+  type: 'test'
+  ...
+# Subtest: plain http is allowed only for the machine itself (the settings sync runs on the GitLab host)
+ok 44 - plain http is allowed only for the machine itself (the settings sync runs on the GitLab host)
+  ---
+  duration_ms: 0.243596
+  type: 'test'
+  ...
+# Subtest: a path must start with one slash and must not be a URL: the token cannot be pointed at another host
+ok 45 - a path must start with one slash and must not be a URL: the token cannot be pointed at another host
+  ---
+  duration_ms: 0.207587
+  type: 'test'
+  ...
+# Subtest: the method must be one of the HTTP methods the client knows
+ok 46 - the method must be one of the HTTP methods the client knows
+  ---
+  duration_ms: 0.101753
+  type: 'test'
+  ...
+# Subtest: clients do not share state: two clients with different tokens send their own
+ok 47 - clients do not share state: two clients with different tokens send their own
+  ---
+  duration_ms: 0.420833
+  type: 'test'
+  ...
+# Subtest: the client object does not expose the token
+ok 48 - the client object does not expose the token
+  ---
+  duration_ms: 0.102044
+  type: 'test'
+  ...
+# Subtest: records method, url, path, query, lower-cased headers and a parsed JSON body
+ok 49 - records method, url, path, query, lower-cased headers and a parsed JSON body
+  ---
+  duration_ms: 22.066682
+  type: 'test'
+  ...
+# Subtest: method defaults to GET; a non-JSON body is kept as text; no body is undefined
+ok 50 - method defaults to GET; a non-JSON body is kept as text; no body is undefined
+  ---
+  duration_ms: 0.439238
+  type: 'test'
+  ...
+# Subtest: route match by exact path, by RegExp and by function; the query of the URL is not part of the path
+ok 51 - route match by exact path, by RegExp and by function; the query of the URL is not part of the path
+  ---
+  duration_ms: 1.338276
+  type: 'test'
+  ...
+# Subtest: a route can require a subset of the query; the method must match too
+ok 52 - a route can require a subset of the query; the method must match too
+  ---
+  duration_ms: 0.920257
+  type: 'test'
+  ...
+# Subtest: the most recently registered matching route wins, so a test can override a default
+ok 53 - the most recently registered matching route wins, so a test can override a default
+  ---
+  duration_ms: 0.806777
+  type: 'test'
+  ...
+# Subtest: a response can be a function of the call
+ok 54 - a response can be a function of the call
+  ---
+  duration_ms: 0.593392
+  type: 'test'
+  ...
+# Subtest: a sequence answers in order and an exhausted sequence fails loudly instead of repeating
+ok 55 - a sequence answers in order and an exhausted sequence fails loudly instead of repeating
+  ---
+  duration_ms: 0.579308
+  type: 'test'
+  ...
+# Subtest: a sequence can end with a response that repeats
+ok 56 - a sequence can end with a response that repeats
+  ---
+  duration_ms: 0.469806
+  type: 'test'
+  ...
+# Subtest: an unmatched call throws an error that names the method and path; lenient mode answers 404 JSON
+ok 57 - an unmatched call throws an error that names the method and path; lenient mode answers 404 JSON
+  ---
+  duration_ms: 0.512222
+  type: 'test'
+  ...
+# Subtest: response helpers: json sets the content type, text, empty 204 has no body, headers are readable
+ok 58 - response helpers: json sets the content type, text, empty 204 has no body, headers are readable
+  ---
+  duration_ms: 0.763466
+  type: 'test'
+  ...
+# Subtest: a status that cannot carry a body is answered without one even if the spec has json or text
+ok 59 - a status that cannot carry a body is answered without one even if the spec has json or text
+  ---
+  duration_ms: 0.253104
+  type: 'test'
+  ...
+# Subtest: writes() lists the calls that are not GET or HEAD; mark() and since() look at part of the history
+ok 60 - writes() lists the calls that are not GET or HEAD; mark() and since() look at part of the history
+  ---
+  duration_ms: 0.495956
+  type: 'test'
+  ...
+# Subtest: hang never answers until the abort signal fires, then rejects with an AbortError
+ok 61 - hang never answers until the abort signal fires, then rejects with an AbortError
+  ---
+  duration_ms: 15.487987
+  type: 'test'
+  ...
+# Subtest: networkError rejects like Node fetch does: a TypeError whose cause carries the code
+ok 62 - networkError rejects like Node fetch does: a TypeError whose cause carries the code
+  ---
+  duration_ms: 0.267055
+  type: 'test'
+  ...
+# Subtest: reset() clears calls and routes; the fake is a plain function usable as the fetch of any client
+ok 63 - reset() clears calls and routes; the fake is a plain function usable as the fetch of any client
+  ---
+  duration_ms: 0.216248
+  type: 'test'
+  ...
+# Subtest: input may be a URL object or a Request-like with a url property
+ok 64 - input may be a URL object or a Request-like with a url property
+  ---
+  duration_ms: 0.289155
+  type: 'test'
+  ...
+1..64
+# tests 64
+# suites 0
+# pass 64
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 204.519339

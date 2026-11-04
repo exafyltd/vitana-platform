@@ -1,6 +1,6 @@
 ---
 lane: gitlab-client
-state: ready
+state: executing
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -14,7 +14,9 @@ paths:
   - scripts/eng/testing/fake-fetch.mjs
   - scripts/eng/testing/fake-fetch.test.mjs
   - docs/validation/**
-updated: 2026-11-04T19:35Z
+claimed_by: kiro-exafy-202611021438-cff7
+branch: kiro/eng-gitlab-m2/gitlab-client
+updated: 2026-11-04T20:37Z
 vtid: VTID-05537
 ---
 # Lane: gitlab-client (repo vitana-platform)
@@ -26,3 +28,10 @@ Lane created with the plan.
 
 ### 2026-11-04T19:35Z · ci-plan-spar · ready (VTID allocated)
 VTID-05537 allocated after policy approval (converged-auto-v1).
+
+### 2026-11-04T20:37Z · kiro-exafy-202611021438-cff7 · ready → executing
+Claimed; code, tests and evidence on branch kiro/eng-gitlab-m2/gitlab-client. Tests first (red on base: both modules absent), then the
+client and the fake fetch; 64 tests; a mutation run (82 deliberate breakages, each caught by a test) is in the evidence. Decisions
+taken inside the plan (listed for Gate 2): POST and PATCH are retried on 429 only, not on 5xx, network errors or timeouts; redirects
+are never followed; a pagination Link to another origin or outside the API path is refused; plain http is accepted only for
+localhost, 127.0.0.1 and ::1; a token shorter than 8 characters is refused.
