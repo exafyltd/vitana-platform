@@ -1,10 +1,10 @@
 # VTID-05528 - Track S approvals-auth-v2: review findings, and the heads the reviewer accepted
 
-Lane: `mt-track-s-authz/approvals-auth-v2` (plan amendment 1). The reviewer agent `vitana-lane-reviewer` returned `changes` on head `2dd8cc325519a2f4ce9e7a48791377be28489796` (2026-11-04T17:24Z) with three blocking findings. The earlier commits answer findings 1 and 2. Finding 3 (Operator Chat service token) moved to lane `operator-chat-service-token` (branch `kiro/operator-chat-service-token/lane`). The reviewer accepted head `64524419f3b2f598b8aeaa99abd3ede82120f11a` (2026-11-04T18:15Z, no blocking findings, four non-blocking findings). It then accepted head `10707edca4993842aacca1567fcc2f526d668920` (2026-11-04T19:03Z, no blocking findings, six non-blocking findings). Those six findings are answered in the section "Reviewer findings on 10707edca4" below.
+Lane: `mt-track-s-authz/approvals-auth-v2` (plan amendment 1). The reviewer agent `vitana-lane-reviewer` returned `changes` on head `2dd8cc325519a2f4ce9e7a48791377be28489796` (2026-11-04T17:24Z) with three blocking findings. The earlier commits answer findings 1 and 2. Finding 3 (Operator Chat service token) moved to lane `operator-chat-service-token` (branch `kiro/operator-chat-service-token/lane`). The reviewer accepted head `64524419f3b2f598b8aeaa99abd3ede82120f11a` (2026-11-04T18:15Z, no blocking findings, four non-blocking findings). It then accepted head `10707edca4993842aacca1567fcc2f526d668920` (2026-11-04T19:03Z, six non-blocking findings) and head `0aac59b9ea686bd7d4e15ed0581621fcfc4b3407` (2026-11-04T19:55Z, three non-blocking findings). The findings of the last two accepts are answered below, in "Reviewer findings on 10707edca4" and "Reviewer findings on 0aac59b9ea".
 
-Commits on top of the accepted head `10707edca4`: `014b00bc52` (the generic-path reject case, finding 2) and the evidence commit that adds this text. The next review is on the head that carries this file.
+Commits since `0aac59b9ea`: `a10b0417bf` (the success-text assertion in the reject case) and the evidence commit that adds this text. The next review is on the head that carries this file.
 
-Earlier commits in the lane: `7a30f146d9` (Operator Chat change, reverted below), `a6455dfbc5` (bind tests), `33c492784b` (this folder), `be3f456cdf` (reverts `7a30f146d9` from this branch), `64524419f3` (evidence refresh), `861c3ceca9` (merge of origin/main `4066f563e7`, no conflicts), `db8a6b41ef` (narrows the generic-path bearer to the approvals tools).
+Earlier commits in the lane: `7a30f146d9` (Operator Chat change, reverted below), `a6455dfbc5` (bind tests), `33c492784b` (this folder), `be3f456cdf` (reverts `7a30f146d9` from this branch), `64524419f3` (evidence refresh), `861c3ceca9` (merge of origin/main `4066f563e7`, no conflicts), `db8a6b41ef` (narrows the generic-path bearer to the approvals tools), `014b00bc52` (the generic-path reject case), `10707edca4` and `0aac59b9ea` (evidence refreshes).
 
 VALIDATION_PROFILE: gateway_backend
 
@@ -34,14 +34,14 @@ AC-4: Finding 2 (orb-tool). `POST /api/v1/orb/tool` passes the request bearer to
 AC-5: Finding 2 (source pins). The three guard sites in `orb-live.ts` and `orb-tool.ts` keep their exact guard text.
   TEST: services/gateway/test/mt-track-s-authz-approvals-auth.test.ts, "the bind guards and the tool bearer, as written in source" (3 cases)
 
-AC-6: Finding 2 (the tests fail on a regression). Four mutations were applied one at a time to head `a6455dfbc5`: SSE bind without the owner check, WebSocket bind without the identity check, SSE bind without verification, and orb-tool without the bearer. Each one fails the named tests in outputs/mutation-checks.txt. The source was reverted after each run. The generic-path narrowing has its own mutation runs (AC-11, M5 and M6).
+AC-6: Finding 2 (the tests fail on a regression). Four mutations were applied one at a time to head `a6455dfbc5`: SSE bind without the owner check, WebSocket bind without the identity check, SSE bind without verification, and orb-tool without the bearer. Each one fails the named tests in outputs/mutation-checks.txt. The source was reverted after each run. The generic-path narrowing has its own mutation runs (AC-11, M5 to M7).
   TEST: services/gateway/test/mt-track-s-authz-approvals-auth.test.ts (mutation runs, outputs/mutation-checks.txt)
 
 AC-7: Authorization not loosened. The approvals routes keep `requireServiceOrAdmin`. No test assertion is removed or weakened.
   TEST: services/gateway/test/mt-track-s-authz-approvals-auth.test.ts, the no-bearer 401 and non-admin 403 cases on all three POST routes (outputs/green-approvals-head.txt)
   TEST: services/gateway/test/orb-tools/developer-tools.test.ts (outputs/green-developer-tools-head.txt)
 
-AC-8: The suites that cover this change pass. The approvals suite ran on code head `014b00bc52`. Every other suite ran on `db8a6b41ef`. `014b00bc52` changes only the approvals test file, and no service source changed after `db8a6b41ef`, so those runs still hold.
+AC-8: The suites that cover this change pass. The approvals suite ran on code head `a10b0417bf`. Every other suite ran on `db8a6b41ef`. The commits after `db8a6b41ef` change only the approvals test file, and no service source changed after `db8a6b41ef`, so those runs still hold.
   TEST: `npx jest test/mt-track-s-authz-approvals-auth.test.ts`, 34 passed (outputs/green-approvals-head.txt)
   TEST: `npx jest test/orb-tools/developer-tools.test.ts`, 60 passed (outputs/green-developer-tools-head.txt)
   TEST: `npm run test:operator`, 71 passed (outputs/green-test-operator-head.txt)
@@ -49,15 +49,15 @@ AC-8: The suites that cover this change pass. The approvals suite ran on code he
   TEST: `npm run test:support`, 87 passed in 4 suites (outputs/green-test-support-head.txt)
   TEST: nearby suites (VTID-05047, VTID-05019, VTID-05005, VTID-05006, ws-tenant-fallback, sse-stream characterization, VTID-04834), 142 passed in 7 suites (outputs/green-nearby-head.txt)
 
-AC-9: The TypeScript build is clean. `npx tsc --noEmit` exits 0 on `014b00bc52` (outputs/tsc-head.txt records `exit=0`).
+AC-9: The TypeScript build is clean. `npx tsc --noEmit` exits 0 on `a10b0417bf` (outputs/tsc-head.txt records `exit=0`).
 
-AC-10: Red before green. Run against origin/main code (7292527d60), the new and changed tests fail where the behaviour is new: 19 approvals cases. The six not-bound cases pass there by construction, because origin/main never binds the bearer. They are guards, and mutation runs show they fail on a regression. The red run predates the generic-path cases in AC-11, so it covers the 32 approvals cases that existed then, plus the 60 developer-tools cases. origin/main has since moved to 4066f563e7, which changes none of this lane's files.
+AC-10: Red before green. Run against origin/main code (7292527d60), the new and changed tests fail where the behaviour is new: 19 approvals cases. The six not-bound cases pass there by construction, because origin/main never binds the bearer. They are guards, and mutation runs show they fail on a regression. The red run already contains the generic-path approve case, which fails there at the missing `__executeLiveApiToolForTest` export, before any bearer is checked. The behavioural red for the generic path is therefore M5 to M7 on this head. The red run does not contain the non-approvals guard or the reject case in AC-11. Its 92 tests are the 32 approvals cases and the 60 developer-tools cases. origin/main has since moved to 4066f563e7, which changes none of this lane's files.
   TEST: outputs/red-origin-main-results.txt (19 failed, 73 passed, 92 tests in 2 files; full console log not committed)
 
 AC-11: The generic live path gives the member's bearer only to `dev_approve_pr` and `dev_reject_pr`. Every other registry tool on that path gets no bearer and answers as it did before this lane.
   TEST: services/gateway/test/mt-track-s-authz-approvals-auth.test.ts, "a non-approvals tool on the generic live path gets no member bearer" (no fetch call; the admin-session message is returned)
   TEST: services/gateway/test/mt-track-s-authz-approvals-auth.test.ts, "a voice session holding the member bearer approves as that member" (dev_approve_pr) and "a voice session holding the member bearer rejects as that member (dev_reject_pr)"
-  TEST: mutation M5 (the wide form) fails the non-approvals case, and M6 (reject operand dropped) fails the reject case, in outputs/mutation-checks.txt
+  TEST: mutation M5 (the wide form) fails the non-approvals case, M6 (reject operand dropped) fails the reject case and M7 (approve operand dropped) fails the approve case, in outputs/mutation-checks.txt
 
 AC-12: POST /feed/approve refuses a body branch that differs from the PR head and merges nothing.
   TEST: services/gateway/test/mt-track-s-authz-approvals-auth.test.ts, "a body branch that differs from the PR head is refused and nothing merges", and "the matching head branch proceeds to the merge call"
@@ -76,6 +76,12 @@ AC-14: The one test-only export added to `orb-live.ts`, `__executeLiveApiToolFor
 4. The recorded import-cycle follow-up was unsafe (non-blocking). The text is corrected under Open items. Moving `NO_ADMIN_SESSION` to `orb-tools-shared.ts` would create a cycle in which that module spreads the developer-tools exports at load, and the spread would silently drop every dev tool.
 5. Wording (non-blocking). `scan_existing_matches` is removed from the list of tools that got the wide bearer. It has its own case arm, which passes the session token (orb-live.ts:6493), so the wide form never reached it. The orb-tool scope is recorded under Decisions taken.
 6. Evidence (non-blocking). `outputs/tsc-head.txt` now records `exit=0`. AC-10 says the red run predates the generic-path cases. The `commands.log` section numbering is fixed.
+
+## Reviewer findings on 0aac59b9ea and the answers
+
+1. Merge order (non-blocking, open by design). The lane still waits for `operator-chat-service-token` and plan PR #4653 to reach origin/main. Any update of this branch after they land makes a new head, which needs its own accept, and CI on the PR head must be green. No change here. The reviewer did not re-run jest, because its shell policy blocks it. The recorded 34-case run is the evidence, and CI on the PR head is the live proof.
+2. AC-10 wording (non-blocking). Corrected in AC-10 above. The red run holds the generic approve case, and that case fails there at the missing export. M7 (approve operand dropped) completes the pair with M6.
+3. Optional reject assertion (non-blocking). Added in `a10b0417bf`. The reject case also requires the success text, so a gateway refusal that still returns ok:true cannot pass it.
 
 ## Decisions taken
 
