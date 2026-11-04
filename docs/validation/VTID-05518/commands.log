@@ -1,0 +1,66 @@
+# VTID-05518 commands (2026-11-02T19:15:12Z, Linux, node v22.23.4)
+$ npx jest test/eng-platform-stage-oidc-workflows.test.ts test/vtid-05009-provision-pack-token-workflow.test.ts test/vtid-04324-ecs-scale-allowlist.test.ts
+    ✓ covers the eight known static-key workflows (29 ms)
+    ✓ AWS-PROVISION-APPILIX-SECRETS keeps its production leg on AWS_PROD_ROLE_ARN (1 ms)
+      ✓ every credential step that names the staging keys uses the role variable and the key guard (2 ms)
+      ✓ no unguarded static key remains (2 ms)
+      ✓ grants id-token: write at the top level (1 ms)
+      ✓ every credential step that names the staging keys uses the role variable and the key guard (6 ms)
+      ✓ no unguarded static key remains (1 ms)
+      ✓ grants id-token: write at the top level (1 ms)
+      ✓ every credential step that names the staging keys uses the role variable and the key guard (3 ms)
+      ✓ no unguarded static key remains
+      ✓ grants id-token: write at the top level
+      ✓ every credential step that names the staging keys uses the role variable and the key guard (1 ms)
+      ✓ no unguarded static key remains
+      ✓ grants id-token: write at the top level (1 ms)
+      ✓ every credential step that names the staging keys uses the role variable and the key guard (1 ms)
+      ✓ no unguarded static key remains
+      ✓ grants id-token: write at the top level (1 ms)
+      ✓ every credential step that names the staging keys uses the role variable and the key guard
+      ✓ no unguarded static key remains
+      ✓ grants id-token: write at the top level
+      ✓ every credential step that names the staging keys uses the role variable and the key guard (1 ms)
+      ✓ no unguarded static key remains
+      ✓ grants id-token: write at the top level (1 ms)
+      ✓ every credential step that names the staging keys uses the role variable and the key guard
+      ✓ no unguarded static key remains (1 ms)
+      ✓ grants id-token: write at the top level
+    ✓ assumes vars.AWS_DRIFT_ROLE_ARN, falling back to the prod role while it is unset
+    ✓ uses the claude-readonly secret, not the master secret, on the drift-role path (1 ms)
+    ✓ holds exactly the 23 July-9 orphans plus the retired worker-runner (29 ms)
+    ✓ refuses the governed/serving service vitana-gateway (1 ms)
+    ✓ refuses the governed/serving service vitana-gateway-awsdr (2 ms)
+    ✓ refuses the governed/serving service vitana-community-app-awsdr (1 ms)
+    ✓ refuses the governed/serving service vitana-community-app-staging (1 ms)
+    ✓ refuses the governed/serving service vitana-oasis-operator-awsdr (1 ms)
+    ✓ refuses the governed/serving service vitana-oasis-projector (1 ms)
+    ✓ refuses the governed/serving service vitana-orb-agent (1 ms)
+    ✓ refuses the governed/serving service vitana-erp-bridge (1 ms)
+    ✓ refuses the governed/serving service vitana-postgrest-aurora-proxy (1 ms)
+    ✓ refuses the governed/serving service vitana-vitana-verification-engine
+    ✓ one refused name refuses the whole request (1 ms)
+    ✓ "all" expands to the allowlist; explicit names are de-duplicated (1 ms)
+    ✓ desired_count must be 0 or 1 (8 ms)
+    ✓ is dispatch-only, dry run by default, and requires a reason (1 ms)
+    ✓ validates against the allowlist before assuming any AWS role (1 ms)
+    ✓ uses OIDC and pins the account (1 ms)
+    ✓ runs only on manual dispatch with a required reason (9 ms)
+    ✓ targets the staging secret with staging keys only (no prod role, no prod name) (1 ms)
+    ✓ never rotates an existing secret (1 ms)
+    ✓ masks the value before use and never prints it (1 ms)
+Test Suites: 3 passed, 3 total
+Tests:       49 passed, 49 total
+
+red on base: red-on-base.txt
+
+$ js-yaml load of every changed workflow
+parsed ALERT-APP-USERS-IDENTITY-DRIFT.yml
+parsed AWS-PROVISION-APPILIX-SECRETS.yml
+parsed AWS-PROVISION-DEV-MEMORY-PACK-TOKEN.yml
+parsed AWS-STAGE-DEPLOY-ERP-BRIDGE.yml
+parsed AWS-STAGE-DEPLOY-GATEWAY.yml
+parsed AWS-STAGE-DEPLOY-KIRO-RUNNER.yml
+parsed AWS-STAGE-DEPLOY-POSTGREST-AURORA-PROXY.yml
+parsed I18N-DB-SEED.yml
+parsed MIGRATION-DRIFT-CHECK.yml

@@ -1,0 +1,102 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/wt-id-helpers-and-policy-rewrite/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+FAIL test/mt-identity-bare-policy-lint.test.ts
+  VTID-05465 N3 bare-policy lint
+    ✓ reads ZERO bare current_tenant_id() policies over supabase/migrations (837 ms)
+    ✓ the rollback restores exactly the recount set (32 policies on 15 tables) (737 ms)
+  VTID-05465 helpers and rewrite migrations
+    ✓ ships tenant_id_for_policies() and is_member(uuid) as STABLE SECURITY DEFINER and leaves current_tenant_id() alone (3 ms)
+    ✓ rewrites every recounted policy to tenant_id_for_policies() and nothing else (amendment 1) (143 ms)
+    ✓ the rollback recreates each policy exactly as the migration that created it, and the rewrite only swaps the helper (819 ms)
+  VTID-05465 live-body guard
+    ✕ reads the live current_tenant_id() body in DO $pre$ and raises before any policy is touched unless the three 20260218 markers match (2 ms)
+  VTID-05465 lint parser
+    ✓ counts only bare policies left after drops, re-definitions and DO blocks (49 ms)
+    ✓ applies a paired _rollback.sql only when asked (63 ms)
+
+  ● VTID-05465 live-body guard › reads the live current_tenant_id() body in DO $pre$ and raises before any policy is touched unless the three 20260218 markers match
+
+    expect(received).toContain(expected) // indexOf
+
+    Expected substring: "pg_get_functiondef('public.current_tenant_id()'::regprocedure)"
+    Received string:    "
+    DECLARE
+      r record;
+      p record;
+    BEGIN
+      IF to_regprocedure('public.is_member(uuid)') IS NULL
+         OR to_regprocedure('public.tenant_id_for_policies()') IS NULL THEN
+        RAISE EXCEPTION 'VTID-05465: apply 20261102030000_vtid_05465_tenant_id_for_policies_is_member.sql first';
+      END IF;
+      FOR r IN SELECT * FROM (VALUES
+            ('community_groups', 'community_groups_insert', 'INSERT'),
+            ('community_groups', 'community_groups_update', 'UPDATE'),
+            ('community_groups', 'community_groups_delete', 'DELETE'),
+            ('community_meetups', 'community_meetups_insert', 'INSERT'),
+            ('community_meetups', 'community_meetups_update', 'UPDATE'),
+            ('community_meetups', 'community_meetups_delete', 'DELETE'),
+            ('community_listings', 'community_listings_select_public', 'SELECT'),
+            ('d42_domain_weights', 'd42_domain_weights_select', 'SELECT'),
+            ('event_attendance', 'event_attendance_select', 'SELECT'),
+            ('live_highlights', 'live_highlights_select', 'SELECT'),
+            ('live_room_attendance', 'live_room_attendance_select', 'SELECT'),
+            ('live_rooms', 'live_rooms_select', 'SELECT'),
+            ('live_rooms', 'live_rooms_insert', 'INSERT'),
+            ('live_rooms', 'live_rooms_update', 'UPDATE'),
+            ('products_catalog', 'products_catalog_select', 'SELECT'),
+            ('products_catalog', 'products_catalog_insert', 'INSERT'),
+            ('services_catalog', 'services_catalog_select', 'SELECT'),
+            ('services_catalog', 'services_catalog_insert', 'INSERT'),
+            ('tenant_catalog_overrides', 'tenant_catalog_overrides_select', 'SELECT'),
+            ('match_targets', 'match_targets_select_policy', 'SELECT'),
+            ('match_targets', 'match_targets_insert_policy', 'INSERT'),
+            ('match_targets', 'match_targets_update_policy', 'UPDATE'),
+            ('relationship_nodes', 'relationship_nodes_select', 'SELECT'),
+            ('relationship_nodes', 'relationship_nodes_insert', 'INSERT'),
+            ('relationship_nodes', 'relationship_nodes_update', 'UPDATE'),
+            ('relationship_nodes', 'relationship_nodes_delete', 'DELETE'),
+            ('social_alignment_signals', 'social_alignment_signals_select', 'SELECT'),
+            ('social_alignment_signals', 'social_alignment_signals_insert', 'INSERT'),
+            ('topic_registry', 'topic_registry_select', 'SELECT'),
+            ('topic_registry', 'topic_registry_insert', 'INSERT'),
+            ('topic_registry', 'topic_registry_update', 'UPDATE'),
+            ('topic_registry', 'topic_registry_delete', 'DELETE')
+        ) AS s(tbl, pol, cmd) LOOP
+        CONTINUE WHEN to_regclass('public.' || r.tbl) IS NULL;
+        SELECT * INTO p FROM pg_policies WHERE schemaname = 'public' AND tablename = r.tbl AND policyname = r.pol;
+        IF NOT FOUND THEN
+          RAISE EXCEPTION 'VTID-05465: policy %.% is not live; refusing (live drift)', r.tbl, r.pol;
+        END IF;
+        -- Either the original form (current_tenant_id()) or, on a re-run, the
+        -- rewritten form (tenant_id_for_policies).
+        IF p.cmd <> r.cmd OR p.roles <> ARRAY['authenticated']::name[]
+           OR coalesce(p.qual, '') || ' ' || coalesce(p.with_check, '')
+              !~ '(current_tenant_id|tenant_id_for_policies)\\(' THEN
+          RAISE EXCEPTION 'VTID-05465: live policy %.% differs from its migration (cmd %, roles %); refusing', r.tbl, r.pol, p.cmd, p.roles;
+        END IF;
+      END LOOP;
+    END
+    "
+
+      175 |     expect(pre).not.toBeNull();
+      176 |     const guard = pre![1];
+    > 177 |     expect(guard).toContain("pg_get_functiondef('public.current_tenant_id()'::regprocedure)");
+          |                   ^
+      178 |     expect(guard).toContain("position('v_jwt_claims->''app_metadata''->>''active_tenant_id''' IN v_def)");
+      179 |     expect(guard).toContain("position('FROM public.user_tenants' IN v_def)");
+      180 |     expect(guard).toContain("position('WHERE user_id = auth.uid()' IN v_def)");
+
+      at Object.<anonymous> (test/mt-identity-bare-policy-lint.test.ts:177:19)
+
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 7 passed, 8 total
+Snapshots:   0 total
+Time:        3.427 s
+Ran all test suites matching /test\/mt-identity-bare-policy-lint.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

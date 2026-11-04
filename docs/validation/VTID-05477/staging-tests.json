@@ -1,0 +1,8 @@
+{
+  "vtid": "VTID-05477",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "unauthenticated GET /community/new-members is refused (route mounted)", "target": "gateway", "method": "GET", "path": "/api/v1/community/new-members", "rejected_probe": true, "expect_status": 401, "reason": "rejected probe, nothing written; proves the revision is deployed" },
+    { "kind": "existing", "ref": "npx jest test/vtid-05477-new-members-feed.test.ts", "cwd": "services/gateway", "reason": "listing, exclusion and fail-closed behaviour need data; proven in CI with an in-memory database" }
+  ]
+}
