@@ -1,5 +1,5 @@
 == gate scope --base origin/main --head HEAD
-✅ **scope** — 20 changed file(s), all inside the scope of VTID-05528
+✅ **scope** — 21 changed file(s), all inside the scope of VTID-05528
 exit=0
 
 == gate sparring --base origin/main --head HEAD

@@ -1,5 +1,5 @@
 preflight: node scripts/collab/preflight.mjs --repo . --base origin/main --head HEAD --branch kiro/mt-track-s-authz/approvals-auth-v2 --title "VTID-05528 (mt-track-s-authz/approvals-auth-v2): give the generic live path's user_jwt to the approvals tools only"
-Run on code head db8a6b41ef, with this evidence folder in the working tree. Exit 1. The full output lists every lane of the shared Collab queue, so it is not committed.
+Run on code head 014b00bc52, with this evidence folder in the working tree. Exit 1. The full output lists every lane of the shared Collab queue, so it is not committed.
 
 PASS  Collab tests [required]
 FAIL  Collab handoff [required]

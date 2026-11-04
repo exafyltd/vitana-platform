@@ -134,7 +134,7 @@ $ git rm docs/validation/VTID-05528/outputs/green-operator-chat-head.txt        
 
 # Commands run after this file was committed (git log / git show checks of the three commits and their trailers) are reported in the final report, not here.
 
-## 8. Narrowing of the generic-path bearer, merge of origin/main, refresh on db8a6b41ef (after the reviewer accept on 64524419f3)
+## 10. Narrowing of the generic-path bearer, merge of origin/main, refresh on db8a6b41ef (after the reviewer accept on 64524419f3)
 
 $ git merge --no-ff origin/main (origin/main 4066f563e7)                                 -> 861c3ceca9, no conflicts (16 files: plan group-chat-realtime-status and the VTID-05208 record)
 $ npx jest test/mt-track-s-authz-approvals-auth.test.ts (new negative case, first draft)   -> exit 1, 32 passed, 1 failed (assertion text wrong: the admin tool answers "signed-in admin session"; corrected)
@@ -151,3 +151,13 @@ $ npx jest <the 7 nearby suites> > outputs/green-nearby-head.txt                
 $ npx tsc --noEmit > outputs/tsc-head.txt                                                         -> exit 0, no diagnostics
 $ node scripts/collab/preflight.mjs --repo . --base origin/main --head HEAD --branch kiro/mt-track-s-authz/approvals-auth-v2 --title "..." -> exit 1: Collab handoff and Lane scope fail (lane file on plan PR #4653, not on origin/main; gh cannot authenticate); PR-GATE sparring report-only (outputs/preflight-summary.txt)
 $ node scripts/ci/pr-gate/gate.mjs scope | sparring | weakening --base origin/main --head HEAD > outputs/pr-gate-local.txt -> scope exit 0 (20 files in scope), sparring exit 1 (unchanged, report-only), weakening exit 0 (2 test files)
+
+## 11. Reviewer findings on 10707edca4: reject case, typecheck record, preflight and PR-gate refresh on 014b00bc52
+
+$ run_workflow agent://vitana-lane-reviewer (wf_e14cb699ac973c66, model claude-sonnet-5.5) on 10707edca4 -> accept, no blocking, six non-blocking (answered in acceptance.md, "Reviewer findings on 10707edca4")
+$ git commit 014b00bc52 (generic-path reject case; Collab-Session and Collab-Lane trailers)
+$ npx jest test/mt-track-s-authz-approvals-auth.test.ts > outputs/green-approvals-head.txt   -> exit 0, 34 passed (run on 014b00bc52)
+$ mutation M6: dev_reject_pr dropped from the narrowing; npx jest test/mt-track-s-authz-approvals-auth.test.ts -t "rejects as that member" -> exit 1, 1 failed, 33 skipped; file restored from a copy, narrowed line count 1 (outputs/mutation-checks.txt M6)
+$ npx tsc --noEmit > outputs/tsc-head.txt; echo "exit=$?" >> outputs/tsc-head.txt   -> exit=0
+$ node scripts/collab/preflight.mjs --repo . --base origin/main --head HEAD --branch kiro/mt-track-s-authz/approvals-auth-v2 --title "..."   -> exit 1: Collab handoff and Lane scope fail (lane file on plan PR #4653, not on origin/main; gh cannot authenticate); PR-GATE sparring report-only (outputs/preflight-summary.txt)
+$ node scripts/ci/pr-gate/gate.mjs scope | sparring | weakening --base origin/main --head HEAD > outputs/pr-gate-local.txt   -> scope exit 0 (21 files in scope), sparring exit 1 (unchanged, report-only), weakening exit 0 (2 test files)

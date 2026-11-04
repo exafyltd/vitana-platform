@@ -46,3 +46,11 @@ M5  services/gateway/src/routes/orb-live.ts, generic live fallback user_jwt (run
     failed:
       - voice approve on the generic live path (VTID-05528) > a non-approvals tool on the generic live path gets no member bearer
     restored: the narrowed line is back (grep count 1); the full approvals suite passes 33 of 33 on db8a6b41ef.
+
+M6  services/gateway/src/routes/orb-live.ts, generic live fallback user_jwt (run on code head 014b00bc52; the mutation was applied to the narrowed file and the file was restored from a copy after the run)
+    before:  user_jwt: (toolName === 'dev_approve_pr' || toolName === 'dev_reject_pr') ? (session.callerAccessToken ?? null) : null,
+    after:   user_jwt: (toolName === 'dev_approve_pr') ? (session.callerAccessToken ?? null) : null,
+    result:  Tests: 1 failed, 33 skipped, 34 total (jest -t "rejects as that member")
+    failed:
+      - voice approve on the generic live path (VTID-05528) > a voice session holding the member bearer rejects as that member (dev_reject_pr)
+    restored: the narrowed line is back (grep count 1); the full approvals suite passes 34 of 34 on 014b00bc52.
