@@ -13,7 +13,7 @@ paths:
   - scripts/ci/validator-path-guard.cjs
   - scripts/ci/validator-path-guard.test.cjs
   - docs/validation/**
-updated: 2026-11-04T17:29Z
+updated: 2026-11-04T17:35Z
 vtid: VTID-05305
 parked_from: ready
 ---
@@ -5093,4 +5093,6 @@ park (stale_claim); claim released; Claude unavailable → exafyltd
 ### 2026-11-04T17:23Z · pm-agent · update
 park (stale_claim); claim released; Claude unavailable → exafyltd
 ### 2026-11-04T17:29Z · pm-agent · update
+park (stale_claim); claim released; Claude unavailable → exafyltd
+### 2026-11-04T17:35Z · pm-agent · update
 park (stale_claim); claim released; Claude unavailable → exafyltd
