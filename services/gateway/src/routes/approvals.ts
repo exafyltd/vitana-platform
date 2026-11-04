@@ -13,7 +13,7 @@
  * - POST /api/v1/approvals/:approval_id/reject → records rejection, returns { ok }
  */
 
-import { gatewayServiceAuthHeader } from '../middleware/require-service-or-admin';
+import { gatewayServiceAuthHeader, requireServiceOrAdmin } from '../middleware/require-service-or-admin';
 import { Router, Request, Response } from 'express';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { createHash } from 'crypto';
@@ -526,7 +526,7 @@ router.get('/feed', async (req: Request, res: Response) => {
  * - CI must be passing (ci_state = 'pass')
  * - PR must be mergeable (mergeable = true)
  */
-router.post('/feed/approve', async (req: Request, res: Response) => {
+router.post('/feed/approve', requireServiceOrAdmin, async (req: Request, res: Response) => {
   try {
     const { pr_number, repo = 'exafyltd/vitana-platform', branch, vtid } = req.body;
 
@@ -554,6 +554,14 @@ router.post('/feed/approve', async (req: Request, res: Response) => {
       return res.status(404).json({
         ok: false,
         error: `PR #${pr_number} not found in open PRs`,
+      });
+    }
+
+    // mt-track-s-authz (VTID-05452): merge only the branch that belongs to this PR.
+    if (prItem.branch !== branch) {
+      return res.status(400).json({
+        ok: false,
+        error: 'branch_mismatch',
       });
     }
 
@@ -648,7 +656,7 @@ router.post('/feed/approve', async (req: Request, res: Response) => {
  * Triggers safe merge for the approval item
  * Uses existing autonomous-pr-merge endpoint
  */
-router.post('/:approval_id/approve', async (req: Request, res: Response) => {
+router.post('/:approval_id/approve', requireServiceOrAdmin, async (req: Request, res: Response) => {
   const { approval_id } = req.params;
 
   try {
@@ -777,7 +785,7 @@ router.post('/:approval_id/approve', async (req: Request, res: Response) => {
  * POST /:approval_id/reject
  * Records rejection for the approval item
  */
-router.post('/:approval_id/reject', async (req: Request, res: Response) => {
+router.post('/:approval_id/reject', requireServiceOrAdmin, async (req: Request, res: Response) => {
   const { approval_id } = req.params;
   const { reason } = req.body || {};
 

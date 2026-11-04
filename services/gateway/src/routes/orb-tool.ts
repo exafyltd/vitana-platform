@@ -83,6 +83,8 @@ router.post('/orb/tool', requireAuth, async (req: AuthenticatedRequest, res: Res
     tenant_id: tenantId,
     role: effectiveRole ?? req.identity?.role ?? null,
     vitana_id: req.identity?.vitana_id ?? null,
+    // mt-track-s-authz (VTID-05452): the caller's own bearer, so approvals tools reach the gateway as this user.
+    user_jwt: (req.header('authorization') ?? '').replace(/^Bearer\s+/i, '').trim() || null,
   };
   const lang = toolCallLang(req.body);
   if (lang) identity.lang = lang;

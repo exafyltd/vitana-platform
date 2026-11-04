@@ -7023,6 +7023,8 @@ async function executeLiveApiToolInner(
                 tenant_id: lens.tenant_id ?? null,
                 role: sessionServedRole(session) || session.identity?.role || null,
                 vitana_id: session.identity?.vitana_id ?? null,
+                // mt-track-s-authz (VTID-05452): the approvals tools forward the caller's own token.
+                user_jwt: ((session as any).access_token as string | undefined) ?? ((session as any).jwt as string | undefined) ?? null,
                 session_id: session.sessionId,
                 thread_id: session.thread_id || session.sessionId,
                 turn_number: session.turn_count,
