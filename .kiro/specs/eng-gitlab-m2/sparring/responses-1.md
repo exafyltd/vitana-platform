@@ -1,0 +1,24 @@
+# Responses — round 1 (session `af19bcd5-1194-4347-a876-b6c23a2eb855`)
+
+All three findings were checked against the base ref before answering. R1-F1 is a real defect in the plan and is fixed by
+changing the design, not only the wording. R1-F2 and R1-F3 are accepted with one correction of the premise each.
+
+```json
+[
+  {
+    "finding_id": "R1-F1",
+    "disposition": "accepted",
+    "rationale": "Confirmed. `CicdOasisEvent.type` is the closed union `CicdEventType` (services/gateway/src/types/cicd.ts:1220); of the three names the plan listed only `cicd.merge.success` is a member (cicd.ts:224). `cicd.pr.created` and `cicd.ci.failed` appear only as strings in the open `eventTypes: string[]` of the lifecycle mapper (autopilot-event-mapper.ts:269, 454), so typed code cannot emit them. I went further than naming the existing topics: the plan no longer reuses any `cicd.*` topic, because `cicd.merge.success` is the Command Hub's own merged signal (oasis-event-service.ts:525); board-adapter.ts:353 turns it into a COMPLETED board card and gemini-operator.ts:3210 reads it as 'PR merged', so a GitLab event emitting it could complete a real VTID. plan.md §3.5 now lists all five new literals added to `CicdEventType` (scm.gitlab.merge_request.opened|merged|closed, scm.gitlab.pipeline.succeeded|failed) with a GitLab-event-to-topic table, states the VTID source for merge_request and pipeline events and the no-VTID case (202, nothing emitted), and says `autopilot-event-mapper.ts` is not edited and has no `scm.gitlab.*` rule, so no GitLab event moves a VTID's state in this milestone; that mapping is deferred to the vitana-v1 cutover and recorded in §10. tasks.md W2 and W6 and the scm-webhook acceptance were changed to match (W6 is now a test that no mapper rule lists `scm.gitlab.*` and that the route emits no existing `cicd.*` topic). §5 adds a compile-time membership check and the per-event topic tests. §8's duplicate-delivery risk is reworded: a duplicate adds one informational OASIS row and moves no state."
+  },
+  {
+    "finding_id": "R1-F2",
+    "disposition": "accepted",
+    "rationale": "Accepted with one correction of the premise. `verifySvix` does not use Svix header names: its parameter is `headers: { id?, timestamp?, signature? }` and the body reads only those three fields (webhook-signature.ts:59-71). The header names live in the caller, as in the Vital connector (connectors/wearable/vital.ts:186-191, `id: headerValue(req.headers['svix-id'])` and so on). The HMAC scheme is the same for Standard Webhooks (`${id}.${timestamp}.${raw}`, base64, `v1,` candidates, `whsec_` key, webhook-signature.ts:77-87). The finding's substance still holds, because the plan did not say who maps the headers. plan.md §3.5 now states that the route maps `webhook-id`, `webhook-timestamp` and `webhook-signature` to `id`, `timestamp` and `signature` with `headerValue`, and §5 / tasks.md W2 add a test that a request carrying only `svix-*` headers is refused. The suggested `verifyStandardWebhook` wrapper is not added: it would put a new export into webhook-signature.ts, which is shared with the Vital connector and pinned by test/vtid-05031-webhook-verification.test.ts, for a three-line mapping that sits once in the new route file. The shared verifier stays unedited, and the lane's `paths` do not include it."
+  },
+  {
+    "finding_id": "R1-F3",
+    "disposition": "accepted",
+    "rationale": "Confirmed. `checksVerdict` reads GitHub check runs (`name`, `id`, `started_at`, `status`, `conclusion`) and passes only `OK_CONCLUSIONS` = success, skipped, neutral (scripts/collab/land-guard.mjs:32, 85-98), and the plan gave no complete mapping. plan.md §3.4 now carries the table, built from the job statuses in GitLab's jobs API documentation (canceled, canceling, created, failed, manual, pending, preparing, running, scheduled, skipped, success, waiting_for_callback, waiting_for_resource) and `allow_failure`: success -> completed/success; failed -> completed/failure, or completed/neutral when `allow_failure` is true; canceled -> completed/cancelled (fail); skipped -> completed/skipped; manual -> completed/neutral when optional (`allow_failure` true) and queued (pending) when blocking; created, pending, scheduled, preparing, waiting_for_resource, waiting_for_callback -> queued; running, canceling -> in_progress; any other value -> queued with one log line (fails closed). The pipeline's jobs come from the endpoint that omits retried attempts, so each name appears once. One pure exported function `jobToCheckRun(job)` implements it (tasks.md B2) and §5 tests it row by row, then through the real `checksVerdict`. One tightening beyond the finding: a name in `required_jobs` must map to `success`, so a required job that is skipped, neutral or absent does not pass."
+  }
+]
+```
