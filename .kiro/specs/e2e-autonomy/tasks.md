@@ -16,6 +16,10 @@ Authoritative plan: `plan.md`. VTID from CI PLAN-SPAR. Branch `kiro/e2e-autonomy
 - [ ] S5 Evidence: tests red then green in both repositories; `sha256sum` of the steering file in both (equal);
       `node vitana-platform/scripts/collab/kiro-web-steering.mjs --check` ending `kiro-web-steering: ok` with the byte size
       before and after.
+- [ ] S6 The body of the vitana-v1 PR states, with the lines of plan §4: stop row 3 there changes from "a Claude review … or an
+      owner instruction" to "the owner's instruction plus a reviewer-agent accept" (a tightening, authority
+      `collaboration.md` §3a/§7b on the platform's `main`), and that vitana-v1's `.claude/rules/collaboration.md` still carries
+      the older reading at lines 132 and 253 and lags by 27 lines. The platform PR body links to it.
 
 **Acceptance**
 - Change types: Tooling/docs.
@@ -25,7 +29,9 @@ Authoritative plan: `plan.md`. VTID from CI PLAN-SPAR. Branch `kiro/e2e-autonomy
   shows equal hashes; the next edit of either copy must update both).
 - Surfaces: the steering file, the guard and its test, one doc paragraph. No product code.
 - Locales: n/a. Accessibility: n/a.
-- Contract: `rule-text.md` is copied byte for byte; the 13 stop rows and their 16 existing anchors are untouched.
+- Contract: `rule-text.md` is copied byte for byte; the 13 stop rows keep their meaning and their 16 existing anchors, except
+  that row 3 in vitana-v1 becomes the platform's wording (a tightening, plan §4).
 - Staging proof: not verified on staging: steering text and a CI guard deploy nothing. Proof: the guard tests and the
   generator check.
-- No rule is weakened; nothing is added to the stop table; `vitana-pipeline.md`, `AGENTS.md` and `CLAUDE.md` are not edited.
+- No rule is weakened (row 3 in vitana-v1 is tightened, on the authority named in plan §4); nothing is added to the stop table;
+  `vitana-pipeline.md`, `AGENTS.md`, `CLAUDE.md` and vitana-v1's `collaboration.md` are not edited.
