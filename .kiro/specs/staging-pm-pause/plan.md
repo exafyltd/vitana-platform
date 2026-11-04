@@ -23,6 +23,12 @@ them from `pm-agent/*`. The loop starts only when `PM_MODE` is not `off` (`servi
 `.github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml:1229`: `value:"live"` → `value:"off"` for `PM_MODE` only.
 `PM_AGENT_ENABLED` stays `true`, and no other env value, step or job changes.
 
+## Sequencing (R1-F1)
+Merging this PR triggers `AWS-STAGE-DEPLOY-GATEWAY.yml`, because its own file is in `on.push.paths`. That staging deploy
+registers a new task-definition revision with `PM_MODE=off` and rolls `vitana-gateway`, so the merge itself makes the
+pause durable. The owner ECS action below is the immediate relief, applied before the merge. Both lead to the same
+state. The owner ECS action is not a precondition for the merge.
+
 ## Owner action for the running task (not performed by Kiro)
 Register a new revision from `ci-audit/pm-pause/vitana-gateway-pm-off.json` (the current `:973` with `PM_MODE=off`),
 then update the service so new tasks start with it. The Kiro session does not run these calls (§7a).
