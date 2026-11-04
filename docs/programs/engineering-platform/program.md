@@ -6,6 +6,7 @@ priority: 3
 repos: [vitana-platform, vitana-v1]
 specs:
   - vitana-platform:eng-platform-p01
+  - vitana-platform:eng-gitlab-m1
 docs:
   - vitana-platform:docs/ENGINEERING-PLATFORM-PLAN.md
 exit_criteria:
@@ -19,3 +20,4 @@ Programme registry entry. Links only; the plan is the source of truth.
 
 - Plan: `vitana-platform:docs/ENGINEERING-PLATFORM-PLAN.md` (written by lane `eng-platform-p01/program-doc`)
 - Spec: `vitana-platform:.kiro/specs/eng-platform-p01/` (Phase 0 inventory + Phase 1 keyless staging CI)
+- Spec: `vitana-platform:.kiro/specs/eng-gitlab-m1/` (self-hosted GitLab, milestone 1: the running system under review, tests, restore check)
