@@ -89,3 +89,62 @@ are under `services/gateway/` unless they start with `docs/`.
   database (CLAUDE.md rule 48); the Jest suites prove it and are referenced as `existing`.
 - `npm run test:roles` stays green without editing `test/vtid-04560-role-separation-regression.test.ts` (`:108-110`
   tests the unchanged pure resolver; `:848-851` builds an already-verified profile). No assertion is loosened.
+
+<!-- lane: work-surface-permission-v2 -->
+## Lane `work-surface-permission-v2 (supersedes work-surface-permission, amendment wsp-1)`
+- Scope (amendment wsp-1): `services/gateway/test/routes/orb-livekit.test.ts` is in this lane's paths. The superseded
+  lane (seat exafy) could not carry it. Tasks W1–W8 are the superseded lane's tasks, unchanged; W9 is the one new task.
+- [ ] W1 Re-check plan §2 at the lane base (profile resolution at `live-session-controller.ts:1181-1187`, the
+      LiveKit mint at `orb-livekit.ts:690-697`, the text role at `conversation.ts:216`, `:918`).
+- [ ] W2 Write `test/mt-track-s-authz-work-surface.test.ts` first and record it red on `origin/main`: the
+      `verifyWorkSurfaceProfile` matrix (`command-hub`, `admin`, `backoffice`, `commerce` × exafy_admin, permitted,
+      not permitted, `permittedRoles: null`), including the resolution each case ends with (`declared`/`route` for
+      exafy_admin, `permitted`, `narrowed`); a controller case where a caller without a permitted role declares
+      `command-hub` or `admin` and gets the member surface with no admin briefing, and the profile event warns; a
+      controller case where the permitted-roles read returns `roles: null` and one where it rejects, both served the
+      member surface; a LiveKit mint case; a text-path case where body role `developer` without permission yields the
+      `'user'` tool set.
+- [ ] W3 `orb/profile/assistant-profile.ts`: add `verifyWorkSurfaceProfile` per plan §4 (pure; `resolveAssistantProfile`
+      unchanged) and the `ProfileResolution` member `'permitted'`.
+- [ ] W4 `orb/live/session/live-session-controller.ts`: read `fetchPermittedRoles` for an authenticated work-surface
+      session (not for exafy_admin) and apply W3 before any consumer reads the profile; at most 20 lines.
+- [ ] W5 `routes/orb-livekit.ts`: the same check on the mint's profile.
+- [ ] W6 `routes/conversation.ts`: clamp the body role on `/turn` and `/stream` per plan §4; the
+      `developer_assistant` check unchanged.
+- [ ] W7 Run the new test, `npm run test:roles`, `npm run test:support`, `npm run test:operator`,
+      `npm run test:voice-identity`, `npx tsc --noEmit`; record outputs in `docs/validation/<VTID>/`. The PR states the
+      deliberate contract change (rule 42h): a Command Hub, admin or backoffice declaration without a permitted role is
+      served the member surface.
+- [ ] W8 `docs/validation/<VTID>/staging-tests.json` with an `existing` reference to the Jest suites (plan §6).
+- [ ] W9 Apply the contract change to `test/routes/orb-livekit.test.ts` (rule 42h; closes OPEN-1 of the superseded
+      lane). Three edits, and nothing else: (a) in `VTID-04776: a phone showing the admin screens gets the admin Vitana
+      — the device does not decide`, before `mockActiveProviderRow('livekit')`, add
+      `chainFor('user_permitted_roles').mockResolvedValueOnce({ data: [{ role: 'admin' }], error: null });`;
+      (b) in `VTID-04776: the same declaration resolves the same role on desktop and mobile`, inside the loop before
+      `mockActiveProviderRow('livekit')`, add the same call with `{ role: 'backoffice' }`; (c) in
+      `GET /orb/context-bootstrap › anonymous request resolves lang from Accept-Language`, add `'vitanaland'` as the
+      fourteenth expected argument of `mockBuildLiveSystemInstruction`. No denial expectation changes: the 401, 403,
+      429 and 503 assertions stay as they are. Run `npx jest test/routes/orb-livekit.test.ts` (92 tests green).
+
+**Acceptance**
+- Change types: Backend.
+- Outcome: the same as the superseded lane. A declared work surface is served only to a caller who holds a permitted
+  role for it; anyone else talks to the member Vitana, without admin briefing and without privileged tools. The text
+  chat uses a privileged role only when the caller holds it.
+- States: exafy_admin → declared surface kept (`declared`/`route`); permitted role → kept (`permitted`); not permitted →
+  member surface (`narrowed`, event `warning`); permitted roles unreadable or the read rejects → member surface (fail
+  closed); anonymous → unchanged (`anonymous`).
+- Surfaces: callers — Vertex/Nova voice session start (WS and SSE), LiveKit token mint and context bootstrap,
+  `/conversation/turn` and `/conversation/stream`; the member surface and the Command Hub for exafy_admin are unchanged.
+- Locales: n/a: no user-visible catalog text; spoken wording stays model-composed (NEVER 41).
+- Accessibility: n/a: no UI.
+- Contract: `verifyWorkSurfaceProfile(profile, { isExafyAdmin, permittedRoles }) → AssistantProfile`;
+  `fetchPermittedRoles` (`lib/permitted-roles.ts:36`) read-only; `orb.session.profile.resolved` reports the final
+  `resolution`; conversation responses keep their shape.
+- Contract change (rule 42h): a caller without a permitted role who declares admin or backoffice is served the member
+  surface. The PR body names this change and cites rule 42h and OPEN-1. The three assertions of W9 keep their intent
+  (the device does not decide; a permitted caller gets the work surface) and state the new contract.
+- Staging proof: not verified on staging: an authenticated ORB session start writes session rows to the shared
+  database (CLAUDE.md rule 48); the Jest suites prove it and are referenced as `existing`.
+- `npm run test:roles` stays green without editing `test/vtid-04560-role-separation-regression.test.ts` (`:108-110`
+  tests the unchanged pure resolver; `:848-851` builds an already-verified profile). No assertion is loosened.
