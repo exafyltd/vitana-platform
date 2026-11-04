@@ -4,10 +4,12 @@ author: kiro
 author_seat: exafy
 executor: kiro
 next_actor: kiro
-state: drafted
+state: approved
 spar_refs:
   - exafyltd/vitana-v1: 7829ef2f2ef12364862961d339161229c286d6f0
-updated: 2026-11-04T20:14Z
+updated: 2026-11-04T20:33Z
+sparring_record: .kiro/specs/eng-gitlab-m1/sparring/verdict.md
+vtids: [VTID-05544]
 ---
 # Handoff — eng-gitlab-m1
 Milestone 1 of the self-hosted GitLab CI (program `engineering-platform`). Plan: `plan.md`.
@@ -40,3 +42,6 @@ type check job on the base commit shows the file that runs installs the gateway 
 `declare module 'express-serve-static-core'` blocks; `npm ci` then `pnpm run typecheck` passes. The lane now commits a corrected
 `host/ci-platform.yml`, the plan gets step 0 (owner pastes the corrected file into GitLab) and premise P10. The Prisma half of the
 finding was disproved (no `@prisma/client` import; the check passes without a client). Answers in `sparring/s2-responses-1.md`.
+
+### 2026-11-04T20:33Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.
