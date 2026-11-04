@@ -232,6 +232,27 @@ describe('voice approve on the generic live path (VTID-05528)', () => {
     expect(out.success).toBe(true);
     expect(out.result).not.toContain('signed-in admin session');
   });
+
+  it('a non-approvals tool on the generic live path gets no member bearer', async () => {
+    process.env.SUPABASE_URL = 'https://example.supabase.test';
+    process.env.SUPABASE_SERVICE_ROLE = 'svc-role-test';
+    // An admin session holding a bearer: the admin feedback tool must still answer "no admin session"
+    // on this path, because only the approvals tools receive the bearer (VTID-05528 narrowing).
+    const session = {
+      sessionId: 'live-05528-scope',
+      identity: { user_id: 'admin-1', tenant_id: 't-1', role: 'admin', exafy_admin: false },
+      callerAccessToken: 'admin-jwt-05528',
+      lang: 'en',
+      inputTranscriptBuffer: '',
+      turn_count: 1,
+      createdAt: new Date(),
+    } as unknown as Parameters<typeof __executeLiveApiToolForTest>[0];
+
+    const out = await __executeLiveApiToolForTest(session, 'admin_list_feedback_tickets', {});
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(JSON.stringify(out)).toContain('signed-in admin session');
+  });
 });
 
 // VTID-05528: the member's bearer is bound to a live session only when it verifies to the session owner.

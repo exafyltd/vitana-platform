@@ -7028,9 +7028,12 @@ async function executeLiveApiToolInner(
                 tenant_id: lens.tenant_id ?? null,
                 role: sessionServedRole(session) || session.identity?.role || null,
                 vitana_id: session.identity?.vitana_id ?? null,
-                // mt-track-s-authz (VTID-05452, VTID-05528): the approvals tools forward the caller's own
-                // token, which the WS and SSE transports bind to the session (callerAccessToken).
-                user_jwt: session.callerAccessToken ?? null,
+                // mt-track-s-authz (VTID-05452, VTID-05528): only the two approvals tools forward the caller's
+                // own token, which the WS and SSE transports bind to the session (callerAccessToken). Every
+                // other generic tool keeps the no-token identity it had before this lane.
+                user_jwt: (toolName === 'dev_approve_pr' || toolName === 'dev_reject_pr')
+                  ? (session.callerAccessToken ?? null)
+                  : null,
                 session_id: session.sessionId,
                 thread_id: session.thread_id || session.sessionId,
                 turn_number: session.turn_count,
