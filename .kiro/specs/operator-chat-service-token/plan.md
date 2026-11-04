@@ -3,9 +3,9 @@ change_class: standard
 ---
 # plan(operator-chat-service-token): Operator Chat approve and reject send the gateway service token
 
-Author: Kiro, session `kiro-hotmail-202611011452-6d16`, seat hotmail. This is a local draft: not pushed, no PR, not
-sparred. Premises were checked at `origin/main` `7292527d60` (fetched 2026-11-04). CI sparring (PLAN-SPAR) and the VTID
-come when the plan is pushed as a `plan(` PR.
+Author: Kiro, session `kiro-hotmail-202611011452-6d16`, seat hotmail. Premises were checked at `origin/main` `7292527d60`
+(fetched 2026-11-04). The gateway files it cites are unchanged on `origin/main` `bf5e0c12d0`. CI sparring (PLAN-SPAR) and
+the VTID come from this `plan(` PR.
 
 <!-- plan:begin -->
 ## 1. Goal
