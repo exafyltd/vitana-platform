@@ -4,8 +4,10 @@ author: kiro
 author_seat: exafy
 executor: kiro
 next_actor: kiro
-state: drafted
-updated: 2026-11-04T19:27Z
+state: approved
+updated: 2026-11-04T19:35Z
+sparring_record: .kiro/specs/eng-gitlab-m2/sparring/verdict.md
+vtids: [VTID-05536, VTID-05537, VTID-05538, VTID-05539, VTID-05540, VTID-05541, VTID-05542]
 ---
 # Handoff — eng-gitlab-m2
 Milestone 2 of the self-hosted GitLab CI (program `engineering-platform`). Plan: `plan.md`.
@@ -24,3 +26,6 @@ PLAN-SPAR stopped at once (exit 2): `spar_refs` listed the plan's own repo, whic
 Round 1 (session `af19bcd5…`) returned three findings, all accepted: no `cicd.*` topic is reused and the five
 `scm.gitlab.*` topics are listed (the lifecycle mapper is untouched); the route maps the `webhook-*` headers itself; the
 GitLab job-status table for `checksVerdict` is in plan §3.4. Answers in `sparring/responses-1.md`.
+
+### 2026-11-04T19:35Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 7 lane(s) got a VTID and are handed to Kiro.
