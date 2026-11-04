@@ -127,13 +127,15 @@ jobs:
         if: steps.target.outputs.target == 'aurora'
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_PROD_ROLE_ARN }}
+          # eng-platform-p01: the read-only drift role when vars.AWS_DRIFT_ROLE_ARN is set; the prod role until then.
+          role-to-assume: ${{ vars.AWS_DRIFT_ROLE_ARN || secrets.AWS_PROD_ROLE_ARN }}
           aws-region: eu-central-1
 
       - name: Snapshot live public tables (Aurora, via RDS Data API)
         if: steps.target.outputs.target == 'aurora'
         env:
           AWS_PAGER: ''
+          DRIFT_ROLE: ${{ vars.AWS_DRIFT_ROLE_ARN }}
         run: |
           set -euo pipefail
           R=eu-central-1
@@ -141,8 +143,13 @@ jobs:
           [ "$ACCT" = "472838866351" ] || { echo "::error::Assumed role is in account $ACCT, expected 472838866351"; exit 1; }
           CLUSTER_ARN=$(aws rds describe-db-clusters --region $R --db-cluster-identifier vitana-aurora-prod \
             --query 'DBClusters[0].DBClusterArn' --output text)
-          SECRET_ARN=$(aws rds describe-db-clusters --region $R --db-cluster-identifier vitana-aurora-prod \
-            --query 'DBClusters[0].MasterUserSecret.SecretArn' --output text)
+          # eng-platform-p01: with the drift role, read through the read-only claude-readonly secret, never the master secret.
+          if [ -n "$DRIFT_ROLE" ]; then
+            SECRET_ARN=$(aws secretsmanager describe-secret --region $R --secret-id vitana/aurora/prod/claude-readonly --query ARN --output text)
+          else
+            SECRET_ARN=$(aws rds describe-db-clusters --region $R --db-cluster-identifier vitana-aurora-prod \
+              --query 'DBClusters[0].MasterUserSecret.SecretArn' --output text)
+          fi
           SQL="SELECT c.relname::text AS table_name FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p') ORDER BY c.relname"
           tries=0
           until aws rds-data execute-statement --region $R --resource-arn "$CLUSTER_ARN" \

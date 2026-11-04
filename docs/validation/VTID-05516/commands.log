@@ -1,0 +1,25 @@
+# VTID-05516 commands (2026-11-03T13:34Z, Linux, node v22.23.4)
+red on base (origin/main): outputs/red-on-base.txt; secret-coverage test red against the reviewed head ad76e76a: outputs/red-secret-coverage.txt
+
+$ cd services/gateway && npx jest test/eng-platform-oidc-roles.test.ts --verbose
+    ✓ eng-platform-oidc-staging-deploy-trust.json trusts exactly the plan §3 subjects with StringEquals (15 ms)
+    ✓ eng-platform-oidc-v1-preview-trust.json trusts exactly the plan §3 subjects with StringEquals (1 ms)
+    ✓ eng-platform-oidc-drift-readonly-trust.json trusts exactly the plan §3 subjects with StringEquals (2 ms)
+    ✓ eng-platform-oidc-prod-deploy-trust.json trusts exactly the plan §3 subjects with StringEquals
+    ✓ eng-platform-oidc-v1-preview-policy.json has no wildcard action or resource
+    ✓ eng-platform-oidc-drift-readonly-policy.json has no wildcard action or resource
+    ✓ the drift role can read only the claude-readonly secret, never the master secret
+    ✓ runs in strict mode, guards the account and defaults to dry-run
+    ✓ reaches every IAM write only behind --apply (1 ms)
+    ✓ gives the staging role an explicit policy and never copies the static-key user (3 ms)
+    ✓ fills PassRole from the five staging services and refuses a prod-named role (1 ms)
+    ✓ never creates access keys, deletes users or keys, or uses a wildcard trust
+    ✓ uses Resource "*" only for actions AWS cannot scope (1 ms)
+    ✓ deploys only the five staging ECS services, never a prod (-awsdr) service
+    ✓ has no IAM action except PassRole to ECS tasks, and cannot read secret values
+    ✓ covers every secret name the staging workflows describe, create or write (2 ms)
+Tests:       16 passed, 16 total
+
+$ (no AWS credentials) bash scripts/aws/setup-github-oidc-roles.sh
+refusing to run: caller account is '<no credentials>', expected 472838866351
+exit=4

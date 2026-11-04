@@ -1,0 +1,27 @@
+    ✕ targets the staging secret with staging keys only (no prod role, no prod name) (5 ms)
+      ✕ every credential step that names the staging keys uses the role variable and the key guard (2 ms)
+      ✕ no unguarded static key remains (1 ms)
+      ✕ grants id-token: write at the top level (1 ms)
+      ✕ every credential step that names the staging keys uses the role variable and the key guard (1 ms)
+      ✕ no unguarded static key remains (1 ms)
+      ✕ every credential step that names the staging keys uses the role variable and the key guard (1 ms)
+      ✕ no unguarded static key remains (1 ms)
+      ✕ grants id-token: write at the top level
+      ✕ every credential step that names the staging keys uses the role variable and the key guard (1 ms)
+      ✕ no unguarded static key remains
+      ✕ grants id-token: write at the top level
+      ✕ every credential step that names the staging keys uses the role variable and the key guard (1 ms)
+      ✕ no unguarded static key remains (2 ms)
+      ✕ grants id-token: write at the top level (1 ms)
+      ✕ every credential step that names the staging keys uses the role variable and the key guard (1 ms)
+      ✕ no unguarded static key remains
+      ✕ grants id-token: write at the top level
+      ✕ every credential step that names the staging keys uses the role variable and the key guard
+      ✕ no unguarded static key remains
+      ✕ grants id-token: write at the top level (1 ms)
+      ✕ every credential step that names the staging keys uses the role variable and the key guard (1 ms)
+      ✕ no unguarded static key remains
+      ✕ grants id-token: write at the top level
+    ✕ assumes vars.AWS_DRIFT_ROLE_ARN, falling back to the prod role while it is unset (1 ms)
+    ✕ uses the claude-readonly secret, not the master secret, on the drift-role path
+Tests:       26 failed, 6 passed, 32 total

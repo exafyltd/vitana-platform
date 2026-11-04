@@ -1,0 +1,28 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/wt-id-helpers-and-policy-rewrite/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/mt-identity-bare-policy-lint.test.ts
+  VTID-05465 N3 bare-policy lint
+    ✓ reads ZERO bare current_tenant_id() policies over supabase/migrations (771 ms)
+    ✓ the rollback restores exactly the recount set (32 policies on 15 tables) (721 ms)
+  VTID-05465 helpers and rewrite migrations
+    ✓ ships tenant_id_for_policies() and is_member(uuid) as STABLE SECURITY DEFINER and leaves current_tenant_id() alone (3 ms)
+    ✓ rewrites every recounted policy to tenant_id_for_policies() and nothing else (amendment 1) (152 ms)
+    ✓ the rollback recreates each policy exactly as the migration that created it, and the rewrite only swaps the helper (835 ms)
+  VTID-05465 live-body guard
+    ✓ reads the live current_tenant_id() body in DO $pre$ and raises before any policy is touched unless the three 20260218 markers match (1 ms)
+  VTID-05465 lint parser
+    ✓ counts only bare policies left after drops, re-definitions and DO blocks (48 ms)
+    ✓ applies a paired _rollback.sql only when asked (61 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       8 passed, 8 total
+Snapshots:   0 total
+Time:        3.395 s
+Ran all test suites matching /test\/mt-identity-bare-policy-lint.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
