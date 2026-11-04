@@ -3,6 +3,12 @@ name: ENFORCE-FRONTEND-CANONICAL-SOURCE (DEV-CICDL-0205)
 
 on: [pull_request]
 
+# Pipeline speed (kiro/pipeline-speed): a newer push to the same PR cancels the
+# superseded run, so queued runners do not spend time on stale heads.
+concurrency:
+  group: frontend-canonical-source-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   validate:
     runs-on: ubuntu-latest

@@ -6,6 +6,12 @@ on:
   push:
     branches: [main, trunk]
 
+# Pipeline speed (kiro/pipeline-speed): a newer push to the same PR cancels the
+# superseded run. Push runs on main are never cancelled, so post-merge checks finish.
+concurrency:
+  group: phase-2b-naming-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   enforce-naming-standards:
     name: Enforce Phase 2B Naming Standards
