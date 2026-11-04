@@ -66,3 +66,20 @@ Collab-Review: mt-track-s-authz/approvals-auth-v2
 Collab-Verdict: accept
 Collab-Reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 Collab-Reviewed-Head: 0aac59b9ea686bd7d4e15ed0581621fcfc4b3407
+
+### 2026-11-04T20:19Z · agent-vitana-lane-reviewer-202611042019-de5d · review
+review: accept
+head: d4d82e99c8a39d35a593cac54c579385e2778b92
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+PR: none yet (local head on branch kiro/mt-track-s-authz/approvals-auth-v2); CI on the head not judged
+Findings:
+- non-blocking · services/gateway/test/mt-track-s-authz-approvals-auth.test.ts:281 · Checked, no change requested. The added assertion is right for the success path: dev_reject_pr's success text is 'VTID-01234 rejected. Reason recorded: not ready for merge.' (developer-tools.ts:396), dispatchOrbToolForVertex returns it as result, and the generic path drops data (orb-live.ts:7052), so JSON.stringify(out) holds 'rejected' only on that branch. The refusal text (developer-tools.ts:390), the confirm-gate text and the admin-session text do not, and developer-tools.test.ts:312 pins the same substring. Since 0aac59b9ea only this line changed under services/. Recorded run: 34 passed (green-approvals-head.txt:691-692).
+- non-blocking · docs/validation/VTID-05528/acceptance.md:54 · Checked, no change requested. AC-10 matches outputs/red-origin-main-results.txt: 19 failed, 73 passed, 92 total (32 approvals + 60 developer-tools cases); the generic approve case is listed as failed (1 ms), the six not-bound cases pass, the non-approvals guard and the reject case are absent. 'At the missing export' is not readable from that file (no failure messages). It follows from the source: this lane adds the export (orb-live.ts:19309) and jest.config.js:30 sets isolatedModules, so on base the call is a TypeError. M7 is a real failure: without dev_approve_pr in the narrowing (line intact at orb-live.ts:7034-7036, worktree clean against HEAD) the tool gets no bearer, answers the admin-session text and never calls fetch, so the call-count assertion fails; the -t filter selects that one case (1 failed, 33 skipped, 34 total). The three answers (acceptance.md:82-84) match the points named in the request and the commit messages (merge order, AC-10 with M7, reject success text); the earlier entry's own text is not in this checkout.
+- non-blocking · docs/validation/VTID-05528/acceptance.md:101 · Carried, no change requested. This accept covers d4d82e99c8 only. Landing still needs operator-chat-service-token and plan PR #4653 on origin/main first, then the branch up to date and CI green on the PR head (Lane scope and Collab handoff fail locally only because the lane file is on #4653). origin/main is now ab0f5ad0b1 (plan eng-gitlab-m2, #4667); it changes only .kiro/specs/eng-gitlab-m2/** and docs/programs/engineering-platform/program.md. Updating the branch makes a new head that needs its own accept. Jest was not re-run (reviewer shell policy): the recorded run is the evidence and PR CI is the live proof. Self-review guard: the caller's session id was not in my inputs and the lane log I could read (plan commit 91f683c9) has no executing entry.
+Next: the land step merges under §7b once operator-chat-service-token and plan PR #4653 are on origin/main, the branch is up to date and CI is green on the PR head; an updated branch needs its own accept
+
+Collab-Session: agent-vitana-lane-reviewer-202611042019-de5d
+Collab-Review: mt-track-s-authz/approvals-auth-v2
+Collab-Verdict: accept
+Collab-Reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+Collab-Reviewed-Head: d4d82e99c8a39d35a593cac54c579385e2778b92
