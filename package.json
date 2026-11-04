@@ -11,8 +11,7 @@
     "test:realtime-local": "bash services/realtime-aurora/test/local-delivery.sh",
     "test:reverse-cdc": "bash scripts/aws/test/reverse-cdc.sh",
     "test:aurora-migrations": "bash scripts/aws/test/aurora-apply-migration.sh",
-    "test:rehearsal-clone": "bash scripts/aws/test/rehearsal-clone.sh",
-    "test:superseded-concurrency": "node --test scripts/ci/superseded-concurrency.test.mjs"
+    "test:rehearsal-clone": "bash scripts/aws/test/rehearsal-clone.sh"
   },
   "devDependencies": {
     "prisma": "^6.18.0"

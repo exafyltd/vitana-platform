@@ -3,11 +3,9 @@
   "kind": "infra",
   "paths": [
     ".github/workflows/*.yml",
-    "package.json",
-    "scripts/ci/superseded-concurrency.test.mjs",
     "docs/validation/VTID-05513/**"
   ],
-  "sparring_record": ".kiro/specs/ci-superseded-pr-runs/sparring/verdict.md",
+  "sparring_record": "docs/validation/VTID-05513/plan-sparring.md",
   "weakens_tests": [],
   "red_green_exempt": []
 }

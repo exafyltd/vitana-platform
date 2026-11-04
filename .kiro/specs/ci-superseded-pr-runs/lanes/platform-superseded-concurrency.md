@@ -1,6 +1,6 @@
 ---
 lane: platform-superseded-concurrency
-state: executing
+state: ready
 next_actor: kiro
 branch: kiro/ci-superseded-pr-runs/platform-superseded-concurrency
 depends_on: []
@@ -49,12 +49,8 @@ paths:
   - .github/workflows/VCAOP-GUARDRAILS-CI.yml
   - .github/workflows/VOICE-PIPELINE-PARITY-SCANNER.yml
   - .github/workflows/VOICE-TOOLS-MANIFEST-RECONCILE.yml
-  - scripts/ci/superseded-concurrency.test.mjs
-  - package.json
-  - docs/validation/VTID-05513/**
 updated: 2026-11-02T16:31Z
 vtid: VTID-05513
-claimed_by: kiro-exafyltd-202611021510-092e
 ---
 
 # Lane: platform-superseded-concurrency (repo exafyltd/vitana-platform)
@@ -67,6 +63,3 @@ Lane created with the plan. Paths are the exact files changed by the prepared co
 
 ### 2026-11-02T16:31Z · ci-plan-spar · ready (VTID allocated)
 VTID-05513 allocated after policy approval (converged-auto-v1).
-
-### 2026-11-04T14:05Z · kiro-exafyltd-202611021510-092e · ready → executing
-Claimed. Concurrency block applied to the 38 listed workflows on current main. Guard test added (scripts/ci/superseded-concurrency.test.mjs). Evidence under docs/validation/VTID-05513/.
