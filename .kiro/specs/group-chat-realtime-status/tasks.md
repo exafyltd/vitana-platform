@@ -5,7 +5,7 @@ Repo `exafyltd/vitana-v1`. Code starts only after the VTID is allocated by CI PL
       `origin/main` run `npx vitest run src/pages/messages/GroupChat.realtime-reconnect.test.tsx`, save the output to
       `docs/validation/<VTID>/red-on-base.txt`. Case (a) must fail on the reload assertion in `GroupChat.tsx`, not on a
       setup or parse error. Cases (b) and (c) may pass on base.
-- [ ] T2 Keep the lane-branch implementation (commit `90142e0c5`, `GroupChat.tsx` only): status-aware subscribe
+- [ ] T2 Cherry-pick commit `90142e0c5` onto the new lane branch (plan § Change 5). It changes `GroupChat.tsx` only: status-aware subscribe
       callback with one reload after a drop, opt-in `vitana:chat-latency` logs. Change nothing else in the file.
 - [ ] T3 Green on head: the new test passes; the 30 existing GroupChat tests
       (`npx vitest run src/pages/messages/`) pass; `npx tsc --noEmit -p tsconfig.app.json` reports no more errors than
@@ -16,7 +16,7 @@ Repo `exafyltd/vitana-v1`. Code starts only after the VTID is allocated by CI PL
       read that spec and confirm it only reads (no non-GET request to Supabase or the gateway).
 - [ ] T5 Commit trailers on every lane commit: `Collab-Session: <session id>` and
       `Collab-Lane: group-chat-realtime-status/groupchat-realtime`. Run `preflight.mjs` on the head before pushing.
-- [ ] T6 PR on the existing branch `kiro/groupchat-realtime-status` (PR #1560). Retitle it
+- [ ] T6 Open the PR from the new lane branch `kiro/group-chat-realtime-status/groupchat-realtime` (cut from origin/main), then close PR #1560 as superseded. Title
       `VTID-xxxxx (group-chat-realtime-status/groupchat-realtime): fix group chat reload after realtime drops`. On its
       head `PR-GATE`, `change-suite` and `Lane scope` pass. Keep it a draft until the reviewer agent accepts.
 - [ ] T7 Owner device check (not a Kiro task): owner records latency on a real device, per plan § Owner measurement.

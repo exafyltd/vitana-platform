@@ -3,8 +3,9 @@ change_class: standard
 ---
 # plan(group-chat-realtime-status): group chat messages reach an open thread late; reconnect safety and latency measurement
 Author: Kiro, seat `exafyltd`, session `kiro-exafyltd-202611030923-a395`. Code repo: `exafyltd/vitana-v1` (area
-`messenger`). The spec lives in vitana-platform because PLAN-SPAR only runs here. Premises pinned to vitana-v1
-`origin/main` at plan time and to the lane branch `kiro/groupchat-realtime-status` (commit `90142e0c5`, PR #1560, draft).
+`messenger`). The spec lives in vitana-platform because PLAN-SPAR only runs here. Line references in "Today" are pinned to
+vitana-v1 `origin/main` `7829ef2f2` (checked in round 1). The earlier draft implementation lives on the unmerged branch
+`kiro/groupchat-realtime-status` (commit `90142e0c5`, PR #1560, draft); its line numbers differ from main.
 Detail: `tasks.md`; lane file under `lanes/`.
 
 <!-- plan:begin -->
@@ -14,29 +15,32 @@ This plan covers the group chat thread first. Its goal is that a message from an
 thread within about a second while the connection is up, and that a dropped connection recovers without waiting for a
 timer. Measurement comes first so the owner can see which cause applies on a real device.
 
-## Today (evidence from code on the vitana-v1 branch, read-only)
-1. **Group thread live path.** `src/pages/messages/GroupChat.tsx:288-299` subscribes to Supabase Realtime INSERTs on
-   `chat_messages` filtered by `group_id`. Each event calls `loadMessages()`, a full request for the latest 100 rows
-   (`fetchGroupMessages(groupId, 100)`).
-2. **No connection-state handling.** Before the lane branch, the `.subscribe()` call (`GroupChat.tsx:302`) had no
-   callback. A dropped subscription was not detected, and nothing reloaded the thread on reconnect. The only recovery
-   was the fallback poll at `GroupChat.tsx:67` (`POLL_INTERVAL_MS = 8000`, `setInterval` at line 317).
+## Today (evidence from vitana-v1 `origin/main` `7829ef2f2`, read-only)
+1. **Group thread live path.** `src/pages/messages/GroupChat.tsx:267-273` subscribes to Supabase Realtime INSERTs on
+   `chat_messages` filtered by `group_id=eq.<id>`. Each event calls `loadMessages()`, a full request for the latest 100
+   rows (`fetchGroupMessages(groupId, 100)`).
+2. **No connection-state handling.** On `origin/main`, the chain ends in `.subscribe();` at line 273 with no status
+   callback. A dropped subscription is not detected, and nothing reloads the thread on reconnect. The only recovery is
+   the fallback poll: `POLL_INTERVAL_MS = 8000` (line 67) driving `setInterval` at line 279.
 3. **Direct messages already handle drops.** `src/hooks/useGlobalMessages.ts` tracks `SUBSCRIBED` / `CHANNEL_ERROR` /
    `CLOSED` / `TIMED_OUT`, backfills after a reconnect, and runs a 6 s fallback poll only while disconnected
    (`useGlobalMessages.ts:2054-2060`). Group chat does not have this.
 4. **Thread list poll.** `src/hooks/useChatGroupsAsThreads.ts:26` polls every 10 s. Out of scope for this lane.
-5. **Lane branch state.** Commit `90142e0c5` on `kiro/groupchat-realtime-status` already contains a candidate change to
+5. **Draft implementation on an unmerged branch.** Commit `90142e0c5` on `kiro/groupchat-realtime-status` changes
    `GroupChat.tsx` (status tracking, one backfill reload after a drop, opt-in `localStorage["vitana:chat-latency"]`
-   logging). It has no VTID, no test and no `Collab-Lane` trailer. PR #1560 fails two PR-GATE checks for exactly that
-   reason: `change-suite` (title names no VTID) and `Lane scope` (no `Collab-Lane` trailer). Its typecheck count and
-   the 30 existing GroupChat tests were unchanged by it.
-6. **Unverified premise: the realtime publication.** The vitana-v1 migration
-   `supabase/migrations/20260618110546_chat_messages_realtime_publication.sql` adds `chat_messages` to the
-   `supabase_realtime` publication. Whether that migration is applied to the database the app uses was not verified in
-   this plan. The session did not query the database: production queries are forbidden, and staging shares the
-   production database. The owner (or CI with the owner's approval) must confirm it. If it is not applied, group chat
-   has no realtime path and the fix in this plan is not sufficient; the plan then stops for the owner (see Risks).
-7. **Scope of the Supabase Realtime connection on mobile.** The app runs in a wrapper (`isAppilix()` in
+   logging). It has no VTID, no test and no `Collab-Lane` trailer. PR #1560 fails two PR-GATE checks for those reasons:
+   `change-suite` (the title names no VTID) and `Lane scope` (its log reads "no commit carries a Collab-Lane … trailer").
+   The typecheck count and the 30 existing GroupChat tests were unchanged by it.
+6. **Existence of the files this plan names.** On `origin/main` `7829ef2f2` these exist:
+   `src/pages/messages/GroupChat.vtid-04921.test.tsx`,
+   `tests/e2e/staging/vtid-04921-group-chat-latest.staging.spec.ts`,
+   `supabase/migrations/20260618110546_chat_messages_realtime_publication.sql`.
+7. **Unverified premise: the realtime publication.** That migration adds `chat_messages` to the `supabase_realtime`
+   publication. Whether it is applied to the database the app uses was not verified in this plan. The session did not
+   query the database: production queries are forbidden, and staging shares the production database. The owner (or CI
+   with the owner's approval) must confirm it. If it is not applied, group chat has no realtime path and the fix in this
+   plan is not sufficient; the plan then stops for the owner (see Risks).
+8. **Scope of the Supabase Realtime connection on mobile.** The app runs in a wrapper (`isAppilix()` in
    `useGlobalMessages.ts`). Whether the OS suspends the socket in the background is a device fact that only a device run
    can show. This plan adds the measurement for it, not a fix.
 
@@ -49,22 +53,25 @@ timer. Measurement comes first so the owner can see which cause applies on a rea
    c. a realtime INSERT event triggers a reload (regression guard for today's behaviour).
    Run on `origin/main`: case a must fail, naming `GroupChat.tsx`, not a setup or parse error. Output goes to
    `docs/validation/<VTID>/red-on-base.txt`.
-2. **Keep the lane branch change** (commit `90142e0c5`) as the implementation. It stays inside `GroupChat.tsx`:
+2. **Reuse the draft implementation.** Cherry-pick commit `90142e0c5` onto the new lane branch (change 5). It changes only
+   `GroupChat.tsx`:
    - `subscribe((status) => …)` tracks drops and runs one `loadMessages()` after the next `SUBSCRIBED`;
-   - the INSERT handler does not change its reload behaviour (still a full `loadMessages()`);
+   - the INSERT handler keeps its full `loadMessages()` reload;
    - latency logs run only when `localStorage["vitana:chat-latency"] === "1"` and print the `created_at`-to-receipt
      delay and the reload duration. The `created_at` value comes from the server clock, so device clock skew shifts the
      first number. The logs carry no message content.
+   Any fix needed to make change 1 pass is a new commit on the lane branch.
 3. **Green on head.** The new test passes; the 30 existing GroupChat tests still pass; `tsc --noEmit` error count does not
    rise above the base count (176 at plan time); ESLint shows no new warning in `GroupChat.tsx`.
-4. **Staging proof (rule 47).** `docs/validation/<VTID>/staging-tests.json` with `service: community-app` and one test
+4. **Staging proof.** `docs/validation/<VTID>/staging-tests.json` with `service: community-app` and one test
    `kind: "existing"` pointing at `tests/e2e/staging/vtid-04921-group-chat-latest.staging.spec.ts`. That suite is
-   read-only (rule 48). It must be checked against the existing suite's own write guard before the lane is marked
-   verified.
-5. **Commit trailers.** Lane commits carry `Collab-Session` and `Collab-Lane: group-chat-realtime-status/groupchat-realtime`.
-   The lane-branch commit `90142e0c5` predates this plan and keeps its message. A new commit adds the trailers and the
-   test, so the `Lane scope` check finds a trailer and `change-suite` finds the VTID in the PR title. The branch is not
-   rewritten (no force push, no rebase of a pushed branch).
+   read-only (platform `CLAUDE.md`, Staging Verification Gate, rule 48). Before the lane is marked verified, the session
+   reads the suite and confirms it makes no non-GET request.
+5. **Branch and trailers.** A new lane branch `kiro/group-chat-realtime-status/groupchat-realtime` is cut from
+   `origin/main`. Its first commit is the cherry-pick of `90142e0c5`, and every later commit carries
+   `Collab-Session` and `Collab-Lane: group-chat-realtime-status/groupchat-realtime`. The new PR's title carries the VTID.
+   PR #1560 and its branch stay unchanged (no rewrite of pushed history). PR #1560 is closed as superseded once the new PR
+   is open.
 
 ## Lanes
 - `groupchat-realtime` (vitana-v1, `executor: kiro`, seat `exafyltd`, area `messenger`): changes 1–5.
@@ -102,8 +109,9 @@ itself.
   cursor-based append is a later plan, after the measurement shows whether it matters.
 
 ## Decisions taken
-- The change is kept on the existing branch rather than rewritten, because the branch is pushed. Lane identity comes
-  from the trailers and the PR title, as `collaboration.md` §3 allows.
-- A test is added even though the lane is small. The vitana-v1 standing rule (rule 47, "no suite, no merge") requires it.
+- The draft implementation moves to a new lane branch by cherry-pick, so every lane commit carries the trailers the
+  rules require. The pushed draft branch is not rewritten.
+- A test is added even though the lane is small. The platform `CLAUDE.md` Staging Verification Gate (rule 47, "no suite,
+  no merge") requires it for any change that deploys.
 - The spec sits in vitana-platform and the code PR in vitana-v1, following `ci-dockerhub-mirror`.
 <!-- plan:end -->
