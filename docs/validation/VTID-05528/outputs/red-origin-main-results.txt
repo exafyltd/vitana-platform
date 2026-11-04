@@ -1,0 +1,120 @@
+PASS test/orb-tools/developer-tools.test.ts
+    ✓ exposes all 12 tools (14 ms)
+    ✓ dev_list_vtids denies community role with developer_role_required (2 ms)
+    ✓ dev_get_vtid_status denies community role with developer_role_required (7 ms)
+    ✓ dev_list_pending_approvals denies community role with developer_role_required
+    ✓ dev_count_approvals denies community role with developer_role_required
+    ✓ dev_approve_pr denies community role with developer_role_required (1 ms)
+    ✓ dev_reject_pr denies community role with developer_role_required
+    ✓ dev_list_voice_sessions denies community role with developer_role_required (1 ms)
+    ✓ dev_list_routines denies community role with developer_role_required (1 ms)
+    ✓ dev_get_routine_detail denies community role with developer_role_required (1 ms)
+    ✓ dev_list_active_healing denies community role with developer_role_required
+    ✓ dev_get_autonomy_pulse denies community role with developer_role_required (1 ms)
+    ✓ dev_list_agents denies community role with developer_role_required
+    ✓ dev_list_vtids denies unauthenticated callers
+    ✓ dev_get_vtid_status denies unauthenticated callers (1 ms)
+    ✓ dev_list_pending_approvals denies unauthenticated callers
+    ✓ dev_count_approvals denies unauthenticated callers (2 ms)
+    ✓ dev_approve_pr denies unauthenticated callers (1 ms)
+    ✓ dev_reject_pr denies unauthenticated callers
+    ✓ dev_list_voice_sessions denies unauthenticated callers (1 ms)
+    ✓ dev_list_routines denies unauthenticated callers
+    ✓ dev_get_routine_detail denies unauthenticated callers
+    ✓ dev_list_active_healing denies unauthenticated callers
+    ✓ dev_get_autonomy_pulse denies unauthenticated callers (1 ms)
+    ✓ dev_list_agents denies unauthenticated callers
+    ✓ allows developer, admin and exafy_admin
+    ✓ accepts loose spoken forms (1 ms)
+    ✓ matches the routes/approvals.ts deterministic format (1 ms)
+    ✓ speaks id + title + status for recent ledger rows (1 ms)
+    ✓ speaks a plain empty state
+    ✓ normalizes loose ids and speaks the full status (1 ms)
+    ✓ answers plainly when the VTID is unknown
+    ✓ rejects input without digits
+    ✓ speaks vtid, title, PR and checks per queue item (1 ms)
+    ✓ speaks an empty queue plainly
+    ✓ fails loudly when the approvals API errors
+    ✓ speaks the pending count (1 ms)
+    ✓ asks for confirmation before mutating
+    ✓ calls the Command Hub approve route after confirm (1 ms)
+    ✓ reports a failed merge without throwing
+    ✓ errors when the VTID is not in the ledger
+    ✓ requires a reason
+    ✓ asks for confirmation before mutating (1 ms)
+    ✓ posts the rejection with reason after confirm
+    ✓ speaks user, status and turns per session (1 ms)
+    ✓ filters to active sessions
+    ✓ speaks an empty state plainly
+    ✓ speaks failing routines first with counts (1 ms)
+    ✓ speaks the routine plus its recent runs
+    ✓ falls back to fuzzy match and reports unknown routines plainly
+    ✓ requires a name
+    ✓ speaks in-flight healing VTIDs and pending diagnoses (4 ms)
+    ✓ speaks a quiet state plainly (1 ms)
+    ✓ composes counts across the four pulse sources plus terminalized VTIDs (387 ms)
+    ✓ decays stale service heartbeats like routes/agents-registry.ts (7 ms)
+    ✓ speaks health counts with problem agents first (1 ms)
+    ✓ speaks an empty registry plainly
+    ✓ declares every handler and nothing else (1 ms)
+    ✓ uses only the OpenAPI-3.0 subset Vertex accepts (no default/minimum/maximum/format/examples) (2 ms)
+    ✓ reject declares reason as required; confirm flow documented on both mutations (1 ms)
+FAIL test/operator-chat-service-token.test.ts
+    ✕ sends the gateway service token and never the Supabase service key (42 ms)
+    ✕ sends the gateway service token and never the Supabase service key (3 ms)
+  ● dev_approve_item (Operator Chat to the approvals route) › sends the gateway service token and never the Supabase service key
+  ● dev_reject_item (Operator Chat to the approvals route) › sends the gateway service token and never the Supabase service key
+FAIL test/mt-track-s-authz-approvals-auth.test.ts (8.69 s)
+    ✕ no bearer → 401 and the handler is never reached (49 ms)
+    ✕ a non-admin JWT → 403 (5 ms)
+    ✓ the gateway service token reaches the handler (5 ms)
+    ✓ an exafy_admin JWT reaches the handler (4 ms)
+    ✕ no bearer → 401 and the handler is never reached (4 ms)
+    ✕ a non-admin JWT → 403 (3 ms)
+    ✓ the gateway service token reaches the handler (3 ms)
+    ✓ an exafy_admin JWT reaches the handler (3 ms)
+    ✕ no bearer → 401 and the handler is never reached (4 ms)
+    ✕ a non-admin JWT → 403 (2 ms)
+    ✓ the gateway service token reaches the handler (2 ms)
+    ✓ an exafy_admin JWT reaches the handler (1 ms)
+    ✕ a body branch that differs from the PR head is refused and nothing merges (2 ms)
+    ✓ the matching head branch proceeds to the merge call (3 ms)
+    ✕ dev_approve_pr without a user_jwt answers the admin-session message and makes no call (3 ms)
+    ✕ dev_reject_pr without a user_jwt answers the admin-session message and makes no call (1 ms)
+    ✕ dev_approve_pr with a user_jwt forwards it as the Bearer token
+    ✕ dev_reject_pr with a user_jwt forwards it as the Bearer token (1 ms)
+    ✕ a voice session holding the member bearer approves as that member (1 ms)
+    ✕ binds the bearer when it verifies to the session owner (21 ms)
+    ✓ does not bind a bearer that verifies to another user, and still serves the stream (19 ms)
+    ✓ does not bind a token that does not verify (10 ms)
+    ✓ does not bind when no token is sent (17 ms)
+    ✕ binds the socket bearer when it verifies to the session owner (23 ms)
+    ✓ does not bind a bearer that verifies to another user (24 ms)
+    ✓ does not bind a token that does not verify (21 ms)
+    ✓ does not bind when the socket sends no token (21 ms)
+    ✕ the request bearer becomes user_jwt in the tool identity (8 ms)
+    ✕ a request without a bearer gives the tool no user_jwt, so it cannot act as the caller (2 ms)
+    ✕ the SSE stream binds a token only when it verified to the session owner (24 ms)
+    ✕ the WebSocket start binds the socket token only when its identity is the session owner (21 ms)
+    ✕ orb-tool takes user_jwt from the request bearer
+  ● POST /api/v1/approvals/feed/approve › no bearer → 401 and the handler is never reached
+  ● POST /api/v1/approvals/feed/approve › a non-admin JWT → 403
+  ● POST /api/v1/approvals/appr_VTID-01234_abc/approve › no bearer → 401 and the handler is never reached
+  ● POST /api/v1/approvals/appr_VTID-01234_abc/approve › a non-admin JWT → 403
+  ● POST /api/v1/approvals/appr_VTID-01234_abc/reject › no bearer → 401 and the handler is never reached
+  ● POST /api/v1/approvals/appr_VTID-01234_abc/reject › a non-admin JWT → 403
+  ● POST /feed/approve branch check › a body branch that differs from the PR head is refused and nothing merges
+  ● developer voice tools carry the caller token (dev_approve_pr / dev_reject_pr) › dev_approve_pr without a user_jwt answers the admin-session message and makes no call
+  ● developer voice tools carry the caller token (dev_approve_pr / dev_reject_pr) › dev_reject_pr without a user_jwt answers the admin-session message and makes no call
+  ● developer voice tools carry the caller token (dev_approve_pr / dev_reject_pr) › dev_approve_pr with a user_jwt forwards it as the Bearer token
+  ● developer voice tools carry the caller token (dev_approve_pr / dev_reject_pr) › dev_reject_pr with a user_jwt forwards it as the Bearer token
+  ● voice approve on the generic live path (VTID-05528) › a voice session holding the member bearer approves as that member
+  ● the SSE stream binds the member bearer only when it verifies to the session owner (VTID-05528) › binds the bearer when it verifies to the session owner
+  ● the WebSocket start frame binds the member bearer only when it verifies to the session owner (VTID-05528) › binds the socket bearer when it verifies to the session owner
+  ● POST /api/v1/orb/tool hands the request bearer to the tools as user_jwt (VTID-05528) › the request bearer becomes user_jwt in the tool identity
+  ● POST /api/v1/orb/tool hands the request bearer to the tools as user_jwt (VTID-05528) › a request without a bearer gives the tool no user_jwt, so it cannot act as the caller
+  ● the bind guards and the tool bearer, as written in source (VTID-05528) › the SSE stream binds a token only when it verified to the session owner
+  ● the bind guards and the tool bearer, as written in source (VTID-05528) › the WebSocket start binds the socket token only when its identity is the session owner
+  ● the bind guards and the tool bearer, as written in source (VTID-05528) › orb-tool takes user_jwt from the request bearer
+Test Suites: 2 failed, 1 passed, 3 total
+Tests:       21 failed, 73 passed, 94 total

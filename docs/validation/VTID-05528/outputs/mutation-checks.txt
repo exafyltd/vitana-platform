@@ -1,0 +1,40 @@
+Mutation checks on head a6455dfbc5 (test file: services/gateway/test/mt-track-s-authz-approvals-auth.test.ts, unchanged by the mutations)
+Each mutation changed one guard in the source, ran `npx jest test/mt-track-s-authz-approvals-auth.test.ts`, and was reverted with `git checkout --` on the same file. The tree was checked clean after each revert.
+
+M1  services/gateway/src/routes/orb-live.ts, SSE GET /live/stream bind
+    before:  if (token && verifiedTokenUserId && verifiedTokenUserId === session.identity?.user_id) {
+    after:   if (token && verifiedTokenUserId) {
+    result:  Tests: 2 failed, 30 passed, 32 total
+    failed:
+      - the SSE stream binds the member bearer only when it verifies to the session owner > does not bind a bearer that verifies to another user, and still serves the stream
+      - the bind guards and the tool bearer, as written in source > the SSE stream binds a token only when it verified to the session owner
+
+M2  services/gateway/src/routes/orb-live.ts, WebSocket start bind (handleWsStartMessage)
+    before:  if (clientSession.authToken && identity?.user_id && identity.user_id === liveSession.identity?.user_id) {
+    after:   if (clientSession.authToken) {
+    result:  Tests: 3 failed, 29 passed, 32 total
+    failed:
+      - the WebSocket start frame binds the member bearer only when it verifies to the session owner > does not bind a bearer that verifies to another user
+      - the WebSocket start frame binds the member bearer only when it verifies to the session owner > does not bind a token that does not verify
+      - the bind guards and the tool bearer, as written in source > the WebSocket start binds the socket token only when its identity is the session owner
+
+M3  services/gateway/src/routes/orb-tool.ts, user_jwt in the tool identity
+    before:  user_jwt: (req.header('authorization') ?? '').replace(/^Bearer\s+/i, '').trim() || null,
+    after:   user_jwt: null,
+    result:  Tests: 2 failed, 30 passed, 32 total
+    failed:
+      - POST /api/v1/orb/tool hands the request bearer to the tools as user_jwt > the request bearer becomes user_jwt in the tool identity
+      - the bind guards and the tool bearer, as written in source > orb-tool takes user_jwt from the request bearer
+
+M4  services/gateway/src/routes/orb-live.ts, SSE bind without verification
+    before:  if (token && verifiedTokenUserId && verifiedTokenUserId === session.identity?.user_id) {
+    after:   if (token) {
+    result:  Tests: 3 failed, 29 passed, 32 total
+    failed:
+      - the SSE stream binds the member bearer only when it verifies to the session owner > does not bind a bearer that verifies to another user, and still serves the stream
+      - the SSE stream binds the member bearer only when it verifies to the session owner > does not bind a token that does not verify
+      - the bind guards and the tool bearer, as written in source > the SSE stream binds a token only when it verified to the session owner
+
+Not separately mutated: "does not bind when no token is sent" (SSE and WebSocket). With no token, no mutation of the bind guard can bind a verified owner, so these cases guard the absence of a token rather than a guard condition.
+
+Raw run outputs (in the session scratch area, not committed): the four runs above.

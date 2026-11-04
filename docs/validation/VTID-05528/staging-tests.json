@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-05528",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "approve without a bearer is refused before the handler (401)", "method": "POST", "path": "/api/v1/approvals/appr_invalid/approve", "rejected_probe": true, "expect_status": 401, "expect_content_type": "application/json", "reason": "POST only as a rejected probe (no bearer, nonexistent approval); requireServiceOrAdmin answers before the handler, so nothing is approved" },
+    { "kind": "http", "name": "reject without a bearer is refused before the handler (401)", "method": "POST", "path": "/api/v1/approvals/appr_invalid/reject", "rejected_probe": true, "expect_status": 401, "expect_content_type": "application/json", "reason": "POST only as a rejected probe (no bearer, nonexistent approval); nothing is rejected" },
+    { "kind": "http", "name": "feed approve without a bearer is refused before the handler (401)", "method": "POST", "path": "/api/v1/approvals/feed/approve", "rejected_probe": true, "expect_status": 401, "expect_content_type": "application/json", "reason": "POST only as a rejected probe (no bearer); nothing is merged" },
+    { "kind": "existing", "ref": "npx jest test/mt-track-s-authz-approvals-auth.test.ts test/orb-tools/developer-tools.test.ts test/operator-chat-service-token.test.ts test/vtid-05047-cicd-routes-auth.test.ts", "cwd": "services/gateway", "reason": "pins the three POST gates and the branch_mismatch check, the SSE, WebSocket and orb-tool bearer binding, the Operator Chat service-token calls, and the existing CI-route auth" },
+    { "kind": "existing", "ref": "npm run test:operator", "cwd": "services/gateway", "reason": "the operator pipeline regression, so the approval tools still run end to end with the service token" },
+    { "kind": "existing", "ref": "npm run test:roles", "cwd": "services/gateway", "reason": "the role separation regression, so the developer and admin gates still hold" }
+  ]
+}

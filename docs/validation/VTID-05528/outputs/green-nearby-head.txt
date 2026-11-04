@@ -1,0 +1,1232 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/wt-av2/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/wt-av2/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/wt-av2/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/wt-av2/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/wt-av2/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/wt-av2/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/wt-av2/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/orb/live/characterization/sse-stream.characterization.test.ts
+  A9.2 characterization: /live/stream delegates SSE setup to the transport module
+    ✓ calls attachSseHeaders(res) for the SSE upgrade (8 ms)
+    ✓ does NOT inline raw res.setHeader calls for the SSE headers (3 ms)
+    ✓ starts the heartbeat through startSseHeartbeat (NOT setInterval) (2 ms)
+    ✓ writes the ready event through writeSseEvent (NOT raw res.write) (1 ms)
+  A9.2 characterization: ready event payload contract (unchanged)
+    ✓ emits an event with type: "ready" (1 ms)
+    ✓ includes session_id in the ready payload (1 ms)
+    ✓ includes live_api_connected boolean in the ready payload (1 ms)
+    ✓ includes meta.model in the ready payload (1 ms)
+    ✓ includes meta.lang in the ready payload (1 ms)
+    ✓ includes meta.voice in the ready payload (1 ms)
+    ✓ declares audio_out_rate (server → client TTS sample rate) (1 ms)
+    ✓ declares audio_in_rate (client → server mic sample rate)
+  A9.2 characterization: session id parameter (unchanged)
+    ✓ reads session_id from query string
+    ✓ rejects request with 400 when session_id is missing (1 ms)
+  A9.2 characterization: import wiring
+    ✓ imports the SSE helpers from the transport module (15 ms)
+
+PASS test/orb/live/ws-tenant-fallback.test.ts
+  WS tenant fallback — source-level wall
+    ✓ the SSE /live/stream route has the tenant fallback (reference implementation) (21 ms)
+    ✓ the WebSocket connection handler applies the SAME fallback when tenant_id is missing (1 ms)
+    ✓ the WS session start is handed the (possibly-fallback-resolved) identity variable (2 ms)
+    ✓ the shared controller re-applies the tenant fallback, so the WS hand-off is belt-and-braces (1 ms)
+  lookupPrimaryTenant — behavior (previously untested)
+    ✓ is defined with a primary-tenant-first, any-tenant-fallback contract (7 ms)
+
+  console.log
+    [CICD] PR #7 created for VTID-05019: https://x/7
+
+      at src/routes/cicd.ts:277:13
+
+  console.log
+    [CICD] PR #7 created for VTID-05019: https://x/7
+
+      at src/routes/cicd.ts:277:13
+
+  console.log
+    [CICD] PR #7 merged for VTID-05019: m
+
+      at safeMerge (src/routes/cicd.ts:481:13)
+
+  console.log
+    [CICD] PR #7 merged for VTID-05019: m
+
+      at safeMerge (src/routes/cicd.ts:481:13)
+
+PASS test/vtid-05019-cicd-pr-routes-auth.test.ts
+  POST /create-pr
+    ✓ no bearer → 401, nothing done (36 ms)
+    ✓ a wrong bearer → 401 (an empty body is never validated first) (6 ms)
+    ✓ a signed-in non-admin → 403 (3 ms)
+    ✓ the gateway service token → the handler runs (27 ms)
+    ✓ an exafy_admin session → the handler runs (5 ms)
+    ✓ the same gate on the other mount prefixes (6 ms)
+    ✓ no GATEWAY_SERVICE_TOKEN configured: even a bearer equal to "" cannot pass (3 ms)
+  POST /safe-merge
+    ✓ no bearer → 401, nothing done (5 ms)
+    ✓ a wrong bearer → 401 (an empty body is never validated first) (3 ms)
+    ✓ a signed-in non-admin → 403 (2 ms)
+    ✓ the gateway service token → the handler runs (3 ms)
+    ✓ an exafy_admin session → the handler runs (3 ms)
+    ✓ the same gate on the other mount prefixes (4 ms)
+    ✓ no GATEWAY_SERVICE_TOKEN configured: even a bearer equal to "" cannot pass (2 ms)
+  callers send the service token
+    ✓ gatewayServiceAuthHeader: bearer when set, nothing when unset (1 ms)
+    ✓ Operator / Kiro executors (and no Supabase key on the self-call) (2 ms)
+    ✓ autopilot event loop, ORB developer tools, openclaw-bridge (1 ms)
+    ✓ both routes are mounted behind requireServiceOrAdmin (1 ms)
+
+  console.error
+    [VTID-0601] GitHub token not found in env
+
+      1013 |
+      1014 |     if (!token) {
+    > 1015 |       console.error('[VTID-0601] GitHub token not found in env');
+           |               ^
+      1016 |       return res.status(200).json({
+      1017 |         ok: true,
+      1018 |         approvals: [],
+
+      at src/routes/cicd.ts:1015:15
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at next (node_modules/express/lib/router/route.js:149:13)
+      at requireServiceOrAdmin (src/middleware/require-service-or-admin.ts:85:5)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at next (node_modules/express/lib/router/route.js:149:13)
+      at Route.dispatch (node_modules/express/lib/router/route.js:119:3)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at node_modules/express/lib/router/index.js:284:15
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (node_modules/express/lib/router/index.js:175:3)
+      at router (node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at jsonParser (node_modules/body-parser/lib/types/json.js:117:7)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at expressInit (node_modules/express/lib/middleware/init.js:40:5)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at query (node_modules/express/lib/middleware/query.js:45:5)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (node_modules/express/lib/router/index.js:175:3)
+      at Function.handle (node_modules/express/lib/application.js:181:10)
+      at Server.app (node_modules/express/lib/express.js:39:9)
+
+  console.error
+    [VTID-0601] GitHub token not found in env
+
+      1013 |
+      1014 |     if (!token) {
+    > 1015 |       console.error('[VTID-0601] GitHub token not found in env');
+           |               ^
+      1016 |       return res.status(200).json({
+      1017 |         ok: true,
+      1018 |         approvals: [],
+
+      at src/routes/cicd.ts:1015:15
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at next (node_modules/express/lib/router/route.js:149:13)
+      at src/middleware/require-service-or-admin.ts:94:7
+      at optionalAuth (test/vtid-05047-cicd-routes-auth.test.ts:14:121)
+      at requireServiceOrAdmin (src/middleware/require-service-or-admin.ts:90:15)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at next (node_modules/express/lib/router/route.js:149:13)
+      at Route.dispatch (node_modules/express/lib/router/route.js:119:3)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at node_modules/express/lib/router/index.js:284:15
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (node_modules/express/lib/router/index.js:175:3)
+      at router (node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at jsonParser (node_modules/body-parser/lib/types/json.js:117:7)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at expressInit (node_modules/express/lib/middleware/init.js:40:5)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at query (node_modules/express/lib/middleware/query.js:45:5)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (node_modules/express/lib/router/index.js:175:3)
+      at Function.handle (node_modules/express/lib/application.js:181:10)
+      at Server.app (node_modules/express/lib/express.js:39:9)
+
+PASS test/vtid-05006-kiro-write-tools.test.ts
+  the write set
+    ✓ is the approved list: no deploy, nothing that mints a VTID; every tool needs a vtid (6 ms)
+  the gates, in order
+    ✓ switched off: nothing is asked or run (1 ms)
+    ✓ autopilot writes respect the autopilot kill switch; other writes do not depend on it (2 ms)
+    ✓ a missing or closed VTID is refused before the user is asked
+    ✓ only an Allow runs the tool; a vtid the executor does not take is stripped (1 ms)
+    ✓ the target must belong to the gated VTID (Codex review on #3977) (2 ms)
+    ✓ the card never shows file contents (1 ms)
+  the confirmation
+    ✓ an Allow from the owner is seen; only once (13 ms)
+    ✓ no answer in the window: expired, and a late Allow changes nothing (4 ms)
+    ✓ the call going away (Kiro gave up, connection closed) expires it at once (11 ms)
+  dev_push_kiro_branch
+    ✓ only the caller’s own kiro/ branch of vitana-platform (the PR/merge routes accept only that repo) (1 ms)
+    ✓ refuses governance, CI, evidence, migrations, ownership and dependency files, and traversal (1 ms)
+    ✓ enforces the size, count and text-only limits (4 ms)
+    ✓ one commit on a new branch from main, or a fast-forward of the existing one — never force (1 ms)
+  wiring (source check)
+    ✓ the confirmation table is service-role only and documented (2 ms)
+    ✓ the decision routes are admin-only and use the caller from the identity (2 ms)
+    ✓ writes follow the engine on both environments (owner approved production 2026-10-09); off with no runner (1 ms)
+    ✓ the Command Hub polls only during a Kiro run and answers through the confirmation route (11 ms)
+
+  console.log
+    [AUTONOMOUS-PR-MERGE] Request 74777023-b67b-4a4f-bc6d-15ac1de1b4a1 started
+
+      at src/routes/cicd.ts:1563:11
+
+  console.log
+    [AUTONOMOUS-PR-MERGE] Request 7700d876-7d5d-4030-a8e3-4db00d0287fe started
+
+      at src/routes/cicd.ts:1563:11
+
+PASS test/vtid-05047-cicd-routes-auth.test.ts
+  post /service
+    ✓ no bearer → 401 on every mount, handler never reached (49 ms)
+    ✓ a wrong bearer → 401 (4 ms)
+    ✓ a signed-in non-admin → 403 (4 ms)
+    ✓ the gateway service token passes the gate (6 ms)
+    ✓ an exafy_admin session passes the gate (2 ms)
+    ✓ no GATEWAY_SERVICE_TOKEN configured → an empty bearer cannot pass (2 ms)
+  post /merge
+    ✓ no bearer → 401 on every mount, handler never reached (8 ms)
+    ✓ a wrong bearer → 401 (1 ms)
+    ✓ a signed-in non-admin → 403 (2 ms)
+    ✓ the gateway service token passes the gate (3 ms)
+    ✓ an exafy_admin session passes the gate (2 ms)
+    ✓ no GATEWAY_SERVICE_TOKEN configured → an empty bearer cannot pass (2 ms)
+  post /deploy
+    ✓ no bearer → 401 on every mount, handler never reached (4 ms)
+    ✓ a wrong bearer → 401 (2 ms)
+    ✓ a signed-in non-admin → 403 (1 ms)
+    ✓ the gateway service token passes the gate (2 ms)
+    ✓ an exafy_admin session passes the gate (9 ms)
+    ✓ no GATEWAY_SERVICE_TOKEN configured → an empty bearer cannot pass (2 ms)
+  get /approvals
+    ✓ no bearer → 401 on every mount, handler never reached (6 ms)
+    ✓ a wrong bearer → 401 (2 ms)
+    ✓ a signed-in non-admin → 403 (2 ms)
+    ✓ the gateway service token passes the gate (25 ms)
+    ✓ an exafy_admin session passes the gate (6 ms)
+    ✓ no GATEWAY_SERVICE_TOKEN configured → an empty bearer cannot pass (1 ms)
+  post /approvals/12/approve
+    ✓ no bearer → 401 on every mount, handler never reached (5 ms)
+    ✓ a wrong bearer → 401 (1 ms)
+    ✓ a signed-in non-admin → 403 (2 ms)
+    ✓ the gateway service token passes the gate (2 ms)
+    ✓ an exafy_admin session passes the gate (2 ms)
+    ✓ no GATEWAY_SERVICE_TOKEN configured → an empty bearer cannot pass (1 ms)
+  post /approvals/12/deny
+    ✓ no bearer → 401 on every mount, handler never reached (4 ms)
+    ✓ a wrong bearer → 401 (2 ms)
+    ✓ a signed-in non-admin → 403 (2 ms)
+    ✓ the gateway service token passes the gate (2 ms)
+    ✓ an exafy_admin session passes the gate (3 ms)
+    ✓ no GATEWAY_SERVICE_TOKEN configured → an empty bearer cannot pass (2 ms)
+  post /autonomous-pr-merge
+    ✓ no bearer → 401 on every mount, handler never reached (6 ms)
+    ✓ a wrong bearer → 401 (8 ms)
+    ✓ a signed-in non-admin → 403 (2 ms)
+    ✓ the gateway service token passes the gate (6 ms)
+    ✓ an exafy_admin session passes the gate (4 ms)
+    ✓ no GATEWAY_SERVICE_TOKEN configured → an empty bearer cannot pass (2 ms)
+  get /lock-status
+    ✓ no bearer → 401 on every mount, handler never reached (5 ms)
+    ✓ a wrong bearer → 401 (2 ms)
+    ✓ a signed-in non-admin → 403 (2 ms)
+    ✓ the gateway service token passes the gate (2 ms)
+    ✓ an exafy_admin session passes the gate (2 ms)
+    ✓ no GATEWAY_SERVICE_TOKEN configured → an empty bearer cannot pass (1 ms)
+  post /lock-release
+    ✓ no bearer → 401 on every mount, handler never reached (6 ms)
+    ✓ a wrong bearer → 401 (2 ms)
+    ✓ a signed-in non-admin → 403 (2 ms)
+    ✓ the gateway service token passes the gate (3 ms)
+    ✓ an exafy_admin session passes the gate (1 ms)
+    ✓ no GATEWAY_SERVICE_TOKEN configured → an empty bearer cannot pass (1 ms)
+  GET /health stays public
+    ✓ no bearer → not 401/403 (2 ms)
+  callers send the service token
+    ✓ approvals.ts and execute.ts self-calls of autonomous-pr-merge (2 ms)
+    ✓ gemini-operator: deploy/service and lock-status use the service token, not the Supabase key (2 ms)
+    ✓ ORB cicd tools: merge, lock-status, lock-release (1 ms)
+    ✓ openclaw-bridge sends the token on every gateway call
+    ✓ every gated route is mounted behind requireServiceOrAdmin; /health is not (2 ms)
+
+  console.log
+    [VTID-0536] Executing tool: dev_domain_atlas
+
+      at executeTool (src/services/gemini-operator.ts:3715:11)
+
+  console.log
+    [VTID-0536] Tool dev_domain_atlas completed in 3ms: success
+
+      at executeTool (src/services/gemini-operator.ts:4281:11)
+
+PASS test/vtid-05005-kiro-dev-tools-mcp.test.ts
+  the session pass
+    ✓ verifies for its own environment, user and thread until it expires (7 ms)
+    ✓ refuses a forged, tampered, cross-environment or garbage pass; no secret = cannot sign (2 ms)
+  the tool set
+    ✓ is exactly the approved read set, each declared once, with an object schema (12 ms)
+    ✓ holds no write tool (1 ms)
+    ✓ runs a tool as the caller: auth + identity registered for the call only, then removed (2 ms)
+    ✓ a tool past its 100 s budget answers "timed out" instead of hanging the call (2 ms)
+    ✓ refuses unknown tools and callers without a user; a thrown tool is an error result (1 ms)
+  POST /api/v1/operator/kiro/mcp
+    ✓ is off (404) unless KIRO_MCP_ENABLED=true (25 ms)
+    ✓ 401 without or with a bad pass, 503 when the gateway cannot verify, 403 for a non-admin (17 ms)
+    ✓ initialize and tools/list answer as MCP; notifications get 202 (7 ms)
+    ✓ tools/call refuses a write tool and logs a read call to OASIS without its arguments (42 ms)
+    ✓ a batch is capped at 10 messages and charged per message, never fanned out (295 ms)
+    ✓ rate-limits a runaway loop per user (429) (279 ms)
+  wiring (source check)
+    ✓ a Kiro turn may outlast the 30 s request default (tools run inside it)
+    ✓ the gateway sends the pass to the runner in a header, never the URL (1 ms)
+    ✓ the route is mounted before the operator router and claimed by the domain atlas (1 ms)
+    ✓ each environment turns the tools on with its engine and points its runner at its own gateway (1 ms)
+
+  console.log
+    [VTID-ORBC] Vertex config at startup: PROJECT_ID=lovable-vitana-vers1, LOCATION=us-central1
+
+      at Object.<anonymous> (src/routes/orb-live.ts:2205:9)
+
+  console.log
+    [VTID-01155] Google Cloud TTS client initialized
+
+      at Object.<anonymous> (src/routes/orb-live.ts:2212:11)
+
+  console.log
+    [VTID-01219] Google Auth client initialized for Live API
+
+      at Object.<anonymous> (src/routes/orb-live.ts:2236:11)
+
+  console.log
+    [VTID-01219] ORB Voice startup validation passed — Live API ready
+
+      at src/routes/orb-live.ts:2261:13
+
+  console.log
+    [VTID-INSTANT-FEEDBACK] Chime PCM generated: 9600 samples, 19200 bytes, 25600 b64 chars
+
+      at generateChimePcm (src/routes/orb-live.ts:2464:11)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:987:11)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'de' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1106:11)
+
+  console.log
+    [VTID-ANON] Session live-91a56841-d505-4b93-9902-4504e91a8533: hasJwtIdentity=false, isAnonymous=true, req.identity.user_id=none, orbIdentity.user_id=none, bootstrapIdentity=null
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1174:11)
+
+  console.log
+    [VTID-CONTEXT] Client context: city=test, country=DE, time=12:00, device=desktop, anonymous=true
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1175:11)
+
+  console.log
+    [LANG-PREF] Using client-requested language: de (user's UI selection)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1256:13)
+
+  console.log
+    [VTID-ANON] Anonymous session live-91a56841-d505-4b93-9902-4504e91a8533 — skipping memory, tools, lastSessionInfo. Context: city=test
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1340:13)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="voice.vad.silence_duration_ms" tenant_id="GLOBAL" — using defaultValue
+
+      135 |   if (loggedMisses.has(tag)) return;
+      136 |   loggedMisses.add(tag);
+    > 137 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      138 | }
+      139 |
+      140 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:137:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:149:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:284:12)
+      at getVadSilenceDurationMs (src/orb/upstream/constants.ts:113:30)
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1977:63)
+      at startLiveSessionForWs (src/orb/live/session/ws-start-adapter.ts:141:3)
+      at Object.<anonymous> (test/vtid-04834-live-session-start-stop-once.test.ts:158:20)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="voice.live_api.voice.de" tenant_id="GLOBAL" — using defaultValue
+
+      135 |   if (loggedMisses.has(tag)) return;
+      136 |   loggedMisses.add(tag);
+    > 137 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      138 | }
+      139 |
+      140 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:137:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:149:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:284:12)
+      at getLiveApiVoice (src/orb/live/voice/live-api-voice.ts:77:35)
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2718:36)
+      at startLiveSessionForWs (src/orb/live/session/ws-start-adapter.ts:141:3)
+      at Object.<anonymous> (test/vtid-04834-live-session-start-stop-once.test.ts:158:20)
+
+  console.log
+    [VTID-ORBC] Live session created: live-91a56841-d505-4b93-9902-4504e91a8533 (user=anonymous, tenant=none, lang=de, contextDeferred=false)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2737:11)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:987:11)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'en' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1106:11)
+
+  console.log
+    [VTID-ANON] Session live-f5a19fa7-d5b5-4ff5-a3ed-a4f5ef6c5f62: hasJwtIdentity=false, isAnonymous=true, req.identity.user_id=none, orbIdentity.user_id=none, bootstrapIdentity=null
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1174:11)
+
+  console.log
+    [VTID-CONTEXT] Client context: city=test, country=DE, time=12:00, device=desktop, anonymous=true
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1175:11)
+
+  console.log
+    [LANG-PREF] Using client-requested language: en (user's UI selection)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1256:13)
+
+  console.log
+    [VTID-ANON] Anonymous session live-f5a19fa7-d5b5-4ff5-a3ed-a4f5ef6c5f62 — skipping memory, tools, lastSessionInfo. Context: city=test
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1340:13)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="voice.live_api.voice.en" tenant_id="GLOBAL" — using defaultValue
+
+      135 |   if (loggedMisses.has(tag)) return;
+      136 |   loggedMisses.add(tag);
+    > 137 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      138 | }
+      139 |
+      140 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:137:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:149:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:284:12)
+      at getLiveApiVoice (src/orb/live/voice/live-api-voice.ts:77:35)
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2718:36)
+      at Object.<anonymous> (test/vtid-04834-live-session-start-stop-once.test.ts:196:5)
+
+  console.log
+    [VTID-ORBC] Live session created: live-f5a19fa7-d5b5-4ff5-a3ed-a4f5ef6c5f62 (user=anonymous, tenant=none, lang=en, contextDeferred=false)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2737:11)
+
+  console.warn
+    [VTID-01219] ORB Voice access-token prewarm failed (will fetch lazily): Could not load the default credentials. Browse to https://cloud.google.com/docs/authentication/getting-started for more information.
+
+      2355 |     .then(() => console.log(`[VTID-01219] ORB Voice access token prewarmed (auth=${isGoogleAwsSupplierEnabled() ? 'aws_supplier' : 'adc'})`))
+      2356 |     .catch((err: any) =>
+    > 2357 |       console.warn('[VTID-01219] ORB Voice access-token prewarm failed (will fetch lazily):', err?.message));
+           |               ^
+      2358 | }
+      2359 |
+      2360 | // BOOTSTRAP-NOVA-SONIC-VOICE: same latency treatment for Nova — when Nova is
+
+      at src/routes/orb-live.ts:2357:15
+
+  console.log
+    [VTID-01222] Stopping session: ws-socket-04834
+
+      at handleWsStopSession (src/routes/orb-live.ts:19170:11)
+
+  console.log
+    [VTID-04353] finalized live-04834 (ws_stop): turns=2 memory=transcript_too_short summary=queued continuity=queued
+
+      at finalizeLiveSession (src/orb/live/session/finalize-live-session.ts:314:11)
+
+  console.warn
+    [llm-router] stage=memory primary bedrock/eu.anthropic.claude-sonnet-4-6 failed: Provider 'bedrock' has no credentials configured — trying fallback deepseek/deepseek-flash
+
+      1253 |     return primary;
+      1254 |   }
+    > 1255 |   console.warn(
+           |           ^
+      1256 |     `${LOG_PREFIX} stage=${stage} primary ${stageConfig.primary_provider}/${stageConfig.primary_model} failed: ${primary.error?.slice(0, 200)} — trying fallback ${stageConfig.fallback_provider}/${stageConfig.fallback_model}`,
+      1257 |   );
+      1258 |   const fallback = await runProviderCall(
+
+      at callViaRouter (src/services/llm-router.ts:1255:11)
+      at extractContinuity (src/services/continuity/session-continuity-writer.ts:148:13)
+      at recordSessionContinuity (src/services/continuity/session-continuity-writer.ts:246:23)
+          at async Promise.all (index 1)
+
+  console.warn
+    [VTID-04353:continuity-writer] extraction failed for live-04834 via router: both providers failed: primary=Provider 'bedrock' has no credentials configured; fallback=Provider 'deepseek' has no credentials configured
+
+      152 |   });
+      153 |   if (!r.ok || !r.text) {
+    > 154 |     console.warn(`${LOG_PREFIX} extraction failed for ${sessionId} via ${r.provider ?? 'router'}: ${r.error ?? 'empty response'}`);
+          |             ^
+      155 |     return null;
+      156 |   }
+      157 |   return parseContinuityReply(r.text);
+
+      at extractContinuity (src/services/continuity/session-continuity-writer.ts:154:13)
+      at recordSessionContinuity (src/services/continuity/session-continuity-writer.ts:246:23)
+          at async Promise.all (index 1)
+
+  console.warn
+    [llm-router] stage=memory primary bedrock/eu.anthropic.claude-sonnet-4-6 failed: Provider 'bedrock' has no credentials configured — trying fallback deepseek/deepseek-flash
+
+      1253 |     return primary;
+      1254 |   }
+    > 1255 |   console.warn(
+           |           ^
+      1256 |     `${LOG_PREFIX} stage=${stage} primary ${stageConfig.primary_provider}/${stageConfig.primary_model} failed: ${primary.error?.slice(0, 200)} — trying fallback ${stageConfig.fallback_provider}/${stageConfig.fallback_model}`,
+      1257 |   );
+      1258 |   const fallback = await runProviderCall(
+
+      at callViaRouter (src/services/llm-router.ts:1255:11)
+      at summarizeWithGeminiFlash (src/services/guide/session-summaries.ts:200:13)
+      at recordSessionSummary (src/services/guide/session-summaries.ts:106:17)
+          at async Promise.all (index 0)
+
+  console.warn
+    [Guide:session-summaries] summary failed via router: both providers failed: primary=Provider 'bedrock' has no credentials configured; fallback=Provider 'deepseek' has no credentials configured
+
+      208 |     if (raw.length > 0) return truncate(raw, MAX_SUMMARY_CHARS);
+      209 |   } else {
+    > 210 |     console.warn(
+          |             ^
+      211 |       `${LOG_PREFIX} summary failed via ${r.provider ?? 'router'}: ${r.error ?? 'empty response'}`,
+      212 |     );
+      213 |   }
+
+      at summarizeWithGeminiFlash (src/services/guide/session-summaries.ts:210:13)
+      at recordSessionSummary (src/services/guide/session-summaries.ts:106:17)
+          at async Promise.all (index 0)
+
+  console.log
+    [VTID-01222] Stopping session: ws-socket-04834
+
+      at handleWsStopSession (src/routes/orb-live.ts:19170:11)
+
+  console.log
+    [VTID-04353] finalized live-04834 (ws_stop): turns=2 memory=transcript_too_short summary=queued continuity=queued
+
+      at finalizeLiveSession (src/orb/live/session/finalize-live-session.ts:314:11)
+
+  console.log
+    [VTID-01222] WebSocket session cleaned up: ws-socket-04834
+
+      at cleanupWsSession (src/orb/live/session/live-session-controller.ts:525:11)
+
+  console.log
+    [VTID-03510] Reaped 1 idle/expired live sessions (remaining: 0)
+
+      at sweepIdleLiveSessions (src/routes/orb-live.ts:1575:27)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/stop
+
+      at handleLiveSessionStop (src/orb/live/session/live-session-controller.ts:2866:11)
+
+  console.log
+    [VTID-01155] Live session stopped: live-04834
+
+      at handleLiveSessionStop (src/orb/live/session/live-session-controller.ts:3051:11)
+
+  console.warn
+    [llm-router] stage=memory primary bedrock/eu.anthropic.claude-sonnet-4-6 failed: Provider 'bedrock' has no credentials configured — trying fallback deepseek/deepseek-flash
+
+      1253 |     return primary;
+      1254 |   }
+    > 1255 |   console.warn(
+           |           ^
+      1256 |     `${LOG_PREFIX} stage=${stage} primary ${stageConfig.primary_provider}/${stageConfig.primary_model} failed: ${primary.error?.slice(0, 200)} — trying fallback ${stageConfig.fallback_provider}/${stageConfig.fallback_model}`,
+      1257 |   );
+      1258 |   const fallback = await runProviderCall(
+
+      at callViaRouter (src/services/llm-router.ts:1255:11)
+      at extractContinuity (src/services/continuity/session-continuity-writer.ts:148:13)
+      at recordSessionContinuity (src/services/continuity/session-continuity-writer.ts:246:23)
+          at async Promise.all (index 1)
+
+  console.warn
+    [VTID-04353:continuity-writer] extraction failed for live-04834 via router: both providers failed: primary=Provider 'bedrock' has no credentials configured; fallback=Provider 'deepseek' has no credentials configured
+
+      152 |   });
+      153 |   if (!r.ok || !r.text) {
+    > 154 |     console.warn(`${LOG_PREFIX} extraction failed for ${sessionId} via ${r.provider ?? 'router'}: ${r.error ?? 'empty response'}`);
+          |             ^
+      155 |     return null;
+      156 |   }
+      157 |   return parseContinuityReply(r.text);
+
+      at extractContinuity (src/services/continuity/session-continuity-writer.ts:154:13)
+      at recordSessionContinuity (src/services/continuity/session-continuity-writer.ts:246:23)
+          at async Promise.all (index 1)
+
+  console.warn
+    [llm-router] stage=memory primary bedrock/eu.anthropic.claude-sonnet-4-6 failed: Provider 'bedrock' has no credentials configured — trying fallback deepseek/deepseek-flash
+
+      1253 |     return primary;
+      1254 |   }
+    > 1255 |   console.warn(
+           |           ^
+      1256 |     `${LOG_PREFIX} stage=${stage} primary ${stageConfig.primary_provider}/${stageConfig.primary_model} failed: ${primary.error?.slice(0, 200)} — trying fallback ${stageConfig.fallback_provider}/${stageConfig.fallback_model}`,
+      1257 |   );
+      1258 |   const fallback = await runProviderCall(
+
+      at callViaRouter (src/services/llm-router.ts:1255:11)
+      at summarizeWithGeminiFlash (src/services/guide/session-summaries.ts:200:13)
+      at recordSessionSummary (src/services/guide/session-summaries.ts:106:17)
+          at async Promise.all (index 0)
+
+  console.warn
+    [Guide:session-summaries] summary failed via router: both providers failed: primary=Provider 'bedrock' has no credentials configured; fallback=Provider 'deepseek' has no credentials configured
+
+      208 |     if (raw.length > 0) return truncate(raw, MAX_SUMMARY_CHARS);
+      209 |   } else {
+    > 210 |     console.warn(
+          |             ^
+      211 |       `${LOG_PREFIX} summary failed via ${r.provider ?? 'router'}: ${r.error ?? 'empty response'}`,
+      212 |     );
+      213 |   }
+
+      at summarizeWithGeminiFlash (src/services/guide/session-summaries.ts:210:13)
+      at recordSessionSummary (src/services/guide/session-summaries.ts:106:17)
+          at async Promise.all (index 0)
+
+  console.warn
+    [Guide:session-summaries] forgotten-value check failed; summary stored: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      124 |     }
+      125 |   } catch (err: any) {
+    > 126 |     console.warn(`${LOG_PREFIX} forgotten-value check failed; summary stored: ${err?.message || err}`);
+          |             ^
+      127 |   }
+      128 |
+      129 |   const { error } = await repo.upsertSessionSummary(supabase, {
+
+      at recordSessionSummary (src/services/guide/session-summaries.ts:126:13)
+          at async Promise.all (index 0)
+
+  console.warn
+    [Guide:session-summaries] forgotten-value check failed; summary stored: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      124 |     }
+      125 |   } catch (err: any) {
+    > 126 |     console.warn(`${LOG_PREFIX} forgotten-value check failed; summary stored: ${err?.message || err}`);
+          |             ^
+      127 |   }
+      128 |
+      129 |   const { error } = await repo.upsertSessionSummary(supabase, {
+
+      at recordSessionSummary (src/services/guide/session-summaries.ts:126:13)
+          at async Promise.all (index 0)
+
+  console.warn
+    [Guide:session-summaries] write failed: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      139 |
+      140 |   if (error) {
+    > 141 |     console.warn(`${LOG_PREFIX} write failed:`, error.message);
+          |             ^
+      142 |     return { success: false, error: error.message };
+      143 |   }
+      144 |
+
+      at recordSessionSummary (src/services/guide/session-summaries.ts:141:13)
+          at async Promise.all (index 0)
+
+  console.warn
+    [Guide:session-summaries] write failed: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      139 |
+      140 |   if (error) {
+    > 141 |     console.warn(`${LOG_PREFIX} write failed:`, error.message);
+          |             ^
+      142 |     return { success: false, error: error.message };
+      143 |   }
+      144 |
+
+      at recordSessionSummary (src/services/guide/session-summaries.ts:141:13)
+          at async Promise.all (index 0)
+
+  console.error
+    [VTID-03255] fetchLatestJourneySessionUpdate error for user=u-1: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      36 |       // the user's ENTIRE journey history, writing a wrong "you just
+      37 |       // completed: [everything]" summary from a corrupted baseline.
+    > 38 |       console.error(`[VTID-03255] fetchLatestJourneySessionUpdate error for user=${userId}: ${lastErr.message}`);
+         |               ^
+      39 |       return;
+      40 |     }
+      41 |     const previouslyDone = new Set<string>(
+
+      at recordJourneySessionSummary (src/services/journey-foundation/session-summary-writer.ts:38:15)
+
+  console.log
+    [VTID-04353] finalized live-04834 (ws_cleanup_client_disconnect): turns=2 memory=transcript_too_short summary=queued continuity=queued
+
+      at finalizeLiveSession (src/orb/live/session/finalize-live-session.ts:314:11)
+
+  console.log
+    [VTID-01222] WebSocket session cleaned up: ws-socket-04834
+
+      at cleanupWsSession (src/orb/live/session/live-session-controller.ts:525:11)
+
+  console.log
+    [VTID-03510] Reaped 1 idle/expired live sessions (remaining: 0)
+
+      at sweepIdleLiveSessions (src/routes/orb-live.ts:1575:27)
+
+  console.warn
+    [llm-router] stage=memory primary bedrock/eu.anthropic.claude-sonnet-4-6 failed: Provider 'bedrock' has no credentials configured — trying fallback deepseek/deepseek-flash
+
+      1253 |     return primary;
+      1254 |   }
+    > 1255 |   console.warn(
+           |           ^
+      1256 |     `${LOG_PREFIX} stage=${stage} primary ${stageConfig.primary_provider}/${stageConfig.primary_model} failed: ${primary.error?.slice(0, 200)} — trying fallback ${stageConfig.fallback_provider}/${stageConfig.fallback_model}`,
+      1257 |   );
+      1258 |   const fallback = await runProviderCall(
+
+      at callViaRouter (src/services/llm-router.ts:1255:11)
+      at extractContinuity (src/services/continuity/session-continuity-writer.ts:148:13)
+      at recordSessionContinuity (src/services/continuity/session-continuity-writer.ts:246:23)
+          at async Promise.all (index 1)
+
+  console.warn
+    [VTID-04353:continuity-writer] extraction failed for live-04834 via router: both providers failed: primary=Provider 'bedrock' has no credentials configured; fallback=Provider 'deepseek' has no credentials configured
+
+      152 |   });
+      153 |   if (!r.ok || !r.text) {
+    > 154 |     console.warn(`${LOG_PREFIX} extraction failed for ${sessionId} via ${r.provider ?? 'router'}: ${r.error ?? 'empty response'}`);
+          |             ^
+      155 |     return null;
+      156 |   }
+      157 |   return parseContinuityReply(r.text);
+
+      at extractContinuity (src/services/continuity/session-continuity-writer.ts:154:13)
+      at recordSessionContinuity (src/services/continuity/session-continuity-writer.ts:246:23)
+          at async Promise.all (index 1)
+
+  console.warn
+    [llm-router] stage=memory primary bedrock/eu.anthropic.claude-sonnet-4-6 failed: Provider 'bedrock' has no credentials configured — trying fallback deepseek/deepseek-flash
+
+      1253 |     return primary;
+      1254 |   }
+    > 1255 |   console.warn(
+           |           ^
+      1256 |     `${LOG_PREFIX} stage=${stage} primary ${stageConfig.primary_provider}/${stageConfig.primary_model} failed: ${primary.error?.slice(0, 200)} — trying fallback ${stageConfig.fallback_provider}/${stageConfig.fallback_model}`,
+      1257 |   );
+      1258 |   const fallback = await runProviderCall(
+
+      at callViaRouter (src/services/llm-router.ts:1255:11)
+      at summarizeWithGeminiFlash (src/services/guide/session-summaries.ts:200:13)
+      at recordSessionSummary (src/services/guide/session-summaries.ts:106:17)
+          at async Promise.all (index 0)
+
+  console.warn
+    [Guide:session-summaries] summary failed via router: both providers failed: primary=Provider 'bedrock' has no credentials configured; fallback=Provider 'deepseek' has no credentials configured
+
+      208 |     if (raw.length > 0) return truncate(raw, MAX_SUMMARY_CHARS);
+      209 |   } else {
+    > 210 |     console.warn(
+          |             ^
+      211 |       `${LOG_PREFIX} summary failed via ${r.provider ?? 'router'}: ${r.error ?? 'empty response'}`,
+      212 |     );
+      213 |   }
+
+      at summarizeWithGeminiFlash (src/services/guide/session-summaries.ts:210:13)
+      at recordSessionSummary (src/services/guide/session-summaries.ts:106:17)
+          at async Promise.all (index 0)
+
+  console.warn
+    [Guide:session-summaries] forgotten-value check failed; summary stored: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      124 |     }
+      125 |   } catch (err: any) {
+    > 126 |     console.warn(`${LOG_PREFIX} forgotten-value check failed; summary stored: ${err?.message || err}`);
+          |             ^
+      127 |   }
+      128 |
+      129 |   const { error } = await repo.upsertSessionSummary(supabase, {
+
+      at recordSessionSummary (src/services/guide/session-summaries.ts:126:13)
+          at async Promise.all (index 0)
+
+  console.warn
+    [Guide:session-summaries] write failed: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      139 |
+      140 |   if (error) {
+    > 141 |     console.warn(`${LOG_PREFIX} write failed:`, error.message);
+          |             ^
+      142 |     return { success: false, error: error.message };
+      143 |   }
+      144 |
+
+      at recordSessionSummary (src/services/guide/session-summaries.ts:141:13)
+          at async Promise.all (index 0)
+
+  console.log
+    [VTID-04353] finalized live-idle (idle_sweep_expired_ttl): turns=2 memory=transcript_too_short summary=queued continuity=queued
+
+      at finalizeLiveSession (src/orb/live/session/finalize-live-session.ts:314:11)
+
+  console.log
+    [VTID-03510] Reaped 1 idle/expired live sessions (remaining: 0)
+
+      at sweepIdleLiveSessions (src/routes/orb-live.ts:1575:27)
+
+  console.warn
+    [llm-router] stage=memory primary bedrock/eu.anthropic.claude-sonnet-4-6 failed: Provider 'bedrock' has no credentials configured — trying fallback deepseek/deepseek-flash
+
+      1253 |     return primary;
+      1254 |   }
+    > 1255 |   console.warn(
+           |           ^
+      1256 |     `${LOG_PREFIX} stage=${stage} primary ${stageConfig.primary_provider}/${stageConfig.primary_model} failed: ${primary.error?.slice(0, 200)} — trying fallback ${stageConfig.fallback_provider}/${stageConfig.fallback_model}`,
+      1257 |   );
+      1258 |   const fallback = await runProviderCall(
+
+      at callViaRouter (src/services/llm-router.ts:1255:11)
+      at extractContinuity (src/services/continuity/session-continuity-writer.ts:148:13)
+      at recordSessionContinuity (src/services/continuity/session-continuity-writer.ts:246:23)
+          at async Promise.all (index 1)
+
+  console.warn
+    [VTID-04353:continuity-writer] extraction failed for live-idle via router: both providers failed: primary=Provider 'bedrock' has no credentials configured; fallback=Provider 'deepseek' has no credentials configured
+
+      152 |   });
+      153 |   if (!r.ok || !r.text) {
+    > 154 |     console.warn(`${LOG_PREFIX} extraction failed for ${sessionId} via ${r.provider ?? 'router'}: ${r.error ?? 'empty response'}`);
+          |             ^
+      155 |     return null;
+      156 |   }
+      157 |   return parseContinuityReply(r.text);
+
+      at extractContinuity (src/services/continuity/session-continuity-writer.ts:154:13)
+      at recordSessionContinuity (src/services/continuity/session-continuity-writer.ts:246:23)
+          at async Promise.all (index 1)
+
+  console.warn
+    [llm-router] stage=memory primary bedrock/eu.anthropic.claude-sonnet-4-6 failed: Provider 'bedrock' has no credentials configured — trying fallback deepseek/deepseek-flash
+
+      1253 |     return primary;
+      1254 |   }
+    > 1255 |   console.warn(
+           |           ^
+      1256 |     `${LOG_PREFIX} stage=${stage} primary ${stageConfig.primary_provider}/${stageConfig.primary_model} failed: ${primary.error?.slice(0, 200)} — trying fallback ${stageConfig.fallback_provider}/${stageConfig.fallback_model}`,
+      1257 |   );
+      1258 |   const fallback = await runProviderCall(
+
+      at callViaRouter (src/services/llm-router.ts:1255:11)
+      at summarizeWithGeminiFlash (src/services/guide/session-summaries.ts:200:13)
+      at recordSessionSummary (src/services/guide/session-summaries.ts:106:17)
+          at async Promise.all (index 0)
+
+  console.warn
+    [Guide:session-summaries] summary failed via router: both providers failed: primary=Provider 'bedrock' has no credentials configured; fallback=Provider 'deepseek' has no credentials configured
+
+      208 |     if (raw.length > 0) return truncate(raw, MAX_SUMMARY_CHARS);
+      209 |   } else {
+    > 210 |     console.warn(
+          |             ^
+      211 |       `${LOG_PREFIX} summary failed via ${r.provider ?? 'router'}: ${r.error ?? 'empty response'}`,
+      212 |     );
+      213 |   }
+
+      at summarizeWithGeminiFlash (src/services/guide/session-summaries.ts:210:13)
+      at recordSessionSummary (src/services/guide/session-summaries.ts:106:17)
+          at async Promise.all (index 0)
+
+  console.warn
+    [Guide:session-summaries] forgotten-value check failed; summary stored: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      124 |     }
+      125 |   } catch (err: any) {
+    > 126 |     console.warn(`${LOG_PREFIX} forgotten-value check failed; summary stored: ${err?.message || err}`);
+          |             ^
+      127 |   }
+      128 |
+      129 |   const { error } = await repo.upsertSessionSummary(supabase, {
+
+      at recordSessionSummary (src/services/guide/session-summaries.ts:126:13)
+          at async Promise.all (index 0)
+
+  console.warn
+    [Guide:session-summaries] write failed: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      139 |
+      140 |   if (error) {
+    > 141 |     console.warn(`${LOG_PREFIX} write failed:`, error.message);
+          |             ^
+      142 |     return { success: false, error: error.message };
+      143 |   }
+      144 |
+
+      at recordSessionSummary (src/services/guide/session-summaries.ts:141:13)
+          at async Promise.all (index 0)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/stop
+
+      at handleLiveSessionStop (src/orb/live/session/live-session-controller.ts:2866:11)
+
+  console.log
+    [VTID-04353] finalized live-04834 (live_session_stop): turns=2 memory=transcript_too_short summary=queued continuity=queued
+
+      at finalizeLiveSession (src/orb/live/session/finalize-live-session.ts:314:11)
+
+  console.log
+    [VTID-01155] Live session stopped: live-04834
+
+      at handleLiveSessionStop (src/orb/live/session/live-session-controller.ts:3051:11)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/stop
+
+      at handleLiveSessionStop (src/orb/live/session/live-session-controller.ts:2866:11)
+
+  console.log
+    [VTID-04353] finalized live-latched (live_session_stop): turns=2 memory=transcript_too_short summary=queued continuity=queued
+
+      at finalizeLiveSession (src/orb/live/session/finalize-live-session.ts:314:11)
+
+  console.log
+    [VTID-01155] Live session stopped: live-latched
+
+      at handleLiveSessionStop (src/orb/live/session/live-session-controller.ts:3051:11)
+
+  console.warn
+    [llm-router] stage=memory primary bedrock/eu.anthropic.claude-sonnet-4-6 failed: Provider 'bedrock' has no credentials configured — trying fallback deepseek/deepseek-flash
+
+      1253 |     return primary;
+      1254 |   }
+    > 1255 |   console.warn(
+           |           ^
+      1256 |     `${LOG_PREFIX} stage=${stage} primary ${stageConfig.primary_provider}/${stageConfig.primary_model} failed: ${primary.error?.slice(0, 200)} — trying fallback ${stageConfig.fallback_provider}/${stageConfig.fallback_model}`,
+      1257 |   );
+      1258 |   const fallback = await runProviderCall(
+
+      at callViaRouter (src/services/llm-router.ts:1255:11)
+      at extractContinuity (src/services/continuity/session-continuity-writer.ts:148:13)
+      at recordSessionContinuity (src/services/continuity/session-continuity-writer.ts:246:23)
+          at async Promise.all (index 1)
+
+  console.warn
+    [VTID-04353:continuity-writer] extraction failed for live-04834 via router: both providers failed: primary=Provider 'bedrock' has no credentials configured; fallback=Provider 'deepseek' has no credentials configured
+
+      152 |   });
+      153 |   if (!r.ok || !r.text) {
+    > 154 |     console.warn(`${LOG_PREFIX} extraction failed for ${sessionId} via ${r.provider ?? 'router'}: ${r.error ?? 'empty response'}`);
+          |             ^
+      155 |     return null;
+      156 |   }
+      157 |   return parseContinuityReply(r.text);
+
+      at extractContinuity (src/services/continuity/session-continuity-writer.ts:154:13)
+      at recordSessionContinuity (src/services/continuity/session-continuity-writer.ts:246:23)
+          at async Promise.all (index 1)
+
+  console.warn
+    [llm-router] stage=memory primary bedrock/eu.anthropic.claude-sonnet-4-6 failed: Provider 'bedrock' has no credentials configured — trying fallback deepseek/deepseek-flash
+
+      1253 |     return primary;
+      1254 |   }
+    > 1255 |   console.warn(
+           |           ^
+      1256 |     `${LOG_PREFIX} stage=${stage} primary ${stageConfig.primary_provider}/${stageConfig.primary_model} failed: ${primary.error?.slice(0, 200)} — trying fallback ${stageConfig.fallback_provider}/${stageConfig.fallback_model}`,
+      1257 |   );
+      1258 |   const fallback = await runProviderCall(
+
+      at callViaRouter (src/services/llm-router.ts:1255:11)
+      at extractContinuity (src/services/continuity/session-continuity-writer.ts:148:13)
+      at recordSessionContinuity (src/services/continuity/session-continuity-writer.ts:246:23)
+          at async Promise.all (index 1)
+
+  console.warn
+    [VTID-04353:continuity-writer] extraction failed for live-latched via router: both providers failed: primary=Provider 'bedrock' has no credentials configured; fallback=Provider 'deepseek' has no credentials configured
+
+      152 |   });
+      153 |   if (!r.ok || !r.text) {
+    > 154 |     console.warn(`${LOG_PREFIX} extraction failed for ${sessionId} via ${r.provider ?? 'router'}: ${r.error ?? 'empty response'}`);
+          |             ^
+      155 |     return null;
+      156 |   }
+      157 |   return parseContinuityReply(r.text);
+
+      at extractContinuity (src/services/continuity/session-continuity-writer.ts:154:13)
+      at recordSessionContinuity (src/services/continuity/session-continuity-writer.ts:246:23)
+          at async Promise.all (index 1)
+
+  console.warn
+    [llm-router] stage=memory primary bedrock/eu.anthropic.claude-sonnet-4-6 failed: Provider 'bedrock' has no credentials configured — trying fallback deepseek/deepseek-flash
+
+      1253 |     return primary;
+      1254 |   }
+    > 1255 |   console.warn(
+           |           ^
+      1256 |     `${LOG_PREFIX} stage=${stage} primary ${stageConfig.primary_provider}/${stageConfig.primary_model} failed: ${primary.error?.slice(0, 200)} — trying fallback ${stageConfig.fallback_provider}/${stageConfig.fallback_model}`,
+      1257 |   );
+      1258 |   const fallback = await runProviderCall(
+
+      at callViaRouter (src/services/llm-router.ts:1255:11)
+      at summarizeWithGeminiFlash (src/services/guide/session-summaries.ts:200:13)
+      at recordSessionSummary (src/services/guide/session-summaries.ts:106:17)
+          at async Promise.all (index 0)
+
+  console.warn
+    [Guide:session-summaries] summary failed via router: both providers failed: primary=Provider 'bedrock' has no credentials configured; fallback=Provider 'deepseek' has no credentials configured
+
+      208 |     if (raw.length > 0) return truncate(raw, MAX_SUMMARY_CHARS);
+      209 |   } else {
+    > 210 |     console.warn(
+          |             ^
+      211 |       `${LOG_PREFIX} summary failed via ${r.provider ?? 'router'}: ${r.error ?? 'empty response'}`,
+      212 |     );
+      213 |   }
+
+      at summarizeWithGeminiFlash (src/services/guide/session-summaries.ts:210:13)
+      at recordSessionSummary (src/services/guide/session-summaries.ts:106:17)
+          at async Promise.all (index 0)
+
+  console.warn
+    [llm-router] stage=memory primary bedrock/eu.anthropic.claude-sonnet-4-6 failed: Provider 'bedrock' has no credentials configured — trying fallback deepseek/deepseek-flash
+
+      1253 |     return primary;
+      1254 |   }
+    > 1255 |   console.warn(
+           |           ^
+      1256 |     `${LOG_PREFIX} stage=${stage} primary ${stageConfig.primary_provider}/${stageConfig.primary_model} failed: ${primary.error?.slice(0, 200)} — trying fallback ${stageConfig.fallback_provider}/${stageConfig.fallback_model}`,
+      1257 |   );
+      1258 |   const fallback = await runProviderCall(
+
+      at callViaRouter (src/services/llm-router.ts:1255:11)
+      at summarizeWithGeminiFlash (src/services/guide/session-summaries.ts:200:13)
+      at recordSessionSummary (src/services/guide/session-summaries.ts:106:17)
+          at async Promise.all (index 0)
+
+  console.warn
+    [Guide:session-summaries] summary failed via router: both providers failed: primary=Provider 'bedrock' has no credentials configured; fallback=Provider 'deepseek' has no credentials configured
+
+      208 |     if (raw.length > 0) return truncate(raw, MAX_SUMMARY_CHARS);
+      209 |   } else {
+    > 210 |     console.warn(
+          |             ^
+      211 |       `${LOG_PREFIX} summary failed via ${r.provider ?? 'router'}: ${r.error ?? 'empty response'}`,
+      212 |     );
+      213 |   }
+
+      at summarizeWithGeminiFlash (src/services/guide/session-summaries.ts:210:13)
+      at recordSessionSummary (src/services/guide/session-summaries.ts:106:17)
+          at async Promise.all (index 0)
+
+  console.warn
+    [Guide:session-summaries] forgotten-value check failed; summary stored: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      124 |     }
+      125 |   } catch (err: any) {
+    > 126 |     console.warn(`${LOG_PREFIX} forgotten-value check failed; summary stored: ${err?.message || err}`);
+          |             ^
+      127 |   }
+      128 |
+      129 |   const { error } = await repo.upsertSessionSummary(supabase, {
+
+      at recordSessionSummary (src/services/guide/session-summaries.ts:126:13)
+          at async Promise.all (index 0)
+
+  console.warn
+    [Guide:session-summaries] forgotten-value check failed; summary stored: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      124 |     }
+      125 |   } catch (err: any) {
+    > 126 |     console.warn(`${LOG_PREFIX} forgotten-value check failed; summary stored: ${err?.message || err}`);
+          |             ^
+      127 |   }
+      128 |
+      129 |   const { error } = await repo.upsertSessionSummary(supabase, {
+
+      at recordSessionSummary (src/services/guide/session-summaries.ts:126:13)
+          at async Promise.all (index 0)
+
+  console.warn
+    [Guide:session-summaries] write failed: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      139 |
+      140 |   if (error) {
+    > 141 |     console.warn(`${LOG_PREFIX} write failed:`, error.message);
+          |             ^
+      142 |     return { success: false, error: error.message };
+      143 |   }
+      144 |
+
+      at recordSessionSummary (src/services/guide/session-summaries.ts:141:13)
+          at async Promise.all (index 0)
+
+  console.warn
+    [Guide:session-summaries] write failed: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      139 |
+      140 |   if (error) {
+    > 141 |     console.warn(`${LOG_PREFIX} write failed:`, error.message);
+          |             ^
+      142 |     return { success: false, error: error.message };
+      143 |   }
+      144 |
+
+      at recordSessionSummary (src/services/guide/session-summaries.ts:141:13)
+          at async Promise.all (index 0)
+
+  console.error
+    [VTID-03255] fetchLatestJourneySessionUpdate error for user=u-1: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      36 |       // the user's ENTIRE journey history, writing a wrong "you just
+      37 |       // completed: [everything]" summary from a corrupted baseline.
+    > 38 |       console.error(`[VTID-03255] fetchLatestJourneySessionUpdate error for user=${userId}: ${lastErr.message}`);
+         |               ^
+      39 |       return;
+      40 |     }
+      41 |     const previouslyDone = new Set<string>(
+
+      at recordJourneySessionSummary (src/services/journey-foundation/session-summary-writer.ts:38:15)
+
+  console.error
+    [VTID-03255] fetchLatestJourneySessionUpdate error for user=u-1: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      36 |       // the user's ENTIRE journey history, writing a wrong "you just
+      37 |       // completed: [everything]" summary from a corrupted baseline.
+    > 38 |       console.error(`[VTID-03255] fetchLatestJourneySessionUpdate error for user=${userId}: ${lastErr.message}`);
+         |               ^
+      39 |       return;
+      40 |     }
+      41 |     const previouslyDone = new Set<string>(
+
+      at recordJourneySessionSummary (src/services/journey-foundation/session-summary-writer.ts:38:15)
+
+PASS test/vtid-04834-live-session-start-stop-once.test.ts
+  VTID-04834: one vtid.live.session.start per WS session
+    ✓ a WS start (via the adapter) emits exactly one start, labelled websocket, with the merged fields (37 ms)
+    ✓ an SSE start keeps transport sse (21 ms)
+    ✓ orb-live.ts has no start emit of its own; the controller has exactly one (4 ms)
+    ✓ canonical OASIS transport vocabulary is websocket | sse
+  VTID-04834: one vtid.live.session.stop per WS session
+    ✓ stop_session frame reports the LIVE id (not the ws- socket id) and removes the live session (62 ms)
+    ✓ stop_session then socket close then idle sweep then POST stop: still exactly one stop (the prod sequence) (24 ms)
+    ✓ socket close alone emits one stop (cleanupWsSession), and a later sweep adds none (4 ms)
+    ✓ the idle sweep still reports a session nobody reported, exactly once (5 ms)
+    ✓ POST /live/session/stop reports transport and does not re-report a latched session (10 ms)
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 7 passed, 7 total
+Tests:       142 passed, 142 total
+Snapshots:   0 total
+Time:        3.748 s
+Ran all test suites matching /test\/vtid-05047-cicd-routes-auth.test.ts|test\/vtid-05019-cicd-pr-routes-auth.test.ts|test\/vtid-05005-kiro-dev-tools-mcp.test.ts|test\/vtid-05006-kiro-write-tools.test.ts|test\/orb\/live\/ws-tenant-fallback.test.ts|test\/orb\/live\/characterization\/sse-stream.characterization.test.ts|test\/vtid-04834-live-session-start-stop-once.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
