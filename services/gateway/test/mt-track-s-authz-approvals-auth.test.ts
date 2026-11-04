@@ -278,6 +278,7 @@ describe('voice approve on the generic live path (VTID-05528)', () => {
     expect(url).toContain('/api/v1/approvals/appr_VTID-01234_abc/reject');
     expect(init.headers.Authorization).toBe('Bearer dev-jwt-05528');
     expect(JSON.stringify(out)).not.toContain('signed-in admin session');
+    expect(JSON.stringify(out)).toContain('rejected');
   });
 });
 
