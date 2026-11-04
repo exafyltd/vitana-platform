@@ -4,10 +4,12 @@ author: kiro
 author_seat: exafy
 executor: kiro
 next_actor: kiro
-state: drafted
+state: approved
 spar_refs:
   - exafyltd/vitana-v1: 7829ef2f2ef12364862961d339161229c286d6f0
-updated: 2026-11-04T19:41Z
+updated: 2026-11-04T20:00Z
+sparring_record: .kiro/specs/e2e-autonomy/sparring/verdict.md
+vtids: [VTID-05543]
 ---
 # Handoff — e2e-autonomy
 The owner's end-to-end autonomy rule (2026-11-04) merged into the standing steering file of both repositories. Plan: `plan.md`. The exact new file text: `rule-text.md`.
@@ -24,3 +26,6 @@ Round 1 (session `dccc8533…`) returned one minor finding: the difference in st
 of meaning, not drift. Accepted. Plan §4 now states it (vitana-v1 moves from "review OR instruction" to "instruction AND
 reviewer-agent accept"), names the binding text (platform `collaboration.md` §3a/§7b, VTID-05409) and records that vitana-v1's
 own `collaboration.md` copy lags by 27 lines and is not synced here. Answer in `sparring/responses-1.md`.
+
+### 2026-11-04T20:00Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.
