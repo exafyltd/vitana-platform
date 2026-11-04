@@ -1,20 +1,6 @@
 ts-jest[config] (WARN) 
     The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/wt-av2/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
   
-ts-jest[config] (WARN) 
-    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/wt-av2/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
-  
-ts-jest[config] (WARN) 
-    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/wt-av2/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
-  
-ts-jest[config] (WARN) 
-    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/wt-av2/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
-  
-  console.log
-    ✅ Test setup loaded - fetch mocked, env vars set
-
-      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
-
   console.log
     ✅ Test setup loaded - fetch mocked, env vars set
 
@@ -31,28 +17,47 @@ ts-jest[config] (WARN)
 
       at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
 
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/wt-av2/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/wt-av2/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/wt-av2/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
   console.log
     ✅ Test setup loaded - fetch mocked, env vars set
 
       at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
 
-  console.log
-    ✅ Test setup loaded - fetch mocked, env vars set
-
-      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
-
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/wt-av2/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
 PASS test/orb/live/ws-tenant-fallback.test.ts
   WS tenant fallback — source-level wall
-    ✓ the SSE /live/stream route has the tenant fallback (reference implementation) (57 ms)
-    ✓ the WebSocket connection handler applies the SAME fallback when tenant_id is missing (6 ms)
-    ✓ the WS session start is handed the (possibly-fallback-resolved) identity variable (3 ms)
+    ✓ the SSE /live/stream route has the tenant fallback (reference implementation) (8 ms)
+    ✓ the WebSocket connection handler applies the SAME fallback when tenant_id is missing (2 ms)
+    ✓ the WS session start is handed the (possibly-fallback-resolved) identity variable (2 ms)
     ✓ the shared controller re-applies the tenant fallback, so the WS hand-off is belt-and-braces
   lookupPrimaryTenant — behavior (previously untested)
-    ✓ is defined with a primary-tenant-first, any-tenant-fallback contract (5 ms)
+    ✓ is defined with a primary-tenant-first, any-tenant-fallback contract (4 ms)
 
-ts-jest[config] (WARN) 
-    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/wt-av2/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
-  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
   console.log
     ✅ Test setup loaded - fetch mocked, env vars set
 
@@ -60,39 +65,24 @@ ts-jest[config] (WARN)
 
 PASS test/orb/live/characterization/sse-stream.characterization.test.ts
   A9.2 characterization: /live/stream delegates SSE setup to the transport module
-    ✓ calls attachSseHeaders(res) for the SSE upgrade (15 ms)
+    ✓ calls attachSseHeaders(res) for the SSE upgrade (9 ms)
     ✓ does NOT inline raw res.setHeader calls for the SSE headers (2 ms)
     ✓ starts the heartbeat through startSseHeartbeat (NOT setInterval) (1 ms)
-    ✓ writes the ready event through writeSseEvent (NOT raw res.write)
+    ✓ writes the ready event through writeSseEvent (NOT raw res.write) (1 ms)
   A9.2 characterization: ready event payload contract (unchanged)
-    ✓ emits an event with type: "ready"
-    ✓ includes session_id in the ready payload (1 ms)
-    ✓ includes live_api_connected boolean in the ready payload
+    ✓ emits an event with type: "ready" (1 ms)
+    ✓ includes session_id in the ready payload (2 ms)
+    ✓ includes live_api_connected boolean in the ready payload (1 ms)
     ✓ includes meta.model in the ready payload (1 ms)
-    ✓ includes meta.lang in the ready payload
-    ✓ includes meta.voice in the ready payload
-    ✓ declares audio_out_rate (server → client TTS sample rate) (1 ms)
-    ✓ declares audio_in_rate (client → server mic sample rate)
+    ✓ includes meta.lang in the ready payload (1 ms)
+    ✓ includes meta.voice in the ready payload (4 ms)
+    ✓ declares audio_out_rate (server → client TTS sample rate)
+    ✓ declares audio_in_rate (client → server mic sample rate) (1 ms)
   A9.2 characterization: session id parameter (unchanged)
     ✓ reads session_id from query string
     ✓ rejects request with 400 when session_id is missing
   A9.2 characterization: import wiring
     ✓ imports the SSE helpers from the transport module (5 ms)
-
-  console.log
-    ✅ Test setup loaded - fetch mocked, env vars set
-
-      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
-
-  console.log
-    [CICD] PR #7 created for VTID-05019: https://x/7
-
-      at src/routes/cicd.ts:277:13
-
-  console.log
-    [CICD] PR #7 created for VTID-05019: https://x/7
-
-      at src/routes/cicd.ts:277:13
 
   console.error
     [VTID-0601] GitHub token not found in env
@@ -145,15 +135,40 @@ PASS test/orb/live/characterization/sse-stream.characterization.test.ts
       at Function.handle (node_modules/express/lib/application.js:181:10)
       at Server.app (node_modules/express/lib/express.js:39:9)
 
+PASS test/vtid-05006-kiro-write-tools.test.ts
+  the write set
+    ✓ is the approved list: no deploy, nothing that mints a VTID; every tool needs a vtid (5 ms)
+  the gates, in order
+    ✓ switched off: nothing is asked or run (1 ms)
+    ✓ autopilot writes respect the autopilot kill switch; other writes do not depend on it (1 ms)
+    ✓ a missing or closed VTID is refused before the user is asked
+    ✓ only an Allow runs the tool; a vtid the executor does not take is stripped (1 ms)
+    ✓ the target must belong to the gated VTID (Codex review on #3977) (2 ms)
+    ✓ the card never shows file contents (1 ms)
+  the confirmation
+    ✓ an Allow from the owner is seen; only once (12 ms)
+    ✓ no answer in the window: expired, and a late Allow changes nothing (4 ms)
+    ✓ the call going away (Kiro gave up, connection closed) expires it at once (11 ms)
+  dev_push_kiro_branch
+    ✓ only the caller’s own kiro/ branch of vitana-platform (the PR/merge routes accept only that repo) (1 ms)
+    ✓ refuses governance, CI, evidence, migrations, ownership and dependency files, and traversal (4 ms)
+    ✓ enforces the size, count and text-only limits (3 ms)
+    ✓ one commit on a new branch from main, or a fast-forward of the existing one — never force (1 ms)
+  wiring (source check)
+    ✓ the confirmation table is service-role only and documented (2 ms)
+    ✓ the decision routes are admin-only and use the caller from the identity (1 ms)
+    ✓ writes follow the engine on both environments (owner approved production 2026-10-09); off with no runner (1 ms)
+    ✓ the Command Hub polls only during a Kiro run and answers through the confirmation route (10 ms)
+
   console.log
-    [CICD] PR #7 merged for VTID-05019: m
+    [CICD] PR #7 created for VTID-05019: https://x/7
 
-      at safeMerge (src/routes/cicd.ts:481:13)
+      at src/routes/cicd.ts:277:13
 
   console.log
-    [CICD] PR #7 merged for VTID-05019: m
+    [CICD] PR #7 created for VTID-05019: https://x/7
 
-      at safeMerge (src/routes/cicd.ts:481:13)
+      at src/routes/cicd.ts:277:13
 
   console.error
     [VTID-0601] GitHub token not found in env
@@ -208,136 +223,48 @@ PASS test/orb/live/characterization/sse-stream.characterization.test.ts
       at Function.handle (node_modules/express/lib/application.js:181:10)
       at Server.app (node_modules/express/lib/express.js:39:9)
 
+  console.log
+    [CICD] PR #7 merged for VTID-05019: m
+
+      at safeMerge (src/routes/cicd.ts:481:13)
+
+  console.log
+    [CICD] PR #7 merged for VTID-05019: m
+
+      at safeMerge (src/routes/cicd.ts:481:13)
+
 PASS test/vtid-05019-cicd-pr-routes-auth.test.ts
   POST /create-pr
-    ✓ no bearer → 401, nothing done (39 ms)
+    ✓ no bearer → 401, nothing done (40 ms)
     ✓ a wrong bearer → 401 (an empty body is never validated first) (5 ms)
-    ✓ a signed-in non-admin → 403 (38 ms)
-    ✓ the gateway service token → the handler runs (34 ms)
+    ✓ a signed-in non-admin → 403 (4 ms)
+    ✓ the gateway service token → the handler runs (31 ms)
     ✓ an exafy_admin session → the handler runs (6 ms)
     ✓ the same gate on the other mount prefixes (7 ms)
     ✓ no GATEWAY_SERVICE_TOKEN configured: even a bearer equal to "" cannot pass (3 ms)
   POST /safe-merge
-    ✓ no bearer → 401, nothing done (5 ms)
-    ✓ a wrong bearer → 401 (an empty body is never validated first) (3 ms)
+    ✓ no bearer → 401, nothing done (6 ms)
+    ✓ a wrong bearer → 401 (an empty body is never validated first) (4 ms)
     ✓ a signed-in non-admin → 403 (3 ms)
-    ✓ the gateway service token → the handler runs (5 ms)
-    ✓ an exafy_admin session → the handler runs (5 ms)
-    ✓ the same gate on the other mount prefixes (13 ms)
-    ✓ no GATEWAY_SERVICE_TOKEN configured: even a bearer equal to "" cannot pass (2 ms)
+    ✓ the gateway service token → the handler runs (12 ms)
+    ✓ an exafy_admin session → the handler runs (4 ms)
+    ✓ the same gate on the other mount prefixes (5 ms)
+    ✓ no GATEWAY_SERVICE_TOKEN configured: even a bearer equal to "" cannot pass (1 ms)
   callers send the service token
     ✓ gatewayServiceAuthHeader: bearer when set, nothing when unset (1 ms)
     ✓ Operator / Kiro executors (and no Supabase key on the self-call) (3 ms)
-    ✓ autopilot event loop, ORB developer tools, openclaw-bridge (3 ms)
+    ✓ autopilot event loop, ORB developer tools, openclaw-bridge (2 ms)
     ✓ both routes are mounted behind requireServiceOrAdmin (1 ms)
 
   console.log
-    [AUTONOMOUS-PR-MERGE] Request 27d5d07d-37f0-49dd-a6c8-6cd4861e34f7 started
+    [AUTONOMOUS-PR-MERGE] Request 3d190a11-66d5-4715-bf0c-12a2bc75dfd4 started
 
       at src/routes/cicd.ts:1563:11
 
   console.log
-    [AUTONOMOUS-PR-MERGE] Request a147842f-d378-4e72-99bf-c8020b6eddd4 started
+    [AUTONOMOUS-PR-MERGE] Request ea461066-6362-4dea-9268-6306f10555ac started
 
       at src/routes/cicd.ts:1563:11
-
-PASS test/vtid-05047-cicd-routes-auth.test.ts
-  post /service
-    ✓ no bearer → 401 on every mount, handler never reached (69 ms)
-    ✓ a wrong bearer → 401 (6 ms)
-    ✓ a signed-in non-admin → 403 (5 ms)
-    ✓ the gateway service token passes the gate (9 ms)
-    ✓ an exafy_admin session passes the gate (6 ms)
-    ✓ no GATEWAY_SERVICE_TOKEN configured → an empty bearer cannot pass (4 ms)
-  post /merge
-    ✓ no bearer → 401 on every mount, handler never reached (13 ms)
-    ✓ a wrong bearer → 401 (2 ms)
-    ✓ a signed-in non-admin → 403 (2 ms)
-    ✓ the gateway service token passes the gate (4 ms)
-    ✓ an exafy_admin session passes the gate (3 ms)
-    ✓ no GATEWAY_SERVICE_TOKEN configured → an empty bearer cannot pass (2 ms)
-  post /deploy
-    ✓ no bearer → 401 on every mount, handler never reached (6 ms)
-    ✓ a wrong bearer → 401 (2 ms)
-    ✓ a signed-in non-admin → 403 (2 ms)
-    ✓ the gateway service token passes the gate (3 ms)
-    ✓ an exafy_admin session passes the gate (3 ms)
-    ✓ no GATEWAY_SERVICE_TOKEN configured → an empty bearer cannot pass (4 ms)
-  get /approvals
-    ✓ no bearer → 401 on every mount, handler never reached (7 ms)
-    ✓ a wrong bearer → 401 (3 ms)
-    ✓ a signed-in non-admin → 403 (4 ms)
-    ✓ the gateway service token passes the gate (60 ms)
-    ✓ an exafy_admin session passes the gate (10 ms)
-    ✓ no GATEWAY_SERVICE_TOKEN configured → an empty bearer cannot pass (3 ms)
-  post /approvals/12/approve
-    ✓ no bearer → 401 on every mount, handler never reached (8 ms)
-    ✓ a wrong bearer → 401 (2 ms)
-    ✓ a signed-in non-admin → 403 (2 ms)
-    ✓ the gateway service token passes the gate (3 ms)
-    ✓ an exafy_admin session passes the gate (2 ms)
-    ✓ no GATEWAY_SERVICE_TOKEN configured → an empty bearer cannot pass (2 ms)
-  post /approvals/12/deny
-    ✓ no bearer → 401 on every mount, handler never reached (6 ms)
-    ✓ a wrong bearer → 401 (2 ms)
-    ✓ a signed-in non-admin → 403 (2 ms)
-    ✓ the gateway service token passes the gate (3 ms)
-    ✓ an exafy_admin session passes the gate (18 ms)
-    ✓ no GATEWAY_SERVICE_TOKEN configured → an empty bearer cannot pass (3 ms)
-  post /autonomous-pr-merge
-    ✓ no bearer → 401 on every mount, handler never reached (13 ms)
-    ✓ a wrong bearer → 401 (3 ms)
-    ✓ a signed-in non-admin → 403 (2 ms)
-    ✓ the gateway service token passes the gate (8 ms)
-    ✓ an exafy_admin session passes the gate (7 ms)
-    ✓ no GATEWAY_SERVICE_TOKEN configured → an empty bearer cannot pass (2 ms)
-  get /lock-status
-    ✓ no bearer → 401 on every mount, handler never reached (5 ms)
-    ✓ a wrong bearer → 401 (2 ms)
-    ✓ a signed-in non-admin → 403 (2 ms)
-    ✓ the gateway service token passes the gate (3 ms)
-    ✓ an exafy_admin session passes the gate (2 ms)
-    ✓ no GATEWAY_SERVICE_TOKEN configured → an empty bearer cannot pass (2 ms)
-  post /lock-release
-    ✓ no bearer → 401 on every mount, handler never reached (6 ms)
-    ✓ a wrong bearer → 401 (8 ms)
-    ✓ a signed-in non-admin → 403 (2 ms)
-    ✓ the gateway service token passes the gate (3 ms)
-    ✓ an exafy_admin session passes the gate (2 ms)
-    ✓ no GATEWAY_SERVICE_TOKEN configured → an empty bearer cannot pass (2 ms)
-  GET /health stays public
-    ✓ no bearer → not 401/403 (3 ms)
-  callers send the service token
-    ✓ approvals.ts and execute.ts self-calls of autonomous-pr-merge (1 ms)
-    ✓ gemini-operator: deploy/service and lock-status use the service token, not the Supabase key (2 ms)
-    ✓ ORB cicd tools: merge, lock-status, lock-release (1 ms)
-    ✓ openclaw-bridge sends the token on every gateway call (1 ms)
-    ✓ every gated route is mounted behind requireServiceOrAdmin; /health is not (2 ms)
-
-PASS test/vtid-05006-kiro-write-tools.test.ts (6.775 s)
-  the write set
-    ✓ is the approved list: no deploy, nothing that mints a VTID; every tool needs a vtid (17 ms)
-  the gates, in order
-    ✓ switched off: nothing is asked or run (1 ms)
-    ✓ autopilot writes respect the autopilot kill switch; other writes do not depend on it (2 ms)
-    ✓ a missing or closed VTID is refused before the user is asked
-    ✓ only an Allow runs the tool; a vtid the executor does not take is stripped (2 ms)
-    ✓ the target must belong to the gated VTID (Codex review on #3977) (3 ms)
-    ✓ the card never shows file contents (1 ms)
-  the confirmation
-    ✓ an Allow from the owner is seen; only once (15 ms)
-    ✓ no answer in the window: expired, and a late Allow changes nothing (6 ms)
-    ✓ the call going away (Kiro gave up, connection closed) expires it at once (14 ms)
-  dev_push_kiro_branch
-    ✓ only the caller’s own kiro/ branch of vitana-platform (the PR/merge routes accept only that repo) (1 ms)
-    ✓ refuses governance, CI, evidence, migrations, ownership and dependency files, and traversal (3 ms)
-    ✓ enforces the size, count and text-only limits (3 ms)
-    ✓ one commit on a new branch from main, or a fast-forward of the existing one — never force (2 ms)
-  wiring (source check)
-    ✓ the confirmation table is service-role only and documented (2 ms)
-    ✓ the decision routes are admin-only and use the caller from the identity (2 ms)
-    ✓ writes follow the engine on both environments (owner approved production 2026-10-09); off with no runner (2 ms)
-    ✓ the Command Hub polls only during a Kiro run and answers through the confirmation route (10 ms)
 
   console.log
     [VTID-0536] Executing tool: dev_domain_atlas
@@ -345,32 +272,105 @@ PASS test/vtid-05006-kiro-write-tools.test.ts (6.775 s)
       at executeTool (src/services/gemini-operator.ts:3715:11)
 
   console.log
-    [VTID-0536] Tool dev_domain_atlas completed in 3ms: success
+    [VTID-0536] Tool dev_domain_atlas completed in 2ms: success
 
       at executeTool (src/services/gemini-operator.ts:4281:11)
 
-PASS test/vtid-05005-kiro-dev-tools-mcp.test.ts (7.995 s)
+PASS test/vtid-05047-cicd-routes-auth.test.ts
+  post /service
+    ✓ no bearer → 401 on every mount, handler never reached (46 ms)
+    ✓ a wrong bearer → 401 (4 ms)
+    ✓ a signed-in non-admin → 403 (4 ms)
+    ✓ the gateway service token passes the gate (4 ms)
+    ✓ an exafy_admin session passes the gate (2 ms)
+    ✓ no GATEWAY_SERVICE_TOKEN configured → an empty bearer cannot pass (2 ms)
+  post /merge
+    ✓ no bearer → 401 on every mount, handler never reached (7 ms)
+    ✓ a wrong bearer → 401 (2 ms)
+    ✓ a signed-in non-admin → 403 (2 ms)
+    ✓ the gateway service token passes the gate (2 ms)
+    ✓ an exafy_admin session passes the gate (2 ms)
+    ✓ no GATEWAY_SERVICE_TOKEN configured → an empty bearer cannot pass (2 ms)
+  post /deploy
+    ✓ no bearer → 401 on every mount, handler never reached (5 ms)
+    ✓ a wrong bearer → 401 (2 ms)
+    ✓ a signed-in non-admin → 403 (2 ms)
+    ✓ the gateway service token passes the gate (3 ms)
+    ✓ an exafy_admin session passes the gate (2 ms)
+    ✓ no GATEWAY_SERVICE_TOKEN configured → an empty bearer cannot pass (2 ms)
+  get /approvals
+    ✓ no bearer → 401 on every mount, handler never reached (4 ms)
+    ✓ a wrong bearer → 401 (1 ms)
+    ✓ a signed-in non-admin → 403 (2 ms)
+    ✓ the gateway service token passes the gate (40 ms)
+    ✓ an exafy_admin session passes the gate (17 ms)
+    ✓ no GATEWAY_SERVICE_TOKEN configured → an empty bearer cannot pass (2 ms)
+  post /approvals/12/approve
+    ✓ no bearer → 401 on every mount, handler never reached (7 ms)
+    ✓ a wrong bearer → 401 (2 ms)
+    ✓ a signed-in non-admin → 403 (2 ms)
+    ✓ the gateway service token passes the gate (2 ms)
+    ✓ an exafy_admin session passes the gate (2 ms)
+    ✓ no GATEWAY_SERVICE_TOKEN configured → an empty bearer cannot pass (3 ms)
+  post /approvals/12/deny
+    ✓ no bearer → 401 on every mount, handler never reached (6 ms)
+    ✓ a wrong bearer → 401 (2 ms)
+    ✓ a signed-in non-admin → 403 (2 ms)
+    ✓ the gateway service token passes the gate (2 ms)
+    ✓ an exafy_admin session passes the gate (1 ms)
+    ✓ no GATEWAY_SERVICE_TOKEN configured → an empty bearer cannot pass (3 ms)
+  post /autonomous-pr-merge
+    ✓ no bearer → 401 on every mount, handler never reached (8 ms)
+    ✓ a wrong bearer → 401 (4 ms)
+    ✓ a signed-in non-admin → 403 (2 ms)
+    ✓ the gateway service token passes the gate (5 ms)
+    ✓ an exafy_admin session passes the gate (3 ms)
+    ✓ no GATEWAY_SERVICE_TOKEN configured → an empty bearer cannot pass (1 ms)
+  get /lock-status
+    ✓ no bearer → 401 on every mount, handler never reached (4 ms)
+    ✓ a wrong bearer → 401 (1 ms)
+    ✓ a signed-in non-admin → 403 (1 ms)
+    ✓ the gateway service token passes the gate (2 ms)
+    ✓ an exafy_admin session passes the gate (1 ms)
+    ✓ no GATEWAY_SERVICE_TOKEN configured → an empty bearer cannot pass (2 ms)
+  post /lock-release
+    ✓ no bearer → 401 on every mount, handler never reached (4 ms)
+    ✓ a wrong bearer → 401 (5 ms)
+    ✓ a signed-in non-admin → 403 (2 ms)
+    ✓ the gateway service token passes the gate (2 ms)
+    ✓ an exafy_admin session passes the gate (2 ms)
+    ✓ no GATEWAY_SERVICE_TOKEN configured → an empty bearer cannot pass (2 ms)
+  GET /health stays public
+    ✓ no bearer → not 401/403 (2 ms)
+  callers send the service token
+    ✓ approvals.ts and execute.ts self-calls of autonomous-pr-merge (2 ms)
+    ✓ gemini-operator: deploy/service and lock-status use the service token, not the Supabase key (2 ms)
+    ✓ ORB cicd tools: merge, lock-status, lock-release (1 ms)
+    ✓ openclaw-bridge sends the token on every gateway call
+    ✓ every gated route is mounted behind requireServiceOrAdmin; /health is not (1 ms)
+
+PASS test/vtid-05005-kiro-dev-tools-mcp.test.ts
   the session pass
-    ✓ verifies for its own environment, user and thread until it expires (8 ms)
-    ✓ refuses a forged, tampered, cross-environment or garbage pass; no secret = cannot sign (3 ms)
+    ✓ verifies for its own environment, user and thread until it expires (6 ms)
+    ✓ refuses a forged, tampered, cross-environment or garbage pass; no secret = cannot sign (2 ms)
   the tool set
-    ✓ is exactly the approved read set, each declared once, with an object schema (4 ms)
+    ✓ is exactly the approved read set, each declared once, with an object schema (11 ms)
     ✓ holds no write tool (1 ms)
     ✓ runs a tool as the caller: auth + identity registered for the call only, then removed (2 ms)
-    ✓ a tool past its 100 s budget answers "timed out" instead of hanging the call (3 ms)
-    ✓ refuses unknown tools and callers without a user; a thrown tool is an error result (2 ms)
+    ✓ a tool past its 100 s budget answers "timed out" instead of hanging the call (2 ms)
+    ✓ refuses unknown tools and callers without a user; a thrown tool is an error result (1 ms)
   POST /api/v1/operator/kiro/mcp
-    ✓ is off (404) unless KIRO_MCP_ENABLED=true (49 ms)
-    ✓ 401 without or with a bad pass, 503 when the gateway cannot verify, 403 for a non-admin (13 ms)
-    ✓ initialize and tools/list answer as MCP; notifications get 202 (11 ms)
-    ✓ tools/call refuses a write tool and logs a read call to OASIS without its arguments (66 ms)
-    ✓ a batch is capped at 10 messages and charged per message, never fanned out (421 ms)
-    ✓ rate-limits a runaway loop per user (429) (414 ms)
+    ✓ is off (404) unless KIRO_MCP_ENABLED=true (29 ms)
+    ✓ 401 without or with a bad pass, 503 when the gateway cannot verify, 403 for a non-admin (16 ms)
+    ✓ initialize and tools/list answer as MCP; notifications get 202 (32 ms)
+    ✓ tools/call refuses a write tool and logs a read call to OASIS without its arguments (44 ms)
+    ✓ a batch is capped at 10 messages and charged per message, never fanned out (320 ms)
+    ✓ rate-limits a runaway loop per user (429) (293 ms)
   wiring (source check)
     ✓ a Kiro turn may outlast the 30 s request default (tools run inside it) (1 ms)
-    ✓ the gateway sends the pass to the runner in a header, never the URL (1 ms)
+    ✓ the gateway sends the pass to the runner in a header, never the URL
     ✓ the route is mounted before the operator router and claimed by the domain atlas (2 ms)
-    ✓ each environment turns the tools on with its engine and points its runner at its own gateway (3 ms)
+    ✓ each environment turns the tools on with its engine and points its runner at its own gateway (2 ms)
 
   console.log
     [VTID-ORBC] Vertex config at startup: PROJECT_ID=lovable-vitana-vers1, LOCATION=us-central1
@@ -408,7 +408,7 @@ PASS test/vtid-05005-kiro-dev-tools-mcp.test.ts (7.995 s)
       at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1106:11)
 
   console.log
-    [VTID-ANON] Session live-08b44206-381c-4399-8445-6edfe18d2296: hasJwtIdentity=false, isAnonymous=true, req.identity.user_id=none, orbIdentity.user_id=none, bootstrapIdentity=null
+    [VTID-ANON] Session live-5638756d-aa04-4c2e-81cc-628405db4778: hasJwtIdentity=false, isAnonymous=true, req.identity.user_id=none, orbIdentity.user_id=none, bootstrapIdentity=null
 
       at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1174:11)
 
@@ -423,7 +423,7 @@ PASS test/vtid-05005-kiro-dev-tools-mcp.test.ts (7.995 s)
       at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1256:13)
 
   console.log
-    [VTID-ANON] Anonymous session live-08b44206-381c-4399-8445-6edfe18d2296 — skipping memory, tools, lastSessionInfo. Context: city=test
+    [VTID-ANON] Anonymous session live-5638756d-aa04-4c2e-81cc-628405db4778 — skipping memory, tools, lastSessionInfo. Context: city=test
 
       at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1340:13)
 
@@ -466,7 +466,7 @@ PASS test/vtid-05005-kiro-dev-tools-mcp.test.ts (7.995 s)
       at Object.<anonymous> (test/vtid-04834-live-session-start-stop-once.test.ts:158:20)
 
   console.log
-    [VTID-ORBC] Live session created: live-08b44206-381c-4399-8445-6edfe18d2296 (user=anonymous, tenant=none, lang=de, contextDeferred=false)
+    [VTID-ORBC] Live session created: live-5638756d-aa04-4c2e-81cc-628405db4778 (user=anonymous, tenant=none, lang=de, contextDeferred=false)
 
       at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2737:11)
 
@@ -481,7 +481,7 @@ PASS test/vtid-05005-kiro-dev-tools-mcp.test.ts (7.995 s)
       at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1106:11)
 
   console.log
-    [VTID-ANON] Session live-531f7dd6-5b26-4e56-9919-a685838d8825: hasJwtIdentity=false, isAnonymous=true, req.identity.user_id=none, orbIdentity.user_id=none, bootstrapIdentity=null
+    [VTID-ANON] Session live-741fe288-8809-49f2-a0aa-13c401635d84: hasJwtIdentity=false, isAnonymous=true, req.identity.user_id=none, orbIdentity.user_id=none, bootstrapIdentity=null
 
       at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1174:11)
 
@@ -496,7 +496,7 @@ PASS test/vtid-05005-kiro-dev-tools-mcp.test.ts (7.995 s)
       at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1256:13)
 
   console.log
-    [VTID-ANON] Anonymous session live-531f7dd6-5b26-4e56-9919-a685838d8825 — skipping memory, tools, lastSessionInfo. Context: city=test
+    [VTID-ANON] Anonymous session live-741fe288-8809-49f2-a0aa-13c401635d84 — skipping memory, tools, lastSessionInfo. Context: city=test
 
       at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1340:13)
 
@@ -519,7 +519,7 @@ PASS test/vtid-05005-kiro-dev-tools-mcp.test.ts (7.995 s)
       at Object.<anonymous> (test/vtid-04834-live-session-start-stop-once.test.ts:196:5)
 
   console.log
-    [VTID-ORBC] Live session created: live-531f7dd6-5b26-4e56-9919-a685838d8825 (user=anonymous, tenant=none, lang=en, contextDeferred=false)
+    [VTID-ORBC] Live session created: live-741fe288-8809-49f2-a0aa-13c401635d84 (user=anonymous, tenant=none, lang=en, contextDeferred=false)
 
       at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2737:11)
 
@@ -539,7 +539,7 @@ PASS test/vtid-05005-kiro-dev-tools-mcp.test.ts (7.995 s)
   console.log
     [VTID-01222] Stopping session: ws-socket-04834
 
-      at handleWsStopSession (src/routes/orb-live.ts:19170:11)
+      at handleWsStopSession (src/routes/orb-live.ts:19173:11)
 
   console.log
     [VTID-04353] finalized live-04834 (ws_stop): turns=2 memory=transcript_too_short summary=queued continuity=queued
@@ -611,7 +611,7 @@ PASS test/vtid-05005-kiro-dev-tools-mcp.test.ts (7.995 s)
   console.log
     [VTID-01222] Stopping session: ws-socket-04834
 
-      at handleWsStopSession (src/routes/orb-live.ts:19170:11)
+      at handleWsStopSession (src/routes/orb-live.ts:19173:11)
 
   console.log
     [VTID-04353] finalized live-04834 (ws_stop): turns=2 memory=transcript_too_short summary=queued continuity=queued
@@ -1210,23 +1210,23 @@ PASS test/vtid-05005-kiro-dev-tools-mcp.test.ts (7.995 s)
 
       at recordJourneySessionSummary (src/services/journey-foundation/session-summary-writer.ts:38:15)
 
-PASS test/vtid-04834-live-session-start-stop-once.test.ts (14.614 s)
+PASS test/vtid-04834-live-session-start-stop-once.test.ts
   VTID-04834: one vtid.live.session.start per WS session
-    ✓ a WS start (via the adapter) emits exactly one start, labelled websocket, with the merged fields (55 ms)
-    ✓ an SSE start keeps transport sse (24 ms)
-    ✓ orb-live.ts has no start emit of its own; the controller has exactly one (6 ms)
+    ✓ a WS start (via the adapter) emits exactly one start, labelled websocket, with the merged fields (38 ms)
+    ✓ an SSE start keeps transport sse (21 ms)
+    ✓ orb-live.ts has no start emit of its own; the controller has exactly one (5 ms)
     ✓ canonical OASIS transport vocabulary is websocket | sse (1 ms)
   VTID-04834: one vtid.live.session.stop per WS session
-    ✓ stop_session frame reports the LIVE id (not the ws- socket id) and removes the live session (37 ms)
-    ✓ stop_session then socket close then idle sweep then POST stop: still exactly one stop (the prod sequence) (39 ms)
-    ✓ socket close alone emits one stop (cleanupWsSession), and a later sweep adds none (7 ms)
-    ✓ the idle sweep still reports a session nobody reported, exactly once (8 ms)
-    ✓ POST /live/session/stop reports transport and does not re-report a latched session (17 ms)
+    ✓ stop_session frame reports the LIVE id (not the ws- socket id) and removes the live session (66 ms)
+    ✓ stop_session then socket close then idle sweep then POST stop: still exactly one stop (the prod sequence) (25 ms)
+    ✓ socket close alone emits one stop (cleanupWsSession), and a later sweep adds none (5 ms)
+    ✓ the idle sweep still reports a session nobody reported, exactly once (6 ms)
+    ✓ POST /live/session/stop reports transport and does not re-report a latched session (14 ms)
 
 A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
 Test Suites: 7 passed, 7 total
 Tests:       142 passed, 142 total
 Snapshots:   0 total
-Time:        16.42 s
+Time:        3.835 s
 Ran all test suites matching /test\/vtid-05047-cicd-routes-auth.test.ts|test\/vtid-05019-cicd-pr-routes-auth.test.ts|test\/vtid-05005-kiro-dev-tools-mcp.test.ts|test\/vtid-05006-kiro-write-tools.test.ts|test\/orb\/live\/ws-tenant-fallback.test.ts|test\/orb\/live\/characterization\/sse-stream.characterization.test.ts|test\/vtid-04834-live-session-start-stop-once.test.ts/i.
 Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

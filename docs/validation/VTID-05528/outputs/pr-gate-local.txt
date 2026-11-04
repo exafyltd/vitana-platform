@@ -1,12 +1,12 @@
 == gate scope --base origin/main --head HEAD
-✅ **scope** — 21 changed file(s), all inside the scope of VTID-05528
-exit=0 (check scope)
+✅ **scope** — 20 changed file(s), all inside the scope of VTID-05528
+exit=0
 
 == gate sparring --base origin/main --head HEAD
 ❌ **sparring record**:
 - VTID-05528: `.kiro/specs/mt-track-s-authz/sparring/verdict.md` — no owner-approval line
-exit=1 (check sparring)
+exit=1
 
 == gate weakening --base origin/main --head HEAD
 ✅ **test weakening** — 2 changed test file(s), none weakened without a declaration
-exit=0 (check weakening)
+exit=0

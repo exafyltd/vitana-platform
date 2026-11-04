@@ -172,15 +172,60 @@ ts-jest[config] (WARN)
 
       at trackServerEvent (src/services/product-analytics/track-server.ts:67:24)
 
+  console.warn
+    [role-policy-enforcer][SHADOW] role 'admin' is NOT permitted tool 'admin_list_feedback_tickets' (deny-by-default closed-world policy) surface=orb-tool session=live-05528-scope actor=admin-1
+
+      173 |   const mode = decision.enforced ? 'ENFORCED' : 'SHADOW';
+      174 |   // eslint-disable-next-line no-console
+    > 175 |   console.warn(
+          |           ^
+      176 |     `[role-policy-enforcer][${mode}] ${decision.message}` +
+      177 |       (ctx.surface ? ` surface=${ctx.surface}` : '') +
+      178 |       (ctx.session_id ? ` session=${ctx.session_id}` : '') +
+
+      at logPolicyViolation (src/services/intelligence/role-policy-enforcer.ts:175:11)
+      at shouldBlockTool (src/services/intelligence/role-policy-enforcer.ts:195:3)
+      at dispatchOrbTool (src/services/orb-tools-shared.ts:5549:22)
+      at dispatchOrbToolForVertex (src/services/orb-tools-shared.ts:5628:19)
+      at executeLiveApiToolInner (src/routes/orb-live.ts:7023:38)
+      at executeLiveApiTool (src/routes/orb-live.ts:3459:18)
+      at Object.<anonymous> (test/mt-track-s-authz-approvals-auth.test.ts:251:17)
+
+  console.warn
+    [Analytics:Product:Server] tool_call_succeeded write failed: TypeError: res.text is not a function
+
+      65 |
+      66 |     const { error } = await repo.insertProductAnalyticsEvent(supa, row);
+    > 67 |     if (error) console.warn(`${LOG_PREFIX} ${input.event_name} write failed: ${error.message}`);
+         |                        ^
+      68 |   } catch (err: any) {
+      69 |     console.warn(`${LOG_PREFIX} ${input.event_name} failed: ${err?.message}`);
+      70 |   }
+
+      at trackServerEvent (src/services/product-analytics/track-server.ts:67:24)
+
+  console.warn
+    [Analytics:Product:Server] tool_called write failed: TypeError: res.text is not a function
+
+      65 |
+      66 |     const { error } = await repo.insertProductAnalyticsEvent(supa, row);
+    > 67 |     if (error) console.warn(`${LOG_PREFIX} ${input.event_name} write failed: ${error.message}`);
+         |                        ^
+      68 |   } catch (err: any) {
+      69 |     console.warn(`${LOG_PREFIX} ${input.event_name} failed: ${err?.message}`);
+      70 |   }
+
+      at trackServerEvent (src/services/product-analytics/track-server.ts:67:24)
+
   console.log
     [VTID-ORBC] GET /orb/live/stream
 
-      at src/routes/orb-live.ts:16413:11
+      at src/routes/orb-live.ts:16416:11
 
   console.log
     [VTID-ORBC] SSE stream: user=owner-05528, tenant=tenant-05528, session=live-sse-05528-1, source=jwt
 
-      at src/routes/orb-live.ts:16489:11
+      at src/routes/orb-live.ts:16492:11
 
   console.warn
     [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="voice.live_api.voice.en" tenant_id="GLOBAL" — using defaultValue
@@ -197,152 +242,152 @@ ts-jest[config] (WARN)
       at getValueImpl (src/services/decision-contract/policy-resolver.ts:149:5)
       at Object.getValue (src/services/decision-contract/policy-resolver.ts:284:12)
       at getLiveApiVoice (src/orb/live/voice/live-api-voice.ts:77:35)
-      at src/routes/orb-live.ts:16565:29
+      at src/routes/orb-live.ts:16568:29
 
   console.log
     [VTID-ORBC] Live API check: googleAuth=true, VERTEX_PROJECT_ID=EMPTY, sessionId=live-sse-05528-1
 
-      at src/routes/orb-live.ts:16580:11
+      at src/routes/orb-live.ts:16583:11
 
   console.warn
     [VTID-01219] Live API not available - missing auth or project ID
 
-      16780 |     });
-      16781 |   } else {
-    > 16782 |     console.warn('[VTID-01219] Live API not available - missing auth or project ID');
+      16783 |     });
+      16784 |   } else {
+    > 16785 |     console.warn('[VTID-01219] Live API not available - missing auth or project ID');
             |             ^
-      16783 |     emitLiveSessionEvent('orb.live.config_missing', {
-      16784 |       session_id: sessionId,
-      16785 |       google_auth_ready: !!googleAuth,
+      16786 |     emitLiveSessionEvent('orb.live.config_missing', {
+      16787 |       session_id: sessionId,
+      16788 |       google_auth_ready: !!googleAuth,
 
-      at src/routes/orb-live.ts:16782:13
+      at src/routes/orb-live.ts:16785:13
 
   console.log
     [VTID-01155] Live stream disconnected: live-sse-05528-1
 
-      at IncomingMessage.<anonymous> (src/routes/orb-live.ts:16814:13)
+      at IncomingMessage.<anonymous> (src/routes/orb-live.ts:16817:13)
 
   console.log
     [VTID-SESSION-LEAK-FIX] Cleaned up live session on SSE disconnect: live-sse-05528-1 (remaining: 1)
 
-      at teardownSseSession (src/routes/orb-live.ts:16863:13)
+      at teardownSseSession (src/routes/orb-live.ts:16866:13)
 
   console.log
     [VTID-ORBC] GET /orb/live/stream
 
-      at src/routes/orb-live.ts:16413:11
+      at src/routes/orb-live.ts:16416:11
 
   console.warn
     [VTID-ORBC] SSE ownership mismatch (allowed): session_user=owner-05528, request_user=intruder-05528, session_tenant=tenant-05528, request_tenant=tenant-05528, sessionId=live-sse-05528-2
 
-      16484 |   if (identity && session.identity && session.identity.user_id !== DEV_IDENTITY.USER_ID &&
-      16485 |       session.identity.user_id !== identity.user_id) {
-    > 16486 |     console.warn(`[VTID-ORBC] SSE ownership mismatch (allowed): session_user=${session.identity.user_id}, request_user=${identity.user_id}, session_tenant=${session.identity.tenant_id}, request_tenant=${identity.tenant_id}, sessionId=${sessionId}`);
+      16487 |   if (identity && session.identity && session.identity.user_id !== DEV_IDENTITY.USER_ID &&
+      16488 |       session.identity.user_id !== identity.user_id) {
+    > 16489 |     console.warn(`[VTID-ORBC] SSE ownership mismatch (allowed): session_user=${session.identity.user_id}, request_user=${identity.user_id}, session_tenant=${session.identity.tenant_id}, request_tenant=${identity.tenant_id}, sessionId=${sessionId}`);
             |             ^
-      16487 |   }
-      16488 |
-      16489 |   console.log(`[VTID-ORBC] SSE stream: user=${identity?.user_id || 'anonymous'}, tenant=${identity?.tenant_id || 'none'}, session=${sessionId}, source=${token ? 'jwt' : identity ? 'dev-sandbox' : 'anonymous'}`);
+      16490 |   }
+      16491 |
+      16492 |   console.log(`[VTID-ORBC] SSE stream: user=${identity?.user_id || 'anonymous'}, tenant=${identity?.tenant_id || 'none'}, session=${sessionId}, source=${token ? 'jwt' : identity ? 'dev-sandbox' : 'anonymous'}`);
 
-      at src/routes/orb-live.ts:16486:13
+      at src/routes/orb-live.ts:16489:13
 
   console.log
     [VTID-ORBC] SSE stream: user=intruder-05528, tenant=tenant-05528, session=live-sse-05528-2, source=jwt
 
-      at src/routes/orb-live.ts:16489:11
+      at src/routes/orb-live.ts:16492:11
 
   console.log
     [VTID-ORBC] Live API check: googleAuth=true, VERTEX_PROJECT_ID=EMPTY, sessionId=live-sse-05528-2
 
-      at src/routes/orb-live.ts:16580:11
+      at src/routes/orb-live.ts:16583:11
 
   console.warn
     [VTID-01219] Live API not available - missing auth or project ID
 
-      16780 |     });
-      16781 |   } else {
-    > 16782 |     console.warn('[VTID-01219] Live API not available - missing auth or project ID');
+      16783 |     });
+      16784 |   } else {
+    > 16785 |     console.warn('[VTID-01219] Live API not available - missing auth or project ID');
             |             ^
-      16783 |     emitLiveSessionEvent('orb.live.config_missing', {
-      16784 |       session_id: sessionId,
-      16785 |       google_auth_ready: !!googleAuth,
+      16786 |     emitLiveSessionEvent('orb.live.config_missing', {
+      16787 |       session_id: sessionId,
+      16788 |       google_auth_ready: !!googleAuth,
 
-      at src/routes/orb-live.ts:16782:13
+      at src/routes/orb-live.ts:16785:13
 
   console.log
     [VTID-01155] Live stream disconnected: live-sse-05528-2
 
-      at IncomingMessage.<anonymous> (src/routes/orb-live.ts:16814:13)
+      at IncomingMessage.<anonymous> (src/routes/orb-live.ts:16817:13)
 
   console.log
     [VTID-SESSION-LEAK-FIX] Cleaned up live session on SSE disconnect: live-sse-05528-2 (remaining: 1)
 
-      at teardownSseSession (src/routes/orb-live.ts:16863:13)
+      at teardownSseSession (src/routes/orb-live.ts:16866:13)
 
   console.log
     [VTID-ORBC] GET /orb/live/stream
 
-      at src/routes/orb-live.ts:16413:11
+      at src/routes/orb-live.ts:16416:11
 
   console.log
     [VTID-ORBC] SSE stream: user=anonymous, tenant=none, session=live-sse-05528-3, source=jwt
 
-      at src/routes/orb-live.ts:16489:11
+      at src/routes/orb-live.ts:16492:11
 
   console.log
     [VTID-ORBC] Live API check: googleAuth=true, VERTEX_PROJECT_ID=EMPTY, sessionId=live-sse-05528-3
 
-      at src/routes/orb-live.ts:16580:11
+      at src/routes/orb-live.ts:16583:11
 
   console.warn
     [VTID-01219] Live API not available - missing auth or project ID
 
-      16780 |     });
-      16781 |   } else {
-    > 16782 |     console.warn('[VTID-01219] Live API not available - missing auth or project ID');
+      16783 |     });
+      16784 |   } else {
+    > 16785 |     console.warn('[VTID-01219] Live API not available - missing auth or project ID');
             |             ^
-      16783 |     emitLiveSessionEvent('orb.live.config_missing', {
-      16784 |       session_id: sessionId,
-      16785 |       google_auth_ready: !!googleAuth,
+      16786 |     emitLiveSessionEvent('orb.live.config_missing', {
+      16787 |       session_id: sessionId,
+      16788 |       google_auth_ready: !!googleAuth,
 
-      at src/routes/orb-live.ts:16782:13
+      at src/routes/orb-live.ts:16785:13
 
   console.log
     [VTID-01155] Live stream disconnected: live-sse-05528-3
 
-      at IncomingMessage.<anonymous> (src/routes/orb-live.ts:16814:13)
+      at IncomingMessage.<anonymous> (src/routes/orb-live.ts:16817:13)
 
   console.log
     [VTID-SESSION-LEAK-FIX] Cleaned up live session on SSE disconnect: live-sse-05528-3 (remaining: 1)
 
-      at teardownSseSession (src/routes/orb-live.ts:16863:13)
+      at teardownSseSession (src/routes/orb-live.ts:16866:13)
 
   console.log
     [VTID-ORBC] GET /orb/live/stream
 
-      at src/routes/orb-live.ts:16413:11
+      at src/routes/orb-live.ts:16416:11
 
   console.log
     [VTID-ORBC] SSE stream: user=anonymous, tenant=none, session=live-sse-05528-4, source=anonymous
 
-      at src/routes/orb-live.ts:16489:11
+      at src/routes/orb-live.ts:16492:11
 
   console.log
     [VTID-ORBC] Live API check: googleAuth=true, VERTEX_PROJECT_ID=EMPTY, sessionId=live-sse-05528-4
 
-      at src/routes/orb-live.ts:16580:11
+      at src/routes/orb-live.ts:16583:11
 
   console.warn
     [VTID-01219] Live API not available - missing auth or project ID
 
-      16780 |     });
-      16781 |   } else {
-    > 16782 |     console.warn('[VTID-01219] Live API not available - missing auth or project ID');
+      16783 |     });
+      16784 |   } else {
+    > 16785 |     console.warn('[VTID-01219] Live API not available - missing auth or project ID');
             |             ^
-      16783 |     emitLiveSessionEvent('orb.live.config_missing', {
-      16784 |       session_id: sessionId,
-      16785 |       google_auth_ready: !!googleAuth,
+      16786 |     emitLiveSessionEvent('orb.live.config_missing', {
+      16787 |       session_id: sessionId,
+      16788 |       google_auth_ready: !!googleAuth,
 
-      at src/routes/orb-live.ts:16782:13
+      at src/routes/orb-live.ts:16785:13
       at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
       at next (node_modules/express/lib/router/route.js:149:13)
       at orbSseCrossTaskForward (src/orb/live/session/cross-task-forward.ts:181:49)
@@ -382,7 +427,7 @@ ts-jest[config] (WARN)
   console.log
     [VTID-01222] Initializing ORB WebSocket server...
 
-      at initializeOrbWebSocket (src/routes/orb-live.ts:17662:11)
+      at initializeOrbWebSocket (src/routes/orb-live.ts:17665:11)
 
   console.log
     [orb-transport-ws] mounted at /api/v1/orb/live/ws
@@ -392,213 +437,214 @@ ts-jest[config] (WARN)
   console.log
     [VTID-01222] ORB WebSocket server initialized at /api/v1/orb/live/ws
 
-      at initializeOrbWebSocket (src/routes/orb-live.ts:17672:11)
+      at initializeOrbWebSocket (src/routes/orb-live.ts:17675:11)
 
   console.log
     [VTID-01155] Live stream disconnected: live-sse-05528-4
 
-      at IncomingMessage.<anonymous> (src/routes/orb-live.ts:16814:13)
+      at IncomingMessage.<anonymous> (src/routes/orb-live.ts:16817:13)
 
   console.log
     [VTID-SESSION-LEAK-FIX] Cleaned up live session on SSE disconnect: live-sse-05528-4 (remaining: 0)
 
-      at teardownSseSession (src/routes/orb-live.ts:16863:13)
+      at teardownSseSession (src/routes/orb-live.ts:16866:13)
 
   console.log
-    [VTID-01222] WebSocket connected: ws-80dfe5a0-7996-46e9-88ff-26973e980247 from 127.0.0.1
+    [VTID-01222] WebSocket connected: ws-8d21b261-3e44-4bb3-aae7-a319ff34e5f2 from 127.0.0.1
 
-      at handleWebSocketConnection (src/routes/orb-live.ts:17698:11)
+      at handleWebSocketConnection (src/routes/orb-live.ts:17701:11)
 
   console.log
     [VTID-01224] WebSocket authenticated: user=owner-05528, tenant=tenant-05528
 
-      at handleWebSocketConnection (src/routes/orb-live.ts:17755:17)
+      at handleWebSocketConnection (src/routes/orb-live.ts:17758:17)
 
   console.warn
     [VTID-01222] Live API not available for live-ws-05528-5 - missing auth or project ID
 
-      18575 |   // Connect to Vertex AI Live API
-      18576 |   if (!googleAuth || !VERTEX_PROJECT_ID) {
-    > 18577 |     console.warn(`[VTID-01222] Live API not available for ${sessionId} - missing auth or project ID`);
+      18578 |   // Connect to Vertex AI Live API
+      18579 |   if (!googleAuth || !VERTEX_PROJECT_ID) {
+    > 18580 |     console.warn(`[VTID-01222] Live API not available for ${sessionId} - missing auth or project ID`);
             |             ^
-      18578 |     sendWsMessage(clientWs, {
-      18579 |       type: 'session_started',
-      18580 |       session_id: sessionId,
+      18581 |     sendWsMessage(clientWs, {
+      18582 |       type: 'session_started',
+      18583 |       session_id: sessionId,
 
-      at handleWsStartMessage (src/routes/orb-live.ts:18577:13)
-      at handleWsClientMessage (src/routes/orb-live.ts:17901:7)
-      at WebSocket.<anonymous> (src/routes/orb-live.ts:17800:7)
+      at handleWsStartMessage (src/routes/orb-live.ts:18580:13)
+      at handleWsClientMessage (src/routes/orb-live.ts:17904:7)
+      at WebSocket.<anonymous> (src/routes/orb-live.ts:17803:7)
 
   console.log
-    [VTID-01222] WebSocket connected: ws-9a22c1ea-36d7-4e4b-8d77-aa39c1489b98 from 127.0.0.1
+    [VTID-01222] WebSocket connected: ws-d67317d6-c649-4a95-b39d-85ba19bb6271 from 127.0.0.1
 
-      at handleWebSocketConnection (src/routes/orb-live.ts:17698:11)
+      at handleWebSocketConnection (src/routes/orb-live.ts:17701:11)
 
   console.log
     [VTID-01224] WebSocket authenticated: user=intruder-05528, tenant=tenant-05528
 
-      at handleWebSocketConnection (src/routes/orb-live.ts:17755:17)
+      at handleWebSocketConnection (src/routes/orb-live.ts:17758:17)
 
   console.log
-    [VTID-01222] WebSocket disconnected: ws-80dfe5a0-7996-46e9-88ff-26973e980247, code=1005, reason=
+    [VTID-01222] WebSocket disconnected: ws-8d21b261-3e44-4bb3-aae7-a319ff34e5f2, code=1005, reason=
 
-      at WebSocket.<anonymous> (src/routes/orb-live.ts:17867:13)
+      at WebSocket.<anonymous> (src/routes/orb-live.ts:17870:13)
 
   console.log
-    [VTID-01222] WebSocket session cleaned up: ws-80dfe5a0-7996-46e9-88ff-26973e980247
+    [VTID-01222] WebSocket session cleaned up: ws-8d21b261-3e44-4bb3-aae7-a319ff34e5f2
 
       at cleanupWsSession (src/orb/live/session/live-session-controller.ts:525:11)
 
   console.warn
     [VTID-01222] Live API not available for live-ws-05528-6 - missing auth or project ID
 
-      18575 |   // Connect to Vertex AI Live API
-      18576 |   if (!googleAuth || !VERTEX_PROJECT_ID) {
-    > 18577 |     console.warn(`[VTID-01222] Live API not available for ${sessionId} - missing auth or project ID`);
+      18578 |   // Connect to Vertex AI Live API
+      18579 |   if (!googleAuth || !VERTEX_PROJECT_ID) {
+    > 18580 |     console.warn(`[VTID-01222] Live API not available for ${sessionId} - missing auth or project ID`);
             |             ^
-      18578 |     sendWsMessage(clientWs, {
-      18579 |       type: 'session_started',
-      18580 |       session_id: sessionId,
+      18581 |     sendWsMessage(clientWs, {
+      18582 |       type: 'session_started',
+      18583 |       session_id: sessionId,
 
-      at handleWsStartMessage (src/routes/orb-live.ts:18577:13)
-      at handleWsClientMessage (src/routes/orb-live.ts:17901:7)
-      at WebSocket.<anonymous> (src/routes/orb-live.ts:17800:7)
+      at handleWsStartMessage (src/routes/orb-live.ts:18580:13)
+      at handleWsClientMessage (src/routes/orb-live.ts:17904:7)
+      at WebSocket.<anonymous> (src/routes/orb-live.ts:17803:7)
 
   console.log
-    [VTID-01222] WebSocket connected: ws-d7cbdb23-86b5-4efd-9c74-d9935f5cb848 from 127.0.0.1
+    [VTID-01222] WebSocket connected: ws-e66e2e4c-555c-42ac-b186-415fa83d4a7a from 127.0.0.1
 
-      at handleWebSocketConnection (src/routes/orb-live.ts:17698:11)
+      at handleWebSocketConnection (src/routes/orb-live.ts:17701:11)
 
   console.warn
-    [VTID-01224] WebSocket auth failed for ws-d7cbdb23-86b5-4efd-9c74-d9935f5cb848: invalid token
+    [VTID-01224] WebSocket auth failed for ws-e66e2e4c-555c-42ac-b186-415fa83d4a7a: invalid token
 
-      17755 |         console.log(`[VTID-01224] WebSocket authenticated: user=${identity.user_id}, tenant=${identity.tenant_id}`);
-      17756 |       } else {
-    > 17757 |         console.warn(`[VTID-01224] WebSocket auth failed for ${sessionId}: invalid token`);
+      17758 |         console.log(`[VTID-01224] WebSocket authenticated: user=${identity.user_id}, tenant=${identity.tenant_id}`);
+      17759 |       } else {
+    > 17760 |         console.warn(`[VTID-01224] WebSocket auth failed for ${sessionId}: invalid token`);
             |                 ^
-      17758 |       }
-      17759 |     } catch (err: any) {
-      17760 |       console.warn(`[VTID-01224] WebSocket auth error for ${sessionId}: ${err.message}`);
+      17761 |       }
+      17762 |     } catch (err: any) {
+      17763 |       console.warn(`[VTID-01224] WebSocket auth error for ${sessionId}: ${err.message}`);
 
-      at handleWebSocketConnection (src/routes/orb-live.ts:17757:17)
-
-  console.log
-    [VTID-01222] WebSocket disconnected: ws-9a22c1ea-36d7-4e4b-8d77-aa39c1489b98, code=1005, reason=
-
-      at WebSocket.<anonymous> (src/routes/orb-live.ts:17867:13)
+      at handleWebSocketConnection (src/routes/orb-live.ts:17760:17)
 
   console.log
-    [VTID-01222] WebSocket session cleaned up: ws-9a22c1ea-36d7-4e4b-8d77-aa39c1489b98
+    [VTID-01222] WebSocket disconnected: ws-d67317d6-c649-4a95-b39d-85ba19bb6271, code=1005, reason=
+
+      at WebSocket.<anonymous> (src/routes/orb-live.ts:17870:13)
+
+  console.log
+    [VTID-01222] WebSocket session cleaned up: ws-d67317d6-c649-4a95-b39d-85ba19bb6271
 
       at cleanupWsSession (src/orb/live/session/live-session-controller.ts:525:11)
 
   console.warn
     [VTID-01222] Live API not available for live-ws-05528-7 - missing auth or project ID
 
-      18575 |   // Connect to Vertex AI Live API
-      18576 |   if (!googleAuth || !VERTEX_PROJECT_ID) {
-    > 18577 |     console.warn(`[VTID-01222] Live API not available for ${sessionId} - missing auth or project ID`);
+      18578 |   // Connect to Vertex AI Live API
+      18579 |   if (!googleAuth || !VERTEX_PROJECT_ID) {
+    > 18580 |     console.warn(`[VTID-01222] Live API not available for ${sessionId} - missing auth or project ID`);
             |             ^
-      18578 |     sendWsMessage(clientWs, {
-      18579 |       type: 'session_started',
-      18580 |       session_id: sessionId,
+      18581 |     sendWsMessage(clientWs, {
+      18582 |       type: 'session_started',
+      18583 |       session_id: sessionId,
 
-      at handleWsStartMessage (src/routes/orb-live.ts:18577:13)
-      at handleWsClientMessage (src/routes/orb-live.ts:17901:7)
-      at WebSocket.<anonymous> (src/routes/orb-live.ts:17800:7)
-
-  console.log
-    [VTID-01222] WebSocket connected: ws-ba5bf3af-a837-4f19-b06b-3cf2a60bb5e4 from 127.0.0.1
-
-      at handleWebSocketConnection (src/routes/orb-live.ts:17698:11)
+      at handleWsStartMessage (src/routes/orb-live.ts:18580:13)
+      at handleWsClientMessage (src/routes/orb-live.ts:17904:7)
+      at WebSocket.<anonymous> (src/routes/orb-live.ts:17803:7)
 
   console.log
-    [VTID-01224] WebSocket unauthenticated: ws-ba5bf3af-a837-4f19-b06b-3cf2a60bb5e4 (no token provided)
+    [VTID-01222] WebSocket connected: ws-e81de194-d131-4691-83ae-4cd7dd35d2ce from 127.0.0.1
 
-      at handleWebSocketConnection (src/routes/orb-live.ts:17763:13)
-
-  console.log
-    [VTID-01222] WebSocket disconnected: ws-d7cbdb23-86b5-4efd-9c74-d9935f5cb848, code=1005, reason=
-
-      at WebSocket.<anonymous> (src/routes/orb-live.ts:17867:13)
+      at handleWebSocketConnection (src/routes/orb-live.ts:17701:11)
 
   console.log
-    [VTID-01222] WebSocket session cleaned up: ws-d7cbdb23-86b5-4efd-9c74-d9935f5cb848
+    [VTID-01224] WebSocket unauthenticated: ws-e81de194-d131-4691-83ae-4cd7dd35d2ce (no token provided)
+
+      at handleWebSocketConnection (src/routes/orb-live.ts:17766:13)
+
+  console.log
+    [VTID-01222] WebSocket disconnected: ws-e66e2e4c-555c-42ac-b186-415fa83d4a7a, code=1005, reason=
+
+      at WebSocket.<anonymous> (src/routes/orb-live.ts:17870:13)
+
+  console.log
+    [VTID-01222] WebSocket session cleaned up: ws-e66e2e4c-555c-42ac-b186-415fa83d4a7a
 
       at cleanupWsSession (src/orb/live/session/live-session-controller.ts:525:11)
 
   console.warn
     [VTID-01222] Live API not available for live-ws-05528-8 - missing auth or project ID
 
-      18575 |   // Connect to Vertex AI Live API
-      18576 |   if (!googleAuth || !VERTEX_PROJECT_ID) {
-    > 18577 |     console.warn(`[VTID-01222] Live API not available for ${sessionId} - missing auth or project ID`);
+      18578 |   // Connect to Vertex AI Live API
+      18579 |   if (!googleAuth || !VERTEX_PROJECT_ID) {
+    > 18580 |     console.warn(`[VTID-01222] Live API not available for ${sessionId} - missing auth or project ID`);
             |             ^
-      18578 |     sendWsMessage(clientWs, {
-      18579 |       type: 'session_started',
-      18580 |       session_id: sessionId,
+      18581 |     sendWsMessage(clientWs, {
+      18582 |       type: 'session_started',
+      18583 |       session_id: sessionId,
 
-      at handleWsStartMessage (src/routes/orb-live.ts:18577:13)
-      at handleWsClientMessage (src/routes/orb-live.ts:17901:7)
-      at WebSocket.<anonymous> (src/routes/orb-live.ts:17800:7)
-
-  console.log
-    [VTID-01222] WebSocket disconnected: ws-ba5bf3af-a837-4f19-b06b-3cf2a60bb5e4, code=1005, reason=
-
-      at WebSocket.<anonymous> (src/routes/orb-live.ts:17867:13)
+      at handleWsStartMessage (src/routes/orb-live.ts:18580:13)
+      at handleWsClientMessage (src/routes/orb-live.ts:17904:7)
+      at WebSocket.<anonymous> (src/routes/orb-live.ts:17803:7)
 
   console.log
-    [VTID-01222] WebSocket session cleaned up: ws-ba5bf3af-a837-4f19-b06b-3cf2a60bb5e4
+    [VTID-01222] WebSocket disconnected: ws-e81de194-d131-4691-83ae-4cd7dd35d2ce, code=1005, reason=
+
+      at WebSocket.<anonymous> (src/routes/orb-live.ts:17870:13)
+
+  console.log
+    [VTID-01222] WebSocket session cleaned up: ws-e81de194-d131-4691-83ae-4cd7dd35d2ce
 
       at cleanupWsSession (src/orb/live/session/live-session-controller.ts:525:11)
 
-PASS test/mt-track-s-authz-approvals-auth.test.ts (15.566 s)
+PASS test/mt-track-s-authz-approvals-auth.test.ts (9.567 s)
   POST /api/v1/approvals/feed/approve
-    ✓ no bearer → 401 and the handler is never reached (46 ms)
+    ✓ no bearer → 401 and the handler is never reached (31 ms)
     ✓ a non-admin JWT → 403 (3 ms)
-    ✓ the gateway service token reaches the handler (8 ms)
+    ✓ the gateway service token reaches the handler (18 ms)
     ✓ an exafy_admin JWT reaches the handler (5 ms)
   POST /api/v1/approvals/appr_VTID-01234_abc/approve
-    ✓ no bearer → 401 and the handler is never reached (2 ms)
+    ✓ no bearer → 401 and the handler is never reached (3 ms)
     ✓ a non-admin JWT → 403 (2 ms)
     ✓ the gateway service token reaches the handler (4 ms)
-    ✓ an exafy_admin JWT reaches the handler (4 ms)
+    ✓ an exafy_admin JWT reaches the handler (3 ms)
   POST /api/v1/approvals/appr_VTID-01234_abc/reject
     ✓ no bearer → 401 and the handler is never reached (4 ms)
-    ✓ a non-admin JWT → 403 (3 ms)
-    ✓ the gateway service token reaches the handler (2 ms)
+    ✓ a non-admin JWT → 403 (2 ms)
+    ✓ the gateway service token reaches the handler (3 ms)
     ✓ an exafy_admin JWT reaches the handler (2 ms)
   POST /feed/approve branch check
-    ✓ a body branch that differs from the PR head is refused and nothing merges (3 ms)
-    ✓ the matching head branch proceeds to the merge call (4 ms)
+    ✓ a body branch that differs from the PR head is refused and nothing merges (4 ms)
+    ✓ the matching head branch proceeds to the merge call (3 ms)
   developer voice tools carry the caller token (dev_approve_pr / dev_reject_pr)
-    ✓ dev_approve_pr without a user_jwt answers the admin-session message and makes no call
-    ✓ dev_reject_pr without a user_jwt answers the admin-session message and makes no call (1 ms)
-    ✓ dev_approve_pr with a user_jwt forwards it as the Bearer token
-    ✓ dev_reject_pr with a user_jwt forwards it as the Bearer token (1 ms)
+    ✓ dev_approve_pr without a user_jwt answers the admin-session message and makes no call (1 ms)
+    ✓ dev_reject_pr without a user_jwt answers the admin-session message and makes no call
+    ✓ dev_approve_pr with a user_jwt forwards it as the Bearer token (1 ms)
+    ✓ dev_reject_pr with a user_jwt forwards it as the Bearer token
   voice approve on the generic live path (VTID-05528)
-    ✓ a voice session holding the member bearer approves as that member (57 ms)
+    ✓ a voice session holding the member bearer approves as that member (47 ms)
+    ✓ a non-approvals tool on the generic live path gets no member bearer (4 ms)
   the SSE stream binds the member bearer only when it verifies to the session owner (VTID-05528)
-    ✓ binds the bearer when it verifies to the session owner (21 ms)
-    ✓ does not bind a bearer that verifies to another user, and still serves the stream (28 ms)
-    ✓ does not bind a token that does not verify (13 ms)
-    ✓ does not bind when no token is sent (18 ms)
+    ✓ binds the bearer when it verifies to the session owner (18 ms)
+    ✓ does not bind a bearer that verifies to another user, and still serves the stream (24 ms)
+    ✓ does not bind a token that does not verify (11 ms)
+    ✓ does not bind when no token is sent (13 ms)
   the WebSocket start frame binds the member bearer only when it verifies to the session owner (VTID-05528)
-    ✓ binds the socket bearer when it verifies to the session owner (22 ms)
-    ✓ does not bind a bearer that verifies to another user (31 ms)
-    ✓ does not bind a token that does not verify (23 ms)
-    ✓ does not bind when the socket sends no token (22 ms)
+    ✓ binds the socket bearer when it verifies to the session owner (23 ms)
+    ✓ does not bind a bearer that verifies to another user (25 ms)
+    ✓ does not bind a token that does not verify (21 ms)
+    ✓ does not bind when the socket sends no token (20 ms)
   POST /api/v1/orb/tool hands the request bearer to the tools as user_jwt (VTID-05528)
     ✓ the request bearer becomes user_jwt in the tool identity (5 ms)
     ✓ a request without a bearer gives the tool no user_jwt, so it cannot act as the caller (3 ms)
   the bind guards and the tool bearer, as written in source (VTID-05528)
     ✓ the SSE stream binds a token only when it verified to the session owner (3 ms)
     ✓ the WebSocket start binds the socket token only when its identity is the session owner (3 ms)
-    ✓ orb-tool takes user_jwt from the request bearer
+    ✓ orb-tool takes user_jwt from the request bearer (1 ms)
 
 Test Suites: 1 passed, 1 total
-Tests:       32 passed, 32 total
+Tests:       33 passed, 33 total
 Snapshots:   0 total
-Time:        15.836 s
+Time:        9.766 s
 Ran all test suites matching /test\/mt-track-s-authz-approvals-auth.test.ts/i.
 Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

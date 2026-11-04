@@ -38,3 +38,11 @@ M4  services/gateway/src/routes/orb-live.ts, SSE bind without verification
 Not separately mutated: "does not bind when no token is sent" (SSE and WebSocket). With no token, no mutation of the bind guard can bind a verified owner, so these cases guard the absence of a token rather than a guard condition.
 
 Raw run outputs (in the session scratch area, not committed): the four runs above.
+
+M5  services/gateway/src/routes/orb-live.ts, generic live fallback user_jwt (run on code head db8a6b41ef; the mutation was applied to the narrowed file and the file was restored from a copy after the run)
+    before:  user_jwt: (toolName === 'dev_approve_pr' || toolName === 'dev_reject_pr') ? (session.callerAccessToken ?? null) : null,
+    after:   user_jwt: session.callerAccessToken ?? null,
+    result:  Tests: 1 failed, 32 skipped, 33 total (jest -t "non-approvals tool")
+    failed:
+      - voice approve on the generic live path (VTID-05528) > a non-approvals tool on the generic live path gets no member bearer
+    restored: the narrowed line is back (grep count 1); the full approvals suite passes 33 of 33 on db8a6b41ef.

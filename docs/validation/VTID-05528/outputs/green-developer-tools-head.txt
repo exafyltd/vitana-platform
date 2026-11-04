@@ -8,20 +8,20 @@ ts-jest[config] (WARN)
 
 PASS test/orb-tools/developer-tools.test.ts
   developer role gate
-    ✓ exposes all 12 tools (4 ms)
+    ✓ exposes all 12 tools (3 ms)
     ✓ dev_list_vtids denies community role with developer_role_required (1 ms)
     ✓ dev_get_vtid_status denies community role with developer_role_required (1 ms)
-    ✓ dev_list_pending_approvals denies community role with developer_role_required (1 ms)
-    ✓ dev_count_approvals denies community role with developer_role_required
-    ✓ dev_approve_pr denies community role with developer_role_required (1 ms)
+    ✓ dev_list_pending_approvals denies community role with developer_role_required
+    ✓ dev_count_approvals denies community role with developer_role_required (1 ms)
+    ✓ dev_approve_pr denies community role with developer_role_required
     ✓ dev_reject_pr denies community role with developer_role_required
-    ✓ dev_list_voice_sessions denies community role with developer_role_required (1 ms)
+    ✓ dev_list_voice_sessions denies community role with developer_role_required
     ✓ dev_list_routines denies community role with developer_role_required
-    ✓ dev_get_routine_detail denies community role with developer_role_required
+    ✓ dev_get_routine_detail denies community role with developer_role_required (1 ms)
     ✓ dev_list_active_healing denies community role with developer_role_required
-    ✓ dev_get_autonomy_pulse denies community role with developer_role_required
+    ✓ dev_get_autonomy_pulse denies community role with developer_role_required (1 ms)
     ✓ dev_list_agents denies community role with developer_role_required
-    ✓ dev_list_vtids denies unauthenticated callers (1 ms)
+    ✓ dev_list_vtids denies unauthenticated callers
     ✓ dev_get_vtid_status denies unauthenticated callers
     ✓ dev_list_pending_approvals denies unauthenticated callers
     ✓ dev_count_approvals denies unauthenticated callers
@@ -29,11 +29,11 @@ PASS test/orb-tools/developer-tools.test.ts
     ✓ dev_reject_pr denies unauthenticated callers
     ✓ dev_list_voice_sessions denies unauthenticated callers
     ✓ dev_list_routines denies unauthenticated callers
-    ✓ dev_get_routine_detail denies unauthenticated callers (1 ms)
-    ✓ dev_list_active_healing denies unauthenticated callers
+    ✓ dev_get_routine_detail denies unauthenticated callers
+    ✓ dev_list_active_healing denies unauthenticated callers (1 ms)
     ✓ dev_get_autonomy_pulse denies unauthenticated callers
     ✓ dev_list_agents denies unauthenticated callers
-    ✓ allows developer, admin and exafy_admin (1 ms)
+    ✓ allows developer, admin and exafy_admin
   normalizeVtidCandidates
     ✓ accepts loose spoken forms (1 ms)
   approvalIdForVtid
@@ -42,39 +42,39 @@ PASS test/orb-tools/developer-tools.test.ts
     ✓ speaks id + title + status for recent ledger rows (1 ms)
     ✓ speaks a plain empty state
   dev_get_vtid_status
-    ✓ normalizes loose ids and speaks the full status (4 ms)
+    ✓ normalizes loose ids and speaks the full status (1 ms)
     ✓ answers plainly when the VTID is unknown
     ✓ rejects input without digits
   dev_list_pending_approvals
-    ✓ speaks vtid, title, PR and checks per queue item
-    ✓ speaks an empty queue plainly (1 ms)
+    ✓ speaks vtid, title, PR and checks per queue item (3 ms)
+    ✓ speaks an empty queue plainly
     ✓ fails loudly when the approvals API errors
   dev_count_approvals
-    ✓ speaks the pending count
+    ✓ speaks the pending count (1 ms)
   dev_approve_pr
-    ✓ asks for confirmation before mutating (1 ms)
-    ✓ calls the Command Hub approve route after confirm
+    ✓ asks for confirmation before mutating
+    ✓ calls the Command Hub approve route after confirm (1 ms)
     ✓ reports a failed merge without throwing
-    ✓ errors when the VTID is not in the ledger
+    ✓ errors when the VTID is not in the ledger (1 ms)
   dev_reject_pr
     ✓ requires a reason
-    ✓ asks for confirmation before mutating (1 ms)
-    ✓ posts the rejection with reason after confirm
+    ✓ asks for confirmation before mutating
+    ✓ posts the rejection with reason after confirm (1 ms)
   dev_list_voice_sessions
-    ✓ speaks user, status and turns per session (1 ms)
+    ✓ speaks user, status and turns per session
     ✓ filters to active sessions
-    ✓ speaks an empty state plainly (1 ms)
+    ✓ speaks an empty state plainly
   dev_list_routines
-    ✓ speaks failing routines first with counts
+    ✓ speaks failing routines first with counts (1 ms)
   dev_get_routine_detail
     ✓ speaks the routine plus its recent runs
-    ✓ falls back to fuzzy match and reports unknown routines plainly
+    ✓ falls back to fuzzy match and reports unknown routines plainly (1 ms)
     ✓ requires a name
   dev_list_active_healing
-    ✓ speaks in-flight healing VTIDs and pending diagnoses (1 ms)
+    ✓ speaks in-flight healing VTIDs and pending diagnoses
     ✓ speaks a quiet state plainly
   dev_get_autonomy_pulse
-    ✓ composes counts across the four pulse sources plus terminalized VTIDs (399 ms)
+    ✓ composes counts across the four pulse sources plus terminalized VTIDs (267 ms)
   deriveAgentStatus
     ✓ decays stale service heartbeats like routes/agents-registry.ts
   dev_list_agents
@@ -82,12 +82,12 @@ PASS test/orb-tools/developer-tools.test.ts
     ✓ speaks an empty registry plainly
   DEVELOPER_TOOL_DECLARATIONS
     ✓ declares every handler and nothing else (1 ms)
-    ✓ uses only the OpenAPI-3.0 subset Vertex accepts (no default/minimum/maximum/format/examples) (3 ms)
-    ✓ reject declares reason as required; confirm flow documented on both mutations (1 ms)
+    ✓ uses only the OpenAPI-3.0 subset Vertex accepts (no default/minimum/maximum/format/examples) (2 ms)
+    ✓ reject declares reason as required; confirm flow documented on both mutations
 
 Test Suites: 1 passed, 1 total
 Tests:       60 passed, 60 total
 Snapshots:   0 total
-Time:        0.968 s
+Time:        0.784 s
 Ran all test suites matching /test\/orb-tools\/developer-tools.test.ts/i.
 Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
