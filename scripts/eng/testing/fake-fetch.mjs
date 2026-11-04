@@ -10,7 +10,10 @@
 //   f.writes(mark)     the calls that are not GET or HEAD   f.assertNoWrites(mark)   "the second apply made no write"
 //   f.mark() / f.since(mark)   look at part of the history
 //
-// A response spec is { status = 200, json | text, headers, hang, networkError }. The most recently registered matching
+// A response spec is { status = 200, json | text, headers, hang, hangBody, networkError }; a response function may be async.
+// hang never answers; hangBody answers with status and headers and the text so far, then stalls until the request is aborted;
+// cutBody: '<CODE>' answers with status, headers and the text so far, then drops the connection the way undici reports it.
+// The most recently registered matching
 // route wins, so a test can override a default. An unmatched call, or a sequence used up, throws FakeFetchError (never
 // a quiet 404), so a test fails on a call it did not expect; fakeFetch({ strict: false }) answers 404 JSON instead.
 // Dependency-free Node 20; it builds real Response objects, so a client under test uses the standard fetch API.
@@ -82,6 +85,39 @@ function toResponse(spec) {
   return new Response(body, { status, headers });
 }
 
+/** A response whose headers arrive and whose body stalls after `text` until the request is aborted (like a dropped server). */
+function stalledBodyResponse(spec, signal) {
+  const headers = new Headers(spec.headers ?? {});
+  const first = spec.json !== undefined ? JSON.stringify(spec.json) : spec.text !== undefined ? String(spec.text) : '';
+  const body = new ReadableStream({
+    start(controller) {
+      if (first) controller.enqueue(new TextEncoder().encode(first));
+      const fail = () => { try { controller.error(new DOMException('This operation was aborted', 'AbortError')); } catch { /* already closed */ } };
+      if (!signal) return;
+      if (signal.aborted) fail();
+      else signal.addEventListener('abort', fail, { once: true });
+    },
+    pull() { return new Promise(() => {}); },
+  });
+  return new Response(body, { status: spec.status ?? 200, headers });
+}
+
+/** Headers and the first text arrive, then the connection drops: reading the body rejects like undici does ("terminated"). */
+function cutBodyResponse(spec) {
+  const headers = new Headers(spec.headers ?? {});
+  const first = spec.json !== undefined ? JSON.stringify(spec.json) : spec.text !== undefined ? String(spec.text) : '';
+  const body = new ReadableStream({
+    start(controller) {
+      if (first) controller.enqueue(new TextEncoder().encode(first));
+    },
+    pull(controller) {
+      const cause = Object.assign(new Error('other side closed'), { code: String(spec.cutBody) });
+      controller.error(Object.assign(new TypeError('terminated'), { cause }));
+    },
+  });
+  return new Response(body, { status: spec.status ?? 200, headers });
+}
+
 export function fakeFetch({ strict = true } = {}) {
   const calls = [];
   const routes = [];
@@ -105,7 +141,8 @@ export function fakeFetch({ strict = true } = {}) {
         throw new FakeFetchError(`fakeFetch: responses for ${call.method} ${call.path} exhausted after ${spec.length} calls`);
       }
     }
-    if (typeof spec === 'function') spec = spec(call);
+    if (typeof spec === 'function') spec = await spec(call);
+    if (!spec || typeof spec !== 'object') throw new FakeFetchError(`fakeFetch: the response for ${call.method} ${call.path} is not a response spec`);
     if (spec.networkError) {
       const cause = Object.assign(new Error(String(spec.networkError)), { code: String(spec.networkError) });
       throw Object.assign(new TypeError('fetch failed'), { cause });
@@ -119,11 +156,16 @@ export function fakeFetch({ strict = true } = {}) {
         else signal.addEventListener('abort', abort, { once: true });
       });
     }
+    if (spec.hangBody) return stalledBodyResponse(spec, init.signal);
+    if (spec.cutBody) return cutBodyResponse(spec);
     return toResponse(spec);
   }
 
   fetchImpl.calls = calls;
   fetchImpl.route = (method, match, response, { query, repeatLast = false } = {}) => {
+    if (typeof match !== 'string' && !(match instanceof RegExp) && typeof match !== 'function') {
+      throw new FakeFetchError('fakeFetch: route(method, match, …) needs a path string, a RegExp or a function as match; an undefined match would answer every request');
+    }
     routes.push({ method: String(method).toUpperCase(), match, query, response, repeatLast, used: 0 });
     return fetchImpl;
   };

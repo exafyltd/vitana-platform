@@ -1,21 +1,109 @@
 caught   token in Authorization header  <- request: the token goes in the PRIVATE-TOKEN header only; th|a caller cannot replace the token header or add another cred|paginate: follows a keyset Link header on the same origin wh
 caught   token also in the URL  <- request: the token goes in the PRIVATE-TOKEN header only; th|a base URL with a trailing slash or with /api/v4 already in |a base URL on a sub path keeps the sub path
 caught   redirects followed  <- a redirect is never followed: fetch is told not to, and a 3x
-caught   3xx accepted as success  <- a redirect is never followed: fetch is told not to, and a 3x
+caught   3xx band starts at 301  <- 3xx answers are redirect errors across the whole band, and n
+caught   caller sets Authorization  <- a caller cannot replace the token header or add another cred
+caught   caller sets Proxy-Authorization  <- credentials cannot be put in the query string, and more rout
+caught   caller sets Job-Token  <- a caller cannot replace the token header or add another cred
+caught   caller sets Cookie  <- a caller cannot replace the token header or add another cred
+caught   caller sets Host  <- a caller cannot replace the token header or add another cred
+caught   caller sets X-HTTP-Method-Override  <- credentials cannot be put in the query string, and more rout
+caught   caller sets X-Forwarded-Host  <- credentials cannot be put in the query string, and more rout
+caught   caller sets Forwarded  <- credentials cannot be put in the query string, and more rout
+caught   query private_token allowed  <- credentials cannot be put in the query string, and more rout|paginate refuses bad options before sending anything
+caught   query access_token allowed  <- credentials cannot be put in the query string, and more rout
+caught   query check not case-insensitive  <- credentials cannot be put in the query string, and more rout
+caught   http allowed for any host  <- configuration is checked when the client is created|plain http is allowed only for the machine itself (the setti
+caught   credentials in baseUrl allowed  <- configuration is checked when the client is created
+caught   query string in baseUrl allowed  <- configuration is checked when the client is created
+caught   3xx accepted as success  <- a redirect is never followed: fetch is told not to, and a 3x|3xx answers are redirect errors across the whole band, and n
+caught   okStatuses ignored by raw  <- raw returns status, headers and data, and does not throw for|request has no okStatuses option and says so; raw accepts th
+caught   caller overrides the token header (both layers)  <- request: the token goes in the PRIVATE-TOKEN header only; th|a caller cannot replace the token header or add another cred|paginate: follows a keyset Link header on the same origin wh
+equiv    absolute URL accepted by the character class  <- an https://host/x path then fails the final URL check (it would leave /api/v4); two independent layers refuse it
+caught   path with space accepted  <- a path must start with one slash and must not be a URL: the 
+caught   encoded dot segments accepted  <- encoded dot segments cannot climb out of /api/v4; ordinary d
+caught   token charset widened to any print  <- configuration is checked when the client is created
+caught   short token accepted  <- configuration is checked when the client is created
+caught   unexpected fetch error swallowed  <- an error thrown by fetch that is not a network error is a bu|every common network failure code is a network error; a code
+caught   body limit applies to 3xx bodies too  <- an error body is read only up to 64 KiB: a huge or endless e
+equiv    caller header deny list lacks private-token  <- the client assigns its own PRIVATE-TOKEN after the caller's headers, so a caller value is overwritten anyway
+equiv    final URL check removed  <- checkPath rejects every input that could leave /api/v4; the check re-reads the built URL as defence in depth
+equiv    GitLabApiError rethrow in the catch removed  <- networkInfo() returns null for a GitLabApiError, and the generic rethrow of a non-network error handles it
+caught   dot segments accepted  <- encoded dot segments cannot climb out of /api/v4; ordinary d
+caught   double slash accepted  <- a path must start with one slash and must not be a URL: the 
+caught   path may be a non-string  <- a path must be a string: an array or an object that prints a
+caught   token not validated  <- configuration is checked when the client is created
+caught   token not trimmed  <- the token is trimmed before use
+caught   fetch not validated  <- configuration is checked when the client is created
+caught   sleep not validated  <- configuration is checked when the client is created
+caught   random not validated  <- configuration is checked when the client is created
+caught   now not validated  <- configuration is checked when the client is created
+caught   log not validated  <- configuration is checked when the client is created
+caught   retries not validated  <- configuration is checked when the client is created
+caught   baseDelayMs not validated  <- configuration is checked when the client is created
+caught   maxDelayMs not validated  <- configuration is checked when the client is created
+caught   timeoutMs not validated  <- configuration is checked when the client is created
+caught   maxBodyBytes not validated  <- configuration is checked when the client is created
+caught   retryUnsafe not validated  <- configuration is checked when the client is created
+caught   timer limit removed (timeoutMs)  <- configuration is checked when the client is created
+caught   baseUrl without api prefix  <- request: the token goes in the PRIVATE-TOKEN header only; th|a base URL with a trailing slash or with /api/v4 already in |a base URL on a sub path keeps the sub path
+caught   api prefix doubled  <- a base URL with a trailing slash or with /api/v4 already in 
+caught   baseUrl trailing slash kept  <- request: the token goes in the PRIVATE-TOKEN header only; th|a base URL with a trailing slash or with /api/v4 already in |query: arrays become key[]=v, null and undefined are skipped
 caught   all 4xx retried  <- other 4xx are not retried: one call, the status in the error
 caught   404 retried  <- other 4xx are not retried: one call, the status in the error
-caught   POST retried on 5xx  <- a write is not repeated by accident: POST and PATCH are retr|a timeout becomes an error with code timeout, not a hang; a 
-caught   PUT not treated as idempotent  <- PUT and DELETE are idempotent and are retried on 5xx; GET an
+caught   501 retried  <- 501 Not Implemented is not retried; other 5xx are
+caught   POST retried on 5xx  <- a write is not repeated by accident: POST and PATCH are retr|a timeout becomes an error with code timeout, not a hang; a |a connection cut while the body is read: the error says the 
+caught   PATCH treated as idempotent  <- a write is not repeated by accident: POST and PATCH are retr
+caught   HEAD not idempotent  <- PUT and DELETE are idempotent and are retried on 5xx; GET an
+caught   PUT not treated as idempotent  <- PUT and DELETE are idempotent and are retried on 5xx; GET an|a retried PUT sends the same body and headers again, after a
+caught   DELETE not idempotent  <- PUT and DELETE are idempotent and are retried on 5xx; GET an
 caught   429 not retried for writes  <- a write is not repeated by accident: POST and PATCH are retr
-caught   retries never stop  <- (hung, timed out)
-caught   retry cap off by one  <- back-off without Retry-After doubles from baseDelayMs, is ca|retries are capped: a server that keeps failing gives an err|a token without a GitLab shape (the 20-character bootstrap t
-caught   Retry-After ignored  <- 429 with Retry-After in seconds: waits that long once, then |Retry-After as an HTTP date is read against the injected clo|a write is not repeated by accident: POST and PATCH are retr
-caught   Retry-After not capped  <- Retry-After as an HTTP date is read against the injected clo
+caught   429 never retried  <- 429 with Retry-After in seconds: waits that long once, then |Retry-After as an HTTP date is read against the injected clo|a Retry-After longer than maxDelayMs is not retried early: t
+caught   retries never stop (status)  <- (hung, timed out)
+caught   retry cap off by one (status)  <- back-off without Retry-After doubles from baseDelayMs, is ca|retries are capped: a server that keeps failing gives an err|a token without a GitLab shape (the 20-character bootstrap t
+caught   retries never stop (network)  <- (hung, timed out)
+caught   retry cap off by one (network)  <- a network error on a GET is retried and then succeeds; after|a timeout becomes an error with code timeout, not a hang; a |log events for network errors and timeouts carry exactly met
+caught   network/timeout retried for POST  <- a write is not repeated by accident: POST and PATCH are retr|a timeout becomes an error with code timeout, not a hang; a |a connection cut while the body is read: the error says the 
+caught   network/timeout never retried  <- a network error on a GET is retried and then succeeds; after|a timeout becomes an error with code timeout, not a hang; a |log events for network errors and timeouts carry exactly met
+caught   retryUnsafe ignored (network)  <- retryUnsafe: true also covers network errors and timeouts of
+caught   retryUnsafe ignored (5xx)  <- retryUnsafe: true lets a caller opt a POST into 5xx retries
+caught   per-call retries ignored  <- options are checked before anything is sent: okStatuses, exp|per-call retries: 0 stops a PUT that is an action (merge) fr|paginate passes caller headers, the timeout and the retry co
+caught   per-call retries not validated  <- options are checked before anything is sent: okStatuses, exp|paginate refuses bad options before sending anything
+caught   Retry-After ignored  <- 429 with Retry-After in seconds: waits that long once, then |Retry-After as an HTTP date is read against the injected clo|a Retry-After longer than maxDelayMs is not retried early: t
+caught   Retry-After not limited by maxDelayMs  <- a Retry-After longer than maxDelayMs is not retried early: t
+caught   Retry-After limit off by one  <- a Retry-After longer than maxDelayMs is not retried early: t
+caught   Retry-After only on 429  <- Retry-After is honoured on 503 as well as 429, and ignored o
+caught   Retry-After on every status  <- Retry-After is honoured on 503 as well as 429, and ignored o
 caught   Retry-After date ignored  <- Retry-After as an HTTP date is read against the injected clo
+caught   Retry-After seconds ignored  <- 429 with Retry-After in seconds: waits that long once, then |a Retry-After longer than maxDelayMs is not retried early: t|Retry-After is honoured on 503 as well as 429, and ignored o
+caught   Retry-After letterless value parsed  <- a malformed Retry-After is not a delay of zero: the client b
+caught   Retry-After in the past is negative  <- Retry-After as an HTTP date is read against the injected clo
+caught   rate_limited drops retryAfterMs  <- a Retry-After longer than maxDelayMs is not retried early: t
 caught   back-off constant  <- back-off without Retry-After doubles from baseDelayMs, is ca
 caught   back-off not capped  <- back-off without Retry-After doubles from baseDelayMs, is ca
 caught   jitter ignored  <- back-off without Retry-After doubles from baseDelayMs, is ca
-caught   error path keeps the query  <- the error carries status, method and path without the query |log receives retry events with method, path without the quer|log events for network errors and timeouts carry exactly met
+caught   jitter can exceed the cap  <- Retry-After is honoured on 503 as well as 429, and ignored o|a malformed Retry-After is not a delay of zero: the client b|back-off without Retry-After doubles from baseDelayMs, is ca
+caught   body not resent on retry  <- a retried PUT sends the same body and headers again, after a
+caught   headers dropped on retry  <- a retried PUT sends the same body and headers again, after a
+caught   timeout never fires  <- a timeout becomes an error with code timeout, not a hang; a |a per-call timeoutMs overrides the client default; the abort|the error carries status, method and path without the query 
+caught   deadline not raced against fetch  <- a timeout is enforced even when the injected fetch ignores t|a connection cut while the body is read: the error says the |a success body larger than maxBodyBytes is refused as soon a
+caught   deadline not raced against the body  <- a timeout is enforced even when the injected fetch ignores t|a connection cut while the body is read: the error says the |a success body larger than maxBodyBytes is refused as soon a
+caught   signal not passed to fetch  <- a per-call timeoutMs overrides the client default; the abort
+caught   timer never cleared  <- the deadline timer is cleared after a success, after an HTTP
+caught   timer cleared before the body is read  <- a body that stalls after the headers ends as a timeout, not |a timeout is enforced even when the injected fetch ignores t|a connection cut while the body is read: the error says the 
+caught   per-call timeout ignored  <- (hung, timed out)
+caught   per-call timeout not limited  <- options are checked before anything is sent: okStatuses, exp
+caught   per-call maxBodyBytes ignored  <- options are checked before anything is sent: okStatuses, exp|a success body larger than maxBodyBytes is refused as soon a|paginate passes the per-call body limit to every page
+caught   body limit ignored  <- (hung, timed out)
+caught   body limit off by one  <- maxBodyBytes: a body of exactly the limit is accepted and on
+caught   oversize body accepted  <- a success body larger than maxBodyBytes is refused as soon a|maxBodyBytes: a body of exactly the limit is accepted and on|paginate passes the per-call body limit to every page
+caught   error body read to the end  <- an error body is read only up to 64 KiB: a huge or endless e
+caught   timeout error loses the attempt count  <- a timeout becomes an error with code timeout, not a hang; a 
+caught   response status lost on a cut body  <- a connection cut while the body is read: the error says the 
+caught   cut body message lacks the warning  <- a connection cut while the body is read: the error says the 
+caught   network code lost  <- a network error on a GET is retried and then succeeds; after|every common network failure code is a network error; a code|a connection cut while the body is read: the error says the 
+caught   NETWORK_CODE narrowed  <- every common network failure code is a network error; a code|a connection cut while the body is read: the error says the 
+caught   fetch failed not a network error  <- a TypeError "fetch failed" is a network error whatever its c
 caught   token redaction removed  <- a token without a GitLab shape (the 20-character bootstrap t
 caught   token shapes not redacted  <- the token appears nowhere: not in messages, stacks, JSON, ex|redact removes the configured token and any GitLab token sha
 caught   bearer not redacted  <- the token appears nowhere: not in messages, stacks, JSON, ex|redact removes the configured token and any GitLab token sha
@@ -23,62 +111,83 @@ caught   body excerpt not redacted  <- the token appears nowhere: not in message
 caught   message detail not redacted  <- the token appears nowhere: not in messages, stacks, JSON, ex|a token without a GitLab shape (the 20-character bootstrap t
 caught   excerpt not cut  <- a long body is cut to a short excerpt
 caught   detail not cut  <- a long body is cut to a short excerpt
+caught   excerpt whitespace kept  <- the excerpt collapses whitespace and the message detail come
+sh: line 1: ?: command not found
+caught   error path keeps the query  <- request: the token goes in the PRIVATE-TOKEN header only; th|a base URL with a trailing slash or with /api/v4 already in |a base URL on a sub path keeps the sub path
 caught   non-JSON success body returned as text  <- empty bodies: 204 and an empty 200 give null; a non-JSON suc|the token appears nowhere: not in messages, stacks, JSON, ex
 caught   empty body returns empty string  <- a JSON body is serialised with its content type; POST, PUT a|empty bodies: 204 and an empty 200 give null; a non-JSON suc|PUT and DELETE are idempotent and are retried on 5xx; GET an
-caught   pagination stops after the first page  <- paginate: three pages in order, per_page 100, one request pe|paginate: a server that never stops is cut off at maxPages|paginate: X-Next-Page wins over a Link header
-caught   pagination ignores maxPages  <- (hung, timed out)
-caught   Link origin not checked  <- paginate: a Link to another origin is refused and the token 
-caught   Link path prefix not checked  <- paginate: a Link on the same origin but outside the API path
-caught   Link preferred over X-Next-Page  <- paginate: three pages in order, per_page 100, one request pe|paginate: a server that never stops is cut off at maxPages|paginate: X-Next-Page wins over a Link header
-caught   non-array page accepted  <- paginate: a page that is not an array is an error naming the
-caught   perPage not sent  <- paginate: three pages in order, per_page 100, one request pe|paginate: perPage and other query parameters are kept on eve
-caught   timeout never fires  <- a timeout becomes an error with code timeout, not a hang; a |a per-call timeoutMs overrides the client default; the abort|the error carries status, method and path without the query 
-caught   signal not passed to fetch  <- a timeout becomes an error with code timeout, not a hang; a |a per-call timeoutMs overrides the client default; the abort|the error carries status, method and path without the query 
-caught   per-call timeout ignored  <- a per-call timeoutMs overrides the client default; the abort
-caught   timeouts retried for POST  <- a write is not repeated by accident: POST and PATCH are retr|a timeout becomes an error with code timeout, not a hang; a 
-caught   network errors not retried  <- a network error on a GET is retried and then succeeds; after|a timeout becomes an error with code timeout, not a hang; a |log events for network errors and timeouts carry exactly met
-caught   every fetch error treated as network  <- an error thrown by fetch that is not a network error is a bu
-caught   network code lost  <- a network error on a GET is retried and then succeeds; after
-caught   caller overrides the token header  <- a caller cannot replace the token header or add another cred
-caught   caller sets Authorization  <- a caller cannot replace the token header or add another cred
-caught   absolute URL accepted as path  <- a path must start with one slash and must not be a URL: the 
-caught   dot segments accepted  <- a path must start with one slash and must not be a URL: the 
-caught   double slash accepted  <- a path must start with one slash and must not be a URL: the 
-caught   http allowed for any host  <- configuration is checked when the client is created|plain http is allowed only for the machine itself (the setti
-caught   credentials in baseUrl allowed  <- configuration is checked when the client is created
-caught   short token accepted  <- scripts/eng/gitlab-api.test.mjs
-caught   token with spaces accepted  <- scripts/eng/gitlab-api.test.mjs
-caught   GET with a body accepted  <- a GET with a body is refused: the caller made a mistake
+caught   expect text ignored  <- expect: "text" returns the text as it is, also when it is no|maxBodyBytes: a body of exactly the limit is accepted and on
+caught   expect not validated  <- options are checked before anything is sent: okStatuses, exp
+caught   okStatuses not validated  <- request has no okStatuses option and says so; raw accepts th
+caught   request accepts okStatuses silently  <- request has no okStatuses option and says so; raw accepts th
+caught   attempts not reported  <- retries are capped: a server that keeps failing gives an err
+caught   GET with a body accepted  <- a GET with a body is refused: the caller made a mistake|a HEAD request with a body is refused like a GET
+caught   HEAD with a body accepted  <- a HEAD request with a body is refused like a GET
 caught   unknown method accepted  <- the method must be one of the HTTP methods the client knows
-caught   query arrays without []  <- query: arrays become key[]=v, null and undefined are skipped|paginate: perPage and other query parameters are kept on eve
-caught   null query values sent  <- query: arrays become key[]=v, null and undefined are skipped
-caught   object query values sent  <- a query value that is an object is refused instead of being 
-caught   dates sent as local text  <- query: arrays become key[]=v, null and undefined are skipped
-caught   projectId not encoded  <- projectId encodes a path with slashes for use in a URL
-caught   baseUrl without api prefix  <- request: the token goes in the PRIVATE-TOKEN header only; th|a base URL with a trailing slash or with /api/v4 already in |a base URL on a sub path keeps the sub path
-caught   api prefix doubled  <- a base URL with a trailing slash or with /api/v4 already in 
-caught   user agent missing  <- request: the token goes in the PRIVATE-TOKEN header only; th
+caught   PATCH not a known method  <- a write is not repeated by accident: POST and PATCH are retr|the shortcuts use their own method
+caught   patch shortcut sends PUT  <- the shortcuts use their own method
+caught   del shortcut sends GET  <- a JSON body is serialised with its content type; POST, PUT a|the shortcuts use their own method
+caught   content type missing  <- a JSON body is serialised with its content type; POST, PUT a|a retried PUT sends the same body and headers again, after a
 caught   no accept header  <- request: the token goes in the PRIVATE-TOKEN header only; th
-caught   content type missing  <- a JSON body is serialised with its content type; POST, PUT a
+caught   user agent missing  <- request: the token goes in the PRIVATE-TOKEN header only; th
 caught   log carries the full URL  <- log receives retry events with method, path without the quer
 caught   log carries the headers  <- log events for network errors and timeouts carry exactly met
-caught   okStatuses ignored by raw  <- raw returns status, headers and data, and does not throw for|request never returns the body of a status it did not accept
-caught   request honours okStatuses  <- request never returns the body of a status it did not accept
-caught   expect text ignored  <- expect: "text" returns the text as it is, also when it is no
-caught   attempts not reported  <- retries are capped: a server that keeps failing gives an err
-caught   bad config not checked (retries)  <- configuration is checked when the client is created
-caught   bad config not checked (timeout)  <- configuration is checked when the client is created
-caught   sleep not injectable  <- configuration is checked when the client is created
+caught   query arrays without []  <- query: arrays become key[]=v, null and undefined are skipped|paginate: perPage and other query parameters are kept on eve
+caught   query arrays doubled []  <- query: arrays become key[]=v, null and undefined are skipped
+caught   null query values sent  <- query: arrays become key[]=v, null and undefined are skipped
+caught   undefined query values sent  <- query: arrays become key[]=v, null and undefined are skipped
+caught   object query values sent  <- a query value that is an object is refused instead of being 
+caught   dates sent as local text  <- query: arrays become key[]=v, null and undefined are skipped
+caught   projectId not encoded  <- projectId encodes a path with slashes for use in a URL|projectId: whole numbers and non-empty paths only
+caught   projectId accepts negative numbers  <- projectId: whole numbers and non-empty paths only
+caught   pagination stops after the first page  <- paginate: three pages in order, per_page 100, one request pe|paginate: a server that never stops is cut off at maxPages|paginate: X-Next-Page wins over a Link header
+caught   pagination ignores maxPages  <- (hung, timed out)
+caught   maxPages off by one  <- paginate: a server that never stops is cut off at maxPages
+caught   maxPages not validated  <- paginate refuses bad options before sending anything
+caught   perPage not validated  <- paginate refuses bad options before sending anything
+caught   perPage not sent  <- paginate: three pages in order, per_page 100, one request pe|paginate: perPage and other query parameters are kept on eve
+caught   page parameter not sent  <- paginate: three pages in order, per_page 100, one request pe|paginate: perPage and other query parameters are kept on eve|paginate: a server that never stops is cut off at maxPages
+caught   non-array page accepted  <- paginate: a page that is not an array is an error naming the
+caught   pages built with spread  <- paginate: a single page of 150 000 items is returned whole (
+caught   next page may be NaN or backwards  <- paginate: an X-Next-Page that is not a number or does not mo
+caught   next page only checked as number  <- paginate: an X-Next-Page that is not a number or does not mo
+caught   next page not checked as digits  <- paginate: an X-Next-Page that is not a number or does not mo
+caught   Link origin not checked  <- paginate: a Link to another origin is refused and the token |paginate: a Link with credentials, or with a path that only 
+caught   Link userinfo not checked  <- paginate: a Link with credentials, or with a path that only 
+caught   Link path prefix not checked  <- paginate: a Link on the same origin but outside the API path|paginate: a Link with credentials, or with a path that only 
+caught   Link path boundary missing  <- paginate: a Link with credentials, or with a path that only 
+caught   Link rel anywhere not found  <- paginate: rel="next" is found wherever it stands among the L
+caught   Link entries not split  <- paginate: rel="next" is found wherever it stands among the L
+caught   Link rel case sensitive  <- paginate: rel="next" is found wherever it stands among the L
+caught   Link rel prefix match  <- paginate: rel is matched as a whole word in a space-separate
+caught   X-Next-Page wins over Link (reversed)  <- paginate: three pages in order, per_page 100, one request pe|paginate: a server that never stops is cut off at maxPages|paginate: X-Next-Page wins over a Link header
+caught   pagination drops caller headers  <- paginate passes caller headers, the timeout and the retry co
+caught   pagination drops per-call timeout  <- paginate refuses bad options before sending anything
+caught   pagination drops per-call retries  <- paginate passes caller headers, the timeout and the retry co|paginate refuses bad options before sending anything
+caught   pagination drops per-call body limit  <- paginate passes the per-call body limit to every page
 caught   fake: first route wins  <- the most recently registered matching route wins, so a test 
 caught   fake: exhausted sequence repeats  <- a sequence answers in order and an exhausted sequence fails 
+caught   fake: repeatLast ignored  <- a sequence can end with a response that repeats
 caught   fake: unmatched answers 404  <- route match by exact path, by RegExp and by function; the qu|a route can require a subset of the query; the method must m|an unmatched call throws an error that names the method and 
 caught   fake: query not matched  <- a route can require a subset of the query; the method must m
+caught   fake: query value compared loosely  <- a route can require a subset of the query; the method must m
+caught   fake: method ignored  <- the shortcuts use their own method|a route can require a subset of the query; the method must m
 caught   fake: PUT counted as safe  <- writes() lists the calls that are not GET or HEAD; mark() an
-caught   fake: hang ignores abort  <- a timeout becomes an error with code timeout, not a hang; a |a per-call timeoutMs overrides the client default; the abort|the error carries status, method and path without the query 
+caught   fake: hang ignores abort  <- hang never answers until the abort signal fires, then reject|networkError rejects like Node fetch does: a TypeError whose|reset() clears calls and routes; the fake is a plain functio
+caught   fake: hang ignores an aborted signal  <- hang never answers until the abort signal fires, then reject|networkError rejects like Node fetch does: a TypeError whose|reset() clears calls and routes; the fake is a plain functio
 caught   fake: network error not a TypeError  <- networkError rejects like Node fetch does: a TypeError whose
 caught   fake: headers not lower-cased  <- records method, url, path, query, lower-cased headers and a 
-caught   fake: JSON body not parsed  <- a JSON body is serialised with its content type; POST, PUT a|records method, url, path, query, lower-cased headers and a |a response can be a function of the call
-caught   fake: calls not recorded when unmatched  <- request: the token goes in the PRIVATE-TOKEN header only; th|a base URL with a trailing slash or with /api/v4 already in |a base URL on a sub path keeps the sub path
+caught   fake: JSON body not parsed  <- a JSON body is serialised with its content type; POST, PUT a|a retried PUT sends the same body and headers again, after a|records method, url, path, query, lower-cased headers and a 
+caught   fake: calls not recorded  <- request: the token goes in the PRIVATE-TOKEN header only; th|a base URL with a trailing slash or with /api/v4 already in |a base URL on a sub path keeps the sub path
 caught   fake: 204 keeps a body  <- a status that cannot carry a body is answered without one ev
+caught   fake: async handler not awaited  <- a response function may be async: its result is awaited, not
+caught   fake: bad match accepted  <- a route needs a string, a RegExp or a function as match: und
+caught   fake: hangBody never stalls  <- a body that stalls after the headers ends as a timeout, not |hangBody answers with its status, headers and first text, th
+caught   fake: hangBody ignores abort  <- hangBody answers with its status, headers and first text, th|cutBody answers with its status and first text, then the bod|input may be a URL object or a Request-like with a url prope
+caught   fake: cutBody keeps the connection  <- a connection cut while the body is read: the error says the |cutBody answers with its status and first text, then the bod
+caught   fake: reset keeps routes  <- reset() clears calls and routes; the fake is a plain functio
+caught   fake: since ignores mark  <- writes() lists the calls that are not GET or HEAD; mark() an
+caught   fake: assertNoWrites never throws  <- writes() lists the calls that are not GET or HEAD; mark() an
+caught   fake: spec not an object accepted  <- a response function may be async: its result is awaited, not
 
-mutations: 82   not caught: 0
+mutations: 190   caught: 186   equivalent (tests green by design, reason printed): 4   not caught: 0

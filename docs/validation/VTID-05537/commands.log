@@ -1,29 +1,28 @@
 # VTID-05537 commands (2026-11-04, Linux, node v22.23.4; seat exafy, session kiro-exafy-202611021438-cff7)
 base: origin/main ab0f5ad0b1 (the merge of the eng-gitlab-m2 plan). Worktree: .worktrees/eng-gitlab-m2-gitlab-client
+Every output below was produced from the final code of this PR, in this order: tests, red on base, green, the whole script set, then the mutation run.
 
 # 1. Red on base: both test files, no implementation present. Output: outputs/red-on-base.txt
 $ node --test scripts/eng/gitlab-api.test.mjs scripts/eng/testing/fake-fetch.test.mjs
-tests 2, pass 0, fail 2 (ERR_MODULE_NOT_FOUND: scripts/eng/gitlab-api.mjs and scripts/eng/testing/fake-fetch.mjs do not exist)
+tests 2, pass 0, fail 2: each file fails to load because its module does not exist (ERR_MODULE_NOT_FOUND). The red is the missing module, as for any new module; a stub that exports the names would turn it into one failing assertion per test, and there is no code of the lane to stub.
 
 # 2. Green with the implementation. Output: outputs/green.txt
 $ node --test scripts/eng/gitlab-api.test.mjs scripts/eng/testing/fake-fetch.test.mjs
-tests 64, pass 64, fail 0 (gitlab-api.test.mjs 48, fake-fetch.test.mjs 16), duration about 0.2 s
+tests 102, pass 102, fail 0 (gitlab-api.test.mjs 82, fake-fetch.test.mjs 20), skipped 0
 
-# 3. Mutation run: each of 82 deliberate breakages applied alone to a scratch copy; the tests must fail (or hang, cut by a 90 s timeout).
-#    Script: outputs/mutate-gitlab-client.sh   Output: outputs/mutation-run.txt
-$ bash outputs/mutate-gitlab-client.sh <worktree>
-mutations: 82   not caught: 0   (two of them, "retries never stop" and "pagination ignores maxPages", are caught by the timeout)
-First run: 81 mutations, 7 not caught (token redaction without the GitLab token shape, a Link outside the API path, caller-supplied
-Authorization, the fields of network and timeout retry log lines, request() honouring okStatuses, the fake answering 204 with a body, and
-the short-token rule that the 8-character minimum came from). A test was added for each; the second run is the one above.
-
-# 4. The whole script test set exactly as .github/workflows/UNIT.yml:21-25 runs it (no install)
+# 3. The whole script test set exactly as .github/workflows/UNIT.yml:21-25 runs it (no install). Output: outputs/unit-all.txt
 $ FILES=$(find scripts -path '*/node_modules' -prune -o \( -name '*.test.cjs' -o -name '*.test.mjs' \) -print | sort); node --test $FILES
-33 files; tests 575, pass 574, fail 0, cancelled 0, skipped 1 (not in this lane); about 9.7 s, well inside the workflow's 10-minute limit.
+33 files; tests 613, pass 612, fail 0, cancelled 0, skipped 1 (a skip in a file this lane does not touch); about 9.6 s, inside the workflow's 10-minute limit.
 
-# 5. Scope file made with the helper the gate documents
+# 4. Mutation run: each of 190 deliberate changes applied alone to a scratch copy of the client or the fake. Script: outputs/mutate-gitlab-client.sh  Output: outputs/mutation-run.txt
+$ bash outputs/mutate-gitlab-client.sh <worktree>
+mutations 190: caught 186, equivalent 4, not caught 0. A mutation counts as caught only when the mutated file still parses (node --check) and a test fails or hangs (cut by a 90 s timeout; 5 of them hang). A mutation that changes nothing (NOOP) or does not parse (INVALID) is reported as not caught.
+The 4 equivalent mutants leave every test green on purpose, and each prints why: the client's own PRIVATE-TOKEN assignment overwrites a caller value (so the deny-list entry for it is a second layer); the final URL check and the character class of the path check refuse the same inputs (two independent layers); a rethrow in the catch is also done by the generic rethrow below it.
+History: the first run of an earlier 82-mutation set left 7 survivors; a behavioural review (semantic_reviewer, advisory, not the pipeline's reviewer-agent accept) then found a confirmed path escape and two mutations whose mutated file did not parse but had been counted as caught. All of its confirmed findings are fixed (see the PR) and the harness now refuses an unparseable mutant.
+
+# 5. Scope file made with the helper the gate documents, then pointed at the lane's own sparring record
 $ node scripts/ci/pr-gate/vtid-scope.mjs init VTID-05537 --kind feature --paths "scripts/eng/gitlab-api.mjs,scripts/eng/gitlab-api.test.mjs,scripts/eng/testing/fake-fetch.mjs,scripts/eng/testing/fake-fetch.test.mjs,docs/validation/VTID-05537/**" --sparring-record .kiro/specs/eng-gitlab-m2/sparring/verdict.md
-wrote docs/validation/VTID-05537/scope.json
+wrote docs/validation/VTID-05537/scope.json ; then "sparring_record" was set to docs/validation/VTID-05537/plan-sparring.md, because the gate's sparring check looks for the words "owner approval" and the CI verdict of a policy-approved plan says "approved by policy"; plan-sparring.md states the approval and cites the verdict.
 
 # 6. Facts the tests rest on, each checked
 - Node's fetch follows redirects by default and delivers a custom header to the new origin. Run: outputs/redirect-check.mjs, output outputs/redirect-check.txt.

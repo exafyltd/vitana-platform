@@ -173,6 +173,49 @@ test('reset() clears calls and routes; the fake is a plain function usable as th
   assert.equal(f.route('GET', '/api/v4/a', { json: 2 }), f, 'route() chains');
 });
 
+test('a response function may be async: its result is awaited, not read as a Promise', async () => {
+  const f = fakeFetch().route('GET', '/api/v4/a', async (call) => ({ status: 500, json: { message: `boom ${call.n}` } }));
+  const res = await f(`${API}/a`);
+  assert.equal(res.status, 500);
+  assert.deepEqual(await res.json(), { message: 'boom 0' });
+  const g = fakeFetch().route('GET', '/api/v4/b', () => undefined);
+  await assert.rejects(g(`${API}/b`), (e) => e.name === 'FakeFetchError' && /not a response spec/.test(e.message));
+});
+
+test('a route needs a string, a RegExp or a function as match: undefined would answer every request', () => {
+  for (const bad of [undefined, null, 5, {}, ['/a']]) {
+    assert.throws(() => fakeFetch().route('GET', bad, { json: 1 }), (e) => e.name === 'FakeFetchError' && /needs a path string/.test(e.message), String(bad));
+  }
+});
+
+test('hangBody answers with its status, headers and first text, then stalls until the request is aborted', async () => {
+  const f = fakeFetch().route('GET', '/api/v4/cut', { status: 201, headers: { 'X-Id': '7' }, text: 'part', hangBody: true });
+  const ac = new AbortController();
+  const res = await f(`${API}/cut`, { signal: ac.signal });
+  assert.equal(res.status, 201);
+  assert.equal(res.headers.get('x-id'), '7');
+  const reader = res.body.getReader();
+  const first = await reader.read();
+  assert.equal(new TextDecoder().decode(first.value), 'part');
+  let settled = false;
+  const next = reader.read().then(() => { settled = true; }, () => { settled = true; });
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(settled, false, 'the body is stalled');
+  ac.abort();
+  await next;
+  assert.equal(settled, true);
+  await assert.rejects(reader.read(), (e) => e.name === 'AbortError');
+});
+
+test('cutBody answers with its status and first text, then the body rejects like undici does when the connection drops', async () => {
+  const f = fakeFetch().route('POST', '/api/v4/w', { status: 201, text: '{"id":', cutBody: 'UND_ERR_SOCKET' });
+  const res = await f(`${API}/w`, { method: 'POST' });
+  assert.equal(res.status, 201);
+  const reader = res.body.getReader();
+  assert.equal(new TextDecoder().decode((await reader.read()).value), '{"id":');
+  await assert.rejects(reader.read(), (e) => e instanceof TypeError && e.message === 'terminated' && e.cause.code === 'UND_ERR_SOCKET');
+});
+
 test('input may be a URL object or a Request-like with a url property', async () => {
   const f = fakeFetch().route('GET', '/api/v4/u', { json: 'u' });
   assert.equal(await (await f(new URL(`${API}/u`))).json(), 'u');

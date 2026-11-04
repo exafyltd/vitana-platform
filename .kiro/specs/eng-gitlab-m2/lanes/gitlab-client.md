@@ -1,6 +1,6 @@
 ---
 lane: gitlab-client
-state: executing
+state: in-review
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -16,7 +16,8 @@ paths:
   - docs/validation/**
 claimed_by: kiro-exafy-202611021438-cff7
 branch: kiro/eng-gitlab-m2/gitlab-client
-updated: 2026-11-04T20:37Z
+pr: https://github.com/exafyltd/vitana-platform/pull/4679
+updated: 2026-11-04T22:14Z
 vtid: VTID-05537
 ---
 # Lane: gitlab-client (repo vitana-platform)
@@ -35,3 +36,11 @@ client and the fake fetch; 64 tests; a mutation run (82 deliberate breakages, ea
 taken inside the plan (listed for Gate 2): POST and PATCH are retried on 429 only, not on 5xx, network errors or timeouts; redirects
 are never followed; a pagination Link to another origin or outside the API path is refused; plain http is accepted only for
 localhost, 127.0.0.1 and ::1; a token shorter than 8 characters is refused.
+
+### 2026-11-04T22:14Z · kiro-exafy-202611021438-cff7 · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/4679 (head: see the PR). An advisory behavioural review (semantic_reviewer, not the
+pipeline's reviewer-agent accept) found a confirmed path escape and other defects; all are fixed on this branch and the evidence was
+regenerated from the final code: 102 tests, a mutation run of 190 changes (186 caught, 4 equivalent with reasons, 0 not caught), the
+whole script set 613 tests with 0 failures. The reviewer agent `vitana-lane-reviewer` is not available in this Kiro Web runtime
+(not in the agent registry, checked twice); this lane waits for its accept on the current head. Requirement for lane `merge-bot`
+(VTID-05538): call `PUT …/merge` with `retries: 0` and re-read the merge request after an error before deciding the merge failed.

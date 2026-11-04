@@ -281,20 +281,53 @@ test('429 with Retry-After in seconds: waits that long once, then succeeds', asy
   assert.equal(fetch.calls.length, 2);
 });
 
-test('Retry-After as an HTTP date is read against the injected clock, and is capped by maxDelayMs', async () => {
+test('Retry-After as an HTTP date is read against the injected clock; a date in the past means retry now', async () => {
   const now = () => Date.parse('2026-11-04T20:00:00Z');
   const a = setup({ now });
   a.fetch.route('GET', `${API}/x`, [{ status: 429, headers: { 'Retry-After': 'Wed, 04 Nov 2026 20:00:07 GMT' } }, { json: 1 }]);
   await a.client.request('GET', '/x');
   assert.deepEqual(a.sleeps, [7000]);
-  const b = setup({ now, maxDelayMs: 5000 });
-  b.fetch.route('GET', `${API}/x`, [{ status: 429, headers: { 'Retry-After': '120' } }, { json: 1 }]);
-  await b.client.request('GET', '/x');
-  assert.deepEqual(b.sleeps, [5000]);
   const c = setup({ now });
   c.fetch.route('GET', `${API}/x`, [{ status: 429, headers: { 'Retry-After': 'Wed, 04 Nov 2026 19:00:00 GMT' } }, { json: 1 }]);
   await c.client.request('GET', '/x');
-  assert.deepEqual(c.sleeps, [0], 'a date in the past means retry now');
+  assert.deepEqual(c.sleeps, [0]);
+});
+
+test('a Retry-After longer than maxDelayMs is not retried early: the error says how long to wait', async () => {
+  const { fetch, client, sleeps } = setup({ maxDelayMs: 5000 });
+  fetch.route('GET', `${API}/x`, { status: 429, headers: { 'Retry-After': '120' }, json: { message: 'Retry later' } }, { repeatLast: true });
+  const e = await failure(client.request('GET', '/x'));
+  assert.equal(e.code, 'rate_limited');
+  assert.equal(e.status, 429);
+  assert.equal(e.retryAfterMs, 120_000);
+  assert.match(e.message, /120 s/);
+  assert.equal(fetch.calls.length, 1, 'no request while the server asked for a pause');
+  assert.deepEqual(sleeps, []);
+  assert.equal(JSON.parse(JSON.stringify(e)).retryAfterMs, 120_000);
+  const exact = setup({ maxDelayMs: 5000 });
+  exact.fetch.route('GET', `${API}/x`, [{ status: 429, headers: { 'Retry-After': '5' } }, { json: 1 }]);
+  await exact.client.request('GET', '/x');
+  assert.deepEqual(exact.sleeps, [5000], 'exactly maxDelayMs is still waited');
+});
+
+test('Retry-After is honoured on 503 as well as 429, and ignored on other 5xx', async () => {
+  const a = setup();
+  a.fetch.route('GET', `${API}/x`, [{ status: 503, headers: { 'Retry-After': '3' } }, { json: 1 }]);
+  await a.client.request('GET', '/x');
+  assert.deepEqual(a.sleeps, [3000]);
+  const b = setup();
+  b.fetch.route('GET', `${API}/x`, [{ status: 500, headers: { 'Retry-After': '3' } }, { json: 1 }]);
+  await b.client.request('GET', '/x');
+  assert.deepEqual(b.sleeps, [500]);
+});
+
+test('a malformed Retry-After is not a delay of zero: the client backs off instead', async () => {
+  for (const value of ['-5', '+5', '5.', '1,5', '1 2', 'abc', '', '   ', 'NaN']) {
+    const { fetch, client, sleeps } = setup();
+    fetch.route('GET', `${API}/x`, [{ status: 429, headers: { 'Retry-After': value } }, { json: 1 }]);
+    await client.request('GET', '/x');
+    assert.deepEqual(sleeps, [500], JSON.stringify(value));
+  }
 });
 
 test('back-off without Retry-After doubles from baseDelayMs, is capped by maxDelayMs, and jitter halves it at most', async () => {
@@ -360,7 +393,7 @@ test('a write is not repeated by accident: POST and PATCH are retried on 429 onl
 });
 
 test('PUT and DELETE are idempotent and are retried on 5xx; GET and HEAD too', async () => {
-  for (const method of ['PUT', 'DELETE', 'GET']) {
+  for (const method of ['PUT', 'DELETE', 'GET', 'HEAD']) {
     const { fetch, client } = setup();
     fetch.route(method, `${API}/i`, [{ status: 502 }, { status: 204 }]);
     assert.equal(await client.request(method, '/i', method === 'PUT' ? { body: {} } : {}), null);
@@ -509,12 +542,385 @@ test('log events for network errors and timeouts carry exactly method, path, sta
   assert.deepEqual(b.logs, [{ event: 'retry', method: 'GET', path: '/t', status: 0, code: 'timeout', attempt: 1, delayMs: 500 }]);
 });
 
-test('request never returns the body of a status it did not accept, even if okStatuses is passed; raw does accept it', async () => {
+test('request has no okStatuses option and says so; raw accepts the statuses it is given, and checks them before sending', async () => {
   const { fetch, client } = setup();
   fetch.route('GET', `${API}/missing`, { status: 404, json: { message: '404 Not found' } }, { repeatLast: true });
   const e = await failure(client.request('GET', '/missing', { okStatuses: [404] }));
-  assert.equal(e.status, 404);
+  assert.equal(e.code, 'bad_request');
+  assert.match(e.message, /use raw\(\)/);
+  assert.equal(fetch.calls.length, 0, 'nothing was sent');
   assert.equal((await client.raw('GET', '/missing', { okStatuses: [404] })).status, 404);
+  for (const okStatuses of [500, '404', ['404'], [99], [600], [404.5], [null]]) {
+    const bad = await failure(client.raw('POST', '/w', { body: {}, okStatuses }));
+    assert.equal(bad.code, 'bad_request', JSON.stringify(okStatuses));
+  }
+  assert.equal(fetch.calls.length, 1, 'only the valid raw call went out');
+});
+
+// ------------------------------------------------------------ review round: path, options, retries, timers, bodies, pagination
+test('encoded dot segments cannot climb out of /api/v4; ordinary dots and encoded slashes are fine', async () => {
+  const { fetch, client } = setup();
+  for (const path of ['/%2e%2e/%2e%2e/oauth/token', '/.%2e/x', '/%2E./x', '/a/%2E', '/a/%2e%2E/b', '/projects/1/%2e%2e/%2e%2e/%2e%2e/uploads/x', '/..', '/.', '/a/.', '/a/..']) {
+    const e = await failure(client.request('GET', path));
+    assert.equal(e.code, 'bad_path', path);
+  }
+  assert.equal(fetch.calls.length, 0, 'nothing was sent');
+  fetch.route('GET', /.*/, { json: 1 }, { repeatLast: true });
+  for (const path of ['/a.b', '/..foo', '/foo..', '/projects/1/repository/files/.gitlab-ci.yml', '/%2e%2e%2e/x', '/%252e%252e/x', '/projects/vitana%2Fvitana-platform']) {
+    await client.request('GET', path);
+    const url = new URL(fetch.calls.at(-1).url);
+    assert.ok(url.pathname.startsWith('/api/v4/'), `${path} stays under /api/v4: ${url.pathname}`);
+  }
+});
+
+test('options are checked before anything is sent: okStatuses, expect, retries, maxBodyBytes and timeoutMs per call', async () => {
+  const { fetch, client } = setup();
+  const cases = [
+    { expect: 'txt' }, { expect: 5 }, { retries: -1 }, { retries: 11 }, { retries: 1.5 }, { maxBodyBytes: 0 }, { timeoutMs: 0 }, { timeoutMs: 3_000_000_000 },
+  ];
+  for (const extra of cases) {
+    const e = await failure(client.request('POST', '/w', { body: {}, ...extra }));
+    assert.equal(e.code, 'bad_request', JSON.stringify(extra));
+  }
+  assert.equal(fetch.calls.length, 0, 'a write with a bad option was never sent');
+});
+
+test('credentials cannot be put in the query string, and more routing headers are dropped', async () => {
+  const { fetch, client } = setup();
+  for (const key of ['private_token', 'access_token', 'job_token', 'PRIVATE_TOKEN', 'private-token']) {
+    const e = await failure(client.request('GET', '/projects', { query: { [key]: 'x' } }));
+    assert.equal(e.code, 'bad_request', key);
+  }
+  assert.equal(fetch.calls.length, 0);
+  fetch.route('GET', `${API}/user`, { json: {} });
+  await client.request('GET', '/user', {
+    headers: { 'Proxy-Authorization': 'Basic x', 'X-HTTP-Method-Override': 'DELETE', 'X-Method-Override': 'DELETE', 'X-Forwarded-Host': 'evil.test', 'X-Forwarded-For': '1.2.3.4', Forwarded: 'for=1.2.3.4', 'X-Keep': 'yes' },
+  });
+  const h = fetch.calls[0].headers;
+  for (const name of ['proxy-authorization', 'x-http-method-override', 'x-method-override', 'x-forwarded-host', 'x-forwarded-for', 'forwarded']) assert.equal(h[name], undefined, name);
+  assert.equal(h['x-keep'], 'yes');
+});
+
+test('per-call retries: 0 stops a PUT that is an action (merge) from being repeated; a larger value allows more attempts', async () => {
+  const merge = setup();
+  merge.fetch.route('PUT', `${API}/projects/1/merge_requests/7/merge`, [{ status: 503 }, { json: { state: 'merged' } }]);
+  const e = await failure(merge.client.put('/projects/1/merge_requests/7/merge', { body: { sha: 'abc' }, retries: 0 }));
+  assert.equal(e.status, 503);
+  assert.equal(e.attempts, 1);
+  assert.equal(merge.fetch.calls.length, 1);
+  assert.deepEqual(merge.sleeps, []);
+  const more = setup({ retries: 0 });
+  more.fetch.route('GET', `${API}/x`, [{ status: 503 }, { status: 503 }, { json: 'ok' }]);
+  assert.equal(await more.client.request('GET', '/x', { retries: 2 }), 'ok');
+  assert.equal(more.fetch.calls.length, 3);
+});
+
+test('a retried PUT sends the same body and headers again, after a 5xx and after a network error', async () => {
+  for (const first of [{ status: 502 }, { networkError: 'ECONNRESET' }]) {
+    const { fetch, client } = setup();
+    fetch.route('PUT', `${API}/p`, [first, { json: { ok: true } }]);
+    await client.put('/p', { body: { a: [1, 2], b: 'x' }, headers: { 'X-Request-Id': 'r9' } });
+    assert.equal(fetch.calls.length, 2);
+    assert.deepEqual(fetch.calls[1].body, { a: [1, 2], b: 'x' });
+    assert.deepEqual(fetch.calls[1].body, fetch.calls[0].body);
+    assert.deepEqual(fetch.calls[1].headers, fetch.calls[0].headers);
+    assert.equal(fetch.calls[1].headers['x-request-id'], 'r9');
+  }
+});
+
+test('501 Not Implemented is not retried; other 5xx are', async () => {
+  const a = setup();
+  a.fetch.route('GET', `${API}/x`, { status: 501 }, { repeatLast: true });
+  assert.equal((await failure(a.client.request('GET', '/x'))).status, 501);
+  assert.equal(a.fetch.calls.length, 1);
+  for (const status of [500, 502, 503, 504, 599]) {
+    const b = setup();
+    b.fetch.route('GET', `${API}/x`, [{ status }, { json: 1 }]);
+    await b.client.request('GET', '/x');
+    assert.equal(b.fetch.calls.length, 2, String(status));
+  }
+});
+
+test('retryUnsafe: true also covers network errors and timeouts of a POST', async () => {
+  const a = setup({ retryUnsafe: true });
+  a.fetch.route('POST', `${API}/w`, [{ networkError: 'ECONNRESET' }, { json: { id: 1 } }]);
+  assert.deepEqual(await a.client.post('/w', { body: {} }), { id: 1 });
+  assert.equal(a.fetch.calls.length, 2);
+  const b = setup({ retryUnsafe: true, timeoutMs: 20 });
+  b.fetch.route('POST', `${API}/w`, [{ hang: true }, { json: { id: 2 } }]);
+  assert.deepEqual(await b.client.post('/w', { body: {} }), { id: 2 });
+  assert.equal(b.fetch.calls.length, 2);
+});
+
+test('the shortcuts use their own method', async () => {
+  const { fetch, client } = setup();
+  for (const m of ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']) fetch.route(m, `${API}/s`, { json: m });
+  assert.equal(await client.get('/s'), 'GET');
+  assert.equal(await client.post('/s', { body: {} }), 'POST');
+  assert.equal(await client.put('/s', { body: {} }), 'PUT');
+  assert.equal(await client.patch('/s', { body: {} }), 'PATCH');
+  assert.equal(await client.del('/s'), 'DELETE');
+  assert.deepEqual(fetch.calls.map((c) => c.method), ['GET', 'POST', 'PUT', 'PATCH', 'DELETE']);
+});
+
+test('every common network failure code is a network error; a code that is not one is rethrown unchanged', async () => {
+  const codes = ['ECONNRESET', 'ECONNREFUSED', 'ECONNABORTED', 'ENOTFOUND', 'EAI_AGAIN', 'ETIMEDOUT', 'EPIPE', 'EHOSTUNREACH', 'ENETUNREACH', 'UND_ERR_SOCKET', 'UND_ERR_CONNECT_TIMEOUT', 'ERR_SSL_PROTOCOL_ERROR', 'CERT_HAS_EXPIRED', 'DEPTH_ZERO_SELF_SIGNED_CERT', 'UNABLE_TO_VERIFY_LEAF_SIGNATURE'];
+  for (const code of codes) {
+    const { client } = setup({ retries: 0, fetch: async () => { throw Object.assign(new Error('socket problem'), { code }); } });
+    const e = await failure(client.request('GET', '/x'));
+    assert.equal(e.code, 'network', code);
+    assert.equal(e.networkCode, code);
+  }
+  const eacces = Object.assign(new Error('permission'), { code: 'EACCES' });
+  const { client } = setup({ retries: 0, fetch: async () => { throw eacces; } });
+  assert.equal(await failure(client.request('GET', '/x')), eacces);
+});
+
+test('the token is trimmed before use', async () => {
+  const { fetch, client } = setup({ token: `  ${TOKEN}\n` });
+  fetch.route('GET', `${API}/user`, { json: {} });
+  await client.request('GET', '/user');
+  assert.equal(fetch.calls[0].headers['private-token'], TOKEN);
+});
+
+test('3xx answers are redirect errors across the whole band, and none is retried', async () => {
+  for (const status of [300, 301, 302, 303, 304, 307, 308, 399]) {
+    const { fetch, client } = setup();
+    fetch.route('GET', `${API}/r`, { status, headers: { Location: 'https://elsewhere.test/x' } }, { repeatLast: true });
+    const e = await failure(client.request('GET', '/r'));
+    assert.equal(e.code, 'redirect', String(status));
+    assert.equal(fetch.calls.length, 1);
+  }
+});
+
+test('the excerpt collapses whitespace and the message detail comes from message, error or error_description', async () => {
+  const a = setup();
+  a.fetch.route('GET', `${API}/x`, { status: 400, text: 'a\n\n   b\t c' });
+  const e = await failure(a.client.request('GET', '/x'));
+  assert.equal(e.bodyExcerpt, 'a b c');
+  const b = setup();
+  b.fetch.route('GET', `${API}/x`, { status: 401, json: { error: 'invalid_token', error_description: 'Token expired' } });
+  assert.match((await failure(b.client.request('GET', '/x'))).message, /invalid_token/);
+});
+
+// timers and bodies
+function timers() { return process.getActiveResourcesInfo().filter((n) => n === 'Timeout').length; }
+
+test('the deadline timer is cleared after a success, after an HTTP error and after a network error', async () => {
+  const before = timers();
+  const { fetch, client } = setup({ timeoutMs: 60_000, retries: 0 });
+  fetch.route('GET', `${API}/ok`, { json: 1 });
+  fetch.route('GET', `${API}/bad`, { status: 404, json: {} });
+  fetch.route('GET', `${API}/down`, { networkError: 'ECONNRESET' });
+  await client.request('GET', '/ok');
+  await failure(client.request('GET', '/bad'));
+  await failure(client.request('GET', '/down'));
+  assert.equal(timers(), before, 'no 60 s timer is left running');
+});
+
+test('a body that stalls after the headers ends as a timeout, not a hang', async () => {
+  const { fetch, client } = setup({ timeoutMs: 30, retries: 0 });
+  fetch.route('GET', `${API}/stall`, { status: 200, text: '[1,', hangBody: true });
+  const t0 = Date.now();
+  const e = await failure(client.request('GET', '/stall'));
+  assert.equal(e.code, 'timeout');
+  assert.ok(Date.now() - t0 < 5000);
+});
+
+test('a timeout is enforced even when the injected fetch ignores the abort signal', async () => {
+  const { client } = setup({ timeoutMs: 30, retries: 0, fetch: () => new Promise(() => {}) });
+  const e = await failure(client.request('GET', '/x'));
+  assert.equal(e.code, 'timeout');
+  const slowBody = setup({ timeoutMs: 30, retries: 0, fetch: async () => new Response(new ReadableStream({ pull: () => new Promise(() => {}) }), { status: 200 }) });
+  assert.equal((await failure(slowBody.client.request('GET', '/x'))).code, 'timeout');
+});
+
+test('a connection cut while the body is read: the error says the request may have been processed and a POST is not repeated', async () => {
+  const post = setup();
+  post.fetch.route('POST', `${API}/w`, { status: 201, text: '{"id":', cutBody: 'UND_ERR_SOCKET' }, { repeatLast: true });
+  const e = await failure(post.client.post('/w', { body: { a: 1 } }));
+  assert.equal(e.code, 'network');
+  assert.equal(e.status, 0);
+  assert.equal(e.responseStatus, 201);
+  assert.equal(e.networkCode, 'UND_ERR_SOCKET');
+  assert.match(e.message, /may have been processed/);
+  assert.match(e.message, /HTTP 201/);
+  assert.equal(post.fetch.calls.length, 1);
+  const get = setup();
+  get.fetch.route('GET', `${API}/r`, [{ status: 200, text: '[1,', cutBody: 'UND_ERR_SOCKET' }, { json: [1, 2] }]);
+  assert.deepEqual(await get.client.request('GET', '/r'), [1, 2]);
+  assert.equal(get.fetch.calls.length, 2);
+  const noResponse = setup({ retries: 0 });
+  noResponse.fetch.route('GET', `${API}/r`, { networkError: 'ECONNRESET' });
+  const n = await failure(noResponse.client.request('GET', '/r'));
+  assert.equal(n.responseStatus, undefined);
+  assert.match(n.message, /could not be reached/);
+});
+
+test('a success body larger than maxBodyBytes is refused as soon as the limit is passed, without waiting for the rest', async () => {
+  const { fetch, client } = setup({ maxBodyBytes: 100, timeoutMs: 60_000, retries: 2 });
+  fetch.route('GET', `${API}/big`, { status: 200, text: 'x'.repeat(5000), hangBody: true });
+  const t0 = Date.now();
+  const e = await failure(client.request('GET', '/big'));
+  assert.equal(e.code, 'body_too_large');
+  assert.equal(e.status, 200);
+  assert.equal(fetch.calls.length, 1, 'not retried');
+  assert.ok(Date.now() - t0 < 5000, 'did not wait for the stalled rest of the body');
+  const ok = setup({ maxBodyBytes: 100 });
+  ok.fetch.route('GET', `${API}/small`, { json: { ok: 'x'.repeat(50) } });
+  assert.ok(await ok.client.request('GET', '/small'));
+  const perCall = setup();
+  perCall.fetch.route('GET', `${API}/big`, { text: 'y'.repeat(500) });
+  assert.equal((await failure(perCall.client.request('GET', '/big', { maxBodyBytes: 100 }))).code, 'body_too_large');
+});
+
+test('an error body is read only up to 64 KiB: a huge or endless error page gives the error at once', async () => {
+  const { fetch, client } = setup({ timeoutMs: 60_000, retries: 0 });
+  fetch.route('GET', `${API}/err`, { status: 500, text: 'z'.repeat(200_000), hangBody: true });
+  const t0 = Date.now();
+  const e = await failure(client.request('GET', '/err'));
+  assert.equal(e.status, 500);
+  assert.ok(e.bodyExcerpt.length <= 300);
+  assert.ok(Date.now() - t0 < 5000, 'did not wait for the end of the error body');
+});
+
+// pagination
+test('paginate: a single page of 150 000 items is returned whole (no argument-spread limit)', async () => {
+  const { fetch, client } = setup();
+  const big = Array.from({ length: 150_000 }, (_, i) => i);
+  fetch.route('GET', `${API}/many`, { json: big });
+  const all = await client.paginate('/many');
+  assert.equal(all.length, 150_000);
+  assert.equal(all[149_999], 149_999);
+});
+
+test('paginate: an X-Next-Page that is not a number or does not move forward stops with bad_pagination after one repeat, not 1000 requests', async () => {
+  for (const value of ['abc', '1', '0', '-2', '1.5', '2x']) {
+    const { fetch, client } = setup();
+    fetch.route('GET', `${API}/p`, { json: [1], headers: { 'X-Next-Page': value } }, { repeatLast: true });
+    const e = await failure(client.paginate('/p'));
+    assert.equal(e.code, 'bad_pagination', value);
+    assert.equal(fetch.calls.length, 1, value);
+  }
+});
+
+test('paginate: rel="next" is found wherever it stands among the Link parameters and entries', async () => {
+  for (const link of [
+    '<https://gitlab.test/api/v4/p?id_after=1>; title="more"; rel="next"',
+    '<https://gitlab.test/api/v4/p?id_after=1>; rel=next',
+    '<https://gitlab.test/api/v4/p?page=1>; rel="prev", <https://gitlab.test/api/v4/p?id_after=1>; rel="next", <https://gitlab.test/api/v4/p?page=9>; rel="last"',
+    '<https://gitlab.test/api/v4/p?id_after=1>; REL="Next"',
+  ]) {
+    const { fetch, client } = setup();
+    fetch.route('GET', `${API}/p`, [{ json: [1], headers: { Link: link } }, { json: [2] }]);
+    assert.deepEqual(await client.paginate('/p'), [1, 2], link);
+    assert.equal(fetch.calls[1].url, 'https://gitlab.test/api/v4/p?id_after=1', link);
+  }
+  const noNext = setup();
+  noNext.fetch.route('GET', `${API}/p`, { json: [1], headers: { Link: '<https://gitlab.test/api/v4/p?page=1>; rel="prev", <https://gitlab.test/api/v4/p?page=9>; rel="last"' } });
+  assert.deepEqual(await noNext.client.paginate('/p'), [1]);
+});
+
+test('paginate: a Link with credentials, or with a path that only starts like the API path, is refused', async () => {
+  for (const link of ['https://user:pass@gitlab.test/api/v4/p?x=1', '/api/v4evil/p', 'https://gitlab.test/api/v4evil/p', 'https://gitlab.test:8443/api/v4/p', 'http://gitlab.test/api/v4/p']) {
+    const { fetch, client } = setup();
+    fetch.route('GET', `${API}/p`, { json: [1], headers: { Link: `<${link}>; rel="next"` } });
+    const e = await failure(client.paginate('/p'));
+    assert.equal(e.code, 'bad_link', link);
+    assert.equal(fetch.calls.length, 1, link);
+  }
+});
+
+test('paginate passes caller headers, the timeout and the retry count to every page, not only the first', async () => {
+  const a = setup();
+  pagedRoute(a.fetch, `${API}/q`, [[1], [2], [3]]);
+  await a.client.paginate('/q', { headers: { 'X-Request-Id': 'r5' } });
+  assert.deepEqual(a.fetch.calls.map((c) => c.headers['x-request-id']), ['r5', 'r5', 'r5']);
+  const b = setup({ retries: 3 });
+  b.fetch.route('GET', `${API}/q`, (call) => (call.query.page[0] === '1' ? { json: [1], headers: { 'X-Next-Page': '2' } } : { hang: true }), { repeatLast: true });
+  const e = await failure(b.client.paginate('/q', { timeoutMs: 20, retries: 0 }));
+  assert.equal(e.code, 'timeout');
+  assert.equal(b.fetch.calls.length, 2, 'page 2 had the per-call timeout and no retry');
+  const c = setup();
+  c.fetch.route('GET', `${API}/q`, (call) => (call.query.page[0] === '1' ? { json: [1], headers: { 'X-Next-Page': '2' } } : { status: 503 }), { repeatLast: true });
+  await failure(c.client.paginate('/q', { retries: 1 }));
+  assert.equal(c.fetch.calls.length, 3, 'page 1, then page 2 and its one retry');
+});
+
+test('paginate refuses bad options before sending anything', async () => {
+  const { fetch, client } = setup();
+  for (const o of [{ perPage: 0 }, { perPage: 101 }, { perPage: 1.5 }, { maxPages: 0 }, { maxPages: 1.5 }, { retries: 99 }, { timeoutMs: 0 }, { query: { private_token: 'x' } }]) {
+    const e = await failure(client.paginate('/p', o));
+    assert.equal(e.code, 'bad_request', JSON.stringify(o));
+  }
+  assert.equal(fetch.calls.length, 0);
+});
+
+test('a path must be a string: an array or an object that prints as a path is refused, not coerced', async () => {
+  const { fetch, client } = setup();
+  for (const path of [['/a'], { toString: () => '/a' }, 5, null, undefined, new String('/a')]) {
+    const e = await failure(client.request('GET', path));
+    assert.equal(e.code, 'bad_path', String(path));
+  }
+  assert.equal(fetch.calls.length, 0);
+});
+
+test('maxBodyBytes: a body of exactly the limit is accepted and one byte more is refused', async () => {
+  const { fetch, client } = setup({ maxBodyBytes: 10 });
+  fetch.route('GET', `${API}/t`, [{ text: '0123456789' }, { text: '0123456789A' }]);
+  assert.equal(await client.request('GET', '/t', { expect: 'text' }), '0123456789');
+  const e = await failure(client.request('GET', '/t', { expect: 'text' }));
+  assert.equal(e.code, 'body_too_large');
+});
+
+test('a TypeError "fetch failed" is a network error whatever its cause: no cause, or a code not in the list', async () => {
+  const noCause = setup({ retries: 0, fetch: async () => { throw new TypeError('fetch failed'); } });
+  const a = await failure(noCause.client.request('GET', '/x'));
+  assert.equal(a.code, 'network');
+  assert.equal(a.networkCode, 'FETCH_FAILED');
+  const odd = setup({ retries: 0, fetch: async () => { throw Object.assign(new TypeError('fetch failed'), { cause: Object.assign(new Error('x'), { code: 'ESOMETHINGELSE' }) }); } });
+  const b = await failure(odd.client.request('GET', '/x'));
+  assert.equal(b.code, 'network');
+  assert.equal(b.networkCode, 'ESOMETHINGELSE');
+  const other = setup({ retries: 0, fetch: async () => { throw new TypeError('something else'); } });
+  assert.equal((await failure(other.client.request('GET', '/x'))).constructor, TypeError, 'any other TypeError is rethrown unchanged');
+});
+
+test('a HEAD request with a body is refused like a GET', async () => {
+  const { fetch, client } = setup();
+  const e = await failure(client.request('HEAD', '/x', { body: {} }));
+  assert.equal(e.code, 'bad_request');
+  assert.equal(fetch.calls.length, 0);
+});
+
+test('projectId: whole numbers and non-empty paths only', () => {
+  assert.equal(projectId(0), '0');
+  assert.equal(projectId('  a/b  '), 'a%2Fb');
+  for (const bad of [-1, 1.5, Number.NaN, Infinity, '', '   ', null, undefined, {}, [], true]) {
+    assert.throws(() => projectId(bad), GitLabApiError, String(bad));
+  }
+});
+
+test('paginate: rel is matched as a whole word in a space-separated list; a lookalike is not a next link', async () => {
+  const follows = setup();
+  follows.fetch.route('GET', `${API}/p`, [{ json: [1], headers: { Link: '<https://gitlab.test/api/v4/p?id_after=1>; rel="prev next"' } }, { json: [2] }]);
+  assert.deepEqual(await follows.client.paginate('/p'), [1, 2]);
+  for (const rel of ['nextpage', 'prevnext', 'nex', 'next-page', 'xnext']) {
+    const { fetch, client } = setup();
+    fetch.route('GET', `${API}/p`, { json: [1], headers: { Link: `<https://gitlab.test/api/v4/p?id_after=1>; rel="${rel}"` } });
+    assert.deepEqual(await client.paginate('/p'), [1], rel);
+    assert.equal(fetch.calls.length, 1, `${rel} is not a next link`);
+  }
+});
+
+test('paginate passes the per-call body limit to every page', async () => {
+  const { fetch, client } = setup();
+  fetch.route('GET', `${API}/p`, (call) => (call.query.page[0] === '1'
+    ? { json: [1], headers: { 'X-Next-Page': '2' } }
+    : { json: ['x'.repeat(500)] }), { repeatLast: true });
+  const e = await failure(client.paginate('/p', { maxBodyBytes: 100 }));
+  assert.equal(e.code, 'body_too_large');
+  assert.equal(fetch.calls.length, 2);
 });
 
 // ------------------------------------------------------------ validation
@@ -526,6 +932,9 @@ test('configuration is checked when the client is created', () => {
   bad({ token: 'has space' });
   bad({ token: 'short' });
   bad({ token: '1234567' });
+  bad({ token: 'ab"cd\\ef/gh12' }); // characters a JSON or URL echo would change
+  bad({ token: 'abcdefgh+/==' });
+  bad({ token: 'abcdefgh\u00e9' });
   bad({ token: 'line\nbreak' });
   bad({ baseUrl: undefined });
   bad({ baseUrl: 'not a url' });
@@ -536,6 +945,18 @@ test('configuration is checked when the client is created', () => {
   bad({ retries: -1 });
   bad({ retries: 1.5 });
   bad({ timeoutMs: 0 });
+  bad({ timeoutMs: 3_000_000_000 }); // setTimeout would fire after 1 ms
+  bad({ maxDelayMs: 3_000_000_000 });
+  bad({ baseDelayMs: 3_000_000_000 });
+  bad({ baseDelayMs: -1 });
+  bad({ maxDelayMs: -1 });
+  bad({ baseDelayMs: Number.NaN });
+  bad({ maxBodyBytes: 0 });
+  bad({ retryUnsafe: 'yes' });
+  bad({ random: 'x' });
+  bad({ now: 5 });
+  bad({ log: 'x' });
+  bad({ sleep: 'x' });
   bad({ fetch: 'nope' });
   assert.throws(() => createClient({ baseUrl: 'https://gitlab.test', token: TOKEN, fetch: fakeFetch(), sleep: 5 }), GitLabApiError);
 });
@@ -551,11 +972,15 @@ test('plain http is allowed only for the machine itself (the settings sync runs 
 
 test('a path must start with one slash and must not be a URL: the token cannot be pointed at another host', async () => {
   const { fetch, client } = setup();
-  for (const path of ['user', '', '//evil.test/x', 'https://evil.test/x', '/x/../../y', '/a\\b', '/a b', '/x\n', '/x?y=1', '/x#frag']) {
+  for (const path of ['user', '', '//evil.test/x', 'https://evil.test/x', 'https:/evil.test/x', 'http:/evil.test/x', 'https:evil.test/x', 'evil.test/x', '/x/../../y', '/a\\b', '/a b', '/x\n', '/x?y=1', '/x#frag', '/x\t', '/x\u0000', '/\u00e9']) {
     const e = await failure(client.request('GET', path));
     assert.equal(e.code, 'bad_path', JSON.stringify(path));
   }
   assert.equal(fetch.calls.length, 0, 'nothing was sent');
+  // A path that merely contains a URL is a sub-path of the API on the same origin, not a URL the token could be sent to.
+  fetch.route('GET', '/api/v4/https://evil.test/x', { json: 'same origin' });
+  assert.equal(await client.request('GET', '/https://evil.test/x'), 'same origin');
+  assert.equal(new URL(fetch.calls[0].url).origin, 'https://gitlab.test');
 });
 
 test('the method must be one of the HTTP methods the client knows', async () => {
