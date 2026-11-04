@@ -7,7 +7,7 @@ next_actor: kiro
 state: drafted
 spar_refs:
   - exafyltd/vitana-v1: 7829ef2f2ef12364862961d339161229c286d6f0
-updated: 2026-11-04T19:42Z
+updated: 2026-11-04T20:14Z
 ---
 # Handoff — eng-gitlab-m1
 Milestone 1 of the self-hosted GitLab CI (program `engineering-platform`). Plan: `plan.md`.
@@ -32,3 +32,11 @@ changes) so the premises about its workflows are readable. Checking those premis
 check lives in `CICDL-GATEWAY-CI.yml`, not TEST-SUITE; the vitana-v1 pipeline runs `npm test`, not GitHub's job set; and the
 document's Phase 2 and Phase 3 items that M1 does not build are now named in §2 and tracked in §10. A01 to A05 are stated
 in §9 because git does not define them.
+
+### 2026-11-04T20:14Z · kiro-exafy-202611021438-cff7 · sparring session 2, round 1 answered
+Session 2 (`a47c00c6…`) read the nine premises and returned two major findings, both accepted. R1-F1: premise P8 was false on the
+base (I had read the PR's own copy of `program.md`); the registration is made by this plan PR. R1-F2: running the platform's
+type check job on the base commit shows the file that runs installs the gateway with `pnpm install` and fails with TS2664 on two
+`declare module 'express-serve-static-core'` blocks; `npm ci` then `pnpm run typecheck` passes. The lane now commits a corrected
+`host/ci-platform.yml`, the plan gets step 0 (owner pastes the corrected file into GitLab) and premise P10. The Prisma half of the
+finding was disproved (no `@prisma/client` import; the check passes without a client). Answers in `sparring/s2-responses-1.md`.

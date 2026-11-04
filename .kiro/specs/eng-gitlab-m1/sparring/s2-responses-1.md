@@ -1,0 +1,19 @@
+# Responses to session 2, round 1 (`a47c00c6-4665-455a-94f4-eea7dcce4585`)
+
+Both findings are right in substance. R1-F1 is a mistake in my premise; R1-F2 found a real defect in the file the plan describes, which I
+reproduced by running the job, and one of its two suggestions turned out to be unnecessary.
+
+```json
+[
+  {
+    "finding_id": "R1-F1",
+    "disposition": "accepted",
+    "rationale": "P8 was false on the base ref. I read program.md in the PR's own worktree, which already contains this PR's two added lines, and cited those line numbers. On the base (4066f563e7) the file has 21 lines and `specs:` at :7-8 lists only eng-platform-p01. The registration itself is needed (scripts/collab/queue.mjs:1182 fails a spec that no programme lists) and this plan PR already makes it: its diff against the base adds `- vitana-platform:eng-gitlab-m1` to `specs:` and one `Spec:` line. It is not a lane task: the plan PR merges before the lane starts, so the lane's paths do not include program.md. plan.md §2a P8 now states the base state (21 lines, one spec listed), cites :7-8, :20-21 and queue.mjs:1182, and says the registration is made by this PR. I also re-read every other cited line on the base commit (`git show 4066f563e7:<path>`), not in the worktree; none of the others changed."
+  },
+  {
+    "finding_id": "R1-F2",
+    "disposition": "accepted",
+    "rationale": "Accepted with one correction. (a) The install is wrong, and it fails. I ran the job on the base commit (checkout of 4066f563e7, pnpm 9.0.0, Node 22): `pnpm install --frozen-lockfile` in services/gateway followed by `pnpm run typecheck`, which is what the central file's `typecheck` job does, exits 2 with `src/middleware/server-timing.ts(36,16)` and `src/orb/live/latency-tracker.ts(236,16)`: TS2664 'Invalid module name in augmentation, module express-serve-static-core cannot be found'. Both files declare `declare module 'express-serve-static-core'`, the gateway's package.json does not list that package (@types/express at :86 brings it in), and pnpm's strict layout does not expose it. `npm ci --no-audit --no-fund` followed by `pnpm run typecheck` exits 0 with no errors (about 45 s). That is exactly what CICDL-GATEWAY-CI.yml:86-92 does and says. The plan now describes the corrected jobs (§3: `typecheck` = npm ci then pnpm run typecheck; `gateway-jest` = pnpm install --frozen-lockfile then jest, as TEST-SUITE.yml:68-69), records the defect as premise P10 with the two file:line pairs, commits the corrected host/ci-platform.yml in the lane (§4), pins the exact job scripts in the structure test (§5, mutation-checked: putting the pnpm install back into the type check is caught), adds the two reproduction commands and their output to the lane evidence, and adds step 0 to §6: the running GitLab still has the old file, so the owner pastes the corrected one (the RUNBOOK embeds it, pinned equal to the file by a test). The failure on GitLab itself is expected, not observed; the plan says so. (b) Prisma generation is not needed and is not added. No file under services/gateway/src or services/gateway/test imports @prisma/client (grep: 0 files), the gateway tsconfig includes only src/**/*, and the type check above passed with no generated client (node_modules has no .prisma or @prisma directory). `@prisma/client` is a root dependency used by the root Prisma workflow, which the central file never runs. The three gateway sources that mention 'prisma' do so in a comment and two path strings. §3 now says there is no Prisma step and the structure test fails if one is added."
+  }
+]
+```
