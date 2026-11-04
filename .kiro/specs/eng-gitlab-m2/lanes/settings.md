@@ -4,7 +4,7 @@ state: ready
 next_actor: kiro
 depends_on: [gitlab-client]
 executor: kiro
-seat: exafy
+seat: exafyltd
 reviewer_seat: agent:vitana-lane-reviewer
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 repos: [exafyltd/vitana-platform]
@@ -24,7 +24,7 @@ paths:
   - docs/ENGINEERING-PLATFORM-PLAN.md
   - docs/ENGINEERING-PLATFORM-LICENCES.md
   - docs/validation/**
-updated: 2026-11-04T19:35Z
+updated: 2026-11-04T21:40Z
 vtid: VTID-05542
 ---
 # Lane: settings (repo vitana-platform)
@@ -36,3 +36,5 @@ Lane created with the plan.
 
 ### 2026-11-04T19:35Z · ci-plan-spar · ready (VTID allocated)
 VTID-05542 allocated after policy approval (converged-auto-v1).
+### 2026-11-04T21:40Z · pm-agent · update
+reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
