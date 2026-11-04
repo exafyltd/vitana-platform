@@ -253,6 +253,32 @@ describe('voice approve on the generic live path (VTID-05528)', () => {
     expect(fetchMock).not.toHaveBeenCalled();
     expect(JSON.stringify(out)).toContain('signed-in admin session');
   });
+
+  it('a voice session holding the member bearer rejects as that member (dev_reject_pr)', async () => {
+    process.env.SUPABASE_URL = 'https://example.supabase.test';
+    process.env.SUPABASE_SERVICE_ROLE = 'svc-role-test';
+    const session = {
+      sessionId: 'live-05528-reject',
+      identity: { user_id: 'dev-1', tenant_id: 't-1', role: 'developer', exafy_admin: false },
+      callerAccessToken: 'dev-jwt-05528',
+      lang: 'en',
+      inputTranscriptBuffer: '',
+      turn_count: 1,
+      createdAt: new Date(),
+    } as unknown as Parameters<typeof __executeLiveApiToolForTest>[0];
+
+    const out = await __executeLiveApiToolForTest(session, 'dev_reject_pr', {
+      approval_id: 'appr_VTID-01234_abc',
+      reason: 'not ready for merge',
+      confirm: true,
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, { headers: Record<string, string> }];
+    expect(url).toContain('/api/v1/approvals/appr_VTID-01234_abc/reject');
+    expect(init.headers.Authorization).toBe('Bearer dev-jwt-05528');
+    expect(JSON.stringify(out)).not.toContain('signed-in admin session');
+  });
 });
 
 // VTID-05528: the member's bearer is bound to a live session only when it verifies to the session owner.
