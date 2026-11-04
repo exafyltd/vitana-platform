@@ -1,0 +1,10 @@
+{
+  "service": "community-app",
+  "tests": [
+    {
+      "kind": "existing",
+      "ref": "npm run test:superseded-concurrency",
+      "reason": "CI-only change: workflow concurrency keys and a guard test. The app bundle and runtime are unchanged."
+    }
+  ]
+}

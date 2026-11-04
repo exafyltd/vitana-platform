@@ -1,0 +1,3 @@
+$ npm run -s test:superseded-concurrency          # 3 pass, 0 fail (outputs/test-superseded-concurrency.txt)
+$ node scripts/ci/pr-gate/vtid-scope.mjs init VTID-05513 --kind infra --paths ".github/workflows/*.yml,package.json,scripts/ci/superseded-concurrency.test.mjs,docs/validation/VTID-05513/**" --sparring-record .kiro/specs/ci-superseded-pr-runs/sparring/verdict.md   # wrote scope.json
+$ edited 38 workflows on origin/main; lane paths match exactly (38 == 38)
