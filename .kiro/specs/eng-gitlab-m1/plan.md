@@ -16,8 +16,8 @@ bundle that the owner ran in AWS CloudShell, and is documented here second. It r
 - One CI runner (Docker executor, tag `vitana-eng`) on its own machine.
 - A mirror that copies `vitana-platform` and `vitana-v1` from GitHub into GitLab every 5 minutes. GitHub stays the source
   of truth.
-- Pipelines on the mirrored `main` run the same checks as GitHub's TEST-SUITE and UNIT-TESTS, from a central
-  configuration that branches cannot change.
+- Pipelines on the mirrored `main` run a subset of GitHub's gateway and frontend checks (§3 and premises P6 and P9 in §2a),
+  from a central configuration that branches cannot change.
 - A nightly backup to an encrypted S3 bucket.
 
 This plan does four things: it puts the bundle into git under `infra/gitlab-engineering/` so it is reviewed and
@@ -42,7 +42,38 @@ self-healing. Milestone 2 (`eng-gitlab-m2`) covers what agents need.
   with a low EC2 vCPU limit, so `setup.sh` falls back to `m6i.large` and grows the machines later with `setup.sh grow`.
 - The bundle is run by the owner from AWS CloudShell (`setup.sh`), because only the owner has AWS rights (decision D5).
   Resource names that must be unique carry the account id (state and backup buckets).
-- Recovery point 24 hours (nightly backup). Recovery time: a rebuild from Terraform plus a restore, hours not minutes.
+- Recovery point 24 hours (nightly backup), where D4 states 1 hour (`docs/ENGINEERING-PLATFORM-PLAN.md:34`). Recovery time:
+  a rebuild from Terraform plus a restore, hours not minutes.
+- Other items of the document's Phase 2 and Phase 3 that milestone 1 does not build (`docs/ENGINEERING-PLATFORM-PLAN.md:111-122`):
+  - No S3 object storage: uploads, artifacts and LFS stay on the 200 GB volume (part of the D4 deviation).
+  - No AWS Backup: the nightly `gitlab-backup` copy in S3 is the only backup.
+  - CloudTrail, Config and Security Hub are not enabled in the new account (line 112). Tracked in §10.
+  - Group layout: one group `vitana` with `ci-config`, `vitana-platform` and `vitana-v1`, named like the GitHub repositories so
+    the mirror and the later cutover map one to one. The names `vitana/platform`, `vitana/v1`, `vitana/ci-templates` and
+    `vitana/infra` of line 114 are not created.
+  - Line 114 says nobody pushes to `main` directly. In milestone 1 the mirror user writes `main` of the mirrored projects with
+    a forced update of every branch, and the instance default branch protection lets Maintainers push and force-push so that
+    it can. The `mirror` profile of milestone 2 keeps this until the cutover; the `native` profile of milestone 2 forbids it.
+  - Phase 3 (lines 119 and 121): no runner manager or autoscaling groups, concurrency 3 or 1 where the document says 10.
+  - The pipelines of the two mirrored projects do not reproduce every GitHub check (§3).
+
+## 2a. Premises the review can check (each readable on the base ref of this PR, `4066f563e7`)
+Statements about the running system (account id, host names, versions, "answers 200", "runner verified") come from the
+owner's CloudShell output and from outside checks on 2026-11-04. They are not in git until the lane merges, so they are not
+premises of this review; the lane's structure test pins each value of §3 once the files are committed (§5). The premises that
+are in git:
+
+| # | Premise | Where |
+|---|---|---|
+| P1 | The programme document takes D2 (Premium), D4 (RDS, ElastiCache, RPO 1 h) and D5 (Kiro writes, the owner applies). This plan follows D5 and deviates from D2 and D4 as §2 says | `docs/ENGINEERING-PLATFORM-PLAN.md:32`, `:34`, `:35` |
+| P2 | The document's Phase 2 and Phase 3 list the items §2 names as not built | `docs/ENGINEERING-PLATFORM-PLAN.md:111-116`, `:119-122` |
+| P3 | The labels A01 to A05 are referred to but not defined in git; §9 states each in its own words | `docs/ENGINEERING-PLATFORM-PLAN.md:116`, `:122`, `:180` |
+| P4 | `infra/` holds only `cognito-migration` and `livekit`; `infra/gitlab-engineering/` and `scripts/eng/` do not exist; the repository has no `.gitlab-ci.yml` | directory listing of `infra/` and `scripts/`; no tracked path matches `gitlab-ci` |
+| P5 | `UNIT.yml` runs every `*.test.cjs` and `*.test.mjs` under `scripts/` with `node --test` and no install, so the structure test runs there without a workflow change | `.github/workflows/UNIT.yml:23`, `:25` |
+| P6 | The platform pipeline takes its checks from two GitHub workflows: the gateway type check (`pnpm run typecheck` in `services/gateway`, script `tsc --noEmit`) and the four Jest shards of the gateway job (`pnpm install --frozen-lockfile`, `npx jest --shard=N/4`, Node 20.x). TEST-SUITE itself has no type check. The shard-union check is not ported | `.github/workflows/CICDL-GATEWAY-CI.yml:108`, `services/gateway/package.json:21`, `.github/workflows/TEST-SUITE.yml:43`, `:75`, `:88` |
+| P7 | The lane's paths (`infra/gitlab-engineering/**`, `scripts/eng/gitlab-m1-structure.test.mjs`, `docs/validation/**`) match none of the governance paths, so the lane is an ordinary lane | `scripts/collab/queue.mjs:86-87` |
+| P8 | The programme registers this plan | `docs/programs/engineering-platform/program.md:9`, `:23` |
+| P9 | In vitana-v1 (companion ref `7829ef2f2e`, declared in `handoff.md`) the vitest job runs `npm run test:unit` (`vitest run`); the Deno test of the edge data client has no counterpart on GitLab; the PR-GATE type check, ESLint and design ratchets and the regression run are not ported; the build step is `npm run build` | `.github/workflows/UNIT-TESTS.yml:39`, `:55-59`, `package.json:30`, `:33`, `.github/workflows/PR-GATE.yml:134-158`, `:160-164` |
 
 ## 3. Interfaces (what runs)
 - Account `vitana-engineering`, created in AWS Organizations by `setup.sh`. VPC `10.20.0.0/16`, two availability zones.
@@ -66,16 +97,22 @@ self-healing. Milestone 2 (`eng-gitlab-m2`) covers what agents need.
   job at 02:15 UTC runs `gitlab-backup` and copies the archive and `/etc/gitlab` to the bucket.
 - GitLab content: group `vitana` with projects `ci-config`, `vitana-platform`, `vitana-v1`; the mirror user `vitana-mirror`
   (Maintainer on the two mirrored projects, Reporter on `ci-config`).
-- Central CI: `platform.gitlab-ci.yml` (Node 20, pnpm 9, typecheck and four Jest shards, as TEST-SUITE) and `v1.gitlab-ci.yml`
-  (unit tests and build, lint reported but not blocking). Every job has the tag `vitana-eng`, names no AWS credential and runs
-  no deploy.
+- Central CI, two files, both only on `main` and on manual, API and schedule runs, every job with the tag `vitana-eng`, no AWS
+  credential and no deploy:
+  - `platform.gitlab-ci.yml`: Node 20, pnpm 9.0.0, from `services/gateway`: job `typecheck` (`pnpm run typecheck`, premise P6)
+    and job `gateway-jest` (4 parallel shards, `npx jest --shard=N/4`, `--maxWorkers=2`). Not ported: the shard-union check, the
+    Dev frontend navigation spec validation, every other GitHub workflow.
+  - `v1.gitlab-ci.yml`: after `npm ci`, job `unit-tests` (`npm test`: the three guard scripts and `vitest run`), job `build`
+    (`npm run build`) and job `lint` (`npm run lint`, reported, allowed to fail). Not ported: the Deno test, the PR-GATE
+    ratchets and regression run (premise P9).
 - Owner entry point `setup.sh` with `run`, `status`, `password`, `token`, `diag`, `runner`, `grow`; DNS records can be created
   through the Cloudflare API with a token typed hidden and kept only in memory.
 
 ## 4. Lane
 One lane, `gitlab-infra` (vitana-platform, executor kiro, seat exafy): commits the bundle to `infra/gitlab-engineering/`
 exactly as it runs (setup.sh, terraform, host scripts, central CI files), adds `scripts/eng/gitlab-m1-structure.test.mjs`,
-`infra/gitlab-engineering/RUNBOOK.md` (owner steps, the restore procedure, how to read `setup.sh status`), and the evidence.
+`infra/gitlab-engineering/RUNBOOK.md` (owner steps, the restore procedure, how to read `setup.sh status`, and a "Not built yet"
+list of the items §10 defers), and the evidence.
 It changes no running resource.
 
 ## 5. Tests (red on base because the files do not exist there)
@@ -97,7 +134,9 @@ complete (VPC, load balancer, both machines, buckets, secrets); `https://gitlab.
 a valid certificate; GitLab configuration finished with no failures; the runner is registered and verified.
 Still to do:
 1. ▶ The first green pipeline on `vitana-platform` and on `vitana-v1` (the mirror runs every 5 minutes once the GitHub token is
-   stored, which it is). If a pipeline fails, the lane fixes the central CI file.
+   stored, which it is). The evidence puts each GitLab job result next to GitHub's result for the same `main` commit
+   (`docs/ENGINEERING-PLATFORM-PLAN.md:120` asks for this comparison): TEST-SUITE for the platform, UNIT-TESTS for vitana-v1.
+   A difference is recorded, not hidden. If a pipeline fails, the lane fixes the central CI file.
 2. ▶ One restore test: create a scratch machine from the latest backup and compare project counts and one commit hash
    (acceptance A04). The runbook gives the commands.
 3. ▶ Evidence that the nightly backup ran: `aws s3 ls` of the backup bucket after 02:15 UTC.
@@ -119,11 +158,30 @@ per month, less while the machines are at the smaller size.
 - A GitLab major upgrade needs its own plan. Milestone 1 stays on the pinned version.
 
 ## 9. Staging verification and acceptance
-Not verified on staging: no product code path changes. Acceptance for milestone 1: GitLab over HTTPS (A01, observed); Terraform
-provisioned (A02, observed); encrypted storage and nightly backup (A03, evidence step 3); restore succeeds (A04, step 2); runner
-operational (A05, observed); first green pipelines on both mirrored projects (step 1).
+Not verified on staging: no product code path changes (the lane's paths are `infra/`, one test file and `docs/validation/`).
+The labels A01 to A05 are the numbering of the owner's original plan; git does not define them (premise P3), so this plan
+states each one:
 
-## 10. Unchanged
-GitHub Actions and every deploy workflow; production; the gateway; production DNS; the production frontend change
+| # | Criterion in this plan | Proof |
+|---|---|---|
+| A01 | GitLab answers over HTTPS with a valid certificate on `gitlab.vitanaland.com` | observed 2026-11-04: `/users/sign_in` answers 200 |
+| A02 | The infrastructure is created by Terraform; after this lane merges it can be rebuilt from git | the owner's apply completed 2026-11-04; the structure test and `terraform validate` once the files are in git |
+| A03 | Storage is encrypted and a nightly backup exists in the backup bucket | encryption pinned by the structure test; the backup listing after 02:15 UTC (step 3) |
+| A04 | A restore on a scratch machine reproduces the project count and one commit hash | step 2 |
+| A05 | The runner is registered and runs jobs | observed 2026-11-04: runner verified; the first pipelines (step 1) |
+
+Plus the first green pipelines on both mirrored projects, compared with GitHub's results (step 1).
+
+## 10. Unchanged, and the items this plan defers
+Unchanged: GitHub Actions and every deploy workflow; production; the gateway; production DNS; the production frontend change
 (`eng-platform-p02`, paused).
+
+Deferred, with where each is tracked (§2 lists the document lines):
+- CloudTrail, Config and Security Hub in the engineering account, RDS and ElastiCache, S3 object storage and AWS Backup:
+  not covered by milestone 2 either. They stay in `docs/ENGINEERING-PLATFORM-PLAN.md` Phase 2 (lines 112-113) as open
+  items, and the lane's `RUNBOOK.md` lists them under "Not built yet".
+- Bot-only `main` protection and the removal of Maintainer force-push on a project: milestone 2, lane `settings` (§3.3
+  of `eng-gitlab-m2`, profile `native`); for the two mirrored projects at their cutover.
+- The Deno test, the PR-GATE ratchets and the regression run for vitana-v1, and the shard-union check for the platform:
+  the milestone that moves each project, with the cutover plan.
 <!-- plan:end -->
