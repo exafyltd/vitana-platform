@@ -7,8 +7,17 @@
  *   - the gateway service token and an exafy_admin JWT reach the handler;
  *   - /feed/approve answers 400 branch_mismatch when the body branch is not the
  *     PR's head branch, and merges nothing.
+ *
+ * VTID-05528 adds the real-path tests for the member's bearer: the SSE stream
+ * and the WebSocket start bind it to the live session only when it verifies to
+ * the session owner, and POST /api/v1/orb/tool passes the request bearer to the
+ * tools as user_jwt. The Operator Chat service-token calls are in
+ * test/operator-chat-service-token.test.ts.
  */
 let identity: Record<string, unknown> | null = null;
+// VTID-05528: the bind tests verify tokens and start sessions through these stubs.
+const mockVerifyAndExtractIdentity = jest.fn(async (_token: string): Promise<any> => null);
+const mockStartLiveSessionForWs = jest.fn(async (_input: unknown): Promise<any> => ({ status: 500, body: { ok: false } }));
 jest.mock('../src/middleware/auth-supabase-jwt', () => {
   const actual = jest.requireActual('../src/middleware/auth-supabase-jwt');
   return {
@@ -17,8 +26,26 @@ jest.mock('../src/middleware/auth-supabase-jwt', () => {
       if (identity) req.identity = identity;
       next();
     },
+    requireAuth: (req: any, _res: any, next: () => void) => {
+      if (identity) req.identity = identity;
+      next();
+    },
+    verifyAndExtractIdentity: (token: string) => mockVerifyAndExtractIdentity(token),
   };
 });
+jest.mock('../src/orb/live/config', () => ({
+  ...jest.requireActual('../src/orb/live/config'),
+  // No Vertex project in tests, so the live routes skip the upstream connect and the Google prewarm.
+  VERTEX_PROJECT_ID: '',
+}));
+jest.mock('../src/orb/live/session/finalize-live-session', () => ({
+  ...jest.requireActual('../src/orb/live/session/finalize-live-session'),
+  finalizeLiveSession: jest.fn(),
+}));
+jest.mock('../src/orb/live/session/ws-start-adapter', () => ({
+  ...jest.requireActual('../src/orb/live/session/ws-start-adapter'),
+  startLiveSessionForWs: (input: unknown) => mockStartLiveSessionForWs(input),
+}));
 jest.mock('../src/services/oasis-event-service', () => ({
   __esModule: true,
   default: new Proxy({}, { get: () => jest.fn(async () => ({ ok: true })) }),
@@ -168,7 +195,15 @@ describe('developer voice tools carry the caller token (dev_approve_pr / dev_rej
   });
 });
 
-import { __executeLiveApiToolForTest } from '../src/routes/orb-live';
+import * as fs from 'fs';
+import * as http from 'http';
+import * as path from 'path';
+import type { AddressInfo } from 'net';
+import WebSocket from 'ws';
+import orbLiveRouter, { __executeLiveApiToolForTest, initializeOrbWebSocket } from '../src/routes/orb-live';
+import orbToolRouter from '../src/routes/orb-tool';
+import * as orbToolsShared from '../src/services/orb-tools-shared';
+import { liveSessions } from '../src/orb/live/session/live-session-registry';
 
 describe('voice approve on the generic live path (VTID-05528)', () => {
   it('a voice session holding the member bearer approves as that member', async () => {
@@ -196,5 +231,222 @@ describe('voice approve on the generic live path (VTID-05528)', () => {
     expect(init.headers.Authorization).toBe('Bearer dev-jwt-05528');
     expect(out.success).toBe(true);
     expect(out.result).not.toContain('signed-in admin session');
+  });
+});
+
+// VTID-05528: the member's bearer is bound to a live session only when it verifies to the session owner.
+// The next blocks drive the real SSE route and the real WebSocket transport. The controller, finalize and
+// upstream connect are stubbed above, so nothing reaches Vertex, a database or a production host.
+const OWNER = 'owner-05528';
+const INTRUDER = 'intruder-05528';
+const TENANT = 'tenant-05528';
+const OWNER_TOKEN = 'owner-jwt-05528';
+const INTRUDER_TOKEN = 'intruder-jwt-05528';
+let liveSeq = 0;
+
+function liveSessionFor(sessionId: string, ownerId: string): any {
+  const session = {
+    sessionId,
+    active: true,
+    lang: 'en',
+    identity: { user_id: ownerId, tenant_id: TENANT, role: 'authenticated', exafy_admin: false, email: null, aud: null, exp: null, iat: null },
+    transcriptTurns: [],
+    turn_count: 0,
+    createdAt: new Date(),
+    lastActivity: new Date(),
+  };
+  liveSessions.set(sessionId, session as any);
+  return session;
+}
+
+/** Verifies the two test tokens to their users; any other token does not verify. */
+function verifyTestTokens(): void {
+  const users: Record<string, string> = { [OWNER_TOKEN]: OWNER, [INTRUDER_TOKEN]: INTRUDER };
+  mockVerifyAndExtractIdentity.mockImplementation(async (token: string) => {
+    const userId = users[token];
+    if (!userId) return null;
+    return { identity: { user_id: userId, tenant_id: TENANT, role: 'authenticated', exafy_admin: false, email: null, aud: null, exp: null, iat: null } };
+  });
+}
+
+function listen(server: http.Server): Promise<number> {
+  return new Promise((resolve) => server.listen(0, '127.0.0.1', () => resolve((server.address() as AddressInfo).port)));
+}
+
+async function waitUntil(done: () => boolean, ms = 5000): Promise<void> {
+  const started = Date.now();
+  while (!done()) {
+    if (Date.now() - started > ms) throw new Error('timed out waiting for the gateway');
+    await new Promise((r) => setTimeout(r, 10));
+  }
+}
+
+describe('the SSE stream binds the member bearer only when it verifies to the session owner (VTID-05528)', () => {
+  let server: http.Server;
+  let port: number;
+  beforeAll(async () => {
+    const app = express();
+    app.use('/api/v1/orb', orbLiveRouter);
+    server = http.createServer(app);
+    port = await listen(server);
+  });
+  afterAll(async () => {
+    server.closeAllConnections();
+    await new Promise<void>((r) => server.close(() => r()));
+  });
+  beforeEach(() => verifyTestTokens());
+
+  // Resolves once the response headers arrive. The route writes the headers after its bind decision.
+  function openStream(sessionId: string, token?: string): Promise<{ status: number; close: () => void }> {
+    const params = token ? { session_id: sessionId, token } : { session_id: sessionId };
+    const qs = new URLSearchParams(params).toString();
+    return new Promise((resolve, reject) => {
+      const req = http.get(
+        { host: '127.0.0.1', port, path: `/api/v1/orb/live/stream?${qs}`, headers: { accept: 'text/event-stream' } },
+        (res) => {
+          res.resume();
+          resolve({ status: res.statusCode ?? 0, close: () => req.destroy() });
+        },
+      );
+      req.on('error', reject);
+    });
+  }
+
+  async function boundBearer(token: string | undefined): Promise<unknown> {
+    const sessionId = `live-sse-05528-${++liveSeq}`;
+    const live = liveSessionFor(sessionId, OWNER);
+    const stream = await openStream(sessionId, token);
+    try {
+      expect(stream.status).toBe(200);
+      return live.callerAccessToken;
+    } finally {
+      stream.close();
+      liveSessions.delete(sessionId);
+    }
+  }
+
+  it('binds the bearer when it verifies to the session owner', async () => {
+    expect(await boundBearer(OWNER_TOKEN)).toBe(OWNER_TOKEN);
+  });
+
+  it('does not bind a bearer that verifies to another user, and still serves the stream', async () => {
+    expect(await boundBearer(INTRUDER_TOKEN)).toBeFalsy();
+  });
+
+  it('does not bind a token that does not verify', async () => {
+    expect(await boundBearer('forged-jwt-05528')).toBeFalsy();
+  });
+
+  it('does not bind when no token is sent', async () => {
+    expect(await boundBearer(undefined)).toBeFalsy();
+  });
+});
+
+describe('the WebSocket start frame binds the member bearer only when it verifies to the session owner (VTID-05528)', () => {
+  let server: http.Server;
+  let port: number;
+  beforeAll(async () => {
+    server = http.createServer();
+    initializeOrbWebSocket(server);
+    port = await listen(server);
+  });
+  afterAll(async () => {
+    server.closeAllConnections();
+    await new Promise<void>((r) => server.close(() => r()));
+  });
+  beforeEach(() => {
+    verifyTestTokens();
+    // The controller starts the live session. Here it hands back a session owned by OWNER, whatever socket asks.
+    mockStartLiveSessionForWs.mockImplementation(async () => {
+      const sessionId = `live-ws-05528-${++liveSeq}`;
+      liveSessionFor(sessionId, OWNER);
+      return { status: 200, body: { ok: true, session_id: sessionId } };
+    });
+  });
+
+  async function boundBearer(token: string | undefined): Promise<unknown> {
+    const qs = token ? `?token=${encodeURIComponent(token)}` : '';
+    const client = new WebSocket(`ws://127.0.0.1:${port}/api/v1/orb/live/ws${qs}`);
+    const frames: Array<Record<string, any>> = [];
+    client.on('message', (raw) => frames.push(JSON.parse(String(raw))));
+    try {
+      await waitUntil(() => frames.some((f) => f.type === 'connected'));
+      client.send(JSON.stringify({ type: 'start', lang: 'en' }));
+      await waitUntil(() => frames.some((f) => f.type === 'session_started' || f.type === 'error'));
+      const started = frames.find((f) => f.type === 'session_started');
+      if (!started) throw new Error(`the start frame was refused: ${JSON.stringify(frames)}`);
+      const live = liveSessions.get(started.session_id);
+      liveSessions.delete(started.session_id);
+      return live?.callerAccessToken;
+    } finally {
+      client.close();
+    }
+  }
+
+  it('binds the socket bearer when it verifies to the session owner', async () => {
+    expect(await boundBearer(OWNER_TOKEN)).toBe(OWNER_TOKEN);
+  });
+
+  it('does not bind a bearer that verifies to another user', async () => {
+    expect(await boundBearer(INTRUDER_TOKEN)).toBeFalsy();
+  });
+
+  it('does not bind a token that does not verify', async () => {
+    expect(await boundBearer('forged-jwt-05528')).toBeFalsy();
+  });
+
+  it('does not bind when the socket sends no token', async () => {
+    expect(await boundBearer(undefined)).toBeFalsy();
+  });
+});
+
+describe('POST /api/v1/orb/tool hands the request bearer to the tools as user_jwt (VTID-05528)', () => {
+  const toolApp = express();
+  toolApp.use(express.json());
+  toolApp.use('/api/v1', orbToolRouter);
+  let dispatch: jest.SpyInstance;
+
+  beforeEach(() => {
+    identity = { user_id: 'dev-05528', tenant_id: null, role: 'developer', vitana_id: null };
+    dispatch = jest.spyOn(orbToolsShared, 'dispatchOrbTool').mockResolvedValue({ ok: true, result: {} } as any);
+  });
+  afterEach(() => {
+    dispatch.mockRestore();
+  });
+
+  it('the request bearer becomes user_jwt in the tool identity', async () => {
+    await request(toolApp)
+      .post('/api/v1/orb/tool')
+      .set('Authorization', 'Bearer member-jwt-05528')
+      .send({ name: 'dev_approve_pr', args: { approval_id: 'appr_VTID-01234_abc', confirm: true } })
+      .expect(200);
+    expect(dispatch.mock.calls[0][2]).toMatchObject({ user_id: 'dev-05528', user_jwt: 'member-jwt-05528' });
+  });
+
+  it('a request without a bearer gives the tool no user_jwt, so it cannot act as the caller', async () => {
+    await request(toolApp).post('/api/v1/orb/tool').send({ name: 'dev_approve_pr', args: {} }).expect(200);
+    expect(dispatch.mock.calls[0][2].user_jwt).toBeNull();
+  });
+});
+
+describe('the bind guards and the tool bearer, as written in source (VTID-05528)', () => {
+  const read = (rel: string): string => fs.readFileSync(path.join(__dirname, '..', rel), 'utf8');
+
+  it('the SSE stream binds a token only when it verified to the session owner', () => {
+    expect(read('src/routes/orb-live.ts')).toContain(
+      'if (token && verifiedTokenUserId && verifiedTokenUserId === session.identity?.user_id) {\n    session.callerAccessToken = token;\n  }',
+    );
+  });
+
+  it('the WebSocket start binds the socket token only when its identity is the session owner', () => {
+    expect(read('src/routes/orb-live.ts')).toContain(
+      'if (clientSession.authToken && identity?.user_id && identity.user_id === liveSession.identity?.user_id) {\n    liveSession.callerAccessToken = clientSession.authToken;\n  }',
+    );
+  });
+
+  it('orb-tool takes user_jwt from the request bearer', () => {
+    expect(read('src/routes/orb-tool.ts')).toContain(
+      String.raw`user_jwt: (req.header('authorization') ?? '').replace(/^Bearer\s+/i, '').trim() || null,`,
+    );
   });
 });
