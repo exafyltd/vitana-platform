@@ -6,10 +6,8 @@
     "services/gateway/src/services/orb-tools/developer-tools.ts",
     "services/gateway/src/routes/orb-live.ts",
     "services/gateway/src/routes/orb-tool.ts",
-    "services/gateway/src/services/gemini-operator.ts",
     "services/gateway/test/mt-track-s-authz-approvals-auth.test.ts",
     "services/gateway/test/orb-tools/developer-tools.test.ts",
-    "services/gateway/test/operator-chat-service-token.test.ts",
     "docs/validation/VTID-05528/**"
   ],
   "sparring_record": ".kiro/specs/mt-track-s-authz/sparring/verdict.md",

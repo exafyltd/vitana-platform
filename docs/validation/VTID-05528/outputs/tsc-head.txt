@@ -1,2 +1,1 @@
-$ cd services/gateway && npx tsc --noEmit
-exit 0 (no diagnostics on head a6455dfbc5)
+exit 0 (no diagnostics on head be3f456cdf)

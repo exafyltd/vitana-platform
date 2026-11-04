@@ -405,7 +405,7 @@ ts-jest[config] (WARN)
       at teardownSseSession (src/routes/orb-live.ts:16863:13)
 
   console.log
-    [VTID-01222] WebSocket connected: ws-5cf5539a-d986-4eed-a004-dde542693720 from 127.0.0.1
+    [VTID-01222] WebSocket connected: ws-80dfe5a0-7996-46e9-88ff-26973e980247 from 127.0.0.1
 
       at handleWebSocketConnection (src/routes/orb-live.ts:17698:11)
 
@@ -430,7 +430,7 @@ ts-jest[config] (WARN)
       at WebSocket.<anonymous> (src/routes/orb-live.ts:17800:7)
 
   console.log
-    [VTID-01222] WebSocket connected: ws-4ad5775c-b603-4e37-a312-d54717c345d0 from 127.0.0.1
+    [VTID-01222] WebSocket connected: ws-9a22c1ea-36d7-4e4b-8d77-aa39c1489b98 from 127.0.0.1
 
       at handleWebSocketConnection (src/routes/orb-live.ts:17698:11)
 
@@ -440,12 +440,12 @@ ts-jest[config] (WARN)
       at handleWebSocketConnection (src/routes/orb-live.ts:17755:17)
 
   console.log
-    [VTID-01222] WebSocket disconnected: ws-5cf5539a-d986-4eed-a004-dde542693720, code=1005, reason=
+    [VTID-01222] WebSocket disconnected: ws-80dfe5a0-7996-46e9-88ff-26973e980247, code=1005, reason=
 
       at WebSocket.<anonymous> (src/routes/orb-live.ts:17867:13)
 
   console.log
-    [VTID-01222] WebSocket session cleaned up: ws-5cf5539a-d986-4eed-a004-dde542693720
+    [VTID-01222] WebSocket session cleaned up: ws-80dfe5a0-7996-46e9-88ff-26973e980247
 
       at cleanupWsSession (src/orb/live/session/live-session-controller.ts:525:11)
 
@@ -465,12 +465,12 @@ ts-jest[config] (WARN)
       at WebSocket.<anonymous> (src/routes/orb-live.ts:17800:7)
 
   console.log
-    [VTID-01222] WebSocket connected: ws-c074177c-4d0e-4ba0-99d6-a3219d8604e2 from 127.0.0.1
+    [VTID-01222] WebSocket connected: ws-d7cbdb23-86b5-4efd-9c74-d9935f5cb848 from 127.0.0.1
 
       at handleWebSocketConnection (src/routes/orb-live.ts:17698:11)
 
   console.warn
-    [VTID-01224] WebSocket auth failed for ws-c074177c-4d0e-4ba0-99d6-a3219d8604e2: invalid token
+    [VTID-01224] WebSocket auth failed for ws-d7cbdb23-86b5-4efd-9c74-d9935f5cb848: invalid token
 
       17755 |         console.log(`[VTID-01224] WebSocket authenticated: user=${identity.user_id}, tenant=${identity.tenant_id}`);
       17756 |       } else {
@@ -483,12 +483,12 @@ ts-jest[config] (WARN)
       at handleWebSocketConnection (src/routes/orb-live.ts:17757:17)
 
   console.log
-    [VTID-01222] WebSocket disconnected: ws-4ad5775c-b603-4e37-a312-d54717c345d0, code=1005, reason=
+    [VTID-01222] WebSocket disconnected: ws-9a22c1ea-36d7-4e4b-8d77-aa39c1489b98, code=1005, reason=
 
       at WebSocket.<anonymous> (src/routes/orb-live.ts:17867:13)
 
   console.log
-    [VTID-01222] WebSocket session cleaned up: ws-4ad5775c-b603-4e37-a312-d54717c345d0
+    [VTID-01222] WebSocket session cleaned up: ws-9a22c1ea-36d7-4e4b-8d77-aa39c1489b98
 
       at cleanupWsSession (src/orb/live/session/live-session-controller.ts:525:11)
 
@@ -508,22 +508,22 @@ ts-jest[config] (WARN)
       at WebSocket.<anonymous> (src/routes/orb-live.ts:17800:7)
 
   console.log
-    [VTID-01222] WebSocket connected: ws-da441b5a-c346-4bf9-b81b-9bd47daf2ad9 from 127.0.0.1
+    [VTID-01222] WebSocket connected: ws-ba5bf3af-a837-4f19-b06b-3cf2a60bb5e4 from 127.0.0.1
 
       at handleWebSocketConnection (src/routes/orb-live.ts:17698:11)
 
   console.log
-    [VTID-01224] WebSocket unauthenticated: ws-da441b5a-c346-4bf9-b81b-9bd47daf2ad9 (no token provided)
+    [VTID-01224] WebSocket unauthenticated: ws-ba5bf3af-a837-4f19-b06b-3cf2a60bb5e4 (no token provided)
 
       at handleWebSocketConnection (src/routes/orb-live.ts:17763:13)
 
   console.log
-    [VTID-01222] WebSocket disconnected: ws-c074177c-4d0e-4ba0-99d6-a3219d8604e2, code=1005, reason=
+    [VTID-01222] WebSocket disconnected: ws-d7cbdb23-86b5-4efd-9c74-d9935f5cb848, code=1005, reason=
 
       at WebSocket.<anonymous> (src/routes/orb-live.ts:17867:13)
 
   console.log
-    [VTID-01222] WebSocket session cleaned up: ws-c074177c-4d0e-4ba0-99d6-a3219d8604e2
+    [VTID-01222] WebSocket session cleaned up: ws-d7cbdb23-86b5-4efd-9c74-d9935f5cb848
 
       at cleanupWsSession (src/orb/live/session/live-session-controller.ts:525:11)
 
@@ -543,54 +543,54 @@ ts-jest[config] (WARN)
       at WebSocket.<anonymous> (src/routes/orb-live.ts:17800:7)
 
   console.log
-    [VTID-01222] WebSocket disconnected: ws-da441b5a-c346-4bf9-b81b-9bd47daf2ad9, code=1005, reason=
+    [VTID-01222] WebSocket disconnected: ws-ba5bf3af-a837-4f19-b06b-3cf2a60bb5e4, code=1005, reason=
 
       at WebSocket.<anonymous> (src/routes/orb-live.ts:17867:13)
 
   console.log
-    [VTID-01222] WebSocket session cleaned up: ws-da441b5a-c346-4bf9-b81b-9bd47daf2ad9
+    [VTID-01222] WebSocket session cleaned up: ws-ba5bf3af-a837-4f19-b06b-3cf2a60bb5e4
 
       at cleanupWsSession (src/orb/live/session/live-session-controller.ts:525:11)
 
-PASS test/mt-track-s-authz-approvals-auth.test.ts (8.693 s)
+PASS test/mt-track-s-authz-approvals-auth.test.ts (15.566 s)
   POST /api/v1/approvals/feed/approve
-    ✓ no bearer → 401 and the handler is never reached (38 ms)
-    ✓ a non-admin JWT → 403 (4 ms)
-    ✓ the gateway service token reaches the handler (7 ms)
-    ✓ an exafy_admin JWT reaches the handler (3 ms)
+    ✓ no bearer → 401 and the handler is never reached (46 ms)
+    ✓ a non-admin JWT → 403 (3 ms)
+    ✓ the gateway service token reaches the handler (8 ms)
+    ✓ an exafy_admin JWT reaches the handler (5 ms)
   POST /api/v1/approvals/appr_VTID-01234_abc/approve
     ✓ no bearer → 401 and the handler is never reached (2 ms)
     ✓ a non-admin JWT → 403 (2 ms)
-    ✓ the gateway service token reaches the handler (3 ms)
-    ✓ an exafy_admin JWT reaches the handler (2 ms)
+    ✓ the gateway service token reaches the handler (4 ms)
+    ✓ an exafy_admin JWT reaches the handler (4 ms)
   POST /api/v1/approvals/appr_VTID-01234_abc/reject
-    ✓ no bearer → 401 and the handler is never reached (3 ms)
+    ✓ no bearer → 401 and the handler is never reached (4 ms)
     ✓ a non-admin JWT → 403 (3 ms)
     ✓ the gateway service token reaches the handler (2 ms)
     ✓ an exafy_admin JWT reaches the handler (2 ms)
   POST /feed/approve branch check
-    ✓ a body branch that differs from the PR head is refused and nothing merges (4 ms)
-    ✓ the matching head branch proceeds to the merge call (3 ms)
+    ✓ a body branch that differs from the PR head is refused and nothing merges (3 ms)
+    ✓ the matching head branch proceeds to the merge call (4 ms)
   developer voice tools carry the caller token (dev_approve_pr / dev_reject_pr)
     ✓ dev_approve_pr without a user_jwt answers the admin-session message and makes no call
-    ✓ dev_reject_pr without a user_jwt answers the admin-session message and makes no call
+    ✓ dev_reject_pr without a user_jwt answers the admin-session message and makes no call (1 ms)
     ✓ dev_approve_pr with a user_jwt forwards it as the Bearer token
-    ✓ dev_reject_pr with a user_jwt forwards it as the Bearer token
+    ✓ dev_reject_pr with a user_jwt forwards it as the Bearer token (1 ms)
   voice approve on the generic live path (VTID-05528)
-    ✓ a voice session holding the member bearer approves as that member (44 ms)
+    ✓ a voice session holding the member bearer approves as that member (57 ms)
   the SSE stream binds the member bearer only when it verifies to the session owner (VTID-05528)
-    ✓ binds the bearer when it verifies to the session owner (17 ms)
-    ✓ does not bind a bearer that verifies to another user, and still serves the stream (26 ms)
-    ✓ does not bind a token that does not verify (10 ms)
-    ✓ does not bind when no token is sent (12 ms)
+    ✓ binds the bearer when it verifies to the session owner (21 ms)
+    ✓ does not bind a bearer that verifies to another user, and still serves the stream (28 ms)
+    ✓ does not bind a token that does not verify (13 ms)
+    ✓ does not bind when no token is sent (18 ms)
   the WebSocket start frame binds the member bearer only when it verifies to the session owner (VTID-05528)
     ✓ binds the socket bearer when it verifies to the session owner (22 ms)
-    ✓ does not bind a bearer that verifies to another user (24 ms)
-    ✓ does not bind a token that does not verify (21 ms)
-    ✓ does not bind when the socket sends no token (21 ms)
+    ✓ does not bind a bearer that verifies to another user (31 ms)
+    ✓ does not bind a token that does not verify (23 ms)
+    ✓ does not bind when the socket sends no token (22 ms)
   POST /api/v1/orb/tool hands the request bearer to the tools as user_jwt (VTID-05528)
     ✓ the request bearer becomes user_jwt in the tool identity (5 ms)
-    ✓ a request without a bearer gives the tool no user_jwt, so it cannot act as the caller (2 ms)
+    ✓ a request without a bearer gives the tool no user_jwt, so it cannot act as the caller (3 ms)
   the bind guards and the tool bearer, as written in source (VTID-05528)
     ✓ the SSE stream binds a token only when it verified to the session owner (3 ms)
     ✓ the WebSocket start binds the socket token only when its identity is the session owner (3 ms)
@@ -599,6 +599,6 @@ PASS test/mt-track-s-authz-approvals-auth.test.ts (8.693 s)
 Test Suites: 1 passed, 1 total
 Tests:       32 passed, 32 total
 Snapshots:   0 total
-Time:        8.881 s
+Time:        15.836 s
 Ran all test suites matching /test\/mt-track-s-authz-approvals-auth.test.ts/i.
 Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

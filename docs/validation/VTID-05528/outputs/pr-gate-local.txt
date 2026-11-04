@@ -1,5 +1,5 @@
 == gate scope --base origin/main --head HEAD
-✅ **scope** — 8 changed file(s), all inside the scope of VTID-05528
+✅ **scope** — 21 changed file(s), all inside the scope of VTID-05528
 exit=0 (check scope)
 
 == gate sparring --base origin/main --head HEAD
@@ -8,6 +8,5 @@ exit=0 (check scope)
 exit=1 (check sparring)
 
 == gate weakening --base origin/main --head HEAD
-✅ **test weakening** — 3 changed test file(s), none weakened without a declaration
+✅ **test weakening** — 2 changed test file(s), none weakened without a declaration
 exit=0 (check weakening)
-

@@ -108,4 +108,28 @@ $ grep -n "docs/validation/VTID-05528" ... fix-ups of stale hashes in acceptance
 $ git add docs/validation/VTID-05528
 $ GIT_AUTHOR_NAME='kiro-agent[bot]' GIT_COMMITTER_NAME='kiro-agent[bot]' GIT_AUTHOR_EMAIL='245459735+kiro-agent[bot]@users.noreply.github.com' GIT_COMMITTER_EMAIL='245459735+kiro-agent[bot]@users.noreply.github.com' git commit -q -F /projects/sandbox/av2-scratch/msg-3-evidence.txt
 
+## 9. Operator Chat moved to its own lane; re-verification on the revised head (be3f456cdf)
+$ git -C /projects/sandbox/wt-av2 revert --no-commit 7a30f146d9                   -> applied cleanly; gemini-operator.ts restored, operator test deleted (staged only)
+$ git commit -m <subject> -m <body> -m <trailers>, kiro-agent[bot] identity in the env vars   -> commit be3f456cdf (2 files). The first attempt read its message from a file the shell could not see and failed before creating a commit.
+$ git -C /projects/sandbox/wt-av2 diff --name-only origin/main...HEAD             -> neither operator file is listed
+$ git -C /projects/sandbox/vitana-platform worktree add -b kiro/operator-chat-service-token/lane /projects/sandbox/wt-ocs-lane origin/main   -> new branch at origin/main 4066f563e7 (lane worktree)
+$ git -C /projects/sandbox/wt-ocs-lane cherry-pick --no-commit 7a30f146d9         -> applied cleanly; the same two files staged, code unchanged
+$ ln -s <wt-av2>/services/gateway/node_modules <lane>/services/gateway/node_modules -> npx tsc --noEmit reported TS2742 (paths resolved outside the lane worktree); replaced by a copy of the same directory (package.json and lockfile identical on both bases)
+$ cp -a <wt-av2>/services/gateway/node_modules <lane>/services/gateway/node_modules  -> copy made
+(lane) $ npx jest test/operator-chat-service-token.test.ts                        -> exit 0, 1 suite, 2 passed
+(lane) $ npx tsc --noEmit                                                         -> exit 0, 0 errors
+(lane) $ git commit -m <subject> -m <body> -m <trailers>                          -> commit 2741edbe64 (2 files); trailers kiro-hotmail-202611011452-6d16 and operator-chat-service-token
+$ npx jest test/mt-track-s-authz-approvals-auth.test.ts > outputs/green-approvals-head.txt          -> exit 0, 32 passed
+$ npx jest test/orb-tools/developer-tools.test.ts > outputs/green-developer-tools-head.txt        -> exit 0, 60 passed
+$ npm run test:operator > outputs/green-test-operator-head.txt                                    -> exit 0, 71 passed
+$ npm run test:roles > outputs/green-test-roles-head.txt                                          -> exit 0, 105 passed
+$ npx tsc --noEmit (record written to outputs/tsc-head.txt)                                       -> exit 0, 0 errors
+$ npx jest test/vtid-05047-cicd-routes-auth.test.ts test/vtid-05019-cicd-pr-routes-auth.test.ts test/vtid-05005-kiro-dev-tools-mcp.test.ts test/vtid-05006-kiro-write-tools.test.ts test/orb/live/ws-tenant-fallback.test.ts test/orb/live/characterization/sse-stream.characterization.test.ts test/vtid-04834-live-session-start-stop-once.test.ts > outputs/green-nearby-head.txt   -> exit 0, 7 suites, 142 passed
+$ git archive 7292527d60 services/gateway | tar -x into a scratch copy (/projects/sandbox/av2-scratch/red-base); the two approvals test files copied in; node_modules linked from wt-av2
+$ npx jest test/mt-track-s-authz-approvals-auth.test.ts test/orb-tools/developer-tools.test.ts -> exit 1, 19 failed, 73 passed, 92 total
+$ grep -E "^(PASS|FAIL) |^Tests:|^Test Suites:|✓|✕|^  ● " <raw log> > outputs/red-origin-main-results.txt; scratch copy removed (node_modules link removed first; the real node_modules is intact)
+$ node scripts/ci/pr-gate/gate.mjs scope | sparring | weakening --base origin/main --head HEAD > outputs/pr-gate-local.txt   -> scope exit 0 (21 files, all in scope), sparring exit 1 (unchanged), weakening exit 0 (2 test files)
+$ git diff --stat a6455dfbc5 HEAD -- services/gateway/src/routes/orb-live.ts services/gateway/src/routes/orb-tool.ts services/gateway/test/mt-track-s-authz-approvals-auth.test.ts   -> empty; the mutation runs in outputs/mutation-checks.txt still apply to these files
+$ git rm docs/validation/VTID-05528/outputs/green-operator-chat-head.txt           -> removed from this folder; its content stays in history at 33c492784b
+
 # Commands run after this file was committed (git log / git show checks of the three commits and their trailers) are reported in the final report, not here.

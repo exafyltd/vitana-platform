@@ -1,39 +1,39 @@
 PASS test/orb-tools/developer-tools.test.ts
-    ✓ exposes all 12 tools (14 ms)
-    ✓ dev_list_vtids denies community role with developer_role_required (2 ms)
-    ✓ dev_get_vtid_status denies community role with developer_role_required (7 ms)
+    ✓ exposes all 12 tools (13 ms)
+    ✓ dev_list_vtids denies community role with developer_role_required (1 ms)
+    ✓ dev_get_vtid_status denies community role with developer_role_required
     ✓ dev_list_pending_approvals denies community role with developer_role_required
-    ✓ dev_count_approvals denies community role with developer_role_required
+    ✓ dev_count_approvals denies community role with developer_role_required (3 ms)
     ✓ dev_approve_pr denies community role with developer_role_required (1 ms)
     ✓ dev_reject_pr denies community role with developer_role_required
-    ✓ dev_list_voice_sessions denies community role with developer_role_required (1 ms)
+    ✓ dev_list_voice_sessions denies community role with developer_role_required
     ✓ dev_list_routines denies community role with developer_role_required (1 ms)
-    ✓ dev_get_routine_detail denies community role with developer_role_required (1 ms)
-    ✓ dev_list_active_healing denies community role with developer_role_required
-    ✓ dev_get_autonomy_pulse denies community role with developer_role_required (1 ms)
+    ✓ dev_get_routine_detail denies community role with developer_role_required
+    ✓ dev_list_active_healing denies community role with developer_role_required (1 ms)
+    ✓ dev_get_autonomy_pulse denies community role with developer_role_required
     ✓ dev_list_agents denies community role with developer_role_required
-    ✓ dev_list_vtids denies unauthenticated callers
-    ✓ dev_get_vtid_status denies unauthenticated callers (1 ms)
+    ✓ dev_list_vtids denies unauthenticated callers (1 ms)
+    ✓ dev_get_vtid_status denies unauthenticated callers
     ✓ dev_list_pending_approvals denies unauthenticated callers
-    ✓ dev_count_approvals denies unauthenticated callers (2 ms)
+    ✓ dev_count_approvals denies unauthenticated callers
     ✓ dev_approve_pr denies unauthenticated callers (1 ms)
     ✓ dev_reject_pr denies unauthenticated callers
-    ✓ dev_list_voice_sessions denies unauthenticated callers (1 ms)
+    ✓ dev_list_voice_sessions denies unauthenticated callers
     ✓ dev_list_routines denies unauthenticated callers
     ✓ dev_get_routine_detail denies unauthenticated callers
-    ✓ dev_list_active_healing denies unauthenticated callers
-    ✓ dev_get_autonomy_pulse denies unauthenticated callers (1 ms)
+    ✓ dev_list_active_healing denies unauthenticated callers (1 ms)
+    ✓ dev_get_autonomy_pulse denies unauthenticated callers
     ✓ dev_list_agents denies unauthenticated callers
     ✓ allows developer, admin and exafy_admin
     ✓ accepts loose spoken forms (1 ms)
     ✓ matches the routes/approvals.ts deterministic format (1 ms)
-    ✓ speaks id + title + status for recent ledger rows (1 ms)
+    ✓ speaks id + title + status for recent ledger rows
     ✓ speaks a plain empty state
-    ✓ normalizes loose ids and speaks the full status (1 ms)
-    ✓ answers plainly when the VTID is unknown
+    ✓ normalizes loose ids and speaks the full status
+    ✓ answers plainly when the VTID is unknown (1 ms)
     ✓ rejects input without digits
-    ✓ speaks vtid, title, PR and checks per queue item (1 ms)
-    ✓ speaks an empty queue plainly
+    ✓ speaks vtid, title, PR and checks per queue item
+    ✓ speaks an empty queue plainly (1 ms)
     ✓ fails loudly when the approvals API errors
     ✓ speaks the pending count (1 ms)
     ✓ asks for confirmation before mutating
@@ -43,60 +43,55 @@ PASS test/orb-tools/developer-tools.test.ts
     ✓ requires a reason
     ✓ asks for confirmation before mutating (1 ms)
     ✓ posts the rejection with reason after confirm
-    ✓ speaks user, status and turns per session (1 ms)
+    ✓ speaks user, status and turns per session
     ✓ filters to active sessions
-    ✓ speaks an empty state plainly
-    ✓ speaks failing routines first with counts (1 ms)
+    ✓ speaks an empty state plainly (1 ms)
+    ✓ speaks failing routines first with counts
     ✓ speaks the routine plus its recent runs
-    ✓ falls back to fuzzy match and reports unknown routines plainly
+    ✓ falls back to fuzzy match and reports unknown routines plainly (1 ms)
     ✓ requires a name
-    ✓ speaks in-flight healing VTIDs and pending diagnoses (4 ms)
+    ✓ speaks in-flight healing VTIDs and pending diagnoses
     ✓ speaks a quiet state plainly (1 ms)
-    ✓ composes counts across the four pulse sources plus terminalized VTIDs (387 ms)
-    ✓ decays stale service heartbeats like routes/agents-registry.ts (7 ms)
-    ✓ speaks health counts with problem agents first (1 ms)
+    ✓ composes counts across the four pulse sources plus terminalized VTIDs (292 ms)
+    ✓ decays stale service heartbeats like routes/agents-registry.ts (1 ms)
+    ✓ speaks health counts with problem agents first
     ✓ speaks an empty registry plainly
     ✓ declares every handler and nothing else (1 ms)
-    ✓ uses only the OpenAPI-3.0 subset Vertex accepts (no default/minimum/maximum/format/examples) (2 ms)
-    ✓ reject declares reason as required; confirm flow documented on both mutations (1 ms)
-FAIL test/operator-chat-service-token.test.ts
-    ✕ sends the gateway service token and never the Supabase service key (42 ms)
-    ✕ sends the gateway service token and never the Supabase service key (3 ms)
-  ● dev_approve_item (Operator Chat to the approvals route) › sends the gateway service token and never the Supabase service key
-  ● dev_reject_item (Operator Chat to the approvals route) › sends the gateway service token and never the Supabase service key
-FAIL test/mt-track-s-authz-approvals-auth.test.ts (8.69 s)
-    ✕ no bearer → 401 and the handler is never reached (49 ms)
+    ✓ uses only the OpenAPI-3.0 subset Vertex accepts (no default/minimum/maximum/format/examples) (3 ms)
+    ✓ reject declares reason as required; confirm flow documented on both mutations
+FAIL test/mt-track-s-authz-approvals-auth.test.ts (9.95 s)
+    ✕ no bearer → 401 and the handler is never reached (56 ms)
     ✕ a non-admin JWT → 403 (5 ms)
     ✓ the gateway service token reaches the handler (5 ms)
     ✓ an exafy_admin JWT reaches the handler (4 ms)
-    ✕ no bearer → 401 and the handler is never reached (4 ms)
+    ✕ no bearer → 401 and the handler is never reached (5 ms)
     ✕ a non-admin JWT → 403 (3 ms)
     ✓ the gateway service token reaches the handler (3 ms)
     ✓ an exafy_admin JWT reaches the handler (3 ms)
-    ✕ no bearer → 401 and the handler is never reached (4 ms)
-    ✕ a non-admin JWT → 403 (2 ms)
+    ✕ no bearer → 401 and the handler is never reached (5 ms)
+    ✕ a non-admin JWT → 403 (3 ms)
     ✓ the gateway service token reaches the handler (2 ms)
-    ✓ an exafy_admin JWT reaches the handler (1 ms)
-    ✕ a body branch that differs from the PR head is refused and nothing merges (2 ms)
-    ✓ the matching head branch proceeds to the merge call (3 ms)
+    ✓ an exafy_admin JWT reaches the handler (2 ms)
+    ✕ a body branch that differs from the PR head is refused and nothing merges (10 ms)
+    ✓ the matching head branch proceeds to the merge call (4 ms)
     ✕ dev_approve_pr without a user_jwt answers the admin-session message and makes no call (3 ms)
     ✕ dev_reject_pr without a user_jwt answers the admin-session message and makes no call (1 ms)
     ✕ dev_approve_pr with a user_jwt forwards it as the Bearer token
     ✕ dev_reject_pr with a user_jwt forwards it as the Bearer token (1 ms)
     ✕ a voice session holding the member bearer approves as that member (1 ms)
-    ✕ binds the bearer when it verifies to the session owner (21 ms)
-    ✓ does not bind a bearer that verifies to another user, and still serves the stream (19 ms)
-    ✓ does not bind a token that does not verify (10 ms)
-    ✓ does not bind when no token is sent (17 ms)
+    ✕ binds the bearer when it verifies to the session owner (18 ms)
+    ✓ does not bind a bearer that verifies to another user, and still serves the stream (21 ms)
+    ✓ does not bind a token that does not verify (15 ms)
+    ✓ does not bind when no token is sent (15 ms)
     ✕ binds the socket bearer when it verifies to the session owner (23 ms)
-    ✓ does not bind a bearer that verifies to another user (24 ms)
+    ✓ does not bind a bearer that verifies to another user (26 ms)
     ✓ does not bind a token that does not verify (21 ms)
     ✓ does not bind when the socket sends no token (21 ms)
-    ✕ the request bearer becomes user_jwt in the tool identity (8 ms)
-    ✕ a request without a bearer gives the tool no user_jwt, so it cannot act as the caller (2 ms)
-    ✕ the SSE stream binds a token only when it verified to the session owner (24 ms)
-    ✕ the WebSocket start binds the socket token only when its identity is the session owner (21 ms)
-    ✕ orb-tool takes user_jwt from the request bearer
+    ✕ the request bearer becomes user_jwt in the tool identity (9 ms)
+    ✕ a request without a bearer gives the tool no user_jwt, so it cannot act as the caller (3 ms)
+    ✕ the SSE stream binds a token only when it verified to the session owner (25 ms)
+    ✕ the WebSocket start binds the socket token only when its identity is the session owner (23 ms)
+    ✕ orb-tool takes user_jwt from the request bearer (1 ms)
   ● POST /api/v1/approvals/feed/approve › no bearer → 401 and the handler is never reached
   ● POST /api/v1/approvals/feed/approve › a non-admin JWT → 403
   ● POST /api/v1/approvals/appr_VTID-01234_abc/approve › no bearer → 401 and the handler is never reached
@@ -116,5 +111,5 @@ FAIL test/mt-track-s-authz-approvals-auth.test.ts (8.69 s)
   ● the bind guards and the tool bearer, as written in source (VTID-05528) › the SSE stream binds a token only when it verified to the session owner
   ● the bind guards and the tool bearer, as written in source (VTID-05528) › the WebSocket start binds the socket token only when its identity is the session owner
   ● the bind guards and the tool bearer, as written in source (VTID-05528) › orb-tool takes user_jwt from the request bearer
-Test Suites: 2 failed, 1 passed, 3 total
-Tests:       21 failed, 73 passed, 94 total
+Test Suites: 1 failed, 1 passed, 2 total
+Tests:       19 failed, 73 passed, 92 total
