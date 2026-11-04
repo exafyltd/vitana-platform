@@ -31,6 +31,9 @@ Each is one file on `main` (vitana-platform unless marked v1):
    no staging rollback; STAGING-VERIFY started by a dispatch; a workflow that pushes to the branch it runs on.
 
 ## 1. Summary
+- Built for how we work: about a dozen Kiro accounts, each running several sessions, dozens of tasks at once in the same
+  two repositories. Every task keeps its sparred plan, its own VTID, its tests and STAGING-VERIFY, and every step is
+  recorded in OASIS. A one-lane task goes from plan PR to verified staging in under 3 hours (p50), instead of days.
 - Hard cutover: on one day, both repositories move their delivery to our own GitLab: checks, the merge queue, staging
   deploys and STAGING-VERIFY. From that day GitHub Actions no longer runs on pull requests or pushes.
 - Before the cut, the pieces are built (the 7 lanes here and the M2 lanes) and proven on copies of `main` running on
@@ -44,8 +47,8 @@ Each is one file on `main` (vitana-platform unless marked v1):
 - The VTID ledger and OASIS stay the single record of all work. Every GitLab step writes an OASIS event with its VTID.
 - After the cut: the gateway's GitHub calls move behind a provider layer, production publish moves to GitLab, GitHub is
   archived, then the repair and improvement loops follow.
-- Measured: first check result, accept to `main`, landings per hour, STAGING-VERIFY pass rate, change failure rate,
-  time to restore and AWS cost per day (§10).
+- Measured per task in `timings.json`, and across tasks: first check result, accept to `main`, landings per hour,
+  STAGING-VERIFY pass rate, change failure rate, time to restore and AWS cost per day (§10).
 
 ## 2. Today
 ### 2.1 The flow and where the time goes
@@ -329,19 +332,22 @@ They need secrets (LLM keys, Bedrock), so they cannot run on the untrusted class
 |---|---|---|---|
 | Merge request opened, closed, merged | `scm.gitlab.merge_request.opened`, `.closed`, `.merged` (M2) | webhook | M2; the cut adds lane key, head SHA and URL |
 | Merge request updated (queue label, new head) | `scm.gitlab.merge_request.updated` | webhook | cut |
+| Push to an agent branch (head, session from the trailers) | `scm.gitlab.push` | webhook | cut |
+| Review entry pushed (lane, verdict, reviewer model, reviewed head, from the `Collab-*` trailers) | `delivery.review.recorded` | webhook, from push events | cut |
+| Lane file changed (slug, lane, commit, session) | `delivery.lane.updated` | webhook, from push events | cut |
 | Pipeline started and finished, with each job's name, status, wait and run seconds | `scm.gitlab.pipeline.started`, `.succeeded`, `.failed`, `.canceled` | webhook | M2 and cut |
 | Landed: merge SHA, merge request, reviewed head, verdict, reviewer model, seconds from accept to land | `delivery.landed` | webhook, from the trailers of the `main` pipeline's commit | cut |
 | Staging deploy finished or rolled back | `staging.deploy.completed`, `.failed` (existing, `types/cicd.ts:1037-1038`), `staging.deploy.rolled_back` | webhook, from the deploy job's status | cut |
 | STAGING-VERIFY | `staging.verify.passed`, `.failed`, `.superseded` (existing) | `record` job | cut |
 | VTID closed at landing | lifecycle event of `/api/v1/oasis/tasks/:vtid/complete` | `vtid-close` job | cut |
 | A GitHub PR moved to GitLab; a repository cut over | `scm.migration.pr_moved`, `scm.migration.cutover` | webhook (the merge-request description line `Moved from <PR URL>`; the tag `delivery/cutover-<repo>`) | cut |
-| Lane state change, review verdict | `delivery.lane.state_changed`, `delivery.review.recorded` | platform `main` pipeline job, from the lane-file diff | after the cut |
+| Lane state value at each change (read from the file at that commit) | `delivery.lane.state_changed` | gateway, through the provider layer | after the cut |
 | A GitHub merge refused after the cut | `delivery.merge.refused` | gateway guard (§3.13) | cut |
 | Gate 2 sent | `delivery.gate2.sent` | driver or Project Manager | after the cut |
 | Heal and improve actions | `delivery.heal.*`, `delivery.improve.*` | gateway loop service | with the loops |
 
 - **VTID on every event.** It is the first `VTID-\d{5}` in the merge-request title, or in the subject of the commit on
-  `main` (the rule STAGING-VERIFY uses, `run.mjs:375`). Pipeline-level facts without one (a nightly run) use
+  `main` (the rule STAGING-VERIFY uses, `run.mjs:375`); a push takes the VTID of its branch's merge request. Pipeline-level facts without one (a nightly run) use
   `BOOTSTRAP-DELIVERY`, as STAGING-VERIFY uses `BOOTSTRAP-STAGING-VERIFY` (`record-oasis.sh:28`).
 - **Exactly once for readers.** Each event carries `metadata.dedupe_key` (host, project, object, id, state). Readers keep
   the first row per key. GitLab redeliveries are already dropped by `webhook-id` (M2); the key catches duplicates
@@ -414,18 +420,23 @@ OASIS events (NEVER 10).
 ## 5. Concurrency for dozens of agents
 | Measure | Today | Target from the cut (both repositories) |
 |---|---|---|
+| One-lane task, plan PR opened to STAGING-VERIFY passed (`timings.json`) | days | p50 ≤ 3 h, p95 ≤ 8 h |
 | Push to first job result | wait p50 11.1 min, then the job | p50 ≤ 3 min, p95 ≤ 6 min |
 | Required merge-request checks done | vitana-v1 PR-GATE wall time p50 54.9 min | p95 ≤ 15 min (vitana-v1), ≤ 20 min (vitana-platform) |
 | Accept to on `main` | not recorded | p50 ≤ 15 min, p95 ≤ 45 min |
 | Landing to STAGING-VERIFY result | vitana-v1 staging deploy wall time p50 61.4 min, then verify | p95 ≤ 45 min (vitana-v1), ≤ 60 min (gateway) |
 | Landing capacity per repository | serial | ≥ 4 per hour each |
-| Machine maximum (untrusted / main / deploy) | shared GitHub pool | 48 / 8 / 4 |
+| Parallel tasks supported | limited by the shared GitHub queue | about 48 sessions (12 accounts × 4) |
+| Machine maximum (untrusted / main / deploy) | shared GitHub pool | 64 / 8 / 4 |
 | AWS budget, engineering account | – | 2,000 USD per month |
 
 - **Demand model.** Busy machines ≈ agents × pushes per agent-hour × jobs per pipeline × (minutes per job + 1.5 boot)
   ÷ 60. For 30 agents, 2 pushes an hour, 6 jobs and 4 minutes: about 33 machines. vitana-v1 carries about a quarter of
-  today's PRs and vitana-platform the rest; the untrusted class allows 48 machines for both. M2's quota check prints the
-  vCPU requests.
+  today's PRs and vitana-platform the rest. For 48 sessions the model gives about 53 busy machines at peak, so the
+  untrusted class allows 64. Idle machines cost nothing (scale to zero). M2's quota check prints the vCPU requests.
+- **Accounts.** The number of Kiro accounts does not change the delivery path. Every account pushes through the bridge,
+  or directly once it has a GitLab login (M2 allows 100 service accounts); sessions stay attributed by their
+  `Collab-Session` trailers, and work is assigned by `docs/programs/areas.yaml` as today.
 - **Serial queue.** Capacity ≈ 60 ÷ (merge-request pipeline minutes + about 2) landings an hour, about 5 at 10
   minutes. Each landing makes every other ready merge request re-run once. Staging does not cap landing: deploys queue
   per service and each STAGING-VERIFY covers every commit since production.
@@ -441,10 +452,11 @@ OASIS events (NEVER 10).
   hot files kept one at a time.
 - **Fairness.** Classes have separate machine pools, so merge-request load never starves `main`, staging or previews.
 - **Agent caps stay**: at most 6 build lanes per plan, 2 PLAN-SPAR sessions (Bedrock quota shared with production,
-  `collaboration.md` §8a item 2), one landing per repository and one staging deploy per service at a time. The
-  sparring cap becomes the first limit at roughly 40 plans a day (2 slots, up to 25 minutes per run, about 3 runs per
-  plan). Raising it needs Bedrock quota and an owner instruction, because `PLAN-SPAR.yml` and `plan-spar.mjs` are
-  protected.
+  `collaboration.md` §8a item 2), one landing per repository and one staging deploy per service at a time. A PLAN-SPAR
+  run took about 3 minutes tonight once it had a machine (this plan's first round ran 2.5 minutes after a 20-minute
+  wait). With 2 slots that is about 40 runs an hour, enough for dozens of plans a day once the GitHub queue is gone.
+  The partner's Bedrock quota is shared with production, so the cap stays 2; raising it is owner decision C3, because
+  `PLAN-SPAR.yml` and `plan-spar.mjs` are protected.
 
 ## 6. Self-healing and self-improvement loops (after the cut)
 Each loop reacts to an OASIS event, acts through the normal pipeline (a lane or a merge request with a VTID), and

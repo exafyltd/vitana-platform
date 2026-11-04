@@ -210,7 +210,9 @@ six and eng-gitlab-m2 `settings`. Every new test is recorded red on `origin/main
       `scm.gitlab.merge_request.updated`; pipeline running and canceled give `.started` and `.canceled`; the tags
       `delivery/cutover-<repo>` give `scm.migration.cutover`; shadow runs are marked `metadata.mode: shadow`; every event
       has a VTID or `BOOTSTRAP-DELIVERY`, `metadata.dedupe_key`, `plane: delivery` and `host: gitlab`; a duplicate key
-      gives one row; no rule of `autopilot-event-mapper.ts` lists `scm.gitlab.*` or `delivery.*`),
+      gives one row; a push gives `scm.gitlab.push` with the VTID of its branch's merge request; a pushed commit with
+      `Collab-Verdict` gives one `delivery.review.recorded` and a commit that changes a lane file one
+      `delivery.lane.updated`; no rule of `autopilot-event-mapper.ts` lists `scm.gitlab.*` or `delivery.*`),
       `test/delivery/delivery-host-guard.test.ts` (with `DELIVERY_HOST_<REPO>=gitlab`, `mergePullRequest` and
       `updatePullRequestBranch` for that repository make no GitHub call, return `merge_moved_to_gitlab` and emit one OASIS
       event; with the flag unset they behave exactly as before; `safeMerge` and the Project Manager's merge report the
@@ -251,7 +253,7 @@ six and eng-gitlab-m2 `settings`. Every new test is recorded red on `origin/main
 ## Lane `cutover` (vitana-platform)
 - [ ] C1 Write and record red on base: `scripts/eng/gitlab-settings-cutover.test.mjs` (a project with a cutover block
       keeps the `mirror` profile until the instance marker exists, then converges to `native` with landing, the required
-      jobs `lane-scope`, `change-suite` and `gate`, webhook events including tag pushes, the push mirror of protected
+      jobs `lane-scope`, `change-suite` and `gate`, webhook events including pushes and tag pushes, the push mirror of protected
       branches to GitHub with divergent refs kept, protected `assist/*` and `DELIVERY_MODE=live`; removing the marker
       converges back; a second run writes nothing), `scripts/eng/github-workflows.test.mjs` (the list covers all 159
       workflow files of both repositories with one action each, `disable` or `keep`; every `keep` file has no
