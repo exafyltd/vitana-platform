@@ -31,16 +31,17 @@ Each is one file on `main` (vitana-platform unless marked v1):
    no staging rollback; STAGING-VERIFY started by a dispatch; a workflow that pushes to the branch it runs on.
 
 ## 1. Summary
-- Built for how we work: about a dozen Kiro accounts, each running several sessions, dozens of tasks at once in the same
-  two repositories. Every task keeps its sparred plan, its own VTID, its tests and STAGING-VERIFY, and every step is
-  recorded in OASIS. A one-lane task goes from plan PR to verified staging in under 3 hours (p50), instead of days.
+- Built for how we work: about a dozen Kiro accounts running about 96 sessions, dozens of tasks at once in the same two
+  repositories. Every task keeps its sparred plan, its own VTID, its tests and STAGING-VERIFY, and every step is
+  recorded in OASIS. A one-lane task goes from plan PR to verified staging in 1 to 3 hours, instead of days.
 - Hard cutover: on one day, both repositories move their delivery to our own GitLab: checks, the merge queue, staging
   deploys and STAGING-VERIFY. From that day GitHub Actions no longer runs on pull requests or pushes.
 - Before the cut, the pieces are built (the 7 lanes here and the M2 lanes) and proven on copies of `main` running on
   GitLab, then rehearsed once. The cut happens when a mechanical checklist is green (§8). The target is 7 days after
   this plan is approved.
-- For agents: a push gets its first check result in about 3 minutes. A merge bot lands reviewed, green work one change
-  at a time per repository. Every landing deploys to staging and runs STAGING-VERIFY. Agents keep pushing branches as
+- For agents: a push gets its first check result in 1 to 3 minutes and all required checks in 5 to 10. A merge bot
+  lands reviewed, green work in 5 to 15 minutes, testing up to 8 changes at once and landing them in order. Every
+  landing deploys to staging and has its STAGING-VERIFY result in 10 to 20 minutes. Agents keep pushing branches as
   today; GitLab picks them up within a minute until each agent tool pushes to GitLab directly.
 - For the owner: nothing to approve on the way. One staging summary per change, PUBLISH for production, and a Delivery
   screen in the Command Hub.
@@ -176,9 +177,9 @@ So today a VTID's history is split between OASIS, git and GitHub. This plan clos
 ### 3.2 Runner classes
 | Class (runner tag) | Runs | Holds | Machines |
 |---|---|---|---|
-| untrusted `vitana-eng` (M2 fleet) | every job of every merge-request pipeline | nothing: no AWS role, no secret, no ID token; egress 80, 443 and DNS only (M2 §3.2) | single-use VMs, scale to zero, max 48 |
-| main `vitana-eng-main` (protected runner: protected refs only, `main` and `assist/*`) | full suites after landing, image builds, STAGING-VERIFY, nightly, assist jobs | per-job ID tokens for read-only secrets (test user, LLM keys); no instance policy | second ASG under the M2 manager, single-use, max 8 |
-| deploy `vitana-eng-deploy` | only central-script jobs: push image, staging deploy and rollback, preview upload and teardown, record, VTID close, notify platform | per-job ID tokens for the deploy roles (§7); never runs repo code | third ASG, single-use, max 4 |
+| untrusted `vitana-eng` (M2 fleet) | every job of every merge-request pipeline and of the merge bot's train refs (§3.5) | nothing: no AWS role, no secret, no ID token; egress 80, 443 and DNS only (M2 §3.2) | single-use VMs, max 96; a warm pool of 4 ready machines (autoscaler `idle_count`) keeps the first result near 1 minute |
+| main `vitana-eng-main` (protected runner: protected refs only, `main` and `assist/*`) | full suites after landing, image builds, STAGING-VERIFY, nightly, assist jobs | per-job ID tokens for read-only secrets (test user, LLM keys); no instance policy | second ASG under the M2 manager, single-use, max 12 |
+| deploy `vitana-eng-deploy` | only central-script jobs: push image, staging deploy and rollback, preview upload and teardown, record, VTID close, notify platform | per-job ID tokens for the deploy roles (§7); never runs repo code | third ASG, single-use, max 6 |
 | trusted host (GitLab machine) | GitLab, the merge bot, the settings sync (M2) and the GitHub bridge (§3.13) | bot tokens, the bridge's GitHub token | no CI job |
 
 A structure test fails when a job tagged `vitana-eng` declares `id_tokens` or names a secret, or when a job tagged
@@ -222,6 +223,11 @@ the paths must equal `config/service-path-map.json` (a parity test), which stays
 - Selection is never narrower than GitHub's path filters: a test over the file lists of the last 60 merged vitana-v1
   PRs (a fixture read once) checks that each PR selects every check whose GitHub workflow ran for it.
 - `interruptible` plus auto-cancel: a new push cancels the old pipeline of that branch.
+- **Speed rules**, so the required checks finish in 5 to 10 minutes: the governance jobs come first and take under a
+  minute; no check job runs longer than about 4 minutes (Vitest and Jest are sharded until they fit, with the union check
+  of plan ci-push-to-result); dependencies come from the S3 cache keyed by the lockfile hash, and the job image already
+  holds the toolchain (M2 image). The nightly report (T3) lists every job whose median passed 4 minutes, and that opens
+  an improve task (I2, §6).
 - Retry only on runner failure, stuck job or scheduler failure, at most once (M2 central CI). A failing test is never
   retried automatically and never skipped.
 - The signed-in part of vitana-v1's `preview-e2e` (`vitana-v1/.github/workflows/PR-GATE.yml:196`, test-user secrets
@@ -240,6 +246,15 @@ request per project at a time with fast-forward plus squash, using the `land-gua
 - **Order.** First, revert and `fix-main` merge requests while `main` is red. Then the oldest accept. A merge request
   that touches a hot file (`collaboration.md` §8a item 4) waits until the previous hot-file landing has its
   STAGING-VERIFY result.
+- **Train.** To land each change in 5 to 15 minutes without breaking `main`, the bot tests up to 8 ready merge requests
+  per repository at once, in queue order. Position k is a bot ref `train/<k>` that merges `main` and the first k merge
+  requests; its pipeline runs the required jobs on the untrusted class. When position k is green and positions 1 to k-1
+  have landed, the bot updates merge request k by merging `main` into it with `ci.skip`, checks that the new head's tree
+  equals the tested tree of position k, and lands it. A failed or conflicting position drops that merge request from the
+  train (it goes back to its builder) and the positions behind it are rebuilt without it. Every state of `main` is a
+  tested tree, and each merge request stays one squash commit with its VTID. This uses GitLab's "skipped pipelines are
+  considered successful" setting (Free). Only `bot-land` and the owner can merge, so nobody else can use a skipped
+  pipeline to land.
 - **Main red pauses landing**, except for the first group.
 - **Squash message.** The merge request title (VTID first) and description, plus trailers `Merge-Request: !<iid>`,
   `Source-Branch:`, `Reviewed-Head:`, `Review-Verdict: accept`, `Reviewer: agent:vitana-lane-reviewer (<model>)` and
@@ -253,14 +268,17 @@ request per project at a time with fast-forward plus squash, using the `land-gua
 
 ### 3.6 Main pipeline: full suite, image, staging, STAGING-VERIFY, records (T2)
 1. `full-suite`: every check of the repository on the landed commit (main class). Main pipelines are not interruptible,
-   so a red `main` is always tied to one landing.
+   so a red `main` is always tied to one landing. It runs in parallel with the image build and the staging deploy, as
+   today on GitHub, so staging is not held up; a red full suite pauses landing (§3.5).
 2. For each changed deployable service: `build-image` (main class, rootless BuildKit with
    `--oci-worker-no-process-sandbox`, output an OCI archive, no push); `push-image` (deploy class, push to ECR, record
    the digest); `deploy-staging` (deploy class: copy the live task definition, change only the image digest and the
    commit variables, register, update the service, wait until stable, check the served build stamp). In live mode it
    also applies the service's `env_overrides` from the service list; for the gateway at the cut these are
    `PM_AGENT_ENABLED=false`, `DELIVERY_HOST_VITANA_PLATFORM=gitlab` and `DELIVERY_HOST_VITANA_V1=gitlab` (§3.13). A
-   deploy that starts after a newer landing was already deployed ends as superseded without deploying.
+   deploy that starts after a newer landing was already deployed ends as superseded without deploying. Image builds
+   reuse BuildKit layer caches kept in ECR, and the staging services stabilise in a few minutes because their target
+   groups' deregistration delay is 30 seconds (set by the owner's setup script, A1).
 3. `staging-verify` (main class, `resource_group` per service, oldest first): platform `main`'s
    `scripts/ci/staging-verify/run.mjs verify` unchanged, except one new input `--deploy-runs-file` that the deploy job
    writes, in place of the GitHub Actions API call (`run.mjs:180`). Each run covers every commit between production and
@@ -418,36 +436,35 @@ OASIS events (NEVER 10).
 | Identity, trailers, no force-push | `common-rules.md` rule 8 | one GitLab service account per seat (M2); author `kiro-agent[bot]` unchanged; force push off on `main` | same |
 
 ## 5. Concurrency for dozens of agents
-| Measure | Today | Target from the cut (both repositories) |
+| Measure | Today | Target from the cut, typical / slowest 5 % (both repositories) |
 |---|---|---|
-| One-lane task, plan PR opened to STAGING-VERIFY passed (`timings.json`) | days | p50 ≤ 3 h, p95 ≤ 8 h |
-| Push to first job result | wait p50 11.1 min, then the job | p50 ≤ 3 min, p95 ≤ 6 min |
-| Required merge-request checks done | vitana-v1 PR-GATE wall time p50 54.9 min | p95 ≤ 15 min (vitana-v1), ≤ 20 min (vitana-platform) |
-| Accept to on `main` | not recorded | p50 ≤ 15 min, p95 ≤ 45 min |
-| Landing to STAGING-VERIFY result | vitana-v1 staging deploy wall time p50 61.4 min, then verify | p95 ≤ 45 min (vitana-v1), ≤ 60 min (gateway) |
-| Landing capacity per repository | serial | ≥ 4 per hour each |
-| Parallel tasks supported | limited by the shared GitHub queue | about 48 sessions (12 accounts × 4) |
-| Machine maximum (untrusted / main / deploy) | shared GitHub pool | 64 / 8 / 4 |
-| AWS budget, engineering account | – | 2,000 USD per month |
+| One-lane task, plan PR opened to STAGING-VERIFY passed (`timings.json`) | days | 1 h / 3 h |
+| Push to first job result | wait p50 11.1 min, then the job | 1 min / 3 min |
+| Required merge-request checks done | vitana-v1 PR-GATE wall time p50 54.9 min | 5 min / 10 min |
+| Accept to on `main` | not recorded | 5 min / 15 min |
+| Landing to STAGING-VERIFY result | vitana-v1 staging deploy wall time p50 61.4 min, then verify | 10 min / 20 min |
+| Landing capacity per repository | serial | up to 8 per train cycle, about 40 an hour |
+| Parallel tasks supported | limited by the shared GitHub queue | about 96 sessions |
+| Machine maximum (untrusted / main / deploy) | shared GitHub pool | 96 / 12 / 6 |
+| AWS budget, engineering account | – | 5,000 USD per month |
 
-- **Demand model.** Busy machines ≈ agents × pushes per agent-hour × jobs per pipeline × (minutes per job + 1.5 boot)
-  ÷ 60. For 30 agents, 2 pushes an hour, 6 jobs and 4 minutes: about 33 machines. vitana-v1 carries about a quarter of
-  today's PRs and vitana-platform the rest. For 48 sessions the model gives about 53 busy machines at peak, so the
-  untrusted class allows 64. Idle machines cost nothing (scale to zero). M2's quota check prints the vCPU requests.
+- **Demand model.** Busy machines ≈ sessions × pushes per session-hour × jobs per pipeline × (minutes per job + 1 boot)
+  ÷ 60. For 96 sessions, 2 pushes an hour and 6 jobs of 2.5 minutes: about 67 machines, plus the train positions; the
+  untrusted class allows 96. The warm pool of 4 removes the boot wait for the first job. M2's quota check prints the vCPU
+  requests.
 - **Accounts.** The number of Kiro accounts does not change the delivery path. Every account pushes through the bridge,
   or directly once it has a GitLab login (M2 allows 100 service accounts); sessions stay attributed by their
   `Collab-Session` trailers, and work is assigned by `docs/programs/areas.yaml` as today.
-- **Serial queue.** Capacity ≈ 60 ÷ (merge-request pipeline minutes + about 2) landings an hour, about 5 at 10
-  minutes. Each landing makes every other ready merge request re-run once. Staging does not cap landing: deploys queue
-  per service and each STAGING-VERIFY covers every commit since production.
-- **When a batch queue is needed.** When, on 3 working days in a row, accept to `main` p95 exceeds 60 minutes, or
-  4 or more ready merge requests wait for more than 2 hours a day, or demand stays above 4 landings an hour for 2
-  hours. Then a later plan builds batch landing (test K ready merge requests together, land all on green, split on
-  red). That is an owner scope decision (§10).
+- **Landing capacity.** One merge at a time with a full re-run before each gives about 6 landings an hour at 10-minute
+  pipelines (60 ÷ (10 + 1)). The train (§3.5) tests up to 8 in parallel, so a cycle of about 10 minutes lands up to 8:
+  about 40 an hour per repository. Staging does not cap landing: deploys queue per service and each STAGING-VERIFY covers
+  every commit since production.
+- **When the train is not enough.** When, on 3 working days in a row, accept to `main` passes 15 minutes for the slowest
+  5 %, or more than 8 merge requests wait over an hour, the train grows to 12 positions; beyond that is owner decision C1.
 - **Flaky tests.** Only runner failures retry, once. A job that fails and then passes on the same SHA counts as flaky
   (the CI-HEALTH definition). Three in 7 days opens an improve task (§6). A flaky test is never skipped or quarantined.
-- **What the serial queue cannot do.** It cannot land two independent changes at once, it cannot test a change
-  against the ones queued ahead of it, and every landing costs one extra pipeline for each waiting merge request.
+- **What the train cannot do.** It cannot land a merge request that conflicts with one ahead of it (that one goes back
+  to its builder), and a failure at position k costs the positions behind it one re-run.
 - **Queue priority** is the order of §3.5: revert and fix-main first while `main` is red, then the oldest accept, with
   hot files kept one at a time.
 - **Fairness.** Classes have separate machine pools, so merge-request load never starves `main`, staging or previews.
@@ -471,7 +488,7 @@ records each step as an OASIS event. They map to the loop catalog's engineering 
 | H4 production rollback | `prod.deploy.rolled_back` | Operator | an incident in Ops attention and a repair proposal; never an automatic re-publish |
 | I1 flaky test | three flaky results in 7 days | Autopilot or a driver | a task to stabilise the test |
 | I2 slow checks | merge-request pipeline p95 over target 3 days in a row | Autopilot or a driver | a task to shard, cache or split |
-| I3 queue pressure | the batch-queue trigger of §5 | Operator | a proposal to the owner |
+| I3 queue pressure | the train trigger of §5 ("When the train is not enough") | Operator | a proposal to the owner |
 | I4 review rework | a lane with 2 or more `changes` verdicts | Operator | a proposal on lane or plan quality |
 
 **Guardrails for every loop.**
@@ -548,7 +565,8 @@ records each step as an OASIS event. They map to the loop catalog's engineering 
 
 **The cut happens when every item of this checklist is green** (`delivery-cutover.sh status` prints it):
 M1 done; the M2 lanes above done and M2 rehearsal A1 to A9 passed; every lane of §9 done; owner steps A1 to A3 done;
-at least 10 shadow commits per repository with no unexplained difference; the bridge dry run complete; the rehearsal
+at least 10 shadow commits per repository with no unexplained difference and within the §5 targets for first result
+and required checks; the bridge dry run complete; the rehearsal
 passed.
 
 ### 8.2 The cut (one owner command, about one hour)
@@ -566,7 +584,8 @@ passed.
 Lanes that were ready to land on GitHub land on GitLab from the next merge-bot tick; nothing is migrated by hand.
 
 ### 8.3 Exit criteria (10 working days after the cut)
-First result p50 ≤ 3 min and p95 ≤ 6 min. Accept to `main` p50 ≤ 15 min and p95 ≤ 45 min. Every landed VTID has a
+The §5 targets hold (typical / slowest 5 %): first result 1 / 3 min, required checks 5 / 10 min, accept to `main`
+5 / 15 min, landing to STAGING-VERIFY result 10 / 20 min, one-lane task 1 / 3 h. Every landed VTID has a
 `delivery.landed` event and a STAGING-VERIFY result. No push to GitHub `main` except by the mirror. No GitHub workflow
 run on a pull request except PLAN-SPAR and MIGRATION-DRIFT-CHECK. Change failure rate no worse than the 30 days before the
 cut (from OASIS STAGING-VERIFY results and reverts). Cost per day within budget.
@@ -589,7 +608,7 @@ no commit is lost.
    unused in CloudTrail for 30 days; both repositories are push-mirror targets only. Then the owner archives them; issues
    and PR history stay readable there.
 5. The loops of §6, the Command Hub Flow, Agents, Metrics and Loops tabs, a reviewer service with its own identity, and
-   the batch queue if its trigger fired. Exit: change failure rate and time to restore at or below their values after
+   a longer train if its trigger fired. Exit: change failure rate and time to restore at or below their values after
    the cut, heal success at least 60 % as a starting target, no guardrail breach. Rollback: each loop's kill switch.
 
 ## 9. Lanes for the cut
@@ -628,13 +647,14 @@ rehearsal then proves the real staging deploys.
 
 | Item | Per month |
 |---|---|
-| Always on, from M1 and M2: GitLab host (m6i.xlarge, about 0.23 USD/h), fleet manager, NAT gateway, load balancer, about 320 GB of gp3, S3, Secrets Manager, CloudWatch | about 300 to 350 USD |
-| Job machines for both repositories at today's activity: roughly 9,000 machine-minutes a day at a blended 0.0021 USD/min (80 % spot) | about 550 USD |
-| The same at three times today's activity | about 1,700 USD |
+| Always on, from M1 and M2, with the GitLab host grown to m6i.2xlarge (about 0.46 USD/h) for 96 sessions: fleet manager, NAT gateway, load balancer, about 320 GB of gp3, S3, Secrets Manager, CloudWatch | about 470 to 520 USD |
+| Warm pool of 4 untrusted machines, all day | about 370 USD |
+| Job machines at today's activity: roughly 9,000 machine-minutes a day at a blended 0.0021 USD/min (80 % spot) | about 550 USD |
+| Job machines with about 96 sessions busy 12 hours a day: roughly 57,000 machine-minutes a day | about 3,600 USD |
 | NAT data for package installs, the main variable risk | kept low by the S3 cache through the gateway endpoint (M2) |
 
 Caps: each class's machine maximum (§5) bounds the spend per hour; the AWS budget alarm warns at 50, 80 and 100 % of
-2,000 USD (M2 monitoring).
+5,000 USD (M2 monitoring).
 
 **Risks.**
 - R1 A hard cut moves both repositories at once, so a fault hits all work. The checklist, the rehearsal and the one-hour
@@ -642,7 +662,8 @@ Caps: each class's machine maximum (§5) bounds the spend per hour; the AWS budg
 - R2 Cross-repo review entries are trailers, as today, until the reviewer service.
 - R3 In the first days the staging gateway writes delivery events into the shared database. They are for display; the
   PUBLISH gate reads only the CI-written STAGING-VERIFY rows.
-- R4 Free has no merge train: about 5 landings an hour per repository. The batch-queue trigger is defined (§5).
+- R4 The train is our own code on the Free tier (§3.5). Its safety rests on the tree check before each landing and on
+  only `bot-land` and the owner being able to merge; the settings sync reports any other Maintainer.
 - R5 Rootless BuildKit needs seccomp and AppArmor unconfined on the main class (not privileged). The fallback is rootless
   Buildah. The lane proves it on the M2 image.
 - R6 One GitLab machine is a single point of failure (M1); the rollback to GitHub stays open for 10 days.
@@ -651,12 +672,16 @@ Caps: each class's machine maximum (§5) bounds the spend per hour; the AWS budg
 - R8 Until the protected list includes the GitLab merge authority, a reviewed lane can change the bot or the settings
   file. The settings sync reports any Maintainer other than `bot-land` and the owner (M2).
 - R9 Signed-in preview specs move from before merge to after merge (§3.4).
+- R11 The speed targets need the warm pool, sharded tests, warm caches and the shorter deregistration delay; the
+  checklist holds the cut until the shadow pipelines meet them.
 - R10 Command Hub buttons that dispatch disabled vitana-v1 workflows (`routes/admin-i18n-ops.ts`, `routes/testing.ts`)
   answer with an error until they move; Dev Autopilot is paused until its move.
 
 **Owner actions (only A to E).**
-- A1 Run `scripts/aws/setup-gitlab-oidc.sh --apply` in CloudShell and fill the secrets it lists.
-- A2 Apply the runner classes in the engineering account (the M2 owner entry point), with any quota request it prints.
+- A1 Run `scripts/aws/setup-gitlab-oidc.sh --apply` in CloudShell and fill the secrets it lists; with it, the staging
+  target groups' deregistration delay goes to 30 seconds.
+- A2 Apply the runner classes in the engineering account (the M2 owner entry point), with any quota request it prints,
+  and grow the GitLab host to m6i.2xlarge (M1 `setup.sh grow`).
 - A3 Create the two GitHub tokens of §7 (push mirror, bridge) and store them where the runbook says.
 - A4 Run the M2 rehearsal and this plan's rehearsal (`delivery-cutover.sh rehearse`).
 - A5 Command the cut naming this plan (it disables PR-GATE.yml, a protected gate file, stop 3) and run
@@ -664,7 +689,7 @@ Caps: each class's machine maximum (§5) bounds the spend per hour; the AWS budg
 - A6 (stop 13, with the loops) switch a loop from L1 to L2, `EXECUTION_DISARMED` or `AUTOPILOT_LOOP_ENABLED`.
 - B1 Set the Dev Autopilot kill switch at the cut (a production control). B2 None else: production stays a normal
   PUBLISH after Gate 2.
-- C The hard cut itself is the owner's decision of 2026-11-04. Later: C1 build the batch queue when its trigger fires;
+- C The hard cut itself is the owner's decision of 2026-11-04. Later: C1 grow the train beyond 12 positions when its trigger fires;
   C2 automatic Workers deploys versus PUBLISH; C3 raise the sparring cap.
 - D1 Archive both GitHub repositories after the switch-off measure. D2 Delete the `claude-staging-validation` keys
   (eng-platform-p01 §8). D3 Retire PLAN-SPAR.yml and AWS-PROD-*.yml after their GitLab twins (protected gate files).

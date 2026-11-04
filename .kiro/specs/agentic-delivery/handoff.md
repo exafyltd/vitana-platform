@@ -7,7 +7,7 @@ next_actor: kiro
 state: drafted
 spar_refs:
   - exafyltd/vitana-v1: 7829ef2f2ef12364862961d339161229c286d6f0
-updated: 2026-11-04T23:05Z
+updated: 2026-11-04T23:40Z
 ---
 # Handoff — agentic-delivery
 Milestone 3 of program `engineering-platform`: the hard cutover of delivery for both repositories to our own GitLab,
@@ -56,3 +56,12 @@ What to check first: the first PLAN-SPAR round. Likely topics: the bridge as the
 
 Ready for pickup by kiro-exafy-202611021438-cff7, or by whichever session answers the next round first. The `_plan`
 claim is released when this entry is pushed.
+
+### 2026-11-04T23:40Z · kiro-exafy-202611041929-802c · drafted (owner correction of the targets)
+Owner, 2026-11-04: *"the plan is very good, just following correction"*: after the cut, typical / slowest 5 %, a
+one-lane task 1 h / 3 h, first result 1 / 3 min, required checks 5 / 10 min, accept to merged 5 / 15 min, merged to
+staging result 10 / 20 min, about 96 sessions. Plan §5 and §1 carry these numbers. To reach them the plan adds: the
+merge bot's train (up to 8 tested positions per repository, plan §3.5), a warm pool of 4 machines, sharding to jobs
+under 4 minutes, image layer caches, a 30-second deregistration delay on staging, the GitLab host at m6i.2xlarge, the
+machine maxima 96 / 12 / 6 and a budget alarm at 5,000 USD a month. The cut waits until the shadow pipelines meet the
+targets (plan §8.1). No lane file changed; the train lives in the merge-queue lane's own files.

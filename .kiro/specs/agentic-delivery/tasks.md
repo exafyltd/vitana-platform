@@ -14,7 +14,9 @@ six and eng-gitlab-m2 `settings`. Every new test is recorded red on `origin/main
 - [ ] P1 Write and record red on base: `scripts/eng/pipeline-gen.test.mjs` (renders both project files from the service
       list; `--check` exits 3 on drift; each T1 check job has `rules: changes:` from its service paths; a shared path
       selects every check; `gate` needs every check with `optional: true`; governance jobs carry no path rule; no T1 job
-      declares `id_tokens`, a secret or `include: local`; T1 jobs are tagged `vitana-eng` and interruptible; `main`
+      declares `id_tokens`, a secret or `include: local`; governance jobs come first; every test job is sharded so its
+      fixture duration is under 4 minutes; dependencies use the lockfile-keyed cache; T1 jobs are tagged `vitana-eng` and
+      interruptible; `main`
       pipelines are not interruptible; main-class and deploy-class tags as plan §3.2; `DELIVERY_MODE` defaults to
       `shadow`, and in shadow mode `.record`, `.vtid-close`, `.notify-platform` and every assist job are absent and no
       `env_overrides` are passed), `scripts/eng/affected-parity.test.mjs` (for each of the last 60 merged PRs of each
@@ -67,7 +69,8 @@ six and eng-gitlab-m2 `settings`. Every new test is recorded red on `origin/main
       principal; each policy names only the resources of plan §7; no production role), and
       `scripts/eng/fleet-classes-structure.test.mjs` (two new groups with min 0 and single-use machines; the main class
       registered as a protected runner; IMDSv2 hop limit 1; no instance policy; egress 80, 443 and DNS only; the manager
-      renders three runner blocks tagged `vitana-eng`, `vitana-eng-main`, `vitana-eng-deploy`; seccomp and AppArmor
+      renders three runner blocks tagged `vitana-eng`, `vitana-eng-main`, `vitana-eng-deploy`, the untrusted block with
+      `idle_count = 4` and the maxima of plan §5; seccomp and AppArmor
       unconfined only for the main class's build jobs; `privileged = false` everywhere).
 - [ ] D2 `scripts/eng/deploy/build-image.sh` (rootless BuildKit, `--oci-worker-no-process-sandbox`, OCI archive),
       `push-image.mjs`, `deploy-ecs.mjs`, `preview.mjs` (AWS CLI and registry CLI behind an injectable runner, so tests
@@ -78,12 +81,14 @@ six and eng-gitlab-m2 `settings`. Every new test is recorded red on `origin/main
       per class.
 - [ ] D5 `scripts/aws/iam/gitlab-oidc-*.json` (provider and the six roles of plan §7) and `scripts/aws/setup-gitlab-oidc.sh`
       (dry run by default; `--apply` for the owner; stops unless the account is `472838866351` and the region
-      `eu-central-1`, CLAUDE.md IF–THEN 11; lists which secrets exist and which need a value).
+      `eu-central-1`, CLAUDE.md IF–THEN 11; lists which secrets exist and which need a value);
+      `scripts/eng/deploy/staging-tg-setup.sh` (dry run by default) sets the staging target groups' deregistration delay to
+      30 seconds when the owner applies it (A1).
 - [ ] D6 `infra/gitlab-engineering/RUNBOOK-delivery-aws.md`: owner steps A1 and A2 of plan §10, the secret list, how to
       read a failed deploy, how to drain a class.
 - [ ] D7 Evidence: tests red then green; `terraform fmt -check` and `terraform validate` with the M1 and M2 files; the
       setup script's dry-run transcript; rootless builds of the vitana-v1 `Dockerfile` and `services/gateway` on the M2
-      job image, or the recorded switch to rootless Buildah.
+      job image, or the recorded switch to rootless Buildah, with the cold and cached build times.
 
 **Acceptance**
 - Change types: Infrastructure/CI.
@@ -149,12 +154,15 @@ six and eng-gitlab-m2 `settings`. Every new test is recorded red on `origin/main
       `scripts/eng/assist-trigger.test.mjs` (one `assist/<iid>-<rule>` per head and rule; never after an accept; never for
       a protected-file merge request), `scripts/eng/gitlab-land-queue.test.mjs` (revert and fix-main first while `main` is
       red, then the oldest accept; red `main` pauses the rest; a hot-file merge request waits for the previous hot-file
-      STAGING-VERIFY result; a `plan(` merge request lands only with `approved`, a `sparring_record` and a successful
+      STAGING-VERIFY result; the train builds up to 8 positions in queue order from `main` plus the first k merge
+      requests, lands merge request k only when its position is green, every earlier position has landed and the
+      `ci.skip` update's tree equals the tested tree, drops a failed or conflicting position and rebuilds the ones behind
+      it; a `plan(` merge request lands only with `approved`, a `sparring_record` and a successful
       `gitlab/plan-spar` or GitHub PLAN-SPAR status on its head; the squash message starts with the VTID and has the six
       trailers; each queue label is set once per state).
 - [ ] Q2 `scripts/eng/review-source.mjs`, `scripts/eng/gitlab-gates.mjs`, `scripts/eng/assist-trigger.mjs`; extend
-      `scripts/eng/gitlab-land.mjs` (M2) with the review source, order, pause, plan merge requests, trailers, labels and
-      assist trigger. `land-guard.mjs` and `queue.mjs` are not edited.
+      `scripts/eng/gitlab-land.mjs` (M2) with the review source, order, pause, the train of plan §3.5, plan merge
+      requests, trailers, labels and assist trigger. `land-guard.mjs` and `queue.mjs` are not edited.
 - [ ] Q3 Evidence: tests red then green; `git diff` showing `land-guard.mjs` and `queue.mjs` untouched; a dry run over the
       fake GitLab with 12 merge requests, three of them cross-repo vitana-v1 lanes and one a plan.
 
@@ -254,12 +262,14 @@ six and eng-gitlab-m2 `settings`. Every new test is recorded red on `origin/main
 - [ ] C1 Write and record red on base: `scripts/eng/gitlab-settings-cutover.test.mjs` (a project with a cutover block
       keeps the `mirror` profile until the instance marker exists, then converges to `native` with landing, the required
       jobs `lane-scope`, `change-suite` and `gate`, webhook events including pushes and tag pushes, the push mirror of protected
-      branches to GitHub with divergent refs kept, protected `assist/*` and `DELIVERY_MODE=live`; removing the marker
+      branches to GitHub with divergent refs kept, protected `assist/*`, "skipped pipelines are considered successful" and
+      `DELIVERY_MODE=live`; removing the marker
       converges back; a second run writes nothing), `scripts/eng/github-workflows.test.mjs` (the list covers all 159
       workflow files of both repositories with one action each, `disable` or `keep`; every `keep` file has no
       `pull_request` trigger except PLAN-SPAR and MIGRATION-DRIFT-CHECK and never pushes to `main`; it matches plan §2.2),
       `scripts/eng/delivery-cutover.test.mjs` (with fake GitHub and GitLab: `status` prints every checklist item of plan
-      §8.1; `apply` runs the steps of plan §8.2 in order and stops at the first failure with nothing half-done for that
+      §8.1, including the §5 targets for first result and required checks measured on the shadow pipelines, and
+      `apply` runs the steps of plan §8.2 in order and stops at the first failure with nothing half-done for that
       step; `--dry-run` writes nothing; `delivery-rollback.sh` reverses them), `scripts/eng/parity-report.test.mjs` (pairs
       GitHub results and GitLab jobs by SHA through the workflow-to-job map, lists every unexplained difference, counts a
       commit staging never served as not comparable), `scripts/eng/delivery-metrics.test.mjs` (the fields of
