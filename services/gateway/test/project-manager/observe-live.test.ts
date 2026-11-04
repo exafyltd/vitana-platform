@@ -17,6 +17,7 @@ import {
 import {
   GithubRepoFileWriter,
   applyLaneChange,
+  changeAlreadyRecorded,
   type GithubWriteClient,
 } from '../../src/services/project-manager/writers';
 import { claudeAvailability } from '../../src/services/project-manager/decide';
@@ -347,5 +348,28 @@ describe('applyLaneChange + GithubRepoFileWriter (W1 / W2, Collab-Session pm-age
     expect(f.puts.map((p) => p.branch)).toEqual(['pm-agent/kiro-autonomy-fallback', 'pm-agent/kiro-autonomy-fallback']);
     expect(f.puts[0].message).toMatch(/Collab-Session: pm-agent\nCollab-Lane: kiro-autonomy-fallback\/_plan$/);
     expect(f.pulls).toEqual([{ head: 'pm-agent/kiro-autonomy-fallback', title: 'VTID-05271 (kiro-autonomy-fallback/_plan): PM bookkeeping' }]);
+  });
+
+  it('W2 does not commit a change the bookkeeping branch already records (no commit storm while the PR is open)', async () => {
+    const reassign = { slug: 'kiro-autonomy-fallback', lane: 'pm-fallback', seat: 'exafyltd', next_actor: 'exafyltd', log: 'reassign lane jtadic→exafyltd (stale_ready, Claude unavailable)' };
+    const recorded = applyLaneChange(LANE, reassign, new Date(NOW).toISOString());
+    expect(changeAlreadyRecorded(recorded, reassign)).toBe(true);
+    const f = fakeClient();
+    const base = f.client.file;
+    f.client.file = async (r, path, ref) => (path.endsWith('handoff.md') ? base(r, path, ref) : { text: recorded, sha: 'rs' });
+    // Repeat the same decision on every tick: no commit, the open PR stays.
+    const w = new GithubRepoFileWriter(f.client, { now: () => NOW });
+    await w.write(reassign);
+    await w.write(reassign);
+    expect(f.puts).toHaveLength(0);
+    expect(f.refs['pm-agent/kiro-autonomy-fallback']).toBe('m'.repeat(40));
+  });
+
+  it('changeAlreadyRecorded is false for a new log line or a different seat', () => {
+    const reassign = { slug: 'kiro-autonomy-fallback', lane: 'pm-fallback', seat: 'exafyltd', next_actor: 'exafyltd', log: 'reassign A' };
+    const recorded = applyLaneChange(LANE, reassign, new Date(NOW).toISOString());
+    expect(changeAlreadyRecorded(recorded, { ...reassign, log: 'reassign B' })).toBe(false);
+    expect(changeAlreadyRecorded(recorded, { ...reassign, seat: 'someone-else' })).toBe(false);
+    expect(changeAlreadyRecorded(LANE, reassign)).toBe(false);
   });
 });

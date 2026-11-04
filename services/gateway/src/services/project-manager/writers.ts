@@ -61,6 +61,30 @@ export function applyLaneChange(text: string, change: LaneFileChange, nowIso: st
   return `---\n${fm}\n---${body}### ${isoMinute(nowIso)} · ${PM_SESSION} · ${transition}\n${change.log}\n`;
 }
 
+/**
+ * True when the lane file already records this exact PM change: the fields the
+ * change sets already hold their values, no claim is left to release, and the
+ * newest log entry is this change's log line. The PM reads lane state from
+ * `main`, so while its bookkeeping PR is still open the same decision fires on
+ * every tick. Committing it again only adds an identical commit and another
+ * round of CI.
+ */
+export function changeAlreadyRecorded(text: string, change: LaneFileChange): boolean {
+  const m = FM_RE.exec(text);
+  if (!m) return false;
+  const fm = m[1].replace(/\r/g, '');
+  const field = (key: string) => new RegExp(`^${key}:\\s*(.*)$`, 'm').exec(fm)?.[1]?.trim() ?? '';
+  if (change.state !== undefined && field('state') !== change.state) return false;
+  if (change.seat !== undefined && field('seat') !== change.seat) return false;
+  if (change.next_actor) {
+    const expected = LANE_ACTORS.includes(change.next_actor) ? change.next_actor : 'kiro';
+    if (field('next_actor') !== expected) return false;
+  }
+  if (change.release_claim && field('claimed_by') !== '') return false;
+  const lines = text.split(/\r?\n/).map((l) => l.trimEnd()).filter((l) => l !== '');
+  return lines.length > 0 && lines[lines.length - 1] === change.log;
+}
+
 /** The GitHub calls the writer needs (fake in tests). */
 export interface GithubWriteClient {
   file(repo: string, path: string, ref: string): Promise<{ text: string; sha: string } | null>;
@@ -97,6 +121,7 @@ export class GithubRepoFileWriter implements LaneFileWriter {
       const head = await this.client.pullHead(repo, n);
       const cur = await this.client.file(repo, path, head.ref);
       if (!cur) throw new Error(`${path} not on ${head.ref}`);
+      if (changeAlreadyRecorded(cur.text, change)) return;
       const next = applyLaneChange(cur.text, change, this.nowIso());
       await this.client.put(repo, path, head.ref, next, cur.sha, commitMessage(`pm: ${change.slug}/${change.lane} ${change.state ?? 'update'}`, `${change.slug}/${change.lane}`));
       return;
@@ -104,6 +129,11 @@ export class GithubRepoFileWriter implements LaneFileWriter {
     const branch = await this.ensureBookkeepingBranch(repo, change.slug);
     const cur = await this.client.file(repo, path, branch);
     if (!cur) throw new Error(`${path} not on ${branch}`);
+    if (changeAlreadyRecorded(cur.text, change)) {
+      // Already committed on the bookkeeping branch: no new commit, but keep the PR open.
+      await this.ensureBookkeepingPull(repo, change.slug, branch);
+      return;
+    }
     const next = applyLaneChange(cur.text, change, this.nowIso());
     await this.client.put(repo, path, branch, next, cur.sha, commitMessage(`pm: ${change.slug}/${change.lane} ${change.state ?? 'update'}`, `${change.slug}/_plan`));
     await this.ensureBookkeepingPull(repo, change.slug, branch);
