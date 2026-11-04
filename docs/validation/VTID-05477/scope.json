@@ -1,0 +1,16 @@
+{
+  "vtid": "VTID-05477",
+  "kind": "feature",
+  "lane": "welcome-finish-r2/new-members-feed-api",
+  "repo": "exafyltd/vitana-platform",
+  "sparring_record": "docs/validation/VTID-05477/plan-sparring.md",
+  "paths": [
+    "services/gateway/src/routes/community-new-members.ts",
+    "services/gateway/src/index.ts",
+    "services/gateway/src/orb/developer/domain-atlas.ts",
+    "services/gateway/test/vtid-05477-new-members-feed.test.ts",
+    "docs/validation/VTID-05477/**"
+  ],
+  "weakens_tests": [],
+  "red_green_exempt": []
+}
