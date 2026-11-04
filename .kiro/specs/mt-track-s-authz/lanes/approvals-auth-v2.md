@@ -48,3 +48,21 @@ Collab-Review: mt-track-s-authz/approvals-auth-v2
 Collab-Verdict: accept
 Collab-Reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 Collab-Reviewed-Head: 10707edca4993842aacca1567fcc2f526d668920
+
+### 2026-11-04T19:55Z · agent-vitana-lane-reviewer-202611041955-add1 · review
+review: accept
+head: 0aac59b9ea686bd7d4e15ed0581621fcfc4b3407
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+PR: none yet (local head on branch kiro/mt-track-s-authz/approvals-auth-v2)
+Findings:
+Re-check of the six findings on 10707edca4: (1) holds, the narrowing at orb-live.ts:7034 is unchanged and the delta since 10707edca4 is the approvals test file plus docs/validation only; (2) closed, the reject case (test :257) drives dev_reject_pr through the real generic path, the recorded run is 34 of 34 (outputs/green-approvals-head.txt:691-692), and M6 (reject operand dropped) fails it at :276 because dev_reject_pr then gets no user_jwt, returns NO_ADMIN_SESSION (developer-tools.ts:365-366) and never calls fetch; (3) open by design, first finding below; (4) closed, the corrected follow-up matches developer-tools.ts:23, admin-users-rbac-tools.ts:15 and the spread at orb-tools-shared.ts:5375; (5) closed, scan_existing_matches has its own arm that passes its own token (orb-live.ts:6493) and the orb-tool scope note matches tasks.md A5; (6) closed apart from the AC-10 wording below: counts match (34, 60, 71, 105, 87 in 4 suites, 142 in 7 suites; red 19 failed, 73 passed, 92 total), tsc-head.txt reads exit=0, commands.log sections run 1 to 11 in order.
+- non-blocking · docs/validation/VTID-05528/acceptance.md:95 · Finding 3 is answered and stays open by design. This lane may merge only after operator-chat-service-token and plan PR #4653 are on origin/main. Neither is on the local origin/main 4066f563e7 (the operator-chat test file and the v2 lane file are both absent). Updating the branch after they land creates a new head, which needs its own accept, and CI on the PR head must be green.
+- non-blocking · docs/validation/VTID-05528/acceptance.md:54 · AC-10 says the red run predates the generic-path cases of AC-11. The red run already holds the approve case (outputs/red-origin-main-results.txt:81); only the non-approvals guard and the reject case postdate it. Counts are right. That approve case can only fail on origin/main at the missing __executeLiveApiToolForTest export (orb-live.ts:19309), before any bearer is checked, so the behavioural red for the generic path is M5 and M6 on the head. Reword at the next evidence touch; one more mutation that drops the approve operand would complete the pair.
+- non-blocking · services/gateway/test/mt-track-s-authz-approvals-auth.test.ts:280 · Optional. The reject case ends with a negative check on the output. The load-bearing assertions are at lines 276-279 (one fetch, the reject URL, the exact member bearer), and M6 trips them. dev_reject_pr returns ok:true when the gateway refuses too, so expect(out.result).toContain('rejected') would also pin the success text.
+Next: the land step merges under §7b once operator-chat-service-token and plan PR #4653 are on origin/main, the PR is up to date with an accept on its current head, and every required check on that head is green. This accept did not re-run jest (the reviewer shell policy blocks it); CI on the PR head is the live proof.
+
+Collab-Session: agent-vitana-lane-reviewer-202611041955-add1
+Collab-Review: mt-track-s-authz/approvals-auth-v2
+Collab-Verdict: accept
+Collab-Reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+Collab-Reviewed-Head: 0aac59b9ea686bd7d4e15ed0581621fcfc4b3407
