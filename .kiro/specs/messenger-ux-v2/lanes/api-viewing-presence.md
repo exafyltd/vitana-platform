@@ -21,7 +21,7 @@ paths:
   - DATABASE_SCHEMA.md
   - services/gateway/test/vtid-*-chat-viewing-presence.test.ts
   - docs/validation/VTID-*/**
-updated: 2026-11-04T17:03Z
+updated: 2026-11-04T17:25Z
 vtid: VTID-05312
 ---
 # api-viewing-presence
@@ -5388,4 +5388,6 @@ reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
 ### 2026-11-04T16:57Z · pm-agent · update
 reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
 ### 2026-11-04T17:03Z · pm-agent · update
+reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
+### 2026-11-04T17:25Z · pm-agent · update
 reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
