@@ -23,3 +23,4 @@ $ node scripts/collab/queue.mjs validate --base origin/main --head HEAD --repo .
 $ node scripts/collab/queue.mjs scope-check --base origin/main --head HEAD --repo . --branch kiro/close/new-member-welcome/grouped-welcome-notifications-i1   -> outputs/closing-scope-check.txt
 $ node scripts/collab/preflight.mjs ...   -> outputs/closing-preflight.txt
 $ node scripts/collab/preflight.mjs ...   -> run before push (see PR body)
+$ node scripts/collab/preflight.mjs --repo . --base origin/main --head HEAD --branch kiro/close/new-member-welcome/grouped-welcome-notifications-done --title "VTID-05208 (new-member-welcome/grouped-welcome-notifications): close lane record — verified → done"   -> outputs/done-preflight.txt
