@@ -15,7 +15,7 @@ paths:
   - scripts/collab/kiro-web-session.mjs
   - scripts/collab/kiro-web-session.test.mjs
   - docs/validation/VTID-*/**
-updated: 2026-11-04T03:19Z
+updated: 2026-11-04T03:25Z
 branch: kiro/guard-required-only-preflight/guard-required-only
 vtid: VTID-05413
 parked_from: executing
@@ -927,4 +927,6 @@ park (stale_claim); claim released; Claude unavailable → exafyltd
 ### 2026-11-04T02:49Z · pm-agent · update
 park (stale_claim); claim released; Claude unavailable → exafyltd
 ### 2026-11-04T03:19Z · pm-agent · update
+park (stale_claim); claim released; Claude unavailable → exafyltd
+### 2026-11-04T03:25Z · pm-agent · update
 park (stale_claim); claim released; Claude unavailable → exafyltd
