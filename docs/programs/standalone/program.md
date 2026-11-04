@@ -38,6 +38,7 @@ specs:
   - vitana-platform:i18n-audit-nightly-off
   - vitana-platform:fix-deeplink-scroll-test
   - vitana-platform:pipeline-speed
+  - vitana-platform:pr-gate-policy-sparring-record
   - vitana-platform:kiro-web-steering
   - vitana-platform:owner-autonomy
   - vitana-platform:step-order-gate
