@@ -6,6 +6,7 @@ priority: 3
 repos: [vitana-platform, vitana-v1]
 specs:
   - vitana-platform:pm-agent
+  - vitana-platform:sparring-token-efficiency-r2
   - vitana-platform:claude-sessions-handover
   - vitana-platform:retire-claude-code
   - vitana-platform:plan-spar-stale-session
@@ -28,6 +29,7 @@ specs:
   - vitana-platform:pm-reassign-idempotent-r3
   - vitana-platform:matches-scroll-end
   - vitana-platform:spotlight-commit-coverage
+  - vitana-platform:ci-superseded-pr-runs
   - vitana-platform:wallet-fx-rate-url
   - vitana-platform:profile-posts-full-width
   - vitana-platform:staging-verify-runner-fix
@@ -57,6 +59,7 @@ specs:
   - vitana-platform:reviewer-session-id-permission
   - vitana-platform:kiro-lane-admin
   - vitana-platform:say-hello-lane-reassign
+  - vitana-platform:welcome-finish-r2
   - vitana-platform:i18n-propagate-stale-write
   - vitana-platform:sparring-floor-retry
   - vitana-platform:ci-dockerhub-mirror

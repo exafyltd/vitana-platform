@@ -72,6 +72,7 @@ permissions:
   # direct push has never once succeeded (GH006), which is why the artifact
   # directory has never existed in git history.
   pull-requests: write
+  id-token: write # eng-platform-p01: OIDC for the staging AWS role
 
 concurrency:
   # Keyed by locale, not just ref. Keying on the ref alone serializes every
@@ -113,8 +114,10 @@ jobs:
         if: github.event_name == 'schedule' || github.event_name == 'repository_dispatch' || github.event_name == 'workflow_dispatch'
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_STAGING_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_STAGING_SECRET_ACCESS_KEY }}
+          # eng-platform-p01: OIDC when vars.AWS_STAGING_ROLE_ARN is set; the static keys only while it is unset.
+          role-to-assume: ${{ vars.AWS_STAGING_ROLE_ARN }}
+          aws-access-key-id: ${{ !vars.AWS_STAGING_ROLE_ARN && secrets.AWS_STAGING_ACCESS_KEY_ID || '' }}
+          aws-secret-access-key: ${{ !vars.AWS_STAGING_ROLE_ARN && secrets.AWS_STAGING_SECRET_ACCESS_KEY || '' }}
           aws-region: eu-central-1
 
       # Automatic propagation for DB-backed content.
