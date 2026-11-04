@@ -1,0 +1,9 @@
+{
+  "vtid": "VTID-05465",
+  "service": "gateway",
+  "not_verified_on_staging": "The two migrations and the rollback are files only: nothing is applied from the PR, and staging shares the production database. Applying them is a later RUN-MIGRATION.yml run on the owner's approval of the files and the target database (collaboration.md §7d). Until then staging serves the same policies as before; this suite pins the N3 lint (reads 0), the rewrite set and the rollback text.",
+  "tests": [
+    { "kind": "existing", "ref": "npx jest test/mt-identity-bare-policy-lint.test.ts", "cwd": "services/gateway",
+      "reason": "runs the N3 bare-policy lint over supabase/migrations (must read 0) and checks the rewrite and rollback migrations against the 32-policy recount" }
+  ]
+}

@@ -21,7 +21,9 @@ describe('VTID-05009 provisioning workflow for the dev-memory pack token', () =>
     expect(wf).toContain('secrets.AWS_STAGING_ACCESS_KEY_ID');
     expect(wf).not.toContain('AWS_PROD_ROLE_ARN');
     expect(wf).not.toContain('vitana/gateway/prod/');
-    expect(wf).not.toContain('id-token: write');
+    // eng-platform-p01 (sparring R1-F1): OIDC needs id-token: write; staging-only is kept by allowing exactly one role.
+    const roles = [...wf.matchAll(/role-to-assume: (.+)/g)].map((m) => m[1].trim());
+    expect(roles).toEqual(['${{ vars.AWS_STAGING_ROLE_ARN }}']);
   });
 
   it('never rotates an existing secret', () => {

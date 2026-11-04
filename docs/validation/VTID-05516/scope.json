@@ -1,0 +1,13 @@
+{
+  "vtid": "VTID-05516",
+  "kind": "infra",
+  "paths": [
+    "scripts/aws/setup-github-oidc-roles.sh",
+    "scripts/aws/iam/eng-platform-oidc-*.json",
+    "services/gateway/test/eng-platform-oidc-roles.test.ts",
+    "docs/validation/VTID-05516/**"
+  ],
+  "sparring_record": ".kiro/specs/eng-platform-p01/sparring/verdict.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}
