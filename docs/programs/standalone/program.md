@@ -29,6 +29,7 @@ specs:
   - vitana-platform:pm-reassign-idempotent-r3
   - vitana-platform:matches-scroll-end
   - vitana-platform:spotlight-commit-coverage
+  - vitana-platform:staging-pm-pause
   - vitana-platform:wallet-fx-rate-url
   - vitana-platform:profile-posts-full-width
   - vitana-platform:staging-verify-runner-fix
