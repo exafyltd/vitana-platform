@@ -127,3 +127,36 @@ $ (clone) git merge origin/main → CONFLICT in the lane file; resolved by hand 
 
 # F8. Driver keep-alive: plan-driver.mjs heartbeat --slug agentic-delivery / eng-gitlab-m2 --session kiro-exafy-202611041929-802c,
 # about every 15 minutes (04:33Z, 04:44Z, 04:55Z, 05:03Z, …), all {"ok":true}.
+
+# ---- Fix round 2 (2026-11-05, session kiro-exafy-202611050107-c4a6, node v22.23.4; review changes on bd9cd43d) ----
+# R0. Lane head: git fetch origin; git merge --ff-only origin/kiro/agentic-delivery/github-bridge → c88bc85c (the 16:05Z
+#     review entry); lane file in-review → executing (e2eef9da).
+# R1. Red first. Output: outputs/red-fix2.txt (scripts/eng/github-bridge.mjs byte-identical to bd9cd43d: git diff --quiet)
+$ node --test scripts/eng/github-bridge.test.mjs
+tests 58, pass 53, fail 5: the 4 new tests and "one merge request per open …" (expectation changed: the Moved from line).
+With a budget of 1 the one status posted was a's gitlab/lane-scope success (the blocking finding); the passed gate was
+posted while lane-scope and change-suite ran; the landing comment and close were posted outside the budget, before the
+red status. The test file was not changed after this run (sha256 51c0ddebcdedbb71 in red-fix2.txt and green.txt).
+# R2. Green after the fix (code commit 60de47bc), then on the merged head. Output: outputs/green.txt
+$ node --test scripts/eng/github-bridge.test.mjs
+tests 58, pass 58, fail 0 (node v22.23.4, 14 s), before and after the merge of origin/main.
+# R3. Mutation check, 8 shards side by side. Script: outputs/mutation-check.sh  Output: outputs/mutation-check.txt
+$ for k in 0..7: SHARD=$k NSHARDS=8 MUT_DIR=<scratch>/s$k bash docs/validation/VTID-05548/outputs/mutation-check.sh <wt> &; wait
+mutations 32: caught 32, survived 0, not applied 0, not parsing 0 (90 s). Three patterns updated (their lines changed),
+7 added. A first, sequential attempt was cut off when its shell ended; its partial output was discarded.
+# R4. Merge of origin/main (merge commit 193a5ff9; main at cd1e8e30: a8220f10, b5544e37, b3d547b6, cd1e8e30 since 49cff4a9)
+$ git fetch origin; git merge --no-ff origin/main   (pass, no conflict)
+# R5. UNIT.yml's command on the merged head. Output: outputs/unit-all.txt
+$ node --test $(find scripts -path '*/node_modules' -prune -o \( -name '*.test.cjs' -o -name '*.test.mjs' \) -print | sort)
+35 files; tests 705, pass 704, fail 0, cancelled 0, skipped 1 (the same win32-only test), node v22.23.4 (16 s). No Node 20
+binary in this sandbox; CI's unit check runs UNIT.yml on Node 20.
+# R6. Acceptance mapping (the blocking CI finding) and the PR validator
+$ python3 (the VALIDATOR-CHECK.yml gate logic) over acceptance.md → 16 AC lines, each with TEST: within 9 lines
+$ gh api repos/exafyltd/vitana-platform/pulls/4689 --jq .body > <scratch>/pr-body.md   (GET)
+$ node scripts/ci/validate-pr-locally.cjs --title "<PR title>" --body-file <scratch>/pr-body.md --base main
+"Acceptance mapping OK" … APPROVED (on the old body, and again on the updated body, see R8)
+# R7. Staging
+$ node scripts/ci/staging-verify/run.mjs check-pr --service gateway --repo-root <wt> --base cd1e8e30 --head 193a5ff9 --title "<PR title>"
+"PR touches no gateway deploy path — nothing deploys, no staging suite needed." (exit 0) → no staging-tests.json
+# R8. Driver keep-alive: plan-driver.mjs heartbeat --slug agentic-delivery / eng-gitlab-m2 --session kiro-exafy-202611041929-802c
+# at 16:43Z (both refused: another builder had just moved the refs), 16:53Z and 17:03Z ({"ok":true}).

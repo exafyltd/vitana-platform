@@ -171,9 +171,10 @@ reviewed head bd9cd43d (byte-identical): 58 tests, 53 pass, 5 fail: the 4 new te
 changed (the `Moved from` line). Each fails on the finding itself: with a budget of 1 the one status posted is a's
 `gitlab/lane-scope` success; a passed gate is posted while lane-scope and change-suite run; the landing comment and the
 close are posted outside the budget and before the red status; no `Moved from` line.
-Green: outputs/green.txt, 54 of 54 pass on Node 20.20.2 (UNIT.yml's version) and on Node 22.23.4.
-Whole script set (UNIT.yml's command, no install): outputs/unit-all.txt, 34 files, 667 tests, 666 pass, 0 fail, 1 skipped
-(a win32-only test in a file this lane does not touch), on Node 20.20.2 and Node 22.23.4.
+Green: outputs/green.txt, 58 of 58 pass on Node 22.23.4, on the head with current main merged (fix round 1: 54 of 54 on
+Node 20.20.2 and 22.23.4).
+Whole script set (UNIT.yml's command, no install): outputs/unit-all.txt, 35 files, 705 tests, 704 pass, 0 fail, 1 skipped
+(a win32-only test in a file this lane does not touch), on Node 22.23.4, after the merge of main.
 Mutation check: outputs/mutation-check.txt (script outputs/mutation-check.sh, 8 shards side by side): 32 deliberate
 changes of the bridge, one at a time in a copy outside the worktree; 32 caught, 0 survived. Fix round 1 replaced the
 gate-order mutation and added 9 (the three gate states, gate jobs read like any job, the non-success-first split, the
