@@ -1,0 +1,201 @@
+# Link check, VTID-05542 (eng-gitlab-m2/settings), task S5
+Run: 2026-11-05T14:01:55.421Z; node v22.23.4; curl 8.21.0 (x86_64-amazon-linux-gnu) libcurl/8.21.0 OpenSSL/3.5.8 zlib/1.2.11 libidn2/2.3.2 libpsl/0.21.5 nghttp2/1.59.0 mit-krb5/1.21.3
+Documents: docs/ENGINEERING-PLATFORM-PLAN.md, docs/ENGINEERING-PLATFORM-LICENCES.md
+Meaning: OK = resolves. WARN = curl could not confirm (the page was read with web_fetch on 2026-11-05). FAIL = broken.
+
+## 1. Relative links and anchors
+OK    docs/ENGINEERING-PLATFORM-PLAN.md: #9-change-log-free-tier-amendment (same file) heading found
+OK    docs/ENGINEERING-PLATFORM-PLAN.md: #92-what-replaces-each-paid-feature (same file) heading found
+OK    docs/ENGINEERING-PLATFORM-PLAN.md: ../.kiro/specs/eng-gitlab-m2/plan.md file exists
+OK    docs/ENGINEERING-PLATFORM-PLAN.md: ENGINEERING-PLATFORM-LICENCES.md file exists
+OK    docs/ENGINEERING-PLATFORM-LICENCES.md: ENGINEERING-PLATFORM-PLAN.md#9-change-log-free-tier-amendment file and heading found
+OK    docs/ENGINEERING-PLATFORM-LICENCES.md: #4-what-could-not-be-read (same file) heading found
+OK    docs/ENGINEERING-PLATFORM-LICENCES.md: #34-aws-and-other-services (same file) heading found
+OK    docs/ENGINEERING-PLATFORM-LICENCES.md: #21-gitlab-enterprise-edition-the-package-we-install (same file) heading found
+OK    docs/ENGINEERING-PLATFORM-LICENCES.md: #22-terraform (same file) heading found
+OK    docs/ENGINEERING-PLATFORM-LICENCES.md: #21-gitlab-enterprise-edition-the-package-we-install (same file) heading found
+OK    docs/ENGINEERING-PLATFORM-LICENCES.md: #23-redis-inside-the-gitlab-package (same file) heading found
+OK    docs/ENGINEERING-PLATFORM-LICENCES.md: #22-terraform (same file) heading found
+OK    docs/ENGINEERING-PLATFORM-LICENCES.md: #24-docker (same file) heading found
+OK    docs/ENGINEERING-PLATFORM-LICENCES.md: #34-aws-and-other-services (same file) heading found
+OK    docs/ENGINEERING-PLATFORM-LICENCES.md: #25-ubuntu (same file) heading found
+OK    docs/ENGINEERING-PLATFORM-LICENCES.md: #26-gpl-packages (same file) heading found
+OK    docs/ENGINEERING-PLATFORM-LICENCES.md: #22-terraform (same file) heading found
+
+## 2. File:line pins cited in the licence list (the line holds the cited text)
+OK    infra/gitlab-engineering/setup.sh:26 contains [TF_VERSION=1.17.1]
+OK    infra/gitlab-engineering/setup.sh:27 contains [GITLAB_VERSION=19.5.3-ee.0]
+OK    infra/gitlab-engineering/setup.sh:28 contains [RUNNER_VERSION=19.5.2-1]
+OK    infra/gitlab-engineering/setup.sh:138 contains [canonical/ubuntu]
+OK    infra/gitlab-engineering/setup.sh:264 contains [releases.hashicorp.com]
+OK    infra/gitlab-engineering/setup.sh:265 contains [python3]
+OK    infra/gitlab-engineering/terraform/main.tf:5 contains [required_version = ">= 1.10.0"]
+OK    infra/gitlab-engineering/terraform/main.tf:9 contains [>= 5.60.0, < 6.0.0]
+OK    infra/gitlab-engineering/terraform/main.tf:70 contains [data "aws_ssm_parameter" "ubuntu"]
+OK    infra/gitlab-engineering/terraform/main.tf:71 contains [canonical/ubuntu]
+OK    infra/gitlab-engineering/host/gitlab-install.sh:11 contains [apt install -y curl ca-certificates unzip jq git openssh-server perl tzdata gnupg]
+OK    infra/gitlab-engineering/host/gitlab-install.sh:14 contains [awscli.amazonaws.com]
+OK    infra/gitlab-engineering/host/gitlab-install.sh:15 contains [unzip]
+OK    infra/gitlab-engineering/host/gitlab-install.sh:34 contains [openssl]
+OK    infra/gitlab-engineering/host/gitlab-install.sh:60 contains [gitlab-ee=]
+OK    infra/gitlab-engineering/host/gitlab-install.sh:61 contains [apt-mark hold gitlab-ee]
+OK    infra/gitlab-engineering/host/gitlab-configure.sh:27 contains [openssl]
+OK    infra/gitlab-engineering/host/runner-install.sh:11 contains [docker.io]
+OK    infra/gitlab-engineering/host/runner-install.sh:14 contains [awscli.amazonaws.com]
+OK    infra/gitlab-engineering/host/runner-install.sh:15 contains [unzip]
+OK    infra/gitlab-engineering/host/runner-install.sh:26 contains [gitlab-runner=]
+OK    infra/gitlab-engineering/host/runner-install.sh:27 contains [apt-mark hold gitlab-runner]
+OK    infra/gitlab-engineering/host/runner-install.sh:43 contains [--executor docker]
+OK    infra/gitlab-engineering/host/runner-install.sh:44 contains [node:20-bookworm]
+OK    infra/gitlab-engineering/host/runner-fix.sh:21 contains [node:20-bookworm]
+OK    infra/gitlab-engineering/host/ci-platform.yml:11 contains [node:20-bookworm]
+OK    infra/gitlab-engineering/host/ci-platform.yml:27 contains [pnpm@9.0.0]
+OK    infra/gitlab-engineering/host/ci-platform.yml:40 contains [npm ci]
+OK    infra/gitlab-engineering/host/ci-v1.yml:11 contains [node:20-bookworm]
+OK    infra/gitlab-engineering/host/ci-v1.yml:27 contains [npm ci]
+OK    .github/workflows/UNIT.yml:20 contains [node-version: 20]
+OK    docs/validation/VTID-05544/outputs/terraform-checks.txt:10 contains [hashicorp/aws v5.100.0]
+OK    docs/validation/VTID-05544/outputs/terraform-checks.txt:11 contains [hashicorp/aws v5.100.0]
+
+## 3. Plan document: lines other documents point at (M1 plan P1-P3 and 154/197; RUNBOOK section 10)
+Lines 1-189 that differ from the base: 4, 16, 32, 39, 53, 54, 61, 67, 68, 78, 80, 81, 82, 84, 115, 132, 146, 151, 176
+OK    exactly the 19 intended lines changed in sections 1-8
+OK    line 34 identical to the base: | D4 | Single-node Omnibus EE on EC2 with RDS PostgreSQL, El
+OK    line 35 identical to the base: | D5 | Kiro writes Terraform and scripts and runs `plan` rea
+OK    line 111 identical to the base: - Terraform with a new S3 state, `use_lockfile`, KMS and ver
+OK    line 112 identical to the base: - VPC, ALB with ACM, Cloudflare DNS, pinned Omnibus, RDS, El
+OK    line 113 identical to the base: - AWS Backup plus `gitlab-backup` to S3, then a **restore in
+OK    line 114 identical to the base: - Group layout: `vitana/platform`, `vitana/v1`, `vitana/ci-t
+OK    line 116 identical to the base: - Exit: A01–A04.
+OK    line 117 identical to the base: 
+OK    line 118 identical to the base: **Phase 3: CI runner fleet**
+OK    line 119 identical to the base: - Runner manager, four ASGs, hardened AMI pipeline, S3 cache
+OK    line 120 identical to the base: - Run the existing unit and test suites on GitLab against th
+OK    line 121 identical to the base: - Concurrency starts at 10.
+OK    line 122 identical to the base: - Exit: A05, A08 (CI part).
+OK    line 180 identical to the base: Keep A01–A30 from the original plan, with these changes:
+OK    line 32 is still the D2 row
+OK    lines 34 and 35 are still D4 and D5
+OK    Sources section moved to lines 253-258; only base line 191 changed (found: 191)
+OK    file grew by 63 lines, all in the new section 9
+OK    target-architecture box: 13 box lines (lines 41-62) keep their width
+
+## 4. Repository facts the licence list relies on
+OK    no Ubuntu Pro in infra/gitlab-engineering, scripts/eng, UNIT.yml
+OK    no .npmrc tracked in vitana-platform
+OK    exactly one VPC endpoint, of type Gateway (S3), so no interface-endpoint charges: 1 | 202:  vpc_endpoint_type = "Gateway"
+OK    one job image tag everywhere: 6 public.ecr.aws/docker/library/node:20-bookworm
+OK    LICENSE.txt in the downloaded Terraform 1.17.1 zip vs the v1.17.1 tag: /projects/sandbox/tools/tf/LICENSE.txt identical | /projects/sandbox/gitlab-m1/.tf/LICENSE.txt identical
+
+## 5. External links (curl GET, follow redirects, 3 tries on 429/5xx). Each URL was also read with web_fetch on 2026-11-05.
+OK    200 https://about.gitlab.com/gitlab-community-edition/
+OK    200 https://about.gitlab.com/terms/
+OK    200 https://aws.amazon.com/agreement/
+OK    200 https://aws.amazon.com/aws-cost-management/aws-budgets/pricing/
+OK    200 https://aws.amazon.com/certificate-manager/faqs/
+OK    200 https://aws.amazon.com/cloudshell/pricing/
+OK    200 https://aws.amazon.com/cloudwatch/pricing/
+OK    200 https://aws.amazon.com/ebs/pricing/
+OK    200 https://aws.amazon.com/ec2/autoscaling/pricing/
+OK    200 https://aws.amazon.com/ec2/pricing/on-demand/
+OK    200 https://aws.amazon.com/ec2/spot/pricing/
+OK    200 https://aws.amazon.com/ecr/pricing/
+OK    200 https://aws.amazon.com/elasticloadbalancing/pricing/
+OK    200 https://aws.amazon.com/kms/pricing/
+OK    200 https://aws.amazon.com/s3/pricing/
+OK    200 https://aws.amazon.com/secrets-manager/pricing/
+OK    200 https://aws.amazon.com/sns/pricing/
+OK    200 https://aws.amazon.com/vpc/pricing/
+OK    200 https://canonical.com/legal/intellectual-property-policy
+OK    200 https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/Connect-using-EC2-Instance-Connect.html -> https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/connect-linux-inst-eic.html
+OK    200 https://docs.aws.amazon.com/IAM/latest/UserGuide/introduction.html
+OK    200 https://docs.aws.amazon.com/imagebuilder/latest/userguide/what-is-image-builder.html
+OK    200 https://docs.aws.amazon.com/prescriptive-guidance/latest/aws-startup-security-baseline/wkld-06.html
+OK    200 https://docs.aws.amazon.com/systems-manager/latest/userguide/run-command.html
+OK    200 https://docs.docker.com/subscription/desktop-license/ -> https://docs.docker.com/subscription-billing/desktop-license/
+OK    200 https://docs.gitlab.com/administration/auth/oidc/
+OK    200 https://docs.gitlab.com/administration/license/
+OK    200 https://docs.gitlab.com/administration/reference_architectures/
+OK    200 https://docs.gitlab.com/ci/cloud_services/aws/
+OK    200 https://docs.gitlab.com/ci/environments/protected_environments/
+OK    200 https://docs.gitlab.com/ci/pipelines/merge_trains/
+OK    200 https://docs.gitlab.com/ci/pipelines/merged_results_pipelines/
+OK    200 https://docs.gitlab.com/ci/runners/configure_runners/
+OK    200 https://docs.gitlab.com/ci/secrets/id_token_authentication/
+OK    200 https://docs.gitlab.com/runner/executors/docker_autoscaler/
+OK    200 https://docs.gitlab.com/runner/runner_autoscale/
+OK    200 https://docs.gitlab.com/security/two_factor_authentication/
+OK    200 https://docs.gitlab.com/user/profile/service_accounts/
+OK    200 https://docs.gitlab.com/user/project/codeowners/
+OK    200 https://docs.gitlab.com/user/project/integrations/webhooks/
+OK    200 https://docs.gitlab.com/user/project/merge_requests/approvals/
+OK    200 https://docs.gitlab.com/user/project/merge_requests/approvals/settings/
+OK    200 https://docs.gitlab.com/user/project/merge_requests/methods/
+OK    200 https://docs.gitlab.com/user/project/merge_requests/squash_and_merge/
+OK    200 https://docs.gitlab.com/user/project/repository/branches/protected/
+OK    200 https://docs.gitlab.com/user/project/repository/mirror/
+OK    200 https://docs.gitlab.com/user/project/repository/push_rules/
+OK    200 https://docs.npmjs.com/policies/terms -> https://docs.npmjs.com/policies/terms/
+OK    200 https://gitlab.com/gitlab-org/fleeting/fleeting/-/raw/main/LICENSE
+OK    200 https://gitlab.com/gitlab-org/fleeting/plugins/aws/-/raw/main/LICENSE
+OK    200 https://gitlab.com/gitlab-org/fleeting/plugins/aws/-/raw/main/README.md
+OK    200 https://gitlab.com/gitlab-org/fleeting/taskscaler/-/raw/main/LICENSE
+OK    200 https://gitlab.com/gitlab-org/gitlab-foss/-/raw/master/LICENSE
+OK    200 https://gitlab.com/gitlab-org/gitlab-runner/-/raw/v19.5.2/LICENSE
+OK    200 https://gitlab.com/gitlab-org/gitlab/-/issues/498268
+OK    200 https://gitlab.com/gitlab-org/gitlab/-/raw/v19.5.3-ee/LICENSE
+OK    200 https://gitlab.com/gitlab-org/gitlab/-/raw/v19.5.3-ee/ee/LICENSE
+OK    200 https://gitlab.com/gitlab-org/omnibus-gitlab/-/raw/19.5.3%2Bee.0/config/software/postgresql.rb
+OK    200 https://gitlab.com/gitlab-org/omnibus-gitlab/-/raw/19.5.3%2Bee.0/config/software/redis.rb
+OK    200 https://handbook.gitlab.com/handbook/legal/subscription-agreement/
+OK    200 https://infozip.sourceforge.net/license.html
+OK    200 https://mariadb.com/bsl-faq-adopting/
+OK    200 https://packages.ubuntu.com/noble/containerd
+OK    200 https://packages.ubuntu.com/noble/docker.io
+OK    200 https://raw.githubusercontent.com/Perl/perl5/blead/README
+OK    200 https://raw.githubusercontent.com/aws/amazon-cloudwatch-agent/main/LICENSE
+OK    200 https://raw.githubusercontent.com/aws/amazon-ssm-agent/mainline/LICENSE
+OK    200 https://raw.githubusercontent.com/aws/aws-cli/v2/LICENSE.txt
+OK    200 https://raw.githubusercontent.com/aws/aws-ec2-instance-connect-config/master/LICENSE
+OK    200 https://raw.githubusercontent.com/containerd/containerd/main/LICENSE
+OK    200 https://raw.githubusercontent.com/curl/curl/master/COPYING
+OK    200 https://raw.githubusercontent.com/docker/cli/master/LICENSE
+OK    200 https://raw.githubusercontent.com/eggert/tz/main/LICENSE
+OK    200 https://raw.githubusercontent.com/git/git/master/COPYING
+OK    200 https://raw.githubusercontent.com/gpg/gnupg/master/COPYING
+OK    200 https://raw.githubusercontent.com/hashicorp/terraform-provider-aws/v5.100.0/LICENSE
+OK    200 https://raw.githubusercontent.com/hashicorp/terraform/v1.17.1/LICENSE
+OK    200 https://raw.githubusercontent.com/hashicorp/terraform/v1.5.7/LICENSE
+OK    200 https://raw.githubusercontent.com/jqlang/jq/master/COPYING
+OK    200 https://raw.githubusercontent.com/moby/moby/master/LICENSE
+OK    200 https://raw.githubusercontent.com/nodejs/docker-node/main/LICENSE
+OK    200 https://raw.githubusercontent.com/nodejs/docker-node/main/README.md
+OK    200 https://raw.githubusercontent.com/nodejs/node/v20.x/LICENSE
+OK    200 https://raw.githubusercontent.com/npm/cli/latest/LICENSE
+OK    200 https://raw.githubusercontent.com/opencontainers/runc/main/LICENSE
+OK    200 https://raw.githubusercontent.com/openssh/openssh-portable/master/LICENCE
+OK    200 https://raw.githubusercontent.com/openssl/openssl/master/LICENSE.txt
+OK    200 https://raw.githubusercontent.com/opentofu/opentofu/main/LICENSE
+OK    200 https://raw.githubusercontent.com/pnpm/pnpm/v9.0.0/LICENSE
+OK    200 https://raw.githubusercontent.com/postgres/postgres/REL_17_STABLE/COPYRIGHT
+OK    200 https://raw.githubusercontent.com/python/cpython/main/LICENSE
+OK    200 https://raw.githubusercontent.com/redis/redis/7.2/COPYING
+OK    200 https://raw.githubusercontent.com/yaml/pyyaml/main/LICENSE
+OK    200 https://raw.githubusercontent.com/yarnpkg/yarn/master/LICENSE
+OK    200 https://redis.io/legal/licenses/
+OK    200 https://sources.debian.org/src/ca-certificates/latest/debian/copyright/ -> https://sources.debian.org/.internal/challenge.html?original=%2Fsrc%2Fca-certificates%2Flatest%2Fdebian%2Fcopyright%2F&referer=
+OK    200 https://sources.debian.org/src/docker.io/latest/debian/copyright/ -> https://sources.debian.org/.internal/challenge.html?original=%2Fsrc%2Fdocker.io%2Flatest%2Fdebian%2Fcopyright%2F&referer=
+OK    200 https://sources.debian.org/src/gnupg2/latest/debian/copyright/ -> https://sources.debian.org/.internal/challenge.html?original=%2Fsrc%2Fgnupg2%2Flatest%2Fdebian%2Fcopyright%2F&referer=
+OK    200 https://sources.debian.org/src/perl/latest/debian/copyright/ -> https://sources.debian.org/.internal/challenge.html?original=%2Fsrc%2Fperl%2Flatest%2Fdebian%2Fcopyright%2F&referer=
+OK    200 https://sources.debian.org/src/tzdata/latest/debian/copyright/ -> https://sources.debian.org/.internal/challenge.html?original=%2Fsrc%2Ftzdata%2Flatest%2Fdebian%2Fcopyright%2F&referer=
+OK    200 https://sources.debian.org/src/unzip/latest/debian/copyright/ -> https://sources.debian.org/.internal/challenge.html?original=%2Fsrc%2Funzip%2Flatest%2Fdebian%2Fcopyright%2F&referer=
+OK    200 https://www.cloudflare.com/plans/
+
+## 6. Pages that could not be read (listed in the licence list, section 4, as plain text, not as links)
+NOTE  https://www.hashicorp.com/license-faq (HTTP 429 twice)
+NOTE  https://aws.amazon.com/organizations/pricing/ (HTTP 404)
+NOTE  https://aws.amazon.com/image-builder/pricing/ (HTTP 404)
+NOTE  https://www.cloudflare.com/terms/ (no text returned)
+NOTE  https://raw.githubusercontent.com/redis/redis/7.2.16/COPYING (no text; branch 7.2 file read instead)
+
+SUMMARY: 177 OK, 0 WARN, 0 FAIL; 102 external URLs, 2 documents
