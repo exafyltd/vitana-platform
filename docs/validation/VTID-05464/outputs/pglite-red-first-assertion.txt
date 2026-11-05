@@ -1,0 +1,6 @@
+PASS fixture (roles, user_tenants; pgtap line replaced by the shim)  (mt_identity_hook_fixture.sql)
+RED A: the lane plan as written, on a database without the forward migrations (origin/main has none of them)
+  plan stopped with an error before its first assertion: function public.custom_access_token_hook_shadow(jsonb) does not exist
+RED B: the first assertion (has_function, test line 36) with body checking off, so pg_temp.hook can be created
+  not ok 1 - hook function exists
+  0 of 1 assertions ok (plan 36)
