@@ -45,6 +45,48 @@ are under `services/gateway/` unless they start with `docs/`.
 - Only the lane `paths` change; `gatewayApiCall`, the GET routes and `test/vtid-05047-cicd-routes-auth.test.ts` are
   unchanged and green.
 
+<!-- lane: approvals-auth-v2 -->
+## Lane `approvals-auth-v2 (supersedes approvals-auth, amendment 1)`
+- Scope (amendment 1): services/gateway/test/orb-tools/developer-tools.test.ts is in this lane's paths.
+- [ ] A1 Re-check plan §2 at the lane base: `routes/approvals.ts` POST routes still have no auth middleware and
+      `index.ts:819` still mounts the router bare. A change → re-read and adapt within the lane `paths`, log it.
+- [ ] A2 Write `test/mt-track-s-authz-approvals-auth.test.ts` first and record it red on `origin/main`: 401 without a
+      bearer and 403 with a non-exafy JWT on `POST /feed/approve`, `POST /:approval_id/approve`,
+      `POST /:approval_id/reject`; the service token and an exafy_admin JWT reach the handler (outbound `fetch` mocked,
+      nothing merged); `/feed/approve` answers 400 `branch_mismatch` when the body `branch` differs from the feed item's
+      `branch` field (the field `listOpenPrsWithStatus` sets from `pr.head.ref`, `github-service.ts:1029`; the test
+      builds the item with that exact field).
+- [ ] A3 `routes/approvals.ts`: `requireServiceOrAdmin` on the three POST routes; the `branch_mismatch` check in
+      `/feed/approve`. GET routes unchanged.
+- [ ] A4 `services/orb-tools/developer-tools.ts`: `approvalsApi` sends `Authorization: Bearer <id.user_jwt>` when
+      present; `dev_approve_pr` / `dev_reject_pr` without `user_jwt` answer the admin-session message and make no
+      call. Cases for both in the new test.
+- [ ] A5 `routes/orb-live.ts` generic fallback identity (`:7019-7030`) and `routes/orb-tool.ts` identity (`:81-86`)
+      carry `user_jwt`; at most 3 lines each.
+- [ ] A6 Run `npx jest test/mt-track-s-authz-approvals-auth.test.ts test/vtid-05047-cicd-routes-auth.test.ts`,
+      `npm run test:operator`, `npm run test:roles`, `npx tsc --noEmit`; record outputs in `docs/validation/<VTID>/`.
+- [ ] A7 `docs/validation/<VTID>/staging-tests.json`: the two read-only 401 probes of plan §6.
+
+**Acceptance**
+- Change types: Backend.
+- Outcome: only the gateway itself (service token) or an exafy_admin can approve, reject or feed-approve a change
+  through `/api/v1/approvals`; anyone else gets 401/403 and nothing is merged. A feed approval merges only the PR whose
+  CI was checked. A developer approving by voice keeps working with their own signed-in session.
+- States: no bearer → 401 `missing bearer token`; non-exafy JWT → 403; branch mismatch → 400 `branch_mismatch`;
+  voice session without a token → the admin-session answer, no call.
+- Surfaces: callers — developer voice tools (Vertex/Nova path and LiveKit `/orb/tool`); no Command Hub screen calls
+  the POST routes (`app.js:5272` reads `GET /feed`, `operator-console.js:3116`, `:3702` read `GET /pending`, both
+  unchanged).
+- Locales: n/a: no user-visible catalog text changes; the voice answer is the existing admin-session text.
+- Accessibility: n/a: no UI.
+- Contract: `requireServiceOrAdmin` (`middleware/require-service-or-admin.ts:71`) → 401/403 JSON `{ ok:false, error }`;
+  handlers unchanged after the gate; the tools send `Authorization: Bearer <user_jwt>`
+  (`developer-tools.ts:109-132` ↔ `approvals.ts:529`, `:651`, `:780`).
+- Staging proof: `POST /api/v1/approvals/appr_invalid/approve` and `POST /api/v1/approvals/feed/approve` (`{}`), no
+  bearer, expect 401 `application/json`. Both answer 400 at input validation on base, so the probes write nothing.
+- Only the lane `paths` change; `gatewayApiCall`, the GET routes and `test/vtid-05047-cicd-routes-auth.test.ts` are
+  unchanged and green.
+
 <!-- lane: work-surface-permission -->
 ## Lane `work-surface-permission`
 - [ ] W1 Re-check plan §2 at the lane base (profile resolution at `live-session-controller.ts:1181-1187`, the

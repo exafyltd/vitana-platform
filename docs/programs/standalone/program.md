@@ -41,6 +41,7 @@ specs:
   - vitana-platform:pipeline-speed
   - vitana-platform:kiro-web-steering
   - vitana-platform:owner-autonomy
+  - vitana-platform:e2e-autonomy
   - vitana-platform:step-order-gate
   - vitana-platform:sv-05308-coverage
   - vitana-platform:kiro-web-parity
@@ -104,6 +105,7 @@ belong to none of the named programmes are listed here until the owner assigns t
 - `vitana-platform:pipeline-speed` — Kiro pipeline time-to-completion: zero-cost empty slots, one-pass preflight, restart watchdog
 - `vitana-platform:kiro-web-steering` — Kiro Web sessions load both repos' steering and the pipeline driver (generated workspace-root steering, AGENTS.md trigger, Configuration Sync file)
 - `vitana-platform:owner-autonomy` — one standing autonomy rule for every Vitana session and process; one complete stop table; guard-checked (both repos)
+- `vitana-platform:e2e-autonomy` — the owner's end-to-end autonomy rule (2026-11-04) merged into that file in both repos; guard anchors for each section
 - `vitana-platform:step-order-gate` — pipeline step order enforced in code (`scripts/collab/land-guard.mjs`)
 - `vitana-platform:sv-05308-coverage` — the missing VTID-05308 staging suite so gateway STAGING-VERIFY passes
 - `vitana-platform:pipeline-lane-state-efficiency` — one closing record may carry a chain of legal lane/plan transitions (every edge, its evidence and the append-only log checked)
