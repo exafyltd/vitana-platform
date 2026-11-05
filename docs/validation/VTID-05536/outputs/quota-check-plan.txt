@@ -1,0 +1,45 @@
+# quota check of lane fleet (VTID-05536), run through terraform plan WITHOUT AWS.
+# The resource block terraform_data.fleet_quota_check is taken as written from terraform/fleet.tf; only the three attributes read from the data sources are replaced by
+# stand-in values (local.sim_*), because no AWS call is possible here. The conditions, the arithmetic and the messages are the ones the owner's apply will use.
+# Stand-in Spot code: L-SPOTCODE-FROM-AWS (the real apply prints the code AWS returns for the quota named 'All Standard (A, C, D, H, I, M, R, T, Z) Spot Instance Requests').
+
+## 1. both quotas at the 5 vCPUs of a new account, fleet_max_instances 24 (needs 96)
+Error: Resource precondition failed
+  on main.tf line 18, in resource "terraform_data" "fleet_quota_check":
+  18:       condition     = local.sim_ondemand_value >= local.fleet_required_vcpus
+    ├────────────────
+    │ local.fleet_required_vcpus is 96
+    │ local.sim_ondemand_value is 5
+The On-Demand Standard vCPU quota in eu-central-1 is 5; the fleet needs 96
+(fleet_max_instances 24 x 4 vCPUs).
+Ask AWS to raise it, wait for the approval, then run the apply again:
+  aws service-quotas request-service-quota-increase --service-code ec2 --quota-code L-1216C47A --desired-value 96 --region eu-central-1
+Error: Resource precondition failed
+  on main.tf line 26, in resource "terraform_data" "fleet_quota_check":
+  26:       condition     = local.sim_spot_value >= local.fleet_required_vcpus
+    ├────────────────
+    │ local.fleet_required_vcpus is 96
+    │ local.sim_spot_value is 5
+The Spot Standard vCPU quota in eu-central-1 is 5; the fleet needs 96
+(fleet_max_instances 24 x 4 vCPUs).
+Ask AWS to raise it, wait for the approval, then run the apply again:
+  aws service-quotas request-service-quota-increase --service-code ec2 --quota-code L-SPOTCODE-FROM-AWS --desired-value 96 --region eu-central-1
+
+## 2. only Spot too low (On-Demand 96, Spot 40)
+Error: Resource precondition failed
+The Spot Standard vCPU quota in eu-central-1 is 40; the fleet needs 96
+  aws service-quotas request-service-quota-increase --service-code ec2 --quota-code L-SPOTCODE-FROM-AWS --desired-value 96 --region eu-central-1
+
+## 3. both exactly enough (96 and 96)
+Plan: 1 to add, 0 to change, 0 to destroy.
+
+## 4. the boundary with fleet_max_instances=2 (needs 8): quota 8 passes ...
+Plan: 1 to add, 0 to change, 0 to destroy.
+## ... and 7 fails, naming 8:
+Error: Resource precondition failed
+  aws service-quotas request-service-quota-increase --service-code ec2 --quota-code L-SPOTCODE-FROM-AWS --desired-value 8 --region eu-central-1
+
+## 5. the On-Demand code no longer carries its documented name
+Error: Resource precondition failed
+Quota code L-1216C47A is no longer the On-Demand Standard vCPU quota (AWS
+returned 'Something else'). Look the code up again with: aws service-quotas

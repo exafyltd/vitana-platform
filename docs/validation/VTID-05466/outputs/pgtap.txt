@@ -1,0 +1,6 @@
+ok   after apply: pgTAP backfill file passed (rolled back)
+ok   after apply: pgTAP drift file passed (rolled back)
+ok   after apply: pgTAP dualwrite file passed (rolled back)
+ok   after re-apply: pgTAP backfill file passed (rolled back)
+ok   after re-apply: pgTAP drift file passed (rolled back)
+ok   after re-apply: pgTAP dualwrite file passed (rolled back)

@@ -1,0 +1,13 @@
+# systemd-analyze verify of the two units (VTID-05548), 2026-11-05T03:05:55Z, systemd 252 (252.23-15.amzn2023) on Amazon Linux 2023 (the GitLab host runs Ubuntu 24.04, systemd 255)
+$ systemd-analyze verify --man=no vitana-github-bridge.service vitana-github-bridge.timer
+exit=0 (no warning or error for the two units)
+
+$ systemd-analyze calendar minutely
+  Original form: minutely
+Normalized form: *-*-* *:*:00
+
+Control: the same service with the credentials specifier %d changed to %Q fails verify, so the check does read ExecStart:
+<tmp>/control-bad.service:26: Failed to resolve unit specifiers in %Q/github-token: Invalid slot
+control-bad.service: Unit configuration has fatal error, unit will not be started.
+Unit control-bad.service has a bad unit file setting.
+exit=1

@@ -368,3 +368,90 @@ six and eng-gitlab-m2 `settings`. Every new test is recorded red on `origin/main
   code or migration in the PR; `lane_admin` is not edited and this lane's own file is not in its `paths`.
 - Staging proof: not verified on staging: deploys nothing. Proven by `queue.mjs validate`/`scope-check` on the PR and the
   trial merge into #4690's head.
+
+<!-- lane: nav-paths -->
+## Lane `nav-paths` (vitana-platform; late lane, `lane_admin`)
+- [ ] N1 Claim `agentic-delivery/nav-paths` with a seat `exafy` session that is not the plan driver; branch
+      `kiro/agentic-delivery/nav-paths` from `origin/main`.
+- [ ] N2 In `.kiro/specs/agentic-delivery/lanes/gateway-delivery.md` add exactly four entries to `paths`:
+      `services/gateway/src/navigation/data/command-hub-screens.json`,
+      `services/gateway/src/navigation/data/nav-embeddings.bin`,
+      `services/gateway/src/navigation/data/nav-embeddings.json`, `scripts/ci/command-hub-ownership-guard.js`. Nothing else
+      in the target changes (`state`, `seat`, `executor`, `reviewer_seat`, `vtid`, `updated`, `claimed_by`, every log line).
+      Mechanism and precedent: `laneAdminCovers` (`scripts/collab/queue.mjs`) lets a trusted `lane_admin` lane change a
+      target's permission fields; lane `say-hello-lane-reassign/reassign` (VTID-05410, `ee1d363dd2`) added four `paths` to
+      `new-member-welcome/say-hello-composer` the same way.
+- [ ] N3 Evidence `docs/validation/<VTID>/`: `scope.json`, `plan-sparring.md`, `acceptance.md` (AC- entries each followed by a
+      TEST: line within 12 lines), `commands.log`, `outputs/`: `queue.mjs validate` and `scope-check` for this lane; a byte
+      check that the target differs only by the four lines; a positive proof on a scratch branch (never pushed): with this
+      change on main, a commit of lane gateway-delivery that changes the four files passes Lane scope; a negative proof: the
+      same commit fails Lane scope on today's main.
+
+**Acceptance**
+- Change types: Tooling/docs.
+- Outcome: lane `gateway-delivery` can land its Delivery screen together with the voice-navigation entries, the stored
+  vectors and the ownership-guard line it needs, in one green PR.
+- States: the target lane `ready` on main with a claim held on its branch (only the `paths` block changes on main);
+  the four files changed by another lane (refused, as before).
+- Surfaces: PR-GATE Collab handoff and Lane scope for this PR and for lane gateway-delivery's PR.
+- Locales: n/a. Accessibility: n/a.
+- Contract: the target diff is exactly four added `paths` lines; no governance path, protected gate file or code in the PR;
+  `lane_admin` and this lane's own `paths` are unchanged.
+- Staging proof: not verified on staging: deploys nothing. Proven by Collab handoff and Lane scope and the two proofs.
+
+<!-- lane: sv-cwd -->
+## Lane `sv-cwd` (vitana-platform; late lane, fix forward of STAGING-VERIFY)
+- [ ] V1 Claim `agentic-delivery/sv-cwd` with a seat `exafy` session that is not the plan driver; branch
+      `kiro/agentic-delivery/sv-cwd` from `origin/main`.
+- [ ] V2 Record red: the `existing` refs of `docs/validation/VTID-05515/staging-tests.json`, `VTID-05516` and `VTID-05518`,
+      run the way `scripts/ci/staging-verify/run.mjs` runs them without `cwd` (from the repository root), fail; cite the
+      STAGING-VERIFY runs 42078889519 and 42098033490 where they are the only failures.
+- [ ] V3 Add `"cwd": "services/gateway"` to the `existing` test of each of the three manifests, nothing else; record green:
+      the same refs run from `services/gateway` pass, `lib.validateManifest` accepts each manifest, and
+      `node --test scripts/ci/staging-verify/` (every test file) stays green.
+- [ ] V4 Evidence `docs/validation/<VTID>/` (`scope.json`, `plan-sparring.md`, `acceptance.md`, `commands.log`, `outputs/`).
+
+**Acceptance**
+- Change types: Tooling/docs.
+- Outcome: the next gateway STAGING-VERIFY runs the suites of VTID-05515, VTID-05516 and VTID-05518 in the gateway folder,
+  where they pass, so a gateway merge of this plan can reach a passed STAGING-VERIFY.
+- States: a manifest whose ref names `test/…` paths and has no `cwd` (fails from the root); with `cwd` (passes).
+- Surfaces: STAGING-VERIFY for the gateway (`run.mjs` `runExisting`, `run.mjs:298-306`); the three manifests.
+- Locales: n/a. Accessibility: n/a.
+- Contract: the manifest schema of `scripts/ci/staging-verify/lib.cjs` (`validateManifest`, the `existing` kind with an
+  optional repo-relative `cwd`); each manifest diff is one added `"cwd"` line.
+- Staging proof: the next gateway STAGING-VERIFY on a commit that contains this change (the merge of a later gateway lane),
+  linked in the lane log; until then the local runs above.
+
+<!-- lane: cut-settings -->
+## Lane `cut-settings` (vitana-platform; late lane, after `cutover`)
+- [ ] C1 Claim `agentic-delivery/cut-settings` with a seat `exafy` session that is not the plan driver. Read the settings file and sync script as lanes eng-gitlab-m2 `settings` and `cutover` leave
+      them (prepare on a scratch base of their trees if they are not on main yet; push only after `cutover` is on main).
+- [ ] C2 Tests first, red on that base (`scripts/eng/gitlab-settings-delivery.test.mjs`, the fake GitLab of
+      `scripts/eng/testing/fake-fetch.mjs`): the sync creates or keeps the `bot-assist` service account (Developer on
+      vitana-v1 only) and writes its token as the protected, masked CI variable `ASSIST_PUSH_TOKEN` of vitana-v1, rotated
+      with the other tokens (plan §3.9); creates the pipeline schedules the generated pipelines need (the nightly and T3
+      jobs of lane pipelines, read from its files); sets `process_mode: oldest_first` on the resource groups that
+      `tpl-verify.yml` `.resource-groups` lists; allows the vitana-v1 job token to read vitana-platform and the reverse where
+      the templates need it; sets the maximum artifact size the image archives need (lane deploy-path: at least 2 GB);
+      lets `bot-land` push `assist/*` (plan §3.9) and keeps `train/*` unprotected (plan §3.5). creates the GitHub bridge's
+      GitLab account (Developer on both projects; scopes api, write_repository) and writes its token to
+      /etc/vitana/gitlab-bridge-token on the host, as for bot-land (RUNBOOK-github-bridge.md); A second run writes nothing;
+      `--check` exits 3 on drift; nothing is printed that holds a token.
+- [ ] C3 Implement in `scripts/eng/gitlab-settings.mjs` and `infra/gitlab-engineering/settings/gitlab-settings.json` only;
+      any item that lanes `settings` or `cutover` already apply is recorded and not built twice.
+- [ ] C4 Evidence `docs/validation/<VTID>/`; a dry run over the fake GitLab with both projects.
+
+**Acceptance**
+- Change types: Integration, Infrastructure/CI.
+- Outcome: after the cut the assist jobs can push, the nightly and T3 pipelines run on schedule, STAGING-VERIFY runs
+  oldest first, the platform scripts are readable from vitana-v1 jobs, image archives fit, and the merge bot can move its
+  `assist/*` and `train/*` refs.
+- States: GitLab API down (nothing changes, retried); a token near expiry (rotated); a setting already right (no write);
+  drift (`--check` exit 3).
+- Surfaces: the trusted GitLab host (the settings sync timer); both GitLab projects.
+- Locales: n/a. Accessibility: n/a.
+- Contract: the settings file schema of lane eng-gitlab-m2 `settings`; the job names, schedules and resource groups of lanes
+  pipelines and verify-on-gitlab; the GitLab REST endpoints used, with file:line on both sides.
+- Staging proof: not verified on staging: runs on the GitLab host in the engineering account. Proven by its tests and the
+  dry run; live from the cut.
