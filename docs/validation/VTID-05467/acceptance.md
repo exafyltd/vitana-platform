@@ -90,7 +90,7 @@ TEST: `git diff --name-only origin/main...HEAD | grep '^services/'` prints nothi
 AC-21: The staging manifest is valid. It names the existing role suite and claims no staging test.
 TEST: `validateManifest(docs/validation/VTID-05467/staging-tests.json)` returns `{"ok":true}` (commands.log).
 
-AC-22: `docs/multitenancy/MIGRATION-QUEUE.md` and `scripts/ci/migration-drift-baseline.json` are not touched. The `drift` check fails on the three new snapshot tables until lane `migration-records` lands; that failure is expected.
+AC-22: `docs/multitenancy/MIGRATION-QUEUE.md` and `scripts/ci/migration-drift-baseline.json` are not touched. The `drift` check passes on the fix head (CI run on `9487f8fa8c6`). It did not fail on the three new snapshot tables after lane `migration-records` (VTID-05479) landed.
 TEST: `git diff --name-only origin/main...HEAD | grep -E 'MIGRATION-QUEUE|migration-drift-baseline'` prints nothing.
 
 AC-23: The S2 definer rule (`services/gateway/test/vtid-05041-definer-lockdown.test.ts`) passes. A migration newer than VTID-05041 that creates a SECURITY DEFINER function revokes PUBLIC and anon in the same file, or carries a `-- definer-public:` reason. The forward file revokes. The rollback carries the reason and no grant statement.
