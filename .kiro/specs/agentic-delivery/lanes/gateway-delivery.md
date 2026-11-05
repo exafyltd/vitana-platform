@@ -21,6 +21,10 @@ paths:
   - services/gateway/src/frontend/command-hub/index.html
   - services/gateway/specs/dev-screen-inventory-v1.json
   - services/gateway/test/delivery/**
+  - services/gateway/src/navigation/data/command-hub-screens.json
+  - services/gateway/src/navigation/data/nav-embeddings.bin
+  - services/gateway/src/navigation/data/nav-embeddings.json
+  - scripts/ci/command-hub-ownership-guard.js
   - docs/validation/**
 updated: 2026-11-05T02:59Z
 vtid: VTID-05547

@@ -1,0 +1,4 @@
+base 0f45367bb69a8661eca6d5170ebb33909d03d001  head HEAD dcef3ff7b0645cb177480396a486e3794b5c69cf
+diff hunks: 23a24,27 
+ok front matter: keys=12, other keys changed=[], paths base=13 head=17, removed=[], added=[services/gateway/src/navigation/data/command-hub-screens.json, services/gateway/src/navigation/data/nav-embeddings.bin, services/gateway/src/navigation/data/nav-embeddings.json, scripts/ci/command-hub-ownership-guard.js]
+PASS .kiro/specs/agentic-delivery/lanes/gateway-delivery.md: base docs/validation lines=1 numstat="4 0" expected=c3e982c17fe7379c head=c3e982c17fe7379c removed lines=0 added=[- services/gateway/src/navigation/data/command-hub-screens.json - services/gateway/src/navigation/data/nav-embeddings.bin - services/gateway/src/navigation/data/nav-embeddings.json - scripts/ci/command-hub-ownership-guard.js]
