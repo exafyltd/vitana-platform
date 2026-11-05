@@ -58,3 +58,6 @@
        file restored to main's text (git restore --source=3767d3d09d), one new commit with the code and evidence only.
        No commit of this push touches the lane file, so Lane scope's seat rule has nothing to judge; the lane file's
        ready → executing text is kept for the commit that follows #4703 (lane reseat) on main.
+13:36  git commit 47e8f7b4d1 (the code and evidence, no lane-file change)
+13:37  node scripts/collab/preflight.mjs --repo . --base origin/main (abe2d7a59f) --head HEAD --branch kiro/agentic-delivery/verify-on-gitlab --title "<PR title>"
+                                                                                         -> every check passed (8/8; outputs/preflight.txt section 1)
