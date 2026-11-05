@@ -1,6 +1,6 @@
 ---
 lane: github-bridge
-state: in-review
+state: executing
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -15,7 +15,7 @@ paths:
   - infra/gitlab-engineering/host/units/vitana-github-bridge.timer
   - infra/gitlab-engineering/RUNBOOK-github-bridge.md
   - docs/validation/**
-updated: 2026-11-05T03:13Z
+updated: 2026-11-05T04:33Z
 vtid: VTID-05548
 claimed_by: kiro-exafy-202611050107-c4a6
 branch: kiro/agentic-delivery/github-bridge
@@ -54,3 +54,6 @@ Findings: non-blocking: dry-run-harness.mjs:30 serves branch heads from the PR s
 Findings: non-blocking: three cross-lane items have no owner yet. (a) The bridge's GitLab account and token file. (b) Bridged pushes arrive as the bridge's account, so M2's 'accept pushed by agent-reviewer' check cannot pass for a bridged same-repo lane. (c) How an assist result reaches a protected refs/heads/assist/* ref, and who calls assist-push. The driver assigns each to M2 settings, merge-queue or cutover before the cut.
 Findings: non-blocking: acceptance.md Contract gives no file:line for the boundaries it crosses (quality-checks.md asks for both sides). Add them with the AC-4 update.
 Next: the lane's seat fixes the blocking findings; then a new review on the new head.
+
+### 2026-11-05T04:33Z · kiro-exafy-202611050107-c4a6 · in-review → executing
+Review changes on 45dcdf53 (entry above): fixing the blocking finding (gate jobs' non-success results posted as success).
