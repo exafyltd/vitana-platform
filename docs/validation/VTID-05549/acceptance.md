@@ -13,7 +13,8 @@ and `queue.mjs` are not edited.
 How it was built: first on a local scratch base (F2 brief: origin/main `abe2d7a59f` plus the tree of merge-bot
 `570fe18b55`), parked locally. After eng-gitlab-m2 merge-bot (#4697) landed as `72dbefbaae`, the branch was made anew from
 origin/main `0f45367bb6` (it also holds #4718 and github-bridge #4689), the lane's five own commits were cherry-picked
-(no conflict), and one more commit adapts the queue to merge-bot's final `gitlab-land.mjs` (AC-7, AC-12, AC-14).
+(no conflict), one commit adapts the queue to merge-bot's final `gitlab-land.mjs` (AC-7a, AC-12, AC-14), and a follow-up
+keeps a same-tick drop on the head the bot made (AC-7a).
 
 AC-1 Cross-repo review source (plan §3.5): a vitana-v1 merge request titled `VTID-xxxxx (<slug>/<lane>): …` is judged by
 the review entry in the platform lane file `.kiro/specs/<slug>/lanes/<lane>.md`, read from the bot's clone of
@@ -63,8 +64,9 @@ AC-7a Merge-bot's final rules in the train (#4697): a merge request whose merge 
 comment, and the younger ones go on in the same tick (M2's blocking fix); a position whose merge GitLab keeps refusing
 holds the train for at most 60 minutes from its position pipeline's creation (M2's turn bound), then it is dropped
 (`merge_refused_too_long`, one comment, until a new head) and the positions behind it are rebuilt without it; after a
-refused merge no further merge call is made in that tick.
-TEST: scripts/eng/gitlab-land-queue.test.mjs "a merge request whose merge of main conflicts is skipped with one comment, and the younger ones go on in the same tick (M2's conflict rule, in queue mode)", "a position whose merge GitLab keeps refusing holds the train for at most 60 minutes from its pipeline's creation; then it is dropped and the positions behind it are rebuilt without it"
+refused merge no further merge call is made in that tick; a drop in the tick in which the bot merged `main` into the
+branch is kept, and commented, for the head the bot made, so the merge request stays out until its builder pushes.
+TEST: scripts/eng/gitlab-land-queue.test.mjs "a merge request whose merge of main conflicts is skipped with one comment, and the younger ones go on in the same tick (M2's conflict rule, in queue mode)", "a position whose merge GitLab keeps refusing holds the train for at most 60 minutes from its pipeline's creation; then it is dropped and the positions behind it are rebuilt without it", "a merge request dropped in the tick in which the bot merged main into it stays out for the head the bot made, with one comment"
 
 AC-8 Plan merge requests (plan §3.5, planning.md §6): a `plan(` merge request lands only when `handoff.md` on its head
 says `approved` with a `sparring_record`, the last `gitlab/plan-spar` or `PLAN-SPAR` commit status from a trusted account
@@ -129,7 +131,7 @@ Contract:
   gitlab-land.mjs:169 (in `queueSquashMessage`, lane :574); `judgeReviewCommit` :140 and `pushedByReviewer` :249 with its
   `pushRange` :238 (in `sameRepoReview`, lane :723); `checksFor` :124 (in `pipelineChecks`, lane :714); `GIT_CONFIG_ARGS`
   :194 (also in the lane's `mergeTree`, lane :686); `lostItsTurn` :380 and `waitedMinutes` :384 (the train's refused-merge
-  bound, lane :937); `gitRun` :196, `ensureClone` :218, `fetchMrHead` :232, `openMergeRequests` :374, `COMMENT_TEXT` :175,
+  bound, lane :938); `gitRun` :196, `ensureClone` :218, `fetchMrHead` :232, `openMergeRequests` :374, `COMMENT_TEXT` :175,
   `PIPELINE_FINAL` :121, `REVIEWER_RE` :54. Edited M2 lines: the header comment and imports, `DEFAULTS` (+`services`,
   +`queueProjects`), the first two lines of `tickProject` (`queueSetting`, `tickQueue`; lane :400-402), `loadProjects`
   (+`queue`, `train_required_jobs`), `makeContext` (+`services`, `statusUsers`, `queueProjects`), the usage line. Not used by
@@ -145,13 +147,14 @@ Staging proof: not verified on staging: it runs on the GitLab host in the engine
 deploys nothing (`run.mjs check-pr`: outputs/staging-check-pr.txt). Proven by its tests and the 12-merge-request dry run
 over the fake GitLab; live from the cut.
 
-Red on base: outputs/red-on-base.txt — 30 of 30 fail on origin/main `0f45367bb6` (3 files fail whole: missing modules; 27
+Red on base: outputs/red-on-base.txt — 31 of 31 fail on origin/main `0f45367bb6` (3 files fail whole: missing modules; 28
 queue tests fail); outputs/red-on-stub.txt — 30 of 30 fail against no-behaviour stubs outside the repo. The four tests
 added for the adaptation: outputs/red-adapt.txt — on the cherry-picked code before the adaptation, 3 of 4 fail (the queue
 switch by name, the refused-merge bound, the credential flag); the conflict case passes there (the queue already skipped
-it; a regression test of M2's rule).
-Green: outputs/green.txt — 115 of 115 pass (57 new: review-source 14, gitlab-gates 8, assist-trigger 8, gitlab-land-queue
-27; plus M2's gitlab-land.test.mjs 58, unchanged); outputs/unit-all.txt — UNIT's full command: 939 tests, 938 pass, 0 fail,
+it; a regression test of M2's rule). The same-tick drop test: outputs/red-fix-same-tick.txt — 1 of 1 fails on the code of
+PR head `43ef9402f5`.
+Green: outputs/green.txt — 116 of 116 pass (58 new: review-source 14, gitlab-gates 8, assist-trigger 8, gitlab-land-queue
+28; plus M2's gitlab-land.test.mjs 58, unchanged); outputs/unit-all.txt — UNIT's full command: 940 tests, 939 pass, 0 fail,
 1 skipped (pre-existing win32 case).
 
 Decisions taken (inside the plan):
@@ -183,7 +186,8 @@ Decisions taken (inside the plan):
    (`merge_refused_too_long`). The bound counts from the position pipeline because a train merge request's own pipeline
    is older than its position. A position whose pipeline stays pending is not bounded by the bot: GitLab's job timeout
    ends it, and a failed or canceled position is dropped (AC-7). A head the bot made (main merged in with `ci.skip`) is
-   judged by the checks of the head it was made from.
+   judged by the checks of the head it was made from, and from the moment the bot pushes it, it is the merge request's
+   head for that tick's drop and comment.
 10. Train refs move by delete-then-push, never by force; the train state file is only a cache: a lost or unreadable one
     makes the bot rebuild the train.
 11. `gitlab-land.mjs merge <project> <iid>` on a queue project runs a normal queue tick (nothing jumps the queue) and

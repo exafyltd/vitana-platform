@@ -1,4 +1,4 @@
-# land-guard.mjs and queue.mjs are not edited by this lane (tasks.md Q2/Q3). Lane diff = 0f45367bb69a8661eca6d5170ebb33909d03d001 (origin/main when the lane was rebuilt) ... the lane's tree, 2026-11-05T22:04:08Z.
+# land-guard.mjs and queue.mjs are not edited by this lane (tasks.md Q2/Q3). Lane diff = 0f45367bb69a8661eca6d5170ebb33909d03d001 (origin/main when the lane was rebuilt) ... the lane's tree, 2026-11-05T22:16:54Z.
 $ git diff --stat 0f45367bb69a8661eca6d5170ebb33909d03d001... -- scripts/collab/land-guard.mjs scripts/collab/queue.mjs scripts/collab/protected-gate-files.json   (and the staged tree)
 (empty: untouched)
 $ git hash-object scripts/collab/land-guard.mjs scripts/collab/queue.mjs scripts/collab/protected-gate-files.json; git rev-parse 0f45367bb69a8661eca6d5170ebb33909d03d001:<each>
@@ -15,6 +15,7 @@ docs/validation/VTID-05549/outputs/dry-run-12.mjs
 docs/validation/VTID-05549/outputs/dry-run-12.txt
 docs/validation/VTID-05549/outputs/green.txt
 docs/validation/VTID-05549/outputs/red-adapt.txt
+docs/validation/VTID-05549/outputs/red-fix-same-tick.txt
 docs/validation/VTID-05549/outputs/red-on-base.txt
 docs/validation/VTID-05549/outputs/red-on-stub.txt
 docs/validation/VTID-05549/outputs/staging-check-pr.txt

@@ -50,3 +50,11 @@
 2026-11-05T22:01Z node docs/validation/VTID-05549/outputs/dry-run-12.mjs   → exit 0: tick 0 --dry-run 0 API writes; tick 2 landed 8 (platform) + 3 (v1); !17 refused once   [outputs/dry-run-12.txt]
 2026-11-05T22:04Z node scripts/ci/staging-verify/run.mjs check-pr --service gateway … --base 0f45367bb6 --head <staged tree commit f75992cd61>   → "nothing deploys, no staging suite needed", exit 0   [outputs/staging-check-pr.txt]
 2026-11-05T22:05Z node scripts/collab/land-guard.mjs evidence --repo /projects/sandbox/.rv/mq --vtid VTID-05549   → exit 0
+2026-11-05T22:06Z git push origin 8d90a0fb85:refs/heads/kiro/agentic-delivery/merge-queue; gh api …/pulls (REST)   → PR #4721 opened; lane-file commit 43ef9402f5 (executing, pr:, waits for settings) pushed after preflight (every check passed)
+2026-11-05T22:12Z gh api …/commits/43ef9402f5/check-runs   → 11 check runs, all completed success
+2026-11-05T22:13Z self-review of the adaptation: a drop in the tick in which the bot pushed its main merge was keyed on the head read at the start of the tick; new test "a merge request dropped in the tick in which the bot merged main into it stays out for the head the bot made, with one comment" on the PR head code   → tests 1, pass 0, fail 1   [outputs/red-fix-same-tick.txt]
+2026-11-05T22:14Z landPosition sets the item's head to the head it pushed; node --test scripts/eng/gitlab-land-queue.test.mjs   → tests 28, pass 28, fail 0
+2026-11-05T22:15Z green (5 files)   → tests 116, pass 116, fail 0   [outputs/green.txt]; UNIT full   → tests 940, pass 939, fail 0, skipped 1   [outputs/unit-all.txt]; dry-run-12   → exit 0   [outputs/dry-run-12.txt]
+2026-11-05T22:16Z sh /projects/sandbox/.scratch/tools/6eb1/red.sh 0f45367bb6…   → red on base: tests 31, pass 0, fail 31 (exit 1); red on stubs: tests 30, pass 0, fail 30 (exit 1)
+2026-11-05T22:16:54Z node scripts/ci/staging-verify/run.mjs check-pr --service gateway … --base 0f45367bb6 --head <staged tree commit 3c5ced1a5f>   → "nothing deploys, no staging suite needed", exit 0   [outputs/staging-check-pr.txt]
+2026-11-05T22:16:54Z node scripts/collab/land-guard.mjs evidence --repo /projects/sandbox/.rv/mq --vtid VTID-05549   → exit 0

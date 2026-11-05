@@ -887,6 +887,7 @@ async function landPosition(ctx, repo, pid, pos, it) {
     gitRun(ctx, repo, ['push', '-q', '-o', 'ci.skip', 'origin', `${next}:refs/heads/${mr.source_branch}`]);
     pos.updated = next;
     ctx.log({ event: 'updated', mr: it.iid, from: it.head, to: next, ciSkip: true });
+    it.head = next; // the merge request's head is now the one the bot made: a drop or a comment in this tick is for it
   }
   const body = { sha: next, squash: true, squash_commit_message: queueSquashMessage(mr, it.accept), should_remove_source_branch: true };
   let merged = false;

@@ -1,6 +1,6 @@
 # Red on stubs: review-source, gitlab-gates and assist-trigger tests (final versions) against no-behaviour stubs of their modules, OUTSIDE the repo:
 # /projects/sandbox/.scratch/tools/6eb1/stub-run = git archive of the base's scripts/ (0f45367bb69a8661eca6d5170ebb33909d03d001) + the test files + stub modules that export the names and do nothing (/projects/sandbox/.scratch/tools/6eb1/stubs/scripts/eng/*.mjs).
-# command (in the stub dir): node --test scripts/eng/review-source.test.mjs scripts/eng/gitlab-gates.test.mjs scripts/eng/assist-trigger.test.mjs (2026-11-05T22:04:08Z)
+# command (in the stub dir): node --test scripts/eng/review-source.test.mjs scripts/eng/gitlab-gates.test.mjs scripts/eng/assist-trigger.test.mjs (2026-11-05T22:16:54Z)
 
 not ok 1 - assistRef and the rule names: assist/<iid>-<rule>, a rule id is a plain lowercase name
 not ok 2 - matchingRules: a rule applies when the merge request changes one of its paths

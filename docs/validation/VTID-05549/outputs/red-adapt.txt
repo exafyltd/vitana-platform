@@ -1,6 +1,6 @@
 # Red of the adaptation to merge-bot's final gitlab-land.mjs: the four tests added on the rebuilt branch, run against the lane's code as
 # cherry-picked onto origin/main 0f45367bb69a8661eca6d5170ebb33909d03d001 (commit 19abaf4c0b43da465b5cbbab06ee848e1ffd8c94, before the adaptation), in /projects/sandbox/.scratch/tools/6eb1/pre (git archive of that commit's scripts/ plus
-# the new gitlab-land-queue.test.mjs; outside the repo), 2026-11-05T22:04:08Z.
+# the new gitlab-land-queue.test.mjs; outside the repo), 2026-11-05T22:16:54Z.
 # command: node --test --test-name-pattern='^(queue mode is on for the two projects|a merge request whose merge of main conflicts|a position whose merge GitLab keeps refusing|every git command of a queue tick)' scripts/eng/gitlab-land-queue.test.mjs
 # result: tests 4, pass 1, fail 3. The pass is the conflict case: the queue already skipped a merge request whose merge of main conflicts and went on
 # with the younger ones (M2's blocking fix); it is a regression test of that rule. The three red ones: the queue switch by name (DEFAULTS.queueProjects

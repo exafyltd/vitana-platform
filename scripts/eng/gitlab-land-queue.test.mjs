@@ -542,6 +542,25 @@ test('a position whose merge GitLab keeps refusing holds the train for at most 6
   assert.equal(notePosts(r3.f).length, 0, 'the drop is explained once per head');
 });
 
+test('a merge request dropped in the tick in which the bot merged main into it stays out for the head the bot made, with one comment', async () => {
+  const { W } = threeReady(); // !8 (lane-b) is behind main: landing it first merges main into it (ci.skip)
+  await tickOnce(W);
+  ciTrain(W, 'vitana-platform', { createdAt: '2026-11-05T10:30:00Z' }); // 90 minutes before NOW: the first refusal is past the bound
+  W.s['vitana-platform'].refuse = new Set([8]);
+  const before = g(W.p['vitana-platform'].remote, 'rev-parse', 'refs/heads/kiro/demo/lane-b');
+  const r1 = await tickOnce(W);
+  assert.deepEqual(merges(r1.f).map(iidOf), [8]);
+  const updated = g(W.p['vitana-platform'].remote, 'rev-parse', 'refs/heads/kiro/demo/lane-b');
+  assert.notEqual(updated, before, 'main was merged into lane-b in this tick');
+  assert.deepEqual(mrOf(W, 'vitana-platform', 8).labels, ['queue-blocked']);
+  assert.equal(W.s['vitana-platform'].notes[8].length, 1);
+  assert.ok(W.s['vitana-platform'].notes[8][0].body.includes(`vitana-land:merge_refused_too_long:${updated}`), 'the comment is for the head the merge request has now');
+  const r2 = await tickOnce(W);
+  assert.deepEqual(mrOf(W, 'vitana-platform', 8).labels, ['queue-blocked'], 'still out: its head is the one it was dropped with');
+  assert.equal(notePosts(r2.f).length, 0, 'no second comment');
+  assert.equal(trainRefs(W).some(([, sha]) => g(W.p['vitana-platform'].remote, 'rev-list', '--parents', '-n', '1', sha).split(' ')[2] === updated), false, 'not back in the train');
+});
+
 test('every git command of a queue tick starts with -c credential.helper=, as M2\'s bot does, so no configured helper can store the token', async () => {
   const { W } = threeReady();
   const bin = path.join(W.root, 'bin');
