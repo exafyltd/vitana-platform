@@ -1,0 +1,64 @@
+# VTID-05544 commands (2026-11-05, Linux; node v22.23.4 unless a line says node 20; seat exafy, session kiro-exafy-202611021438-cff7)
+base: origin/main 945755f084c. Worktree: .worktrees/eng-gitlab-m1-gitlab-infra, branch kiro/eng-gitlab-m1/gitlab-infra.
+The outputs under outputs/ were produced from the final files of this PR, in the order below, by one pass at the end (tests, red on base, mutation run, restore-script run, whole script set), after the last change to a tested file.
+
+# 1. Where the bundle comes from, and how it differs from what ran
+The owner ran bundle v6 in AWS CloudShell. The CloudShell block (archive as base64, then `sha256sum -c`) was decoded and extracted unchanged; its sha256 is
+66983e0f9854f5025e2b5e23e2ae2cd134592fb628f8e1f249d271569aff10f6, the value that block checks before it extracts.
+$ sha256sum <file of the archive> vs sha256sum infra/gitlab-engineering/<file>      for the 10 files of the archive
+Output: outputs/diff-vs-running-bundle.txt. 9 files identical; host/ci-platform.yml differs (the install steps); RUNBOOK.md is new; the Terraform lock file is not committed.
+
+# 2. Red on base, green
+$ node --test scripts/eng/gitlab-m1-structure.test.mjs      (with infra/gitlab-engineering set aside = the tree of origin/main) -> outputs/red-on-base.txt
+tests 26, pass 0, fail 26: each case fails on its own ENOENT (terraform/main.tf, host/ci-platform.yml, setup.sh, host/gitlab-configure.sh, RUNBOOK.md or the host folder).
+$ the same test on a scratch tree with an EMPTY file at each of the 11 paths of the bundle      -> outputs/red-on-empty-bundle.txt
+tests 26, pass 0, fail 26: every case fails by assertion (ERR_ASSERTION), none by a missing file or a crash.
+$ node --test scripts/eng/gitlab-m1-structure.test.mjs      (bundle present) -> outputs/green.txt
+tests 26, pass 26, fail 0, skipped 0.
+
+# 3. The whole script test set exactly as .github/workflows/UNIT.yml:21-25 runs it (no install)
+$ FILES=$(find scripts -path '*/node_modules' -prune -o \( -name '*.test.cjs' -o -name '*.test.mjs' \) -print | sort); node --test $FILES      -> outputs/unit-all.txt
+34 files; tests 639, pass 638, fail 0, cancelled 0, skipped 1 (a skip in a file this lane does not touch).
+$ the same with node v20.20.2 (npx -y node@20; the workflow uses actions/setup-node 20)      -> outputs/unit-all-node20.txt
+34 files; tests 639, pass 638, fail 0, skipped 1.
+
+# 4. Mutation run: each of 138 deliberate changes applied alone to a scratch copy of the bundle. Script: outputs/mutate-gitlab-m1.sh   Output: outputs/mutation-run.txt
+$ TMPDIR=<scratch> TERRAFORM=<terraform binary> PYLIB=<PyYAML directory> bash outputs/mutate-gitlab-m1.sh <worktree>
+Baseline 26 of 26 pass on the unmutated tree. Mutations 138: caught 138, not caught 0. A change counts as caught only when the changed file still parses
+(bash -n; PyYAML safe_load; terraform fmt's parser, exit 2 on a syntax error), differs from the original, and the test fails on a named case. Three
+changes are meant to break the syntax (case 14); the harness requires that they do.
+History: the first run of the same 138 changes against the first version of the test left 6 survivors (the GitHub token written to a file, the GitHub token
+logged, the backup archive not uploaded, the configuration archive not uploaded, the configuration archive without /etc/gitlab, the backup script not
+stopping on error). The test was tightened for those (cases 17 and 21), case 3 was rewritten, and the test now reads files when a case runs; the recorded
+run is the second.
+
+# 5. Terraform and scripts
+$ cd <copy of infra/gitlab-engineering/terraform> && terraform fmt -check -diff -recursive; terraform init -backend=false -input=false; terraform validate      -> outputs/terraform-checks.txt
+Terraform v1.17.1, hashicorp/aws v5.100.0: fmt exit 0; "Success! The configuration is valid."
+$ bash -n on the 7 scripts; PyYAML (6.0.3) safe_load of the two central CI files, jobs and tags listed      -> outputs/scripts-and-yaml.txt
+All 7 scripts ok; both files parse; every job runs on the default tag vitana-eng; stages [check] only.
+$ bash outputs/test-restore-inner.sh infra/gitlab-engineering/RUNBOOK.md      -> outputs/restore-script-test.txt
+21 checks, 0 failures. Control flow of the restore script of RUNBOOK section 8 step B with stub commands; it restores nothing.
+
+# 6. The gateway type check with the two installs, on the plan's base commit
+A throwaway checkout of exafyltd/vitana-platform at 4066f563e7, directory services/gateway; pnpm 9.0.0; node v20.20.2 (also run with v22.23.4).
+$ pnpm install --frozen-lockfile; pnpm run typecheck      -> TS2664 at src/middleware/server-timing.ts(36,16) and src/orb/live/latency-tracker.ts(236,16), exit 2
+$ npm ci --no-audit --no-fund; pnpm run typecheck         -> no error, exit 0
+Output: outputs/gateway-typecheck.txt
+
+# 7. Cost estimate (plan section 7)
+$ python3 outputs/cost-estimate.py      -> outputs/cost-estimate.txt
+Prices from the AWS public price list for eu-central-1 (versions named in the script). Full size about $452 per month, start size about $284 per month.
+
+# 8. Secret scan of every file of the PR
+Pattern scan for GitHub, GitLab, AWS, Slack and Cloudflare-style tokens, key blocks, JWTs and literal secret assignments      -> outputs/secret-scan.txt
+Three matches, all the Secrets Manager secret names pinned by the test; no value.
+
+# 9. Scope file made with the helper the gate documents, then pointed at the lane's own sparring record
+$ node scripts/ci/pr-gate/vtid-scope.mjs init VTID-05544 --kind infra --paths "infra/gitlab-engineering/**,scripts/eng/gitlab-m1-structure.test.mjs,docs/validation/VTID-05544/**" --sparring-record .kiro/specs/eng-gitlab-m1/sparring/verdict.md
+wrote docs/validation/VTID-05544/scope.json ; then "sparring_record" was set to docs/validation/VTID-05544/plan-sparring.md, because the gate's sparring check looks for the words "owner approval" and
+the CI verdict of a policy-approved plan says "approved by policy"; plan-sparring.md states the approval and cites the verdict.
+
+# 10. Not run, with the reason
+- terraform plan / apply, aws, gitlab or GitHub calls: this session has no AWS or GitLab access by rule (never write to or test a live system); the owner applies in CloudShell.
+- A real restore, the backup listing, the first pipelines on GitLab: the owner's steps 1 to 3 of plan section 6.

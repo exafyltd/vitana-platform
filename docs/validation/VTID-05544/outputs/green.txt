@@ -1,0 +1,167 @@
+# $ node --test scripts/eng/gitlab-m1-structure.test.mjs   (final test, bundle present)
+TAP version 13
+# Subtest: both machines: no public IP, IMDSv2 required with hop limit 1, encrypted root volume with the engineering key
+ok 1 - both machines: no public IP, IMDSv2 required with hop limit 1, encrypted root volume with the engineering key
+  ---
+  duration_ms: 1.675089
+  type: 'test'
+  ...
+# Subtest: machine sizes are variables with the documented default
+ok 2 - machine sizes are variables with the documented default
+  ---
+  duration_ms: 0.560653
+  type: 'test'
+  ...
+# Subtest: volumes: 200 GB gp3 for GitLab, 100 GB gp3 for the runner
+ok 3 - volumes: 200 GB gp3 for GitLab, 100 GB gp3 for the runner
+  ---
+  duration_ms: 0.453192
+  type: 'test'
+  ...
+# Subtest: Terraform state: S3 backend with use_lockfile and encryption, supplied by setup.sh
+ok 4 - Terraform state: S3 backend with use_lockfile and encryption, supplied by setup.sh
+  ---
+  duration_ms: 0.345301
+  type: 'test'
+  ...
+# Subtest: backup bucket: KMS encryption, versioning, public access blocked, 30-day expiry, TLS only
+ok 5 - backup bucket: KMS encryption, versioning, public access blocked, 30-day expiry, TLS only
+  ---
+  duration_ms: 1.150848
+  type: 'test'
+  ...
+# Subtest: Secrets Manager: the three secrets use the engineering key and the documented names
+ok 6 - Secrets Manager: the three secrets use the engineering key and the documented names
+  ---
+  duration_ms: 2.541403
+  type: 'test'
+  ...
+# Subtest: GitLab accepts only the load balancer; the runner accepts nothing; the load balancer accepts 443 only
+ok 7 - GitLab accepts only the load balancer; the runner accepts nothing; the load balancer accepts 443 only
+  ---
+  duration_ms: 1.107557
+  type: 'test'
+  ...
+# Subtest: IAM: no wildcard action or resource, except the TLS-only deny on the backup bucket
+ok 8 - IAM: no wildcard action or resource, except the TLS-only deny on the backup bucket
+  ---
+  duration_ms: 1.021564
+  type: 'test'
+  ...
+# Subtest: the runner role may read only its own registration token and use the key to decrypt it
+ok 9 - the runner role may read only its own registration token and use the key to decrypt it
+  ---
+  duration_ms: 1.05987
+  type: 'test'
+  ...
+# Subtest: the GitLab role: backups bucket, writes only the two generated secrets, reads only the mirror token
+ok 10 - the GitLab role: backups bucket, writes only the two generated secrets, reads only the mirror token
+  ---
+  duration_ms: 0.722011
+  type: 'test'
+  ...
+# Subtest: load balancer: HTTPS 443 with the TLS 1.3 policy and no port-80 listener; health check on /users/sign_in
+ok 11 - load balancer: HTTPS 443 with the TLS 1.3 policy and no port-80 listener; health check on /users/sign_in
+  ---
+  duration_ms: 0.570384
+  type: 'test'
+  ...
+# Subtest: network: own VPC 10.20.0.0/16 in two availability zones, one NAT gateway, an S3 endpoint, no peering
+ok 12 - network: own VPC 10.20.0.0/16 in two availability zones, one NAT gateway, an S3 endpoint, no peering
+  ---
+  duration_ms: 0.322111
+  type: 'test'
+  ...
+# Subtest: every host file the machines are built from exists
+ok 13 - every host file the machines are built from exists
+  ---
+  duration_ms: 0.364359
+  type: 'test'
+  ...
+# Subtest: every shell script passes bash -n
+ok 14 - every shell script passes bash -n
+  ---
+  duration_ms: 19.896422
+  type: 'test'
+  ...
+# Subtest: no script turns on xtrace (it would write secrets into logs)
+ok 15 - no script turns on xtrace (it would write secrets into logs)
+  ---
+  duration_ms: 1.928168
+  type: 'test'
+  ...
+# Subtest: the Cloudflare token is typed hidden, handed to curl on stdin, and used nowhere else
+ok 16 - the Cloudflare token is typed hidden, handed to curl on stdin, and used nowhere else
+  ---
+  duration_ms: 0.60212
+  type: 'test'
+  ...
+# Subtest: the GitHub mirror token is typed hidden and goes to Secrets Manager only
+ok 17 - the GitHub mirror token is typed hidden and goes to Secrets Manager only
+  ---
+  duration_ms: 0.536441
+  type: 'test'
+  ...
+# Subtest: setup.sh exports AWS_REGION as well as AWS_DEFAULT_REGION (CloudShell sets AWS_REGION and the CLI prefers it)
+ok 18 - setup.sh exports AWS_REGION as well as AWS_DEFAULT_REGION (CloudShell sets AWS_REGION and the CLI prefers it)
+  ---
+  duration_ms: 0.133429
+  type: 'test'
+  ...
+# Subtest: files that hold a secret on a machine are created with umask 077; the mirror scrubs credentials from git output
+ok 19 - files that hold a secret on a machine are created with umask 077; the mirror scrubs credentials from git output
+  ---
+  duration_ms: 0.254256
+  type: 'test'
+  ...
+# Subtest: instance settings: sign-up off, two-factor required, usage ping off, private by default
+ok 20 - instance settings: sign-up off, two-factor required, usage ping off, private by default
+  ---
+  duration_ms: 0.127168
+  type: 'test'
+  ...
+# Subtest: the nightly backup runs at 02:15 UTC, encrypted copy to the backup bucket
+ok 21 - the nightly backup runs at 02:15 UTC, encrypted copy to the backup bucket
+  ---
+  duration_ms: 0.256066
+  type: 'test'
+  ...
+# Subtest: central CI: only main and manual, API or schedule runs; stage check only
+ok 22 - central CI: only main and manual, API or schedule runs; stage check only
+  ---
+  duration_ms: 0.347462
+  type: 'test'
+  ...
+# Subtest: central CI: every job runs on the vitana-eng runner; no AWS credential, no deploy
+ok 23 - central CI: every job runs on the vitana-eng runner; no AWS credential, no deploy
+  ---
+  duration_ms: 0.800523
+  type: 'test'
+  ...
+# Subtest: central CI platform: gateway type check and four Jest shards with pnpm 9.0.0 (as CICDL-GATEWAY-CI and TEST-SUITE)
+ok 24 - central CI platform: gateway type check and four Jest shards with pnpm 9.0.0 (as CICDL-GATEWAY-CI and TEST-SUITE)
+  ---
+  duration_ms: 0.523602
+  type: 'test'
+  ...
+# Subtest: central CI vitana-v1: npm test and npm run build gate the pipeline; lint is reported only
+ok 25 - central CI vitana-v1: npm test and npm run build gate the pipeline; lint is reported only
+  ---
+  duration_ms: 0.203687
+  type: 'test'
+  ...
+# Subtest: RUNBOOK section 6 embeds the platform central CI file exactly
+ok 26 - RUNBOOK section 6 embeds the platform central CI file exactly
+  ---
+  duration_ms: 0.165309
+  type: 'test'
+  ...
+1..26
+# tests 26
+# suites 0
+# pass 26
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 102.306846

@@ -1,0 +1,557 @@
+# base: origin/main 945755f084c has no infra/gitlab-engineering; this run has the final test file and that folder absent
+# $ node --test scripts/eng/gitlab-m1-structure.test.mjs
+TAP version 13
+# Subtest: both machines: no public IP, IMDSv2 required with hop limit 1, encrypted root volume with the engineering key
+not ok 1 - both machines: no public IP, IMDSv2 required with hop limit 1, encrypted root volume with the engineering key
+  ---
+  duration_ms: 1.026926
+  type: 'test'
+  location: '<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:27:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/terraform/main.tf'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:16:23)
+    get TF (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:22:21)
+    file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:49:122
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:27:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.start (node:internal/test_runner/test:944:17)
+    startSubtestAfterBootstrap (node:internal/test_runner/harness:296:17)
+  ...
+# Subtest: machine sizes are variables with the documented default
+not ok 2 - machine sizes are variables with the documented default
+  ---
+  duration_ms: 0.267976
+  type: 'test'
+  location: '<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:27:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/terraform/main.tf'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:16:23)
+    get TF (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:22:21)
+    file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:64:68
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:27:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+  ...
+# Subtest: volumes: 200 GB gp3 for GitLab, 100 GB gp3 for the runner
+not ok 3 - volumes: 200 GB gp3 for GitLab, 100 GB gp3 for the runner
+  ---
+  duration_ms: 0.136233
+  type: 'test'
+  location: '<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:27:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/terraform/main.tf'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:16:23)
+    get TF (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:22:21)
+    file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:71:70
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:27:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+  ...
+# Subtest: Terraform state: S3 backend with use_lockfile and encryption, supplied by setup.sh
+not ok 4 - Terraform state: S3 backend with use_lockfile and encryption, supplied by setup.sh
+  ---
+  duration_ms: 0.116145
+  type: 'test'
+  location: '<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:27:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/terraform/main.tf'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:16:23)
+    get TF (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:22:21)
+    file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:80:95
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:27:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+  ...
+# Subtest: backup bucket: KMS encryption, versioning, public access blocked, 30-day expiry, TLS only
+not ok 5 - backup bucket: KMS encryption, versioning, public access blocked, 30-day expiry, TLS only
+  ---
+  duration_ms: 0.203022
+  type: 'test'
+  location: '<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:27:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/terraform/main.tf'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:16:23)
+    get TF (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:22:21)
+    file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:88:102
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:27:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+  ...
+# Subtest: Secrets Manager: the three secrets use the engineering key and the documented names
+not ok 6 - Secrets Manager: the three secrets use the engineering key and the documented names
+  ---
+  duration_ms: 0.180554
+  type: 'test'
+  location: '<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:27:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/terraform/main.tf'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:16:23)
+    get TF (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:22:21)
+    file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:105:96
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:27:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+  ...
+# Subtest: GitLab accepts only the load balancer; the runner accepts nothing; the load balancer accepts 443 only
+not ok 7 - GitLab accepts only the load balancer; the runner accepts nothing; the load balancer accepts 443 only
+  ---
+  duration_ms: 0.194865
+  type: 'test'
+  location: '<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:27:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/terraform/main.tf'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:16:23)
+    get TF (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:22:21)
+    file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:122:114
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:27:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+  ...
+# Subtest: IAM: no wildcard action or resource, except the TLS-only deny on the backup bucket
+not ok 8 - IAM: no wildcard action or resource, except the TLS-only deny on the backup bucket
+  ---
+  duration_ms: 0.140158
+  type: 'test'
+  location: '<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:27:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/terraform/main.tf'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:16:23)
+    get TF (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:22:21)
+    file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:141:95
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:27:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+  ...
+# Subtest: the runner role may read only its own registration token and use the key to decrypt it
+not ok 9 - the runner role may read only its own registration token and use the key to decrypt it
+  ---
+  duration_ms: 0.329111
+  type: 'test'
+  location: '<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:27:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/terraform/main.tf'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:16:23)
+    get TF (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:22:21)
+    file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:152:99
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:27:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+  ...
+# Subtest: the GitLab role: backups bucket, writes only the two generated secrets, reads only the mirror token
+not ok 10 - the GitLab role: backups bucket, writes only the two generated secrets, reads only the mirror token
+  ---
+  duration_ms: 0.305244
+  type: 'test'
+  location: '<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:27:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/terraform/main.tf'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:16:23)
+    get TF (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:22:21)
+    file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:166:112
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:27:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+  ...
+# Subtest: load balancer: HTTPS 443 with the TLS 1.3 policy and no port-80 listener; health check on /users/sign_in
+not ok 11 - load balancer: HTTPS 443 with the TLS 1.3 policy and no port-80 listener; health check on /users/sign_in
+  ---
+  duration_ms: 0.185295
+  type: 'test'
+  location: '<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:27:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/terraform/main.tf'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:16:23)
+    get TF (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:22:21)
+    file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:173:117
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:27:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+  ...
+# Subtest: network: own VPC 10.20.0.0/16 in two availability zones, one NAT gateway, an S3 endpoint, no peering
+not ok 12 - network: own VPC 10.20.0.0/16 in two availability zones, one NAT gateway, an S3 endpoint, no peering
+  ---
+  duration_ms: 0.116103
+  type: 'test'
+  location: '<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:27:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/terraform/main.tf'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:16:23)
+    get TF (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:22:21)
+    file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:185:113
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:27:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+  ...
+# Subtest: every host file the machines are built from exists
+not ok 13 - every host file the machines are built from exists
+  ---
+  duration_ms: 0.11097
+  type: 'test'
+  location: '<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:27:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/terraform/main.tf'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:16:23)
+    get TF (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:22:21)
+    file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:194:63
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:27:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+  ...
+# Subtest: every shell script passes bash -n
+not ok 14 - every shell script passes bash -n
+  ---
+  duration_ms: 0.112938
+  type: 'test'
+  location: '<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:27:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, scandir '<worktree>/infra/gitlab-engineering/host'"
+  code: 'ENOENT'
+  stack: |-
+    readdirSync (node:fs:1590:26)
+    get shellScripts (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:25:47)
+    file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:203:46
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:27:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: no script turns on xtrace (it would write secrets into logs)
+not ok 15 - no script turns on xtrace (it would write secrets into logs)
+  ---
+  duration_ms: 0.09608
+  type: 'test'
+  location: '<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:27:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, scandir '<worktree>/infra/gitlab-engineering/host'"
+  code: 'ENOENT'
+  stack: |-
+    readdirSync (node:fs:1590:26)
+    get shellScripts (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:25:47)
+    file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:212:73
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:27:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: the Cloudflare token is typed hidden, handed to curl on stdin, and used nowhere else
+not ok 16 - the Cloudflare token is typed hidden, handed to curl on stdin, and used nowhere else
+  ---
+  duration_ms: 0.128989
+  type: 'test'
+  location: '<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:27:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/setup.sh'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:16:23)
+    get SETUP (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:23:24)
+    file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:223:97
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:27:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+  ...
+# Subtest: the GitHub mirror token is typed hidden and goes to Secrets Manager only
+not ok 17 - the GitHub mirror token is typed hidden and goes to Secrets Manager only
+  ---
+  duration_ms: 0.40593
+  type: 'test'
+  location: '<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:27:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/setup.sh'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:16:23)
+    get SETUP (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:23:24)
+    file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:238:85
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:27:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+  ...
+# Subtest: setup.sh exports AWS_REGION as well as AWS_DEFAULT_REGION (CloudShell sets AWS_REGION and the CLI prefers it)
+not ok 18 - setup.sh exports AWS_REGION as well as AWS_DEFAULT_REGION (CloudShell sets AWS_REGION and the CLI prefers it)
+  ---
+  duration_ms: 0.203351
+  type: 'test'
+  location: '<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:27:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/setup.sh'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:16:23)
+    get SETUP (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:23:24)
+    file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:254:122
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:27:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+  ...
+# Subtest: files that hold a secret on a machine are created with umask 077; the mirror scrubs credentials from git output
+not ok 19 - files that hold a secret on a machine are created with umask 077; the mirror scrubs credentials from git output
+  ---
+  duration_ms: 0.19671
+  type: 'test'
+  location: '<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:27:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/host/gitlab-configure.sh'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:16:23)
+    file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:259:15
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:27:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: instance settings: sign-up off, two-factor required, usage ping off, private by default
+not ok 20 - instance settings: sign-up off, two-factor required, usage ping off, private by default
+  ---
+  duration_ms: 0.153075
+  type: 'test'
+  location: '<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:27:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/host/gitlab-configure.sh'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:16:23)
+    file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:271:15
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:27:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: the nightly backup runs at 02:15 UTC, encrypted copy to the backup bucket
+not ok 21 - the nightly backup runs at 02:15 UTC, encrypted copy to the backup bucket
+  ---
+  duration_ms: 0.1276
+  type: 'test'
+  location: '<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:27:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/host/gitlab-configure.sh'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:16:23)
+    file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:283:16
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:27:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: central CI: only main and manual, API or schedule runs; stage check only
+not ok 22 - central CI: only main and manual, API or schedule runs; stage check only
+  ---
+  duration_ms: 0.167149
+  type: 'test'
+  location: '<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:27:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/host/ci-platform.yml'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:16:23)
+    get CI (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:24:33)
+    file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:294:85
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:27:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+  ...
+# Subtest: central CI: every job runs on the vitana-eng runner; no AWS credential, no deploy
+not ok 23 - central CI: every job runs on the vitana-eng runner; no AWS credential, no deploy
+  ---
+  duration_ms: 0.142922
+  type: 'test'
+  location: '<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:27:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/host/ci-platform.yml'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:16:23)
+    get CI (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:24:33)
+    file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:307:94
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:27:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+  ...
+# Subtest: central CI platform: gateway type check and four Jest shards with pnpm 9.0.0 (as CICDL-GATEWAY-CI and TEST-SUITE)
+not ok 24 - central CI platform: gateway type check and four Jest shards with pnpm 9.0.0 (as CICDL-GATEWAY-CI and TEST-SUITE)
+  ---
+  duration_ms: 0.11774
+  type: 'test'
+  location: '<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:27:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/host/ci-platform.yml'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:16:23)
+    get CI (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:24:33)
+    file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:329:126
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:27:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+  ...
+# Subtest: central CI vitana-v1: npm test and npm run build gate the pipeline; lint is reported only
+not ok 25 - central CI vitana-v1: npm test and npm run build gate the pipeline; lint is reported only
+  ---
+  duration_ms: 0.093894
+  type: 'test'
+  location: '<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:27:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/host/ci-platform.yml'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:16:23)
+    get CI (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:24:33)
+    file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:348:102
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:27:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+  ...
+# Subtest: RUNBOOK section 6 embeds the platform central CI file exactly
+not ok 26 - RUNBOOK section 6 embeds the platform central CI file exactly
+  ---
+  duration_ms: 0.079858
+  type: 'test'
+  location: '<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:27:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/RUNBOOK.md'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:16:23)
+    file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:358:14
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/gitlab-m1-structure.test.mjs:27:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+1..26
+# tests 26
+# suites 0
+# pass 0
+# fail 26
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 77.757699
