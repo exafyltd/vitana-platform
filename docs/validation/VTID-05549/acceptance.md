@@ -158,3 +158,10 @@ Decisions taken (inside the plan):
     refuses a range that names two lanes, so `lane-scope` cannot pass on `train/<k>` for k ≥ 2; they stay required on each
     merge request's own head. Lane `pipelines` should run them only in merge-request pipelines and run `gate` and the
     checks on `train/*` refs; a settings key `train_required_jobs` overrides the default.
+15. The assist ref is moved with a normal `git push` by `bot-land`, as plan §3.9 says ("only `bot-land` and the owner may
+    push there"). Plan §7 says `main` and `assist/*` are protected with "push No one, merge Maintainers"; the settings
+    (M2 settings sync, lane `cutover`) must let `bot-land` push `assist/*`, or the trigger moves to the branches API.
+    Flagged for the driver; `assist-trigger.mjs` follows §3.9.
+16. `train/*` are plain bot branches, not protected: their pipelines run on the untrusted class with no secret (§3.2),
+    the bot trusts only the pipeline of the exact commit it built on that ref, and it moves them by delete-then-push. The
+    settings must not protect `train/*` (a protected branch cannot be deleted by a push).
