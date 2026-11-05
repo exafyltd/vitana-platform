@@ -1,0 +1,26 @@
+# terraform checks of lane fleet (VTID-05536): the whole terraform/ folder, i.e. milestone 1's main.tf together with fleet.tf and fleet-ami.tf
+# files in the folder: fleet-ami.tf fleet.tf main.tf 
+# main.tf is byte-identical to the base commit: yes
+
+# $ terraform version
+Terraform v1.17.1
+on linux_amd64
+
+
+# $ cd infra/gitlab-engineering/terraform && terraform fmt -check -diff -recursive
+exit: 0
+
+# $ terraform init -backend=false -input=false   (providers only; the S3 backend is supplied by setup.sh)
+- terraform.io/builtin/terraform is built in to Terraform
+- Finding hashicorp/aws versions matching ">= 5.60.0, < 6.0.0"...
+- Installing hashicorp/aws v5.100.0...
+- Installed hashicorp/aws v5.100.0 (signed by HashiCorp)
+Terraform has been successfully initialized!
+exit: 0
+
+# $ terraform validate
+Success! The configuration is valid.
+
+exit: 0
+
+# Never committed: .terraform/ and .terraform.lock.hcl (this folder was a scratch copy under /projects/sandbox/tools).
