@@ -19,7 +19,8 @@ paths:
   - scripts/aws/iam/gitlab-oidc-*.json
   - scripts/aws/setup-gitlab-oidc.sh
   - docs/validation/**
-updated: 2026-11-04T23:03Z
+updated: 2026-11-05T00:25Z
+vtid: VTID-05546
 ---
 # Lane: deploy-path (repo vitana-platform)
 Tasks in `tasks.md`. Implements plan §3.2 (classes), §3.6 step 2, §3.7, §3.8 and the roles of §7. Starts when eng-gitlab-m2 lane fleet is done (plan §9). VTID from PLAN-SPAR; never by hand.
@@ -27,3 +28,6 @@ Tasks in `tasks.md`. Implements plan §3.2 (classes), §3.6 step 2, §3.7, §3.8
 ## Log
 ### 2026-11-04T23:03Z · kiro-exafy-202611041929-802c · ready
 Lane created with the plan.
+
+### 2026-11-05T00:25Z · ci-plan-spar · ready (VTID allocated)
+VTID-05546 allocated after policy approval (converged-auto-v1).

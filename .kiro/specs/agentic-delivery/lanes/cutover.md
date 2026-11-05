@@ -25,7 +25,8 @@ paths:
   - .kiro/pipeline/driver.md
   - .kiro/pipeline/lane-land.md
   - docs/validation/**
-updated: 2026-11-04T23:03Z
+updated: 2026-11-05T00:25Z
+vtid: VTID-05545
 ---
 # Lane: cutover (repo vitana-platform)
 Tasks in `tasks.md`. Implements plan §8 (shadow, checklist, cut, rollback) and the measurement of §10. Starts when the other six lanes and eng-gitlab-m2 lane settings are done (plan §9). VTID from PLAN-SPAR; never by hand.
@@ -33,3 +34,6 @@ Tasks in `tasks.md`. Implements plan §8 (shadow, checklist, cut, rollback) and 
 ## Log
 ### 2026-11-04T23:03Z · kiro-exafy-202611041929-802c · ready
 Lane created with the plan.
+
+### 2026-11-05T00:25Z · ci-plan-spar · ready (VTID allocated)
+VTID-05545 allocated after policy approval (converged-auto-v1).

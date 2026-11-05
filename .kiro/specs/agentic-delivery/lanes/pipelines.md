@@ -23,7 +23,8 @@ paths:
   - infra/gitlab-engineering/ci/v1-delivery.gitlab-ci.yml
   - infra/gitlab-engineering/ci/platform-delivery.gitlab-ci.yml
   - docs/validation/**
-updated: 2026-11-04T23:03Z
+updated: 2026-11-05T00:25Z
+vtid: VTID-05550
 ---
 # Lane: pipelines (repo vitana-platform)
 Tasks in `tasks.md`. Implements plan §3.3, §3.4, §3.6 (orchestration), §3.9 (jobs) and T3, for both repositories. Starts when eng-gitlab-m2 lane settings is done (plan §9). VTID from PLAN-SPAR; never by hand.
@@ -31,3 +32,6 @@ Tasks in `tasks.md`. Implements plan §3.3, §3.4, §3.6 (orchestration), §3.9 
 ## Log
 ### 2026-11-04T23:03Z · kiro-exafy-202611041929-802c · ready
 Lane created with the plan.
+
+### 2026-11-05T00:25Z · ci-plan-spar · ready (VTID allocated)
+VTID-05550 allocated after policy approval (converged-auto-v1).

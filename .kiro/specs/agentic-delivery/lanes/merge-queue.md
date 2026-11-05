@@ -18,7 +18,8 @@ paths:
   - scripts/eng/assist-trigger.mjs
   - scripts/eng/assist-trigger.test.mjs
   - docs/validation/**
-updated: 2026-11-04T23:03Z
+updated: 2026-11-05T00:25Z
+vtid: VTID-05549
 ---
 # Lane: merge-queue (repo vitana-platform)
 Tasks in `tasks.md`. Implements plan §3.5 and the trigger of §3.9. Starts when eng-gitlab-m2 lane merge-bot is done (plan §9). Edits neither land-guard.mjs nor queue.mjs. VTID from PLAN-SPAR; never by hand.
@@ -26,3 +27,6 @@ Tasks in `tasks.md`. Implements plan §3.5 and the trigger of §3.9. Starts when
 ## Log
 ### 2026-11-04T23:03Z · kiro-exafy-202611041929-802c · ready
 Lane created with the plan.
+
+### 2026-11-05T00:25Z · ci-plan-spar · ready (VTID allocated)
+VTID-05549 allocated after policy approval (converged-auto-v1).

@@ -22,7 +22,8 @@ paths:
   - services/gateway/specs/dev-screen-inventory-v1.json
   - services/gateway/test/delivery/**
   - docs/validation/**
-updated: 2026-11-04T23:03Z
+updated: 2026-11-05T00:25Z
+vtid: VTID-05547
 ---
 # Lane: gateway-delivery (repo vitana-platform)
 Tasks in `tasks.md`. Implements plan §3.11 (webhook mapping), §3.12 (at the cut) and the guards of §3.13. Starts when eng-gitlab-m2 lane scm-webhook is done (plan §9). The only lane that deploys (gateway to staging). VTID from PLAN-SPAR; never by hand.
@@ -30,3 +31,6 @@ Tasks in `tasks.md`. Implements plan §3.11 (webhook mapping), §3.12 (at the cu
 ## Log
 ### 2026-11-04T23:03Z · kiro-exafy-202611041929-802c · ready
 Lane created with the plan.
+
+### 2026-11-05T00:25Z · ci-plan-spar · ready (VTID allocated)
+VTID-05547 allocated after policy approval (converged-auto-v1).
