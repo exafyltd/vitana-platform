@@ -1,6 +1,6 @@
 ---
 lane: pipelines
-state: in-review
+state: executing
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -26,7 +26,7 @@ paths:
 claimed_by: kiro-exafy-202611051542-d83b
 branch: kiro/agentic-delivery/pipelines
 pr: https://github.com/exafyltd/vitana-platform/pull/4709
-updated: 2026-11-05T16:23Z
+updated: 2026-11-05T22:01Z
 vtid: VTID-05550
 ---
 # Lane: pipelines (repo vitana-platform)
@@ -71,3 +71,5 @@ Findings:
 - non-blocking: tpl-assist.yml:44. I18N_PROVIDER gemini follows plan §3.9 but conflicts with CLAUDE.md AI-27; a plan or owner question.
 - non-blocking: Independent by session id (builder d83b, caller 802c only as driver, no caller commit). CI 11/11 green per the caller; not re-read because GraphQL is blocked here. Red/green evidence is credible. No issue with paths, weakening, live writes, UI or protected files.
 Next: the lane's seat fixes the blocking findings
+### 2026-11-05T22:01Z · kiro-exafy-202611051542-d83b · in-review → executing
+Review changes on e2c50732 (entry above): fixing the six blocking findings.
