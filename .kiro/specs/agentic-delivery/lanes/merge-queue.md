@@ -18,7 +18,7 @@ paths:
   - scripts/eng/assist-trigger.mjs
   - scripts/eng/assist-trigger.test.mjs
   - docs/validation/**
-updated: 2026-11-05T22:08Z
+updated: 2026-11-05T22:17Z
 vtid: VTID-05549
 claimed_by: kiro-exafy-202611051413-6eb1
 branch: kiro/agentic-delivery/merge-queue
@@ -52,3 +52,7 @@ Final counts: red on base 26 of 26 (30 of 30 on stubs), green 107 of 107 (53 new
 Rebuilt after eng-gitlab-m2 merge-bot (#4697, `72dbefbaae`) landed: the branch was made anew from origin/main `0f45367bb6`, the lane's five own commits were cherry-picked unchanged (`3c5af48ecb`, `cc748671c8`, `f8268ba07a`, `5f154fa094`, `19abaf4c0b`; the scratch commit stays local), and `8d90a0fb85` adapts the queue to merge-bot's final `gitlab-land.mjs`: the queue switch by project name, M2's 60-minute bound for a merge GitLab keeps refusing, `-c credential.helper=` on every git command of a queue tick, and a regression test of M2's conflict rule.
 Tests first: the adaptation tests 3 of 4 red on the cherry-picked code; red on base 30 of 30 (30 of 30 on stubs), green 115 of 115, UNIT 939 tests, 0 fail; preflight passed. PR https://github.com/exafyltd/vitana-platform/pull/4721 open.
 Waits for eng-gitlab-m2 lane settings (#4711): `gitlab-land.mjs` reads its projects through `loadEffectiveProjects` (cut checklist item `bot-config`) once #4711 lands with that function; then main is merged, the call is added test first, and the lane goes to in-review. For the driver: `acceptance.md` decisions 1, 4 and 19.
+
+### 2026-11-05T22:17Z · kiro-exafy-202611051413-6eb1 · executing
+Follow-up `cd814f0e34` on PR https://github.com/exafyltd/vitana-platform/pull/4721: a merge request dropped in the tick in which the bot merged `main` into it is dropped and commented for the head the bot made, so it stays out until its builder pushes (test red first on `43ef9402f5`). Red on base 31 of 31, green 116 of 116, UNIT 940 tests, 0 fail.
+Still waits for eng-gitlab-m2 lane settings (#4711) and its `loadEffectiveProjects`.
