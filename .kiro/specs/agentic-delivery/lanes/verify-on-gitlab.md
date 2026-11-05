@@ -1,6 +1,6 @@
 ---
 lane: verify-on-gitlab
-state: executing
+state: in-review
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -17,7 +17,7 @@ paths:
 claimed_by: kiro-exafy-202611051219-be7f
 branch: kiro/agentic-delivery/verify-on-gitlab
 pr: https://github.com/exafyltd/vitana-platform/pull/4705
-updated: 2026-11-05T15:35Z
+updated: 2026-11-05T17:46Z
 vtid: VTID-05552
 ---
 # Lane: verify-on-gitlab (repo vitana-platform)
@@ -47,3 +47,6 @@ PR https://github.com/exafyltd/vitana-platform/pull/4705 open (head 6d02651bae);
 `unit`, whose only failures are the 3 record-env integration cases that need lane prerequisites (#4690). The lane file
 waited for lane reseat (#4703). Next: #4690 lands, then this branch is updated with main and the driver requests the
 reviewer agent.
+
+### 2026-11-05T17:46Z · kiro-exafy-202611051219-be7f · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/4705 updated with main after lane prerequisites (#4690) landed; every test green. Next: the driver requests the reviewer agent.
