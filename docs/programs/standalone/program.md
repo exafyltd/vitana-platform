@@ -28,6 +28,7 @@ specs:
   - vitana-platform:pm-reassign-idempotent-r2
   - vitana-platform:pm-reassign-idempotent-r3
   - vitana-platform:matches-scroll-end
+  - vitana-platform:messenger-assisted-posts
   - vitana-platform:spotlight-commit-coverage
   - vitana-platform:group-chat-realtime-status
   - vitana-platform:ci-superseded-pr-runs
