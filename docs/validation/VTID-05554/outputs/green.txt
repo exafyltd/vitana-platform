@@ -1,0 +1,86 @@
+mode lane; origin/main 3767d3d09d934361750523fd5cb7ff3cda6607d5; #4690 head 18a10349d8bafeb1e00ee5aaf259f032f0323171; this PR head d2c5be757e77030a9c849aee541c1c45dc78dd6a
+Squash commit -- not updating HEAD
+squash S = 6281b83b20ced0c7c97f7741689806bfdf461778 (parent 3767d3d09d934361750523fd5cb7ff3cda6607d5); S differs from origin/main in 20 files:
+  .kiro/specs/agentic-delivery/lanes/cutover.md
+  .kiro/specs/agentic-delivery/lanes/deploy-path.md
+  .kiro/specs/agentic-delivery/lanes/gateway-delivery.md
+  .kiro/specs/agentic-delivery/lanes/github-bridge.md
+  .kiro/specs/agentic-delivery/lanes/merge-queue.md
+  .kiro/specs/agentic-delivery/lanes/pipelines.md
+  .kiro/specs/agentic-delivery/lanes/prerequisites.md
+  .kiro/specs/agentic-delivery/lanes/reseat.md
+  .kiro/specs/agentic-delivery/lanes/verify-on-gitlab.md
+  docs/validation/VTID-05554/acceptance.md
+  docs/validation/VTID-05554/commands.log
+  docs/validation/VTID-05554/outputs/negative-proof.sh
+  docs/validation/VTID-05554/outputs/negative-proof.txt
+  docs/validation/VTID-05554/outputs/open-prs.txt
+  docs/validation/VTID-05554/outputs/positive-proof.sh
+  docs/validation/VTID-05554/outputs/queue.test.txt
+  docs/validation/VTID-05554/outputs/red-on-base.txt
+  docs/validation/VTID-05554/outputs/target-diff-check.sh
+  docs/validation/VTID-05554/plan-sparring.md
+  docs/validation/VTID-05554/scope.json
+main side of the merge: 6281b83b20ced0c7c97f7741689806bfdf461778 (seat: exafy)
+
+$ git merge --no-ff --no-commit 6281b83b20ced0c7c97f7741689806bfdf461778   (in a scratch worktree of #4690's head)
+[exit 1]
+Auto-merging .kiro/specs/agentic-delivery/lanes/prerequisites.md
+CONFLICT (content): Merge conflict in .kiro/specs/agentic-delivery/lanes/prerequisites.md
+unmerged files: .kiro/specs/agentic-delivery/lanes/prerequisites.md
+resolved .kiro/specs/agentic-delivery/lanes/prerequisites.md: front matter from #4690 with "seat: exafy"; log = 4 main-side entries, then 2 #4690 entries (2026-11-05T03:49Z, 2026-11-05T03:53Z)
+trial merge M = 24418b289774424a73624648036b892903858e4e (parents 18a10349d8 #4690, 6281b83b20 main side)
+resolved front matter seat: seat: exafy; state: in-review; claimed_by: kiro-exafy-202611050324-2956
+lane-file commits the checks judge (6281b83b20ced0c7c97f7741689806bfdf461778..M, merges excluded as queue.mjs does):
+  18a10349d8 kiro-exafy-202611050324-2956 agentic-delivery/prerequisites lane(agentic-delivery/prerequisites): executing → in-review
+  75f26daa17 kiro-exafy-202611050324-2956 agentic-delivery/prerequisites lane(agentic-delivery/prerequisites): ready → executing
+$ git diff <main side> M -- .kiro/specs/agentic-delivery/lanes/prerequisites.md   (the resolved lane file against the main side)
+diff --git a/.kiro/specs/agentic-delivery/lanes/prerequisites.md b/.kiro/specs/agentic-delivery/lanes/prerequisites.md
+index 836ad76400..bc3e3ad0eb 100644
+--- a/.kiro/specs/agentic-delivery/lanes/prerequisites.md
++++ b/.kiro/specs/agentic-delivery/lanes/prerequisites.md
+@@ -1,6 +1,6 @@
+ ---
+ lane: prerequisites
+-state: ready
++state: in-review
+ next_actor: kiro
+ depends_on: []
+ executor: kiro
+@@ -14,7 +14,10 @@ paths:
+   - scripts/ci/staging-verify/record-oasis.sh
+   - scripts/ci/staging-verify/record-oasis-workflow.test.mjs
+   - docs/validation/**
+-updated: 2026-11-05T02:59Z
++claimed_by: kiro-exafy-202611050324-2956
++branch: kiro/agentic-delivery/prerequisites
++pr: https://github.com/exafyltd/vitana-platform/pull/4690
++updated: 2026-11-05T03:53Z
+ vtid: VTID-05551
+ ---
+ # Lane: prerequisites (repo vitana-platform)
+@@ -30,3 +33,14 @@ VTID-05551 allocated after policy approval (converged-auto-v1).
+ reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
+ ### 2026-11-05T02:59Z · pm-agent · update
+ reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
++
++### 2026-11-05T03:49Z · kiro-exafy-202611050324-2956 · ready → executing
++Claimed and built from the spec by a separate builder session (seat exafy; driver kiro-exafy-202611041929-802c). Atlas domain `deploy`
++claims `/^internal-gitlab-webhook$/` and `/^delivery$/`; `record-oasis.sh` passes `--arg workflow "${WORKFLOW:-STAGING-VERIFY.yml}"` to both
++jq programs. Tests first, red on base: atlas 3 of 4 fail; record-oasis 5 of 15 fail (the `WORKFLOW` cases), and its unset cases pass
++against the base script, so the recorded bodies are today's bytes (also under jq 1.7.1). Green: 4/4 and 15/15; test:roles 105/105;
++typecheck exit 0; staging-verify scripts 103/103; UNIT 628 tests, 627 pass, 0 fail, 1 skip (Node 22 and Node 20). Decisions in
++`docs/validation/VTID-05551/acceptance.md`: an empty `WORKFLOW` is unset; the `existing` staging test runs in `services/gateway`.
++
++### 2026-11-05T03:53Z · kiro-exafy-202611050324-2956 · executing → in-review
++PR https://github.com/exafyltd/vitana-platform/pull/4690 open; preflight passed. Next: the driver requests the reviewer agent.
+
+$ node queue.mjs scope-check --repo . --base 6281b83b20ced0c7c97f7741689806bfdf461778 --head 24418b289774424a73624648036b892903858e4e --branch kiro/agentic-delivery/prerequisites
+✅ **lane scope** — lane agentic-delivery/prerequisites: every change is inside its paths
+[exit 0]
+
+$ node queue.mjs validate --repo . --base 6281b83b20ced0c7c97f7741689806bfdf461778 --head 24418b289774424a73624648036b892903858e4e --branch kiro/agentic-delivery/prerequisites
+✅ **collab handoff** — 1 handoff/lane file(s) changed, all valid
+[exit 0]
+
+scratch worktrees removed; no branch was created and nothing was pushed
