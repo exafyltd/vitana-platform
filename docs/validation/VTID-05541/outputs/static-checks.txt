@@ -1,0 +1,10 @@
+# Static checks (kiro/eng-gitlab-m2/scm-webhook working tree on base 945755f084, node v22.23.4)
+$ node -e (js-yaml load of .github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml)
+parsed: name="AWS Stage Deploy Gateway (ECS)" jobs=1 steps=28; step "Resolve GitLab webhook signing token" found 1x, if: none, run: 821 chars
+longest run: block in the file: 19855 chars (GitHub limit 21000, VTID-03788)
+exit=0
+$ bash -n scripts/aws/setup-gitlab-webhook-secret.sh
+exit=0
+$ bash -n <run: of the new step>
+exit=0
+(python3 has no yaml module here, so the YAML parse is js-yaml, the parser the gateway suites use; actionlint and shellcheck are not installed)
