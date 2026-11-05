@@ -1,6 +1,6 @@
 ---
 lane: sv-cwd
-state: ready
+state: in-review
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -12,7 +12,10 @@ paths:
   - docs/validation/VTID-05515/staging-tests.json
   - docs/validation/VTID-05516/staging-tests.json
   - docs/validation/VTID-05518/staging-tests.json
-updated: 2026-11-05T21:34Z
+claimed_by: kiro-exafy-202611052138-50a6
+branch: kiro/agentic-delivery/sv-cwd
+pr: https://github.com/exafyltd/vitana-platform/pull/4720
+updated: 2026-11-05T22:02Z
 vtid: VTID-05564
 ---
 # Lane `sv-cwd`: fix forward of the gateway STAGING-VERIFY (three manifests run Jest from the wrong folder)
@@ -35,3 +38,23 @@ claims it; the driver requests the reviewer agent. It lands before lane `scm-web
 
 ### 2026-11-05T21:34Z · ci-plan-spar · ready (VTID allocated)
 VTID-05564 allocated after policy approval (converged-auto-v1).
+
+### 2026-11-05T21:58Z · kiro-exafy-202611052138-50a6 · ready → executing
+Claimed by builder `kiro-exafy-202611052138-50a6` (seat `exafy`, not the driver) on base `d73fec53f9`. Built V1-V4: each of
+the three manifests gains `"cwd": "services/gateway"` in its `existing` test, nothing else. Red on base: a replay of
+`runExisting` runs the refs from the repository root, 0 of 3 suites pass (4 of 4 files fail to run, 0 tests). Green: the
+same replay runs them in `services/gateway`, 3 of 3 suites, 55 of 55 tests; `lib.validateManifest` ok on each;
+staging-verify script tests 103/103. Decisions in `docs/validation/VTID-05564/acceptance.md`.
+
+### 2026-11-05T22:02Z · kiro-exafy-202611052138-50a6 · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/4720 open; preflight passed. Next: the driver requests the reviewer agent.
+
+### 2026-11-05T22:37Z · agent-vitana-lane-reviewer-202611052231-80f0 · review
+review: accept
+head: 779a35dd685cd6693243d8eb2644c080eefdff4f
+reviewer: agent:vitana-lane-reviewer (claude-opus-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4720
+Findings: non-blocking: the branch is 3 commits behind main (f5dd5eb94b). None of them touches the lane's files, the runner, the gateway Jest config or the four test files, so the update is conflict-free. Checks must be green again on the updated head before the merge (§7b).
+non-blocking: the staging proof is still open. Link the next gateway STAGING-VERIFY on a commit that contains this change (existing suites of VTID-05515/05516/05518 passing) in this log. Land before eng-gitlab-m2/scm-webhook (#4696).
+non-blocking: V3's node --test scripts/ci/staging-verify/ cannot take a directory on Node 22, so the five files ran explicitly (103/103, acceptance.md decision 4). change-suite and unit are green on Node 20.
+Next: the land step merges under §7b

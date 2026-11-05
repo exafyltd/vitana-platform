@@ -1,0 +1,14 @@
+{
+  "vtid": "VTID-05564",
+  "kind": "feature",
+  "paths": [
+    "docs/validation/VTID-05515/staging-tests.json",
+    "docs/validation/VTID-05516/staging-tests.json",
+    "docs/validation/VTID-05518/staging-tests.json",
+    ".kiro/specs/agentic-delivery/lanes/sv-cwd.md",
+    "docs/validation/VTID-05564/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05564/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}
