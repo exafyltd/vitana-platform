@@ -1,6 +1,6 @@
 ---
 lane: sv-cwd
-state: executing
+state: in-review
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -14,7 +14,8 @@ paths:
   - docs/validation/VTID-05518/staging-tests.json
 claimed_by: kiro-exafy-202611052138-50a6
 branch: kiro/agentic-delivery/sv-cwd
-updated: 2026-11-05T21:58Z
+pr: https://github.com/exafyltd/vitana-platform/pull/4720
+updated: 2026-11-05T22:02Z
 vtid: VTID-05564
 ---
 # Lane `sv-cwd`: fix forward of the gateway STAGING-VERIFY (three manifests run Jest from the wrong folder)
@@ -44,3 +45,6 @@ the three manifests gains `"cwd": "services/gateway"` in its `existing` test, no
 `runExisting` runs the refs from the repository root, 0 of 3 suites pass (4 of 4 files fail to run, 0 tests). Green: the
 same replay runs them in `services/gateway`, 3 of 3 suites, 55 of 55 tests; `lib.validateManifest` ok on each;
 staging-verify script tests 103/103. Decisions in `docs/validation/VTID-05564/acceptance.md`.
+
+### 2026-11-05T22:02Z · kiro-exafy-202611052138-50a6 · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/4720 open; preflight passed. Next: the driver requests the reviewer agent.
