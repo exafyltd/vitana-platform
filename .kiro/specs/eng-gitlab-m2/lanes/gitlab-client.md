@@ -17,7 +17,7 @@ paths:
 claimed_by: kiro-exafy-202611021438-cff7
 branch: kiro/eng-gitlab-m2/gitlab-client
 pr: https://github.com/exafyltd/vitana-platform/pull/4679
-updated: 2026-11-05T08:35Z
+updated: 2026-11-05T16:09Z
 vtid: VTID-05537
 ---
 # Lane: gitlab-client (repo vitana-platform)
@@ -60,11 +60,11 @@ Next: the land step merges under §7b once land-guard.mjs shows every check gree
 ### 2026-11-05T08:35Z · kiro-exafy-202611021438-cff7 · in-review → verified
 The reviewer-agent accept of 2026-11-04T23:44Z (agent:vitana-lane-reviewer, claude-opus-5.5, head e4b294c24e3c3773a9ab17019b0e2d5d15a50afb) is in this log.
 The PR head at merge, 0cb5742749234268b37d5950a2ad31babf7d9252, adds only that review entry on top of the accepted head.
-PR https://github.com/exafyltd/vitana-platform/pull/4679 was merged by DraganOffice at 2026-11-05T00:33:03Z; merge: 8f3934c8bed0cad0ff9f779b94119267fd6c907b.
-This session did not merge it; the record is written from the PR as GitHub reports it.
-authority: none recorded in git. The lane said `in-review` when #4679 was merged, no session or the Project Manager recorded a §7b merge, and no owner
-instruction naming the plan is in this lane's log or the plan's handoff. GitHub reports the merge as made by the user account DraganOffice (a human account,
-created 2026-11-02); what that merge rests on is for the owner to say.
+PR https://github.com/exafyltd/vitana-platform/pull/4679 was merged at 2026-11-05T00:33:03Z by the plan driver of eng-gitlab-m2, session kiro-exafy-202611041929-802c (its `gh` identity is the GitHub user DraganOffice); merge: 8f3934c8bed0cad0ff9f779b94119267fd6c907b.
+This session did not merge it. The driver recorded nothing in this log at the merge. What follows is from its statement in PR #4693 (comment 6656223388, 2026-11-05T10:57Z) and from git.
+authority: §7b PM rule (plan driver kiro-exafy-202611041929-802c; it ran `land-guard.mjs merge` for exafyltd/vitana-platform PR 4679 on reviewed head e4b294c24e3c3773a9ab17019b0e2d5d15a50afb; merge: 8f3934c8bed0cad0ff9f779b94119267fd6c907b at 2026-11-05T00:33:03Z).
+Git agrees: the driver took over the collab-driver/eng-gitlab-m2 heartbeat at 6b19405e (2026-11-04T23:41:30Z; the previous tip, 173d021f, was 86 minutes old) and was live at the merge (heartbeats 3a9b2f68 at 00:31:27Z and 603a7179 at 00:42:12Z). DraganOffice made the update-branch merge e4b294c2 at 23:43:05Z, just before the accept review. Every land-guard gate held on 0cb57427: one entry-only commit after the accept, a squash tree equal to the head tree, no protected gate file, checks green.
+Gaps git shows: the lane said `in-review`, not `verified` (§7b), when #4679 merged; and the driver held the heartbeat but not the _plan claim (collab-claim/eng-gitlab-m2/_plan, kiro-exafy-202611021438-cff7, 2026-11-04T20:19:09Z).
 Checks on the merged head 0cb5742749234268b37d5950a2ad31babf7d9252 (REST read of `GET repos/exafyltd/vitana-platform/commits/<sha>/check-runs`, 2026-11-05T11:00Z):
 11 of 11 completed/success, the last at 00:29:10Z, before the merge at 00:33:03Z: change-suite, check-phase-2b-docs, Collab handoff, Enforce Phase 2B Naming
 Standards, Lane scope, pr-gate, scan, unit (UNIT on Node 20), validate, validate-pr, wake. A twelfth run, `close`, was cancelled at 00:37:43Z, after the merge; it
@@ -77,8 +77,8 @@ The reviewer's non-blocking findings were not fixed before the merge. They stay 
 - `scripts/eng/gitlab-api.mjs:245, 285, 290, 301, 322` put the caller's path unredacted into errors and log events, and so do 235, 279 and 317 and the paths in `decode`, `paginate` and `badRequest`: a path that held the token would leak. That the plan's lanes pass only fixed API paths is the builder's reading and no test pins it. Open: the fix belongs in `checkPath` or `prepare` (refuse a path that contains the token, or clean it once there), in the first change that touches that file. The remark "no URL escaping" (lines 18, 205) is inexact: `=` and `~` become `%3D` and `%7E`.
 - `outputs/red-on-base.txt` is a missing-module red (`ERR_MODULE_NOT_FOUND`). Accepted as the red of a new module; `acceptance.md` is wrong that a per-test red is unavailable (a stub module would give one).
 - The PR body of #4679 still shows the first counts (64 tests, 82 mutations, 575 script tests); the files in the PR carry the final ones (102 tests, 190 changes, 613 tests).
-- The base differs between `outputs/red-on-base.txt:1` (`bf5e0c12d0`) and `commands.log:2` (`ab0f5ad0b1`) of VTID-05537; both are ancestors of the merged head and the red is the same (the module does not exist). The Gate 2 decisions of that lane are in `acceptance.md:33-34`.
-Carried to lane merge-bot (VTID-05538): call `PUT …/merge` with `retries: 0` and re-read the merge request after an error before deciding the merge failed. The reviewer asked for it in `merge-bot.md` or the lane's acceptance before the lane is built; the lane is built (PR "VTID-05538 (eng-gitlab-m2/merge-bot)") and meets it in code (`landOne`), in tests ("a merge call that fails is not repeated by the client…", "a merge call that reports an error but was processed is recognised by the re-read") and in its acceptance and log.
+- The base differs between `outputs/red-on-base.txt:1` (`bf5e0c12d0`) and `commands.log:2` (`ab0f5ad0b1`) of VTID-05537; both are ancestors of the merged head and the red is the same (the module does not exist). The Gate 2 decisions of that lane are in `acceptance.md:32-37` (33-34 are the first two).
+Carried to lane merge-bot (VTID-05538): call `PUT …/merge` with `retries: 0` and re-read the merge request after an error before deciding the merge failed. The reviewer asked for it in `merge-bot.md` or the lane's acceptance before the lane is built; the lane is built (PR https://github.com/exafyltd/vitana-platform/pull/4697) and meets it in code (`landOne`), in tests ("a merge call that fails is not repeated by the client…", "a merge call that reports an error but was processed is recognised by the re-read") and in its acceptance and log.
 Lane record only: state in-review → done, `updated`, two appended log entries.
 
 ### 2026-11-05T10:08Z · agent-vitana-lane-reviewer-202611050957-f2c8 · review
