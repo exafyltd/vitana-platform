@@ -1,0 +1,3 @@
+$ node scripts/ci/staging-verify/run.mjs check-pr --service gateway --repo-root /projects/sandbox/.rv/navp --base 0f45367bb69a8661eca6d5170ebb33909d03d001 --head dcef3ff7b0645cb177480396a486e3794b5c69cf --title "VTID-05563 (agentic-delivery/nav-paths): lane gateway-delivery may change the four voice-navigation files"
+[staging-verify] PR touches no gateway deploy path — nothing deploys, no staging suite needed.
+[exit 0]
