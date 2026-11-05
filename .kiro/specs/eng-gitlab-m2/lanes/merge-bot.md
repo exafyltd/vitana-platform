@@ -1,6 +1,6 @@
 ---
 lane: merge-bot
-state: in-review
+state: executing
 next_actor: kiro
 depends_on: [gitlab-client]
 executor: kiro
@@ -14,7 +14,7 @@ paths:
   - infra/gitlab-engineering/host/units/vitana-land.service
   - infra/gitlab-engineering/host/units/vitana-land.timer
   - docs/validation/**
-updated: 2026-11-05T11:09Z
+updated: 2026-11-05T16:20Z
 claimed_by: kiro-exafy-202611021438-cff7
 branch: kiro/eng-gitlab-m2/merge-bot
 pr: https://github.com/exafyltd/vitana-platform/pull/4697
@@ -59,3 +59,35 @@ Findings: non-blocking: outputs/untouched-guard-files.txt:8-14 lists VTID-05479 
 Findings: non-blocking: this review did not re-read CI on 570fe18 (the gh pr commands need GraphQL here, and gh api is not allowed). The 11 green check runs are the caller's REST read at 14:05Z.
 Findings: non-blocking: the branch is 3 commits behind main, and abe2d7a59f (VTID-05331) changes scripts/collab/queue.mjs and queue.test.mjs, so a review will not carry across the land step's merge of main (mergeKeepsReview). Merge main with the fix and request the next review on that head.
 Next: the lane's seat fixes the blocking findings
+
+### 2026-11-05T16:20Z · kiro-exafy-202611021438-cff7 · in-review → executing
+The review of 2026-11-05T14:13Z (head 570fe18b55450e3a37e2ea4cfe1e883fd0acb7a8) is `changes`. One answer per finding:
+- [blocking] a conflict of the merge of `main` holds the turn (gitlab-land.mjs:342-346, :378, :399): accepted. A conflict is now a skip, like any merge
+  request that needs a human (plan §3.4): `acted` stays false, the younger merge requests of the project are evaluated in the same tick, and the one comment
+  per head and reason is kept. The old conflict case now expects the skip; a new two-merge-request case (the older conflicts, the younger one lands in the
+  same tick, the conflict is not commented twice) and its mutations are added, recorded red on the code as reviewed.
+- [non-blocking] a merge GitLab keeps refusing holds the turn every tick (:330, :400): accepted for the 60-minute bound, in the form the bot already uses for
+  a pending pipeline (counted from the pipeline's `created_at`, from the merge request's `updated_at` without a pipeline): a refused merge keeps the turn
+  while that time is under 60 minutes and loses it after that, so the merge requests behind it are served. It needs no state between ticks. A dry run makes
+  no merge call and so never counts as a refusal. Test and two mutations. The second half (fail closed on a finished pipeline whose own status is not
+  `success`) is deferred to lane `merge-queue` of plan agentic-delivery, which edits this file next: plan §3.4 defines the checks as the jobs of the pipeline,
+  the pipeline's own status and its bridge jobs are outside that definition, and the new bound already limits the cost of such a refusal to 60 minutes.
+- [non-blocking] a reviewer push without `commit_from` is widened to `commit_count` commits (:230): accepted. Such a push now proves its tip only
+  (`commit_to`), so builder commits and a forged accept below the tip are never counted. Test (with the control that an accept which IS the tip still counts)
+  and a mutation.
+- [non-blocking] only the newest 500 push events are read, `eventPages` 5 (:237): deferred to lane `merge-queue` of plan agentic-delivery (it edits this file
+  next and moves the review source). It fails closed: an accept that has aged out is refused, never landed.
+- [non-blocking] a landing project with no or a misspelled `required_jobs` (:89, :442): rejected. The bot follows plan §3.4 ("every name in the project's
+  `required_jobs` must be present and map to `success`"), and a misspelled name already fails closed in the bot (a required name that is absent from a finished
+  pipeline is `required_job_missing`). What the list should contain for each landing project is owned by lane `settings` (plan §3.3, `gitlab-settings.json`);
+  its sync is where the file is checked, not this bot.
+- [non-blocking] the unit runs as root and a global `credential.helper` is not neutralised (service:12, :457): the credential part is accepted. Every git
+  command the bot runs now starts with `-c credential.helper=` (an empty value clears any configured helper), so a global helper cannot store the token that
+  `GIT_ASKPASS` gives git. Test (a recording `git` in front of the real one sees every command carry the flag; a control shows the flag stops a global `store`
+  helper from writing a credential) and two mutations. The `User=` / sandboxing part is deferred to lane `settings`, which creates the accounts and the token
+  file (plan §3.3: `/etc/vitana/bot-land-token`, mode 0600) and installs the units; plan §3.4 asks this unit for `flock`, `Nice`, `CPUQuota` and `MemoryMax`.
+- [non-blocking] `outputs/untouched-guard-files.txt` listed files of other lanes, and `commands.log` / `red-on-base.txt` named different bases: accepted. The
+  list is now a three-dot diff against a freshly fetched `origin/main`, and one base is named in `commands.log`, `red-on-base.txt` and the list.
+- [non-blocking] CI was not re-read by the reviewer: nothing to change. The check runs of the new head are read by REST after the push.
+- [non-blocking] the branch is behind `main` (abe2d7a59f changes `queue.mjs`): accepted. `origin/main` is merged into the branch after the fix, and all evidence
+  is regenerated from the final code on the merged head; the next review is asked on that head.
