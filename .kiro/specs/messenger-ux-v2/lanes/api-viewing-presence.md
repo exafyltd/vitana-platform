@@ -1,6 +1,6 @@
 ---
 lane: api-viewing-presence
-state: done
+state: ready
 next_actor: kiro
 depends_on: [api-send-reliability]
 executor: kiro

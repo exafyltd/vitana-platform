@@ -1,6 +1,6 @@
 ---
 lane: ui-scroll-anchoring
-state: done
+state: ready
 next_actor: kiro
 depends_on: [ui-send-status]
 executor: kiro

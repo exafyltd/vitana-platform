@@ -1,6 +1,6 @@
 ---
 lane: ui-media-album
-state: done
+state: ready
 next_actor: kiro
 depends_on: [ui-compact-grouping]
 executor: kiro

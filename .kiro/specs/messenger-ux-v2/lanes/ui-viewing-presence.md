@@ -1,6 +1,6 @@
 ---
 lane: ui-viewing-presence
-state: done
+state: ready
 next_actor: kiro
 depends_on: [ui-compact-grouping, api-viewing-presence]
 executor: kiro

@@ -1,6 +1,6 @@
 ---
 lane: api-send-reliability
-state: done
+state: ready
 next_actor: kiro
 depends_on: []
 executor: kiro

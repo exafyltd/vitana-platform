@@ -3,8 +3,8 @@ slug: messenger-ux-v2
 author: kiro
 author_seat: exafyltd
 executor: kiro
-next_actor: owner
-state: verified
+next_actor: kiro
+state: approved
 updated: 2026-11-05T11:54Z
 sparring_record: .kiro/specs/messenger-ux-v2/sparring/verdict.md
 vtids: [VTID-05309, VTID-05310, VTID-05311, VTID-05312, VTID-05313, VTID-05314, VTID-05315, VTID-05316, VTID-05317, VTID-05318, VTID-05319, VTID-05320, VTID-05321, VTID-05322]
@@ -59,9 +59,10 @@ an unresolvable trigger row falls back to the dedup rule. Plan PR #4253 merges u
 instruction (§7b). `Collab handoff` is red only on the governance artifacts of a plan PR: the `ci-plan-spar` session
 mix and lane-file edits in the round-1 answer commit. That is a known false positive, so the merge uses `--admin`.
 
-### 2026-11-05T11:54Z · kiro-exafyltd-202610211130-c65e · approved → verified (closing records)
-All 14 lanes are merged on main (lane PRs listed in each lane file's log). Merge SHAs for the plan and lanes are in the lane
-PRs' merge commits. The community-app STAGING-VERIFY passed on main commit 5c75715e1: run 41491021698 in
+### 2026-11-05T11:54Z · kiro-exafyltd-202610211130-c65e · closing records (state unchanged: approved)
+All 14 lanes are merged on main. Their PR numbers and merge times are in `docs/validation/VTID-05309/timings.json`.
+The lane and plan state fields are unchanged (ready and approved). The collab validator rejects direct jumps to done or
+verified, so the pipeline has to record those states. This entry is the closing record. The community-app STAGING-VERIFY passed on main commit 5c75715e1: run 41491021698 in
 exafyltd/vitana-platform (verify: success, report: success, 2026-11-02T17:26:59Z). The first run for that commit (41465504527)
 failed on one News /home timing budget in the phone-journey staging spec (median 3662 ms vs 1500 ms). The re-run passed
 with no change to the budget.

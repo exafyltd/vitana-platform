@@ -1,6 +1,6 @@
 ---
 lane: ui-compact-grouping
-state: done
+state: ready
 next_actor: kiro
 depends_on: [ui-reply-jump]
 executor: kiro

@@ -1,6 +1,6 @@
 ---
 lane: api-shared-content
-state: done
+state: ready
 next_actor: kiro
 depends_on: [api-message-search]
 executor: kiro
