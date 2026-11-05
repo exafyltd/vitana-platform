@@ -733,9 +733,9 @@ test('settings.tf: an inline policy named settings on the role of the GitLab mac
   assert.equal(new Set(names).size, names.length, `inline policy names on the host role are unique: ${names.join(', ')}`);
 });
 
-test('settings.tf policy, statement by statement: the agent tokens, the fleet runner token, the webhook signing token, and the key', ({ TF }) => {
+test('settings.tf policy, statement by statement: the agent tokens, the fleet runner token, the webhook signing token, the key, and the read-only view of the fleet group for the rehearsal', ({ TF }) => {
   const st = renderPolicy(TF);
-  assert.deepEqual(st.map((s) => s.Sid), ['AgentTokens', 'FleetRunnerToken', 'WebhookSigningToken', 'UseKeyForTheEncryptedSecrets']);
+  assert.deepEqual(st.map((s) => s.Sid), ['AgentTokens', 'FleetRunnerToken', 'WebhookSigningToken', 'UseKeyForTheEncryptedSecrets', 'ReadTheFleetGroupForTheRehearsal']);
   const by = Object.fromEntries(st.map((s) => [s.Sid, s]));
   for (const s of st) { assert.equal(s.Effect, 'Allow', `${s.Sid}: Allow only`); assert.equal(s.hasPrincipal, false); assert.equal(s.hasCondition, false, `${s.Sid}: nothing conditional to get wrong`); }
   // 1. agents/*: read, write, create (when the secret does not exist yet) and describe; no tags, nothing else
@@ -750,10 +750,18 @@ test('settings.tf policy, statement by statement: the agent tokens, the fleet ru
   // 4. the key of main.tf, for the secrets it encrypts (the fleet token)
   assert.deepEqual(by.UseKeyForTheEncryptedSecrets.Action.slice().sort(), ['kms:Decrypt', 'kms:GenerateDataKey']);
   assert.deepEqual(by.UseKeyForTheEncryptedSecrets.Resource, [SAMPLE.keyArn]);
+  // 5. the rehearsal samples the fleet group: two read-only Describe actions, which cannot be limited to one group
+  assert.deepEqual(by.ReadTheFleetGroupForTheRehearsal.Action.slice().sort(), ['autoscaling:DescribeAutoScalingGroups', 'autoscaling:DescribeScalingActivities']);
+  assert.deepEqual(by.ReadTheFleetGroupForTheRehearsal.Resource, ['*']);
 });
 
-test('settings.tf policy: no wildcard action, no bare wildcard resource, no write that the sync does not make', ({ TF }) => {
-  const st = renderPolicy(TF);
+test('settings.tf policy: no wildcard action, no bare wildcard resource except the read-only autoscaling Describe pair, no write that the sync does not make', ({ TF }) => {
+  const all = renderPolicy(TF);
+  const bare = all.filter((s) => s.Resource.includes('*') && s.Resource.every((r) => r === '*'));
+  assert.deepEqual(bare.map((s) => s.Sid), ['ReadTheFleetGroupForTheRehearsal'], 'the only statement whose resource is a bare *');
+  assert.deepEqual(bare[0].Action.slice().sort(), ['autoscaling:DescribeAutoScalingGroups', 'autoscaling:DescribeScalingActivities'], 'and it holds the two read-only Describe actions of the rehearsal, nothing else');
+  assert.equal(bare[0].Action.every((a) => /^autoscaling:Describe[A-Za-z]+$/.test(a)), true, 'Describe only: no write');
+  const st = all.filter((s) => s !== bare[0]);
   const actions = st.flatMap((s) => s.Action);
   const resources = st.flatMap((s) => s.Resource);
   assert.equal(actions.some((a) => a.includes('*')), false, 'no * in any action');
@@ -781,6 +789,7 @@ test('settings.tf creates no secret (the fleet lane creates the runner token sec
   assert.match(TF, /kms:ViaService/, 'and why no KMS statement can or needs to name it');
   assert.match(TF, /TagResource is not granted|so TagResource is not granted/, 'TagResource is left out on purpose');
   assert.match(TF, /fleet lane creates the empty fleet runner token secret/);
+  assert.match(TF, /Describe actions have no resource-level permission/, 'the bare * of the autoscaling statement is explained');
 });
 
 test('settings.tf matches what part A really calls: Secrets Manager get-secret-value, put-secret-value and create-secret only, on the secrets of its SECRETS table, with no tags and no KMS key', ({ TF, ENGINE }) => {

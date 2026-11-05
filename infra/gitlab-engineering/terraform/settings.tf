@@ -16,6 +16,10 @@
 # six characters and not a longer name. The agent secrets are one per account and are made at run time, so their ARN is a prefix, agents/*
 # (the one wildcard in this file; the prefix is the limit).
 #
+# The rehearsal (lane rehearsal, scripts/eng/rehearse.mjs, run by `m2.sh rehearse` on this machine) samples the fleet group to prove acceptance A1:
+# autoscaling:DescribeAutoScalingGroups and autoscaling:DescribeScalingActivities. Describe actions have no resource-level permission, so their
+# resource is * and the statement is read only. Without it the rehearsal refuses to start (it checks both calls before it writes anything).
+#
 # Keys. The fleet runner token secret is encrypted with the key of main.tf (the fleet lane sets kms_key_id = aws_kms_key.main.arn), and
 # the role already holds the two rights below on that key through main.tf; they are repeated here so that this policy stands on its own.
 # The sync creates the agent secrets without naming a key, so they are encrypted with the AWS managed key aws/secretsmanager. Its key
@@ -48,6 +52,11 @@ data "aws_iam_policy_document" "settings" {
     sid       = "UseKeyForTheEncryptedSecrets"
     actions   = ["kms:Decrypt", "kms:GenerateDataKey"]
     resources = [aws_kms_key.main.arn]
+  }
+  statement {
+    sid       = "ReadTheFleetGroupForTheRehearsal"
+    actions   = ["autoscaling:DescribeAutoScalingGroups", "autoscaling:DescribeScalingActivities"]
+    resources = ["*"] # Describe actions have no resource-level permission; read only
   }
 }
 
