@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-05544",
+  "kind": "infra",
+  "paths": [
+    "infra/gitlab-engineering/**",
+    "scripts/eng/gitlab-m1-structure.test.mjs",
+    "docs/validation/VTID-05544/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05544/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}
