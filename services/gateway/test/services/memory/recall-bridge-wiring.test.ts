@@ -82,8 +82,26 @@ describe('fetchMemoryContextWithIdentity + recall()', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it('no identity (dev sandbox): recall is not used', async () => {
+  it('no identity, bridge disabled (not a dev environment): recall is not used', async () => {
     await fetchMemoryContextWithIdentity(null);
     expect(mockRecall).not.toHaveBeenCalled();
+  });
+
+  it('no identity, dev sandbox: DEV_IDENTITY is read through recall()', async () => {
+    process.env.ENVIRONMENT = 'dev-sandbox';
+    mockRecall.mockResolvedValue(RECALL_OK);
+    let devFetch!: typeof fetchMemoryContextWithIdentity;
+    let devId!: { USER_ID: string; TENANT_ID: string };
+    jest.isolateModules(() => {
+      // fresh module: isMemoryBridgeEnabled() caches its answer per module instance
+      const m = require('../../../src/services/orb-memory-bridge');
+      devFetch = m.fetchMemoryContextWithIdentity;
+      devId = m.DEV_IDENTITY;
+    });
+    const r = await devFetch(null);
+    expect(mockRecall).toHaveBeenCalledTimes(1);
+    expect(mockRecall.mock.calls[0][0]).toEqual(expect.objectContaining({ user_id: devId.USER_ID, tenant_id: devId.TENANT_ID }));
+    expect(r.ok).toBe(true);
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

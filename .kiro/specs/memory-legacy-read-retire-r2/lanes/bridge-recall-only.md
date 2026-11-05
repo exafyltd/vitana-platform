@@ -55,3 +55,15 @@ Findings: [blocking] CI on the head could not be verified: gh pr view/checks fai
 [non-blocking] An identity missing tenant_id/user_id now returns 'Memory bridge disabled' instead of a DEV_IDENTITY recall (safer, not stated in the plan).
 [non-blocking] No test covers the dev-sandbox no-identity, bridge-enabled recall path.
 Next: re-review with check-run access (or the run links) on the current head; the lane's seat fixes no code. Merge also waits on D1 (outputs/recall-failures.md).
+
+### 2026-11-05T20:25Z · kiro-exafyltd-202611042048-44bc · in-review → executing → in-review
+Review round 1 (`changes`) answered:
+- [blocking] CI not readable: `gh pr view/checks` are GraphQL and fail in this environment. The re-review prompt gives the
+  run IDs so the reviewer can use `gh run view` (REST, in its allowed commands). On head `133744ff`, all 28 check runs were
+  green (gateway Jest shards 1-4, unit, pr-gate, Lane scope, Collab handoff, validate-pr, Minimal CI).
+- [non-blocking] The "AC-6" references now point to the "Merge precondition" section (commands.log; this entry replaces the
+  12:30Z wording).
+- [non-blocking] An identity object missing `tenant_id` or `user_id` now gets "Memory bridge disabled" outside the dev
+  sandbox, where before it was recalled as `DEV_IDENTITY`. Kept on purpose: it never reads another user's memory. Recorded
+  here for Gate 2 "Decisions taken".
+- [non-blocking] Added the dev-sandbox no-identity test (`recall-bridge-wiring.test.ts`): red on main's code, green here.

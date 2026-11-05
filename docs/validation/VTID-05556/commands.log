@@ -35,4 +35,11 @@ CI (unit) on the PR head is the reference run.
 
 ## Premise 7 (D1)
 $ aws sts get-caller-identity
-NoCredentials. The 14-day production count cannot be taken from this session; see acceptance.md AC-6.
+NoCredentials. The 14-day production count cannot be taken from this session; see the 'Merge precondition' section of acceptance.md.
+
+## Review round 1 fix (2026-11-05T20:20Z): dev-sandbox no-identity path
+$ npx jest test/services/memory/recall-bridge-wiring.test.ts -t "dev sandbox: DEV_IDENTITY"   # main's bridge, repository and recall-shadow
+    ✕ no identity, dev sandbox: DEV_IDENTITY is read through recall()
+Tests:       1 failed, 5 skipped, 6 total
+$ npx jest test/services/memory/recall-bridge-wiring.test.ts   # lane head
+Tests:       6 passed, 6 total
