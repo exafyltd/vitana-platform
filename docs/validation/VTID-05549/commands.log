@@ -18,3 +18,17 @@
 2026-11-05T16:03Z node --test $(find scripts -path '*/node_modules' -prune -o \( -name '*.test.cjs' -o -name '*.test.mjs' \) -print | sort)   → tests 727, pass 726, fail 0, skipped 1 (pre-existing win32 case)   [outputs/unit-all.txt]
 2026-11-05T16:03Z git diff --stat 5209c22376 -- scripts/collab/land-guard.mjs scripts/collab/queue.mjs scripts/collab/protected-gate-files.json   → empty; blob ids equal the base   [outputs/untouched-guard-files.txt]
 2026-11-05T16:04Z node scripts/ci/staging-verify/run.mjs check-pr --service gateway … --base 5209c22376 --head <staged tree commit 6df3765769>   → "nothing deploys, no staging suite needed", exit 0   [outputs/staging-check-pr.txt]
+2026-11-05T16:05Z node scripts/collab/land-guard.mjs evidence --repo /projects/sandbox/.rv/mq --vtid VTID-05549   → "evidence present", exit 0
+2026-11-05T16:05Z git commit (code) af6cfd1e7a
+2026-11-05T16:06Z node scripts/collab/queue.mjs validate --base 5209c22376 --head <lane-file commit object> --branch kiro/agentic-delivery/merge-queue   → exit 0
+2026-11-05T16:06Z node scripts/collab/queue.mjs scope-check --base 5209c22376 --head af6cfd1e7a   → ✅ every change is inside its paths, exit 0
+2026-11-05T16:06Z node scripts/collab/queue.mjs scope-check --base 5209c22376 --head <lane-file commit>   → ❌ only because the scratch base's lane file still says seat exafyltd (reseat #4703 is on origin/main now)
+2026-11-05T16:07Z the same lane-file change as a commit object on origin/main 49cff4a9df (seat exafy): queue.mjs scope-check --base origin/main   → ✅ exit 0 (nothing pushed)
+2026-11-05T16:07Z git commit (lane state) 0c19e60e38 lane(agentic-delivery/merge-queue): ready → executing
+2026-11-05T16:08Z read queue.mjs scopeCheck: a range naming two lanes is refused ("one PR per lane"), so lane-scope cannot be required on train/<k>, k ≥ 2
+2026-11-05T16:08Z new test "a train position needs the checks and gate, not the governance jobs …" on af6cfd1e7a   → tests 1, pass 0, fail 1 (land.trainRequiredJobs is not a function)
+2026-11-05T16:08Z trainRequiredJobs / MR_ONLY_JOBS / train_required_jobs in scripts/eng/gitlab-land.mjs; node --test scripts/eng/gitlab-land-queue.test.mjs scripts/eng/gitlab-land.test.mjs   → tests 77, pass 77, fail 0
+2026-11-05T16:09Z sh /projects/sandbox/.scratch/tools/mq/red.sh   → red on base: tests 26, pass 0, fail 26 (exit 1); red on stubs: tests 30, pass 0, fail 30 (exit 1)
+2026-11-05T16:09Z green (5 files)   → tests 107, pass 107, fail 0   [outputs/green.txt]
+2026-11-05T16:09Z node docs/validation/VTID-05549/outputs/dry-run-12.mjs   → exit 0, same result (8 + 3 landed, !17 refused once)
+2026-11-05T16:10Z node --test $(find scripts … -print | sort) (UNIT full)   → tests 728, pass 727, fail 0, skipped 1 (pre-existing win32 case)   [outputs/unit-all.txt]

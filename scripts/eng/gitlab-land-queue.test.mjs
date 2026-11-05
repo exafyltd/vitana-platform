@@ -338,6 +338,25 @@ test('planSparVerdict and planGate: approved, a sparring_record and a successful
   assert.match(scope.reason, /scripts\/x\.mjs/);
 });
 
+test('a train position needs the checks and gate, not the governance jobs that judge one merge request', async () => {
+  assert.deepEqual(land.trainRequiredJobs({ required_jobs: ['lane-scope', 'collab-handoff', 'change-suite', 'gate'] }), ['gate']);
+  assert.deepEqual(land.trainRequiredJobs({ required_jobs: ['lane-scope', 'gate'], train_required_jobs: ['gate', 'full'] }), ['gate', 'full']);
+  const gateOnly = (name) => [{ name, status: 'success', allow_failure: false, started_at: '2026-11-05T11:00:00Z' }];
+  // the governance jobs run on each merge request's own head (scopeCheck refuses a range of two lanes); a train ref runs gate
+  const { W } = threeReady();
+  await tickOnce(W);
+  for (const [ref, sha] of trainRefs(W)) pipeline(W, 'vitana-platform', { sha, ref, jobs: gateOnly('gate') });
+  const r = await tickOnce(W);
+  assert.deepEqual(merges(r.f).map((m) => Number(/merge_requests\/(\d+)\/merge/.exec(m.path)[1])), [8, 7, 9]);
+  // a finished train pipeline without gate is not green: nothing lands
+  const { W: W2 } = threeReady();
+  await tickOnce(W2);
+  for (const [ref, sha] of trainRefs(W2)) pipeline(W2, 'vitana-platform', { sha, ref, jobs: gateOnly('lane-scope') });
+  const r2 = await tickOnce(W2);
+  assert.equal(merges(r2.f).length, 0);
+  assert.deepEqual(mrOf(W2, 'vitana-platform', 8).labels, ['queue-blocked'], 'position 1 failed closed and was dropped');
+});
+
 test('loadProjects reads the queue setting; normalizeQueue allows 1 to 12 positions', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'land-q-settings-')); tmpDirs.push(dir);
   const file = path.join(dir, 's.json');

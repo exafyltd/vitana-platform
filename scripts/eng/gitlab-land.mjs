@@ -588,6 +588,19 @@ export function trainSelect(order, { capacity = 8, kept = [] } = {}) {
   return picked;
 }
 
+/**
+ * The jobs that judge one merge request (its own diff, commits and lane: plan §3.4's governance jobs). They are required on
+ * each merge request's own head, which the bot reads before the merge request may join the train; a train position merges
+ * several merge requests (scopeCheck refuses a range of two lanes), so it is judged by the other required jobs (`gate`).
+ */
+export const MR_ONLY_JOBS = Object.freeze(['lane-scope', 'collab-handoff', 'change-suite', 'pr-gate-report']);
+
+/** The required jobs of a train position: the project's `train_required_jobs`, else its `required_jobs` without MR_ONLY_JOBS. */
+export function trainRequiredJobs(project) {
+  if (Array.isArray(project?.train_required_jobs)) return project.train_required_jobs.map(String);
+  return (project?.required_jobs || []).filter((j) => !MR_ONLY_JOBS.includes(j));
+}
+
 /** PLAN-SPAR's last run on a plan head: a `gitlab/plan-spar` or `PLAN-SPAR` commit status from a trusted account. */
 export function planSparVerdict(statuses, { users = [DEFAULTS.botUser] } = {}) {
   const runs = (statuses || []).filter((s) => PLAN_SPAR_STATUSES.has(s?.name) && users.includes(s?.author?.username))
@@ -889,7 +902,8 @@ async function runTrain(ctx, project, repo, pid, state, items, order) {
   if (bad >= 0) positions = positions.slice(0, bad);
 
   const verdicts = [];
-  for (const p of positions) verdicts.push(await pipelineChecks(ctx, pid, project, p.sha, { ref: p.ref }));
+  const trainProject = { ...project, required_jobs: trainRequiredJobs(project) };
+  for (const p of positions) verdicts.push(await pipelineChecks(ctx, pid, trainProject, p.sha, { ref: p.ref }));
   const failedAt = verdicts.findIndex((v) => v.state === 'fail');
   let end = failedAt >= 0 ? failedAt : positions.length;
   let landed = 0;
@@ -1024,6 +1038,7 @@ export function loadProjects(settingsFile) {
   return Object.entries(s.projects).map(([name, p]) => ({
     name, path: `${s.group}/${name}`, landing: p?.landing === true, required_jobs: Array.isArray(p?.required_jobs) ? p.required_jobs.map(String) : [],
     ...(p?.queue !== undefined && p?.queue !== false ? { queue: normalizeQueue(p.queue) } : {}),
+    ...(Array.isArray(p?.train_required_jobs) ? { train_required_jobs: p.train_required_jobs.map(String) } : {}),
   }));
 }
 

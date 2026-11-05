@@ -1,14 +1,14 @@
 12 merge requests: 9 in vitana-platform (iids 10, 11, 12, 13, 14, 15, 16, 17, 18), 3 cross-repo in vitana-v1 (iids 20, 21, 22)
 
 == tick 0 (--dry-run; asserted: no API write, no ref moved, no state file): failed=false, API writes=0
-{"event":"would_build_train","position":1,"mr":16,"sha":"f3c8bec48d325286d3578e7c7725ec60393ac408"}
-{"event":"would_build_train","position":2,"mr":15,"sha":"7a6f4c99a754957f615adc204d052396aa0f4c7c"}
-{"event":"would_build_train","position":3,"mr":14,"sha":"d7b3de47fe6e273b95ae70fdd5927004d81bd1dd"}
-{"event":"would_build_train","position":4,"mr":13,"sha":"2ae436823c182ce729cfb500da2be8beb7b4187b"}
-{"event":"would_build_train","position":5,"mr":12,"sha":"67e96d17e2e53c43be64d2928c1f6bc942782620"}
-{"event":"would_build_train","position":6,"mr":18,"sha":"f76affd089c520134e9628fe036632986b66cf78"}
-{"event":"would_build_train","position":7,"mr":11,"sha":"94b749fc4e9914af9895b4b51fca4568dc1e2a8d"}
-{"event":"would_build_train","position":8,"mr":10,"sha":"d1aa77a814ba787034fa3e2af21e663ecd245e8f"}
+{"event":"would_build_train","position":1,"mr":16,"sha":"4389c62c4f8e3ee27c72d11ce99558a6d794af82"}
+{"event":"would_build_train","position":2,"mr":15,"sha":"96cdca6180a09028331330679160ad61505c510c"}
+{"event":"would_build_train","position":3,"mr":14,"sha":"4dc109822e1aaa8ca09b8f32c4e02c16d549363b"}
+{"event":"would_build_train","position":4,"mr":13,"sha":"732f901626deb7332130245b824eb542b8598ef6"}
+{"event":"would_build_train","position":5,"mr":12,"sha":"ddf0eab260080fdd89c3534bd704130aa4cb27a1"}
+{"event":"would_build_train","position":6,"mr":18,"sha":"474ff6d17e40897df1da904295da3c5f62b12f32"}
+{"event":"would_build_train","position":7,"mr":11,"sha":"f6de81b28dea1618419ed93093f8aa7fc3f7ada4"}
+{"event":"would_build_train","position":8,"mr":10,"sha":"13a0cde116919686d1f11d301d864026a741dcb4"}
 {"event":"would_label","mr":10,"label":"queue-ready"}
 {"event":"would_label","mr":11,"label":"queue-ready"}
 {"event":"would_label","mr":12,"label":"queue-ready"}
@@ -28,25 +28,25 @@
 {"event":"queue_state","project":"vitana-platform","mr":16,"state":"ready","reason":"ready","position":1,"detail":"only lane-file entries after the reviewed head; 2 checks green; 2 required job(s) green"}
 {"event":"queue_state","project":"vitana-platform","mr":17,"state":"blocked","reason":"protected_gate_file","position":null,"detail":"protected gate file(s) changed (CLAUDE.md): the owner merges it"}
 {"event":"queue_state","project":"vitana-platform","mr":18,"state":"ready","reason":"ready","position":6,"detail":"approved, sparring record .kiro/specs/demo2/sparring/verdict.md; gitlab/plan-spar succeeded on this head; 2 checks green; 2 required job(s) green"}
-{"event":"would_build_train","position":1,"mr":20,"sha":"4859fce1e519b934fc78052c4ee769039d292907"}
-{"event":"would_build_train","position":2,"mr":21,"sha":"0b2614c2dad4d29f67ceb757daa6dffd2107111d"}
-{"event":"would_build_train","position":3,"mr":22,"sha":"b1ce5f45d82f20e2c596b3ea906bc58037e8f13c"}
+{"event":"would_build_train","position":1,"mr":20,"sha":"159b999dd68613349e892f2ed756a7e3a54c3b0a"}
+{"event":"would_build_train","position":2,"mr":21,"sha":"a154a733ea8a8194f9110cc112dff0f91612de71"}
+{"event":"would_build_train","position":3,"mr":22,"sha":"5a03180ed09f5caab41dcae9693dd64e024ef1b8"}
 {"event":"would_label","mr":20,"label":"queue-ready"}
 {"event":"would_label","mr":21,"label":"queue-ready"}
 {"event":"would_label","mr":22,"label":"queue-ready"}
-{"event":"queue_state","project":"vitana-v1","mr":20,"state":"ready","reason":"ready","position":1,"detail":"accept b386e625 on main counts for this head; 2 checks green; 2 required job(s) green"}
-{"event":"queue_state","project":"vitana-v1","mr":21,"state":"ready","reason":"ready","position":2,"detail":"accept 4519432f on main counts for this head; 2 checks green; 2 required job(s) green"}
-{"event":"queue_state","project":"vitana-v1","mr":22,"state":"ready","reason":"ready","position":3,"detail":"accept af395f3a on main counts for this head; 2 checks green; 2 required job(s) green"}
+{"event":"queue_state","project":"vitana-v1","mr":20,"state":"ready","reason":"ready","position":1,"detail":"accept a08e09be on main counts for this head; 2 checks green; 2 required job(s) green"}
+{"event":"queue_state","project":"vitana-v1","mr":21,"state":"ready","reason":"ready","position":2,"detail":"accept c61465ec on main counts for this head; 2 checks green; 2 required job(s) green"}
+{"event":"queue_state","project":"vitana-v1","mr":22,"state":"ready","reason":"ready","position":3,"detail":"accept 08e645ec on main counts for this head; 2 checks green; 2 required job(s) green"}
 
 == tick 1 (trains built, labels set, the protected-file merge request refused once): failed=false, API writes=13
-{"event":"train_position","position":1,"mr":16,"sha":"9e21689fac3bf9ae54e62e88f96b959369f7175d"}
-{"event":"train_position","position":2,"mr":15,"sha":"10756aefce554e3331213b4ab44bd5b2756334f5"}
-{"event":"train_position","position":3,"mr":14,"sha":"e74aea54acac2c7b64de20a430f37381ebeaf1b6"}
-{"event":"train_position","position":4,"mr":13,"sha":"c0114b2b45b675c7d114f0b525c059fb62b4a1e3"}
-{"event":"train_position","position":5,"mr":12,"sha":"86e9ea10ea6c3a048d2a19b7a63fab438c968476"}
-{"event":"train_position","position":6,"mr":18,"sha":"86a84ab60e4b9109011cba3d5d8217f27530ef2f"}
-{"event":"train_position","position":7,"mr":11,"sha":"bbd3b969ab5a3fe44074d661621011382c4a0c90"}
-{"event":"train_position","position":8,"mr":10,"sha":"097cea1e38302189c40c451fabac43e5a3bbc82f"}
+{"event":"train_position","position":1,"mr":16,"sha":"d8c569894814fc5a3e8328850223046f02ab61d7"}
+{"event":"train_position","position":2,"mr":15,"sha":"22ac190a0776eefc60fb9424983c497a657c3127"}
+{"event":"train_position","position":3,"mr":14,"sha":"4028cc8a279cffc7d9526d8e2e08fde2d55aa5bb"}
+{"event":"train_position","position":4,"mr":13,"sha":"d5aac8493c3c47b4f8db0b47de873bfc7cf2ddc1"}
+{"event":"train_position","position":5,"mr":12,"sha":"089d5a379ef155c23a3c8d5f14c09699dff361c5"}
+{"event":"train_position","position":6,"mr":18,"sha":"78df633cc9ce84f1cba266bee5b3e9e6f76901cc"}
+{"event":"train_position","position":7,"mr":11,"sha":"2308eceda68ed94fa212a6a7f8fff57df40db61e"}
+{"event":"train_position","position":8,"mr":10,"sha":"d30d417774d051f73d4cf3ee4bd1ec52883997a6"}
 {"event":"labelled","mr":10,"label":"queue-ready"}
 {"event":"labelled","mr":11,"label":"queue-ready"}
 {"event":"labelled","mr":12,"label":"queue-ready"}
@@ -66,42 +66,42 @@
 {"event":"queue_state","project":"vitana-platform","mr":16,"state":"ready","reason":"ready","position":1,"detail":"only lane-file entries after the reviewed head; 2 checks green; 2 required job(s) green"}
 {"event":"queue_state","project":"vitana-platform","mr":17,"state":"blocked","reason":"protected_gate_file","position":null,"detail":"protected gate file(s) changed (CLAUDE.md): the owner merges it"}
 {"event":"queue_state","project":"vitana-platform","mr":18,"state":"ready","reason":"ready","position":6,"detail":"approved, sparring record .kiro/specs/demo2/sparring/verdict.md; gitlab/plan-spar succeeded on this head; 2 checks green; 2 required job(s) green"}
-{"event":"train_position","position":1,"mr":20,"sha":"a0167f311f09c752f8718c3f7c097aa7614da702"}
-{"event":"train_position","position":2,"mr":21,"sha":"b07a4f7eb3a049242f010e5f5f185ffe1691cb7c"}
-{"event":"train_position","position":3,"mr":22,"sha":"73170f5a4fa29db7f676f37e6ca3de78a396528e"}
+{"event":"train_position","position":1,"mr":20,"sha":"159b999dd68613349e892f2ed756a7e3a54c3b0a"}
+{"event":"train_position","position":2,"mr":21,"sha":"a154a733ea8a8194f9110cc112dff0f91612de71"}
+{"event":"train_position","position":3,"mr":22,"sha":"5a03180ed09f5caab41dcae9693dd64e024ef1b8"}
 {"event":"labelled","mr":20,"label":"queue-ready"}
 {"event":"labelled","mr":21,"label":"queue-ready"}
 {"event":"labelled","mr":22,"label":"queue-ready"}
-{"event":"queue_state","project":"vitana-v1","mr":20,"state":"ready","reason":"ready","position":1,"detail":"accept b386e625 on main counts for this head; 2 checks green; 2 required job(s) green"}
-{"event":"queue_state","project":"vitana-v1","mr":21,"state":"ready","reason":"ready","position":2,"detail":"accept 4519432f on main counts for this head; 2 checks green; 2 required job(s) green"}
-{"event":"queue_state","project":"vitana-v1","mr":22,"state":"ready","reason":"ready","position":3,"detail":"accept af395f3a on main counts for this head; 2 checks green; 2 required job(s) green"}
+{"event":"queue_state","project":"vitana-v1","mr":20,"state":"ready","reason":"ready","position":1,"detail":"accept a08e09be on main counts for this head; 2 checks green; 2 required job(s) green"}
+{"event":"queue_state","project":"vitana-v1","mr":21,"state":"ready","reason":"ready","position":2,"detail":"accept c61465ec on main counts for this head; 2 checks green; 2 required job(s) green"}
+{"event":"queue_state","project":"vitana-v1","mr":22,"state":"ready","reason":"ready","position":3,"detail":"accept 08e645ec on main counts for this head; 2 checks green; 2 required job(s) green"}
 train refs: vitana-platform: train/1 train/2 train/3 train/4 train/5 train/6 train/7 train/8 | vitana-v1: train/1 train/2 train/3
 
 == tick 2 (every train position green: landed in queue order): failed=false, API writes=21
 {"event":"labelled","mr":16,"label":"queue-updating"}
-{"event":"updated","mr":16,"from":"b9601bf4a1b3f00fd7955006e986d73b4b429476","to":"03d32e16add5e6d6ccec3ed8ec00cbbc052a69d2","ciSkip":true}
-{"event":"landed","mr":16,"position":1,"head":"03d32e16add5e6d6ccec3ed8ec00cbbc052a69d2","main":"fe7445f88292a0a7ba6dc635f75a67078625fe66","testedTree":true}
+{"event":"updated","mr":16,"from":"4a55461d6ae51c2f365094cf61454a241aac068d","to":"b0ffdd29822055093eea6108f4c493f02ce4104a","ciSkip":true}
+{"event":"landed","mr":16,"position":1,"head":"b0ffdd29822055093eea6108f4c493f02ce4104a","main":"f8bcf6432869b33ea0b22dd4d6d27580b8077ab6","testedTree":true}
 {"event":"labelled","mr":15,"label":"queue-updating"}
-{"event":"updated","mr":15,"from":"5b5dfbcbf9ec973529958fcc4d673f8f63085647","to":"0b8ac1b048440090f5a232e9a8e4da46c99ddd16","ciSkip":true}
-{"event":"landed","mr":15,"position":2,"head":"0b8ac1b048440090f5a232e9a8e4da46c99ddd16","main":"abacdab3f05e4911822bd55776aba48c04be9f62","testedTree":true}
+{"event":"updated","mr":15,"from":"134b5f1772a915f3ca52c928387dfbaed70775a2","to":"ed50fd8111ded5ed7702e1b8c8150eeab9fde92a","ciSkip":true}
+{"event":"landed","mr":15,"position":2,"head":"ed50fd8111ded5ed7702e1b8c8150eeab9fde92a","main":"528bc268fea557f941324ad5daf1c3e2257ec7e2","testedTree":true}
 {"event":"labelled","mr":14,"label":"queue-updating"}
-{"event":"updated","mr":14,"from":"c02033c4ac5ea9d87fcdef6675a7fe46868f22f0","to":"ee986c3ac1778e45323d00d93076e50ad57460e7","ciSkip":true}
-{"event":"landed","mr":14,"position":3,"head":"ee986c3ac1778e45323d00d93076e50ad57460e7","main":"57b5412d73bb76fb40f7d8a9b1efcb18a66ea94a","testedTree":true}
+{"event":"updated","mr":14,"from":"890b02422c454b29a2f657148ce5d87d729d23cd","to":"4e4a8322a2c199e73dd6811eb6d4ebb2dcb2973e","ciSkip":true}
+{"event":"landed","mr":14,"position":3,"head":"4e4a8322a2c199e73dd6811eb6d4ebb2dcb2973e","main":"994985cb6b131b7f1e42cb7e1927ba4affbe6547","testedTree":true}
 {"event":"labelled","mr":13,"label":"queue-updating"}
-{"event":"updated","mr":13,"from":"c4b2263effa73bc5178a53da98c49eb67adf8845","to":"5ae2fb8aaabc55e06b36b0e6b73130711b1365dc","ciSkip":true}
-{"event":"landed","mr":13,"position":4,"head":"5ae2fb8aaabc55e06b36b0e6b73130711b1365dc","main":"ba93ffd424b7421df25b2a57ada3809f207c540a","testedTree":true}
+{"event":"updated","mr":13,"from":"bdd418b89b91113251c4e9361aef182602c159d1","to":"00fec03c361cdd313c06cb526e7f507c187830d1","ciSkip":true}
+{"event":"landed","mr":13,"position":4,"head":"00fec03c361cdd313c06cb526e7f507c187830d1","main":"dca2da9c96395bfae6507ade2c02b9c6ad185c8a","testedTree":true}
 {"event":"labelled","mr":12,"label":"queue-updating"}
-{"event":"updated","mr":12,"from":"7c5b9fc6dd6c46c15cdca46d0067a2760423ea8f","to":"6c313c0dbed5fc26bb29eb13a1de719643dd59c8","ciSkip":true}
-{"event":"landed","mr":12,"position":5,"head":"6c313c0dbed5fc26bb29eb13a1de719643dd59c8","main":"9e5372f5451514917b8d4bc076172c9d7b9c147d","testedTree":true}
+{"event":"updated","mr":12,"from":"823b046e849fbd9d8ed625e1e0b8c564356f9e87","to":"b1abab9645ec195f167fad0196bdfbc1189693d9","ciSkip":true}
+{"event":"landed","mr":12,"position":5,"head":"b1abab9645ec195f167fad0196bdfbc1189693d9","main":"469a8e88a71b7f0b63ff2bb2ddb83ff41819c1d5","testedTree":true}
 {"event":"labelled","mr":18,"label":"queue-updating"}
-{"event":"updated","mr":18,"from":"0e7364fba4c7876393dc5b344a012b045060ba24","to":"fb9c18ca383c13a7e9a895dca14bbd96230f807a","ciSkip":true}
-{"event":"landed","mr":18,"position":6,"head":"fb9c18ca383c13a7e9a895dca14bbd96230f807a","main":"67698d7713e739e6de20124a237ae515aa34982c","testedTree":true}
+{"event":"updated","mr":18,"from":"38431d1c7cf4f5b57f8c8d634cfcb479cdf11af1","to":"5b2fb28c43a17abd418ebbd58138045acc09ce32","ciSkip":true}
+{"event":"landed","mr":18,"position":6,"head":"5b2fb28c43a17abd418ebbd58138045acc09ce32","main":"a82c479640e38ede6c88644f56a33e22330119b0","testedTree":true}
 {"event":"labelled","mr":11,"label":"queue-updating"}
-{"event":"updated","mr":11,"from":"ff98e178b820c62a6acd5568c4507ebbce72fb7b","to":"105585fecc957ec0fe14f7913354c0d1ddacb265","ciSkip":true}
-{"event":"landed","mr":11,"position":7,"head":"105585fecc957ec0fe14f7913354c0d1ddacb265","main":"c3bbf577b00baa5c0d00510bd41f2c437dc84f62","testedTree":true}
+{"event":"updated","mr":11,"from":"9d2b54cdaada21af0b395c57a7690b90e176c724","to":"fa745585c3cc25e85ab6845b1efd1ee7c13f3486","ciSkip":true}
+{"event":"landed","mr":11,"position":7,"head":"fa745585c3cc25e85ab6845b1efd1ee7c13f3486","main":"4f3218d0e2eed700e009b8359646bfccc8de9d85","testedTree":true}
 {"event":"labelled","mr":10,"label":"queue-updating"}
-{"event":"updated","mr":10,"from":"03fe8cf43d9aec733a5591a5d493f0b3fc04d44c","to":"304d83c8d6522631f2e09ca502e198acedc7fda5","ciSkip":true}
-{"event":"landed","mr":10,"position":8,"head":"304d83c8d6522631f2e09ca502e198acedc7fda5","main":"4de20a4a26fc9239fbc2742ca6d0166b2750f2bc","testedTree":true}
+{"event":"updated","mr":10,"from":"dc7284327dc7870a823d65f5fd63c2c535ba159e","to":"f134da9774e3dfe64095636878d1c484fdde7d89","ciSkip":true}
+{"event":"landed","mr":10,"position":8,"head":"f134da9774e3dfe64095636878d1c484fdde7d89","main":"0dfd677a2f05f5c6c648f1b68c4939e9051e0897","testedTree":true}
 {"event":"queue_state","project":"vitana-platform","mr":10,"state":"landed","reason":"ready","position":null,"detail":"only lane-file entries after the reviewed head; 2 checks green; 2 required job(s) green"}
 {"event":"queue_state","project":"vitana-platform","mr":11,"state":"landed","reason":"ready","position":null,"detail":"only lane-file entries after the reviewed head; 2 checks green; 2 required job(s) green"}
 {"event":"queue_state","project":"vitana-platform","mr":12,"state":"landed","reason":"ready","position":null,"detail":"only lane-file entries after the reviewed head; 2 checks green; 2 required job(s) green"}
@@ -111,41 +111,41 @@ train refs: vitana-platform: train/1 train/2 train/3 train/4 train/5 train/6 tra
 {"event":"queue_state","project":"vitana-platform","mr":16,"state":"landed","reason":"ready","position":null,"detail":"only lane-file entries after the reviewed head; 2 checks green; 2 required job(s) green"}
 {"event":"queue_state","project":"vitana-platform","mr":17,"state":"blocked","reason":"protected_gate_file","position":null,"detail":"protected gate file(s) changed (CLAUDE.md): the owner merges it"}
 {"event":"queue_state","project":"vitana-platform","mr":18,"state":"landed","reason":"ready","position":null,"detail":"approved, sparring record .kiro/specs/demo2/sparring/verdict.md; gitlab/plan-spar succeeded on this head; 2 checks green; 2 required job(s) green"}
-{"event":"landed","mr":20,"position":1,"head":"3e4a54c1dbec5d50c45ac7b7dc3022637ca4ff1c","main":"761ec33164f80dc989962ebf5f7c161e36da5b9d","testedTree":true}
+{"event":"landed","mr":20,"position":1,"head":"ae534e4810742873a5accbbd383c12b2b5a48ccd","main":"d4c0e6323bf09f8414f8a4cb2d145a92b6c69c77","testedTree":true}
 {"event":"labelled","mr":21,"label":"queue-updating"}
-{"event":"updated","mr":21,"from":"4c2469d4cf8a18d9ace58be8c5377b69d50a06ab","to":"56295cffca517104d12b1fd9383b6c2d02b5fcc9","ciSkip":true}
-{"event":"landed","mr":21,"position":2,"head":"56295cffca517104d12b1fd9383b6c2d02b5fcc9","main":"b90797254a0caab128b0c65a710326395b38444d","testedTree":true}
+{"event":"updated","mr":21,"from":"bb87b858191c82f47ac7a3f3c2da6d528cca8434","to":"03914b0f4c82c6732da240fa7d5227027db94cf5","ciSkip":true}
+{"event":"landed","mr":21,"position":2,"head":"03914b0f4c82c6732da240fa7d5227027db94cf5","main":"cfcda6834b1958332a7a90c144dc9bdc5b16c162","testedTree":true}
 {"event":"labelled","mr":22,"label":"queue-updating"}
-{"event":"updated","mr":22,"from":"8b3e539d3858eee998e7d8996d44fc761cd60bda","to":"53636c6278054087302cfeec25f17ddb63010f95","ciSkip":true}
-{"event":"landed","mr":22,"position":3,"head":"53636c6278054087302cfeec25f17ddb63010f95","main":"a06f266bf6d79f0de238f6f6d273f2499e3b8983","testedTree":true}
-{"event":"queue_state","project":"vitana-v1","mr":20,"state":"landed","reason":"ready","position":null,"detail":"accept b386e625 on main counts for this head; 2 checks green; 2 required job(s) green"}
-{"event":"queue_state","project":"vitana-v1","mr":21,"state":"landed","reason":"ready","position":null,"detail":"accept 4519432f on main counts for this head; 2 checks green; 2 required job(s) green"}
-{"event":"queue_state","project":"vitana-v1","mr":22,"state":"landed","reason":"ready","position":null,"detail":"accept af395f3a on main counts for this head; 2 checks green; 2 required job(s) green"}
+{"event":"updated","mr":22,"from":"957b225e2617c9a11575e9b547b02811695aa675","to":"ac801792bde2950d1f86cb67b0d7cd98f789a2a9","ciSkip":true}
+{"event":"landed","mr":22,"position":3,"head":"ac801792bde2950d1f86cb67b0d7cd98f789a2a9","main":"1f782fb92e8e30054023d8713619c15606c1c684","testedTree":true}
+{"event":"queue_state","project":"vitana-v1","mr":20,"state":"landed","reason":"ready","position":null,"detail":"accept a08e09be on main counts for this head; 2 checks green; 2 required job(s) green"}
+{"event":"queue_state","project":"vitana-v1","mr":21,"state":"landed","reason":"ready","position":null,"detail":"accept c61465ec on main counts for this head; 2 checks green; 2 required job(s) green"}
+{"event":"queue_state","project":"vitana-v1","mr":22,"state":"landed","reason":"ready","position":null,"detail":"accept 08e645ec on main counts for this head; 2 checks green; 2 required job(s) green"}
 
 vitana-platform: landed in this order: !16 !15 !14 !13 !12 !18 !11 !10
-4de20a4 VTID-05999 (demo/api-a): add api-a
-    Merge-Request: !10, Source-Branch: kiro/demo/api-a, Reviewed-Head: 3dfe2615317622151d53c4195342f62d05b99e31, Review-Verdict: accept, Reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5), Accepted-At: 2026-11-05T10:50:00.000Z
-c3bbf57 VTID-05999 (demo/api-b): add api-b
-    Merge-Request: !11, Source-Branch: kiro/demo/api-b, Reviewed-Head: 20eb39d9e70a359091ea5aaa2aa028ce724b0680, Review-Verdict: accept, Reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5), Accepted-At: 2026-11-05T10:45:00.000Z
-67698d7 plan(demo2): the plan
+0dfd677 VTID-05999 (demo/api-a): add api-a
+    Merge-Request: !10, Source-Branch: kiro/demo/api-a, Reviewed-Head: e8cc34ebb5e7a0a8d87151eec71c1e7552eef696, Review-Verdict: accept, Reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5), Accepted-At: 2026-11-05T10:50:00.000Z
+4f3218d VTID-05999 (demo/api-b): add api-b
+    Merge-Request: !11, Source-Branch: kiro/demo/api-b, Reviewed-Head: 4d143ec41f0e56770c35313dabf45d08e8b133eb, Review-Verdict: accept, Reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5), Accepted-At: 2026-11-05T10:45:00.000Z
+a82c479 plan(demo2): the plan
     Merge-Request: !18, Source-Branch: kiro/demo2/plan
-9e5372f VTID-05999 (demo/api-c): add api-c
-    Merge-Request: !12, Source-Branch: kiro/demo/api-c, Reviewed-Head: 98684fed0f2feacef844103002fe6eddcea3a716, Review-Verdict: accept, Reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5), Accepted-At: 2026-11-05T10:40:00.000Z
-ba93ffd VTID-05999 (demo/api-d): add api-d
-    Merge-Request: !13, Source-Branch: kiro/demo/api-d, Reviewed-Head: b98534d839085b77decef63ebbca02f7470784bc, Review-Verdict: accept, Reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5), Accepted-At: 2026-11-05T10:35:00.000Z
-57b5412 VTID-05999 (demo/api-e): add api-e
-    Merge-Request: !14, Source-Branch: kiro/demo/api-e, Reviewed-Head: caf39c952df73247e5d519a71aee25a8c5bb6449, Review-Verdict: accept, Reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5), Accepted-At: 2026-11-05T10:30:00.000Z
-abacdab VTID-05999 (demo/api-f): add api-f
-    Merge-Request: !15, Source-Branch: kiro/demo/api-f, Reviewed-Head: 5dbf1b36ab5add4f75e96decb585a477360d30df, Review-Verdict: accept, Reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5), Accepted-At: 2026-11-05T10:25:00.000Z
-fe7445f VTID-05999 (demo/api-g): add api-g
-    Merge-Request: !16, Source-Branch: kiro/demo/api-g, Reviewed-Head: bdad397da3cb12edde11c9622c82e845f7f127ab, Review-Verdict: accept, Reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5), Accepted-At: 2026-11-05T10:20:00.000Z
+469a8e8 VTID-05999 (demo/api-c): add api-c
+    Merge-Request: !12, Source-Branch: kiro/demo/api-c, Reviewed-Head: 092c21c10d55b10d2e1d94dc0135f278306cf3fb, Review-Verdict: accept, Reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5), Accepted-At: 2026-11-05T10:40:00.000Z
+dca2da9 VTID-05999 (demo/api-d): add api-d
+    Merge-Request: !13, Source-Branch: kiro/demo/api-d, Reviewed-Head: 11f70b87d0b85550f5e1933ebeb49617a5c052b2, Review-Verdict: accept, Reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5), Accepted-At: 2026-11-05T10:35:00.000Z
+994985c VTID-05999 (demo/api-e): add api-e
+    Merge-Request: !14, Source-Branch: kiro/demo/api-e, Reviewed-Head: 206ce3aa98d9ccf0410395585faa08442bde3c23, Review-Verdict: accept, Reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5), Accepted-At: 2026-11-05T10:30:00.000Z
+528bc26 VTID-05999 (demo/api-f): add api-f
+    Merge-Request: !15, Source-Branch: kiro/demo/api-f, Reviewed-Head: e79754ca3cf24da98dc2bb6e9632661f8f8b00df, Review-Verdict: accept, Reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5), Accepted-At: 2026-11-05T10:25:00.000Z
+f8bcf64 VTID-05999 (demo/api-g): add api-g
+    Merge-Request: !16, Source-Branch: kiro/demo/api-g, Reviewed-Head: f431ef66f76d3dfcb8d3bbf5cd7a958fc599799b, Review-Verdict: accept, Reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5), Accepted-At: 2026-11-05T10:20:00.000Z
 
 vitana-v1: landed in this order: !20 !21 !22
-a06f266 VTID-05999 (demo/web-c): add web-c
-    Merge-Request: !22, Source-Branch: kiro/demo/web-c, Reviewed-Head: 8b3e539d3858eee998e7d8996d44fc761cd60bda, Review-Verdict: accept, Reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5), Accepted-At: 2026-11-05T10:35:00.000Z
-b907972 VTID-05999 (demo/web-b): add web-b
-    Merge-Request: !21, Source-Branch: kiro/demo/web-b, Reviewed-Head: 4c2469d4cf8a18d9ace58be8c5377b69d50a06ab, Review-Verdict: accept, Reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5), Accepted-At: 2026-11-05T10:25:00.000Z
-761ec33 VTID-05999 (demo/web-a): add web-a
-    Merge-Request: !20, Source-Branch: kiro/demo/web-a, Reviewed-Head: 3e4a54c1dbec5d50c45ac7b7dc3022637ca4ff1c, Review-Verdict: accept, Reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5), Accepted-At: 2026-11-05T10:15:00.000Z
+1f782fb VTID-05999 (demo/web-c): add web-c
+    Merge-Request: !22, Source-Branch: kiro/demo/web-c, Reviewed-Head: 957b225e2617c9a11575e9b547b02811695aa675, Review-Verdict: accept, Reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5), Accepted-At: 2026-11-05T10:35:00.000Z
+cfcda68 VTID-05999 (demo/web-b): add web-b
+    Merge-Request: !21, Source-Branch: kiro/demo/web-b, Reviewed-Head: bb87b858191c82f47ac7a3f3c2da6d528cca8434, Review-Verdict: accept, Reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5), Accepted-At: 2026-11-05T10:25:00.000Z
+d4c0e63 VTID-05999 (demo/web-a): add web-a
+    Merge-Request: !20, Source-Branch: kiro/demo/web-a, Reviewed-Head: ae534e4810742873a5accbbd383c12b2b5a48ccd, Review-Verdict: accept, Reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5), Accepted-At: 2026-11-05T10:15:00.000Z
 
 result: 8 landed in vitana-platform, 3 in vitana-v1; !17 (CLAUDE.md) refused with 1 comment; every assertion passed

@@ -52,7 +52,10 @@ and positions 1..k-1 have landed, after `main` is merged into it with `ci.skip` 
 k's tested tree (pinned `sha`, squash); a failed or conflicting position drops its merge request (one comment,
 `queue-blocked`, back to its builder until a new head) and the positions behind it are rebuilt without it; a tree
 mismatch or a `main` moved by someone else rebuilds the train and lands nothing; every state of `main` is a tested tree.
-TEST: scripts/eng/gitlab-land-queue.test.mjs "trainSelect: …", "the train: positions train/1..k in queue order …", "lands merge request k only when its position is green and every earlier position has landed; main merged in with ci.skip; the tree on main is the tested tree", "a failed position drops its merge request …", "a conflicting position …", "the update's tree must equal the tested tree: …"
+A position is judged by the project's required jobs without the governance jobs that judge one merge request
+(`lane-scope`, `collab-handoff`, `change-suite`, `pr-gate-report`; or by `train_required_jobs` when the settings name
+them): those run and are required on each merge request's own head before it joins the train.
+TEST: scripts/eng/gitlab-land-queue.test.mjs "trainSelect: …", "the train: positions train/1..k in queue order …", "lands merge request k only when its position is green and every earlier position has landed; main merged in with ci.skip; the tree on main is the tested tree", "a failed position drops its merge request …", "a conflicting position …", "the update's tree must equal the tested tree: …", "a train position needs the checks and gate, not the governance jobs that judge one merge request"
 
 AC-8 Plan merge requests (plan §3.5, planning.md §6): a `plan(` merge request lands only when `handoff.md` on its head
 says `approved` with a `sparring_record`, the last `gitlab/plan-spar` or `PLAN-SPAR` commit status from a trusted account
@@ -99,7 +102,7 @@ Locales: n/a. Accessibility: n/a.
 
 Contract:
 - `land-guard.mjs` unchanged: `reviewCurrent` scripts/collab/land-guard.mjs:59, `checksVerdict` :85, `protectedTouched` :103,
-  `mergeDecision` :108, `localAfter` :166; called from scripts/eng/gitlab-land.mjs:647-660 (`sameRepoReview`), :129 (M2
+  `mergeDecision` :108, `localAfter` :166; called from scripts/eng/gitlab-land.mjs:660-673 (`sameRepoReview`), :129 (M2
   `checksFor`), and scripts/eng/review-source.mjs:108-119 (`crossRepoReview`).
 - `queue.mjs` unchanged: `validateRange` scripts/collab/queue.mjs:779, `scopeCheck` :946 (tasks.md says :912; VTID-05331,
   `abe2d7a59f`, moved it before this lane), `commitsInRange` :669; called from scripts/eng/gitlab-gates.mjs:91-118.
@@ -118,11 +121,11 @@ Staging proof: not verified on staging: it runs on the GitLab host in the engine
 deploys nothing (`run.mjs check-pr`: outputs/staging-check-pr.txt). Proven by its tests and the 12-merge-request dry run
 over the fake GitLab; live from the cut (lane `cutover` sets `queue` in the settings).
 
-Red on base: outputs/red-on-base.txt — 25 of 25 fail on the scratch base (3 files fail whole: missing modules; 22 queue
-tests fail); outputs/red-on-stub.txt — 30 of 30 fail against no-behaviour stubs outside the repo.
-Green: outputs/green.txt — 106 of 106 pass (52 new: review-source 14, gitlab-gates 8, assist-trigger 8, gitlab-land-queue
-22; plus M2's gitlab-land.test.mjs 54 unchanged); outputs/unit-all.txt — UNIT's full command 727 tests, 726 pass, 0 fail,
-1 skipped (a pre-existing win32-only case).
+Red on base: outputs/red-on-base.txt — 26 of 26 fail on the scratch base (3 files fail whole: missing modules; 23 queue
+tests fail); outputs/red-on-stub.txt — 30 of 30 fail against no-behaviour stubs outside the repo. The train-jobs test,
+added after the first commit, was red on that commit too (1 of 1).
+Green: outputs/green.txt — 107 of 107 pass (53 new: review-source 14, gitlab-gates 8, assist-trigger 8, gitlab-land-queue
+23; plus M2's gitlab-land.test.mjs 54 unchanged); outputs/unit-all.txt — UNIT's full command, 0 fail (counts in the file).
 
 Decisions taken (inside the plan):
 1. Queue mode is opt-in per project (`queue` in its settings entry); without it the M2 loop is unchanged. The settings
@@ -151,3 +154,7 @@ Decisions taken (inside the plan):
     is what refuses it (the interrupted run's version was masked by `review_stale`).
 13. The dry-run test compares refs after removing the fake's `refs/merge-requests/*` with `.trim()` (the earlier version
     failed only on the trailing newline those refs leave).
+14. A train position does not require the governance jobs that judge one merge request (`MR_ONLY_JOBS`): `scopeCheck`
+    refuses a range that names two lanes, so `lane-scope` cannot pass on `train/<k>` for k ≥ 2; they stay required on each
+    merge request's own head. Lane `pipelines` should run them only in merge-request pipelines and run `gate` and the
+    checks on `train/*` refs; a settings key `train_required_jobs` overrides the default.
