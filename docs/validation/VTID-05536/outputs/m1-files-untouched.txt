@@ -1,0 +1,20 @@
+# M1 files are not edited by this lane
+# $ git diff --stat HEAD -- infra/gitlab-engineering ':!infra/gitlab-engineering/terraform/fleet.tf' ':!infra/gitlab-engineering/terraform/fleet-ami.tf' ':!infra/gitlab-engineering/host/fleet-manager-install.sh' ':!infra/gitlab-engineering/host/fleet-image' ':!infra/gitlab-engineering/RUNBOOK-m2-fleet.md' scripts/eng/gitlab-m1-structure.test.mjs
+(empty = no tracked M1 file differs from the base commit)
+
+# sha256 of every M1 file of the lane's folder, in the worktree and at HEAD (the base commit):
+infra/gitlab-engineering/terraform/main.tf                     6888ee0a5605ce2a 6888ee0a5605ce2a same
+infra/gitlab-engineering/setup.sh                              ec82f66a385f778b ec82f66a385f778b same
+infra/gitlab-engineering/RUNBOOK.md                            7456884253fa2592 7456884253fa2592 same
+infra/gitlab-engineering/host/runner-install.sh                da3c99ab88e4c0a0 da3c99ab88e4c0a0 same
+infra/gitlab-engineering/host/gitlab-install.sh                14d2f38d3b0de3e7 14d2f38d3b0de3e7 same
+scripts/eng/gitlab-m1-structure.test.mjs                       a0ad18500db99f6f a0ad18500db99f6f same
+
+# untracked files this lane adds (everything else in git status is clean):
+?? docs/validation/VTID-05536/
+?? infra/gitlab-engineering/RUNBOOK-m2-fleet.md
+?? infra/gitlab-engineering/host/fleet-image/
+?? infra/gitlab-engineering/host/fleet-manager-install.sh
+?? infra/gitlab-engineering/terraform/fleet-ami.tf
+?? infra/gitlab-engineering/terraform/fleet.tf
+?? scripts/eng/fleet-structure.test.mjs
