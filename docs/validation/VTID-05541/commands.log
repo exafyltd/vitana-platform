@@ -83,3 +83,13 @@ $ node /projects/sandbox/vitana-platform/scripts/collab/land-guard.mjs evidence 
   land-guard evidence: ok — VTID-05541 evidence present (exit 0; acceptance.md, commands.log, scope.json staged)
 
 # 14. Results of the checks that need the commit (filled in after the code commit)
+Code commit f58323c4a6, lane commit 28c1e855f6 (state ready → executing); base for the PR checks: origin/main 29b639da4b.
+$ node scripts/ci/staging-verify/run.mjs check-pr --service gateway --repo-root /projects/sandbox/.rv/scm2 --base 29b639da4bfcacce3200e2d1d08881c260c4e990 --head 28c1e855f69af364d0443209ec01223a8416e00d --title "VTID-05541 (eng-gitlab-m2/scm-webhook): GitLab webhook route, five scm.gitlab.* OASIS topics, staging key wiring"
+  [staging-verify] ✓ change suite present and valid for VTID-05541   (exit 0)
+$ node scripts/collab/queue.mjs validate --repo /projects/sandbox/.rv/scm2 --base 29b639da4b --head 28c1e855f6      exit 0
+$ node /projects/sandbox/vitana-platform/scripts/collab/preflight.mjs --repo /projects/sandbox/.rv/scm2 --base origin/main --head HEAD --branch kiro/eng-gitlab-m2/scm-webhook --title "<PR title>"
+  PASS Collab tests, Collab handoff, Lane scope, PR-GATE scope, PR-GATE sparring, PR-GATE weakening, PR-GATE red-green, Kiro steering: "preflight: every check passed"
+$ node scripts/ci/validate-pr-locally.cjs --title "<PR title>" --body-file <PR body> --base main
+  APPROVED (profile gateway_backend; 30 in-remit files match; 3 not judged: the workflow, the lane file, the script; Acceptance mapping OK;
+  CSP scan clean; Route Mount Evidence Gate: route added, evidence present; OASIS_IMPACT=yes with OASIS_PROOF)
+This file is then committed once more (the commit after the lane commit), and preflight is run again on that head before the push.
