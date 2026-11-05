@@ -1,6 +1,6 @@
 ---
 lane: nav-paths
-state: executing
+state: in-review
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -13,7 +13,8 @@ paths:
   - .kiro/specs/agentic-delivery/lanes/gateway-delivery.md
 claimed_by: kiro-exafy-202611052207-653d
 branch: kiro/agentic-delivery/nav-paths
-updated: 2026-11-05T22:13Z
+pr: https://github.com/exafyltd/vitana-platform/pull/4722
+updated: 2026-11-05T22:19Z
 vtid: VTID-05563
 ---
 # Lane `nav-paths`: lane gateway-delivery may change the four voice-navigation files its Delivery screen needs
@@ -46,3 +47,6 @@ Claimed by a builder session of seat exafy (not the driver kiro-exafy-2026110419
 else in it changes. No code and no new test. Negative proof: the gateway-delivery commit that changes the four files fails
 Lane scope on today's main (4 problems, exit 1, `outputs/red-on-base.txt`); the positive proof runs on this lane's head
 (`outputs/green.txt`). Decisions in `docs/validation/VTID-05563/acceptance.md`.
+
+### 2026-11-05T22:19Z · kiro-exafy-202611052207-653d · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/4722 open; preflight passed. Next: the driver requests the reviewer agent.
