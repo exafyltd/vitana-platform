@@ -9,10 +9,10 @@ exit 0; writes to GitLab: none; merged so far: none
 
 $ node scripts/eng/gitlab-land.mjs run --dry-run   (token file and workdir omitted)
 {"ts":"2026-11-05T10:30:00.000Z","event":"verdict","project":"rehearsal","mr":7,"action":"land","reason":"ready","detail":"review current, checks green, up to date"}
-{"ts":"2026-11-05T10:30:00.000Z","event":"would_land","mr":7,"head":"c72cb5e0d4633612ddf2182d654b9b55d314671a"}
+{"ts":"2026-11-05T10:30:00.000Z","event":"would_land","mr":7,"head":"a39f7c799ef1c3fd65eb0cfdbc3263e1b354225f"}
 exit 0; writes to GitLab: none; merged so far: none
 
 $ node scripts/eng/gitlab-land.mjs run   (token file and workdir omitted)
 {"ts":"2026-11-05T10:30:00.000Z","event":"verdict","project":"rehearsal","mr":7,"action":"land","reason":"ready","detail":"review current, checks green, up to date"}
-{"ts":"2026-11-05T10:30:00.000Z","event":"landed","mr":7,"head":"c72cb5e0d4633612ddf2182d654b9b55d314671a"}
+{"ts":"2026-11-05T10:30:00.000Z","event":"landed","mr":7,"head":"a39f7c799ef1c3fd65eb0cfdbc3263e1b354225f"}
 exit 0; writes to GitLab: PUT /merge_requests/7/merge; merged so far: 7

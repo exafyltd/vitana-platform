@@ -1,6 +1,6 @@
 ---
 lane: merge-bot
-state: executing
+state: in-review
 next_actor: kiro
 depends_on: [gitlab-client]
 executor: kiro
@@ -14,7 +14,7 @@ paths:
   - infra/gitlab-engineering/host/units/vitana-land.service
   - infra/gitlab-engineering/host/units/vitana-land.timer
   - docs/validation/**
-updated: 2026-11-05T16:20Z
+updated: 2026-11-05T16:38Z
 claimed_by: kiro-exafy-202611021438-cff7
 branch: kiro/eng-gitlab-m2/merge-bot
 pr: https://github.com/exafyltd/vitana-platform/pull/4697
@@ -91,3 +91,10 @@ The review of 2026-11-05T14:13Z (head 570fe18b55450e3a37e2ea4cfe1e883fd0acb7a8) 
 - [non-blocking] CI was not re-read by the reviewer: nothing to change. The check runs of the new head are read by REST after the push.
 - [non-blocking] the branch is behind `main` (abe2d7a59f changes `queue.mjs`): accepted. `origin/main` is merged into the branch after the fix, and all evidence
   is regenerated from the final code on the merged head; the next review is asked on that head.
+
+### 2026-11-05T16:38Z · kiro-exafy-202611021438-cff7 · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/4697. The review of 2026-11-05T14:13Z is answered in the entry above; `origin/main` (b3d547b66c7) is merged into the
+branch. Evidence regenerated from the final code on the merged head: 58 cases (red on base 1 of 1, red on a stub 58 of 58, red on the code as reviewed 6 of 58, green 58 of 58),
+a mutation run of 115 changes (0 not caught), the whole script set 705 tests with 0 failures on Node 22 and Node 20, the 24-row table against `mergeDecision` (0 differences),
+`land-guard.mjs` and `queue.mjs` untouched, a secret scan of 22 files. Deferred, with where: the pipeline-status half of finding 2 and `eventPages` to lane `merge-queue`;
+`User=` and sandboxing of the unit to lane `settings`. Ready for a new review on the current head.

@@ -5,15 +5,15 @@ TAP version 13
 # Subtest: jobToCheckRun follows the plan §3.4 table for every documented status, and checksVerdict reads the result
 not ok 1 - jobToCheckRun follows the plan §3.4 table for every documented status, and checksVerdict reads the result
   ---
-  duration_ms: 0.952232
+  duration_ms: 0.952193
   type: 'test'
-  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:197:1'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:209:1'
   failureType: 'testCodeFailure'
   error: "Cannot read properties of undefined (reading 'status')"
   code: 'ERR_TEST_FAILURE'
   name: 'TypeError'
   stack: |-
-    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:201:23)
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:213:23)
     Test.runInAsyncScope (node:async_hooks:214:14)
     Test.run (node:internal/test_runner/test:1047:25)
     Test.start (node:internal/test_runner/test:944:17)
@@ -22,15 +22,15 @@ not ok 1 - jobToCheckRun follows the plan §3.4 table for every documented statu
 # Subtest: jobToCheckRun: an unknown status is pending (fails closed) and is reported once through onUnknown
 not ok 2 - jobToCheckRun: an unknown status is pending (fails closed) and is reported once through onUnknown
   ---
-  duration_ms: 0.187012
+  duration_ms: 0.16309
   type: 'test'
-  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:208:1'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:220:1'
   failureType: 'testCodeFailure'
   error: "Cannot read properties of undefined (reading 'status')"
   code: 'ERR_TEST_FAILURE'
   name: 'TypeError'
   stack: |-
-    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:211:23)
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:223:23)
     Test.runInAsyncScope (node:async_hooks:214:14)
     Test.run (node:internal/test_runner/test:1047:25)
     Test.processPendingSubtests (node:internal/test_runner/test:744:18)
@@ -41,16 +41,16 @@ not ok 2 - jobToCheckRun: an unknown status is pending (fails closed) and is rep
 # Subtest: jobToCheckRun keeps name, id and started_at, so the latest attempt of a job is the one checksVerdict reads
 not ok 3 - jobToCheckRun keeps name, id and started_at, so the latest attempt of a job is the one checksVerdict reads
   ---
-  duration_ms: 0.189862
+  duration_ms: 0.178824
   type: 'test'
-  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:217:1'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:229:1'
   failureType: 'testCodeFailure'
   error: "Cannot read properties of undefined (reading 'name')"
   code: 'ERR_TEST_FAILURE'
   name: 'TypeError'
   stack: |-
     checksVerdict (file://<scratch>/scripts/collab/land-guard.mjs:89:31)
-    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:222:16)
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:234:16)
     Test.runInAsyncScope (node:async_hooks:214:14)
     Test.run (node:internal/test_runner/test:1047:25)
     Test.processPendingSubtests (node:internal/test_runner/test:744:18)
@@ -61,15 +61,15 @@ not ok 3 - jobToCheckRun keeps name, id and started_at, so the latest attempt of
 # Subtest: requiredJobsVerdict: every required name must be present and success; skipped, neutral or absent does not pass
 not ok 4 - requiredJobsVerdict: every required name must be present and success; skipped, neutral or absent does not pass
   ---
-  duration_ms: 0.20765
+  duration_ms: 0.181283
   type: 'test'
-  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:236:1'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:248:1'
   failureType: 'testCodeFailure'
   error: "Cannot read properties of undefined (reading 'state')"
   code: 'ERR_TEST_FAILURE'
   name: 'TypeError'
   stack: |-
-    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:238:94)
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:250:94)
     Test.runInAsyncScope (node:async_hooks:214:14)
     Test.run (node:internal/test_runner/test:1047:25)
     Test.processPendingSubtests (node:internal/test_runner/test:744:18)
@@ -80,15 +80,15 @@ not ok 4 - requiredJobsVerdict: every required name must be present and success;
 # Subtest: checksFor: no pipeline is pending, a finished pipeline with no jobs fails, optional failures do not block, fail beats pending
 not ok 5 - checksFor: no pipeline is pending, a finished pipeline with no jobs fails, optional failures do not block, fail beats pending
   ---
-  duration_ms: 0.133011
+  duration_ms: 0.119294
   type: 'test'
-  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:257:1'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:269:1'
   failureType: 'testCodeFailure'
   error: "Cannot read properties of undefined (reading 'state')"
   code: 'ERR_TEST_FAILURE'
   name: 'TypeError'
   stack: |-
-    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:259:45)
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:271:45)
     Test.runInAsyncScope (node:async_hooks:214:14)
     Test.run (node:internal/test_runner/test:1047:25)
     Test.processPendingSubtests (node:internal/test_runner/test:744:18)
@@ -99,15 +99,15 @@ not ok 5 - checksFor: no pipeline is pending, a finished pipeline with no jobs f
 # Subtest: decide gives the verdicts of mergeDecision itself for every combination of review, checks, behind and protected files
 not ok 6 - decide gives the verdicts of mergeDecision itself for every combination of review, checks, behind and protected files
   ---
-  duration_ms: 0.273086
+  duration_ms: 0.250429
   type: 'test'
-  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:272:1'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:284:1'
   failureType: 'testCodeFailure'
   error: "Cannot read properties of undefined (reading 'action')"
   code: 'ERR_TEST_FAILURE'
   name: 'TypeError'
   stack: |-
-    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:285:26)
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:297:26)
     Test.runInAsyncScope (node:async_hooks:214:14)
     Test.run (node:internal/test_runner/test:1047:25)
     Test.processPendingSubtests (node:internal/test_runner/test:744:18)
@@ -118,15 +118,15 @@ not ok 6 - decide gives the verdicts of mergeDecision itself for every combinati
 # Subtest: judgeReviewCommit: the newest review of the lane decides; it must be an accept by the reviewer agent, pushed by the reviewer account
 not ok 7 - judgeReviewCommit: the newest review of the lane decides; it must be an accept by the reviewer agent, pushed by the reviewer account
   ---
-  duration_ms: 0.190815
+  duration_ms: 0.180625
   type: 'test'
-  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:310:1'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:322:1'
   failureType: 'testCodeFailure'
   error: "Cannot read properties of undefined (reading 'code')"
   code: 'ERR_TEST_FAILURE'
   name: 'TypeError'
   stack: |-
-    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:312:65)
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:324:65)
     Test.runInAsyncScope (node:async_hooks:214:14)
     Test.run (node:internal/test_runner/test:1047:25)
     Test.processPendingSubtests (node:internal/test_runner/test:744:18)
@@ -137,9 +137,9 @@ not ok 7 - judgeReviewCommit: the newest review of the lane decides; it must be 
 # Subtest: squashMessage is the title with the VTID first and the description
 not ok 8 - squashMessage is the title with the VTID first and the description
   ---
-  duration_ms: 0.865162
+  duration_ms: 0.757364
   type: 'test'
-  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:325:1'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:337:1'
   failureType: 'testCodeFailure'
   error: |-
     Expected values to be strictly equal:
@@ -156,7 +156,7 @@ not ok 8 - squashMessage is the title with the VTID first and the description
     Body.
   operator: 'strictEqual'
   stack: |-
-    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:326:10)
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:338:10)
     Test.runInAsyncScope (node:async_hooks:214:14)
     Test.run (node:internal/test_runner/test:1047:25)
     Test.processPendingSubtests (node:internal/test_runner/test:744:18)
@@ -167,9 +167,9 @@ not ok 8 - squashMessage is the title with the VTID first and the description
 # Subtest: lands a reviewed, green, up-to-date merge request: one merge call pinned to the head, squash, title and description, source branch removed
 not ok 9 - lands a reviewed, green, up-to-date merge request: one merge call pinned to the head, squash, title and description, source branch removed
   ---
-  duration_ms: 118.506673
+  duration_ms: 110.064248
   type: 'test'
-  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:332:1'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:344:1'
   failureType: 'testCodeFailure'
   error: |-
     Expected values to be strictly equal:
@@ -183,31 +183,31 @@ not ok 9 - lands a reviewed, green, up-to-date merge request: one merge call pin
   expected: false
   operator: 'strictEqual'
   stack: |-
-    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:335:10)
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:347:10)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: a lane-file entry after the accept still counts; the review is read against the head, not the accepted sha
 not ok 10 - a lane-file entry after the accept still counts; the review is read against the head, not the accepted sha
   ---
-  duration_ms: 159.357473
+  duration_ms: 142.194003
   type: 'test'
-  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:349:1'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:361:1'
   failureType: 'testCodeFailure'
   error: "Cannot read properties of undefined (reading '0')"
   code: 'ERR_TEST_FAILURE'
   name: 'TypeError'
   stack: |-
-    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:356:22)
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:368:22)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: a merge call that fails is not repeated by the client; the merge request is read again and the bot says it will try next tick
 not ok 11 - a merge call that fails is not repeated by the client; the merge request is read again and the bot says it will try next tick
   ---
-  duration_ms: 116.666558
+  duration_ms: 109.093627
   type: 'test'
-  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:360:1'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:372:1'
   failureType: 'testCodeFailure'
   error: |-
     retries: 0 for an action
@@ -220,16 +220,16 @@ not ok 11 - a merge call that fails is not repeated by the client; the merge req
   actual: 0
   operator: 'strictEqual'
   stack: |-
-    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:364:10)
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:376:10)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: a merge call that reports an error but was processed is recognised by the re-read
 not ok 12 - a merge call that reports an error but was processed is recognised by the re-read
   ---
-  duration_ms: 129.138331
+  duration_ms: 111.629141
   type: 'test'
-  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:373:1'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:385:1'
   failureType: 'testCodeFailure'
   error: |-
     Expected values to be strictly equal:
@@ -242,16 +242,16 @@ not ok 12 - a merge call that reports an error but was processed is recognised b
   actual: 0
   operator: 'strictEqual'
   stack: |-
-    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:377:10)
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:389:10)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: a 200 answer whose merge request is not merged is not a landing unless the re-read says so
 not ok 13 - a 200 answer whose merge request is not merged is not a landing unless the re-read says so
   ---
-  duration_ms: 116.830861
+  duration_ms: 117.972167
   type: 'test'
-  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:382:1'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:394:1'
   failureType: 'testCodeFailure'
   error: |-
     Expected values to be strictly equal:
@@ -264,46 +264,46 @@ not ok 13 - a 200 answer whose merge request is not merged is not a landing unle
   actual: 0
   operator: 'strictEqual'
   stack: |-
-    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:386:10)
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:398:10)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: the merge is refused when GitLab says the head changed (409): nothing else is done
 not ok 14 - the merge is refused when GitLab says the head changed (409): nothing else is done
   ---
-  duration_ms: 116.132844
+  duration_ms: 109.038846
   type: 'test'
-  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:391:1'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:403:1'
   failureType: 'testCodeFailure'
   error: "Cannot read properties of undefined (reading '0')"
   code: 'ERR_TEST_FAILURE'
   name: 'TypeError'
   stack: |-
-    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:395:22)
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:407:22)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: no reviewer accept: nothing lands and the reason is written once per head
 not ok 15 - no reviewer accept: nothing lands and the reason is written once per head
   ---
-  duration_ms: 115.567345
+  duration_ms: 110.969878
   type: 'test'
-  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:400:1'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:412:1'
   failureType: 'testCodeFailure'
   error: "Cannot read properties of undefined (reading '0')"
   code: 'ERR_TEST_FAILURE'
   name: 'TypeError'
   stack: |-
-    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:408:22)
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:420:22)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: a note by someone else that contains the marker does not stand in for the bot's comment
 not ok 16 - a note by someone else that contains the marker does not stand in for the bot's comment
   ---
-  duration_ms: 113.86913
+  duration_ms: 110.536617
   type: 'test'
-  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:416:1'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:428:1'
   failureType: 'testCodeFailure'
   error: |-
     Expected values to be strictly equal:
@@ -316,31 +316,16 @@ not ok 16 - a note by someone else that contains the marker does not stand in fo
   actual: 0
   operator: 'strictEqual'
   stack: |-
-    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:421:10)
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:433:10)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: an accept pushed by a builder is forged: it does not land and says why
 not ok 17 - an accept pushed by a builder is forged: it does not land and says why
   ---
-  duration_ms: 118.101881
+  duration_ms: 111.43513
   type: 'test'
-  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:424:1'
-  failureType: 'testCodeFailure'
-  error: "Cannot read properties of undefined (reading '0')"
-  code: 'ERR_TEST_FAILURE'
-  name: 'TypeError'
-  stack: |-
-    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:430:22)
-    async Test.run (node:internal/test_runner/test:1054:7)
-    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
-  ...
-# Subtest: an accept whose commit is in no push of the reviewer (a builder committed the trailers) is forged
-not ok 18 - an accept whose commit is in no push of the reviewer (a builder committed the trailers) is forged
-  ---
-  duration_ms: 116.247338
-  type: 'test'
-  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:435:1'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:436:1'
   failureType: 'testCodeFailure'
   error: "Cannot read properties of undefined (reading '0')"
   code: 'ERR_TEST_FAILURE'
@@ -350,12 +335,12 @@ not ok 18 - an accept whose commit is in no push of the reviewer (a builder comm
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
-# Subtest: an accept that does not name the reviewer agent is forged
-not ok 19 - an accept that does not name the reviewer agent is forged
+# Subtest: an accept whose commit is in no push of the reviewer (a builder committed the trailers) is forged
+not ok 18 - an accept whose commit is in no push of the reviewer (a builder committed the trailers) is forged
   ---
-  duration_ms: 117.449854
+  duration_ms: 111.06641
   type: 'test'
-  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:445:1'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:447:1'
   failureType: 'testCodeFailure'
   error: "Cannot read properties of undefined (reading '0')"
   code: 'ERR_TEST_FAILURE'
@@ -365,10 +350,10 @@ not ok 19 - an accept that does not name the reviewer agent is forged
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
-# Subtest: code changed after the accept: the review no longer counts for the head
-not ok 20 - code changed after the accept: the review no longer counts for the head
+# Subtest: a reviewer push without commit_from proves only its tip: an accept below the tip is not counted, an accept that is the tip is
+not ok 19 - a reviewer push without commit_from proves only its tip: an accept below the tip is not counted, an accept that is the tip is
   ---
-  duration_ms: 157.666292
+  duration_ms: 144.19347
   type: 'test'
   location: '<scratch>/scripts/eng/gitlab-land.test.mjs:457:1'
   failureType: 'testCodeFailure'
@@ -376,121 +361,151 @@ not ok 20 - code changed after the accept: the review no longer counts for the h
   code: 'ERR_TEST_FAILURE'
   name: 'TypeError'
   stack: |-
-    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:465:22)
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:467:23)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: an accept that does not name the reviewer agent is forged
+not ok 20 - an accept that does not name the reviewer agent is forged
+  ---
+  duration_ms: 108.079073
+  type: 'test'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:480:1'
+  failureType: 'testCodeFailure'
+  error: "Cannot read properties of undefined (reading '0')"
+  code: 'ERR_TEST_FAILURE'
+  name: 'TypeError'
+  stack: |-
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:489:22)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: code changed after the accept: the review no longer counts for the head
+not ok 21 - code changed after the accept: the review no longer counts for the head
+  ---
+  duration_ms: 138.765148
+  type: 'test'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:492:1'
+  failureType: 'testCodeFailure'
+  error: "Cannot read properties of undefined (reading '0')"
+  code: 'ERR_TEST_FAILURE'
+  name: 'TypeError'
+  stack: |-
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:500:22)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: a force-push after the review removes the accept with it: nothing lands
-not ok 21 - a force-push after the review removes the accept with it: nothing lands
+not ok 22 - a force-push after the review removes the accept with it: nothing lands
   ---
-  duration_ms: 147.578971
+  duration_ms: 135.073425
   type: 'test'
-  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:469:1'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:504:1'
   failureType: 'testCodeFailure'
   error: "Cannot read properties of undefined (reading '0')"
   code: 'ERR_TEST_FAILURE'
   name: 'TypeError'
   stack: |-
-    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:480:22)
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:515:22)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: a changes verdict after an accept: the lane is back with its builder
-not ok 22 - a changes verdict after an accept: the lane is back with its builder
+not ok 23 - a changes verdict after an accept: the lane is back with its builder
   ---
-  duration_ms: 145.683394
+  duration_ms: 135.556387
   type: 'test'
-  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:483:1'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:518:1'
   failureType: 'testCodeFailure'
   error: "Cannot read properties of undefined (reading '0')"
   code: 'ERR_TEST_FAILURE'
   name: 'TypeError'
   stack: |-
-    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:492:22)
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:527:22)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: a red required job does not land and names the job; a required job that is absent in a finished pipeline does not land either
-not ok 23 - a red required job does not land and names the job; a required job that is absent in a finished pipeline does not land either
+not ok 24 - a red required job does not land and names the job; a required job that is absent in a finished pipeline does not land either
   ---
-  duration_ms: 115.211378
+  duration_ms: 104.774099
   type: 'test'
-  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:495:1'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:530:1'
   failureType: 'testCodeFailure'
   error: "Cannot read properties of undefined (reading '0')"
   code: 'ERR_TEST_FAILURE'
   name: 'TypeError'
   stack: |-
-    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:500:23)
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:535:23)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: the pipeline is read for exactly the head: a green pipeline of another sha does not count
-not ok 24 - the pipeline is read for exactly the head: a green pipeline of another sha does not count
+not ok 25 - the pipeline is read for exactly the head: a green pipeline of another sha does not count
   ---
-  duration_ms: 115.291987
+  duration_ms: 108.583483
   type: 'test'
-  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:516:1'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:551:1'
   failureType: 'testCodeFailure'
   error: "Cannot read properties of undefined (reading '0')"
   code: 'ERR_TEST_FAILURE'
   name: 'TypeError'
   stack: |-
-    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:522:22)
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:557:22)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: a pipeline of another sha is never used, even when the server returns it for the query
-not ok 25 - a pipeline of another sha is never used, even when the server returns it for the query
+not ok 26 - a pipeline of another sha is never used, even when the server returns it for the query
   ---
-  duration_ms: 114.957873
+  duration_ms: 110.303258
   type: 'test'
-  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:526:1'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:561:1'
   failureType: 'testCodeFailure'
   error: "Cannot read properties of undefined (reading 'rows')"
   code: 'ERR_TEST_FAILURE'
   name: 'TypeError'
   stack: |-
-    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:535:20)
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:570:20)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: a merge request with an unexpected iid, head or source branch name is not touched
-not ok 26 - a merge request with an unexpected iid, head or source branch name is not touched
+not ok 27 - a merge request with an unexpected iid, head or source branch name is not touched
   ---
-  duration_ms: 116.425513
+  duration_ms: 112.960093
   type: 'test'
-  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:538:1'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:573:1'
   failureType: 'testCodeFailure'
   error: "Cannot read properties of undefined (reading '0')"
   code: 'ERR_TEST_FAILURE'
   name: 'TypeError'
   stack: |-
-    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:543:24)
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:578:24)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: a pending pipeline waits: no write at all, and the next merge request of the project is not even read
-not ok 27 - a pending pipeline waits: no write at all, and the next merge request of the project is not even read
+not ok 28 - a pending pipeline waits: no write at all, and the next merge request of the project is not even read
   ---
-  duration_ms: 241.865368
+  duration_ms: 224.71998
   type: 'test'
-  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:549:1'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:584:1'
   failureType: 'testCodeFailure'
   error: "Cannot read properties of undefined (reading 'length')"
   code: 'ERR_TEST_FAILURE'
   name: 'TypeError'
   stack: |-
-    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:556:23)
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:591:23)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: a merge request that waited more than 60 minutes for its pipeline loses its turn to the next one
-not ok 28 - a merge request that waited more than 60 minutes for its pipeline loses its turn to the next one
+not ok 29 - a merge request that waited more than 60 minutes for its pipeline loses its turn to the next one
   ---
-  duration_ms: 195.053846
+  duration_ms: 180.701573
   type: 'test'
-  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:564:1'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:599:1'
   failureType: 'testCodeFailure'
   error: |-
     Expected values to be strictly equal:
@@ -503,16 +518,43 @@ not ok 28 - a merge request that waited more than 60 minutes for its pipeline lo
   actual: 0
   operator: 'strictEqual'
   stack: |-
-    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:570:10)
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:605:10)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: a merge that GitLab keeps refusing keeps the turn for 60 minutes (counted from its pipeline), then loses it to the next merge request
+not ok 30 - a merge that GitLab keeps refusing keeps the turn for 60 minutes (counted from its pipeline), then loses it to the next merge request
+  ---
+  duration_ms: 178.345449
+  type: 'test'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:611:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    it keeps the turn: !8 is not even read
+    + actual - expected
+    
+    + []
+    - [
+    -   '7'
+    - ]
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    0: '7'
+  actual:
+  operator: 'deepStrictEqual'
+  stack: |-
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:621:10)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: two ready merge requests: the oldest lands, the other is not touched in the same tick
-not ok 29 - two ready merge requests: the oldest lands, the other is not touched in the same tick
+not ok 31 - two ready merge requests: the oldest lands, the other is not touched in the same tick
   ---
-  duration_ms: 194.285974
+  duration_ms: 179.927589
   type: 'test'
-  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:575:1'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:645:1'
   failureType: 'testCodeFailure'
   error: |-
     Expected values to be strictly equal:
@@ -525,16 +567,16 @@ not ok 29 - two ready merge requests: the oldest lands, the other is not touched
   actual: 0
   operator: 'strictEqual'
   stack: |-
-    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:579:10)
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:649:10)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: a merge request that needs a human is skipped, not waited for: the next one lands
-not ok 30 - a merge request that needs a human is skipped, not waited for: the next one lands
+not ok 32 - a merge request that needs a human is skipped, not waited for: the next one lands
   ---
-  duration_ms: 206.412934
+  duration_ms: 183.775332
   type: 'test'
-  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:585:1'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:655:1'
   failureType: 'testCodeFailure'
   error: |-
     Expected values to be strictly equal:
@@ -547,61 +589,61 @@ not ok 30 - a merge request that needs a human is skipped, not waited for: the n
   actual: 0
   operator: 'strictEqual'
   stack: |-
-    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:589:10)
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:659:10)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: behind main: main is merged INTO the source branch by bot-land, pushed, and the merge request is not landed in the same tick; the next tick lands it
-not ok 31 - behind main: main is merged INTO the source branch by bot-land, pushed, and the merge request is not landed in the same tick; the next tick lands it
+not ok 33 - behind main: main is merged INTO the source branch by bot-land, pushed, and the merge request is not landed in the same tick; the next tick lands it
   ---
-  duration_ms: 144.085614
+  duration_ms: 134.966301
   type: 'test'
-  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:594:1'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:664:1'
   failureType: 'testCodeFailure'
   error: "Cannot read properties of undefined (reading '0')"
   code: 'ERR_TEST_FAILURE'
   name: 'TypeError'
   stack: |-
-    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:600:22)
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:670:22)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: main's own change decides, not the branch's: a branch that itself changes a governance file is still updated when main brought in something unrelated
-not ok 32 - main's own change decides, not the branch's: a branch that itself changes a governance file is still updated when main brought in something unrelated
+not ok 34 - main's own change decides, not the branch's: a branch that itself changes a governance file is still updated when main brought in something unrelated
   ---
-  duration_ms: 143.456325
+  duration_ms: 136.124798
   type: 'test'
-  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:621:1'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:691:1'
   failureType: 'testCodeFailure'
   error: "Cannot read properties of undefined (reading '0')"
   code: 'ERR_TEST_FAILURE'
   name: 'TypeError'
   stack: |-
-    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:630:22)
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:700:22)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: behind a main that changed a governance or protected gate file: the branch is left alone, because the merge would end the review; one comment says so
-not ok 33 - behind a main that changed a governance or protected gate file: the branch is left alone, because the merge would end the review; one comment says so
+not ok 35 - behind a main that changed a governance or protected gate file: the branch is left alone, because the merge would end the review; one comment says so
   ---
-  duration_ms: 143.377131
+  duration_ms: 135.209199
   type: 'test'
-  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:634:1'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:704:1'
   failureType: 'testCodeFailure'
   error: "Cannot read properties of undefined (reading '0')"
   code: 'ERR_TEST_FAILURE'
   name: 'TypeError'
   stack: |-
-    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:640:24)
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:710:24)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: the update is never a force push: a branch that moved meanwhile keeps the builder's commit and the tick fails
-not ok 34 - the update is never a force push: a branch that moved meanwhile keeps the builder's commit and the tick fails
+not ok 36 - the update is never a force push: a branch that moved meanwhile keeps the builder's commit and the tick fails
   ---
-  duration_ms: 167.916148
+  duration_ms: 156.075025
   type: 'test'
-  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:657:1'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:727:1'
   failureType: 'testCodeFailure'
   error: |-
     Expected values to be strictly equal:
@@ -615,68 +657,83 @@ not ok 34 - the update is never a force push: a branch that moved meanwhile keep
   expected: true
   operator: 'strictEqual'
   stack: |-
-    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:663:10)
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:733:10)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: behind main with a conflict: nothing is pushed, the branch is left alone, one comment says so
-not ok 35 - behind main with a conflict: nothing is pushed, the branch is left alone, one comment says so
+not ok 37 - behind main with a conflict: nothing is pushed, the branch is left alone, one comment says so
   ---
-  duration_ms: 142.423193
+  duration_ms: 132.927455
   type: 'test'
-  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:668:1'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:738:1'
   failureType: 'testCodeFailure'
   error: "Cannot read properties of undefined (reading '0')"
   code: 'ERR_TEST_FAILURE'
   name: 'TypeError'
   stack: |-
-    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:673:22)
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:743:22)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
-# Subtest: a protected gate file in the diff is never landed by the bot; one comment per head
-not ok 36 - a protected gate file in the diff is never landed by the bot; one comment per head
+# Subtest: a merge request whose merge of main conflicts is skipped, not waited for: the younger one lands in the same tick, and the conflict is commented once per head
+not ok 38 - a merge request whose merge of main conflicts is skipped, not waited for: the younger one lands in the same tick, and the conflict is commented once per head
   ---
-  duration_ms: 115.652619
+  duration_ms: 216.649411
   type: 'test'
-  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:684:1'
-  failureType: 'testCodeFailure'
-  error: "Cannot read properties of undefined (reading '0')"
-  code: 'ERR_TEST_FAILURE'
-  name: 'TypeError'
-  stack: |-
-    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:693:22)
-    async Test.run (node:internal/test_runner/test:1054:7)
-    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
-  ...
-# Subtest: a title that is not "VTID-nnnnn (<slug>/<lane>): …" is not landed and says why once; a draft is skipped silently
-not ok 37 - a title that is not "VTID-nnnnn (<slug>/<lane>): …" is not landed and says why once; a draft is skipped silently
-  ---
-  duration_ms: 198.787537
-  type: 'test'
-  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:701:1'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:755:1'
   failureType: 'testCodeFailure'
   error: "Cannot read properties of undefined (reading 'map')"
   code: 'ERR_TEST_FAILURE'
   name: 'TypeError'
   stack: |-
-    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:707:27)
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:761:27)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: a protected gate file in the diff is never landed by the bot; one comment per head
+not ok 39 - a protected gate file in the diff is never landed by the bot; one comment per head
+  ---
+  duration_ms: 125.090189
+  type: 'test'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:781:1'
+  failureType: 'testCodeFailure'
+  error: "Cannot read properties of undefined (reading '0')"
+  code: 'ERR_TEST_FAILURE'
+  name: 'TypeError'
+  stack: |-
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:790:22)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: a title that is not "VTID-nnnnn (<slug>/<lane>): …" is not landed and says why once; a draft is skipped silently
+not ok 40 - a title that is not "VTID-nnnnn (<slug>/<lane>): …" is not landed and says why once; a draft is skipped silently
+  ---
+  duration_ms: 182.542225
+  type: 'test'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:798:1'
+  failureType: 'testCodeFailure'
+  error: "Cannot read properties of undefined (reading 'map')"
+  code: 'ERR_TEST_FAILURE'
+  name: 'TypeError'
+  stack: |-
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:804:27)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: --dry-run writes nothing: no merge call, no comment, no push
-not ok 38 - --dry-run writes nothing: no merge call, no comment, no push
+not ok 41 - --dry-run writes nothing: no merge call, no comment, no push
   ---
-  duration_ms: 117.758427
+  duration_ms: 110.074709
   type: 'test'
-  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:715:1'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:812:1'
   failureType: 'testCodeFailure'
   error: "Cannot set properties of undefined (setting 'dryRun')"
   code: 'ERR_TEST_FAILURE'
   name: 'TypeError'
   stack: |-
-    run (file://<scratch>/scripts/eng/gitlab-land.test.mjs:171:33)
-    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:718:20)
+    run (file://<scratch>/scripts/eng/gitlab-land.test.mjs:183:33)
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:815:20)
     Test.runInAsyncScope (node:async_hooks:214:14)
     Test.run (node:internal/test_runner/test:1047:25)
     Test.processPendingSubtests (node:internal/test_runner/test:744:18)
@@ -685,11 +742,11 @@ not ok 38 - --dry-run writes nothing: no merge call, no comment, no push
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: an API error half-way lands nothing: the tick fails, the project is reported, no merge call is made
-not ok 39 - an API error half-way lands nothing: the tick fails, the project is reported, no merge call is made
+not ok 42 - an API error half-way lands nothing: the tick fails, the project is reported, no merge call is made
   ---
-  duration_ms: 115.612955
+  duration_ms: 110.920788
   type: 'test'
-  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:741:1'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:838:1'
   failureType: 'testCodeFailure'
   error: |-
     Expected values to be strictly equal:
@@ -703,16 +760,16 @@ not ok 39 - an API error half-way lands nothing: the tick fails, the project is 
   expected: true
   operator: 'strictEqual'
   stack: |-
-    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:745:10)
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:842:10)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: a git error lands nothing: a merge request whose head ref is missing on the remote fails the tick
-not ok 40 - a git error lands nothing: a merge request whose head ref is missing on the remote fails the tick
+not ok 43 - a git error lands nothing: a merge request whose head ref is missing on the remote fails the tick
   ---
-  duration_ms: 115.378057
+  duration_ms: 108.954115
   type: 'test'
-  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:750:1'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:847:1'
   failureType: 'testCodeFailure'
   error: |-
     Expected values to be strictly equal:
@@ -726,61 +783,61 @@ not ok 40 - a git error lands nothing: a merge request whose head ref is missing
   expected: true
   operator: 'strictEqual'
   stack: |-
-    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:754:10)
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:851:10)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: a head that moved between the list and the fetch is left for the next tick
-not ok 41 - a head that moved between the list and the fetch is left for the next tick
+not ok 44 - a head that moved between the list and the fetch is left for the next tick
   ---
-  duration_ms: 114.033258
+  duration_ms: 110.07953
   type: 'test'
-  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:758:1'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:855:1'
   failureType: 'testCodeFailure'
   error: "Cannot read properties of undefined (reading '0')"
   code: 'ERR_TEST_FAILURE'
   name: 'TypeError'
   stack: |-
-    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:762:22)
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:859:22)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: only projects with landing: true are looked at, and only the default branch main
-not ok 42 - only projects with landing: true are looked at, and only the default branch main
+not ok 45 - only projects with landing: true are looked at, and only the default branch main
   ---
-  duration_ms: 114.39261
+  duration_ms: 107.791037
   type: 'test'
-  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:766:1'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:863:1'
   failureType: 'testCodeFailure'
   error: "Cannot read properties of undefined (reading 'rows')"
   code: 'ERR_TEST_FAILURE'
   name: 'TypeError'
   stack: |-
-    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:771:24)
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:868:24)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: an unknown job status is logged once and the merge request waits
-not ok 43 - an unknown job status is logged once and the merge request waits
+not ok 46 - an unknown job status is logged once and the merge request waits
   ---
-  duration_ms: 117.093589
+  duration_ms: 108.277304
   type: 'test'
-  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:782:1'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:879:1'
   failureType: 'testCodeFailure'
   error: "Cannot read properties of undefined (reading '0')"
   code: 'ERR_TEST_FAILURE'
   name: 'TypeError'
   stack: |-
-    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:787:22)
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:884:22)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: the requests the bot makes are exactly the ones listed here (a new request is a deliberate change)
-not ok 44 - the requests the bot makes are exactly the ones listed here (a new request is a deliberate change)
+not ok 47 - the requests the bot makes are exactly the ones listed here (a new request is a deliberate change)
   ---
-  duration_ms: 114.212943
+  duration_ms: 109.216001
   type: 'test'
-  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:791:1'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:888:1'
   failureType: 'testCodeFailure'
   error: |-
     Expected values to be strictly deep-equal:
@@ -808,16 +865,16 @@ not ok 44 - the requests the bot makes are exactly the ones listed here (a new r
   actual:
   operator: 'deepStrictEqual'
   stack: |-
-    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:794:10)
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:891:10)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: no log line carries the token, also when GitLab echoes it back in an error
-not ok 45 - no log line carries the token, also when GitLab echoes it back in an error
+not ok 48 - no log line carries the token, also when GitLab echoes it back in an error
   ---
-  duration_ms: 121.068573
+  duration_ms: 115.870336
   type: 'test'
-  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:817:1'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:914:1'
   failureType: 'testCodeFailure'
   error: |-
     The expression evaluated to a falsy value:
@@ -830,22 +887,22 @@ not ok 45 - no log line carries the token, also when GitLab echoes it back in an
   actual: false
   operator: '=='
   stack: |-
-    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:821:10)
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:918:10)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: git gets the token through GIT_ASKPASS: the script answers the username and the password, and no git environment value holds the token
-not ok 46 - git gets the token through GIT_ASKPASS: the script answers the username and the password, and no git environment value holds the token
+not ok 49 - git gets the token through GIT_ASKPASS: the script answers the username and the password, and no git environment value holds the token
   ---
-  duration_ms: 111.778839
+  duration_ms: 113.911467
   type: 'test'
-  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:830:1'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:927:1'
   failureType: 'testCodeFailure'
   error: "Cannot read properties of undefined (reading 'gitEnv')"
   code: 'ERR_TEST_FAILURE'
   name: 'TypeError'
   stack: |-
-    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:833:22)
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:930:22)
     Test.runInAsyncScope (node:async_hooks:214:14)
     Test.run (node:internal/test_runner/test:1047:25)
     Test.processPendingSubtests (node:internal/test_runner/test:744:18)
@@ -853,18 +910,33 @@ not ok 46 - git gets the token through GIT_ASKPASS: the script answers the usern
     Test.run (node:internal/test_runner/test:1101:12)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
-# Subtest: the log redacts the token by itself, whatever is put into an entry
-not ok 47 - the log redacts the token by itself, whatever is put into an entry
+# Subtest: every git command the bot runs neutralises a global credential helper, so the token that GIT_ASKPASS supplies can never be stored
+not ok 50 - every git command the bot runs neutralises a global credential helper, so the token that GIT_ASKPASS supplies can never be stored
   ---
-  duration_ms: 111.017124
+  duration_ms: 135.880176
   type: 'test'
-  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:844:1'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:941:1'
+  failureType: 'testCodeFailure'
+  error: "Cannot read properties of undefined (reading '0')"
+  code: 'ERR_TEST_FAILURE'
+  name: 'TypeError'
+  stack: |-
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:951:22)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: the log redacts the token by itself, whatever is put into an entry
+not ok 51 - the log redacts the token by itself, whatever is put into an entry
+  ---
+  duration_ms: 106.859424
+  type: 'test'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:972:1'
   failureType: 'testCodeFailure'
   error: "Cannot read properties of undefined (reading 'log')"
   code: 'ERR_TEST_FAILURE'
   name: 'TypeError'
   stack: |-
-    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:847:7)
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:975:7)
     Test.runInAsyncScope (node:async_hooks:214:14)
     Test.run (node:internal/test_runner/test:1047:25)
     Test.processPendingSubtests (node:internal/test_runner/test:744:18)
@@ -873,18 +945,18 @@ not ok 47 - the log redacts the token by itself, whatever is put into an entry
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: CLI status prints what the bot would do for every open merge request and writes nothing
-not ok 48 - CLI status prints what the bot would do for every open merge request and writes nothing
+not ok 52 - CLI status prints what the bot would do for every open merge request and writes nothing
   ---
-  duration_ms: 199.195948
+  duration_ms: 185.488159
   type: 'test'
-  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:866:1'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:994:1'
   failureType: 'testCodeFailure'
   error: "Cannot read properties of undefined (reading 'then')"
   code: 'ERR_TEST_FAILURE'
   name: 'TypeError'
   stack: |-
-    cli (file://<scratch>/scripts/eng/gitlab-land.test.mjs:863:18)
-    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:869:19)
+    cli (file://<scratch>/scripts/eng/gitlab-land.test.mjs:991:18)
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:997:19)
     Test.runInAsyncScope (node:async_hooks:214:14)
     Test.run (node:internal/test_runner/test:1047:25)
     Test.processPendingSubtests (node:internal/test_runner/test:744:18)
@@ -893,18 +965,18 @@ not ok 48 - CLI status prints what the bot would do for every open merge request
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: CLI run lands one tick's worth and exits 0; merge <project> <iid> acts on that merge request only
-not ok 49 - CLI run lands one tick's worth and exits 0; merge <project> <iid> acts on that merge request only
+not ok 53 - CLI run lands one tick's worth and exits 0; merge <project> <iid> acts on that merge request only
   ---
-  duration_ms: 199.275429
+  duration_ms: 189.365826
   type: 'test'
-  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:877:1'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:1005:1'
   failureType: 'testCodeFailure'
   error: "Cannot read properties of undefined (reading 'then')"
   code: 'ERR_TEST_FAILURE'
   name: 'TypeError'
   stack: |-
-    cli (file://<scratch>/scripts/eng/gitlab-land.test.mjs:863:18)
-    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:879:19)
+    cli (file://<scratch>/scripts/eng/gitlab-land.test.mjs:991:18)
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:1007:19)
     Test.runInAsyncScope (node:async_hooks:214:14)
     Test.run (node:internal/test_runner/test:1047:25)
     Test.processPendingSubtests (node:internal/test_runner/test:744:18)
@@ -913,18 +985,18 @@ not ok 49 - CLI run lands one tick's worth and exits 0; merge <project> <iid> ac
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: CLI exit codes: 1 for a failed tick, an unknown project, an unknown command, a missing option value or an unreadable token file
-not ok 50 - CLI exit codes: 1 for a failed tick, an unknown project, an unknown command, a missing option value or an unreadable token file
+not ok 54 - CLI exit codes: 1 for a failed tick, an unknown project, an unknown command, a missing option value or an unreadable token file
   ---
-  duration_ms: 139.673933
+  duration_ms: 109.504166
   type: 'test'
-  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:889:1'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:1017:1'
   failureType: 'testCodeFailure'
   error: "Cannot read properties of undefined (reading 'then')"
   code: 'ERR_TEST_FAILURE'
   name: 'TypeError'
   stack: |-
-    cli (file://<scratch>/scripts/eng/gitlab-land.test.mjs:863:18)
-    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:891:23)
+    cli (file://<scratch>/scripts/eng/gitlab-land.test.mjs:991:18)
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:1019:23)
     Test.runInAsyncScope (node:async_hooks:214:14)
     Test.run (node:internal/test_runner/test:1047:25)
     Test.processPendingSubtests (node:internal/test_runner/test:744:18)
@@ -933,11 +1005,11 @@ not ok 50 - CLI exit codes: 1 for a failed tick, an unknown project, an unknown 
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: loadProjects reads the group and the projects of gitlab-settings.json
-not ok 51 - loadProjects reads the group and the projects of gitlab-settings.json
+not ok 55 - loadProjects reads the group and the projects of gitlab-settings.json
   ---
-  duration_ms: 0.818232
+  duration_ms: 0.766969
   type: 'test'
-  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:906:1'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:1034:1'
   failureType: 'testCodeFailure'
   error: |-
     Expected values to be strictly deep-equal:
@@ -979,7 +1051,7 @@ not ok 51 - loadProjects reads the group and the projects of gitlab-settings.jso
         1: 'build'
   operator: 'deepStrictEqual'
   stack: |-
-    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:910:10)
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:1038:10)
     Test.runInAsyncScope (node:async_hooks:214:14)
     Test.run (node:internal/test_runner/test:1047:25)
     Test.processPendingSubtests (node:internal/test_runner/test:744:18)
@@ -988,11 +1060,11 @@ not ok 51 - loadProjects reads the group and the projects of gitlab-settings.jso
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: the decision functions are imported from land-guard.mjs and queue.mjs, not copied
-not ok 52 - the decision functions are imported from land-guard.mjs and queue.mjs, not copied
+not ok 56 - the decision functions are imported from land-guard.mjs and queue.mjs, not copied
   ---
-  duration_ms: 0.300744
+  duration_ms: 0.273221
   type: 'test'
-  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:919:1'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:1047:1'
   failureType: 'testCodeFailure'
   error: 'an import from land-guard.mjs'
   code: 'ERR_ASSERTION'
@@ -1001,7 +1073,7 @@ not ok 52 - the decision functions are imported from land-guard.mjs and queue.mj
   actual: ~
   operator: '=='
   stack: |-
-    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:922:10)
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:1050:10)
     Test.runInAsyncScope (node:async_hooks:214:14)
     Test.run (node:internal/test_runner/test:1047:25)
     Test.processPendingSubtests (node:internal/test_runner/test:744:18)
@@ -1010,17 +1082,17 @@ not ok 52 - the decision functions are imported from land-guard.mjs and queue.mj
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: vitana-land.service: one tick under flock, niced and limited, with the token in a root-only file and not in the unit
-not ok 53 - vitana-land.service: one tick under flock, niced and limited, with the token in a root-only file and not in the unit
+not ok 57 - vitana-land.service: one tick under flock, niced and limited, with the token in a root-only file and not in the unit
   ---
-  duration_ms: 0.147698
+  duration_ms: 0.143169
   type: 'test'
-  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:933:1'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:1061:1'
   failureType: 'testCodeFailure'
   error: "ENOENT: no such file or directory, open '<scratch>/infra/gitlab-engineering/host/units/vitana-land.service'"
   code: 'ENOENT'
   stack: |-
     Object.readFileSync (node:fs:440:20)
-    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:934:18)
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:1062:18)
     Test.runInAsyncScope (node:async_hooks:214:14)
     Test.run (node:internal/test_runner/test:1047:25)
     Test.processPendingSubtests (node:internal/test_runner/test:744:18)
@@ -1029,17 +1101,17 @@ not ok 53 - vitana-land.service: one tick under flock, niced and limited, with t
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: vitana-land.timer: every minute, for vitana-land.service
-not ok 54 - vitana-land.timer: every minute, for vitana-land.service
+not ok 58 - vitana-land.timer: every minute, for vitana-land.service
   ---
-  duration_ms: 0.077071
+  duration_ms: 0.075157
   type: 'test'
-  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:947:1'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:1075:1'
   failureType: 'testCodeFailure'
   error: "ENOENT: no such file or directory, open '<scratch>/infra/gitlab-engineering/host/units/vitana-land.timer'"
   code: 'ENOENT'
   stack: |-
     Object.readFileSync (node:fs:440:20)
-    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:948:20)
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:1076:20)
     Test.runInAsyncScope (node:async_hooks:214:14)
     Test.run (node:internal/test_runner/test:1047:25)
     Test.processPendingSubtests (node:internal/test_runner/test:744:18)
@@ -1047,12 +1119,12 @@ not ok 54 - vitana-land.timer: every minute, for vitana-land.service
     Test.run (node:internal/test_runner/test:1101:12)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
-1..54
-# tests 54
+1..58
+# tests 58
 # suites 0
 # pass 0
-# fail 54
+# fail 58
 # cancelled 0
 # skipped 0
 # todo 0
-# duration_ms 6104.488332
+# duration_ms 6399.436973
