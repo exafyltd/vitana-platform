@@ -1,6 +1,6 @@
-# $ cd services/gateway && npm run test:roles   (CLAUDE.md 42h; kiro/eng-gitlab-m2/scm-webhook working tree on base 945755f084, node v22.23.4)
-# Expected: exactly one failure, the atlas drift guard (test/vtid-04560-role-separation-regression.test.ts:524), because no domain of services/gateway/src/orb/developer/domain-atlas.ts claims routes/internal-gitlab-webhook.ts yet.
-# domain-atlas.ts is outside this lane's paths; lane agentic-delivery/prerequisites (PR #4690, VTID-05551, open) adds /^internal-gitlab-webhook$/.
+# $ cd services/gateway && npm run test:roles   (CLAUDE.md 42h; kiro/eng-gitlab-m2/scm-webhook after origin/main 51c2bead07 was merged in (merge commit 6f32fdf95d), node v22.23.4)
+# 51c2bead07 is the merge of lane agentic-delivery/prerequisites (PR #4690, VTID-05551, merged 2026-11-05T17:40:30Z); its domain-atlas.ts change adds /^internal-gitlab-webhook$/.
+# Result: 105/105 pass, the atlas drift guard "every gateway route file is claimed by at least one domain" included. Before #4690 landed the same suite was 104/105, that guard red (commands.log step 4).
 
 > @vitana/gateway@1.0.1 test:roles
 > jest test/vtid-04560-role-separation-regression.test.ts
@@ -38,44 +38,44 @@ ts-jest[config] (WARN)
 
       at generateChimePcm (src/routes/orb-live.ts:2459:11)
 
-FAIL test/vtid-04560-role-separation-regression.test.ts (6.76 s)
+PASS test/vtid-04560-role-separation-regression.test.ts (9.54 s)
   resolveAssistantProfile — the screen decides, the token verifies
     ✓ work surface command-hub serves role /command-hub/autopilot/live/ from the first byte (2 ms)
-    ✓ work surface admin serves role /admin/dashboard from the first byte
+    ✓ work surface admin serves role /admin/dashboard from the first byte (1 ms)
     ✓ work surface backoffice serves role /backoffice/dashboard from the first byte
     ✓ work surface commerce serves role /commerce/org from the first byte (1 ms)
     ✓ the device never changes the surface: a phone on the Command Hub is still the Command Hub
-    ✓ community screens serve the declared member role; a work role there is narrowed to community (1 ms)
+    ✓ community screens serve the declared member role; a work role there is narrowed to community
     ✓ a declared surface wins over the route (the host knows what it renders)
-    ✓ an unknown declared surface falls back to the route, never to a crash or undefined (1 ms)
-    ✓ Command Hub without an exafy_admin claim is unverified — still the developer persona, never community
+    ✓ an unknown declared surface falls back to the route, never to a crash or undefined
+    ✓ Command Hub without an exafy_admin claim is unverified — still the developer persona, never community (1 ms)
     ✓ anonymous sessions stay on the member surface with no role
     ✓ clampRoleToProfile: stored roles never leak across surfaces (1 ms)
     ✓ session helpers read the profile; sessions without one keep the legacy derivation
   greeting ladder — a work surface never reaches a member rung
     ✓ developer on the Command Hub opens with work_surface_open — normal ladder (context resolved) (2 ms)
-    ✓ developer on the Command Hub opens with work_surface_open — safe-fast ladder (context NOT resolved — the 300 ms gate case) (1 ms)
-    ✓ admin surface opens with its own role opener (3 ms)
+    ✓ developer on the Command Hub opens with work_surface_open — safe-fast ladder (context NOT resolved — the 300 ms gate case) (5 ms)
+    ✓ admin surface opens with its own role opener (1 ms)
     ✓ backoffice surface opens with its own role opener (1 ms)
-    ✓ commerce surface opens with its own role opener (1 ms)
-    ✓ no facts loaded → the opener offers to check, it does not invent
+    ✓ commerce surface opens with its own role opener
+    ✓ no facts loaded → the opener offers to check, it does not invent (1 ms)
     ✓ VTID-04586: a work surface skips the member payload gathers — normal ladder (context resolved)
     ✓ VTID-04586: a work surface skips the member payload gathers — safe-fast ladder (context NOT resolved — the 300 ms gate case)
-    ✓ VTID-04586: the member surface still gathers — normal ladder (context resolved)
+    ✓ VTID-04586: the member surface still gathers — normal ladder (context resolved) (1 ms)
     ✓ VTID-04586: the member surface still gathers — safe-fast ladder (context NOT resolved — the 300 ms gate case)
     ✓ VTID-04586: the opener speaks from the loaded facts and calls no tool first
     ✓ VTID-04586: the developer conduct rule no longer demands a tool call for facts the snapshot covers (1 ms)
     ✓ a genuine transport reconnect stays silent on a work surface too
-    ✓ the member surface is untouched: no surface field, or vitanaland, never takes the work rung
-    ✓ workSurfaceGreetingFields feeds the rung from the session; member sessions add nothing (1 ms)
+    ✓ the member surface is untouched: no surface field, or vitanaland, never takes the work rung (1 ms)
+    ✓ workSurfaceGreetingFields feeds the rung from the session; member sessions add nothing
   system instruction — each surface carries only its own Vitana
-    ✓ Command Hub: developer supervisor conduct, the work context, and no member content even when it is concatenated in (12 ms)
+    ✓ Command Hub: developer supervisor conduct, the work context, and no member content even when it is concatenated in (17 ms)
     ✓ Command Hub with no work context carries no bootstrap at all (never the member brain) (1 ms)
     ✓ admin: work conduct block, no member content (2 ms)
     ✓ backoffice: work conduct block, no member content (1 ms)
-    ✓ commerce: work conduct block, no member content (5 ms)
-    ✓ member surface keeps the member Vitana exactly as before (2 ms)
-    ✓ every surface keeps the stop-and-farewell rule (2 ms)
+    ✓ commerce: work conduct block, no member content (1 ms)
+    ✓ member surface keeps the member Vitana exactly as before (1 ms)
+    ✓ every surface keeps the stop-and-farewell rule (5 ms)
     ✓ extractWorkSurfaceContext keeps only the marked section
   text path — engineering context only for the console and developer/admin callers
     ✓ the Operator Console itself (no custom instruction) keeps it
@@ -83,62 +83,62 @@ FAIL test/vtid-04560-role-separation-regression.test.ts (6.76 s)
     ✓ admin caller with a custom instruction keeps it
     ✓ infra caller with a custom instruction keeps it
     ✓ exafy_admin caller with a custom instruction keeps it
-    ✓ member caller community never receives it
+    ✓ member caller community never receives it (1 ms)
     ✓ member caller patient never receives it
     ✓ member caller professional never receives it
     ✓ member caller staff never receives it
     ✓ member caller undefined never receives it
   source contracts — the wiring cannot silently disappear
-    ✓ the controller resolves the profile from the declared surface/view_role and stores it on the session
+    ✓ the controller resolves the profile from the declared surface/view_role and stores it on the session (1 ms)
     ✓ work surfaces skip the member brain and the member wake-brief
-    ✓ the old route override and phone-means-community rule are gone (1 ms)
-    ✓ the setup envelope reads role, surface and tools from the profile (1 ms)
-    ✓ every greeting context carries the work-surface fields (1 ms)
-    ✓ the Nova prewarm resolves the same profile and member role as the session start
+    ✓ the old route override and phone-means-community rule are gone
+    ✓ the setup envelope reads role, surface and tools from the profile (2 ms)
+    ✓ every greeting context carries the work-surface fields
+    ✓ the Nova prewarm resolves the same profile and member role as the session start (1 ms)
     ✓ the widget declares surface + view_role and restarts on a role switch (1 ms)
     ✓ the Command Hub declares the developer surface (1 ms)
   VTID-04561 role registry — one declarative answer per role
     ✓ every Vitana role has an entry
     ✓ member-plane roles are served on the member surface by the member ladder; work roles on their surface (1 ms)
     ✓ privileged voice tools follow the registry, never a member role
-    ✓ the profile persona comes from the registry (1 ms)
-    ✓ the tool catalog has no hard-coded privileged-role list left (1 ms)
+    ✓ the profile persona comes from the registry
+    ✓ the tool catalog has no hard-coded privileged-role list left
   VTID-04561 one role truth — both switchers write both tables
     ✓ set_role_preference (community app) also writes user_active_roles
     ✓ me_set_active_role (Command Hub) also writes role_preferences
     ✓ the Command Hub switches into the community app of its own environment (8 ms)
   VTID-04562 domain atlas — a map that cannot silently fall behind the code
-    ✕ every gateway route file is claimed by at least one domain (drift guard) (8 ms)
+    ✓ every gateway route file is claimed by at least one domain (drift guard) (6 ms)
     ✓ keys are unique and every domain names code, tables and docs or flags (1 ms)
-    ✓ the developer's words find the right domain (1 ms)
-    ✓ the prompt index is one line per domain and names the lookup tool
+    ✓ the developer's words find the right domain
+    ✓ the prompt index is one line per domain and names the lookup tool (1 ms)
   VTID-04562 live system snapshot — facts with a timestamp, never a throw
-    ✓ critical facts lead the highlights (kill switch, provider outage, error spike) (3 ms)
-    ✓ a clean system says so instead of inventing a problem (1 ms)
-    ✓ a failed source renders as unavailable, the rest still renders
+    ✓ critical facts lead the highlights (kill switch, provider outage, error spike) (1 ms)
+    ✓ a clean system says so instead of inventing a problem
+    ✓ a failed source renders as unavailable, the rest still renders (1 ms)
     ✓ snapshots are cached and concurrent builds coalesce into one
   VTID-04562 developer knowledge loader — fails open, never member memory
     ✓ snapshot, atlas and engineering memory all reach the session (1 ms)
-    ✓ failing sources degrade to null, the atlas stays
+    ✓ failing sources degrade to null, the atlas stays (1 ms)
     ✓ the Command Hub loader is registered and the member surface gets nothing (2 ms)
-    ✓ the developer loader reads dev_agent_memory, never the member memory tables (1 ms)
+    ✓ the developer loader reads dev_agent_memory, never the member memory tables (3 ms)
   VTID-04562 developer knowledge tools
-    ✓ both tools are declared for developers and registered with a handler (3 ms)
+    ✓ both tools are declared for developers and registered with a handler (6 ms)
     ✓ a community caller is refused
-    ✓ dev_domain_atlas answers a topic with code, tables and docs
-    ✓ the developer conduct block names both tools (1 ms)
+    ✓ dev_domain_atlas answers a topic with code, tables and docs (1 ms)
+    ✓ the developer conduct block names both tools
   VTID-04562 text path — the tool-result turn is gated like the main turn
     ✓ sendToolResultsToVertex only loads the pack for engineering callers (1 ms)
   VTID-04563 deep dive — read-only tools with guard rails
-    ✓ the probe only GETs /alive and /api/v1/* on the two known hosts
+    ✓ the probe only GETs /alive and /api/v1/* on the two known hosts (1 ms)
     ✓ file windows are numbered and bounded (1 ms)
     ✓ a screen resolves by id, route or title to its App.tsx mount
-    ✓ the executor routes every tool and never throws (3 ms)
+    ✓ the executor routes every tool and never throws (4 ms)
   VTID-04563 deep dive — only developers, on the planner stage, with telemetry
     ✓ member and admin-surface callers are refused before any model call (1 ms)
-    ✓ a developer question runs bounded on the planner stage and reports findings with telemetry (11 ms)
-    ✓ a loop failure is reported as failed, never as findings (1 ms)
-    ✓ the target is registered for the Command Hub only, read tier
+    ✓ a developer question runs bounded on the planner stage and reports findings with telemetry (9 ms)
+    ✓ a loop failure is reported as failed, never as findings
+    ✓ the target is registered for the Command Hub only, read tier (1 ms)
     ✓ the Command Hub catalog declares dev_deep_dive; the member and admin catalogs never do (1 ms)
     ✓ a delegation caller carries the served role from the profile
     ✓ orb-live dispatches dev_deep_dive to the async runner (3 ms)
@@ -147,9 +147,9 @@ FAIL test/vtid-04560-role-separation-regression.test.ts (6.76 s)
     ✓ engineering callers get the atlas in the prompt; the snapshot stays one tool call away
     ✓ the console deep dive requires the verified caller on the thread (1 ms)
   VTID-04565 developer-assistant evaluation set
-    ✓ 60+ questions, every domain covered, every expected tool declared (4 ms)
-    ✓ the atlas routes at least 90% of the questions to the right domain (2 ms)
-    ✓ the live eval script refuses any host but staging and uses the machine credential
+    ✓ 60+ questions, every domain covered, every expected tool declared (5 ms)
+    ✓ the atlas routes at least 90% of the questions to the right domain (1 ms)
+    ✓ the live eval script refuses any host but staging and uses the machine credential (2 ms)
   VTID-04565 telemetry — which Vitana served, and how deep dives went
     ✓ profiles are counted per surface and resolution (1 ms)
     ✓ the snapshot reports them and reads them in its one events query
@@ -165,31 +165,9 @@ FAIL test/vtid-04560-role-separation-regression.test.ts (6.76 s)
   VTID-04656 the live eval sends thread ids the chat route accepts
     ✓ the eval script sends a UUID, which is what the route validates
 
-  ● VTID-04562 domain atlas — a map that cannot silently fall behind the code › every gateway route file is claimed by at least one domain (drift guard)
-
-    expect(received).toEqual(expected) // deep equality
-
-    - Expected  - 1
-    + Received  + 3
-
-    - Array []
-    + Array [
-    +   "internal-gitlab-webhook.ts",
-    + ]
-
-      526 |     expect(files.length).toBeGreaterThan(100);
-      527 |     const unclaimed = files.filter((f) => domainsForRoute(f).length === 0);
-    > 528 |     expect(unclaimed).toEqual([]);
-          |                       ^
-      529 |   });
-      530 |
-      531 |   test('keys are unique and every domain names code, tables and docs or flags', () => {
-
-      at Object.<anonymous> (test/vtid-04560-role-separation-regression.test.ts:528:23)
-
-Test Suites: 1 failed, 1 total
-Tests:       1 failed, 104 passed, 105 total
+Test Suites: 1 passed, 1 total
+Tests:       105 passed, 105 total
 Snapshots:   0 total
-Time:        6.942 s
+Time:        9.728 s
 Ran all test suites matching /test\/vtid-04560-role-separation-regression.test.ts/i.
 Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

@@ -157,16 +157,19 @@ Red on base (outputs/red-on-base.txt, base 945755f084, no-behaviour stubs outsid
 that import a lane module cannot load and staging-wiring fails 17 of 18; run B, with stubs, 108 tests: 106 fail, 2 pass (the
 two guards that are true on base: no lifecycle rule lists `scm.gitlab.*`, production workflow not wired); run C, tsc exit 2
 with 22 errors without the five literals.
-Green (outputs/green.txt): 108 tests, 108 pass (route 35, mapper 42, dedupe 9, oasis-write 4, staging-wiring 18).
+Green (outputs/green.txt): 108 tests, 108 pass (route 35, mapper 42, dedupe 9, oasis-write 4, staging-wiring 18), on the
+merge of origin/main 51c2bead07 into this branch (merge commit 6f32fdf95d), as before the merge on base.
 Typecheck exit 0; build exit 0; `npm run test:operator` 71/71 (CLAUDE.md 42e); workflow suites 102/102 suites, 1370 tests;
 other suites that read index.ts or cicd.ts or walk the routes 59 suites, 1162 tests, all pass; whole gateway suite 29,267
-tests: 29,204 pass, 3 fail, 54 skipped (outputs/full-suite.txt: the atlas red below and two sandbox-environment failures
-that fail the same way on base).
-Known red: `npm run test:roles` (CLAUDE.md 42h) is 104/105: the atlas drift guard "every gateway route file is claimed by at
-least one domain" (test/vtid-04560-role-separation-regression.test.ts:524) fails for the new routes/internal-gitlab-webhook.ts
-because no domain of services/gateway/src/orb/developer/domain-atlas.ts claims it yet. That file is outside this lane's
-paths; lane agentic-delivery/prerequisites (PR #4690, VTID-05551, open) adds `/^internal-gitlab-webhook$/`. Not worked
-around: this lane stays `executing` until that lands and this branch takes `main`.
+tests: 29,204 pass, 3 fail, 54 skipped (outputs/full-suite.txt, run before #4690 landed; the 3 failures: the atlas guard,
+green since #4690 landed (below), and two sandbox-environment failures that fail the same way on base).
+test:roles green: `npm run test:roles` (CLAUDE.md 42h) is 105/105 (outputs/test-roles.txt), the atlas drift guard "every
+gateway route file is claimed by at least one domain" (test/vtid-04560-role-separation-regression.test.ts:524) included.
+Before, it was 104/105 with that guard red for the new routes/internal-gitlab-webhook.ts, because no domain of
+services/gateway/src/orb/developer/domain-atlas.ts claimed it (that file is outside this lane's paths). Lane
+agentic-delivery/prerequisites (PR #4690, VTID-05551) added `/^internal-gitlab-webhook$/` and landed on main as
+51c2bead07b9d2091be0fb20e0584a7cb16d5fb4 (2026-11-05T17:40:30Z); this branch took main in merge commit 6f32fdf95d and the
+suite was re-run there (commands.log step 15). Nothing was worked around.
 
 Decisions taken (inside the plan, the conservative option each time):
 1. An unsigned request is refused 401 before the key is read, so the STAGING-VERIFY probe has one answer whatever the key
@@ -191,4 +194,5 @@ Decisions taken (inside the plan, the conservative option each time):
    deleted.
 9. staging-tests.json also lists `npm run test:roles`, so STAGING-VERIFY proves the atlas claim on the merge commit.
 10. Red on base was run on 945755f084, the branch's merge base; origin/main 29b639da4b adds only VTID-05529, which touches
-    no file these tests read or import. `main` is not merged into this branch (the driver brings it up to date before review).
+    no file these tests read or import. `main` was merged into this branch only after #4690 landed (merge commit 6f32fdf95d,
+    with origin/main 51c2bead07); the lane suites and test:roles were re-run on that merge (commands.log step 15).

@@ -1,5 +1,6 @@
-# VTID-05541 green: the five new test files on kiro/eng-gitlab-m2/scm-webhook (working tree on base 945755f084), node v22.23.4, jest 29.7.0
+# VTID-05541 green: the five new test files on kiro/eng-gitlab-m2/scm-webhook after origin/main 51c2bead07 (#4690 landed) was merged in (merge commit 6f32fdf95d), node v22.23.4, jest 29.7.0
 # $ cd services/gateway && npx jest --ci test/routes/internal-gitlab-webhook.test.ts test/gitlab-events
+# Before the merge (working tree on base 945755f084) the same 108 tests passed 108/108 (commands.log step 2).
 
 - services/gateway/test/routes/internal-gitlab-webhook.test.ts: tests 35, pass 35, fail 0
 - services/gateway/test/gitlab-events/mapper.test.ts: tests 42, pass 42, fail 0

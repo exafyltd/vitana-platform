@@ -1,6 +1,7 @@
 # VTID-05541 commands (2026-11-05, Linux, node v22.23.4, jest 29.7.0, tsc 5.9.3; seat exafy, builder session kiro-exafy-202611050535-c34d; driver kiro-exafy-202611041929-802c)
 base: 945755f084 (origin/main when the branch was cut; the merge base of the PR). Worktree /projects/sandbox/.rv/scm2, branch kiro/eng-gitlab-m2/scm-webhook.
-origin/main is now 29b639da4b (one merge, VTID-05529, no file these tests read or import); main is not merged into this branch here.
+origin/main was 29b639da4b during steps 1-14 (one merge, VTID-05529, no file these tests read or import); main was not merged then.
+After lane prerequisites (#4690) landed, origin/main 51c2bead07 was merged into this branch (merge commit 6f32fdf95d) and the lane suites and test:roles were re-run on it (step 15).
 This is the resumed run of the builder: the first run stopped before its first commit. Every check below was re-run in this session on the final files.
 Nothing was written to a live system: no AWS, Supabase, gateway or GitLab call, no workflow dispatch; the curl proof runs on 127.0.0.1 with a local OASIS sink.
 CI runs the gateway Jest suite on Node 20.x (CICDL-GATEWAY-CI.yml:25, TEST-SUITE.yml); these runs are Node 22.
@@ -24,6 +25,7 @@ $ cd <scratch>/services/gateway && npx tsc --noEmit    # run C: the lane's real 
 # 2. Green. Output: outputs/green.txt
 $ cd services/gateway && npx jest --ci test/routes/internal-gitlab-webhook.test.ts test/gitlab-events
   suites 5, tests 108, pass 108, fail 0 (route 35, mapper 42, dedupe 9, oasis-write 4, staging-wiring 18)
+  re-run after the main merge (step 15): the same 108 tests, 108 pass; outputs/green.txt now holds that run
 
 # 3. Typecheck and build. Outputs: outputs/typecheck.txt, outputs/build.txt
 $ npm run typecheck      exit 0 (tsc --noEmit, 49 s)
@@ -34,6 +36,7 @@ $ npm run test:operator  tests 71, pass 71, fail 0 (CLAUDE.md 42e)
 $ npm run test:roles     tests 105, pass 104, fail 1 (CLAUDE.md 42h): the known atlas drift guard,
   test/vtid-04560-role-separation-regression.test.ts:524, Received ["internal-gitlab-webhook.ts"]. The claim is added by
   agentic-delivery/prerequisites (PR #4690, VTID-05551, open; its domain-atlas.ts diff adds /^internal-gitlab-webhook$/). Not worked around.
+  re-run after #4690 landed and main was merged (step 15): tests 105, pass 105, fail 0; outputs/test-roles.txt now holds that run
 
 # 5. Every gateway suite that reads the staging deploy workflow. Output: outputs/workflow-suites.txt
 $ npx jest --ci $(grep -rl AWS-STAGE-DEPLOY-GATEWAY.yml test | sort)
@@ -93,3 +96,18 @@ $ node scripts/ci/validate-pr-locally.cjs --title "<PR title>" --body-file <PR b
   APPROVED (profile gateway_backend; 30 in-remit files match; 3 not judged: the workflow, the lane file, the script; Acceptance mapping OK;
   CSP scan clean; Route Mount Evidence Gate: route added, evidence present; OASIS_IMPACT=yes with OASIS_PROOF)
 This file is then committed once more (the commit after the lane commit), and preflight is run again on that head before the push.
+
+# 15. After lane prerequisites (#4690) landed: main merged, checks re-run (2026-11-05, builder session kiro-exafy-202611050535-c34d)
+#4690 (agentic-delivery/prerequisites, VTID-05551) merged 2026-11-05T17:40:30Z as 51c2bead07b9d2091be0fb20e0584a7cb16d5fb4; its domain-atlas.ts change adds /^internal-gitlab-webhook$/.
+$ git -C /projects/sandbox/.rv/scm2 fetch origin
+  local branch = origin/kiro/eng-gitlab-m2/scm-webhook = 0100804f9f; origin/main = 51c2bead07
+$ git merge --no-ff --no-commit origin/main, then git commit -m "Merge origin/main into kiro/eng-gitlab-m2/scm-webhook (dependency landed)" (Collab-Session and Collab-Lane trailers)
+  merge commit 6f32fdf95d (parents 0100804f9f, 51c2bead07); no conflict. AWS-STAGE-DEPLOY-GATEWAY.yml auto-merged: main's one-line change
+  (PM_AGENT_ENABLED in the roll step, 0759ee5294, VTID-05421) touches no line of this lane's step; the lines acceptance.md cites are unchanged.
+$ node scripts/collab/queue.mjs validate --repo /projects/sandbox/.rv/scm2 --base origin/main --head HEAD --branch kiro/eng-gitlab-m2/scm-webhook    exit 0
+$ node scripts/collab/queue.mjs scope-check (same arguments)    exit 0: every change is inside the lane's paths
+$ cd services/gateway && npm run test:roles    (output: outputs/test-roles.txt)
+  tests 105, pass 105, fail 0 (CLAUDE.md 42h); the atlas drift guard (test/vtid-04560-role-separation-regression.test.ts:524) passes
+$ npx jest --ci test/routes/internal-gitlab-webhook.test.ts test/gitlab-events    (output: outputs/green.txt)
+  suites 5, tests 108, pass 108, fail 0 (route 35, mapper 42, dedupe 9, oasis-write 4, staging-wiring 18)
+Then this evidence commit, the lane commit (executing → in-review), preflight on that head, and the push.
