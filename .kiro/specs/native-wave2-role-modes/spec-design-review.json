@@ -1,0 +1,24 @@
+{
+  "verdict": "APPROVED",
+  "findings": [
+    {
+      "severity": "NIT",
+      "where": "design.md §2, requirements.md Out of scope, plan.md",
+      "problem": "Spec cites 93 /admin/* rows (verified correct against the ledger), but the program plan NATIVE-APP-PLAN.md §2 decision 3 says 'Admin (96 consoles)'. The discrepancy is in the program plan, not this spec.",
+      "fix": "Optional: add a half-sentence in design.md §2 noting the program plan's '96 consoles' predates the current ledger, which has 93 /admin/* rows."
+    },
+    {
+      "severity": "NIT",
+      "where": "requirements.md R0.5, lanes/business.md",
+      "problem": "Business web sources described as 'under src/pages/ commerce screens', less precise than the exact folders named for patient/professional/staff. Commerce pages are spread across src/pages/Commerce*.tsx rather than one folder.",
+      "fix": "Optional: replace with 'the commerce screens behind the 11 enumerated /commerce* routes in App.tsx' to match the other lanes' precision. Authoritative scope (11 enumerated ledger rows + the design.md §1 route-file plan) is already exact."
+    },
+    {
+      "severity": "NIT",
+      "where": "tasks.md, requirements.md R5.3",
+      "problem": "Device-runtime G1 task is task 6 in the three 7-task lanes and task 7 in the 8-task business lane (extra core-extraction task 1). Consistent per lane but a skimming reader might expect one number.",
+      "fix": "Optional: no change required; lane acceptance blocks already reference the correct per-lane task number."
+    }
+  ],
+  "reviewDoc": "c:\\Users\\dstev\\vitana-platform-1\\.worktrees\\rm2\\.kiro\\specs\\native-wave2-role-modes\\spec-design-review.md"
+}
