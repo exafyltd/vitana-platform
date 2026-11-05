@@ -4,7 +4,7 @@ state: ready
 next_actor: kiro
 depends_on: []
 executor: kiro
-seat: exafy
+seat: exafyltd
 reviewer_seat: agent:vitana-lane-reviewer
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 repos: [exafyltd/vitana-platform]
@@ -19,7 +19,7 @@ paths:
   - scripts/aws/iam/gitlab-oidc-*.json
   - scripts/aws/setup-gitlab-oidc.sh
   - docs/validation/**
-updated: 2026-11-05T00:25Z
+updated: 2026-11-05T02:59Z
 vtid: VTID-05546
 ---
 # Lane: deploy-path (repo vitana-platform)
@@ -31,3 +31,7 @@ Lane created with the plan.
 
 ### 2026-11-05T00:25Z · ci-plan-spar · ready (VTID allocated)
 VTID-05546 allocated after policy approval (converged-auto-v1).
+### 2026-11-05T02:53Z · pm-agent · update
+reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
+### 2026-11-05T02:59Z · pm-agent · update
+reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
