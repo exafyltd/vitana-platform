@@ -1,0 +1,6 @@
+# VTID-05540 sample refusal (SIMULATION: a fake GitLab with a scripted merge bot, a fake fleet and a fake aws runner on a virtual clock (scripts/eng/rehearse.test.mjs, section 9)): the role of the GitLab machine may not read the scaling activities of the fleet group.
+# $ node scripts/eng/rehearse.mjs --project rehearsal --agents 12      (stdout; exit code 2, nothing was written: no GitLab write, no merge request)
+# exit code of this simulated run: 2; non-GET calls to GitLab: 0
+
+rehearse: refusing to start; nothing was written:
+  - the role of the GitLab machine may not read the fleet group vitana-eng-fleet: autoscaling:DescribeScalingActivities is denied (An error occurred (AccessDenied) when calling the DescribeScalingActivities operation: User: arn:aws:sts::123456789012:assumed-role/vitana-eng-gitlab/i-0abc is not authorized to perform: autoscaling:D); it needs both autoscaling:DescribeAutoScalingGroups and autoscaling:DescribeScalingActivities (infra/gitlab-engineering/terraform/settings.tf grants them: apply that Terraform change, then run again)

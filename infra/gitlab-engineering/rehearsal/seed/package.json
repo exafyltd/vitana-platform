@@ -1,0 +1,11 @@
+{
+  "name": "vitana-rehearsal-seed",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Scratch repository of the GitLab rehearsal (plan eng-gitlab-m2, section 3.8). No dependencies: npm test needs no install.",
+  "type": "module",
+  "scripts": {
+    "test": "node scripts/ci-test.mjs"
+  },
+  "engines": { "node": ">=20" }
+}
