@@ -12,7 +12,7 @@ AC-1: Each of the eight target lane files changes only `seat: exafyltd` → `sea
 same: `state`, `next_actor`, `depends_on`, `executor`, `reviewer_seat`, `paths`, `vtid`, `updated`, `claimed_by` and
 every log line (`git diff --numstat` is `1 1` per file; the head bytes equal the base bytes with only that line changed).
 TEST: `bash docs/validation/VTID-05554/outputs/target-diff-check.sh origin/main HEAD` → `outputs/target-diff-check.txt`
-(PENDING-C2).
+(8 pass, 0 fail, at `d2c5be757e`).
 
 AC-2: Collab handoff passes for this PR through the `lane_admin` path. The commit with `Collab-Lane:
 agentic-delivery/reseat` edits eight other lanes' files; `validateRange` lets that through only because
@@ -20,13 +20,13 @@ agentic-delivery/reseat` edits eight other lanes' files; `validateRange` lets th
 `lane_admin: true`, `executor: kiro`, `reviewer_seat: agent:vitana-lane-reviewer`) and its `paths` list each target
 (`queue.mjs:873`).
 TEST: `node scripts/collab/queue.mjs validate --repo . --base origin/main --head HEAD --branch kiro/agentic-delivery/reseat`
-→ `outputs/validate.txt` (PENDING-C2).
+→ `outputs/validate.txt` (✅ 9 handoff/lane files changed, all valid, exit 0, at `d2c5be757e`).
 
 AC-3: Lane scope passes for lane `agentic-delivery/reseat`: the reseat lane file is edited only by this seat `exafy`
 session, its permission fields (`executor`, `seat`, `reviewer_seat`, `paths`) and `lane_admin` are unchanged, and every
 changed file is inside the lane's spec folder or its evidence folder.
 TEST: `node scripts/collab/queue.mjs scope-check --repo . --base origin/main --head HEAD --branch kiro/agentic-delivery/reseat`
-→ `outputs/scope-check.txt` (PENDING-C2).
+→ `outputs/scope-check.txt` (✅ every change inside its paths, exit 0, at `d2c5be757e`).
 
 AC-4: Negative proof: the same seat edit from a lane without `lane_admin` is refused. N1: lane reseat with `lane_admin`
 removed from its trusted base makes the eight edits → Collab handoff refuses all eight (exit 1). N2: lane prerequisites
@@ -40,14 +40,16 @@ AC-5: Positive proof: this PR's tree squashed onto origin/main (as GitHub would)
 builder commits `75f26daa17` and `18a10349d8` (session `kiro-exafy-202611050324-2956`, seat `exafy`). Control: the
 same trial merge of today's origin/main (no reseat) fails Lane scope on exactly those two commits.
 TEST: `bash docs/validation/VTID-05554/outputs/positive-proof.sh control …` → `outputs/red-on-base.txt` (❌ 2 problems,
-exit 1); `positive-proof.sh lane … <this PR's head>` → `outputs/green.txt` (PENDING-C2).
+exit 1); `positive-proof.sh lane … d2c5be757e` → `outputs/green.txt` (squash `6281b83b20` of this PR onto origin/main,
+trial merge `24418b2897`: Lane scope ✅ exit 0 for `75f26daa17` and `18a10349d8`; Collab handoff ✅ exit 0).
 
 AC-6: The collab enforcement suite stays green (this lane changes no code).
 TEST: `node --test scripts/collab/queue.test.mjs` → `outputs/queue.test.txt` (78 tests, 78 pass, 0 fail).
 
 AC-7: Preflight (every CI governance check of the PR) passes on the lane head.
 TEST: `node scripts/collab/preflight.mjs --repo . --base origin/main --head HEAD --branch kiro/agentic-delivery/reseat
---title "<PR title>"` → `outputs/preflight.txt` (PENDING-C2).
+--title "<PR title>"` → `outputs/preflight.txt` (8 of 8 PASS, exit 0, at `d2c5be757e`; re-run on every later head
+before its push).
 
 AC-8: The open PRs that touch the eight target lane files are listed (task S1): #4689 (`github-bridge.md`) and #4690
 (`prerequisites.md`), both `in-review` on their branches with seat `exafy` there and a merge-base where the seat was
@@ -83,13 +85,14 @@ Contract:
 - Seat names: `exafy` is a seat of `docs/programs/areas.yaml:18` (checked by `validateRegistry` in Collab handoff).
 
 Staging proof: not verified on staging: this PR deploys nothing (lane files and evidence only;
-`node scripts/ci/staging-verify/run.mjs check-pr` → `outputs/check-pr.txt`, PENDING-C2), so there is no
+`node scripts/ci/staging-verify/run.mjs check-pr` → `outputs/check-pr.txt`: "PR touches no gateway deploy path —
+nothing deploys, no staging suite needed", exit 0), so there is no
 `staging-tests.json`. Covered by AC-2 to AC-5 (Collab handoff and Lane scope on this PR, the negative proof and the
 trial merge into #4690's head).
 
 Red on base: no new test; the lane changes no code. Its base-versus-lane pair is the trial merge into #4690: with
 today's origin/main (no reseat) Lane scope fails, 2 problems, exit 1 (`outputs/red-on-base.txt`).
-Green: with this lane, the same trial merge passes Lane scope (`outputs/green.txt`, PENDING-C2); `queue.test.mjs` 78/78.
+Green: with this lane, the same trial merge passes Lane scope, exit 0 (`outputs/green.txt`); `queue.test.mjs` 78/78.
 
 Decisions taken:
 1. `scope.json` uses `kind: feature`, the builder protocol's template (the change is Tooling/docs; `kind` only gates
