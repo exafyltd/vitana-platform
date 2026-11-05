@@ -1,0 +1,15 @@
+$ node /projects/sandbox/vitana-platform/scripts/collab/preflight.mjs --repo /projects/sandbox/.rv/navp --base origin/main --head HEAD --branch kiro/agentic-delivery/nav-paths --title "VTID-05563 (agentic-delivery/nav-paths): lane gateway-delivery may change the four voice-navigation files"   (HEAD dcef3ff7b0645cb177480396a486e3794b5c69cf)
+preflight vitana-platform /projects/sandbox/.rv/navp
+  base 0f45367bb69a8661eca6d5170ebb33909d03d001  head dcef3ff7b0645cb177480396a486e3794b5c69cf  branch kiro/agentic-delivery/nav-paths
+
+PASS  Collab tests [required]
+PASS  Collab handoff [required]
+PASS  Lane scope [required]
+PASS  PR-GATE scope [report-only in CI (until config.enforce=true)]
+PASS  PR-GATE sparring [report-only in CI (until config.enforce=true)]
+PASS  PR-GATE weakening [report-only in CI (until config.enforce=true)]
+PASS  PR-GATE red-green [report-only in CI (until config.enforce=true)]
+PASS  Kiro steering [report-only in CI (until config.enforce=true)]
+
+preflight: every check passed
+[exit 0]

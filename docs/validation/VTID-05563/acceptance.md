@@ -12,41 +12,50 @@ AC-1: The target `lanes/gateway-delivery.md` gains exactly four `paths` lines, t
 changes: `state`, `seat`, `executor`, `reviewer_seat`, `vtid`, `updated`, every other `paths` entry and every log line stay
 byte-identical (`git diff --numstat` is `4 0`; the head bytes equal the base bytes with the four lines inserted before
 `  - docs/validation/**`; the parsed front matter differs only in `paths`, by the four entries).
-TEST: `bash docs/validation/VTID-05563/outputs/target-diff-check.sh origin/main HEAD` → `outputs/target-diff-check.txt`.
+TEST: `bash docs/validation/VTID-05563/outputs/target-diff-check.sh origin/main HEAD` → `outputs/target-diff-check.txt`
+(PASS at `dcef3ff7b0`: numstat `4 0`, one hunk `23a24,27`, sha256 of the expected bytes = head `c3e982c17fe7379c`, 0 other
+front-matter keys changed, `paths` 13 → 17 entries, none removed).
 
 AC-2: Collab handoff passes for this PR through the `lane_admin` path. The commit with `Collab-Lane:
 agentic-delivery/nav-paths` edits another lane's file; `validateRange` lets that through only because `laneAdminCovers`
 reads this lane's trusted front matter (the merge-base: `lane_admin: true`, `executor: kiro`, `reviewer_seat:
 agent:vitana-lane-reviewer`) and its `paths` list the target.
 TEST: `node scripts/collab/queue.mjs validate --repo . --base origin/main --head HEAD --branch kiro/agentic-delivery/nav-paths`
-→ `outputs/validate.txt`.
+→ `outputs/validate.txt` (✅ 2 handoff/lane files changed, all valid, exit 0, at `dcef3ff7b0`).
 
 AC-3: Lane scope passes for lane `agentic-delivery/nav-paths`: its lane file is edited only by this seat `exafy` session,
 its permission fields and `lane_admin` are unchanged, and every changed file is inside the lane's spec folder or its
 evidence folder.
 TEST: `node scripts/collab/queue.mjs scope-check --repo . --base origin/main --head HEAD --branch kiro/agentic-delivery/nav-paths`
-→ `outputs/scope-check.txt`.
+→ `outputs/scope-check.txt` (✅ every change inside its paths, exit 0, at `dcef3ff7b0`).
 
 AC-4: Negative proof: on today's origin/main, a commit of lane gateway-delivery (`Collab-Lane:
 agentic-delivery/gateway-delivery`, session `kiro-exafy-202611021438-cff7`, seat `exafy`) that changes the four files fails
 Lane scope: 4 problems, one per file ("… is outside lane agentic-delivery/gateway-delivery"), exit 1.
-TEST: `bash docs/validation/VTID-05563/outputs/nav-paths-proof.sh negative <origin/main>` → `outputs/red-on-base.txt`.
+TEST: `bash docs/validation/VTID-05563/outputs/nav-paths-proof.sh negative <origin/main>` → `outputs/red-on-base.txt` (base
+`0f45367bb6`, commit `c97d780341`, patch-id `801c17a11c66209c`: scope-check ❌ 4 problems, exit 1; validate ✅ exit 0).
 
 AC-5: Positive proof: with this PR's tree squashed onto origin/main (as GitHub would), the same commit (same patch-id) passes
 Lane scope and Collab handoff, exit 0.
-TEST: `bash docs/validation/VTID-05563/outputs/nav-paths-proof.sh positive <origin/main> <this PR's head>` → `outputs/green.txt`.
+TEST: `bash docs/validation/VTID-05563/outputs/nav-paths-proof.sh positive <origin/main> <this PR's head>` → `outputs/green.txt`
+(squash S `bc8e07d1a2` of `dcef3ff7b0` onto origin/main; commit `95ec551f81` with the same patch-id `801c17a11c66209c` and
+sha256(diff --binary) `dc61e7814c3979b8` as AC-4: scope-check ✅ exit 0; validate ✅ exit 0).
 
 AC-6: The four files changed by another lane are refused, as before: on the same squashed base, the same change under
 `Collab-Lane: agentic-delivery/cutover` fails Lane scope with 4 problems, exit 1.
-TEST: `outputs/green.txt`, section "control on the same base S" (same command as AC-5).
+TEST: `outputs/green.txt`, section "control on the same base S" (same command as AC-5; commit `56e897201a`, same
+patch-id: scope-check ❌ 4 problems, exit 1).
 
 AC-7: The PR holds no governance path, protected gate file or code: it changes the target lane file, this lane's own file
 and `docs/validation/VTID-05563/**` only; `lane_admin` and this lane's own `paths` are unchanged.
-TEST: `bash docs/validation/VTID-05563/outputs/contract-check.sh origin/main HEAD` → `outputs/contract-check.txt`.
+TEST: `bash docs/validation/VTID-05563/outputs/contract-check.sh origin/main HEAD` → `outputs/contract-check.txt` (10 changed
+files, all in scope, none governance, protected or code; the four new target paths are neither governance nor protected;
+nav-paths `executor`, `seat`, `reviewer_seat`, `paths`, `lane_admin` unchanged; contract: PASS, exit 0, at `dcef3ff7b0`).
 
 AC-8: Preflight (every CI governance check of the PR) passes on the lane head.
 TEST: `node scripts/collab/preflight.mjs --repo . --base origin/main --head HEAD --branch kiro/agentic-delivery/nav-paths
---title "<PR title>"` → `outputs/preflight.txt`.
+--title "<PR title>"` → `outputs/preflight.txt` (8 of 8 PASS, exit 0, at `dcef3ff7b0`; re-run on every later head
+before its push).
 
 States:
 - The target lane `ready` on `main` with a claim held on its branch (`collab-claim/agentic-delivery/gateway-delivery`,
@@ -79,7 +88,8 @@ Contract:
   `agentic-delivery/reseat` (VTID-05554, PR #4703, `49cff4a9df`) used the same `lane_admin` path in this plan.
 
 Staging proof: not verified on staging: this PR deploys nothing (lane files and evidence only;
-`node scripts/ci/staging-verify/run.mjs check-pr` → `outputs/check-pr.txt`), so there is no `staging-tests.json`. Covered
+`node scripts/ci/staging-verify/run.mjs check-pr` → `outputs/check-pr.txt`: "PR touches no gateway deploy path — nothing
+deploys, no staging suite needed", exit 0), so there is no `staging-tests.json`. Covered
 by AC-2 to AC-6 (Collab handoff and Lane scope on this PR, the negative proof and the positive proof).
 
 Red on base: no new test; the lane changes no code. Its base-versus-lane pair is the gateway-delivery commit that changes
