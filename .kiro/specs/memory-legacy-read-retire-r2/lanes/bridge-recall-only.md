@@ -56,7 +56,10 @@ Findings: [blocking] CI on the head could not be verified: gh pr view/checks fai
 [non-blocking] No test covers the dev-sandbox no-identity, bridge-enabled recall path.
 Next: re-review with check-run access (or the run links) on the current head; the lane's seat fixes no code. Merge also waits on D1 (outputs/recall-failures.md).
 
-### 2026-11-05T20:25Z · kiro-exafyltd-202611042048-44bc · in-review → executing → in-review
+### 2026-11-05T20:25Z · kiro-exafyltd-202611042048-44bc · in-review → executing
+Review round 1 returned `changes`; fixing.
+
+### 2026-11-05T20:26Z · kiro-exafyltd-202611042048-44bc · executing → in-review
 Review round 1 (`changes`) answered:
 - [blocking] CI not readable: `gh pr view/checks` are GraphQL and fail in this environment. The re-review prompt gives the
   run IDs so the reviewer can use `gh run view` (REST, in its allowed commands). On head `133744ff`, all 28 check runs were
