@@ -1,6 +1,6 @@
 ---
 lane: merge-queue
-state: executing
+state: in-review
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -18,7 +18,7 @@ paths:
   - scripts/eng/assist-trigger.mjs
   - scripts/eng/assist-trigger.test.mjs
   - docs/validation/**
-updated: 2026-11-05T22:17Z
+updated: 2026-11-05T22:47Z
 vtid: VTID-05549
 claimed_by: kiro-exafy-202611051413-6eb1
 branch: kiro/agentic-delivery/merge-queue
@@ -56,3 +56,7 @@ Waits for eng-gitlab-m2 lane settings (#4711): `gitlab-land.mjs` reads its proje
 ### 2026-11-05T22:17Z · kiro-exafy-202611051413-6eb1 · executing
 Follow-up `cd814f0e34` on PR https://github.com/exafyltd/vitana-platform/pull/4721: a merge request dropped in the tick in which the bot merged `main` into it is dropped and commented for the head the bot made, so it stays out until its builder pushes (test red first on `43ef9402f5`). Red on base 31 of 31, green 116 of 116, UNIT 940 tests, 0 fail.
 Still waits for eng-gitlab-m2 lane settings (#4711) and its `loadEffectiveProjects`.
+
+### 2026-11-05T22:47Z · kiro-exafy-202611051413-6eb1 · executing → in-review
+eng-gitlab-m2 settings (#4711) landed as `0e5a74a72a` and was merged into the branch (`a6e7c57c04`). `b793f09357`: the bot reads its projects through `loadEffectiveProjects` of `scripts/eng/gitlab-settings.mjs` when that module exports it (#4711 landed without it; lane cutover has it), else the settings file as M2 does; and the queue's own train is the "landing train", so the settings lane's free-tier guard passes. Tests first (red-effective, red-free-tier-guard); red on base 32 of 32, green 117 of 117, UNIT 1085 tests, 0 fail.
+PR https://github.com/exafyltd/vitana-platform/pull/4721 open; preflight passed. Next: the driver requests the reviewer agent.
