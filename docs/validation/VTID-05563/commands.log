@@ -1,0 +1,17 @@
+# VTID-05563 agentic-delivery/nav-paths — commands.log (worktree /projects/sandbox/.rv/navp, origin/main 0f45367bb6)
+$ node scripts/collab/queue.mjs session-id --agent kiro --seat exafy   -> kiro-exafy-202611052207-653d
+$ gh api repos/exafyltd/vitana-platform/pulls/4718; git show origin/main:.kiro/specs/agentic-delivery/lanes/nav-paths.md   -> plan PR #4718 merged 2026-11-05T21:50:00Z as d73fec53f9; lane on main with vtid: VTID-05563 (no wait needed)
+$ node scripts/collab/queue.mjs claim agentic-delivery/nav-paths --session kiro-exafy-202611052207-653d --repo /projects/sandbox/vitana-platform   -> {"ok":true,"sha":"bbab6c39b6…"} (pass)
+$ git -C /projects/sandbox/vitana-platform worktree add -b kiro/agentic-delivery/nav-paths /projects/sandbox/.rv/navp origin/main   -> HEAD 0f45367bb6 (pass)
+$ (edit) .kiro/specs/agentic-delivery/lanes/gateway-delivery.md: four lines added to paths, before `  - docs/validation/**`   -> 1 file, 4 insertions, 0 deletions
+$ bash docs/validation/VTID-05563/outputs/target-diff-check.sh origin/main WT   -> PASS (working tree, before the commit)
+$ bash docs/validation/VTID-05563/outputs/nav-paths-proof.sh negative 0f45367bb69a8661eca6d5170ebb33909d03d001   -> outputs/red-on-base.txt (scope-check exit 1, 4 problems: the four files are outside lane agentic-delivery/gateway-delivery; validate exit 0; scratch worktree removed, nothing pushed)
+$ node /projects/sandbox/vitana-platform/scripts/collab/land-guard.mjs evidence --repo /projects/sandbox/.rv/navp --vtid VTID-05563   -> "land-guard evidence: ok — VTID-05563 evidence present" (pass, before the code commit)
+$ git commit (code commit dcef3ff7b0, Collab-Session kiro-exafy-202611052207-653d, Collab-Lane agentic-delivery/nav-paths)   (pass)
+$ bash docs/validation/VTID-05563/outputs/nav-paths-proof.sh positive 0f45367bb69a8661eca6d5170ebb33909d03d001 dcef3ff7b0645cb177480396a486e3794b5c69cf   -> outputs/green.txt (squash S bc8e07d1a2; gateway-delivery commit 95ec551f81, same patch-id 801c17a11c66209c as the negative run: scope-check exit 0, validate exit 0; control lane cutover commit 56e897201a: scope-check exit 1, 4 problems; scratch worktree removed, nothing pushed)
+$ bash docs/validation/VTID-05563/outputs/target-diff-check.sh origin/main HEAD   -> outputs/target-diff-check.txt (PASS at dcef3ff7b0, exit 0)
+$ node scripts/collab/queue.mjs validate --repo . --base origin/main --head HEAD --branch kiro/agentic-delivery/nav-paths   -> outputs/validate.txt (✅ 2 files, all valid, exit 0; queue table cut)
+$ node scripts/collab/queue.mjs scope-check --repo . --base origin/main --head HEAD --branch kiro/agentic-delivery/nav-paths   -> outputs/scope-check.txt (✅ exit 0)
+$ bash docs/validation/VTID-05563/outputs/contract-check.sh origin/main HEAD   -> outputs/contract-check.txt (contract: PASS, 10 files, exit 0)
+$ node scripts/ci/staging-verify/run.mjs check-pr --service gateway --repo-root /projects/sandbox/.rv/navp --base 0f45367bb6… --head dcef3ff7b0… --title "<PR title>"   -> outputs/check-pr.txt (nothing deploys, exit 0; no staging-tests.json)
+$ node /projects/sandbox/vitana-platform/scripts/collab/preflight.mjs --repo /projects/sandbox/.rv/navp --base origin/main --head HEAD --branch kiro/agentic-delivery/nav-paths --title "<PR title>"   -> outputs/preflight.txt (8 of 8 PASS at dcef3ff7b0, exit 0; re-run on every later head before its push)

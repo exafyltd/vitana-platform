@@ -1,0 +1,24 @@
+mode negative; origin/main 0f45367bb69a8661eca6d5170ebb33909d03d001; gateway-delivery builder patch from 594ab32a511cd183496db5c78333571ecbaefbc0
+base 0f45367bb69a8661eca6d5170ebb33909d03d001: lane gateway-delivery paths on the base (13 entries; the four files listed: 0)
+
+################ negative: lane gateway-delivery changes the four files ################
+commit c97d7803415f45f8a7d05a4ff964ca856bcff673 (parent 0f45367bb6), Collab-Lane agentic-delivery/gateway-delivery, Collab-Session kiro-exafy-202611021438-cff7:
+  2	1	scripts/ci/command-hub-ownership-guard.js
+  60	0	services/gateway/src/navigation/data/command-hub-screens.json
+  -	-	services/gateway/src/navigation/data/nav-embeddings.bin
+  1	1	services/gateway/src/navigation/data/nav-embeddings.json
+  patch-id 801c17a11c66209c; sha256(diff --binary) dc61e7814c3979b8
+
+$ node scripts/collab/queue.mjs scope-check --repo . --base 0f45367bb69a8661eca6d5170ebb33909d03d001 --head HEAD --branch kiro/agentic-delivery/gateway-delivery
+❌ **lane scope** — 4 problem(s) (lane agentic-delivery/gateway-delivery):
+- scripts/ci/command-hub-ownership-guard.js is outside lane agentic-delivery/gateway-delivery (paths: services/gateway/src/services/gitlab-events/**, services/gateway/src/services/delivery-host.ts, services/gateway/src/services/github-service.ts, services/gateway/src/types/cicd.ts, services/gateway/src/routes/delivery.ts, services/gateway/src/index.ts, services/gateway/src/frontend/command-hub/delivery.js, services/gateway/src/frontend/command-hub/app.js, services/gateway/src/frontend/command-hub/navigation-config.js, services/gateway/src/frontend/command-hub/index.html, services/gateway/specs/dev-screen-inventory-v1.json, services/gateway/test/delivery/**, docs/validation/**)
+- services/gateway/src/navigation/data/command-hub-screens.json is outside lane agentic-delivery/gateway-delivery (paths: services/gateway/src/services/gitlab-events/**, services/gateway/src/services/delivery-host.ts, services/gateway/src/services/github-service.ts, services/gateway/src/types/cicd.ts, services/gateway/src/routes/delivery.ts, services/gateway/src/index.ts, services/gateway/src/frontend/command-hub/delivery.js, services/gateway/src/frontend/command-hub/app.js, services/gateway/src/frontend/command-hub/navigation-config.js, services/gateway/src/frontend/command-hub/index.html, services/gateway/specs/dev-screen-inventory-v1.json, services/gateway/test/delivery/**, docs/validation/**)
+- services/gateway/src/navigation/data/nav-embeddings.bin is outside lane agentic-delivery/gateway-delivery (paths: services/gateway/src/services/gitlab-events/**, services/gateway/src/services/delivery-host.ts, services/gateway/src/services/github-service.ts, services/gateway/src/types/cicd.ts, services/gateway/src/routes/delivery.ts, services/gateway/src/index.ts, services/gateway/src/frontend/command-hub/delivery.js, services/gateway/src/frontend/command-hub/app.js, services/gateway/src/frontend/command-hub/navigation-config.js, services/gateway/src/frontend/command-hub/index.html, services/gateway/specs/dev-screen-inventory-v1.json, services/gateway/test/delivery/**, docs/validation/**)
+- services/gateway/src/navigation/data/nav-embeddings.json is outside lane agentic-delivery/gateway-delivery (paths: services/gateway/src/services/gitlab-events/**, services/gateway/src/services/delivery-host.ts, services/gateway/src/services/github-service.ts, services/gateway/src/types/cicd.ts, services/gateway/src/routes/delivery.ts, services/gateway/src/index.ts, services/gateway/src/frontend/command-hub/delivery.js, services/gateway/src/frontend/command-hub/app.js, services/gateway/src/frontend/command-hub/navigation-config.js, services/gateway/src/frontend/command-hub/index.html, services/gateway/specs/dev-screen-inventory-v1.json, services/gateway/test/delivery/**, docs/validation/**)
+[exit 1]
+
+$ node scripts/collab/queue.mjs validate --repo . --base 0f45367bb69a8661eca6d5170ebb33909d03d001 --head HEAD --branch kiro/agentic-delivery/gateway-delivery
+✅ **collab handoff** — 0 handoff/lane file(s) changed, all valid
+[exit 0]
+
+scratch worktree removed; no branch was created and nothing was pushed
