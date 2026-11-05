@@ -60,3 +60,6 @@
 22:44  node land-guard.mjs evidence --repo /projects/sandbox/.rv/deploy --vtid VTID-05546          -> ok
 22:44  node scripts/ci/staging-verify/run.mjs check-pr --service gateway --base 0e5a74a72a --head 48e139b28b   -> no gateway deploy path, no suite needed (exit 0)
 22:44  node preflight.mjs --repo <wt> --base origin/main --head HEAD (48e139b28b) --branch kiro/agentic-delivery/deploy-path   -> every check passed (exit 0)
+22:45  git push origin 0d2dacefad:refs/heads/kiro/agentic-delivery/deploy-path; git ls-remote          -> 580b028896..0d2dacefad (no force)
+22:45  node preflight.mjs ... --head HEAD (0d2dacefad)                                             -> every check passed (exit 0)
+22:46  node scripts/ci/validate-pr-locally.cjs --title <PR title> --body-file <round-2 PR body> --base main   -> APPROVED; PR #4714 body updated (gh api PATCH)
