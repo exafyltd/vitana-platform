@@ -1,6 +1,6 @@
 ---
 lane: pipelines
-state: executing
+state: in-review
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -26,7 +26,7 @@ paths:
 claimed_by: kiro-exafy-202611051542-d83b
 branch: kiro/agentic-delivery/pipelines
 pr: https://github.com/exafyltd/vitana-platform/pull/4709
-updated: 2026-11-05T22:01Z
+updated: 2026-11-05T22:07Z
 vtid: VTID-05550
 ---
 # Lane: pipelines (repo vitana-platform)
@@ -73,3 +73,6 @@ Findings:
 Next: the lane's seat fixes the blocking findings
 ### 2026-11-05T22:01Z · kiro-exafy-202611051542-d83b · in-review → executing
 Review changes on e2c50732 (entry above): fixing the six blocking findings.
+### 2026-11-05T22:07Z · kiro-exafy-202611051542-d83b · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/4709 updated (fix round 1); preflight passed. Next: the driver requests a new review.
+The six blocking findings fixed, tests red first: 9 of 36 fail on e6490b1cba, 36 of 36 pass after the merge of origin/main; UNIT 918 tests, 0 fail. Open items for the driver (impact ingest and PR comment, gl-verify trust for e2e-preview-orb, the 2700-character description limit) and the deferred CI-HEALTH job: docs/validation/VTID-05550/acceptance.md.
