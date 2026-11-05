@@ -1,0 +1,11 @@
+[Unit]
+Description=Publish the CI metrics every minute
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1min
+AccuracySec=5s
+Unit=vitana-ci-metrics.service
+
+[Install]
+WantedBy=timers.target

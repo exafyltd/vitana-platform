@@ -1,0 +1,22 @@
+[Unit]
+Description=Publish CI queue, merge bot and backup metrics to CloudWatch (one run, read only on GitLab)
+After=network-online.target
+
+[Service]
+Type=oneshot
+Nice=10
+CPUQuota=50%
+MemoryMax=512M
+TimeoutStartSec=90
+# REGION and BACKUP_BUCKET come from the environment file that milestone 1 wrote on this machine.
+EnvironmentFile=/etc/vitana/env
+# The AWS CLI wants a home directory; the sandbox below leaves only the state directory writable.
+Environment=HOME=/var/lib/vitana-ci-metrics
+StateDirectory=vitana-ci-metrics
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+# The account is bot-metrics (Reporter): the script only reads GitLab. The file is written by the settings sync, readable by root only.
+# flock keeps two runs from overlapping; a run that finds the lock busy exits 0 and the next minute tries again.
+ExecStart=/usr/bin/flock -n -E 0 /run/vitana-ci-metrics.lock /usr/bin/node /opt/vitana/platform/scripts/eng/ci-metrics.mjs run --url http://127.0.0.1 --token-file /etc/vitana/bot-metrics-token --state-dir /var/lib/vitana-ci-metrics
