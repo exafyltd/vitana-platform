@@ -3,9 +3,10 @@ slug: claude-migration-lanes
 author: claude
 executor: claude
 next_actor: kiro
-state: drafted
-vtids: []
-updated: 2026-11-05T19:00Z
+state: approved
+vtids: [VTID-05565, VTID-05566]
+updated: 2026-11-05T22:17Z
+sparring_record: .kiro/specs/claude-migration-lanes/sparring/verdict.md
 ---
 # Handoff — claude-migration-lanes
 Plan: `plan.md`. Lanes: `lanes/reinstate-rules.md`, `lanes/executor-switch.md`, `lanes/reassign-migration.md`.
@@ -26,3 +27,6 @@ The plan is still `drafted`: the CI PLAN-SPAR sparring round and the policy appr
 
 ### 2026-11-05T22:30Z · session_01Cp885Gw1CMmPDvDVHc7kw8 · sparring round 1 answered
 Round 1 (`sparring/round-1.md`, session `b6f117fc`): F1 rejected (the lane file has no reviewer_seat; evidence in responses), F2 and F3 accepted. Lane `executor-switch` withdrawn, so no protected file changes; `reassign-migration` now sets `reviewer_seat: exafyltd` on the Claude lanes (P4) and skips `github-bridge` unless it is ready. Answers in `sparring/responses-1.md`; plan text updated.
+
+### 2026-11-05T22:17Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 2 lane(s) got a VTID and are handed to Kiro.

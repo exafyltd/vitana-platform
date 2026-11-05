@@ -14,7 +14,8 @@ paths:
   - .kiro/specs/agentic-delivery/lanes/github-bridge.md
   - .kiro/specs/agentic-delivery/lanes/merge-queue.md
   - .kiro/specs/agentic-delivery/lanes/pipelines.md
-updated: 2026-11-05T22:30Z
+updated: 2026-11-05T22:17Z
+vtid: VTID-05565
 ---
 # Lane: reassign-migration (repo vitana-platform)
 Plan §3. Lane administration that sets `executor: claude` and `reviewer_seat: exafyltd` on `verify-on-gitlab`, `merge-queue` and
@@ -24,3 +25,6 @@ Plan §3. Lane administration that sets `executor: claude` and `reviewer_seat: e
 ## Log
 ### 2026-11-05T22:30Z · session_01Cp885Gw1CMmPDvDVHc7kw8 · ready
 Lane created with the plan (round 1 response: `executor-switch` withdrawn, reviewer seat changed, github-bridge gated on state).
+
+### 2026-11-05T22:17Z · ci-plan-spar · ready (VTID allocated)
+VTID-05565 allocated after policy approval (converged-auto-v1).

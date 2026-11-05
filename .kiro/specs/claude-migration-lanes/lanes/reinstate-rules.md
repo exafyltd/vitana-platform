@@ -11,7 +11,8 @@ repos: [exafyltd/vitana-platform]
 paths:
   - .claude/rules/collaboration.md
   - .kiro/steering/vitana-collaboration.md
-updated: 2026-11-05T19:00Z
+updated: 2026-11-05T22:17Z
+vtid: VTID-05566
 ---
 # Lane: reinstate-rules (repo vitana-platform)
 Plan §3. Removes the retirement wording of `collaboration.md` (P1) and its Kiro twin, keeps every gate, and states that
@@ -22,3 +23,6 @@ Claude Code builds `executor: claude` lanes in any plan. VTID from PLAN-SPAR; ne
 Lane created with the plan. If `.kiro/steering/vitana-collaboration.md` does not exist on main, the builder drops that path and says so in the log.
 
 Scope (plan §3): remove the retirement wording; state that Claude Code builds `executor: claude` lanes in any plan; update the lane-administration prose of `collaboration.md` §7a to match what the code allows (`executor` and `reviewer_seat` on a target lane; round 2 R2-F1).
+
+### 2026-11-05T22:17Z · ci-plan-spar · ready (VTID allocated)
+VTID-05566 allocated after policy approval (converged-auto-v1).
