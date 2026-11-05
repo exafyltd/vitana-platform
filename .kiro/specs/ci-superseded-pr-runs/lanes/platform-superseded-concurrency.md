@@ -1,6 +1,7 @@
 ---
 lane: platform-superseded-concurrency
-state: ready
+state: executing
+claimed_by: kiro-exafyltd-202611051700-c1a1
 next_actor: kiro
 branch: kiro/ci-superseded-pr-runs/platform-superseded-concurrency
 depends_on: []
@@ -63,3 +64,8 @@ Lane created with the plan. Paths are the exact files changed by the prepared co
 
 ### 2026-11-02T16:31Z · ci-plan-spar · ready (VTID allocated)
 VTID-05513 allocated after policy approval (converged-auto-v1).
+
+### 2026-11-05T17:10Z · kiro-exafyltd-202611051700-c1a1 · ready → executing
+Continued the existing lane PR #4672 instead of opening a duplicate. Its branch was based on an older main, so current
+origin/main was merged into it (no conflicts, no force-push). The lane diff against main is the 38 PR-triggered
+workflows plus this lane's evidence. Preflight passes on the merged head.
