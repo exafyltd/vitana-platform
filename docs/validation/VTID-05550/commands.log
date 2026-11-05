@@ -1,0 +1,38 @@
+# VTID-05550 (agentic-delivery/pipelines) — commands, in order, with results
+# Session kiro-exafy-202611051542-d83b (seat exafy), builder; driver kiro-exafy-202611041929-802c. Times UTC 2026-11-05.
+
+15:42 node scripts/collab/queue.mjs session-id --agent kiro --seat exafy                      → kiro-exafy-202611051542-d83b
+15:43 node scripts/collab/plan-driver.mjs heartbeat --slug agentic-delivery|eng-gitlab-m2 …   → ok (also 16:04, 16:11, 16:22, …)
+15:44 node scripts/collab/queue.mjs claim agentic-delivery/pipelines --session kiro-exafy-202611051542-d83b --repo /projects/sandbox/vitana-platform → {"ok":true}
+15:45 git worktree add -b kiro/agentic-delivery/pipelines /projects/sandbox/.rv/pipes origin/main (49cff4a9df; reseat #4703 on main)
+
+# Fixtures (P4): read-only GitHub REST GETs through `gh api`, by /projects/sandbox/.scratch/tools/pipes/build-fixtures.mjs (outside the repo)
+15:53 node build-fixtures.mjs exafyltd/vitana-v1 scripts/eng/fixtures/v1-pr-files.json UNIT-TESTS.yml CALENDAR-REGRESSION.yml NATIVE-CI.yml PR-GATE.yml
+      GET repos/exafyltd/vitana-v1/pulls?state=closed&per_page=100&sort=updated&direction=desc&page=<n>   (newest 60 merged)
+      GET repos/exafyltd/vitana-v1/pulls/<n>/files?per_page=100&page=<p>
+      GET repos/exafyltd/vitana-v1/actions/runs?head_sha=<PR head>&per_page=100      (event pull_request|pull_request_target)
+      GET repos/exafyltd/vitana-v1/actions/runs/<id>/jobs?per_page=100               (durations; at most 12 runs per workflow)
+      → 60 PRs (merged 2026-10-27T13:07Z … 2026-11-05T15:00Z), 159 GETs, 13 job-duration keys; exit 0
+15:53 node build-fixtures.mjs exafyltd/vitana-platform scripts/eng/fixtures/platform-pr-files.json TEST-SUITE.yml OASIS-PERSISTENCE.yml CICDL-GATEWAY-CI.yml UNIT.yml
+      (same four GET shapes)  → 60 PRs (merged 2026-11-01T22:13Z … 2026-11-05T15:45Z), 166 GETs, 14 job-duration keys; exit 0
+
+# Workflow path filters and run steps read from origin/main of both repositories (git show, read-only), outside the repo:
+15:58 node wf-extract.mjs / wf-blocks.mjs (pull_request paths, step run blocks of SQL-*, PHASE-2B-*, CICDL-CORE-*, i18n-check, NATIVE-CI)
+16:00 node author-services.mjs config/delivery/services.json   (one-off authoring helper; services.json is the source of truth after it)
+
+# Red on base (P1): the three new test files on origin/main b3d547b66c (first run 16:07 on b5544e37dd, same result) (no implementation, no service list, no fixtures)
+16:07 node --test scripts/eng/pipeline-gen.test.mjs scripts/eng/affected-parity.test.mjs scripts/eng/services-parity.test.mjs
+      → exit 1: 3 of 3 files fail (Cannot find module scripts/eng/pipeline-gen.mjs)          outputs/red-on-base.txt
+16:07 PIPELINE_GEN_MODULE=/projects/sandbox/.scratch/tools/pipes/stub/pipeline-gen.mjs node --test (same three files)
+      → tests 22, pass 0, fail 22                                                              outputs/red-on-base.txt
+
+# Implementation, render, green (P2, P3, P5)
+16:09 node scripts/eng/pipeline-gen.mjs                    → written v1-delivery.gitlab-ci.yml, platform-delivery.gitlab-ci.yml
+16:09 node --test (three files)                            → 23 pass, 4 fail (parity gaps: TEST-SUITE services/**, OASIS filters, KIRO-RUNNER workflow file, supabase/**; class list)
+16:12 services.json: the parity gaps closed (selection widened to what GitHub runs); node scripts/eng/pipeline-gen.mjs
+16:14 node --test (three files)                            → tests 27, pass 27, fail 0
+16:19 node --test (three files, final)                     → tests 27, pass 27, fail 0                      outputs/green.txt
+16:19 node scripts/eng/pipeline-gen.mjs --check            → ok, ok; exit 0                                 outputs/pipeline-gen-check.txt
+16:19 node /projects/sandbox/.scratch/tools/pipes/yaml-cross.mjs <worktree>  (Ruby 3.4.10 Psych vs parseYaml, 6 files) → 6 agree; exit 0   outputs/yaml-cross-check.txt
+16:20 node --test $(find scripts -path '*/node_modules' -prune -o \( -name '*.test.cjs' -o -name '*.test.mjs' \) -print | sort)
+      → tests 648, pass 647, fail 0, skipped 1 (the existing win32-only skip in a collab test); exit 0     outputs/unit-all.txt

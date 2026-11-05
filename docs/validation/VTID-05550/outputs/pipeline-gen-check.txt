@@ -1,0 +1,5 @@
+# pipeline-gen.mjs --check (writes nothing; exit 3 on drift)
+$ node scripts/eng/pipeline-gen.mjs --check
+ok      infra/gitlab-engineering/ci/v1-delivery.gitlab-ci.yml
+ok      infra/gitlab-engineering/ci/platform-delivery.gitlab-ci.yml
+exit=0

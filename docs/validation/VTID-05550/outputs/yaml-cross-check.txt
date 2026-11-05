@@ -1,0 +1,9 @@
+# Every infra/gitlab-engineering/ci/*.yml parsed by Ruby Psych (the YAML library GitLab uses) equals what pipeline-gen.mjs parseYaml reads
+$ node /projects/sandbox/.scratch/tools/pipes/yaml-cross.mjs <worktree>   (ruby 3.4.10)
+agree  platform-delivery.gitlab-ci.yml: 124 top-level keys, 120 jobs, gate needs 47
+agree  tpl-assist.yml: 2 top-level keys, 0 jobs
+agree  tpl-checks.yml: 10 top-level keys, 0 jobs
+agree  tpl-main.yml: 1 top-level keys, 0 jobs
+agree  tpl-nightly.yml: 2 top-level keys, 0 jobs
+agree  v1-delivery.gitlab-ci.yml: 62 top-level keys, 58 jobs, gate needs 18
+exit=0

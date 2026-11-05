@@ -1,0 +1,28 @@
+# VTID-05550 — T2 main delivery (plan agentic-delivery §3.6; lane pipelines). Hidden jobs only.
+# Every landing on main runs every check of the repository once (full-suite:<check>, main class, never interrupted, so a
+# red main is always tied to one landing) in parallel with the image build and the staging deploy. The orchestration
+# per changed deployable service is in the generated file:
+#   build-image:<svc> (.build-image, main) → push-image:<svc> (.push-image, deploy) → deploy-staging:<svc>
+#   (.deploy-staging, deploy; the service's env_overrides only in live mode) → rollback-staging:<svc> (on failure)
+#   → staging-verify:<svc> (.staging-verify, main) → record:<svc> (.record, deploy, live mode only)
+#   vtid-close (.vtid-close, live mode only) and, for vitana-v1, notify-platform (.notify-platform, live mode only).
+# The .build-image … .rollback-staging, .preview-upload and .preview-stop jobs are lane deploy-path's (tpl-deploy.yml);
+# .staging-verify, .staging-verify-nightly, .record, .vtid-close and .notify-platform are lane verify-on-gitlab's
+# (tpl-verify.yml). The generated jobs pass them DEPLOY_* and VERIFY_SERVICE variables; tpl-verify reads the deploy-runs
+# file from $CI_PROJECT_DIR/deploy-runs.json (DEPLOY_RUNS_FILE), which deploy-staging leaves as an artifact.
+# Shadow mode (DELIVERY_MODE unset or not "live", the default of the generated file): record, vtid-close,
+# notify-platform and every assist job are not created, no env_overrides are passed, and the deploy templates only
+# render (plan §3.6 step 8). The settings sync sets the project variable DELIVERY_MODE=live at the cut (plan §8.2).
+
+.full-suite:
+  image: public.ecr.aws/docker/library/node:20-bookworm
+  tags: [vitana-eng-main]
+  interruptible: false
+  timeout: 30m
+  retry:
+    max: 1
+    when: [runner_system_failure, stuck_or_timeout_failure, scheduler_failure]
+  variables:
+    CI: "true"
+    npm_config_cache: $CI_PROJECT_DIR/.npm
+    npm_config_store_dir: $CI_PROJECT_DIR/.pnpm-store

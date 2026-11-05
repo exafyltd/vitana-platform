@@ -1,0 +1,184 @@
+Change types: Infrastructure/CI, Tooling/docs.
+
+# VTID-05550 — agentic-delivery/pipelines: acceptance
+
+Outcome: one service list (`config/delivery/services.json`, schema `vitana.delivery-services/v1`) drives both
+repositories' GitLab pipelines. `scripts/eng/pipeline-gen.mjs` renders `infra/gitlab-engineering/ci/v1-delivery.gitlab-ci.yml`
+(58 jobs) and `platform-delivery.gitlab-ci.yml` (120 jobs) from it, with the hand-written hidden-job templates
+`tpl-checks.yml` (T1), `tpl-main.yml` (T2), `tpl-nightly.yml` (T3) and `tpl-assist.yml` (T7), and includes lane
+deploy-path's `tpl-deploy.yml` and lane verify-on-gitlab's `tpl-verify.yml` by the job names of plan §9. A merge request
+runs the governance jobs, then only the checks of what it changed, never fewer than GitHub ran for the same files (proven
+over the last 60 merged PRs of each repository), then `gate`. `main` runs every check once per landing plus the deploy and
+verify chain of each changed deployable service; the nightly run adds the full STAGING-VERIFY. Shadow mode is the default.
+
+## Acceptance criteria and the tests that prove them
+AC-1 One service list renders both project files byte for byte; `--check` writes nothing and exits 3 on drift.
+TEST: scripts/eng/pipeline-gen.test.mjs "renders both project files from the service list, byte for byte"
+TEST: scripts/eng/pipeline-gen.test.mjs "--check exits 0 when the files are current and 3 on drift, and writes nothing"
+
+AC-2 Each T1 check job has generated `rules: changes:` from the paths of every service that lists it plus the shared and
+other paths, compared with `refs/heads/main`, at most 50 patterns (GitLab's limit), with GitLab glob semantics.
+TEST: scripts/eng/pipeline-gen.test.mjs "each T1 check job has rules: changes: from its service paths plus the shared and other paths"
+TEST: scripts/eng/pipeline-gen.test.mjs "GitLab glob semantics: dir/**/* is recursive, a trailing ** is one level, braces and dotfiles match"
+
+AC-3 A shared path (lockfiles, package.json, TypeScript, Vite, ESLint, Tailwind config) or an area no single service owns
+selects every check; a change to one service selects that service's checks; a documentation-only change runs the
+governance jobs and `gate` only.
+TEST: scripts/eng/pipeline-gen.test.mjs "a shared path, or an area no single service owns, selects every check"
+TEST: scripts/eng/pipeline-gen.test.mjs "a change to one service selects only that service checks; a documentation-only change selects none"
+
+AC-4 `gate` needs every check with `optional: true` (and their artifacts), never runs `when: always` (a failing check
+leaves it unrun, so the merge request cannot land), and at runtime fails closed on an unknown path or on a check the
+change needs that did not run.
+TEST: scripts/eng/pipeline-gen.test.mjs "gate needs every check with optional: true and runs only when they passed"
+TEST: scripts/eng/pipeline-gen.test.mjs "an unknown path makes gate fail and name it, so the merge request cannot land with fewer checks"
+
+AC-5 Governance jobs (`lane-scope`, `change-suite`, `pr-gate-report`, `collab-handoff`) come first, carry no path rule;
+`collab-handoff` is required on vitana-platform and report-only on vitana-v1, as today.
+TEST: scripts/eng/pipeline-gen.test.mjs "governance jobs carry no path rule, come first, and are the only jobs besides gate that always run"
+
+AC-6 No T1 job (merge request or train ref) declares `id_tokens` or reads a secret; no file uses `include: local`; every
+T1 job is tagged `vitana-eng` and is interruptible.
+TEST: scripts/eng/pipeline-gen.test.mjs "no T1 job declares id_tokens or a secret, no file uses include: local, and T1 jobs are untrusted and interruptible"
+
+AC-7 Every test job is sharded so its fixture duration (the median GitHub job time in the fixture) divided by its shards is
+under 4 minutes; dependencies come from the cache keyed by the lockfile.
+TEST: scripts/eng/pipeline-gen.test.mjs "every test job is sharded so its fixture duration is under 4 minutes"
+TEST: scripts/eng/pipeline-gen.test.mjs "dependencies come from the cache keyed by the lockfile"
+
+AC-8 `main` and nightly pipelines run every check once (`full-suite:<check>`), are not interruptible, and use the main
+class (`vitana-eng-main`: full suite, image build, STAGING-VERIFY, assists) and the deploy class (`vitana-eng-deploy`:
+push, staging deploy and rollback, record, VTID close, notify, preview upload and stop), per plan §3.2.
+TEST: scripts/eng/pipeline-gen.test.mjs "main pipelines run every check once, are not interruptible, and use the main and deploy classes"
+
+AC-9 `DELIVERY_MODE` defaults to `shadow`; in shadow mode no job extending `.record`, `.vtid-close`, `.notify-platform`
+or `.assist` exists and no `env_overrides` are passed; in live mode the gateway's deploy gets exactly
+`PM_AGENT_ENABLED=false`, `DELIVERY_HOST_VITANA_PLATFORM=gitlab`, `DELIVERY_HOST_VITANA_V1=gitlab`.
+TEST: scripts/eng/pipeline-gen.test.mjs "DELIVERY_MODE defaults to shadow; in shadow mode record, vtid-close, notify-platform and assists are absent and no env_overrides pass"
+
+AC-10 The generated files include `tpl-deploy.yml` and `tpl-verify.yml` (and the four templates of this lane) from
+`vitana/ci-config` at `main` and extend the plan §9 job names.
+TEST: scripts/eng/pipeline-gen.test.mjs "the generated files include the deploy and verify templates by the job names of plan §9"
+
+AC-11 Sibling sweep: every workflow plan §2.2 moves to GitLab (fates t1, t2, t3, t4, t7 in the registry) has its jobs in a
+generated file.
+TEST: scripts/eng/pipeline-gen.test.mjs "sibling sweep: every workflow plan §2.2 moves to GitLab has its jobs in a generated file"
+
+AC-12 For each of the last 60 merged PRs of each repository (fixtures read once through read-only `gh api` GETs), the
+selected checks cover every path-filtered GitHub workflow that ran for it, and no PR has an unknown path.
+TEST: scripts/eng/affected-parity.test.mjs "vitana-v1: each of the 60 PRs selects every check whose path-filtered GitHub workflow ran for it"
+TEST: scripts/eng/affected-parity.test.mjs "vitana-platform: each of the 60 PRs selects every check whose path-filtered GitHub workflow ran for it"
+
+AC-13 Platform service paths equal `config/service-path-map.json`; every path filter of the platform pull-request
+workflows maps to a service and selects that workflow's checks; the service list holds the v1 services, images, staging
+targets, STAGING-VERIFY ids, the v1 preview kind, the assist rules and the gateway's `env_overrides`.
+TEST: scripts/eng/services-parity.test.mjs "platform service paths equal config/service-path-map.json"
+TEST: scripts/eng/services-parity.test.mjs "every path filter of the platform pull-request workflows maps to a service, and selects that workflow's checks"
+TEST: scripts/eng/services-parity.test.mjs "the gateway service carries the env_overrides of plan §3.6 step 2; the deployable services have images and staging targets"
+
+States: unknown path (no service, shared, other or docs entry claims it: `gate` fails and names it; GitLab `rules:changes`
+has no negation, so a path no pattern lists cannot select jobs by itself; `other_paths` claim every area of today's tree
+that no single service owns, so for today's tree an unclaimed path means a new top-level entry); shared path (every
+check); documentation-only change (`.kiro/**`, `docs/**`, root `*.md`, `.github/**`, which are inert on GitLab:
+governance jobs and `gate` only); a failing check (`gate` does not run, so the merge request cannot land); generator
+drift (`--check` exits 3); `DELIVERY_MODE` unset (shadow: no record, VTID close, notify or assist job, no env_overrides,
+the deploy templates only render); train refs `train/<k>` (the same T1 jobs, changes compared with main).
+
+Surfaces: GitLab projects `vitana/vitana-v1` and `vitana/vitana-platform` through `vitana/ci-config`; callers: the M2
+settings sync (copies `infra/gitlab-engineering/ci/*.yml`, applies the `.schedules`/`.schedules-assist` cron entries and
+the resource-group modes) and the merge bot (required jobs `lane-scope`, `change-suite`, `gate`; the train passes
+`GATE_BASE`, `GATE_HEAD`, `GATE_BRANCH`, `GATE_TITLE` as pipeline variables; the assist trigger passes `ASSIST_RULE`,
+`ASSIST_KIND`, `ASSIST_MR_IID`, `ASSIST_MR_HEAD`, `ASSIST_SOURCE_BRANCH`, `ASSIST_BRANCH_HOME`).
+
+Locales: n/a. Accessibility: n/a.
+
+Contract:
+- Schema of plan §3.3 (`.kiro/specs/agentic-delivery/plan.md:190-206`) with `env_overrides` (plan.md:279-281) ↔
+  `config/delivery/services.json` (gateway `env_overrides` at services.json:757-759) and `config/delivery/README.md`.
+- Template and job names of plan §9 (plan.md:627-632) ↔ the generated files: `include` at v1-delivery.gitlab-ci.yml:5 and
+  platform-delivery.gitlab-ci.yml:5; `deploy-staging:gateway` platform-delivery:3647, `staging-verify:gateway` :3716,
+  `record:gateway` :3738, `vtid-close` :4125; v1 `deploy-staging:community-app` v1-delivery:1767,
+  `staging-verify:community-app` :1853, `record:community-app` :1889, `vtid-close` :1957, `notify-platform` :1969,
+  `staging-verify-nightly:community-app` :1928, `assist:i18n-propagate` :1985, `preview-upload` :1141.
+- Lane verify-on-gitlab's hidden jobs (PR #4705, branch `origin/kiro/agentic-delivery/verify-on-gitlab`,
+  `infra/gitlab-engineering/ci/tpl-verify.yml`): `.staging-verify` :44 (reads `VERIFY_SERVICE` :54 and
+  `DEPLOY_RUNS_FILE: $CI_PROJECT_DIR/deploy-runs.json` :56), `.staging-verify-nightly` :69, `.record` :80, `.vtid-close`
+  :101, `.notify-platform` :122. The generated jobs set `VERIFY_SERVICE` and need the deploy job's artifacts.
+- Runner tags of plan §3.2 (plan.md:179-188) ↔ `tpl-checks.yml:15-18` (`.t1-base`, `vitana-eng`), `tpl-main.yml:17-20`
+  (`.full-suite`, `vitana-eng-main`), `tpl-assist.yml:27-30` (`.assist`, `vitana-eng-main`), and the explicit `tags` of the
+  generated deploy-class jobs.
+- Lane deploy-path's `tpl-deploy.yml` is not built yet: the generated jobs extend `.build-image`, `.push-image`,
+  `.deploy-staging`, `.rollback-staging`, `.preview-upload`, `.preview-stop` by name only (plan §9) and pass
+  `DEPLOY_SERVICE`, `DEPLOY_ECR_REPOSITORY`, `DEPLOY_IMAGE_CONTEXT`, `DEPLOY_DOCKERFILE`, `DEPLOY_ECS_CLUSTER`,
+  `DEPLOY_ECS_SERVICE`, `DEPLOY_RUNS_FILE`, `DEPLOY_ENV_OVERRIDES` (live mode only), `PREVIEW_SERVICE`, `PREVIEW_PREFIX`.
+  These variable names are this lane's choice; deploy-path reads them, or the driver aligns the names when both land.
+- Lane merge-queue's `scripts/eng/gitlab-gates.mjs` (not on any remote branch yet) is called as
+  `gitlab-gates.mjs lane-scope|collab-handoff --repository <key> --repo-root <dir> --platform-dir <platform main clone>
+  --base <sha> --head <sha> --branch <name>` (`tpl-checks.yml:53-75`). Same rule: the driver aligns the CLI when both land.
+
+Staging proof: not verified on staging: nothing deploys when this lane is merged (GitLab is not cut over; the files are
+copied into `vitana/ci-config` by M2's settings sync and run only in lane `cutover`'s shadow pipelines, plan §8.1 step 3).
+Covered by the 27 tests above, the `--check` run, and the Ruby Psych cross-check of every CI file
+(`outputs/yaml-cross-check.txt`; Psych is the YAML library GitLab uses). `run.mjs check-pr` says nothing deploys
+(`outputs/staging-check-pr.txt`), so there is no `staging-tests.json`.
+
+Red on base: `outputs/red-on-base.txt` — on origin/main `b3d547b66c` the three files fail as whole files (3 of 3, no
+`pipeline-gen.mjs`, no service list, no fixtures); against no-behaviour stubs outside the repo all 22 reported results fail (21 tests, and affected-parity.test.mjs as a whole file because its per-repository loop reads the missing fixture at load time).
+Green: `outputs/green.txt` — 27 of 27 pass; `outputs/unit-all.txt` — UNIT's full command, 0 failures.
+
+## Files of other lanes this lane needs (none of them is a file of this lane)
+- eng-gitlab-m2 lane `settings` (paths include `infra/gitlab-engineering/ci/**`): the sync that copies
+  `infra/gitlab-engineering/ci/*.yml` into the root of `vitana/ci-config` (`scripts/eng/gitlab-settings.mjs`), points each
+  project's `ci_config_path` at `v1-delivery.gitlab-ci.yml@vitana/ci-config` / `platform-delivery.gitlab-ci.yml@vitana/ci-config`
+  (`infra/gitlab-engineering/settings/gitlab-settings.json`), sets the project variable `DELIVERY_MODE`, applies the
+  `.schedules` and `.schedules-assist` cron entries, the job-token allowlist (vitana-v1 jobs read vitana/vitana-platform),
+  and the protected, masked `ASSIST_PUSH_TOKEN`. Its central CI files (plan S3) must not use the names of this lane's six
+  files. The plan orders this lane after `settings` (§9): the driver lands it after `settings` is done.
+- Lane `deploy-path`: `infra/gitlab-engineering/ci/tpl-deploy.yml` (the six hidden jobs above, `.preview-build` is this
+  lane's). Lane `verify-on-gitlab`: `tpl-verify.yml`. Lane `merge-queue`: `scripts/eng/gitlab-gates.mjs`,
+  `scripts/eng/assist-trigger.mjs`. Lane `github-bridge`: applies `assist-out/assist.patch` to a bridged branch.
+
+## Decisions taken
+- Unknown path: GitLab `rules:changes` cannot negate, so "every check for a path no service claims" is implemented as
+  `other_paths` (every unowned area of today's tree selects every check, like a shared path) plus `gate` failing closed on a
+  path nothing claims. A new top-level entry therefore blocks until it is claimed in the service list, instead of
+  silently running fewer checks.
+- `gate` proves the selection at runtime from the service list on platform `main`: each passed check leaves a marker
+  artifact (`.delivery-ran/`), and `gate` fails when a check the change needs did not run.
+- The parity tests compare path-filtered workflows (plan §3.4, "never narrower than GitHub's path filters"); always-on
+  workflows (PR-GATE, UNIT-TESTS, UNIT, STAGING-TESTS-REQUIRED, DEV-AUTOPILOT-IMPACT, ENFORCE-FRONTEND-CANONICAL-SOURCE,
+  PHASE-2B-*) map to the governance jobs and to path-selected checks, so a documentation-only change runs no check.
+- Selection is widened where GitHub runs more: TEST-SUITE's `services/**` filter selects the gateway suite and the three
+  service suites for any services change; NATIVE-CI's `src/**` filter selects the mobile jobs for web changes; i18n-check's
+  `src/**` selects `i18n`; OASIS-PERSISTENCE selects the gateway typecheck, Jest and build.
+- GitHub `dir/**` filters became GitLab `dir/**/*` (a trailing `**` is one level in Ruby `File.fnmatch`); the generator
+  refuses a trailing `**`.
+- Templates hold hidden jobs; the generated files hold every concrete job with explicit `rules` (GitLab's `extends`
+  replaces arrays, so the generated rules decide; the shadow guard is repeated on `record`, `vtid-close`,
+  `notify-platform` and `assist:*`).
+- Train refs run the T1 jobs with `changes` compared with `refs/heads/main`; the bot overrides `GATE_*` with pipeline
+  variables.
+- T3 reuses the `full-suite:<check>` jobs (they run on main pushes and on the nightly schedule); the 02:17 UTC schedule is a
+  hidden `.schedules` entry for the settings sync (GitLab creates schedules only through the API).
+- vitana-v1 Vitest has 3 shards and a union job (`shard-union.mjs` of platform main); the gateway Jest keeps 4 shards;
+  `mobile-test`/`mobile-bundle` split NATIVE-CI's mobile job; the Android JVM tests run in 2 shards by test class.
+- Ratchet and PR-GATE steps keep the `enforce` switch of `scripts/ci/pr-gate/config.json` (report-only today).
+- SQL tests: one job per platform SQL workflow (21, each with its own filter); one job for the four vitana-v1 ones.
+- Platform services not in `config/service-path-map.json` (`postgrest-aurora-proxy`, `realtime-aurora`, `vcaop`,
+  `vcaop-mcp`) are `path_map: false`; check areas are `area: true`. The map is not edited (gateway file, other lane).
+- T4: the merge-request preview jobs exist only in live mode (no merge requests before the cut); shadow mode builds and
+  uploads the `gl-main/` preview on main (plan §8.1 step 3).
+- T7: the assist job runs main's `scripts/` over a worktree of the merge request head and commits only `src/i18n`; a
+  bridged branch gets the commit as `assist-out/assist.patch` (plan §7: the bridge token never reaches a CI job); the nightly
+  safety net pushes `bot-assist/nightly-<rule>-<date>` (assist/* is protected) and opens a merge request. The provider
+  stays the workflow's default (`gemini`), as plan §3.9 says.
+
+## Not done yet (draft-quality parts, listed for the driver)
+- `preview-e2e` (the unauthenticated PR-GATE preview specs and E2E-PREVIEW-ORB) is not generated: it needs the T4
+  preview URL from lane deploy-path. The signed-in specs run in STAGING-VERIFY after landing (plan §3.4).
+- VALIDATOR-CHECK and DEV-AUTOPILOT-IMPACT are ported only to their main command (`validator-path-guard.cjs --pr-body-check`;
+  `dev-autopilot-impact-scan.mjs`), not every inline step; the CI-HEALTH report job is not generated (`.ci-health-rules`
+  states the rules; the report needs M2 monitoring's metrics).
+- Commands are ported from today's workflows but unproven on GitLab: the Android job needs a job image with JDK 17 and the
+  Android SDK (`images.android` is a JDK image only); `edge-data-client` uses `npx deno@2`; the Vitest union relies on
+  `shard-union.mjs` reading Vitest's Jest-compatible JSON. Lane `cutover`'s shadow pipelines prove or correct them.

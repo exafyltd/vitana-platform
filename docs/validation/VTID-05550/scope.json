@@ -1,0 +1,23 @@
+{
+  "vtid": "VTID-05550",
+  "kind": "feature",
+  "paths": [
+    "config/delivery/**",
+    "scripts/eng/pipeline-gen.mjs",
+    "scripts/eng/pipeline-gen.test.mjs",
+    "scripts/eng/affected-parity.test.mjs",
+    "scripts/eng/services-parity.test.mjs",
+    "scripts/eng/fixtures/v1-pr-files.json",
+    "scripts/eng/fixtures/platform-pr-files.json",
+    "infra/gitlab-engineering/ci/tpl-checks.yml",
+    "infra/gitlab-engineering/ci/tpl-main.yml",
+    "infra/gitlab-engineering/ci/tpl-nightly.yml",
+    "infra/gitlab-engineering/ci/tpl-assist.yml",
+    "infra/gitlab-engineering/ci/v1-delivery.gitlab-ci.yml",
+    "infra/gitlab-engineering/ci/platform-delivery.gitlab-ci.yml",
+    "docs/validation/VTID-05550/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05550/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

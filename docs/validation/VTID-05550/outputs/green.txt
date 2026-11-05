@@ -1,0 +1,37 @@
+# Green: the three new test files on the lane branch (origin/main b3d547b66c72ef4b10c680ef7d337db0e61137f7 + this lane's files), Node v22.23.4
+$ node --test scripts/eng/pipeline-gen.test.mjs scripts/eng/affected-parity.test.mjs scripts/eng/services-parity.test.mjs
+ok 1 - vitana-v1: the fixture holds the last 60 merged PRs with their files and workflows
+ok 2 - vitana-v1: every pull-request workflow that ran is in the service list registry
+ok 3 - vitana-v1: each of the 60 PRs selects every check whose path-filtered GitHub workflow ran for it
+ok 4 - vitana-platform: the fixture holds the last 60 merged PRs with their files and workflows
+ok 5 - vitana-platform: every pull-request workflow that ran is in the service list registry
+ok 6 - vitana-platform: each of the 60 PRs selects every check whose path-filtered GitHub workflow ran for it
+ok 7 - renders both project files from the service list, byte for byte
+ok 8 - --check exits 0 when the files are current and 3 on drift, and writes nothing
+ok 9 - GitLab glob semantics: dir/**/* is recursive, a trailing ** is one level, braces and dotfiles match
+ok 10 - each T1 check job has rules: changes: from its service paths plus the shared and other paths
+ok 11 - a shared path, or an area no single service owns, selects every check
+ok 12 - a change to one service selects only that service checks; a documentation-only change selects none
+ok 13 - an unknown path makes gate fail and name it, so the merge request cannot land with fewer checks
+ok 14 - gate needs every check with optional: true and runs only when they passed
+ok 15 - governance jobs carry no path rule, come first, and are the only jobs besides gate that always run
+ok 16 - no T1 job declares id_tokens or a secret, no file uses include: local, and T1 jobs are untrusted and interruptible
+ok 17 - every test job is sharded so its fixture duration is under 4 minutes
+ok 18 - dependencies come from the cache keyed by the lockfile
+ok 19 - main pipelines run every check once, are not interruptible, and use the main and deploy classes
+ok 20 - DELIVERY_MODE defaults to shadow; in shadow mode record, vtid-close, notify-platform and assists are absent and no env_overrides pass
+ok 21 - the generated files include the deploy and verify templates by the job names of plan §9
+ok 22 - sibling sweep: every workflow plan §2.2 moves to GitLab has its jobs in a generated file
+ok 23 - the service list has schema vitana.delivery-services/v1 and both repositories
+ok 24 - platform service paths equal config/service-path-map.json
+ok 25 - the gateway service carries the env_overrides of plan §3.6 step 2; the deployable services have images and staging targets
+ok 26 - every path filter of the platform pull-request workflows maps to a service, and selects that workflow's checks
+ok 27 - every vitana-v1 workflow path filter recorded in the service list selects its checks
+# tests 27
+# suites 0
+# pass 27
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+exit=0
