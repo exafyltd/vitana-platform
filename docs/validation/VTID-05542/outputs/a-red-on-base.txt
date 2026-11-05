@@ -2,6 +2,8 @@
 # (so each case fails by its own assertion, not by one crash). Tree: gitlab-api.mjs + testing/fake-fetch.mjs of this branch + the new test.
 # command: node --test scripts/eng/gitlab-settings.test.mjs   (Node v22.23.4)
 # The one case that passes is the guard 'free tier: ... names none of the Premium-only APIs': an empty file names none, as the plan's guard passes on the repo today.
+# Coverage note (review of 16:54Z): this recorded red covers 52 of the 55 final cases (cases 42, 44 and 45 were added after it was recorded; case 17 was renamed).
+# The reds of the stub are TypeError or SyntaxError raised by the empty module, not assertion failures; the mutation run (a-mutation-run.txt) covers the added cases.
 # tests 52
 # pass 1
 # fail 51

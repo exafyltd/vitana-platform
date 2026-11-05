@@ -130,6 +130,12 @@ Never change a setting in the GitLab UI: the next run reverts it, and `check` re
 
 Secrets are passed to the AWS CLI on standard input, never as an argument. No log line, error or output contains a token.
 
+## Re-running the milestone 1 installer
+
+`host/gitlab-configure.sh` of milestone 1 still writes `host/ci-platform.yml` and `host/ci-v1.yml` to `vitana/ci-config` under the names
+`platform.gitlab-ci.yml` and `v1.gitlab-ci.yml`. Running it again puts those older texts back, until the next settings sync (within 10 minutes)
+writes the files of `infra/gitlab-engineering/ci/` over them. Do not run it after `m2.sh install`.
+
 ## Free-tier endpoints used
 
 All on GitLab documentation pages whose tier banner includes Free (checked 2026-11-05 against GitLab 19.x docs; the pinned instance is 19.5): `GET /license`; `GET|DELETE /personal_access_tokens/:id` (also `self`), `GET /personal_access_tokens`,

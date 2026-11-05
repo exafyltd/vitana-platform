@@ -396,12 +396,15 @@ function lintCi(doc, { requiredJobs = [] } = {}) {
   return bad;
 }
 
-test('central CI: exactly three files, named as gitlab-settings.json says, one per project, and nothing else in the folder', ({ CONFIG }) => {
+test('central CI: the three project files exist, named as gitlab-settings.json says, one per project; any other *.yml in the folder has a name the sync accepts', ({ CONFIG }) => {
   const dir = path.join(ROOT, 'ci');
-  assert.deepEqual(readdirSync(dir).sort(), ['platform.gitlab-ci.yml', 'rehearsal.gitlab-ci.yml', 'v1.gitlab-ci.yml'], 'the sync writes every *.yml directly in the folder to vitana/ci-config under the same name');
+  const present = readdirSync(dir).filter((f) => f.endsWith('.yml'));
+  // The delivery lanes of plan agentic-delivery add their templates to this folder and the sync copies every *.yml, so the folder is not closed:
+  // the three project files must exist, and any other file only needs a name the sync accepts.
+  for (const f of ['platform.gitlab-ci.yml', 'rehearsal.gitlab-ci.yml', 'v1.gitlab-ci.yml']) assert.ok(present.includes(f), `${f} is in the folder: the sync writes every *.yml directly in it to vitana/ci-config under the same name`);
   assert.deepEqual(Object.fromEntries(Object.entries(CONFIG.projects).map(([k, p]) => [k, p.ci_file])),
     { 'vitana-platform': 'platform.gitlab-ci.yml', 'vitana-v1': 'v1.gitlab-ci.yml', rehearsal: 'rehearsal.gitlab-ci.yml' }, 'part A points each project at its own file');
-  for (const f of readdirSync(dir)) assert.match(f, /^[A-Za-z0-9][A-Za-z0-9._-]{0,100}\.yml$/, `${f}: a name the sync accepts`);
+  for (const f of present) assert.match(f, /^[A-Za-z0-9][A-Za-z0-9._-]{0,100}\.yml$/, `${f}: a name the sync accepts`);
 });
 
 test('central CI: every file parses, and its structure is what plan section 3.3 promises (workflow, retry, tag, interruptible, no deploy, no secret, nothing Premium)', ({ CI, CONFIG }) => {
@@ -506,7 +509,7 @@ test('central CI reader: it refuses what it cannot read instead of misreading it
 
 const PYYAML = spawnSync('python3', ['-c', 'import yaml'], { env: process.env }).status === 0;
 nodeTest('central CI reader agrees with PyYAML on every file of the folder', { skip: PYYAML ? false : 'PyYAML is not installed on this machine (set PYTHONPATH to a folder that has it)' }, () => {
-  for (const f of readdirSync(path.join(ROOT, 'ci')).filter((x) => x.endsWith('.yml'))) {
+  for (const f of Object.values(CI_FILES).map((p) => path.basename(p))) {   // the three project files; the delivery templates of other lanes use YAML this reader does not claim to read
     const r = spawnSync('python3', ['-c', 'import sys, json, yaml; print(json.dumps(yaml.safe_load(open(sys.argv[1], encoding="utf8"))))', path.join(ROOT, 'ci', f)], { encoding: 'utf8' });
     assert.equal(r.status, 0, `${f}: ${r.stderr}`);
     assert.deepEqual(parseYaml(read(`ci/${f}`)), JSON.parse(r.stdout), `${f}: both readers see the same document`);
