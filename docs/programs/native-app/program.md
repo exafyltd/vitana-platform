@@ -10,6 +10,7 @@ specs:
   - vitana-platform:native-wave2-discover-commerce
   - vitana-platform:native-wave2-discover-commerce-r2
   - vitana-platform:native-wave2-events-calendar
+  - vitana-platform:native-wave2-fix-forward
   - vitana-platform:native-wave2-health-biology
   - vitana-platform:native-wave2-health-biology-r3
   - vitana-platform:native-wave2-home-feed-news
