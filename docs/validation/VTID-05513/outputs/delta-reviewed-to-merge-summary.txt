@@ -1,0 +1,44 @@
+range 5c4a8249e7..e34c102e53 (reviewed head to the merge of main)
+files: 49
+lane-owned files changed in this range: 2
+non-lane files in this range (from main via merge): 47
+M	.kiro/specs/eng-gitlab-m1/handoff.md
+A	.kiro/specs/eng-gitlab-m1/lanes/gitlab-verify.md
+M	.kiro/specs/eng-gitlab-m1/plan.md
+M	.kiro/specs/eng-gitlab-m1/sparring/verdict.md
+M	.kiro/specs/eng-gitlab-m1/tasks.md
+M	.kiro/specs/messenger-ux-v2/handoff.md
+A	.kiro/specs/operator-chat-service-token/handoff.md
+A	.kiro/specs/operator-chat-service-token/lanes/operator-chat-service-token.md
+A	.kiro/specs/operator-chat-service-token/plan.md
+A	.kiro/specs/operator-chat-service-token/sparring/responses-1.md
+A	.kiro/specs/operator-chat-service-token/sparring/round-1.md
+A	.kiro/specs/operator-chat-service-token/sparring/round-2.md
+A	.kiro/specs/operator-chat-service-token/sparring/state.json
+A	.kiro/specs/operator-chat-service-token/sparring/verdict.md
+A	.kiro/specs/operator-chat-service-token/tasks.md
+M	.kiro/specs/pm-reassign-idempotent-r3/lanes/reassign-noop-r3.md
+M	docs/programs/standalone/program.md
+M	docs/validation/VTID-05309/acceptance.md
+A	docs/validation/VTID-05309/timings.json
+A	docs/validation/VTID-05421/acceptance.md
+A	docs/validation/VTID-05421/commands.log
+A	docs/validation/VTID-05421/outputs/archive-r2-green-on-head.txt
+A	docs/validation/VTID-05421/outputs/changed-files.txt
+A	docs/validation/VTID-05421/outputs/jest-project-manager.log
+A	docs/validation/VTID-05421/outputs/protected-check.txt
+A	docs/validation/VTID-05421/outputs/red-on-base.txt
+A	docs/validation/VTID-05421/outputs/test-change-explanation.md
+A	docs/validation/VTID-05421/outputs/test-operator.txt
+A	docs/validation/VTID-05421/outputs/test-removals-count.txt
+A	docs/validation/VTID-05421/outputs/test-removals.txt
+A	docs/validation/VTID-05421/plan-sparring.md
+A	docs/validation/VTID-05421/scope.json
+A	docs/validation/VTID-05421/staging-tests.json
+M	services/gateway/src/services/conversation/conversation-flag-pins.generated.ts
+M	services/gateway/src/services/project-manager/act.ts
+M	services/gateway/src/services/project-manager/decide.ts
+M	services/gateway/src/services/project-manager/types.ts
+M	services/gateway/src/services/project-manager/writers.ts
+M	services/gateway/test/kaf-staging-claude-available-wiring.test.ts
+M	services/gateway/test/project-manager/act.test.ts
