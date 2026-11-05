@@ -7,7 +7,7 @@ next_actor: kiro
 state: approved
 spar_refs:
   - exafyltd/vitana-v1: 7829ef2f2ef12364862961d339161229c286d6f0
-updated: 2026-11-05T21:34Z
+updated: 2026-11-05T21:45Z
 sparring_record: .kiro/specs/agentic-delivery/sparring/verdict.md
 vtids: [VTID-05545, VTID-05546, VTID-05547, VTID-05548, VTID-05549, VTID-05550, VTID-05551, VTID-05552, VTID-05554, VTID-05562, VTID-05563, VTID-05564]
 ---
@@ -129,3 +129,6 @@ nav-paths before gateway-delivery, cutover, cut-settings.
 
 ### 2026-11-05T21:34Z · ci-plan-spar · approved (late lane VTID)
 Converged; approved by policy converged-auto-v1. 3 lane(s) got a VTID and are handed to Kiro.
+
+### 2026-11-05T21:45Z · kiro-exafy-202611041929-802c · approved (driver: merging the late-lane plan PR)
+PLAN-SPAR allocated VTID-05563 (`nav-paths`), VTID-05564 (`sv-cwd`) and VTID-05562 (`cut-settings`) at 21:34Z.

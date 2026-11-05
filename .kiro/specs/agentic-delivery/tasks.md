@@ -434,7 +434,9 @@ six and eng-gitlab-m2 `settings`. Every new test is recorded red on `origin/main
       jobs of lane pipelines, read from its files); sets `process_mode: oldest_first` on the resource groups that
       `tpl-verify.yml` `.resource-groups` lists; allows the vitana-v1 job token to read vitana-platform and the reverse where
       the templates need it; sets the maximum artifact size the image archives need (lane deploy-path: at least 2 GB);
-      lets `bot-land` push `assist/*` (plan §3.9) and keeps `train/*` unprotected (plan §3.5). A second run writes nothing;
+      lets `bot-land` push `assist/*` (plan §3.9) and keeps `train/*` unprotected (plan §3.5). creates the GitHub bridge's
+      GitLab account (Developer on both projects; scopes api, write_repository) and writes its token to
+      /etc/vitana/gitlab-bridge-token on the host, as for bot-land (RUNBOOK-github-bridge.md); A second run writes nothing;
       `--check` exits 3 on drift; nothing is printed that holds a token.
 - [ ] C3 Implement in `scripts/eng/gitlab-settings.mjs` and `infra/gitlab-engineering/settings/gitlab-settings.json` only;
       any item that lanes `settings` or `cutover` already apply is recorded and not built twice.
