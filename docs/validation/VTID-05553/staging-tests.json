@@ -1,0 +1,6 @@
+{
+  "vtid": "VTID-05553",
+  "service": "gateway",
+  "tests": [],
+  "reason": "Not verified on staging: the change alters the headers of two in-process calls, and a real approve or reject writes to the shared Supabase project. Staging suites are read-only (CLAUDE.md rule 48). The covering test is test/operator-chat-service-token.test.ts (plan section 9)."
+}
