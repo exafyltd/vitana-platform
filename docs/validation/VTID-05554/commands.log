@@ -1,0 +1,10 @@
+# VTID-05554 agentic-delivery/reseat — commands.log (worktree /projects/sandbox/.rv/reseat, origin/main 3767d3d09d)
+$ node scripts/collab/queue.mjs session-id --agent kiro --seat exafy   -> kiro-exafy-202611051218-d1d2
+$ node scripts/collab/queue.mjs claim agentic-delivery/reseat --session kiro-exafy-202611051218-d1d2 --repo /projects/sandbox/vitana-platform   -> {"ok":true} (pass)
+$ git -C /projects/sandbox/vitana-platform worktree add -b kiro/agentic-delivery/reseat /projects/sandbox/.rv/reseat origin/main   -> HEAD 3767d3d09d (pass)
+$ gh api "repos/exafyltd/vitana-platform/pulls?state=open&per_page=100" --paginate; per PR: gh api ".../pulls/<n>/files" --paginate   -> outputs/open-prs.txt (121 open PRs, 2 touch a target: #4689, #4690)
+$ sed -i 's/^seat: exafyltd$/seat: exafy/' .kiro/specs/agentic-delivery/lanes/{prerequisites,pipelines,deploy-path,verify-on-gitlab,merge-queue,github-bridge,gateway-delivery,cutover}.md   -> 8 files, 8 insertions, 8 deletions
+$ bash docs/validation/VTID-05554/outputs/target-diff-check.sh origin/main WT   -> 8 pass, 0 fail (working tree, before the commit)
+$ bash docs/validation/VTID-05554/outputs/negative-proof.sh 3767d3d09d… kiro-exafy-202611051218-d1d2   -> outputs/negative-proof.txt (N1: scope-check exit 0, validate exit 1 with 8 problems; N2: scope-check exit 1 with 2 problems, validate exit 0; scratch worktree removed, nothing pushed)
+$ bash docs/validation/VTID-05554/outputs/positive-proof.sh control 3767d3d09d… 18a10349d8…   -> outputs/red-on-base.txt (trial merge of origin/main into #4690: scope-check exit 1, 2 problems; validate exit 0; scratch removed, nothing pushed)
+$ node --test scripts/collab/queue.test.mjs   -> outputs/queue.test.txt (78 tests, 78 pass, 0 fail; Node 22.23.4)

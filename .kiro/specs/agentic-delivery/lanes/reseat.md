@@ -1,6 +1,6 @@
 ---
 lane: reseat
-state: ready
+state: executing
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -18,7 +18,9 @@ paths:
   - .kiro/specs/agentic-delivery/lanes/github-bridge.md
   - .kiro/specs/agentic-delivery/lanes/gateway-delivery.md
   - .kiro/specs/agentic-delivery/lanes/cutover.md
-updated: 2026-11-05T10:16Z
+claimed_by: kiro-exafy-202611051218-d1d2
+branch: kiro/agentic-delivery/reseat
+updated: 2026-11-05T12:28Z
 vtid: VTID-05554
 ---
 # Lane `reseat`: give the eight lanes of this plan back to seat exafy (plan §9) through the reviewed lane_admin path
@@ -44,3 +46,10 @@ reviewer agent.
 
 ### 2026-11-05T10:16Z · ci-plan-spar · ready (VTID allocated)
 VTID-05554 allocated after policy approval (converged-auto-v1).
+
+### 2026-11-05T12:28Z · kiro-exafy-202611051218-d1d2 · ready → executing
+Claimed by a builder session of seat exafy (not the driver kiro-exafy-202611041929-802c). The eight target lane files
+change only `seat: exafyltd` → `seat: exafy` (byte check 8/8 pass, `outputs/target-diff-check.txt`). No code and no new
+test; `queue.test.mjs` 78/78 pass. Negative proof refused (N1 by Collab handoff, N2 by Lane scope); control trial merge
+of today's main into #4690 fails Lane scope on its builder's two lane-file commits. Decisions in
+`docs/validation/VTID-05554/acceptance.md`.
