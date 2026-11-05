@@ -1,0 +1,24 @@
+{
+  "vtid": "VTID-05542",
+  "kind": "infra",
+  "paths": [
+    "infra/gitlab-engineering/settings/**",
+    "infra/gitlab-engineering/ci/**",
+    "infra/gitlab-engineering/m2.sh",
+    "infra/gitlab-engineering/host/ops-install.sh",
+    "infra/gitlab-engineering/host/units/vitana-settings.service",
+    "infra/gitlab-engineering/host/units/vitana-settings.timer",
+    "infra/gitlab-engineering/host/units/vitana-platform-sync.service",
+    "infra/gitlab-engineering/host/units/vitana-platform-sync.timer",
+    "infra/gitlab-engineering/terraform/settings.tf",
+    "scripts/eng/gitlab-settings.mjs",
+    "scripts/eng/gitlab-settings.test.mjs",
+    "scripts/eng/free-tier-guard.test.mjs",
+    "docs/ENGINEERING-PLATFORM-PLAN.md",
+    "docs/ENGINEERING-PLATFORM-LICENCES.md",
+    "docs/validation/VTID-05542/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05542/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

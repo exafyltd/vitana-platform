@@ -1,0 +1,15 @@
+# VTID-05564 diff contract, run in /projects/sandbox/.rv/svcwd, 2026-11-05T21:59:01Z
+$ node docs/validation/VTID-05564/outputs/diff-check.mjs d73fec53f96ab8fbfb5fbdf002ae9fa2cf00376d HEAD   (HEAD = code commit e41c1fc9eac5ecdbe6ee41833c22a5f25a3e14a8)
+base d73fec53f96ab8fbfb5fbdf002ae9fa2cf00376d  head e41c1fc9eac5ecdbe6ee41833c22a5f25a3e14a8
+PASS docs/validation/VTID-05515/staging-tests.json: numstat "1 0" (want "1 0")
+PASS docs/validation/VTID-05515/staging-tests.json: added line ["      \"cwd\": \"services/gateway\","]
+PASS docs/validation/VTID-05515/staging-tests.json: head JSON = base JSON + cwd on its one existing test
+PASS docs/validation/VTID-05516/staging-tests.json: numstat "1 0" (want "1 0")
+PASS docs/validation/VTID-05516/staging-tests.json: added line ["      \"cwd\": \"services/gateway\","]
+PASS docs/validation/VTID-05516/staging-tests.json: head JSON = base JSON + cwd on its one existing test
+PASS docs/validation/VTID-05518/staging-tests.json: numstat "1 0" (want "1 0")
+PASS docs/validation/VTID-05518/staging-tests.json: added line ["      \"cwd\": \"services/gateway\","]
+PASS docs/validation/VTID-05518/staging-tests.json: head JSON = base JSON + cwd on its one existing test
+PASS 15 changed file(s) in d73fec53f9..HEAD, outside the lane: []
+10 pass, 0 fail
+[exit 0]
