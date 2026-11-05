@@ -1,0 +1,25 @@
+[Unit]
+Description=Fast-forward the checkout /opt/vitana/platform to main of the mirrored vitana/vitana-platform (one tick)
+After=network-online.target
+
+[Service]
+Type=oneshot
+Nice=10
+CPUQuota=50%
+MemoryMax=512M
+TimeoutStartSec=120
+# REGION and DOMAIN come from the environment file that milestone 1 wrote on this machine.
+EnvironmentFile=/etc/vitana/env
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+Environment=HOME=/root
+# git reads the mirror user's token through this helper (ops-install.sh installs it): the token is in no URL and in no git config.
+Environment=GIT_ASKPASS=/opt/vitana/git-askpass.sh
+Environment=GIT_TERMINAL_PROMPT=0
+Environment=GIT_CONFIG_NOSYSTEM=1
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+# flock keeps two ticks from overlapping; a tick that finds the lock busy exits 0 and the next minute tries again.
+# fetch and merge --ff-only, nothing else: no rebase, no reset, no force. A checkout that cannot fast-forward (someone committed in it) makes
+# the tick fail and changes nothing; every other unit only reads the checkout.
+ExecStart=/usr/bin/flock -n -E 0 /run/vitana-platform-sync.lock /bin/sh -c 'git -C /opt/vitana/platform fetch --quiet origin main && git -C /opt/vitana/platform merge --quiet --ff-only FETCH_HEAD'

@@ -1,0 +1,11 @@
+[Unit]
+Description=Fast-forward the platform checkout every minute
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=1min
+AccuracySec=5s
+Unit=vitana-platform-sync.service
+
+[Install]
+WantedBy=timers.target
