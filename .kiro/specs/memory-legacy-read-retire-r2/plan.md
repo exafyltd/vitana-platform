@@ -79,6 +79,9 @@ Today every ORB memory read still pays for the legacy path twice:
   all-empty case is asserted on an empty recall. The two dev-identity tests are unchanged.
   `test/vtid-05147-effective-role-permitted.test.ts` mocks `fetchMemoryContextWithIdentity` entirely, so it needs no
   change (prototype: 73/73 across the three files). `test/routes/orb-live.test.ts` mocks it too and is unchanged.
+- Unchanged (round 1 of this slug, R1-F1): `test/vtid-04452-staging-orb-recall-pinned.test.ts` only reads
+  `AWS-STAGE-DEPLOY-GATEWAY.yml` and `AWS-PROD-DEPLOY-GATEWAY.yml` (`readFileSync`, `:7`) and asserts the
+  `MEMORY_ORB_RECALL_*` pins, which this plan keeps; it does not import the bridge or `isOrbRecallEnabled`. Prototype: 3/3.
 - Removed with the code: `test/services/memory/vtid-04784-recall-shadow.test.ts`. No other test is skipped or loosened.
 - Gateway `npx tsc --noEmit` clean and full `npx jest` green apart from failures that also fail on `origin/main` (prototype:
   `test/providers/storage-provider.test.ts` and `test/vtid-04226-eventbridge-test-contract-schedules.test.ts` read the
