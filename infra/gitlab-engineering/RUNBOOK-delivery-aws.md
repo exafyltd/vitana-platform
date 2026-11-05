@@ -5,7 +5,8 @@ staging, rolls back a deploy that does not serve, and publishes vitana-v1 merge-
 with a short-lived per-job ID token; no AWS key exists on the GitLab side. Production is not touched by anything here:
 it stays the owner's PUBLISH.
 
-Files: `ci/tpl-deploy.yml` (the six jobs), `terraform/fleet-classes.tf` (runner classes main and deploy),
+Files: `ci/tpl-deploy.yml` (the six jobs), `terraform/fleet-classes.tf` (runner classes main and deploy) and the class
+runner blocks of `host/fleet-manager-install.sh` (M2's fleet manager),
 `scripts/eng/deploy/` (build, push, deploy, rollback, previews, target-group setup), `scripts/aws/setup-gitlab-oidc.sh`
 and `scripts/aws/iam/gitlab-oidc-*.json` (the OIDC provider and the six roles).
 
@@ -56,21 +57,63 @@ and `scripts/aws/iam/gitlab-oidc-*.json` (the OIDC provider and the six roles).
 
 ## A2. Runner classes (owner, the M2 entry point)
 
-`terraform/fleet-classes.tf` adds two Auto Scaling groups next to M2's untrusted fleet:
+`terraform/fleet-classes.tf` adds two Auto Scaling groups next to M2's untrusted fleet (`terraform/fleet.tf`), and the
+M2 fleet manager scales all three, one runner block each (`host/fleet-manager-install.sh`):
 
 | Class | Group | Tag | Max | Machines |
 |---|---|---|---|---|
+| untrusted (M2) | `vitana-eng-fleet` | `vitana-eng` | 96, 4 kept ready | single use, 80 % spot |
 | main | `vitana-eng-fleet-main` | `vitana-eng-main` (protected runner) | 12 | single use, 80 % spot |
 | deploy | `vitana-eng-fleet-deploy` | `vitana-eng-deploy` | 6 | single use, On-Demand only |
 
-Both: min 0 and desired 0 (the runner scales them), IMDSv2 with hop limit 1, no public IP, no instance profile, egress
-80, 443 and DNS only. Apply with the M2 entry point and set `fleet_class_ami_id` to the M2 job image. A vCPU quota that
-is too low makes the Terraform check print the exact `aws service-quotas request-service-quota-increase` command; run
-it and apply again when AWS has raised the quota. Grow the GitLab host to m6i.2xlarge with M1 `setup.sh grow`.
+All three: min 0 and desired 0 (the runner scales them), one job per machine and the machine deleted after it,
+`privileged = false`, IMDSv2 with hop limit 1, no public IP, egress 80, 443 and DNS only, SSH in only from the fleet
+manager. The class machines run the M2 job image and have no instance profile. Only the main class's service
+containers (the rootless BuildKit daemon of `.build-image`) run without the seccomp and AppArmor profiles; every job
+container keeps both. Each class keeps its own cache path, so no class reads another class's cache.
 
-Until the M2 fleet lane is on `main`, these parts wait (they live in M2's files): the fleet manager's runner blocks for
-the two classes (`host/fleet-manager-install.sh`), SSH from the fleet manager to the class machines, and the manager's
-permissions on the two groups. The settings sync must also allow job artifacts of at least 2 GB (the OCI archives).
+1. Sizes of plan §3.2 for the untrusted class (M2 variables). In your CloudShell copy, put these two lines into
+   `~/vitana-eng/terraform/terraform.tfvars` (next to `fleet.tf`):
+
+   ```hcl
+   fleet_max_instances = 96
+   fleet_idle_count    = 4
+   ```
+
+2. Apply with the M2 entry point: `bash ~/vitana-eng/setup.sh`. A vCPU quota that is too low stops M2's part of the
+   apply, or makes the check of `fleet-classes.tf` warn, and both print the exact
+   `aws service-quotas request-service-quota-increase` command: run it, wait for AWS, and apply again. Grow the GitLab
+   host to m6i.2xlarge with M1 `setup.sh grow`.
+3. Tell the fleet manager the new sizes and the classes, with the engineering-account credentials of `RUNBOOK.md`
+   section 2. Do it before the cut, when no job runs: the installer restarts the runner.
+
+   ```bash
+   MGR=$(aws ec2 describe-instances --filters Name=tag:Name,Values=vitana-eng-fleet-manager Name=instance-state-name,Values=running --query 'Reservations[].Instances[].InstanceId' --output text)
+   aws ssm send-command --instance-ids "$MGR" --document-name AWS-RunShellScript --comment "runner classes (VTID-05546)" --parameters '{"commands":[
+     "sed -i -e \"s/^FLEET_MAX_INSTANCES=.*/FLEET_MAX_INSTANCES=96/\" -e \"s/^FLEET_IDLE_COUNT=.*/FLEET_IDLE_COUNT=4/\" /etc/vitana/env",
+     "echo CLASS_MAIN_ASG_NAME=vitana-eng-fleet-main > /etc/vitana/env.classes",
+     "echo CLASS_MAIN_MAX_INSTANCES=12 >> /etc/vitana/env.classes",
+     "echo CLASS_MAIN_TOKEN_SECRET=vitana/engineering/gitlab/vitana-eng-fleet-main-runner-token >> /etc/vitana/env.classes",
+     "echo CLASS_DEPLOY_ASG_NAME=vitana-eng-fleet-deploy >> /etc/vitana/env.classes",
+     "echo CLASS_DEPLOY_MAX_INSTANCES=6 >> /etc/vitana/env.classes",
+     "echo CLASS_DEPLOY_TOKEN_SECRET=vitana/engineering/gitlab/vitana-eng-fleet-deploy-runner-token >> /etc/vitana/env.classes",
+     "bash /opt/vitana/fleet-manager-install.sh >> /var/log/vitana-bootstrap.log 2>&1"]}' --query Command.CommandId --output text
+   ```
+
+   Read the end of `/var/log/vitana-bootstrap.log` a few minutes later with the `ssm send-command` pattern of
+   `RUNBOOK-m2-fleet.md` section 3. Good: `class main: runner token found in …`, `class deploy: runner token found in …`
+   and `== fleet manager install done`. `class …: no runner token in … yet; the class stays off` means that class's
+   runner does not exist in GitLab yet: its jobs wait, and the untrusted fleet runs as before. Run the last command
+   (the installer) again once the token exists. After changing `fleet_main_max_instances` or
+   `fleet_deploy_max_instances`, write the new value into `/etc/vitana/env.classes` the same way.
+4. The class runners in GitLab: `vitana-eng-fleet-main` (tag `vitana-eng-main`, a protected runner: protected refs
+   only) and `vitana-eng-fleet-deploy` (tag `vitana-eng-deploy`), their tokens stored in
+   `vitana/engineering/gitlab/vitana-eng-fleet-main-runner-token` and
+   `vitana/engineering/gitlab/vitana-eng-fleet-deploy-runner-token` (created empty by `fleet-classes.tf`). The settings
+   sync creates them once its runner list has the two classes; today it manages the legacy and the fleet runner only
+   (open item of this lane, `docs/validation/VTID-05546/acceptance.md`).
+
+The settings sync must also allow job artifacts of at least 2 GB (the OCI archives).
 
 ## How a deploy runs, and how to read a failed one
 

@@ -1,6 +1,9 @@
 // VTID-05546 — runner classes main and deploy (plan agentic-delivery §3.2, §5) and the job-class rules of §3.2:
 // a job tagged vitana-eng declares no id_tokens and names no secret; a job tagged vitana-eng-deploy runs no repository
 // script. Reads committed files only; never calls AWS or GitLab. Dependency-free Node 20 (UNIT.yml, no install).
+// The fleet manager's config.toml is rendered by host/fleet-manager-install.sh --render-config (M2 lane fleet, edited
+// here for the classes), and the installer's class step runs against stub commands in a temporary folder: no network,
+// no AWS, no root.
 //
 // The CI files are parsed with the strict reader of scripts/eng/verify/tpl-verify-structure.test.mjs (VTID-05552): only
 // the plain YAML subset (block maps and lists, flow lists, plain and quoted scalars); anything else throws, so a file
@@ -9,14 +12,20 @@
 // pipelines include every template from vitana/ci-config).
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync, existsSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync, mkdtempSync, mkdirSync, writeFileSync, chmodSync, rmSync, statSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join, dirname } from 'node:path';
+import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const TF = join(ROOT, 'infra', 'gitlab-engineering', 'terraform', 'fleet-classes.tf');
-const CI_DIR = join(ROOT, 'infra', 'gitlab-engineering', 'ci');
+const ENG = join(ROOT, 'infra', 'gitlab-engineering');
+const TF = join(ENG, 'terraform', 'fleet-classes.tf');
+const FLEET_TF = join(ENG, 'terraform', 'fleet.tf');
+const FLEET_AMI_TF = join(ENG, 'terraform', 'fleet-ami.tf');
+const INSTALL_SH = join(ENG, 'host', 'fleet-manager-install.sh');
+const RUNBOOK = join(ENG, 'RUNBOOK-delivery-aws.md');
+const CI_DIR = join(ENG, 'ci');
 const TPL = join(CI_DIR, 'tpl-deploy.yml');
 const BUILD = join(ROOT, 'scripts', 'eng', 'deploy', 'build-image.sh');
 const UNTRUSTED = 'vitana-eng';
@@ -25,21 +34,47 @@ const DEPLOY = 'vitana-eng-deploy';
 
 // ── Terraform helpers ─────────────────────────────────────────────────────────────────────────────────────────────
 const tf = () => readFileSync(TF, 'utf8');
-function block(src, head) {
-  const m = new RegExp(`^${head}\\s*\\{`, 'm').exec(src);
-  assert.ok(m, `${head} not found in fleet-classes.tf`);
+/** Index of the brace that closes the one at `open`; strings and # comments are skipped. */
+function closeOf(src, open) {
   let depth = 0;
-  let i = m.index + m[0].length - 1;
-  for (; i < src.length; i += 1) {
+  for (let i = open; i < src.length; i += 1) {
     const ch = src[i];
     if (ch === '"') { i += 1; while (i < src.length && src[i] !== '"') { if (src[i] === '\\') i += 1; i += 1; } continue; }
     if (ch === '#') { while (i < src.length && src[i] !== '\n') i += 1; continue; }
     if (ch === '{') depth += 1;
-    else if (ch === '}' && --depth === 0) break;
+    else if (ch === '}' && --depth === 0) return i;
   }
-  return src.slice(m.index, i + 1);
+  throw new Error('unbalanced braces');
+}
+function block(src, head, where = 'fleet-classes.tf') {
+  const m = new RegExp(`^${head}\\s*\\{`, 'm').exec(src);
+  assert.ok(m, `${head} not found in ${where}`);
+  return src.slice(m.index, closeOf(src, m.index + m[0].length - 1) + 1);
 }
 const code = (src) => src.split('\n').map((l) => l.replace(/(^|\s)#.*$/, '')).join('\n');
+/** Bodies of every nested `name { ... }` (any depth) inside a block text. */
+function subs(src, name) {
+  const out = [];
+  const re = new RegExp(`(^|[\\s{])${name}\\s*\\{`, 'g');
+  let m;
+  while ((m = re.exec(src))) {
+    const open = m.index + m[0].length - 1;
+    out.push(src.slice(open, closeOf(src, open) + 1));
+    re.lastIndex = open + 1;
+  }
+  return out;
+}
+/** Statements of an aws_iam_policy_document block: sid, effect, actions, the resources expression, the conditions. */
+function statements(doc) {
+  const one = (s, re) => re.exec(s)?.[1];
+  return subs(doc, 'statement').map((s) => ({
+    sid: one(s, /\bsid\s*=\s*"([^"]*)"/),
+    effect: one(s, /\beffect\s*=\s*"([^"]*)"/) ?? 'Allow',
+    actions: [...(one(s, /\bactions\s*=\s*\[([^\]]*)\]/) ?? '').matchAll(/"([^"]*)"/g)].map((m) => m[1]),
+    resources: (one(s, /\bresources\s*=\s*(\[[^\n]*\])/) ?? '').replace(/\s+/g, ' ').trim(),
+    conditions: subs(s, 'condition').map((c) => [one(c, /\btest\s*=\s*"([^"]+)"/), one(c, /\bvariable\s*=\s*"([^"]+)"/), one(c, /\bvalues\s*=\s*(\[[^\n]*\])/)].join(' ')),
+  }));
+}
 
 // ── YAML reader (same subset as tpl-verify-structure.test.mjs) ─────────────────────────────────────────────────────
 function scalar(raw, where) {
@@ -184,30 +219,98 @@ test('IMDSv2 required with hop limit 1, no public IP, encrypted gp3 with the eng
   assert.match(lt, /volume_type\s*=\s*"gp3"/);
 });
 
-test('no instance policy: no instance profile and no IAM resource for the classes', () => {
+// The class machines hold no AWS permission (plan §3.2: jobs get AWS access only through their per-job ID tokens, §7).
+// The one IAM resource in this file widens the M2 fleet manager's role to the two class groups (the next test).
+test('no instance policy: the class machines get no instance profile, and the only IAM resource here is the fleet manager policy for the two classes', () => {
   const src = code(tf());
-  assert.equal(/iam_instance_profile/.test(src), false);
-  assert.equal(/resource\s+"aws_iam_/.test(src), false);
+  assert.equal(/iam_instance_profile/.test(src), false, 'no instance profile on the class machines');
+  const iam = [...src.matchAll(/^(resource|data)\s+"(aws_iam_[a-z_]+)"\s+"([a-z_]+)"/gm)].map((m) => `${m[1]} ${m[2]}.${m[3]}`);
+  assert.deepEqual(iam.sort(), ['data aws_iam_policy_document.fleet_manager_classes', 'resource aws_iam_role_policy.fleet_manager_classes']);
+  const p = block(src, 'resource "aws_iam_role_policy" "fleet_manager_classes"');
+  assert.match(p, /\brole\s*=\s*aws_iam_role\.fleet_manager\.id/, 'attached to the M2 manager role, never to a job machine');
+  assert.match(p, /\bpolicy\s*=\s*data\.aws_iam_policy_document\.fleet_manager_classes\.json/);
+  assert.equal(/aws_iam_role\.fleet_job\b|aws_iam_instance_profile\./.test(src), false, 'the M2 job role and profiles are not used here');
 });
 
-test('egress tcp 80, tcp 443 and DNS only, and no ingress', () => {
+// Each class group: out tcp 80, tcp 443 and DNS (inside the VPC); in only SSH from the M2 fleet manager, which opens the
+// runner's Docker connection through it (one-time key over EC2 Instance Connect, as for the untrusted fleet). The manager
+// group gets the matching way out, and nothing else.
+test('egress tcp 80, tcp 443 and DNS only; ingress only tcp 22 from the fleet manager', () => {
   const src = code(tf());
   const rules = [...src.matchAll(/^resource\s+"aws_vpc_security_group_(egress|ingress)_rule"\s+"([a-z_]+)"\s*\{/gm)];
   assert.ok(rules.length > 0);
   const seen = [];
   for (const [, kind, name] of rules) {
-    assert.equal(kind, 'egress', `${name}: no ingress (SSH from the fleet manager comes with the M2 fleet edit)`);
     const b = block(src, `resource "aws_vpc_security_group_${kind}_rule" "${name}"`);
-    assert.match(b, /security_group_id\s*=\s*aws_security_group\.fleet_class\[each\.key\]\.id/);
+    assert.match(b, /for_each\s*=\s*local\.fleet_classes\b/, `${name}: one rule per class`);
+    const group = /^\s*security_group_id\s*=\s*aws_security_group\.([a-z_]+(?:\[each\.key\])?)\.id/m.exec(b);
+    assert.ok(group, `${name}: security_group_id`);
+    const ref = /^\s*referenced_security_group_id\s*=\s*aws_security_group\.([a-z_]+(?:\[each\.key\])?)\.id/m.exec(b);
+    const cidr = /^\s*cidr_ipv4\s*=\s*(\S+)/m.exec(b)?.[1];
+    assert.ok(Boolean(ref) !== Boolean(cidr), `${name}: one source or destination`);
     const proto = /ip_protocol\s*=\s*"([^"]+)"/.exec(b)[1];
     const from = /from_port\s*=\s*(\d+)/.exec(b)[1];
     const to = /to_port\s*=\s*(\d+)/.exec(b)[1];
     assert.equal(from, to, `${name}: one port`);
-    if (from === '53') assert.match(b, /cidr_ipv4\s*=\s*aws_vpc\.main\.cidr_block/, `${name}: DNS stays in the VPC`);
-    seen.push(`${proto}/${from}`);
+    seen.push(`${group[1]} ${kind} ${proto}/${from} ${ref ? `group:${ref[1]}` : cidr}`);
   }
-  assert.deepEqual(seen.sort(), ['tcp/443', 'tcp/53', 'tcp/80', 'udp/53']);
+  assert.deepEqual(seen.sort(), [
+    'fleet_class[each.key] egress tcp/443 "0.0.0.0/0"',
+    'fleet_class[each.key] egress tcp/53 aws_vpc.main.cidr_block',
+    'fleet_class[each.key] egress tcp/80 "0.0.0.0/0"',
+    'fleet_class[each.key] egress udp/53 aws_vpc.main.cidr_block',
+    'fleet_class[each.key] ingress tcp/22 group:fleet_manager',
+    'fleet_manager egress tcp/22 group:fleet_class[each.key]',
+  ]);
   assert.equal(/ingress\s*\{|egress\s*\{/.test(src), false, 'no inline rules');
+  assert.equal(/cidr_ipv6|::\/0/.test(src), false, 'no IPv6');
+});
+
+test('the fleet manager may scale only the two class groups, open SSH only to their machines as ubuntu, and read only their two runner tokens', () => {
+  const src = code(tf());
+  const doc = block(src, 'data "aws_iam_policy_document" "fleet_manager_classes"');
+  const st = statements(doc);
+  assert.deepEqual(st.map((s) => s.sid), ['ScaleClassGroups', 'ConnectToClassMachines', 'ReadClassRunnerTokens']);
+  for (const s of st) assert.equal(s.effect, 'Allow', s.sid);
+  const [scale, connect, read] = st;
+  assert.deepEqual(scale.actions, ['autoscaling:SetDesiredCapacity', 'autoscaling:SetInstanceProtection', 'autoscaling:TerminateInstanceInAutoScalingGroup']);
+  assert.equal(scale.resources, '[for g in aws_autoscaling_group.fleet_class : g.arn]', 'the two class groups, nothing else');
+  assert.deepEqual(connect.actions, ['ec2-instance-connect:SendSSHPublicKey']);
+  assert.equal(connect.resources, '["arn:aws:ec2:${var.region}:${data.aws_caller_identity.me.account_id}:instance/*"]');
+  assert.deepEqual(connect.conditions.sort(), [
+    'StringEquals ec2:ResourceTag/aws:autoscaling:groupName [for c in local.fleet_classes : c.name]',
+    'StringEquals ec2:osuser ["ubuntu"]',
+  ]);
+  assert.deepEqual(read.actions, ['secretsmanager:GetSecretValue']);
+  assert.equal(read.resources, '[for s in aws_secretsmanager_secret.fleet_class_runner_token : s.arn]', 'the two class tokens, nothing else');
+  assert.equal(st.flatMap((s) => s.actions).some((a) => a.includes('*')), false, 'no wildcard action');
+  // What the plugin also needs is already in the M2 manager policy: describing groups and machines, and the key that
+  // encrypts the class secrets (fleet.tf, statements DescribeGroupAndMachines and UseKey).
+  const m2 = statements(block(code(readFileSync(FLEET_TF, 'utf8')), 'data "aws_iam_policy_document" "fleet_manager"', 'fleet.tf'));
+  const describe = m2.find((s) => s.sid === 'DescribeGroupAndMachines');
+  assert.ok(describe && describe.actions.includes('autoscaling:DescribeAutoScalingGroups') && describe.actions.includes('ec2:DescribeInstances'));
+  const key = m2.find((s) => s.sid === 'UseKey');
+  assert.ok(key && key.actions.includes('kms:Decrypt') && key.resources === '[aws_kms_key.main.arn]');
+  assert.match(block(src, 'resource "aws_secretsmanager_secret" "fleet_class_runner_token"'), /kms_key_id\s*=\s*aws_kms_key\.main\.arn/);
+});
+
+test('the classes run on the M2 job image and launch through the Auto Scaling role that holds the key grant', () => {
+  const src = code(tf());
+  const lt = block(src, 'resource "aws_launch_template" "fleet_class"');
+  assert.match(lt, /image_id\s*=\s*one\(aws_imagebuilder_image\.fleet\.output_resources\[0\]\.amis\)\.image/, 'the job image M2 builds (fleet-ami.tf)');
+  assert.equal(/fleet_class_ami_id/.test(src), false, 'no separate image input that could stay empty or drift from the M2 image');
+  const asg = block(src, 'resource "aws_autoscaling_group" "fleet_class"');
+  assert.match(asg, /service_linked_role_arn\s*=\s*aws_iam_service_linked_role\.fleet_autoscaling\.arn/,
+    'the volumes are encrypted with the engineering key; only this Auto Scaling role holds a grant on it (fleet.tf)');
+  const deps = /depends_on\s*=\s*\[([^\]]*)\]/.exec(asg)?.[1] ?? '';
+  for (const d of ['aws_kms_grant.fleet_autoscaling', 'aws_kms_grant.fleet_spot']) assert.ok(deps.includes(d), `the groups start after ${d}`);
+  assert.match(asg, /force_delete\s*=\s*true/, 'protected machines cannot block a destroy');
+  assert.match(block(src, 'resource "aws_secretsmanager_secret" "fleet_class_runner_token"'), /recovery_window_in_days\s*=\s*0\b/, 'a destroyed class can be applied again');
+  const m2 = code(`${readFileSync(FLEET_TF, 'utf8')}\n${readFileSync(FLEET_AMI_TF, 'utf8')}`);
+  for (const head of ['resource "aws_imagebuilder_image" "fleet"', 'resource "aws_iam_service_linked_role" "fleet_autoscaling"', 'resource "aws_kms_grant" "fleet_autoscaling"',
+    'resource "aws_kms_grant" "fleet_spot"', 'resource "aws_security_group" "fleet_manager"', 'resource "aws_iam_role" "fleet_manager"']) {
+    assert.match(m2, new RegExp(`^${head}\\s*\\{`, 'm'), `${head} exists in fleet.tf or fleet-ami.tf`);
+  }
 });
 
 test('a quota that is too low makes the Terraform check print the request', () => {
@@ -253,7 +356,7 @@ test('tpl-deploy defines the six jobs of plan §9: build on the main class, the 
   assert.equal(build.id_tokens, undefined, 'the build has no AWS access');
   assert.match(String(build.variables.BUILDKITD_FLAGS), /--oci-worker-no-process-sandbox/);
   assert.match(String(build.image.name), /^docker\.io\/moby\/buildkit:v[0-9.]+-rootless@sha256:[0-9a-f]{64}$/, 'rootless BuildKit pinned by digest');
-  assert.deepEqual(build.image.entrypoint, [''], 'the job runs buildctl-daemonless.sh, not the image entrypoint');
+  assert.deepEqual(build.image.entrypoint, [''], 'the job runs build-image.sh, not the image entrypoint');
   assert.equal(JSON.stringify(build).includes('privileged'), false);
   for (const n of ['.push-image', '.deploy-staging', '.rollback-staging']) {
     assert.deepEqual(byName[n].tags, [DEPLOY], n);
@@ -276,4 +379,319 @@ test('build-image.sh refuses without --oci-worker-no-process-sandbox', () => {
   assert.equal(r.status, 2, r.stderr);
   assert.match(r.stderr, /--oci-worker-no-process-sandbox/);
   assert.ok(existsSync(BUILD));
+});
+
+// ── The fleet manager: one runner block per class (host/fleet-manager-install.sh, M2 lane fleet) ────────────────────
+/** A small reader for the subset of TOML config.toml uses (tables, arrays of tables, strings, integers, booleans,
+ *  string arrays); anything else throws. */
+function parseToml(text) {
+  const root = {};
+  let cur = root;
+  const walk = (parts) => {
+    let o = root;
+    for (const p of parts) o = Array.isArray(o[p]) ? o[p].at(-1) : (o[p] ??= {});
+    return o;
+  };
+  text.split('\n').forEach((rawLine, i) => {
+    const line = rawLine.trim();
+    if (!line || line.startsWith('#')) return;
+    let m;
+    if ((m = /^\[\[([A-Za-z0-9_.]+)\]\]$/.exec(line))) {
+      const parts = m[1].split('.');
+      const parent = walk(parts.slice(0, -1));
+      (parent[parts.at(-1)] ??= []).push((cur = {}));
+    } else if ((m = /^\[([A-Za-z0-9_.]+)\]$/.exec(line))) {
+      cur = walk(m[1].split('.'));
+    } else if ((m = /^([A-Za-z0-9_]+)\s*=\s*(.+)$/.exec(line))) {
+      assert.equal(m[1] in cur, false, `config.toml line ${i + 1}: ${m[1]} is set twice in one table`);
+      const v = m[2].trim();
+      if (/^"(?:[^"\\]|\\.)*"$/.test(v) || /^\[[^\]]*\]$/.test(v)) cur[m[1]] = JSON.parse(v);
+      else if (v === 'true' || v === 'false') cur[m[1]] = v === 'true';
+      else if (/^-?\d+$/.test(v)) cur[m[1]] = Number(v);
+      else assert.fail(`config.toml line ${i + 1}: a value this reader does not know: ${v}`);
+    } else {
+      assert.fail(`config.toml line ${i + 1}: not TOML this reader knows: ${line}`);
+    }
+  });
+  return root;
+}
+
+// Tokens are built at run time, so no token-looking literal sits in this file (the secret scan looks for them).
+const tok = (s) => ['glrt', s].join('-');
+const FLEET_TOKEN = tok('t1_FLEETTESTONLY');
+const MAIN_TOKEN = tok('t1_MAINTESTONLY');
+const DEPLOY_TOKEN = tok('t1_DEPLOYTESTONLY');
+const KEY_ARN = 'arn:aws:kms:eu-central-1:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab';
+const FLEET_SECRET = 'vitana/engineering/gitlab/fleet-runner-token';
+
+/** Step A2 of RUNBOOK-delivery-aws.md as data: the lines it writes into /etc/vitana/env.classes on the manager, the
+ *  untrusted sizes it writes into /etc/vitana/env, and the Terraform values it puts into terraform.tfvars. */
+function stepA2() {
+  const rb = readFileSync(RUNBOOK, 'utf8');
+  const classEnv = {};
+  for (const m of rb.matchAll(/echo (CLASS_[A-Z_]+)=([^\s">]+) >>? \/etc\/vitana\/env\.classes/g)) {
+    assert.equal(m[1] in classEnv, false, `${m[1]} is written twice`);
+    classEnv[m[1]] = m[2];
+  }
+  const managerEnv = Object.fromEntries([...rb.matchAll(/s\/\^(FLEET_[A-Z_]+)=\.\*\/\1=(\d+)\//g)].map((m) => [m[1], m[2]]));
+  const tfvars = Object.fromEntries([...rb.matchAll(/^\s*(fleet_[a-z_]+)\s*=\s*(\d+)\s*$/gm)].map((m) => [m[1], m[2]]));
+  return { rb, classEnv, managerEnv, tfvars };
+}
+// What step A2 gives the manager (the step's own test checks the runbook says exactly this): the untrusted sizes of
+// plan §3.2 and §5 in /etc/vitana/env, and the classes of fleet-classes.tf in /etc/vitana/env.classes.
+const A2_MANAGER_ENV = { FLEET_MAX_INSTANCES: '96', FLEET_IDLE_COUNT: '4' };
+const A2_CLASS_ENV = {
+  CLASS_MAIN_ASG_NAME: 'vitana-eng-fleet-main', CLASS_MAIN_MAX_INSTANCES: '12', CLASS_MAIN_TOKEN_SECRET: 'vitana/engineering/gitlab/vitana-eng-fleet-main-runner-token',
+  CLASS_DEPLOY_ASG_NAME: 'vitana-eng-fleet-deploy', CLASS_DEPLOY_MAX_INSTANCES: '6', CLASS_DEPLOY_TOKEN_SECRET: 'vitana/engineering/gitlab/vitana-eng-fleet-deploy-runner-token',
+};
+/** The manager's environment after step A2, with a runner token for every block. */
+function fullEnv() {
+  return {
+    DOMAIN: 'gitlab.vitanaland.com', REGION: 'eu-central-1', FLEET_ASG_NAME: 'vitana-eng-fleet', ...A2_MANAGER_ENV,
+    FLEET_CACHE_BUCKET: 'vitana-engineering-ci-cache-111122223333', FLEET_CACHE_KMS_KEY_ARN: KEY_ARN, FLEET_RUNNER_TOKEN: FLEET_TOKEN,
+    CLASS_MAIN_ASG_NAME: A2_CLASS_ENV.CLASS_MAIN_ASG_NAME, CLASS_MAIN_MAX_INSTANCES: A2_CLASS_ENV.CLASS_MAIN_MAX_INSTANCES, CLASS_MAIN_RUNNER_TOKEN: MAIN_TOKEN,
+    CLASS_DEPLOY_ASG_NAME: A2_CLASS_ENV.CLASS_DEPLOY_ASG_NAME, CLASS_DEPLOY_MAX_INSTANCES: A2_CLASS_ENV.CLASS_DEPLOY_MAX_INSTANCES, CLASS_DEPLOY_RUNNER_TOKEN: DEPLOY_TOKEN,
+  };
+}
+/** Runs the installer in render mode: environment in, config.toml out. No network, no file, no root. */
+function render(env) {
+  const e = { PATH: process.env.PATH, LANG: 'C', ...env };
+  for (const k of Object.keys(e)) if (e[k] === undefined) delete e[k];
+  return spawnSync('bash', [INSTALL_SH, '--render-config'], { encoding: 'utf8', env: e, timeout: 20000 });
+}
+function rendered(env) {
+  const r = render(env);
+  assert.equal(r.status, 0, `render failed (${r.status}): ${r.stderr}`);
+  return { text: r.stdout, toml: parseToml(r.stdout) };
+}
+const NAMES = ['vitana-eng-fleet', 'vitana-eng-fleet-main', 'vitana-eng-fleet-deploy'];
+
+test('the manager renders three runner blocks: vitana-eng on the untrusted group with the warm pool of 4, vitana-eng-main and vitana-eng-deploy on their own groups, at the maxima of plan §5', () => {
+  const { text, toml } = rendered(fullEnv());
+  assert.deepEqual(toml.runners.map((r) => r.name), NAMES);
+  assert.deepEqual(toml.runners.map((r) => r.autoscaler.plugin_config.name), NAMES, 'each block scales its own group (fleet.tf, fleet-classes.tf)');
+  assert.deepEqual(toml.runners.map((r) => r.autoscaler.max_instances), [96, 12, 6], 'plan §5: 96 / 12 / 6');
+  const [untrusted, main, deploy] = toml.runners;
+  assert.deepEqual(untrusted.autoscaler.policy, [{ idle_count: 4, idle_time: '10m0s' }], 'the warm pool of 4 ready machines (plan §3.2)');
+  for (const r of [main, deploy]) assert.deepEqual(r.autoscaler.policy, [{ idle_count: 0, idle_time: '10m0s' }], `${r.name}: no machine waits idle`);
+  assert.equal(toml.concurrent, 96 + 12 + 6, 'concurrent covers every block, so one class never uses up the job slots of another');
+  assert.deepEqual([main.limit, deploy.limit], [12, 6], 'a class runs at most its own maximum of jobs');
+  for (const r of toml.runners) {
+    assert.equal(r.url, 'https://gitlab.vitanaland.com');
+    assert.equal(r.executor, 'docker-autoscaler');
+    assert.equal(r.autoscaler.plugin, 'aws');
+    assert.equal(r.autoscaler.plugin_config.region, 'eu-central-1');
+    assert.deepEqual(r.autoscaler.connector_config, { username: 'ubuntu', use_external_addr: false });
+  }
+  // Tags belong to a runner's token in GitLab: each block takes the token of its own class.
+  assert.deepEqual(toml.runners.map((r) => r.token), [FLEET_TOKEN, MAIN_TOKEN, DEPLOY_TOKEN]);
+  const classes = block(code(tf()), 'locals').match(/fleet_classes\s*=\s*\{([\s\S]*)\n {2}\}/)[1];
+  for (const [cls, tag] of [['main', MAIN], ['deploy', DEPLOY]]) {
+    assert.match(classes, new RegExp(`\\b${cls}\\s*=\\s*\\{[^}]*name\\s*=\\s*"vitana-eng-fleet-${cls}"[^}]*tag\\s*=\\s*"${tag}"`));
+    assert.match(text, new RegExp(`^# vitana-eng-fleet-${cls}: runner tag ${tag}\\b`, 'm'), `the block says which tag its token carries (${tag})`);
+  }
+  assert.match(text, /^# vitana-eng-fleet-main: runner tag vitana-eng-main, a protected runner/m);
+});
+
+test('every block: one job per single-use machine, privileged = false, no Docker socket and no extra power', () => {
+  const { text, toml } = rendered(fullEnv());
+  assert.equal(toml.runners.length, 3);
+  for (const r of toml.runners) {
+    assert.equal(r.autoscaler.capacity_per_instance, 1, `${r.name}: one job per machine`);
+    assert.equal(r.autoscaler.max_use_count, 1, `${r.name}: a machine is deleted after its job`);
+    assert.equal(r.docker.privileged, false, `${r.name}: privileged = false`);
+    assert.deepEqual(r.docker.pull_policy, ['if-not-present']);
+    assert.deepEqual(r.docker.volumes, ['/cache'], `${r.name}: only the cache volume`);
+    assert.equal(r.docker.image, 'public.ecr.aws/docker/library/node:20-bookworm', `${r.name}: the image the M2 machine image carries`);
+  }
+  assert.equal(/docker\.sock|privileged\s*=\s*true|\/var\/run|host_network|network_mode|cap_add|devices\s*=|services_privileged|allowed_privileged/.test(text), false,
+    'no socket mount, no privileged service, no extra capability');
+});
+
+test("seccomp and AppArmor unconfined only for the main class's build service: no job container of any class loses either profile", () => {
+  const { toml } = rendered(fullEnv());
+  const [untrusted, main, deploy] = toml.runners;
+  for (const r of toml.runners) assert.equal(r.docker.security_opt, undefined, `${r.name}: job containers keep the default seccomp and AppArmor profiles`);
+  assert.equal(untrusted.docker.services_security_opt, undefined, 'untrusted: services keep both profiles');
+  assert.equal(deploy.docker.services_security_opt, undefined, 'deploy: services keep both profiles');
+  assert.deepEqual(main.docker.services_security_opt, ['seccomp=unconfined', 'apparmor=unconfined'], 'main: the rootless BuildKit daemon that .build-image starts as its service (plan R5)');
+  // The daemon is a service of .build-image on the main class only; every other job image stays a plain client.
+  const withBuildkit = allJobs().filter(({ job }) => (job.services || []).some((s) => /moby\/buildkit/.test(typeof s === 'string' ? s : String(s.name))));
+  assert.ok(withBuildkit.some(({ name }) => name === '.build-image'));
+  for (const { file, name, job } of withBuildkit) assert.deepEqual(tagsOf(job), [MAIN], `${file} ${name}: the BuildKit daemon runs only on the main class`);
+});
+
+test("each block has its own token, once, and each class its own cache path: no class reads another class's cache", () => {
+  const { text, toml } = rendered(fullEnv());
+  for (const t of [FLEET_TOKEN, MAIN_TOKEN, DEPLOY_TOKEN]) assert.equal(text.split(t).length - 1, 1, 'each token appears once');
+  const [untrusted, main, deploy] = toml.runners;
+  assert.equal(untrusted.cache.Path, undefined, 'the untrusted block keeps the M2 cache path');
+  assert.deepEqual([main.cache.Path, deploy.cache.Path], [MAIN, DEPLOY]);
+  for (const r of toml.runners) {
+    assert.equal(r.cache.Type, 's3');
+    assert.notEqual(r.cache.Shared, true, `${r.name}: the cache is never shared between runners`);
+    assert.deepEqual(r.cache.s3, {
+      ServerAddress: 's3.eu-central-1.amazonaws.com', BucketName: 'vitana-engineering-ci-cache-111122223333', BucketLocation: 'eu-central-1',
+      AuthenticationType: 'iam', ServerSideEncryption: 'KMS', ServerSideEncryptionKeyID: KEY_ARN,
+    }, `${r.name}: the M2 bucket with the engineering key; the manager signs the URLs`);
+  }
+});
+
+test('a class renders only with its token; a wrong class input refuses the whole config, names the input and never echoes a token', () => {
+  const none = rendered({ ...fullEnv(), CLASS_MAIN_RUNNER_TOKEN: undefined, CLASS_DEPLOY_RUNNER_TOKEN: undefined });
+  assert.deepEqual(none.toml.runners.map((r) => r.name), ['vitana-eng-fleet'], 'no class token: the M2 configuration alone');
+  assert.equal(none.toml.concurrent, 96);
+  const onlyMain = rendered({ ...fullEnv(), CLASS_DEPLOY_RUNNER_TOKEN: '' });
+  assert.deepEqual(onlyMain.toml.runners.map((r) => r.name), ['vitana-eng-fleet', 'vitana-eng-fleet-main']);
+  assert.equal(onlyMain.toml.concurrent, 96 + 12);
+  const bad = [
+    ['CLASS_MAIN_RUNNER_TOKEN', 'glpat-wrongkind'], ['CLASS_MAIN_RUNNER_TOKEN', `${MAIN_TOKEN}"\nconcurrent = 999`],
+    ['CLASS_MAIN_ASG_NAME', ''], ['CLASS_MAIN_ASG_NAME', 'a b'], ['CLASS_MAIN_ASG_NAME', 'vitana-eng-fleet'],
+    ['CLASS_DEPLOY_ASG_NAME', 'vitana-eng-fleet-main'], ['CLASS_MAIN_MAX_INSTANCES', '0'], ['CLASS_MAIN_MAX_INSTANCES', '12; rm -rf /'],
+    ['CLASS_DEPLOY_MAX_INSTANCES', ''], ['CLASS_DEPLOY_MAX_INSTANCES', '7000'],
+  ];
+  assert.equal(render(fullEnv()).status, 0, 'control: the same inputs, unspoiled, render');
+  for (const [k, v] of bad) {
+    const r = render({ ...fullEnv(), [k]: v });
+    assert.notEqual(r.status, 0, `${k}=${JSON.stringify(v)} must be refused`);
+    assert.equal(r.stdout, '', `${k}=${JSON.stringify(v)}: no config text`);
+    assert.ok(r.stderr.includes(k), `${k}=${JSON.stringify(v)}: the refusal names the input (stderr: ${r.stderr.slice(0, 160)})`);
+    for (const t of [FLEET_TOKEN, MAIN_TOKEN, DEPLOY_TOKEN]) assert.equal((r.stdout + r.stderr).includes(t), false, `${k}: no token is echoed`);
+  }
+});
+
+// The installer's own flow, against stub commands in a temporary folder (the pattern of M2's fleet-structure.test.mjs):
+// the absolute paths of the script are pointed at the folder, aws answers by secret name, nothing needs root or a network.
+function runInstaller({ classes, answers }) {
+  const T = mkdtempSync(join(process.env.TMPDIR || tmpdir(), 'fleet-classes-'));
+  try {
+    for (const d of ['bin', 'etc/vitana', 'etc/gitlab-runner', 'etc/systemd/system/gitlab-runner.service.d', 'opt/vitana', 'root', 'answers']) mkdirSync(join(T, d), { recursive: true });
+    writeFileSync(join(T, 'etc/vitana/env'), [
+      'DOMAIN=gitlab.vitanaland.com', 'REGION=eu-central-1', 'RUNNER_VERSION=19.5.2-1', 'FLEET_ASG_NAME=vitana-eng-fleet', 'FLEET_MAX_INSTANCES=24',
+      'FLEET_IDLE_COUNT=0', 'FLEET_CACHE_BUCKET=vitana-engineering-ci-cache-111122223333', `FLEET_CACHE_KMS_KEY_ARN=${KEY_ARN}`, `FLEET_TOKEN_SECRET=${FLEET_SECRET}`, ''].join('\n'));
+    if (classes) writeFileSync(join(T, 'etc/vitana/env.classes'), `${Object.entries(classes).map(([k, v]) => `${k}=${v}`).join('\n')}\n`);
+    const log = join(T, 'calls.log');
+    const stub = (name, body) => { writeFileSync(join(T, 'bin', name), `#!/bin/bash\n${body}\n`); chmodSync(join(T, 'bin', name), 0o755); };
+    for (const n of ['apt-get', 'apt-mark', 'unzip', 'sleep', 'systemctl']) stub(n, `echo "${n} $*" >> "${log}"`);
+    stub('curl', `echo "curl $*" >> "${log}"; exit 0`);
+    stub('seq', 'echo 1; echo 2; echo 3; echo 4');
+    stub('id', 'echo 0');
+    stub('install', `echo "install $*" >> "${log}"; mode=""; args=(); while [ $# -gt 0 ]; do case "$1" in -m) mode="$2"; shift 2 ;; -o|-g) shift 2 ;; *) args+=("$1"); shift ;; esac; done; cp "\${args[0]}" "\${args[1]}"; chmod "\${mode:-0644}" "\${args[1]}"`);
+    // aws: answers get-secret-value from answers/<secret name with / as _>; no file means the secret has no value yet.
+    for (const [id, value] of Object.entries(answers)) if (value !== null) writeFileSync(join(T, 'answers', id.replace(/\//g, '_')), `${value}\n`);
+    stub('aws', `id=""; while [ $# -gt 0 ]; do [ "$1" = --secret-id ] && id="$2"; shift; done; echo "aws secretsmanager get-secret-value $id" >> "${log}"; `
+      + `f="${T}/answers/\${id//\\//_}"; if [ -f "$f" ]; then cat "$f"; else echo "An error occurred (ResourceNotFoundException)" >&2; exit 254; fi`);
+    stub('gitlab-runner', `echo "gitlab-runner $*" >> "${log}"; if [ "$1" = verify ]; then echo "Verifying runner... is alive runner=t1_ABCDEFGH"; fi`);
+    let script = readFileSync(INSTALL_SH, 'utf8');
+    for (const [from, to] of [['/etc/vitana/env', 'etc/vitana/env'], ['/etc/systemd/system/gitlab-runner.service.d', 'etc/systemd/system/gitlab-runner.service.d'],
+      ['/opt/vitana/fleeting-plugins', 'opt/vitana/fleeting-plugins'], ['/etc/gitlab-runner/config.toml', 'etc/gitlab-runner/config.toml'], ['/root/config.toml.XXXXXX', 'root/config.toml.XXXXXX']]) {
+      assert.ok(script.includes(from), `the installer uses ${from}`);
+      script = script.split(from).join(join(T, to));
+    }
+    writeFileSync(join(T, 'installer.sh'), script);
+    const r = spawnSync('bash', [join(T, 'installer.sh')], { encoding: 'utf8', env: { PATH: `${join(T, 'bin')}:${process.env.PATH}`, LANG: 'C' }, timeout: 30000 });
+    const conf = join(T, 'etc/gitlab-runner/config.toml');
+    return {
+      status: r.status, out: r.stdout + r.stderr, calls: existsSync(log) ? readFileSync(log, 'utf8') : '',
+      config: existsSync(conf) ? readFileSync(conf, 'utf8') : null, mode: existsSync(conf) ? statSync(conf).mode & 0o777 : null,
+    };
+  } finally {
+    rmSync(T, { recursive: true, force: true });
+  }
+}
+
+test('installer with the class env file of step A2: reads each class token once after the untrusted one, renders the classes that have one, leaves the others off, prints no token', () => {
+  const classEnv = A2_CLASS_ENV;
+  const r = runInstaller({ classes: classEnv, answers: { [FLEET_SECRET]: FLEET_TOKEN, [classEnv.CLASS_MAIN_TOKEN_SECRET]: MAIN_TOKEN, [classEnv.CLASS_DEPLOY_TOKEN_SECRET]: null } });
+  assert.equal(r.status, 0, `exit ${r.status}: ${r.out}`);
+  const reads = r.calls.split('\n').filter((l) => l.startsWith('aws secretsmanager get-secret-value')).map((l) => l.split(' ').at(-1));
+  assert.deepEqual(reads, [FLEET_SECRET, classEnv.CLASS_MAIN_TOKEN_SECRET, classEnv.CLASS_DEPLOY_TOKEN_SECRET], 'the untrusted token first, then each class once');
+  const toml = parseToml(r.config);
+  assert.deepEqual(toml.runners.map((x) => x.name), ['vitana-eng-fleet', 'vitana-eng-fleet-main'], 'deploy has no token yet: it stays off, its jobs wait');
+  assert.equal(toml.concurrent, 24 + 12);
+  assert.deepEqual(toml.runners.map((x) => x.token), [FLEET_TOKEN, MAIN_TOKEN]);
+  assert.equal(r.mode, 0o600, 'config.toml holds the tokens and is mode 0600');
+  assert.match(r.out, /class main: runner token found in vitana\/engineering\/gitlab\/vitana-eng-fleet-main-runner-token/);
+  assert.match(r.out, /class deploy: no runner token in vitana\/engineering\/gitlab\/vitana-eng-fleet-deploy-runner-token yet; the class stays off/);
+  for (const t of [FLEET_TOKEN, MAIN_TOKEN]) assert.equal(r.out.includes(t) || r.calls.includes(t), false, 'no token in the output or on any command line');
+  assert.match(r.calls, /^systemctl restart gitlab-runner$/m);
+  const wrong = rendered({ ...fullEnv(), CLASS_MAIN_RUNNER_TOKEN: undefined, CLASS_DEPLOY_RUNNER_TOKEN: undefined });
+  assert.equal(wrong.toml.runners.length, 1, 'control: without class tokens the same inputs give the M2 block alone');
+});
+
+test('installer: a class token secret outside vitana/engineering/gitlab/ is never read, and a value that is not a runner token is never written', () => {
+  const classEnv = A2_CLASS_ENV;
+  const odd = { ...classEnv, CLASS_DEPLOY_TOKEN_SECRET: 'vitana/ci/test-user' };
+  const notToken = ['glpat', 'NOT-A-RUNNER-TOKEN-0000'].join('-');
+  const r = runInstaller({ classes: odd, answers: { [FLEET_SECRET]: FLEET_TOKEN, [classEnv.CLASS_MAIN_TOKEN_SECRET]: notToken } });
+  assert.equal(r.status, 0, r.out);
+  const reads = r.calls.split('\n').filter((l) => l.startsWith('aws secretsmanager get-secret-value')).map((l) => l.split(' ').at(-1));
+  assert.deepEqual(reads, [FLEET_SECRET, classEnv.CLASS_MAIN_TOKEN_SECRET], 'the odd secret name is not read');
+  assert.match(r.out, /CLASS_DEPLOY_TOKEN_SECRET has an unexpected form; class deploy stays off/);
+  assert.deepEqual(parseToml(r.config).runners.map((x) => x.name), ['vitana-eng-fleet']);
+  assert.equal((r.out + r.calls + r.config).includes(notToken), false, 'a wrong value is neither written nor echoed');
+});
+
+test('step A2 gives the manager the groups, sizes and token secrets of fleet-classes.tf, and the untrusted sizes of plan §3.2', () => {
+  const { rb, classEnv, managerEnv, tfvars } = stepA2();
+  assert.deepEqual(classEnv, A2_CLASS_ENV, 'the class env file the installer reads');
+  for (const c of ['main', 'deploy']) {
+    assert.equal(classEnv[`CLASS_${c.toUpperCase()}_ASG_NAME`], `vitana-eng-fleet-${c}`, 'the group names of local.fleet_classes');
+    assert.equal(classEnv[`CLASS_${c.toUpperCase()}_TOKEN_SECRET`], `vitana/engineering/gitlab/vitana-eng-fleet-${c}-runner-token`);
+  }
+  const src = code(tf());
+  assert.match(block(src, 'resource "aws_secretsmanager_secret" "fleet_class_runner_token"'), /name\s*=\s*"vitana\/engineering\/gitlab\/\$\{each\.value\.name\}-runner-token"/,
+    'the secret names Terraform creates');
+  assert.match(block(src, 'variable "fleet_main_max_instances"'), new RegExp(`default\\s*=\\s*${classEnv.CLASS_MAIN_MAX_INSTANCES}\\b`));
+  assert.match(block(src, 'variable "fleet_deploy_max_instances"'), new RegExp(`default\\s*=\\s*${classEnv.CLASS_DEPLOY_MAX_INSTANCES}\\b`));
+  assert.deepEqual(tfvars, { fleet_max_instances: '96', fleet_idle_count: '4' }, 'the M2 variables at the sizes of plan §3.2 and §5');
+  assert.deepEqual(managerEnv, A2_MANAGER_ENV, 'and the same sizes on the manager');
+  const m2 = code(readFileSync(FLEET_TF, 'utf8'));
+  for (const v of Object.keys(tfvars)) assert.match(m2, new RegExp(`^variable\\s+"${v}"\\s*\\{`, 'm'), `${v} is an M2 variable`);
+  assert.match(rb, /bash \/opt\/vitana\/fleet-manager-install\.sh >> \/var\/log\/vitana-bootstrap\.log 2>&1/, 'the installer runs again on the manager');
+  assert.match(rb, /aws ssm send-command --instance-ids "\$MGR" --document-name AWS-RunShellScript/);
+});
+
+test('.build-image starts rootless BuildKit as its service with --oci-worker-no-process-sandbox; the job container is only its client', () => {
+  const build = allJobs().find((j) => j.file === 'tpl-deploy.yml' && j.name === '.build-image').job;
+  assert.equal(build.services.length, 1);
+  const [svc] = build.services;
+  assert.equal(svc.name, build.image.name, 'the daemon is the same rootless image, pinned by digest');
+  assert.equal(svc.alias, 'buildkitd');
+  assert.equal(svc.entrypoint, undefined, 'the image entrypoint (rootlesskit buildkitd) starts the daemon');
+  assert.deepEqual(svc.command, ['--addr', 'tcp://0.0.0.0:1234', '--oci-worker-no-process-sandbox']);
+  assert.equal(build.variables.BUILDKIT_HOST, 'tcp://buildkitd:1234');
+  assert.equal(JSON.stringify(build).includes('privileged'), false);
+});
+
+test('build-image.sh builds through the BuildKit service when BUILDKIT_HOST is set, and with the daemonless helper otherwise', () => {
+  const T = mkdtempSync(join(process.env.TMPDIR || tmpdir(), 'build-image-'));
+  try {
+    mkdirSync(join(T, 'bin'));
+    mkdirSync(join(T, 'ctx'));
+    writeFileSync(join(T, 'ctx', 'Dockerfile'), 'FROM scratch\n');
+    const log = join(T, 'calls.log');
+    // buildctl and the helper write down how they were called and leave the archive where --output points.
+    const fake = (n) => `echo "${n} $*" >> "${log}"; for a in "$@"; do case "$a" in type=oci,dest=*) printf oci > "\${a#type=oci,dest=}" ;; esac; done; exit 0`;
+    for (const [n, body] of [['buildctl', fake('buildctl')], ['buildctl-daemonless.sh', fake('buildctl-daemonless.sh')], ['id', 'echo 1000']]) {
+      writeFileSync(join(T, 'bin', n), `#!/bin/sh\n${body}\n`);
+      chmodSync(join(T, 'bin', n), 0o755);
+    }
+    const run = (extra) => spawnSync('sh', [BUILD, '--context', join(T, 'ctx'), '--dockerfile', join(T, 'ctx', 'Dockerfile'), '--out', join(T, 'image.oci.tar')],
+      { encoding: 'utf8', env: { PATH: `${join(T, 'bin')}:${process.env.PATH}`, BUILDKITD_FLAGS: '--oci-worker-no-process-sandbox', ...extra } });
+    const remote = run({ BUILDKIT_HOST: 'tcp://buildkitd:1234' });
+    assert.equal(remote.status, 0, remote.stderr);
+    let calls = readFileSync(log, 'utf8');
+    assert.match(calls, /^buildctl --addr tcp:\/\/buildkitd:1234 debug workers$/m, 'waits until the service answers');
+    assert.match(calls, /^buildctl --addr tcp:\/\/buildkitd:1234 build --progress=plain --frontend dockerfile\.v0 .*--output type=oci,dest=\S+image\.oci\.tar/m);
+    assert.equal(/buildctl-daemonless/.test(calls), false, 'no daemon in the job container');
+    rmSync(log);
+    const local = run({});
+    assert.equal(local.status, 0, local.stderr);
+    calls = readFileSync(log, 'utf8');
+    assert.match(calls, /^buildctl-daemonless\.sh build --progress=plain /m);
+    assert.equal(/^buildctl /m.test(calls), false);
+  } finally {
+    rmSync(T, { recursive: true, force: true });
+  }
 });

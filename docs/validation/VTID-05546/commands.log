@@ -35,3 +35,26 @@
 17:16  green: node --test <5 new test files>                                                    -> 39 tests, 39 pass, 0 fail
 17:16  UNIT full command                                                                        -> 686 tests, 685 pass, 0 fail, 1 skipped
 17:17  cross-lane job-class check (with lanes pipelines and verify-on-gitlab CI files)          -> 9 tests, 9 pass, 0 fail
+
+# Round 2 (after M2 fleet), same builder session kiro-exafy-202611051643-bc0a (holds the claim; no new id), 2026-11-05 (UTC)
+21:38  read /projects/sandbox/.scratch/builder-protocol.md and lanes-briefs.md section M; worktree head 580b028896
+21:39  plan-driver.mjs heartbeat --slug agentic-delivery / eng-gitlab-m2 (driver 802c)           -> push refused (another builder wrote it a second earlier: allowed)
+21:39  gh api repos/exafyltd/vitana-platform/pulls/4716 (GET), then every 3 minutes            -> open, head f08b114f87
+21:45  git show origin/kiro/eng-gitlab-m2/fleet:{host/fleet-manager-install.sh,terraform/fleet.tf,scripts/eng/fleet-structure.test.mjs}   -> read (M2's test pins one block, concurrent, the env file and the stub flow)
+21:47  git merge-tree --write-tree HEAD origin/kiro/eng-gitlab-m2/fleet; git archive | tar -x (scratch dir outside the repo)   -> clean merge tree 449117f212
+21:47  terraform init -backend=false; validate (scratch: round-1 fleet-classes.tf with fleet.tf, fleet-ami.tf, main.tf, monitoring.tf)   -> valid (baseline)
+21:55  heartbeats (both), then 22:04, 22:12, 22:21, 22:28, 22:32, 22:41                            -> ok
+22:00  round-2 tests written first and run on the scratch base                                   -> 21 tests, 7 pass, 14 fail
+22:05  read https://docs.gitlab.com/ci/docker/using_buildkit/ and gitlab-runner MR !3760 (GitLab REST GET, public)   -> services_security_opt exists (runner 15.10)
+22:08  round-2 change on the scratch tree: fleet-classes-structure 21/21; M2 fleet-structure 38/38; terraform validate valid
+22:28  #4716: review accept, branch updated from main (fleet files unchanged from f08b114f87)
+22:38  gh api .../pulls/4716                                                                       -> merged 22:36:40Z as f5dd5eb94b
+22:38  git fetch; git merge --no-ff origin/main                                                    -> df45b674ec (no conflict; fleet files equal f08b114f87)
+22:38  red on base: node --test scripts/eng/fleet-classes-structure.test.mjs (round-2 test on df45b674ec, no implementation)   -> 21 tests, 7 pass, 14 fail (outputs/red-on-base-fleet.txt)
+22:39  green: same test with the round-2 change                                                    -> 21 tests, 21 pass, 0 fail (outputs/green-fleet.txt)
+22:39  node --test scripts/eng/fleet-structure.test.mjs (M2, not edited)                            -> 38 tests, 38 pass, 0 fail (outputs/m2-fleet-tests.txt)
+22:39  node --test <the five test files of this lane>                                             -> 51 tests, 51 pass, 0 fail
+22:39  UNIT full: node --test $(find scripts -path '*/node_modules' -prune -o \( -name '*.test.cjs' -o -name '*.test.mjs' \) -print | sort)   -> 971 tests, 970 pass, 0 fail, 1 skipped (outputs/unit-all.txt)
+22:40  terraform fmt -check (5 files); init -backend=false; validate (scratch copy of infra/gitlab-engineering)   -> fmt 0, valid (outputs/terraform.txt)
+22:41  cross-lane: round-2 test with the CI files of pipelines d5b609bf88, verify-on-gitlab 194f308f9b, settings d28e8c960a   -> 21/21; tpl-verify-structure 10/10 (outputs/cross-lane-job-classes.txt)
+22:44  node land-guard.mjs evidence --repo /projects/sandbox/.rv/deploy --vtid VTID-05546          -> ok

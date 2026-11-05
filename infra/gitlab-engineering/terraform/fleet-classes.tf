@@ -8,16 +8,10 @@
 #
 # Both classes: min 0 and desired 0 (the runner sets the desired capacity; Terraform ignores it), scale-in protection,
 # AZRebalance suspended, IMDSv2 required with hop limit 1, no public IP, no instance profile (so no instance policy: jobs
-# get AWS access only through their per-job ID tokens, plan §7), encrypted gp3 with the M1 key, egress tcp 80, tcp 443
-# and DNS only. Single use (max_use_count = 1), privileged = false and the per-class runner blocks are rendered by
-# host/fleet-manager-install.sh (M2 lane fleet), which also gets the SSH ingress from the fleet manager and the
-# manager's permissions on these two groups: that edit waits until M2's fleet.tf is on main.
-
-variable "fleet_class_ami_id" {
-  description = "AMI of the job machines: the M2 job image (EC2 Image Builder output of fleet.tf)."
-  type        = string
-  default     = ""
-}
+# get AWS access only through their per-job ID tokens, plan §7), encrypted gp3 with the M1 key, the M2 job image,
+# egress tcp 80, tcp 443 and DNS only, and SSH in only from the M2 fleet manager. The manager scales both groups with
+# one runner block per class (host/fleet-manager-install.sh, single use, privileged = false); this file gives its role
+# the two groups, their machines and their two runner tokens.
 
 variable "fleet_main_max_instances" {
   type    = number
@@ -69,11 +63,11 @@ locals {
   fleet_classes_spot_vcpus      = sum([for c in local.fleet_classes : ceil(c.max_instances * c.spot_percent / 100) * local.fleet_class_vcpus])
 }
 
-# ---------------------------------------------------------------- network: egress 80, 443 and DNS only
+# ---------------------------------------------------------------- network: egress 80, 443 and DNS; SSH in from the manager
 resource "aws_security_group" "fleet_class" {
   for_each    = local.fleet_classes
   name        = "${each.value.name}-job"
-  description = "${each.value.tag} job machines: egress 80, 443 and DNS only"
+  description = "${each.value.tag} job machines: SSH from the fleet manager only"
   vpc_id      = aws_vpc.main.id
   tags        = { Name = "${each.value.name}-job" }
 }
@@ -114,11 +108,31 @@ resource "aws_vpc_security_group_egress_rule" "fleet_class_dns_tcp" {
   to_port           = 53
 }
 
+# The runner's Docker connection to a class machine runs through SSH from the M2 fleet manager (a one-time key sent
+# through EC2 Instance Connect, as for the untrusted fleet). Nothing else comes in.
+resource "aws_vpc_security_group_ingress_rule" "fleet_class_ssh_from_manager" {
+  for_each                     = local.fleet_classes
+  security_group_id            = aws_security_group.fleet_class[each.key].id
+  referenced_security_group_id = aws_security_group.fleet_manager.id
+  ip_protocol                  = "tcp"
+  from_port                    = 22
+  to_port                      = 22
+}
+
+resource "aws_vpc_security_group_egress_rule" "fleet_manager_ssh_to_class" {
+  for_each                     = local.fleet_classes
+  security_group_id            = aws_security_group.fleet_manager.id
+  referenced_security_group_id = aws_security_group.fleet_class[each.key].id
+  ip_protocol                  = "tcp"
+  from_port                    = 22
+  to_port                      = 22
+}
+
 # ---------------------------------------------------------------- machines
 resource "aws_launch_template" "fleet_class" {
   for_each               = local.fleet_classes
   name                   = each.value.name
-  image_id               = var.fleet_class_ami_id
+  image_id               = one(aws_imagebuilder_image.fleet.output_resources[0].amis).image
   update_default_version = true
 
   metadata_options {
@@ -148,25 +162,22 @@ resource "aws_launch_template" "fleet_class" {
     resource_type = "instance"
     tags          = { Name = each.value.name, RunnerClass = each.value.tag }
   }
-
-  lifecycle {
-    precondition {
-      condition     = var.fleet_class_ami_id != ""
-      error_message = "Set fleet_class_ami_id to the M2 job image (fleet.tf) before applying the runner classes."
-    }
-  }
 }
 
+# The volumes use the M1 key, whose key policy is the default one: the groups launch through M2's custom-suffix Auto
+# Scaling role, which holds the grant on it (fleet.tf); Spot launches use the Spot role's grant.
 resource "aws_autoscaling_group" "fleet_class" {
-  for_each              = local.fleet_classes
-  name                  = each.value.name
-  min_size              = 0
-  desired_capacity      = 0
-  max_size              = each.value.max_instances
-  vpc_zone_identifier   = aws_subnet.private[*].id
-  protect_from_scale_in = true
-  capacity_rebalance    = false
-  suspended_processes   = ["AZRebalance"]
+  for_each                = local.fleet_classes
+  name                    = each.value.name
+  min_size                = 0
+  desired_capacity        = 0
+  max_size                = each.value.max_instances
+  vpc_zone_identifier     = aws_subnet.private[*].id
+  protect_from_scale_in   = true
+  capacity_rebalance      = false
+  suspended_processes     = ["AZRebalance"]
+  force_delete            = true
+  service_linked_role_arn = aws_iam_service_linked_role.fleet_autoscaling.arn
 
   mixed_instances_policy {
     instances_distribution {
@@ -197,14 +208,54 @@ resource "aws_autoscaling_group" "fleet_class" {
   lifecycle {
     ignore_changes = [desired_capacity]
   }
+
+  depends_on = [aws_kms_grant.fleet_autoscaling, aws_kms_grant.fleet_spot]
 }
 
 # Runner authentication tokens: the settings sync creates the runners (main as a protected runner, ref_protected) and
-# stores their glrt- tokens here; the fleet manager reads them (M2 lane fleet grants that read).
+# stores their glrt- tokens here; the fleet manager reads them (policy below) and renders one runner block per class.
 resource "aws_secretsmanager_secret" "fleet_class_runner_token" {
-  for_each   = local.fleet_classes
-  name       = "vitana/engineering/gitlab/${each.value.name}-runner-token"
-  kms_key_id = aws_kms_key.main.arn
+  for_each                = local.fleet_classes
+  name                    = "vitana/engineering/gitlab/${each.value.name}-runner-token"
+  kms_key_id              = aws_kms_key.main.arn
+  recovery_window_in_days = 0
+}
+
+# ---------------------------------------------------------------- the fleet manager's part (M2 role, not edited)
+# The fleeting plugin scales each class group and opens SSH to its machines; the installer reads the two class
+# tokens. Describing groups and machines and decrypting with the M1 key are already in the M2 manager policy.
+data "aws_iam_policy_document" "fleet_manager_classes" {
+  statement {
+    sid       = "ScaleClassGroups"
+    actions   = ["autoscaling:SetDesiredCapacity", "autoscaling:SetInstanceProtection", "autoscaling:TerminateInstanceInAutoScalingGroup"]
+    resources = [for g in aws_autoscaling_group.fleet_class : g.arn]
+  }
+  statement {
+    sid       = "ConnectToClassMachines"
+    actions   = ["ec2-instance-connect:SendSSHPublicKey"]
+    resources = ["arn:aws:ec2:${var.region}:${data.aws_caller_identity.me.account_id}:instance/*"]
+    condition {
+      test     = "StringEquals"
+      variable = "ec2:ResourceTag/aws:autoscaling:groupName"
+      values   = [for c in local.fleet_classes : c.name]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "ec2:osuser"
+      values   = ["ubuntu"]
+    }
+  }
+  statement {
+    sid       = "ReadClassRunnerTokens"
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = [for s in aws_secretsmanager_secret.fleet_class_runner_token : s.arn]
+  }
+}
+
+resource "aws_iam_role_policy" "fleet_manager_classes" {
+  name   = "fleet-manager-classes"
+  role   = aws_iam_role.fleet_manager.id
+  policy = data.aws_iam_policy_document.fleet_manager_classes.json
 }
 
 # ---------------------------------------------------------------- quota: the check prints the request

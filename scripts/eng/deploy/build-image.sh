@@ -4,7 +4,10 @@
 # archive (push-image.mjs).
 #
 # Runs in moby/buildkit:<version>-rootless as its unprivileged user, with BUILDKITD_FLAGS=--oci-worker-no-process-sandbox.
-# The runner gives the main class's build jobs seccomp and AppArmor unconfined, never `privileged` (plan R5).
+# With BUILDKIT_HOST set (the `.build-image` job: the daemon is its service, started with that flag) it is only the
+# daemon's client; the main runner block gives service containers seccomp and AppArmor unconfined, never `privileged`
+# (plan R5), and the job container keeps both profiles. Without BUILDKIT_HOST it starts its own daemon
+# (buildctl-daemonless.sh), which needs the same two options for the job container itself.
 #
 # USAGE:
 #   build-image.sh --context <dir> --dockerfile <path> --out <image.oci.tar> [--build-arg KEY=VALUE]...
@@ -47,7 +50,22 @@ case " ${BUILDKITD_FLAGS:-} " in
   *) echo "refusing: BUILDKITD_FLAGS must hold --oci-worker-no-process-sandbox (rootless BuildKit, no privileged container)" >&2; exit 2 ;;
 esac
 if [ "$(id -u)" = 0 ]; then echo "refusing: build as the rootless BuildKit user, never as root" >&2; exit 2; fi
-command -v buildctl-daemonless.sh >/dev/null 2>&1 || { echo "buildctl-daemonless.sh not found: run in moby/buildkit:<version>-rootless" >&2; exit 3; }
+if [ -n "${BUILDKIT_HOST:-}" ]; then
+  case "$BUILDKIT_HOST" in tcp://*|unix://*) ;; *) echo "BUILDKIT_HOST must be tcp://<host>:<port> or unix://<path>" >&2; exit 2 ;; esac
+  case "$BUILDKIT_HOST" in *[!A-Za-z0-9:/._-]*) echo "BUILDKIT_HOST has an unexpected form" >&2; exit 2 ;; esac
+  command -v buildctl >/dev/null 2>&1 || { echo "buildctl not found: run in moby/buildkit:<version>-rootless" >&2; exit 3; }
+  BUILDCTL="buildctl --addr $BUILDKIT_HOST"
+  # The service starts with the job; wait until it answers (up to 2 minutes).
+  n=0
+  until $BUILDCTL debug workers >/dev/null 2>&1; do
+    n=$((n + 1))
+    [ "$n" -lt 60 ] || { echo "the BuildKit service at $BUILDKIT_HOST did not answer in 2 minutes" >&2; exit 3; }
+    sleep 2
+  done
+else
+  command -v buildctl-daemonless.sh >/dev/null 2>&1 || { echo "buildctl-daemonless.sh not found: run in moby/buildkit:<version>-rootless" >&2; exit 3; }
+  BUILDCTL="buildctl-daemonless.sh"
+fi
 
 if [ -n "$VITE_SHA" ]; then
   case "$VITE_SHA" in *[!0-9a-f]*|"") echo "--vite-staging-env needs a commit sha" >&2; exit 2 ;; esac
@@ -81,7 +99,7 @@ if [ -n "$CACHE_DIR" ]; then
 fi
 
 START="$(date +%s)"
-buildctl-daemonless.sh "$@"
+$BUILDCTL "$@"
 END="$(date +%s)"
 if [ -n "$CACHE_DIR" ] && [ -d "$CACHE_DIR.new" ]; then rm -rf "$CACHE_DIR"; mv "$CACHE_DIR.new" "$CACHE_DIR"; fi
 echo "built $OUT in $((END - START)) s; sha256 $(sha256sum "$OUT" | cut -d' ' -f1)"
