@@ -1,6 +1,6 @@
 ---
 lane: reseat
-state: executing
+state: in-review
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -20,7 +20,8 @@ paths:
   - .kiro/specs/agentic-delivery/lanes/cutover.md
 claimed_by: kiro-exafy-202611051218-d1d2
 branch: kiro/agentic-delivery/reseat
-updated: 2026-11-05T12:28Z
+pr: https://github.com/exafyltd/vitana-platform/pull/4703
+updated: 2026-11-05T12:36Z
 vtid: VTID-05554
 ---
 # Lane `reseat`: give the eight lanes of this plan back to seat exafy (plan §9) through the reviewed lane_admin path
@@ -53,3 +54,6 @@ change only `seat: exafyltd` → `seat: exafy` (byte check 8/8 pass, `outputs/ta
 test; `queue.test.mjs` 78/78 pass. Negative proof refused (N1 by Collab handoff, N2 by Lane scope); control trial merge
 of today's main into #4690 fails Lane scope on its builder's two lane-file commits. Decisions in
 `docs/validation/VTID-05554/acceptance.md`.
+
+### 2026-11-05T12:36Z · kiro-exafy-202611051218-d1d2 · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/4703 open; preflight passed. Next: the driver requests the reviewer agent.
