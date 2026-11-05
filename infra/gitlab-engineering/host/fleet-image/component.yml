@@ -1,0 +1,58 @@
+name: vitana-eng-fleet-job-image
+description: Docker Engine, EC2 Instance Connect and the pre-pulled job images of the Vitana engineering CI fleet (plan eng-gitlab-m2, lane fleet). No runner binary, no key, no secret.
+schemaVersion: 1.0
+parameters:
+  - JobImage:
+      type: string
+      description: The image most CI jobs run in, pulled once into the machine image.
+  - RunnerHelperImage:
+      type: string
+      description: The GitLab Runner helper image for the pinned runner version, pulled once into the machine image.
+phases:
+  - name: build
+    steps:
+      - name: InstallPackages
+        action: ExecuteBash
+        inputs:
+          commands:
+            - set -eu
+            - export DEBIAN_FRONTEND=noninteractive
+            - apt-get -o DPkg::Lock::Timeout=900 update -y
+            - apt-get -o DPkg::Lock::Timeout=900 install -y docker.io ec2-instance-connect ca-certificates curl
+            - systemctl enable docker
+      - name: AllowUbuntuUserToUseDocker
+        action: ExecuteBash
+        inputs:
+          commands:
+            - set -eu
+            - usermod -aG docker ubuntu
+      - name: PullJobImages
+        action: ExecuteBash
+        inputs:
+          commands:
+            - set -eu
+            - systemctl start docker
+            - 'docker pull "{{ JobImage }}"'
+            - 'docker pull "{{ RunnerHelperImage }}"'
+      - name: Clean
+        action: ExecuteBash
+        inputs:
+          commands:
+            - set -eu
+            - apt-get clean
+            - rm -rf /var/lib/apt/lists/*
+  - name: test
+    steps:
+      - name: CheckTheMachine
+        action: ExecuteBash
+        inputs:
+          commands:
+            - set -eu
+            - systemctl start docker
+            - docker --version
+            - systemctl is-enabled docker
+            - id -nG ubuntu | tr ' ' '\n' | grep -qx docker
+            - dpkg -s ec2-instance-connect
+            - 'docker image inspect "{{ JobImage }}"'
+            - 'docker image inspect "{{ RunnerHelperImage }}"'
+            - test ! -e /usr/bin/gitlab-runner

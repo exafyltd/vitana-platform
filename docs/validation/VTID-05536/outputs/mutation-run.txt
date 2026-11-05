@@ -1,0 +1,138 @@
+# mutation run of scripts/eng/fleet-structure.test.mjs: 133 deliberate changes, each applied alone to a scratch copy (harness: outputs/mutate-fleet.sh)
+# a change counts as caught only when the file really changed and the test then reports at least one failing case (the case names follow '<-')
+# $ TMPDIR=<scratch> bash outputs/mutate-fleet.sh <worktree>
+caught   group minimum 1  <- ASG vitana-eng-fleet: min 0, desired 0 (later changes ignored: the runne
+caught   group starts with 3 machines  <- ASG vitana-eng-fleet: min 0, desired 0 (later changes ignored: the runne
+caught   group max hard-coded  <- ASG vitana-eng-fleet: min 0, desired 0 (later changes ignored: the runne
+caught   desired_capacity no longer ignored  <- ASG vitana-eng-fleet: min 0, desired 0 (later changes ignored: the runne
+caught   scale-in protection off  <- ASG: AZRebalance suspended, scale-in protection on, capacity rebalance o
+caught   AZRebalance not suspended  <- ASG: AZRebalance suspended, scale-in protection on, capacity rebalance o
+caught   capacity rebalance on  <- ASG: AZRebalance suspended, scale-in protection on, capacity rebalance o
+caught   a scaling policy appears  <- ASG vitana-eng-fleet: min 0, desired 0 (later changes ignored: the runne
+caught   instance type m5a replaced by m5.2xlarge  <- ASG: mixed instances m6i, m6a, m5 and m5a .xlarge; spot share from fleet
+caught   spot share ignores the variable  <- ASG: mixed instances m6i, m6a, m5 and m5a .xlarge; spot share from fleet
+caught   group in a public subnet  <- ASG: AZRebalance suspended, scale-in protection on, capacity rebalance o
+caught   group without the custom role  <- ASG: mixed instances m6i, m6a, m5 and m5a .xlarge; spot share from fleet
+caught   variable default changed  <- fleet variables: documented defaults and validation; none of the M1 vari
+caught   M1 variable declared again  <- fleet variables: documented defaults and validation; none of the M1 vari
+caught   a variable loses its default  <- fleet variables: documented defaults and validation; none of the M1 vari
+caught   job volume unencrypted  <- launch template: 100 GB encrypted gp3 with the M1 key, no public IP, IMD
+caught   job volume 50 GB  <- launch template: 100 GB encrypted gp3 with the M1 key, no public IP, IMD
+caught   job volume loses the M1 key  <- launch template: 100 GB encrypted gp3 with the M1 key, no public IP, IMD
+caught   job machine gets a public IP  <- launch template: 100 GB encrypted gp3 with the M1 key, no public IP, IMD
+caught   job IMDSv2 optional  <- launch template: 100 GB encrypted gp3 with the M1 key, no public IP, IMD
+caught   job IMDS hop limit 2  <- launch template: 100 GB encrypted gp3 with the M1 key, no public IP, IMD
+caught   job machine uses the manager group  <- launch template: 100 GB encrypted gp3 with the M1 key, no public IP, IMD
+caught   a key pair on the job machines  <- launch template: 100 GB encrypted gp3 with the M1 key, no public IP, IMD|outputs carry names and ids, never a secret value; no key pair, no store
+caught   job role gets a policy  <- the job instance profile has no policy of any kind, and nothing else use|IAM in the fleet files: no wildcard action, a wildcard resource only whe
+caught   job role gets an inline policy  <- the job instance profile has no policy of any kind, and nothing else use
+caught   job profile uses the manager role  <- the job instance profile has no policy of any kind, and nothing else use
+caught   job SSH open to the VPC  <- job group: tcp 22 in from the manager group only; out only tcp 80, tcp 4|no 0.0.0.0/0 or ::/0 ingress anywhere, no inline rules, no legacy rule r
+caught   job SSH open to the world  <- job group: tcp 22 in from the manager group only; out only tcp 80, tcp 4|no 0.0.0.0/0 or ::/0 ingress anywhere, no inline rules, no legacy rule r
+caught   job SSH port 2222  <- job group: tcp 22 in from the manager group only; out only tcp 80, tcp 4
+caught   manager gets an inbound rule  <- manager group: nothing comes in; out only tcp 22 to the job group, tcp 8
+caught   job egress opens all ports  <- job group: tcp 22 in from the manager group only; out only tcp 80, tcp 4|no 0.0.0.0/0 or ::/0 ingress anywhere, no inline rules, no legacy rule r
+caught   job egress adds SMTP  <- job group: tcp 22 in from the manager group only; out only tcp 80, tcp 4
+caught   DNS egress to the world  <- job group: tcp 22 in from the manager group only; out only tcp 80, tcp 4
+caught   a third security group  <- no 0.0.0.0/0 or ::/0 ingress anywhere, no inline rules, no legacy rule r
+caught   manager is a t3.large  <- manager machine: t3.medium in a private subnet, no public IP, IMDSv2 hop
+caught   manager gets a public IP  <- manager machine: t3.medium in a private subnet, no public IP, IMDSv2 hop
+caught   manager IMDSv2 optional  <- manager machine: t3.medium in a private subnet, no public IP, IMDSv2 hop
+caught   manager root unencrypted  <- manager machine: t3.medium in a private subnet, no public IP, IMDSv2 hop
+caught   manager has a key pair  <- manager machine: t3.medium in a private subnet, no public IP, IMDSv2 hop|outputs carry names and ids, never a secret value; no key pair, no store
+caught   manager starts before the group  <- manager starts only after the group exists, so a failed image build leav
+caught   group may start before the quota check  <- manager starts only after the group exists, so a failed image build leav
+caught   role may also terminate everything  <- manager role: exactly the actions of plan 3.2 and nothing more
+caught   role scales any group  <- manager role: exactly the actions of plan 3.2 and nothing more|IAM in the fleet files: no wildcard action, a wildcard resource only whe
+caught   role loses SetInstanceProtection  <- manager role: exactly the actions of plan 3.2 and nothing more
+caught   role may send keys to any machine  <- manager role: exactly the actions of plan 3.2 and nothing more
+caught   role may read any secret  <- manager role: exactly the actions of plan 3.2 and nothing more|IAM in the fleet files: no wildcard action, a wildcard resource only whe
+caught   role reads the M1 runner token  <- manager role: exactly the actions of plan 3.2 and nothing more
+caught   role may use every key  <- manager role: exactly the actions of plan 3.2 and nothing more|IAM in the fleet files: no wildcard action, a wildcard resource only whe
+caught   role may write every bucket  <- manager role: exactly the actions of plan 3.2 and nothing more|IAM in the fleet files: no wildcard action, a wildcard resource only whe
+caught   admin policy attached to the manager  <- IAM in the fleet files: no wildcard action, a wildcard resource only whe
+caught   cache bucket not encrypted with the key  <- cache bucket vitana-engineering-ci-cache-<account>: SSE-KMS with the M1 
+caught   cache expiry 30 days  <- cache bucket vitana-engineering-ci-cache-<account>: SSE-KMS with the M1 
+caught   cache bucket public ACLs allowed  <- cache bucket vitana-engineering-ci-cache-<account>: SSE-KMS with the M1 
+caught   cache bucket gets versioning  <- cache bucket vitana-engineering-ci-cache-<account>: SSE-KMS with the M1 
+caught   TLS-only deny removed  <- cache bucket vitana-engineering-ci-cache-<account>: SSE-KMS with the M1 
+caught   cache bucket name loses the account id  <- cache bucket vitana-engineering-ci-cache-<account>: SSE-KMS with the M1 
+caught   token secret renamed  <- runner-token secret: the plan name, the M1 key, created empty (no secret|names agree across the files: group, secret, bucket, region, images
+caught   token secret gets a value  <- runner-token secret: the plan name, the M1 key, created empty (no secret
+caught   quota compares with 3 vCPUs per machine  <- quota check: both Standard vCPU quotas are read and compared with fleet_
+caught   Spot quota not checked  <- quota check: both Standard vCPU quotas are read and compared with fleet_
+caught   On-Demand quota not checked  <- quota check: both Standard vCPU quotas are read and compared with fleet_
+caught   quota code changed  <- quota check: both Standard vCPU quotas are read and compared with fleet_
+caught   increase command loses the quota code  <- quota check: both Standard vCPU quotas are read and compared with fleet_
+caught   increase command is wrapped by Terraform  <- quota check: both Standard vCPU quotas are read and compared with fleet_
+caught   autoscaling grant loses CreateGrant  <- Auto Scaling and Spot can use the M1 key: custom-suffix service-linked r
+caught   spot grant goes to another role  <- Auto Scaling and Spot can use the M1 key: custom-suffix service-linked r
+caught   spot role may not exist before the grant  <- Auto Scaling and Spot can use the M1 key: custom-suffix service-linked r
+caught   no custom suffix  <- Auto Scaling and Spot can use the M1 key: custom-suffix service-linked r
+caught   grant on another key  <- Auto Scaling and Spot can use the M1 key: custom-suffix service-linked r
+caught   image tests off  <- image: Image Builder component, recipe, infrastructure configuration and
+caught   image build wait removed  <- image: Image Builder component, recipe, infrastructure configuration and
+caught   failed build tolerated  <- image: Image Builder component, recipe, infrastructure configuration and
+caught   failed build machine left running  <- image build machine: private subnet, the job group, IMDSv2 hop 1, termin
+caught   build machine IMDSv2 optional  <- image build machine: private subnet, the job group, IMDSv2 hop 1, termin
+caught   build machine in a public subnet  <- image build machine: private subnet, the job group, IMDSv2 hop 1, termin
+caught   image volume unencrypted  <- image: Image Builder component, recipe, infrastructure configuration and
+caught   image role gets admin  <- IAM in the fleet files: no wildcard action, a wildcard resource only whe|image build machine: private subnet, the job group, IMDSv2 hop 1, termin
+caught   image role reuses the job role  <- the job instance profile has no policy of any kind, and nothing else use
+caught   new Canonical image rebuilds  <- image: Image Builder component, recipe, infrastructure configuration and
+caught   helper image tag floats  <- image: Image Builder component, recipe, infrastructure configuration and
+caught   job image tag floats  <- image: Image Builder component, recipe, infrastructure configuration and|names agree across the files: group, secret, bucket, region, images
+caught   component ships the runner  <- component: Docker Engine, EC2 Instance Connect, ubuntu in group docker, 
+caught   component drops Docker  <- component: Docker Engine, EC2 Instance Connect, ubuntu in group docker, 
+caught   component drops EC2 Instance Connect  <- component: Docker Engine, EC2 Instance Connect, ubuntu in group docker, 
+caught   ubuntu not in group docker  <- component: Docker Engine, EC2 Instance Connect, ubuntu in group docker, 
+caught   helper image not pulled  <- component: Docker Engine, EC2 Instance Connect, ubuntu in group docker, 
+caught   test phase removed  <- component: Docker Engine, EC2 Instance Connect, ubuntu in group docker, 
+caught   a key baked into the image  <- component: Docker Engine, EC2 Instance Connect, ubuntu in group docker, 
+caught   max_use_count 2  <- config.toml (rendered): docker-autoscaler, plugin aws, one job per machi
+caught   capacity_per_instance 2  <- config.toml (rendered): docker-autoscaler, plugin aws, one job per machi
+caught   privileged jobs  <- config.toml (rendered): job containers are not privileged, no Docker soc
+caught   Docker socket mounted  <- config.toml (rendered): job containers are not privileged, no Docker soc
+caught   pull always  <- config.toml (rendered): job containers are not privileged, no Docker soc
+caught   wrong executor  <- config.toml (rendered): docker-autoscaler, plugin aws, one job per machi
+caught   plugin pinned to a made-up name  <- config.toml (rendered): docker-autoscaler, plugin aws, one job per machi
+caught   external addresses used  <- config.toml (rendered): docker-autoscaler, plugin aws, one job per machi
+caught   connector user ec2-user  <- config.toml (rendered): docker-autoscaler, plugin aws, one job per machi
+caught   idle time 20 minutes  <- config.toml (rendered): docker-autoscaler, plugin aws, one job per machi
+caught   idle_count fixed at 5  <- config.toml (rendered): docker-autoscaler, plugin aws, one job per machi|config.toml (rendered): every size comes from the inputs: max_instances 
+caught   concurrent fixed at 10  <- config.toml (rendered): docker-autoscaler, plugin aws, one job per machi|config.toml (rendered): every size comes from the inputs: max_instances |installer, run against stub commands: waits for the token, installs the 
+caught   max_instances fixed at 10  <- config.toml (rendered): docker-autoscaler, plugin aws, one job per machi|config.toml (rendered): every size comes from the inputs: max_instances |installer, run against stub commands: waits for the token, installs the 
+caught   cache without encryption  <- config.toml (rendered): cache in the S3 bucket of the account, SSE-KMS w
+caught   cache uses stored keys  <- config.toml (rendered): cache in the S3 bucket of the account, SSE-KMS w
+caught   cache over plain HTTP  <- config.toml (rendered): cache in the S3 bucket of the account, SSE-KMS w
+caught   cache bucket location fixed  <- config.toml (rendered): every size comes from the inputs: max_instances 
+caught   runner version unpinned  <- installer: bash, no xtrace, no Docker on the manager, pinned runner held|the env file Terraform writes defines every variable the installer reads|installer, run against stub commands: waits for the token, installs the 
+caught   runner not held back  <- installer: bash, no xtrace, no Docker on the manager, pinned runner held|installer, run against stub commands: waits for the token, installs the |installer, run against stub commands: no token means no config.toml, no 
+caught   Docker installed on the manager  <- installer: bash, no xtrace, no Docker on the manager, pinned runner held|installer, run against stub commands: waits for the token, installs the 
+caught   plugin install dropped  <- installer, run against stub commands: waits for the token, installs the 
+caught   plugin folder differs from the service  <- installer, run against stub commands: waits for the token, installs the 
+caught   config.toml world readable  <- installer waits for a glrt- token in the fleet secret before it writes c|installer, run against stub commands: waits for the token, installs the 
+caught   config.toml copy not private  <- installer waits for a glrt- token in the fleet secret before it writes c|installer, run against stub commands: waits for the token, installs the |installer, run against stub commands: a secret value that is not a runne
+caught   global umask before the package repo  <- installer waits for a glrt- token in the fleet secret before it writes c
+caught   docker not started before the image test  <- component: Docker Engine, EC2 Instance Connect, ubuntu in group docker, 
+caught   wait is 2 hours  <- installer waits for a glrt- token in the fleet secret before it writes c
+caught   any secret value ends the wait  <- installer waits for a glrt- token in the fleet secret before it writes c|installer, run against stub commands: waits for the token, installs the |installer, run against stub commands: a secret value that is not a runne
+caught   token echoed  <- installer waits for a glrt- token in the fleet secret before it writes c
+caught   xtrace on  <- installer: bash, no xtrace, no Docker on the manager, pinned runner held|config.toml (rendered): the token appears once, in the runner section, a|rendering fails closed: a bad size, token, bucket, key or name prints no|the installer and the component pass the syntax checks the lane can run:|installer, run against stub commands: waits for the token, installs the |installer, run against stub commands: a secret value that is not a runne
+caught   verify output not scrubbed  <- installer waits for a glrt- token in the fleet secret before it writes c|installer, run against stub commands: waits for the token, installs the 
+caught   token checked loosely  <- rendering fails closed: a bad size, token, bucket, key or name prints no
+caught   size check removed  <- rendering fails closed: a bad size, token, bucket, key or name prints no
+caught   idle larger than max accepted  <- rendering fails closed: a bad size, token, bucket, key or name prints no
+caught   script with a syntax error  <- installer: bash, no xtrace, no Docker on the manager, pinned runner held|installer, run against stub commands: waits for the token, installs the |installer, run against stub commands: a secret value that is not a runne
+caught   start line removed  <- installer: bash, no xtrace, no Docker on the manager, pinned runner held|installer, run against stub commands: waits for the token, installs the 
+caught   user data writes no log  <- manager user data: env file, the installer, output to /var/log/vitana-bo
+caught   env file loses the idle count  <- manager user data: env file, the installer, output to /var/log/vitana-bo|the env file Terraform writes defines every variable the installer reads
+caught   env file gets a secret  <- manager user data: env file, the installer, output to /var/log/vitana-bo|outputs carry names and ids, never a secret value; no key pair, no store|installer waits for a glrt- token in the fleet secret before it writes c
+caught   an output leaks a secret value  <- outputs carry names and ids, never a secret value; no key pair, no store
+caught   an output name collides with M1  <- outputs carry names and ids, never a secret value; no key pair, no store
+caught   RUNBOOK quota command changed  <- RUNBOOK-m2-fleet: quota commands, the apply, what to read when a job wai
+caught   RUNBOOK drain forgets the decrement  <- RUNBOOK-m2-fleet: quota commands, the apply, what to read when a job wai
+caught   RUNBOOK no cost section  <- RUNBOOK-m2-fleet: quota commands, the apply, what to read when a job wai
+caught   RUNBOOK names no KMS symptom  <- RUNBOOK-m2-fleet: quota commands, the apply, what to read when a job wai
+
+mutations: 133   not caught: 0

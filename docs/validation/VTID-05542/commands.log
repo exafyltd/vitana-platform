@@ -1,0 +1,31 @@
+VTID-05542 (eng-gitlab-m2/settings): commands run and what they showed. Paths are shown as <worktree>. The lane was built in three parts that did not touch each other's files:
+part A (sync engine), part B (host files, CI files, Terraform, m2.sh, guard test) and the documentation. Each part wrote its own outputs (a-*, b-*, and the two doc files).
+
+Base: the tip of the M1 branch while M1 (#4692) waited for its review, then rebuilt as one commit on top of origin/main after M1 merged. No M1 file is edited.
+
+# Part A: sync engine
+$ node --test scripts/eng/gitlab-settings.test.mjs                      (final code)  -> outputs/a-green.txt: 55 pass, 0 fail
+red on base: the same test file against an empty implementation          -> outputs/a-red-on-base.txt: 51 of 52 fail by assertion (the pass: "no Premium names" on an empty file)
+$ bash outputs/a-mutate-settings.sh <worktree>                           -> outputs/a-mutation-run.txt: 124 mutations, 124 caught, 0 survived (2 early survivors exposed test gaps, closed)
+full apply on the fake GitLab                                            -> outputs/a-fake-gitlab-apply-transcript.txt: run 1 = 66 calls (36 writes); run 2 = 0 writes; every endpoint with its docs page and tier
+merge bot's real loadProjects against the shipped JSON                   -> outputs/a-loadprojects-check.txt: accepted
+$ FILES=$(find scripts ... -name '*.test.mjs' | sort); node --test $FILES   (UNIT.yml:21-25)  -> outputs/a-unit-all.txt, a-unit-all-node20.txt: 0 fail on Node 22 and Node 20
+$ bash /projects/sandbox/tools/scan-secrets.sh <worktree> VTID-05542     -> outputs/a-secret-scan.txt: 0 matches
+
+# Part B: host files
+$ node --test scripts/eng/free-tier-guard.test.mjs                      (final code)  -> outputs/b-green.txt: 51 pass, 0 fail (PyYAML present, so the PyYAML cross-check ran)
+red on base: the same test file on a tree without part B's files        -> outputs/b-red-on-base.txt: 46 of 51 fail; the other 5 are self-tests of the scanner and the YAML reader
+$ bash outputs/b-mutate-settings-host.sh <worktree>                      -> outputs/b-mutation-run.txt: 139 mutations, 139 caught, 0 survived (6 parallel shards; 4 early survivors closed by new cases)
+$ terraform fmt -check -diff -recursive; terraform init -backend=false -input=false; terraform validate
+    main.tf + settings.tf, and main.tf + settings.tf + fleet.tf + fleet-ami.tf + monitoring.tf             -> outputs/b-terraform-checks.txt: Success; a renamed-duplicate control fails as it should
+$ bash -n on the scripts; systemd-analyze verify on the four units (negative control included); PyYAML safe_load on the three CI files  -> outputs/b-scripts-and-units.txt: clean
+$ the whole script set on Node 22 and Node 20                            -> outputs/b-unit-all.txt, b-unit-all-node20.txt: 745 tests, 744 pass, 0 fail, 1 skipped (a win32-only case in another file)
+$ bash /projects/sandbox/tools/scan-secrets.sh <worktree> VTID-05542     -> outputs/b-secret-scan.txt: 0 matches
+merged-tree check: free-tier-guard.test.mjs on an overlay of all lane worktrees (8 units, 5 .tf files, the merge bot's script) -> 51/51
+
+# Documentation
+docs/ENGINEERING-PLATFORM-PLAN.md amended, docs/ENGINEERING-PLATFORM-LICENCES.md added; every licence read with web_fetch on 2026-11-05   -> outputs/doc-diff.txt, outputs/link-check.txt (177 OK, 0 WARN, 0 FAIL)
+
+# Not done by rule
+No call to GitLab, AWS, GitHub with credentials, Cloudflare or any live system was made (CLAUDE.md absolute rule; collaboration.md §7a). `terraform plan/apply`, `m2.sh install`, `m2.sh status` and the rehearsal are the owner's.
+HashiCorp's licence FAQ answered HTTP 429, so the Terraform internal-use reading rests on the licence text alone; AWS Organizations and Image Builder pricing pages answered 404 (the Image Builder user guide was used); Cloudflare's terms returned no text.
