@@ -18,7 +18,8 @@ paths:
   - .kiro/specs/agentic-delivery/lanes/github-bridge.md
   - .kiro/specs/agentic-delivery/lanes/gateway-delivery.md
   - .kiro/specs/agentic-delivery/lanes/cutover.md
-updated: 2026-11-05T05:31Z
+updated: 2026-11-05T10:16Z
+vtid: VTID-05554
 ---
 # Lane `reseat`: give the eight lanes of this plan back to seat exafy (plan §9) through the reviewed lane_admin path
 Tasks in `tasks.md` (group `<!-- lane: reseat -->`). VTID from PLAN-SPAR (a late lane of the converged plan); never by
@@ -40,3 +41,6 @@ log line of a target is edited. Evidence under `docs/validation/<this VTID>/`.
 Lane added through `_plan` by the plan driver (plan PR `plan(agentic-delivery): …`, branch `kiro/agentic-delivery/plan-2`).
 Next: PLAN-SPAR allocates its VTID; then a builder of seat `exafy` (not the driver) claims it and the driver requests the
 reviewer agent.
+
+### 2026-11-05T10:16Z · ci-plan-spar · ready (VTID allocated)
+VTID-05554 allocated after policy approval (converged-auto-v1).

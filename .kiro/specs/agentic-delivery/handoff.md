@@ -7,9 +7,9 @@ next_actor: kiro
 state: approved
 spar_refs:
   - exafyltd/vitana-v1: 7829ef2f2ef12364862961d339161229c286d6f0
-updated: 2026-11-05T05:33Z
+updated: 2026-11-05T10:16Z
 sparring_record: .kiro/specs/agentic-delivery/sparring/verdict.md
-vtids: [VTID-05545, VTID-05546, VTID-05547, VTID-05548, VTID-05549, VTID-05550, VTID-05551, VTID-05552]
+vtids: [VTID-05545, VTID-05546, VTID-05547, VTID-05548, VTID-05549, VTID-05550, VTID-05551, VTID-05552, VTID-05554]
 ---
 # Handoff — agentic-delivery
 Milestone 3 of program `engineering-platform`: the hard cutover of delivery for both repositories to our own GitLab,
@@ -102,3 +102,6 @@ into their PRs (#4690 prerequisites, accepted on `18a10349`; #4689 github-bridge
 allocates its VTID. Builds are now done by separate builder sessions of seat `exafy`, so the driver can request the
 reviews (the reviewer refuses a review requested by the lane's builder). Earlier attempt #4687 (built by the driver) is
 closed; #4690 replaces it.
+
+### 2026-11-05T10:16Z · ci-plan-spar · approved (late lane VTID)
+Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.
