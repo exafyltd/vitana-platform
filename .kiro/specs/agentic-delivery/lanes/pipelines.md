@@ -23,7 +23,7 @@ paths:
   - infra/gitlab-engineering/ci/v1-delivery.gitlab-ci.yml
   - infra/gitlab-engineering/ci/platform-delivery.gitlab-ci.yml
   - docs/validation/**
-updated: 2026-11-05T02:53Z
+updated: 2026-11-05T02:59Z
 vtid: VTID-05550
 ---
 # Lane: pipelines (repo vitana-platform)
@@ -36,4 +36,6 @@ Lane created with the plan.
 ### 2026-11-05T00:25Z · ci-plan-spar · ready (VTID allocated)
 VTID-05550 allocated after policy approval (converged-auto-v1).
 ### 2026-11-05T02:53Z · pm-agent · update
+reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
+### 2026-11-05T02:59Z · pm-agent · update
 reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
