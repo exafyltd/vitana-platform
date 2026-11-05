@@ -18,7 +18,7 @@ paths:
   - scripts/eng/assist-trigger.mjs
   - scripts/eng/assist-trigger.test.mjs
   - docs/validation/**
-updated: 2026-11-05T16:05Z
+updated: 2026-11-05T16:12Z
 vtid: VTID-05549
 claimed_by: kiro-exafy-202611051413-6eb1
 branch: kiro/agentic-delivery/merge-queue
@@ -42,3 +42,7 @@ Built Q1-Q3: the queue mode of `scripts/eng/gitlab-land.mjs` (order, red-main pa
 Tests first: red on the scratch base 25 of 25 (30 of 30 on stubs), green 106 of 106 (52 new plus M2's 54); UNIT 727 tests, 0 fail; a 12-merge-request run over the fake GitLab; `land-guard.mjs` and `queue.mjs` untouched.
 Parked locally (F2): built on the local scratch commit "scratch: merge-bot tree" (main after merge-bot #4697, which has a `changes` review); nothing pushed. The driver rebuilds the lane's commits on origin/main after merge-bot lands.
 Decisions taken and the merge-bot functions this lane depends on: `acceptance.md` ("Decisions taken", "Contract").
+
+### 2026-11-05T16:12Z · kiro-exafy-202611051413-6eb1 · executing
+Parked locally, waiting for eng-gitlab-m2 lane merge-bot (#4697, `changes` review at 14:13Z) to land; nothing pushed, no PR. Local commits on the scratch base 5209c22376: af6cfd1e7a (code), 0c19e60e38 (this lane file), 71f0273b71 (train positions need gate, not the per-merge-request governance jobs), d8893eebdd (acceptance decisions 15-16), and this entry.
+Final counts: red on base 26 of 26 (30 of 30 on stubs), green 107 of 107 (53 new plus M2's 54), UNIT 728 tests, 0 fail. Next: the driver rebuilds these commits on origin/main after merge-bot lands (cherry-pick, adapt to its fix, re-test, preflight), then pushes and opens the PR.
