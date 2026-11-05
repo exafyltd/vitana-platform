@@ -1,0 +1,39 @@
+# VTID-05538 commands (2026-11-05, Linux, node v22.23.4 unless a line says node 20; seat exafy, session kiro-exafy-202611021438-cff7)
+base: origin/main 29b639da4bf. Worktree: .worktrees/eng-gitlab-m2-merge-bot, branch kiro/eng-gitlab-m2/merge-bot.
+The outputs under outputs/ were produced from the final code of this PR, in this order, by one pass at the end (red on base, red on a stub, green, mutation run, the whole script set on two Node versions, transcript, table, guard files), after the last change to the module or the test.
+
+# 1. Red on base, red on a stub, green
+$ node --test scripts/eng/gitlab-land.test.mjs      (with scripts/eng/gitlab-land.mjs and host/units set aside = the tree of origin/main)   -> outputs/red-on-base.txt
+tests 1, fail 1: the test file cannot import the module (ERR_MODULE_NOT_FOUND). That is the red of a new module.
+$ the same test on a scratch tree whose scripts/eng/gitlab-land.mjs is a STUB (every export of the real module, each returning undefined) and with no units      -> outputs/red-on-stub.txt
+tests 54, pass 0, fail 54: every case fails on its own, none on a missing module.
+$ node --test scripts/eng/gitlab-land.test.mjs      -> outputs/green.txt
+tests 54, pass 54, fail 0, skipped 0 (about 12 s: the cases run real git in temporary directories).
+
+# 2. Mutation run: each of 98 deliberate changes applied alone to a scratch copy. Script: outputs/mutate-gitlab-land.mjs   Output: outputs/mutation-run.txt
+$ TMPDIR=<scratch> node outputs/mutate-gitlab-land.mjs <worktree>
+Baseline 54 of 54 pass on the unmutated tree. Mutations 98: caught 98, not caught 0. A change counts as caught only when its text is found exactly once in the file, the changed .mjs file still parses (node --check) and the test fails or is cut by a 180 s timeout; NOOP, AMBIGUOUS, INVALID, CRASH, HUNG and SURVIVED are reported as not caught.
+History: the first run of the 98 changes (against 52 cases, written before the mutations were planned) left 5 not caught: "protected file has no reason code" did not parse (the mutation was fixed), and four properties the test did not pin: a push of the reviewer that does not contain the accept, the merge-base diff of what main brings in (a branch that itself changes a governance file), the removal of the scratch worktree, and the redaction by the logger itself. A test or a mutation was added or fixed for each; the recorded run is the last.
+
+# 3. The whole script test set exactly as .github/workflows/UNIT.yml:21-25 runs it (no install)
+$ FILES=$(find scripts -path '*/node_modules' -prune -o \( -name '*.test.cjs' -o -name '*.test.mjs' \) -print | sort); node --test $FILES      -> outputs/unit-all.txt
+34 files; tests 667, pass 666, fail 0, cancelled 0, skipped 1 (a skip in a file this lane does not touch).
+$ the same with node v20.20.2 (npx -y node@20; the workflow uses actions/setup-node 20)      -> outputs/unit-all-node20.txt
+tests 667, pass 666, fail 0, skipped 1.
+
+# 4. The same verdicts as mergeDecision, and the guard files
+$ node outputs/verdict-table.mjs <repository root>      -> outputs/verdict-table.txt      24 combinations, 0 differences.
+$ git diff --stat origin/main -- scripts/collab/land-guard.mjs scripts/collab/queue.mjs ; sha256sum of both files here and on origin/main      -> outputs/untouched-guard-files.txt
+No difference; the sha256 of each file is the same on the branch and on origin/main.
+
+# 5. A dry-run transcript against a scratch repository and a fake GitLab
+$ node outputs/dry-run-transcript.mjs <repository root>      -> outputs/dry-run-transcript.txt
+`status` shows both merge requests (one would land, one has no review) and writes nothing; `run --dry-run` logs would_land and writes nothing; `run` lands the one merge request that is ready with a single PUT and leaves the other.
+
+# 6. Scope file made with the helper the gate documents, then pointed at the lane's own sparring record
+$ node scripts/ci/pr-gate/vtid-scope.mjs init VTID-05538 --kind feature --paths "scripts/eng/gitlab-land.mjs,scripts/eng/gitlab-land.test.mjs,infra/gitlab-engineering/host/units/vitana-land.service,infra/gitlab-engineering/host/units/vitana-land.timer,docs/validation/VTID-05538/**" --sparring-record docs/validation/VTID-05538/plan-sparring.md
+wrote docs/validation/VTID-05538/scope.json. plan-sparring.md states the policy approval and cites the verdict of plan eng-gitlab-m2 (the gate's sparring check looks for the words "owner approval").
+
+# 7. Not run, with the reason
+- Any request to the real GitLab, a real push, a real landing: this session has no GitLab access and writes to no live system. The first real run is rehearsal A4 of the plan, after lane settings creates the accounts `bot-land` and `agent-reviewer` and the token file.
+- The units are not installed or started (ops-install.sh of lane settings does that, on the owner's command).

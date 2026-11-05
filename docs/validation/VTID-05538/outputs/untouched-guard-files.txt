@@ -1,0 +1,22 @@
+# $ git diff --stat origin/main -- scripts/collab/land-guard.mjs scripts/collab/queue.mjs     (empty = untouched)
+# diff exit: 0  (0 = no difference)
+# $ sha256sum of the two files here and on origin/main
+branch      be818fbfefef76a9a779763f84146b5b3cf1b66f39bbb38238efdea3f4d73414  scripts/collab/land-guard.mjs
+origin/main be818fbfefef76a9a779763f84146b5b3cf1b66f39bbb38238efdea3f4d73414  scripts/collab/land-guard.mjs
+branch      b29eee56fb3d45238039615394bc2048ef153364064ccb9556acd369ce773498  scripts/collab/queue.mjs
+origin/main b29eee56fb3d45238039615394bc2048ef153364064ccb9556acd369ce773498  scripts/collab/queue.mjs
+# files this lane changes (git diff --name-only origin/main, plus new files):
+  docs/multitenancy/MIGRATION-QUEUE.md
+  docs/validation/VTID-05479/acceptance.md
+  docs/validation/VTID-05479/commands.log
+  docs/validation/VTID-05479/outputs/json-check.txt
+  docs/validation/VTID-05479/plan-sparring.md
+  docs/validation/VTID-05479/scope.json
+  docs/validation/VTID-05479/staging-tests.json
+  infra/gitlab-engineering/host/units/vitana-land.service
+  infra/gitlab-engineering/host/units/vitana-land.timer
+  .kiro/specs/eng-gitlab-m2/lanes/merge-bot.md
+  .kiro/specs/mt-identity-r2/lanes/migration-records.md
+  scripts/ci/migration-drift-baseline.json
+  scripts/eng/gitlab-land.mjs
+  scripts/eng/gitlab-land.test.mjs

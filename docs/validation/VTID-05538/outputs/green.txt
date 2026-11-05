@@ -1,0 +1,335 @@
+# $ node --test scripts/eng/gitlab-land.test.mjs   (final code)
+TAP version 13
+# Subtest: jobToCheckRun follows the plan §3.4 table for every documented status, and checksVerdict reads the result
+ok 1 - jobToCheckRun follows the plan §3.4 table for every documented status, and checksVerdict reads the result
+  ---
+  duration_ms: 1.755446
+  type: 'test'
+  ...
+# Subtest: jobToCheckRun: an unknown status is pending (fails closed) and is reported once through onUnknown
+ok 2 - jobToCheckRun: an unknown status is pending (fails closed) and is reported once through onUnknown
+  ---
+  duration_ms: 0.359133
+  type: 'test'
+  ...
+# Subtest: jobToCheckRun keeps name, id and started_at, so the latest attempt of a job is the one checksVerdict reads
+ok 3 - jobToCheckRun keeps name, id and started_at, so the latest attempt of a job is the one checksVerdict reads
+  ---
+  duration_ms: 0.247809
+  type: 'test'
+  ...
+# Subtest: requiredJobsVerdict: every required name must be present and success; skipped, neutral or absent does not pass
+ok 4 - requiredJobsVerdict: every required name must be present and success; skipped, neutral or absent does not pass
+  ---
+  duration_ms: 0.48273
+  type: 'test'
+  ...
+# Subtest: checksFor: no pipeline is pending, a finished pipeline with no jobs fails, optional failures do not block, fail beats pending
+ok 5 - checksFor: no pipeline is pending, a finished pipeline with no jobs fails, optional failures do not block, fail beats pending
+  ---
+  duration_ms: 0.323617
+  type: 'test'
+  ...
+# Subtest: decide gives the verdicts of mergeDecision itself for every combination of review, checks, behind and protected files
+ok 6 - decide gives the verdicts of mergeDecision itself for every combination of review, checks, behind and protected files
+  ---
+  duration_ms: 0.547024
+  type: 'test'
+  ...
+# Subtest: judgeReviewCommit: the newest review of the lane decides; it must be an accept by the reviewer agent, pushed by the reviewer account
+ok 7 - judgeReviewCommit: the newest review of the lane decides; it must be an accept by the reviewer agent, pushed by the reviewer account
+  ---
+  duration_ms: 0.32707
+  type: 'test'
+  ...
+# Subtest: squashMessage is the title with the VTID first and the description
+ok 8 - squashMessage is the title with the VTID first and the description
+  ---
+  duration_ms: 0.172157
+  type: 'test'
+  ...
+# Subtest: lands a reviewed, green, up-to-date merge request: one merge call pinned to the head, squash, title and description, source branch removed
+ok 9 - lands a reviewed, green, up-to-date merge request: one merge call pinned to the head, squash, title and description, source branch removed
+  ---
+  duration_ms: 222.008118
+  type: 'test'
+  ...
+# Subtest: a lane-file entry after the accept still counts; the review is read against the head, not the accepted sha
+ok 10 - a lane-file entry after the accept still counts; the review is read against the head, not the accepted sha
+  ---
+  duration_ms: 268.253147
+  type: 'test'
+  ...
+# Subtest: a merge call that fails is not repeated by the client; the merge request is read again and the bot says it will try next tick
+ok 11 - a merge call that fails is not repeated by the client; the merge request is read again and the bot says it will try next tick
+  ---
+  duration_ms: 263.017676
+  type: 'test'
+  ...
+# Subtest: a merge call that reports an error but was processed is recognised by the re-read
+ok 12 - a merge call that reports an error but was processed is recognised by the re-read
+  ---
+  duration_ms: 206.186567
+  type: 'test'
+  ...
+# Subtest: a 200 answer whose merge request is not merged is not a landing unless the re-read says so
+ok 13 - a 200 answer whose merge request is not merged is not a landing unless the re-read says so
+  ---
+  duration_ms: 195.104219
+  type: 'test'
+  ...
+# Subtest: the merge is refused when GitLab says the head changed (409): nothing else is done
+ok 14 - the merge is refused when GitLab says the head changed (409): nothing else is done
+  ---
+  duration_ms: 194.281109
+  type: 'test'
+  ...
+# Subtest: no reviewer accept: nothing lands and the reason is written once per head
+ok 15 - no reviewer accept: nothing lands and the reason is written once per head
+  ---
+  duration_ms: 198.899779
+  type: 'test'
+  ...
+# Subtest: a note by someone else that contains the marker does not stand in for the bot's comment
+ok 16 - a note by someone else that contains the marker does not stand in for the bot's comment
+  ---
+  duration_ms: 161.559262
+  type: 'test'
+  ...
+# Subtest: an accept pushed by a builder is forged: it does not land and says why
+ok 17 - an accept pushed by a builder is forged: it does not land and says why
+  ---
+  duration_ms: 165.315799
+  type: 'test'
+  ...
+# Subtest: an accept whose commit is in no push of the reviewer (a builder committed the trailers) is forged
+ok 18 - an accept whose commit is in no push of the reviewer (a builder committed the trailers) is forged
+  ---
+  duration_ms: 181.907033
+  type: 'test'
+  ...
+# Subtest: an accept that does not name the reviewer agent is forged
+ok 19 - an accept that does not name the reviewer agent is forged
+  ---
+  duration_ms: 160.972097
+  type: 'test'
+  ...
+# Subtest: code changed after the accept: the review no longer counts for the head
+ok 20 - code changed after the accept: the review no longer counts for the head
+  ---
+  duration_ms: 231.84888
+  type: 'test'
+  ...
+# Subtest: a force-push after the review removes the accept with it: nothing lands
+ok 21 - a force-push after the review removes the accept with it: nothing lands
+  ---
+  duration_ms: 193.392809
+  type: 'test'
+  ...
+# Subtest: a changes verdict after an accept: the lane is back with its builder
+ok 22 - a changes verdict after an accept: the lane is back with its builder
+  ---
+  duration_ms: 191.520029
+  type: 'test'
+  ...
+# Subtest: a red required job does not land and names the job; a required job that is absent in a finished pipeline does not land either
+ok 23 - a red required job does not land and names the job; a required job that is absent in a finished pipeline does not land either
+  ---
+  duration_ms: 579.895281
+  type: 'test'
+  ...
+# Subtest: the pipeline is read for exactly the head: a green pipeline of another sha does not count
+ok 24 - the pipeline is read for exactly the head: a green pipeline of another sha does not count
+  ---
+  duration_ms: 194.364239
+  type: 'test'
+  ...
+# Subtest: a pipeline of another sha is never used, even when the server returns it for the query
+ok 25 - a pipeline of another sha is never used, even when the server returns it for the query
+  ---
+  duration_ms: 195.698412
+  type: 'test'
+  ...
+# Subtest: a merge request with an unexpected iid, head or source branch name is not touched
+ok 26 - a merge request with an unexpected iid, head or source branch name is not touched
+  ---
+  duration_ms: 722.428697
+  type: 'test'
+  ...
+# Subtest: a pending pipeline waits: no write at all, and the next merge request of the project is not even read
+ok 27 - a pending pipeline waits: no write at all, and the next merge request of the project is not even read
+  ---
+  duration_ms: 331.696338
+  type: 'test'
+  ...
+# Subtest: a merge request that waited more than 60 minutes for its pipeline loses its turn to the next one
+ok 28 - a merge request that waited more than 60 minutes for its pipeline loses its turn to the next one
+  ---
+  duration_ms: 347.441195
+  type: 'test'
+  ...
+# Subtest: two ready merge requests: the oldest lands, the other is not touched in the same tick
+ok 29 - two ready merge requests: the oldest lands, the other is not touched in the same tick
+  ---
+  duration_ms: 286.306843
+  type: 'test'
+  ...
+# Subtest: a merge request that needs a human is skipped, not waited for: the next one lands
+ok 30 - a merge request that needs a human is skipped, not waited for: the next one lands
+  ---
+  duration_ms: 307.557487
+  type: 'test'
+  ...
+# Subtest: behind main: main is merged INTO the source branch by bot-land, pushed, and the merge request is not landed in the same tick; the next tick lands it
+ok 31 - behind main: main is merged INTO the source branch by bot-land, pushed, and the merge request is not landed in the same tick; the next tick lands it
+  ---
+  duration_ms: 361.254667
+  type: 'test'
+  ...
+# Subtest: main's own change decides, not the branch's: a branch that itself changes a governance file is still updated when main brought in something unrelated
+ok 32 - main's own change decides, not the branch's: a branch that itself changes a governance file is still updated when main brought in something unrelated
+  ---
+  duration_ms: 261.173367
+  type: 'test'
+  ...
+# Subtest: behind a main that changed a governance or protected gate file: the branch is left alone, because the merge would end the review; one comment says so
+ok 33 - behind a main that changed a governance or protected gate file: the branch is left alone, because the merge would end the review; one comment says so
+  ---
+  duration_ms: 1147.052498
+  type: 'test'
+  ...
+# Subtest: the update is never a force push: a branch that moved meanwhile keeps the builder's commit and the tick fails
+ok 34 - the update is never a force push: a branch that moved meanwhile keeps the builder's commit and the tick fails
+  ---
+  duration_ms: 284.118965
+  type: 'test'
+  ...
+# Subtest: behind main with a conflict: nothing is pushed, the branch is left alone, one comment says so
+ok 35 - behind main with a conflict: nothing is pushed, the branch is left alone, one comment says so
+  ---
+  duration_ms: 347.86045
+  type: 'test'
+  ...
+# Subtest: a protected gate file in the diff is never landed by the bot; one comment per head
+ok 36 - a protected gate file in the diff is never landed by the bot; one comment per head
+  ---
+  duration_ms: 258.001629
+  type: 'test'
+  ...
+# Subtest: a title that is not "VTID-nnnnn (<slug>/<lane>): …" is not landed and says why once; a draft is skipped silently
+ok 37 - a title that is not "VTID-nnnnn (<slug>/<lane>): …" is not landed and says why once; a draft is skipped silently
+  ---
+  duration_ms: 358.622683
+  type: 'test'
+  ...
+# Subtest: --dry-run writes nothing: no merge call, no comment, no push
+ok 38 - --dry-run writes nothing: no merge call, no comment, no push
+  ---
+  duration_ms: 608.325496
+  type: 'test'
+  ...
+# Subtest: an API error half-way lands nothing: the tick fails, the project is reported, no merge call is made
+ok 39 - an API error half-way lands nothing: the tick fails, the project is reported, no merge call is made
+  ---
+  duration_ms: 164.132773
+  type: 'test'
+  ...
+# Subtest: a git error lands nothing: a merge request whose head ref is missing on the remote fails the tick
+ok 40 - a git error lands nothing: a merge request whose head ref is missing on the remote fails the tick
+  ---
+  duration_ms: 145.272766
+  type: 'test'
+  ...
+# Subtest: a head that moved between the list and the fetch is left for the next tick
+ok 41 - a head that moved between the list and the fetch is left for the next tick
+  ---
+  duration_ms: 153.826798
+  type: 'test'
+  ...
+# Subtest: only projects with landing: true are looked at, and only the default branch main
+ok 42 - only projects with landing: true are looked at, and only the default branch main
+  ---
+  duration_ms: 234.491281
+  type: 'test'
+  ...
+# Subtest: an unknown job status is logged once and the merge request waits
+ok 43 - an unknown job status is logged once and the merge request waits
+  ---
+  duration_ms: 194.108676
+  type: 'test'
+  ...
+# Subtest: the requests the bot makes are exactly the ones listed here (a new request is a deliberate change)
+ok 44 - the requests the bot makes are exactly the ones listed here (a new request is a deliberate change)
+  ---
+  duration_ms: 357.563749
+  type: 'test'
+  ...
+# Subtest: no log line carries the token, also when GitLab echoes it back in an error
+ok 45 - no log line carries the token, also when GitLab echoes it back in an error
+  ---
+  duration_ms: 359.965493
+  type: 'test'
+  ...
+# Subtest: git gets the token through GIT_ASKPASS: the script answers the username and the password, and no git environment value holds the token
+ok 46 - git gets the token through GIT_ASKPASS: the script answers the username and the password, and no git environment value holds the token
+  ---
+  duration_ms: 117.936847
+  type: 'test'
+  ...
+# Subtest: the log redacts the token by itself, whatever is put into an entry
+ok 47 - the log redacts the token by itself, whatever is put into an entry
+  ---
+  duration_ms: 112.675319
+  type: 'test'
+  ...
+# Subtest: CLI status prints what the bot would do for every open merge request and writes nothing
+ok 48 - CLI status prints what the bot would do for every open merge request and writes nothing
+  ---
+  duration_ms: 337.936191
+  type: 'test'
+  ...
+# Subtest: CLI run lands one tick's worth and exits 0; merge <project> <iid> acts on that merge request only
+ok 49 - CLI run lands one tick's worth and exits 0; merge <project> <iid> acts on that merge request only
+  ---
+  duration_ms: 485.570228
+  type: 'test'
+  ...
+# Subtest: CLI exit codes: 1 for a failed tick, an unknown project, an unknown command, a missing option value or an unreadable token file
+ok 50 - CLI exit codes: 1 for a failed tick, an unknown project, an unknown command, a missing option value or an unreadable token file
+  ---
+  duration_ms: 868.944023
+  type: 'test'
+  ...
+# Subtest: loadProjects reads the group and the projects of gitlab-settings.json
+ok 51 - loadProjects reads the group and the projects of gitlab-settings.json
+  ---
+  duration_ms: 1.068328
+  type: 'test'
+  ...
+# Subtest: the decision functions are imported from land-guard.mjs and queue.mjs, not copied
+ok 52 - the decision functions are imported from land-guard.mjs and queue.mjs, not copied
+  ---
+  duration_ms: 1.446411
+  type: 'test'
+  ...
+# Subtest: vitana-land.service: one tick under flock, niced and limited, with the token in a root-only file and not in the unit
+ok 53 - vitana-land.service: one tick under flock, niced and limited, with the token in a root-only file and not in the unit
+  ---
+  duration_ms: 0.368629
+  type: 'test'
+  ...
+# Subtest: vitana-land.timer: every minute, for vitana-land.service
+ok 54 - vitana-land.timer: every minute, for vitana-land.service
+  ---
+  duration_ms: 0.20708
+  type: 'test'
+  ...
+1..54
+# tests 54
+# suites 0
+# pass 54
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 13393.060407
