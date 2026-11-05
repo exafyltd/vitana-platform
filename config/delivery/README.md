@@ -11,6 +11,9 @@ node scripts/eng/pipeline-gen.mjs --check  # CI and preflight: exit 3 when a ren
 node --test scripts/eng/pipeline-gen.test.mjs scripts/eng/affected-parity.test.mjs scripts/eng/services-parity.test.mjs
 ```
 
+## Top level
+`images` (job images), `image_tools` (the tools on PATH of each image, from its Dockerfile), `apt_tools` and `npm_global_tools` (what an installed package adds). `pipeline-gen.test.mjs` checks that every generated job runs only tools its image has or an earlier line installs, and no GitHub Actions variable.
+
 ## Shape (per repository under `repositories.<key>`)
 | Field | Meaning |
 |---|---|
@@ -19,10 +22,11 @@ node --test scripts/eng/pipeline-gen.test.mjs scripts/eng/affected-parity.test.m
 | `shared_paths` | lockfiles and toolchain config: a change selects every check |
 | `other_paths` | areas no single service owns (root config files, tools, content of unknown use): a change selects every check |
 | `docs_paths` | documentation and inert files (GitHub workflow files are inert on GitLab): no check; governance and `gate` only |
-| `checks.<name>` | `kind` (`test`, `check`, `build`), `script`, `install` (a key of `install`: lockfile-keyed cache plus install lines), `install_cache`, `parallel` (shards), `needs`, `central` (needs the platform-main tools), `postgres`, `image`, `artifacts`, `duration` (the GitHub job in the fixture whose median duration, divided by the shards, must stay under `max_check_minutes`) |
+| `checks.<name>` | `kind` (`test`, `check`, `build`), `script`, `apt` (Debian packages of `apt_tools`, installed by the first script line), `install` (a key of `install`: lockfile-keyed cache plus install lines), `install_cache`, `cache_paths` (more cached paths), `parallel` (shards), `needs`, `central` (needs the platform-main tools), `postgres`, `image`, `artifacts`, `duration` (the GitHub job in the fixture whose median duration, divided by the shards, must stay under `max_check_minutes`) |
 | `assist_rules.<rule>` | T7: `trigger` (`merge_request` or `schedule`), `paths`, `script` (runs in a worktree of the merge request head with main's `scripts/`; ends with `assist_finish`) |
+| `pr_gate_install` | the `install` whose lockfile keys the `pr-gate-report` cache; red-green installs it for a "fix" VTID |
 | `notify_platform_paths` | vitana-v1: the paths whose landing starts the platform's screens-catalog pipeline |
-| `github_workflows.<file>` | each GitHub workflow's fate at the cut (plan §2.2: `t1`…`t7`, `kept`, `dead`), the GitLab jobs that take its work, and whether it had a pull-request path filter (the parity tests compare only path-filtered workflows; always-on ones map to the governance jobs and the service checks, plan §3.4) |
+| `github_workflows.<file>` | each GitHub workflow's fate at the cut (plan §2.2: `t1`…`t7`, `kept`, `dead`), the GitLab jobs that take its work, and whether it had a pull-request path filter (the parity tests compare only path-filtered workflows; always-on ones map to the governance jobs and the service checks, plan §3.4); `steps` maps each `run` step of the multi-gate workflows to its GitLab job(s) (or `{ "open": reason }`, an item for the driver); `replaced_by` names what plan §2.2 puts in place of a moved workflow that keeps no job (`retry`) |
 
 ## Selection rules (GitLab semantics)
 - Globs follow GitLab `rules:changes` (Ruby `File.fnmatch` with `FNM_PATHNAME | FNM_DOTMATCH | FNM_EXTGLOB`): write

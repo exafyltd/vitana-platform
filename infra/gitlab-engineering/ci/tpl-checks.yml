@@ -60,10 +60,14 @@
     - node "$CENTRAL_DIR/scripts/ci/staging-verify/run.mjs" check-pr --service "$CHANGE_SUITE_SERVICE" --repo-root "$CI_PROJECT_DIR" --base "$GATE_BASE" --head "$GATE_HEAD" --title "$GATE_TITLE"
 
 # PR-GATE's checks from this repository's main, report-only unless its config says enforce (the owner's switch).
+# gate.mjs reads the VTIDs from --title (gate.mjs:22-23; without it scope, sparring and red-green skip). red-green runs
+# the change's tests on the base commit with the checkout's node_modules, so a "fix" VTID installs them first in the
+# red_green cwd of main's config.json (vitana-v1 the root, vitana-platform services/gateway), as PR-GATE.yml does.
 .pr-gate-report:
   script:
     - FAILED=""
-    - for c in scope sparring weakening red-green; do node "$MAIN_TREE/scripts/ci/pr-gate/gate.mjs" "$c" --base "$GATE_BASE" --head "$GATE_HEAD" || FAILED="$FAILED $c"; done
+    - 'for v in $(printf "%s" "$GATE_TITLE" | grep -Eo "VTID-[0-9]{4,5}" | sort -u || true); do f="docs/validation/$v/scope.json"; if [ -f "$f" ] && [ "$(node -p "require(\"./$f\").kind")" = "fix" ]; then RG_CWD=$(node -p "(require(process.env.MAIN_TREE + \"/scripts/ci/pr-gate/config.json\").red_green || {}).cwd || \".\""); echo "red-green: $v is a fix: npm ci in $RG_CWD"; (cd "$RG_CWD" && npm ci --no-audit --no-fund --prefer-offline >/dev/null) || FAILED="$FAILED red-green-install"; break; fi; done'
+    - for c in scope sparring weakening red-green; do node "$MAIN_TREE/scripts/ci/pr-gate/gate.mjs" "$c" --base "$GATE_BASE" --head "$GATE_HEAD" --title "$GATE_TITLE" || FAILED="$FAILED $c"; done
     - node "$MAIN_TREE/scripts/ci/kiro-steering/guard.cjs" . || FAILED="$FAILED kiro-steering"
     - ENFORCE=$(node -p "require('$MAIN_TREE/scripts/ci/pr-gate/config.json').enforce === true")
     - 'if [ -z "$FAILED" ]; then echo "PR-GATE passed"; elif [ "$ENFORCE" = "true" ]; then echo "PR-GATE failed:$FAILED"; exit 1; else echo "PR-GATE (report-only) would fail:$FAILED"; fi'

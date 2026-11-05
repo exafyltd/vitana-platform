@@ -203,7 +203,7 @@ test('dependencies come from the cache keyed by the lockfile', () => {
 });
 
 test('main pipelines run every check once, are not interruptible, and use the main and deploy classes', () => {
-  const MAIN_CLASS = /^(full-suite:|build-image:|preview-build:main$|staging-verify:|staging-verify-nightly:|assist:)/;
+  const MAIN_CLASS = /^(full-suite:|build-image:|preview-build:main$|staging-verify:|staging-verify-nightly:|assist:|e2e-preview-orb$)/;
   const DEPLOY_CLASS = /^(push-image:|deploy-staging:|rollback-staging:|record:|record-nightly:|vtid-close$|notify-platform$|preview-upload|preview-stop)/;
   for (const repo of REPOS) {
     for (const ctx of [MAIN({ DELIVERY_MODE: 'live' }), MAIN(), NIGHTLY({ DELIVERY_MODE: 'live' })]) {
@@ -266,15 +266,227 @@ test('the generated files include the deploy and verify templates by the job nam
   for (const name of ['.notify-platform', '.preview-upload', '.preview-stop', '.assist']) assert.ok(Object.values(v1).some((j) => [].concat(j?.extends || []).includes(name)), `vitana-v1: ${name}`);
 });
 
-test('sibling sweep: every workflow plan §2.2 moves to GitLab has its jobs in a generated file', () => {
+// Plan §2.2's table: one row per repository and workflow family, with what happens to it at the cut.
+function planWorkflowRows() {
+  const plan = readFileSync(path.join(ROOT, '.kiro/specs/agentic-delivery/plan.md'), 'utf8');
+  const sec = plan.slice(plan.indexOf('### 2.2 '), plan.indexOf('### 2.3 '));
+  return sec.split('\n').filter((l) => /^\| (v1|platform) \|/.test(l)).map((l) => {
+    const cells = l.split('|').map((c) => c.trim());
+    const families = cells[2].replace(/\([^)]*\)/g, '').split(',').map((f) => f.trim()).filter(Boolean);
+    return { repo: cells[1], families, cut: cells[3] };
+  });
+}
+const familyMatch = (fam, wf) => new RegExp(`^${fam.replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`).test(wf.replace(/\.ya?ml$/, ''));
+// A moved workflow that keeps no job of its own is allowed only where plan §2.2 names what replaces it.
+const REPLACED_BY = {
+  retry: (all) => ['.t1-base', '.full-suite'].every((t) => [].concat(gen.resolveJob(all, t).retry?.when || []).includes('runner_system_failure')),
+};
+
+test('sibling sweep: every workflow has its plan §2.2 fate, and every moved workflow has its jobs in a generated file', () => {
+  const rows = planWorkflowRows();
+  assert.ok(rows.length >= 15, `plan §2.2 rows: ${rows.length}`);
   for (const repo of REPOS) {
-    const { cfg, generated } = docsFor(repo);
+    const { cfg, generated, all } = docsFor(repo);
     const reg = cfg.repositories[repo].github_workflows;
-    const all = new Set(Object.keys(generated));
+    const names = new Set(Object.keys(generated));
     for (const [wf, e] of Object.entries(reg)) {
-      if (!['t1', 't2', 't3', 't4', 't7'].includes(e.fate)) continue;
-      for (const j of [...e.jobs, ...(e.pr_jobs || [])]) assert.ok(all.has(j), `${repo}: ${wf} → ${j} is not in ${cfg.repositories[repo].output}`);
-      if (e.fate === 't1') assert.ok(e.jobs.length > 0, `${repo}: ${wf} maps to no job`);
+      const row = rows.find((r) => r.repo === (repo === 'vitana-v1' ? 'v1' : 'platform') && r.families.some((f) => familyMatch(f, wf)));
+      assert.ok(row, `${repo}: ${wf} is in no plan §2.2 row`);
+      const moved = ['t1', 't2', 't3', 't4', 't7'].includes(e.fate);
+      if (moved) assert.match(row.cut, new RegExp(`^disabled; .*\\bT${e.fate.slice(1)}\\b`), `${repo}: ${wf} is ${e.fate} here but "${row.cut}" in plan §2.2`);
+      else if (e.fate === 'kept') assert.match(row.cut, /^kept/, `${repo}: ${wf} is kept here but "${row.cut}" in plan §2.2`);
+      else if (e.fate === 'dead') assert.match(row.cut, /dead/, `${repo}: ${wf} is dead here but "${row.cut}" in plan §2.2`);
+      else assert.fail(`${repo}: ${wf} has unknown fate ${e.fate}`);
+      for (const j of [...e.jobs, ...(e.pr_jobs || [])]) assert.ok(names.has(j), `${repo}: ${wf} → ${j} is not in ${cfg.repositories[repo].output}`);
+      if (moved && e.jobs.length === 0) {
+        assert.ok(REPLACED_BY[e.replaced_by], `${repo}: ${wf} (${e.fate}) maps to no job and names no replacement that plan §2.2 gives`);
+        assert.ok(REPLACED_BY[e.replaced_by](all), `${repo}: ${wf}: the templates lack the ${e.replaced_by} that replaces it`);
+      }
     }
   }
+});
+
+// ---------- review round 1 (agent:vitana-lane-reviewer on e2c50732): jobs that can pass on GitLab ----------
+// The first word of every simple command in a script line (keywords, VAR=value prefixes and paths dropped).
+const TRACKED = new Set(['jq', 'node', 'npm', 'npx', 'pnpm', 'psql', 'pg_isready', 'python3', 'java', 'gradlew', 'spectral', 'git', 'curl', 'gh']);
+const NEEDS = { gradlew: ['java', 'android-sdk'] };
+function commandsOf(line) {
+  const out = [];
+  for (let seg of line.replace(/'[^']*'/g, "''").split(/\|\||&&|\$\(|[;|&()`\n{}]/)) {
+    seg = seg.trim();
+    for (let m; (m = seg.match(/^(?:if|then|do|else|elif|while|until|!|time|exec|xargs)\s+/) || seg.match(/^[A-Za-z_][A-Za-z0-9_]*=(?:"[^"]*"|\S*)\s+/));) seg = seg.slice(m[0].length);
+    const w = (seg.match(/^[^\s"'<>=]+/) || [''])[0];
+    if (w) out.push(w.replace(/^.*\//, ''));
+  }
+  return out;
+}
+function installedBy(line, cfg) {
+  const got = [];
+  for (const m of line.matchAll(/apt-get install\b([^;&|\n]*)/g)) for (const p of m[1].split(/\s+/)) got.push(...(cfg.apt_tools[p] || []));
+  for (const m of line.matchAll(/npm (?:install|i) (?:-g|--global)\b([^;&|\n]*)/g)) for (const p of m[1].split(/\s+/)) got.push(...(cfg.npm_global_tools[p.replace(/(.)@[^@/]*$/, '$1')] || []));
+  if (/\$ANDROID_HOME\/licenses\/android-sdk-license/.test(line)) got.push('android-sdk');
+  return got;
+}
+const imageKey = (cfg, image) => Object.entries(cfg.images).find(([, v]) => v === image)?.[0];
+
+test('every generated job: its image provides each tool its script runs, or an earlier line installs it; no GitHub Actions variable', () => {
+  const cfg = config();
+  let checked = 0;
+  for (const repo of REPOS) {
+    const d = docsFor(repo);
+    for (const name of Object.keys(d.generated)) {
+      if (['include', 'workflow', 'stages', 'variables'].includes(name)) continue;
+      const job = gen.resolveJob(d.all, name);
+      if (!job.script) continue; // its template is another lane's (tpl-deploy.yml, tpl-verify.yml)
+      const key = imageKey(cfg, job.image);
+      assert.ok(key && cfg.image_tools[key], `${repo}: ${name} runs on ${job.image}, which has no image_tools entry`);
+      const have = new Set(cfg.image_tools[key]);
+      if (job.variables?.ANDROID_HOME === undefined) have.delete('android-sdk');
+      for (const line of [...[].concat(job.before_script || []), ...[].concat(job.script)]) {
+        assert.doesNotMatch(line, /\$\{?GITHUB_[A-Z_]+/, `${repo}: ${name} uses a GitHub Actions variable: ${line.slice(0, 120)}`);
+        for (const c of commandsOf(line)) if (TRACKED.has(c)) for (const t of NEEDS[c] || [c]) assert.ok(have.has(t), `${repo}: ${name} runs ${c}, but ${job.image} has no ${t} and no earlier line installs it`);
+        for (const t of installedBy(line, cfg)) have.add(t);
+      }
+      checked += 1;
+    }
+  }
+  assert.ok(checked > 100, `checked ${checked} jobs`);
+  // the four jobs of finding 1 and the Android job of finding 2, by name
+  const p = docsFor('vitana-platform');
+  const cicdl = gen.resolveJob(p.all, 'cicdl-lint-services').script;
+  assert.ok(cicdl.findIndex((l) => /apt-get install[^\n]*\bjq\b/.test(l)) < cicdl.findIndex((l) => /\bjq\b/.test(l) && !/apt-get/.test(l)), 'cicdl-lint-services installs jq before it uses it');
+  assert.doesNotMatch(gen.resolveJob(p.all, 'openapi-enforce').script.join('\n'), /GITHUB_OUTPUT/);
+  const bridge = gen.resolveJob(p.all, 'sql-auth-bridge');
+  assert.ok(new Set([...cfg.image_tools[imageKey(cfg, bridge.image)], ...bridge.script.flatMap((l) => installedBy(l, cfg))]).has('npm'), 'sql-auth-bridge has npm');
+});
+
+test('validator-check reads the merge request title and description only in merge-request pipelines and logs why it skips them elsewhere', () => {
+  const MR_ONLY = /^if \[ "\$CI_PIPELINE_SOURCE" = "merge_request_event" \]; then /;
+  for (const name of ['validator-check', 'full-suite:validator-check']) {
+    const job = gen.resolveJob(docsFor('vitana-platform').all, name);
+    for (const line of job.script) if (/CI_MERGE_REQUEST_(DESCRIPTION|TITLE)|\/tmp\/pr_(body|title)\.txt|\$VC_VTID|\$VC_PROFILE/.test(line)) assert.match(line, MR_ONLY, `${name}: reads merge request text outside a merge-request pipeline: ${line.slice(0, 100)}`);
+    const skip = job.script.find((l) => /^if \[ "\$CI_PIPELINE_SOURCE" != "merge_request_event" \]; then echo /.test(l));
+    assert.ok(skip && /skipped/.test(skip) && /merge request/.test(skip), `${name}: no skip reason in the job log for main, nightly and train pipelines`);
+    assert.equal(job.variables.GIT_DEPTH, '0', `${name}: needs the full history for origin/<target>...HEAD`);
+  }
+  const sel = gen.selectChecks(config(), 'vitana-platform', ['services/gateway/src/routes/x.ts']).selected;
+  assert.ok(sel.includes('validator-check'));
+});
+
+test('android-module: Node from the image, JDK 17 and an Android SDK home with accepted licences before gradlew, cached', () => {
+  const cfg = config();
+  for (const name of ['android-module', 'full-suite:android-module']) {
+    const job = gen.resolveJob(docsFor('vitana-v1').all, name);
+    const at = (re) => job.script.findIndex((l) => re.test(l));
+    assert.ok(cfg.image_tools[imageKey(cfg, job.image)].includes('node'), `${name}: ${job.image} has no Node`);
+    assert.ok(at(/apt-get install[^\n]*openjdk-17-jdk-headless/) >= 0 && at(/apt-get install[^\n]*openjdk-17/) < at(/gradlew/), `${name}: JDK 17 before gradlew`);
+    assert.ok(at(/android-sdk-license/) >= 0 && at(/android-sdk-license/) < at(/gradlew/), `${name}: SDK licences before gradlew`);
+    assert.equal(job.variables.ANDROID_HOME, '$CI_PROJECT_DIR/.android-sdk');
+    for (const p of ['.npm', '.android-sdk', '.gradle-home']) assert.ok(job.cache.paths.includes(p), `${name}: cache ${p}`);
+  }
+});
+
+test('pr-gate-report passes the merge request title to every gate.mjs check and installs what red-green runs', () => {
+  const cfg = config();
+  for (const repo of REPOS) {
+    const d = docsFor(repo);
+    assert.equal(d.generated.variables.GATE_TITLE, '$CI_MERGE_REQUEST_TITLE');
+    const job = gen.resolveJob(d.all, 'pr-gate-report');
+    const calls = job.script.filter((l) => /pr-gate\/gate\.mjs/.test(l));
+    assert.ok(calls.length > 0);
+    for (const c of calls) assert.match(c, /--title "\$GATE_TITLE"/, `${repo}: gate.mjs without --title skips scope, sparring and red-green (gate.mjs:22-23)`);
+    const install = job.script.findIndex((l) => /red_green/.test(l) && /npm ci/.test(l));
+    const redGreen = job.script.findIndex((l) => /red-green/.test(l) && /gate\.mjs/.test(l));
+    assert.ok(install >= 0 && install < redGreen, `${repo}: red-green runs the tests with node_modules of the checkout; install them first`);
+    const lock = cfg.repositories[repo].install[cfg.repositories[repo].pr_gate_install].lockfiles;
+    assert.deepEqual(job.cache?.key?.files, lock, `${repo}: pr-gate-report cache keyed by ${lock}`);
+  }
+});
+
+test('dev-autopilot-impact scans against the merge request target (main for trains, the pushed range on main), never HEAD~1', () => {
+  for (const name of ['dev-autopilot-impact', 'full-suite:dev-autopilot-impact']) {
+    const job = gen.resolveJob(docsFor('vitana-platform').all, name);
+    const text = job.script.join('\n');
+    const set = job.script.findIndex((l) => /IMPACT_SCAN_BASE=/.test(l));
+    const scan = job.script.findIndex((l) => /dev-autopilot-impact-scan\.mjs/.test(l));
+    assert.ok(set >= 0 && set < scan, `${name}: IMPACT_SCAN_BASE is set before the scan`);
+    assert.match(text, /IMPACT_SCAN_BASE="origin\/\$CI_MERGE_REQUEST_TARGET_BRANCH_NAME"/);
+    assert.match(text, /IMPACT_SCAN_BASE="\$CI_COMMIT_BEFORE_SHA"/);
+    assert.match(text, /git rev-parse --verify --quiet "\$IMPACT_SCAN_BASE\^\{commit\}"[^\n]*\|\| \{[^\n]*exit 1/, `${name}: fails closed instead of the scan's HEAD~1 fallback (dev-autopilot-impact-scan.mjs:48-56)`);
+    assert.doesNotMatch(text, /HEAD~1/);
+    assert.equal(job.variables.GIT_DEPTH, '0');
+  }
+});
+
+// Each `run` step of a GitHub job: "<job>/<step name>".
+function runSteps(text) {
+  const out = [];
+  let job = null; let cur = null; let inJobs = false;
+  const flush = () => { if (cur && cur.run && cur.name) out.push(`${job}/${cur.name}`); cur = null; };
+  for (const line of text.split('\n')) {
+    if (/^jobs:\s*$/.test(line)) { inJobs = true; continue; }
+    if (!inJobs) continue;
+    let m;
+    if ((m = line.match(/^ {2}([A-Za-z0-9_-]+):\s*$/))) { flush(); job = m[1]; continue; }
+    if ((m = line.match(/^ {6}- (\w+):\s*(.*)$/))) { flush(); cur = { name: null, run: false }; }
+    else if (!(m = line.match(/^ {8}(\w+):\s*(.*)$/)) || !cur) continue;
+    if (m[1] === 'name') cur.name = m[2].replace(/^(['"])(.*)\1$/, '$2');
+    if (m[1] === 'run') cur.run = true;
+  }
+  flush();
+  return out;
+}
+// Steps whose work needs what plan §3.2 gives no GitLab class yet; open items for the driver (acceptance.md).
+const OPEN_STEPS = new Set([
+  'vitana-platform DEV-AUTOPILOT-IMPACT.yml scan/Ingest impact findings into Developer Autopilot queue',
+  'vitana-platform DEV-AUTOPILOT-IMPACT.yml scan/Build PR comment body',
+  'vitana-platform DEV-AUTOPILOT-IMPACT.yml scan/Post or update PR comment',
+]);
+
+test('the multi-gate ports: every run step of the GitHub workflow has a GitLab job (or is a listed open item); no partial port is left', () => {
+  const STEP_MAPPED = { 'vitana-v1': ['PR-GATE.yml'], 'vitana-platform': ['PR-GATE.yml', 'VALIDATOR-CHECK.yml', 'DEV-AUTOPILOT-IMPACT.yml'] };
+  const open = [];
+  for (const repo of REPOS) {
+    const { cfg, generated } = docsFor(repo);
+    const r = cfg.repositories[repo];
+    for (const [name, c] of Object.entries(r.checks)) assert.notEqual(c.port, 'partial', `${repo}: ${name} is still a partial port`);
+    const fx = JSON.parse(readFileSync(path.join(ROOT, r.fixture), 'utf8'));
+    for (const wf of STEP_MAPPED[repo]) {
+      const steps = repo === 'vitana-platform' ? runSteps(readFileSync(path.join(ROOT, '.github/workflows', wf), 'utf8')) : fx.workflow_steps[wf].steps;
+      assert.ok(steps.length >= 3, `${repo}: ${wf} has ${steps.length} run steps`);
+      const map = r.github_workflows[wf].steps || {};
+      assert.deepEqual(Object.keys(map).sort(), [...steps].sort(), `${repo}: ${wf}: the step map differs from the workflow's run steps`);
+      for (const [step, to] of Object.entries(map)) {
+        if (to && to.open) { open.push(`${repo} ${wf} ${step}`); continue; }
+        for (const j of [].concat(to)) assert.ok(generated[j], `${repo}: ${wf} "${step}" → ${j} is not a generated job`);
+      }
+    }
+  }
+  assert.deepEqual(open.sort(), [...OPEN_STEPS].sort());
+});
+
+test('vitana-v1: PR-GATE preview-e2e on a local vite preview without a session; the gate and Kiro steering self-tests; E2E-PREVIEW-ORB by hand', () => {
+  const d = docsFor('vitana-v1');
+  const cfg = config();
+  const e2e = gen.resolveJob(d.all, 'preview-e2e');
+  const text = e2e.script.join('\n');
+  assert.match(text, /vite preview --host 127\.0\.0\.1 --port 4173 --strictPort/);
+  assert.match(text, /playwright test \$SPECS --config=\.pr-gate\.playwright\.config\.mjs/);
+  assert.match(text, /scripts\/ci\/staging-verify\/staging-guard\.ts/);
+  assert.match(text, /enforce_preview_e2e/);
+  assert.doesNotMatch(text, /TEST_USER_(EMAIL|PASSWORD)|E2E_PASSWORD/, 'plan §3.4: no session on the untrusted class');
+  assert.deepEqual(e2e.tags, ['vitana-eng']);
+  for (const f of ['src/App.tsx', 'public/logo.svg', 'index.html', 'vite.config.ts', 'package-lock.json', 'tests/e2e/staging/smoke.staging.spec.ts']) assert.ok(gen.selectChecks(cfg, 'vitana-v1', [f]).selected.includes('preview-e2e'), `preview-e2e not selected by ${f} (PR-GATE.yml:211)`);
+  for (const [job, cmd, file] of [['gate-selftest', /^node --test scripts\/ci\/pr-gate\/__tests__\/\*\.test\.mjs$/, 'scripts/ci/pr-gate/lib.mjs'], ['kiro-steering-selftest', /^node --test scripts\/ci\/kiro-steering\/guard\.test\.cjs$/, 'scripts/ci/kiro-steering/guard.cjs']]) {
+    assert.ok(gen.resolveJob(d.all, job).script.some((l) => cmd.test(l)), `${job} runs ${cmd}`);
+    assert.ok(gen.selectChecks(cfg, 'vitana-v1', [file]).selected.includes(job), `${job} selected by ${file}`);
+  }
+  const orb = gen.evaluatePipeline(d.all, MAIN({ DELIVERY_MODE: 'live' }))['e2e-preview-orb'];
+  assert.ok(orb, 'e2e-preview-orb on main in live mode');
+  assert.equal(orb.when, 'manual');
+  assert.equal(orb.allow_failure, true, 'a manual job must not block the main pipeline');
+  assert.deepEqual(orb.tags, ['vitana-eng-main']);
+  assert.match(orb.script.join('\n'), /node tests\/e2e\/orb-preview\.mjs/);
+  assert.equal(gen.evaluatePipeline(d.all, MAIN())['e2e-preview-orb'], undefined, 'not in shadow mode');
+  assert.equal(gen.evaluatePipeline(d.all, MR(['src/App.tsx']))['e2e-preview-orb'], undefined, 'never on the untrusted class');
 });

@@ -33,9 +33,17 @@ export function validateServices(config) {
       for (const c of s.checks) if (!r.checks[c]) throw new Error(`${key}: service ${name} names unknown check ${c}`);
       for (const p of s.paths) if (/(^|\/)\*\*$/.test(p)) throw new Error(`${key}: ${name} path ${p}: a trailing ** matches one level in GitLab; write ${p}/*`);
     }
-    for (const [name, c] of Object.entries(r.checks)) if (c.install && !r.install[c.install]) throw new Error(`${key}: check ${name} names unknown install ${c.install}`);
+    for (const [name, c] of Object.entries(r.checks)) {
+      if (c.install && !r.install[c.install]) throw new Error(`${key}: check ${name} names unknown install ${c.install}`);
+      if (c.image && !config.images[c.image]) throw new Error(`${key}: check ${name} names unknown image ${c.image}`);
+      for (const p of c.apt || []) if (!config.apt_tools?.[p]) throw new Error(`${key}: check ${name} installs ${p}, which apt_tools does not list`);
+    }
+    if (r.pr_gate_install && !r.install[r.pr_gate_install]) throw new Error(`${key}: pr_gate_install names unknown install ${r.pr_gate_install}`);
   }
 }
+
+// The first script line of a check that needs Debian packages its image lacks (apt_tools of the service list).
+export const aptLine = (pkgs) => `apt-get update -qq && apt-get install -y -qq --no-install-recommends ${pkgs.join(' ')} >/dev/null`;
 
 // ---------- globs: GitLab rules:changes = Ruby File.fnmatch(pattern, path, FNM_PATHNAME | FNM_DOTMATCH | FNM_EXTGLOB) ----------
 const reCache = new Map();
@@ -105,9 +113,9 @@ function checkJob(config, r, name, c, mode) {
   if (c.postgres) Object.assign(vars, { PGHOST: 'postgres', PGPORT: '5432', PGUSER: 'postgres', PGPASSWORD: vars.PGPASSWORD || 'postgres' });
   job.variables = vars;
   const cache = c.install ? r.install[c.install] : c.install_cache;
-  if (cache) job.cache = { key: { files: cache.lockfiles, prefix: name }, paths: cache.cache_paths, policy: 'pull-push' };
-  // The install lines run first; a `cd` in them (services/gateway, apps/mobile) stays in force for the check's lines.
-  job.script = [...(c.install ? r.install[c.install].script : []), ...c.script];
+  if (cache) job.cache = { key: { files: cache.lockfiles, prefix: name }, paths: [...cache.cache_paths, ...(c.cache_paths || [])], policy: 'pull-push' };
+  // The apt line, then the install lines; a `cd` in them (services/gateway, apps/mobile) stays in force for the check's lines.
+  job.script = [...(c.apt?.length ? [aptLine(c.apt)] : []), ...(c.install ? r.install[c.install].script : []), ...c.script];
   if (c.artifacts) job.artifacts = { when: 'always', expire_in: '1 day', paths: [...c.artifacts, '.delivery-ran/'] };
   job.rules = mode === 't1'
     ? [{ if: IF.t1, changes: { paths: checkPatterns(r, name), compare_to: 'refs/heads/main' } }]
@@ -146,7 +154,10 @@ export function buildPipeline(config, repoKey) {
   const t1 = { if: IF.t1 };
   doc['lane-scope'] = { extends: ['.governance', '.lane-scope'], stage: 'governance', rules: [t1] };
   doc['change-suite'] = { extends: ['.governance', '.change-suite'], stage: 'governance', variables: { CHANGE_SUITE_SERVICE: v1 ? 'community-app' : 'gateway' }, rules: [t1] };
-  doc['pr-gate-report'] = { extends: ['.governance', '.pr-gate-report'], stage: 'governance', rules: [t1] };
+  // red-green runs the change's tests on the base commit with the checkout's node_modules (gate.mjs red-green), so a
+  // fix VTID installs them first; the cache is keyed by that lockfile.
+  const rgInstall = r.install[r.pr_gate_install];
+  doc['pr-gate-report'] = { extends: ['.governance', '.pr-gate-report'], stage: 'governance', ...(rgInstall ? { cache: { key: { files: rgInstall.lockfiles, prefix: 'pr-gate-report' }, paths: rgInstall.cache_paths, policy: 'pull-push' } } : {}), rules: [t1] };
   doc['collab-handoff'] = { extends: ['.governance', '.collab-handoff'], stage: 'governance', ...(r.collab_handoff === 'report-only' ? { allow_failure: true } : {}), rules: [t1] };
   // T1 service checks, selected by path.
   for (const name of checks) doc[name] = checkJob(config, r, name, r.checks[name], 't1');
@@ -161,6 +172,8 @@ export function buildPipeline(config, repoKey) {
     // Shadow proof (plan §8.1 step 3): the non-production preview path gl-main/ on every main commit.
     doc['preview-build:main'] = { extends: ['.full-suite', '.preview-build'], stage: 'build', variables: { PREVIEW_SERVICE: svc, PREVIEW_BASE: '/gl-main/' }, rules: [{ if: `${IF.notLive} && ${IF.main}`, changes: { paths: servicePatterns(r, s) } }] };
     doc['preview-upload:main'] = { extends: '.preview-upload', stage: 'deploy', tags: [config.runner_tags.deploy], interruptible: false, needs: [{ job: 'preview-build:main', artifacts: true }], variables: { PREVIEW_SERVICE: svc, PREVIEW_PREFIX: 'gl-main/' }, rules: [{ if: `${IF.notLive} && ${IF.main}`, changes: { paths: servicePatterns(r, s) } }] };
+    // E2E-PREVIEW-ORB (dispatch only on GitHub): by hand on main, main class (it signs in as the test user), live mode only.
+    doc['e2e-preview-orb'] = { extends: '.e2e-preview-orb', stage: 'verify', tags: [config.runner_tags.main], interruptible: false, allow_failure: true, needs: [], rules: [NEVER_IN_SHADOW, { if: IF.main, when: 'manual' }] };
   }
   // T2: every check once per landing (and on the nightly run, T3), on the main class, never interrupted.
   for (const name of checks) doc[`full-suite:${name}`] = checkJob(config, r, name, r.checks[name], 'main');

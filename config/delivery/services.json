@@ -13,8 +13,52 @@
   "images": {
     "node": "public.ecr.aws/docker/library/node:20-bookworm",
     "postgres": "public.ecr.aws/docker/library/postgres:16",
-    "python": "public.ecr.aws/docker/library/python:3.12-slim",
-    "android": "public.ecr.aws/docker/library/eclipse-temurin:17-jdk"
+    "python": "public.ecr.aws/docker/library/python:3.12-slim"
+  },
+  "image_tools": {
+    "$comment": "The tools on PATH of each image, from its Dockerfile (docker-library: node 20-bookworm = buildpack-deps bookworm, whose scm layer adds git and mercurial, which brings python3, and whose curl layer adds curl; postgres 16 bookworm; python 3.12-slim). No image has jq, a PostgreSQL client besides postgres, a JDK or an Android SDK. pipeline-gen.test.mjs checks every generated job against this list; a job that needs more installs it first (apt, apt_tools, npm_global_tools).",
+    "node": [
+      "node",
+      "npm",
+      "npx",
+      "git",
+      "curl",
+      "python3"
+    ],
+    "postgres": [
+      "psql",
+      "pg_isready"
+    ],
+    "python": [
+      "python3"
+    ]
+  },
+  "apt_tools": {
+    "$comment": "Debian bookworm packages a check may install with `apt` (rendered as the first script line), and the tools each one puts on PATH.",
+    "jq": [
+      "jq"
+    ],
+    "npm": [
+      "npm",
+      "node",
+      "npx"
+    ],
+    "openjdk-17-jdk-headless": [
+      "java"
+    ],
+    "postgresql-client": [
+      "psql",
+      "pg_isready"
+    ]
+  },
+  "npm_global_tools": {
+    "$comment": "Packages a script installs with npm install -g, and their commands.",
+    "@stoplight/spectral-cli": [
+      "spectral"
+    ],
+    "pnpm": [
+      "pnpm"
+    ]
   },
   "max_check_minutes": 4,
   "max_changes_patterns": 50,
@@ -25,6 +69,7 @@
       "output": "infra/gitlab-engineering/ci/v1-delivery.gitlab-ci.yml",
       "fixture": "scripts/eng/fixtures/v1-pr-files.json",
       "collab_handoff": "report-only",
+      "pr_gate_install": "npm",
       "install": {
         "npm": {
           "lockfiles": [
@@ -109,7 +154,8 @@
             "eslint",
             "build",
             "regressions",
-            "realtime-helper"
+            "realtime-helper",
+            "preview-e2e"
           ],
           "image": {
             "ecr_repository": "vitana/community-app",
@@ -320,6 +366,64 @@
             "node scripts/ci/pr-gate/run-regressions.mjs || node -e 'process.exit(require(\"./scripts/ci/pr-gate/config.json\").enforce === true ? 1 : 0)'"
           ]
         },
+        "gate-selftest": {
+          "kind": "test",
+          "script": [
+            "node --test scripts/ci/pr-gate/__tests__/*.test.mjs"
+          ],
+          "duration": {
+            "fixture": null,
+            "minutes": 1,
+            "note": "node --test of the gate library tests (a step of PR-GATE.yml#pr-gate, not timed on its own)"
+          },
+          "github": "PR-GATE.yml"
+        },
+        "kiro-steering-selftest": {
+          "kind": "test",
+          "script": [
+            "node --test scripts/ci/kiro-steering/guard.test.cjs"
+          ],
+          "duration": {
+            "fixture": null,
+            "minutes": 1,
+            "note": "node --test of one guard test file (a step of PR-GATE.yml#pr-gate, not timed on its own)"
+          },
+          "github": "PR-GATE.yml"
+        },
+        "preview-e2e": {
+          "kind": "test",
+          "install": "npm",
+          "central": true,
+          "variables": {
+            "STAGING_GATEWAY": "https://preview-aws-gateway.vitanaland.com",
+            "NODE_OPTIONS": "--max-old-space-size=4096"
+          },
+          "script": [
+            "OK=false; for i in 1 2 3; do if [ \"$(curl -s -o /dev/null -w '%{http_code}' \"$STAGING_GATEWAY/alive\")\" = \"200\" ]; then OK=true; break; fi; sleep 30; done",
+            "if [ \"$OK\" != \"true\" ]; then echo \"preview-e2e: neutral: staging gateway unhealthy, e2e deferred to STAGING-VERIFY\"; exit 0; fi",
+            "printf 'VITE_GATEWAY_BASE=%s\\nVITE_GATEWAY_URL=%s/api/v1\\nVITE_APP_VERSION=%s\\nVITE_HEALTH_REAL_DATA=true\\n' \"$STAGING_GATEWAY\" \"$STAGING_GATEWAY\" \"$(git rev-parse --short=12 HEAD)\" > .env.production",
+            "npm run build",
+            "cp \"$CENTRAL_DIR/scripts/ci/staging-verify/staging-guard.ts\" tests/e2e/staging/staging-guard.ts",
+            "npm install --no-save --no-audit --no-fund @playwright/test@1.51.0",
+            "npx playwright install --with-deps chromium",
+            "(npx vite preview --host 127.0.0.1 --port 4173 --strictPort > /tmp/preview.log 2>&1 &)",
+            "for i in $(seq 1 30); do curl -sf http://127.0.0.1:4173/ >/dev/null && break; sleep 1; done",
+            "SPECS=\"tests/e2e/staging/smoke.staging.spec.ts\"; for v in $(printf \"%s\" \"$GATE_TITLE\" | grep -Eo \"VTID-[0-9]{4,5}\" | sort -u || true); do m=\"docs/validation/$v/staging-tests.json\"; if [ -f \"$m\" ]; then SPECS=\"$SPECS $(node -e \"const m=require('./$m');console.log(m.tests.filter(t=>t.kind==='playwright').map(t=>t.spec).join(' '))\")\"; fi; done; echo \"specs (no session, plan §3.4; the signed-in specs run in STAGING-VERIFY): $SPECS\"",
+            "printf \"%s\\n\" \"import { defineConfig, devices } from '@playwright/test';\" \"export default defineConfig({ testDir: process.cwd(), timeout: 90_000, retries: 0, workers: 1, reporter: [['list']], use: { baseURL: 'http://127.0.0.1:4173', ...devices['Desktop Chrome'], screenshot: 'only-on-failure' } });\" > .pr-gate.playwright.config.mjs",
+            "E2E=0; npx playwright test $SPECS --config=.pr-gate.playwright.config.mjs 2>&1 | tee /tmp/e2e.log || E2E=$?",
+            "if [ \"$E2E\" = \"0\" ]; then echo \"preview-e2e: passed ($(grep -Eo '[0-9]+ passed' /tmp/e2e.log | tail -1 || true))\"; exit 0; fi",
+            "ENFORCE=$(node -p \"require('./scripts/ci/pr-gate/config.json').enforce_preview_e2e === true\")",
+            "if [ \"$ENFORCE\" = \"true\" ]; then echo \"preview-e2e: failed\"; exit 1; fi; echo \"preview-e2e (report-only, enforce_preview_e2e is not true) would fail: see the log above\""
+          ],
+          "artifacts": [
+            "test-results/"
+          ],
+          "duration": {
+            "fixture": "PR-GATE.yml#preview-e2e",
+            "github_shards": 1
+          },
+          "github": "PR-GATE.yml"
+        },
         "realtime-helper": {
           "kind": "test",
           "install": "npm",
@@ -467,11 +571,24 @@
           "kind": "test",
           "parallel": 2,
           "install": "mobile-npm",
-          "image": "android",
+          "image": "node",
+          "apt": [
+            "openjdk-17-jdk-headless"
+          ],
+          "cache_paths": [
+            ".android-sdk",
+            ".gradle-home"
+          ],
           "variables": {
-            "APP_PROFILE": "development"
+            "APP_PROFILE": "development",
+            "EXPO_OFFLINE": "0",
+            "ANDROID_HOME": "$CI_PROJECT_DIR/.android-sdk",
+            "ANDROID_SDK_ROOT": "$CI_PROJECT_DIR/.android-sdk",
+            "GRADLE_USER_HOME": "$CI_PROJECT_DIR/.gradle-home"
           },
           "script": [
+            "mkdir -p \"$ANDROID_HOME/licenses\" && printf \"\\n24333f8a63b6825ea9c5514f83c2829b004d1fee\\nd56f5187479451eabf01fb78af6dfcb131a6481e\\n\" > \"$ANDROID_HOME/licenses/android-sdk-license\"",
+            "java -version 2>&1 | head -n 1",
             "npx expo prebuild --platform android --no-install",
             "CLASSES=$(find modules/vitana-voice/android/src/test -name \"*Test.kt\" -o -name \"*Test.java\" | sed \"s#.*/##; s#\\.[a-z]*$##\" | sort | awk -v n=\"$CI_NODE_TOTAL\" -v i=\"$CI_NODE_INDEX\" '(NR - 1) % n == i - 1')",
             "if [ -z \"$CLASSES\" ]; then echo \"no test class in shard $CI_NODE_INDEX/$CI_NODE_TOTAL\"; exit 0; fi",
@@ -524,13 +641,51 @@
             "lane-scope",
             "pr-gate-report",
             "collab-handoff",
+            "gate-selftest",
+            "kiro-steering-selftest",
             "typecheck",
             "eslint",
             "build",
             "regressions",
-            "migration-lint"
+            "migration-lint",
+            "preview-e2e"
           ],
-          "note": "preview-e2e: unauthenticated specs need the T4 preview (Not done yet); signed-in specs run in STAGING-VERIFY after landing (plan §3.4)"
+          "note": "preview-e2e runs its specs without a session on a local vite preview (plan §3.4); the signed-in specs run after landing in STAGING-VERIFY",
+          "steps": {
+            "pr-gate/Install": [
+              "typecheck",
+              "eslint",
+              "build"
+            ],
+            "pr-gate/Gate self-test": "gate-selftest",
+            "pr-gate/Live PR title": "pr-gate-report",
+            "pr-gate/Kiro steering": [
+              "pr-gate-report",
+              "kiro-steering-selftest"
+            ],
+            "pr-gate/Collab handoff": "collab-handoff",
+            "pr-gate/Scope guard": "pr-gate-report",
+            "pr-gate/Sparring record": "pr-gate-report",
+            "pr-gate/Test-weakening guard": "pr-gate-report",
+            "pr-gate/Red→green proof (fixes)": "pr-gate-report",
+            "pr-gate/Migrations (lint + Postgres parse + rollback dry run)": "migration-lint",
+            "pr-gate/Typecheck ratchet": "typecheck",
+            "pr-gate/ESLint ratchet": "eslint",
+            "pr-gate/Design ratchet": "eslint",
+            "pr-gate/Regression scripts": "regressions",
+            "pr-gate/Build": "build",
+            "pr-gate/Verdict": "pr-gate-report",
+            "preview-e2e/Does this PR touch the app?": "preview-e2e",
+            "preview-e2e/Staging gateway healthy?": "preview-e2e",
+            "preview-e2e/Build against the staging gateway": "preview-e2e",
+            "preview-e2e/Fetch the canonical staging guard": "preview-e2e",
+            "preview-e2e/Run smoke + this change's specs": [
+              "preview-e2e",
+              "staging-verify:community-app"
+            ],
+            "preview-e2e/Verdict": "preview-e2e",
+            "lane-scope/Lane scope": "lane-scope"
+          }
         },
         "UNIT-TESTS.yml": {
           "fate": "t1",
@@ -631,8 +786,10 @@
         "E2E-PREVIEW-ORB.yml": {
           "fate": "t4",
           "path_filter": true,
-          "jobs": [],
-          "note": "Not done yet: the ORB preview specs need the T4 preview URL (lane deploy-path)"
+          "jobs": [
+            "e2e-preview-orb"
+          ],
+          "note": "dispatch only on GitHub; a manual job on main, main class, live mode only (it signs in as the test user, so never on the untrusted class, plan §3.2)"
         },
         "I18N-PROPAGATE.yml": {
           "fate": "t7",
@@ -657,6 +814,7 @@
       "output": "infra/gitlab-engineering/ci/platform-delivery.gitlab-ci.yml",
       "fixture": "scripts/eng/fixtures/platform-pr-files.json",
       "collab_handoff": "required",
+      "pr_gate_install": "gateway-npm",
       "install": {
         "gateway-pnpm": {
           "lockfiles": [
@@ -1738,11 +1896,37 @@
         },
         "validator-check": {
           "kind": "check",
+          "variables": {
+            "GIT_DEPTH": "0"
+          },
+          "install_cache": {
+            "lockfiles": [
+              "services/gateway/package-lock.json"
+            ],
+            "cache_paths": [
+              ".npm"
+            ]
+          },
           "script": [
-            "printf \"%s\" \"${CI_MERGE_REQUEST_DESCRIPTION:-}\" > /tmp/pr_body.txt",
-            "node scripts/ci/validator-path-guard.cjs --pr-body-check /tmp/pr_body.txt"
+            "test -f gov/validator-rules.yaml || { echo \"REJECTED: missing gov/validator-rules.yaml\"; exit 2; }",
+            "if [ \"$CI_PIPELINE_SOURCE\" != \"merge_request_event\" ]; then echo \"validator-check: $CI_PIPELINE_SOURCE pipeline on $CI_COMMIT_REF_NAME has no merge request title or description, so the gates that read them are skipped here (body declarations, VTID and profile, changed files, path ownership, evidence pack, acceptance mapping, route mount, OASIS, merge deploy): VALIDATOR-CHECK runs them on pull requests only, and they ran on the merge request pipeline of every landed change. The CSP and build gates run.\"; fi",
+            "VC_TARGET=\"${CI_MERGE_REQUEST_TARGET_BRANCH_NAME:-main}\"; git fetch --quiet origin \"+refs/heads/$VC_TARGET:refs/remotes/origin/$VC_TARGET\"",
+            "if [ \"$CI_PIPELINE_SOURCE\" = \"merge_request_event\" ]; then if [ \"${CI_MERGE_REQUEST_DESCRIPTION_IS_TRUNCATED:-false}\" = \"true\" ]; then echo \"REJECTED: the merge request description is longer than the 2700 characters GitLab passes to CI (CI_MERGE_REQUEST_DESCRIPTION_IS_TRUNCATED), so its declarations cannot be read: shorten it\"; exit 2; fi; printf \"%s\" \"${CI_MERGE_REQUEST_TITLE:-}\" > /tmp/pr_title.txt; printf \"%s\" \"${CI_MERGE_REQUEST_DESCRIPTION:-}\" > /tmp/pr_body.txt; test -s /tmp/pr_title.txt || { echo \"REJECTED: empty PR title\"; exit 2; }; test -s /tmp/pr_body.txt || { echo \"REJECTED: empty PR body\"; exit 2; }; fi",
+            "if [ \"$CI_PIPELINE_SOURCE\" = \"merge_request_event\" ]; then node scripts/ci/validator-path-guard.cjs --pr-body-check /tmp/pr_body.txt; fi",
+            "if [ \"$CI_PIPELINE_SOURCE\" = \"merge_request_event\" ]; then VC_VTID=\"$(grep -Eo 'VTID-[0-9]{4,5}' /tmp/pr_title.txt | head -n 1 || true)\"; if [ -z \"$VC_VTID\" ]; then VC_VTID=\"$(grep -Eo '^[[:space:]]*VTID:[[:space:]]*VTID-[0-9]{4,5}' /tmp/pr_body.txt | grep -Eo 'VTID-[0-9]{4,5}' | head -n 1 || true)\"; fi; test -n \"$VC_VTID\" || { echo \"REJECTED: no VTID in the title, and no explicit 'VTID: VTID-XXXXX' line in the body\"; exit 10; }; VC_PROFILE=\"$(grep -Eo 'VALIDATION_PROFILE:\\s*[a-zA-Z0-9_/-]+' /tmp/pr_body.txt | head -n 1 | awk '{print $2}' || true)\"; test -n \"$VC_PROFILE\" || { echo \"REJECTED: VALIDATION_PROFILE missing in PR body\"; exit 11; }; echo \"Detected VTID=$VC_VTID PROFILE=$VC_PROFILE\"; fi",
+            "if [ \"$CI_PIPELINE_SOURCE\" = \"merge_request_event\" ]; then git diff --name-only \"origin/$VC_TARGET\"...HEAD > /tmp/changed_files.txt; COUNT=\"$(wc -l < /tmp/changed_files.txt | tr -d ' ')\"; echo \"Changed files: $COUNT\"; test \"$COUNT\" -gt 0 || { echo \"REJECTED: no changes detected\"; exit 16; }; fi",
+            "if [ \"$CI_PIPELINE_SOURCE\" = \"merge_request_event\" ]; then node scripts/ci/validator-path-guard.cjs /tmp/changed_files.txt \"$VC_PROFILE\" /tmp/pr_body.txt; fi",
+            "if [ \"$CI_PIPELINE_SOURCE\" = \"merge_request_event\" ]; then EVID=\"docs/validation/$VC_VTID\"; test -d \"$EVID\" || { echo \"REJECTED: missing evidence dir $EVID\"; exit 30; }; test -f \"$EVID/acceptance.md\" || { echo \"REJECTED: missing $EVID/acceptance.md\"; exit 31; }; test -f \"$EVID/commands.log\" || { echo \"REJECTED: missing $EVID/commands.log\"; exit 32; }; test -d \"$EVID/outputs\" || { echo \"REJECTED: missing $EVID/outputs/\"; exit 33; }; fi",
+            "if [ \"$CI_PIPELINE_SOURCE\" = \"merge_request_event\" ]; then A=\"docs/validation/$VC_VTID/acceptance.md\"; grep -qE '^AC-' \"$A\" || { echo \"REJECTED: acceptance.md has no AC- entries\"; exit 40; }; VTID=\"$VC_VTID\" python3 - << 'PY'\nimport re, sys, os\npath=os.path.expandvars(\"docs/validation/${VTID}/acceptance.md\")\ntxt=open(path,encoding=\"utf-8\").read().splitlines()\nac_idx=[i for i,l in enumerate(txt) if re.match(r'^AC-\\d+', l.strip())]\nif not ac_idx:\n  print(\"REJECTED: no AC- entries\"); sys.exit(40)\nfor i in ac_idx:\n  window=txt[i+1:i+13]\n  if not any(re.match(r'^(TEST:|CURL:|UI:)', w.strip()) for w in window):\n    print(f\"REJECTED: AC at line {i+1} has no TEST:/CURL:/UI: mapping within 12 lines\")\n    sys.exit(41)\nprint(\"Acceptance mapping OK\")\nPY\nfi",
+            "DIFF_BASE=\"origin/$VC_TARGET\"; REVERTED_SHA=\"$(git log \"origin/$VC_TARGET\"..HEAD | grep -oE 'This reverts commit [0-9a-f]{40}' | head -n1 | awk '{print $4}' || true)\"; if [ -n \"$REVERTED_SHA\" ] && git rev-parse -q --verify \"${REVERTED_SHA}^{commit}\" >/dev/null && git merge-base --is-ancestor \"$REVERTED_SHA\" \"origin/$VC_TARGET\"; then DIFF_BASE=\"${REVERTED_SHA}^\"; echo \"Detected a corruption-recovery revert of $REVERTED_SHA (a real commit on origin/$VC_TARGET); comparing CSP surface against $DIFF_BASE instead of origin/$VC_TARGET.\"; fi; git diff \"$DIFF_BASE\"...HEAD -- 'services/gateway/src/frontend/' 'services/gateway/dist/frontend/' > /tmp/csp_diff.txt || true; node scripts/ci/validator-path-guard.cjs --csp-added-lines /tmp/csp_diff.txt || exit 50",
+            "(cd services/gateway && npm ci --no-audit --no-fund --prefer-offline && npm run build)",
+            "if [ \"$CI_PIPELINE_SOURCE\" = \"merge_request_event\" ]; then if [ \"$VC_PROFILE\" = \"command_hub_frontend\" ]; then SRC_CHANGED=\"$(grep -c '^services/gateway/src/frontend/command-hub/' /tmp/changed_files.txt || true)\"; DIST_CHANGED=\"$(grep -c '^services/gateway/dist/frontend/command-hub/' /tmp/changed_files.txt || true)\"; if [ \"$SRC_CHANGED\" -eq 0 ] || [ \"$DIST_CHANGED\" -eq 0 ]; then echo \"REJECTED: command_hub_frontend requires src+dist both updated\"; exit 60; fi; fi; fi",
+            "if [ \"$CI_PIPELINE_SOURCE\" = \"merge_request_event\" ]; then git diff \"origin/$VC_TARGET\"...HEAD -- 'services/gateway/src/routes/' 'services/gateway/src/index.ts' 'services/gateway/src/app.ts' > /tmp/route_diff.txt || true; if node scripts/ci/validator-path-guard.cjs --route-evidence-required /tmp/route_diff.txt; then A=\"docs/validation/$VC_VTID/acceptance.md\"; grep -q \"ROUTE_MOUNT:\" \"$A\" || { echo \"REJECTED: missing ROUTE_MOUNT:\"; exit 70; }; grep -q \"FINAL_URL:\" \"$A\" || { echo \"REJECTED: missing FINAL_URL:\"; exit 71; }; grep -q \"CURL_PROOF:\" \"$A\" || { echo \"REJECTED: missing CURL_PROOF:\"; exit 72; }; fi; fi",
+            "if [ \"$CI_PIPELINE_SOURCE\" = \"merge_request_event\" ]; then IMPACT=\"$(grep -Eo 'OASIS_IMPACT:\\s*(yes|no)' /tmp/pr_body.txt | head -n 1 | awk '{print $2}' || true)\"; test -n \"$IMPACT\" || { echo \"REJECTED: invalid OASIS_IMPACT value\"; exit 80; }; if [ \"$IMPACT\" = \"yes\" ]; then grep -q \"OASIS_PROOF:\" \"docs/validation/$VC_VTID/acceptance.md\" || { echo \"REJECTED: missing OASIS_PROOF:\"; exit 81; }; fi; fi",
+            "if [ \"$CI_PIPELINE_SOURCE\" = \"merge_request_event\" ]; then grep -q \"$VC_VTID\" /tmp/pr_title.txt || { echo \"REJECTED: PR title must contain VTID for autodeploy gate\"; exit 90; }; grep -q \"MERGE_PAYLOAD_PREVIEW:\" /tmp/pr_body.txt || { echo \"REJECTED: missing MERGE_PAYLOAD_PREVIEW:\"; exit 91; }; fi",
+            "if [ \"$CI_PIPELINE_SOURCE\" = \"merge_request_event\" ]; then echo \"APPROVED\"; echo \"VTID=$VC_VTID\"; echo \"PROFILE=$VC_PROFILE\"; echo \"Evidence=docs/validation/$VC_VTID/\"; fi"
           ],
-          "port": "partial"
+          "github": "VALIDATOR-CHECK.yml"
         },
         "command-hub-guardrails": {
           "kind": "check",
@@ -1764,13 +1948,24 @@
         },
         "dev-autopilot-impact": {
           "kind": "check",
+          "variables": {
+            "GIT_DEPTH": "0"
+          },
           "script": [
+            "IMPACT_SCAN_DRY_RUN=false; if [ \"$CI_PIPELINE_SOURCE\" = \"merge_request_event\" ]; then IMPACT_SCAN_BASE=\"origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME\"; git fetch --quiet origin \"+refs/heads/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME:refs/remotes/origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME\"; elif [ -n \"${CI_COMMIT_BRANCH:-}\" ] && [ \"${CI_COMMIT_BRANCH#train/}\" != \"$CI_COMMIT_BRANCH\" ]; then IMPACT_SCAN_BASE=\"origin/main\"; git fetch --quiet origin \"+refs/heads/main:refs/remotes/origin/main\"; elif [ \"$CI_PIPELINE_SOURCE\" = \"push\" ] && [ -n \"${CI_COMMIT_BEFORE_SHA:-}\" ] && [ \"$CI_COMMIT_BEFORE_SHA\" != \"0000000000000000000000000000000000000000\" ]; then IMPACT_SCAN_BASE=\"$CI_COMMIT_BEFORE_SHA\"; IMPACT_SCAN_DRY_RUN=true; else IMPACT_SCAN_BASE=\"HEAD\"; IMPACT_SCAN_DRY_RUN=true; echo \"dev-autopilot-impact: $CI_PIPELINE_SOURCE pipeline without a landing: nothing to compare\"; fi; export IMPACT_SCAN_BASE IMPACT_SCAN_DRY_RUN; echo \"impact scan: base $IMPACT_SCAN_BASE, dry run $IMPACT_SCAN_DRY_RUN (blockers fail merge request and train pipelines only, as on GitHub)\"",
+            "git rev-parse --verify --quiet \"$IMPACT_SCAN_BASE^{commit}\" >/dev/null || { echo \"dev-autopilot-impact: base $IMPACT_SCAN_BASE does not resolve; failing closed instead of letting the scan fall back to the parent commit\"; exit 1; }",
             "node scripts/ci/dev-autopilot-impact-scan.mjs"
           ],
-          "port": "partial"
+          "artifacts": [
+            "dev-autopilot-impact-findings.json"
+          ],
+          "github": "DEV-AUTOPILOT-IMPACT.yml"
         },
         "cicdl-lint-services": {
           "kind": "check",
+          "apt": [
+            "jq"
+          ],
           "script": [
             "echo \"🔍 Validating services directory structure...\"\n\nviolations=0\n\nif [ ! -d \"services\" ]; then\n  echo \"❌ ERROR: /services directory not found\"\n  exit 1\nfi\n\necho \"✅ /services directory exists\"\necho \"\"\n\necho \"📋 Found services:\"\nfind services -mindepth 1 -maxdepth 3 -type d | sort\necho \"\"",
             "echo \"🔍 Checking for manifest.json in each service...\"\necho \"\"\n\nviolations=0\nservices_checked=0\n\n# Check agents - look for manifest.json at the direct agent level\nfor agent_dir in services/agents/*/; do\n  if [ -d \"$agent_dir\" ]; then\n    services_checked=$((services_checked + 1))\n    agent_name=$(basename \"$agent_dir\")\n\n    if [ -f \"${agent_dir}manifest.json\" ]; then\n      echo \"✅ ${agent_dir}\"\n    else\n      echo \"❌ Missing: ${agent_dir}manifest.json\"\n      violations=$((violations + 1))\n    fi\n  fi\ndone\n\n# Check MCP services\nfor mcp_dir in services/mcp/*/; do\n  if [ -d \"$mcp_dir\" ]; then\n    services_checked=$((services_checked + 1))\n\n    if [ -f \"${mcp_dir}manifest.json\" ]; then\n      echo \"✅ $mcp_dir\"\n    else\n      echo \"❌ Missing: ${mcp_dir}manifest.json\"\n      violations=$((violations + 1))\n    fi\n  fi\ndone\n\n# Check gateway\nif [ -d \"services/gateway\" ]; then\n  services_checked=$((services_checked + 1))\n\n  if [ -f \"services/gateway/manifest.json\" ]; then\n    echo \"✅ services/gateway/\"\n  else\n    echo \"❌ Missing: services/gateway/manifest.json\"\n    violations=$((violations + 1))\n  fi\nfi\n\n# Check deploy-watcher\nif [ -d \"services/deploy-watcher\" ]; then\n  services_checked=$((services_checked + 1))\n\n  if [ -f \"services/deploy-watcher/manifest.json\" ]; then\n    echo \"✅ services/deploy-watcher/\"\n  else\n    echo \"❌ Missing: services/deploy-watcher/manifest.json\"\n    violations=$((violations + 1))\n  fi\nfi\n\necho \"\"\necho \"Services checked: $services_checked\"\necho \"Violations: $violations\"\n\nif [ $violations -gt 0 ]; then\n  echo \"\"\n  echo \"❌ FAILURE: $violations service(s) missing manifest.json\"\n  exit 1\nfi\n\necho \"✅ All services have manifest.json files\"",
@@ -1801,7 +1996,7 @@
           "kind": "check",
           "script": [
             "npm install -g @stoplight/spectral-cli >/dev/null",
-            "echo \"🔍 Finding OpenAPI specification files...\"\n\n# Find all OpenAPI specs\nSPECS=$(find specs packages/openapi -name \"*.yml\" -o -name \"*.yaml\" 2>/dev/null || true)\n\nif [ -z \"$SPECS\" ]; then\n  echo \"⚠️  No OpenAPI specifications found\"\n  echo \"has_specs=false\" >> $GITHUB_OUTPUT\n  exit 0\nfi\n\necho \"has_specs=true\" >> $GITHUB_OUTPUT\necho \"Found specifications:\"\necho \"$SPECS\" | while read spec; do\n  echo \"  - $spec\"\ndone",
+            "echo \"🔍 Finding OpenAPI specification files...\"\n\n# Find all OpenAPI specs\nSPECS=$(find specs packages/openapi -name \"*.yml\" -o -name \"*.yaml\" 2>/dev/null || true)\n\nif [ -z \"$SPECS\" ]; then\n  echo \"⚠️  No OpenAPI specifications found\"\n  echo \"has_specs=false\" >> \"$CI_PROJECT_DIR/openapi-enforce.env\"\n  exit 0\nfi\n\necho \"has_specs=true\" >> \"$CI_PROJECT_DIR/openapi-enforce.env\"\necho \"Found specifications:\"\necho \"$SPECS\" | while read spec; do\n  echo \"  - $spec\"\ndone",
             "echo \"✨ Running Spectral validation...\"\necho \"\"\n\nviolations=0\ntotal_specs=0\n\n# Validate each spec\nfor spec in $(find specs packages/openapi -name \"*.yml\" -o -name \"*.yaml\" 2>/dev/null); do\n  total_specs=$((total_specs + 1))\n  echo \"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\"\n  echo \"📄 Validating: $spec\"\n  echo \"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\"\n\n  if spectral lint \"$spec\" --fail-severity=warn; then\n    echo \"✅ $spec - PASSED\"\n  else\n    echo \"❌ $spec - FAILED\"\n    violations=$((violations + 1))\n  fi\n\n  echo \"\"\ndone\n\necho \"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\"\necho \"📊 Summary\"\necho \"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\"\necho \"Total specs validated: $total_specs\"\necho \"Passed: $((total_specs - violations))\"\necho \"Failed: $violations\"\necho \"\"\n\nif [ $violations -gt 0 ]; then\n  echo \"❌ FAILURE: $violations OpenAPI specification(s) failed validation\"\n  echo \"\"\n  echo \"📘 Common issues:\"\n  echo \"   - Missing or invalid OpenAPI version\"\n  echo \"   - Schema validation errors\"\n  echo \"   - Missing required fields (info, paths, etc.)\"\n  echo \"   - Invalid references (\\$ref)\"\n  echo \"   - Security scheme issues\"\n  echo \"\"\n  echo \"💡 Fix the errors above and commit the changes.\"\n  echo \"   Run locally: spectral lint <spec-file>\"\n  exit 1\nfi\n\necho \"✅ All OpenAPI specifications are valid!\"",
             "echo \"🔍 Checking OpenAPI versions...\"\necho \"\"\n\nviolations=0\n\nfor spec in $(find specs packages/openapi -name \"*.yml\" -o -name \"*.yaml\" 2>/dev/null); do\n  version=$(grep -E \"^openapi:\" \"$spec\" | head -1 | awk '{print $2}' | tr -d '\"' | tr -d \"'\")\n\n  if [ -z \"$version\" ]; then\n    echo \"❌ $spec - Missing openapi version field\"\n    violations=$((violations + 1))\n    continue\n  fi\n\n  # Check if version is 3.0.x or 3.1.x\n  if echo \"$version\" | grep -qE \"^3\\.[01]\\.[0-9]+$\"; then\n    echo \"✅ $spec - OpenAPI $version\"\n  else\n    echo \"❌ $spec - Unsupported version: $version\"\n    echo \"   Required: OpenAPI 3.0.x or 3.1.x\"\n    violations=$((violations + 1))\n  fi\ndone\n\necho \"\"\n\nif [ $violations -gt 0 ]; then\n  echo \"❌ FAILURE: $violations version issue(s)\"\n  echo \"\"\n  echo \"📘 All OpenAPI specs must use version 3.0.x or 3.1.x\"\n  echo \"   Add to spec: openapi: 3.0.3\"\n  exit 1\nfi\n\necho \"✅ All specs use supported OpenAPI versions\"",
             "echo \"🔍 Checking for duplicate operationIds...\"\necho \"\"\n\nviolations=0\n\nfor spec in $(find specs packages/openapi -name \"*.yml\" -o -name \"*.yaml\" 2>/dev/null); do\n  echo \"Checking: $spec\"\n\n  # Extract all operationIds\n  operation_ids=$(grep -oP 'operationId:\\s*\\K[^\\s]+' \"$spec\" 2>/dev/null || true)\n\n  if [ -z \"$operation_ids\" ]; then\n    echo \"  ⚠️  No operationIds found (optional)\"\n    continue\n  fi\n\n  # Check for duplicates\n  duplicates=$(echo \"$operation_ids\" | sort | uniq -d)\n\n  if [ -n \"$duplicates\" ]; then\n    echo \"  ❌ Duplicate operationIds found:\"\n    echo \"$duplicates\" | while read dup; do\n      echo \"     - $dup\"\n    done\n    violations=$((violations + 1))\n  else\n    echo \"  ✅ No duplicate operationIds\"\n  fi\ndone\n\necho \"\"\n\nif [ $violations -gt 0 ]; then\n  echo \"❌ FAILURE: Duplicate operationIds detected\"\n  echo \"\"\n  echo \"📘 Each operation must have a unique operationId within a spec\"\n  exit 1\nfi\n\necho \"✅ No duplicate operationIds found\"",
@@ -1893,6 +2088,9 @@
           "kind": "test",
           "postgres": true,
           "image": "postgres",
+          "apt": [
+            "npm"
+          ],
           "script": [
             "set -o pipefail\nnpm run test:auth-bridge 2>&1 | tee /tmp/auth-bridge.log",
             "grep -q '^PASS vtid-05023 auth bridge' /tmp/auth-bridge.log"
@@ -2200,7 +2398,24 @@
             "lane-scope",
             "pr-gate-report",
             "collab-handoff"
-          ]
+          ],
+          "steps": {
+            "pr-gate/Gate self-test": "unit-scripts",
+            "pr-gate/Live PR title": "pr-gate-report",
+            "pr-gate/Kiro steering": [
+              "pr-gate-report",
+              "unit-scripts"
+            ],
+            "pr-gate/Scope guard": "pr-gate-report",
+            "pr-gate/Sparring record": "pr-gate-report",
+            "pr-gate/Test-weakening guard": "pr-gate-report",
+            "pr-gate/Gateway deps (only when a VTID in the title is a \"fix\")": "pr-gate-report",
+            "pr-gate/Red→green proof (fixes)": "pr-gate-report",
+            "pr-gate/Verdict": "pr-gate-report",
+            "collab-handoff/Collab tests": "unit-scripts",
+            "collab-handoff/Collab handoff": "collab-handoff",
+            "lane-scope/Lane scope": "lane-scope"
+          }
         },
         "UNIT.yml": {
           "fate": "t1",
@@ -2263,7 +2478,23 @@
           "path_filter": true,
           "jobs": [
             "validator-check"
-          ]
+          ],
+          "steps": {
+            "validate-pr/Load ruleset": "validator-check",
+            "validate-pr/Collect PR text (title/body)": "validator-check",
+            "validate-pr/Require PR body declarations (profile + markers)": "validator-check",
+            "validate-pr/Extract VTID + Validation Profile": "validator-check",
+            "validate-pr/Compute changed files": "validator-check",
+            "validate-pr/Enforce Path Ownership Guard (profile-based)": "validator-check",
+            "validate-pr/Evidence Pack Gate": "validator-check",
+            "validate-pr/Acceptance Mapping Gate (no unmapped ACs)": "validator-check",
+            "validate-pr/CSP Governance Gate (scan added lines only)": "validator-check",
+            "validate-pr/Build Gate (profile-based)": "validator-check",
+            "validate-pr/Route Mount Evidence Gate (conditional)": "validator-check",
+            "validate-pr/OASIS Traceability Gate (conditional)": "validator-check",
+            "validate-pr/Merge Deploy Gate (VTID must be in merge title/message)": "validator-check",
+            "validate-pr/PASS summary": "validator-check"
+          }
         },
         "COMMAND-HUB-GUARDRAILS.yml": {
           "fate": "t1",
@@ -2326,7 +2557,20 @@
           "path_filter": false,
           "jobs": [
             "dev-autopilot-impact"
-          ]
+          ],
+          "steps": {
+            "scan/Run impact scan": "dev-autopilot-impact",
+            "scan/Ingest impact findings into Developer Autopilot queue": {
+              "open": "push to main only: POSTs the findings to the staging gateway with the DEV_AUTOPILOT_SCAN_TOKEN secret. No GitLab job may: the untrusted class holds no secret and plan §7 gives the main class no role for this token. Open item for the driver (a role and a secret, then a live-mode main-class job); until the cut GitHub keeps ingesting."
+            },
+            "scan/Build PR comment body": {
+              "open": "formats the findings for the PR comment below; the findings stay in the job log and the dev-autopilot-impact-findings.json artifact"
+            },
+            "scan/Post or update PR comment": {
+              "open": "needs a token that may comment on the merge request; no T1 job holds one (plan §3.2). Open item for the driver (the bridge of plan §3.13 or a bot job)"
+            },
+            "scan/Fail if blocker findings (PR only, respecting dry_run)": "dev-autopilot-impact"
+          }
         },
         "VCAOP-GUARDRAILS-CI.yml": {
           "fate": "t1",
@@ -2568,7 +2812,8 @@
         "TEST-SUITE-RERUN.yml": {
           "fate": "t2",
           "jobs": [],
-          "note": "replaced by GitLab retry on runner failure, at most once (the retry of every template)"
+          "note": "replaced by GitLab retry on runner failure, at most once (the retry of every template)",
+          "replaced_by": "retry"
         },
         "PLAN-SPAR.yml": {
           "fate": "kept",

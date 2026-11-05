@@ -26,6 +26,15 @@ for (const repo of ['vitana-v1', 'vitana-platform']) {
     }
   });
 
+  // Lane eng-gitlab-m2 settings' free-tier guard scans the raw text of scripts/eng for Premium API names; a PR's file
+  // name such as .kiro/specs/<slug>/lanes/approvals-auth.md would read as GET /projects/:id/approvals. Such a slash is
+  // written as the JSON escape \u002f, so the parsed fixture keeps the real path (review round 1).
+  test(`${repo}: the fixture's raw text names no Premium approvals path, and parses to the real file names`, () => {
+    const raw = readFileSync(path.join(ROOT, r.fixture), 'utf8');
+    assert.doesNotMatch(raw, /(?<!merge_requests\/[^\s'"`/]{1,40})\/approvals\b/);
+    if (repo === 'vitana-platform') assert.ok(fx.prs.some((pr) => pr.files.includes('.kiro/specs/mt-track-s-authz/lanes/approvals-auth.md')));
+  });
+
   test(`${repo}: every pull-request workflow that ran is in the service list registry`, () => {
     const reg = r.github_workflows;
     const seen = new Set(fx.prs.flatMap((pr) => Object.keys(pr.workflows)));

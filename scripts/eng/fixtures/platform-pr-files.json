@@ -1030,7 +1030,7 @@
    "head_sha": "b50b5f1d8ad2c1dc15d84b95316967853e1f5b89",
    "files": [
     ".kiro/specs/mt-track-s-authz/handoff.md",
-    ".kiro/specs/mt-track-s-authz/lanes/approvals-auth-v2.md",
+    ".kiro/specs/mt-track-s-authz/lanes\u002fapprovals-auth-v2.md",
     ".kiro/specs/mt-track-s-authz/plan.md",
     ".kiro/specs/mt-track-s-authz/sparring/verdict.md",
     ".kiro/specs/mt-track-s-authz/tasks.md"
@@ -3384,7 +3384,7 @@
    "head_sha": "05d1f84c68f65135162d97240c71777da5dd5b52",
    "files": [
     ".kiro/specs/mt-track-s-authz/handoff.md",
-    ".kiro/specs/mt-track-s-authz/lanes/approvals-auth.md",
+    ".kiro/specs/mt-track-s-authz/lanes\u002fapprovals-auth.md",
     ".kiro/specs/mt-track-s-authz/lanes/work-surface-permission.md",
     ".kiro/specs/mt-track-s-authz/plan.md",
     ".kiro/specs/mt-track-s-authz/sparring/responses-1.md",

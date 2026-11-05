@@ -4,7 +4,7 @@ Change types: Infrastructure/CI, Tooling/docs.
 
 Outcome: one service list (`config/delivery/services.json`, schema `vitana.delivery-services/v1`) drives both
 repositories' GitLab pipelines. `scripts/eng/pipeline-gen.mjs` renders `infra/gitlab-engineering/ci/v1-delivery.gitlab-ci.yml`
-(58 jobs) and `platform-delivery.gitlab-ci.yml` (120 jobs) from it, with the hand-written hidden-job templates
+(65 jobs) and `platform-delivery.gitlab-ci.yml` (120 jobs) from it, with the hand-written hidden-job templates
 `tpl-checks.yml` (T1), `tpl-main.yml` (T2), `tpl-nightly.yml` (T3) and `tpl-assist.yml` (T7), and includes lane
 deploy-path's `tpl-deploy.yml` and lane verify-on-gitlab's `tpl-verify.yml` by the job names of plan §9. A merge request
 runs the governance jobs, then only the checks of what it changed, never fewer than GitHub ran for the same files (proven
@@ -60,9 +60,10 @@ AC-10 The generated files include `tpl-deploy.yml` and `tpl-verify.yml` (and the
 `vitana/ci-config` at `main` and extend the plan §9 job names.
 TEST: scripts/eng/pipeline-gen.test.mjs "the generated files include the deploy and verify templates by the job names of plan §9"
 
-AC-11 Sibling sweep: every workflow plan §2.2 moves to GitLab (fates t1, t2, t3, t4, t7 in the registry) has its jobs in a
-generated file.
-TEST: scripts/eng/pipeline-gen.test.mjs "sibling sweep: every workflow plan §2.2 moves to GitLab has its jobs in a generated file"
+AC-11 Sibling sweep: every workflow of the registry has the fate plan §2.2 gives it (the test reads the §2.2 table), and every
+moved one (t1, t2, t3, t4, t7) has its jobs in a generated file, or names the replacement §2.2 gives (TEST-SUITE-RERUN:
+`retry`); E2E-PREVIEW-ORB maps to `e2e-preview-orb`.
+TEST: scripts/eng/pipeline-gen.test.mjs "sibling sweep: every workflow has its plan §2.2 fate, and every moved workflow has its jobs in a generated file"
 
 AC-12 For each of the last 60 merged PRs of each repository (fixtures read once through read-only `gh api` GETs), the
 selected checks cover every path-filtered GitHub workflow that ran for it, and no PR has an unknown path.
@@ -75,6 +76,43 @@ targets, STAGING-VERIFY ids, the v1 preview kind, the assist rules and the gatew
 TEST: scripts/eng/services-parity.test.mjs "platform service paths equal config/service-path-map.json"
 TEST: scripts/eng/services-parity.test.mjs "every path filter of the platform pull-request workflows maps to a service, and selects that workflow's checks"
 TEST: scripts/eng/services-parity.test.mjs "the gateway service carries the env_overrides of plan §3.6 step 2; the deployable services have images and staging targets"
+
+AC-14 (review round 1, findings 1 and 2) Every generated job runs only tools its image provides (`image_tools`, from the
+images' Dockerfiles) or that an earlier line installs (`apt` with `apt_tools`, `npm install -g` with
+`npm_global_tools`), and no script uses a GitHub Actions variable: `cicdl-lint-services` installs jq,
+`openapi-enforce` writes `openapi-enforce.env` instead of `$GITHUB_OUTPUT`, `sql-auth-bridge` installs npm.
+TEST: scripts/eng/pipeline-gen.test.mjs "every generated job: its image provides each tool its script runs, or an earlier line installs it; no GitHub Actions variable"
+
+AC-15 (finding 1) `validator-check` reads the merge request title and description only in merge-request pipelines; on
+main, nightly and `train/*` it logs why those gates are skipped and runs the CSP and build gates; full history.
+TEST: scripts/eng/pipeline-gen.test.mjs "validator-check reads the merge request title and description only in merge-request pipelines and logs why it skips them elsewhere"
+
+AC-16 (finding 2) `android-module` runs on the node image, installs JDK 17 and an Android SDK home with the accepted
+licence file before `gradlew` (AGP fetches the platform and build tools), and caches `.npm`, `.android-sdk`,
+`.gradle-home`.
+TEST: scripts/eng/pipeline-gen.test.mjs "android-module: Node from the image, JDK 17 and an Android SDK home with accepted licences before gradlew, cached"
+
+AC-17 (finding 3) `pr-gate-report` passes `--title "$GATE_TITLE"` (default `$CI_MERGE_REQUEST_TITLE`, the train's title
+from the bot) to every `gate.mjs` check, and for a "fix" VTID installs the red_green dependencies first, cached by
+that lockfile.
+TEST: scripts/eng/pipeline-gen.test.mjs "pr-gate-report passes the merge request title to every gate.mjs check and installs what red-green runs"
+
+AC-18 (finding 4) `dev-autopilot-impact` sets `IMPACT_SCAN_BASE` to `origin/<merge request target>` (`origin/main` on
+trains, `$CI_COMMIT_BEFORE_SHA` on main pushes) and fails closed when it does not resolve, never HEAD~1.
+TEST: scripts/eng/pipeline-gen.test.mjs "dev-autopilot-impact scans against the merge request target (main for trains, the pushed range on main), never HEAD~1"
+
+AC-19 (findings 4 and 5) Every run step of VALIDATOR-CHECK, DEV-AUTOPILOT-IMPACT and both PR-GATE workflows maps to a
+generated job, or to an open item the test lists (the impact ingest and the PR comment); no check is a partial port.
+TEST: scripts/eng/pipeline-gen.test.mjs "the multi-gate ports: every run step of the GitHub workflow has a GitLab job (or is a listed open item); no partial port is left"
+
+AC-20 (finding 5) vitana-v1 runs PR-GATE's `preview-e2e` on a local vite preview built against the staging gateway,
+without a session, report-only unless `enforce_preview_e2e`; `gate-selftest` and `kiro-steering-selftest` run
+the two self-tests; E2E-PREVIEW-ORB is `e2e-preview-orb`, manual, main class, live mode only.
+TEST: scripts/eng/pipeline-gen.test.mjs "vitana-v1: PR-GATE preview-e2e on a local vite preview without a session; the gate and Kiro steering self-tests; E2E-PREVIEW-ORB by hand"
+
+AC-21 (collision with eng-gitlab-m2 settings) The fixtures' raw text names no Premium approvals path, so that lane's
+free-tier guard stays green with both lanes on main; the parsed paths are unchanged.
+TEST: scripts/eng/affected-parity.test.mjs "vitana-platform: the fixture's raw text names no Premium approvals path, and parses to the real file names"
 
 States: unknown path (no service, shared, other or docs entry claims it: `gate` fails and names it; GitLab `rules:changes`
 has no negation, so a path no pattern lists cannot select jobs by itself; `other_paths` claim every area of today's tree
@@ -118,13 +156,21 @@ Contract:
 
 Staging proof: not verified on staging: nothing deploys when this lane is merged (GitLab is not cut over; the files are
 copied into `vitana/ci-config` by M2's settings sync and run only in lane `cutover`'s shadow pipelines, plan §8.1 step 3).
-Covered by the 27 tests above, the `--check` run, and the Ruby Psych cross-check of every CI file
+Covered by the 36 tests above, the `--check` run, and the Ruby Psych cross-check of every CI file
 (`outputs/yaml-cross-check.txt`; Psych is the YAML library GitLab uses). `run.mjs check-pr` says nothing deploys
 (`outputs/staging-check-pr.txt`), so there is no `staging-tests.json`.
 
 Red on base: `outputs/red-on-base.txt` — on origin/main `b3d547b66c` the three files fail as whole files (3 of 3, no
 `pipeline-gen.mjs`, no service list, no fixtures); against no-behaviour stubs outside the repo all 22 reported results fail (21 tests, and affected-parity.test.mjs as a whole file because its per-repository loop reads the missing fixture at load time).
-Green: `outputs/green.txt` — 27 of 27 pass; `outputs/unit-all.txt` — UNIT's full command, 0 failures.
+Red on base, review round 1: `outputs/red-fix1.txt` — on the reviewed head e6490b1cba the 10 new or changed tests run
+36 results: 27 pass, 9 fail (the 8 tests of AC-11, AC-14 to AC-20 and the platform test of AC-21; the vitana-v1 test
+of AC-21 passes on base, its fixture has no such path); the same 9 fail with only the new fact tables added; the tools rule
+lists 12 violations on base (android-module x2 jobs x3, cicdl jq, openapi $GITHUB_OUTPUT, sql-auth-bridge npm, each also
+in full-suite) and 0 on the fixed tree.
+Green: `outputs/green.txt` — 36 of 36 pass (after the merge of origin/main); `outputs/unit-all.txt` — UNIT's full command,
+0 failures; `outputs/yaml-cross-check.txt` — Psych agrees on all 6 files; `outputs/bash-n.txt` — every generated job
+script parses in bash; `outputs/settings-merge.txt` — with eng-gitlab-m2 settings merged, its free-tier guard and these
+tests pass.
 
 ## Files of other lanes this lane needs (none of them is a file of this lane)
 - eng-gitlab-m2 lane `settings` (paths include `infra/gitlab-engineering/ci/**`): the sync that copies
@@ -139,6 +185,28 @@ Green: `outputs/green.txt` — 27 of 27 pass; `outputs/unit-all.txt` — UNIT's 
   `scripts/eng/assist-trigger.mjs`. Lane `github-bridge`: applies `assist-out/assist.patch` to a bridged branch.
 
 ## Decisions taken
+- Review round 1: the image facts come from the Docker official images' Dockerfiles (read through `gh api`): node 20-bookworm
+  has git, curl and python3 (mercurial in buildpack-deps' scm layer depends on it) and no jq or psql; postgres 16 has no
+  Node. A job installs what its image lacks with one `apt-get` line rather than a new image (no image pipeline yet, M2).
+- `sql-auth-bridge` installs npm on postgres:16 rather than psql on the node image, so its client matches the server like
+  the other 21 SQL checks.
+- `android-module` uses Debian's OpenJDK 17 (GitHub: Temurin 17) and writes the SDK licence file, as GitHub's runner image
+  has it accepted; the Gradle plugin then downloads the SDK packages. The `images.android` (JDK-only) entry is removed.
+- `pr-gate-report` passes `$GATE_TITLE`, not `$CI_MERGE_REQUEST_TITLE` directly: it defaults to the merge request title and
+  the merge bot sets it on train refs, where the merge request variables are empty.
+- `validator-check` on main and nightly runs the CSP gate against `origin/main` (an empty diff after landing) and the build;
+  the PR-text gates run on merge requests only (the brief: skip them on main, nightly and `train/*` with the reason logged).
+- `dev-autopilot-impact`: base `$CI_COMMIT_BEFORE_SHA` on main pushes (the landed range; GitHub used HEAD~1) and `HEAD` on
+  schedules (nothing landed); dry run there, as GitHub fails only pull requests on blockers.
+- The two v1 self-tests are path-selected checks (any `scripts/**` change selects them, through `other_paths`), so they
+  block when they fail; on GitHub they are steps of the report-only PR-GATE job. Stricter, never fewer.
+- `preview-e2e` keeps GitHub's health check, build env, specs and report-only verdict, and takes the staging guard from the
+  platform-main clone (`central: true`) instead of a token fetch; it gets `NODE_OPTIONS=--max-old-space-size=4096` like
+  `build`.
+- `e2e-preview-orb` keeps `PREVIEW_URL=https://preview.vitanaland.com` (the workflow's target), manual and
+  `allow_failure: true`, so it never blocks a main pipeline.
+- The two platform fixture paths with `/approvals` are written with the JSON escape `\u002f` (same parsed data), so
+  lane settings' raw-text free-tier guard does not read a lane-file name as the Premium approvals API (AC-21).
 - Unknown path: GitLab `rules:changes` cannot negate, so "every check for a path no service claims" is implemented as
   `other_paths` (every unowned area of today's tree selects every check, like a shared path) plus `gate` failing closed on a
   path nothing claims. A new top-level entry therefore blocks until it is claimed in the service list, instead of
@@ -173,12 +241,52 @@ Green: `outputs/green.txt` — 27 of 27 pass; `outputs/unit-all.txt` — UNIT's 
   safety net pushes `bot-assist/nightly-<rule>-<date>` (assist/* is protected) and opens a merge request. The provider
   stays the workflow's default (`gemini`), as plan §3.9 says.
 
+## Review round 1 (agent:vitana-lane-reviewer, claude-opus-5.5, on e2c50732; entry 2026-11-05T16:54Z)
+1. Jobs that could not pass on GitLab. `cicdl-lint-services` gets `apt: ["jq"]` (services.json:1964; the generator
+   renders `apt-get install … jq` first, pipeline-gen.mjs:46, :118). `openapi-enforce` writes `has_specs` to
+   `$CI_PROJECT_DIR/openapi-enforce.env` (services.json:1999); with no spec its `exit 0` ends the job, as the
+   `has_specs` conditions skip the steps on GitHub. `sql-auth-bridge` keeps postgres:16 (psql 16 like the other 21 SQL
+   checks) and installs npm (services.json:2087). `validator-check` reads merge request text only in merge-request
+   pipelines (finding 4 below). New fact tables `image_tools`, `apt_tools`, `npm_global_tools` (services.json:18-60) and a
+   structure test over all 151 generated jobs with scripts (AC-14).
+2. `android-module` (services.json:570): node image, `apt: ["openjdk-17-jdk-headless"]`, `ANDROID_HOME`/`ANDROID_SDK_ROOT` =
+   `$CI_PROJECT_DIR/.android-sdk` with the licence file `android-sdk-license` written before `gradlew`, so the Android Gradle
+   plugin downloads the platform and build tools it needs; `GRADLE_USER_HOME` and the SDK are cached. A v1 `src/**` merge
+   request still selects it (NATIVE-CI runs it for web files too), now on a toolchain that can pass (AC-16).
+3. `pr-gate-report` (tpl-checks.yml:66-73): `--title "$GATE_TITLE"` on every `gate.mjs` call; a "fix" VTID runs `npm ci` in
+   main's `red_green.cwd` first (PR-GATE.yml "Gateway deps" step; v1 root, platform `services/gateway`); the job cache is
+   keyed by that lockfile (`pr_gate_install`, services.json:72, :817; pipeline-gen.mjs:159-160) (AC-17).
+4. VALIDATOR-CHECK is ported step by step (services.json:1897): ruleset, PR text, body declarations, VTID and profile,
+   changed files, path ownership, evidence pack, acceptance mapping (python3, in the node image), CSP, build, route mount,
+   OASIS, merge deploy, PASS summary; `GIT_DEPTH: "0"` for `origin/<target>...HEAD`. `dev-autopilot-impact`
+   (services.json:1949) sets `IMPACT_SCAN_BASE` per pipeline and fails closed; blockers fail merge request and train
+   pipelines only (dry run on main and nightly, as GitHub's "PR only" step); the findings file is an artifact. A step map
+   per workflow and a test that reads the GitHub files (AC-15, AC-18, AC-19).
+5. vitana-v1 `preview-e2e` (services.json:393), `gate-selftest` (:369), `kiro-steering-selftest` (:381); E2E-PREVIEW-ORB
+   (dispatch-only on GitHub, signs in) is `e2e-preview-orb` (tpl-main.yml:34, v1-delivery.gitlab-ci.yml:1470) (AC-20).
+6. The sibling sweep reads plan §2.2 and checks every fate; a moved workflow without jobs needs a replacement the plan
+   names (TEST-SUITE-RERUN → `retry`, services.json:2812-2816) (AC-11).
+- Non-blocking, T3 CI-health report job: deferred. `tpl-nightly.yml` keeps the CI-HEALTH rules (`.ci-health-rules`); the
+  report reads job durations and flaky reruns from M2 monitoring's metrics feed (plan §3.3 T3, §6 I1/I2), which is not
+  built, so a job now would report nothing. The driver adds it with or after M2 monitoring.
+- Non-blocking, carried: this lane lands after eng-gitlab-m2 `settings` (merge main and re-check then); `tpl-deploy.yml`,
+  `tpl-verify.yml` and `gitlab-gates.mjs` must be on main before a GitLab pipeline can include them; the public
+  node:20-bookworm image instead of the M2 toolchain image; `GATE_BASE` empty on main and nightly; `gate` needs 47 of
+  50 on platform; I18N_PROVIDER `gemini` (plan §3.9) against CLAUDE.md AI-27: a plan or owner question.
+
+## Open items for the driver (outside this lane's paths)
+- DEV-AUTOPILOT-IMPACT "Ingest impact findings" (push to main, `DEV_AUTOPILOT_SCAN_TOKEN`, POST to the staging gateway) and
+  "Post or update PR comment" have no GitLab job: the untrusted class holds no secret or comment token and plan §7 gives
+  the main class no role for that token. Until the cut GitHub keeps both. Needs a role and secret (lane deploy-path's
+  `setup-gitlab-oidc.sh`) or the bridge (plan §3.13). Listed in the test (`OPEN_STEPS`).
+- `e2e-preview-orb` uses lane verify-on-gitlab's role `gl-verify` (ID token audience `aws:verify`) and secret
+  `vitana/ci/test-user`; lane deploy-path's trust policy must admit a main-ref job of vitana/vitana-v1 for it.
+- GitLab passes at most 2700 characters of a merge request description to CI; `validator-check` rejects a truncated
+  description with that reason (`CI_MERGE_REQUEST_DESCRIPTION_IS_TRUNCATED`) instead of a wrong "marker missing". The
+  bridge or the PR template should keep the declarations within that size.
+
 ## Not done yet (draft-quality parts, listed for the driver)
-- `preview-e2e` (the unauthenticated PR-GATE preview specs and E2E-PREVIEW-ORB) is not generated: it needs the T4
-  preview URL from lane deploy-path. The signed-in specs run in STAGING-VERIFY after landing (plan §3.4).
-- VALIDATOR-CHECK and DEV-AUTOPILOT-IMPACT are ported only to their main command (`validator-path-guard.cjs --pr-body-check`;
-  `dev-autopilot-impact-scan.mjs`), not every inline step; the CI-HEALTH report job is not generated (`.ci-health-rules`
-  states the rules; the report needs M2 monitoring's metrics).
-- Commands are ported from today's workflows but unproven on GitLab: the Android job needs a job image with JDK 17 and the
-  Android SDK (`images.android` is a JDK image only); `edge-data-client` uses `npx deno@2`; the Vitest union relies on
-  `shard-union.mjs` reading Vitest's Jest-compatible JSON. Lane `cutover`'s shadow pipelines prove or correct them.
+- The CI-HEALTH report job (deferred, see Review round 1).
+- Commands are ported from today's workflows but unproven on a GitLab runner (no GitLab pipeline runs before the cut):
+  the Android job's SDK download by the Gradle plugin, `edge-data-client`'s `npx deno@2`, the Vitest union reading Vitest's
+  Jest-compatible JSON, `preview-e2e`'s Playwright install. Lane `cutover`'s shadow pipelines prove or correct them.

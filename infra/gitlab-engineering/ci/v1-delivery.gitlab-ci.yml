@@ -69,6 +69,14 @@ pr-gate-report:
     - ".governance"
     - ".pr-gate-report"
   stage: "governance"
+  cache:
+    key:
+      files:
+        - "package-lock.json"
+      prefix: "pr-gate-report"
+    paths:
+      - ".npm"
+    policy: "pull-push"
   rules:
     - if: "$CI_PIPELINE_SOURCE == \"merge_request_event\" || $CI_COMMIT_BRANCH =~ /^train\\//"
 
@@ -367,6 +375,150 @@ regressions:
   script:
     - "npm ci --no-audit --no-fund --prefer-offline"
     - "node scripts/ci/pr-gate/run-regressions.mjs || node -e 'process.exit(require(\"./scripts/ci/pr-gate/config.json\").enforce === true ? 1 : 0)'"
+  rules:
+    - if: "$CI_PIPELINE_SOURCE == \"merge_request_event\" || $CI_COMMIT_BRANCH =~ /^train\\//"
+      changes:
+        paths:
+          - "package.json"
+          - "package-lock.json"
+          - "bun.lock"
+          - "tsconfig*.json"
+          - "vite.config.ts"
+          - "vitest.config.ts"
+          - "eslint.config.js"
+          - "eslint-patterns.config.js"
+          - "eslint-rules/**/*"
+          - "tailwind.config.ts"
+          - "postcss.config.js"
+          - "scripts/**/*"
+          - "config/**/*"
+          - "tests/**/*"
+          - "stories/**/*"
+          - "i18n-audit/**/*"
+          - "i18n-source-stamps/**/*"
+          - "*.{cjs,js,mjs,ts,json,yml,yaml,sh}"
+          - ".env*"
+          - ".dockerignore"
+          - ".gitignore"
+          - "src/**/*"
+          - "public/**/*"
+          - "index.html"
+          - "Dockerfile"
+          - "nginx.conf"
+          - "e2e/**/*"
+          - ".github/workflows/AWS-STAGE-DEPLOY-FRONTEND.yml"
+          - ".github/workflows/PREVIEW-DEPLOY-FRONTEND.yml"
+          - ".github/workflows/UNIT-TESTS.yml"
+        compare_to: "refs/heads/main"
+
+gate-selftest:
+  extends: ".check"
+  stage: "checks"
+  variables:
+    DELIVERY_CHECK: "gate-selftest"
+  script:
+    - "node --test scripts/ci/pr-gate/__tests__/*.test.mjs"
+  rules:
+    - if: "$CI_PIPELINE_SOURCE == \"merge_request_event\" || $CI_COMMIT_BRANCH =~ /^train\\//"
+      changes:
+        paths:
+          - "package.json"
+          - "package-lock.json"
+          - "bun.lock"
+          - "tsconfig*.json"
+          - "vite.config.ts"
+          - "vitest.config.ts"
+          - "eslint.config.js"
+          - "eslint-patterns.config.js"
+          - "eslint-rules/**/*"
+          - "tailwind.config.ts"
+          - "postcss.config.js"
+          - "scripts/**/*"
+          - "config/**/*"
+          - "tests/**/*"
+          - "stories/**/*"
+          - "i18n-audit/**/*"
+          - "i18n-source-stamps/**/*"
+          - "*.{cjs,js,mjs,ts,json,yml,yaml,sh}"
+          - ".env*"
+          - ".dockerignore"
+          - ".gitignore"
+        compare_to: "refs/heads/main"
+
+kiro-steering-selftest:
+  extends: ".check"
+  stage: "checks"
+  variables:
+    DELIVERY_CHECK: "kiro-steering-selftest"
+  script:
+    - "node --test scripts/ci/kiro-steering/guard.test.cjs"
+  rules:
+    - if: "$CI_PIPELINE_SOURCE == \"merge_request_event\" || $CI_COMMIT_BRANCH =~ /^train\\//"
+      changes:
+        paths:
+          - "package.json"
+          - "package-lock.json"
+          - "bun.lock"
+          - "tsconfig*.json"
+          - "vite.config.ts"
+          - "vitest.config.ts"
+          - "eslint.config.js"
+          - "eslint-patterns.config.js"
+          - "eslint-rules/**/*"
+          - "tailwind.config.ts"
+          - "postcss.config.js"
+          - "scripts/**/*"
+          - "config/**/*"
+          - "tests/**/*"
+          - "stories/**/*"
+          - "i18n-audit/**/*"
+          - "i18n-source-stamps/**/*"
+          - "*.{cjs,js,mjs,ts,json,yml,yaml,sh}"
+          - ".env*"
+          - ".dockerignore"
+          - ".gitignore"
+        compare_to: "refs/heads/main"
+
+preview-e2e:
+  extends:
+    - ".check"
+    - ".central-tools"
+  stage: "checks"
+  variables:
+    DELIVERY_CHECK: "preview-e2e"
+    STAGING_GATEWAY: "https://preview-aws-gateway.vitanaland.com"
+    NODE_OPTIONS: "--max-old-space-size=4096"
+  cache:
+    key:
+      files:
+        - "package-lock.json"
+      prefix: "preview-e2e"
+    paths:
+      - ".npm"
+    policy: "pull-push"
+  script:
+    - "npm ci --no-audit --no-fund --prefer-offline"
+    - "OK=false; for i in 1 2 3; do if [ \"$(curl -s -o /dev/null -w '%{http_code}' \"$STAGING_GATEWAY/alive\")\" = \"200\" ]; then OK=true; break; fi; sleep 30; done"
+    - "if [ \"$OK\" != \"true\" ]; then echo \"preview-e2e: neutral: staging gateway unhealthy, e2e deferred to STAGING-VERIFY\"; exit 0; fi"
+    - "printf 'VITE_GATEWAY_BASE=%s\\nVITE_GATEWAY_URL=%s/api/v1\\nVITE_APP_VERSION=%s\\nVITE_HEALTH_REAL_DATA=true\\n' \"$STAGING_GATEWAY\" \"$STAGING_GATEWAY\" \"$(git rev-parse --short=12 HEAD)\" > .env.production"
+    - "npm run build"
+    - "cp \"$CENTRAL_DIR/scripts/ci/staging-verify/staging-guard.ts\" tests/e2e/staging/staging-guard.ts"
+    - "npm install --no-save --no-audit --no-fund @playwright/test@1.51.0"
+    - "npx playwright install --with-deps chromium"
+    - "(npx vite preview --host 127.0.0.1 --port 4173 --strictPort > /tmp/preview.log 2>&1 &)"
+    - "for i in $(seq 1 30); do curl -sf http://127.0.0.1:4173/ >/dev/null && break; sleep 1; done"
+    - "SPECS=\"tests/e2e/staging/smoke.staging.spec.ts\"; for v in $(printf \"%s\" \"$GATE_TITLE\" | grep -Eo \"VTID-[0-9]{4,5}\" | sort -u || true); do m=\"docs/validation/$v/staging-tests.json\"; if [ -f \"$m\" ]; then SPECS=\"$SPECS $(node -e \"const m=require('./$m');console.log(m.tests.filter(t=>t.kind==='playwright').map(t=>t.spec).join(' '))\")\"; fi; done; echo \"specs (no session, plan §3.4; the signed-in specs run in STAGING-VERIFY): $SPECS\""
+    - "printf \"%s\\n\" \"import { defineConfig, devices } from '@playwright/test';\" \"export default defineConfig({ testDir: process.cwd(), timeout: 90_000, retries: 0, workers: 1, reporter: [['list']], use: { baseURL: 'http://127.0.0.1:4173', ...devices['Desktop Chrome'], screenshot: 'only-on-failure' } });\" > .pr-gate.playwright.config.mjs"
+    - "E2E=0; npx playwright test $SPECS --config=.pr-gate.playwright.config.mjs 2>&1 | tee /tmp/e2e.log || E2E=$?"
+    - "if [ \"$E2E\" = \"0\" ]; then echo \"preview-e2e: passed ($(grep -Eo '[0-9]+ passed' /tmp/e2e.log | tail -1 || true))\"; exit 0; fi"
+    - "ENFORCE=$(node -p \"require('./scripts/ci/pr-gate/config.json').enforce_preview_e2e === true\")"
+    - "if [ \"$ENFORCE\" = \"true\" ]; then echo \"preview-e2e: failed\"; exit 1; fi; echo \"preview-e2e (report-only, enforce_preview_e2e is not true) would fail: see the log above\""
+  artifacts:
+    when: "always"
+    expire_in: "1 day"
+    paths:
+      - "test-results/"
+      - ".delivery-ran/"
   rules:
     - if: "$CI_PIPELINE_SOURCE == \"merge_request_event\" || $CI_COMMIT_BRANCH =~ /^train\\//"
       changes:
@@ -986,11 +1138,15 @@ orb-parity:
 android-module:
   extends: ".check"
   stage: "checks"
-  image: "public.ecr.aws/docker/library/eclipse-temurin:17-jdk"
+  image: "public.ecr.aws/docker/library/node:20-bookworm"
   parallel: 2
   variables:
     DELIVERY_CHECK: "android-module"
     APP_PROFILE: "development"
+    EXPO_OFFLINE: "0"
+    ANDROID_HOME: "$CI_PROJECT_DIR/.android-sdk"
+    ANDROID_SDK_ROOT: "$CI_PROJECT_DIR/.android-sdk"
+    GRADLE_USER_HOME: "$CI_PROJECT_DIR/.gradle-home"
   cache:
     key:
       files:
@@ -998,10 +1154,15 @@ android-module:
       prefix: "android-module"
     paths:
       - ".npm"
+      - ".android-sdk"
+      - ".gradle-home"
     policy: "pull-push"
   script:
+    - "apt-get update -qq && apt-get install -y -qq --no-install-recommends openjdk-17-jdk-headless >/dev/null"
     - "cd apps/mobile"
     - "npm ci --no-audit --no-fund --prefer-offline"
+    - "mkdir -p \"$ANDROID_HOME/licenses\" && printf \"\\n24333f8a63b6825ea9c5514f83c2829b004d1fee\\nd56f5187479451eabf01fb78af6dfcb131a6481e\\n\" > \"$ANDROID_HOME/licenses/android-sdk-license\""
+    - "java -version 2>&1 | head -n 1"
     - "npx expo prebuild --platform android --no-install"
     - "CLASSES=$(find modules/vitana-voice/android/src/test -name \"*Test.kt\" -o -name \"*Test.java\" | sed \"s#.*/##; s#\\.[a-z]*$##\" | sort | awk -v n=\"$CI_NODE_TOTAL\" -v i=\"$CI_NODE_INDEX\" '(NR - 1) % n == i - 1')"
     - "if [ -z \"$CLASSES\" ]; then echo \"no test class in shard $CI_NODE_INDEX/$CI_NODE_TOTAL\"; exit 0; fi"
@@ -1061,6 +1222,15 @@ gate:
       optional: true
       artifacts: true
     - job: "regressions"
+      optional: true
+      artifacts: true
+    - job: "gate-selftest"
+      optional: true
+      artifacts: true
+    - job: "kiro-steering-selftest"
+      optional: true
+      artifacts: true
+    - job: "preview-e2e"
       optional: true
       artifacts: true
     - job: "realtime-helper"
@@ -1297,6 +1467,20 @@ preview-stop:
           - "tailwind.config.ts"
           - "postcss.config.js"
 
+e2e-preview-orb:
+  extends: ".e2e-preview-orb"
+  stage: "verify"
+  tags:
+    - "vitana-eng-main"
+  interruptible: false
+  allow_failure: true
+  needs: []
+  rules:
+    - if: "$DELIVERY_MODE != \"live\""
+      when: "never"
+    - if: "$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == \"push\""
+      when: "manual"
+
 "full-suite:vitest":
   extends: ".full-suite"
   stage: "full-suite"
@@ -1418,6 +1602,69 @@ preview-stop:
   script:
     - "npm ci --no-audit --no-fund --prefer-offline"
     - "node scripts/ci/pr-gate/run-regressions.mjs || node -e 'process.exit(require(\"./scripts/ci/pr-gate/config.json\").enforce === true ? 1 : 0)'"
+  rules:
+    - if: "$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == \"push\" || $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == \"schedule\" && $DELIVERY_SCHEDULE == \"nightly\""
+
+"full-suite:gate-selftest":
+  extends: ".full-suite"
+  stage: "full-suite"
+  variables:
+    DELIVERY_CHECK: "gate-selftest"
+  script:
+    - "node --test scripts/ci/pr-gate/__tests__/*.test.mjs"
+  rules:
+    - if: "$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == \"push\" || $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == \"schedule\" && $DELIVERY_SCHEDULE == \"nightly\""
+
+"full-suite:kiro-steering-selftest":
+  extends: ".full-suite"
+  stage: "full-suite"
+  variables:
+    DELIVERY_CHECK: "kiro-steering-selftest"
+  script:
+    - "node --test scripts/ci/kiro-steering/guard.test.cjs"
+  rules:
+    - if: "$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == \"push\" || $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == \"schedule\" && $DELIVERY_SCHEDULE == \"nightly\""
+
+"full-suite:preview-e2e":
+  extends:
+    - ".full-suite"
+    - ".central-tools"
+  stage: "full-suite"
+  variables:
+    DELIVERY_CHECK: "preview-e2e"
+    STAGING_GATEWAY: "https://preview-aws-gateway.vitanaland.com"
+    NODE_OPTIONS: "--max-old-space-size=4096"
+  cache:
+    key:
+      files:
+        - "package-lock.json"
+      prefix: "preview-e2e"
+    paths:
+      - ".npm"
+    policy: "pull-push"
+  script:
+    - "npm ci --no-audit --no-fund --prefer-offline"
+    - "OK=false; for i in 1 2 3; do if [ \"$(curl -s -o /dev/null -w '%{http_code}' \"$STAGING_GATEWAY/alive\")\" = \"200\" ]; then OK=true; break; fi; sleep 30; done"
+    - "if [ \"$OK\" != \"true\" ]; then echo \"preview-e2e: neutral: staging gateway unhealthy, e2e deferred to STAGING-VERIFY\"; exit 0; fi"
+    - "printf 'VITE_GATEWAY_BASE=%s\\nVITE_GATEWAY_URL=%s/api/v1\\nVITE_APP_VERSION=%s\\nVITE_HEALTH_REAL_DATA=true\\n' \"$STAGING_GATEWAY\" \"$STAGING_GATEWAY\" \"$(git rev-parse --short=12 HEAD)\" > .env.production"
+    - "npm run build"
+    - "cp \"$CENTRAL_DIR/scripts/ci/staging-verify/staging-guard.ts\" tests/e2e/staging/staging-guard.ts"
+    - "npm install --no-save --no-audit --no-fund @playwright/test@1.51.0"
+    - "npx playwright install --with-deps chromium"
+    - "(npx vite preview --host 127.0.0.1 --port 4173 --strictPort > /tmp/preview.log 2>&1 &)"
+    - "for i in $(seq 1 30); do curl -sf http://127.0.0.1:4173/ >/dev/null && break; sleep 1; done"
+    - "SPECS=\"tests/e2e/staging/smoke.staging.spec.ts\"; for v in $(printf \"%s\" \"$GATE_TITLE\" | grep -Eo \"VTID-[0-9]{4,5}\" | sort -u || true); do m=\"docs/validation/$v/staging-tests.json\"; if [ -f \"$m\" ]; then SPECS=\"$SPECS $(node -e \"const m=require('./$m');console.log(m.tests.filter(t=>t.kind==='playwright').map(t=>t.spec).join(' '))\")\"; fi; done; echo \"specs (no session, plan §3.4; the signed-in specs run in STAGING-VERIFY): $SPECS\""
+    - "printf \"%s\\n\" \"import { defineConfig, devices } from '@playwright/test';\" \"export default defineConfig({ testDir: process.cwd(), timeout: 90_000, retries: 0, workers: 1, reporter: [['list']], use: { baseURL: 'http://127.0.0.1:4173', ...devices['Desktop Chrome'], screenshot: 'only-on-failure' } });\" > .pr-gate.playwright.config.mjs"
+    - "E2E=0; npx playwright test $SPECS --config=.pr-gate.playwright.config.mjs 2>&1 | tee /tmp/e2e.log || E2E=$?"
+    - "if [ \"$E2E\" = \"0\" ]; then echo \"preview-e2e: passed ($(grep -Eo '[0-9]+ passed' /tmp/e2e.log | tail -1 || true))\"; exit 0; fi"
+    - "ENFORCE=$(node -p \"require('./scripts/ci/pr-gate/config.json').enforce_preview_e2e === true\")"
+    - "if [ \"$ENFORCE\" = \"true\" ]; then echo \"preview-e2e: failed\"; exit 1; fi; echo \"preview-e2e (report-only, enforce_preview_e2e is not true) would fail: see the log above\""
+  artifacts:
+    when: "always"
+    expire_in: "1 day"
+    paths:
+      - "test-results/"
+      - ".delivery-ran/"
   rules:
     - if: "$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == \"push\" || $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == \"schedule\" && $DELIVERY_SCHEDULE == \"nightly\""
 
@@ -1660,11 +1907,15 @@ preview-stop:
 "full-suite:android-module":
   extends: ".full-suite"
   stage: "full-suite"
-  image: "public.ecr.aws/docker/library/eclipse-temurin:17-jdk"
+  image: "public.ecr.aws/docker/library/node:20-bookworm"
   parallel: 2
   variables:
     DELIVERY_CHECK: "android-module"
     APP_PROFILE: "development"
+    EXPO_OFFLINE: "0"
+    ANDROID_HOME: "$CI_PROJECT_DIR/.android-sdk"
+    ANDROID_SDK_ROOT: "$CI_PROJECT_DIR/.android-sdk"
+    GRADLE_USER_HOME: "$CI_PROJECT_DIR/.gradle-home"
   cache:
     key:
       files:
@@ -1672,10 +1923,15 @@ preview-stop:
       prefix: "android-module"
     paths:
       - ".npm"
+      - ".android-sdk"
+      - ".gradle-home"
     policy: "pull-push"
   script:
+    - "apt-get update -qq && apt-get install -y -qq --no-install-recommends openjdk-17-jdk-headless >/dev/null"
     - "cd apps/mobile"
     - "npm ci --no-audit --no-fund --prefer-offline"
+    - "mkdir -p \"$ANDROID_HOME/licenses\" && printf \"\\n24333f8a63b6825ea9c5514f83c2829b004d1fee\\nd56f5187479451eabf01fb78af6dfcb131a6481e\\n\" > \"$ANDROID_HOME/licenses/android-sdk-license\""
+    - "java -version 2>&1 | head -n 1"
     - "npx expo prebuild --platform android --no-install"
     - "CLASSES=$(find modules/vitana-voice/android/src/test -name \"*Test.kt\" -o -name \"*Test.java\" | sed \"s#.*/##; s#\\.[a-z]*$##\" | sort | awk -v n=\"$CI_NODE_TOTAL\" -v i=\"$CI_NODE_INDEX\" '(NR - 1) % n == i - 1')"
     - "if [ -z \"$CLASSES\" ]; then echo \"no test class in shard $CI_NODE_INDEX/$CI_NODE_TOTAL\"; exit 0; fi"

@@ -1,0 +1,115 @@
+# VTID-05550 review round 1 — the new and changed tests, red on the reviewed head e6490b1cba (lane pipelines)
+# Session kiro-exafy-202611051542-d83b. The reviewed tree is copied outside the repository (git archive e6490b1cba config/delivery scripts/eng infra/gitlab-engineering/ci .github/workflows config/service-path-map.json .kiro/specs/agentic-delivery/plan.md) and the new test files are put over it.
+
+## 1. Base code and data, new tests: node --test scripts/eng/pipeline-gen.test.mjs scripts/eng/affected-parity.test.mjs scripts/eng/services-parity.test.mjs (exit 1)
+ok 1 - vitana-v1: the fixture holds the last 60 merged PRs with their files and workflows
+ok 2 - vitana-v1: the fixture's raw text names no Premium approvals path, and parses to the real file names
+ok 3 - vitana-v1: every pull-request workflow that ran is in the service list registry
+ok 4 - vitana-v1: each of the 60 PRs selects every check whose path-filtered GitHub workflow ran for it
+ok 5 - vitana-platform: the fixture holds the last 60 merged PRs with their files and workflows
+not ok 6 - vitana-platform: the fixture's raw text names no Premium approvals path, and parses to the real file names
+ok 7 - vitana-platform: every pull-request workflow that ran is in the service list registry
+ok 8 - vitana-platform: each of the 60 PRs selects every check whose path-filtered GitHub workflow ran for it
+ok 9 - renders both project files from the service list, byte for byte
+ok 10 - --check exits 0 when the files are current and 3 on drift, and writes nothing
+ok 11 - GitLab glob semantics: dir/**/* is recursive, a trailing ** is one level, braces and dotfiles match
+ok 12 - each T1 check job has rules: changes: from its service paths plus the shared and other paths
+ok 13 - a shared path, or an area no single service owns, selects every check
+ok 14 - a change to one service selects only that service checks; a documentation-only change selects none
+ok 15 - an unknown path makes gate fail and name it, so the merge request cannot land with fewer checks
+ok 16 - gate needs every check with optional: true and runs only when they passed
+ok 17 - governance jobs carry no path rule, come first, and are the only jobs besides gate that always run
+ok 18 - no T1 job declares id_tokens or a secret, no file uses include: local, and T1 jobs are untrusted and interruptible
+ok 19 - every test job is sharded so its fixture duration is under 4 minutes
+ok 20 - dependencies come from the cache keyed by the lockfile
+ok 21 - main pipelines run every check once, are not interruptible, and use the main and deploy classes
+ok 22 - DELIVERY_MODE defaults to shadow; in shadow mode record, vtid-close, notify-platform and assists are absent and no env_overrides pass
+ok 23 - the generated files include the deploy and verify templates by the job names of plan §9
+not ok 24 - sibling sweep: every workflow has its plan §2.2 fate, and every moved workflow has its jobs in a generated file
+not ok 25 - every generated job: its image provides each tool its script runs, or an earlier line installs it; no GitHub Actions variable
+not ok 26 - validator-check reads the merge request title and description only in merge-request pipelines and logs why it skips them elsewhere
+not ok 27 - android-module: Node from the image, JDK 17 and an Android SDK home with accepted licences before gradlew, cached
+not ok 28 - pr-gate-report passes the merge request title to every gate.mjs check and installs what red-green runs
+not ok 29 - dev-autopilot-impact scans against the merge request target (main for trains, the pushed range on main), never HEAD~1
+not ok 30 - the multi-gate ports: every run step of the GitHub workflow has a GitLab job (or is a listed open item); no partial port is left
+not ok 31 - vitana-v1: PR-GATE preview-e2e on a local vite preview without a session; the gate and Kiro steering self-tests; E2E-PREVIEW-ORB by hand
+ok 32 - the service list has schema vitana.delivery-services/v1 and both repositories
+ok 33 - platform service paths equal config/service-path-map.json
+ok 34 - the gateway service carries the env_overrides of plan §3.6 step 2; the deployable services have images and staging targets
+ok 35 - every path filter of the platform pull-request workflows maps to a service, and selects that workflow's checks
+ok 36 - every vitana-v1 workflow path filter recorded in the service list selects its checks
+# tests 36
+# pass 27
+# fail 9
+
+## failure reasons (base)
+  not ok 6 - vitana-platform: the fixture's raw text names no Premium approvals path, and parses to the real file names
+    error: |-
+  not ok 24 - sibling sweep: every workflow has its plan §2.2 fate, and every moved workflow has its jobs in a generated file
+    error: 'vitana-v1: E2E-PREVIEW-ORB.yml (t4) maps to no job and names no replacement that plan §2.2 gives'
+  not ok 25 - every generated job: its image provides each tool its script runs, or an earlier line installs it; no GitHub Actions variable
+    error: "Cannot read properties of undefined (reading 'node')"
+  not ok 26 - validator-check reads the merge request title and description only in merge-request pipelines and logs why it skips them elsewhere
+    error: 'validator-check: reads merge request text outside a merge-request pipeline: printf "%s" "${CI_MERGE_REQUEST_DESCRIPTION:-}" > /tmp/pr_body.txt'
+  not ok 27 - android-module: Node from the image, JDK 17 and an Android SDK home with accepted licences before gradlew, cached
+    error: "Cannot read properties of undefined (reading 'android')"
+  not ok 28 - pr-gate-report passes the merge request title to every gate.mjs check and installs what red-green runs
+    error: 'vitana-v1: gate.mjs without --title skips scope, sparring and red-green (gate.mjs:22-23)'
+  not ok 29 - dev-autopilot-impact scans against the merge request target (main for trains, the pushed range on main), never HEAD~1
+    error: 'dev-autopilot-impact: IMPACT_SCAN_BASE is set before the scan'
+  not ok 30 - the multi-gate ports: every run step of the GitHub workflow has a GitLab job (or is a listed open item); no partial port is left
+    error: "Cannot read properties of undefined (reading 'PR-GATE.yml')"
+  not ok 31 - vitana-v1: PR-GATE preview-e2e on a local vite preview without a session; the gate and Kiro steering self-tests; E2E-PREVIEW-ORB by hand
+    error: "Cannot read properties of undefined (reading 'join')"
+
+## 2. Base code with only the new fact tables added (image_tools, apt_tools, npm_global_tools, the v1 PR-GATE run steps in the fixture), so no test fails on missing data (exit 1)
+not ok 6 - vitana-platform: the fixture's raw text names no Premium approvals path, and parses to the real file names
+not ok 24 - sibling sweep: every workflow has its plan §2.2 fate, and every moved workflow has its jobs in a generated file
+not ok 25 - every generated job: its image provides each tool its script runs, or an earlier line installs it; no GitHub Actions variable
+not ok 26 - validator-check reads the merge request title and description only in merge-request pipelines and logs why it skips them elsewhere
+not ok 27 - android-module: Node from the image, JDK 17 and an Android SDK home with accepted licences before gradlew, cached
+not ok 28 - pr-gate-report passes the merge request title to every gate.mjs check and installs what red-green runs
+not ok 29 - dev-autopilot-impact scans against the merge request target (main for trains, the pushed range on main), never HEAD~1
+not ok 30 - the multi-gate ports: every run step of the GitHub workflow has a GitLab job (or is a listed open item); no partial port is left
+not ok 31 - vitana-v1: PR-GATE preview-e2e on a local vite preview without a session; the gate and Kiro steering self-tests; E2E-PREVIEW-ORB by hand
+# tests 36
+# pass 27
+# fail 9
+
+  not ok 6 - vitana-platform: the fixture's raw text names no Premium approvals path, and parses to the real file names
+    error: |-
+  not ok 24 - sibling sweep: every workflow has its plan §2.2 fate, and every moved workflow has its jobs in a generated file
+    error: 'vitana-v1: E2E-PREVIEW-ORB.yml (t4) maps to no job and names no replacement that plan §2.2 gives'
+  not ok 25 - every generated job: its image provides each tool its script runs, or an earlier line installs it; no GitHub Actions variable
+    error: 'vitana-v1: android-module runs npm, but public.ecr.aws/docker/library/eclipse-temurin:17-jdk has no npm and no earlier line installs it'
+  not ok 26 - validator-check reads the merge request title and description only in merge-request pipelines and logs why it skips them elsewhere
+    error: 'validator-check: reads merge request text outside a merge-request pipeline: printf "%s" "${CI_MERGE_REQUEST_DESCRIPTION:-}" > /tmp/pr_body.txt'
+  not ok 27 - android-module: Node from the image, JDK 17 and an Android SDK home with accepted licences before gradlew, cached
+    error: 'android-module: public.ecr.aws/docker/library/eclipse-temurin:17-jdk has no Node'
+  not ok 28 - pr-gate-report passes the merge request title to every gate.mjs check and installs what red-green runs
+    error: 'vitana-v1: gate.mjs without --title skips scope, sparring and red-green (gate.mjs:22-23)'
+  not ok 29 - dev-autopilot-impact scans against the merge request target (main for trains, the pushed range on main), never HEAD~1
+    error: 'dev-autopilot-impact: IMPACT_SCAN_BASE is set before the scan'
+  not ok 30 - the multi-gate ports: every run step of the GitHub workflow has a GitLab job (or is a listed open item); no partial port is left
+    error: |-
+  not ok 31 - vitana-v1: PR-GATE preview-e2e on a local vite preview without a session; the gate and Kiro steering self-tests; E2E-PREVIEW-ORB by hand
+    error: "Cannot read properties of undefined (reading 'join')"
+
+## 3. Every violation of the tools rule (the logic of test 25, all jobs, no stop at the first), base + fact tables vs the fixed tree
+$ node /projects/sandbox/.scratch/d83b/tools-violations.mjs <tree>
+-- base e6490b1cba + fact tables
+jobs checked: 144; violations: 12
+- vitana-v1 android-module: runs npm without npm (eclipse-temurin:17-jdk)
+- vitana-v1 android-module: runs npx without npx (eclipse-temurin:17-jdk)
+- vitana-v1 android-module: runs gradlew without android-sdk (eclipse-temurin:17-jdk)
+- vitana-v1 full-suite:android-module: runs npm without npm (eclipse-temurin:17-jdk)
+- vitana-v1 full-suite:android-module: runs npx without npx (eclipse-temurin:17-jdk)
+- vitana-v1 full-suite:android-module: runs gradlew without android-sdk (eclipse-temurin:17-jdk)
+- vitana-platform cicdl-lint-services: runs jq without jq (node:20-bookworm)
+- vitana-platform openapi-enforce: GitHub Actions variable $GITHUB_OUTPUT
+- vitana-platform sql-auth-bridge: runs npm without npm (postgres:16)
+- vitana-platform full-suite:cicdl-lint-services: runs jq without jq (node:20-bookworm)
+- vitana-platform full-suite:openapi-enforce: GitHub Actions variable $GITHUB_OUTPUT
+- vitana-platform full-suite:sql-auth-bridge: runs npm without npm (postgres:16)
+-- fixed tree
+jobs checked: 151; violations: 0

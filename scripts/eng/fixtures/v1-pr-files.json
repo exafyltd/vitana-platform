@@ -3114,5 +3114,36 @@
     }
    }
   }
- ]
+ ],
+ "workflow_steps": {
+  "PR-GATE.yml": {
+   "source": "gh api GET repos/exafyltd/vitana-v1/contents/.github/workflows/PR-GATE.yml?ref=fcc1e451b4f2d5177f0c556eba433a38f92634a4 (vitana-v1 main, 2026-11-05)",
+   "sha256": "6910614ea81b92bdda45835b6fd8eb8563e28d7086c63a8288f0acfe641c3507",
+   "steps": [
+    "pr-gate/Install",
+    "pr-gate/Gate self-test",
+    "pr-gate/Live PR title",
+    "pr-gate/Kiro steering",
+    "pr-gate/Collab handoff",
+    "pr-gate/Scope guard",
+    "pr-gate/Sparring record",
+    "pr-gate/Test-weakening guard",
+    "pr-gate/Red→green proof (fixes)",
+    "pr-gate/Migrations (lint + Postgres parse + rollback dry run)",
+    "pr-gate/Typecheck ratchet",
+    "pr-gate/ESLint ratchet",
+    "pr-gate/Design ratchet",
+    "pr-gate/Regression scripts",
+    "pr-gate/Build",
+    "pr-gate/Verdict",
+    "preview-e2e/Does this PR touch the app?",
+    "preview-e2e/Staging gateway healthy?",
+    "preview-e2e/Build against the staging gateway",
+    "preview-e2e/Fetch the canonical staging guard",
+    "preview-e2e/Run smoke + this change's specs",
+    "preview-e2e/Verdict",
+    "lane-scope/Lane scope"
+   ]
+  }
+ }
 }
