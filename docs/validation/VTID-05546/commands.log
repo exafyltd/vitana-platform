@@ -23,3 +23,15 @@
 17:10  terraform fmt -check / init -backend=false / validate (outputs/terraform.txt)            -> fmt 0 (both files), valid
 17:10  AWS_REGION=eu-central-1 scripts/aws/setup-gitlab-oidc.sh --preview-distribution-id E1SAMPLEDIST23 (stub aws on PATH)   -> exit 0, 0 write calls (outputs/setup-gitlab-oidc-dry-run.txt)
 17:10  cross-lane job-class check (outputs/cross-lane-job-classes.txt)                           -> 9 tests, 9 pass, 0 fail
+17:13  node land-guard.mjs evidence --repo /projects/sandbox/.rv/deploy --vtid VTID-05546         -> refused (not staged yet); after git add -> ok
+17:13  git commit (code + evidence)                                                            -> 6ef2e429e7
+17:13  node scripts/ci/staging-verify/run.mjs check-pr --service gateway --base 5381e3e146 --head 6ef2e429e7   -> no gateway deploy path, no suite needed (exit 0)
+17:13  node preflight.mjs --repo <wt> --base origin/main --head HEAD --branch kiro/agentic-delivery/deploy-path   -> every check passed (exit 0)
+17:14  node scripts/ci/validate-pr-locally.cjs --title <PR title> --body-file <PR body> --base main   -> APPROVED
+17:15  fetched https://raw.githubusercontent.com/moby/buildkit/v0.34.2/Dockerfile (read-only)  -> rootless stage has git and buildctl-daemonless.sh, USER 1000, entrypoint rootlesskit buildkitd
+17:15  tpl-deploy.yml .build-image: image entrypoint cleared ([""]); deploy-ecs.mjs: fetch once before the ancestry check when the served commit is unknown; CLI validates the service before reading the push file; one CLI test added
+17:16  red on base (scratch copy of origin/main 5381e3e146 + the five test files)               -> 19 tests, 0 pass, 19 fail
+17:16  red against no-behaviour stubs (outside the repo)                                       -> 39 tests, 0 pass, 39 fail
+17:16  green: node --test <5 new test files>                                                    -> 39 tests, 39 pass, 0 fail
+17:16  UNIT full command                                                                        -> 686 tests, 685 pass, 0 fail, 1 skipped
+17:17  cross-lane job-class check (with lanes pipelines and verify-on-gitlab CI files)          -> 9 tests, 9 pass, 0 fail

@@ -252,7 +252,8 @@ test('tpl-deploy defines the six jobs of plan §9: build on the main class, the 
   assert.deepEqual(build.tags, [MAIN]);
   assert.equal(build.id_tokens, undefined, 'the build has no AWS access');
   assert.match(String(build.variables.BUILDKITD_FLAGS), /--oci-worker-no-process-sandbox/);
-  assert.match(String(build.image), /^docker\.io\/moby\/buildkit:v[0-9.]+-rootless@sha256:[0-9a-f]{64}$/, 'rootless BuildKit pinned by digest');
+  assert.match(String(build.image.name), /^docker\.io\/moby\/buildkit:v[0-9.]+-rootless@sha256:[0-9a-f]{64}$/, 'rootless BuildKit pinned by digest');
+  assert.deepEqual(build.image.entrypoint, [''], 'the job runs buildctl-daemonless.sh, not the image entrypoint');
   assert.equal(JSON.stringify(build).includes('privileged'), false);
   for (const n of ['.push-image', '.deploy-staging', '.rollback-staging']) {
     assert.deepEqual(byName[n].tags, [DEPLOY], n);

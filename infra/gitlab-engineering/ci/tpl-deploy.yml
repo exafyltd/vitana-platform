@@ -23,8 +23,12 @@
 # role of the project through AWS_ROLE_ARN and AWS_WEB_IDENTITY_TOKEN_FILE. There is no AWS key on the GitLab side.
 # Shadow mode is DELIVERY_MODE set to anything but "live", or unset.
 
+# The rootless image's own entrypoint starts buildkitd; the job runs buildctl-daemonless.sh instead (it brings
+# its own daemon), so the entrypoint is cleared, as the GitLab BuildKit guide does.
 .build-image:
-  image: docker.io/moby/buildkit:v0.34.2-rootless@sha256:c8252268760e1baba80780d63d738ef9f260fb7c7c0973c78494cb9ddd99eda1
+  image:
+    name: docker.io/moby/buildkit:v0.34.2-rootless@sha256:c8252268760e1baba80780d63d738ef9f260fb7c7c0973c78494cb9ddd99eda1
+    entrypoint: [""]
   tags: [vitana-eng-main]
   interruptible: false
   timeout: 45m

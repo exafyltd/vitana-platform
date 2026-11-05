@@ -4,8 +4,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, readFileSync, existsSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { deploy, rollback, diffTaskDefinitions } from './deploy-ecs.mjs';
+
+const CLI = join(dirname(fileURLToPath(import.meta.url)), 'deploy-ecs.mjs');
 
 const REG = '472838866351.dkr.ecr.eu-central-1.amazonaws.com';
 const OLD = 'a'.repeat(40);
@@ -269,4 +273,16 @@ test('an env override cannot replace a secret or a commit variable', async () =>
     await assert.rejects(deploy(opts(f, { envOverrides: JSON.stringify(ov) }), { run: a.run, fetchText: stamps(OLD), isAncestor: () => false, log: quiet }), (e) => e.exitCode === 2);
     assert.deepEqual(writes(a.calls), []);
   }
+});
+
+test('the CLI refuses a service outside the allowlist (exit 2) and its rollback without a state does nothing', () => {
+  const f = setup();
+  const env = { PATH: dirname(process.execPath), HOME: f.dir };
+  const bad = spawnSync(process.execPath, [CLI, 'deploy', '--service', 'gateway-prod', '--cluster', 'Vitana-ECS-Cluster', '--ecs-service', 'vitana-gateway', '--sha', SHA, '--runs-file', f.runsFile, '--state-file', f.stateFile], { encoding: 'utf8', env, cwd: f.dir });
+  assert.equal(bad.status, 2, bad.stderr);
+  assert.match(bad.stderr, /outside the staging allowlist of plan §3\.10/);
+  assert.equal(existsSync(f.stateFile), false, 'nothing captured');
+  const none = spawnSync(process.execPath, [CLI, 'rollback', '--state-file', join(f.dir, 'absent.json'), '--runs-file', f.runsFile], { encoding: 'utf8', env, cwd: f.dir });
+  assert.equal(none.status, 0, none.stderr);
+  assert.match(none.stdout, /nothing to roll back/);
 });

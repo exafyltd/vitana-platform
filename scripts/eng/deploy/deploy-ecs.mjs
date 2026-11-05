@@ -230,7 +230,7 @@ export async function deploy(o, rawDeps) {
     throw new DeployError(`${o.cluster}/${o.ecsService} is not the staging target of ${o.service} (${CLUSTER}/${t.ecsService}, plan §3.10): refused`, 2);
   }
   if (!isFullSha(o.sha)) throw new DeployError(`--sha must be a full commit SHA, got '${o.sha}'`, 2);
-  const image = imageFromPush(t, o.service, o.push);
+  const image = imageFromPush(t, o.service, o.push || readJson(o.pushFile));
   const mode = o.mode === 'live' ? 'live' : 'shadow';
   const envOverrides = mode === 'live' ? parseEnvOverrides(o.envOverrides) : null;
   const opts = { stampAttempts: o.stampAttempts || 20, stampIntervalMs: o.stampIntervalMs === undefined ? 15000 : o.stampIntervalMs };
@@ -347,13 +347,18 @@ async function main(argv) {
   const runsFile = a['runs-file'] || env.DEPLOY_RUNS_FILE || 'deploy-runs.json';
   const stateFile = a['state-file'] || 'deploy-state.json';
   const repoRoot = a['repo-root'] || env.CI_PROJECT_DIR || process.cwd();
-  const isAncestor = (x, y) => spawnSync('git', ['-C', repoRoot, 'merge-base', '--is-ancestor', x, y], { stdio: 'ignore' }).status === 0;
+  // The served commit may have landed after this job's checkout: fetch once when it is not known yet.
+  const known = (c) => spawnSync('git', ['-C', repoRoot, 'cat-file', '-e', `${c}^{commit}`], { stdio: 'ignore' }).status === 0;
+  const isAncestor = (x, y) => {
+    if (!known(y)) spawnSync('git', ['-C', repoRoot, 'fetch', '--quiet', 'origin'], { stdio: 'ignore' });
+    return spawnSync('git', ['-C', repoRoot, 'merge-base', '--is-ancestor', x, y], { stdio: 'ignore' }).status === 0;
+  };
   if (cmd === 'deploy') {
     return deploy({
       service: a.service || env.DEPLOY_SERVICE,
       cluster: a.cluster || env.DEPLOY_ECS_CLUSTER,
       ecsService: a['ecs-service'] || env.DEPLOY_ECS_SERVICE,
-      push: readJson(a['push-file'] || 'push-image.json'),
+      pushFile: a['push-file'] || 'push-image.json',
       sha: a.sha || env.CI_COMMIT_SHA,
       mode: a.mode || env.DELIVERY_MODE,
       envOverrides: a['env-overrides'] !== undefined ? a['env-overrides'] : env.DEPLOY_ENV_OVERRIDES,

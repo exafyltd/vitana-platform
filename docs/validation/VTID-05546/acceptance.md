@@ -28,7 +28,7 @@ TEST: scripts/eng/deploy/deploy-ecs.test.mjs "shadow mode renders the definition
 
 AC-3 A service, cluster or ECS service outside the plan §3.10 allowlist, or an image outside the service's own ECR
 repository, is refused (exit 2) before any AWS call.
-TEST: scripts/eng/deploy/deploy-ecs.test.mjs "a service outside the plan §3.10 allowlist is refused before any AWS call"; "an image outside the service ECR repository is refused before any AWS call".
+TEST: scripts/eng/deploy/deploy-ecs.test.mjs "a service outside the plan §3.10 allowlist is refused before any AWS call"; "an image outside the service ECR repository is refused before any AWS call"; "the CLI refuses a service outside the allowlist (exit 2) and its rollback without a state does nothing".
 
 AC-4 A deploy that finds a newer descendant already served ends `superseded` (exit 0) and writes nothing to ECS; a
 served commit that is not a descendant does not supersede.
@@ -142,8 +142,8 @@ by lane `cutover`'s shadow run (the `gl-main/` preview, `shadow-<sha12>` images,
 rehearsal's real staging deploys.
 
 Red on base: outputs/red-on-base.txt — on `origin/main` 19/19 fail (the three script test files fail as whole files,
-their modules do not exist); against no-behaviour stubs outside the repo 38/38 fail.
-Green: outputs/green.txt — 38/38 pass. UNIT full command (outputs/unit-all.txt): 685 tests, 684 pass, 0 fail, 1 skipped
+their modules do not exist); against no-behaviour stubs outside the repo 39/39 fail.
+Green: outputs/green.txt — 39/39 pass. UNIT full command (outputs/unit-all.txt): 686 tests, 685 pass, 0 fail, 1 skipped
 (pre-existing). Terraform 1.17.1 `fmt -check` and `validate` with M1's `main.tf`: outputs/terraform.txt (valid).
 Setup dry run: outputs/setup-gitlab-oidc-dry-run.txt (stub `aws`, 0 write calls).
 
