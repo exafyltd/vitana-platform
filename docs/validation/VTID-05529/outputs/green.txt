@@ -1,0 +1,716 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/wt-wsp/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    [VTID-ORBC] Vertex config at startup: PROJECT_ID=lovable-vitana-vers1, LOCATION=us-central1
+
+      at Object.<anonymous> (src/routes/orb-live.ts:2200:9)
+
+  console.log
+    [VTID-01155] Google Cloud TTS client initialized
+
+      at Object.<anonymous> (src/routes/orb-live.ts:2207:11)
+
+  console.log
+    [VTID-01219] Google Auth client initialized for Live API
+
+      at Object.<anonymous> (src/routes/orb-live.ts:2231:11)
+
+  console.log
+    [VTID-01219] ORB Voice startup validation passed — Live API ready
+
+      at src/routes/orb-live.ts:2256:13
+
+  console.log
+    [VTID-INSTANT-FEEDBACK] Chime PCM generated: 9600 samples, 19200 bytes, 25600 b64 chars
+
+      at generateChimePcm (src/routes/orb-live.ts:2459:11)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1013:11)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'NONE' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1132:11)
+
+  console.log
+    [VTID-ANON] Session live-c18467d3-1db4-4fa3-93e1-703e60c7f932: hasJwtIdentity=true, isAnonymous=false, req.identity.user_id=user-vtid-05453, orbIdentity.user_id=user-vtid-05453, bootstrapIdentity=user-vti
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1200:11)
+
+  console.log
+    [VTID-CONTEXT] Client context: city=Cologne, country=DE, time=Friday afternoon, 15:00, device=Desktop, anonymous=false
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1201:11)
+
+  console.log
+    [VTID-01224] Building bootstrap context for SSE session live-c18467d3-1db4-4fa3-93e1-703e60c7f932 user=user-vti...
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1475:13)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="voice.vad.silence_duration_ms" tenant_id="GLOBAL" — using defaultValue
+
+      135 |   if (loggedMisses.has(tag)) return;
+      136 |   loggedMisses.add(tag);
+    > 137 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      138 | }
+      139 |
+      140 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:137:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:149:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:284:12)
+      at getVadSilenceDurationMs (src/orb/upstream/constants.ts:113:30)
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2011:63)
+      at startSession (test/mt-track-s-authz-work-surface.test.ts:371:3)
+      at Object.<anonymous> (test/mt-track-s-authz-work-surface.test.ts:387:25)
+
+  console.log
+    [VTID-01224] Context bootstrap complete for live-c18467d3-1db4-4fa3-93e1-703e60c7f932: 1ms, base chars=12
+
+      at src/orb/live/session/live-session-controller.ts:1623:19
+
+  console.log
+    [LANG-PREF] No client lang — using stored preference: en for user=user-vti...
+
+      at src/orb/live/session/live-session-controller.ts:1629:19
+
+  console.log
+    [BOOTSTRAP-ORB-CRITICAL-PATH] Context ready for live-c18467d3-1db4-4fa3-93e1-703e60c7f932 in 107ms (role=community, chars=12)
+
+      at src/orb/live/session/live-session-controller.ts:1682:17
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="voice.live_api.voice.en" tenant_id="GLOBAL" — using defaultValue
+
+      135 |   if (loggedMisses.has(tag)) return;
+      136 |   loggedMisses.add(tag);
+    > 137 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      138 | }
+      139 |
+      140 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:137:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:149:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:284:12)
+      at getLiveApiVoice (src/orb/live/voice/live-api-voice.ts:77:35)
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2755:36)
+      at startSession (test/mt-track-s-authz-work-surface.test.ts:371:3)
+      at Object.<anonymous> (test/mt-track-s-authz-work-surface.test.ts:387:25)
+
+  console.log
+    [VTID-ORBC] Live session created: live-c18467d3-1db4-4fa3-93e1-703e60c7f932 (user=user-vtid-05453, tenant=tenant-vtid-05453, lang=en, contextDeferred=true)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2774:11)
+
+  console.warn
+    [VTID-01219] ORB Voice access-token prewarm failed (will fetch lazily): Could not load the default credentials. Browse to https://cloud.google.com/docs/authentication/getting-started for more information.
+
+      2350 |     .then(() => console.log(`[VTID-01219] ORB Voice access token prewarmed (auth=${isGoogleAwsSupplierEnabled() ? 'aws_supplier' : 'adc'})`))
+      2351 |     .catch((err: any) =>
+    > 2352 |       console.warn('[VTID-01219] ORB Voice access-token prewarm failed (will fetch lazily):', err?.message));
+           |               ^
+      2353 | }
+      2354 |
+      2355 | // BOOTSTRAP-NOVA-SONIC-VOICE: same latency treatment for Nova — when Nova is
+
+      at src/routes/orb-live.ts:2352:15
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1013:11)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'NONE' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1132:11)
+
+  console.log
+    [VTID-ANON] Session live-c014226f-66b2-453e-94a5-496b92ae7c25: hasJwtIdentity=true, isAnonymous=false, req.identity.user_id=user-vtid-05453, orbIdentity.user_id=user-vtid-05453, bootstrapIdentity=user-vti
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1200:11)
+
+  console.log
+    [VTID-CONTEXT] Client context: city=Cologne, country=DE, time=Friday afternoon, 15:00, device=Desktop, anonymous=false
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1201:11)
+
+  console.log
+    [VTID-01224] Building bootstrap context for SSE session live-c014226f-66b2-453e-94a5-496b92ae7c25 user=user-vti...
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1475:13)
+
+  console.log
+    [VTID-01224] Context bootstrap complete for live-c014226f-66b2-453e-94a5-496b92ae7c25: 1ms, base chars=12
+
+      at src/orb/live/session/live-session-controller.ts:1623:19
+
+  console.log
+    [LANG-PREF] No client lang — using stored preference: en for user=user-vti...
+
+      at src/orb/live/session/live-session-controller.ts:1629:19
+
+  console.log
+    [BOOTSTRAP-ORB-CRITICAL-PATH] Context ready for live-c014226f-66b2-453e-94a5-496b92ae7c25 in 1ms (role=community, chars=12)
+
+      at src/orb/live/session/live-session-controller.ts:1682:17
+
+  console.log
+    [VTID-ORBC] Live session created: live-c014226f-66b2-453e-94a5-496b92ae7c25 (user=user-vtid-05453, tenant=tenant-vtid-05453, lang=en, contextDeferred=true)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2774:11)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1013:11)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'NONE' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1132:11)
+
+  console.log
+    [VTID-ANON] Session live-e9224f7d-f2e9-4e86-8aaa-7ed090ca5520: hasJwtIdentity=true, isAnonymous=false, req.identity.user_id=user-vtid-05453, orbIdentity.user_id=user-vtid-05453, bootstrapIdentity=user-vti
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1200:11)
+
+  console.log
+    [VTID-CONTEXT] Client context: city=Cologne, country=DE, time=Friday afternoon, 15:00, device=Desktop, anonymous=false
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1201:11)
+
+  console.log
+    [VTID-04560] Work-surface session live-e9224f7d-f2e9-4e86-8aaa-7ed090ca5520: surface=backoffice role=backoffice — member brain and wake-brief skipped
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1472:13)
+
+  console.log
+    [VTID-04560] session live-e9224f7d-f2e9-4e86-8aaa-7ed090ca5520: wake-brief skipped on work surface backoffice
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2665:13)
+
+  console.log
+    [VTID-ORBC] Live session created: live-e9224f7d-f2e9-4e86-8aaa-7ed090ca5520 (user=user-vtid-05453, tenant=tenant-vtid-05453, lang=en, contextDeferred=true)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2774:11)
+
+  console.log
+    [VTID-04560] Work-surface context ready for live-e9224f7d-f2e9-4e86-8aaa-7ed090ca5520 in 5ms (surface=backoffice, role=backoffice, chars=103)
+
+      at src/orb/live/session/live-session-controller.ts:1470:15
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1013:11)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'NONE' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1132:11)
+
+  console.log
+    [VTID-ANON] Session live-1d744eda-c413-4547-a89d-73561ad91589: hasJwtIdentity=true, isAnonymous=false, req.identity.user_id=user-vtid-05453, orbIdentity.user_id=user-vtid-05453, bootstrapIdentity=user-vti
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1200:11)
+
+  console.log
+    [VTID-CONTEXT] Client context: city=Cologne, country=DE, time=Friday afternoon, 15:00, device=Desktop, anonymous=false
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1201:11)
+
+  console.log
+    [VTID-01224] Building bootstrap context for SSE session live-1d744eda-c413-4547-a89d-73561ad91589 user=user-vti...
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1475:13)
+
+  console.log
+    [VTID-01224] Context bootstrap complete for live-1d744eda-c413-4547-a89d-73561ad91589: 1ms, base chars=12
+
+      at src/orb/live/session/live-session-controller.ts:1623:19
+
+  console.log
+    [LANG-PREF] No client lang — using stored preference: en for user=user-vti...
+
+      at src/orb/live/session/live-session-controller.ts:1629:19
+
+  console.log
+    [BOOTSTRAP-ORB-CRITICAL-PATH] Context ready for live-1d744eda-c413-4547-a89d-73561ad91589 in 0ms (role=community, chars=12)
+
+      at src/orb/live/session/live-session-controller.ts:1682:17
+
+  console.log
+    [VTID-ORBC] Live session created: live-1d744eda-c413-4547-a89d-73561ad91589 (user=user-vtid-05453, tenant=tenant-vtid-05453, lang=en, contextDeferred=true)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2774:11)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1013:11)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'NONE' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1132:11)
+
+  console.log
+    [VTID-ANON] Session live-e2965ef3-49f0-40e6-b59a-a904f0992dcc: hasJwtIdentity=true, isAnonymous=false, req.identity.user_id=user-vtid-05453, orbIdentity.user_id=user-vtid-05453, bootstrapIdentity=user-vti
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1200:11)
+
+  console.log
+    [VTID-CONTEXT] Client context: city=Cologne, country=DE, time=Friday afternoon, 15:00, device=Desktop, anonymous=false
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1201:11)
+
+  console.log
+    [VTID-01224] Building bootstrap context for SSE session live-e2965ef3-49f0-40e6-b59a-a904f0992dcc user=user-vti...
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1475:13)
+
+  console.log
+    [VTID-01224] Context bootstrap complete for live-e2965ef3-49f0-40e6-b59a-a904f0992dcc: 1ms, base chars=12
+
+      at src/orb/live/session/live-session-controller.ts:1623:19
+
+  console.log
+    [LANG-PREF] No client lang — using stored preference: en for user=user-vti...
+
+      at src/orb/live/session/live-session-controller.ts:1629:19
+
+  console.log
+    [BOOTSTRAP-ORB-CRITICAL-PATH] Context ready for live-e2965ef3-49f0-40e6-b59a-a904f0992dcc in 0ms (role=community, chars=12)
+
+      at src/orb/live/session/live-session-controller.ts:1682:17
+
+  console.log
+    [VTID-ORBC] Live session created: live-e2965ef3-49f0-40e6-b59a-a904f0992dcc (user=user-vtid-05453, tenant=tenant-vtid-05453, lang=en, contextDeferred=true)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2774:11)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1013:11)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'NONE' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1132:11)
+
+  console.log
+    [VTID-ANON] Session live-2ee88051-8ff6-4fc1-931e-bb1dfaeec6fa: hasJwtIdentity=true, isAnonymous=false, req.identity.user_id=user-vtid-05453, orbIdentity.user_id=user-vtid-05453, bootstrapIdentity=user-vti
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1200:11)
+
+  console.log
+    [VTID-CONTEXT] Client context: city=Cologne, country=DE, time=Friday afternoon, 15:00, device=Desktop, anonymous=false
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1201:11)
+
+  console.log
+    [VTID-04560] Work-surface session live-2ee88051-8ff6-4fc1-931e-bb1dfaeec6fa: surface=command-hub role=developer — member brain and wake-brief skipped
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1472:13)
+
+  console.log
+    [VTID-04560] session live-2ee88051-8ff6-4fc1-931e-bb1dfaeec6fa: wake-brief skipped on work surface command-hub
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2665:13)
+
+  console.log
+    [VTID-ORBC] Live session created: live-2ee88051-8ff6-4fc1-931e-bb1dfaeec6fa (user=user-vtid-05453, tenant=tenant-vtid-05453, lang=en, contextDeferred=true)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2774:11)
+
+  console.log
+    [VTID-04560] Work-surface context ready for live-2ee88051-8ff6-4fc1-931e-bb1dfaeec6fa in 9ms (surface=command-hub, role=developer, chars=4050)
+
+      at src/orb/live/session/live-session-controller.ts:1470:15
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1013:11)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'NONE' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1132:11)
+
+  console.log
+    [VTID-ANON] Session live-070446d0-6bc3-4430-b4f5-46773b278c14: hasJwtIdentity=false, isAnonymous=true, req.identity.user_id=none, orbIdentity.user_id=none, bootstrapIdentity=null
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1200:11)
+
+  console.log
+    [VTID-CONTEXT] Client context: city=Cologne, country=DE, time=Friday afternoon, 15:00, device=Desktop, anonymous=true
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1201:11)
+
+  console.log
+    [LANG-PREF] Anonymous session using Accept-Language: en
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1291:15)
+
+  console.log
+    [VTID-ANON] Anonymous session live-070446d0-6bc3-4430-b4f5-46773b278c14 — skipping memory, tools, lastSessionInfo. Context: city=Cologne
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1369:13)
+
+  console.log
+    [VTID-ORBC] Live session created: live-070446d0-6bc3-4430-b4f5-46773b278c14 (user=anonymous, tenant=none, lang=en, contextDeferred=false)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2774:11)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1013:11)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'NONE' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1132:11)
+
+  console.log
+    [VTID-ANON] Session live-a353f72f-f40b-473d-8968-8e6d95ef59a7: hasJwtIdentity=true, isAnonymous=false, req.identity.user_id=user-vtid-05453, orbIdentity.user_id=user-vtid-05453, bootstrapIdentity=user-vti
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1200:11)
+
+  console.log
+    [VTID-CONTEXT] Client context: city=Cologne, country=DE, time=Friday afternoon, 15:00, device=Desktop, anonymous=false
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1201:11)
+
+  console.log
+    [VTID-04560] Work-surface session live-a353f72f-f40b-473d-8968-8e6d95ef59a7: surface=commerce role=commerce — member brain and wake-brief skipped
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1472:13)
+
+  console.log
+    [VTID-04560] session live-a353f72f-f40b-473d-8968-8e6d95ef59a7: wake-brief skipped on work surface commerce
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2665:13)
+
+  console.log
+    [VTID-ORBC] Live session created: live-a353f72f-f40b-473d-8968-8e6d95ef59a7 (user=user-vtid-05453, tenant=tenant-vtid-05453, lang=en, contextDeferred=true)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2774:11)
+
+  console.log
+    [VTID-04560] Work-surface context ready for live-a353f72f-f40b-473d-8968-8e6d95ef59a7 in 284ms (surface=commerce, role=commerce, chars=186)
+
+      at src/orb/live/session/live-session-controller.ts:1470:15
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1013:11)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'NONE' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1132:11)
+
+  console.log
+    [VTID-ANON] Session live-2c598045-3e30-407b-9b47-524d65bf7b68: hasJwtIdentity=true, isAnonymous=false, req.identity.user_id=user-vtid-05453, orbIdentity.user_id=user-vtid-05453, bootstrapIdentity=user-vti
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1200:11)
+
+  console.log
+    [VTID-CONTEXT] Client context: city=Cologne, country=DE, time=Friday afternoon, 15:00, device=Desktop, anonymous=false
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1201:11)
+
+  console.log
+    [VTID-01224] Building bootstrap context for SSE session live-2c598045-3e30-407b-9b47-524d65bf7b68 user=user-vti...
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1475:13)
+
+  console.log
+    [VTID-01224] Context bootstrap complete for live-2c598045-3e30-407b-9b47-524d65bf7b68: 1ms, base chars=12
+
+      at src/orb/live/session/live-session-controller.ts:1623:19
+
+  console.log
+    [LANG-PREF] No client lang — using stored preference: en for user=user-vti...
+
+      at src/orb/live/session/live-session-controller.ts:1629:19
+
+  console.log
+    [BOOTSTRAP-ORB-CRITICAL-PATH] Context ready for live-2c598045-3e30-407b-9b47-524d65bf7b68 in 1ms (role=community, chars=12)
+
+      at src/orb/live/session/live-session-controller.ts:1682:17
+
+  console.log
+    [VTID-ORBC] Live session created: live-2c598045-3e30-407b-9b47-524d65bf7b68 (user=user-vtid-05453, tenant=tenant-vtid-05453, lang=en, contextDeferred=true)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2774:11)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1013:11)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'NONE' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1132:11)
+
+  console.log
+    [VTID-ANON] Session live-86e64f5c-7023-455a-98a1-05b569018150: hasJwtIdentity=true, isAnonymous=false, req.identity.user_id=user-vtid-05453, orbIdentity.user_id=user-vtid-05453, bootstrapIdentity=user-vti
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1200:11)
+
+  console.log
+    [VTID-CONTEXT] Client context: city=Cologne, country=DE, time=Friday afternoon, 15:00, device=Desktop, anonymous=false
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1201:11)
+
+  console.log
+    [VTID-01224] Building bootstrap context for SSE session live-86e64f5c-7023-455a-98a1-05b569018150 user=user-vti...
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1475:13)
+
+  console.log
+    [VTID-01224] Context bootstrap complete for live-86e64f5c-7023-455a-98a1-05b569018150: 1ms, base chars=12
+
+      at src/orb/live/session/live-session-controller.ts:1623:19
+
+  console.log
+    [LANG-PREF] No client lang — using stored preference: en for user=user-vti...
+
+      at src/orb/live/session/live-session-controller.ts:1629:19
+
+  console.log
+    [BOOTSTRAP-ORB-CRITICAL-PATH] Context ready for live-86e64f5c-7023-455a-98a1-05b569018150 in 1ms (role=community, chars=12)
+
+      at src/orb/live/session/live-session-controller.ts:1682:17
+
+  console.log
+    [VTID-ORBC] Live session created: live-86e64f5c-7023-455a-98a1-05b569018150 (user=user-vtid-05453, tenant=tenant-vtid-05453, lang=en, contextDeferred=true)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2774:11)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1013:11)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'NONE' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1132:11)
+
+  console.log
+    [VTID-ANON] Session live-4c9a159a-e653-4db5-a2bf-bf2ae7137990: hasJwtIdentity=true, isAnonymous=false, req.identity.user_id=user-vtid-05453, orbIdentity.user_id=user-vtid-05453, bootstrapIdentity=user-vti
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1200:11)
+
+  console.log
+    [VTID-CONTEXT] Client context: city=Cologne, country=DE, time=Friday afternoon, 15:00, device=Desktop, anonymous=false
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1201:11)
+
+  console.log
+    [VTID-04560] Work-surface session live-4c9a159a-e653-4db5-a2bf-bf2ae7137990: surface=command-hub role=developer — member brain and wake-brief skipped
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1472:13)
+
+  console.log
+    [VTID-04560] session live-4c9a159a-e653-4db5-a2bf-bf2ae7137990: wake-brief skipped on work surface command-hub
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2665:13)
+
+  console.log
+    [VTID-ORBC] Live session created: live-4c9a159a-e653-4db5-a2bf-bf2ae7137990 (user=user-vtid-05453, tenant=tenant-vtid-05453, lang=en, contextDeferred=true)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2774:11)
+
+  console.log
+    [VTID-04560] Work-surface context ready for live-4c9a159a-e653-4db5-a2bf-bf2ae7137990 in 1ms (surface=command-hub, role=developer, chars=4050)
+
+      at src/orb/live/session/live-session-controller.ts:1470:15
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1013:11)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'NONE' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1132:11)
+
+  console.log
+    [VTID-ANON] Session live-710fc9b3-ffff-45ef-902c-9a966a286962: hasJwtIdentity=true, isAnonymous=false, req.identity.user_id=user-vtid-05453, orbIdentity.user_id=user-vtid-05453, bootstrapIdentity=user-vti
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1200:11)
+
+  console.log
+    [VTID-CONTEXT] Client context: city=Cologne, country=DE, time=Friday afternoon, 15:00, device=Desktop, anonymous=false
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1201:11)
+
+  console.log
+    [VTID-01224] Building bootstrap context for SSE session live-710fc9b3-ffff-45ef-902c-9a966a286962 user=user-vti...
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1475:13)
+
+  console.log
+    [VTID-04560] Member-surface role developer served as community (narrowed)
+
+      at src/orb/live/session/live-session-controller.ts:1591:19
+
+  console.log
+    [VTID-01224] Context bootstrap complete for live-710fc9b3-ffff-45ef-902c-9a966a286962: 1ms, base chars=12
+
+      at src/orb/live/session/live-session-controller.ts:1623:19
+
+  console.log
+    [LANG-PREF] No client lang — using stored preference: en for user=user-vti...
+
+      at src/orb/live/session/live-session-controller.ts:1629:19
+
+  console.log
+    [BOOTSTRAP-ORB-CRITICAL-PATH] Context ready for live-710fc9b3-ffff-45ef-902c-9a966a286962 in 1ms (role=community, chars=12)
+
+      at src/orb/live/session/live-session-controller.ts:1682:17
+
+  console.log
+    [VTID-ORBC] Live session created: live-710fc9b3-ffff-45ef-902c-9a966a286962 (user=user-vtid-05453, tenant=tenant-vtid-05453, lang=en, contextDeferred=true)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2774:11)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=user-vtid-05453
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=user-vtid-05453
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=user-vtid-05453
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=user-vtid-05453
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=user-vtid-05453
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+PASS test/mt-track-s-authz-work-surface.test.ts (10.556 s)
+  each screen mirrors its own gate
+    ✓ the Command Hub role set is the one routes/command-hub.ts admits (4 ms)
+  verifyWorkSurfaceProfile — command-hub
+    ✓ kept for a caller with the permitted role developer, resolution "permitted" (1 ms)
+    ✓ kept for a caller with the permitted role admin, resolution "permitted"
+    ✓ kept for a caller with the permitted role infra, resolution "permitted" (1 ms)
+    ✓ kept for a caller with the permitted role staff, resolution "permitted"
+    ✓ narrowed to the member surface for community alone (1 ms)
+    ✓ narrowed to the member surface for patient alone
+    ✓ narrowed to the member surface for professional alone
+    ✓ narrowed to the member surface for backoffice alone
+    ✓ fails closed when the permitted set is unreadable (null)
+    ✓ an empty permitted set is refused
+    ✓ the exafy_admin claim is not a role: permitted ["exafy_admin"] is refused for a non-exafy caller
+    ✓ exafy_admin keeps the resolver value, whatever the permitted set says
+    ✓ a route-derived surface (no declaration) is verified the same way
+  verifyWorkSurfaceProfile — admin
+    ✓ kept for a caller with the permitted role admin, resolution "permitted"
+    ✓ kept for a caller with the permitted role developer, resolution "permitted"
+    ✓ kept for a caller with the permitted role infra, resolution "permitted"
+    ✓ narrowed to the member surface for community alone
+    ✓ narrowed to the member surface for patient alone
+    ✓ narrowed to the member surface for professional alone (1 ms)
+    ✓ narrowed to the member surface for staff alone
+    ✓ narrowed to the member surface for backoffice alone
+    ✓ fails closed when the permitted set is unreadable (null) (1 ms)
+    ✓ an empty permitted set is refused
+    ✓ the exafy_admin claim is not a role: permitted ["exafy_admin"] is refused for a non-exafy caller (5 ms)
+    ✓ exafy_admin keeps the resolver value, whatever the permitted set says (1 ms)
+    ✓ a route-derived surface (no declaration) is verified the same way
+  verifyWorkSurfaceProfile — backoffice
+    ✓ kept for a caller with the permitted role backoffice, resolution "permitted"
+    ✓ kept for a caller with the permitted role admin, resolution "permitted" (1 ms)
+    ✓ kept for a caller with the permitted role developer, resolution "permitted"
+    ✓ kept for a caller with the permitted role infra, resolution "permitted"
+    ✓ narrowed to the member surface for community alone
+    ✓ narrowed to the member surface for patient alone
+    ✓ narrowed to the member surface for professional alone (1 ms)
+    ✓ narrowed to the member surface for staff alone
+    ✓ fails closed when the permitted set is unreadable (null)
+    ✓ an empty permitted set is refused
+    ✓ the exafy_admin claim is not a role: permitted ["exafy_admin"] is refused for a non-exafy caller
+    ✓ exafy_admin keeps the resolver value, whatever the permitted set says
+    ✓ a route-derived surface (no declaration) is verified the same way
+  verifyWorkSurfaceProfile — commerce, member and anonymous are unchanged
+    ✓ commerce keeps its surface and role for every permitted input, including unreadable (1 ms)
+    ✓ the member surface and an anonymous session pass through untouched
+    ✓ needsWorkSurfacePermit: only a signed-in, non-exafy caller on a work surface other than commerce
+    ✓ a narrowed profile is served the member role from the stored role, never the work role
+  session start — a declared work surface is served only to a permitted caller
+    ✓ command-hub declared by a caller without a permitted role: member surface, no admin briefing, warning event (153 ms)
+    ✓ admin declared by a caller without a permitted role: member surface, no admin briefing (5 ms)
+    ✓ a permitted caller keeps the work surface, resolution "permitted", with the admin context (8 ms)
+    ✓ an unreadable permitted set (roles null) is served the member surface (3 ms)
+    ✓ a permitted-roles read that rejects is served the member surface and the session still starts (4 ms)
+    ✓ exafy_admin keeps the declared surface and never reads the permitted set (12 ms)
+    ✓ an anonymous session is unchanged and reads nothing (3 ms)
+    ✓ commerce is unchanged: served without a permitted-roles read (287 ms)
+    ✓ a refused caller on a Command Hub route is not lifted to the developer brain by the route (5 ms)
+    ✓ a refused caller cannot bind an operator thread; a permitted developer still can (7 ms)
+    ✓ a refused caller whose stored role is developer is served the member role, not the work role (3 ms)
+  LiveKit mint — resolveLiveKitServedProfile
+    ✓ a declared admin surface without a permitted role is served the member surface
+    ✓ a permitted caller keeps the admin surface with role admin (1 ms)
+    ✓ an unreadable permitted set fails closed to the member surface
+    ✓ a rejected read fails closed to the member surface
+    ✓ exafy_admin, anonymous and commerce never read the permitted set (1 ms)
+  LiveKit mint — POST /orb/livekit/token
+    ✓ a non-exafy caller without a permitted admin role is minted a member session (29 ms)
+    ✓ a non-exafy caller with a permitted admin role is minted the admin session (6 ms)
+    ✓ an unreadable permitted set mints the member session (4 ms)
+    ✓ exafy_admin keeps the declared admin surface (4 ms)
+    ✓ commerce is minted as before (4 ms)
+  text path — servedTurnRole
+    ✓ user and community pass through as before (1 ms)
+    ✓ a privileged body role the caller does not hold is served as user
+    ✓ the role the caller holds (case-insensitive) is served; exafy_admin is served as asked
+    ✓ a denied developer role yields the user tool set, not the developer one (1 ms)
+  source contracts — the three routes call the verifier
+    ✓ the session start verifies the declared profile before any consumer reads it (1 ms)
+    ✓ the LiveKit mint serves the verified profile (1 ms)
+    ✓ the LiveKit context bootstrap builds both instructions for the verified surface (1 ms)
+    ✓ the text turn and stream serve the clamped role and resolve the effective role
+    ✓ the developer_assistant gate is unchanged (1 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       74 passed, 74 total
+Snapshots:   0 total
+Time:        10.761 s
+Ran all test suites matching /test\/mt-track-s-authz-work-surface.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
