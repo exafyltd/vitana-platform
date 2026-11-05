@@ -7,9 +7,9 @@ next_actor: kiro
 state: approved
 spar_refs:
   - exafyltd/vitana-v1: 7829ef2f2ef12364862961d339161229c286d6f0
-updated: 2026-11-05T21:35Z
+updated: 2026-11-05T21:34Z
 sparring_record: .kiro/specs/agentic-delivery/sparring/verdict.md
-vtids: [VTID-05545, VTID-05546, VTID-05547, VTID-05548, VTID-05549, VTID-05550, VTID-05551, VTID-05552, VTID-05554]
+vtids: [VTID-05545, VTID-05546, VTID-05547, VTID-05548, VTID-05549, VTID-05550, VTID-05551, VTID-05552, VTID-05554, VTID-05562, VTID-05563, VTID-05564]
 ---
 # Handoff — agentic-delivery
 Milestone 3 of program `engineering-platform`: the hard cutover of delivery for both repositories to our own GitLab,
@@ -126,3 +126,6 @@ lane builds; after cutover). Landing order the driver applies: merge-bot and git
 fleet, settings, scm-webhook (its own diff carries a workflow file, so later updates of the others would need new reviews),
 then verify-on-gitlab and pipelines (after settings), deploy-path (after fleet), merge-queue (after merge-bot and settings),
 nav-paths before gateway-delivery, cutover, cut-settings.
+
+### 2026-11-05T21:34Z · ci-plan-spar · approved (late lane VTID)
+Converged; approved by policy converged-auto-v1. 3 lane(s) got a VTID and are handed to Kiro.

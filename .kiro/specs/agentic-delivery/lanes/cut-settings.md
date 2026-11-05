@@ -13,7 +13,8 @@ paths:
   - infra/gitlab-engineering/settings/gitlab-settings.json
   - scripts/eng/gitlab-settings-delivery.test.mjs
   - docs/validation/**
-updated: 2026-11-05T21:35Z
+updated: 2026-11-05T21:34Z
+vtid: VTID-05562
 ---
 # Lane `cut-settings`: the GitLab settings the cut needs that no lane builds yet
 Tasks in `tasks.md` (group `<!-- lane: cut-settings -->`). VTID from PLAN-SPAR (a late lane of the converged plan);
@@ -31,3 +32,6 @@ job-token allowlist between the two projects, the artifact size limit for image 
 ### 2026-11-05T21:35Z · kiro-exafy-202611041929-802c · created → ready
 Lane added through `_plan` by the plan driver. Next: PLAN-SPAR allocates its VTID; a builder of seat `exafy` that is not
 the driver may prepare it on a scratch base of the settings and cutover trees, and pushes after `cutover` lands.
+
+### 2026-11-05T21:34Z · ci-plan-spar · ready (VTID allocated)
+VTID-05562 allocated after policy approval (converged-auto-v1).

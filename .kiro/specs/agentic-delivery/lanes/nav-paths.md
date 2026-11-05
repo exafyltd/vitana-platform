@@ -11,7 +11,8 @@ lane_admin: true
 repos: [exafyltd/vitana-platform]
 paths:
   - .kiro/specs/agentic-delivery/lanes/gateway-delivery.md
-updated: 2026-11-05T21:35Z
+updated: 2026-11-05T21:34Z
+vtid: VTID-05563
 ---
 # Lane `nav-paths`: lane gateway-delivery may change the four voice-navigation files its Delivery screen needs
 Tasks in `tasks.md` (group `<!-- lane: nav-paths -->`). VTID from PLAN-SPAR (a late lane of the converged plan); never
@@ -33,3 +34,6 @@ else in the target. Evidence under `docs/validation/<this VTID>/`.
 Lane added through `_plan` by the plan driver (plan PR `plan(agentic-delivery): late lanes nav-paths, sv-cwd, cut-settings`,
 branch `kiro/agentic-delivery/plan-3`), from the sync of gateway-delivery's builder (2026-11-05 19:45Z). Next: PLAN-SPAR
 allocates its VTID; a builder of seat `exafy` that is not the driver claims it; the driver requests the reviewer agent.
+
+### 2026-11-05T21:34Z · ci-plan-spar · ready (VTID allocated)
+VTID-05563 allocated after policy approval (converged-auto-v1).

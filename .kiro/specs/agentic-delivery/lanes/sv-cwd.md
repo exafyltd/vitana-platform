@@ -12,7 +12,8 @@ paths:
   - docs/validation/VTID-05515/staging-tests.json
   - docs/validation/VTID-05516/staging-tests.json
   - docs/validation/VTID-05518/staging-tests.json
-updated: 2026-11-05T21:35Z
+updated: 2026-11-05T21:34Z
+vtid: VTID-05564
 ---
 # Lane `sv-cwd`: fix forward of the gateway STAGING-VERIFY (three manifests run Jest from the wrong folder)
 Tasks in `tasks.md` (group `<!-- lane: sv-cwd -->`). VTID from PLAN-SPAR (a late lane of the converged plan); never by
@@ -31,3 +32,6 @@ STAGING-VERIFY (driver.md step 7, fix forward through `_plan`).
 Lane added through `_plan` by the plan driver as the fix forward of STAGING-VERIFY run 42078889519 (merge commit
 `51c2bead07`, lane prerequisites). Next: PLAN-SPAR allocates its VTID; a builder of seat `exafy` that is not the driver
 claims it; the driver requests the reviewer agent. It lands before lane `scm-webhook` of eng-gitlab-m2 deploys the gateway.
+
+### 2026-11-05T21:34Z · ci-plan-spar · ready (VTID allocated)
+VTID-05564 allocated after policy approval (converged-auto-v1).
