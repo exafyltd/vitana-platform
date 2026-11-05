@@ -48,6 +48,7 @@ specs:
   - vitana-platform:kiro-web-reliability
   - vitana-platform:plan-spar-stuck-session
   - vitana-platform:session-title-stable
+  - vitana-platform:live-room-edit-cohost
   - vitana-platform:pipeline-lane-state-efficiency
   - vitana-platform:operating-workflow
   - vitana-platform:pm-ci-load
@@ -66,6 +67,8 @@ specs:
   - vitana-platform:sparring-floor-retry
   - vitana-platform:ci-dockerhub-mirror
   - vitana-platform:review-survives-main-merge
+  - vitana-platform:operator-chat-service-token
+  - vitana-platform:memory-legacy-read-retire-r2
 docs:
   - vitana-platform:.kiro/specs/pm-agent/plan-sparring.md
   - vitana-platform:.kiro/specs/claude-sessions-handover/handoff.md

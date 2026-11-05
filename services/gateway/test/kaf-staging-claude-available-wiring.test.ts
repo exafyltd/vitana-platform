@@ -48,6 +48,11 @@ describe('VTID-05282 staging task definition carries CLAUDE_AVAILABLE', () => {
     expect(step).toContain(`{name:"PM_MODE", value:"live"}, ${upsert},`);
   });
 
+  test('VTID-05414: a staging deploy keeps the PM paused (PM_AGENT_ENABLED false)', () => {
+    expect(step).toContain('{name:"PM_AGENT_ENABLED", value:"false"},');
+    expect(stage).not.toContain('{name:"PM_AGENT_ENABLED", value:"true"}');
+  });
+
   test('production never gets CLAUDE_AVAILABLE', () => {
     expect(prod).not.toContain('CLAUDE_AVAILABLE');
   });

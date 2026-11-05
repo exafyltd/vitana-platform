@@ -1,0 +1,18 @@
+# $ terraform version
+Terraform v1.17.1
+on linux_amd64
+
+# $ cd infra/gitlab-engineering/terraform && terraform fmt -check -diff -recursive
+exit: 0
+
+# $ terraform init -backend=false -input=false   (providers only; the S3 backend is supplied by setup.sh)
+- Finding hashicorp/aws versions matching ">= 5.60.0, < 6.0.0"...
+- Installing hashicorp/aws v5.100.0...
+- Installed hashicorp/aws v5.100.0 (signed by HashiCorp)
+Terraform has been successfully initialized!
+exit: 0
+
+# $ terraform validate
+Success! The configuration is valid.
+
+exit: 0

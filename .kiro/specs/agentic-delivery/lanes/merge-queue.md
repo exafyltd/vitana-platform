@@ -4,7 +4,7 @@ state: ready
 next_actor: kiro
 depends_on: []
 executor: kiro
-seat: exafyltd
+seat: exafy
 reviewer_seat: agent:vitana-lane-reviewer
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 repos: [exafyltd/vitana-platform]
