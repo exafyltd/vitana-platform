@@ -62,15 +62,23 @@ The reviewer-agent accept of 2026-11-04T23:44Z (agent:vitana-lane-reviewer, clau
 The PR head at merge, 0cb5742749234268b37d5950a2ad31babf7d9252, adds only that review entry on top of the accepted head.
 PR https://github.com/exafyltd/vitana-platform/pull/4679 was merged by DraganOffice at 2026-11-05T00:33:03Z; merge: 8f3934c8bed0cad0ff9f779b94119267fd6c907b.
 This session did not merge it; the record is written from the PR as GitHub reports it.
+authority: none recorded in git. The lane said `in-review` when #4679 was merged, no session or the Project Manager recorded a §7b merge, and no owner
+instruction naming the plan is in this lane's log or the plan's handoff. GitHub reports the merge as made by the user account DraganOffice (a human account,
+created 2026-11-02); what that merge rests on is for the owner to say.
+Checks on the merged head 0cb5742749234268b37d5950a2ad31babf7d9252 (REST read of `GET repos/exafyltd/vitana-platform/commits/<sha>/check-runs`, 2026-11-05T11:00Z):
+11 of 11 completed/success, the last at 00:29:10Z, before the merge at 00:33:03Z: change-suite, check-phase-2b-docs, Collab handoff, Enforce Phase 2B Naming
+Standards, Lane scope, pr-gate, scan, unit (UNIT on Node 20), validate, validate-pr, wake. A twelfth run, `close`, was cancelled at 00:37:43Z, after the merge; it
+is the post-merge job, not a check of the head. None was red or missing, so the lane is marked done and not fixed forward.
 
 ### 2026-11-05T08:35Z · kiro-exafy-202611021438-cff7 · verified → done
 Lane complete; merge: 8f3934c8bed0cad0ff9f779b94119267fd6c907b. It deploys nothing, so no staging proof applies (acceptance.md of VTID-05537).
 The reviewer's non-blocking findings were not fixed before the merge. They stay open as follows:
 - `docs/validation/VTID-05537/outputs/mutate-gitlab-client.sh:173` has an unescaped `${...}` in its perl replacement. The mutation "error path keeps the query" ran a shell command and made an empty-URL mutant, so its "caught" (mutation-run.txt:115-116) is not the named change; the `e.path` assertion still pins the property. Open: fix with the next change to that harness, then the counts in acceptance.md and commands.log change.
-- `scripts/eng/gitlab-api.mjs:245, 285, 290, 301, 322` put the caller's path unredacted into errors and log events, so a path that held the token would leak. The plan's lanes pass fixed API paths and never a token in a path. Open: clean the path, or refuse a path that contains the token, in the first change that touches that file. The remark "no URL escaping" (lines 18, 205) is inexact: `=` and `~` become `%3D` and `%7E`.
+- `scripts/eng/gitlab-api.mjs:245, 285, 290, 301, 322` put the caller's path unredacted into errors and log events, and so do 235, 279 and 317 and the paths in `decode`, `paginate` and `badRequest`: a path that held the token would leak. That the plan's lanes pass only fixed API paths is the builder's reading and no test pins it. Open: the fix belongs in `checkPath` or `prepare` (refuse a path that contains the token, or clean it once there), in the first change that touches that file. The remark "no URL escaping" (lines 18, 205) is inexact: `=` and `~` become `%3D` and `%7E`.
 - `outputs/red-on-base.txt` is a missing-module red (`ERR_MODULE_NOT_FOUND`). Accepted as the red of a new module; `acceptance.md` is wrong that a per-test red is unavailable (a stub module would give one).
 - The PR body of #4679 still shows the first counts (64 tests, 82 mutations, 575 script tests); the files in the PR carry the final ones (102 tests, 190 changes, 613 tests).
-Carried to lane merge-bot (VTID-05538): call `PUT …/merge` with `retries: 0` and re-read the merge request after an error before deciding the merge failed; the builder reads it in this log and in acceptance.md of VTID-05537.
+- The base differs between `outputs/red-on-base.txt:1` (`bf5e0c12d0`) and `commands.log:2` (`ab0f5ad0b1`) of VTID-05537; both are ancestors of the merged head and the red is the same (the module does not exist). The Gate 2 decisions of that lane are in `acceptance.md:33-34`.
+Carried to lane merge-bot (VTID-05538): call `PUT …/merge` with `retries: 0` and re-read the merge request after an error before deciding the merge failed. The reviewer asked for it in `merge-bot.md` or the lane's acceptance before the lane is built; the lane is built (PR "VTID-05538 (eng-gitlab-m2/merge-bot)") and meets it in code (`landOne`), in tests ("a merge call that fails is not repeated by the client…", "a merge call that reports an error but was processed is recognised by the re-read") and in its acceptance and log.
 Lane record only: state in-review → done, `updated`, two appended log entries.
 
 ### 2026-11-05T10:08Z · agent-vitana-lane-reviewer-202611050957-f2c8 · review
