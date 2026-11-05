@@ -14,14 +14,46 @@
       "landing": false,
       "rehearsal": false,
       "required_jobs": [],
-      "ci_file": "platform.gitlab-ci.yml"
+      "ci_file": "platform.gitlab-ci.yml",
+      "cutover": {
+        "github": "exafyltd/vitana-platform",
+        "ci_file": "platform-delivery.gitlab-ci.yml",
+        "webhook_url": "https://preview-aws-gateway.vitanaland.com/api/v1/internal/gitlab/webhook",
+        "mirror_user": "vitana-mirror",
+        "shadow": { "webhook_events": ["merge_request", "pipeline"], "mirror_user_role": "maintainer" },
+        "live": {
+          "landing": true,
+          "required_jobs": ["lane-scope", "change-suite", "gate"],
+          "webhook_events": ["merge_request", "pipeline", "push", "tag_push"],
+          "mirror_user_role": "reporter",
+          "push_mirror": { "token_file": "/etc/vitana/github-push-mirror-token", "only_protected_branches": true, "keep_divergent_refs": true },
+          "protected_branches": [{ "name": "assist/*", "push": 40, "merge": 40 }],
+          "allow_merge_on_skipped_pipeline": true
+        }
+      }
     },
     "vitana-v1": {
       "profile": "mirror",
       "landing": false,
       "rehearsal": false,
       "required_jobs": [],
-      "ci_file": "v1.gitlab-ci.yml"
+      "ci_file": "v1.gitlab-ci.yml",
+      "cutover": {
+        "github": "exafyltd/vitana-v1",
+        "ci_file": "v1-delivery.gitlab-ci.yml",
+        "webhook_url": "https://preview-aws-gateway.vitanaland.com/api/v1/internal/gitlab/webhook",
+        "mirror_user": "vitana-mirror",
+        "shadow": { "webhook_events": ["merge_request", "pipeline"], "mirror_user_role": "maintainer" },
+        "live": {
+          "landing": true,
+          "required_jobs": ["lane-scope", "change-suite", "gate"],
+          "webhook_events": ["merge_request", "pipeline", "push", "tag_push"],
+          "mirror_user_role": "reporter",
+          "push_mirror": { "token_file": "/etc/vitana/github-push-mirror-token", "only_protected_branches": true, "keep_divergent_refs": true },
+          "protected_branches": [{ "name": "assist/*", "push": 40, "merge": 40 }],
+          "allow_merge_on_skipped_pipeline": true
+        }
+      }
     },
     "rehearsal": {
       "profile": "native",
@@ -30,6 +62,19 @@
       "required_jobs": ["unit"],
       "ci_file": "rehearsal.gitlab-ci.yml"
     }
+  },
+  "cutover": {
+    "accounts": [
+      {
+        "username": "bot-bridge",
+        "name": "GitHub bridge",
+        "projects": ["vitana-platform", "vitana-v1"],
+        "shadow_role": "reporter",
+        "live_role": "developer",
+        "scopes": ["api", "write_repository"],
+        "token_file": "/etc/vitana/gitlab-bridge-token"
+      }
+    ]
   },
   "accounts": [
     {
