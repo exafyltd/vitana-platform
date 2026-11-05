@@ -70,6 +70,9 @@ m('CRLF in the description is kept', LAND, ".replace(/\\r\\n/g, '\\n').trim();\n
 m('any author counts as the reviewer', LAND, 'if (ev?.author_username !== ctx.reviewerUser) continue;', 'if (false) continue;');
 m('any push of the reviewer proves the accept', LAND, 'if (pushRange(ctx, repo, pd).includes(sha)) return true;', 'if (pushRange(ctx, repo, pd).length > 0) return true;');
 m('the push events are never read', LAND, 'for (let page = 1; page <= ctx.eventPages; page++) {', 'for (let page = 1; page <= 0; page++) {');
+// ---- a push without commit_from proves its tip only (review, non-blocking)
+m('a push without commit_from is widened to commit_count commits', LAND, "if (!SHA.test(from || '')) return [to];", "if (!SHA.test(from || '')) { const widened = gitRun(ctx, repo, ['rev-list', '-n', String(Math.min(Math.max(Number(pushData.commit_count) || 1, 1), 500)), to], { allowFail: true }); return widened ? widened.split('\\n').filter(Boolean) : []; }");
+m('a push without commit_from proves nothing, not even its tip', LAND, "if (!SHA.test(from || '')) return [to];", "if (!SHA.test(from || '')) return [];");
 // ---- evaluate
 m('drafts are read as ready', LAND, "if (mr.draft === true || mr.work_in_progress === true) return verdict('skip', 'draft'", "if (false) return verdict('skip', 'draft'");
 m('a title without a VTID is enough', LAND, "if (!laneKey || !VTID_TITLE.test(mr.title || ''))", 'if (!laneKey)');
@@ -101,9 +104,21 @@ m('the scratch worktree is kept', LAND, "  } finally {\n    gitRun(ctx, repo, ['
 m('a conflict is not reported', LAND, "await ensureNote(ctx, pid, mr, 'conflict', v.head);", '');
 m('a conflict is pushed on', LAND, 'if (merged === null) {', 'if (false) {');
 m('a dry run updates', LAND, "if (ctx.dryRun) { ctx.log({ event: 'would_update'", "if (false) { ctx.log({ event: 'would_update'");
+// ---- a conflict is a skip, not a wait (review of 2026-11-05T14:13Z, blocking)
+m('a conflict holds the turn', LAND, 'if (res.conflict) {', 'if (false) {');
+m('a conflict is not signalled to the tick', LAND, 'return { updated: false, conflict: true };', 'return { updated: false };');
+m('a conflicting merge request keeps the action update', LAND, "row.action = 'skip';\n        row.reasonCode = 'conflict';", "row.reasonCode = 'conflict';");
 // ---- one tick
 m('the project goes on after acting', LAND, 'if (acted && !statusOnly) break;', '');
 m('a waiting merge request does not hold the others', LAND, "      acted = true;\n      continue;\n    }\n    if (v.action === 'update')", "      continue;\n    }\n    if (v.action === 'update')");
+// ---- a merge GitLab keeps refusing loses the turn after 60 minutes (review, non-blocking)
+m('a refused merge never loses its turn', LAND, 'if (res.refused && lostItsTurn(ctx, v)) {', 'if (false) {');
+m('a refused merge always loses its turn', LAND, 'if (res.refused && lostItsTurn(ctx, v)) {', 'if (res.refused) {');
+m('a merge refused in a dry run counts as refused', LAND, "ctx.log({ event: 'would_land', mr: mr.iid, head: v.head }); return { landed: false }; }", "ctx.log({ event: 'would_land', mr: mr.iid, head: v.head }); return { landed: false, refused: true }; }");
+m('a refused merge is not flagged as refused', LAND, 'return { landed: false, refused: true };', 'return { landed: false };');
+m('a merge refused for too long gets another reason code', LAND, "row.reasonCode = 'merge_refused_too_long';", "row.reasonCode = 'waited_too_long';");
+m('the lost turn of a refused merge is logged as another reason', LAND, "reason: 'merge_refused', waitedMinutes", "reason: 'pipeline_pending', waitedMinutes");
+m('the lost turn of a pending pipeline is logged as another reason', LAND, "reason: 'pipeline_pending', waitedMinutes", "reason: 'merge_refused', waitedMinutes");
 m('a merge request never loses its turn', LAND, 'ctx.now() - since > ctx.pipelineWaitMs', 'ctx.now() - since > 1e15');
 m('every waiting merge request loses its turn', LAND, 'ctx.now() - since > ctx.pipelineWaitMs', 'ctx.now() - since > -1');
 m('merge requests are taken in the order the API lists them', LAND, ".sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)) || a.iid - b.iid)", '');
@@ -118,6 +133,12 @@ m('a dry run comments', LAND, "if (ctx.dryRun) { ctx.log({ event: 'would_comment
 // ---- logs, git credentials, command line
 m('the log is not redacted', LAND, 'write(redact(JSON.stringify({ ts: new Date(now()).toISOString(), ...entry }), token))', 'write(JSON.stringify({ ts: new Date(now()).toISOString(), ...entry }))');
 m('git may prompt', LAND, ", GIT_TERMINAL_PROMPT: '0' };", ' };');
+// ---- a global credential helper cannot store the token (review, non-blocking)
+m('git may use a global credential helper', LAND, "execFileSync('git', [...GIT_CONFIG_ARGS, '-C', cwd, ...args], {", "execFileSync('git', ['-C', cwd, ...args], {");
+m('the clone is created without the credential flag', LAND, "[...GIT_CONFIG_ARGS, 'init', '--bare', '-q', repo]", "['init', '--bare', '-q', repo]");
+m('the clone is created outside the bot\'s git environment', LAND, "{ stdio: 'ignore', env: ctx.gitEnv }", "{ stdio: 'ignore' }");
+m('the credential flag names a store helper', LAND, "Object.freeze(['-c', 'credential.helper='])", "Object.freeze(['-c', 'credential.helper=store'])");
+m('the credential flag sets another option', LAND, "Object.freeze(['-c', 'credential.helper='])", "Object.freeze(['-c', 'credential.useHttpPath='])");
 m('the askpass script answers a wrong user', LAND, 'Username*) echo oauth2 ;;', 'Username*) echo root ;;');
 m('the askpass script is world readable', LAND, '{ mode: 0o700 }', '{ mode: 0o755 }');
 m('the token is put in the git environment', LAND, 'LAND_TOKEN_FILE: tokenFile, GIT_TERMINAL_PROMPT', 'LAND_TOKEN_FILE: tokenFile, LAND_TOKEN: readTokenForEnv(tokenFile), GIT_TERMINAL_PROMPT');

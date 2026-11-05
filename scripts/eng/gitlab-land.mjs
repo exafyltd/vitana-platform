@@ -20,9 +20,13 @@
 //    `retries: 0` (an action is never repeated by the client) and, after any error, a re-read of the merge request before the
 //    bot decides the merge failed.
 //  - Behind main: `origin/main` is merged INTO the source branch (never a rebase, so the reviewed head stays an ancestor), as
-//    `bot-land`, and the bot waits for the next tick.
+//    `bot-land`, and the bot waits for the next tick. A merge that conflicts needs a human: that merge request is skipped (one
+//    comment per head), not waited for, and the younger ones go on in the same tick.
+//  - The turn: the oldest merge request that is waiting for its pipeline, or whose merge GitLab refuses, keeps the turn for 60
+//    minutes (counted from its pipeline's creation) and then loses it to the next one. The bot keeps no state between ticks.
 // Fails closed: any API or git error lands nothing. `--dry-run` writes nothing to GitLab. A comment is written once per
-// (head, reason). Logs are JSON lines without tokens; git gets the token through GIT_ASKPASS, never on a command line.
+// (head, reason). Logs are JSON lines without tokens; git gets the token through GIT_ASKPASS, never on a command line, and
+// every git command starts with `-c credential.helper=` so that no configured helper can store it.
 // Dependency-free Node 20.
 
 import { execFileSync } from 'node:child_process';
@@ -183,9 +187,15 @@ const COMMENT_TEXT = {
 
 // ── IO helpers ───────────────────────────────────────────────────────────────
 
+/**
+ * Put before every git command the bot runs. The token reaches git through GIT_ASKPASS; an empty `credential.helper` clears every
+ * helper configured anywhere (a global `store` helper would write that token to a file in plain text after a successful fetch).
+ */
+export const GIT_CONFIG_ARGS = Object.freeze(['-c', 'credential.helper=']);
+
 function gitRun(ctx, cwd, args, { env, allowFail = false } = {}) {
   try {
-    return execFileSync('git', ['-C', cwd, ...args], {
+    return execFileSync('git', [...GIT_CONFIG_ARGS, '-C', cwd, ...args], {
       encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: MAX_BUFFER, timeout: ctx.gitTimeoutMs, env: { ...ctx.gitEnv, ...(env || {}) },
     }).trimEnd();
   } catch (e) {
@@ -210,7 +220,7 @@ function ensureClone(ctx, project) {
   const url = ctx.remoteUrl(project);
   if (!fs.existsSync(repo)) {
     fs.mkdirSync(ctx.workdir, { recursive: true });
-    execFileSync('git', ['init', '--bare', '-q', repo], { stdio: 'ignore' });
+    execFileSync('git', [...GIT_CONFIG_ARGS, 'init', '--bare', '-q', repo], { stdio: 'ignore', env: ctx.gitEnv });
     gitRun(ctx, repo, ['remote', 'add', 'origin', url]);
   } else {
     gitRun(ctx, repo, ['remote', 'set-url', 'origin', url]);
@@ -224,11 +234,14 @@ function fetchMrHead(ctx, repo, iid) {
   return gitRun(ctx, repo, ['rev-parse', `refs/mr/${iid}`]);
 }
 
+/** The commits one push event proves the pusher made: `commit_from..commit_to`, or the tip alone when the push created its branch. */
 function pushRange(ctx, repo, pushData) {
   const to = pushData.commit_to;
-  const from = SHA.test(pushData.commit_from || '') ? pushData.commit_from : null;
-  const args = from ? ['rev-list', `${from}..${to}`] : ['rev-list', '-n', String(Math.min(Math.max(Number(pushData.commit_count) || 1, 1), 500)), to];
-  const out = gitRun(ctx, repo, args, { allowFail: true });
+  const from = pushData.commit_from;
+  // A push without a usable commit_from created its branch. GitLab's commit_count then also covers commits the pusher did not make
+  // (a builder's, and an accept forged among them), so such a push proves its tip and nothing below it.
+  if (!SHA.test(from || '')) return [to];
+  const out = gitRun(ctx, repo, ['rev-list', `${from}..${to}`], { allowFail: true });
   return out ? out.split('\n').filter(Boolean) : [];
 }
 
@@ -328,7 +341,7 @@ async function landOne(ctx, pid, mr, v) {
   const current = await ctx.client.get(`/projects/${pid}/merge_requests/${mr.iid}`).catch(() => null);
   if (current?.state === 'merged') { ctx.log({ event: 'landed', mr: mr.iid, head: v.head, confirmedBy: 'reread' }); return { landed: true }; }
   ctx.log({ event: 'not_landed', mr: mr.iid, reason: 'the merge call was refused; the next tick tries again' });
-  return { landed: false };
+  return { landed: false, refused: true };
 }
 
 async function updateOne(ctx, project, repo, pid, mr, v) {
@@ -343,7 +356,7 @@ async function updateOne(ctx, project, repo, pid, mr, v) {
       gitRun(ctx, tmp, ['merge', '--abort'], { allowFail: true });
       await ensureNote(ctx, pid, mr, 'conflict', v.head);
       ctx.log({ event: 'not_updated', mr: mr.iid, reason: 'conflict' });
-      return { updated: false };
+      return { updated: false, conflict: true };
     }
     const sha = gitRun(ctx, tmp, ['rev-parse', 'HEAD']);
     gitRun(ctx, tmp, ['push', '-q', 'origin', `${sha}:refs/heads/${mr.source_branch}`]);
@@ -362,6 +375,13 @@ async function openMergeRequests(ctx, pid, branch) {
   const list = await ctx.client.paginate(`/projects/${pid}/merge_requests`, { query: { state: 'opened', target_branch: branch, order_by: 'created_at', sort: 'asc' }, maxPages: 20 });
   return [...list].sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)) || a.iid - b.iid);
 }
+
+/** Has the merge request held the turn longer than the bound? Counted from its pipeline's creation (its last update when it has no pipeline). */
+function lostItsTurn(ctx, v) {
+  const since = Date.parse(v.waitingSince || '');
+  return Number.isFinite(since) && ctx.now() - since > ctx.pipelineWaitMs;
+}
+const waitedMinutes = (ctx, v) => Math.round((ctx.now() - Date.parse(v.waitingSince)) / 60_000);
 
 export async function tickProject(ctx, project, { only, statusOnly = false } = {}) {
   const pid = projectId(project.path);
@@ -386,9 +406,8 @@ export async function tickProject(ctx, project, { only, statusOnly = false } = {
       continue;
     }
     if (v.action === 'wait') {
-      const since = Date.parse(v.waitingSince || '');
-      if (Number.isFinite(since) && ctx.now() - since > ctx.pipelineWaitMs) {
-        ctx.log({ event: 'lost_its_turn', mr: mr.iid, waitedMinutes: Math.round((ctx.now() - since) / 60_000) });
+      if (lostItsTurn(ctx, v)) {
+        ctx.log({ event: 'lost_its_turn', mr: mr.iid, reason: 'pipeline_pending', waitedMinutes: waitedMinutes(ctx, v) });
         row.action = 'skip';
         row.reasonCode = 'waited_too_long';
         continue;
@@ -396,8 +415,33 @@ export async function tickProject(ctx, project, { only, statusOnly = false } = {
       acted = true;
       continue;
     }
-    if (v.action === 'update') { Object.assign(row, await updateOne(ctx, project, repo, pid, mr, v)); acted = true; continue; }
-    if (v.action === 'land') { Object.assign(row, await landOne(ctx, pid, mr, v)); acted = true; continue; }
+    if (v.action === 'update') {
+      const res = await updateOne(ctx, project, repo, pid, mr, v);
+      Object.assign(row, res);
+      if (res.conflict) {
+        // The merge of main conflicts: the builder has to resolve it. Like any merge request that needs a human it is skipped, not waited
+        // for, so the younger merge requests of the project go on (plan §3.4). The comment was written once for this head.
+        row.action = 'skip';
+        row.reasonCode = 'conflict';
+        continue;
+      }
+      acted = true;
+      continue;
+    }
+    if (v.action === 'land') {
+      const res = await landOne(ctx, pid, mr, v);
+      Object.assign(row, res);
+      if (res.refused && lostItsTurn(ctx, v)) {
+        // GitLab keeps refusing this merge (an unresolved thread, a merge setting the bot does not read). As for a pipeline that does not
+        // finish, it keeps the turn for 60 minutes and then loses it, so the merge requests behind it are not held for ever.
+        ctx.log({ event: 'lost_its_turn', mr: mr.iid, reason: 'merge_refused', waitedMinutes: waitedMinutes(ctx, v) });
+        row.action = 'skip';
+        row.reasonCode = 'merge_refused_too_long';
+        continue;
+      }
+      acted = true;
+      continue;
+    }
   }
   return out;
 }

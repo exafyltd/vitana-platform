@@ -165,6 +165,18 @@ function scenario({ lanes = 1 } = {}) {
   Object.assign(out, out.mrs['lane-a']);
   return out;
 }
+/** One more reviewed, green merge request, cut from the CURRENT origin/main (so it is up to date even when main moved after the others). */
+function addReadyLane(w, s, { lane, iid }) {
+  addLane(w, lane);
+  const branch = `kiro/demo/${lane}`;
+  const F = addFeature(w, { lane, branch });
+  const R = addReview(w, { lane, branch, reviewed: F });
+  publish(w, { branch, iid });
+  addMr(s, { iid, lane, sha: R, branch });
+  reviewerPush(s, F, R);
+  addPipeline(s, R);
+  return { iid, branch, F, R, lane };
+}
 const run = async (sc, opts = {}) => {
   const f = gitlab(sc.s);
   const c = context(sc.w, f, opts.extra, opts.deps);
@@ -442,6 +454,29 @@ test('an accept whose commit is in no push of the reviewer (a builder committed 
   assert.equal(r.rows[0].reasonCode, 'review_forged');
 });
 
+test('a reviewer push without commit_from proves only its tip: an accept below the tip is not counted, an accept that is the tip is', async () => {
+  // the reviewer account created a branch (no commit_from); GitLab's commit_count then also covers commits the builder made
+  const below = scenario();
+  const tip = addCommit(below.w, { branch: below.branch, file: `.kiro/specs/demo/lanes/${below.lane}.md`, text: `${laneFile(below.lane)}\n### 2026-11-05T10:09Z · kiro · note\nA note.\n`, message: 'lane note' });
+  publish(below.w, { branch: below.branch, iid: below.iid });
+  below.s.mrs[0].sha = tip;
+  addPipeline(below.s, tip);
+  below.s.events = [{ author_username: 'agent-reviewer', push_data: { commit_from: null, commit_to: tip, commit_count: 3, action: 'created', ref_type: 'branch' } }];
+  const r1 = await run(below);
+  assert.equal(merges(r1.f).length, 0, 'the accept is two commits below the pushed tip: the push does not prove it');
+  assert.equal(r1.rows[0].reasonCode, 'review_forged');
+  assert.equal(notePosts(r1.f).length, 1);
+
+  const tipIsAccept = scenario();
+  tipIsAccept.s.events = [{ author_username: 'agent-reviewer', push_data: { commit_from: null, commit_to: tipIsAccept.R, commit_count: 2, action: 'created', ref_type: 'branch' } }];
+  const r2 = await run(tipIsAccept);
+  assert.equal(r2.rows[0].action, 'land', 'when the accept is the tip of the branch the reviewer created, it was pushed by the reviewer');
+  assert.equal(merges(r2.f).length, 1);
+
+  const withFrom = scenario(); // the planned flow: the reviewer pushes onto the builder's branch, commit_from set: the range counts
+  assert.equal((await run(withFrom)).rows[0].action, 'land');
+});
+
 test('an accept that does not name the reviewer agent is forged', async () => {
   const w = newWorld(); const s = newState();
   addLane(w, 'lane-a');
@@ -569,7 +604,42 @@ test('a merge request that waited more than 60 minutes for its pipeline loses it
   const r = await run(sc);
   assert.equal(merges(r.f).length, 1);
   assert.match(merges(r.f)[0].path, /\/merge_requests\/8\/merge$/);
-  assert.ok(r.events().some((e) => e.event === 'lost_its_turn' && e.mr === 7));
+  assert.ok(r.events().some((e) => e.event === 'lost_its_turn' && e.mr === 7 && e.reason === 'pipeline_pending'));
+  assert.equal(r.rows[0].reasonCode, 'waited_too_long');
+});
+
+test('a merge that GitLab keeps refusing keeps the turn for 60 minutes (counted from its pipeline), then loses it to the next merge request', async () => {
+  // GitLab refuses the merge of !7 (an unresolved thread, a merge setting the bot does not read); !8 is ready and younger
+  const refuse7 = (call, s) => {
+    if (/merge_requests\/7\/merge$/.test(call.path)) return { status: 406, json: { message: 'Branch cannot be merged' } };
+    s.merged.add(8);
+    return { json: { iid: 8, state: 'merged', merge_commit_sha: null } };
+  };
+  const young = scenario({ lanes: 2 }); // the pipeline of !7 is 10 minutes old
+  young.s.mergeResponse = refuse7;
+  const r1 = await run(young);
+  assert.deepEqual(merges(r1.f).map((c) => /merge_requests\/(\d+)\/merge$/.exec(c.path)[1]), ['7'], 'it keeps the turn: !8 is not even read');
+  assert.equal(r1.rows.length, 1);
+  assert.equal(r1.rows[0].landed, false);
+  assert.equal(r1.events().filter((e) => e.event === 'lost_its_turn').length, 0);
+
+  const old = scenario({ lanes: 2 });
+  old.s.pipelines.find((p) => p.sha === old.R).created_at = '2026-11-05T09:20:00Z'; // 70 minutes before NOW
+  old.s.mergeResponse = refuse7;
+  const r2 = await run(old);
+  assert.deepEqual(merges(r2.f).map((c) => /merge_requests\/(\d+)\/merge$/.exec(c.path)[1]), ['7', '8'], 'the refused one was tried, then the next one landed in the same tick');
+  assert.equal(r2.rows[0].action, 'skip');
+  assert.equal(r2.rows[0].reasonCode, 'merge_refused_too_long');
+  assert.equal(r2.rows[0].landed, false);
+  assert.equal(r2.rows[1].landed, true);
+  assert.ok(r2.events().some((e) => e.event === 'lost_its_turn' && e.mr === 7 && e.reason === 'merge_refused'));
+
+  const dry = scenario({ lanes: 2 }); // a dry run makes no merge call, so nothing was refused and the turn stays where it is
+  dry.s.pipelines.find((p) => p.sha === dry.R).created_at = '2026-11-05T09:20:00Z';
+  const r3 = await run(dry, { dryRun: true });
+  assert.equal(r3.rows.length, 1);
+  assert.equal(r3.rows[0].action, 'land');
+  r3.f.assertNoWrites();
 });
 
 test('two ready merge requests: the oldest lands, the other is not touched in the same tick', async () => {
@@ -670,7 +740,8 @@ test('behind main with a conflict: nothing is pushed, the branch is left alone, 
   advanceMain(sc.w, `scripts/${sc.lane}.mjs`, 'export const x = 99; // main got there first\n');
   const before = refs(sc.w.remote);
   const r = await run(sc);
-  assert.equal(r.rows[0].action, 'update');
+  assert.equal(r.rows[0].action, 'skip', 'a conflict needs a human: it is a skip, not an update');
+  assert.equal(r.rows[0].reasonCode, 'conflict');
   assert.notEqual(r.rows[0].updated, true);
   assert.equal(merges(r.f).length, 0);
   assert.equal(notePosts(r.f).length, 1);
@@ -679,6 +750,32 @@ test('behind main with a conflict: nothing is pushed, the branch is left alone, 
   const again = await run(sc);
   assert.equal(notePosts(again.f).length, 0, 'the conflict comment is written once per head');
   assert.deepEqual(fs.readdirSync(path.join(sc.w.root, 'land')).filter((n) => n.includes('-update-')), [], 'the scratch worktree is gone');
+});
+
+test('a merge request whose merge of main conflicts is skipped, not waited for: the younger one lands in the same tick, and the conflict is commented once per head', async () => {
+  const sc = scenario(); // lane-a, iid 7: reviewed and green, but behind main and in conflict with it
+  advanceMain(sc.w, `scripts/${sc.lane}.mjs`, 'export const x = 99; // main got there first\n');
+  const b = addReadyLane(sc.w, sc.s, { lane: 'lane-b', iid: 8 }); // cut from the new main: up to date, reviewed, green, and younger
+  const aTip = g(sc.w.remote, 'rev-parse', `refs/heads/${sc.branch}`);
+  const r = await run(sc);
+  assert.deepEqual(r.rows.map((x) => x.iid), [7, 8], 'the older one was looked at first, then the younger one');
+  const a = r.rows.find((x) => x.iid === 7);
+  assert.equal(a.action, 'skip');
+  assert.equal(a.reasonCode, 'conflict');
+  assert.notEqual(a.updated, true);
+  assert.equal(merges(r.f).length, 1, 'the younger merge request landed in the same tick');
+  assert.match(merges(r.f)[0].path, /\/merge_requests\/8\/merge$/);
+  assert.equal(merges(r.f)[0].body.sha, b.R);
+  assert.equal(r.rows.find((x) => x.iid === 8).landed, true);
+  assert.equal(notePosts(r.f).length, 1, 'one comment, on the conflicting merge request');
+  assert.match(sc.s.notes[7][0].body, /conflicts/);
+  assert.equal(sc.s.notes[8].length, 0);
+  assert.equal(g(sc.w.remote, 'rev-parse', `refs/heads/${sc.branch}`), aTip, 'the conflicting branch was not pushed');
+  assert.deepEqual(fs.readdirSync(path.join(sc.w.root, 'land')).filter((n) => n.includes('-update-')), [], 'the scratch worktree is gone');
+  const again = await run(sc); // lane-b is merged now; the conflict is still there and is not commented a second time
+  assert.equal(again.rows.find((x) => x.iid === 7).reasonCode, 'conflict');
+  assert.equal(notePosts(again.f).length, 0, 'once per head and reason');
+  assert.equal(merges(again.f).length, 0);
 });
 
 test('a protected gate file in the diff is never landed by the bot; one comment per head', async () => {
@@ -839,6 +936,37 @@ test('git gets the token through GIT_ASKPASS: the script answers the username an
   assert.equal(ctx.gitEnv.GIT_TERMINAL_PROMPT, '0');
   assert.equal(Object.values(ctx.gitEnv).some((v) => String(v).includes(TOKEN)), false, 'the token is not in any environment value');
   assert.equal(fs.readFileSync(script, 'utf8').includes(TOKEN), false, 'nor in the script');
+});
+
+test('every git command the bot runs neutralises a global credential helper, so the token that GIT_ASKPASS supplies can never be stored', async () => {
+  const sc = scenario();
+  advanceMain(sc.w, 'docs/other.md', 'main moved\n'); // behind main: the tick clones, fetches, reads and pushes an update, the commands that reach the remote
+  const bin = path.join(sc.w.root, 'bin');
+  fs.mkdirSync(bin);
+  const log = path.join(sc.w.root, 'git-calls.log');
+  const realGit = execFileSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).trim();
+  // a recording `git` in front of the real one: one record per command, arguments separated by \037, records by \036
+  fs.writeFileSync(path.join(bin, 'git'), `#!/bin/sh\nprintf '%s\\037' "$@" >> "${log}"\nprintf '\\036' >> "${log}"\nexec "${realGit}" "$@"\n`, { mode: 0o755 });
+  const r = await run(sc, { deps: { env: { ...process.env, PATH: `${bin}:${process.env.PATH}` } } });
+  assert.equal(r.rows[0].updated, true, 'the update went through the recording git');
+  const calls = fs.readFileSync(log, 'utf8').split('\u001e').filter(Boolean).map((rec) => rec.split('\u001f').slice(0, -1));
+  assert.ok(calls.length >= 12, `commands recorded: ${calls.length}`);
+  for (const argv of calls) assert.deepEqual(argv.slice(0, 2), ['-c', 'credential.helper='], `git ${argv.join(' ').slice(0, 80)} starts with the flag`);
+  // and the run really exercised the commands that matter (the one that clones, the ones that reach the remote, the update)
+  const verbs = new Set(calls.map((argv) => argv.find((a, i) => i >= 2 && !a.startsWith('-') && argv[i - 1] !== '-C')));
+  for (const verb of ['init', 'fetch', 'worktree', 'merge', 'push', 'rev-parse', 'diff']) assert.ok(verbs.has(verb), `git ${verb} was run (seen: ${[...verbs].join(' ')})`);
+  // the commands the bot imports from land-guard.mjs and queue.mjs (localAfter, commitsInRange) only read the local clone; they never reach a remote
+
+  // and the flag is what stops a global helper: with `helper = store` in the global config, approving a credential writes it, unless the flag is given
+  const home = path.join(sc.w.root, 'home');
+  fs.mkdirSync(home);
+  fs.writeFileSync(path.join(home, '.gitconfig'), '[credential]\n\thelper = store\n');
+  const credential = 'protocol=https\nhost=gitlab.test\nusername=oauth2\npassword=fixture-secret-value\n\n';
+  const env = { PATH: process.env.PATH, HOME: home, GIT_CONFIG_NOSYSTEM: '1' };
+  execFileSync('git', [...land.GIT_CONFIG_ARGS, 'credential', 'approve'], { input: credential, env });
+  assert.equal(fs.existsSync(path.join(home, '.git-credentials')), false, 'with the flag the global store helper is not called');
+  execFileSync('git', ['credential', 'approve'], { input: credential, env });
+  assert.equal(fs.existsSync(path.join(home, '.git-credentials')), true, 'control: without the flag the global store helper writes the credential');
 });
 
 test('the log redacts the token by itself, whatever is put into an entry', () => {
