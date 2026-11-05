@@ -83,3 +83,21 @@ The review of 2026-11-05T09:30Z (head 3b1191cec234d42e9db63b4a61aa243e03c8cc3a) 
 PR https://github.com/exafyltd/vitana-platform/pull/4692. `main` merged into the branch (29b639da4bf). Evidence regenerated from the final files: 26 cases (red on
 base 26 of 26, on an empty bundle 26 of 26, green 26 of 26), a mutation run of 143 changes (0 not caught), the whole script set 639 tests with 0 failures on
 Node 22 and Node 20, the comparison with the archive, a secret scan of 34 files. Ready for a new review on the current head once plan PR #4695 is on `main`.
+
+### 2026-11-05T15:09Z · agent-vitana-lane-reviewer-202611051509-916c · review
+review: accept
+head: edb596fbe0732ffb1501538f5becbb7809a55088
+reviewer: agent:vitana-lane-reviewer (claude-opus-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4692
+Findings:
+- [non-blocking] infra/gitlab-engineering/host/gitlab-install.sh:49-53: gitlab.rb sets the NGINX keys as gitlab_rails['nginx'][...], but as far as this reviewer knows the Linux package reads only top-level nginx[...]. If 19.5.3 ignores the nested form, a fresh build serves nothing on port 80, gitlab-configure.sh:14-21 stops at 'GitLab not ready', and the rebuild from git (A02) fails. The running machine works, so either 19.5.3 accepts this form or its gitlab.rb differs from this file. Case 20 (gitlab-m1-structure.test.mjs:292-293) pins the nested form. gitlab-verify can compare the nginx lines of the restored /etc/gitlab/gitlab.rb (RUNBOOK §8 step B). A fix to gitlab-install.sh and case 20 goes through _plan.
+- [non-blocking] docs/validation/VTID-05544/acceptance.md:51: the runner-creation log line is gitlab-configure.sh:55, not :56. The deferred list misses gitlab-configure.sh:26 and :31 (bootstrap token in a curl header), :51 (runner token to put-secret-value) and gitlab-install.sh:68 (root password to put-secret-value).
+- [non-blocking] scripts/eng/gitlab-m1-structure.test.mjs:163: the attached-policy check reads only quoted policy_arn values. A managed_policy_arns list or a data.aws_iam_policy reference could attach, for example, AmazonS3FullAccess while every case stays green.
+- [non-blocking] Not confirmed independently: CI (GraphQL refused and gh api not allowed; the caller's REST read says 11/11 success at 15:07:46Z), the PR body, and byte identity with bundle v6 (compare-with-v6.sh cannot be run here). Confirmed with git: the PR's own diff is blob-identical at 8bae0d49 and edb596fb, and the update-branch merge brings in only main's 29b639da..ce38b681.
+Next: the land step merges under §7b. For lane gitlab-verify: record the nginx lines of the restored gitlab.rb next to host/gitlab-install.sh:49-53 (first finding). Checklist results on this head:
+- Item 1: met against tasks.md on main. The owner-run evidence and the green-pipeline clause moved to gitlab-verify (VTID-05555) through #4695 (ce38b681), which was the second option the 09:30Z review offered. The six non-blocking 09:30Z findings are answered in the test, the RUNBOOK and the evidence, with the gaps listed above.
+- Item 2: all 35 files are in the lane's paths.
+- Item 3: rests on the caller's REST read.
+- Item 4: red on base 26/26 (one ENOENT per case), red on an empty bundle 26/26 by assertion, green 26/26, and 143 of 143 mutations caught.
+- Items 5-9: pass. No test weakened, no live write, no spoken string, no UI, no protected gate file.
+- Item 10: the plan §3 values match. Only host/ci-platform.yml differs from v6, and only by the planned install steps. No secret value is in git or in the Terraform outputs. No workflow file is in the diff, and no workflow on main triggers on these paths. The Tooling/docs links resolve. The Infrastructure/CI "workflow run is linked" check is carried by gitlab-verify (the GitLab pipeline runs).
