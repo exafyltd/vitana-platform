@@ -1,6 +1,6 @@
 ---
 lane: gitlab-client
-state: ready
+state: parked
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -14,8 +14,9 @@ paths:
   - scripts/eng/testing/fake-fetch.mjs
   - scripts/eng/testing/fake-fetch.test.mjs
   - docs/validation/**
-updated: 2026-11-04T23:40Z
+updated: 2026-11-05T02:54Z
 vtid: VTID-05537
+parked_from: ready
 ---
 # Lane: gitlab-client (repo vitana-platform)
 Tasks in `tasks.md`. Implements plan §3.7: the GitLab API client and the recording fake fetch. VTID from PLAN-SPAR; never by hand.
@@ -40,3 +41,5 @@ reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
 reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
 ### 2026-11-04T23:40Z · pm-agent · update
 reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
+### 2026-11-05T02:54Z · pm-agent · ready → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
