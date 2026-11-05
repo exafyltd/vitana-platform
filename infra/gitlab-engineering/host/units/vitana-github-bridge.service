@@ -1,0 +1,44 @@
+# GitHub bridge, one tick (plan agentic-delivery §3.13, lane github-bridge, VTID-05548). Runbook:
+# infra/gitlab-engineering/RUNBOOK-github-bridge.md.
+# Copies agent branches (kiro/*, claude/*) from GitHub to GitLab, keeps one merge request per open pull request, posts the
+# GitLab job results back as gitlab/<job> commit statuses and closes a pull request with a link once its merge request
+# landed. vitana-github-bridge.timer starts it every minute. flock keeps two ticks (and a manual run or an assist push,
+# which take the same lock) from ever overlapping; a tick that finds the lock taken ends at once with exit 75 (skipped).
+# No token in this file: systemd copies the two root-only token files into the service's private credentials directory
+# (%d), readable only by the service, and the script reads them from there.
+[Unit]
+Description=Vitana GitHub bridge tick (agent branches and pull requests, GitHub to GitLab)
+Documentation=file:///opt/vitana/platform/infra/gitlab-engineering/RUNBOOK-github-bridge.md
+Wants=network-online.target
+After=network-online.target
+AssertPathExists=/etc/vitana/github-bridge-token
+AssertPathExists=/etc/vitana/gitlab-bridge-token
+AssertPathExists=/opt/vitana/platform/scripts/eng/github-bridge.mjs
+
+[Service]
+Type=oneshot
+DynamicUser=yes
+StateDirectory=vitana/github-bridge
+StateDirectoryMode=0700
+LoadCredential=github-token:/etc/vitana/github-bridge-token
+LoadCredential=gitlab-token:/etc/vitana/gitlab-bridge-token
+Environment=HOME=/var/lib/vitana/github-bridge
+ExecStart=/usr/bin/flock --nonblock --conflict-exit-code 75 /var/lib/vitana/github-bridge/tick.lock node /opt/vitana/platform/scripts/eng/github-bridge.mjs run --state-dir /var/lib/vitana/github-bridge --github-token-file %d/github-token --gitlab-token-file %d/gitlab-token
+SuccessExitStatus=75
+TimeoutStartSec=15min
+Nice=10
+IOSchedulingClass=idle
+CPUQuota=50%
+MemoryMax=1G
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+LockPersonality=yes

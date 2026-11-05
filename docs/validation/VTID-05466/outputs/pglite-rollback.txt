@@ -1,0 +1,5 @@
+ok   rollback on a database without the lane is a no-op (replay order)
+ok   rollback restores the prior state exactly (rows, comment, functions, tables)
+ok   second rollback restores the prior state exactly
+ok   rollback drops the dual-write trigger
+ok   rollback keeps the real membership the trigger wrote while live

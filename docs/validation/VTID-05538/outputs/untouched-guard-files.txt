@@ -1,0 +1,16 @@
+# base: origin/main b3d547b66c7 (b3d547b66c72ef4b10c680ef7d337db0e61137f7), freshly fetched; HEAD b71b382a969205006133a8e432036c9907c92cc6 contains it (yes)
+# $ git diff --stat origin/main -- scripts/collab/land-guard.mjs scripts/collab/queue.mjs     (empty = untouched)
+# diff exit: 0  (0 = no difference)
+# $ sha256sum of the two files here and on origin/main
+branch      be818fbfefef76a9a779763f84146b5b3cf1b66f39bbb38238efdea3f4d73414  scripts/collab/land-guard.mjs
+origin/main be818fbfefef76a9a779763f84146b5b3cf1b66f39bbb38238efdea3f4d73414  scripts/collab/land-guard.mjs
+branch      c47caa601bd7e28c97cedb83541699c3f8ade302a1a0342a09e6483fc62c2df7  scripts/collab/queue.mjs
+origin/main c47caa601bd7e28c97cedb83541699c3f8ade302a1a0342a09e6483fc62c2df7  scripts/collab/queue.mjs
+# files this lane changes: $ git diff --name-only origin/main...HEAD   (three dots: what the branch added since it contains origin/main), plus files not yet committed
+  infra/gitlab-engineering/host/units/vitana-land.service
+  infra/gitlab-engineering/host/units/vitana-land.timer
+  .kiro/specs/eng-gitlab-m2/lanes/merge-bot.md
+  scripts/eng/gitlab-land.mjs
+  scripts/eng/gitlab-land.test.mjs
+# and the evidence folder: 18 file(s) under docs/validation/VTID-05538/
+# files of any other lane or VTID in that list: 0

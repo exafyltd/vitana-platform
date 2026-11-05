@@ -1,0 +1,10 @@
+{
+  "vtid": "VTID-05464",
+  "read_only": true,
+  "not_verified_on_staging": {
+    "reason": "Database migrations only; no gateway or frontend file changes, so no staging deploy and no STAGING-VERIFY run for this lane. The migrations are not applied from the PR (owner-approved RUN-MIGRATION.yml run, collaboration.md §7d), and the hook stays SHADOW: it is not configured in Supabase Auth (GO-LIVE is the owner-applied D14 lane), so nothing calls it on any host. Staging shares the production Supabase project (rule 48), so a staging check cannot exercise it without a write.",
+    "proven_by": "supabase/tests/mt_identity_hook_shadow.test.sql (pgTAP, throwaway local Postgres, order in commands.log)",
+    "after_apply": "docs/validation/VTID-05464/post-check.sql (read-only) in the owner-approved RUN-MIGRATION run"
+  },
+  "tests": []
+}

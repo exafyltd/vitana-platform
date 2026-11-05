@@ -1,0 +1,126 @@
+baseline: tests 55 and pass 55 on the unmutated tree
+caught      admin token rotated below 1 day  <- admin token: not rotated with 10 days left, rotated with 9|admin token: if the file cannot be written the token is no
+caught      admin token rotated below 30 days  <- admin token: not rotated with 10 days left, rotated with 9
+caught      cap warning from 90  <- service accounts: near the 100-account cap the sync report
+caught      cap warning needs more than 80  <- service accounts: near the 100-account cap the sync report
+caught      token rotated at 30 days left too  <- tokens: rotated only when fewer than 30 days are left (30 
+caught      token lifetime check off by one  <- apply: a first apply on the M1 GitLab creates everything o|drift: a setting changed by hand is reported by check (exi
+caught      token lifetime limit raised to 365  <- config: every invalid input is refused with an error that 
+caught      new tokens live 365 days  <- apply: a first apply on the M1 GitLab creates everything o|drift: a setting changed by hand is reported by check (exi
+caught      admin token rotated for 7 days  <- admin token: not rotated with 10 days left, rotated with 9
+caught      Developer becomes Maintainer  <- apply: a first apply on the M1 GitLab creates everything o|drift: a setting changed by hand is reported by check (exi
+caught      Reporter becomes Guest  <- apply: a first apply on the M1 GitLab creates everything o|apply: reads come first, the legacy runner is retagged bef
+caught      ci-config readers become Developers  <- apply: a first apply on the M1 GitLab creates everything o
+caught      Developers no longer read ci-config  <- apply: a first apply on the M1 GitLab creates everything o|drift: a setting changed by hand is reported by check (exi
+caught      default scopes of a Developer  <- config: a project with a webhook, and defaults for what th
+caught      default scopes of a Reporter  <- config: a project with a webhook, and defaults for what th
+caught      native: push open to Maintainers  <- apply: a first apply on the M1 GitLab creates everything o|apply: reads come first, the legacy runner is retagged bef
+caught      native: merge open to Developers  <- apply: a first apply on the M1 GitLab creates everything o|profiles: native sets push No one, merge Maintainers, forc
+caught      native: force push allowed  <- apply: a first apply on the M1 GitLab creates everything o|profiles: native sets push No one, merge Maintainers, forc
+caught      mirror: force push off  <- apply: a first apply on the M1 GitLab creates everything o|profiles: native sets push No one, merge Maintainers, forc
+caught      mirror: push to No one  <- apply: a first apply on the M1 GitLab creates everything o|profiles: native sets push No one, merge Maintainers, forc
+caught      native: merge method merge  <- apply: a first apply on the M1 GitLab creates everything o|profiles: native sets push No one, merge Maintainers, forc
+caught      native: squash only encouraged  <- apply: a first apply on the M1 GitLab creates everything o|profiles: native sets push No one, merge Maintainers, forc
+caught      native: pipelines not required  <- apply: a first apply on the M1 GitLab creates everything o|profiles: native sets push No one, merge Maintainers, forc
+caught      native: discussions not required  <- apply: a first apply on the M1 GitLab creates everything o|profiles: native sets push No one, merge Maintainers, forc
+caught      native: source branch kept  <- apply: a first apply on the M1 GitLab creates everything o|profiles: native sets push No one, merge Maintainers, forc
+caught      native: automatic rebase on  <- apply: a first apply on the M1 GitLab creates everything o|profiles: native sets push No one, merge Maintainers, forc
+caught      native: squash template changed  <- apply: a first apply on the M1 GitLab creates everything o|profiles: native sets push No one, merge Maintainers, forc
+caught      native: merge template changed  <- profiles: native sets push No one, merge Maintainers, forc
+caught      token name changed  <- apply: a first apply on the M1 GitLab creates everything o|tokens: created once with 90 days and the configured scope
+caught      webhook name changed  <- webhook: created with the signing token read from Secrets 
+caught      fleet secret renamed  <- apply: a first apply on the M1 GitLab creates everything o|tokens: created once with 90 days and the configured scope
+caught      webhook secret renamed  <- tokens: no secret appears in any output or argument list, |webhook: created with the signing token read from Secrets 
+caught      agent secret path renamed  <- apply: a first apply on the M1 GitLab creates everything o|tokens: created once with 90 days and the configured scope
+caught      central CI branch changed  <- apply: a first apply on the M1 GitLab creates everything o|apply: reads come first, the legacy runner is retagged bef
+caught      tokens before the memberships  <- apply: reads come first, the legacy runner is retagged bef|failures: a failed protection keeps every token back; a fa
+caught      tokens before the projects  <- apply: reads come first, the legacy runner is retagged bef|failures: a failed protection keeps every token back; a fa
+caught      legacy retag after the accounts  <- apply: reads come first, the legacy runner is retagged bef
+caught      tokens do not wait for the legacy retag  <- failures: a failed legacy retag keeps every token from bei
+caught      tokens do not wait for the protections  <- failures: a failed protection keeps every token back; a fa
+caught      tokens do not wait for the memberships  <- failures: a failed protection keeps every token back; a fa
+caught      memberships do not wait for the account  <- failures: a failed legacy retag keeps every token from bei|failures: three server errors in a row end the run, a sing
+caught      writes may be retried (send)  <- every write passes retries: 0 — a 503 on a write is attemp
+caught      token revocation may be retried  <- every write passes retries: 0 — a 503 on a write is attemp
+caught      member removal may be retried  <- every write passes retries: 0 — a 503 on a write is attemp
+caught      licence never found  <- licence guard: a licence stops check and apply loudly befo|licence guard: a licence that appears later stops the next
+caught      an empty licence list is a licence  <- licence guard: a licence stops check and apply loudly befo
+caught      one server error ends the run  <- failures: a failed legacy retag keeps every token from bei|failures: three server errors in a row end the run, a sing
+caught      server errors never end the run  <- failures: three server errors in a row end the run, a sing
+caught      a network error does not end the run  <- failures: GitLab going away in the middle of the writes st
+caught      failures do not change the exit code  <- tokens: a token created but not stored (Secrets Manager re|tokens: no secret appears in any output or argument list, 
+caught      a skipped change does not hold others  <- failures: a failed legacy retag keeps every token from bei|failures: three server errors in a row end the run, a sing
+caught      check ignores findings that need a person  <- membership: unmanaged members are never touched; an unexpe
+caught      check exits 1 on drift  <- drift: a setting changed by hand is reported by check (exi|membership: unmanaged members are never touched; an unexpe
+caught      dry-run writes  <- cli: apply is the default; check and --check never write a
+caught      reads fail but the run goes on  <- tokens: a secret that cannot be read (access denied) is an|admin token: a token GitLab does not accept stops the run 
+caught      no hint for a rejected admin token  <- admin token: a token GitLab does not accept stops the run 
+caught      admin token rotated without a preflight  <- admin token: if the file cannot be written the token is no
+caught      admin token file written 0644  <- admin token: not rotated with 10 days left, rotated with 9
+caught      the new admin token is not used  <- admin token: not rotated with 10 days left, rotated with 9|free tier: every call of a full apply, a drift repair and 
+caught      no re-read before the admin rotation  <- rotation: a token that turned inactive between the read an
+caught      no re-read before a token rotation  <- rotation: a token that turned inactive between the read an
+caught      bot token file written 0644  <- apply: a first apply on the M1 GitLab creates everything o|drift: a setting changed by hand is reported by check (exi
+caught      secret passed as an argument  <- apply: a first apply on the M1 GitLab creates everything o|apply: reads come first, the legacy runner is retagged bef
+caught      redactor forgets the secrets it saw  <- redaction: every secret registered during a run, GitLab to
+caught      a lost secret is not recovered  <- tokens: a lost or wrong secret is recovered by rotating th|tokens: a token created but not stored (Secrets Manager re
+caught      scope changes are ignored  <- tokens: scopes changed in the file replace the token, the 
+caught      the old token is revoked before the new one is stored  <- tokens: scopes changed in the file replace the token, the 
+caught      stray tokens are never revoked  <- tokens: a duplicate managed token and a token with no or a|every write passes retries: 0 — a 503 on a write is attemp
+caught      a second managed token is kept  <- tokens: a duplicate managed token and a token with no or a
+caught      the token file is never repaired  <- drift: a setting changed by hand is reported by check (exi
+caught      the token file mode is not compared  <- drift: a setting changed by hand is reported by check (exi
+caught      protection is not removed before re-creating  <- apply: a first apply on the M1 GitLab creates everything o|apply: reads come first, the legacy runner is retagged bef
+caught      force push uses DELETE and POST  <- drift: a setting changed by hand is reported by check (exi
+caught      a failed re-creation is not retried  <- protection: when the re-creation after a removal fails, it
+caught      the audit of native projects is off  <- membership: unmanaged members are never touched; an unexpe
+caught      mirror projects are audited too  <- apply: a first apply on the M1 GitLab creates everything o|drift: a setting changed by hand is reported by check (exi
+caught      the audit ignores Maintainers at 40  <- membership: unmanaged members are never touched; an unexpe
+caught      unmanaged members are removed  <- apply: a first apply on the M1 GitLab creates everything o|profiles: native sets push No one, merge Maintainers, forc
+caught      owners are not made Maintainer  <- membership: an owner named in the file who is not yet a me
+caught      legacy runner keeps untagged jobs  <- drift: a setting changed by hand is reported by check (exi
+caught      legacy runner is never paused  <- legacy runner: retagged and kept unpaused until the file s
+caught      legacy runner keeps the fleet tag  <- apply: a first apply on the M1 GitLab creates everything o|apply: reads come first, the legacy runner is retagged bef
+caught      fleet runner takes untagged jobs  <- apply: a first apply on the M1 GitLab creates everything o|drift: a setting changed by hand is reported by check (exi
+caught      fleet runner is protected-only  <- apply: a first apply on the M1 GitLab creates everything o|drift: a setting changed by hand is reported by check (exi
+caught      any fleet secret value is accepted  <- fleet runner: created once with the plan values, its token
+caught      fleet token never reset  <- fleet runner: created once with the plan values, its token|fleet runner: a token whose storing failed is regained by 
+caught      webhook has no fingerprint of the token  <- webhook: created with the signing token read from Secrets |webhook: a rotated signing token, a changed URL or event, 
+caught      webhook keeps push events  <- webhook: created with the signing token read from Secrets |webhook: a rotated signing token, a changed URL or event, 
+caught      webhook without ssl verification  <- webhook: created with the signing token read from Secrets |webhook: a rotated signing token, a changed URL or event, 
+caught      any signing token is accepted  <- webhook: an empty, malformed or unreadable signing token i
+caught      our webhook is not removed  <- webhook: a rotated signing token, a changed URL or event, 
+caught      central CI files are never updated  <- apply: a first apply on the M1 GitLab creates everything o|drift: a setting changed by hand is reported by check (exi
+caught      central CI files are always written  <- apply: a first apply on the M1 GitLab creates everything o|drift: a setting changed by hand is reported by check (exi
+caught      domain mismatch is not reported  <- cli: a settings file naming another DOMAIN than the host i
+caught      a licence read error is not an error  <- licence guard: a licence read that fails (403) cannot prov
+caught      file writer keeps the temp file  <- real file writer: atomic, mode 0600 whatever the umask, re
+caught      file writer ignores the mode  <- real file writer: atomic, mode 0600 whatever the umask, re
+caught      directory listing includes symlinks  <- real file writer: atomic, mode 0600 whatever the umask, re
+caught      aws stdin is not written  <- real aws runner: the secret travels on stdin, never in the
+caught      overlapping runner tags accepted  <- config: every invalid input is refused with an error that 
+caught      landing on a mirror project accepted  <- config: every invalid input is refused with an error that 
+caught      rehearsal webhook accepted  <- config: every invalid input is refused with an error that 
+caught      token files anywhere  <- config: every invalid input is refused with an error that 
+caught      sudo scope accepted  <- config: every invalid input is refused with an error that 
+caught      duplicate usernames accepted  <- config: every invalid input is refused with an error that 
+caught      unknown keys accepted  <- config: every invalid input is refused with an error that 
+caught      schema version not checked  <- config: every invalid input is refused with an error that 
+caught      file: token lifetime 365  <- config: the shipped file is schema version 1 with the acco|config: every invalid input is refused with an error that 
+caught      file: rotation below 60  <- config: the shipped file is schema version 1 with the acco|tokens: rotated only when fewer than 30 days are left (30 
+caught      file: legacy runner keeps the fleet tag  <- config: the shipped file is schema version 1 with the acco|config: every invalid input is refused with an error that 
+caught      file: fleet tag changed  <- config: the shipped file is schema version 1 with the acco|config: every invalid input is refused with an error that 
+caught      file: rehearsal is mirror  <- config: the shipped file is schema version 1 with the acco|config: every invalid input is refused with an error that 
+caught      file: rehearsal not landing  <- config: the shipped file is schema version 1 with the acco|config: the shipped file satisfies what the merge bot read
+caught      file: required job removed  <- config: the shipped file is schema version 1 with the acco
+caught      file: bot-land is Developer  <- config: the shipped file is schema version 1 with the acco|apply: a first apply on the M1 GitLab creates everything o
+caught      file: bot-metrics may write  <- config: the shipped file is schema version 1 with the acco|apply: a first apply on the M1 GitLab creates everything o
+caught      file: bot-land token file moved  <- config: the shipped file is schema version 1 with the acco|apply: a first apply on the M1 GitLab creates everything o
+caught      file: bot-metrics token file moved  <- config: the shipped file is schema version 1 with the acco|apply: a first apply on the M1 GitLab creates everything o
+caught      file: a seat on a mirror project  <- config: the shipped file is schema version 1 with the acco|profiles: native sets push No one, merge Maintainers, forc
+caught      file: reviewer account renamed  <- config: the shipped file is schema version 1 with the acco|apply: a first apply on the M1 GitLab creates everything o
+caught      file: owners changed  <- config: the shipped file is schema version 1 with the acco|config: every invalid input is refused with an error that 
+caught      file: legacy runner paused at the start  <- config: the shipped file is schema version 1 with the acco|apply: reads come first, the legacy runner is retagged bef
+caught      README forgets a key  <- config: the README documents every key the validator accep
+caught      README forgets the exit code  <- config: the README documents every key the validator accep
+mutations: 124, not caught: 0
