@@ -1,0 +1,141 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/.rv/scm-webhook/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/.rv/scm-webhook/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/.rv/scm-webhook/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/gitlab-events/staging-wiring.test.ts
+  VTID-05541 GITLAB_WEBHOOK_SIGNING_TOKEN wiring
+    ✓ staging resolves the secret by name and wires it only when it exists (27 ms)
+    ✓ staging resolves it before the task definition is built (it rides connected-apps.json) (2 ms)
+    ✓ production is not wired in this milestone (2 ms)
+    ✓ the owner script copies the value without printing it and checks the accounts first (1 ms)
+
+PASS test/gitlab-events/map.test.ts
+  VTID-05541 mapGitlabEvent — the event table of plan §3.5
+    ✓ merge_request action open → scm.gitlab.merge_request.opened (7 ms)
+    ✓ merge_request action reopen → scm.gitlab.merge_request.opened (1 ms)
+    ✓ merge_request action merge → scm.gitlab.merge_request.merged
+    ✓ merge_request action close → scm.gitlab.merge_request.closed
+    ✓ pipeline status success → scm.gitlab.pipeline.succeeded (1 ms)
+    ✓ pipeline status failed → scm.gitlab.pipeline.failed
+    ✓ merge_request action "update" is ignored
+    ✓ merge_request action "approved" is ignored
+    ✓ merge_request action "unapproved" is ignored
+    ✓ merge_request action "approval" is ignored
+    ✓ merge_request action "unapproval" is ignored
+    ✓ merge_request action undefined is ignored
+    ✓ merge_request action 42 is ignored (1 ms)
+    ✓ pipeline status "created" is ignored
+    ✓ pipeline status "waiting_for_resource" is ignored
+    ✓ pipeline status "preparing" is ignored
+    ✓ pipeline status "pending" is ignored
+    ✓ pipeline status "running" is ignored
+    ✓ pipeline status "canceled" is ignored
+    ✓ pipeline status "skipped" is ignored
+    ✓ pipeline status "manual" is ignored
+    ✓ pipeline status "scheduled" is ignored
+    ✓ pipeline status undefined is ignored
+    ✓ push is ignored
+    ✓ note is ignored
+    ✓ build is ignored
+    ✓ no object_kind is ignored
+    ✓ not an object is ignored
+    ✓ an array is ignored
+    ✓ null is ignored (1 ms)
+    ✓ the VTID of a merge request event comes from its title only
+    ✓ a pipeline takes the merge request title first, then the commit title
+    ✓ firstVtid takes the first five-digit VTID and never the start of a longer number (1 ms)
+    ✓ the payload carries identifiers, not bodies; titles are cut
+    ✓ all five topics are new scm.gitlab.* names, none of them an existing cicd.* topic (1 ms)
+    ✓ no rule of autopilot-event-mapper.ts lists a scm.gitlab.* topic, so no GitLab event moves a VTID in this milestone (1 ms)
+    ✓ the route and the mapper emit no existing cicd.* topic
+  VTID-05541 createDeliveryIdStore — dedupe of resends per gateway task
+    ✓ remembers an id and answers has()
+    ✓ forgets an id after its time to live
+    ✓ keeps at most maxEntries, dropping the oldest first
+    ✓ refuses nonsense limits (8 ms)
+
+PASS test/routes/internal-gitlab-webhook.test.ts
+  VTID-05541 POST /api/v1/internal/gitlab/webhook
+    ✓ a signed merge request event is recorded once as an OASIS event with its VTID (22 ms)
+    ✓ merge_request open → {
+  object_kind: 'merge_request',
+  project: [Object],
+  object_attributes: [Object]
+} (4 ms)
+    ✓ merge_request reopen → {
+  object_kind: 'merge_request',
+  project: [Object],
+  object_attributes: [Object]
+} (3 ms)
+    ✓ merge_request merge → {
+  object_kind: 'merge_request',
+  project: [Object],
+  object_attributes: [Object]
+} (2 ms)
+    ✓ merge_request close → {
+  object_kind: 'merge_request',
+  project: [Object],
+  object_attributes: [Object]
+} (3 ms)
+    ✓ pipeline success → {
+  object_kind: 'pipeline',
+  project: [Object],
+  object_attributes: [Object],
+  merge_request: [Object],
+  commit: [Object]
+} (3 ms)
+    ✓ pipeline failed → {
+  object_kind: 'pipeline',
+  project: [Object],
+  object_attributes: [Object],
+  merge_request: [Object],
+  commit: [Object]
+} (2 ms)
+    ✓ a bad signature is refused with 401 JSON and records nothing (3 ms)
+    ✓ a signature over other bytes is refused (the exact raw body is what is checked) (4 ms)
+    ✓ bytes that JSON re-serialization would change still verify, because the raw parser runs first (3 ms)
+    ✓ a stale timestamp is refused with 401 (2 ms)
+    ✓ a request that carries only svix-* headers is refused with 401 (2 ms)
+    ✓ an unsigned request gets 401 JSON whether or not a key is set (the staging probe) (3 ms)
+    ✓ a signed delivery with no signing key configured fails closed with 500 not_configured JSON (6 ms)
+    ✓ a key that decodes to nothing is treated as not configured (2 ms)
+    ✓ the same webhook-id twice records one event; the second answer says duplicate (3 ms)
+    ✓ an event without a VTID is acknowledged with 202 and records nothing (2 ms)
+    ✓ an unmapped event kind (push) is acknowledged with 202 and records nothing (2 ms)
+    ✓ an unmapped merge request action (update) is acknowledged with 202 and records nothing (2 ms)
+    ✓ an unmapped pipeline status (running) is acknowledged with 202 and records nothing (2 ms)
+    ✓ a pipeline with no VTID in the merge request or the commit is acknowledged with 202 and records nothing (1 ms)
+    ✓ a signed body that is not JSON gets 400 JSON (2 ms)
+    ✓ a body over 1 MB gets 413 JSON, not an HTML error page (9 ms)
+    ✓ any content type is read raw (GitLab labels its bodies application/json, but the signature covers the bytes) (2 ms)
+    ✓ when OASIS cannot record the event the answer is 503 and a resend of the same delivery is processed (3 ms)
+    ✓ an emitter that throws gives 503, never an unhandled error (2 ms)
+    ✓ the default router reads GITLAB_WEBHOOK_SIGNING_TOKEN and records through emitOasisEvent (14 ms)
+    ✓ index.ts mounts the raw parser for the path before express.json() and mounts the router (1 ms)
+
+Test Suites: 3 passed, 3 total
+Tests:       73 passed, 73 total
+Snapshots:   0 total
+Time:        1.465 s
+Ran all test suites matching /test\/routes\/internal-gitlab-webhook.test.ts|test\/gitlab-events/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

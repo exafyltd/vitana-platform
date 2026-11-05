@@ -1,0 +1,18 @@
+{
+  "vtid": "VTID-05541",
+  "kind": "feature",
+  "paths": [
+    "services/gateway/src/routes/internal-gitlab-webhook.ts",
+    "services/gateway/src/services/gitlab-events/**",
+    "services/gateway/src/types/cicd.ts",
+    "services/gateway/src/index.ts",
+    "services/gateway/test/routes/internal-gitlab-webhook.test.ts",
+    "services/gateway/test/gitlab-events/**",
+    ".github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml",
+    "scripts/aws/setup-gitlab-webhook-secret.sh",
+    "docs/validation/VTID-05541/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05541/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

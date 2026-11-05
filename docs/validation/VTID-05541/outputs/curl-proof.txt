@@ -1,0 +1,19 @@
+# local curl proof (VTID-05541), 2026-11-05T00:25:34Z: gateway dist built from this branch, the route mounted as index.ts mounts it (mountGitlabWebhookParsers, express.json, router); signatures computed with Node's crypto as GitLab computes them
+## 1. unsigned POST (the staging probe) -> 401 JSON
+{"ok":false,"error":"signature_missing"}
+HTTP 401 application/json; charset=utf-8
+## 2. signed push event (not mapped) -> 202 JSON
+{"ok":true,"ignored":true,"reason":"event push is not mapped"}
+HTTP 202 application/json; charset=utf-8
+## 3. the same delivery again -> 200 duplicate
+{"ok":true,"duplicate":true}
+HTTP 200 application/json; charset=utf-8
+## 4. same signature, one byte of the body changed -> 401 JSON
+{"ok":false,"error":"signature_invalid"}
+HTTP 401 application/json; charset=utf-8
+## 5. signed delivery to a gateway with no key -> 500 not_configured JSON
+{"ok":false,"error":"not_configured"}
+HTTP 500 application/json; charset=utf-8
+## 6. body over 1 MB -> 413 JSON
+{"ok":false,"error":"payload_too_large","limit":"1mb"}
+HTTP 413 application/json; charset=utf-8

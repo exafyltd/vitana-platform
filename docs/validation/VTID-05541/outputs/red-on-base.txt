@@ -1,0 +1,929 @@
+# Red on base (VTID-05541): the two new suites run against stub modules that export the same names with no behaviour
+# (map: ignores everything; delivery ids: never remembers; route: answers 501), with types/cicd.ts and index.ts as on origin/main.
+# The stubs were never committed; the real modules were restored before the green run.
+
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/.rv/scm-webhook/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/.rv/scm-webhook/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+FAIL test/gitlab-events/map.test.ts
+  VTID-05541 mapGitlabEvent — the event table of plan §3.5
+    ✕ merge_request action open → scm.gitlab.merge_request.opened (16 ms)
+    ✕ merge_request action reopen → scm.gitlab.merge_request.opened (1 ms)
+    ✕ merge_request action merge → scm.gitlab.merge_request.merged (1 ms)
+    ✕ merge_request action close → scm.gitlab.merge_request.closed (1 ms)
+    ✕ pipeline status success → scm.gitlab.pipeline.succeeded (1 ms)
+    ✕ pipeline status failed → scm.gitlab.pipeline.failed
+    ✓ merge_request action "update" is ignored (1 ms)
+    ✓ merge_request action "approved" is ignored
+    ✓ merge_request action "unapproved" is ignored
+    ✓ merge_request action "approval" is ignored
+    ✓ merge_request action "unapproval" is ignored
+    ✓ merge_request action undefined is ignored
+    ✓ merge_request action 42 is ignored
+    ✓ pipeline status "created" is ignored
+    ✓ pipeline status "waiting_for_resource" is ignored
+    ✓ pipeline status "preparing" is ignored
+    ✓ pipeline status "pending" is ignored
+    ✓ pipeline status "running" is ignored
+    ✓ pipeline status "canceled" is ignored (1 ms)
+    ✓ pipeline status "skipped" is ignored
+    ✓ pipeline status "manual" is ignored
+    ✓ pipeline status "scheduled" is ignored
+    ✓ pipeline status undefined is ignored
+    ✓ push is ignored
+    ✓ note is ignored
+    ✓ build is ignored
+    ✓ no object_kind is ignored
+    ✓ not an object is ignored
+    ✓ an array is ignored
+    ✓ null is ignored
+    ✓ the VTID of a merge request event comes from its title only
+    ✕ a pipeline takes the merge request title first, then the commit title
+    ✕ firstVtid takes the first five-digit VTID and never the start of a longer number
+    ✕ the payload carries identifiers, not bodies; titles are cut
+    ✕ all five topics are new scm.gitlab.* names, none of them an existing cicd.* topic
+    ✓ no rule of autopilot-event-mapper.ts lists a scm.gitlab.* topic, so no GitLab event moves a VTID in this milestone
+    ✓ the route and the mapper emit no existing cicd.* topic
+  VTID-05541 createDeliveryIdStore — dedupe of resends per gateway task
+    ✕ remembers an id and answers has() (1 ms)
+    ✕ forgets an id after its time to live
+    ✕ keeps at most maxEntries, dropping the oldest first
+    ✕ refuses nonsense limits
+
+  ● VTID-05541 mapGitlabEvent — the event table of plan §3.5 › merge_request action open → scm.gitlab.merge_request.opened
+
+    expect(received).toMatchObject(expected)
+
+    - Expected  - 4
+    + Received  + 1
+
+      Object {
+    -   "kind": "emit",
+    -   "status": "info",
+    -   "topic": "scm.gitlab.merge_request.opened",
+    -   "vtid": "VTID-05541",
+    +   "kind": "ignore",
+      }
+
+      29 |   ])('merge_request action %s → %s', (action, topic, status) => {
+      30 |     const m = mapGitlabEvent(mr(action));
+    > 31 |     expect(m).toMatchObject({ kind: 'emit', topic, vtid: 'VTID-05541', status });
+         |               ^
+      32 |   });
+      33 |
+      34 |   test.each([
+
+      at test/gitlab-events/map.test.ts:31:15
+
+  ● VTID-05541 mapGitlabEvent — the event table of plan §3.5 › merge_request action reopen → scm.gitlab.merge_request.opened
+
+    expect(received).toMatchObject(expected)
+
+    - Expected  - 4
+    + Received  + 1
+
+      Object {
+    -   "kind": "emit",
+    -   "status": "info",
+    -   "topic": "scm.gitlab.merge_request.opened",
+    -   "vtid": "VTID-05541",
+    +   "kind": "ignore",
+      }
+
+      29 |   ])('merge_request action %s → %s', (action, topic, status) => {
+      30 |     const m = mapGitlabEvent(mr(action));
+    > 31 |     expect(m).toMatchObject({ kind: 'emit', topic, vtid: 'VTID-05541', status });
+         |               ^
+      32 |   });
+      33 |
+      34 |   test.each([
+
+      at test/gitlab-events/map.test.ts:31:15
+
+  ● VTID-05541 mapGitlabEvent — the event table of plan §3.5 › merge_request action merge → scm.gitlab.merge_request.merged
+
+    expect(received).toMatchObject(expected)
+
+    - Expected  - 4
+    + Received  + 1
+
+      Object {
+    -   "kind": "emit",
+    -   "status": "success",
+    -   "topic": "scm.gitlab.merge_request.merged",
+    -   "vtid": "VTID-05541",
+    +   "kind": "ignore",
+      }
+
+      29 |   ])('merge_request action %s → %s', (action, topic, status) => {
+      30 |     const m = mapGitlabEvent(mr(action));
+    > 31 |     expect(m).toMatchObject({ kind: 'emit', topic, vtid: 'VTID-05541', status });
+         |               ^
+      32 |   });
+      33 |
+      34 |   test.each([
+
+      at test/gitlab-events/map.test.ts:31:15
+
+  ● VTID-05541 mapGitlabEvent — the event table of plan §3.5 › merge_request action close → scm.gitlab.merge_request.closed
+
+    expect(received).toMatchObject(expected)
+
+    - Expected  - 4
+    + Received  + 1
+
+      Object {
+    -   "kind": "emit",
+    -   "status": "info",
+    -   "topic": "scm.gitlab.merge_request.closed",
+    -   "vtid": "VTID-05541",
+    +   "kind": "ignore",
+      }
+
+      29 |   ])('merge_request action %s → %s', (action, topic, status) => {
+      30 |     const m = mapGitlabEvent(mr(action));
+    > 31 |     expect(m).toMatchObject({ kind: 'emit', topic, vtid: 'VTID-05541', status });
+         |               ^
+      32 |   });
+      33 |
+      34 |   test.each([
+
+      at test/gitlab-events/map.test.ts:31:15
+
+  ● VTID-05541 mapGitlabEvent — the event table of plan §3.5 › pipeline status success → scm.gitlab.pipeline.succeeded
+
+    expect(received).toMatchObject(expected)
+
+    - Expected  - 4
+    + Received  + 1
+
+      Object {
+    -   "kind": "emit",
+    -   "status": "success",
+    -   "topic": "scm.gitlab.pipeline.succeeded",
+    -   "vtid": "VTID-05541",
+    +   "kind": "ignore",
+      }
+
+      36 |     ['failed', 'scm.gitlab.pipeline.failed', 'error'],
+      37 |   ])('pipeline status %s → %s', (st, topic, status) => {
+    > 38 |     expect(mapGitlabEvent(pipeline(st, 'VTID-05541 x', null))).toMatchObject({ kind: 'emit', topic, vtid: 'VTID-05541', status });
+         |                                                                ^
+      39 |   });
+      40 |
+      41 |   test.each(['update', 'approved', 'unapproved', 'approval', 'unapproval', undefined, 42])('merge_request action %p is ignored', (action) => {
+
+      at test/gitlab-events/map.test.ts:38:64
+
+  ● VTID-05541 mapGitlabEvent — the event table of plan §3.5 › pipeline status failed → scm.gitlab.pipeline.failed
+
+    expect(received).toMatchObject(expected)
+
+    - Expected  - 4
+    + Received  + 1
+
+      Object {
+    -   "kind": "emit",
+    -   "status": "error",
+    -   "topic": "scm.gitlab.pipeline.failed",
+    -   "vtid": "VTID-05541",
+    +   "kind": "ignore",
+      }
+
+      36 |     ['failed', 'scm.gitlab.pipeline.failed', 'error'],
+      37 |   ])('pipeline status %s → %s', (st, topic, status) => {
+    > 38 |     expect(mapGitlabEvent(pipeline(st, 'VTID-05541 x', null))).toMatchObject({ kind: 'emit', topic, vtid: 'VTID-05541', status });
+         |                                                                ^
+      39 |   });
+      40 |
+      41 |   test.each(['update', 'approved', 'unapproved', 'approval', 'unapproval', undefined, 42])('merge_request action %p is ignored', (action) => {
+
+      at test/gitlab-events/map.test.ts:38:64
+
+  ● VTID-05541 mapGitlabEvent — the event table of plan §3.5 › a pipeline takes the merge request title first, then the commit title
+
+    expect(received).toMatchObject(expected)
+
+    - Expected  - 1
+    + Received  + 2
+
+      Object {
+    -   "vtid": "VTID-05541",
+    +   "kind": "ignore",
+    +   "reason": "stub",
+      }
+
+      66 |
+      67 |   test('a pipeline takes the merge request title first, then the commit title', () => {
+    > 68 |     expect(mapGitlabEvent(pipeline('success', 'VTID-05541 mr', 'VTID-05542 commit'))).toMatchObject({ vtid: 'VTID-05541' });
+         |                                                                                       ^
+      69 |     expect(mapGitlabEvent(pipeline('success', 'no vtid', 'VTID-05542 commit'))).toMatchObject({ vtid: 'VTID-05542' });
+      70 |     expect(mapGitlabEvent(pipeline('success', null, 'VTID-05542 commit'))).toMatchObject({ vtid: 'VTID-05542' });
+      71 |     expect(mapGitlabEvent(pipeline('success', null, null)).kind).toBe('ignore');
+
+      at Object.<anonymous> (test/gitlab-events/map.test.ts:68:87)
+
+  ● VTID-05541 mapGitlabEvent — the event table of plan §3.5 › firstVtid takes the first five-digit VTID and never the start of a longer number
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "VTID-05541"
+    Received: null
+
+      73 |
+      74 |   test('firstVtid takes the first five-digit VTID and never the start of a longer number', () => {
+    > 75 |     expect(firstVtid('VTID-05541 and VTID-05542')).toBe('VTID-05541');
+         |                                                    ^
+      76 |     expect(firstVtid('VTID-055411')).toBeNull();
+      77 |     expect(firstVtid('XVTID-05541')).toBeNull();
+      78 |     expect(firstVtid('(VTID-05541)')).toBe('VTID-05541');
+
+      at Object.<anonymous> (test/gitlab-events/map.test.ts:75:52)
+
+  ● VTID-05541 mapGitlabEvent — the event table of plan §3.5 › the payload carries identifiers, not bodies; titles are cut
+
+    expected emit
+
+      84 |     const long = `VTID-05541 ${'t'.repeat(500)}`;
+      85 |     const m = mapGitlabEvent(mr('open', long, { description: 'secret plan text' }));
+    > 86 |     if (m.kind !== 'emit') throw new Error('expected emit');
+         |                                  ^
+      87 |     expect(JSON.stringify(m.payload)).not.toContain('secret plan text');
+      88 |     expect(String(m.payload.title).length).toBeLessThanOrEqual(201);
+      89 |     expect(m.payload).toMatchObject({ host: 'gitlab', project: 'vitana/rehearsal', project_id: 3, iid: 7, head_sha: 'a'.repeat(40) });
+
+      at Object.<anonymous> (test/gitlab-events/map.test.ts:86:34)
+
+  ● VTID-05541 mapGitlabEvent — the event table of plan §3.5 › all five topics are new scm.gitlab.* names, none of them an existing cicd.* topic
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 5
+    Received length: 0
+    Received array:  []
+
+      91 |
+      92 |   test('all five topics are new scm.gitlab.* names, none of them an existing cicd.* topic', () => {
+    > 93 |     expect(GITLAB_TOPICS).toHaveLength(5);
+         |                           ^
+      94 |     for (const t of GITLAB_TOPICS) expect(t.startsWith('scm.gitlab.')).toBe(true);
+      95 |     const types = fs.readFileSync(path.join(SRC, 'types', 'cicd.ts'), 'utf8');
+      96 |     for (const t of GITLAB_TOPICS) expect(types).toContain(`| '${t}'`);
+
+      at Object.<anonymous> (test/gitlab-events/map.test.ts:93:27)
+
+  ● VTID-05541 createDeliveryIdStore — dedupe of resends per gateway task › remembers an id and answers has()
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+      116 |     expect(s.has('a')).toBe(false);
+      117 |     s.remember('a');
+    > 118 |     expect(s.has('a')).toBe(true);
+          |                        ^
+      119 |     expect(s.size()).toBe(1);
+      120 |   });
+      121 |
+
+      at Object.<anonymous> (test/gitlab-events/map.test.ts:118:24)
+
+  ● VTID-05541 createDeliveryIdStore — dedupe of resends per gateway task › forgets an id after its time to live
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+      125 |     s.remember('a');
+      126 |     t = 999;
+    > 127 |     expect(s.has('a')).toBe(true);
+          |                        ^
+      128 |     t = 1000;
+      129 |     expect(s.has('a')).toBe(false);
+      130 |   });
+
+      at Object.<anonymous> (test/gitlab-events/map.test.ts:127:24)
+
+  ● VTID-05541 createDeliveryIdStore — dedupe of resends per gateway task › keeps at most maxEntries, dropping the oldest first
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+      137 |     s.remember('c');
+      138 |     expect(s.has('a')).toBe(false);
+    > 139 |     expect(s.has('b')).toBe(true);
+          |                        ^
+      140 |     expect(s.has('c')).toBe(true);
+      141 |     expect(s.size()).toBe(2);
+      142 |   });
+
+      at Object.<anonymous> (test/gitlab-events/map.test.ts:139:24)
+
+  ● VTID-05541 createDeliveryIdStore — dedupe of resends per gateway task › refuses nonsense limits
+
+    expect(received).toThrow()
+
+    Received function did not throw
+
+      143 |
+      144 |   test('refuses nonsense limits', () => {
+    > 145 |     expect(() => createDeliveryIdStore({ maxEntries: 0 })).toThrow();
+          |                                                            ^
+      146 |     expect(() => createDeliveryIdStore({ ttlMs: 0 })).toThrow();
+      147 |   });
+      148 | });
+
+      at Object.<anonymous> (test/gitlab-events/map.test.ts:145:60)
+
+FAIL test/routes/internal-gitlab-webhook.test.ts
+  VTID-05541 POST /api/v1/internal/gitlab/webhook
+    ✕ a signed merge request event is recorded once as an OASIS event with its VTID (28 ms)
+    ✕ merge_request open → {
+  object_kind: 'merge_request',
+  project: [Object],
+  object_attributes: [Object]
+} (3 ms)
+    ✕ merge_request reopen → {
+  object_kind: 'merge_request',
+  project: [Object],
+  object_attributes: [Object]
+} (3 ms)
+    ✕ merge_request merge → {
+  object_kind: 'merge_request',
+  project: [Object],
+  object_attributes: [Object]
+} (3 ms)
+    ✕ merge_request close → {
+  object_kind: 'merge_request',
+  project: [Object],
+  object_attributes: [Object]
+} (3 ms)
+    ✕ pipeline success → {
+  object_kind: 'pipeline',
+  project: [Object],
+  object_attributes: [Object],
+  merge_request: [Object],
+  commit: [Object]
+} (2 ms)
+    ✕ pipeline failed → {
+  object_kind: 'pipeline',
+  project: [Object],
+  object_attributes: [Object],
+  merge_request: [Object],
+  commit: [Object]
+} (2 ms)
+    ✕ a bad signature is refused with 401 JSON and records nothing (2 ms)
+    ✕ a signature over other bytes is refused (the exact raw body is what is checked) (4 ms)
+    ✕ bytes that JSON re-serialization would change still verify, because the raw parser runs first (2 ms)
+    ✕ a stale timestamp is refused with 401 (1 ms)
+    ✕ a request that carries only svix-* headers is refused with 401 (2 ms)
+    ✕ an unsigned request gets 401 JSON whether or not a key is set (the staging probe) (2 ms)
+    ✕ a signed delivery with no signing key configured fails closed with 500 not_configured JSON (2 ms)
+    ✕ a key that decodes to nothing is treated as not configured (2 ms)
+    ✕ the same webhook-id twice records one event; the second answer says duplicate (3 ms)
+    ✕ an event without a VTID is acknowledged with 202 and records nothing (2 ms)
+    ✕ an unmapped event kind (push) is acknowledged with 202 and records nothing (1 ms)
+    ✕ an unmapped merge request action (update) is acknowledged with 202 and records nothing (1 ms)
+    ✕ an unmapped pipeline status (running) is acknowledged with 202 and records nothing (2 ms)
+    ✕ a pipeline with no VTID in the merge request or the commit is acknowledged with 202 and records nothing (1 ms)
+    ✕ a signed body that is not JSON gets 400 JSON (6 ms)
+    ✕ a body over 1 MB gets 413 JSON, not an HTML error page (13 ms)
+    ✕ any content type is read raw (GitLab labels its bodies application/json, but the signature covers the bytes) (1 ms)
+    ✕ when OASIS cannot record the event the answer is 503 and a resend of the same delivery is processed (1 ms)
+    ✕ an emitter that throws gives 503, never an unhandled error (1 ms)
+    ✕ the default router reads GITLAB_WEBHOOK_SIGNING_TOKEN and records through emitOasisEvent (15 ms)
+    ✕ index.ts mounts the raw parser for the path before express.json() and mounts the router (1 ms)
+
+  ● VTID-05541 POST /api/v1/internal/gitlab/webhook › a signed merge request event is recorded once as an OASIS event with its VTID
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 501
+
+      83 |     const res = await post(makeApp(deps), JSON.stringify(mrEvent('open')), { id: 'msg_open', headers: undefined })
+      84 |       .set('x-gitlab-event', 'Merge Request Hook');
+    > 85 |     expect(res.status).toBe(200);
+         |                        ^
+      86 |     expect(res.headers['content-type']).toMatch(/application\/json/);
+      87 |     expect(res.body).toEqual({ ok: true, topic: 'scm.gitlab.merge_request.opened', vtid: 'VTID-05541', event_id: 'evt-1' });
+      88 |     expect(emit).toHaveBeenCalledTimes(1);
+
+      at Object.<anonymous> (test/routes/internal-gitlab-webhook.test.ts:85:24)
+
+  ● VTID-05541 POST /api/v1/internal/gitlab/webhook › merge_request open → {
+  object_kind: 'merge_request',
+  project: [Object],
+  object_attributes: [Object]
+}
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 501
+
+      103 |     const { deps, emit } = makeDeps();
+      104 |     const res = await post(makeApp(deps), JSON.stringify(event));
+    > 105 |     expect(res.status).toBe(200);
+          |                        ^
+      106 |     expect(emit).toHaveBeenCalledTimes(1);
+      107 |     expect(emit.mock.calls[0][0].type).toBe(topic);
+      108 |   });
+
+      at test/routes/internal-gitlab-webhook.test.ts:105:24
+
+  ● VTID-05541 POST /api/v1/internal/gitlab/webhook › merge_request reopen → {
+  object_kind: 'merge_request',
+  project: [Object],
+  object_attributes: [Object]
+}
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 501
+
+      103 |     const { deps, emit } = makeDeps();
+      104 |     const res = await post(makeApp(deps), JSON.stringify(event));
+    > 105 |     expect(res.status).toBe(200);
+          |                        ^
+      106 |     expect(emit).toHaveBeenCalledTimes(1);
+      107 |     expect(emit.mock.calls[0][0].type).toBe(topic);
+      108 |   });
+
+      at test/routes/internal-gitlab-webhook.test.ts:105:24
+
+  ● VTID-05541 POST /api/v1/internal/gitlab/webhook › merge_request merge → {
+  object_kind: 'merge_request',
+  project: [Object],
+  object_attributes: [Object]
+}
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 501
+
+      103 |     const { deps, emit } = makeDeps();
+      104 |     const res = await post(makeApp(deps), JSON.stringify(event));
+    > 105 |     expect(res.status).toBe(200);
+          |                        ^
+      106 |     expect(emit).toHaveBeenCalledTimes(1);
+      107 |     expect(emit.mock.calls[0][0].type).toBe(topic);
+      108 |   });
+
+      at test/routes/internal-gitlab-webhook.test.ts:105:24
+
+  ● VTID-05541 POST /api/v1/internal/gitlab/webhook › merge_request close → {
+  object_kind: 'merge_request',
+  project: [Object],
+  object_attributes: [Object]
+}
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 501
+
+      103 |     const { deps, emit } = makeDeps();
+      104 |     const res = await post(makeApp(deps), JSON.stringify(event));
+    > 105 |     expect(res.status).toBe(200);
+          |                        ^
+      106 |     expect(emit).toHaveBeenCalledTimes(1);
+      107 |     expect(emit.mock.calls[0][0].type).toBe(topic);
+      108 |   });
+
+      at test/routes/internal-gitlab-webhook.test.ts:105:24
+
+  ● VTID-05541 POST /api/v1/internal/gitlab/webhook › pipeline success → {
+  object_kind: 'pipeline',
+  project: [Object],
+  object_attributes: [Object],
+  merge_request: [Object],
+  commit: [Object]
+}
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 501
+
+      103 |     const { deps, emit } = makeDeps();
+      104 |     const res = await post(makeApp(deps), JSON.stringify(event));
+    > 105 |     expect(res.status).toBe(200);
+          |                        ^
+      106 |     expect(emit).toHaveBeenCalledTimes(1);
+      107 |     expect(emit.mock.calls[0][0].type).toBe(topic);
+      108 |   });
+
+      at test/routes/internal-gitlab-webhook.test.ts:105:24
+
+  ● VTID-05541 POST /api/v1/internal/gitlab/webhook › pipeline failed → {
+  object_kind: 'pipeline',
+  project: [Object],
+  object_attributes: [Object],
+  merge_request: [Object],
+  commit: [Object]
+}
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 501
+
+      103 |     const { deps, emit } = makeDeps();
+      104 |     const res = await post(makeApp(deps), JSON.stringify(event));
+    > 105 |     expect(res.status).toBe(200);
+          |                        ^
+      106 |     expect(emit).toHaveBeenCalledTimes(1);
+      107 |     expect(emit.mock.calls[0][0].type).toBe(topic);
+      108 |   });
+
+      at test/routes/internal-gitlab-webhook.test.ts:105:24
+
+  ● VTID-05541 POST /api/v1/internal/gitlab/webhook › a bad signature is refused with 401 JSON and records nothing
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 401
+    Received: 501
+
+      112 |     const raw = JSON.stringify(mrEvent('open'));
+      113 |     const res = await post(makeApp(deps), raw, { sig: sign('msg_x', String(Math.floor(NOW / 1000)), raw, randomBytes(32)) });
+    > 114 |     expect(res.status).toBe(401);
+          |                        ^
+      115 |     expect(res.headers['content-type']).toMatch(/application\/json/);
+      116 |     expect(res.body).toEqual({ ok: false, error: 'signature_invalid' });
+      117 |     expect(emit).not.toHaveBeenCalled();
+
+      at Object.<anonymous> (test/routes/internal-gitlab-webhook.test.ts:114:24)
+
+  ● VTID-05541 POST /api/v1/internal/gitlab/webhook › a signature over other bytes is refused (the exact raw body is what is checked)
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 401
+    Received: 501
+
+      124 |     const ts = String(Math.floor(NOW / 1000));
+      125 |     const res = await post(makeApp(deps), signed.replace('"open"', '"merge"'), { id, ts, sig: sign(id, ts, signed) });
+    > 126 |     expect(res.status).toBe(401);
+          |                        ^
+      127 |     expect(emit).not.toHaveBeenCalled();
+      128 |   });
+      129 |
+
+      at Object.<anonymous> (test/routes/internal-gitlab-webhook.test.ts:126:24)
+
+  ● VTID-05541 POST /api/v1/internal/gitlab/webhook › bytes that JSON re-serialization would change still verify, because the raw parser runs first
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 501
+
+      132 |     const raw = `{ "object_kind" : "merge_request",\n  "project": ${JSON.stringify(PROJECT)},\n  "object_attributes": ${JSON.stringify(mrEvent('close').object_attributes)} }`;
+      133 |     const res = await post(makeApp(deps), raw);
+    > 134 |     expect(res.status).toBe(200);
+          |                        ^
+      135 |     expect(emit.mock.calls[0][0].type).toBe('scm.gitlab.merge_request.closed');
+      136 |   });
+      137 |
+
+      at Object.<anonymous> (test/routes/internal-gitlab-webhook.test.ts:134:24)
+
+  ● VTID-05541 POST /api/v1/internal/gitlab/webhook › a stale timestamp is refused with 401
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 401
+    Received: 501
+
+      139 |     const { deps, emit } = makeDeps();
+      140 |     const res = await post(makeApp(deps), JSON.stringify(mrEvent('open')), { ts: String(Math.floor(NOW / 1000) - 3600) });
+    > 141 |     expect(res.status).toBe(401);
+          |                        ^
+      142 |     expect(res.body).toEqual({ ok: false, error: 'timestamp_out_of_tolerance' });
+      143 |     expect(emit).not.toHaveBeenCalled();
+      144 |   });
+
+      at Object.<anonymous> (test/routes/internal-gitlab-webhook.test.ts:141:24)
+
+  ● VTID-05541 POST /api/v1/internal/gitlab/webhook › a request that carries only svix-* headers is refused with 401
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 401
+    Received: 501
+
+      149 |     const ts = String(Math.floor(NOW / 1000));
+      150 |     const res = await post(makeApp(deps), raw, { headers: { 'svix-id': 'msg_s', 'svix-timestamp': ts, 'svix-signature': sign('msg_s', ts, raw) } });
+    > 151 |     expect(res.status).toBe(401);
+          |                        ^
+      152 |     expect(res.body).toEqual({ ok: false, error: 'signature_missing' });
+      153 |     expect(emit).not.toHaveBeenCalled();
+      154 |   });
+
+      at Object.<anonymous> (test/routes/internal-gitlab-webhook.test.ts:151:24)
+
+  ● VTID-05541 POST /api/v1/internal/gitlab/webhook › an unsigned request gets 401 JSON whether or not a key is set (the staging probe)
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 401
+    Received: 501
+
+      158 |       const { deps, emit } = makeDeps({ signingKey: () => key });
+      159 |       const res = await post(makeApp(deps), '{}', { headers: { authorization: 'Bearer staging-verify.invalid.probe' } });
+    > 160 |       expect(res.status).toBe(401);
+          |                          ^
+      161 |       expect(res.headers['content-type']).toMatch(/application\/json/);
+      162 |       expect(emit).not.toHaveBeenCalled();
+      163 |     }
+
+      at Object.<anonymous> (test/routes/internal-gitlab-webhook.test.ts:160:26)
+
+  ● VTID-05541 POST /api/v1/internal/gitlab/webhook › a signed delivery with no signing key configured fails closed with 500 not_configured JSON
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 500
+    Received: 501
+
+      167 |     const { deps, emit } = makeDeps({ signingKey: () => undefined });
+      168 |     const res = await post(makeApp(deps), JSON.stringify(mrEvent('open')));
+    > 169 |     expect(res.status).toBe(500);
+          |                        ^
+      170 |     expect(res.headers['content-type']).toMatch(/application\/json/);
+      171 |     expect(res.body).toEqual({ ok: false, error: 'not_configured' });
+      172 |     expect(emit).not.toHaveBeenCalled();
+
+      at Object.<anonymous> (test/routes/internal-gitlab-webhook.test.ts:169:24)
+
+  ● VTID-05541 POST /api/v1/internal/gitlab/webhook › a key that decodes to nothing is treated as not configured
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 500
+    Received: 501
+
+      176 |     const { deps } = makeDeps({ signingKey: () => 'whsec_' });
+      177 |     const res = await post(makeApp(deps), JSON.stringify(mrEvent('open')));
+    > 178 |     expect(res.status).toBe(500);
+          |                        ^
+      179 |     expect(res.body.error).toBe('not_configured');
+      180 |   });
+      181 |
+
+      at Object.<anonymous> (test/routes/internal-gitlab-webhook.test.ts:178:24)
+
+  ● VTID-05541 POST /api/v1/internal/gitlab/webhook › the same webhook-id twice records one event; the second answer says duplicate
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 501
+
+      186 |     const first = await post(app, raw, { id: 'msg_dup' });
+      187 |     const second = await post(app, raw, { id: 'msg_dup' });
+    > 188 |     expect(first.status).toBe(200);
+          |                          ^
+      189 |     expect(second.status).toBe(200);
+      190 |     expect(second.body).toEqual({ ok: true, duplicate: true });
+      191 |     expect(emit).toHaveBeenCalledTimes(1);
+
+      at Object.<anonymous> (test/routes/internal-gitlab-webhook.test.ts:188:26)
+
+  ● VTID-05541 POST /api/v1/internal/gitlab/webhook › an event without a VTID is acknowledged with 202 and records nothing
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 202
+    Received: 501
+
+      201 |     const { deps, emit } = makeDeps();
+      202 |     const res = await post(makeApp(deps), JSON.stringify(event));
+    > 203 |     expect(res.status).toBe(202);
+          |                        ^
+      204 |     expect(res.headers['content-type']).toMatch(/application\/json/);
+      205 |     expect(res.body.ok).toBe(true);
+      206 |     expect(res.body.ignored).toBe(true);
+
+      at test/routes/internal-gitlab-webhook.test.ts:203:24
+
+  ● VTID-05541 POST /api/v1/internal/gitlab/webhook › an unmapped event kind (push) is acknowledged with 202 and records nothing
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 202
+    Received: 501
+
+      201 |     const { deps, emit } = makeDeps();
+      202 |     const res = await post(makeApp(deps), JSON.stringify(event));
+    > 203 |     expect(res.status).toBe(202);
+          |                        ^
+      204 |     expect(res.headers['content-type']).toMatch(/application\/json/);
+      205 |     expect(res.body.ok).toBe(true);
+      206 |     expect(res.body.ignored).toBe(true);
+
+      at test/routes/internal-gitlab-webhook.test.ts:203:24
+
+  ● VTID-05541 POST /api/v1/internal/gitlab/webhook › an unmapped merge request action (update) is acknowledged with 202 and records nothing
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 202
+    Received: 501
+
+      201 |     const { deps, emit } = makeDeps();
+      202 |     const res = await post(makeApp(deps), JSON.stringify(event));
+    > 203 |     expect(res.status).toBe(202);
+          |                        ^
+      204 |     expect(res.headers['content-type']).toMatch(/application\/json/);
+      205 |     expect(res.body.ok).toBe(true);
+      206 |     expect(res.body.ignored).toBe(true);
+
+      at test/routes/internal-gitlab-webhook.test.ts:203:24
+
+  ● VTID-05541 POST /api/v1/internal/gitlab/webhook › an unmapped pipeline status (running) is acknowledged with 202 and records nothing
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 202
+    Received: 501
+
+      201 |     const { deps, emit } = makeDeps();
+      202 |     const res = await post(makeApp(deps), JSON.stringify(event));
+    > 203 |     expect(res.status).toBe(202);
+          |                        ^
+      204 |     expect(res.headers['content-type']).toMatch(/application\/json/);
+      205 |     expect(res.body.ok).toBe(true);
+      206 |     expect(res.body.ignored).toBe(true);
+
+      at test/routes/internal-gitlab-webhook.test.ts:203:24
+
+  ● VTID-05541 POST /api/v1/internal/gitlab/webhook › a pipeline with no VTID in the merge request or the commit is acknowledged with 202 and records nothing
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 202
+    Received: 501
+
+      201 |     const { deps, emit } = makeDeps();
+      202 |     const res = await post(makeApp(deps), JSON.stringify(event));
+    > 203 |     expect(res.status).toBe(202);
+          |                        ^
+      204 |     expect(res.headers['content-type']).toMatch(/application\/json/);
+      205 |     expect(res.body.ok).toBe(true);
+      206 |     expect(res.body.ignored).toBe(true);
+
+      at test/routes/internal-gitlab-webhook.test.ts:203:24
+
+  ● VTID-05541 POST /api/v1/internal/gitlab/webhook › a signed body that is not JSON gets 400 JSON
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 4
+    + Received  + 1
+
+    - Object {
+    -   "error": "invalid_json",
+    -   "ok": false,
+    - }
+    + Object {}
+
+      212 |     const res = await post(makeApp(deps), '{"object_kind": "merge_request",');
+      213 |     expect(res.status).toBe(400);
+    > 214 |     expect(res.body).toEqual({ ok: false, error: 'invalid_json' });
+          |                      ^
+      215 |     expect(emit).not.toHaveBeenCalled();
+      216 |   });
+      217 |
+
+      at Object.<anonymous> (test/routes/internal-gitlab-webhook.test.ts:214:22)
+
+  ● VTID-05541 POST /api/v1/internal/gitlab/webhook › a body over 1 MB gets 413 JSON, not an HTML error page
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 413
+    Received: 501
+
+      220 |     const raw = JSON.stringify({ object_kind: 'merge_request', pad: 'x'.repeat(1024 * 1024 + 10) });
+      221 |     const res = await post(makeApp(deps), raw);
+    > 222 |     expect(res.status).toBe(413);
+          |                        ^
+      223 |     expect(res.headers['content-type']).toMatch(/application\/json/);
+      224 |     expect(res.body).toMatchObject({ ok: false, error: 'payload_too_large' });
+      225 |     expect(emit).not.toHaveBeenCalled();
+
+      at Object.<anonymous> (test/routes/internal-gitlab-webhook.test.ts:222:24)
+
+  ● VTID-05541 POST /api/v1/internal/gitlab/webhook › any content type is read raw (GitLab labels its bodies application/json, but the signature covers the bytes)
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 501
+
+      229 |     const { deps, emit } = makeDeps();
+      230 |     const res = await post(makeApp(deps), JSON.stringify(pipelineEvent('failed')), { contentType: 'text/plain' });
+    > 231 |     expect(res.status).toBe(200);
+          |                        ^
+      232 |     expect(emit.mock.calls[0][0].type).toBe('scm.gitlab.pipeline.failed');
+      233 |   });
+      234 |
+
+      at Object.<anonymous> (test/routes/internal-gitlab-webhook.test.ts:231:24)
+
+  ● VTID-05541 POST /api/v1/internal/gitlab/webhook › when OASIS cannot record the event the answer is 503 and a resend of the same delivery is processed
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 503
+    Received: 501
+
+      241 |     const raw = JSON.stringify(pipelineEvent('success'));
+      242 |     const first = await post(app, raw, { id: 'msg_retry' });
+    > 243 |     expect(first.status).toBe(503);
+          |                          ^
+      244 |     expect(first.body).toEqual({ ok: false, error: 'oasis_unavailable' });
+      245 |     const resend = await post(app, raw, { id: 'msg_retry' });
+      246 |     expect(resend.status).toBe(200);
+
+      at Object.<anonymous> (test/routes/internal-gitlab-webhook.test.ts:243:26)
+
+  ● VTID-05541 POST /api/v1/internal/gitlab/webhook › an emitter that throws gives 503, never an unhandled error
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 503
+    Received: 501
+
+      253 |     const { deps } = makeDeps({ emit });
+      254 |     const res = await post(makeApp(deps), JSON.stringify(mrEvent('open')));
+    > 255 |     expect(res.status).toBe(503);
+          |                        ^
+      256 |     expect(res.headers['content-type']).toMatch(/application\/json/);
+      257 |   });
+      258 |
+
+      at Object.<anonymous> (test/routes/internal-gitlab-webhook.test.ts:255:24)
+
+  ● VTID-05541 POST /api/v1/internal/gitlab/webhook › the default router reads GITLAB_WEBHOOK_SIGNING_TOKEN and records through emitOasisEvent
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 501
+
+      277 |       const res = await request(app).post(GITLAB_WEBHOOK_PATH).set('content-type', 'application/json')
+      278 |         .set('webhook-id', id).set('webhook-timestamp', ts).set('webhook-signature', sign(id, ts, raw)).send(raw);
+    > 279 |       expect(res.status).toBe(200);
+          |                          ^
+      280 |       expect(emitOasisEvent).toHaveBeenCalledTimes(1);
+      281 |     } finally {
+      282 |       if (saved === undefined) delete process.env.GITLAB_WEBHOOK_SIGNING_TOKEN;
+
+      at Object.<anonymous> (test/routes/internal-gitlab-webhook.test.ts:279:26)
+
+  ● VTID-05541 POST /api/v1/internal/gitlab/webhook › index.ts mounts the raw parser for the path before express.json() and mounts the router
+
+    expect(received).toBeGreaterThan(expected)
+
+    Expected: > -1
+    Received:   -1
+
+      289 |     const parsers = src.indexOf('internalGitlabWebhook.mountGitlabWebhookParsers(app)');
+      290 |     const json = src.indexOf("app.use(express.json({ limit: '2mb' }))");
+    > 291 |     expect(parsers).toBeGreaterThan(-1);
+          |                     ^
+      292 |     expect(json).toBeGreaterThan(-1);
+      293 |     expect(parsers).toBeLessThan(json);
+      294 |     expect(src).toContain("mountRouterSync(app, '/api/v1/internal/gitlab', internalGitlabWebhook.default, { owner: 'internal-gitlab-webhook' })");
+
+      at Object.<anonymous> (test/routes/internal-gitlab-webhook.test.ts:291:21)
+
+Test Suites: 2 failed, 2 total
+Tests:       42 failed, 27 passed, 69 total
+Snapshots:   0 total
+Time:        1.087 s
+Ran all test suites matching /test\/routes\/internal-gitlab-webhook.test.ts|test\/gitlab-events\/map.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

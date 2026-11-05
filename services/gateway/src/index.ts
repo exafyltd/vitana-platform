@@ -235,6 +235,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const authBridgeRouter = require('./routes/auth-bridge').default;
   // VTID-05174 (Health Hub D5 remainder): account-deletion health residue (service token only)
   const healthErasureInternalRouter = require('./routes/health-erasure-internal').default;
+  // VTID-05541 (eng-gitlab-m2 §3.5): signed GitLab webhook events -> OASIS (signature is the gate, no user auth)
+  const internalGitlabWebhook = require('./routes/internal-gitlab-webhook');
   // VTID-02000: User limitations CRUD + impact counter
   const userLimitationsRouter = require('./routes/user-limitations').default;
   // VTID-02000: Wearables waitlist (Phase 0 stub — still works alongside Phase 1 connector flow)
@@ -616,6 +618,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // type '*/*' on purpose (unlike the Stripe mounts): the signature covers whatever
   // bytes the vendor sent, whatever Content-Type it labels them with.
   app.use('/api/v1/connectors/webhook', express.raw({ type: '*/*', limit: '2mb' }));
+  // VTID-05541: GitLab signs the exact bytes too (Standard Webhooks). Raw body plus JSON 413/400 replies for that path.
+  internalGitlabWebhook.mountGitlabWebhookParsers(app);
 
   // Middleware - IMPORTANT: JSON body parser must come before route handlers
   app.use(express.json({ limit: '2mb' }));
@@ -1271,6 +1275,7 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/internal/marketplace', internalMarketplaceSyncRouter, { owner: 'marketplace-sync' });
   mountRouterSync(app, '/api/v1/internal/auth-bridge', authBridgeRouter, { owner: 'auth-bridge' });
   mountRouterSync(app, '/api/v1/internal/health-erasure', healthErasureInternalRouter, { owner: 'health-erasure-internal' });
+  mountRouterSync(app, '/api/v1/internal/gitlab', internalGitlabWebhook.default, { owner: 'internal-gitlab-webhook' });
 
   // VTID-02000: User limitations + impact counter (user-facing /ecosystem/preferences)
   mountRouterSync(app, '/api/v1/user/limitations', userLimitationsRouter, { owner: 'user-limitations' });

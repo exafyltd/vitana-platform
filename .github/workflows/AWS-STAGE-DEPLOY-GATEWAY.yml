@@ -357,6 +357,28 @@ jobs:
             jq -c --arg a "$ARN" '.sec += [{name:"DEV_MEMORY_PACK_TOKEN", valueFrom:$a}]' "$F" > "$F.tmp" && mv "$F.tmp" "$F"
           fi
           jq -c '{env, sec: [.sec[].name]}' "$F"
+      # VTID-05541 (plan eng-gitlab-m2 §3.5): the signing key of the GitLab webhook route
+      # (routes/internal-gitlab-webhook.ts). Wired only when vitana/gateway/staging/gitlab-webhook-signing-token
+      # exists (scripts/aws/setup-gitlab-webhook-secret.sh); absent => not wired, the deploy never fails, an unsigned
+      # request still gets 401 and a signed one 500 not_configured. Production is not wired in this milestone.
+      - name: Resolve GitLab webhook signing key
+        run: |
+          set -euo pipefail
+          NAME="vitana/gateway/staging/gitlab-webhook-signing-token"
+          ERR="$RUNNER_TEMP/gitlab-webhook-describe.err"
+          ARN=$(aws secretsmanager describe-secret --secret-id "$NAME" --query ARN --output text 2>"$ERR" || true)
+          F="$RUNNER_TEMP/connected-apps.json"
+          if [ -z "$ARN" ] || [ "$ARN" = "None" ]; then
+            if grep -q ResourceNotFoundException "$ERR"; then
+              echo "  $NAME not found - GITLAB_WEBHOOK_SIGNING_TOKEN not wired (VTID-05541)"
+            else
+              echo "::warning::$NAME lookup failed - GITLAB_WEBHOOK_SIGNING_TOKEN not wired: $(head -c 300 "$ERR")"
+            fi
+          else
+            echo "  resolved $NAME -> GITLAB_WEBHOOK_SIGNING_TOKEN"
+            jq -c --arg a "$ARN" '.sec += [{name:"GITLAB_WEBHOOK_SIGNING_TOKEN", valueFrom:$a}]' "$F" > "$F.tmp" && mv "$F.tmp" "$F"
+          fi
+          jq -c '{env, sec: [.sec[].name]}' "$F"
       # VTID-04999: the Operator's Kiro engine on the private kiro-runner. Jev
       # pattern: wired only when the runner token secret exists (the owner runs
       # scripts/aws/setup-kiro-runner-staging.sh provision --apply); then

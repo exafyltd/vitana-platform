@@ -1,0 +1,12 @@
+# npm run test:roles on this branch (VTID-05541). One expected failure: the atlas drift guard, because no atlas
+# domain claims routes/internal-gitlab-webhook.ts yet. The claim is added by lane agentic-delivery/prerequisites, which lands
+# first (plan agentic-delivery §9); this lane's PR is brought up to date with main after it and must then be green.
+
+    ✕ every gateway route file is claimed by at least one domain (drift guard) (8 ms)
+    - Expected  - 1
+    + Received  + 3
+    - Array []
+    + Array [
+    +   "internal-gitlab-webhook.ts",
+    + ]
+Tests:       1 failed, 104 passed, 105 total

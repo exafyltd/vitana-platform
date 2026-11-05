@@ -1,0 +1,15 @@
+# VTID-05541 (eng-gitlab-m2/scm-webhook) — commands run by kiro-exafy-202611041929-802c, branch kiro/eng-gitlab-m2/scm-webhook from origin/main 177c28d139
+node scripts/collab/queue.mjs claim eng-gitlab-m2/scm-webhook --session kiro-exafy-202611041929-802c --repo vitana-platform   # ok
+(cd services/gateway && npm ci)                                                                   # 850 packages
+# tests written first; red on base with stub modules (outputs/red-on-base.txt):
+(cd services/gateway && npx jest test/routes/internal-gitlab-webhook.test.ts test/gitlab-events/map.test.ts)   # 42 failed, 27 passed
+# implementation, then green (outputs/green.txt):
+(cd services/gateway && npx jest test/routes/internal-gitlab-webhook.test.ts test/gitlab-events)   # 73 passed
+(cd services/gateway && npm run typecheck)                                                         # exit 0 (outputs/typecheck.txt)
+(cd services/gateway && npm run build)                                                             # exit 0
+(cd services/gateway && npx jest test/vtid-04465-operator-pipeline-regression.test.ts)             # 71 passed (outputs/operator-regression.txt)
+(cd services/gateway && npx jest test/vtid-04560-role-separation-regression.test.ts)               # 1 failed (atlas drift guard, expected until agentic-delivery/prerequisites; outputs/roles-atlas.txt)
+(cd services/gateway && npx jest $(grep -rl AWS-STAGE-DEPLOY-GATEWAY.yml test))                   # 102 suites, 1356 tests passed (outputs/workflow-tests.txt)
+bash -n scripts/aws/setup-gitlab-webhook-secret.sh                                                 # ok
+node -e '<js-yaml load of .github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml>'                         # parsed; new step 13 of 28, after "Resolve dev-memory pack token"
+# local curl proof against the built route (outputs/curl-proof.txt): 401, 202, 200 duplicate, 401, 500 not_configured, 413

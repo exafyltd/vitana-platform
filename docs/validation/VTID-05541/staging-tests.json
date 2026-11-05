@@ -1,0 +1,21 @@
+{
+  "vtid": "VTID-05541",
+  "service": "gateway",
+  "note": "A machine route signed by GitLab. The probe sends no signed event (a real one would write an OASIS row to the shared database); it proves the route is mounted and refuses an unsigned request with JSON, whether or not the staging key is set.",
+  "read_only": true,
+  "tests": [
+    {
+      "kind": "http",
+      "name": "an unsigned POST to the GitLab webhook route is refused with JSON 401 (mounted, not 404 or HTML)",
+      "path": "/api/v1/internal/gitlab/webhook",
+      "method": "POST",
+      "rejected_probe": true,
+      "expect_status": 401
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/routes/internal-gitlab-webhook.test.ts test/gitlab-events",
+      "reason": "The signed paths (mapping, dedupe, 503 on an OASIS failure) need a signing key and would write OASIS rows on staging; Jest covers them."
+    }
+  ]
+}
