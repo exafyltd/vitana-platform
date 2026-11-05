@@ -1,0 +1,11 @@
+# the same with node v20.20.2 (npx -y node@20; the workflow uses actions/setup-node 20)
+# $ npx -y node@20 --test $FILES
+# files: 35
+# tests 677
+# suites 0
+# pass 676
+# fail 0
+# cancelled 0
+# skipped 1
+# todo 0
+# failing case names (none expected):

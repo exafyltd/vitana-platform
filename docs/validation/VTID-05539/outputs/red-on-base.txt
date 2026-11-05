@@ -1,0 +1,808 @@
+# base: the commit this lane starts from (8bae0d492d4, the tip of the M1 branch) has no monitoring.tf, no vitana-ci-metrics units, no host/ops.d and no scripts/eng/ci-metrics.mjs; this run has the final test files and those absent
+# $ node --test scripts/eng/monitoring-structure.test.mjs scripts/eng/ci-metrics.test.mjs
+TAP version 13
+# node:internal/modules/esm/resolve:275
+#     throw new ERR_MODULE_NOT_FOUND(
+#           ^
+# Error [ERR_MODULE_NOT_FOUND]: Cannot find module '<worktree>/scripts/eng/ci-metrics.mjs' imported from <worktree>/scripts/eng/ci-metrics.test.mjs
+#   code: 'ERR_MODULE_NOT_FOUND',
+#   url: 'file://<worktree>/scripts/eng/ci-metrics.mjs'
+# }
+# Node.js v22.23.4
+# Subtest: scripts/eng/ci-metrics.test.mjs
+not ok 1 - scripts/eng/ci-metrics.test.mjs
+  ---
+  duration_ms: 38.761862
+  type: 'test'
+  location: '<worktree>/scripts/eng/ci-metrics.test.mjs:1:1'
+  failureType: 'testCodeFailure'
+  exitCode: 1
+  signal: ~
+  error: 'test failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# Subtest: monitoring.tf is a second file of the same module: it declares no provider, backend or terraform block and no name main.tf already uses
+not ok 2 - monitoring.tf is a second file of the same module: it declares no provider, backend or terraform block and no name main.tf already uses
+  ---
+  duration_ms: 1.505112
+  type: 'test'
+  location: '<worktree>/scripts/eng/monitoring-structure.test.mjs:33:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/terraform/monitoring.tf'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:20:23)
+    get MON (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:25:22)
+    file://<worktree>/scripts/eng/monitoring-structure.test.mjs:107:148
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:33:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.start (node:internal/test_runner/test:944:17)
+    startSubtestAfterBootstrap (node:internal/test_runner/harness:296:17)
+  ...
+# Subtest: every variable has a default, so the owner's existing setup.sh apply needs no new -var flag
+not ok 3 - every variable has a default, so the owner's existing setup.sh apply needs no new -var flag
+  ---
+  duration_ms: 0.354484
+  type: 'test'
+  location: '<worktree>/scripts/eng/monitoring-structure.test.mjs:33:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/terraform/monitoring.tf'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:20:23)
+    get MON (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:25:22)
+    file://<worktree>/scripts/eng/monitoring-structure.test.mjs:125:105
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:33:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+  ...
+# Subtest: every reference to milestone 1 points at something main.tf really declares
+not ok 4 - every reference to milestone 1 points at something main.tf really declares
+  ---
+  duration_ms: 0.245165
+  type: 'test'
+  location: '<worktree>/scripts/eng/monitoring-structure.test.mjs:33:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/terraform/monitoring.tf'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:20:23)
+    get MON (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:25:22)
+    file://<worktree>/scripts/eng/monitoring-structure.test.mjs:135:87
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:33:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+  ...
+# Subtest: topic vitana-eng-alerts is encrypted with its own customer-managed key (the M1 key cannot be used by CloudWatch)
+not ok 5 - topic vitana-eng-alerts is encrypted with its own customer-managed key (the M1 key cannot be used by CloudWatch)
+  ---
+  duration_ms: 0.224614
+  type: 'test'
+  location: '<worktree>/scripts/eng/monitoring-structure.test.mjs:33:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/terraform/monitoring.tf'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:20:23)
+    get MON (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:25:22)
+    file://<worktree>/scripts/eng/monitoring-structure.test.mjs:150:125
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:33:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+  ...
+# Subtest: key policy: the account keeps control, and cloudwatch.amazonaws.com may only decrypt and generate data keys, for alarms of this account
+not ok 6 - key policy: the account keeps control, and cloudwatch.amazonaws.com may only decrypt and generate data keys, for alarms of this account
+  ---
+  duration_ms: 0.370979
+  type: 'test'
+  location: '<worktree>/scripts/eng/monitoring-structure.test.mjs:33:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/terraform/monitoring.tf'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:20:23)
+    get MON (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:25:22)
+    file://<worktree>/scripts/eng/monitoring-structure.test.mjs:163:148
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:33:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+  ...
+# Subtest: the e-mail subscription goes to alert_email, or to the admin_email setup.sh already passes; a bad address stops the plan
+not ok 7 - the e-mail subscription goes to alert_email, or to the admin_email setup.sh already passes; a bad address stops the plan
+  ---
+  duration_ms: 0.198169
+  type: 'test'
+  location: '<worktree>/scripts/eng/monitoring-structure.test.mjs:33:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/terraform/monitoring.tf'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:20:23)
+    get MON (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:25:22)
+    file://<worktree>/scripts/eng/monitoring-structure.test.mjs:178:133
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:33:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+  ...
+# Subtest: exactly the eight alarms of plan §3.6 exist
+not ok 8 - exactly the eight alarms of plan §3.6 exist
+  ---
+  duration_ms: 0.217031
+  type: 'test'
+  location: '<worktree>/scripts/eng/monitoring-structure.test.mjs:33:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/terraform/monitoring.tf'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:20:23)
+    get MON (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:25:22)
+    file://<worktree>/scripts/eng/monitoring-structure.test.mjs:190:56
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:33:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+  ...
+# Subtest: alarm vitana-eng-oldest-pending-job: OldestPendingJobAgeSeconds GreaterThanThreshold 600, 3 x 60 s, missing data notBreaching
+not ok 9 - alarm vitana-eng-oldest-pending-job: OldestPendingJobAgeSeconds GreaterThanThreshold 600, 3 x 60 s, missing data notBreaching
+  ---
+  duration_ms: 0.213753
+  type: 'test'
+  location: '<worktree>/scripts/eng/monitoring-structure.test.mjs:33:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/terraform/monitoring.tf'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:20:23)
+    get MON (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:25:22)
+    file://<worktree>/scripts/eng/monitoring-structure.test.mjs:195:150
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:33:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+  ...
+# Subtest: alarm vitana-eng-fleet-at-maximum: FleetRunningJobs GreaterThanOrEqualToThreshold var.fleet_alarm_running_jobs, 30 x 60 s, missing data notBreaching
+not ok 10 - alarm vitana-eng-fleet-at-maximum: FleetRunningJobs GreaterThanOrEqualToThreshold var.fleet_alarm_running_jobs, 30 x 60 s, missing data notBreaching
+  ---
+  duration_ms: 0.400176
+  type: 'test'
+  location: '<worktree>/scripts/eng/monitoring-structure.test.mjs:33:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/terraform/monitoring.tf'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:20:23)
+    get MON (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:25:22)
+    file://<worktree>/scripts/eng/monitoring-structure.test.mjs:195:150
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:33:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+  ...
+# Subtest: alarm vitana-eng-gitlab-host-status: StatusCheckFailed GreaterThanThreshold 0, 5 x 60 s, missing data breaching
+not ok 11 - alarm vitana-eng-gitlab-host-status: StatusCheckFailed GreaterThanThreshold 0, 5 x 60 s, missing data breaching
+  ---
+  duration_ms: 0.402113
+  type: 'test'
+  location: '<worktree>/scripts/eng/monitoring-structure.test.mjs:33:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/terraform/monitoring.tf'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:20:23)
+    get MON (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:25:22)
+    file://<worktree>/scripts/eng/monitoring-structure.test.mjs:195:150
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:33:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+  ...
+# Subtest: alarm vitana-eng-gitlab-disk-used: disk_used_percent GreaterThanThreshold 80, 3 x 300 s, missing data notBreaching
+not ok 12 - alarm vitana-eng-gitlab-disk-used: disk_used_percent GreaterThanThreshold 80, 3 x 300 s, missing data notBreaching
+  ---
+  duration_ms: 1.309662
+  type: 'test'
+  location: '<worktree>/scripts/eng/monitoring-structure.test.mjs:33:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/terraform/monitoring.tf'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:20:23)
+    get MON (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:25:22)
+    file://<worktree>/scripts/eng/monitoring-structure.test.mjs:195:150
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:33:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+  ...
+# Subtest: alarm vitana-eng-gitlab-lb-unhealthy-target: UnHealthyHostCount GreaterThanThreshold 0, 5 x 60 s, missing data notBreaching
+not ok 13 - alarm vitana-eng-gitlab-lb-unhealthy-target: UnHealthyHostCount GreaterThanThreshold 0, 5 x 60 s, missing data notBreaching
+  ---
+  duration_ms: 0.161443
+  type: 'test'
+  location: '<worktree>/scripts/eng/monitoring-structure.test.mjs:33:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/terraform/monitoring.tf'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:20:23)
+    get MON (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:25:22)
+    file://<worktree>/scripts/eng/monitoring-structure.test.mjs:195:150
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:33:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+  ...
+# Subtest: alarm vitana-eng-backup-age: BackupAgeSeconds GreaterThanThreshold 108000, 3 x 300 s, missing data breaching
+not ok 14 - alarm vitana-eng-backup-age: BackupAgeSeconds GreaterThanThreshold 108000, 3 x 300 s, missing data breaching
+  ---
+  duration_ms: 0.085535
+  type: 'test'
+  location: '<worktree>/scripts/eng/monitoring-structure.test.mjs:33:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/terraform/monitoring.tf'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:20:23)
+    get MON (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:25:22)
+    file://<worktree>/scripts/eng/monitoring-structure.test.mjs:195:150
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:33:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+  ...
+# Subtest: alarm vitana-eng-merge-bot-tick: TickAgeSeconds GreaterThanThreshold 900, 3 x 60 s, missing data breaching
+not ok 15 - alarm vitana-eng-merge-bot-tick: TickAgeSeconds GreaterThanThreshold 900, 3 x 60 s, missing data breaching
+  ---
+  duration_ms: 0.075422
+  type: 'test'
+  location: '<worktree>/scripts/eng/monitoring-structure.test.mjs:33:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/terraform/monitoring.tf'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:20:23)
+    get MON (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:25:22)
+    file://<worktree>/scripts/eng/monitoring-structure.test.mjs:195:150
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:33:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+  ...
+# Subtest: alarm vitana-eng-settings-sync-tick: TickAgeSeconds GreaterThanThreshold 900, 3 x 60 s, missing data breaching
+not ok 16 - alarm vitana-eng-settings-sync-tick: TickAgeSeconds GreaterThanThreshold 900, 3 x 60 s, missing data breaching
+  ---
+  duration_ms: 0.067421
+  type: 'test'
+  location: '<worktree>/scripts/eng/monitoring-structure.test.mjs:33:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/terraform/monitoring.tf'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:20:23)
+    get MON (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:25:22)
+    file://<worktree>/scripts/eng/monitoring-structure.test.mjs:195:150
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:33:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+  ...
+# Subtest: a heartbeat that goes quiet is an alarm; a queue number that is missing is not (plan §3.6 States)
+not ok 17 - a heartbeat that goes quiet is an alarm; a queue number that is missing is not (plan §3.6 States)
+  ---
+  duration_ms: 0.188648
+  type: 'test'
+  location: '<worktree>/scripts/eng/monitoring-structure.test.mjs:33:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/terraform/monitoring.tf'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:20:23)
+    get MON (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:25:22)
+    file://<worktree>/scripts/eng/monitoring-structure.test.mjs:213:110
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:33:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+  ...
+# Subtest: only alarm_actions: a healthy system sends nothing, and an alarm that clears does not send a second mail
+not ok 18 - only alarm_actions: a healthy system sends nothing, and an alarm that clears does not send a second mail
+  ---
+  duration_ms: 0.195627
+  type: 'test'
+  location: '<worktree>/scripts/eng/monitoring-structure.test.mjs:33:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/terraform/monitoring.tf'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:20:23)
+    get MON (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:25:22)
+    file://<worktree>/scripts/eng/monitoring-structure.test.mjs:220:117
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:33:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+  ...
+# Subtest: the fleet alarm threshold is the fleet maximum of plan §3.2 (24) through a variable, evaluated over 30 one-minute periods
+not ok 19 - the fleet alarm threshold is the fleet maximum of plan §3.2 (24) through a variable, evaluated over 30 one-minute periods
+  ---
+  duration_ms: 0.1307
+  type: 'test'
+  location: '<worktree>/scripts/eng/monitoring-structure.test.mjs:33:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/terraform/monitoring.tf'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:20:23)
+    get MON (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:25:22)
+    file://<worktree>/scripts/eng/monitoring-structure.test.mjs:227:134
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:33:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+  ...
+# Subtest: the tick alarms are 15 minutes (900 s) of age on the two units of plan §3.3 and §3.4; the backup alarm is 30 hours
+not ok 20 - the tick alarms are 15 minutes (900 s) of age on the two units of plan §3.3 and §3.4; the backup alarm is 30 hours
+  ---
+  duration_ms: 0.122677
+  type: 'test'
+  location: '<worktree>/scripts/eng/monitoring-structure.test.mjs:33:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/terraform/monitoring.tf'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:20:23)
+    get MON (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:25:22)
+    file://<worktree>/scripts/eng/monitoring-structure.test.mjs:234:127
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:33:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+  ...
+# Subtest: budget: monthly, in dollars, from a variable, with mails at 50, 80 and 100 percent of the actual cost, straight to the owner
+not ok 21 - budget: monthly, in dollars, from a variable, with mails at 50, 80 and 100 percent of the actual cost, straight to the owner
+  ---
+  duration_ms: 0.1589
+  type: 'test'
+  location: '<worktree>/scripts/eng/monitoring-structure.test.mjs:33:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/terraform/monitoring.tf'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:20:23)
+    get MON (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:25:22)
+    file://<worktree>/scripts/eng/monitoring-structure.test.mjs:241:137
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:33:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+  ...
+# Subtest: the host role may publish metrics to the namespace Vitana/Engineering and do nothing else here
+not ok 22 - the host role may publish metrics to the namespace Vitana/Engineering and do nothing else here
+  ---
+  duration_ms: 0.142415
+  type: 'test'
+  location: '<worktree>/scripts/eng/monitoring-structure.test.mjs:33:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/terraform/monitoring.tf'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:20:23)
+    get MON (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:25:22)
+    file://<worktree>/scripts/eng/monitoring-structure.test.mjs:261:107
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:33:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+  ...
+# Subtest: wildcards: only kms:* for the account in the key policy, kms:GenerateDataKey* for CloudWatch, and PutMetricData on * with its namespace condition
+not ok 23 - wildcards: only kms:* for the account in the key policy, kms:GenerateDataKey* for CloudWatch, and PutMetricData on * with its namespace condition
+  ---
+  duration_ms: 0.145556
+  type: 'test'
+  location: '<worktree>/scripts/eng/monitoring-structure.test.mjs:33:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/terraform/monitoring.tf'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:20:23)
+    get MON (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:25:22)
+    file://<worktree>/scripts/eng/monitoring-structure.test.mjs:277:158
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:33:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+  ...
+# Subtest: outputs give m2.sh status what it needs: topic, recipient, alarm names, budget and namespace; no secret
+not ok 24 - outputs give m2.sh status what it needs: topic, recipient, alarm names, budget and namespace; no secret
+  ---
+  duration_ms: 0.139225
+  type: 'test'
+  location: '<worktree>/scripts/eng/monitoring-structure.test.mjs:33:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/terraform/monitoring.tf'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:20:23)
+    get MON (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:25:22)
+    file://<worktree>/scripts/eng/monitoring-structure.test.mjs:289:116
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:33:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+  ...
+# Subtest: vitana-ci-metrics.service: one tick under flock -n -E 0, niced, CPU and memory capped, the read-only token, state in /var/lib
+not ok 25 - vitana-ci-metrics.service: one tick under flock -n -E 0, niced, CPU and memory capped, the read-only token, state in /var/lib
+  ---
+  duration_ms: 0.476729
+  type: 'test'
+  location: '<worktree>/scripts/eng/monitoring-structure.test.mjs:33:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/host/units/vitana-ci-metrics.service'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:20:23)
+    get SERVICE (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:27:26)
+    file://<worktree>/scripts/eng/monitoring-structure.test.mjs:302:138
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:33:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+  ...
+# Subtest: vitana-ci-metrics.timer: every minute, 5 s accuracy, starts the service, installed on timers.target
+not ok 26 - vitana-ci-metrics.timer: every minute, 5 s accuracy, starts the service, installed on timers.target
+  ---
+  duration_ms: 0.147532
+  type: 'test'
+  location: '<worktree>/scripts/eng/monitoring-structure.test.mjs:33:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/host/units/vitana-ci-metrics.timer'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:20:23)
+    get TIMER (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:28:24)
+    file://<worktree>/scripts/eng/monitoring-structure.test.mjs:327:112
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:33:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+  ...
+# Subtest: the units the metrics job watches are the ones the plan gives the merge bot (§3.4) and the settings sync (§3.3)
+not ok 27 - the units the metrics job watches are the ones the plan gives the merge bot (§3.4) and the settings sync (§3.3)
+  ---
+  duration_ms: 1.142984
+  type: 'test'
+  location: '<worktree>/scripts/eng/monitoring-structure.test.mjs:33:28'
+  failureType: 'testCodeFailure'
+  error: "Cannot find module '<worktree>/scripts/eng/ci-metrics.mjs' imported from <worktree>/scripts/eng/monitoring-structure.test.mjs"
+  code: 'ERR_MODULE_NOT_FOUND'
+  stack: |-
+    finalizeResolution (node:internal/modules/esm/resolve:275:11)
+    moduleResolve (node:internal/modules/esm/resolve:865:10)
+    defaultResolve (node:internal/modules/esm/resolve:989:11)
+    #cachedDefaultResolve (node:internal/modules/esm/loader:747:20)
+    ModuleLoader.resolve (node:internal/modules/esm/loader:724:38)
+    ModuleLoader.getModuleJobForImport (node:internal/modules/esm/loader:320:38)
+    onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:680:36)
+    TracingChannel.tracePromise (node:diagnostics_channel:350:14)
+    ModuleLoader.import (node:internal/modules/esm/loader:679:21)
+    defaultImportModuleDynamicallyForModule (node:internal/modules/esm/utils:222:31)
+  ...
+# Subtest: ci-metrics.mjs is read only on GitLab: no write method, no shell, nothing imported but node: modules and the GitLab client
+not ok 28 - ci-metrics.mjs is read only on GitLab: no write method, no shell, nothing imported but node: modules and the GitLab client
+  ---
+  duration_ms: 0.333257
+  type: 'test'
+  location: '<worktree>/scripts/eng/monitoring-structure.test.mjs:33:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/scripts/eng/ci-metrics.mjs'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    get SOURCE (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:30:25)
+    file://<worktree>/scripts/eng/monitoring-structure.test.mjs:345:135
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:33:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: 20-cwagent.sh is a strict bash script, installs only a package whose AWS signature and fingerprint it checked, over https
+not ok 29 - 20-cwagent.sh is a strict bash script, installs only a package whose AWS signature and fingerprint it checked, over https
+  ---
+  duration_ms: 0.196409
+  type: 'test'
+  location: '<worktree>/scripts/eng/monitoring-structure.test.mjs:33:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/host/ops.d/20-cwagent.sh'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:20:23)
+    get CWAGENT (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:29:26)
+    file://<worktree>/scripts/eng/monitoring-structure.test.mjs:363:134
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:33:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+  ...
+# Subtest: the agent publishes disk_used_percent of / to the namespace Vitana/Engineering, rolled up to the InstanceId dimension the disk alarm reads
+not ok 30 - the agent publishes disk_used_percent of / to the namespace Vitana/Engineering, rolled up to the InstanceId dimension the disk alarm reads
+  ---
+  duration_ms: 0.144171
+  type: 'test'
+  location: '<worktree>/scripts/eng/monitoring-structure.test.mjs:33:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/host/ops.d/20-cwagent.sh'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:20:23)
+    get CWAGENT (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:29:26)
+    file://<worktree>/scripts/eng/monitoring-structure.test.mjs:391:151
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:33:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+  ...
+# Subtest: first run: downloads the package, its signature and the key over https, verifies, installs, writes the configuration and starts the agent
+not ok 31 - first run: downloads the package, its signature and the key over https, verifies, installs, writes the configuration and starts the agent
+  ---
+  duration_ms: 0.209581
+  type: 'test'
+  location: '<worktree>/scripts/eng/monitoring-structure.test.mjs:33:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/host/ops.d/20-cwagent.sh'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:20:23)
+    get CWAGENT (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:29:26)
+    file://<worktree>/scripts/eng/monitoring-structure.test.mjs:441:150
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:33:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+  ...
+# Subtest: a key with another fingerprint stops the script before anything is installed
+not ok 32 - a key with another fingerprint stops the script before anything is installed
+  ---
+  duration_ms: 0.108614
+  type: 'test'
+  location: '<worktree>/scripts/eng/monitoring-structure.test.mjs:33:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/host/ops.d/20-cwagent.sh'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:20:23)
+    get CWAGENT (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:29:26)
+    file://<worktree>/scripts/eng/monitoring-structure.test.mjs:464:89
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:33:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+  ...
+# Subtest: a package whose signature does not verify is not installed
+not ok 33 - a package whose signature does not verify is not installed
+  ---
+  duration_ms: 0.094658
+  type: 'test'
+  location: '<worktree>/scripts/eng/monitoring-structure.test.mjs:33:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/host/ops.d/20-cwagent.sh'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:20:23)
+    get CWAGENT (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:29:26)
+    file://<worktree>/scripts/eng/monitoring-structure.test.mjs:473:71
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:33:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+  ...
+# Subtest: second run: nothing to do, no download, no restart; a changed configuration is loaded again
+not ok 34 - second run: nothing to do, no download, no restart; a changed configuration is loaded again
+  ---
+  duration_ms: 0.151418
+  type: 'test'
+  location: '<worktree>/scripts/eng/monitoring-structure.test.mjs:33:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/host/ops.d/20-cwagent.sh'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:20:23)
+    get CWAGENT (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:29:26)
+    file://<worktree>/scripts/eng/monitoring-structure.test.mjs:481:104
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:33:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+  ...
+# Subtest: configuration unchanged but the agent has stopped: it is started again, and nothing is downloaded
+not ok 35 - configuration unchanged but the agent has stopped: it is started again, and nothing is downloaded
+  ---
+  duration_ms: 0.108189
+  type: 'test'
+  location: '<worktree>/scripts/eng/monitoring-structure.test.mjs:33:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/host/ops.d/20-cwagent.sh'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:20:23)
+    get CWAGENT (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:29:26)
+    file://<worktree>/scripts/eng/monitoring-structure.test.mjs:498:110
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:33:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+  ...
+# Subtest: an agent that does not come up is an error the owner sees (non-zero exit and a message), not a silent success
+not ok 36 - an agent that does not come up is an error the owner sees (non-zero exit and a message), not a silent success
+  ---
+  duration_ms: 0.150072
+  type: 'test'
+  location: '<worktree>/scripts/eng/monitoring-structure.test.mjs:33:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/host/ops.d/20-cwagent.sh'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:20:23)
+    get CWAGENT (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:29:26)
+    file://<worktree>/scripts/eng/monitoring-structure.test.mjs:511:122
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:33:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+  ...
+# Subtest: installed but not running: the agent is started again with the same configuration
+not ok 37 - installed but not running: the agent is started again with the same configuration
+  ---
+  duration_ms: 0.119292
+  type: 'test'
+  location: '<worktree>/scripts/eng/monitoring-structure.test.mjs:33:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/host/ops.d/20-cwagent.sh'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:20:23)
+    get CWAGENT (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:29:26)
+    file://<worktree>/scripts/eng/monitoring-structure.test.mjs:519:94
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:33:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+  ...
+# Subtest: every metric, dimension and namespace an alarm reads is one that ci-metrics.mjs or the agent publishes
+not ok 38 - every metric, dimension and namespace an alarm reads is one that ci-metrics.mjs or the agent publishes
+  ---
+  duration_ms: 0.272201
+  type: 'test'
+  location: '<worktree>/scripts/eng/monitoring-structure.test.mjs:33:28'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<worktree>/infra/gitlab-engineering/terraform/monitoring.tf'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:20:23)
+    get MON (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:25:22)
+    file://<worktree>/scripts/eng/monitoring-structure.test.mjs:531:121
+    TestContext.<anonymous> (file://<worktree>/scripts/eng/monitoring-structure.test.mjs:33:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+  ...
+1..38
+# tests 38
+# suites 0
+# pass 0
+# fail 38
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 98.190665
