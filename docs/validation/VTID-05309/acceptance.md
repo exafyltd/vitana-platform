@@ -1,24 +1,30 @@
-# VTID-05309 — authorised message search (GET /api/v1/chat/search)
+# Acceptance — messenger-ux-v2 closing records (VTID-05309)
 
-VALIDATION_PROFILE: gateway_backend
+Plan: `messenger-ux-v2`. Repos: `exafyltd/vitana-v1`, `exafyltd/vitana-platform`.
+Scope of this PR: closing records only (`docs/validation/VTID-05309/**`, `.kiro/specs/messenger-ux-v2/handoff.md`).
+No product code, no state changes to lanes or the plan.
 
-ROUTE_MOUNT: `GET /api/v1/chat/search` — `routes/chat-search.ts`, mounted by `routes/chat.ts` (`router.use('/search', …)`) under the existing `/api/v1/chat` mount.
+AC-1: All 14 lanes (VTID-05309 to VTID-05322) are recorded in timings.json with a merge time.
+TEST: node -e "const t=require('./docs/validation/VTID-05309/timings.json'); if(t.lanes.length!==14||t.lanes.some(l=>!l.merged_at)) process.exit(1)" → pass
+UI: n/a — closing record, no user-facing screen.
 
-FINAL_URL: https://preview-aws-gateway.vitanaland.com/api/v1/chat/search (staging; only an unsigned rejected probe is sent)
+AC-2: timings.json uses schema vitana.plan-timings/v1 and lists every unknown field in sources_unavailable (no invented zeros).
+TEST: node -e "const t=require('./docs/validation/VTID-05309/timings.json'); if(t.schema!=='vitana.plan-timings/v1'||t.sources_unavailable.length<1) process.exit(1)" → pass
+UI: n/a — closing record, no user-facing screen.
 
-CURL_PROOF: staging answers 401 to an unsigned `GET /api/v1/chat/search?q=abc`; the search itself is proven in CI.
+AC-3: The community-app STAGING-VERIFY passed on the deployed main commit 5c75715e1 (run 41491021698).
+CURL: gh api repos/exafyltd/vitana-platform/actions/runs/41491021698 --jq .conclusion → success
+UI: n/a — evidence is the CI run, not a screen.
 
-OASIS_PROOF: n/a — read-only endpoint.
+AC-4: All 11 messenger claim refs and the driver heartbeat ref are gone from origin.
+TEST: git ls-remote --heads origin 'refs/heads/collab-claim/messenger-ux-v2/*' 'refs/heads/collab-driver/messenger-ux-v2' | wc -l → 0
+UI: n/a — git refs only.
 
-## Acceptance criteria
+AC-5: Gate 2 is not sent by this PR. The owner decides production (PUBLISH). Nothing is deployed to production.
+TEST: grep -c "Gate 2 is not sent yet" .kiro/specs/messenger-ux-v2/handoff.md → 1
+UI: n/a — a decision recorded in the handoff log.
 
-AC-1: User C never sees an A↔B DM; a non-member never sees a group's messages; another tenant never (also with the tenant filter bypassed); a deleted group's rows never surface as a DM — enforced by the query filter AND a row-level check (the test's mock ignores the visibility filter).
-  TEST: services/gateway/test/vtid-05309-chat-message-search.test.ts ("authorization")
-AC-2: `scope=group:<id>` for a non-member → 403; `scope=dm:<peer>` returns only that DM.
-  TEST: services/gateway/test/vtid-05309-chat-message-search.test.ts ("scope=group", "scope=dm")
-AC-3: `q` < 3 chars → 400; LIKE wildcards are escaped (a `%` query matches a literal `%`); the filter value is quoted.
-  TEST: services/gateway/test/vtid-05309-chat-message-search.test.ts ("query rules")
-AC-4: `type=image` returns only messages whose attachments include an image (type or mime); file names match.
-  TEST: services/gateway/test/vtid-05309-chat-message-search.test.ts ("type=image", "a file name matches")
-AC-5: Newest first, cursor pagination by (created_at, id) — pages continue without overlap, a strict ISO cursor (else 400); snippet ±60 characters; per-member rate limit (30/min → 429).
-  TEST: services/gateway/test/vtid-05309-chat-message-search.test.ts ("cursor", "short page", "snippet", "rate limit")
+## Not verified
+
+- No Playwright or screenshot evidence exists for the Messenger lanes. The owner's visual check on staging is the acceptance step for the look.
+- Per-lane review rounds, claim times and merge conflict counts are not recorded in a structured source (see timings.json sources_unavailable).

@@ -1,0 +1,14 @@
+# VTID-05553 commands (code head 7facd9cba9)
+
+$ git merge --no-ff origin/main (origin/main 29b639da4b)                              -> 43fc9fd0f7, clean; lane files: gemini-operator.ts and operator-chat-service-token.test.ts only
+$ npx jest test/operator-chat-service-token.test.ts                                     -> exit 0, 2 passed (before the comment fix)
+$ npm run test:operator > outputs/green-test-operator-head.txt                          -> exit 0, 71 passed
+$ npm run test:roles > outputs/green-test-roles-head.txt                                -> exit 0, 105 passed
+$ npx jest test/orb-tools/developer-tools.test.ts > outputs/green-developer-tools-head.txt -> exit 0, 60 passed
+$ npx tsc --noEmit > outputs/tsc-head.txt                                               -> exit 0
+$ red run: temporary worktree at origin/main 29b639da4b, node_modules linked, new test copied in; npx jest test/operator-chat-service-token.test.ts > outputs/red-on-base.txt -> exit 1, 2 failed (header assertion); worktree removed
+$ npx jest <the 47 test files that mention gemini-operator> > outputs/green-gemini-operator-suites.txt -> exit 0, 47 suites, 817 passed
+$ npm run typecheck > outputs/typecheck-head.txt                                        -> exit 0
+$ commit 7facd9cba9 (header comments name VTID-05553, was VTID-05528; no code change)
+$ npx jest test/operator-chat-service-token.test.ts > outputs/green-operator-chat-head.txt -> exit 0, 2 passed (on 7facd9cba9)
+$ npm run typecheck > outputs/typecheck-head.txt (re-run on 7facd9cba9)                 -> exit 0

@@ -62,6 +62,28 @@ Already in place (build on, do not re-plan): `ci_tenant_isolation_health()` (VTI
 RPC would 404 on `DATA_REST_URL` and row 21b would report INFO forever (`:556-558`), hiding the signal.
 ci-wiring only adds a comment at `:546` saying why this row deliberately does not follow the flip. `isHealthTable()` (CROSS-SPEC O1) does not exist yet; until mt-identity ships it, lane 2's shared
 constant from `docs/MULTI-TENANT-PLAN.md` §2 is the health-table list.
+
+## Amendment 2 (2026-11-02, owner decision)
+The owner decided on 2026-11-02 that the local stack runs on PGlite, not Docker, and left the detail to the planner. Where this section and the rest of the plan differ, this section wins.
+
+**Why.** The Docker replay did not meet the lane's required tables. In the VTID-05469 spike, job `smoke` of workflow MT-LOCAL-STACK on PR #4628 ([job log](https://github.com/exafyltd/vitana-platform/actions/runs/41478907569/job/125391700043), head `22a72617`) replayed the 673 top-level migration files. 210 failed on the first pass and 201 after four passes. 13 required tables were missing, so the lane's own stop rule fired.
+
+**Decisions.**
+1. `local-test-stack` and `local-test-stack-v2` are superseded and not built. PR #4628 (`local-test-stack-v2`) closes when this amendment merges.
+2. The local stack is PGlite (`@electric-sql/pglite`), in-process, one database per test file. It needs no container runtime, no network and no secrets. This replaces D11's Supabase-stack wording. D11's purpose stands: a local stack, never production data.
+3. The schema is the files in `supabase/migrations/` that create the tables the lanes under test need, applied in timestamp order to an empty database. Skips are listed in `supabase/tests/local-stack/replay-skip.json` (`file`, `reason`). The required tables are listed in `supabase/tests/local-stack/required-tables.txt`. A missing required table stops the lane and is raised.
+4. The stub `auth` schema is wider than `auth.users` alone. With `auth.users` only, the migrations cannot apply: 179 of the 673 top-level migrations call `auth.uid()` or `auth.jwt()`, and more than 270 name the `anon`, `authenticated` or `service_role` roles. The stub holds `auth.users`, those two functions and those three roles, and nothing else. Anything more needs another amendment.
+5. The database is seeded idempotently from the synthetic fixtures in `supabase/tests/fixtures/`.
+6. Replaying the whole migration tree is not a gate. The parity report that compared it with `ci_schema_inventory` is dropped.
+7. Real pgTAP on the D11 stack is replaced by PGlite plus a pgTAP-compatible assertion shim. Each acceptance text that asked for real pgTAP or `pg_prove` on this stack says so. This departs from the pgTAP wording of parent plan `docs/MULTI-TENANT-PLAN.md` §4.2 and §4.9. The parent is hash-stamped, and this amendment does not edit it.
+8. No production dump, no live call and no secret, in any lane, script or CI job.
+9. `@electric-sql/pglite` goes into the root `package.json`, and `pnpm-lock.yaml` changes with it. The lane's paths therefore include the lockfile.
+
+**Consequences.**
+- Fidelity is lower than production. PGlite ships its own extension set, not Supabase's. A migration that needs an extension PGlite lacks (`pg_cron`, used by 2 top-level migrations) is skipped with its reason, or the lane stops if a required table depends on it. Realtime, storage and the auth hook are not reproduced.
+- Every isolation claim must name what it does not cover. "b_member sees 0 T_A rows" shows the policy on the loaded tables. It does not show the production auth path.
+- `generated-inventories`, `isolation-suite` and `ci-wiring` keep their `depends_on: local-test-stack`, which now means `local-test-stack-pglite`. Their Docker, `up.sh`, `replay.sh` and `pg_prove` steps read as the PGlite run, and the isolation suite's acceptance reads "green on PGlite through the shim". Their lane files are not edited here.
+
 ## Fix (per lane)
 1. **`local-test-stack`** (kiro, seat hotmail, repo platform) — committed D11 local-stack config
    snapshot + fixture seed: tenants T_A/T_B, members a_member/a_admin/b_member/b_admin/ab_dual, a
@@ -147,6 +169,17 @@ constant from `docs/MULTI-TENANT-PLAN.md` §2 is the health-table list.
    at `MORNING-SYSTEM-HEALTH-CHECK.yml:546` explaining why row 21b keeps `secrets.SUPABASE_URL` (the RPC reads
    Supabase-only tenant tables; s2 R1-F1). The binding itself is not changed. Governance path, not a protected gate file →
    `executor: kiro` with the reviewer agent. Depends on lanes 2–5.
+**Lane 1 superseded by `local-test-stack-v2` (2026-11-02, never built).** Task 1 is a spike that needs `docker run`
+to boot the pinned image, and the session hosts that build lanes have no container runtime (Kiro Web: podman
+"could not find a working conmon binary"; no `psql`/`pg_prove`). The lane's `paths` hold no workflow, so its own PR
+cannot run the spike either. `local-test-stack-v2` has the same tasks, acceptance, pins and end point, plus one file:
+`.github/workflows/MT-LOCAL-STACK.yml`, a `pull_request` job (`runs-on: ubuntu-24.04`, path filter on the lane's
+`paths`, `permissions: contents: read`, no secrets, no network target other than Docker Hub and the Ubuntu archive)
+that runs `scripts/mt/stack/smoke.sh`. The spike result (pgtap availability, replay failures, required tables) is
+read from that job's log and committed as the skip-list and `docs/validation/<vtid>/` evidence. `ci-wiring` may later
+fold the job into `MT-GUARDRAILS.yml` and delete this file; until then it is the "CI service container" run that the
+acceptance names. `generated-inventories`, `isolation-suite` and `ci-wiring` keep `depends_on: local-test-stack`: once `local-test-stack-v2` merges, the old lane is closed `done` (superseded by v2, merge SHA recorded) by a commit under its own `Collab-Lane`, so those dependencies resolve with no lane-file edit from `_plan`.
+
 ## Pinned versions (496d R2-F1 — lanes 1 and 6 copy these strings verbatim)
 | What | Exact value | Why this value |
 |---|---|---|
@@ -154,6 +187,7 @@ constant from `docs/MULTI-TENANT-PLAN.md` §2 is the health-table list.
 | Image index digest (recorded, checked by the smoke test) | `sha256:dc436b5b4ebeb0f3bdf6d8dda2b390cc094e14d24cd434d5fe02840459e67670` | Docker Hub digest of that tag; the tag is the pin, the digest guards a re-push |
 | `pg_prove` apt package | `libtap-parser-sourcehandler-pgtap-perl=3.36-2` | the Ubuntu 24.04 (noble, universe) published version |
 | Runner / host OS | CI `runs-on: ubuntu-24.04` (not `ubuntu-latest`); locally `scripts/mt/stack/` runs `pg_prove` inside an `ubuntu:24.04` container with the same apt pin | the apt version above exists only on noble, so the OS is pinned too. Review trigger (s2 R1-F2): when GitHub announces the ubuntu-24.04 runner deprecation, or `ubuntu-latest` moves past 24.04, re-pin the OS and the apt version together in this table and in `docs/multitenancy/LOCAL-STACK.md` |
+| Local database engine, amendment 2 (2026-11-02) | `@electric-sql/pglite`, exact version recorded in `package.json` at implementation | Supersedes the Docker image pin (the image and digest rows above). The local stack runs in-process, with no container runtime, no network and no secrets |
 Lane 1 records these four values once in `docs/multitenancy/LOCAL-STACK.md`; lane 6 uses the same
 literals. A bump changes this table first (a plan change), then both lanes in one PR each.
 ## Migrations
