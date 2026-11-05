@@ -1,0 +1,16 @@
+{
+  "vtid": "VTID-05548",
+  "kind": "feature",
+  "paths": [
+    "scripts/eng/github-bridge.mjs",
+    "scripts/eng/github-bridge.test.mjs",
+    "infra/gitlab-engineering/host/units/vitana-github-bridge.service",
+    "infra/gitlab-engineering/host/units/vitana-github-bridge.timer",
+    "infra/gitlab-engineering/RUNBOOK-github-bridge.md",
+    ".kiro/specs/agentic-delivery/lanes/github-bridge.md",
+    "docs/validation/VTID-05548/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05548/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}
