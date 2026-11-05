@@ -17,6 +17,13 @@ Some agents can push only to GitHub. The bridge lets them keep working after the
 - posts each job result of the merge request's head pipeline as a commit status `gitlab/<job name>` on the GitHub
   commit, once the job has a result (a waiting or running job has none yet). It never posts a status that equals the
   latest one of that name on that commit;
+- reads the landing gate jobs `lane-scope`, `change-suite` and `gate` the way the merge bot does: only a pass is
+  `success`. A gate job that was skipped (an earlier job did not pass), failed while allowed to fail, or canceled, is
+  `failure` or `error`; a manual gate job that has not run, or an unknown status, is `pending`. The merge bot lands a
+  merge request only when all three passed (eng-gitlab-m2 §3.4), so GitHub and GitLab agree;
+- posts `gitlab/gate` as `pending` ("GitLab pipeline running") while the head pipeline runs and has no gate result
+  yet, once per head. The gate's real result replaces it. A pipeline that ended without a gate job (the merge bot's
+  `ci.skip` update of a train, plan §3.5) changes nothing on GitHub;
 - closes the pull request with one comment that links the landed commit, once the merge request has landed.
 
 One writer per branch (plan §3.1 principle 1). The bridge copies a branch only when GitLab does not have it, when GitLab
@@ -74,6 +81,12 @@ sudo sh -c 'umask 077; t=$(mktemp /etc/vitana/.github-bridge-token.XXXXXX) || ex
 A tick fails visibly (`AssertPathExists`, the unit shows as failed) while either file is missing.
 
 ## Start, stop, status
+Before the cut the timer is installed but not enabled. `ops-install.sh` installs `vitana-github-bridge.service` and
+`.timer` with the other units in `host/units/` (eng-gitlab-m2 §3.3), and only the cut enables the timer (plan §8.2 step 5).
+Until then the M1 mirror (`vitana-mirror`, every 5 minutes) copies both repositories to GitLab, and a bridge that ran too
+would be a second writer of the same branches (plan §3.1 principle 1). Check it before the cut:
+`systemctl is-enabled vitana-github-bridge.timer` must print `disabled`. If it prints `enabled`, stop it with the
+command below.
 - Start (the cut, plan §8.2 step 5): `sudo systemctl enable --now vitana-github-bridge.timer`
 - Stop (the rollback, plan §8.4, or to pause it): `sudo systemctl disable --now vitana-github-bridge.timer`
 - One tick now: `sudo systemctl start vitana-github-bridge.service`
@@ -108,7 +121,7 @@ then copies or refuses it.
 | `merge_request_closed_on_gitlab` (warn) | a person closed the merge request while the pull request is open; it is not opened again for this head; a new head gets a new one |
 | `merge_request_not_ours` | an open merge request from a bridged branch was opened by another account; the bridge does not change its title or description |
 | `github_writes_paused` (warn) | GitHub answered with a rate limit; statuses and pull request closes wait until it has passed (at least a minute) |
-| `post_status` | a `gitlab/<job>` status on the GitHub commit |
+| `post_status` | a `gitlab/<job>` status on the GitHub commit, or the pending `gitlab/gate` of a running pipeline |
 | `status_budget_reached` | this tick or this hour posted as many statuses as GitHub allows; the rest follow at a later tick |
 | `unknown_job_status` (warn) | a job status this code does not know; posted as pending, never as success |
 | `comment_landed`, `close_pull_request` | the merge request landed; the pull request was closed with a link |
@@ -158,12 +171,23 @@ GitLab. `--dry-run` works here too.
   limit ends that repository's tick (`repo_skipped`); the next tick tries again.
 - GitHub also allows an account about 80 content writes a minute and 500 an hour
   ([secondary rate limits](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api)). Status
-  writes are the bridge's most frequent write, so it posts at most 60 a tick and 450 a clock hour and leaves the rest
-  for a later tick (`status_budget_reached`). With many agents pushing at once, results can reach GitHub later than they
-  reach GitLab. The merge bot reads GitLab directly, so landing does not wait for them.
-- Only job results are posted, never "running". While some jobs still run, GitHub can show only green statuses, so
-  a GitHub reader (for example `plan-driver.mjs` checks) can see green early. The merge bot reads GitLab, so landing is
-  not affected.
+  writes are the bridge's most frequent write, so it posts at most 60 a tick and 450 in any hour (a sliding hour) and
+  leaves the rest for a later tick (`status_budget_reached`). With many agents pushing at once, results can reach GitHub
+  later than they reach GitLab. The merge bot reads GitLab directly, so landing does not wait for them.
+- In each tick, the gate results that are not `success` (and the pending `gitlab/gate`) are posted first, across all
+  pull requests, then the other gate results, then the other jobs. So as long as a tick can post anything, a red or
+  running pipeline does not show only green on GitHub. The next tick starts with the first pull request that got no
+  status in this one. While the hour's budget is used up nothing is posted, and a head keeps the statuses it has (for
+  example green from an earlier pipeline of the same head) until the budget frees up.
+- Statuses come only from job results, plus the pending `gitlab/gate` while the head pipeline runs. A job that still
+  waits or runs has no status of its own.
+- A refused branch's pull request gets no merge request and no `gitlab/*` status. A GitHub reader that counts no status
+  as green (for example `plan-driver.mjs` checks) sees green there; the `branch_refused` log line is the signal (see
+  "A refused branch"). The same holds for the minute between a new head and its first pipeline.
+- A pipeline that ended without a gate job posts no `gitlab/gate`, so GitHub keeps the gate status it has. After the
+  merge bot's `ci.skip` train update (plan §3.5) that is the result of the tested head. A pipeline that ran without a
+  gate job leaves the pending gate in place. A pipeline that created no jobs at all (for example a CI configuration
+  error) adds no status. The pipeline page on GitLab shows the result.
 - The bridge copies only `kiro/*` and `claude/*` branches. Pull requests from other branches (for example `pm-agent/*`,
   or the branches the kept GitHub workflows open) get no merge request.
 - The bridge stops when no agent pushes to GitHub any more (plan §8.5 step 3).

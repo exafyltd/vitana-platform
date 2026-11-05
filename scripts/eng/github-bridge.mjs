@@ -23,8 +23,12 @@
 //    into main is left.
 //  - Statuses. One commit status gitlab/<job> per job result of the merge request's head pipeline (of the pull request head,
 //    or of it with the bot's merges of main), on the GitHub commit; never a status equal to the latest one of its context on
-//    that commit. GitHub's content write limits: at most 60 status writes a tick and 450 in any hour, the landing gate jobs
-//    first, the next tick starting with the pull request left without a turn; a rate limit pauses every GitHub write.
+//    that commit. A landing gate job (lane-scope, change-suite, gate) is success only when it passed, as the merge bot reads
+//    it; while the head pipeline runs without a gate result, gitlab/gate is pending until the result replaces it. GitHub's
+//    content write limits: at most 60 status writes a tick and 450 in any hour. In each tick the gate results that are not
+//    success go first, over every pull request, then the other gate results, then the rest, so a red or running pipeline
+//    never shows only success while writes wait; the next tick starts with the pull request left without a turn; a rate
+//    limit pauses every GitHub write.
 //  - Landing. When the merge request of the pull request head (also with the bot's merges of main) is merged, the pull
 //    request is closed with one comment that links the landed commit.
 // An API or git error changes nothing for that branch in that tick (a read that every branch of a repository needs: nothing
@@ -82,19 +86,35 @@ function isPlainRef(ref) {
   return ref.split('/').every((seg) => seg !== '' && !seg.startsWith('.') && !seg.endsWith('.lock'));
 }
 
+/** The landing gate jobs (plan §8.2 step 3: the required jobs lane-scope, change-suite and gate). The merge bot lands a merge
+ * request only when each of them is `success` (eng-gitlab-m2 plan §3.4: a required job that is absent, skipped, neutral or
+ * still running does not pass), so GitHub shows no other result of them as success. */
+export const GATE_JOBS = Object.freeze(['lane-scope', 'change-suite', 'gate']);
+const GATE = new Set(GATE_JOBS);
+
 const WAITING = new Set(['created', 'pending', 'scheduled', 'preparing', 'waiting_for_resource', 'waiting_for_callback']);
-/** The GitHub commit status of a GitLab job, read the way the merge bot reads jobs (eng-gitlab-m2 plan §3.4 table).
+/** The GitHub commit status of a GitLab job, read the way the merge bot reads jobs (eng-gitlab-m2 plan §3.4 table); a landing
+ * gate job is success only when it passed (skipped, allowed to fail and an optional manual job are success for any other job).
  * `settled` is true for a result (success, failed, canceled, skipped, manual, or a status this code does not know, which
  * fails closed as pending); only a settled job is posted, so each job result is one status (GitHub limits how much
  * content an account may create: 80 requests a minute, 500 an hour). */
 export function jobToStatus(job) {
   const allowed = job?.allow_failure === true;
+  const gate = GATE.has(job?.name);
   switch (job?.status) {
     case 'success': return { state: 'success', description: 'Passed on GitLab', settled: true };
-    case 'failed': return allowed ? { state: 'success', description: 'Failed on GitLab, allowed to fail', settled: true } : { state: 'failure', description: 'Failed on GitLab', settled: true };
+    case 'failed':
+      if (!allowed) return { state: 'failure', description: 'Failed on GitLab', settled: true };
+      return gate ? { state: 'failure', description: 'Failed on GitLab; a landing needs this job to pass', settled: true }
+        : { state: 'success', description: 'Failed on GitLab, allowed to fail', settled: true };
     case 'canceled': return { state: 'error', description: 'Canceled on GitLab', settled: true };
-    case 'skipped': return { state: 'success', description: 'Skipped on GitLab', settled: true };
-    case 'manual': return allowed ? { state: 'success', description: 'Optional manual job on GitLab, not run', settled: true } : { state: 'pending', description: 'Waiting for a manual action on GitLab', settled: true };
+    case 'skipped':
+      return gate ? { state: 'failure', description: 'Skipped on GitLab: an earlier job did not pass', settled: true }
+        : { state: 'success', description: 'Skipped on GitLab', settled: true };
+    case 'manual':
+      if (!allowed) return { state: 'pending', description: 'Waiting for a manual action on GitLab', settled: true };
+      return gate ? { state: 'pending', description: 'Manual job on GitLab, not run; a landing needs this job to pass', settled: true }
+        : { state: 'success', description: 'Optional manual job on GitLab, not run', settled: true };
     case 'running': return { state: 'pending', description: 'Running on GitLab', settled: false };
     case 'canceling': return { state: 'pending', description: 'Being canceled on GitLab', settled: false };
     default:
@@ -104,6 +124,11 @@ export function jobToStatus(job) {
 }
 /** The commit status name of a job (plan §9: gitlab/<job>); a job name is cut at 200 characters (GitLab allows 255). */
 export const statusContext = (jobName) => `gitlab/${String(jobName).slice(0, 200)}`;
+const GATE_CONTEXT = statusContext('gate');
+const GATE_CONTEXTS = new Set(GATE_JOBS.map(statusContext));
+/** The order of a tick's status writes: 0 a gate result that is not success, 1 a gate result that is success, 2 any other. */
+const statusTier = (context, s) => (GATE_CONTEXTS.has(context) ? (s.state === 'success' ? 1 : 0) : 2);
+const FINISHED_PIPELINE = new Set(['success', 'failed', 'canceled', 'skipped']);
 
 /** The merge request title: the pull request title; a draft pull request becomes a GitLab draft, which cannot be merged. */
 export function mrTitle(pr) {
@@ -569,7 +594,7 @@ export async function tick(callerCtx) {
   const recent = (Array.isArray(prev.status_writes) ? prev.status_writes : []).filter(([m, n]) => Number.isInteger(m) && m > minute - 60 && Number.isInteger(n));
   const usedLastHour = recent.reduce((sum, [, n]) => sum + n, 0);
   const statusBudget = {
-    left: Math.max(0, Math.min(callerCtx.maxStatusWritesPerTick ?? 60, (callerCtx.maxStatusWritesPerHour ?? 450) - usedLastHour)), used: 0, reported: false,
+    left: Math.max(0, Math.min(callerCtx.maxStatusWritesPerTick ?? 60, (callerCtx.maxStatusWritesPerHour ?? 450) - usedLastHour)), used: 0,
   };
   // A GitHub rate limit pauses every GitHub write until it has passed (at least a minute; Retry-After when longer), also
   // across ticks: GitHub asks clients not to go on writing while limited.
@@ -588,8 +613,9 @@ export async function tick(callerCtx) {
     try { return await fn(...args); } catch (e) { onGitHubError(e); throw e; }
   };
   const github = callerCtx.github && Object.fromEntries(Object.entries(callerCtx.github).map(([k, v]) => [k, typeof v === 'function' ? guard(v) : v]));
+  const statusQueue = []; // the statuses every pull request of the tick needs (statusStep), posted after all repositories
   const ctx = {
-    ...callerCtx, github, gitlabUserCache: undefined, statusBudget, githubPaused, onGitHubError,
+    ...callerCtx, github, gitlabUserCache: undefined, statusBudget, githubPaused, onGitHubError, statusQueue,
     gitlabMain: async (r, glUrl) => {
       if (!mainHeads.has(r.github)) {
         const head = callerCtx.git.mainHead(glUrl);
@@ -605,15 +631,18 @@ export async function tick(callerCtx) {
   const errors = [];
   for (const r of repos) {
     const before = prev.repos[r.github];
+    const queued = statusQueue.length;
     try {
       next.repos[r.github] = await syncRepo(ctx, r, structuredClone(before ?? { branches: {}, prs: {} }), actions, errors);
     } catch (e) {
+      statusQueue.length = queued; // a repository skipped in this tick posts nothing either
       errors.push({ repo: r.github, message: messageOf(e) });
       log('error', 'repo_skipped', { repo: r.github, error: messageOf(e), retry: 'next tick' });
       if (before === undefined) delete next.repos[r.github];
       else next.repos[r.github] = before;
     }
   }
+  await postStatuses(ctx, statusQueue, { next, errors });
   const writes = statusBudget.used ? [...recent.filter(([m]) => m !== minute), [minute, statusBudget.used + (recent.find(([m]) => m === minute)?.[1] ?? 0)]] : recent;
   if (writes.length) next.status_writes = writes;
   if (pause.until > nowMs()) next.github_paused_until = new Date(pause.until).toISOString();
@@ -686,7 +715,7 @@ async function syncRepo(ctx, r, st, actions, errors) {
     const before = st.prs[pr.number];
     const draft = structuredClone(before ?? {});
     try {
-      if (step.bridged) await pullRequestStep(ctx, r, { b, pr, mr: openBySource.get(b), draft, me, pid, act, entry: step.entry ?? {}, glUrl });
+      if (step.bridged) await pullRequestStep(ctx, r, { b, pr, mr: openBySource.get(b), draft, before, me, pid, act, entry: step.entry ?? {}, glUrl });
       if (Object.keys(draft).length) out.prs[pr.number] = draft;
     } catch (e) {
       errors.push({ repo: r.github, branch: b, pr: pr.number, message: messageOf(e) });
@@ -702,9 +731,7 @@ async function syncRepo(ctx, r, st, actions, errors) {
     if (gl && (gl === entry.pushed || gl === entry.gitlab)) out.branches[b] = entry;
   }
   await closeOrphans(ctx, r, { mrs, prs, me, pid, act, errors });
-  const resume = ctx.statusBudget?.resume?.[r.github];
-  if (resume) out.status_resume = resume;
-  return out;
+  return out; // postStatuses adds the statuses' cache entries and status_resume after every repository was read
 }
 
 /** True when GitLab head `glSha` is the GitHub head `sha` itself, or `sha` with only the merge bot's clean merges of main
@@ -811,7 +838,7 @@ async function branchStep(ctx, r, { b, gh, gl, entry, ghUrl, glUrl, act }) {
 }
 
 /** The merge request of one open pull request whose branch the bridge copied: create, update, land, statuses. */
-async function pullRequestStep(ctx, r, { b, pr, mr, draft, me, pid, act, entry, glUrl }) {
+async function pullRequestStep(ctx, r, { b, pr, mr, draft, before, me, pid, act, entry, glUrl }) {
   const { gitlab, log = () => {} } = ctx;
   const title = mrTitle(pr);
   const description = mrDescription(pr.body);
@@ -845,7 +872,7 @@ async function pullRequestStep(ctx, r, { b, pr, mr, draft, me, pid, act, entry, 
     await act({ action: 'update_merge_request', branch: b, pr: pr.number, mr: mr.iid }, () => gitlab.put(`/projects/${pid}/merge_requests/${mr.iid}`, { body: { title, description } }));
   }
   delete draft.closed_seen;
-  return statusStep(ctx, r, { b, pr, mr, draft, pid, act, entry });
+  return statusStep(ctx, r, { b, pr, mr, draft, before, pid, act, entry });
 }
 
 /** Closes the pull request whose head landed, with one comment that links the landed commit (idempotent: the marker). */
@@ -877,9 +904,11 @@ async function latestStatuses(github, repo, sha) {
   return out;
 }
 
-/** One gitlab/<job> status per job of the merge request's head pipeline, when that pipeline is for the PR head. */
-async function statusStep(ctx, r, { b, pr, mr, draft, pid, act, entry = {} }) {
-  const { github, gitlab, log = () => {} } = ctx;
+/** The gitlab/<job> statuses one pull request head needs, from the merge request's head pipeline when that pipeline is for
+ * the PR head: one per job result, and a pending gitlab/gate while the pipeline runs without a gate result. They are queued
+ * in ctx.statusQueue; postStatuses posts the queue of the whole tick. */
+async function statusStep(ctx, r, { b, pr, mr, draft, before, pid, act, entry = {} }) {
+  const { gitlab } = ctx;
   const sha = pr.head.sha;
   // The pipeline of the pull request head, or of that head with the merge bot's merges of main on top (then its results
   // are posted on the pull request head, the commit GitHub knows).
@@ -891,43 +920,94 @@ async function statusStep(ctx, r, { b, pr, mr, draft, pid, act, entry = {} }) {
   const pipe = full?.head_pipeline;
   if (!pipe || !heads.has(pipe.sha) || !Number.isInteger(pipe.id)) return;
   const web = `${String(ctx.gitlabWebUrl ?? DEFAULTS.gitlabUrl).replace(/\/+$/, '')}/`;
+  const onGitLab = (url) => (typeof url === 'string' && url.startsWith(web) ? url : undefined);
   const want = new Map();
   for (const job of await gitlab.paginate(`/projects/${pid}/pipelines/${pipe.id}/jobs`)) {
     if (typeof job?.name !== 'string' || job.name === '') continue;
     const s = jobToStatus(job);
     if (!s.settled) continue; // a job that is still waiting or running has no result yet
-    const targetUrl = typeof job.web_url === 'string' && job.web_url.startsWith(web) ? job.web_url : undefined;
-    want.set(statusContext(job.name), { state: s.state, description: s.description, target_url: targetUrl, unknown: s.unknown, status: job.status });
+    want.set(statusContext(job.name), { state: s.state, description: s.description, target_url: onGitLab(job.web_url), unknown: s.unknown, status: job.status });
+  }
+  // Until the pipeline has a gate result, gitlab/gate is pending, so GitHub never shows only success while GitLab still
+  // runs (plan-driver.mjs reads a pending status as pending). The real result replaces it. A pipeline that ended without a
+  // gate job (the merge bot's ci.skip update of a train, plan §3.5) gets none: GitHub keeps what it shows.
+  if (!want.has(GATE_CONTEXT) && !FINISHED_PIPELINE.has(pipe.status)) {
+    want.set(GATE_CONTEXT, { state: 'pending', description: 'GitLab pipeline running', target_url: onGitLab(pipe.web_url) });
   }
   const fp = Object.fromEntries([...want].map(([c, s]) => [c, statusKey(s)]));
   if (draft.statuses?.sha === sha && JSON.stringify(draft.statuses.fp) === JSON.stringify(fp)) return; // nothing changed
-  // The status write budget of this tick (see tick): over budget, the rest is posted at a later tick, because the cache
-  // below is updated only when every status of this head is on GitHub.
+  const writes = [...want].map(([context, s]) => ({ context, s, tier: statusTier(context, s) }));
+  ctx.statusQueue.push({ r, b, pr, sha, fp, draft, before, act, writes });
+}
+
+/**
+ * Posts the statuses the tick queued, within the status write budget of the tick (see tick). The gate results that are not
+ * success go first, over every pull request of the tick, then the other gate results, then the rest; within each group in
+ * the order the pull requests were read (rotation included) and the pipeline lists its jobs. So with any budget left, a red
+ * or running pipeline never shows only success on GitHub while other writes wait. A head's cache entry (draft.statuses) is
+ * written only when every status of that head is on GitHub; over budget, the rest is posted at a later tick, and the first
+ * pull request of each repository left without a turn starts that repository's next tick. An error leaves that pull
+ * request as it was before the tick; the others go on.
+ */
+async function postStatuses(ctx, queue, { next, errors }) {
+  const { github, log = () => {} } = ctx;
   const budget = ctx.statusBudget ?? { left: Infinity, used: 0 };
-  let postedHere = 0;
-  const overBudget = () => {
-    if (!budget.reported) log('info', 'status_budget_reached', { repo: r.github, pr: pr.number, note: 'GitHub content write limit: the remaining statuses are posted at a later tick' });
-    budget.reported = true;
-    budget.resume ??= {};
-    if (postedHere === 0) budget.resume[r.github] ??= b; // the first pull request left without a turn starts the next tick
+  const prsOf = (q) => next.repos[q.r.github].prs;
+  const commit = (q) => {
+    q.draft.statuses = { sha: q.sha, fp: q.fp };
+    prsOf(q)[q.pr.number] = q.draft;
   };
-  if (budget.left <= 0) return overBudget();
-  const latest = await latestStatuses(github, r.github, sha);
-  // The jobs that gate a landing first (plan §8.2 step 3: lane-scope, change-suite, gate), then the others.
-  const first = new Set(['gitlab/lane-scope', 'gitlab/change-suite', 'gitlab/gate']);
-  const ordered = [...want].sort(([a], [c]) => Number(first.has(c)) - Number(first.has(a)));
-  for (const [context, s] of ordered) {
-    if (latest.has(context) && statusKey(latest.get(context)) === statusKey(s)) continue;
-    if (ctx.githubPaused?.()) return; // a write of this tick hit a rate limit
-    if (budget.left <= 0) return overBudget();
+  const settle = (q) => { // one status of the head is on GitHub (posted now, or already the latest of its context)
+    q.left -= 1;
+    if (q.left === 0) commit(q);
+  };
+  const fail = (q, e) => {
+    q.failed = true;
+    errors.push({ repo: q.r.github, branch: q.b, pr: q.pr.number, message: messageOf(e) });
+    log('error', 'pull_request_failed', { repo: q.r.github, branch: q.b, pr: q.pr.number, error: messageOf(e), retry: 'next tick' });
+    if (q.before) prsOf(q)[q.pr.number] = q.before;
+    else delete prsOf(q)[q.pr.number];
+  };
+  for (const q of queue) {
+    q.posted = 0;
+    q.left = q.writes.length;
+    if (q.left === 0) commit(q); // a pipeline with nothing to post (it ended without a job result)
+  }
+  const order = queue.flatMap((q) => q.writes.map((w) => ({ q, ...w }))).sort((x, y) => x.tier - y.tier);
+  let refused = null; // the first write the budget did not allow
+  for (const { q, context, s } of order) {
+    if (q.failed) continue;
+    if (ctx.githubPaused?.()) break; // a write of this tick hit a rate limit
+    if (!q.latest) {
+      if (budget.left <= 0) { refused = q; break; }
+      try {
+        q.latest = await latestStatuses(github, q.r.github, q.sha);
+      } catch (e) {
+        fail(q, e);
+        continue;
+      }
+    }
+    if (q.latest.has(context) && statusKey(q.latest.get(context)) === statusKey(s)) { settle(q); continue; }
+    if (budget.left <= 0) { refused = q; break; }
     budget.left -= 1;
     budget.used += 1;
-    postedHere += 1;
-    if (s.unknown) log('warn', 'unknown_job_status', { repo: r.github, pr: pr.number, context, status: String(s.status).slice(0, 60) });
-    await act({ action: 'post_status', branch: b, pr: pr.number, sha, context, state: s.state },
-      () => github.post(`/repos/${r.github}/statuses/${sha}`, { body: { state: s.state, target_url: s.target_url, description: s.description, context } }));
+    q.posted += 1;
+    if (s.unknown) log('warn', 'unknown_job_status', { repo: q.r.github, pr: q.pr.number, context, status: String(s.status).slice(0, 60) });
+    try {
+      await q.act({ action: 'post_status', branch: q.b, pr: q.pr.number, sha: q.sha, context, state: s.state },
+        () => github.post(`/repos/${q.r.github}/statuses/${q.sha}`, { body: { state: s.state, target_url: s.target_url, description: s.description, context } }));
+    } catch (e) {
+      fail(q, e);
+      continue;
+    }
+    settle(q);
   }
-  draft.statuses = { sha, fp };
+  if (!refused) return;
+  log('info', 'status_budget_reached', { repo: refused.r.github, pr: refused.pr.number, note: 'GitHub content write limit: the remaining statuses are posted at a later tick' });
+  for (const q of queue) {
+    const out = next.repos[q.r.github];
+    if (q.posted === 0 && q.left > 0 && !q.failed && out.status_resume === undefined) out.status_resume = q.b;
+  }
 }
 
 /** Closes each merge request the bridge opened whose pull request is no longer open into main, after GitHub confirms it. */

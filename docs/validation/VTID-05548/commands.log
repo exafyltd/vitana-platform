@@ -74,3 +74,56 @@ semantic_reviewer agent on the uncommitted lane: verdict NEEDS_CHANGES, 1 high a
   least a minute (https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api).
 - systemd credential files may carry ACLs instead of mode 0400 (systemd issue 29435), so the bridge does not check a token
   file's mode; the runbook keeps the files root-only, mode 0600.
+
+# ===== Fix round 1 (2026-11-05, same session kiro-exafy-202611050107-c4a6; review changes on 45dcdf53 by
+# agent-vitana-lane-reviewer-202611050324-7146). Start head 137d38dc655d7eb711689cccd75782e8cd5f86b8 (= 45dcdf53 + the
+# review entry), origin/main 945755f084cbe0eb4c56d1b1d3b4ce2cdd6181ee. Every output below is from the final code of the round.
+
+# F0. Lane back to executing (lane file only), preflight, push
+$ git -C /projects/sandbox/.rv/github-bridge fetch origin; git rev-parse HEAD; git ls-remote origin refs/heads/kiro/agentic-delivery/github-bridge
+137d38dc655d7eb711689cccd75782e8cd5f86b8 on both (pass)
+$ git commit (lane(agentic-delivery/github-bridge): in-review → executing)  → b8bfa0c3c03e3fe170c6dd0842ecc7e14f2289cf
+$ node scripts/collab/preflight.mjs --repo /projects/sandbox/.rv/github-bridge --base origin/main --head HEAD --branch kiro/agentic-delivery/github-bridge --title "<PR title>"
+preflight: every check passed
+$ PR_TITLE='<PR title>' git push origin b8bfa0c3…:refs/heads/kiro/agentic-delivery/github-bridge; git ls-remote …   (pass, matches)
+
+# F1. Red first. Output: outputs/red-fix1.txt
+$ git archive 137d38dc scripts/eng infra/gitlab-engineering | tar -x -C <scratch>/red; cp scripts/eng/github-bridge.test.mjs <scratch>/red/scripts/eng/
+$ (cd <scratch>/red && node --test scripts/eng/github-bridge.test.mjs)
+tests 54, pass 47, fail 7 (node v22.23.4): the 5 new tests and the 2 changed ones; each fails on its own assertion
+(listed in red-fix1.txt). The test file was not changed after this run (sha256 9f94c4c48be6bec3 both times).
+
+# F2. Green. Output: outputs/green.txt
+$ npx -y node@20 --test scripts/eng/github-bridge.test.mjs
+tests 54, pass 54, fail 0 (node v20.20.2)
+$ node --test scripts/eng/github-bridge.test.mjs
+tests 54, pass 54, fail 0 (node v22.23.4)
+
+# F3. UNIT.yml's command (no install, gh shimmed as before). Output: outputs/unit-all.txt
+$ FILES=$(find scripts -path '*/node_modules' -prune -o \( -name '*.test.cjs' -o -name '*.test.mjs' \) -print | sort); node --test $FILES
+34 files; tests 667, pass 666, fail 0, skipped 1 (the same win32-only test), on node v20.20.2 (15 s) and v22.23.4 (14 s).
+
+# F4. Mutation check. Script: outputs/mutation-check.sh  Output: outputs/mutation-check.txt
+$ MUT_DIR=<scratch> bash docs/validation/VTID-05548/outputs/mutation-check.sh /projects/sandbox/.rv/github-bridge
+mutations 25: caught 25, survived 0, not applied 0, not parsing 0. The gate-order mutation of round 0 was replaced (its line
+is gone) and 9 were added. A first run had one INVALID mutation (an empty if-body); it was fixed to `void 0;` and the whole
+check run again.
+
+# F5. systemd-analyze verify: not run again; fix round 1 does not change the units.
+
+# F6. Checks read for the review's CI finding (GET only)
+$ gh api repos/exafyltd/vitana-platform/commits/45dcdf534adf9ec3804fc9df02bc0a8d14daddc8/check-runs
+11 check runs, all completed / success (unit, pr-gate, Lane scope, Collab handoff, change-suite, validate, validate-pr,
+scan, check-phase-2b-docs, Enforce Phase 2B Naming Standards, wake).
+
+# F7. Up to date with main? (read-only, in a throw-away clone under <scratch>, removed afterwards, nothing pushed)
+$ gh api repos/exafyltd/vitana-platform/pulls/4689   → mergeable false, mergeable_state dirty
+$ git show --stat origin/main   → 945755f0 "PM bookkeeping (#4688)" changed .kiro/specs/agentic-delivery/lanes/github-bridge.md
+  (seat exafy → exafyltd, "reassign lane exafy→exafyltd (stale_ready, Claude unavailable)", twice)
+$ (clone) git merge origin/main → CONFLICT in the lane file; resolved by hand in the clone; preflight there:
+  Lane scope FAIL: "f30ed1ea / 45dcdf53 / b8bfa0c3: kiro-exafy-202611050107-c4a6 (seat exafy) edits lane
+  agentic-delivery/github-bridge, which belongs to seat exafyltd". So main is not merged into this branch here; an open
+  item for the driver (acceptance.md).
+
+# F8. Driver keep-alive: plan-driver.mjs heartbeat --slug agentic-delivery / eng-gitlab-m2 --session kiro-exafy-202611041929-802c,
+# about every 15 minutes (04:33Z, 04:44Z, 04:55Z, 05:03Z, …), all {"ok":true}.

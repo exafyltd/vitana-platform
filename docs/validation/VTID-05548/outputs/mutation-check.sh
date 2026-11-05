@@ -25,7 +25,16 @@ run_one 'landing only by exact sha' 'if (same) return m;' ''
 run_one 'no rate-limit pause' "if (e?.code === 'rate_limited') pause.until" "if (false) pause.until"
 run_one 'secondary limit not detected' "const secondary = status === 403 && /secondary rate limit|abuse detection/i.test(text);" 'const secondary = false;'
 run_one 'no rotation' 'const order = start > 0 ?' 'const order = false ?'
-run_one 'no required-first order' 'Number(first.has(c)) - Number(first.has(a))' '0'
+run_one 'no gate-first order (no tier sort)' '.sort((x, y) => x.tier - y.tier)' ''
+run_one 'gate results not split: non-success not first' "(s.state === 'success' ? 1 : 0)" '1'
+run_one 'gate order per pull request, not across the tick' 'queue.flatMap((q) => q.writes.map((w) => ({ q, ...w }))).sort((x, y) => x.tier - y.tier)' 'queue.flatMap((q) => [...q.writes].sort((x, y) => x.tier - y.tier).map((w) => ({ q, ...w })))'
+run_one 'no rotation after a budget stop (resume not set)' 'out.status_resume = q.b;' 'void 0;'
+run_one 'gate jobs read like any other job' 'const gate = GATE.has(job?.name);' 'const gate = false;'
+run_one 'skipped gate job posted as success' "return gate ? { state: 'failure', description: 'Skipped on GitLab" "return false ? { state: 'failure', description: 'Skipped on GitLab"
+run_one 'gate job allowed to fail posted as success' "return gate ? { state: 'failure', description: 'Failed on GitLab;" "return false ? { state: 'failure', description: 'Failed on GitLab;"
+run_one 'optional manual gate job posted as success' "return gate ? { state: 'pending', description: 'Manual job" "return false ? { state: 'pending', description: 'Manual job"
+run_one 'no pending gate while the pipeline runs' 'if (!want.has(GATE_CONTEXT) && !FINISHED_PIPELINE.has(pipe.status)) {' 'if (false) {'
+run_one 'pending gate also after the pipeline ended' ' && !FINISHED_PIPELINE.has(pipe.status)' ''
 run_one 'foreign MR rewritten' '} else if (mr.author?.id !== me.id) {' '} else if (false) {'
 run_one 'ownership dropped with the GitHub branch' 'if (gl && (gl === entry.pushed || gl === entry.gitlab)) out.branches[b] = entry;' ''
 run_one 'assist from any ref' "|| !fromRef.startsWith('refs/heads/assist/')" ''

@@ -1,5 +1,5 @@
 # Mutation check (VTID-05548): bash docs/validation/VTID-05548/outputs/mutation-check.sh <worktree>
-# Generated 2026-11-05T03:02:37Z by session kiro-exafy-202611050107-c4a6 on module sha256 6f089f75a0ac10a4 and test file sha256 653e1775668d045e
+# Generated 2026-11-05T05:09:09Z by session kiro-exafy-202611050107-c4a6 (fix round 1) on module sha256 db961be2d77fe9bc and test file sha256 9f94c4c48be6bec3
 # CAUGHT = a test fails with the mutation; SURVIVED = every test still passes; NOOP / INVALID = the mutation did not apply / does not parse.
 CAUGHT   main merges never accepted (3 failing: the merge bot merging main into a bridged branch is not anot|a landing right after the merge bot merged main (a train upd|a new GitHub head after the merge bot merged main is copied )
 CAUGHT   main merge: any merge accepted (no tree check) (1 failing: a new GitHub head after the merge bot merged main is copied )
@@ -7,11 +7,20 @@ CAUGHT   landing only by exact sha (2 failing: the merge bot merging main into a
 CAUGHT   no rate-limit pause (1 failing: a GitHub rate limit stops every GitHub write for the rest of)
 CAUGHT   secondary limit not detected (1 failing: a GitHub rate limit stops every GitHub write for the rest of)
 CAUGHT   no rotation (1 failing: the status budget goes first to the jobs that gate a landing)
-CAUGHT   no required-first order (1 failing: the status budget goes first to the jobs that gate a landing)
+CAUGHT   no gate-first order (no tier sort) (3 failing: the status budget goes first to the jobs that gate a landing|with a status budget of 1, GitHub never shows only success f|while the head pipeline runs without a gate result, gitlab/g)
+CAUGHT   gate results not split: non-success not first (3 failing: the status budget goes first to the jobs that gate a landing|with a status budget of 1, GitHub never shows only success f|while the head pipeline runs without a gate result, gitlab/g)
+CAUGHT   gate order per pull request, not across the tick (2 failing: the status budget goes first to the jobs that gate a landing|with a status budget of 1, GitHub never shows only success f)
+CAUGHT   no rotation after a budget stop (resume not set) (1 failing: the status budget goes first to the jobs that gate a landing)
+CAUGHT   gate jobs read like any other job (3 failing: jobToStatus: a landing gate job (lane-scope, change-suite, g|a failed check and a skipped gate give gitlab/gate failure o|with a status budget of 1, GitHub never shows only success f)
+CAUGHT   skipped gate job posted as success (3 failing: jobToStatus: a landing gate job (lane-scope, change-suite, g|a failed check and a skipped gate give gitlab/gate failure o|with a status budget of 1, GitHub never shows only success f)
+CAUGHT   gate job allowed to fail posted as success (2 failing: jobToStatus: a landing gate job (lane-scope, change-suite, g|a failed check and a skipped gate give gitlab/gate failure o)
+CAUGHT   optional manual gate job posted as success (2 failing: jobToStatus: a landing gate job (lane-scope, change-suite, g|a failed check and a skipped gate give gitlab/gate failure o)
+CAUGHT   no pending gate while the pipeline runs (2 failing: statuses: one gitlab/<job> commit status per job result of t|while the head pipeline runs without a gate result, gitlab/g)
+CAUGHT   pending gate also after the pipeline ended (2 failing: status writes stay under GitHub content limits: a budget per|while the head pipeline runs without a gate result, gitlab/g)
 CAUGHT   foreign MR rewritten (1 failing: a merge request someone else opened from a bridged branch is)
 CAUGHT   ownership dropped with the GitHub branch (1 failing: a branch deleted on GitHub stays the bridge's while GitLab h)
 CAUGHT   assist from any ref (1 failing: assist push: one commit on top of the head of a bridged bran)
-CAUGHT   running jobs posted (1 failing: statuses: one gitlab/<job> commit status per job result of t)
+CAUGHT   running jobs posted (2 failing: statuses: one gitlab/<job> commit status per job result of t|while the head pipeline runs without a gate result, gitlab/g)
 CAUGHT   clock-hour budget (no sliding window) (1 failing: status writes stay under GitHub content limits: a budget per)
 CAUGHT   refused-then-deleted not re-created (1 failing: a refused branch whose GitLab copy a person deleted is copie)
 CAUGHT   dry run fetches (1 failing: a dry run that cannot judge a branch's history without a fet)

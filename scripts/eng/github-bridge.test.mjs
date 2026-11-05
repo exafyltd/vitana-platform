@@ -150,9 +150,11 @@ function botMergesMain(w, pair, branch) {
   pushTo(w, pair.github, glUrl, `refs/heads/${branch}`, merge, true);
   return merge;
 }
+/** A pipeline of the GitLab model; its status follows its jobs as on GitLab (running while a job has no result), unless a
+ * test sets pl.status itself. */
 function addPipeline(w, pair, sha, jobs) {
   const p = w.gl[pair.gitlab];
-  const pl = { id: 500 + p.pipelines.length + 1, sha, status: 'running', jobs: [] };
+  const pl = { id: 500 + p.pipelines.length + 1, sha, jobs: [] };
   for (const j of jobs) {
     const id = w.nextJobId++;
     pl.jobs.push({ id, name: j.name, status: j.status, allow_failure: Boolean(j.allow_failure), web_url: `${GL_URL}/${pair.gitlab}/-/jobs/${id}` });
@@ -160,6 +162,18 @@ function addPipeline(w, pair, sha, jobs) {
   p.pipelines.push(pl);
   return pl;
 }
+const SETTLED_JOB = new Set(['success', 'failed', 'canceled', 'skipped', 'manual']);
+/** The status GitLab shows for a pipeline with these jobs. */
+function pipelineStatus(pl) {
+  if (pl.status) return pl.status;
+  if (pl.jobs.length === 0 || pl.jobs.some((j) => !SETTLED_JOB.has(j.status))) return 'running';
+  if (pl.jobs.some((j) => j.status === 'failed' && !j.allow_failure)) return 'failed';
+  if (pl.jobs.some((j) => j.status === 'canceled')) return 'canceled';
+  if (pl.jobs.some((j) => j.status === 'manual' && !j.allow_failure)) return 'manual';
+  return pl.jobs.every((j) => j.status === 'skipped') ? 'skipped' : 'success';
+}
+/** GitHub's latest status of each context on a commit of the model: context → { state, description, target_url }. */
+const latestOn = (w, github, sha) => Object.fromEntries((w.gh[github].statuses.get(sha) ?? []).map((s) => [s.context, s]));
 /** The next `times` calls of `method` whose path matches `re` get `response` instead of the model's answer. */
 function failNext(w, method, re, response, times = 1) {
   w.failures.push({ method, re, response, times });
@@ -270,7 +284,8 @@ function installGitLabRoutes(w, route) {
     if (!mr) return { status: 404, json: { message: '404 Not found' } };
     const v = view(p, mr);
     const pl = [...p.pipelines].reverse().find((x) => x.sha === v.sha);
-    return { json: { ...v, head_pipeline: pl ? { id: pl.id, sha: pl.sha, status: pl.status } : null } };
+    const head = pl ? { id: pl.id, sha: pl.sha, status: pipelineStatus(pl), web_url: `${GL_URL}/${p.repo.gitlab}/-/pipelines/${pl.id}` } : null;
+    return { json: { ...v, head_pipeline: head } };
   });
   route('PUT', /^\/api\/v4\/projects\/([^/]+)\/merge_requests\/(\d+)$/, (call, m) => {
     const p = project(m);
@@ -384,6 +399,33 @@ test('jobToStatus maps every GitLab job status to a GitHub commit status state w
   assert.notEqual(jobToStatus({ status: 'skipped' }).description, jobToStatus({ status: 'success' }).description);
   assert.equal(statusContext('gate'), 'gitlab/gate');
   assert.equal(statusContext('gateway-jest 2/4'), 'gitlab/gateway-jest 2/4');
+});
+
+test('jobToStatus: a landing gate job (lane-scope, change-suite, gate) is success on GitHub only when it passed; every other result is a non-success state', () => {
+  // The merge bot lands only when each required job is `success` (eng-gitlab-m2 plan §3.4: a required job that is absent,
+  // skipped, neutral or still running does not pass), so GitHub must not show anything else as success for these jobs.
+  const statuses = ['success', 'failed', 'canceled', 'skipped', 'manual', 'created', 'pending', 'scheduled', 'preparing',
+    'waiting_for_resource', 'waiting_for_callback', 'running', 'canceling', 'a-status-gitlab-adds-later'];
+  for (const name of ['lane-scope', 'change-suite', 'gate']) {
+    for (const status of statuses) {
+      for (const allow_failure of [false, true]) {
+        const s = jobToStatus({ name, status, allow_failure });
+        const what = `${name} ${status} allow_failure=${allow_failure}`;
+        assert.equal(s.state === 'success', status === 'success', `${what}: ${s.state}`);
+        assert.ok(['success', 'failure', 'error', 'pending'].includes(s.state), what);
+        assert.ok(s.description.length > 0 && s.description.length <= 140, s.description);
+      }
+    }
+  }
+  assert.deepEqual(jobToStatus({ name: 'gate', status: 'skipped' }), { state: 'failure', description: 'Skipped on GitLab: an earlier job did not pass', settled: true });
+  assert.equal(jobToStatus({ name: 'change-suite', status: 'failed', allow_failure: true }).state, 'failure');
+  assert.equal(jobToStatus({ name: 'lane-scope', status: 'manual', allow_failure: true }).state, 'pending');
+  assert.equal(jobToStatus({ name: 'gate', status: 'canceled' }).state, 'error');
+  assert.equal(jobToStatus({ name: 'gate', status: 'a-status-gitlab-adds-later' }).state, 'pending');
+  // Any other job keeps the merge bot's table: skipped, allowed to fail and optional manual pass.
+  for (const job of [{ name: 'docs', status: 'skipped' }, { name: 'lint', status: 'failed', allow_failure: true }, { name: 'gate-x', status: 'manual', allow_failure: true }]) {
+    assert.equal(jobToStatus(job).state, 'success', JSON.stringify(job));
+  }
 });
 
 test('merge request title and description: the PR title and body, a draft PR as a GitLab draft, quick actions disarmed', () => {
@@ -620,13 +662,14 @@ test('statuses: one gitlab/<job> commit status per job result of the merge reque
   let mark = w.f.mark();
   await runTick(w);
   const posted = w.f.writes(mark);
-  assert.equal(posted.length, 8, 'the running job has no result yet');
+  assert.equal(posted.length, 9, 'the running gate job has no result yet: gitlab/gate is pending until it has one');
   for (const x of posted) assert.equal(`${x.method} ${x.path}`, `POST /repos/${gh}/statuses/${a}`);
   const byContext = Object.fromEntries(posted.map((x) => [x.body.context, x.body]));
   assert.deepEqual(Object.fromEntries(Object.entries(byContext).map(([k, v]) => [k, v.state])), {
-    'gitlab/lane-scope': 'success', 'gitlab/unit 1/2': 'failure', 'gitlab/lint': 'success', 'gitlab/old': 'error',
+    'gitlab/lane-scope': 'success', 'gitlab/gate': 'pending', 'gitlab/unit 1/2': 'failure', 'gitlab/lint': 'success', 'gitlab/old': 'error',
     'gitlab/docs': 'success', 'gitlab/optional-manual': 'success', 'gitlab/blocking-manual': 'pending', 'gitlab/future': 'pending',
   });
+  assert.equal(byContext['gitlab/gate'].description, 'GitLab pipeline running');
   assert.equal(byContext['gitlab/unit 1/2'].target_url, pl.jobs[2].web_url);
   assert.equal(byContext['gitlab/unit 1/2'].description, 'Failed on GitLab');
   mark = w.f.mark();
@@ -700,7 +743,124 @@ test('the status budget goes first to the jobs that gate a landing, and the next
   const served = async () => { const mark = w.f.mark(); await runTick(w, opts); return w.f.writes(mark).map((x) => `${x.path.endsWith(a) ? 'a' : 'b'} ${x.body.context}`); };
   assert.deepEqual(await served(), ['a gitlab/gate', 'a gitlab/lane-scope']);
   addPipeline(w, PF, a, ['docs', 'unit', 'gate', 'lane-scope'].map((name) => ({ name, status: 'failed' }))); // new results for a
-  assert.deepEqual(await served(), ['b gitlab/gate', 'b gitlab/unit'], 'b, left without a turn, goes first');
+  // a's GitHub head shows a green gate from its first pipeline while its new pipeline is red: the red gate results go
+  // before every other write of the tick, also before b's turn.
+  assert.deepEqual(await served(), ['a gitlab/gate', 'a gitlab/lane-scope'], 'a red gate result goes first');
+  assert.deepEqual([latestOn(w, gh, a)['gitlab/gate'].state, latestOn(w, gh, a)['gitlab/lane-scope'].state], ['failure', 'failure']);
+  assert.deepEqual(await served(), ['b gitlab/gate', 'b gitlab/unit'], 'b, left without a turn, goes first among the rest');
+  assert.deepEqual(await served(), ['a gitlab/docs', 'a gitlab/unit']);
+});
+
+/** A red pipeline as the plan's CI runs it: the governance jobs passed, a check failed, so gate did not run (skipped). */
+const RED = () => [{ name: 'lane-scope', status: 'success' }, { name: 'change-suite', status: 'success' }, { name: 'unit 1/2', status: 'failed' }, { name: 'gate', status: 'skipped' }];
+const GREEN = () => [{ name: 'lane-scope', status: 'success' }, { name: 'change-suite', status: 'success' }, { name: 'unit 1/2', status: 'success' }, { name: 'gate', status: 'success' }];
+
+test('a failed check and a skipped gate give gitlab/gate failure on GitHub, as the merge bot reads them: the merge request cannot land', async (t) => {
+  const w = world(t);
+  const gh = PF.github;
+  const a = mk(w, gh, 'kiro/s/a');
+  addPr(w, gh, { number: 1, branch: 'kiro/s/a', sha: a });
+  await runTick(w);
+  addPipeline(w, PF, a, RED());
+  const res = await runTick(w);
+  assert.deepEqual(res.errors, []);
+  const latest = latestOn(w, gh, a);
+  assert.deepEqual(Object.fromEntries(Object.entries(latest).map(([k, v]) => [k, v.state])), {
+    'gitlab/lane-scope': 'success', 'gitlab/change-suite': 'success', 'gitlab/unit 1/2': 'failure', 'gitlab/gate': 'failure',
+  });
+  assert.equal(latest['gitlab/gate'].description, 'Skipped on GitLab: an earlier job did not pass');
+  for (const [name, status, allow] of [['gate', 'failed', true], ['change-suite', 'manual', true], ['lane-scope', 'skipped', false]]) {
+    const b = `kiro/s/${name}-${status}`;
+    const sha = mk(w, gh, b);
+    addPr(w, gh, { number: 10 + w.gh[gh].pulls.size, branch: b, sha });
+    await runTick(w);
+    addPipeline(w, PF, sha, [{ name, status, allow_failure: allow }]);
+    await runTick(w);
+    assert.notEqual(latestOn(w, gh, sha)[`gitlab/${name}`].state, 'success', `${name} ${status} allow_failure=${allow}`);
+  }
+});
+
+test('with a status budget of 1, GitHub never shows only success for a red pipeline: its non-success gate result is posted first, before any other write of the tick', async (t) => {
+  const w = world(t);
+  const gh = PF.github;
+  const b = mk(w, gh, 'kiro/s/b');
+  addPr(w, gh, { number: 2, branch: 'kiro/s/b', sha: b });
+  await runTick(w);
+  addPipeline(w, PF, b, RED());
+  const opts = { maxStatusWritesPerTick: 1, maxStatusWritesPerHour: 1000 };
+  let mark = w.f.mark();
+  await runTick(w, opts);
+  const first = w.f.writes(mark);
+  assert.equal(first.length, 1);
+  assert.deepEqual([first[0].body.context, first[0].body.state], ['gitlab/gate', 'failure'], 'the one status posted is non-success');
+  for (let i = 0; i < 5; i++) {
+    await runTick(w, opts);
+    const states = Object.values(latestOn(w, gh, b)).map((s) => s.state);
+    assert.ok(states.some((s) => s !== 'success'), `tick ${i + 2}: ${states.join(', ')}`);
+  }
+  assert.equal(Object.keys(latestOn(w, gh, b)).length, 4, 'all four results reached GitHub, one a tick');
+  // Two pull requests. b's head shows only green from a first pipeline; a new pipeline on the same head (as after a
+  // retry, or the merge bot's merge of main) is red. a comes first in the rotation and has new green results. The one
+  // write of the tick is b's red gate, not a's green.
+  addPipeline(w, PF, b, GREEN());
+  for (let i = 0; i < 4; i++) await runTick(w, opts);
+  assert.ok(Object.values(latestOn(w, gh, b)).every((s) => s.state === 'success'), 'b shows only green for its green pipeline');
+  const a = mk(w, gh, 'kiro/s/a');
+  addPr(w, gh, { number: 1, branch: 'kiro/s/a', sha: a });
+  await runTick(w, { maxStatusWritesPerTick: 0 });
+  addPipeline(w, PF, a, GREEN());
+  addPipeline(w, PF, b, RED());
+  mark = w.f.mark();
+  await runTick(w, opts);
+  assert.deepEqual(w.f.writes(mark).map((x) => [x.path, x.body.context, x.body.state]), [[`/repos/${gh}/statuses/${b}`, 'gitlab/gate', 'failure']]);
+});
+
+test('while the head pipeline runs without a gate result, gitlab/gate is pending on GitHub: one status per head, counted in the budget, replaced by the real result', async (t) => {
+  const w = world(t);
+  const gh = PF.github;
+  const a = mk(w, gh, 'kiro/s/a');
+  addPr(w, gh, { number: 1, branch: 'kiro/s/a', sha: a });
+  await runTick(w);
+  const pl = addPipeline(w, PF, a, [{ name: 'lane-scope', status: 'success' }, { name: 'unit', status: 'running' }, { name: 'gate', status: 'created' }]);
+  let mark = w.f.mark();
+  await runTick(w, { maxStatusWritesPerTick: 1, maxStatusWritesPerHour: 1000 });
+  const pending = w.f.writes(mark);
+  assert.deepEqual(pending.map((x) => [x.body.context, x.body.state, x.body.description]), [['gitlab/gate', 'pending', 'GitLab pipeline running']],
+    'the one write of the budget is the pending gate, not the green lane-scope');
+  assert.equal(pending[0].body.target_url, `${GL_URL}/${PF.gitlab}/-/pipelines/${pl.id}`);
+  mark = w.f.mark();
+  await runTick(w);
+  assert.deepEqual(w.f.writes(mark).map((x) => [x.body.context, x.body.state]), [['gitlab/lane-scope', 'success']], 'the pending gate is posted once');
+  mark = w.f.mark();
+  await runTick(w);
+  w.f.assertNoWrites(mark);
+  pl.jobs[1].status = 'success';
+  pl.jobs[2].status = 'success';
+  mark = w.f.mark();
+  await runTick(w);
+  assert.deepEqual(w.f.writes(mark).map((x) => [x.body.context, x.body.state]), [['gitlab/gate', 'success'], ['gitlab/unit', 'success']]);
+  assert.equal(latestOn(w, gh, a)['gitlab/gate'].state, 'success', 'the real result replaced the pending gate');
+  // A pipeline without any job result yet: still a pending gate. A new head gets its own.
+  const a2 = commitOn(w, gh, 'kiro/s/a', 'a2', { from: a });
+  pushGitHub(w, gh, 'kiro/s/a', a2);
+  updatePr(w, gh, 1, { sha: a2 });
+  await runTick(w);
+  addPipeline(w, PF, a2, []);
+  mark = w.f.mark();
+  await runTick(w);
+  assert.deepEqual(w.f.writes(mark).map((x) => [x.path, x.body.context, x.body.state]), [[`/repos/${gh}/statuses/${a2}`, 'gitlab/gate', 'pending']]);
+  // A pipeline that ended with no gate job (the merge bot's ci.skip update of the train, plan §3.5): nothing is posted,
+  // GitHub keeps what it shows.
+  addPipeline(w, PF, a2, [{ name: 'gate', status: 'success' }]);
+  await runTick(w);
+  const m = botMergesMain(w, PF, 'kiro/s/a');
+  await runTick(w);
+  const skipped = addPipeline(w, PF, m, []);
+  skipped.status = 'skipped';
+  mark = w.f.mark();
+  await runTick(w);
+  w.f.assertNoWrites(mark);
+  assert.equal(latestOn(w, gh, a2)['gitlab/gate'].state, 'success');
 });
 
 test('a GitHub rate limit stops every GitHub write for the rest of the tick and pauses them until it has passed', async (t) => {
@@ -1336,6 +1496,16 @@ test('the runbook names the token scopes, where the tokens live, how to read a r
     'systemctl enable --now vitana-github-bridge.timer', '--dry-run', 'assist-push']) {
     assert.ok(rb.includes(needle), needle);
   }
+});
+
+test('the runbook says the timer is installed but not enabled before the cut, how gate results are posted, and the limits that stay', () => {
+  const rb = readFileSync(join(ROOT, 'infra', 'gitlab-engineering', 'RUNBOOK-github-bridge.md'), 'utf8');
+  for (const needle of ['installed but not enabled', 'plan §8.2 step 5', 'systemctl is-enabled vitana-github-bridge.timer',
+    '`lane-scope`, `change-suite` and `gate`', 'GitLab pipeline running', 'no `gitlab/*` status', 'in any hour']) {
+    assert.ok(rb.includes(needle), needle);
+  }
+  assert.ok(!rb.includes('a clock hour'), 'the hour budget is a sliding hour');
+  assert.ok(!rb.includes('GitHub can show only green statuses'), 'the pending gate closed that gap');
 });
 
 // ------------------------------------------------------------------------------------------------- state and CLI

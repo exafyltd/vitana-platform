@@ -1,370 +1,624 @@
-# Green (VTID-05548): node --test scripts/eng/github-bridge.test.mjs with the implementation, test file sha256 653e1775668d045e, module sha256 6f089f75a0ac10a4
-# Generated 2026-11-05T03:00:34Z by session kiro-exafy-202611050107-c4a6; git version 2.50.1
+# Green (VTID-05548, fix round 1): node --test scripts/eng/github-bridge.test.mjs with the implementation, test file sha256 9f94c4c48be6bec3, module sha256 db961be2d77fe9bc
+# Generated 2026-11-05T04:54:30Z by session kiro-exafy-202611050107-c4a6; git version 2.50.1
 
 ## Node 20 (the version UNIT.yml uses): npx -y node@20 --test scripts/eng/github-bridge.test.mjs
 v20.20.2
-ok 1 - BRIDGE_REPOS pairs exafyltd/vitana-platform with vitana/vitana-platform and exafyltd/vitana-v1 with vitana/vitana-v1, nothing else
-ok 2 - isBridgedBranch: kiro/* and claude/* only; never main, assist/*, pm-agent/* or any other name; never a malformed ref
-ok 3 - jobToStatus maps every GitLab job status to a GitHub commit status state with a short description
-ok 4 - merge request title and description: the PR title and body, a draft PR as a GitLab draft, quick actions disarmed
-ok 5 - a tick copies the kiro/* and claude/* branches of both repositories to GitLab, and never main, assist/*, pm-agent/* or another name
-ok 6 - a second tick with nothing new pushes nothing, fetches nothing and makes no API write
-ok 7 - a new commit and a force-push on GitHub are copied to a branch the bridge owns
-ok 8 - a branch that already lives on GitLab with other history is refused, never overwritten, gets no merge request, and is reported once per GitLab head
-ok 9 - the same history already on GitLab (a mirror copy) is adopted without a push, and an older copy of it is fast-forwarded
-ok 10 - a write on GitLab to a branch the bridge copied makes it refused: the GitLab commit stays and GitHub is not copied over it
-ok 11 - one merge request per open same-repository pull request from a bridged branch into main: same title, body and head; updated on change; none for forks, other branches or other bases
-ok 12 - a pull request that closes without landing, or leaves main, has its merge request closed once; a merge request the bridge did not open is left alone
-ok 13 - a merge request is closed only after GitHub confirms that no open pull request from its branch into main exists
-ok 14 - statuses: one gitlab/<job> commit status per job result of the merge request head pipeline, on the GitHub commit, never posted twice
-ok 15 - status writes stay under GitHub content limits: a budget per tick and per hour, the rest posted at a later tick, none lost or doubled
-ok 16 - statuses are posted only for the head pipeline of the merge request at the pull request head
-ok 17 - the status budget goes first to the jobs that gate a landing, and the next tick starts with the pull request that was left without a turn
-ok 18 - a GitHub rate limit stops every GitHub write for the rest of the tick and pauses them until it has passed
-ok 19 - a merge request someone else opened from a bridged branch is never rewritten; its pipeline results still come back
-ok 20 - a branch deleted on GitHub stays the bridge's while GitLab has its copy: a new branch of that name is copied, not refused
-ok 21 - after the merge request lands, the pull request is closed with one comment that links the landed commit; the removed branch is not copied again
-ok 22 - the merge bot merging main into a bridged branch is not another writer: the branch stays bridged, results come back to the PR head, and the landing closes the PR
-ok 23 - a landing right after the merge bot merged main (a train update the bridge never saw) still closes the PR and is not copied again
-ok 24 - a new GitHub head after the merge bot merged main is copied over the bot's merge; a merge with other changes is refused
-ok 25 - a refused branch whose GitLab copy a person deleted is copied again, also when GitHub did not move
-ok 26 - new commits pushed to a branch after its merge request landed are copied again and get a new merge request
-ok 27 - a merge request someone closed on GitLab while its pull request is open is reported once and not opened again for that head
-ok 28 - assist push: one commit on top of the head of a bridged branch goes to the GitHub branch; anything else is refused and pushes nothing
-ok 29 - assist push refuses a branch whose GitLab copy another writer changed, and a branch that is gone from GitHub
-ok 30 - a dry run that cannot judge a branch's history without a fetch plans check_history and fetches nothing
-ok 31 - --dry-run writes nothing anywhere (no git push or fetch, no API write, no state write) and prints the planned actions
-ok 32 - GitHub API down: nothing changes for that repository in that tick, it is retried at the next tick, the other repository goes on
-ok 33 - GitLab API down: nothing changes for that repository in that tick and it is retried at the next tick
-ok 34 - a git error on one branch changes nothing for that branch and is retried at the next tick; the other branches are copied
-ok 35 - a GitLab write that races a copy is never overwritten: every push carries the head it expects (lease)
-ok 36 - an API error on one pull request leaves it for the next tick; the other pull request gets its merge request in the same tick
-ok 37 - tokens come from files, never from argv, and appear in no log line or error, also when a server echoes them
-ok 38 - git gets each token only through the environment and only for its own host; never in argv or in a URL; git errors are redacted
-ok 39 - makeRedactor removes the tokens, their Basic-auth forms, GitHub and GitLab token shapes, bearer and basic values
-ok 40 - readTokenFile: trims the token; a missing, empty or malformed file is an error that names the file and never its content
-ok 41 - GitHub client: the token goes in one Authorization header to one origin; redirects are not followed; paths are plain paths
-ok 42 - GitHub client: paginate follows rel="next" links on the same origin only
-ok 43 - GitHub client: a GET is retried on 5xx and network errors, a write never; a rate limit is an error that is not retried
-ok 44 - GitHub client: an error carries status, method and the path without its query, and never the token
-ok 45 - systemd units: the timer fires every minute; the service runs one tick through flock, niced and capped and hardened, with the tokens as credentials and never in the unit
-ok 46 - the runbook names the token scopes, where the tokens live, how to read a refused branch, how to stop and start the bridge, and the dry run
-ok 47 - state: saved atomically with mode 0600 and loaded back; a missing file is an empty state; a corrupt file is refused
-ok 48 - CLI: a corrupt state file, a missing token file, an unknown command or option stop with exit 2 before any call
-ok 49 - CLI assist-push uses the saved state: a bridged branch gets the commit, and a refusal exits 3
-# tests 49
-# suites 0
-# pass 49
-# fail 0
-# cancelled 0
-# skipped 0
-# todo 0
-# duration_ms 11512.143019
-exit=0
-
-## Node v22.23.4, full TAP output: node --test scripts/eng/github-bridge.test.mjs
 TAP version 13
 # Subtest: BRIDGE_REPOS pairs exafyltd/vitana-platform with vitana/vitana-platform and exafyltd/vitana-v1 with vitana/vitana-v1, nothing else
 ok 1 - BRIDGE_REPOS pairs exafyltd/vitana-platform with vitana/vitana-platform and exafyltd/vitana-v1 with vitana/vitana-v1, nothing else
   ---
-  duration_ms: 1.376536
+  duration_ms: 1.260702
+  ...
+# Subtest: isBridgedBranch: kiro/* and claude/* only; never main, assist/*, pm-agent/* or any other name; never a malformed ref
+ok 2 - isBridgedBranch: kiro/* and claude/* only; never main, assist/*, pm-agent/* or any other name; never a malformed ref
+  ---
+  duration_ms: 0.347298
+  ...
+# Subtest: jobToStatus maps every GitLab job status to a GitHub commit status state with a short description
+ok 3 - jobToStatus maps every GitLab job status to a GitHub commit status state with a short description
+  ---
+  duration_ms: 0.40023
+  ...
+# Subtest: jobToStatus: a landing gate job (lane-scope, change-suite, gate) is success on GitHub only when it passed; every other result is a non-success state
+ok 4 - jobToStatus: a landing gate job (lane-scope, change-suite, gate) is success on GitHub only when it passed; every other result is a non-success state
+  ---
+  duration_ms: 0.34557
+  ...
+# Subtest: merge request title and description: the PR title and body, a draft PR as a GitLab draft, quick actions disarmed
+ok 5 - merge request title and description: the PR title and body, a draft PR as a GitLab draft, quick actions disarmed
+  ---
+  duration_ms: 0.301143
+  ...
+# Subtest: a tick copies the kiro/* and claude/* branches of both repositories to GitLab, and never main, assist/*, pm-agent/* or another name
+ok 6 - a tick copies the kiro/* and claude/* branches of both repositories to GitLab, and never main, assist/*, pm-agent/* or another name
+  ---
+  duration_ms: 466.727391
+  ...
+# Subtest: a second tick with nothing new pushes nothing, fetches nothing and makes no API write
+ok 7 - a second tick with nothing new pushes nothing, fetches nothing and makes no API write
+  ---
+  duration_ms: 204.132062
+  ...
+# Subtest: a new commit and a force-push on GitHub are copied to a branch the bridge owns
+ok 8 - a new commit and a force-push on GitHub are copied to a branch the bridge owns
+  ---
+  duration_ms: 310.737085
+  ...
+# Subtest: a branch that already lives on GitLab with other history is refused, never overwritten, gets no merge request, and is reported once per GitLab head
+ok 9 - a branch that already lives on GitLab with other history is refused, never overwritten, gets no merge request, and is reported once per GitLab head
+  ---
+  duration_ms: 510.400708
+  ...
+# Subtest: the same history already on GitLab (a mirror copy) is adopted without a push, and an older copy of it is fast-forwarded
+ok 10 - the same history already on GitLab (a mirror copy) is adopted without a push, and an older copy of it is fast-forwarded
+  ---
+  duration_ms: 327.329452
+  ...
+# Subtest: a write on GitLab to a branch the bridge copied makes it refused: the GitLab commit stays and GitHub is not copied over it
+ok 11 - a write on GitLab to a branch the bridge copied makes it refused: the GitLab commit stays and GitHub is not copied over it
+  ---
+  duration_ms: 289.566735
+  ...
+# Subtest: one merge request per open same-repository pull request from a bridged branch into main: same title, body and head; updated on change; none for forks, other branches or other bases
+ok 12 - one merge request per open same-repository pull request from a bridged branch into main: same title, body and head; updated on change; none for forks, other branches or other bases
+  ---
+  duration_ms: 580.420184
+  ...
+# Subtest: a pull request that closes without landing, or leaves main, has its merge request closed once; a merge request the bridge did not open is left alone
+ok 13 - a pull request that closes without landing, or leaves main, has its merge request closed once; a merge request the bridge did not open is left alone
+  ---
+  duration_ms: 328.709942
+  ...
+# Subtest: a merge request is closed only after GitHub confirms that no open pull request from its branch into main exists
+ok 14 - a merge request is closed only after GitHub confirms that no open pull request from its branch into main exists
+  ---
+  duration_ms: 199.252703
+  ...
+# Subtest: statuses: one gitlab/<job> commit status per job result of the merge request head pipeline, on the GitHub commit, never posted twice
+ok 15 - statuses: one gitlab/<job> commit status per job result of the merge request head pipeline, on the GitHub commit, never posted twice
+  ---
+  duration_ms: 298.759323
+  ...
+# Subtest: status writes stay under GitHub content limits: a budget per tick and per hour, the rest posted at a later tick, none lost or doubled
+ok 16 - status writes stay under GitHub content limits: a budget per tick and per hour, the rest posted at a later tick, none lost or doubled
+  ---
+  duration_ms: 344.350458
+  ...
+# Subtest: statuses are posted only for the head pipeline of the merge request at the pull request head
+ok 17 - statuses are posted only for the head pipeline of the merge request at the pull request head
+  ---
+  duration_ms: 274.870846
+  ...
+# Subtest: the status budget goes first to the jobs that gate a landing, and the next tick starts with the pull request that was left without a turn
+ok 18 - the status budget goes first to the jobs that gate a landing, and the next tick starts with the pull request that was left without a turn
+  ---
+  duration_ms: 405.269228
+  ...
+# Subtest: a failed check and a skipped gate give gitlab/gate failure on GitHub, as the merge bot reads them: the merge request cannot land
+ok 19 - a failed check and a skipped gate give gitlab/gate failure on GitHub, as the merge bot reads them: the merge request cannot land
+  ---
+  duration_ms: 735.718262
+  ...
+# Subtest: with a status budget of 1, GitHub never shows only success for a red pipeline: its non-success gate result is posted first, before any other write of the tick
+ok 20 - with a status budget of 1, GitHub never shows only success for a red pipeline: its non-success gate result is posted first, before any other write of the tick
+  ---
+  duration_ms: 620.414463
+  ...
+# Subtest: while the head pipeline runs without a gate result, gitlab/gate is pending on GitHub: one status per head, counted in the budget, replaced by the real result
+ok 21 - while the head pipeline runs without a gate result, gitlab/gate is pending on GitHub: one status per head, counted in the budget, replaced by the real result
+  ---
+  duration_ms: 623.21319
+  ...
+# Subtest: a GitHub rate limit stops every GitHub write for the rest of the tick and pauses them until it has passed
+ok 22 - a GitHub rate limit stops every GitHub write for the rest of the tick and pauses them until it has passed
+  ---
+  duration_ms: 465.308175
+  ...
+# Subtest: a merge request someone else opened from a bridged branch is never rewritten; its pipeline results still come back
+ok 23 - a merge request someone else opened from a bridged branch is never rewritten; its pipeline results still come back
+  ---
+  duration_ms: 155.27202
+  ...
+# Subtest: a branch deleted on GitHub stays the bridge's while GitLab has its copy: a new branch of that name is copied, not refused
+ok 24 - a branch deleted on GitHub stays the bridge's while GitLab has its copy: a new branch of that name is copied, not refused
+  ---
+  duration_ms: 260.290548
+  ...
+# Subtest: after the merge request lands, the pull request is closed with one comment that links the landed commit; the removed branch is not copied again
+ok 25 - after the merge request lands, the pull request is closed with one comment that links the landed commit; the removed branch is not copied again
+  ---
+  duration_ms: 302.714019
+  ...
+# Subtest: the merge bot merging main into a bridged branch is not another writer: the branch stays bridged, results come back to the PR head, and the landing closes the PR
+ok 26 - the merge bot merging main into a bridged branch is not another writer: the branch stays bridged, results come back to the PR head, and the landing closes the PR
+  ---
+  duration_ms: 489.36232
+  ...
+# Subtest: a landing right after the merge bot merged main (a train update the bridge never saw) still closes the PR and is not copied again
+ok 27 - a landing right after the merge bot merged main (a train update the bridge never saw) still closes the PR and is not copied again
+  ---
+  duration_ms: 383.807429
+  ...
+# Subtest: a new GitHub head after the merge bot merged main is copied over the bot's merge; a merge with other changes is refused
+ok 28 - a new GitHub head after the merge bot merged main is copied over the bot's merge; a merge with other changes is refused
+  ---
+  duration_ms: 586.286908
+  ...
+# Subtest: a refused branch whose GitLab copy a person deleted is copied again, also when GitHub did not move
+ok 29 - a refused branch whose GitLab copy a person deleted is copied again, also when GitHub did not move
+  ---
+  duration_ms: 301.636603
+  ...
+# Subtest: new commits pushed to a branch after its merge request landed are copied again and get a new merge request
+ok 30 - new commits pushed to a branch after its merge request landed are copied again and get a new merge request
+  ---
+  duration_ms: 355.407631
+  ...
+# Subtest: a merge request someone closed on GitLab while its pull request is open is reported once and not opened again for that head
+ok 31 - a merge request someone closed on GitLab while its pull request is open is reported once and not opened again for that head
+  ---
+  duration_ms: 293.983493
+  ...
+# Subtest: assist push: one commit on top of the head of a bridged branch goes to the GitHub branch; anything else is refused and pushes nothing
+ok 32 - assist push: one commit on top of the head of a bridged branch goes to the GitHub branch; anything else is refused and pushes nothing
+  ---
+  duration_ms: 504.170189
+  ...
+# Subtest: assist push refuses a branch whose GitLab copy another writer changed, and a branch that is gone from GitHub
+ok 33 - assist push refuses a branch whose GitLab copy another writer changed, and a branch that is gone from GitHub
+  ---
+  duration_ms: 318.627491
+  ...
+# Subtest: a dry run that cannot judge a branch's history without a fetch plans check_history and fetches nothing
+ok 34 - a dry run that cannot judge a branch's history without a fetch plans check_history and fetches nothing
+  ---
+  duration_ms: 157.85421
+  ...
+# Subtest: --dry-run writes nothing anywhere (no git push or fetch, no API write, no state write) and prints the planned actions
+ok 35 - --dry-run writes nothing anywhere (no git push or fetch, no API write, no state write) and prints the planned actions
+  ---
+  duration_ms: 484.427495
+  ...
+# Subtest: GitHub API down: nothing changes for that repository in that tick, it is retried at the next tick, the other repository goes on
+ok 36 - GitHub API down: nothing changes for that repository in that tick, it is retried at the next tick, the other repository goes on
+  ---
+  duration_ms: 285.91321
+  ...
+# Subtest: GitLab API down: nothing changes for that repository in that tick and it is retried at the next tick
+ok 37 - GitLab API down: nothing changes for that repository in that tick and it is retried at the next tick
+  ---
+  duration_ms: 257.947589
+  ...
+# Subtest: a git error on one branch changes nothing for that branch and is retried at the next tick; the other branches are copied
+ok 38 - a git error on one branch changes nothing for that branch and is retried at the next tick; the other branches are copied
+  ---
+  duration_ms: 267.202328
+  ...
+# Subtest: a GitLab write that races a copy is never overwritten: every push carries the head it expects (lease)
+ok 39 - a GitLab write that races a copy is never overwritten: every push carries the head it expects (lease)
+  ---
+  duration_ms: 329.540962
+  ...
+# Subtest: an API error on one pull request leaves it for the next tick; the other pull request gets its merge request in the same tick
+ok 40 - an API error on one pull request leaves it for the next tick; the other pull request gets its merge request in the same tick
+  ---
+  duration_ms: 276.815111
+  ...
+# Subtest: tokens come from files, never from argv, and appear in no log line or error, also when a server echoes them
+ok 41 - tokens come from files, never from argv, and appear in no log line or error, also when a server echoes them
+  ---
+  duration_ms: 134.762074
+  ...
+# Subtest: git gets each token only through the environment and only for its own host; never in argv or in a URL; git errors are redacted
+ok 42 - git gets each token only through the environment and only for its own host; never in argv or in a URL; git errors are redacted
+  ---
+  duration_ms: 1.453137
+  ...
+# Subtest: makeRedactor removes the tokens, their Basic-auth forms, GitHub and GitLab token shapes, bearer and basic values
+ok 43 - makeRedactor removes the tokens, their Basic-auth forms, GitHub and GitLab token shapes, bearer and basic values
+  ---
+  duration_ms: 0.263856
+  ...
+# Subtest: readTokenFile: trims the token; a missing, empty or malformed file is an error that names the file and never its content
+ok 44 - readTokenFile: trims the token; a missing, empty or malformed file is an error that names the file and never its content
+  ---
+  duration_ms: 0.558752
+  ...
+# Subtest: GitHub client: the token goes in one Authorization header to one origin; redirects are not followed; paths are plain paths
+ok 45 - GitHub client: the token goes in one Authorization header to one origin; redirects are not followed; paths are plain paths
+  ---
+  duration_ms: 1.085188
+  ...
+# Subtest: GitHub client: paginate follows rel="next" links on the same origin only
+ok 46 - GitHub client: paginate follows rel="next" links on the same origin only
+  ---
+  duration_ms: 1.185802
+  ...
+# Subtest: GitHub client: a GET is retried on 5xx and network errors, a write never; a rate limit is an error that is not retried
+ok 47 - GitHub client: a GET is retried on 5xx and network errors, a write never; a rate limit is an error that is not retried
+  ---
+  duration_ms: 1.366314
+  ...
+# Subtest: GitHub client: an error carries status, method and the path without its query, and never the token
+ok 48 - GitHub client: an error carries status, method and the path without its query, and never the token
+  ---
+  duration_ms: 0.452161
+  ...
+# Subtest: systemd units: the timer fires every minute; the service runs one tick through flock, niced and capped and hardened, with the tokens as credentials and never in the unit
+ok 49 - systemd units: the timer fires every minute; the service runs one tick through flock, niced and capped and hardened, with the tokens as credentials and never in the unit
+  ---
+  duration_ms: 0.84439
+  ...
+# Subtest: the runbook names the token scopes, where the tokens live, how to read a refused branch, how to stop and start the bridge, and the dry run
+ok 50 - the runbook names the token scopes, where the tokens live, how to read a refused branch, how to stop and start the bridge, and the dry run
+  ---
+  duration_ms: 0.217423
+  ...
+# Subtest: the runbook says the timer is installed but not enabled before the cut, how gate results are posted, and the limits that stay
+ok 51 - the runbook says the timer is installed but not enabled before the cut, how gate results are posted, and the limits that stay
+  ---
+  duration_ms: 0.167766
+  ...
+# Subtest: state: saved atomically with mode 0600 and loaded back; a missing file is an empty state; a corrupt file is refused
+ok 52 - state: saved atomically with mode 0600 and loaded back; a missing file is an empty state; a corrupt file is refused
+  ---
+  duration_ms: 0.639691
+  ...
+# Subtest: CLI: a corrupt state file, a missing token file, an unknown command or option stop with exit 2 before any call
+ok 53 - CLI: a corrupt state file, a missing token file, an unknown command or option stop with exit 2 before any call
+  ---
+  duration_ms: 181.747455
+  ...
+# Subtest: CLI assist-push uses the saved state: a bridged branch gets the commit, and a refusal exits 3
+ok 54 - CLI assist-push uses the saved state: a bridged branch gets the commit, and a refusal exits 3
+  ---
+  duration_ms: 238.540653
+  ...
+1..54
+# tests 54
+# suites 0
+# pass 54
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 13637.989825
+exit=0
+
+## Node 22: node --test scripts/eng/github-bridge.test.mjs
+v22.23.4
+TAP version 13
+# Subtest: BRIDGE_REPOS pairs exafyltd/vitana-platform with vitana/vitana-platform and exafyltd/vitana-v1 with vitana/vitana-v1, nothing else
+ok 1 - BRIDGE_REPOS pairs exafyltd/vitana-platform with vitana/vitana-platform and exafyltd/vitana-v1 with vitana/vitana-v1, nothing else
+  ---
+  duration_ms: 2.454068
   type: 'test'
   ...
 # Subtest: isBridgedBranch: kiro/* and claude/* only; never main, assist/*, pm-agent/* or any other name; never a malformed ref
 ok 2 - isBridgedBranch: kiro/* and claude/* only; never main, assist/*, pm-agent/* or any other name; never a malformed ref
   ---
-  duration_ms: 1.198585
+  duration_ms: 0.501697
   type: 'test'
   ...
 # Subtest: jobToStatus maps every GitLab job status to a GitHub commit status state with a short description
 ok 3 - jobToStatus maps every GitLab job status to a GitHub commit status state with a short description
   ---
-  duration_ms: 0.44634
+  duration_ms: 0.459688
+  type: 'test'
+  ...
+# Subtest: jobToStatus: a landing gate job (lane-scope, change-suite, gate) is success on GitHub only when it passed; every other result is a non-success state
+ok 4 - jobToStatus: a landing gate job (lane-scope, change-suite, gate) is success on GitHub only when it passed; every other result is a non-success state
+  ---
+  duration_ms: 0.34107
   type: 'test'
   ...
 # Subtest: merge request title and description: the PR title and body, a draft PR as a GitLab draft, quick actions disarmed
-ok 4 - merge request title and description: the PR title and body, a draft PR as a GitLab draft, quick actions disarmed
+ok 5 - merge request title and description: the PR title and body, a draft PR as a GitLab draft, quick actions disarmed
   ---
-  duration_ms: 0.246789
+  duration_ms: 0.27749
   type: 'test'
   ...
 # Subtest: a tick copies the kiro/* and claude/* branches of both repositories to GitLab, and never main, assist/*, pm-agent/* or another name
-ok 5 - a tick copies the kiro/* and claude/* branches of both repositories to GitLab, and never main, assist/*, pm-agent/* or another name
+ok 6 - a tick copies the kiro/* and claude/* branches of both repositories to GitLab, and never main, assist/*, pm-agent/* or another name
   ---
-  duration_ms: 419.456398
+  duration_ms: 426.691621
   type: 'test'
   ...
 # Subtest: a second tick with nothing new pushes nothing, fetches nothing and makes no API write
-ok 6 - a second tick with nothing new pushes nothing, fetches nothing and makes no API write
+ok 7 - a second tick with nothing new pushes nothing, fetches nothing and makes no API write
   ---
-  duration_ms: 184.546497
+  duration_ms: 189.647518
   type: 'test'
   ...
 # Subtest: a new commit and a force-push on GitHub are copied to a branch the bridge owns
-ok 7 - a new commit and a force-push on GitHub are copied to a branch the bridge owns
+ok 8 - a new commit and a force-push on GitHub are copied to a branch the bridge owns
   ---
-  duration_ms: 290.800201
+  duration_ms: 298.913114
   type: 'test'
   ...
 # Subtest: a branch that already lives on GitLab with other history is refused, never overwritten, gets no merge request, and is reported once per GitLab head
-ok 8 - a branch that already lives on GitLab with other history is refused, never overwritten, gets no merge request, and is reported once per GitLab head
+ok 9 - a branch that already lives on GitLab with other history is refused, never overwritten, gets no merge request, and is reported once per GitLab head
   ---
-  duration_ms: 469.611776
+  duration_ms: 492.489418
   type: 'test'
   ...
 # Subtest: the same history already on GitLab (a mirror copy) is adopted without a push, and an older copy of it is fast-forwarded
-ok 9 - the same history already on GitLab (a mirror copy) is adopted without a push, and an older copy of it is fast-forwarded
+ok 10 - the same history already on GitLab (a mirror copy) is adopted without a push, and an older copy of it is fast-forwarded
   ---
-  duration_ms: 294.49436
+  duration_ms: 307.858306
   type: 'test'
   ...
 # Subtest: a write on GitLab to a branch the bridge copied makes it refused: the GitLab commit stays and GitHub is not copied over it
-ok 10 - a write on GitLab to a branch the bridge copied makes it refused: the GitLab commit stays and GitHub is not copied over it
+ok 11 - a write on GitLab to a branch the bridge copied makes it refused: the GitLab commit stays and GitHub is not copied over it
   ---
-  duration_ms: 254.822319
+  duration_ms: 271.09181
   type: 'test'
   ...
 # Subtest: one merge request per open same-repository pull request from a bridged branch into main: same title, body and head; updated on change; none for forks, other branches or other bases
-ok 11 - one merge request per open same-repository pull request from a bridged branch into main: same title, body and head; updated on change; none for forks, other branches or other bases
+ok 12 - one merge request per open same-repository pull request from a bridged branch into main: same title, body and head; updated on change; none for forks, other branches or other bases
   ---
-  duration_ms: 522.40536
+  duration_ms: 533.054939
   type: 'test'
   ...
 # Subtest: a pull request that closes without landing, or leaves main, has its merge request closed once; a merge request the bridge did not open is left alone
-ok 12 - a pull request that closes without landing, or leaves main, has its merge request closed once; a merge request the bridge did not open is left alone
+ok 13 - a pull request that closes without landing, or leaves main, has its merge request closed once; a merge request the bridge did not open is left alone
   ---
-  duration_ms: 290.294111
+  duration_ms: 302.697819
   type: 'test'
   ...
 # Subtest: a merge request is closed only after GitHub confirms that no open pull request from its branch into main exists
-ok 13 - a merge request is closed only after GitHub confirms that no open pull request from its branch into main exists
+ok 14 - a merge request is closed only after GitHub confirms that no open pull request from its branch into main exists
   ---
-  duration_ms: 178.985015
+  duration_ms: 186.855857
   type: 'test'
   ...
 # Subtest: statuses: one gitlab/<job> commit status per job result of the merge request head pipeline, on the GitHub commit, never posted twice
-ok 14 - statuses: one gitlab/<job> commit status per job result of the merge request head pipeline, on the GitHub commit, never posted twice
+ok 15 - statuses: one gitlab/<job> commit status per job result of the merge request head pipeline, on the GitHub commit, never posted twice
   ---
-  duration_ms: 275.750753
+  duration_ms: 269.660275
   type: 'test'
   ...
 # Subtest: status writes stay under GitHub content limits: a budget per tick and per hour, the rest posted at a later tick, none lost or doubled
-ok 15 - status writes stay under GitHub content limits: a budget per tick and per hour, the rest posted at a later tick, none lost or doubled
+ok 16 - status writes stay under GitHub content limits: a budget per tick and per hour, the rest posted at a later tick, none lost or doubled
   ---
-  duration_ms: 313.267153
+  duration_ms: 315.010141
   type: 'test'
   ...
 # Subtest: statuses are posted only for the head pipeline of the merge request at the pull request head
-ok 16 - statuses are posted only for the head pipeline of the merge request at the pull request head
+ok 17 - statuses are posted only for the head pipeline of the merge request at the pull request head
   ---
-  duration_ms: 251.324373
+  duration_ms: 248.13344
   type: 'test'
   ...
 # Subtest: the status budget goes first to the jobs that gate a landing, and the next tick starts with the pull request that was left without a turn
-ok 17 - the status budget goes first to the jobs that gate a landing, and the next tick starts with the pull request that was left without a turn
+ok 18 - the status budget goes first to the jobs that gate a landing, and the next tick starts with the pull request that was left without a turn
   ---
-  duration_ms: 294.485668
+  duration_ms: 364.707507
+  type: 'test'
+  ...
+# Subtest: a failed check and a skipped gate give gitlab/gate failure on GitHub, as the merge bot reads them: the merge request cannot land
+ok 19 - a failed check and a skipped gate give gitlab/gate failure on GitHub, as the merge bot reads them: the merge request cannot land
+  ---
+  duration_ms: 648.404059
+  type: 'test'
+  ...
+# Subtest: with a status budget of 1, GitHub never shows only success for a red pipeline: its non-success gate result is posted first, before any other write of the tick
+ok 20 - with a status budget of 1, GitHub never shows only success for a red pipeline: its non-success gate result is posted first, before any other write of the tick
+  ---
+  duration_ms: 552.565754
+  type: 'test'
+  ...
+# Subtest: while the head pipeline runs without a gate result, gitlab/gate is pending on GitHub: one status per head, counted in the budget, replaced by the real result
+ok 21 - while the head pipeline runs without a gate result, gitlab/gate is pending on GitHub: one status per head, counted in the budget, replaced by the real result
+  ---
+  duration_ms: 549.914459
   type: 'test'
   ...
 # Subtest: a GitHub rate limit stops every GitHub write for the rest of the tick and pauses them until it has passed
-ok 18 - a GitHub rate limit stops every GitHub write for the rest of the tick and pauses them until it has passed
+ok 22 - a GitHub rate limit stops every GitHub write for the rest of the tick and pauses them until it has passed
   ---
-  duration_ms: 405.478106
+  duration_ms: 412.645446
   type: 'test'
   ...
 # Subtest: a merge request someone else opened from a bridged branch is never rewritten; its pipeline results still come back
-ok 19 - a merge request someone else opened from a bridged branch is never rewritten; its pipeline results still come back
+ok 23 - a merge request someone else opened from a bridged branch is never rewritten; its pipeline results still come back
   ---
-  duration_ms: 138.106644
+  duration_ms: 137.681304
   type: 'test'
   ...
 # Subtest: a branch deleted on GitHub stays the bridge's while GitLab has its copy: a new branch of that name is copied, not refused
-ok 20 - a branch deleted on GitHub stays the bridge's while GitLab has its copy: a new branch of that name is copied, not refused
+ok 24 - a branch deleted on GitHub stays the bridge's while GitLab has its copy: a new branch of that name is copied, not refused
   ---
-  duration_ms: 236.021074
+  duration_ms: 238.847789
   type: 'test'
   ...
 # Subtest: after the merge request lands, the pull request is closed with one comment that links the landed commit; the removed branch is not copied again
-ok 21 - after the merge request lands, the pull request is closed with one comment that links the landed commit; the removed branch is not copied again
+ok 25 - after the merge request lands, the pull request is closed with one comment that links the landed commit; the removed branch is not copied again
   ---
-  duration_ms: 284.809835
+  duration_ms: 279.082492
   type: 'test'
   ...
 # Subtest: the merge bot merging main into a bridged branch is not another writer: the branch stays bridged, results come back to the PR head, and the landing closes the PR
-ok 22 - the merge bot merging main into a bridged branch is not another writer: the branch stays bridged, results come back to the PR head, and the landing closes the PR
+ok 26 - the merge bot merging main into a bridged branch is not another writer: the branch stays bridged, results come back to the PR head, and the landing closes the PR
   ---
-  duration_ms: 436.565023
+  duration_ms: 432.559888
   type: 'test'
   ...
 # Subtest: a landing right after the merge bot merged main (a train update the bridge never saw) still closes the PR and is not copied again
-ok 23 - a landing right after the merge bot merged main (a train update the bridge never saw) still closes the PR and is not copied again
+ok 27 - a landing right after the merge bot merged main (a train update the bridge never saw) still closes the PR and is not copied again
   ---
-  duration_ms: 358.582214
+  duration_ms: 338.93783
   type: 'test'
   ...
 # Subtest: a new GitHub head after the merge bot merged main is copied over the bot's merge; a merge with other changes is refused
-ok 24 - a new GitHub head after the merge bot merged main is copied over the bot's merge; a merge with other changes is refused
+ok 28 - a new GitHub head after the merge bot merged main is copied over the bot's merge; a merge with other changes is refused
   ---
-  duration_ms: 539.396694
+  duration_ms: 526.681563
   type: 'test'
   ...
 # Subtest: a refused branch whose GitLab copy a person deleted is copied again, also when GitHub did not move
-ok 25 - a refused branch whose GitLab copy a person deleted is copied again, also when GitHub did not move
+ok 29 - a refused branch whose GitLab copy a person deleted is copied again, also when GitHub did not move
   ---
-  duration_ms: 285.414765
+  duration_ms: 273.909772
   type: 'test'
   ...
 # Subtest: new commits pushed to a branch after its merge request landed are copied again and get a new merge request
-ok 26 - new commits pushed to a branch after its merge request landed are copied again and get a new merge request
+ok 30 - new commits pushed to a branch after its merge request landed are copied again and get a new merge request
   ---
-  duration_ms: 320.109097
+  duration_ms: 324.836022
   type: 'test'
   ...
 # Subtest: a merge request someone closed on GitLab while its pull request is open is reported once and not opened again for that head
-ok 27 - a merge request someone closed on GitLab while its pull request is open is reported once and not opened again for that head
+ok 31 - a merge request someone closed on GitLab while its pull request is open is reported once and not opened again for that head
   ---
-  duration_ms: 260.690065
+  duration_ms: 258.611755
   type: 'test'
   ...
 # Subtest: assist push: one commit on top of the head of a bridged branch goes to the GitHub branch; anything else is refused and pushes nothing
-ok 28 - assist push: one commit on top of the head of a bridged branch goes to the GitHub branch; anything else is refused and pushes nothing
+ok 32 - assist push: one commit on top of the head of a bridged branch goes to the GitHub branch; anything else is refused and pushes nothing
   ---
-  duration_ms: 442.025518
+  duration_ms: 444.463248
   type: 'test'
   ...
 # Subtest: assist push refuses a branch whose GitLab copy another writer changed, and a branch that is gone from GitHub
-ok 29 - assist push refuses a branch whose GitLab copy another writer changed, and a branch that is gone from GitHub
+ok 33 - assist push refuses a branch whose GitLab copy another writer changed, and a branch that is gone from GitHub
   ---
-  duration_ms: 290.068026
+  duration_ms: 286.845978
   type: 'test'
   ...
 # Subtest: a dry run that cannot judge a branch's history without a fetch plans check_history and fetches nothing
-ok 30 - a dry run that cannot judge a branch's history without a fetch plans check_history and fetches nothing
+ok 34 - a dry run that cannot judge a branch's history without a fetch plans check_history and fetches nothing
   ---
-  duration_ms: 139.481589
+  duration_ms: 140.174463
   type: 'test'
   ...
 # Subtest: --dry-run writes nothing anywhere (no git push or fetch, no API write, no state write) and prints the planned actions
-ok 31 - --dry-run writes nothing anywhere (no git push or fetch, no API write, no state write) and prints the planned actions
+ok 35 - --dry-run writes nothing anywhere (no git push or fetch, no API write, no state write) and prints the planned actions
   ---
-  duration_ms: 442.437934
+  duration_ms: 438.707049
   type: 'test'
   ...
 # Subtest: GitHub API down: nothing changes for that repository in that tick, it is retried at the next tick, the other repository goes on
-ok 32 - GitHub API down: nothing changes for that repository in that tick, it is retried at the next tick, the other repository goes on
+ok 36 - GitHub API down: nothing changes for that repository in that tick, it is retried at the next tick, the other repository goes on
   ---
-  duration_ms: 253.923901
+  duration_ms: 249.981275
   type: 'test'
   ...
 # Subtest: GitLab API down: nothing changes for that repository in that tick and it is retried at the next tick
-ok 33 - GitLab API down: nothing changes for that repository in that tick and it is retried at the next tick
+ok 37 - GitLab API down: nothing changes for that repository in that tick and it is retried at the next tick
   ---
-  duration_ms: 239.884544
+  duration_ms: 226.513017
   type: 'test'
   ...
 # Subtest: a git error on one branch changes nothing for that branch and is retried at the next tick; the other branches are copied
-ok 34 - a git error on one branch changes nothing for that branch and is retried at the next tick; the other branches are copied
+ok 38 - a git error on one branch changes nothing for that branch and is retried at the next tick; the other branches are copied
   ---
-  duration_ms: 247.644853
+  duration_ms: 249.278335
   type: 'test'
   ...
 # Subtest: a GitLab write that races a copy is never overwritten: every push carries the head it expects (lease)
-ok 35 - a GitLab write that races a copy is never overwritten: every push carries the head it expects (lease)
+ok 39 - a GitLab write that races a copy is never overwritten: every push carries the head it expects (lease)
   ---
-  duration_ms: 301.811242
+  duration_ms: 306.431451
   type: 'test'
   ...
 # Subtest: an API error on one pull request leaves it for the next tick; the other pull request gets its merge request in the same tick
-ok 36 - an API error on one pull request leaves it for the next tick; the other pull request gets its merge request in the same tick
+ok 40 - an API error on one pull request leaves it for the next tick; the other pull request gets its merge request in the same tick
   ---
-  duration_ms: 239.852119
+  duration_ms: 245.791588
   type: 'test'
   ...
 # Subtest: tokens come from files, never from argv, and appear in no log line or error, also when a server echoes them
-ok 37 - tokens come from files, never from argv, and appear in no log line or error, also when a server echoes them
+ok 41 - tokens come from files, never from argv, and appear in no log line or error, also when a server echoes them
   ---
-  duration_ms: 119.359904
+  duration_ms: 115.332621
   type: 'test'
   ...
 # Subtest: git gets each token only through the environment and only for its own host; never in argv or in a URL; git errors are redacted
-ok 38 - git gets each token only through the environment and only for its own host; never in argv or in a URL; git errors are redacted
+ok 42 - git gets each token only through the environment and only for its own host; never in argv or in a URL; git errors are redacted
   ---
-  duration_ms: 1.286305
+  duration_ms: 1.350187
   type: 'test'
   ...
 # Subtest: makeRedactor removes the tokens, their Basic-auth forms, GitHub and GitLab token shapes, bearer and basic values
-ok 39 - makeRedactor removes the tokens, their Basic-auth forms, GitHub and GitLab token shapes, bearer and basic values
+ok 43 - makeRedactor removes the tokens, their Basic-auth forms, GitHub and GitLab token shapes, bearer and basic values
   ---
-  duration_ms: 0.194191
+  duration_ms: 0.281714
   type: 'test'
   ...
 # Subtest: readTokenFile: trims the token; a missing, empty or malformed file is an error that names the file and never its content
-ok 40 - readTokenFile: trims the token; a missing, empty or malformed file is an error that names the file and never its content
+ok 44 - readTokenFile: trims the token; a missing, empty or malformed file is an error that names the file and never its content
   ---
-  duration_ms: 0.507106
+  duration_ms: 0.597524
   type: 'test'
   ...
 # Subtest: GitHub client: the token goes in one Authorization header to one origin; redirects are not followed; paths are plain paths
-ok 41 - GitHub client: the token goes in one Authorization header to one origin; redirects are not followed; paths are plain paths
+ok 45 - GitHub client: the token goes in one Authorization header to one origin; redirects are not followed; paths are plain paths
   ---
-  duration_ms: 1.249895
+  duration_ms: 1.107596
   type: 'test'
   ...
 # Subtest: GitHub client: paginate follows rel="next" links on the same origin only
-ok 42 - GitHub client: paginate follows rel="next" links on the same origin only
+ok 46 - GitHub client: paginate follows rel="next" links on the same origin only
   ---
-  duration_ms: 1.138451
+  duration_ms: 1.163416
   type: 'test'
   ...
 # Subtest: GitHub client: a GET is retried on 5xx and network errors, a write never; a rate limit is an error that is not retried
-ok 43 - GitHub client: a GET is retried on 5xx and network errors, a write never; a rate limit is an error that is not retried
+ok 47 - GitHub client: a GET is retried on 5xx and network errors, a write never; a rate limit is an error that is not retried
   ---
-  duration_ms: 1.165879
+  duration_ms: 1.201142
   type: 'test'
   ...
 # Subtest: GitHub client: an error carries status, method and the path without its query, and never the token
-ok 44 - GitHub client: an error carries status, method and the path without its query, and never the token
+ok 48 - GitHub client: an error carries status, method and the path without its query, and never the token
   ---
-  duration_ms: 0.480905
+  duration_ms: 0.425536
   type: 'test'
   ...
 # Subtest: systemd units: the timer fires every minute; the service runs one tick through flock, niced and capped and hardened, with the tokens as credentials and never in the unit
-ok 45 - systemd units: the timer fires every minute; the service runs one tick through flock, niced and capped and hardened, with the tokens as credentials and never in the unit
+ok 49 - systemd units: the timer fires every minute; the service runs one tick through flock, niced and capped and hardened, with the tokens as credentials and never in the unit
   ---
-  duration_ms: 0.700449
+  duration_ms: 0.748582
   type: 'test'
   ...
 # Subtest: the runbook names the token scopes, where the tokens live, how to read a refused branch, how to stop and start the bridge, and the dry run
-ok 46 - the runbook names the token scopes, where the tokens live, how to read a refused branch, how to stop and start the bridge, and the dry run
+ok 50 - the runbook names the token scopes, where the tokens live, how to read a refused branch, how to stop and start the bridge, and the dry run
   ---
-  duration_ms: 0.189198
+  duration_ms: 0.185642
+  type: 'test'
+  ...
+# Subtest: the runbook says the timer is installed but not enabled before the cut, how gate results are posted, and the limits that stay
+ok 51 - the runbook says the timer is installed but not enabled before the cut, how gate results are posted, and the limits that stay
+  ---
+  duration_ms: 0.145545
   type: 'test'
   ...
 # Subtest: state: saved atomically with mode 0600 and loaded back; a missing file is an empty state; a corrupt file is refused
-ok 47 - state: saved atomically with mode 0600 and loaded back; a missing file is an empty state; a corrupt file is refused
+ok 52 - state: saved atomically with mode 0600 and loaded back; a missing file is an empty state; a corrupt file is refused
   ---
-  duration_ms: 0.643337
+  duration_ms: 0.543514
   type: 'test'
   ...
 # Subtest: CLI: a corrupt state file, a missing token file, an unknown command or option stop with exit 2 before any call
-ok 48 - CLI: a corrupt state file, a missing token file, an unknown command or option stop with exit 2 before any call
+ok 53 - CLI: a corrupt state file, a missing token file, an unknown command or option stop with exit 2 before any call
   ---
-  duration_ms: 162.709742
+  duration_ms: 162.500108
   type: 'test'
   ...
 # Subtest: CLI assist-push uses the saved state: a bridged branch gets the commit, and a refusal exits 3
-ok 49 - CLI assist-push uses the saved state: a bridged branch gets the commit, and a refusal exits 3
+ok 54 - CLI assist-push uses the saved state: a bridged branch gets the commit, and a refusal exits 3
   ---
-  duration_ms: 216.193839
+  duration_ms: 214.737868
   type: 'test'
   ...
-1..49
-# tests 49
+1..54
+# tests 54
 # suites 0
-# pass 49
+# pass 54
 # fail 0
 # cancelled 0
 # skipped 0
 # todo 0
-# duration_ms 10492.687279
+# duration_ms 12346.057329
 exit=0
