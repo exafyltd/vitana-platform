@@ -32,3 +32,21 @@
 2026-11-05T16:09Z green (5 files)   → tests 107, pass 107, fail 0   [outputs/green.txt]
 2026-11-05T16:09Z node docs/validation/VTID-05549/outputs/dry-run-12.mjs   → exit 0, same result (8 + 3 landed, !17 refused once)
 2026-11-05T16:10Z node --test $(find scripts … -print | sort) (UNIT full)   → tests 728, pass 727, fail 0, skipped 1 (pre-existing win32 case)   [outputs/unit-all.txt]
+
+# Rebuild after merge-bot (F3 brief), same session kiro-exafy-202611051413-6eb1. Final base: origin/main 0f45367bb69a8661eca6d5170ebb33909d03d001
+# (merge-bot #4697 = 72dbefbaae, plan PR #4718 = d73fec53f9, github-bridge #4689 = 0f45367bb6). Node v22.23.4 (tests Node 20 compatible).
+2026-11-05T21:38Z gh api repos/exafyltd/vitana-platform/pulls/4697 --jq .merged   → false (polled every 3 min; driver heartbeats of agentic-delivery and eng-gitlab-m2 every ≤ 10 min)
+2026-11-05T21:44Z git diff 5209c22376 origin/kiro/eng-gitlab-m2/merge-bot -- scripts/eng/gitlab-land.mjs   → GIT_CONFIG_ARGS, pushRange tip-only, landOne refused:true, updateOne conflict:true, lostItsTurn, tickProject conflict=skip and refused-merge bound
+2026-11-05T21:48Z prep: own five commits cherry-picked onto the merge-bot head 3cf330bb9e (local only)   → no conflict; node --test (5 files) → tests 111, pass 111, fail 0
+2026-11-05T21:50Z gh api …/pulls/4697 --jq .merged   → true (merge commit 72dbefbaae); #4711 (settings) still open, no loadEffectiveProjects on origin/kiro/eng-gitlab-m2/settings (eec9c24313)
+2026-11-05T21:51Z git branch -m kiro/agentic-delivery/merge-queue kiro/agentic-delivery/merge-queue-parked; git switch -c kiro/agentic-delivery/merge-queue origin/main (d73fec53f9); cherry-pick af6cfd1e7a 0c19e60e38 71f0273b71 d8893eebdd 44d68b6b6b   → no conflict
+2026-11-05T21:53Z four new tests in scripts/eng/gitlab-land-queue.test.mjs (queue switch by name, conflict skip, refused-merge bound, credential flag) on the cherry-picked code   → tests 4, pass 1, fail 3
+2026-11-05T21:55Z adaptation in scripts/eng/gitlab-land.mjs (queueSetting, DEFAULTS.queueProjects, --queue-projects, the train's refused-merge bound, GIT_CONFIG_ARGS in mergeTree); node --test scripts/eng/gitlab-land-queue.test.mjs   → tests 27, pass 27, fail 0
+2026-11-05T21:59Z origin/main moved to 0f45367bb6 (github-bridge #4689, no file of this lane): branch made anew from it (the d73fec53f9 build renamed kiro/agentic-delivery/merge-queue-on-d73fec, local); the five commits cherry-picked again (no conflict); the adaptation re-applied as one staged change
+2026-11-05T22:00Z sh /projects/sandbox/.scratch/tools/6eb1/red.sh 0f45367bb6… (outside the repo)   → red on base: tests 30, pass 0, fail 30 (exit 1); red on stubs: tests 30, pass 0, fail 30 (exit 1)   [outputs/red-on-base.txt, outputs/red-on-stub.txt]
+2026-11-05T22:00Z the four new tests on the pre-adaptation commit 19abaf4c0b (git archive outside the repo)   → tests 4, pass 1, fail 3 (exit 1)   [outputs/red-adapt.txt]
+2026-11-05T22:01Z node --test scripts/eng/review-source.test.mjs scripts/eng/gitlab-gates.test.mjs scripts/eng/assist-trigger.test.mjs scripts/eng/gitlab-land-queue.test.mjs scripts/eng/gitlab-land.test.mjs   → tests 115, pass 115, fail 0   [outputs/green.txt]
+2026-11-05T22:01Z node --test $(find scripts -path '*/node_modules' -prune -o \( -name '*.test.cjs' -o -name '*.test.mjs' \) -print | sort) (UNIT full)   → tests 939, pass 938, fail 0, skipped 1 (pre-existing win32 case)   [outputs/unit-all.txt]
+2026-11-05T22:01Z node docs/validation/VTID-05549/outputs/dry-run-12.mjs   → exit 0: tick 0 --dry-run 0 API writes; tick 2 landed 8 (platform) + 3 (v1); !17 refused once   [outputs/dry-run-12.txt]
+2026-11-05T22:04Z node scripts/ci/staging-verify/run.mjs check-pr --service gateway … --base 0f45367bb6 --head <staged tree commit f75992cd61>   → "nothing deploys, no staging suite needed", exit 0   [outputs/staging-check-pr.txt]
+2026-11-05T22:05Z node scripts/collab/land-guard.mjs evidence --repo /projects/sandbox/.rv/mq --vtid VTID-05549   → exit 0

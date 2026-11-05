@@ -6,6 +6,7 @@
 //   node scripts/eng/gitlab-land.mjs merge  <project> <iid> [--dry-run]   decide and act on one merge request now
 //   node scripts/eng/gitlab-land.mjs status                        what the bot would do for every open merge request; writes nothing
 //   options: --settings <gitlab-settings.json>  --url <GitLab URL>  --token-file <file>  --workdir <dir>  --git-base <URL>
+//            --services <services.json>  --queue-projects <a,b>   (queue mode, below)
 //
 // The decisions are the ones the GitHub pipeline uses: `land-guard.mjs` (`laneKeyOf`, `localAfter`, `reviewCurrent`,
 // `checksVerdict`, `protectedTouched`, `mergeDecision`) and `queue.mjs` (`commitsInRange`, `PROTECTED_GATE_PATHS`) are imported
@@ -29,10 +30,13 @@
 // every git command starts with `-c credential.helper=` so that no configured helper can store it.
 // Dependency-free Node 20.
 //
-// Queue mode (plan agentic-delivery §3.5, lane merge-queue): a project whose settings entry has `queue` (true, or
-// { positions: 1..12 }) is landed by the merge queue of the cut instead of the one-at-a-time loop above. See the section
-// "queue mode" below: cross-repo review source (review-source.mjs), order, red-main pause, hot files, the train of up to
-// 8 positions, plan merge requests, the squash trailers, the queue labels and the assist trigger (assist-trigger.mjs).
+// Queue mode (plan agentic-delivery §3.5, lane merge-queue): the two projects of the cut (`vitana-platform`, `vitana-v1`;
+// `--queue-projects a,b` changes the list, an empty value turns it off) and any project entry that carries `queue` (true, or
+// { positions: 1..12 }) are landed by the merge queue of the cut instead of the one-at-a-time loop above, once they have
+// `landing: true`. See the section "queue mode" below: cross-repo review source (review-source.mjs), order, red-main pause,
+// hot files, the train of up to 8 positions, plan merge requests, the squash trailers, the queue labels and the assist
+// trigger (assist-trigger.mjs). In queue mode the train holds the turn: a position whose merge GitLab refuses keeps it for
+// 60 minutes from its pipeline's creation and is then dropped, so the positions behind it are rebuilt without it.
 // `--services <config/delivery/services.json>` names the service list the assist rules come from.
 
 import { execFileSync } from 'node:child_process';
@@ -56,6 +60,7 @@ export const DEFAULTS = Object.freeze({
   settings: '/opt/vitana/platform/infra/gitlab-engineering/settings/gitlab-settings.json',
   url: 'http://127.0.0.1',
   services: '/opt/vitana/platform/config/delivery/services.json',
+  queueProjects: Object.freeze(['vitana-platform', 'vitana-v1']),
 });
 
 const SHA = /^[0-9a-f]{40}$/;
@@ -393,7 +398,8 @@ function lostItsTurn(ctx, v) {
 const waitedMinutes = (ctx, v) => Math.round((ctx.now() - Date.parse(v.waitingSince)) / 60_000);
 
 export async function tickProject(ctx, project, { only, statusOnly = false } = {}) {
-  if (project.queue) return tickQueue(ctx, project, { only, statusOnly });
+  const queue = queueSetting(project, ctx);
+  if (queue) return tickQueue(ctx, { ...project, queue }, { only, statusOnly });
   const pid = projectId(project.path);
   const info = await ctx.client.get(`/projects/${pid}`);
   if (info?.default_branch !== 'main') {
@@ -502,6 +508,7 @@ const QUEUE_COMMENT_TEXT = {
   plan_spar_failed: 'Not landed: the last PLAN-SPAR run on this head failed.',
   train_failed: 'Not landed: it failed in the merge train (its position merges `main` and the merge requests ahead of it). It is back with its builder; a new head enters the queue again.',
   train_conflict: 'Not landed: it conflicts with a merge request ahead of it in the merge train. Merge `main` into the branch after that one has landed and resolve the conflict.',
+  merge_refused_too_long: 'Not landed: GitLab refused the merge of this merge request for more than 60 minutes (for example an unresolved thread or a merge setting), so it left the merge train and the merge requests behind it go on. Resolve it and push again; a new head enters the queue again.',
 };
 
 /** The `queue` setting of a project: true → 8 positions; { positions } → 1 to 12 (plan §5: 8, grown to 12 by its trigger). */
@@ -511,6 +518,17 @@ export function normalizeQueue(value) {
   const positions = value.positions === undefined ? 8 : value.positions;
   if (!Number.isInteger(positions) || positions < 1 || positions > MAX_POSITIONS) throw new Error(`queue: positions must be an integer from 1 to ${MAX_POSITIONS}`);
   return { positions };
+}
+
+/**
+ * Is a project landed by the queue, and with how many positions? → { positions } or null (M2's one-at-a-time loop). An entry's
+ * own `queue` wins (false = off); otherwise the projects of the cut (`ctx.queueProjects`, default vitana-platform and vitana-v1)
+ * get 8 positions. The settings schema of lane eng-gitlab-m2 `settings` has no `queue` key, so the cut's projects are named here.
+ */
+export function queueSetting(project, ctx = {}) {
+  if (project?.queue === false) return null;
+  if (project?.queue !== undefined && project?.queue !== null) return normalizeQueue(project.queue);
+  return (ctx.queueProjects || []).includes(project?.name) ? normalizeQueue(true) : null;
 }
 
 /** Revert and fix-main lanes (`<slug>/revert[-…]`, `<slug>/fix-main[-…]`) land first while main is red. */
@@ -667,7 +685,7 @@ const isAncestor = (ctx, repo, a, b) => gitRun(ctx, repo, ['merge-base', '--is-a
 /** git merge-tree --write-tree: { tree } for a clean merge, null for a conflict; any other git failure throws. */
 function mergeTree(ctx, repo, a, b) {
   try {
-    const out = execFileSync('git', ['-C', repo, 'merge-tree', '--write-tree', '--no-messages', a, b], {
+    const out = execFileSync('git', [...GIT_CONFIG_ARGS, '-C', repo, 'merge-tree', '--write-tree', '--no-messages', a, b], {
       encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: MAX_BUFFER, timeout: ctx.gitTimeoutMs, env: ctx.gitEnv,
     });
     const tree = out.split('\n')[0].trim();
@@ -697,7 +715,8 @@ async function pipelineChecks(ctx, pid, project, sha, { ref } = {}) {
   const list = await ctx.client.get(`/projects/${pid}/pipelines`, { query: { sha, ...(ref ? { ref } : {}), order_by: 'id', sort: 'desc', per_page: 20 } });
   const pipeline = (Array.isArray(list) ? list : []).filter((p) => p.sha === sha && (!ref || p.ref === ref)).sort((a, b) => b.id - a.id)[0] || null;
   const jobs = pipeline ? await ctx.client.paginate(`/projects/${pid}/pipelines/${pipeline.id}/jobs`, { maxPages: 20 }) : [];
-  return checksFor(pipeline, jobs, project.required_jobs, { onUnknown: (j) => ctx.log({ event: 'unknown_job_status', sha, job: j.name, status: String(j.status) }) });
+  const verdict = checksFor(pipeline, jobs, project.required_jobs, { onUnknown: (j) => ctx.log({ event: 'unknown_job_status', sha, job: j.name, status: String(j.status) }) });
+  return { ...verdict, createdAt: pipeline?.created_at ?? null };
 }
 
 /** Same-repo review: M2's push-identity check (judgeReviewCommit, pushedByReviewer), then reviewCurrent. */
@@ -881,7 +900,7 @@ async function landPosition(ctx, repo, pid, pos, it) {
     const current = await ctx.client.get(`/projects/${pid}/merge_requests/${it.iid}`).catch(() => null);
     merged = current?.state === 'merged';
   }
-  if (!merged) { ctx.log({ event: 'not_landed', mr: it.iid, position: pos.k, reason: 'the merge call was refused; the next tick tries again' }); return { landed: false }; }
+  if (!merged) { ctx.log({ event: 'not_landed', mr: it.iid, position: pos.k, reason: 'the merge call was refused; the next tick tries again' }); return { landed: false, refused: true }; }
   gitRun(ctx, repo, ['fetch', '-q', 'origin', '+refs/heads/main:refs/remotes/origin/main']);
   const tip = gitRun(ctx, repo, ['rev-parse', 'origin/main']);
   const tested = gitRun(ctx, repo, ['rev-parse', `${tip}^{tree}`]) === pos.tree;
@@ -913,7 +932,18 @@ async function runTrain(ctx, project, repo, pid, state, items, order) {
     const it = byIid.get(positions[i].iid);
     const r = await landPosition(ctx, repo, pid, positions[i], it);
     if (r.mismatch) { end = i; break; }
-    if (!r.landed) break;
+    if (!r.landed) {
+      const held = { waitingSince: verdicts[i].createdAt };
+      if (r.refused && lostItsTurn(ctx, held)) {
+        // GitLab keeps refusing this merge (an unresolved thread, a merge setting the bot does not read). As in M2's loop, it holds
+        // the turn for 60 minutes from its pipeline's creation and then loses it: it leaves the train (one comment, until a new
+        // head), and the positions behind it, which contain its change, are rebuilt without it.
+        ctx.log({ event: 'lost_its_turn', mr: it.iid, position: positions[i].k, reason: 'merge_refused', waitedMinutes: waitedMinutes(ctx, held) });
+        dropItem(ctx, state, it, 'merge_refused_too_long', `GitLab refused the merge of position ${positions[i].k} for more than ${Math.round(ctx.pipelineWaitMs / 60_000)} minutes`);
+        end = i;
+      }
+      break;
+    }
     it.landed = true;
     landed = i + 1;
     main = r.main;
@@ -1037,10 +1067,13 @@ export function loadProjects(settingsFile) {
   if (!s || typeof s !== 'object' || typeof s.group !== 'string' || !s.projects || typeof s.projects !== 'object') throw new Error(`${settingsFile}: needs "group" and "projects"`);
   return Object.entries(s.projects).map(([name, p]) => ({
     name, path: `${s.group}/${name}`, landing: p?.landing === true, required_jobs: Array.isArray(p?.required_jobs) ? p.required_jobs.map(String) : [],
-    ...(p?.queue !== undefined && p?.queue !== false ? { queue: normalizeQueue(p.queue) } : {}),
+    ...(p?.queue !== undefined && p?.queue !== null ? { queue: p.queue === false ? false : normalizeQueue(p.queue) } : {}),
     ...(Array.isArray(p?.train_required_jobs) ? { train_required_jobs: p.train_required_jobs.map(String) } : {}),
   }));
 }
+
+/** A list option: an array, or a comma-separated string (empty = none); absent → the default. */
+const nameList = (v, fallback) => (v === undefined || v === null ? [...fallback] : Array.isArray(v) ? v.map(String) : String(v).split(',').map((s) => s.trim()).filter(Boolean));
 
 export function makeContext(o, { env = process.env, fetch: fetchImpl, now = Date.now, write = (line) => process.stdout.write(`${line}\n`) } = {}) {
   const workdir = o.workdir || DEFAULTS.workdir;
@@ -1062,6 +1095,7 @@ export function makeContext(o, { env = process.env, fetch: fetchImpl, now = Date
     eventPages: o.eventPages ?? DEFAULTS.eventPages,
     services: o.services || DEFAULTS.services,
     statusUsers: Array.isArray(o.statusUsers) ? o.statusUsers.map(String) : [o.botUser || DEFAULTS.botUser],
+    queueProjects: nameList(o.queueProjects ?? o['queue-projects'], DEFAULTS.queueProjects),
     dryRun: o.dryRun === true,
     log: (entry) => write(redact(JSON.stringify({ ts: new Date(now()).toISOString(), ...entry }), token)),
   };
@@ -1073,7 +1107,7 @@ export async function main(argv, deps = {}) {
   try { o = { ...parseArgs(argv), ...(deps.overrides || {}) }; } catch (e) { out(`gitlab-land: ${e.message}\n`); return 1; }
   const cmd = o._[0];
   if (!['run', 'merge', 'status'].includes(cmd)) {
-    out('usage: gitlab-land.mjs run [--dry-run] | merge <project> <iid> [--dry-run] | status   [--settings f] [--url u] [--token-file f] [--workdir d] [--git-base u]\n');
+    out('usage: gitlab-land.mjs run [--dry-run] | merge <project> <iid> [--dry-run] | status   [--settings f] [--url u] [--token-file f] [--workdir d] [--git-base u] [--services f] [--queue-projects a,b]\n');
     return 1;
   }
   let ctx;

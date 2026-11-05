@@ -5,13 +5,15 @@ Change types: Tooling/docs, Integration.
 Outcome: reviewed, green merge requests of both repositories land one train at a time per repository in the right order
 (the oldest accept first; revert and fix-main first while `main` is red); a red `main` stops normal landings until a fix or
 revert lands; each landing carries its review facts into the squash commit on `main`; a converged plan lands without a
-person. Built as the queue mode of the M2 merge bot `scripts/eng/gitlab-land.mjs` (a project whose settings entry has
-`queue`), plus `review-source.mjs` (cross-repo review entries), `gitlab-gates.mjs` (the `lane-scope` and
-`collab-handoff` jobs) and `assist-trigger.mjs` (plan §3.9). `land-guard.mjs` and `queue.mjs` are not edited.
+person. Built as the queue mode of the M2 merge bot `scripts/eng/gitlab-land.mjs` (on for the two projects of the cut,
+`vitana-platform` and `vitana-v1`, once they have `landing: true`), plus `review-source.mjs` (cross-repo review entries),
+`gitlab-gates.mjs` (the `lane-scope` and `collab-handoff` jobs) and `assist-trigger.mjs` (plan §3.9). `land-guard.mjs`
+and `queue.mjs` are not edited.
 
-Built on a local scratch base (F2 brief): `5209c22376` = origin/main `abe2d7a59f` plus the tree of
-`origin/kiro/eng-gitlab-m2/merge-bot` `570fe18b55` (main after merge-bot). Parked locally, not pushed; the driver rebuilds
-it from origin/main after merge-bot (#4697) lands.
+How it was built: first on a local scratch base (F2 brief: origin/main `abe2d7a59f` plus the tree of merge-bot
+`570fe18b55`), parked locally. After eng-gitlab-m2 merge-bot (#4697) landed as `72dbefbaae`, the branch was made anew from
+origin/main `0f45367bb6` (it also holds #4718 and github-bridge #4689), the lane's five own commits were cherry-picked
+(no conflict), and one more commit adapts the queue to merge-bot's final `gitlab-land.mjs` (AC-7, AC-12, AC-14).
 
 AC-1 Cross-repo review source (plan §3.5): a vitana-v1 merge request titled `VTID-xxxxx (<slug>/<lane>): …` is judged by
 the review entry in the platform lane file `.kiro/specs/<slug>/lanes/<lane>.md`, read from the bot's clone of
@@ -53,9 +55,16 @@ k's tested tree (pinned `sha`, squash); a failed or conflicting position drops i
 `queue-blocked`, back to its builder until a new head) and the positions behind it are rebuilt without it; a tree
 mismatch or a `main` moved by someone else rebuilds the train and lands nothing; every state of `main` is a tested tree.
 A position is judged by the project's required jobs without the governance jobs that judge one merge request
-(`lane-scope`, `collab-handoff`, `change-suite`, `pr-gate-report`; or by `train_required_jobs` when the settings name
-them): those run and are required on each merge request's own head before it joins the train.
+(`lane-scope`, `collab-handoff`, `change-suite`, `pr-gate-report`; or by `train_required_jobs`): those run and are
+required on each merge request's own head before it joins the train.
 TEST: scripts/eng/gitlab-land-queue.test.mjs "trainSelect: …", "the train: positions train/1..k in queue order …", "lands merge request k only when its position is green and every earlier position has landed; main merged in with ci.skip; the tree on main is the tested tree", "a failed position drops its merge request …", "a conflicting position …", "the update's tree must equal the tested tree: …", "a train position needs the checks and gate, not the governance jobs that judge one merge request"
+
+AC-7a Merge-bot's final rules in the train (#4697): a merge request whose merge of `main` conflicts is skipped with one
+comment, and the younger ones go on in the same tick (M2's blocking fix); a position whose merge GitLab keeps refusing
+holds the train for at most 60 minutes from its position pipeline's creation (M2's turn bound), then it is dropped
+(`merge_refused_too_long`, one comment, until a new head) and the positions behind it are rebuilt without it; after a
+refused merge no further merge call is made in that tick.
+TEST: scripts/eng/gitlab-land-queue.test.mjs "a merge request whose merge of main conflicts is skipped with one comment, and the younger ones go on in the same tick (M2's conflict rule, in queue mode)", "a position whose merge GitLab keeps refusing holds the train for at most 60 minutes from its pipeline's creation; then it is dropped and the positions behind it are rebuilt without it"
 
 AC-8 Plan merge requests (plan §3.5, planning.md §6): a `plan(` merge request lands only when `handoff.md` on its head
 says `approved` with a `sparring_record`, the last `gitlab/plan-spar` or `PLAN-SPAR` commit status from a trusted account
@@ -77,10 +86,12 @@ comment and never enters the train or an assist (the owner merges it, M2); an ac
 comment per head and reason.
 TEST: scripts/eng/gitlab-land-queue.test.mjs "a protected gate file is refused with one comment and never enters the train; an accept on an old head is refused"
 
-AC-12 No writes without need: `--dry-run` writes nothing (no train ref, label, comment, merge, state file) and logs what it
-would do; `status` prints each merge request's queue state and writes nothing; the settings `queue` key (true or
-`{ "positions": 1..12 }`) is read by `loadProjects`, a project without it keeps M2's loop.
-TEST: scripts/eng/gitlab-land-queue.test.mjs "--dry-run writes nothing: …", "status in queue mode prints each merge request's queue state and writes nothing", "loadProjects reads the queue setting; normalizeQueue allows 1 to 12 positions"; scripts/eng/gitlab-land.test.mjs (M2's 54 tests, unchanged, green)
+AC-12 Which projects use the queue, and no writes without need: `vitana-platform` and `vitana-v1` use the queue by name
+(`DEFAULTS.queueProjects`; `--queue-projects a,b` changes the list, an empty value turns it off), because the settings
+schema of eng-gitlab-m2 lane `settings` allows no `queue` key; an entry's own `queue` (true, `{ "positions": 1..12 }`,
+or false) wins; every other project (M2's `rehearsal`) keeps M2's loop. `--dry-run` writes nothing (no train ref,
+label, comment, merge, state file) and logs what it would do; `status` prints each queue state and writes nothing.
+TEST: scripts/eng/gitlab-land-queue.test.mjs "queue mode is on for the two projects of the cut by name (the settings schema has no queue key), off for any other project; an explicit setting wins", "loadProjects reads the queue setting; normalizeQueue allows 1 to 12 positions", "--dry-run writes nothing: …", "status in queue mode prints each merge request's queue state and writes nothing"; scripts/eng/gitlab-land.test.mjs (M2's 58 tests as merged, unchanged, green)
 
 AC-13 Q3: `land-guard.mjs` and `queue.mjs` untouched (same blob ids as the base); a dry run over the fake GitLab with 12
 merge requests (9 in vitana-platform: 7 lanes, 1 protected-file lane, 1 plan; 3 cross-repo vitana-v1 lanes): tick 0
@@ -88,11 +99,18 @@ merge requests (9 in vitana-platform: 7 lanes, 1 protected-file lane, 1 plan; 3 
 one once, tick 2 lands 8 and 3 in queue order with the trailers.
 TEST: docs/validation/VTID-05549/outputs/untouched-guard-files.txt; docs/validation/VTID-05549/outputs/dry-run-12.mjs (transcript dry-run-12.txt, its assertions pass)
 
+AC-14 Credentials (merge-bot #4697: every git command starts with `-c credential.helper=`): every git command the queue
+runs with the bot's git environment (clone, fetch, `merge-tree`, `commit-tree`, `ls-remote`, the pushes of train refs,
+updates and assist refs) carries the flag, so no configured credential helper can store the token from GIT_ASKPASS.
+TEST: scripts/eng/gitlab-land-queue.test.mjs "every git command of a queue tick starts with -c credential.helper=, as M2's bot does, so no configured helper can store the token"
+
 States: platform project unreachable → the project's tick fails, nothing lands (AC-2); two accepts → the newest current
 one counts (AC-1); accept on an old head → refused, `queue-blocked`, one comment (AC-2, AC-11); `main` red →
 `queue-paused` except revert / fix-main (AC-5); hot file → `queue-waiting` until the STAGING-VERIFY result (AC-6);
 protected file → refused, one comment (AC-11); assist pending → `queue-waiting` (AC-4); position failed or conflicting →
-dropped, `queue-blocked`, one comment (AC-7); plan not approved or PLAN-SPAR not green → `queue-waiting` (AC-8).
+dropped, `queue-blocked`, one comment (AC-7); merge of `main` conflicts → skipped, one comment, the younger ones go on
+(AC-7a); merge refused → kept 60 minutes, then dropped (AC-7a); plan not approved or PLAN-SPAR not green →
+`queue-waiting` (AC-8).
 
 Surfaces: merge requests of the landing projects (labels, notes, the merge call); the bot refs `train/<k>` and
 `assist/<iid>-<rule>`; the required jobs `lane-scope` and `collab-handoff` of the generated pipelines (lane `pipelines`
@@ -102,40 +120,56 @@ Locales: n/a. Accessibility: n/a.
 
 Contract:
 - `land-guard.mjs` unchanged: `reviewCurrent` scripts/collab/land-guard.mjs:59, `checksVerdict` :85, `protectedTouched` :103,
-  `mergeDecision` :108, `localAfter` :166; called from scripts/eng/gitlab-land.mjs:660-673 (`sameRepoReview`), :129 (M2
-  `checksFor`), and scripts/eng/review-source.mjs:108-119 (`crossRepoReview`).
+  `mergeDecision` :108, `localAfter` :166; called from scripts/eng/gitlab-land.mjs:723-736 (`sameRepoReview`), :718 (through
+  M2's `checksFor`), and scripts/eng/review-source.mjs:111-117 (`crossRepoReview`).
 - `queue.mjs` unchanged: `validateRange` scripts/collab/queue.mjs:779, `scopeCheck` :946 (tasks.md says :912; VTID-05331,
-  `abe2d7a59f`, moved it before this lane), `commitsInRange` :669; called from scripts/eng/gitlab-gates.mjs:91-118.
-- Merge-bot (M2, VTID-05538, PR #4697, scratch-base line numbers) functions this lane depends on — keep them, or adapt
-  these call sites when the merge-bot fix lands: `squashMessage` (gitlab-land.mjs:165 on the base) in `queueSquashMessage`;
-  `judgeReviewCommit` (:136) and `pushedByReviewer` (:236, incl. its `pushRange`) in `sameRepoReview`; `checksFor` (:120)
-  in `pipelineChecks`; the internals `gitRun` (:186), `ensureClone` (:208), `fetchMrHead` (:222), `openMergeRequests`
-  (:361), `COMMENT_TEXT` (:171), `PIPELINE_FINAL` (:117), `REVIEWER_RE` (:50). Edited M2 lines: the header comment and
-  imports, `DEFAULTS.services`, the first line of `tickProject` (`if (project.queue) return tickQueue(…)`), `loadProjects`
-  (+`queue`), `makeContext` (+`services`, `statusUsers`). Not used: `evaluate`, `decide`, `updateOne`, `landOne`,
-  `ensureNote`, the `acted` loop — the code the blocking review finding of 14:13Z changes.
+  `abe2d7a59f`, moved it before this lane), `commitsInRange` :669; called from scripts/eng/gitlab-gates.mjs:92, :103 and
+  scripts/eng/gitlab-land.mjs:724.
+- Merge-bot (M2, VTID-05538, merged as `72dbefbaae`; line numbers of origin/main) code this lane uses: `squashMessage`
+  gitlab-land.mjs:169 (in `queueSquashMessage`, lane :574); `judgeReviewCommit` :140 and `pushedByReviewer` :249 with its
+  `pushRange` :238 (in `sameRepoReview`, lane :723); `checksFor` :124 (in `pipelineChecks`, lane :714); `GIT_CONFIG_ARGS`
+  :194 (also in the lane's `mergeTree`, lane :686); `lostItsTurn` :380 and `waitedMinutes` :384 (the train's refused-merge
+  bound, lane :937); `gitRun` :196, `ensureClone` :218, `fetchMrHead` :232, `openMergeRequests` :374, `COMMENT_TEXT` :175,
+  `PIPELINE_FINAL` :121, `REVIEWER_RE` :54. Edited M2 lines: the header comment and imports, `DEFAULTS` (+`services`,
+  +`queueProjects`), the first two lines of `tickProject` (`queueSetting`, `tickQueue`; lane :400-402), `loadProjects`
+  (+`queue`, `train_required_jobs`), `makeContext` (+`services`, `statusUsers`, `queueProjects`), the usage line. Not used by
+  the queue: `evaluate`, `decide`, `updateOne`, `landOne`, `ensureNote`, the `acted` loop.
 - Trailers, labels and assist refs exactly as plan §3.5 and §3.9 name them; job names `lane-scope`, `collab-handoff`,
   `staging-verify` (plan §3.4, §3.6); status names `gitlab/plan-spar` and `PLAN-SPAR` (tasks.md Q1).
+- Waits for eng-gitlab-m2 lane `settings` (#4711): `gitlab-land.mjs` is to read its projects through `loadEffectiveProjects`
+  of `scripts/eng/gitlab-settings.mjs` (cut checklist item `bot-config`). That function is not on main and not on
+  `origin/kiro/eng-gitlab-m2/settings` (head `eec9c24313`); a version exists on `origin/kiro/backup/cutover`
+  (gitlab-settings.mjs:384, returns `{ name, path, landing, required_jobs }`). The call is added when #4711 lands with it.
 
 Staging proof: not verified on staging: it runs on the GitLab host in the engineering account, which has no staging; it
 deploys nothing (`run.mjs check-pr`: outputs/staging-check-pr.txt). Proven by its tests and the 12-merge-request dry run
-over the fake GitLab; live from the cut (lane `cutover` sets `queue` in the settings).
+over the fake GitLab; live from the cut.
 
-Red on base: outputs/red-on-base.txt — 26 of 26 fail on the scratch base (3 files fail whole: missing modules; 23 queue
-tests fail); outputs/red-on-stub.txt — 30 of 30 fail against no-behaviour stubs outside the repo. The train-jobs test,
-added after the first commit, was red on that commit too (1 of 1).
-Green: outputs/green.txt — 107 of 107 pass (53 new: review-source 14, gitlab-gates 8, assist-trigger 8, gitlab-land-queue
-23; plus M2's gitlab-land.test.mjs 54 unchanged); outputs/unit-all.txt — UNIT's full command, 0 fail (counts in the file).
+Red on base: outputs/red-on-base.txt — 30 of 30 fail on origin/main `0f45367bb6` (3 files fail whole: missing modules; 27
+queue tests fail); outputs/red-on-stub.txt — 30 of 30 fail against no-behaviour stubs outside the repo. The four tests
+added for the adaptation: outputs/red-adapt.txt — on the cherry-picked code before the adaptation, 3 of 4 fail (the queue
+switch by name, the refused-merge bound, the credential flag); the conflict case passes there (the queue already skipped
+it; a regression test of M2's rule).
+Green: outputs/green.txt — 115 of 115 pass (57 new: review-source 14, gitlab-gates 8, assist-trigger 8, gitlab-land-queue
+27; plus M2's gitlab-land.test.mjs 58, unchanged); outputs/unit-all.txt — UNIT's full command: 939 tests, 938 pass, 0 fail,
+1 skipped (pre-existing win32 case).
 
 Decisions taken (inside the plan):
-1. Queue mode is opt-in per project (`queue` in its settings entry); without it the M2 loop is unchanged. The settings
-   file belongs to lane `cutover`, which sets the key at the cut.
+1. Queue mode is on, by name, for `vitana-platform` and `vitana-v1`, the two projects the cut lands (plan §3.5, §8.2),
+   once they have `landing: true`; before the cut neither is a landing project, so nothing changes until then. The first
+   build read a settings key `queue`, but the settings sync of eng-gitlab-m2 lane `settings` refuses unknown project keys
+   (`origin/kiro/eng-gitlab-m2/settings` `eec9c24313`, scripts/eng/gitlab-settings.mjs `SCHEMA_KEYS.project` :72, `onlyKeys` :165), and
+   the cutover's `loadEffectiveProjects` returns no such key. A `queue` value that a loader or `projectsOverride` passes still
+   wins (growing the train to 12, plan §5); `--queue-projects` changes the list without a code change.
 2. Every queue project other than vitana-platform reads its review entries cross-repo from the platform project;
    vitana-platform keeps M2's push-identity check (plan §3.5 "Same-repo lanes keep M2's push-identity check").
 3. The accept time that orders the queue and fills `Accepted-At` is the committer time of the accept entry; a plan merge
    request is ordered by the time of its successful PLAN-SPAR status.
-4. Trusted authors of `gitlab/plan-spar` / `PLAN-SPAR` statuses default to `bot-land` (`ctx.statusUsers`); the
-   github-bridge lane must post PLAN-SPAR's result with that account, or the list gets its account.
+4. Trusted authors of `gitlab/plan-spar` / `PLAN-SPAR` statuses default to `bot-land` (`ctx.statusUsers`). The bridge now on
+   main (github-bridge #4689) posts GitLab job results to GitHub as `gitlab/<job>`, but no code relays PLAN-SPAR's GitHub
+   result to the GitLab commit (plan §3.5: "its result reaches GitLab through the bridge"). Until that relay or the
+   GitLab `plan-spar` job (plan §4, after the cut) exists, a `plan(` merge request waits (`plan_spar_pending`, fails
+   closed). Named for the driver.
 5. A merge request that changes a file a merge request ahead of it in the train changes waits for the next cycle instead
    of risking a drop; one that git cannot merge (a file/directory conflict) is dropped.
 6. "The previous hot-file landing" = the newest of the last 50 first-parent commits of `main` that shares a hot key; its
@@ -144,24 +178,39 @@ Decisions taken (inside the plan):
 7. `main` is red when its newest finished landing pipeline (source `push`, success or failed) failed; a canceled or
    scheduled (nightly) pipeline does not decide.
 8. A dropped merge request stays out (blocked) until its head changes; the drop is kept in the train state file.
-9. A refused merge call keeps the position and is retried at the next tick, as M2's `landOne`; a head the bot made (main
-   merged in with `ci.skip`) is judged by the checks of the head it was made from.
+9. A refused merge call keeps its position and is retried at the next tick, for at most 60 minutes from the position
+   pipeline's creation (M2's turn bound since #4697, `lostItsTurn`); then the merge request leaves the train
+   (`merge_refused_too_long`). The bound counts from the position pipeline because a train merge request's own pipeline
+   is older than its position. A position whose pipeline stays pending is not bounded by the bot: GitLab's job timeout
+   ends it, and a failed or canceled position is dropped (AC-7). A head the bot made (main merged in with `ci.skip`) is
+   judged by the checks of the head it was made from.
 10. Train refs move by delete-then-push, never by force; the train state file is only a cache: a lost or unreadable one
     makes the bot rebuild the train.
 11. `gitlab-land.mjs merge <project> <iid>` on a queue project runs a normal queue tick (nothing jumps the queue) and
     reports that merge request.
 12. The cross-repo queue test accepts web-c's head after the reviewer's own commit, so the builder rule, not staleness,
-    is what refuses it (the interrupted run's version was masked by `review_stale`).
-13. The dry-run test compares refs after removing the fake's `refs/merge-requests/*` with `.trim()` (the earlier version
-    failed only on the trailing newline those refs leave).
+    is what refuses it.
+13. The dry-run test compares refs after removing the fake's `refs/merge-requests/*` with `.trim()` (the fake leaves a
+    trailing newline there).
 14. A train position does not require the governance jobs that judge one merge request (`MR_ONLY_JOBS`): `scopeCheck`
     refuses a range that names two lanes, so `lane-scope` cannot pass on `train/<k>` for k ≥ 2; they stay required on each
     merge request's own head. Lane `pipelines` should run them only in merge-request pipelines and run `gate` and the
-    checks on `train/*` refs; a settings key `train_required_jobs` overrides the default.
+    checks on `train/*` refs; a `train_required_jobs` value overrides the default. With the cut's required jobs
+    (`lane-scope`, `change-suite`, `gate`; plan §8.2 step 3) a position needs `gate`.
 15. The assist ref is moved with a normal `git push` by `bot-land`, as plan §3.9 says ("only `bot-land` and the owner may
-    push there"). Plan §7 says `main` and `assist/*` are protected with "push No one, merge Maintainers"; the settings
-    (M2 settings sync, lane `cutover`) must let `bot-land` push `assist/*`, or the trigger moves to the branches API.
-    Flagged for the driver; `assist-trigger.mjs` follows §3.9.
-16. `train/*` are plain bot branches, not protected: their pipelines run on the untrusted class with no secret (§3.2),
-    the bot trusts only the pipeline of the exact commit it built on that ref, and it moves them by delete-then-push. The
-    settings must not protect `train/*` (a protected branch cannot be deleted by a push).
+    push there"). Plan §7 says `main` and `assist/*` are protected with "push No one, merge Maintainers"; the settings must
+    let `bot-land` push `assist/*`. Late lane `cut-settings` (VTID-05562, tasks C2) now owns that setting.
+16. `train/*` are plain bot branches, not protected: their pipelines run on the untrusted class with no secret (§3.2), the
+    bot trusts only the pipeline of the exact commit it built on that ref, and it moves them by delete-then-push. Late
+    lane `cut-settings` (VTID-05562, tasks C2) keeps `train/*` unprotected.
+17. Rebuild after merge-bot: branch made anew from origin/main `0f45367bb6`; the lane's five own commits cherry-picked
+    unchanged (no conflict; the scratch commit and the first rebuild on `d73fec53f9` stay local, never pushed); the
+    adaptation is one new commit with its tests recorded red first (outputs/red-adapt.txt).
+18. Every git command the queue runs itself starts with M2's `GIT_CONFIG_ARGS` (the one direct `execFileSync` of
+    `merge-tree` now too). The commands of `review-source.mjs`, `land-guard.mjs` and `queue.mjs` read only local clones and
+    run with the process environment, as M2's test notes for its own imports.
+19. Merge-bot deferred two items to this lane (`.kiro/specs/eng-gitlab-m2/lanes/merge-bot.md`, entry 16:20Z): failing
+    closed on a finished pipeline whose own status is not `success`, and `eventPages`. Neither is in this lane's tasks
+    (the reviewer of 17:07Z noted the same). Not built: a train position is judged by its jobs as M2 judges a head; the
+    cross-repo source reads no push events, and same-repo lanes keep M2's push-identity check with its 500-event window
+    (an aged-out accept is refused, never landed). Named for the driver.

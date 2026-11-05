@@ -122,12 +122,12 @@ function pipeline(W, name, { sha, ref, status = 'success', source = 'push', jobs
 }
 const mrPipe = (W, name, iid, sha, status = 'success') => pipeline(W, name, { sha, ref: `refs/merge-requests/${iid}/head`, status, source: 'merge_request_event' });
 /** CI for the train: a pipeline for every train ref that has none yet; positions in `fail` are red, in `pending` running. */
-function ciTrain(W, name, { fail = [], pending = [] } = {}) {
+function ciTrain(W, name, { fail = [], pending = [], createdAt } = {}) {
   for (const [ref, sha] of remoteRefs(W.p[name], 'refs/heads/train/')) {
     const short = ref.replace('refs/heads/', '');
     if (W.s[name].pipelines.some((p) => p.sha === sha && p.ref === short)) continue;
     const k = Number(short.split('/')[1]);
-    pipeline(W, name, { sha, ref: short, status: fail.includes(k) ? 'failed' : pending.includes(k) ? 'running' : 'success' });
+    pipeline(W, name, { sha, ref: short, status: fail.includes(k) ? 'failed' : pending.includes(k) ? 'running' : 'success', ...(createdAt ? { createdAt } : {}) });
   }
 }
 /** A reviewed, green merge request of a same-repo lane in project `name`. */
@@ -175,6 +175,7 @@ function handle(W, call) {
   }
   if ((mm = /^\/merge_requests\/(\d+)\/merge$/.exec(sub)) && call.method === 'PUT') {
     const mr = byIid(mm[1]);
+    if (s.refuse?.has(mr.iid)) return { status: 405, json: { message: '405 Method Not Allowed' } }; // e.g. an unresolved thread
     const head = headOf(W, name, mr);
     if (call.body.sha !== head) return { status: 409, json: { message: 'SHA does not match HEAD of source branch' } };
     const main = g(p.remote, 'rev-parse', 'refs/heads/main');
@@ -213,7 +214,7 @@ function gitlab(W) {
   f.route('*', /^\/api\/v4\/projects\/vitana%2F[a-z0-9-]+(\/.*)?$/, (call) => handle(W, call));
   return f;
 }
-function context(W, f, { projects, extra = {} } = {}) {
+function context(W, f, { projects, extra = {}, env } = {}) {
   const tokenFile = path.join(W.root, 'token');
   if (!fs.existsSync(tokenFile)) fs.writeFileSync(tokenFile, `${TOKEN}\n`, { mode: 0o600 });
   const lines = [];
@@ -223,7 +224,7 @@ function context(W, f, { projects, extra = {} } = {}) {
       { name: 'vitana-platform', path: 'vitana/vitana-platform', landing: true, required_jobs: REQUIRED, queue: { positions: 8 } },
     ],
     remoteUrl: (proj) => W.p[proj.name].remote, services: path.join(W.root, 'services.json'), ...extra,
-  }, { fetch: f, now: () => NOW, write: (l) => lines.push(l) });
+  }, { fetch: f, now: () => NOW, write: (l) => lines.push(l), ...(env ? { env } : {}) });
   return { ctx, lines, events: () => lines.map((l) => JSON.parse(l)) };
 }
 async function tickOnce(W, opts = {}) {
@@ -234,6 +235,7 @@ async function tickOnce(W, opts = {}) {
   return { f, ...c, ...out };
 }
 const merges = (f) => f.calls.filter((c) => c.method === 'PUT' && /\/merge$/.test(c.path));
+const iidOf = (call) => Number(/merge_requests\/(\d+)/.exec(call.path)[1]);
 const labelWrites = (f) => f.calls.filter((c) => c.method === 'PUT' && /\/merge_requests\/\d+$/.test(c.path));
 const notePosts = (f) => f.calls.filter((c) => c.method === 'POST' && /\/notes$/.test(c.path));
 const mrOf = (W, name, iid) => W.s[name].mrs.find((m) => m.iid === iid);
@@ -370,6 +372,31 @@ test('loadProjects reads the queue setting; normalizeQueue allows 1 to 12 positi
   for (const bad of [{ positions: 0 }, { positions: 13 }, { positions: 2.5 }, 'yes', []]) assert.throws(() => land.normalizeQueue(bad), /queue/);
 });
 
+test('queue mode is on for the two projects of the cut by name (the settings schema has no queue key), off for any other project; an explicit setting wins', async () => {
+  assert.deepEqual([...land.DEFAULTS.queueProjects], ['vitana-platform', 'vitana-v1']);
+  const ctx = { queueProjects: land.DEFAULTS.queueProjects };
+  assert.deepEqual(land.queueSetting({ name: 'vitana-platform', landing: true, required_jobs: ['gate'] }, ctx), { positions: 8 });
+  assert.deepEqual(land.queueSetting({ name: 'vitana-v1', landing: true, required_jobs: [] }, ctx), { positions: 8 });
+  assert.equal(land.queueSetting({ name: 'rehearsal', landing: true, required_jobs: ['unit'] }, ctx), null, 'M2\'s rehearsal project keeps the one-at-a-time loop');
+  assert.deepEqual(land.queueSetting({ name: 'rehearsal', queue: { positions: 3 } }, ctx), { positions: 3 });
+  assert.deepEqual(land.queueSetting({ name: 'vitana-v1', queue: { positions: 12 } }, ctx), { positions: 12 });
+  assert.equal(land.queueSetting({ name: 'vitana-v1', queue: false }, ctx), null);
+  assert.equal(land.queueSetting({ name: 'vitana-v1' }, { queueProjects: [] }), null);
+  // makeContext: the default list, or --queue-projects (comma-separated; empty = none)
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'land-q-names-')); tmpDirs.push(dir);
+  const tokenFile = path.join(dir, 'token');
+  fs.writeFileSync(tokenFile, `${TOKEN}\n`, { mode: 0o600 });
+  const mk = (o = {}) => land.makeContext({ 'token-file': tokenFile, workdir: path.join(dir, 'land'), projectsOverride: [], ...o }, { fetch: fakeFetch(), write: () => {} });
+  assert.deepEqual(mk().queueProjects, ['vitana-platform', 'vitana-v1']);
+  assert.deepEqual(mk({ 'queue-projects': 'vitana-v1' }).queueProjects, ['vitana-v1']);
+  assert.deepEqual(mk({ 'queue-projects': '' }).queueProjects, []);
+  // a project entry without a queue key, as the settings loaders return it: the tick runs the train for vitana-platform
+  const { W } = threeReady();
+  const r = await tickOnce(W, { projects: [{ name: 'vitana-platform', path: 'vitana/vitana-platform', landing: true, required_jobs: REQUIRED }] });
+  assert.equal(r.failed, false);
+  assert.deepEqual(trainRefs(W).map(([ref]) => ref), ['train/1', 'train/2', 'train/3']);
+});
+
 // ── the train, with real git and the fake GitLab ─────────────────────────────
 function threeReady() {
   const W = newWorld();
@@ -466,6 +493,73 @@ test('a conflicting position (a file where another adds a directory) is dropped 
   assert.deepEqual(mrOf(W, 'vitana-platform', 8).labels, ['queue-blocked']);
   assert.match(W.s['vitana-platform'].notes[8][0].body, /conflicts with a merge request ahead of it/);
   assert.equal(notePosts(r.f).length, 1);
+});
+
+test('a merge request whose merge of main conflicts is skipped with one comment, and the younger ones go on in the same tick (M2\'s conflict rule, in queue mode)', async () => {
+  const W = newWorld();
+  readyLane(W, 'vitana-platform', { lane: 'lane-a', iid: 7, when: '2026-11-05T10:10:00Z', files: { 'docs/shared.md': 'from lane-a\n' } });
+  onMain(W, 'vitana-platform', { 'docs/shared.md': 'from main\n' }, 'main changes the same file');
+  readyLane(W, 'vitana-platform', { lane: 'lane-b', iid: 8, when: '2026-11-05T10:20:00Z' });
+  const r1 = await tickOnce(W);
+  assert.equal(r1.failed, false);
+  assert.deepEqual(mrOf(W, 'vitana-platform', 7).labels, ['queue-blocked'], 'the older merge request is skipped, not waited for');
+  assert.equal(W.s['vitana-platform'].notes[7].length, 1);
+  assert.match(W.s['vitana-platform'].notes[7][0].body, /merging `main` into this branch conflicts/);
+  const remote = W.p['vitana-platform'].remote;
+  assert.deepEqual(trainRefs(W).map(([ref]) => ref), ['train/1'], 'the younger one takes position 1 in the same tick');
+  assert.equal(g(remote, 'rev-list', '--parents', '-n', '1', 'refs/heads/train/1').split(' ')[2], g(remote, 'rev-parse', 'refs/heads/kiro/demo/lane-b'));
+  ciTrain(W, 'vitana-platform');
+  const r2 = await tickOnce(W);
+  assert.deepEqual(merges(r2.f).map(iidOf), [8]);
+  assert.equal(notePosts(r2.f).length, 0, 'the conflict is not commented twice');
+  assert.equal(mrOf(W, 'vitana-platform', 7).state, 'opened');
+});
+
+test('a position whose merge GitLab keeps refusing holds the train for at most 60 minutes from its pipeline\'s creation; then it is dropped and the positions behind it are rebuilt without it', async () => {
+  const { W } = threeReady(); // queue order: !8 (lane-b), !7 (lane-a), !9 (lane-c)
+  await tickOnce(W);
+  ciTrain(W, 'vitana-platform', { createdAt: '2026-11-05T11:30:00Z' }); // 30 minutes before NOW
+  W.s['vitana-platform'].refuse = new Set([8]);
+  const r1 = await tickOnce(W);
+  assert.deepEqual(merges(r1.f).map(iidOf), [8], 'GitLab refuses position 1; nothing behind it lands');
+  assert.deepEqual(trainRefs(W).map(([ref]) => ref), ['train/1', 'train/2', 'train/3'], 'within 60 minutes the train keeps its positions');
+  assert.equal(notePosts(r1.f).length, 0);
+  assert.deepEqual(mrOf(W, 'vitana-platform', 8).labels, ['queue-ready'], 'still in the train; tried again at the next tick');
+  for (const p of W.s['vitana-platform'].pipelines) if (p.ref.startsWith('train/')) p.created_at = '2026-11-05T10:30:00Z'; // 90 minutes
+  const r2 = await tickOnce(W);
+  assert.deepEqual(merges(r2.f).map(iidOf), [8], 'one more try, refused again');
+  assert.ok(r2.events().some((e) => e.event === 'train_dropped' && e.mr === 8 && e.reason === 'merge_refused_too_long'));
+  assert.deepEqual(mrOf(W, 'vitana-platform', 8).labels, ['queue-blocked']);
+  assert.equal(W.s['vitana-platform'].notes[8].length, 1);
+  assert.match(W.s['vitana-platform'].notes[8][0].body, /refused the merge/);
+  const remote = W.p['vitana-platform'].remote;
+  const refs = Object.fromEntries(trainRefs(W));
+  assert.deepEqual(Object.keys(refs), ['train/1', 'train/2'], 'rebuilt without it: lane-a and lane-c');
+  assert.deepEqual(g(remote, 'rev-list', '--parents', '-n', '1', refs['train/1']).split(' ').slice(1), [g(remote, 'rev-parse', 'refs/heads/main'), g(remote, 'rev-parse', 'refs/heads/kiro/demo/lane-a')]);
+  ciTrain(W, 'vitana-platform');
+  const r3 = await tickOnce(W);
+  assert.deepEqual(merges(r3.f).map(iidOf), [7, 9]);
+  assert.equal(notePosts(r3.f).length, 0, 'the drop is explained once per head');
+});
+
+test('every git command of a queue tick starts with -c credential.helper=, as M2\'s bot does, so no configured helper can store the token', async () => {
+  const { W } = threeReady();
+  const bin = path.join(W.root, 'bin');
+  fs.mkdirSync(bin);
+  const log = path.join(W.root, 'git-calls.log');
+  const realGit = execFileSync('sh', ['-c', 'command -v git'], { encoding: 'utf8' }).trim();
+  // a recording `git` in front of the real one, for the commands the bot runs with its git environment (as in gitlab-land.test.mjs)
+  fs.writeFileSync(path.join(bin, 'git'), `#!/bin/sh\nprintf '%s\\037' "$@" >> "${log}"\nprintf '\\036' >> "${log}"\nexec "${realGit}" "$@"\n`, { mode: 0o755 });
+  const env = { ...process.env, PATH: `${bin}:${process.env.PATH}` };
+  await tickOnce(W, { env }); // clones, fetches, builds the train (merge-tree, commit-tree), lists and pushes train refs
+  ciTrain(W, 'vitana-platform');
+  const r = await tickOnce(W, { env }); // lands: merges main into the branches behind (merge-tree, commit-tree, push -o ci.skip), fetches main
+  assert.deepEqual(merges(r.f).map(iidOf), [8, 7, 9]);
+  const calls = fs.readFileSync(log, 'utf8').split('\u001e').filter(Boolean).map((rec) => rec.split('\u001f').slice(0, -1));
+  assert.ok(calls.length >= 20, `commands recorded: ${calls.length}`);
+  for (const argv of calls) assert.deepEqual(argv.slice(0, 2), ['-c', 'credential.helper='], `git ${argv.join(' ').slice(0, 80)} starts with the flag`);
+  const verbs = new Set(calls.map((argv) => argv.find((a, i) => i >= 2 && !a.startsWith('-') && argv[i - 1] !== '-C')));
+  for (const verb of ['init', 'fetch', 'merge-tree', 'commit-tree', 'ls-remote', 'push', 'rev-parse']) assert.ok(verbs.has(verb), `git ${verb} was run (seen: ${[...verbs].join(' ')})`);
 });
 
 test('the update\'s tree must equal the tested tree: a mismatch lands nothing and rebuilds the train; so does main moved by someone else', async () => {

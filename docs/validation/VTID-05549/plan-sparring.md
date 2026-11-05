@@ -18,6 +18,7 @@ PR-GATE sparring check reads.
   this lane's VTID. The owner's standing instruction of 2026-10-27 (carry owner tasks to STAGING VERIFY) covers the
   lane work.
 - Source record: `.kiro/specs/agentic-delivery/sparring/verdict.md`, `round-1.md`, `responses-1.md`, `round-2.md`,
-  `state.json` (all on origin/main at `0ca24febdb`).
+  `state.json` (on origin/main since `0ca24febdb`; the late-lane plan PRs #4691 and #4718 added their VTIDs to
+  `verdict.md`; session and final plan hash unchanged, checked on origin/main `0f45367bb6`).
 - VTID: VTID-05549 (lane `merge-queue`), allocated by CI PLAN-SPAR, not by hand (lane file log
   "2026-11-05T00:25Z · ci-plan-spar · ready (VTID allocated)").

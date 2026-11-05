@@ -1,6 +1,6 @@
 # Red on stubs: review-source, gitlab-gates and assist-trigger tests (final versions) against no-behaviour stubs of their modules, OUTSIDE the repo:
-# /projects/sandbox/.scratch/tools/mq/stub-run = git archive of the base's scripts/ (5209c223768dddf5dcd1c06440de3b9f98c55732) + the test files + stub modules that export the names and do nothing (/projects/sandbox/.scratch/tools/mq/stubs/scripts/eng/*.mjs).
-# command (in the stub dir): node --test scripts/eng/review-source.test.mjs scripts/eng/gitlab-gates.test.mjs scripts/eng/assist-trigger.test.mjs (2026-11-05T16:09:24Z)
+# /projects/sandbox/.scratch/tools/6eb1/stub-run = git archive of the base's scripts/ (0f45367bb69a8661eca6d5170ebb33909d03d001) + the test files + stub modules that export the names and do nothing (/projects/sandbox/.scratch/tools/6eb1/stubs/scripts/eng/*.mjs).
+# command (in the stub dir): node --test scripts/eng/review-source.test.mjs scripts/eng/gitlab-gates.test.mjs scripts/eng/assist-trigger.test.mjs (2026-11-05T22:04:08Z)
 
 not ok 1 - assistRef and the rule names: assist/<iid>-<rule>, a rule id is a plain lowercase name
 not ok 2 - matchingRules: a rule applies when the merge request changes one of its paths
@@ -33,6 +33,10 @@ not ok 28 - refuses a changes verdict, also when an older accept exists
 not ok 29 - an entry that is not from a reviewer agent session is refused
 not ok 30 - a platform clone without main fails closed: an error, never an accept
 # tests 30
+# suites 0
 # pass 0
 # fail 30
+# cancelled 0
+# skipped 0
+# todo 0
 exit 1
