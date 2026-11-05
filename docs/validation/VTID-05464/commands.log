@@ -54,3 +54,17 @@ Run on a throwaway local cluster only (PostgreSQL 16 + postgresql-16-pgtap), nev
   $P -f supabase/migrations/20261102032000_vtid_05464_access_token_hook_shadow_rollback.sql   # second run: no-op
   $P -f supabase/migrations/20261102032000_vtid_05464_access_token_hook_shadow.sql && $P -f supabase/migrations/20261102032100_vtid_05464_tenant_claim_mismatch_log.sql   # re-apply
 Red on origin/main: the plan fails at its first assertion (has_function) because the hook does not exist there.
+
+## PGlite run of the SQL and pgTAP plan (replaces the "not run on this host" record)
+
+Host: no PostgreSQL server; PGlite (in-process PostgreSQL 17, WASM) from the VTID-05465 harness, throwaway in-memory database. Runner and shim: docs/validation/VTID-05464/pglite/run.mjs and shim.sql. Install the package with `npm i @electric-sql/pglite` in a scratch directory, then `node run.mjs <lane worktree> green|red <output file>`.
+
+$ node run.mjs <lane> red outputs/pglite-red-first-assertion.txt   -> RED A: plan stopped with an error before its first assertion ("function public.custom_access_token_hook_shadow(jsonb) does not exist", raised when pg_temp.hook is created, a SQL function body); RED B (check_function_bodies off): "not ok 1 - hook function exists", 0 of 1 assertions ok
+$ node run.mjs <lane> green outputs/pglite-green-36.txt   -> PASS fixture; PASS forward 032000 apply 1; PASS forward 032000 apply 2; state {hook true, log false}
+$ ... PASS rollback 032000 in-order replay (NOTICE no-op in the file's own guard); state {hook true, log false}
+$ ... PASS forward 032100 apply 1 and apply 2; state {hook true, log true}
+$ ... PASS pgTAP plan 36 after both forward files: 36 of 36 assertions ok
+$ ... PASS rollback 032000 run 1 (drops hook and log); state {hook false, log false}
+$ ... PASS rollback 032000 run 2 (no-op); state {hook false, log false}
+$ ... PASS re-apply forward 032000 and 032100; state {hook true, log true}
+$ ... PASS pgTAP plan 36 after rollback and re-apply: 36 of 36 assertions ok

@@ -21,9 +21,11 @@ separate owner-applied lane (D14, R3.4). Nothing is applied from the PR.
 
 ## Acceptance criteria (tasks.md group `access-token-hook-shadow`)
 
-pgTAP was not run on this host (no PostgreSQL here). The pgTAP tests below are unproven until they run on a throwaway
-local cluster; see `outputs/pgtap-not-run.md`. Each criterion has an `AC-<n>:` line and a `TEST:` line that names the
-proving test or file.
+The SQL was run on PGlite, an in-process PostgreSQL 17 build (WASM), on a throwaway database, with a minimal pgTAP shim
+(`docs/validation/VTID-05464/pglite/shim.sql`: plan, ok, is, throws_ok, results_eq, has_function, function_returns, finish).
+The shim replaces `CREATE EXTENSION pgtap`, which PGlite does not ship. Green: `outputs/pglite-green-36.txt`, 36 of 36 on the
+first pass and 36 of 36 after rollback and re-apply. Red on the base: `outputs/pglite-red-first-assertion.txt`. Each criterion
+has an `AC-<n>:` line and a `TEST:` line that names the proving test or file.
 
 AC-1: "pgTAP: the hook returns the original claims on a forced error" (S1 fail-open; R3.2).
 `EXCEPTION WHEN OTHERS THEN RETURN event` around the whole body; the log write has its own inner handler.
@@ -79,9 +81,9 @@ Both forward files are idempotent (CREATE OR REPLACE / IF NOT EXISTS / repeatabl
 `BEGIN; … COMMIT;`, and end with a self-check that RAISEs. The rollback drops both and self-checks; a second run is a
 no-op.
 TEST: harness order in `docs/validation/VTID-05464/commands.log` (apply each forward file twice, replay the rollback in
-sort order = no-op, pgTAP, rollback, rollback again, re-apply). **Not run on this host** (no PostgreSQL, no working
-Docker). Static stand-ins in `docs/validation/VTID-05464/outputs/static-checks.txt`: the SQL parses with libpg-query
-18.2.2 (PostgreSQL grammar, PL/pgSQL bodies) and passes PR-GATE `lintMigration`.
+sort order = no-op, pgTAP, rollback, rollback again, re-apply). **Run on PGlite** (`outputs/pglite-green-36.txt`): every
+step PASS, the state after each step is recorded, 36 of 36 both passes. Static checks in `outputs/static-checks.txt`: the
+SQL parses with libpg-query 18.2.2 and passes PR-GATE `lintMigration`.
 
 AC-9: "Nothing is applied from the PR" (S3 "No auth-config change here").
 No workflow, Auth config or gateway file is in the diff. Apply: owner-approved `RUN-MIGRATION.yml`, one dispatch per
