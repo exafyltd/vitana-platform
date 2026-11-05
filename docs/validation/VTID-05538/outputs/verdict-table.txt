@@ -1,0 +1,29 @@
+# $ node docs/validation/VTID-05538/outputs/verdict-table.mjs <repository root>
+| review | checks | behind by | protected | mergeDecision | bot action | reason code | same verdict and reason |
+|---|---|---|---|---|---|---|---|
+| review ok | checks pass | 0 | - | ok (0) | land | ready | same |
+| review ok | checks pass | 0 | CLAUDE.md | refused (1) | skip | protected_gate_file | same |
+| review ok | checks pass | 3 | - | refused (1) | update | behind | same |
+| review ok | checks pass | 3 | CLAUDE.md | refused (1) | skip | protected_gate_file | same |
+| review ok | checks fail | 0 | - | refused (1) | skip | checks_failed | same |
+| review ok | checks fail | 0 | CLAUDE.md | refused (1) | skip | protected_gate_file | same |
+| review ok | checks fail | 3 | - | refused (1) | skip | checks_failed | same |
+| review ok | checks fail | 3 | CLAUDE.md | refused (1) | skip | protected_gate_file | same |
+| review ok | checks pending | 0 | - | pending (2) | wait | checks_pending | same |
+| review ok | checks pending | 0 | CLAUDE.md | refused (1) | skip | protected_gate_file | same |
+| review ok | checks pending | 3 | - | pending (2) | wait | checks_pending | same |
+| review ok | checks pending | 3 | CLAUDE.md | refused (1) | skip | protected_gate_file | same |
+| no review | checks pass | 0 | - | refused (1) | skip | no_review | same |
+| no review | checks pass | 0 | CLAUDE.md | refused (1) | skip | protected_gate_file | same |
+| no review | checks pass | 3 | - | refused (1) | skip | no_review | same |
+| no review | checks pass | 3 | CLAUDE.md | refused (1) | skip | protected_gate_file | same |
+| no review | checks fail | 0 | - | refused (1) | skip | no_review | same |
+| no review | checks fail | 0 | CLAUDE.md | refused (1) | skip | protected_gate_file | same |
+| no review | checks fail | 3 | - | refused (1) | skip | no_review | same |
+| no review | checks fail | 3 | CLAUDE.md | refused (1) | skip | protected_gate_file | same |
+| no review | checks pending | 0 | - | refused (1) | skip | no_review | same |
+| no review | checks pending | 0 | CLAUDE.md | refused (1) | skip | protected_gate_file | same |
+| no review | checks pending | 3 | - | refused (1) | skip | no_review | same |
+| no review | checks pending | 3 | CLAUDE.md | refused (1) | skip | protected_gate_file | same |
+
+24 combinations, 0 differences.
