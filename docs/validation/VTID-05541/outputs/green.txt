@@ -1,0 +1,124 @@
+# VTID-05541 green: the five new test files on kiro/eng-gitlab-m2/scm-webhook (working tree on base 945755f084), node v22.23.4, jest 29.7.0
+# $ cd services/gateway && npx jest --ci test/routes/internal-gitlab-webhook.test.ts test/gitlab-events
+
+- services/gateway/test/routes/internal-gitlab-webhook.test.ts: tests 35, pass 35, fail 0
+- services/gateway/test/gitlab-events/mapper.test.ts: tests 42, pass 42, fail 0
+- services/gateway/test/gitlab-events/dedupe.test.ts: tests 9, pass 9, fail 0
+- services/gateway/test/gitlab-events/oasis-write.test.ts: tests 4, pass 4, fail 0
+- services/gateway/test/gitlab-events/staging-wiring.test.ts: tests 18, pass 18, fail 0
+Totals: suites 5 (failed 0); tests 108, pass 108, fail 0, skipped 0.
+Red on base for the same files: tests 108, pass 2, fail 106 (outputs/red-on-base.txt).
+
+services/gateway/test/routes/internal-gitlab-webhook.test.ts
+  PASS  index.ts mounting (VTID-05541) > mounts the raw body parser and its JSON error handler for the route before express.json()
+  PASS  index.ts mounting (VTID-05541) > mounts the router at /api/v1/internal/gitlab through the route guard
+  PASS  POST /api/v1/internal/gitlab/webhook — signed deliveries (VTID-05541) > merge_request open → 200 and one scm.gitlab.merge_request.opened event
+  PASS  POST /api/v1/internal/gitlab/webhook — signed deliveries (VTID-05541) > merge_request reopen → 200 and one scm.gitlab.merge_request.opened event
+  PASS  POST /api/v1/internal/gitlab/webhook — signed deliveries (VTID-05541) > merge_request merge → 200 and one scm.gitlab.merge_request.merged event
+  PASS  POST /api/v1/internal/gitlab/webhook — signed deliveries (VTID-05541) > merge_request close → 200 and one scm.gitlab.merge_request.closed event
+  PASS  POST /api/v1/internal/gitlab/webhook — signed deliveries (VTID-05541) > pipeline success → 200 and one scm.gitlab.pipeline.succeeded event
+  PASS  POST /api/v1/internal/gitlab/webhook — signed deliveries (VTID-05541) > pipeline failed → 200 and one scm.gitlab.pipeline.failed event
+  PASS  POST /api/v1/internal/gitlab/webhook — signed deliveries (VTID-05541) > carries the webhook-id into the event and verifies the exact bytes, not a re-serialization
+  PASS  POST /api/v1/internal/gitlab/webhook — signed deliveries (VTID-05541) > decides by the signed body, not by the unsigned X-Gitlab-Event header
+  PASS  POST /api/v1/internal/gitlab/webhook — signed deliveries (VTID-05541) > a duplicate webhook-id answers 200 and records nothing more
+  PASS  POST /api/v1/internal/gitlab/webhook — signed deliveries (VTID-05541) > a retry is dropped by its webhook-id before its body is looked at
+  PASS  POST /api/v1/internal/gitlab/webhook — signed deliveries (VTID-05541) > the OASIS write failing answers 502 and leaves the id open, so the retry records it
+  PASS  POST /api/v1/internal/gitlab/webhook — signed deliveries (VTID-05541) > the OASIS write throwing answers 502 without the error text
+  PASS  POST /api/v1/internal/gitlab/webhook — signed deliveries (VTID-05541) > no VTID in the title → 202 (no_vtid), acknowledged and ignored, nothing recorded
+  PASS  POST /api/v1/internal/gitlab/webhook — signed deliveries (VTID-05541) > pipeline without a VTID → 202 (no_vtid), acknowledged and ignored, nothing recorded
+  PASS  POST /api/v1/internal/gitlab/webhook — signed deliveries (VTID-05541) > an unknown event → 202 (unknown_event), acknowledged and ignored, nothing recorded
+  PASS  POST /api/v1/internal/gitlab/webhook — signed deliveries (VTID-05541) > an unmapped action → 202 (unmapped_action), acknowledged and ignored, nothing recorded
+  PASS  POST /api/v1/internal/gitlab/webhook — signed deliveries (VTID-05541) > an unmapped pipeline status → 202 (unmapped_status), acknowledged and ignored, nothing recorded
+  PASS  POST /api/v1/internal/gitlab/webhook — signed deliveries (VTID-05541) > a JSON value that is not an object → 202 (unknown_event), acknowledged and ignored, nothing recorded
+  PASS  POST /api/v1/internal/gitlab/webhook — signed deliveries (VTID-05541) > malformed JSON with a valid signature → 400 invalid_json
+  PASS  POST /api/v1/internal/gitlab/webhook — refused deliveries (VTID-05541) > a signature made with another key → 401 signature_invalid
+  PASS  POST /api/v1/internal/gitlab/webhook — refused deliveries (VTID-05541) > a body altered after signing → 401 signature_invalid
+  PASS  POST /api/v1/internal/gitlab/webhook — refused deliveries (VTID-05541) > a signed webhook-id swapped for another → 401 signature_invalid
+  PASS  POST /api/v1/internal/gitlab/webhook — refused deliveries (VTID-05541) > a stale or future timestamp (over 300 s) → 401 timestamp_out_of_tolerance
+  PASS  POST /api/v1/internal/gitlab/webhook — refused deliveries (VTID-05541) > without webhook-id → 401 signature_missing
+  PASS  POST /api/v1/internal/gitlab/webhook — refused deliveries (VTID-05541) > without webhook-timestamp → 401 signature_missing
+  PASS  POST /api/v1/internal/gitlab/webhook — refused deliveries (VTID-05541) > without webhook-signature → 401 signature_missing
+  PASS  POST /api/v1/internal/gitlab/webhook — refused deliveries (VTID-05541) > a correctly signed request carrying only svix-* headers → 401 signature_missing
+  PASS  POST /api/v1/internal/gitlab/webhook — refused deliveries (VTID-05541) > a non-numeric timestamp → 401 signature_missing
+  PASS  POST /api/v1/internal/gitlab/webhook — refused deliveries (VTID-05541) > a body over the limit → 413 payload_too_large, as JSON
+  PASS  POST /api/v1/internal/gitlab/webhook — the key (VTID-05541) > the unsigned staging probe → 401 signature_missing JSON with the key set
+  PASS  POST /api/v1/internal/gitlab/webhook — the key (VTID-05541) > the unsigned staging probe → 401 signature_missing JSON with no key configured
+  PASS  POST /api/v1/internal/gitlab/webhook — the key (VTID-05541) > a signed delivery with no key configured → 500 not_configured JSON, nothing recorded
+  PASS  POST /api/v1/internal/gitlab/webhook — the key (VTID-05541) > reads the key at request time (a rotated key applies without a restart)
+services/gateway/test/gitlab-events/mapper.test.ts
+  PASS  VTID-05541 mapper — the event-to-topic table of plan §3.5 > merge_request open → scm.gitlab.merge_request.opened
+  PASS  VTID-05541 mapper — the event-to-topic table of plan §3.5 > merge_request reopen → scm.gitlab.merge_request.opened
+  PASS  VTID-05541 mapper — the event-to-topic table of plan §3.5 > merge_request merge → scm.gitlab.merge_request.merged
+  PASS  VTID-05541 mapper — the event-to-topic table of plan §3.5 > merge_request close → scm.gitlab.merge_request.closed
+  PASS  VTID-05541 mapper — the event-to-topic table of plan §3.5 > pipeline success → scm.gitlab.pipeline.succeeded
+  PASS  VTID-05541 mapper — the event-to-topic table of plan §3.5 > pipeline failed → scm.gitlab.pipeline.failed
+  PASS  VTID-05541 mapper — the event-to-topic table of plan §3.5 > merge_request action "update" is acknowledged and ignored (unmapped_action)
+  PASS  VTID-05541 mapper — the event-to-topic table of plan §3.5 > merge_request action "approved" is acknowledged and ignored (unmapped_action)
+  PASS  VTID-05541 mapper — the event-to-topic table of plan §3.5 > merge_request action "unapproved" is acknowledged and ignored (unmapped_action)
+  PASS  VTID-05541 mapper — the event-to-topic table of plan §3.5 > merge_request action "approval" is acknowledged and ignored (unmapped_action)
+  PASS  VTID-05541 mapper — the event-to-topic table of plan §3.5 > merge_request action "unapproval" is acknowledged and ignored (unmapped_action)
+  PASS  VTID-05541 mapper — the event-to-topic table of plan §3.5 > merge_request action "" is acknowledged and ignored (unmapped_action)
+  PASS  VTID-05541 mapper — the event-to-topic table of plan §3.5 > merge_request action undefined is acknowledged and ignored (unmapped_action)
+  PASS  VTID-05541 mapper — the event-to-topic table of plan §3.5 > pipeline status "running" is acknowledged and ignored (unmapped_status)
+  PASS  VTID-05541 mapper — the event-to-topic table of plan §3.5 > pipeline status "pending" is acknowledged and ignored (unmapped_status)
+  PASS  VTID-05541 mapper — the event-to-topic table of plan §3.5 > pipeline status "created" is acknowledged and ignored (unmapped_status)
+  PASS  VTID-05541 mapper — the event-to-topic table of plan §3.5 > pipeline status "canceled" is acknowledged and ignored (unmapped_status)
+  PASS  VTID-05541 mapper — the event-to-topic table of plan §3.5 > pipeline status "skipped" is acknowledged and ignored (unmapped_status)
+  PASS  VTID-05541 mapper — the event-to-topic table of plan §3.5 > pipeline status "manual" is acknowledged and ignored (unmapped_status)
+  PASS  VTID-05541 mapper — the event-to-topic table of plan §3.5 > pipeline status "scheduled" is acknowledged and ignored (unmapped_status)
+  PASS  VTID-05541 mapper — the event-to-topic table of plan §3.5 > pipeline status undefined is acknowledged and ignored (unmapped_status)
+  PASS  VTID-05541 mapper — the event-to-topic table of plan §3.5 > push event is acknowledged and ignored (unknown_event)
+  PASS  VTID-05541 mapper — the event-to-topic table of plan §3.5 > note event is acknowledged and ignored (unknown_event)
+  PASS  VTID-05541 mapper — the event-to-topic table of plan §3.5 > no object_kind is acknowledged and ignored (unknown_event)
+  PASS  VTID-05541 mapper — the event-to-topic table of plan §3.5 > an array is acknowledged and ignored (unknown_event)
+  PASS  VTID-05541 mapper — the event-to-topic table of plan §3.5 > a string is acknowledged and ignored (unknown_event)
+  PASS  VTID-05541 mapper — the event-to-topic table of plan §3.5 > null is acknowledged and ignored (unknown_event)
+  PASS  VTID-05541 mapper — the VTID > merge_request: the first VTID of the merge request title
+  PASS  VTID-05541 mapper — the VTID > merge_request: no VTID in the title → ignored (no_vtid), even when the description or a commit has one
+  PASS  VTID-05541 mapper — the VTID > pipeline: merge_request.title first
+  PASS  VTID-05541 mapper — the VTID > pipeline: then commit.title when the merge request title has none or there is no merge request
+  PASS  VTID-05541 mapper — the VTID > pipeline: neither title has one → ignored (no_vtid)
+  PASS  VTID-05541 mapper — the VTID > firstVtid takes a whole VTID-\d{5} only
+  PASS  VTID-05541 mapper — the OASIS event > merge_request: source, status info, stage VALIDATOR, ids and refs only
+  PASS  VTID-05541 mapper — the OASIS event > merge_request: reopen says reopened; every merge request topic is status info
+  PASS  VTID-05541 mapper — the OASIS event > pipeline: succeeded is status success, failed is status warning (never error), no stage
+  PASS  VTID-05541 mapper — the OASIS event > never carries the description, the user, labels, pipeline variables or builds
+  PASS  VTID-05541 mapper — the OASIS event > a missing or odd field becomes null; long strings are cut to 512 characters
+  PASS  VTID-05541 topics — members of CicdEventType, none reused > exports exactly the five topics of plan §3.5, all scm.gitlab.*, none cicd.*
+  PASS  VTID-05541 topics — members of CicdEventType, none reused > each topic is a literal of the CicdEventType union in types/cicd.ts
+  PASS  VTID-05541 W6 — no GitLab event moves a VTID in this milestone > no rule of autopilot-event-mapper.ts lists a topic starting scm.gitlab.
+  PASS  VTID-05541 W6 — no GitLab event moves a VTID in this milestone > each of the five events, with the status the route gives it, matches no rule in any state
+services/gateway/test/gitlab-events/dedupe.test.ts
+  PASS  VTID-05541 DeliveryDedupe > defaults: ids are kept 24 hours, at most 10,000 of them
+  PASS  VTID-05541 DeliveryDedupe > records an id once; a later delivery with the same id is a duplicate and records nothing
+  PASS  VTID-05541 DeliveryDedupe > a failed record is not remembered: the retry records it
+  PASS  VTID-05541 DeliveryDedupe > a record that throws counts as failed and is not remembered
+  PASS  VTID-05541 DeliveryDedupe > a concurrent duplicate waits for the first delivery and records nothing itself
+  PASS  VTID-05541 DeliveryDedupe > when the first of two concurrent deliveries fails, both answer failed and a later retry records
+  PASS  VTID-05541 DeliveryDedupe > forgets an id after the TTL
+  PASS  VTID-05541 DeliveryDedupe > tells apart long ids that share a prefix (ids are hashed, not cut)
+  PASS  VTID-05541 DeliveryDedupe > drops the oldest id when the cap is reached
+services/gateway/test/gitlab-events/oasis-write.test.ts
+  PASS  VTID-05541 route → emitOasisEvent → oasis_events INSERT > a failed pipeline: one row, topic scm.gitlab.pipeline.failed, status warning, no stage
+  PASS  VTID-05541 route → emitOasisEvent → oasis_events INSERT > a merged merge request: topic scm.gitlab.merge_request.merged, status info, stage VALIDATOR (not the inferred DEPLOY)
+  PASS  VTID-05541 route → emitOasisEvent → oasis_events INSERT > the database refusing the row → 502, and the same delivery retried writes one row
+  PASS  VTID-05541 route → emitOasisEvent → oasis_events INSERT > an ignored or refused delivery writes nothing
+services/gateway/test/gitlab-events/staging-wiring.test.ts
+  PASS  W3 — AWS-STAGE-DEPLOY-GATEWAY.yml wires the key only when the secret exists > the workflow parses and the step resolves the staging secret by name, tolerating its absence
+  PASS  W3 — AWS-STAGE-DEPLOY-GATEWAY.yml wires the key only when the secret exists > wires a secret reference into connected-apps.json, never a plain value, before the task definition is built
+  PASS  W3 — AWS-STAGE-DEPLOY-GATEWAY.yml wires the key only when the secret exists > secret absent: the step succeeds, says so, and wires nothing
+  PASS  W3 — AWS-STAGE-DEPLOY-GATEWAY.yml wires the key only when the secret exists > lookup denied: the step succeeds with a warning and wires nothing
+  PASS  W3 — AWS-STAGE-DEPLOY-GATEWAY.yml wires the key only when the secret exists > secret present: the step adds exactly one secret reference and keeps everything else
+  PASS  W3 — AWS-STAGE-DEPLOY-GATEWAY.yml wires the key only when the secret exists > sibling sweep: AWS-PROD-DEPLOY-GATEWAY.yml is intentionally not wired in this milestone
+  PASS  W4 — scripts/aws/setup-gitlab-webhook-secret.sh > passes bash -n
+  PASS  W4 — scripts/aws/setup-gitlab-webhook-secret.sh > dry run by default: reads only, writes nothing, never reads a secret value
+  PASS  W4 — scripts/aws/setup-gitlab-webhook-secret.sh > --apply, target missing: creates the staging secret from the engineering value, through a file, as the workload account
+  PASS  W4 — scripts/aws/setup-gitlab-webhook-secret.sh > the engineering session credentials reach the CLI only through its environment, never an argument list
+  PASS  W4 — scripts/aws/setup-gitlab-webhook-secret.sh > --apply, target holds another value: updates it with put-secret-value
+  PASS  W4 — scripts/aws/setup-gitlab-webhook-secret.sh > --apply, target already holds the same value: writes nothing
+  PASS  W4 — scripts/aws/setup-gitlab-webhook-secret.sh > refuses outside the workload account 472838866351, before any Secrets Manager call
+  PASS  W4 — scripts/aws/setup-gitlab-webhook-secret.sh > refuses a source value that is not whsec_<base64>, and an empty one, writing nothing
+  PASS  W4 — scripts/aws/setup-gitlab-webhook-secret.sh > refuses when the source secret does not exist yet, writing nothing
+  PASS  W4 — scripts/aws/setup-gitlab-webhook-secret.sh > refuses when the engineering account cannot be found or assumed
+  PASS  W4 — scripts/aws/setup-gitlab-webhook-secret.sh > --source-account skips the Organizations lookup and must be another 12-digit account
+  PASS  W4 — scripts/aws/setup-gitlab-webhook-secret.sh > rejects an unknown argument (there is no production mode) before any AWS call

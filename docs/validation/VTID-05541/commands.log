@@ -1,0 +1,85 @@
+# VTID-05541 commands (2026-11-05, Linux, node v22.23.4, jest 29.7.0, tsc 5.9.3; seat exafy, builder session kiro-exafy-202611050535-c34d; driver kiro-exafy-202611041929-802c)
+base: 945755f084 (origin/main when the branch was cut; the merge base of the PR). Worktree /projects/sandbox/.rv/scm2, branch kiro/eng-gitlab-m2/scm-webhook.
+origin/main is now 29b639da4b (one merge, VTID-05529, no file these tests read or import); main is not merged into this branch here.
+This is the resumed run of the builder: the first run stopped before its first commit. Every check below was re-run in this session on the final files.
+Nothing was written to a live system: no AWS, Supabase, gateway or GitLab call, no workflow dispatch; the curl proof runs on 127.0.0.1 with a local OASIS sink.
+CI runs the gateway Jest suite on Node 20.x (CICDL-GATEWAY-CI.yml:25, TEST-SUITE.yml); these runs are Node 22.
+
+# 0. Housekeeping
+$ git checkout -- services/gateway/specs/command-hub-symbol-index.json
+  rewritten by a build step of the interrupted run, and again by this run's whole-suite or build step; outside the lane's paths, restored
+  each time and never staged. `git status --short` shows only lane paths before each commit.
+
+# 1. Red on base. Outputs: outputs/red-on-base.txt (per test), outputs/red-on-base-A.txt (run A, jest output), outputs/red-on-base-tsc.txt (run C)
+$ git archive 945755f084 services/gateway/src services/gateway/test services/gateway/package.json services/gateway/jest.config.js services/gateway/tsconfig.json .github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml .github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml scripts/aws | tar -x -C <scratch>
+  <scratch> = /projects/sandbox/.scratch/vtid-05541/red-base, outside the repository; the five new test files copied in unchanged; node_modules as hard links (cp -al)
+$ cd <scratch>/services/gateway && npx jest --ci test/routes/internal-gitlab-webhook.test.ts test/gitlab-events                      # run A, base code only
+  4 suites cannot load (Cannot find module of the route, the mapper, the dedupe); staging-wiring.test.ts: tests 18, pass 1, fail 17
+$ (same command) with no-behaviour stubs of routes/internal-gitlab-webhook.ts and services/gitlab-events/{mapper,dedupe}.ts in <scratch>   # run B
+  tests 108, pass 2, fail 106: route 35/0 pass, mapper 42/1, dedupe 9/0, oasis-write 4/0, staging-wiring 18/1
+  the 2 passes are guards that are true on base: no lifecycle rule lists scm.gitlab.*; AWS-PROD-DEPLOY-GATEWAY.yml is not wired
+$ cd <scratch>/services/gateway && npx tsc --noEmit    # run C: the lane's real mapper.ts, dedupe.ts and route file, with base types/cicd.ts
+  exit 2, 22 errors (mapper.ts 18, routes/internal-gitlab-webhook.ts 4), incl. TS2322 for each of the five scm.gitlab.* literals
+
+# 2. Green. Output: outputs/green.txt
+$ cd services/gateway && npx jest --ci test/routes/internal-gitlab-webhook.test.ts test/gitlab-events
+  suites 5, tests 108, pass 108, fail 0 (route 35, mapper 42, dedupe 9, oasis-write 4, staging-wiring 18)
+
+# 3. Typecheck and build. Outputs: outputs/typecheck.txt, outputs/build.txt
+$ npm run typecheck      exit 0 (tsc --noEmit, 49 s)
+$ npm run build          exit 0 (tsc, copy-frontend, copy-data; dist/ is not committed)
+
+# 4. Pipeline suites. Outputs: outputs/test-operator.txt, outputs/test-roles.txt
+$ npm run test:operator  tests 71, pass 71, fail 0 (CLAUDE.md 42e)
+$ npm run test:roles     tests 105, pass 104, fail 1 (CLAUDE.md 42h): the known atlas drift guard,
+  test/vtid-04560-role-separation-regression.test.ts:524, Received ["internal-gitlab-webhook.ts"]. The claim is added by
+  agentic-delivery/prerequisites (PR #4690, VTID-05551, open; its domain-atlas.ts diff adds /^internal-gitlab-webhook$/). Not worked around.
+
+# 5. Every gateway suite that reads the staging deploy workflow. Output: outputs/workflow-suites.txt
+$ npx jest --ci $(grep -rl AWS-STAGE-DEPLOY-GATEWAY.yml test | sort)
+  suites 102, tests 1370, pass 1370, fail 0
+
+# 6. Other suites near the change. Output: outputs/affected-suites.txt
+$ npx jest --ci <every test that reads types/cicd.ts or src/index.ts or walks src/routes, plus vtid-05031 webhook verification and vtid-04968 delegation guard; roles excluded (step 4)>
+  suites 59, tests 1162, pass 1162, fail 0
+
+# 7. The whole gateway Jest suite. Output: outputs/full-suite.txt
+$ npx jest --ci --silent
+  suites 1760, tests 29267: pass 29204, fail 3, skipped 54, todo 6 (1 min 53 s)
+  the 3: the atlas guard of step 4, and two sandbox-environment failures that fail the same way on base 945755f084 in <scratch>
+  (providers/storage-provider: the AWS region here resolves to us-east-1; vtid-04226: openssl is not installed, scripts/aws/setup-gateway-internal-token.sh:62)
+
+# 8. Static checks. Output: outputs/static-checks.txt
+$ node -e '<js-yaml load of .github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml>'
+  parsed: 1 job, 28 steps; "Resolve GitLab webhook signing token" found once, no if:, run: 821 chars; longest run: in the file 19855 chars (limit 21000, VTID-03788)
+$ bash -n scripts/aws/setup-gitlab-webhook-secret.sh      exit 0
+$ bash -n <the run: block of the new step>                exit 0
+  (python3 has no yaml module here; actionlint and shellcheck are not installed)
+
+# 9. Fix made during this build: the setup script handed the assumed-role credentials to `env VAR=value aws …`, which puts them on env's argument list
+$ npx jest test/gitlab-events/staging-wiring.test.ts -t "credentials reach the CLI"    # new test; a stub env(1) first on PATH records its arguments
+  against the previous source_aws(): 1 failed ("Expected substring: not \"ASIASTUBKEY\""), the script then restored
+  after the change (a subshell that exports the three variables, then runs aws): the file passes 18/18
+
+# 10. Local curl proof. Output: outputs/curl-proof.txt (script outputs/curl-proof.sh, server outputs/curl-proof-server.cjs)
+$ bash docs/validation/VTID-05541/outputs/curl-proof.sh /projects/sandbox/.rv/scm2
+  the route from dist/ of this branch, mounted in the index.ts order, two servers on 127.0.0.1 (key set, no key), env -i, a fresh random key never printed,
+  signatures made with Node's crypto; 16 cases: 401 x6 (probe x2, altered, stale, svix-only), 200 x5 (open, duplicate, merge, pipeline failed, retry), 202 x2, 400, 413, 502, 500
+  OASIS sink A: 4 rows (open, merge, pipeline failed, the retried open); sink B: 0; "not copied", the user's name and e-mail appear in no row
+
+# 11. staging-tests.json (docs/validation/VTID-05541/staging-tests.json)
+$ node -e '<lib.validateManifest(manifest, {vtid:"VTID-05541", service:"gateway"})>'     {"ok":true,"errors":[]}
+  lib.httpRequestInit(probe) = POST, Bearer staging-verify.invalid.probe, body {}; lib.evaluateHttp passes on the route's reply (curl case 1) and fails on 404/HTML
+$ node scripts/ci/staging-verify/run.mjs check-pr --service gateway --repo-root /projects/sandbox/.rv/scm2 --base <origin/main> --head <head> --title "<PR title>"
+  result: see step 14
+
+# 12. Scope file and sparring record
+$ node scripts/ci/pr-gate/vtid-scope.mjs init VTID-05541 --kind feature --paths "<the lane's paths>,.kiro/specs/eng-gitlab-m2/lanes/scm-webhook.md,docs/validation/VTID-05541/**" --sparring-record docs/validation/VTID-05541/plan-sparring.md
+  wrote docs/validation/VTID-05541/scope.json
+  plan-sparring.md: the facts of .kiro/specs/eng-gitlab-m2/sparring/verdict.md, state.json, round-2.md and responses-1.md on origin/main
+
+# 13. Before the code commit
+$ node /projects/sandbox/vitana-platform/scripts/collab/land-guard.mjs evidence --repo /projects/sandbox/.rv/scm2 --vtid VTID-05541
+  land-guard evidence: ok — VTID-05541 evidence present (exit 0; acceptance.md, commands.log, scope.json staged)
+
+# 14. Results of the checks that need the commit (filled in after the code commit)
