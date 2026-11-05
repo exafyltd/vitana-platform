@@ -29,6 +29,13 @@ the owner copies it there (section 6, step 0, does this for the platform CI file
 
 ## 2. The owner's commands (CloudShell, signed in to the management account 472838866351)
 
+**Get the folder into CloudShell.** `setup.sh` runs from `~/vitana-eng/` and writes `state.env` next to itself (account id, load balancer name,
+instance ids). To use the copy in git (a rebuild, or a newer version), zip the contents of the folder `infra/gitlab-engineering` (so that
+`setup.sh` is at the top of the zip) on a computer that has the repository, upload the zip with CloudShell's Actions menu (Upload file), and
+run `mkdir -p ~/vitana-eng && unzip -o <the zip> -d ~/vitana-eng`. Keep an existing `state.env`. Without one, `setup.sh` finds the account
+`vitana-engineering` by name (it creates one only when none exists), the certificate by domain and the machines by name, and Terraform's state
+is in the bucket `vitana-engineering-tfstate-<account id>`, so a rebuild continues from it.
+
 `bash ~/vitana-eng/setup.sh` followed by:
 
 | Word | What it does |
@@ -188,6 +195,16 @@ GitLab's own rules: the same version and type (`19.5.3-ee.0`), the secrets file 
 during the restore. The commands below follow those rules and the S3 layout of section 7. They have not been run; the first run is the
 evidence, and a command that fails is fixed in this file.
 
+Step B uses the variable `BUCKET` from section 7. Set it again if this is a new shell (engineering-account credentials, section 2):
+
+```bash
+ACCOUNT_ID=$(grep '^ACCOUNT_ID=' ~/vitana-eng/state.env | cut -d= -f2)
+BUCKET=vitana-engineering-gitlab-backups-$ACCOUNT_ID
+```
+
+Step C uses `TIP`, which the last line of step B sets from the result. If you come back to step C in a new shell, set `TIP` to the
+`RESULT-MAIN-TIP:` value you kept.
+
 **A. Launch the scratch machine** (engineering-account credentials, section 2). It uses the runner's security group, which accepts
 nothing inbound, and the GitLab machine's role, which can read the backup bucket:
 
@@ -302,8 +319,10 @@ aws ec2 terminate-instances --instance-ids "$SCRATCH" --query 'TerminatingInstan
 aws ec2 describe-instances --filters Name=tag:Name,Values=vitana-eng-restore-test Name=instance-state-name,Values=pending,running,stopping,stopped --query 'Reservations[].Instances[].InstanceId' --output text
 ```
 
-The second command must print nothing. The scratch machine has no mirror timer and no backup cron (neither is part of the backup), so it
-cannot touch GitHub or the backup bucket; it is a copy of GitLab's data and secrets, so it is treated like the live machine until it is gone.
+The second command must print nothing. The scratch machine has no mirror timer and no backup cron (neither is part of the backup), so
+nothing on it talks to GitHub or writes to the backup bucket by itself. Its role is the GitLab machine's role, which can read and write the
+backup bucket and write the two generated secrets, and it holds a copy of GitLab's data and secrets: treat it like the live machine until it
+is gone.
 
 ## 9. Dates that matter
 

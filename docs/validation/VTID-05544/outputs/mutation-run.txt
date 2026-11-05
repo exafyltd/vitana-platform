@@ -46,11 +46,16 @@ caught      load balancer rule on port 80  <- GitLab accepts only the load balan
 caught      gitlab ingress to port 8080  <- GitLab accepts only the load balancer; the runner accepts no
 caught      inline ingress on the runner group  <- GitLab accepts only the load balancer; the runner accepts no
 caught      legacy security group rule  <- GitLab accepts only the load balancer; the runner accepts no
-caught      admin policy attached  <- IAM: no wildcard action or resource, except the TLS-only den
-caught      extra managed policy attached  <- IAM: no wildcard action or resource, except the TLS-only den
-caught      wildcard resource in gitlab policy  <- IAM: no wildcard action or resource, except the TLS-only den
-caught      wildcard action in gitlab policy  <- IAM: no wildcard action or resource, except the TLS-only den
-caught      runner may read every secret  <- IAM: no wildcard action or resource, except the TLS-only den|the runner role may read only its own registration token and
+caught      admin policy attached  <- IAM: no wildcard action or resource (except the TLS-only den
+caught      extra managed policy attached  <- IAM: no wildcard action or resource (except the TLS-only den
+caught      wildcard resource in gitlab policy  <- IAM: no wildcard action or resource (except the TLS-only den
+caught      wildcard action in gitlab policy  <- IAM: no wildcard action or resource (except the TLS-only den
+caught      partial wildcard action in gitlab policy  <- IAM: no wildcard action or resource (except the TLS-only den
+caught      partial wildcard resource in runner policy  <- IAM: no wildcard action or resource (except the TLS-only den|the runner role may read only its own registration token and
+caught      inline JSON role policy  <- IAM: no wildcard action or resource (except the TLS-only den
+caught      heredoc role policy  <- IAM: no wildcard action or resource (except the TLS-only den
+caught      customer-managed policy resource  <- IAM: no wildcard action or resource (except the TLS-only den
+caught      runner may read every secret  <- IAM: no wildcard action or resource (except the TLS-only den|the runner role may read only its own registration token and
 caught      runner may read the mirror token  <- the runner role may read only its own registration token and
 caught      gitlab may read the root password  <- the GitLab role: backups bucket, writes only the two generat
 caught      gitlab may read the runner token  <- the GitLab role: backups bucket, writes only the two generat
@@ -138,4 +143,4 @@ caught      v1 install without prefer-offline  <- central CI vitana-v1: npm test
 caught      RUNBOOK copy of the CI file drifts  <- RUNBOOK section 6 embeds the platform central CI file exactl
 caught      CI file changes, RUNBOOK copy stays  <- central CI platform: gateway type check and four Jest shards|RUNBOOK section 6 embeds the platform central CI file exactl
 
-mutations: 138   caught: 138   not caught: 0
+mutations: 143   caught: 143   not caught: 0

@@ -3,9 +3,9 @@ base: origin/main 945755f084c. Worktree: .worktrees/eng-gitlab-m1-gitlab-infra, 
 The outputs under outputs/ were produced from the final files of this PR, in the order below, by one pass at the end (tests, red on base, mutation run, restore-script run, whole script set), after the last change to a tested file.
 
 # 1. Where the bundle comes from, and how it differs from what ran
-The owner ran bundle v6 in AWS CloudShell. The CloudShell block (archive as base64, then `sha256sum -c`) was decoded and extracted unchanged; its sha256 is
-66983e0f9854f5025e2b5e23e2ae2cd134592fb628f8e1f249d271569aff10f6, the value that block checks before it extracts.
-$ sha256sum <file of the archive> vs sha256sum infra/gitlab-engineering/<file>      for the 10 files of the archive
+The owner ran bundle v6 in AWS CloudShell. The CloudShell block (archive as base64, then `sha256sum -c`) is kept byte for byte in outputs/owner-cloudshell-block-v6.txt;
+its archive has the sha256 66983e0f9854f5025e2b5e23e2ae2cd134592fb628f8e1f249d271569aff10f6, the value that block checks before it extracts.
+$ bash outputs/compare-with-v6.sh <repository root>      decodes the block, checks that hash, then compares sha256 of the 10 files of the archive with infra/gitlab-engineering/<file>
 Output: outputs/diff-vs-running-bundle.txt. 9 files identical; host/ci-platform.yml differs (the install steps); RUNBOOK.md is new; the Terraform lock file is not committed.
 
 # 2. Red on base, green
@@ -22,15 +22,16 @@ $ FILES=$(find scripts -path '*/node_modules' -prune -o \( -name '*.test.cjs' -o
 $ the same with node v20.20.2 (npx -y node@20; the workflow uses actions/setup-node 20)      -> outputs/unit-all-node20.txt
 34 files; tests 639, pass 638, fail 0, skipped 1.
 
-# 4. Mutation run: each of 138 deliberate changes applied alone to a scratch copy of the bundle. Script: outputs/mutate-gitlab-m1.sh   Output: outputs/mutation-run.txt
+# 4. Mutation run: each of 143 deliberate changes applied alone to a scratch copy of the bundle. Script: outputs/mutate-gitlab-m1.sh   Output: outputs/mutation-run.txt
 $ TMPDIR=<scratch> TERRAFORM=<terraform binary> PYLIB=<PyYAML directory> bash outputs/mutate-gitlab-m1.sh <worktree>
-Baseline 26 of 26 pass on the unmutated tree. Mutations 138: caught 138, not caught 0. A change counts as caught only when the changed file still parses
+Baseline 26 of 26 pass on the unmutated tree. Mutations 143: caught 143, not caught 0. A change counts as caught only when the changed file still parses
 (bash -n; PyYAML safe_load; terraform fmt's parser, exit 2 on a syntax error), differs from the original, and the test fails on a named case. Three
 changes are meant to break the syntax (case 14); the harness requires that they do.
-History: the first run of the same 138 changes against the first version of the test left 6 survivors (the GitHub token written to a file, the GitHub token
+History: the first run of the first 138 changes against the first version of the test left 6 survivors (the GitHub token written to a file, the GitHub token
 logged, the backup archive not uploaded, the configuration archive not uploaded, the configuration archive without /etc/gitlab, the backup script not
-stopping on error). The test was tightened for those (cases 17 and 21), case 3 was rewritten, and the test now reads files when a case runs; the recorded
-run is the second.
+stopping on error). The test was tightened for those (cases 17 and 21), case 3 was rewritten, and the test now reads files when a case runs. After the reviewer's
+first round (the lane file, review of 09:30Z) case 8 was tightened (no `*` in any action or resource string, policies only as data documents) with 5 new changes
+that exercise it, and the exact-text pins of the secret-name alignment and the two token prompts were relaxed; the recorded run is the last one.
 
 # 5. Terraform and scripts
 $ cd <copy of infra/gitlab-engineering/terraform> && terraform fmt -check -diff -recursive; terraform init -backend=false -input=false; terraform validate      -> outputs/terraform-checks.txt

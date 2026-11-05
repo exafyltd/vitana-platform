@@ -15,7 +15,7 @@ paths:
 claimed_by: kiro-exafy-202611021438-cff7
 branch: kiro/eng-gitlab-m1/gitlab-infra
 pr: https://github.com/exafyltd/vitana-platform/pull/4692
-updated: 2026-11-05T08:31Z
+updated: 2026-11-05T10:25Z
 vtid: VTID-05544
 ---
 # Lane: gitlab-infra (repo vitana-platform)
@@ -59,3 +59,27 @@ Findings:
 - [non-blocking] RUNBOOK.md:305-306: 'cannot touch the backup bucket' overstates it, because the scratch machine has the vitana-eng-gitlab role. Steps B and C rely on BUCKET and ACCOUNT_ID from earlier sections.
 - [non-blocking] Not confirmed independently: CI (GraphQL refused; the caller's REST read says 11/11 green), and byte identity with bundle v6 (the archive is not in git).
 Next: the lane's seat fixes the blocking finding. The owner runs plan §6 steps 0-3 from RUNBOOK §6-§8 on the PR branch. The builder adds the pasted output, the GitLab-vs-GitHub comparison and any host/ci-platform.yml fix to docs/validation/VTID-05544/. Then a new review runs on the new head. Checklist items 2 and 4-9 passed on this head: paths in scope; red on base 26/26 and on an empty bundle 26/26; green 26/26; 138 of 138 mutations caught; no test weakened; no live write; merging deploys nothing; no protected gate file; no secret committed. Item 3 rests on the caller's REST read.
+
+### 2026-11-05T10:25Z · kiro-exafy-202611021438-cff7 · in-review → executing
+The review of 2026-11-05T09:30Z (head 3b1191cec234d42e9db63b4a61aa243e03c8cc3a) is `changes`. One answer per finding:
+- [blocking] the owner's runs of plan §6 steps 0 to 3 as lane evidence: accepted, in the second form the reviewer offered, a change through `_plan`.
+  Late lane `gitlab-verify` (plan PR https://github.com/exafyltd/vitana-platform/pull/4695, `depends_on: [gitlab-infra]`) takes that evidence and the
+  "green pipelines" clause of the Outcome; the plan is `done` only when both lanes are. acceptance.md says so in its Outcome and Decisions. The sparred
+  plan text is unchanged. This lane's review is asked again after that PR is on `main`.
+- [non-blocking] `host/gitlab-configure.sh:55` logs the runner-creation answer (the `glrt-` token) when `put-secret-value` fails, and the wider
+  process-list exposure: accepted; both are on the deferred list in acceptance.md (Decisions), with the eight call sites. The files keep the behaviour that ran.
+- [non-blocking] case 8 read only `aws_iam_policy_document` blocks: accepted. It now refuses a `*` inside any action or resource string (except the
+  TLS-only deny and the bucket's object ARN), requires every `policy` and `assume_role_policy` to be a data document's JSON, and refuses an
+  `aws_iam_policy` resource; five new changes exercise it (143 changes, 143 caught).
+- [non-blocking] exact-text pins (fmt alignment of the secret names, the wording of the two token prompts): accepted, relaxed to patterns that still require a hidden read.
+- [non-blocking] RUNBOOK.md:32 no way to get the git copy into CloudShell: accepted, a paragraph in section 2 (what `setup.sh` finds again without a `state.env`).
+- [non-blocking] RUNBOOK.md:305-306 and the variables of steps B and C: accepted, the wording now says the scratch machine's role can read and write the
+  bucket and nothing on it does by itself; section 8 sets `BUCKET` and says where `TIP` comes from.
+- [not confirmed independently] byte identity with bundle v6: `outputs/owner-cloudshell-block-v6.txt` is the block the owner pasted, byte for byte, and
+  `outputs/compare-with-v6.sh <repository root>` decodes it, checks the hash the block checks, and compares every file; its output is
+  `outputs/diff-vs-running-bundle.txt`. CI: all checks green on 3b1191cec234 by the REST read.
+
+### 2026-11-05T10:25Z · kiro-exafy-202611021438-cff7 · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/4692. `main` merged into the branch (29b639da4bf). Evidence regenerated from the final files: 26 cases (red on
+base 26 of 26, on an empty bundle 26 of 26, green 26 of 26), a mutation run of 143 changes (0 not caught), the whole script set 639 tests with 0 failures on
+Node 22 and Node 20, the comparison with the archive, a secret scan of 34 files. Ready for a new review on the current head once plan PR #4695 is on `main`.

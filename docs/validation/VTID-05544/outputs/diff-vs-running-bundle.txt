@@ -1,9 +1,7 @@
-# VTID-05544: the committed bundle against the archive the owner ran in CloudShell (bundle v6)
-# v6.tgz sha256 66983e0f9854f5025e2b5e23e2ae2cd134592fb628f8e1f249d271569aff10f6 (decoded from the CloudShell block the owner pasted; that block checks this hash with sha256sum -c before it extracts, so the owner's run used exactly this archive)
-# Compared: every file of the archive against infra/gitlab-engineering/ of this branch (sha256, first 16 characters)
-
-same     setup.sh  ec82f66a385f778b
-same     terraform/main.tf  6888ee0a5605ce2a
+# $ bash docs/validation/VTID-05544/outputs/compare-with-v6.sh <repository root>
+# archive sha256 66983e0f9854f5025e2b5e23e2ae2cd134592fb628f8e1f249d271569aff10f6
+# the block checks for   66983e0f9854f5025e2b5e23e2ae2cd134592fb628f8e1f249d271569aff10f6
+# every file of the archive against <repository root>/infra/gitlab-engineering (sha256, first 16 characters)
 same     host/backup.sh  ffd7040435069f5a
 CHANGED  host/ci-platform.yml  archive 35853826118807f9  branch a235c03c8b67dd35
 same     host/ci-v1.yml  f2c3dfcbc0ace095
@@ -12,12 +10,15 @@ same     host/gitlab-install.sh  14d2f38d3b0de3e7
 same     host/mirror.sh  75d21f773b10d3d0
 same     host/runner-fix.sh  95ddb3dd6b0d558b
 same     host/runner-install.sh  da3c99ab88e4c0a0
-new      RUNBOOK.md (not in the archive; plan task I3)
-omitted  terraform/.terraform.lock.hcl (made by a local terraform init of the lane author, not part of what the owner ran)
+same     setup.sh  ec82f66a385f778b
+same     terraform/main.tf  6888ee0a5605ce2a
+# files of the branch that are not in the archive:
+new      RUNBOOK.md
+# changed files: 1
 
-# The one changed file, as a diff (archive -> branch)
---- archive/host/ci-platform.yml	2026-11-04 12:00:00.000000000 +0000
-+++ infra/gitlab-engineering/host/ci-platform.yml	2026-11-05 07:56:40.966739552 +0000
+# diff -u of host/ci-platform.yml (archive -> branch)
+--- archive/host/ci-platform.yml
++++ branch/host/ci-platform.yml
 @@ -27,14 +27,17 @@
      - npm install -g pnpm@9.0.0
      - pnpm config set store-dir "$CI_PROJECT_DIR/.pnpm-store"

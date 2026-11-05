@@ -111,7 +111,7 @@ test('Secrets Manager: the three secrets use the engineering key and the documen
   assert.deepEqual(namesOf(TF, 'resource', 'aws_secretsmanager_secret').sort(), Object.keys(expected).sort(), 'no other secret');
   for (const [res, name] of Object.entries(expected)) {
     const b = block(TF, 'resource', 'aws_secretsmanager_secret', res);
-    assert.ok(b.includes(`name                    = "${name}"`), `${res}: name`);
+    assert.match(b, new RegExp(`\\bname\\s*=\\s*"${name.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&')}"`), `${res}: name`);
     assert.match(b, /kms_key_id\s*=\s*aws_kms_key\.main\.arn/, `${res}: key`);
   }
   const key = block(TF, 'resource', 'aws_kms_key', 'main');
@@ -138,12 +138,27 @@ test('GitLab accepts only the load balancer; the runner accepts nothing; the loa
   assert.match(byGroup.alb[0].b, /from_port\s*=\s*443\b[\s\S]*to_port\s*=\s*443\b/);
 });
 
-test('IAM: no wildcard action or resource, except the TLS-only deny on the backup bucket', ({ TF }) => {
-  for (const doc of namesOf(TF, 'data', 'aws_iam_policy_document')) {
+test('IAM: no wildcard action or resource (except the TLS-only deny and the backup bucket objects); policies are data documents only', ({ TF }) => {
+  const docs = namesOf(TF, 'data', 'aws_iam_policy_document');
+  assert.ok(docs.length >= 4, `the policy documents of the bundle, found ${docs.length}`);
+  for (const doc of docs) {
     const b = block(TF, 'data', 'aws_iam_policy_document', doc);
-    assert.equal(/resources\s*=\s*\[[^\]]*"\*"\s*[\],]/.test(b), false, `${doc}: wildcard resource`);
-    if (doc !== 'backups_tls_only') assert.equal(/actions\s*=\s*\[[^\]]*"[\w-]*:?\*"/.test(b), false, `${doc}: wildcard action`);
+    // A `*` inside any resource string is refused, except the object ARN of the backup bucket.
+    for (const list of b.matchAll(/resources\s*=\s*\[([^\]]*)\]/g)) {
+      for (const item of list[1].match(/"[^"]*"/g) ?? []) {
+        if (item.includes('*')) assert.equal(item, '"${aws_s3_bucket.backups.arn}/*"', `${doc}: wildcard resource ${item}`);
+      }
+    }
+    // A `*` inside any action is refused (also `s3:Get*`), except in the TLS-only deny.
+    if (doc !== 'backups_tls_only') {
+      for (const list of b.matchAll(/actions\s*=\s*\[([^\]]*)\]/g)) assert.equal(list[1].includes('*'), false, `${doc}: wildcard action in ${list[1].trim()}`);
+    }
   }
+  // Every policy attribute is the JSON of a data document above: no inline jsonencode, no heredoc, no customer-managed policy resource.
+  const attributes = [...TF.matchAll(/^\s*(policy|assume_role_policy)\s*=\s*(.+)$/gm)].map((m) => m[2].trim());
+  assert.ok(attributes.length >= 5, `policy attributes found: ${attributes.length}`);
+  for (const rhs of attributes) assert.match(rhs, /^data\.aws_iam_policy_document\.\w+\.json$/, `a policy must be a data document: ${rhs}`);
+  assert.deepEqual(namesOf(TF, 'resource', 'aws_iam_policy'), [], 'no customer-managed policy resource');
   assert.equal(/"AWSAdministratorAccess"|AdministratorAccess|PowerUserAccess/.test(TF), false, 'no broad managed policy');
   const attached = [...TF.matchAll(/policy_arn\s*=\s*"([^"]+)"/g)].map((m) => m[1]);
   assert.deepEqual([...new Set(attached)], ['arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore'], 'only the SSM core policy is attached');
@@ -221,12 +236,12 @@ test('no script turns on xtrace (it would write secrets into logs)', ({ shellScr
 });
 
 test('the Cloudflare token is typed hidden, handed to curl on stdin, and used nowhere else', ({ SETUP }) => {
-  assert.match(SETUP, /read -rsp "Cloudflare API token: " CF_TOKEN/);
+  assert.match(SETUP, /read -rsp "[^"$`]*" CF_TOKEN/);
   const allowed = [
     /^CF_TOKEN="\$\{CLOUDFLARE_API_TOKEN:-\}"$/,
     /^printf 'header = "Authorization: Bearer %s"\\n' "\$CF_TOKEN" \| curl [^|>]*--config - /,
     /^if \[ -z "\$CF_TOKEN" \] && \[ "\$CF_ASKED" = 0 \]; then$/,
-    /^read -rsp "Cloudflare API token: " CF_TOKEN; echo$/,
+    /^read -rsp "[^"$`]*" CF_TOKEN; echo$/,
     /^\[ -n "\$CF_TOKEN" \] \|\| return 1$/,
     /^CF_TOKEN=""$/,
   ];
@@ -236,7 +251,7 @@ test('the Cloudflare token is typed hidden, handed to curl on stdin, and used no
 });
 
 test('the GitHub mirror token is typed hidden and goes to Secrets Manager only', ({ SETUP }) => {
-  assert.match(SETUP, /read -rsp "Paste the token \(Enter to skip for now\): " t/);
+  assert.match(SETUP, /read -rsp "[^"$`]*" t; echo/);
   const puts = SETUP.split('\n').filter((l) => /put-secret-value/.test(l) && /github-mirror-token/.test(l));
   assert.equal(puts.length, 1);
   assert.match(puts[0], /--secret-string "\$t"/);
