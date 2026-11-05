@@ -1,0 +1,59 @@
+# b-green: node --test scripts/eng/free-tier-guard.test.mjs on this worktree (Node v22.23.4; PyYAML 6.0.3 on PYTHONPATH, so the PyYAML cross-check runs and is not skipped)
+ok 1 - free-tier guard: the repository today names no Premium-only API path or setting (scans infra/gitlab-engineering and scripts/eng)
+ok 2 - free-tier guard negative control: a fixture file per forbidden name, and the scanner catches every one under its own rule
+ok 3 - free-tier guard: every rule names its tier and the documentation page whose banner was checked
+ok 4 - free-tier guard: Free-tier names that the sync and the merge bot use pass (near misses), and so do comments, test files, documents and files outside the two folders
+ok 5 - free-tier guard: the approvals rule flags the project configuration path and lets the Free merge request endpoints through
+ok 6 - central CI: exactly three files, named as gitlab-settings.json says, one per project, and nothing else in the folder
+ok 7 - central CI: every file parses, and its structure is what plan section 3.3 promises (workflow, retry, tag, interruptible, no deploy, no secret, nothing Premium)
+ok 8 - central CI: merge-request pipelines come first in workflow.rules, and the main-only rules of milestone 1 stay for the mirrored projects
+ok 9 - central CI: default has tag vitana-eng, interruptible, and one retry for runner_system_failure and stuck_or_timeout_failure only
+ok 10 - central CI: the platform and vitana-v1 jobs are those of milestone 1, unchanged (typecheck: npm ci then pnpm run typecheck; gateway-jest: pnpm install --frozen-lockfile)
+ok 11 - central CI: the required jobs of gitlab-settings.json are real jobs of the project's file; rehearsal has the job unit, which runs the seed's tests
+ok 12 - central CI structural walk: a file that breaks a promise is reported, one problem per promise (negative control)
+ok 13 - central CI reader: it refuses what it cannot read instead of misreading it
+ok 14 - central CI reader agrees with PyYAML on every file of the folder
+ok 15 - vitana-settings.service: one tick of `gitlab-settings.mjs apply` under flock -n -E 0, niced and capped, with the env file, root, and room to write /etc/vitana
+ok 16 - vitana-settings.service: the command line is one that gitlab-settings.mjs itself accepts (contract with part A)
+ok 17 - vitana-settings.timer: every 10 minutes after a start delay, starts the service, installed on timers.target
+ok 18 - vitana-platform-sync.service: fetch and merge --ff-only under one flock, no rebase, no reset, no force, the token through GIT_ASKPASS only
+ok 19 - vitana-platform-sync.timer: every minute, starts the service, installed on timers.target
+ok 20 - the four units are exactly the files the lane owns in host/units, and each timer names the service of its pair
+ok 21 - settings.tf is a second file of the same module: no provider, backend, terraform block or variable, no name another file uses, only the policy and its attachment
+ok 22 - settings.tf: every reference to another file points at something main.tf really declares
+ok 23 - settings.tf: an inline policy named settings on the role of the GitLab machine, built from its policy document, and no other role is touched
+ok 24 - settings.tf policy, statement by statement: the agent tokens, the fleet runner token, the webhook signing token, and the key
+ok 25 - settings.tf policy: no wildcard action, no bare wildcard resource, no write that the sync does not make
+ok 26 - settings.tf creates no secret (the fleet lane creates the runner token secret, the sync the agent secrets) and says why each wildcard and the KMS rights are what they are
+ok 27 - settings.tf matches what part A really calls: Secrets Manager get-secret-value, put-secret-value and create-secret only, on the secrets of its SECRETS table, with no tags and no KMS key
+ok 28 - ops-install.sh is a strict bash script, installs node only from a pinned version with a pinned SHA256, over https, and never pipes a download into a shell
+ok 29 - ops-install.sh handles secrets safely: the token goes to curl on stdin, git gets it through GIT_ASKPASS, the token file is 0600, the log is scrubbed
+ok 30 - ops-install.sh first run: node, the git helper, the checkout, every unit by glob, the admin token, ops.d in order, and every timer
+ok 31 - ops-install.sh second run: nothing changes and it says so (no download, no clone, no reload, no new token, no timer touched)
+ok 32 - ops-install.sh: a refused admin token is replaced; an unreachable GitLab is not mistaken for a refused token
+ok 33 - ops-install.sh: what gitlab-rails prints is scrubbed of the token before it is logged, and a failing gitlab-rails leaves no token file
+ok 34 - ops-install.sh: a failing ops.d script is logged and the others still run; the exit code says so at the end
+ok 35 - ops-install.sh: a tarball with the wrong SHA256, or one that nodejs.org does not list, installs nothing; the steps that do not need node still run
+ok 36 - ops-install.sh: a checkout with no host/units says what is missing; no mirror token, or a project the mirror has not filled, stops the steps that need the checkout and nothing else
+ok 37 - ops-install.sh: a later run fast-forwards the checkout; a checkout that cannot fast-forward is left as it was and reported
+ok 38 - ops-install.sh: a changed timer file is picked up (the running timer is restarted), and a unit file the checkout changed is replaced
+ok 39 - ops-install.sh stops and says why when the environment file of milestone 1 is missing
+ok 40 - m2.sh is a strict bash script with the four commands, no xtrace, and no command that prints a secret
+ok 41 - m2.sh: no command, an unknown command or --help print the usage; an unknown command is a usage mistake (exit 2) and calls nothing
+ok 42 - m2.sh install: sends host/ops-install.sh itself (compressed, byte for byte) to the GitLab machine and runs it with bash; prints the result
+ok 43 - m2.sh install: Systems Manager that refuses the command (the machine has not registered with it yet) is said plainly
+ok 44 - m2.sh status, all well: the four timers, no drift, the last good run, the mail confirmed, every alarm, the fleet token; exit 0; no secret printed
+ok 45 - m2.sh status: an unconfirmed alert subscription is shown loudly and makes the status fail
+ok 46 - m2.sh status: a missing alarm, an empty fleet token, drift, a stopped timer and no good run are each reported, and each makes the status fail
+ok 47 - m2.sh status: the script it sends runs for real on stand-ins: timers, the drift lines of `check` (exit 3), and the date of the last good tick from the journal
+ok 48 - m2.sh settings: pulls the newest main first, then runs the sync now, and prints this run's log; the script it sends runs for real on stand-ins
+ok 49 - m2.sh rehearse: runs scripts/eng/rehearse.mjs --project rehearsal --agents 12 on the machine; when the file is absent it says so plainly and exits 1; nothing is run then
+ok 50 - m2.sh finds the engineering account and the machine by itself when state.env is missing, and stops with a clear message when it cannot
+ok 51 - the pieces agree: ops-install.sh installs what the units run (git helper path, node path, env file, token file), and m2.sh asks for the timers that exist
+# tests 51
+# pass 51
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 5355.579224
