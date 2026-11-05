@@ -1,0 +1,2 @@
+RESULT: deploy or protected-gate-file matches in changed files = 1 (required 0)
+CHECK: changed files matching PR-GATE, PLAN-SPAR, AWS-PROD, AWS-STAGE, DEPLOY or protected
