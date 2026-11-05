@@ -1,0 +1,4 @@
+# VTID-05564 STAGING-VERIFY check-pr, 2026-11-05T21:59:04Z
+$ node scripts/ci/staging-verify/run.mjs check-pr --service gateway --repo-root /projects/sandbox/.rv/svcwd --base d73fec53f96ab8fbfb5fbdf002ae9fa2cf00376d --head e41c1fc9eac5ecdbe6ee41833c22a5f25a3e14a8 --title "VTID-05564 (agentic-delivery/sv-cwd): run the three eng-platform-p01 staging suites in services/gateway"
+[staging-verify] PR touches no gateway deploy path — nothing deploys, no staging suite needed.
+[exit 0]
