@@ -1,0 +1,17 @@
+# dependency graph of lane fleet (VTID-05536): `terraform graph` on the folder with milestone 1's main.tf (builds the graph without any AWS call), then reachability checks.
+# What they prove: a failed quota check or a failed image build stops the apply before the group, the launch template and the manager exist.
+graph exit 0 ; edges: 138 ; stderr bytes: 0
+nodes on a cycle: none
+ok   group needs the finished image (through the launch template) -> True
+ok   manager needs the group -> True
+ok   manager needs the finished image -> True
+ok   group needs the quota check -> True
+ok   group needs the Auto Scaling key grant -> True
+ok   group needs the Spot key grant -> True
+ok   Spot grant needs the Spot role -> True
+ok   image build needs the NAT gateway -> True
+ok   image does NOT need the manager -> False
+ok   image does NOT need the group -> False
+ok   quota check does NOT need anything that is built -> False
+ok   group does NOT need the manager's policy (which names the group's ARN) -> False
+failures: 0

@@ -1,0 +1,60 @@
+# Central CI config for exafyltd/vitana-v1 (plan eng-gitlab-m2 section 3.3). Lives in the GitLab project vitana/ci-config (see platform.gitlab-ci.yml);
+# the settings sync (scripts/eng/gitlab-settings.mjs) copies this file there; edit it here, never in GitLab.
+# The jobs are the ones of milestone 1 (host/ci-v1.yml): they mirror the GitHub UNIT-TESTS and PR-GATE build steps. Lint runs but does not
+# fail the pipeline yet: GitHub gates it with a ratchet against the base branch, which is not ported.
+# What milestone 2 adds is in workflow and default: merge-request pipelines (the mirrored project never gets a merge request, so for it
+# only main and manual runs happen, as before), one retry for a job that lost its machine (spot interruption) or got stuck, and jobs that a
+# newer pipeline may cancel. No deploy job, no secret, no variable that holds a credential, nothing that needs a licence.
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_PIPELINE_SOURCE =~ /^(web|api|schedule)$/
+
+default:
+  tags: [vitana-eng]
+  image: public.ecr.aws/docker/library/node:20-bookworm
+  interruptible: true
+  retry:
+    max: 1
+    when:
+      - runner_system_failure
+      - stuck_or_timeout_failure
+
+stages: [check]
+
+variables:
+  CI: "true"
+  npm_config_cache: "$CI_PROJECT_DIR/.npm"
+
+.install:
+  timeout: 30m
+  cache:
+    key:
+      files: [package-lock.json]
+    paths: [.npm]
+  before_script:
+    - npm ci --no-audit --no-fund --prefer-offline
+
+unit-tests:
+  extends: .install
+  stage: check
+  variables:
+    NODE_OPTIONS: "--max-old-space-size=4096"
+  script:
+    - npm test
+
+build:
+  extends: .install
+  stage: check
+  variables:
+    NODE_OPTIONS: "--max-old-space-size=4096"
+  script:
+    - npm run build
+
+lint:
+  extends: .install
+  stage: check
+  allow_failure: true
+  script:
+    - npm run lint

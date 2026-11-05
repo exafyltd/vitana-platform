@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "gitlab_url": "https://gitlab.vitanaland.com",
+  "group": "vitana",
+  "owners": ["root"],
+  "tokens": { "lifetime_days": 90, "rotate_below_days": 30 },
+  "runners": {
+    "legacy": { "description": "vitana-eng-1", "tags": ["vitana-legacy"], "paused": false },
+    "fleet": { "description": "vitana-eng-fleet", "tags": ["vitana-eng"] }
+  },
+  "projects": {
+    "vitana-platform": {
+      "profile": "mirror",
+      "landing": false,
+      "rehearsal": false,
+      "required_jobs": [],
+      "ci_file": "platform.gitlab-ci.yml"
+    },
+    "vitana-v1": {
+      "profile": "mirror",
+      "landing": false,
+      "rehearsal": false,
+      "required_jobs": [],
+      "ci_file": "v1.gitlab-ci.yml"
+    },
+    "rehearsal": {
+      "profile": "native",
+      "landing": true,
+      "rehearsal": true,
+      "required_jobs": ["unit"],
+      "ci_file": "rehearsal.gitlab-ci.yml"
+    }
+  },
+  "accounts": [
+    {
+      "username": "agent-kiro-exafy",
+      "name": "Kiro seat exafy",
+      "role": "developer",
+      "projects": ["rehearsal"],
+      "scopes": ["api", "write_repository"]
+    },
+    {
+      "username": "agent-kiro-exafyltd",
+      "name": "Kiro seat exafyltd",
+      "role": "developer",
+      "projects": ["rehearsal"],
+      "scopes": ["api", "write_repository"]
+    },
+    {
+      "username": "agent-kiro-jtadic",
+      "name": "Kiro seat jtadic",
+      "role": "developer",
+      "projects": ["rehearsal"],
+      "scopes": ["api", "write_repository"]
+    },
+    {
+      "username": "agent-kiro-hotmail",
+      "name": "Kiro seat hotmail",
+      "role": "developer",
+      "projects": ["rehearsal"],
+      "scopes": ["api", "write_repository"]
+    },
+    {
+      "username": "agent-reviewer",
+      "name": "Reviewer agent",
+      "role": "developer",
+      "projects": ["rehearsal"],
+      "scopes": ["api", "write_repository"]
+    },
+    {
+      "username": "bot-land",
+      "name": "Merge bot",
+      "role": "maintainer",
+      "projects": ["rehearsal"],
+      "scopes": ["api", "write_repository"],
+      "token_file": "/etc/vitana/bot-land-token"
+    },
+    {
+      "username": "bot-metrics",
+      "name": "CI metrics",
+      "role": "reporter",
+      "projects": ["vitana-platform", "vitana-v1", "rehearsal"],
+      "scopes": ["read_api"],
+      "token_file": "/etc/vitana/bot-metrics-token"
+    }
+  ]
+}

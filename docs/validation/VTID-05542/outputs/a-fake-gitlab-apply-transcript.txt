@@ -1,0 +1,131 @@
+# Full apply of gitlab-settings.json on the fake GitLab (state left by milestone 1: group, ci-config, two mirrored projects, mirror user, runner vitana-eng-1)
+# Source: scripts/eng/gitlab-settings.test.mjs, test "apply: a first apply ... second apply makes zero writes". Secrets and file contents are shown as <hidden>.
+
+## Endpoints the sync is allowed to call (Free tier: the tier banner of each documentation page includes Free). The fake throws on any other.
+  GET    /license                                       https://docs.gitlab.com/api/license/
+  GET    /personal_access_tokens/self                   https://docs.gitlab.com/api/personal_access_tokens/
+  GET    /personal_access_tokens                        https://docs.gitlab.com/api/personal_access_tokens/
+  GET    /personal_access_tokens/:id                    https://docs.gitlab.com/api/personal_access_tokens/
+  POST   /personal_access_tokens/:id/rotate             https://docs.gitlab.com/api/personal_access_tokens/
+  DELETE /personal_access_tokens/:id                    https://docs.gitlab.com/api/personal_access_tokens/
+  POST   /users/:id/personal_access_tokens              https://docs.gitlab.com/api/user_tokens/
+  GET    /users?username=                               https://docs.gitlab.com/api/users/
+  GET    /service_accounts                              https://docs.gitlab.com/api/service_accounts/
+  POST   /service_accounts                              https://docs.gitlab.com/api/service_accounts/
+  GET    /groups/:path                                  https://docs.gitlab.com/api/groups/
+  GET    /projects/:id                                  https://docs.gitlab.com/api/projects/
+  POST   /projects                                      https://docs.gitlab.com/api/projects/
+  PUT    /projects/:id                                  https://docs.gitlab.com/api/projects/
+  GET    /projects/:id/protected_branches               https://docs.gitlab.com/api/protected_branches/
+  POST   /projects/:id/protected_branches               https://docs.gitlab.com/api/protected_branches/
+  PATCH  /projects/:id/protected_branches/:name         https://docs.gitlab.com/api/protected_branches/
+  DELETE /projects/:id/protected_branches/:name         https://docs.gitlab.com/api/protected_branches/
+  GET    /projects/:id/members                          https://docs.gitlab.com/api/project_members/
+  GET    /projects/:id/members/all                      https://docs.gitlab.com/api/project_members/
+  POST   /projects/:id/members                          https://docs.gitlab.com/api/project_members/
+  PUT    /projects/:id/members/:user_id                 https://docs.gitlab.com/api/project_members/
+  DELETE /projects/:id/members/:user_id                 https://docs.gitlab.com/api/project_members/
+  GET    /projects/:id/hooks                            https://docs.gitlab.com/api/project_webhooks/
+  POST   /projects/:id/hooks                            https://docs.gitlab.com/api/project_webhooks/
+  PUT    /projects/:id/hooks/:hook_id                   https://docs.gitlab.com/api/project_webhooks/
+  DELETE /projects/:id/hooks/:hook_id                   https://docs.gitlab.com/api/project_webhooks/
+  GET    /runners/all                                   https://docs.gitlab.com/api/runners/
+  GET    /runners/:id                                   https://docs.gitlab.com/api/runners/
+  PUT    /runners/:id                                   https://docs.gitlab.com/api/runners/
+  POST   /user/runners                                  https://docs.gitlab.com/api/users/
+  POST   /runners/:id/reset_authentication_token        https://docs.gitlab.com/api/runners/
+  GET    /projects/:id/repository/files/:path           https://docs.gitlab.com/api/repository_files/
+  POST   /projects/:id/repository/commits               https://docs.gitlab.com/api/commits/
+
+## First run: 66 GitLab calls (36 of them writes), in order
+  0  GET    /license
+  1  GET    /personal_access_tokens/self
+  2  GET    /service_accounts
+  3  GET    /users?username=agent-kiro-exafy
+  4  GET    /users?username=agent-kiro-exafyltd
+  5  GET    /users?username=agent-kiro-jtadic
+  6  GET    /users?username=agent-kiro-hotmail
+  7  GET    /users?username=agent-reviewer
+  8  GET    /users?username=bot-land
+  9  GET    /users?username=bot-metrics
+ 10  GET    /groups/vitana
+ 11  GET    /projects/vitana%2Fci-config
+ 12  GET    /projects/101/members
+ 13  GET    /projects/vitana%2Fvitana-platform
+ 14  GET    /projects/106/members
+ 15  GET    /projects/106/protected_branches
+ 16  GET    /projects/106/members/all
+ 17  GET    /projects/106/hooks
+ 18  GET    /projects/vitana%2Fvitana-v1
+ 19  GET    /projects/111/members
+ 20  GET    /projects/111/protected_branches
+ 21  GET    /projects/111/members/all
+ 22  GET    /projects/111/hooks
+ 23  GET    /projects/vitana%2Frehearsal
+ 24  GET    /runners/all?type=instance_type
+ 25  GET    /runners/5
+ 26  GET    /projects/101/repository/files/platform.gitlab-ci.yml?ref=main
+ 27  GET    /projects/101/repository/files/rehearsal.gitlab-ci.yml?ref=main
+ 28  GET    /projects/101/repository/files/v1.gitlab-ci.yml?ref=main
+ 29  PUT    /runners/5   { tag_list="vitana-legacy" }
+ 30  POST   /service_accounts   { name="Kiro seat exafy" username="agent-kiro-exafy" }
+ 31  POST   /service_accounts   { name="Kiro seat exafyltd" username="agent-kiro-exafyltd" }
+ 32  POST   /service_accounts   { name="Kiro seat jtadic" username="agent-kiro-jtadic" }
+ 33  POST   /service_accounts   { name="Kiro seat hotmail" username="agent-kiro-hotmail" }
+ 34  POST   /service_accounts   { name="Reviewer agent" username="agent-reviewer" }
+ 35  POST   /service_accounts   { name="Merge bot" username="bot-land" }
+ 36  POST   /service_accounts   { name="CI metrics" username="bot-metrics" }
+ 37  POST   /projects/101/repository/commits   { branch="main" commit_message="vitana-eng: sync platform.gitlab-ci.yml, rehearsal.gitlab-ci.yml, v1.gitlab-ci.yml from infra/gitlab-engineering/ci (gitlab-settings)" actions=[{"action":"update","file_path":"platform.gitlab-ci.yml","content":"# central CI for vitana-platform\nworkflow:\n  rules:\n    - if: $CI_COMMIT_BRANCH == \"main\"\n"},{"action":"create","file_path":"rehearsal.gitlab-ci.yml","content":"# central CI for rehearsal\nunit:\n  script: [node --test]\n"},{"action":"update","file_path":"v1.gitlab-ci.yml","content":"# central CI for vitana-v1\nunit-tests:\n  script: [npm test]\n"}] }
+ 38  POST   /projects   { name="rehearsal" path="rehearsal" namespace_id=10 visibility="private" initialize_with_readme=true ci_config_path="rehearsal.gitlab-ci.yml@vitana/ci-config:main" }
+ 39  PUT    /projects/123   { merge_method="ff" squash_option="always" only_allow_merge_if_pipeline_succeeds=true only_allow_merge_if_all_discussions_are_resolved=true remove_source_branch_after_merge=true automatic_rebase_enabled=false squash_commit_template="%{title}" merge_commit_template="%{title}" }
+ 40  GET    /projects/123/protected_branches
+ 41  DELETE /projects/123/protected_branches/main
+ 42  POST   /projects/123/protected_branches   { name="main" push_access_level=0 merge_access_level=40 allow_force_push=false }
+ 43  POST   /projects/101/members   { user_id=116 access_level=20 }
+ 44  POST   /projects/101/members   { user_id=117 access_level=20 }
+ 45  POST   /projects/101/members   { user_id=118 access_level=20 }
+ 46  POST   /projects/101/members   { user_id=119 access_level=20 }
+ 47  POST   /projects/101/members   { user_id=120 access_level=20 }
+ 48  POST   /projects/101/members   { user_id=121 access_level=20 }
+ 49  POST   /projects/106/members   { user_id=122 access_level=20 }
+ 50  POST   /projects/111/members   { user_id=122 access_level=20 }
+ 51  POST   /projects/123/members   { user_id=116 access_level=30 }
+ 52  POST   /projects/123/members   { user_id=117 access_level=30 }
+ 53  POST   /projects/123/members   { user_id=118 access_level=30 }
+ 54  POST   /projects/123/members   { user_id=119 access_level=30 }
+ 55  POST   /projects/123/members   { user_id=120 access_level=30 }
+ 56  POST   /projects/123/members   { user_id=121 access_level=40 }
+ 57  POST   /projects/123/members   { user_id=122 access_level=20 }
+ 58  POST   /user/runners   { runner_type="instance_type" description="vitana-eng-fleet" tag_list="vitana-eng" run_untagged=false locked=false access_level="not_protected" paused=false }
+ 59  POST   /users/116/personal_access_tokens   { name="vitana-settings" scopes=["api","write_repository"] expires_at="2027-02-03" }
+ 60  POST   /users/117/personal_access_tokens   { name="vitana-settings" scopes=["api","write_repository"] expires_at="2027-02-03" }
+ 61  POST   /users/118/personal_access_tokens   { name="vitana-settings" scopes=["api","write_repository"] expires_at="2027-02-03" }
+ 62  POST   /users/119/personal_access_tokens   { name="vitana-settings" scopes=["api","write_repository"] expires_at="2027-02-03" }
+ 63  POST   /users/120/personal_access_tokens   { name="vitana-settings" scopes=["api","write_repository"] expires_at="2027-02-03" }
+ 64  POST   /users/121/personal_access_tokens   { name="vitana-settings" scopes=["api","write_repository"] expires_at="2027-02-03" }
+ 65  POST   /users/122/personal_access_tokens   { name="vitana-settings" scopes=["read_api"] expires_at="2027-02-03" }
+
+## Secrets Manager calls of the first run
+  aws secretsmanager get-secret-value --secret-id vitana/engineering/gitlab/fleet-runner-token
+  aws secretsmanager put-secret-value --secret-id vitana/engineering/gitlab/fleet-runner-token   (value on stdin: <hidden>)
+  aws secretsmanager put-secret-value --secret-id vitana/engineering/gitlab/agents/agent-kiro-exafy   (value on stdin: <hidden>)
+  aws secretsmanager create-secret --name vitana/engineering/gitlab/agents/agent-kiro-exafy   (value on stdin: <hidden>)
+  aws secretsmanager put-secret-value --secret-id vitana/engineering/gitlab/agents/agent-kiro-exafyltd   (value on stdin: <hidden>)
+  aws secretsmanager create-secret --name vitana/engineering/gitlab/agents/agent-kiro-exafyltd   (value on stdin: <hidden>)
+  aws secretsmanager put-secret-value --secret-id vitana/engineering/gitlab/agents/agent-kiro-jtadic   (value on stdin: <hidden>)
+  aws secretsmanager create-secret --name vitana/engineering/gitlab/agents/agent-kiro-jtadic   (value on stdin: <hidden>)
+  aws secretsmanager put-secret-value --secret-id vitana/engineering/gitlab/agents/agent-kiro-hotmail   (value on stdin: <hidden>)
+  aws secretsmanager create-secret --name vitana/engineering/gitlab/agents/agent-kiro-hotmail   (value on stdin: <hidden>)
+  aws secretsmanager put-secret-value --secret-id vitana/engineering/gitlab/agents/agent-reviewer   (value on stdin: <hidden>)
+  aws secretsmanager create-secret --name vitana/engineering/gitlab/agents/agent-reviewer   (value on stdin: <hidden>)
+  aws secretsmanager put-secret-value --secret-id vitana/engineering/gitlab/agents/bot-land   (value on stdin: <hidden>)
+  aws secretsmanager create-secret --name vitana/engineering/gitlab/agents/bot-land   (value on stdin: <hidden>)
+  aws secretsmanager put-secret-value --secret-id vitana/engineering/gitlab/agents/bot-metrics   (value on stdin: <hidden>)
+  aws secretsmanager create-secret --name vitana/engineering/gitlab/agents/bot-metrics   (value on stdin: <hidden>)
+
+## Files written under /etc/vitana in the first run
+  /etc/vitana/bot-land-token  mode 0600  (token: <hidden>)
+  /etc/vitana/bot-metrics-token  mode 0600  (token: <hidden>)
+
+## Second run: 82 GitLab calls, 0 writes; Secrets Manager writes: 0; /etc/vitana writes: 0
+  calls by method: {"GET":82}
