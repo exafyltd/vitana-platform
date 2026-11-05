@@ -1,0 +1,278 @@
+# $ TERRAFORM=<terraform> PART=<i>/6 bash outputs/mutate-monitoring.sh <worktree>      for i in 0..5, in parallel (each part runs every sixth mutation)
+# count-only: 181 run_str mutations checked, 0 not found exactly once
+# A mutation counts as caught only when the mutated file still parses (node --check, bash -n, terraform fmt, an ini line check) and at least one test case fails by name.
+# NOOP, AMBIGUOUS, INVALID, CRASH, HUNG and SURVIVED are reported as not caught.
+
+## part 0/6
+baseline: tests 104 and pass 104 on the unmutated tree
+caught      oldest pending job: reads the pending count  <- alarm vitana-eng-oldest-pending-job: OldestPendingJobAgeSeconds Greate|every metric, dimension and namespace an alarm reads is one that ci-me
+caught      fleet at maximum: one datapoint is enough  <- alarm vitana-eng-fleet-at-maximum: FleetRunningJobs GreaterThanOrEqual
+caught      host status: threshold 1  <- alarm vitana-eng-gitlab-host-status: StatusCheckFailed GreaterThanThre
+caught      disk: missing data breaches  <- alarm vitana-eng-gitlab-disk-used: disk_used_percent GreaterThanThresh|a heartbeat that goes quiet is an alarm; a queue number that is missin
+caught      backup: 24 h, not 30  <- alarm vitana-eng-backup-age: BackupAgeSeconds GreaterThanThreshold 108|the tick alarms are 15 minutes (900 s) of age on the two units of plan
+caught      merge bot: missing data does not breach  <- alarm vitana-eng-merge-bot-tick: TickAgeSeconds GreaterThanThreshold 9|a heartbeat that goes quiet is an alarm; a queue number that is missin
+caught      alarm renamed  <- alarm vitana-eng-backup-age: BackupAgeSeconds GreaterThanThreshold 108
+caught      alarm description emptied  <- alarm vitana-eng-backup-age: BackupAgeSeconds GreaterThanThreshold 108
+caught      key deletion window 7 days  <- topic vitana-eng-alerts is encrypted with its own customer-managed key
+caught      key policy: any account's alarms  <- key policy: the account keeps control, and cloudwatch.amazonaws.com ma
+caught      recipient does not fall back to admin_email  <- the e-mail subscription goes to alert_email, or to the admin_email set
+caught      budget third notification dropped  <- budget: monthly, in dollars, from a variable, with mails at 50, 80 and
+caught      budget mails on the forecast  <- budget: monthly, in dollars, from a variable, with mails at 50, 80 and
+caught      metrics permission is also a read  <- the host role may publish metrics to the namespace Vitana/Engineering 
+caught      variable declared twice  <- monitoring.tf is a second file of the same module: it declares no prov|every variable has a default, so the owner's existing setup.sh apply n
+caught      service is not a one-shot  <- vitana-ci-metrics.service: one tick under flock -n -E 0, niced, CPU an
+caught      service asks another GitLab  <- vitana-ci-metrics.service: one tick under flock -n -E 0, niced, CPU an|every metric, dimension and namespace an alarm reads is one that ci-me
+caught      service without the environment file  <- vitana-ci-metrics.service: one tick under flock -n -E 0, niced, CPU an
+caught      service without a home for the CLI  <- vitana-ci-metrics.service: one tick under flock -n -E 0, niced, CPU an
+caught      timer with a 1 h accuracy  <- vitana-ci-metrics.timer: every minute, 5 s accuracy, starts the servic
+caught      package installed with --force-all  <- 20-cwagent.sh is a strict bash script, installs only a package whose A
+caught      package from another path  <- 20-cwagent.sh is a strict bash script, installs only a package whose A|first run: downloads the package, its signature and the key over https
+caught      agent only started when the file changed  <- configuration unchanged but the agent has stopped: it is started again
+caught      agent loses the InstanceId dimension  <- the agent publishes disk_used_percent of / to the namespace Vitana/Eng
+caught      namespace changed  <- the namespace, metric names, unit names and fleet tag are the ones the|a healthy minute: one put-metric-data call with every metric, the fail
+caught      fleet metric renamed  <- the namespace, metric names, unit names and fleet tag are the ones the|a healthy minute: one put-metric-data call with every metric, the fail
+caught      default GitLab deadline 4 minutes  <- parseArgs: defaults are the paths of the units and the values from the
+caught      preparing jobs not counted as running  <- collectQueue: counts and the oldest pending age are right over three p
+caught      the youngest job is the oldest  <- collectQueue: counts and the oldest pending age are right over three p|collectQueue: the numbers of all projects add up and the oldest job of
+caught      no cap on pipeline lookups  <- collectQueue: past the lookup cap the jobs are still counted, only the|collectQueue: under the lookup cap the pipeline of the OLDEST waiting 
+caught      ages are rounded up  <- collectQueue: an age is whole seconds, rounded down (never more than t
+caught      an older observation replaces a newer tick  <- collectTicks: a newer good tick replaces the stored one; an older obse
+caught      state of another version accepted  <- run: a state file of another version, or without a version, is not bel
+caught      the oldest backup is the newest  <- a healthy minute: one put-metric-data call with every metric, the fail|collectBackupAge: the age of the newest object under backups/ and the 
+caught      failure metric published inverted  <- a healthy minute: one put-metric-data call with every metric, the fail|GitLab answers 500: the failure metric is published, no queue number i
+caught      an empty publish makes a call  <- publishMetrics: nothing to publish means no call
+caught      the token is not removed from logs  <- the logger itself removes the exact token, also when it has no GitLab 
+caught      token env fallback  <- ci-metrics.mjs is read only on GitLab: no write method, no shell, noth
+caught      no region needed  <- parseArgs: a usage mistake is a UsageError (unknown command or option,
+caught      the read-only module writes to GitLab  <- collectQueue: counts and the oldest pending age are right over three p|collectQueue: the numbers of all projects add up and the oldest job of
+
+mutations: 40, caught: 40, not caught: 0
+
+## part 1/6
+baseline: tests 104 and pass 104 on the unmutated tree
+caught      oldest pending job: threshold 20 min  <- alarm vitana-eng-oldest-pending-job: OldestPendingJobAgeSeconds Greate|the tick alarms are 15 minutes (900 s) of age on the two units of plan
+caught      oldest pending job: average, not maximum  <- alarm vitana-eng-oldest-pending-job: OldestPendingJobAgeSeconds Greate
+caught      fleet at maximum: missing data breaches  <- alarm vitana-eng-fleet-at-maximum: FleetRunningJobs GreaterThanOrEqual|a heartbeat that goes quiet is an alarm; a queue number that is missin
+caught      host status: another service namespace  <- alarm vitana-eng-gitlab-host-status: StatusCheckFailed GreaterThanThre
+caught      disk: period 1 min  <- alarm vitana-eng-gitlab-disk-used: disk_used_percent GreaterThanThresh
+caught      backup: missing data does not breach  <- alarm vitana-eng-backup-age: BackupAgeSeconds GreaterThanThreshold 108|a heartbeat that goes quiet is an alarm; a queue number that is missin
+caught      merge bot: fires on one datapoint  <- alarm vitana-eng-merge-bot-tick: TickAgeSeconds GreaterThanThreshold 9
+caught      alarm resource renamed (one of eight gone)  <- monitoring.tf is a second file of the same module: it declares no prov|every reference to milestone 1 points at something main.tf really decl
+caught      topic renamed  <- topic vitana-eng-alerts is encrypted with its own customer-managed key
+caught      key without its policy  <- topic vitana-eng-alerts is encrypted with its own customer-managed key|wildcards: only kms:* for the account in the key policy, kms:GenerateD
+caught      key policy: any alarm ARN  <- key policy: the account keeps control, and cloudwatch.amazonaws.com ma
+caught      address check dropped  <- the e-mail subscription goes to alert_email, or to the admin_email set
+caught      budget yearly  <- budget: monthly, in dollars, from a variable, with mails at 50, 80 and
+caught      budget notifies the topic as well  <- budget: monthly, in dollars, from a variable, with mails at 50, 80 and
+caught      metrics permission on the runner role  <- every reference to milestone 1 points at something main.tf really decl|the host role may publish metrics to the namespace Vitana/Engineering 
+caught      a provider block  <- monitoring.tf is a second file of the same module: it declares no prov
+caught      service without -n  <- vitana-ci-metrics.service: one tick under flock -n -E 0, niced, CPU an
+caught      service runs another script  <- vitana-ci-metrics.service: one tick under flock -n -E 0, niced, CPU an
+caught      service without a state directory  <- vitana-ci-metrics.service: one tick under flock -n -E 0, niced, CPU an|every metric, dimension and namespace an alarm reads is one that ci-me
+caught      service carries a token  <- vitana-ci-metrics.service: one tick under flock -n -E 0, niced, CPU an
+caught      timer starts another unit  <- vitana-ci-metrics.timer: every minute, 5 s accuracy, starts the servic
+caught      script not strict  <- 20-cwagent.sh is a strict bash script, installs only a package whose A|a package whose signature does not verify is not installed
+caught      no signature downloaded  <- first run: downloads the package, its signature and the key over https
+caught      agent configured for on-premises  <- 20-cwagent.sh is a strict bash script, installs only a package whose A|first run: downloads the package, its signature and the key over https
+caught      agent rolls up on another dimension  <- the agent publishes disk_used_percent of / to the namespace Vitana/Eng
+caught      pending metric renamed  <- the namespace, metric names, unit names and fleet tag are the ones the|a healthy minute: one put-metric-data call with every metric, the fail
+caught      settings unit renamed  <- the namespace, metric names, unit names and fleet tag are the ones the|a healthy minute: one put-metric-data call with every metric, the fail
+caught      default request timeout changed  <- parseArgs: defaults are the paths of the units and the values from the
+caught      every running job counts for the fleet  <- collectQueue: counts and the oldest pending age are right over three p|collectQueue: the numbers of all projects add up and the oldest job of
+caught      running pipelines are aged from creation  <- collectQueue: only GET requests are made (the account is read only)|collectQueue: a job of a running pipeline waits from the last finish i
+caught      cap one too late  <- collectQueue: past the lookup cap the jobs are still counted, only the|collectQueue: under the lookup cap the pipeline of the OLDEST waiting 
+caught      an empty queue is not a zero  <- collectQueue: an empty queue is a real zero, read from GitLab
+caught      the stored tick is ignored  <- collectTicks: a run that failed does not count; the age keeps growing |collectTicks: a tick that is running right now is bridged by the last 
+caught      a non-numeric stored time accepted  <- run: a corrupt or foreign state file is ignored (and replaced), not a 
+caught      the config archives count as backups  <- collectBackupAge: the age of the newest object under backups/ and the 
+caught      queue numbers published after a failure  <- buildMetricData: a failed read wins over a queue that is still around
+caught      metrics published to the default namespace  <- a healthy minute: one put-metric-data call with every metric, the fail|publishMetrics: one aws cloudwatch put-metric-data with the namespace,
+caught      a publish failure still exits 0  <- publishing fails: exit code 1, the error is logged, and nothing is thr|the token appears in no log line, error, command line or state file, a
+caught      GitLab retries only once less  <- a GitLab that answers 503 once and then well is read after a retry, no
+caught      bucket name not checked at the command line  <- parseArgs: a usage mistake is a UsageError (unknown command or option,
+caught      the module runs a shell  <- ci-metrics.mjs is read only on GitLab: no write method, no shell, noth
+
+mutations: 41, caught: 41, not caught: 0
+
+## part 2/6
+baseline: tests 104 and pass 104 on the unmutated tree
+caught      oldest pending job: period 5 min  <- alarm vitana-eng-oldest-pending-job: OldestPendingJobAgeSeconds Greate
+caught      oldest pending job: fires below the threshold  <- alarm vitana-eng-oldest-pending-job: OldestPendingJobAgeSeconds Greate
+caught      fleet at maximum: maximum, not minimum  <- alarm vitana-eng-fleet-at-maximum: FleetRunningJobs GreaterThanOrEqual
+caught      host status: system check only  <- alarm vitana-eng-gitlab-host-status: StatusCheckFailed GreaterThanThre
+caught      load balancer: healthy count  <- alarm vitana-eng-gitlab-lb-unhealthy-target: UnHealthyHostCount Greate
+caught      backup: another metric  <- alarm vitana-eng-backup-age: BackupAgeSeconds GreaterThanThreshold 108|every metric, dimension and namespace an alarm reads is one that ci-me
+caught      settings sync: 5 minutes  <- alarm vitana-eng-settings-sync-tick: TickAgeSeconds GreaterThanThresho|the tick alarms are 15 minutes (900 s) of age on the two units of plan
+caught      a ninth alarm  <- monitoring.tf is a second file of the same module: it declares no prov|exactly the eight alarms of plan §3.6 exist
+caught      topic uses the key of milestone 1  <- topic vitana-eng-alerts is encrypted with its own customer-managed key
+caught      key alias renamed  <- topic vitana-eng-alerts is encrypted with its own customer-managed key
+caught      key policy: root statement renamed away  <- key policy: the account keeps control, and cloudwatch.amazonaws.com ma
+caught      subscription precondition removed  <- the e-mail subscription goes to alert_email, or to the admin_email set
+caught      budget in euro  <- budget: monthly, in dollars, from a variable, with mails at 50, 80 and
+caught      budget mails someone else  <- budget: monthly, in dollars, from a variable, with mails at 50, 80 and
+caught      metrics policy renamed  <- the host role may publish metrics to the namespace Vitana/Engineering 
+caught      an inline JSON policy  <- topic vitana-eng-alerts is encrypted with its own customer-managed key|the host role may publish metrics to the namespace Vitana/Engineering 
+caught      service exits 1 on a busy lock  <- vitana-ci-metrics.service: one tick under flock -n -E 0, niced, CPU an
+caught      service is not niced  <- vitana-ci-metrics.service: one tick under flock -n -E 0, niced, CPU an
+caught      service may gain privileges  <- vitana-ci-metrics.service: one tick under flock -n -E 0, niced, CPU an
+caught      service runs as a user without the token file  <- vitana-ci-metrics.service: one tick under flock -n -E 0, niced, CPU an
+caught      timer not installed anywhere  <- vitana-ci-metrics.timer: every minute, 5 s accuracy, starts the servic
+caught      script traces its commands  <- 20-cwagent.sh is a strict bash script, installs only a package whose A
+caught      installs again every run  <- 20-cwagent.sh is a strict bash script, installs only a package whose A|second run: nothing to do, no download, no restart; a changed configur
+caught      agent not started after configuring  <- first run: downloads the package, its signature and the key over https
+caught      agent keeps the device dimension  <- the agent publishes disk_used_percent of / to the namespace Vitana/Eng
+caught      oldest age metric renamed  <- the namespace, metric names, unit names and fleet tag are the ones the|a healthy minute: one put-metric-data call with every metric, the fail
+caught      fleet tag changed  <- the namespace, metric names, unit names and fleet tag are the ones the|collectQueue: counts and the oldest pending age are right over three p
+caught      archived projects included  <- collectQueue: the project list is read page by page, only the projects
+caught      an empty account is an empty queue  <- collectQueue: an account that sees no project is a failure, not an emp
+caught      pending pipelines are looked up too  <- collectQueue: counts and the oldest pending age are right over three p|collectQueue: the numbers of all projects add up and the oldest job of
+caught      a skipped pipeline is aged from creation  <- collectQueue: past the lookup cap the jobs are still counted, only the|collectQueue: a pipeline that vanished between two requests (404) is s
+caught      an unageable queue is a zero  <- collectQueue: when pending jobs exist but none can be aged the oldest |collectQueue: a pipeline that vanished between two requests (404) is s
+caught      an unknown unit is a zero  <- collectTicks: an inactive unit whose Result is not success is not a go|collectTicks: a unit that never ran, or does not exist, gives no datap
+caught      state never saved  <- run: the last good tick is kept in the state file across runs, so a fa|run: a corrupt or foreign state file is ignored (and replaced), not a 
+caught      an empty bucket is a fresh backup  <- collectBackupAge: an empty bucket gives null (no datapoint, so the ala
+caught      a negative number is published  <- buildMetricData: a number that is not finite or is negative is never p
+caught      metrics published in the wrong region  <- a healthy minute: one put-metric-data call with every metric, the fail|publishMetrics: one aws cloudwatch put-metric-data with the namespace,
+caught      a dry run publishes  <- --dry-run reads, prints the metrics it would publish, and writes nothi
+caught      the command is not required  <- parseArgs: a usage mistake is a UsageError (unknown command or option,
+caught      ftp URL accepted  <- parseArgs: a usage mistake is a UsageError (unknown command or option,
+caught      the module imports a package  <- ci-metrics.mjs is read only on GitLab: no write method, no shell, noth
+
+mutations: 41, caught: 41, not caught: 0
+
+## part 3/6
+baseline: tests 104 and pass 104 on the unmutated tree
+caught      oldest pending job: fires on one datapoint  <- alarm vitana-eng-oldest-pending-job: OldestPendingJobAgeSeconds Greate
+caught      oldest pending job: tells nobody  <- alarm vitana-eng-oldest-pending-job: OldestPendingJobAgeSeconds Greate|only alarm_actions: a healthy system sends nothing, and an alarm that 
+caught      fleet at maximum: strictly greater  <- alarm vitana-eng-fleet-at-maximum: FleetRunningJobs GreaterThanOrEqual
+caught      host status: 1 of 1 minute  <- alarm vitana-eng-gitlab-host-status: StatusCheckFailed GreaterThanThre
+caught      load balancer: fires on fewer than 1  <- alarm vitana-eng-gitlab-lb-unhealthy-target: UnHealthyHostCount Greate
+caught      backup: below the threshold  <- alarm vitana-eng-backup-age: BackupAgeSeconds GreaterThanThreshold 108
+caught      settings sync: watches the merge bot  <- alarm vitana-eng-settings-sync-tick: TickAgeSeconds GreaterThanThresho
+caught      an alarm also mails on recovery  <- only alarm_actions: a healthy system sends nothing, and an alarm that 
+caught      topic uses the AWS managed SNS key  <- topic vitana-eng-alerts is encrypted with its own customer-managed key
+caught      key policy names events, not cloudwatch  <- key policy: the account keeps control, and cloudwatch.amazonaws.com ma
+caught      key policy: root principal is everyone  <- key policy: the account keeps control, and cloudwatch.amazonaws.com ma
+caught      budget 50 percent becomes 60  <- budget: monthly, in dollars, from a variable, with mails at 50, 80 and
+caught      budget by usage  <- budget: monthly, in dollars, from a variable, with mails at 50, 80 and
+caught      metrics permission is wider than PutMetricData  <- the host role may publish metrics to the namespace Vitana/Engineering |wildcards: only kms:* for the account in the key policy, kms:GenerateD
+caught      variable alert_email loses its default  <- every variable has a default, so the owner's existing setup.sh apply n
+caught      an output without the topic  <- outputs give m2.sh status what it needs: topic, recipient, alarm names
+caught      service has no lock  <- vitana-ci-metrics.service: one tick under flock -n -E 0, niced, CPU an
+caught      service without a CPU cap  <- vitana-ci-metrics.service: one tick under flock -n -E 0, niced, CPU an
+caught      service sees the real tmp  <- vitana-ci-metrics.service: one tick under flock -n -E 0, niced, CPU an
+caught      service starts before the network  <- vitana-ci-metrics.service: one tick under flock -n -E 0, niced, CPU an
+caught      fingerprint differs by one character  <- 20-cwagent.sh is a strict bash script, installs only a package whose A|first run: downloads the package, its signature and the key over https
+caught      curl ignores an HTTP error (package)  <- first run: downloads the package, its signature and the key over https
+caught      download directory left behind  <- 20-cwagent.sh is a strict bash script, installs only a package whose A|first run: downloads the package, its signature and the key over https
+caught      agent not enabled at boot  <- first run: downloads the package, its signature and the key over https
+caught      agent measures every mount  <- the agent publishes disk_used_percent of / to the namespace Vitana/Eng
+caught      failure metric renamed  <- the namespace, metric names, unit names and fleet tag are the ones the|a healthy minute: one put-metric-data call with every metric, the fail
+caught      backup prefix changed  <- the namespace, metric names, unit names and fleet tag are the ones the|collectBackupAge: the age of the newest object under backups/ and the 
+caught      not only the account's projects  <- collectQueue: counts and the oldest pending age are right over three p|collectQueue: the numbers of all projects add up and the oldest job of
+caught      no readable project is an empty queue  <- collectQueue: when no project can be read at all it is a failure, not 
+caught      the last finish is ignored  <- collectQueue: a job of a running pipeline waits from the last finish i|collectQueue: a pipeline is looked up once however many of its jobs ar
+caught      the newest pending jobs are looked up first  <- collectQueue: under the lookup cap the pipeline of the OLDEST waiting 
+caught      a vanished pipeline fails the read  <- collectQueue: a pipeline that vanished between two requests (404) is s
+caught      a never-started unit is a good tick  <- collectTicks: a unit that never ran, or does not exist, gives no datap
+caught      state saved in a dry run  <- --dry-run reads, prints the metrics it would publish, and writes nothi
+caught      a failed listing is a fresh backup  <- collectBackupAge: a listing that fails gives null and is logged|run: a failing backup listing or a missing bucket leaves the other met
+caught      a null is published as 0  <- run: a failing backup listing or a missing bucket leaves the other met|buildMetricData: a failed read wins over a queue that is still around
+caught      a GitLab error is not caught  <- GitLab answers 500: the failure metric is published, no queue number i|GitLab is unreachable (connection refused): failure metric, no queue n
+caught      units are read before the uptime is known  <- run: the last good tick is kept in the state file across runs, so a fa|run: a state file of another version, or without a version, is not bel
+caught      an unknown option is ignored  <- parseArgs: a usage mistake is a UsageError (unknown command or option,
+caught      a usage error exits 1  <- main: exit 0 for a good run, 2 for a usage mistake (usage text on stde
+
+mutations: 40, caught: 40, not caught: 0
+
+## part 4/6
+baseline: tests 104 and pass 104 on the unmutated tree
+caught      oldest pending job: one evaluation period  <- alarm vitana-eng-oldest-pending-job: OldestPendingJobAgeSeconds Greate
+caught      fleet at maximum: threshold hard-coded  <- alarm vitana-eng-fleet-at-maximum: FleetRunningJobs GreaterThanOrEqual|the fleet alarm threshold is the fleet maximum of plan §3.2 (24) throu
+caught      fleet at maximum: other metric  <- alarm vitana-eng-fleet-at-maximum: FleetRunningJobs GreaterThanOrEqual|every metric, dimension and namespace an alarm reads is one that ci-me
+caught      disk: threshold 90  <- alarm vitana-eng-gitlab-disk-used: disk_used_percent GreaterThanThresh|the agent publishes disk_used_percent of / to the namespace Vitana/Eng
+caught      load balancer: missing data breaches  <- alarm vitana-eng-gitlab-lb-unhealthy-target: UnHealthyHostCount Greate|a heartbeat that goes quiet is an alarm; a queue number that is missin
+caught      merge bot: 30 minutes  <- alarm vitana-eng-merge-bot-tick: TickAgeSeconds GreaterThanThreshold 9|the tick alarms are 15 minutes (900 s) of age on the two units of plan
+caught      settings sync: missing data does not breach  <- alarm vitana-eng-settings-sync-tick: TickAgeSeconds GreaterThanThresho|a heartbeat that goes quiet is an alarm; a queue number that is missin
+caught      an alarm is switched off  <- only alarm_actions: a healthy system sends nothing, and an alarm that 
+caught      topic is not encrypted  <- topic vitana-eng-alerts is encrypted with its own customer-managed key
+caught      key policy: no data key for CloudWatch  <- key policy: the account keeps control, and cloudwatch.amazonaws.com ma|wildcards: only kms:* for the account in the key policy, kms:GenerateD
+caught      subscription protocol sms  <- the e-mail subscription goes to alert_email, or to the admin_email set
+caught      budget 80 percent becomes 90  <- budget: monthly, in dollars, from a variable, with mails at 50, 80 and
+caught      budget amount fixed  <- budget: monthly, in dollars, from a variable, with mails at 50, 80 and
+caught      metrics permission loses its namespace limit  <- the host role may publish metrics to the namespace Vitana/Engineering 
+caught      budget default 500  <- every variable has a default, so the owner's existing setup.sh apply n
+caught      an output without the settings alarm  <- outputs give m2.sh status what it needs: topic, recipient, alarm names
+caught      service reads another token file  <- vitana-ci-metrics.service: one tick under flock -n -E 0, niced, CPU an|every metric, dimension and namespace an alarm reads is one that ci-me
+caught      service without a memory cap  <- vitana-ci-metrics.service: one tick under flock -n -E 0, niced, CPU an
+caught      service may write the whole system  <- vitana-ci-metrics.service: one tick under flock -n -E 0, niced, CPU an
+caught      timer every 5 minutes  <- vitana-ci-metrics.timer: every minute, 5 s accuracy, starts the servic
+caught      fingerprint check inverted  <- first run: downloads the package, its signature and the key over https|a key with another fingerprint stops the script before anything is ins
+caught      package over plain http  <- 20-cwagent.sh is a strict bash script, installs only a package whose A|first run: downloads the package, its signature and the key over https
+caught      configuration always rewritten  <- 20-cwagent.sh is a strict bash script, installs only a package whose A|second run: nothing to do, no download, no restart; a changed configur
+caught      a stopped agent is not an error  <- an agent that does not come up is an error the owner sees (non-zero ex
+caught      agent measures free space  <- the agent publishes disk_used_percent of / to the namespace Vitana/Eng
+caught      tick metric renamed  <- the namespace, metric names, unit names and fleet tag are the ones the|a healthy minute: one put-metric-data call with every metric, the fail
+caught      default token file changed  <- parseArgs: defaults are the paths of the units and the values from the|every metric, dimension and namespace an alarm reads is one that ci-me
+caught      pending jobs not asked for  <- collectQueue: counts and the oldest pending age are right over three p
+caught      a forbidden project fails the read  <- collectQueue: a project that forbids reading its jobs is skipped and l|collectQueue: when no project can be read at all it is a failure, not 
+caught      the oldest finish, not the newest  <- collectQueue: a job of a running pipeline waits from the last finish i
+caught      an undatable job is aged as 0  <- collectQueue: when pending jobs exist but none can be aged the oldest 
+caught      a failed run counts as a good tick  <- collectTicks: an inactive unit whose Result is not success is not a go
+caught      uptime and monotonic clock mixed up  <- a healthy minute: one put-metric-data call with every metric, the fail|GitLab answers 500: the failure metric is published, no queue number i
+caught      state file written without a rename  <- run: the last good tick is kept in the state file across runs, so a fa|run: a corrupt or foreign state file is ignored (and replaced), not a 
+caught      bucket name not checked  <- collectBackupAge: a bucket name that could be read as an option is ref
+caught      tick metric without its unit dimension  <- a healthy minute: one put-metric-data call with every metric, the fail|GitLab answers 500: the failure metric is published, no queue number i
+caught      no deadline on GitLab  <- GitLab hangs: after the deadline the failure metric is published inste
+caught      token file not trimmed  <- a healthy minute: one put-metric-data call with every metric, the fail|GitLab answers 500: the failure metric is published, no queue number i
+caught      a missing value is accepted  <- parseArgs: a usage mistake is a UsageError (unknown command or option,
+caught      a usage error prints no usage  <- main: exit 0 for a good run, 2 for a usage mistake (usage text on stde
+
+mutations: 40, caught: 40, not caught: 0
+
+## part 5/6
+baseline: tests 104 and pass 104 on the unmutated tree
+caught      oldest pending job: missing data breaches  <- alarm vitana-eng-oldest-pending-job: OldestPendingJobAgeSeconds Greate|a heartbeat that goes quiet is an alarm; a queue number that is missin
+caught      fleet at maximum: 10 minutes, not 30  <- alarm vitana-eng-fleet-at-maximum: FleetRunningJobs GreaterThanOrEqual|the fleet alarm threshold is the fleet maximum of plan §3.2 (24) throu
+caught      host status: missing data does not breach  <- alarm vitana-eng-gitlab-host-status: StatusCheckFailed GreaterThanThre|a heartbeat that goes quiet is an alarm; a queue number that is missin
+caught      disk: reads free space  <- alarm vitana-eng-gitlab-disk-used: disk_used_percent GreaterThanThresh|the agent publishes disk_used_percent of / to the namespace Vitana/Eng
+caught      load balancer: target group dimension dropped  <- every reference to milestone 1 points at something main.tf really decl|alarm vitana-eng-gitlab-lb-unhealthy-target: UnHealthyHostCount Greate
+caught      merge bot: watches the settings sync  <- alarm vitana-eng-merge-bot-tick: TickAgeSeconds GreaterThanThreshold 9
+caught      settings sync: wrong unit name  <- alarm vitana-eng-settings-sync-tick: TickAgeSeconds GreaterThanThresho
+caught      namespace of the queue alarms changed  <- the host role may publish metrics to the namespace Vitana/Engineering |every metric, dimension and namespace an alarm reads is one that ci-me
+caught      key rotation off  <- topic vitana-eng-alerts is encrypted with its own customer-managed key
+caught      key policy: CloudWatch may administer  <- key policy: the account keeps control, and cloudwatch.amazonaws.com ma|wildcards: only kms:* for the account in the key policy, kms:GenerateD
+caught      subscription goes to alert_email only  <- the e-mail subscription goes to alert_email, or to the admin_email set
+caught      budget 100 percent becomes 110  <- budget: monthly, in dollars, from a variable, with mails at 50, 80 and
+caught      budget renamed  <- budget: monthly, in dollars, from a variable, with mails at 50, 80 and
+caught      metrics permission for every namespace  <- the host role may publish metrics to the namespace Vitana/Engineering |every metric, dimension and namespace an alarm reads is one that ci-me
+caught      fleet default 12  <- every variable has a default, so the owner's existing setup.sh apply n
+caught      output names the wrong email  <- outputs give m2.sh status what it needs: topic, recipient, alarm names
+caught      service keeps state elsewhere  <- vitana-ci-metrics.service: one tick under flock -n -E 0, niced, CPU an|every metric, dimension and namespace an alarm reads is one that ci-me
+caught      service may run 20 minutes  <- vitana-ci-metrics.service: one tick under flock -n -E 0, niced, CPU an
+caught      service sees home directories  <- vitana-ci-metrics.service: one tick under flock -n -E 0, niced, CPU an
+caught      timer starts after 20 minutes  <- vitana-ci-metrics.timer: every minute, 5 s accuracy, starts the servic
+caught      signature not verified  <- 20-cwagent.sh is a strict bash script, installs only a package whose A|first run: downloads the package, its signature and the key over https
+caught      key over plain http  <- 20-cwagent.sh is a strict bash script, installs only a package whose A|first run: downloads the package, its signature and the key over https
+caught      agent always restarted  <- second run: nothing to do, no download, no restart; a changed configur
+caught      agent namespace changed  <- the agent publishes disk_used_percent of / to the namespace Vitana/Eng|every metric, dimension and namespace an alarm reads is one that ci-me
+caught      agent collects every ten seconds  <- the agent publishes disk_used_percent of / to the namespace Vitana/Eng
+caught      backup metric renamed  <- the namespace, metric names, unit names and fleet tag are the ones the|a healthy minute: one put-metric-data call with every metric, the fail
+caught      default state directory changed  <- parseArgs: defaults are the paths of the units and the values from the|every metric, dimension and namespace an alarm reads is one that ci-me
+caught      running jobs not asked for  <- collectQueue: counts and the oldest pending age are right over three p
+caught      a 500 on a project is skipped like a 403  <- collectQueue: a server error on one project fails the whole read (no p|a read that fails half-way (second project) publishes the failure metr
+caught      pipeline looked up once per job  <- collectQueue: a pipeline is looked up once however many of its jobs ar
+caught      a job in the future gives a negative age  <- collectQueue: a finish time in the future (clock skew) never gives a n|collectQueue: a creation time in the future (clock skew) gives age 0, 
+caught      a running unit counts as a good tick  <- collectTicks: a tick that is running right now is bridged by the last 
+caught      the wrong unit is asked  <- a healthy minute: one put-metric-data call with every metric, the fail|GitLab answers 500: the failure metric is published, no queue number i
+caught      a state write error crashes the run  <- run: a state directory that cannot be written is logged and the metric
+caught      bucket listed in another region  <- collectBackupAge: the age of the newest object under backups/ and the 
+caught      dimension named wrongly  <- a healthy minute: one put-metric-data call with every metric, the fail|GitLab answers 500: the failure metric is published, no queue number i
+caught      deadline never fires  <- GitLab hangs: after the deadline the failure metric is published inste
+caught      any token text accepted  <- an empty or malformed token file is the same failure, and the file con
+caught      a bad number is accepted  <- parseArgs: a usage mistake is a UsageError (unknown command or option,
+caught      --help does nothing  <- main --help prints the usage on stdout and touches nothing
+
+mutations: 40, caught: 40, not caught: 0
+
+TOTAL mutations: 242, caught: 242, not caught: 0
