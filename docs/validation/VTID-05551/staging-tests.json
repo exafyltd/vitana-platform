@@ -1,0 +1,19 @@
+{
+  "vtid": "VTID-05551",
+  "service": "gateway",
+  "note": "Two atlas claims and an optional WORKFLOW input of record-oasis.sh. The atlas has no read endpoint, so on staging this proves the build with the new claims serves; the claims themselves are proven by Jest. record-oasis.sh deploys nothing; its next real run is the next STAGING-VERIFY on GitHub, which records the same body as before.",
+  "read_only": true,
+  "tests": [
+    {
+      "kind": "http",
+      "name": "gateway is alive on the build with the new atlas claims",
+      "path": "/alive",
+      "expect_status": 200
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/atlas-gitlab-route-claims.test.ts test/vtid-04560-role-separation-regression.test.ts",
+      "reason": "The atlas is read in-process by the developer assistant and has no read endpoint; the claims and the drift guard are proven by Jest."
+    }
+  ]
+}

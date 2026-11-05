@@ -1,0 +1,13 @@
+# VTID-05551 (agentic-delivery/prerequisites) — commands run by kiro-exafy-202611041929-802c, branch kiro/agentic-delivery/prerequisites from origin/main 8f3934c8be
+node scripts/collab/queue.mjs claim agentic-delivery/prerequisites --session kiro-exafy-202611041929-802c --repo vitana-platform   # ok
+# services/gateway/node_modules: the same npm ci tree as the scm-webhook worktree (hard-linked copy, not committed)
+# tests written first; red on base:
+(cd services/gateway && npx jest test/atlas-gitlab-route-claims.test.ts)                 # 2 failed, 2 passed (outputs/red-on-base-atlas.txt)
+node --test scripts/ci/staging-verify/record-oasis-workflow.test.mjs                     # 3 failed (the WORKFLOW-set cases), 3 passed (outputs/red-on-base-record-oasis.txt)
+# implementation (domain-atlas.ts: two route claims; record-oasis.sh: --arg wf "${WORKFLOW:-STAGING-VERIFY.yml}" in both jq programs), then green:
+(cd services/gateway && npx jest test/atlas-gitlab-route-claims.test.ts)                 # 4 passed (outputs/green-atlas.txt)
+node --test scripts/ci/staging-verify/record-oasis-workflow.test.mjs scripts/ci/staging-verify/record-oasis.test.cjs   # 15 passed (outputs/green-record-oasis.txt)
+node --test $(find scripts/ci/staging-verify \( -name '*.test.cjs' -o -name '*.test.mjs' \) | sort)   # 94 passed (outputs/staging-verify-scripts.txt; Node 22 reads a bare directory argument as a file, so the files are listed)
+node --test $(find scripts -path '*/node_modules' -prune -o \( -name '*.test.cjs' -o -name '*.test.mjs' \) -print | sort)   # UNIT.yml's command: 618 passed, 1 skipped, 0 failed (outputs/unit-scripts.txt)
+(cd services/gateway && npm run test:roles)                                              # 105 passed, drift guard included (outputs/test-roles.txt)
+(cd services/gateway && npm run typecheck)                                               # exit 0 (outputs/typecheck.txt)

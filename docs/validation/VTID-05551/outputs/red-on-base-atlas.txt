@@ -1,0 +1,31 @@
+    + Array []
+      13 | describe('VTID-05551 atlas claims for the GitLab delivery routes', () => {
+      14 |   test('internal-gitlab-webhook belongs to the deploy domain, and only to it', () => {
+    > 15 |     expect(domainsForRoute('internal-gitlab-webhook.ts').map((d) => d.key)).toEqual(['deploy']);
+         |                                                                             ^
+      16 |     expect(domainsForRoute('internal-gitlab-webhook').map((d) => d.key)).toEqual(['deploy']);
+      17 |   });
+      18 |
+      at Object.<anonymous> (test/atlas-gitlab-route-claims.test.ts:15:77)
+  ● VTID-05551 atlas claims for the GitLab delivery routes › delivery belongs to the deploy domain, and only to it
+    expect(received).toEqual(expected) // deep equality
+    - Expected  - 3
+    + Received  + 1
+    - Array [
+    -   "deploy",
+    - ]
+    + Array []
+      18 |
+      19 |   test('delivery belongs to the deploy domain, and only to it', () => {
+    > 20 |     expect(domainsForRoute('delivery.ts').map((d) => d.key)).toEqual(['deploy']);
+         |                                                              ^
+      21 |     expect(domainsForRoute('delivery').map((d) => d.key)).toEqual(['deploy']);
+      22 |   });
+      23 |
+      at Object.<anonymous> (test/atlas-gitlab-route-claims.test.ts:20:62)
+Test Suites: 1 failed, 1 total
+Tests:       2 failed, 2 passed, 4 total
+Snapshots:   0 total
+Time:        0.469 s
+Ran all test suites matching /test\/atlas-gitlab-route-claims.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

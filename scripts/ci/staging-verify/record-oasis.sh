@@ -3,6 +3,9 @@
 #
 # Called by the "Record result in OASIS" step of .github/workflows/STAGING-VERIFY.yml.
 # Env: SUPABASE_URL, SUPABASE_SVC, RESULTS (results.json path), RUN_URL, SERVICE, SHA.
+# VTID-05551: WORKFLOW (optional) names the pipeline that verified, recorded as
+# metadata.workflow. Unset or empty = "STAGING-VERIFY.yml", so GitHub's rows stay
+# byte for byte as before; the GitLab pipeline sets gitlab:<project>/staging-verify.
 #
 # The event body is written to a file and sent with `curl --data-binary @file`.
 # It used to be passed as one argv argument (`curl -d "$BODY"`): a full run
@@ -24,7 +27,7 @@ BODY_FILE="$(mktemp "${RUNNER_TEMP:-/tmp}/oasis-event.XXXXXX.json")"
 trap 'rm -f "$BODY_FILE"' EXIT
 
 if [ -n "${RESULTS:-}" ] && [ -f "$RESULTS" ]; then
-  jq -c --arg run "${RUN_URL:-}" '{
+  jq -c --arg run "${RUN_URL:-}" --arg wf "${WORKFLOW:-STAGING-VERIFY.yml}" '{
     vtid: (.vtid // "BOOTSTRAP-STAGING-VERIFY"),
     topic: ("staging.verify." + .outcome),
     service: ("staging-verify-" + .service),
@@ -37,7 +40,7 @@ if [ -n "${RESULTS:-}" ] && [ -f "$RESULTS" ]; then
       vtids: .vtids, run_url: $run, production_commit: .production_stamp,
       results: [.results[] | {suite, name, ok, problems} + (if has("attributed") then {attributed} else {} end)],
       missing_suites: .plan.missing, invalid_suites: .plan.invalid,
-      shipping: .shipping, full: (.full // false), workflow: "STAGING-VERIFY.yml",
+      shipping: .shipping, full: (.full // false), workflow: $wf,
       superseded_by: (.superseded_by // null), attribution_cutoff: (.attribution_cutoff // null),
       chain: (.chain // 0)
     }
@@ -45,11 +48,11 @@ if [ -n "${RESULTS:-}" ] && [ -f "$RESULTS" ]; then
 else
   # The runner crashed before writing a result: that is a failed
   # verification, and it must be visible as one.
-  jq -nc --arg svc "${SERVICE:-}" --arg sha "${SHA:-}" --arg run "${RUN_URL:-}" '{
+  jq -nc --arg svc "${SERVICE:-}" --arg sha "${SHA:-}" --arg run "${RUN_URL:-}" --arg wf "${WORKFLOW:-STAGING-VERIFY.yml}" '{
     vtid: "BOOTSTRAP-STAGING-VERIFY", topic: "staging.verify.failed",
     service: ("staging-verify-" + $svc), role: "CICD", model: "staging-verify", status: "error",
     message: ("**Staging verification FAILED — the runner crashed before producing a result.** Not ready for production. Run: " + $run),
-    metadata: { env: "staging", service: $svc, commit: $sha, outcome: "failed", run_url: $run, crashed: true, workflow: "STAGING-VERIFY.yml" }
+    metadata: { env: "staging", service: $svc, commit: $sha, outcome: "failed", run_url: $run, crashed: true, workflow: $wf }
   }' > "$BODY_FILE"
 fi
 

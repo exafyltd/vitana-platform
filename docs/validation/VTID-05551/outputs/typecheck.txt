@@ -1,0 +1,1 @@
+npm run typecheck (tsc --noEmit): exit 0, no errors

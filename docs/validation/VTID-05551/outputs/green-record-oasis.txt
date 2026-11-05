@@ -1,0 +1,18 @@
+ok 1 - WORKFLOW unset: the body is byte-identical to today's
+ok 2 - WORKFLOW empty: treated as unset, the body is byte-identical to today's
+ok 3 - WORKFLOW set: the body differs from today's only in metadata.workflow
+ok 4 - crashed runner, WORKFLOW unset: the body is byte-identical to today's
+ok 5 - crashed runner, WORKFLOW set: the body differs from today's only in metadata.workflow
+ok 6 - WORKFLOW is passed as data: quotes and backslashes stay one JSON string
+ok 7 - a full run (1,100 results, body over 128 KiB) is recorded from a file, not argv
+ok 8 - a passed run is recorded as passed / success
+ok 9 - VTID-05144: superseded_by, attribution_cutoff, chain and per-result attributed reach the body
+ok 10 - VTID-05144: a run without the new fields records null/0 and no attributed key
+ok 11 - runner crashed (no results.json) → recorded as a failed, crashed verification
+ok 12 - missing Supabase credentials fail loudly before anything is sent
+ok 13 - a failed POST fails the step (no silent success)
+ok 14 - the body file is removed after the step
+ok 15 - the workflow step calls the script and never passes the body as an argument
+# tests 15
+# pass 15
+# fail 0

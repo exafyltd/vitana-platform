@@ -1,0 +1,9 @@
+ok 1 - WORKFLOW unset: the body is byte-identical to today's
+ok 2 - WORKFLOW empty: treated as unset, the body is byte-identical to today's
+not ok 3 - WORKFLOW set: the body differs from today's only in metadata.workflow
+ok 4 - crashed runner, WORKFLOW unset: the body is byte-identical to today's
+not ok 5 - crashed runner, WORKFLOW set: the body differs from today's only in metadata.workflow
+not ok 6 - WORKFLOW is passed as data: quotes and backslashes stay one JSON string
+# tests 6
+# pass 3
+# fail 3
