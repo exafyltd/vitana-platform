@@ -15,7 +15,7 @@ paths:
   - scripts/collab/protected-gate-files.json
   - .github/workflows/PR-GATE.yml
   - docs/validation/VTID-*/**
-updated: 2026-11-05T03:54Z
+updated: 2026-11-05T04:00Z
 vtid: VTID-05276
 branch: kiro/kiro-autonomy-fallback/scope-check
 parked_from: executing
@@ -5242,4 +5242,6 @@ park (stale_claim); claim released; Claude unavailable → exafyltd
 ### 2026-11-05T03:48Z · pm-agent · update
 park (stale_claim); claim released; Claude unavailable → exafyltd
 ### 2026-11-05T03:54Z · pm-agent · update
+park (stale_claim); claim released; Claude unavailable → exafyltd
+### 2026-11-05T04:00Z · pm-agent · update
 park (stale_claim); claim released; Claude unavailable → exafyltd
