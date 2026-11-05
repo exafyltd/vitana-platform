@@ -1,0 +1,4 @@
+# STAGING-VERIFY change-suite check for this PR (nothing deploys → no staging-tests.json)
+$ node scripts/ci/staging-verify/run.mjs check-pr --service gateway --repo-root <wt> --base b3d547b66c72ef4b10c680ef7d337db0e61137f7 --head cd946c8f0e5c60e9ec2dce5f9e0dfa5275b59965 --title "VTID-05550 (agentic-delivery/pipelines): one service list drives both repositories' GitLab pipelines"
+[staging-verify] PR touches no gateway deploy path — nothing deploys, no staging suite needed.
+exit=0

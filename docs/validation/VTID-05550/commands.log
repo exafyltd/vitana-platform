@@ -36,3 +36,12 @@
 16:19 node /projects/sandbox/.scratch/tools/pipes/yaml-cross.mjs <worktree>  (Ruby 3.4.10 Psych vs parseYaml, 6 files) → 6 agree; exit 0   outputs/yaml-cross-check.txt
 16:20 node --test $(find scripts -path '*/node_modules' -prune -o \( -name '*.test.cjs' -o -name '*.test.mjs' \) -print | sort)
       → tests 648, pass 647, fail 0, skipped 1 (the existing win32-only skip in a collab test); exit 0     outputs/unit-all.txt
+16:21 git commit (code, evidence, lane ready → executing)                                     → cd946c8f0e
+16:21 node /projects/sandbox/vitana-platform/scripts/collab/land-guard.mjs evidence --repo <wt> --vtid VTID-05550 → ok (before the commit)
+16:21 node scripts/ci/staging-verify/run.mjs check-pr --service gateway --repo-root <wt> --base b3d547b66c --head cd946c8f0e --title "<PR title>"
+      → "PR touches no gateway deploy path — nothing deploys, no staging suite needed"; exit 0     outputs/staging-check-pr.txt
+16:22 node /projects/sandbox/vitana-platform/scripts/collab/preflight.mjs --repo <wt> --base origin/main --head HEAD --branch kiro/agentic-delivery/pipelines --title "<PR title>"
+      → every check passed (Collab tests, Collab handoff, Lane scope, PR-GATE scope/sparring/weakening/red-green, Kiro steering)   outputs/preflight.txt
+16:22 git push origin cd946c8f0e:refs/heads/kiro/agentic-delivery/pipelines; git ls-remote → cd946c8f0e
+16:23 node scripts/ci/validate-pr-locally.cjs --title "<PR title>" --body-file <body> --base main → APPROVED      outputs/validate-pr.txt
+16:23 gh api repos/exafyltd/vitana-platform/pulls (POST, own PR) → #4709 https://github.com/exafyltd/vitana-platform/pull/4709

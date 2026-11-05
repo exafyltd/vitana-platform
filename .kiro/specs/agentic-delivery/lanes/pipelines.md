@@ -1,6 +1,6 @@
 ---
 lane: pipelines
-state: executing
+state: in-review
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -25,7 +25,8 @@ paths:
   - docs/validation/**
 claimed_by: kiro-exafy-202611051542-d83b
 branch: kiro/agentic-delivery/pipelines
-updated: 2026-11-05T16:20Z
+pr: https://github.com/exafyltd/vitana-platform/pull/4709
+updated: 2026-11-05T16:23Z
 vtid: VTID-05550
 ---
 # Lane: pipelines (repo vitana-platform)
@@ -47,3 +48,5 @@ Claimed and built from the spec by a separate builder session (seat exafy; drive
 checks) renders the two pipeline files with `scripts/eng/pipeline-gen.mjs`; templates tpl-checks/main/nightly/assist.
 Tests first: red on base 3 of 3 files (22 of 22 against stubs); green 27 of 27; `--check` exit 0; Psych cross-check 6/6;
 UNIT 648 tests, 647 pass, 0 fail, 1 skip. Decisions and the not-done list in `docs/validation/VTID-05550/acceptance.md`.
+### 2026-11-05T16:23Z · kiro-exafy-202611051542-d83b · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/4709 open; preflight passed. Next: the driver requests the reviewer agent.

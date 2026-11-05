@@ -1,0 +1,16 @@
+# preflight before the push of cd946c8f0e (re-run on the same head to record it)
+$ node /projects/sandbox/vitana-platform/scripts/collab/preflight.mjs --repo <wt> --base origin/main --head cd946c8f0e --branch kiro/agentic-delivery/pipelines --title "VTID-05550 (agentic-delivery/pipelines): one service list drives both repositories' GitLab pipelines"
+preflight vitana-platform /projects/sandbox/.rv/pipes
+  base b3d547b66c72ef4b10c680ef7d337db0e61137f7  head cd946c8f0e5c60e9ec2dce5f9e0dfa5275b59965  branch kiro/agentic-delivery/pipelines
+
+PASS  Collab tests [required]
+PASS  Collab handoff [required]
+PASS  Lane scope [required]
+PASS  PR-GATE scope [report-only in CI (until config.enforce=true)]
+PASS  PR-GATE sparring [report-only in CI (until config.enforce=true)]
+PASS  PR-GATE weakening [report-only in CI (until config.enforce=true)]
+PASS  PR-GATE red-green [report-only in CI (until config.enforce=true)]
+PASS  Kiro steering [report-only in CI (until config.enforce=true)]
+
+preflight: every check passed
+exit=0

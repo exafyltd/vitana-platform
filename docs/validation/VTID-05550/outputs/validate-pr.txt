@@ -1,0 +1,15 @@
+# scripts/ci/validate-pr-locally.cjs on the PR title and body before opening the PR
+$ node scripts/ci/validate-pr-locally.cjs --title "<PR title>" --body-file <pr body> --base main
+  These trees have no governance gate of their own. That is a real gap,
+  not an approval — see VTID-03696.
+APPROVED: 9 in-remit file(s) match the gateway_backend allowlist
+Acceptance mapping OK
+CSP scan: no pattern hits in added lines.
+Build Gate SKIPPED (pass --build to run npm ci && npm run build locally too).
+Route Mount Evidence Gate: no route registration added, skipped.
+OASIS Traceability Gate: OASIS_IMPACT=no.
+APPROVED
+VTID=VTID-05550
+PROFILE=gateway_backend
+Evidence=docs/validation/VTID-05550/
+exit=0
