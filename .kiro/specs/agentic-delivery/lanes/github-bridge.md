@@ -1,6 +1,6 @@
 ---
 lane: github-bridge
-state: in-review
+state: executing
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -15,7 +15,7 @@ paths:
   - infra/gitlab-engineering/host/units/vitana-github-bridge.timer
   - infra/gitlab-engineering/RUNBOOK-github-bridge.md
   - docs/validation/**
-updated: 2026-11-05T05:14Z
+updated: 2026-11-05T16:48Z
 vtid: VTID-05548
 claimed_by: kiro-exafy-202611050107-c4a6
 branch: kiro/agentic-delivery/github-bridge
@@ -79,3 +79,6 @@ Findings: non-blocking: some 03:42Z items stay open, recorded in acceptance.md '
 Findings: non-blocking: independence: the builder sent the driver's heartbeats as kiro-exafy-202611041929-802c (commands.log:11, :128-129). The caller appears in the lane log only in the 23:03Z creation entry, and its one branch commit (137d38dc) carries the reviewer's session, so the self-review rule does not apply.
 Findings: non-blocking: checked, no action needed: the merge bd9cd43d resolved the lane file correctly (branch front matter, seat exafy as on main after #4703; main's four log entries unchanged and in order, then the branch's five entries once each). The PR's other 18 files are byte-identical at 83f8b616 and bd9cd43d. Fix round 1's gate mapping (github-bridge.mjs:101-124) is correct and tested: red on 137d38dc with 7 of 54 failing, green 54 of 54, mutations 25 of 25. The Contract now gives file:line on both sides.
 Next: the lane's seat fixes the two blocking findings and merges current main (a8220f10 and b5544e37 landed after 49cff4a9); the driver then requests a new review on the new head.
+
+### 2026-11-05T16:48Z · kiro-exafy-202611050107-c4a6 · in-review → executing
+Review changes on bd9cd43d (entry above): fixing the two blocking findings.
