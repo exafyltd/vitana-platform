@@ -6,7 +6,9 @@ priority: 3
 repos: [vitana-v1, vitana-platform]
 specs:
   - vitana-platform:native-wave2-ai-pages
+  - vitana-platform:native-wave2-ai-pages-r2
   - vitana-platform:native-wave2-discover-commerce
+  - vitana-platform:native-wave2-discover-commerce-r2
   - vitana-platform:native-wave2-events-calendar
   - vitana-platform:native-wave2-health-biology
   - vitana-platform:native-wave2-health-biology-r3
