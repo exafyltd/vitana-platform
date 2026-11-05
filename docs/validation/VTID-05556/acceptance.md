@@ -16,6 +16,9 @@ AC-4: The dev-sandbox fallback is unchanged in shape: no identity and bridge dis
   TEST: services/gateway/test/services/orb-memory-bridge.test.ts
 AC-5: The flag pins in both deploy workflows are unchanged.
   TEST: services/gateway/test/vtid-04452-staging-orb-recall-pinned.test.ts
-AC-6: Before merge (plan premise 7, task D1): the 14-day production count of not-ok recalls is measured read-only and recorded in
-  outputs/recall-failures.md; above about 0.5% of sessions the lane parks.
-  CHECK: outputs/recall-failures.md (pending: this session has no AWS credentials)
+
+## Merge precondition (plan premise 7, task D1)
+Before merge, the 14-day production count of not-ok recalls (`[VTID-04452] orb recall unavailable`) and of sessions served by
+the legacy read is taken read-only (`scripts/memory/recall-shadow-report.sh /vitana/gateway-awsdr 336`) and recorded in
+`outputs/recall-failures.md`. Above about 0.5% of sessions, the lane parks and the owner is told. Pending: the building
+session has no AWS credentials.
