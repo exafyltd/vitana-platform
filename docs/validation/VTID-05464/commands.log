@@ -1,0 +1,70 @@
+# VTID-05464 (mt-identity-r2/access-token-hook-shadow) — commands and results
+# Worktree base: origin/main 50e55fd3a4. No database or live system was contacted in this session.
+
+## Premise checks (read-only, git checkout)
+$ ls supabase/migrations | tail -3; ls supabase/migrations | wc -l
+20261101110000_mt_launch_tenant_pack_intake.sql / 20261101110100_mt_launch_tenant_content_pipeline.sql; 674 entries
+  -> 20261102032000 / 20261102032100 are free.
+$ grep -rliE "access_token_hook|custom_access_token|tenant_id_shadow|tenant_claim_mismatch" supabase/ services/gateway/src
+(no match) -> no hook and no mismatch log exist yet (plan premise holds).
+$ grep -rn "supabase_auth_admin" supabase/migrations
+(no match) -> no earlier grant to the Auth role.
+$ sed -n 90,104p supabase/migrations/20251231000000_vtid_01101_phase_a_bootstrap.sql
+user_tenants(id, tenant_id, user_id, active_role, is_primary, created_at, updated_at, UNIQUE (tenant_id, user_id));
+idx_user_tenants_user ON (user_id) -> the hook's single lookup index. No later ALTER TABLE adds columns.
+$ grep -rln "FUNCTION public.current_tenant_id" supabase/migrations
+20251229000000_vtid_01051_me_active_role_fix.sql, 20260218000000_fix_maxina_signup_tenant_association.sql
+  -> last definition 20260218000000:33 reads request.tenant_id, claims tenant_id/tenant, app_metadata.active_tenant_id,
+     then user_tenants (auth.uid()). It does NOT ignore browser JWTs (see "Premises found false" in the lane report).
+$ grep -n "DROP\|drop table" scripts/ci/check-migration-drift.cjs
+(no match) -> MIGRATION-DRIFT-CHECK will report tenant_claim_mismatch_log as new drift until it is in
+   scripts/ci/migration-drift-baseline.json (outside this lane's paths).
+$ sed -n 469,505p scripts/ci/staging-verify/run.mjs
+check-pr validates a manifest only when the PR touches a gateway deploy path; this PR touches none.
+
+## Static checks (this session)
+$ node check.mjs <5 SQL files>     # libpg-query 18.2.2: parse() + parsePlPgSQL() (PL/pgSQL bodies and DO blocks)
+OK 20261102032000_vtid_05464_access_token_hook_shadow.sql 10 statements, plpgsql OK
+OK 20261102032100_vtid_05464_tenant_claim_mismatch_log.sql 12 statements, plpgsql OK
+OK 20261102032000_vtid_05464_access_token_hook_shadow_rollback.sql 5 statements, plpgsql OK
+OK supabase/tests/mt_identity_hook_fixture.sql 8 statements, plpgsql OK
+OK supabase/tests/mt_identity_hook_shadow.test.sql 56 statements, plpgsql OK
+$ node -e "…scripts/ci/pr-gate/lib.mjs lintMigration(…)"   # PR-GATE migration lint
+[] [] []   (all three migration files: wrapped in BEGIN/COMMIT, idempotent)
+$ node -e "…validateScope(scope.json,'VTID-05464'); evaluateSparringRecord(plan-sparring.md); evaluateScope(changed files)"
+[] / [] / {"ok":true,"outside":[]}
+$ grep -cE "^SELECT (has_function|function_returns|ok|is|results_eq|throws_ok)\(" supabase/tests/mt_identity_hook_shadow.test.sql
+36   (= SELECT plan(36))
+
+## pgTAP — NOT RUN in this session
+No PostgreSQL server and no Docker daemon are available here, so the pgTAP plan was written but not executed.
+Run on a throwaway local cluster only (PostgreSQL 16 + postgresql-16-pgtap), never on a shared database:
+  initdb -D "$W/data" -U postgres -A trust
+  pg_ctl -D "$W/data" -o "-p 55464 -k $W -c listen_addresses=''" -w start
+  P="psql -X -q -v ON_ERROR_STOP=1 -h $W -p 55464 -U postgres -d postgres"
+  $P -f supabase/tests/mt_identity_hook_fixture.sql
+  $P -f supabase/migrations/20261102032000_vtid_05464_access_token_hook_shadow.sql            # apply
+  $P -f supabase/migrations/20261102032000_vtid_05464_access_token_hook_shadow.sql            # idempotent
+  $P -f supabase/migrations/20261102032000_vtid_05464_access_token_hook_shadow_rollback.sql   # in-order replay: NOTICE, no-op
+  $P -f supabase/migrations/20261102032100_vtid_05464_tenant_claim_mismatch_log.sql           # apply
+  $P -f supabase/migrations/20261102032100_vtid_05464_tenant_claim_mismatch_log.sql           # idempotent
+  pg_prove -h $W -p 55464 -U postgres -d postgres supabase/tests/mt_identity_hook_shadow.test.sql   # expect 36/36
+  $P -f supabase/migrations/20261102032000_vtid_05464_access_token_hook_shadow_rollback.sql   # drops hook + log
+  $P -c "SELECT to_regprocedure('public.custom_access_token_hook_shadow(jsonb)'), to_regclass('public.tenant_claim_mismatch_log')"  # expect NULL, NULL
+  $P -f supabase/migrations/20261102032000_vtid_05464_access_token_hook_shadow_rollback.sql   # second run: no-op
+  $P -f supabase/migrations/20261102032000_vtid_05464_access_token_hook_shadow.sql && $P -f supabase/migrations/20261102032100_vtid_05464_tenant_claim_mismatch_log.sql   # re-apply
+Red on origin/main: the plan fails at its first assertion (has_function) because the hook does not exist there.
+
+## PGlite run of the SQL and pgTAP plan (replaces the "not run on this host" record)
+
+Host: no PostgreSQL server; PGlite (in-process PostgreSQL 17, WASM) from the VTID-05465 harness, throwaway in-memory database. Runner and shim: docs/validation/VTID-05464/pglite/run.mjs and shim.sql. Install the package with `npm i @electric-sql/pglite` in a scratch directory, then `node run.mjs <lane worktree> green|red <output file>`.
+
+$ node run.mjs <lane> red outputs/pglite-red-first-assertion.txt   -> RED A: plan stopped with an error before its first assertion ("function public.custom_access_token_hook_shadow(jsonb) does not exist", raised when pg_temp.hook is created, a SQL function body); RED B (check_function_bodies off): "not ok 1 - hook function exists", 0 of 1 assertions ok
+$ node run.mjs <lane> green outputs/pglite-green-36.txt   -> PASS fixture; PASS forward 032000 apply 1; PASS forward 032000 apply 2; state {hook true, log false}
+$ ... PASS rollback 032000 in-order replay (NOTICE no-op in the file's own guard); state {hook true, log false}
+$ ... PASS forward 032100 apply 1 and apply 2; state {hook true, log true}
+$ ... PASS pgTAP plan 36 after both forward files: 36 of 36 assertions ok
+$ ... PASS rollback 032000 run 1 (drops hook and log); state {hook false, log false}
+$ ... PASS rollback 032000 run 2 (no-op); state {hook false, log false}
+$ ... PASS re-apply forward 032000 and 032100; state {hook true, log true}
+$ ... PASS pgTAP plan 36 after rollback and re-apply: 36 of 36 assertions ok

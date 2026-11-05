@@ -1,0 +1,17 @@
+{
+  "vtid": "VTID-05464",
+  "slug": "mt-identity-r2",
+  "lane": "access-token-hook-shadow",
+  "kind": "feature",
+  "sparring_record": "docs/validation/VTID-05464/plan-sparring.md",
+  "summary": "Shadow custom access-token hook (adds tenant_id_shadow only, fails open, not enabled in Auth) and the service-role-only tenant_claim_mismatch_log soak table, with a rollback and a pgTAP plan.",
+  "paths": [
+    "supabase/migrations/20261102032000_vtid_05464_access_token_hook_shadow.sql",
+    "supabase/migrations/20261102032100_vtid_05464_tenant_claim_mismatch_log.sql",
+    "supabase/migrations/20261102032000_vtid_05464_access_token_hook_shadow_rollback.sql",
+    "supabase/tests/mt_identity_hook_*.sql",
+    "docs/validation/VTID-05464/**"
+  ],
+  "weakens_tests": [],
+  "red_green_exempt": []
+}
