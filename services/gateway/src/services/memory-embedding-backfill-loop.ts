@@ -18,6 +18,7 @@
  */
 
 import { resolveAutomationDeliveryMode } from './automation-shadow';
+import { isMtResolutionV2Enabled } from './mt-flags';
 
 export const BACKFILL_AUTOMATION_ID = 'AP-0910';
 export const BACKFILL_INTERVAL_MS = 30 * 60 * 1000;
@@ -26,6 +27,13 @@ const DEFAULT_TICK_MS = 5 * 60 * 1000;
 export interface BackfillLoopConfig {
   enabled: boolean;
   tenantIds: string[];
+  /**
+   * VTID-05268 (mt-jobs): 'db' ⇒ the tenant set is activeTenantIds(), read on
+   * every tick. Set only when MT_RESOLUTION_V2=true and
+   * MEMORY_EMBEDDING_BACKFILL_TENANT_IDS names no tenant; the env list stays
+   * the override (master off, or pinned).
+   */
+  source?: 'db';
   reason?: string;
 }
 
@@ -39,13 +47,25 @@ export function resolveBackfillLoopConfig(
     .split(',')
     .map((s) => s.trim())
     .filter((s) => /^[0-9a-f-]{36}$/i.test(s));
-  if (tenantIds.length === 0) {
+  const dbSource = tenantIds.length === 0 && isMtResolutionV2Enabled(env);
+  if (tenantIds.length === 0 && !dbSource) {
     return { enabled: false, tenantIds: [], reason: 'MEMORY_EMBEDDING_BACKFILL_TENANT_IDS has no tenant id' };
   }
   if (resolveAutomationDeliveryMode(env) !== 'live') {
     return { enabled: false, tenantIds, reason: 'AUTOMATIONS_DELIVERY_MODE is shadow; the backfill writes, so it never runs here' };
   }
-  return { enabled: true, tenantIds };
+  return dbSource ? { enabled: true, tenantIds: [], source: 'db' } : { enabled: true, tenantIds };
+}
+
+/**
+ * VTID-05268: the tenants one tick runs for. 'db' ⇒ activeTenantIds() (read
+ * on this tick, so a flag flip needs no restart); otherwise the env list.
+ */
+export async function backfillTenantsForTick(
+  cfg: BackfillLoopConfig,
+  loadActive: () => Promise<string[]> = async () => (await import('./jobs/job-tenant-loop')).activeTenantIds(),
+): Promise<string[]> {
+  return cfg.source === 'db' ? loadActive() : cfg.tenantIds;
 }
 
 export interface BackfillDeps {
@@ -109,7 +129,7 @@ export function startMemoryEmbeddingBackfillLoop(
     if (running) return;
     running = true;
     try {
-      const r = await runBackfillTick(cfg.tenantIds);
+      const r = await runBackfillTick(await backfillTenantsForTick(cfg));
       if (r.ran.length || r.failed.length) {
         console.log(`[VTID-04786] embedding backfill ran=${r.ran.length} skipped=${r.skipped.length} failed=${r.failed.length}`);
       }
@@ -127,6 +147,6 @@ export function startMemoryEmbeddingBackfillLoop(
     void tick();
     setInterval(tick, DEFAULT_TICK_MS);
   }, 60_000 + jitterMs);
-  console.log(`🧠 Memory embedding backfill loop started (AP-0910 every 30 min, tenants: ${cfg.tenantIds.length})`);
+  console.log(`🧠 Memory embedding backfill loop started (AP-0910 every 30 min, tenants: ${cfg.source === 'db' ? 'active (DB)' : cfg.tenantIds.length})`);
   return true;
 }

@@ -1,0 +1,9 @@
+{
+  "vtid": "VTID-05408",
+  "service": "gateway",
+  "note": "Developer tooling with no deployed surface. The enforcement lives in scripts/collab/queue.mjs (CI PR-GATE Collab handoff + Lane scope) and in the PM governance.ts merge guard (a pure, no-I/O function); nothing new is served to a user, so there is no staging behaviour to exercise. It is proven in CI, not on staging: `node --test scripts/collab/queue.test.mjs` (T-A..T-K red-on-base captured in red-on-base.log; all 53 existing cases + JSON<->builtin parity green) and the gateway Jest governance suite (npx jest test/project-manager/governance.test.ts). Those run as CI checks (CI scripts / Gateway Jest), not here. The only staging check is read-only: the gateway is alive (unchanged by this lane).",
+  "read_only": true,
+  "tests": [
+    { "kind": "http", "name": "gateway is alive (unchanged by this lane)", "path": "/alive", "expect_status": 200 }
+  ]
+}

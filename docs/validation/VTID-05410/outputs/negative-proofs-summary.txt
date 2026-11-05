@@ -1,0 +1,37 @@
+6:################ (b) seat ownership BEFORE reassignment ################
+8:$ node /projects/sandbox/vitana-platform/scripts/collab/queue.mjs scope-check --base origin/main --head HEAD --repo . --branch kiro/new-member-welcome/say-hello-composer
+9:❌ **lane scope** — 1 problem(s) (lane new-member-welcome/say-hello-composer):
+10:- e3ed5fb0: kiro-jtadic-202610291040-a0e6 (seat jtadic) edits lane new-member-welcome/say-hello-composer, which belongs to seat exafyltd
+13:[exit 1]
+15:$ node /projects/sandbox/vitana-platform/scripts/collab/queue.mjs validate --base origin/main --head HEAD --repo . --branch kiro/new-member-welcome/say-hello-composer
+16:✅ **collab handoff** — 1 handoff/lane file(s) changed, all valid
+419:[exit 0]
+421:################ (a1) same PERM edit, lane WITHOUT lane_admin ################
+423:$ node /projects/sandbox/vitana-platform/scripts/collab/queue.mjs scope-check --base 2e1386cc7b8b0997d9f7412dcf27283676081ac3 --head HEAD --repo . --branch kiro/say-hello-lane-reassign/reassign
+424:✅ **lane scope** — lane say-hello-lane-reassign/reassign: every change is inside its paths
+425:[exit 0]
+427:$ node /projects/sandbox/vitana-platform/scripts/collab/queue.mjs validate --base 2e1386cc7b8b0997d9f7412dcf27283676081ac3 --head HEAD --repo . --branch kiro/say-hello-lane-reassign/reassign
+428:❌ **collab handoff** — 3 problem(s):
+429:- ee8a020e: changes .kiro/specs/new-member-welcome/lanes/grouped-welcome-notifications.md but its Collab-Lane is "say-hello-lane-reassign/reassign" (needs "new-member-welcome/grouped-welcome-notifications", or Collab-Review: new-member-welcome/grouped-welcome-notifications with the front matter unchanged)
+430:- ee8a020e: changes .kiro/specs/new-member-welcome/lanes/new-member-card-optin.md but its Collab-Lane is "say-hello-lane-reassign/reassign" (needs "new-member-welcome/new-member-card-optin", or Collab-Review: new-member-welcome/new-member-card-optin with the front matter unchanged)
+431:- ee8a020e: changes .kiro/specs/new-member-welcome/lanes/say-hello-composer.md but its Collab-Lane is "say-hello-lane-reassign/reassign" (needs "new-member-welcome/say-hello-composer", or Collab-Review: new-member-welcome/say-hello-composer with the front matter unchanged)
+834:[exit 1]
+836:################ (a2) lane_admin: true written only in the PR head ################
+838:$ node /projects/sandbox/vitana-platform/scripts/collab/queue.mjs scope-check --base 2e1386cc7b8b0997d9f7412dcf27283676081ac3 --head HEAD --repo . --branch kiro/say-hello-lane-reassign/reassign
+839:✅ **lane scope** — lane say-hello-lane-reassign/reassign: every change is inside its paths
+840:[exit 0]
+842:$ node /projects/sandbox/vitana-platform/scripts/collab/queue.mjs validate --base 2e1386cc7b8b0997d9f7412dcf27283676081ac3 --head HEAD --repo . --branch kiro/say-hello-lane-reassign/reassign
+843:❌ **collab handoff** — 3 problem(s):
+844:- e8177645: changes .kiro/specs/new-member-welcome/lanes/grouped-welcome-notifications.md but its Collab-Lane is "say-hello-lane-reassign/reassign" (needs "new-member-welcome/grouped-welcome-notifications", or Collab-Review: new-member-welcome/grouped-welcome-notifications with the front matter unchanged)
+845:- e8177645: changes .kiro/specs/new-member-welcome/lanes/new-member-card-optin.md but its Collab-Lane is "say-hello-lane-reassign/reassign" (needs "new-member-welcome/new-member-card-optin", or Collab-Review: new-member-welcome/new-member-card-optin with the front matter unchanged)
+846:- e8177645: changes .kiro/specs/new-member-welcome/lanes/say-hello-composer.md but its Collab-Lane is "say-hello-lane-reassign/reassign" (needs "new-member-welcome/say-hello-composer", or Collab-Review: new-member-welcome/say-hello-composer with the front matter unchanged)
+1249:[exit 1]
+1251:################ (a3) PERM edit committed under the TARGET lane's own key (ordinary lane PR, no lane_admin) ################
+1252:$ node /projects/sandbox/vitana-platform/scripts/collab/queue.mjs scope-check --base origin/main --head HEAD --repo . --branch kiro/new-member-welcome/say-hello-composer
+1253:❌ **lane scope** — 2 problem(s) (lane new-member-welcome/say-hello-composer):
+1254:- lane new-member-welcome/say-hello-composer: executor, seat, reviewer_seat, paths changed in a lane PR — lane permissions come from the base revision (reassign a target lane through an executor: kiro, reviewer_seat: agent:vitana-lane-reviewer lane with lane_admin: true from a trusted source whose paths cover it, or change an executor: claude Claude Code lane)
+1255:- 3475291f: kiro-jtadic-202610291040-a0e6 (seat jtadic) edits lane new-member-welcome/say-hello-composer, which belongs to seat exafyltd
+1258:[exit 1]
+1260:$ node /projects/sandbox/vitana-platform/scripts/collab/queue.mjs validate --base origin/main --head HEAD --repo . --branch kiro/new-member-welcome/say-hello-composer
+1261:✅ **collab handoff** — 1 handoff/lane file(s) changed, all valid
+1664:[exit 0]

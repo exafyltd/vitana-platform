@@ -3,9 +3,10 @@ slug: collab-kiro-governance
 author: kiro
 author_seat: exafyltd
 executor: kiro
-next_actor: kiro
-state: approved
-updated: 2026-10-20T11:32Z
+next_actor: owner
+state: parked
+parked_from: approved
+updated: 2026-10-20T13:55Z
 sparring_record: .kiro/specs/collab-kiro-governance/sparring/verdict.md
 vtids: [VTID-05260, VTID-05261]
 ---
@@ -35,3 +36,17 @@ Lane-scope override, plan A.5); then this plan's author adds `governance: owner`
 Owner instruction 2026-10-20 "ok, go ahead and merge" (for #4211). Squash-merged as 817dd897 with all 9 PR checks green
 (Lane scope included); plan-only PR, nothing deployed. Lane `owner-governance` (VTID-05260) is ready for seat exafy;
 `retry-partner-invalid` (VTID-05261) waits for it.
+### 2026-10-20T13:55Z · kiro-exafyltd-202610201346-3bb3 · approved → parked (superseded)
+Owner decision 2026-10-20 in a Kiro session on account exafyltd@gmail.com: "let's go with Option A".
+- Governance lanes use `governance: true` from `retire-claude-code` (#4210, VTID-05259), not this plan's `governance: owner`.
+- **Lane `owner-governance` (VTID-05260):** parked. Its PRs #4214 and vitana-v1#1467 are closed unmerged, and the parked
+  state lives on branch `kiro/collab-kiro-governance/owner-governance`.
+  - Wrong seat: that lane's session id `kiro-exafy-202610201154-1d48` named seat `exafy`. The work was done from account
+    exafyltd@gmail.com (seat `exafyltd`), because the first instruction said "your seat exafy".
+- **Lane `retry-partner-invalid` (VTID-05261):** not built. It depends on `owner-governance`, and under #4210 it can never
+  gain `governance: true`. Change B is re-planned as plan `plan-spar-retry-invalid` (#4215, lane `retry-invalid`), which
+  gets its own VTID.
+  - The lane file is left untouched: only a session of its seat (`exafy`) may edit it.
+- **Do not build either lane.** VTIDs 05260 and 05261 are not reused.
+- **If #4212 merges first:** it is still open and records the merge of #4211 in this same file. Keep both log entries and
+  this front matter.

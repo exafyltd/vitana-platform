@@ -1,0 +1,52 @@
+TAP version 13
+# Subtest: evidence: missing files are named; committed or staged files count
+ok 1 - evidence: missing files are named; committed or staged files count
+  ---
+  duration_ms: 1.265277
+  type: 'test'
+  ...
+# Subtest: review: same head counts; entry-only commits after it count; a code commit does not
+ok 2 - review: same head counts; entry-only commits after it count; a code commit does not
+  ---
+  duration_ms: 0.509906
+  type: 'test'
+  ...
+# Subtest: checks: latest attempt per name decides; pending and empty never pass
+ok 3 - checks: latest attempt per name decides; pending and empty never pass
+  ---
+  duration_ms: 0.360205
+  type: 'test'
+  ...
+# Subtest: merge: refuses on a stale review, red or pending checks, or a PR behind its base
+ok 4 - merge: refuses on a stale review, red or pending checks, or a PR behind its base
+  ---
+  duration_ms: 0.221883
+  type: 'test'
+  ...
+# Subtest: merge: protected gate files are detected with queue.mjs glob semantics
+ok 5 - merge: protected gate files are detected with queue.mjs glob semantics
+  ---
+  duration_ms: 0.340204
+  type: 'test'
+  ...
+# Subtest: release: a lane only when done/parked; _plan only when the plan and every lane are
+ok 6 - release: a lane only when done/parked; _plan only when the plan and every lane are
+  ---
+  duration_ms: 0.275214
+  type: 'test'
+  ...
+# Subtest: CLI: release of a verified lane exits 1 and leaves the claim ref in place
+ok 7 - CLI: release of a verified lane exits 1 and leaves the claim ref in place
+  ---
+  duration_ms: 422.575553
+  type: 'test'
+  ...
+1..7
+# tests 7
+# suites 0
+# pass 7
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 527.356801

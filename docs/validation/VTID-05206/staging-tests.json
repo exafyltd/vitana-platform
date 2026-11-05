@@ -1,0 +1,7 @@
+{
+  "vtid": "VTID-05206",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "gateway alive", "path": "/alive" }
+  ]
+}

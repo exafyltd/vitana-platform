@@ -1,0 +1,76 @@
+# DRIVER-WAKE — wake an absent plan driver when a sparring or review result arrives (VTID-05354, plan
+# pipeline-agent-wake-and-review lane driver-wake). Logic and limits: scripts/collab/driver-wake.mjs.
+#
+# Safety: the job always checks out `main` (never the pushed branch), so no unreviewed code runs next to the secret;
+# the Kiro prompt is a fixed sentence plus a slug that matched /^[a-z0-9][a-z0-9-]*$/ (no event text); one wake per
+# plan per 20 min, at most 6 per hour repo-wide; a live driver (heartbeat < 45 min) is never woken. Without the
+# repository secret KIRO_API_KEY every run is a green no-op ("wake unavailable"). A woken session never merges and
+# never publishes (docs/kiro/driver-wake.md, "For the woken session"). Switch off: delete the secret, or disable this workflow.
+name: DRIVER-WAKE
+
+on:
+  workflow_run:
+    workflows: ['PLAN-SPAR']
+    types: [completed]
+  push:
+    branches: ['kiro/**']
+    paths: ['.kiro/specs/*/lanes/*.md']
+  workflow_dispatch:
+    inputs:
+      slug:
+        description: 'Plan slug to wake'
+        required: true
+        type: string
+      dry_run:
+        description: 'Decide only: no marker, no session'
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: driver-wake-${{ github.event.workflow_run.head_branch || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  wake:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # A push run attaches a `wake` check to the pushed commit, and land-guard refuses a merge while any check is
+      # red, so this advisory job must never fail a lane's head: every step is continue-on-error and reports in the
+      # job summary instead. Until this lane is on main the script is absent there: skip.
+      - name: Decide
+        id: decide
+        continue-on-error: true
+        env:
+          KIRO_API_KEY_SET: ${{ secrets.KIRO_API_KEY != '' }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && 'true' || 'false' }}
+        run: |
+          if [ ! -f scripts/collab/driver-wake.mjs ]; then echo "driver-wake: not on main yet — skip" >> "$GITHUB_STEP_SUMMARY"; exit 0; fi
+          node scripts/collab/driver-wake.mjs run --repo . --event "$GITHUB_EVENT_PATH" --event-name "$GITHUB_EVENT_NAME"
+
+      - name: Start one Kiro cloud session (fixed prompt)
+        if: steps.decide.outputs.decision == 'wake'
+        continue-on-error: true
+        env:
+          KIRO_API_KEY: ${{ secrets.KIRO_API_KEY }}
+          SLUG: ${{ steps.decide.outputs.slug }}
+        run: |
+          # Kiro CLI headless install (kiro.dev/docs/cli/headless). The installer documents no version pin or checksum.
+          curl -fsSL https://cli.kiro.dev/install | bash
+          export PATH="$HOME/.local/bin:$PATH"
+          prompt="$(node --input-type=module -e "import { wakePrompt } from './scripts/collab/driver-wake.mjs'; console.log(wakePrompt(process.env.SLUG));")"
+          kiro-cli chat --v3 --no-interactive --cloud --repo exafyltd/vitana-platform,exafyltd/vitana-v1 "$prompt" | tail -n 5
+          echo "driver-wake: started a Kiro cloud session for plan $SLUG" >> "$GITHUB_STEP_SUMMARY"

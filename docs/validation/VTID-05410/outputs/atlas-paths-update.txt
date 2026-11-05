@@ -1,0 +1,13 @@
+# Why: CI drift guard on feature PR #4503 head 2b49540699 (Gateway Jest shard 1/4, run 41034365762; also OASIS Persistence CI run 41034365867)
+8564965Z Received 33554432 of 61566374 (54.5%), 32.0 MBs/sec
+0966608Z Received 61566374 of 61566374 (100.0%), 47.3 MBs/sec
+2223840Z     ✕ every gateway route file is claimed by at least one domain (drift guard) (20 ms)
+2293009Z     + Received  + 4
+2294708Z     +   "new-member-greeting-repository.ts",
+2295362Z     +   "new-member-greeting.ts",
+2579883Z     ✓ stamps lastAudioReceivedAt on every inbound audio frame (1 ms)
+0678750Z     + Received  + 4
+
+# Rule: platform CLAUDE.md NEVER 42h — a new route file gets an atlas domain (services/gateway/src/orb/developer/domain-atlas.ts).
+# Change: add exactly one path to lane new-member-welcome/say-hello-composer: services/gateway/src/orb/developer/domain-atlas.ts
+# Also: tests/e2e/staging/vtid-05207-*.staging.spec.ts — the vitana-v1 read-only STAGING-VERIFY Playwright spec for the composer (rules 46-48: no suite, no merge; same convention as VTID-05206's tests/e2e/staging/vtid-05206-community-intro.staging.spec.ts).

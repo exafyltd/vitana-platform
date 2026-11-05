@@ -199,11 +199,11 @@ function listStageDeployRuns(service, runStart) {
   }
 }
 
-function loadManifest(repoRoot, vtid) {
+export function loadManifest(repoRoot, vtid) {
   const p = join(repoRoot, 'docs', 'validation', vtid, 'staging-tests.json');
   if (!existsSync(p)) return null;
   try {
-    return JSON.parse(readFileSync(p, 'utf8'));
+    return lib.parseJsonText(readFileSync(p, 'utf8'));
   } catch (e) {
     return { __parseError: e.message };
   }
@@ -376,7 +376,7 @@ async function verify(args) {
   // VTID-05236: owner-approved coverage for commits that landed without a VTID.
   const coveragePath = join(repoRoot, 'docs', 'validation', 'commit-coverage.json');
   let coverageJson = null;
-  try { coverageJson = existsSync(coveragePath) ? JSON.parse(readFileSync(coveragePath, 'utf8')) : null; } catch (e) { log(`commit-coverage.json unreadable: ${e.message} — ignored`); }
+  try { coverageJson = existsSync(coveragePath) ? lib.parseJsonText(readFileSync(coveragePath, 'utf8')) : null; } catch (e) { log(`commit-coverage.json unreadable: ${e.message} — ignored`); }
   const { coverage, errors: coverageErrors } = lib.parseCommitCoverage(coverageJson);
   for (const e of coverageErrors) log(e);
   for (const v of Object.values(coverage)) if (!(v in manifests)) manifests[v] = loadManifest(repoRoot, v);

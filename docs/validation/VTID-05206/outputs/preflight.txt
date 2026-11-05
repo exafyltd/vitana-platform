@@ -1,0 +1,13 @@
+preflight vitana-platform /projects/sandbox/wt-close-card-optin
+  base ee1d363dd2e5bb6a15c8444c69372ed031e7b67a  head c5d44d569cdcbf7897da261990ae4d140be125df  branch kiro/close/new-member-welcome/new-member-card-optin-i1
+
+PASS  Collab tests [required]
+PASS  Collab handoff [required]
+PASS  Lane scope [required]
+PASS  PR-GATE scope [report-only in CI (until config.enforce=true)]
+PASS  PR-GATE sparring [report-only in CI (until config.enforce=true)]
+PASS  PR-GATE weakening [report-only in CI (until config.enforce=true)]
+PASS  PR-GATE red-green [report-only in CI (until config.enforce=true)]
+PASS  Kiro steering [report-only in CI (until config.enforce=true)]
+
+preflight: every check passed

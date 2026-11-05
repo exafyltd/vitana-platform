@@ -1,0 +1,46 @@
+{
+  "schema": "vitana.plan-timings/v1",
+  "plan_slug": "reviewer-model-fallback",
+  "vtid": "VTID-05335",
+  "vtids": [
+    "VTID-05335"
+  ],
+  "generated_at": "2026-10-22T20:20:00Z",
+  "generated_by": "kiro (pipeline wf_b6d63f5d6dbd1a63, staging step)",
+  "plan_pr_opened_at": "2026-10-22T13:09:19Z",
+  "converged_at": "2026-10-22T13:36:26Z",
+  "policy_approved_at": "2026-10-22T13:36:26Z",
+  "vtids_allocated_at": "2026-10-22T13:36:26Z",
+  "plan_merged_at": "2026-10-22T18:01:13Z",
+  "gate2_sent_at": null,
+  "convergence_ms": 1627000,
+  "vtid_ms": null,
+  "plan_merge_ms": 15887000,
+  "lanes": [
+    {
+      "lane": "chain-coverage",
+      "vtid": "VTID-05335",
+      "claimed_at": null,
+      "pr_opened_at": "2026-10-22T19:32:31Z",
+      "accepted_at": "2026-10-22T19:40:00Z",
+      "merged_at": "2026-10-22T19:56:43Z",
+      "staging_verified_at": null,
+      "build_ms": null,
+      "review_ms": 449000,
+      "merge_ms": 1003000,
+      "review_rounds": 1,
+      "ci_fix_attempts": 0
+    }
+  ],
+  "staging_verify_ms": null,
+  "approved_to_verified_ms": null,
+  "merge_conflict_count": 1,
+  "staging_verify_failure_count": 0,
+  "sources_unavailable": [
+    "vtid_ms: CI PLAN-SPAR allocated the single lane VTID (VTID-05335) on convergence; no VTID-allocation timestamp distinct from policy_approved_at exists, so the policy-approval-to-VTID interval is not measurable (recorded null rather than 0).",
+    "lane claimed_at / build_ms: no GitHub source for the claim instant. The RUN/timings/lane-code-slot1.jsonl lane_started event is a coarse local-clock placeholder (00:00:00Z), so claimed_at and the claim-to-PR build_ms are left null rather than emit a misleading duration. review_ms is anchored on the GitHub PR createdAt (#4343, 2026-10-22T19:32:31Z) and the RUN lane_accepted event (2026-10-22T19:40:00Z); merge_ms on that accept and the GitHub merge (2026-10-22T19:56:43Z).",
+    "staging_verify_ms / approved_to_verified_ms / staging_verified_at: the plan's only landed lane (chain-coverage) touched no path any staging deploy workflow watches (docs/validation/** + .kiro/specs/** only), so there is no AWS-STAGE-DEPLOY / STAGING-VERIFY run; the plan deploys nothing. See RUN/staging.json.",
+    "gate2_sent_at: a change that deploys nothing has no Gate 2; it is done when merged with green checks (CLAUDE.md autonomy contract)."
+  ],
+  "note": "Single-lane plan. Convergence/approval timestamps come from the reused converged plan record (run.json policy_approved_at 2026-10-22T13:36:26Z); the RUN spar-loop.jsonl spar_converged event (17:55Z) is a local-clock re-spar estimate and is not used. plan_pr_opened_at / plan_merged_at are GitHub PR #4321 createdAt / mergedAt. The one merge conflict counted was in plan PR #4321 (docs/programs/standalone/program.md, resolved keeping both spec entries); the lane PR #4343 had 0 conflicts. The lane landed docs/validation/** + its spec log only (merge c7819403, 2026-10-22T19:56:43Z) and changed no services/gateway/** file, so it triggered no staging deploy and deploys nothing; the reviewer-chain code it documents (governance.ts, commit 91d26a15) was merged in a prior separate plan (PR #4295)."
+}

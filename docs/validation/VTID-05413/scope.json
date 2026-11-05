@@ -1,0 +1,15 @@
+{
+  "vtid": "VTID-05413",
+  "slug": "guard-required-only-preflight",
+  "lane": "guard-required-only",
+  "kind": "infra",
+  "sparring_record": "docs/validation/VTID-05413/plan-sparring.md",
+  "summary": "preflight.mjs gains --required-only (exit status from CI-required checks only, requiredOk in --json); the Kiro Web push guard passes it and prints report-only failures without blocking.",
+  "paths": [
+    "scripts/collab/preflight.mjs",
+    "scripts/collab/preflight.test.mjs",
+    "scripts/collab/kiro-web-session.mjs",
+    "scripts/collab/kiro-web-session.test.mjs",
+    "docs/validation/VTID-05413/**"
+  ]
+}

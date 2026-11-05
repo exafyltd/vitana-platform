@@ -3,7 +3,27 @@ lane: say-hello-composer
 state: ready
 next_actor: kiro
 vtid: VTID-05207
-seat: exafyltd
+seat: jtadic
+executor: kiro
+reviewer_seat: agent:vitana-lane-reviewer
+paths:
+  - services/gateway/src/services/new-member-greeting-guard.ts
+  - services/gateway/src/services/new-member-greeting-suggestion.ts
+  - services/gateway/src/routes/new-member-greeting.ts
+  - services/gateway/src/routes/new-member-greeting-repository.ts
+  - services/gateway/src/routes/chat.ts
+  - services/gateway/src/index.ts
+  - services/gateway/src/orb/developer/domain-atlas.ts
+  - services/gateway/test/vtid-05207-*.ts
+  - services/gateway/test/vtid-05208-greeting-send-route.test.ts
+  - docs/validation/VTID-05207/**
+  - src/components/home/NewMemberCard.tsx
+  - src/components/home/NewMemberCard.test.tsx
+  - src/components/home/NewMemberGreetingComposer.tsx
+  - src/components/home/NewMemberGreetingComposer.test.tsx
+  - src/i18n/*/*.json
+  - i18n-source-stamps/*.json
+  - tests/e2e/staging/vtid-05207-*.staging.spec.ts
 area: messenger
 depends_on: [new-member-card-optin, grouped-welcome-notifications]
 updated: 2026-10-15T13:00Z

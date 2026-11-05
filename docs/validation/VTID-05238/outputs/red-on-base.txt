@@ -1,0 +1,950 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in C:/Users/dstev/vitana-platform-1/.worktrees/gso-rebuild/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in C:/Users/dstev/vitana-platform-1/.worktrees/gso-rebuild/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+FAIL test/vtid-04941-commerce-mcp-automation.test.ts (12.134 s)
+  nextAction
+    × a typeless business is asked for its type through update_business (61 ms)
+    × company → the assistant calls update_business (3 ms)
+    × verification → the assistant calls check_verification (2 ms)
+    × catalogue → the assistant calls add_product (2 ms)
+    × mapping → the assistant calls connect_store (2 ms)
+    √ terms → only the supplier can do it, with the portal link (2 ms)
+    √ tracking_test → only the supplier can do it, with the portal link
+    √ billing_mandate → only the supplier can do it, with the portal link
+    √ dpa → only the supplier can do it, with the portal link (1 ms)
+    √ results_channel → only the supplier can do it, with the portal link (1 ms)
+    √ a complete checklist points at submit_for_verification (2 ms)
+    √ shapeStatus keeps next_step and adds next_action; verification and mapping are no longer on-screen-only (2 ms)
+  check_verification
+    √ runs the service as the signed-in user with a 10 s budget and returns status plus the verification (3 ms)
+    √ a partial result keeps its retry hint (1 ms)
+    √ needs an organization id; a service refusal becomes a structured error (1 ms)
+  connect_store
+    √ recognised shop: starts an idempotent connection and returns the portal link, never an OAuth URL (5 ms)
+    √ an existing connection is reported as reused (1 ms)
+    √ an unrecognised platform starts nothing and sends the supplier to Vitanaland (2 ms)
+    √ no website → prerequisites_missing; unreachable site → unavailable (2 ms)
+    √ needs an organization id
+  tool catalogue
+    √ the two new tools are write tools, not destructive, and idempotent (2 ms)
+
+  ● nextAction › a typeless business is asked for its type through update_business
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 0
+
+      Object {
+        "link": null,
+    -   "owner": "assistant",
+        "step": "business_type",
+        "supplier_action": null,
+        "tool": "update_business",
+      }
+
+    [0m [90m 36 |[39m   test([32m'a typeless business is asked for its type through update_business'[39m[33m,[39m () [33m=>[39m {
+     [90m 37 |[39m     [90m// VTID-05238: next_action now carries owner (assistant for the typeless pseudo-step).[39m
+    [31m[1m>[22m[39m[90m 38 |[39m     expect(nextAction([36mnull[39m[33m,[39m [36mtrue[39m[33m,[39m link))[33m.[39mtoEqual({ step[33m:[39m [32m'business_type'[39m[33m,[39m tool[33m:[39m [32m'update_business'[39m[33m,[39m supplier_action[33m:[39m [36mnull[39m[33m,[39m link[33m:[39m [36mnull[39m[33m,[39m owner[33m:[39m [32m'assistant'[39m })[33m;[39m
+     [90m    |[39m                                          [31m[1m^[22m[39m
+     [90m 39 |[39m   })[33m;[39m
+     [90m 40 |[39m   test[33m.[39meach([
+     [90m 41 |[39m     [[32m'company'[39m[33m,[39m [32m'update_business'[39m[33m,[39m [32m'assistant'[39m][33m,[39m[0m
+
+      at Object.<anonymous> (test/vtid-04941-commerce-mcp-automation.test.ts:38:42)
+
+  ● nextAction › company → the assistant calls update_business
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 0
+
+      Object {
+        "link": null,
+    -   "owner": "assistant",
+        "step": "company",
+        "supplier_action": null,
+        "tool": "update_business",
+      }
+
+    [0m [90m 46 |[39m     [90m// VTID-05238: owner comes from the step's owner (none on these bare checklists) or its fixed owner;[39m
+     [90m 47 |[39m     [90m// verification's owner varies with its codes, so with no codes here it is null.[39m
+    [31m[1m>[22m[39m[90m 48 |[39m     expect(nextAction({ next_step[33m:[39m step [36mas[39m string[33m,[39m complete[33m:[39m [36mfalse[39m }[33m,[39m [36mfalse[39m[33m,[39m link))[33m.[39mtoEqual({ step[33m,[39m tool[33m,[39m supplier_action[33m:[39m [36mnull[39m[33m,[39m link[33m:[39m [36mnull[39m[33m,[39m owner })[33m;[39m
+     [90m    |[39m                                                                                     [31m[1m^[22m[39m
+     [90m 49 |[39m   })[33m;[39m
+     [90m 50 |[39m   test[33m.[39meach([[32m'terms'[39m[33m,[39m [32m'tracking_test'[39m[33m,[39m [32m'billing_mandate'[39m[33m,[39m [32m'dpa'[39m[33m,[39m [32m'results_channel'[39m])([32m'%s → only the supplier can do it, with the portal link'[39m[33m,[39m (step) [33m=>[39m {
+     [90m 51 |[39m     [36mconst[39m a [33m=[39m nextAction({ next_step[33m:[39m step[33m,[39m complete[33m:[39m [36mfalse[39m }[33m,[39m [36mfalse[39m[33m,[39m link)[33m;[39m[0m
+
+      at test/vtid-04941-commerce-mcp-automation.test.ts:48:85
+
+  ● nextAction › verification → the assistant calls check_verification
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 0
+
+      Object {
+        "link": null,
+    -   "owner": null,
+        "step": "verification",
+        "supplier_action": null,
+        "tool": "check_verification",
+      }
+
+    [0m [90m 46 |[39m     [90m// VTID-05238: owner comes from the step's owner (none on these bare checklists) or its fixed owner;[39m
+     [90m 47 |[39m     [90m// verification's owner varies with its codes, so with no codes here it is null.[39m
+    [31m[1m>[22m[39m[90m 48 |[39m     expect(nextAction({ next_step[33m:[39m step [36mas[39m string[33m,[39m complete[33m:[39m [36mfalse[39m }[33m,[39m [36mfalse[39m[33m,[39m link))[33m.[39mtoEqual({ step[33m,[39m tool[33m,[39m supplier_action[33m:[39m [36mnull[39m[33m,[39m link[33m:[39m [36mnull[39m[33m,[39m owner })[33m;[39m
+     [90m    |[39m                                                                                     [31m[1m^[22m[39m
+     [90m 49 |[39m   })[33m;[39m
+     [90m 50 |[39m   test[33m.[39meach([[32m'terms'[39m[33m,[39m [32m'tracking_test'[39m[33m,[39m [32m'billing_mandate'[39m[33m,[39m [32m'dpa'[39m[33m,[39m [32m'results_channel'[39m])([32m'%s → only the supplier can do it, with the portal link'[39m[33m,[39m (step) [33m=>[39m {
+     [90m 51 |[39m     [36mconst[39m a [33m=[39m nextAction({ next_step[33m:[39m step[33m,[39m complete[33m:[39m [36mfalse[39m }[33m,[39m [36mfalse[39m[33m,[39m link)[33m;[39m[0m
+
+      at test/vtid-04941-commerce-mcp-automation.test.ts:48:85
+
+  ● nextAction › catalogue → the assistant calls add_product
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 0
+
+      Object {
+        "link": null,
+    -   "owner": "assistant",
+        "step": "catalogue",
+        "supplier_action": null,
+        "tool": "add_product",
+      }
+
+    [0m [90m 46 |[39m     [90m// VTID-05238: owner comes from the step's owner (none on these bare checklists) or its fixed owner;[39m
+     [90m 47 |[39m     [90m// verification's owner varies with its codes, so with no codes here it is null.[39m
+    [31m[1m>[22m[39m[90m 48 |[39m     expect(nextAction({ next_step[33m:[39m step [36mas[39m string[33m,[39m complete[33m:[39m [36mfalse[39m }[33m,[39m [36mfalse[39m[33m,[39m link))[33m.[39mtoEqual({ step[33m,[39m tool[33m,[39m supplier_action[33m:[39m [36mnull[39m[33m,[39m link[33m:[39m [36mnull[39m[33m,[39m owner })[33m;[39m
+     [90m    |[39m                                                                                     [31m[1m^[22m[39m
+     [90m 49 |[39m   })[33m;[39m
+     [90m 50 |[39m   test[33m.[39meach([[32m'terms'[39m[33m,[39m [32m'tracking_test'[39m[33m,[39m [32m'billing_mandate'[39m[33m,[39m [32m'dpa'[39m[33m,[39m [32m'results_channel'[39m])([32m'%s → only the supplier can do it, with the portal link'[39m[33m,[39m (step) [33m=>[39m {
+     [90m 51 |[39m     [36mconst[39m a [33m=[39m nextAction({ next_step[33m:[39m step[33m,[39m complete[33m:[39m [36mfalse[39m }[33m,[39m [36mfalse[39m[33m,[39m link)[33m;[39m[0m
+
+      at test/vtid-04941-commerce-mcp-automation.test.ts:48:85
+
+  ● nextAction › mapping → the assistant calls connect_store
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 0
+
+      Object {
+        "link": null,
+    -   "owner": "assistant",
+        "step": "mapping",
+        "supplier_action": null,
+        "tool": "connect_store",
+      }
+
+    [0m [90m 46 |[39m     [90m// VTID-05238: owner comes from the step's owner (none on these bare checklists) or its fixed owner;[39m
+     [90m 47 |[39m     [90m// verification's owner varies with its codes, so with no codes here it is null.[39m
+    [31m[1m>[22m[39m[90m 48 |[39m     expect(nextAction({ next_step[33m:[39m step [36mas[39m string[33m,[39m complete[33m:[39m [36mfalse[39m }[33m,[39m [36mfalse[39m[33m,[39m link))[33m.[39mtoEqual({ step[33m,[39m tool[33m,[39m supplier_action[33m:[39m [36mnull[39m[33m,[39m link[33m:[39m [36mnull[39m[33m,[39m owner })[33m;[39m
+     [90m    |[39m                                                                                     [31m[1m^[22m[39m
+     [90m 49 |[39m   })[33m;[39m
+     [90m 50 |[39m   test[33m.[39meach([[32m'terms'[39m[33m,[39m [32m'tracking_test'[39m[33m,[39m [32m'billing_mandate'[39m[33m,[39m [32m'dpa'[39m[33m,[39m [32m'results_channel'[39m])([32m'%s → only the supplier can do it, with the portal link'[39m[33m,[39m (step) [33m=>[39m {
+     [90m 51 |[39m     [36mconst[39m a [33m=[39m nextAction({ next_step[33m:[39m step[33m,[39m complete[33m:[39m [36mfalse[39m }[33m,[39m [36mfalse[39m[33m,[39m link)[33m;[39m[0m
+
+      at test/vtid-04941-commerce-mcp-automation.test.ts:48:85
+
+FAIL test/vtid-05238-step-owner.test.ts (12.49 s)
+  stepOwner — null cases
+    × a done step has no owner (48 ms)
+    × a not_required step has no owner (2 ms)
+    × a step not required for the type has no owner (3 ms)
+  stepOwner — fixed owners per step key
+    × company → assistant (1 ms)
+    × catalogue → assistant (1 ms)
+    × mapping → assistant
+    × terms → supplier (1 ms)
+    × dpa → supplier (1 ms)
+    × billing_mandate → supplier (1 ms)
+    × results_channel → supplier (1 ms)
+    × tracking_test → supplier (1 ms)
+    × team → supplier
+    × account → supplier (1 ms)
+    × catalogue carrying catalogue_fixes is still the assistant (1 ms)
+  stepOwner — verification, first match wins
+    × facts_changed in missing → assistant, ignoring stale detail.missing (R1-F1) (1 ms)
+    × review_note present → supplier
+    × review_note wins over an assistant code in detail.missing
+    × supplier code email_not_verified → supplier
+    × supplier code domain_proof → supplier
+    × assistant code website → assistant
+    × assistant code vat_id → assistant
+    × assistant code vat_invalid → assistant
+    × assistant code email_check_unavailable → assistant (1 ms)
+    × assistant code domain_check_unavailable → assistant
+    × assistant code vat_check_unavailable → assistant
+    × website (R1-F2) in detail.missing → assistant
+    × a supplier code and an assistant code together → supplier (first match wins) (1 ms)
+    × Vitanaland-only code business_verification_pending → vitanaland (1 ms)
+    × Vitanaland-only code business_verification → vitanaland (1 ms)
+    × Vitanaland-only code licence → vitanaland (1 ms)
+    × Vitanaland-only code licence_missing → vitanaland
+    × in_progress with no code → vitanaland (1 ms)
+    × an unknown code → supplier (a new check never silently claims the AI can do it) (1 ms)
+    × a never-checked verification (todo, no codes) → assistant, not vitanaland (R2-F1)
+    × an unknown code alongside an assistant code → supplier (unknown wins, R2-F2) (1 ms)
+    × union of step.missing and detail.missing is considered when facts_changed is absent (1 ms)
+  buildChecklist — owner is additive only
+    × sets owner on every open required step and nothing else (3 ms)
+    √ changes no field other than owner (compared to a run with owner stripped) (8 ms)
+    √ a done step (account) carries no owner (1 ms)
+    × a stale verification row → owner assistant, old detail codes ignored (R1-F1 end to end) (4 ms)
+    × verification with a website missing code → owner assistant (R1-F2) (1 ms)
+  shapeStatus — owner on open steps and byte-for-byte fields
+    × carries owner on each open step (3 ms)
+    √ keeps every existing field and only adds owner (1 ms)
+    √ a step with no owner (done) carries no owner field (1 ms)
+  next_action.owner
+    × owner of the next_action.step (1 ms)
+    × typeless business_type pseudo-step → assistant (7 ms)
+    × checklist complete (submit_for_verification) → assistant (1 ms)
+    × no step and no tool → null owner (1 ms)
+    × a supplier next step carries owner supplier and keeps supplier_action/link (1 ms)
+  ON_SCREEN_STEPS / STEP_TOOLS consistency (R2-F1)
+    × ON_SCREEN_STEPS is exactly the five supplier-action keys — team excluded
+    × every ON_SCREEN_STEPS key has fixed owner supplier (1 ms)
+    × team keeps today byte-for-byte MCP shape (no done_on_vitanaland) (1 ms)
+
+  ● stepOwner — null cases › a done step has no owner
+
+    TypeError: (0 , partner_onboarding_checklist_1.stepOwner) is not a function
+
+    [0m [90m 37 |[39m describe([32m'stepOwner — null cases'[39m[33m,[39m () [33m=>[39m {
+     [90m 38 |[39m   it([32m'a done step has no owner'[39m[33m,[39m () [33m=>[39m {
+    [31m[1m>[22m[39m[90m 39 |[39m     expect(stepOwner(step({ key[33m:[39m [32m'company'[39m[33m,[39m status[33m:[39m [32m'done'[39m })))[33m.[39mtoBeNull()[33m;[39m
+     [90m    |[39m                     [31m[1m^[22m[39m
+     [90m 40 |[39m   })[33m;[39m
+     [90m 41 |[39m   it([32m'a not_required step has no owner'[39m[33m,[39m () [33m=>[39m {
+     [90m 42 |[39m     expect(stepOwner(step({ key[33m:[39m [32m'dpa'[39m[33m,[39m status[33m:[39m [32m'not_required'[39m })))[33m.[39mtoBeNull()[33m;[39m[0m
+
+      at Object.<anonymous> (test/vtid-05238-step-owner.test.ts:39:21)
+
+  ● stepOwner — null cases › a not_required step has no owner
+
+    TypeError: (0 , partner_onboarding_checklist_1.stepOwner) is not a function
+
+    [0m [90m 40 |[39m   })[33m;[39m
+     [90m 41 |[39m   it([32m'a not_required step has no owner'[39m[33m,[39m () [33m=>[39m {
+    [31m[1m>[22m[39m[90m 42 |[39m     expect(stepOwner(step({ key[33m:[39m [32m'dpa'[39m[33m,[39m status[33m:[39m [32m'not_required'[39m })))[33m.[39mtoBeNull()[33m;[39m
+     [90m    |[39m                     [31m[1m^[22m[39m
+     [90m 43 |[39m   })[33m;[39m
+     [90m 44 |[39m   it([32m'a step not required for the type has no owner'[39m[33m,[39m () [33m=>[39m {
+     [90m 45 |[39m     expect(stepOwner(step({ key[33m:[39m [32m'company'[39m[33m,[39m required[33m:[39m [36mfalse[39m })))[33m.[39mtoBeNull()[33m;[39m[0m
+
+      at Object.<anonymous> (test/vtid-05238-step-owner.test.ts:42:21)
+
+  ● stepOwner — null cases › a step not required for the type has no owner
+
+    TypeError: (0 , partner_onboarding_checklist_1.stepOwner) is not a function
+
+    [0m [90m 43 |[39m   })[33m;[39m
+     [90m 44 |[39m   it([32m'a step not required for the type has no owner'[39m[33m,[39m () [33m=>[39m {
+    [31m[1m>[22m[39m[90m 45 |[39m     expect(stepOwner(step({ key[33m:[39m [32m'company'[39m[33m,[39m required[33m:[39m [36mfalse[39m })))[33m.[39mtoBeNull()[33m;[39m
+     [90m    |[39m                     [31m[1m^[22m[39m
+     [90m 46 |[39m   })[33m;[39m
+     [90m 47 |[39m })[33m;[39m
+     [90m 48 |[39m[0m
+
+      at Object.<anonymous> (test/vtid-05238-step-owner.test.ts:45:21)
+
+  ● stepOwner — fixed owners per step key › company → assistant
+
+    TypeError: (0 , partner_onboarding_checklist_1.stepOwner) is not a function
+
+    [0m [90m 60 |[39m     [[32m'account'[39m[33m,[39m [32m'supplier'[39m][33m,[39m
+     [90m 61 |[39m   ])([32m'%s → %s'[39m[33m,[39m (key[33m,[39m owner) [33m=>[39m {
+    [31m[1m>[22m[39m[90m 62 |[39m     expect(stepOwner(step({ key })))[33m.[39mtoBe(owner)[33m;[39m
+     [90m    |[39m                     [31m[1m^[22m[39m
+     [90m 63 |[39m   })[33m;[39m
+     [90m 64 |[39m
+     [90m 65 |[39m   it([32m'catalogue carrying catalogue_fixes is still the assistant'[39m[33m,[39m () [33m=>[39m {[0m
+
+      at test/vtid-05238-step-owner.test.ts:62:21
+
+  ● stepOwner — fixed owners per step key › catalogue → assistant
+
+    TypeError: (0 , partner_onboarding_checklist_1.stepOwner) is not a function
+
+    [0m [90m 60 |[39m     [[32m'account'[39m[33m,[39m [32m'supplier'[39m][33m,[39m
+     [90m 61 |[39m   ])([32m'%s → %s'[39m[33m,[39m (key[33m,[39m owner) [33m=>[39m {
+    [31m[1m>[22m[39m[90m 62 |[39m     expect(stepOwner(step({ key })))[33m.[39mtoBe(owner)[33m;[39m
+     [90m    |[39m                     [31m[1m^[22m[39m
+     [90m 63 |[39m   })[33m;[39m
+     [90m 64 |[39m
+     [90m 65 |[39m   it([32m'catalogue carrying catalogue_fixes is still the assistant'[39m[33m,[39m () [33m=>[39m {[0m
+
+      at test/vtid-05238-step-owner.test.ts:62:21
+
+  ● stepOwner — fixed owners per step key › mapping → assistant
+
+    TypeError: (0 , partner_onboarding_checklist_1.stepOwner) is not a function
+
+    [0m [90m 60 |[39m     [[32m'account'[39m[33m,[39m [32m'supplier'[39m][33m,[39m
+     [90m 61 |[39m   ])([32m'%s → %s'[39m[33m,[39m (key[33m,[39m owner) [33m=>[39m {
+    [31m[1m>[22m[39m[90m 62 |[39m     expect(stepOwner(step({ key })))[33m.[39mtoBe(owner)[33m;[39m
+     [90m    |[39m                     [31m[1m^[22m[39m
+     [90m 63 |[39m   })[33m;[39m
+     [90m 64 |[39m
+     [90m 65 |[39m   it([32m'catalogue carrying catalogue_fixes is still the assistant'[39m[33m,[39m () [33m=>[39m {[0m
+
+      at test/vtid-05238-step-owner.test.ts:62:21
+
+  ● stepOwner — fixed owners per step key › terms → supplier
+
+    TypeError: (0 , partner_onboarding_checklist_1.stepOwner) is not a function
+
+    [0m [90m 60 |[39m     [[32m'account'[39m[33m,[39m [32m'supplier'[39m][33m,[39m
+     [90m 61 |[39m   ])([32m'%s → %s'[39m[33m,[39m (key[33m,[39m owner) [33m=>[39m {
+    [31m[1m>[22m[39m[90m 62 |[39m     expect(stepOwner(step({ key })))[33m.[39mtoBe(owner)[33m;[39m
+     [90m    |[39m                     [31m[1m^[22m[39m
+     [90m 63 |[39m   })[33m;[39m
+     [90m 64 |[39m
+     [90m 65 |[39m   it([32m'catalogue carrying catalogue_fixes is still the assistant'[39m[33m,[39m () [33m=>[39m {[0m
+
+      at test/vtid-05238-step-owner.test.ts:62:21
+
+  ● stepOwner — fixed owners per step key › dpa → supplier
+
+    TypeError: (0 , partner_onboarding_checklist_1.stepOwner) is not a function
+
+    [0m [90m 60 |[39m     [[32m'account'[39m[33m,[39m [32m'supplier'[39m][33m,[39m
+     [90m 61 |[39m   ])([32m'%s → %s'[39m[33m,[39m (key[33m,[39m owner) [33m=>[39m {
+    [31m[1m>[22m[39m[90m 62 |[39m     expect(stepOwner(step({ key })))[33m.[39mtoBe(owner)[33m;[39m
+     [90m    |[39m                     [31m[1m^[22m[39m
+     [90m 63 |[39m   })[33m;[39m
+     [90m 64 |[39m
+     [90m 65 |[39m   it([32m'catalogue carrying catalogue_fixes is still the assistant'[39m[33m,[39m () [33m=>[39m {[0m
+
+      at test/vtid-05238-step-owner.test.ts:62:21
+
+  ● stepOwner — fixed owners per step key › billing_mandate → supplier
+
+    TypeError: (0 , partner_onboarding_checklist_1.stepOwner) is not a function
+
+    [0m [90m 60 |[39m     [[32m'account'[39m[33m,[39m [32m'supplier'[39m][33m,[39m
+     [90m 61 |[39m   ])([32m'%s → %s'[39m[33m,[39m (key[33m,[39m owner) [33m=>[39m {
+    [31m[1m>[22m[39m[90m 62 |[39m     expect(stepOwner(step({ key })))[33m.[39mtoBe(owner)[33m;[39m
+     [90m    |[39m                     [31m[1m^[22m[39m
+     [90m 63 |[39m   })[33m;[39m
+     [90m 64 |[39m
+     [90m 65 |[39m   it([32m'catalogue carrying catalogue_fixes is still the assistant'[39m[33m,[39m () [33m=>[39m {[0m
+
+      at test/vtid-05238-step-owner.test.ts:62:21
+
+  ● stepOwner — fixed owners per step key › results_channel → supplier
+
+    TypeError: (0 , partner_onboarding_checklist_1.stepOwner) is not a function
+
+    [0m [90m 60 |[39m     [[32m'account'[39m[33m,[39m [32m'supplier'[39m][33m,[39m
+     [90m 61 |[39m   ])([32m'%s → %s'[39m[33m,[39m (key[33m,[39m owner) [33m=>[39m {
+    [31m[1m>[22m[39m[90m 62 |[39m     expect(stepOwner(step({ key })))[33m.[39mtoBe(owner)[33m;[39m
+     [90m    |[39m                     [31m[1m^[22m[39m
+     [90m 63 |[39m   })[33m;[39m
+     [90m 64 |[39m
+     [90m 65 |[39m   it([32m'catalogue carrying catalogue_fixes is still the assistant'[39m[33m,[39m () [33m=>[39m {[0m
+
+      at test/vtid-05238-step-owner.test.ts:62:21
+
+  ● stepOwner — fixed owners per step key › tracking_test → supplier
+
+    TypeError: (0 , partner_onboarding_checklist_1.stepOwner) is not a function
+
+    [0m [90m 60 |[39m     [[32m'account'[39m[33m,[39m [32m'supplier'[39m][33m,[39m
+     [90m 61 |[39m   ])([32m'%s → %s'[39m[33m,[39m (key[33m,[39m owner) [33m=>[39m {
+    [31m[1m>[22m[39m[90m 62 |[39m     expect(stepOwner(step({ key })))[33m.[39mtoBe(owner)[33m;[39m
+     [90m    |[39m                     [31m[1m^[22m[39m
+     [90m 63 |[39m   })[33m;[39m
+     [90m 64 |[39m
+     [90m 65 |[39m   it([32m'catalogue carrying catalogue_fixes is still the assistant'[39m[33m,[39m () [33m=>[39m {[0m
+
+      at test/vtid-05238-step-owner.test.ts:62:21
+
+  ● stepOwner — fixed owners per step key › team → supplier
+
+    TypeError: (0 , partner_onboarding_checklist_1.stepOwner) is not a function
+
+    [0m [90m 60 |[39m     [[32m'account'[39m[33m,[39m [32m'supplier'[39m][33m,[39m
+     [90m 61 |[39m   ])([32m'%s → %s'[39m[33m,[39m (key[33m,[39m owner) [33m=>[39m {
+    [31m[1m>[22m[39m[90m 62 |[39m     expect(stepOwner(step({ key })))[33m.[39mtoBe(owner)[33m;[39m
+     [90m    |[39m                     [31m[1m^[22m[39m
+     [90m 63 |[39m   })[33m;[39m
+     [90m 64 |[39m
+     [90m 65 |[39m   it([32m'catalogue carrying catalogue_fixes is still the assistant'[39m[33m,[39m () [33m=>[39m {[0m
+
+      at test/vtid-05238-step-owner.test.ts:62:21
+
+  ● stepOwner — fixed owners per step key › account → supplier
+
+    TypeError: (0 , partner_onboarding_checklist_1.stepOwner) is not a function
+
+    [0m [90m 60 |[39m     [[32m'account'[39m[33m,[39m [32m'supplier'[39m][33m,[39m
+     [90m 61 |[39m   ])([32m'%s → %s'[39m[33m,[39m (key[33m,[39m owner) [33m=>[39m {
+    [31m[1m>[22m[39m[90m 62 |[39m     expect(stepOwner(step({ key })))[33m.[39mtoBe(owner)[33m;[39m
+     [90m    |[39m                     [31m[1m^[22m[39m
+     [90m 63 |[39m   })[33m;[39m
+     [90m 64 |[39m
+     [90m 65 |[39m   it([32m'catalogue carrying catalogue_fixes is still the assistant'[39m[33m,[39m () [33m=>[39m {[0m
+
+      at test/vtid-05238-step-owner.test.ts:62:21
+
+  ● stepOwner — fixed owners per step key › catalogue carrying catalogue_fixes is still the assistant
+
+    TypeError: (0 , partner_onboarding_checklist_1.stepOwner) is not a function
+
+    [0m [90m 64 |[39m
+     [90m 65 |[39m   it([32m'catalogue carrying catalogue_fixes is still the assistant'[39m[33m,[39m () [33m=>[39m {
+    [31m[1m>[22m[39m[90m 66 |[39m     expect(stepOwner(step({ key[33m:[39m [32m'catalogue'[39m[33m,[39m missing[33m:[39m [[32m'catalogue_fixes'[39m][33m,[39m detail[33m:[39m { returned_products[33m:[39m [35m2[39m } })))[33m.[39mtoBe([32m'assistant'[39m)[33m;[39m
+     [90m    |[39m                     [31m[1m^[22m[39m
+     [90m 67 |[39m   })[33m;[39m
+     [90m 68 |[39m })[33m;[39m
+     [90m 69 |[39m[0m
+
+      at Object.<anonymous> (test/vtid-05238-step-owner.test.ts:66:21)
+
+  ● stepOwner — verification, first match wins › facts_changed in missing → assistant, ignoring stale detail.missing (R1-F1)
+
+    TypeError: (0 , partner_onboarding_checklist_1.stepOwner) is not a function
+
+    [0m [90m 74 |[39m     [90m// A stale row: missing is ['facts_changed'] but the old detail still names[39m
+     [90m 75 |[39m     [90m// a supplier code. The supplier code must NOT win.[39m
+    [31m[1m>[22m[39m[90m 76 |[39m     [36mconst[39m owner [33m=[39m stepOwner(v({ status[33m:[39m [32m'todo'[39m[33m,[39m missing[33m:[39m [[32m'facts_changed'[39m][33m,[39m detail[33m:[39m { missing[33m:[39m [[32m'email_not_verified'[39m[33m,[39m [32m'domain_proof'[39m] } }))[33m;[39m
+     [90m    |[39m                            [31m[1m^[22m[39m
+     [90m 77 |[39m     expect(owner)[33m.[39mtoBe([32m'assistant'[39m)[33m;[39m
+     [90m 78 |[39m   })[33m;[39m
+     [90m 79 |[39m[0m
+
+      at Object.<anonymous> (test/vtid-05238-step-owner.test.ts:76:28)
+
+  ● stepOwner — verification, first match wins › review_note present → supplier
+
+    TypeError: (0 , partner_onboarding_checklist_1.stepOwner) is not a function
+
+    [0m [90m 79 |[39m
+     [90m 80 |[39m   it([32m'review_note present → supplier'[39m[33m,[39m () [33m=>[39m {
+    [31m[1m>[22m[39m[90m 81 |[39m     expect(stepOwner(v({ detail[33m:[39m { review_note[33m:[39m { reason[33m:[39m [32m'Please re-upload the licence.'[39m } } })))[33m.[39mtoBe([32m'supplier'[39m)[33m;[39m
+     [90m    |[39m                     [31m[1m^[22m[39m
+     [90m 82 |[39m   })[33m;[39m
+     [90m 83 |[39m
+     [90m 84 |[39m   it([32m'review_note wins over an assistant code in detail.missing'[39m[33m,[39m () [33m=>[39m {[0m
+
+      at Object.<anonymous> (test/vtid-05238-step-owner.test.ts:81:21)
+
+  ● stepOwner — verification, first match wins › review_note wins over an assistant code in detail.missing
+
+    TypeError: (0 , partner_onboarding_checklist_1.stepOwner) is not a function
+
+    [0m [90m 83 |[39m
+     [90m 84 |[39m   it([32m'review_note wins over an assistant code in detail.missing'[39m[33m,[39m () [33m=>[39m {
+    [31m[1m>[22m[39m[90m 85 |[39m     expect(stepOwner(v({ detail[33m:[39m { review_note[33m:[39m { reason[33m:[39m [32m'x'[39m }[33m,[39m missing[33m:[39m [[32m'vat_id'[39m] } })))[33m.[39mtoBe([32m'supplier'[39m)[33m;[39m
+     [90m    |[39m                     [31m[1m^[22m[39m
+     [90m 86 |[39m   })[33m;[39m
+     [90m 87 |[39m
+     [90m 88 |[39m   it[33m.[39meach([[[32m'email_not_verified'[39m][33m,[39m [[32m'domain_proof'[39m]])([32m'supplier code %s → supplier'[39m[33m,[39m (code) [33m=>[39m {[0m
+
+      at Object.<anonymous> (test/vtid-05238-step-owner.test.ts:85:21)
+
+  ● stepOwner — verification, first match wins › supplier code email_not_verified → supplier
+
+    TypeError: (0 , partner_onboarding_checklist_1.stepOwner) is not a function
+
+    [0m [90m 87 |[39m
+     [90m 88 |[39m   it[33m.[39meach([[[32m'email_not_verified'[39m][33m,[39m [[32m'domain_proof'[39m]])([32m'supplier code %s → supplier'[39m[33m,[39m (code) [33m=>[39m {
+    [31m[1m>[22m[39m[90m 89 |[39m     expect(stepOwner(v({ missing[33m:[39m [code] })))[33m.[39mtoBe([32m'supplier'[39m)[33m;[39m
+     [90m    |[39m                     [31m[1m^[22m[39m
+     [90m 90 |[39m   })[33m;[39m
+     [90m 91 |[39m
+     [90m 92 |[39m   it[33m.[39meach([[[32m'website'[39m][33m,[39m [[32m'vat_id'[39m][33m,[39m [[32m'vat_invalid'[39m][33m,[39m [[32m'email_check_unavailable'[39m][33m,[39m [[32m'domain_check_unavailable'[39m][33m,[39m [[32m'vat_check_unavailable'[39m]])([0m
+
+      at test/vtid-05238-step-owner.test.ts:89:21
+
+  ● stepOwner — verification, first match wins › supplier code domain_proof → supplier
+
+    TypeError: (0 , partner_onboarding_checklist_1.stepOwner) is not a function
+
+    [0m [90m 87 |[39m
+     [90m 88 |[39m   it[33m.[39meach([[[32m'email_not_verified'[39m][33m,[39m [[32m'domain_proof'[39m]])([32m'supplier code %s → supplier'[39m[33m,[39m (code) [33m=>[39m {
+    [31m[1m>[22m[39m[90m 89 |[39m     expect(stepOwner(v({ missing[33m:[39m [code] })))[33m.[39mtoBe([32m'supplier'[39m)[33m;[39m
+     [90m    |[39m                     [31m[1m^[22m[39m
+     [90m 90 |[39m   })[33m;[39m
+     [90m 91 |[39m
+     [90m 92 |[39m   it[33m.[39meach([[[32m'website'[39m][33m,[39m [[32m'vat_id'[39m][33m,[39m [[32m'vat_invalid'[39m][33m,[39m [[32m'email_check_unavailable'[39m][33m,[39m [[32m'domain_check_unavailable'[39m][33m,[39m [[32m'vat_check_unavailable'[39m]])([0m
+
+      at test/vtid-05238-step-owner.test.ts:89:21
+
+  ● stepOwner — verification, first match wins › assistant code website → assistant
+
+    TypeError: (0 , partner_onboarding_checklist_1.stepOwner) is not a function
+
+    [0m [90m 93 |[39m     [32m'assistant code %s → assistant'[39m[33m,[39m
+     [90m 94 |[39m     (code) [33m=>[39m {
+    [31m[1m>[22m[39m[90m 95 |[39m       expect(stepOwner(v({ missing[33m:[39m [code] })))[33m.[39mtoBe([32m'assistant'[39m)[33m;[39m
+     [90m    |[39m                       [31m[1m^[22m[39m
+     [90m 96 |[39m     }[33m,[39m
+     [90m 97 |[39m   )[33m;[39m
+     [90m 98 |[39m[0m
+
+      at test/vtid-05238-step-owner.test.ts:95:23
+
+  ● stepOwner — verification, first match wins › assistant code vat_id → assistant
+
+    TypeError: (0 , partner_onboarding_checklist_1.stepOwner) is not a function
+
+    [0m [90m 93 |[39m     [32m'assistant code %s → assistant'[39m[33m,[39m
+     [90m 94 |[39m     (code) [33m=>[39m {
+    [31m[1m>[22m[39m[90m 95 |[39m       expect(stepOwner(v({ missing[33m:[39m [code] })))[33m.[39mtoBe([32m'assistant'[39m)[33m;[39m
+     [90m    |[39m                       [31m[1m^[22m[39m
+     [90m 96 |[39m     }[33m,[39m
+     [90m 97 |[39m   )[33m;[39m
+     [90m 98 |[39m[0m
+
+      at test/vtid-05238-step-owner.test.ts:95:23
+
+  ● stepOwner — verification, first match wins › assistant code vat_invalid → assistant
+
+    TypeError: (0 , partner_onboarding_checklist_1.stepOwner) is not a function
+
+    [0m [90m 93 |[39m     [32m'assistant code %s → assistant'[39m[33m,[39m
+     [90m 94 |[39m     (code) [33m=>[39m {
+    [31m[1m>[22m[39m[90m 95 |[39m       expect(stepOwner(v({ missing[33m:[39m [code] })))[33m.[39mtoBe([32m'assistant'[39m)[33m;[39m
+     [90m    |[39m                       [31m[1m^[22m[39m
+     [90m 96 |[39m     }[33m,[39m
+     [90m 97 |[39m   )[33m;[39m
+     [90m 98 |[39m[0m
+
+      at test/vtid-05238-step-owner.test.ts:95:23
+
+  ● stepOwner — verification, first match wins › assistant code email_check_unavailable → assistant
+
+    TypeError: (0 , partner_onboarding_checklist_1.stepOwner) is not a function
+
+    [0m [90m 93 |[39m     [32m'assistant code %s → assistant'[39m[33m,[39m
+     [90m 94 |[39m     (code) [33m=>[39m {
+    [31m[1m>[22m[39m[90m 95 |[39m       expect(stepOwner(v({ missing[33m:[39m [code] })))[33m.[39mtoBe([32m'assistant'[39m)[33m;[39m
+     [90m    |[39m                       [31m[1m^[22m[39m
+     [90m 96 |[39m     }[33m,[39m
+     [90m 97 |[39m   )[33m;[39m
+     [90m 98 |[39m[0m
+
+      at test/vtid-05238-step-owner.test.ts:95:23
+
+  ● stepOwner — verification, first match wins › assistant code domain_check_unavailable → assistant
+
+    TypeError: (0 , partner_onboarding_checklist_1.stepOwner) is not a function
+
+    [0m [90m 93 |[39m     [32m'assistant code %s → assistant'[39m[33m,[39m
+     [90m 94 |[39m     (code) [33m=>[39m {
+    [31m[1m>[22m[39m[90m 95 |[39m       expect(stepOwner(v({ missing[33m:[39m [code] })))[33m.[39mtoBe([32m'assistant'[39m)[33m;[39m
+     [90m    |[39m                       [31m[1m^[22m[39m
+     [90m 96 |[39m     }[33m,[39m
+     [90m 97 |[39m   )[33m;[39m
+     [90m 98 |[39m[0m
+
+      at test/vtid-05238-step-owner.test.ts:95:23
+
+  ● stepOwner — verification, first match wins › assistant code vat_check_unavailable → assistant
+
+    TypeError: (0 , partner_onboarding_checklist_1.stepOwner) is not a function
+
+    [0m [90m 93 |[39m     [32m'assistant code %s → assistant'[39m[33m,[39m
+     [90m 94 |[39m     (code) [33m=>[39m {
+    [31m[1m>[22m[39m[90m 95 |[39m       expect(stepOwner(v({ missing[33m:[39m [code] })))[33m.[39mtoBe([32m'assistant'[39m)[33m;[39m
+     [90m    |[39m                       [31m[1m^[22m[39m
+     [90m 96 |[39m     }[33m,[39m
+     [90m 97 |[39m   )[33m;[39m
+     [90m 98 |[39m[0m
+
+      at test/vtid-05238-step-owner.test.ts:95:23
+
+  ● stepOwner — verification, first match wins › website (R1-F2) in detail.missing → assistant
+
+    TypeError: (0 , partner_onboarding_checklist_1.stepOwner) is not a function
+
+    [0m [90m  98 |[39m
+     [90m  99 |[39m   it([32m'website (R1-F2) in detail.missing → assistant'[39m[33m,[39m () [33m=>[39m {
+    [31m[1m>[22m[39m[90m 100 |[39m     expect(stepOwner(v({ detail[33m:[39m { missing[33m:[39m [[32m'website'[39m] } })))[33m.[39mtoBe([32m'assistant'[39m)[33m;[39m
+     [90m     |[39m                     [31m[1m^[22m[39m
+     [90m 101 |[39m   })[33m;[39m
+     [90m 102 |[39m
+     [90m 103 |[39m   it([32m'a supplier code and an assistant code together → supplier (first match wins)'[39m[33m,[39m () [33m=>[39m {[0m
+
+      at Object.<anonymous> (test/vtid-05238-step-owner.test.ts:100:21)
+
+  ● stepOwner — verification, first match wins › a supplier code and an assistant code together → supplier (first match wins)
+
+    TypeError: (0 , partner_onboarding_checklist_1.stepOwner) is not a function
+
+    [0m [90m 102 |[39m
+     [90m 103 |[39m   it([32m'a supplier code and an assistant code together → supplier (first match wins)'[39m[33m,[39m () [33m=>[39m {
+    [31m[1m>[22m[39m[90m 104 |[39m     expect(stepOwner(v({ missing[33m:[39m [[32m'vat_id'[39m[33m,[39m [32m'email_not_verified'[39m] })))[33m.[39mtoBe([32m'supplier'[39m)[33m;[39m
+     [90m     |[39m                     [31m[1m^[22m[39m
+     [90m 105 |[39m   })[33m;[39m
+     [90m 106 |[39m
+     [90m 107 |[39m   it[33m.[39meach([[[32m'business_verification_pending'[39m][33m,[39m [[32m'business_verification'[39m][33m,[39m [[32m'licence'[39m][33m,[39m [[32m'licence_missing'[39m]])([0m
+
+      at Object.<anonymous> (test/vtid-05238-step-owner.test.ts:104:21)
+
+  ● stepOwner — verification, first match wins › Vitanaland-only code business_verification_pending → vitanaland
+
+    TypeError: (0 , partner_onboarding_checklist_1.stepOwner) is not a function
+
+    [0m [90m 108 |[39m     [32m'Vitanaland-only code %s → vitanaland'[39m[33m,[39m
+     [90m 109 |[39m     (code) [33m=>[39m {
+    [31m[1m>[22m[39m[90m 110 |[39m       expect(stepOwner(v({ missing[33m:[39m [code] })))[33m.[39mtoBe([32m'vitanaland'[39m)[33m;[39m
+     [90m     |[39m                       [31m[1m^[22m[39m
+     [90m 111 |[39m     }[33m,[39m
+     [90m 112 |[39m   )[33m;[39m
+     [90m 113 |[39m[0m
+
+      at test/vtid-05238-step-owner.test.ts:110:23
+
+  ● stepOwner — verification, first match wins › Vitanaland-only code business_verification → vitanaland
+
+    TypeError: (0 , partner_onboarding_checklist_1.stepOwner) is not a function
+
+    [0m [90m 108 |[39m     [32m'Vitanaland-only code %s → vitanaland'[39m[33m,[39m
+     [90m 109 |[39m     (code) [33m=>[39m {
+    [31m[1m>[22m[39m[90m 110 |[39m       expect(stepOwner(v({ missing[33m:[39m [code] })))[33m.[39mtoBe([32m'vitanaland'[39m)[33m;[39m
+     [90m     |[39m                       [31m[1m^[22m[39m
+     [90m 111 |[39m     }[33m,[39m
+     [90m 112 |[39m   )[33m;[39m
+     [90m 113 |[39m[0m
+
+      at test/vtid-05238-step-owner.test.ts:110:23
+
+  ● stepOwner — verification, first match wins › Vitanaland-only code licence → vitanaland
+
+    TypeError: (0 , partner_onboarding_checklist_1.stepOwner) is not a function
+
+    [0m [90m 108 |[39m     [32m'Vitanaland-only code %s → vitanaland'[39m[33m,[39m
+     [90m 109 |[39m     (code) [33m=>[39m {
+    [31m[1m>[22m[39m[90m 110 |[39m       expect(stepOwner(v({ missing[33m:[39m [code] })))[33m.[39mtoBe([32m'vitanaland'[39m)[33m;[39m
+     [90m     |[39m                       [31m[1m^[22m[39m
+     [90m 111 |[39m     }[33m,[39m
+     [90m 112 |[39m   )[33m;[39m
+     [90m 113 |[39m[0m
+
+      at test/vtid-05238-step-owner.test.ts:110:23
+
+  ● stepOwner — verification, first match wins › Vitanaland-only code licence_missing → vitanaland
+
+    TypeError: (0 , partner_onboarding_checklist_1.stepOwner) is not a function
+
+    [0m [90m 108 |[39m     [32m'Vitanaland-only code %s → vitanaland'[39m[33m,[39m
+     [90m 109 |[39m     (code) [33m=>[39m {
+    [31m[1m>[22m[39m[90m 110 |[39m       expect(stepOwner(v({ missing[33m:[39m [code] })))[33m.[39mtoBe([32m'vitanaland'[39m)[33m;[39m
+     [90m     |[39m                       [31m[1m^[22m[39m
+     [90m 111 |[39m     }[33m,[39m
+     [90m 112 |[39m   )[33m;[39m
+     [90m 113 |[39m[0m
+
+      at test/vtid-05238-step-owner.test.ts:110:23
+
+  ● stepOwner — verification, first match wins › in_progress with no code → vitanaland
+
+    TypeError: (0 , partner_onboarding_checklist_1.stepOwner) is not a function
+
+    [0m [90m 113 |[39m
+     [90m 114 |[39m   it([32m'in_progress with no code → vitanaland'[39m[33m,[39m () [33m=>[39m {
+    [31m[1m>[22m[39m[90m 115 |[39m     expect(stepOwner(v({ status[33m:[39m [32m'in_progress'[39m })))[33m.[39mtoBe([32m'vitanaland'[39m)[33m;[39m
+     [90m     |[39m                     [31m[1m^[22m[39m
+     [90m 116 |[39m   })[33m;[39m
+     [90m 117 |[39m
+     [90m 118 |[39m   it([32m'an unknown code → supplier (a new check never silently claims the AI can do it)'[39m[33m,[39m () [33m=>[39m {[0m
+
+      at Object.<anonymous> (test/vtid-05238-step-owner.test.ts:115:21)
+
+  ● stepOwner — verification, first match wins › an unknown code → supplier (a new check never silently claims the AI can do it)
+
+    TypeError: (0 , partner_onboarding_checklist_1.stepOwner) is not a function
+
+    [0m [90m 117 |[39m
+     [90m 118 |[39m   it([32m'an unknown code → supplier (a new check never silently claims the AI can do it)'[39m[33m,[39m () [33m=>[39m {
+    [31m[1m>[22m[39m[90m 119 |[39m     expect(stepOwner(v({ missing[33m:[39m [[32m'some_new_future_check'[39m] })))[33m.[39mtoBe([32m'supplier'[39m)[33m;[39m
+     [90m     |[39m                     [31m[1m^[22m[39m
+     [90m 120 |[39m   })[33m;[39m
+     [90m 121 |[39m
+     [90m 122 |[39m   it([32m'a never-checked verification (todo, no codes) → assistant, not vitanaland (R2-F1)'[39m[33m,[39m () [33m=>[39m {[0m
+
+      at Object.<anonymous> (test/vtid-05238-step-owner.test.ts:119:21)
+
+  ● stepOwner — verification, first match wins › a never-checked verification (todo, no codes) → assistant, not vitanaland (R2-F1)
+
+    TypeError: (0 , partner_onboarding_checklist_1.stepOwner) is not a function
+
+    [0m [90m 123 |[39m     [90m// A required todo/failed verification with no missing and no detail.missing[39m
+     [90m 124 |[39m     [90m// means "run the checks" — the assistant's job, not a Vitanaland review.[39m
+    [31m[1m>[22m[39m[90m 125 |[39m     expect(stepOwner(v({ status[33m:[39m [32m'todo'[39m })))[33m.[39mtoBe([32m'assistant'[39m)[33m;[39m
+     [90m     |[39m                     [31m[1m^[22m[39m
+     [90m 126 |[39m     expect(stepOwner(v({ status[33m:[39m [32m'failed'[39m })))[33m.[39mtoBe([32m'assistant'[39m)[33m;[39m
+     [90m 127 |[39m   })[33m;[39m
+     [90m 128 |[39m[0m
+
+      at Object.<anonymous> (test/vtid-05238-step-owner.test.ts:125:21)
+
+  ● stepOwner — verification, first match wins › an unknown code alongside an assistant code → supplier (unknown wins, R2-F2)
+
+    TypeError: (0 , partner_onboarding_checklist_1.stepOwner) is not a function
+
+    [0m [90m 130 |[39m     [90m// The unknown-code check runs before the assistant-code match, so a[39m
+     [90m 131 |[39m     [90m// brand-new check never silently claims the AI can do it.[39m
+    [31m[1m>[22m[39m[90m 132 |[39m     expect(stepOwner(v({ detail[33m:[39m { missing[33m:[39m [[32m'vat_id'[39m[33m,[39m [32m'some_new_check'[39m] } })))[33m.[39mtoBe([32m'supplier'[39m)[33m;[39m
+     [90m     |[39m                     [31m[1m^[22m[39m
+     [90m 133 |[39m     expect(stepOwner(v({ missing[33m:[39m [[32m'vat_id'[39m[33m,[39m [32m'some_new_check'[39m] })))[33m.[39mtoBe([32m'supplier'[39m)[33m;[39m
+     [90m 134 |[39m   })[33m;[39m
+     [90m 135 |[39m[0m
+
+      at Object.<anonymous> (test/vtid-05238-step-owner.test.ts:132:21)
+
+  ● stepOwner — verification, first match wins › union of step.missing and detail.missing is considered when facts_changed is absent
+
+    TypeError: (0 , partner_onboarding_checklist_1.stepOwner) is not a function
+
+    [0m [90m 135 |[39m
+     [90m 136 |[39m   it([32m'union of step.missing and detail.missing is considered when facts_changed is absent'[39m[33m,[39m () [33m=>[39m {
+    [31m[1m>[22m[39m[90m 137 |[39m     expect(stepOwner(v({ missing[33m:[39m [][33m,[39m detail[33m:[39m { missing[33m:[39m [[32m'vat_id'[39m] } })))[33m.[39mtoBe([32m'assistant'[39m)[33m;[39m
+     [90m     |[39m                     [31m[1m^[22m[39m
+     [90m 138 |[39m   })[33m;[39m
+     [90m 139 |[39m })[33m;[39m
+     [90m 140 |[39m[0m
+
+      at Object.<anonymous> (test/vtid-05238-step-owner.test.ts:137:21)
+
+  ● buildChecklist — owner is additive only › sets owner on every open required step and nothing else
+
+    TypeError: (0 , partner_onboarding_checklist_1.stepOwner) is not a function
+
+    [0m [90m 157 |[39m       [36mconst[39m open [33m=[39m s[33m.[39mrequired [33m&&[39m s[33m.[39mstatus [33m!==[39m [32m'done'[39m [33m&&[39m s[33m.[39mstatus [33m!==[39m [32m'not_required'[39m[33m;[39m
+     [90m 158 |[39m       [36mif[39m (open) {
+    [31m[1m>[22m[39m[90m 159 |[39m         expect(s[33m.[39mowner)[33m.[39mtoBe(stepOwner(s))[33m;[39m
+     [90m     |[39m                                       [31m[1m^[22m[39m
+     [90m 160 |[39m         expect(s[33m.[39mowner)[33m.[39mtoBeTruthy()[33m;[39m
+     [90m 161 |[39m       } [36melse[39m {
+     [90m 162 |[39m         expect(s[33m.[39mowner)[33m.[39mtoBeUndefined()[33m;[39m[0m
+
+      at Object.<anonymous> (test/vtid-05238-step-owner.test.ts:159:39)
+
+  ● buildChecklist — owner is additive only › a stale verification row → owner assistant, old detail codes ignored (R1-F1 end to end)
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "assistant"
+    Received: undefined
+
+    [0m [90m 202 |[39m     expect(ver[33m.[39mstatus)[33m.[39mtoBe([32m'todo'[39m)[33m;[39m
+     [90m 203 |[39m     expect(ver[33m.[39mmissing)[33m.[39mtoEqual([[32m'facts_changed'[39m])[33m;[39m
+    [31m[1m>[22m[39m[90m 204 |[39m     expect(ver[33m.[39mowner)[33m.[39mtoBe([32m'assistant'[39m)[33m;[39m
+     [90m     |[39m                       [31m[1m^[22m[39m
+     [90m 205 |[39m   })[33m;[39m
+     [90m 206 |[39m
+     [90m 207 |[39m   it([32m'verification with a website missing code → owner assistant (R1-F2)'[39m[33m,[39m () [33m=>[39m {[0m
+
+      at Object.<anonymous> (test/vtid-05238-step-owner.test.ts:204:23)
+
+  ● buildChecklist — owner is additive only › verification with a website missing code → owner assistant (R1-F2)
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "assistant"
+    Received: undefined
+
+    [0m [90m 213 |[39m     )[33m;[39m
+     [90m 214 |[39m     [36mconst[39m ver [33m=[39m cl[33m.[39msteps[33m.[39mfind((s) [33m=>[39m s[33m.[39mkey [33m===[39m [32m'verification'[39m)[33m![39m[33m;[39m
+    [31m[1m>[22m[39m[90m 215 |[39m     expect(ver[33m.[39mowner)[33m.[39mtoBe([32m'assistant'[39m)[33m;[39m
+     [90m     |[39m                       [31m[1m^[22m[39m
+     [90m 216 |[39m   })[33m;[39m
+     [90m 217 |[39m })[33m;[39m
+     [90m 218 |[39m[0m
+
+      at Object.<anonymous> (test/vtid-05238-step-owner.test.ts:215:23)
+
+  ● shapeStatus — owner on open steps and byte-for-byte fields › carries owner on each open step
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "assistant"
+    Received: undefined
+
+    [0m [90m 245 |[39m     [36mconst[39m out [33m=[39m shapeStatus(statusBody()[33m,[39m [33mPORTAL[39m) [36mas[39m any[33m;[39m
+     [90m 246 |[39m     [36mconst[39m byKey [33m=[39m [33mObject[39m[33m.[39mfromEntries(out[33m.[39msteps[33m.[39mmap((s[33m:[39m any) [33m=>[39m [s[33m.[39mstep[33m,[39m s]))[33m;[39m
+    [31m[1m>[22m[39m[90m 247 |[39m     expect(byKey[33m.[39mcompany[33m.[39mowner)[33m.[39mtoBe([32m'assistant'[39m)[33m;[39m
+     [90m     |[39m                                 [31m[1m^[22m[39m
+     [90m 248 |[39m     expect(byKey[33m.[39mterms[33m.[39mowner)[33m.[39mtoBe([32m'supplier'[39m)[33m;[39m
+     [90m 249 |[39m     expect(byKey[33m.[39mverification[33m.[39mowner)[33m.[39mtoBe([32m'vitanaland'[39m)[33m;[39m
+     [90m 250 |[39m   })[33m;[39m[0m
+
+      at Object.<anonymous> (test/vtid-05238-step-owner.test.ts:247:33)
+
+  ● next_action.owner › owner of the next_action.step
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "assistant"
+    Received: undefined
+
+    [0m [90m 274 |[39m     [36mconst[39m out [33m=[39m shapeStatus(statusBody()[33m,[39m [33mPORTAL[39m) [36mas[39m any[33m;[39m
+     [90m 275 |[39m     expect(out[33m.[39mnext_action[33m.[39mstep)[33m.[39mtoBe([32m'company'[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 276 |[39m     expect(out[33m.[39mnext_action[33m.[39mowner)[33m.[39mtoBe([32m'assistant'[39m)[33m;[39m
+     [90m     |[39m                                   [31m[1m^[22m[39m
+     [90m 277 |[39m   })[33m;[39m
+     [90m 278 |[39m
+     [90m 279 |[39m   it([32m'typeless business_type pseudo-step → assistant'[39m[33m,[39m () [33m=>[39m {[0m
+
+      at Object.<anonymous> (test/vtid-05238-step-owner.test.ts:276:35)
+
+  ● next_action.owner › typeless business_type pseudo-step → assistant
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 0
+
+      Object {
+        "link": null,
+    -   "owner": "assistant",
+        "step": "business_type",
+        "supplier_action": null,
+        "tool": "update_business",
+      }
+
+    [0m [90m 279 |[39m   it([32m'typeless business_type pseudo-step → assistant'[39m[33m,[39m () [33m=>[39m {
+     [90m 280 |[39m     [36mconst[39m action [33m=[39m nextAction([36mnull[39m[33m,[39m [36mtrue[39m[33m,[39m [32m'link'[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 281 |[39m     expect(action)[33m.[39mtoEqual({ step[33m:[39m [32m'business_type'[39m[33m,[39m tool[33m:[39m [32m'update_business'[39m[33m,[39m supplier_action[33m:[39m [36mnull[39m[33m,[39m link[33m:[39m [36mnull[39m[33m,[39m owner[33m:[39m [32m'assistant'[39m })[33m;[39m
+     [90m     |[39m                    [31m[1m^[22m[39m
+     [90m 282 |[39m   })[33m;[39m
+     [90m 283 |[39m
+     [90m 284 |[39m   it([32m'checklist complete (submit_for_verification) → assistant'[39m[33m,[39m () [33m=>[39m {[0m
+
+      at Object.<anonymous> (test/vtid-05238-step-owner.test.ts:281:20)
+
+  ● next_action.owner › checklist complete (submit_for_verification) → assistant
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "assistant"
+    Received: undefined
+
+    [0m [90m 285 |[39m     [36mconst[39m action [33m=[39m nextAction({ next_step[33m:[39m [36mnull[39m[33m,[39m complete[33m:[39m [36mtrue[39m[33m,[39m steps[33m:[39m [] }[33m,[39m [36mfalse[39m[33m,[39m [32m'link'[39m)[33m;[39m
+     [90m 286 |[39m     expect(action[33m.[39mtool)[33m.[39mtoBe([32m'submit_for_verification'[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 287 |[39m     expect(action[33m.[39mowner)[33m.[39mtoBe([32m'assistant'[39m)[33m;[39m
+     [90m     |[39m                          [31m[1m^[22m[39m
+     [90m 288 |[39m   })[33m;[39m
+     [90m 289 |[39m
+     [90m 290 |[39m   it([32m'no step and no tool → null owner'[39m[33m,[39m () [33m=>[39m {[0m
+
+      at Object.<anonymous> (test/vtid-05238-step-owner.test.ts:287:26)
+
+  ● next_action.owner › no step and no tool → null owner
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 0
+
+      Object {
+        "link": null,
+    -   "owner": null,
+        "step": null,
+        "supplier_action": null,
+        "tool": null,
+      }
+
+    [0m [90m 290 |[39m   it([32m'no step and no tool → null owner'[39m[33m,[39m () [33m=>[39m {
+     [90m 291 |[39m     [36mconst[39m action [33m=[39m nextAction({ next_step[33m:[39m [36mnull[39m[33m,[39m complete[33m:[39m [36mfalse[39m[33m,[39m steps[33m:[39m [] }[33m,[39m [36mfalse[39m[33m,[39m [32m'link'[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 292 |[39m     expect(action)[33m.[39mtoEqual({ step[33m:[39m [36mnull[39m[33m,[39m tool[33m:[39m [36mnull[39m[33m,[39m supplier_action[33m:[39m [36mnull[39m[33m,[39m link[33m:[39m [36mnull[39m[33m,[39m owner[33m:[39m [36mnull[39m })[33m;[39m
+     [90m     |[39m                    [31m[1m^[22m[39m
+     [90m 293 |[39m   })[33m;[39m
+     [90m 294 |[39m
+     [90m 295 |[39m   it([32m'a supplier next step carries owner supplier and keeps supplier_action/link'[39m[33m,[39m () [33m=>[39m {[0m
+
+      at Object.<anonymous> (test/vtid-05238-step-owner.test.ts:292:20)
+
+  ● next_action.owner › a supplier next step carries owner supplier and keeps supplier_action/link
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "supplier"
+    Received: undefined
+
+    [0m [90m 299 |[39m       [32m'LINK'[39m[33m,[39m
+     [90m 300 |[39m     )[33m;[39m
+    [31m[1m>[22m[39m[90m 301 |[39m     expect(action[33m.[39mowner)[33m.[39mtoBe([32m'supplier'[39m)[33m;[39m
+     [90m     |[39m                          [31m[1m^[22m[39m
+     [90m 302 |[39m     expect(action[33m.[39msupplier_action)[33m.[39mtoBe([32m'Read and accept the Partner Terms on Vitanaland.'[39m)[33m;[39m
+     [90m 303 |[39m     expect(action[33m.[39mlink)[33m.[39mtoBe([32m'LINK'[39m)[33m;[39m
+     [90m 304 |[39m   })[33m;[39m[0m
+
+      at Object.<anonymous> (test/vtid-05238-step-owner.test.ts:301:26)
+
+  ● ON_SCREEN_STEPS / STEP_TOOLS consistency (R2-F1) › ON_SCREEN_STEPS is exactly the five supplier-action keys — team excluded
+
+    TypeError: commerce_mcp_1.ON_SCREEN_STEPS is not iterable
+
+    [0m [90m 307 |[39m describe([32m'ON_SCREEN_STEPS / STEP_TOOLS consistency (R2-F1)'[39m[33m,[39m () [33m=>[39m {
+     [90m 308 |[39m   it([32m'ON_SCREEN_STEPS is exactly the five supplier-action keys — team excluded'[39m[33m,[39m () [33m=>[39m {
+    [31m[1m>[22m[39m[90m 309 |[39m     expect([[33m...[39m[33mON_SCREEN_STEPS[39m][33m.[39msort())[33m.[39mtoEqual([[32m'billing_mandate'[39m[33m,[39m [32m'dpa'[39m[33m,[39m [32m'results_channel'[39m[33m,[39m [32m'terms'[39m[33m,[39m [32m'tracking_test'[39m][33m.[39msort())[33m;[39m
+     [90m     |[39m                [31m[1m^[22m[39m
+     [90m 310 |[39m     expect([33mON_SCREEN_STEPS[39m[33m.[39mhas([32m'team'[39m))[33m.[39mtoBe([36mfalse[39m)[33m;[39m
+     [90m 311 |[39m   })[33m;[39m
+     [90m 312 |[39m[0m
+
+      at Object.<anonymous> (test/vtid-05238-step-owner.test.ts:309:16)
+
+  ● ON_SCREEN_STEPS / STEP_TOOLS consistency (R2-F1) › every ON_SCREEN_STEPS key has fixed owner supplier
+
+    TypeError: commerce_mcp_1.ON_SCREEN_STEPS is not iterable
+
+    [0m [90m 312 |[39m
+     [90m 313 |[39m   it([32m'every ON_SCREEN_STEPS key has fixed owner supplier'[39m[33m,[39m () [33m=>[39m {
+    [31m[1m>[22m[39m[90m 314 |[39m     [36mfor[39m ([36mconst[39m key [36mof[39m [33mON_SCREEN_STEPS[39m) {
+     [90m     |[39m                       [31m[1m^[22m[39m
+     [90m 315 |[39m       expect(stepOwner(step({ key[33m:[39m key [36mas[39m [33mStepKey[39m })))[33m.[39mtoBe([32m'supplier'[39m)[33m;[39m
+     [90m 316 |[39m     }
+     [90m 317 |[39m   })[33m;[39m[0m
+
+      at Object.<anonymous> (test/vtid-05238-step-owner.test.ts:314:23)
+
+  ● ON_SCREEN_STEPS / STEP_TOOLS consistency (R2-F1) › team keeps today byte-for-byte MCP shape (no done_on_vitanaland)
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "supplier"
+    Received: undefined
+
+    [0m [90m 331 |[39m     expect(team[33m.[39mdone_on_vitanaland)[33m.[39mtoBeUndefined()[33m;[39m
+     [90m 332 |[39m     expect(team[33m.[39mlink)[33m.[39mtoBeUndefined()[33m;[39m
+    [31m[1m>[22m[39m[90m 333 |[39m     expect(team[33m.[39mowner)[33m.[39mtoBe([32m'supplier'[39m)[33m;[39m
+     [90m     |[39m                        [31m[1m^[22m[39m
+     [90m 334 |[39m   })[33m;[39m
+     [90m 335 |[39m })[33m;[39m
+     [90m 336 |[39m[0m
+
+      at Object.<anonymous> (test/vtid-05238-step-owner.test.ts:333:24)
+
+Test Suites: 2 failed, 2 total
+Tests:       53 failed, 20 passed, 73 total
+Snapshots:   0 total
+Time:        16.089 s, estimated 18 s
+Ran all test suites matching /test\\vtid-05238-step-owner.test.ts|test\\vtid-04941-commerce-mcp-automation.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

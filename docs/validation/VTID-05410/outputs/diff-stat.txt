@@ -1,0 +1,4 @@
+ .../lanes/grouped-welcome-notifications.md           |  2 +-
+ .../lanes/new-member-card-optin.md                   |  2 +-
+ .../new-member-welcome/lanes/say-hello-composer.md   | 20 +++++++++++++++++++-
+ 3 files changed, 21 insertions(+), 3 deletions(-)

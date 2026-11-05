@@ -1,0 +1,27 @@
+# VTID-05347 commands (base fef112e8c7, head before this log f6a8827c8c)
+$ node --test scripts/ci/staging-verify/lib.test.cjs scripts/ci/staging-verify/workflow.test.cjs scripts/ci/staging-verify/confirm-live.test.mjs scripts/ci/staging-verify/record-oasis.test.cjs
+# tests 88
+# pass 88
+# fail 0
+# skipped 0
+exit 0
+
+$ node --test scripts/ci/vtid-auto-close.test.cjs
+# tests 8
+# pass 8
+# fail 0
+# skipped 0
+exit 0
+
+$ node /projects/sandbox/vitana-platform/scripts/collab/preflight.mjs --repo . --base origin/main --head HEAD --branch kiro/quality-checks/staging-manifest-bom --title VTID-05347 (quality-checks/staging-manifest-bom): STAGING-VERIFY reads BOM manifests and coverage
+PASS  Collab tests [required]
+PASS  Collab handoff [required]
+PASS  Lane scope [required]
+PASS  PR-GATE scope [report-only in CI (until config.enforce=true)]
+PASS  PR-GATE sparring [report-only in CI (until config.enforce=true)]
+PASS  PR-GATE weakening [report-only in CI (until config.enforce=true)]
+PASS  PR-GATE red-green [report-only in CI (until config.enforce=true)]
+PASS  Kiro steering [report-only in CI (until config.enforce=true)]
+preflight: every check passed
+exit 0
+

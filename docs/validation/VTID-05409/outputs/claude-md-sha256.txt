@@ -1,0 +1,6 @@
+protected-gate sentence (normalized, soft-wrap collapsed):
+A protected gate file (§3a, e.g. `CLAUDE.md`) never merges on a reviewer-agent accept alone: it needs the owner's instruction naming the plan plus a reviewer-agent accept on the current head (Claude Code is retired).
+
+platform CLAUDE.md sha256 : 6aa1041d27f8f5511155b5c13003dce8e20dbda303e0c60e45261afbca9928f5
+vitana-v1 CLAUDE.md sha256: 6aa1041d27f8f5511155b5c13003dce8e20dbda303e0c60e45261afbca9928f5
+BYTE-IDENTICAL: True

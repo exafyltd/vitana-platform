@@ -1,0 +1,39 @@
+# VTID-05365 commands (collab-handoff-check-fix/validator-fix)
+Base: origin/main cf009eca8fe8c1bb4febb218fdb1a46deb6b4926. Session kiro-exafy-202610281323-392f. Windows 11, Node v24.11.1.
+
+## V1 red on base (new tests, base queue.mjs)
+node --test --test-name-pattern=VTID-05365 scripts/collab/queue.test.mjs   → tests 7, pass 1, fail 6 (red-on-base.txt)
+  R1 positive: "lane cards/_plan: commits from 2 sessions" (expected none)
+  R1 negative (second kiro session): base reports 3 sessions incl. ci-plan-spar
+  silent failure validate / scope-check: stderr empty
+  batching: "validateRange spawns: 3 commits 36, 30 commits 117"
+  commitsInRange: not exported
+  (the third R1 case, ci-plan-spar editing a lane past ready, is unchanged behaviour: passes on base and head)
+
+## V1-V4 green on head
+node --test --test-name-pattern=VTID-05365 scripts/collab/queue.test.mjs   → tests 8, pass 8, fail 0
+(8th test: commitFileReader equals git show in memory and through the temporary file, 2 git spawns)
+
+## Collab suite (Windows, linked worktree)
+node --test scripts/collab/*.test.mjs   → tests 229, pass 226, fail 3
+The 3 failures are Kiro Web / Windows-worktree tests and fail identically on base cf009eca8f
+(kiro-web-session.test.mjs + kiro-web-steering.test.mjs on base → 33 tests, 30 pass, 3 fail): parseCommand finds every push
+form …; from a linked worktree the workspace is the main checkout's parent …; case 6: the real checkout(s) generate a
+clean set. CI (Linux) is the arbiter for those.
+
+## Preflight (--no-tests), head 196880def4
+Collab handoff PASS, Lane scope PASS, PR-GATE scope/sparring/weakening/red-green PASS, Kiro steering PASS
+
+## V5 validate on the heads of #4415 and #4333 (before = origin/main queue.mjs, after = this head), local Windows
+node <queue.mjs> validate --repo <vitana-platform> --base <base> --head <head> --branch <branch> --summary <tmp>
+#4415 head 606f245076fb3f305f674e3464846c3761e3b731, base 94b5cd2600 (PR base), 5 non-merge commits
+  before: exit 1, 26.2 s, 1 problem "lane pm-ci-load/_plan: commits from 2 sessions (kiro-exafyltd-202610271503-9458,
+          ci-plan-spar) — one session per lane" (R1), nothing on stderr
+  after:  exit 0, 24.8 s, "3 handoff/lane file(s) changed, all valid"
+#4333 head 90aafd310fc7b3ce6ab3a97f8e8eaf934b5c4db5, base 3d3b4e6f17 (merge-base with origin/main), 14,020 non-merge commits
+  before: exit 1, 3.8 s, crash "queue.mjs: spawnSync git ENOBUFS" (the one-line log output of 14k commits overflows
+          the 1 MB default buffer), no summary
+  after:  exit 1, 265.5 s, 6 problems, each also as a ::error::collab handoff: line on stderr — the real R2 errors
+          ("reviewer_seat must differ from seat" on 6 kiro-autonomy-fallback lanes, a PM writer bug, plan
+          pm-reassign-idempotent). The lane-file reads are ~1.4 GB of distinct blobs here; they go through the
+          temporary file. Wall time includes the queue table (collect) of the local checkout.

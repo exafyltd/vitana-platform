@@ -1,0 +1,13 @@
+{
+  "vtid": "VTID-05341",
+  "kind": "infra",
+  "paths": [
+    ".kiro/steering/vitana-session-title.md",
+    "scripts/ci/kiro-steering/guard.test.cjs",
+    ".kiro/specs/session-title-stable/lanes/platform-title.md",
+    "docs/validation/VTID-05341/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05341/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

@@ -1,0 +1,10 @@
+{
+  "vtid": "VTID-05438",
+  "tests": [
+    {
+      "kind": "existing",
+      "ref": "node --test scripts/collab/land-guard.test.mjs",
+      "reason": "tooling-only change, nothing deploys"
+    }
+  ]
+}

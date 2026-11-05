@@ -21,8 +21,8 @@
    the PR's current head, every required check green on that head incl. Lane scope and Collab handoff, PR up to date
    with latest `main` and re-checked on that head, no conflict, every `depends_on` lane done, target `main` with a
    staging-only deploy path. A change to a protected gate file (`scripts/collab/protected-gate-files.json`) never
-   merges on the agent's accept alone: it needs a `claude` review on the current head or an owner instruction that
-   names the plan; log each such file in `decisions.md`. `gh pr merge --admin` only when the one red check is a
+   merges on the agent's accept alone: it needs the owner's instruction naming the plan plus a reviewer-agent accept
+   on the current head (Claude Code is retired); log each such file in `decisions.md`. `gh pr merge --admin` only when the one red check is a
    governance-artifact false positive for this change (Lane scope failing solely on the executor / governance-path /
    reviewer rule, or because the spec is not on `main` yet), with the run log linked in `merges.md`. A real red test,
    build, typecheck or STAGING-VERIFY is never overridden. Record every merge (lane log + `merges.md`: authority,
@@ -71,3 +71,15 @@
 12. **Measurement (collaboration.md §8b).** Every plan writes `docs/validation/<plan VTID>/timings.json` (schema
     `vitana.plan-timings/v1`: convergence, VTID, per-lane build / review / merge, staging verify, approved → verified,
     merge-conflict count, STAGING-VERIFY failure count; `null` where a source is missing, never 0) and Gate 2 quotes it.
+13. **Step order (enforced, plan `step-order-gate`).** Independent steps may run in parallel. A dependent step never
+    runs in parallel with the step it depends on: it waits for that step's result and exit code. Four orders are checked
+    by `node <vitana-platform>/scripts/collab/land-guard.mjs`: (a) `evidence --repo <dir> --vtid <VTID>` before a lane
+    code commit (acceptance.md, commands.log, scope.json staged or committed); (b) a review counts only for the PR's
+    current head or a head whose later commits only append lane-file entries or are `pm-agent` lane-state commits
+    (`review`); (c) every check's latest attempt is finished and green, and the PR is up to date, before a merge
+    (`checks`); (d) claims and the driver heartbeat are released only after the closing records are on `origin/main`
+    (`release`, `release-heartbeat`). A lane merge goes through `land-guard.mjs merge` (it runs (b), (c), the
+    up-to-date and protected-gate-file checks, and only then merges). A release goes through `land-guard.mjs release`,
+    never a raw `queue.mjs release`. Two merges stay outside `merge`, after `land-guard.mjs checks` shows the only red is
+    the logged false positive (run URL in `merges.md`): a spec-only `plan(` PR, and the `--admin` governance-artifact
+    case of rule 4. Breaking another session's stale claim stays `queue.mjs release --stale` (§5, §8).

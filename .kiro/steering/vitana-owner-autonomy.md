@@ -39,7 +39,7 @@ below applies.
 |---|---|---|---|
 | 1 | Applying a database migration. The owner must approve the migration file(s) and the target database before `RUN-MIGRATION.yml` or a vitana-v1 `apply-*.yml` runs, because staging shares the production database. Writing the migration file in a PR needs no approval. | `collaboration.md` §7d | Yes, when staging needs the migration applied first |
 | 2 | Production: PUBLISH, any `AWS-PROD-*` or production deploy workflow | `collaboration.md` §7c, §7d "Never"; CLAUDE.md IF–THEN 22–26 | No. Production comes after STAGING-VERIFY (Gate 2). A write to the production database before then is a live write (row 7) |
-| 3 | Merging a change to a protected gate file (`scripts/collab/protected-gate-files.json`, e.g. `CLAUDE.md`). It needs a Claude review on the current head or an owner instruction that names the plan. | `collaboration.md` §3a, §7b | Yes, for changes to those files only |
+| 3 | Merging a change to a protected gate file (`scripts/collab/protected-gate-files.json`, e.g. `CLAUDE.md`). It needs the owner's instruction naming the plan plus a reviewer-agent accept on the current head (Claude Code is retired). | `collaboration.md` §3a, §7b | Yes, for changes to those files only |
 | 4 | Security or data-loss risk | CLAUDE.md Autonomy Contract (c); `collaboration.md` §7 | Yes |
 | 5 | The same failure surviving 3 fix-forward attempts (park the lane or plan) | CLAUDE.md Autonomy Contract (d); `collaboration.md` §7, §7a | Yes |
 | 6 | An escalated sparring verdict, or work outside the converged plan that one more round does not settle | `collaboration.md` §7; CLAUDE.md Autonomy Contract (a) | Yes |

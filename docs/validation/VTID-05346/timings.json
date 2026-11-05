@@ -1,0 +1,75 @@
+{
+  "schema": "vitana.plan-timings/v1",
+  "plan_slug": "quality-checks",
+  "vtid": "VTID-05346",
+  "vtids": [
+    "VTID-05346",
+    "VTID-05347",
+    "VTID-05348"
+  ],
+  "generated_at": "2026-10-28T12:15:45Z",
+  "generated_by": "kiro-jtadic-202610271220-68a5",
+  "plan_pr_opened_at": "2026-10-27T12:31:53Z",
+  "converged_at": "2026-10-27T12:49:50.368Z",
+  "policy_approved_at": "2026-10-27T12:49:50.368Z",
+  "vtids_allocated_at": "2026-10-27T12:54:00Z",
+  "plan_merged_at": "2026-10-27T13:02:33Z",
+  "gate2_sent_at": null,
+  "convergence_ms": 1077368,
+  "vtid_ms": 249632,
+  "plan_merge_ms": 513000,
+  "lanes": [
+    {
+      "lane": "pipeline-quality",
+      "vtid": "VTID-05346",
+      "claimed_at": "2026-10-27T13:03:00Z",
+      "pr_opened_at": "2026-10-27T13:06:08Z",
+      "accepted_at": "2026-10-28T08:53:00Z",
+      "merged_at": "2026-10-28T09:55:32Z",
+      "staging_verified_at": null,
+      "build_ms": 188000,
+      "review_ms": 71212000,
+      "merge_ms": 3752000,
+      "review_rounds": 2,
+      "ci_fix_attempts": 1
+    },
+    {
+      "lane": "staging-manifest-bom",
+      "vtid": "VTID-05347",
+      "claimed_at": "2026-10-27T13:03:00Z",
+      "pr_opened_at": "2026-10-27T13:06:12Z",
+      "accepted_at": "2026-10-28T08:53:00Z",
+      "merged_at": "2026-10-28T10:00:26Z",
+      "staging_verified_at": null,
+      "build_ms": 192000,
+      "review_ms": 71208000,
+      "merge_ms": 4046000,
+      "review_rounds": 2,
+      "ci_fix_attempts": 1
+    },
+    {
+      "lane": "v1-pr-template",
+      "vtid": "VTID-05348",
+      "claimed_at": "2026-10-27T13:03:00Z",
+      "pr_opened_at": "2026-10-27T13:07:16Z",
+      "accepted_at": null,
+      "merged_at": "2026-10-28T10:01:15Z",
+      "staging_verified_at": null,
+      "build_ms": 256000,
+      "review_ms": null,
+      "merge_ms": null,
+      "review_rounds": 1,
+      "ci_fix_attempts": 0
+    }
+  ],
+  "staging_verify_ms": null,
+  "approved_to_verified_ms": null,
+  "merge_conflict_count": 0,
+  "staging_verify_failure_count": null,
+  "sources_unavailable": [
+    "staging_verify (deploys nothing: .kiro/pipeline/**, scripts/ci/staging-verify/**, a PR template)",
+    "gate2 (deploys nothing)",
+    "v1-pr-template accepted_at (the review session agent-vitana-lane-reviewer-202610280846-be97 started 08:46Z, before the merge; its entry was committed 10:06Z, after the merge, in #4432)"
+  ],
+  "notes": "claimed_at = the 13:03Z executing log entries (claims pushed 12:57-13:03Z). review_ms of the two platform lanes includes ~19 h blocked on the reviewer self-review rule (changes on 21121452/84a0f749 at 13:17Z) until session kiro-ide-202610272306-27b0 requested the reviews; correction in plan quality-checks-followup. ci_fix_attempts = the VALIDATOR-CHECK Evidence Pack fix (outputs/ missing). v1 pr-gate failed twice on public.ecr.aws \"Data limit exceeded\" (infra, one rerun per head; plan ci-ecr-public-auth), green on 01538df4."
+}

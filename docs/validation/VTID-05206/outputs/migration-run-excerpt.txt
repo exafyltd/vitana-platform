@@ -1,0 +1,2 @@
+apply	Apply migration via Supabase Management API	2026-10-30T12:15:45.0049057Z ^[[36;1m    print('Apply OK, status', r.status)^[[0m
+apply	Apply migration via Supabase Management API	2026-10-30T12:15:46.1826088Z Apply OK, status 201

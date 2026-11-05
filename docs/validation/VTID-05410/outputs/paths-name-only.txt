@@ -1,0 +1,26 @@
+## vitana-platform: git diff --name-only d729406d4cd656ad9d4f719d03d0a12dfe533561 kiro/new-member-welcome/say-hello-composer
+.kiro/specs/new-member-welcome/lanes/say-hello-composer.md
+docs/validation/VTID-05207/acceptance.md
+docs/validation/VTID-05207/plan-sparring.md
+docs/validation/VTID-05207/scope.json
+docs/validation/VTID-05207/staging-tests.json
+services/gateway/src/index.ts
+services/gateway/src/routes/chat.ts
+services/gateway/src/routes/new-member-greeting-repository.ts
+services/gateway/src/routes/new-member-greeting.ts
+services/gateway/src/services/new-member-greeting-guard.ts
+services/gateway/src/services/new-member-greeting-suggestion.ts
+services/gateway/test/vtid-05207-greeting-guard-send-route.test.ts
+services/gateway/test/vtid-05207-greeting-guard.test.ts
+services/gateway/test/vtid-05207-greeting-suggestion-route.test.ts
+services/gateway/test/vtid-05207-greeting-suggestion.test.ts
+services/gateway/test/vtid-05208-greeting-send-route.test.ts
+
+## vitana-v1: git diff --name-only 5a853a7775d64c328d52ed88e273fbc2439a6a51 kiro/new-member-welcome/say-hello-composer
+src/components/home/NewMemberCard.test.tsx
+src/components/home/NewMemberCard.tsx
+src/components/home/NewMemberGreetingComposer.test.tsx
+src/components/home/NewMemberGreetingComposer.tsx
+src/i18n/de/newsCard.json
+src/i18n/en/newsCard.json
+

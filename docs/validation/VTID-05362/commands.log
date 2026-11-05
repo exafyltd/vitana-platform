@@ -1,0 +1,57 @@
+$ node --test scripts/collab/land-guard.test.mjs
+# tests 7
+# pass 7
+# fail 0
+# skipped 0
+exit=0
+
+$ node --test scripts/collab/*.test.mjs
+# tests 191
+# pass 190
+# fail 0
+# skipped 1
+exit=0
+
+$ node --test scripts/ci/kiro-steering/guard.test.cjs
+# tests 66
+# pass 66
+# fail 0
+# skipped 0
+exit=0
+
+$ node scripts/ci/kiro-steering/guard.cjs .
+kiro-steering: OK
+exit=0
+
+$ node scripts/collab/land-guard.mjs evidence --repo . --vtid VTID-05362   (gate before the commit)
+land-guard evidence: refused — spawnSync git ENOBUFS
+
+## fix 1 (dogfood finding)
+The gate above refused with `spawnSync git ENOBUFS`: a whole-tree `git ls-files` overflowed the child-process buffer.
+The pipe through `tee` hid the exit code, so commit 971fd206 went ahead without a passing gate (the failure this lane
+exists to prevent). Fix: `evidence` lists only `docs/validation/<VTID>/` and child processes get a 64 MB buffer.
+Regression test: `evidence` on this repository for VTID-05343. From here on the gate runs with no pipe and its exit
+code decides.
+$ node --test scripts/collab/land-guard.test.mjs
+# tests 8
+# pass 8
+# fail 0
+exit=0
+$ node scripts/collab/land-guard.mjs evidence --repo . --vtid VTID-05362
+land-guard evidence: ok — VTID-05362 evidence present
+exit=0
+
+## fix 2 (review changes on 0c43330d)
+release: no .trim() on an inherited stdout (a successful release reported 'refused'). There is now a CLI test where a done lane exits 0 and the claim ref is freed. review: with the lane key (derived from the PR title) only that lane's file counts. checks: any non-completed attempt keeps a check pending. evidence: a staged deletion no longer counts as present.
+$ node --test scripts/collab/land-guard.test.mjs
+# tests 11
+# pass 11
+# fail 0
+# skipped 0
+exit=0
+$ node --test scripts/collab/*.test.mjs
+# tests 195
+# pass 194
+# fail 0
+# skipped 1
+exit=0

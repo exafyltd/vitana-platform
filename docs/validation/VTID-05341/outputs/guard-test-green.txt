@@ -1,0 +1,5 @@
+# Subtest: steering: the session title is set once and never renamed (vitana-session-title.md)
+ok 38 - steering: the session title is set once and never renamed (vitana-session-title.md)
+# tests 38
+# pass 38
+# fail 0
