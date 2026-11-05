@@ -235,6 +235,12 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const authBridgeRouter = require('./routes/auth-bridge').default;
   // VTID-05174 (Health Hub D5 remainder): account-deletion health residue (service token only)
   const healthErasureInternalRouter = require('./routes/health-erasure-internal').default;
+  // VTID-05541 (eng-gitlab-m2): GitLab project webhooks -> OASIS events (Standard Webhooks signature, no JWT)
+  const {
+    default: internalGitlabWebhookRouter,
+    gitlabWebhookBodyErrors,
+    GITLAB_WEBHOOK_BODY_LIMIT,
+  } = require('./routes/internal-gitlab-webhook');
   // VTID-02000: User limitations CRUD + impact counter
   const userLimitationsRouter = require('./routes/user-limitations').default;
   // VTID-02000: Wearables waitlist (Phase 0 stub — still works alongside Phase 1 connector flow)
@@ -616,6 +622,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // type '*/*' on purpose (unlike the Stripe mounts): the signature covers whatever
   // bytes the vendor sent, whatever Content-Type it labels them with.
   app.use('/api/v1/connectors/webhook', express.raw({ type: '*/*', limit: '2mb' }));
+  // VTID-05541: GitLab signs its project webhooks (Standard Webhooks) over the exact bytes sent, so this
+  // path gets raw bytes too; routes/internal-gitlab-webhook.ts parses the JSON after verification, and
+  // gitlabWebhookBodyErrors answers an oversized or broken body as JSON instead of an HTML error page.
+  app.use('/api/v1/internal/gitlab/webhook', express.raw({ type: '*/*', limit: GITLAB_WEBHOOK_BODY_LIMIT }), gitlabWebhookBodyErrors);
 
   // Middleware - IMPORTANT: JSON body parser must come before route handlers
   app.use(express.json({ limit: '2mb' }));
@@ -1271,6 +1281,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/internal/marketplace', internalMarketplaceSyncRouter, { owner: 'marketplace-sync' });
   mountRouterSync(app, '/api/v1/internal/auth-bridge', authBridgeRouter, { owner: 'auth-bridge' });
   mountRouterSync(app, '/api/v1/internal/health-erasure', healthErasureInternalRouter, { owner: 'health-erasure-internal' });
+  // VTID-05541: POST /api/v1/internal/gitlab/webhook (raw body parser above, before express.json()).
+  mountRouterSync(app, '/api/v1/internal/gitlab', internalGitlabWebhookRouter, { owner: 'internal-gitlab-webhook' });
 
   // VTID-02000: User limitations + impact counter (user-facing /ecosystem/preferences)
   mountRouterSync(app, '/api/v1/user/limitations', userLimitationsRouter, { owner: 'user-limitations' });
