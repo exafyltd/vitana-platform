@@ -1,0 +1,273 @@
+VTID-05552 — the new tests, red on base (tasks.md: every new test is recorded red on origin/main before the code).
+Base: origin/main 3767d3d09d934361750523fd5cb7ff3cda6607d5. Node v22.23.4 (no Node 22-only API used).
+
+== Run 1: the final test files copied into a detached worktree of the base commit, outside the repo
+   (/projects/sandbox/.scratch/be7f/base-wt, removed afterwards). The modules do not exist on base: each test
+   imports its module inside the test, so every test fails on its own (no whole-file failure).
+$ node --test scripts/ci/staging-verify/deploy-runs.test.mjs scripts/eng/verify/{aws-secret,record-env,shadow-wait,tpl-verify-structure,vtid-close-env}.test.mjs
+not ok 1 - deploy-runs file and GitHub listing give the same T_cut: a deploy that started mid-run bounds T_cut
+    error: run.mjs exports deployRunsFromEntries | expected: 'function' | actual: 'undefined'
+not ok 2 - deploy-runs file and GitHub listing give the same T_cut: a deploy that finished inside the 5-minute margin clamps T_cut to the run start
+    error: run.mjs exports deployRunsFromEntries | expected: 'function' | actual: 'undefined'
+not ok 3 - deploy-runs file and GitHub listing give the same T_cut: a skipped deploy never counts; the next real one does
+    error: run.mjs exports deployRunsFromEntries | expected: 'function' | actual: 'undefined'
+not ok 4 - deploy-runs file and GitHub listing give the same T_cut: a failed deploy counts (it may have rolled tasks)
+    error: run.mjs exports deployRunsFromEntries | expected: 'function' | actual: 'undefined'
+not ok 5 - deploy-runs file and GitHub listing give the same T_cut: a deploy older than the 6-hour lookback is ignored
+    error: run.mjs exports deployRunsFromEntries | expected: 'function' | actual: 'undefined'
+not ok 6 - deploy-runs file and GitHub listing give the same T_cut: no deploy of this service: T_cut = run start (nothing attributed)
+    error: run.mjs exports deployRunsFromEntries | expected: 'function' | actual: 'undefined'
+not ok 7 - deploy-runs entries become the run shape deployCutoff reads, only for the service under test
+    error: 'run.deployRunsFromEntries is not a function'
+not ok 8 - a malformed deploy-runs file is refused as a whole (fail closed), never partly read
+    error: 'run.deployRunsFromEntries is not a function'
+not ok 9 - with --deploy-runs-file there is no gh call, even with a GitHub token present, and T_cut matches GitHub
+    error: 'run.deployRunsFor is not a function'
+not ok 10 - without --deploy-runs-file the GitHub path is unchanged: the same gh call per service, the same runs
+    error: 'run.deployRunsFor is not a function'
+not ok 11 - a missing, empty or unreadable deploy-runs file fails closed: null (T_cut = run start), no GitHub fallback
+    error: 'run.deployRunsFor is not a function'
+not ok 12 - dry run, gateway: run.mjs verify with a deploy-runs file — no network, no gh call, T_cut from the file
+    error: the same T_cut as the GitHub listing of the same deploy | expected: '2026-11-05T13:04:57.474Z' | actual: '2026-11-05T12:54:57.587Z'
+ok 13 - dry run, gateway: without the flag the GitHub listing is used, with the same T_cut
+not ok 14 - dry run, community-app: run.mjs verify with a deploy-runs file — no network, no gh call, T_cut from the file
+    error: the same T_cut as the GitHub listing of the same deploy | expected: '2026-11-05T13:04:57.830Z' | actual: '2026-11-05T12:54:57.934Z'
+ok 15 - dry run, community-app: without the flag the GitHub listing is used, with the same T_cut
+not ok 16 - dry run, gateway: deploy-runs file missing on GitLab — fails closed (nothing attributed), says why, no GitHub fallback
+    error: The input did not match the regular expression /deploy-runs file .*missing.*no GitHub fallback/i. Input:
+not ok 17 - signV4 reproduces the AWS documentation example (IAM ListUsers, 20150830T123600Z)
+    error: "Cannot find module 'scripts/eng/verify/aws-secret.mjs' imported from scripts/eng/verify/aws-secret.test.mjs"
+not ok 18 - readSecret: the ID token buys 15-minute credentials for the role, which read the one secret
+    error: "Cannot find module 'scripts/eng/verify/aws-secret.mjs' imported from scripts/eng/verify/aws-secret.test.mjs"
+not ok 19 - a role outside account 472838866351 or a region other than eu-central-1 is refused before any call (IF–THEN 11)
+    error: "Cannot find module 'scripts/eng/verify/aws-secret.mjs' imported from scripts/eng/verify/aws-secret.test.mjs"
+not ok 20 - an STS or Secrets Manager error names the role or secret and the AWS error, never the token
+    error: "Cannot find module 'scripts/eng/verify/aws-secret.mjs' imported from scripts/eng/verify/aws-secret.test.mjs"
+not ok 21 - the CLI writes the secret to --out (mode 0600) and never prints it
+    error: node:internal/modules/esm/resolve:275
+not ok 22 - the CLI fails, naming the variable, when the job has no ID token
+    error: The input did not match the regular expression /VERIFY_ID_TOKEN/. Input:
+not ok 23 - GitLab variables and the oasis-recorder secret map to every input of record-oasis.sh
+    error: "Cannot find module 'scripts/eng/verify/record-env.mjs' imported from scripts/eng/verify/record-env.test.mjs"
+not ok 24 - WORKFLOW names the GitLab project of the job; DATA_REST_URL overrides the secret URL as on GitHub
+    error: "Cannot find module 'scripts/eng/verify/record-env.mjs' imported from scripts/eng/verify/record-env.test.mjs"
+not ok 25 - the commit and service the verify job wrote in target.json win over the pipeline commit (the nightly run)
+    error: "Cannot find module 'scripts/eng/verify/record-env.mjs' imported from scripts/eng/verify/record-env.test.mjs"
+not ok 26 - without the secret the Supabase inputs are empty, so record-oasis.sh itself refuses (job red)
+    error: "Cannot find module 'scripts/eng/verify/record-env.mjs' imported from scripts/eng/verify/record-env.test.mjs"
+not ok 27 - integration, a passed run: the same body as on GitHub except metadata.workflow, which names the GitLab job
+    error: node:internal/modules/cjs/loader:1433
+not ok 28 - integration, a superseded full run with attribution: the same body as on GitHub except metadata.workflow, which names the GitLab job
+    error: node:internal/modules/cjs/loader:1433
+not ok 29 - integration, the crashed runner (target.json, no results.json): the same body as on GitHub except metadata.workflow, which names the GitLab job
+    error: node:internal/modules/cjs/loader:1433
+not ok 30 - the fields the PUBLISH gate filters on (topic, metadata.service, metadata.commit) are the same on both hosts
+    error: "Cannot read properties of null (reading 'topic')"
+not ok 31 - record without its secret: the job is red, nothing is sent, the result stays in the artifact
+    error: The input did not match the regular expression /SUPABASE_URL \/ SUPABASE_SERVICE_ROLE not set/. Input:
+not ok 32 - shadow mode, or DELIVERY_MODE unset: nothing is recorded (GitHub stays the only writer of verification rows)
+    error: The input did not match the regular expression /shadow/i. Input:
+not ok 33 - the verify job never started (no target.json, no results.json): nothing is recorded and the log says why
+    error: node:internal/modules/cjs/loader:1433
+not ok 34 - shadow mode: waits until staging serves the commit, then runs run.mjs verify once
+    error: "Cannot find module 'scripts/eng/verify/shadow-wait.mjs' imported from scripts/eng/verify/shadow-wait.test.mjs"
+not ok 35 - shadow mode: staging never serves the commit within 60 minutes → not_comparable, run.mjs never runs, nothing recorded
+    error: "Cannot find module 'scripts/eng/verify/shadow-wait.mjs' imported from scripts/eng/verify/shadow-wait.test.mjs"
+not ok 36 - shadow mode: staging already serves a descendant → not_comparable at once (it will never serve the commit)
+    error: "Cannot find module 'scripts/eng/verify/shadow-wait.mjs' imported from scripts/eng/verify/shadow-wait.test.mjs"
+not ok 37 - shadow mode: a failed verification keeps its exit code; the result stays in the artifact
+    error: "Cannot find module 'scripts/eng/verify/shadow-wait.mjs' imported from scripts/eng/verify/shadow-wait.test.mjs"
+not ok 38 - live mode: no wait; run.mjs verify runs at once
+    error: "Cannot find module 'scripts/eng/verify/shadow-wait.mjs' imported from scripts/eng/verify/shadow-wait.test.mjs"
+not ok 39 - DELIVERY_MODE: only the exact value `live` is live; anything else, unset included, is shadow
+    error: "Cannot find module 'scripts/eng/verify/shadow-wait.mjs' imported from scripts/eng/verify/shadow-wait.test.mjs"
+not ok 40 - run.mjs is always given --deploy-runs-file (never the GitHub listing), and the full flag
+    error: "Cannot find module 'scripts/eng/verify/shadow-wait.mjs' imported from scripts/eng/verify/shadow-wait.test.mjs"
+not ok 41 - target.json records what the job verifies before anything else runs (the record job reads it)
+    error: "Cannot find module 'scripts/eng/verify/shadow-wait.mjs' imported from scripts/eng/verify/shadow-wait.test.mjs"
+not ok 42 - bad input is refused before any wait: unknown service, short sha
+    error: "Cannot find module 'scripts/eng/verify/shadow-wait.mjs' imported from scripts/eng/verify/shadow-wait.test.mjs"
+not ok 43 - nightly (--sha-from-staging): the commit is the one staging serves now, checked out before the full run
+    error: "Cannot find module 'scripts/eng/verify/shadow-wait.mjs' imported from scripts/eng/verify/shadow-wait.test.mjs"
+not ok 44 - the template defines the hidden jobs of plan §9 and nothing that runs on its own
+    error: "ENOENT: no such file or directory, open 'infra/gitlab-engineering/ci/tpl-verify.yml'"
+not ok 45 - .staging-verify: main class, a resource_group per service, not interruptible, audience of gl-verify only
+    error: "ENOENT: no such file or directory, open 'infra/gitlab-engineering/ci/tpl-verify.yml'"
+not ok 46 - the resource groups are oldest first: every group the template uses is declared for the settings sync
+    error: "ENOENT: no such file or directory, open 'infra/gitlab-engineering/ci/tpl-verify.yml'"
+not ok 47 - the nightly run passes full=true on the commit staging serves, in its own resource group
+    error: "ENOENT: no such file or directory, open 'infra/gitlab-engineering/ci/tpl-verify.yml'"
+not ok 48 - .record: deploy class, audience of gl-record only, checks out nothing, live mode only, runs record-oasis.sh
+    error: "ENOENT: no such file or directory, open 'infra/gitlab-engineering/ci/tpl-verify.yml'"
+not ok 49 - .vtid-close: deploy class, audience of gl-record only, checks out nothing, live mode only, at landing
+    error: "ENOENT: no such file or directory, open 'infra/gitlab-engineering/ci/tpl-verify.yml'"
+not ok 50 - .notify-platform: deploy class, no ID token, live mode only, starts the platform pipeline SCREENS-CATALOG-TRIGGER starts
+    error: "ENOENT: no such file or directory, open 'infra/gitlab-engineering/ci/tpl-verify.yml'"
+not ok 51 - shadow mode: every writing job also refuses in its own script, so a pipeline that overrides rules still writes nothing
+    error: "ENOENT: no such file or directory, open 'infra/gitlab-engineering/ci/tpl-verify.yml'"
+not ok 52 - runner classes (§3.2): nothing on the untrusted class; deploy-class jobs run only platform main's scripts
+    error: "ENOENT: no such file or directory, open 'infra/gitlab-engineering/ci/tpl-verify.yml'"
+not ok 53 - the central scripts come from platform main through the job token; the AWS roles are in account 472838866351
+    error: "ENOENT: no such file or directory, open 'infra/gitlab-engineering/ci/tpl-verify.yml'"
+not ok 54 - a squash commit with the §3.5 trailers maps to PR_TITLE, PR_BODY, PR_HEAD_REF, PR_LABELS and PR_REF
+    error: "Cannot find module 'scripts/eng/verify/vtid-close-env.mjs' imported from scripts/eng/verify/vtid-close-env.test.mjs"
+not ok 55 - the trailers are parsed from the last block, also without a blank line before them; CRLF is accepted
+    error: "Cannot find module 'scripts/eng/verify/vtid-close-env.mjs' imported from scripts/eng/verify/vtid-close-env.test.mjs"
+not ok 56 - the mapped environment gives vtid-auto-close.cjs the same decision as the GitHub pull request did
+    error: "Cannot find module 'scripts/eng/verify/vtid-close-env.mjs' imported from scripts/eng/verify/vtid-close-env.test.mjs"
+not ok 57 - a dev-autopilot/* source branch keeps its meaning: the Dev Autopilot pipeline closes that VTID, not the landing
+    error: "Cannot find module 'scripts/eng/verify/vtid-close-env.mjs' imported from scripts/eng/verify/vtid-close-env.test.mjs"
+not ok 58 - the `VTID_AUTO_CLOSE: no` line in the description keeps its meaning and stays in PR_BODY
+    error: "Cannot find module 'scripts/eng/verify/vtid-close-env.mjs' imported from scripts/eng/verify/vtid-close-env.test.mjs"
+not ok 59 - a commit on main without a Merge-Request trailer is not a merge-bot landing: no environment, nothing is closed
+    error: "Cannot find module 'scripts/eng/verify/vtid-close-env.mjs' imported from scripts/eng/verify/vtid-close-env.test.mjs"
+not ok 60 - `vtid-close-env.mjs run` in live mode runs vtid-auto-close.cjs with the mapped environment and the service token
+    error: node:internal/modules/esm/resolve:275
+not ok 61 - `vtid-close-env.mjs run` closes nothing in shadow mode, or when DELIVERY_MODE is unset (GitHub stays the only closer)
+    error: The input did not match the regular expression /shadow/i. Input:
+not ok 62 - `vtid-close-env.mjs run` on a commit without the merge-bot trailers makes no gateway call and says why
+    error: node:internal/modules/esm/resolve:275
+# tests 62
+# suites 0
+# pass 2
+# fail 60
+# cancelled 0
+# skipped 0
+# todo 0
+
+== Run 2: the same tests against no-behaviour stubs placed OUTSIDE the repo (/projects/sandbox/.scratch/be7f/red-stubs):
+   base run.mjs plus empty exports deployRunsFromEntries/readDeployRuns/deployRunsFor; scripts/eng/verify/*.mjs with
+   the same exports and empty bodies; an empty tpl-verify.yml. Failures are now assertion failures.
+not ok 1 - deploy-runs file and GitHub listing give the same T_cut: a deploy that started mid-run bounds T_cut
+    error: "Cannot read properties of undefined (reading 'ok')"
+not ok 2 - deploy-runs file and GitHub listing give the same T_cut: a deploy that finished inside the 5-minute margin clamps T_cut to the run start
+    error: "Cannot read properties of undefined (reading 'ok')"
+not ok 3 - deploy-runs file and GitHub listing give the same T_cut: a skipped deploy never counts; the next real one does
+    error: "Cannot read properties of undefined (reading 'ok')"
+not ok 4 - deploy-runs file and GitHub listing give the same T_cut: a failed deploy counts (it may have rolled tasks)
+    error: "Cannot read properties of undefined (reading 'ok')"
+not ok 5 - deploy-runs file and GitHub listing give the same T_cut: a deploy older than the 6-hour lookback is ignored
+    error: "Cannot read properties of undefined (reading 'ok')"
+not ok 6 - deploy-runs file and GitHub listing give the same T_cut: no deploy of this service: T_cut = run start (nothing attributed)
+    error: "Cannot read properties of undefined (reading 'ok')"
+not ok 7 - deploy-runs entries become the run shape deployCutoff reads, only for the service under test
+    error: Expected values to be strictly deep-equal:
+not ok 8 - a malformed deploy-runs file is refused as a whole (fail closed), never partly read
+    error: "Cannot read properties of undefined (reading 'ok')"
+not ok 9 - with --deploy-runs-file there is no gh call, even with a GitHub token present, and T_cut matches GitHub
+    error: Expected values to be strictly equal: | expected: 1793881200000 | actual: 1793880000000
+not ok 10 - without --deploy-runs-file the GitHub path is unchanged: the same gh call per service, the same runs
+    error: Expected values to be strictly deep-equal:
+not ok 11 - a missing, empty or unreadable deploy-runs file fails closed: null (T_cut = run start), no GitHub fallback
+    error: deploy-runs-file="/tmp/deploy-runs-95Flz4/missing.json" | expected: ~
+not ok 12 - dry run, gateway: run.mjs verify with a deploy-runs file — no network, no gh call, T_cut from the file
+    error: the same T_cut as the GitHub listing of the same deploy | expected: '2026-11-05T13:04:58.490Z' | actual: '2026-11-05T12:54:58.597Z'
+ok 13 - dry run, gateway: without the flag the GitHub listing is used, with the same T_cut
+not ok 14 - dry run, community-app: run.mjs verify with a deploy-runs file — no network, no gh call, T_cut from the file
+    error: the same T_cut as the GitHub listing of the same deploy | expected: '2026-11-05T13:04:58.839Z' | actual: '2026-11-05T12:54:58.941Z'
+ok 15 - dry run, community-app: without the flag the GitHub listing is used, with the same T_cut
+not ok 16 - dry run, gateway: deploy-runs file missing on GitLab — fails closed (nothing attributed), says why, no GitHub fallback
+    error: The input did not match the regular expression /deploy-runs file .*missing.*no GitHub fallback/i. Input:
+not ok 17 - signV4 reproduces the AWS documentation example (IAM ListUsers, 20150830T123600Z)
+    error: Expected values to be strictly equal: | expected: 'f536975d06c0309214f805bb90ccff089219ecd68b2577efef23edd43b7e1a59'
+not ok 18 - readSecret: the ID token buys 15-minute credentials for the role, which read the one secret
+    error: Expected values to be strictly equal: | expected: '{"SUPABASE_URL":"https://example.invalid","SUPABASE_SERVICE_ROLE":"k"}'
+not ok 19 - a role outside account 472838866351 or a region other than eu-central-1 is refused before any call (IF–THEN 11)
+    error: 'Missing expected rejection.'
+not ok 20 - an STS or Secrets Manager error names the role or secret and the AWS error, never the token
+    error: 'Missing expected rejection.'
+not ok 21 - the CLI writes the secret to --out (mode 0600) and never prints it
+    error: "Cannot read properties of null (reading 'text')"
+not ok 22 - the CLI fails, naming the variable, when the job has no ID token
+    error: 'Expected "actual" to be strictly unequal to: 0' | expected: 0 | actual: 0
+not ok 23 - GitLab variables and the oasis-recorder secret map to every input of record-oasis.sh
+    error: Expected values to be strictly deep-equal:
+not ok 24 - WORKFLOW names the GitLab project of the job; DATA_REST_URL overrides the secret URL as on GitHub
+    error: Expected values to be strictly equal: | expected: 'gitlab:vitana/vitana-platform/staging-verify'
+not ok 25 - the commit and service the verify job wrote in target.json win over the pipeline commit (the nightly run)
+    error: "Cannot read properties of undefined (reading 'SHA')"
+not ok 26 - without the secret the Supabase inputs are empty, so record-oasis.sh itself refuses (job red)
+    error: "Cannot read properties of undefined (reading 'SUPABASE_URL')"
+not ok 27 - integration, a passed run: the same body as on GitHub except metadata.workflow, which names the GitLab job
+    error: 'both runs sent a body' | expected: true | actual: ~
+not ok 28 - integration, a superseded full run with attribution: the same body as on GitHub except metadata.workflow, which names the GitLab job
+    error: 'both runs sent a body' | expected: true | actual: ~
+not ok 29 - integration, the crashed runner (target.json, no results.json): the same body as on GitHub except metadata.workflow, which names the GitLab job
+    error: 'both runs sent a body' | expected: true | actual: ~
+not ok 30 - the fields the PUBLISH gate filters on (topic, metadata.service, metadata.commit) are the same on both hosts
+    error: "Cannot read properties of null (reading 'topic')"
+not ok 31 - record without its secret: the job is red, nothing is sent, the result stays in the artifact
+    error: '' | expected: 0 | actual: 0
+not ok 32 - shadow mode, or DELIVERY_MODE unset: nothing is recorded (GitHub stays the only writer of verification rows)
+    error: 'DELIVERY_MODE=shadow: refused' | expected: 0 | actual: 0
+not ok 33 - the verify job never started (no target.json, no results.json): nothing is recorded and the log says why
+    error: The input did not match the regular expression /target\.json/. Input: | actual: ''
+not ok 34 - shadow mode: waits until staging serves the commit, then runs run.mjs verify once
+    error: Expected values to be strictly equal: | expected: 0
+not ok 35 - shadow mode: staging never serves the commit within 60 minutes → not_comparable, run.mjs never runs, nothing recorded
+    error: Expected values to be strictly equal: | expected: 3600000
+not ok 36 - shadow mode: staging already serves a descendant → not_comparable at once (it will never serve the commit)
+    error: Expected values to be strictly equal: | expected: 0
+not ok 37 - shadow mode: a failed verification keeps its exit code; the result stays in the artifact
+    error: Expected values to be strictly equal: | expected: 1
+not ok 38 - live mode: no wait; run.mjs verify runs at once
+    error: Expected values to be strictly equal: | expected: 0
+not ok 39 - DELIVERY_MODE: only the exact value `live` is live; anything else, unset included, is shadow
+    error: Expected values to be strictly equal: | expected: 'live'
+not ok 40 - run.mjs is always given --deploy-runs-file (never the GitHub listing), and the full flag
+    error: Expected values to be strictly deep-equal:
+not ok 41 - target.json records what the job verifies before anything else runs (the record job reads it)
+    error: "ENOENT: no such file or directory, open '/tmp/shadow-wait-TbhBif/target.json'"
+not ok 42 - bad input is refused before any wait: unknown service, short sha
+    error: 'Missing expected rejection.'
+not ok 43 - nightly (--sha-from-staging): the commit is the one staging serves now, checked out before the full run
+    error: Expected values to be strictly equal: | expected: 'aa00bb11cc22dd33ee44ff5566778899aabbccdd'
+not ok 44 - the template defines the hidden jobs of plan §9 and nothing that runs on its own
+    error: '.staging-verify defined' | expected: true | actual: false
+not ok 45 - .staging-verify: main class, a resource_group per service, not interruptible, audience of gl-verify only
+    error: '.staging-verify is defined' | expected: true | actual: false
+not ok 46 - the resource groups are oldest first: every group the template uses is declared for the settings sync
+    error: '.resource-groups declares the process modes (GitLab sets them only through the API)' | expected: true | actual: false
+not ok 47 - the nightly run passes full=true on the commit staging serves, in its own resource group
+    error: '.staging-verify-nightly is defined' | expected: true | actual: false
+not ok 48 - .record: deploy class, audience of gl-record only, checks out nothing, live mode only, runs record-oasis.sh
+    error: '.record is defined' | expected: true | actual: false
+not ok 49 - .vtid-close: deploy class, audience of gl-record only, checks out nothing, live mode only, at landing
+    error: '.vtid-close is defined' | expected: true | actual: false
+not ok 50 - .notify-platform: deploy class, no ID token, live mode only, starts the platform pipeline SCREENS-CATALOG-TRIGGER starts
+    error: '.notify-platform is defined' | expected: true | actual: false
+not ok 51 - shadow mode: every writing job also refuses in its own script, so a pipeline that overrides rules still writes nothing
+    error: '.record is defined' | expected: true | actual: false
+not ok 52 - runner classes (§3.2): nothing on the untrusted class; deploy-class jobs run only platform main's scripts
+    error: '.staging-verify is defined' | expected: true | actual: false
+not ok 53 - the central scripts come from platform main through the job token; the AWS roles are in account 472838866351
+    error: '.delivery-central is defined' | expected: true | actual: false
+not ok 54 - a squash commit with the §3.5 trailers maps to PR_TITLE, PR_BODY, PR_HEAD_REF, PR_LABELS and PR_REF
+    error: Expected values to be strictly deep-equal:
+not ok 55 - the trailers are parsed from the last block, also without a blank line before them; CRLF is accepted
+    error: "Cannot read properties of undefined (reading 'title')"
+not ok 56 - the mapped environment gives vtid-auto-close.cjs the same decision as the GitHub pull request did
+    error: "Cannot read properties of undefined (reading 'PR_TITLE')"
+not ok 57 - a dev-autopilot/* source branch keeps its meaning: the Dev Autopilot pipeline closes that VTID, not the landing
+    error: "Cannot read properties of undefined (reading 'PR_HEAD_REF')"
+not ok 58 - the `VTID_AUTO_CLOSE: no` line in the description keeps its meaning and stays in PR_BODY
+    error: "Cannot read properties of undefined (reading 'PR_BODY')"
+not ok 59 - a commit on main without a Merge-Request trailer is not a merge-bot landing: no environment, nothing is closed
+    error: Expected values to be strictly equal: | expected: ~
+not ok 60 - `vtid-close-env.mjs run` in live mode runs vtid-auto-close.cjs with the mapped environment and the service token
+    error: Expected values to be strictly equal: | expected: 2 | actual: 0
+not ok 61 - `vtid-close-env.mjs run` closes nothing in shadow mode, or when DELIVERY_MODE is unset (GitHub stays the only closer)
+    error: 'DELIVERY_MODE=shadow: refused' | expected: 0 | actual: 0
+not ok 62 - `vtid-close-env.mjs run` on a commit without the merge-bot trailers makes no gateway call and says why
+    error: The input did not match the regular expression /Merge-Request/. Input: | actual: ''
+# tests 62
+# suites 0
+# pass 2
+# fail 60
+# cancelled 0
+# skipped 0
+# todo 0
+
+Result: 62 tests, 60 red on base (and 60 red on the stubs). The 2 that pass on base are by design: tests 13 and 15
+prove that WITHOUT --deploy-runs-file the GitHub listing is used with the same T_cut (task V1: "without it the GitHub
+path is unchanged"), so they must pass on base and on head.
