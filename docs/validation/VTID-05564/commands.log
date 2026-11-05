@@ -1,0 +1,18 @@
+# VTID-05564 agentic-delivery/sv-cwd — commands.log (worktree /projects/sandbox/.rv/svcwd, base origin/main d73fec53f9 = plan PR #4718 merge)
+# Scratch folder (outside the repository): /projects/sandbox/.scratch/tools/svcwd/ (harness copies, npx HOME, CI logs). Node v22.23.4 (sandbox).
+$ node scripts/collab/queue.mjs session-id --agent kiro --seat exafy   -> kiro-exafy-202611052138-50a6
+$ gh api repos/exafyltd/vitana-platform/pulls/4718 (polled 21:38Z-21:50Z)   -> merged 2026-11-05T21:50:00Z as d73fec53f9; lanes/sv-cwd.md on main with vtid: VTID-05564 (pass)
+$ gh api repos/exafyltd/vitana-platform/actions/runs/{42078889519,42098033490}; gh run view <id> --repo exafyltd/vitana-platform --log-failed   -> both failure; summaries 37/40 and 43/46, failed = the three existing suites only (outputs/staging-verify-runs.txt)
+$ gh api ".../actions/workflows/STAGING-VERIFY.yml/runs?created=>=2026-11-05T12:00:00Z"; gh run view {42050099671,42061647712} --log-failed; gh run view 42063399508 --log   -> 32/35 and 35/38 (same three failures); 42063399508 verified the production commit 2002283504, smoke 12/12 (outputs/staging-verify-runs.txt)
+$ node scripts/collab/queue.mjs claim agentic-delivery/sv-cwd --session kiro-exafy-202611052138-50a6 --repo /projects/sandbox/vitana-platform   -> claim ref pushed 07ff7be536 (21:50:47Z); the command then failed on a shared-store ref-lock race in its fetch; the retry 20 s later reported the claim held by this session (pass)
+$ git -C /projects/sandbox/vitana-platform worktree add -b kiro/agentic-delivery/sv-cwd /projects/sandbox/.rv/svcwd origin/main   -> HEAD d73fec53f9 (pass)
+$ cp -al /projects/sandbox/.cache/gateway-node_modules services/gateway/node_modules   -> gateway dependencies in place of npm ci (pass)
+$ HOME=<scratch>/home node <scratch>/replay-existing.mjs --repo <scratch detached worktree at 27de7a98d1, identical manifests> --vtids VTID-05515,VTID-05516,VTID-05518   -> 0 passed, 3 failed (first replay, 21:44Z; npx installed jest@30.5.2 into <scratch>/home)
+$ HOME=<scratch>/home node <scratch>/replay-existing.mjs --repo /projects/sandbox/.rv/svcwd --vtids VTID-05515,VTID-05516,VTID-05518   -> outputs/red-on-base.txt: 0 passed, 3 failed, 4 of 4 files "Test suite failed to run", 0 tests (exit 1, fail as expected)
+$ (edit) add "cwd": "services/gateway" to tests[0] of docs/validation/VTID-05515|05516|05518/staging-tests.json   -> 3 files, 3 insertions
+$ HOME=<scratch>/home node <scratch>/replay-existing.mjs --repo /projects/sandbox/.rv/svcwd --vtids VTID-05515,VTID-05516,VTID-05518   -> outputs/green.txt: 3 passed, 0 failed; Tests 7/7, 16/16, 32/32 = 55/55; validateManifest ok=true x3 (exit 0, pass)
+$ node --test scripts/ci/staging-verify/   -> Node 22 takes the directory as a module path: MODULE_NOT_FOUND, 1 fail, nothing tested (outputs/staging-verify-scripts.txt)
+$ node --test $(find scripts/ci/staging-verify -path '*/node_modules' -prune -o \( -name '*.test.cjs' -o -name '*.test.mjs' \) -print | sort)   -> outputs/staging-verify-scripts.txt: 103 tests, 103 pass, 0 fail (pass)
+$ cd services/gateway && CI=1 NODE_ENV=test npx jest test/vtid-04659-staging-checks-use-versioned-urls.test.ts test/vtid-04696-staging-checks-follow-asset-bumps.test.ts   -> outputs/manifest-readers.txt: 2 suites, 3 tests, all pass (pass)
+$ sha256sum outputs/replay-existing.mjs <scratch>/replay-existing.mjs   -> both 30049c469cdf7af84c107c4bddd0353f2e5d6cdf8d6fb09159e227d462f98c34 (the committed harness is the one that ran)
+$ node /projects/sandbox/vitana-platform/scripts/collab/land-guard.mjs evidence --repo /projects/sandbox/.rv/svcwd --vtid VTID-05564   -> "land-guard evidence: ok — VTID-05564 evidence present" (pass)

@@ -1,6 +1,6 @@
 ---
 lane: sv-cwd
-state: ready
+state: executing
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -12,7 +12,9 @@ paths:
   - docs/validation/VTID-05515/staging-tests.json
   - docs/validation/VTID-05516/staging-tests.json
   - docs/validation/VTID-05518/staging-tests.json
-updated: 2026-11-05T21:34Z
+claimed_by: kiro-exafy-202611052138-50a6
+branch: kiro/agentic-delivery/sv-cwd
+updated: 2026-11-05T21:58Z
 vtid: VTID-05564
 ---
 # Lane `sv-cwd`: fix forward of the gateway STAGING-VERIFY (three manifests run Jest from the wrong folder)
@@ -35,3 +37,10 @@ claims it; the driver requests the reviewer agent. It lands before lane `scm-web
 
 ### 2026-11-05T21:34Z · ci-plan-spar · ready (VTID allocated)
 VTID-05564 allocated after policy approval (converged-auto-v1).
+
+### 2026-11-05T21:58Z · kiro-exafy-202611052138-50a6 · ready → executing
+Claimed by builder `kiro-exafy-202611052138-50a6` (seat `exafy`, not the driver) on base `d73fec53f9`. Built V1-V4: each of
+the three manifests gains `"cwd": "services/gateway"` in its `existing` test, nothing else. Red on base: a replay of
+`runExisting` runs the refs from the repository root, 0 of 3 suites pass (4 of 4 files fail to run, 0 tests). Green: the
+same replay runs them in `services/gateway`, 3 of 3 suites, 55 of 55 tests; `lib.validateManifest` ok on each;
+staging-verify script tests 103/103. Decisions in `docs/validation/VTID-05564/acceptance.md`.
