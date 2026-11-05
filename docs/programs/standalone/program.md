@@ -66,6 +66,7 @@ specs:
   - vitana-platform:sparring-floor-retry
   - vitana-platform:ci-dockerhub-mirror
   - vitana-platform:review-survives-main-merge
+  - vitana-platform:operator-chat-service-token
   - vitana-platform:memory-legacy-read-retire-r2
 docs:
   - vitana-platform:.kiro/specs/pm-agent/plan-sparring.md
