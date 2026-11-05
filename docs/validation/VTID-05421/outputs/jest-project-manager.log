@@ -69,6 +69,57 @@ ts-jest[config] (WARN)
 
       at recordLease (src/services/project-manager/lease.ts:47:13)
 
+PASS test/project-manager/decide.test.ts
+  mergeDecision — all preconditions true → merge-eligible
+    ✓ the baseline lane is merge-eligible (28 ms)
+  mergeDecision — each precondition individually false → NO merge (mutation)
+    ✓ lane not verified (2 ms)
+    ✓ no PR (3 ms)
+    ✓ no VTID on the lane (1 ms)
+    ✓ no review entry (1 ms)
+    ✓ review from a different seat than reviewer_seat (1 ms)
+    ✓ review on a stale head sha (not current)
+    ✓ review verdict is changes, not approve (1 ms)
+    ✓ a required check (Lane scope) is not green (1 ms)
+    ✓ a required check (Collab handoff) is missing on the head (1 ms)
+    ✓ a required check is green but on a different head sha (1 ms)
+    ✓ Claude Approvals App check exists but is not success
+    ✓ Claude Approvals App check present AND success → still merge-eligible (1 ms)
+    ✓ merge conflict (not mergeable) (1 ms)
+    ✓ a depends_on lane is not done (12 ms)
+    ✓ a depends_on lane IS done → merge-eligible (2 ms)
+    ✓ PR title does not carry the lane VTID
+    ✓ lane declares no paths
+    ✓ self-review residual: review session id appears in the executing log (1 ms)
+  reassignDecision — stale ready / stale review
+    ✓ ready <24h → no reassign (1 ms)
+    ✓ ready >24h but seat ran automation in window → no reassign
+    ✓ ready >24h, no automation → reassign to next seat for area (1 ms)
+    ✓ ready >24h, no next seat for area → claude (1 ms)
+    ✓ review waiting >24h with no review entry → reassign review (1 ms)
+    ✓ review waiting >24h but a review already exists → no reassign
+    ✓ review waiting <24h → no reassign
+  parkDecision — 3 CI fails / risk flag / stale claim
+    ✓ PR failed CI on 3 consecutive pushes → park
+    ✓ PR failed CI on only 2 pushes → no park (1 ms)
+    ✓ reviewer flagged risk → park (1 ms)
+    ✓ claim >48h with no branch activity → park + release
+    ✓ claim >48h BUT with later branch activity → no park (1 ms)
+    ✓ claim <48h → no park (2 ms)
+    ✓ a done lane is never parked
+  gate2Decisions — all-verified vs 4h-elapsed timing
+    ✓ no lane verified yet → no gate2 (1 ms)
+    ✓ every deploying lane verified → gate2 (all_verified) (1 ms)
+    ✓ one verified, one not, <4h since first → no gate2 (1 ms)
+    ✓ one verified, one not, >4h since first → gate2 (four_hours_elapsed) (1 ms)
+    ✓ gate2 already sent → not re-sent
+    ✓ non-deploying lanes are ignored (no gate2) (1 ms)
+  decide — orchestration + mode gating + precedence
+    ✓ mode off → no decisions at all (1 ms)
+    ✓ park takes precedence over merge for a troubled verified lane (1 ms)
+    ✓ a clean merge-eligible lane yields exactly one merge decision
+    ✓ merge + gate2 can both appear for different lanes (1 ms)
+
   console.log
     [PM] pm_lease: acquired → table_absent
 
@@ -91,72 +142,126 @@ ts-jest[config] (WARN)
 
 PASS test/project-manager/act.test.ts
   act layer — mode gating
-    ✓ live: a merge-eligible decision calls safe-merge exactly once (79 ms)
+    ✓ live: a merge-eligible decision calls safe-merge exactly once (52 ms)
     ✓ dry_run: never calls safe-merge (1 ms)
     ✓ off: never calls safe-merge (1 ms)
   act layer — never deploys, dispatches, or allocates
-    ✓ acting on every decision kind touches only safe-merge, lane writes and the Gate-2 post (2 ms)
+    ✓ acting on every decision kind touches only safe-merge, lane writes and the Gate-2 post (1 ms)
   act layer — governance-path merge guard
-    ✓ a governance-path PR whose reviewer is NOT claude is refused, never merged (1 ms)
-    ✓ a governance-path PR whose reviewer IS claude is allowed to merge
+    ✓ a governance-path PR whose reviewer is NOT claude is refused, never merged (25 ms)
+    ✓ a governance-path PR whose reviewer IS claude is allowed to merge (1 ms)
     ✓ governance helpers classify paths and reviewers correctly (1 ms)
   act layer — safe-merge result handling
-    ✓ already-merged PR is a no-op success, not an error; lane set done
-    ✓ safe-merge refused (gate not met) → lane NOT set done (11 ms)
+    ✓ already-merged PR is a no-op success, not an error; lane set done (1 ms)
+    ✓ safe-merge refused (gate not met) → lane NOT set done (1 ms)
   act layer — per-tick lease
     ✓ lease absent (p1 migration not present) → tick no-ops, no action taken (2 ms)
-    ✓ lease held by another task → tick no-ops (2 ms)
-    ✓ default lease manager (no injection) is the fail-safe NoLeaseManager → no-op (2 ms)
+    ✓ lease held by another task → tick no-ops (1 ms)
+    ✓ default lease manager (no injection) is the fail-safe NoLeaseManager → no-op (7 ms)
   act layer — Gate-2 batch
     ✓ posts the run-view question with the full production..verified commit list; never deploys (2 ms)
   act layer — reassign and park write lane-file state
     ✓ reassign to a seat moves seat + next_actor (1 ms)
-    ✓ reassign to claude sets next_actor claude, no seat change (9 ms)
+    ✓ reassign to claude sets next_actor claude, no seat change
     ✓ stale-claim park releases the claim (1 ms)
   prNumberFromUrl
-    ✓ parses a PR number from a GitHub url (5 ms)
+    ✓ parses a PR number from a GitHub url
     ✓ returns null for a url with no pull segment (1 ms)
+
+PASS test/project-manager/governance.test.ts
+  T9-T12 merge on the reviewer agent accept
+    ✓ T9 governance lane + agent accept on the current head + checks green → merge decision and act merges (36 ms)
+    ✓ T10 non-governance lane, reviewer_seat differs from the review seat, agent accept → merge (2 ms)
+    ✓ T11 agent accept on H, review-only commits after it (review_only_since [H]) → merge (5 ms)
+    ✓ T12 guard: a legacy claude review on a governance lane still merges (1 ms)
+  M1 protected gate files never merge on an agent accept alone
+    ✓ CLAUDE.md (2 ms)
+    ✓ scripts/collab/plan-spar.mjs (1 ms)
+    ✓ scripts/collab/queue.mjs (1 ms)
+    ✓ scripts/collab/protected-gate-files.json (1 ms)
+    ✓ services/gateway/src/services/plan-sparring/** (3 ms)
+    ✓ services/gateway/src/services/project-manager/governance.ts (1 ms)
+    ✓ .github/workflows/PLAN-SPAR.yml (1 ms)
+    ✓ .github/workflows/PR-GATE.yml (1 ms)
+    ✓ .github/workflows/AWS-PROD-*.yml (1 ms)
+    ✓ .kiro/agents/vitana-lane-reviewer.md (4 ms)
+    ✓ supabase/migrations/*vtid_ledger*.sql (10 ms)
+    ✓ supabase/migrations/*plan_sparring*.sql (1 ms)
+    ✓ VTID-05408: a legacy claude review no longer unlocks a protected file (the unlock is retired, not transferred) (1 ms)
+    ✓ VTID-05408: a protected file is refused with NO review supplied too (defense-in-depth, always refuse)
+    ✓ the compiled-in list is never empty (1 ms)
+  M2-M5 reviews that do not count
+    ✓ M2 stale head: accept on an old head with no review-only commits → no merge
+    ✓ M2 review_only_since does not match a different earlier head (1 ms)
+    ✓ M3 reviewer "agent:someone-else" → no merge on a governance lane
+    ✓ M3 reviewer null → no merge on a governance lane
+    ✓ M3 reviewer "agent:vitana-lane-reviewer-fake" → no merge on a governance lane (1 ms)
+    ✓ M3 reviewer "agent:vitana-lane-reviewer (gpt-5)" → no merge on a governance lane
+    ✓ the reviewer model chain is sonnet-5.5 → opus-5.5 → sonnet-4.5 (Claude only)
+    ✓ fallback: reviewer "agent:vitana-lane-reviewer" on the current head → merge on a governance lane (1 ms)
+    ✓ fallback: reviewer "agent:vitana-lane-reviewer (claude-sonnet-5.5)" on the current head → merge on a governance lane (2 ms)
+    ✓ fallback: reviewer "agent:vitana-lane-reviewer (claude-opus-5.5)" on the current head → merge on a governance lane (1 ms)
+    ✓ fallback: reviewer "agent:vitana-lane-reviewer (claude-sonnet-4.5)" on the current head → merge on a governance lane
+    ✓ fallback: reviewer "agent:vitana-lane-reviewer (claude-opus-4.8)" (model outside the chain) → no merge
+    ✓ fallback: reviewer "agent:vitana-lane-reviewer (claude-sonnet-5)" (model outside the chain) → no merge (1 ms)
+    ✓ fallback: reviewer "agent:vitana-lane-reviewer (claude-opus-5)" (model outside the chain) → no merge
+    ✓ fallback: reviewer "agent:vitana-lane-reviewer (claude-haiku-4.5)" (model outside the chain) → no merge
+    ✓ fallback: reviewer "agent:vitana-lane-reviewer (auto)" (model outside the chain) → no merge
+    ✓ fallback: reviewer "agent:vitana-lane-reviewer (unstated)" (model outside the chain) → no merge (1 ms)
+    ✓ fallback: reviewer "agent:vitana-lane-reviewer (gemini-2.5-pro)" (model outside the chain) → no merge
+    ✓ fallback: reviewer "agent:vitana-lane-reviewer (claude-opus-5.5" (model outside the chain) → no merge (1 ms)
+    ✓ fallback: reviewer "agent:vitana-lane-reviewer (claude-opus-5.5) x" (model outside the chain) → no merge
+    ✓ M4 agent changes on the current head → no merge (1 ms)
+    ✓ M5 agent review from a session in the executing log → no merge
+    ✓ decide() emits no merge for a protected-file PR with an agent accept (2 ms)
+  T25 parity with scripts/collab/protected-gate-files.json
+    ✓ PROTECTED_GATE_GLOBS equals the JSON globs (absent file fails) (2 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
 
 PASS test/project-manager/fallback.test.ts
   T1-T4 claudeAvailability (plan §3)
-    ✓ T1 flag false → unavailable, flag_false (43 ms)
+    ✓ T1 flag false → unavailable, flag_false (29 ms)
     ✓ T2 oldest item 5 h old, last Claude action 6 h ago → no_action_4h (1 ms)
     ✓ T2b flag true does not override the 4 h rule (1 ms)
     ✓ T3 oldest item 3 h old → available (1 ms)
     ✓ T4 item 5 h old but Claude acted 1 h ago → available (1 ms)
-    ✓ missing claude observation → available (today’s behaviour) (1 ms)
+    ✓ missing claude observation → available (today’s behaviour)
   T5-T8 fallback routing to the exceptions seat
-    ✓ T5 end of rotation, Claude unavailable → exafyltd, fallback true (6 ms)
-    ✓ T6 / M6 end of rotation, Claude available → claude, fallback false
-    ✓ T7 lane already on exafyltd, Claude unavailable → no self loop (null) (2 ms)
-    ✓ T8 park with Claude unavailable → actPark writes next_actor exafyltd (38 ms)
-    ✓ M6 park with Claude available → next_actor claude
+    ✓ T5 end of rotation, Claude unavailable → exafyltd, fallback true (1 ms)
+    ✓ T6 / M6 end of rotation, Claude available → claude, fallback false (1 ms)
+    ✓ T7 lane already on exafyltd, Claude unavailable → no self loop (null) (1 ms)
+    ✓ T8 park with Claude unavailable → actPark writes next_actor exafyltd (28 ms)
+    ✓ M6 park with Claude available → next_actor claude (1 ms)
     ✓ decide() threads the availability into reassign (1 ms)
   T13-T15 timers without a live plan driver
-    ✓ T13 ready 3 h, no driver (null heartbeat) → reassign with window 2 h (1 ms)
-    ✓ T14 guard: ready 3 h, heartbeat 1 min ago → no reassign
+    ✓ T13 ready 3 h, no driver (null heartbeat) → reassign with window 2 h
+    ✓ T14 guard: ready 3 h, heartbeat 1 min ago → no reassign (1 ms)
     ✓ T14b a heartbeat older than 45 min counts as no driver (1 ms)
     ✓ T15 claim 5 h, no activity, no driver → park stale_claim, window 4 h
-    ✓ T15b claim 5 h with a live driver → no park (48 h window) (1 ms)
-    ✓ cap 6: no reassign of a ready lane into a plan with 6 lanes executing|in-review
+    ✓ T15b claim 5 h with a live driver → no park (48 h window)
+    ✓ cap 6: no reassign of a ready lane into a plan with 6 lanes executing|in-review (1 ms)
   T16-T17 merge queue
-    ✓ T16 two eligible lanes in one repo → exactly one merge (oldest state_since) (18 ms)
-    ✓ T16b one merge per repo: lanes in different repos both merge (1 ms)
+    ✓ T16 two eligible lanes in one repo → exactly one merge (oldest state_since) (2 ms)
+    ✓ T16b one merge per repo: lanes in different repos both merge
     ✓ T17 behind main → update_branch, no merge
-    ✓ verify (W1): in-review lane with an agent accept on the current head → verify (1 ms)
+    ✓ verify (W1): in-review lane with an agent accept on the current head → verify
   T18 merge_plan
-    ✓ spec-only, converged, policy-approved plan( PR → merge_plan (1 ms)
+    ✓ spec-only, converged, policy-approved plan( PR → merge_plan
     ✓ none for a file outside the spec (1 ms)
     ✓ none for plan hash mismatch
-    ✓ none for head commit not PLAN-SPAR
-    ✓ none for not converged (2 ms)
+    ✓ none for head commit not PLAN-SPAR (1 ms)
+    ✓ none for not converged (20 ms)
     ✓ none for no policy approval
-    ✓ none for handoff not approved
-    ✓ none for no VTIDs (1 ms)
+    ✓ none for handoff not approved (1 ms)
+    ✓ none for no VTIDs
     ✓ none for a red check
     ✓ none for not mergeable
-    ✓ none for title of another slug
-    ✓ decide() emits merge_plan when no lane merge took the repo this tick (1 ms)
+    ✓ none for title of another slug (1 ms)
+    ✓ decide() emits merge_plan when no lane merge took the repo this tick
     ✓ W2 bookkeeping PR (pm-agent only, spec + timings) → merge_bookkeeping (1 ms)
   T19 Gate 2
     ✓ one lane verified 5 h ago, the sibling parked → all_verified (1 ms)
@@ -166,113 +271,8 @@ PASS test/project-manager/fallback.test.ts
   T22 ledger decision
     ✓ executing lane with ledger row scheduled → one ledger decision; in_progress → none (1 ms)
   M7 new decision kinds never reach deploy / dispatch / allocate
-    ✓ acting on every new kind uses only safe-merge, update-branch, lane writes and the ledger writer (9 ms)
-    ✓ no project-manager source file reaches a deploy, dispatch or VTID allocation path (12 ms)
-
-PASS test/project-manager/decide.test.ts
-  mergeDecision — all preconditions true → merge-eligible
-    ✓ the baseline lane is merge-eligible (24 ms)
-  mergeDecision — each precondition individually false → NO merge (mutation)
-    ✓ lane not verified (1 ms)
-    ✓ no PR (1 ms)
-    ✓ no VTID on the lane (1 ms)
-    ✓ no review entry (1 ms)
-    ✓ review from a different seat than reviewer_seat
-    ✓ review on a stale head sha (not current) (1 ms)
-    ✓ review verdict is changes, not approve (1 ms)
-    ✓ a required check (Lane scope) is not green (1 ms)
-    ✓ a required check (Collab handoff) is missing on the head (1 ms)
-    ✓ a required check is green but on a different head sha
-    ✓ Claude Approvals App check exists but is not success (1 ms)
-    ✓ Claude Approvals App check present AND success → still merge-eligible (1 ms)
-    ✓ merge conflict (not mergeable) (1 ms)
-    ✓ a depends_on lane is not done
-    ✓ a depends_on lane IS done → merge-eligible
-    ✓ PR title does not carry the lane VTID (1 ms)
-    ✓ lane declares no paths (1 ms)
-    ✓ self-review residual: review session id appears in the executing log
-  reassignDecision — stale ready / stale review
-    ✓ ready <24h → no reassign
-    ✓ ready >24h but seat ran automation in window → no reassign
-    ✓ ready >24h, no automation → reassign to next seat for area
-    ✓ ready >24h, no next seat for area → claude (1 ms)
-    ✓ review waiting >24h with no review entry → reassign review
-    ✓ review waiting >24h but a review already exists → no reassign (1 ms)
-    ✓ review waiting <24h → no reassign (1 ms)
-  parkDecision — 3 CI fails / risk flag / stale claim
-    ✓ PR failed CI on 3 consecutive pushes → park (1 ms)
-    ✓ PR failed CI on only 2 pushes → no park (1 ms)
-    ✓ reviewer flagged risk → park (1 ms)
-    ✓ claim >48h with no branch activity → park + release
-    ✓ claim >48h BUT with later branch activity → no park
-    ✓ claim <48h → no park (3 ms)
-    ✓ a done lane is never parked
-  gate2Decisions — all-verified vs 4h-elapsed timing
-    ✓ no lane verified yet → no gate2 (1 ms)
-    ✓ every deploying lane verified → gate2 (all_verified) (1 ms)
-    ✓ one verified, one not, <4h since first → no gate2 (1 ms)
-    ✓ one verified, one not, >4h since first → gate2 (four_hours_elapsed) (1 ms)
-    ✓ gate2 already sent → not re-sent (3 ms)
-    ✓ non-deploying lanes are ignored (no gate2)
-  decide — orchestration + mode gating + precedence
-    ✓ mode off → no decisions at all (1 ms)
-    ✓ park takes precedence over merge for a troubled verified lane
-    ✓ a clean merge-eligible lane yields exactly one merge decision (1 ms)
-    ✓ merge + gate2 can both appear for different lanes (1 ms)
-
-PASS test/project-manager/governance.test.ts
-  T9-T12 merge on the reviewer agent accept
-    ✓ T9 governance lane + agent accept on the current head + checks green → merge decision and act merges (87 ms)
-    ✓ T10 non-governance lane, reviewer_seat differs from the review seat, agent accept → merge (1 ms)
-    ✓ T11 agent accept on H, review-only commits after it (review_only_since [H]) → merge (1 ms)
-    ✓ T12 guard: a legacy claude review on a governance lane still merges (1 ms)
-  M1 protected gate files never merge on an agent accept alone
-    ✓ CLAUDE.md (2 ms)
-    ✓ scripts/collab/plan-spar.mjs (1 ms)
-    ✓ scripts/collab/queue.mjs (2 ms)
-    ✓ scripts/collab/protected-gate-files.json (1 ms)
-    ✓ services/gateway/src/services/plan-sparring/** (2 ms)
-    ✓ services/gateway/src/services/project-manager/governance.ts (1 ms)
-    ✓ .github/workflows/PLAN-SPAR.yml (1 ms)
-    ✓ .github/workflows/PR-GATE.yml (1 ms)
-    ✓ .github/workflows/AWS-PROD-*.yml (1 ms)
-    ✓ .kiro/agents/vitana-lane-reviewer.md (4 ms)
-    ✓ supabase/migrations/*vtid_ledger*.sql (1 ms)
-    ✓ supabase/migrations/*plan_sparring*.sql
-    ✓ VTID-05408: a legacy claude review no longer unlocks a protected file (the unlock is retired, not transferred) (1 ms)
-    ✓ VTID-05408: a protected file is refused with NO review supplied too (defense-in-depth, always refuse)
-    ✓ the compiled-in list is never empty
-  M2-M5 reviews that do not count
-    ✓ M2 stale head: accept on an old head with no review-only commits → no merge (1 ms)
-    ✓ M2 review_only_since does not match a different earlier head
-    ✓ M3 reviewer "agent:someone-else" → no merge on a governance lane (1 ms)
-    ✓ M3 reviewer null → no merge on a governance lane (1 ms)
-    ✓ M3 reviewer "agent:vitana-lane-reviewer-fake" → no merge on a governance lane
-    ✓ M3 reviewer "agent:vitana-lane-reviewer (gpt-5)" → no merge on a governance lane (1 ms)
-    ✓ the reviewer model chain is sonnet-5.5 → opus-5.5 → sonnet-4.5 (Claude only)
-    ✓ fallback: reviewer "agent:vitana-lane-reviewer" on the current head → merge on a governance lane (8 ms)
-    ✓ fallback: reviewer "agent:vitana-lane-reviewer (claude-sonnet-5.5)" on the current head → merge on a governance lane (1 ms)
-    ✓ fallback: reviewer "agent:vitana-lane-reviewer (claude-opus-5.5)" on the current head → merge on a governance lane (1 ms)
-    ✓ fallback: reviewer "agent:vitana-lane-reviewer (claude-sonnet-4.5)" on the current head → merge on a governance lane (3 ms)
-    ✓ fallback: reviewer "agent:vitana-lane-reviewer (claude-opus-4.8)" (model outside the chain) → no merge (1 ms)
-    ✓ fallback: reviewer "agent:vitana-lane-reviewer (claude-sonnet-5)" (model outside the chain) → no merge
-    ✓ fallback: reviewer "agent:vitana-lane-reviewer (claude-opus-5)" (model outside the chain) → no merge (1 ms)
-    ✓ fallback: reviewer "agent:vitana-lane-reviewer (claude-haiku-4.5)" (model outside the chain) → no merge
-    ✓ fallback: reviewer "agent:vitana-lane-reviewer (auto)" (model outside the chain) → no merge (1 ms)
-    ✓ fallback: reviewer "agent:vitana-lane-reviewer (unstated)" (model outside the chain) → no merge
-    ✓ fallback: reviewer "agent:vitana-lane-reviewer (gemini-2.5-pro)" (model outside the chain) → no merge
-    ✓ fallback: reviewer "agent:vitana-lane-reviewer (claude-opus-5.5" (model outside the chain) → no merge (1 ms)
-    ✓ fallback: reviewer "agent:vitana-lane-reviewer (claude-opus-5.5) x" (model outside the chain) → no merge
-    ✓ M4 agent changes on the current head → no merge
-    ✓ M5 agent review from a session in the executing log → no merge (1 ms)
-    ✓ decide() emits no merge for a protected-file PR with an agent accept (1 ms)
-  T25 parity with scripts/collab/protected-gate-files.json
-    ✓ PROTECTED_GATE_GLOBS equals the JSON globs (absent file fails)
-
-  console.log
-    ✅ Test setup loaded - fetch mocked, env vars set
-
-      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+    ✓ acting on every new kind uses only safe-merge, update-branch, lane writes and the ledger writer (2 ms)
+    ✓ no project-manager source file reaches a deploy, dispatch or VTID allocation path (18 ms)
 
   console.log
     ✅ Test setup loaded - fetch mocked, env vars set
@@ -293,65 +293,6 @@ PASS test/project-manager/governance.test.ts
     [PM] pm_lease: none → acquired
 
       at recordLease (src/services/project-manager/lease.ts:47:13)
-
-  console.warn
-    [PM] observe: exafyltd/vitana-platform#4240: 502
-
-      283 |
-      284 |   private log(msg: string): void {
-    > 285 |     (this.deps.log ?? ((m: string) => console.warn(`[PM] observe: ${m}`)))(msg);
-          |                                               ^
-      286 |   }
-      287 |
-      288 |   async observe(mode: PmMode): Promise<ObservedState> {
-
-      at src/services/project-manager/observe-live.ts:285:47
-      at GithubObserver.log (src/services/project-manager/observe-live.ts:285:75)
-      at GithubObserver.observe (src/services/project-manager/observe-live.ts:410:16)
-      at Object.<anonymous> (test/project-manager/observe-live.test.ts:208:15)
-
-PASS test/project-manager/reassign-idempotent.test.ts
-  VTID-05414 two ticks over the same observed lane: one write, then none
-    ✓ tick 1 writes, tick 2 (later now) is a no-op: status unchanged, no put, no ref, no PR (54 ms)
-  VTID-05414 GithubRepoFileWriter: the same change twice → one put
-    ✓ W2 (bookkeeping branch) (2 ms)
-    ✓ W2 no-op on a fresh branch creates no ref and no PR (1 ms)
-    ✓ W1 (lane PR branch) (1 ms)
-  VTID-05414 laneChangeIsNoop compares keys and the newest log body only
-    ✓ same keys + same newest log body → true, whatever updated: says (1 ms)
-    ✓ a different log body → false (1 ms)
-    ✓ a different key → false (1 ms)
-
-  console.log
-    ✅ Test setup loaded - fetch mocked, env vars set
-
-      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
-
-PASS test/project-manager/observe-live.test.ts
-  parsers
-    ✓ parseTrailers reads the §4.1 trailers (19 ms)
-    ✓ parseLaneLog splits executing entries, review entries and decisions (2 ms)
-    ✓ parseLaneLog accepts the " - " separator (2 ms)
-    ✓ reviewOnlySince: heads after which only review / pm-agent lane commits follow (1 ms)
-    ✓ reviewOnlySince stops at a commit that changes another file (1 ms)
-  GithubObserver
-    ✓ builds lanes, PR, reviews (trailers win), review_only_since, behind_by, ledger, claim, rotations and Claude flag (6 ms)
-    ✓ variable unreadable → env CLAUDE_AVAILABLE fallback, else null (3 ms)
-    ✓ 4 h rule inputs: oldest item with next_actor claude, newest session_ commit (2 ms)
-    ✓ driver heartbeat ref: committer date read; a lane PR that fails to load is dropped, not thrown (27 ms)
-    ✓ staging verify + gate2 sent are read from the data reader (2 ms)
-  GithubRestReader.variable + env fallback (VTID-05281)
-    ✓ B1: rejects on a 404 (unset or no access — unreadable) (57 ms)
-    ✓ B2: resolves the value on a 200 with a string value (1 ms)
-    ✓ B3: rejects on a 403 (2 ms)
-    ✓ B4: a 404 on the variable → observer uses env CLAUDE_AVAILABLE=false (1 ms)
-    ✓ B5: a 404 + env true → true; a 404 + no env → null (2 ms)
-    ✓ B6: a readable variable wins over the env (2 ms)
-    ✓ B7: the 4 h rule still applies — 404 + env true + a claude item > 4 h old with no session_ commit → no_action_4h (3 ms)
-  applyLaneChange + GithubRepoFileWriter (W1 / W2, Collab-Session pm-agent)
-    ✓ applyLaneChange edits only the allowed keys and appends one log entry (2 ms)
-    ✓ W1 (verify) commits on the lane PR branch with Collab-Lane <slug>/<lane> (2 ms)
-    ✓ W2 (bookkeeping) commits on pm-agent/<slug> with Collab-Lane <slug>/_plan and opens the PR once (1 ms)
 
   console.log
     [PM] pm_lease: none → acquired
@@ -373,10 +314,50 @@ PASS test/project-manager/observe-live.test.ts
 
       at recordLease (src/services/project-manager/lease.ts:47:13)
 
+PASS test/project-manager/reassign-idempotent.test.ts
+  VTID-05414 two ticks over the same observed lane: one write, then none
+    ✓ tick 1 writes, tick 2 (later now) is a no-op: status unchanged, no put, no ref, no PR (71 ms)
+  VTID-05414 GithubRepoFileWriter: the same change twice → one put
+    ✓ W2 (bookkeeping branch) (2 ms)
+    ✓ W2 no-op on a fresh branch creates no ref and no PR (1 ms)
+    ✓ W1 (lane PR branch) (4 ms)
+  VTID-05414 laneChangeIsNoop compares keys and the newest log body only
+    ✓ same keys + same newest log body → true, whatever updated: says
+    ✓ a different log body → false (1 ms)
+    ✓ a different key → false (1 ms)
+
   console.log
     [PM] pm_lease: error → acquired
 
       at recordLease (src/services/project-manager/lease.ts:47:13)
+
+  console.warn
+    [PM] observe: exafyltd/vitana-platform#4240: 502
+
+      283 |
+      284 |   private log(msg: string): void {
+    > 285 |     (this.deps.log ?? ((m: string) => console.warn(`[PM] observe: ${m}`)))(msg);
+          |                                               ^
+      286 |   }
+      287 |
+      288 |   async observe(mode: PmMode): Promise<ObservedState> {
+
+      at src/services/project-manager/observe-live.ts:285:47
+      at GithubObserver.log (src/services/project-manager/observe-live.ts:285:75)
+      at GithubObserver.observe (src/services/project-manager/observe-live.ts:410:16)
+      at Object.<anonymous> (test/project-manager/observe-live.test.ts:208:15)
+
+PASS test/project-manager/loop.test.ts
+  T26 PgLeaseManager on pm_lease
+    ✓ row free → acquired (TTL passed through), last_lease acquired (4 ms)
+    ✓ held by another task (no row updated) → held_by_other (2 ms)
+    ✓ missing relation (42P01) → table_absent (1 ms)
+    ✓ missing relation (PGRST205) → table_absent
+    ✓ any other error → error (never throws) (2 ms)
+  startPmLoop
+    ✓ live → act tick (takes the lease); status shows the fallback (3 ms)
+    ✓ dry_run → decide-only tick (never takes the lease) (1 ms)
+    ✓ a tick error is caught; overlapping ticks are skipped (3 ms)
 
   console.warn
     [PM] tick error: boom
@@ -392,46 +373,64 @@ PASS test/project-manager/observe-live.test.ts
       at Object.tick (src/services/project-manager/loop.ts:68:15)
       at Object.<anonymous> (test/project-manager/loop.test.ts:119:5)
 
-PASS test/project-manager/loop.test.ts
-  T26 PgLeaseManager on pm_lease
-    ✓ row free → acquired (TTL passed through), last_lease acquired (17 ms)
-    ✓ held by another task (no row updated) → held_by_other (1 ms)
-    ✓ missing relation (42P01) → table_absent (1 ms)
-    ✓ missing relation (PGRST205) → table_absent (1 ms)
-    ✓ any other error → error (never throws) (1 ms)
-  startPmLoop
-    ✓ live → act tick (takes the lease); status shows the fallback (7 ms)
-    ✓ dry_run → decide-only tick (never takes the lease) (1 ms)
-    ✓ a tick error is caught; overlapping ticks are skipped (5 ms)
+PASS test/project-manager/timings.test.ts
+  T21 planTimings
+    ✓ computes every duration exactly (2 ms)
+    ✓ a missing source → null (never 0) and named in sources_unavailable (7 ms)
+  T23 Gate 2 evidence and message
+    ✓ evidence carries services, staging_verify, migrations, decisions_taken, timings, unavailable (2 ms)
+    ✓ a failing source fails open into unavailable[] (1 ms)
+    ✓ the poster writes one assistant message with the question and a pm_digests gate2 row; never deploys (2 ms)
 
   console.log
     ✅ Test setup loaded - fetch mocked, env vars set
 
       at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
 
-PASS test/project-manager/github-app-token.test.ts
-  appConfigFromEnv
-    ✓ is null unless all three variables are set (2 ms)
-    ✓ accepts a key stored with escaped newlines (Secrets Manager single-line value)
-  createAppTokenSource
-    ✓ mints an RS256 App JWT (iss = app id, iat −60 s, exp +9 min) and asks for exactly the §4 permissions on the two repos (19 ms)
-    ✓ reuses the cached token and refreshes 5 min before expiry (5 ms)
-    ✓ shares one exchange between concurrent callers (7 ms)
-    ✓ an exchange answered 401 returns null and logs one line without secret material (3 ms)
-    ✓ an exchange answered 500 returns null and logs one line without secret material (5 ms)
-  resolvePmToken (github-rest token resolution)
-    ✓ without the App variables uses exactly today's token for each repo (3 ms)
-    ✓ prefers the App token when the source yields one, else falls back to today's token (1 ms)
-    ✓ with no token at all still throws the existing error (19 ms)
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/project-manager/observe-live.test.ts
+  parsers
+    ✓ parseTrailers reads the §4.1 trailers (7 ms)
+    ✓ parseLaneLog splits executing entries, review entries and decisions (4 ms)
+    ✓ parseLaneLog accepts the " - " separator (1 ms)
+    ✓ reviewOnlySince: heads after which only review / pm-agent lane commits follow (1 ms)
+    ✓ reviewOnlySince stops at a commit that changes another file (7 ms)
+  GithubObserver
+    ✓ builds lanes, PR, reviews (trailers win), review_only_since, behind_by, ledger, claim, rotations and Claude flag (10 ms)
+    ✓ variable unreadable → env CLAUDE_AVAILABLE fallback, else null (2 ms)
+    ✓ 4 h rule inputs: oldest item with next_actor claude, newest session_ commit (14 ms)
+    ✓ driver heartbeat ref: committer date read; a lane PR that fails to load is dropped, not thrown (33 ms)
+    ✓ staging verify + gate2 sent are read from the data reader (1 ms)
+  GithubRestReader.variable + env fallback (VTID-05281)
+    ✓ B1: rejects on a 404 (unset or no access — unreadable) (33 ms)
+    ✓ B2: resolves the value on a 200 with a string value (1 ms)
+    ✓ B3: rejects on a 403 (2 ms)
+    ✓ B4: a 404 on the variable → observer uses env CLAUDE_AVAILABLE=false (1 ms)
+    ✓ B5: a 404 + env true → true; a 404 + no env → null (1 ms)
+    ✓ B6: a readable variable wins over the env (1 ms)
+    ✓ B7: the 4 h rule still applies — 404 + env true + a claude item > 4 h old with no session_ commit → no_action_4h (2 ms)
+  applyLaneChange + GithubRepoFileWriter (W1 / W2, Collab-Session pm-agent)
+    ✓ applyLaneChange edits only the allowed keys and appends one log entry (2 ms)
+    ✓ W1 (verify) commits on the lane PR branch with Collab-Lane <slug>/<lane> (2 ms)
+    ✓ W2 (bookkeeping) commits on pm-agent/<slug> with Collab-Lane <slug>/_plan and opens the PR once (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
 
 PASS test/project-manager/tick-and-config.test.ts
   config switches
     ✓ PM_AGENT_ENABLED defaults off, true only on exactly "true" (2 ms)
-    ✓ PM_MODE defaults dry_run; accepts off/live; unknown → dry_run (1 ms)
-    ✓ tick interval defaults to 2 minutes
+    ✓ PM_MODE defaults dry_run; accepts off/live; unknown → dry_run (4 ms)
+    ✓ tick interval defaults to 2 minutes (1 ms)
   runDecideTick — observe → decide → report (no act)
     ✓ with the stub observer (empty world) emits nothing and records a snapshot (1 ms)
-    ✓ reports each decision through the emitter (dry_run) (2 ms)
+    ✓ reports each decision through the emitter (dry_run) (5 ms)
     ✓ mode off → decide yields nothing even with lanes present (1 ms)
 
   console.log
@@ -439,40 +438,41 @@ PASS test/project-manager/tick-and-config.test.ts
 
       at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
 
-  console.log
-    ✅ Test setup loaded - fetch mocked, env vars set
-
-      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
-
-PASS test/project-manager/timings.test.ts
-  T21 planTimings
-    ✓ computes every duration exactly (5 ms)
-    ✓ a missing source → null (never 0) and named in sources_unavailable (1 ms)
-  T23 Gate 2 evidence and message
-    ✓ evidence carries services, staging_verify, migrations, decisions_taken, timings, unavailable (2 ms)
-    ✓ a failing source fails open into unavailable[] (1 ms)
-    ✓ the poster writes one assistant message with the question and a pm_digests gate2 row; never deploys (20 ms)
-
 PASS test/kaf-staging-claude-available-wiring.test.ts
   VTID-05282 staging task definition carries CLAUDE_AVAILABLE
-    ✓ the step env reads the repo variable with a true default, outside run: (2 ms)
-    ✓ the jq call passes it as an arg placed before --arg TASK_ROLE, which stays last (1 ms)
-    ✓ the strip list removes the old entry next to PM_MODE (1 ms)
-    ✓ the upsert appears exactly once, right after PM_MODE (8 ms)
-    ✓ VTID-05414: a staging deploy keeps the PM paused (PM_AGENT_ENABLED false)
+    ✓ the step env reads the repo variable with a true default, outside run: (1 ms)
+    ✓ the jq call passes it as an arg placed before --arg TASK_ROLE, which stays last (2 ms)
+    ✓ the strip list removes the old entry next to PM_MODE
+    ✓ the upsert appears exactly once, right after PM_MODE
+    ✓ VTID-05414: a staging deploy keeps the PM paused (PM_AGENT_ENABLED false) (1 ms)
     ✓ production never gets CLAUDE_AVAILABLE
 
 PASS test/project-manager/reassign-seat.test.ts
   VTID-05414 stale-ready target is never the reviewer_seat
     ✓ rotation [exafy], Claude unavailable, reviewer_seat exafyltd → no decision (1 ms)
     ✓ rotation [exafy, exafyltd, jtadic] → skips exafyltd, to_actor jtadic
-    ✓ Claude available → to_actor claude (seat unchanged by act)
-    ✓ no reviewer_seat → the exceptions seat as today (1 ms)
-    ✓ reviewer agent as reviewer_seat → the exceptions seat as today
+    ✓ Claude available → to_actor claude (seat unchanged by act) (1 ms)
+    ✓ no reviewer_seat → the exceptions seat as today
+    ✓ reviewer agent as reviewer_seat → the exceptions seat as today (1 ms)
   VTID-05414 applyLaneChange refuses seat == reviewer_seat
-    ✓ a change that makes seat equal reviewer_seat throws (14 ms)
+    ✓ a change that makes seat equal reviewer_seat throws (22 ms)
     ✓ a lane that already has seat == reviewer_seat still takes a park (2 ms)
     ✓ a next_actor-only change on such a lane does not throw
+
+PASS test/project-manager/github-app-token.test.ts
+  appConfigFromEnv
+    ✓ is null unless all three variables are set (1 ms)
+    ✓ accepts a key stored with escaped newlines (Secrets Manager single-line value)
+  createAppTokenSource
+    ✓ mints an RS256 App JWT (iss = app id, iat −60 s, exp +9 min) and asks for exactly the §4 permissions on the two repos (12 ms)
+    ✓ reuses the cached token and refreshes 5 min before expiry (5 ms)
+    ✓ shares one exchange between concurrent callers (3 ms)
+    ✓ an exchange answered 401 returns null and logs one line without secret material (3 ms)
+    ✓ an exchange answered 500 returns null and logs one line without secret material (9 ms)
+  resolvePmToken (github-rest token resolution)
+    ✓ without the App variables uses exactly today's token for each repo (1 ms)
+    ✓ prefers the App token when the source yields one, else falls back to today's token
+    ✓ with no token at all still throws the existing error (9 ms)
 
   console.error
     [VTID-ORBC] No JWT secrets configured (need SUPABASE_JWT_SECRET or LOVABLE_JWT_SECRET)
@@ -527,15 +527,15 @@ PASS test/project-manager/reassign-seat.test.ts
 
 PASS test/project-manager/route.test.ts
   GET /status auth
-    ✓ 401 without a bearer token (22 ms)
-    ✓ 401 with a wrong service token (14 ms)
-    ✓ 200 with the service token, returns mode + decisions (5 ms)
+    ✓ 401 without a bearer token (17 ms)
+    ✓ 401 with a wrong service token (11 ms)
+    ✓ 200 with the service token, returns mode + decisions (4 ms)
   T24 /status fallback fields and the public /mode
     ✓ /status with the token carries claude, fallback, build_lanes_in_flight, last_lease (4 ms)
     ✓ /status defaults: Claude available, no fallback, last_lease null (4 ms)
     ✓ /status without a token → 401 (3 ms)
-    ✓ /mode without a token → 200 with exactly ok, enabled, mode, executor_mode (4 ms)
-    ✓ /mode reports claude_primary when Claude is available (7 ms)
+    ✓ /mode without a token → 200 with exactly ok, enabled, mode, executor_mode (3 ms)
+    ✓ /mode reports claude_primary when Claude is available (3 ms)
 
   console.log
     [CICD] PR #4242 merged for VTID-05217: mergedsha
@@ -544,35 +544,35 @@ PASS test/project-manager/route.test.ts
 
 PASS test/project-manager/safe-merge-fn.test.ts
   safeMerge — clean merge
-    ✓ merges exactly once and returns result "merged" with status 200 (10 ms)
+    ✓ merges exactly once and returns result "merged" with status 200 (17 ms)
   safeMerge — pr not open → already_merged no-op
-    ✓ returns result "already_merged", keeps the identical 400 pr_not_open body, and NEVER merges (1 ms)
+    ✓ returns result "already_merged", keeps the identical 400 pr_not_open body, and NEVER merges
   safeMerge — refused outcomes (behaviour-preserving)
-    ✓ unauthorized repo → refused 403, no merge (1 ms)
+    ✓ unauthorized repo → refused 403, no merge
     ✓ pr not found → refused 404, no merge
     ✓ invalid base → refused 400, no merge (1 ms)
-    ✓ checks failed → refused 400, no merge (1 ms)
+    ✓ checks failed → refused 400, no merge
     ✓ governance blocked → refused 403, no merge
 
 PASS test/services/conversation/vtid-04525-conversation-flag-registry.test.ts
   VTID-04525 B7 — conversation flag registry
-    ✓ names are unique and every entry is read somewhere in the gateway source (1089 ms)
-    ✓ exact-true flags: only the string `true` enables (7 ms)
-    ✓ not-false flags: on unless exactly `false` (1 ms)
-    ✓ number flags resolve to a finite number whatever the raw value (1 ms)
-    ✓ inline-read mirrors match the source expression they mirror (6 ms)
+    ✓ names are unique and every entry is read somewhere in the gateway source (1069 ms)
+    ✓ exact-true flags: only the string `true` enables (4 ms)
+    ✓ not-false flags: on unless exactly `false` (2 ms)
+    ✓ number flags resolve to a finite number whatever the raw value (2 ms)
+    ✓ inline-read mirrors match the source expression they mirror (7 ms)
     ✓ invalid raw values are flagged per parse rule
     ✓ resolve reports raw, effective, validity and both workflow pins (1 ms)
-    ✓ VTIDs are either a real id or null — the registry never invents one (1 ms)
-    ✓ the generated workflow pins file is current (run the generator if this fails) (68 ms)
-    ✓ JEV_DECISIONS_ENABLED is a workflow pin (staging true|false, prod true), not a conversation flag (1 ms)
-    ✓ registers the production navigator switch on its own registry
-    ✓ pins the three orchestrator specialist flags "true" on staging and prod (2 ms)
-    ✓ registers the Google task-role token flag: voice, exact-true, staging only (5 ms)
+    ✓ VTIDs are either a real id or null — the registry never invents one (2 ms)
+    ✓ the generated workflow pins file is current (run the generator if this fails) (71 ms)
+    ✓ JEV_DECISIONS_ENABLED is a workflow pin (staging true|false, prod true), not a conversation flag
+    ✓ registers the production navigator switch on its own registry (1 ms)
+    ✓ pins the three orchestrator specialist flags "true" on staging and prod
+    ✓ registers the Google task-role token flag: voice, exact-true, staging only (4 ms)
 
 Test Suites: 15 passed, 15 total
 Tests:       243 passed, 243 total
 Snapshots:   0 total
-Time:        4.77 s
+Time:        4.702 s
 Ran all test suites matching /test\/project-manager|test\/services\/conversation\/vtid-04525-conversation-flag-registry.test.ts|test\/kaf-staging-claude-available-wiring.test.ts/i.
 Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

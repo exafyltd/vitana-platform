@@ -99,6 +99,8 @@ describe('VTID-05414 applyLaneChange refuses seat == reviewer_seat', () => {
     const bad = LANE.replace('seat: exafy\n', 'seat: exafyltd\n');
     const out = applyLaneChange(bad, { slug: 'demo', lane: 'l1', state: 'parked', next_actor: 'exafyltd', seat: 'exafyltd', log: 'park (ci_failed_3_consecutive)' }, '2026-10-28T12:00:00.000Z');
     expect(out).toMatch(/^state: parked$/m);
+    // A park leaves the seat as it was (the VTID-05414 refusal only blocks introducing seat == reviewer_seat).
+    expect(out).toMatch(/^seat: exafyltd$/m);
   });
 
   it('a next_actor-only change on such a lane does not throw', () => {
