@@ -114,10 +114,10 @@ Contract:
   `scripts/eng/deploy/deploy-ecs.mjs:226` (`deploy`) and `:316` (`rollback`); reader
   `origin/kiro/agentic-delivery/verify-on-gitlab:scripts/ci/staging-verify/run.mjs:208` (`deployRunsFromEntries`: keys
   service, sha, started_at, finished_at, outcome; `skipped` ignored by `deployCutoff`, `scripts/ci/staging-verify/lib.cjs:475`).
-  The file path is `$CI_PROJECT_DIR/deploy-runs.json` on both sides (`tpl-deploy.yml:94-106` writes it as an artifact,
+  The file path is `$CI_PROJECT_DIR/deploy-runs.json` on both sides (`tpl-deploy.yml:98-110` writes it as an artifact,
   `tpl-verify.yml:56` reads `DEPLOY_RUNS_FILE`).
-- Job names of plan §9: `tpl-deploy.yml:26` `.build-image`, `:80` `.push-image`, `:94` `.deploy-staging`, `:108`
-  `.rollback-staging`, `:146` `.preview-upload`, `:153` `.preview-stop`; extended by lane pipelines at
+- Job names of plan §9: `tpl-deploy.yml:28` `.build-image`, `:84` `.push-image`, `:98` `.deploy-staging`, `:112`
+  `.rollback-staging`, `:150` `.preview-upload`, `:157` `.preview-stop`; extended by lane pipelines at
   `v1-delivery.gitlab-ci.yml:1142,1186,1264,1687,1726,1768,1811` and the same names in `platform-delivery.gitlab-ci.yml`
   (`origin/kiro/agentic-delivery/pipelines`).
 - Variables: lane pipelines passes `DEPLOY_SERVICE`, `DEPLOY_ECR_REPOSITORY`, `DEPLOY_IMAGE_CONTEXT`,
@@ -126,7 +126,7 @@ Contract:
   (`v1-delivery.gitlab-ci.yml:1111-1112,1151-1152,1195-1196`); `tpl-deploy.yml` reads every one of them by these names
   (`PREVIEW_BASE` is used by lane pipelines' own `.preview-build`). `DEPLOY_ENV_OVERRIDES` is read by
   `deploy-ecs.mjs` from the environment (`main`, `envOverrides`).
-- Roles and audiences of plan §7: `scripts/aws/iam/gitlab-oidc-*.json`; consumers `tpl-deploy.yml:60,62,128`
+- Roles and audiences of plan §7: `scripts/aws/iam/gitlab-oidc-*.json`; consumers `tpl-deploy.yml:64,66,132`
   (`aws:v1:staging`, `aws:platform:staging`, `aws:v1:preview`), `tpl-verify.yml:57,89` (`gl-verify`, `gl-record`,
   lane verify-on-gitlab), `tpl-assist.yml:37,45` (`aws:assist`, `gl-assist`, lane pipelines). The plan names the
   assist role `gl-assist` in §7 and `gl-v1-assist` in §3.9; the §7 table and lane pipelines use `gl-assist`, so this lane
