@@ -1,0 +1,15 @@
+VTID-05552 — infra/gitlab-engineering/ci/tpl-verify.yml read two ways.
+
+No GitLab call is allowed from this session (no CI lint against gitlab.vitanaland.com). Instead the template was parsed
+by Ruby's YAML library (Psych, the parser GitLab itself uses for .gitlab-ci.yml) and by the strict subset reader in
+scripts/eng/verify/tpl-verify-structure.test.mjs, and the two results were compared as JSON.
+
+$ ruby -v
+ruby 3.4.10 (2026-06-30 revision 2b0b7728dc) +PRISM [x86_64-linux]
+$ ruby -ryaml -rjson -e 'puts JSON.generate(YAML.safe_load(File.read("infra/gitlab-engineering/ci/tpl-verify.yml")))' > tpl-ruby.json
+$ node --input-type=module -e '<load parseYaml from tpl-verify-structure.test.mjs; compare JSON.stringify of both>'
+IDENTICAL 5415 bytes of JSON
+
+So the structure test asserts on exactly the data GitLab's parser sees. The reader also throws on YAML it does not
+support (anchors, tags, block scalars, flow maps, trailing comments, unquoted ": ", YAML 1.1 booleans such as yes/no),
+so the template cannot drift into syntax the test would misread.

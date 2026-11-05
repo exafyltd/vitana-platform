@@ -1,0 +1,50 @@
+Monthly cost estimate of the CI fleet of milestone 2 (plan eng-gitlab-m2 sections 3.2 and 7), region eu-central-1, USD.
+
+Machine prices per hour, On-Demand (AmazonEC2 20261104210305): m6i.xlarge $0.23, m6a.xlarge $0.207, m5.xlarge $0.23, m5a.xlarge $0.208, t3.medium $0.048
+Blended job machine: 20 % On-Demand at $0.230 (m6i.xlarge, the dearest) + 80 % Spot at 50 % of that = $0.1380 per hour (Spot at 35 %: $0.1104)
+
+== Always on (even when no job runs)
+   Fleet manager t3.medium, 24 x 7                                                                  $   35.04
+   Fleet manager root volume 30 GB gp3                                                              $    2.86
+   Runner-token secret (1)                                                                          $    0.40
+   Cache bucket storage, ~30 GB (7-day expiry)                                                      $    0.73
+   Machine image snapshots, 2 x 6 GB                                                                $    0.65
+   Image builds, 1 a month (Image Builder is free; the build machines are not)                      $    0.09
+   SUBTOTAL always on                                                                               $   39.77
+
+== Scenario light: 100 jobs a day, average job 8 min, Spot at 50 % of On-Demand
+   Job machines: 3042 jobs x 9.5 min = 482 machine-hours at $0.1380/h                               $   66.46
+   Job machine volumes 100 GB gp3, same hours                                                       $    6.28
+   NAT data processed: 0.5 GB per job                                                               $   79.08
+   S3 cache requests (10 PUT, 30 GET per job)                                                       $    0.20
+   KMS requests (10 per job)                                                                        $    0.09
+   SUBTOTAL per job                                                                                 $  152.12
+   TOTAL per month (always on + per job)                                                            $  191.89   (about $2,303 per year)
+     if Spot pays 35 % instead: total                                                               $  178.60
+
+== Scenario medium: 400 jobs a day, average job 8 min, Spot at 50 % of On-Demand
+   Job machines: 12167 jobs x 9.5 min = 1926 machine-hours at $0.1380/h                             $  265.84
+   Job machine volumes 100 GB gp3, same hours                                                       $   25.12
+   NAT data processed: 0.5 GB per job                                                               $  316.33
+   S3 cache requests (10 PUT, 30 GET per job)                                                       $    0.81
+   KMS requests (10 per job)                                                                        $    0.37
+   SUBTOTAL per job                                                                                 $  608.48
+   TOTAL per month (always on + per job)                                                            $  648.25   (about $7,779 per year)
+     if Spot pays 35 % instead: total                                                               $  595.08
+
+== Scenario heavy: 1200 jobs a day, average job 8 min, Spot at 50 % of On-Demand
+   Job machines: 36500 jobs x 9.5 min = 5779 machine-hours at $0.1380/h                             $  797.52
+   Job machine volumes 100 GB gp3, same hours                                                       $   75.37
+   NAT data processed: 0.5 GB per job                                                               $  949.00
+   S3 cache requests (10 PUT, 30 GET per job)                                                       $    2.44
+   KMS requests (10 per job)                                                                        $    1.09
+   SUBTOTAL per job                                                                                 $ 1825.43
+   TOTAL per month (always on + per job)                                                            $ 1865.20   (about $22,382 per year)
+     if Spot pays 35 % instead: total                                                               $ 1705.69
+
+Per job (medium scenario): $0.050 (machine, volume, NAT, requests).
+What moves the number, biggest first: jobs per day; NAT data per job (0.5 GB assumed; each extra 0.1 GB per job costs $63.27 a month at 400 jobs a day);
+the Spot share and price; job length. Levers in this order (plan section 7): fleet_spot_percent, fleet_max_instances, capacity_per_instance above 1, fleet_idle_count above 0.
+An idle fleet costs the always-on subtotal only: the group is 0 machines when no job waits and idle_count is 0.
+
+First week's real AWS cost (acceptance A9): ______ (the owner or the next session writes it here beside the estimate above)

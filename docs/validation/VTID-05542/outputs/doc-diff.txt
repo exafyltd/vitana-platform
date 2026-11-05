@@ -1,0 +1,216 @@
+# doc-diff, VTID-05542 (eng-gitlab-m2/settings), task S5
+# Generated 2026-11-05T14:02:52Z with read-only git commands (git --no-optional-locks diff HEAD). HEAD = 8bae0d492d4e143aa941b81ff23d3af1f363ac3e
+# Document: docs/ENGINEERING-PLATFORM-PLAN.md (amended). docs/ENGINEERING-PLATFORM-LICENCES.md is a new file (stat at the end).
+
+## git diff --stat HEAD -- docs/ENGINEERING-PLATFORM-PLAN.md
+ docs/ENGINEERING-PLATFORM-PLAN.md | 103 ++++++++++++++++++++++++++++++--------
+ 1 file changed, 83 insertions(+), 20 deletions(-)
+
+## Line-count check: base 194 lines, amended 257 lines; sections 1-8 keep their line numbers, the 63 added lines are section 9 (before ## Sources).
+
+## git diff HEAD -- docs/ENGINEERING-PLATFORM-PLAN.md
+diff --git a/docs/ENGINEERING-PLATFORM-PLAN.md b/docs/ENGINEERING-PLATFORM-PLAN.md
+index 6e892b8e485..6a7d6e5f60a 100644
+--- a/docs/ENGINEERING-PLATFORM-PLAN.md
++++ b/docs/ENGINEERING-PLATFORM-PLAN.md
+@@ -1,7 +1,7 @@
+ # Engineering Platform — self-hosted GitLab on AWS for governed agent delivery
+ 
+ Based on `vitana-platform@50e55fd3a4` and `vitana-v1@c3d71c83e` (main, 2026-11-02).
+-Programme: `docs/programs/engineering-platform/program.md`. First slice: spec `eng-platform-p01`.
++Programme: `docs/programs/engineering-platform/program.md`. First slice: spec `eng-platform-p01`. Amended 2026-11-05 for the Free tier (owner decision 2026-11-03, plan `eng-gitlab-m2`): see [section 9](#9-change-log-free-tier-amendment).
+ 
+ ---
+ 
+@@ -13,7 +13,7 @@ Programme: `docs/programs/engineering-platform/program.md`. First slice: spec `e
+ | F2 | There is one AWS account (`4728…`), one ECS cluster (`Vitana-ECS-Cluster`), one VPC and security group, and one Aurora cluster, all shared by staging and prod. Staging also writes to the production Supabase project. | "Staging credentials cannot reach production" cannot be achieved with IAM alone in the current account. GitLab and its runners go into a **separate AWS account**. Backend preview environments are blocked until a non-production database exists. |
+ | F3 | Prod deploys use GitHub OIDC, but the documented trust condition is `repo:exafyltd/vitana-platform:*`, which allows any branch (`scripts/aws/README.md`). Staging deploys and the **prod frontend** deploy use the static keys of IAM user `claude-staging-validation`. | Fix this now, before GitLab exists. The GitLab OIDC trust is pinned to project path, protected ref and environment from day one. |
+ | F4 | Promotion copies a **tag** (`:<sha>`, `awsdr-latest`) from the staging task def; it is not a digest. Auto-rollback exists only in `AWS-PROD-DEPLOY-GATEWAY.yml` (VTID-04647). | Keep the promote-staging design and pin by `@sha256` digest. Make rollback a shared template job for every service. |
+-| F5 | Governance already exists, but it is GitHub-native: PLAN-SPAR (allocates VTIDs), PR-GATE, lane-scope, the reviewer agent's verdict bound to head SHA, `land-guard.mjs` with `RUN/merge.lock` (a hand-built serialized merge queue), STAGING-VERIFY, Gate 2 owner PUBLISH, and VTID-AUTO-CLOSE. | These are the functional spec for merge trains and approvals. **Port them; do not redesign them.** |
++| F5 | Governance already exists, but it is GitHub-native: PLAN-SPAR (allocates VTIDs), PR-GATE, lane-scope, the reviewer agent's verdict bound to head SHA, `land-guard.mjs` with `RUN/merge.lock` (a hand-built serialized merge queue), STAGING-VERIFY, Gate 2 owner PUBLISH, and VTID-AUTO-CLOSE. | These are the functional spec for the merge bot that replaces merge trains and required approvals on the Free tier (section 9). **Port them; do not redesign them.** |
+ | F6 | Two agent execution paths exist. (a) The gateway Worker Orchestrator claims tasks from `vtid_ledger` and runs the `autopilot-executor` ECS task. (b) The Kiro lane pipeline uses `kiro-runner` worktrees, `queue.mjs` and a 6-slot `slots.json`. Both write to GitHub through shared tokens (`GITHUB_SAFE_MERGE_TOKEN`, `DEV_AUTOPILOT_GITHUB_TOKEN`, `FRONTEND_DEPLOY_TOKEN`). There is no GitHub App and no webhooks; everything polls. | Isolated agent workspaces already exist. **GitLab runners run CI only.** Agents keep running in the existing executors and receive per-agent GitLab identities. |
+ | F7 | GitHub coupling is wide: about 30 platform files call `api.github.com` and about 30 use the `gh` CLI; there are 113 + 46 workflows; OASIS topics are named `cicd.github.*`; `kiro-runner/src/repo-mirrors.ts` hardcodes github.com URLs. There is no provider abstraction (the closest are `github-service.ts` and `vitana-repos.ts`). | The **first code deliverable** is a `GitProvider` interface. Porting the workflows, not installing GitLab, is the largest cost of the project. |
+ | F8 | No service-principal model exists. Agents authenticate with shared secrets (`GATEWAY_SERVICE_TOKEN`, `X-Dev-Memory-Token`, the operator machine token) or by running a human exafy_admin session. Cognito has a known `exafy_admin` gap. | An agent identity registry is needed. It must be designed with the owners of `mt-track-s-authz`, not alongside them. |
+@@ -29,14 +29,14 @@ Programme: `docs/programs/engineering-platform/program.md`. First slice: spec `e
+ | # | Decision | Reason | Reversible? |
+ |---|---|---|---|
+ | D1 | Move source control to GitLab in stages: vitana-v1 first (no `api.github.com` callers, 46 workflows), then vitana-platform. GitHub ends as an archived read-only mirror. Never two-way sync. | The owner asked for self-hosted GitLab; a staged move keeps one source of truth per repo at every moment. | Yes, until GitHub is archived. |
+-| D2 | GitLab self-managed **Premium**. Install the EE package unlicensed (it runs as Free) and buy Premium before the vitana-v1 cutover (Phase 6). | Merge trains, required approvals, prevent-author-approval, CODEOWNERS, protected environments with deployment approvals and service accounts are Premium. Buying later defers spend until the features are used. | Yes: EE without a licence is Free. |
++| D2 | GitLab self-managed on the **Free** tier. No licence, subscription or seat is bought, now or later (owner decision 2026-11-03, plan `eng-gitlab-m2`; it replaces the decision of 2026-11-02 to buy Premium before Phase 6). Install the EE package without a licence key; it runs as Free. Each paid feature the first version counted on is replaced as listed in [section 9.2](#92-what-replaces-each-paid-feature). | Owner: "we only pay for aws instances. no license fees to GitLab or others." Merge trains, required approvals, push rules, Code Owners and protected environments are Premium; the merge bot, git trailers, central CI configuration and the Command Hub PUBLISH gate do their work. Service accounts are Free (100 per instance, no seat), not Premium as the first version said. | Yes, by a new owner decision. The settings sync stops if a licence ever appears (plan `eng-gitlab-m2` §3.3). |
+ | D3 | A new AWS **engineering account** in AWS Organizations for GitLab and runners; cross-account OIDC roles into the workload account `4728…`. | Staging and prod share one account, cluster, VPC and Aurora (F2); an account boundary is the only isolation IAM alone cannot undo. | Yes. |
+ | D4 | Single-node Omnibus EE on EC2 with RDS PostgreSQL, ElastiCache Redis and S3 object storage; Gitaly on encrypted EBS. RPO 1 h, RTO 4 h. | Smallest production-grade topology; components move to a reference architecture without redesign. | Yes. |
+ | D5 | Kiro writes Terraform and scripts and runs `plan` read-only; the owner runs `apply`. Agents never apply. | Only the owner has AWS admin rights today. | n/a |
+ | D6 | GitLab local accounts with mandatory 2FA for humans; OIDC SSO after the Cognito migration. | No identity provider is live for SSO today. | Yes. |
+ | D7 | A non-production database is a dependency of backend preview environments and true staging isolation, tracked outside this program. Until it exists: frontend previews only. | Staging shares the production database (CLAUDE.md, owner-autonomy stop 1). | n/a |
+ 
+-Owner actions that remain (cannot be done by an agent): create the engineering account (D3), purchase Premium (D2, before Phase 6), run the inventory and the OIDC role script (plan `eng-platform-p01` §8), and command the `AWS-PROD-*` follow-ups (prod frontend on OIDC, promotion by digest).
++Owner actions that remain (cannot be done by an agent): create the engineering account (D3), run the inventory and the OIDC role script (plan `eng-platform-p01` §8), and command the `AWS-PROD-*` follow-ups (prod frontend on OIDC, promotion by digest). Purchasing Premium (D2) is no longer an owner action: nothing is bought.
+ 
+ ## 3. Target architecture (adjusted)
+ 
+@@ -50,22 +50,22 @@ Engineering account (new)                       Workload account 4728… (existi
+ │   AWS Backup · KMS · SSM only          │ ─────▶ │  gl-ecr-push        (main, build)     │
+ │ Runner manager EC2                     │ STS    │  gl-staging-deploy  (main, env=stg)   │
+ │   ASG validate   (untrusted, no AWS)   │        │  gl-prod-deploy     (main, env=prod,  │
+-│   ASG build-stg  (protected main)      │        │                      approval)        │
+-│   ASG release    (protected env prod)  │        │  gl-tf-plan         (read-only)       │
++│   ASG build-stg  (protected main)      │        │                      PUBLISH)         │
++│   ASG release    (PUBLISH job only)    │        │  gl-tf-plan         (read-only)       │
+ │   ASG infra      (plan only)           │        │                                       │
+ └───────────────────────────────────────┘        └───────────────────────────────────────┘
+         ▲ HTTPS git push (per-agent token)                   ▲
+         │                                                    │ webhooks → gateway
+ Existing agent executors (unchanged): autopilot-executor ECS task, kiro-runner worktrees
+ Gateway: GitProvider interface, /api/v1/scm/gitlab/webhook → OASIS → vtid_ledger
+-Command Hub: MR / pipeline / train / approval views, PUBLISH plays the GitLab prod job
++Command Hub: MR / pipeline / merge bot / review views, PUBLISH plays the GitLab prod job
+ ```
+ 
+ **Runner classes (CI only)**
+ - `validate` runs MR pipelines on agent branches. It has no AWS role apart from its own S3 cache prefix, restricted egress, and no network path to the workload VPC.
+ - `build-stg` runs only on protected `main`. It pushes to ECR and deploys staging.
+-- `release` runs only in the protected `production` environment, executes only the promote job, and uses short-lived STS credentials.
+-- `infra` runs `terraform plan` read-only. `apply` happens only through a protected environment with owner approval.
++- `release` runs only the promote job, started by the Command Hub PUBLISH button after Gate 2, and uses short-lived STS credentials. GitLab protected environments are Premium and are not used; how the Free tier restricts this runner (a protected runner, a tag that only the central CI configuration assigns) is settled in the milestone that builds deploy jobs (`eng-gitlab-m2` has none).
++- `infra` runs `terraform plan` read-only. `apply` is run only by the owner (D5), never by a runner; protected environments with approvals are Premium and are not used.
+ 
+ **Fleet settings.** Docker Autoscaler with `fleeting-plugin-aws`, `capacity_per_instance = 1`, `max_use_count = 1`, no public IP, IMDSv2 required, AMIs built by Image Builder/Packer and versioned. The original "Agent" runner class is dropped because coding agents already have workspaces (F6).
+ 
+@@ -75,13 +75,13 @@ Command Hub: MR / pipeline / train / approval views, PUBLISH plays the GitLab pr
+ 
+ | Today (GitHub) | GitLab equivalent | Notes |
+ |---|---|---|
+-| PR-GATE VTID title check, scope guard, test-weakening guard (`scripts/ci/pr-gate/gate.mjs`) | Job in the central `ci-templates` MR pipeline, plus a push rule on commit messages | Same scripts, called with `--scm gitlab` |
++| PR-GATE VTID title check, scope guard, test-weakening guard (`scripts/ci/pr-gate/gate.mjs`) | Job in the central `ci-templates` MR pipeline (built as `vitana/ci-config`), plus a list of required job names per project that the merge bot checks | Same scripts, called with `--scm gitlab`. Push rules are Premium. |
+ | PLAN-SPAR (VTID allocation) | Job in the central template | `allocate_global_vtid` is unchanged |
+-| Reviewer agent verdict bound to head SHA (`store-review.cjs`) | Reviewer service account approves the MR, with "reset approvals on push" turned on | Head binding is enforced natively. The existing review record is kept. |
+-| `land-guard merge` + `RUN/merge.lock` + `gh pr update-branch` | Merge train with merged-results pipelines | On CE, keep `land-guard` and point it at the GitLab API |
+-| `protected-gate-files.json` | CODEOWNERS on gate files plus a separate `ci-templates` project that application agents cannot write to | Templates are included by pinned ref |
++| Reviewer agent verdict bound to head SHA (`store-review.cjs`) | The accept stays in git trailers as today. The merge bot checks it with the `land-guard.mjs` functions and checks that the accept commit was pushed by the `agent-reviewer` service account | The bot checks the head binding (`reviewCurrent`), GitLab does not. Required approvals and "reset approvals on push" are Premium. The existing review record is kept. |
++| `land-guard merge` + `RUN/merge.lock` + `gh pr update-branch` | Merge bot (plan `eng-gitlab-m2`, lane `merge-bot`): fast-forward merge method with squash. The bot merges `main` into a branch that is behind, waits for its pipeline, and lands one merge request per project at a time | Keeps the `land-guard.mjs` decision functions unchanged and points them at the GitLab API. Merge trains and merged-results pipelines are Premium. |
++| `protected-gate-files.json` | The merge bot never lands a change to a file listed there and comments that the owner must merge it; plus a separate `ci-templates` project that application agents cannot write to | Templates are included by pinned ref. CODEOWNERS is Premium. |
+ | STAGING-VERIFY | `main` pipeline stage that blocks the release job | |
+-| Gate 2, owner PUBLISH | `production` protected environment with owner deployment approval. Command Hub PUBLISH calls the GitLab API. | Promotes by digest, no rebuild |
++| Gate 2, owner PUBLISH | The owner's Gate 2 "yes" (Command Hub PUBLISH, or a publish the owner commands in a session) is the approval. PUBLISH calls the GitLab API to start the production job. | Promotes by digest, no rebuild. Protected environments and deployment approvals are Premium and are not used. |
+ | Gateway auto-rollback (VTID-04647) | Template job used by every service | |
+ | VTID-AUTO-CLOSE | MR-merged webhook → OASIS → `/oasis/tasks/:vtid/complete` | |
+ | `cicd.github.*` OASIS topics | New `scm.*`, `pipeline.*`, `train.*` and `deploy.*` topics | Old topics keep being emitted during the transition |
+@@ -112,7 +112,7 @@ Each phase has its own VTIDs through PLAN-SPAR and runs through the normal lane,
+ - VPC, ALB with ACM, Cloudflare DNS, pinned Omnibus, RDS, ElastiCache, S3 object storage, SSM-only access, CloudTrail/Config/Security Hub enabled in the new account.
+ - AWS Backup plus `gitlab-backup` to S3, then a **restore into a scratch instance**.
+ - Group layout: `vitana/platform`, `vitana/v1`, `vitana/ci-templates`, `vitana/infra`. `main` protected and nobody pushes to it directly.
+-- Repos imported (a push mirror from GitHub during the transition).
++- Repos imported (a copy from GitHub during the transition, run by a timer on the GitLab host: GitLab's own pull mirroring is Premium and is not used).
+ - Exit: A01–A04.
+ 
+ **Phase 3: CI runner fleet**
+@@ -129,7 +129,7 @@ Each phase has its own VTIDs through PLAN-SPAR and runs through the normal lane,
+ - Exit: one contract test suite passes against both providers. A14 done; A15 partly done.
+ 
+ **Phase 5: Agent identity**
+-- GitLab service accounts per agent role: worker-frontend, worker-backend, worker-memory, autopilot-executor, kiro-lane-executor, lane-reviewer, verification-engine. All have Developer role, so none can push to `main` or approve their own MRs.
++- GitLab service accounts per agent role: worker-frontend, worker-backend, worker-memory, autopilot-executor, kiro-lane-executor, lane-reviewer, verification-engine. All have Developer role, so none can push to `main`. Service accounts are Free and use no seat, with a cap of 100 per instance: one account per role or seat, never per session. Approving is not a gate on Free; the merge bot lands a merge request only on a reviewer accept pushed by the reviewer's service account (`agent-reviewer` in `eng-gitlab-m2`, section 9.2).
+ - Tokens are scoped per project and kept in Secrets Manager with rotation.
+ - Every commit carries `VTID:`, `Execution-ID:` and `Agent:` trailers.
+ - A minimal `engineering_agents` registry in platform scope, designed with the mt-track-s-authz owners. It needs an approved migration plan.
+@@ -143,12 +143,12 @@ Each phase has its own VTIDs through PLAN-SPAR and runs through the normal lane,
+ 
+ **Phase 7: vitana-platform cutover**
+ - Port the deploy workflows into per-service template jobs. Move crons and alerts to EventBridge.
+-- Turn merge trains on.
++- Turn the merge bot on for the project (`landing: true` in the settings file). Merge trains are Premium and are not used.
+ - Retire the GitHub OIDC role and the shared GitHub tokens.
+ - Exit: A18, A26, A27, A29.
+ 
+ **Phase 8: Scale and resilience**
+-- Run 10, then 20, then 50 concurrent agents. Raise the existing caps on purpose: the 6 lane slots, the fixed worker-runner count, and the merge train's 20 parallel pipelines.
++- Run 10, then 20, then 50 concurrent agents. Raise the existing caps on purpose: the 6 lane slots, the fixed worker-runner count, and the merge bot's one landing per project at a time (merge trains and their 20 parallel pipelines are Premium; a batch queue is a later lane if the rate is not enough).
+ - Conflict tests through lane-scope and JEV pr-clash, moved out of shadow mode.
+ - Tenant-isolation tests: agent tokens and runners cannot reach prod Aurora or tenant memory.
+ - DR drill, cost review.
+@@ -173,7 +173,7 @@ Each phase has its own VTIDs through PLAN-SPAR and runs through the normal lane,
+ - Effort is dominated by porting about 160 workflows and about 60 GitHub call sites, not by installing GitLab.
+ - A single-node GitLab is a single point of failure. The RTO must be accepted explicitly.
+ - 50 agents generate heavy API and webhook load. Size by requests per second and load-test before Phase 8.
+-- Premium seat cost, including how agent service accounts are licensed.
++- No licence cost: the Free tier needs no seat, and service accounts use none. The limits that replace it are 100 service accounts per instance and one merge landing per project at a time (throughput is about one landing per pipeline length).
+ - Running two providers during the transition: there must be one source of truth per repo at any moment, never two-way sync.
+ 
+ ## 8. Acceptance criteria
+@@ -187,8 +187,71 @@ New criteria:
+ - **A33**: the GitProvider contract suite passes for both providers.
+ - **A34**: GitHub repos are archived or read-only after cutover.
+ 
++## 9. Change log (Free-tier amendment)
++
++**2026-11-05, plan `eng-gitlab-m2`, lane `settings` (VTID-05542).** Owner decision of 2026-11-03: *"we only pay for aws instances. no license fees to GitLab or others. self hosted we only pay for aws"*. Decision D2 (buy GitLab Premium) is replaced by the Free tier. Everything else is unchanged: findings F1 to F12 (only the consequence of F5 changed), decisions D1 and D3 to D7, the phases and the acceptance criteria. Every edit keeps the line count of sections 1 to 8, so references such as `:32`, `:34`, `:35`, `:111-122` and `:180` in other documents still point at the same text. Plan: [`.kiro/specs/eng-gitlab-m2/plan.md`](../.kiro/specs/eng-gitlab-m2/plan.md), section 2. Every component and its licence: [ENGINEERING-PLATFORM-LICENCES.md](ENGINEERING-PLATFORM-LICENCES.md).
++
++### 9.1 What changed
++| Where | Was | Now | Why |
++|---|---|---|---|
++| Header | no pointer | pointer to this section | readers of the old text find the change |
++| F5, consequence | functional spec for merge trains and approvals | functional spec for the merge bot that replaces them | merge trains and required approvals are Premium (9.3) |
++| D2 | Premium, bought before Phase 6; service accounts called Premium | Free tier, nothing bought; replacements in 9.2 | owner decision 2026-11-03; service accounts are Free (100 per instance, no seat) |
++| Owner actions | included "purchase Premium" | removed | nothing is bought |
++| Section 3 diagram, `gl-prod-deploy` and ASG `release` | "approval", "protected env prod" | "PUBLISH", "PUBLISH job only" | protected environments and deployment approvals are Premium |
++| Section 3, Command Hub line | MR / pipeline / train / approval views | MR / pipeline / merge bot / review views | no trains or required approvals on Free |
++| Section 3, runner class `release` | runs in the protected `production` environment | runs the promote job started by PUBLISH after Gate 2 | protected environments are Premium |
++| Section 3, runner class `infra` | `apply` through a protected environment with owner approval | `apply` run only by the owner (D5) | protected environments are Premium |
++| Section 4, PR-GATE row | push rule on commit messages | central CI configuration plus a required-job list the bot checks | push rules are Premium |
++| Section 4, reviewer verdict row | reviewer account approves, "reset approvals on push" | accept stays in trailers; the bot checks it and who pushed it | required approvals and reset-on-push are Premium |
++| Section 4, `land-guard` row | merge train with merged-results pipelines | merge bot | merge trains and merged-results pipelines are Premium |
++| Section 4, gate-files row | CODEOWNERS | the bot refuses protected gate files | Code Owners is Premium |
++| Section 4, Gate 2 row | `production` protected environment with owner deployment approval | the owner's Gate 2 "yes"; PUBLISH starts the job | protected environments and deployment approvals are Premium |
++| Phase 2, import | "a push mirror from GitHub" | a copy by a timer on the GitLab host | GitLab pull mirroring is Premium; push mirroring runs the other way |
++| Phase 5, service accounts | none can "approve their own MRs" | none can push to `main`; cap of 100; approving is not a gate | approvals are optional on Free |
++| Phase 7 | turn merge trains on | turn the merge bot on | merge trains are Premium |
++| Phase 8 | the merge train's 20 parallel pipelines | the merge bot's one landing per project at a time | merge trains are Premium |
++| Section 7, risks | Premium seat cost | no licence cost; the limits that replace it | Free needs no seat |
++| Sources | merge trains link | link kept, marked Premium and not used | evidence for the tier |
++
++Left unchanged on purpose because the feature is Free (9.3): `main` protected with nobody pushing (Phase 2), protected runners (Phase 3), the read-only push mirror from GitLab to GitHub (Phase 6), mandatory 2FA and OIDC login (D6), and the OIDC trust pinned to project, protected ref and environment (F3, A32).
++
++### 9.2 What replaces each paid feature
++| What the first plan counted on (Premium) | What milestone 2 does on Free |
++|---|---|
++| Merge trains, merged-results pipelines | Merge method fast-forward with squash: GitLab itself refuses a merge request that is behind `main`. The bot brings the branch up to date by merging `main` into it (not a rebase, so the reviewed head stays an ancestor), waits for the new pipeline, then lands it. One landing per project at a time. This is rule §7b of `collaboration.md` as it runs today, at the same rate. A batch queue is a later lane if the rate is not enough. |
++| Required approvals, Code Owners | The reviewer's accept stays in git trailers as today. The bot checks it with the `land-guard.mjs` functions and, new, checks that the accept commit was pushed by the `agent-reviewer` account (project push events). A builder cannot forge that. |
++| Owner approval of protected gate files | The bot never lands a change to a file in `protected-gate-files.json` (as `land-guard.mjs merge` already refuses). It comments that the owner must. The owner merges it in GitLab. |
++| Push rules | Central CI configuration in `vitana/ci-config`, which agents cannot edit, plus a list of required job names per project that the bot checks. |
++| Protected environments, deployment approvals | Not needed: milestone 2 has no deploy job. Production stays the Command Hub PUBLISH button and Gate 2. |
++| Branch protection by user or group | By role: push `No one`, merge `Maintainers`. Only `bot-land` and the owner hold Maintainer. |
++| Group webhooks | One project webhook per project, created by the settings sync. |
++| Unlimited service accounts | 100 per instance. One account per seat, not per session. A session is still identified by its `Collab-Session` trailer. About ten accounts are used. |
++
++### 9.3 Tier shown on GitLab's own page for each feature (pages read 2026-11-05)
++| Feature | Tier on the page | Page |
++|---|---|---|
++| Merge trains | Premium, Ultimate | <https://docs.gitlab.com/ci/pipelines/merge_trains/> |
++| Merged results pipelines | Premium, Ultimate | <https://docs.gitlab.com/ci/pipelines/merged_results_pipelines/> |
++| Merge request approvals | Free, Premium, Ultimate. Free: any user with Developer or above can approve; approvals are optional and do not block merging. Required approvals and Code Owners: Premium, Ultimate | <https://docs.gitlab.com/user/project/merge_requests/approvals/> |
++| Approval settings (prevent approval by the author, remove approvals when commits are added) | Premium, Ultimate | <https://docs.gitlab.com/user/project/merge_requests/approvals/settings/> |
++| Push rules | Premium, Ultimate | <https://docs.gitlab.com/user/project/repository/push_rules/> |
++| Code Owners | Premium, Ultimate | <https://docs.gitlab.com/user/project/codeowners/> |
++| Protected environments (deployment approvals) | Premium, Ultimate | <https://docs.gitlab.com/ci/environments/protected_environments/> |
++| Protected branches | Free, Premium, Ultimate. Users or groups in the allowed lists, and group-level rules: Premium, Ultimate | <https://docs.gitlab.com/user/project/repository/branches/protected/> |
++| Protected runners | Free, Premium, Ultimate | <https://docs.gitlab.com/ci/runners/configure_runners/> |
++| Service accounts | Free, Premium, Ultimate. Free self-managed: up to 100 per instance, no seat | <https://docs.gitlab.com/user/profile/service_accounts/> |
++| Webhooks, signing token | Free, Premium, Ultimate. Group webhooks: Premium, Ultimate | <https://docs.gitlab.com/user/project/integrations/webhooks/> |
++| Merge methods | Free, Premium, Ultimate | <https://docs.gitlab.com/user/project/merge_requests/methods/> |
++| Squash and merge | Free, Premium, Ultimate | <https://docs.gitlab.com/user/project/merge_requests/squash_and_merge/> |
++| Repository mirroring | Free, Premium, Ultimate. Push mirroring is not restricted; pull mirroring: Premium, Ultimate | <https://docs.gitlab.com/user/project/repository/mirror/> |
++| Runner autoscaling | Free, Premium, Ultimate | <https://docs.gitlab.com/runner/runner_autoscale/> |
++| ID tokens and OIDC to AWS | Free, Premium, Ultimate | <https://docs.gitlab.com/ci/secrets/id_token_authentication/>, <https://docs.gitlab.com/ci/cloud_services/aws/> |
++| Two-factor authentication, enforced for all users | Free, Premium, Ultimate | <https://docs.gitlab.com/security/two_factor_authentication/> |
++| OpenID Connect login | Free, Premium, Ultimate. Group-membership rules: Premium, Ultimate | <https://docs.gitlab.com/administration/auth/oidc/> |
++
+ ## Sources
+-- [GitLab merge trains](https://docs.gitlab.com/ci/pipelines/merge_trains/)
++- [GitLab merge trains](https://docs.gitlab.com/ci/pipelines/merge_trains/) (Premium; read to confirm the tier, not used)
+ - [Docker Machine executor deprecation, removal in GitLab 20.0 (May 2027)](https://gitlab.com/gitlab-org/gitlab/-/issues/498268)
+ - [Docker Autoscaler executor](https://docs.gitlab.com/runner/executors/docker_autoscaler/)
+ - [GitLab reference architectures](https://docs.gitlab.com/administration/reference_architectures/)
+
+## New file: docs/ENGINEERING-PLATFORM-LICENCES.md
+ /dev/null => docs/ENGINEERING-PLATFORM-LICENCES.md | 132 +++++++++++++++++++++
+ 1 file changed, 132 insertions(+)

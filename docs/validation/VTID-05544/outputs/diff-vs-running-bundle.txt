@@ -1,0 +1,47 @@
+# $ bash docs/validation/VTID-05544/outputs/compare-with-v6.sh <repository root>
+# archive sha256 66983e0f9854f5025e2b5e23e2ae2cd134592fb628f8e1f249d271569aff10f6
+# the block checks for   66983e0f9854f5025e2b5e23e2ae2cd134592fb628f8e1f249d271569aff10f6
+# every file of the archive against <repository root>/infra/gitlab-engineering (sha256, first 16 characters)
+same     host/backup.sh  ffd7040435069f5a
+CHANGED  host/ci-platform.yml  archive 35853826118807f9  branch a235c03c8b67dd35
+same     host/ci-v1.yml  f2c3dfcbc0ace095
+same     host/gitlab-configure.sh  947e3176f59ac2ef
+same     host/gitlab-install.sh  14d2f38d3b0de3e7
+same     host/mirror.sh  75d21f773b10d3d0
+same     host/runner-fix.sh  95ddb3dd6b0d558b
+same     host/runner-install.sh  da3c99ab88e4c0a0
+same     setup.sh  ec82f66a385f778b
+same     terraform/main.tf  6888ee0a5605ce2a
+# files of the branch that are not in the archive:
+new      RUNBOOK.md
+# changed files: 1
+
+# diff -u of host/ci-platform.yml (archive -> branch)
+--- archive/host/ci-platform.yml
++++ branch/host/ci-platform.yml
+@@ -27,14 +27,17 @@
+     - npm install -g pnpm@9.0.0
+     - pnpm config set store-dir "$CI_PROJECT_DIR/.pnpm-store"
+     - cd services/gateway
+-    - pnpm install --frozen-lockfile
+ 
++# Same install as GitHub's gateway type check (CICDL-GATEWAY-CI.yml: `npm ci` in services/gateway, then `pnpm run typecheck`).
++# With `pnpm install` here tsc fails on two `declare module 'express-serve-static-core'` augmentations (TS2664): pnpm's strict
++# node_modules layout hides that transitive type package. Checked on the base commit: npm ci then pnpm run typecheck = 0 errors.
+ typecheck:
+   extends: .gateway
+   stage: check
+   variables:
+     NODE_OPTIONS: "--max-old-space-size=6144"
+   script:
++    - npm ci --no-audit --no-fund
+     - pnpm run typecheck
+ 
+ gateway-jest:
+@@ -44,4 +47,6 @@
+   variables:
+     NODE_OPTIONS: "--max-old-space-size=3072"
+   script:
++    # Same install as TEST-SUITE.yml (pnpm install --frozen-lockfile in services/gateway).
++    - pnpm install --frozen-lockfile
+     - npx jest --silent --maxWorkers=2 --shard=$CI_NODE_INDEX/$CI_NODE_TOTAL

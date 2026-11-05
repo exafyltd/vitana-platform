@@ -1,0 +1,33 @@
+# Central CI config for the scratch project vitana/rehearsal (plan eng-gitlab-m2 sections 3.3 and 3.8; scripts/eng/rehearse.mjs plays 12 agents on it).
+# The settings sync (scripts/eng/gitlab-settings.mjs) copies this file to vitana/ci-config; edit it here, never in GitLab.
+# One real job, `unit`, which is the project's required job in gitlab-settings.json (the merge bot lands a merge request only when it is green).
+# It runs the tests of the rehearsal seed repository: the seed (infra/gitlab-engineering/rehearsal/seed/) must have a package.json whose `test`
+# script runs its tests with no install step. A merge request that breaks a test makes `unit` red, and the bot refuses it.
+# Merge-request pipelines, one retry for a job that lost its machine or got stuck, jobs that a newer pipeline may cancel. No deploy job, no secret.
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_PIPELINE_SOURCE =~ /^(web|api|schedule)$/
+
+default:
+  tags: [vitana-eng]
+  image: public.ecr.aws/docker/library/node:20-bookworm
+  interruptible: true
+  retry:
+    max: 1
+    when:
+      - runner_system_failure
+      - stuck_or_timeout_failure
+
+stages: [check]
+
+variables:
+  CI: "true"
+
+unit:
+  stage: check
+  timeout: 10m
+  script:
+    - node --version
+    - npm test
