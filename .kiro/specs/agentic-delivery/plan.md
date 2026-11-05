@@ -36,7 +36,7 @@ Each is one file on `main` (vitana-platform unless marked v1):
   recorded in OASIS. A one-lane task goes from plan PR to verified staging in 1 to 3 hours, instead of days.
 - Hard cutover: on one day, both repositories move their delivery to our own GitLab: checks, the merge queue, staging
   deploys and STAGING-VERIFY. From that day GitHub Actions no longer runs on pull requests or pushes.
-- Before the cut, the pieces are built (the 7 lanes here and the M2 lanes) and proven on copies of `main` running on
+- Before the cut, the pieces are built (the 8 lanes here and the M2 lanes) and proven on copies of `main` running on
   GitLab, then rehearsed once. The cut happens when a mechanical checklist is green (§8). The target is 7 days after
   this plan is approved.
 - For agents: a push gets its first check result in 1 to 3 minutes and all required checks in 5 to 10. A merge bot
@@ -109,7 +109,7 @@ unchanged until it moves after the cut. Lane `cutover` lists all 159 files with 
 | platform | AWS-PROD-DEPLOY-* (9), VISUAL-VERIFY-FRONTEND | kept, dispatch only (PUBLISH). AWS-PROD-* are protected | T5, then retired on the owner's instruction naming a plan |
 | platform | RUN-MIGRATION, AWS-PROD-SETUP-* (2), AWS-PROVISION-* (2), AWS-OPS-ECS-SCALE-UNGOVERNED, AWS-REHEARSAL-AURORA-CLONE, AWS-STAGING-VALIDATION, SET-STAGING-TENANT-CONSENT, SETUP-OPERATOR-MEDIA-BUCKET, JOURNEY-TRANSLATIONS-BACKFILL, BOOTSTRAP-CLOUDFLARE-KV, ANDROID-DEVICE-E2E, MOBILE-DEVICE-E2E, E2E-TEST-RUN, OPS-TOGGLE-FLOW-V3-STAGING | kept, dispatch only; migrations keep §7d | T6 |
 | platform | ALERT-* (7), CRON-* (3), E2E-ORB-MONITOR, MORNING-SYSTEM-HEALTH-CHECK, SCREEN-LOAD-* (2), EXERCISE-STAGING-SHADOW* (2), MARKETPLACE-SYNC-CRON, DEV-AUTOPILOT, VCAOP-HEALTH, TENANT-RESERVED-SLUGS-DRIFT, SMOKE-WELCOME-GREETING, CI-HEALTH, DAILY-STATUS-UPDATE, TEST-CATALOG, CODEINTEL-INDEX, MIGRATION-DRIFT-CHECK, DRIVER-WAKE, I18N-DB-SEED, REGEN-SCREENS-CATALOG, APPLY-FB061-DEBOUNCER-FIX, REUSABLE-NOTIFY | kept (schedules, dispatch, pushes from the mirror; small load); the PRs they open go through the bridge | T6, T2 or T7 |
-| platform | DEPLOY-CLOUDFLARE-WORKERS | kept: it deploys production Workers on every push to `main`, as today, now from mirror pushes | owner decision C2 |
+| platform | DEPLOY-CLOUDFLARE-WORKERS | kept: it deploys production Workers on a push to `main` that changes `cloudflare/**` (its path filter, `DEPLOY-CLOUDFLARE-WORKERS.yml:12-17`), as today, now from the mirror's push; a known exception to principle 5 (§4) | owner decision C2 |
 | platform | AUTO-DEPLOY, VTID-02409-BOOTSTRAP, VCAOP-CICD | disabled (GCP era, dead) | deleted |
 
 After the cut the only GitHub workflows that run on a pull request are PLAN-SPAR (plan PRs) and the path-filtered
@@ -170,7 +170,9 @@ So today a VTID's history is split between OASIS, git and GitHub. This plan clos
 3. A trusted tool judges untrusted work. Every gate runs code from `main` or from `vitana/ci-config` and reads the
    branch as data, as Lane scope does today with the base revision's `queue.mjs` (`PR-GATE.yml:166-173`).
 4. Feedback on a branch is fast and cheap. The full proof runs once, after landing, and then on staging.
-5. Production stays the owner's PUBLISH after Gate 2.
+5. Production stays the owner's PUBLISH after Gate 2. One existing exception stays exactly as it is today:
+   `DEPLOY-CLOUDFLARE-WORKERS.yml` deploys production Workers when a push to `main` changes `cloudflare/**` (§4). The cut
+   adds no other way for a landing to reach production.
 6. Speed comes from parallel machines and selective checks; accuracy comes from the gates that do not change: an
    independent review on the current head, the full suite once after landing, and STAGING-VERIFY on the deployed build.
 
@@ -283,7 +285,11 @@ request per project at a time with fast-forward plus squash, using the `land-gua
    `scripts/ci/staging-verify/run.mjs verify` unchanged, except one new input `--deploy-runs-file` that the deploy job
    writes, in place of the GitHub Actions API call (`run.mjs:180`). Each run covers every commit between production and
    the deployed commit (`run.mjs:373-375`), so every landed VTID is verified even when deploys batch.
-4. `record` (deploy class): `record-oasis.sh` unchanged writes the `staging.verify.*` rows the PUBLISH gate reads.
+4. `record` (deploy class): `record-oasis.sh` writes the `staging.verify.*` rows the PUBLISH gate reads. Lane
+   `prerequisites` lets it take `WORKFLOW` (default `STAGING-VERIFY.yml`, so GitHub runs write exactly what they write
+   today), and the GitLab job passes `gitlab:<project>/staging-verify`, so every row says which host verified it
+   (`record-oasis.sh:40` hard-codes the GitHub name today). The fields the PUBLISH gate filters on (topic, service,
+   commit; `publish-gate.ts:135`) do not change.
 5. `vtid-close` (deploy class): `scripts/ci/vtid-auto-close.cjs` unchanged, with its environment taken from the squash
    commit (title, body, `Source-Branch:`).
 6. `notify-platform` (vitana-v1): starts the platform pipeline that SCREENS-CATALOG-TRIGGER's dispatch starts today.
@@ -342,7 +348,7 @@ They need secrets (LLM keys, Bedrock), so they cannot run on the untrusted class
   after a terminal VTID is a new lane with a new VTID from PLAN-SPAR, as `driver.md` step 7 already says.
 - **Writers.** The GitLab webhook route (M2 §3.5: signed, through `emitOasisEvent`,
   `services/oasis-event-service.ts:59`) writes every GitLab fact. The `record` job writes STAGING-VERIFY with
-  `record-oasis.sh` unchanged. The `vtid-close` job closes VTIDs through the governed endpoint. No new writer inserts
+  `record-oasis.sh`, whose only change is the `workflow` value (§3.6 step 4). The `vtid-close` job closes VTIDs through the governed endpoint. No new writer inserts
   into the database directly.
 - **Events.**
 
@@ -432,6 +438,7 @@ OASIS events (NEVER 10).
 | VTID auto-close | `VTID-AUTO-CLOSE.yml` | `vtid-close` job | script and opt-outs |
 | Gate 1 and Gate 2 | policy approval; message from STAGING-VERIFY evidence | unchanged; commit lists from the GitHub mirror until the provider layer | text and evidence |
 | PUBLISH | Command Hub → `operator.ts:2445` → `AWS-PROD-DEPLOY-*` | unchanged: the workflows run on GitHub from the mirrored commit. After the cut: T5, promoting by digest | owner only, after Gate 2, pinned to the verified commit |
+| Cloudflare Workers deploy | `DEPLOY-CLOUDFLARE-WORKERS.yml:12-17` deploys production Workers on a push to `main` that changes `cloudflare/**`, without PUBLISH: a pre-existing exception to principle 5 | unchanged: the mirror's push of `main` starts it exactly as a merge on GitHub does today. It is the only kept workflow that a push to `main` starts and that deploys production; `github-workflows.test.mjs` (lane `cutover`) fails if another one appears | the path filter; moving it under PUBLISH is owner decision C2 |
 | Migrations | §7d: the owner approves the files and the database | unchanged (dispatch on GitHub); after the cut one T6 owner-dispatched job | same |
 | Identity, trailers, no force-push | `common-rules.md` rule 8 | one GitLab service account per seat (M2); author `kiro-agent[bot]` unchanged; force push off on `main` | same |
 
@@ -552,7 +559,7 @@ records each step as an OASIS event. They map to the loop catalog's engineering 
 ## 8. The hard cutover
 ### 8.1 Before the cut (target: 7 days after approval)
 1. Land pipeline-speed PR #4674 first, so the PM commit storm stops filling GitHub's queue while the pieces are built.
-2. Build the 7 lanes of §9 and the M2 lanes `fleet`, `settings`, `merge-bot`, `scm-webhook` and `monitoring` in
+2. Build the 8 lanes of §9 and the M2 lanes `fleet`, `settings`, `merge-bot`, `scm-webhook` and `monitoring` in
    parallel (at most 6 in flight per plan, `collaboration.md` §8a).
 3. Shadow as each lane lands: GitLab runs the generated pipelines of both repositories on every mirrored `main` commit
    with `DELIVERY_MODE=shadow` (§3.6 step 8). It builds and pushes `shadow-<sha12>` images, renders the staging task
@@ -567,7 +574,8 @@ records each step as an OASIS event. They map to the loop catalog's engineering 
 M1 done; the M2 lanes above done and M2 rehearsal A1 to A9 passed; every lane of §9 done; owner steps A1 to A3 done;
 at least 10 shadow commits per repository with no unexplained difference and within the §5 targets for first result
 and required checks; the bridge dry run complete; the rehearsal
-passed.
+passed; the only production deploy a landing can start is DEPLOY-CLOUDFLARE-WORKERS for a `cloudflare/**` change, as today
+(`github-workflows.test.mjs` green).
 
 ### 8.2 The cut (one owner command, about one hour)
 `delivery-cutover.sh apply`, on the owner's command naming this plan, for both repositories:
@@ -599,7 +607,8 @@ no commit is lost.
 ### 8.5 After the cut (later `plan(` PRs that cite this one)
 1. The provider layer of §2.3: a GitHub implementation that wraps `github-service.ts` unchanged and a GitLab one. The
    Project Manager and Dev Autopilot come back on GitLab, and the PLAN-SPAR twin starts.
-2. PUBLISH moves to T5 (promote by digest); the scheduled and owner-run jobs move to T6; the protected list gains the
+2. PUBLISH moves to T5 (promote by digest), which also pins the frontend to the verified commit: today the frontend leg
+   rebuilds vitana-v1 `main` without a pin (`operator.ts:2326-2348`); the scheduled and owner-run jobs move to T6; the protected list gains the
    GitLab merge authority and publish files.
 3. Each agent surface pushes to GitLab directly as soon as it can reach it; the bridge stops when none pushes to GitHub.
 4. **"GitHub can be switched off" means, for 14 days in a row:** no workflow run in either GitHub repository; no call to
@@ -617,10 +626,19 @@ file of M1 or M2 starts when the M2 lane that owns that file is `done` (the plan
 name another plan's lane). The interfaces between lanes are fixed in §3: template file names, the job names
 `.build-image`, `.push-image`, `.deploy-staging`, `.rollback-staging`, `.preview-upload`, `.preview-stop`,
 `.staging-verify`, `.record`, `.vtid-close`, `.notify-platform`, `.assist`, the service-list schema with `env_overrides`,
-the deploy-runs file, and the bridge's status names `gitlab/<job>`. There are 7 lanes; at most 6 build at once.
+the deploy-runs file, the bridge's status names `gitlab/<job>`, and `record-oasis.sh`'s `WORKFLOW` input. There are 8
+lanes; at most 6 build at once.
+
+Order the plan driver applies (lane files can name only lanes of this plan, and these orders are not in them): lane
+`prerequisites` lands first. Lanes `gateway-delivery` and `verify-on-gitlab` (its `.record` job) build on it, and so does
+eng-gitlab-m2 lane `scm-webhook`: every file under `services/gateway/src/routes/` must be claimed by a domain of the
+developer atlas (`services/gateway/src/orb/developer/domain-atlas.ts`, drift guard in
+`test/vtid-04560-role-separation-regression.test.ts:524-528`), and neither `routes/internal-gitlab-webhook.ts` (M2) nor
+`routes/delivery.ts` (here) is claimed today. `prerequisites` adds both claims to the atlas domain `deploy`.
 
 | Lane | Builds | Owns (paths) | Starts | Deploys |
 |---|---|---|---|---|
+| `prerequisites` | the atlas claims of the two new route files; `record-oasis.sh`'s `WORKFLOW` input (§3.6 step 4) | `services/gateway/src/orb/developer/domain-atlas.ts`, `services/gateway/test/atlas-gitlab-route-claims.test.ts`, `scripts/ci/staging-verify/record-oasis.sh`, `scripts/ci/staging-verify/record-oasis-workflow.test.mjs` | at once | gateway to staging (an atlas entry; nothing a member sees) |
 | `pipelines` | §3.3, §3.4, the orchestration of §3.6, T3, T7 jobs, for both repositories | `config/delivery/**`, `scripts/eng/pipeline-gen.mjs` and its tests and fixtures, `infra/gitlab-engineering/ci/{tpl-checks,tpl-main,tpl-nightly,tpl-assist}.yml`, `infra/gitlab-engineering/ci/{v1,platform}-delivery.gitlab-ci.yml` | after M2 `settings` | nothing |
 | `deploy-path` | §3.2 classes, §3.6 step 2, §3.7, §3.8, §7 roles | `scripts/eng/deploy/**`, `infra/gitlab-engineering/ci/tpl-deploy.yml`, `infra/gitlab-engineering/terraform/fleet-classes.tf`, `infra/gitlab-engineering/host/fleet-manager-install.sh`, `scripts/aws/iam/gitlab-oidc-*.json`, `scripts/aws/setup-gitlab-oidc.sh`, structure tests, `infra/gitlab-engineering/RUNBOOK-delivery-aws.md` | after M2 `fleet` | nothing on merge |
 | `verify-on-gitlab` | §3.6 steps 3 to 6 and 8, for the gateway and the community app | `scripts/ci/staging-verify/run.mjs`, `scripts/ci/staging-verify/deploy-runs.test.mjs`, `infra/gitlab-engineering/ci/tpl-verify.yml`, `scripts/eng/verify/**` | at once; the template merges after M2 `settings` | nothing |
@@ -674,6 +692,10 @@ Caps: each class's machine maximum (§5) bounds the spend per hour; the AWS budg
 - R9 Signed-in preview specs move from before merge to after merge (§3.4).
 - R11 The speed targets need the warm pool, sharded tests, warm caches and the shorter deregistration delay; the
   checklist holds the cut until the shadow pipelines meet them.
+- R12 PUBLISH's frontend leg rebuilds vitana-v1 `main` without a commit pin (`operator.ts:2326-2348`). That is true
+  today; after the cut GitHub `main` trails GitLab `main` by up to a minute, so the window in which a newer landing can
+  ship with a PUBLISH is a little wider. Until T5 pins the frontend (§8.5 step 2), the Delivery screen shows the
+  frontend commit staging verified next to GitHub's `main`, so the owner can see a difference before pressing PUBLISH.
 - R10 Command Hub buttons that dispatch disabled vitana-v1 workflows (`routes/admin-i18n-ops.ts`, `routes/testing.ts`)
   answer with an error until they move; Dev Autopilot is paused until its move.
 
@@ -690,7 +712,7 @@ Caps: each class's machine maximum (§5) bounds the spend per hour; the AWS budg
 - B1 Set the Dev Autopilot kill switch at the cut (a production control). B2 None else: production stays a normal
   PUBLISH after Gate 2.
 - C The hard cut itself is the owner's decision of 2026-11-04. Later: C1 grow the train beyond 12 positions when its trigger fires;
-  C2 automatic Workers deploys versus PUBLISH; C3 raise the sparring cap.
+  C2 whether DEPLOY-CLOUDFLARE-WORKERS moves under PUBLISH (until then it deploys as it does today); C3 raise the sparring cap.
 - D1 Archive both GitHub repositories after the switch-off measure. D2 Delete the `claude-staging-validation` keys
   (eng-platform-p01 §8). D3 Retire PLAN-SPAR.yml and AWS-PROD-*.yml after their GitLab twins (protected gate files).
 - E None planned. An escalated sparring verdict on this plan goes to the owner (stop 6).

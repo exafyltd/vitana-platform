@@ -4,10 +4,43 @@ titles `VTID-xxxxx (agentic-delivery/<lane>): …`; trailers `Collab-Session` an
 identity `kiro-agent[bot]`; evidence in `docs/validation/<VTID>/` (`land-guard.mjs evidence` before the first code
 commit). Node tests are dependency-free and run with `node --test` (`UNIT.yml` runs `scripts/**/*.test.mjs` with no
 install). Gateway tests: `cd services/gateway && npm run typecheck && npx jest test/delivery`. Cross-plan starts (plan
-§9): `pipelines` after eng-gitlab-m2 `settings`; `deploy-path` after eng-gitlab-m2 `fleet`; `merge-queue` after
+§9): `prerequisites` at once, and it lands before `gateway-delivery`, the `.record` job of `verify-on-gitlab` and
+eng-gitlab-m2 `scm-webhook`; `pipelines` after eng-gitlab-m2 `settings`; `deploy-path` after eng-gitlab-m2 `fleet`; `merge-queue` after
 eng-gitlab-m2 `merge-bot`; `github-bridge` after eng-gitlab-m2 `gitlab-client`; `gateway-delivery` after eng-gitlab-m2
 `scm-webhook`; `verify-on-gitlab` at once, its template merging after eng-gitlab-m2 `settings`; `cutover` after the other
 six and eng-gitlab-m2 `settings`. Every new test is recorded red on `origin/main` in `commands.log` before the code.
+
+<!-- lane: prerequisites -->
+## Lane `prerequisites` (vitana-platform)
+- [ ] R1 Write and record red on base: `services/gateway/test/atlas-gitlab-route-claims.test.ts` (`domainsForRoute` of
+      `internal-gitlab-webhook` and of `delivery` returns the atlas domain `deploy`; red on base, where neither is
+      claimed) and `scripts/ci/staging-verify/record-oasis-workflow.test.mjs` (runs `record-oasis.sh` with a fake `curl`
+      first on `PATH` that saves the body it is sent: without `WORKFLOW` the body is byte-identical to today's for the
+      same `results.json` fixture, with `metadata.workflow: "STAGING-VERIFY.yml"`; with
+      `WORKFLOW=gitlab:vitana/vitana-v1/staging-verify` the body differs only in `metadata.workflow`; the crashed-runner
+      body behaves the same way; red on base for the `WORKFLOW` cases).
+- [ ] R2 `services/gateway/src/orb/developer/domain-atlas.ts`: add `/^internal-gitlab-webhook$/` and `/^delivery$/` to
+      the `routes` of domain `deploy`, nothing else. `scripts/ci/staging-verify/record-oasis.sh`: read `WORKFLOW` with the
+      default `STAGING-VERIFY.yml` in both jq programs, nothing else.
+- [ ] R3 `docs/validation/<VTID>/staging-tests.json`: the gateway smoke suite plus the atlas test as an `existing` test;
+      evidence: tests red then green, `npm run test:roles` green, `node --test scripts/ci/staging-verify/` green.
+
+**Acceptance**
+- Change types: Backend, Tooling/docs.
+- Outcome: the two route files the GitLab lanes add (`routes/internal-gitlab-webhook.ts` of eng-gitlab-m2 and
+  `routes/delivery.ts` of this plan) pass the atlas drift guard when they land, and every STAGING-VERIFY row in OASIS
+  says which host verified it, while GitHub's rows stay exactly as they are.
+- States: `WORKFLOW` unset (today's value); set (that value); the crashed-runner path (same rule).
+- Surfaces: callers of `domainsForRoute` (the developer assistant's deep dive and atlas tools); the drift test; the
+  STAGING-VERIFY workflow (unchanged inputs); readers of `oasis_events` `staging.verify.*` (the PUBLISH gate reads topic,
+  service and commit only, `publish-gate.ts:135`).
+- Locales: n/a. Accessibility: n/a.
+- Contract: the atlas entry shape of `domain-atlas.ts`; the `record-oasis.sh` environment of its header (lines 4-5) plus
+  `WORKFLOW`; `npm run test:roles` stays green (CLAUDE.md NEVER 42h).
+- Staging proof: the gateway smoke suite on the deployed staging build plus the atlas test as an `existing` test in
+  `staging-tests.json`. The atlas has no read endpoint, so the claims are not otherwise observable on staging: not
+  verified on staging beyond that; the drift test covers it. `record-oasis.sh` deploys nothing; its next real run is the
+  next STAGING-VERIFY on GitHub, which must record the same body as before.
 
 <!-- lane: pipelines -->
 ## Lane `pipelines` (vitana-platform)
@@ -115,7 +148,7 @@ six and eng-gitlab-m2 `settings`. Every new test is recorded red on `origin/main
       (a squash commit with the plan §3.5 trailers maps to `PR_TITLE`, `PR_BODY`, `PR_HEAD_REF`, `PR_LABELS`, `PR_REF`; a
       `dev-autopilot/*` source branch and the `VTID_AUTO_CLOSE: no` line keep their meaning),
       `scripts/eng/verify/record-env.test.mjs` (GitLab variables map to the inputs of `record-oasis.sh`, which then builds
-      the same body as on GitHub for the same `results.json`), `scripts/eng/verify/tpl-verify-structure.test.mjs`
+      the same body as on GitHub for the same `results.json`, except `metadata.workflow`, which names the GitLab job), `scripts/eng/verify/tpl-verify-structure.test.mjs`
       (`.staging-verify` on the main class with a `resource_group` per service, oldest first, not interruptible; `.record`
       and `.vtid-close` on the deploy class with the audiences of `gl-verify` and `gl-record`; the nightly run passes
       `full=true`), `scripts/eng/verify/shadow-wait.test.mjs` (in shadow mode the wrapper waits up to 60 minutes for
@@ -138,8 +171,8 @@ six and eng-gitlab-m2 `settings`. Every new test is recorded red on `origin/main
 - Surfaces: GitHub STAGING-VERIFY (path unchanged until the cut); GitLab `main` and nightly pipelines; `oasis_events`;
   the reader `services/gateway/src/services/testing/publish-gate.ts:148`.
 - Locales: n/a. Accessibility: n/a.
-- Contract: the `record-oasis.sh` body (`scripts/ci/staging-verify/record-oasis.sh:28-59`) and the `vtid-auto-close.cjs`
-  inputs (`scripts/ci/vtid-auto-close.cjs:134-143`) unchanged; the deploy-runs file of lane `deploy-path`.
+- Contract: the `record-oasis.sh` body (`scripts/ci/staging-verify/record-oasis.sh:28-59`; only `metadata.workflow` differs,
+  lane `prerequisites`) and the `vtid-auto-close.cjs` inputs (`scripts/ci/vtid-auto-close.cjs:134-143`) unchanged; the deploy-runs file of lane `deploy-path`.
 - Staging proof: not verified on staging at merge: deploys nothing. The unchanged GitHub path keeps passing on the next
   merges; the GitLab path is proven by lane `cutover`'s shadow run.
 
@@ -266,7 +299,9 @@ six and eng-gitlab-m2 `settings`. Every new test is recorded red on `origin/main
       `DELIVERY_MODE=live`; removing the marker
       converges back; a second run writes nothing), `scripts/eng/github-workflows.test.mjs` (the list covers all 159
       workflow files of both repositories with one action each, `disable` or `keep`; every `keep` file has no
-      `pull_request` trigger except PLAN-SPAR and MIGRATION-DRIFT-CHECK and never pushes to `main`; it matches plan §2.2),
+      `pull_request` trigger except PLAN-SPAR and MIGRATION-DRIFT-CHECK and never pushes to `main`; the only `keep` file
+      that a push to `main` starts and that deploys production is DEPLOY-CLOUDFLARE-WORKERS, with its `cloudflare/**`
+      path filter; it matches plan §2.2),
       `scripts/eng/delivery-cutover.test.mjs` (with fake GitHub and GitLab: `status` prints every checklist item of plan
       §8.1, including the §5 targets for first result and required checks measured on the shadow pipelines, and
       `apply` runs the steps of plan §8.2 in order and stops at the first failure with nothing half-done for that

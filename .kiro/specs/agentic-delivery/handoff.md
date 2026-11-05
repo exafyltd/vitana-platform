@@ -7,7 +7,7 @@ next_actor: kiro
 state: drafted
 spar_refs:
   - exafyltd/vitana-v1: 7829ef2f2ef12364862961d339161229c286d6f0
-updated: 2026-11-04T23:40Z
+updated: 2026-11-05T00:30Z
 ---
 # Handoff — agentic-delivery
 Milestone 3 of program `engineering-platform`: the hard cutover of delivery for both repositories to our own GitLab,
@@ -65,3 +65,19 @@ merge bot's train (up to 8 tested positions per repository, plan §3.5), a warm 
 under 4 minutes, image layer caches, a 30-second deregistration delay on staging, the GitLab host at m6i.2xlarge, the
 machine maxima 96 / 12 / 6 and a budget alarm at 5,000 USD a month. The cut waits until the shadow pipelines meet the
 targets (plan §8.1). No lane file changed; the train lives in the merge-queue lane's own files.
+
+### 2026-11-05T00:30Z · kiro-exafy-202611041929-802c · sparring round 1 answered
+Round 1 (session `b80e315e-68b7-4e3b-ae79-d876722af78c`) verified eight premise groups and returned three findings,
+answered in `sparring/responses-1.md`: R1-F1 (Workers deploy without PUBLISH) accepted: it stays exactly as today and is
+documented as the one pre-existing exception (§3.1 principle 5, §4, a test in lane `cutover`, the cut checklist), and
+moving it under PUBLISH is owner decision C2; R1-F2 (`record-oasis.sh` names the GitHub workflow) accepted: a `WORKFLOW`
+input with today's default; R1-F3 (unpinned PUBLISH frontend leg) deferred to T5, with risk R12 and a mitigation on the
+Delivery screen. While answering, I found a defect the round did not raise: the atlas drift guard
+(`test/vtid-04560-role-separation-regression.test.ts:524-528`) fails for any new file under `services/gateway/src/routes/`
+that no atlas domain claims, which hits `routes/delivery.ts` here and `routes/internal-gitlab-webhook.ts` of eng-gitlab-m2
+lane `scm-webhook`. Lane files cannot be edited in a plan PR after their first commit, so a new lane `prerequisites`
+(created in this commit, as a `_plan` commit may) adds both atlas claims and the `WORKFLOW` input; it lands first (§9).
+Also tonight: 148 queued GitHub runs that tested superseded PR heads were cancelled (293 → 136 queued; the PM's
+bookkeeping pushes refilled it to about 300 within 25 minutes); eng-gitlab-m2 lane `gitlab-client` (#4679) got its
+reviewer-agent accept on `e4b294c` (the builder's runtime had no reviewer agent); the stale eng-gitlab-m2 driver
+heartbeat (22:15Z) was taken over by this session.
