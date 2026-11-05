@@ -13,7 +13,9 @@ paths:
   - services/gateway/src/services/orb-memory-bridge-repository.ts
   - services/gateway/src/services/memory/recall-shadow.ts
   - services/gateway/test/services/memory/**
+  - services/gateway/test/services/orb-memory-bridge.test.ts
   - services/gateway/test/routes/orb-live.test.ts
+  - services/gateway/test/vtid-05147-effective-role-permitted.test.ts
   - docs/MEMORY-SYSTEM-PLAN.md
   - docs/validation/VTID-*/**
 updated: 2026-11-04T21:30Z
