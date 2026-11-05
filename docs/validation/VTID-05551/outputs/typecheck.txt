@@ -1,0 +1,11 @@
+# VTID-05551: npm run typecheck (tsc --noEmit over src, as the gateway tsconfig.json includes) on the final code; 2026-11-05T03:45:41Z
+$ cd services/gateway && npm run typecheck
+
+> @vitana/gateway@1.0.1 typecheck
+> tsc --noEmit
+
+exit=0
+
+# The gateway tsconfig.json excludes test/, so the new jest file is type-checked on its own: a throwaway config outside the repo that extends services/gateway/tsconfig.json (strict) and includes only test/atlas-gitlab-route-claims.test.ts, with types jest and node
+$ cd services/gateway && npx tsc -p <scratch>/tsconfig.atlas-test.json
+exit=0
