@@ -1,7 +1,7 @@
 ---
 lane: api-send-reliability
-state: ready
-next_actor: kiro
+state: done
+next_actor: none
 depends_on: []
 executor: kiro
 seat: exafy

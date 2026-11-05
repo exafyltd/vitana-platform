@@ -1,7 +1,7 @@
 ---
 lane: ui-reply-jump
-state: ready
-next_actor: kiro
+state: done
+next_actor: none
 depends_on: [ui-scroll-anchoring, api-send-reliability]
 executor: kiro
 seat: exafyltd

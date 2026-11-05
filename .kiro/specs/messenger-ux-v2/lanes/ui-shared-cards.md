@@ -1,7 +1,7 @@
 ---
 lane: ui-shared-cards
-state: ready
-next_actor: kiro
+state: done
+next_actor: none
 depends_on: [ui-media-album, ui-message-search, api-shared-content]
 executor: kiro
 seat: exafyltd

@@ -1,7 +1,7 @@
 ---
 lane: api-shared-content
-state: ready
-next_actor: kiro
+state: done
+next_actor: none
 depends_on: [api-message-search]
 executor: kiro
 seat: exafyltd

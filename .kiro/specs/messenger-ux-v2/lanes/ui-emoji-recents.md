@@ -1,7 +1,7 @@
 ---
 lane: ui-emoji-recents
-state: ready
-next_actor: kiro
+state: done
+next_actor: none
 depends_on: []
 executor: kiro
 seat: exafyltd
