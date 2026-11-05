@@ -439,6 +439,29 @@ test('merge request title and description: the PR title and body, a draft PR as 
   assert.equal(mrDescription('# Summary\n- [x] done\n'), '# Summary\n- [x] done\n');
 });
 
+test('the merge request description ends with one line "Moved from <pull request URL>" after a blank line, written once and never repeated on updates (plan §3.11 scm.migration.pr_moved)', async (t) => {
+  const url = 'https://github.com/exafyltd/vitana-platform/pull/7';
+  assert.equal(mrDescription('Body\r\n', url), `Body\n\nMoved from ${url}`);
+  assert.equal(mrDescription('/merge', url), `\\/merge\n\nMoved from ${url}`);
+  assert.equal(mrDescription('', url), `Moved from ${url}`);
+  assert.equal(mrDescription(`Body\n\nMoved from ${url}\n`, url), `Body\n\nMoved from ${url}`, 'a body that already ends with the line keeps one');
+  const w = world(t);
+  const gh = PF.github;
+  const a = mk(w, gh, 'kiro/s/a');
+  addPr(w, gh, { number: 1, branch: 'kiro/s/a', sha: a, body: 'First body' });
+  await runTick(w);
+  const pr = `https://github.com/${gh}/pull/1`;
+  assert.equal(mrFor(w, PF, 'kiro/s/a').description, `First body\n\nMoved from ${pr}`);
+  updatePr(w, gh, 1, { body: 'Second body' });
+  await runTick(w);
+  assert.equal(mrFor(w, PF, 'kiro/s/a').description, `Second body\n\nMoved from ${pr}`, 'an update writes the line once');
+  updatePr(w, gh, 1, { html_url: 'https://example.invalid/not-this-pull-request' });
+  const mark = w.f.mark();
+  await runTick(w);
+  w.f.assertNoWrites(mark);
+  assert.equal(mrFor(w, PF, 'kiro/s/a').description.split('Moved from').length, 2, 'one line, the pull request\'s own URL');
+});
+
 // ------------------------------------------------------------------------------------------------- branches
 test('a tick copies the kiro/* and claude/* branches of both repositories to GitLab, and never main, assist/*, pm-agent/* or another name', async (t) => {
   const w = world(t);
@@ -587,8 +610,8 @@ test('one merge request per open same-repository pull request from a bridged bra
   assert.deepEqual(res.errors, []);
   const rows = w.gl[PF.gitlab].mrs.map((m) => [m.source_branch, m.target_branch, m.title, m.description, m.state]).sort();
   assert.deepEqual(rows, [
-    ['claude/b', 'main', 'Draft: Second', 'Line one\n\\/merge\n', 'opened'],
-    ['kiro/s/a', 'main', 'VTID-05548 (s/a): first', 'Body of the first PR', 'opened'],
+    ['claude/b', 'main', 'Draft: Second', `Line one\n\\/merge\n\nMoved from https://github.com/${gh}/pull/2`, 'opened'],
+    ['kiro/s/a', 'main', 'VTID-05548 (s/a): first', `Body of the first PR\n\nMoved from https://github.com/${gh}/pull/1`, 'opened'],
   ]);
   assert.equal(mrFor(w, PF, 'kiro/s/a').sha, a, 'the merge request head is the pull request head');
   assert.equal(headOn(glUrlOf(w, PF), 'kiro/s/c'), c, 'branches are copied whatever their pull requests are');
@@ -600,7 +623,7 @@ test('one merge request per open same-repository pull request from a bridged bra
   await runTick(w);
   const writes = w.f.writes(mark);
   assert.deepEqual(writes.map((x) => `${x.method} ${x.path}`), [`PUT /api/v4/projects/vitana%2Fvitana-platform/merge_requests/${mrFor(w, PF, 'kiro/s/a').iid}`]);
-  assert.deepEqual(writes[0].body, { title: 'VTID-05548 (s/a): first, renamed', description: 'New body' });
+  assert.deepEqual(writes[0].body, { title: 'VTID-05548 (s/a): first, renamed', description: `New body\n\nMoved from https://github.com/${gh}/pull/1` });
   mark = w.f.mark();
   await runTick(w);
   w.f.assertNoWrites(mark);
@@ -742,7 +765,9 @@ test('the status budget goes first to the jobs that gate a landing, and the next
   const opts = { maxStatusWritesPerTick: 2, maxStatusWritesPerHour: 1000 };
   const served = async () => { const mark = w.f.mark(); await runTick(w, opts); return w.f.writes(mark).map((x) => `${x.path.endsWith(a) ? 'a' : 'b'} ${x.body.context}`); };
   assert.deepEqual(await served(), ['a gitlab/gate', 'a gitlab/lane-scope']);
-  addPipeline(w, PF, a, ['docs', 'unit', 'gate', 'lane-scope'].map((name) => ({ name, status: 'failed' }))); // new results for a
+  // New results for a, red in its gate jobs only (a red docs or unit result would also go before b's green results: every
+  // non-success result goes before any success, see the next tests; here the rotation among the green results is checked).
+  addPipeline(w, PF, a, [['docs', 'success'], ['unit', 'success'], ['gate', 'failed'], ['lane-scope', 'failed']].map(([name, status]) => ({ name, status })));
   // a's GitHub head shows a green gate from its first pipeline while its new pipeline is red: the red gate results go
   // before every other write of the tick, also before b's turn.
   assert.deepEqual(await served(), ['a gitlab/gate', 'a gitlab/lane-scope'], 'a red gate result goes first');
@@ -815,6 +840,44 @@ test('with a status budget of 1, GitHub never shows only success for a red pipel
   assert.deepEqual(w.f.writes(mark).map((x) => [x.path, x.body.context, x.body.state]), [[`/repos/${gh}/statuses/${b}`, 'gitlab/gate', 'failure']]);
 });
 
+test('every non-success job result goes before any success: with a status budget of 1 and a pipeline red through a job that is not a gate job, the one status posted is non-success', async (t) => {
+  const w = world(t);
+  const gh = PF.github;
+  const a = mk(w, gh, 'kiro/s/a');
+  addPr(w, gh, { number: 1, branch: 'kiro/s/a', sha: a });
+  const b = mk(w, gh, 'kiro/s/b');
+  addPr(w, gh, { number: 2, branch: 'kiro/s/b', sha: b });
+  await runTick(w);
+  // collab-handoff is required on vitana-platform and gate needs only the checks, so the three gate jobs pass while the
+  // pipeline is red; the merge bot fails a merge request with any failed job (eng-gitlab-m2 §3.4). a, first in the
+  // rotation, is green.
+  addPipeline(w, PF, a, GREEN());
+  addPipeline(w, PF, b, [{ name: 'lane-scope', status: 'success' }, { name: 'change-suite', status: 'success' }, { name: 'collab-handoff', status: 'failed' }, { name: 'gate', status: 'success' }]);
+  const opts = { maxStatusWritesPerTick: 1, maxStatusWritesPerHour: 1000 };
+  let mark = w.f.mark();
+  await runTick(w, opts);
+  assert.deepEqual(w.f.writes(mark).map((x) => [x.path, x.body.context, x.body.state]), [[`/repos/${gh}/statuses/${b}`, 'gitlab/collab-handoff', 'failure']],
+    'the one write of the tick is the red collab-handoff, not a gate success and not a\'s green');
+  for (let i = 0; i < 8; i++) {
+    await runTick(w, opts);
+    const states = Object.values(latestOn(w, gh, b)).map((s) => s.state);
+    assert.ok(states.some((s) => s !== 'success'), `tick ${i + 2}: ${states.join(', ')}`);
+  }
+  assert.deepEqual([Object.keys(latestOn(w, gh, a)).length, Object.keys(latestOn(w, gh, b)).length], [4, 4], 'every result reached GitHub, one a tick');
+  // Without a budget limit the writes of a tick go in four groups: non-success gate results, other non-success results,
+  // gate successes, other successes; within a group in the pipeline's job order.
+  const c = mk(w, gh, 'kiro/s/c');
+  addPr(w, gh, { number: 3, branch: 'kiro/s/c', sha: c });
+  await runTick(w);
+  addPipeline(w, PF, c, [['docs', 'success'], ['lane-scope', 'success'], ['unit', 'failed'], ['gate', 'skipped'], ['collab-handoff', 'failed'], ['change-suite', 'success']]
+    .map(([name, status]) => ({ name, status })));
+  mark = w.f.mark();
+  await runTick(w);
+  assert.deepEqual(w.f.writes(mark).map((x) => `${x.body.context} ${x.body.state}`), [
+    'gitlab/gate failure', 'gitlab/unit failure', 'gitlab/collab-handoff failure', 'gitlab/lane-scope success', 'gitlab/change-suite success', 'gitlab/docs success',
+  ]);
+});
+
 test('while the head pipeline runs without a gate result, gitlab/gate is pending on GitHub: one status per head, counted in the budget, replaced by the real result', async (t) => {
   const w = world(t);
   const gh = PF.github;
@@ -861,6 +924,40 @@ test('while the head pipeline runs without a gate result, gitlab/gate is pending
   await runTick(w);
   w.f.assertNoWrites(mark);
   assert.equal(latestOn(w, gh, a2)['gitlab/gate'].state, 'success');
+});
+
+test('gitlab/gate stays pending until lane-scope, change-suite and gate all have a result: a gate that passed while another gate job runs is not success on GitHub', async (t) => {
+  const w = world(t);
+  const gh = PF.github;
+  const a = mk(w, gh, 'kiro/s/a');
+  addPr(w, gh, { number: 1, branch: 'kiro/s/a', sha: a });
+  await runTick(w);
+  // A docs-only merge request: gate's needs are optional and absent, so GitLab runs gate at once (needs:optional) while
+  // lane-scope and change-suite still run.
+  const pl = addPipeline(w, PF, a, [{ name: 'lane-scope', status: 'running' }, { name: 'change-suite', status: 'created' }, { name: 'gate', status: 'success' }]);
+  let mark = w.f.mark();
+  await runTick(w);
+  assert.deepEqual(w.f.writes(mark).map((x) => [x.body.context, x.body.state, x.body.description]), [['gitlab/gate', 'pending', 'GitLab pipeline running']]);
+  pl.jobs[0].status = 'success';
+  mark = w.f.mark();
+  await runTick(w);
+  assert.deepEqual(w.f.writes(mark).map((x) => [x.body.context, x.body.state]), [['gitlab/lane-scope', 'success']]);
+  assert.equal(latestOn(w, gh, a)['gitlab/gate'].state, 'pending', 'change-suite still runs: gitlab/gate stays pending');
+  pl.jobs[1].status = 'success';
+  mark = w.f.mark();
+  await runTick(w);
+  assert.deepEqual(w.f.writes(mark).map((x) => [x.body.context, x.body.state]).sort(), [['gitlab/change-suite', 'success'], ['gitlab/gate', 'success']]);
+  // A gate job that failed early is pending too until the other gate jobs have a result; then its own result.
+  const a2 = commitOn(w, gh, 'kiro/s/a', 'a2', { from: a });
+  pushGitHub(w, gh, 'kiro/s/a', a2);
+  updatePr(w, gh, 1, { sha: a2 });
+  await runTick(w);
+  const pl2 = addPipeline(w, PF, a2, [{ name: 'lane-scope', status: 'success' }, { name: 'change-suite', status: 'running' }, { name: 'gate', status: 'failed' }]);
+  await runTick(w);
+  assert.equal(latestOn(w, gh, a2)['gitlab/gate'].state, 'pending');
+  pl2.jobs[1].status = 'success';
+  await runTick(w);
+  assert.equal(latestOn(w, gh, a2)['gitlab/gate'].state, 'failure');
 });
 
 test('a GitHub rate limit stops every GitHub write for the rest of the tick and pauses them until it has passed', async (t) => {
@@ -952,6 +1049,36 @@ test('after the merge request lands, the pull request is closed with one comment
   w.f.assertNoWrites(mark);
   assert.equal(spy.verb('push').length, 0);
   assert.equal(headOn(glUrlOf(w, PF), 'kiro/s/a'), null);
+});
+
+test('the landing comment and the pull request close count in the one GitHub write budget of the statuses, after every non-success status', async (t) => {
+  const w = world(t);
+  const gh = PF.github;
+  const a = mk(w, gh, 'kiro/s/a');
+  addPr(w, gh, { number: 1, branch: 'kiro/s/a', sha: a });
+  const b = mk(w, gh, 'kiro/s/b');
+  addPr(w, gh, { number: 2, branch: 'kiro/s/b', sha: b });
+  await runTick(w);
+  landMr(w, PF, mrFor(w, PF, 'kiro/s/a').iid);
+  addPipeline(w, PF, b, [{ name: 'gate', status: 'failed' }]);
+  let clock = new Date('2026-11-05T10:00:00Z');
+  const opts = { maxStatusWritesPerTick: 1, maxStatusWritesPerHour: 3, now: () => clock };
+  const writesOf = async () => { const mark = w.f.mark(); const res = await runTick(w, opts); return { list: w.f.writes(mark).map((x) => `${x.method} ${x.path}`), res }; };
+  assert.deepEqual((await writesOf()).list, [`POST /repos/${gh}/statuses/${b}`], 'one write a tick: the red status before the landing writes');
+  clock = new Date('2026-11-05T10:01:00Z');
+  assert.deepEqual((await writesOf()).list, [`POST /repos/${gh}/issues/1/comments`]);
+  assert.equal(w.gh[gh].pulls.get(1).state, 'open', 'the close waits for the next tick');
+  clock = new Date('2026-11-05T10:02:00Z');
+  assert.deepEqual((await writesOf()).list, [`PATCH /repos/${gh}/pulls/1`]);
+  assert.equal(w.gh[gh].pulls.get(1).state, 'closed');
+  assert.equal(w.gh[gh].comments.get(1).length, 1);
+  addPipeline(w, PF, b, [{ name: 'gate', status: 'success' }]);
+  clock = new Date('2026-11-05T10:03:00Z');
+  const fourth = await writesOf();
+  assert.deepEqual(fourth.list, [], 'the comment and the close count in the hour budget too: 3 writes in this hour');
+  assert.equal(events(fourth.res, 'status_budget_reached').length, 1);
+  clock = new Date('2026-11-05T11:00:30Z');
+  assert.deepEqual((await writesOf()).list, [`POST /repos/${gh}/statuses/${b}`], 'the 10:00 write left the hour');
 });
 
 test('the merge bot merging main into a bridged branch is not another writer: the branch stays bridged, results come back to the PR head, and the landing closes the PR', async (t) => {

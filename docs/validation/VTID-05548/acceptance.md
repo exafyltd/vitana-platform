@@ -24,7 +24,8 @@ another writer. A second tick with nothing new pushes, fetches and writes nothin
 TEST: "a new commit and a force-push on GitHub are copied…", "a branch that already lives on GitLab with other history is refused…", "the same history already on GitLab (a mirror copy) is adopted…", "a write on GitLab to a branch the bridge copied makes it refused…", "a GitLab write that races a copy is never overwritten…", "a refused branch whose GitLab copy a person deleted is copied again…", "a branch deleted on GitHub stays the bridge's…", "the merge bot merging main into a bridged branch is not another writer…", "a new GitHub head after the merge bot merged main is copied over the bot's merge; a merge with other changes is refused", "a second tick with nothing new pushes nothing…"
 AC-3 One GitLab merge request per open pull request into `main` from a bridged branch of the same repository: same title
 (a draft pull request is a GitLab `Draft:`, which cannot be merged), same body (CRLF as LF; a line that starts with `/`
-gets a backslash so it cannot run a GitLab quick action), source branch = head branch, target `main`. Updated when the
+gets a backslash so it cannot run a GitLab quick action; the last line is `Moved from <PR URL>`, AC-16), source branch =
+head branch, target `main`. Updated when the
 title or body changes, only when the bridge opened it; a merge request another account opened is never rewritten.
 Closed when the pull request closes or leaves `main` without landing, only after GitHub confirms that no open pull
 request from that branch into `main` is left. Forks, other head branches and other bases get none. A merge request a
@@ -33,24 +34,15 @@ TEST: "one merge request per open same-repository pull request from a bridged br
 AC-4 One GitHub commit status `gitlab/<job name>` per job result of the merge request's head pipeline, on the pull
 request head (also when the pipeline ran on the bot's merge of `main` on top of it), `target_url` = the job page. The
 state follows the eng-gitlab-m2 §3.4 job table (success; failed → failure, or success when allowed to fail; canceled →
-error; skipped → success; manual → success when optional, pending when blocking; an unknown status → pending, never
-success), except for the landing gate jobs `lane-scope`, `change-suite` and `gate`. The merge bot passes a required job
-only when it is `success` (eng-gitlab-m2 plan.md:154-155), so for these three only `success` is success: skipped →
-failure ("Skipped on GitLab: an earlier job did not pass"), failed and allowed to fail → failure, optional manual →
-pending, canceled → error, unknown → pending. While the head pipeline has not ended and has no gate result,
-`gitlab/gate` is pending ("GitLab pipeline running", `target_url` = the pipeline page), once per head, until the real
-result replaces it; a pipeline that ended without a gate job (the bot's `ci.skip` train update, plan §3.5) adds no
-status. A status equal to the latest one of its context on that commit is never posted (a cache, and GitHub's latest
-statuses when the cache is lost). Waiting and running jobs get no status of their own. GitHub's content write limits: at
-most 60 status writes a tick and 450 in any hour. Each tick posts in three groups across all its pull requests: the gate
-results that are not success (the pending gate included), then the other gate results, then the other jobs; within a
-group in rotation order. So as long as a tick can post anything, GitHub never shows only success for a red or running
-pipeline: with a budget of 1, the one status posted is the non-success gate, also when another pull request comes first
-in the rotation. The next tick starts with the pull request left without a turn; a GitHub rate limit stops every GitHub
-write for the rest of the tick and pauses them until it has passed.
-TEST: "jobToStatus maps every GitLab job status…", "jobToStatus: a landing gate job (lane-scope, change-suite, gate) is success on GitHub only when it passed…", "statuses: one gitlab/<job> commit status per job result…", "a failed check and a skipped gate give gitlab/gate failure on GitHub…", "with a status budget of 1, GitHub never shows only success for a red pipeline…", "while the head pipeline runs without a gate result, gitlab/gate is pending on GitHub…", "statuses are posted only for the head pipeline of the merge request at the pull request head", "status writes stay under GitHub content limits…", "the status budget goes first to the jobs that gate a landing…", "a GitHub rate limit stops every GitHub write…"
+error; skipped → success; manual → success when optional, pending when blocking; unknown → pending, never success),
+except for the landing gate jobs `lane-scope`, `change-suite` and `gate`: the merge bot passes a required job only when it
+is `success` (eng-gitlab-m2 plan.md:154-155), so for these three only `success` is success (skipped → failure, failed and
+allowed to fail → failure, optional manual → pending, canceled → error, unknown → pending). A status equal to the latest
+one of its context on that commit is never posted (a cache, and GitHub's latest statuses when the cache is lost); waiting
+and running jobs get no status of their own. The pending gate: AC-14; the write order and budget: AC-15.
+TEST: "jobToStatus maps every GitLab job status…", "jobToStatus: a landing gate job (lane-scope, change-suite, gate) is success on GitHub only when it passed…", "statuses: one gitlab/<job> commit status per job result…", "a failed check and a skipped gate give gitlab/gate failure on GitHub…", "statuses are posted only for the head pipeline of the merge request at the pull request head"
 AC-5 After the merge request lands, the pull request is closed with one comment that links the landed commit and the
-merge request (a marker keeps a retried close from commenting twice). Landing is found from the merged merge request's
+merge request (a marker keeps a retried close from commenting twice; both writes are in the one budget, AC-15). Landing is found from the merged merge request's
 head (`refs/merge-requests/<iid>/head`), also when that head is the bot's merge of `main` (the train update the bridge
 never saw). The landed head is not copied to GitLab again, also after a lost state; new commits pushed after the landing
 are copied and get a new merge request.
@@ -96,6 +88,25 @@ AC-13 Dry run against both repositories' open pull requests (task B3), read-only
 `create_branch` and `create_merge_request`; 34 are ignored: 33 `pm-agent/*`, 1 `i18n-db/*`) and 31 in vitana-v1 (all
 31 get both); 230 planned actions, 235 API calls, all GET, no error.
 TEST: docs/validation/VTID-05548/outputs/dry-run.txt (harness outputs/dry-run-harness.mjs over a `gh api` GET snapshot, empty GitLab)
+AC-14 While the head pipeline has not ended and one of `lane-scope`, `change-suite` and `gate` in it has no result yet,
+`gitlab/gate` is pending ("GitLab pipeline running", `target_url` = the pipeline page), once per head. In a docs-only
+merge request `gate` runs at once (its needs are optional and absent) and can pass while the other two still run;
+GitHub still shows pending. Once all three have a result, the gate job's own result replaces it (also a gate job that
+failed early). A pipeline that ended without a gate job (the bot's `ci.skip` train update, plan §3.5) adds no status.
+TEST: "while the head pipeline runs without a gate result, gitlab/gate is pending on GitHub…", "gitlab/gate stays pending until lane-scope, change-suite and gate all have a result…"
+AC-15 GitHub's content write limits: every GitHub write of a tick (statuses, landing comments, pull request closes)
+shares one budget of at most 60 a tick and 450 in any hour. A tick writes, across all its pull requests, in five
+groups: gate results that are not success (the pending gate included), every other result that is not success,
+landing comments and closes, gate successes, other successes; within a group in rotation order. So no success is posted
+while a result that is not success waits: with a budget of 1 the one status posted is non-success, also when the
+pipeline is red only through a job that is not a gate job (`collab-handoff` failed, the three gate jobs passed) and
+another pull request comes first in the rotation. The next tick starts with the pull request left without a turn; a
+GitHub rate limit stops every GitHub write for the rest of the tick and pauses them until it has passed.
+TEST: "status writes stay under GitHub content limits…", "the status budget goes first to the jobs that gate a landing…", "with a status budget of 1, GitHub never shows only success for a red pipeline…", "every non-success job result goes before any success…", "the landing comment and the pull request close count in the one GitHub write budget…", "a GitHub rate limit stops every GitHub write…"
+AC-16 The merge request description ends with one line `Moved from <PR URL>` after a blank line (the pull request's
+URL `https://github.com/<owner>/<name>/pull/<number>`, built from the repository and the number), which plan §3.11
+reads as the event `scm.migration.pr_moved`. An update writes the line once; a body that already ends with it keeps one.
+TEST: "the merge request description ends with one line \"Moved from <pull request URL>\"…", "one merge request per open same-repository pull request…"
 
 States: GitHub or GitLab API down (nothing changes for that repository, retried next tick); a git error on one branch
 (that branch unchanged, the others go on); a branch with two writers (refused, reported once per GitLab head); the merge
@@ -103,8 +114,11 @@ bot's merge of `main` (still bridged); a PR from a fork (ignored); a PR closed o
 request closed); a force-push to an agent branch (copied; the review rule decides whether the review still counts); a
 landing (PR closed with a link, branch not copied again); a lost state (adopted again, nothing posted or opened twice); a
 GitHub rate limit (writes paused); a dry run (nothing written); a red pipeline (`gitlab/gate` failure, posted first); a
-running pipeline (`gitlab/gate` pending); a pipeline that ended without a gate job (nothing new posted); the status
-budget used up (the rest later, red gate results first).
+running pipeline (`gitlab/gate` pending); a docs-only merge request whose gate passed while `lane-scope` and
+`change-suite` still run (`gitlab/gate` pending until all three have a result); a pipeline red only through a job that is
+not a gate job (its failure posted before any success); a pipeline that ended without a gate job (nothing new posted);
+the write budget used up (the rest later: results that are not success first, then landing comments and closes, then
+successes).
 Surfaces: the trusted GitLab host (two systemd units, state directory `/var/lib/vitana/github-bridge`, token files under
 `/etc/vitana/`); GitHub pull requests, comments and commit statuses of both repositories; GitLab branches and merge
 requests of both projects.
@@ -114,28 +128,30 @@ scopes of plan §7 (in the runbook); the CLI (`run`, `assist-push`, options, exi
 (runbook table) and the state file schema `vitana.github-bridge-state/v1` (module header). The boundaries it crosses,
 this side (`scripts/eng/github-bridge.mjs` at this PR's head) → the other side (a file on origin/main 945755f0, or the
 plan section where no file exists yet; plan.md = `.kiro/specs/agentic-delivery/plan.md`):
-- GitHub REST commit statuses: read `github-bridge.mjs:896-905` (GET `/repos/{repo}/commits/{sha}/status`), write
-  `:998` (POST `/repos/{repo}/statuses/{sha}`); the states `:101-124` and the pending gate `:931-936`; the order
-  `:130`, `:976`. Read on the other side by `scripts/collab/plan-driver.mjs:195-200` (`statusCheckRollup`: any
+- GitHub REST commit statuses: read `github-bridge.mjs:919-929` (GET `/repos/{repo}/commits/{sha}/status`), write
+  `:1044` (POST `/repos/{repo}/statuses/{sha}`); the states `:104-127` and the pending gate `:946-965`; the order
+  `:135-136` (`statusTier`, `LANDING_TIER`) and `:1008`; the one write budget: landing writes `:1013-1026`, statuses
+  `:1035-1039`. Read on the other side by `scripts/collab/plan-driver.mjs:195-200` (`statusCheckRollup`: any
   FAILURE or ERROR → failed, PENDING → pending, no status → green); `scripts/collab/land-guard.mjs:207-210` reads check
   runs, not statuses. Status names: plan.md:415, :629.
-- GitHub REST pull requests: list `:680`, the open-PR check before a close `:1020`, close `:891`; plan §3.13
-  (plan.md:413-417). The client: `:242` (one origin, no redirect `:295`).
-- GitHub REST issue comments (the landing link): read `:885`, write `:889`; plan §3.13 (plan.md:416).
-- GitLab REST merge requests: list `:681`, `:752`, `:846`; create `:862`; update `:872`; close `:1025`; read with
-  `head_pipeline` `:919-920`; `/user` `:662`. Through `scripts/eng/gitlab-api.mjs:198` (`createClient`, built at
-  `:1142`), `:375` (`request`), `:382-397` (`paginate`, `x-next-page`), `:91` (`projectId`), unchanged.
-- GitLab REST pipelines and jobs: `:925` (GET `/projects/{id}/pipelines/{pipeline}/jobs`, through
+- GitHub REST pull requests: list `:698`, the open-PR check before a close `:1066`, close `:913`; plan §3.13
+  (plan.md:413-417). The client: `:259` (one origin, no redirect `:312`).
+- GitHub REST issue comments (the landing link): read `:906`, write `:911`, queued `:914`; plan §3.13 (plan.md:416).
+- GitLab REST merge requests: list `:699`, `:770`, `:864`; create `:880`; update `:890`; close `:1071`; read with
+  `head_pipeline` `:942-943`; `/user` `:680`. The description with the `Moved from` line: `:149-159`, read for
+  `scm.migration.pr_moved` by the webhook of plan §3.11 (plan.md:367; no reader on main yet). Through `scripts/eng/gitlab-api.mjs:198` (`createClient`, built at
+  `:1188`), `:375` (`request`), `:382-397` (`paginate`, `x-next-page`), `:91` (`projectId`), unchanged.
+- GitLab REST pipelines and jobs: `:949` (GET `/projects/{id}/pipelines/{pipeline}/jobs`, through
   `gitlab-api.mjs:382`). The merge bot's reading of the same jobs: `.kiro/specs/eng-gitlab-m2/plan.md:140-155` (job
   table; a required job must be `success`, :154-155); the required jobs at the cut: plan.md:584-585.
-- git: `ls-remote` `:463`, `:511`; `fetch` `:441`; `push --force-with-lease` `:484` (to GitLab `:777`, `:814`; the assist
-  commit to GitHub `:1071`). The other writer before the cut is the M1 mirror (`.kiro/specs/eng-gitlab-m1/plan.md:39`);
+- git: `ls-remote` `:480`, `:528`; `fetch` `:458`; `push --force-with-lease` `:501` (to GitLab `:795`, `:832`; the assist
+  commit to GitHub `:1117`). The other writer before the cut is the M1 mirror (`.kiro/specs/eng-gitlab-m1/plan.md:39`);
   one writer per branch: plan.md:165-167.
-- The merge bot's merge of `main`: `:531` (`withoutMainMerges`), `:739` (`sameWork`), `:825` (`adopt_main_merge`), the
-  landed head `refs/merge-requests/<iid>/head` `:522`. Other side: eng-gitlab-m2 plan.md:156 (behind `main`: the bot
+- The merge bot's merge of `main`: `:548` (`withoutMainMerges`), `:757` (`sameWork`), `:843` (`adopt_main_merge`), the
+  landed head `refs/merge-requests/<iid>/head` `:539`. Other side: eng-gitlab-m2 plan.md:156 (behind `main`: the bot
   merges `origin/main` into the source branch), plan.md:254 (the train's update with `ci.skip`); a clean merge of `main`:
   `.claude/rules/collaboration.md:104-106`.
-- The assist ref: `:1050` (only `refs/heads/assist/*`), `:1059` (the ref must point at the commit). Other side: plan §3.9
+- The assist ref: `:1096` (only `refs/heads/assist/*`), `:1106` (the ref must point at the commit). Other side: plan §3.9
   (plan.md:325: only `bot-land` and the owner push `assist/<iid>-<rule>`), §7 (plan.md:529: `assist/*` protected), and
   the caller, lane `merge-queue` (open item below).
 - Host units: `infra/gitlab-engineering/host/units/vitana-github-bridge.{service,timer}`, installed by `ops-install.sh`
@@ -150,14 +166,23 @@ test file fails to load because the module does not exist (ERR_MODULE_NOT_FOUND,
 the same exported names and no behaviour, 49 of 49 tests fail.
 Red, fix round 1: outputs/red-fix1.txt. The committed test file (sha256 9f94c4c48be6bec3) on the code of the reviewed
 head 137d38dc: 54 tests, 47 pass, 7 fail: the 5 new tests and the 2 tests whose expectation changed (below).
+Red, fix round 2: outputs/red-fix2.txt. The fix-round-2 test file (sha256 51c0ddebcdedbb71) on the bridge code of the
+reviewed head bd9cd43d (byte-identical): 58 tests, 53 pass, 5 fail: the 4 new tests and the 1 test whose expectation
+changed (the `Moved from` line). Each fails on the finding itself: with a budget of 1 the one status posted is a's
+`gitlab/lane-scope` success; a passed gate is posted while lane-scope and change-suite run; the landing comment and the
+close are posted outside the budget and before the red status; no `Moved from` line.
 Green: outputs/green.txt, 54 of 54 pass on Node 20.20.2 (UNIT.yml's version) and on Node 22.23.4.
 Whole script set (UNIT.yml's command, no install): outputs/unit-all.txt, 34 files, 667 tests, 666 pass, 0 fail, 1 skipped
 (a win32-only test in a file this lane does not touch), on Node 20.20.2 and Node 22.23.4.
-Mutation check: outputs/mutation-check.txt (script outputs/mutation-check.sh): 25 deliberate changes of the bridge, one at
-a time in a copy outside the worktree; 25 caught, 0 survived. Fix round 1 replaced the gate-order mutation (its line
-changed) and added 9 (the three gate states, gate jobs read like any job, the non-success-first split, the order across
-the tick, the rotation after a budget stop, the pending gate, the pending gate after a pipeline ended).
-`systemd-analyze verify` (outputs/systemd-verify.txt) was not run again: fix round 1 does not change the units.
+Mutation check: outputs/mutation-check.txt (script outputs/mutation-check.sh, 8 shards side by side): 32 deliberate
+changes of the bridge, one at a time in a copy outside the worktree; 32 caught, 0 survived. Fix round 1 replaced the
+gate-order mutation and added 9 (the three gate states, gate jobs read like any job, the non-success-first split, the
+order across the tick, the rotation after a budget stop, the pending gate, the pending gate after a pipeline ended).
+Fix round 2 changed the patterns of three whose lines changed (the gate split, the pending gate, running jobs) and added 7:
+other non-success results after the successes and after the gate successes, the gate not kept pending while another
+gate job runs, landing writes outside the budget, landing writes before the red statuses, no `Moved from` line, the
+line repeated.
+`systemd-analyze verify` (outputs/systemd-verify.txt) was not run again: fix rounds 1 and 2 do not change the units.
 
 Advisory review (not the pipeline's reviewer-agent accept): a behavioural review by the `semantic_reviewer` agent of the
 uncommitted lane found one high finding and sixteen others. Fixed and tested: the merge bot's merge of `main` was refused
@@ -172,7 +197,8 @@ only when the read worked); the fake GitLab moved closed merge requests and miss
 conflict, the bridge's GitLab account, the push-identity check, PLAN-SPAR's status. (The no-pending-signal limit it
 named was closed in fix round 1 by the pending `gitlab/gate`.)
 
-Review round 1 (agent-vitana-lane-reviewer-202611050324-7146, `review: changes` on 45dcdf53), fixed on this head:
+Review round 1 (agent-vitana-lane-reviewer-202611050324-7146, `review: changes` on 45dcdf53), fixed in fix round 1 (line
+numbers of that round's head bd9cd43d):
 - Blocking, gate jobs' non-success results posted as success: fixed. `jobToStatus` (`:101-124`) gives `lane-scope`,
   `change-suite` and `gate` success only for `success`; the writes of a tick go non-success gate results first, then
   the other gate results, then the rest, across all pull requests (`:130`, `:976`). Tests "a failed check and a skipped
@@ -189,6 +215,27 @@ Review round 1 (agent-vitana-lane-reviewer-202611050324-7146, `review: changes` 
   head gets its own run, and land-guard checks the merged head.
 - Plan §2.2 / §8.1 step 4 against §3.13, the dry-run harness scope, the three cross-lane items: not changed here (the
   review says this lane should not change); listed under "Open items for the driver".
+
+Review round 2 (agent-vitana-lane-reviewer-202611051546-fbe4, `review: changes` on bd9cd43d), fixed on this head:
+- Blocking, Acceptance Mapping Gate exit 41 (the `TEST:` line of the old AC-4 was 18 lines below it): the old AC-4 is
+  split into AC-4 (the states), AC-14 (the pending gate), AC-15 (the write order and the budget) and AC-16 (`Moved
+  from`); every `AC-` line now has its `TEST:` line within 9 lines, and `validate-pr-locally.cjs` prints APPROVED on the
+  PR's title and body (commands.log).
+- Blocking, a pipeline red only through a job that is not a gate job could show only success: fixed. `statusTier`
+  (`:135-136`) orders every write of a tick: gate results that are not success, every other result that is not success,
+  landing comments and closes, gate successes, other successes. Test "every non-success job result goes before any
+  success…": on bd9cd43d the one status posted was a's `gitlab/lane-scope` success; now it is b's failed
+  `gitlab/collab-handoff`; the test also checks the five groups without a budget limit. AC-15 and the runbook "Limits".
+- Pending gate until all three gate jobs have a result (non-blocking): done (`:946-965`). Test "gitlab/gate stays pending
+  until lane-scope, change-suite and gate all have a result…" (on bd9cd43d the passed gate was posted while lane-scope
+  and change-suite ran). AC-14.
+- Landing comment and close in the one write budget (non-blocking): done (`:900-915`, `:1013-1026`). Test "the landing
+  comment and the pull request close count in the one GitHub write budget…" (on bd9cd43d both were posted outside the
+  budget, before the red status). AC-15.
+- `scm.migration.pr_moved` (non-blocking, the driver's decision): the bridge writes the line (`:149-159`). Test "the
+  merge request description ends with one line…". AC-16.
+- Current main merged into the branch (a8220f10, b5544e37 and b3d547b6 landed after 49cff4a9).
+- The other open items of both reviews stay open, below.
 
 Decisions taken inside the plan (for Gate 2):
 - Adoption: a GitLab branch at the GitHub head or at one of its ancestors is the same history and is adopted (M1's
@@ -237,6 +284,31 @@ Decisions taken inside the plan (for Gate 2):
   `ci.skip` train update (plan §3.5) GitHub keeps the tested head's result instead of turning pending. Its `target_url`
   is the pipeline page. The fake GitLab of the tests now derives a pipeline's status from its jobs, as GitLab does.
 
+- Fix round 2, order: five groups across all pull requests of a tick (`statusTier`): gate results that are not success
+  (the pending gate included), every other result that is not success, landing comments and closes, gate successes,
+  other successes. The landing writes come after every result that is not success, so counting them in the budget
+  cannot delay a red result, and before the successes, so a landing does not wait for green statuses.
+- Fix round 2, pending gate: pending while the head pipeline has not ended and one of the three gate jobs that the
+  pipeline has is without a result; a gate job that failed early shows pending until the other two have a result, then
+  `failure` (the brief: "pending until all three gate jobs have a result"). A gate job the pipeline does not have does
+  not hold the gate pending: it never gets a result, and the merge bot refuses such a merge request (unchanged).
+- Fix round 2, one write budget: the landing comment and the pull request close are queued with the statuses and use
+  the same budget per tick and per hour. The state field keeps its name `status_writes` (schema
+  `vitana.github-bridge-state/v1` unchanged) and now counts every GitHub write. A comment posted without its close
+  over budget is completed at a later tick; the marker prevents a second comment.
+- Fix round 2, `Moved from`: the URL is built from the repository and the number (`https://github.com/<owner>/<name>/
+  pull/<number>`, the pull request's `html_url`), not copied from the API field, so no other text reaches the line. A
+  body that already ends with the line keeps one. Merge requests the bridge opened before this change get one update
+  that adds the line (a GitLab write, outside the GitHub budget).
+- Fix round 2, two existing tests changed; neither lost an assertion. "one merge request per open …": its expected
+  descriptions now end with the `Moved from` line (the decision above). "the status budget goes first to the jobs that
+  gate a landing…": a's second pipeline is now red in its gate jobs only (docs and unit pass). With the old all-red
+  pipeline the new order posts a's red docs and unit before b's green results, and the rotation check (b first among
+  the rest) would have nothing left to show; the all-red case is the new test "every non-success job result goes before
+  any success…".
+- Fix round 2, Node: run locally on Node 22.23.4 only (no Node 20 binary in this sandbox, and the protocol asks for one
+  version); the change uses no API newer than Node 20, and CI's `unit` check runs UNIT.yml on Node 20.
+
 Open items for the driver (outside this lane's paths, not decided here):
 - Plan §2.2 says the pull requests of the kept GitHub workflows (WHATS-NEW-DRAFT, I18N-DB-SEED, …) "go through the
   bridge"; §3.13, the task and the brief bridge only `kiro/*` and `claude/*`. Their branches (`whats-new/*`,
@@ -256,7 +328,4 @@ Open items for the driver (outside this lane's paths, not decided here):
   `plan-driver.mjs:195-200` reads no status as green. Two ways out, for the driver to choose: one status on a refused
   head (for example `gitlab/gate` `error` "Branch refused by the GitHub bridge"), or a reader that treats a missing
   `gitlab/gate` as pending after the cut.
-- Seat: main's PM bookkeeping (#4688, 945755f0) reassigned this lane `exafy → exafyltd` ("stale_ready") while the lane
-  was executing on its branch, and changed this lane file. The PR now conflicts with main, and once main is merged in,
-  Lane scope trusts main's `seat: exafyltd` and refuses every lane-file commit of this session (seat `exafy`). Checked in
-  a throw-away clone, not pushed. Main's lane file needs `seat: exafy` back, or the lane a new builder, before it lands.
+- Seat (resolved): #4703 (49cff4a9, lane `reseat`) set `seat: exafy` again on main, and the merge bd9cd43d kept it.

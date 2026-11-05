@@ -21,9 +21,13 @@ Some agents can push only to GitHub. The bridge lets them keep working after the
   `success`. A gate job that was skipped (an earlier job did not pass), failed while allowed to fail, or canceled, is
   `failure` or `error`; a manual gate job that has not run, or an unknown status, is `pending`. The merge bot lands a
   merge request only when all three passed (eng-gitlab-m2 §3.4), so GitHub and GitLab agree;
-- posts `gitlab/gate` as `pending` ("GitLab pipeline running") while the head pipeline runs and has no gate result
-  yet, once per head. The gate's real result replaces it. A pipeline that ended without a gate job (the merge bot's
+- posts `gitlab/gate` as `pending` ("GitLab pipeline running") while the head pipeline runs and one of the three gate
+  jobs has no result yet, once per head. In a docs-only merge request `gate` runs at once (its needs are optional and
+  absent) and can pass while `lane-scope` and `change-suite` still run; GitHub still shows the pending gate. The gate
+  job's own result replaces it once all three have a result. A pipeline that ended without a gate job (the merge bot's
   `ci.skip` update of a train, plan §3.5) changes nothing on GitHub;
+- writes the merge request description as the pull request body plus one last line `Moved from <pull request URL>`
+  after a blank line (plan §3.11 reads it as the event `scm.migration.pr_moved`); an update writes the line once;
 - closes the pull request with one comment that links the landed commit, once the merge request has landed.
 
 One writer per branch (plan §3.1 principle 1). The bridge copies a branch only when GitLab does not have it, when GitLab
@@ -120,9 +124,9 @@ then copies or refuses it.
 | `create_merge_request`, `update_merge_request`, `close_merge_request` | the merge request of a pull request |
 | `merge_request_closed_on_gitlab` (warn) | a person closed the merge request while the pull request is open; it is not opened again for this head; a new head gets a new one |
 | `merge_request_not_ours` | an open merge request from a bridged branch was opened by another account; the bridge does not change its title or description |
-| `github_writes_paused` (warn) | GitHub answered with a rate limit; statuses and pull request closes wait until it has passed (at least a minute) |
+| `github_writes_paused` (warn) | GitHub answered with a rate limit; statuses, landing comments and pull request closes wait until it has passed (at least a minute) |
 | `post_status` | a `gitlab/<job>` status on the GitHub commit, or the pending `gitlab/gate` of a running pipeline |
-| `status_budget_reached` | this tick or this hour posted as many statuses as GitHub allows; the rest follow at a later tick |
+| `status_budget_reached` | this tick or this hour made as many GitHub writes (statuses, landing comments, pull request closes) as GitHub allows; the rest follow at a later tick |
 | `unknown_job_status` (warn) | a job status this code does not know; posted as pending, never as success |
 | `comment_landed`, `close_pull_request` | the merge request landed; the pull request was closed with a link |
 | `pull_request_list_inconsistent` (warn) | GitHub's list missed an open pull request; nothing was closed |
@@ -170,17 +174,21 @@ GitLab. `--dry-run` works here too.
   read from GitHub only when a job result changed. Branches are read and copied with git, not the REST API. A rate
   limit ends that repository's tick (`repo_skipped`); the next tick tries again.
 - GitHub also allows an account about 80 content writes a minute and 500 an hour
-  ([secondary rate limits](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api)). Status
-  writes are the bridge's most frequent write, so it posts at most 60 a tick and 450 in any hour (a sliding hour) and
-  leaves the rest for a later tick (`status_budget_reached`). With many agents pushing at once, results can reach GitHub
-  later than they reach GitLab. The merge bot reads GitLab directly, so landing does not wait for them.
-- In each tick, the gate results that are not `success` (and the pending `gitlab/gate`) are posted first, across all
-  pull requests, then the other gate results, then the other jobs. So as long as a tick can post anything, a red or
-  running pipeline does not show only green on GitHub. The next tick starts with the first pull request that got no
-  status in this one. While the hour's budget is used up nothing is posted, and a head keeps the statuses it has (for
-  example green from an earlier pipeline of the same head) until the budget frees up.
-- Statuses come only from job results, plus the pending `gitlab/gate` while the head pipeline runs. A job that still
-  waits or runs has no status of its own.
+  ([secondary rate limits](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api)). Every
+  GitHub write of the bridge (statuses, its most frequent write, landing comments and pull request closes) shares one
+  budget: at most 60 a tick and 450 in any hour (a sliding hour); the rest waits for a later tick
+  (`status_budget_reached`). With many agents pushing at once, results can reach GitHub later than they reach GitLab.
+  The merge bot reads GitLab directly, so landing does not wait for them.
+- In each tick, across all pull requests, the writes go in this order: the gate results that are not `success` (the
+  pending `gitlab/gate` included), every other job result that is not `success` (for example a failed
+  `collab-handoff` while the three gate jobs passed), the landing comments and pull request closes, the gate results
+  that are `success`, the other `success` results. No success is posted while a result that is not success waits, so
+  as long as a tick can post anything, a red or running pipeline does not show only green on GitHub. The next tick
+  starts with the first pull request that got no write in this one. While the hour's budget is used up nothing is
+  posted, and a head keeps the statuses it has (for example green from an earlier pipeline of the same head) until the
+  budget frees up.
+- Statuses come only from job results, plus the pending `gitlab/gate` while the head pipeline runs without a result of
+  all three gate jobs. A job that still waits or runs has no status of its own.
 - A refused branch's pull request gets no merge request and no `gitlab/*` status. A GitHub reader that counts no status
   as green (for example `plan-driver.mjs` checks) sees green there; the `branch_refused` log line is the signal (see
   "A refused branch"). The same holds for the minute between a new head and its first pipeline.
