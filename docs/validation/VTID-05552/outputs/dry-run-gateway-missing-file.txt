@@ -1,0 +1,58 @@
+$ node --import <offline fetch stub> run.mjs verify --service gateway … --deploy-runs-file deploy-runs.json
+exit 0
+[staging-verify] service=gateway sha=02727957729e8061d11911c34eab53d613560cfc chain=0
+[staging-verify] production=bb225388d84afad5886ce1b7d99efe991dd49c3a range=1 commits, 0 touch gateway; suites=(none) missing=0 lockfileOnly=0
+[staging-verify] PASS smoke › alive
+[staging-verify] PASS smoke › admin health reports staging
+[staging-verify] PASS smoke › build-info reports staging
+[staging-verify] PASS smoke › ORB health
+[staging-verify] PASS smoke › Nova Sonic health
+[staging-verify] PASS smoke › autopilot health
+[staging-verify] PASS smoke › VTID ledger health
+[staging-verify] PASS smoke › scheduler health
+[staging-verify] PASS smoke › operator health
+[staging-verify] PASS smoke › OASIS tasks list
+[staging-verify] PASS smoke › community members requires auth
+[staging-verify] PASS smoke › publish route exists (rejected write probe)
+[staging-verify] fetched origin main to resolve staging stamp 5ef6372587e7c6093bf43588926e64b35c60348e
+[staging-verify] deploy-runs file /tmp/dry-run-gateway-DFMBjZ/deploy-runs.json missing — attribution cutoff = run start (no GitHub fallback)
+[staging-verify] superseded by 5ef6372587e7c6093bf43588926e64b35c60348e; attribution cutoff 2026-11-05T12:55:17.209Z: 0/12 results attributed
+
+**Staging verification superseded** — staging moved from `02727957729e` to `5ef6372587e7` during the run; nothing failed while staging still served `02727957729e`, but it is not verified. The newer commit gets its own verification. No production prompt.
+
+- Service: `gateway`
+- Verified commit: `02727957729e8061d11911c34eab53d613560cfc`
+- Tests: 12/12 passed
+- Staging moved to: `5ef6372587e7c6093bf43588926e64b35c60348e`
+- Attribution cutoff: 2026-11-05T12:55:17.209Z
+- Attributed to `02727957729e`: 0 passed, 0 failed; not attributed: 12
+
+What would ship (production `bb225388d84a` → `02727957729e`, 0 commit(s)):
+- (none — production already serves or contains this commit, or its version could not be read)
+
+-- gh calls: []
+-- npx calls: []
+-- requests run.mjs made, all answered by the offline fetch stub (none left the process):
+GET https://preview-aws-gateway.vitanaland.com/api/v1/admin/build-info
+GET https://preview-aws-gateway.vitanaland.com/api/v1/admin/build-info
+GET https://preview-aws-gateway.vitanaland.com/api/v1/admin/build-info
+GET https://preview-aws-gateway.vitanaland.com/api/v1/admin/build-info
+GET https://preview-aws-gateway.vitanaland.com/api/v1/admin/build-info
+GET https://gateway.vitanaland.com/api/v1/admin/build-info
+GET https://preview-aws-gateway.vitanaland.com/alive
+GET https://preview-aws-gateway.vitanaland.com/api/v1/admin/health
+GET https://preview-aws-gateway.vitanaland.com/api/v1/admin/build-info
+GET https://preview-aws-gateway.vitanaland.com/api/v1/orb/health
+GET https://preview-aws-gateway.vitanaland.com/api/v1/orb/nova-sonic/health
+GET https://preview-aws-gateway.vitanaland.com/api/v1/autopilot/health
+GET https://preview-aws-gateway.vitanaland.com/api/v1/vtid/health
+GET https://preview-aws-gateway.vitanaland.com/api/v1/scheduler/health
+GET https://preview-aws-gateway.vitanaland.com/api/v1/operator/health
+GET https://preview-aws-gateway.vitanaland.com/api/v1/oasis/tasks
+GET https://preview-aws-gateway.vitanaland.com/api/v1/community/members
+POST https://preview-aws-gateway.vitanaland.com/api/v1/operator/publish
+GET https://preview-aws-gateway.vitanaland.com/api/v1/admin/build-info
+GET https://preview-aws-gateway.vitanaland.com/api/v1/admin/build-info
+GET https://preview-aws-gateway.vitanaland.com/api/v1/admin/build-info
+GET https://preview-aws-gateway.vitanaland.com/api/v1/admin/build-info
+GET https://preview-aws-gateway.vitanaland.com/api/v1/admin/build-info
