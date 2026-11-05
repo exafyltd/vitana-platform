@@ -1,6 +1,6 @@
 ---
 lane: deploy-path
-state: executing
+state: in-review
 claimed_by: kiro-exafy-202611051643-bc0a
 branch: kiro/agentic-delivery/deploy-path
 pr: https://github.com/exafyltd/vitana-platform/pull/4714
@@ -22,7 +22,7 @@ paths:
   - scripts/aws/iam/gitlab-oidc-*.json
   - scripts/aws/setup-gitlab-oidc.sh
   - docs/validation/**
-updated: 2026-11-05T17:19Z
+updated: 2026-11-05T22:44Z
 vtid: VTID-05546
 ---
 # Lane: deploy-path (repo vitana-platform)
@@ -50,3 +50,11 @@ Final counts after one fix commit: red on base 19 of 19 (39 of 39 against stubs)
 0 fail, 1 skip. Stays executing: waits for eng-gitlab-m2 lane fleet (no branch yet) for the `host/fleet-manager-install.sh`
 runner blocks and their tests, SSH ingress and manager permissions on the two class groups, `terraform validate` with
 `fleet.tf`, and the rootless builds on the M2 job image (acceptance.md "Waits for M2 fleet").
+### 2026-11-05T22:44Z · kiro-exafy-202611051643-bc0a · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/4714 updated (round 2, after M2 fleet #4716 landed as f5dd5eb94b; main
+merged in): the fleet manager renders one runner block per class (single use, unprivileged, own cache path, tokens from
+Secrets Manager, a class without one stays off); seccomp/AppArmor unconfined only for the main class's BuildKit service;
+SSH from the manager, its policy for the two class groups, the M2 image and key-grant role in fleet-classes.tf; runbook
+step A2. Red on the merged base 14 of 21, green 21 of 21; M2's fleet tests 38 of 38; UNIT 971 tests, 0 fail; terraform
+validate with fleet.tf valid; preflight passed. Open: D7 rootless builds (rehearsal); the class runners in the settings
+sync (for the driver, acceptance.md). Next: the driver requests the reviewer agent.
