@@ -4,8 +4,10 @@ author: kiro
 author_seat: exafyltd
 executor: kiro
 next_actor: kiro
-state: drafted
-updated: 2026-11-05T11:45Z
+state: approved
+updated: 2026-11-05T11:55Z
+sparring_record: .kiro/specs/memory-legacy-read-retire-r2/sparring/verdict.md
+vtids: [VTID-05556]
 ---
 # Handoff — memory-legacy-read-retire-r2
 Planner and driver: Kiro seat `exafyltd` (session kiro-exafyltd-202611042048-44bc). Lane: `lanes/bridge-recall-only.md`.
@@ -17,3 +19,6 @@ missing from the lane paths, only five fetchers go, re-pin to `29b639da`); they 
 not take the lane-path fix: a `_plan` commit may create a lane file but never edit it. No VTID was allocated.
 Continues the memory architecture handover: W1, W3, W5 done; W4 (VTID-05009) token now created and wired on staging
 (run 42001385088, staging deploy 42008867084); W2 (VTID-05011) waits on owner AWS steps.
+
+### 2026-11-05T11:55Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.
