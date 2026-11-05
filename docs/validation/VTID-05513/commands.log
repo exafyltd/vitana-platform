@@ -1,0 +1,3 @@
+$ grep -l "cancel-in-progress: \${{ github.event_name == 'pull_request' }}" .github/workflows/*.yml | wc -l    # 38
+$ git diff --numstat origin/main -- .github/workflows/                                                    # 38 files, +6 lines each, 0 deletions
+$ git diff origin/main -- .github/workflows/ | grep '^-' | grep -v '^---' | wc -l                        # 0
