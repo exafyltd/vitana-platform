@@ -1,0 +1,88 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/wt-ocs-base/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    [VTID-0536] Executing tool: dev_approve_item
+
+      at executeTool (src/services/gemini-operator.ts:3715:11)
+
+  console.log
+    [VTID-0536] Tool dev_approve_item completed in 1ms: success
+
+      at executeTool (src/services/gemini-operator.ts:4281:11)
+
+  console.log
+    [VTID-0536] Executing tool: dev_reject_item
+
+      at executeTool (src/services/gemini-operator.ts:3715:11)
+
+  console.log
+    [VTID-0536] Tool dev_reject_item completed in 0ms: success
+
+      at executeTool (src/services/gemini-operator.ts:4281:11)
+
+FAIL test/operator-chat-service-token.test.ts
+  dev_approve_item (Operator Chat to the approvals route)
+    ✕ sends the gateway service token and never the Supabase service key (37 ms)
+  dev_reject_item (Operator Chat to the approvals route)
+    ✕ sends the gateway service token and never the Supabase service key (3 ms)
+
+  ● dev_approve_item (Operator Chat to the approvals route) › sends the gateway service token and never the Supabase service key
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 2
+
+      Object {
+    -   "Authorization": "Bearer gateway-service-token-05528",
+    +   "Authorization": "Bearer supabase-service-role-05528",
+        "Content-Type": "application/json",
+    +   "apikey": "supabase-service-role-05528",
+      }
+
+      53 |     const [url, init] = nodeFetch.mock.calls[0] as unknown as [string, { headers: Record<string, string> }];
+      54 |     expect(url).toContain(route);
+    > 55 |     expect(init.headers).toEqual({ 'Content-Type': 'application/json', Authorization: `Bearer ${SVC}` });
+         |                          ^
+      56 |     expect(JSON.stringify(init)).not.toContain(SUPABASE_KEY);
+      57 |     expect(out.ok).toBe(true);
+      58 |   });
+
+      at Object.<anonymous> (test/operator-chat-service-token.test.ts:55:26)
+
+  ● dev_reject_item (Operator Chat to the approvals route) › sends the gateway service token and never the Supabase service key
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 2
+
+      Object {
+    -   "Authorization": "Bearer gateway-service-token-05528",
+    +   "Authorization": "Bearer supabase-service-role-05528",
+        "Content-Type": "application/json",
+    +   "apikey": "supabase-service-role-05528",
+      }
+
+      53 |     const [url, init] = nodeFetch.mock.calls[0] as unknown as [string, { headers: Record<string, string> }];
+      54 |     expect(url).toContain(route);
+    > 55 |     expect(init.headers).toEqual({ 'Content-Type': 'application/json', Authorization: `Bearer ${SVC}` });
+         |                          ^
+      56 |     expect(JSON.stringify(init)).not.toContain(SUPABASE_KEY);
+      57 |     expect(out.ok).toBe(true);
+      58 |   });
+
+      at Object.<anonymous> (test/operator-chat-service-token.test.ts:55:26)
+
+Test Suites: 1 failed, 1 total
+Tests:       2 failed, 2 total
+Snapshots:   0 total
+Time:        3.013 s
+Ran all test suites matching /test\/operator-chat-service-token.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

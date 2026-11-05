@@ -12,6 +12,12 @@ on:
 
 run-name: 'Services Lint [VTID: DEV-CICDL-0033] (${{ github.ref_name }})'
 
+# Superseded PR runs are cancelled when a newer commit lands on the same PR.
+# Pushes to main and scheduled runs are never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   lint-services:
     name: Validate Services Structure

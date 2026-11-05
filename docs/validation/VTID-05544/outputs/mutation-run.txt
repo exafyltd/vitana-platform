@@ -1,0 +1,146 @@
+baseline: tests 26 and pass 26 on the unmutated tree
+caught      gitlab gets a public IP  <- both machines: no public IP, IMDSv2 required with hop limit 
+caught      runner gets a public IP  <- both machines: no public IP, IMDSv2 required with hop limit 
+caught      IMDSv2 optional on runner  <- both machines: no public IP, IMDSv2 required with hop limit 
+caught      IMDSv2 optional on gitlab  <- both machines: no public IP, IMDSv2 required with hop limit 
+caught      hop limit 2 on gitlab  <- both machines: no public IP, IMDSv2 required with hop limit 
+caught      hop limit 2 on runner  <- both machines: no public IP, IMDSv2 required with hop limit 
+caught      gitlab volume unencrypted  <- both machines: no public IP, IMDSv2 required with hop limit 
+caught      runner volume unencrypted  <- both machines: no public IP, IMDSv2 required with hop limit 
+caught      runner volume loses its key  <- both machines: no public IP, IMDSv2 required with hop limit 
+caught      gitlab volume loses its key  <- both machines: no public IP, IMDSv2 required with hop limit 
+caught      gitlab in a public subnet  <- both machines: no public IP, IMDSv2 required with hop limit 
+caught      runner in a public subnet  <- both machines: no public IP, IMDSv2 required with hop limit 
+caught      metadata endpoint switched off  <- both machines: no public IP, IMDSv2 required with hop limit 
+caught      gitlab size hard-coded  <- machine sizes are variables with the documented default
+caught      runner size hard-coded  <- machine sizes are variables with the documented default
+caught      gitlab size default changed  <- machine sizes are variables with the documented default
+caught      runner size default changed  <- machine sizes are variables with the documented default
+caught      gitlab volume 100 GB  <- volumes: 200 GB gp3 for GitLab, 100 GB gp3 for the runner
+caught      runner volume 50 GB  <- volumes: 200 GB gp3 for GitLab, 100 GB gp3 for the runner
+caught      gitlab volume gp2  <- volumes: 200 GB gp3 for GitLab, 100 GB gp3 for the runner
+caught      runner volume gp2  <- volumes: 200 GB gp3 for GitLab, 100 GB gp3 for the runner
+caught      backend loses lockfile (setup.sh)  <- Terraform state: S3 backend with use_lockfile and encryption
+caught      backend encryption dropped  <- Terraform state: S3 backend with use_lockfile and encryption
+caught      Terraform minimum lowered  <- Terraform state: S3 backend with use_lockfile and encryption
+caught      AWS provider 6 allowed  <- Terraform state: S3 backend with use_lockfile and encryption
+caught      backup bucket SSE becomes AES256  <- backup bucket: KMS encryption, versioning, public access blo
+caught      backup bucket SSE key dropped  <- backup bucket: KMS encryption, versioning, public access blo
+caught      backup versioning suspended  <- backup bucket: KMS encryption, versioning, public access blo
+caught      backup bucket allows public ACLs  <- backup bucket: KMS encryption, versioning, public access blo
+caught      backup bucket allows public policy  <- backup bucket: KMS encryption, versioning, public access blo
+caught      backup bucket ignores no public ACL  <- backup bucket: KMS encryption, versioning, public access blo
+caught      backup bucket not restricted  <- backup bucket: KMS encryption, versioning, public access blo
+caught      backup expiry 365 days  <- backup bucket: KMS encryption, versioning, public access blo
+caught      TLS-only deny removed  <- backup bucket: KMS encryption, versioning, public access blo
+caught      TLS-only deny becomes allow  <- backup bucket: KMS encryption, versioning, public access blo
+caught      bucket name without the account id  <- backup bucket: KMS encryption, versioning, public access blo
+caught      secret without the key  <- Secrets Manager: the three secrets use the engineering key a
+caught      extra secret  <- Secrets Manager: the three secrets use the engineering key a
+caught      root password secret renamed  <- Secrets Manager: the three secrets use the engineering key a
+caught      key rotation off  <- Secrets Manager: the three secrets use the engineering key a
+caught      key alias renamed  <- Secrets Manager: the three secrets use the engineering key a
+caught      gitlab ingress open to the world  <- GitLab accepts only the load balancer; the runner accepts no
+caught      runner gets an inbound rule  <- GitLab accepts only the load balancer; the runner accepts no
+caught      load balancer rule on port 80  <- GitLab accepts only the load balancer; the runner accepts no
+caught      gitlab ingress to port 8080  <- GitLab accepts only the load balancer; the runner accepts no
+caught      inline ingress on the runner group  <- GitLab accepts only the load balancer; the runner accepts no
+caught      legacy security group rule  <- GitLab accepts only the load balancer; the runner accepts no
+caught      admin policy attached  <- IAM: no wildcard action or resource (except the TLS-only den
+caught      extra managed policy attached  <- IAM: no wildcard action or resource (except the TLS-only den
+caught      wildcard resource in gitlab policy  <- IAM: no wildcard action or resource (except the TLS-only den
+caught      wildcard action in gitlab policy  <- IAM: no wildcard action or resource (except the TLS-only den
+caught      partial wildcard action in gitlab policy  <- IAM: no wildcard action or resource (except the TLS-only den
+caught      partial wildcard resource in runner policy  <- IAM: no wildcard action or resource (except the TLS-only den|the runner role may read only its own registration token and
+caught      inline JSON role policy  <- IAM: no wildcard action or resource (except the TLS-only den
+caught      heredoc role policy  <- IAM: no wildcard action or resource (except the TLS-only den
+caught      customer-managed policy resource  <- IAM: no wildcard action or resource (except the TLS-only den
+caught      runner may read every secret  <- IAM: no wildcard action or resource (except the TLS-only den|the runner role may read only its own registration token and
+caught      runner may read the mirror token  <- the runner role may read only its own registration token and
+caught      gitlab may read the root password  <- the GitLab role: backups bucket, writes only the two generat
+caught      gitlab may read the runner token  <- the GitLab role: backups bucket, writes only the two generat
+caught      gitlab may write the mirror token  <- the GitLab role: backups bucket, writes only the two generat
+caught      load balancer opens port 80  <- load balancer: HTTPS 443 with the TLS 1.3 policy and no port
+caught      old TLS policy  <- load balancer: HTTPS 443 with the TLS 1.3 policy and no port
+caught      listener protocol HTTP  <- load balancer: HTTPS 443 with the TLS 1.3 policy and no port
+caught      listener port 8443  <- load balancer: HTTPS 443 with the TLS 1.3 policy and no port
+caught      health check path changed  <- load balancer: HTTPS 443 with the TLS 1.3 policy and no port
+caught      load balancer internal  <- load balancer: HTTPS 443 with the TLS 1.3 policy and no port
+caught      invalid headers kept  <- load balancer: HTTPS 443 with the TLS 1.3 policy and no port
+caught      peering to production  <- network: own VPC 10.20.0.0/16 in two availability zones, one
+caught      transit gateway  <- network: own VPC 10.20.0.0/16 in two availability zones, one
+caught      VPC overlaps production  <- network: own VPC 10.20.0.0/16 in two availability zones, one
+caught      second NAT gateway  <- network: own VPC 10.20.0.0/16 in two availability zones, one
+caught      S3 endpoint replaced  <- network: own VPC 10.20.0.0/16 in two availability zones, one
+caught      one availability zone  <- network: own VPC 10.20.0.0/16 in two availability zones, one
+caught      older Ubuntu image  <- network: own VPC 10.20.0.0/16 in two availability zones, one
+caught      a host file renamed in the list  <- every host file the machines are built from exists
+caught      host file list shortened  <- every host file the machines are built from exists
+caught      backup.sh with a syntax error  <- every shell script passes bash -n
+caught      setup.sh with a syntax error  <- every shell script passes bash -n
+caught      runner-install.sh with a syntax error  <- every shell script passes bash -n
+caught      xtrace in mirror.sh  <- no script turns on xtrace (it would write secrets into logs)
+caught      xtrace in setup.sh  <- no script turns on xtrace (it would write secrets into logs)
+caught      xtrace in backup.sh by option  <- no script turns on xtrace (it would write secrets into logs)|the nightly backup runs at 02:15 UTC, encrypted copy to the 
+caught      xtrace in gitlab-install.sh by name  <- no script turns on xtrace (it would write secrets into logs)
+caught      Cloudflare token echoed to a file  <- the Cloudflare token is typed hidden, handed to curl on stdi
+caught      Cloudflare token on the curl line  <- the Cloudflare token is typed hidden, handed to curl on stdi
+caught      Cloudflare token typed visibly  <- the Cloudflare token is typed hidden, handed to curl on stdi
+caught      GitHub token typed visibly  <- the GitHub mirror token is typed hidden and goes to Secrets 
+caught      GitHub token also written to a file  <- the GitHub mirror token is typed hidden and goes to Secrets 
+caught      GitHub token logged  <- the GitHub mirror token is typed hidden and goes to Secrets 
+caught      GitHub token stored under another secret  <- the GitHub mirror token is typed hidden and goes to Secrets 
+caught      AWS_REGION export dropped  <- setup.sh exports AWS_REGION as well as AWS_DEFAULT_REGION (C
+caught      bootstrap token never expires  <- files that hold a secret on a machine are created with umask
+caught      PAT file world readable  <- files that hold a secret on a machine are created with umask
+caught      mirror token file world readable  <- files that hold a secret on a machine are created with umask
+caught      mirror push without scrub  <- files that hold a secret on a machine are created with umask
+caught      mirror fetch without scrub  <- files that hold a secret on a machine are created with umask
+caught      mirror push --prune without scrub  <- files that hold a secret on a machine are created with umask
+caught      scrub forgets the GitLab token  <- files that hold a secret on a machine are created with umask
+caught      scrub forgets the GitHub token  <- files that hold a secret on a machine are created with umask
+caught      sign-up enabled  <- instance settings: sign-up off, two-factor required, usage p
+caught      two-factor optional  <- instance settings: sign-up off, two-factor required, usage p
+caught      two-factor grace period 0  <- instance settings: sign-up off, two-factor required, usage p
+caught      usage ping on  <- instance settings: sign-up off, two-factor required, usage p
+caught      projects public by default  <- instance settings: sign-up off, two-factor required, usage p
+caught      groups internal by default  <- instance settings: sign-up off, two-factor required, usage p
+caught      external_url over http  <- instance settings: sign-up off, two-factor required, usage p
+caught      nginx terminates TLS itself  <- instance settings: sign-up off, two-factor required, usage p
+caught      swap smaller  <- instance settings: sign-up off, two-factor required, usage p
+caught      backup moved to noon  <- the nightly backup runs at 02:15 UTC, encrypted copy to the 
+caught      backup strategy streaming  <- the nightly backup runs at 02:15 UTC, encrypted copy to the 
+caught      backup archive not uploaded  <- the nightly backup runs at 02:15 UTC, encrypted copy to the 
+caught      config archive not uploaded  <- the nightly backup runs at 02:15 UTC, encrypted copy to the 
+caught      config archive without the secrets  <- the nightly backup runs at 02:15 UTC, encrypted copy to the 
+caught      backup goes on after an error  <- the nightly backup runs at 02:15 UTC, encrypted copy to the 
+caught      CI runs on merge requests  <- central CI: only main and manual, API or schedule runs; stag|RUNBOOK section 6 embeds the platform central CI file exactl
+caught      CI runs on every branch  <- central CI: only main and manual, API or schedule runs; stag
+caught      API and schedule pipelines dropped  <- central CI: only main and manual, API or schedule runs; stag|RUNBOOK section 6 embeds the platform central CI file exactl
+caught      a second stage appears  <- central CI: only main and manual, API or schedule runs; stag
+caught      default tag changed  <- central CI: every job runs on the vitana-eng runner; no AWS |RUNBOOK section 6 embeds the platform central CI file exactl
+caught      a job overrides the tag  <- central CI: every job runs on the vitana-eng runner; no AWS 
+caught      AWS credential in CI  <- central CI: every job runs on the vitana-eng runner; no AWS |RUNBOOK section 6 embeds the platform central CI file exactl
+caught      a deploy job appears  <- central CI: every job runs on the vitana-eng runner; no AWS 
+caught      environment keyword appears  <- central CI: every job runs on the vitana-eng runner; no AWS 
+caught      OIDC id_tokens appear  <- central CI: every job runs on the vitana-eng runner; no AWS |RUNBOOK section 6 embeds the platform central CI file exactl
+caught      kubectl appears  <- central CI: every job runs on the vitana-eng runner; no AWS 
+caught      other container image  <- central CI: every job runs on the vitana-eng runner; no AWS 
+caught      pnpm version drifts  <- central CI platform: gateway type check and four Jest shards|RUNBOOK section 6 embeds the platform central CI file exactl
+caught      Jest shards reduced to 2  <- central CI platform: gateway type check and four Jest shards|RUNBOOK section 6 embeds the platform central CI file exactl
+caught      typecheck installs with pnpm (the bug)  <- central CI platform: gateway type check and four Jest shards|RUNBOOK section 6 embeds the platform central CI file exactl
+caught      typecheck install dropped  <- central CI platform: gateway type check and four Jest shards|RUNBOOK section 6 embeds the platform central CI file exactl
+caught      jest install dropped  <- central CI platform: gateway type check and four Jest shards|RUNBOOK section 6 embeds the platform central CI file exactl
+caught      jest installs with npm  <- central CI platform: gateway type check and four Jest shards|RUNBOOK section 6 embeds the platform central CI file exactl
+caught      shared install back in before_script  <- central CI platform: gateway type check and four Jest shards|RUNBOOK section 6 embeds the platform central CI file exactl
+caught      prisma step added  <- central CI platform: gateway type check and four Jest shards|RUNBOOK section 6 embeds the platform central CI file exactl
+caught      typecheck dropped  <- central CI platform: gateway type check and four Jest shards|RUNBOOK section 6 embeds the platform central CI file exactl
+caught      typecheck memory limit lowered  <- central CI platform: gateway type check and four Jest shards|RUNBOOK section 6 embeds the platform central CI file exactl
+caught      v1 lint blocks the pipeline  <- central CI vitana-v1: npm test and npm run build gate the pi
+caught      v1 build allowed to fail  <- central CI vitana-v1: npm test and npm run build gate the pi
+caught      v1 tests dropped  <- central CI vitana-v1: npm test and npm run build gate the pi
+caught      v1 install without prefer-offline  <- central CI vitana-v1: npm test and npm run build gate the pi
+caught      RUNBOOK copy of the CI file drifts  <- RUNBOOK section 6 embeds the platform central CI file exactl
+caught      CI file changes, RUNBOOK copy stays  <- central CI platform: gateway type check and four Jest shards|RUNBOOK section 6 embeds the platform central CI file exactl
+
+mutations: 143   caught: 143   not caught: 0
