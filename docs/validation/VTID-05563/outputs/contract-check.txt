@@ -1,0 +1,24 @@
+$ bash docs/validation/VTID-05563/outputs/contract-check.sh origin/main HEAD
+base 0f45367bb69a8661eca6d5170ebb33909d03d001  head dcef3ff7b0645cb177480396a486e3794b5c69cf
+changed files (10):
+  ok  .kiro/specs/agentic-delivery/lanes/gateway-delivery.md
+  ok  .kiro/specs/agentic-delivery/lanes/nav-paths.md
+  ok  docs/validation/VTID-05563/acceptance.md
+  ok  docs/validation/VTID-05563/commands.log
+  ok  docs/validation/VTID-05563/outputs/contract-check.sh
+  ok  docs/validation/VTID-05563/outputs/nav-paths-proof.sh
+  ok  docs/validation/VTID-05563/outputs/red-on-base.txt
+  ok  docs/validation/VTID-05563/outputs/target-diff-check.sh
+  ok  docs/validation/VTID-05563/plan-sparring.md
+  ok  docs/validation/VTID-05563/scope.json
+  new target path services/gateway/src/navigation/data/command-hub-screens.json: governance=false protected=false
+  new target path services/gateway/src/navigation/data/nav-embeddings.bin: governance=false protected=false
+  new target path services/gateway/src/navigation/data/nav-embeddings.json: governance=false protected=false
+  new target path scripts/ci/command-hub-ownership-guard.js: governance=false protected=false
+  nav-paths executor: unchanged ("kiro")
+  nav-paths seat: unchanged ("exafy")
+  nav-paths reviewer_seat: unchanged ("agent:vitana-lane-reviewer")
+  nav-paths paths: unchanged ([".kiro/specs/agentic-delivery/lanes/gateway-delivery.md"])
+  nav-paths lane_admin: unchanged ("true")
+contract: PASS
+[exit 0]
