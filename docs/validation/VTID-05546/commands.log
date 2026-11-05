@@ -58,3 +58,5 @@
 22:40  terraform fmt -check (5 files); init -backend=false; validate (scratch copy of infra/gitlab-engineering)   -> fmt 0, valid (outputs/terraform.txt)
 22:41  cross-lane: round-2 test with the CI files of pipelines d5b609bf88, verify-on-gitlab 194f308f9b, settings d28e8c960a   -> 21/21; tpl-verify-structure 10/10 (outputs/cross-lane-job-classes.txt)
 22:44  node land-guard.mjs evidence --repo /projects/sandbox/.rv/deploy --vtid VTID-05546          -> ok
+22:44  node scripts/ci/staging-verify/run.mjs check-pr --service gateway --base 0e5a74a72a --head 48e139b28b   -> no gateway deploy path, no suite needed (exit 0)
+22:44  node preflight.mjs --repo <wt> --base origin/main --head HEAD (48e139b28b) --branch kiro/agentic-delivery/deploy-path   -> every check passed (exit 0)
