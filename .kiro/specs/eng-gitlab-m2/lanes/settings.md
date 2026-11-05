@@ -24,7 +24,7 @@ paths:
   - docs/ENGINEERING-PLATFORM-PLAN.md
   - docs/ENGINEERING-PLATFORM-LICENCES.md
   - docs/validation/**
-updated: 2026-11-05T16:43Z
+updated: 2026-11-05T19:43Z
 claimed_by: kiro-exafy-202611021438-cff7
 branch: kiro/eng-gitlab-m2/settings
 pr: https://github.com/exafyltd/vitana-platform/pull/4711
@@ -59,3 +59,16 @@ Findings: non-blocking: a-red-on-base.txt covers 52 of the 55 final cases (42, 4
 Findings: non-blocking: M1's gitlab-configure.sh:89-90 still writes host/ci-*.yml under the same ci-config names; a re-run of it reverts ci-config until the next sync tick. Note this in the settings README.
 Findings: non-blocking: the Node.js row of ENGINEERING-PLATFORM-LICENCES.md (line 64) omits the host install pinned at ops-install.sh:29.
 Next: the lane's seat fixes the blocking findings
+
+### 2026-11-05T19:43Z · kiro-exafy-202611021438-cff7 · in-review → executing
+Answers to the review of 16:54Z (head 3c36895b18a), one per finding:
+- blocking, the guard pinned `ci/` to exactly the three files: accepted. `scripts/eng/free-tier-guard.test.mjs` now requires the three project files and only checks that any other `*.yml` has a name the sync accepts; the PyYAML cross-check reads the three project files. The templates of `pipelines` (#4709) and `verify-on-gitlab` (#4705) can land next to them.
+- non-blocking, CI not read by the reviewer: nothing to change.
+- non-blocking, `depends_on` gitlab-client: its closing record (#4693) is on main since 19:04 CET.
+- non-blocking, the webhook secret is read only and the fleet secret must exist: accepted, recorded under "Decisions taken" in acceptance.md (the owner puts the signing token; `fleet.tf` creates the runner token secret in the same apply, before `m2.sh install` starts the timers). No code change.
+- non-blocking, the recorded red covers 52 of 55 cases and the stub reds are not assertions: accepted; the header of `a-red-on-base.txt` and acceptance.md say so.
+- non-blocking, a re-run of `gitlab-configure.sh` reverts ci-config: accepted; a note in `settings/README.md`.
+- non-blocking, the Node.js licence row: accepted; it names the host install pinned at `ops-install.sh:29`.
+
+### 2026-11-05T19:43Z · kiro-exafy-202611021438-cff7 · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/4711. Fix pushed on a head that merges the current main. Guard test 51 of 51 (PyYAML present), sync engine 55 of 55, the whole script set 872 tests with 0 failures on Node 22 (39 files). Ready for a new review on the current head.
