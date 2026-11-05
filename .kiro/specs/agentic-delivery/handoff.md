@@ -7,7 +7,7 @@ next_actor: kiro
 state: approved
 spar_refs:
   - exafyltd/vitana-v1: 7829ef2f2ef12364862961d339161229c286d6f0
-updated: 2026-11-05T10:55Z
+updated: 2026-11-05T21:35Z
 sparring_record: .kiro/specs/agentic-delivery/sparring/verdict.md
 vtids: [VTID-05545, VTID-05546, VTID-05547, VTID-05548, VTID-05549, VTID-05550, VTID-05551, VTID-05552, VTID-05554]
 ---
@@ -110,3 +110,19 @@ Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are ha
 PLAN-SPAR allocated VTID-05554 to lane `reseat` at 10:16Z (late lane, no new round; the sparred text is unchanged). This
 entry starts the PR checks that PLAN-SPAR's own push does not start; #4691 merges when they are green. Then a builder
 session of seat `exafy` that is not the driver builds `reseat`, and the driver requests its review.
+
+### 2026-11-05T21:35Z · kiro-exafy-202611041929-802c · approved (late lanes nav-paths, sv-cwd, cut-settings)
+State at 21:30Z. On main: prerequisites (#4690, `51c2bead07`), reseat (#4703, `49cff4a9df`); eng-gitlab-m1 gitlab-infra
+(#4692); eng-gitlab-m2 gitlab-client (#4679, record #4693) and monitoring (#4710). In review: github-bridge #4689 and
+eng-gitlab-m2 merge-bot #4697 (accepted, the accepts still count), scm-webhook #4696, fleet #4716, settings #4711,
+verify-on-gitlab #4705, deploy-path #4714 (waits for fleet), pipelines #4709 (review `changes` 16:54Z, six blocking).
+merge-queue is built and parked locally (waits for merge-bot, and for settings' `loadEffectiveProjects`). gateway-delivery,
+cutover and eng-gitlab-m2 rehearsal are built by `kiro-exafy-202611021438-cff7` (backups on `kiro/backup/*`), PRs when their
+bases land. Driver heartbeats were stale 18:20Z-21:02Z; renewed for all three plans at 21:02Z.
+Three late lanes, outside the sparred text (plan.md "Late lanes"): `nav-paths` (`lane_admin`: four files for lane
+gateway-delivery, from its builder's sync), `sv-cwd` (fix forward: every gateway STAGING-VERIFY since 14:57Z fails only on the
+manifests of VTID-05515, 05516, 05518, which run Jest from the repository root), `cut-settings` (settings the cut needs that no
+lane builds; after cutover). Landing order the driver applies: merge-bot and github-bridge first (accepted), then sv-cwd,
+fleet, settings, scm-webhook (its own diff carries a workflow file, so later updates of the others would need new reviews),
+then verify-on-gitlab and pipelines (after settings), deploy-path (after fleet), merge-queue (after merge-bot and settings),
+nav-paths before gateway-delivery, cutover, cut-settings.
