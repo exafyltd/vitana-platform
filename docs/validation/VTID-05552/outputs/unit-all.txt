@@ -7,7 +7,7 @@ $ node --test $(find scripts -path '*/node_modules' -prune -o \( -name '*.test.c
 # fail 0
 # skipped 1
 
-== head
+== head before lane prerequisites (#4690) landed (the code of 47e8f7b4d1 on base 3767d3d09d)
 # tests 675
 # pass 671
 # fail 3
@@ -16,5 +16,15 @@ not ok 631 - integration, a passed run: the same body as on GitHub except metada
 not ok 632 - integration, a superseded full run with attribution: the same body as on GitHub except metadata.workflow, which names the GitLab job
 not ok 633 - integration, the crashed runner (target.json, no results.json): the same body as on GitHub except metadata.workflow, which names the GitLab job
 
-675 = 613 + the 62 new tests. The only failures are the 3 known-red record-env integration cases (green with #4690,
-see green.txt run 2). No existing test changed or failed.
+675 = 613 + the 62 new tests. The only failures were the 3 known-red record-env integration cases (green with #4690,
+see green.txt). No existing test changed or failed.
+
+== head 6ce814552f (the branch with origin/main 51c2bead07 merged, lane prerequisites #4690 included), 2026-11-05T17:42Z
+# tests 724
+# pass 723
+# fail 0
+# skipped 1
+
+Every test passes, the 3 record-env integration cases included. The count is higher because main gained tests since
+3767d3d09d (other lanes, #4690's record-oasis-workflow.test.mjs among them). The skipped test is a win32-only case
+(`ok 518 - workspace match is case-insensitive with normalised separators on win32 # SKIP`).

@@ -1,8 +1,10 @@
 VTID-05552 — green on head (worktree /projects/sandbox/.rv/verify, branch kiro/agentic-delivery/verify-on-gitlab).
-Node v22.23.4.
+Node v22.23.4. Head 6ce814552f: the merge of origin/main 51c2bead07 into the branch. 51c2bead07 is lane prerequisites
+(VTID-05551, PR #4690, merged 2026-11-05T17:40:30Z); record-oasis.sh on head is #4690's (sha256
+eb557def1c7ffb6fc7b87c46f251d58a0b10a49f30596e64395e7576d2229600), which takes WORKFLOW.
 
-== The new tests on head
-$ node --test scripts/ci/staging-verify/deploy-runs.test.mjs scripts/eng/verify/{aws-secret,record-env,shadow-wait,tpl-verify-structure,vtid-close-env}.test.mjs
+== The new tests on head (2026-11-05T17:42Z)
+$ node --test scripts/ci/staging-verify/deploy-runs.test.mjs scripts/eng/verify/*.test.mjs
 ok 1 - deploy-runs file and GitHub listing give the same T_cut: a deploy that started mid-run bounds T_cut
 ok 2 - deploy-runs file and GitHub listing give the same T_cut: a deploy that finished inside the 5-minute margin clamps T_cut to the run start
 ok 3 - deploy-runs file and GitHub listing give the same T_cut: a skipped deploy never counts; the next real one does
@@ -29,12 +31,9 @@ ok 23 - GitLab variables and the oasis-recorder secret map to every input of rec
 ok 24 - WORKFLOW names the GitLab project of the job; DATA_REST_URL overrides the secret URL as on GitHub
 ok 25 - the commit and service the verify job wrote in target.json win over the pipeline commit (the nightly run)
 ok 26 - without the secret the Supabase inputs are empty, so record-oasis.sh itself refuses (job red)
-not ok 27 - integration, a passed run: the same body as on GitHub except metadata.workflow, which names the GitLab job
-    error: the GitLab row names its job (needs record-oasis.sh WORKFLOW, lane prerequisites #4690) | expected: 'gitlab:vitana/vitana-v1/staging-verify' | actual: 'STAGING-VERIFY.yml'
-not ok 28 - integration, a superseded full run with attribution: the same body as on GitHub except metadata.workflow, which names the GitLab job
-    error: the GitLab row names its job (needs record-oasis.sh WORKFLOW, lane prerequisites #4690) | expected: 'gitlab:vitana/vitana-v1/staging-verify' | actual: 'STAGING-VERIFY.yml'
-not ok 29 - integration, the crashed runner (target.json, no results.json): the same body as on GitHub except metadata.workflow, which names the GitLab job
-    error: the GitLab row names its job (needs record-oasis.sh WORKFLOW, lane prerequisites #4690) | expected: 'gitlab:vitana/vitana-v1/staging-verify' | actual: 'STAGING-VERIFY.yml'
+ok 27 - integration, a passed run: the same body as on GitHub except metadata.workflow, which names the GitLab job
+ok 28 - integration, a superseded full run with attribution: the same body as on GitHub except metadata.workflow, which names the GitLab job
+ok 29 - integration, the crashed runner (target.json, no results.json): the same body as on GitHub except metadata.workflow, which names the GitLab job
 ok 30 - the fields the PUBLISH gate filters on (topic, metadata.service, metadata.commit) are the same on both hosts
 ok 31 - record without its secret: the job is red, nothing is sent, the result stays in the artifact
 ok 32 - shadow mode, or DELIVERY_MODE unset: nothing is recorded (GitHub stays the only writer of verification rows)
@@ -70,34 +69,20 @@ ok 61 - `vtid-close-env.mjs run` closes nothing in shadow mode, or when DELIVERY
 ok 62 - `vtid-close-env.mjs run` on a commit without the merge-bot trailers makes no gateway call and says why
 # tests 62
 # suites 0
-# pass 59
-# fail 3
-# cancelled 0
-# skipped 0
-# todo 0
-
-59 of 62 pass. The 3 red tests are the KNOWN red of the lane brief: record-env.test.mjs's integration cases run the
-real record-oasis.sh, which on main ignores WORKFLOW (metadata.workflow stays "STAGING-VERIFY.yml"). Lane
-prerequisites (VTID-05551, PR #4690) adds that input. They turn green when #4690 is on main, as run 2 shows.
-
-== Run 2: record-env.test.mjs with #4690's record-oasis.sh (origin/kiro/agentic-delivery/prerequisites 18a10349d8,
-   sha256 eb557def1c7ffb6fc7b87c46f251d58a0b10a49f30596e64395e7576d2229600), in a copy OUTSIDE the repo
-   (/projects/sandbox/.scratch/be7f/with-4690: this lane's record-env.mjs + record-env.test.mjs, #4690's record-oasis.sh)
-ok 1 - GitLab variables and the oasis-recorder secret map to every input of record-oasis.sh
-ok 2 - WORKFLOW names the GitLab project of the job; DATA_REST_URL overrides the secret URL as on GitHub
-ok 3 - the commit and service the verify job wrote in target.json win over the pipeline commit (the nightly run)
-ok 4 - without the secret the Supabase inputs are empty, so record-oasis.sh itself refuses (job red)
-ok 5 - integration, a passed run: the same body as on GitHub except metadata.workflow, which names the GitLab job
-ok 6 - integration, a superseded full run with attribution: the same body as on GitHub except metadata.workflow, which names the GitLab job
-ok 7 - integration, the crashed runner (target.json, no results.json): the same body as on GitHub except metadata.workflow, which names the GitLab job
-ok 8 - the fields the PUBLISH gate filters on (topic, metadata.service, metadata.commit) are the same on both hosts
-ok 9 - record without its secret: the job is red, nothing is sent, the result stays in the artifact
-ok 10 - shadow mode, or DELIVERY_MODE unset: nothing is recorded (GitHub stays the only writer of verification rows)
-ok 11 - the verify job never started (no target.json, no results.json): nothing is recorded and the log says why
-# tests 11
-# suites 0
-# pass 11
+# pass 62
 # fail 0
 # cancelled 0
 # skipped 0
 # todo 0
+
+62 of 62 pass. Tests 27 to 29 (record-env.test.mjs's integration cases, which run the real record-oasis.sh) were the
+known red until #4690 landed. With #4690's record-oasis.sh on main they pass in the repo: metadata.workflow names the
+GitLab job.
+
+== Before #4690 landed
+- The code of 47e8f7b4d1 on base 3767d3d09d (12:56Z), and again after main with lane reseat (#4703, 49cff4a9df) was
+  merged into the branch (15:36Z): 62 tests, 59 pass, 3 fail. The 3 were tests 27 to 29: expected
+  'gitlab:vitana/vitana-v1/staging-verify', actual 'STAGING-VERIFY.yml'.
+- record-env.test.mjs in a copy outside the repo with #4690's record-oasis.sh (18a10349d8, the same sha256 eb557def…):
+  11/11.
+The transcripts of the 12:56Z run and of the 11/11 run are in this file at commit 6d02651bae.

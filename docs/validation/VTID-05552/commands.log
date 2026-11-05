@@ -61,3 +61,25 @@
 13:36  git commit 47e8f7b4d1 (the code and evidence, no lane-file change)
 13:37  node scripts/collab/preflight.mjs --repo . --base origin/main (abe2d7a59f) --head HEAD --branch kiro/agentic-delivery/verify-on-gitlab --title "<PR title>"
                                                                                          -> every check passed (8/8; outputs/preflight.txt section 1)
+13:39  git commit 6d02651bae (evidence); preflight (passed); git push                     -> PR #4705 opened 13:40Z, head 6d02651bae
+
+# Update 1: main with lane reseat (VTID-05554, #4703, 49cff4a9df) merged; lane file ready → executing
+15:35  git merge origin/main (49cff4a9df), committed with the trailers                      -> b3d5024016, no conflict
+15:36  node --test scripts/ci/staging-verify/deploy-runs.test.mjs scripts/eng/verify/*.test.mjs
+                                                                                         -> 62 tests, 59 pass, 3 fail (the known red, unchanged)
+15:36  git commit b662bc5c15 (lane file ready → executing: claimed_by, branch, pr:)
+15:37  node scripts/collab/preflight.mjs --repo . --base origin/main (49cff4a9df) --head HEAD --branch kiro/agentic-delivery/verify-on-gitlab --title "<PR title>"
+                                                                                         -> every check passed (8/8); pushed b662bc5c15
+       CI `unit` on b662bc5c15 (Node 20): 683 tests, 678 pass, 3 fail (the same three), 2 skipped; every other check green
+
+# Update 2: lane prerequisites (VTID-05551, PR #4690) landed on main as 51c2bead07 (merged 2026-11-05T17:40:30Z)
+16:43-17:41  gh api repos/exafyltd/vitana-platform/pulls/4690 --jq .merged, every 3 min       -> true at 17:41
+             plan-driver.mjs heartbeat --slug agentic-delivery|eng-gitlab-m2 --session kiro-exafy-202611041929-802c (every <=10 min) -> ok
+17:41  git fetch origin                                                                  -> branch = origin/kiro/agentic-delivery/verify-on-gitlab = b662bc5c15
+17:41  git merge --no-ff --no-commit origin/main (51c2bead07); git commit                   -> 6ce814552f, no conflict (main changed no lane path and not the lane file)
+17:42  node --test scripts/ci/staging-verify/deploy-runs.test.mjs scripts/eng/verify/*.test.mjs
+                                                                                         -> 62/62 (outputs/green.txt); tests 27-29 green in the repo
+17:42  node scripts/collab/queue.mjs validate --repo . --base origin/main --head HEAD --branch kiro/agentic-delivery/verify-on-gitlab
+                                                                                         -> ok (exit 0)
+17:42  node scripts/collab/queue.mjs scope-check (the same arguments)                        -> ✅ lane scope, exit 0
+17:42  UNIT.yml's command on 6ce814552f                                                   -> 724 tests, 723 pass, 0 fail, 1 skipped (outputs/unit-all.txt)

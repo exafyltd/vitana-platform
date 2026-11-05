@@ -71,8 +71,9 @@ TEST: scripts/eng/verify/record-env.test.mjs "GitLab variables and the oasis-rec
 
 AC-11 record-oasis.sh then builds the same body as on GitHub for the same results.json, except `metadata.workflow`,
 which names the GitLab job: a passed run, a superseded full run with attribution, the crashed runner. The fields the
-PUBLISH gate filters on (topic, `metadata.service`, `metadata.commit`) are the same. KNOWN RED on main until lane
-prerequisites (#4690) lands: record-oasis.sh on main ignores WORKFLOW; with #4690's script all 11 tests pass.
+PUBLISH gate filters on (topic, `metadata.service`, `metadata.commit`) are the same. Known red until lane prerequisites
+(#4690) landed, because record-oasis.sh ignored WORKFLOW; #4690 is on main as `51c2bead07`, and with main merged into
+this branch (`6ce814552f`) all 11 tests pass in the repo (outputs/green.txt).
 TEST: scripts/eng/verify/record-env.test.mjs "integration, <case>: the same body as on GitHub except metadata.workflow, which names the GitLab job" (3 tests); "the fields the PUBLISH gate filters on (topic, metadata.service, metadata.commit) are the same on both hosts".
 
 AC-12 `record` without its secret: the job is red (record-oasis.sh's own refusal), nothing is sent, results.json stays in
@@ -155,10 +156,13 @@ Red on base (`origin/main` `3767d3d09d`, the final tests): outputs/red-on-base.t
 62 tests, 60 failed, 2 passed; run 2 against no-behaviour stubs outside the repo, 62 tests, 60 failed (assertion
 failures), 2 passed. The 2 that pass on base are by design: they prove that without `--deploy-runs-file` the GitHub
 listing is used with the same T_cut (task V1, "without it the GitHub path is unchanged").
-Green (final code): outputs/green.txt — 62 tests, 59 pass, 3 fail (the known-red record-env integration cases, until
-#4690); the same record-env.test.mjs with #4690's record-oasis.sh (`18a10349d8`, outside the repo) 11/11.
+Green (final code): outputs/green.txt — on `6ce814552f`, the merge of origin/main `51c2bead07` (lane prerequisites
+#4690, merged 2026-11-05T17:40:30Z) into this branch: 62 tests, 62 pass. Before #4690 landed: 59 pass, 3 fail (the
+known-red record-env integration cases); the same record-env.test.mjs with #4690's record-oasis.sh (`18a10349d8`,
+outside the repo) 11/11.
 outputs/staging-verify-dir.txt 104/104. outputs/unit-all.txt (UNIT.yml's command): base 613 tests, 612 pass, 1 skipped;
-head 675 tests, 671 pass, 3 fail (the same three), 1 skipped. outputs/dry-run-*.txt: the V4 dry runs.
+head before #4690 675 tests, 671 pass, 3 fail (the same three), 1 skipped; `6ce814552f` 724 tests, 723 pass, 0 fail,
+1 skipped. outputs/dry-run-*.txt: the V4 dry runs.
 outputs/yaml-cross-check.txt: the template parses identically with Ruby Psych.
 
 Decisions taken (for Gate 2):
@@ -215,3 +219,6 @@ Decisions taken (for Gate 2):
   seat exafy; once it is on main and main is merged into this branch, the lane file's `ready → executing` entry (with
   `claimed_by`, `branch`, `pr:`) follows. A scratch simulation of exactly that passes every preflight check and merges
   the lane file without a conflict (outputs/preflight.txt).
+- After #4690 landed, UNIT.yml's full command was run once more on the merged head (outputs/unit-all.txt), besides the
+  lane's own tests, so the lane's `executing → in-review` entry ("every test green") rests on the command the `unit`
+  check runs, the one check that was red before.
