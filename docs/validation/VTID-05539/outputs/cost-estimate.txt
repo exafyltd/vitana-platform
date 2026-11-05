@@ -1,0 +1,24 @@
+== this lane, per month
+   CloudWatch alarms (8)                                                            $    0.80
+   CloudWatch custom metrics (10)                                                   $    3.00
+   CloudWatch API requests (86400), none counted as free                            $    0.86
+   KMS key of the alerts topic (1)                                                  $    1.00
+   SNS e-mail notifications, AWS Budgets (first two budgets), the budget mails      $    0.00
+   TOTAL                                                                            $    5.66   (about $68 per year)
+   The monthly free allowance of CloudWatch (10 metrics, 10 alarms, 1 000 000 requests) would take most of this away; it is not counted.
+
+== the floor the budget must clear (always-on cost; job machines come on top, plan section 7)
+   milestone 1, full size                                                          $  452.20
+   fleet manager, one t3.medium (0.048 an hour x 730 h)                                  $   35.04
+   about 12 more secrets                                                           $    4.80   (assumption, lanes fleet and settings)
+   this lane                                                                       $    5.66
+   FLOOR at full size                                                              $  497.70
+   FLOOR at the start size (m6i.large machines)                                    $  329.80
+
+== default monthly_budget_usd = 1000: twice the full-size floor, rounded
+    50 percent = $  500.00   job machines and NAT traffic needed to reach it: full size $    2.30, start size $  170.20
+    80 percent = $  800.00   job machines and NAT traffic needed to reach it: full size $  302.30, start size $  470.20
+   100 percent = $ 1000.00   job machines and NAT traffic needed to reach it: full size $  502.30, start size $  670.20
+   twice the full-size floor is $  995.41; 1000 keeps the 50 percent mail at about the floor, so it arrives late in most months once jobs run
+   (a checkpoint), the 80 percent mail means job machines cost about $300 or more (look at it), and 100 percent is the stop sign.
+   A fleet stuck at its maximum of 24 m6i.xlarge on demand (0.23 an hour, as in VTID-05544) costs about $  132.48 a day, so 80 percent is reached within days, not weeks.

@@ -1,0 +1,65 @@
+# $ terraform console   (can(regex("^[^@[:space:]]+@[^@[:space:]]+$", <address>)), the precondition of aws_sns_topic_subscription.owner_email)
+[someone@example.test]     true
+[a@b]                      true
+[no-at-sign]               false
+[two@@signs.test]          false
+[has space@x.test]         false
+[]                         false
+
+# $ terraform init -input=false && terraform plan -input=false   (scratch configuration holding only the two policy documents)
+commands will detect it and remind you to do so if necessary.
+Changes to Outputs:
+
+== output alerts_key_policy
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "EnableIamPolicies",
+      "Effect": "Allow",
+      "Action": "kms:*",
+      "Resource": "*",
+      "Principal": {
+        "AWS": "arn:aws:iam::123456789012:root"
+      }
+    },
+    {
+      "Sid": "AllowCloudWatchAlarms",
+      "Effect": "Allow",
+      "Action": [
+        "kms:GenerateDataKey*",
+        "kms:Decrypt"
+      ],
+      "Resource": "*",
+      "Principal": {
+        "Service": "cloudwatch.amazonaws.com"
+      },
+      "Condition": {
+        "ArnLike": {
+          "aws:SourceArn": "arn:aws:cloudwatch:eu-central-1:123456789012:alarm:*"
+        },
+        "StringEquals": {
+          "aws:SourceAccount": "123456789012"
+        }
+      }
+    }
+  ]
+}
+
+== output monitoring_policy
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "PublishEngineeringMetrics",
+      "Effect": "Allow",
+      "Action": "cloudwatch:PutMetricData",
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "cloudwatch:namespace": "Vitana/Engineering"
+        }
+      }
+    }
+  ]
+}
