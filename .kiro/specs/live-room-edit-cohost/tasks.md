@@ -39,8 +39,11 @@ Repo `exafyltd/vitana-platform`.
       service role, `503 CO_HOST_VALIDATION_UNAVAILABLE` when the function is missing), `isRoomHost`, session edit
       orchestration.
 - [ ] T3 `routes/live.ts`: `enter` and `/daily` use `isRoomHost`; `CreateSessionSchema` gets `co_hosts`; the create
-      upsert writes `co_hosts`, `enable_chat`, `enable_polls`, `enable_recording`; new `PATCH /rooms/:id/sessions/current`.
-      `cancelSession` stays creator-only.
+      upsert writes `co_hosts`, `enable_chat`, `enable_polls`, `enable_recording`; new `PATCH /rooms/:id/sessions/current`;
+      `open-lobby` and `cancel` get `requireAuth` and use `identity.user_id`, the body `user_id` is no longer read.
+      `room-session-manager.ts`: the gate in `transition()` (`:277`) uses `isRoomHost`. `cancelSession` (`:378`) stays
+      creator-only. Grep the gateway for any other `host_user_id` comparison before finishing; each one is either
+      changed here or listed in the lane log as creator-only on purpose.
 - [ ] T4 `npx jest` on the changed tests and the four existing live suites, `npm run typecheck`, `npm run build`; save
       to `docs/validation/<VTID>/commands.log`.
 - [ ] T5 `staging-tests.json`: `/alive` 200 and `PATCH /api/v1/live/rooms/00000000-0000-0000-0000-000000000000/sessions/current`
@@ -49,15 +52,18 @@ Repo `exafyltd/vitana-platform`.
 
 Acceptance:
 - Change types: Backend, Integration.
-- **Outcome** — a co-host who opens a live room gets the moderator view and token and can run it; a creator can change
-  every field of a scheduled session after creating it and the Live Rooms list shows the new values at once.
-- **States** — helper missing or RPC failing (not host, creator unaffected); session `live` (locked fields refused with
+- **Outcome** — a co-host who opens a scheduled live room starts it, gets the moderator view and token and can run it
+  (open the lobby, admit, end); a creator can change every field of a scheduled session after creating it and the Live
+  Rooms list shows the new values at once.
+- **States** — a request whose body names another user as the actor (the JWT identity decides); no token (401 on
+  `open-lobby` and `cancel`); helper missing or RPC failing (not host, creator unaffected); session `live` (locked fields refused with
   the field list); session has access grants (access change refused); start time in the past; listing write fails
   (502, retry converges); more than 5 or invalid co-hosts (400 with the ids).
 - **Surfaces** — callers: `GoLivePopup` (create), `EditSessionDialog` (edit), `LiveRoomViewer` (`enter`), the ORB tools
   that call `/sessions` (`live-rooms-tools.ts`, unchanged contract).
-- **Contract** — request and reply shapes, status codes and auth gate of `PATCH .../sessions/current`, `POST .../sessions`
-  and `POST .../enter` with `file:line` on the gateway and on the `liveRoomService` side; JSON error bodies.
+- **Contract** — request and reply shapes, status codes and auth gate of `PATCH .../sessions/current`, `POST .../sessions`,
+  `POST .../enter`, `POST .../open-lobby` and `POST .../cancel` with `file:line` on the gateway and on the
+  `liveRoomService` side (`openLobby` sends no body, `cancelRoom` sends `user_id`); JSON error bodies.
 - **Staging proof** — the unauthenticated probe returns 401 on the deployed route (proves it is mounted and guarded).
   Behaviour for a real co-host is not verified on staging (needs a live write); the Jest suites cover it.
 - Diff only inside the lane `paths`; no Stripe or refund code touched.

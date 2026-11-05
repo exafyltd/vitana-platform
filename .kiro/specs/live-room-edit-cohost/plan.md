@@ -29,12 +29,20 @@ existing accounts, which I would add as a co-host and which could run the live a
   nobody. Its only reader is the `stream_recordings` SELECT policy
   (`20251022113129_*.sql:18-31`, `auth.uid()::text = ANY(co_hosts)`).
 - Host identity is `live_rooms.host_user_id` everywhere: gateway `routes/live.ts:1122` (`enter`, decides the Daily
-  `isOwner` token at `:1189-1193`), `:1373` (`/daily`), `room-session-manager.ts:376` (`cancelSession`), and the SQL
+  `isOwner` token at `:1189-1193`), `:1373` (`/daily`), `room-session-manager.ts:277` (`transition()`, a second
+  gateway-layer gate that runs before any SQL: `event.userId !== room.host_user_id` returns `NOT_HOST`; reached by
+  `startForHost` at `:613` and `:618`, which `enter` calls, and by `POST /rooms/:id/open-lobby`, `live.ts:2252`),
+  `room-session-manager.ts:378` (`cancelSession`), and the SQL
   functions `live_room_transition_status`, `live_room_end_session`, `live_room_set_host_present`,
   `live_room_get_lobby`, `live_room_admit_user`, `live_room_reject_user`, `live_room_admit_all`, `live_room_kick_user`,
   `live_room_ban_user`, `live_room_join_session` (role at `:568`), `live_room_get_state` (viewer role at `:824`,`:839`),
   `live_room_check_access` and `live_room_update_metadata`. Latest definitions: `20260210100000_vtid_01228_live_room_session_mgmt.sql`
   and `20260209_vtid_01228_daily_co_live_rooms_fixed.sql`. A co-host is therefore a plain guest today.
+- `POST /rooms/:id/open-lobby` (`live.ts:2247`) and `POST /rooms/:id/cancel` (`live.ts:2285`) read the acting user from
+  the request body (`const { user_id } = req.body`) and run without `requireAuth`, while the SQL functions behind them
+  use `auth.uid()` from the JWT. With one possible host the two always agreed; with co-hosts they could disagree, and
+  a body value is not proof of who is calling. `POST /rooms/:id/end` (`live.ts:673`) calls the SQL function
+  `live_room_end_session` directly and has no gateway-layer gate, so it is gated by SQL only.
 - No gateway endpoint edits a session after creation (`PATCH /rooms/:id`, `routes/live.ts:2192`, only changes the
   permanent room's name, slug, cover and description). The creator-only UPDATE policy on `community_live_streams` also
   lets a browser write any user id into `co_hosts` (no tenant check, test and service accounts included).
@@ -70,9 +78,17 @@ existing accounts, which I would add as a co-host and which could run the live a
    access, `starts_at`, `ends_at = starts_at + duration`, merged `metadata`), then `live_rooms.access_level`, then the
    `community_live_streams` row, so the three stay consistent. While the session is `live` or `lobby`, `starts_at`,
    `duration_minutes`, `access_level` and `stream_type` are locked (409 `SESSION_LOCKED`).
-4. **Enter / host gate** (lane `gateway-cohost`): `isHost` in `enter` and `/daily` is `host_user_id === caller` or, for
-   other callers, the RPC `live_room_is_host` (service role). An RPC failure means "not host". The creator path makes no
-   extra call. `cancelSession` keeps comparing `host_user_id` (creator only).
+4. **Host gates in the gateway** (lane `gateway-cohost`). One helper `isRoomHost(roomId, userId, hostUserId)` in
+   `services/live-cohosts.ts`: true when `hostUserId === userId`, otherwise the RPC `live_room_is_host` with the service
+   role; an RPC failure means "not host"; the creator path makes no extra call. It replaces the comparison in exactly
+   these places: `enter` (`live.ts:1122`), `/daily` (`live.ts:1373`) and `transition()`
+   (`room-session-manager.ts:277`). `transition()` therefore lets a co-host open the lobby and start the room, from
+   `enter` (via `startForHost`) and from `open-lobby`. `end` needs no gateway change (SQL-gated, interface 1).
+   `cancelSession` (`room-session-manager.ts:378`) keeps comparing `host_user_id` (creator only).
+   **The acting user is always the verified JWT identity.** `open-lobby` and `cancel` get `requireAuth` and pass
+   `identity.user_id` as `event.userId` / `userId`. A `user_id` in the request body is no longer read; existing callers
+   that still send it keep working (`liveRoomService.cancelRoom` sends one), and `open-lobby` no longer answers
+   `400 USER_ID_REQUIRED` for a body-less call (`liveRoomService.openLobby` sends none).
 5. **Frontend**: `LiveStream` rows already carry `co_hosts`, `enable_*`, `stream_type`, `tags`, `access_level`,
    `duration_minutes`, `scheduled_for` (`useLiveStreams.ts:5-31`). `LiveRoom` gains `coHosts`, `accessLevel`,
    `enableChat`, `enablePolls`, `enableRecording`. "Can run" (Start, Manage, host controls) = creator or listed co-host;
@@ -90,8 +106,9 @@ co-host. Creator-only and unchanged: `live_room_create_session`, `live_room_upda
 `SQL-LIVE-ROOM-CALENDAR` pattern. Applying the migration is an owner stop (`collaboration.md` §7d).
 
 ### Lane `gateway-cohost` (exafyltd/vitana-platform), depends on `db-cohost-authz`
-`routes/live.ts`, `room-session-manager.ts`, a new `services/live-cohosts.ts` (validation call, `isRoomHost`, edit
-orchestration) and tests. Implements interfaces 2 to 4. Until the migration is applied, a request that carries
+`routes/live.ts`, `room-session-manager.ts` (`transition()` only; `cancelSession` unchanged), a new
+`services/live-cohosts.ts` (validation call, `isRoomHost`, edit orchestration) and tests. Implements interfaces 2 to 4,
+including `requireAuth` plus JWT identity on `open-lobby` and `cancel`. Until the migration is applied, a request that carries
 `co_hosts` answers `503 CO_HOST_VALIDATION_UNAVAILABLE` (it never accepts unvalidated ids), and a non-creator caller is
 "not host", which is today's behaviour.
 
@@ -139,9 +156,11 @@ visible on staging.
   listed id outside the room's tenant are not; `kick`/`ban` of a host is refused; an `authenticated` JWT cannot change
   `co_hosts`, `service_role` can; the filter drops creator, other tenant, test and service accounts.
   Red on base: the functions do not exist.
-- Gateway Jest `test/live-room-cohost*.test.ts`: `enter` as co-host gets `isOwner: true` and `is_host: true`; unlisted
-  member gets a participant token; RPC failure means participant; creator makes no extra call; `/daily` follows the
-  same rule; `cancel` by a co-host is `NOT_HOST`; create validates, writes and resets `co_hosts`; `PATCH` is creator
+- Gateway Jest `test/live-room-cohost*.test.ts`: `enter` as co-host gets `isOwner: true` and `is_host: true`, and
+  entering a `scheduled` room as co-host opens the lobby and starts it (`transition()` OPEN_LOBBY and START succeed);
+  `open-lobby` by a co-host succeeds, by an unlisted member is `NOT_HOST`; a body `user_id` naming the creator, sent by
+  an unlisted member, is ignored (the JWT identity decides); unlisted member gets a participant token; RPC failure
+  means participant; creator makes no extra call; `/daily` follows the same rule; `cancel` by a co-host is `NOT_HOST`; create validates, writes and resets `co_hosts`; `PATCH` is creator
   only, honours the locks, writes the three stores consistently and survives a listing failure with a repeatable retry.
   Existing suites stay green: `vtid-04904-live-daily-rooms`, `vtid-04905-live-enter-exit`,
   `vtid-04834-live-session-start-stop-once`, `vtid-04602-04604-go-live`; plus `npm run typecheck` and `npm run build`.
