@@ -19,7 +19,9 @@
 -- Apply after 20261102033000_vtid_05467_single_role_source.sql, so the derivation trigger covers the canonical row.
 -- Apply order and approvals: collaboration.md §7d (one RUN-MIGRATION dispatch per file, after owner approval).
 --
--- impact-allow-solo-migration: function body only. No table, column, signature or grant changes.
+-- impact-allow-solo-migration: the function body and the EXECUTE grant on this one function. No table, column or signature
+-- changes. No application code calls bootstrap_admin_user (the generated types in vitana-v1 only list it), so the grant
+-- change breaks no caller.
 
 BEGIN;
 
@@ -147,7 +149,13 @@ BEGIN
 END;
 $function$;
 
--- Self-check, by effect: the body pins no tenant name and keys on the default tenant.
+-- Who may execute it. A SECURITY DEFINER function created after VTID-05041 revokes PUBLIC and anon in the same file
+-- (services/gateway/test/vtid-05041-definer-lockdown.test.ts). The body already refuses every caller that is not an exafy
+-- admin. These grants also keep anon and the signed-in client role away from it. The service role keeps EXECUTE.
+REVOKE ALL ON FUNCTION public.bootstrap_admin_user(uuid, text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.bootstrap_admin_user(uuid, text) TO service_role;
+
+-- Self-check, by effect: the body pins no tenant name and keys on the default tenant, and no client role can execute it.
 DO $check$
 DECLARE
   v_src text;
@@ -158,6 +166,10 @@ BEGIN
   END IF;
   IF position('is_default' IN v_src) = 0 THEN
     RAISE EXCEPTION 'VTID-05467 self-check: bootstrap_admin_user does not key on tenants.is_default';
+  END IF;
+  IF has_function_privilege('anon', 'public.bootstrap_admin_user(uuid, text)', 'EXECUTE')
+     OR has_function_privilege('authenticated', 'public.bootstrap_admin_user(uuid, text)', 'EXECUTE') THEN
+    RAISE EXCEPTION 'VTID-05467 self-check: bootstrap_admin_user is still executable by anon or authenticated';
   END IF;
 END
 $check$;

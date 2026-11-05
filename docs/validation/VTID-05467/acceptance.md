@@ -63,8 +63,8 @@ TEST: bootstrap assertions 5, 17–20 (`outputs/pgtap-after-apply.txt`).
 AC-12: Red before the fix. The new pgTAP files fail on the previous bodies, and the previous bootstrap fails with its own errors: `column "id" does not exist` on the tenant_id key shape, and `type "tenant_role" does not exist` on the id key shape.
 TEST: `outputs/pglite-red-base.txt` (the red-base section) and `outputs/pglite-variant-id.txt` (the id variant, red before apply).
 
-AC-13: The rollback restores `bootstrap_admin_user`, `set_role_preference` and `me_set_active_role` verbatim, removes the trigger and its function, restores `user_tenants.active_role` from the snapshot, and drops the three snapshots. The catalog fingerprint after rollback equals the base.
-TEST: `outputs/pglite-rollback.txt`: "rollback restores the catalog exactly", and the switched member's selected role goes back to `community`.
+AC-13: The rollback restores `bootstrap_admin_user`, `set_role_preference` and `me_set_active_role` verbatim, removes the trigger and its function, restores `user_tenants.active_role` from the snapshot, and drops the three snapshots. The catalog fingerprint after rollback equals the base, except one ACL: `bootstrap_admin_user` stays revoked from PUBLIC, anon and authenticated, as R2 left it (decision 11).
+TEST: `outputs/pglite-rollback.txt`: "rollback restores the catalog exactly except the bootstrap ACL", "the rollback keeps bootstrap_admin_user revoked from PUBLIC, anon and authenticated", and the switched member's selected role goes back to `community`.
 
 AC-14: On a database without the lane the rollback is a no-op (replay order): the catalog fingerprint is unchanged.
 TEST: `outputs/pglite-rollback-noop.txt`.
@@ -84,14 +84,20 @@ TEST: `grep -n -i -E '^\s*(insert|update|delete|drop|alter|create|truncate|grant
 AC-19: The migrations add no table other than the three snapshots, no column, no index, and no signature change. The impact scan reports no blocker and no warning.
 TEST: `IMPACT_SCAN_BASE=origin/main node scripts/ci/dev-autopilot-impact-scan.mjs` in the worktree after the commit reports `blocker=0 warning=0` (commands.log).
 
-AC-20: No gateway file changes. `npm run test:roles` (42h) was not run in this worktree (no `services/gateway/node_modules`); CI runs it.
-TEST: `git diff --name-only origin/main...HEAD | grep '^services/'` prints nothing; `services/gateway/test/vtid-04560-role-separation-regression.test.ts` reads `20260925120000` and `20260926150000` by name (lines 459–473 and 1013–1028), and this lane changes neither file.
+AC-20: No gateway file changes, and the gateway suites that read migrations by name pass on this head.
+TEST: `git diff --name-only origin/main...HEAD | grep '^services/'` prints nothing; `npm run test:roles` passes 105 of 105 (`outputs/jest-test-roles.txt`); `npx jest test/vtid-05147-s-m-membership-role-lockdown.test.ts` passes 6, with 1 skipped (`outputs/jest-vtid-05147.txt`). `services/gateway/test/vtid-04560-role-separation-regression.test.ts` reads `20260925120000` and `20260926150000` by name (lines 459–473 and 1013–1028), and this lane changes neither file.
 
 AC-21: The staging manifest is valid. It names the existing role suite and claims no staging test.
 TEST: `validateManifest(docs/validation/VTID-05467/staging-tests.json)` returns `{"ok":true}` (commands.log).
 
 AC-22: `docs/multitenancy/MIGRATION-QUEUE.md` and `scripts/ci/migration-drift-baseline.json` are not touched. The `drift` check fails on the three new snapshot tables until lane `migration-records` lands; that failure is expected.
 TEST: `git diff --name-only origin/main...HEAD | grep -E 'MIGRATION-QUEUE|migration-drift-baseline'` prints nothing.
+
+AC-23: The S2 definer rule (`services/gateway/test/vtid-05041-definer-lockdown.test.ts`) passes. A migration newer than VTID-05041 that creates a SECURITY DEFINER function revokes PUBLIC and anon in the same file, or carries a `-- definer-public:` reason. The forward file revokes. The rollback carries the reason and no grant statement.
+TEST: `npx jest test/vtid-05041-definer-lockdown.test.ts` passes 7, with 1 skipped (`outputs/jest-vtid-05041.txt`). The same test failed on the head before the fix (`outputs/jest-vtid-05041-before-fix.txt`). `grep -n -E '^(GRANT|REVOKE)' supabase/migrations/20261102033000_vtid_05467_role_source_rollback.sql` prints nothing.
+
+AC-24: `bootstrap_admin_user` is executable by the service role only. No client role and not PUBLIC can execute it. The exafy-admin check in its body is unchanged.
+TEST: `supabase/tests/mt_identity_roles_bootstrap.test.sql` assertions 21–24 (`outputs/pgtap-after-apply.txt`: "anon cannot execute", "authenticated cannot execute", "PUBLIC has no EXECUTE", "service_role can execute"). Assertions 21–23 are red on the previous body (`outputs/pglite-red-base.txt`). The self-check in `20261102033100` raises if anon or authenticated can execute it.
 
 ## Decisions taken (for the owner; each is the most conservative reading of the plan)
 
@@ -124,7 +130,14 @@ TEST: `git diff --name-only origin/main...HEAD | grep -E 'MIGRATION-QUEUE|migrat
    stale preference row could survive a re-created membership. This is the strict reading of "derive".
 9. **Tenant key.** The bootstrap reads the default tenant's key with `coalesce(to_jsonb(t) ->> 'tenant_id', to_jsonb(t) ->> 'id')`,
    so it works on either shape and does not decide the question (premise 3).
-10. **Escapes.** `-- impact-allow-solo-migration` is set in the forward and rollback files, with the reason.
+10. **Escapes.** `-- impact-allow-solo-migration` is set in the forward and rollback files, with the reason. The rollback also
+    carries `-- definer-public:` (decision 11, AC-23).
+11. **`bootstrap_admin_user` is executable by the service role only (owner to confirm).** The forward file revokes EXECUTE
+    from PUBLIC, anon and authenticated, and grants it to service_role. The S2 rule (VTID-05041) requires a SECURITY DEFINER
+    function created after S2 to revoke PUBLIC and anon, and an admin bootstrap has no client caller: no application code in
+    services/, vitana-v1 src/ or supabase/functions/ calls it. The body still refuses every caller that is not an exafy admin.
+    An operator who called it as a signed-in user through PostgREST will now get a permission error. The owner should confirm
+    no such path exists. The rollback does not reopen the grant (AC-13, AC-23): restoring PUBLIC EXECUTE would re-expose it.
 
 ## Premises that turned out false or unverified
 
@@ -143,7 +156,7 @@ TEST: `git diff --name-only origin/main...HEAD | grep -E 'MIGRATION-QUEUE|migrat
 4. **Dependency on `membership-unification` (plan, R2 "through the dual-write path").** The dual-write trigger is not on
    `origin/main` yet. The bootstrap writes the canonical row explicitly, so it does not need the trigger. The apply order still
    puts this lane after `membership-unification`.
-5. **`npm run test:roles` is green (lane acceptance).** Not run here, because `services/gateway/node_modules` is absent. The
+5. **`npm run test:roles` is green (lane acceptance).** Run on this head after installing the gateway dependencies: 105 passed (`outputs/jest-test-roles.txt`). The
    suite reads historical migrations by name, so the new files cannot change its input (AC-20).
 6. **Local stack (lane acceptance: "apply and roll back clean on the local stack").** Not run: Docker is not available. The
    PGlite run applies to a stub schema (`fixture-stub.sql`), which models the live shape from the 05147 fixture. It is not the live catalog.
@@ -154,4 +167,4 @@ TEST: `git diff --name-only origin/main...HEAD | grep -E 'MIGRATION-QUEUE|migrat
 
 - `supabase test db` and `supabase db reset` (no Docker). The pgTAP files are written for pg_prove and ran through the PGlite shim.
 - Any read or write against a live database, RUN-MIGRATION, and any dispatch. All of them need owner approval first.
-- `npm run test:roles` (no gateway `node_modules`).
+- The SQL harness case of the two guard suites: no local PostgreSQL binary on this sandbox (`/usr/lib/postgresql` is absent).

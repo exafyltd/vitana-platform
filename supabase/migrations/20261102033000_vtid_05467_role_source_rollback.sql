@@ -16,6 +16,11 @@
 -- role_preferences is not restored. After the lane it holds the current selection that the community app and the ORB read.
 -- Rows the derivation created stay for the same reason.
 --
+-- definer-public: the three functions restored here are SECURITY DEFINER by design. set_role_preference and
+-- me_set_active_role are signed-in member RPCs and each body checks auth.uid(). bootstrap_admin_user is an exafy-admin
+-- tool. This file restores bodies only and changes no grant: CREATE OR REPLACE keeps each function's existing ACL, so
+-- bootstrap_admin_user stays service_role only as 20261102033100 leaves it, and the two switches keep the EXECUTE they had.
+--
 -- impact-allow-solo-migration: rollback of DB-only objects. No gateway, worker or frontend code reads them by name.
 
 BEGIN;

@@ -13,14 +13,18 @@ not ok 10 - the bootstrap sets no selected role [have NULL, want community]
 not ok 11 - the derived preference row follows the canonical row [have NULL, want community]
 ok 12 - no membership is written in any other tenant (no name pin)
 not ok 13 - the target is flagged exafy_admin [have NULL, want true]
-not ok 14 - the default tenant becomes the active tenant [have NULL, want a4eb5d1e-d8ab-4fc0-a65a-cdcd95c189f7]
+not ok 14 - the default tenant becomes the active tenant [have NULL, want 3996462a-bfdb-4ee4-b24b-edce8c22b08d]
 not ok 15 - the success is audited against the default tenant
 ok 16 - the default tenant was renamed in this test, so the grant did not depend on its name
 not ok 17 - a second bootstrap of an admin is refused [42704: type "tenant_role" does not exist]
 not ok 18 - a target with no app_users row is refused [42704: type "tenant_role" does not exist]
 ok 19 - an unknown target user is refused [P0001: Target user does not exist: nobody-05467@example.test]
 ok 20 - a refused bootstrap writes no membership or user_tenants row
-SUMMARY planned=20 ran=20 failed=13
+not ok 21 - anon cannot execute bootstrap_admin_user
+not ok 22 - authenticated cannot execute bootstrap_admin_user
+not ok 23 - PUBLIC has no EXECUTE on bootstrap_admin_user
+ok 24 - service_role can execute bootstrap_admin_user
+SUMMARY planned=24 ran=24 failed=16
 (red run, expected to fail: it fails)
 --- R1 single_source after apply (id variant)
 ok 1 - the derivation trigger is on user_tenants and enabled
@@ -74,6 +78,10 @@ ok 17 - a second bootstrap of an admin is refused [P0001: User u-05467@example.t
 ok 18 - a target with no app_users row is refused [P0001: Target user has no app_users row: z-05467@example.test]
 ok 19 - an unknown target user is refused [P0001: Target user does not exist: nobody-05467@example.test]
 ok 20 - a refused bootstrap writes no membership or user_tenants row
-SUMMARY planned=20 ran=20 failed=0
+ok 21 - anon cannot execute bootstrap_admin_user
+ok 22 - authenticated cannot execute bootstrap_admin_user
+ok 23 - PUBLIC has no EXECUTE on bootstrap_admin_user
+ok 24 - service_role can execute bootstrap_admin_user
+SUMMARY planned=24 ran=24 failed=0
 PASS  R2 bootstrap after apply (id variant): every planned assertion ran and passed
 PASS  both pgTAP files pass on the id variant

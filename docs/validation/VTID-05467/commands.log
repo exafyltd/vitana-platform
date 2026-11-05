@@ -111,3 +111,39 @@ $ node scripts/collab/preflight.mjs --repo . --base origin/main --head HEAD --br
 # Premises rechecked on the merged head: the last definitions of set_role_preference (20261013233000), me_set_active_role
 # (20260926150000), check_role_permitted (20260318100000) and switch_to_tenant_by_slug (20261010180200) are unchanged.
 # bootstrap_admin_user is defined only by this lane's own files. No migration name collides with 2026110203300x.
+
+# 10. Fix round after the reviewer's `changes` on f96ad6be20d
+# Three blocking findings from the reviewer (agent-vitana-lane-reviewer-202611052248-7739): (1) bootstrap_admin_user (R2) is
+# SECURITY DEFINER with no REVOKE from PUBLIC and anon and no definer-public reason, which fails
+# services/gateway/test/vtid-05041-definer-lockdown.test.ts (the rule at lines 125-137); (2) the rollback (R3) has the same gap;
+# (3) no gateway Jest ran on this supabase-only PR, so npm run test:roles was unevidenced.
+$ cd services/gateway && npm ci   -> added 850 packages, exit 0 (gateway dependencies were absent in this worktree)
+$ npx jest test/vtid-05041-definer-lockdown.test.ts   (on f96ad6be20d, before the fix) -> outputs/jest-vtid-05041-before-fix.txt:
+  1 failed (the SECURITY DEFINER rule), 6 passed, 1 skipped
+Fix:
+  - 20261102033100 (R2): REVOKE ALL ON FUNCTION public.bootstrap_admin_user(uuid, text) FROM PUBLIC, anon, authenticated;
+    GRANT EXECUTE ON FUNCTION public.bootstrap_admin_user(uuid, text) TO service_role; the self-check raises if anon or
+    authenticated can execute it. The header now names the grant change.
+  - 20261102033000_role_source_rollback (R3): a `-- definer-public:` reason. The file has no GRANT or REVOKE statement.
+    CREATE OR REPLACE keeps each function's ACL, so the rollback does not reopen bootstrap_admin_user. Restoring PUBLIC
+    EXECUTE would re-expose it, against the S2 rule.
+  - supabase/tests/mt_identity_roles_bootstrap.test.sql: plan 20 -> 24. Assertions 21-24 check anon, authenticated, PUBLIC
+    and service_role. They fail on the previous body and pass after apply.
+  - docs/validation/VTID-05467/pglite-check.mjs: the rollback check compares the catalog exactly except bootstrap's ACL, which
+    it checks by its end state. The first run failed there, as designed (the ACL differs from base). The second run failed on
+    a lookup bug: regprocedure::text omits the schema for functions on the search path. The lookup now matches on the name.
+$ node run.mjs <worktree>   (PGlite; copy of pglite-check.mjs in /projects/sandbox/pglite-05467)
+  -> ALL CHECKS PASSED. Red base: R1 13 of 28 failing; R2 16 of 24 failing, including assertions 21-23.
+     After apply and after re-apply: R1 28/28, R2 24/24. Rollback on base: fingerprint identical.
+     Rollback after a switch: catalog identical except the bootstrap ACL, which is {postgres=X/postgres,service_role=X/postgres}.
+     Negative control: 8 failing assertions (expected). Id variant: red, then pass.
+$ npm run test:roles   -> outputs/jest-test-roles.txt: Tests 105 passed, 105 total, exit 0
+$ npx jest test/vtid-05041-definer-lockdown.test.ts   -> outputs/jest-vtid-05041.txt: 7 passed, 1 skipped, exit 0
+  The skipped case runs the SQL harness (scripts/ci/test-vtid-05041-definer-lockdown.sh), which needs a local PostgreSQL
+  binary. /usr/lib/postgresql is absent on this sandbox.
+$ npx jest test/vtid-05147-s-m-membership-role-lockdown.test.ts   -> outputs/jest-vtid-05147.txt: 6 passed, 1 skipped, exit 0
+  The skipped case has the same reason.
+$ node -e "validateManifest(JSON.parse(staging-tests.json))"   -> {"ok":true,"errors":[]}
+$ IMPACT_SCAN_BASE=origin/main node scripts/ci/dev-autopilot-impact-scan.mjs  -> changed=24, blocker=0 warning=0 info=0.
+  The generated dev-autopilot-impact-findings.json was deleted and not committed.
+$ acceptance mapping (every AC- line has a TEST: line within 12 lines)  -> 24 AC entries, none unmapped

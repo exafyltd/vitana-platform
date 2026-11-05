@@ -12,7 +12,7 @@ BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET search_path = public, extensions;
 
-SELECT plan(20);
+SELECT plan(24);
 
 -- The default tenant of this database, read without naming its key column (tenant_id or id).
 SELECT set_config('vtid05467.default', coalesce(to_jsonb(t) ->> 'tenant_id', to_jsonb(t) ->> 'id'), true)
@@ -140,6 +140,22 @@ SELECT is((SELECT count(*)::text FROM public.memberships
         || '/' || (SELECT count(*)::text FROM public.user_tenants
             WHERE user_id = current_setting('vtid05467.z')::uuid),
   '0/0', 'a refused bootstrap writes no membership or user_tenants row');
+
+-- E. Grants: no client role executes bootstrap_admin_user; the service role does ---------------------------------------
+SELECT ok(NOT has_function_privilege('anon', 'public.bootstrap_admin_user(uuid, text)', 'EXECUTE'),
+  'anon cannot execute bootstrap_admin_user');
+
+SELECT ok(NOT has_function_privilege('authenticated', 'public.bootstrap_admin_user(uuid, text)', 'EXECUTE'),
+  'authenticated cannot execute bootstrap_admin_user');
+
+SELECT ok(NOT EXISTS (
+  SELECT 1 FROM pg_proc p, aclexplode(coalesce(p.proacl, acldefault('f', p.proowner))) a
+   WHERE p.oid = 'public.bootstrap_admin_user(uuid, text)'::regprocedure
+     AND a.grantee = 0 AND a.privilege_type = 'EXECUTE'),
+  'PUBLIC has no EXECUTE on bootstrap_admin_user');
+
+SELECT ok(has_function_privilege('service_role', 'public.bootstrap_admin_user(uuid, text)', 'EXECUTE'),
+  'service_role can execute bootstrap_admin_user');
 
 SELECT * FROM finish();
 

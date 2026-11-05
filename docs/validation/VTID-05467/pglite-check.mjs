@@ -6,7 +6,7 @@
 //   2. the rollback is a no-op on a database without the lane, catalog fingerprint equal (pglite-rollback-noop.txt);
 //   3. apply the forward files: the snapshot counts, and no selected role changes (pglite-apply.txt);
 //   4. the pgTAP files pass after apply (pgtap-after-apply.txt);
-//   5. rollback after a post-apply switch: the catalog fingerprint equals the base, the selected role of the switched
+//   5. rollback after a post-apply switch: the catalog fingerprint equals the base except the bootstrap ACL, which must stay revoked, the selected role of the switched
 //      member is restored from the snapshot, the preference row is kept (pglite-rollback.txt);
 //   6. re-apply and pgTAP again (pgtap-after-reapply.txt);
 //   7. negative control: without the derivation trigger the single-source file fails (pglite-negative-control.txt);
@@ -287,8 +287,19 @@ async function main() {
     check(file, afterRb.legacy_selected === 'community' && afterRb.legacy_preference === 'professional',
       'rollback leaves the legacy disagreement exactly as it was at apply');
     const restored = await fingerprint(db);
-    check(file, restored === base,
-      'rollback restores the catalog exactly: previous bodies verbatim, ACLs, trigger and function removed, snapshots dropped');
+    // bootstrap_admin_user keeps the ACL that R2 set (PUBLIC, anon and authenticated revoked, service_role granted). CREATE OR
+    // REPLACE keeps ACLs, so the rollback does not reopen it: the S2 guard forbids a SECURITY DEFINER function that anon can
+    // execute. Every other part of the catalog must match the base exactly; the bootstrap ACL is checked by its end state.
+    const withoutBootstrapAcl = (fp) => {
+      const o = JSON.parse(fp);
+      for (const r of o.functions) if (/^(public\.)?bootstrap_admin_user\(/.test(r.fn)) r.acl = '<kept by VTID-05467 R2>';
+      return JSON.stringify(o);
+    };
+    check(file, withoutBootstrapAcl(restored) === withoutBootstrapAcl(base),
+      'rollback restores the catalog exactly except the bootstrap ACL: previous bodies verbatim, trigger and function removed, snapshots dropped');
+    const bootAcl = JSON.parse(restored).functions.find((r) => /^(public\.)?bootstrap_admin_user\(/.test(r.fn))?.acl ?? '';
+    check(file, bootAcl !== '' && !/(^|[,{])=X\//.test(bootAcl) && !/\banon=/.test(bootAcl) && !/\bauthenticated=/.test(bootAcl) && /\bservice_role=X/.test(bootAcl),
+      `the rollback keeps bootstrap_admin_user revoked from PUBLIC, anon and authenticated, service_role keeps EXECUTE (acl ${bootAcl})`);
   }
 
   // Phase 6: re-apply and run the pgTAP files again.
