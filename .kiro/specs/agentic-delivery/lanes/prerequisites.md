@@ -29,6 +29,10 @@ Lane created with sparring round 1's answer (plan §9: the atlas drift guard and
 
 ### 2026-11-05T00:25Z · ci-plan-spar · ready (VTID allocated)
 VTID-05551 allocated after policy approval (converged-auto-v1).
+### 2026-11-05T02:53Z · pm-agent · update
+reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
+### 2026-11-05T02:59Z · pm-agent · update
+reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
 
 ### 2026-11-05T03:49Z · kiro-exafy-202611050324-2956 · ready → executing
 Claimed and built from the spec by a separate builder session (seat exafy; driver kiro-exafy-202611041929-802c). Atlas domain `deploy`
