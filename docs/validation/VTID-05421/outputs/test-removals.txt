@@ -1,0 +1,1 @@
+-    expect(out).toMatch(/^seat: exafyltd$/m);

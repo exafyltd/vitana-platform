@@ -1,0 +1,37 @@
+scratch worktree /projects/sandbox/.scratch/reseat/wt-neg, detached at origin/main 3767d3d09d934361750523fd5cb7ff3cda6607d5 (never pushed)
+origin/main: reseat lane_admin lines=1; prerequisites lane_admin lines=0; prerequisites seat: exafyltd
+
+################ N1: lane reseat WITHOUT lane_admin (removed in the trusted base) makes the eight seat edits ################
+scratch base f4f3711133c5e380f076ab9f694a5efadb3ad5ae: reseat lane_admin lines=0
+scratch head 4b1851f75033e60e074de8f932d337693a053a56: 8 files, 8 seat lines exafyltd -> exafy
+
+$ node queue.mjs scope-check --repo . --base f4f3711133c5e380f076ab9f694a5efadb3ad5ae --head HEAD --branch kiro/agentic-delivery/reseat
+✅ **lane scope** — lane agentic-delivery/reseat: every change is inside its paths
+[exit 0]
+
+$ node queue.mjs validate --repo . --base f4f3711133c5e380f076ab9f694a5efadb3ad5ae --head HEAD --branch kiro/agentic-delivery/reseat
+❌ **collab handoff** — 8 problem(s):
+- 4b1851f7: changes .kiro/specs/agentic-delivery/lanes/cutover.md but its Collab-Lane is "agentic-delivery/reseat" (needs "agentic-delivery/cutover", or Collab-Review: agentic-delivery/cutover with the front matter unchanged)
+- 4b1851f7: changes .kiro/specs/agentic-delivery/lanes/deploy-path.md but its Collab-Lane is "agentic-delivery/reseat" (needs "agentic-delivery/deploy-path", or Collab-Review: agentic-delivery/deploy-path with the front matter unchanged)
+- 4b1851f7: changes .kiro/specs/agentic-delivery/lanes/gateway-delivery.md but its Collab-Lane is "agentic-delivery/reseat" (needs "agentic-delivery/gateway-delivery", or Collab-Review: agentic-delivery/gateway-delivery with the front matter unchanged)
+- 4b1851f7: changes .kiro/specs/agentic-delivery/lanes/github-bridge.md but its Collab-Lane is "agentic-delivery/reseat" (needs "agentic-delivery/github-bridge", or Collab-Review: agentic-delivery/github-bridge with the front matter unchanged)
+- 4b1851f7: changes .kiro/specs/agentic-delivery/lanes/merge-queue.md but its Collab-Lane is "agentic-delivery/reseat" (needs "agentic-delivery/merge-queue", or Collab-Review: agentic-delivery/merge-queue with the front matter unchanged)
+- 4b1851f7: changes .kiro/specs/agentic-delivery/lanes/pipelines.md but its Collab-Lane is "agentic-delivery/reseat" (needs "agentic-delivery/pipelines", or Collab-Review: agentic-delivery/pipelines with the front matter unchanged)
+- 4b1851f7: changes .kiro/specs/agentic-delivery/lanes/prerequisites.md but its Collab-Lane is "agentic-delivery/reseat" (needs "agentic-delivery/prerequisites", or Collab-Review: agentic-delivery/prerequisites with the front matter unchanged)
+- 4b1851f7: changes .kiro/specs/agentic-delivery/lanes/verify-on-gitlab.md but its Collab-Lane is "agentic-delivery/reseat" (needs "agentic-delivery/verify-on-gitlab", or Collab-Review: agentic-delivery/verify-on-gitlab with the front matter unchanged)
+[exit 1]
+
+################ N2: target lane prerequisites (no lane_admin) changes its own seat under its own key ################
+scratch head 1cc17a3c4da24fbdc8fd1beb115197673bbe1a03 on origin/main: 1 file, seat line exafyltd -> exafy, session kiro-exafy-202611050324-2956 (seat exafy)
+
+$ node queue.mjs scope-check --repo . --base 3767d3d09d934361750523fd5cb7ff3cda6607d5 --head HEAD --branch kiro/agentic-delivery/prerequisites
+❌ **lane scope** — 2 problem(s) (lane agentic-delivery/prerequisites):
+- lane agentic-delivery/prerequisites: seat changed in a lane PR — lane permissions come from the base revision (reassign a target lane through an executor: kiro, reviewer_seat: agent:vitana-lane-reviewer lane with lane_admin: true from a trusted source whose paths cover it, or change an executor: claude Claude Code lane)
+- 1cc17a3c: kiro-exafy-202611050324-2956 (seat exafy) edits lane agentic-delivery/prerequisites, which belongs to seat exafyltd
+[exit 1]
+
+$ node queue.mjs validate --repo . --base 3767d3d09d934361750523fd5cb7ff3cda6607d5 --head HEAD --branch kiro/agentic-delivery/prerequisites
+✅ **collab handoff** — 1 handoff/lane file(s) changed, all valid
+[exit 0]
+
+scratch worktree removed; no branch was created and nothing was pushed

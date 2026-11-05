@@ -30,6 +30,10 @@ Lane created with the plan.
 
 ### 2026-11-05T00:25Z · ci-plan-spar · ready (VTID allocated)
 VTID-05548 allocated after policy approval (converged-auto-v1).
+### 2026-11-05T02:53Z · pm-agent · update
+reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
+### 2026-11-05T02:59Z · pm-agent · update
+reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
 
 ### 2026-11-05T03:11Z · kiro-exafy-202611050107-c4a6 · ready → executing
 Built `scripts/eng/github-bridge.mjs` (one tick: `kiro/*` and `claude/*` branches GitHub → GitLab under the one-writer rule, one merge request per open PR, `gitlab/<job>` statuses back, the PR closed with a link after landing; `assist-push`), the units `vitana-github-bridge.{service,timer}` and `RUNBOOK-github-bridge.md`.
