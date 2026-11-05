@@ -1,0 +1,879 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/wt-wsp/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=11111111-1111-4111-8111-000000000001
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=11111111-1111-4111-8111-000000000002
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=11111111-1111-4111-8111-000000000003
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+  console.warn
+    {"event":"tenant_meta_unavailable","vtid":"VTID-05149","tenant_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"}
+
+      620 |   const meta = await getTenantMeta(tenantId);
+      621 |   if (!meta) {
+    > 622 |     console.warn(JSON.stringify({ event: 'tenant_meta_unavailable', vtid: 'VTID-05149', tenant_id: tenantId }));
+          |             ^
+      623 |   }
+      624 |   req.tenant = { tenantId, slug: meta?.slug ?? null, role, source, isPlatform: meta?.isPlatform ?? false };
+      625 |   return req.tenant;
+
+      at attachTenantContext (src/middleware/auth-supabase-jwt.ts:622:13)
+      at requireAuthWithTenant (src/middleware/auth-supabase-jwt.ts:822:3)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=11111111-1111-4111-8111-000000000004
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+  console.warn
+    {"event":"tenant_meta_unavailable","vtid":"VTID-05149","tenant_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"}
+
+      620 |   const meta = await getTenantMeta(tenantId);
+      621 |   if (!meta) {
+    > 622 |     console.warn(JSON.stringify({ event: 'tenant_meta_unavailable', vtid: 'VTID-05149', tenant_id: tenantId }));
+          |             ^
+      623 |   }
+      624 |   req.tenant = { tenantId, slug: meta?.slug ?? null, role, source, isPlatform: meta?.isPlatform ?? false };
+      625 |   return req.tenant;
+
+      at attachTenantContext (src/middleware/auth-supabase-jwt.ts:622:13)
+      at requireAuthWithTenant (src/middleware/auth-supabase-jwt.ts:822:3)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=11111111-1111-4111-8111-000000000005
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+  console.warn
+    {"event":"tenant_meta_unavailable","vtid":"VTID-05149","tenant_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"}
+
+      620 |   const meta = await getTenantMeta(tenantId);
+      621 |   if (!meta) {
+    > 622 |     console.warn(JSON.stringify({ event: 'tenant_meta_unavailable', vtid: 'VTID-05149', tenant_id: tenantId }));
+          |             ^
+      623 |   }
+      624 |   req.tenant = { tenantId, slug: meta?.slug ?? null, role, source, isPlatform: meta?.isPlatform ?? false };
+      625 |   return req.tenant;
+
+      at attachTenantContext (src/middleware/auth-supabase-jwt.ts:622:13)
+      at requireAuthWithTenant (src/middleware/auth-supabase-jwt.ts:822:3)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=11111111-1111-4111-8111-000000000006
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+  console.warn
+    {"event":"tenant_meta_unavailable","vtid":"VTID-05149","tenant_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"}
+
+      620 |   const meta = await getTenantMeta(tenantId);
+      621 |   if (!meta) {
+    > 622 |     console.warn(JSON.stringify({ event: 'tenant_meta_unavailable', vtid: 'VTID-05149', tenant_id: tenantId }));
+          |             ^
+      623 |   }
+      624 |   req.tenant = { tenantId, slug: meta?.slug ?? null, role, source, isPlatform: meta?.isPlatform ?? false };
+      625 |   return req.tenant;
+
+      at attachTenantContext (src/middleware/auth-supabase-jwt.ts:622:13)
+      at requireAuthWithTenant (src/middleware/auth-supabase-jwt.ts:822:3)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=11111111-1111-4111-8111-000000000007
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+  console.warn
+    {"event":"tenant_meta_unavailable","vtid":"VTID-05149","tenant_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"}
+
+      620 |   const meta = await getTenantMeta(tenantId);
+      621 |   if (!meta) {
+    > 622 |     console.warn(JSON.stringify({ event: 'tenant_meta_unavailable', vtid: 'VTID-05149', tenant_id: tenantId }));
+          |             ^
+      623 |   }
+      624 |   req.tenant = { tenantId, slug: meta?.slug ?? null, role, source, isPlatform: meta?.isPlatform ?? false };
+      625 |   return req.tenant;
+
+      at attachTenantContext (src/middleware/auth-supabase-jwt.ts:622:13)
+      at requireAuthWithTenant (src/middleware/auth-supabase-jwt.ts:822:3)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=11111111-1111-4111-8111-000000000008
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+  console.warn
+    {"event":"tenant_meta_unavailable","vtid":"VTID-05149","tenant_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"}
+
+      620 |   const meta = await getTenantMeta(tenantId);
+      621 |   if (!meta) {
+    > 622 |     console.warn(JSON.stringify({ event: 'tenant_meta_unavailable', vtid: 'VTID-05149', tenant_id: tenantId }));
+          |             ^
+      623 |   }
+      624 |   req.tenant = { tenantId, slug: meta?.slug ?? null, role, source, isPlatform: meta?.isPlatform ?? false };
+      625 |   return req.tenant;
+
+      at attachTenantContext (src/middleware/auth-supabase-jwt.ts:622:13)
+      at requireAuthWithTenant (src/middleware/auth-supabase-jwt.ts:822:3)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=11111111-1111-4111-8111-000000000009
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+  console.warn
+    {"event":"tenant_meta_unavailable","vtid":"VTID-05149","tenant_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"}
+
+      620 |   const meta = await getTenantMeta(tenantId);
+      621 |   if (!meta) {
+    > 622 |     console.warn(JSON.stringify({ event: 'tenant_meta_unavailable', vtid: 'VTID-05149', tenant_id: tenantId }));
+          |             ^
+      623 |   }
+      624 |   req.tenant = { tenantId, slug: meta?.slug ?? null, role, source, isPlatform: meta?.isPlatform ?? false };
+      625 |   return req.tenant;
+
+      at attachTenantContext (src/middleware/auth-supabase-jwt.ts:622:13)
+      at requireAuthWithTenant (src/middleware/auth-supabase-jwt.ts:822:3)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=11111111-1111-4111-8111-000000000010
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+  console.warn
+    {"event":"tenant_meta_unavailable","vtid":"VTID-05149","tenant_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"}
+
+      620 |   const meta = await getTenantMeta(tenantId);
+      621 |   if (!meta) {
+    > 622 |     console.warn(JSON.stringify({ event: 'tenant_meta_unavailable', vtid: 'VTID-05149', tenant_id: tenantId }));
+          |             ^
+      623 |   }
+      624 |   req.tenant = { tenantId, slug: meta?.slug ?? null, role, source, isPlatform: meta?.isPlatform ?? false };
+      625 |   return req.tenant;
+
+      at attachTenantContext (src/middleware/auth-supabase-jwt.ts:622:13)
+      at requireAuthWithTenant (src/middleware/auth-supabase-jwt.ts:822:3)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=11111111-1111-4111-8111-000000000011
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+  console.warn
+    {"event":"tenant_meta_unavailable","vtid":"VTID-05149","tenant_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"}
+
+      620 |   const meta = await getTenantMeta(tenantId);
+      621 |   if (!meta) {
+    > 622 |     console.warn(JSON.stringify({ event: 'tenant_meta_unavailable', vtid: 'VTID-05149', tenant_id: tenantId }));
+          |             ^
+      623 |   }
+      624 |   req.tenant = { tenantId, slug: meta?.slug ?? null, role, source, isPlatform: meta?.isPlatform ?? false };
+      625 |   return req.tenant;
+
+      at attachTenantContext (src/middleware/auth-supabase-jwt.ts:622:13)
+      at requireAuthWithTenant (src/middleware/auth-supabase-jwt.ts:822:3)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=11111111-1111-4111-8111-000000000012
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+  console.warn
+    {"event":"tenant_meta_unavailable","vtid":"VTID-05149","tenant_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"}
+
+      620 |   const meta = await getTenantMeta(tenantId);
+      621 |   if (!meta) {
+    > 622 |     console.warn(JSON.stringify({ event: 'tenant_meta_unavailable', vtid: 'VTID-05149', tenant_id: tenantId }));
+          |             ^
+      623 |   }
+      624 |   req.tenant = { tenantId, slug: meta?.slug ?? null, role, source, isPlatform: meta?.isPlatform ?? false };
+      625 |   return req.tenant;
+
+      at attachTenantContext (src/middleware/auth-supabase-jwt.ts:622:13)
+      at requireAuthWithTenant (src/middleware/auth-supabase-jwt.ts:822:3)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=11111111-1111-4111-8111-000000000013
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=11111111-1111-4111-8111-000000000014
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=11111111-1111-4111-8111-000000000015
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=11111111-1111-4111-8111-000000000016
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=11111111-1111-4111-8111-000000000017
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=11111111-1111-4111-8111-000000000018
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=11111111-1111-4111-8111-000000000019
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+  console.warn
+    [VTID-01157] Access denied: user 11111111-1111-4111-8111-000000000019 is not exafy_admin
+
+      871 |   // Then, require exafy_admin
+      872 |   if (!req.identity.exafy_admin) {
+    > 873 |     console.warn(
+          |             ^
+      874 |       `[VTID-01157] Access denied: user ${req.identity.user_id} is not exafy_admin`
+      875 |     );
+      876 |     res.status(403).json({
+
+      at requireAdminAuth (src/middleware/auth-supabase-jwt.ts:873:13)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=11111111-1111-4111-8111-000000000020
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=11111111-1111-4111-8111-000000000021
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=11111111-1111-4111-8111-000000000022
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=11111111-1111-4111-8111-000000000023
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=11111111-1111-4111-8111-000000000024
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=11111111-1111-4111-8111-000000000025
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=11111111-1111-4111-8111-000000000026
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=11111111-1111-4111-8111-000000000027
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=11111111-1111-4111-8111-000000000028
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=11111111-1111-4111-8111-000000000029
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=11111111-1111-4111-8111-000000000029
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=11111111-1111-4111-8111-000000000030
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=11111111-1111-4111-8111-000000000031
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+  console.log
+    [VTID-03047] persona system_instruction rendered for devon (569 chars, handoff_summary=none, user_context=no)
+
+      at src/routes/orb-livekit.ts:1713:19
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=11111111-1111-4111-8111-000000000032
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=11111111-1111-4111-8111-000000000033
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+  console.warn
+    [VTID-LIVEKIT-FOUNDATION] decision-context compile failed (LiveKit path falls back to identity-only bootstrap): decision engine down
+
+      1651 |         // Compile/render failure must NEVER block the bootstrap.
+      1652 |         // Vertex production users are unaffected by anything here.
+    > 1653 |         console.warn(
+           |                 ^
+      1654 |           `[${VTID}] decision-context compile failed (LiveKit path falls back to identity-only bootstrap): ${(exc as Error).message}`,
+      1655 |         );
+      1656 |       }
+
+      at src/routes/orb-livekit.ts:1653:17
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=11111111-1111-4111-8111-000000000034
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+  console.warn
+    [VTID-LIVEKIT-FOUNDATION] wake-brief decision failed (non-fatal): wake-brief provider timeout
+
+      1903 |         }
+      1904 |       } catch (exc) {
+    > 1905 |         console.warn(
+           |                 ^
+      1906 |           `[${VTID}] wake-brief decision failed (non-fatal): ${(exc as Error).message}`,
+      1907 |         );
+      1908 |       }
+
+      at src/routes/orb-livekit.ts:1905:17
+
+  console.warn
+    [VTID-LIVEKIT-FOUNDATION] system_instruction render failed (agent falls back to its own builder): prompt renderer exploded
+
+      1795 |       }
+      1796 |     } catch (exc) {
+    > 1797 |       console.warn(
+           |               ^
+      1798 |         `[${VTID}] system_instruction render failed (agent falls back to its own builder): ${(exc as Error).message}`,
+      1799 |       );
+      1800 |     }
+
+      at src/routes/orb-livekit.ts:1797:15
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=11111111-1111-4111-8111-000000000035
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+  console.log
+    [VTID-LIVEKIT-FOUNDATION/BOOTSTRAP-ORB-RCV-DOUBLEGREET] systemInstruction re-rendered with LiveKit first-turn SUPPRESSION (kind=proactive_opener, decision_id=dec-1, lang=en) — session.say() owns the first turn, model stays silent; directive appended post-cap so it survives heavy bootstrap
+
+      at src/routes/orb-livekit.ts:2034:17
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=11111111-1111-4111-8111-000000000036
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=11111111-1111-4111-8111-000000000037
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=11111111-1111-4111-8111-000000000038
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+  console.warn
+    {"event":"tenant_meta_unavailable","vtid":"VTID-05149","tenant_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"}
+
+      620 |   const meta = await getTenantMeta(tenantId);
+      621 |   if (!meta) {
+    > 622 |     console.warn(JSON.stringify({ event: 'tenant_meta_unavailable', vtid: 'VTID-05149', tenant_id: tenantId }));
+          |             ^
+      623 |   }
+      624 |   req.tenant = { tenantId, slug: meta?.slug ?? null, role, source, isPlatform: meta?.isPlatform ?? false };
+      625 |   return req.tenant;
+
+      at attachTenantContext (src/middleware/auth-supabase-jwt.ts:622:13)
+      at requireAuthWithTenant (src/middleware/auth-supabase-jwt.ts:822:3)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=11111111-1111-4111-8111-000000000039
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+  console.warn
+    {"event":"tenant_meta_unavailable","vtid":"VTID-05149","tenant_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"}
+
+      620 |   const meta = await getTenantMeta(tenantId);
+      621 |   if (!meta) {
+    > 622 |     console.warn(JSON.stringify({ event: 'tenant_meta_unavailable', vtid: 'VTID-05149', tenant_id: tenantId }));
+          |             ^
+      623 |   }
+      624 |   req.tenant = { tenantId, slug: meta?.slug ?? null, role, source, isPlatform: meta?.isPlatform ?? false };
+      625 |   return req.tenant;
+
+      at attachTenantContext (src/middleware/auth-supabase-jwt.ts:622:13)
+      at requireAuthWithTenant (src/middleware/auth-supabase-jwt.ts:822:3)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=11111111-1111-4111-8111-000000000040
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+  console.warn
+    {"event":"tenant_meta_unavailable","vtid":"VTID-05149","tenant_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"}
+
+      620 |   const meta = await getTenantMeta(tenantId);
+      621 |   if (!meta) {
+    > 622 |     console.warn(JSON.stringify({ event: 'tenant_meta_unavailable', vtid: 'VTID-05149', tenant_id: tenantId }));
+          |             ^
+      623 |   }
+      624 |   req.tenant = { tenantId, slug: meta?.slug ?? null, role, source, isPlatform: meta?.isPlatform ?? false };
+      625 |   return req.tenant;
+
+      at attachTenantContext (src/middleware/auth-supabase-jwt.ts:622:13)
+      at requireAuthWithTenant (src/middleware/auth-supabase-jwt.ts:822:3)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=11111111-1111-4111-8111-000000000041
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+  console.warn
+    {"event":"tenant_meta_unavailable","vtid":"VTID-05149","tenant_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"}
+
+      620 |   const meta = await getTenantMeta(tenantId);
+      621 |   if (!meta) {
+    > 622 |     console.warn(JSON.stringify({ event: 'tenant_meta_unavailable', vtid: 'VTID-05149', tenant_id: tenantId }));
+          |             ^
+      623 |   }
+      624 |   req.tenant = { tenantId, slug: meta?.slug ?? null, role, source, isPlatform: meta?.isPlatform ?? false };
+      625 |   return req.tenant;
+
+      at attachTenantContext (src/middleware/auth-supabase-jwt.ts:622:13)
+      at requireAuthWithTenant (src/middleware/auth-supabase-jwt.ts:822:3)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=11111111-1111-4111-8111-000000000042
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+  console.warn
+    {"event":"tenant_meta_unavailable","vtid":"VTID-05149","tenant_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"}
+
+      620 |   const meta = await getTenantMeta(tenantId);
+      621 |   if (!meta) {
+    > 622 |     console.warn(JSON.stringify({ event: 'tenant_meta_unavailable', vtid: 'VTID-05149', tenant_id: tenantId }));
+          |             ^
+      623 |   }
+      624 |   req.tenant = { tenantId, slug: meta?.slug ?? null, role, source, isPlatform: meta?.isPlatform ?? false };
+      625 |   return req.tenant;
+
+      at attachTenantContext (src/middleware/auth-supabase-jwt.ts:622:13)
+      at requireAuthWithTenant (src/middleware/auth-supabase-jwt.ts:822:3)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=11111111-1111-4111-8111-000000000043
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+  console.warn
+    {"event":"tenant_meta_unavailable","vtid":"VTID-05149","tenant_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"}
+
+      620 |   const meta = await getTenantMeta(tenantId);
+      621 |   if (!meta) {
+    > 622 |     console.warn(JSON.stringify({ event: 'tenant_meta_unavailable', vtid: 'VTID-05149', tenant_id: tenantId }));
+          |             ^
+      623 |   }
+      624 |   req.tenant = { tenantId, slug: meta?.slug ?? null, role, source, isPlatform: meta?.isPlatform ?? false };
+      625 |   return req.tenant;
+
+      at attachTenantContext (src/middleware/auth-supabase-jwt.ts:622:13)
+      at requireAuthWithTenant (src/middleware/auth-supabase-jwt.ts:822:3)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=11111111-1111-4111-8111-000000000044
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+  console.warn
+    {"event":"tenant_meta_unavailable","vtid":"VTID-05149","tenant_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"}
+
+      620 |   const meta = await getTenantMeta(tenantId);
+      621 |   if (!meta) {
+    > 622 |     console.warn(JSON.stringify({ event: 'tenant_meta_unavailable', vtid: 'VTID-05149', tenant_id: tenantId }));
+          |             ^
+      623 |   }
+      624 |   req.tenant = { tenantId, slug: meta?.slug ?? null, role, source, isPlatform: meta?.isPlatform ?? false };
+      625 |   return req.tenant;
+
+      at attachTenantContext (src/middleware/auth-supabase-jwt.ts:622:13)
+      at requireAuthWithTenant (src/middleware/auth-supabase-jwt.ts:822:3)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=11111111-1111-4111-8111-000000000045
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+  console.warn
+    {"event":"tenant_meta_unavailable","vtid":"VTID-05149","tenant_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"}
+
+      620 |   const meta = await getTenantMeta(tenantId);
+      621 |   if (!meta) {
+    > 622 |     console.warn(JSON.stringify({ event: 'tenant_meta_unavailable', vtid: 'VTID-05149', tenant_id: tenantId }));
+          |             ^
+      623 |   }
+      624 |   req.tenant = { tenantId, slug: meta?.slug ?? null, role, source, isPlatform: meta?.isPlatform ?? false };
+      625 |   return req.tenant;
+
+      at attachTenantContext (src/middleware/auth-supabase-jwt.ts:622:13)
+      at requireAuthWithTenant (src/middleware/auth-supabase-jwt.ts:822:3)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=11111111-1111-4111-8111-000000000046
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+  console.warn
+    {"event":"tenant_meta_unavailable","vtid":"VTID-05149","tenant_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"}
+
+      620 |   const meta = await getTenantMeta(tenantId);
+      621 |   if (!meta) {
+    > 622 |     console.warn(JSON.stringify({ event: 'tenant_meta_unavailable', vtid: 'VTID-05149', tenant_id: tenantId }));
+          |             ^
+      623 |   }
+      624 |   req.tenant = { tenantId, slug: meta?.slug ?? null, role, source, isPlatform: meta?.isPlatform ?? false };
+      625 |   return req.tenant;
+
+      at attachTenantContext (src/middleware/auth-supabase-jwt.ts:622:13)
+      at requireAuthWithTenant (src/middleware/auth-supabase-jwt.ts:822:3)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=11111111-1111-4111-8111-000000000047
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+  console.warn
+    {"event":"tenant_meta_unavailable","vtid":"VTID-05149","tenant_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"}
+
+      620 |   const meta = await getTenantMeta(tenantId);
+      621 |   if (!meta) {
+    > 622 |     console.warn(JSON.stringify({ event: 'tenant_meta_unavailable', vtid: 'VTID-05149', tenant_id: tenantId }));
+          |             ^
+      623 |   }
+      624 |   req.tenant = { tenantId, slug: meta?.slug ?? null, role, source, isPlatform: meta?.isPlatform ?? false };
+      625 |   return req.tenant;
+
+      at attachTenantContext (src/middleware/auth-supabase-jwt.ts:622:13)
+      at requireAuthWithTenant (src/middleware/auth-supabase-jwt.ts:822:3)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=11111111-1111-4111-8111-000000000048
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+  console.warn
+    {"event":"tenant_meta_unavailable","vtid":"VTID-05149","tenant_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"}
+
+      620 |   const meta = await getTenantMeta(tenantId);
+      621 |   if (!meta) {
+    > 622 |     console.warn(JSON.stringify({ event: 'tenant_meta_unavailable', vtid: 'VTID-05149', tenant_id: tenantId }));
+          |             ^
+      623 |   }
+      624 |   req.tenant = { tenantId, slug: meta?.slug ?? null, role, source, isPlatform: meta?.isPlatform ?? false };
+      625 |   return req.tenant;
+
+      at attachTenantContext (src/middleware/auth-supabase-jwt.ts:622:13)
+      at requireAuthWithTenant (src/middleware/auth-supabase-jwt.ts:822:3)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=11111111-1111-4111-8111-000000000049
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+  console.warn
+    {"event":"tenant_meta_unavailable","vtid":"VTID-05149","tenant_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"}
+
+      620 |   const meta = await getTenantMeta(tenantId);
+      621 |   if (!meta) {
+    > 622 |     console.warn(JSON.stringify({ event: 'tenant_meta_unavailable', vtid: 'VTID-05149', tenant_id: tenantId }));
+          |             ^
+      623 |   }
+      624 |   req.tenant = { tenantId, slug: meta?.slug ?? null, role, source, isPlatform: meta?.isPlatform ?? false };
+      625 |   return req.tenant;
+
+      at attachTenantContext (src/middleware/auth-supabase-jwt.ts:622:13)
+      at requireAuthWithTenant (src/middleware/auth-supabase-jwt.ts:822:3)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=11111111-1111-4111-8111-000000000050
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+  console.warn
+    {"event":"tenant_meta_unavailable","vtid":"VTID-05149","tenant_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"}
+
+      620 |   const meta = await getTenantMeta(tenantId);
+      621 |   if (!meta) {
+    > 622 |     console.warn(JSON.stringify({ event: 'tenant_meta_unavailable', vtid: 'VTID-05149', tenant_id: tenantId }));
+          |             ^
+      623 |   }
+      624 |   req.tenant = { tenantId, slug: meta?.slug ?? null, role, source, isPlatform: meta?.isPlatform ?? false };
+      625 |   return req.tenant;
+
+      at attachTenantContext (src/middleware/auth-supabase-jwt.ts:622:13)
+      at requireAuthWithTenant (src/middleware/auth-supabase-jwt.ts:822:3)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=11111111-1111-4111-8111-000000000051
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+  console.warn
+    {"event":"tenant_meta_unavailable","vtid":"VTID-05149","tenant_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"}
+
+      620 |   const meta = await getTenantMeta(tenantId);
+      621 |   if (!meta) {
+    > 622 |     console.warn(JSON.stringify({ event: 'tenant_meta_unavailable', vtid: 'VTID-05149', tenant_id: tenantId }));
+          |             ^
+      623 |   }
+      624 |   req.tenant = { tenantId, slug: meta?.slug ?? null, role, source, isPlatform: meta?.isPlatform ?? false };
+      625 |   return req.tenant;
+
+      at attachTenantContext (src/middleware/auth-supabase-jwt.ts:622:13)
+      at requireAuthWithTenant (src/middleware/auth-supabase-jwt.ts:822:3)
+
+  console.error
+    [orb/session/commit-memory] failed: extraction pipeline exploded
+
+      2366 |       return res.json({ ok: true, ...result, vtid: VTID });
+      2367 |     } catch (err) {
+    > 2368 |       console.error(
+           |               ^
+      2369 |         `[orb/session/commit-memory] failed: ${err instanceof Error ? err.message : String(err)}`,
+      2370 |       );
+      2371 |       return res.status(500).json({ ok: false, error: 'commit_failed', vtid: VTID });
+
+      at src/routes/orb-livekit.ts:2368:15
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at next (node_modules/express/lib/router/route.js:149:13)
+      at requireAuthWithTenant (src/middleware/auth-supabase-jwt.ts:824:3)
+
+  console.log
+    [VTID-ORBC] JWT verified via platform secret: user=11111111-1111-4111-8111-000000000052
+
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:333:15)
+
+  console.warn
+    {"event":"tenant_meta_unavailable","vtid":"VTID-05149","tenant_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"}
+
+      620 |   const meta = await getTenantMeta(tenantId);
+      621 |   if (!meta) {
+    > 622 |     console.warn(JSON.stringify({ event: 'tenant_meta_unavailable', vtid: 'VTID-05149', tenant_id: tenantId }));
+          |             ^
+      623 |   }
+      624 |   req.tenant = { tenantId, slug: meta?.slug ?? null, role, source, isPlatform: meta?.isPlatform ?? false };
+      625 |   return req.tenant;
+
+      at attachTenantContext (src/middleware/auth-supabase-jwt.ts:622:13)
+      at requireAuthWithTenant (src/middleware/auth-supabase-jwt.ts:822:3)
+
+FAIL test/routes/orb-livekit.test.ts
+  orb-livekit routes
+    GET /orb/active-provider
+      ✓ unauthenticated caller with no config row defaults to vertex (18 ms)
+      ✓ global=livekit but canary disabled → effective stays vertex (canary_disabled) (4 ms)
+      ✓ global=livekit + missing LiveKit creds → livekit_config_invalid regardless of canary (2 ms)
+      ✓ canary-eligible caller but backend agent not ready → pinned_until_agent_ready + OASIS emitted (17 ms)
+      ✓ all gates pass → effectiveProvider=livekit, no pinned OASIS event (4 ms)
+      ✓ returns 500 when an internal lookup throws (2 ms)
+    POST /orb/active-provider
+      ✓ 400 on an invalid provider value (11 ms)
+      ✓ 403 when caller is authenticated but not exafy_admin (5 ms)
+      ✓ 401 unauthenticated (5 ms)
+      ✓ admin flips vertex → livekit: writes system_config, audits, emits OASIS (6 ms)
+      ✓ 429 when a flip is attempted inside the 1-hour cooldown window (4 ms)
+      ✓ idempotent no-op flip (same provider) skips the cooldown gate and returns ok (4 ms)
+      ✓ 500 when the system_config upsert fails (3 ms)
+      ✓ 500 when supabase is unavailable (4 ms)
+      ✓ 409 nova_global_flip_locked when NOVA_SONIC_ALLOW_GLOBAL_FLIP is not set (4 ms)
+      ✓ 409 nova_not_ready when unlocked but Nova runtime is not configured (3 ms)
+      ✓ permits a nova_sonic flip when unlocked AND the runtime reports ready (4 ms)
+    GET /orb/nova-sonic/health
+      ✓ reports disabled + not ready when NOVA_SONIC_ENABLED is unset (2 ms)
+      ✓ surfaces a typed issue for an invalid region override without leaking secrets (2 ms)
+      cascade block (VTID-03721)
+        ✓ reports effective=true only when BOTH gates are set (2 ms)
+        ✓ reports enabled=true but effective=false when Vertex is not marked dead (2 ms)
+        ✓ reports the per-language routing verdict Polish and Portuguese get (2 ms)
+        ✓ leaks nothing through the new block on this public route (2 ms)
+    POST /orb/livekit/token
+      ✓ 503 provider_standby when active_provider is not livekit (2 ms)
+      ✓ 500 livekit_misconfigured when active=livekit but env vars are missing (5 ms)
+      ✓ mints a token for an authenticated user with correct grants + metadata (5 ms)
+      ✓ mints an anonymous token with no user_jwt and an anon- identity (2 ms)
+      ✓ a mobile caller that declares no surface gets the member (community) role (3 ms)
+      ✕ VTID-04776: a phone showing the admin screens gets the admin Vitana — the device does not decide (6 ms)
+      ✕ VTID-04776: the same declaration resolves the same role on desktop and mobile (9 ms)
+      ✓ VTID-04776: emits orb.livekit.session.minted with tenant, surface, role and lang (4 ms)
+      ✓ defaults lang to "en" and agent_id to "vitana" when omitted (2 ms)
+      ✓ forwards the real client IP from x-forwarded-for, not the agent egress IP (2 ms)
+      ✓ drops a loopback client IP rather than embedding it (1 ms)
+    GET /orb/livekit/health
+      ✓ reports agent unreachable when ORB_AGENT_URL is unset (1 ms)
+      ✓ reports agent reachable when the probe responds 200 (2 ms)
+      ✓ failure mode: agent probe network error → reachable=false, never 500s the whole health check (2 ms)
+      ✓ failure mode: agent probe returns non-2xx → reachable=false (1 ms)
+      ✓ surfaces which STT/TTS/LLM providers have API keys configured (1 ms)
+    GET /orb/livekit/sessions/health
+      ✓ 401 unauthenticated (2 ms)
+      ✓ 403 non-admin (3 ms)
+      ✓ 503 when supabase is unavailable (3 ms)
+      ✓ computes active/expired/stuck counts for an admin caller (26 ms)
+      ✓ honors ?stale_minutes= override (5 ms)
+      ✓ degrades gracefully (not 500) when the migration has not landed yet (3 ms)
+      ✓ 500 when the query throws synchronously (3 ms)
+    GET /orb/context-bootstrap
+      ✕ anonymous request resolves lang from Accept-Language and renders a system instruction (5 ms)
+      ✓ ?lang= query param wins over the Accept-Language header (2 ms)
+      ✓ falls back to the stored preferred_language fact when no query lang is given (authenticated) (6 ms)
+      ✓ greeting_only=true returns the fast-path payload with slow fields empty (2 ms)
+      ✓ greeting_only=true for an authenticated user resolves first_name from display_name (2 ms)
+      ✓ greeting_only=true falls back to memory_facts.user_name when display_name is null (2 ms)
+      ✓ full path for an authenticated user assembles identity facts + Vitana Index + Life Compass into bootstrap_context (3 ms)
+      ✓ L1 in-memory cache hit on a repeat call skips the DB batch entirely (4 ms)
+      ✓ L2 shared-cache hit re-populates L1 and returns cache_layer=l2_supabase (3 ms)
+      ✓ specialist persona (devon) uses the persona system_prompt instead of buildLiveSystemInstruction (18 ms)
+      ✓ specialist persona with no system_prompt on file falls back to the Vitana builder (4 ms)
+      ✓ failure mode: decision-context compile throwing degrades gracefully (no 500, decision_context null) (5 ms)
+      ✓ failure mode: wake-brief decision throwing degrades gracefully (wake_brief_decision null, still 200) (4 ms)
+      ✓ failure mode: buildLiveSystemInstruction throwing still returns 200 with system_instruction null (3 ms)
+      ✓ re-renders with the LiveKit first-turn suppression block when a wake-brief candidate has a spoken line (4 ms)
+      ✓ does NOT apply the first-turn suppression override on a reconnect (3 ms)
+      ✓ echoes current_route and comma-separated recent_routes back in the response (2 ms)
+      ✓ does not crash and degrades to the anonymous-style path when supabase is entirely unavailable (2 ms)
+    GET /voice-providers
+      ✓ returns an empty list when supabase is unavailable (1 ms)
+      ✓ degrades gracefully with a note when the migration has not landed (1 ms)
+      ✓ returns enabled providers (1 ms)
+    POST /voice-providers/:id/test
+      ✓ 404 for an unknown provider id (3 ms)
+      ✓ ok=false with a typed detail when the required API key env var is missing (2 ms)
+      ✓ ok=true when the key is configured and the HEAD probe succeeds (1 ms)
+      ✓ failure mode: network error on the probe → ok=false with a network detail (1 ms)
+      ✓ azure providers use an env-only check (no network probe) (2 ms)
+      ✓ google_stt has no required env key and probes directly (2 ms)
+    GET /agents/:id/voice-config
+      ✓ 401 unauthenticated (1 ms)
+      ✓ returns null config when supabase is unavailable (29 ms)
+      ✓ returns the stored config for the agent (3 ms)
+    PUT /agents/:id/voice-config
+      ✓ 401 unauthenticated (2 ms)
+      ✓ 400 on an invalid transport value (3 ms)
+      ✓ 400 when a referenced provider is unknown or disabled (5 ms)
+      ✓ 500 when supabase is unavailable (4 ms)
+      ✓ upserts a valid config and emits an OASIS event (4 ms)
+      ✓ 500 when the upsert fails (3 ms)
+    POST /agents/:id/voice-config/test-session
+      ✓ 401 unauthenticated (2 ms)
+      ✓ 500 livekit_misconfigured when env vars are missing (4 ms)
+      ✓ mints a short-TTL ephemeral token carrying the proposed (unsaved) config (4 ms)
+      ✓ defaults lang to "en" when the proposed config omits it (4 ms)
+    POST /orb/session/commit-memory
+      ✓ 401 unauthenticated (1 ms)
+      ✓ commits and emits an info-status OASIS event when the transcript is long enough (3 ms)
+      ✓ reports committed=false with a warning-status OASIS event for a too-short transcript (3 ms)
+      ✓ defaults session_id to a unique userId-derived value when omitted (VTID-04365) (6 ms)
+      ✓ failure mode: commitSessionMemory throwing returns 500 commit_failed, never crashes (3 ms)
+      ✓ treats a missing/non-string transcript as empty rather than throwing (2 ms)
+
+  ● orb-livekit routes › POST /orb/livekit/token › VTID-04776: a phone showing the admin screens gets the admin Vitana — the device does not decide
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "admin"
+    Received: "community"
+
+      839 |       const metadataArg = JSON.parse(mockAccessTokenCtor.mock.calls[0][2].metadata);
+      840 |       expect(metadataArg.is_mobile).toBe(true);
+    > 841 |       expect(metadataArg.role).toBe('admin');
+          |                                ^
+      842 |       expect(metadataArg.surface).toBe('admin');
+      843 |     });
+      844 |
+
+      at Object.<anonymous> (test/routes/orb-livekit.test.ts:841:32)
+
+  ● orb-livekit routes › POST /orb/livekit/token › VTID-04776: the same declaration resolves the same role on desktop and mobile
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 2
+    + Received  + 2
+
+      Array [
+    -   "backoffice",
+    -   "backoffice",
+    +   "community",
+    +   "community",
+      ]
+
+      858 |         roles.push(JSON.parse(mockAccessTokenCtor.mock.calls[0][2].metadata).role);
+      859 |       }
+    > 860 |       expect(roles).toEqual(['backoffice', 'backoffice']);
+          |                     ^
+      861 |     });
+      862 |
+      863 |     it('VTID-04776: emits orb.livekit.session.minted with tenant, surface, role and lang', async () => {
+
+      at Object.<anonymous> (test/routes/orb-livekit.test.ts:860:21)
+
+  ● orb-livekit routes › GET /orb/context-bootstrap › anonymous request resolves lang from Accept-Language and renders a system instruction
+
+    expect(jest.fn()).toHaveBeenCalledWith(...expected)
+
+    Expected: "de", Any<String>, Any<String>, "community", undefined, undefined, false, null, null, null, undefined, null, true
+    Received: "de", "friendly, calm, empathetic", "Role: community.
+    Language: de.
+
+    [BEHAVIORAL RULE]", "community", undefined, undefined, false, null, null, null, undefined, null, true, "vitanaland"
+
+    Number of calls: 1
+
+      1094 |       expect(res.body.ok).toBe(true);
+      1095 |       expect(res.body.system_instruction).toBe('MOCK_SYSTEM_INSTRUCTION');
+    > 1096 |       expect(mockBuildLiveSystemInstruction).toHaveBeenCalledWith(
+           |                                              ^
+      1097 |         'de',
+      1098 |         expect.any(String),
+      1099 |         expect.any(String),
+
+      at Object.<anonymous> (test/routes/orb-livekit.test.ts:1096:46)
+
+Test Suites: 1 failed, 1 total
+Tests:       3 failed, 89 passed, 92 total
+Snapshots:   0 total
+Time:        1.222 s
+Ran all test suites matching /test\/routes\/orb-livekit.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
