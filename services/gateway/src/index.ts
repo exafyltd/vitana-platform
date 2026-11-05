@@ -241,6 +241,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
     gitlabWebhookBodyErrors,
     GITLAB_WEBHOOK_BODY_LIMIT,
   } = require('./routes/internal-gitlab-webhook');
+  // VTID-05547 (plan agentic-delivery §3.11, §3.12): the GitLab delivery stage in front of that router, and the
+  // Delivery read routes (GET /api/v1/delivery/summary and /metrics, service token or exafy_admin).
+  const { createGitlabDeliveryStage, oasisBranchVtidLookup } = require('./services/gitlab-events/delivery-stage');
+  const deliveryRouter = require('./routes/delivery').default;
   // VTID-02000: User limitations CRUD + impact counter
   const userLimitationsRouter = require('./routes/user-limitations').default;
   // VTID-02000: Wearables waitlist (Phase 0 stub — still works alongside Phase 1 connector flow)
@@ -1281,6 +1285,11 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/internal/marketplace', internalMarketplaceSyncRouter, { owner: 'marketplace-sync' });
   mountRouterSync(app, '/api/v1/internal/auth-bridge', authBridgeRouter, { owner: 'auth-bridge' });
   mountRouterSync(app, '/api/v1/internal/health-erasure', healthErasureInternalRouter, { owner: 'health-erasure-internal' });
+  // VTID-05547: the delivery stage answers every POST /api/v1/internal/gitlab/webhook (signature checked by the
+  // M2 route's own gate, unchanged) and records the delivery events; it is middleware, not a second route, so the
+  // route guard still sees one handler for the endpoint. The router below stays mounted unchanged: its mount line
+  // and tests are pinned by VTID-05541, and a request the stage does not take falls through to it.
+  app.use('/api/v1/internal/gitlab/webhook', createGitlabDeliveryStage({ map: { lookupBranchVtid: oasisBranchVtidLookup() } }));
   // VTID-05541: POST /api/v1/internal/gitlab/webhook (raw body parser above, before express.json()).
   mountRouterSync(app, '/api/v1/internal/gitlab', internalGitlabWebhookRouter, { owner: 'internal-gitlab-webhook' });
 
@@ -1529,6 +1538,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/ops/health', opsHealthChecksRouter, { owner: 'ops-health-checks' });
   // VTID-04664: GET /api/v1/ops/runtime/* — deploy, AWS runtime, autopilot, voice, data, support checks
   mountRouterSync(app, '/api/v1/ops/runtime', opsRuntimeHealthRouter, { owner: 'ops-runtime-health' });
+  // VTID-05547: GET /api/v1/delivery/summary and /metrics — the Command Hub Delivery module (service token or exafy_admin)
+  mountRouterSync(app, '/api/v1/delivery', deliveryRouter, { owner: 'delivery' });
 
   // VTID-01097: Diary Templates - guided diary templates for memory quality
   mountRouterSync(app, '/api/v1/diary', diaryRouter, { owner: 'diary' });
