@@ -1,4 +1,4 @@
-# node scripts/ci/staging-verify/run.mjs check-pr --service gateway --repo-root /projects/sandbox/.rv/mq --base 0f45367bb69a8661eca6d5170ebb33909d03d001 --head 3c5ced1a5fc9f359d3ec5ae5507bd980a46df31a --title "VTID-05549 (agentic-delivery/merge-queue): merge queue, cross-repo review source, governance jobs and assist trigger on the GitLab merge bot"
-# base = origin/main when the lane was rebuilt (after merge-bot #4697); head = a commit object of this lane's staged tree (never a ref, never pushed), 2026-11-05T22:16:54Z
+# node scripts/ci/staging-verify/run.mjs check-pr --service gateway --repo-root /projects/sandbox/.rv/mq --base 0e5a74a72a8fe26785df3133f4133b3e99b97efd --head 97c04e384c729757cd1831d9c768c2272a7e0983 --title "VTID-05549 (agentic-delivery/merge-queue): merge queue, cross-repo review source, governance jobs and assist trigger on the GitLab merge bot"
+# base = origin/main merged into the lane (after settings #4711); head = a commit object of this lane's staged tree (never a ref, never pushed), 2026-11-05T22:47:11Z
 [staging-verify] PR touches no gateway deploy path — nothing deploys, no staging suite needed.
 exit 0

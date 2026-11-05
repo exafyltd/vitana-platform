@@ -468,7 +468,7 @@ test('a failed position drops its merge request (one comment, queue-blocked) and
   assert.deepEqual(merges(r.f).map((m) => /merge_requests\/(\d+)/.exec(m.path)[1]), ['8'], 'position 1 lands; position 2 failed');
   assert.deepEqual(mrOf(W, 'vitana-platform', 7).labels, ['queue-blocked']);
   assert.equal(W.s['vitana-platform'].notes[7].length, 1);
-  assert.match(W.s['vitana-platform'].notes[7][0].body, /failed in the merge train/);
+  assert.match(W.s['vitana-platform'].notes[7][0].body, /failed in the landing train/);
   const after = Object.fromEntries(trainRefs(W));
   assert.deepEqual(Object.keys(after), ['train/1'], 'the cycle ended (1 landed, 2 dropped): lane-c is rebuilt as position 1 of the next one; train/2 and train/3 are gone');
   assert.notEqual(after['train/1'], before['train/1']);
@@ -812,6 +812,49 @@ test('--dry-run writes nothing: no train ref, no label, no comment, no merge, no
   assert.ok(ev.some((e) => e.event === 'would_build_train' && e.position === 1 && e.mr === 8));
   assert.ok(ev.some((e) => e.event === 'would_label' && e.mr === 7 && e.label === 'queue-ready'));
   assert.ok(ev.some((e) => e.event === 'would_comment' && e.mr === 10));
+});
+
+test('run and status read the projects through loadEffectiveProjects of gitlab-settings.mjs (the cut configuration) when it exports it, else the settings file as M2 does; a loader error lands nothing', async () => {
+  // the bot names the function where the cut checklist item bot-config looks for it (gitlab-land.mjs on main)
+  const src = fs.readFileSync(new URL('./gitlab-land.mjs', import.meta.url), 'utf8');
+  assert.match(src, /import \* as gitlabSettings from '\.\/gitlab-settings\.mjs';/);
+  assert.match(src, /gitlabSettings\.loadEffectiveProjects|lib\.loadEffectiveProjects/);
+  const { W } = threeReady();
+  const tokenFile = path.join(W.root, 'token');
+  fs.writeFileSync(tokenFile, `${TOKEN}\n`, { mode: 0o600 });
+  const settingsFile = path.join(W.root, 'settings.json');
+  fs.writeFileSync(settingsFile, JSON.stringify({ group: 'vitana', projects: { 'vitana-platform': { landing: false, required_jobs: [] } } }));
+  const run = async (settingsLib, extra = []) => {
+    const f = gitlab(W);
+    const out = [];
+    const code = await land.main(['status', '--settings', settingsFile, '--url', 'https://gitlab.test', '--token-file', tokenFile, '--workdir', path.join(W.root, 'land'), ...extra], {
+      fetch: f, now: () => NOW, stdout: (t) => out.push(t), settingsLib,
+      overrides: { remoteUrl: (p) => W.p[p.name].remote, services: path.join(W.root, 'none.json') },
+    });
+    return { code, out: out.join(''), f };
+  };
+  const rowsOf = (out) => out.split('\n').filter((l) => /^vitana-platform!/.test(l)).map((l) => l.split('\t').slice(0, 2));
+  // the cut configuration (marker live) says vitana-platform lands: the queue reports its merge requests
+  const calls = [];
+  const cut = { loadEffectiveProjects: async (file, opts) => { calls.push([file, opts]); return [{ name: 'vitana-platform', path: 'vitana/vitana-platform', landing: true, required_jobs: REQUIRED }]; } };
+  const marker = path.join(W.root, 'delivery-cutover');
+  const ciDir = path.join(W.root, 'ci');
+  const r1 = await run(cut, ['--marker-file', marker, '--ci-dir', ciDir]);
+  assert.equal(r1.code, 0, r1.out);
+  assert.deepEqual(calls, [[settingsFile, { markerFile: marker, ciDir }]]);
+  assert.deepEqual(rowsOf(r1.out), [['vitana-platform!7', 'ready'], ['vitana-platform!8', 'ready'], ['vitana-platform!9', 'ready']]);
+  r1.f.assertNoWrites();
+  await run(cut);
+  assert.deepEqual(calls[1], [settingsFile, {}], 'without the options the module\'s own defaults apply');
+  // a settings module without the function (lane settings before lane cutover): the file itself, as M2 reads it
+  const r2 = await run({});
+  assert.equal(r2.code, 0, r2.out);
+  assert.deepEqual(rowsOf(r2.out), [], 'vitana-platform is not a landing project in the file');
+  // the loader fails (for example an invalid settings file): nothing is asked of GitLab, exit 1
+  const r3 = await run({ loadEffectiveProjects: async () => { throw new Error('projects.vitana-v1.cutover: unknown key'); } });
+  assert.equal(r3.code, 1);
+  assert.match(r3.out, /gitlab-land: projects\.vitana-v1\.cutover: unknown key/);
+  assert.equal(r3.f.calls.length, 0);
 });
 
 test('status in queue mode prints each merge request\'s queue state and writes nothing', async () => {

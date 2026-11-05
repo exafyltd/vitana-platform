@@ -1,21 +1,23 @@
-# land-guard.mjs and queue.mjs are not edited by this lane (tasks.md Q2/Q3). Lane diff = 0f45367bb69a8661eca6d5170ebb33909d03d001 (origin/main when the lane was rebuilt) ... the lane's tree, 2026-11-05T22:16:54Z.
-$ git diff --stat 0f45367bb69a8661eca6d5170ebb33909d03d001... -- scripts/collab/land-guard.mjs scripts/collab/queue.mjs scripts/collab/protected-gate-files.json   (and the staged tree)
+# land-guard.mjs and queue.mjs are not edited by this lane (tasks.md Q2/Q3). Lane diff = 0e5a74a72a8fe26785df3133f4133b3e99b97efd (origin/main when the lane was rebuilt) ... the lane's tree, 2026-11-05T22:47:11Z.
+$ git diff --stat 0e5a74a72a8fe26785df3133f4133b3e99b97efd... -- scripts/collab/land-guard.mjs scripts/collab/queue.mjs scripts/collab/protected-gate-files.json   (and the staged tree)
 (empty: untouched)
-$ git hash-object scripts/collab/land-guard.mjs scripts/collab/queue.mjs scripts/collab/protected-gate-files.json; git rev-parse 0f45367bb69a8661eca6d5170ebb33909d03d001:<each>
+$ git hash-object scripts/collab/land-guard.mjs scripts/collab/queue.mjs scripts/collab/protected-gate-files.json; git rev-parse 0e5a74a72a8fe26785df3133f4133b3e99b97efd:<each>
 d37f3bf71bd889ff041a113590bd0d9627220536
 c76800f33182388113a41a8ac3dbf9b225bf5b2c
 c50b9e3d6eed2e019ed6ccd0227ab223c4a689b3
 d37f3bf71bd889ff041a113590bd0d9627220536
 c76800f33182388113a41a8ac3dbf9b225bf5b2c
 c50b9e3d6eed2e019ed6ccd0227ab223c4a689b3
-$ git diff --name-only 0f45367bb69a8661eca6d5170ebb33909d03d001... ; git diff --cached --name-only   (every file the lane changes, committed and staged)
+$ git diff --name-only 0e5a74a72a8fe26785df3133f4133b3e99b97efd... ; git diff --cached --name-only   (every file the lane changes, committed and staged)
 docs/validation/VTID-05549/acceptance.md
 docs/validation/VTID-05549/commands.log
 docs/validation/VTID-05549/outputs/dry-run-12.mjs
 docs/validation/VTID-05549/outputs/dry-run-12.txt
 docs/validation/VTID-05549/outputs/green.txt
 docs/validation/VTID-05549/outputs/red-adapt.txt
+docs/validation/VTID-05549/outputs/red-effective.txt
 docs/validation/VTID-05549/outputs/red-fix-same-tick.txt
+docs/validation/VTID-05549/outputs/red-free-tier-guard.txt
 docs/validation/VTID-05549/outputs/red-on-base.txt
 docs/validation/VTID-05549/outputs/red-on-stub.txt
 docs/validation/VTID-05549/outputs/staging-check-pr.txt

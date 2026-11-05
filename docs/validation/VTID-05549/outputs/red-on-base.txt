@@ -1,10 +1,10 @@
-# Red on base: the four new test files (final versions) run against origin/main 0f45367bb69a8661eca6d5170ebb33909d03d001
-# (main after eng-gitlab-m2 merge-bot #4697 = 72dbefbaae; it also holds plan PR #4718 and github-bridge #4689), without this lane's code.
-# Run in /projects/sandbox/.scratch/tools/6eb1/base (git archive of the base's scripts/ plus the four test files; outside the repo), 2026-11-05T22:16:54Z.
+# Red on base: the four new test files (final versions) run against origin/main 0e5a74a72a8fe26785df3133f4133b3e99b97efd
+# (main after eng-gitlab-m2 merge-bot #4697 = 72dbefbaae and settings #4711 = 0e5a74a72a; it also holds #4718, #4689, #4716), without this lane's code.
+# Run in /projects/sandbox/.scratch/tools/6eb1/base (git archive of the base's scripts/ plus the four test files; outside the repo), 2026-11-05T22:47:11Z.
 # command: node --test scripts/eng/review-source.test.mjs scripts/eng/gitlab-gates.test.mjs scripts/eng/assist-trigger.test.mjs scripts/eng/gitlab-land-queue.test.mjs
-# result: tests 31, pass 0, fail 31. The three new modules do not exist on base, so each of their files fails as a whole (ERR_MODULE_NOT_FOUND;
-# per-test counts against no-behaviour stubs: red-on-stub.txt, 30 of 30 fail); all 28 tests of gitlab-land-queue.test.mjs fail (no queue mode on base).
-# The five tests added on the rebuilt branch are also red on the lane's code before them: red-adapt.txt (four) and red-fix-same-tick.txt (one).
+# result: tests 32, pass 0, fail 32. The three new modules do not exist on base, so each of their files fails as a whole (ERR_MODULE_NOT_FOUND;
+# per-test counts against no-behaviour stubs: red-on-stub.txt, 30 of 30 fail); all 29 tests of gitlab-land-queue.test.mjs fail (no queue mode on base).
+# The six tests added on the rebuilt branch are also red on the lane's code before them: red-adapt.txt (four), red-fix-same-tick.txt (one), red-effective.txt (one).
 
 # throw new ERR_MODULE_NOT_FOUND(
 # Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/projects/sandbox/.scratch/tools/6eb1/base/scripts/eng/assist-trigger.mjs' imported from /projects/sandbox/.scratch/tools/6eb1/base/scripts/eng/assist-trigger.test.mjs
@@ -41,15 +41,16 @@ not ok 26 - a protected gate file is refused with one comment and never enters t
 not ok 27 - assist: one assist/<iid>-<rule> pipeline per head and rule; the merge request waits for it; never after an accept
 not ok 28 - cross-repo: vitana-v1 lanes land on their platform review entries; a reviewer session on a merge-request commit is refused; an unreachable platform lands nothing
 not ok 29 - --dry-run writes nothing: no train ref, no label, no comment, no merge, no state file
-not ok 30 - status in queue mode prints each merge request's queue state and writes nothing
+not ok 30 - run and status read the projects through loadEffectiveProjects of gitlab-settings.mjs (the cut configuration) when it exports it, else the settings file as M2 does; a loader error lands nothing
+not ok 31 - status in queue mode prints each merge request's queue state and writes nothing
 # throw new ERR_MODULE_NOT_FOUND(
 # Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/projects/sandbox/.scratch/tools/6eb1/base/scripts/eng/review-source.mjs' imported from /projects/sandbox/.scratch/tools/6eb1/base/scripts/eng/review-source.test.mjs
 # code: 'ERR_MODULE_NOT_FOUND',
 not ok 4 - scripts/eng/review-source.test.mjs
-# tests 31
+# tests 32
 # suites 0
 # pass 0
-# fail 31
+# fail 32
 # cancelled 0
 # skipped 0
 # todo 0

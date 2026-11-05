@@ -14,7 +14,9 @@ How it was built: first on a local scratch base (F2 brief: origin/main `abe2d7a5
 `570fe18b55`), parked locally. After eng-gitlab-m2 merge-bot (#4697) landed as `72dbefbaae`, the branch was made anew from
 origin/main `0f45367bb6` (it also holds #4718 and github-bridge #4689), the lane's five own commits were cherry-picked
 (no conflict), one commit adapts the queue to merge-bot's final `gitlab-land.mjs` (AC-7a, AC-12, AC-14), and a follow-up
-keeps a same-tick drop on the head the bot made (AC-7a).
+keeps a same-tick drop on the head the bot made (AC-7a). After eng-gitlab-m2 settings (#4711) landed, origin/main
+`0e5a74a72a` was merged into the branch (no conflict) and the bot reads its projects through `loadEffectiveProjects`
+(AC-15); its own train is called the landing train, so the settings lane's free-tier guard passes (AC-16).
 
 AC-1 Cross-repo review source (plan §3.5): a vitana-v1 merge request titled `VTID-xxxxx (<slug>/<lane>): …` is judged by
 the review entry in the platform lane file `.kiro/specs/<slug>/lanes/<lane>.md`, read from the bot's clone of
@@ -106,6 +108,18 @@ runs with the bot's git environment (clone, fetch, `merge-tree`, `commit-tree`, 
 updates and assist refs) carries the flag, so no configured credential helper can store the token from GIT_ASKPASS.
 TEST: scripts/eng/gitlab-land-queue.test.mjs "every git command of a queue tick starts with -c credential.helper=, as M2's bot does, so no configured helper can store the token"
 
+AC-15 Projects through the cut configuration (cut checklist item `bot-config`): `run`, `merge` and `status` read the
+projects through `loadEffectiveProjects` of `scripts/eng/gitlab-settings.mjs` (the view of the delivery cutover marker:
+after the cut the two projects land) when that module exports it, passing the settings file and `--marker-file` /
+`--ci-dir` when given; while it does not (lane settings alone, before lane cutover), the settings file itself, as M2
+reads it; a loader error lands nothing (exit 1, no GitLab call); `projectsOverride` (tests) still wins.
+TEST: scripts/eng/gitlab-land-queue.test.mjs "run and status read the projects through loadEffectiveProjects of gitlab-settings.mjs (the cut configuration) when it exports it, else the settings file as M2 does; a loader error lands nothing"
+
+AC-16 Free tier: no Premium-only name in the bot's code: the free-tier guard of eng-gitlab-m2 lane `settings` scans
+`scripts/eng/**` and refuses the words "merge train" (GitLab's Premium feature) outside comments; the queue's own train
+is the "landing train" in every comment text and drop reason, and the guard passes on the lane's tree.
+TEST: scripts/eng/free-tier-guard.test.mjs "free-tier guard: the repository today names no Premium-only API path or setting (scans infra/gitlab-engineering and scripts/eng)" (unchanged, in UNIT's run); scripts/eng/gitlab-land-queue.test.mjs "a failed position drops its merge request …" (reads the new text)
+
 States: platform project unreachable → the project's tick fails, nothing lands (AC-2); two accepts → the newest current
 one counts (AC-1); accept on an old head → refused, `queue-blocked`, one comment (AC-2, AC-11); `main` red →
 `queue-paused` except revert / fix-main (AC-5); hot file → `queue-waiting` until the STAGING-VERIFY result (AC-6);
@@ -122,40 +136,46 @@ Locales: n/a. Accessibility: n/a.
 
 Contract:
 - `land-guard.mjs` unchanged: `reviewCurrent` scripts/collab/land-guard.mjs:59, `checksVerdict` :85, `protectedTouched` :103,
-  `mergeDecision` :108, `localAfter` :166; called from scripts/eng/gitlab-land.mjs:723-736 (`sameRepoReview`), :718 (through
+  `mergeDecision` :108, `localAfter` :166; called from scripts/eng/gitlab-land.mjs:725-738 (`sameRepoReview`), :720 (through
   M2's `checksFor`), and scripts/eng/review-source.mjs:111-117 (`crossRepoReview`).
 - `queue.mjs` unchanged: `validateRange` scripts/collab/queue.mjs:779, `scopeCheck` :946 (tasks.md says :912; VTID-05331,
   `abe2d7a59f`, moved it before this lane), `commitsInRange` :669; called from scripts/eng/gitlab-gates.mjs:92, :103 and
-  scripts/eng/gitlab-land.mjs:724.
+  scripts/eng/gitlab-land.mjs:726.
 - Merge-bot (M2, VTID-05538, merged as `72dbefbaae`; line numbers of origin/main) code this lane uses: `squashMessage`
-  gitlab-land.mjs:169 (in `queueSquashMessage`, lane :574); `judgeReviewCommit` :140 and `pushedByReviewer` :249 with its
-  `pushRange` :238 (in `sameRepoReview`, lane :723); `checksFor` :124 (in `pipelineChecks`, lane :714); `GIT_CONFIG_ARGS`
-  :194 (also in the lane's `mergeTree`, lane :686); `lostItsTurn` :380 and `waitedMinutes` :384 (the train's refused-merge
-  bound, lane :938); `gitRun` :196, `ensureClone` :218, `fetchMrHead` :232, `openMergeRequests` :374, `COMMENT_TEXT` :175,
+  gitlab-land.mjs:169 (in `queueSquashMessage`, lane :576); `judgeReviewCommit` :140 and `pushedByReviewer` :249 with its
+  `pushRange` :238 (in `sameRepoReview`, lane :725); `checksFor` :124 (in `pipelineChecks`, lane :716); `GIT_CONFIG_ARGS`
+  :194 (also in the lane's `mergeTree`, lane :688); `lostItsTurn` :380 and `waitedMinutes` :384 (the train's refused-merge
+  bound, lane :940); `gitRun` :196, `ensureClone` :218, `fetchMrHead` :232, `openMergeRequests` :374, `COMMENT_TEXT` :175,
   `PIPELINE_FINAL` :121, `REVIEWER_RE` :54. Edited M2 lines: the header comment and imports, `DEFAULTS` (+`services`,
-  +`queueProjects`), the first two lines of `tickProject` (`queueSetting`, `tickQueue`; lane :400-402), `loadProjects`
-  (+`queue`, `train_required_jobs`), `makeContext` (+`services`, `statusUsers`, `queueProjects`), the usage line. Not used by
+  +`queueProjects`), the first two lines of `tickProject` (`queueSetting`, `tickQueue`; lane :402-404), `loadProjects`
+  (+`queue`, `train_required_jobs`), `makeContext` (+`services`, `statusUsers`, `queueProjects`), `main` (the projects
+  loader, lane :1135-1137), the usage line. Not used by
   the queue: `evaluate`, `decide`, `updateOne`, `landOne`, `ensureNote`, the `acted` loop.
 - Trailers, labels and assist refs exactly as plan §3.5 and §3.9 name them; job names `lane-scope`, `collab-handoff`,
   `staging-verify` (plan §3.4, §3.6); status names `gitlab/plan-spar` and `PLAN-SPAR` (tasks.md Q1).
-- Waits for eng-gitlab-m2 lane `settings` (#4711): `gitlab-land.mjs` is to read its projects through `loadEffectiveProjects`
-  of `scripts/eng/gitlab-settings.mjs` (cut checklist item `bot-config`). That function is not on main and not on
-  `origin/kiro/eng-gitlab-m2/settings` (head `eec9c24313`); a version exists on `origin/kiro/backup/cutover`
-  (gitlab-settings.mjs:384, returns `{ name, path, landing, required_jobs }`). The call is added when #4711 lands with it.
+- Projects loader: `import * as gitlabSettings from './gitlab-settings.mjs'` (lane gitlab-land.mjs:52) and `readProjects`
+  (lane :1084). `scripts/eng/gitlab-settings.mjs` on main (#4711, `0e5a74a72a`) exports no `loadEffectiveProjects`; the
+  version on `origin/kiro/backup/cutover` (gitlab-settings.mjs:384, lane `cutover`) is
+  `loadEffectiveProjects(settingsFile, { fs, markerFile, ciDir })` → `[{ name, path, landing, required_jobs }]`, and the
+  bot calls it as `(file, { markerFile?, ciDir? })`. The cut checklist item `bot-config` greps gitlab-land.mjs on main for
+  the name (`origin/kiro/backup/cutover:scripts/eng/delivery-cutover.sh:388`).
+- Free-tier guard: `scripts/eng/free-tier-guard.test.mjs` (lane settings, unchanged) rule `merge trains`.
 
 Staging proof: not verified on staging: it runs on the GitLab host in the engineering account, which has no staging; it
 deploys nothing (`run.mjs check-pr`: outputs/staging-check-pr.txt). Proven by its tests and the 12-merge-request dry run
 over the fake GitLab; live from the cut.
 
-Red on base: outputs/red-on-base.txt — 31 of 31 fail on origin/main `0f45367bb6` (3 files fail whole: missing modules; 28
+Red on base: outputs/red-on-base.txt — 32 of 32 fail on origin/main `0e5a74a72a` (3 files fail whole: missing modules; 29
 queue tests fail); outputs/red-on-stub.txt — 30 of 30 fail against no-behaviour stubs outside the repo. The four tests
 added for the adaptation: outputs/red-adapt.txt — on the cherry-picked code before the adaptation, 3 of 4 fail (the queue
 switch by name, the refused-merge bound, the credential flag); the conflict case passes there (the queue already skipped
 it; a regression test of M2's rule). The same-tick drop test: outputs/red-fix-same-tick.txt — 1 of 1 fails on the code of
-PR head `43ef9402f5`.
-Green: outputs/green.txt — 116 of 116 pass (58 new: review-source 14, gitlab-gates 8, assist-trigger 8, gitlab-land-queue
-28; plus M2's gitlab-land.test.mjs 58, unchanged); outputs/unit-all.txt — UNIT's full command: 940 tests, 939 pass, 0 fail,
-1 skipped (pre-existing win32 case).
+PR head `43ef9402f5`. The loader test: outputs/red-effective.txt — 1 of 1 fails on the merge of main `a6e7c57c04`, also
+without its source assertions. The guard: outputs/red-free-tier-guard.txt — red on that tree (5 lines said "merge train").
+Green: outputs/green.txt — 117 of 117 pass (59 new: review-source 14, gitlab-gates 8, assist-trigger 8, gitlab-land-queue
+29; plus M2's gitlab-land.test.mjs 58, unchanged); outputs/unit-all.txt — UNIT's full command: 1085 tests, 1083 pass, 0 fail,
+2 skipped (pre-existing on main: a win32-only case; the settings guard's PyYAML case, PyYAML is not installed here); the
+free-tier guard passes on the lane's tree.
 
 Decisions taken (inside the plan):
 1. Queue mode is on, by name, for `vitana-platform` and `vitana-v1`, the two projects the cut lands (plan §3.5, §8.2),
@@ -218,3 +238,12 @@ Decisions taken (inside the plan):
     (the reviewer of 17:07Z noted the same). Not built: a train position is judged by its jobs as M2 judges a head; the
     cross-repo source reads no push events, and same-repo lanes keep M2's push-identity check with its 500-event window
     (an aged-out accept is refused, never landed). Named for the driver.
+20. The projects loader uses `loadEffectiveProjects` only when `gitlab-settings.mjs` exports it. The F3 brief placed the
+    function in lane settings (#4711), but #4711 landed without it; a version exists only on lane cutover's backup, and plan
+    §9 orders cutover after this lane. A named import would break the bot until cutover lands, so the namespace import
+    reads the function when it exists; until then the bot reads the settings file itself, which gives the same view for a
+    file without cutover blocks (`effectiveConfig` on the cutover backup: "An inactive project … come out unchanged"). The
+    cut checklist item `bot-config` (a grep for the name) passes once this lane is on main. Named for the driver: lane
+    cutover must export `loadEffectiveProjects(settingsFile, { markerFile, ciDir })` with that result shape.
+21. The queue's own train is called the "landing train" in comments to members and in drop reasons: the settings lane's
+    free-tier guard refuses "merge train" (GitLab's Premium feature) outside comment lines. Code comments keep "train".

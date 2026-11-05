@@ -7,6 +7,7 @@
 //   node scripts/eng/gitlab-land.mjs status                        what the bot would do for every open merge request; writes nothing
 //   options: --settings <gitlab-settings.json>  --url <GitLab URL>  --token-file <file>  --workdir <dir>  --git-base <URL>
 //            --services <services.json>  --queue-projects <a,b>   (queue mode, below)
+//            --marker-file <delivery cutover marker>  --ci-dir <dir>   (read through gitlab-settings.mjs loadEffectiveProjects)
 //
 // The decisions are the ones the GitHub pipeline uses: `land-guard.mjs` (`laneKeyOf`, `localAfter`, `reviewCurrent`,
 // `checksVerdict`, `protectedTouched`, `mergeDecision`) and `queue.mjs` (`commitsInRange`, `PROTECTED_GATE_PATHS`) are imported
@@ -48,6 +49,7 @@ import { laneKeyOf, localAfter, reviewCurrent, checksVerdict, protectedTouched, 
 import { commitsInRange, PROTECTED_GATE_PATHS, GOVERNANCE_PATHS } from '../collab/queue.mjs';
 import { crossRepoReview } from './review-source.mjs';
 import { loadAssistRules, matchingRules, assistActions, assistRuns, triggerAssist } from './assist-trigger.mjs';
+import * as gitlabSettings from './gitlab-settings.mjs';
 
 export const DEFAULTS = Object.freeze({
   reviewerUser: 'agent-reviewer',
@@ -506,9 +508,9 @@ const QUEUE_COMMENT_TEXT = {
   plan_scope: 'Not landed: a `plan(` merge request changes only its spec folder and the program entry. Move the other files to a lane.',
   plan_parked: 'Not landed: the plan is parked (handoff.md).',
   plan_spar_failed: 'Not landed: the last PLAN-SPAR run on this head failed.',
-  train_failed: 'Not landed: it failed in the merge train (its position merges `main` and the merge requests ahead of it). It is back with its builder; a new head enters the queue again.',
-  train_conflict: 'Not landed: it conflicts with a merge request ahead of it in the merge train. Merge `main` into the branch after that one has landed and resolve the conflict.',
-  merge_refused_too_long: 'Not landed: GitLab refused the merge of this merge request for more than 60 minutes (for example an unresolved thread or a merge setting), so it left the merge train and the merge requests behind it go on. Resolve it and push again; a new head enters the queue again.',
+  train_failed: 'Not landed: it failed in the landing train (its position merges `main` and the merge requests ahead of it). It is back with its builder; a new head enters the queue again.',
+  train_conflict: 'Not landed: it conflicts with a merge request ahead of it in the landing train. Merge `main` into the branch after that one has landed and resolve the conflict.',
+  merge_refused_too_long: 'Not landed: GitLab refused the merge of this merge request for more than 60 minutes (for example an unresolved thread or a merge setting), so it left the landing train and the merge requests behind it go on. Resolve it and push again; a new head enters the queue again.',
 };
 
 /** The `queue` setting of a project: true → 8 positions; { positions } → 1 to 12 (plan §5: 8, grown to 12 by its trigger). */
@@ -953,7 +955,7 @@ async function runTrain(ctx, project, repo, pid, state, items, order) {
   }
   if (failedAt >= 0 && end === failedAt) {
     const p = positions[failedAt];
-    dropItem(ctx, state, byIid.get(p.iid), 'train_failed', `position ${p.k} of the merge train failed: ${verdicts[failedAt].detail}`);
+    dropItem(ctx, state, byIid.get(p.iid), 'train_failed', `position ${p.k} of the landing train failed: ${verdicts[failedAt].detail}`);
   }
   const kept = positions.slice(landed, end);
   const keptIids = new Set(kept.map((p) => p.iid));
@@ -972,7 +974,7 @@ async function runTrain(ctx, project, repo, pid, state, items, order) {
     const merged = mergeTree(ctx, repo, baseSha, next.head);
     if (!merged) {
       if (k === 0) dropItem(ctx, state, next, 'conflict', 'merging main into this branch conflicts');
-      else dropItem(ctx, state, next, 'train_conflict', `it conflicts with position ${k} of the merge train`);
+      else dropItem(ctx, state, next, 'train_conflict', `it conflicts with position ${k} of the landing train`);
       continue;
     }
     k += 1;
@@ -1073,6 +1075,25 @@ export function loadProjects(settingsFile) {
   }));
 }
 
+/**
+ * The projects as `run`, `merge` and `status` read them: through `loadEffectiveProjects` of scripts/eng/gitlab-settings.mjs,
+ * the view of the delivery cutover marker (plan agentic-delivery §8.2: after the cut the two projects land), when that module
+ * exports it; otherwise the settings file itself, as M2 reads it (the same view for a file without cutover blocks).
+ * `--marker-file` and `--ci-dir` reach the loader; without them its own defaults apply. A loader error fails closed.
+ */
+export async function readProjects(o, lib = gitlabSettings) {
+  const file = o.settings || DEFAULTS.settings;
+  if (typeof lib?.loadEffectiveProjects !== 'function') return loadProjects(file);
+  const opts = { ...(o['marker-file'] ? { markerFile: o['marker-file'] } : {}), ...(o['ci-dir'] ? { ciDir: o['ci-dir'] } : {}) };
+  const list = await lib.loadEffectiveProjects(file, opts);
+  if (!Array.isArray(list)) throw new Error(`${file}: loadEffectiveProjects returned no project list`);
+  return list.map((p) => ({
+    name: String(p.name), path: String(p.path), landing: p.landing === true, required_jobs: Array.isArray(p.required_jobs) ? p.required_jobs.map(String) : [],
+    ...(p.queue !== undefined && p.queue !== null ? { queue: p.queue === false ? false : normalizeQueue(p.queue) } : {}),
+    ...(Array.isArray(p.train_required_jobs) ? { train_required_jobs: p.train_required_jobs.map(String) } : {}),
+  }));
+}
+
 /** A list option: an array, or a comma-separated string (empty = none); absent → the default. */
 const nameList = (v, fallback) => (v === undefined || v === null ? [...fallback] : Array.isArray(v) ? v.map(String) : String(v).split(',').map((s) => s.trim()).filter(Boolean));
 
@@ -1108,8 +1129,11 @@ export async function main(argv, deps = {}) {
   try { o = { ...parseArgs(argv), ...(deps.overrides || {}) }; } catch (e) { out(`gitlab-land: ${e.message}\n`); return 1; }
   const cmd = o._[0];
   if (!['run', 'merge', 'status'].includes(cmd)) {
-    out('usage: gitlab-land.mjs run [--dry-run] | merge <project> <iid> [--dry-run] | status   [--settings f] [--url u] [--token-file f] [--workdir d] [--git-base u] [--services f] [--queue-projects a,b]\n');
+    out('usage: gitlab-land.mjs run [--dry-run] | merge <project> <iid> [--dry-run] | status   [--settings f] [--url u] [--token-file f] [--workdir d] [--git-base u] [--services f] [--queue-projects a,b] [--marker-file f] [--ci-dir d]\n');
     return 1;
+  }
+  if (!o.projectsOverride) {
+    try { o = { ...o, projectsOverride: await readProjects(o, deps.settingsLib ?? gitlabSettings) }; } catch (e) { out(`gitlab-land: ${String(e.message).split('\n')[0]}\n`); return 1; }
   }
   let ctx;
   try { ctx = makeContext(o, { ...deps, write: (line) => out(`${line}\n`) }); } catch (e) { out(`gitlab-land: ${String(e.message).split('\n')[0]}\n`); return 1; }

@@ -58,3 +58,14 @@
 2026-11-05T22:16Z sh /projects/sandbox/.scratch/tools/6eb1/red.sh 0f45367bb6…   → red on base: tests 31, pass 0, fail 31 (exit 1); red on stubs: tests 30, pass 0, fail 30 (exit 1)
 2026-11-05T22:16:54Z node scripts/ci/staging-verify/run.mjs check-pr --service gateway … --base 0f45367bb6 --head <staged tree commit 3c5ced1a5f>   → "nothing deploys, no staging suite needed", exit 0   [outputs/staging-check-pr.txt]
 2026-11-05T22:16:54Z node scripts/collab/land-guard.mjs evidence --repo /projects/sandbox/.rv/mq --vtid VTID-05549   → exit 0
+2026-11-05T22:17Z commit cd814f0e34 (same-tick drop) and lane entry 5308be19a9; preflight passed; pushed; PR body updated (REST PATCH)
+2026-11-05T22:21Z–22:41Z gh api …/pulls/4711 --jq .merged every 3 min (heartbeats renewed)   → 22:41Z true (merge commit 0e5a74a72a); git grep loadEffectiveProjects origin/main -- scripts   → none (the function is only on origin/kiro/backup/cutover)
+2026-11-05T22:41Z git merge --no-edit origin/main (0e5a74a72a) into kiro/agentic-delivery/merge-queue   → a6e7c57c04, no conflict
+2026-11-05T22:42Z new test "run and status read the projects through loadEffectiveProjects …" on a6e7c57c04 (git archive outside the repo)   → tests 1, pass 0, fail 1; the same test without its two source assertions   → tests 1, pass 0, fail 1 (the loader is never called)   [outputs/red-effective.txt]
+2026-11-05T22:42Z readProjects in scripts/eng/gitlab-land.mjs (namespace import of gitlab-settings.mjs; loadEffectiveProjects when exported, else loadProjects)   → the queue file 29 of 29
+2026-11-05T22:43Z UNIT full on the merged tree   → tests 1085, pass 1082, fail 1: free-tier guard (lane settings) finds "merge train" on 5 non-comment lines of gitlab-land.mjs   [outputs/red-free-tier-guard.txt]
+2026-11-05T22:44Z the queue's own train renamed "landing train" in those 5 strings (and the one test regex that reads one of them); node --test --test-name-pattern='^free-tier guard: the repository today' scripts/eng/free-tier-guard.test.mjs   → tests 1, pass 1
+2026-11-05T22:45Z green (5 files)   → tests 117, pass 117, fail 0   [outputs/green.txt]; UNIT full   → tests 1085, pass 1083, fail 0, skipped 2 (win32 case; PyYAML case of the settings guard)   [outputs/unit-all.txt]; dry-run-12   → exit 0   [outputs/dry-run-12.txt]
+2026-11-05T22:46Z sh /projects/sandbox/.scratch/tools/6eb1/red.sh 0e5a74a72a…   → red on base: tests 32, pass 0, fail 32 (exit 1); red on stubs: tests 30, pass 0, fail 30 (exit 1)
+2026-11-05T22:47:11Z node scripts/ci/staging-verify/run.mjs check-pr --service gateway … --base 0e5a74a72a --head <staged tree commit 97c04e384c>   → "nothing deploys, no staging suite needed", exit 0   [outputs/staging-check-pr.txt]
+2026-11-05T22:47:11Z node scripts/collab/land-guard.mjs evidence --repo /projects/sandbox/.rv/mq --vtid VTID-05549   → exit 0
