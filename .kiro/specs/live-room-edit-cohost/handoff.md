@@ -4,8 +4,10 @@ author: kiro
 author_seat: jtadic
 executor: kiro
 next_actor: kiro
-state: drafted
-updated: 2026-11-05T16:40Z
+state: approved
+updated: 2026-11-05T16:35Z
+sparring_record: .kiro/specs/live-room-edit-cohost/sparring/verdict.md
+vtids: [VTID-05558, VTID-05559, VTID-05560, VTID-05561]
 ---
 # Handoff — live-room-edit-cohost
 
@@ -27,3 +29,6 @@ the target database (`collaboration.md` §7d). Everything else runs without ques
 Written on the owner's request of 5 Nov 2026 (Edit Session must match Go Live; co-host picker; co-hosts can run the
 live). Investigation: EditSessionDialog.tsx, GoLivePopup.tsx, live.ts, room-session-manager.ts and the live-room SQL
 functions were read on origin/main; findings are in plan.md "Today".
+
+### 2026-11-05T16:35Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 4 lane(s) got a VTID and are handed to Kiro.

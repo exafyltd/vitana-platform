@@ -16,7 +16,8 @@ paths:
   - services/gateway/src/services/live-cohosts.ts
   - services/gateway/src/types/live-room.ts
   - services/gateway/test/live-room-cohost*.test.ts
-updated: 2026-11-05T16:40Z
+updated: 2026-11-05T16:35Z
+vtid: VTID-05559
 ---
 
 # Lane: gateway-cohost (repo exafyltd/vitana-platform)
@@ -27,3 +28,6 @@ tasks.md. `cancelSession` stays creator-only.
 ## Log
 ### 2026-11-05T16:40Z · kiro-jtadic-202611051617-04a8 · ready
 Lane created with the plan.
+
+### 2026-11-05T16:35Z · ci-plan-spar · ready (VTID allocated)
+VTID-05559 allocated after policy approval (converged-auto-v1).

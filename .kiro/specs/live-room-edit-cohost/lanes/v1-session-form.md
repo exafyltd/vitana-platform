@@ -32,7 +32,8 @@ paths:
   - src/i18n/zh/liveRooms.json
   - docs/SCREEN_INVENTORY.md
   - tests/e2e/staging/*live-room-cohost*.staging.spec.ts
-updated: 2026-11-05T16:40Z
+updated: 2026-11-05T16:35Z
+vtid: VTID-05561
 ---
 
 # Lane: v1-session-form (repo exafyltd/vitana-v1)
@@ -43,3 +44,6 @@ sends `co_hosts`. Tasks T1-T7 in tasks.md.
 ## Log
 ### 2026-11-05T16:40Z · kiro-jtadic-202611051617-04a8 · ready
 Lane created with the plan.
+
+### 2026-11-05T16:35Z · ci-plan-spar · ready (VTID allocated)
+VTID-05561 allocated after policy approval (converged-auto-v1).

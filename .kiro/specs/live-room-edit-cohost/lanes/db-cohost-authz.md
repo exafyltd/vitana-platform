@@ -16,7 +16,8 @@ paths:
   - scripts/ci/sql-tests/live-room-cohost.sql
   - .github/workflows/SQL-LIVE-ROOM-COHOST.yml
   - DATABASE_SCHEMA.md
-updated: 2026-11-05T16:40Z
+updated: 2026-11-05T16:35Z
+vtid: VTID-05558
 ---
 
 # Lane: db-cohost-authz (repo exafyltd/vitana-platform)
@@ -28,3 +29,6 @@ browser writes to `community_live_streams.co_hosts`. Tasks T1-T5 in tasks.md. Ap
 ## Log
 ### 2026-11-05T16:40Z · kiro-jtadic-202611051617-04a8 · ready
 Lane created with the plan.
+
+### 2026-11-05T16:35Z · ci-plan-spar · ready (VTID allocated)
+VTID-05558 allocated after policy approval (converged-auto-v1).
