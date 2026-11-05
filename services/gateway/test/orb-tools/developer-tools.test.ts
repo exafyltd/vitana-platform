@@ -34,6 +34,7 @@ const DEV_ID: OrbToolIdentity = { user_id: 'u-dev', tenant_id: 't-1', role: 'dev
 const ADMIN_ID: OrbToolIdentity = { user_id: 'u-adm', tenant_id: 't-1', role: 'exafy_admin' };
 const COMMUNITY_ID: OrbToolIdentity = { user_id: 'u-com', tenant_id: 't-1', role: 'community' };
 const ANON_ID: OrbToolIdentity = { user_id: '', tenant_id: null, role: 'developer' };
+const DEV_JWT_ID: OrbToolIdentity = { ...DEV_ID, user_jwt: 'dev-session-jwt' }; // approvals tools send the caller's own token (VTID-05452)
 
 // ---------------------------------------------------------------------------
 // Chainable Supabase stub. Per-table queue: each .from(table) call consumes
@@ -255,7 +256,7 @@ describe('dev_approve_pr', () => {
   it('asks for confirmation before mutating', async () => {
     const fetchFn = mockFetch(200, { ok: true });
     const sb = makeSb({ vtid_ledger: [ok([{ vtid: 'VTID-02700' }])] });
-    const r = await dev_approve_pr({ vtid: '2700' }, DEV_ID, sb);
+    const r = await dev_approve_pr({ vtid: '2700' }, DEV_JWT_ID, sb);
     expect(r.ok).toBe(true);
     expect((r as { result: { requires_confirmation: boolean } }).result.requires_confirmation).toBe(true);
     expect((r as { text: string }).text.toLowerCase()).toContain('confirm');
@@ -265,7 +266,7 @@ describe('dev_approve_pr', () => {
   it('calls the Command Hub approve route after confirm', async () => {
     const fetchFn = mockFetch(200, { ok: true, result: { merged: true } });
     const sb = makeSb({ vtid_ledger: [ok([{ vtid: 'VTID-02700' }])] });
-    const r = await dev_approve_pr({ vtid: 'VTID-02700', confirm: true }, DEV_ID, sb);
+    const r = await dev_approve_pr({ vtid: 'VTID-02700', confirm: true }, DEV_JWT_ID, sb);
     expect(r.ok).toBe(true);
     expect((r as { text: string }).text).toContain('merged');
     const url = String(fetchFn.mock.calls[0][0]);
@@ -275,21 +276,21 @@ describe('dev_approve_pr', () => {
   it('reports a failed merge without throwing', async () => {
     mockFetch(400, { ok: false, error: 'Cannot approve: CI is fail' });
     const sb = makeSb({ vtid_ledger: [ok([{ vtid: 'VTID-02700' }])] });
-    const r = await dev_approve_pr({ vtid: '2700', confirm: true }, DEV_ID, sb);
+    const r = await dev_approve_pr({ vtid: '2700', confirm: true }, DEV_JWT_ID, sb);
     expect(r.ok).toBe(true);
     expect((r as { text: string }).text).toContain('did not go through');
     expect((r as { text: string }).text).toContain('CI is fail');
   });
 
   it('errors when the VTID is not in the ledger', async () => {
-    const r = await dev_approve_pr({ vtid: '2700' }, DEV_ID, makeSb({ vtid_ledger: [ok([])] }));
+    const r = await dev_approve_pr({ vtid: '2700' }, DEV_JWT_ID, makeSb({ vtid_ledger: [ok([])] }));
     expect(r.ok).toBe(false);
   });
 });
 
 describe('dev_reject_pr', () => {
   it('requires a reason', async () => {
-    const r = await dev_reject_pr({ vtid: '2700', confirm: true }, DEV_ID, makeSb());
+    const r = await dev_reject_pr({ vtid: '2700', confirm: true }, DEV_JWT_ID, makeSb());
     expect(r.ok).toBe(false);
     expect((r as { error: string }).error).toContain('reason');
   });
@@ -297,7 +298,7 @@ describe('dev_reject_pr', () => {
   it('asks for confirmation before mutating', async () => {
     const fetchFn = mockFetch(200, { ok: true });
     const sb = makeSb({ vtid_ledger: [ok([{ vtid: 'VTID-02700' }])] });
-    const r = await dev_reject_pr({ vtid: '2700', reason: 'wrong approach' }, DEV_ID, sb);
+    const r = await dev_reject_pr({ vtid: '2700', reason: 'wrong approach' }, DEV_JWT_ID, sb);
     expect(r.ok).toBe(true);
     expect((r as { text: string }).text).toContain('wrong approach');
     expect(fetchFn).not.toHaveBeenCalled();
@@ -306,7 +307,7 @@ describe('dev_reject_pr', () => {
   it('posts the rejection with reason after confirm', async () => {
     const fetchFn = mockFetch(200, { ok: true });
     const sb = makeSb({ vtid_ledger: [ok([{ vtid: 'VTID-02700' }])] });
-    const r = await dev_reject_pr({ vtid: '2700', reason: 'stale spec', confirm: true }, DEV_ID, sb);
+    const r = await dev_reject_pr({ vtid: '2700', reason: 'stale spec', confirm: true }, DEV_JWT_ID, sb);
     expect(r.ok).toBe(true);
     expect((r as { text: string }).text).toContain('rejected');
     const url = String(fetchFn.mock.calls[0][0]);
