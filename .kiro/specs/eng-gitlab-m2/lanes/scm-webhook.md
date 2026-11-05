@@ -1,6 +1,6 @@
 ---
 lane: scm-webhook
-state: executing
+state: in-review
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -21,7 +21,7 @@ paths:
 claimed_by: kiro-exafy-202611050535-c34d
 branch: kiro/eng-gitlab-m2/scm-webhook
 pr: https://github.com/exafyltd/vitana-platform/pull/4696
-updated: 2026-11-05T10:39Z
+updated: 2026-11-05T17:46Z
 vtid: VTID-05541
 ---
 # Lane: scm-webhook (repo vitana-platform)
@@ -44,3 +44,6 @@ Goes to review after agentic-delivery/prerequisites lands and this branch takes 
 ### 2026-11-05T10:39Z · kiro-exafy-202611050535-c34d · executing
 PR https://github.com/exafyltd/vitana-platform/pull/4696 open; waits for agentic-delivery/prerequisites (#4690) to land, then a main merge, then review.
 Preflight passed and validate-pr-locally APPROVED on the pushed head; run.mjs check-pr: change suite present and valid for VTID-05541.
+
+### 2026-11-05T17:46Z · kiro-exafy-202611050535-c34d · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/4696 updated with main after lane prerequisites (#4690) landed; test:roles green. Next: the driver requests the reviewer agent.
