@@ -14,7 +14,7 @@ paths:
   - scripts/ci/staging-verify/record-oasis.sh
   - scripts/ci/staging-verify/record-oasis-workflow.test.mjs
   - docs/validation/**
-updated: 2026-11-05T02:53Z
+updated: 2026-11-05T02:59Z
 vtid: VTID-05551
 ---
 # Lane: prerequisites (repo vitana-platform)
@@ -27,4 +27,6 @@ Lane created with sparring round 1's answer (plan §9: the atlas drift guard and
 ### 2026-11-05T00:25Z · ci-plan-spar · ready (VTID allocated)
 VTID-05551 allocated after policy approval (converged-auto-v1).
 ### 2026-11-05T02:53Z · pm-agent · update
+reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
+### 2026-11-05T02:59Z · pm-agent · update
 reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
