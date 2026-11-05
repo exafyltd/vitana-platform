@@ -529,6 +529,10 @@ Each phase is its own VTID, its own PR, a staging verification, and the owner's 
 6. **Backstop context.** The extractor gets the previous turn; it saves nothing when the subject is unclear.
 7. **Delete what this replaces:**
    - the legacy six-table read;
+     - **Removed 2026-11 (plan `memory-legacy-read-retire-r2`).** The ORB reads only through `recall()`. A not-ok recall
+       returns `ok:false` and the session starts with no memory block. The silent legacy fallback and the VTID-04784
+       shadow are gone, so a failure shows as `[VTID-04452] orb recall unavailable`. `MEMORY_ORB_RECALL_*` is no longer
+       read; the pins stay in the deploy workflows until a separate change removes them. Rollback: revert the merge.
    - the tier-2 `mem_*` mirrors;
    - `ai_memory`;
    - the dead D-engine prompt paths.
