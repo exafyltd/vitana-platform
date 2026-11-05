@@ -72,3 +72,16 @@ The reviewer's non-blocking findings were not fixed before the merge. They stay 
 - The PR body of #4679 still shows the first counts (64 tests, 82 mutations, 575 script tests); the files in the PR carry the final ones (102 tests, 190 changes, 613 tests).
 Carried to lane merge-bot (VTID-05538): call `PUT …/merge` with `retries: 0` and re-read the merge request after an error before deciding the merge failed; the builder reads it in this log and in acceptance.md of VTID-05537.
 Lane record only: state in-review → done, `updated`, two appended log entries.
+
+### 2026-11-05T10:08Z · agent-vitana-lane-reviewer-202611050957-f2c8 · review
+review: changes
+head: fb89d131b93bce3ac5dedd35eb957e162d0b6afc
+reviewer: agent:vitana-lane-reviewer (claude-opus-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4693
+Findings: blocking: line 63 records the merge without an authority: line (§7b). The pipeline did not land #4679: the lane said in-review and no session merged it. Say what the DraganOffice merge rests on, or that no §7b or owner-instruction authority is recorded.
+Findings: blocking: line 67 (verified → done) gives no check result for the merged head 0cb5742749234268b37d5950a2ad31babf7d9252. A lane that deploys nothing is done when merged with green checks, and the accept made the merge wait for every check green, including UNIT on Node 20. Add the required check runs of 0cb57427 with their conclusions, the source and the read time. If one was red or missing, fix forward instead of marking the lane done.
+Findings: non-blocking: line 68's open list leaves out the base mismatch (red-on-base.txt:1 bf5e0c12d0, commands.log:2 ab0f5ad0b1) and the Gate 2 decisions (acceptance.md:33-34). Both are still tracked in the evidence.
+Findings: non-blocking: on line 70, "fixed API paths" is the builder's reading and no test pins it. The path also reaches errors at gitlab-api.mjs:235, 279 and 317 and in decode, paginate and badRequest, so the fix belongs in checkPath or prepare. The listed line numbers match origin/main.
+Findings: non-blocking: the merge-bot requirement on line 73 is not in merge-bot.md or in the merge-bot acceptance in tasks.md. The _plan holder should add it before merge-bot is built.
+Findings: non-blocking: CI on fb89d131 was not read here (GraphQL only, gh api not allowed). The caller reports 10/10 success. The base is behind main with no conflicting change, and land-guard.mjs checks up to date and green. Red to green, UI and staging proof do not apply to a record-only PR.
+Next: the lane's seat fixes the blocking findings (two lines to add). The merge sha 8f3934c8 (a squash of #4679 whose tree equals 0cb57427), the accept on e4b294c2, 0cb57427 adding only that entry, the unchanged permission fields (seat, executor, reviewer_seat, paths) and the other carried findings all match git.
