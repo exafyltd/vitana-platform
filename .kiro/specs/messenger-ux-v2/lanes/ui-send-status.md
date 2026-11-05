@@ -1,7 +1,7 @@
 ---
 lane: ui-send-status
 state: done
-next_actor: none
+next_actor: kiro
 depends_on: [api-send-reliability, test-fixture-05201]
 executor: kiro
 seat: exafyltd

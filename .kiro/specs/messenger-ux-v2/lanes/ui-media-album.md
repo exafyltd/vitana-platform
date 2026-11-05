@@ -1,7 +1,7 @@
 ---
 lane: ui-media-album
 state: done
-next_actor: none
+next_actor: kiro
 depends_on: [ui-compact-grouping]
 executor: kiro
 seat: exafyltd

@@ -1,7 +1,7 @@
 ---
 lane: ui-compact-grouping
 state: done
-next_actor: none
+next_actor: kiro
 depends_on: [ui-reply-jump]
 executor: kiro
 seat: exafyltd

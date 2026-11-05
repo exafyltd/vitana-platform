@@ -1,7 +1,7 @@
 ---
 lane: api-viewing-presence
 state: done
-next_actor: none
+next_actor: kiro
 depends_on: [api-send-reliability]
 executor: kiro
 seat: exafy

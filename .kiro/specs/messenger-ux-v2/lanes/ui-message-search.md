@@ -1,7 +1,7 @@
 ---
 lane: ui-message-search
 state: done
-next_actor: none
+next_actor: kiro
 depends_on: [ui-viewing-presence, ui-reply-jump, api-message-search]
 executor: kiro
 seat: exafyltd

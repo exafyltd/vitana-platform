@@ -1,7 +1,7 @@
 ---
 lane: ui-viewing-presence
 state: done
-next_actor: none
+next_actor: kiro
 depends_on: [ui-compact-grouping, api-viewing-presence]
 executor: kiro
 seat: exafyltd

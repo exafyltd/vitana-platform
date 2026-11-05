@@ -1,7 +1,7 @@
 ---
 lane: api-message-search
 state: done
-next_actor: none
+next_actor: kiro
 depends_on: [api-viewing-presence]
 executor: kiro
 seat: exafy

@@ -1,7 +1,7 @@
 ---
 lane: test-fixture-05201
 state: done
-next_actor: none
+next_actor: kiro
 depends_on: []
 executor: kiro
 seat: exafyltd

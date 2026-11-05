@@ -3,7 +3,7 @@ slug: messenger-ux-v2
 author: kiro
 author_seat: exafyltd
 executor: kiro
-next_actor: exafyltd
+next_actor: owner
 state: verified
 updated: 2026-11-05T11:54Z
 sparring_record: .kiro/specs/messenger-ux-v2/sparring/verdict.md
