@@ -1,6 +1,6 @@
 ---
 lane: cutover
-state: ready
+state: in-review
 next_actor: kiro
 depends_on: [pipelines, deploy-path, verify-on-gitlab, merge-queue, github-bridge, gateway-delivery]
 executor: kiro
@@ -25,7 +25,10 @@ paths:
   - .kiro/pipeline/driver.md
   - .kiro/pipeline/lane-land.md
   - docs/validation/**
-updated: 2026-11-05T02:59Z
+updated: 2026-11-05T23:01Z
+claimed_by: kiro-exafy-202611021438-cff7
+branch: kiro/agentic-delivery/cutover
+pr: https://github.com/exafyltd/vitana-platform/pull/4725
 vtid: VTID-05545
 ---
 # Lane: cutover (repo vitana-platform)
@@ -41,3 +44,9 @@ VTID-05545 allocated after policy approval (converged-auto-v1).
 reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
 ### 2026-11-05T02:59Z · pm-agent · update
 reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
+
+### 2026-11-05T12:40Z · kiro-exafy-202611021438-cff7 · ready → executing
+Claimed. Built on a stacked base (fleet, settings, merge-bot, monitoring) while those lanes were in review; rebuilt as one commit on origin/main after they merged. Tests first (103 cases on stand-ins for gh, aws, git and the GitLab machine). An independent pre-review found five blocking safety issues (B1 to B5); all fixed with tests red on the earlier code. Decisions taken inside the plan are in acceptance.md and the PR.
+
+### 2026-11-05T23:01Z · kiro-exafy-202611021438-cff7 · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/4725. Evidence from the final code: 103 cases green, 161 mutations all caught, the whole script set 1056 tests with 0 failures on Node 22 and Node 20, secret scan 0 matches. Ready for a review on the current head; depends_on lanes pipelines, deploy-path, merge-queue and gateway-delivery are not done yet, so it merges after them.
