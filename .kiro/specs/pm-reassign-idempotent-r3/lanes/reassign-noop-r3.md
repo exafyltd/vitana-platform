@@ -86,3 +86,14 @@ reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 PR: https://github.com/exafyltd/vitana-platform/pull/4556
 Findings: no blocking findings; non-blocking: all CI checks were pending at review time; the protected files that differ from c1110581 (collaboration.md, land-guard.mjs and its test) are the reviewed #4599 changes from main, covered by the owner instruction 'merge review-survives-main-merge' (2026-11-01). Reviewer workflow wf_5105bf840f1844a1 (session sess_e648688b-6930-450b-8cce-afc6250237f6).
 Next: the land step merges under §7b once every required check is green on this head and it is 0 behind main.
+
+### 2026-11-05T17:30Z · kiro-exafyltd-202611051700-c1a1 · executing (head re-merged, tests re-run, containment decision)
+- Merged current origin/main into the lane branch (clean, no conflicts). The previous accepts (c1110581, 00dc69ec) do not
+  cover this head, so the reviewer agent reviews it again.
+- Tests on this head: `services/gateway` jest `test/project-manager`, `vtid-04525-conversation-flag-registry` and
+  `kaf-staging-claude-available-wiring`: 15 suites, 243 tests passed. The PM tests cover repeated sweeps, reviewer-seat
+  refusal and the unchanged-write path.
+- Containment decision: the deploy pins stay as this lane's contract: `PM_AGENT_ENABLED=false`, `PM_MODE=live`. Two existing
+  tests (VTID-05414, VTID-05282) assert those exact pins, so they were not changed. Consequence: a deploy of this lane
+  leaves the staging PM switched off, which is stricter than `dry_run` and writes nothing. Observation in dry_run on the
+  verified revision is set on the ECS revision (a documented operator step, see issue #4699), not in the pin.
