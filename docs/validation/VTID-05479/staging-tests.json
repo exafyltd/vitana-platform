@@ -1,0 +1,9 @@
+{
+  "vtid": "VTID-05479",
+  "service": "gateway",
+  "tests": [
+    { "kind": "existing", "ref": "npm run test:roles", "cwd": "services/gateway",
+      "reason": "records-only change; the identity role-separation suite is the plan's gate and must stay green" }
+  ],
+  "not_verified_on_staging": "Records only: a queue table and a drift baseline list. Nothing is applied and nothing deploys."
+}
