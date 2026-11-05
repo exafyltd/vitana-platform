@@ -6,6 +6,10 @@ on:
   push:
     branches: [main, trunk]
 
+concurrency:
+  group: phase-2b-naming-enforcement-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   enforce-naming-standards:
     name: Enforce Phase 2B Naming Standards

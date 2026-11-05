@@ -3,6 +3,10 @@ name: ENFORCE-FRONTEND-CANONICAL-SOURCE (DEV-CICDL-0205)
 
 on: [pull_request]
 
+concurrency:
+  group: enforce-frontend-canonical-source-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   validate:
     runs-on: ubuntu-latest
