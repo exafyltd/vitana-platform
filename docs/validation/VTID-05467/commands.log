@@ -147,3 +147,6 @@ $ node -e "validateManifest(JSON.parse(staging-tests.json))"   -> {"ok":true,"er
 $ IMPACT_SCAN_BASE=origin/main node scripts/ci/dev-autopilot-impact-scan.mjs  -> changed=24, blocker=0 warning=0 info=0.
   The generated dev-autopilot-impact-findings.json was deleted and not committed.
 $ acceptance mapping (every AC- line has a TEST: line within 12 lines)  -> 24 AC entries, none unmapped
+Harness tightened on the same fix round: the rollback check no longer checks bootstrap_admin_user's ACL by its end state
+only. It pins that ACL to the value that apply and the switch left it, captured before the rollback runs. Everything
+else is still compared exactly to the base. Rerun on the fix head: ALL CHECKS PASSED (outputs refreshed).

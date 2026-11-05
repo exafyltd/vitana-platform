@@ -13,7 +13,7 @@ not ok 10 - the bootstrap sets no selected role [have NULL, want community]
 not ok 11 - the derived preference row follows the canonical row [have NULL, want community]
 ok 12 - no membership is written in any other tenant (no name pin)
 not ok 13 - the target is flagged exafy_admin [have NULL, want true]
-not ok 14 - the default tenant becomes the active tenant [have NULL, want 3996462a-bfdb-4ee4-b24b-edce8c22b08d]
+not ok 14 - the default tenant becomes the active tenant [have NULL, want c1329ee6-3320-444a-a41c-afaa59d002da]
 not ok 15 - the success is audited against the default tenant
 ok 16 - the default tenant was renamed in this test, so the grant did not depend on its name
 not ok 17 - a second bootstrap of an admin is refused [42704: type "tenant_role" does not exist]

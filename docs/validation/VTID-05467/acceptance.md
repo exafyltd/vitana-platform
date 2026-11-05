@@ -64,7 +64,7 @@ AC-12: Red before the fix. The new pgTAP files fail on the previous bodies, and 
 TEST: `outputs/pglite-red-base.txt` (the red-base section) and `outputs/pglite-variant-id.txt` (the id variant, red before apply).
 
 AC-13: The rollback restores `bootstrap_admin_user`, `set_role_preference` and `me_set_active_role` verbatim, removes the trigger and its function, restores `user_tenants.active_role` from the snapshot, and drops the three snapshots. The catalog fingerprint after rollback equals the base, except one ACL: `bootstrap_admin_user` stays revoked from PUBLIC, anon and authenticated, as R2 left it (decision 11).
-TEST: `outputs/pglite-rollback.txt`: "rollback restores the catalog exactly except the bootstrap ACL", "the rollback keeps bootstrap_admin_user revoked from PUBLIC, anon and authenticated", and the switched member's selected role goes back to `community`.
+TEST: `outputs/pglite-rollback.txt`: "rollback restores the catalog exactly except the bootstrap ACL", "the rollback leaves bootstrap_admin_user's ACL exactly as apply set it", and the switched member's selected role goes back to `community`.
 
 AC-14: On a database without the lane the rollback is a no-op (replay order): the catalog fingerprint is unchanged.
 TEST: `outputs/pglite-rollback-noop.txt`.
