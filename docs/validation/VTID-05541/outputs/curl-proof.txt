@@ -1,0 +1,42 @@
+# VTID-05541 local curl proof, 2026-11-05T10:17:14Z, node v22.23.4, curl 8.21.0
+# Route built from branch kiro/eng-gitlab-m2/scm-webhook (services/gateway: npm run build -> dist/), mounted as index.ts mounts it, 127.0.0.1 only.
+# OASIS INSERTs go to a local sink (SUPABASE_URL=http://127.0.0.1:<port>); no staging, production, Supabase or GitLab host was called.
+# Command: bash docs/validation/VTID-05541/outputs/curl-proof.sh <repo>   (server: outputs/curl-proof-server.cjs)
+
+== server A: signing key configured
+ 1. unsigned POST, the STAGING-VERIFY probe (Bearer invalid, {})   -> 401 application/json; charset=utf-8 {"ok":false,"error":"signature_missing"}
+ 2. signed merge_request open                                      -> 200 application/json; charset=utf-8 {"ok":true,"topic":"scm.gitlab.merge_request.opened","vtid":"VTID-05541","event_id":"3e5f0297-7db8-44e9-a8cc-aa70878e41ab"}
+ 3. same webhook-id again, new timestamp (duplicate)               -> 200 application/json; charset=utf-8 {"ok":true,"duplicate":true}
+ 4. body altered after signing                                     -> 401 application/json; charset=utf-8 {"ok":false,"error":"signature_invalid"}
+ 5. signed with a stale timestamp (now - 301 s)                    -> 401 application/json; charset=utf-8 {"ok":false,"error":"timestamp_out_of_tolerance"}
+ 6. correct signature in svix-* headers only                       -> 401 application/json; charset=utf-8 {"ok":false,"error":"signature_missing"}
+ 7. signed merge_request merge                                     -> 200 application/json; charset=utf-8 {"ok":true,"topic":"scm.gitlab.merge_request.merged","vtid":"VTID-05541","event_id":"3c8597fc-5eb1-4ded-9a3d-dd3480fffc68"}
+ 8. signed pipeline failed                                         -> 200 application/json; charset=utf-8 {"ok":true,"topic":"scm.gitlab.pipeline.failed","vtid":"VTID-05541","event_id":"71767546-8d94-4d41-aa38-58b17787f8ec"}
+ 9. signed push event (unknown event)                              -> 202 application/json; charset=utf-8 {"ok":true,"ignored":true,"reason":"unknown_event"}
+10. signed merge_request without a VTID in the title               -> 202 application/json; charset=utf-8 {"ok":true,"ignored":true,"reason":"no_vtid"}
+11. signed body that is not JSON                                   -> 400 application/json; charset=utf-8 {"ok":false,"error":"invalid_json"}
+12. signed body of 3 MiB (limit 2mb)                               -> 413 application/json; charset=utf-8 {"ok":false,"error":"payload_too_large"}
+13. signed open while the OASIS table refuses the row              -> 502 application/json; charset=utf-8 {"ok":false,"error":"oasis_emit_failed"}
+14. the same delivery retried (webhook-id msg_proof_11)            -> 200 application/json; charset=utf-8 {"ok":true,"topic":"scm.gitlab.merge_request.opened","vtid":"VTID-05541","event_id":"d60a5d98-8ae2-46d4-b712-36b40fe34803"}
+== server B: no signing key
+15. unsigned POST, the STAGING-VERIFY probe (Bearer invalid, {})   -> 401 application/json; charset=utf-8 {"ok":false,"error":"signature_missing"}
+16. signed merge_request open (no key to check it with)            -> 500 application/json; charset=utf-8 {"ok":false,"error":"not_configured"}
+== OASIS rows received by sink A (the INSERTs emitOasisEvent sent; selected columns)
+{"vtid":"VTID-05541","topic":"scm.gitlab.merge_request.opened","service":"gitlab-webhook","status":"info","task_stage":"VALIDATOR","message":"GitLab merge request !12 opened in vitana/rehearsal","metadata":{"gitlab_event":"merge_request","webhook_id":"msg_proof_1","action":"open","project_id":42,"project_path":"vitana/rehearsal","merge_request_iid":12,"state":"opened","source_branch":"kiro/eng-gitlab-m2/scm-webhook","target_branch":"main","head_sha":"abc0000000000000000000000000000000000002","merge_commit_sha":null,"url":"https://gitlab.example/vitana/rehearsal/-/merge_requests/12","env":"staging"}}
+{"vtid":"VTID-05541","topic":"scm.gitlab.merge_request.merged","service":"gitlab-webhook","status":"info","task_stage":"VALIDATOR","message":"GitLab merge request !12 merged in vitana/rehearsal","metadata":{"gitlab_event":"merge_request","webhook_id":"msg_proof_5","action":"merge","project_id":42,"project_path":"vitana/rehearsal","merge_request_iid":12,"state":"merged","source_branch":"kiro/eng-gitlab-m2/scm-webhook","target_branch":"main","head_sha":"abc0000000000000000000000000000000000002","merge_commit_sha":null,"url":"https://gitlab.example/vitana/rehearsal/-/merge_requests/12","env":"staging"}}
+{"vtid":"VTID-05541","topic":"scm.gitlab.pipeline.failed","service":"gitlab-webhook","status":"warning","task_stage":null,"message":"GitLab pipeline 31 failed on main in vitana/rehearsal","metadata":{"gitlab_event":"pipeline","webhook_id":"msg_proof_6","status":"failed","project_id":42,"project_path":"vitana/rehearsal","pipeline_id":31,"ref":"main","sha":"abc0000000000000000000000000000000000002","source":"push","merge_request_iid":null,"duration_s":9,"url":null,"env":"staging"}}
+{"vtid":"VTID-05541","topic":"scm.gitlab.merge_request.opened","service":"gitlab-webhook","status":"info","task_stage":"VALIDATOR","message":"GitLab merge request !12 opened in vitana/rehearsal","metadata":{"gitlab_event":"merge_request","webhook_id":"msg_proof_11","action":"open","project_id":42,"project_path":"vitana/rehearsal","merge_request_iid":12,"state":"opened","source_branch":"kiro/eng-gitlab-m2/scm-webhook","target_branch":"main","head_sha":"abc0000000000000000000000000000000000002","merge_commit_sha":null,"url":"https://gitlab.example/vitana/rehearsal/-/merge_requests/12","env":"staging"}}
+rows: 4
+contains "not copied": false
+contains "agent@example.invalid": false
+contains "Agent Kiro": false
+== OASIS rows received by sink B: 0
+== server logs (A then B)
+route on 127.0.0.1:18541, OASIS sink on 127.0.0.1:18542
+[OASIS Event] Emitted: scm.gitlab.merge_request.opened for VTID-05541 (3e5f0297-7db8-44e9-a8cc-aa70878e41ab)
+[OASIS Event] Emitted: scm.gitlab.merge_request.merged for VTID-05541 (3c8597fc-5eb1-4ded-9a3d-dd3480fffc68)
+[OASIS Event] Emitted: scm.gitlab.pipeline.failed for VTID-05541 (71767546-8d94-4d41-aa38-58b17787f8ec)
+[OASIS Event] Failed to emit event: 503 - sink: refused once on purpose
+[gitlab-webhook] OASIS write failed: scm.gitlab.merge_request.opened VTID-05541 (webhook-id msg_proof_11)
+[OASIS Event] Emitted: scm.gitlab.merge_request.opened for VTID-05541 (d60a5d98-8ae2-46d4-b712-36b40fe34803)
+route on 127.0.0.1:18543, OASIS sink on 127.0.0.1:18544
