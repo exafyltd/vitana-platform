@@ -1,6 +1,6 @@
 ---
 lane: github-bridge
-state: executing
+state: in-review
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -15,10 +15,11 @@ paths:
   - infra/gitlab-engineering/host/units/vitana-github-bridge.timer
   - infra/gitlab-engineering/RUNBOOK-github-bridge.md
   - docs/validation/**
-updated: 2026-11-05T03:11Z
+updated: 2026-11-05T03:13Z
 vtid: VTID-05548
 claimed_by: kiro-exafy-202611050107-c4a6
 branch: kiro/agentic-delivery/github-bridge
+pr: https://github.com/exafyltd/vitana-platform/pull/4689
 ---
 # Lane: github-bridge (repo vitana-platform)
 Tasks in `tasks.md`. Implements plan §3.13 (branches, pull requests, statuses). Starts when eng-gitlab-m2 lane gitlab-client is done (plan §9). VTID from PLAN-SPAR; never by hand.
@@ -35,3 +36,6 @@ Built `scripts/eng/github-bridge.mjs` (one tick: `kiro/*` and `claude/*` branche
 Tests `scripts/eng/github-bridge.test.mjs`: red on base 49/49 failing against a no-behaviour stub (the module does not exist on base); green 49/49 on Node 20 and 22; UNIT 662 tests, 0 fail; mutation check 16/16 caught.
 B3 dry run, read-only: 84 + 31 merge requests planned for 118 + 31 open PRs; 34 platform PRs ignored (33 `pm-agent/*`, 1 `i18n-db/*`).
 Decisions and the open items for the driver: `docs/validation/VTID-05548/acceptance.md`.
+
+### 2026-11-05T03:13Z · kiro-exafy-202611050107-c4a6 · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/4689 open; preflight passed. Next: the driver requests the reviewer agent.
