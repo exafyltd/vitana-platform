@@ -1,0 +1,43 @@
+$ node --import <offline fetch stub> run.mjs verify --service community-app …
+exit 0
+[staging-verify] service=community-app sha=071d8ed6073ed1b261864678121ff2c4e496303d chain=0
+[staging-verify] production=90a3854fe797 range=1 commits, 0 touch community-app; suites=(none) missing=0 lockfileOnly=0
+[staging-verify] PASS smoke › app shell loads with a version stamp
+[staging-verify] PASS smoke › SPA fallback serves deep links
+[staging-verify] PASS smoke › screen registry published
+[staging-verify] PASS smoke › staging gateway reachable
+[staging-verify] PASS smoke › app boots against the staging gateway without runtime errors
+[staging-verify] PASS smoke › phone journey: tab switches load fast, no photo re-download, no frame jump (VTID-05062)
+[staging-verify] fetched origin main to resolve staging stamp 22f74bda047b
+[staging-verify] superseded by 22f74bda047bd24f150721b8ad0e51b91fa3bb8c; attribution cutoff 2026-11-05T13:05:16.937Z: 6/6 results attributed
+
+**Staging verification superseded** — staging moved from `071d8ed6073e` to `22f74bda047b` during the run; nothing failed while staging still served `071d8ed6073e`, but it is not verified. The newer commit gets its own verification. No production prompt.
+
+- Service: `community-app`
+- Verified commit: `071d8ed6073ed1b261864678121ff2c4e496303d`
+- Tests: 6/6 passed
+- Staging moved to: `22f74bda047bd24f150721b8ad0e51b91fa3bb8c`
+- Attribution cutoff: 2026-11-05T13:05:16.937Z
+- Attributed to `071d8ed6073e`: 6 passed, 0 failed; not attributed: 0
+
+What would ship (production `90a3854fe797` → `071d8ed6073e`, 0 commit(s)):
+- (none — production already serves or contains this commit, or its version could not be read)
+
+-- gh calls: ["gh api -X GET repos/exafyltd/vitana-v1/actions/workflows/AWS-STAGE-DEPLOY-FRONTEND.yml/runs -f created=>=2026-11-05T06:55:17.032Z -F per_page=100 --jq [.workflow_runs[] | {created_at, updated_at, status, conclusion}]"]
+-- npx calls: ["npx playwright test tests/e2e/staging/smoke.staging.spec.ts --config=/tmp/dry-run-community-app-Y7O0nE/target/.staging-verify.playwright.config.mjs","npx playwright test tests/e2e/staging/screen-journey.staging.spec.ts --config=/tmp/dry-run-community-app-Y7O0nE/target/.staging-verify.playwright.config.mjs"]
+-- requests run.mjs made, all answered by the offline fetch stub (none left the process):
+GET https://preview-aws.vitanaland.com/
+GET https://preview-aws.vitanaland.com/
+GET https://preview-aws.vitanaland.com/
+GET https://preview-aws.vitanaland.com/
+GET https://preview-aws.vitanaland.com/
+GET https://vitanaland.com/
+GET https://preview-aws.vitanaland.com/
+GET https://preview-aws.vitanaland.com/maxina
+GET https://preview-aws.vitanaland.com/nav-registry.json
+GET https://preview-aws-gateway.vitanaland.com/alive
+GET https://preview-aws.vitanaland.com/
+GET https://preview-aws.vitanaland.com/
+GET https://preview-aws.vitanaland.com/
+GET https://preview-aws.vitanaland.com/
+GET https://preview-aws.vitanaland.com/
