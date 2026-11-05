@@ -1,0 +1,28 @@
+# VTID-05545: the two pipeline runbooks this lane edits (.kiro/pipeline/driver.md, lane-land.md) and everything that reads them
+$ node scripts/ci/kiro-steering/guard.cjs
+kiro-steering: OK
+exit 0
+$ node --test scripts/ci/kiro-steering/guard.test.cjs scripts/collab/automations.test.mjs scripts/collab/preflight.test.mjs scripts/collab/quality-checks.test.mjs scripts/collab/kiro-web-steering.test.mjs
+# tests 106
+# pass 106
+# fail 0
+$ git diff --stat HEAD -- .kiro/pipeline
+ .kiro/pipeline/driver.md    | 24 +++++++++++++++++++++---
+ .kiro/pipeline/lane-land.md |  6 ++++++
+ 2 files changed, 27 insertions(+), 3 deletions(-)
+$ scripts/collab/protected-gate-files.json: is .kiro/pipeline/* a protected gate file?
+patterns: 14  naming .kiro/pipeline: 0
+vitana.protected-gate-files/v1
+VTID-05276 (plan kiro-autonomy-fallback §4.3), VTID-05408 (kiro-lane-admin §4): protected gate files. A change to one never merges on a reviewer-agent accept alone; it needs the owner's instruction naming the plan plus a reviewer-agent accept on the current head (Claude Code is retired). Globs use scripts/collab/queue.mjs globToRegex semantics. Owned by scripts/collab/queue.mjs (compiled-in copy for single-file runs); the Project Manager mirrors it in governance.ts.
+CLAUDE.md
+scripts/collab/plan-spar.mjs
+scripts/collab/queue.mjs
+scripts/collab/protected-gate-files.json
+services/gateway/src/services/plan-sparring/**
+services/gateway/src/services/project-manager/governance.ts
+.github/workflows/PLAN-SPAR.yml
+.github/workflows/PR-GATE.yml
+.github/workflows/AWS-PROD-*.yml
+.kiro/agents/vitana-lane-reviewer.md
+supabase/migrations/*vtid_ledger*.sql
+supabase/migrations/*plan_sparring*.sql
