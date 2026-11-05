@@ -1,6 +1,6 @@
 ---
 lane: prerequisites
-state: ready
+state: executing
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -14,13 +14,23 @@ paths:
   - scripts/ci/staging-verify/record-oasis.sh
   - scripts/ci/staging-verify/record-oasis-workflow.test.mjs
   - docs/validation/**
-updated: 2026-11-05T00:25Z
+claimed_by: kiro-exafy-202611041929-802c
+branch: kiro/agentic-delivery/prerequisites
+updated: 2026-11-05T00:52Z
 vtid: VTID-05551
 ---
 # Lane: prerequisites (repo vitana-platform)
 Tasks in `tasks.md`. Implements the atlas claims of plan §9 and the `WORKFLOW` input of plan §3.6 step 4. Starts at once and lands first: lanes gateway-delivery and verify-on-gitlab, and eng-gitlab-m2 lane scm-webhook, build on it (plan §9). VTID from PLAN-SPAR; never by hand.
 
 ## Log
+### 2026-11-05T00:52Z · kiro-exafy-202611041929-802c · ready → executing
+Claimed; code, tests and evidence on branch kiro/agentic-delivery/prerequisites. Tests first: red on base
+(`atlas-gitlab-route-claims.test.ts` 2 of 4 fail; `record-oasis-workflow.test.mjs` the 3 `WORKFLOW`-set cases fail),
+green after (4 and 15, all staging-verify script tests 94, UNIT's command 618 + 1 skipped, `npm run test:roles` 105,
+typecheck exit 0). `domain-atlas.ts`: `/^internal-gitlab-webhook$/` and `/^delivery$/` under `deploy`, nothing else.
+`record-oasis.sh`: `--arg wf "${WORKFLOW:-STAGING-VERIFY.yml}"` in both jq programs. Decisions for Gate 2 are in
+`docs/validation/VTID-05551/acceptance.md`.
+
 ### 2026-11-05T00:30Z · kiro-exafy-202611041929-802c · ready
 Lane created with sparring round 1's answer (plan §9: the atlas drift guard and R1-F2).
 
