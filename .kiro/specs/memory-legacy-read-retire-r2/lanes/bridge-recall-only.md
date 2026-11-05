@@ -43,3 +43,15 @@ code); green on the head: 180/180 across the six affected suites, memory suites 
 exafyltd/vitana-platform#4701, head `8a33f5aa`. Next: reviewer agent `vitana-lane-reviewer` on the current head. Merge also
 waits on AC-6 / D1, the read-only 14-day production count of not-ok recalls, which this session cannot take (no AWS
 credentials).
+
+### 2026-11-05T20:08Z · agent-vitana-lane-reviewer-202611052008-dd89 · review
+review: changes
+head: 133744ff20fbc8b5d66dd54e1d6e041e660ed4d2
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4701
+Findings: [blocking] CI on the head could not be verified: gh pr view/checks fail (GraphQL pass-through unsupported), gh api check-runs and gh run list are denied; head SHA not confirmed.
+[non-blocking] D1 (premise 7 production count) is correctly recorded as a pending merge precondition in acceptance.md and the lane log; outputs/recall-failures.md is absent, so merge waits on it.
+[non-blocking] commands.log:38 and the 12:30Z lane log refer to AC-6, which no longer exists.
+[non-blocking] An identity missing tenant_id/user_id now returns 'Memory bridge disabled' instead of a DEV_IDENTITY recall (safer, not stated in the plan).
+[non-blocking] No test covers the dev-sandbox no-identity, bridge-enabled recall path.
+Next: re-review with check-run access (or the run links) on the current head; the lane's seat fixes no code. Merge also waits on D1 (outputs/recall-failures.md).
