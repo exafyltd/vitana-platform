@@ -1,11 +1,10 @@
-# UNIT.yml's full command on the lane branch (Node v22.23.4; UNIT runs Node 20)
+# UNIT.yml's full command on head 45642f38f395a53ba5e421ef325e5ecda1427009 (after the merge of origin/main 0f45367bb6); node v22.23.4
 $ node --test $(find scripts -path '*/node_modules' -prune -o \( -name '*.test.cjs' -o -name '*.test.mjs' \) -print | sort)
-# tests 648
+# tests 918
 # suites 0
-# pass 647
+# pass 917
 # fail 0
 # cancelled 0
 # skipped 1
 # todo 0
-# duration_ms 11931.648229
-exit=0
+exit 0

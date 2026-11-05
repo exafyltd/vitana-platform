@@ -1,0 +1,20 @@
+# eng-gitlab-m2 settings (PR #4711) and this lane on one tree, never pushed: git merge-tree --write-tree <this head> origin/kiro/eng-gitlab-m2/settings, archived outside the repository
+$ git merge-tree --write-tree 45642f38f395a53ba5e421ef325e5ecda1427009 eec9c243136510cea6b1cb3935fdc8892002330d   → tree 4e4b603d13b295c48ccf3cfbb39944385da87909 (no conflict: the two lanes share no file)
+$ ls infra/gitlab-engineering/ci/
+platform-delivery.gitlab-ci.yml
+platform.gitlab-ci.yml
+rehearsal.gitlab-ci.yml
+tpl-assist.yml
+tpl-checks.yml
+tpl-main.yml
+tpl-nightly.yml
+v1-delivery.gitlab-ci.yml
+v1.gitlab-ci.yml
+$ node --test scripts/eng/free-tier-guard.test.mjs scripts/eng/pipeline-gen.test.mjs scripts/eng/affected-parity.test.mjs scripts/eng/services-parity.test.mjs
+# tests 87
+# pass 86
+# fail 0
+# skipped 1
+exit 0
+
+Before the fixture escape (AC-21) the guard failed on this merge: scripts/eng/fixtures/platform-pr-files.json:1033 and :3387 [approvals (project configuration path)] .kiro/specs/mt-track-s-authz/lanes/approvals-auth{-v2,}.md

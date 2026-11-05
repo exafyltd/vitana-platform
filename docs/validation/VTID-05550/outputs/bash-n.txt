@@ -1,0 +1,4 @@
+# bash -n of every generated job's before_script + script + after_script, joined as GitLab joins them (set -eo pipefail first); head 45642f38f395a53ba5e421ef325e5ecda1427009
+$ node /projects/sandbox/.scratch/d83b/bash-n.mjs <worktree>
+bash -n: 151 job scripts, 0 with a syntax error
+exit=0
