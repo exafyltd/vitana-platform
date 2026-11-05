@@ -201,3 +201,9 @@ Deferred, with where each is tracked (§2 lists the document lines):
 - The Deno test, the PR-GATE ratchets and the regression run for vitana-v1, and the shard-union check for the platform:
   the milestone that moves each project, with the cutover plan.
 <!-- plan:end -->
+
+## Late lanes (added after convergence; outside the sparred plan text)
+- `gitlab-verify` (2026-11-05): records the owner's runs of section 6 steps 0 to 3 and the acceptance A01 to A05 evidence that needs the
+  running GitLab (the first green pipelines next to GitHub's results, the backup listing, the restore result). It depends on lane
+  `gitlab-infra` and is `done` only with the owner's output in `docs/validation/`. The plan is `done` when both lanes are. Lane file
+  `lanes/gitlab-verify.md`, tasks group `gitlab-verify`; its VTID comes from PLAN-SPAR. The sparred text above is unchanged.

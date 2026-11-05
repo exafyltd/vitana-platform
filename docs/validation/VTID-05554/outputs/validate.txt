@@ -1,0 +1,3 @@
+$ node scripts/collab/queue.mjs validate --repo . --base origin/main --head HEAD --branch kiro/agentic-delivery/reseat   (origin/main 3767d3d09d934361750523fd5cb7ff3cda6607d5, HEAD d2c5be757e77030a9c849aee541c1c45dc78dd6a; the queue table after the verdict is cut)
+✅ **collab handoff** — 9 handoff/lane file(s) changed, all valid
+[exit 0]
