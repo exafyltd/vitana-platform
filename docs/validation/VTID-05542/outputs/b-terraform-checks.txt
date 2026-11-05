@@ -1,0 +1,102 @@
+# Terraform checks for terraform/settings.tf (lane eng-gitlab-m2/settings, part B). Terraform from /projects/sandbox/tools/tf (TMPDIR=<scratch>).
+# $ terraform version
+Terraform v1.17.1
+on linux_amd64
+
+################################################################################################################
+# CASE 1: main.tf (milestone 1) + settings.tf  (this lane's file with the file it extends)
+# files: main.tf settings.tf 
+# $ terraform fmt -check -diff -recursive
+exit: 0
+
+# $ terraform init -backend=false -input=false -no-color   (providers only; the S3 backend is supplied by setup.sh)
+- Finding hashicorp/aws versions matching ">= 5.60.0, < 6.0.0"...
+- Installing hashicorp/aws v5.100.0...
+- Installed hashicorp/aws v5.100.0 (signed by HashiCorp)
+Terraform has been successfully initialized!
+exit: 0
+
+# $ terraform validate -no-color
+Success! The configuration is valid.
+
+exit: 0
+
+################################################################################################################
+# CASE 2: main.tf + settings.tf + fleet.tf + fleet-ami.tf (fleet lane worktree) + monitoring.tf (monitoring lane worktree): name clashes between lanes show up here
+# files: fleet-ami.tf fleet.tf main.tf monitoring.tf settings.tf 
+# $ terraform fmt -check -diff -recursive
+exit: 0
+
+# $ terraform init -backend=false -input=false -no-color   (providers only; the S3 backend is supplied by setup.sh)
+- terraform.io/builtin/terraform is built in to Terraform
+- Finding hashicorp/aws versions matching ">= 5.60.0, < 6.0.0"...
+- Installing hashicorp/aws v5.100.0...
+- Installed hashicorp/aws v5.100.0 (signed by HashiCorp)
+Terraform has been successfully initialized!
+exit: 0
+
+# $ terraform validate -no-color
+Success! The configuration is valid.
+
+exit: 0
+
+################################################################################################################
+# NEGATIVE CONTROL: the same module with the policy document of settings.tf renamed to one that monitoring.tf declares (a clash between lanes)
+# $ terraform init -backend=false -input=false; terraform validate
+Error: Duplicate data "aws_iam_policy_document" configuration
+exit: 1
+
+################################################################################################################
+# THE POLICY AS AWS WILL SEE IT: terraform plan on a scratch configuration that holds only the locals and the policy document of settings.tf
+# (no AWS call: fake credentials, every check skipped; the account id and the key ARN are variables)
+# $ terraform init -input=false && terraform plan -input=false
+commands will detect it and remind you to do so if necessary.
+Changes to Outputs:
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AgentTokens",
+      "Effect": "Allow",
+      "Action": [
+        "secretsmanager:PutSecretValue",
+        "secretsmanager:GetSecretValue",
+        "secretsmanager:DescribeSecret",
+        "secretsmanager:CreateSecret"
+      ],
+      "Resource": "arn:aws:secretsmanager:eu-central-1:123456789012:secret:vitana/engineering/gitlab/agents/*"
+    },
+    {
+      "Sid": "FleetRunnerToken",
+      "Effect": "Allow",
+      "Action": [
+        "secretsmanager:PutSecretValue",
+        "secretsmanager:GetSecretValue",
+        "secretsmanager:DescribeSecret"
+      ],
+      "Resource": "arn:aws:secretsmanager:eu-central-1:123456789012:secret:vitana/engineering/gitlab/fleet-runner-token-??????"
+    },
+    {
+      "Sid": "WebhookSigningToken",
+      "Effect": "Allow",
+      "Action": [
+        "secretsmanager:GetSecretValue",
+        "secretsmanager:DescribeSecret"
+      ],
+      "Resource": "arn:aws:secretsmanager:eu-central-1:123456789012:secret:vitana/engineering/gitlab/webhook-signing-token-??????"
+    },
+    {
+      "Sid": "UseKeyForTheEncryptedSecrets",
+      "Effect": "Allow",
+      "Action": [
+        "kms:GenerateDataKey",
+        "kms:Decrypt"
+      ],
+      "Resource": "arn:aws:kms:eu-central-1:123456789012:key/11111111-2222-3333-4444-555555555555"
+    }
+  ]
+}
+
+################################################################################################################
+# Not run, with the reason: terraform plan and apply against the owner's account (this session has no AWS access and writes to no live system).
+# The policy rendered above is the one scripts/eng/free-tier-guard.test.mjs checks statement by statement (Sid, actions, resources) from the Terraform source.

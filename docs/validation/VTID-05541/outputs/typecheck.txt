@@ -1,0 +1,10 @@
+# $ cd services/gateway && npm run typecheck   (kiro/eng-gitlab-m2/scm-webhook working tree on base 945755f084, node v22.23.4)
+
+> @vitana/gateway@1.0.1 typecheck
+> tsc --noEmit
+
+
+real	0m49.349s
+user	1m11.919s
+sys	0m2.270s
+exit=0

@@ -1213,7 +1213,15 @@ export type CicdEventType =
   // names only — never an invitation token or an email address.
   | 'tenant.provisioned'
   | 'tenant.brand_pack.updated'
-  | 'tenant.asset.uploaded';
+  | 'tenant.asset.uploaded'
+  // VTID-05541 (plan eng-gitlab-m2 §3.5): GitLab project webhooks (POST /api/v1/internal/gitlab/webhook).
+  // Informational only: no rule of autopilot-event-mapper.ts lists them, so no GitLab event moves a
+  // VTID's state; ids, refs, shas, statuses and URLs only (services/gitlab-events/mapper.ts).
+  | 'scm.gitlab.merge_request.opened'
+  | 'scm.gitlab.merge_request.merged'
+  | 'scm.gitlab.merge_request.closed'
+  | 'scm.gitlab.pipeline.succeeded'
+  | 'scm.gitlab.pipeline.failed';
 
 export interface CicdOasisEvent {
   vtid: string;
