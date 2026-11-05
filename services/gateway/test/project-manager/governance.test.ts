@@ -106,7 +106,7 @@ function deps(calls: SafeMergeRequest[]): ActDeps {
       calls.push(i);
       return { result: 'merged', status: 200, body: { ok: true, merged: true, vtid: i.vtid, details: { head: HEAD } } };
     },
-    laneWriter: { write: async () => undefined },
+    laneWriter: { write: async () => 'written' as const },
     gate2Poster: { post: async () => undefined },
     gate2Evidence: { resolve: async () => ({ verified_commit: 'v', production_commit: 'p', commits: [] }) },
     lease: new Lease(),

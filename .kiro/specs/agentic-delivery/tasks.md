@@ -335,3 +335,36 @@ six and eng-gitlab-m2 `settings`. Every new test is recorded red on `origin/main
 - Staging proof: the shadow pipelines this lane switches on deploy a non-production path to staging (the `gl-main/`
   preview, `shadow-<sha12>` images, rendered task definitions) and run STAGING-VERIFY read-only on the commit GitHub
   verified. The lane is `done` when the first such run passed for each service and its link is in the lane log.
+
+<!-- lane: reseat -->
+## Lane `reseat` (vitana-platform; late lane, `lane_admin`)
+- [ ] S1 Claim `agentic-delivery/reseat` with a seat `exafy` session that is not the plan driver; branch
+      `kiro/agentic-delivery/reseat` from `origin/main`. List the open PRs that touch the eight target lane files
+      (REST `gh api`), and record them.
+- [ ] S2 In each of the eight target lane files (`prerequisites`, `pipelines`, `deploy-path`, `verify-on-gitlab`,
+      `merge-queue`, `github-bridge`, `gateway-delivery`, `cutover`) change only `seat: exafyltd` to `seat: exafy`.
+      Nothing else in a target changes: `state`, `next_actor`, `depends_on`, `executor`, `reviewer_seat`, `paths`,
+      `vtid`, `updated`, `claimed_by` and every log line stay byte-identical.
+- [ ] S3 Evidence `docs/validation/<VTID>/`: `scope.json`, `plan-sparring.md` (the converged record of this plan),
+      `acceptance.md` (AC- entries each followed by a TEST: line within 12 lines), `commands.log`, `outputs/`, no
+      `staging-tests.json` if `run.mjs check-pr` says nothing deploys. Save under `outputs/`: `queue.mjs validate` and
+      `scope-check` for this lane against `origin/main`; `node --test scripts/collab/queue.test.mjs`; a negative proof
+      on a scratch branch (never pushed): the same seat edit from a lane without `lane_admin` is refused by Lane scope;
+      a positive proof: after a trial merge of this branch into the head of #4690, Lane scope passes for its builder's
+      lane-file commits; preflight.
+
+**Acceptance**
+- Change types: Tooling/docs.
+- Outcome: the eight lanes of plan agentic-delivery belong to seat `exafy` again, as plan §9 says, so the plan
+  driver's builders of seat `exafy` can bring their lane PRs up to date with `main` and keep Lane scope green; the
+  open lane PRs #4689 and #4690 keep their work.
+- States: a target lane `ready` (only the seat changes); a target `in-review` on its own branch with a claim held
+  (`main`'s copy changes only the seat line, so merging `main` into that branch conflicts at most on the lines the
+  PM changed before); the same edit from a lane without `lane_admin` (refused).
+- Surfaces: PR-GATE Collab handoff and Lane scope (`queue.mjs validate`, `scope-check`) for this PR and for the later
+  lane PRs of this plan; the Project Manager's reassign rule (`decide.ts:227-283`), which reads the seat.
+- Locales: n/a (developer-facing). Accessibility: n/a.
+- Contract: the diff of each target lane file is exactly one line (`seat:`); no governance path, protected gate file,
+  code or migration in the PR; `lane_admin` is not edited and this lane's own file is not in its `paths`.
+- Staging proof: not verified on staging: deploys nothing. Proven by `queue.mjs validate`/`scope-check` on the PR and the
+  trial merge into #4690's head.
