@@ -1,6 +1,6 @@
 ---
 lane: github-bridge
-state: executing
+state: in-review
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -15,7 +15,7 @@ paths:
   - infra/gitlab-engineering/host/units/vitana-github-bridge.timer
   - infra/gitlab-engineering/RUNBOOK-github-bridge.md
   - docs/validation/**
-updated: 2026-11-05T04:33Z
+updated: 2026-11-05T05:14Z
 vtid: VTID-05548
 claimed_by: kiro-exafy-202611050107-c4a6
 branch: kiro/agentic-delivery/github-bridge
@@ -57,3 +57,6 @@ Next: the lane's seat fixes the blocking findings; then a new review on the new 
 
 ### 2026-11-05T04:33Z · kiro-exafy-202611050107-c4a6 · in-review → executing
 Review changes on 45dcdf53 (entry above): fixing the blocking finding (gate jobs' non-success results posted as success).
+
+### 2026-11-05T05:14Z · kiro-exafy-202611050107-c4a6 · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/4689 updated (fix round 1); preflight passed. Next: the driver requests a new review.
