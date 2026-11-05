@@ -121,7 +121,7 @@ export const DOMAIN_ATLAS: readonly AtlasDomain[] = [
     title: 'Community and social',
     summary:
       'Members, groups, chat, posts and media, matchmaking and intents, presence, celebrations and notifications, and the community Autopilot engine (AP automations registry, recommendation inbox). Every member-facing list must exclude test/service accounts (service_bot_accounts, notification_test_actors).',
-    routes: [/^community/, /^chat/, /^social-connect/, /^matchmaking/, /^match-feedback/, /^intent/, /^intents/, /^celebrations/, /^creators$/, /^news-feed/, /^media-hub/, /^companion$/, /^presence/, /^public-profile-og/, /^users-/, /^topics/, /^notifications/, /^tenant-admin\/(community-admin|content-moderation|invitations)/, /^admin-moderation$/, /^automations/, /^recommendation-inbox/, /^enrichment-cards$/],
+    routes: [/^community/, /^chat/, /^social-connect/, /^matchmaking/, /^match-feedback/, /^intent/, /^intents/, /^celebrations/, /^creators$/, /^news-feed/, /^new-member-greeting/, /^media-hub/, /^companion$/, /^presence/, /^public-profile-og/, /^users-/, /^topics/, /^notifications/, /^tenant-admin\/(community-admin|content-moderation|invitations)/, /^admin-moderation$/, /^automations/, /^recommendation-inbox/, /^enrichment-cards$/],
     code: ['services/connect-people-*.ts', 'services/welcome-chat-service.ts', 'lib/excluded-test-service-accounts.ts'],
     tables: ['profiles', 'user_tenants', 'automation_runs', 'chat_messages', 'chat_group_members', 'profile_posts', 'user_notifications', 'daily_matches', 'service_bot_accounts', 'user_enrichment_cards'],
     flags: [],
