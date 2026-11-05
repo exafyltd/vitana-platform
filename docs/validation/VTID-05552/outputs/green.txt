@@ -1,0 +1,103 @@
+VTID-05552 — green on head (worktree /projects/sandbox/.rv/verify, branch kiro/agentic-delivery/verify-on-gitlab).
+Node v22.23.4.
+
+== The new tests on head
+$ node --test scripts/ci/staging-verify/deploy-runs.test.mjs scripts/eng/verify/{aws-secret,record-env,shadow-wait,tpl-verify-structure,vtid-close-env}.test.mjs
+ok 1 - deploy-runs file and GitHub listing give the same T_cut: a deploy that started mid-run bounds T_cut
+ok 2 - deploy-runs file and GitHub listing give the same T_cut: a deploy that finished inside the 5-minute margin clamps T_cut to the run start
+ok 3 - deploy-runs file and GitHub listing give the same T_cut: a skipped deploy never counts; the next real one does
+ok 4 - deploy-runs file and GitHub listing give the same T_cut: a failed deploy counts (it may have rolled tasks)
+ok 5 - deploy-runs file and GitHub listing give the same T_cut: a deploy older than the 6-hour lookback is ignored
+ok 6 - deploy-runs file and GitHub listing give the same T_cut: no deploy of this service: T_cut = run start (nothing attributed)
+ok 7 - deploy-runs entries become the run shape deployCutoff reads, only for the service under test
+ok 8 - a malformed deploy-runs file is refused as a whole (fail closed), never partly read
+ok 9 - with --deploy-runs-file there is no gh call, even with a GitHub token present, and T_cut matches GitHub
+ok 10 - without --deploy-runs-file the GitHub path is unchanged: the same gh call per service, the same runs
+ok 11 - a missing, empty or unreadable deploy-runs file fails closed: null (T_cut = run start), no GitHub fallback
+ok 12 - dry run, gateway: run.mjs verify with a deploy-runs file — no network, no gh call, T_cut from the file
+ok 13 - dry run, gateway: without the flag the GitHub listing is used, with the same T_cut
+ok 14 - dry run, community-app: run.mjs verify with a deploy-runs file — no network, no gh call, T_cut from the file
+ok 15 - dry run, community-app: without the flag the GitHub listing is used, with the same T_cut
+ok 16 - dry run, gateway: deploy-runs file missing on GitLab — fails closed (nothing attributed), says why, no GitHub fallback
+ok 17 - signV4 reproduces the AWS documentation example (IAM ListUsers, 20150830T123600Z)
+ok 18 - readSecret: the ID token buys 15-minute credentials for the role, which read the one secret
+ok 19 - a role outside account 472838866351 or a region other than eu-central-1 is refused before any call (IF–THEN 11)
+ok 20 - an STS or Secrets Manager error names the role or secret and the AWS error, never the token
+ok 21 - the CLI writes the secret to --out (mode 0600) and never prints it
+ok 22 - the CLI fails, naming the variable, when the job has no ID token
+ok 23 - GitLab variables and the oasis-recorder secret map to every input of record-oasis.sh
+ok 24 - WORKFLOW names the GitLab project of the job; DATA_REST_URL overrides the secret URL as on GitHub
+ok 25 - the commit and service the verify job wrote in target.json win over the pipeline commit (the nightly run)
+ok 26 - without the secret the Supabase inputs are empty, so record-oasis.sh itself refuses (job red)
+not ok 27 - integration, a passed run: the same body as on GitHub except metadata.workflow, which names the GitLab job
+    error: the GitLab row names its job (needs record-oasis.sh WORKFLOW, lane prerequisites #4690) | expected: 'gitlab:vitana/vitana-v1/staging-verify' | actual: 'STAGING-VERIFY.yml'
+not ok 28 - integration, a superseded full run with attribution: the same body as on GitHub except metadata.workflow, which names the GitLab job
+    error: the GitLab row names its job (needs record-oasis.sh WORKFLOW, lane prerequisites #4690) | expected: 'gitlab:vitana/vitana-v1/staging-verify' | actual: 'STAGING-VERIFY.yml'
+not ok 29 - integration, the crashed runner (target.json, no results.json): the same body as on GitHub except metadata.workflow, which names the GitLab job
+    error: the GitLab row names its job (needs record-oasis.sh WORKFLOW, lane prerequisites #4690) | expected: 'gitlab:vitana/vitana-v1/staging-verify' | actual: 'STAGING-VERIFY.yml'
+ok 30 - the fields the PUBLISH gate filters on (topic, metadata.service, metadata.commit) are the same on both hosts
+ok 31 - record without its secret: the job is red, nothing is sent, the result stays in the artifact
+ok 32 - shadow mode, or DELIVERY_MODE unset: nothing is recorded (GitHub stays the only writer of verification rows)
+ok 33 - the verify job never started (no target.json, no results.json): nothing is recorded and the log says why
+ok 34 - shadow mode: waits until staging serves the commit, then runs run.mjs verify once
+ok 35 - shadow mode: staging never serves the commit within 60 minutes → not_comparable, run.mjs never runs, nothing recorded
+ok 36 - shadow mode: staging already serves a descendant → not_comparable at once (it will never serve the commit)
+ok 37 - shadow mode: a failed verification keeps its exit code; the result stays in the artifact
+ok 38 - live mode: no wait; run.mjs verify runs at once
+ok 39 - DELIVERY_MODE: only the exact value `live` is live; anything else, unset included, is shadow
+ok 40 - run.mjs is always given --deploy-runs-file (never the GitHub listing), and the full flag
+ok 41 - target.json records what the job verifies before anything else runs (the record job reads it)
+ok 42 - bad input is refused before any wait: unknown service, short sha
+ok 43 - nightly (--sha-from-staging): the commit is the one staging serves now, checked out before the full run
+ok 44 - the template defines the hidden jobs of plan §9 and nothing that runs on its own
+ok 45 - .staging-verify: main class, a resource_group per service, not interruptible, audience of gl-verify only
+ok 46 - the resource groups are oldest first: every group the template uses is declared for the settings sync
+ok 47 - the nightly run passes full=true on the commit staging serves, in its own resource group
+ok 48 - .record: deploy class, audience of gl-record only, checks out nothing, live mode only, runs record-oasis.sh
+ok 49 - .vtid-close: deploy class, audience of gl-record only, checks out nothing, live mode only, at landing
+ok 50 - .notify-platform: deploy class, no ID token, live mode only, starts the platform pipeline SCREENS-CATALOG-TRIGGER starts
+ok 51 - shadow mode: every writing job also refuses in its own script, so a pipeline that overrides rules still writes nothing
+ok 52 - runner classes (§3.2): nothing on the untrusted class; deploy-class jobs run only platform main's scripts
+ok 53 - the central scripts come from platform main through the job token; the AWS roles are in account 472838866351
+ok 54 - a squash commit with the §3.5 trailers maps to PR_TITLE, PR_BODY, PR_HEAD_REF, PR_LABELS and PR_REF
+ok 55 - the trailers are parsed from the last block, also without a blank line before them; CRLF is accepted
+ok 56 - the mapped environment gives vtid-auto-close.cjs the same decision as the GitHub pull request did
+ok 57 - a dev-autopilot/* source branch keeps its meaning: the Dev Autopilot pipeline closes that VTID, not the landing
+ok 58 - the `VTID_AUTO_CLOSE: no` line in the description keeps its meaning and stays in PR_BODY
+ok 59 - a commit on main without a Merge-Request trailer is not a merge-bot landing: no environment, nothing is closed
+ok 60 - `vtid-close-env.mjs run` in live mode runs vtid-auto-close.cjs with the mapped environment and the service token
+ok 61 - `vtid-close-env.mjs run` closes nothing in shadow mode, or when DELIVERY_MODE is unset (GitHub stays the only closer)
+ok 62 - `vtid-close-env.mjs run` on a commit without the merge-bot trailers makes no gateway call and says why
+# tests 62
+# suites 0
+# pass 59
+# fail 3
+# cancelled 0
+# skipped 0
+# todo 0
+
+59 of 62 pass. The 3 red tests are the KNOWN red of the lane brief: record-env.test.mjs's integration cases run the
+real record-oasis.sh, which on main ignores WORKFLOW (metadata.workflow stays "STAGING-VERIFY.yml"). Lane
+prerequisites (VTID-05551, PR #4690) adds that input. They turn green when #4690 is on main, as run 2 shows.
+
+== Run 2: record-env.test.mjs with #4690's record-oasis.sh (origin/kiro/agentic-delivery/prerequisites 18a10349d8,
+   sha256 eb557def1c7ffb6fc7b87c46f251d58a0b10a49f30596e64395e7576d2229600), in a copy OUTSIDE the repo
+   (/projects/sandbox/.scratch/be7f/with-4690: this lane's record-env.mjs + record-env.test.mjs, #4690's record-oasis.sh)
+ok 1 - GitLab variables and the oasis-recorder secret map to every input of record-oasis.sh
+ok 2 - WORKFLOW names the GitLab project of the job; DATA_REST_URL overrides the secret URL as on GitHub
+ok 3 - the commit and service the verify job wrote in target.json win over the pipeline commit (the nightly run)
+ok 4 - without the secret the Supabase inputs are empty, so record-oasis.sh itself refuses (job red)
+ok 5 - integration, a passed run: the same body as on GitHub except metadata.workflow, which names the GitLab job
+ok 6 - integration, a superseded full run with attribution: the same body as on GitHub except metadata.workflow, which names the GitLab job
+ok 7 - integration, the crashed runner (target.json, no results.json): the same body as on GitHub except metadata.workflow, which names the GitLab job
+ok 8 - the fields the PUBLISH gate filters on (topic, metadata.service, metadata.commit) are the same on both hosts
+ok 9 - record without its secret: the job is red, nothing is sent, the result stays in the artifact
+ok 10 - shadow mode, or DELIVERY_MODE unset: nothing is recorded (GitHub stays the only writer of verification rows)
+ok 11 - the verify job never started (no target.json, no results.json): nothing is recorded and the log says why
+# tests 11
+# suites 0
+# pass 11
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0

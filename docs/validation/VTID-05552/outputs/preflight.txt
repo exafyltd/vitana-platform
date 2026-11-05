@@ -1,0 +1,41 @@
+VTID-05552 — preflight (scripts/collab/preflight.mjs), on this lane's branch and after lane reseat.
+
+== 1. On the branch as pushed (base origin/main 3767d3d09d, head 74ff5049 = the code commit)
+$ node scripts/collab/preflight.mjs --repo /projects/sandbox/.rv/verify --base origin/main --head HEAD --branch kiro/agentic-delivery/verify-on-gitlab --title "VTID-05552 (agentic-delivery/verify-on-gitlab): STAGING-VERIFY on GitLab (deploy-runs input, record and close jobs, tpl-verify.yml)"
+preflight vitana-platform /projects/sandbox/.rv/verify
+  base 3767d3d09d934361750523fd5cb7ff3cda6607d5  head 74ff504932a96c2cdce5e5cdf7611f5168dcddd2  branch kiro/agentic-delivery/verify-on-gitlab
+
+PASS  Collab tests [required]
+PASS  Collab handoff [required]
+FAIL  Lane scope [required]
+      ❌ **lane scope** — 1 problem(s) (lane agentic-delivery/verify-on-gitlab):
+      - 74ff5049: kiro-exafy-202611051219-be7f (seat exafy) edits lane agentic-delivery/verify-on-gitlab, which belongs to seat exafyltd
+PASS  PR-GATE scope [report-only in CI (until config.enforce=true)]
+PASS  PR-GATE sparring [report-only in CI (until config.enforce=true)]
+PASS  PR-GATE weakening [report-only in CI (until config.enforce=true)]
+PASS  PR-GATE red-green [report-only in CI (until config.enforce=true)]
+PASS  Kiro steering [report-only in CI (until config.enforce=true)]
+
+preflight: 1 check(s) failed: Lane scope — fix every error above, then push
+
+The one failure is not fixable inside this lane: the lane file on main says seat exafyltd (the Project Manager's
+reassignment of 2026-11-05T02:53Z/02:59Z), this builder is seat exafy as plan §9 assigns, and a lane PR may not change
+its own seat (queue.mjs scopeCheck, PERM fields). Lane reseat (VTID-05554, PR #4703) gives the eight lanes back to
+seat exafy. Known red until #4703 is on main and this branch is updated with main.
+
+== 2. Simulation, scratch only, never pushed (/projects/sandbox/.scratch/be7f/sim, removed afterwards):
+   M' = origin/main 3767d3d09d + #4703's head f4754fbb39 applied as its squash would (d82dc8dad2);
+   then M' merged into this lane's code commit 74ff5049 (9f719ee11d). The lane file merges without a conflict:
+   state: executing / seat: exafy / claimed_by: kiro-exafy-202611051219-be7f / branch: kiro/agentic-delivery/verify-on-gitlab
+$ node scripts/collab/queue.mjs scope-check --base M' --head HEAD --branch kiro/agentic-delivery/verify-on-gitlab
+✅ **lane scope** — lane agentic-delivery/verify-on-gitlab: every change is inside its paths   (exit 0)
+$ node scripts/collab/preflight.mjs --repo <sim> --base M' --head HEAD --branch kiro/agentic-delivery/verify-on-gitlab --title "…"
+PASS  Collab tests [required]
+PASS  Collab handoff [required]
+PASS  Lane scope [required]
+PASS  PR-GATE scope [report-only in CI (until config.enforce=true)]
+PASS  PR-GATE sparring [report-only in CI (until config.enforce=true)]
+PASS  PR-GATE weakening [report-only in CI (until config.enforce=true)]
+PASS  PR-GATE red-green [report-only in CI (until config.enforce=true)]
+PASS  Kiro steering [report-only in CI (until config.enforce=true)]
+preflight: every check passed
