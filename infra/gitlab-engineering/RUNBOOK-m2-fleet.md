@@ -48,6 +48,9 @@ The plan keeps stopping until the value has really been raised. The always-on ma
 manager (2) also use the On-Demand quota; at the default 80 % Spot the fleet uses about a fifth of its limit On-Demand, so 96 leaves room.
 A smaller fleet needs less: `terraform` variable `fleet_max_instances`, section 6.
 
+While AWS raises the quota, a smaller fleet lets the rest of milestone 2 apply now: put `fleet_max_instances = 1` (4 vCPUs in each quota) in `~/vitana-eng/terraform/terraform.tfvars`, next to `main.tf`,
+and set `fleet_alarm_running_jobs` (the at-maximum alarm of the monitoring file) to the same number, or that alarm never fires. Raise both when the quota is granted. Acceptance A1 of the rehearsal needs the full 24.
+
 ## 3. The apply
 
 ```bash
@@ -55,7 +58,16 @@ bash ~/vitana-eng/setup.sh
 ```
 
 The same command as milestone 1 (get the newer folder into CloudShell first, section 2 of `RUNBOOK.md`). About 30 minutes, most of it the image
-build. What happens, in order:
+build.
+
+**Keep the CloudShell tab active.** CloudShell ends a session after 20 to 30 minutes without keyboard or pointer input, and a running command does not count as input: press Enter in the tab every ten minutes while the image builds.
+`setup.sh` also runs Terraform under credentials that last one hour. If the run ends with `ExpiredToken`, an image timeout or a state lock error ("Error acquiring the state lock"), nothing is lost. With no apply running, clear the lock with the engineering-account credentials of `RUNBOOK.md` section 2 and run the same command again:
+
+```bash
+aws s3 rm s3://vitana-engineering-tfstate-$ACCOUNT_ID/gitlab-engineering/terraform.tfstate.tflock
+```
+
+An image that a cut-off run had half built is not known to Terraform; Image Builder keeps it and the next run builds another. If the apply says `AWSServiceRoleForEC2Spot has been taken`, the account already has the Spot role: add `fleet_create_spot_service_role = false` to `terraform.tfvars` and run again. What happens, in order:
 
 1. The quota check (section 2). If it stops the apply, nothing of the fleet exists yet; raise the quota and run the command again.
 2. The service-linked roles and the **key grants**: the Auto Scaling and Spot roles of AWS get access to the engineering key. Without these,
@@ -128,12 +140,11 @@ aws autoscaling update-auto-scaling-group --auto-scaling-group-name vitana-eng-f
 ```
 
 To start again: `aws autoscaling update-auto-scaling-group --auto-scaling-group-name vitana-eng-fleet --max-size 24` (the value of `fleet_max_instances`) and unpause the runner in GitLab.
-Terraform does not reset `desired_capacity`, but it does reset `max_size` to `fleet_max_instances` at the next apply. To remove the fleet completely, `terraform destroy` works with machines
-present (the group is force-deleted, scale-in protection does not block it); the empty runner-token secret and the cache bucket go with it, and a non-empty bucket must be emptied first.
+Terraform does not reset `desired_capacity`, but it does reset `max_size` to `fleet_max_instances` at the next apply. To remove the fleet completely, delete `fleet.tf` and `fleet-ami.tf` (and the host files only they use) in a pull request and apply. **Do not run a bare `terraform destroy`:** the fleet files share one module and one state with `main.tf`, so it would plan to delete the GitLab machine, the runner, the network and the key as well. With machines present the group is force-deleted (scale-in protection does not block it); the empty runner-token secret and the cache bucket go with it, and a non-empty bucket must be emptied first.
 
 ## 6. Changing the size or the mix
 
-The variables (`fleet_max_instances`, `fleet_idle_count`, `fleet_spot_percent`, `fleet_image_revision`) have defaults; to change one, add `-var name=value` to the `terraform apply` line in
+The variables (`fleet_max_instances`, `fleet_idle_count`, `fleet_spot_percent`, `fleet_image_revision`, `fleet_create_spot_service_role`) have defaults; to change one, add `-var name=value` to the `terraform apply` line in
 `setup.sh` of your CloudShell copy, or put it in a `terraform.tfvars` file next to `fleet.tf`. The group changes at once. **The manager's `config.toml` does not**, because a machine's
 start-up script is never re-run by an apply (the same rule as milestone 1's machines). After changing `fleet_max_instances` or `fleet_idle_count`, tell the manager: write the new value into
 `/etc/vitana/env` on it (`FLEET_MAX_INSTANCES=`, `FLEET_IDLE_COUNT=`) with `ssm send-command`, then run the installer again (section 3). Changing `fleet_max_instances` also needs the quota of section 2.

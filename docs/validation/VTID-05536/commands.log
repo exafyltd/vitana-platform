@@ -1,5 +1,5 @@
 # VTID-05536 commands (2026-11-05, Linux, node v22.23.4 unless a line says node 20; seat exafy, session kiro-exafy-202611021438-cff7)
-base: the tip of the M1 branch, 8bae0d492d4 (VTID-05544 "answer the review of 09:30Z"). Worktree: <worktree> = .worktrees/eng-gitlab-m2-fleet, branch kiro/eng-gitlab-m2/fleet.
+base: origin/main with M1 and monitoring merged. The lane was first built on the tip of the M1 branch, 8bae0d492d4, and rebuilt as one commit on main when M1 merged. Worktree: <worktree> = .worktrees/eng-gitlab-m2-fleet, branch kiro/eng-gitlab-m2/fleet.
 The outputs under outputs/ were produced from the final files of this PR, in this order, by one pass at the end (red on base, red on empty files, green, mutation run, terraform checks, the quota and console runs, the whole script set on two Node versions, secret scan, cost estimate), after the last change to a lane file or to the test.
 This session has no AWS, GitLab or GitHub credentials and wrote to no live system. The only network use: reading public documentation and AWS price-list files, `terraform init` (provider download), and `npx -y node@20`.
 
