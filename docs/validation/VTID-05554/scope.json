@@ -1,0 +1,19 @@
+{
+  "vtid": "VTID-05554",
+  "kind": "feature",
+  "paths": [
+    ".kiro/specs/agentic-delivery/lanes/prerequisites.md",
+    ".kiro/specs/agentic-delivery/lanes/pipelines.md",
+    ".kiro/specs/agentic-delivery/lanes/deploy-path.md",
+    ".kiro/specs/agentic-delivery/lanes/verify-on-gitlab.md",
+    ".kiro/specs/agentic-delivery/lanes/merge-queue.md",
+    ".kiro/specs/agentic-delivery/lanes/github-bridge.md",
+    ".kiro/specs/agentic-delivery/lanes/gateway-delivery.md",
+    ".kiro/specs/agentic-delivery/lanes/cutover.md",
+    ".kiro/specs/agentic-delivery/lanes/reseat.md",
+    "docs/validation/VTID-05554/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05554/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

@@ -1,0 +1,17 @@
+# bash -n on every script of the bundle
+ok   infra/gitlab-engineering/setup.sh
+ok   infra/gitlab-engineering/host/backup.sh
+ok   infra/gitlab-engineering/host/gitlab-configure.sh
+ok   infra/gitlab-engineering/host/gitlab-install.sh
+ok   infra/gitlab-engineering/host/mirror.sh
+ok   infra/gitlab-engineering/host/runner-fix.sh
+ok   infra/gitlab-engineering/host/runner-install.sh
+
+# the two central CI files parsed with a YAML parser (PyYAML 6.0.3), jobs and their tags
+infra/gitlab-engineering/host/ci-platform.yml: stages=['check'] default.tags=['vitana-eng'] workflow.rules=['$CI_COMMIT_BRANCH == "main"', '$CI_PIPELINE_SOURCE =~ /^(web|api|schedule)$/']
+   job typecheck: stage=check extends=.gateway parallel=None allow_failure=False tags=(default) script=['npm ci --no-audit --no-fund', 'pnpm run typecheck']
+   job gateway-jest: stage=check extends=.gateway parallel=4 allow_failure=False tags=(default) script=['pnpm install --frozen-lockfile', 'npx jest --silent --maxWorkers=2 --shard=$CI_NODE_INDEX/$CI_NODE_TOTAL']
+infra/gitlab-engineering/host/ci-v1.yml: stages=['check'] default.tags=['vitana-eng'] workflow.rules=['$CI_COMMIT_BRANCH == "main"', '$CI_PIPELINE_SOURCE =~ /^(web|api|schedule)$/']
+   job unit-tests: stage=check extends=.install parallel=None allow_failure=False tags=(default) script=['npm test']
+   job build: stage=check extends=.install parallel=None allow_failure=False tags=(default) script=['npm run build']
+   job lint: stage=check extends=.install parallel=None allow_failure=True tags=(default) script=['npm run lint']
