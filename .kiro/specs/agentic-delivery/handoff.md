@@ -7,7 +7,7 @@ next_actor: kiro
 state: approved
 spar_refs:
   - exafyltd/vitana-v1: 7829ef2f2ef12364862961d339161229c286d6f0
-updated: 2026-11-05T00:25Z
+updated: 2026-11-05T05:33Z
 sparring_record: .kiro/specs/agentic-delivery/sparring/verdict.md
 vtids: [VTID-05545, VTID-05546, VTID-05547, VTID-05548, VTID-05549, VTID-05550, VTID-05551, VTID-05552]
 ---
@@ -92,3 +92,13 @@ Round 2 converged with no findings (session `b80e315e`), policy approval `conver
 CI allocated VTID-05545 to VTID-05552 for the eight lanes. This entry starts the PR checks that PLAN-SPAR's own push does
 not start; the plan PR merges when they are green. First lane: `prerequisites` (it lands before eng-gitlab-m2
 `scm-webhook`, PR #4686, and before `gateway-delivery`). eng-gitlab-m2 lane `gitlab-client` landed as `8f3934c8` (#4679).
+
+### 2026-11-05T05:33Z · kiro-exafy-202611041929-802c · approved (late lane `reseat`)
+The Project Manager moved all eight lanes to the exceptions seat `exafyltd` at 02:53Z/02:59Z (`stale_ready`, #4688),
+while the driver heartbeat was stale for 54 minutes (02:04Z to 02:58Z, a builder step that did not refresh it). Plan §9
+assigns them to seat `exafy`, and Lane scope now refuses the `exafy` builders' lane-file commits once `main` is merged
+into their PRs (#4690 prerequisites, accepted on `18a10349`; #4689 github-bridge, fix round 1 on `83f8b616`). Late lane
+`reseat` (`lane_admin: true`, paths = the eight lane files) restores the seat through the reviewed path; PLAN-SPAR
+allocates its VTID. Builds are now done by separate builder sessions of seat `exafy`, so the driver can request the
+reviews (the reviewer refuses a review requested by the lane's builder). Earlier attempt #4687 (built by the driver) is
+closed; #4690 replaces it.
