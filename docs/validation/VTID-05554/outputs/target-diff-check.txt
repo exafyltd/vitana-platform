@@ -1,0 +1,10 @@
+base 3767d3d09d934361750523fd5cb7ff3cda6607d5  head HEAD d2c5be757e77030a9c849aee541c1c45dc78dd6a
+PASS .kiro/specs/agentic-delivery/lanes/prerequisites.md: base seat lines=1 numstat="1 1" expected=df364288999271aa head=df364288999271aa removed=[< seat: exafyltd] added=[> seat: exafy]
+PASS .kiro/specs/agentic-delivery/lanes/pipelines.md: base seat lines=1 numstat="1 1" expected=07b89891d6627287 head=07b89891d6627287 removed=[< seat: exafyltd] added=[> seat: exafy]
+PASS .kiro/specs/agentic-delivery/lanes/deploy-path.md: base seat lines=1 numstat="1 1" expected=c191a700e248f889 head=c191a700e248f889 removed=[< seat: exafyltd] added=[> seat: exafy]
+PASS .kiro/specs/agentic-delivery/lanes/verify-on-gitlab.md: base seat lines=1 numstat="1 1" expected=4e04b99a2e93b908 head=4e04b99a2e93b908 removed=[< seat: exafyltd] added=[> seat: exafy]
+PASS .kiro/specs/agentic-delivery/lanes/merge-queue.md: base seat lines=1 numstat="1 1" expected=2ff9cfaa4c136a65 head=2ff9cfaa4c136a65 removed=[< seat: exafyltd] added=[> seat: exafy]
+PASS .kiro/specs/agentic-delivery/lanes/github-bridge.md: base seat lines=1 numstat="1 1" expected=3ac7efc36ecfeaba head=3ac7efc36ecfeaba removed=[< seat: exafyltd] added=[> seat: exafy]
+PASS .kiro/specs/agentic-delivery/lanes/gateway-delivery.md: base seat lines=1 numstat="1 1" expected=a86f21ae31fe3aca head=a86f21ae31fe3aca removed=[< seat: exafyltd] added=[> seat: exafy]
+PASS .kiro/specs/agentic-delivery/lanes/cutover.md: base seat lines=1 numstat="1 1" expected=01e0e717a1b2eeb0 head=01e0e717a1b2eeb0 removed=[< seat: exafyltd] added=[> seat: exafy]
+targets: 8 pass, 0 fail
