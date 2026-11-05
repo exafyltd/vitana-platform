@@ -38,6 +38,6 @@ Let Claude Code build lanes marked `executor: claude` in every plan, and let the
 
 ## 6. Risks
 - R1 A Claude builder that stops committing for 4 h is treated as unavailable, and its lanes go to the exceptions seat. Mitigation: commit at each step; the lane log records each.
-- R2 Two builders on the same program can collide on shared files. Mitigation: the four lanes move whole, never split; `pipelines` lands before `merge-queue` (its `depends_on`).
+- R2 Two builders on the same program can collide on shared files. Mitigation: the four lanes move whole, never split; their declared paths are disjoint (`pipelines` owns `config/delivery/**` and the CI templates, `merge-queue` owns `scripts/eng/gitlab-land*.mjs`), and neither lane file declares a `depends_on` on the other (round 3 R3-F1: the earlier ordering claim was wrong).
 - R3 Changing `reviewer_seat` to a Kiro seat means the Claude-built lanes are reviewed by a Kiro session, not by the reviewer agent. This is weaker independence than the agent. Mitigation: decision §5 item 1, and the reviewer seat is never the builder's.
 <!-- plan:end -->
