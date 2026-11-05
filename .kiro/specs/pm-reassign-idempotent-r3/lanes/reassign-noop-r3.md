@@ -2,7 +2,7 @@
 lane: reassign-noop-r3
 state: executing
 next_actor: kiro
-claimed_by: kiro-exafyltd-202610312303-3dad
+claimed_by: kiro-exafyltd-202611051700-c1a1
 branch: kiro/pm-reassign-idempotent-r3/reassign-noop-r3
 pr: https://github.com/exafyltd/vitana-platform/pull/4556
 depends_on: []
@@ -97,3 +97,8 @@ Next: the land step merges under §7b once every required check is green on this
   tests (VTID-05414, VTID-05282) assert those exact pins, so they were not changed. Consequence: a deploy of this lane
   leaves the staging PM switched off, which is stricter than `dry_run` and writes nothing. Observation in dry_run on the
   verified revision is set on the ECS revision (a documented operator step, see issue #4699), not in the pin.
+
+### 2026-11-05T17:45Z · kiro-exafyltd-202611051700-c1a1 · claim
+Broke the stale claim of kiro-exafyltd-202610312303-3dad (claim dated 2026-11-01, older than 24 h, no new lane commit
+from that session). Claimed the lane for this session. Scope kind corrected to `fix` (the allowed values are fix, feature,
+refactor, infra, docs).

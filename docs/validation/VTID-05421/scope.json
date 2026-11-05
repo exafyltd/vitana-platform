@@ -1,6 +1,6 @@
 {
   "vtid": "VTID-05421",
-  "kind": "backend",
+  "kind": "fix",
   "paths": [
     "services/gateway/src/services/project-manager/decide.ts",
     "services/gateway/src/services/project-manager/act.ts",
