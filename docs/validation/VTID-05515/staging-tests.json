@@ -6,6 +6,7 @@
   "tests": [
     {
       "kind": "existing",
+      "cwd": "services/gateway",
       "ref": "npx jest test/eng-platform-inventory-readonly.test.ts",
       "reason": "Owner-run read-only script; nothing deploys."
     },

@@ -1,0 +1,57 @@
+$ node --import <offline fetch stub> run.mjs verify --service gateway …
+exit 0
+[staging-verify] service=gateway sha=0c87371efa5f3d3a19ff1309e1c7286d6ddd85d2 chain=0
+[staging-verify] production=1bda7855554a52d92288df7056ed24dd7e644ffa range=1 commits, 0 touch gateway; suites=(none) missing=0 lockfileOnly=0
+[staging-verify] PASS smoke › alive
+[staging-verify] PASS smoke › admin health reports staging
+[staging-verify] PASS smoke › build-info reports staging
+[staging-verify] PASS smoke › ORB health
+[staging-verify] PASS smoke › Nova Sonic health
+[staging-verify] PASS smoke › autopilot health
+[staging-verify] PASS smoke › VTID ledger health
+[staging-verify] PASS smoke › scheduler health
+[staging-verify] PASS smoke › operator health
+[staging-verify] PASS smoke › OASIS tasks list
+[staging-verify] PASS smoke › community members requires auth
+[staging-verify] PASS smoke › publish route exists (rejected write probe)
+[staging-verify] fetched origin main to resolve staging stamp 74fdd7081ef2b41aa22dbf0d74b78810383879f1
+[staging-verify] superseded by 74fdd7081ef2b41aa22dbf0d74b78810383879f1; attribution cutoff 2026-11-05T13:05:16.596Z: 12/12 results attributed
+
+**Staging verification superseded** — staging moved from `0c87371efa5f` to `74fdd7081ef2` during the run; nothing failed while staging still served `0c87371efa5f`, but it is not verified. The newer commit gets its own verification. No production prompt.
+
+- Service: `gateway`
+- Verified commit: `0c87371efa5f3d3a19ff1309e1c7286d6ddd85d2`
+- Tests: 12/12 passed
+- Staging moved to: `74fdd7081ef2b41aa22dbf0d74b78810383879f1`
+- Attribution cutoff: 2026-11-05T13:05:16.596Z
+- Attributed to `0c87371efa5f`: 12 passed, 0 failed; not attributed: 0
+
+What would ship (production `1bda7855554a` → `0c87371efa5f`, 0 commit(s)):
+- (none — production already serves or contains this commit, or its version could not be read)
+
+-- gh calls: ["gh api -X GET repos/exafyltd/vitana-platform/actions/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml/runs -f created=>=2026-11-05T06:55:16.694Z -F per_page=100 --jq [.workflow_runs[] | {created_at, updated_at, status, conclusion}]"]
+-- npx calls: []
+-- requests run.mjs made, all answered by the offline fetch stub (none left the process):
+GET https://preview-aws-gateway.vitanaland.com/api/v1/admin/build-info
+GET https://preview-aws-gateway.vitanaland.com/api/v1/admin/build-info
+GET https://preview-aws-gateway.vitanaland.com/api/v1/admin/build-info
+GET https://preview-aws-gateway.vitanaland.com/api/v1/admin/build-info
+GET https://preview-aws-gateway.vitanaland.com/api/v1/admin/build-info
+GET https://gateway.vitanaland.com/api/v1/admin/build-info
+GET https://preview-aws-gateway.vitanaland.com/alive
+GET https://preview-aws-gateway.vitanaland.com/api/v1/admin/health
+GET https://preview-aws-gateway.vitanaland.com/api/v1/admin/build-info
+GET https://preview-aws-gateway.vitanaland.com/api/v1/orb/health
+GET https://preview-aws-gateway.vitanaland.com/api/v1/orb/nova-sonic/health
+GET https://preview-aws-gateway.vitanaland.com/api/v1/autopilot/health
+GET https://preview-aws-gateway.vitanaland.com/api/v1/vtid/health
+GET https://preview-aws-gateway.vitanaland.com/api/v1/scheduler/health
+GET https://preview-aws-gateway.vitanaland.com/api/v1/operator/health
+GET https://preview-aws-gateway.vitanaland.com/api/v1/oasis/tasks
+GET https://preview-aws-gateway.vitanaland.com/api/v1/community/members
+POST https://preview-aws-gateway.vitanaland.com/api/v1/operator/publish
+GET https://preview-aws-gateway.vitanaland.com/api/v1/admin/build-info
+GET https://preview-aws-gateway.vitanaland.com/api/v1/admin/build-info
+GET https://preview-aws-gateway.vitanaland.com/api/v1/admin/build-info
+GET https://preview-aws-gateway.vitanaland.com/api/v1/admin/build-info
+GET https://preview-aws-gateway.vitanaland.com/api/v1/admin/build-info
