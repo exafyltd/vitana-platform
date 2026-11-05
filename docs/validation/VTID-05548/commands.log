@@ -1,0 +1,76 @@
+# VTID-05548 commands (2026-11-05, Linux, node v22.23.4 and v20.20.2, git 2.50.1; seat exafy, session kiro-exafy-202611050107-c4a6)
+base: origin/main 0ca24febdb1614310048b763dfd79481be0cb33e (the merge of plan PR #4684). Worktree: /projects/sandbox/.rv/github-bridge,
+branch kiro/agentic-delivery/github-bridge. Every output below was produced from the final code of this PR, in this order.
+
+# 0. Session and claim (from the platform checkout)
+$ node scripts/collab/queue.mjs session-id --agent kiro --seat exafy
+kiro-exafy-202611050107-c4a6
+$ node scripts/collab/queue.mjs claim agentic-delivery/github-bridge --session kiro-exafy-202611050107-c4a6 --repo /projects/sandbox/vitana-platform
+{"ok":true,...} (pass)
+$ git -C /projects/sandbox/vitana-platform worktree add -b kiro/agentic-delivery/github-bridge /projects/sandbox/.rv/github-bridge origin/main
+pass. The driver's heartbeats (plan-driver.mjs heartbeat --slug agentic-delivery / eng-gitlab-m2) were sent about every 15 minutes, all {"ok":true}.
+
+# 1. Red on base: the test file was written first. Output: outputs/red-on-base.txt
+$ (clean worktree of origin/main + the test file only) node --test scripts/eng/github-bridge.test.mjs
+tests 1, pass 0, fail 1: the file fails to load, the module does not exist (ERR_MODULE_NOT_FOUND).
+$ (temp tree outside the repo: the test file, gitlab-api.mjs, fake-fetch.mjs and a stub github-bridge.mjs that exports the same names with no behaviour) node --test scripts/eng/github-bridge.test.mjs
+tests 49, pass 0, fail 49. The stub is not committed.
+
+# 2. Green with the implementation. Output: outputs/green.txt
+$ npx -y node@20 --test scripts/eng/github-bridge.test.mjs
+tests 49, pass 49, fail 0 (node v20.20.2, UNIT.yml's version), about 11 s
+$ node --test scripts/eng/github-bridge.test.mjs
+tests 49, pass 49, fail 0 (node v22.23.4), about 10 s
+
+# 3. The whole script test set exactly as .github/workflows/UNIT.yml runs it (no install). Output: outputs/unit-all.txt
+$ FILES=$(find scripts -path '*/node_modules' -prune -o \( -name '*.test.cjs' -o -name '*.test.mjs' \) -print | sort); node --test $FILES
+34 files; tests 662, pass 661, fail 0, cancelled 0, skipped 1 (a win32-only test in a file this lane does not touch), on node v20.20.2 (14 s) and v22.23.4 (12 s).
+gh was replaced by a shim that fails like an unauthenticated CI runner, so no test could reach GitHub.
+
+# 4. Mutation check. Script: outputs/mutation-check.sh  Output: outputs/mutation-check.txt
+$ MUT_DIR=<scratch> bash docs/validation/VTID-05548/outputs/mutation-check.sh /projects/sandbox/.rv/github-bridge
+mutations 16: caught 16, survived 0, not applied 0, not parsing 0. Each one is applied alone to a copy outside the worktree
+(the merge bot's main merges, the clean-merge tree check, landing by ancestry, the rate-limit pause and its 403 detection,
+the budget rotation, gate jobs first, foreign merge requests, ownership after a GitHub delete, the assist ref rule, running
+jobs not posted, the sliding hour, re-copy after a refusal, no fetch in a dry run, quick actions, the push lease).
+An earlier run had 3 survivors: one mutation hit an unreachable line (replaced), two showed test gaps (the assist ref rule
+and the push lease), closed by the tests "assist push: … anything else is refused" (a commit on an ordinary branch) and
+"a GitLab write that races a copy is never overwritten".
+
+# 5. Host units. Output: outputs/systemd-verify.txt
+$ systemd-analyze verify --man=no vitana-github-bridge.service vitana-github-bridge.timer
+exit 0, no warning (systemd 252; a control copy with an invalid specifier fails, so the check reads ExecStart)
+
+# 6. B3 dry run, read-only. Harness: outputs/dry-run-harness.mjs  Output: outputs/dry-run.txt
+$ gh api --paginate "repos/exafyltd/vitana-platform/pulls?state=open&per_page=100" > <scratch>/vitana-platform.pulls.json   (GET only)
+$ gh api --paginate "repos/exafyltd/vitana-v1/pulls?state=open&per_page=100" > <scratch>/vitana-v1.pulls.json                 (GET only)
+snapshot taken 2026-11-05T02:02:37Z: 118 and 31 open pull requests (the snapshot files are not committed: they hold bodies)
+$ node docs/validation/VTID-05548/outputs/dry-run-harness.mjs <platform.json> <v1.json> "2026-11-05T02:02:37Z"
+exit 0. vitana-platform: 118 open; create_branch 84, create_merge_request 84, ignored 34 (33 pm-agent/*, 1 i18n-db/*).
+vitana-v1: 31 open; create_branch 31, create_merge_request 31. 230 planned actions, 235 API calls (all GET, asserted), 0 errors.
+
+# 6b. Staging suite needed? (run on a temporary commit object of the staged tree, never pushed; same file list as the PR)
+$ node scripts/ci/staging-verify/run.mjs check-pr --service gateway --repo-root . --base 0ca24febdb --head <tmp> --title "VTID-05548 (agentic-delivery/github-bridge): …"
+[staging-verify] PR touches no gateway deploy path — nothing deploys, no staging suite needed. (exit 0)
+$ node scripts/ci/staging-verify/run.mjs check-pr --service community-app … (the same)
+[staging-verify] PR touches no community-app deploy path — nothing deploys, no staging suite needed. (exit 0)
+So no docs/validation/VTID-05548/staging-tests.json.
+
+# 7. Advisory behavioural review (not the pipeline's reviewer-agent accept)
+semantic_reviewer agent on the uncommitted lane: verdict NEEDS_CHANGES, 1 high and 16 lower findings (acceptance.md
+"Advisory review"). Every code finding was fixed and tested before steps 1 to 6 were run again on the final code.
+
+# 8. Facts the code rests on, each checked
+- git push --porcelain prints "<flag>\t<src>:<dst>\t<summary>"; --force-with-lease=<ref>:<sha> refuses a stale ref and
+  --force-with-lease=<ref>: refuses an existing one (exit 1, "[rejected] (stale info)"), checked on scratch repositories.
+- git ls-remote <url> 'refs/heads/kiro/*' matches branches with deeper names (kiro/a/b/c), checked.
+- systemd's %d specifier is the credentials directory (accepted by systemd-analyze verify; %Q is refused).
+- GitLab: a personal access token over Git-over-HTTPS takes any non-blank user name
+  (https://docs.gitlab.com/ee/user/profile/personal_access_tokens.html).
+- GitHub fine-grained tokens: POST /repos/{owner}/{repo}/issues/{n}/comments and PATCH /repos/{owner}/{repo}/pulls/{n} are
+  covered by "Pull requests" write; statuses by "Commit statuses"
+  (https://docs.github.com/en/rest/authentication/permissions-required-for-fine-grained-personal-access-tokens).
+- GitHub secondary rate limits: about 80 content-generating requests a minute and 500 an hour; wait for Retry-After or at
+  least a minute (https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api).
+- systemd credential files may carry ACLs instead of mode 0400 (systemd issue 29435), so the bridge does not check a token
+  file's mode; the runbook keeps the files root-only, mode 0600.

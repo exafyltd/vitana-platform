@@ -1,0 +1,19 @@
+# Mutation check (VTID-05548): bash docs/validation/VTID-05548/outputs/mutation-check.sh <worktree>
+# Generated 2026-11-05T03:02:37Z by session kiro-exafy-202611050107-c4a6 on module sha256 6f089f75a0ac10a4 and test file sha256 653e1775668d045e
+# CAUGHT = a test fails with the mutation; SURVIVED = every test still passes; NOOP / INVALID = the mutation did not apply / does not parse.
+CAUGHT   main merges never accepted (3 failing: the merge bot merging main into a bridged branch is not anot|a landing right after the merge bot merged main (a train upd|a new GitHub head after the merge bot merged main is copied )
+CAUGHT   main merge: any merge accepted (no tree check) (1 failing: a new GitHub head after the merge bot merged main is copied )
+CAUGHT   landing only by exact sha (2 failing: the merge bot merging main into a bridged branch is not anot|a landing right after the merge bot merged main (a train upd)
+CAUGHT   no rate-limit pause (1 failing: a GitHub rate limit stops every GitHub write for the rest of)
+CAUGHT   secondary limit not detected (1 failing: a GitHub rate limit stops every GitHub write for the rest of)
+CAUGHT   no rotation (1 failing: the status budget goes first to the jobs that gate a landing)
+CAUGHT   no required-first order (1 failing: the status budget goes first to the jobs that gate a landing)
+CAUGHT   foreign MR rewritten (1 failing: a merge request someone else opened from a bridged branch is)
+CAUGHT   ownership dropped with the GitHub branch (1 failing: a branch deleted on GitHub stays the bridge's while GitLab h)
+CAUGHT   assist from any ref (1 failing: assist push: one commit on top of the head of a bridged bran)
+CAUGHT   running jobs posted (1 failing: statuses: one gitlab/<job> commit status per job result of t)
+CAUGHT   clock-hour budget (no sliding window) (1 failing: status writes stay under GitHub content limits: a budget per)
+CAUGHT   refused-then-deleted not re-created (1 failing: a refused branch whose GitLab copy a person deleted is copie)
+CAUGHT   dry run fetches (1 failing: a dry run that cannot judge a branch's history without a fet)
+CAUGHT   quick actions kept (2 failing: merge request title and description: the PR title and body, |one merge request per open same-repository pull request from)
+CAUGHT   no lease on push (1 failing: a GitLab write that races a copy is never overwritten: every)

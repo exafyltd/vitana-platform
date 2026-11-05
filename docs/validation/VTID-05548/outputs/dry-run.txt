@@ -1,0 +1,160 @@
+# Bridge dry run, read-only, over the open pull requests of both repositories (VTID-05548, task B3). It plans the
+# merge requests; the returning statuses of plan §8.1 step 4 need a GitLab instance and are not part of it.
+# Snapshot of GitHub's open pull requests taken 2026-11-05T02:02:37Z with gh api (GET only); GitLab empty (no instance exists yet).
+# API calls: 235, all GET (no write). Git: ls-remote only (served from the snapshot). State: not written.
+# One line per pull request: repository #number head-branch: planned actions, or why it is ignored.
+
+exafyltd/vitana-platform #4120 i18n-db/artifacts: ignored: head branch is not kiro/* or claude/* (i18n-db/...)
+exafyltd/vitana-platform #4157 kiro/i18n-propagate-stale-write/plan: create_branch, create_merge_request
+exafyltd/vitana-platform #4171 kiro/mt-network/plan: create_branch, create_merge_request
+exafyltd/vitana-platform #4276 kiro/native-wave2-discover-commerce/plan: create_branch, create_merge_request
+exafyltd/vitana-platform #4349 kiro/native-wave2-sharing-business/plan: create_branch, create_merge_request
+exafyltd/vitana-platform #4376 kiro/spotlight-commit-coverage/plan: create_branch, create_merge_request
+exafyltd/vitana-platform #4377 kiro/collab-multi-builder-handoff/sequential-builders: create_branch, create_merge_request
+exafyltd/vitana-platform #4409 kiro/ci-push-to-result/plan: create_branch, create_merge_request
+exafyltd/vitana-platform #4424 kiro/plan-spar-stuck-session/stuck-recovery: create_branch, create_merge_request
+exafyltd/vitana-platform #4430 kiro/native-wave2-ai-pages/plan: create_branch, create_merge_request
+exafyltd/vitana-platform #4434 kiro/native-wave2-role-modes/plan: create_branch, create_merge_request
+exafyltd/vitana-platform #4445 kiro/pipeline-agent-wake-and-review/review-fallback-trailer: create_branch, create_merge_request
+exafyltd/vitana-platform #4470 kiro/quality-checks-followup/merge-policy-text: create_branch, create_merge_request
+exafyltd/vitana-platform #4472 kiro/quality-checks-followup/steering-quality-checks: create_branch, create_merge_request
+exafyltd/vitana-platform #4474 kiro/quality-checks-followup/reviewer-requester-rule: create_branch, create_merge_request
+exafyltd/vitana-platform #4475 kiro/close/pipeline-agent-wake-and-review/driver-wake-closed: create_branch, create_merge_request
+exafyltd/vitana-platform #4476 kiro/kiro-web-reliability/preflight-validator: create_branch, create_merge_request
+exafyltd/vitana-platform #4477 kiro/messenger-ux-v2/ui-send-status: create_branch, create_merge_request
+exafyltd/vitana-platform #4478 pm-agent/collab-handoff-check-fix: ignored: head branch is not kiro/* or claude/* (pm-agent/...)
+exafyltd/vitana-platform #4479 pm-agent/kiro-web-reliability: ignored: head branch is not kiro/* or claude/* (pm-agent/...)
+exafyltd/vitana-platform #4480 pm-agent/matches-scroll-end: ignored: head branch is not kiro/* or claude/* (pm-agent/...)
+exafyltd/vitana-platform #4481 pm-agent/multi-tenant: ignored: head branch is not kiro/* or claude/* (pm-agent/...)
+exafyltd/vitana-platform #4482 pm-agent/spotlight-commit-coverage: ignored: head branch is not kiro/* or claude/* (pm-agent/...)
+exafyltd/vitana-platform #4484 pm-agent/health-native: ignored: head branch is not kiro/* or claude/* (pm-agent/...)
+exafyltd/vitana-platform #4485 kiro/kiro-web-reliability/session-reliability: create_branch, create_merge_request
+exafyltd/vitana-platform #4487 kiro/operating-workflow/pm-noop: create_branch, create_merge_request
+exafyltd/vitana-platform #4489 kiro/remove-b12-claude-sparring-gate1/plan-guard-paths: create_branch, create_merge_request
+exafyltd/vitana-platform #4490 pm-agent/operating-workflow: ignored: head branch is not kiro/* or claude/* (pm-agent/...)
+exafyltd/vitana-platform #4491 pm-agent/pipeline-agent-wake-and-review: ignored: head branch is not kiro/* or claude/* (pm-agent/...)
+exafyltd/vitana-platform #4496 pm-agent/outbox-test-dates: ignored: head branch is not kiro/* or claude/* (pm-agent/...)
+exafyltd/vitana-platform #4502 kiro/communication-style/plan: create_branch, create_merge_request
+exafyltd/vitana-platform #4503 kiro/new-member-welcome/say-hello-composer: create_branch, create_merge_request
+exafyltd/vitana-platform #4515 kiro/close/new-member-welcome/team-welcome-backend-i1: create_branch, create_merge_request
+exafyltd/vitana-platform #4516 pm-agent/reviewer-session-id-permission: ignored: head branch is not kiro/* or claude/* (pm-agent/...)
+exafyltd/vitana-platform #4518 kiro/ci-ecr-public-auth/platform-ecr-public-login: create_branch, create_merge_request
+exafyltd/vitana-platform #4520 pm-agent/ci-github-modernization: ignored: head branch is not kiro/* or claude/* (pm-agent/...)
+exafyltd/vitana-platform #4521 pm-agent/commerce-step-owner: ignored: head branch is not kiro/* or claude/* (pm-agent/...)
+exafyltd/vitana-platform #4522 pm-agent/kiro-autonomy-fallback: ignored: head branch is not kiro/* or claude/* (pm-agent/...)
+exafyltd/vitana-platform #4523 pm-agent/messenger-ux-v2: ignored: head branch is not kiro/* or claude/* (pm-agent/...)
+exafyltd/vitana-platform #4524 pm-agent/mt-frontend-brand: ignored: head branch is not kiro/* or claude/* (pm-agent/...)
+exafyltd/vitana-platform #4525 pm-agent/mt-jobs: ignored: head branch is not kiro/* or claude/* (pm-agent/...)
+exafyltd/vitana-platform #4526 pm-agent/mt-launch: ignored: head branch is not kiro/* or claude/* (pm-agent/...)
+exafyltd/vitana-platform #4527 pm-agent/plan-spar-vitana-v1-ref: ignored: head branch is not kiro/* or claude/* (pm-agent/...)
+exafyltd/vitana-platform #4528 pm-agent/reviewer-model-fallback: ignored: head branch is not kiro/* or claude/* (pm-agent/...)
+exafyltd/vitana-platform #4529 pm-agent/sparring-floor-retry: ignored: head branch is not kiro/* or claude/* (pm-agent/...)
+exafyltd/vitana-platform #4537 pm-agent/pipeline-lane-state-efficiency: ignored: head branch is not kiro/* or claude/* (pm-agent/...)
+exafyltd/vitana-platform #4550 pm-agent/sv-05308-coverage: ignored: head branch is not kiro/* or claude/* (pm-agent/...)
+exafyltd/vitana-platform #4551 kiro/plan/staging-coverage-6028392a: create_branch, create_merge_request
+exafyltd/vitana-platform #4556 kiro/pm-reassign-idempotent-r3/reassign-noop-r3: create_branch, create_merge_request
+exafyltd/vitana-platform #4557 kiro/staging-coverage-6028392a/notify-coverage: create_branch, create_merge_request
+exafyltd/vitana-platform #4558 kiro/github-api-quota/plan: create_branch, create_merge_request
+exafyltd/vitana-platform #4559 pm-agent/new-member-welcome: ignored: head branch is not kiro/* or claude/* (pm-agent/...)
+exafyltd/vitana-platform #4560 pm-agent/guard-required-only-preflight: ignored: head branch is not kiro/* or claude/* (pm-agent/...)
+exafyltd/vitana-platform #4561 kiro/spotlight-card-proportion/events-close: create_branch, create_merge_request
+exafyltd/vitana-platform #4565 kiro/desktop-spotlight-finish/colours-batch-4-review-1538: create_branch, create_merge_request
+exafyltd/vitana-platform #4566 kiro/ci-dockerhub-mirror/_plan: create_branch, create_merge_request
+exafyltd/vitana-platform #4568 kiro/records-r6/desktop-spotlight-finish/colours-batch-2: create_branch, create_merge_request
+exafyltd/vitana-platform #4569 kiro/records-r6/desktop-spotlight-finish/colours-batch-3: create_branch, create_merge_request
+exafyltd/vitana-platform #4570 kiro/records-r6/desktop-spotlight-finish/colours-batch-4: create_branch, create_merge_request
+exafyltd/vitana-platform #4571 kiro/records-r6/desktop-spotlight-finish/colours-batch-5: create_branch, create_merge_request
+exafyltd/vitana-platform #4572 kiro/records-r6/desktop-spotlight-finish/public-profile: create_branch, create_merge_request
+exafyltd/vitana-platform #4576 kiro/spotlight-card-proportion/find-a-match-close: create_branch, create_merge_request
+exafyltd/vitana-platform #4577 kiro/native-wave2-health-biology-r2/plan: create_branch, create_merge_request
+exafyltd/vitana-platform #4582 kiro/mt-community-isolation-r2/plan: create_branch, create_merge_request
+exafyltd/vitana-platform #4586 pm-agent/mt-track-s-r2: ignored: head branch is not kiro/* or claude/* (pm-agent/...)
+exafyltd/vitana-platform #4587 kiro/sidebar-chrome-colour-tokens/plan: create_branch, create_merge_request
+exafyltd/vitana-platform #4588 pm-agent/mt-guardrails-r2: ignored: head branch is not kiro/* or claude/* (pm-agent/...)
+exafyltd/vitana-platform #4590 kiro/staging-coverage-6028392a/_plan: create_branch, create_merge_request
+exafyltd/vitana-platform #4595 kiro/wallet-fx-rate-url/fx-url-review: create_branch, create_merge_request
+exafyltd/vitana-platform #4600 kiro/collab-bom-tolerance/plan-r2: create_branch, create_merge_request
+exafyltd/vitana-platform #4601 kiro/ia-architecture-map-r2/plan: create_branch, create_merge_request
+exafyltd/vitana-platform #4602 pm-agent/mt-track-s-authz: ignored: head branch is not kiro/* or claude/* (pm-agent/...)
+exafyltd/vitana-platform #4606 kiro/mt-track-s-authz/approvals-auth: create_branch, create_merge_request
+exafyltd/vitana-platform #4607 kiro/ci-queue-flood/plan: create_branch, create_merge_request
+exafyltd/vitana-platform #4615 kiro/mt-native-health-r2/_plan: create_branch, create_merge_request
+exafyltd/vitana-platform #4617 kiro/mt-network-r2/plan: create_branch, create_merge_request
+exafyltd/vitana-platform #4618 kiro/mt-data-cleanup-r2/_plan: create_branch, create_merge_request
+exafyltd/vitana-platform #4626 kiro/mt-identity-r2/membership-unification: create_branch, create_merge_request
+exafyltd/vitana-platform #4627 kiro/mt-identity-r2/access-token-hook-shadow: create_branch, create_merge_request
+exafyltd/vitana-platform #4628 kiro/mt-guardrails-r2/local-test-stack-v2: create_branch, create_merge_request
+exafyltd/vitana-platform #4631 kiro/mt-track-s-r2/s-j-retire-allowlist-v2: create_branch, create_merge_request
+exafyltd/vitana-platform #4633 kiro/mt-identity-r2/migration-records: create_branch, create_merge_request
+exafyltd/vitana-platform #4635 kiro/native-wave2-role-modes-r2/plan: create_branch, create_merge_request
+exafyltd/vitana-platform #4637 kiro/ci-queue-flood-r2/plan: create_branch, create_merge_request
+exafyltd/vitana-platform #4642 kiro/native-wave2-events-calendar-r3/plan: create_branch, create_merge_request
+exafyltd/vitana-platform #4643 pm-agent/eng-platform-p01: ignored: head branch is not kiro/* or claude/* (pm-agent/...)
+exafyltd/vitana-platform #4644 pm-agent/fix-deeplink-scroll-test: ignored: head branch is not kiro/* or claude/* (pm-agent/...)
+exafyltd/vitana-platform #4645 pm-agent/pm-ci-load: ignored: head branch is not kiro/* or claude/* (pm-agent/...)
+exafyltd/vitana-platform #4647 kiro/media-hub-vitana-cards/plan: create_branch, create_merge_request
+exafyltd/vitana-platform #4648 kiro/popup-close-button/plan: create_branch, create_merge_request
+exafyltd/vitana-platform #4650 kiro/welcome-finish-r2/native-extract-regen: create_branch, create_merge_request
+exafyltd/vitana-platform #4651 kiro/messenger-assisted-posts/plan: create_branch, create_merge_request
+exafyltd/vitana-platform #4654 kiro/mt-track-s-authz/work-surface-permission: create_branch, create_merge_request
+exafyltd/vitana-platform #4656 kiro/native-wave2-sharing-business-r2/plan: create_branch, create_merge_request
+exafyltd/vitana-platform #4657 kiro/native-shell-fixes/plan: create_branch, create_merge_request
+exafyltd/vitana-platform #4658 kiro/native-wave2-media-hub/plan: create_branch, create_merge_request
+exafyltd/vitana-platform #4659 kiro/native-wave2-memory-diary-r2/diary: create_branch, create_merge_request
+exafyltd/vitana-platform #4660 kiro/native-wave2-profile-settings-r2/delete-account: create_branch, create_merge_request
+exafyltd/vitana-platform #4661 kiro/native-wave2-profile-settings-r2/public-profile: create_branch, create_merge_request
+exafyltd/vitana-platform #4662 kiro/native-wave2-profile-settings-r2/support-connectors: create_branch, create_merge_request
+exafyltd/vitana-platform #4663 kiro/native-wave2-profile-settings-r2/settings: create_branch, create_merge_request
+exafyltd/vitana-platform #4664 kiro/native-wave2-fix-forward/plan: create_branch, create_merge_request
+exafyltd/vitana-platform #4665 kiro/eng-platform-p02/_plan: create_branch, create_merge_request
+exafyltd/vitana-platform #4668 pm-agent/review-survives-main-merge: ignored: head branch is not kiro/* or claude/* (pm-agent/...)
+exafyltd/vitana-platform #4669 kiro/staging-pm-pause/plan: create_branch, create_merge_request
+exafyltd/vitana-platform #4670 kiro/staging-pm-pause/plan-2: create_branch, create_merge_request
+exafyltd/vitana-platform #4671 kiro/repositories-steering: create_branch, create_merge_request
+exafyltd/vitana-platform #4672 kiro/ci-superseded-pr-runs/platform-superseded-concurrency: create_branch, create_merge_request
+exafyltd/vitana-platform #4673 kiro/mt-track-s-authz/work-surface-permission-v2: create_branch, create_merge_request
+exafyltd/vitana-platform #4674 kiro/pipeline-speed/pm-bookkeeping-idempotent: create_branch, create_merge_request
+exafyltd/vitana-platform #4675 kiro/pipeline-speed/plan: create_branch, create_merge_request
+exafyltd/vitana-platform #4676 kiro/ci-pr-run-concurrency: create_branch, create_merge_request
+exafyltd/vitana-platform #4681 kiro/operator-chat-service-token/plan: create_branch, create_merge_request
+exafyltd/vitana-platform #4682 pm-agent/eng-gitlab-m2: ignored: head branch is not kiro/* or claude/* (pm-agent/...)
+exafyltd/vitana-platform #4683 kiro/mt-track-s-authz/approvals-auth-v2: create_branch, create_merge_request
+exafyltd/vitana-platform #4685 pm-agent/eng-gitlab-m1: ignored: head branch is not kiro/* or claude/* (pm-agent/...)
+exafyltd/vitana-platform #4686 kiro/eng-gitlab-m2/scm-webhook: create_branch, create_merge_request
+exafyltd/vitana-platform #4687 kiro/agentic-delivery/prerequisites: create_branch, create_merge_request
+exafyltd/vitana-v1 #1438 kiro/multi-tenant/provisioning-ui: create_branch, create_merge_request
+exafyltd/vitana-v1 #1520 kiro/new-member-welcome/say-hello-composer: create_branch, create_merge_request
+exafyltd/vitana-v1 #1521 kiro/ci-ecr-public-auth/v1-ecr-public-login: create_branch, create_merge_request
+exafyltd/vitana-v1 #1540 kiro/wallet-fx-rate-url/fx-url: create_branch, create_merge_request
+exafyltd/vitana-v1 #1553 kiro/native-wave2-public-auth-onboarding-r3/public-legal: create_branch, create_merge_request
+exafyltd/vitana-v1 #1554 kiro/native-wave2-public-auth-onboarding-r3/auth-portals: create_branch, create_merge_request
+exafyltd/vitana-v1 #1559 kiro/native-wave2-public-auth-onboarding-r3/onboarding: create_branch, create_merge_request
+exafyltd/vitana-v1 #1561 kiro/native-wave2-inbox-chat-calls-r2/conversation-chat: create_branch, create_merge_request
+exafyltd/vitana-v1 #1562 kiro/native-wave2-health-biology-r3/health-hub: create_branch, create_merge_request
+exafyltd/vitana-v1 #1563 kiro/native-wave2-health-biology-r3/health-plans-services: create_branch, create_merge_request
+exafyltd/vitana-v1 #1564 kiro/native-wave2-inbox-chat-calls-r2/inbox-list: create_branch, create_merge_request
+exafyltd/vitana-v1 #1565 kiro/native-wave2-journey-autopilot-r2/journey: create_branch, create_merge_request
+exafyltd/vitana-v1 #1566 kiro/native-wave2-journey-autopilot-r2/autopilot-audiobook: create_branch, create_merge_request
+exafyltd/vitana-v1 #1567 kiro/native-wave2-health-biology-r3/vitana-index-biology: create_branch, create_merge_request
+exafyltd/vitana-v1 #1568 kiro/mt-track-s-r2/s-j-retire-allowlist-v2: create_branch, create_merge_request
+exafyltd/vitana-v1 #1573 kiro/native-wave2-discover-commerce-r2/discover: create_branch, create_merge_request
+exafyltd/vitana-v1 #1575 kiro/native-wave2-discover-commerce-r2/marketplace-orders: create_branch, create_merge_request
+exafyltd/vitana-v1 #1576 kiro/spotlight-card-proportion/layout-core: create_branch, create_merge_request
+exafyltd/vitana-v1 #1577 kiro/native-wave2-discover-commerce-r2/product-cart-checkout: create_branch, create_merge_request
+exafyltd/vitana-v1 #1581 kiro/native-wave2-ai-pages-r2/ai-chat: create_branch, create_merge_request
+exafyltd/vitana-v1 #1582 kiro/welcome-finish-r2/native-extract-regen: create_branch, create_merge_request
+exafyltd/vitana-v1 #1583 kiro/native-wave2-ai-pages-r2/ai-coach: create_branch, create_merge_request
+exafyltd/vitana-v1 #1584 kiro/native-wave2-ai-pages-r2/ai-assistants: create_branch, create_merge_request
+exafyltd/vitana-v1 #1585 kiro/native-wave2-role-modes-r2/patient: create_branch, create_merge_request
+exafyltd/vitana-v1 #1586 kiro/native-wave2-role-modes-r2/professional: create_branch, create_merge_request
+exafyltd/vitana-v1 #1587 kiro/native-wave2-role-modes-r2/business: create_branch, create_merge_request
+exafyltd/vitana-v1 #1588 kiro/native-wave2-role-modes-r2/staff: create_branch, create_merge_request
+exafyltd/vitana-v1 #1589 kiro/repositories-steering: create_branch, create_merge_request
+exafyltd/vitana-v1 #1590 kiro/ci-superseded-pr-runs/v1-superseded-concurrency: create_branch, create_merge_request
+exafyltd/vitana-v1 #1591 kiro/vitana-avatar-every-message: create_branch, create_merge_request
+exafyltd/vitana-v1 #1592 kiro/group-chat-realtime-status/groupchat-realtime: create_branch, create_merge_request
+
+# Counts
+exafyltd/vitana-platform: 118 open pull requests; create_branch 84; create_merge_request 84; ignored: head branch is not kiro/* or claude/* 34
+exafyltd/vitana-v1: 31 open pull requests; create_branch 31; create_merge_request 31
+total planned actions: 230; errors: 0
