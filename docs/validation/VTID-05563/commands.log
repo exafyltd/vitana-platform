@@ -1,0 +1,9 @@
+# VTID-05563 agentic-delivery/nav-paths — commands.log (worktree /projects/sandbox/.rv/navp, origin/main 0f45367bb6)
+$ node scripts/collab/queue.mjs session-id --agent kiro --seat exafy   -> kiro-exafy-202611052207-653d
+$ gh api repos/exafyltd/vitana-platform/pulls/4718; git show origin/main:.kiro/specs/agentic-delivery/lanes/nav-paths.md   -> plan PR #4718 merged 2026-11-05T21:50:00Z as d73fec53f9; lane on main with vtid: VTID-05563 (no wait needed)
+$ node scripts/collab/queue.mjs claim agentic-delivery/nav-paths --session kiro-exafy-202611052207-653d --repo /projects/sandbox/vitana-platform   -> {"ok":true,"sha":"bbab6c39b6…"} (pass)
+$ git -C /projects/sandbox/vitana-platform worktree add -b kiro/agentic-delivery/nav-paths /projects/sandbox/.rv/navp origin/main   -> HEAD 0f45367bb6 (pass)
+$ (edit) .kiro/specs/agentic-delivery/lanes/gateway-delivery.md: four lines added to paths, before `  - docs/validation/**`   -> 1 file, 4 insertions, 0 deletions
+$ bash docs/validation/VTID-05563/outputs/target-diff-check.sh origin/main WT   -> PASS (working tree, before the commit)
+$ bash docs/validation/VTID-05563/outputs/nav-paths-proof.sh negative 0f45367bb69a8661eca6d5170ebb33909d03d001   -> outputs/red-on-base.txt (scope-check exit 1, 4 problems: the four files are outside lane agentic-delivery/gateway-delivery; validate exit 0; scratch worktree removed, nothing pushed)
+$ node /projects/sandbox/vitana-platform/scripts/collab/land-guard.mjs evidence --repo /projects/sandbox/.rv/navp --vtid VTID-05563   -> "land-guard evidence: ok — VTID-05563 evidence present" (pass, before the code commit)

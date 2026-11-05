@@ -1,6 +1,6 @@
 ---
 lane: nav-paths
-state: ready
+state: executing
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -11,7 +11,9 @@ lane_admin: true
 repos: [exafyltd/vitana-platform]
 paths:
   - .kiro/specs/agentic-delivery/lanes/gateway-delivery.md
-updated: 2026-11-05T21:34Z
+claimed_by: kiro-exafy-202611052207-653d
+branch: kiro/agentic-delivery/nav-paths
+updated: 2026-11-05T22:13Z
 vtid: VTID-05563
 ---
 # Lane `nav-paths`: lane gateway-delivery may change the four voice-navigation files its Delivery screen needs
@@ -37,3 +39,10 @@ allocates its VTID; a builder of seat `exafy` that is not the driver claims it; 
 
 ### 2026-11-05T21:34Z · ci-plan-spar · ready (VTID allocated)
 VTID-05563 allocated after policy approval (converged-auto-v1).
+
+### 2026-11-05T22:13Z · kiro-exafy-202611052207-653d · ready → executing
+Claimed by a builder session of seat exafy (not the driver kiro-exafy-202611041929-802c). The target
+`lanes/gateway-delivery.md` gains exactly four `paths` entries (byte check pass, `outputs/target-diff-check.txt`); nothing
+else in it changes. No code and no new test. Negative proof: the gateway-delivery commit that changes the four files fails
+Lane scope on today's main (4 problems, exit 1, `outputs/red-on-base.txt`); the positive proof runs on this lane's head
+(`outputs/green.txt`). Decisions in `docs/validation/VTID-05563/acceptance.md`.
