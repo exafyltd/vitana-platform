@@ -1,0 +1,26 @@
+ok   rollback on a database without the lane is a no-op (replay order)
+ok   M1 backfilled the drifted member
+ok   M1 did not backfill the bot
+ok   M1 fired no side effect
+ok   suppression off after M1
+     drift report after M1+M3: {"drift":0,"generated_at":"2026-11-02T16:46:55.858+00:00","status_mismatch":0,"excluded_bot_rows":1,"memberships_without_app_user":1,"memberships_not_in_user_tenants":0,"user_tenants_not_in_memberships":0}
+ok   drift memberships -> user_tenants reads 0 after M1
+ok   drift reads 0 on the converged mirror
+ok   after apply: pgTAP backfill file passed (rolled back)
+ok   after apply: pgTAP drift file passed (rolled back)
+ok   after apply: pgTAP dualwrite file passed (rolled back)
+ok   rollback restores the prior state exactly (rows, comment, functions, tables)
+ok   re-apply after rollback works
+ok   after re-apply: pgTAP backfill file passed (rolled back)
+ok   after re-apply: pgTAP drift file passed (rolled back)
+ok   after re-apply: pgTAP dualwrite file passed (rolled back)
+ok   second rollback restores the prior state exactly
+ok   committed legacy-only insert: user_tenants row, community, primary
+ok   committed dual-write fired no side effect
+ok   writer order: the writer's own primary insert keeps its side effects (trigger deferred, no-op)
+ok   committed re-insert is a no-op
+ok   committed bot insert writes nothing
+ok   drift memberships -> user_tenants stays 0 with the dual-write live
+ok   rollback drops the dual-write trigger
+ok   rollback keeps the real membership the trigger wrote while live
+ALL OK
