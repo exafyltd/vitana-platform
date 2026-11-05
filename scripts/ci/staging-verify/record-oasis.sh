@@ -2,7 +2,8 @@
 # VTID-05128 — STAGING-VERIFY: record the result in OASIS.
 #
 # Called by the "Record result in OASIS" step of .github/workflows/STAGING-VERIFY.yml.
-# Env: SUPABASE_URL, SUPABASE_SVC, RESULTS (results.json path), RUN_URL, SERVICE, SHA.
+# Env: SUPABASE_URL, SUPABASE_SVC, RESULTS (results.json path), RUN_URL, SERVICE, SHA,
+#      and optional WORKFLOW (VTID-05551, below).
 #
 # The event body is written to a file and sent with `curl --data-binary @file`.
 # It used to be passed as one argv argument (`curl -d "$BODY"`): a full run
@@ -13,6 +14,12 @@
 # VTID-05144: metadata also carries superseded_by, attribution_cutoff, chain,
 # and per result `attributed` (only when the run was superseded mid-run and
 # its results were attributed against the deploy cutoff).
+#
+# VTID-05551: metadata.workflow names the workflow that verified the run:
+# WORKFLOW, or "STAGING-VERIFY.yml" when WORKFLOW is unset or empty. GitHub's
+# STAGING-VERIFY.yml sets none, so its body is the same as before; the GitLab
+# .record job passes gitlab:<project>/staging-verify. The value reaches jq as
+# data (--arg), never as program text.
 set -euo pipefail
 
 if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SVC:-}" ]; then
@@ -24,7 +31,7 @@ BODY_FILE="$(mktemp "${RUNNER_TEMP:-/tmp}/oasis-event.XXXXXX.json")"
 trap 'rm -f "$BODY_FILE"' EXIT
 
 if [ -n "${RESULTS:-}" ] && [ -f "$RESULTS" ]; then
-  jq -c --arg run "${RUN_URL:-}" '{
+  jq -c --arg run "${RUN_URL:-}" --arg workflow "${WORKFLOW:-STAGING-VERIFY.yml}" '{
     vtid: (.vtid // "BOOTSTRAP-STAGING-VERIFY"),
     topic: ("staging.verify." + .outcome),
     service: ("staging-verify-" + .service),
@@ -37,7 +44,7 @@ if [ -n "${RESULTS:-}" ] && [ -f "$RESULTS" ]; then
       vtids: .vtids, run_url: $run, production_commit: .production_stamp,
       results: [.results[] | {suite, name, ok, problems} + (if has("attributed") then {attributed} else {} end)],
       missing_suites: .plan.missing, invalid_suites: .plan.invalid,
-      shipping: .shipping, full: (.full // false), workflow: "STAGING-VERIFY.yml",
+      shipping: .shipping, full: (.full // false), workflow: $workflow,
       superseded_by: (.superseded_by // null), attribution_cutoff: (.attribution_cutoff // null),
       chain: (.chain // 0)
     }
@@ -45,11 +52,11 @@ if [ -n "${RESULTS:-}" ] && [ -f "$RESULTS" ]; then
 else
   # The runner crashed before writing a result: that is a failed
   # verification, and it must be visible as one.
-  jq -nc --arg svc "${SERVICE:-}" --arg sha "${SHA:-}" --arg run "${RUN_URL:-}" '{
+  jq -nc --arg svc "${SERVICE:-}" --arg sha "${SHA:-}" --arg run "${RUN_URL:-}" --arg workflow "${WORKFLOW:-STAGING-VERIFY.yml}" '{
     vtid: "BOOTSTRAP-STAGING-VERIFY", topic: "staging.verify.failed",
     service: ("staging-verify-" + $svc), role: "CICD", model: "staging-verify", status: "error",
     message: ("**Staging verification FAILED — the runner crashed before producing a result.** Not ready for production. Run: " + $run),
-    metadata: { env: "staging", service: $svc, commit: $sha, outcome: "failed", run_url: $run, crashed: true, workflow: "STAGING-VERIFY.yml" }
+    metadata: { env: "staging", service: $svc, commit: $sha, outcome: "failed", run_url: $run, crashed: true, workflow: $workflow }
   }' > "$BODY_FILE"
 fi
 

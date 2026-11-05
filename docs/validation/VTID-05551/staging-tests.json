@@ -1,0 +1,15 @@
+{
+  "vtid": "VTID-05551",
+  "service": "gateway",
+  "note": "This lane deploys the gateway to staging with one change members never see: two route names added to the developer atlas domain deploy (src/orb/developer/domain-atlas.ts). The atlas has no read endpoint, so on staging the lane is proven by the gateway smoke suite on the deployed build plus the atlas tests as an existing suite, run on the verified commit. The other half of the lane, scripts/ci/staging-verify/record-oasis.sh taking WORKFLOW, deploys nothing; it is proven by scripts/ci/staging-verify/record-oasis-workflow.test.mjs in UNIT, and its next real run is the next GitHub STAGING-VERIFY, which records the same body as before.",
+  "read_only": true,
+  "tests": [
+    { "kind": "http", "name": "gateway alive on the deployed staging build", "path": "/alive", "expect_status": 200 },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/atlas-gitlab-route-claims.test.ts test/vtid-04560-role-separation-regression.test.ts",
+      "cwd": "services/gateway",
+      "reason": "the atlas claims of routes/internal-gitlab-webhook.ts and routes/delivery.ts (domain deploy) and the drift guard over every route file, on the verified commit; the atlas has no endpoint to read on staging"
+    }
+  ]
+}

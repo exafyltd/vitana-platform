@@ -1,0 +1,238 @@
+# VTID-05551 red on base: a git archive of origin/main 0ca24febdb (record-oasis.sh sha256 077b3182..., unchanged) with this PR's final test file copied in; 2026-11-05T03:44:56Z, node v22.23.4, jq-1.8.1
+$ node --test scripts/ci/staging-verify/record-oasis-workflow.test.mjs
+TAP version 13
+# Subtest: each recorded body names the GitHub workflow exactly once
+ok 1 - each recorded body names the GitHub workflow exactly once
+  ---
+  duration_ms: 0.831163
+  type: 'test'
+  ...
+# Subtest: a passed run: without WORKFLOW the body is byte-identical to today's
+ok 2 - a passed run: without WORKFLOW the body is byte-identical to today's
+  ---
+  duration_ms: 15.051307
+  type: 'test'
+  ...
+# Subtest: a passed run: an empty WORKFLOW behaves as unset
+ok 3 - a passed run: an empty WORKFLOW behaves as unset
+  ---
+  duration_ms: 14.324261
+  type: 'test'
+  ...
+# Subtest: a passed run: with WORKFLOW=gitlab:vitana/vitana-v1/staging-verify the body differs only in metadata.workflow
+not ok 4 - a passed run: with WORKFLOW=gitlab:vitana/vitana-v1/staging-verify the body differs only in metadata.workflow
+  ---
+  duration_ms: 28.08703
+  type: 'test'
+  location: '/projects/sandbox/.scratch/prereq2-tmp/base-tree/scripts/ci/staging-verify/record-oasis-workflow.test.mjs:184:3'
+  failureType: 'testCodeFailure'
+  error: |-
+    a passed run
+    + actual - expected
+    
+    + '{"vtid":"VTID-05551","topic":"staging.verify.passed","service":"staging-verify-gateway","role":"CICD","model":"staging-verify","status":"success","message":"**Staging verified** gateway at 1d2c3b4a5968: 2 of 2 passed.","metadata":{"env":"staging","service":"gateway","commit":"1d2c3b4a59687766554433221100ffeeddccbbaa","outcome":"passed","vtids":["VTID-05551"],"run_url":"https://github.com/exafyltd/vitana-platform/actions/runs/19000000001","production_commit":"0ca24febdb16","results":[{"suite":"smoke","name":"gateway alive","ok":true,"problems":[]},{"suite":"VTID-05551","name":"atlas claims","ok":true,"problems":[]}],"missing_suites":[],"invalid_suites":[],"shipping":[{"sha":"1d2c3b4a59687766554433221100ffeeddccbbaa","subject":"VTID-05551 (agentic-delivery/prerequisites): atlas claims","author":"kiro-agent[bot]","date":"2026-11-05T02:55:00Z","branch_commits":0}],"full":false,"workflow":"STAGING-VERIFY.yml","superseded_by":null,"attribution_cutoff":null,"chain":0}}\n'
+    - '{"vtid":"VTID-05551","topic":"staging.verify.passed","service":"staging-verify-gateway","role":"CICD","model":"staging-verify","status":"success","message":"**Staging verified** gateway at 1d2c3b4a5968: 2 of 2 passed.","metadata":{"env":"staging","service":"gateway","commit":"1d2c3b4a59687766554433221100ffeeddccbbaa","outcome":"passed","vtids":["VTID-05551"],"run_url":"https://github.com/exafyltd/vitana-platform/actions/runs/19000000001","production_commit":"0ca24febdb16","results":[{"suite":"smoke","name":"gateway alive","ok":true,"problems":[]},{"suite":"VTID-05551","name":"atlas claims","ok":true,"problems":[]}],"missing_suites":[],"invalid_suites":[],"shipping":[{"sha":"1d2c3b4a59687766554433221100ffeeddccbbaa","subject":"VTID-05551 (agentic-delivery/prerequisites): atlas claims","author":"kiro-agent[bot]","date":"2026-11-05T02:55:00Z","branch_commits":0}],"full":false,"workflow":"gitlab:vitana/vitana-v1/staging-verify","superseded_by":null,"attribution_cutoff":null,"chain":0}}\n'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: |-
+    {"vtid":"VTID-05551","topic":"staging.verify.passed","service":"staging-verify-gateway","role":"CICD","model":"staging-verify","status":"success","message":"**Staging verified** gateway at 1d2c3b4a5968: 2 of 2 passed.","metadata":{"env":"staging","service":"gateway","commit":"1d2c3b4a59687766554433221100ffeeddccbbaa","outcome":"passed","vtids":["VTID-05551"],"run_url":"https://github.com/exafyltd/vitana-platform/actions/runs/19000000001","production_commit":"0ca24febdb16","results":[{"suite":"smoke","name":"gateway alive","ok":true,"problems":[]},{"suite":"VTID-05551","name":"atlas claims","ok":true,"problems":[]}],"missing_suites":[],"invalid_suites":[],"shipping":[{"sha":"1d2c3b4a59687766554433221100ffeeddccbbaa","subject":"VTID-05551 (agentic-delivery/prerequisites): atlas claims","author":"kiro-agent[bot]","date":"2026-11-05T02:55:00Z","branch_commits":0}],"full":false,"workflow":"gitlab:vitana/vitana-v1/staging-verify","superseded_by":null,"attribution_cutoff":null,"chain":0}}
+    
+  actual: |-
+    {"vtid":"VTID-05551","topic":"staging.verify.passed","service":"staging-verify-gateway","role":"CICD","model":"staging-verify","status":"success","message":"**Staging verified** gateway at 1d2c3b4a5968: 2 of 2 passed.","metadata":{"env":"staging","service":"gateway","commit":"1d2c3b4a59687766554433221100ffeeddccbbaa","outcome":"passed","vtids":["VTID-05551"],"run_url":"https://github.com/exafyltd/vitana-platform/actions/runs/19000000001","production_commit":"0ca24febdb16","results":[{"suite":"smoke","name":"gateway alive","ok":true,"problems":[]},{"suite":"VTID-05551","name":"atlas claims","ok":true,"problems":[]}],"missing_suites":[],"invalid_suites":[],"shipping":[{"sha":"1d2c3b4a59687766554433221100ffeeddccbbaa","subject":"VTID-05551 (agentic-delivery/prerequisites): atlas claims","author":"kiro-agent[bot]","date":"2026-11-05T02:55:00Z","branch_commits":0}],"full":false,"workflow":"STAGING-VERIFY.yml","superseded_by":null,"attribution_cutoff":null,"chain":0}}
+    
+  operator: 'strictEqual'
+  stack: |-
+    assertBytes (file:///projects/sandbox/.scratch/prereq2-tmp/base-tree/scripts/ci/staging-verify/record-oasis-workflow.test.mjs:160:10)
+    TestContext.<anonymous> (file:///projects/sandbox/.scratch/prereq2-tmp/base-tree/scripts/ci/staging-verify/record-oasis-workflow.test.mjs:188:5)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: a failed run in the older results.json shape: without WORKFLOW the body is byte-identical to today's
+ok 5 - a failed run in the older results.json shape: without WORKFLOW the body is byte-identical to today's
+  ---
+  duration_ms: 14.073608
+  type: 'test'
+  ...
+# Subtest: a failed run in the older results.json shape: an empty WORKFLOW behaves as unset
+ok 6 - a failed run in the older results.json shape: an empty WORKFLOW behaves as unset
+  ---
+  duration_ms: 14.170047
+  type: 'test'
+  ...
+# Subtest: a failed run in the older results.json shape: with WORKFLOW=gitlab:vitana/vitana-v1/staging-verify the body differs only in metadata.workflow
+not ok 7 - a failed run in the older results.json shape: with WORKFLOW=gitlab:vitana/vitana-v1/staging-verify the body differs only in metadata.workflow
+  ---
+  duration_ms: 28.330778
+  type: 'test'
+  location: '/projects/sandbox/.scratch/prereq2-tmp/base-tree/scripts/ci/staging-verify/record-oasis-workflow.test.mjs:184:3'
+  failureType: 'testCodeFailure'
+  error: |-
+    a failed run in the older results.json shape
+    + actual - expected
+    
+    + '{"vtid":"BOOTSTRAP-STAGING-VERIFY","topic":"staging.verify.failed","service":"staging-verify-gateway","role":"CICD","model":"staging-verify","status":"error","message":"**Staging verification failed** for gateway: 1 failed, 1 suite missing, 1 invalid.","metadata":{"env":"staging","service":"gateway","commit":"1d2c3b4a59687766554433221100ffeeddccbbaa","outcome":"failed","vtids":["VTID-05537","VTID-05551"],"run_url":"https://github.com/exafyltd/vitana-platform/actions/runs/19000000001","production_commit":"0ca24febdb16","results":[{"suite":"smoke","name":"gateway alive","ok":true,"problems":[]},{"suite":"VTID-05537","name":"gitlab client suite","ok":false,"problems":["exit 1: 1 failed"]}],"missing_suites":[{"sha":"b0b1b2b3b4b5b6b7b8b9c0c1c2c3c4c5c6c7c8c9","subject":"chore: a commit with no VTID","vtid":null}],"invalid_suites":[{"vtid":"VTID-05550","errors":["tests must be a non-empty array"]}],"shipping":[],"full":false,"workflow":"STAGING-VERIFY.yml","superseded_by":null,"attribution_cutoff":null,"chain":0}}\n'
+    - '{"vtid":"BOOTSTRAP-STAGING-VERIFY","topic":"staging.verify.failed","service":"staging-verify-gateway","role":"CICD","model":"staging-verify","status":"error","message":"**Staging verification failed** for gateway: 1 failed, 1 suite missing, 1 invalid.","metadata":{"env":"staging","service":"gateway","commit":"1d2c3b4a59687766554433221100ffeeddccbbaa","outcome":"failed","vtids":["VTID-05537","VTID-05551"],"run_url":"https://github.com/exafyltd/vitana-platform/actions/runs/19000000001","production_commit":"0ca24febdb16","results":[{"suite":"smoke","name":"gateway alive","ok":true,"problems":[]},{"suite":"VTID-05537","name":"gitlab client suite","ok":false,"problems":["exit 1: 1 failed"]}],"missing_suites":[{"sha":"b0b1b2b3b4b5b6b7b8b9c0c1c2c3c4c5c6c7c8c9","subject":"chore: a commit with no VTID","vtid":null}],"invalid_suites":[{"vtid":"VTID-05550","errors":["tests must be a non-empty array"]}],"shipping":[],"full":false,"workflow":"gitlab:vitana/vitana-v1/staging-verify","superseded_by":null,"attribution_cutoff":null,"chain":0}}\n'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: |-
+    {"vtid":"BOOTSTRAP-STAGING-VERIFY","topic":"staging.verify.failed","service":"staging-verify-gateway","role":"CICD","model":"staging-verify","status":"error","message":"**Staging verification failed** for gateway: 1 failed, 1 suite missing, 1 invalid.","metadata":{"env":"staging","service":"gateway","commit":"1d2c3b4a59687766554433221100ffeeddccbbaa","outcome":"failed","vtids":["VTID-05537","VTID-05551"],"run_url":"https://github.com/exafyltd/vitana-platform/actions/runs/19000000001","production_commit":"0ca24febdb16","results":[{"suite":"smoke","name":"gateway alive","ok":true,"problems":[]},{"suite":"VTID-05537","name":"gitlab client suite","ok":false,"problems":["exit 1: 1 failed"]}],"missing_suites":[{"sha":"b0b1b2b3b4b5b6b7b8b9c0c1c2c3c4c5c6c7c8c9","subject":"chore: a commit with no VTID","vtid":null}],"invalid_suites":[{"vtid":"VTID-05550","errors":["tests must be a non-empty array"]}],"shipping":[],"full":false,"workflow":"gitlab:vitana/vitana-v1/staging-verify","superseded_by":null,"attribution_cutoff":null,"chain":0}}
+    
+  actual: |-
+    {"vtid":"BOOTSTRAP-STAGING-VERIFY","topic":"staging.verify.failed","service":"staging-verify-gateway","role":"CICD","model":"staging-verify","status":"error","message":"**Staging verification failed** for gateway: 1 failed, 1 suite missing, 1 invalid.","metadata":{"env":"staging","service":"gateway","commit":"1d2c3b4a59687766554433221100ffeeddccbbaa","outcome":"failed","vtids":["VTID-05537","VTID-05551"],"run_url":"https://github.com/exafyltd/vitana-platform/actions/runs/19000000001","production_commit":"0ca24febdb16","results":[{"suite":"smoke","name":"gateway alive","ok":true,"problems":[]},{"suite":"VTID-05537","name":"gitlab client suite","ok":false,"problems":["exit 1: 1 failed"]}],"missing_suites":[{"sha":"b0b1b2b3b4b5b6b7b8b9c0c1c2c3c4c5c6c7c8c9","subject":"chore: a commit with no VTID","vtid":null}],"invalid_suites":[{"vtid":"VTID-05550","errors":["tests must be a non-empty array"]}],"shipping":[],"full":false,"workflow":"STAGING-VERIFY.yml","superseded_by":null,"attribution_cutoff":null,"chain":0}}
+    
+  operator: 'strictEqual'
+  stack: |-
+    assertBytes (file:///projects/sandbox/.scratch/prereq2-tmp/base-tree/scripts/ci/staging-verify/record-oasis-workflow.test.mjs:160:10)
+    TestContext.<anonymous> (file:///projects/sandbox/.scratch/prereq2-tmp/base-tree/scripts/ci/staging-verify/record-oasis-workflow.test.mjs:188:5)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: a superseded full run with attribution: without WORKFLOW the body is byte-identical to today's
+ok 8 - a superseded full run with attribution: without WORKFLOW the body is byte-identical to today's
+  ---
+  duration_ms: 14.122672
+  type: 'test'
+  ...
+# Subtest: a superseded full run with attribution: an empty WORKFLOW behaves as unset
+ok 9 - a superseded full run with attribution: an empty WORKFLOW behaves as unset
+  ---
+  duration_ms: 14.00862
+  type: 'test'
+  ...
+# Subtest: a superseded full run with attribution: with WORKFLOW=gitlab:vitana/vitana-v1/staging-verify the body differs only in metadata.workflow
+not ok 10 - a superseded full run with attribution: with WORKFLOW=gitlab:vitana/vitana-v1/staging-verify the body differs only in metadata.workflow
+  ---
+  duration_ms: 29.849803
+  type: 'test'
+  location: '/projects/sandbox/.scratch/prereq2-tmp/base-tree/scripts/ci/staging-verify/record-oasis-workflow.test.mjs:184:3'
+  failureType: 'testCodeFailure'
+  error: |-
+    a superseded full run with attribution
+    + actual - expected
+    
+    + '{"vtid":"VTID-05551","topic":"staging.verify.superseded","service":"staging-verify-gateway","role":"CICD","model":"staging-verify","status":"info","message":"**Staging verification superseded** for gateway: staging moved to aa00bb11cc22.","metadata":{"env":"staging","service":"gateway","commit":"1d2c3b4a59687766554433221100ffeeddccbbaa","outcome":"superseded","vtids":["VTID-05551"],"run_url":"https://github.com/exafyltd/vitana-platform/actions/runs/19000000001","production_commit":"0ca24febdb16","results":[{"suite":"smoke","name":"gateway alive","ok":true,"problems":[],"attributed":true},{"suite":"VTID-05551","name":"late result","ok":false,"problems":["fetch failed"],"attributed":false}],"missing_suites":[],"invalid_suites":[],"shipping":[],"full":true,"workflow":"STAGING-VERIFY.yml","superseded_by":"aa00bb11cc22dd33ee44ff5566778899aabbccdd","attribution_cutoff":"2026-11-05T03:10:00.000Z","chain":1}}\n'
+    - '{"vtid":"VTID-05551","topic":"staging.verify.superseded","service":"staging-verify-gateway","role":"CICD","model":"staging-verify","status":"info","message":"**Staging verification superseded** for gateway: staging moved to aa00bb11cc22.","metadata":{"env":"staging","service":"gateway","commit":"1d2c3b4a59687766554433221100ffeeddccbbaa","outcome":"superseded","vtids":["VTID-05551"],"run_url":"https://github.com/exafyltd/vitana-platform/actions/runs/19000000001","production_commit":"0ca24febdb16","results":[{"suite":"smoke","name":"gateway alive","ok":true,"problems":[],"attributed":true},{"suite":"VTID-05551","name":"late result","ok":false,"problems":["fetch failed"],"attributed":false}],"missing_suites":[],"invalid_suites":[],"shipping":[],"full":true,"workflow":"gitlab:vitana/vitana-v1/staging-verify","superseded_by":"aa00bb11cc22dd33ee44ff5566778899aabbccdd","attribution_cutoff":"2026-11-05T03:10:00.000Z","chain":1}}\n'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: |-
+    {"vtid":"VTID-05551","topic":"staging.verify.superseded","service":"staging-verify-gateway","role":"CICD","model":"staging-verify","status":"info","message":"**Staging verification superseded** for gateway: staging moved to aa00bb11cc22.","metadata":{"env":"staging","service":"gateway","commit":"1d2c3b4a59687766554433221100ffeeddccbbaa","outcome":"superseded","vtids":["VTID-05551"],"run_url":"https://github.com/exafyltd/vitana-platform/actions/runs/19000000001","production_commit":"0ca24febdb16","results":[{"suite":"smoke","name":"gateway alive","ok":true,"problems":[],"attributed":true},{"suite":"VTID-05551","name":"late result","ok":false,"problems":["fetch failed"],"attributed":false}],"missing_suites":[],"invalid_suites":[],"shipping":[],"full":true,"workflow":"gitlab:vitana/vitana-v1/staging-verify","superseded_by":"aa00bb11cc22dd33ee44ff5566778899aabbccdd","attribution_cutoff":"2026-11-05T03:10:00.000Z","chain":1}}
+    
+  actual: |-
+    {"vtid":"VTID-05551","topic":"staging.verify.superseded","service":"staging-verify-gateway","role":"CICD","model":"staging-verify","status":"info","message":"**Staging verification superseded** for gateway: staging moved to aa00bb11cc22.","metadata":{"env":"staging","service":"gateway","commit":"1d2c3b4a59687766554433221100ffeeddccbbaa","outcome":"superseded","vtids":["VTID-05551"],"run_url":"https://github.com/exafyltd/vitana-platform/actions/runs/19000000001","production_commit":"0ca24febdb16","results":[{"suite":"smoke","name":"gateway alive","ok":true,"problems":[],"attributed":true},{"suite":"VTID-05551","name":"late result","ok":false,"problems":["fetch failed"],"attributed":false}],"missing_suites":[],"invalid_suites":[],"shipping":[],"full":true,"workflow":"STAGING-VERIFY.yml","superseded_by":"aa00bb11cc22dd33ee44ff5566778899aabbccdd","attribution_cutoff":"2026-11-05T03:10:00.000Z","chain":1}}
+    
+  operator: 'strictEqual'
+  stack: |-
+    assertBytes (file:///projects/sandbox/.scratch/prereq2-tmp/base-tree/scripts/ci/staging-verify/record-oasis-workflow.test.mjs:160:10)
+    TestContext.<anonymous> (file:///projects/sandbox/.scratch/prereq2-tmp/base-tree/scripts/ci/staging-verify/record-oasis-workflow.test.mjs:188:5)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: the crashed runner (no results.json): without WORKFLOW the body is byte-identical to today's
+ok 11 - the crashed runner (no results.json): without WORKFLOW the body is byte-identical to today's
+  ---
+  duration_ms: 13.996987
+  type: 'test'
+  ...
+# Subtest: the crashed runner (no results.json): an empty WORKFLOW behaves as unset
+ok 12 - the crashed runner (no results.json): an empty WORKFLOW behaves as unset
+  ---
+  duration_ms: 13.446887
+  type: 'test'
+  ...
+# Subtest: the crashed runner (no results.json): with WORKFLOW=gitlab:vitana/vitana-v1/staging-verify the body differs only in metadata.workflow
+not ok 13 - the crashed runner (no results.json): with WORKFLOW=gitlab:vitana/vitana-v1/staging-verify the body differs only in metadata.workflow
+  ---
+  duration_ms: 25.705099
+  type: 'test'
+  location: '/projects/sandbox/.scratch/prereq2-tmp/base-tree/scripts/ci/staging-verify/record-oasis-workflow.test.mjs:184:3'
+  failureType: 'testCodeFailure'
+  error: |-
+    the crashed runner (no results.json)
+    + actual - expected
+    
+    + '{"vtid":"BOOTSTRAP-STAGING-VERIFY","topic":"staging.verify.failed","service":"staging-verify-gateway","role":"CICD","model":"staging-verify","status":"error","message":"**Staging verification FAILED — the runner crashed before producing a result.** Not ready for production. Run: https://github.com/exafyltd/vitana-platform/actions/runs/19000000001","metadata":{"env":"staging","service":"gateway","commit":"1d2c3b4a59687766554433221100ffeeddccbbaa","outcome":"failed","run_url":"https://github.com/exafyltd/vitana-platform/actions/runs/19000000001","crashed":true,"workflow":"STAGING-VERIFY.yml"}}\n'
+    - '{"vtid":"BOOTSTRAP-STAGING-VERIFY","topic":"staging.verify.failed","service":"staging-verify-gateway","role":"CICD","model":"staging-verify","status":"error","message":"**Staging verification FAILED — the runner crashed before producing a result.** Not ready for production. Run: https://github.com/exafyltd/vitana-platform/actions/runs/19000000001","metadata":{"env":"staging","service":"gateway","commit":"1d2c3b4a59687766554433221100ffeeddccbbaa","outcome":"failed","run_url":"https://github.com/exafyltd/vitana-platform/actions/runs/19000000001","crashed":true,"workflow":"gitlab:vitana/vitana-v1/staging-verify"}}\n'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: |-
+    {"vtid":"BOOTSTRAP-STAGING-VERIFY","topic":"staging.verify.failed","service":"staging-verify-gateway","role":"CICD","model":"staging-verify","status":"error","message":"**Staging verification FAILED — the runner crashed before producing a result.** Not ready for production. Run: https://github.com/exafyltd/vitana-platform/actions/runs/19000000001","metadata":{"env":"staging","service":"gateway","commit":"1d2c3b4a59687766554433221100ffeeddccbbaa","outcome":"failed","run_url":"https://github.com/exafyltd/vitana-platform/actions/runs/19000000001","crashed":true,"workflow":"gitlab:vitana/vitana-v1/staging-verify"}}
+    
+  actual: |-
+    {"vtid":"BOOTSTRAP-STAGING-VERIFY","topic":"staging.verify.failed","service":"staging-verify-gateway","role":"CICD","model":"staging-verify","status":"error","message":"**Staging verification FAILED — the runner crashed before producing a result.** Not ready for production. Run: https://github.com/exafyltd/vitana-platform/actions/runs/19000000001","metadata":{"env":"staging","service":"gateway","commit":"1d2c3b4a59687766554433221100ffeeddccbbaa","outcome":"failed","run_url":"https://github.com/exafyltd/vitana-platform/actions/runs/19000000001","crashed":true,"workflow":"STAGING-VERIFY.yml"}}
+    
+  operator: 'strictEqual'
+  stack: |-
+    assertBytes (file:///projects/sandbox/.scratch/prereq2-tmp/base-tree/scripts/ci/staging-verify/record-oasis-workflow.test.mjs:160:10)
+    TestContext.<anonymous> (file:///projects/sandbox/.scratch/prereq2-tmp/base-tree/scripts/ci/staging-verify/record-oasis-workflow.test.mjs:188:5)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: WORKFLOW reaches jq as data, never as program or shell text
+not ok 14 - WORKFLOW reaches jq as data, never as program or shell text
+  ---
+  duration_ms: 13.935548
+  type: 'test'
+  location: '/projects/sandbox/.scratch/prereq2-tmp/base-tree/scripts/ci/staging-verify/record-oasis-workflow.test.mjs:200:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    gitlab:\(env.SUPABASE_SVC)
+    + actual - expected
+    
+    + '{"vtid":"VTID-05551","topic":"staging.verify.passed","service":"staging-verify-gateway","role":"CICD","model":"staging-verify","status":"success","message":"**Staging verified** gateway at 1d2c3b4a5968: 2 of 2 passed.","metadata":{"env":"staging","service":"gateway","commit":"1d2c3b4a59687766554433221100ffeeddccbbaa","outcome":"passed","vtids":["VTID-05551"],"run_url":"https://github.com/exafyltd/vitana-platform/actions/runs/19000000001","production_commit":"0ca24febdb16","results":[{"suite":"smoke","name":"gateway alive","ok":true,"problems":[]},{"suite":"VTID-05551","name":"atlas claims","ok":true,"problems":[]}],"missing_suites":[],"invalid_suites":[],"shipping":[{"sha":"1d2c3b4a59687766554433221100ffeeddccbbaa","subject":"VTID-05551 (agentic-delivery/prerequisites): atlas claims","author":"kiro-agent[bot]","date":"2026-11-05T02:55:00Z","branch_commits":0}],"full":false,"workflow":"STAGING-VERIFY.yml","superseded_by":null,"attribution_cutoff":null,"chain":0}}\n'
+    - '{"vtid":"VTID-05551","topic":"staging.verify.passed","service":"staging-verify-gateway","role":"CICD","model":"staging-verify","status":"success","message":"**Staging verified** gateway at 1d2c3b4a5968: 2 of 2 passed.","metadata":{"env":"staging","service":"gateway","commit":"1d2c3b4a59687766554433221100ffeeddccbbaa","outcome":"passed","vtids":["VTID-05551"],"run_url":"https://github.com/exafyltd/vitana-platform/actions/runs/19000000001","production_commit":"0ca24febdb16","results":[{"suite":"smoke","name":"gateway alive","ok":true,"problems":[]},{"suite":"VTID-05551","name":"atlas claims","ok":true,"problems":[]}],"missing_suites":[],"invalid_suites":[],"shipping":[{"sha":"1d2c3b4a59687766554433221100ffeeddccbbaa","subject":"VTID-05551 (agentic-delivery/prerequisites): atlas claims","author":"kiro-agent[bot]","date":"2026-11-05T02:55:00Z","branch_commits":0}],"full":false,"workflow":"gitlab:\\\\(env.SUPABASE_SVC)","superseded_by":null,"attribution_cutoff":null,"chain":0}}\n'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: |-
+    {"vtid":"VTID-05551","topic":"staging.verify.passed","service":"staging-verify-gateway","role":"CICD","model":"staging-verify","status":"success","message":"**Staging verified** gateway at 1d2c3b4a5968: 2 of 2 passed.","metadata":{"env":"staging","service":"gateway","commit":"1d2c3b4a59687766554433221100ffeeddccbbaa","outcome":"passed","vtids":["VTID-05551"],"run_url":"https://github.com/exafyltd/vitana-platform/actions/runs/19000000001","production_commit":"0ca24febdb16","results":[{"suite":"smoke","name":"gateway alive","ok":true,"problems":[]},{"suite":"VTID-05551","name":"atlas claims","ok":true,"problems":[]}],"missing_suites":[],"invalid_suites":[],"shipping":[{"sha":"1d2c3b4a59687766554433221100ffeeddccbbaa","subject":"VTID-05551 (agentic-delivery/prerequisites): atlas claims","author":"kiro-agent[bot]","date":"2026-11-05T02:55:00Z","branch_commits":0}],"full":false,"workflow":"gitlab:\\(env.SUPABASE_SVC)","superseded_by":null,"attribution_cutoff":null,"chain":0}}
+    
+  actual: |-
+    {"vtid":"VTID-05551","topic":"staging.verify.passed","service":"staging-verify-gateway","role":"CICD","model":"staging-verify","status":"success","message":"**Staging verified** gateway at 1d2c3b4a5968: 2 of 2 passed.","metadata":{"env":"staging","service":"gateway","commit":"1d2c3b4a59687766554433221100ffeeddccbbaa","outcome":"passed","vtids":["VTID-05551"],"run_url":"https://github.com/exafyltd/vitana-platform/actions/runs/19000000001","production_commit":"0ca24febdb16","results":[{"suite":"smoke","name":"gateway alive","ok":true,"problems":[]},{"suite":"VTID-05551","name":"atlas claims","ok":true,"problems":[]}],"missing_suites":[],"invalid_suites":[],"shipping":[{"sha":"1d2c3b4a59687766554433221100ffeeddccbbaa","subject":"VTID-05551 (agentic-delivery/prerequisites): atlas claims","author":"kiro-agent[bot]","date":"2026-11-05T02:55:00Z","branch_commits":0}],"full":false,"workflow":"STAGING-VERIFY.yml","superseded_by":null,"attribution_cutoff":null,"chain":0}}
+    
+  operator: 'strictEqual'
+  stack: |-
+    assertBytes (file:///projects/sandbox/.scratch/prereq2-tmp/base-tree/scripts/ci/staging-verify/record-oasis-workflow.test.mjs:160:10)
+    TestContext.<anonymous> (file:///projects/sandbox/.scratch/prereq2-tmp/base-tree/scripts/ci/staging-verify/record-oasis-workflow.test.mjs:209:5)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: GitHub STAGING-VERIFY.yml sets no WORKFLOW, so its rows keep the default
+ok 15 - GitHub STAGING-VERIFY.yml sets no WORKFLOW, so its rows keep the default
+  ---
+  duration_ms: 0.47626
+  type: 'test'
+  ...
+1..15
+# tests 15
+# suites 0
+# pass 10
+# fail 5
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 298.754409
+exit=1

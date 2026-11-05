@@ -1,0 +1,91 @@
+# VTID-05551 red on base: a git archive of origin/main 0ca24febdb (domain-atlas.ts sha256 edd48857..., unchanged) with this PR's final test file copied in; 2026-11-05T03:44:55Z, node v22.23.4
+$ cd services/gateway && npx jest test/atlas-gitlab-route-claims.test.ts
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/.scratch/prereq2-tmp/base-tree/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+FAIL test/atlas-gitlab-route-claims.test.ts
+  VTID-05551 atlas claims for the GitLab delivery route files
+    ✕ internal-gitlab-webhook.ts is claimed by domain deploy, and only by it (14 ms)
+    ✕ delivery.ts is claimed by domain deploy, and only by it (2 ms)
+    ✕ the drift guard passes for today's route files plus the two new ones (6 ms)
+    ✓ the new claims match the exact file names only (1 ms)
+
+  ● VTID-05551 atlas claims for the GitLab delivery route files › internal-gitlab-webhook.ts is claimed by domain deploy, and only by it
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Array [
+    -   "deploy",
+    - ]
+    + Array []
+
+      36 |   test.each(NEW_ROUTE_FILES)('%s is claimed by domain deploy, and only by it', (file) => {
+      37 |     // The drift guard passes the file name with .ts; domainsForRoute also accepts the bare name.
+    > 38 |     expect(domainKeys(file)).toEqual(['deploy']);
+         |                              ^
+      39 |     expect(domainKeys(file.replace(/\.ts$/, ''))).toEqual(['deploy']);
+      40 |   });
+      41 |
+
+      at test/atlas-gitlab-route-claims.test.ts:38:30
+
+  ● VTID-05551 atlas claims for the GitLab delivery route files › delivery.ts is claimed by domain deploy, and only by it
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 3
+    + Received  + 1
+
+    - Array [
+    -   "deploy",
+    - ]
+    + Array []
+
+      36 |   test.each(NEW_ROUTE_FILES)('%s is claimed by domain deploy, and only by it', (file) => {
+      37 |     // The drift guard passes the file name with .ts; domainsForRoute also accepts the bare name.
+    > 38 |     expect(domainKeys(file)).toEqual(['deploy']);
+         |                              ^
+      39 |     expect(domainKeys(file.replace(/\.ts$/, ''))).toEqual(['deploy']);
+      40 |   });
+      41 |
+
+      at test/atlas-gitlab-route-claims.test.ts:38:30
+
+  ● VTID-05551 atlas claims for the GitLab delivery route files › the drift guard passes for today's route files plus the two new ones
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 4
+
+    - Array []
+    + Array [
+    +   "internal-gitlab-webhook.ts",
+    +   "delivery.ts",
+    + ]
+
+      43 |     const files = [...listRouteFiles(), ...NEW_ROUTE_FILES];
+      44 |     expect(files.length).toBeGreaterThan(100);
+    > 45 |     expect(files.filter((f) => domainsForRoute(f).length === 0)).toEqual([]);
+         |                                                                  ^
+      46 |   });
+      47 |
+      48 |   test('the new claims match the exact file names only', () => {
+
+      at Object.<anonymous> (test/atlas-gitlab-route-claims.test.ts:45:66)
+
+Test Suites: 1 failed, 1 total
+Tests:       3 failed, 1 passed, 4 total
+Snapshots:   0 total
+Time:        0.51 s
+Ran all test suites matching /test\/atlas-gitlab-route-claims.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
+exit=1

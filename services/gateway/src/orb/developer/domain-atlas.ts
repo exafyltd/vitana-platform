@@ -85,7 +85,7 @@ export const DOMAIN_ATLAS: readonly AtlasDomain[] = [
     title: 'Deploys, CI/CD and the Command Hub',
     summary:
       'Merging to main deploys staging (ECS vitana-gateway); production moves only through PUBLISH or an approved pinned dispatch. The Command Hub is the developer surface served by the gateway, with its own ownership guard and cache-busting.',
-    routes: [/^cicd$/, /^command-hub/, /^commandhub$/, /^devhub$/, /^dev-access$/, /^dev-auth/, /^canary-target$/, /^domain-routing$/],
+    routes: [/^cicd$/, /^command-hub/, /^commandhub$/, /^devhub$/, /^dev-access$/, /^dev-auth/, /^canary-target$/, /^domain-routing$/, /^internal-gitlab-webhook$/, /^delivery$/],
     code: ['frontend/command-hub/', 'services/github-service.ts', 'services/aws-ecs-*.ts', '.github/workflows/AWS-*.yml'],
     tables: ['oasis_events (deploy.*, staging.deploy.*)'],
     flags: ['PUBLISH_TARGET_CLOUD', 'FRONTEND_DEPLOY_TOKEN', 'GITHUB_SAFE_MERGE_TOKEN'],

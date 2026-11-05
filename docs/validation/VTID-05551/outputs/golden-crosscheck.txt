@@ -1,0 +1,14 @@
+# VTID-05551: the recorded bodies (GOLDEN_*) regenerated from the base script, with jq 1.8.1 (this machine) and jq 1.7.1 (the CI runner's), and compared; 2026-11-05T03:47:11Z
+$ git show 0ca24febdb:scripts/ci/staging-verify/record-oasis.sh > <scratch>/record-oasis.base.sh
+sha256 077b31828b6048587dc0e8b1014377c69137dd00d35c36b67f49ed5ded44cc63
+$ node docs/validation/VTID-05551/outputs/golden-bodies.mjs <scratch>/record-oasis.base.sh > A   (jq 1.8.1)
+exit=0
+$ PATH=<jq-1.7.1 dir>:$PATH node docs/validation/VTID-05551/outputs/golden-bodies.mjs <scratch>/record-oasis.base.sh > B   (jq 1.7.1)
+exit=0
+$ cmp A B && cmp A docs/validation/VTID-05551/outputs/golden-bodies.txt
+identical: jq 1.7.1 = jq 1.8.1 = outputs/golden-bodies.txt
+$ the literals in record-oasis-workflow.test.mjs decode to the same four bodies
+PASSED: same bytes (977 bytes)
+FAILED: same bytes (1023 bytes)
+SUPERSEDED: same bytes (915 bytes)
+CRASHED: same bytes (601 bytes)
