@@ -1,0 +1,87 @@
+# VTID-05551 commands (2026-11-05, Linux, node v22.23.4, jq 1.8.1, bash 5.2; seat exafy, builder session kiro-exafy-202611050324-2956)
+base: origin/main 0ca24febdb1614310048b763dfd79481be0cb33e (the merge of plan PR #4684, agentic-delivery). Worktree: /projects/sandbox/.rv/prereq2,
+branch kiro/agentic-delivery/prerequisites. Built from tasks.md (lane prerequisites, R1-R3) and plan.md §9 and §3.6 step 4 only; the closed
+earlier attempt (#4687) was not read. Every output below was produced from the final code of this PR, in this order.
+
+# 0. Session, claim, worktree
+$ node scripts/collab/queue.mjs session-id --agent kiro --seat exafy
+kiro-exafy-202611050324-2956
+$ node scripts/collab/queue.mjs claim agentic-delivery/prerequisites --session kiro-exafy-202611050324-2956 --repo /projects/sandbox/vitana-platform
+{"ok":true,"sha":"2f808b925bef4fa2eb0c8d3852b0412cd469683c"}
+$ git -C /projects/sandbox/vitana-platform worktree add -b kiro/agentic-delivery/prerequisites /projects/sandbox/.rv/prereq2 origin/main
+HEAD is now at 0ca24febdb. Gateway dependencies: a hard-linked copy (cp -al) of another checkout's services/gateway/node_modules, not committed.
+
+# 1. Tests written first (services/gateway/test/atlas-gitlab-route-claims.test.ts, scripts/ci/staging-verify/record-oasis-workflow.test.mjs).
+# The expected bodies of the record-oasis test are today's bytes, recorded once from the base script for the test's fixtures.
+$ git show 0ca24febdb:scripts/ci/staging-verify/record-oasis.sh > <scratch>/record-oasis.base.sh   (sha256 077b3182…, the same as the worktree's before the change)
+$ node docs/validation/VTID-05551/outputs/golden-bodies.mjs <scratch>/record-oasis.base.sh > docs/validation/VTID-05551/outputs/golden-bodies.txt
+exit 0; 4 bodies: PASSED 977 bytes, FAILED 1023, SUPERSEDED 915, CRASHED 601. The test file holds them as string literals.
+Cross-check, output outputs/golden-crosscheck.txt: the same generator with jq 1.7.1 first on PATH (the jq of the ubuntu-latest runner that runs
+STAGING-VERIFY and UNIT; release binary jq-linux-amd64 from github.com/jqlang/jq, sha256 5942c9b0934e510ee61eb3e30273f1b3fe2590df93933a93d7c58b81d19c8ff5
+matches the release's sha256sum.txt) gives identical bytes, and the literals in the test decode to the same four bodies.
+
+# 2. Red on base. A git archive of origin/main 0ca24febdb (base domain-atlas.ts sha256 edd48857…, base record-oasis.sh sha256 077b3182…) with the
+# final test files of this PR copied in.
+$ cd services/gateway && npx jest test/atlas-gitlab-route-claims.test.ts            Output: outputs/red-on-base-atlas.txt
+Tests: 4; 3 failed, 1 passed. Both new files get [] instead of ["deploy"] and the drift walk reports ["internal-gitlab-webhook.ts","delivery.ts"]
+unclaimed. The near-miss test passes on base by design (nothing claims those names there either).
+$ node --test scripts/ci/staging-verify/record-oasis-workflow.test.mjs              Output: outputs/red-on-base-record-oasis.txt
+tests 15, pass 10, fail 5. Fail: the 4 "with WORKFLOW=gitlab:vitana/vitana-v1/staging-verify" cases (the body still says STAGING-VERIFY.yml) and
+"WORKFLOW reaches jq as data". Pass: the 4 "without WORKFLOW" cases (the recorded bodies are the base script's bytes for these fixtures), the 4
+"empty WORKFLOW" cases, the fixture check and the STAGING-VERIFY.yml check.
+
+# 3. Code: domain-atlas.ts (domain deploy gains /^internal-gitlab-webhook$/ and /^delivery$/), record-oasis.sh (--arg workflow
+# "${WORKFLOW:-STAGING-VERIFY.yml}" and workflow: $workflow in both jq programs; the header documents WORKFLOW).
+$ bash -n scripts/ci/staging-verify/record-oasis.sh                                exit 0
+
+# 4. Green
+$ cd services/gateway && npx jest test/atlas-gitlab-route-claims.test.ts            Output: outputs/green-atlas.txt
+Tests: 4 passed, 4 total
+$ node --test scripts/ci/staging-verify/record-oasis-workflow.test.mjs              Output: outputs/green-record-oasis.txt
+tests 15, pass 15, fail 0
+$ PATH=<jq-1.7.1 dir>:$PATH node --test scripts/ci/staging-verify/record-oasis-workflow.test.mjs   Output: outputs/green-record-oasis-jq171.txt
+tests 15, pass 15, fail 0 (jq 1.7.1)
+
+# 5. Gateway suites the change touches
+$ cd services/gateway && npm run test:roles                                         Output: outputs/test-roles.txt
+Tests: 105 passed, 105 total (includes the drift guard "every gateway route file is claimed by at least one domain")
+$ cd services/gateway && npm run typecheck                                          Output: outputs/typecheck.txt
+exit 0 (tsc --noEmit over src)
+$ cd services/gateway && npx tsc -p <scratch>/tsconfig.atlas-test.json               Output: outputs/typecheck.txt (second part)
+exit 0. The gateway tsconfig.json excludes test/; this throwaway config extends it (strict) and includes only the new jest file.
+
+# 6. Script tests
+$ node --test $(find scripts/ci/staging-verify \( -name '*.test.cjs' -o -name '*.test.mjs' \) | sort)   Output: outputs/staging-verify-scripts.txt
+5 files; tests 103, pass 103, fail 0 (record-oasis.test.cjs 9 of them, unchanged)
+$ FILES=$(find scripts -path '*/node_modules' -prune -o \( -name '*.test.cjs' -o -name '*.test.mjs' \) -print | sort); node --test $FILES
+   (UNIT.yml's command)                                                             Output: outputs/unit-all.txt
+34 files; tests 628, pass 627, fail 0, cancelled 0, skipped 1 (a win32-only test in scripts/collab/workflow-watchdog.test.mjs, not touched here)
+$ the same with Node v20.20.2 first on PATH (UNIT.yml sets node-version 20; nodejs.org binary, SHASUMS256.txt checked)   Output: outputs/unit-all-node20.txt
+34 files; tests 628, pass 627, fail 0, cancelled 0, skipped 1
+
+# 7. Staging suite (docs/validation/VTID-05551/staging-tests.json)
+$ node -e 'lib.validateManifest(manifest, { vtid: "VTID-05551", service: "gateway" })'   (scripts/ci/staging-verify/lib.cjs)
+{"ok":true,"errors":[]}; the existing ref matches lib.cjs EXISTING_REF.
+$ cd services/gateway && env -i PATH="$PATH" HOME="$HOME" CI=1 NODE_ENV=test npx jest test/atlas-gitlab-route-claims.test.ts test/vtid-04560-role-separation-regression.test.ts
+   (the existing suite in the environment run.mjs runExisting gives it)               Output: outputs/staging-existing-suite-local.txt
+Test Suites: 2 passed; Tests: 109 passed, 109 total
+$ node scripts/ci/staging-verify/run.mjs check-pr --service gateway --repo-root <worktree> --base 0ca24febdb1614310048b763dfd79481be0cb33e --head <head> --title "VTID-05551 (agentic-delivery/prerequisites): …"
+[staging-verify] ✓ change suite present and valid for VTID-05551   (exit 0; run before the commit, with --head a temporary commit of the
+staged tree made by `git stash create`: the same changed files and the same manifest on disk as the code commit)
+
+# 8. PR-GATE inputs, checked with the gate's own functions (scripts/ci/pr-gate/lib.mjs)
+$ validateScope(scope.json, "VTID-05551")                                           []  (no errors)
+$ evaluateSparringRecord(plan-sparring.md)                                          []  (verdict, owner-approval line and plan hash present)
+Sparring facts checked against .kiro/specs/agentic-delivery/sparring/verdict.md, state.json, round-1.md, round-2.md and responses-1.md on
+origin/main: CONVERGED, 2 rounds, session b80e315e-68b7-4e3b-ae79-d876722af78c, final plan hash bbd3bd5f…6afc, policy_approved_at
+2026-11-05T00:24:00.207+00:00; round 1 R1-F1 major, R1-F2 and R1-F3 minor (accepted, accepted, deferred); round 2 no findings.
+
+# 9. Facts checked read-only before writing the tests
+- The drift guard is test/vtid-04560-role-separation-regression.test.ts:524-529 (domainsForRoute over every src/routes file); neither
+  internal-gitlab-webhook nor delivery matches any domain on base (red run above); no file of either name exists in src/routes today.
+- record-oasis.sh on base wrote workflow: "STAGING-VERIFY.yml" in both jq programs (lines 40 and 52); .github/workflows/STAGING-VERIFY.yml
+  contains no WORKFLOW (the test pins it); GitHub sets GITHUB_WORKFLOW, never WORKFLOW.
+- Readers of staging.verify.* rows (publish-gate.ts:56-69, 118-120, 133-140 and the others named in acceptance.md OASIS_PROOF) never read
+  metadata.workflow; the only metadata?.workflow read in services/gateway/src is routes/testing.ts:366, on testing.run.launched rows.
+No live system was called: the record-oasis tests send to a fake curl and https://example.invalid; the staging suite is not run from here.
+Preflight (scripts/collab/preflight.mjs) and validate-pr-locally.cjs run on the pushed commits; their results are in the PR body.
