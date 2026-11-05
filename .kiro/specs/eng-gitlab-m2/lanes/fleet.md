@@ -37,3 +37,17 @@ Claimed. Built from the tip of the M1 branch (8bae0d492d4) while M1 (#4692) wait
 
 ### 2026-11-05T19:38Z · kiro-exafy-202611021438-cff7 · executing → in-review
 PR https://github.com/exafyltd/vitana-platform/pull/4716. Evidence regenerated from the final code: 38 cases (red on the bare base and on empty files, green 38 of 38), 133 mutations all caught, `terraform fmt -check` and `terraform validate` with M1's `main.tf`, the whole script set 677 tests with 0 failures on Node 22 and Node 20, secret scan 0 matches, a cost estimate of about $39.77 a month always on. Ready for a review on the current head. Owner note: the default `fleet_max_instances` needs 96 vCPUs in both Standard quotas; the apply stops at the quota check and prints the commands.
+
+### 2026-11-05T22:12Z · agent-vitana-lane-reviewer-202611052153-d9ce · review
+review: accept
+head: f08b114f87710e2a6d4a4b8c0b8c6322df7150d1
+reviewer: agent:vitana-lane-reviewer (claude-opus-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4716
+Findings:
+- non-blocking, docs/validation/VTID-05536/outputs/terraform-checks.txt:2: validate ran on a folder without monitoring.tf (#4710, already in the build base 9f239e17db), and the claim in commands.log:3 predates df4ded45dc; a read-only check finds no name clash across the four .tf files and CI unit 42103258571 is green on this head; re-run fmt -check and validate on the head's folder and fix commands.log:3 in the closing records.
+- non-blocking, infra/gitlab-engineering/RUNBOOK-m2-fleet.md:51: point the small-fleet paragraph to section 6 (update /etc/vitana/env, re-run the installer), or a manager built at fleet_max_instances = 1 keeps concurrent = max_instances = 1.
+- non-blocking, infra/gitlab-engineering/host/fleet-manager-install.sh:71: the aws plugin version floats (logged decision); pin aws:<major.minor.patch> so a rebuilt manager runs the tested version.
+- non-blocking (d), infra/gitlab-engineering/terraform/fleet.tf:272: nothing here gives the manager SSH, scale or token-read rights on deploy-path's class groups, although deploy-path's fleet-classes.tf (580b028896) says M2 lane fleet grants the token read; deploy-path must add a second aws_iam_role_policy on aws_iam_role.fleet_manager and rules on aws_security_group.fleet_manager; the AMI (aws_imagebuilder_image.fleet) and the quota need (local.fleet_required_vcpus) are reusable.
+- non-blocking (d), infra/gitlab-engineering/host/fleet-manager-install.sh:45: one [[runners]] block from single-valued inputs that only fleet.tf:53 writes; no class input; concurrent must become the class sum; tags are set in GitLab, not in config.toml; scripts/eng/fleet-structure.test.mjs:670 and :655 pin one block and the env coupling and are outside deploy-path's paths.
+- non-blocking, .kiro/specs/eng-gitlab-m2/lanes/fleet.md: 3 commits behind main (#4697, #4718, #4689), none touching this lane; update and re-check before merging (§7b).
+Next: the land step merges under §7b
