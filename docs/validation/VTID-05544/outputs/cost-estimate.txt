@@ -1,0 +1,28 @@
+== full size: two m6i.xlarge (the default of setup.sh)
+   EC2 GitLab + runner machines                 $  335.80
+   NAT gateway hours (1)                        $   37.96
+   NAT data processed                           $    7.80
+   EBS gp3 300 GB                               $   28.56
+   Application load balancer hours              $   19.71
+   Application load balancer LCU                $    5.84
+   Public IPv4 addresses (3)                    $   10.95
+   KMS key (1) + requests                       $    1.90
+   Secrets Manager (3 secrets) + API            $    2.70
+   S3 backups 40 GB                             $    0.98
+   TOTAL per month                              $  452.20   (about $5,426 per year)
+
+== start size: two m6i.large (setup.sh falls back to it while the new account's vCPU limit is low)
+   EC2 GitLab + runner machines                 $  167.90
+   NAT gateway hours (1)                        $   37.96
+   NAT data processed                           $    7.80
+   EBS gp3 300 GB                               $   28.56
+   Application load balancer hours              $   19.71
+   Application load balancer LCU                $    5.84
+   Public IPv4 addresses (3)                    $   10.95
+   KMS key (1) + requests                       $    1.90
+   Secrets Manager (3 secrets) + API            $    2.70
+   S3 backups 40 GB                             $    0.98
+   TOTAL per month                              $  284.30   (about $3,412 per year)
+
+Not included: data transfer out to the internet, snapshots, CloudWatch, the autoscaling job machines of milestone 2.
+The two machines and the NAT gateway are 24 x 7 costs; EC2 and NAT are 83% of the full-size total.

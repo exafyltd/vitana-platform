@@ -1,0 +1,9 @@
+# same command with node v20.20.2 (CI: actions/setup-node node-version 20)
+# files: 34
+# tests 639
+# suites 0
+# pass 638
+# fail 0
+# cancelled 0
+# skipped 1
+# todo 0
