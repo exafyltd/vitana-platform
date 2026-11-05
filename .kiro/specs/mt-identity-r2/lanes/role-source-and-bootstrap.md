@@ -1,6 +1,6 @@
 ---
 lane: role-source-and-bootstrap
-state: ready
+state: in-review
 next_actor: kiro
 executor: kiro
 seat: hotmail
@@ -13,9 +13,11 @@ paths:
   - supabase/migrations/20261102033100_vtid_*_fix_bootstrap_admin_user.sql
   - supabase/migrations/20261102033000_vtid_*_role_source_rollback.sql
   - supabase/tests/mt_identity_roles_*.sql
-updated: 2026-11-02T13:05Z
+updated: 2026-11-05T22:37Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05467
+branch: kiro/mt-identity-r2/role-source-and-bootstrap
+claimed_by: kiro-hotmail-202611011452-6d16
 ---
 # role-source-and-bootstrap — one role source + fix bootstrap_admin_user (DB)
 
@@ -43,3 +45,8 @@ definition (vitana-v1 `20250915132930`).
 
 ### 2026-11-02T13:05Z · ci-plan-spar · ready (VTID allocated)
 VTID-05467 allocated after policy approval (converged-auto-v1).
+### 2026-11-05T22:37Z · kiro-hotmail-202611011452-6d16 · ready → in-review
+Built on `8d7b8d57fc` and `61be2d39f2` (migrations, pgTAP, evidence, sparring record). Merged `origin/main`
+(`78bb4b3969`) into the lane branch in merge commit `d9b4d37398`. Preflight passed on that merge. The PGlite check
+was rerun on it and passed (`docs/validation/VTID-05467/commands.log`, section 9). Nothing is applied: migrations
+wait for the owner's approval of the files and the target database (§7d).

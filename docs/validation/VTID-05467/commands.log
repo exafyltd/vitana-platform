@@ -98,3 +98,16 @@ $ git grep -l -E "supabase[/\\]migrations" origin/main -- services/gateway/test 
 # Final state
 - Commits: 8d7b8d57fc (migrations, pgTAP, evidence) and 61be2d39f2 (owner-approval line). Local only; nothing pushed.
 - Preflight on 61be2d39f2: every check passed.
+
+# 9. Rerun on the merged head (origin/main 78bb4b3969 merged into the lane branch in d9b4d37398)
+$ cp docs/validation/VTID-05467/pglite-check.mjs /projects/sandbox/pglite-05467/run.mjs && node run.mjs <worktree>
+  -> ALL CHECKS PASSED. R1 single_source after apply 28/28 and R2 bootstrap 20/20 on the id variant; the tenant_id
+     variant passed on the first run. Two committed outputs differ from the first run only in random tenant UUIDs printed
+     on red lines (pglite-red-base.txt line 47, pglite-variant-id.txt line 16). Pass and fail results are identical; the
+     rerun output is committed as it came out.
+$ node scripts/collab/preflight.mjs --repo . --base origin/main --head HEAD --branch kiro/mt-identity-r2/role-source-and-bootstrap --title "VTID-05467 (mt-identity-r2/role-source-and-bootstrap): one selected-role source and the bootstrap fix"
+  -> every check passed on d9b4d37398 (Collab tests, Collab handoff, Lane scope, PR-GATE scope, PR-GATE sparring,
+     PR-GATE weakening, PR-GATE red-green, Kiro steering)
+# Premises rechecked on the merged head: the last definitions of set_role_preference (20261013233000), me_set_active_role
+# (20260926150000), check_role_permitted (20260318100000) and switch_to_tenant_by_slug (20261010180200) are unchanged.
+# bootstrap_admin_user is defined only by this lane's own files. No migration name collides with 2026110203300x.
