@@ -1,0 +1,7 @@
+{
+  "vtid": "VTID-05387",
+  "service": "gateway",
+  "tests": [
+    { "kind": "existing", "ref": "npx jest test/project-manager test/kaf-staging-claude-available-wiring.test.ts test/kiro-autonomy-fallback-proof.test.ts", "cwd": "services/gateway", "reason": "the PM writer/decider are pure or GitHub-faked; the PM stays paused on staging (PM_AGENT_ENABLED=false), so there is no live tick to observe — proven in CI" }
+  ]
+}

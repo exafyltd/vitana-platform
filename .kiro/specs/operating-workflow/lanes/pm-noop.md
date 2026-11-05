@@ -1,6 +1,6 @@
 ---
 lane: pm-noop
-state: ready
+state: executing
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -18,7 +18,9 @@ paths:
   - services/gateway/test/kaf-staging-claude-available-wiring.test.ts
   - .github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml
   - docs/validation/VTID-*/**
-updated: 2026-10-28T12:52Z
+updated: 2026-10-28T14:55Z
+claimed_by: kiro-jtadic-202610281148-d6d3
+branch: kiro/operating-workflow/pm-noop
 vtid: VTID-05387
 ---
 # Lane: pm-noop (repo vitana-platform)
@@ -30,3 +32,9 @@ Lane created with the plan.
 
 ### 2026-10-28T12:52Z · ci-plan-spar · ready (VTID allocated)
 VTID-05387 allocated after policy approval (converged-auto-v1).
+
+### 2026-10-28T14:55Z · kiro-jtadic-202610281148-d6d3 · ready → executing
+Built: writer no-op guard (W1, W2, writeFile), `unchanged` act status, the PM never writes `seat` (reassign, park;
+`applyLaneChange` refuses a seat change), staging deploy pins `PM_AGENT_ENABLED="false"`. Tests red on base (13/21),
+PM suites green (232/232; 1538/1538 in 112 PM-related suites). Decisions in `docs/validation/VTID-05387/acceptance.md`.
+

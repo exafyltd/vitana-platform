@@ -1,0 +1,22 @@
+# VTID-05387 (operating-workflow/pm-noop) — commands, run in /projects/sandbox/wt-pm-noop (Kiro Web, session kiro-jtadic-202610281148-d6d3)
+# base origin/main ad6b081d96372c304468a232c227a1058415b833
+
+$ cd services/gateway && npx jest test/project-manager/reassign-idempotent.test.ts test/project-manager/reassign-seat.test.ts test/kaf-staging-claude-available-wiring.test.ts   # on base sources (git stash of src + workflow)
+Tests: 13 failed, 8 passed, 21 total   -> red-on-base.txt
+
+$ npx jest test/project-manager test/kaf-staging-claude-available-wiring.test.ts test/kiro-autonomy-fallback-proof.test.ts   # head
+Test Suites: 14 passed, 14 total; Tests: 232 passed, 232 total
+
+$ npx jest $(grep -rl "project-manager\|AWS-STAGE-DEPLOY-GATEWAY" test --include=*.test.ts)   # every suite that imports the PM or reads the staging workflow (head)
+Test Suites: 112 passed, 112 total; Tests: 1538 passed, 1538 total
+
+$ npx tsc --noEmit -p .
+exit 0
+
+# The rejection paths the guard avoids (read-only, on the real bookkeeping branch of #4370):
+$ node scripts/collab/queue.mjs validate --repo . --base origin/main --head origin/pm-agent/commerce-step-owner
+❌ collab handoff — 1 problem(s): .kiro/specs/commerce-step-owner/lanes/gateway-step-owner.md: reviewer_seat must differ from seat
+$ node scripts/collab/queue.mjs scope-check --repo . --base origin/main --head origin/pm-agent/commerce-step-owner --branch pm-agent/commerce-step-owner
+➖ lane scope — not a lane PR
+# => on a W2 bookkeeping PR the PM's seat move is rejected by Collab handoff (queue.mjs:227); on a W1 lane-PR commit the
+#    Lane scope PERM rule (queue.mjs:678-684) applies. The PM no longer writes seat on either path.

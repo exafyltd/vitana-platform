@@ -247,6 +247,10 @@ export function reassignDecision(
       if ((buildLanesInFlight(state)[lane.slug] ?? 0) >= MAX_BUILD_LANES_PER_PLAN) return null;
       const next = nextActor(lane.seat);
       if (next.actor === lane.seat) return null;
+      // VTID-05387 (operating-workflow/pm-noop, R1-F3): the decision names the
+      // target actor only; actReassign writes `next_actor`, never `seat` (a lane
+      // permission key Lane scope refuses on a pm-agent commit), and the writer's
+      // no-op guard makes a repeated decision write nothing.
       return {
         kind: 'reassign',
         slug: lane.slug,

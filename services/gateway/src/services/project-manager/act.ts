@@ -109,8 +109,15 @@ export interface LaneFileChange {
  * tests use an in-memory recorder.
  */
 export interface LaneFileWriter {
-  write(change: LaneFileChange): Promise<void>;
+  /**
+   * VTID-05387: `'noop'` when the change is already in the file (nothing committed);
+   * `'written'` (or `void`, treated as written, for simple recorders) otherwise.
+   */
+  write(change: LaneFileChange): Promise<WriteOutcome | void>;
 }
+
+/** VTID-05387: what a lane-file write did. */
+export type WriteOutcome = 'written' | 'noop';
 
 /**
  * Posts the Gate-2 message to the Operator Chat. Posting ONLY — it never
@@ -277,16 +284,16 @@ async function actMerge(decision: MergeDecision, state: ObservedState, deps: Bou
 }
 
 async function actReassign(decision: ReassignDecision, state: ObservedState, deps: Bound): Promise<ActResult> {
-  const isLane = decision.target === 'lane';
-  await deps.laneWriter.write({
+  // VTID-05387 (R1-F3): next_actor only — the PM never changes `seat` (a lane
+  // permission key Lane scope refuses on a pm-agent commit).
+  const outcome = await deps.laneWriter.write({
     slug: decision.slug,
     lane: decision.lane,
     repo: findLane(state, decision.slug, decision.lane)?.repo,
-    // A reassigned lane moves its seat (lane) or its review (next_actor only).
-    seat: isLane && decision.to_actor !== 'claude' ? decision.to_actor : undefined,
     next_actor: decision.to_actor,
     log: `reassign ${decision.target} ${decision.from_seat}→${decision.to_actor} (${decision.reason}${decision.fallback ? ', Claude unavailable' : ''})`,
   });
+  if (outcome === 'noop') return { decision, status: 'unchanged', detail: `${decision.target}→${decision.to_actor} already recorded` };
   return { decision, status: 'reassigned', detail: `${decision.target}→${decision.to_actor}` };
 }
 
@@ -298,8 +305,8 @@ async function actPark(decision: ParkDecision, state: ObservedState, deps: Bound
     repo: findLane(state, decision.slug, decision.lane)?.repo,
     state: 'parked',
     next_actor: to,
-    // VTID-05274: parked with the exceptions seat → that seat builds it next.
-    seat: to !== 'claude' ? to : undefined,
+    // VTID-05387 (R1-F3): no `seat` change — a permission key Lane scope refuses
+    // on a pm-agent commit; the exceptions seat picks the lane up by next_actor.
     release_claim: decision.release_claim,
     log: `park (${decision.reason})${decision.release_claim ? '; claim released' : ''}${decision.fallback ? `; Claude unavailable → ${to}` : ''}`,
   });
