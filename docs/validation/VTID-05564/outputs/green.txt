@@ -1,0 +1,28 @@
+# VTID-05564 green: the same replay with the lane's manifests (each existing test has "cwd": "services/gateway")
+# checkout /projects/sandbox/.rv/svcwd = base origin/main d73fec53f96ab8fbfb5fbdf002ae9fa2cf00376d + the three one-line manifest edits (working tree, before the code commit), 2026-11-05T21:53:30Z, node v22.23.4
+# harness: outputs/replay-existing.mjs (sha256 30049c469cdf7af84c107c4bddd0353f2e5d6cdf8d6fb09159e227d462f98c34); gateway dependencies: services/gateway/node_modules hard-linked from the sandbox cache (CI runs npm ci there, run.mjs ensureDeps)
+$ HOME=/projects/sandbox/.scratch/tools/svcwd/home node /projects/sandbox/.scratch/tools/svcwd/replay-existing.mjs --repo /projects/sandbox/.rv/svcwd --vtids VTID-05515,VTID-05516,VTID-05518
+[replay] VTID-05515 lib.validateManifest: ok=true errors=[]
+[replay] VTID-05515 › existing npx jest test/eng-platform-inventory-readonly.test.ts (manifest cwd "services/gateway", runs in services/gateway; node_modules present, no npm ci (as run.mjs))
+    PASS test/eng-platform-inventory-readonly.test.ts
+    Test Suites: 1 passed, 1 total
+    Tests:       7 passed, 7 total
+    Ran all test suites matching /test\/eng-platform-inventory-readonly.test.ts/i.
+[replay] PASS VTID-05515 › existing npx jest test/eng-platform-inventory-readonly.test.ts (exit 0)
+[replay] VTID-05516 lib.validateManifest: ok=true errors=[]
+[replay] VTID-05516 › existing npx jest test/eng-platform-oidc-roles.test.ts (manifest cwd "services/gateway", runs in services/gateway; node_modules present, no npm ci (as run.mjs))
+    PASS test/eng-platform-oidc-roles.test.ts
+    Test Suites: 1 passed, 1 total
+    Tests:       16 passed, 16 total
+    Ran all test suites matching /test\/eng-platform-oidc-roles.test.ts/i.
+[replay] PASS VTID-05516 › existing npx jest test/eng-platform-oidc-roles.test.ts (exit 0)
+[replay] VTID-05518 lib.validateManifest: ok=true errors=[]
+[replay] VTID-05518 › existing npx jest test/eng-platform-stage-oidc-workflows.test.ts test/vtid-05009-provision-pack-token-workflow.test.ts (manifest cwd "services/gateway", runs in services/gateway; node_modules present, no npm ci (as run.mjs))
+    PASS test/vtid-05009-provision-pack-token-workflow.test.ts
+    PASS test/eng-platform-stage-oidc-workflows.test.ts
+    Test Suites: 2 passed, 2 total
+    Tests:       32 passed, 32 total
+    Ran all test suites matching /test\/eng-platform-stage-oidc-workflows.test.ts|test\/vtid-05009-provision-pack-token-workflow.test.ts/i.
+[replay] PASS VTID-05518 › existing npx jest test/eng-platform-stage-oidc-workflows.test.ts test/vtid-05009-provision-pack-token-workflow.test.ts (exit 0)
+[replay] existing suites: 3 passed, 0 failed
+[exit 0]

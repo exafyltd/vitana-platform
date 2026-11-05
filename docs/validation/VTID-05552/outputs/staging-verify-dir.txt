@@ -1,0 +1,13 @@
+VTID-05552 — task V4: every test of scripts/ci/staging-verify/ on head (the existing ones stay green).
+Node 22 takes files, not a directory, so the directory's test files are listed:
+$ node --test $(ls scripts/ci/staging-verify/*.test.mjs scripts/ci/staging-verify/*.test.cjs)
+  scripts/ci/staging-verify/confirm-live.test.mjs
+  scripts/ci/staging-verify/deploy-runs.test.mjs
+  scripts/ci/staging-verify/lib.test.cjs
+  scripts/ci/staging-verify/record-oasis.test.cjs
+  scripts/ci/staging-verify/workflow.test.cjs
+# tests 104
+# pass 104
+# fail 0
+# skipped 0
+(88 existing tests + the 16 of deploy-runs.test.mjs; all pass.)
