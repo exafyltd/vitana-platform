@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-05553",
+  "kind": "fix",
+  "paths": [
+    "services/gateway/src/services/gemini-operator.ts",
+    "services/gateway/test/operator-chat-service-token.test.ts",
+    "docs/validation/VTID-05553/**"
+  ],
+  "sparring_record": ".kiro/specs/operator-chat-service-token/sparring/verdict.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

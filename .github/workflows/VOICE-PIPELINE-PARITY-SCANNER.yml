@@ -27,6 +27,12 @@ permissions:
   contents: read
   pull-requests: write
 
+# Superseded PR runs are cancelled when a newer commit lands on the same PR.
+# Pushes to main and scheduled runs are never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   scan:
     runs-on: ubuntu-latest

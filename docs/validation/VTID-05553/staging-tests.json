@@ -1,0 +1,24 @@
+{
+  "vtid": "VTID-05553",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "existing",
+      "ref": "npx jest test/operator-chat-service-token.test.ts",
+      "cwd": "services/gateway",
+      "reason": "pins the gateway service token on the Operator Chat approve and reject calls, and that the Supabase service key is not sent. Not verified on staging: the change alters the headers of two in-process calls, and a real approve or reject writes to the shared Supabase project. Staging suites are read-only (CLAUDE.md rule 48); plan section 9."
+    },
+    {
+      "kind": "existing",
+      "ref": "npm run test:operator",
+      "cwd": "services/gateway",
+      "reason": "the operator pipeline regression, so Operator Chat approve and reject still run end to end"
+    },
+    {
+      "kind": "existing",
+      "ref": "npm run test:roles",
+      "cwd": "services/gateway",
+      "reason": "the role separation regression, so the developer and admin gates still hold"
+    }
+  ]
+}
