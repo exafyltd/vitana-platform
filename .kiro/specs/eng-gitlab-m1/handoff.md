@@ -7,9 +7,9 @@ next_actor: kiro
 state: approved
 spar_refs:
   - exafyltd/vitana-v1: 7829ef2f2ef12364862961d339161229c286d6f0
-updated: 2026-11-05T10:19Z
+updated: 2026-11-05T10:49Z
 sparring_record: .kiro/specs/eng-gitlab-m1/sparring/verdict.md
-vtids: [VTID-05544]
+vtids: [VTID-05544, VTID-05555]
 ---
 # Handoff — eng-gitlab-m1
 Milestone 1 of the self-hosted GitLab CI (program `engineering-platform`). Plan: `plan.md`.
@@ -57,3 +57,6 @@ Decision (listed for Gate 2): late lane `gitlab-verify`, `depends_on: [gitlab-in
 Outcome clause "green pipelines". The plan is `done` only when both lanes are, and the cutover checklist item "M1 done" (agentic-delivery
 plan §8.1) means the plan, so the restore test and the first pipelines stay a precondition of the cut. The sparred plan text is unchanged.
 Next: PLAN-SPAR allocates the lane's VTID; lane `gitlab-infra` goes back to review with the evidence it can produce.
+
+### 2026-11-05T10:49Z · ci-plan-spar · approved (late lane VTID)
+Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.
