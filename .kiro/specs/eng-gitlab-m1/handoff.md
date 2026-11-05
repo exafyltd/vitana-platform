@@ -7,9 +7,9 @@ next_actor: kiro
 state: approved
 spar_refs:
   - exafyltd/vitana-v1: 7829ef2f2ef12364862961d339161229c286d6f0
-updated: 2026-11-04T20:33Z
+updated: 2026-11-05T10:49Z
 sparring_record: .kiro/specs/eng-gitlab-m1/sparring/verdict.md
-vtids: [VTID-05544]
+vtids: [VTID-05544, VTID-05555]
 ---
 # Handoff — eng-gitlab-m1
 Milestone 1 of the self-hosted GitLab CI (program `engineering-platform`). Plan: `plan.md`.
@@ -44,4 +44,19 @@ type check job on the base commit shows the file that runs installs the gateway 
 finding was disproved (no `@prisma/client` import; the check passes without a client). Answers in `sparring/s2-responses-1.md`.
 
 ### 2026-11-04T20:33Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.
+
+### 2026-11-05T10:19Z · kiro-exafy-202611021438-cff7 · approved (late lane `gitlab-verify`)
+The reviewer agent returned `changes` on lane `gitlab-infra` (PR #4692, review of 09:30Z). Its one blocking finding: the lane's acceptance
+lists the owner's runs of plan §6 steps 0 to 3 as evidence, and they are open. It offered two ways: add the output, or change the plan
+through `_plan`. No step needs the merge. But the files in git are what the M2 Terraform lanes (`eng-gitlab-m2`) and the delivery plan
+(`agentic-delivery`) build on, and they wait for that merge, while the owner's runs are evidence about the running system and need the
+owner's time (the restore test about an hour).
+
+Decision (listed for Gate 2): late lane `gitlab-verify`, `depends_on: [gitlab-infra]`, takes the owner-run evidence of task I4 and the
+Outcome clause "green pipelines". The plan is `done` only when both lanes are, and the cutover checklist item "M1 done" (agentic-delivery
+plan §8.1) means the plan, so the restore test and the first pipelines stay a precondition of the cut. The sparred plan text is unchanged.
+Next: PLAN-SPAR allocates the lane's VTID; lane `gitlab-infra` goes back to review with the evidence it can produce.
+
+### 2026-11-05T10:49Z · ci-plan-spar · approved (late lane VTID)
 Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.
