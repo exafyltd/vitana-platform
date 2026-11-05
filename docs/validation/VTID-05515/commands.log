@@ -1,0 +1,19 @@
+# VTID-05515 commands (2026-11-03T13:33:13Z, Linux, node v22.23.4)
+red on base (origin/main, script absent): outputs/red-on-base.txt
+
+$ cd services/gateway && npx jest test/eng-platform-inventory-readonly.test.ts --verbose
+    ✓ runs in strict mode (13 ms)
+    ✓ refuses to run against any account but 472838866351 (1 ms)
+    ✓ only calls describe-*, list-* and get-* APIs through run() (4 ms)
+    ✓ calls aws directly only for get-caller-identity and inside run()
+    ✓ never reads secret values, decrypts parameters, uploads or mutates (1 ms)
+    ✓ lists IAM users with their groups, group policies and permissions boundary (sparring R1-F2) (1 ms)
+    ✓ has no flag that changes the guarded account (reviewer finding 2026-11-03)
+Tests:       7 passed, 7 total
+
+$ bash scripts/aws/inventory-readonly.sh --account 123
+unknown argument: --account
+exit=2
+$ (no AWS credentials) bash scripts/aws/inventory-readonly.sh
+refusing to run: caller account is '<no credentials>', expected 472838866351
+exit=4

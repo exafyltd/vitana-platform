@@ -1,0 +1,74 @@
+# a scratch tree whose scripts/eng/ci-metrics.mjs is a STUB (every export of the real module, doing nothing); the final test file, unchanged
+# $ node --test scripts/eng/ci-metrics.test.mjs
+not ok 1 - the namespace, metric names, unit names and fleet tag are the ones the alarms and the plan use
+not ok 2 - collectQueue: counts and the oldest pending age are right over three pages of jobs
+not ok 3 - collectQueue: the numbers of all projects add up and the oldest job of all projects wins
+not ok 4 - collectQueue: the project list is read page by page, only the projects the account belongs to, not archived ones
+not ok 5 - collectQueue: an empty queue is a real zero, read from GitLab
+not ok 6 - collectQueue: only GET requests are made (the account is read only)
+not ok 7 - collectQueue: a job of a pipeline that has not started counts from its own creation
+not ok 8 - collectQueue: a job of a running pipeline waits from the last finish in its pipeline, not from the creation of the whole pipeline
+not ok 9 - collectQueue: a pending job in a running pipeline where nothing has finished yet counts from its creation
+not ok 10 - collectQueue: a pipeline is looked up once however many of its jobs are pending
+not ok 11 - collectQueue: past the lookup cap the jobs are still counted, only their age is left out, and it is logged
+not ok 12 - collectQueue: when pending jobs exist but none can be aged the oldest age is null, never 0
+not ok 13 - collectQueue: a job without tag_list or pipeline is still counted and aged from its creation
+not ok 14 - collectQueue: an age is whole seconds, rounded down (never more than the job has waited)
+not ok 15 - collectQueue: under the lookup cap the pipeline of the OLDEST waiting job is the one that is looked up
+not ok 16 - collectQueue: a pipeline that vanished between two requests (404) is skipped and logged; any other error fails the read
+not ok 17 - collectQueue: a finish time in the future (clock skew) never gives a negative age
+not ok 18 - collectQueue: a creation time in the future (clock skew) gives age 0, never a negative number
+not ok 19 - collectQueue: a server error on one project fails the whole read (no partial numbers)
+not ok 20 - collectQueue: a project that forbids reading its jobs is skipped and logged; the others are counted
+not ok 21 - collectQueue: when no project can be read at all it is a failure, not an empty queue
+not ok 22 - collectQueue: an account that sees no project is a failure, not an empty queue
+not ok 23 - a healthy minute: one put-metric-data call with every metric, the failure metric at 0
+not ok 24 - GitLab answers 500: the failure metric is published, no queue number is, and the host metrics still go out
+not ok 25 - a GitLab that answers 503 once and then well is read after a retry, not reported as failed
+not ok 26 - GitLab is unreachable (connection refused): failure metric, no queue numbers
+not ok 27 - the token is refused (401): failure metric, no queue numbers
+not ok 28 - a read that fails half-way (second project) publishes the failure metric only, not the numbers of the first project
+not ok 29 - the token file is missing: failure metric, GitLab is not asked, nothing else breaks
+not ok 30 - an empty or malformed token file is the same failure, and the file content is never printed
+not ok 31 - GitLab hangs: after the deadline the failure metric is published instead of nothing
+not ok 32 - GitLab hangs: the late failure of the abandoned request is not an unhandled rejection
+not ok 33 - publishing fails: exit code 1, the error is logged, and nothing is thrown
+not ok 34 - --dry-run reads, prints the metrics it would publish, and writes nothing: no AWS call, no state file
+not ok 35 - the token appears in no log line, error, command line or state file, also when GitLab and AWS echo it back
+not ok 36 - the logger itself removes the exact token, also when it has no GitLab token shape
+not ok 37 - main: the token is sent to GitLab only in the PRIVATE-TOKEN header
+not ok 38 - collectTicks: the age of a unit that finished well is now minus its finish time (monotonic stamp and uptime)
+not ok 39 - collectTicks: a run that failed does not count; the age keeps growing from the last good tick
+not ok 40 - collectTicks: a tick that is running right now is bridged by the last good tick (no gap, no reset), whatever the run before it was
+not ok 41 - collectTicks: an inactive unit whose Result is not success is not a good tick either
+not ok 42 - collectTicks: a unit that never ran, or does not exist, gives no datapoint at all (never 0)
+not ok 43 - collectTicks: a newer good tick replaces the stored one; an older observation never moves it back
+not ok 44 - collectTicks: when systemctl itself fails the stored tick is used and the failure is logged
+not ok 45 - collectTicks: without a readable uptime nothing is observed, and the stored ticks still give an age
+not ok 46 - run: the last good tick is kept in the state file across runs, so a failing bot is seen growing older
+not ok 47 - run: a corrupt or foreign state file is ignored (and replaced), not a crash
+not ok 48 - run: a state file of another version, or without a version, is not believed even when it holds a recent time
+not ok 49 - run: a state directory that cannot be written is logged and the metrics are still published
+not ok 50 - collectBackupAge: the age of the newest object under backups/ and the exact aws command
+not ok 51 - collectBackupAge: an empty bucket gives null (no datapoint, so the alarm sees missing data), never 0
+not ok 52 - collectBackupAge: a listing that fails gives null and is logged
+not ok 53 - collectBackupAge: a bucket name that could be read as an option is refused before aws is called
+not ok 54 - run: a failing backup listing or a missing bucket leaves the other metrics alone
+not ok 55 - buildMetricData: a failed read gives the failure metric (1) and no queue metric; the host metrics stay
+not ok 56 - buildMetricData: a failed read wins over a queue that is still around
+not ok 57 - buildMetricData: a good read gives the queue metrics and the failure metric at 0; a null age is left out
+not ok 58 - buildMetricData: a number that is not finite or is negative is never published
+not ok 59 - publishMetrics: one aws cloudwatch put-metric-data with the namespace, the region and the data as JSON
+not ok 60 - publishMetrics: nothing to publish means no call
+not ok 61 - parseArgs: defaults are the paths of the units and the values from the environment file
+not ok 62 - parseArgs: the --option=value form works too
+not ok 63 - parseArgs: options override the environment; --dry-run and the knobs are read
+not ok 64 - parseArgs: a usage mistake is a UsageError (unknown command or option, missing value, no region, bad number)
+not ok 65 - main: exit 0 for a good run, 2 for a usage mistake (usage text on stderr), and the usage mistake touches nothing
+not ok 66 - main --help prints the usage on stdout and touches nothing
+not ok 67 - main: exit 1 when publishing fails
+# tests 67
+# pass 0
+# fail 67
+# cancelled 0
+# skipped 0

@@ -1,0 +1,59 @@
+# VTID-05539 commands (2026-11-05, Linux, node v22.23.4 unless a line says node 20; seat exafy, session kiro-exafy-202611021438-cff7)
+base: 8bae0d492d4 (the tip of the M1 branch kiro/eng-gitlab-m1/gitlab-infra, which the worktree was created from). Worktree: .worktrees/eng-gitlab-m2-monitoring, branch kiro/eng-gitlab-m2/monitoring.
+The outputs under outputs/ were produced from the final code of this PR, in this order, by one pass at the end (mutation run, red on base, red on a stub, green, Terraform checks, policy render, scripts and units, the whole script set on two Node versions, cost estimate), after the last change to a test or to the code.
+
+# 1. Red on base, red on a stub, green
+$ node --test scripts/eng/monitoring-structure.test.mjs scripts/eng/ci-metrics.test.mjs      (in a scratch tree made with `git archive HEAD` = the base, plus the two final test files)   -> outputs/red-on-base.txt
+tests 38, pass 0, fail 38: the 37 cases of the structure test each fail on their own (no monitoring.tf, no units, no ops.d script, no module); the module test file cannot import scripts/eng/ci-metrics.mjs (ERR_MODULE_NOT_FOUND), 1 failure. That is the red of a new module.
+$ the same ci-metrics.test.mjs on a scratch tree whose scripts/eng/ci-metrics.mjs is a STUB (every export of the real module, each doing nothing)      -> outputs/red-on-stub.txt
+tests 67, pass 0, fail 67: every case fails on its own, none on a missing module.
+$ node --test scripts/eng/monitoring-structure.test.mjs scripts/eng/ci-metrics.test.mjs      -> outputs/green.txt
+tests 104, pass 104, fail 0, skipped 0 (about 2 s: the structure test runs 20-cwagent.sh with stand-in programs).
+
+# 2. Mutation run: each of 242 deliberate changes applied alone to a scratch copy. Script: outputs/mutate-monitoring.sh   Output: outputs/mutation-run.txt
+$ for i in 0 1 2 3 4 5; do TERRAFORM=<terraform> PART=$i/6 bash outputs/mutate-monitoring.sh <worktree> & done      (six parts, each runs every sixth mutation)
+Baseline 104 of 104 pass on the unmutated tree. Mutations 242 (181 exact-string changes whose old text is found exactly once, checked first with COUNT_ONLY=1, and 61 pattern changes): caught 242, not caught 0.
+A change counts as caught only when the changed file still parses (node --check, bash -n, terraform fmt, an ini line check) and at least one case fails by name; NOOP, AMBIGUOUS, INVALID, CRASH, HUNG and SURVIVED are reported as not caught.
+History: the first run (244 changes, 92 cases) left 18 not caught. Cases were added for the properties they showed (a running unit taken for a good tick, the state file version, ages rounded up, the order of the lookups under the cap, a vanished pipeline, a finish in the future, the exact-token redaction by the logger itself, the GitLab retry, an option value that is an option, a stale queue next to a failed read, a stopped agent, an agent that does not start), four pieces of redundant code were removed (a second clamp of finish times, a stored-time validation that collectTicks repeats, dpkg -E, a .catch that Promise.race makes unnecessary) and their mutations dropped or replaced. The recorded run is the last, against the final tests and code.
+
+# 3. Terraform with the M1 file in the same directory       -> outputs/terraform-checks.txt
+$ cp -r infra/gitlab-engineering <scratch>/infra/ && cd <scratch>/infra/gitlab-engineering/terraform
+$ terraform fmt -check -diff -recursive                  exit 0 (monitoring.tf was formatted with `terraform fmt` once while writing)
+$ terraform init -backend=false -input=false -no-color   exit 0 (hashicorp/aws v5.100.0; providers only, the S3 backend is supplied by setup.sh)
+$ terraform validate -no-color                           "Success! The configuration is valid."
+Terraform v1.17.1. The scratch copy is removed; no .terraform directory and no lock file is in the tree.
+$ bash outputs/render-policies.sh <worktree>      -> outputs/terraform-policy-render.txt
+The two aws_iam_policy_document data sources of monitoring.tf rendered by the AWS provider with fake credentials and every check skipped (no AWS call), and the address test of the subscription in `terraform console`: the key policy has the account root and cloudwatch.amazonaws.com (kms:GenerateDataKey*, kms:Decrypt, with aws:SourceAccount and the alarm ARN pattern), the host policy is one statement with the namespace condition; a valid address passes, five bad ones do not.
+
+# 4. Shell script, units, syntax       -> outputs/scripts-and-units.txt
+$ bash -n infra/gitlab-engineering/host/ops.d/20-cwagent.sh      exit 0
+$ systemd-analyze verify infra/gitlab-engineering/host/units/vitana-ci-metrics.service infra/gitlab-engineering/host/units/vitana-ci-metrics.timer      no output (this machine has systemd 252; the GitLab host runs Ubuntu 24.04 with 255)
+Negative control: the same service with two directives misspelled -> the verifier names both. node --check of the three .mjs files: ok.
+
+# 5. The whole script test set exactly as .github/workflows/UNIT.yml:21-25 runs it (no install)
+$ FILES=$(find scripts -path '*/node_modules' -prune -o \( -name '*.test.cjs' -o -name '*.test.mjs' \) -print | sort); node --test $FILES      -> outputs/unit-all.txt
+36 files; tests 743, pass 742, fail 0, cancelled 0, skipped 1 (a skip in a file this lane does not touch).
+$ the same with node v20.20.2 (npx -y node@20; the workflow uses actions/setup-node 20)      -> outputs/unit-all-node20.txt
+tests 743, pass 742, fail 0, skipped 1.
+
+# 6. Cost and the budget default       -> outputs/cost-estimate.txt
+$ python3 outputs/cost-estimate.py
+Prices from the AWS public price list, eu-central-1 (AmazonCloudWatch 20261104213532, AmazonEC2 20261104210305): this lane 5.66 dollars a month (8 alarms, 10 custom metrics, 86 400 requests counted as paid, 1 KMS key); the always-on floor of M1 + M2 is 497.70 at full size and 329.80 at the start size; the default budget of 1000 is twice the full-size floor.
+
+# 7. Scope file made with the helper the gate documents, then pointed at the lane's own sparring record
+$ node scripts/ci/pr-gate/vtid-scope.mjs init VTID-05539 --kind infra --paths "<the lane paths>" --sparring-record docs/validation/VTID-05539/plan-sparring.md
+wrote docs/validation/VTID-05539/scope.json. plan-sparring.md states the policy approval and cites the verdict of plan eng-gitlab-m2 (the gate's sparring check looks for the words "owner approval").
+
+# 8. Secret scan of every file this PR adds       -> outputs/secret-scan.txt
+The patterns of the local helper scan-secrets.sh (GitHub, GitLab and Slack tokens, AWS access keys, private key blocks, JWTs, a password/secret/token assigned a literal of 12+ characters) over the 24 files of this lane: 0 matches.
+The helper itself scans the whole diff against origin/main, which also holds the files of milestone 1 (VTID-05544) until that lane is merged; its only matches there are three secret NAMES (Secrets Manager paths) in gitlab-m1-structure.test.mjs, none in a file of this lane.
+The two token-shaped fixtures of this lane (the test token of ci-metrics.test.mjs, a payload of the mutation harness) are built so that no token-shaped literal is in a file: the test token is assembled at run time.
+
+# 9. The CI governance checks, locally, in one pass (with gh replaced by a stub that fails, so no GitHub call with credentials is made)
+$ node scripts/collab/preflight.mjs --repo <worktree> --base 8bae0d492d4 --head HEAD --branch kiro/eng-gitlab-m2/monitoring --title "VTID-05539 (eng-gitlab-m2/monitoring): …"
+Collab tests, Collab handoff, Lane scope, PR-GATE scope, sparring, weakening, red-green and Kiro steering: every check passed. Run on the final commit of the lane.
+
+# 10. Not run, with the reason
+- terraform plan and apply: they need the owner's AWS account (this session has no AWS access). The first apply is the owner's `setup.sh` run of plan §6 step 3.
+- The metrics job against a real GitLab and CloudWatch, the units on a real host, the CloudWatch agent on a real host, a test mail through the topic (acceptance A6): this session has no GitLab or AWS access and writes to no live system. They are exercised by `m2.sh install` and `m2.sh status` of lane settings, and the owner confirms the subscription link once.
+- The units are not installed or started: ops-install.sh of lane settings installs everything in host/units/* and runs host/ops.d/*, on the owner's command.

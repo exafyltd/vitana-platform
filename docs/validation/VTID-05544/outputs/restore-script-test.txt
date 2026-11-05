@@ -1,0 +1,26 @@
+# $ bash docs/validation/VTID-05544/outputs/test-restore-inner.sh infra/gitlab-engineering/RUNBOOK.md
+# Control flow of the restore script in RUNBOOK section 8 step B, run as written with every external command replaced by a recording stub.
+# It proves the order of the steps and the error handling. It does not restore anything: acceptance A04 is still the owner's run.
+ok    happy: exit 0
+ok    happy: shows the backup chosen
+ok    happy: shows doctor result
+ok    happy: shows counts
+ok    happy: shows main tip
+ok    happy: ends with DONE and the id
+ok    happy: noise stays out of stdout
+ok    happy: noise is in the log
+ok    happy: stop puma then sidekiq, restore, in order
+ok    happy: restore got BACKUP=<id> without the suffix
+ok    happy: /etc/gitlab (secrets) extracted
+ok    script order: secrets extracted before the package install and before the restore
+ok    happy: backup file placed in the backup dir
+ok    empty bucket: exit 1
+ok    empty bucket: FAIL line is shown
+ok    empty bucket: nothing installed or restored
+ok    install fail: exit 1 and named
+ok    install fail: restore not attempted
+ok    restore fail: exit 1 and named
+ok    restore fail: no DONE line
+ok    restore fail: nothing restarted afterwards
+
+failures: 0

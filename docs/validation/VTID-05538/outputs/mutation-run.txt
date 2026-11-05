@@ -1,0 +1,118 @@
+baseline: 58 tests pass on the unmutated tree
+caught    success becomes failure  <- jobToCheckRun follows the plan §3.4 table for every docume | jobToCheckRun keeps name, id and started_at, so the latest | requiredJobsVerdict: every required name must be present a
+caught    failed is always a failure  <- jobToCheckRun follows the plan §3.4 table for every docume | checksFor: no pipeline is pending, a finished pipeline wit | lands a reviewed, green, up-to-date merge request: one mer
+caught    failed is always neutral  <- jobToCheckRun follows the plan §3.4 table for every docume | jobToCheckRun keeps name, id and started_at, so the latest | a red required job does not land and names the job; a requ
+caught    canceled passes  <- jobToCheckRun follows the plan §3.4 table for every docume | requiredJobsVerdict: every required name must be present a
+caught    skipped fails  <- jobToCheckRun follows the plan §3.4 table for every docume | requiredJobsVerdict: every required name must be present a | a red required job does not land and names the job; a requ
+caught    manual is always pending  <- jobToCheckRun follows the plan §3.4 table for every docume
+caught    manual is always neutral  <- jobToCheckRun follows the plan §3.4 table for every docume
+caught    waiting_for_callback is unknown  <- jobToCheckRun follows the plan §3.4 table for every docume
+caught    canceling is unknown  <- jobToCheckRun follows the plan §3.4 table for every docume
+caught    running is unknown  <- jobToCheckRun follows the plan §3.4 table for every docume
+caught    unknown status passes  <- jobToCheckRun: an unknown status is pending (fails closed) | an unknown job status is logged once and the merge request
+caught    unknown status is not reported  <- jobToCheckRun: an unknown status is pending (fails closed) | checksFor: no pipeline is pending, a finished pipeline wit | an unknown job status is logged once and the merge request
+caught    start time dropped  <- jobToCheckRun keeps name, id and started_at, so the latest
+caught    a job without allow_failure is optional  <- jobToCheckRun follows the plan §3.4 table for every docume
+caught    absent required job is pending when the pipeline finished  <- requiredJobsVerdict: every required name must be present a | checksFor: no pipeline is pending, a finished pipeline wit | a red required job does not land and names the job; a requ
+caught    skipped and neutral required jobs pass  <- requiredJobsVerdict: every required name must be present a | a red required job does not land and names the job; a requ
+caught    running required job fails  <- requiredJobsVerdict: every required name must be present a | a pending pipeline waits: no write at all, and the next me | a merge request that waited more than 60 minutes for its p
+caught    no required jobs fails  <- requiredJobsVerdict: every required name must be present a
+caught    oldest attempt of a required job wins  <- requiredJobsVerdict: every required name must be present a
+caught    a failed check is ignored when combining  <- checksFor: no pipeline is pending, a finished pipeline wit | a red required job does not land and names the job; a requ
+caught    a pending check is ignored when combining  <- checksFor: no pipeline is pending, a finished pipeline wit | a pending pipeline waits: no write at all, and the next me | a merge request that waited more than 60 minutes for its p
+caught    no pipeline passes  <- checksFor: no pipeline is pending, a finished pipeline wit | the pipeline is read for exactly the head: a green pipelin | a pipeline of another sha is never used, even when the ser
+caught    finished pipeline without jobs passes  <- checksFor: no pipeline is pending, a finished pipeline wit
+caught    the failing rule is not named  <- a red required job does not land and names the job; a requ
+caught    every pipeline is final  <- checksFor: no pipeline is pending, a finished pipeline wit | a pending pipeline waits: no write at all, and the next me | a merge request that waited more than 60 minutes for its p
+caught    a changes verdict counts as an accept  <- judgeReviewCommit: the newest review of the lane decides;  | a changes verdict after an accept: the lane is back with i
+caught    any reviewer name is accepted  <- judgeReviewCommit: the newest review of the lane decides;  | an accept that does not name the reviewer agent is forged
+caught    the reviewed head is not checked  <- judgeReviewCommit: the newest review of the lane decides; 
+caught    an unproven push counts  <- judgeReviewCommit: the newest review of the lane decides; 
+caught    the oldest review wins  <- judgeReviewCommit: the newest review of the lane decides;  | a changes verdict after an accept: the lane is back with i
+caught    another lane's review counts  <- judgeReviewCommit: the newest review of the lane decides; 
+caught    a pending pipeline lands  <- decide gives the verdicts of mergeDecision itself for ever | the pipeline is read for exactly the head: a green pipelin | a pipeline of another sha is never used, even when the ser
+caught    everything refused is an update  <- decide gives the verdicts of mergeDecision itself for ever | no reviewer accept: nothing lands and the reason is writte | a note by someone else that contains the marker does not s
+caught    a behind branch is never updated  <- decide gives the verdicts of mergeDecision itself for ever | behind main: main is merged INTO the source branch by bot- | main's own change decides, not the branch's: a branch that
+caught    protected file has no reason code  <- decide gives the verdicts of mergeDecision itself for ever | a protected gate file in the diff is never landed by the b
+caught    the description is dropped  <- squashMessage is the title with the VTID first and the des | lands a reviewed, green, up-to-date merge request: one mer
+caught    title whitespace is kept  <- squashMessage is the title with the VTID first and the des
+caught    CRLF in the description is kept  <- squashMessage is the title with the VTID first and the des
+caught    any author counts as the reviewer  <- an accept pushed by a builder is forged: it does not land 
+caught    any push of the reviewer proves the accept  <- an accept whose commit is in no push of the reviewer (a bu | a reviewer push without commit_from proves only its tip: a
+caught    the push events are never read  <- lands a reviewed, green, up-to-date merge request: one mer | a lane-file entry after the accept still counts; the revie | a merge call that fails is not repeated by the client; the
+caught    a push without commit_from is widened to commit_count commits  <- a reviewer push without commit_from proves only its tip: a
+caught    a push without commit_from proves nothing, not even its tip  <- a reviewer push without commit_from proves only its tip: a
+caught    drafts are read as ready  <- a title that is not "VTID-nnnnn (<slug>/<lane>): …" is not
+caught    a title without a VTID is enough  <- a title that is not "VTID-nnnnn (<slug>/<lane>): …" is not
+caught    a moved head is not noticed  <- a head that moved between the list and the fetch is left f
+caught    protected gate files are ignored  <- a protected gate file in the diff is never landed by the b
+caught    the diff includes what main brought in  <- behind a main that changed a governance or protected gate 
+caught    behind is never counted  <- behind main: main is merged INTO the source branch by bot- | main's own change decides, not the branch's: a branch that | behind a main that changed a governance or protected gate 
+caught    a stale review counts  <- code changed after the accept: the review no longer counts
+caught    the pipeline is not asked for the head  <- lands a reviewed, green, up-to-date merge request: one mer | a lane-file entry after the accept still counts; the revie | a merge call that fails is not repeated by the client; the
+caught    the first pipeline is used whatever its sha  <- a pipeline of another sha is never used, even when the ser
+caught    required jobs are not passed on  <- a red required job does not land and names the job; a requ
+caught    no comment is ever written for a skip  <- no reviewer accept: nothing lands and the reason is writte | a note by someone else that contains the marker does not s | an accept pushed by a builder is forged: it does not land 
+caught    unexpected merge request fields are accepted  <- a merge request with an unexpected iid, head or source bra
+caught    a branch behind a lapsing main is updated  <- behind a main that changed a governance or protected gate 
+caught    the incoming files are not the merge-base diff  <- main's own change decides, not the branch's: a branch that
+caught    the merge call is retried by the client  <- a merge call that fails is not repeated by the client; the | a merge call that reports an error but was processed is re
+caught    the merge is not pinned to the head  <- lands a reviewed, green, up-to-date merge request: one mer | a lane-file entry after the accept still counts; the revie | behind main: main is merged INTO the source branch by bot-
+caught    no squash  <- lands a reviewed, green, up-to-date merge request: one mer
+caught    the source branch is kept  <- lands a reviewed, green, up-to-date merge request: one mer
+caught    any 200 is a landing  <- a 200 answer whose merge request is not merged is not a la
+caught    no re-read after an error  <- a merge call that fails is not repeated by the client; the | a merge call that reports an error but was processed is re | a 200 answer whose merge request is not merged is not a la
+caught    a dry run lands  <- a merge that GitLab keeps refusing keeps the turn for 60 m | --dry-run writes nothing: no merge call, no comment, no pu
+caught    the update is authored by the builder  <- behind main: main is merged INTO the source branch by bot-
+caught    the update has no Collab-Session  <- behind main: main is merged INTO the source branch by bot-
+caught    the update is a force push  <- the update is never a force push: a branch that moved mean
+caught    the scratch worktree is kept  <- behind main: main is merged INTO the source branch by bot- | behind main with a conflict: nothing is pushed, the branch | a merge request whose merge of main conflicts is skipped, 
+caught    a conflict is not reported  <- behind main with a conflict: nothing is pushed, the branch | a merge request whose merge of main conflicts is skipped, 
+caught    a conflict is pushed on  <- behind main with a conflict: nothing is pushed, the branch | a merge request whose merge of main conflicts is skipped, 
+caught    a dry run updates  <- --dry-run writes nothing: no merge call, no comment, no pu
+caught    a conflict holds the turn  <- behind main with a conflict: nothing is pushed, the branch | a merge request whose merge of main conflicts is skipped, 
+caught    a conflict is not signalled to the tick  <- behind main with a conflict: nothing is pushed, the branch | a merge request whose merge of main conflicts is skipped, 
+caught    a conflicting merge request keeps the action update  <- behind main with a conflict: nothing is pushed, the branch | a merge request whose merge of main conflicts is skipped, 
+caught    the project goes on after acting  <- a pending pipeline waits: no write at all, and the next me | a merge that GitLab keeps refusing keeps the turn for 60 m | two ready merge requests: the oldest lands, the other is n
+caught    a waiting merge request does not hold the others  <- a pending pipeline waits: no write at all, and the next me
+caught    a refused merge never loses its turn  <- a merge that GitLab keeps refusing keeps the turn for 60 m
+caught    a refused merge always loses its turn  <- a merge that GitLab keeps refusing keeps the turn for 60 m
+caught    a merge refused in a dry run counts as refused  <- a merge that GitLab keeps refusing keeps the turn for 60 m
+caught    a refused merge is not flagged as refused  <- a merge that GitLab keeps refusing keeps the turn for 60 m
+caught    a merge refused for too long gets another reason code  <- a merge that GitLab keeps refusing keeps the turn for 60 m
+caught    the lost turn of a refused merge is logged as another reason  <- a merge that GitLab keeps refusing keeps the turn for 60 m
+caught    the lost turn of a pending pipeline is logged as another reason  <- a merge request that waited more than 60 minutes for its p
+caught    a merge request never loses its turn  <- a merge request that waited more than 60 minutes for its p | a merge that GitLab keeps refusing keeps the turn for 60 m
+caught    every waiting merge request loses its turn  <- the pipeline is read for exactly the head: a green pipelin | a pipeline of another sha is never used, even when the ser | a pending pipeline waits: no write at all, and the next me
+caught    merge requests are taken in the order the API lists them  <- two ready merge requests: the oldest lands, the other is n
+caught    projects without landing are read  <- only projects with landing: true are looked at, and only t
+caught    any default branch is accepted  <- only projects with landing: true are looked at, and only t
+caught    a skipped merge request gets no comment  <- no reviewer accept: nothing lands and the reason is writte | a note by someone else that contains the marker does not s | an accept pushed by a builder is forged: it does not land 
+caught    a failed project does not fail the tick  <- the update is never a force push: a branch that moved mean | an API error half-way lands nothing: the tick fails, the p | a git error lands nothing: a merge request whose head ref 
+caught    a comment is written again and again  <- no reviewer accept: nothing lands and the reason is writte | behind a main that changed a governance or protected gate  | behind main with a conflict: nothing is pushed, the branch
+caught    anyone's note stands in for the bot's  <- a note by someone else that contains the marker does not s
+caught    a dry run comments  <- behind a main that changed a governance or protected gate  | --dry-run writes nothing: no merge call, no comment, no pu
+caught    the log is not redacted  <- the log redacts the token by itself, whatever is put into 
+caught    git may prompt  <- git gets the token through GIT_ASKPASS: the script answers
+caught    git may use a global credential helper  <- every git command the bot runs neutralises a global creden
+caught    the clone is created without the credential flag  <- every git command the bot runs neutralises a global creden
+caught    the clone is created outside the bot's git environment  <- every git command the bot runs neutralises a global creden
+caught    the credential flag names a store helper  <- every git command the bot runs neutralises a global creden
+caught    the credential flag sets another option  <- every git command the bot runs neutralises a global creden
+caught    the askpass script answers a wrong user  <- git gets the token through GIT_ASKPASS: the script answers
+caught    the askpass script is world readable  <- git gets the token through GIT_ASKPASS: the script answers
+caught    the token is put in the git environment  <- lands a reviewed, green, up-to-date merge request: one mer | a lane-file entry after the accept still counts; the revie | a merge call that fails is not repeated by the client; the
+caught    a failed run exits 0  <- CLI exit codes: 1 for a failed tick, an unknown project, a
+caught    landing is true for every listed project  <- loadProjects reads the group and the projects of gitlab-se
+caught    the service is not one-shot  <- vitana-land.service: one tick under flock, niced and limit
+caught    the service has no flock  <- vitana-land.service: one tick under flock, niced and limit
+caught    a busy lock fails the unit  <- vitana-land.service: one tick under flock, niced and limit
+caught    the service has no CPU limit  <- vitana-land.service: one tick under flock, niced and limit
+caught    the service has no memory limit  <- vitana-land.service: one tick under flock, niced and limit
+caught    the service has no Nice  <- vitana-land.service: one tick under flock, niced and limit
+caught    the service reads another token file  <- vitana-land.service: one tick under flock, niced and limit
+caught    the token is in the unit  <- vitana-land.service: one tick under flock, niced and limit
+caught    the timer runs hourly  <- vitana-land.timer: every minute, for vitana-land.service
+caught    the timer starts another unit  <- vitana-land.timer: every minute, for vitana-land.service
+
+mutations: 115   caught: 115   not caught: 0
