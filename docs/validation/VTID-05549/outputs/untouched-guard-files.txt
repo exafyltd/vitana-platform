@@ -1,0 +1,18 @@
+# land-guard.mjs and queue.mjs are not edited by this lane (tasks.md Q2/Q3). Lane diff = scratch base 5209c223768dddf5dcd1c06440de3b9f98c55732 (main after merge-bot) .. working tree.
+$ git diff --stat 5209c223768dddf5dcd1c06440de3b9f98c55732 -- scripts/collab/land-guard.mjs scripts/collab/queue.mjs scripts/collab/protected-gate-files.json
+(empty: untouched)
+$ git hash-object scripts/collab/land-guard.mjs scripts/collab/queue.mjs; git rev-parse 5209c223768dddf5dcd1c06440de3b9f98c55732:scripts/collab/land-guard.mjs 5209c223768dddf5dcd1c06440de3b9f98c55732:scripts/collab/queue.mjs
+d37f3bf71bd889ff041a113590bd0d9627220536
+c76800f33182388113a41a8ac3dbf9b225bf5b2c
+d37f3bf71bd889ff041a113590bd0d9627220536
+c76800f33182388113a41a8ac3dbf9b225bf5b2c
+$ git status --short (every changed file of the lane)
+ M scripts/eng/gitlab-land.mjs
+?? docs/validation/VTID-05549/
+?? scripts/eng/assist-trigger.mjs
+?? scripts/eng/assist-trigger.test.mjs
+?? scripts/eng/gitlab-gates.mjs
+?? scripts/eng/gitlab-gates.test.mjs
+?? scripts/eng/gitlab-land-queue.test.mjs
+?? scripts/eng/review-source.mjs
+?? scripts/eng/review-source.test.mjs
