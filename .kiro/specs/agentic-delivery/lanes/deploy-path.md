@@ -1,6 +1,8 @@
 ---
 lane: deploy-path
-state: ready
+state: executing
+claimed_by: kiro-exafy-202611051643-bc0a
+branch: kiro/agentic-delivery/deploy-path
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -19,7 +21,7 @@ paths:
   - scripts/aws/iam/gitlab-oidc-*.json
   - scripts/aws/setup-gitlab-oidc.sh
   - docs/validation/**
-updated: 2026-11-05T02:59Z
+updated: 2026-11-05T17:12Z
 vtid: VTID-05546
 ---
 # Lane: deploy-path (repo vitana-platform)
@@ -35,3 +37,9 @@ VTID-05546 allocated after policy approval (converged-auto-v1).
 reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
 ### 2026-11-05T02:59Z · pm-agent · update
 reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
+### 2026-11-05T17:12Z · kiro-exafy-202611051643-bc0a · ready → executing
+Claimed and built from the spec by a separate builder session (seat exafy; driver kiro-exafy-202611041929-802c).
+Deploy scripts (build, push by digest, ECS deploy and rollback, previews), `tpl-deploy.yml` (the six jobs of plan §9),
+`fleet-classes.tf`, the GitLab OIDC provider and six roles with `setup-gitlab-oidc.sh` (dry run by default) and the runbook.
+Tests first: red on base 19 of 19 (38 of 38 against stubs); green 38 of 38; UNIT 685 tests, 684 pass, 0 fail, 1 skip;
+`terraform validate` with M1 valid. Decisions and the parts that wait for M2 fleet in `docs/validation/VTID-05546/acceptance.md`.

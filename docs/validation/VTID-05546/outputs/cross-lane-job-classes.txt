@@ -1,0 +1,15 @@
+# Job-class rules of plan §3.2 (fleet-classes-structure.test.mjs) run over this lane's tpl-deploy.yml TOGETHER WITH the CI files of
+# lane pipelines (origin/kiro/agentic-delivery/pipelines @ e2c507323d72fcc9a720cebcf45cd47b7d5c56af) and lane verify-on-gitlab (@ b662bc5c15390739d06b673c861abf4b3c312d5d), in a scratch copy outside the repo,
+# so main stays green when those lanes land, 2026-11-05T17:10:28Z
+ok 1 - two new groups, main and deploy: min 0, desired left to the runner, scale-in protection, maxima of plan §5
+ok 2 - IMDSv2 required with hop limit 1, no public IP, encrypted gp3 with the engineering key
+ok 3 - no instance policy: no instance profile and no IAM resource for the classes
+ok 4 - egress tcp 80, tcp 443 and DNS only, and no ingress
+ok 5 - a quota that is too low makes the Terraform check print the request
+ok 6 - a job tagged vitana-eng declares no id_tokens and names no secret
+ok 7 - a job tagged vitana-eng-deploy runs no repository script
+ok 8 - tpl-deploy defines the six jobs of plan §9: build on the main class, the rest on the deploy class
+ok 9 - build-image.sh refuses without --oci-worker-no-process-sandbox
+# tests 9
+# pass 9
+# fail 0
