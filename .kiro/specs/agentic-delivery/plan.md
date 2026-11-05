@@ -732,3 +732,8 @@ https://docs.gitlab.com/ci/docker/using_buildkit/ · Runner trust zones:
 https://about.gitlab.com/resources/well-architected/architecture-design/runner-trust-zones/ · m6i.xlarge price in
 eu-central-1: https://www.doit.com/compute/compute/aws/eu-central-1/m6i.xlarge
 <!-- plan:end -->
+
+## Late lanes (added after convergence; outside the sparred plan text)
+- `reseat` (2026-11-05, `lane_admin`): gives the eight lanes of §9 back to seat `exafy`, which §9 assigns. The Project
+  Manager moved them to the exceptions seat `exafyltd` during a driver heartbeat gap (#4688). Lane file
+  `lanes/reseat.md`, tasks group `reseat`. Its VTID comes from PLAN-SPAR. The sparred text above is unchanged.
