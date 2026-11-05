@@ -1,0 +1,26 @@
+# VTID-05540 sample of a report where the AWS role cannot read the fleet group (SIMULATION): A1 is NOT PROVEN and names the missing IAM actions; the rest is decided
+
+REHEARSAL REPORT (plan eng-gitlab-m2, section 3.8)
+run r202611051400 | project vitana/rehearsal | 12 agents + 5 controls | started 2026-11-05T14:00:00.000Z | took 41 min
+RESULT: FAIL   A1 NOT PROVEN | A2 PASS | A3 PASS | A4 PASS | A8 PASS
+
+SEED          landed through !1 in 2 min (26 file(s) created, 0 updated)
+OPENED        agent-kiro-exafy 5, agent-kiro-exafyltd 4, agent-kiro-jtadic 4, agent-kiro-hotmail 4
+
+A1 FLEET       NOT PROVEN
+  [??  ] the ASG could not be read (aws autoscaling describe-auto-scaling-groups failed (exit 254): An error occurred (AccessDenied) when calling the operation: User is not authorized to perform: ); the role of the GitLab machine needs autoscaling:DescribeAutoScalingGroups and autoscaling:DescribeScalingActivities (see infra/gitlab-engineering/rehearsal/README.md)
+  [??  ] machines launched are unknown (the ASG activity history could not be read: aws autoscaling describe-scaling-activities failed (exit 254): An error occurred (AccessDenied) when calling the operati); the role of the GitLab machine needs autoscaling:DescribeAutoScalingGroups and autoscaling:DescribeScalingActivities (see infra/gitlab-engineering/rehearsal/README.md)
+
+A2 ISOLATION   PASS
+  [ok  ] imds: 42 PASS, 0 FAIL
+  [ok  ] gitlab-host: 42 PASS, 0 FAIL
+  [ok  ] aws-env: 42 PASS, 0 FAIL
+  traces read 42, with all three lines 42, unreadable 0
+
+A3 ACCESS      PASS
+  [ok  ] main: push No one, merge Maintainers, no force push
+  [ok  ] Maintainers: bot-land, root
+  [ok  ] 7 token(s) checked, the latest expires in 76 day(s) (needs at most 90)
+  [ok  ] gitlab-settings.mjs check exit 0
+PROBLEMS AND NOTES
+  - the fleet group could not be read three times in a row (aws autoscaling describe-auto-scaling-groups failed (exit 254): An error occurred (AccessDenied) when calling the operation: User is not authorized to perform: autoscaling:describe-auto-scaling-groups); sampling stopped. the role of the GitLab machine needs autoscaling:DescribeAutoScalingGroups and autoscaling:DescribeScalingActivities (see infra/gitlab-engineering/rehearsal/README.md)

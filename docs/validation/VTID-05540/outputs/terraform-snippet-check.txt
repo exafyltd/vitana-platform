@@ -1,0 +1,10 @@
+# VTID-05540: the Terraform snippet of infra/gitlab-engineering/rehearsal/README.md, added as terraform/rehearsal.tf to a scratch copy of infra/gitlab-engineering (the follow-up change is outside this lane; this shows the snippet is valid next to main.tf and settings.tf)
+# $ terraform fmt -check -diff -recursive
+fmt exit 0
+# $ terraform init -backend=false -input=false
+If you ever set or change modules or backend configuration for Terraform,
+rerun this command to reinitialize your working directory. If you forget, other
+commands will detect it and remind you to do so if necessary.
+# $ terraform validate
+Success! The configuration is valid.
+
