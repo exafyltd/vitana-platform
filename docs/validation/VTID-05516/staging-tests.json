@@ -7,6 +7,7 @@
     {
       "kind": "existing",
       "ref": "npx jest test/eng-platform-oidc-roles.test.ts",
+      "cwd": "services/gateway",
       "reason": "Owner-run IAM script and policy files; nothing deploys."
     },
     {
