@@ -30,8 +30,7 @@ import { z } from 'zod';
 import { randomUUID } from 'crypto';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { DailyClient, computeDailyRoomExpiry } from '../services/daily-client';
-import { isRoomHostNow, filterCoHosts, CoHostValidationUnavailableError, type RpcClient } from '../services/live-cohosts';
-import { lockedFieldsRequested, buildSessionEditPatch } from '../services/live-session-edit';
+import { isRoomHostNow, filterCoHosts, CoHostValidationUnavailableError, lockedFieldsRequested, buildSessionEditPatch, type RpcClient } from '../services/live-cohosts';
 import { getSupabase } from '../lib/supabase';
 // VTID-03107: Live Room hosting quota enforcement
 import { verifyAndExtractIdentity, optionalAuth, requireAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';

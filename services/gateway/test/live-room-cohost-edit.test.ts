@@ -2,7 +2,7 @@
  * live-room-edit-cohost / gateway-cohost — edit rules (services/live-session-edit.ts).
  * Locked fields while live or in the lobby; the session and listing payloads.
  */
-import { lockedFieldsRequested, buildSessionEditPatch } from '../src/services/live-session-edit';
+import { lockedFieldsRequested, buildSessionEditPatch } from '../src/services/live-cohosts';
 
 const START = '2026-12-01T18:00:00.000Z';
 
