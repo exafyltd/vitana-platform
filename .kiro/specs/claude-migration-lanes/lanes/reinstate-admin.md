@@ -1,6 +1,6 @@
 ---
 lane: reinstate-admin
-state: in-review
+state: executing
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -34,5 +34,5 @@ VTID-05567 allocated after policy approval (converged-auto-v1).
 ### 2026-11-06T12:11Z · kiro-exafy-202611061210-404d · ready -> executing
 Claimed by Kiro seat exafy. Edits only `reinstate-rules.md` (executor kiro -> claude, reviewer_seat -> exafyltd, seat removed). Next: reviewer agent reviews the PR head.
 
-### 2026-11-06T12:12Z · kiro-exafy-202611061210-404d · executing -> in-review
+### 2026-11-06T12:12Z · kiro-exafy-202611061210-404d · executing (PR opened)
 PR https://github.com/exafyltd/vitana-platform/pull/4743. validate and scope-check green locally. Next: reviewer agent `vitana-lane-reviewer` reviews the current head.
