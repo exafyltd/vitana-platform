@@ -42,3 +42,15 @@ Built on `kiro/companion-test-card/gateway-test-card` from origin/main `2b9356e0
 passed on head (`docs/validation/VTID-05588/red-on-base.txt`). Companion suites 77/77, `test:roles` 105/105,
 typecheck and build clean; the full suite's 2 failures fail the same on base (`commands.log`). PR https://github.com/exafyltd/vitana-platform/pull/4751. Decision:
 `getSupabase()` is the service-role client (sparring R2-F1). Next: reviewer agent on the current head.
+
+### 2026-11-06T17:52:00Z · agent-vitana-lane-reviewer-202611061752-166e · review
+review: changes
+head: d40cefc21eea15005cddc95bd84d332da9258b54
+reviewer: agent:vitana-lane-reviewer (claude-opus-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4751
+Findings: [blocking] Item 3: CI on head d40cefc2 could not be verified. gh pr view and gh pr checks fail with "GraphQL pass-through is not supported", and gh run view needs a run id that no allowed command can list. Without CI evidence the verdict cannot be accept.
+Findings: [non-blocking] test/companion-test-card.test.ts: the staging, off and shadow tests check only that nothing was inserted. They do not check that no table was read or that compose was never called. The code order already meets 10c.
+Findings: [non-blocking] routes/companion.ts: the 60 s rate limit is an in-process Map, so each gateway task counts separately. The plan accepts this; noted for Gate 2.
+Findings: [non-blocking] 10d passes. lib/supabase.ts:9/19 builds getSupabase() with the service-role key, and getServiceClient() is not exported, so getSupabase() meets the plan's intent (R2-F1).
+Findings: Other items pass on reading the code (1, 2, 4, 5, 6, 7, 8, 9, 10a, 10b, 10c, 10e).
+Next: the lane's seat (or the caller) supplies readable CI status for head d40cefc2 and re-requests review. No code change is required by this review.
