@@ -148,7 +148,9 @@ safe to apply ahead of activation. DB lanes are split from code lanes (§4.7).
   author-only readable (Rollout) and WS2 resolves them; the `CHECK` is therefore added `NOT VALID` and
   VALIDATEd only when that count is 0. (ii) **child rows** — `global_community_group_members`: `tenant_id`
   is copied from its parent `global_community_groups.tenant_id` (trigger + backfill by `group_id`
-  join; deterministic). (iii) **per-user rows** — `global_community_profiles`: **NO `tenant_id` column**;
+  join; deterministic). `global_event_participants` (round-2 R2-F2) is a class (ii) child too: `tenant_id` is copied
+  from its parent `global_community_events.tenant_id` (trigger + backfill by `event_id` join), with the same column
+  add, backfill, RLS rewrite and realtime check. (iii) **per-user rows** — `global_community_profiles`: **NO `tenant_id` column**;
   its RLS and every reader scope by a membership predicate at read time (`EXISTS (SELECT 1 FROM
   user_tenants ut WHERE ut.user_id = <row>.user_id AND ut.tenant_id = <active tenant>)`), so a member
   of two tenants is visible in both. **Rewrite** the existing RLS policies classified user-private /
@@ -210,7 +212,17 @@ safe to apply ahead of activation. DB lanes are split from code lanes (§4.7).
   verified active tenant: `social-context-builder.ts`, `person-context-builder.ts`,
   `community-activity-builder.ts`, `social-read-tools.ts`, `social-memory-service.ts`,
   `routes/memory-social.ts`, `intent-find-match.ts:277`, `orb-tools/p0-gap-tools.ts:71`,
-  `discovery-tools.ts` (incl. `tool_browse_news_feed`, `:313`). **`fetchPeople` hydration contract:**
+  `discovery-tools.ts` (incl. `tool_browse_news_feed`, `:313`).
+  **`community-activity-builder-repository.ts` (round-2 R2-F1, a seam with direct community-table reads):**
+  `fetchPersonEventParticipations` (`:21`, `global_event_participants`, `.eq('user_id', personId)`),
+  `fetchNetworkEventParticipations` (`:57`, same table, `.in('user_id', userIds)`) and `fetchPersonGroupJoins` (`:31`,
+  `global_community_group_members`) → (M): `personId`/`userIds` are intersected with the tenant's `memberIds` before the
+  query. `fetchNetworkVisiblePosts` (`:45`, `profile_posts`) and `fetchCommunityGroupNames` (`:41`,
+  `global_community_groups`) → (C) `.eq('tenant_id', tenantId)`; the DB lane classifies both tables as class (i) and
+  adds their `tenant_id` columns if it does not already. `buildPersonActivity` and `buildNetworkDigest` take and thread
+  `tenantId` from `community-activity-builder.ts`. The lane's first commit adds this file to its `paths` and to the lint
+  enumeration.
+  **`fetchPeople` hydration contract:**
   `fetchPeople(userIds, scope?)` takes an optional `scope: { memberIds: Set<string> }` and, when given,
   intersects `userIds` with it **before** the `.in('user_id', …)` at `:78`; `scope` is omitted only
   when the flag is off. Callers resolve `memberIds` once per request via `fetchActiveTenantMemberIds`
