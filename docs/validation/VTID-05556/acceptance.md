@@ -20,5 +20,5 @@ AC-5: The flag pins in both deploy workflows are unchanged.
 ## Merge precondition (plan premise 7, task D1)
 Before merge, the 14-day production count of not-ok recalls (`[VTID-04452] orb recall unavailable`) and of sessions served by
 the legacy read is taken read-only (`scripts/memory/recall-shadow-report.sh /vitana/gateway-awsdr 336`) and recorded in
-`outputs/recall-failures.md`. Above about 0.5% of sessions, the lane parks and the owner is told. Pending: the building
-session has no AWS credentials.
+`outputs/recall-failures.md`. Above about 0.5% of sessions, the lane parks and the owner is told.
+Result (owner, read-only, 2026-11-05): 1 legacy-served read of 392 (0.26%), 0 broker failures. Met.

@@ -83,3 +83,8 @@ Findings: [non-blocking] D1 (premise 7 production count) is still a pending merg
 [non-blocking] Round-1 AC-6 wording: commands.log fixed, and the 20:26Z entry supersedes the 12:30Z wording. Round-1 dev-sandbox test: added in recall-bridge-wiring.test.ts, red on main's code (1 failed) and green on the head (6/6).
 CI on 468cc1c4 (gh run view --json headSha,conclusion): all 12 named runs succeeded.
 Next: the land step merges under §7b after the PR is updated to latest main and green on that head, and after D1 is recorded in outputs/recall-failures.md.
+
+### 2026-11-05T21:10Z · kiro-exafyltd-202611042048-44bc · in-review (D1 recorded)
+Merge precondition D1 met: the owner took the 14-day production count read-only. 392 reads, 1 served by the legacy
+read (0.26%), 0 `[VTID-04452] orb recall unavailable`; recorded in `docs/validation/VTID-05556/outputs/recall-failures.md`.
+Branch updated to latest main; a new review on the new head follows (the evidence change alters the PR diff).
