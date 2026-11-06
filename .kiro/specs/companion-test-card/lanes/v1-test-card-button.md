@@ -17,7 +17,8 @@ paths:
   - src/hooks/useCompanionTestCard.test.ts
   - src/i18n/*/screens.json
   - docs/validation/VTID-*/**
-updated: 2026-11-06T17:10Z
+updated: 2026-11-06T17:09Z
+vtid: VTID-05589
 ---
 
 # Lane: v1-test-card-button (repo exafyltd/vitana-v1)
@@ -27,3 +28,6 @@ Admin-only "send me a test card" button in Vitana messages settings. Tasks T1-T5
 ## Log
 ### 2026-11-06T17:10Z · kiro-exafy-202611061658-9ca9 · ready
 Lane created with the plan.
+
+### 2026-11-06T17:09Z · ci-plan-spar · ready (VTID allocated)
+VTID-05589 allocated after policy approval (converged-auto-v1).

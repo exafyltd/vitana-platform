@@ -4,8 +4,10 @@ author: kiro
 author_seat: exafy
 executor: kiro
 next_actor: kiro
-state: drafted
-updated: 2026-11-06T17:10Z
+state: approved
+updated: 2026-11-06T17:09Z
+sparring_record: .kiro/specs/companion-test-card/sparring/verdict.md
+vtids: [VTID-05588, VTID-05589]
 ---
 # Handoff — companion-test-card
 
@@ -23,3 +25,6 @@ Written on the owner's request of 6 Nov 2026 (see a first card now, e.g. the Vit
 admin-only test send). Investigation on origin/main: routes/companion.ts, scheduled-notifications.ts companion-tick,
 companion-service.ts, moments.ts, delivery.ts, companion-repository.ts, auth-supabase-jwt.ts, and in vitana-v1
 VitanaMessagesSettings.tsx, useCompanionPreferences.ts, useTenant.tsx, MessageBubble.tsx, VitanaChatCard.tsx.
+
+### 2026-11-06T17:09Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 2 lane(s) got a VTID and are handed to Kiro.

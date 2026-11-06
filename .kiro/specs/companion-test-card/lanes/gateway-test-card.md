@@ -16,7 +16,8 @@ paths:
   - services/gateway/src/types/cicd.ts
   - services/gateway/test/companion-test-card.test.ts
   - docs/validation/VTID-*/**
-updated: 2026-11-06T17:10Z
+updated: 2026-11-06T17:09Z
+vtid: VTID-05588
 ---
 
 # Lane: gateway-test-card (repo exafyltd/vitana-platform)
@@ -27,3 +28,6 @@ T1-T5 in tasks.md.
 ## Log
 ### 2026-11-06T17:10Z · kiro-exafy-202611061658-9ca9 · ready
 Lane created with the plan.
+
+### 2026-11-06T17:09Z · ci-plan-spar · ready (VTID allocated)
+VTID-05588 allocated after policy approval (converged-auto-v1).
