@@ -1,6 +1,6 @@
 ---
 lane: gateway-delivery
-state: in-review
+state: verified
 next_actor: kiro
 depends_on: []
 executor: kiro
