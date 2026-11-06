@@ -1,6 +1,6 @@
 ---
 lane: migration-records
-state: ready
+state: done
 next_actor: kiro
 executor: kiro
 seat: hotmail
@@ -11,9 +11,12 @@ paths:
   - docs/multitenancy/MIGRATION-QUEUE.md
   - scripts/ci/migration-drift-baseline.json
   - docs/validation/**
-updated: 2026-11-02T16:06Z
+updated: 2026-11-05T10:53Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05479
+branch: kiro/mt-identity-r2/migration-records
+pr: https://github.com/exafyltd/vitana-platform/pull/4633
+claimed_by: kiro-hotmail-202611011452-6d16
 ---
 # migration-records — MIGRATION-QUEUE rows + drift baseline for the four mt-identity-r2 DB slices
 Added by Amendment 1: both files are hot and outside the DB lanes' paths. Merges before any DB lane. No migration,
@@ -134,3 +137,10 @@ Built in platform PR #4633 (`kiro/mt-identity-r2/migration-records`, opened 2026
 
 ### 2026-11-04T16:11Z · kiro-hotmail-202611011452-6d16 · executing → in-review
 PR https://github.com/exafyltd/vitana-platform/pull/4633 (opened 2026-11-02T17:50Z). Reviewed on head `272d55a3fd`; the accept entry is in this file already.
+
+### 2026-11-05T10:53Z · kiro-hotmail-202611011452-6d16 · in-review → verified
+merge: e47da4cebb612b5bd1679261f035355a40aad88e (exafyltd/vitana-platform#4633)
+authority: §7b PM rule. Merged by kiro-hotmail-202611011452-6d16 on head `a34da8c03d0`: the reviewed head `272d55a3fd` plus the lane's review-entry commit and clean merges of main. No lane code changed after the accept.
+
+### 2026-11-05T10:53Z · kiro-hotmail-202611011452-6d16 · verified → done
+Closing record: the code and evidence are on main from merge e47da4cebb612b5bd1679261f035355a40aad88e. The lane claim is released once this record is on main.
