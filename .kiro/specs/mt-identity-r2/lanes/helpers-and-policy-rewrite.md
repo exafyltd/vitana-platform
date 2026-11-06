@@ -1,6 +1,6 @@
 ---
 lane: helpers-and-policy-rewrite
-state: ready
+state: done
 next_actor: kiro
 executor: kiro
 seat: hotmail
@@ -14,9 +14,12 @@ paths:
   - scripts/ci/bare-policy-lint.mjs
   - services/gateway/test/mt-identity-bare-policy-lint.test.ts
   - supabase/tests/mt_identity_helpers_*.sql
-updated: 2026-11-02T13:05Z
+updated: 2026-11-03T18:43Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05465
+branch: kiro/mt-identity-r2/helpers-and-policy-rewrite
+pr: https://github.com/exafyltd/vitana-platform/pull/4625
+claimed_by: kiro-hotmail-202611011452-6d16
 ---
 # helpers-and-policy-rewrite — tenant_id_for_policies() + is_member() + the bare-policy rewrite (DB)
 
@@ -145,3 +148,10 @@ Built in platform PR #4625 (`kiro/mt-identity-r2/helpers-and-policy-rewrite`, op
 
 ### 2026-11-03T15:38Z · kiro-hotmail-202611011452-6d16 · executing → in-review
 PR https://github.com/exafyltd/vitana-platform/pull/4625 (opened 2026-11-02T15:38Z). Reviewed on head `f64d08e4a2`; the accept entry is in this file already.
+
+### 2026-11-03T18:43Z · kiro-hotmail-202611011452-6d16 · in-review → verified
+merge: 3dc28e5fa74f314b2193ef11a141a8bcc0d8d85c (exafyltd/vitana-platform#4625)
+authority: §7b PM rule. Merged by kiro-hotmail-202611011452-6d16 on head `840ce7659c8`: the reviewed head `f64d08e4a2` plus the lane's own review-entry commit (entry-only). No lane code changed after the accept.
+
+### 2026-11-03T18:43Z · kiro-hotmail-202611011452-6d16 · verified → done
+Closing record: the code and evidence are on main from merge 3dc28e5fa74f314b2193ef11a141a8bcc0d8d85c. The lane claim is released once this record is on main.
