@@ -50,6 +50,10 @@ receives anything. Nothing about members' daily companion message changes.
   (`isSendMode`: staff or live) → `409 SEND_NOT_AVAILABLE` with the mode (the kill switch `off` therefore also stops
   test cards).
 - Rate limit: one test card per admin per 60 s (in-process map) → `429 RATE_LIMITED` with `retry_after_s`.
+- Supabase client: the route uses `getServiceClient()` (service role, as the tick does at
+  `scheduled-notifications.ts:1766`), not the `getSupabase()` of the preference routes, because the insert writes a
+  row whose `sender_id` is the Vitana bot; no client → `503 storage_unavailable`. The injectable `sb` dep receives this
+  service-role client.
 - Builds the caller's `MemberContext` the same way the tick does for one member (tenant from the caller's
   `user_tenants`/member row, `profiles.first_name` and timezone → `localTime`, locale via the same locale lookup the
   tick uses, `fetchVitanaIndexForProfiler`, topics all on, `lastUsed` empty) and runs the moment's own `build()`.
@@ -91,7 +95,13 @@ the error codes to messages.
   `src/hooks/useCompanionTestCard.test.ts`.
 
 ## Decisions taken (conservative, listed for Gate 2)
-- Only `vitana_index` now (the owner's example); the enum makes another moment a one-line change later.
+- Only `vitana_index` now (the owner's example). The `MemberContext` built here leaves the optional signal and
+  enrichment fields (`journey`, `diaryLastEntryDate`, `activeDays`, `recentFeatureTips`,
+  `eligibleEnrichmentCardTypes`) unset, which is correct because `vitanaIndex.build()` reads only `ctx.vitanaIndex`.
+  Adding another `moment_key` later is not a one-line change: it must also populate the fields that moment reads
+  (e.g. `guided_journey_step` needs `journey`, `diary_nudge` needs `diaryLastEntryDate`).
+- Composition reuses `composeCompanionMessage`, which sets `providerOverride: 'bedrock'` and a Bedrock
+  `fallbackOverride` (`composer.ts:74-82`): the Bedrock-only routing rule is satisfied by construction.
 - Recipient is always the caller; no admin can send to another member.
 - No push, no ledger row, no pacer touch: a test card never costs the admin's real morning message and never shows in
   member metrics; the OASIS event is the audit trail.
