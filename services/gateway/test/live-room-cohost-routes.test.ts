@@ -86,6 +86,8 @@ beforeEach(() => {
   mockSupa = { rpc: async () => ({ data: false, error: null }) };
   process.env.SUPABASE_URL = 'https://supabase.test';
   process.env.SUPABASE_SERVICE_ROLE = 'service-key';
+  // The daily route answers 503 before its host check when no Daily key is set; the host check is what these tests cover.
+  process.env.DAILY_API_KEY = process.env.DAILY_API_KEY || 'test-daily-key';
 });
 
 describe('PATCH /rooms/:id/sessions/current', () => {
