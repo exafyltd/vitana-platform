@@ -11,7 +11,8 @@ reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 repos: [exafyltd/vitana-platform]
 paths:
   - .kiro/specs/claude-migration-lanes/lanes/reinstate-rules.md
-updated: 2026-11-06T00:05Z
+updated: 2026-11-06T09:20Z
+vtid: VTID-05567
 ---
 # Lane: reinstate-admin (repo vitana-platform)
 Late lane of plan `claude-migration-lanes`, added after the plan merged (owner instruction 2026-11-05: option 1, take VTID-05565 as
@@ -23,3 +24,6 @@ lane is trusted from main and its paths cover the target (`queue.mjs` targetOfAd
 ## Log
 ### 2026-11-06T00:05Z · session_01Cp885Gw1CMmPDvDVHc7kw8 · ready
 Late lane created by the plan owner's option 1. VTID to be allocated by CI PLAN-SPAR on this PR, never by hand.
+
+### 2026-11-06T09:20Z · ci-plan-spar · ready (VTID allocated)
+VTID-05567 allocated after policy approval (converged-auto-v1).
