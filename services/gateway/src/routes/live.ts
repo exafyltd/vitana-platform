@@ -31,6 +31,7 @@ import { randomUUID } from 'crypto';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { DailyClient, computeDailyRoomExpiry } from '../services/daily-client';
 import { isRoomHostNow, filterCoHosts, CoHostValidationUnavailableError, type RpcClient } from '../services/live-cohosts';
+import { lockedFieldsRequested, buildSessionEditPatch } from '../services/live-session-edit';
 import { getSupabase } from '../lib/supabase';
 // VTID-03107: Live Room hosting quota enforcement
 import { verifyAndExtractIdentity, optionalAuth, requireAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
@@ -2257,7 +2258,7 @@ router.patch('/rooms/:id', async (req: Request, res: Response) => {
  *
  * Host moves room from scheduled → lobby.
  */
-router.post('/rooms/:id/open-lobby', async (req: Request, res: Response) => {
+router.post('/rooms/:id/open-lobby', requireAuth, async (req: Request, res: Response) => {
   const roomId = req.params.id;
   console.log(`[VTID-01228] POST /live/rooms/${roomId}/open-lobby`);
 
@@ -2270,12 +2271,13 @@ router.post('/rooms/:id/open-lobby', async (req: Request, res: Response) => {
     return res.status(400).json({ ok: false, error: 'Invalid room ID format' });
   }
 
-  const { user_id } = req.body;
-  if (!user_id) {
-    return res.status(400).json({ ok: false, error: 'USER_ID_REQUIRED' });
+  // VTID-05559: the acting user is the verified identity; a body user_id is ignored.
+  const actorId = (req as any).identity?.user_id as string | undefined;
+  if (!actorId) {
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
   }
 
-  const result = await sessionManager.transition(roomId, { type: 'OPEN_LOBBY', userId: user_id }, token);
+  const result = await sessionManager.transition(roomId, { type: 'OPEN_LOBBY', userId: actorId }, token);
 
   if (!result.ok) {
     const statusCode =
@@ -2295,7 +2297,7 @@ router.post('/rooms/:id/open-lobby', async (req: Request, res: Response) => {
  * Cancel current session + refunds + reset to idle.
  * Host-only.
  */
-router.post('/rooms/:id/cancel', async (req: Request, res: Response) => {
+router.post('/rooms/:id/cancel', requireAuth, async (req: Request, res: Response) => {
   const roomId = req.params.id;
   console.log(`[VTID-01228] POST /live/rooms/${roomId}/cancel`);
 
@@ -2308,9 +2310,10 @@ router.post('/rooms/:id/cancel', async (req: Request, res: Response) => {
     return res.status(400).json({ ok: false, error: 'Invalid room ID format' });
   }
 
-  const { user_id } = req.body;
+  // VTID-05559: the acting user is the verified identity; a body user_id is ignored.
+  const user_id = (req as any).identity?.user_id as string | undefined;
   if (!user_id) {
-    return res.status(400).json({ ok: false, error: 'USER_ID_REQUIRED' });
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
   }
 
   // Initialize Stripe for refunds
@@ -2599,6 +2602,115 @@ router.post('/rooms/:id/disconnect', async (req: Request, res: Response) => {
   }
 
   return res.json({ ok: true });
+});
+
+/**
+ * VTID-05559: PATCH /rooms/:id/sessions/current — the creator edits the current
+ * session. Creator only. Locked fields refused while live or in the lobby. Writes
+ * the session row first, then the listing; a listing failure is 502 and a retry
+ * repeats the same writes.
+ */
+const PatchSessionSchema = z.object({
+  session_title: z.string().min(1).max(200).optional(),
+  topic_keys: z.array(z.string()).min(1).max(3).optional(),
+  starts_at: z.string().datetime().optional(),
+  duration_minutes: z.number().int().min(5).max(480).optional(),
+  co_hosts: z.array(z.string().uuid()).max(5).optional(),
+}).strict();
+
+router.patch('/rooms/:id/sessions/current', requireAuth, async (req: Request, res: Response) => {
+  const roomId = req.params.id;
+  const token = getBearerToken(req);
+  const actorId = (req as any).identity?.user_id as string | undefined;
+  if (!token || !actorId) {
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  }
+  if (!UUID_REGEX.test(roomId)) {
+    return res.status(400).json({ ok: false, error: 'Invalid room ID format' });
+  }
+
+  const parsed = PatchSessionSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      ok: false,
+      error: 'VALIDATION',
+      details: parsed.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', '),
+    });
+  }
+  const body = parsed.data;
+  if (Object.keys(body).length === 0) {
+    return res.status(400).json({ ok: false, error: 'NOTHING_TO_EDIT' });
+  }
+
+  // Creator only: the same comparison the room was created with.
+  const roomResult = await callRpc(token, 'live_room_get', { p_live_room_id: roomId });
+  if (!roomResult.ok || !roomResult.data) {
+    return res.status(404).json({ ok: false, error: 'ROOM_NOT_FOUND' });
+  }
+  if (roomResult.data.host_user_id !== actorId) {
+    return res.status(403).json({ ok: false, error: 'NOT_HOST' });
+  }
+
+  const stateResult = await sessionManager.getState(roomId, token);
+  const session = stateResult.data?.session;
+  if (!stateResult.ok || !session?.id) {
+    return res.status(409).json({ ok: false, error: 'NO_ACTIVE_SESSION' });
+  }
+
+  const locked = lockedFieldsRequested(body, session.status);
+  if (locked.length > 0) {
+    return res.status(409).json({ ok: false, error: 'SESSION_LOCKED', fields: locked });
+  }
+  if (body.starts_at && Date.parse(body.starts_at) <= Date.now()) {
+    return res.status(400).json({ ok: false, error: 'START_IN_PAST' });
+  }
+
+  const creds = getSupabaseCredentials();
+  if (!creds) {
+    return res.status(503).json({ ok: false, error: 'SERVICE_UNAVAILABLE' });
+  }
+
+  if (body.co_hosts && body.co_hosts.length > 0) {
+    const supaForCoHosts = getSupabase();
+    if (!supaForCoHosts) {
+      return res.status(503).json({ ok: false, error: 'CO_HOST_VALIDATION_UNAVAILABLE' });
+    }
+    try {
+      const filtered = await filterCoHosts(supaForCoHosts as unknown as RpcClient, roomId, actorId, body.co_hosts);
+      if (!filtered.ok) return res.status(400).json({ ok: false, error: 'INVALID_CO_HOSTS', dropped: filtered.dropped });
+    } catch (err) {
+      if (err instanceof CoHostValidationUnavailableError) {
+        return res.status(503).json({ ok: false, error: 'CO_HOST_VALIDATION_UNAVAILABLE' });
+      }
+      return res.status(502).json({ ok: false, error: 'CO_HOST_VALIDATION_FAILED' });
+    }
+  }
+
+  const patch = buildSessionEditPatch(body, { starts_at: session.starts_at, ends_at: session.ends_at });
+  const serviceHeaders = {
+    'Content-Type': 'application/json',
+    'apikey': creds.key,
+    'Authorization': `Bearer ${creds.key}`,
+    'Prefer': 'return=minimal',
+  };
+
+  // 1) the session row
+  if (Object.keys(patch.session).length > 0) {
+    const r = await fetch(`${creds.url}/rest/v1/live_room_sessions?id=eq.${session.id}`, {
+      method: 'PATCH', headers: serviceHeaders, body: JSON.stringify(patch.session),
+    });
+    if (!r.ok) return res.status(502).json({ ok: false, error: 'SESSION_UPDATE_FAILED' });
+  }
+
+  // 2) the listing (repeatable: the same request writes the same values)
+  if (Object.keys(patch.listing).length > 0) {
+    const r = await fetch(`${creds.url}/rest/v1/community_live_streams?id=eq.${roomId}`, {
+      method: 'PATCH', headers: serviceHeaders, body: JSON.stringify(patch.listing),
+    });
+    if (!r.ok) return res.status(502).json({ ok: false, error: 'LISTING_SYNC_FAILED' });
+  }
+
+  return res.json({ ok: true, session: { id: session.id, ...patch.session } });
 });
 
 export default router;
