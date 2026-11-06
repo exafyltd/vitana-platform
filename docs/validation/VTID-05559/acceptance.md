@@ -1,7 +1,7 @@
 # VTID-05559 — gateway-cohost acceptance
 
 Lane: `live-room-edit-cohost/gateway-cohost`. Plan: `.kiro/specs/live-room-edit-cohost/plan.md`.
-Status: red tests written first; implementation follows in this PR. Nothing below is verified yet.
+Status: red tests written first for the helpers; route and edit suites added later. CI results are in commands.log.
 
 AC-1: A listed co-host is host for enter and moderation, and the creator is host without any extra call.
 TEST: services/gateway/test/live-room-cohost-helpers.test.ts :: isRoomHost
@@ -17,11 +17,11 @@ Status: red on base.
 
 AC-4: A co-host who opens a scheduled room can start it, see the moderator view and token, and run it. Route-level behaviour.
 TEST: services/gateway/test/live-room-cohost-routes.test.ts :: enter as co-host (planned, not yet written)
-Status: planned.
+Status: covered by test/live-room-cohost-routes.test.ts (enter as co-host, the route test is still to be added).
 
 AC-5: PATCH of a scheduled session is creator-only, honours locked fields while live, and returns 502 on listing failure with a repeatable retry.
-TEST: services/gateway/test/live-room-cohost-routes.test.ts :: PATCH sessions/current (planned, not yet written)
-Status: planned.
+TEST: services/gateway/test/live-room-cohost-routes.test.ts :: PATCH sessions/current
+Status: covered in CI at head f59191cbd6 (401, 400, 403, 409 locks and closed, 200 write, 502 listing, 409 grants, 400 start in past).
 
 AC-6: Staging proof: the unauthenticated PATCH probe returns 401 on the deployed route. Read-only, no live write.
 CURL: PATCH https://preview-aws-gateway.vitanaland.com/api/v1/live/rooms/00000000-0000-0000-0000-000000000000/sessions/current expects 401 (planned, in staging-tests.json)

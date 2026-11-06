@@ -143,6 +143,26 @@ describe('PATCH /rooms/:id/sessions/current', () => {
   });
 });
 
+describe('PATCH start time guard', () => {
+  it('400 START_IN_PAST for a start time already gone', async () => {
+    installFetch({});
+    const r = await request(app())
+      .patch(`/api/v1/live/rooms/${ROOM}/sessions/current`)
+      .set('Authorization', `Bearer valid-${CREATOR}`)
+      .send({ starts_at: '2001-01-01T10:00:00.000Z' });
+    expect(r.status).toBe(400);
+    expect(r.body.error).toBe('START_IN_PAST');
+  });
+});
+
+describe('POST /rooms/:id/cancel', () => {
+  it('401 without a login, whatever the body says', async () => {
+    installFetch({});
+    const r = await request(app()).post(`/api/v1/live/rooms/${ROOM}/cancel`).send({ user_id: CREATOR });
+    expect(r.status).toBe(401);
+  });
+});
+
 describe('POST /rooms/:id/open-lobby', () => {
   it('401 without a login, whatever the body says', async () => {
     installFetch({});
