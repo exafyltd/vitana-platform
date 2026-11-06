@@ -1,6 +1,6 @@
 ---
 lane: membership-unification
-state: ready
+state: done
 next_actor: kiro
 executor: kiro
 seat: hotmail
@@ -13,9 +13,12 @@ paths:
   - supabase/migrations/20261102031200_vtid_*_membership_drift_report.sql
   - supabase/migrations/20261102031000_vtid_*_membership_unification_rollback.sql
   - supabase/tests/mt_identity_membership_*.sql
-updated: 2026-11-02T13:05Z
+updated: 2026-11-05T20:11Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05466
+branch: kiro/mt-identity-r2/membership-unification
+pr: https://github.com/exafyltd/vitana-platform/pull/4626
+claimed_by: kiro-hotmail-202611011452-6d16
 ---
 # membership-unification — user_tenants canonical, memberships → view, dual-write + drift report (DB)
 
@@ -62,3 +65,9 @@ Findings:
 - [non-blocking] docs/validation/VTID-05466/staging-tests.json. CI is not evaluated on this head. gh pr view and gh pr checks both failed with HTTP 400 (the GitHub gateway answers 'GraphQL pass-through is not supported'), and my shell has no REST reader for check runs, so I saw no check run on c8458b6271. After git fetch origin, origin/kiro/mt-identity-r2/membership-unification reads c8458b6271 and origin/main has no commit that the head lacks, but that is a view of local refs. This accept does not confirm any check. The land step waits for every required check's latest attempt to be finished and green on this head, and land-guard compares Collab-Reviewed-Head with the PR's current head.
 - [non-blocking] docs/validation/VTID-05466/commands.log:55. Still open from my review of 933bade4a0 (file unchanged). The 'Not run here' section (:55-64) records that pgTAP ran only through the shim (no Docker in the sandbox), that supabase db reset on the D11 stack has not run, and that the live recount is live-before.sql in the RUN-MIGRATION pre-check. The migration apply needs the owner's approval of the files and the target database (§7d) or a D11 run on the local stack with real pgTAP. That does not block the merge. The eight non-blocking notes of that review stand as recorded there. This merge changes none of them, because the lane's files are byte-identical.
 Next: the land step merges under §7b once every check on this head is green and the PR is up to date with main. The lane is accepted for merging files only. The merge applies no migration; the apply needs the owner's approval of the files and the target database (§7d) or a D11 run. The commit that appends this entry touches only the lane file, so this accept stays valid for it (land-guard rule b). Another merge of main is not covered by rule b and needs a new review, which can be limited to the three checks above. I judged the evidence from read-only git reads and file reads of the lane worktree at this head, and gh pr view failed (GraphQL), so land-guard must still compare Collab-Reviewed-Head with the PR's current head.
+### 2026-11-05T20:11Z · kiro-hotmail-202611011452-6d16 · in-review → verified
+merge: 27de7a98d121201f5c6de2798e49c27820af9902 (exafyltd/vitana-platform#4626)
+authority: §7b PM rule. Merged by kiro-hotmail-202611011452-6d16 on the reviewed head `c8458b6271cd10ebdea8107b567aef6149be26d5`, which was the PR head at merge.
+
+### 2026-11-05T20:11Z · kiro-hotmail-202611011452-6d16 · verified → done
+Closing record: the code and evidence are on main from merge 27de7a98d121201f5c6de2798e49c27820af9902. The lane claim is released once this record is on main.
