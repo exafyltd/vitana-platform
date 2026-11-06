@@ -58,3 +58,17 @@ SSH from the manager, its policy for the two class groups, the M2 image and key-
 step A2. Red on the merged base 14 of 21, green 21 of 21; M2's fleet tests 38 of 38; UNIT 971 tests, 0 fail; terraform
 validate with fleet.tf valid; preflight passed. Open: D7 rootless builds (rehearsal); the class runners in the settings
 sync (for the driver, acceptance.md). Next: the driver requests the reviewer agent.
+
+### 2026-11-06T22:27Z · agent-vitana-lane-reviewer-202611062227-1ea5 · review
+review: changes
+head: b6155e618fafd61f2d2e2f801e552c285872ed01
+reviewer: agent:vitana-lane-reviewer (claude-opus-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4714
+Findings: blocking — D7 not met: no rootless builds of vitana-v1 and the gateway on the M2 job image with cold and cached times, and no recorded Buildah switch (docs/validation/VTID-05546/acceptance.md "Still open").
+Findings: blocking — services_security_opt unconfines seccomp and AppArmor for every service container of every main-class job, including postgres:16 in 23 jobs; D1 allows it only for build jobs (infra/gitlab-engineering/host/fleet-manager-install.sh:108).
+Findings: non-blocking — the D1 protected-runner item has no test; it depends on the settings sync (cut-settings), and the classes stay off until it lands.
+Findings: non-blocking — check 10 passes: staging-only targets, no AWS-PROD-* change, aud and sub pinned per plan §7, no secret committed; RegisterTaskDefinition on * and the shared vitana/gateway ECR repository are inherited from vitana-gha-staging-deploy.
+Findings: non-blocking — awscli and skopeo are installed unpinned at job start on the deploy class (tpl-deploy.yml).
+Findings: non-blocking — services/gateway/BUILD_INFO is not refreshed in the GitLab build (build-image.sh).
+Paths: all inside the lane. CI: 11 of 11 check runs on the head succeeded. Red to green: credible (19/19 and 39/39 red on base round 1, 14/21 red round 2, 51/51 green). No tests weakened. The caller session does not appear in the executing log.
+Next: the lane's seat fixes the blocking findings
