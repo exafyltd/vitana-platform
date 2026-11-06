@@ -1,6 +1,6 @@
 ---
 lane: reinstate-admin
-state: ready
+state: executing
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -11,8 +11,10 @@ reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 repos: [exafyltd/vitana-platform]
 paths:
   - .kiro/specs/claude-migration-lanes/lanes/reinstate-rules.md
-updated: 2026-11-06T09:20Z
+updated: 2026-11-06T12:11Z
 vtid: VTID-05567
+claimed_by: kiro-exafy-202611061210-404d
+branch: kiro/claude-migration-lanes/reinstate-admin
 ---
 # Lane: reinstate-admin (repo vitana-platform)
 Late lane of plan `claude-migration-lanes`, added after the plan merged (owner instruction 2026-11-05: option 1, take VTID-05565 as
@@ -27,3 +29,6 @@ Late lane created by the plan owner's option 1. VTID to be allocated by CI PLAN-
 
 ### 2026-11-06T09:20Z · ci-plan-spar · ready (VTID allocated)
 VTID-05567 allocated after policy approval (converged-auto-v1).
+
+### 2026-11-06T12:11Z · kiro-exafy-202611061210-404d · ready -> executing
+Claimed by Kiro seat exafy. Edits only `reinstate-rules.md` (executor kiro -> claude, reviewer_seat -> exafyltd, seat removed). Next: reviewer agent reviews the PR head.
