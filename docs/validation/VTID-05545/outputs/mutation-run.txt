@@ -1,0 +1,174 @@
+# VTID-05545 mutation run (outputs/mutate-cutover.sh), after the review fixes B1 to B5. Run in two parts, because a background run does not
+# survive in this sandbox: part 1 = every mutation but the B ones (ONLY='^(json|sync|config|status|apply|machine|rehearse|rollback|runbook|driver|lane-land|workflows|metrics|parity)', with the baseline),
+# part 2 = the 40 B1 to B5 mutations (ONLY='^B[1-5]:', SKIP_BASELINE=1, the same tree). JOBS=8, TMPDIR=/projects/sandbox/tools.
+
+== part 1
+baseline: gitlab-settings-cutover pass 19/tests 19; github-workflows pass 11/tests 11; delivery-metrics pass 9/tests 9; parity-report pass 14/tests 14; delivery-cutover pass 50/tests 50;
+caught      json: live required jobs lose gate  <- config: the shipped file has a cutover block on both mirror projects a
+caught      json: live webhook loses tag_push  <- config: the shipped file has a cutover block on both mirror projects a
+caught      json: push mirror sends every branch  <- config: the shipped file has a cutover block on both mirror projects a|config: every invalid cutover input is refused with an error that name
+caught      json: push mirror overwrites divergent refs  <- config: the shipped file has a cutover block on both mirror projects a|config: every invalid cutover input is refused with an error that name
+caught      json: assist/* pushed by developers  <- config: the shipped file has a cutover block on both mirror projects a
+caught      json: assist/* merged by developers  <- config: the shipped file has a cutover block on both mirror projects a
+caught      json: skipped pipelines no longer count  <- config: the shipped file has a cutover block on both mirror projects a
+caught      json: the bridge is a Maintainer when live  <- config: the shipped file has a cutover block on both mirror projects a
+caught      json: the bridge is a Developer in shadow  <- config: the shipped file has a cutover block on both mirror projects a
+caught      json: the bridge loses write_repository  <- config: the shipped file has a cutover block on both mirror projects a
+caught      json: the old mirror user stays Maintainer live  <- config: the shipped file has a cutover block on both mirror projects a
+caught      json: the old mirror user is Reporter in shadow  <- config: the shipped file has a cutover block on both mirror projects a
+caught      json: shadow sends no pipeline events  <- config: the shipped file has a cutover block on both mirror projects a
+caught      json: the webhook points at production  <- config: the shipped file has a cutover block on both mirror projects a
+caught      json: the platform delivery file is renamed  <- config: the shipped file has a cutover block on both mirror projects a|inactive: without the generated pipeline files in the CI folder the sy
+caught      json: the push mirror token file is renamed  <- config: the shipped file has a cutover block on both mirror projects a
+caught      sync: the marker path changes  <- live: the marker turns both projects native in one run: landing and th|live: a token file that is not mode 600 is warned about, a malformed o
+caught      sync: rehearsal is treated as live  <- rehearsal: the marker "rehearsal" is shadow with DELIVERY_MODE=live an
+caught      sync: rehearsal runs the pipelines in shadow  <- rehearsal: the marker "rehearsal" is shadow with DELIVERY_MODE=live an
+caught      sync: the push mirror is created for every branch  <- live: the marker turns both projects native in one run: landing and th|live: a mirror that was changed by hand is corrected (disabled, every 
+caught      sync: the push mirror overwrites divergent refs  <- live: the marker turns both projects native in one run: landing and th|live: a mirror that was changed by hand is corrected (disabled, every 
+caught      sync: the push mirror address loses x-access-token  <- live: the marker turns both projects native in one run: landing and th
+caught      sync: the push mirror stays after the rollback  <- removing the marker converges back to shadow: mirror profile, the push
+caught      sync: the token file mode is not looked at  <- live: a token file that is not mode 600 is warned about, a malformed o
+caught      sync: assist/* stays protected after the rollback  <- removing the marker converges back to shadow: mirror profile, the push|live: a protected branch rule for assist/* changed by hand is repaired
+caught      sync: force push on assist/* is not looked at  <- live: a protected branch rule for assist/* changed by hand is repaired
+caught      sync: skipped pipelines count in shadow too  <- shadow: the pipeline files and no marker keep the mirror profile, poin|removing the marker converges back to shadow: mirror profile, the push
+caught      sync: DELIVERY_MODE is created protected  <- shadow: the pipeline files and no marker keep the mirror profile, poin
+caught      sync: the mirror user keeps its old role  <- live: the marker turns both projects native in one run: landing and th
+caught      sync: the bridge keeps the shadow role when live  <- live: the marker turns both projects native in one run: landing and th
+caught      sync: bot-land is not Maintainer of a live project  <- live: the marker turns both projects native in one run: landing and th
+caught      sync: a project without the delivery file is live  <- inactive: without the generated pipeline files in the CI folder the sy
+caught      sync: the push mirror token reaches the output and is not redacted  <- no secret appears in any output, finding or argument list: not the Git
+caught      sync: a Premium-only name appears in the script  <- free tier: the script and the settings file name none of the Premium-o
+caught      status: a smaller GitLab host is accepted  <- status --item: each red condition turns exactly its own item red, name
+caught      status: the deploy runner class is not required  <- status --item: each red condition turns exactly its own item red, name
+caught      status: the assist role is not required  <- status --item: each red condition turns exactly its own item red, name
+caught      status: one lane of the plan is not required  <- status --item: each red condition turns exactly its own item red, name
+caught      status: one shadow commit is enough  <- status --item: each red condition turns exactly its own item red, name
+caught      status: a rehearsal never expires  <- status --item: each red condition turns exactly its own item red, name
+caught      status: a running bridge timer is accepted  <- status --item: each red condition turns exactly its own item red, name
+caught      status: the merge bot is not looked at  <- status --item: each red condition turns exactly its own item red, name
+caught      status: an unclassified workflow is accepted  <- status --item: each red condition turns exactly its own item red, name
+caught      apply: GitHub admins may still push main  <- apply: the cut, step by step in the order of plan §8.2, each change pr
+caught      apply: force pushes stay allowed on GitHub main  <- apply: the cut, step by step in the order of plan §8.2, each change pr
+caught      apply: someone besides the mirror may push main  <- apply: the cut, step by step in the order of plan §8.2, each change pr
+caught      apply: the plan slug is not checked  <- apply: a wrong plan slug, an unknown option, a real run without --mirr
+caught      apply: no slug still changes things  <- apply: without the plan slug, or with --dry-run, it is a dry run: it s
+caught      apply: --dry-run with the slug still changes  <- apply: without the plan slug, or with --dry-run, it is a dry run: it s
+caught      apply: a red checklist does not stop the cut  <- apply: with a red checklist it refuses, names the red item, and change
+caught      apply: a mirror account that can only read  <- apply: a wrong plan slug, an unknown option, a real run without --mirr
+caught      apply: the kill switch is read the wrong way  <- apply: the cut, step by step in the order of plan §8.2, each change pr|apply: waits for the owner at step 6 (exit 3), is resumed from step 6 
+caught      apply: no wait for the kill switch  <- apply: waits for the owner at step 6 (exit 3), is resumed from step 6 
+caught      apply: waiting for the owner exits 1, not 3  <- apply: waits for the owner at step 6 (exit 3), is resumed from step 6 
+caught      apply: the tags lose the delivery/ prefix  <- apply: the cut, step by step in the order of plan §8.2, each change pr
+caught      apply: step 7 accepts any DELIVERY_MODE  <- apply: step 7 stops when DELIVERY_MODE of a project is not live after  (other case)
+caught      apply: the final copy runs after the marker  <- apply: step 2 does not run the GitHub-to-GitLab copy when the cutover  (other case)
+caught      apply: the steps run in a different order  <- apply: the cut, step by step in the order of plan §8.2, each change pr
+caught      apply: the disabled workflows are not saved  <- apply: the cut, step by step in the order of plan §8.2, each change pr|failure at step 4: the workflows disabled in that step are enabled aga
+caught      apply: the protection is not saved first  <- apply: the cut, step by step in the order of plan §8.2, each change pr|failure at step 1: the protection of the first repository is put back,
+caught      apply: the keep list is disabled, not the disable list  <- apply: the cut, step by step in the order of plan §8.2, each change pr
+caught      apply: step 1 failure does not put the protection back  <- failure at step 1: the protection of the first repository is put back,
+caught      apply: a sync that fails leaves the marker  <- failure at step 2: a final copy that fails leaves the copy running and
+caught      apply: a rerun does not see step 5 as done  <- apply: run again after the cut it does nothing: every step says alread
+caught      apply: the GitLab tag loses the delivery/ prefix  <- apply: the cut, step by step in the order of plan §8.2, each change pr
+caught      machine scripts: the bot token goes on a curl command line  <- machine scripts: every script sent to the GitLab machine starts with i|machine scripts, run for real in sh on stand-ins: the converge script 
+caught      apply: the GitHub token goes on a command line  <- the GitHub token is typed hidden when GH_TOKEN is not set, and it appe
+caught      apply: a stored value goes on the command line  <- apply: the cut, step by step in the order of plan §8.2, each change pr|failure at step 1: the protection of the first repository is put back,
+caught      rehearse: merges need not be paused  <- rehearse: it needs --merges-paused, opens with the marker "rehearsal",
+caught      rehearse: a deploy without a verification passes  <- rehearse: it needs --merges-paused, opens with the marker "rehearsal",
+caught      rehearse: staging is not sent back to GitHub  <- rehearse: it needs --merges-paused, opens with the marker "rehearsal",
+caught      rehearse: --dry-run still opens the rehearsal  <- rehearse --dry-run: opening, closing and aborting print every change a
+caught      rehearse: a dry run says the rehearsal is open  <- rehearse --dry-run: opening, closing and aborting print every change a
+caught      rehearse: the rehearsal marker says live  <- rehearse: it needs --merges-paused, opens with the marker "rehearsal",
+caught      rollback: GitHub main is not compared with GitLab main  <- rollback: it refuses while GitHub main is not GitLab main, and while b
+caught      rollback: GitLab-only branches are deleted silently  <- rollback: it refuses while GitHub main is not GitLab main, and while b
+caught      rollback: every disable-list workflow is enabled  <- rollback: it enables again only the workflows the cut disabled; one th (other case)
+caught      rollback: the protection is not restored  <- rollback: it reverses the cut in the order of plan §8.4, restores exac
+caught      rollback: the marker stays  <- rollback: it reverses the cut in the order of plan §8.4, restores exac
+caught      rollback: the merge bot is stopped last  <- rollback: it reverses the cut in the order of plan §8.4, restores exac
+caught      rollback: the tags stay on GitHub  <- rollback: it reverses the cut in the order of plan §8.4, restores exac
+caught      rollback: the staging gateway is never redeployed  <- rollback: a staging gateway that still carries the cut settings is red
+caught      rollback: no slug still changes things  <- rollback: a staging gateway that still carries the cut settings is red
+caught      rollback: the bridge is started, not stopped  <- rollback: it reverses the cut in the order of plan §8.4, restores exac
+caught      runbook: the token prompt echoes what is typed  <- runbook: every bash block parses, it explains every checklist item, sh
+caught      runbook: a status item is not explained  <- runbook: every bash block parses, it explains every checklist item, sh
+caught      runbook: the rollback flag is misspelled  <- runbook: every bash block parses, it explains every checklist item, sh
+caught      runbook: step 8 has no row in the cut table  <- runbook: every bash block parses, it explains every checklist item, sh
+caught      runbook: a token is pasted into it  <- runbook: every bash block parses, it explains every checklist item, sh
+caught      driver: it no longer waits for delivery.landed  <- pipeline runbooks: after the cut tag of a repository the merge bot lan
+caught      driver: the Never line loses the cut rule  <- pipeline runbooks: after the cut tag of a repository the merge bot lan
+caught      driver: the flow before the tag changes  <- pipeline runbooks: after the cut tag of a repository the merge bot lan
+caught      driver: the tag is looked up with another command  <- pipeline runbooks: after the cut tag of a repository the merge bot lan
+caught      lane-land: the land step does not skip a to e  <- pipeline runbooks: after the cut tag of a repository the merge bot lan
+caught      lane-land: the squash rule is gone  <- pipeline runbooks: after the cut tag of a repository the merge bot lan
+caught      workflows: a push to github.ref_name passes unrecorded  <- kept workflows: a push to the dispatched ref (github.ref_name) counts 
+caught      runbook: the round-trip item is not explained  <- runbook: every bash block parses, it explains every checklist item, sh
+caught      workflows: PR-GATE.yml is kept (platform)  <- plan 2.2: the disabled workflows are the ones of the table, family by |plan 2.2: the kept workflows are the families of the table (89 of 159)
+caught      workflows: UNIT.yml is kept  <- plan 2.2: the disabled workflows are the ones of the table, family by |plan 2.2: the kept workflows are the families of the table (89 of 159)
+caught      workflows: PLAN-SPAR.yml is disabled  <- plan 2.2: the disabled workflows are the ones of the table, family by |plan 2.2: the kept workflows are the families of the table (89 of 159)
+caught      workflows: DEPLOY-CLOUDFLARE-WORKERS no longer deploys production  <- kept workflows: none pushes to main, and the only one that a push to m
+caught      workflows: a kept workflow runs on pull requests  <- list: the platform entries are exactly the files of .github/workflows |list: the vitana-v1 entries are exactly the files of the vitana-v1 che (other case)
+caught      workflows: a kept workflow gets a pull_request trigger  <- kept workflows: only PLAN-SPAR (plan PRs) and the path-filtered MIGRAT
+caught      workflows: an entry is missing  <- list: 159 workflow files of both repositories (113 platform, 46 vitana|list: the platform entries are exactly the files of .github/workflows 
+caught      workflows: PR-GATE.yml loses its protected flag  <- protected gate files: PR-GATE (both repositories), PLAN-SPAR and AWS-P
+caught      workflows: a recorded trigger is wrong  <- list: the platform entries are exactly the files of .github/workflows 
+caught      metrics: first result target 90 s  <- targets: the typical and slowest 5 % columns of plan §5 and the GitHub
+caught      metrics: required checks slowest 900 s  <- targets: the typical and slowest 5 % columns of plan §5 and the GitHub
+caught      metrics: landing to verify typical 900 s  <- targets: the typical and slowest 5 % columns of plan §5 and the GitHub
+caught      metrics: the GitHub baseline of first result  <- targets: the typical and slowest 5 % columns of plan §5 and the GitHub
+caught      metrics: the budget is 6000 a month  <- compute: every field of vitana.delivery-metrics/v1 from fixture rows, |compute: the baseline of the input overrides the plan values field by 
+caught      metrics: gate is not a required job  <- pipeline timings: first result at the first finished job, required che
+caught      metrics: the percentile rounds down  <- percentile: nearest rank, the median and the 95th percentile of small 
+caught      metrics: no cost rows count as 0  <- a field without a source is null, never 0: an empty input, a window wi
+caught      parity: a deploy of an unserved commit is compared  <- report: the staging fates are t2 and t3: a commit staging never served (other case)
+caught      parity: both red is unexplained  <- report: a difference with a reason is explained: GitHub cancelled or s
+caught      parity: a cancelled GitHub run is unexplained  <- report: a difference with a reason is explained: GitHub cancelled or s
+caught      parity: five shadow commits are enough  <- report: the default minimum is ten shadow commits (other case)
+caught      parity: the GitHub token is not redacted from an error  <- cli: a GitHub or GitLab that refuses a token, a missing file and a map
+caught      parity: a missing GitLab job is explained  <- report: every unexplained difference is listed with its SHA, workflow,
+caught      parity: a commit older than the shadow period counts  <- report: a commit older than the first GitLab pipeline is before the sh
+part 1: mutations: 121   caught: 121   not caught: 0
+
+== part 2
+caught      B1: the protection backup write is not checked  <- B1: a backup write that Secrets Manager refuses, or one that reads bac
+caught      B1: a written secret is not read back  <- B1: a backup write that Secrets Manager refuses, or one that reads bac
+caught      B1: any GET error counts as no protection  <- B1: a 502 on the protection GET stops step 1 and saves nothing; only G
+caught      B1: any 404 counts as no protection  <- B1: a 502 on the protection GET stops step 1 and saves nothing; only G
+caught      B1: a missing backup counts as restored  <- B1: a rollback whose protection backup is deleted or cannot be read ex
+caught      B1: every Secrets Manager error reads as not found  <- B1: a rollback whose protection backup is deleted or cannot be read ex|B1: rollback step 4 without its saved list exits 1 with the manual ins
+caught      B1: undone is printed after a failed restore  <- B1: when step 1 cannot put a protection back it says NOT undone, never
+caught      B1: the started record is not checked  <- B1: the record of a started cut, and the list of step 4, are read back
+caught      B1: the step 4 list is not checked  <- B1: the record of a started cut, and the list of step 4, are read back
+caught      B1: rollback step 4 without a list goes on  <- B1: rollback step 4 without its saved list exits 1 with the manual ins
+caught      B2: rollback step 3 restores whatever main has  <- B2: a second rollback after a good one restores no protection and enab
+caught      B2: rollback step 4 enables any disabled state  <- B2: a second rollback after a good one restores no protection and enab
+caught      B2: rollback step 4 acts after a finished rollback  <- B2: a second rollback after a good one restores no protection and enab
+caught      B2: rolling-back is not recorded  <- B2: the rollback records rolling-back before its first change; apply r
+caught      B2: apply resumes a rolling-back cut  <- B2: the rollback records rolling-back before its first change; apply r
+caught      B2: an old record is resumed without the checklist  <- B2: apply resumes a started cut only within 24 hours; an older record 
+caught      B2: the mirror account of the record is ignored  <- B2: apply resumes a started cut only within 24 hours; an older record 
+caught      B2: no lock is taken  <- B2: a lock keeps runs apart: apply, rehearse and the rollback refuse w
+caught      B2: --break-lock clears a young lock  <- B2: a lock keeps runs apart: apply, rehearse and the rollback refuse w
+caught      B2: the lock is never released  <- apply: run again after the cut it does nothing: every step says alread|B2: a lock keeps runs apart: apply, rehearse and the rollback refuse w
+caught      B3: bypass allowances are dropped  <- B3: the restore body carries bypass allowances and dismissal restricti|B3: a cut and its rollback restore a protection with bypass allowances
+caught      B3: a null app_id stays null  <- B3: the restore body carries bypass allowances and dismissal restricti|B3: a cut and its rollback restore a protection with bypass allowances
+caught      B3: contexts and checks are both sent  <- B3: the restore body carries bypass allowances and dismissal restricti|B3: a cut and its rollback restore a protection with bypass allowances
+caught      B3: the round trip does not compare  <- B3: rehearse first runs the round trip of the protection (PUT the rest
+caught      B3: the rehearsal opens without the round trip  <- B3: rehearse first runs the round trip of the protection (PUT the rest
+caught      B3: the checklist leaves out the round trip  <- status: with every item true it prints the 15 items of plan §8.1 one b|B3: rehearse first runs the round trip of the protection (PUT the rest
+caught      B3: a changed protection keeps the item green  <- status --item: each red condition turns exactly its own item red, name|B3: rehearse first runs the round trip of the protection (PUT the rest
+caught      B3: an old round trip still counts  <- status --item: each red condition turns exactly its own item red, name
+caught      B4: heads of shared branches are not compared  <- B4: the rollback refuses while a branch on both hosts has GitLab commi
+caught      B4: a diverged head reads as contained  <- B4: the rollback refuses while a branch on both hosts has GitLab commi
+caught      B4: commits at risk do not stop the rollback  <- B4: the rollback refuses while a branch on both hosts has GitLab commi
+caught      B4: bot refs count as GitLab-only branches  <- B4: the bot refs train/* and assist/* are left out of the GitLab-only 
+caught      B4: a full page 30 is not reported  <- B4: the bot refs train/* and assist/* are left out of the GitLab-only 
+caught      B4: the machine never says truncated  <- B4: on the machine the GitLab branch listing prints every head, stops 
+caught      B5: the redeploy run is not waited for  <- B5: the rollback waits for the redeploy, reads the staging task defini|B5: closing the rehearsal waits for both staging redeploys and checks 
+caught      B5: a failed redeploy counts as success  <- B5: the rollback waits for the redeploy, reads the staging task defini
+caught      B5: the task definition is not read again  <- B5: the rollback waits for the redeploy, reads the staging task defini
+caught      B5: the cut settings on staging are not seen  <- B5: the rollback waits for the redeploy, reads the staging task defini|B5: closing the rehearsal waits for both staging redeploys and checks 
+caught      B5: the owner command is not printed  <- B5: the rollback waits for the redeploy, reads the staging task defini|B5: closing the rehearsal waits for both staging redeploys and checks 
+caught      B5: the rehearsal is recorded passed before staging is back  <- B5: closing the rehearsal waits for both staging redeploys and checks 
+part 2: mutations: 40   caught: 40   not caught: 0
+
+mutations: 161   caught: 161   not caught: 0   caught by the aimed case: 155   by another case: 6
+harness exit 0 (both parts)

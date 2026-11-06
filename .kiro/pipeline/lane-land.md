@@ -27,6 +27,12 @@ true` exactly when the status becomes `landed`, `parked` or `skipped`.
    one try on this head, so it is not repeated. A new head starts fresh. (When all three models fail, the race itself
    fails and this step does not run: `lane-review.md` "All three fail".)
 3. **`accepted` → land:**
+   0. **Cut over?** `git ls-remote --tags origin "refs/tags/delivery/cutover-<repo>"` for the PR's repository (driver.md "After the
+      cut"). A line is printed → the merge bot lands it, not this step: skip a–e and wait (poll 2-3 min, max 90 min) until the
+      squash commit with the lane's VTID in its subject is on `origin/main` (`git fetch origin main`, then `git log origin/main -n 1
+      --format=%H --grep "^VTID-xxxxx"`) and the pull request is closed with the bridge's link. Then go to f with `merged_by: merge
+      bot`, that commit as the merge SHA, its committer date as `mergedAt`, no `--admin` and no PR comment. Not landed at the bound
+      → stay `accepted`, go to 4. No line → a–g as written.
    a. Order: a lane whose plan names a "lands first" lane waits until that lane is `landed` or `parked` (poll 2-3 min,
       max 90 min; else stay `accepted`, go to 4).
    b. Merge lock (one merge at a time): create `RUN/merge.lock` exclusively (`New-Item` fails when it exists) with the
