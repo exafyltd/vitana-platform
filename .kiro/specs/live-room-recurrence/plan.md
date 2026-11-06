@@ -37,7 +37,10 @@ dialog that plan introduces, so it runs after those lanes.
    their tenant's series; writes only via `service_role` (gateway). No browser writes.
 2. **Create contract** (lane `gateway-live-series`): `POST /api/v1/live/rooms/:id/sessions` accepts an optional
    `recurrence: { frequency: "daily"|"weekly"|"biweekly"|"monthly", end: { count: 2..52 } | { until: ISO date } }`.
-   The gateway expands the occurrences from `starts_at` with `expandOccurrences` and creates the series row. Occurrence 0
+   The gateway expands the occurrences from `starts_at` with `expandOccurrences` (`calendar-recurrence.ts:118`) over the
+   window `{ from: now, to: now + 8 weeks }` only, and creates the series row. Occurrences after that window are created
+   later by the hourly materialisation loop (Interface 3), so the POST creates at most about 8 weeks of rows and the
+   materialiser is the single owner of rows beyond the window; the same idempotency key is used at the boundary. Occurrence 0
    is created through the existing `live_room_create_session` path, which makes it the room's `current_session_id`. The
    remaining occurrences are inserted with `live_room_series_insert_occurrence` (idempotent, `series:<series_id>:<index>`),
    so they are scheduled rows that are not the room's current session. A retry converges.
@@ -45,10 +48,13 @@ dialog that plan introduces, so it runs after those lanes.
    `20260210100000_vtid_01228_live_room_session_mgmt.sql:95`). Only the nearest upcoming occurrence is ever linked to the
    room; the others are plain scheduled rows until promoted (Interface 6). Maximum 52 occurrences and at most 12 months ahead. The reply adds
    `series: { id, occurrences: n, next_starts_at }`. A request without `recurrence` is unchanged.
-3. **Rolling window:** the gateway materialises occurrences up to 8 weeks ahead. A new worker
+3. **Rolling window and two loops:** the gateway materialises occurrences up to 8 weeks ahead. A new worker
    `startLiveSeriesMaterialiser()` in `services/gateway/src/services/live-series.ts`, registered in `services/gateway/src/index.ts`
-   behind the env gate `LIVE_SERIES_MATERIALISER_ENABLED` (default off until verified), runs one tick per hour with its own
-   in-process lock, so no two ticks overlap. It does not use the user-JWT RPC `live_room_create_session`: it calls the new
+   behind the env gate `LIVE_SERIES_MATERIALISER_ENABLED` (default off until verified), runs two independent loops, each with
+   its own in-process lock so no two runs of the same loop overlap:
+   - **Promotion loop, every 5 minutes:** calls `live_room_series_promote_next` (Interface 6) for every room with an active series.
+   - **Materialisation loop, every hour:** creates the missing occurrence rows inside the 8-week window (below). Heavier, so
+     it runs less often and never blocks promotion. It does not use the user-JWT RPC `live_room_create_session`: it calls the new
    SQL function `live_room_series_insert_occurrence(p_series_id uuid, p_index int)` (service_role only, SECURITY DEFINER).
    That function reads host, tenant, rule and time from the `live_room_series` row, checks that the series is `active` and
    that the room exists, inserts one `live_room_sessions` row with `idempotency_key = series:<series_id>:<index>` and
@@ -73,11 +79,12 @@ dialog that plan introduces, so it runs after those lanes.
    earliest occurrence of a series on that room with `status = 'scheduled'` and `starts_at > now() - lobby_buffer` and sets
    `live_rooms.current_session_id` to it and `status` to `scheduled`. It returns that session id, or NULL when none is left.
    A room that is not `idle` is never changed. A live or ended occurrence is never promoted.
-   Trigger: the materialiser tick (Interface 3) runs it for every room that has an active series, every 5 minutes, so the
-   next occurrence is linked at most about 5 minutes after the previous one ends. `live_room_end_session`,
+   Trigger: the 5-minute promotion loop of Interface 3 runs it for every room that has an active series, so the next
+   occurrence is linked at most about 5 minutes after the previous one ends. `live_room_end_session`,
    `room-state-machine.ts` and the room status values are unchanged.
    A scheduled occurrence whose `starts_at` is more than 1 hour in the past and was never opened is set to `cancelled`
-   with `metadata.cancel_reason = 'missed'` by the same tick, so it cannot block the next promotion.
+   with `metadata.cancel_reason = 'missed'` by the hourly materialisation loop, so it cannot block the next promotion.
+   (Promotion skips it in the meantime, so a missed occurrence never delays the next one by more than an hour.)
 
 ## Change
 ### Lane `db-live-series` (exafyltd/vitana-platform, seat exafy)
@@ -105,6 +112,7 @@ owns `EditSessionDialog.tsx` and the list files.
   promoted one at a time, about 5 minutes after the previous session ends. A missed occurrence (never opened, more than
   1 hour late) is cancelled so it cannot stall the series.
 - **The materialiser is a new worker with its own env gate and lock**, not a shared scheduler (none exists).
+- **Creation window:** the POST creates only the 8-week window; the materialiser owns everything after it.
 - **Materialise, do not expand on read.** Each occurrence is a real session row, so every existing screen, grant and
   calendar entry works without change. Cost: a bounded number of rows (at most 52 per series, 8 weeks ahead at a time).
 - **Frequencies are daily, weekly, biweekly and monthly.** Monthly repeats on the same day of month as the first start. No custom rules in
