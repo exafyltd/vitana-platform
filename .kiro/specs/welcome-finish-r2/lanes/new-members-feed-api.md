@@ -1,10 +1,10 @@
 ---
 lane: new-members-feed-api
-state: executing
+state: parked
 next_actor: kiro
 depends_on: []
 executor: kiro
-seat: jtadic
+seat: exafyltd
 area: backend
 reviewer_seat: agent:vitana-lane-reviewer
 repos: [exafyltd/vitana-platform]
@@ -14,11 +14,11 @@ paths:
   - services/gateway/src/orb/developer/domain-atlas.ts
   - services/gateway/test/vtid-*-new-members-feed.test.ts
   - docs/validation/VTID-*/**
-updated: 2026-11-03T12:14Z
+updated: 2026-11-05T14:03Z
 vtid: VTID-05477
-claimed_by: kiro-jtadic-202610291040-a0e6
 branch: kiro/welcome-finish-r2/new-members-feed-api
 pr:
+parked_from: executing
 ---
 # Lane `new-members-feed-api`
 Plan: `.kiro/specs/welcome-finish-r2/` — `plan.md` and the `tasks.md` section `<!-- lane: new-members-feed-api -->` are authoritative.
@@ -54,3 +54,25 @@ reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 PR: https://github.com/exafyltd/vitana-platform/pull/4649
 Findings: (non-blocking) index.ts is a plan-declared hot file shared with open PR #4503, serialized landing per §8a; (non-blocking) main's .github/workflows/* arrived via the update-branch merge of 3dc28e5fa7 and are not in the PR's own diff; (non-blocking) CI on the current head is not readable by the reviewer, the land step confirms Lane scope, Collab handoff and the gateway Jest job are green on this head before merge. Re-review after the main merge: own-change files unchanged since db118e5a (route +77, test +179, same 11 files); the lane file only gained the earlier review entry; route behaviour verified by direct read (no tenant filter, strict exclusion helper, caller excluded, fail-closed 503).
 Next: the land step merges under §7b
+### 2026-11-05T12:38Z · pm-agent · executing → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
+### 2026-11-05T12:44Z · pm-agent · update
+park (stale_claim); claim released; Claude unavailable → exafyltd
+### 2026-11-05T12:50Z · pm-agent · update
+park (stale_claim); claim released; Claude unavailable → exafyltd
+### 2026-11-05T12:56Z · pm-agent · update
+park (stale_claim); claim released; Claude unavailable → exafyltd
+### 2026-11-05T13:02Z · pm-agent · update
+park (stale_claim); claim released; Claude unavailable → exafyltd
+### 2026-11-05T13:08Z · pm-agent · update
+park (stale_claim); claim released; Claude unavailable → exafyltd
+### 2026-11-05T13:38Z · pm-agent · update
+park (stale_claim); claim released; Claude unavailable → exafyltd
+### 2026-11-05T13:44Z · pm-agent · update
+park (stale_claim); claim released; Claude unavailable → exafyltd
+### 2026-11-05T13:51Z · pm-agent · update
+park (stale_claim); claim released; Claude unavailable → exafyltd
+### 2026-11-05T13:57Z · pm-agent · update
+park (stale_claim); claim released; Claude unavailable → exafyltd
+### 2026-11-05T14:03Z · pm-agent · update
+park (stale_claim); claim released; Claude unavailable → exafyltd
