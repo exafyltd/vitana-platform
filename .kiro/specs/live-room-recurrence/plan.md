@@ -37,9 +37,13 @@ dialog that plan introduces, so it runs after those lanes.
    their tenant's series; writes only via `service_role` (gateway). No browser writes.
 2. **Create contract** (lane `gateway-live-series`): `POST /api/v1/live/rooms/:id/sessions` accepts an optional
    `recurrence: { frequency: "daily"|"weekly"|"biweekly"|"monthly", end: { count: 2..52 } | { until: ISO date } }`.
-   The gateway expands the first occurrence from `starts_at` with `expandOccurrences`, creates the series row and then one
-   session per occurrence through the existing `live_room_create_session` path, with `idempotency_key =
-   series:<series_id>:<index>` so a retry converges. Maximum 52 occurrences and at most 12 months ahead. The reply adds
+   The gateway expands the occurrences from `starts_at` with `expandOccurrences` and creates the series row. Occurrence 0
+   is created through the existing `live_room_create_session` path, which makes it the room's `current_session_id`. The
+   remaining occurrences are inserted with `live_room_series_insert_occurrence` (idempotent, `series:<series_id>:<index>`),
+   so they are scheduled rows that are not the room's current session. A retry converges.
+   **Single-current-session rule:** a room has one `current_session_id` at a time (`live_rooms`, fk at
+   `20260210100000_vtid_01228_live_room_session_mgmt.sql:95`). Only the nearest upcoming occurrence is ever linked to the
+   room; the others are plain scheduled rows until promoted (Interface 6). Maximum 52 occurrences and at most 12 months ahead. The reply adds
    `series: { id, occurrences: n, next_starts_at }`. A request without `recurrence` is unchanged.
 3. **Rolling window:** the gateway materialises occurrences up to 8 weeks ahead. A new worker
    `startLiveSeriesMaterialiser()` in `services/gateway/src/services/live-series.ts`, registered in `services/gateway/src/index.ts`
@@ -63,10 +67,22 @@ dialog that plan introduces, so it runs after those lanes.
    `SessionFormFields` renders the Repeat control in both modes; `EditSessionDialog` shows the scope choice when the session
    has a series; `liveRoomService` types `recurrence` and `scope`.
 
+6. **Next-occurrence promotion** (lane `db-live-series`, called by lane `gateway-live-series`). SQL function
+   `live_room_series_promote_next(p_room_id uuid) returns uuid` (service_role only, SECURITY DEFINER). When the room is
+   `idle` (its session ended or was cancelled, `live_room_end_session` at `...session_mgmt.sql:469` resets it), it picks the
+   earliest occurrence of a series on that room with `status = 'scheduled'` and `starts_at > now() - lobby_buffer` and sets
+   `live_rooms.current_session_id` to it and `status` to `scheduled`. It returns that session id, or NULL when none is left.
+   A room that is not `idle` is never changed. A live or ended occurrence is never promoted.
+   Trigger: the materialiser tick (Interface 3) runs it for every room that has an active series, every 5 minutes, so the
+   next occurrence is linked at most about 5 minutes after the previous one ends. `live_room_end_session`,
+   `room-state-machine.ts` and the room status values are unchanged.
+   A scheduled occurrence whose `starts_at` is more than 1 hour in the past and was never opened is set to `cancelled`
+   with `metadata.cancel_reason = 'missed'` by the same tick, so it cannot block the next promotion.
+
 ## Change
 ### Lane `db-live-series` (exafyltd/vitana-platform, seat exafy)
-One migration `supabase/migrations/20261106120000_live_room_series.sql` (also the SQL function
-`live_room_series_insert_occurrence`, service_role only, see Interface 3) (timestamp after the cohost migration
+One migration `supabase/migrations/20261106120000_live_room_series.sql` (also the SQL functions
+`live_room_series_insert_occurrence` (Interface 3) and `live_room_series_promote_next` (Interface 6), both service_role only) (timestamp after the cohost migration
 `20261105170000`, so the two are sequenced): the table, the two columns, the unique index, RLS and the rrule CHECK.
 Additive only: no existing function or row changes. `DATABASE_SCHEMA.md` changelog row. A throwaway-Postgres test
 `scripts/ci/sql-tests/run-live-room-series-test.sh` with workflow `SQL-LIVE-ROOM-SERIES.yml`, same pattern as
@@ -85,6 +101,9 @@ label on cards and in the drawer, and the i18n keys (de first, du-form). It depe
 owns `EditSessionDialog.tsx` and the list files.
 
 ## Decisions taken (conservative, listed for Gate 2)
+- **One linked session per room.** Only the nearest upcoming occurrence is the room's `current_session_id`; the rest are
+  promoted one at a time, about 5 minutes after the previous session ends. A missed occurrence (never opened, more than
+  1 hour late) is cancelled so it cannot stall the series.
 - **The materialiser is a new worker with its own env gate and lock**, not a shared scheduler (none exists).
 - **Materialise, do not expand on read.** Each occurrence is a real session row, so every existing screen, grant and
   calendar entry works without change. Cost: a bounded number of rows (at most 52 per series, 8 weeks ahead at a time).
@@ -118,6 +137,9 @@ dialog and list files). Until both are `done` the lanes stay `ready` and unclaim
 - SQL (throwaway Postgres): a series row with a valid rule is accepted, an invalid rule and `max_occurrences` outside 2 to 52
   are refused; the unique `(series_id, series_index)` holds; a browser session (`authenticated`) cannot insert a series row.
   Red on base: the table does not exist.
+- SQL (throwaway Postgres), added for round 2: a series of 3 creates one linked session and two scheduled rows; ending
+  occurrence 0 and running promotion links occurrence 1 and nothing else; promotion never changes a `live` or `ended`
+  session or a non-idle room; a missed occurrence is cancelled, not promoted.
 - Gateway Jest `test/live-room-series*.test.ts`: the worker never calls the user-JWT RPC and inserts only through
   `live_room_series_insert_occurrence`; an overlapping tick is skipped by the lock; OASIS events emitted on create, edit and
   cancel; weekly and monthly expansion from a Monday and a month end, DST-safe
