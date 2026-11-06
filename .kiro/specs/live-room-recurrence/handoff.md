@@ -7,6 +7,7 @@ next_actor: claude
 state: parked
 updated: 2026-11-06T09:19Z
 parked_from: drafted
+sparring_record: .kiro/specs/live-room-recurrence/sparring/state.json
 ---
 # Handoff — live-room-recurrence
 
@@ -23,6 +24,9 @@ Sparring: CI PLAN-SPAR on this `plan(` PR. Converged plans are approved by polic
 No lane of this plan is claimed until `live-room-edit-cohost` lanes `gateway-cohost` and `v1-edit-session` are `done` (see plan.md).
 
 ## Log
+### 2026-11-06T09:23Z · claude-code session_01Cp885FGVuZp27dQmDP6eMH · parked (sparring escalated)
+CI PLAN-SPAR escalated both sparring sessions at the round cap (state.json). Added `sparring_record` so the Collab handoff check passes; state stays `parked` as CI set it. Waiting for the owner: approve the plan as it stands, or request another sparring round.
+
 ### 2026-11-06T08:45Z · claude-code session_01Cp885FGVuZp27dQmDP6eMH · drafted
 Written on the owner's instruction (6 Nov 2026) for repeating Live Rooms. Read on origin/main 84a488d282: the
 `live_room_sessions` table has no series field; calendar entries already use `calendar_events.rrule` with the gateway
