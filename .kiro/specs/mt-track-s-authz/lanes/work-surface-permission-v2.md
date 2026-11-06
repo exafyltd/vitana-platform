@@ -41,3 +41,9 @@ Findings: 0 blocking, 5 non-blocking
 - docs/validation/VTID-05529/plan-sparring.md:1: the heading and last bullet name VTID-05453 as 'this record'. The content passes the PR-GATE sparring check and the verdict on main lists VTID-05529. Not required for merge.
 - docs/validation/VTID-05529/scope.json:4: paths omits services/gateway/test/routes/orb-livekit.test.ts; PR-GATE scope passes only through the kiro-agent[bot] exemption. Add the path with the next commit that touches this folder.
 Next: the land step merges under §7b once every check run is finished and green on this head; findings 3 to 5 need no action before merge
+
+### 2026-11-04T16:11Z · kiro-hotmail-202611011452-6d16 · ready → executing
+Built in platform PR #4673 (`kiro/mt-track-s-authz/work-surface-permission-v2`, opened 2026-11-04T16:10Z). Recorded here at the closing; the reviewed head and the accept entry are earlier in this file.
+
+### 2026-11-04T16:11Z · kiro-hotmail-202611011452-6d16 · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/4673 (opened 2026-11-04T16:10Z). Reviewed on head `0b892417c1`; the accept entry is in this file already.
