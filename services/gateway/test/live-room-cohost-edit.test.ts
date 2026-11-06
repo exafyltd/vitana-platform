@@ -1,5 +1,5 @@
 /**
- * live-room-edit-cohost / gateway-cohost — edit rules (services/live-session-edit.ts).
+ * live-room-edit-cohost / gateway-cohost — edit rules (services/live-cohosts.ts).
  * Locked fields while live or in the lobby; the session and listing payloads.
  */
 import { lockedFieldsRequested, buildSessionEditPatch } from '../src/services/live-cohosts';

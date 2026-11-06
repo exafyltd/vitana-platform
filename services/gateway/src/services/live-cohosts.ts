@@ -96,7 +96,7 @@ export async function isRoomHostNow(
 // --- Session edit rules (VTID-05559): locked fields and the session/listing payloads ---
 
 
-export const LOCKED_WHILE_OPEN = ['starts_at', 'duration_minutes'] as const;
+export const LOCKED_WHILE_OPEN = ['starts_at', 'duration_minutes', 'stream_type'] as const;
 
 export interface SessionEditBody {
   session_title?: string;
@@ -104,6 +104,12 @@ export interface SessionEditBody {
   starts_at?: string;
   duration_minutes?: number;
   co_hosts?: string[];
+  description?: string | null;
+  cover_image_url?: string | null;
+  stream_type?: 'audio' | 'video';
+  enable_chat?: boolean;
+  enable_polls?: boolean;
+  enable_recording?: boolean;
 }
 
 export interface CurrentSessionTimes {
@@ -150,6 +156,12 @@ export function buildSessionEditPatch(body: SessionEditBody, current: CurrentSes
   if (body.co_hosts !== undefined) {
     listing.co_hosts = body.co_hosts;
   }
+  if (body.description !== undefined) listing.description = body.description;
+  if (body.cover_image_url !== undefined) listing.cover_image_url = body.cover_image_url;
+  if (body.stream_type !== undefined) listing.stream_type = body.stream_type;
+  if (body.enable_chat !== undefined) listing.enable_chat = body.enable_chat;
+  if (body.enable_polls !== undefined) listing.enable_polls = body.enable_polls;
+  if (body.enable_recording !== undefined) listing.enable_recording = body.enable_recording;
   return { session, listing };
 }
 

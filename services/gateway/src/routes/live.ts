@@ -2141,9 +2141,13 @@ router.post('/rooms/:id/sessions', optionalAuth, sessionCreateLimiter, async (re
           scheduled_for: validation.data.starts_at,
           access_level: validation.data.access_level || 'public',
           tags: validation.data.topic_keys || [],
-          enable_chat: true,
           // VTID-05559: the validated co-host list (always written, [] when none).
           co_hosts: coHosts,
+          // VTID-05559: chat, polls and recording switches come from the request;
+          // polls and recording are written only when the request sets them.
+          enable_chat: validation.data.metadata?.enable_chat ?? true,
+          ...(validation.data.metadata?.enable_polls !== undefined ? { enable_polls: !!validation.data.metadata.enable_polls } : {}),
+          ...(validation.data.metadata?.enable_recording !== undefined ? { enable_recording: !!validation.data.metadata.enable_recording } : {}),
           viewer_count: 0,
           // Planned session length → deterministic finish (start + duration).
           // The staleness guard / reaper use this to auto-move a finished room
@@ -2625,6 +2629,12 @@ const PatchSessionSchema = z.object({
   starts_at: z.string().datetime().optional(),
   duration_minutes: z.number().int().min(5).max(480).optional(),
   co_hosts: z.array(z.string().uuid()).max(5).optional(),
+  description: z.string().max(1000).nullable().optional(),
+  cover_image_url: z.string().url().nullable().optional(),
+  stream_type: z.enum(['audio', 'video']).optional(),
+  enable_chat: z.boolean().optional(),
+  enable_polls: z.boolean().optional(),
+  enable_recording: z.boolean().optional(),
 }).strict();
 
 router.patch('/rooms/:id/sessions/current', requireAuth, async (req: Request, res: Response) => {
@@ -2653,7 +2663,10 @@ router.patch('/rooms/:id/sessions/current', requireAuth, async (req: Request, re
 
   // Creator only: the same comparison the room was created with.
   const roomResult = await callRpc(token, 'live_room_get', { p_live_room_id: roomId });
-  if (!roomResult.ok || !roomResult.data) {
+  if (!roomResult.ok) {
+    return res.status(502).json({ ok: false, error: 'ROOM_READ_FAILED' });
+  }
+  if (!roomResult.data) {
     return res.status(404).json({ ok: false, error: 'ROOM_NOT_FOUND' });
   }
   if (roomResult.data.host_user_id !== actorId) {
@@ -2664,6 +2677,9 @@ router.patch('/rooms/:id/sessions/current', requireAuth, async (req: Request, re
   const session = stateResult.data?.session;
   if (!stateResult.ok || !session?.id) {
     return res.status(409).json({ ok: false, error: 'NO_ACTIVE_SESSION' });
+  }
+  if (session.status === 'ended' || session.status === 'cancelled') {
+    return res.status(409).json({ ok: false, error: 'SESSION_CLOSED', status: session.status });
   }
 
   const locked = lockedFieldsRequested(body, session.status);
@@ -2687,6 +2703,7 @@ router.patch('/rooms/:id/sessions/current', requireAuth, async (req: Request, re
     try {
       const filtered = await filterCoHosts(supaForCoHosts as unknown as RpcClient, roomId, actorId, body.co_hosts);
       if (!filtered.ok) return res.status(400).json({ ok: false, error: 'INVALID_CO_HOSTS', dropped: filtered.dropped });
+      body.co_hosts = filtered.ids; // write the validated list, never the raw one
     } catch (err) {
       if (err instanceof CoHostValidationUnavailableError) {
         return res.status(503).json({ ok: false, error: 'CO_HOST_VALIDATION_UNAVAILABLE' });
