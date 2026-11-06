@@ -2632,6 +2632,7 @@ const PatchSessionSchema = z.object({
   description: z.string().max(1000).nullable().optional(),
   cover_image_url: z.string().url().nullable().optional(),
   stream_type: z.enum(['audio', 'video']).optional(),
+  access_level: z.enum(['public', 'group']).optional(),
   enable_chat: z.boolean().optional(),
   enable_polls: z.boolean().optional(),
   enable_recording: z.boolean().optional(),
@@ -2695,6 +2696,28 @@ router.patch('/rooms/:id/sessions/current', requireAuth, async (req: Request, re
     return res.status(503).json({ ok: false, error: 'SERVICE_UNAVAILABLE' });
   }
 
+  // An access-level change is refused while valid access grants exist (paid or granted).
+  const accessChanging = body.access_level !== undefined && body.access_level !== session.access_level;
+  if (accessChanging) {
+    const grantHeaders = { 'apikey': creds.key, 'Authorization': `Bearer ${creds.key}` };
+    const grantQueries = [
+      `${creds.url}/rest/v1/live_room_access_grants?select=id&session_id=eq.${session.id}&is_valid=eq.true&is_revoked=eq.false&limit=1`,
+      `${creds.url}/rest/v1/live_room_access_grants?select=id&room_id=eq.${roomId}&session_id=is.null&is_valid=eq.true&is_revoked=eq.false&limit=1`,
+    ];
+    try {
+      for (const u of grantQueries) {
+        const g = await fetch(u, { headers: grantHeaders });
+        if (!g.ok) return res.status(502).json({ ok: false, error: 'GRANT_CHECK_FAILED' });
+        const rows = (await g.json()) as unknown[];
+        if (Array.isArray(rows) && rows.length > 0) {
+          return res.status(409).json({ ok: false, error: 'HAS_ACCESS_GRANTS' });
+        }
+      }
+    } catch {
+      return res.status(502).json({ ok: false, error: 'GRANT_CHECK_FAILED' });
+    }
+  }
+
   if (body.co_hosts && body.co_hosts.length > 0) {
     const supaForCoHosts = getSupabase();
     if (!supaForCoHosts) {
@@ -2728,7 +2751,15 @@ router.patch('/rooms/:id/sessions/current', requireAuth, async (req: Request, re
     if (!r.ok) return res.status(502).json({ ok: false, error: 'SESSION_UPDATE_FAILED' });
   }
 
-  // 2) the listing (repeatable: the same request writes the same values)
+  // 2) the room's access level, when it changes
+  if (accessChanging) {
+    const r = await fetch(`${creds.url}/rest/v1/live_rooms?id=eq.${roomId}`, {
+      method: 'PATCH', headers: serviceHeaders, body: JSON.stringify({ access_level: body.access_level }),
+    });
+    if (!r.ok) return res.status(502).json({ ok: false, error: 'SESSION_UPDATE_FAILED' });
+  }
+
+  // 3) the listing (repeatable: the same request writes the same values)
   if (Object.keys(patch.listing).length > 0) {
     const r = await fetch(`${creds.url}/rest/v1/community_live_streams?id=eq.${roomId}`, {
       method: 'PATCH', headers: serviceHeaders, body: JSON.stringify(patch.listing),
