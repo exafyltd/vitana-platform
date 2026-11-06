@@ -1,0 +1,24 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/wt-id-role-source-and-bootstrap/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-05147-s-m-membership-role-lockdown.test.ts
+  VTID-05147 membership/role lockdown (S-M)
+    ✓ is one transaction that never queues behind a long lock (4 ms)
+    ✓ drops the six member write policies and revokes member writes on the four tables (2 ms)
+    ✓ replaces set_role_preference with the membership check and closes PUBLIC/anon (2 ms)
+    ✓ checks the end state on apply, by effect (1 ms)
+    ✓ no later migration gives members writes on the role/membership tables back (10 ms)
+    ✓ the evidence pack carries pre/post-apply checks and the rollback (5 ms)
+    ○ skipped reproduces the live hole, applies twice and passes the SQL assertions
+
+Test Suites: 1 passed, 1 total
+Tests:       1 skipped, 6 passed, 7 total
+Snapshots:   0 total
+Time:        0.477 s
+Ran all test suites matching /test\/vtid-05147-s-m-membership-role-lockdown.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
