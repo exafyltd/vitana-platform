@@ -51,8 +51,7 @@ import {
   ContextMetrics,
   formatSelectionDebug
 } from './context-window-manager';
-import { isOrbRecallEnabled, recallOrbMemoryItems } from './memory/recall';
-import { isRecallShadowEnabled, runRecallShadow, type ReadPath } from './memory/recall-shadow';
+import { recallOrbMemoryItems } from './memory/recall';
 import { formatPeopleBlock } from './memory/people';
 
 // =============================================================================
@@ -148,8 +147,6 @@ export interface OrbMemoryContext {
   excludedCount?: number;
   /** VTID-01117: Reasons for exclusions (summary) */
   exclusionSummary?: Record<string, number>;
-  /** VTID-04784: which read path produced this context (unset on errors). */
-  read_path?: ReadPath;
 }
 
 // =============================================================================
@@ -824,342 +821,56 @@ function buildOrbMemoryContextFromItems(
  * Uses the provided identity instead of DEV_IDENTITY.
  * Falls back to DEV_IDENTITY if no identity provided (dev-sandbox only).
  *
+ * memory-legacy-read-retire (memory plan §8.4 phase 7): an identified caller
+ * reads through recall() only. A not-ok recall returns ok:false with no items;
+ * the legacy six-table read, its silent fallback and the VTID-04784 shadow are
+ * gone, so a recall failure shows up in the `[VTID-04452] orb recall
+ * unavailable` log line instead of being hidden.
+ *
  * @param identity - Optional authenticated identity. If not provided, uses DEV_IDENTITY in dev-sandbox mode.
- * @param limit - Maximum number of memory items to fetch
+ * @param _limit - Kept for callers; recall() applies its own budget.
  * @param categories - Optional category filter
  */
 export async function fetchMemoryContextWithIdentity(
   identity?: MemoryIdentity | null,
-  limit: number = MEMORY_CONFIG.DEFAULT_CONTEXT_LIMIT,
+  _limit: number = MEMORY_CONFIG.DEFAULT_CONTEXT_LIMIT,
   categories?: string[]
 ): Promise<OrbMemoryContext> {
-  const t0 = Date.now();
-  const ctx = await readMemoryContext(identity, limit, categories);
-  // VTID-04784: compare against the other read path in the background
-  // (memory plan phase 2). Never awaited; the session is already answered.
-  if (identity && ctx.ok && ctx.read_path && isRecallShadowEnabled()) {
-    const served = ctx.read_path;
-    const other: ReadPath = served === 'legacy' ? 'recall' : 'legacy';
-    void runRecallShadow(ctx, { served, ms_served: Date.now() - t0 }, () =>
-      readMemoryContext(identity, limit, categories, other),
-    );
-  }
-  return ctx;
-}
-
-/**
- * The ORB memory read. `forcePath` picks a path regardless of
- * MEMORY_ORB_RECALL_ENABLED (the VTID-04784 shadow); a forced recall does not
- * fall back to the legacy read.
- */
-async function readMemoryContext(
-  identity?: MemoryIdentity | null,
-  limit: number = MEMORY_CONFIG.DEFAULT_CONTEXT_LIMIT,
-  categories?: string[],
-  forcePath?: ReadPath,
-): Promise<OrbMemoryContext> {
-  // If no identity provided, fall back to DEV_IDENTITY in dev-sandbox mode
-  const effectiveIdentity: MemoryIdentity = identity && identity.user_id && identity.tenant_id
-    ? identity
-    : {
-        user_id: DEV_IDENTITY.USER_ID,
-        tenant_id: DEV_IDENTITY.TENANT_ID,
-        active_role: DEV_IDENTITY.ACTIVE_ROLE
-      };
-
-  // If falling back to DEV_IDENTITY, check if dev-sandbox mode is enabled
-  if (!identity && !isMemoryBridgeEnabled()) {
-    const fetchedAt = new Date().toISOString();
+  const fetchedAt = new Date().toISOString();
+  // If no identity provided, fall back to DEV_IDENTITY in dev-sandbox mode only.
+  const hasIdentity = !!(identity && identity.user_id && identity.tenant_id);
+  if (!hasIdentity && !isMemoryBridgeEnabled()) {
     return {
       ok: false,
-      user_id: effectiveIdentity.user_id,
-      tenant_id: effectiveIdentity.tenant_id,
+      user_id: DEV_IDENTITY.USER_ID,
+      tenant_id: DEV_IDENTITY.TENANT_ID,
       items: [],
       summary: 'Memory bridge disabled',
       formatted_context: '',
       fetched_at: fetchedAt,
-      error: 'Memory bridge not enabled (requires dev-sandbox mode or valid identity)'
+      error: 'Memory bridge not enabled (requires dev-sandbox mode or valid identity)',
     };
   }
+  const effectiveIdentity: MemoryIdentity = hasIdentity
+    ? identity!
+    : { user_id: DEV_IDENTITY.USER_ID, tenant_id: DEV_IDENTITY.TENANT_ID, active_role: DEV_IDENTITY.ACTIVE_ROLE };
 
-  // VTID-04452: read through the broker (one recall()) when enabled. Falls
-  // back to the legacy six-table read below if the broker gives nothing.
-  const useRecall = forcePath ? forcePath === 'recall' : isOrbRecallEnabled();
-  if (identity && useRecall) {
-    const recalled = await recallOrbMemoryItems(effectiveIdentity);
-    if (recalled.ok) {
-      return {
-        ...buildOrbMemoryContextFromItems(
-          recalled.items as MemoryItem[], effectiveIdentity, new Date().toISOString(), categories,
-        ),
-        read_path: 'recall',
-      };
-    }
-    if (forcePath === 'recall') {
-      return {
-        ok: false, user_id: effectiveIdentity.user_id, tenant_id: effectiveIdentity.tenant_id,
-        items: [], summary: 'recall unavailable', formatted_context: '',
-        fetched_at: new Date().toISOString(), error: recalled.error ?? 'recall_not_ok',
-      };
-    }
+  const recalled = await recallOrbMemoryItems(effectiveIdentity);
+  if (recalled.ok) {
+    return buildOrbMemoryContextFromItems(
+      recalled.items as MemoryItem[], effectiveIdentity, new Date().toISOString(), categories,
+    );
   }
-
-  const fetchedAt = new Date().toISOString();
-  const supabase = createMemoryClient();
-  if (!supabase) {
-    return {
-      ok: false,
-      user_id: effectiveIdentity.user_id,
-      tenant_id: effectiveIdentity.tenant_id,
-      items: [],
-      summary: 'Database not configured',
-      formatted_context: '',
-      fetched_at: fetchedAt,
-      error: 'Supabase not configured'
-    };
-  }
-
-  try {
-    const sinceDate = new Date();
-    sinceDate.setHours(sinceDate.getHours() - MEMORY_CONFIG.MAX_AGE_HOURS);
-    const sinceTimestamp = sinceDate.toISOString();
-    const categoryFilter = categories || MEMORY_CONFIG.CONTEXT_CATEGORIES;
-
-    // Split categories into persistent and time-sensitive
-    const persistentCategories = categoryFilter.filter(
-      (cat: string) => MEMORY_CONFIG.PERSISTENT_CATEGORIES.includes(cat)
-    );
-    const timeSensitiveCategories = categoryFilter.filter(
-      (cat: string) => !MEMORY_CONFIG.PERSISTENT_CATEGORIES.includes(cat)
-    );
-
-    // VTID-01224-FIX: Run ALL 6 queries in parallel instead of sequentially.
-    // Previous sequential execution took 300-1200ms. Parallel cuts to ~100-300ms.
-    const BOOTSTRAP_FETCH_TIMEOUT_MS = 2000;
-    const bootstrapController = new AbortController();
-    const bootstrapTimeout = setTimeout(() => bootstrapController.abort(), BOOTSTRAP_FETCH_TIMEOUT_MS);
-    const bootstrapStartTime = Date.now();
-
-    let persistentItems: MemoryItem[] = [];
-    let timeSensitiveItems: MemoryItem[] = [];
-    let structuredFacts: MemoryItem[] = [];
-    let diaryItems: MemoryItem[] = [];
-    let lovableDiaryItems: MemoryItem[] = [];
-    let lovableMemoryItems: MemoryItem[] = [];
-
-    const bootstrapPromises: Promise<void>[] = [];
-
-    // 1. Persistent categories (no time filter)
-    if (persistentCategories.length > 0) {
-      bootstrapPromises.push(
-        repo.fetchPersistentMemoryItemsParallel(
-          supabase, effectiveIdentity.tenant_id, effectiveIdentity.user_id, persistentCategories,
-          limit, bootstrapController.signal,
-        ).then(({ data, error }) => {
-            if (!error) persistentItems = (data || []) as MemoryItem[];
-          })
-          .catch((e: any) => console.warn(`[VTID-01224-FIX] persistent items fetch failed: ${e.message}`))
-      );
-    }
-
-    // 2. Time-sensitive categories
-    if (timeSensitiveCategories.length > 0) {
-      bootstrapPromises.push(
-        repo.fetchTimeSensitiveMemoryItemsParallel(
-          supabase, effectiveIdentity.tenant_id, effectiveIdentity.user_id, timeSensitiveCategories,
-          sinceTimestamp, limit, bootstrapController.signal,
-        ).then(({ data, error }) => {
-            if (!error) timeSensitiveItems = (data || []) as MemoryItem[];
-          })
-          .catch((e: any) => console.warn(`[VTID-01224-FIX] time-sensitive items fetch failed: ${e.message}`))
-      );
-    }
-
-    // 3. Structured facts (memory_facts via REST — previously had NO timeout)
-    const SUPABASE_URL_ENV = process.env.SUPABASE_URL;
-    const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
-    if (SUPABASE_URL_ENV && SUPABASE_KEY) {
-      bootstrapPromises.push(
-        (async () => {
-          try {
-            const factsUrl = `${SUPABASE_URL_ENV}/rest/v1/memory_facts?select=id,fact_key,fact_value,entity,provenance_confidence&tenant_id=eq.${effectiveIdentity.tenant_id}&user_id=eq.${effectiveIdentity.user_id}&superseded_by=is.null&order=provenance_confidence.desc,extracted_at.desc&limit=50`;
-            const factsResp = await fetch(factsUrl, {
-              method: 'GET',
-              headers: {
-                'Content-Type': 'application/json',
-                apikey: SUPABASE_KEY,
-                Authorization: `Bearer ${SUPABASE_KEY}`,
-              },
-              signal: bootstrapController.signal,
-            });
-            if (factsResp.ok) {
-              const factsData = await factsResp.json() as Array<{
-                id: string; fact_key: string; fact_value: string;
-                entity: string; provenance_confidence: number;
-              }>;
-              structuredFacts = factsData.map((f) => ({
-                id: f.id,
-                category_key: 'personal',
-                source: 'memory_facts',
-                content: `${f.fact_key}: ${f.fact_value}`,
-                content_json: { fact_key: f.fact_key, fact_value: f.fact_value, entity: f.entity } as Record<string, unknown>,
-                importance: Math.round((f.provenance_confidence || 0.85) * 100),
-                occurred_at: new Date().toISOString(),
-                created_at: new Date().toISOString(),
-              }));
-              if (structuredFacts.length > 0) {
-                console.log(`[VTID-01225-READ-FIX] Fetched ${structuredFacts.length} structured facts from memory_facts`);
-              }
-            }
-          } catch (factsErr: any) {
-            console.warn(`[VTID-01225-READ-FIX] memory_facts fetch failed (non-fatal): ${factsErr.message}`);
-          }
-        })()
-      );
-    }
-
-    // 4. Diary entries (memory_diary_entries)
-    bootstrapPromises.push(
-      repo.fetchMemoryDiaryEntriesParallel(
-        supabase, effectiveIdentity.tenant_id, effectiveIdentity.user_id, 20, bootstrapController.signal,
-      ).then(({ data: diaryData, error: diaryError }) => {
-          if (!diaryError && diaryData && diaryData.length > 0) {
-            diaryItems = (diaryData as Array<{
-              id: string; raw_text: string; tags: string[];
-              entry_date: string; created_at: string; entry_type: string;
-            }>).map((d) => ({
-              id: d.id,
-              category_key: d.tags && d.tags.length > 0 ? d.tags[0].replace(/-/g, '_') : 'notes',
-              source: 'diary',
-              content: d.raw_text,
-              content_json: { tags: d.tags, entry_type: d.entry_type } as Record<string, unknown>,
-              importance: 60,
-              occurred_at: d.entry_date ? new Date(d.entry_date).toISOString() : d.created_at,
-              created_at: d.created_at,
-            }));
-            console.log(`[VTID-01082-BRIDGE] Fetched ${diaryItems.length} diary entries from memory_diary_entries`);
-          }
-        })
-        .catch((e: any) => console.warn(`[VTID-01082-BRIDGE] memory_diary_entries fetch failed (non-fatal): ${e.message}`))
-    );
-
-    // 5. Lovable diary entries (diary_entries)
-    bootstrapPromises.push(
-      repo.fetchLovableDiaryEntriesParallel(
-        supabase, effectiveIdentity.user_id, 20, bootstrapController.signal,
-      ).then(({ data: lovDiaryData, error: lovDiaryErr }) => {
-          if (!lovDiaryErr && lovDiaryData && lovDiaryData.length > 0) {
-            lovableDiaryItems = (lovDiaryData as Array<{
-              id: string; text: string; source: string;
-              tags: string[]; created_at: string;
-            }>).map((d) => ({
-              id: d.id,
-              category_key: d.tags && d.tags.length > 0 ? d.tags[0].replace(/-/g, '_') : 'notes',
-              source: d.source || 'diary',
-              content: d.text,
-              content_json: { tags: d.tags, source: d.source } as Record<string, unknown>,
-              importance: 60,
-              occurred_at: d.created_at,
-              created_at: d.created_at,
-            }));
-            console.log(`[VTID-MEMORY-BRIDGE] Fetched ${lovableDiaryItems.length} entries from diary_entries (Lovable)`);
-          }
-        })
-        .catch((e: any) => console.warn(`[VTID-MEMORY-BRIDGE] diary_entries fetch failed (non-fatal): ${e.message}`))
-    );
-
-    // 6. Lovable AI memory (ai_memory)
-    bootstrapPromises.push(
-      repo.fetchLovableAiMemoryParallel(
-        supabase, effectiveIdentity.user_id, 30, bootstrapController.signal,
-      ).then(({ data: lovMemData, error: lovMemErr }) => {
-          if (!lovMemErr && lovMemData && lovMemData.length > 0) {
-            lovableMemoryItems = (lovMemData as Array<{
-              id: string; content: string; memory_type: string;
-              category: string; created_at: string;
-            }>).map((m) => ({
-              id: m.id,
-              category_key: m.category ? m.category.replace(/-/g, '_') : 'notes',
-              source: 'ai_memory',
-              content: m.content,
-              content_json: { memory_type: m.memory_type } as Record<string, unknown>,
-              importance: 55,
-              occurred_at: m.created_at,
-              created_at: m.created_at,
-            }));
-            console.log(`[VTID-MEMORY-BRIDGE] Fetched ${lovableMemoryItems.length} entries from ai_memory (Lovable)`);
-          }
-        })
-        .catch((e: any) => console.warn(`[VTID-MEMORY-BRIDGE] ai_memory fetch failed (non-fatal): ${e.message}`))
-    );
-
-    // Execute ALL 6 queries in parallel with 2s hard timeout
-    await Promise.all(bootstrapPromises);
-    clearTimeout(bootstrapTimeout);
-    console.log(`[VTID-01224-FIX] Bootstrap parallel fetch completed in ${Date.now() - bootstrapStartTime}ms`);
-
-    // Merge: structured facts FIRST, then diary entries (both tables), then Lovable memory,
-    // then persistent items, then time-sensitive
-    const allItems = [...structuredFacts, ...diaryItems, ...lovableDiaryItems, ...lovableMemoryItems, ...persistentItems, ...timeSensitiveItems];
-    const seenIds = new Set<string>();
-    const memoryItems = allItems.filter(item => {
-      if (seenIds.has(item.id)) return false;
-      seenIds.add(item.id);
-      return true;
-    });
-
-    // Use context window manager for selection
-    const turnId = `turn-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
-    const selectionResult = selectContextWindow(
-      memoryItems,
-      50,
-      turnId,
-      effectiveIdentity.user_id,
-      effectiveIdentity.tenant_id
-    );
-
-    const items: MemoryItem[] = selectionResult.includedItems.map(item => ({
-      id: item.id,
-      category_key: item.category_key,
-      source: item.source,
-      content: item.content,
-      content_json: item.content_json,
-      importance: item.importance,
-      occurred_at: item.occurred_at,
-      created_at: item.created_at
-    }));
-
-    const summary = generateMemorySummary(items);
-    const formattedContext = formatMemoryForPrompt(items);
-
-    console.log(`[VTID-01186] Memory context fetched for user=${effectiveIdentity.user_id.substring(0,8)}...: ${items.length} items`);
-
-    return {
-      ok: true,
-      user_id: effectiveIdentity.user_id,
-      tenant_id: effectiveIdentity.tenant_id,
-      items,
-      summary,
-      formatted_context: formattedContext,
-      fetched_at: fetchedAt,
-      contextMetrics: selectionResult.metrics,
-      excludedCount: selectionResult.excludedItems.length,
-      read_path: 'legacy',
-    };
-
-  } catch (err: any) {
-    console.error('[VTID-01186] Memory context fetch error:', err.message);
-    return {
-      ok: false,
-      user_id: effectiveIdentity.user_id,
-      tenant_id: effectiveIdentity.tenant_id,
-      items: [],
-      summary: 'Fetch error',
-      formatted_context: '',
-      fetched_at: fetchedAt,
-      error: err.message
-    };
-  }
+  return {
+    ok: false,
+    user_id: effectiveIdentity.user_id,
+    tenant_id: effectiveIdentity.tenant_id,
+    items: [],
+    summary: 'recall unavailable',
+    formatted_context: '',
+    fetched_at: fetchedAt,
+    error: recalled.error ?? 'recall_not_ok',
+  };
 }
 
 /**
