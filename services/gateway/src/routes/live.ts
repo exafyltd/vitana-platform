@@ -30,6 +30,7 @@ import { z } from 'zod';
 import { randomUUID } from 'crypto';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { DailyClient, computeDailyRoomExpiry } from '../services/daily-client';
+import { isRoomHostNow } from '../services/live-cohosts';
 // VTID-03107: Live Room hosting quota enforcement
 import { verifyAndExtractIdentity, optionalAuth, requireAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import {
@@ -1119,7 +1120,7 @@ router.post('/rooms/:id/enter', requireAuth, async (req: Request, res: Response)
 
     let room = stateResult.data.room;
     let session = stateResult.data.session;
-    const isHost = room.host_user_id === identity.user_id;
+    const isHost = await isRoomHostNow(roomId, identity.user_id, room.host_user_id);
 
     if (!room.current_session_id || !session) {
       return res.status(409).json({ ok: false, error: 'NOT_LIVE' });
@@ -1370,7 +1371,7 @@ router.post('/rooms/:id/daily', optionalAuth, dailyRoomLimiter, async (req: Requ
     }
 
     const room = roomResult.data;
-    if (room.host_user_id !== identity.user_id) {
+    if (!(await isRoomHostNow(roomId, identity.user_id, room.host_user_id))) {
       return res.status(403).json({ ok: false, error: 'NOT_HOST' });
     }
 

@@ -11,6 +11,8 @@
  * (the route answers 503), so unvalidated ids are never accepted.
  */
 
+import { getSupabase } from '../lib/supabase';
+
 export class CoHostValidationUnavailableError extends Error {
   readonly code = 'CO_HOST_VALIDATION_UNAVAILABLE';
 
@@ -73,4 +75,20 @@ export async function filterCoHosts(
   const dropped = ids.filter((id) => !kept.includes(id));
   if (dropped.length > 0) return { ok: false, code: 'INVALID_CO_HOSTS', dropped };
   return { ok: true, ids: kept };
+}
+
+/**
+ * Host check for routes and the room state machine: the creator is host with
+ * no database call; otherwise the service-role client answers. No client
+ * (not configured) means only the creator is host.
+ */
+export async function isRoomHostNow(
+  roomId: string,
+  userId: string,
+  hostUserId: string | null | undefined,
+): Promise<boolean> {
+  if (hostUserId && hostUserId === userId) return true;
+  const supa = getSupabase();
+  if (!supa) return false;
+  return isRoomHost(supa as unknown as RpcClient, roomId, userId, hostUserId);
 }
