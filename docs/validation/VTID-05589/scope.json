@@ -1,0 +1,15 @@
+{
+  "vtid": "VTID-05589",
+  "kind": "feature",
+  "paths": [
+    "src/components/settings/VitanaMessagesSettings.tsx",
+    "src/components/settings/VitanaMessagesSettings.test-card.test.tsx",
+    "src/hooks/useCompanionTestCard.ts",
+    "src/hooks/useCompanionTestCard.test.ts",
+    "src/i18n/*/screens.json",
+    "docs/validation/VTID-05589/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05589/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}
