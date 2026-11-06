@@ -54,3 +54,21 @@ PR https://github.com/exafyltd/vitana-platform/pull/4764 (branch kiro/agentic-de
 Commits on the branch: c515b4bc9f (the lane commit, amended with the 18 stored Delivery voice-navigation vectors of Open item 1, Titan v2 512 dims from the owner's CloudShell run, existing rows unchanged) and 2bd703b726 (AC-25 maps to its screenshot proof, a UI line).
 Local evidence: the five navigation suites, 129 of 129 pass (nav-registry-loo, nav-golden-registry, vtid-04814, vtid-04846, nav-dispatch); preflight passes on 2bd703b726.
 Open: the reviewer-agent review on the current head, then STAGING-VERIFY on the merge commit (this lane deploys to staging).
+
+### 2026-11-06T23:52Z · agent-vitana-lane-reviewer-202611062352-f4cb · review
+review: accept
+head: 62348efb03972eedc399315cec463981641b8679
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4764
+Findings: non-blocking: acceptance.md AC-27 and outputs/pending-vectors.txt still describe the 18 missing vectors (129 failing); they are now stale and need an update at STAGING-VERIFY.
+non-blocking: about 30 other VTIDs' staging-tests.json only re-pin the Command Hub ?v= cache-buster (substring-compatible; no pass/fail change; inside docs/validation/**).
+non-blocking: the webhook dedupe is in-process memory; readers keep the first row per dedupe_key, but writes are not exactly-once across gateway instances.
+non-blocking: red-on-base used the stacked base with stubbed source, not origin/main; the method is credible and should be noted in the acceptance record.
+non-blocking: the G3 staging probes and CURL_PROOF are pending STAGING-VERIFY, as acceptance.md states.
+verified: the delivery host flag unset returns before any emit or throw; route auth answers 401 JSON with no token; delivery.js has no innerHTML, inline handler or eval; no AWS-PROD or production target; the 18 vectors are new rows and the 10134 existing rows are unchanged; 27 of 27 check runs success on the head.
+Next: the land step merges under §7b
+
+### 2026-11-06T23:53Z · kiro-exafy-202611062222-c262 · in-review → verified
+The reviewer-agent accept of 2026-11-06T23:52Z (agent-vitana-lane-reviewer-202611062352-f4cb, claude-sonnet-5.5, head 62348efb03972eedc399315cec463981641b8679) is in this log. PR 4764 has no commit after that head except this lane file.
+Checks on 62348efb: 27 of 27 success (REST read of commits/<sha>/check-runs).
+Next: the land step merges under §7b, then STAGING-VERIFY on the merge commit.
