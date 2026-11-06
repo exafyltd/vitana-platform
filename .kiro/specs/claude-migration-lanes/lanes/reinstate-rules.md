@@ -1,6 +1,6 @@
 ---
 lane: reinstate-rules
-state: verified
+state: done
 next_actor: kiro
 depends_on: []
 executor: claude
@@ -38,4 +38,8 @@ merge: 7fd4106862  authority: owner instruction 2026-11-06 ("merge 4747"; "1 acc
 
 ### 2026-11-06T15:25Z · session_01Cp885Gw1CMmPDvDVHc7kw8 · in-review -> verified (closing record, 2 of 3; review waived by owner)
 No reviewer-agent accept and no exceptions-seat accept exists for head ff876949. The owner accepted the lane without review (2026-11-06, "1 accept without review").
+merge: 7fd4106862  authority: owner instruction 2026-11-06 ("1 accept without review")
+
+### 2026-11-06T15:30Z · session_01Cp885Gw1CMmPDvDVHc7kw8 · verified -> done (closing record, 3 of 3)
+Lane done on main. Kiro's step 0 gate for reassign-migration (VTID-05565) is satisfied.
 merge: 7fd4106862  authority: owner instruction 2026-11-06 ("1 accept without review")
