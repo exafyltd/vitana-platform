@@ -4,8 +4,8 @@ author: claude
 executor: claude
 next_actor: kiro
 state: approved
-vtids: [VTID-05565, VTID-05566]
-updated: 2026-11-05T22:17Z
+vtids: [VTID-05565, VTID-05566, VTID-05567]
+updated: 2026-11-06T09:20Z
 sparring_record: .kiro/specs/claude-migration-lanes/sparring/verdict.md
 ---
 # Handoff — claude-migration-lanes
@@ -30,3 +30,9 @@ Round 1 (`sparring/round-1.md`, session `b6f117fc`): F1 rejected (the lane file 
 
 ### 2026-11-05T22:17Z · ci-plan-spar · drafted → approved
 Converged; approved by policy converged-auto-v1. 2 lane(s) got a VTID and are handed to Kiro.
+
+### 2026-11-06T00:05Z · session_01Cp885Gw1CMmPDvDVHc7kw8 · late lane reinstate-admin
+Owner chose option 1 (2026-11-05): a Kiro-built lane_admin lane reassigns `reinstate-rules` to Claude; then Claude's lane PR carries the rule text (patch saved in the session scratchpad). Late lane added after merge, like `reseat` and `gitlab-verify` in other plans; CI PLAN-SPAR allocates its VTID.
+
+### 2026-11-06T09:20Z · ci-plan-spar · approved (late lane VTID)
+Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.

@@ -1,0 +1,7 @@
+before rollback, switched member: {"selected":"developer","preference":"developer"}
+after rollback:         {"selected":"community","preference":"developer","legacy_selected":"community","legacy_preference":"professional"}
+PASS  rollback restores the apply-time selected role of the switched member
+PASS  rollback keeps the preference row the switch wrote
+PASS  rollback leaves the legacy disagreement exactly as it was at apply
+PASS  rollback restores the catalog exactly except the bootstrap ACL: previous bodies verbatim, trigger and function removed, snapshots dropped
+PASS  the rollback leaves bootstrap_admin_user's ACL exactly as apply set it: revoked from PUBLIC, anon and authenticated, service_role keeps EXECUTE (acl {postgres=X/postgres,service_role=X/postgres})
