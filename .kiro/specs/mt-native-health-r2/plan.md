@@ -4,6 +4,21 @@ change_class: standard
 # mt-native-health — multi-tenancy contract for the native app and health data — mt-native-health-r2 (re-plan)
 
 <!-- plan:begin -->
+## Premise files (round 1 of session `b89d284e`)
+
+Round 1 of session `b89d284e` escalated with `evidence_floor_not_met`: no premise check cited a file the partner read. The
+premises of this plan rest on these files, which exist on this branch (it includes `origin/main`):
+
+- `services/gateway/src/routes/notifications.ts`: `POST /token` at `:62`; the upsert writes `tenant_id: identity.tenant_id`
+  at `:109` (the device-token premise, `:79`).
+- `services/gateway/src/services/notification-service-repository.ts`: `fetchLiveDeviceTokensForUser` at `:28` (the token
+  filter premise, `:82`).
+- `docs/multitenancy/MIGRATION-QUEUE.md`: the queue rows; row 4 is `20261014000300_vtid_05149_ci_tenant_isolation_health.sql`
+  (the insertion-point premise, `:102`).
+
+`services/gateway/src/services/tenancy/is-health-table.ts` is not on `main` yet. It is a deliverable of `mt-identity-r2`
+lane `tenant-db-and-slug-cleanup`, and this plan cites it only as that lane's output (`:126`).
+
 ## Re-plan answers (session `fca982e6` round 3)
 Re-plan of `mt-native-health` (branch `kiro/mt-native-health/plan`; PLAN-SPAR session `fca982e6` escalated at the round
 cap). Every premise was re-verified on platform `origin/main` `62990ce285` and vitana-v1 `58c76c956` on 2026-11-01.
