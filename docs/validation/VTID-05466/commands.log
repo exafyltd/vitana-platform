@@ -1,0 +1,80 @@
+# VTID-05466 (mt-identity-r2 / membership-unification) — commands run for this lane
+# Worktree /projects/sandbox/wt-id-membership-unification, base origin/main 50e55fd3a4. No database or
+# live system was connected to at any point; every check below is a file read or an in-memory Postgres.
+
+# Premise checks (read-only, git files)
+$ sed -n 80,130p supabase/migrations/20251231000000_vtid_01101_phase_a_bootstrap.sql
+  -> user_tenants :90, user_id REFERENCES app_users(user_id) :93, active_role :94, is_primary :95, UNIQUE (tenant_id, user_id) :98
+$ cat supabase/migrations/20261010180000_vtid_05043_s3_membership_side_effect_guard.sql
+  -> membership_side_effects_suppressed() :32-38; the four triggers :46-70 (names as the plan says)
+$ cat supabase/migrations/data-fixups/20261010180100_vtid_05043_s3_backfill_drifted_memberships.sql
+  -> 15 drifted rows counted 2026-10-10: 3 real (backfilled), 12 deleted accounts (left alone)
+$ head -80 supabase/migrations/data-fixups/20261012214500_vtid_05124_delete_orphan_memberships.sql
+  -> the 12 orphans deleted; memberships has 7 columns, no FK on user_id, no triggers
+$ git -C vitana-v1 show origin/main:supabase/migrations/20250831074859_….sql | sed -n 1,80p
+  -> memberships :32-41 (role tenant_role, status active|inactive|pending, UNIQUE (user_id, tenant_id))
+$ cat supabase/migrations/20261013233000_vtid_05147_s_m_membership_role_lockdown.sql
+  -> AC-5 end state (no anon/authenticated write on user_tenants/role tables); set_role_preference reads memberships.role as a grant
+$ grep -n memberships supabase/migrations/2026091*_vtid_03832_*.sql 2026091*_vtid_03995_*.sql 20260925120000_vtid_04561_*.sql 20261010180200_vtid_05043_*.sql 20261014000200_vtid_05149_*.sql
+  -> get_my_permitted_roles / set_role_preference / check paths read memberships.role (status active) as a grant;
+     switch_to_tenant_by_slug writes INSERT INTO public.memberships … ON CONFLICT (user_id, tenant_id) DO NOTHING (:78-80);
+     handle_new_user writes INSERT INTO public.memberships (:130)
+$ git grep -n "from('memberships')" -- services; git -C vitana-v1 grep … -- src supabase/functions
+  -> gateway lib/permitted-roles.ts:46, services/jev/jev-repository.ts:33 (role reads);
+     v1 edge functions list_my_memberships:44 (embeds tenants(...)), stripe-create-package-checkout:108
+$ python3 pol.py   (scratch regex parser over 391 v1 + 676 platform migrations, last definition wins, DROP POLICY/TABLE honoured)
+  -> 50 policies on 34 other tables reference memberships (mostly admin/staff gates on memberships.role);
+     approximate (regex, not the live catalog), but the order of magnitude is the point
+$ grep cron.schedule supabase/migrations/*.sql  -> pg_cron pattern of 20261014130000_vtid_05167 (guarded by pg_extension)
+$ grep -n -E "CREATE|schema" scripts/ci/check-migration-drift.cjs  -> only public tables are checked
+
+# ON CONFLICT against a view with an INSTEAD OF trigger (PGlite, PostgreSQL 18.6)
+$ node q.mjs
+  -> INSERT INTO v … ON CONFLICT DO NOTHING             OK
+  -> INSERT INTO v … ON CONFLICT (a,b) DO NOTHING       ERR there is no unique or exclusion constraint matching the ON CONFLICT specification
+
+# Migration logic, replay order, apply -> rollback -> re-apply -> rollback, both pgTAP files (PGlite + pgTAP shim)
+$ npm i @electric-sql/pglite && node docs/validation/VTID-05466/pglite-migration-check.mjs <repo>
+  -> ALL OK (outputs/pglite-migration-check.txt)
+   First run failed: the rollback's `IF pg_cron AND EXISTS (SELECT … FROM cron.job)` is planned as one
+   expression, so cron.job is parsed where pg_cron is absent. Fixed by nesting the IFs; re-run green.
+$ (negative controls) the same run with plan(25) in the backfill file, and with one privilege assertion inverted
+  -> FAIL "planned 25 ran 24"; FAIL "authenticated cannot read the drift reports" (the shim reports failures)
+# M2 (plan Amendment 1, commit 8a21d0455d in wt-ida): deferred dual-write trigger, rollback DROP, pgTAP
+$ grep -i -E "trigger[^;]*on (public\.)?memberships" (both repos' migrations)
+  -> only v1 20250831075007_…:61 update_memberships_updated_at (BEFORE UPDATE); no insert trigger to interact with
+$ node docs/validation/VTID-05466/pglite-migration-check.mjs <repo>   (now M1 + M2 + M3, three pgTAP files)
+  -> ALL OK: all three files pass after apply and after re-apply; rollback exact twice; on a second database,
+     committed writes: legacy-only insert -> community + primary row, 0 side effects; writer order (memberships,
+     then the writer's own primary user_tenants row) keeps the writer's row and its side effects; re-insert
+     no-op; bot insert writes nothing; drift stays 0; rollback drops the trigger and keeps the real row
+$ (negative control) the same run with the suppression set_config removed from the M2 function
+  -> FAIL "dual-write: 0 welcome chats | … 0 live rooms | no user got any side effect | re-inserting … fires none"
+$ node -e "validateManifest(staging-tests.json)" (scripts/ci/staging-verify/lib.cjs)  -> {"ok":true}
+
+# Not run here
+- docs/multitenancy/MIGRATION-QUEUE.md and scripts/ci/migration-drift-baseline.json: owned by lane
+  migration-records (Amendment 1), not touched here.
+- pgTAP under real pgTAP: `supabase test db` needs the local Supabase stack (Docker); Docker/podman does not
+  start in this sandbox (conmon missing). The files are written for pg_prove and were exercised through the shim.
+- `supabase db reset` on the local stack (D11): same reason. CI or the next session with Docker runs it.
+- `npx jest test/vtid-05147-effective-role-permitted.test.ts` (staging-tests.json): this worktree has no
+  services/gateway/node_modules; the lane changes no gateway code, CI runs the suite.
+- Live recount (M1 "re-verify the counts read-only"): forbidden from a session tool; it is live-before.sql,
+  run in the RUN-MIGRATION pre-check after the owner's approval.
+
+# CI fixes on head 001b7bd049 (impact scan, validate-pr). Scratch tools live outside the repository, in
+# /projects/sandbox/pglite-05466 (PGlite 0.5.14 install); nothing from it is committed.
+$ IMPACT_SCAN_BASE=origin/main node scripts/ci/dev-autopilot-impact-scan.mjs
+  -> edited tree: blocker=0 warning=0, exit 0. The generated dev-autopilot-impact-findings.json was deleted, not committed.
+$ scratch rule run: duplicate-table-name + migration-requires-code-touch check() on the HEAD migrations and on the edited tree
+  -> HEAD: 5 blockers (`for` from the comment; `legacy_archive` x4 from schema-qualified CREATE TABLE) + 1 warning, the same
+     set CI reported. Edited tree: 0 findings.
+$ node docs/validation/VTID-05466/pglite-migration-check.mjs <worktree>   (PGlite 0.5.14, PostgreSQL 18.6, in memory)
+  -> ALL OK, 24 checks. outputs/pglite-apply.txt, pglite-rollback.txt, pglite-reapply.txt and pgtap.txt are the lines of
+     outputs/pglite-migration-check.txt grouped by phase (the pgTAP lines are the 6 "pgTAP" lines).
+$ scratch catalog fingerprint: apply, no-op rollback, rollback, re-apply; original SQL (HEAD) vs edited SQL
+  -> tables, columns, constraints, indexes, functions, triggers, policies, grants, comments and row counts identical at every step.
+$ node scripts/ci/validate-pr-locally.cjs --title "VTID-05466 (mt-identity-r2/membership-unification): ..." --body-file <PR body> --base main
+  -> APPROVED: Acceptance mapping OK, CSP scan clean, OASIS_IMPACT=no. The script builds origin/<base> itself, so
+     `--base origin/main` fails with "couldn't find remote ref origin/main"; `--base main` is the same base.

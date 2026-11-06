@@ -1,0 +1,143 @@
+# b-mutation-run: docs/validation/VTID-05542/outputs/b-mutate-settings-host.sh against scripts/eng/free-tier-guard.test.mjs (Node v22.23.4); six shards run side by side, joined here in mutation order
+# baseline: tests 51 and pass 51 on the unmutated tree
+# caught = the mutated file still parses and the test goes red on a named case; every other word (NOOP, INVALID, SURVIVED, CRASH, HUNG) would be a failure of the check
+001 caught      platform: no merge-request pipelines  <- central CI: every file parses, and its structure is what plan |central CI: merge-request pipelines come first in workflow.rul
+002 caught      platform: merge-request rule not first  <- central CI: every file parses, and its structure is what plan |central CI: merge-request pipelines come first in workflow.rul
+003 caught      platform: main pipelines dropped  <- central CI: every file parses, and its structure is what plan |central CI: merge-request pipelines come first in workflow.rul
+004 caught      platform: retry twice  <- central CI: every file parses, and its structure is what plan |central CI: default has tag vitana-eng, interruptible, and one
+005 caught      platform: retry on script failures too  <- central CI: every file parses, and its structure is what plan |central CI: default has tag vitana-eng, interruptible, and one
+006 caught      platform: no stuck_or_timeout retry  <- central CI: every file parses, and its structure is what plan |central CI: default has tag vitana-eng, interruptible, and one
+007 caught      platform: no retry at all  <- central CI: every file parses, and its structure is what plan |central CI: default has tag vitana-eng, interruptible, and one
+008 caught      platform: legacy runner tag  <- central CI: every file parses, and its structure is what plan |central CI: default has tag vitana-eng, interruptible, and one
+009 caught      platform: interruptible off  <- central CI: every file parses, and its structure is what plan |central CI: default has tag vitana-eng, interruptible, and one
+010 caught      platform: typecheck installs with pnpm  <- central CI: the platform and vitana-v1 jobs are those of miles
+011 caught      platform: jest install without frozen lockfile  <- central CI: the platform and vitana-v1 jobs are those of miles
+012 caught      platform: two jest shards  <- central CI: the platform and vitana-v1 jobs are those of miles
+013 caught      platform: other image  <- central CI: default has tag vitana-eng, interruptible, and one|central CI: the platform and vitana-v1 jobs are those of miles
+014 caught      platform: a deploy job  <- central CI: every file parses, and its structure is what plan |central CI: the platform and vitana-v1 jobs are those of miles
+015 caught      platform: a secret from a vault  <- free-tier guard: the repository today names no Premium-only AP|central CI: every file parses, and its structure is what plan 
+016 caught      platform: a credential variable  <- central CI: every file parses, and its structure is what plan |central CI: the platform and vitana-v1 jobs are those of miles
+017 caught      platform: cloud command in a job  <- central CI: every file parses, and its structure is what plan |central CI: the platform and vitana-v1 jobs are those of miles
+018 caught      v1: lint fails the pipeline  <- central CI: the platform and vitana-v1 jobs are those of miles
+019 caught      v1: build command changed  <- central CI: the platform and vitana-v1 jobs are those of miles
+020 caught      v1: unit tests dropped  <- central CI: the platform and vitana-v1 jobs are those of miles
+021 caught      v1: no merge-request pipelines  <- central CI: every file parses, and its structure is what plan |central CI: merge-request pipelines come first in workflow.rul
+022 caught      rehearsal: required job renamed  <- central CI: every file parses, and its structure is what plan |central CI: the required jobs of gitlab-settings.json are real
+023 caught      rehearsal: unit runs nothing  <- central CI: the required jobs of gitlab-settings.json are real
+024 caught      rehearsal: unit without node check  <- central CI: the required jobs of gitlab-settings.json are real
+025 caught      rehearsal: no retry on lost machines  <- central CI: every file parses, and its structure is what plan |central CI: default has tag vitana-eng, interruptible, and one
+026 caught      settings file: rehearsal CI file renamed  <- central CI: exactly three files, named as gitlab-settings.json
+027 caught      settings file: rehearsal requires another job  <- central CI: every file parses, and its structure is what plan |central CI: the required jobs of gitlab-settings.json are real
+028 caught      settings timer: every 30 minutes  <- vitana-settings.timer: every 10 minutes after a start delay, s
+029 caught      settings timer: starts the wrong service  <- vitana-settings.timer: every 10 minutes after a start delay, s
+030 caught      settings timer: not installed on timers  <- vitana-settings.timer: every 10 minutes after a start delay, s
+031 caught      sync timer: every 5 minutes  <- vitana-platform-sync.timer: every minute, starts the service, 
+032 caught      sync timer: no boot start  <- vitana-platform-sync.timer: every minute, starts the service, 
+033 caught      settings service: flock without -n  <- vitana-settings.service: one tick of `gitlab-settings.mjs appl|the pieces agree: ops-install.sh installs what the units run (
+034 caught      settings service: flock without -E 0  <- vitana-settings.service: one tick of `gitlab-settings.mjs appl|the pieces agree: ops-install.sh installs what the units run (
+035 caught      settings service: not niced  <- vitana-settings.service: one tick of `gitlab-settings.mjs appl
+036 caught      settings service: no CPU quota  <- vitana-settings.service: one tick of `gitlab-settings.mjs appl
+037 caught      settings service: no memory cap  <- vitana-settings.service: one tick of `gitlab-settings.mjs appl
+038 caught      settings service: no start timeout  <- vitana-settings.service: one tick of `gitlab-settings.mjs appl
+039 caught      settings service: no env file  <- vitana-settings.service: one tick of `gitlab-settings.mjs appl
+040 caught      settings service: /etc not writable  <- vitana-settings.service: one tick of `gitlab-settings.mjs appl
+041 caught      settings service: all of /etc writable  <- vitana-settings.service: one tick of `gitlab-settings.mjs appl
+042 caught      settings service: strict sandbox  <- vitana-settings.service: one tick of `gitlab-settings.mjs appl
+043 caught      settings service: runs as nobody  <- vitana-settings.service: one tick of `gitlab-settings.mjs appl
+044 caught      settings service: runs check, not apply  <- vitana-settings.service: one tick of `gitlab-settings.mjs appl|vitana-settings.service: the command line is one that gitlab-s
+045 caught      settings service: dry run  <- vitana-settings.service: one tick of `gitlab-settings.mjs appl|vitana-settings.service: the command line is one that gitlab-s
+046 caught      settings service: another script path  <- vitana-settings.service: one tick of `gitlab-settings.mjs appl
+047 caught      settings service: node elsewhere  <- vitana-settings.service: one tick of `gitlab-settings.mjs appl|the pieces agree: ops-install.sh installs what the units run (
+048 caught      settings service: no PATH for aws  <- vitana-settings.service: one tick of `gitlab-settings.mjs appl
+049 caught      sync service: rebase instead of merge  <- vitana-platform-sync.service: fetch and merge --ff-only under 
+050 caught      sync service: merge without --ff-only  <- vitana-platform-sync.service: fetch and merge --ff-only under 
+051 caught      sync service: hard reset  <- vitana-platform-sync.service: fetch and merge --ff-only under 
+052 caught      sync service: forced fetch  <- vitana-platform-sync.service: fetch and merge --ff-only under 
+053 caught      sync service: flock without -n  <- vitana-platform-sync.service: fetch and merge --ff-only under 
+054 caught      sync service: no helper for the token  <- vitana-platform-sync.service: fetch and merge --ff-only under |the pieces agree: ops-install.sh installs what the units run (
+055 caught      sync service: git may prompt  <- vitana-platform-sync.service: fetch and merge --ff-only under 
+056 caught      sync service: token in the URL  <- vitana-platform-sync.service: fetch and merge --ff-only under 
+057 caught      sync service: not niced  <- vitana-platform-sync.service: fetch and merge --ff-only under 
+058 caught      sync service: no memory cap  <- vitana-platform-sync.service: fetch and merge --ff-only under 
+059 caught      settings.tf: agent secrets on every secret  <- settings.tf policy, statement by statement: the agent tokens, |settings.tf policy: no wildcard action, no bare wildcard resou
+060 caught      settings.tf: all Secrets Manager actions  <- settings.tf policy, statement by statement: the agent tokens, |settings.tf policy: no wildcard action, no bare wildcard resou
+061 caught      settings.tf: tagging granted  <- settings.tf policy, statement by statement: the agent tokens, |settings.tf policy: no wildcard action, no bare wildcard resou
+062 caught      settings.tf: agent secrets cannot be created  <- settings.tf policy, statement by statement: the agent tokens, |settings.tf matches what part A really calls: Secrets Manager 
+063 caught      settings.tf: fleet token not writable  <- settings.tf policy, statement by statement: the agent tokens, |settings.tf matches what part A really calls: Secrets Manager 
+064 caught      settings.tf: fleet token deletable  <- settings.tf policy, statement by statement: the agent tokens, |settings.tf policy: no wildcard action, no bare wildcard resou
+065 caught      settings.tf: webhook token writable  <- settings.tf policy, statement by statement: the agent tokens, |settings.tf matches what part A really calls: Secrets Manager 
+066 caught      settings.tf: every fleet secret  <- settings.tf policy, statement by statement: the agent tokens, |settings.tf policy: no wildcard action, no bare wildcard resou
+067 caught      settings.tf: fleet token without suffix  <- settings.tf policy, statement by statement: the agent tokens, |settings.tf matches what part A really calls: Secrets Manager 
+068 caught      settings.tf: webhook token another name  <- settings.tf policy, statement by statement: the agent tokens, |settings.tf matches what part A really calls: Secrets Manager 
+069 caught      settings.tf: all key actions  <- settings.tf policy, statement by statement: the agent tokens, |settings.tf policy: no wildcard action, no bare wildcard resou
+070 caught      settings.tf: key action dropped  <- settings.tf policy, statement by statement: the agent tokens, 
+071 caught      settings.tf: any key  <- settings.tf: every reference to another file points at somethi|settings.tf policy, statement by statement: the agent tokens, 
+072 caught      settings.tf: attached to the runner role  <- settings.tf: every reference to another file points at somethi|settings.tf: an inline policy named settings on the role of th
+073 caught      settings.tf: policy named like another  <- settings.tf: an inline policy named settings on the role of th
+074 caught      settings.tf: creates the fleet secret  <- settings.tf is a second file of the same module: no provider, |settings.tf creates no secret (the fleet lane creates the runn
+075 caught      settings.tf: a provider block  <- settings.tf is a second file of the same module: no provider, 
+076 caught      settings.tf: a variable without default  <- settings.tf is a second file of the same module: no provider, 
+077 caught      settings.tf: another account  <- settings.tf policy, statement by statement: the agent tokens, |settings.tf policy: no wildcard action, no bare wildcard resou
+078 caught      ops-install: node version unpinned  <- ops-install.sh is a strict bash script, installs node only fro|ops-install.sh first run: node, the git helper, the checkout, 
+079 caught      ops-install: wrong checksum pinned  <- ops-install.sh is a strict bash script, installs node only fro
+080 caught      ops-install: checksum check removed  <- ops-install.sh: a tarball with the wrong SHA256, or one that n
+081 caught      ops-install: published list ignored  <- ops-install.sh: a tarball with the wrong SHA256, or one that n
+082 caught      ops-install: node over plain http  <- ops-install.sh is a strict bash script, installs node only fro
+083 caught      ops-install: no link at /usr/bin/node  <- ops-install.sh first run: node, the git helper, the checkout, |ops-install.sh: a checkout with no host/units says what is mis
+084 caught      ops-install: git helper readable by all  <- ops-install.sh first run: node, the git helper, the checkout, |ops-install.sh second run: nothing changes and it says so (no 
+085 caught      ops-install: helper prints another file  <- ops-install.sh first run: node, the git helper, the checkout, 
+086 caught      ops-install: clone does not fast-forward later  <- ops-install.sh: a later run fast-forwards the checkout; a chec
+087 caught      ops-install: checkout rebased  <- ops-install.sh: a later run fast-forwards the checkout; a chec
+088 caught      ops-install: token in the clone URL  <- ops-install.sh is a strict bash script, installs node only fro|ops-install.sh handles secrets safely: the token goes to curl 
+089 caught      ops-install: units not by glob  <- ops-install.sh first run: node, the git helper, the checkout, |ops-install.sh second run: nothing changes and it says so (no 
+090 caught      ops-install: no daemon-reload  <- ops-install.sh first run: node, the git helper, the checkout, |ops-install.sh: a changed timer file is picked up (the running
+091 caught      ops-install: timers enabled but not started  <- ops-install.sh first run: node, the git helper, the checkout, |ops-install.sh: a failing ops.d script is logged and the other
+092 caught      ops-install: timers not by glob  <- ops-install.sh first run: node, the git helper, the checkout, 
+093 caught      ops-install: changed timer not restarted  <- ops-install.sh: a changed timer file is picked up (the running
+094 caught      ops-install: token curl argument  <- ops-install.sh handles secrets safely: the token goes to curl |ops-install.sh first run: node, the git helper, the checkout, 
+095 caught      ops-install: token mode 0644  <- ops-install.sh handles secrets safely: the token goes to curl |ops-install.sh first run: node, the git helper, the checkout, 
+096 caught      ops-install: log not scrubbed  <- ops-install.sh handles secrets safely: the token goes to curl |ops-install.sh: what gitlab-rails prints is scrubbed of the to
+097 caught      ops-install: token lives a year  <- ops-install.sh handles secrets safely: the token goes to curl |ops-install.sh first run: node, the git helper, the checkout, 
+098 caught      ops-install: token with sudo scope  <- ops-install.sh handles secrets safely: the token goes to curl |ops-install.sh first run: node, the git helper, the checkout, 
+099 caught      ops-install: token for another user  <- ops-install.sh handles secrets safely: the token goes to curl |ops-install.sh first run: node, the git helper, the checkout, 
+100 caught      ops-install: a valid token is replaced  <- ops-install.sh second run: nothing changes and it says so (no |ops-install.sh: a later run fast-forwards the checkout; a chec
+101 caught      ops-install: outage counts as refusal  <- ops-install.sh: a refused admin token is replaced; an unreacha
+102 caught      ops-install: weak token accepted  <- ops-install.sh: what gitlab-rails prints is scrubbed of the to
+103 caught      ops-install: ops.d stops at the first failure  <- ops-install.sh: a failing ops.d script is logged and the other
+104 caught      ops-install: ops.d not run  <- ops-install.sh first run: node, the git helper, the checkout, |ops-install.sh second run: nothing changes and it says so (no 
+105 caught      ops-install: ops.d run before the checkout is good  <- ops-install.sh first run: node, the git helper, the checkout, |ops-install.sh second run: nothing changes and it says so (no 
+106 caught      ops-install: failure not in the exit code  <- ops-install.sh: a refused admin token is replaced; an unreacha|ops-install.sh: what gitlab-rails prints is scrubbed of the to
+107 caught      ops-install: always says changed  <- ops-install.sh second run: nothing changes and it says so (no 
+108 caught      ops-install: other log file  <- ops-install.sh first run: node, the git helper, the checkout, |ops-install.sh: what gitlab-rails prints is scrubbed of the to
+109 caught      ops-install: xtrace on  <- ops-install.sh is a strict bash script, installs node only fro|ops-install.sh handles secrets safely: the token goes to curl 
+110 caught      ops-install: checkout hard reset  <- ops-install.sh handles secrets safely: the token goes to curl 
+111 caught      m2: status prints the fleet token  <- m2.sh is a strict bash script with the four commands, no xtrac|m2.sh status, all well: the four timers, no drift, the last go
+112 caught      m2: pending mail is fine  <- m2.sh status: an unconfirmed alert subscription is shown loudl
+113 caught      m2: only three timers checked  <- m2.sh status: a missing alarm, an empty fleet token, drift, a 
+114 caught      m2: rehearse exits 0 without the script  <- m2.sh rehearse: runs scripts/eng/rehearse.mjs --project rehear
+115 caught      m2: rehearse with six agents  <- m2.sh rehearse: runs scripts/eng/rehearse.mjs --project rehear
+116 caught      m2: rehearse another project  <- m2.sh rehearse: runs scripts/eng/rehearse.mjs --project rehear
+117 caught      m2: settings does not pull first  <- m2.sh settings: pulls the newest main first, then runs the syn
+118 caught      m2: settings pulls after  <- m2.sh settings: pulls the newest main first, then runs the syn
+119 caught      m2: unknown command is fine  <- m2.sh: no command, an unknown command or --help print the usag
+120 caught      m2: problems do not fail the status  <- m2.sh status: an unconfirmed alert subscription is shown loudl|m2.sh status: a missing alarm, an empty fleet token, drift, a 
+121 caught      m2: missing alarm is not a problem  <- m2.sh status: a missing alarm, an empty fleet token, drift, a 
+122 caught      m2: empty fleet token is fine  <- m2.sh status: a missing alarm, an empty fleet token, drift, a 
+123 caught      m2: last good run counts failed runs  <- m2.sh status: the script it sends runs for real on stand-ins: 
+124 caught      m2: status applies instead of checking  <- m2.sh status: the script it sends runs for real on stand-ins: 
+125 caught      m2: drift is fine  <- m2.sh status: a missing alarm, an empty fleet token, drift, a 
+126 caught      m2: install sends nothing compressed  <- m2.sh install: sends host/ops-install.sh itself (compressed, b
+127 caught      m2: install runs with sh  <- m2.sh install: sends host/ops-install.sh itself (compressed, b
+128 caught      m2: install failure exits 0  <- m2.sh install: sends host/ops-install.sh itself (compressed, b|m2.sh install: Systems Manager that refuses the command (the m
+129 caught      m2: state read from the Terraform run  <- m2.sh status, all well: the four timers, no drift, the last go|m2.sh status: an unconfirmed alert subscription is shown loudl
+130 caught      m2: management account check dropped  <- m2.sh finds the engineering account and the machine by itself 
+131 caught      m2: xtrace on  <- m2.sh is a strict bash script with the four commands, no xtrac|m2.sh install: sends host/ops-install.sh itself (compressed, b
+132 caught      guard: push rule in the sync script  <- free-tier guard: the repository today names no Premium-only AP|vitana-settings.service: the command line is one that gitlab-s
+133 caught      guard: approval rules in a CI file  <- free-tier guard: the repository today names no Premium-only AP|central CI: every file parses, and its structure is what plan 
+134 caught      guard: vault secrets in a CI file  <- free-tier guard: the repository today names no Premium-only AP|central CI: every file parses, and its structure is what plan 
+135 caught      guard: merge trains in the installer  <- free-tier guard: the repository today names no Premium-only AP
+136 caught      guard: protected environments in Terraform  <- free-tier guard: the repository today names no Premium-only AP|settings.tf is a second file of the same module: no provider, 
+137 caught      guard: group webhooks in the settings file  <- free-tier guard: the repository today names no Premium-only AP
+138 caught      guard: code owner approval in the unit  <- free-tier guard: the repository today names no Premium-only AP
+139 caught      guard: external status checks in the metrics  <- free-tier guard: the repository today names no Premium-only AP
+mutations: 139, not caught: 0

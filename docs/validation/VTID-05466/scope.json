@@ -1,0 +1,17 @@
+{
+  "vtid": "VTID-05466",
+  "kind": "feature",
+  "paths": [
+    "supabase/migrations/20261102031000_vtid_05466_user_tenants_canonical.sql",
+    "supabase/migrations/20261102031100_vtid_05466_memberships_view_dualwrite.sql",
+    "supabase/migrations/20261102031200_vtid_05466_membership_drift_report.sql",
+    "supabase/migrations/20261102031000_vtid_05466_membership_unification_rollback.sql",
+    "supabase/tests/mt_identity_membership_backfill.test.sql",
+    "supabase/tests/mt_identity_membership_drift_report.test.sql",
+    "supabase/tests/mt_identity_membership_dualwrite.test.sql",
+    "docs/validation/VTID-05466/"
+  ],
+  "sparring_record": "docs/validation/VTID-05466/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

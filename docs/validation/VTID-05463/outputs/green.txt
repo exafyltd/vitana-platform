@@ -1,0 +1,12 @@
+1:26:23 PM [vite] warning: `optimizeDeps.esbuildOptions` option was specified by "vite:react-swc" plugin. This option is deprecated, please use `optimizeDeps.rolldownOptions` instead.
+
+ RUN  v4.1.10 /projects/sandbox/wt-ra2
+
+ ✓ src/lib/supabase-functions-retire.vtid-05008.test.ts (6 tests) 427ms
+     ✓ never names a function something still calls  422ms
+
+ Test Files  1 passed (1)
+      Tests  6 passed (6)
+   Start at  13:26:23
+   Duration  2.47s (transform 185ms, setup 415ms, import 16ms, tests 427ms, environment 1.48s)
+

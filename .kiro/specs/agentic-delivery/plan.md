@@ -737,3 +737,12 @@ eu-central-1: https://www.doit.com/compute/compute/aws/eu-central-1/m6i.xlarge
 - `reseat` (2026-11-05, `lane_admin`): gives the eight lanes of §9 back to seat `exafy`, which §9 assigns. The Project
   Manager moved them to the exceptions seat `exafyltd` during a driver heartbeat gap (#4688). Lane file
   `lanes/reseat.md`, tasks group `reseat`. Its VTID comes from PLAN-SPAR. The sparred text above is unchanged.
+- `nav-paths` (2026-11-05, `lane_admin`): adds four files to lane `gateway-delivery`'s `paths` (the Command Hub voice
+  screens, the two stored-vector files, the ownership-guard line). Its builder found the Delivery screen cannot land green
+  without them. The vectors are rebuilt with one Bedrock call, run by the owner or by CI, never from a session.
+- `sv-cwd` (2026-11-05, fix forward of STAGING-VERIFY): three staging manifests of plan eng-platform-p01 run Jest from the
+  repository root and fail every gateway STAGING-VERIFY since 14:57Z, this plan's merge commit `51c2bead07` included. Each
+  gets `"cwd": "services/gateway"`.
+- `cut-settings` (2026-11-05, after `cutover`): the settings the cut needs that no lane builds: `bot-assist` and its token
+  rotation, pipeline schedules, oldest-first resource groups, the job-token allowlist, the artifact size limit, and the
+  `assist/*` and `train/*` rules. It changes the settings file and sync script after `cutover` lands.

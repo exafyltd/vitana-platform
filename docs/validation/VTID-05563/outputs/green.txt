@@ -1,0 +1,48 @@
+mode positive; origin/main 0f45367bb69a8661eca6d5170ebb33909d03d001; this PR head dcef3ff7b0645cb177480396a486e3794b5c69cf; gateway-delivery builder patch from 594ab32a511cd183496db5c78333571ecbaefbc0
+Squash commit -- not updating HEAD
+squash S = bc8e07d1a230fd8619c2cb6a26ca45e10b10cbea (parent 0f45367bb69a8661eca6d5170ebb33909d03d001); S differs from origin/main in:
+  .kiro/specs/agentic-delivery/lanes/gateway-delivery.md
+  .kiro/specs/agentic-delivery/lanes/nav-paths.md
+  docs/validation/VTID-05563/acceptance.md
+  docs/validation/VTID-05563/commands.log
+  docs/validation/VTID-05563/outputs/contract-check.sh
+  docs/validation/VTID-05563/outputs/nav-paths-proof.sh
+  docs/validation/VTID-05563/outputs/red-on-base.txt
+  docs/validation/VTID-05563/outputs/target-diff-check.sh
+  docs/validation/VTID-05563/plan-sparring.md
+  docs/validation/VTID-05563/scope.json
+base bc8e07d1a230fd8619c2cb6a26ca45e10b10cbea: lane gateway-delivery paths on the base (17 entries; the four files listed: 4)
+
+################ positive: lane gateway-delivery changes the four files ################
+commit 95ec551f81f5d7f8ddef9d1d046a8df04373833a (parent bc8e07d1a2), Collab-Lane agentic-delivery/gateway-delivery, Collab-Session kiro-exafy-202611021438-cff7:
+  2	1	scripts/ci/command-hub-ownership-guard.js
+  60	0	services/gateway/src/navigation/data/command-hub-screens.json
+  -	-	services/gateway/src/navigation/data/nav-embeddings.bin
+  1	1	services/gateway/src/navigation/data/nav-embeddings.json
+  patch-id 801c17a11c66209c; sha256(diff --binary) dc61e7814c3979b8
+
+$ node scripts/collab/queue.mjs scope-check --repo . --base bc8e07d1a230fd8619c2cb6a26ca45e10b10cbea --head HEAD --branch kiro/agentic-delivery/gateway-delivery
+✅ **lane scope** — lane agentic-delivery/gateway-delivery: every change is inside its paths
+[exit 0]
+
+$ node scripts/collab/queue.mjs validate --repo . --base bc8e07d1a230fd8619c2cb6a26ca45e10b10cbea --head HEAD --branch kiro/agentic-delivery/gateway-delivery
+✅ **collab handoff** — 0 handoff/lane file(s) changed, all valid
+[exit 0]
+
+################ control on the same base S: another lane (agentic-delivery/cutover) makes the same change ################
+commit 56e897201a9b8b975149f53812159e65807368db (parent bc8e07d1a2), Collab-Lane agentic-delivery/cutover, Collab-Session kiro-exafy-202611021438-cff7:
+  2	1	scripts/ci/command-hub-ownership-guard.js
+  60	0	services/gateway/src/navigation/data/command-hub-screens.json
+  -	-	services/gateway/src/navigation/data/nav-embeddings.bin
+  1	1	services/gateway/src/navigation/data/nav-embeddings.json
+  patch-id 801c17a11c66209c; sha256(diff --binary) dc61e7814c3979b8
+
+$ node scripts/collab/queue.mjs scope-check --repo . --base bc8e07d1a230fd8619c2cb6a26ca45e10b10cbea --head HEAD --branch kiro/agentic-delivery/cutover
+❌ **lane scope** — 4 problem(s) (lane agentic-delivery/cutover):
+- scripts/ci/command-hub-ownership-guard.js is outside lane agentic-delivery/cutover (paths: infra/gitlab-engineering/settings/gitlab-settings.json, scripts/eng/gitlab-settings.mjs, scripts/eng/gitlab-settings-cutover.test.mjs, scripts/eng/delivery-cutover.sh, scripts/eng/delivery-cutover.test.mjs, scripts/eng/delivery-rollback.sh, scripts/eng/parity-report.mjs, scripts/eng/parity-report.test.mjs, scripts/eng/delivery-metrics.mjs, scripts/eng/delivery-metrics.test.mjs, scripts/eng/github-workflows.json, scripts/eng/github-workflows.test.mjs, infra/gitlab-engineering/RUNBOOK-cutover.md, .kiro/pipeline/driver.md, .kiro/pipeline/lane-land.md, docs/validation/**)
+- services/gateway/src/navigation/data/command-hub-screens.json is outside lane agentic-delivery/cutover (paths: infra/gitlab-engineering/settings/gitlab-settings.json, scripts/eng/gitlab-settings.mjs, scripts/eng/gitlab-settings-cutover.test.mjs, scripts/eng/delivery-cutover.sh, scripts/eng/delivery-cutover.test.mjs, scripts/eng/delivery-rollback.sh, scripts/eng/parity-report.mjs, scripts/eng/parity-report.test.mjs, scripts/eng/delivery-metrics.mjs, scripts/eng/delivery-metrics.test.mjs, scripts/eng/github-workflows.json, scripts/eng/github-workflows.test.mjs, infra/gitlab-engineering/RUNBOOK-cutover.md, .kiro/pipeline/driver.md, .kiro/pipeline/lane-land.md, docs/validation/**)
+- services/gateway/src/navigation/data/nav-embeddings.bin is outside lane agentic-delivery/cutover (paths: infra/gitlab-engineering/settings/gitlab-settings.json, scripts/eng/gitlab-settings.mjs, scripts/eng/gitlab-settings-cutover.test.mjs, scripts/eng/delivery-cutover.sh, scripts/eng/delivery-cutover.test.mjs, scripts/eng/delivery-rollback.sh, scripts/eng/parity-report.mjs, scripts/eng/parity-report.test.mjs, scripts/eng/delivery-metrics.mjs, scripts/eng/delivery-metrics.test.mjs, scripts/eng/github-workflows.json, scripts/eng/github-workflows.test.mjs, infra/gitlab-engineering/RUNBOOK-cutover.md, .kiro/pipeline/driver.md, .kiro/pipeline/lane-land.md, docs/validation/**)
+- services/gateway/src/navigation/data/nav-embeddings.json is outside lane agentic-delivery/cutover (paths: infra/gitlab-engineering/settings/gitlab-settings.json, scripts/eng/gitlab-settings.mjs, scripts/eng/gitlab-settings-cutover.test.mjs, scripts/eng/delivery-cutover.sh, scripts/eng/delivery-cutover.test.mjs, scripts/eng/delivery-rollback.sh, scripts/eng/parity-report.mjs, scripts/eng/parity-report.test.mjs, scripts/eng/delivery-metrics.mjs, scripts/eng/delivery-metrics.test.mjs, scripts/eng/github-workflows.json, scripts/eng/github-workflows.test.mjs, infra/gitlab-engineering/RUNBOOK-cutover.md, .kiro/pipeline/driver.md, .kiro/pipeline/lane-land.md, docs/validation/**)
+[exit 1]
+
+scratch worktree removed; no branch was created and nothing was pushed
