@@ -1,11 +1,11 @@
 VTID-05588 local checks (services/gateway), 2026-11-06, session kiro-exafy-202611061658-9ca9
 
 $ npx jest test/companion-test-card.test.ts
-Tests:       12 passed, 12 total
+Tests:       13 passed, 13 total
 
 $ npx jest test/vtid-05099-companion-messages.test.ts test/vtid-05100-companion-delivery.test.ts test/vtid-05368-messenger-companion-verification.test.ts test/companion-test-card.test.ts
 Test Suites: 4 passed, 4 total
-Tests:       76 passed, 76 total
+Tests:       77 passed, 77 total
 
 $ npm run test:roles
 Tests:       105 passed, 105 total

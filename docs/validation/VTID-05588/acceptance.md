@@ -24,10 +24,10 @@ AC-6 — No ledger access, no pacer touch, no push, no `companion.message.sent`;
   TEST: same test (ledger table never touched, recordTouch and notifyUser not called, emitted types = [companion.test_card.sent]).
 
 AC-7 — A second press within 60 s answers 429 RATE_LIMITED with `retry_after_s`; a refused or failed call does not consume the minute.
-  TEST: "429 RATE_LIMITED for a second press inside 60 s"; the 422/502 tests run back to back with a success in the same suite setup.
+  TEST: "429 RATE_LIMITED for a second press inside 60 s", "a refused or failed press does not use up the minute".
 
 AC-8 — The suite fails on base.
-  TEST: red-on-base.txt (12 failed on 2b9356e041).
+  TEST: red-on-base.txt (13 failed on 2b9356e041).
 
 Not claimed here: a real send on a deployed gateway. Staging answers 409 by design (shared production database, CLAUDE.md
 rule 48); production is reached only after Gate 2 and the owner's publish.

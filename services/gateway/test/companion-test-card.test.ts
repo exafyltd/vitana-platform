@@ -248,6 +248,15 @@ describe('VTID-05588: POST /api/v1/companion/test-card', () => {
     });
   });
 
+  it('a refused or failed press does not use up the minute', async () => {
+    mockFetchIndex.mockResolvedValueOnce(null);
+    expect((await post('admin')).status).toBe(422);
+    mockCompose.mockResolvedValueOnce({ ok: false, error: 'empty' });
+    expect((await post('admin')).status).toBe(502);
+    expect((await post('admin')).status).toBe(200);
+    expect(mockDb.inserts).toHaveLength(1);
+  });
+
   it('429 RATE_LIMITED for a second press inside 60 s', async () => {
     expect((await post('admin')).status).toBe(200);
     const r = await post('admin');
