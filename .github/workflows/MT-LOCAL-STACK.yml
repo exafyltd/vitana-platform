@@ -1,0 +1,35 @@
+# mt-guardrails-r2 / local-test-stack-v2: boots the disposable local stack
+# (pinned supabase/postgres image), replays the committed migrations, seeds the
+# synthetic fixtures and runs the pgTAP smoke test. Local container only: no
+# secrets, no live endpoint. See docs/multitenancy/LOCAL-STACK.md.
+name: MT-LOCAL-STACK
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/tests/fixtures/**'
+      - 'supabase/tests/local-stack/**'
+      - 'scripts/mt/stack/**'
+      - 'docs/multitenancy/LOCAL-STACK.md'
+      - '.github/workflows/MT-LOCAL-STACK.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Local stack smoke (up, pgtap spike, replay, required tables, seed x2, pg_prove)
+        run: OUT_DIR="$RUNNER_TEMP/mt-stack" bash scripts/mt/stack/smoke.sh
+
+      - name: Upload smoke evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mt-local-stack
+          path: ${{ runner.temp }}/mt-stack
+          if-no-files-found: warn

@@ -1,0 +1,15 @@
+{
+  "vtid": "VTID-05469",
+  "kind": "infra",
+  "paths": [
+    "supabase/tests/fixtures/**",
+    "supabase/tests/local-stack/**",
+    "scripts/mt/stack/**",
+    "docs/multitenancy/LOCAL-STACK.md",
+    ".github/workflows/MT-LOCAL-STACK.yml",
+    "docs/validation/VTID-05469/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05469/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

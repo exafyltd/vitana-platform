@@ -1,0 +1,8 @@
+{
+  "vtid": "VTID-05469",
+  "service": "gateway",
+  "tests": [
+    { "kind": "existing", "ref": "npm run test:collab", "cwd": ".", "reason": "test tooling only; the smoke itself runs in the MT-LOCAL-STACK job on the PR, not on staging" }
+  ],
+  "not_verified_on_staging": "Local disposable stack and CI job only; deploys nothing and touches no live system."
+}
