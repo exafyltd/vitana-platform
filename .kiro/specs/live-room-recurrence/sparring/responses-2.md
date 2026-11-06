@@ -1,15 +1,9 @@
 # Planner responses — round 2
 
-Both findings accepted; plan.md updated (Interface 2, Interface 6, Decisions, Tests).
+Both round-2 findings accepted; plan.md updated (Interface 2, Interface 6, Decisions, Tests).
 
 ```json
 [
-  {
-    "finding_id": "R1-F1",
-    "disposition": "accepted",
-    "rationale": "Addressed in round 1 revision; unchanged.",
-    "deferred_to": null
-  },
   {
     "finding_id": "R2-F1",
     "disposition": "accepted",
