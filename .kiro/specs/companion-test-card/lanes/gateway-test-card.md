@@ -16,7 +16,7 @@ paths:
   - services/gateway/src/types/cicd.ts
   - services/gateway/test/companion-test-card.test.ts
   - docs/validation/VTID-*/**
-updated: 2026-11-06T18:02Z
+updated: 2026-11-06T17:55Z
 vtid: VTID-05588
 claimed_by: kiro-exafy-202611061658-9ca9
 pr: https://github.com/exafyltd/vitana-platform/pull/4751
@@ -34,10 +34,10 @@ Lane created with the plan.
 ### 2026-11-06T17:09Z · ci-plan-spar · ready (VTID allocated)
 VTID-05588 allocated after policy approval (converged-auto-v1).
 
-### 2026-11-06T17:30Z · kiro-exafy-202611061658-9ca9 · ready → executing
+### 2026-11-06T17:10Z · kiro-exafy-202611061658-9ca9 · ready → executing
 Claimed; branch `kiro/companion-test-card/gateway-test-card` from origin/main `2b9356e041`.
 
-### 2026-11-06T18:05Z · kiro-exafy-202611061658-9ca9 · executing → in-review
+### 2026-11-06T17:26Z · kiro-exafy-202611061658-9ca9 · executing → in-review
 Built on `kiro/companion-test-card/gateway-test-card` from origin/main `2b9356e041`. Test first: 13 failed on base, 13
 passed on head (`docs/validation/VTID-05588/red-on-base.txt`). Companion suites 77/77, `test:roles` 105/105,
 typecheck and build clean; the full suite's 2 failures fail the same on base (`commands.log`). PR https://github.com/exafyltd/vitana-platform/pull/4751. Decision:
@@ -55,11 +55,11 @@ Findings: [non-blocking] 10d passes. lib/supabase.ts:9/19 builds getSupabase() w
 Findings: Other items pass on reading the code (1, 2, 4, 5, 6, 7, 8, 9, 10a, 10b, 10c, 10e).
 Next: the lane's seat (or the caller) supplies readable CI status for head d40cefc2 and re-requests review. No code change is required by this review.
 
-### 2026-11-06T18:00Z · kiro-exafy-202611061658-9ca9 · in-review → executing
+### 2026-11-06T17:54Z · kiro-exafy-202611061658-9ca9 · in-review → executing
 Review `changes` on d40cefc2: the only blocking finding is that the reviewer could not read CI (`gh pr checks` is not
 available in Kiro Web). Taking the non-blocking test finding too: the staging, off and shadow refusals now also assert
 that no table is read and that fetchIndex and compose are not called.
 
-### 2026-11-06T18:02Z · kiro-exafy-202611061658-9ca9 · executing → in-review
+### 2026-11-06T17:55Z · kiro-exafy-202611061658-9ca9 · executing → in-review
 Refusal tests hardened (13/13 green, outputs/green.txt). The next review gets the head's check-run ids so CI can be
 read with `gh run view`. PR https://github.com/exafyltd/vitana-platform/pull/4751.
