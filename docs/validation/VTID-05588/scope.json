@@ -8,7 +8,7 @@
     "services/gateway/test/companion-test-card.test.ts",
     "docs/validation/VTID-05588/**"
   ],
-  "sparring_record": ".kiro/specs/companion-test-card/sparring/verdict.md",
+  "sparring_record": "docs/validation/VTID-05588/plan-sparring.md",
   "weakens_tests": [],
   "red_green_exempt": []
 }
