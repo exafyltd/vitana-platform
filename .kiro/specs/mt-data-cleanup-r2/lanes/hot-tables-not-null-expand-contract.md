@@ -12,8 +12,9 @@ paths:
   - supabase/tests/vtid_mt_data_cleanup_notnull_*.sql
   - docs/multitenancy/MIGRATION-QUEUE.md
   - DATABASE_SCHEMA.md
-updated: 2026-11-01T15:30Z
+updated: 2026-11-06T10:09Z
 repos: [exafyltd/vitana-platform]
+vtid: VTID-05569
 ---
 # Assert and pin NOT NULL on the hot tables — mt-data-cleanup (repo vitana-platform)
 
@@ -43,3 +44,6 @@ session id>` and `Collab-Lane: mt-data-cleanup-r2/hot-tables-not-null-expand-con
 ### 2026-11-01T15:30Z · kiro-hotmail-202611011452-6d16 · created → ready
 Re-plan of `mt-data-cleanup/hot-tables-not-null-expand-contract`. Versions day-shifted to `20261102*`; WS1 dependency named `mt-identity-r2`;
 executor and reviewer on today's §3a/§7 rules.
+
+### 2026-11-06T10:09Z · ci-plan-spar · ready (VTID allocated)
+VTID-05569 allocated after policy approval (converged-auto-v1).

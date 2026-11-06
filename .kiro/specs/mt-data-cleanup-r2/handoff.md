@@ -4,8 +4,10 @@ author: kiro
 author_seat: hotmail
 executor: kiro
 next_actor: kiro
-state: drafted
-updated: 2026-11-01T15:30Z
+state: approved
+updated: 2026-11-06T10:09Z
+sparring_record: .kiro/specs/mt-data-cleanup-r2/sparring/verdict.md
+vtids: [VTID-05568, VTID-05569, VTID-05570, VTID-05571, VTID-05572]
 ---
 # Handoff — mt-data-cleanup-r2
 Re-plan of `mt-data-cleanup` (branch `kiro/mt-data-cleanup/plan`; PLAN-SPAR session `2efa877e` escalated at the round
@@ -29,3 +31,6 @@ as escalated.
   owner's approval (§7d).
 
 The plan PR opens when PLAN-SPAR capacity allows (`collaboration.md` §8a).
+
+### 2026-11-06T10:09Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 5 lane(s) got a VTID and are handed to Kiro.

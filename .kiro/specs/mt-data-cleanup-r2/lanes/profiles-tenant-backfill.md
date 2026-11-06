@@ -11,8 +11,9 @@ paths:
   - supabase/migrations/20261102042*.sql
   - supabase/tests/vtid_mt_data_cleanup_profiles_*.sql
   - docs/multitenancy/MIGRATION-QUEUE.md
-updated: 2026-11-01T15:30Z
+updated: 2026-11-06T10:09Z
 repos: [exafyltd/vitana-platform]
+vtid: VTID-05572
 ---
 # Backfill profiles.tenant_id — mt-data-cleanup (repo vitana-platform)
 
@@ -40,3 +41,6 @@ and `Collab-Lane: mt-data-cleanup-r2/profiles-tenant-backfill`. When the PR is o
 ### 2026-11-01T15:30Z · kiro-hotmail-202611011452-6d16 · created → ready
 Re-plan of `mt-data-cleanup/profiles-tenant-backfill`. Versions day-shifted to `20261102*`; WS1 dependency named `mt-identity-r2`;
 executor and reviewer on today's §3a/§7 rules.
+
+### 2026-11-06T10:09Z · ci-plan-spar · ready (VTID allocated)
+VTID-05572 allocated after policy approval (converged-auto-v1).

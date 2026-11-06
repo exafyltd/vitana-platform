@@ -11,8 +11,9 @@ paths:
   - supabase/migrations/20261102041*.sql
   - supabase/tests/vtid_mt_data_cleanup_memfacts_*.sql
   - docs/multitenancy/MIGRATION-QUEUE.md
-updated: 2026-11-01T15:30Z
+updated: 2026-11-06T10:09Z
 repos: [exafyltd/vitana-platform]
+vtid: VTID-05570
 ---
 # Supersede-merge reassigned memory_facts — mt-data-cleanup (repo vitana-platform)
 
@@ -36,3 +37,6 @@ id>` and `Collab-Lane: mt-data-cleanup-r2/memory-facts-supersede-merge`. When th
 ### 2026-11-01T15:30Z · kiro-hotmail-202611011452-6d16 · created → ready
 Re-plan of `mt-data-cleanup/memory-facts-supersede-merge`. Versions day-shifted to `20261102*`; WS1 dependency named `mt-identity-r2`;
 executor and reviewer on today's §3a/§7 rules.
+
+### 2026-11-06T10:09Z · ci-plan-spar · ready (VTID allocated)
+VTID-05570 allocated after policy approval (converged-auto-v1).
