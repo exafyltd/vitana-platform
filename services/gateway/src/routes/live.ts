@@ -2332,6 +2332,7 @@ router.post('/rooms/:id/cancel', requireAuth, async (req: Request, res: Response
     stripe = new Stripe(stripeKey);
   }
 
+  // impact-allow-no-oasis: cancelSession (room-session-manager) emits live.room.cancelled itself.
   const result = await sessionManager.cancelSession(roomId, user_id, token, stripe);
 
   if (!result.ok) {
