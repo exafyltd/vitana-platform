@@ -45,7 +45,10 @@ dialog that plan introduces, so it runs after those lanes.
    window `{ from: now, to: now + 8 weeks }` only, and creates the series row. Occurrences after that window are created
    later by the hourly materialisation loop (Interface 3), so the POST creates at most about 8 weeks of rows and the
    materialiser is the single owner of rows beyond the window; the same idempotency key is used at the boundary. Occurrence 0
-   is created through the existing `live_room_create_session` path, which makes it the room's `current_session_id`. The
+   is created through the existing `live_room_create_session` path, which makes it the room's `current_session_id`. Because
+   that function's INSERT does not know the series columns, the gateway then sets `series_id` and `series_index = 0` on that
+   row with a service_role UPDATE in the same request (after the series row exists). A retry repeats both steps: the
+   idempotency key returns the same row and the UPDATE is idempotent, so occurrence 0 always belongs to its series. The
    remaining occurrences are inserted with `live_room_series_insert_occurrence` (idempotent, `series:<series_id>:<index>`),
    so they are scheduled rows that are not the room's current session. A retry converges.
    **Single-current-session rule:** a room has one `current_session_id` at a time (`live_rooms`, fk at
@@ -153,6 +156,8 @@ dialog and list files). Until both are `done` the lanes stay `ready` and unclaim
 - SQL (throwaway Postgres): a series row with a valid rule is accepted, an invalid rule and `max_occurrences` outside 2 to 52
   are refused; the unique `(series_id, series_index)` holds; a browser session (`authenticated`) cannot insert a series row.
   Red on base: the table does not exist.
+- Gateway Jest, added for session-2 round 2: after a create with a series, occurrence 0 has `series_id` and `series_index = 0`;
+  a retried create leaves exactly one occurrence 0; series edit and cancel reach occurrence 0.
 - SQL (throwaway Postgres), added for session-2 round 1: a series row with `BYDAY` is refused; a materialised occurrence
   carries the series `session_defaults` and `co_host_user_ids`; two concurrent promotions on one room promote exactly one
   occurrence (the `FOR UPDATE` serialises them).
@@ -186,5 +191,5 @@ asserted by a test, not counted by hand.
 
 ## Unchanged
 Protected gate files, production workflows and deploys, the sidebar, the Spotlight design contract, Stripe and refund
-logic, `live_room_create_session`, the calendar model, tenant isolation and the test-account allowlists, every existing test.
+logic, `live_room_create_session` (unchanged; the gateway links occurrence 0 after it, see Interface 2), the calendar model, tenant isolation and the test-account allowlists, every existing test.
 <!-- plan:end -->
