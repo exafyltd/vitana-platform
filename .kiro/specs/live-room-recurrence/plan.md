@@ -77,7 +77,10 @@ dialog that plan introduces, so it runs after those lanes.
    other template fields), so later materialised rows read the new template. It never changes a `lobby`, `live` or `ended` one. Replies add
    `updated_occurrences: n`. `409 SERIES_NOT_FOUND` for a session without a series when `scope` is `"series"`.
    Cancelling a series: `POST .../sessions/series/cancel` (creator only) sets `status = 'cancelled'` on the series and on
-   its scheduled occurrences; live and ended occurrences are untouched.
+   its scheduled occurrences; live and ended occurrences are untouched. If the room's `current_session_id` was one of the
+   cancelled occurrences, the gateway then resets the room with a service_role UPDATE to `status = 'idle'`,
+   `current_session_id = NULL`, `host_present = false` (the same effect as `live_room_end_session`), so the room is never left
+   pointing at a cancelled session. Both steps run in one request and a retry repeats them safely.
 5. **Frontend** (lane `v1-live-series`): `LiveStream` and `LiveRoom` gain `seriesId`, `seriesIndex`, `recurrence`.
    `SessionFormFields` renders the Repeat control in both modes; `EditSessionDialog` shows the scope choice when the session
    has a series; `liveRoomService` types `recurrence` and `scope`.
@@ -156,6 +159,8 @@ dialog and list files). Until both are `done` the lanes stay `ready` and unclaim
 - SQL (throwaway Postgres): a series row with a valid rule is accepted, an invalid rule and `max_occurrences` outside 2 to 52
   are refused; the unique `(series_id, series_index)` holds; a browser session (`authenticated`) cannot insert a series row.
   Red on base: the table does not exist.
+- Gateway Jest, added for session-2 round 3: cancelling a series whose occurrence is the room's current session returns the
+  room to `idle` with no current session.
 - Gateway Jest, added for session-2 round 2: after a create with a series, occurrence 0 has `series_id` and `series_index = 0`;
   a retried create leaves exactly one occurrence 0; series edit and cancel reach occurrence 0.
 - SQL (throwaway Postgres), added for session-2 round 1: a series row with `BYDAY` is refused; a materialised occurrence
