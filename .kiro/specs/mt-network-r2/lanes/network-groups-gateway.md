@@ -11,8 +11,9 @@ paths:
   - services/gateway/src/routes/chat-groups-repository.ts
   - services/gateway/src/routes/chat-groups.ts
   - services/gateway/test/mt-network-groups-gateway.test.ts
-updated: 2026-11-01T15:54Z
+updated: 2026-11-06T10:10Z
 repos: [exafyltd/vitana-platform]
+vtid: VTID-05580
 ---
 # mt-network-r2/network-groups-gateway — group create/join via DEFINER (M3, flagged) (repo vitana-platform)
 
@@ -26,3 +27,6 @@ Branch `kiro/mt-network-r2/network-groups-gateway`; PR title `VTID-xxxxx (mt-net
 ## Log
 ### 2026-11-01T15:54Z · kiro-hotmail-202611011452-6d16 · created → ready
 Re-plan of `mt-network/network-groups-gateway`. Paths corrected to the real files on `main`. Sequenced after the lane that shares its files. Versions day-shifted to `20261102050*`. Reviewer agent.
+
+### 2026-11-06T10:10Z · ci-plan-spar · ready (VTID allocated)
+VTID-05580 allocated after policy approval (converged-auto-v1).

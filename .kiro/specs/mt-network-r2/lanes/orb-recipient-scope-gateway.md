@@ -10,8 +10,9 @@ reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 paths:
   - services/gateway/src/services/orb-tools-shared.ts
   - services/gateway/test/mt-network-orb-scope.test.ts
-updated: 2026-11-01T15:54Z
+updated: 2026-11-06T10:10Z
 repos: [exafyltd/vitana-platform]
+vtid: VTID-05583
 ---
 # mt-network-r2/orb-recipient-scope-gateway — ORB recipient/search scope (repo vitana-platform)
 
@@ -25,3 +26,6 @@ Branch `kiro/mt-network-r2/orb-recipient-scope-gateway`; PR title `VTID-xxxxx (m
 ## Log
 ### 2026-11-01T15:54Z · kiro-hotmail-202611011452-6d16 · created → ready
 Re-plan of `mt-network/orb-recipient-scope-gateway`. Sequenced after the lane that shares its files. Versions day-shifted to `20261102050*`. Reviewer agent.
+
+### 2026-11-06T10:10Z · ci-plan-spar · ready (VTID allocated)
+VTID-05583 allocated after policy approval (converged-auto-v1).

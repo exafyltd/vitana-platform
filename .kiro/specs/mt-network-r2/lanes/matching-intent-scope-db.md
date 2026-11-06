@@ -10,8 +10,9 @@ reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 paths:
   - supabase/migrations/20261102053***_*.sql
   - supabase/tests/mt-network-matching-scope.pgtap.sql
-updated: 2026-11-01T15:54Z
+updated: 2026-11-06T10:10Z
 repos: [exafyltd/vitana-platform]
+vtid: VTID-05575
 ---
 # mt-network-r2/matching-intent-scope-db — daily_matches/intent scope + Vitana Index removal (repo vitana-platform (one tree per object, re-plan R1-F1))
 
@@ -25,3 +26,6 @@ Branch `kiro/mt-network-r2/matching-intent-scope-db`; PR title `VTID-xxxxx (mt-n
 ## Log
 ### 2026-11-01T15:54Z · kiro-hotmail-202611011452-6d16 · created → ready
 Re-plan of `mt-network/matching-intent-scope-db`. Moved to the vitana-platform migration tree (one tree per object, R1-F1), seat `hotmail`. Versions day-shifted to `20261102050*`. Reviewer agent.
+
+### 2026-11-06T10:10Z · ci-plan-spar · ready (VTID allocated)
+VTID-05575 allocated after policy approval (converged-auto-v1).

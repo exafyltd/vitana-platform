@@ -16,8 +16,9 @@ paths:
   - src/i18n/de/screens.json
   - src/i18n/en/screens.json
   - tests/e2e/staging/mt-network-matching.staging.spec.ts
-updated: 2026-11-01T15:54Z
+updated: 2026-11-06T10:10Z
 repos: [exafyltd/vitana-v1]
+vtid: VTID-05574
 ---
 # mt-network-r2/matching-discover-scope-v1 — Find-a-Match/Discover scope wiring (repo vitana-v1)
 
@@ -31,3 +32,6 @@ Branch `kiro/mt-network-r2/matching-discover-scope-v1`; PR title `VTID-xxxxx (mt
 ## Log
 ### 2026-11-01T15:54Z · kiro-hotmail-202611011452-6d16 · created → ready
 Re-plan of `mt-network/matching-discover-scope-v1`. Paths corrected to the real files on `main`. Versions day-shifted to `20261102050*`. Reviewer agent.
+
+### 2026-11-06T10:10Z · ci-plan-spar · ready (VTID allocated)
+VTID-05574 allocated after policy approval (converged-auto-v1).

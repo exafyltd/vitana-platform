@@ -12,8 +12,9 @@ paths:
   - docs/multitenancy/MIGRATION-QUEUE.md
   - scripts/ci/migration-drift-baseline.json
   - services/gateway/test/mt-network-messaging-send-db.pgtap.test.ts
-updated: 2026-11-01T15:54Z
+updated: 2026-11-06T10:10Z
 repos: [exafyltd/vitana-platform]
+vtid: VTID-05576
 ---
 # mt-network-r2/messaging-send-db — scope column, send/connection RPCs, client-write revokes (repo vitana-platform)
 
@@ -27,3 +28,6 @@ Branch `kiro/mt-network-r2/messaging-send-db`; PR title `VTID-xxxxx (mt-network-
 ## Log
 ### 2026-11-01T15:54Z · kiro-hotmail-202611011452-6d16 · created → ready
 Re-plan of `mt-network/messaging-send-db`. Versions day-shifted to `20261102050*`. Reviewer agent.
+
+### 2026-11-06T10:10Z · ci-plan-spar · ready (VTID allocated)
+VTID-05576 allocated after policy approval (converged-auto-v1).

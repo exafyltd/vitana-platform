@@ -14,8 +14,9 @@ paths:
   - src/i18n/de/inbox.json
   - src/i18n/en/inbox.json
   - tests/e2e/staging/mt-network-groups.staging.spec.ts
-updated: 2026-11-01T15:54Z
+updated: 2026-11-06T10:10Z
 repos: [exafyltd/vitana-v1]
+vtid: VTID-05581
 ---
 # mt-network-r2/network-groups-v1 — network group UI + labels (M3, flagged) (repo vitana-v1)
 
@@ -29,3 +30,6 @@ Branch `kiro/mt-network-r2/network-groups-v1`; PR title `VTID-xxxxx (mt-network-
 ## Log
 ### 2026-11-01T15:54Z · kiro-hotmail-202611011452-6d16 · created → ready
 Re-plan of `mt-network/network-groups-v1`. Sequenced after the lane that shares its files. Versions day-shifted to `20261102050*`. Reviewer agent.
+
+### 2026-11-06T10:10Z · ci-plan-spar · ready (VTID allocated)
+VTID-05581 allocated after policy approval (converged-auto-v1).

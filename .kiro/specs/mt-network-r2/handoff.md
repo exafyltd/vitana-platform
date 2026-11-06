@@ -4,8 +4,10 @@ author: kiro
 author_seat: hotmail
 executor: kiro
 next_actor: kiro
-state: drafted
-updated: 2026-11-01T15:56Z
+state: approved
+updated: 2026-11-06T10:10Z
+sparring_record: .kiro/specs/mt-network-r2/sparring/verdict.md
+vtids: [VTID-05573, VTID-05574, VTID-05575, VTID-05576, VTID-05577, VTID-05578, VTID-05579, VTID-05580, VTID-05581, VTID-05582, VTID-05583]
 ---
 # Handoff — mt-network-r2
 Re-plan of `mt-network` (branch `kiro/mt-network/plan`). Its PLAN-SPAR session `0f65161a` stopped at round 2 with no
@@ -36,3 +38,6 @@ Other changes:
 - Migrations are applied only on the owner's approval (§7d).
 
 The plan PR opens when PLAN-SPAR capacity allows (`collaboration.md` §8a).
+
+### 2026-11-06T10:10Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 11 lane(s) got a VTID and are handed to Kiro.

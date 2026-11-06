@@ -12,8 +12,9 @@ paths:
   - docs/multitenancy/MIGRATION-QUEUE.md
   - scripts/ci/migration-drift-baseline.json
   - services/gateway/test/mt-network-groups-db.pgtap.test.ts
-updated: 2026-11-01T15:54Z
+updated: 2026-11-06T10:10Z
 repos: [exafyltd/vitana-platform]
+vtid: VTID-05579
 ---
 # mt-network-r2/network-groups-db — chat_groups scope + add_group_member (M3, flagged) (repo vitana-platform)
 
@@ -27,3 +28,6 @@ Branch `kiro/mt-network-r2/network-groups-db`; PR title `VTID-xxxxx (mt-network-
 ## Log
 ### 2026-11-01T15:54Z · kiro-hotmail-202611011452-6d16 · created → ready
 Re-plan of `mt-network/network-groups-db`. Versions day-shifted to `20261102050*`. Reviewer agent.
+
+### 2026-11-06T10:10Z · ci-plan-spar · ready (VTID allocated)
+VTID-05579 allocated after policy approval (converged-auto-v1).
