@@ -1,0 +1,11 @@
+[Unit]
+Description=Run the settings sync every 10 minutes
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=10min
+AccuracySec=5s
+Unit=vitana-settings.service
+
+[Install]
+WantedBy=timers.target

@@ -20,6 +20,7 @@ import { createHash } from 'crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { OrbToolArgs, OrbToolIdentity, OrbToolResult } from '../orb-tools-shared';
 import * as repo from './developer-tools-repository';
+import { NO_ADMIN_SESSION } from './admin-users-rbac-tools';
 
 type Handler = (
   args: OrbToolArgs,
@@ -126,9 +127,19 @@ export async function gatewayApiCall(
 
 async function approvalsApi(
   path: string,
-  init?: { method?: string; body?: unknown },
+  init?: { method?: string; body?: unknown; headers?: Record<string, string> },
 ): Promise<{ ok: boolean; status: number; body: Record<string, unknown> }> {
   return gatewayApiCall(`/api/v1/approvals${path}`, init);
+}
+
+/**
+ * mt-track-s-authz (VTID-05452): the approvals POST routes accept only the
+ * gateway service token or an exafy_admin JWT. The voice tools forward the
+ * caller's own JWT, so the change is made under the developer's signed-in
+ * session. Without one there is no call.
+ */
+function callerApprovalBearer(id: OrbToolIdentity): Record<string, string> | null {
+  return id.user_jwt ? { Authorization: `Bearer ${id.user_jwt}` } : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -311,6 +322,8 @@ async function resolveApprovalTarget(
 export const dev_approve_pr: Handler = async (args, id, sb) => {
   const denied = developerGate(id);
   if (denied) return denied;
+  const bearer = callerApprovalBearer(id);
+  if (!bearer) return NO_ADMIN_SESSION;
   try {
     const target = await resolveApprovalTarget(args, sb);
     if ('error' in target) return { ok: false, error: target.error };
@@ -324,6 +337,7 @@ export const dev_approve_pr: Handler = async (args, id, sb) => {
     const { ok, status, body } = await approvalsApi(`/${encodeURIComponent(target.approval_id)}/approve`, {
       method: 'POST',
       body: {},
+      headers: bearer,
     });
     if (!ok || body.ok !== true) {
       return {
@@ -348,6 +362,8 @@ export const dev_approve_pr: Handler = async (args, id, sb) => {
 export const dev_reject_pr: Handler = async (args, id, sb) => {
   const denied = developerGate(id);
   if (denied) return denied;
+  const bearer = callerApprovalBearer(id);
+  if (!bearer) return NO_ADMIN_SESSION;
   const reason = String(args.reason ?? '').trim();
   if (!reason) {
     return { ok: false, error: 'dev_reject_pr requires a reason. Ask the developer why they are rejecting it.' };
@@ -365,6 +381,7 @@ export const dev_reject_pr: Handler = async (args, id, sb) => {
     const { ok, status, body } = await approvalsApi(`/${encodeURIComponent(target.approval_id)}/reject`, {
       method: 'POST',
       body: { reason },
+      headers: bearer,
     });
     if (!ok || body.ok !== true) {
       return {
