@@ -1,6 +1,6 @@
 ---
 lane: reassign-migration
-state: ready
+state: executing
 next_actor: kiro
 depends_on: [reinstate-rules]
 executor: kiro
@@ -14,8 +14,10 @@ paths:
   - .kiro/specs/agentic-delivery/lanes/github-bridge.md
   - .kiro/specs/agentic-delivery/lanes/merge-queue.md
   - .kiro/specs/agentic-delivery/lanes/pipelines.md
-updated: 2026-11-05T22:17Z
+updated: 2026-11-06T23:43Z
 vtid: VTID-05565
+claimed_by: kiro-exafy-202611061823-5cb2
+branch: kiro/claude-migration-lanes/reassign-migration
 ---
 # Lane: reassign-migration (repo vitana-platform)
 Plan §3. Lane administration that sets `executor: claude` and `reviewer_seat: exafyltd` on `verify-on-gitlab`, `merge-queue` and
@@ -28,3 +30,9 @@ Lane created with the plan (round 1 response: `executor-switch` withdrawn, revie
 
 ### 2026-11-05T22:17Z · ci-plan-spar · ready (VTID allocated)
 VTID-05565 allocated after policy approval (converged-auto-v1).
+
+### 2026-11-06T23:43Z · kiro-exafy-202611061823-5cb2 · claim taken over (owner instruction)
+The claim of session_01Cp885Gw1CMmPDvDVHc7kw8 (since 2026-11-05T22:06Z) was removed on the owner's instruction (2026-11-06, "delete it"). The holder agreed to release it, but its `git push --delete` failed four times on a transport error. The ref was deleted through the GitHub REST API, then claimed by kiro-exafy-202611061823-5cb2.
+
+### 2026-11-06T23:43Z · kiro-exafy-202611061823-5cb2 · ready -> executing
+Reassigns only `merge-queue` (VTID-05549) and `pipelines` (VTID-05550) to `executor: claude`, `reviewer_seat: exafyltd`. Decision for the owner: `verify-on-gitlab` and `github-bridge` are in this lane's description but stay with Kiro (in-review, claimed by Kiro sessions); the owner decides later whether to move them.
