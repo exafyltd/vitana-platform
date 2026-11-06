@@ -298,6 +298,7 @@ with no console error. Seen: the Delivery item between Operations and Governance
 section per repository with "· GitLab" or "· GitHub" and the "Landing paused" pill; one-line rows with clipped titles; no page-level
 horizontal overflow at 390 px. At 390 px the Command Hub's own 260 px sidebar leaves about 130 px for content (existing shell), so
 the table scrolls inside the module once the sidebar is collapsed (content 292 px).
+UI: docs/validation/VTID-05547/outputs/shoot-report.json (screenshots `outputs/desktop-*.png` and `outputs/mobile-*.png`, 15 images)
 Proof: `outputs/shoot-report.json` and `outputs/desktop-*.png`, `outputs/mobile-*.png` (15 images).
 
 AC-26 Staging proof (G3): `docs/validation/VTID-05547/staging-tests.json` is valid for `run.mjs check-pr`; its read-only probes
