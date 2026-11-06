@@ -1,0 +1,9 @@
+##### RED ON BASE, run 1 (helper level): same assertions, the 13 ORIGINAL bodies plus a creator-only stand-in helper (= origin/main behaviour)
+psql:/projects/sandbox/.tools/scratch/base_test.sql:121: ERROR:  listed co-host of the same tenant is host
+CONTEXT:  PL/pgSQL function inline_code_block line 5 at ASSERT
+exit=3
+
+##### RED ON BASE, run 2 (gate level): sections 1-3 skipped, so the first failure is an ORIGINAL gate refusing a listed co-host
+psql:/projects/sandbox/.tools/scratch/base_test_gates.sql:136: ERROR:  transition_status as cohost: {"ok": false, "error": "NOT_HOST"}
+CONTEXT:  PL/pgSQL function inline_code_block line 9 at ASSERT
+exit=3
