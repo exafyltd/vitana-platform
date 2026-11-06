@@ -1,6 +1,6 @@
 ---
 lane: role-source-and-bootstrap
-state: in-review
+state: done
 next_actor: kiro
 executor: kiro
 seat: hotmail
@@ -13,7 +13,7 @@ paths:
   - supabase/migrations/20261102033100_vtid_*_fix_bootstrap_admin_user.sql
   - supabase/migrations/20261102033000_vtid_*_role_source_rollback.sql
   - supabase/tests/mt_identity_roles_*.sql
-updated: 2026-11-05T22:41Z
+updated: 2026-11-06T10:26Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05467
 branch: kiro/mt-identity-r2/role-source-and-bootstrap
@@ -73,3 +73,10 @@ Findings:
 - [non-blocking] .kiro/specs/mt-identity-r2/lanes/role-source-and-bootstrap.md. origin/main is now ed1b4e7388, four commits past this head's merge-base 84a488d282 (c0080572d3, d476df9f86, 51a4741e0e, ed1b4e7388). They change only lane and plan files under .kiro/specs (mt-guardrails-r2, mt-track-s-authz, mt-track-s-r2) and docs/validation/VTID-05463; none touches supabase/, services, scripts or a governance path. The PR is therefore behind main, and §7b needs it up to date and re-checked on its head before the merge. land-guard keeps this accept across a further merge of main only if that merge is clean, brings no governance or protected file and leaves the PR's own diff unchanged; otherwise a new review is needed.
 - [non-blocking] docs/validation/VTID-05467/commands.log. Carried over, unchanged since my earlier accept: pgTAP ran only through the PGlite shim (no Docker, so no supabase test db, supabase db reset or pg_prove); the SQL harness case of the two guard suites skipped (no local PostgreSQL binary); apply and rollback on the local stack did not run. The live tenants key column (tenant_id or id) and the live bootstrap_admin_user body are unverified (acceptance.md premises 2, 3 and 6, and 'Not run here'). None blocks merging the files. The apply needs the owner's approval of the files and the target database (§7d) and the owner's confirmation of decisions 1, 2, 6 and 11 and premise 3.
 Next: the land step merges under §7b once every required check on cd02d2d43a is finished and green and the PR is up to date with main (origin/main is ed1b4e7388 now; land-guard decides whether a further clean merge of main keeps this accept). This accept covers merge ee71c7f773 and the decision 11 text, and it confirms no check, because CI could not be read. The commit that appends this entry touches only the lane file, so this accept stays valid for it (land-guard rule b). The accept is for merging the files only: no migration is applied from the PR, and the apply needs the owner's approval of the files and the target database (§7d).
+
+### 2026-11-06T10:26Z · kiro-hotmail-202611011452-6d16 · in-review → verified
+merge: 0f3374e470 (exafyltd/vitana-platform#4723)
+authority: §7b PM rule. Merged by kiro-hotmail-202611011452-6d16 on head `89ee8f5658`: the reviewed head `cd02d2d43a`, the review-entry commit `2cb034fd75` (lane file only), and a clean merge of `origin/main` (`ed1b4e7388`). The 11 files that merge brought are spec and evidence files: no governance or protected file, no overlap with this lane. All 12 checks green on `89ee8f5658` (land-guard checks). The land guard found the review current, the checks green, and the branch up to date.
+
+### 2026-11-06T10:26Z · kiro-hotmail-202611011452-6d16 · verified → done
+Closed. The migrations are on `main` and not applied. The apply waits for the owner's approval of each file and of the target database (collaboration.md §7d), and for the owner's confirmation of decisions 1, 2, 6 and 11 and premise 3. Reviewer notes carried to the apply request: the explicit `user_tenants` insert in `20261102033100` (:121-127) does not set `vitana.suppress_membership_side_effects`, so the four AFTER INSERT triggers can fire inside the bootstrap when the target user has no primary membership (record it under Decisions taken, or wrap the insert before apply). Stale text in `docs/validation/VTID-05467/acceptance.md` (line 20 says 20 assertions; the file has 24, and premise 4 at line 163 is out of date) is corrected at the next edit of that file.
