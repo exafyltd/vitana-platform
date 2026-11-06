@@ -35,12 +35,18 @@ jest.mock('../src/i18n/server-locale', () => ({
   getUserLocale: async () => 'de',
 }));
 
+// Co-host checks use the service-role client; tests control its answers.
+let mockSupa: any = null;
+jest.mock('../src/lib/supabase', () => ({ getSupabase: () => mockSupa }));
+
 import liveRouter from '../src/routes/live';
 
 const ROOM = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
 const SESSION = 'sess-0001';
 const CREATOR = 'creator-user';
 const STRANGER = 'stranger-user';
+const COHOST = 'cohost-user';
+const COHOST_ID = '33333333-3333-4333-8333-333333333333';
 const FUTURE = '2099-01-01T18:00:00.000Z';
 
 type Setup = {
@@ -49,7 +55,7 @@ type Setup = {
   listingOk?: boolean;
 };
 
-function installFetch(s: Setup) {
+function installFetch(s: Setup & { grantsFail?: boolean }) {
   const calls: Array<{ url: string; method: string; body?: any }> = [];
   (global as any).fetch = jest.fn(async (url: string, init: any = {}) => {
     const method = init.method || 'GET';
@@ -61,7 +67,7 @@ function installFetch(s: Setup) {
     if (url.includes('/rpc/live_room_get')) {
       return json({ id: ROOM, host_user_id: CREATOR, tenant_id: 'tenant-1', current_session_id: SESSION, status: s.status ?? 'scheduled' });
     }
-    if (url.includes('/live_room_access_grants')) return json(s.grants ?? []);
+    if (url.includes('/live_room_access_grants')) return s.grantsFail ? json({ message: 'x' }, 500) : json(s.grants ?? []);
     if (url.includes('/community_live_streams')) return s.listingOk === false ? json({ message: 'boom' }, 500) : json({}, 204);
     if (url.includes('/live_room_sessions') || url.includes('/live_rooms')) return json({}, 204);
     return json({ ok: true });
@@ -77,6 +83,7 @@ function app() {
 }
 
 beforeEach(() => {
+  mockSupa = { rpc: async () => ({ data: false, error: null }) };
   process.env.SUPABASE_URL = 'https://supabase.test';
   process.env.SUPABASE_SERVICE_ROLE = 'service-key';
 });
@@ -168,5 +175,63 @@ describe('POST /rooms/:id/open-lobby', () => {
     installFetch({});
     const r = await request(app()).post(`/api/v1/live/rooms/${ROOM}/open-lobby`).send({ user_id: CREATOR });
     expect(r.status).toBe(401);
+  });
+});
+
+describe('co-host routes (VTID-05559)', () => {
+  it('a listed co-host is not refused as NOT_HOST when opening the lobby', async () => {
+    installFetch({});
+    mockSupa = { rpc: async (fn: string) => ({ data: fn === 'live_room_is_host' ? true : [], error: null }) };
+    const r = await request(app()).post(`/api/v1/live/rooms/${ROOM}/open-lobby`).set('Authorization', `Bearer valid-${COHOST}`).send({});
+    expect(r.body.error).not.toBe('NOT_HOST');
+  });
+
+  it('an unlisted member opening the lobby is 403 NOT_HOST, even when the body names the creator', async () => {
+    installFetch({});
+    const r = await request(app()).post(`/api/v1/live/rooms/${ROOM}/open-lobby`).set('Authorization', `Bearer valid-${STRANGER}`).send({ user_id: CREATOR });
+    expect(r.status).toBe(403);
+    expect(r.body.error).toBe('NOT_HOST');
+  });
+
+  it('daily: an unlisted member is 403 NOT_HOST', async () => {
+    installFetch({});
+    const r = await request(app()).post(`/api/v1/live/rooms/${ROOM}/daily`).set('Authorization', `Bearer valid-${STRANGER}`).send({});
+    expect(r.status).toBe(403);
+    expect(r.body.error).toBe('NOT_HOST');
+  });
+
+  it('daily: a listed co-host is not refused as NOT_HOST', async () => {
+    installFetch({});
+    mockSupa = { rpc: async (fn: string) => ({ data: fn === 'live_room_is_host' ? true : [], error: null }) };
+    const r = await request(app()).post(`/api/v1/live/rooms/${ROOM}/daily`).set('Authorization', `Bearer valid-${COHOST}`).send({});
+    expect(r.body.error).not.toBe('NOT_HOST');
+  });
+
+  it('create: co-hosts with no validation client are 503 CO_HOST_VALIDATION_UNAVAILABLE', async () => {
+    installFetch({});
+    mockSupa = null;
+    const r = await request(app()).post(`/api/v1/live/rooms/${ROOM}/sessions`).set('Authorization', `Bearer valid-${CREATOR}`)
+      .send({ starts_at: FUTURE, co_hosts: [COHOST_ID] });
+    expect(r.status).toBe(503);
+    expect(r.body.error).toBe('CO_HOST_VALIDATION_UNAVAILABLE');
+  });
+
+  it('create: a co-host the room does not accept is 400 INVALID_CO_HOSTS with the dropped id', async () => {
+    installFetch({});
+    mockSupa = { rpc: async () => ({ data: [], error: null }) };
+    const r = await request(app()).post(`/api/v1/live/rooms/${ROOM}/sessions`).set('Authorization', `Bearer valid-${CREATOR}`)
+      .send({ starts_at: FUTURE, co_hosts: [COHOST_ID] });
+    expect(r.status).toBe(400);
+    expect(r.body.error).toBe('INVALID_CO_HOSTS');
+    expect(r.body.dropped).toEqual([COHOST_ID]);
+  });
+
+  it('PATCH: a failed grant check is 502 GRANT_CHECK_FAILED and writes nothing', async () => {
+    const calls = installFetch({ grantsFail: true });
+    const r = await request(app()).patch(`/api/v1/live/rooms/${ROOM}/sessions/current`)
+      .set('Authorization', `Bearer valid-${CREATOR}`).send({ access_level: 'group' });
+    expect(r.status).toBe(502);
+    expect(r.body.error).toBe('GRANT_CHECK_FAILED');
+    expect(calls.some((c) => c.method === 'PATCH')).toBe(false);
   });
 });
