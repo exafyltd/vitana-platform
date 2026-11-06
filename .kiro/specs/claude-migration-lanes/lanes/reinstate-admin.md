@@ -1,6 +1,6 @@
 ---
 lane: reinstate-admin
-state: executing
+state: in-review
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -11,10 +11,11 @@ reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 repos: [exafyltd/vitana-platform]
 paths:
   - .kiro/specs/claude-migration-lanes/lanes/reinstate-rules.md
-updated: 2026-11-06T12:11Z
+updated: 2026-11-06T12:12Z
 vtid: VTID-05567
 claimed_by: kiro-exafy-202611061210-404d
 branch: kiro/claude-migration-lanes/reinstate-admin
+pr: https://github.com/exafyltd/vitana-platform/pull/4743
 ---
 # Lane: reinstate-admin (repo vitana-platform)
 Late lane of plan `claude-migration-lanes`, added after the plan merged (owner instruction 2026-11-05: option 1, take VTID-05565 as
@@ -32,3 +33,6 @@ VTID-05567 allocated after policy approval (converged-auto-v1).
 
 ### 2026-11-06T12:11Z · kiro-exafy-202611061210-404d · ready -> executing
 Claimed by Kiro seat exafy. Edits only `reinstate-rules.md` (executor kiro -> claude, reviewer_seat -> exafyltd, seat removed). Next: reviewer agent reviews the PR head.
+
+### 2026-11-06T12:12Z · kiro-exafy-202611061210-404d · executing -> in-review
+PR https://github.com/exafyltd/vitana-platform/pull/4743. validate and scope-check green locally. Next: reviewer agent `vitana-lane-reviewer` reviews the current head.
