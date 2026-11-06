@@ -28,3 +28,10 @@ VitanaMessagesSettings.tsx, useCompanionPreferences.ts, useTenant.tsx, MessageBu
 
 ### 2026-11-06T17:09Z · ci-plan-spar · drafted → approved
 Converged; approved by policy converged-auto-v1. 2 lane(s) got a VTID and are handed to Kiro.
+
+### 2026-11-06T17:20Z · kiro-exafy-202611061658-9ca9 · approved (driver: merging the plan PR)
+Sparring converged in round 2 (verdict.md); lanes have VTID-05588 (gateway-test-card) and VTID-05589
+(v1-test-card-button). R2-F1 (minor, open at convergence): `getServiceClient()` is local to
+scheduled-notifications.ts; `getSupabase()` (`lib/supabase.ts:5`) is already a service-role client, so the lane uses
+it — the plan's intent (a service-role client for the bot-sender insert) holds; listed under Decisions taken at Gate 2.
+Next: merge PR #4750 under §7b once checks are green, then build `gateway-test-card`.
