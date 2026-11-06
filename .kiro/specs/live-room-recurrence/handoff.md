@@ -4,8 +4,9 @@ author: claude
 author_seat: none
 executor: kiro
 next_actor: claude
-state: drafted
-updated: 2026-11-06T08:45Z
+state: parked
+updated: 2026-11-06T09:19Z
+parked_from: drafted
 ---
 # Handoff — live-room-recurrence
 
@@ -27,3 +28,6 @@ Written on the owner's instruction (6 Nov 2026) for repeating Live Rooms. Read o
 `live_room_sessions` table has no series field; calendar entries already use `calendar_events.rrule` with the gateway
 expander in `services/calendar-recurrence.ts`, which this plan reuses. Depends on the in-flight `live-room-edit-cohost`
 lanes (`gateway-cohost`, `v1-edit-session`) for the shared form, the edit dialog and `live.ts`. No lane is claimed.
+
+### 2026-11-06T09:19Z · ci-plan-spar · drafted → parked
+Not converged after 2 sparring sessions (round_cap_reached). Parked with the open findings in sparring/.
