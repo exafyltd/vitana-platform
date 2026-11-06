@@ -1,5 +1,16 @@
 # VTID-05559 commands.log
 
-Not yet run. The helper tests are red by construction on the base (the module does not exist).
-Local run not possible in this session: npm registry unreachable, no node_modules.
-Results will be recorded here from CI or a local run once the implementation is pushed.
+Head reviewed: f59191cbd67d0253d0c5df31096f6dc888966594 (branch kiro/live-room-edit-cohost/gateway-cohost).
+
+## CI (GitHub Actions, run on the head above)
+- Gateway (Jest, shards 1-4): completed/success.
+- PASS test/live-room-cohost-helpers.test.ts (isRoomHost, filterCoHosts).
+- PASS test/live-room-cohost-edit.test.ts (edit rules: locked fields, payloads).
+- PASS test/live-room-cohost-routes.test.ts (PATCH refusals and writes, open-lobby without a login).
+- All 24 check runs on the head: success.
+
+## Red on base
+The helper tests failed on the base before the implementation existed (module not found).
+
+## Local
+Not run locally: no npm registry access from the build session. CI is the record.
