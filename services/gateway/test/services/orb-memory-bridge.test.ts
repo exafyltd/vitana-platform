@@ -594,34 +594,43 @@ describe('fetchMemoryContextWithIdentity', () => {
     expect(result.user_id).not.toBe(DEV_IDENTITY.USER_ID);
   });
 
-  it('scopes every memory_items query to the given identity\'s tenant_id/user_id, never another tenant\'s', async () => {
+  // memory-legacy-read-retire: the read goes through recall() only, so tenant
+  // scoping is the identity handed to recall() (recall.test.ts covers how the
+  // broker applies it). The bridge itself runs no memory_items query any more.
+  it('reads through recall() with exactly the given identity, never another tenant\'s, and runs no direct memory_items query', async () => {
+    const recallMod = require('../../src/services/memory/recall');
+    const spy = jest.spyOn(recallMod, 'recallOrbMemoryItems').mockResolvedValue({
+      ok: true, items: [], latency_ms: 1, degraded: false, sections: { facts: 0, episodes: 0, diary: 0 },
+    });
     mockClient = makeSupabaseClient({ fromResolver: () => ({ data: [], error: null }) });
-    await fetchMemoryContextWithIdentity({ user_id: 'user-abc', tenant_id: 'tenant-xyz' });
-
-    const memoryItemsCalls = (mockClient.from as jest.Mock).mock.results
-      .filter((_r: any, idx: number) => (mockClient.from as jest.Mock).mock.calls[idx][0] === 'memory_items');
-    expect(memoryItemsCalls.length).toBeGreaterThan(0);
-    for (const r of memoryItemsCalls) {
-      const eqCalls = r.value.__calls.filter((c: ChainCall) => c.method === 'eq');
-      expect(eqCalls).toEqual(
-        expect.arrayContaining([
-          { method: 'eq', args: ['tenant_id', 'tenant-xyz'] },
-          { method: 'eq', args: ['user_id', 'user-abc'] },
-        ]),
-      );
-      // Never leaks another identity's scope onto this query.
-      expect(eqCalls).not.toEqual(
-        expect.arrayContaining([{ method: 'eq', args: ['tenant_id', DEV_IDENTITY.TENANT_ID] }]),
-      );
+    try {
+      await fetchMemoryContextWithIdentity({ user_id: 'user-abc', tenant_id: 'tenant-xyz' });
+      expect(spy).toHaveBeenCalledTimes(1);
+      const passed = spy.mock.calls[0][0] as { user_id: string; tenant_id: string };
+      expect(passed).toEqual(expect.objectContaining({ user_id: 'user-abc', tenant_id: 'tenant-xyz' }));
+      // Never leaks another identity's scope onto the read.
+      expect(passed.tenant_id).not.toBe(DEV_IDENTITY.TENANT_ID);
+      expect(passed.user_id).not.toBe(DEV_IDENTITY.USER_ID);
+      const memoryItemsCalls = (mockClient.from as jest.Mock).mock.calls.filter((c: any[]) => c[0] === 'memory_items');
+      expect(memoryItemsCalls).toEqual([]);
+    } finally {
+      spy.mockRestore();
     }
   });
 
-  it('returns ok:true with an empty item set when every underlying query is empty (no crash on all-empty data)', async () => {
-    mockClient = makeSupabaseClient({ fromResolver: () => ({ data: [], error: null }) });
-    const result: OrbMemoryContext = await fetchMemoryContextWithIdentity({ user_id: 'user-abc', tenant_id: 'tenant-xyz' });
-    expect(result.ok).toBe(true);
-    expect(result.items).toEqual([]);
-    expect(result.formatted_context).toBe('');
+  it('returns ok:true with an empty item set when recall() returns no items (no crash on all-empty data)', async () => {
+    const recallMod = require('../../src/services/memory/recall');
+    const spy = jest.spyOn(recallMod, 'recallOrbMemoryItems').mockResolvedValue({
+      ok: true, items: [], latency_ms: 1, degraded: false, sections: { facts: 0, episodes: 0, diary: 0 },
+    });
+    try {
+      const result: OrbMemoryContext = await fetchMemoryContextWithIdentity({ user_id: 'user-abc', tenant_id: 'tenant-xyz' });
+      expect(result.ok).toBe(true);
+      expect(result.items).toEqual([]);
+      expect(result.formatted_context).toBe('');
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
 

@@ -163,6 +163,8 @@ export type CicdEventType =
   // state transition, unlike the shadow tick), and a member's own settings change.
   | 'companion.message.sent'
   | 'companion.message.failed'
+  // VTID-05588: an exafy admin sent one companion card to themselves (no ledger, no push).
+  | 'companion.test_card.sent'
   // VTID-05205: team welcome DMs (Mariia, Jovana, Alex Blue) — one per real
   // send or failed send, plus one per tick that decided something.
   | 'welcome_team.tick.completed'
