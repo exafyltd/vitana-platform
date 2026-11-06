@@ -1,6 +1,6 @@
 ---
 lane: bridge-recall-only
-state: in-review
+state: done
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -18,7 +18,7 @@ paths:
   - services/gateway/test/vtid-05147-effective-role-permitted.test.ts
   - docs/MEMORY-SYSTEM-PLAN.md
   - docs/validation/VTID-*/**
-updated: 2026-11-05T12:30Z
+updated: 2026-11-06T14:00Z
 claimed_by: kiro-exafyltd-202611042048-44bc
 branch: kiro/memory-legacy-read-retire-r2/bridge-recall-only
 pr: https://github.com/exafyltd/vitana-platform/pull/4701
@@ -110,3 +110,12 @@ Findings: [non-blocking] Re-review after the merge of origin/main: git diff 13df
 [non-blocking] An identity missing tenant_id or user_id now gets 'Memory bridge disabled' instead of a DEV_IDENTITY recall (safer); keep it in Gate 2 "Decisions taken".
 CI on 816dc6e7 (gh run view --json headSha,conclusion): all 12 named runs succeeded, attempt 1.
 Next: the land step merges under §7b.
+
+### 2026-11-06T13:57Z · kiro-exafyltd-202611042048-44bc · in-review → verified
+merge: 05364284a12fd4d8711e0940e285bb81be9e5d86 (exafyltd/vitana-platform#4701, https://github.com/exafyltd/vitana-platform/pull/4701)
+authority: §7b PM rule (land-guard merge: review current on 79d4b7a1, checks green, up to date)
+Staging deploy https://github.com/exafyltd/vitana-platform/actions/runs/42227415002; staging serves 05364284.
+STAGING-VERIFY passed on 05364284: https://github.com/exafyltd/vitana-platform/actions/runs/42229039116 (smoke 12/12; change suites incl. VTID-05556).
+
+### 2026-11-06T14:00Z · kiro-exafyltd-202611042048-44bc · verified → done
+Closed. Production still serves 200228350454; production is the owner's PUBLISH after Gate 2.
