@@ -1,6 +1,6 @@
 ---
 lane: gateway-delivery
-state: ready
+state: in-review
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -26,7 +26,10 @@ paths:
   - services/gateway/src/navigation/data/nav-embeddings.json
   - scripts/ci/command-hub-ownership-guard.js
   - docs/validation/**
-updated: 2026-11-05T02:59Z
+updated: 2026-11-06T23:40Z
+claimed_by: kiro-exafy-202611062222-c262
+branch: kiro/agentic-delivery/gateway-delivery
+pr: https://github.com/exafyltd/vitana-platform/pull/4764
 vtid: VTID-05547
 ---
 # Lane: gateway-delivery (repo vitana-platform)
@@ -42,3 +45,12 @@ VTID-05547 allocated after policy approval (converged-auto-v1).
 reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
 ### 2026-11-05T02:59Z · pm-agent · update
 reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
+
+### 2026-11-06T23:30Z · kiro-exafy-202611062222-c262 · ready → executing
+Takeover of the lane by the plan driver of eng-gitlab-m2 and agentic-delivery. The builder work is the lane commit eb842ba2f3 (session kiro-exafy-202611021438-cff7, branch kiro/backup/gateway-delivery, no PR, no log entry before this one); the driver took the work over from that branch and did not rebuild it. Builder session of the commit: kiro-exafy-202611021438-cff7. Claim: refs/heads/collab-claim/agentic-delivery/gateway-delivery held by kiro-exafy-202611062222-c262.
+
+### 2026-11-06T23:40Z · kiro-exafy-202611062222-c262 · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/4764 (branch kiro/agentic-delivery/gateway-delivery, base main).
+Commits on the branch: c515b4bc9f (the lane commit, amended with the 18 stored Delivery voice-navigation vectors of Open item 1, Titan v2 512 dims from the owner's CloudShell run, existing rows unchanged) and 2bd703b726 (AC-25 maps to its screenshot proof, a UI line).
+Local evidence: the five navigation suites, 129 of 129 pass (nav-registry-loo, nav-golden-registry, vtid-04814, vtid-04846, nav-dispatch); preflight passes on 2bd703b726.
+Open: the reviewer-agent review on the current head, then STAGING-VERIFY on the merge commit (this lane deploys to staging).
