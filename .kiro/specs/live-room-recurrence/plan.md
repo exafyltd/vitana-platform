@@ -29,9 +29,13 @@ dialog that plan introduces, so it runs after those lanes.
 
 ## Interfaces between lanes
 1. **SQL** (lane `db-live-series`, platform): table `public.live_room_series` (`id uuid pk`, `tenant_id`, `room_id`
-   references `live_rooms` on delete cascade, `host_user_id`, `rrule text` with the same CHECK as `calendar_events`
-   plus `FREQ=DAILY|WEEKLY|MONTHLY` and `INTERVAL`, `time_zone text`, `starts_at_first timestamptz`, `until_at timestamptz
-   null`, `max_occurrences int` 2 to 52, `status` active|cancelled, `created_at`). Column
+   references `live_rooms` on delete cascade, `host_user_id`, `rrule text` with a tighter CHECK than `calendar_events`:
+   `^FREQ=(DAILY|WEEKLY|MONTHLY)(;(INTERVAL=[1-9][0-9]*|COUNT=[1-9][0-9]*|UNTIL=[0-9]{8}T[0-9]{6}Z))*$` (no `BYDAY`: the
+   gateway never generates it, so the table refuses it), `time_zone text`, `starts_at_first timestamptz`, `until_at timestamptz
+   null`, `max_occurrences int` 2 to 52, `status` active|cancelled, `created_at`, and the session template
+   `session_defaults jsonb not null` (`session_title`, `topic_keys`, `access_level`, `auto_admit`, `lobby_buffer_minutes`,
+   `max_participants`, `metadata` incl. `stream_type`), and `co_host_user_ids uuid[] not null default '{}'` (validated by the
+   gateway through `live_room_filter_co_hosts` of `live-cohosts`, the same rule as the edit plan). Column
    `live_room_sessions.series_id uuid null references live_room_series(id) on delete set null` and
    `live_room_sessions.series_index int null`. A unique index on `(series_id, series_index)`. RLS: tenant members read
    their tenant's series; writes only via `service_role` (gateway). No browser writes.
@@ -56,16 +60,18 @@ dialog that plan introduces, so it runs after those lanes.
    - **Materialisation loop, every hour:** creates the missing occurrence rows inside the 8-week window (below). Heavier, so
      it runs less often and never blocks promotion. It does not use the user-JWT RPC `live_room_create_session`: it calls the new
    SQL function `live_room_series_insert_occurrence(p_series_id uuid, p_index int)` (service_role only, SECURITY DEFINER).
-   That function reads host, tenant, rule and time from the `live_room_series` row, checks that the series is `active` and
-   that the room exists, inserts one `live_room_sessions` row with `idempotency_key = series:<series_id>:<index>` and
+   That function reads host, tenant, rule, time, the `session_defaults` template and `co_host_user_ids` from the
+   `live_room_series` row, checks that the series is `active` and that the room exists, inserts one `live_room_sessions` row
+   with those values (so every occurrence carries the title, topics, access, stream type and co-hosts the host chose),  with `idempotency_key = series:<series_id>:<index>` and
    `ON CONFLICT DO NOTHING`, and returns the row or nothing. Host ownership is therefore checked against the stored series
    row, not a JWT. A series stops at `until_at` or `max_occurrences`.
    Every series lifecycle operation emits an OASIS event: `live.series.created`, `live.series.updated`,
    `live.series.cancelled` (the same emission pattern as session lifecycle in `room-session-manager.ts`).
 4. **Edit contract** (lane `gateway-live-series`, extends interface 3 of the edit plan): `PATCH .../sessions/current` gains
    `scope: "this" | "series"` (default `"this"`) and `recurrence` (change the rule or end, or `null` to stop repeating).
-   `scope: "series"` updates the series row and every occurrence with `status = 'scheduled'` and `starts_at > now()`
-   (time of day and title/description/other fields), never a `lobby`, `live` or `ended` one. Replies add
+   `scope: "series"` updates the series row first (its `session_defaults`, `co_host_user_ids`, and the rule when given), then
+   every occurrence with `status = 'scheduled'` and `starts_at > now()` (time of day, title, topics, access, co-hosts and the
+   other template fields), so later materialised rows read the new template. It never changes a `lobby`, `live` or `ended` one. Replies add
    `updated_occurrences: n`. `409 SERIES_NOT_FOUND` for a session without a series when `scope` is `"series"`.
    Cancelling a series: `POST .../sessions/series/cancel` (creator only) sets `status = 'cancelled'` on the series and on
    its scheduled occurrences; live and ended occurrences are untouched.
@@ -77,7 +83,9 @@ dialog that plan introduces, so it runs after those lanes.
    `live_room_series_promote_next(p_room_id uuid) returns uuid` (service_role only, SECURITY DEFINER). When the room is
    `idle` (its session ended or was cancelled, `live_room_end_session` at `...session_mgmt.sql:469` resets it), it picks the
    earliest occurrence of a series on that room with `status = 'scheduled'` and `starts_at > now() - lobby_buffer` and sets
-   `live_rooms.current_session_id` to it and `status` to `scheduled`. It returns that session id, or NULL when none is left.
+   `live_rooms.current_session_id` to it and `status` to `scheduled`. The function first runs
+   `SELECT ... FROM public.live_rooms WHERE id = p_room_id FOR UPDATE`, so concurrent callers on any instance are serialised
+   by the row lock and a room cannot be promoted twice or skipped (the platform runs on ECS, so instances are not in-process). It returns that session id, or NULL when none is left.
    A room that is not `idle` is never changed. A live or ended occurrence is never promoted.
    Trigger: the 5-minute promotion loop of Interface 3 runs it for every room that has an active series, so the next
    occurrence is linked at most about 5 minutes after the previous one ends. `live_room_end_session`,
@@ -145,6 +153,9 @@ dialog and list files). Until both are `done` the lanes stay `ready` and unclaim
 - SQL (throwaway Postgres): a series row with a valid rule is accepted, an invalid rule and `max_occurrences` outside 2 to 52
   are refused; the unique `(series_id, series_index)` holds; a browser session (`authenticated`) cannot insert a series row.
   Red on base: the table does not exist.
+- SQL (throwaway Postgres), added for session-2 round 1: a series row with `BYDAY` is refused; a materialised occurrence
+  carries the series `session_defaults` and `co_host_user_ids`; two concurrent promotions on one room promote exactly one
+  occurrence (the `FOR UPDATE` serialises them).
 - SQL (throwaway Postgres), added for round 2: a series of 3 creates one linked session and two scheduled rows; ending
   occurrence 0 and running promotion links occurrence 1 and nothing else; promotion never changes a `live` or `ended`
   session or a non-idle room; a missed occurrence is cancelled, not promoted.
