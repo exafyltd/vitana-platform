@@ -16,7 +16,7 @@ paths:
   - services/gateway/src/types/cicd.ts
   - services/gateway/test/companion-test-card.test.ts
   - docs/validation/VTID-*/**
-updated: 2026-11-06T18:05Z
+updated: 2026-11-06T18:02Z
 vtid: VTID-05588
 claimed_by: kiro-exafy-202611061658-9ca9
 pr: https://github.com/exafyltd/vitana-platform/pull/4751
@@ -54,3 +54,12 @@ Findings: [non-blocking] routes/companion.ts: the 60 s rate limit is an in-proce
 Findings: [non-blocking] 10d passes. lib/supabase.ts:9/19 builds getSupabase() with the service-role key, and getServiceClient() is not exported, so getSupabase() meets the plan's intent (R2-F1).
 Findings: Other items pass on reading the code (1, 2, 4, 5, 6, 7, 8, 9, 10a, 10b, 10c, 10e).
 Next: the lane's seat (or the caller) supplies readable CI status for head d40cefc2 and re-requests review. No code change is required by this review.
+
+### 2026-11-06T18:00Z · kiro-exafy-202611061658-9ca9 · in-review → executing
+Review `changes` on d40cefc2: the only blocking finding is that the reviewer could not read CI (`gh pr checks` is not
+available in Kiro Web). Taking the non-blocking test finding too: the staging, off and shadow refusals now also assert
+that no table is read and that fetchIndex and compose are not called.
+
+### 2026-11-06T18:02Z · kiro-exafy-202611061658-9ca9 · executing → in-review
+Refusal tests hardened (13/13 green, outputs/green.txt). The next review gets the head's check-run ids so CI can be
+read with `gh run view`. PR https://github.com/exafyltd/vitana-platform/pull/4751.

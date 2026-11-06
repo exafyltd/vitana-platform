@@ -168,7 +168,11 @@ describe('VTID-05588: POST /api/v1/companion/test-card', () => {
     const r = await post('admin');
     expect(r.status).toBe(409);
     expect(r.body).toMatchObject({ ok: false, error: 'STAGING_DISABLED' });
+    // Refused before any database read or Bedrock call.
     expect(mockDb.inserts).toHaveLength(0);
+    expect(mockDb.touched.size).toBe(0);
+    expect(mockFetchIndex).not.toHaveBeenCalled();
+    expect(mockCompose).not.toHaveBeenCalled();
   });
 
   it.each(['off', 'shadow'])('409 SEND_NOT_AVAILABLE when the mode is %s (the kill switch stops test cards)', async (mode) => {
@@ -176,7 +180,11 @@ describe('VTID-05588: POST /api/v1/companion/test-card', () => {
     const r = await post('admin');
     expect(r.status).toBe(409);
     expect(r.body).toMatchObject({ ok: false, error: 'SEND_NOT_AVAILABLE', mode });
+    // Refused before any database read or Bedrock call.
     expect(mockDb.inserts).toHaveLength(0);
+    expect(mockDb.touched.size).toBe(0);
+    expect(mockFetchIndex).not.toHaveBeenCalled();
+    expect(mockCompose).not.toHaveBeenCalled();
   });
 
   it('works in staff mode too', async () => {
