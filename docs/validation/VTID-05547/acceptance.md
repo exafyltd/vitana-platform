@@ -405,3 +405,13 @@ Decisions taken inside the plan (for Gate 2):
     Titan v2 call (`test/nav-golden/build-embeddings.ts`) in CloudShell, merged offline with the bundled vectors in
     `nav-embeddings.bin` / `.json`, because regenerating needs Bedrock and no agent session may call AWS. Until they land, the 5 suites of
     `outputs/pending-vectors.txt` fail; with them, they must pass with no other change.
+
+## Route evidence (VTID-05547 mounts two read routes)
+
+ROUTE_MOUNT: `GET /api/v1/delivery/summary` and `GET /api/v1/delivery/metrics` (new, `services/gateway/src/routes/delivery.ts`,
+mounted in `services/gateway/src/index.ts` with `mountRouterSync(app, '/api/v1/delivery', ...)`; service token or exafy_admin, no
+other method). The GitLab webhook stage is middleware before the existing route `POST /api/v1/internal/gitlab/webhook`, not a new route.
+FINAL_URL: https://preview-aws-gateway.vitanaland.com/api/v1/delivery/summary (staging, unauthenticated GET; not yet called: the probe
+runs at STAGING-VERIFY and is in staging-tests.json).
+CURL_PROOF: pending STAGING-VERIFY. The expected answer of the unauthenticated GET is 401 application/json (route exists), not an HTML
+404. Until that run this line is a claim to be checked, not evidence.
