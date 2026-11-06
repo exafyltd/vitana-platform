@@ -1,0 +1,5 @@
+# VTID-05559 commands.log
+
+Not yet run. The helper tests are red by construction on the base (the module does not exist).
+Local run not possible in this session: npm registry unreachable, no node_modules.
+Results will be recorded here from CI or a local run once the implementation is pushed.
