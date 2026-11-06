@@ -30,7 +30,8 @@ import { z } from 'zod';
 import { randomUUID } from 'crypto';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { DailyClient, computeDailyRoomExpiry } from '../services/daily-client';
-import { isRoomHostNow } from '../services/live-cohosts';
+import { isRoomHostNow, filterCoHosts, CoHostValidationUnavailableError, type RpcClient } from '../services/live-cohosts';
+import { getSupabase } from '../lib/supabase';
 // VTID-03107: Live Room hosting quota enforcement
 import { verifyAndExtractIdentity, optionalAuth, requireAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import {
@@ -186,6 +187,8 @@ const MeetupRsvpSchema = z.object({
 // VTID-01228: Session management schemas
 const CreateSessionSchema = z.object({
   session_title: z.string().optional(),
+  // VTID-05559: co-hosts are validated against the room's tenant before any write.
+  co_hosts: z.array(z.string().uuid()).max(5).optional(),
   topic_keys: z.array(z.string()).optional(),
   starts_at: z.string().datetime(),
   ends_at: z.string().datetime().optional(),
@@ -2057,6 +2060,26 @@ router.post('/rooms/:id/sessions', optionalAuth, sessionCreateLimiter, async (re
     }
   }
 
+  // VTID-05559: co-hosts are checked with the service-role validator before
+  // the session exists. The creator is the verified identity (not a decoded token).
+  let coHosts: string[] = [];
+  if (validation.data.co_hosts && validation.data.co_hosts.length > 0) {
+    const creatorId = (req as any).identity?.user_id as string | undefined;
+    const supaForCoHosts = getSupabase();
+    if (!creatorId) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+    if (!supaForCoHosts) return res.status(503).json({ ok: false, error: 'CO_HOST_VALIDATION_UNAVAILABLE' });
+    try {
+      const filtered = await filterCoHosts(supaForCoHosts as unknown as RpcClient, roomId, creatorId, validation.data.co_hosts);
+      if (!filtered.ok) return res.status(400).json({ ok: false, error: 'INVALID_CO_HOSTS', dropped: filtered.dropped });
+      coHosts = filtered.ids;
+    } catch (err) {
+      if (err instanceof CoHostValidationUnavailableError) {
+        return res.status(503).json({ ok: false, error: 'CO_HOST_VALIDATION_UNAVAILABLE' });
+      }
+      return res.status(502).json({ ok: false, error: 'CO_HOST_VALIDATION_FAILED' });
+    }
+  }
+
   // VTID-04905 (B8): a session always gets an end, so auto-end can fire:
   // ends_at = starts_at + duration_minutes (default 60) unless given.
   const sessionPayload = { ...validation.data, ends_at: validation.data.ends_at || defaultSessionEndsAt(validation.data) };
@@ -2119,6 +2142,8 @@ router.post('/rooms/:id/sessions', optionalAuth, sessionCreateLimiter, async (re
           access_level: validation.data.access_level || 'public',
           tags: validation.data.topic_keys || [],
           enable_chat: true,
+          // VTID-05559: the validated co-host list (always written, [] when none).
+          co_hosts: coHosts,
           viewer_count: 0,
           // Planned session length → deterministic finish (start + duration).
           // The staleness guard / reaper use this to auto-move a finished room
