@@ -5,7 +5,7 @@ author_seat: hotmail
 executor: kiro
 next_actor: kiro
 state: approved
-updated: 2026-11-02T20:43Z
+updated: 2026-11-06T09:42Z
 sparring_record: .kiro/specs/mt-guardrails-r2/sparring/verdict.md
 vtids: [VTID-05443, VTID-05444, VTID-05445, VTID-05446, VTID-05447, VTID-05448, VTID-05469, VTID-05520]
 ---
@@ -57,7 +57,7 @@ Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are ha
 ### 2026-11-02T20:43Z · ci-plan-spar · approved (late lane VTID)
 Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.
 
-### 2026-11-06T10:05Z · kiro-hotmail-202611011452-6d16 · amendment 3 proposed
+### 2026-11-06T09:42Z · kiro-hotmail-202611011452-6d16 · amendment 3 proposed
 Amendment 3 replaces amendment 2, decision 3: a required table that is listed in `not-replayable.txt` with its reason is a SKIP,
 not a stop. It answers decision D1 of lane `local-test-stack-pglite` (VTID-05520, `docs/validation/VTID-05520/acceptance.md`).
 Sparred through this `plan(` PR (CI PLAN-SPAR). No lane file changes in this amendment.
