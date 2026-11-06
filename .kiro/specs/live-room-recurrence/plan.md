@@ -41,9 +41,17 @@ dialog that plan introduces, so it runs after those lanes.
    session per occurrence through the existing `live_room_create_session` path, with `idempotency_key =
    series:<series_id>:<index>` so a retry converges. Maximum 52 occurrences and at most 12 months ahead. The reply adds
    `series: { id, occurrences: n, next_starts_at }`. A request without `recurrence` is unchanged.
-3. **Rolling window:** the gateway materialises occurrences up to 8 weeks ahead. A scheduled run (`services/gateway`
-   existing scheduler, one tick per hour, one run at a time) creates the missing rows for active series, using the same
-   idempotency key, so the job is safe to repeat. A series stops at `until_at` or `max_occurrences`.
+3. **Rolling window:** the gateway materialises occurrences up to 8 weeks ahead. A new worker
+   `startLiveSeriesMaterialiser()` in `services/gateway/src/services/live-series.ts`, registered in `services/gateway/src/index.ts`
+   behind the env gate `LIVE_SERIES_MATERIALISER_ENABLED` (default off until verified), runs one tick per hour with its own
+   in-process lock, so no two ticks overlap. It does not use the user-JWT RPC `live_room_create_session`: it calls the new
+   SQL function `live_room_series_insert_occurrence(p_series_id uuid, p_index int)` (service_role only, SECURITY DEFINER).
+   That function reads host, tenant, rule and time from the `live_room_series` row, checks that the series is `active` and
+   that the room exists, inserts one `live_room_sessions` row with `idempotency_key = series:<series_id>:<index>` and
+   `ON CONFLICT DO NOTHING`, and returns the row or nothing. Host ownership is therefore checked against the stored series
+   row, not a JWT. A series stops at `until_at` or `max_occurrences`.
+   Every series lifecycle operation emits an OASIS event: `live.series.created`, `live.series.updated`,
+   `live.series.cancelled` (the same emission pattern as session lifecycle in `room-session-manager.ts`).
 4. **Edit contract** (lane `gateway-live-series`, extends interface 3 of the edit plan): `PATCH .../sessions/current` gains
    `scope: "this" | "series"` (default `"this"`) and `recurrence` (change the rule or end, or `null` to stop repeating).
    `scope: "series"` updates the series row and every occurrence with `status = 'scheduled'` and `starts_at > now()`
@@ -57,16 +65,18 @@ dialog that plan introduces, so it runs after those lanes.
 
 ## Change
 ### Lane `db-live-series` (exafyltd/vitana-platform, seat exafy)
-One migration `supabase/migrations/20261106120000_live_room_series.sql` (timestamp after the cohost migration
+One migration `supabase/migrations/20261106120000_live_room_series.sql` (also the SQL function
+`live_room_series_insert_occurrence`, service_role only, see Interface 3) (timestamp after the cohost migration
 `20261105170000`, so the two are sequenced): the table, the two columns, the unique index, RLS and the rrule CHECK.
 Additive only: no existing function or row changes. `DATABASE_SCHEMA.md` changelog row. A throwaway-Postgres test
 `scripts/ci/sql-tests/run-live-room-series-test.sh` with workflow `SQL-LIVE-ROOM-SERIES.yml`, same pattern as
 `SQL-LIVE-ROOM-CALENDAR`. Applying the migration is an owner stop (`collaboration.md` §7d).
 
 ### Lane `gateway-live-series` (exafyltd/vitana-platform, seat exafy), depends on `db-live-series` and `gateway-cohost`
-`services/gateway/src/services/live-series.ts` (expansion, validation, materialisation, series edit and cancel) and the
-routes in `routes/live.ts`: the create `recurrence`, the PATCH `scope`, the cancel endpoint, and the scheduled
-materialisation tick. It builds on `gateway-cohost`'s `live-cohosts.ts` and `live.ts` edits, so it must not start before
+`services/gateway/src/services/live-series.ts` (expansion, validation, materialisation, series edit and cancel, the
+worker `startLiveSeriesMaterialiser`, OASIS events) and the routes in `routes/live.ts`: the create `recurrence`, the PATCH
+`scope`, the cancel endpoint. Registration of the worker is a one-line change in `services/gateway/src/index.ts`, which every
+gateway worker touches: `index.ts` is a shared hot file, and only this lane edits it in this plan. It builds on `gateway-cohost`'s `live-cohosts.ts` and `live.ts` edits, so it must not start before
 that lane is `done`. Tests `services/gateway/test/live-room-series*.test.ts`.
 
 ### Lane `v1-live-series` (exafyltd/vitana-v1, seat exafyltd), depends on `v1-edit-session` and `gateway-live-series`
@@ -75,6 +85,7 @@ label on cards and in the drawer, and the i18n keys (de first, du-form). It depe
 owns `EditSessionDialog.tsx` and the list files.
 
 ## Decisions taken (conservative, listed for Gate 2)
+- **The materialiser is a new worker with its own env gate and lock**, not a shared scheduler (none exists).
 - **Materialise, do not expand on read.** Each occurrence is a real session row, so every existing screen, grant and
   calendar entry works without change. Cost: a bounded number of rows (at most 52 per series, 8 weeks ahead at a time).
 - **Frequencies are daily, weekly, biweekly and monthly.** Monthly repeats on the same day of month as the first start. No custom rules in
@@ -92,7 +103,8 @@ owns `EditSessionDialog.tsx` and the list files.
 - `db-live-series` (platform, seat exafy, `depends_on: []`)
 - `gateway-live-series` (platform, seat exafy, `depends_on: [db-live-series]`)
 - `v1-live-series` (v1, seat exafyltd, `depends_on: [gateway-live-series]`)
-Shared and hot files: `services/gateway/src/routes/live.ts` (also `gateway-cohost`, sequenced by `depends_on`),
+Shared and hot files: `services/gateway/src/routes/live.ts` and `services/gateway/src/index.ts` (the latter only this lane
+in this plan; `gateway-cohost` also edits `live.ts`, sequenced by the external prerequisite),
 `src/i18n/*/liveRooms.json` and `docs/SCREEN_INVENTORY.md` (also the edit plan's v1 lanes, sequenced), `DATABASE_SCHEMA.md`.
 The chain is serial on purpose: a Repeat control that saves nothing must never be visible on staging.
 
@@ -106,7 +118,9 @@ dialog and list files). Until both are `done` the lanes stay `ready` and unclaim
 - SQL (throwaway Postgres): a series row with a valid rule is accepted, an invalid rule and `max_occurrences` outside 2 to 52
   are refused; the unique `(series_id, series_index)` holds; a browser session (`authenticated`) cannot insert a series row.
   Red on base: the table does not exist.
-- Gateway Jest `test/live-room-series*.test.ts`: weekly and monthly expansion from a Monday and a month end, DST-safe
+- Gateway Jest `test/live-room-series*.test.ts`: the worker never calls the user-JWT RPC and inserts only through
+  `live_room_series_insert_occurrence`; an overlapping tick is skipped by the lock; OASIS events emitted on create, edit and
+  cancel; weekly and monthly expansion from a Monday and a month end, DST-safe
   time in the series zone, count and until ends, 52 cap, idempotent retry creates no duplicates, rolling window adds only
   missing occurrences, `scope: "series"` skips live and ended occurrences, cancel leaves live occurrences alone, a
   non-creator gets `403 NOT_HOST`. Existing suites stay green: `vtid-04904-live-daily-rooms`, `vtid-04905-live-enter-exit`,
