@@ -31,3 +31,21 @@ AC-8 — The suite fails on base.
 
 Not claimed here: a real send on a deployed gateway. Staging answers 409 by design (shared production database, CLAUDE.md
 rule 48); production is reached only after Gate 2 and the owner's publish.
+
+ROUTE_MOUNT: services/gateway/src/index.ts:176 (`const companionRouter = require('./routes/companion').default;`) and
+index.ts:1217 (`mountRouterSync(app, '/api/v1/companion', companionRouter, { owner: 'companion' })`), unchanged; the new
+handler is `router.post('/test-card', requireAuth, requireExafyAdmin, …)` in services/gateway/src/routes/companion.ts.
+FINAL_URL: https://preview-aws-gateway.vitanaland.com/api/v1/companion/test-card (POST, staging, after merge: 401 without a
+sign-in, 409 STAGING_DISABLED for an admin) and https://gateway.vitanaland.com/api/v1/companion/test-card (production,
+only after Gate 2 and the owner's publish).
+CURL_PROOF: outputs/curl-proof.txt (script outputs/curl-proof.sh): the router built by `npm run build` of this branch,
+mounted at /api/v1/companion on 127.0.0.1 with the real auth middleware and no Supabase: POST without a token → 401
+`UNAUTHENTICATED`; POST with an invalid bearer and a `user_id` body → 401 (auth runs before the body); GET → 404 (POST
+only); `/status` → 200 (`feature_off` locally because no feature flag is set there). The admin paths are proven by the
+Jest suite (outputs/green.txt), not by curl, because a real admin token and a send would need the production database.
+OASIS_PROOF: one `oasis_events` row per successful test card, through `emitOasisEvent`
+(services/gateway/src/services/oasis-event-service.ts:59) called in services/gateway/src/services/companion/test-card.ts
+(`await emit({ … type: 'companion.test_card.sent', source: 'companion-messages' … })`), type added to the union in
+services/gateway/src/types/cicd.ts. Payload: actor_user_id, moment_key, card_type, chat_message_id, mode, model; actor_role
+`admin`, surface `api`. Refused and failed calls emit nothing. TEST: "sends exactly one Vitana-bot DM to the caller …"
+asserts the emitted types are exactly [companion.test_card.sent] with that payload.
