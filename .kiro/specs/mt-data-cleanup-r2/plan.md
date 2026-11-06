@@ -35,8 +35,10 @@ cap). Every premise was re-verified on platform `origin/main` `62990ce285` and v
 - **R3-F2** (the d48/d49 tables are written by gateway `service_role` code that this spec did not cover): accepted.
   The spec is no longer DB-only. New CODE lane 5, `engine-tenant-fallbacks`, closes the gateway writers:
   - **d46** `anticipatory_guidance`: `d46-anticipatory-guidance-engine.ts:153` initialises `tenantId =
-    DEV_IDENTITY.TENANT_ID` (`…0001`, `:76-78`). The authenticated branch (`:155-156`) never reassigns it, so an
-    authenticated insert can carry `…0001` today.
+    DEV_IDENTITY.TENANT_ID` (`…0001`, `:76-78`), and `getClientWithContext` returns it (`:799`). The insert does not
+    read that local. It writes `tenant_id: userContext.tenant_id` (`:932`), and `userContext` is `request.user_context`
+    or is built from `request.window_bundle` (`:802-804`), so an authenticated insert stores whatever tenant the
+    request supplies, `…0001` included. (Round-2 R2-F1 corrected this: the earlier wording named the wrong variable.)
   - **d48** `contextual_opportunities`: engine `:917`, repo `:48`. Its tenant is `input.tenant_id`, set from
     `routes/opportunity-surfacing.ts:152`. The dev-sandbox branch (`:54-56`, `:87-88`) sets `…0001`.
   - **d49** `risk_mitigations`: engine `:608-610`. Its tenant is `request.user_context.tenant_id || tenantId`
@@ -168,8 +170,9 @@ ships its SQL under `docs/validation/<vtid>/`.
 
 5. **`engine-tenant-fallbacks`** (CODE, gateway; R3-F2; independent of lanes 1–4) — d46/d48/d49 engines:
    in every non-dev-sandbox path the tenant comes from the authenticated caller (`resolvePrimaryTenant()`) or the
-   explicit request context; empty or `…0001` → no insert, `TENANT_UNRESOLVED`. Fixes `d46-anticipatory-guidance-engine.ts:153`
-   (tenant never reassigned on the authenticated path), `d48-opportunity-surfacing-engine.ts` insert (`:894`, `:917`)
+   explicit request context; empty or `…0001` → no insert, `TENANT_UNRESOLVED`. Fixes d46 at the insert, not at the `tenantId` local: the guard reads `userContext.tenant_id` before
+   `insertAnticipatoryGuidanceRecords` (`:952`), and an empty or `…0001` value returns `TENANT_UNRESOLVED` with nothing
+   written. The Jest test asserts the `tenant_id` of the records passed to that call (round-2 R2-F1), `d48-opportunity-surfacing-engine.ts` insert (`:894`, `:917`)
    and `d49-risk-mitigation-engine.ts:519`. Dev-sandbox branches unchanged (still `isDevSandbox()`-gated).
    - **d48 route (R1-F1, round 1):** the d48 tenant source is `routes/opportunity-surfacing.ts`. Its
      `extractUserContext()` (`:75-93`) never decodes the bearer token (`:81`) and keeps its own `DEV_IDENTITY`
