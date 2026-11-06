@@ -1,14 +1,28 @@
-# VTID-05559 — gateway-cohost (live-room-edit-cohost) acceptance
+# VTID-05559 — gateway-cohost acceptance
 
 Lane: `live-room-edit-cohost/gateway-cohost`. Plan: `.kiro/specs/live-room-edit-cohost/plan.md`.
+Status: red tests written first; implementation follows in this PR. Nothing below is verified yet.
 
-## Status of this PR (red tests first)
-- `services/gateway/test/live-room-cohost-helpers.test.ts` covers `isRoomHost` and `filterCoHosts`.
-- The module `services/gateway/src/services/live-cohosts.ts` does not exist yet, so the tests fail on the base branch.
-- Implementation follows in this PR. Not yet verified: no test has run in CI yet.
+AC-1: A listed co-host is host for enter and moderation, and the creator is host without any extra call.
+TEST: services/gateway/test/live-room-cohost-helpers.test.ts :: isRoomHost
+Status: red on base (module not yet written).
 
-## Acceptance (from tasks.md, gateway-cohost lane)
-- A co-host who opens a scheduled room starts it, gets the moderator view and token, and can run it.
-- A creator can change every field of a scheduled session and the list shows the new values.
-- States: JWT identity decides the actor; 401 with no token; RPC failure means not host; locked fields refused while live; listing write failure is 502 and retry converges; more than 5 or invalid co-hosts is 400 with the ids.
-- Staging proof: read-only `PATCH .../sessions/current` probe without a token returns 401. A real co-host run is not verified on staging (needs a live write).
+AC-2: An unlisted member is not host, and an RPC failure means not host without throwing.
+TEST: services/gateway/test/live-room-cohost-helpers.test.ts :: isRoomHost
+Status: red on base.
+
+AC-3: Co-host validation keeps only valid ids, reports dropped ids (never silently), and fails loudly when the validation function is missing.
+TEST: services/gateway/test/live-room-cohost-helpers.test.ts :: filterCoHosts
+Status: red on base.
+
+AC-4: A co-host who opens a scheduled room can start it, see the moderator view and token, and run it. Route-level behaviour.
+TEST: services/gateway/test/live-room-cohost-routes.test.ts :: enter as co-host (planned, not yet written)
+Status: planned.
+
+AC-5: PATCH of a scheduled session is creator-only, honours locked fields while live, and returns 502 on listing failure with a repeatable retry.
+TEST: services/gateway/test/live-room-cohost-routes.test.ts :: PATCH sessions/current (planned, not yet written)
+Status: planned.
+
+AC-6: Staging proof: the unauthenticated PATCH probe returns 401 on the deployed route. Read-only, no live write.
+CURL: PATCH https://preview-aws-gateway.vitanaland.com/api/v1/live/rooms/00000000-0000-0000-0000-000000000000/sessions/current expects 401 (planned, in staging-tests.json)
+Status: planned.
