@@ -53,6 +53,7 @@ Next: the land step merges under §7b once every required check is green on the 
 PR https://github.com/exafyltd/vitana-platform/pull/4743 (head `503cd6d746`, reviewed by agent:vitana-lane-reviewer (claude-opus-5.5): accept, 0 blocking).
 
 ### 2026-11-06T12:21Z · kiro-exafy-202611061210-404d · in-review → verified
+merge: af3716ccb348418e4d620efe61fd8aeecef6b042 (exafyltd/vitana-platform#4743)
 merged: af3716ccb348418e4d620efe61fd8aeecef6b042  authority: §7b PM rule
 Squash-merged through `land-guard.mjs merge` (review current, every required check green, up to date with main) at final head `e02084954e`: the reviewed head `503cd6d746` plus one review-entry commit that only appends to this lane file.
 
