@@ -1,0 +1,6 @@
+member rows before apply: [{"user_id":"05467000-0000-4000-8000-0000000000f1","selected":"community","preference":"professional"},{"user_id":"05467000-0000-4000-8000-0000000000f2","selected":"community","preference":"community"}]
+member rows after apply:  [{"user_id":"05467000-0000-4000-8000-0000000000f1","selected":"community","preference":"professional"},{"user_id":"05467000-0000-4000-8000-0000000000f2","selected":"community","preference":"community"}]
+PASS  apply moves no data: every selected role and preference is unchanged (no backfill)
+snapshots: {"ut":2,"rp":2,"uar":1}
+PASS  snapshot first: the three legacy_archive snapshots hold the rows of the apply
+PASS  the derivation trigger is installed and enabled
