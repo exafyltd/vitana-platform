@@ -1,0 +1,27 @@
+# VTID-05558 (live-room-edit-cohost / db-cohost-authz) — commands run, in order
+# Lane session kiro-exafy-202611051713-eefe (seat exafy); plan driver kiro-jtadic-202611051617-04a8 (seat jtadic). PostgreSQL 16.2 started as `nobody` on a unix socket in a throwaway data
+# directory (pgserver binaries, never a shared or production database).
+
+$ python3 gen_cohost_migration.py <worktree>      # builds the migration from the LATEST definitions; every edit asserted to match exactly the expected number of times
+wrote supabase/migrations/20261105170000_live_room_cohost_authz.sql  functions: 13
+
+$ scripts/ci/sql-tests/run-live-room-cohost-test.sh      # PostgreSQL 16.2
+PASS vtid-05558 live room cohost                           exit=0        (outputs/sql-test.txt)
+
+$ same test against the 13 ORIGINAL bodies + a creator-only stand-in helper      (outputs/red-on-base.txt)
+run 1: ERROR: listed co-host of the same tenant is host                                          exit=3  (red)
+run 2: ERROR: transition_status as cohost: {"ok": false, "error": "NOT_HOST"}                    exit=3  (red: the ORIGINAL gate refuses a listed co-host)
+
+$ three sabotaged copies of the migration                                                       (outputs/mutation-checks.txt)
+admit_user gate reverted  -> ERROR: co-host admits                                              exit=3
+helper ignores the tenant -> ERROR: listed member of ANOTHER tenant is not host                 exit=3
+kick target guard removed -> ERROR: co-host cannot kick the creator                             exit=3
+restored migration is byte-identical and green
+
+$ python3 function-diff over the 13 bodies                                                      (outputs/function-diff.txt)
+TOTAL +40 -33  (host comparisons, the kick/ban target guard, the check_access co-host branch, and the two noted set_host_present changes)
+
+$ YAML parse of .github/workflows/SQL-LIVE-ROOM-COHOST.yml                                      (outputs/workflow-parse.txt)
+yaml ok | triggers: pull_request, workflow_dispatch | per-PR concurrency | CI grep matches the test output
+
+# Not run, on purpose: nothing was applied to Supabase/Aurora or any shared database (collaboration.md 7d: owner decision).
