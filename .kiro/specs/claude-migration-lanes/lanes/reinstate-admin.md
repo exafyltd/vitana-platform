@@ -1,6 +1,6 @@
 ---
 lane: reinstate-admin
-state: executing
+state: done
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -11,7 +11,7 @@ reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 repos: [exafyltd/vitana-platform]
 paths:
   - .kiro/specs/claude-migration-lanes/lanes/reinstate-rules.md
-updated: 2026-11-06T12:12Z
+updated: 2026-11-06T12:21Z
 vtid: VTID-05567
 claimed_by: kiro-exafy-202611061210-404d
 branch: kiro/claude-migration-lanes/reinstate-admin
@@ -48,3 +48,13 @@ Findings: (non-blocking) reinstate-rules is now executor claude but keeps next_a
 Findings: (non-blocking) The plan.md late-lane note says VTID-05565 for reinstate-rules. The lane file holds VTID-05566, which this diff keeps. This is a pre-existing typo on main.
 Findings: (non-blocking) reinstate-admin is still state executing. §7b needs verified before merge.
 Next: the land step merges under §7b once every required check is green on the current head.
+
+### 2026-11-06T12:21Z · kiro-exafy-202611061210-404d · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/4743 (head `503cd6d746`, reviewed by agent:vitana-lane-reviewer (claude-opus-5.5): accept, 0 blocking).
+
+### 2026-11-06T12:21Z · kiro-exafy-202611061210-404d · in-review → verified
+merged: af3716ccb348418e4d620efe61fd8aeecef6b042  authority: §7b PM rule
+Squash-merged through `land-guard.mjs merge` (review current, every required check green, up to date with main) at final head `e02084954e`: the reviewed head `503cd6d746` plus one review-entry commit that only appends to this lane file.
+
+### 2026-11-06T12:21Z · kiro-exafy-202611061210-404d · verified → done
+Closed. `reinstate-rules` (VTID-05566) is now `executor: claude`, `reviewer_seat: exafyltd`, no `seat`. Next: Claude Code claims and builds `reinstate-rules`; the claim of this lane is released after this record is on main. Reviewer notes carried over: `reinstate-rules` still reads `next_actor: kiro` and `claimed_by: kiro-exafy-202611061210-404d` (only Claude Code's lane PR may change them now that it is `executor: claude`); the plan.md late-lane note names VTID-05565 where the lane holds VTID-05566.
