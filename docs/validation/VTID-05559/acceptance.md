@@ -26,3 +26,8 @@ Status: planned.
 AC-6: Staging proof: the unauthenticated PATCH probe returns 401 on the deployed route. Read-only, no live write.
 CURL: PATCH https://preview-aws-gateway.vitanaland.com/api/v1/live/rooms/00000000-0000-0000-0000-000000000000/sessions/current expects 401 (planned, in staging-tests.json)
 Status: planned.
+
+## Route mount (new PATCH route)
+ROUTE_MOUNT: services/gateway/src/routes/live.ts — router.patch('/rooms/:id/sessions/current', requireAuth, …)
+FINAL_URL: https://preview-aws-gateway.vitanaland.com/api/v1/live/rooms/00000000-0000-0000-0000-000000000000/sessions/current
+CURL_PROOF: pending — the staging probe in staging-tests.json (unauthenticated PATCH, expect 401) runs after the staging deploy. Not run yet; no result is claimed here.
