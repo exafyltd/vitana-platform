@@ -138,6 +138,13 @@ TEST: `supabase/tests/mt_identity_roles_bootstrap.test.sql` assertions 21–24 (
     services/, vitana-v1 src/ or supabase/functions/ calls it. The body still refuses every caller that is not an exafy admin.
     An operator who called it as a signed-in user through PostgREST will now get a permission error. The owner should confirm
     no such path exists. The rollback does not reopen the grant (AC-13, AC-23): restoring PUBLIC EXECUTE would re-expose it.
+    Precisely, for Gate 2 and the apply request: the body also requires the `exafy_admin` claim in the signed-in JWT
+    (`auth.jwt()` app_metadata). A service-role key normally carries no app_metadata, so the grant to service_role does not
+    make the function callable with the service key by itself. After `20261102033100`, the only sessions that pass both the
+    privilege and the gate are the database owner or service_role sessions that set `request.jwt.claims` themselves, as the
+    pgTAP file does. The signed-in exafy admin over PostgREST, the one API path that could pass the gate, is closed. Before any
+    apply, the owner runs the read-only PostgREST API-log check that `docs/SUPABASE-SECURITY-ADVISOR-AUDIT-2026-08-28.md`
+    (line 151) asks for, for `rpc/bootstrap_admin_user`. Nothing in this PR runs it.
 
 ## Premises that turned out false or unverified
 
