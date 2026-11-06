@@ -5,7 +5,7 @@ author_seat: exafyltd
 executor: kiro
 next_actor: kiro
 state: approved
-updated: 2026-10-21T13:16Z
+updated: 2026-11-05T11:54Z
 sparring_record: .kiro/specs/messenger-ux-v2/sparring/verdict.md
 vtids: [VTID-05309, VTID-05310, VTID-05311, VTID-05312, VTID-05313, VTID-05314, VTID-05315, VTID-05316, VTID-05317, VTID-05318, VTID-05319, VTID-05320, VTID-05321, VTID-05322]
 ---
@@ -58,3 +58,26 @@ residuals, taken into lane `api-viewing-presence`: dedup on (user_id, message_id
 an unresolvable trigger row falls back to the dedup rule. Plan PR #4253 merges under the owner's named-set
 instruction (§7b). `Collab handoff` is red only on the governance artifacts of a plan PR: the `ci-plan-spar` session
 mix and lane-file edits in the round-1 answer commit. That is a known false positive, so the merge uses `--admin`.
+
+### 2026-11-05T11:54Z · kiro-exafyltd-202610211130-c65e · closing records (state unchanged: approved)
+All 14 lanes are merged on main. Their PR numbers and merge times are in `docs/validation/VTID-05309/timings.json`.
+The lane and plan state fields are unchanged (ready and approved). The collab validator rejects direct jumps to done or
+verified, so the pipeline has to record those states. This entry is the closing record. The community-app STAGING-VERIFY passed on main commit 5c75715e1: run 41491021698 in
+exafyltd/vitana-platform (verify: success, report: success, 2026-11-02T17:26:59Z). The first run for that commit (41465504527)
+failed on one News /home timing budget in the phone-journey staging spec (median 3662 ms vs 1500 ms). The re-run passed
+with no change to the budget.
+Spotlight PRs #1514 to #1518 (VTID-05286, 05287, 05288, 05289, 05291) were blocked by the shared check failures
+(GitHub API rate limit in Lane scope and preview-e2e). Re-running the failed jobs cleared them. All five were squash-merged
+at their head SHAs. Their merge SHAs are in `merge-ledger.txt` in the session workspace.
+Timings: `docs/validation/VTID-05309/timings.json` (vitana.plan-timings/v1). Fields the sources do not record are null,
+and `sources_unavailable` names each one.
+Plan VTID: the sparring record does not name one, so VTID-05309 is used, following the ci-github-modernization convention.
+Gate 2 is not sent yet. The owner decides PUBLISH to production. Nothing was deployed to production.
+Deviations from the spec, for Gate 2: the unread divider is DM-only. Reply-jump loads up to 1000 rows (10 pages). Calendar
+invites in a viewed chat are suppressed. Group chat is not hidden until positioned. Shared-content captions are capped at 1000
+characters. A gateway share_not_allowed stops the send loop for that share.
+Not done: no screenshots or Playwright specs were written for the Messenger lanes. Verification relies on the owner's visual
+check on staging. Open follow-ups: a caption-less shared card shows an empty last-message line in the conversation list and
+"Attachment" in a reply quote (Messages.tsx, ReplyQuote). The shared-preview response may need Vary: Authorization in the
+gateway lane.
+Releases: _plan and lane claims released; the driver heartbeat (collab-driver/messenger-ux-v2) removed.

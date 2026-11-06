@@ -1,0 +1,58 @@
+# VTID-05536 commands (2026-11-05, Linux, node v22.23.4 unless a line says node 20; seat exafy, session kiro-exafy-202611021438-cff7)
+base: origin/main with M1 and monitoring merged. The lane was first built on the tip of the M1 branch, 8bae0d492d4, and rebuilt as one commit on main when M1 merged. Worktree: <worktree> = .worktrees/eng-gitlab-m2-fleet, branch kiro/eng-gitlab-m2/fleet.
+The outputs under outputs/ were produced from the final files of this PR, in this order, by one pass at the end (red on base, red on empty files, green, mutation run, terraform checks, the quota and console runs, the whole script set on two Node versions, secret scan, cost estimate), after the last change to a lane file or to the test.
+This session has no AWS, GitLab or GitHub credentials and wrote to no live system. The only network use: reading public documentation and AWS price-list files, `terraform init` (provider download), and `npx -y node@20`.
+
+# 1. Documentation read before writing (public pages; what each one decided)
+- fleeting-plugin-aws README (https://gitlab.com/gitlab-org/fleeting/plugins/aws): group needs min and desired 0, scaling policy none, AZRebalance suspended, scale-in protection on; the IAM policy (SetDesiredCapacity, SetInstanceProtection, TerminateInstanceInAutoScalingGroup on the group; the describe calls; SendSSHPublicKey on instances tagged aws:autoscaling:groupName); connector user default ec2-user, key sent through EC2 Instance Connect. -> the manager role, the group settings.
+- GitLab Runner docs, Docker Autoscaler executor (https://docs.gitlab.com/runner/executors/docker_autoscaler/) and fleeting (https://docs.gitlab.com/runner/fleet_scaling/fleeting/): the [runners.autoscaler] keys, `plugin = "<name>[:<version constraint>]"`, `gitlab-runner fleeting install`, FLEETING_PLUGIN_PATH. -> config.toml.
+- GitLab Runner docs, advanced configuration (https://docs.gitlab.com/runner/configuration/advanced-configuration/): S3 cache keys, AuthenticationType iam uses the runner manager's profile because the URLs are signed there, SSE-KMS keys and the permissions it needs, helper image tag x86_64-v${CI_RUNNER_VERSION}. -> the cache section, the manager's S3 and KMS statements, the image's helper tag.
+- AWS, "Required AWS KMS key policy for use with encrypted volumes" (https://docs.aws.amazon.com/autoscaling/ec2/userguide/key-policy-requirements-EBS-encryption.html) and "Service-linked roles for Amazon EC2 Auto Scaling" (.../autoscaling-service-linked-role.html): the Auto Scaling role has no access to a customer managed key; a custom-suffix role is the recommended way to grant it. "Service-linked role for Spot Instance requests" (https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/service-linked-roles-spot-instance-requests.html): the same for AWSServiceRoleForEC2Spot, with the grant operations. -> finding AC-13, fleet.tf key access.
+- AWS CLI documentation, Service Quotas examples (https://docs.aws.amazon.com/cli/latest/userguide/cli_service-quotas_code_examples.html): ServiceCode ec2, QuotaCode L-1216C47A, QuotaName "Running On-Demand Standard (A, C, D, H, I, M, R, T, Z) instances". AWS EC2 documentation (https://docs.aws.amazon.com/ec2/latest/instancetypes/ec2-instance-quotas.html and .../AWSEC2/latest/UserGuide/using-spot-limits.html): the Spot quota is named "All Standard (A, C, D, H, I, M, R, T, Z) Spot Instance Requests", default 5. The Spot CODE is not in AWS's own pages that I could read (only on a third-party page), so Terraform looks the quota up by that documented name. -> the quota check.
+- AWS Image Builder, setting up (https://docs.aws.amazon.com/imagebuilder/latest/userguide/image-builder-setting-up.html): the instance profile needs EC2InstanceProfileForImageBuilder and AmazonSSMManagedInstanceCore. -> fleet-ami.tf.
+- Terraform AWS provider 5.100.0 docs (raw files at github.com/hashicorp/terraform-provider-aws/v5.100.0/website/docs): aws_imagebuilder_image (create timeout default 60m; output_resources.amis.image), aws_imagebuilder_image_recipe (component parameter value is a string), aws_imagebuilder_component (a change needs a new version), aws_imagebuilder_infrastructure_configuration (instance_metadata_options, terminate_instance_on_failure), aws_kms_grant, aws_servicequotas_service_quota (value is the applied value; the provider code falls back to the default value), aws_launch_template (metadata_options, block_device_mappings.ebs, network_interfaces).
+- AWS price list, eu-central-1: AmazonEC2 version 20261104210305 (published 2026-11-04T21:03:05Z) https://pricing.us-east-1.amazonaws.com/offers/v1.0/aws/AmazonEC2/20261104210305/eu-central-1/index.json (a 434 MB file, already on disk from an earlier session: /projects/sandbox/tools/ec2-euc1.json, same size and date as the public file's headers); S3 20261104174445, KMS 20261026201814, Secrets Manager 20260911124610 (files already on disk).
+
+# 2. Red on base, red on empty files, green
+$ node --test scripts/eng/fleet-structure.test.mjs      (in a copy of the base tree: M1 files present, none of the lane's files)      -> outputs/red-on-base.txt
+tests 38, pass 0, fail 38. Each case reads its own file lazily, so each fails on its own.
+$ the same in a copy where the lane's five files exist but are empty (so no case can fail on a missing file)      -> outputs/red-on-empty.txt
+tests 38, pass 0, fail 38, all by assertion.
+$ node --test scripts/eng/fleet-structure.test.mjs      -> outputs/green.txt
+tests 38, pass 38, fail 0, skipped 0 (about 0.4 s; the installer is run against stub commands in a temporary folder).
+History: the first version of the test (35 cases) was red on a bare tree in 34 cases; the one that passed was the fail-closed rendering case (a missing script also "refuses" every input), so it now has a positive control and requires the refusal to name the input. On empty files one case passed (the M1-reference case), so it now requires the fleet files to use the M1 objects by reference. Both records above are of the final test.
+
+# 3. Mutation run: each of 133 deliberate changes applied alone to a scratch copy. Script: outputs/mutate-fleet.sh   Output: outputs/mutation-run.txt
+$ TMPDIR=<scratch> bash outputs/mutate-fleet.sh <worktree>
+mutations 133, caught 133, not caught 0. A change counts as caught only when the file really changed (NOOP otherwise) and the test then fails. The first run left 1 not caught (the RUNBOOK row for the key symptom was only checked as "mentioned somewhere"); the test now pins the row.
+
+# 4. Terraform, with M1's main.tf in the same folder
+$ terraform fmt -check -diff -recursive ; terraform init -backend=false -input=false ; terraform validate      -> outputs/terraform-checks.txt
+fmt exit 0, init OK (hashicorp/aws v5.100.0), "Success! The configuration is valid." No .terraform* or lock file is in the worktree. (`terraform fmt` was first run on fleet.tf and fleet-ami.tf only, to align them.)
+$ terraform console (scratch copy with the backend line removed)      -> outputs/terraform-console.txt
+runner semver 19.5.2, helper image ...gitlab-runner-helper:x86_64-v19.5.2, required vCPUs 96, the four types, spot share 20 % On-Demand; the variable validation refuses 0, 501, 2.5, 101, -1 and an idle count above the maximum and accepts the boundaries.
+$ terraform plan on the real text of terraform_data.fleet_quota_check with the data-source reads replaced by stand-ins      -> outputs/quota-check-plan.txt
+low/low: two errors, each with its own command; one low; exactly enough: plan passes; 8 passes and 7 fails at fleet_max_instances 2; a renamed On-Demand code stops with the look-up command. This run also showed that Terraform wrapped the long command across two lines; the command lines are now indented, which keeps them whole, and the test pins that.
+
+# 5. Scripts and YAML
+$ bash -n on both scripts; PyYAML parse of host/fleet-image/component.yml      -> outputs/scripts-and-yaml.txt
+Both exit 0. The component parses; the two docker pull commands keep their {{ }} parameters as text (unquoted they would have parsed as a YAML mapping).
+
+# 6. The whole script test set exactly as .github/workflows/UNIT.yml:21-25 runs it (no install)
+$ FILES=$(find scripts -path '*/node_modules' -prune -o \( -name '*.test.cjs' -o -name '*.test.mjs' \) -print | sort); node --test $FILES      -> outputs/unit-all.txt
+35 files; tests 677, pass 676, fail 0, cancelled 0, skipped 1 (a skip in a file this lane does not touch).
+$ the same with node v20.20.2 (npx -y node@20; the workflow uses actions/setup-node 20)      -> outputs/unit-all-node20.txt
+tests 677, pass 676, fail 0, skipped 1.
+
+# 7. Secret scan, M1 untouched, cost estimate
+$ bash /projects/sandbox/tools/scan-secrets.sh <worktree> VTID-05536      -> outputs/secret-scan.txt
+$ git diff --stat and sha256 of the M1 files against the base commit      -> outputs/m1-files-untouched.txt      (no difference)
+$ python3 outputs/cost-estimate.py      -> outputs/cost-estimate.txt
+
+# 8. Scope file and sparring record
+scope.json written by hand in the format of the model (kind infra); plan-sparring.md is the model of lane merge-bot with the VTID and the lane changed: the plan facts are the same for every eng-gitlab-m2 lane. Its paths name docs/validation/VTID-05536/** where the lane file says docs/validation/** (the narrower claim, as the merge-bot lane did).
+
+# 9. Not run, with the reason
+- Any AWS call: `terraform plan` against the account, the image build, the first scale-up, the plugin install and the runner on a real manager. This session has no credentials and writes to no live system. They are the owner's apply and rehearsal A1 and A2.
+- Any GitLab call: the runner token is created by the settings sync (lane settings).
+- shellcheck: not installed here; `bash -n` and the stub-command run of the installer stand in for it.

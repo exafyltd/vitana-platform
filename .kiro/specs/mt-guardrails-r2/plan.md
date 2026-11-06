@@ -261,3 +261,28 @@ decided. pgTAP is not a new owner decision — it is the parent plan's existing 
 - Confirm `v1-golden-edge` fixture ownership stays with `maxina-golden-suite` in platform (same repo as
   the drafter prompt) rather than a vitana-v1 lane — CROSS-SPEC O3 names mt-guardrails as owner but not
   the repo. Default: platform.
+
+## Amendment 3 (2026-11-06, planner, under the owner's standing instruction of 2026-11-01)
+**Why.** Amendment 2, decision 3 says that a required table missing after the replay stops the lane. On the PGlite stack
+13 of the 24 required tables cannot be created. The list and the reasons are in
+`supabase/tests/local-stack/not-replayable.txt`. Five have no committed creator in either repository. Five are created by
+migrations that fail on a fresh replay for reasons the migration tree contains. Three need pgvector, which PGlite 0.5.14
+does not bundle. No lane of this plan can clear that condition, so `local-test-stack-pglite` and, through it,
+`generated-inventories`, `isolation-suite` and `ci-wiring` would stay blocked.
+
+**Decision.** Amendment 2, decision 3 is replaced by the following. Where the two differ, this text wins.
+1. The required tables are listed in `supabase/tests/local-stack/required-tables.txt`. A required table that does not exist
+   after the replay is handled in one of two ways. If it is listed in `supabase/tests/local-stack/not-replayable.txt` with its
+   reason and the lanes that need it, the stack reports it as SKIP. Otherwise it stops the lane and is raised.
+2. The gate fails in two cases: a listed table that exists (the listing is stale and its line is removed), and an unlisted
+   missing table.
+3. The isolation suite fails, not passes, on a listed table it needs. Every claim that touches a listed table is reported as
+   unverified in `docs/multitenancy/LOCAL-STACK.md`, with the reason.
+4. A listed table is closed by one of three things: a committed migration that creates it (an owner decision, because the plan
+   calls these tables live), removal from the required list (a plan change through sparring), or a replay fix inside a lane of
+   this plan.
+5. This amendment does not change `replay-skip.json`. Each skipped migration keeps its own reason and its own error line.
+
+**Consequences.** The local stack does not verify the policies or the behaviour of the listed tables. The owner sees the
+list at Gate 2. Nothing in this amendment applies a migration, reads a live system or uses a secret. Amendment 2 decision 1
+still holds: PR #4628 (`local-test-stack-v2`) is closed as superseded.
