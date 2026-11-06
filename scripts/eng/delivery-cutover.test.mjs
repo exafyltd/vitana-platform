@@ -578,11 +578,22 @@ test('preflight: the wrong AWS account, a missing tool, a GitHub token GitHub do
   assert.match(r.stderr, /run this in the management account 472838866351/);
   assert.deepEqual(r.calls.filter((c) => c.tool !== 'aws'), [], 'not even GitHub was asked');
   w.put('account', '472838866351');
-  const noGh = spawnSync('bash', [CUT, 'status'], { encoding: 'utf8', env: { PATH: `${path.join(w.T, 'onlybin')}:/usr/bin:/bin`, HOME: w.T } });
+  // A hermetic PATH: the system's own programs, minus the tools the script checks for, so a machine that happens to have gh or aws
+  // in /usr/bin (a GitHub runner has both) cannot hide the missing tool.
+  const sysbin = path.join(w.T, 'sysbin');
+  fs.mkdirSync(sysbin, { recursive: true });
+  const checked = new Set(['aws', 'git', 'jq', 'node', 'gh', 'curl', 'glab']);
+  for (const dir of ['/bin', '/usr/bin']) for (const n of fs.readdirSync(dir)) {
+    if (checked.has(n) || fs.existsSync(path.join(sysbin, n))) continue;
+    try { fs.symlinkSync(path.join(dir, n), path.join(sysbin, n)); } catch { /* a name that cannot be linked is not needed */ }
+  }
+  fs.symlinkSync(fs.realpathSync(spawnSync('bash', ['-c', 'command -v jq'], { encoding: 'utf8' }).stdout.trim()), path.join(sysbin, 'jq'));
   fs.mkdirSync(path.join(w.T, 'onlybin'), { recursive: true });
+  const noTools = spawnSync('bash', [CUT, 'status'], { encoding: 'utf8', env: { PATH: `${path.join(w.T, 'onlybin')}:${sysbin}`, HOME: w.T } });
   for (const t of ['aws', 'git', 'node']) fs.copyFileSync(path.join(w.bin, t), path.join(w.T, 'onlybin', t));
-  const r2 = spawnSync('bash', [CUT, 'status'], { encoding: 'utf8', env: { PATH: `${path.join(w.T, 'onlybin')}:/usr/bin:/bin`, HOME: w.T, FAKE_DIR: w.F } });
-  assert.equal(noGh.status, 2);
+  const r2 = spawnSync('bash', [CUT, 'status'], { encoding: 'utf8', env: { PATH: `${path.join(w.T, 'onlybin')}:${sysbin}`, HOME: w.T, FAKE_DIR: w.F } });
+  assert.equal(noTools.status, 2);
+  assert.match(noTools.stderr, /ERROR: aws is not installed here/);
   assert.equal(r2.status, 2);
   assert.match(r2.stderr, /ERROR: gh is not installed here/);
   r = w.run([CUT, 'status'], { env: { GH_TOKEN: ['a-token', 'github-refuses'].join('-') } });
