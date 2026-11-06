@@ -1,0 +1,27 @@
+{
+  "vtid": "VTID-05541",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "GitLab webhook route is mounted and refuses an unsigned POST with JSON 401 signature_missing (never 404 or HTML), with or without the signing key",
+      "method": "POST",
+      "path": "/api/v1/internal/gitlab/webhook",
+      "rejected_probe": true,
+      "expect_status": 401,
+      "expect_json": { "ok": false, "error": "signature_missing" }
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/routes/internal-gitlab-webhook.test.ts test/gitlab-events",
+      "cwd": "services/gateway",
+      "reason": "VTID-05541 change suite: signature, stale, duplicate, size, JSON and no-key cases of the route; the event-to-topic table and VTID rule of plan 3.5; that no lifecycle rule moves a VTID on a GitLab event; the staging secret wiring and the setup script against a stubbed aws. Signed GitLab events are not sent to staging because they would write OASIS rows to the shared database (CLAUDE.md rule 48)."
+    },
+    {
+      "kind": "existing",
+      "ref": "npm run test:roles",
+      "cwd": "services/gateway",
+      "reason": "CLAUDE.md rule 42h: the atlas drift guard of the role separation suite must claim the new route file routes/internal-gitlab-webhook.ts (claim added by agentic-delivery/prerequisites, VTID-05551)."
+    }
+  ]
+}

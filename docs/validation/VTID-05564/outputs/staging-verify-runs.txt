@@ -1,0 +1,42 @@
+# VTID-05564: the two STAGING-VERIFY runs whose only failures are the three manifests' existing suites
+# source: gh run view <id> --repo exafyltd/vitana-platform --log-failed (REST GET, 2026-11-05T21:40Z); lines below are the runner's own summary, timestamps cut
+
+## run 42078889519 — STAGING-VERIFY gateway @ 51c2bead07b9d2091be0fb20e0584a7cb16d5fb4 (VTID-04613) · failure · created 2026-11-05T17:52:48Z · https://github.com/exafyltd/vitana-platform/actions/runs/42078889519
+[staging-verify] FAIL VTID-05515 › existing npx jest test/eng-platform-inventory-readonly.test.ts — FAIL services/gateway/test/eng-platform-inventory-readonly.test.ts | ● Test suite failed to run | Jest failed to parse a file. This happens e.g. when your code 
+[staging-verify] PASS VTID-05515 › gateway is alive (unchanged by this lane)
+[staging-verify] FAIL VTID-05518 › existing npx jest test/eng-platform-stage-oidc-workflows.test.ts test/vtid-05009-provision-pack-token-workflow.test.ts — FAIL services/gateway/test/vtid-05009-provision-pack-token-workflow.test.ts | ● Test suite failed to run
+[staging-verify] PASS VTID-05518 › gateway is alive (unchanged by this lane)
+[staging-verify] FAIL VTID-05516 › existing npx jest test/eng-platform-oidc-roles.test.ts — FAIL services/gateway/test/eng-platform-oidc-roles.test.ts | ● Test suite failed to run | Jest failed to parse a file. This happens e.g. when your code or its dependenc
+[staging-verify] PASS VTID-05516 › gateway is alive (unchanged by this lane)
+**Staging verification FAILED — not ready for production.** Nothing will be offered for PUBLISH until this is green.
+- Verified commit: `51c2bead07b9d2091be0fb20e0584a7cb16d5fb4`
+- Tests: 37/40 passed
+- Change suites run: VTID-05352, VTID-05238, VTID-05515, VTID-05518, VTID-05516, VTID-05465, VTID-05477, VTID-05529, VTID-05421, VTID-05553, VTID-05551
+Failed:
+- VTID-05515 › existing npx jest test/eng-platform-inventory-readonly.test.ts: FAIL services/gateway/test/eng-platform-inventory-readonly.test.ts | ● Test suite failed to run | Jest failed to parse a file. This happens e.g. when your code or its dependencies u
+- VTID-05518 › existing npx jest test/eng-platform-stage-oidc-workflows.test.ts test/vtid-05009-provision-pack-token-workflow.test.ts: FAIL services/gateway/test/vtid-05009-provision-pack-token-workflow.test.ts | ● Test suite failed to run | FAIL services/gate
+- VTID-05516 › existing npx jest test/eng-platform-oidc-roles.test.ts: FAIL services/gateway/test/eng-platform-oidc-roles.test.ts | ● Test suite failed to run | Jest failed to parse a file. This happens e.g. when your code or its dependencies use non-standard 
+count of '[staging-verify] FAIL' lines: 3
+
+## run 42098033490 — STAGING-VERIFY gateway @ ec7f45ccb71c4ce80579a4bcb00f34fe4b5b2f4a (VTID-04613) · failure · created 2026-11-05T19:52:29Z · https://github.com/exafyltd/vitana-platform/actions/runs/42098033490
+[staging-verify] FAIL VTID-05515 › existing npx jest test/eng-platform-inventory-readonly.test.ts — FAIL services/gateway/test/eng-platform-inventory-readonly.test.ts | ● Test suite failed to run | Jest failed to parse a file. This happens e.g. when your code 
+[staging-verify] PASS VTID-05515 › gateway is alive (unchanged by this lane)
+[staging-verify] FAIL VTID-05518 › existing npx jest test/eng-platform-stage-oidc-workflows.test.ts test/vtid-05009-provision-pack-token-workflow.test.ts — FAIL services/gateway/test/eng-platform-stage-oidc-workflows.test.ts | ● Test suite failed to run | Synt
+[staging-verify] PASS VTID-05518 › gateway is alive (unchanged by this lane)
+[staging-verify] FAIL VTID-05516 › existing npx jest test/eng-platform-oidc-roles.test.ts — FAIL services/gateway/test/eng-platform-oidc-roles.test.ts | ● Test suite failed to run | Jest failed to parse a file. This happens e.g. when your code or its dependenc
+[staging-verify] PASS VTID-05516 › gateway is alive (unchanged by this lane)
+**Staging verification FAILED — not ready for production.** Nothing will be offered for PUBLISH until this is green.
+- Verified commit: `ec7f45ccb71c4ce80579a4bcb00f34fe4b5b2f4a`
+- Tests: 43/46 passed
+- Change suites run: VTID-05352, VTID-05238, VTID-05515, VTID-05518, VTID-05516, VTID-05465, VTID-05477, VTID-05529, VTID-05421, VTID-05553, VTID-05551, VTID-05528
+Failed:
+- VTID-05515 › existing npx jest test/eng-platform-inventory-readonly.test.ts: FAIL services/gateway/test/eng-platform-inventory-readonly.test.ts | ● Test suite failed to run | Jest failed to parse a file. This happens e.g. when your code or its dependencies u
+- VTID-05518 › existing npx jest test/eng-platform-stage-oidc-workflows.test.ts test/vtid-05009-provision-pack-token-workflow.test.ts: FAIL services/gateway/test/eng-platform-stage-oidc-workflows.test.ts | ● Test suite failed to run | SyntaxError: /home/runner
+- VTID-05516 › existing npx jest test/eng-platform-oidc-roles.test.ts: FAIL services/gateway/test/eng-platform-oidc-roles.test.ts | ● Test suite failed to run | Jest failed to parse a file. This happens e.g. when your code or its dependencies use non-standard 
+count of '[staging-verify] FAIL' lines: 3
+
+## every other gateway STAGING-VERIFY since 14:57Z (REST GET actions/workflows/STAGING-VERIFY.yml/runs, 2026-11-05T21:58Z)
+- run 42050099671 (2026-11-05T14:57:44Z failure): Tests: 32/35 passed; failed: VTID-05515,VTID-05518,VTID-05516 (the same three existing suites, the same "Test suite failed to run")
+- run 42061647712 (2026-11-05T16:08:42Z failure): Tests: 35/38 passed; failed: VTID-05515,VTID-05518,VTID-05516 (the same three existing suites, the same "Test suite failed to run")
+- run 42063399508 (2026-11-05T16:20:28Z success): verified commit `200228350454bc8e3319706d6644e056a58e59e9` (the production commit, which contains none of the three manifests), Tests: 12/12 passed: no change suite of VTID-05515/05516/05518 ran.
+So every gateway STAGING-VERIFY since 14:57Z whose verified commit contains the three manifests failed, and only on their existing suites.

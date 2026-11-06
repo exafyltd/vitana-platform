@@ -1,0 +1,16 @@
+# VTID-05564 preflight on the code commit e41c1fc9eac5ecdbe6ee41833c22a5f25a3e14a8, 2026-11-05T21:59:31Z
+$ node /projects/sandbox/vitana-platform/scripts/collab/preflight.mjs --repo /projects/sandbox/.rv/svcwd --base origin/main --head HEAD --branch kiro/agentic-delivery/sv-cwd --title "VTID-05564 (agentic-delivery/sv-cwd): run the three eng-platform-p01 staging suites in services/gateway"
+preflight vitana-platform /projects/sandbox/.rv/svcwd
+  base 0f45367bb69a8661eca6d5170ebb33909d03d001  head e41c1fc9eac5ecdbe6ee41833c22a5f25a3e14a8  branch kiro/agentic-delivery/sv-cwd
+
+PASS  Collab tests [required]
+PASS  Collab handoff [required]
+PASS  Lane scope [required]
+PASS  PR-GATE scope [report-only in CI (until config.enforce=true)]
+PASS  PR-GATE sparring [report-only in CI (until config.enforce=true)]
+PASS  PR-GATE weakening [report-only in CI (until config.enforce=true)]
+PASS  PR-GATE red-green [report-only in CI (until config.enforce=true)]
+PASS  Kiro steering [report-only in CI (until config.enforce=true)]
+
+preflight: every check passed
+[exit 0]
