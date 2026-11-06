@@ -1,0 +1,10 @@
+# $ FILES=$(find scripts -path '*/node_modules' -prune -o \( -name '*.test.cjs' -o -name '*.test.mjs' \) -print | sort); node --test $FILES    (as .github/workflows/UNIT.yml:21-25, node v22.23.4, HEAD b71b382a969)
+# files: 35
+# tests 705
+# suites 0
+# pass 704
+# fail 0
+# cancelled 0
+# skipped 1
+# todo 0
+# duration_ms 16592.838507

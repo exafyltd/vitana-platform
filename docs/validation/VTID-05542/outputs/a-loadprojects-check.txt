@@ -1,0 +1,1 @@
+[{"name":"vitana-platform","path":"vitana/vitana-platform","landing":false,"required_jobs":[]},{"name":"vitana-v1","path":"vitana/vitana-v1","landing":false,"required_jobs":[]},{"name":"rehearsal","path":"vitana/rehearsal","landing":true,"required_jobs":["unit"]}]

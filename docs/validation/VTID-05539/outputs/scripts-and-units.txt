@@ -1,0 +1,18 @@
+# $ bash -n infra/gitlab-engineering/host/ops.d/20-cwagent.sh
+exit: 0
+
+# $ systemd-analyze --version | head -1   (the machine of this session; the GitLab host runs Ubuntu 24.04, systemd 255, which knows every directive used here)
+systemd 252 (252.23-15.amzn2023)
+
+# $ systemd-analyze verify infra/gitlab-engineering/host/units/vitana-ci-metrics.service infra/gitlab-engineering/host/units/vitana-ci-metrics.timer     (no output = no unknown directive, no missing executable)
+exit: 0
+
+# negative control: the same service with two directives misspelled (the verifier does report them)
+<scratch>/vitana-ci-metrics.service:15: Unknown key name 'StateDirectry' in section 'Service', ignoring.
+<scratch>/vitana-ci-metrics.service:16: Unknown key name 'NoNewPrivilegez' in section 'Service', ignoring.
+exit: 0
+
+# $ node --check scripts/eng/ci-metrics.mjs scripts/eng/ci-metrics.test.mjs scripts/eng/monitoring-structure.test.mjs
+ok scripts/eng/ci-metrics.mjs
+ok scripts/eng/ci-metrics.test.mjs
+ok scripts/eng/monitoring-structure.test.mjs

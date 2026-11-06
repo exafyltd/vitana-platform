@@ -1,0 +1,36 @@
+# terraform console of lane fleet (VTID-05536): the expressions that need no AWS call, evaluated for real (scratch copy whose backend line is removed so console can run; the worktree is not changed)
+# defaults of the variables as setup.sh passes M1's: runner_version=19.5.2-1
+local.fleet_runner_semver            => "19.5.2" 
+
+local.fleet_runner_helper_image      => "registry.gitlab.com/gitlab-org/gitlab-runner/gitlab-runner-helper:x86_64-v19.5.2" 
+
+local.fleet_image_hash               => "9cad11b123" 
+
+local.fleet_required_vcpus           => 96 
+
+local.fleet_instance_types           => [ "m6i.xlarge", "m6a.xlarge", "m5.xlarge", "m5a.xlarge", ] 
+
+100 - var.fleet_spot_percent         => 20 
+
+local.fleet_asg_name                 => "vitana-eng-fleet" 
+
+local.fleet_cache_bucket             => (known after apply) 
+
+# variable validation: values that must be refused
+fleet_max_instances=0        => fleet_max_instances must be a whole number from 1 to 500.
+fleet_max_instances=501      => fleet_max_instances must be a whole number from 1 to 500.
+fleet_max_instances=2.5      => fleet_max_instances must be a whole number from 1 to 500.
+fleet_spot_percent=101       => fleet_spot_percent must be a whole number from 0 to 100.
+fleet_spot_percent=-1        => fleet_spot_percent must be a whole number from 0 to 100.
+fleet_idle_count=25          => fleet_idle_count must be a whole number from 0 up to fleet_max_instances.
+# values that must be accepted
+fleet_max_instances=1        => 1
+ (accepted)
+fleet_max_instances=500      => 500
+ (accepted)
+fleet_spot_percent=0         => 24
+ (accepted)
+fleet_spot_percent=100       => 24
+ (accepted)
+fleet_idle_count=24          => 24
+ (accepted)

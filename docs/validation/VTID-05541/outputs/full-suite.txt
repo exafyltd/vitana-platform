@@ -1,0 +1,16 @@
+# $ cd services/gateway && npx jest --ci --silent   (the whole gateway Jest suite, working tree of kiro/eng-gitlab-m2/scm-webhook on base 945755f084; 1 min 53 s)
+suites 1760 (failed 3, runtime errors 0); tests 29267: pass 29204, fail 3, skipped 54, todo 6
+
+Failed tests (each one below):
+- test/vtid-04560-role-separation-regression.test.ts :: VTID-04562 domain atlas — a map that cannot silently fall behind the code > every gateway route file is claimed by at least one domain (drift guard)
+- test/providers/storage-provider.test.ts :: VTID-03765 s3BucketName / s3PublicUrl > builds a plain, unsigned public URL — same shape as Supabase getPublicUrl()
+- test/vtid-04226-eventbridge-test-contract-schedules.test.ts :: VTID-04226: scripts parse and dry-run > the token provisioning script is dry-run by default and never defaults to prod
+
+Why each fails:
+- vtid-04560-role-separation-regression (atlas drift guard): the known red of this lane. routes/internal-gitlab-webhook.ts is not claimed by any domain of
+  src/orb/developer/domain-atlas.ts (outside this lane's paths); agentic-delivery/prerequisites (PR #4690, VTID-05551) adds the claim. See test-roles.txt.
+- providers/storage-provider "builds a plain, unsigned public URL": the sandbox's AWS region setting resolves to us-east-1 (the URL it built), the test
+  expects eu-central-1. vtid-04226 "the token provisioning script is dry-run by default": scripts/aws/setup-gateway-internal-token.sh:62 calls
+  `openssl rand`, and openssl is not installed in this sandbox, so the script exits before its dry-run output (it makes no AWS call before that line).
+  Both fail the same way on base 945755f084 without any file of this lane (run in the red-on-base tree: "Tests: 2 failed, 38 passed, 40 total"
+  there and here). Neither file is touched or read by this lane.

@@ -1,0 +1,83 @@
+---
+lane: prerequisites
+state: in-review
+next_actor: kiro
+depends_on: []
+executor: kiro
+seat: exafy
+reviewer_seat: agent:vitana-lane-reviewer
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+repos: [exafyltd/vitana-platform]
+paths:
+  - services/gateway/src/orb/developer/domain-atlas.ts
+  - services/gateway/test/atlas-gitlab-route-claims.test.ts
+  - scripts/ci/staging-verify/record-oasis.sh
+  - scripts/ci/staging-verify/record-oasis-workflow.test.mjs
+  - docs/validation/**
+claimed_by: kiro-exafy-202611050324-2956
+branch: kiro/agentic-delivery/prerequisites
+pr: https://github.com/exafyltd/vitana-platform/pull/4690
+updated: 2026-11-05T03:53Z
+vtid: VTID-05551
+---
+# Lane: prerequisites (repo vitana-platform)
+Tasks in `tasks.md`. Implements the atlas claims of plan §9 and the `WORKFLOW` input of plan §3.6 step 4. Starts at once and lands first: lanes gateway-delivery and verify-on-gitlab, and eng-gitlab-m2 lane scm-webhook, build on it (plan §9). VTID from PLAN-SPAR; never by hand.
+
+## Log
+### 2026-11-05T00:30Z · kiro-exafy-202611041929-802c · ready
+Lane created with sparring round 1's answer (plan §9: the atlas drift guard and R1-F2).
+
+### 2026-11-05T00:25Z · ci-plan-spar · ready (VTID allocated)
+VTID-05551 allocated after policy approval (converged-auto-v1).
+### 2026-11-05T02:53Z · pm-agent · update
+reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
+### 2026-11-05T02:59Z · pm-agent · update
+reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
+
+### 2026-11-05T03:49Z · kiro-exafy-202611050324-2956 · ready → executing
+Claimed and built from the spec by a separate builder session (seat exafy; driver kiro-exafy-202611041929-802c). Atlas domain `deploy`
+claims `/^internal-gitlab-webhook$/` and `/^delivery$/`; `record-oasis.sh` passes `--arg workflow "${WORKFLOW:-STAGING-VERIFY.yml}"` to both
+jq programs. Tests first, red on base: atlas 3 of 4 fail; record-oasis 5 of 15 fail (the `WORKFLOW` cases), and its unset cases pass
+against the base script, so the recorded bodies are today's bytes (also under jq 1.7.1). Green: 4/4 and 15/15; test:roles 105/105;
+typecheck exit 0; staging-verify scripts 103/103; UNIT 628 tests, 627 pass, 0 fail, 1 skip (Node 22 and Node 20). Decisions in
+`docs/validation/VTID-05551/acceptance.md`: an empty `WORKFLOW` is unset; the `existing` staging test runs in `services/gateway`.
+
+### 2026-11-05T03:53Z · kiro-exafy-202611050324-2956 · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/4690 open; preflight passed. Next: the driver requests the reviewer agent.
+
+### 2026-11-05T04:41Z · agent-vitana-lane-reviewer-202611050423-dcaa · review
+review: accept
+head: 18a10349d8bafeb1e00ee5aaf259f032f0323171
+reviewer: agent:vitana-lane-reviewer (claude-opus-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4690
+Findings: non-blocking: behind main and will conflict in this lane file (#4688, 945755f0: the updated: line and the log tail); a hand-resolved merge does not keep this review (land-guard.mjs:52), so the merged head needs a new review.
+non-blocking: after main is merged in, Lane scope reads seat exafyltd from the new merge base (queue.mjs:948-949, :987) and rejects 75f26daa and 18a10349 (seat exafy, queue.mjs:1015-1016); restore seat: exafy on main first (pm-agent or lane-admin lane), otherwise an exafyltd session rebuilds the lane.
+non-blocking: CI unfinished at the caller's 04:22Z read (3 passed, 3 running, 10 queued, none failed); not listable here (GraphQL blocked); land-guard.mjs merge must see every required check green.
+non-blocking: independence holds by session id (the caller appears only in the lane-creation entry; all PR commits are from kiro-exafy-202611050324-2956; no #4687 commit is in this branch or on main).
+Next: the land step merges under §7b once the seat on main is restored and main is merged in (findings 1-2); that merged head needs a new review.
+
+### 2026-11-05T15:46Z · agent-vitana-lane-reviewer-202611051546-dc02 · review
+review: accept
+head: 35ae3bed3d598b6b74d15c44e4b01d2ce4274332
+reviewer: agent:vitana-lane-reviewer (claude-opus-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4690
+Findings: non-blocking: CI unfinished at the caller's 15:44:44Z REST read (16 success, 7 in progress: Gateway Jest shards 1-4, Gateway Service Tests, Gateway Validation (Minimal CI), validate-pr; none failed); not listable here (GraphQL blocked); land-guard.mjs merge must see every check green on the head it merges.
+non-blocking: 1 commit behind origin/main (a8220f1059, #4692; no file of this PR, no governance or protected gate file); a clean update keeps this review only through land-guard.mjs merge --repo; without --repo, or after a new conflict in this lane file, the new head needs a new review.
+non-blocking: merge resolution verified: front matter is the branch's with main's seat: exafy; log is main's four entries in order and unchanged, then the branch's 03:49Z, 03:53Z and 04:41Z entries once each; the PR's own diff outside the lane file is unchanged since 18a10349.
+non-blocking: independence holds by session id (the caller is only the lane creator and the driver named in the 03:49Z text; all builder commits carry kiro-exafy-202611050324-2956; this reviewer session is on no PR commit).
+non-blocking: dependents get what tasks.md specifies (WORKFLOW in both jq programs, empty = unset; exact claims for routes/internal-gitlab-webhook.ts and routes/delivery.ts); the GitLab .record job must pass a non-empty WORKFLOW; verify-on-gitlab's cited record-oasis.sh:28-59 is now :35-66.
+non-blocking: the lane log lacks the 'not verified on staging: <reason>' line that acceptance.md and staging-tests.json carry; the closing entry should state it.
+Next: the land step merges under §7b once every check is green on the head it merges and the PR is up to date (land-guard.mjs merge --repo keeps this review across a clean update).
+
+### 2026-11-05T16:54Z · agent-vitana-lane-reviewer-202611051654-728c · review
+review: accept
+head: 3a920ffb531f42441862f44d587ae0c8aea1bb1c
+reviewer: agent:vitana-lane-reviewer (claude-opus-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4690
+Findings: non-blocking: CI judged from the caller's REST read of 3a920ffb (28 check runs completed/success, last 16:33:30Z; land-guard.mjs checks ok, 26 green; mergeable_state clean); not re-listable here (gh pr view/checks blocked: GraphQL pass-through; gh api outside this agent's commands); land-guard.mjs merge must see every check green on the head it merges.
+non-blocking: update-branch merges verified: 35ae3bed..3a920ffb is exactly main's 49cff4a9df..b3d547b66c (110 files, none of this PR) plus the 15:46Z review entry; the PR's own diff outside this lane file is the one reviewed at 35ae3bed; no protected gate file in the PR diff or the merged range; an update that brings governance files again needs a new review.
+non-blocking: independence holds by session id (the caller wrote only the 00:30Z lane-creation entry and is named as driver in the 03:49Z text; all build commits carry kiro-exafy-202611050324-2956; the caller's two branch commits are GitHub update-branch merges of main; this reviewer session is on no commit).
+non-blocking: item 10 passes: GET /alive 200 matches the mounted unauthenticated JSON route (index.ts:634; lib.cjs:400 requires JSON only under /api); the atlas routes field has no runtime reader, so the existing jest suite on the verified commit is the staging-time proof; no rule file changed; spot-checked acceptance.md citations resolve.
+non-blocking: the lane log still lacks the 'not verified on staging: <reason>' line (quality-checks.md:13-15) that acceptance.md and staging-tests.json carry; the closing entry should state it with the covering tests.
+non-blocking: dependents get exact claims (internal-gitlab-webhook per eng-gitlab-m2 lanes/scm-webhook.md, delivery per plan §9; a routes/ subdirectory would not match); the GitLab .record job must pass a non-empty WORKFLOW.
+Next: the land step merges under §7b once every check is green on the head it merges and the PR is still up to date with main.
