@@ -24,6 +24,9 @@ Sparring: CI PLAN-SPAR on this `plan(` PR. Converged plans are approved by polic
 No lane of this plan is claimed until `live-room-edit-cohost` lanes `gateway-cohost` and `v1-edit-session` are `done` (see plan.md).
 
 ## Log
+### 2026-11-06T09:30Z · claude-code session_01Cp885FGVuZp27dQmDP6eMH · owner approval recorded
+Owner approval of the plan as it stands (sparring sessions `05c2a910` and `1e9e89c5`, both escalated at round 3; final plan hash `e2b4fdd3d1c23b57bc370556f0eaef0a761e4981023b7557386bf071243c734f` and `793a69d003fb0d8672dc5873d94b5f5bd9f59533b85595d9dd6371c2143bdb7f`). Given in the conversation on 6 Nov 2026. Gateway approval (`POST /api/v1/plans/spar/:id/approve`) and VTID allocation are still pending: they need an `exafy_admin` JWT or the gateway service token, which this session does not hold.
+
 ### 2026-11-06T09:23Z · claude-code session_01Cp885FGVuZp27dQmDP6eMH · parked (sparring escalated)
 CI PLAN-SPAR escalated both sparring sessions at the round cap (state.json). Added `sparring_record` so the Collab handoff check passes; state stays `parked` as CI set it. Waiting for the owner: approve the plan as it stands, or request another sparring round.
 
