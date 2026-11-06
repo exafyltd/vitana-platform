@@ -92,6 +92,7 @@
         "SQL-HEALTH-STORE.yml": { "action": "disable", "family": "pr-checks", "gitlab": "T1", "triggers": ["pull_request", "workflow_dispatch"], "push_main": false },
         "SQL-INDEX-MOVEMENTS.yml": { "action": "disable", "family": "pr-checks", "gitlab": "T1", "triggers": ["pull_request", "workflow_dispatch"], "push_main": false },
         "SQL-LIVE-ROOM-CALENDAR.yml": { "action": "disable", "family": "pr-checks", "gitlab": "T1", "triggers": ["pull_request", "workflow_dispatch"], "push_main": false },
+        "SQL-LIVE-ROOM-COHOST.yml": { "action": "disable", "family": "pr-checks", "gitlab": "T1", "triggers": ["pull_request", "workflow_dispatch"], "push_main": false },
         "SQL-LIVE-ROOM-HOST-CALENDAR.yml": { "action": "disable", "family": "pr-checks", "gitlab": "T1", "triggers": ["pull_request", "workflow_dispatch"], "push_main": false },
         "SQL-MEMORY-FUNCTIONS-MIGRATE-REVOKE.yml": { "action": "disable", "family": "pr-checks", "gitlab": "T1", "triggers": ["pull_request", "push", "workflow_dispatch"], "push_main": true },
         "SQL-MEMORY-SENSITIVITY.yml": { "action": "disable", "family": "pr-checks", "gitlab": "T1", "triggers": ["pull_request", "workflow_dispatch"], "push_main": false },

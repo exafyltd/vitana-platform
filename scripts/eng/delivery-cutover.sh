@@ -563,7 +563,7 @@ chk_workflows() {
   if [ -n "$unknown" ]; then item workflows fail "github-workflows.json is complete and its test is green" "workflows on GitHub that the list does not classify:$unknown"; return; fi
   if [ -n "$gone" ]; then item workflows fail "github-workflows.json is complete and its test is green" "listed, but not on GitHub:$gone"; return; fi
   if [ -n "$miss" ]; then item workflows fail "github-workflows.json is complete and its test is green" "could not read from vitana-v1:$miss"; return; fi
-  if VITANA_V1_WORKFLOWS_DIR="$v1dir" x_node --test "$ROOT/scripts/eng/github-workflows.test.mjs" >"$TMP/wf-test.txt" 2>&1; then item workflows ok "github-workflows.json is complete and its test is green" "159 workflows classified, the only push-to-main production deploy is DEPLOY-CLOUDFLARE-WORKERS"
+  if VITANA_V1_WORKFLOWS_DIR="$v1dir" x_node --test "$ROOT/scripts/eng/github-workflows.test.mjs" >"$TMP/wf-test.txt" 2>&1; then item workflows ok "github-workflows.json is complete and its test is green" "160 workflows classified, the only push-to-main production deploy is DEPLOY-CLOUDFLARE-WORKERS"
   else item workflows fail "github-workflows.json is complete and its test is green" "scripts/eng/github-workflows.test.mjs failed: $(grep -m1 -E '^not ok' "$TMP/wf-test.txt" | cut -c1-120)"; fi
 }
 chk_bot() {
