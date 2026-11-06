@@ -41,3 +41,6 @@ Let Claude Code build lanes marked `executor: claude` in every plan, and let the
 - R2 Two builders on the same program can collide on shared files. Mitigation: the four lanes move whole, never split; their declared paths are disjoint (`pipelines` owns `config/delivery/**` and the CI templates, `merge-queue` owns `scripts/eng/gitlab-land*.mjs`), and neither lane file declares a `depends_on` on the other (round 3 R3-F1: the earlier ordering claim was wrong).
 - R3 Changing `reviewer_seat` to a Kiro seat means the Claude-built lanes are reviewed by a Kiro session, not by the reviewer agent. This is weaker independence than the agent. Mitigation: decision §5 item 1, and the reviewer seat is never the builder's.
 <!-- plan:end -->
+
+## Late lanes (added after convergence; outside the sparred plan text)
+- `reinstate-admin` (executor kiro, seat exafy, `lane_admin: true`, reviewer agent; paths: `reinstate-rules.md` only). Owner option 1, 2026-11-05: reassigns VTID-05565 (`reinstate-rules`) from `executor: kiro` to `executor: claude` and reviewer seat `exafyltd`, because the code only allows a lane's executor to change through a trusted lane-admin lane. It adds no rule text and no code. Its VTID is allocated by CI PLAN-SPAR on this PR (late-lane path, as for `reseat` and `gitlab-verify`).
