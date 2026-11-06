@@ -1,6 +1,6 @@
 ---
 lane: access-token-hook-shadow
-state: ready
+state: done
 next_actor: kiro
 executor: kiro
 seat: hotmail
@@ -12,9 +12,12 @@ paths:
   - supabase/migrations/20261102032100_vtid_*_tenant_claim_mismatch_log.sql
   - supabase/migrations/20261102032000_vtid_*_access_token_hook_shadow_rollback.sql
   - supabase/tests/mt_identity_hook_*.sql
-updated: 2026-11-02T13:05Z
+updated: 2026-11-05T22:31Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05464
+branch: kiro/mt-identity-r2/access-token-hook-shadow
+pr: https://github.com/exafyltd/vitana-platform/pull/4627
+claimed_by: kiro-hotmail-202611011452-6d16
 ---
 # access-token-hook-shadow — custom access-token hook in SHADOW only (DB)
 
@@ -68,3 +71,10 @@ Findings:
 - non-blocking: CI state on the current head was not read from this seat (gh pr view and gh pr checks fail through the gateway). This accept does not certify check status.
 Carried: the accept on e98617340b (no blocking findings, nine non-blocking notes) stands unchanged for the lane's own files, which are byte-identical.
 Next: the land step merges under §7b after land-guard confirms every required check green on this head. A further clean merge of main that brings in no governance file keeps this review only in land-guard's --repo walk.
+
+### 2026-11-05T22:31Z · kiro-hotmail-202611011452-6d16 · in-review → verified
+merge: 78bb4b3969982bfb71f2a3d412447ac5088056e6 (exafyltd/vitana-platform#4627)
+authority: §7b PM rule. Merged by kiro-hotmail-202611011452-6d16 on the reviewed head `e7c8b183e00b3c4de01c6b38e1910f12c4d18e7f`, which was the PR head at merge.
+
+### 2026-11-05T22:31Z · kiro-hotmail-202611011452-6d16 · verified → done
+Closing record: the code and evidence are on main from merge 78bb4b3969982bfb71f2a3d412447ac5088056e6. The lane claim is released once this record is on main.
