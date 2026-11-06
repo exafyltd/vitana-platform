@@ -1,6 +1,6 @@
 ---
 lane: helpers-and-policy-rewrite
-state: ready
+state: done
 next_actor: kiro
 executor: kiro
 seat: hotmail
@@ -14,9 +14,12 @@ paths:
   - scripts/ci/bare-policy-lint.mjs
   - services/gateway/test/mt-identity-bare-policy-lint.test.ts
   - supabase/tests/mt_identity_helpers_*.sql
-updated: 2026-11-02T13:05Z
+updated: 2026-11-03T18:43Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05465
+branch: kiro/mt-identity-r2/helpers-and-policy-rewrite
+pr: https://github.com/exafyltd/vitana-platform/pull/4625
+claimed_by: kiro-hotmail-202611011452-6d16
 ---
 # helpers-and-policy-rewrite — tenant_id_for_policies() + is_member() + the bare-policy rewrite (DB)
 
@@ -139,3 +142,16 @@ Findings:
 - [non-blocking] docs/validation/VTID-05465/acceptance.md:79. Still open (file unchanged, blob 81bab3cff7). AC-12's TEST: line cites outputs/pglite-apply-rollback-reapply.txt (run at 3e787184e4, no guard-refusal line) and outputs/jest-green.txt (the 7-test run), and AC-7's TEST line at :53 says 7 of 7. The guard evidence is outputs/live-body-guard-green.txt, outputs/pglite-run-after-guard.txt and outputs/jest-live-body-guard-green.txt (8 of 8). Correct the citations and the count with the next change to this folder, and keep AC-12's TEST: line within 12 lines of the AC-12 line. This is not a reason to hold the merge, because another push needs a new review of the head.
 - [non-blocking] docs/validation/VTID-05465/commands.log. Still open (file unchanged, blob fa8e30640f). commands.log ends with the fix-forward 1 section: no entry for commits 8468187bcc, db538376, 03945dad, d47f5eb8, ed3fabbc, 87f9bb9b70 and f64d08e4a2, and no validate-pr-locally.cjs run. Add the entry with the next change to this folder. Until then the validate-pr job on the pushed head decides.
 Next: the seat pushes exactly f64d08e4a2, and the land step merges under §7b once every check on that head is green and the PR is up to date with main. The lane is accepted for merging files only. No apply before the owner has read pre-check.sql sections 5, 6 and 6b on the target database and has either waived AC-8 (PGlite with a pgTAP shim, no CI runner) or seen the files run on the D11 stack with real pgTAP (§7d). If section 5 shows a false marker, the seat parks the lane with the five-part stop message for a plan decision on amendment 1. The commit that appends this entry touches only the lane file, so this accept stays valid for it (land-guard rule b). Another merge of main is not covered by rule b and needs a new review, which can be limited to the blob comparison above.
+
+### 2026-11-03T15:38Z · kiro-hotmail-202611011452-6d16 · ready → executing
+Built in platform PR #4625 (`kiro/mt-identity-r2/helpers-and-policy-rewrite`, opened 2026-11-02T15:38Z). Recorded here at the closing; the reviewed head and the review entry are earlier in this file.
+
+### 2026-11-03T15:38Z · kiro-hotmail-202611011452-6d16 · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/4625 (opened 2026-11-02T15:38Z). Reviewed on head `f64d08e4a2`; the accept entry is in this file already.
+
+### 2026-11-03T18:43Z · kiro-hotmail-202611011452-6d16 · in-review → verified
+merge: 3dc28e5fa74f314b2193ef11a141a8bcc0d8d85c (exafyltd/vitana-platform#4625)
+authority: §7b PM rule. Merged by kiro-hotmail-202611011452-6d16 on head `840ce7659c8`: the reviewed head `f64d08e4a2` plus the lane's own review-entry commit (entry-only). No lane code changed after the accept.
+
+### 2026-11-03T18:43Z · kiro-hotmail-202611011452-6d16 · verified → done
+Closing record: the code and evidence are on main from merge 3dc28e5fa74f314b2193ef11a141a8bcc0d8d85c. The lane claim is released once this record is on main.
