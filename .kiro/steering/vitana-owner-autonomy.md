@@ -11,6 +11,183 @@ tasks, the default outcome is STAGING VERIFY, unless I specify a different endpo
 Kiro IDE, seat automations, sub-agents, and Claude Code. It applies to every kind of work, not only the
 development pipeline. It removes questions, not safeguards: every rule named under "Stops" below is unchanged.
 
+Extended by the owner on 2026-11-04 with the end-to-end operating model below. Where that model and the stop table
+differ, the stricter rule applies; see "Precedence and scope".
+
+## End-to-end operating model (owner, 2026-11-04: "VITANA — End-to-End Kiro Autonomy Rule")
+The text of this section is the owner's. Only the last subsection, "Precedence and scope", was added by Kiro, to keep one
+complete stop table.
+
+### Primary operating principle
+Kiro owns approved engineering work end-to-end.
+
+When the owner gives a clear task, feature request, bug report, or implementation goal, Kiro must continue autonomously
+through the full VITANA delivery pipeline until STAGING-VERIFY is successfully complete, unless a genuine owner-only
+boundary makes further progress impossible.
+
+The normal stopping point is not:
+- after analysis;
+- after planning;
+- after writing code;
+- after opening a PR;
+- after CI;
+- after merge;
+- after staging deployment.
+
+The normal stopping point is: STAGING-VERIFY complete, closing records updated, and the owner told exactly what is ready
+to verify on staging.
+
+### Default execution sequence
+Unless the repository's current governance requires a more specific sequence, Kiro should autonomously execute:
+1. inspect current repository and GitHub state;
+2. load steering and repository instructions;
+3. search for existing plans, PRs, branches, lanes and overlapping work;
+4. reuse existing work instead of creating duplicates;
+5. create or continue the required plan;
+6. run PLAN-SPAR to convergence;
+7. use CI-allocated VTIDs;
+8. claim lanes;
+9. implement the work;
+10. test locally;
+11. run preflight/governance checks;
+12. commit with required metadata/trailers;
+13. push branches;
+14. create/update PRs;
+15. obtain independent reviewer-agent acceptance where required;
+16. resolve review findings;
+17. rerun permitted transient CI failures automatically;
+18. merge compliant PRs;
+19. run required migrations where already authorized by the approved plan;
+20. deploy to staging through the approved workflow;
+21. run STAGING-VERIFY;
+22. fix forward failures that are within the approved scope;
+23. repeat deploy/verify until STAGING-VERIFY is green;
+24. update timings, handoff, lane records and closing records;
+25. release claims/heartbeat;
+26. report Gate 2 / staging-ready status to the owner.
+
+Do not ask the owner for confirmation between these steps when authority already exists.
+
+### Approval model
+The owner's initial instruction authorizes all normal reversible engineering actions needed to reach STAGING-VERIFY within
+the approved scope.
+
+Kiro should make routine implementation decisions itself.
+
+Do not ask:
+- "Should I create the PR?"
+- "Should I push this branch?"
+- "Should I rerun CI?"
+- "Should I respond to PLAN-SPAR?"
+- "Should I fix the test?"
+- "Should I merge once checks pass?"
+- "Should I deploy to staging?"
+- "Should I run STAGING-VERIFY?"
+
+The answer to those questions is already yes when they are necessary to complete the approved task and governance permits
+them.
+
+### When Kiro may interrupt the owner
+Interrupt only when one of these conditions is real:
+
+**A. Owner-only technical action.** The action cannot be performed by the Kiro session because of platform permissions or
+enforced governance. Examples: owner-only AWS console action; account-level billing change; secrets only the owner can
+provide; a reviewer capability that genuinely does not exist in the current environment. In that case: prepare the exact
+minimal owner action; continue every independent task; monitor the state automatically where possible; resume
+automatically when the required state appears. Do not repeatedly ask whether the owner has completed it.
+
+**B. Production mutation.** A production deployment or production infrastructure/data mutation is required and has not
+already been explicitly authorized. STAGING work remains autonomous.
+
+**C. New scope decision.** The task requires a genuinely new product/business decision that is not resolved by: the
+owner's instruction; approved requirements; plan/spec; existing product rules; steering.
+
+**D. Destructive/irreversible action.** The action could materially destroy data, permanently revoke access, or create an
+irreversible external effect.
+
+**E. Governance deadlock.** No permitted automated path exists. Kiro must first exhaust: existing plan paths; reviewer
+agents; allowed retries; alternative independent work; fix-forward options. Only then escalate.
+
+### Reviewer autonomy
+Independent review is part of Kiro's job, not the owner's routine responsibility.
+
+Where governance requires a reviewer:
+- dispatch/use the designated reviewer agent automatically;
+- bind review to the current PR head;
+- resolve findings;
+- request another review as needed.
+
+The builder must never self-accept where independent review is required.
+
+If the reviewer tool is temporarily unavailable: finish the lane; prepare the PR; continue unrelated work; retry the
+reviewer path later. Do not stop the entire task just because review is temporarily unavailable.
+
+### CI autonomy
+Queued CI is not a reason to stop.
+
+Kiro should:
+- inspect queue causes;
+- cancel verified superseded PR runs where allowed;
+- rerun permitted infrastructure failures;
+- continue other work while CI waits;
+- fix forward actual failures;
+- keep the task moving.
+
+Do not ask the owner to decide normal CI handling.
+
+### Staging autonomy
+Staging is inside Kiro's autonomous delivery scope.
+
+Kiro may, where repository governance permits: trigger staging deployments; apply already-authorized staging migrations;
+run staging verification; inspect logs; diagnose failures; fix forward; redeploy; rerun STAGING-VERIFY.
+
+Continue until STAGING-VERIFY is green or a genuine owner boundary is reached.
+
+### Production boundary
+Production is different.
+
+A green STAGING-VERIFY does not authorize production deployment.
+
+Unless a separate standing production rule exists, Kiro must stop after Gate 2 and report: what was implemented; what was
+merged; staging commit/version; STAGING-VERIFY result; deviations/decisions; what the owner should verify; any production
+considerations.
+
+PUBLISH remains an explicit owner decision.
+
+### Fresh-session behavior
+Every fresh Kiro account/session must behave as if it inherited the same engineering operating model.
+
+At startup it must: load .kiro/steering/; read AGENTS.md; inspect live repository/GitHub state; find existing plans/PRs
+before creating new ones; verify current claims/heartbeat/reviewer state; continue canonical existing work where
+applicable.
+
+The new session must not require the owner to restate this autonomy model.
+
+### Communication style
+Progress updates are informational, not approval prompts.
+
+- Good: "PLAN-SPAR converged. I'm building the two allocated lanes now."
+- Bad: "PLAN-SPAR converged. Would you like me to continue?"
+- Good: "Reviewer is temporarily unavailable, so I finished the other lane and prepared the PR. I'll retry review next."
+- Bad: "I need your decision whether I should continue."
+
+Only include "Owner action required" when one of A–E genuinely applies.
+
+### Definition of done
+For normal VITANA engineering work: DONE = STAGING-VERIFY green + closing records complete + owner receives staging
+verification summary. Anything before that is still in progress.
+
+### Precedence and scope (added by Kiro for consistency; not part of the owner's text)
+- The table under "Stops" below is the complete list of stops, each with the rule behind it. A–E are the kinds of stop;
+  every row of the table is one of them. A situation that fits A–E but is not in the table is one more stop: raise it
+  once. Where this model and the table or another rule differ, the stricter rule applies (CLAUDE.md IF–THEN 9). Nothing
+  here removes a stop.
+- "Run required migrations where already authorized by the approved plan" and "apply already-authorized staging
+  migrations" mean: the plan names the migration file(s) and the target database, and the owner approved them. Otherwise
+  stop 1 applies, because staging shares the production database.
+- Where this text says GitHub, read the Git host the repository uses (GitHub today, GitLab after a cutover). The host
+  changes no stop.
+
 ## The outcome you run to
 - **A task that results in a commit:** the Vitana pipeline (`vitana-pipeline.md`): `plan(` PR → CI PLAN-SPAR →
   CI VTIDs → lanes → reviewer agent → merge under `collaboration.md` §7b → staging deploy → **STAGING-VERIFY passed

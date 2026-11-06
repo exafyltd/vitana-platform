@@ -380,10 +380,29 @@ test('steering: the session title is set once and never renamed (vitana-session-
     assert.match(checkOwnerAutonomy(withRule(null)).join('\n'), /vitana-owner-autonomy\.md missing/);
   });
   const { OWNER_AUTONOMY_ANCHORS } = require('./guard.cjs');
-  test('owner-autonomy: one anchor per stop row (13) plus end point, stop message and no-trailing-question rule', () => {
-    assert.strictEqual(OWNER_AUTONOMY_ANCHORS.length, 16);
+  test('owner-autonomy: one anchor per stop row (13), end point, stop message, no-trailing-question rule, eleven end-to-end anchors', () => {
+    assert.strictEqual(OWNER_AUTONOMY_ANCHORS.length, 27);
     const rows = REAL.split(/\r?\n/).filter((l) => /^\|\s*\d+\s*\|/.test(l));
     assert.strictEqual(rows.length, 13);
+  });
+  // Plan e2e-autonomy: the eleven anchors are named here, not read from the guard, so a guard that forgets one is a red test.
+  const END_TO_END = ['Primary operating principle', 'Default execution sequence', 'When Kiro may interrupt the owner', 'Reviewer autonomy', 'CI autonomy',
+    'Staging autonomy', 'Production boundary', 'Fresh-session behavior', 'Communication style', 'Definition of done', 'the stricter rule applies'];
+  test('owner-autonomy: the guard names the eleven end-to-end anchors and the shipped file carries each of them', () => {
+    const names = OWNER_AUTONOMY_ANCHORS.map(([a]) => a);
+    for (const a of END_TO_END) {
+      assert.ok(names.includes(a), `the guard does not name "${a}"`);
+      assert.ok(REAL.includes(a), `the shipped rule file does not carry "${a}"`);
+    }
+  });
+  for (const anchor of END_TO_END) {
+    test(`owner-autonomy: dropping the end-to-end section "${anchor}" fails`, () => {
+      const e = checkOwnerAutonomy(withRule(REAL.split(anchor).join('x'))).join('\n');
+      assert.ok(e.includes(`no longer names ${anchor}`), e);
+    });
+  }
+  test('owner-autonomy: the end-to-end text adds no row to the stop table (still the thirteen stops)', () => {
+    assert.strictEqual(REAL.split(/\r?\n/).filter((l) => /^\|\s*\d+\s*\|/.test(l)).length, 13);
   });
   test('owner-autonomy: deleting the migration row fails even though §7d appears elsewhere', () => {
     const noRow = REAL.split('\n').filter((l) => !/^\|\s*1\s*\|/.test(l)).join('\n');

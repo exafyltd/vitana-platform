@@ -56,6 +56,12 @@ holds **the one complete stop table**, where each row cites the existing rule an
 STAGING-VERIFY. `scripts/ci/kiro-steering/guard.cjs` (both repos) fails CI when the file is missing, is not always
 included, or drops any stop row's anchor.
 
+Since plan `e2e-autonomy` the same file also carries the owner's end-to-end operating model of 2026-11-04 (primary
+principle, default execution sequence, when Kiro may interrupt the owner, reviewer, CI and staging autonomy, the
+production boundary, fresh-session behavior, communication style, definition of done). The model and the stop table sit in
+one file, and where they differ the stricter rule applies. The guard names one anchor per section, so a section cannot be
+dropped quietly, and a fresh Kiro Web session loads all of it through the generator above without the owner restating it.
+
 What was found (audit 2026-10-27) and how it is handled:
 | Finding | Handling |
 |---|---|

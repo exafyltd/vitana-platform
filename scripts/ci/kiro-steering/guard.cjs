@@ -526,11 +526,23 @@ const OWNER_AUTONOMY_ROW_ANCHORS = Object.freeze([
   ['Gate 1', 'stop: Gate 1 for Claude-local sparring'],
   ['NEVER 34', 'stop: turning on product autonomy'],
 ]);
-// The end point, the stop message and the no-trailing-question rule, anywhere in the file.
+// The end point, the stop message and the no-trailing-question rule, anywhere in the file; then (plan e2e-autonomy) one
+// anchor per section of the owner's end-to-end operating model and one for its precedence sentence.
 const OWNER_AUTONOMY_TEXT_ANCHORS = Object.freeze([
   ['STAGING-VERIFY', 'the default end point'],
   ['five-part', 'the stop message'],
   ['Never end a reply with an offer', 'the no-trailing-question rule'],
+  ['Primary operating principle', 'end-to-end model: Kiro owns approved work to STAGING-VERIFY'],
+  ['Default execution sequence', 'end-to-end model: the steps Kiro runs without asking'],
+  ['When Kiro may interrupt the owner', 'end-to-end model: the only reasons to stop'],
+  ['Reviewer autonomy', 'end-to-end model: a reviewer that is down does not stop the task'],
+  ['CI autonomy', 'end-to-end model: Kiro reads, re-runs and fixes its own CI'],
+  ['Staging autonomy', 'end-to-end model: Kiro drives staging deploys and verification'],
+  ['Production boundary', 'end-to-end model: production is never reached without the owner'],
+  ['Fresh-session behavior', 'end-to-end model: a new session resumes from git, not from the owner'],
+  ['Communication style', 'end-to-end model: short, plain reports'],
+  ['Definition of done', 'end-to-end model: what done means'],
+  ['the stricter rule applies', 'precedence: where the model and the stop table differ'],
 ]);
 const OWNER_AUTONOMY_ANCHORS = Object.freeze([...OWNER_AUTONOMY_ROW_ANCHORS, ...OWNER_AUTONOMY_TEXT_ANCHORS]);
 

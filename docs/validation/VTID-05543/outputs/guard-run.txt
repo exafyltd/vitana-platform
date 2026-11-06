@@ -1,0 +1,2 @@
+# vitana-platform: $ node scripts/ci/kiro-steering/guard.cjs .
+kiro-steering: OK

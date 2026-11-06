@@ -1,0 +1,704 @@
+# vitana-platform: the final scripts/ci/kiro-steering/guard.test.cjs against the guard and the steering file of origin/main e47da4cebb6 (nothing else changed)
+# $ node --test scripts/ci/kiro-steering/guard.test.cjs
+TAP version 13
+# Subtest: a matching layout passes
+ok 1 - a matching layout passes
+  ---
+  duration_ms: 3.220642
+  type: 'test'
+  ...
+# Subtest: a rules file without a twin fails
+ok 2 - a rules file without a twin fails
+  ---
+  duration_ms: 0.484756
+  type: 'test'
+  ...
+# Subtest: globs that differ from paths fail
+ok 3 - globs that differ from paths fail
+  ---
+  duration_ms: 0.675774
+  type: 'test'
+  ...
+# Subtest: a link to a missing file fails
+ok 4 - a link to a missing file fails
+  ---
+  duration_ms: 0.29921
+  type: 'test'
+  ...
+# Subtest: no always file linking CLAUDE.md fails
+ok 5 - no always file linking CLAUDE.md fails
+  ---
+  duration_ms: 0.321613
+  type: 'test'
+  ...
+# Subtest: the twin must be fileMatch
+ok 6 - the twin must be fileMatch
+  ---
+  duration_ms: 0.360657
+  type: 'test'
+  ...
+# Subtest: this repository passes
+ok 7 - this repository passes
+  ---
+  duration_ms: 15.687744
+  type: 'test'
+  ...
+# Subtest: the Kiro notes say plan sparring is never skipped and how to load context
+ok 8 - the Kiro notes say plan sparring is never skipped and how to load context
+  ---
+  duration_ms: 0.167594
+  type: 'test'
+  ...
+# Subtest: agents: the shipped reviewer agent, workflow, hook and runbooks pass
+ok 9 - agents: the shipped reviewer agent, workflow, hook and runbooks pass
+  ---
+  duration_ms: 4.318411
+  type: 'test'
+  ...
+# Subtest: agents: check() runs the agent checks only where scripts/collab/queue.mjs exists (vitana-v1 stays green)
+ok 10 - agents: check() runs the agent checks only where scripts/collab/queue.mjs exists (vitana-v1 stays green)
+  ---
+  duration_ms: 0.703716
+  type: 'test'
+  ...
+# Subtest: agents: a missing reviewer agent fails
+ok 11 - agents: a missing reviewer agent fails
+  ---
+  duration_ms: 3.34345
+  type: 'test'
+  ...
+# Subtest: agents: the reviewer front matter pins no model (the review step pins it) or a chain model only
+ok 12 - agents: the reviewer front matter pins no model (the review step pins it) or a chain model only
+  ---
+  duration_ms: 18.913391
+  type: 'test'
+  ...
+# Subtest: agents: the reviewer model chain mirrors governance.ts REVIEWER_AGENT_MODELS (Claude only)
+ok 13 - agents: the reviewer model chain mirrors governance.ts REVIEWER_AGENT_MODELS (Claude only)
+  ---
+  duration_ms: 1.738035
+  type: 'test'
+  ...
+# Subtest: agents: the reviewer names the full model chain
+ok 14 - agents: the reviewer names the full model chain
+  ---
+  duration_ms: 3.483453
+  type: 'test'
+  ...
+# Subtest: agents: the reviewer name is fixed
+ok 15 - agents: the reviewer name is fixed
+  ---
+  duration_ms: 2.927932
+  type: 'test'
+  ...
+# Subtest: agents: the reviewer may only have the read and shell tools
+ok 16 - agents: the reviewer may only have the read and shell tools
+  ---
+  duration_ms: 8.019399
+  type: 'test'
+  ...
+# Subtest: agents: the reviewer must exclude every write tool
+ok 17 - agents: the reviewer must exclude every write tool
+  ---
+  duration_ms: 9.015342
+  type: 'test'
+  ...
+# Subtest: agents: the reviewer gets no MCP servers
+ok 18 - agents: the reviewer gets no MCP servers
+  ---
+  duration_ms: 2.797415
+  type: 'test'
+  ...
+# Subtest: agents: the reviewer fails loudly when its model is unavailable
+ok 19 - agents: the reviewer fails loudly when its model is unavailable
+  ---
+  duration_ms: 2.97292
+  type: 'test'
+  ...
+# Subtest: agents: the reviewer prompt carries the verdict keys and every review-entry trailer
+ok 20 - agents: the reviewer prompt carries the verdict keys and every review-entry trailer
+  ---
+  duration_ms: 15.433905
+  type: 'test'
+  ...
+# Subtest: agents: the reviewer treats protected gate files as blocking
+ok 21 - agents: the reviewer treats protected gate files as blocking
+  ---
+  duration_ms: 3.814698
+  type: 'test'
+  ...
+# Subtest: agents: every agent file needs front matter with a name
+ok 22 - agents: every agent file needs front matter with a name
+  ---
+  duration_ms: 7.689151
+  type: 'test'
+  ...
+# Subtest: workflow: the shipped recipe passes the workflow schema checks
+ok 23 - workflow: the shipped recipe passes the workflow schema checks
+  ---
+  duration_ms: 0.547413
+  type: 'test'
+  ...
+# Subtest: workflow: input is the owner task text only
+ok 24 - workflow: input is the owner task text only
+  ---
+  duration_ms: 0.337603
+  type: 'test'
+  ...
+# Subtest: workflow: a recipe that does not parse fails
+ok 25 - workflow: a recipe that does not parse fails
+  ---
+  duration_ms: 1.393492
+  type: 'test'
+  ...
+# Subtest: workflow: every lane slot races one pinned vitana-lane-reviewer step per chain model in a joinPolicy any parallel
+ok 26 - workflow: every lane slot races one pinned vitana-lane-reviewer step per chain model in a joinPolicy any parallel
+  ---
+  duration_ms: 44.218059
+  type: 'test'
+  ...
+# Subtest: workflow: nothing outside a review race branch reads a review output (a failed or aborted branch has none)
+ok 27 - workflow: nothing outside a review race branch reads a review output (a failed or aborted branch has none)
+  ---
+  duration_ms: 2.748967
+  type: 'test'
+  ...
+# Subtest: workflow: every lane slot and each planning / approval step is gated by one run-gate skip/go pair
+ok 28 - workflow: every lane slot and each planning / approval step is gated by one run-gate skip/go pair
+  ---
+  duration_ms: 7.777709
+  type: 'test'
+  ...
+# Subtest: workflow: a gate race in the wrong shape or with the wrong watch recipe fails
+ok 29 - workflow: a gate race in the wrong shape or with the wrong watch recipe fails
+  ---
+  duration_ms: 8.021748
+  type: 'test'
+  ...
+# Subtest: workflow: no step outside a reviewer race pins a modelId, and every pin is a chain model (regression guard)
+ok 30 - workflow: no step outside a reviewer race pins a modelId, and every pin is a chain model (regression guard)
+  ---
+  duration_ms: 29.487156
+  type: 'test'
+  ...
+# Subtest: review prompts: every shipped reviewer step opens with "Reviewer chain model for this step: <its modelId>. " once (T-E)
+ok 31 - review prompts: every shipped reviewer step opens with "Reviewer chain model for this step: <its modelId>. " once (T-E)
+  ---
+  duration_ms: 3.392046
+  type: 'test'
+  ...
+# Subtest: review prompts: a model line naming another chain model fails (T-B)
+ok 32 - review prompts: a model line naming another chain model fails (T-B)
+  ---
+  duration_ms: 6.04176
+  type: 'test'
+  ...
+# Subtest: review prompts: a prompt without the model line fails (T-C)
+ok 33 - review prompts: a prompt without the model line fails (T-C)
+  ---
+  duration_ms: 7.362231
+  type: 'test'
+  ...
+# Subtest: review prompts: a prompt carrying the label twice fails (T-D)
+ok 34 - review prompts: a prompt carrying the label twice fails (T-D)
+  ---
+  duration_ms: 6.601763
+  type: 'test'
+  ...
+# Subtest: review prompts: the agent, lane-review.md and driver.md keep the label; driver.md is required (T-F)
+ok 35 - review prompts: the agent, lane-review.md and driver.md keep the label; driver.md is required (T-F)
+  ---
+  duration_ms: 15.621726
+  type: 'test'
+  ...
+# Subtest: workflow: at most 6 lanes build in parallel
+ok 36 - workflow: at most 6 lanes build in parallel
+  ---
+  duration_ms: 4.691898
+  type: 'test'
+  ...
+# Subtest: workflow: lane landing is serialized by the merge lock
+ok 37 - workflow: lane landing is serialized by the merge lock
+  ---
+  duration_ms: 3.221015
+  type: 'test'
+  ...
+# Subtest: workflow: schema errors are reported
+ok 38 - workflow: schema errors are reported
+  ---
+  duration_ms: 3.609245
+  type: 'test'
+  ...
+# Subtest: workflow: every .kiro/pipeline file the recipe names exists
+ok 39 - workflow: every .kiro/pipeline file the recipe names exists
+  ---
+  duration_ms: 3.565737
+  type: 'test'
+  ...
+# Subtest: workflow: the steering entry point may only name pipeline files that exist (driver.md exists)
+ok 40 - workflow: the steering entry point may only name pipeline files that exist (driver.md exists)
+  ---
+  duration_ms: 2.929024
+  type: 'test'
+  ...
+# Subtest: hook: SessionStart agent action that loads the pipeline steering and resumes stale drivers
+ok 41 - hook: SessionStart agent action that loads the pipeline steering and resumes stale drivers
+  ---
+  duration_ms: 5.63539
+  type: 'test'
+  ...
+# Subtest: runbooks: no slug-specific text, no machine paths, no owner questions outside Gate 2
+ok 42 - runbooks: no slug-specific text, no machine paths, no owner questions outside Gate 2
+  ---
+  duration_ms: 12.113671
+  type: 'test'
+  ...
+# Subtest: steering: the session title is set once and never renamed (vitana-session-title.md)
+ok 43 - steering: the session title is set once and never renamed (vitana-session-title.md)
+  ---
+  duration_ms: 0.213234
+  type: 'test'
+  ...
+# Subtest: owner-autonomy: the shipped rule file passes
+ok 44 - owner-autonomy: the shipped rule file passes
+  ---
+  duration_ms: 0.46379
+  type: 'test'
+  ...
+# Subtest: owner-autonomy: a missing rule file fails
+ok 45 - owner-autonomy: a missing rule file fails
+  ---
+  duration_ms: 0.234056
+  type: 'test'
+  ...
+# Subtest: owner-autonomy: one anchor per stop row (13), end point, stop message, no-trailing-question rule, eleven end-to-end anchors
+not ok 46 - owner-autonomy: one anchor per stop row (13), end point, stop message, no-trailing-question rule, eleven end-to-end anchors
+  ---
+  duration_ms: 1.333142
+  type: 'test'
+  location: '/projects/sandbox/tools/ws-before/vitana-platform/scripts/ci/kiro-steering/guard.test.cjs:383:3'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    16 !== 27
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 27
+  actual: 16
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/projects/sandbox/tools/ws-before/vitana-platform/scripts/ci/kiro-steering/guard.test.cjs:384:12)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: owner-autonomy: the guard names the eleven end-to-end anchors and the shipped file carries each of them
+not ok 47 - owner-autonomy: the guard names the eleven end-to-end anchors and the shipped file carries each of them
+  ---
+  duration_ms: 0.246242
+  type: 'test'
+  location: '/projects/sandbox/tools/ws-before/vitana-platform/scripts/ci/kiro-steering/guard.test.cjs:391:3'
+  failureType: 'testCodeFailure'
+  error: 'the guard does not name "Primary operating principle"'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: false
+  operator: '=='
+  stack: |-
+    TestContext.<anonymous> (/projects/sandbox/tools/ws-before/vitana-platform/scripts/ci/kiro-steering/guard.test.cjs:394:14)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: owner-autonomy: dropping the end-to-end section "Primary operating principle" fails
+not ok 48 - owner-autonomy: dropping the end-to-end section "Primary operating principle" fails
+  ---
+  duration_ms: 0.474275
+  type: 'test'
+  location: '/projects/sandbox/tools/ws-before/vitana-platform/scripts/ci/kiro-steering/guard.test.cjs:399:5'
+  failureType: 'testCodeFailure'
+  error: ''
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: false
+  operator: '=='
+  stack: |-
+    TestContext.<anonymous> (/projects/sandbox/tools/ws-before/vitana-platform/scripts/ci/kiro-steering/guard.test.cjs:401:14)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: owner-autonomy: dropping the end-to-end section "Default execution sequence" fails
+not ok 49 - owner-autonomy: dropping the end-to-end section "Default execution sequence" fails
+  ---
+  duration_ms: 0.341492
+  type: 'test'
+  location: '/projects/sandbox/tools/ws-before/vitana-platform/scripts/ci/kiro-steering/guard.test.cjs:399:5'
+  failureType: 'testCodeFailure'
+  error: ''
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: false
+  operator: '=='
+  stack: |-
+    TestContext.<anonymous> (/projects/sandbox/tools/ws-before/vitana-platform/scripts/ci/kiro-steering/guard.test.cjs:401:14)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: owner-autonomy: dropping the end-to-end section "When Kiro may interrupt the owner" fails
+not ok 50 - owner-autonomy: dropping the end-to-end section "When Kiro may interrupt the owner" fails
+  ---
+  duration_ms: 0.307366
+  type: 'test'
+  location: '/projects/sandbox/tools/ws-before/vitana-platform/scripts/ci/kiro-steering/guard.test.cjs:399:5'
+  failureType: 'testCodeFailure'
+  error: ''
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: false
+  operator: '=='
+  stack: |-
+    TestContext.<anonymous> (/projects/sandbox/tools/ws-before/vitana-platform/scripts/ci/kiro-steering/guard.test.cjs:401:14)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: owner-autonomy: dropping the end-to-end section "Reviewer autonomy" fails
+not ok 51 - owner-autonomy: dropping the end-to-end section "Reviewer autonomy" fails
+  ---
+  duration_ms: 0.303454
+  type: 'test'
+  location: '/projects/sandbox/tools/ws-before/vitana-platform/scripts/ci/kiro-steering/guard.test.cjs:399:5'
+  failureType: 'testCodeFailure'
+  error: ''
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: false
+  operator: '=='
+  stack: |-
+    TestContext.<anonymous> (/projects/sandbox/tools/ws-before/vitana-platform/scripts/ci/kiro-steering/guard.test.cjs:401:14)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: owner-autonomy: dropping the end-to-end section "CI autonomy" fails
+not ok 52 - owner-autonomy: dropping the end-to-end section "CI autonomy" fails
+  ---
+  duration_ms: 0.339557
+  type: 'test'
+  location: '/projects/sandbox/tools/ws-before/vitana-platform/scripts/ci/kiro-steering/guard.test.cjs:399:5'
+  failureType: 'testCodeFailure'
+  error: ''
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: false
+  operator: '=='
+  stack: |-
+    TestContext.<anonymous> (/projects/sandbox/tools/ws-before/vitana-platform/scripts/ci/kiro-steering/guard.test.cjs:401:14)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: owner-autonomy: dropping the end-to-end section "Staging autonomy" fails
+not ok 53 - owner-autonomy: dropping the end-to-end section "Staging autonomy" fails
+  ---
+  duration_ms: 0.302306
+  type: 'test'
+  location: '/projects/sandbox/tools/ws-before/vitana-platform/scripts/ci/kiro-steering/guard.test.cjs:399:5'
+  failureType: 'testCodeFailure'
+  error: ''
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: false
+  operator: '=='
+  stack: |-
+    TestContext.<anonymous> (/projects/sandbox/tools/ws-before/vitana-platform/scripts/ci/kiro-steering/guard.test.cjs:401:14)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: owner-autonomy: dropping the end-to-end section "Production boundary" fails
+not ok 54 - owner-autonomy: dropping the end-to-end section "Production boundary" fails
+  ---
+  duration_ms: 0.43615
+  type: 'test'
+  location: '/projects/sandbox/tools/ws-before/vitana-platform/scripts/ci/kiro-steering/guard.test.cjs:399:5'
+  failureType: 'testCodeFailure'
+  error: ''
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: false
+  operator: '=='
+  stack: |-
+    TestContext.<anonymous> (/projects/sandbox/tools/ws-before/vitana-platform/scripts/ci/kiro-steering/guard.test.cjs:401:14)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: owner-autonomy: dropping the end-to-end section "Fresh-session behavior" fails
+not ok 55 - owner-autonomy: dropping the end-to-end section "Fresh-session behavior" fails
+  ---
+  duration_ms: 0.353094
+  type: 'test'
+  location: '/projects/sandbox/tools/ws-before/vitana-platform/scripts/ci/kiro-steering/guard.test.cjs:399:5'
+  failureType: 'testCodeFailure'
+  error: ''
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: false
+  operator: '=='
+  stack: |-
+    TestContext.<anonymous> (/projects/sandbox/tools/ws-before/vitana-platform/scripts/ci/kiro-steering/guard.test.cjs:401:14)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: owner-autonomy: dropping the end-to-end section "Communication style" fails
+not ok 56 - owner-autonomy: dropping the end-to-end section "Communication style" fails
+  ---
+  duration_ms: 0.294653
+  type: 'test'
+  location: '/projects/sandbox/tools/ws-before/vitana-platform/scripts/ci/kiro-steering/guard.test.cjs:399:5'
+  failureType: 'testCodeFailure'
+  error: ''
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: false
+  operator: '=='
+  stack: |-
+    TestContext.<anonymous> (/projects/sandbox/tools/ws-before/vitana-platform/scripts/ci/kiro-steering/guard.test.cjs:401:14)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: owner-autonomy: dropping the end-to-end section "Definition of done" fails
+not ok 57 - owner-autonomy: dropping the end-to-end section "Definition of done" fails
+  ---
+  duration_ms: 0.361576
+  type: 'test'
+  location: '/projects/sandbox/tools/ws-before/vitana-platform/scripts/ci/kiro-steering/guard.test.cjs:399:5'
+  failureType: 'testCodeFailure'
+  error: ''
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: false
+  operator: '=='
+  stack: |-
+    TestContext.<anonymous> (/projects/sandbox/tools/ws-before/vitana-platform/scripts/ci/kiro-steering/guard.test.cjs:401:14)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: owner-autonomy: dropping the end-to-end section "the stricter rule applies" fails
+not ok 58 - owner-autonomy: dropping the end-to-end section "the stricter rule applies" fails
+  ---
+  duration_ms: 0.205509
+  type: 'test'
+  location: '/projects/sandbox/tools/ws-before/vitana-platform/scripts/ci/kiro-steering/guard.test.cjs:399:5'
+  failureType: 'testCodeFailure'
+  error: ''
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: false
+  operator: '=='
+  stack: |-
+    TestContext.<anonymous> (/projects/sandbox/tools/ws-before/vitana-platform/scripts/ci/kiro-steering/guard.test.cjs:401:14)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: owner-autonomy: the end-to-end text adds no row to the stop table (still the thirteen stops)
+ok 59 - owner-autonomy: the end-to-end text adds no row to the stop table (still the thirteen stops)
+  ---
+  duration_ms: 0.132639
+  type: 'test'
+  ...
+# Subtest: owner-autonomy: deleting the migration row fails even though §7d appears elsewhere
+ok 60 - owner-autonomy: deleting the migration row fails even though §7d appears elsewhere
+  ---
+  duration_ms: 0.338753
+  type: 'test'
+  ...
+# Subtest: owner-autonomy: dropping "target database" fails
+ok 61 - owner-autonomy: dropping "target database" fails
+  ---
+  duration_ms: 0.205204
+  type: 'test'
+  ...
+# Subtest: owner-autonomy: dropping "§7c" fails
+ok 62 - owner-autonomy: dropping "§7c" fails
+  ---
+  duration_ms: 0.144445
+  type: 'test'
+  ...
+# Subtest: owner-autonomy: dropping "§3a" fails
+ok 63 - owner-autonomy: dropping "§3a" fails
+  ---
+  duration_ms: 0.139061
+  type: 'test'
+  ...
+# Subtest: owner-autonomy: dropping "data-loss" fails
+ok 64 - owner-autonomy: dropping "data-loss" fails
+  ---
+  duration_ms: 0.129403
+  type: 'test'
+  ...
+# Subtest: owner-autonomy: dropping "3 fix-forward attempts" fails
+ok 65 - owner-autonomy: dropping "3 fix-forward attempts" fails
+  ---
+  duration_ms: 0.118495
+  type: 'test'
+  ...
+# Subtest: owner-autonomy: dropping "escalated sparring verdict" fails
+ok 66 - owner-autonomy: dropping "escalated sparring verdict" fails
+  ---
+  duration_ms: 0.121203
+  type: 'test'
+  ...
+# Subtest: owner-autonomy: dropping "IF–THEN 31–32" fails
+ok 67 - owner-autonomy: dropping "IF–THEN 31–32" fails
+  ---
+  duration_ms: 0.125928
+  type: 'test'
+  ...
+# Subtest: owner-autonomy: dropping "AGENTS.md" fails
+ok 68 - owner-autonomy: dropping "AGENTS.md" fails
+  ---
+  duration_ms: 0.1258
+  type: 'test'
+  ...
+# Subtest: owner-autonomy: dropping "Commerce UX contract" fails
+ok 69 - owner-autonomy: dropping "Commerce UX contract" fails
+  ---
+  duration_ms: 0.179605
+  type: 'test'
+  ...
+# Subtest: owner-autonomy: dropping "design.md" fails
+ok 70 - owner-autonomy: dropping "design.md" fails
+  ---
+  duration_ms: 0.135452
+  type: 'test'
+  ...
+# Subtest: owner-autonomy: dropping "§4.1" fails
+ok 71 - owner-autonomy: dropping "§4.1" fails
+  ---
+  duration_ms: 0.143674
+  type: 'test'
+  ...
+# Subtest: owner-autonomy: dropping "Gate 1" fails
+ok 72 - owner-autonomy: dropping "Gate 1" fails
+  ---
+  duration_ms: 0.138093
+  type: 'test'
+  ...
+# Subtest: owner-autonomy: dropping "NEVER 34" fails
+ok 73 - owner-autonomy: dropping "NEVER 34" fails
+  ---
+  duration_ms: 0.117849
+  type: 'test'
+  ...
+# Subtest: owner-autonomy: dropping "STAGING-VERIFY" fails
+ok 74 - owner-autonomy: dropping "STAGING-VERIFY" fails
+  ---
+  duration_ms: 0.116204
+  type: 'test'
+  ...
+# Subtest: owner-autonomy: dropping "five-part" fails
+ok 75 - owner-autonomy: dropping "five-part" fails
+  ---
+  duration_ms: 0.117918
+  type: 'test'
+  ...
+# Subtest: owner-autonomy: dropping "Never end a reply with an offer" fails
+ok 76 - owner-autonomy: dropping "Never end a reply with an offer" fails
+  ---
+  duration_ms: 0.111873
+  type: 'test'
+  ...
+# Subtest: owner-autonomy: a rule file that is not always-included fails
+ok 77 - owner-autonomy: a rule file that is not always-included fails
+  ---
+  duration_ms: 0.168955
+  type: 'test'
+  ...
+# Subtest: owner-autonomy: vitana-pipeline.md without the pointer fails
+ok 78 - owner-autonomy: vitana-pipeline.md without the pointer fails
+  ---
+  duration_ms: 0.141016
+  type: 'test'
+  ...
+# Subtest: owner-autonomy: a repo without the pipeline steering is not checked (fixtures stay green)
+ok 79 - owner-autonomy: a repo without the pipeline steering is not checked (fixtures stay green)
+  ---
+  duration_ms: 0.091196
+  type: 'test'
+  ...
+# Subtest: owner-autonomy: check() runs it
+ok 80 - owner-autonomy: check() runs it
+  ---
+  duration_ms: 0.165325
+  type: 'test'
+  ...
+1..80
+# tests 80
+# suites 0
+# pass 67
+# fail 13
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 368.970653

@@ -1,0 +1,16 @@
+# $ node vitana-platform/scripts/collab/kiro-web-steering.mjs --workspace <dir>     then     ... --check     (scratch workspaces holding both repositories)
+== ws-before (origin/main: platform e47da4cebb6, v1 7e740112c19)
+  always-included, links inlined: 143074 B (Kiro may truncate a long inlined link; see docs/kiro/kiro-web-bootstrap.md)
+  written 16, removed 0
+kiro-web-steering: ok
+  always-included, links inlined: 143074 B (Kiro may truncate a long inlined link; see docs/kiro/kiro-web-bootstrap.md)
+kiro-web-steering: ok
+generated files: 16; owner-autonomy copies: 2
+== ws-after (this branch in both repositories)
+  always-included, links inlined: 143686 B (Kiro may truncate a long inlined link; see docs/kiro/kiro-web-bootstrap.md)
+  written 15, removed 0
+kiro-web-steering: ok
+  always-included, links inlined: 143686 B (Kiro may truncate a long inlined link; see docs/kiro/kiro-web-bootstrap.md)
+kiro-web-steering: ok
+generated files: 15; owner-autonomy copies: 1
+# identical steering files are written once, so the second repository's copy is no longer generated; the always-included total grows by less than the file does

@@ -1,0 +1,14 @@
+# vitana-platform: the steering file is byte-identical in both repositories and equal to the spec's rule-text.md
+# $ sha256sum .kiro/steering/vitana-owner-autonomy.md   (vitana-platform and vitana-v1) and .kiro/specs/e2e-autonomy/rule-text.md
+vitana-platform  cf020d940dfdfb3c5cd9182baadcd59e29b4f7e880e05c82b8f002989a38cd3a  15719 bytes
+vitana-v1        cf020d940dfdfb3c5cd9182baadcd59e29b4f7e880e05c82b8f002989a38cd3a  15719 bytes
+rule-text.md     cf020d940dfdfb3c5cd9182baadcd59e29b4f7e880e05c82b8f002989a38cd3a  15719 bytes
+cmp platform v1: identical
+cmp platform rule-text.md: identical
+
+# before this change the two copies differed in one line (stop row 3), as the plan says:
+# $ diff <(git -C vitana-platform show origin/main:.kiro/steering/vitana-owner-autonomy.md) <(git -C vitana-v1 show origin/main:.kiro/steering/vitana-owner-autonomy.md)
+42c42
+< | 3 | Merging a change to a protected gate file (`scripts/collab/protected-gate-files.json`, e.g. `CLAUDE.md`). It needs the owner's instruction nam ...
+---
+> | 3 | Merging a change to a protected gate file (`scripts/collab/protected-gate-files.json`, e.g. `CLAUDE.md`). It needs a Claude review on the curr ...
