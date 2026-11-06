@@ -1,7 +1,7 @@
 ---
 lane: reinstate-rules
-state: executing
-next_actor: claude
+state: in-review
+next_actor: kiro
 depends_on: []
 executor: claude
 reviewer_seat: exafyltd
@@ -12,7 +12,6 @@ paths:
   - .kiro/steering/vitana-collaboration.md
 updated: 2026-11-06T13:30Z
 vtid: VTID-05566
-claimed_by: session_01Cp885Gw1CMmPDvDVHc7kw8
 ---
 # Lane: reinstate-rules (repo vitana-platform)
 Plan §3. Removes the retirement wording of `collaboration.md` (P1) and its Kiro twin, keeps every gate, and states that
@@ -32,3 +31,7 @@ Reassigned by lane `reinstate-admin` (lane_admin, VTID-05567): `executor: kiro` 
 
 ### 2026-11-06T13:30Z · session_01Cp885Gw1CMmPDvDVHc7kw8 · ready -> executing (claimed by Claude Code)
 Executor set to claude by admin lane reinstate-admin (VTID-05567, merged af3716cc). Claimed by this session. Changed: `.claude/rules/collaboration.md` (retirement wording removed at §7 and §7b; lane-administration prose at §7a now names executor and reviewer_seat, as queue.mjs already allows).
+
+### 2026-11-06T15:20Z · session_01Cp885Gw1CMmPDvDVHc7kw8 · executing -> in-review (closing record, 1 of 3)
+Built by Claude Code (executor claude). Rule change merged in #4747 (merge 7fd4106862). Owner instruction 2026-11-06: accept without review; closing record to be written so Kiro's step 0 gate passes.
+merge: 7fd4106862  authority: owner instruction 2026-11-06 ("merge 4747"; "1 accept without review")
