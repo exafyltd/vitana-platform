@@ -310,6 +310,7 @@ changed files, the Command Hub bundle guards, `npm run test:roles`). No signed e
 production database.
 Proof: `outputs/staging-manifest-check.txt` (validator result, strings found in the served sources), `outputs/preflight-check-pr.txt` (check-pr: change suite present and valid) and
 `outputs/staging-existing-suites-local.txt` (the four suites: 165, 350, 855 and 105 tests green).
+TEST: docs/validation/VTID-05547/staging-tests.json (valid for run.mjs check-pr, outputs/preflight-check-pr.txt); its probes run at STAGING-VERIFY
 
 AC-27 Typecheck and regressions (G4), re-run on origin/main `7fd4106862d` + this commit: the gateway typechecks (npm ci install,
 `pnpm run typecheck`, as CICDL-GATEWAY-CI); `npm run test:operator` (71), `npm run test:support` (4 suites, 87) and
@@ -323,17 +324,20 @@ the voice screens were added.
 Proof: `outputs/gateway-typecheck.txt`, `outputs/test-operator.txt`, `outputs/test-support.txt`, `outputs/test-roles.txt`,
 `outputs/gateway-related-jest.txt`, `outputs/pending-vectors.txt`, `outputs/gateway-full-jest.txt`, `outputs/unit-all.txt`,
 `outputs/unit-all-node20.txt`.
+TEST: `pnpm run typecheck` and the suites of outputs/gateway-typecheck.txt, outputs/test-operator.txt, outputs/test-support.txt, outputs/test-roles.txt
 
 AC-29 Path ownership (COMMAND-HUB-GUARDRAILS.yml "Path Ownership Guard"): `VTID-05547` is in `ALLOWED_VTID_PATTERN` of
 `scripts/ci/command-hub-ownership-guard.js` with a comment naming the Command Hub files this lane changes, so the guard passes for
 this branch and title. `services/gateway/src/navigation/data/command-hub-screens.json` and `scripts/ci/command-hub-ownership-guard.js`
 are inside the lane's `paths` since #4722 (VTID-05563, lane nav-paths, which also added `nav-embeddings.bin` and `.json`).
 Proof: `outputs/ownership-guard.txt`.
+TEST: scripts/ci/command-hub-ownership-guard.js; result in outputs/ownership-guard.txt
 
 AC-28 The tests are not vacuous: 132 mutations of the lane's code (guard, mapper, stage, summary, route, mounts, topics, the screen,
 the loader, the page and the cache-buster) are each caught by a named test case, 0 survive; the first run caught 119 of 126 and
 the seven gaps were closed with tests, none by changing source.
 Proof: `outputs/mutation-run.txt` and the harness `outputs/mutate-gateway-delivery.mjs` (wrapper `outputs/mutate-gateway-delivery.sh`).
+TEST: outputs/mutate-gateway-delivery.mjs (wrapper outputs/mutate-gateway-delivery.sh); result in outputs/mutation-run.txt
 
 Red on base (the lane HEAD `4c3d2341f2b` with the final tests, the new source files stubbed to do nothing and `delivery.js` empty):
 `outputs/red-on-base.txt` 165 tests, 149 failed, 16 passed, 0 suites that did not run. The 16 that pass on base are deliberate
