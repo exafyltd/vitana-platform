@@ -1,0 +1,3 @@
+$ scripts/ci/sql-tests/run-live-room-cohost-test.sh   (PostgreSQL 16.2, throwaway, unix socket)
+PASS vtid-05558 live room cohost
+exit=0

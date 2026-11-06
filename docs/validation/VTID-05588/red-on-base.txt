@@ -1,0 +1,8 @@
+VTID-05588 (companion-test-card/gateway-test-card) — red on base
+base: origin/main 2b9356e0410ba3a6d7c9f5850d53791dded66900 (plan merge, PR #4750), test file added, no source change
+command: (services/gateway) npx jest test/companion-test-card.test.ts
+result: Tests: 13 failed, 13 total
+reason: POST /api/v1/companion/test-card does not exist on base (every request answers 404) and
+        services/companion/test-card.ts does not exist.
+
+green on the lane head (same command): Tests: 13 passed, 13 total
