@@ -2288,6 +2288,15 @@ router.post('/rooms/:id/open-lobby', requireAuth, async (req: Request, res: Resp
     return res.status(statusCode).json({ ok: false, error: result.error, message: result.message });
   }
 
+  await emitOasisEvent({
+    vtid: 'VTID-05559',
+    type: 'live.room.lobby_opened' as any,
+    source: 'live-routes',
+    status: 'success',
+    message: `Lobby opened on room ${roomId}`,
+    payload: { room_id: roomId, actor_id: actorId, status: result.newStatus },
+  });
+
   return res.json({ ok: true, status: result.newStatus });
 });
 
@@ -2709,6 +2718,15 @@ router.patch('/rooms/:id/sessions/current', requireAuth, async (req: Request, re
     });
     if (!r.ok) return res.status(502).json({ ok: false, error: 'LISTING_SYNC_FAILED' });
   }
+
+  await emitOasisEvent({
+    vtid: 'VTID-05559',
+    type: 'live.session.updated' as any,
+    source: 'live-routes',
+    status: 'success',
+    message: `Session edited on room ${roomId}`,
+    payload: { room_id: roomId, session_id: session.id, fields: Object.keys(body) },
+  });
 
   return res.json({ ok: true, session: { id: session.id, ...patch.session } });
 });
