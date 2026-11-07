@@ -1,6 +1,6 @@
 ---
 lane: content-overrides-db
-state: ready
+state: verified
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -12,9 +12,12 @@ paths:
   - supabase/tests/mt/mt_packs_tenant_content_overrides.sql
   - scripts/ci/migration-drift-baseline.json
   - docs/multitenancy/MIGRATION-QUEUE.md
-updated: 2026-11-02T16:24Z
+updated: 2026-11-07T15:20Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05495
+claimed_by: kiro-hotmail-202611061752-cc1f
+branch: kiro/mt-packs-r2/content-overrides-db
+pr: https://github.com/exafyltd/vitana-platform/pull/4789
 ---
 # content-overrides-db — WS5 `tenant_content_overrides` (DB) — mt-packs-r2
 
@@ -64,3 +67,14 @@ reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 PR: https://github.com/exafyltd/vitana-platform/pull/4789
 Findings: non-blocking: migration-drift-baseline.json main had count 118 vs 119 entries, PR now 120 == 120; non-blocking: origin/main moved to 335b615 (specs-only, no hot files of this lane), land-guard re-checks up-to-date; CI 12/12 taken from the caller
 Next: the land step merges under §7b
+
+### 2026-11-07T15:20Z · kiro-hotmail-202611061752-cc1f · ready → executing
+Built on branch kiro/mt-packs-r2/content-overrides-db; recorded here at the closing, because one transition per PR meant the PR carried no lane-state entry.
+
+### 2026-11-07T15:20Z · kiro-hotmail-202611061752-cc1f · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/4789. Reviewed on head `9af114c29b` (accept entry above, reviewer agent claude-sonnet-5.5).
+
+### 2026-11-07T15:20Z · kiro-hotmail-202611061752-cc1f · in-review → verified
+merge: 30b453aa7ab5b4f6201262f52fc414ef3fadafe5 (exafyltd/vitana-platform#4789)
+authority: §7b PM rule. Squash merge by land-guard on head `474c4099c4`: the reviewed head `9af114c29b` plus the review-entry commit. `land-guard review` ok, `land-guard checks` green, PR up to date. No lane code changed after the accept.
+The migrations in this lane are in the repository and NOT applied. Applying them needs the owner's approval per file and database (collaboration.md §7d). Next: STAGING-VERIFY on the merge commit, then the `done` record.
