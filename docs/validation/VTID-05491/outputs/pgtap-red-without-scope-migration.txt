@@ -1,0 +1,6 @@
+# loaded /projects/sandbox/wt-tenant-moderation/docs/validation/VTID-05491/pglite-harness/base_schema.sql
+# loaded /projects/sandbox/wt-tenant-moderation/docs/validation/VTID-05491/pgtap/vtid_05491_fixture.sql
+# loaded /projects/sandbox/wt-tenant-moderation/supabase/migrations/20261102070100_vtid_05491_mt_tenant_admin_p2_moderation.sql
+# loaded /projects/sandbox/wt-tenant-moderation/supabase/migrations/20261102070150_vtid_05491_mt_tenant_admin_p3_moderation.sql
+# SQL ERROR: function "public.moderator_tenant_scope_enabled(uuid)" does not exist
+exit 1
