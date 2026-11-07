@@ -73,3 +73,10 @@ Lane created with the plan (re-plan of `native-wave2-events-calendar-r2/events-m
 
 ### 2026-11-03T17:45Z · ci-plan-spar · ready (VTID allocated)
 VTID-05531 allocated after policy approval (converged-auto-v1).
+
+### 2026-11-07 · kiro-exafyltd-202611062257-540e · blocked (plan change needed)
+State: blocked. PR vitana-v1 #1608 (VTID-05531) head baa4a486a is pushed (fast-forward, merged origin/main). Its Lane scope check stays red on one file outside the lane paths: `apps/mobile/tests/orb/nav-directive.test.ts`. The owner decided (2026-11-07) not to add it to the paths and not to edit it. Restoring it to origin/main fails three tests, because this lane ports COMM.OVERVIEW (`/comm/events-meetups?tab=hot`), which the test uses as its "not ported" example:
+1. `runNativeNavigation (pure mapping) › a registry screen that is not ported yet ⇒ not_found native_screen_not_ported, nothing pushed`
+2. `directives through the session › unported screen: nav_result not_found with the reason, then the ORB closes`
+3. `directives through the session › after_speech waits for turn_complete, then drains, then answers`
+Request for the owner (plan change for this lane): change the example route in those three tests from COMM.OVERVIEW to a route that stays unported, such as `/admin/activity` (the lane branch already uses it, commit 4e37bcbb2), and add the test file to the lane paths, or approve another equivalent. Until approved, the PR cannot pass Lane scope.
