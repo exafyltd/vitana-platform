@@ -19,7 +19,7 @@ Change types: Database, Tooling/docs.
 | P2 rollback (run only through RUN-MIGRATION after owner approval; not under `supabase/migrations`) | `rollback-042100-profiles-tenant-backfill.sql` |
 | P3 read-only checks | `pre-check.sql`, `post-check.sql`, `rollback-check.sql` |
 | P4 pgTAP (22 cases) | `supabase/tests/vtid_mt_data_cleanup_profiles_tenant_backfill.test.sql` |
-| P5 | `docs/multitenancy/MIGRATION-QUEUE.md` rows 37-38 |
+| P5 | `docs/multitenancy/MIGRATION-QUEUE.md` rows 41-42 |
 
 Apply order: 042000 → 042100, after the membership unification (queue rows 14-16). Rollback: restore function via
 `rollback-042100-profiles-tenant-backfill.sql`, then `rollback-check.sql`.
