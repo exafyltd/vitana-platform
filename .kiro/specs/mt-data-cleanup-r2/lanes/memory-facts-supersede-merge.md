@@ -1,6 +1,6 @@
 ---
 lane: memory-facts-supersede-merge
-state: ready
+state: verified
 next_actor: kiro
 depends_on: [orphan-analysis-and-quarantine]
 executor: kiro
@@ -11,9 +11,12 @@ paths:
   - supabase/migrations/20261102041*.sql
   - supabase/tests/vtid_mt_data_cleanup_memfacts_*.sql
   - docs/multitenancy/MIGRATION-QUEUE.md
-updated: 2026-11-06T10:09Z
+updated: 2026-11-07T16:11Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05570
+claimed_by: kiro-hotmail-202611061752-cc1f
+branch: kiro/mt-data-cleanup-r2/memory-facts-supersede-merge
+pr: https://github.com/exafyltd/vitana-platform/pull/4799
 ---
 # Supersede-merge reassigned memory_facts — mt-data-cleanup (repo vitana-platform)
 
@@ -56,3 +59,14 @@ reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 PR: https://github.com/exafyltd/vitana-platform/pull/4799
 Findings: non-blocking: MIGRATION-QUEUE.md rows 37-39 note that row numbers may shift at landing; accurate, no change needed. Lane content (migrations 20261102041*, pgTAP, docs/validation/VTID-05570) unchanged since accept 1748b72a05; queue rows 37-39 follow main's row 36; drift baseline equals main's (count 120 == list length 120).
 Next: the land step merges under §7b
+
+### 2026-11-07T16:11Z · kiro-hotmail-202611061752-cc1f · ready → executing
+Built on branch kiro/mt-data-cleanup-r2/memory-facts-supersede-merge; recorded here at the closing, because one transition per PR meant the PR carried no lane-state entry.
+
+### 2026-11-07T16:11Z · kiro-hotmail-202611061752-cc1f · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/4799. Reviewed on head `29f182066c` (accept entry above, reviewer agent claude-sonnet-5.5).
+
+### 2026-11-07T16:11Z · kiro-hotmail-202611061752-cc1f · in-review → verified
+merge: 37b65df94d22c00ac57cdee067c9f6614f8e1ebe (exafyltd/vitana-platform#4799)
+authority: §7b PM rule. Squash merge by land-guard on head `c4d2bc33be`: the reviewed head `29f182066c` plus the review-entry commit. `land-guard review` ok, `land-guard checks` green, PR up to date. No lane code changed after the accept.
+The migrations in this lane are in the repository and NOT applied. Applying them needs the owner's approval per file and database (collaboration.md §7d). Next: STAGING-VERIFY on the merge commit, then the `done` record.
