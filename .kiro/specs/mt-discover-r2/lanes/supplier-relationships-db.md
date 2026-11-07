@@ -1,6 +1,6 @@
 ---
 lane: supplier-relationships-db
-state: executing
+state: verified
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -15,7 +15,7 @@ paths:
   - docs/multitenancy/MIGRATION-QUEUE.md
   - scripts/ci/migration-drift-baseline.json
   - services/gateway/test/vtid-*-supplier-tenant-relationships.test.ts
-updated: 2026-11-07T12:10Z
+updated: 2026-11-07T11:55Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05488
 claimed_by: kiro-hotmail-202611061752-cc1f
@@ -70,3 +70,11 @@ Collab-Review: mt-discover-r2/supplier-relationships-db
 Collab-Verdict: accept
 Collab-Reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 Collab-Reviewed-Head: b6171aea472bc5ba9dec057ec88453f7a347f74e
+
+### 2026-11-07T11:53Z · kiro-hotmail-202611061752-cc1f · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/4776. Reviewed on head `b6171aea47` (accept entry above, reviewer agent claude-sonnet-5.5). Recorded here at the closing, because one transition per PR meant the PR carried only the executing entry.
+
+### 2026-11-07T11:53Z · kiro-hotmail-202611061752-cc1f · in-review → verified
+merge: 4ac4ad4483e8ee7f0788758dcae042d72ef41e5a (exafyltd/vitana-platform#4776)
+authority: §7b PM rule. Squash merge by land-guard on head `5577ff15ef`: the reviewed head `b6171aea47` plus the review-entry commit and a clean merge of main. `land-guard review` ok, `land-guard checks` green, PR up to date. No lane code changed after the accept.
+The four migrations 20261102120000 to 20261102120300 are in the repository and NOT applied. Applying them needs the owner's approval per file and database (collaboration.md §7d). Next: STAGING-VERIFY on the merge commit, then the `done` record.
