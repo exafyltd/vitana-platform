@@ -1,0 +1,12 @@
+## mutation 1: drop the verified_at filter
+not ok 30 - 30 an UNVERIFIED host resolves empty
+not ok 31 - 31 an unverified host falls through to the slug arm
+## mutation 2: resolve through tenants directly instead of _tenant_public_registry()
+not ok 32 - 32 a verified host on an INACTIVE tenant resolves empty
+not ok 33 - 33 a verified host on a PLATFORM tenant resolves empty
+not ok 34 - 34 an inactive-tenant host falls through to the slug arm
+## mutation 3: drop the reserved-slug trigger
+not ok 23 - 23 INSERT of a reserved-slug host raises (trigger)
+not ok 24 - 24 UPDATE of a host to a reserved slug raises (trigger)
+not ok 26 - 26 the reserved-slug trigger exists and is enabled
+## restored: 48 ok
