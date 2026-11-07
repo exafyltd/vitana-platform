@@ -1,0 +1,9 @@
+# VTID-05506 commands run in the sandbox (PGlite only; no live system, no docker/psql/supabase CLI available)
+pglite-harness/lane.sh --no-migrations pgtap/vtid_05506_erp_monitoring.test.sql  -> outputs/pgtap-red-no-migrations.txt (RED: 31 not ok, origin/main state)
+pglite-harness/lane.sh --only-provision ...                                     -> outputs/pgtap-red-without-by-tenant.txt (RED: 20 not ok, by-tenant function missing)
+pglite-harness/lane.sh pgtap/vtid_05506_erp_monitoring.test.sql                  -> outputs/pgtap-green.txt (60 ok)
+pglite-harness/lane.sh --twice ...                                              -> outputs/pgtap-green-applied-twice.txt (60 ok)
+six mutations of the migrations (see outputs/mutations.txt)                      -> each turns the pgTAP file red; restored -> 60 ok
+pglite-harness/checks.sh                                                        -> outputs/read-only-checks-and-rollback-pglite.txt
+node scripts/ci/bare-policy-lint.mjs                                             -> outputs/bare-policy-lint.txt
+node --test scripts/ci/check-migration-drift.test.cjs                            -> outputs/drift-test.txt
