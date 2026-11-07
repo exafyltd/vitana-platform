@@ -42,3 +42,11 @@ Re-plan of `mt-m3/tenant-domains-db`. Versions day-shifted to `20261102140*`. Ex
 
 ### 2026-11-02T16:28Z · ci-plan-spar · ready (VTID allocated)
 VTID-05507 allocated after policy approval (converged-auto-v1).
+
+### 2026-11-07T12:45Z · agent-vitana-lane-reviewer-202611071241-1c76 · review
+review: accept
+head: aacf7899fc3abf48157d75c37a15a490a2491d90
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4787
+Findings: non-blocking: queue rows 30-31 collide with PR #4788 (VTID-05493) — the second to land renumbers; host is text with a lower-case CHECK instead of citext (conservative, log under Decisions taken); rollbacks under docs/validation instead of beside the forward files (accepted, avoids a version collision); pgTAP/harness under docs/validation; CI (11 check-runs) is the caller's statement — the land step confirms it on the current head; migrations unapplied, need owner approval (§7d)
+Next: the land step merges under §7b once CI is confirmed green on the current head
