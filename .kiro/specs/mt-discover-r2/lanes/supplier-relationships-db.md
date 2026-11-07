@@ -1,6 +1,6 @@
 ---
 lane: supplier-relationships-db
-state: ready
+state: executing
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -15,9 +15,12 @@ paths:
   - docs/multitenancy/MIGRATION-QUEUE.md
   - scripts/ci/migration-drift-baseline.json
   - services/gateway/test/vtid-*-supplier-tenant-relationships.test.ts
-updated: 2026-11-02T16:20Z
+updated: 2026-11-07T12:10Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05488
+claimed_by: kiro-hotmail-202611061752-cc1f
+branch: kiro/mt-discover-r2/supplier-relationships-db
+pr: https://github.com/exafyltd/vitana-platform/pull/4776
 ---
 # supplier-relationships-db — tenant↔supplier + offering distribution (VTID allocated by PLAN-SPAR, repo vitana-platform)
 
@@ -45,3 +48,6 @@ Re-plan of `mt-discover/supplier-relationships-db`. Versions day-shifted to `202
 
 ### 2026-11-02T16:20Z · ci-plan-spar · ready (VTID allocated)
 VTID-05488 allocated after policy approval (converged-auto-v1).
+
+### 2026-11-07T12:10Z · kiro-hotmail-202611061752-cc1f · ready -> executing
+Claimed (collab-claim ref) and built on branch kiro/mt-discover-r2/supplier-relationships-db. PR https://github.com/exafyltd/vitana-platform/pull/4776 is open. Four migrations 20261102120000-120300, rollbacks, read-only checks, pgTAP (79 cases, PGlite), MIGRATION-QUEUE rows 26-29, drift baseline, gateway static test (29). Preflight: all checks pass. Deviations in docs/validation/VTID-05488/acceptance.md (pgTAP under docs/validation because lane paths exclude supabase/tests; D3 expand-only). Nothing applied; no SQL run against a live system. Next: executing -> in-review in the following step (one transition per PR), then vitana-lane-reviewer; migrations applied only on owner approval per file and database (collaboration §7d).

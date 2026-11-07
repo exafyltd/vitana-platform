@@ -9,7 +9,8 @@
     "services/gateway/test/vtid-05488-supplier-tenant-relationships.test.ts",
     "docs/multitenancy/MIGRATION-QUEUE.md",
     "scripts/ci/migration-drift-baseline.json",
-    "docs/validation/VTID-05488/**"
+    "docs/validation/VTID-05488/**",
+    ".kiro/specs/mt-discover-r2/lanes/supplier-relationships-db.md"
   ],
   "sparring_record": "docs/validation/VTID-05488/plan-sparring.md",
   "weakens_tests": [],
