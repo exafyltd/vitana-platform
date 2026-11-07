@@ -1,6 +1,6 @@
 ---
 lane: supplier-relationships-db
-state: verified
+state: done
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -15,7 +15,7 @@ paths:
   - docs/multitenancy/MIGRATION-QUEUE.md
   - scripts/ci/migration-drift-baseline.json
   - services/gateway/test/vtid-*-supplier-tenant-relationships.test.ts
-updated: 2026-11-07T11:55Z
+updated: 2026-11-07T12:25Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05488
 claimed_by: kiro-hotmail-202611061752-cc1f
@@ -78,3 +78,6 @@ PR https://github.com/exafyltd/vitana-platform/pull/4776. Reviewed on head `b617
 merge: 4ac4ad4483e8ee7f0788758dcae042d72ef41e5a (exafyltd/vitana-platform#4776)
 authority: §7b PM rule. Squash merge by land-guard on head `5577ff15ef`: the reviewed head `b6171aea47` plus the review-entry commit and a clean merge of main. `land-guard review` ok, `land-guard checks` green, PR up to date. No lane code changed after the accept.
 The four migrations 20261102120000 to 20261102120300 are in the repository and NOT applied. Applying them needs the owner's approval per file and database (collaboration.md §7d). Next: STAGING-VERIFY on the merge commit, then the `done` record.
+
+### 2026-11-07T12:25Z · kiro-hotmail-202611061752-cc1f · verified → done
+Closing record: STAGING-VERIFY passed on the merge commit 4ac4ad4483e8ee7f0788758dcae042d72ef41e5a (run https://github.com/exafyltd/vitana-platform/actions/runs/42370673291, "STAGING-VERIFY gateway @ 4ac4ad4483", verify and report jobs success; the stage deploy run 42370008747 succeeded). The change suite is staging-tests.json kind=existing, so staging proved the gateway at the commit, not the migrations. The four migrations are on main and NOT applied; applying them needs the owner's approval per file and database (collaboration.md §7d). The lane claim is released once this record is on main.
