@@ -47,3 +47,20 @@
   (autoscaling group MaxSize 1) the five jobs run one after another, and each new `main` push about every 5 minutes cancels the running
   pipeline (interruptible jobs). The group needs more than one machine: MaxSize 1 against `fleet_max_instances` (Terraform) and an
   EC2 Standard vCPU quota of 32 (14 in use by the GitLab, runner and manager machines plus one job machine).
+
+# Fleet size and the first full platform runs (2026-11-07 ~20:00Z, owner instruction to run the AWS work)
+- Writes made with a 1-hour role session (ReadOnlyAccess + ssm:SendCommand + autoscaling:UpdateAutoScalingGroup +
+  servicequotas:RequestServiceQuotaIncrease), engineering account 841276716213 only:
+  - EC2 quota requests to 100 vCPUs: Running On-Demand Standard (7806974cf60c4cd3a7d6d13954ebe329Q9uB6mzj) and All Standard Spot
+    (8c5cb85a110d41c084de4cafe36a9600n9xr8xWh), both PENDING at 19:55Z.
+  - Auto Scaling group vitana-eng-fleet MaxSize 1 -> 5 (32 vCPUs allow five 4-vCPU job machines beside the three fixed machines).
+  - Fleet manager: /etc/vitana/env FLEET_MAX_INSTANCES=1 -> 5 (backup env.bak-20261107), installer re-run (SSM 4e185592-...):
+    config.toml concurrent = 5, max_instances = 5, runner verified 19:56:26Z.
+  - Not changed: ~/vitana-eng/terraform/terraform.tfvars lives only in the owner's CloudShell; until it says fleet_max_instances = 5
+    the next terraform apply resets MaxSize to 1.
+- With 5 machines the platform pipeline finishes (154 on 67c29e13db, 155 on 69d046b016): typecheck green; gateway-jest 1-4/4 red with
+  9 + 3 + 11 + 5 failed tests (8,903 + 7,216 + 7,003 + 6,446 passed). Main cause: `jq: not found` 22 times. The job image
+  public.ecr.aws/docker/library/node:20-bookworm has no jq, and GitHub's ubuntu-latest has it; the failing suites shell out to jq
+  (ALERT workflow steps, env_overrides jq block, deploy-secret wiring, morning-report rows). Fix: install jq in the `.gateway` jobs of
+  `infra/gitlab-engineering/ci/platform.gitlab-ci.yml` (eng-gitlab-m2 file, through `_plan`). Recorded as a GitLab/GitHub difference,
+  not hidden.
