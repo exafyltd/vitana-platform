@@ -1,6 +1,6 @@
 ---
 lane: hot-tables-not-null-expand-contract
-state: verified
+state: done
 next_actor: kiro
 depends_on: [orphan-analysis-and-quarantine, profiles-tenant-backfill]
 executor: kiro
@@ -12,7 +12,7 @@ paths:
   - supabase/tests/vtid_mt_data_cleanup_notnull_*.sql
   - docs/multitenancy/MIGRATION-QUEUE.md
   - DATABASE_SCHEMA.md
-updated: 2026-11-07T18:55Z
+updated: 2026-11-07T19:00Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05569
 claimed_by: kiro-hotmail-202611061752-cc1f
@@ -74,3 +74,6 @@ PR https://github.com/exafyltd/vitana-platform/pull/4837. Reviewed on head `b4a9
 merge: ececf7f9bda192db0d846813b1e3198c5c657472 (exafyltd/vitana-platform#4837)
 authority: §7b PM rule. Squash merge by land-guard on head `e34a5124bf`: the reviewed head `b4a9cd0da0` plus the review-entry commit and a clean merge of main. `land-guard review` ok, `land-guard checks` green (12 checks), PR up to date. No lane code changed after the accept.
 The migrations in this lane are in the repository and NOT applied. Applying them needs the owner's approval per file and database (collaboration.md §7d). Next: the `done` record.
+
+### 2026-11-07T19:00Z · kiro-hotmail-202611061752-cc1f · verified → done
+This lane deploys nothing: it adds an assertion-only migration (20261102043000) with a no-op rollback, a pgTAP test, DATABASE_SCHEMA.md and MIGRATION-QUEUE rows 51-52, none applied. No staging deploy follows from the merge (ececf7f9bd), so there is no STAGING-VERIFY run for it; it is done at merge with green checks (12 green on head e34a5124bf). Applying the migrations needs the owner's approval of the files and the target database (collaboration.md §7d). Non-blocking review notes carried forward: DATABASE_SCHEMA.md section placement orphans a trailing connections_social line, the embedded DO-block copy can drift from the migration, and the orphan scan on a large product_analytics_events may approach the 120s statement_timeout on apply (fails loudly).
