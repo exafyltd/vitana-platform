@@ -1,6 +1,6 @@
 ---
 lane: policy-approval-record-v1
-state: verified
+state: done
 next_actor: kiro
 executor: kiro
 seat: hotmail
@@ -11,7 +11,7 @@ paths:
   - scripts/ci/pr-gate/lib.mjs
   - scripts/ci/pr-gate/__tests__/lib.test.mjs
 repos: [exafyltd/vitana-v1]
-updated: 2026-11-07T15:54Z
+updated: 2026-11-07T15:58Z
 vtid: VTID-05592
 claimed_by: kiro-hotmail-202611061752-cc1f
 branch: kiro/pr-gate-policy-sparring-record/policy-approval-record-v1
@@ -46,3 +46,6 @@ PR https://github.com/exafyltd/vitana-v1/pull/1616. Reviewed on head `8bab331ee4
 ### 2026-11-07T15:54Z · kiro-hotmail-202611061752-cc1f · in-review → verified
 merge: 3beedb329c857cfa7627756a0f6ca1d0b44fc375 (exafyltd/vitana-v1#1616)
 authority: §7b PM rule. Squash merge by land-guard on head `9e4cfe322e`: the reviewed head `8bab331ee4` plus a clean merge of main (the PR's own diff unchanged). `land-guard review` ok, `land-guard checks` green (7/7, after one re-run of the Vitest (jsdom) job, which reported one unhandled timer error after teardown with 494 files and 3972 tests passing), PR up to date. No lane code changed after the accept. Next: the `done` record.
+
+### 2026-11-07T15:58Z · kiro-hotmail-202611061752-cc1f · verified → done
+Closing record: merge 3beedb329c857cfa7627756a0f6ca1d0b44fc375 (exafyltd/vitana-v1#1616) changes scripts/ci/pr-gate (lib.mjs and its test) and docs only, no application source and no deploy workflow, so the vitana-v1 stage deploy and STAGING-VERIFY did not run for it: this change deploys nothing. It is done at merge with green checks (7/7 on the final head). The lane has no migrations. The lane claim is released once this record is on main.
