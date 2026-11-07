@@ -1,0 +1,10 @@
+# VTID-05540 red on base: the tree of origin/main plus the sibling lanes (this worktree without scripts/eng/rehearse.mjs and infra/gitlab-engineering/rehearsal/)
+# $ node --test scripts/eng/rehearse.test.mjs
+# tests 1
+# pass 0
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# Error [ERR_MODULE_NOT_FOUND]: Cannot find module '<scratch tree>/scripts/eng/rehearse.mjs' imported from <scratch tree>/scripts/eng/rehearse.test.mjs
+not ok 1 - scripts/eng/rehearse.test.mjs
