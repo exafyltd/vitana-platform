@@ -1,6 +1,6 @@
 ---
 lane: settings-fix
-state: ready
+state: executing
 next_actor: kiro
 depends_on: [settings]
 executor: kiro
@@ -27,3 +27,7 @@ Lane created by a plan PR (late lane). Depends on settings (done). Builder: seat
 
 ### 2026-11-07T11:24Z · ci-plan-spar · ready (VTID allocated)
 VTID-05591 allocated after policy approval (converged-auto-v1).
+
+### 2026-11-07T15:33Z · kiro-exafy-202611062222-c262 · ready → executing
+Build on a new branch, kiro/eng-gitlab-m2/settings-fix-v2, from origin/main. The source and tests are the fix of the earlier branch kiro/eng-gitlab-m2/settings-fix (tip a5c3c9ab4b), copied for the lane paths only; that branch and its PR are left as they are.
+Red on origin/main: docs/validation/VTID-05591/outputs/red-on-base.txt (18 pass, 38 fail). Green: outputs/green.txt (56 pass, 0 fail).
