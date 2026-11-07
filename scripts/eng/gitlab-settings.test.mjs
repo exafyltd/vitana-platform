@@ -396,11 +396,13 @@ function newAws() {
       return { stdout: `${secrets.get(id)}\n` };
     }
     if (op === 'put-secret-value' || op === 'create-secret') {
-      assert.equal(opt('--secret-string'), 'file:///dev/stdin', 'a secret value is never a command-line argument');
-      assert.equal(typeof opts.input, 'string');
+      const src = opt('--secret-string');
+      assert.match(src, /^file:\/\/.+\/value$/, 'a secret value is never a command-line argument: the CLI reads it from a private file');
+      const stored = fs.readFileSync(src.slice('file://'.length), 'utf8');
+      assert.ok(stored.length > 0);
       if (op === 'put-secret-value' && !secrets.has(id)) throw awsError('ResourceNotFoundException', "Secrets Manager can't find the specified secret.");
       if (op === 'create-secret' && secrets.has(id)) throw awsError('ResourceExistsException', 'already exists');
-      secrets.set(id, opts.input);
+      secrets.set(id, stored);
       return { stdout: '{"Name":"x"}' };
     }
     throw new Error(`unexpected aws call ${op}`);
@@ -871,8 +873,8 @@ test('tokens: created once with 90 days and the configured scopes; secrets are c
   assert.deepEqual(creates, ACCOUNTS.map(SECRET_AGENT).sort(), 'agent secrets that do not exist yet are created');
   assert.ok(w.aws.calls.some((c) => c.args[1] === 'put-secret-value' && c.args.includes(SECRET_FLEET)), 'the pre-created fleet secret gets a value');
   for (const c of w.aws.writes()) {
-    assert.ok(c.args.includes('file:///dev/stdin') && typeof c.input === 'string' && c.input.length > 8);
-    assert.ok(!c.args.some((a) => a === c.input || a.includes(c.input)), 'the value is not in the argument list');
+    const src = c.args[c.args.indexOf('--secret-string') + 1];
+    assert.match(src, /^file:\/\//, 'the value is read from a private file, never passed as an argument');
   }
   // a second world where Terraform pre-created the secrets: they are put, not created
   const w2 = newWorld({ preCreateAgentSecrets: true });
