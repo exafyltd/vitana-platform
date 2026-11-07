@@ -10,6 +10,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+// Value files the sync wrote through the AWS CLI during a test: each must be gone once the call ends.
+const seenSecretFiles = [];
 import { fakeFetch } from './testing/fake-fetch.mjs';
 import * as settings from './gitlab-settings.mjs';
 
@@ -399,7 +402,10 @@ function newAws() {
       const src = opt('--secret-string');
       assert.match(src, /^file:\/\/.+\/value$/, 'a secret value is never a command-line argument: the CLI reads it from a private file');
       const stored = fs.readFileSync(src.slice('file://'.length), 'utf8');
-      assert.ok(stored.length > 0);
+      assert.ok(stored.length > 8, 'the stored value is a real secret, not an empty placeholder');
+      assert.equal(fs.statSync(src.slice('file://'.length)).mode & 0o777, 0o600, 'the value file is private (0600)');
+      assert.equal(fs.statSync(path.dirname(src.slice('file://'.length))).mode & 0o777, 0o700, 'its directory is private (0700)');
+      seenSecretFiles.push(src.slice('file://'.length));
       if (op === 'put-secret-value' && !secrets.has(id)) throw awsError('ResourceNotFoundException', "Secrets Manager can't find the specified secret.");
       if (op === 'create-secret' && secrets.has(id)) throw awsError('ResourceExistsException', 'already exists');
       secrets.set(id, stored);
@@ -875,6 +881,10 @@ test('tokens: created once with 90 days and the configured scopes; secrets are c
   for (const c of w.aws.writes()) {
     const src = c.args[c.args.indexOf('--secret-string') + 1];
     assert.match(src, /^file:\/\//, 'the value is read from a private file, never passed as an argument');
+  }
+  for (const f of seenSecretFiles) {
+    assert.ok(!fs.existsSync(f), 'the value file is removed after the call');
+    assert.ok(!fs.existsSync(path.dirname(f)), 'its private directory is removed after the call');
   }
   // a second world where Terraform pre-created the secrets: they are put, not created
   const w2 = newWorld({ preCreateAgentSecrets: true });
@@ -1607,7 +1617,7 @@ test('real file writer: atomic, mode 0600 whatever the umask, replaces a looser 
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('real aws runner: the secret travels on stdin, never in the argument list; a failing call carries the AWS error text', async () => {
+test('real aws runner: stdin input reaches the CLI, never the argument list; a failing call carries the AWS error text', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'settings-aws-'));
   try {
     const bin = path.join(dir, 'aws');
@@ -1645,5 +1655,18 @@ test('free tier: every call of a full apply, a drift repair and a webhook run is
   for (const c of w.f.calls) {
     const rel = c.path.replace(/^\/api\/v4/, '');
     assert.ok(known.some(([m, re]) => m === c.method && re.test(rel)), `${c.method} ${rel} is not on the Free-tier endpoint list`);
+  }
+});
+
+test('tokens: a value file is removed even when Secrets Manager refuses the write', async () => {
+  const w = newWorld({ preCreateAgentSecrets: true });
+  w.aws.deny('put-secret-value', SECRET_AGENT('agent-reviewer'));
+  const r = await w.run('apply');
+  assert.equal(r.exitCode, 1, 'a refused write is an error');
+  assert.match(w.text(), /agent-reviewer/);
+  assert.ok(seenSecretFiles.length > 0, 'the refused write did create a value file');
+  for (const f of seenSecretFiles) {
+    assert.ok(!fs.existsSync(f), 'the value file is removed after a refusal');
+    assert.ok(!fs.existsSync(path.dirname(f)), 'its private directory is removed after a refusal');
   }
 });

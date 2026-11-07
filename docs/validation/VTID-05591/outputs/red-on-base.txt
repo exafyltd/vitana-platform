@@ -2,51 +2,51 @@ TAP version 13
 # Subtest: config: the shipped file is schema version 1 with the accounts, roles, projects and profiles of plan 3.3
 ok 1 - config: the shipped file is schema version 1 with the accounts, roles, projects and profiles of plan 3.3
   ---
-  duration_ms: 3.891091
+  duration_ms: 3.793005
   type: 'test'
   ...
 # Subtest: config: the shipped file satisfies what the merge bot reads (group, projects.<name>.landing and required_jobs)
 ok 2 - config: the shipped file satisfies what the merge bot reads (group, projects.<name>.landing and required_jobs)
   ---
-  duration_ms: 0.468192
+  duration_ms: 0.52244
   type: 'test'
   ...
 # Subtest: config: every invalid input is refused with an error that names the key
 ok 3 - config: every invalid input is refused with an error that names the key
   ---
-  duration_ms: 7.117504
+  duration_ms: 7.158681
   type: 'test'
   ...
 # Subtest: config: a project with a webhook, and defaults for what the file leaves out, are accepted
 ok 4 - config: a project with a webhook, and defaults for what the file leaves out, are accepted
   ---
-  duration_ms: 0.48407
+  duration_ms: 0.489801
   type: 'test'
   ...
 # Subtest: config: the README documents every key the validator accepts, the profiles, the exit codes and the single-source-of-truth rule
 ok 5 - config: the README documents every key the validator accepts, the profiles, the exit codes and the single-source-of-truth rule
   ---
-  duration_ms: 0.477548
+  duration_ms: 0.486295
   type: 'test'
   ...
 # Subtest: cli: defaults are relative to the script (the settings file and the CI folder of the repository)
 ok 6 - cli: defaults are relative to the script (the settings file and the CI folder of the repository)
   ---
-  duration_ms: 0.257243
+  duration_ms: 0.259585
   type: 'test'
   ...
 # Subtest: free tier: the script, the settings file and the README name none of the Premium-only APIs or settings (plan §2)
 ok 7 - free tier: the script, the settings file and the README name none of the Premium-only APIs or settings (plan §2)
   ---
-  duration_ms: 1.112687
+  duration_ms: 1.229012
   type: 'test'
   ...
 # Subtest: apply: a first apply on the M1 GitLab creates everything of plan 3.3, and the second apply makes zero writes
 not ok 8 - apply: a first apply on the M1 GitLab creates everything of plan 3.3, and the second apply makes zero writes
   ---
-  duration_ms: 76.391282
+  duration_ms: 75.44319
   type: 'test'
-  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:640:1'
+  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:646:1'
   failureType: 'testCodeFailure'
   error: |-
     apply failed: [{"id":"runner:fleet:create","error":"storing the secret vitana/engineering/gitlab/fleet-runner-token failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-exafy","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-exafy failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-exafyltd","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-exafyltd failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-jtadic","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-jtadic failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-hotmail","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-hotmail failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-reviewer","error":"storing the secret vitana/engineering/gitlab/agents/agent-reviewer failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:bot-land","error":"storing the secret vitana/engineering/gitlab/agents/bot-land failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:bot-metrics","error":"storing the secret vitana/engineering/gitlab/agents/bot-metrics failed: a secret value is never a command-line argument: the CLI reads it from a private file"}]
@@ -67,17 +67,17 @@ not ok 8 - apply: a first apply on the M1 GitLab creates everything of plan 3.3,
   actual: 1
   operator: 'strictEqual'
   stack: |-
-    applied (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:473:10)
-    async TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:643:14)
+    applied (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:479:10)
+    async TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:649:14)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: apply: reads come first, the legacy runner is retagged before any token exists, protections and memberships exist before the first token
 not ok 9 - apply: reads come first, the legacy runner is retagged before any token exists, protections and memberships exist before the first token
   ---
-  duration_ms: 20.969405
+  duration_ms: 21.116346
   type: 'test'
-  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:708:1'
+  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:714:1'
   failureType: 'testCodeFailure'
   error: |-
     apply failed: [{"id":"runner:fleet:create","error":"storing the secret vitana/engineering/gitlab/fleet-runner-token failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-exafy","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-exafy failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-exafyltd","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-exafyltd failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-jtadic","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-jtadic failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-hotmail","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-hotmail failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-reviewer","error":"storing the secret vitana/engineering/gitlab/agents/agent-reviewer failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:bot-land","error":"storing the secret vitana/engineering/gitlab/agents/bot-land failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:bot-metrics","error":"storing the secret vitana/engineering/gitlab/agents/bot-metrics failed: a secret value is never a command-line argument: the CLI reads it from a private file"}]
@@ -98,17 +98,17 @@ not ok 9 - apply: reads come first, the legacy runner is retagged before any tok
   actual: 1
   operator: 'strictEqual'
   stack: |-
-    applied (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:473:10)
-    async TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:710:3)
+    applied (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:479:10)
+    async TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:716:3)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: profiles: native sets push No one, merge Maintainers, force push off and the merge settings of plan 3.3; mirror keeps M1
 not ok 10 - profiles: native sets push No one, merge Maintainers, force push off and the merge settings of plan 3.3; mirror keeps M1
   ---
-  duration_ms: 19.990455
+  duration_ms: 17.751472
   type: 'test'
-  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:732:1'
+  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:738:1'
   failureType: 'testCodeFailure'
   error: |-
     apply failed: [{"id":"runner:fleet:create","error":"storing the secret vitana/engineering/gitlab/fleet-runner-token failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-exafy","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-exafy failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-exafyltd","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-exafyltd failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-jtadic","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-jtadic failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-hotmail","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-hotmail failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-reviewer","error":"storing the secret vitana/engineering/gitlab/agents/agent-reviewer failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:bot-land","error":"storing the secret vitana/engineering/gitlab/agents/bot-land failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:bot-metrics","error":"storing the secret vitana/engineering/gitlab/agents/bot-metrics failed: a secret value is never a command-line argument: the CLI reads it from a private file"}]
@@ -129,17 +129,17 @@ not ok 10 - profiles: native sets push No one, merge Maintainers, force push off
   actual: 1
   operator: 'strictEqual'
   stack: |-
-    applied (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:473:10)
-    async TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:734:3)
+    applied (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:479:10)
+    async TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:740:3)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: drift: a setting changed by hand is reported by check (exit 3, nothing written) and corrected by apply
 not ok 11 - drift: a setting changed by hand is reported by check (exit 3, nothing written) and corrected by apply
   ---
-  duration_ms: 14.478775
+  duration_ms: 16.540091
   type: 'test'
-  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:781:1'
+  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:787:1'
   failureType: 'testCodeFailure'
   error: |-
     apply failed: [{"id":"runner:fleet:create","error":"storing the secret vitana/engineering/gitlab/fleet-runner-token failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-exafy","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-exafy failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-exafyltd","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-exafyltd failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-jtadic","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-jtadic failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-hotmail","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-hotmail failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-reviewer","error":"storing the secret vitana/engineering/gitlab/agents/agent-reviewer failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:bot-land","error":"storing the secret vitana/engineering/gitlab/agents/bot-land failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:bot-metrics","error":"storing the secret vitana/engineering/gitlab/agents/bot-metrics failed: a secret value is never a command-line argument: the CLI reads it from a private file"}]
@@ -160,17 +160,17 @@ not ok 11 - drift: a setting changed by hand is reported by check (exit 3, nothi
   actual: 1
   operator: 'strictEqual'
   stack: |-
-    applied (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:473:10)
-    async TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:784:5)
+    applied (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:479:10)
+    async TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:790:5)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: membership: unmanaged members are never touched; an unexpected Maintainer of a native project is reported and not removed
 not ok 12 - membership: unmanaged members are never touched; an unexpected Maintainer of a native project is reported and not removed
   ---
-  duration_ms: 16.748153
+  duration_ms: 15.670583
   type: 'test'
-  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:808:1'
+  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:814:1'
   failureType: 'testCodeFailure'
   error: |-
     apply failed: [{"id":"runner:fleet:create","error":"storing the secret vitana/engineering/gitlab/fleet-runner-token failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-exafy","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-exafy failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-exafyltd","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-exafyltd failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-jtadic","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-jtadic failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-hotmail","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-hotmail failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-reviewer","error":"storing the secret vitana/engineering/gitlab/agents/agent-reviewer failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:bot-land","error":"storing the secret vitana/engineering/gitlab/agents/bot-land failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:bot-metrics","error":"storing the secret vitana/engineering/gitlab/agents/bot-metrics failed: a secret value is never a command-line argument: the CLI reads it from a private file"}]
@@ -191,17 +191,17 @@ not ok 12 - membership: unmanaged members are never touched; an unexpected Maint
   actual: 1
   operator: 'strictEqual'
   stack: |-
-    applied (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:473:10)
-    async TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:810:3)
+    applied (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:479:10)
+    async TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:816:3)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: membership: an owner named in the file who is not yet a member becomes a Maintainer of existing projects
 not ok 13 - membership: an owner named in the file who is not yet a member becomes a Maintainer of existing projects
   ---
-  duration_ms: 13.350994
+  duration_ms: 13.983058
   type: 'test'
-  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:841:1'
+  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:847:1'
   failureType: 'testCodeFailure'
   error: |-
     apply failed: [{"id":"runner:fleet:create","error":"storing the secret vitana/engineering/gitlab/fleet-runner-token failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-exafy","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-exafy failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-exafyltd","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-exafyltd failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-jtadic","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-jtadic failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-hotmail","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-hotmail failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-reviewer","error":"storing the secret vitana/engineering/gitlab/agents/agent-reviewer failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:bot-land","error":"storing the secret vitana/engineering/gitlab/agents/bot-land failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:bot-metrics","error":"storing the secret vitana/engineering/gitlab/agents/bot-metrics failed: a secret value is never a command-line argument: the CLI reads it from a private file"}]
@@ -222,17 +222,17 @@ not ok 13 - membership: an owner named in the file who is not yet a member becom
   actual: 1
   operator: 'strictEqual'
   stack: |-
-    applied (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:473:10)
-    async TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:847:3)
+    applied (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:479:10)
+    async TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:853:3)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: tokens: created once with 90 days and the configured scopes; secrets are created or put through stdin, never as an argument
 not ok 14 - tokens: created once with 90 days and the configured scopes; secrets are created or put through stdin, never as an argument
   ---
-  duration_ms: 14.532206
+  duration_ms: 14.916857
   type: 'test'
-  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:863:1'
+  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:869:1'
   failureType: 'testCodeFailure'
   error: |-
     apply failed: [{"id":"runner:fleet:create","error":"storing the secret vitana/engineering/gitlab/fleet-runner-token failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-exafy","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-exafy failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-exafyltd","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-exafyltd failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-jtadic","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-jtadic failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-hotmail","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-hotmail failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-reviewer","error":"storing the secret vitana/engineering/gitlab/agents/agent-reviewer failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:bot-land","error":"storing the secret vitana/engineering/gitlab/agents/bot-land failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:bot-metrics","error":"storing the secret vitana/engineering/gitlab/agents/bot-metrics failed: a secret value is never a command-line argument: the CLI reads it from a private file"}]
@@ -253,17 +253,17 @@ not ok 14 - tokens: created once with 90 days and the configured scopes; secrets
   actual: 1
   operator: 'strictEqual'
   stack: |-
-    applied (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:473:10)
-    async TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:865:3)
+    applied (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:479:10)
+    async TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:871:3)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: tokens: rotated only when fewer than 30 days are left (30 stays, 29 is rotated), the old token is revoked and the bot file follows
 not ok 15 - tokens: rotated only when fewer than 30 days are left (30 stays, 29 is rotated), the old token is revoked and the bot file follows
   ---
-  duration_ms: 19.748018
+  duration_ms: 18.835126
   type: 'test'
-  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:886:1'
+  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:896:1'
   failureType: 'testCodeFailure'
   error: |-
     apply failed: [{"id":"runner:fleet:create","error":"storing the secret vitana/engineering/gitlab/fleet-runner-token failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-exafy","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-exafy failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-exafyltd","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-exafyltd failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-jtadic","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-jtadic failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-hotmail","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-hotmail failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-reviewer","error":"storing the secret vitana/engineering/gitlab/agents/agent-reviewer failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:bot-land","error":"storing the secret vitana/engineering/gitlab/agents/bot-land failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:bot-metrics","error":"storing the secret vitana/engineering/gitlab/agents/bot-metrics failed: a secret value is never a command-line argument: the CLI reads it from a private file"}]
@@ -284,17 +284,17 @@ not ok 15 - tokens: rotated only when fewer than 30 days are left (30 stays, 29 
   actual: 1
   operator: 'strictEqual'
   stack: |-
-    applied (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:473:10)
-    async TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:888:3)
+    applied (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:479:10)
+    async TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:898:3)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: tokens: a lost or wrong secret is recovered by rotating the active token, never by creating a second one
 not ok 16 - tokens: a lost or wrong secret is recovered by rotating the active token, never by creating a second one
   ---
-  duration_ms: 13.313369
+  duration_ms: 15.811435
   type: 'test'
-  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:921:1'
+  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:931:1'
   failureType: 'testCodeFailure'
   error: |-
     apply failed: [{"id":"runner:fleet:create","error":"storing the secret vitana/engineering/gitlab/fleet-runner-token failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-exafy","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-exafy failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-exafyltd","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-exafyltd failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-jtadic","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-jtadic failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-hotmail","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-hotmail failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-reviewer","error":"storing the secret vitana/engineering/gitlab/agents/agent-reviewer failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:bot-land","error":"storing the secret vitana/engineering/gitlab/agents/bot-land failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:bot-metrics","error":"storing the secret vitana/engineering/gitlab/agents/bot-metrics failed: a secret value is never a command-line argument: the CLI reads it from a private file"}]
@@ -315,17 +315,17 @@ not ok 16 - tokens: a lost or wrong secret is recovered by rotating the active t
   actual: 1
   operator: 'strictEqual'
   stack: |-
-    applied (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:473:10)
-    async TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:924:5)
+    applied (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:479:10)
+    async TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:934:5)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: tokens: a secret that cannot be read (access denied) is an error, not "lost": the run writes nothing
 not ok 17 - tokens: a secret that cannot be read (access denied) is an error, not "lost": the run writes nothing
   ---
-  duration_ms: 14.591623
+  duration_ms: 14.493285
   type: 'test'
-  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:939:1'
+  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:949:1'
   failureType: 'testCodeFailure'
   error: |-
     apply failed: [{"id":"runner:fleet:create","error":"storing the secret vitana/engineering/gitlab/fleet-runner-token failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-exafy","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-exafy failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-exafyltd","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-exafyltd failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-jtadic","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-jtadic failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-hotmail","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-hotmail failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-reviewer","error":"storing the secret vitana/engineering/gitlab/agents/agent-reviewer failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:bot-land","error":"storing the secret vitana/engineering/gitlab/agents/bot-land failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:bot-metrics","error":"storing the secret vitana/engineering/gitlab/agents/bot-metrics failed: a secret value is never a command-line argument: the CLI reads it from a private file"}]
@@ -346,17 +346,17 @@ not ok 17 - tokens: a secret that cannot be read (access denied) is an error, no
   actual: 1
   operator: 'strictEqual'
   stack: |-
-    applied (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:473:10)
-    async TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:941:3)
+    applied (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:479:10)
+    async TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:951:3)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: tokens: scopes changed in the file replace the token, the new one stored before the old one is revoked
 not ok 18 - tokens: scopes changed in the file replace the token, the new one stored before the old one is revoked
   ---
-  duration_ms: 13.693055
+  duration_ms: 12.216501
   type: 'test'
-  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:950:1'
+  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:960:1'
   failureType: 'testCodeFailure'
   error: |-
     apply failed: [{"id":"runner:fleet:create","error":"storing the secret vitana/engineering/gitlab/fleet-runner-token failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-exafy","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-exafy failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-exafyltd","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-exafyltd failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-jtadic","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-jtadic failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-hotmail","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-hotmail failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-reviewer","error":"storing the secret vitana/engineering/gitlab/agents/agent-reviewer failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:bot-land","error":"storing the secret vitana/engineering/gitlab/agents/bot-land failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:bot-metrics","error":"storing the secret vitana/engineering/gitlab/agents/bot-metrics failed: a secret value is never a command-line argument: the CLI reads it from a private file"}]
@@ -377,17 +377,17 @@ not ok 18 - tokens: scopes changed in the file replace the token, the new one st
   actual: 1
   operator: 'strictEqual'
   stack: |-
-    applied (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:473:10)
-    async TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:952:3)
+    applied (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:479:10)
+    async TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:962:3)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: tokens: a duplicate managed token and a token with no or a too-long expiry on a managed account are revoked
 not ok 19 - tokens: a duplicate managed token and a token with no or a too-long expiry on a managed account are revoked
   ---
-  duration_ms: 15.184643
+  duration_ms: 15.806499
   type: 'test'
-  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:972:1'
+  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:982:1'
   failureType: 'testCodeFailure'
   error: |-
     apply failed: [{"id":"runner:fleet:create","error":"storing the secret vitana/engineering/gitlab/fleet-runner-token failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-exafy","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-exafy failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-exafyltd","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-exafyltd failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-jtadic","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-jtadic failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-hotmail","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-hotmail failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-reviewer","error":"storing the secret vitana/engineering/gitlab/agents/agent-reviewer failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:bot-land","error":"storing the secret vitana/engineering/gitlab/agents/bot-land failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:bot-metrics","error":"storing the secret vitana/engineering/gitlab/agents/bot-metrics failed: a secret value is never a command-line argument: the CLI reads it from a private file"}]
@@ -408,17 +408,17 @@ not ok 19 - tokens: a duplicate managed token and a token with no or a too-long 
   actual: 1
   operator: 'strictEqual'
   stack: |-
-    applied (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:473:10)
-    async TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:974:3)
+    applied (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:479:10)
+    async TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:984:3)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: tokens: a token created but not stored (Secrets Manager refused) is recovered by the next run through rotation
 not ok 20 - tokens: a token created but not stored (Secrets Manager refused) is recovered by the next run through rotation
   ---
-  duration_ms: 13.449998
+  duration_ms: 13.858673
   type: 'test'
-  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:989:1'
+  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:999:1'
   failureType: 'testCodeFailure'
   error: 'the other accounts are not held back'
   code: 'ERR_ASSERTION'
@@ -427,16 +427,16 @@ not ok 20 - tokens: a token created but not stored (Secrets Manager refused) is 
   actual: false
   operator: '=='
   stack: |-
-    TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:996:10)
+    TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1006:10)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: tokens: no secret appears in any output or argument list, also when GitLab echoes tokens back in an error body
 not ok 21 - tokens: no secret appears in any output or argument list, also when GitLab echoes tokens back in an error body
   ---
-  duration_ms: 11.761617
+  duration_ms: 11.943378
   type: 'test'
-  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1006:1'
+  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1016:1'
   failureType: 'testCodeFailure'
   error: |-
     apply failed: [{"id":"runner:fleet:create","error":"storing the secret vitana/engineering/gitlab/fleet-runner-token failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-exafy","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-exafy failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-exafyltd","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-exafyltd failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-jtadic","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-jtadic failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-hotmail","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-hotmail failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-reviewer","error":"storing the secret vitana/engineering/gitlab/agents/agent-reviewer failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:bot-land","error":"storing the secret vitana/engineering/gitlab/agents/bot-land failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:bot-metrics","error":"storing the secret vitana/engineering/gitlab/agents/bot-metrics failed: a secret value is never a command-line argument: the CLI reads it from a private file"}]
@@ -457,17 +457,17 @@ not ok 21 - tokens: no secret appears in any output or argument list, also when 
   actual: 1
   operator: 'strictEqual'
   stack: |-
-    applied (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:473:10)
-    async TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1008:3)
+    applied (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:479:10)
+    async TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1018:3)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: admin token: not rotated with 10 days left, rotated with 9; the file is rewritten atomically (0600) and the rest of the run uses the new token
 not ok 22 - admin token: not rotated with 10 days left, rotated with 9; the file is rewritten atomically (0600) and the rest of the run uses the new token
   ---
-  duration_ms: 41.659011
+  duration_ms: 38.306543
   type: 'test'
-  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1031:1'
+  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1041:1'
   failureType: 'testCodeFailure'
   error: |-
     apply failed: [{"id":"runner:fleet:create","error":"storing the secret vitana/engineering/gitlab/fleet-runner-token failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-exafy","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-exafy failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-exafyltd","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-exafyltd failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-jtadic","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-jtadic failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-hotmail","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-hotmail failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-reviewer","error":"storing the secret vitana/engineering/gitlab/agents/agent-reviewer failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:bot-land","error":"storing the secret vitana/engineering/gitlab/agents/bot-land failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:bot-metrics","error":"storing the secret vitana/engineering/gitlab/agents/bot-metrics failed: a secret value is never a command-line argument: the CLI reads it from a private file"}]
@@ -488,35 +488,35 @@ not ok 22 - admin token: not rotated with 10 days left, rotated with 9; the file
   actual: 1
   operator: 'strictEqual'
   stack: |-
-    applied (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:473:10)
-    async TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1045:3)
+    applied (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:479:10)
+    async TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1055:3)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: admin token: if the file cannot be written the token is not rotated, the rest of the run goes on and the run fails loudly
 ok 23 - admin token: if the file cannot be written the token is not rotated, the rest of the run goes on and the run fails loudly
   ---
-  duration_ms: 11.819084
+  duration_ms: 11.327298
   type: 'test'
   ...
 # Subtest: admin token: the rotation is not retried, and a refused rotation leaves the token file as it was
 ok 24 - admin token: the rotation is not retried, and a refused rotation leaves the token file as it was
   ---
-  duration_ms: 14.232426
+  duration_ms: 19.09943
   type: 'test'
   ...
 # Subtest: admin token: a token GitLab does not accept stops the run before any write
 ok 25 - admin token: a token GitLab does not accept stops the run before any write
   ---
-  duration_ms: 1.607844
+  duration_ms: 1.664428
   type: 'test'
   ...
 # Subtest: fleet runner: created once with the plan values, its token goes to the secret; a missing, empty or placeholder secret resets the token
 not ok 26 - fleet runner: created once with the plan values, its token goes to the secret; a missing, empty or placeholder secret resets the token
   ---
-  duration_ms: 13.067842
+  duration_ms: 11.502027
   type: 'test'
-  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1103:1'
+  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1113:1'
   failureType: 'testCodeFailure'
   error: |-
     apply failed: [{"id":"runner:fleet:create","error":"storing the secret vitana/engineering/gitlab/fleet-runner-token failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-exafy","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-exafy failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-exafyltd","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-exafyltd failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-jtadic","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-jtadic failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-hotmail","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-hotmail failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-reviewer","error":"storing the secret vitana/engineering/gitlab/agents/agent-reviewer failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:bot-land","error":"storing the secret vitana/engineering/gitlab/agents/bot-land failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:bot-metrics","error":"storing the secret vitana/engineering/gitlab/agents/bot-metrics failed: a secret value is never a command-line argument: the CLI reads it from a private file"}]
@@ -537,17 +537,17 @@ not ok 26 - fleet runner: created once with the plan values, its token goes to t
   actual: 1
   operator: 'strictEqual'
   stack: |-
-    applied (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:473:10)
-    async TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1105:3)
+    applied (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:479:10)
+    async TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1115:3)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: fleet runner: a token whose storing failed is regained by the next run (the runner exists, the secret is empty)
 not ok 27 - fleet runner: a token whose storing failed is regained by the next run (the runner exists, the secret is empty)
   ---
-  duration_ms: 26.844136
+  duration_ms: 24.602735
   type: 'test'
-  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1128:1'
+  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1138:1'
   failureType: 'testCodeFailure'
   error: |-
     apply failed: [{"id":"runner:fleet:token","error":"storing the secret vitana/engineering/gitlab/fleet-runner-token failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-exafy","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-exafy failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-exafyltd","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-exafyltd failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-jtadic","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-jtadic failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-hotmail","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-hotmail failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-reviewer","error":"storing the secret vitana/engineering/gitlab/agents/agent-reviewer failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:bot-land","error":"storing the secret vitana/engineering/gitlab/agents/bot-land failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:bot-metrics","error":"storing the secret vitana/engineering/gitlab/agents/bot-metrics failed: a secret value is never a command-line argument: the CLI reads it from a private file"}]
@@ -568,17 +568,17 @@ not ok 27 - fleet runner: a token whose storing failed is regained by the next r
   actual: 1
   operator: 'strictEqual'
   stack: |-
-    applied (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:473:10)
-    async TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1136:3)
+    applied (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:479:10)
+    async TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1146:3)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: legacy runner: retagged and kept unpaused until the file says paused; a missing runner is reported and does not stop the run
 not ok 28 - legacy runner: retagged and kept unpaused until the file says paused; a missing runner is reported and does not stop the run
   ---
-  duration_ms: 13.184691
+  duration_ms: 15.94059
   type: 'test'
-  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1141:1'
+  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1151:1'
   failureType: 'testCodeFailure'
   error: |-
     apply failed: [{"id":"runner:fleet:create","error":"storing the secret vitana/engineering/gitlab/fleet-runner-token failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-exafy","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-exafy failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-exafyltd","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-exafyltd failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-jtadic","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-jtadic failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-hotmail","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-hotmail failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-reviewer","error":"storing the secret vitana/engineering/gitlab/agents/agent-reviewer failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:bot-land","error":"storing the secret vitana/engineering/gitlab/agents/bot-land failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:bot-metrics","error":"storing the secret vitana/engineering/gitlab/agents/bot-metrics failed: a secret value is never a command-line argument: the CLI reads it from a private file"}]
@@ -599,17 +599,17 @@ not ok 28 - legacy runner: retagged and kept unpaused until the file says paused
   actual: 1
   operator: 'strictEqual'
   stack: |-
-    applied (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:473:10)
-    async TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1143:3)
+    applied (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:479:10)
+    async TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1153:3)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: webhook: created with the signing token read from Secrets Manager, only the configured events, nothing re-sent when unchanged
 not ok 29 - webhook: created with the signing token read from Secrets Manager, only the configured events, nothing re-sent when unchanged
   ---
-  duration_ms: 15.972545
+  duration_ms: 18.407688
   type: 'test'
-  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1164:1'
+  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1174:1'
   failureType: 'testCodeFailure'
   error: |-
     apply failed: [{"id":"runner:fleet:create","error":"storing the secret vitana/engineering/gitlab/fleet-runner-token failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-exafy","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-exafy failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-exafyltd","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-exafyltd failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-jtadic","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-jtadic failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-hotmail","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-hotmail failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-reviewer","error":"storing the secret vitana/engineering/gitlab/agents/agent-reviewer failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:bot-land","error":"storing the secret vitana/engineering/gitlab/agents/bot-land failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:bot-metrics","error":"storing the secret vitana/engineering/gitlab/agents/bot-metrics failed: a secret value is never a command-line argument: the CLI reads it from a private file"}]
@@ -630,17 +630,17 @@ not ok 29 - webhook: created with the signing token read from Secrets Manager, o
   actual: 1
   operator: 'strictEqual'
   stack: |-
-    applied (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:473:10)
-    async TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1166:3)
+    applied (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:479:10)
+    async TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1176:3)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: webhook: a rotated signing token, a changed URL or event, a missing signing token and a removed hook are all corrected
 not ok 30 - webhook: a rotated signing token, a changed URL or event, a missing signing token and a removed hook are all corrected
   ---
-  duration_ms: 18.670518
+  duration_ms: 12.726517
   type: 'test'
-  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1187:1'
+  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1197:1'
   failureType: 'testCodeFailure'
   error: |-
     apply failed: [{"id":"runner:fleet:create","error":"storing the secret vitana/engineering/gitlab/fleet-runner-token failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-exafy","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-exafy failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-exafyltd","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-exafyltd failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-jtadic","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-jtadic failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-hotmail","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-hotmail failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-reviewer","error":"storing the secret vitana/engineering/gitlab/agents/agent-reviewer failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:bot-land","error":"storing the secret vitana/engineering/gitlab/agents/bot-land failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:bot-metrics","error":"storing the secret vitana/engineering/gitlab/agents/bot-metrics failed: a secret value is never a command-line argument: the CLI reads it from a private file"}]
@@ -661,17 +661,17 @@ not ok 30 - webhook: a rotated signing token, a changed URL or event, a missing 
   actual: 1
   operator: 'strictEqual'
   stack: |-
-    applied (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:473:10)
-    async TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1189:3)
+    applied (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:479:10)
+    async TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1199:3)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: webhook: an empty, malformed or unreadable signing token is reported and no hook is written
 not ok 31 - webhook: an empty, malformed or unreadable signing token is reported and no hook is written
   ---
-  duration_ms: 11.024545
+  duration_ms: 14.83112
   type: 'test'
-  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1229:1'
+  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1239:1'
   failureType: 'testCodeFailure'
   error: |-
     empty
@@ -684,16 +684,16 @@ not ok 31 - webhook: an empty, malformed or unreadable signing token is reported
   actual: 1
   operator: 'strictEqual'
   stack: |-
-    TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1234:12)
+    TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1244:12)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: central CI: only files that differ are written, in one commit, create vs update per file; nothing is deleted; other names are ignored
 not ok 32 - central CI: only files that differ are written, in one commit, create vs update per file; nothing is deleted; other names are ignored
   ---
-  duration_ms: 10.214535
+  duration_ms: 10.719563
   type: 'test'
-  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1242:1'
+  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1252:1'
   failureType: 'testCodeFailure'
   error: |-
     apply failed: [{"id":"runner:fleet:create","error":"storing the secret vitana/engineering/gitlab/fleet-runner-token failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-exafy","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-exafy failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-exafyltd","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-exafyltd failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-jtadic","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-jtadic failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-hotmail","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-hotmail failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-reviewer","error":"storing the secret vitana/engineering/gitlab/agents/agent-reviewer failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:bot-land","error":"storing the secret vitana/engineering/gitlab/agents/bot-land failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:bot-metrics","error":"storing the secret vitana/engineering/gitlab/agents/bot-metrics failed: a secret value is never a command-line argument: the CLI reads it from a private file"}]
@@ -714,17 +714,17 @@ not ok 32 - central CI: only files that differ are written, in one commit, creat
   actual: 1
   operator: 'strictEqual'
   stack: |-
-    applied (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:473:10)
-    async TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1244:3)
+    applied (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:479:10)
+    async TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1254:3)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: central CI: a project whose CI file exists nowhere is not pointed at it, and the run reports it
 not ok 33 - central CI: a project whose CI file exists nowhere is not pointed at it, and the run reports it
   ---
-  duration_ms: 15.231671
+  duration_ms: 10.909146
   type: 'test'
-  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1266:1'
+  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1276:1'
   failureType: 'testCodeFailure'
   error: |-
     Expected values to be strictly equal:
@@ -737,22 +737,22 @@ not ok 33 - central CI: a project whose CI file exists nowhere is not pointed at
   actual: 1
   operator: 'strictEqual'
   stack: |-
-    TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1270:10)
+    TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1280:10)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: licence guard: a licence stops check and apply loudly before any write; none, an empty body or an empty list pass
 ok 34 - licence guard: a licence stops check and apply loudly before any write; none, an empty body or an empty list pass
   ---
-  duration_ms: 19.092383
+  duration_ms: 28.311201
   type: 'test'
   ...
 # Subtest: licence guard: a licence that appears later stops the next run even though there is drift to correct
 not ok 35 - licence guard: a licence that appears later stops the next run even though there is drift to correct
   ---
-  duration_ms: 10.965774
+  duration_ms: 10.600388
   type: 'test'
-  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1304:1'
+  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1314:1'
   failureType: 'testCodeFailure'
   error: |-
     apply failed: [{"id":"runner:fleet:create","error":"storing the secret vitana/engineering/gitlab/fleet-runner-token failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-exafy","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-exafy failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-exafyltd","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-exafyltd failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-jtadic","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-jtadic failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-hotmail","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-hotmail failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-reviewer","error":"storing the secret vitana/engineering/gitlab/agents/agent-reviewer failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:bot-land","error":"storing the secret vitana/engineering/gitlab/agents/bot-land failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:bot-metrics","error":"storing the secret vitana/engineering/gitlab/agents/bot-metrics failed: a secret value is never a command-line argument: the CLI reads it from a private file"}]
@@ -773,23 +773,23 @@ not ok 35 - licence guard: a licence that appears later stops the next run even 
   actual: 1
   operator: 'strictEqual'
   stack: |-
-    applied (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:473:10)
-    async TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1306:3)
+    applied (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:479:10)
+    async TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1316:3)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: licence guard: a licence read that fails (403) cannot prove there is none: stop without writing
 ok 36 - licence guard: a licence read that fails (403) cannot prove there is none: stop without writing
   ---
-  duration_ms: 0.669899
+  duration_ms: 0.706617
   type: 'test'
   ...
 # Subtest: unreachable GitLab: the run writes nothing and exits 1, the next run converges
 not ok 37 - unreachable GitLab: the run writes nothing and exits 1, the next run converges
   ---
-  duration_ms: 17.145442
+  duration_ms: 15.560617
   type: 'test'
-  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1327:1'
+  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1337:1'
   failureType: 'testCodeFailure'
   error: |-
     apply failed: [{"id":"runner:fleet:create","error":"storing the secret vitana/engineering/gitlab/fleet-runner-token failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-exafy","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-exafy failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-exafyltd","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-exafyltd failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-jtadic","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-jtadic failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-hotmail","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-hotmail failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-reviewer","error":"storing the secret vitana/engineering/gitlab/agents/agent-reviewer failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:bot-land","error":"storing the secret vitana/engineering/gitlab/agents/bot-land failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:bot-metrics","error":"storing the secret vitana/engineering/gitlab/agents/bot-metrics failed: a secret value is never a command-line argument: the CLI reads it from a private file"}]
@@ -810,17 +810,17 @@ not ok 37 - unreachable GitLab: the run writes nothing and exits 1, the next run
   actual: 1
   operator: 'strictEqual'
   stack: |-
-    applied (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:473:10)
-    async TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1338:3)
+    applied (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:479:10)
+    async TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1348:3)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: unreachable GitLab: a read that fails half-way through the observation still writes nothing
 not ok 38 - unreachable GitLab: a read that fails half-way through the observation still writes nothing
   ---
-  duration_ms: 11.788923
+  duration_ms: 12.936665
   type: 'test'
-  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1342:1'
+  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1352:1'
   failureType: 'testCodeFailure'
   error: |-
     apply failed: [{"id":"runner:fleet:create","error":"storing the secret vitana/engineering/gitlab/fleet-runner-token failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-exafy","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-exafy failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-exafyltd","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-exafyltd failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-jtadic","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-jtadic failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-hotmail","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-hotmail failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-reviewer","error":"storing the secret vitana/engineering/gitlab/agents/agent-reviewer failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:bot-land","error":"storing the secret vitana/engineering/gitlab/agents/bot-land failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:bot-metrics","error":"storing the secret vitana/engineering/gitlab/agents/bot-metrics failed: a secret value is never a command-line argument: the CLI reads it from a private file"}]
@@ -841,17 +841,17 @@ not ok 38 - unreachable GitLab: a read that fails half-way through the observati
   actual: 1
   operator: 'strictEqual'
   stack: |-
-    applied (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:473:10)
-    async TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1345:5)
+    applied (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:479:10)
+    async TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1355:5)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: failures: GitLab going away in the middle of the writes stops the run at the first network error; the next run finishes the job
 not ok 39 - failures: GitLab going away in the middle of the writes stops the run at the first network error; the next run finishes the job
   ---
-  duration_ms: 14.47757
+  duration_ms: 13.757573
   type: 'test'
-  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1356:1'
+  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1366:1'
   failureType: 'testCodeFailure'
   error: |-
     apply failed: [{"id":"runner:fleet:create","error":"storing the secret vitana/engineering/gitlab/fleet-runner-token failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-exafy","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-exafy failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-exafyltd","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-exafyltd failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-jtadic","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-jtadic failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-hotmail","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-hotmail failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-reviewer","error":"storing the secret vitana/engineering/gitlab/agents/agent-reviewer failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:bot-land","error":"storing the secret vitana/engineering/gitlab/agents/bot-land failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:bot-metrics","error":"storing the secret vitana/engineering/gitlab/agents/bot-metrics failed: a secret value is never a command-line argument: the CLI reads it from a private file"}]
@@ -872,17 +872,17 @@ not ok 39 - failures: GitLab going away in the middle of the writes stops the ru
   actual: 1
   operator: 'strictEqual'
   stack: |-
-    applied (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:473:10)
-    async TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1367:3)
+    applied (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:479:10)
+    async TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1377:3)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: every write passes retries: 0 — a 503 on a write is attempted once and left to the next run
 not ok 40 - every write passes retries: 0 — a 503 on a write is attempted once and left to the next run
   ---
-  duration_ms: 18.53229
+  duration_ms: 24.421777
   type: 'test'
-  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1383:1'
+  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1393:1'
   failureType: 'testCodeFailure'
   error: |-
     apply failed: [{"id":"runner:fleet:token","error":"storing the secret vitana/engineering/gitlab/fleet-runner-token failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-exafy","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-exafy failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-exafyltd","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-exafyltd failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-jtadic","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-jtadic failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-hotmail","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-hotmail failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-reviewer","error":"storing the secret vitana/engineering/gitlab/agents/agent-reviewer failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:bot-land","error":"storing the secret vitana/engineering/gitlab/agents/bot-land failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:bot-metrics","error":"storing the secret vitana/engineering/gitlab/agents/bot-metrics failed: a secret value is never a command-line argument: the CLI reads it from a private file"}]
@@ -903,17 +903,17 @@ not ok 40 - every write passes retries: 0 — a 503 on a write is attempted once
   actual: 1
   operator: 'strictEqual'
   stack: |-
-    applied (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:473:10)
-    async TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1396:5)
+    applied (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:479:10)
+    async TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1406:5)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: failures: a failed legacy retag keeps every token from being created; a failed account keeps only its own dependants back
 not ok 41 - failures: a failed legacy retag keeps every token from being created; a failed account keeps only its own dependants back
   ---
-  duration_ms: 17.438385
+  duration_ms: 16.647519
   type: 'test'
-  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1401:1'
+  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1411:1'
   failureType: 'testCodeFailure'
   error: 'other accounts are served'
   code: 'ERR_ASSERTION'
@@ -922,16 +922,16 @@ not ok 41 - failures: a failed legacy retag keeps every token from being created
   actual: false
   operator: '=='
   stack: |-
-    TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1415:10)
+    TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1425:10)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: failures: three server errors in a row end the run, a single one does not
 not ok 42 - failures: three server errors in a row end the run, a single one does not
   ---
-  duration_ms: 19.646783
+  duration_ms: 15.069129
   type: 'test'
-  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1418:1'
+  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1428:1'
   failureType: 'testCodeFailure'
   error: |-
     Expected values to be strictly equal:
@@ -944,16 +944,16 @@ not ok 42 - failures: three server errors in a row end the run, a single one doe
   actual: 8
   operator: 'strictEqual'
   stack: |-
-    TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1430:10)
+    TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1440:10)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: protection: when the re-creation after a removal fails, it is tried once more at once and then reported as unprotected
 not ok 43 - protection: when the re-creation after a removal fails, it is tried once more at once and then reported as unprotected
   ---
-  duration_ms: 9.906726
+  duration_ms: 12.97451
   type: 'test'
-  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1434:1'
+  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1444:1'
   failureType: 'testCodeFailure'
   error: |-
     apply failed: [{"id":"runner:fleet:create","error":"storing the secret vitana/engineering/gitlab/fleet-runner-token failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-exafy","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-exafy failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-exafyltd","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-exafyltd failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-jtadic","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-jtadic failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-hotmail","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-hotmail failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-reviewer","error":"storing the secret vitana/engineering/gitlab/agents/agent-reviewer failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:bot-land","error":"storing the secret vitana/engineering/gitlab/agents/bot-land failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:bot-metrics","error":"storing the secret vitana/engineering/gitlab/agents/bot-metrics failed: a secret value is never a command-line argument: the CLI reads it from a private file"}]
@@ -974,17 +974,17 @@ not ok 43 - protection: when the re-creation after a removal fails, it is tried 
   actual: 1
   operator: 'strictEqual'
   stack: |-
-    applied (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:473:10)
-    async TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1436:3)
+    applied (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:479:10)
+    async TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1446:3)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: failures: a failed protection keeps every token back; a failed membership keeps back the token of that account only
 not ok 44 - failures: a failed protection keeps every token back; a failed membership keeps back the token of that account only
   ---
-  duration_ms: 21.541292
+  duration_ms: 18.02123
   type: 'test'
-  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1457:1'
+  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1467:1'
   failureType: 'testCodeFailure'
   error: |-
     Expected values to be strictly deep-equal:
@@ -1016,16 +1016,16 @@ not ok 44 - failures: a failed protection keeps every token back; a failed membe
     7: 'token:bot-metrics'
   operator: 'deepStrictEqual'
   stack: |-
-    TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1469:10)
+    TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1479:10)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: rotation: a token that turned inactive between the read and the rotation is not rotated (reuse of a revoked token would revoke its whole family)
 not ok 45 - rotation: a token that turned inactive between the read and the rotation is not rotated (reuse of a revoked token would revoke its whole family)
   ---
-  duration_ms: 10.043238
+  duration_ms: 10.335108
   type: 'test'
-  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1474:1'
+  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1484:1'
   failureType: 'testCodeFailure'
   error: |-
     apply failed: [{"id":"runner:fleet:create","error":"storing the secret vitana/engineering/gitlab/fleet-runner-token failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-exafy","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-exafy failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-exafyltd","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-exafyltd failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-jtadic","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-jtadic failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-hotmail","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-hotmail failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-reviewer","error":"storing the secret vitana/engineering/gitlab/agents/agent-reviewer failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:bot-land","error":"storing the secret vitana/engineering/gitlab/agents/bot-land failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:bot-metrics","error":"storing the secret vitana/engineering/gitlab/agents/bot-metrics failed: a secret value is never a command-line argument: the CLI reads it from a private file"}]
@@ -1046,17 +1046,17 @@ not ok 45 - rotation: a token that turned inactive between the read and the rota
   actual: 1
   operator: 'strictEqual'
   stack: |-
-    applied (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:473:10)
-    async TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1476:3)
+    applied (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:479:10)
+    async TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1486:3)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: service accounts: near the 100-account cap the sync reports it; at the cap creation fails loudly and only that account is held back
 not ok 46 - service accounts: near the 100-account cap the sync reports it; at the cap creation fails loudly and only that account is held back
   ---
-  duration_ms: 18.741909
+  duration_ms: 23.52794
   type: 'test'
-  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1493:1'
+  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1503:1'
   failureType: 'testCodeFailure'
   error: 'the accounts that fit are served'
   code: 'ERR_ASSERTION'
@@ -1065,16 +1065,16 @@ not ok 46 - service accounts: near the 100-account cap the sync reports it; at t
   actual: false
   operator: '=='
   stack: |-
-    TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1509:10)
+    TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1519:10)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: service accounts: a username already taken by a person is an error for that account only; it gets no token and no membership
 not ok 47 - service accounts: a username already taken by a person is an error for that account only; it gets no token and no membership
   ---
-  duration_ms: 17.701812
+  duration_ms: 10.964985
   type: 'test'
-  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1515:1'
+  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1525:1'
   failureType: 'testCodeFailure'
   error: 'the other accounts are served'
   code: 'ERR_ASSERTION'
@@ -1083,16 +1083,16 @@ not ok 47 - service accounts: a username already taken by a person is an error f
   actual: false
   operator: '=='
   stack: |-
-    TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1523:10)
+    TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1533:10)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: cli: apply is the default; check and --check never write and exit 3 on drift, 0 when clean; --dry-run writes nothing
 not ok 48 - cli: apply is the default; check and --check never write and exit 3 on drift, 0 when clean; --dry-run writes nothing
   ---
-  duration_ms: 40.555113
+  duration_ms: 46.470898
   type: 'test'
-  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1527:1'
+  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1537:1'
   failureType: 'testCodeFailure'
   error: |-
     no command = apply
@@ -1105,52 +1105,52 @@ not ok 48 - cli: apply is the default; check and --check never write and exit 3 
   actual: 1
   operator: 'strictEqual'
   stack: |-
-    TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1537:10)
+    TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1547:10)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
 # Subtest: cli: usage mistakes exit 2 and write nothing; help exits 0
 ok 49 - cli: usage mistakes exit 2 and write nothing; help exits 0
   ---
-  duration_ms: 1.308931
+  duration_ms: 1.347913
   type: 'test'
   ...
 # Subtest: cli: a missing admin token file, an unreadable or invalid settings file are errors (exit 1) that say what to do
 ok 50 - cli: a missing admin token file, an unreadable or invalid settings file are errors (exit 1) that say what to do
   ---
-  duration_ms: 1.567795
+  duration_ms: 1.491229
   type: 'test'
   ...
 # Subtest: cli: a settings file naming another DOMAIN than the host is reported as a warning
 ok 51 - cli: a settings file naming another DOMAIN than the host is reported as a warning
   ---
-  duration_ms: 6.767892
+  duration_ms: 5.959102
   type: 'test'
   ...
 # Subtest: real file writer: atomic, mode 0600 whatever the umask, replaces a looser file, leaves no temp file, lists only .yml files
 ok 52 - real file writer: atomic, mode 0600 whatever the umask, replaces a looser file, leaves no temp file, lists only .yml files
   ---
-  duration_ms: 39.403538
+  duration_ms: 41.199824
   type: 'test'
   ...
-# Subtest: real aws runner: the secret travels on stdin, never in the argument list; a failing call carries the AWS error text
-ok 53 - real aws runner: the secret travels on stdin, never in the argument list; a failing call carries the AWS error text
+# Subtest: real aws runner: stdin input reaches the CLI, never the argument list; a failing call carries the AWS error text
+ok 53 - real aws runner: stdin input reaches the CLI, never the argument list; a failing call carries the AWS error text
   ---
-  duration_ms: 13.424278
+  duration_ms: 12.630309
   type: 'test'
   ...
 # Subtest: redaction: every secret registered during a run, GitLab token shapes and bearer tokens are removed from text
 ok 54 - redaction: every secret registered during a run, GitLab token shapes and bearer tokens are removed from text
   ---
-  duration_ms: 0.231888
+  duration_ms: 0.235149
   type: 'test'
   ...
 # Subtest: free tier: every call of a full apply, a drift repair and a webhook run is on the documented endpoint list, with the documented method
 not ok 55 - free tier: every call of a full apply, a drift repair and a webhook run is on the documented endpoint list, with the documented method
   ---
-  duration_ms: 12.372135
+  duration_ms: 13.112651
   type: 'test'
-  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1636:1'
+  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1646:1'
   failureType: 'testCodeFailure'
   error: |-
     apply failed: [{"id":"runner:fleet:create","error":"storing the secret vitana/engineering/gitlab/fleet-runner-token failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-exafy","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-exafy failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-exafyltd","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-exafyltd failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-jtadic","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-jtadic failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-kiro-hotmail","error":"storing the secret vitana/engineering/gitlab/agents/agent-kiro-hotmail failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:agent-reviewer","error":"storing the secret vitana/engineering/gitlab/agents/agent-reviewer failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:bot-land","error":"storing the secret vitana/engineering/gitlab/agents/bot-land failed: a secret value is never a command-line argument: the CLI reads it from a private file"},{"id":"token:bot-metrics","error":"storing the secret vitana/engineering/gitlab/agents/bot-metrics failed: a secret value is never a command-line argument: the CLI reads it from a private file"}]
@@ -1171,18 +1171,37 @@ not ok 55 - free tier: every call of a full apply, a drift repair and a webhook 
   actual: 1
   operator: 'strictEqual'
   stack: |-
-    applied (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:473:10)
+    applied (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:479:10)
     process.processTicksAndRejections (node:internal/process/task_queues:103:5)
-    async TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1640:3)
+    async TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1650:3)
     async Test.run (node:internal/test_runner/test:1054:7)
     async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
   ...
-1..55
-# tests 55
+# Subtest: tokens: a value file is removed even when Secrets Manager refuses the write
+not ok 56 - tokens: a value file is removed even when Secrets Manager refuses the write
+  ---
+  duration_ms: 10.497493
+  type: 'test'
+  location: '/projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1661:1'
+  failureType: 'testCodeFailure'
+  error: 'the refused write did create a value file'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: false
+  operator: '=='
+  stack: |-
+    TestContext.<anonymous> (file:///projects/sandbox/.work/lane-settings-fix/scripts/eng/gitlab-settings.test.mjs:1667:10)
+    process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+1..56
+# tests 56
 # suites 0
 # pass 18
-# fail 37
+# fail 38
 # cancelled 0
 # skipped 0
 # todo 0
-# duration_ms 910.165673
+# duration_ms 932.027325

@@ -13,7 +13,7 @@ TEST: scripts/eng/gitlab-settings.mjs `makeSecrets.put` removes the directory in
 AC-3 A secret that does not exist yet is created with the same file argument.
 TEST: scripts/eng/gitlab-settings.test.mjs "apply: a first apply on the M1 GitLab creates everything of plan 3.3, and the second apply makes zero writes" (create-secret calls for the agent secrets).
 
-AC-4 Red before, green after, on the same test file: outputs/red-on-base.txt (18 pass, 37 fail) and outputs/green.txt (55 pass, 0 fail).
+AC-4 Red before, green after, on the same test file: outputs/red-on-base.txt (18 pass, 38 fail) and outputs/green.txt (56 pass, 0 fail).
 TEST: node --test scripts/eng/gitlab-settings.test.mjs
 
 Staging proof: not applicable (deploys nothing). The owner's `bash ~/vitana-eng/m2.sh settings` (exit 0) is the live proof.
