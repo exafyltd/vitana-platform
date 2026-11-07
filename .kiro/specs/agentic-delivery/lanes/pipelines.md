@@ -1,7 +1,7 @@
 ---
 lane: pipelines
-state: ready
-next_actor: kiro
+state: executing
+next_actor: claude
 depends_on: []
 executor: claude
 reviewer_seat: exafyltd
@@ -41,3 +41,6 @@ reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
 
 ### 2026-11-06T23:43Z · kiro-exafy-202611061823-5cb2 · admin: executor kiro -> claude (admin lane VTID-05565)
 Reassigned by lane `claude-migration-lanes/reassign-migration` (lane_admin): `executor: kiro` -> `claude`, `reviewer_seat` -> `exafyltd`, `seat: exafy` removed; `paths` and `vtid` unchanged. On the owner's instruction (2026-11-06) the earlier Kiro PR for this lane was closed and its claim (older than 24 h) was released. Next: Claude Code claims and builds this lane from `ready`.
+
+### 2026-11-07T10:00Z · session_01Cp885Gw1CMmPDvDVHc7kw8 · ready -> executing (Claude Code)
+Built by Claude Code (executor claude, claimed by this session). Carried Kiro's files from kiro/agentic-delivery/pipelines (8c204f9f81). Fixed the four blocking findings of review d5b609bf: T7 commits the i18n stamps; the assist provider is deepseek (no Google); the i18n fan-out translates from the English pivot; dev-autopilot-impact runs for supabase and scripts paths; build-image and preview-build:main declare needs: []. Also: the sql-live-room-cohost check for SQL-LIVE-ROOM-COHOST.yml (services-parity). Tests: pipeline-gen 28/28 (new tests red on the pre-fix files, green after), affected-parity 8/8, services-parity 5/5.
