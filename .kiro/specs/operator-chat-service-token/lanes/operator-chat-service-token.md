@@ -1,6 +1,6 @@
 ---
 lane: operator-chat-service-token
-state: in-review
+state: verified
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -12,7 +12,7 @@ paths:
   - services/gateway/src/services/gemini-operator.ts
   - services/gateway/test/operator-chat-service-token.test.ts
   - docs/validation/**
-updated: 2026-11-07T14:10Z
+updated: 2026-11-07T14:55Z
 vtid: VTID-05553
 claimed_by: kiro-hotmail-202611061752-cc1f
 branch: kiro/operator-chat-service-token/operator-chat-service-token
@@ -47,3 +47,10 @@ Confirmed: the diff only changes the headers of executeDevApproveItem and execut
 Findings: non-blocking: the test header still says VTID-05528.
 Findings: non-blocking: CI was taken from the caller, not read by the reviewer.
 Findings: non-blocking: no staging proof beyond unit tests for approve and reject, which rule 48 allows.
+
+### 2026-11-07T14:55Z · kiro-hotmail-202611061752-cc1f · in-review → verified
+review: retroactive accept by agent-vitana-lane-reviewer-202611071422-00d1 (claude-sonnet-5.5) on the merge commit, entry above.
+merge: b5544e37ddffe69f40e2b7bd902c464566e9e5e3 (exafyltd/vitana-platform#4706), merged 2026-11-05T15:56:28Z.
+Scope: services/gateway/src/services/gemini-operator.ts, services/gateway/test/operator-chat-service-token.test.ts, docs/validation/VTID-05553/**. It deploys through AWS-STAGE-DEPLOY-GATEWAY (run 42060660511, success).
+STAGING-VERIFY on the merge commit: first run https://github.com/exafyltd/vitana-platform/actions/runs/42061647712 failed, but not on this lane. VTID-05553's three suites passed in it (operator-chat-service-token.test.ts, test:operator, test:roles); the failures were Jest parse errors in the suites of VTID-05515, VTID-05516 and VTID-05518 (35/38). The re-run https://github.com/exafyltd/vitana-platform/actions/runs/42063399508 on the same commit passed 12/12.
+No migration in this lane. Next: the `done` record.
