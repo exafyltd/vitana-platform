@@ -1,0 +1,19 @@
+{
+  "vtid": "VTID-05546",
+  "kind": "feature",
+  "paths": [
+    "scripts/eng/deploy/**",
+    "scripts/eng/gitlab-oidc-structure.test.mjs",
+    "scripts/eng/fleet-classes-structure.test.mjs",
+    "infra/gitlab-engineering/ci/tpl-deploy.yml",
+    "infra/gitlab-engineering/terraform/fleet-classes.tf",
+    "infra/gitlab-engineering/host/fleet-manager-install.sh",
+    "infra/gitlab-engineering/RUNBOOK-delivery-aws.md",
+    "scripts/aws/iam/gitlab-oidc-*.json",
+    "scripts/aws/setup-gitlab-oidc.sh",
+    "docs/validation/VTID-05546/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05546/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}
