@@ -1,4 +1,4 @@
-1..47
+1..50
 ok 1 - analyze_orphan_rows() is STABLE, so PostgreSQL itself rejects any write from it
 ok 2 - analyze_orphan_rows() changed no row anywhere
 ok 3 - dev user on the dead tenant is reported as dev_0099 / dev_user_test_data
@@ -33,16 +33,19 @@ ok 31 - bot row with a real tenant is untouched
 ok 32 - unattributable cross-tenant DM -> quarantine
 ok 33 - DM to the bot -> sender tenant
 ok 34 - DM inside the tenant -> sender tenant
-ok 35 - row under the fake 550e8400 tenant is remapped to the owner's tenant
-ok 36 - re-pollution check: no ...0001 row left in memory_facts, chat_messages, user_notifications
-ok 37 - analysis after the move: zero rows left to move in any table
-ok 38 - the run reports per table
-ok 39 - a second run moves nothing
-ok 40 - a row that cannot move is recorded as move_blocked
-ok 41 - and it stays in place (nothing is lost)
-ok 42 - rollback re-inserts the quarantined memory_facts and keeps the remapped one
-ok 43 - rollback puts the remapped row back on its original tenant_id
-ok 44 - rollback restores the chat_messages counts (C1, C3, C4, C5 back under ...0001)
-ok 45 - the bot row with a real tenant is identical after rollback
-ok 46 - rollback clears this lane's quarantine rows
-ok 47 - the bak_* snapshot is kept after rollback
+ok 35 - group message (receiver_id NULL) on the dead tenant -> sender tenant, not NULL and not blocked
+ok 36 - the group message is neither quarantined nor move_blocked
+ok 37 - row under the fake 550e8400 tenant is remapped to the owner's tenant
+ok 38 - re-pollution check: no ...0001 row left in memory_facts, chat_messages, user_notifications
+ok 39 - analysis after the move: zero rows left to move in any table
+ok 40 - the run reports per table
+ok 41 - a second run moves nothing
+ok 42 - a row that cannot move is recorded as move_blocked
+ok 43 - and it stays in place (nothing is lost)
+ok 44 - rollback re-inserts the quarantined memory_facts and keeps the remapped one
+ok 45 - rollback puts the remapped row back on its original tenant_id
+ok 46 - rollback restores the chat_messages counts (C1, C3, C4, C5, C6 back under ...0001)
+ok 47 - rollback restores the group message with receiver_id NULL and its group_id
+ok 48 - the bot row with a real tenant is identical after rollback
+ok 49 - rollback clears this lane's quarantine rows
+ok 50 - the bak_* snapshot is kept after rollback

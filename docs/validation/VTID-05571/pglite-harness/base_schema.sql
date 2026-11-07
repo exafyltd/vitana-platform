@@ -16,8 +16,10 @@ CREATE TABLE public.memory_items (
   source text NOT NULL, content text NOT NULL CHECK (content != ''), content_json jsonb, importance int NOT NULL DEFAULT 10,
   occurred_at timestamptz NOT NULL DEFAULT now(), created_at timestamptz NOT NULL DEFAULT now());
 CREATE TABLE public.chat_messages (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(), tenant_id uuid NOT NULL, sender_id uuid NOT NULL, receiver_id uuid NOT NULL,
-  content text NOT NULL, read_at timestamptz, created_at timestamptz NOT NULL DEFAULT now());
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(), tenant_id uuid NOT NULL, sender_id uuid NOT NULL, receiver_id uuid,
+  group_id uuid, content text NOT NULL, read_at timestamptz, created_at timestamptz NOT NULL DEFAULT now(),
+  -- Matches production (20260525000000_VTID_03089_chat_groups.sql:40-51): a DM has receiver_id, a group message has group_id and receiver_id NULL.
+  CONSTRAINT chat_messages_dm_xor_group CHECK ((receiver_id IS NOT NULL AND group_id IS NULL) OR (receiver_id IS NULL AND group_id IS NOT NULL)));
 CREATE TABLE public.user_notifications (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(), user_id uuid NOT NULL, tenant_id uuid NOT NULL, type text NOT NULL, title text NOT NULL,
   body text, data jsonb DEFAULT '{}', read_at timestamptz, created_at timestamptz NOT NULL DEFAULT now());

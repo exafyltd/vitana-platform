@@ -124,8 +124,12 @@ BEGIN
   v_owner_e := CASE WHEN v_owner IS NULL THEN 'NULL::uuid' ELSE format('t.%I', v_owner) END;
   v_pk_e    := CASE WHEN v_has_id THEN 't.id::text' ELSE 't.ctid::text' END;
   -- A DM is attributable to the sender's tenant only when the other party is the bot or a member of that tenant.
+  -- A NULL peer is not a DM at all (group messages carry receiver_id NULL + group_id, VTID-03089): it is never a
+  -- cross-tenant DM, so it follows the sender's single-membership remap. Without the explicit IS NOT NULL the
+  -- comparison is NULL, the decision still reads 'remap' and target_tenant becomes NULL (VTID-05571 review finding).
   v_cross_e := CASE WHEN v_peer IS NULL THEN 'false' ELSE format(
     $c$(m.only_tenant IS NOT NULL
+        AND t.%1$I IS NOT NULL
         AND t.%1$I <> '00000000-0000-0000-0000-000000000001'::uuid
         AND NOT EXISTS (SELECT 1 FROM public.user_tenants p WHERE p.user_id = t.%1$I AND p.tenant_id = m.only_tenant))$c$,
     v_peer) END;

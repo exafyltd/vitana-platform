@@ -21,7 +21,7 @@ BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET search_path = public, extensions;
 
-SELECT plan(47);
+SELECT plan(50);
 
 -- Fixture ---------------------------------------------------------------------------------------
 CREATE TEMP TABLE t05571_ids (k text PRIMARY KEY, v uuid NOT NULL);
@@ -45,6 +45,8 @@ INSERT INTO t05571_ids VALUES
   ('C3',  '05571000-0000-4000-8000-0000000000c3'),
   ('C4',  '05571000-0000-4000-8000-0000000000c4'),
   ('C5',  '05571000-0000-4000-8000-0000000000c5'),
+  ('C6',  '05571000-0000-4000-8000-0000000000c6'),
+  ('G1',  '05571000-0000-4000-8000-0000000000b1'),  -- a chat group id
   ('N1',  '05571000-0000-4000-8000-0000000000e1'),
   ('FAKE','550e8400-e29b-41d4-a716-446655440000'),
   ('DEVT','00000000-0000-0000-0000-000000000001');
@@ -87,13 +89,16 @@ INSERT INTO public.memory_facts (id, tenant_id, user_id, fact_key, fact_value) V
   (pg_temp.id('F6'), pg_temp.id('TA'),   pg_temp.id('DEV'), 'k3', 'dev in live tenant');
 
 -- chat_messages: C1 bot on the dead tenant, C2 bot with a real tenant, C3 DM to a member of another tenant,
--- C4 DM to the bot, C5 DM inside the owner's tenant.
+-- C4 DM to the bot, C5 DM inside the owner's tenant, C6 a group message (receiver_id NULL, group_id set) on the
+-- dead tenant: a group message is not a DM, so it follows the sender's single-membership remap (never NULL tenant).
 INSERT INTO public.chat_messages (id, tenant_id, sender_id, receiver_id, content) VALUES
   (pg_temp.id('C1'), pg_temp.id('DEVT'), pg_temp.id('BOT'), pg_temp.id('U1'),  'bot on dev tenant'),
   (pg_temp.id('C2'), pg_temp.id('TA'),   pg_temp.id('BOT'), pg_temp.id('U1'),  'bot with real tenant'),
   (pg_temp.id('C3'), pg_temp.id('DEVT'), pg_temp.id('U1'),  pg_temp.id('UC'),  'cross-tenant dm'),
   (pg_temp.id('C4'), pg_temp.id('DEVT'), pg_temp.id('U1'),  pg_temp.id('BOT'), 'dm to bot'),
   (pg_temp.id('C5'), pg_temp.id('DEVT'), pg_temp.id('U1'),  pg_temp.id('U1B'), 'dm in tenant');
+INSERT INTO public.chat_messages (id, tenant_id, sender_id, receiver_id, group_id, content) VALUES
+  (pg_temp.id('C6'), pg_temp.id('DEVT'), pg_temp.id('U1'),  NULL, pg_temp.id('G1'), 'group message on dev tenant');
 
 -- user_notifications: N1 under the fake 550e8400 tenant.
 INSERT INTO public.user_notifications (id, user_id, tenant_id, type, title)
@@ -204,6 +209,10 @@ SELECT is((SELECT tenant_id FROM public.chat_messages WHERE id = pg_temp.id('C2'
 SELECT is(pg_temp.q_reason('chat_messages', pg_temp.id('C3')), 'cross_tenant_dm', 'unattributable cross-tenant DM -> quarantine');
 SELECT is((SELECT tenant_id FROM public.chat_messages WHERE id = pg_temp.id('C4')), pg_temp.id('TA'), 'DM to the bot -> sender tenant');
 SELECT is((SELECT tenant_id FROM public.chat_messages WHERE id = pg_temp.id('C5')), pg_temp.id('TA'), 'DM inside the tenant -> sender tenant');
+SELECT is((SELECT tenant_id FROM public.chat_messages WHERE id = pg_temp.id('C6')), pg_temp.id('TA'),
+  'group message (receiver_id NULL) on the dead tenant -> sender tenant, not NULL and not blocked');
+SELECT is((SELECT count(*) FROM public.mt_orphan_quarantine WHERE source_table = 'chat_messages' AND source_pk = pg_temp.id('C6')::text), 0::bigint,
+  'the group message is neither quarantined nor move_blocked');
 SELECT is((SELECT tenant_id FROM public.user_notifications WHERE id = pg_temp.id('N1')), pg_temp.id('TA'),
   'row under the fake 550e8400 tenant is remapped to the owner''s tenant');
 
@@ -237,8 +246,10 @@ SELECT is((SELECT count(*) FROM public.memory_facts WHERE id IN
   'rollback re-inserts the quarantined memory_facts and keeps the remapped one');
 SELECT is((SELECT tenant_id FROM public.memory_facts WHERE id = pg_temp.id('F2')), pg_temp.id('DEVT'),
   'rollback puts the remapped row back on its original tenant_id');
-SELECT is((SELECT count(*) FROM public.chat_messages WHERE tenant_id = pg_temp.id('DEVT')), 4::bigint,
-  'rollback restores the chat_messages counts (C1, C3, C4, C5 back under ...0001)');
+SELECT is((SELECT count(*) FROM public.chat_messages WHERE tenant_id = pg_temp.id('DEVT')), 5::bigint,
+  'rollback restores the chat_messages counts (C1, C3, C4, C5, C6 back under ...0001)');
+SELECT is((SELECT receiver_id IS NULL AND group_id = pg_temp.id('G1') FROM public.chat_messages WHERE id = pg_temp.id('C6')), true,
+  'rollback restores the group message with receiver_id NULL and its group_id');
 SELECT is((SELECT tenant_id FROM public.chat_messages WHERE id = pg_temp.id('C2')), (SELECT tenant_id FROM t05571_live_before),
   'the bot row with a real tenant is identical after rollback');
 SELECT is((SELECT count(*) FROM public.mt_orphan_quarantine WHERE quarantined_by = 'VTID-05571'), 0::bigint,
