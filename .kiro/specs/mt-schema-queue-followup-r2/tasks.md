@@ -1,13 +1,14 @@
 # Tasks — mt-schema-queue-followup-r2
 
 <!-- lane: migration-queue-rows -->
-## migration-queue-rows — rows for VTID-05575 and VTID-05573 (repo vitana-platform)
+## migration-queue-rows — rows for VTID-05582, VTID-05573 and VTID-05575 (repo vitana-platform)
 
 Allowed paths: `docs/multitenancy/MIGRATION-QUEUE.md`
 
-- [ ] Q1 Add rows 48-50 (VTID-05575) between rows 47 and 51 from the three files on `main`; rollbacks in order 053200, 053100, 053000.
-- [ ] Q2 Add rows 53-56 (VTID-05573) between rows 47 and 48 if PR #4840 is merged; otherwise skip and record in the lane log.
-- [ ] Q3 Replace the "Rows 48-50 are reserved" sentence and add one Notes bullet per VTID (30-day `bak_*` retention, owner approval, drift baseline).
+- [ ] Q1 Add rows 48-49 (VTID-05582) from the two files and rollbacks on `main`.
+- [ ] Q2 Add rows 50-53 (VTID-05573) if PR #4840 is merged; otherwise skip and record in the lane log.
+- [ ] Q3 Add rows 54-56 (VTID-05575); rollbacks in order 053200, 053100, 053000.
+- [ ] Q3b Renumber the VTID-05569 rows 51-52 to 57-58 and fix every reference (notes, row dependencies, row 46 wording); add one Notes bullet per VTID (30-day `bak_*` retention, owner approval, drift baseline).
 - [ ] Q4 Evidence in `docs/validation/<vtid>/` (acceptance, commands.log, scope.json, staging-tests.json).
 
 **Acceptance**
@@ -17,7 +18,7 @@ Allowed paths: `docs/multitenancy/MIGRATION-QUEUE.md`
 - **Surfaces** — docs only; readers are owners and `queue.mjs` consumers.
 - **Locales** — n/a: English-only internal doc.
 - **Accessibility** — n/a: Markdown table.
-- **Contract** — every file name in a row exists under `supabase/migrations/` on `main`; table order equals apply order.
+- **Contract** — every file name in a row exists under `supabase/migrations/` on `main`; table order equals apply order and row numbers increase monotonically down the table; no stale reference to the old rows 51-52 or 48-50 remains.
 - **Staging proof** — not verified on staging: docs only; covering check is the lane's `ls`/`grep` evidence and preflight.
 
 <!-- lane: schema-entries -->

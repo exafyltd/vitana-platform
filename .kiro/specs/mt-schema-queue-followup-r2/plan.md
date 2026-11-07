@@ -31,17 +31,16 @@ learning): each lane touches one file.
 None. Each lane edits exactly one file; no lane reads another's output. All three are independent and run in parallel.
 
 ## Lanes
-- `migration-queue-rows` (file: `docs/multitenancy/MIGRATION-QUEUE.md`): add rows 48-50 for VTID-05575 in table order
-  after row 47 and before row 51, using the 053000 -> 053100 -> 053200 apply order and the rollback order 053200, 053100,
-  053000 (rollback files `docs/validation/VTID-05575/rollback-05*.sql`; verify names on `main`). Add four rows 53-56 for
-  VTID-05573 (`20261102052000/052100/052200/052300`) placed after row 47 and before row 48 in table order, with
-  dependencies on `20261102050000` and `20261102051000`, and a note that apply precondition 1 (legacy readers retired)
-  comes from its acceptance. Row numbers are labels, execution order is table order (row 51 already sits after 47). Update the
-  closing "Rows 48-50 are reserved" note and add a Notes bullet for each VTID. Rows are written from the migration files
-  on `main` for 05575; for 05573, from PR #4840's `acceptance.md`; if #4840 has not merged when the lane builds, the lane
-  adds only the 05575 rows and the 05573 rows land in a one-file follow-up lane added through `_plan`.
-  No row for 05582 is added (out of scope, deferred: the reviewer agent decides whether it is owed; recorded in
-  `decisions.md`).
+- `migration-queue-rows` (file: `docs/multitenancy/MIGRATION-QUEUE.md`): (R1-F1, R1-F2 accepted) after row 47 and before
+  the VTID-05569 rows, in table order = apply order, add: rows 48-49 for VTID-05582 (`20261102051000`, `051100`; files and
+  `docs/validation/VTID-05582/` rollbacks are on `main`); rows 50-53 for VTID-05573 (`20261102052000-052300`, only when
+  PR #4840 is on `main`, else skipped and recorded in the lane log); rows 54-56 for VTID-05575 (`053000` -> `053100` ->
+  `053200`, rollback order 053200, 053100, 053000, files `docs/validation/VTID-05575/rollback-05*.sql`). The existing
+  VTID-05569 rows 51-52 become 57-58 so the sequence stays monotonic in table position; if 05573 is skipped the lane keeps
+  05569 at 57-58 and leaves 50-53 reserved with a note. Every textual reference to the old numbers is updated in the same
+  edit: the "Rows 48-50 are reserved for VTID-05575" and "Rows 51-52 (VTID-05569)" notes, row 52's "#51" dependency, and
+  row 46's "VTID-05582 ... rows" wording (now "rows 48-49"). Dependencies: 05575 rows depend on rows 48 (05582) and 45
+  (05576); 05573 rows on rows 45 and 48. Notes bullet per VTID. A grep for `51`/`52` row references proves none is stale.
 - `schema-entries` (file: `DATABASE_SCHEMA.md`, items 2 and 3 together because they are the same hot file): move line 1110
   up into the notification-categories entry; add a VTID-05575 section (`daily_matches.scope text NOT NULL DEFAULT 'community'`
   with CHECK community | network, nullable `tenant_id`, `idx_daily_matches_scope_tenant (scope, tenant_id)`, functions
