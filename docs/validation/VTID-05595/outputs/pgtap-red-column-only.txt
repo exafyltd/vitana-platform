@@ -1,0 +1,3 @@
+# loaded /projects/sandbox/wt-nh-a/docs/validation/VTID-05595/pglite-harness/base_schema.sql
+# loaded /projects/sandbox/wt-nh-a/supabase/migrations/20261102130000_vtid_05595_health_home_tenant_column.sql
+# SQL ERROR: function "public.health_home_tenant_id(uuid)" does not exist
