@@ -170,7 +170,7 @@ export function buildPipeline(config, repoKey) {
     doc['preview-upload'] = { extends: '.preview-upload', stage: 'preview', tags: [config.runner_tags.deploy], interruptible: false, needs: [{ job: 'preview-build', artifacts: true }], variables: { PREVIEW_SERVICE: svc, PREVIEW_PREFIX: 'mr-$CI_MERGE_REQUEST_IID/' }, environment: { name: 'review/mr-$CI_MERGE_REQUEST_IID', on_stop: 'preview-stop', auto_stop_in: '1 week' }, rules: [NEVER_IN_SHADOW, { if: IF.mr, changes }] };
     doc['preview-stop'] = { extends: '.preview-stop', stage: 'preview', tags: [config.runner_tags.deploy], interruptible: false, needs: [{ job: 'preview-upload', optional: true }], variables: { PREVIEW_SERVICE: svc, PREVIEW_PREFIX: 'mr-$CI_MERGE_REQUEST_IID/' }, environment: { name: 'review/mr-$CI_MERGE_REQUEST_IID', action: 'stop' }, rules: [NEVER_IN_SHADOW, { if: IF.mr, changes, when: 'manual', allow_failure: true }] };
     // Shadow proof (plan §8.1 step 3): the non-production preview path gl-main/ on every main commit.
-    doc['preview-build:main'] = { extends: ['.full-suite', '.preview-build'], stage: 'build', variables: { PREVIEW_SERVICE: svc, PREVIEW_BASE: '/gl-main/' }, rules: [{ if: `${IF.notLive} && ${IF.main}`, changes: { paths: servicePatterns(r, s) } }] };
+    doc['preview-build:main'] = { extends: ['.full-suite', '.preview-build'], stage: 'build', needs: [], variables: { PREVIEW_SERVICE: svc, PREVIEW_BASE: '/gl-main/' }, rules: [{ if: `${IF.notLive} && ${IF.main}`, changes: { paths: servicePatterns(r, s) } }] };
     doc['preview-upload:main'] = { extends: '.preview-upload', stage: 'deploy', tags: [config.runner_tags.deploy], interruptible: false, needs: [{ job: 'preview-build:main', artifacts: true }], variables: { PREVIEW_SERVICE: svc, PREVIEW_PREFIX: 'gl-main/' }, rules: [{ if: `${IF.notLive} && ${IF.main}`, changes: { paths: servicePatterns(r, s) } }] };
     // E2E-PREVIEW-ORB (dispatch only on GitHub): by hand on main, main class (it signs in as the test user), live mode only.
     doc['e2e-preview-orb'] = { extends: '.e2e-preview-orb', stage: 'verify', tags: [config.runner_tags.main], interruptible: false, allow_failure: true, needs: [], rules: [NEVER_IN_SHADOW, { if: IF.main, when: 'manual' }] };
@@ -190,7 +190,7 @@ export function buildPipeline(config, repoKey) {
       DEPLOY_ECS_SERVICE: s.staging.ecs_service,
       DEPLOY_RUNS_FILE: '$CI_PROJECT_DIR/deploy-runs.json',
     };
-    doc[`build-image:${svc}`] = { extends: '.build-image', stage: 'build', tags: [config.runner_tags.main], interruptible: false, variables: { ...deployVars }, rules: [on] };
+    doc[`build-image:${svc}`] = { extends: '.build-image', stage: 'build', needs: [], tags: [config.runner_tags.main], interruptible: false, variables: { ...deployVars }, rules: [on] };
     doc[`push-image:${svc}`] = { extends: '.push-image', stage: 'push', tags: [config.runner_tags.deploy], interruptible: false, needs: [{ job: `build-image:${svc}`, artifacts: true }], variables: { ...deployVars }, rules: [on] };
     const overrides = Object.keys(s.env_overrides || {}).length ? JSON.stringify(s.env_overrides) : null;
     doc[`deploy-staging:${svc}`] = {

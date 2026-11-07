@@ -1402,6 +1402,7 @@ preview-stop:
     - ".full-suite"
     - ".preview-build"
   stage: "build"
+  needs: []
   variables:
     PREVIEW_SERVICE: "community-app"
     PREVIEW_BASE: "/gl-main/"
@@ -1942,6 +1943,7 @@ e2e-preview-orb:
 "build-image:community-app":
   extends: ".build-image"
   stage: "build"
+  needs: []
   tags:
     - "vitana-eng-main"
   interruptible: false
@@ -2251,7 +2253,7 @@ notify-platform:
     - "node scripts/i18n-stamp-source.mjs --locale=en --check --flag || true"
     - "node scripts/translate-keys.mjs --init --provider=\"$I18N_PROVIDER\" --locale=en --source=de --batch=30 || true"
     - "node scripts/i18n-stamp-source.mjs --locale=en"
-    - "for L in $(node scripts/i18n-locales.mjs --list | grep -vx en); do node scripts/i18n-stamp-source.mjs --locale=\"$L\" --check --flag || true; node scripts/translate-keys.mjs --init --provider=\"$I18N_PROVIDER\" --locale=\"$L\" --source=de --batch=30 || true; node scripts/i18n-stamp-source.mjs --locale=\"$L\"; done"
+    - "for L in $(node scripts/i18n-locales.mjs --list | grep -vx en); do node scripts/i18n-stamp-source.mjs --locale=\"$L\" --check --flag || true; node scripts/translate-keys.mjs --init --provider=\"$I18N_PROVIDER\" --locale=\"$L\" --source=en --batch=30 || true; node scripts/i18n-stamp-source.mjs --locale=\"$L\"; done"
     - "assist_finish \"propagate the German source to every language\""
   rules:
     - if: "$DELIVERY_MODE != \"live\""
@@ -2272,7 +2274,7 @@ notify-platform:
     - "node scripts/i18n-stamp-source.mjs --locale=en --check --flag || true"
     - "node scripts/translate-keys.mjs --init --provider=\"$I18N_PROVIDER\" --locale=en --source=de --batch=30 || true"
     - "node scripts/i18n-stamp-source.mjs --locale=en"
-    - "for L in $(node scripts/i18n-locales.mjs --list | grep -vx en); do node scripts/i18n-stamp-source.mjs --locale=\"$L\" --check --flag || true; node scripts/translate-keys.mjs --init --provider=\"$I18N_PROVIDER\" --locale=\"$L\" --source=de --batch=30 || true; node scripts/i18n-stamp-source.mjs --locale=\"$L\"; done"
+    - "for L in $(node scripts/i18n-locales.mjs --list | grep -vx en); do node scripts/i18n-stamp-source.mjs --locale=\"$L\" --check --flag || true; node scripts/translate-keys.mjs --init --provider=\"$I18N_PROVIDER\" --locale=\"$L\" --source=en --batch=30 || true; node scripts/i18n-stamp-source.mjs --locale=\"$L\"; done"
     - "assist_finish \"propagate the German source to every language (nightly safety net)\""
   rules:
     - if: "$DELIVERY_MODE != \"live\""

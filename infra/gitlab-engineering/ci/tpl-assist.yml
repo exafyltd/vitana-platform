@@ -40,8 +40,8 @@
     CENTRAL_DIR: /tmp/vitana-central
     SECRETS_DIR: /tmp/vitana-secrets
     ASSIST_WORKTREE: /tmp/vitana-assist
-    ASSIST_DATA_PATHS: src/i18n
-    I18N_PROVIDER: gemini
+    ASSIST_DATA_PATHS: src/i18n i18n-source-stamps
+    I18N_PROVIDER: deepseek
     GL_ASSIST_ROLE_ARN: arn:aws:iam::472838866351:role/gl-assist
   before_script:
     - '[ "$DELIVERY_MODE" = "live" ] || { echo "DELIVERY_MODE is not live (shadow mode): assist jobs do not run (plan agentic-delivery §3.6 step 8)"; exit 3; }'

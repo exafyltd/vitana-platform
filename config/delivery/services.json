@@ -611,7 +611,7 @@
             "node scripts/i18n-stamp-source.mjs --locale=en --check --flag || true",
             "node scripts/translate-keys.mjs --init --provider=\"$I18N_PROVIDER\" --locale=en --source=de --batch=30 || true",
             "node scripts/i18n-stamp-source.mjs --locale=en",
-            "for L in $(node scripts/i18n-locales.mjs --list | grep -vx en); do node scripts/i18n-stamp-source.mjs --locale=\"$L\" --check --flag || true; node scripts/translate-keys.mjs --init --provider=\"$I18N_PROVIDER\" --locale=\"$L\" --source=de --batch=30 || true; node scripts/i18n-stamp-source.mjs --locale=\"$L\"; done",
+            "for L in $(node scripts/i18n-locales.mjs --list | grep -vx en); do node scripts/i18n-stamp-source.mjs --locale=\"$L\" --check --flag || true; node scripts/translate-keys.mjs --init --provider=\"$I18N_PROVIDER\" --locale=\"$L\" --source=en --batch=30 || true; node scripts/i18n-stamp-source.mjs --locale=\"$L\"; done",
             "assist_finish \"propagate the German source to every language\""
           ]
         },
@@ -624,7 +624,7 @@
             "node scripts/i18n-stamp-source.mjs --locale=en --check --flag || true",
             "node scripts/translate-keys.mjs --init --provider=\"$I18N_PROVIDER\" --locale=en --source=de --batch=30 || true",
             "node scripts/i18n-stamp-source.mjs --locale=en",
-            "for L in $(node scripts/i18n-locales.mjs --list | grep -vx en); do node scripts/i18n-stamp-source.mjs --locale=\"$L\" --check --flag || true; node scripts/translate-keys.mjs --init --provider=\"$I18N_PROVIDER\" --locale=\"$L\" --source=de --batch=30 || true; node scripts/i18n-stamp-source.mjs --locale=\"$L\"; done",
+            "for L in $(node scripts/i18n-locales.mjs --list | grep -vx en); do node scripts/i18n-stamp-source.mjs --locale=\"$L\" --check --flag || true; node scripts/translate-keys.mjs --init --provider=\"$I18N_PROVIDER\" --locale=\"$L\" --source=en --batch=30 || true; node scripts/i18n-stamp-source.mjs --locale=\"$L\"; done",
             "assist_finish \"propagate the German source to every language (nightly safety net)\""
           ]
         }
@@ -1212,7 +1212,8 @@
             "infra/**/*"
           ],
           "checks": [
-            "unit-scripts"
+            "unit-scripts",
+            "dev-autopilot-impact"
           ]
         },
         "ci-scripts": {
@@ -1408,6 +1409,18 @@
           ],
           "checks": [
             "gateway-calendar-regression"
+          ]
+        },
+        "sql-live-room-cohost": {
+          "description": "SQL-LIVE-ROOM-COHOST.yml (its own path filter)",
+          "area": true,
+          "paths": [
+            "supabase/migrations/*live_room_cohost_authz*.sql",
+            "scripts/ci/sql-tests/**/*",
+            ".github/workflows/SQL-LIVE-ROOM-COHOST.yml"
+          ],
+          "checks": [
+            "sql-live-room-cohost"
           ]
         },
         "sql-activity-tiers": {
@@ -1694,7 +1707,9 @@
           "paths": [
             "supabase/**/*"
           ],
-          "checks": []
+          "checks": [
+            "dev-autopilot-impact"
+          ]
         }
       },
       "checks": {
@@ -2068,6 +2083,21 @@
             "minutes": 2,
             "note": "the calendar subset of the gateway Jest suite"
           }
+        },
+        "sql-live-room-cohost": {
+          "kind": "test",
+          "postgres": true,
+          "image": "postgres",
+          "script": [
+            "set -o pipefail\nscripts/ci/sql-tests/run-live-room-cohost-test.sh 2>&1 | tee /tmp/liveroomcohost.log",
+            "grep -q '^PASS vtid-05558 live room cohost' /tmp/liveroomcohost.log"
+          ],
+          "duration": {
+            "fixture": null,
+            "minutes": 1,
+            "note": "one SQL test file against an empty Postgres; not in the duration sample"
+          },
+          "github": "SQL-LIVE-ROOM-COHOST.yml"
         },
         "sql-activity-tiers": {
           "kind": "test",
@@ -2602,6 +2632,13 @@
             "phase-2b-doc-gate"
           ],
           "note": "on GitLab it runs only when its own files change (plan §2.2)"
+        },
+        "SQL-LIVE-ROOM-COHOST.yml": {
+          "fate": "t1",
+          "path_filter": true,
+          "jobs": [
+            "sql-live-room-cohost"
+          ]
         },
         "SQL-ACTIVITY-TIERS.yml": {
           "fate": "t1",

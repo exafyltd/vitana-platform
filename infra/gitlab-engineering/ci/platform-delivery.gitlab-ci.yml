@@ -952,6 +952,9 @@ dev-autopilot-impact:
           - "tasks/**/*"
           - "vcaop/**/*"
           - "services/gateway/**/*"
+          - "scripts/**/*"
+          - "infra/**/*"
+          - "supabase/**/*"
         compare_to: "refs/heads/main"
 
 cicdl-lint-services:
@@ -1480,6 +1483,58 @@ gateway-calendar-regression:
           - "services/gateway/package.json"
           - "supabase/migrations/*calendar*"
           - ".github/workflows/CALENDAR-REGRESSION.yml"
+        compare_to: "refs/heads/main"
+
+sql-live-room-cohost:
+  extends: ".check"
+  stage: "checks"
+  image: "public.ecr.aws/docker/library/postgres:16"
+  services:
+    - name: "public.ecr.aws/docker/library/postgres:16"
+      alias: "postgres"
+      variables:
+        POSTGRES_PASSWORD: "$PGPASSWORD"
+  variables:
+    DELIVERY_CHECK: "sql-live-room-cohost"
+    PGHOST: "postgres"
+    PGPORT: "5432"
+    PGUSER: "postgres"
+    PGPASSWORD: "postgres"
+  script:
+    - "set -o pipefail\nscripts/ci/sql-tests/run-live-room-cohost-test.sh 2>&1 | tee /tmp/liveroomcohost.log"
+    - "grep -q '^PASS vtid-05558 live room cohost' /tmp/liveroomcohost.log"
+  rules:
+    - if: "$CI_PIPELINE_SOURCE == \"merge_request_event\" || $CI_COMMIT_BRANCH =~ /^train\\//"
+      changes:
+        paths:
+          - "packages/**/*"
+          - "libs/**/*"
+          - "config/**/*"
+          - "package.json"
+          - "pnpm-lock.yaml"
+          - "Dockerfile"
+          - "docker-compose.yml"
+          - ".gitignore"
+          - ".gcp-*"
+          - ".mcp.json"
+          - "node_modules/**/*"
+          - "cloudflare/**/*"
+          - "crew_template/**/*"
+          - "data/**/*"
+          - "e2e/**/*"
+          - "gov/**/*"
+          - "integrations/**/*"
+          - "kb/**/*"
+          - "mcp/**/*"
+          - "outputs/**/*"
+          - "routines/**/*"
+          - "second-brain/**/*"
+          - "skills/**/*"
+          - "tasks/**/*"
+          - "vcaop/**/*"
+          - "supabase/migrations/*live_room_cohost_authz*.sql"
+          - "scripts/ci/sql-tests/**/*"
+          - ".github/workflows/SQL-LIVE-ROOM-COHOST.yml"
         compare_to: "refs/heads/main"
 
 sql-activity-tiers:
@@ -2675,6 +2730,9 @@ gate:
     - job: "gateway-calendar-regression"
       optional: true
       artifacts: true
+    - job: "sql-live-room-cohost"
+      optional: true
+      artifacts: true
     - job: "sql-activity-tiers"
       optional: true
       artifacts: true
@@ -3227,6 +3285,27 @@ gate:
   rules:
     - if: "$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == \"push\" || $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == \"schedule\" && $DELIVERY_SCHEDULE == \"nightly\""
 
+"full-suite:sql-live-room-cohost":
+  extends: ".full-suite"
+  stage: "full-suite"
+  image: "public.ecr.aws/docker/library/postgres:16"
+  services:
+    - name: "public.ecr.aws/docker/library/postgres:16"
+      alias: "postgres"
+      variables:
+        POSTGRES_PASSWORD: "$PGPASSWORD"
+  variables:
+    DELIVERY_CHECK: "sql-live-room-cohost"
+    PGHOST: "postgres"
+    PGPORT: "5432"
+    PGUSER: "postgres"
+    PGPASSWORD: "postgres"
+  script:
+    - "set -o pipefail\nscripts/ci/sql-tests/run-live-room-cohost-test.sh 2>&1 | tee /tmp/liveroomcohost.log"
+    - "grep -q '^PASS vtid-05558 live room cohost' /tmp/liveroomcohost.log"
+  rules:
+    - if: "$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == \"push\" || $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == \"schedule\" && $DELIVERY_SCHEDULE == \"nightly\""
+
 "full-suite:sql-activity-tiers":
   extends: ".full-suite"
   stage: "full-suite"
@@ -3672,6 +3751,7 @@ gate:
 "build-image:gateway":
   extends: ".build-image"
   stage: "build"
+  needs: []
   tags:
     - "vitana-eng-main"
   interruptible: false
@@ -3870,6 +3950,7 @@ gate:
 "build-image:erp-bridge":
   extends: ".build-image"
   stage: "build"
+  needs: []
   tags:
     - "vitana-eng-main"
   interruptible: false
@@ -3981,6 +4062,7 @@ gate:
 "build-image:kiro-runner":
   extends: ".build-image"
   stage: "build"
+  needs: []
   tags:
     - "vitana-eng-main"
   interruptible: false
@@ -4092,6 +4174,7 @@ gate:
 "build-image:postgrest-aurora-proxy":
   extends: ".build-image"
   stage: "build"
+  needs: []
   tags:
     - "vitana-eng-main"
   interruptible: false

@@ -490,3 +490,55 @@ test('vitana-v1: PR-GATE preview-e2e on a local vite preview without a session; 
   assert.equal(gen.evaluatePipeline(d.all, MAIN())['e2e-preview-orb'], undefined, 'not in shadow mode');
   assert.equal(gen.evaluatePipeline(d.all, MR(['src/App.tsx']))['e2e-preview-orb'], undefined, 'never on the untrusted class');
 });
+
+// VTID-05550 review round 2 (d5b609bf): pins the four blocking findings.
+import { readFileSync as _readFileSync } from 'node:fs';
+const _root = new URL('../../', import.meta.url);
+const _read = (p) => _readFileSync(new URL(p, _root), 'utf8');
+
+test('T7 assist commits the i18n stamps with the translations (review: stamps dropped)', () => {
+  const tpl = _read('infra/gitlab-engineering/ci/tpl-assist.yml');
+  const m = tpl.match(/ASSIST_DATA_PATHS:\s*(.+)/);
+  assert.ok(m, 'ASSIST_DATA_PATHS is set');
+  assert.ok(m[1].split(/\s+/).includes('src/i18n'), 'translations are committed');
+  assert.ok(m[1].split(/\s+/).includes('i18n-source-stamps'), 'i18n-source-stamps are committed');
+});
+
+test('T7 assist never uses a Google provider (review: AI-27)', () => {
+  const tpl = _read('infra/gitlab-engineering/ci/tpl-assist.yml');
+  const p = tpl.match(/I18N_PROVIDER:\s*(\S+)/);
+  assert.ok(p, 'I18N_PROVIDER is set');
+  assert.notEqual(p[1], 'gemini');
+  assert.ok(!/gemini/i.test(tpl.split('\n').filter((l) => /I18N_PROVIDER/.test(l)).join('\n')), 'no Gemini provider in the assist template');
+});
+
+test('the i18n fan-out translates from the English pivot, not from de (review: wrong source)', () => {
+  const cfg = _read('config/delivery/services.json');
+  const loops = cfg.split('\n').filter((l) => l.includes('for L in') && l.includes('i18n-locales'));
+  assert.ok(loops.length >= 2, 'both i18n assist rules have a fan-out loop');
+  for (const l of loops) {
+    assert.ok(l.includes('--source=en'), 'fan-out source is en');
+    assert.ok(!l.includes('--source=de'), 'fan-out does not read de');
+  }
+});
+
+test('dev-autopilot-impact runs for migrations and scripts, not only gateway (review: blockers never enforced)', () => {
+  const cfg = JSON.parse(_read('config/delivery/services.json'));
+  const svcs = cfg.repositories['vitana-platform'].services;
+  for (const name of ['supabase', 'scripts']) {
+    assert.ok(svcs[name].checks.includes('dev-autopilot-impact'), `${name} selects dev-autopilot-impact`);
+  }
+});
+
+test('build-image and preview-build:main do not wait for the full suite (review: plan §3.6 step 1)', () => {
+  for (const f of ['v1-delivery.gitlab-ci.yml', 'platform-delivery.gitlab-ci.yml']) {
+    const lines = _read(`infra/gitlab-engineering/ci/${f}`).split('\n');
+    const heads = lines.map((l, n) => [l, n]).filter(([l]) => /^"(build-image:[a-z0-9-]+|preview-build:main)":\s*$/.test(l));
+    assert.ok(heads.length >= 1, `${f}: at least one build job is generated (the test must not pass on zero jobs)`);
+    for (const [head, n] of heads) {
+      const block = [];
+      for (let k = n + 1; k < lines.length && /^\s/.test(lines[k]); k++) block.push(lines[k]);
+      assert.ok(block.some((l) => /^\s+needs: \[\]\s*$/.test(l)), `${f}: ${head.replace(/:\s*$/, '')} declares needs: []`);
+    }
+  }
+});
