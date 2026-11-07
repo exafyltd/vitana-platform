@@ -8,6 +8,9 @@ specs:
   - vitana-platform:multi-tenant
   - vitana-platform:mt-jobs
   - vitana-platform:mt-launch
+  - vitana-platform:mt-native-health-r2
+  - vitana-platform:mt-network-r2
+  - vitana-platform:mt-data-cleanup-r2
   - vitana-platform:mt-discover-r2
   - vitana-platform:mt-packs-r2
   - vitana-platform:mt-frontend-brand-r3

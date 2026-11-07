@@ -337,3 +337,5 @@ deferred here on purpose), the gateway's provider abstraction for the Project Ma
 into AWS on a trusted runner, rootless image builds, per-merge-request previews, a batch merge queue, retiring the legacy
 runner, RDS and a second GitLab node.
 <!-- plan:end -->
+
+- `settings-fix` (2026-11-07, late lane): the settings sync wrote secrets through `file:///dev/stdin`, which the AWS CLI cannot read under systemd, so every secret write failed on the GitLab machine. The lane changes only `scripts/eng/gitlab-settings.mjs` and its test to write from a private file. It depends on `settings` (done). PLAN-SPAR allocates its VTID.
