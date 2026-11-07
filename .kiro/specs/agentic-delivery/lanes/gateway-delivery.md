@@ -1,6 +1,6 @@
 ---
 lane: gateway-delivery
-state: verified
+state: done
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -26,7 +26,7 @@ paths:
   - services/gateway/src/navigation/data/nav-embeddings.json
   - scripts/ci/command-hub-ownership-guard.js
   - docs/validation/**
-updated: 2026-11-06T23:40Z
+updated: 2026-11-07T00:45Z
 claimed_by: kiro-exafy-202611062222-c262
 branch: kiro/agentic-delivery/gateway-delivery
 pr: https://github.com/exafyltd/vitana-platform/pull/4764
@@ -83,3 +83,10 @@ non-blocking: AC-27 and outputs/pending-vectors.txt still describe the 18 missin
 non-blocking: the webhook dedupe is in-process memory, not exactly-once across gateway instances.
 Reason for this review: origin/main moved 17 commits; the update merged main (7357f9291e) and main changed services/gateway/src/types/cicd.ts, which this PR also edits, so the earlier accept (62348efb) did not carry over to the merge.
 Next: the land step merges under §7b, then STAGING-VERIFY on the merge commit.
+
+### 2026-11-07T00:45Z · kiro-exafy-202611062222-c262 · verified → done
+merge: ffaf66f695f52b980ada0ad6a9ac03858c5bf901 (PR https://github.com/exafyltd/vitana-platform/pull/4764, squash of head 930d9fcb after the reviewed head 7357f9291e; authority: §7b PM rule, merged by the plan driver's land-guard merge with the accept of agent-vitana-lane-reviewer-202611070012-3a82 on 7357f9291e; checks green on the head).
+STAGING-VERIFY gateway @ ffaf66f6 (VTID-04613 run, workflow run 42319154339): success. Its VTID-05547 suites passed: the Delivery summary and metrics answer JSON 401 without a token, an invalid bearer is refused, the Command Hub serves delivery.js and the bumped app.js/styles.css, and an unsigned GitLab webhook POST answers JSON 401 signature_missing. AWS Stage Deploy Gateway (ECS) on the same commit: success.
+Not done here: production. This lane deploys to staging only; production stays the owner's PUBLISH at Gate 2.
+Open follow-ups for the lane's next owner: AC-27 and pending-vectors.txt still describe the 18 vectors as missing; the webhook dedupe is per instance (review finding).
+Next: none; the lane is done.
