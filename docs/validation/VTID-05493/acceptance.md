@@ -74,6 +74,7 @@ TEST: `outputs/static-pins-green.txt`, `node --test scripts/ci/check-migration-d
 * **pgTAP location.** The lane `paths` do not include `supabase/tests/`; the pgTAP file lives under
   `docs/validation/VTID-05493/pgtap/` (exempt), written in pgTAP syntax. CI's `supabase test db` does not pick it up there.
 * **Static gate location.** The lane `paths` do not include `services/gateway/test/`, so the static pins are a dependency-free `node --test` file under `docs/validation/VTID-05493/` (exempt); CI's gateway Jest does not pick it up.
+* **Staging manifest.** `staging-tests.json` first named the `node --test` static file, which the staging-verify validator refuses (`EXISTING_REF`, `scripts/ci/staging-verify/lib.cjs`), and the gateway Jest config does not collect a file under `docs/validation/`. It now holds one read-only http probe (`GET /api/v1/admin/tenants`, expect 401: the existing admin route is still mounted and auth-gated). The static pins stay a CI/local gate. Validator output: `outputs/staging-manifest-validate.txt`.
 * **Lane file and spec paths.** The lane's `paths` name `supabase/migrations/20261102070300_vtid_*_mt_tenant_deactivate.sql`
   and `…070350_vtid_*_mt_tenant_archive_switch.sql`; the files use VTID-05493 in the glob.
 * **`current_tenant_id()` is not changed.** About 50 RLS policies read it; the claim the gateway reads is set by the
