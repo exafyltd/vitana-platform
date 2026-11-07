@@ -5,9 +5,9 @@ author_seat: exafy
 executor: kiro
 next_actor: kiro
 state: approved
-updated: 2026-11-07T11:24Z
+updated: 2026-11-07T16:04Z
 sparring_record: .kiro/specs/eng-gitlab-m2/sparring/verdict.md
-vtids: [VTID-05536, VTID-05537, VTID-05538, VTID-05539, VTID-05540, VTID-05541, VTID-05542, VTID-05591]
+vtids: [VTID-05536, VTID-05537, VTID-05538, VTID-05539, VTID-05540, VTID-05541, VTID-05542, VTID-05591, VTID-05607]
 ---
 # Handoff — eng-gitlab-m2
 Milestone 2 of the self-hosted GitLab CI (program `engineering-platform`). Plan: `plan.md`.
@@ -36,4 +36,7 @@ unreadable by the AWS CLI under systemd, owner run 2026-11-07 10:33Z). Lane `set
 PLAN-SPAR allocates its VTID; the lane starts after the plan PR is merged.
 
 ### 2026-11-07T11:24Z · ci-plan-spar · approved (late lane VTID)
+Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.
+
+### 2026-11-07T16:04Z · ci-plan-spar · approved (late lane VTID)
 Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.
