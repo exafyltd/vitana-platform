@@ -1,0 +1,15 @@
+# VTID-05555 commands (session kiro-exafy-202611071142-d7ed, read only; nothing run against GitLab or AWS)
+$ git -C vitana-platform worktree add -b kiro/eng-gitlab-m1/gitlab-verify ../wt-glv origin/main   # base 547d643ad7
+$ node --test scripts/eng/gitlab-m1-structure.test.mjs
+# tests 26
+# pass 26
+# fail 0
+$ node --test scripts/eng/free-tier-guard.test.mjs
+# tests 51
+# pass 50
+# fail 0
+# skipped 1
+$ gh api repos/exafyltd/vitana-platform/actions/workflows/TEST-SUITE.yml/runs?branch=main&per_page=3     # -> run 42362988091, 1abd637af3, success
+$ gh api repos/exafyltd/vitana-platform/actions/runs/42362988091/jobs                                       # -> outputs/github-main-runs.txt
+$ gh api repos/exafyltd/vitana-v1/actions/workflows/UNIT-TESTS.yml/runs?branch=main&per_page=3          # -> run 42364988759, 9fe36a8713, success
+$ gh api repos/exafyltd/vitana-v1/actions/runs/42364988759/jobs                                             # -> outputs/github-main-runs.txt
