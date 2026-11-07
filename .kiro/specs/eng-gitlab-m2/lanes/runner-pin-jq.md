@@ -16,7 +16,8 @@ paths:
   - scripts/eng/fleet-structure.test.mjs
   - scripts/eng/free-tier-guard.test.mjs
   - docs/validation/**
-updated: 2026-11-07T20:06Z
+updated: 2026-11-07T20:08Z
+vtid: VTID-05612
 ---
 # Lane: runner-pin-jq (repo vitana-platform)
 Two defects the first runs on the live GitLab showed (eng-gitlab-m1/gitlab-verify, VTID-05555, evidence in
@@ -34,3 +35,6 @@ VTID from PLAN-SPAR (late lane); never by hand.
 ### 2026-11-07T20:06Z · kiro-exafy-202611071142-d7ed · ready
 Lane created by this plan PR (late lane), on the owner's instruction of 2026-11-07 to run the GitLab migration work end to end.
 Depends on fleet and settings (done). Builder: seat exafy.
+
+### 2026-11-07T20:08Z · ci-plan-spar · ready (VTID allocated)
+VTID-05612 allocated after policy approval (converged-auto-v1).
