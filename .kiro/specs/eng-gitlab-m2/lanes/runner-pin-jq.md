@@ -1,6 +1,6 @@
 ---
 lane: runner-pin-jq
-state: executing
+state: done
 next_actor: kiro
 depends_on: [fleet, settings]
 executor: kiro
@@ -16,10 +16,11 @@ paths:
   - scripts/eng/fleet-structure.test.mjs
   - scripts/eng/free-tier-guard.test.mjs
   - docs/validation/**
-updated: 2026-11-07T20:34Z
+updated: 2026-11-07T20:52Z
 vtid: VTID-05612
 claimed_by: kiro-exafy-202611071142-d7ed
 branch: kiro/eng-gitlab-m2/runner-pin-jq
+pr: https://github.com/exafyltd/vitana-platform/pull/4858
 ---
 # Lane: runner-pin-jq (repo vitana-platform)
 Two defects the first runs on the live GitLab showed (eng-gitlab-m1/gitlab-verify, VTID-05555, evidence in
@@ -56,3 +57,14 @@ non-blocking: item 10 holds (exit 1 with no fallback, both packages held, jq bef
 non-blocking: the diff makes no live or production write; the owner-instructed engineering-account changes are only recorded in the evidence.
 non-blocking: validate-pr, check-phase-2b-docs, Collab handoff, pr-gate, change-suite, validate and Phase 2B naming were still running at review time.
 Next: the land step merges under §7b once every check on this head is green
+
+### 2026-11-07T20:52Z · kiro-exafy-202611071142-d7ed · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/4858 (head 5d7650d2c2), reviewed by agent:vitana-lane-reviewer (claude-opus-5.5): accept, 0 blocking.
+
+### 2026-11-07T20:52Z · kiro-exafy-202611071142-d7ed · in-review → verified
+merge: 3e8770f4ea7dfcf8ce95a2646cf1f8bee21c060a (exafyltd/vitana-platform#4858)
+merged: 3e8770f4ea7dfcf8ce95a2646cf1f8bee21c060a  authority: §7b PM rule
+Squash-merged through `land-guard.mjs merge` (review current, checks green, up to date) after a clean merge of main (one lane-file commit of settings-fix).
+
+### 2026-11-07T20:52Z · kiro-exafy-202611071142-d7ed · verified → done
+Closed. Live: the settings sync wrote the new platform.gitlab-ci.yml to vitana/ci-config at 2026-11-07T20:50:19Z (journal of vitana-settings), host checkout at 3e8770f4e. The running fleet manager already has the helper pin (manual, owner instruction, 18:05Z). Proof of jq on GitLab: the next platform main pipeline, recorded by eng-gitlab-m1/gitlab-verify (VTID-05555). Reviewer note carried: outputs/green.txt lacks the free-tier-guard counts (51/52, 1 skipped; CI unit run 42411784060 green).
