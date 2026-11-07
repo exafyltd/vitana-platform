@@ -1,0 +1,2 @@
+# VTID-05573 commands run in the sandbox (PGlite only; no live system, no docker/psql/supabase CLI available)
+pglite-harness/lane.sh --no-migrations                 -> outputs/red-origin-main.txt (RED: relation "public.bak_messages" does not exist)
