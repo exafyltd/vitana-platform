@@ -43,3 +43,16 @@ Re-plan of `mt-m3/provision-erp-monitoring-db`. Versions day-shifted to `2026110
 
 ### 2026-11-02T16:28Z · ci-plan-spar · ready (VTID allocated)
 VTID-05506 allocated after policy approval (converged-auto-v1).
+
+### 2026-11-07T18:45:00Z · agent-vitana-lane-reviewer-202611071840-75fe · review
+review: accept
+head: 892925c24e2d532e55a657fea07201a22bf5354e
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4839
+Findings:
+- none blocking. E1, E2 and E4 are met; all 27 files are in paths; the IS DISTINCT FROM 'true'::jsonb guard is correct; 'erp' is a governed key as tasked; the per-tenant isolation-health function is read-only and sums to the single-number function; the rollbacks restore the VTID-05150 bodies; queue rows 61-62; drift baseline unchanged.
+- non-blocking: check runs unreadable by the reviewer, so the land step must confirm green.
+- non-blocking: the pgTAP under docs/validation/VTID-05506/pgtap is not CI-run; proof is local PGlite plus six mutations.
+- non-blocking: supabase/tests/vtid_05150_provision_tenant.test.sql:144 is not broken today (no workflow runs it), but its feature_flags equality would not hold on a full replay with 20261102141000. It is outside the lane paths and needs a follow-up.
+- non-blocking: the migrations need owner approval per file and database (§7d).
+Next: the land step merges under §7b
