@@ -1,6 +1,6 @@
 ---
 lane: policy-approval-record
-state: verified
+state: done
 next_actor: kiro
 executor: kiro
 seat: hotmail
@@ -11,7 +11,7 @@ paths:
   - scripts/ci/pr-gate/lib.mjs
   - scripts/ci/pr-gate/__tests__/lib.test.mjs
 repos: [exafyltd/vitana-platform]
-updated: 2026-11-07T15:34Z
+updated: 2026-11-07T15:38Z
 vtid: VTID-05593
 claimed_by: kiro-hotmail-202611061752-cc1f
 branch: kiro/pr-gate-policy-sparring-record/policy-approval-record
@@ -46,3 +46,6 @@ PR https://github.com/exafyltd/vitana-platform/pull/4809. Reviewed on head `8b53
 merge: 70970ab14caaa600dc2323f47999cf0d624f57ad (exafyltd/vitana-platform#4809)
 authority: §7b PM rule. Squash merge by land-guard on head `e2ea1bfe57`: the reviewed head `8b53a1299e` plus the review-entry commit. `land-guard review` ok, `land-guard checks` green, PR up to date. No lane code changed after the accept.
 The migrations in this lane are in the repository and NOT applied. Applying them needs the owner's approval per file and database (collaboration.md §7d). Next: STAGING-VERIFY on the merge commit, then the `done` record.
+
+### 2026-11-07T15:38Z · kiro-hotmail-202611061752-cc1f · verified → done
+Closing record: merge 70970ab14caaa600dc2323f47999cf0d624f57ad (#4809) changes no path under services/gateway or the stage deploy workflow (scripts/ci/pr-gate, its tests and docs only), so AWS-STAGE-DEPLOY-GATEWAY and STAGING-VERIFY did not run for it: this change deploys nothing. It is done at merge with green checks (11/11 on the final head). This lane has no migrations; the migration sentence in the verified record above is boilerplate and does not apply. The lane claim is released once this record is on main.
