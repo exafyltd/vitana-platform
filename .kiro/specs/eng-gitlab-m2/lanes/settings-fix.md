@@ -11,7 +11,8 @@ paths:
   - scripts/eng/gitlab-settings.mjs
   - scripts/eng/gitlab-settings.test.mjs
   - docs/validation/**
-updated: 2026-11-07T11:30Z
+updated: 2026-11-07T11:24Z
+vtid: VTID-05591
 ---
 # Lane: settings-fix (repo vitana-platform)
 Fix forward of lane settings. The settings sync (`scripts/eng/gitlab-settings.mjs`) passed each secret value to the AWS CLI through
@@ -23,3 +24,6 @@ the GitLab machine (8 failures in the first owner run, 2026-11-07 10:33Z). A fix
 ## Log
 ### 2026-11-07T11:30Z · kiro-exafy-202611062222-c262 · ready
 Lane created by a plan PR (late lane). Depends on settings (done). Builder: seat exafy.
+
+### 2026-11-07T11:24Z · ci-plan-spar · ready (VTID allocated)
+VTID-05591 allocated after policy approval (converged-auto-v1).
