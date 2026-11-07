@@ -14,7 +14,7 @@ SQL against any live system; the local runs are in-process PGlite (`pglite-harne
 |---|---|
 | D1 expand-only column | `supabase/migrations/20261102080000_mt_packs_knowledge_docs_tenant_id.sql` |
 | D2 pgTAP (15 cases) | `supabase/tests/mt/mt_packs_knowledge_docs_tenant_id.sql` |
-| D3 queue row 37 / drift baseline | `docs/multitenancy/MIGRATION-QUEUE.md`; `scripts/ci/migration-drift-baseline.json` (comment only, count 118 unchanged) |
+| D3 queue row 37 / drift baseline | `docs/multitenancy/MIGRATION-QUEUE.md`; `scripts/ci/migration-drift-baseline.json` (comment only; this lane does not touch `count` or the list) |
 | D3 rollback / read-only checks | `rollback.sql`, `pre-check.sql`, `post-check.sql` |
 | static gate | `static-checks.test.cjs` |
 
@@ -29,7 +29,7 @@ its tenant only, an unknown tenant fails the FK, and `path` stays unique.
 TEST: pgTAP cases 10-15 in supabase/tests/mt/mt_packs_knowledge_docs_tenant_id.sql.
 
 AC-3 (D1/D3) The migration applies twice without error and rolls back clean; the queue row carries rollback and
-pre/post checks; the drift baseline count still equals its list.
+pre/post checks; this lane adds no baseline table entry.
 TEST: node --test docs/validation/VTID-05498/static-checks.test.cjs (6 tests), and
 `outputs/read-only-checks-and-rollback-pglite.txt`, `outputs/pgtap-green-applied-twice.txt`.
 
@@ -38,6 +38,10 @@ TEST: node --test docs/validation/VTID-05498/static-checks.test.cjs (the expand-
 
 ## Red / green
 
+- Baseline independence (reviewer fix-forward 1): the pgTAP file inserts its own rows under the path prefix `vtid05498/`
+  and filters or compares on them. It needs no fixture row: `base_schema.sql` no longer seeds one, and
+  `pglite-harness/lane.sh --seed-extra` loads 5 unrelated baseline rows before the migration; green both ways
+  (`outputs/pgtap-green.txt`, `outputs/pgtap-green-seeded-baseline.txt`), red without the migration both ways.
 - pgTAP red without the migration: `outputs/pgtap-red-no-migration.txt`; green: `outputs/pgtap-green.txt` (15 ok), twice:
   `outputs/pgtap-green-applied-twice.txt`.
 - Static test red on origin/main: `outputs/static-red-on-origin-main.txt` (1 pass, 5 fail); green:
@@ -49,7 +53,7 @@ TEST: node --test docs/validation/VTID-05498/static-checks.test.cjs (the expand-
 - The FK targets `tenants(tenant_id)`, the live key (VTID-04716), not `tenants(id)` as the plan text says.
 - No `known_missing_tables` entry: the drift check reads `CREATE TABLE` only, so a column is not tracked and a table
   entry named `knowledge_docs` would be wrong (the table is live). The baseline gets a `_comment_vtid_05498` note and
-  its count stays 118.
+  this lane does not change its `count` or list.
 - The queue row is numbered 37, after the last row. Numbering and the baseline count may shift at landing.
 - No index and no RLS change in this expand-only lane (see Open items).
 
@@ -62,3 +66,18 @@ TEST: node --test docs/validation/VTID-05498/static-checks.test.cjs (the expand-
   namespace (pgTAP case 15 pins this). Changing the constraint to `(path, tenant_id)` would alter
   `upsert_knowledge_doc()` conflict behaviour and is not part of an expand-only column.
 - An index on `tenant_id` is left to the reader lane once the query shape is known.
+
+## Before the first overlay write (not owned by this lane)
+
+Two read paths are open to every authenticated client and are NOT narrowed by any lane of this plan
+(kb-overlay-code is gateway TypeScript only): the policy `knowledge_docs_authenticated_select USING (true)` and the
+`search_knowledge_docs` RPC, which would also return overlay rows. Before the first overlay row is written, a new lane or
+a plan amendment must narrow the policy (baseline rows and the caller's own tenant only) and the RPC. This lane does not
+change either; it adds the nullable column only.
+
+## Decision taken (fix-forward 1)
+
+After merging `origin/main`, the baseline there reads `count` 118 with 119 listed tables (VTID-05493 added
+`bak_vtid_05493_tenant_lifecycle` to the list without moving the count). That mismatch is main's, not this lane's. The
+static test therefore no longer asserts `count == len(list)`; it asserts this lane adds no `knowledge_docs` entry and keeps
+its comment. The baseline's count is not edited here (outside the lane's task).

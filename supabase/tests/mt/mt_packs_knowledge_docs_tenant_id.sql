@@ -38,27 +38,31 @@ SELECT is((SELECT string_agg(column_name, ',' ORDER BY ordinal_position)
           'every existing column is unchanged and in place');
 
 -- Expand-only: no backfill ---------------------------------------------------------
-SELECT is((SELECT count(*)::int FROM public.knowledge_docs WHERE path = 'kb/instruction-manual/maxina/00-existing.md' AND tenant_id IS NULL),
-          1, 'a pre-existing row stays NULL (no backfill)');
+-- Independent of baseline data: whatever rows exist before this test inserts anything (none on a bare database, many
+-- on a seeded one) must all be NULL after the migration.
+SELECT is((SELECT count(*)::int FROM public.knowledge_docs WHERE tenant_id IS NULL),
+          (SELECT count(*)::int FROM public.knowledge_docs), 'every pre-existing row stays NULL (no backfill)');
 SELECT is((SELECT count(*)::int FROM public.knowledge_docs WHERE tenant_id IS NOT NULL), 0, 'no row carries a tenant before any overlay write');
 
 -- Behaviour ---------------------------------------------------------------------------
-INSERT INTO public.knowledge_docs (title, path, content) VALUES ('Baseline doc', 'kb/instruction-manual/maxina/99-new-baseline.md', 'baseline');
-SELECT is((SELECT tenant_id IS NULL FROM public.knowledge_docs WHERE path = 'kb/instruction-manual/maxina/99-new-baseline.md'),
+INSERT INTO public.knowledge_docs (title, path, content) VALUES ('Baseline doc', 'vtid05498/kb/99-new-baseline.md', 'baseline');
+SELECT is((SELECT tenant_id IS NULL FROM public.knowledge_docs WHERE path = 'vtid05498/kb/99-new-baseline.md'),
           true, 'a baseline insert that omits tenant_id resolves as NULL (old writers keep working)');
 INSERT INTO public.knowledge_docs (title, path, content, tenant_id)
-  VALUES ('Overlay A', 'tenant/a/overlay.md', 'overlay a', (SELECT ta FROM t05498_ids));
+  VALUES ('Overlay A', 'vtid05498/tenant/a/overlay.md', 'overlay a', (SELECT ta FROM t05498_ids));
 SELECT is((SELECT count(*)::int FROM public.knowledge_docs WHERE tenant_id = (SELECT ta FROM t05498_ids)), 1, 'an overlay row for tenant A is stored');
 SELECT is((SELECT count(*)::int FROM public.knowledge_docs WHERE tenant_id = (SELECT tb FROM t05498_ids)), 0, 'tenant B sees no overlay row of tenant A');
-SELECT is((SELECT count(*)::int FROM public.knowledge_docs WHERE tenant_id IS NULL OR tenant_id = (SELECT tb FROM t05498_ids)),
-          2, 'baseline plus tenant B overlay resolves to the baseline rows only');
+-- Filtered to this test's own rows (path prefix vtid05498/), so it does not depend on how many baseline rows exist.
+SELECT is((SELECT count(*)::int FROM public.knowledge_docs
+            WHERE path LIKE 'vtid05498/%' AND (tenant_id IS NULL OR tenant_id = (SELECT tb FROM t05498_ids))),
+          1, 'baseline plus tenant B overlay resolves to this test''s baseline row only (tenant A overlay excluded)');
 SELECT throws_ok(
   $q$INSERT INTO public.knowledge_docs (title, path, content, tenant_id)
-     VALUES ('Bad', 'tenant/x/bad.md', 'x', '00000000-0000-4000-8000-0000000000ff')$q$,
+     VALUES ('Bad', 'vtid05498/tenant/x/bad.md', 'x', '00000000-0000-4000-8000-0000000000ff')$q$,
   '23503', NULL, 'an unknown tenant violates the foreign key');
 SELECT throws_ok(
   $q$INSERT INTO public.knowledge_docs (title, path, content, tenant_id)
-     VALUES ('Dup', 'tenant/a/overlay.md', 'x', NULL)$q$,
+     VALUES ('Dup', 'vtid05498/tenant/a/overlay.md', 'x', NULL)$q$,
   '23505', NULL, 'path stays unique across baseline and overlay (an overlay needs its own path)');
 
 SELECT * FROM finish();

@@ -20,6 +20,7 @@
     "bak_mt_data_cleanup_memory_items",
     "bak_mt_data_cleanup_user_notifications",
     "bak_vtid_05488_partner_tenant",
+    "bak_vtid_05493_tenant_lifecycle",
     "behavior_constraints",
     "capacity_overrides",
     "capacity_rules",

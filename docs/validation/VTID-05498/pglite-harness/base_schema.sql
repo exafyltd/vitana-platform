@@ -18,4 +18,3 @@ CREATE TABLE public.knowledge_docs (
   updated_at  timestamptz DEFAULT now(),
   content_tsv tsvector GENERATED ALWAYS AS (to_tsvector('english', coalesce(title, '') || ' ' || coalesce(content, ''))) STORED
 );
-INSERT INTO public.knowledge_docs (title, path, content) VALUES ('Existing baseline doc', 'kb/instruction-manual/maxina/00-existing.md', 'pre-existing row');
