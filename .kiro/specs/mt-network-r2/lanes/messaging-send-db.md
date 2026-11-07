@@ -1,6 +1,6 @@
 ---
 lane: messaging-send-db
-state: verified
+state: done
 next_actor: kiro
 depends_on: [network-visibility-db]
 executor: kiro
@@ -12,7 +12,7 @@ paths:
   - docs/multitenancy/MIGRATION-QUEUE.md
   - scripts/ci/migration-drift-baseline.json
   - services/gateway/test/mt-network-messaging-send-db.pgtap.test.ts
-updated: 2026-11-07T18:13Z
+updated: 2026-11-07T18:17Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05576
 claimed_by: kiro-hotmail-202611061752-cc1f
@@ -53,3 +53,6 @@ PR https://github.com/exafyltd/vitana-platform/pull/4832. Reviewed on head `9647
 merge: afeb5b7a816d2630271e28e96ef72c0a4d64b645 (exafyltd/vitana-platform#4832)
 authority: §7b PM rule. Squash merge by land-guard on head `c0568fbe81`: the reviewed head `9647397d6a` plus the review-entry commit. `land-guard review` ok, `land-guard checks` green, PR up to date. No lane code changed after the accept.
 The migrations in this lane are in the repository and NOT applied. Applying them needs the owner's approval per file and database (collaboration.md §7d). Next: STAGING-VERIFY on the merge commit, then the `done` record.
+
+### 2026-11-07T18:17Z · kiro-hotmail-202611061752-cc1f · verified → done
+This lane deploys nothing: it adds a migration file (20261102050*) with rollback, pgTAP test and MIGRATION-QUEUE rows, none applied. No staging deploy follows from the merge (afeb5b7a81), so there is no STAGING-VERIFY run for it; it is done at merge with green checks (26 green on head c0568fbe81). Applying the migration needs the owner's approval of the files and the target database (collaboration.md §7d). Non-blocking review notes carried forward: HOLD marker on MIGRATION-QUEUE row 47, guard against network->community laundering by service_role, case-58 coverage.
