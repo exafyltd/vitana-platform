@@ -29,3 +29,11 @@ Re-plan of `mt-network/matching-intent-scope-db`. Moved to the vitana-platform m
 
 ### 2026-11-06T10:10Z · ci-plan-spar · ready (VTID allocated)
 VTID-05575 allocated after policy approval (converged-auto-v1).
+
+### 2026-11-07T18:05Z · agent-vitana-lane-reviewer-202611071801-51ba · review
+review: accept
+head: 0d583d0f22ff988c5261533fb5f858017cba290b
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4833
+Findings: non-blocking: (1) CI check runs on the head could not be read by the reviewer (sandbox denied gh api/run list; gh pr checks needs GraphQL), so the land step must confirm every required check is green on this head; (2) no MIGRATION-QUEUE.md rows (paths exclude the file; the queue position is in acceptance.md) and no DATABASE_SCHEMA.md update (paths exclude it), both must be added by the platform-side step before any RUN-MIGRATION dispatch (§7d); (3) migration-drift-baseline not touched (no new table), confirm the drift check is green; (4) community rows with no tenant_id still accepted and health-reason clean-up not archived, both documented and tracked until matching-discover-scope-v1; (5) evidence is in-process PGlite with a pgTAP shim, CI is authoritative for the real pgTAP run.
+Next: the land step verifies all checks green on this head, then merges under §7b; the platform-side step adds the MIGRATION-QUEUE rows and DATABASE_SCHEMA.md entry before the owner approves the apply.
