@@ -1,6 +1,6 @@
 ---
 lane: approvals-auth-v2
-state: verified
+state: done
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -16,7 +16,7 @@ paths:
   - services/gateway/test/mt-track-s-authz-approvals-auth.test.ts
   - services/gateway/test/orb-tools/developer-tools.test.ts
   - docs/validation/**
-updated: 2026-11-07T13:56Z
+updated: 2026-11-07T14:01Z
 vtid: VTID-05528
 claimed_by: kiro-hotmail-202611061752-cc1f
 branch: kiro/mt-track-s-authz/approvals-auth-v2
@@ -97,3 +97,6 @@ PR https://github.com/exafyltd/vitana-platform/pull/4715. Reviewed on head `d4d8
 merge: ec7f45ccb71c4ce80579a4bcb00f34fe4b5b2f4a (#4715)
 authority: §7b PM rule. Squash merge on PR head `e746fd913e` (2026-11-05T19:40Z): the reviewed head `d4d82e99c8` plus the review-entry commits and merges of origin/main. A diff of the lane paths and docs/validation/VTID-05528 between `d4d82e99c8` and `e746fd913e` is empty, so no lane code changed after the accept.
 Staging: STAGING-VERIFY gateway on `ec7f45ccb7` (https://github.com/exafyltd/vitana-platform/actions/runs/42098033490, 2026-11-05T19:52Z) ended failure with 43 checks PASS and 3 FAIL. The 3 failures are other lanes' suites, Jest parse errors: VTID-05515 (`eng-platform-inventory-readonly.test.ts`), VTID-05518 (`eng-platform-stage-oidc-workflows.test.ts`), VTID-05516 (`eng-platform-oidc-roles.test.ts`). All six VTID-05528 checks passed in that run: three 401 probes (approve, reject and feed approve without a bearer), jest `mt-track-s-authz-approvals-auth` + `developer-tools` + `vtid-05047-cicd-routes-auth`, `test:operator`, `test:roles`. The `deployed-commit artifact ... not a full sha` text in that log is the step's script source, not an error that fired. STAGING-VERIFY gateway on the descendant `05364284a1` (`ec7f45ccb7` is its ancestor, on main) passed on 2026-11-06T13:52Z: https://github.com/exafyltd/vitana-platform/actions/runs/42229039116 (51 checks PASS, 0 FAIL; VTID-05528: the same three 401 probes, jest 154 passed in 3 suites, test:operator 71, test:roles 105). The six lane source and test files are byte-identical in `ec7f45ccb7` and `05364284a1`. Next: the `done` record.
+
+### 2026-11-07T14:01Z · kiro-hotmail-202611061752-cc1f · verified → done
+Closing record: merge ec7f45ccb71c4ce80579a4bcb00f34fe4b5b2f4a (#4715), authority §7b PM rule. STAGING-VERIFY passed on `05364284a1`, a descendant of the merge commit on main, with the VTID-05528 suite green: https://github.com/exafyltd/vitana-platform/actions/runs/42229039116. The run on the merge commit itself (https://github.com/exafyltd/vitana-platform/actions/runs/42098033490) was red only for three other lanes' suites; its VTID-05528 checks were green too (details in the verified entry above). The lane's source and test files are identical in both commits. The Cloudflare and ALB block on `POST /api/v1/approvals/*` is not touched by this lane and stays an owner action. Gate 2 for the Track S slice goes to the owner from the STAGING-VERIFY evidence; this lane is not in production. The lane claim is released once this record is on main.
