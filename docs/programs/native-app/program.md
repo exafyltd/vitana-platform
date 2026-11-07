@@ -30,6 +30,7 @@ specs:
   - vitana-platform:native-wave2-sharing-business
   - vitana-platform:native-wave2-wallet
   - vitana-platform:native-wave2-wallet-r2
+  - vitana-platform:native-wave3-release
 docs:
   - vitana-v1:docs/programs/native-app/NATIVE-APP-PLAN.md
   - vitana-v1:docs/programs/native-app/EXTRACTION-ANALYSIS.md

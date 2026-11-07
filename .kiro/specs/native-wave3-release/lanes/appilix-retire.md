@@ -1,0 +1,26 @@
+---
+lane: appilix-retire
+state: ready
+next_actor: owner
+depends_on: [client-identity-gateway, store-submission-owner, beta-rollout-runbook]
+executor: kiro
+seat: exafyltd
+reviewer_seat: hotmail
+area: frontend
+repos: [exafyltd/vitana-v1]
+updated: 2026-11-07T10:33Z
+---
+# OWNER GATE — retire Appilix push and bridge code after the adoption threshold (not built)
+Plan: `.kiro/specs/native-wave3-release/` — `plan.md` (decision 6) and the `tasks.md` section marked
+`<!-- lane: appilix-retire -->` (tasks A1–A2) are authoritative.
+
+**OWNER GATE — the gate opens only on measured data.** The owner opens it when the gateway count shows ≥95 % of active
+mobile members on `native` for the last ramp step and the crash-free gate holds (program row `NATIVE-APP-PLAN.md:199`).
+Only then does the lane get its `paths`: the Appilix push and bridge code across the 106 files under `vitana-v1:src/`
+that reference Appilix, fixed against `origin/main` at that time. Until then it has no paths and no session edits it.
+
+**Next actor is the owner.** A migration notice for Appilix-only members is required first (`NATIVE-APP-PLAN.md:120`).
+
+## Log
+### 2026-11-07T10:33Z · kiro-exafyltd-202611062257-540e · created → ready (owner)
+Drafted with the plan. `paths` deliberately empty until the owner opens the gate.
