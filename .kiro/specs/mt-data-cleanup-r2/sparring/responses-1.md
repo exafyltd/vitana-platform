@@ -1,0 +1,5 @@
+# Responses to round 1
+
+```json
+[{"finding_id":"R1-F1","disposition":"accepted","rationale":"Premise verified: routes/opportunity-surfacing.ts:75-93 never decodes the bearer token (:81), keeps its own DEV_IDENTITY (:54-57) and returns null outside isDevSandbox() (:92), so POST /surface is 401 in production (:138-145) and dev-sandbox passes …0001 (:87-88). Plan lane 5 now names the route explicitly and takes the suggestion's second option: the engine guard (E2, reject empty/…0001 outside isDevSandbox()) is the backstop, and a new Jest case E4 pins the route's current behaviour (bearer + non-dev-sandbox → 401, d48 engine never called). The route is not edited: wiring it to requireAuth + getTenantContext() (auth-supabase-jwt.ts:635) would enable a route that is 401 in production today, a behaviour change outside this data-cleanup plan; that is left to a separate plan. The route file is already in lane 5's paths (lanes/engine-tenant-fallbacks.md:14), so no lane file changes. Edited plan.md (Fix lane 5, Tests) and tasks.md (E4, Acceptance).","deferred_to":""}]
+```
