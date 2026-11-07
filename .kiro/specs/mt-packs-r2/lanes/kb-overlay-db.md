@@ -1,6 +1,6 @@
 ---
 lane: kb-overlay-db
-state: ready
+state: done
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -12,7 +12,7 @@ paths:
   - supabase/tests/mt/mt_packs_knowledge_docs_tenant_id.sql
   - scripts/ci/migration-drift-baseline.json
   - docs/multitenancy/MIGRATION-QUEUE.md
-updated: 2026-11-02T16:24Z
+updated: 2026-11-07T16:39Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05498
 ---
@@ -76,3 +76,6 @@ reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 PR: https://github.com/exafyltd/vitana-platform/pull/4795
 Findings: non-blocking: CI not independently verified by the reviewer, caller reports 12/12 green; row 40 note on version ordering and apply order is accurate. Otherwise none. Verified: the hand-resolved merge of origin/main 9ab419f9d1 changed only MIGRATION-QUEUE.md; origin/main...HEAD adds only row 40 and its note there (rows 1-39 untouched, no renumbering); the lane's own files are unchanged since 158ac7e7aa apart from the lane-log entry; nothing applied.
 Next: the land step merges under §7b after confirming every check is green on this head and the branch is up to date with latest main
+
+### 2026-11-07T16:39Z · kiro-hotmail-202611061752-cc1f · verified → done
+
