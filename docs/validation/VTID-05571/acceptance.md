@@ -36,19 +36,23 @@ TEST: pgTAP cases 13-18.
 AC-3 `…0099` rows (also in a live tenant) land in `mt_orphan_quarantine` (`dev_user_test_data`) and in no live tenant; a bot
 row with a real tenant is untouched; a bot row with `tenant_id = …0001` is quarantined as `bot_sender_dev_tenant`
 (R3-F1); a single-membership owner (and the fake 550e8400 tenant) is remapped; 0 and 2+ membership owners and an
-unattributable cross-tenant DM are quarantined, never remapped to a live tenant. TEST: pgTAP cases 19-35.
+unattributable cross-tenant DM are quarantined, never remapped to a live tenant.
+TEST: pgTAP cases 19-35.
 
 AC-4 Re-pollution check reads 0 after the move; a second run moves nothing; a row that cannot move is kept and recorded
-as `move_blocked`. TEST: pgTAP cases 36-41; `repollution-check.sql`.
+as `move_blocked`.
+TEST: pgTAP cases 36-41; `repollution-check.sql`.
 
-AC-5 Rollback restores the snapshot row for row and clears the lane's quarantine rows. TEST: pgTAP cases 42-50;
+AC-5 Rollback restores the snapshot row for row and clears the lane's quarantine rows.
+TEST: pgTAP cases 42-50;
 `rollback-check.sql`.
 
 AC-6 Repoint (O8): gate RAISEs on a fixture with the column but zero primary rows, on an empty `user_tenants` while `auth.users` has accounts, and on a partial backfill (< 95% of `auth.users` with a primary row), and passes only on a fresh stack (both empty) or full coverage; for each of the 19 functions a caller
 with one primary row writes that tenant, callers with 0 and with 2 primaries fail closed (`TENANT_UNRESOLVED`; the
 `uuid` writer returns NULL; `d45_acknowledge_window` resolves the tenant before its UPDATE and returns the same JSON error, leaving the window unacknowledged) and write no `…0001` row;
 the five 01127 functions with a NULL `auth.uid()` return `UNAUTHENTICATED` and write no `…0099` row; no body contains
-either literal; ACL, SECURITY mode and search_path are unchanged. TEST: `…writer_repoint.test.sql` cases 1-47.
+either literal; ACL, SECURITY mode and search_path are unchanged.
+TEST: `…writer_repoint.test.sql` cases 1-47.
 
 ## Deviations and limits (honest record)
 
