@@ -176,3 +176,16 @@ scripts/eng/testing/*.test.mjs` (dependency-free; `UNIT.yml` runs them on every 
 - Contract: plan §3.8 and the A1–A4 definitions of plan §9; the report format is documented in the script header.
 - Staging proof: not verified on staging: the rehearsal is the verification. It never touches production, the gateway,
   Supabase or a real repository.
+
+<!-- lane: settings-fix -->
+## Lane `settings-fix` (vitana-platform)
+- [ ] X1 Write the test first: `scripts/eng/gitlab-settings.test.mjs` asserts that every secret write passes `--secret-string file://<path>` (never `file:///dev/stdin`), that the file holds the value during the call, and that the file and its directory are removed after success and after failure. Record it red on `origin/main`.
+- [ ] X2 `scripts/eng/gitlab-settings.mjs` `makeSecrets.put`: write the value to a 0600 file in a 0700 temp directory; use it for `put-secret-value` and `create-secret`; remove it in `finally`. (Fix exists on `kiro/fix/gitlab-settings-stdin`, commit 279b590d7f.)
+- [ ] X3 Evidence: `docs/validation/<VTID>/` with the red and green `node --test` output and the test count.
+
+**Acceptance**
+- Change types: Tooling.
+- Outcome: the settings sync writes its secret values on the GitLab machine, so the drift check of `m2.sh status` clears for the 7 agent tokens and the fleet runner token.
+- States: a secret that does not exist yet is created; an AWS refusal names the step; no value in any argument, log or error.
+- Staging proof: not applicable: deploys nothing. Proven by the unit tests, then by the owner's `m2.sh settings` run (exit 0).
+

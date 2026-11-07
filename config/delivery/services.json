@@ -1,0 +1,2870 @@
+{
+  "schema": "vitana.delivery-services/v1",
+  "$comment": "VTID-05550 (plan agentic-delivery §3.3): one service list drives both repositories' GitLab pipelines. Edit this file, then run `node scripts/eng/pipeline-gen.mjs` and commit the rendered files; `--check` fails on drift. See README.md.",
+  "ci_config": {
+    "project": "vitana/ci-config",
+    "ref": "main"
+  },
+  "runner_tags": {
+    "untrusted": "vitana-eng",
+    "main": "vitana-eng-main",
+    "deploy": "vitana-eng-deploy"
+  },
+  "images": {
+    "node": "public.ecr.aws/docker/library/node:20-bookworm",
+    "postgres": "public.ecr.aws/docker/library/postgres:16",
+    "python": "public.ecr.aws/docker/library/python:3.12-slim"
+  },
+  "image_tools": {
+    "$comment": "The tools on PATH of each image, from its Dockerfile (docker-library: node 20-bookworm = buildpack-deps bookworm, whose scm layer adds git and mercurial, which brings python3, and whose curl layer adds curl; postgres 16 bookworm; python 3.12-slim). No image has jq, a PostgreSQL client besides postgres, a JDK or an Android SDK. pipeline-gen.test.mjs checks every generated job against this list; a job that needs more installs it first (apt, apt_tools, npm_global_tools).",
+    "node": [
+      "node",
+      "npm",
+      "npx",
+      "git",
+      "curl",
+      "python3"
+    ],
+    "postgres": [
+      "psql",
+      "pg_isready"
+    ],
+    "python": [
+      "python3"
+    ]
+  },
+  "apt_tools": {
+    "$comment": "Debian bookworm packages a check may install with `apt` (rendered as the first script line), and the tools each one puts on PATH.",
+    "jq": [
+      "jq"
+    ],
+    "npm": [
+      "npm",
+      "node",
+      "npx"
+    ],
+    "openjdk-17-jdk-headless": [
+      "java"
+    ],
+    "postgresql-client": [
+      "psql",
+      "pg_isready"
+    ]
+  },
+  "npm_global_tools": {
+    "$comment": "Packages a script installs with npm install -g, and their commands.",
+    "@stoplight/spectral-cli": [
+      "spectral"
+    ],
+    "pnpm": [
+      "pnpm"
+    ]
+  },
+  "max_check_minutes": 4,
+  "max_changes_patterns": 50,
+  "repositories": {
+    "vitana-v1": {
+      "gitlab_project": "vitana/vitana-v1",
+      "github_repository": "exafyltd/vitana-v1",
+      "output": "infra/gitlab-engineering/ci/v1-delivery.gitlab-ci.yml",
+      "fixture": "scripts/eng/fixtures/v1-pr-files.json",
+      "collab_handoff": "report-only",
+      "pr_gate_install": "npm",
+      "install": {
+        "npm": {
+          "lockfiles": [
+            "package-lock.json"
+          ],
+          "cache_paths": [
+            ".npm"
+          ],
+          "script": [
+            "npm ci --no-audit --no-fund --prefer-offline"
+          ]
+        },
+        "mobile-npm": {
+          "lockfiles": [
+            "apps/mobile/package-lock.json"
+          ],
+          "cache_paths": [
+            ".npm"
+          ],
+          "script": [
+            "cd apps/mobile",
+            "npm ci --no-audit --no-fund --prefer-offline"
+          ]
+        }
+      },
+      "shared_paths": [
+        "package.json",
+        "package-lock.json",
+        "bun.lock",
+        "tsconfig*.json",
+        "vite.config.ts",
+        "vitest.config.ts",
+        "eslint.config.js",
+        "eslint-patterns.config.js",
+        "eslint-rules/**/*",
+        "tailwind.config.ts",
+        "postcss.config.js"
+      ],
+      "other_paths": [
+        "scripts/**/*",
+        "config/**/*",
+        "tests/**/*",
+        "stories/**/*",
+        "i18n-audit/**/*",
+        "i18n-source-stamps/**/*",
+        "*.{cjs,js,mjs,ts,json,yml,yaml,sh}",
+        ".env*",
+        ".dockerignore",
+        ".gitignore"
+      ],
+      "docs_paths": [
+        "docs/**/*",
+        "*.md",
+        ".github/**/*",
+        ".kiro/**/*",
+        ".claude/**/*",
+        ".repowise/**/*",
+        ".lovable/**/*",
+        ".mcp.json",
+        "reports/**/*",
+        "screenshots/**/*",
+        "mockups/**/*"
+      ],
+      "services": {
+        "community-app": {
+          "description": "the web app: Vite build, Vitest, typecheck and ESLint ratchets (PR-GATE, UNIT-TESTS); staging ECS and the merge-request preview",
+          "paths": [
+            "src/**/*",
+            "public/**/*",
+            "index.html",
+            "Dockerfile",
+            "nginx.conf",
+            "e2e/**/*",
+            ".github/workflows/AWS-STAGE-DEPLOY-FRONTEND.yml",
+            ".github/workflows/PREVIEW-DEPLOY-FRONTEND.yml",
+            ".github/workflows/UNIT-TESTS.yml"
+          ],
+          "checks": [
+            "vitest",
+            "vitest-union",
+            "typecheck",
+            "eslint",
+            "build",
+            "regressions",
+            "realtime-helper",
+            "preview-e2e"
+          ],
+          "image": {
+            "ecr_repository": "vitana/community-app",
+            "context": ".",
+            "dockerfile": "Dockerfile"
+          },
+          "staging": {
+            "ecs_cluster": "Vitana-ECS-Cluster",
+            "ecs_service": "vitana-community-app-staging",
+            "url": "https://preview-aws.vitanaland.com"
+          },
+          "staging_verify": "community-app",
+          "preview": "spa",
+          "env_overrides": {},
+          "assist": []
+        },
+        "mobile": {
+          "description": "the native app and its shared packages (NATIVE-CI; its path filter includes src/** for the mirrored web shell)",
+          "paths": [
+            "apps/mobile/**/*",
+            "packages/**/*",
+            "scripts/native/**/*",
+            "scripts/nav/spa-routes.mjs",
+            "src/**/*",
+            "tailwind.config.ts",
+            "eslint-rules/**/*",
+            "eslint.config.js",
+            ".github/workflows/NATIVE-CI.yml"
+          ],
+          "checks": [
+            "mobile-test",
+            "mobile-bundle",
+            "native-parity",
+            "native-lint",
+            "orb-parity",
+            "android-module"
+          ],
+          "image": null,
+          "staging": null,
+          "staging_verify": null,
+          "preview": null,
+          "env_overrides": {},
+          "assist": []
+        },
+        "edge-functions": {
+          "description": "Supabase edge functions and their config (UNIT-TESTS edge-data-client; deploys stay dispatch-only on GitHub, plan §2.2)",
+          "paths": [
+            "supabase/functions/**/*",
+            "supabase/config.toml"
+          ],
+          "checks": [
+            "edge-data-client"
+          ],
+          "image": null,
+          "staging": null,
+          "staging_verify": null,
+          "preview": null,
+          "env_overrides": {},
+          "assist": []
+        },
+        "sql": {
+          "description": "migrations and their SQL tests (SQL-* workflows, the PR-GATE migration lint)",
+          "paths": [
+            "supabase/migrations/**/*",
+            "scripts/sql-tests/**/*",
+            "scripts/ci/pr-gate/migrations/**/*",
+            ".github/workflows/SQL-CALENDAR-ENTRY-SHARE.yml",
+            ".github/workflows/SQL-EVENT-SHARE-POSTS.yml",
+            ".github/workflows/SQL-GROUP-PARTICIPANTS.yml",
+            ".github/workflows/SQL-THREAD-JOIN-HARDENING.yml"
+          ],
+          "checks": [
+            "sql-tests",
+            "migration-lint"
+          ],
+          "image": null,
+          "staging": null,
+          "staging_verify": null,
+          "preview": null,
+          "env_overrides": {},
+          "assist": []
+        },
+        "i18n": {
+          "description": "locale catalogs and their guards (i18n-check; its path filter includes src/**); the I18N-PROPAGATE assist",
+          "paths": [
+            "src/**/*",
+            "scripts/i18n-*",
+            "scripts/generate-screen-inventory.mjs",
+            "scripts/split-i18n.mjs",
+            "eslint-rules/**/*",
+            "eslint.config.js",
+            "docs/SCREEN_INVENTORY.md",
+            ".github/workflows/i18n-check.yml",
+            "vite.config.ts",
+            "scripts/check-locale-chunking.mjs",
+            "scripts/check-i18n-subscriptions.mjs"
+          ],
+          "checks": [
+            "i18n"
+          ],
+          "image": null,
+          "staging": null,
+          "staging_verify": null,
+          "preview": null,
+          "env_overrides": {},
+          "assist": [
+            "i18n-propagate",
+            "i18n-nightly"
+          ]
+        },
+        "calendar": {
+          "description": "the calendar regression suite (CALENDAR-REGRESSION)",
+          "paths": [
+            "src/components/calendar/**/*",
+            "src/pages/Calendar.tsx",
+            "src/components/UniversalCalendarButton.tsx",
+            "src/components/mobile/MobileAppShell.tsx",
+            "src/components/mobile/SideDrawerNav.tsx",
+            "src/lib/*alendar*",
+            "src/lib/locale-format.ts",
+            "src/lib/cached-access-token*",
+            "src/lib/i18n-toast.ts",
+            "src/lib/orbActivate.ts",
+            "src/hooks/*alendar*",
+            "src/hooks/useGoogleConnect.ts",
+            "src/hooks/useRole.tsx",
+            "src/i18n/index.ts",
+            "src/i18n/*/vcal.json",
+            "src/i18n/*/calendar.json",
+            "package.json",
+            "package-lock.json",
+            "vitest.config.ts",
+            ".github/workflows/CALENDAR-REGRESSION.yml"
+          ],
+          "checks": [
+            "calendar-regression"
+          ],
+          "image": null,
+          "staging": null,
+          "staging_verify": null,
+          "preview": null,
+          "env_overrides": {},
+          "assist": []
+        }
+      },
+      "checks": {
+        "vitest": {
+          "kind": "test",
+          "parallel": 3,
+          "install": "npm",
+          "variables": {
+            "NODE_OPTIONS": "--max-old-space-size=4096"
+          },
+          "script": [
+            "mkdir -p shards",
+            "npx vitest list --filesOnly | sed \"s#^#$CI_PROJECT_DIR/#\" > \"shards/list-${CI_NODE_INDEX}.txt\"",
+            "npx vitest run --shard=\"${CI_NODE_INDEX}/${CI_NODE_TOTAL}\" --reporter=default --reporter=json --outputFile=\"shards/shard-${CI_NODE_INDEX}.json\""
+          ],
+          "artifacts": [
+            "shards/"
+          ],
+          "duration": {
+            "fixture": "UNIT-TESTS.yml#Vitest (jsdom)",
+            "github_shards": 1
+          }
+        },
+        "vitest-union": {
+          "kind": "check",
+          "needs": [
+            "vitest"
+          ],
+          "central": true,
+          "script": [
+            "node \"$CENTRAL_DIR/scripts/ci/test-suite/shard-union.mjs\" --dir shards --shards 3"
+          ]
+        },
+        "typecheck": {
+          "kind": "check",
+          "install": "npm",
+          "script": [
+            "npx tsc --noEmit -p tsconfig.app.json > tsc.txt 2>&1 || true",
+            "node scripts/ci/pr-gate/gate.mjs ratchet-tsc tsc.txt || node -e 'process.exit(require(\"./scripts/ci/pr-gate/config.json\").enforce === true ? 1 : 0)'"
+          ]
+        },
+        "eslint": {
+          "kind": "check",
+          "install": "npm",
+          "script": [
+            "npx eslint . -f json -o eslint.json || true",
+            "node scripts/ci/pr-gate/gate.mjs ratchet-eslint eslint.json || node -e 'process.exit(require(\"./scripts/ci/pr-gate/config.json\").enforce === true ? 1 : 0)'",
+            "node scripts/ci/pr-gate/gate.mjs ratchet-design eslint.json --base \"$GATE_BASE\" --head \"$GATE_HEAD\" || node -e 'process.exit(require(\"./scripts/ci/pr-gate/config.json\").enforce === true ? 1 : 0)'"
+          ]
+        },
+        "build": {
+          "kind": "build",
+          "install": "npm",
+          "variables": {
+            "NODE_OPTIONS": "--max-old-space-size=4096"
+          },
+          "script": [
+            "npm run build"
+          ]
+        },
+        "regressions": {
+          "kind": "check",
+          "install": "npm",
+          "script": [
+            "node scripts/ci/pr-gate/run-regressions.mjs || node -e 'process.exit(require(\"./scripts/ci/pr-gate/config.json\").enforce === true ? 1 : 0)'"
+          ]
+        },
+        "gate-selftest": {
+          "kind": "test",
+          "script": [
+            "node --test scripts/ci/pr-gate/__tests__/*.test.mjs"
+          ],
+          "duration": {
+            "fixture": null,
+            "minutes": 1,
+            "note": "node --test of the gate library tests (a step of PR-GATE.yml#pr-gate, not timed on its own)"
+          },
+          "github": "PR-GATE.yml"
+        },
+        "kiro-steering-selftest": {
+          "kind": "test",
+          "script": [
+            "node --test scripts/ci/kiro-steering/guard.test.cjs"
+          ],
+          "duration": {
+            "fixture": null,
+            "minutes": 1,
+            "note": "node --test of one guard test file (a step of PR-GATE.yml#pr-gate, not timed on its own)"
+          },
+          "github": "PR-GATE.yml"
+        },
+        "preview-e2e": {
+          "kind": "test",
+          "install": "npm",
+          "central": true,
+          "variables": {
+            "STAGING_GATEWAY": "https://preview-aws-gateway.vitanaland.com",
+            "NODE_OPTIONS": "--max-old-space-size=4096"
+          },
+          "script": [
+            "OK=false; for i in 1 2 3; do if [ \"$(curl -s -o /dev/null -w '%{http_code}' \"$STAGING_GATEWAY/alive\")\" = \"200\" ]; then OK=true; break; fi; sleep 30; done",
+            "if [ \"$OK\" != \"true\" ]; then echo \"preview-e2e: neutral: staging gateway unhealthy, e2e deferred to STAGING-VERIFY\"; exit 0; fi",
+            "printf 'VITE_GATEWAY_BASE=%s\\nVITE_GATEWAY_URL=%s/api/v1\\nVITE_APP_VERSION=%s\\nVITE_HEALTH_REAL_DATA=true\\n' \"$STAGING_GATEWAY\" \"$STAGING_GATEWAY\" \"$(git rev-parse --short=12 HEAD)\" > .env.production",
+            "npm run build",
+            "cp \"$CENTRAL_DIR/scripts/ci/staging-verify/staging-guard.ts\" tests/e2e/staging/staging-guard.ts",
+            "npm install --no-save --no-audit --no-fund @playwright/test@1.51.0",
+            "npx playwright install --with-deps chromium",
+            "(npx vite preview --host 127.0.0.1 --port 4173 --strictPort > /tmp/preview.log 2>&1 &)",
+            "for i in $(seq 1 30); do curl -sf http://127.0.0.1:4173/ >/dev/null && break; sleep 1; done",
+            "SPECS=\"tests/e2e/staging/smoke.staging.spec.ts\"; for v in $(printf \"%s\" \"$GATE_TITLE\" | grep -Eo \"VTID-[0-9]{4,5}\" | sort -u || true); do m=\"docs/validation/$v/staging-tests.json\"; if [ -f \"$m\" ]; then SPECS=\"$SPECS $(node -e \"const m=require('./$m');console.log(m.tests.filter(t=>t.kind==='playwright').map(t=>t.spec).join(' '))\")\"; fi; done; echo \"specs (no session, plan §3.4; the signed-in specs run in STAGING-VERIFY): $SPECS\"",
+            "printf \"%s\\n\" \"import { defineConfig, devices } from '@playwright/test';\" \"export default defineConfig({ testDir: process.cwd(), timeout: 90_000, retries: 0, workers: 1, reporter: [['list']], use: { baseURL: 'http://127.0.0.1:4173', ...devices['Desktop Chrome'], screenshot: 'only-on-failure' } });\" > .pr-gate.playwright.config.mjs",
+            "E2E=0; npx playwright test $SPECS --config=.pr-gate.playwright.config.mjs 2>&1 | tee /tmp/e2e.log || E2E=$?",
+            "if [ \"$E2E\" = \"0\" ]; then echo \"preview-e2e: passed ($(grep -Eo '[0-9]+ passed' /tmp/e2e.log | tail -1 || true))\"; exit 0; fi",
+            "ENFORCE=$(node -p \"require('./scripts/ci/pr-gate/config.json').enforce_preview_e2e === true\")",
+            "if [ \"$ENFORCE\" = \"true\" ]; then echo \"preview-e2e: failed\"; exit 1; fi; echo \"preview-e2e (report-only, enforce_preview_e2e is not true) would fail: see the log above\""
+          ],
+          "artifacts": [
+            "test-results/"
+          ],
+          "duration": {
+            "fixture": "PR-GATE.yml#preview-e2e",
+            "github_shards": 1
+          },
+          "github": "PR-GATE.yml"
+        },
+        "realtime-helper": {
+          "kind": "test",
+          "install": "npm",
+          "script": [
+            "node scripts/check-realtime-helper.mjs",
+            "npx vitest run src/integrations/supabase/realtime.test.ts src/integrations/supabase/realtime.call-sites.test.ts"
+          ],
+          "duration": {
+            "fixture": "UNIT-TESTS.yml#Realtime helper (guard + Vitest)",
+            "github_shards": 1
+          }
+        },
+        "edge-data-client": {
+          "kind": "test",
+          "script": [
+            "node scripts/check-edge-data-client.mjs",
+            "npx --yes deno@2 test --no-remote supabase/functions/_shared/data-client.test.ts"
+          ],
+          "duration": {
+            "fixture": "UNIT-TESTS.yml#Edge data client (guard + Deno tests)",
+            "github_shards": 1
+          }
+        },
+        "migration-lint": {
+          "kind": "check",
+          "install": "npm",
+          "postgres": true,
+          "variables": {
+            "PGPASSWORD": "dryrun"
+          },
+          "script": [
+            "apt-get update -qq && apt-get install -y -qq --no-install-recommends postgresql-client >/dev/null",
+            "if git diff --name-only \"$GATE_BASE...$GATE_HEAD\" | grep -q '^supabase/migrations/.*\\.sql$'; then npm install --no-save libpg-query@17 >/dev/null && psql -X -q -v ON_ERROR_STOP=1 -f scripts/ci/pr-gate/migrations/supabase-stub.sql; fi",
+            "node scripts/ci/pr-gate/gate.mjs migrations --base \"$GATE_BASE\" --head \"$GATE_HEAD\" || node -e 'process.exit(require(\"./scripts/ci/pr-gate/config.json\").enforce === true ? 1 : 0)'"
+          ]
+        },
+        "sql-tests": {
+          "kind": "test",
+          "postgres": true,
+          "image": "postgres",
+          "script": [
+            "bash scripts/sql-tests/run-calendar-entry-share-test.sh",
+            "bash scripts/sql-tests/run-event-share-posts-test.sh",
+            "bash scripts/sql-tests/run-group-participants-test.sh",
+            "bash scripts/sql-tests/run-thread-join-hardening-test.sh"
+          ],
+          "duration": {
+            "fixture": null,
+            "minutes": 1,
+            "note": "four SQL workflows, one run each in the fixture window, each under a minute"
+          }
+        },
+        "i18n": {
+          "kind": "check",
+          "install": "npm",
+          "script": [
+            "node scripts/i18n-audit.mjs --report-only",
+            "npm run build",
+            "node scripts/check-locale-chunking.mjs",
+            "node scripts/check-i18n-subscriptions.mjs",
+            "node scripts/check-locale-registry.mjs",
+            "node scripts/i18n-stamp-source.mjs --check-all",
+            "node scripts/i18n-register-check.mjs --all",
+            "node scripts/i18n-long-words.mjs --locale=de --check-only --max-word-length=22",
+            "npm run lint -- --quiet || echo \"lint warnings noted; not blocking in Wave 1\"",
+            "node scripts/generate-screen-inventory.mjs",
+            "git diff --exit-code docs/SCREEN_INVENTORY.md || echo \"warning: docs/SCREEN_INVENTORY.md is out of date. Run npm run i18n:inventory and commit the result.\""
+          ]
+        },
+        "calendar-regression": {
+          "kind": "test",
+          "install": "npm",
+          "script": [
+            "npm run test:calendar",
+            "git diff --exit-code -- src/components/calendar/__regression__/__golden__"
+          ],
+          "duration": {
+            "fixture": "CALENDAR-REGRESSION.yml#Calendar regression (app)",
+            "github_shards": 1
+          }
+        },
+        "mobile-test": {
+          "kind": "test",
+          "install": "mobile-npm",
+          "script": [
+            "npm run deps:check",
+            "npm run gen:i18n",
+            "npm run typecheck",
+            "npm test -- --ci"
+          ],
+          "duration": {
+            "fixture": "NATIVE-CI.yml#apps/mobile — typecheck, test, bundle (iOS + Android JS)",
+            "github_shards": 1,
+            "split": 2
+          }
+        },
+        "mobile-bundle": {
+          "kind": "build",
+          "install": "mobile-npm",
+          "script": [
+            "npm run gen:i18n",
+            "npm run bundle",
+            "npm run bundle:core-probe"
+          ]
+        },
+        "native-parity": {
+          "kind": "test",
+          "install": "npm",
+          "script": [
+            "node --test scripts/native/__tests__/*.test.mjs",
+            "node scripts/native/parity-ledger.mjs --check",
+            "node scripts/native/gen-tokens.mjs --check",
+            "node scripts/native/gen-core-extract.mjs --check",
+            "node scripts/native/core-closure.mjs --check",
+            "node scripts/native/check-shell-pins.mjs"
+          ],
+          "duration": {
+            "fixture": "NATIVE-CI.yml#Parity ledger, core/tokens generators + native script tests",
+            "github_shards": 1
+          }
+        },
+        "native-lint": {
+          "kind": "test",
+          "install": "npm",
+          "script": [
+            "node --test scripts/native/__tests__/eslint/*.test.mjs",
+            "npx eslint apps/mobile packages"
+          ],
+          "duration": {
+            "fixture": "NATIVE-CI.yml#ESLint native override (apps/mobile, packages) + i18n rule tests",
+            "github_shards": 1
+          }
+        },
+        "orb-parity": {
+          "kind": "check",
+          "script": [
+            "TS_VERSION=$(node -p \"require('./package-lock.json').packages['node_modules/typescript'].version\")",
+            "npm install --prefix /tmp/ts --no-save --no-audit --no-fund \"typescript@$TS_VERSION\"",
+            "ln -s /tmp/ts/node_modules node_modules",
+            "git clone --quiet --depth 1 --branch main \"https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/vitana/vitana-platform.git\" /tmp/platform",
+            "node scripts/native/orb-parity.mjs --check --platform-dir /tmp/platform"
+          ]
+        },
+        "android-module": {
+          "kind": "test",
+          "parallel": 2,
+          "install": "mobile-npm",
+          "image": "node",
+          "apt": [
+            "openjdk-17-jdk-headless"
+          ],
+          "cache_paths": [
+            ".android-sdk",
+            ".gradle-home"
+          ],
+          "variables": {
+            "APP_PROFILE": "development",
+            "EXPO_OFFLINE": "0",
+            "ANDROID_HOME": "$CI_PROJECT_DIR/.android-sdk",
+            "ANDROID_SDK_ROOT": "$CI_PROJECT_DIR/.android-sdk",
+            "GRADLE_USER_HOME": "$CI_PROJECT_DIR/.gradle-home"
+          },
+          "script": [
+            "mkdir -p \"$ANDROID_HOME/licenses\" && printf \"\\n24333f8a63b6825ea9c5514f83c2829b004d1fee\\nd56f5187479451eabf01fb78af6dfcb131a6481e\\n\" > \"$ANDROID_HOME/licenses/android-sdk-license\"",
+            "java -version 2>&1 | head -n 1",
+            "npx expo prebuild --platform android --no-install",
+            "CLASSES=$(find modules/vitana-voice/android/src/test -name \"*Test.kt\" -o -name \"*Test.java\" | sed \"s#.*/##; s#\\.[a-z]*$##\" | sort | awk -v n=\"$CI_NODE_TOTAL\" -v i=\"$CI_NODE_INDEX\" '(NR - 1) % n == i - 1')",
+            "if [ -z \"$CLASSES\" ]; then echo \"no test class in shard $CI_NODE_INDEX/$CI_NODE_TOTAL\"; exit 0; fi",
+            "cd android && ./gradlew :vitana-voice:testDebugUnitTest $(for c in $CLASSES; do printf -- \"--tests *.%s \" \"$c\"; done) --no-daemon --stacktrace"
+          ],
+          "duration": {
+            "fixture": "NATIVE-CI.yml#vitana-voice Android module — JVM + Robolectric unit tests",
+            "github_shards": 1
+          }
+        }
+      },
+      "assist_rules": {
+        "i18n-propagate": {
+          "trigger": "merge_request",
+          "paths": [
+            "src/i18n/de/**/*"
+          ],
+          "description": "I18N-PROPAGATE on a merge request that changes the German source: fill every other language, one commit to the branch by bot-assist, before the review accept (plan §3.9)",
+          "script": [
+            "node scripts/i18n-stamp-source.mjs --locale=en --check --flag || true",
+            "node scripts/translate-keys.mjs --init --provider=\"$I18N_PROVIDER\" --locale=en --source=de --batch=30 || true",
+            "node scripts/i18n-stamp-source.mjs --locale=en",
+            "for L in $(node scripts/i18n-locales.mjs --list | grep -vx en); do node scripts/i18n-stamp-source.mjs --locale=\"$L\" --check --flag || true; node scripts/translate-keys.mjs --init --provider=\"$I18N_PROVIDER\" --locale=\"$L\" --source=en --batch=30 || true; node scripts/i18n-stamp-source.mjs --locale=\"$L\"; done",
+            "assist_finish \"propagate the German source to every language\""
+          ]
+        },
+        "i18n-nightly": {
+          "trigger": "schedule",
+          "description": "the 04:00 UTC safety net of I18N-PROPAGATE: propagate what reached main without it, as a merge request by bot-assist",
+          "cron": "0 4 * * *",
+          "script": [
+            "node scripts/i18n-stamp-source.mjs --check-all > /tmp/drift.txt 2>&1 && { echo \"no language is behind the German source\"; exit 0; } || true",
+            "node scripts/i18n-stamp-source.mjs --locale=en --check --flag || true",
+            "node scripts/translate-keys.mjs --init --provider=\"$I18N_PROVIDER\" --locale=en --source=de --batch=30 || true",
+            "node scripts/i18n-stamp-source.mjs --locale=en",
+            "for L in $(node scripts/i18n-locales.mjs --list | grep -vx en); do node scripts/i18n-stamp-source.mjs --locale=\"$L\" --check --flag || true; node scripts/translate-keys.mjs --init --provider=\"$I18N_PROVIDER\" --locale=\"$L\" --source=en --batch=30 || true; node scripts/i18n-stamp-source.mjs --locale=\"$L\"; done",
+            "assist_finish \"propagate the German source to every language (nightly safety net)\""
+          ]
+        }
+      },
+      "notify_platform_paths": [
+        "src/config/admin-navigation.ts",
+        "src/lib/screen-id.ts"
+      ],
+      "github_workflows": {
+        "PR-GATE.yml": {
+          "fate": "t1",
+          "path_filter": false,
+          "jobs": [
+            "lane-scope",
+            "pr-gate-report",
+            "collab-handoff",
+            "gate-selftest",
+            "kiro-steering-selftest",
+            "typecheck",
+            "eslint",
+            "build",
+            "regressions",
+            "migration-lint",
+            "preview-e2e"
+          ],
+          "note": "preview-e2e runs its specs without a session on a local vite preview (plan §3.4); the signed-in specs run after landing in STAGING-VERIFY",
+          "steps": {
+            "pr-gate/Install": [
+              "typecheck",
+              "eslint",
+              "build"
+            ],
+            "pr-gate/Gate self-test": "gate-selftest",
+            "pr-gate/Live PR title": "pr-gate-report",
+            "pr-gate/Kiro steering": [
+              "pr-gate-report",
+              "kiro-steering-selftest"
+            ],
+            "pr-gate/Collab handoff": "collab-handoff",
+            "pr-gate/Scope guard": "pr-gate-report",
+            "pr-gate/Sparring record": "pr-gate-report",
+            "pr-gate/Test-weakening guard": "pr-gate-report",
+            "pr-gate/Red→green proof (fixes)": "pr-gate-report",
+            "pr-gate/Migrations (lint + Postgres parse + rollback dry run)": "migration-lint",
+            "pr-gate/Typecheck ratchet": "typecheck",
+            "pr-gate/ESLint ratchet": "eslint",
+            "pr-gate/Design ratchet": "eslint",
+            "pr-gate/Regression scripts": "regressions",
+            "pr-gate/Build": "build",
+            "pr-gate/Verdict": "pr-gate-report",
+            "preview-e2e/Does this PR touch the app?": "preview-e2e",
+            "preview-e2e/Staging gateway healthy?": "preview-e2e",
+            "preview-e2e/Build against the staging gateway": "preview-e2e",
+            "preview-e2e/Fetch the canonical staging guard": "preview-e2e",
+            "preview-e2e/Run smoke + this change's specs": [
+              "preview-e2e",
+              "staging-verify:community-app"
+            ],
+            "preview-e2e/Verdict": "preview-e2e",
+            "lane-scope/Lane scope": "lane-scope"
+          }
+        },
+        "UNIT-TESTS.yml": {
+          "fate": "t1",
+          "path_filter": false,
+          "jobs": [
+            "vitest",
+            "vitest-union",
+            "edge-data-client",
+            "realtime-helper"
+          ]
+        },
+        "STAGING-TESTS-REQUIRED.yml": {
+          "fate": "t1",
+          "path_filter": false,
+          "jobs": [
+            "change-suite"
+          ]
+        },
+        "i18n-check.yml": {
+          "fate": "t1",
+          "path_filter": true,
+          "jobs": [
+            "i18n"
+          ]
+        },
+        "CALENDAR-REGRESSION.yml": {
+          "fate": "t1",
+          "path_filter": true,
+          "jobs": [
+            "calendar-regression"
+          ]
+        },
+        "NATIVE-CI.yml": {
+          "fate": "t1",
+          "path_filter": true,
+          "jobs": [
+            "mobile-test",
+            "mobile-bundle",
+            "native-parity",
+            "native-lint",
+            "orb-parity",
+            "android-module"
+          ]
+        },
+        "SQL-CALENDAR-ENTRY-SHARE.yml": {
+          "fate": "t1",
+          "path_filter": true,
+          "jobs": [
+            "sql-tests"
+          ]
+        },
+        "SQL-EVENT-SHARE-POSTS.yml": {
+          "fate": "t1",
+          "path_filter": true,
+          "jobs": [
+            "sql-tests"
+          ]
+        },
+        "SQL-GROUP-PARTICIPANTS.yml": {
+          "fate": "t1",
+          "path_filter": true,
+          "jobs": [
+            "sql-tests"
+          ]
+        },
+        "SQL-THREAD-JOIN-HARDENING.yml": {
+          "fate": "t1",
+          "path_filter": true,
+          "jobs": [
+            "sql-tests"
+          ]
+        },
+        "AWS-STAGE-DEPLOY-FRONTEND.yml": {
+          "fate": "t2",
+          "jobs": [
+            "build-image:community-app",
+            "push-image:community-app",
+            "deploy-staging:community-app",
+            "staging-verify:community-app",
+            "record:community-app"
+          ]
+        },
+        "PREVIEW-DEPLOY-FRONTEND.yml": {
+          "fate": "t4",
+          "path_filter": true,
+          "jobs": [
+            "preview-build",
+            "preview-upload"
+          ]
+        },
+        "PREVIEW-TEARDOWN-FRONTEND.yml": {
+          "fate": "t4",
+          "path_filter": false,
+          "jobs": [
+            "preview-stop"
+          ]
+        },
+        "E2E-PREVIEW-ORB.yml": {
+          "fate": "t4",
+          "path_filter": true,
+          "jobs": [
+            "e2e-preview-orb"
+          ],
+          "note": "dispatch only on GitHub; a manual job on main, main class, live mode only (it signs in as the test user, so never on the untrusted class, plan §3.2)"
+        },
+        "I18N-PROPAGATE.yml": {
+          "fate": "t7",
+          "path_filter": true,
+          "jobs": [
+            "assist:i18n-propagate",
+            "assist:i18n-nightly"
+          ]
+        },
+        "SCREENS-CATALOG-TRIGGER.yml": {
+          "fate": "kept",
+          "jobs": [
+            "notify-platform"
+          ],
+          "note": "kept on GitHub until the cut; notify-platform replaces its dispatch in live mode"
+        }
+      }
+    },
+    "vitana-platform": {
+      "gitlab_project": "vitana/vitana-platform",
+      "github_repository": "exafyltd/vitana-platform",
+      "output": "infra/gitlab-engineering/ci/platform-delivery.gitlab-ci.yml",
+      "fixture": "scripts/eng/fixtures/platform-pr-files.json",
+      "collab_handoff": "required",
+      "pr_gate_install": "gateway-npm",
+      "install": {
+        "gateway-pnpm": {
+          "lockfiles": [
+            "services/gateway/pnpm-lock.yaml"
+          ],
+          "cache_paths": [
+            ".pnpm-store"
+          ],
+          "script": [
+            "npm install -g pnpm@9.0.0 >/dev/null",
+            "pnpm config set store-dir \"$CI_PROJECT_DIR/.pnpm-store\"",
+            "cd services/gateway",
+            "pnpm install --frozen-lockfile"
+          ]
+        },
+        "gateway-npm": {
+          "lockfiles": [
+            "services/gateway/package-lock.json"
+          ],
+          "cache_paths": [
+            ".npm"
+          ],
+          "script": [
+            "cd services/gateway",
+            "npm ci --no-audit --no-fund --prefer-offline"
+          ]
+        }
+      },
+      "shared_paths": [
+        "packages/**/*",
+        "libs/**/*",
+        "config/**/*",
+        "package.json",
+        "pnpm-lock.yaml"
+      ],
+      "other_paths": [
+        "Dockerfile",
+        "docker-compose.yml",
+        ".gitignore",
+        ".gcp-*",
+        ".mcp.json",
+        "node_modules/**/*",
+        "cloudflare/**/*",
+        "crew_template/**/*",
+        "data/**/*",
+        "e2e/**/*",
+        "gov/**/*",
+        "integrations/**/*",
+        "kb/**/*",
+        "mcp/**/*",
+        "outputs/**/*",
+        "routines/**/*",
+        "second-brain/**/*",
+        "skills/**/*",
+        "tasks/**/*",
+        "vcaop/**/*"
+      ],
+      "docs_paths": [
+        "docs/**/*",
+        "*.md",
+        ".github/**/*",
+        ".kiro/**/*",
+        ".claude/**/*",
+        ".repowise/**/*"
+      ],
+      "services": {
+        "gateway": {
+          "paths": [
+            "services/gateway/**/*"
+          ],
+          "checks": [
+            "gateway-typecheck",
+            "gateway-jest",
+            "gateway-shard-union",
+            "gateway-build",
+            "oasis-persistence",
+            "dev-autopilot-impact",
+            "cicdl-lint-services",
+            "phase-2b-naming"
+          ],
+          "path_map": true,
+          "description": "the gateway and the Command Hub it serves",
+          "extra_paths": [],
+          "image": {
+            "ecr_repository": "vitana/gateway",
+            "context": "services/gateway",
+            "dockerfile": "services/gateway/Dockerfile"
+          },
+          "staging": {
+            "ecs_cluster": "Vitana-ECS-Cluster",
+            "ecs_service": "vitana-gateway",
+            "url": "https://preview-aws-gateway.vitanaland.com"
+          },
+          "staging_verify": "gateway",
+          "preview": null,
+          "assist": [],
+          "env_overrides": {
+            "PM_AGENT_ENABLED": "false",
+            "DELIVERY_HOST_VITANA_PLATFORM": "gitlab",
+            "DELIVERY_HOST_VITANA_V1": "gitlab"
+          }
+        },
+        "oasis-operator": {
+          "paths": [
+            "services/oasis-operator/**/*"
+          ],
+          "checks": [
+            "cicdl-lint-services",
+            "phase-2b-naming"
+          ],
+          "path_map": true,
+          "description": "GCP-era service, no AWS staging target",
+          "image": null,
+          "staging": null,
+          "staging_verify": null,
+          "preview": null,
+          "env_overrides": {},
+          "assist": []
+        },
+        "oasis-projector": {
+          "paths": [
+            "services/oasis-projector/**/*"
+          ],
+          "checks": [
+            "oasis-projector-test",
+            "cicdl-lint-services",
+            "phase-2b-naming"
+          ],
+          "path_map": true,
+          "description": "TEST-SUITE services job (jest)",
+          "image": null,
+          "staging": null,
+          "staging_verify": null,
+          "preview": null,
+          "env_overrides": {},
+          "assist": []
+        },
+        "vitana-verification-engine": {
+          "paths": [
+            "services/agents/vitana-orchestrator/**/*"
+          ],
+          "checks": [
+            "cicdl-lint-services",
+            "phase-2b-naming"
+          ],
+          "path_map": true,
+          "description": "agent service, no AWS staging target",
+          "image": null,
+          "staging": null,
+          "staging_verify": null,
+          "preview": null,
+          "env_overrides": {},
+          "assist": []
+        },
+        "agents": {
+          "paths": [
+            "services/agents/**/*"
+          ],
+          "checks": [
+            "cicdl-lint-services",
+            "phase-2b-naming",
+            "voice-pipeline-parity"
+          ],
+          "path_map": true,
+          "description": "agents (orb-agent is read by the voice scanners)",
+          "image": null,
+          "staging": null,
+          "staging_verify": null,
+          "preview": null,
+          "env_overrides": {},
+          "assist": []
+        },
+        "mcp": {
+          "paths": [
+            "services/mcp/**/*"
+          ],
+          "checks": [
+            "cicdl-lint-services",
+            "phase-2b-naming"
+          ],
+          "path_map": true,
+          "description": "MCP servers",
+          "image": null,
+          "staging": null,
+          "staging_verify": null,
+          "preview": null,
+          "env_overrides": {},
+          "assist": []
+        },
+        "mcp-gateway": {
+          "paths": [
+            "services/mcp-gateway/**/*"
+          ],
+          "checks": [
+            "cicdl-lint-services",
+            "phase-2b-naming"
+          ],
+          "path_map": true,
+          "description": "MCP gateway",
+          "image": null,
+          "staging": null,
+          "staging_verify": null,
+          "preview": null,
+          "env_overrides": {},
+          "assist": []
+        },
+        "validators": {
+          "paths": [
+            "services/validators/**/*"
+          ],
+          "checks": [
+            "frontend-canonical-source",
+            "cicdl-lint-services",
+            "phase-2b-naming"
+          ],
+          "path_map": true,
+          "description": "validators (the frontend canonical-source validator)",
+          "image": null,
+          "staging": null,
+          "staging_verify": null,
+          "preview": null,
+          "env_overrides": {},
+          "assist": []
+        },
+        "openclaw-bridge": {
+          "paths": [
+            "services/openclaw-bridge/**/*"
+          ],
+          "checks": [
+            "openclaw-bridge-test",
+            "cicdl-lint-services",
+            "phase-2b-naming"
+          ],
+          "path_map": true,
+          "description": "TEST-SUITE services job (vitest)",
+          "image": null,
+          "staging": null,
+          "staging_verify": null,
+          "preview": null,
+          "env_overrides": {},
+          "assist": []
+        },
+        "vaea": {
+          "paths": [
+            "services/vaea/**/*"
+          ],
+          "checks": [
+            "cicdl-lint-services",
+            "phase-2b-naming"
+          ],
+          "path_map": true,
+          "description": "scaffold",
+          "image": null,
+          "staging": null,
+          "staging_verify": null,
+          "preview": null,
+          "env_overrides": {},
+          "assist": []
+        },
+        "erp-bridge": {
+          "paths": [
+            "services/erp-bridge/**/*"
+          ],
+          "checks": [
+            "cicdl-lint-services",
+            "phase-2b-naming"
+          ],
+          "path_map": true,
+          "description": "ERP bridge, staging on ECS",
+          "image": {
+            "ecr_repository": "vitana/erp-bridge",
+            "context": "services/erp-bridge",
+            "dockerfile": "services/erp-bridge/Dockerfile"
+          },
+          "staging": {
+            "ecs_cluster": "Vitana-ECS-Cluster",
+            "ecs_service": "vitana-erp-bridge",
+            "url": null
+          },
+          "staging_verify": null,
+          "preview": null,
+          "env_overrides": {},
+          "assist": []
+        },
+        "kiro-runner": {
+          "paths": [
+            "services/kiro-runner/**/*"
+          ],
+          "checks": [
+            "kiro-runner-test",
+            "cicdl-lint-services",
+            "phase-2b-naming"
+          ],
+          "path_map": true,
+          "description": "Kiro runner, staging on ECS (AWS-STAGE-DEPLOY-KIRO-RUNNER also builds it on a pull request)",
+          "image": {
+            "ecr_repository": "vitana/kiro-runner",
+            "context": "services/kiro-runner",
+            "dockerfile": "services/kiro-runner/Dockerfile"
+          },
+          "staging": {
+            "ecs_cluster": "Vitana-ECS-Cluster",
+            "ecs_service": "vitana-kiro-runner",
+            "url": null
+          },
+          "staging_verify": null,
+          "preview": null,
+          "env_overrides": {},
+          "assist": []
+        },
+        "postgrest-aurora-proxy": {
+          "description": "PostgREST proxy, staging on ECS; not in config/service-path-map.json (see README)",
+          "path_map": false,
+          "paths": [
+            "services/postgrest-aurora-proxy/**/*"
+          ],
+          "checks": [
+            "cicdl-lint-services",
+            "phase-2b-naming"
+          ],
+          "image": {
+            "ecr_repository": "vitana/postgrest-aurora-proxy",
+            "context": "services/postgrest-aurora-proxy",
+            "dockerfile": "services/postgrest-aurora-proxy/Dockerfile"
+          },
+          "staging": {
+            "ecs_cluster": "Vitana-ECS-Cluster",
+            "ecs_service": "vitana-postgrest-aurora-proxy",
+            "url": null
+          },
+          "staging_verify": null,
+          "preview": null,
+          "env_overrides": {},
+          "assist": []
+        },
+        "realtime-aurora": {
+          "description": "not in config/service-path-map.json; no staging deploy workflow today",
+          "path_map": false,
+          "paths": [
+            "services/realtime-aurora/**/*"
+          ],
+          "checks": [
+            "cicdl-lint-services",
+            "phase-2b-naming"
+          ],
+          "image": null,
+          "staging": null,
+          "staging_verify": null,
+          "preview": null,
+          "env_overrides": {},
+          "assist": []
+        },
+        "vcaop": {
+          "description": "VCAOP (TEST-SUITE services job, VCAOP-GUARDRAILS-CI); not in config/service-path-map.json",
+          "path_map": false,
+          "paths": [
+            "services/vcaop/**/*",
+            ".github/workflows/VCAOP-GUARDRAILS-CI.yml"
+          ],
+          "checks": [
+            "vcaop-test",
+            "vcaop-guardrails",
+            "cicdl-lint-services",
+            "phase-2b-naming"
+          ],
+          "image": null,
+          "staging": null,
+          "staging_verify": null,
+          "preview": null,
+          "env_overrides": {},
+          "assist": []
+        },
+        "vcaop-mcp": {
+          "description": "not in config/service-path-map.json",
+          "path_map": false,
+          "paths": [
+            "services/vcaop-mcp/**/*"
+          ],
+          "checks": [
+            "cicdl-lint-services",
+            "phase-2b-naming"
+          ],
+          "image": null,
+          "staging": null,
+          "staging_verify": null,
+          "preview": null,
+          "env_overrides": {},
+          "assist": []
+        },
+        "scripts": {
+          "description": "repository scripts: every dependency-free script test (UNIT), the CI script tests",
+          "area": true,
+          "paths": [
+            "scripts/**/*",
+            "infra/**/*"
+          ],
+          "checks": [
+            "unit-scripts",
+            "dev-autopilot-impact"
+          ]
+        },
+        "ci-scripts": {
+          "description": "CI-SCRIPTS-TEST",
+          "area": true,
+          "paths": [
+            "scripts/ci/test-suite/**/*",
+            "scripts/ci/plan-spar-slot/**/*",
+            "scripts/collab/plan-driver.mjs",
+            "scripts/collab/plan-driver.test.mjs",
+            "scripts/collab/queue.mjs",
+            ".github/workflows/TEST-SUITE.yml",
+            ".github/workflows/TEST-SUITE-RERUN.yml",
+            ".github/workflows/PLAN-SPAR.yml",
+            ".github/workflows/CI-SCRIPTS-TEST.yml"
+          ],
+          "checks": [
+            "ci-scripts-test"
+          ]
+        },
+        "test-suite-config": {
+          "description": "TEST-SUITE: its path filter is services/** plus its own files, and a run tests the gateway and the three service suites; CICDL-CORE-LINT-SERVICES has the same services/** filter",
+          "area": true,
+          "paths": [
+            "services/**/*",
+            ".github/workflows/TEST-SUITE.yml",
+            "scripts/ci/test-suite/**/*"
+          ],
+          "checks": [
+            "gateway-jest",
+            "gateway-shard-union",
+            "oasis-projector-test",
+            "openclaw-bridge-test",
+            "vcaop-test",
+            "cicdl-lint-services"
+          ]
+        },
+        "gateway-ci-config": {
+          "description": "CICDL-GATEWAY-CI and OASIS-PERSISTENCE path filters outside services/gateway (OASIS-PERSISTENCE runs the gateway typecheck, tests and build)",
+          "area": true,
+          "paths": [
+            "prisma/**/*",
+            "database/**/*",
+            "scripts/report.sh",
+            ".github/workflows/CICDL-GATEWAY-CI.yml",
+            ".github/workflows/OASIS-PERSISTENCE.yml",
+            ".github/workflows/oasis-persistence.yml"
+          ],
+          "checks": [
+            "gateway-typecheck",
+            "oasis-persistence",
+            "gateway-jest",
+            "gateway-shard-union",
+            "gateway-build"
+          ]
+        },
+        "validator": {
+          "description": "VALIDATOR-CHECK (its path filter includes docs/validation/**)",
+          "area": true,
+          "paths": [
+            "services/gateway/src/**/*",
+            "services/gateway/dist/**/*",
+            "services/gateway/openapi/**/*",
+            "services/gateway/test/**/*",
+            "docs/validation/**/*"
+          ],
+          "checks": [
+            "validator-check"
+          ]
+        },
+        "command-hub": {
+          "description": "COMMAND-HUB-GUARDRAILS",
+          "area": true,
+          "paths": [
+            "services/gateway/src/frontend/command-hub/**/*",
+            "services/gateway/dist/frontend/command-hub/**/*"
+          ],
+          "checks": [
+            "command-hub-guardrails"
+          ]
+        },
+        "frontend-canonical": {
+          "description": "ENFORCE-FRONTEND-CANONICAL-SOURCE runs only when its own files change (plan §2.2)",
+          "area": true,
+          "paths": [
+            "services/gateway/src/frontend/**/*",
+            "services/validators/frontend-canonical-source.js",
+            ".github/workflows/ENFORCE-FRONTEND-CANONICAL-SOURCE.yml"
+          ],
+          "checks": [
+            "frontend-canonical-source"
+          ]
+        },
+        "phase-2b-naming": {
+          "description": "PHASE-2B-NAMING-ENFORCEMENT runs only when its own files change (plan §2.2): workflow and service file names",
+          "area": true,
+          "paths": [
+            ".github/workflows/**/*",
+            "services/**/*"
+          ],
+          "checks": [
+            "phase-2b-naming"
+          ]
+        },
+        "phase-2b-docs": {
+          "description": "PHASE-2B-DOC-GATE runs only when its own files change (plan §2.2)",
+          "area": true,
+          "paths": [
+            "phase_2b/**/*",
+            ".github/workflows/PHASE-2B-DOC-GATE.yml"
+          ],
+          "checks": [
+            "phase-2b-doc-gate"
+          ]
+        },
+        "openapi": {
+          "description": "CICDL-CORE-OPENAPI-ENFORCE",
+          "area": true,
+          "paths": [
+            "specs/**/*.yml",
+            "specs/**/*.yaml",
+            "packages/openapi/**/*.yml",
+            "packages/openapi/**/*.yaml"
+          ],
+          "checks": [
+            "openapi-enforce"
+          ]
+        },
+        "aurora-i18n": {
+          "description": "AURORA-I18N-INTEGRATION",
+          "area": true,
+          "paths": [
+            "services/gateway/src/services/db-i18n/**/*",
+            "services/gateway/src/scripts/seed-db-i18n.ts",
+            "services/gateway/test/db-i18n/**/*",
+            ".github/workflows/AURORA-I18N-INTEGRATION.yml"
+          ],
+          "checks": [
+            "aurora-i18n-integration"
+          ]
+        },
+        "aurora-privilege": {
+          "description": "AURORA-PRIVILEGE-PARITY-UNIT",
+          "area": true,
+          "paths": [
+            "scripts/aws/aurora-privilege-parity*",
+            "scripts/aws/taskdef-data-backend.py",
+            "scripts/aws/test/**/*",
+            ".github/workflows/AURORA-PRIVILEGE-PARITY-UNIT.yml"
+          ],
+          "checks": [
+            "aurora-privilege-parity"
+          ]
+        },
+        "voice": {
+          "description": "VOICE-PIPELINE-PARITY-SCANNER, VOICE-TOOLS-MANIFEST-RECONCILE, ORB-TOOLS-LIFT-SCANNER",
+          "area": true,
+          "paths": [
+            "voice-pipeline-spec/**/*",
+            "services/gateway/src/routes/orb-live.ts",
+            "services/agents/orb-agent/**/*",
+            "services/gateway/src/services/orb-tools-shared.ts",
+            "services/gateway/src/services/tool-manifest.json",
+            "services/agents/orb-agent/src/orb_agent/tools.py",
+            "scripts/voice-tools-manifest-reconcile.mjs",
+            "scripts/orb-tools-lift-scanner.mjs",
+            ".github/workflows/voice-pipeline-parity-scanner.yml",
+            ".github/workflows/VOICE-TOOLS-MANIFEST-RECONCILE.yml",
+            ".github/workflows/ORB-TOOLS-LIFT-SCANNER.yml"
+          ],
+          "checks": [
+            "voice-pipeline-parity",
+            "voice-tools-manifest",
+            "orb-tools-lift"
+          ]
+        },
+        "gateway-calendar": {
+          "description": "CALENDAR-REGRESSION (gateway)",
+          "area": true,
+          "paths": [
+            "services/gateway/src/**/*calendar*",
+            "services/gateway/src/**/*calendar*/**/*",
+            "services/gateway/src/services/calendar-*.ts",
+            "services/gateway/src/services/connected-apps/**/*",
+            "services/gateway/src/services/guide/user-timezone.ts",
+            "services/gateway/src/connectors/productivity/**/*",
+            "services/gateway/src/i18n/**/*",
+            "services/gateway/test/calendar/**/*",
+            "services/gateway/test/**/*calendar*",
+            "services/gateway/package.json",
+            "supabase/migrations/*calendar*",
+            ".github/workflows/CALENDAR-REGRESSION.yml"
+          ],
+          "checks": [
+            "gateway-calendar-regression"
+          ]
+        },
+        "sql-live-room-cohost": {
+          "description": "SQL-LIVE-ROOM-COHOST.yml (its own path filter)",
+          "area": true,
+          "paths": [
+            "supabase/migrations/*live_room_cohost_authz*.sql",
+            "scripts/ci/sql-tests/**/*",
+            ".github/workflows/SQL-LIVE-ROOM-COHOST.yml"
+          ],
+          "checks": [
+            "sql-live-room-cohost"
+          ]
+        },
+        "sql-activity-tiers": {
+          "description": "SQL-ACTIVITY-TIERS.yml (its own path filter)",
+          "paths": [
+            "supabase/migrations/*activity_tiers*.sql",
+            "scripts/ci/sql-tests/**/*",
+            ".github/workflows/SQL-ACTIVITY-TIERS.yml"
+          ],
+          "checks": [
+            "sql-activity-tiers"
+          ],
+          "area": true
+        },
+        "sql-auth-bridge": {
+          "description": "SQL-AUTH-BRIDGE.yml (its own path filter)",
+          "paths": [
+            "scripts/aws/aurora-cutover-auth-bridge.sql",
+            "scripts/aws/test/auth-bridge.sh",
+            "scripts/aws/test/auth-bridge/**/*",
+            "scripts/aurora/migrations/0001_auth_shim.sql",
+            ".github/workflows/SQL-AUTH-BRIDGE.yml"
+          ],
+          "checks": [
+            "sql-auth-bridge"
+          ],
+          "area": true
+        },
+        "sql-community-event-calendar": {
+          "description": "SQL-COMMUNITY-EVENT-CALENDAR.yml (its own path filter)",
+          "paths": [
+            "supabase/migrations/*vtid_04915*.sql",
+            "supabase/migrations/*vtid_04321*.sql",
+            "scripts/ci/sql-tests/*community-event-calendar*",
+            ".github/workflows/SQL-COMMUNITY-EVENT-CALENDAR.yml"
+          ],
+          "checks": [
+            "sql-community-event-calendar"
+          ],
+          "area": true
+        },
+        "sql-companion-wiring": {
+          "description": "SQL-COMPANION-WIRING.yml (its own path filter)",
+          "paths": [
+            "supabase/migrations/*companion_wiring*.sql",
+            "scripts/ci/sql-tests/**/*",
+            ".github/workflows/SQL-COMPANION-WIRING.yml"
+          ],
+          "checks": [
+            "sql-companion-wiring"
+          ],
+          "area": true
+        },
+        "sql-erase-user-data": {
+          "description": "SQL-ERASE-USER-DATA.yml (its own path filter)",
+          "paths": [
+            "supabase/migrations/*erase_user_data*.sql",
+            "scripts/ci/sql-tests/**/*",
+            ".github/workflows/SQL-ERASE-USER-DATA.yml"
+          ],
+          "checks": [
+            "sql-erase-user-data"
+          ],
+          "area": true
+        },
+        "sql-health-sources": {
+          "description": "SQL-HEALTH-SOURCES.yml (its own path filter)",
+          "paths": [
+            "supabase/migrations/*health_sources*.sql",
+            "supabase/migrations/*user_integrations*.sql",
+            "supabase/migrations/*erase_user_data*.sql",
+            "supabase/migrations/20260417000000_vtid_02100_connector_framework.sql",
+            "supabase/migrations/20260417000100_vtid_02100_connector_registry_seed.sql",
+            "supabase/migrations/20260417010000_vtid_02100_connector_registry_update.sql",
+            "supabase/migrations/20260423200000_vitana_integrations_v1.sql",
+            "scripts/ci/sql-tests/**/*",
+            ".github/workflows/SQL-HEALTH-SOURCES.yml"
+          ],
+          "checks": [
+            "sql-health-sources"
+          ],
+          "area": true
+        },
+        "sql-health-store": {
+          "description": "SQL-HEALTH-STORE.yml (its own path filter)",
+          "paths": [
+            "supabase/migrations/*health_store*.sql",
+            "supabase/migrations/*erase_user_data*.sql",
+            "scripts/ci/sql-tests/**/*",
+            ".github/workflows/SQL-HEALTH-STORE.yml"
+          ],
+          "checks": [
+            "sql-health-store"
+          ],
+          "area": true
+        },
+        "sql-index-movements": {
+          "description": "SQL-INDEX-MOVEMENTS.yml (its own path filter)",
+          "paths": [
+            "supabase/migrations/*index_movements*.sql",
+            "scripts/ci/sql-tests/**/*",
+            ".github/workflows/SQL-INDEX-MOVEMENTS.yml"
+          ],
+          "checks": [
+            "sql-index-movements"
+          ],
+          "area": true
+        },
+        "sql-live-room-calendar": {
+          "description": "SQL-LIVE-ROOM-CALENDAR.yml (its own path filter)",
+          "paths": [
+            "supabase/migrations/*vtid_04965*.sql",
+            "scripts/ci/sql-tests/*live-room-calendar*",
+            ".github/workflows/SQL-LIVE-ROOM-CALENDAR.yml"
+          ],
+          "checks": [
+            "sql-live-room-calendar"
+          ],
+          "area": true
+        },
+        "sql-live-room-host-calendar": {
+          "description": "SQL-LIVE-ROOM-HOST-CALENDAR.yml (its own path filter)",
+          "paths": [
+            "supabase/migrations/*vtid_04976*.sql",
+            "supabase/migrations/*vtid_04965*.sql",
+            "scripts/ci/sql-tests/*live-room-host-calendar*",
+            ".github/workflows/SQL-LIVE-ROOM-HOST-CALENDAR.yml"
+          ],
+          "checks": [
+            "sql-live-room-host-calendar"
+          ],
+          "area": true
+        },
+        "sql-memory-functions-migrate-revoke": {
+          "description": "SQL-MEMORY-FUNCTIONS-MIGRATE-REVOKE.yml (its own path filter)",
+          "paths": [
+            "supabase/migrations/*_vtid_05125_memory_functions_revoke_migrate.sql",
+            "scripts/ci/sql-tests/run-memory-functions-migrate-revoke-test.sh",
+            ".github/workflows/SQL-MEMORY-FUNCTIONS-MIGRATE-REVOKE.yml"
+          ],
+          "checks": [
+            "sql-memory-functions-migrate-revoke"
+          ],
+          "area": true
+        },
+        "sql-memory-sensitivity": {
+          "description": "SQL-MEMORY-SENSITIVITY.yml (its own path filter)",
+          "paths": [
+            "supabase/migrations/*memory_sensitivity*.sql",
+            "scripts/ci/sql-tests/**/*",
+            ".github/workflows/SQL-MEMORY-SENSITIVITY.yml"
+          ],
+          "checks": [
+            "sql-memory-sensitivity"
+          ],
+          "area": true
+        },
+        "sql-partner-review": {
+          "description": "SQL-PARTNER-REVIEW.yml (its own path filter)",
+          "paths": [
+            "supabase/migrations/*vtid_04769*",
+            "scripts/ci/sql-tests/*partner-review*",
+            "scripts/ci/sql-tests/vtid-04933-*",
+            "services/gateway/src/services/partner-review.ts",
+            ".github/workflows/SQL-PARTNER-REVIEW.yml"
+          ],
+          "checks": [
+            "sql-partner-review"
+          ],
+          "area": true
+        },
+        "sql-partner-terms": {
+          "description": "SQL-PARTNER-TERMS.yml (its own path filter)",
+          "paths": [
+            "supabase/migrations/*partner_terms*.sql",
+            "scripts/ci/sql-tests/*partner-terms*",
+            ".github/workflows/SQL-PARTNER-TERMS.yml"
+          ],
+          "checks": [
+            "sql-partner-terms"
+          ],
+          "area": true
+        },
+        "sql-record-migration-row": {
+          "description": "SQL-RECORD-MIGRATION-ROW.yml (its own path filter)",
+          "paths": [
+            "scripts/ci/apply-sql-via-management-api.sh",
+            "scripts/ci/sql-tests/run-record-migration-row-test.sh",
+            ".github/workflows/RUN-MIGRATION.yml",
+            ".github/workflows/SQL-RECORD-MIGRATION-ROW.yml"
+          ],
+          "checks": [
+            "sql-record-migration-row"
+          ],
+          "area": true
+        },
+        "sql-reminders-in-calendar": {
+          "description": "SQL-REMINDERS-IN-CALENDAR.yml (its own path filter)",
+          "paths": [
+            "supabase/migrations/*vtid_04978*.sql",
+            "scripts/ci/sql-tests/*reminders-in-calendar*",
+            ".github/workflows/SQL-REMINDERS-IN-CALENDAR.yml"
+          ],
+          "checks": [
+            "sql-reminders-in-calendar"
+          ],
+          "area": true
+        },
+        "sql-subscription-dates-in-calendar": {
+          "description": "SQL-SUBSCRIPTION-DATES-IN-CALENDAR.yml (its own path filter)",
+          "paths": [
+            "supabase/migrations/*vtid_04994*.sql",
+            "scripts/ci/sql-tests/*subscription-dates-in-calendar*",
+            ".github/workflows/SQL-SUBSCRIPTION-DATES-IN-CALENDAR.yml"
+          ],
+          "checks": [
+            "sql-subscription-dates-in-calendar"
+          ],
+          "area": true
+        },
+        "sql-supplier-listing-gate": {
+          "description": "SQL-SUPPLIER-LISTING-GATE.yml (its own path filter)",
+          "paths": [
+            "supabase/migrations/*vtid_04769*.sql",
+            "scripts/ci/sql-tests/*supplier-listing-gate*",
+            ".github/workflows/SQL-SUPPLIER-LISTING-GATE.yml"
+          ],
+          "checks": [
+            "sql-supplier-listing-gate"
+          ],
+          "area": true
+        },
+        "sql-tenant-foundation": {
+          "description": "SQL-TENANT-FOUNDATION.yml (its own path filter)",
+          "paths": [
+            "supabase/migrations/*_vtid_05149_*.sql",
+            "docs/validation/VTID-05149/*.sql",
+            "scripts/ci/sql-tests/run-tenant-foundation-test.sh",
+            "scripts/ci/sql-tests/vtid-05149-tenant-foundation.test.sql",
+            ".github/workflows/SQL-TENANT-FOUNDATION.yml"
+          ],
+          "checks": [
+            "sql-tenant-foundation"
+          ],
+          "area": true
+        },
+        "sql-test-results-in-calendar": {
+          "description": "SQL-TEST-RESULTS-IN-CALENDAR.yml (its own path filter)",
+          "paths": [
+            "supabase/migrations/*vtid_04997*.sql",
+            "scripts/ci/sql-tests/*test-results-in-calendar*",
+            ".github/workflows/SQL-TEST-RESULTS-IN-CALENDAR.yml"
+          ],
+          "checks": [
+            "sql-test-results-in-calendar"
+          ],
+          "area": true
+        },
+        "sql-wearable-samples-rpc-revoke": {
+          "description": "SQL-WEARABLE-SAMPLES-RPC-REVOKE.yml (its own path filter)",
+          "paths": [
+            "supabase/migrations/*_vtid_05156_revoke_wearable_samples_rpc.sql",
+            "scripts/ci/sql-tests/run-wearable-samples-rpc-revoke-test.sh",
+            ".github/workflows/SQL-WEARABLE-SAMPLES-RPC-REVOKE.yml"
+          ],
+          "checks": [
+            "sql-wearable-samples-rpc-revoke"
+          ],
+          "area": true
+        },
+        "kiro-runner-ci": {
+          "description": "AWS-STAGE-DEPLOY-KIRO-RUNNER builds on a pull request that changes its own workflow file too",
+          "area": true,
+          "paths": [
+            ".github/workflows/AWS-STAGE-DEPLOY-KIRO-RUNNER.yml"
+          ],
+          "checks": [
+            "kiro-runner-test"
+          ]
+        },
+        "supabase": {
+          "description": "migrations and SQL fixtures: MIGRATION-DRIFT-CHECK stays on GitHub (plan §2.2); each SQL test selects by its own path filter",
+          "area": true,
+          "paths": [
+            "supabase/**/*"
+          ],
+          "checks": [
+            "dev-autopilot-impact"
+          ]
+        }
+      },
+      "checks": {
+        "gateway-typecheck": {
+          "kind": "check",
+          "install": "gateway-npm",
+          "variables": {
+            "NODE_OPTIONS": "--max-old-space-size=6144"
+          },
+          "script": [
+            "npx --yes pnpm@9.0.0 exec prisma generate || npx prisma generate",
+            "npx prisma validate",
+            "npm run validate:dev-frontend-spec",
+            "npm run typecheck"
+          ]
+        },
+        "gateway-jest": {
+          "kind": "test",
+          "parallel": 4,
+          "install": "gateway-pnpm",
+          "variables": {
+            "NODE_OPTIONS": "--max-old-space-size=3072"
+          },
+          "script": [
+            "mkdir -p \"$CI_PROJECT_DIR/shards\"",
+            "npx jest --listTests > \"$CI_PROJECT_DIR/shards/list-${CI_NODE_INDEX}.txt\"",
+            "npx jest --silent --maxWorkers=2 --shard=\"${CI_NODE_INDEX}/${CI_NODE_TOTAL}\" --json --outputFile=\"$CI_PROJECT_DIR/shards/shard-${CI_NODE_INDEX}.json\""
+          ],
+          "artifacts": [
+            "shards/"
+          ],
+          "duration": {
+            "fixture": "TEST-SUITE.yml#Gateway (Jest, shard",
+            "github_shards": 4
+          }
+        },
+        "gateway-shard-union": {
+          "kind": "check",
+          "needs": [
+            "gateway-jest"
+          ],
+          "central": true,
+          "script": [
+            "node \"$CENTRAL_DIR/scripts/ci/test-suite/shard-union.mjs\" --dir shards --shards 4"
+          ]
+        },
+        "gateway-build": {
+          "kind": "build",
+          "install": "gateway-npm",
+          "script": [
+            "npm run build"
+          ]
+        },
+        "oasis-persistence": {
+          "kind": "check",
+          "script": [
+            "npm install -g pnpm@9.0.0 >/dev/null",
+            "pnpm install --frozen-lockfile",
+            "pnpm prisma generate",
+            "pnpm prisma format --check",
+            "bash -n scripts/report.sh"
+          ],
+          "install_cache": {
+            "lockfiles": [
+              "pnpm-lock.yaml"
+            ],
+            "cache_paths": [
+              ".pnpm-store"
+            ]
+          }
+        },
+        "oasis-projector-test": {
+          "kind": "test",
+          "script": [
+            "cd services/oasis-projector",
+            "npm install --no-audit --no-fund",
+            "npm test"
+          ],
+          "install_cache": {
+            "lockfiles": [
+              "services/oasis-projector/package-lock.json"
+            ],
+            "cache_paths": [
+              ".npm"
+            ]
+          },
+          "duration": {
+            "fixture": "TEST-SUITE.yml#oasis-projector (jest)",
+            "github_shards": 1
+          }
+        },
+        "openclaw-bridge-test": {
+          "kind": "test",
+          "script": [
+            "npm install -g pnpm@9.0.0 >/dev/null",
+            "cd services/openclaw-bridge",
+            "pnpm install --frozen-lockfile",
+            "npx vitest run"
+          ],
+          "install_cache": {
+            "lockfiles": [
+              "services/openclaw-bridge/pnpm-lock.yaml"
+            ],
+            "cache_paths": [
+              ".pnpm-store"
+            ]
+          },
+          "duration": {
+            "fixture": "TEST-SUITE.yml#openclaw-bridge (vitest)",
+            "github_shards": 1
+          }
+        },
+        "vcaop-test": {
+          "kind": "test",
+          "script": [
+            "cd services/vcaop",
+            "npm ci --no-audit --no-fund",
+            "npx jest --silent"
+          ],
+          "install_cache": {
+            "lockfiles": [
+              "services/vcaop/package-lock.json"
+            ],
+            "cache_paths": [
+              ".npm"
+            ]
+          },
+          "duration": {
+            "fixture": "TEST-SUITE.yml#vcaop (jest)",
+            "github_shards": 1
+          }
+        },
+        "vcaop-guardrails": {
+          "kind": "test",
+          "script": [
+            "cd services/vcaop",
+            "npm install --no-audit --no-fund",
+            "npm run typecheck",
+            "npm run test:guardrails",
+            "npm test"
+          ],
+          "install_cache": {
+            "lockfiles": [
+              "services/vcaop/package-lock.json"
+            ],
+            "cache_paths": [
+              ".npm"
+            ]
+          },
+          "duration": {
+            "fixture": "TEST-SUITE.yml#vcaop (jest)",
+            "github_shards": 1
+          }
+        },
+        "kiro-runner-test": {
+          "kind": "test",
+          "script": [
+            "cd services/kiro-runner",
+            "npm ci --no-audit --no-fund",
+            "npm run build",
+            "npm test"
+          ],
+          "install_cache": {
+            "lockfiles": [
+              "services/kiro-runner/package-lock.json"
+            ],
+            "cache_paths": [
+              ".npm"
+            ]
+          },
+          "duration": {
+            "fixture": null,
+            "minutes": 1,
+            "note": "small vitest suite; GitHub builds the image on a PR, which the main pipeline does (T2)"
+          }
+        },
+        "unit-scripts": {
+          "kind": "test",
+          "script": [
+            "FILES=$(find scripts -path \"*/node_modules\" -prune -o \\( -name \"*.test.cjs\" -o -name \"*.test.mjs\" \\) -print | sort)",
+            "node --test $FILES"
+          ],
+          "duration": {
+            "fixture": "UNIT.yml#unit",
+            "github_shards": 1
+          }
+        },
+        "ci-scripts-test": {
+          "kind": "test",
+          "script": [
+            "git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main",
+            "node --test scripts/ci/test-suite/*.test.mjs scripts/ci/plan-spar-slot/*.test.mjs scripts/collab/plan-driver.test.mjs"
+          ],
+          "duration": {
+            "fixture": null,
+            "minutes": 1,
+            "note": "node --test of three small directories"
+          }
+        },
+        "validator-check": {
+          "kind": "check",
+          "variables": {
+            "GIT_DEPTH": "0"
+          },
+          "install_cache": {
+            "lockfiles": [
+              "services/gateway/package-lock.json"
+            ],
+            "cache_paths": [
+              ".npm"
+            ]
+          },
+          "script": [
+            "test -f gov/validator-rules.yaml || { echo \"REJECTED: missing gov/validator-rules.yaml\"; exit 2; }",
+            "if [ \"$CI_PIPELINE_SOURCE\" != \"merge_request_event\" ]; then echo \"validator-check: $CI_PIPELINE_SOURCE pipeline on $CI_COMMIT_REF_NAME has no merge request title or description, so the gates that read them are skipped here (body declarations, VTID and profile, changed files, path ownership, evidence pack, acceptance mapping, route mount, OASIS, merge deploy): VALIDATOR-CHECK runs them on pull requests only, and they ran on the merge request pipeline of every landed change. The CSP and build gates run.\"; fi",
+            "VC_TARGET=\"${CI_MERGE_REQUEST_TARGET_BRANCH_NAME:-main}\"; git fetch --quiet origin \"+refs/heads/$VC_TARGET:refs/remotes/origin/$VC_TARGET\"",
+            "if [ \"$CI_PIPELINE_SOURCE\" = \"merge_request_event\" ]; then if [ \"${CI_MERGE_REQUEST_DESCRIPTION_IS_TRUNCATED:-false}\" = \"true\" ]; then echo \"REJECTED: the merge request description is longer than the 2700 characters GitLab passes to CI (CI_MERGE_REQUEST_DESCRIPTION_IS_TRUNCATED), so its declarations cannot be read: shorten it\"; exit 2; fi; printf \"%s\" \"${CI_MERGE_REQUEST_TITLE:-}\" > /tmp/pr_title.txt; printf \"%s\" \"${CI_MERGE_REQUEST_DESCRIPTION:-}\" > /tmp/pr_body.txt; test -s /tmp/pr_title.txt || { echo \"REJECTED: empty PR title\"; exit 2; }; test -s /tmp/pr_body.txt || { echo \"REJECTED: empty PR body\"; exit 2; }; fi",
+            "if [ \"$CI_PIPELINE_SOURCE\" = \"merge_request_event\" ]; then node scripts/ci/validator-path-guard.cjs --pr-body-check /tmp/pr_body.txt; fi",
+            "if [ \"$CI_PIPELINE_SOURCE\" = \"merge_request_event\" ]; then VC_VTID=\"$(grep -Eo 'VTID-[0-9]{4,5}' /tmp/pr_title.txt | head -n 1 || true)\"; if [ -z \"$VC_VTID\" ]; then VC_VTID=\"$(grep -Eo '^[[:space:]]*VTID:[[:space:]]*VTID-[0-9]{4,5}' /tmp/pr_body.txt | grep -Eo 'VTID-[0-9]{4,5}' | head -n 1 || true)\"; fi; test -n \"$VC_VTID\" || { echo \"REJECTED: no VTID in the title, and no explicit 'VTID: VTID-XXXXX' line in the body\"; exit 10; }; VC_PROFILE=\"$(grep -Eo 'VALIDATION_PROFILE:\\s*[a-zA-Z0-9_/-]+' /tmp/pr_body.txt | head -n 1 | awk '{print $2}' || true)\"; test -n \"$VC_PROFILE\" || { echo \"REJECTED: VALIDATION_PROFILE missing in PR body\"; exit 11; }; echo \"Detected VTID=$VC_VTID PROFILE=$VC_PROFILE\"; fi",
+            "if [ \"$CI_PIPELINE_SOURCE\" = \"merge_request_event\" ]; then git diff --name-only \"origin/$VC_TARGET\"...HEAD > /tmp/changed_files.txt; COUNT=\"$(wc -l < /tmp/changed_files.txt | tr -d ' ')\"; echo \"Changed files: $COUNT\"; test \"$COUNT\" -gt 0 || { echo \"REJECTED: no changes detected\"; exit 16; }; fi",
+            "if [ \"$CI_PIPELINE_SOURCE\" = \"merge_request_event\" ]; then node scripts/ci/validator-path-guard.cjs /tmp/changed_files.txt \"$VC_PROFILE\" /tmp/pr_body.txt; fi",
+            "if [ \"$CI_PIPELINE_SOURCE\" = \"merge_request_event\" ]; then EVID=\"docs/validation/$VC_VTID\"; test -d \"$EVID\" || { echo \"REJECTED: missing evidence dir $EVID\"; exit 30; }; test -f \"$EVID/acceptance.md\" || { echo \"REJECTED: missing $EVID/acceptance.md\"; exit 31; }; test -f \"$EVID/commands.log\" || { echo \"REJECTED: missing $EVID/commands.log\"; exit 32; }; test -d \"$EVID/outputs\" || { echo \"REJECTED: missing $EVID/outputs/\"; exit 33; }; fi",
+            "if [ \"$CI_PIPELINE_SOURCE\" = \"merge_request_event\" ]; then A=\"docs/validation/$VC_VTID/acceptance.md\"; grep -qE '^AC-' \"$A\" || { echo \"REJECTED: acceptance.md has no AC- entries\"; exit 40; }; VTID=\"$VC_VTID\" python3 - << 'PY'\nimport re, sys, os\npath=os.path.expandvars(\"docs/validation/${VTID}/acceptance.md\")\ntxt=open(path,encoding=\"utf-8\").read().splitlines()\nac_idx=[i for i,l in enumerate(txt) if re.match(r'^AC-\\d+', l.strip())]\nif not ac_idx:\n  print(\"REJECTED: no AC- entries\"); sys.exit(40)\nfor i in ac_idx:\n  window=txt[i+1:i+13]\n  if not any(re.match(r'^(TEST:|CURL:|UI:)', w.strip()) for w in window):\n    print(f\"REJECTED: AC at line {i+1} has no TEST:/CURL:/UI: mapping within 12 lines\")\n    sys.exit(41)\nprint(\"Acceptance mapping OK\")\nPY\nfi",
+            "DIFF_BASE=\"origin/$VC_TARGET\"; REVERTED_SHA=\"$(git log \"origin/$VC_TARGET\"..HEAD | grep -oE 'This reverts commit [0-9a-f]{40}' | head -n1 | awk '{print $4}' || true)\"; if [ -n \"$REVERTED_SHA\" ] && git rev-parse -q --verify \"${REVERTED_SHA}^{commit}\" >/dev/null && git merge-base --is-ancestor \"$REVERTED_SHA\" \"origin/$VC_TARGET\"; then DIFF_BASE=\"${REVERTED_SHA}^\"; echo \"Detected a corruption-recovery revert of $REVERTED_SHA (a real commit on origin/$VC_TARGET); comparing CSP surface against $DIFF_BASE instead of origin/$VC_TARGET.\"; fi; git diff \"$DIFF_BASE\"...HEAD -- 'services/gateway/src/frontend/' 'services/gateway/dist/frontend/' > /tmp/csp_diff.txt || true; node scripts/ci/validator-path-guard.cjs --csp-added-lines /tmp/csp_diff.txt || exit 50",
+            "(cd services/gateway && npm ci --no-audit --no-fund --prefer-offline && npm run build)",
+            "if [ \"$CI_PIPELINE_SOURCE\" = \"merge_request_event\" ]; then if [ \"$VC_PROFILE\" = \"command_hub_frontend\" ]; then SRC_CHANGED=\"$(grep -c '^services/gateway/src/frontend/command-hub/' /tmp/changed_files.txt || true)\"; DIST_CHANGED=\"$(grep -c '^services/gateway/dist/frontend/command-hub/' /tmp/changed_files.txt || true)\"; if [ \"$SRC_CHANGED\" -eq 0 ] || [ \"$DIST_CHANGED\" -eq 0 ]; then echo \"REJECTED: command_hub_frontend requires src+dist both updated\"; exit 60; fi; fi; fi",
+            "if [ \"$CI_PIPELINE_SOURCE\" = \"merge_request_event\" ]; then git diff \"origin/$VC_TARGET\"...HEAD -- 'services/gateway/src/routes/' 'services/gateway/src/index.ts' 'services/gateway/src/app.ts' > /tmp/route_diff.txt || true; if node scripts/ci/validator-path-guard.cjs --route-evidence-required /tmp/route_diff.txt; then A=\"docs/validation/$VC_VTID/acceptance.md\"; grep -q \"ROUTE_MOUNT:\" \"$A\" || { echo \"REJECTED: missing ROUTE_MOUNT:\"; exit 70; }; grep -q \"FINAL_URL:\" \"$A\" || { echo \"REJECTED: missing FINAL_URL:\"; exit 71; }; grep -q \"CURL_PROOF:\" \"$A\" || { echo \"REJECTED: missing CURL_PROOF:\"; exit 72; }; fi; fi",
+            "if [ \"$CI_PIPELINE_SOURCE\" = \"merge_request_event\" ]; then IMPACT=\"$(grep -Eo 'OASIS_IMPACT:\\s*(yes|no)' /tmp/pr_body.txt | head -n 1 | awk '{print $2}' || true)\"; test -n \"$IMPACT\" || { echo \"REJECTED: invalid OASIS_IMPACT value\"; exit 80; }; if [ \"$IMPACT\" = \"yes\" ]; then grep -q \"OASIS_PROOF:\" \"docs/validation/$VC_VTID/acceptance.md\" || { echo \"REJECTED: missing OASIS_PROOF:\"; exit 81; }; fi; fi",
+            "if [ \"$CI_PIPELINE_SOURCE\" = \"merge_request_event\" ]; then grep -q \"$VC_VTID\" /tmp/pr_title.txt || { echo \"REJECTED: PR title must contain VTID for autodeploy gate\"; exit 90; }; grep -q \"MERGE_PAYLOAD_PREVIEW:\" /tmp/pr_body.txt || { echo \"REJECTED: missing MERGE_PAYLOAD_PREVIEW:\"; exit 91; }; fi",
+            "if [ \"$CI_PIPELINE_SOURCE\" = \"merge_request_event\" ]; then echo \"APPROVED\"; echo \"VTID=$VC_VTID\"; echo \"PROFILE=$VC_PROFILE\"; echo \"Evidence=docs/validation/$VC_VTID/\"; fi"
+          ],
+          "github": "VALIDATOR-CHECK.yml"
+        },
+        "command-hub-guardrails": {
+          "kind": "check",
+          "install": "gateway-npm",
+          "script": [
+            "node \"$CI_PROJECT_DIR/scripts/ci/command-hub-ownership-guard.js\"",
+            "npm run build",
+            "node \"$CI_PROJECT_DIR/scripts/ci/command-hub-golden-fingerprint.js\""
+          ]
+        },
+        "frontend-canonical-source": {
+          "kind": "check",
+          "install": "gateway-npm",
+          "script": [
+            "npm run build",
+            "cd \"$CI_PROJECT_DIR\"",
+            "node services/validators/frontend-canonical-source.js"
+          ]
+        },
+        "dev-autopilot-impact": {
+          "kind": "check",
+          "variables": {
+            "GIT_DEPTH": "0"
+          },
+          "script": [
+            "IMPACT_SCAN_DRY_RUN=false; if [ \"$CI_PIPELINE_SOURCE\" = \"merge_request_event\" ]; then IMPACT_SCAN_BASE=\"origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME\"; git fetch --quiet origin \"+refs/heads/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME:refs/remotes/origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME\"; elif [ -n \"${CI_COMMIT_BRANCH:-}\" ] && [ \"${CI_COMMIT_BRANCH#train/}\" != \"$CI_COMMIT_BRANCH\" ]; then IMPACT_SCAN_BASE=\"origin/main\"; git fetch --quiet origin \"+refs/heads/main:refs/remotes/origin/main\"; elif [ \"$CI_PIPELINE_SOURCE\" = \"push\" ] && [ -n \"${CI_COMMIT_BEFORE_SHA:-}\" ] && [ \"$CI_COMMIT_BEFORE_SHA\" != \"0000000000000000000000000000000000000000\" ]; then IMPACT_SCAN_BASE=\"$CI_COMMIT_BEFORE_SHA\"; IMPACT_SCAN_DRY_RUN=true; else IMPACT_SCAN_BASE=\"HEAD\"; IMPACT_SCAN_DRY_RUN=true; echo \"dev-autopilot-impact: $CI_PIPELINE_SOURCE pipeline without a landing: nothing to compare\"; fi; export IMPACT_SCAN_BASE IMPACT_SCAN_DRY_RUN; echo \"impact scan: base $IMPACT_SCAN_BASE, dry run $IMPACT_SCAN_DRY_RUN (blockers fail merge request and train pipelines only, as on GitHub)\"",
+            "git rev-parse --verify --quiet \"$IMPACT_SCAN_BASE^{commit}\" >/dev/null || { echo \"dev-autopilot-impact: base $IMPACT_SCAN_BASE does not resolve; failing closed instead of letting the scan fall back to the parent commit\"; exit 1; }",
+            "node scripts/ci/dev-autopilot-impact-scan.mjs"
+          ],
+          "artifacts": [
+            "dev-autopilot-impact-findings.json"
+          ],
+          "github": "DEV-AUTOPILOT-IMPACT.yml"
+        },
+        "cicdl-lint-services": {
+          "kind": "check",
+          "apt": [
+            "jq"
+          ],
+          "script": [
+            "echo \"🔍 Validating services directory structure...\"\n\nviolations=0\n\nif [ ! -d \"services\" ]; then\n  echo \"❌ ERROR: /services directory not found\"\n  exit 1\nfi\n\necho \"✅ /services directory exists\"\necho \"\"\n\necho \"📋 Found services:\"\nfind services -mindepth 1 -maxdepth 3 -type d | sort\necho \"\"",
+            "echo \"🔍 Checking for manifest.json in each service...\"\necho \"\"\n\nviolations=0\nservices_checked=0\n\n# Check agents - look for manifest.json at the direct agent level\nfor agent_dir in services/agents/*/; do\n  if [ -d \"$agent_dir\" ]; then\n    services_checked=$((services_checked + 1))\n    agent_name=$(basename \"$agent_dir\")\n\n    if [ -f \"${agent_dir}manifest.json\" ]; then\n      echo \"✅ ${agent_dir}\"\n    else\n      echo \"❌ Missing: ${agent_dir}manifest.json\"\n      violations=$((violations + 1))\n    fi\n  fi\ndone\n\n# Check MCP services\nfor mcp_dir in services/mcp/*/; do\n  if [ -d \"$mcp_dir\" ]; then\n    services_checked=$((services_checked + 1))\n\n    if [ -f \"${mcp_dir}manifest.json\" ]; then\n      echo \"✅ $mcp_dir\"\n    else\n      echo \"❌ Missing: ${mcp_dir}manifest.json\"\n      violations=$((violations + 1))\n    fi\n  fi\ndone\n\n# Check gateway\nif [ -d \"services/gateway\" ]; then\n  services_checked=$((services_checked + 1))\n\n  if [ -f \"services/gateway/manifest.json\" ]; then\n    echo \"✅ services/gateway/\"\n  else\n    echo \"❌ Missing: services/gateway/manifest.json\"\n    violations=$((violations + 1))\n  fi\nfi\n\n# Check deploy-watcher\nif [ -d \"services/deploy-watcher\" ]; then\n  services_checked=$((services_checked + 1))\n\n  if [ -f \"services/deploy-watcher/manifest.json\" ]; then\n    echo \"✅ services/deploy-watcher/\"\n  else\n    echo \"❌ Missing: services/deploy-watcher/manifest.json\"\n    violations=$((violations + 1))\n  fi\nfi\n\necho \"\"\necho \"Services checked: $services_checked\"\necho \"Violations: $violations\"\n\nif [ $violations -gt 0 ]; then\n  echo \"\"\n  echo \"❌ FAILURE: $violations service(s) missing manifest.json\"\n  exit 1\nfi\n\necho \"✅ All services have manifest.json files\"",
+            "echo \"🔍 Validating manifest.json schema...\"\necho \"\"\n\nviolations=0\nmanifests=$(find services -maxdepth 3 -name \"manifest.json\" -type f)\n\nif [ -z \"$manifests\" ]; then\n  echo \"⚠️  No manifest.json files found\"\n  exit 0\nfi\n\nfor manifest in $manifests; do\n  echo \"Checking: $manifest\"\n\n  if ! jq empty \"$manifest\" 2>/dev/null; then\n    echo \"  ❌ Invalid JSON syntax\"\n    violations=$((violations + 1))\n    continue\n  fi\n\n  # Check for required fields - support both old and new schema\n  name=$(jq -r '.name // empty' \"$manifest\")\n  vtid=$(jq -r '.vtid // empty' \"$manifest\")\n  vt_layer=$(jq -r '.vt_layer // .layer // empty' \"$manifest\")\n  vt_module=$(jq -r '.vt_module // .module // empty' \"$manifest\")\n\n  if [ -z \"$name\" ]; then\n    echo \"  ❌ Missing required field: name\"\n    violations=$((violations + 1))\n  fi\n\n  # Either vtid or both vt_layer/vt_module required\n  if [ -z \"$vtid\" ] && ([ -z \"$vt_layer\" ] || [ -z \"$vt_module\" ]); then\n    echo \"  ⚠️  Warning: Missing vtid or vt_layer/vt_module\"\n  fi\n\n  if [ $violations -eq 0 ]; then\n    echo \"  ✅ Valid: $name\"\n  fi\ndone\n\necho \"\"\n\nif [ $violations -gt 0 ]; then\n  echo \"❌ FAILURE: $violations manifest validation error(s)\"\n  exit 1\nfi\n\necho \"✅ All manifests are valid\"",
+            "echo \"🔍 Checking top-level service naming conventions...\"\necho \"\"\n\nviolations=0\n\n# Only check top-level service directories (maxdepth 2)\n# Internal subdirectories can follow language conventions (e.g., Python snake_case)\nwhile IFS= read -r dir; do\n  dirname=$(basename \"$dir\")\n\n  # Skip hidden directories and node_modules\n  if [[ \"$dirname\" == .* ]] || [[ \"$dirname\" == \"node_modules\" ]]; then\n    continue\n  fi\n\n  # Check for uppercase or underscore\n  if echo \"$dirname\" | grep -qE '[A-Z]|_'; then\n    echo \"❌ Non-kebab-case directory: $dir\"\n    echo \"   Top-level service directories must use kebab-case\"\n    violations=$((violations + 1))\n  fi\ndone < <(find services -mindepth 1 -maxdepth 2 -type d -not -path \"*/node_modules/*\")\n\nif [ $violations -gt 0 ]; then\n  echo \"\"\n  echo \"❌ FAILURE: $violations naming convention violation(s)\"\n  echo \"\"\n  echo \"📘 Phase 2B Standard: Top-level service directories must use kebab-case\"\n  echo \"   Internal subdirectories may follow language conventions\"\n  exit 1\nfi\n\necho \"✅ All top-level service directories follow kebab-case convention\"",
+            "echo \"✅ Services Lint Checks Complete\"\necho \"\"\necho \"Checks passed:\"\necho \"  ✅ Services directory structure valid\"\necho \"  ✅ All services have manifest.json\"\necho \"  ✅ All manifests have valid schema\"\necho \"  ✅ Naming conventions followed\""
+          ]
+        },
+        "phase-2b-naming": {
+          "kind": "check",
+          "script": [
+            "echo \"🔍 Checking GitHub Actions workflow naming...\"\nviolations=0\n\nfor file in .github/workflows/*.yml .github/workflows/*.yaml; do\n  [ -f \"$file\" ] || continue\n\n  filename=$(basename \"$file\")\n  # Skip this file and reusable workflows\n  if [[ \"$filename\" == \"PHASE-2B-NAMING-ENFORCEMENT.yml\" ]] || \\\n     [[ \"$filename\" == _* ]]; then\n    continue\n  fi\n\n  # Check if filename contains lowercase letters (excluding extension)\n  basename_no_ext=\"${filename%.*}\"\n  if echo \"$basename_no_ext\" | grep -q '[a-z]'; then\n    echo \"❌ VIOLATION: $file\"\n    echo \"   Expected: UPPERCASE-WITH-HYPHENS.yml\"\n    echo \"   Example: DEPLOY-GATEWAY.yml, RUN-TESTS.yml\"\n    violations=$((violations + 1))\n  else\n    echo \"✅ $file\"\n  fi\ndone\n\nif [ $violations -gt 0 ]; then\n  echo \"\"\n  echo \"❌ Found $violations workflow naming violations\"\n  echo \"📘 Phase 2B Standard: All workflow files must use UPPERCASE names\"\n  exit 1\nfi\n\necho \"✅ All workflows follow UPPERCASE naming standard\"",
+            "echo \"🔍 Checking workflows include run-name with VTID...\"\nviolations=0\n\nfor file in .github/workflows/*.yml .github/workflows/*.yaml; do\n  [ -f \"$file\" ] || continue\n\n  filename=$(basename \"$file\")\n  # Skip reusable workflows and this file\n  if [[ \"$filename\" == _* ]] || \\\n     [[ \"$filename\" == \"PHASE-2B-NAMING-ENFORCEMENT.yml\" ]]; then\n    continue\n  fi\n\n  # Check if workflow has run-name\n  if ! grep -q \"^run-name:\" \"$file\"; then\n    echo \"⚠️  WARNING: $file missing run-name field\"\n    violations=$((violations + 1))\n  else\n    # Check if run-name references VTID or branch\n    if ! grep -A 1 \"^run-name:\" \"$file\" | grep -qi \"vtid\\|github.ref\"; then\n      echo \"⚠️  WARNING: $file run-name doesn't include VTID reference\"\n      violations=$((violations + 1))\n    else\n      echo \"✅ $file\"\n    fi\n  fi\ndone\n\nif [ $violations -gt 0 ]; then\n  echo \"\"\n  echo \"⚠️  Found $violations workflows without VTID in run-name\"\n  echo \"📘 Recommended: Add run-name with VTID for tracking\"\n  echo \"Example:\"\n  echo \"  run-name: 'Deploy Gateway [VTID: DEV-CICDL-0031] (\\<ref>)'\"\n  # Warning only, not failing\nfi",
+            "echo \"🔍 Checking file naming convention (kebab-case)...\"\nviolations=0\n\n# Check TypeScript/JavaScript files\nwhile IFS= read -r file; do\n  filename=$(basename \"$file\")\n  dirname=$(dirname \"$file\")\n\n  # Skip node_modules, .git, temp_* directories, etc\n  if echo \"$file\" | grep -qE \"node_modules|\\.git|\\.next|dist|build|/temp_\"; then\n    continue\n  fi\n\n  # Check for camelCase or snake_case (should be kebab-case)\n  basename_no_ext=\"${filename%.*}\"\n  if echo \"$basename_no_ext\" | grep -qE \"[A-Z]|_\"; then\n    # Allow certain exceptions\n    if [[ \"$filename\" =~ ^(README|LICENSE|CHANGELOG|Dockerfile|Makefile)\\.? ]]; then\n      continue\n    fi\n\n    echo \"❌ VIOLATION: $file\"\n    echo \"   Contains uppercase or underscores\"\n    echo \"   Expected: kebab-case (e.g., my-service.ts)\"\n    violations=$((violations + 1))\n  fi\ndone < <(find . -type f \\( -name \"*.ts\" -o -name \"*.js\" -o -name \"*.tsx\" -o -name \"*.jsx\" \\) -not -path \"*/node_modules/*\" -not -path \"*/.git/*\")\n\nif [ $violations -gt 0 ]; then\n  echo \"\"\n  echo \"❌ Found $violations file naming violations\"\n  echo \"📘 Phase 2B Standard: Use kebab-case for all code files\"\n  exit 1\nfi\n\necho \"✅ All files follow kebab-case naming standard\"",
+            "echo \"🔍 Checking VTID format in code...\"\nviolations=0\n\n# Check for VTID constants that aren't UPPERCASE\nwhile IFS= read -r file; do\n  # Look for VTID assignments with lowercase\n  if grep -nE \"vtid\\s*[:=]\\s*['\\\"]\" \"$file\"; then\n    echo \"❌ VIOLATION: $file\"\n    echo \"   VTID constants should be UPPERCASE\"\n    echo \"   Use: const VTID = 'DEV-CICDL-0031'\"\n    echo \"   Not: const vtid = 'DEV-CICDL-0031'\"\n    violations=$((violations + 1))\n  fi\ndone < <(find services packages -type f \\( -name \"*.ts\" -o -name \"*.js\" \\) -not -path \"*/node_modules/*\" 2>/dev/null || true)\n\nif [ $violations -gt 0 ]; then\n  echo \"\"\n  echo \"⚠️  Found $violations VTID format warnings\"\n  echo \"📘 Recommended: Use UPPERCASE for VTID constants\"\n  # Warning only\nfi",
+            "echo \"🔍 Checking PR description for Phase 2B checklist...\"\n\n# This would require GitHub API access to check PR body\n# For now, we'll just log a reminder\necho \"⚡ Reminder: Ensure PR description includes Phase 2B compliance checklist\"\necho \"   The PR template should be filled out completely\"",
+            "echo \"✅ Phase 2B Naming Standards Verification Complete\"\necho \"\"\necho \"Checks passed:\"\necho \"  ✅ Workflow naming (UPPERCASE)\"\necho \"  ✅ File naming (kebab-case)\"\necho \"  ✅ VTID format compliance\"\necho \"\"\necho \"Ready for review and merge!\""
+          ]
+        },
+        "phase-2b-doc-gate": {
+          "kind": "check",
+          "script": [
+            "set -e\nmissing=0\nfor i in $(seq -w 00 20); do\n  count=$(ls phase_2b/${i}_*.md 2>/dev/null | wc -l | tr -d ' ')\n  if [ \"$count\" -eq 0 ]; then\n    echo \"ERROR: Missing required file for index ${i} (phase_2b/${i}_*.md)\"\n    missing=1\n  fi\ndone\nexit $missing",
+            "set -e\nfor f in phase_2b/*.md; do\n  grep -q \"^# \" \"$f\" || { echo \"ERROR: No H1 heading in $f\"; exit 1; }\n  for sec in \"## Purpose\" \"## Audience\" \"## Inputs\" \"## Outputs\" \"## Procedures\" \"## Validation\" \"## Links\"; do\n    grep -q \"$sec\" \"$f\" || echo \"WARNING: Missing section '$sec' in $f\"\n  done\ndone"
+          ]
+        },
+        "openapi-enforce": {
+          "kind": "check",
+          "script": [
+            "npm install -g @stoplight/spectral-cli >/dev/null",
+            "echo \"🔍 Finding OpenAPI specification files...\"\n\n# Find all OpenAPI specs\nSPECS=$(find specs packages/openapi -name \"*.yml\" -o -name \"*.yaml\" 2>/dev/null || true)\n\nif [ -z \"$SPECS\" ]; then\n  echo \"⚠️  No OpenAPI specifications found\"\n  echo \"has_specs=false\" >> \"$CI_PROJECT_DIR/openapi-enforce.env\"\n  exit 0\nfi\n\necho \"has_specs=true\" >> \"$CI_PROJECT_DIR/openapi-enforce.env\"\necho \"Found specifications:\"\necho \"$SPECS\" | while read spec; do\n  echo \"  - $spec\"\ndone",
+            "echo \"✨ Running Spectral validation...\"\necho \"\"\n\nviolations=0\ntotal_specs=0\n\n# Validate each spec\nfor spec in $(find specs packages/openapi -name \"*.yml\" -o -name \"*.yaml\" 2>/dev/null); do\n  total_specs=$((total_specs + 1))\n  echo \"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\"\n  echo \"📄 Validating: $spec\"\n  echo \"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\"\n\n  if spectral lint \"$spec\" --fail-severity=warn; then\n    echo \"✅ $spec - PASSED\"\n  else\n    echo \"❌ $spec - FAILED\"\n    violations=$((violations + 1))\n  fi\n\n  echo \"\"\ndone\n\necho \"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\"\necho \"📊 Summary\"\necho \"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\"\necho \"Total specs validated: $total_specs\"\necho \"Passed: $((total_specs - violations))\"\necho \"Failed: $violations\"\necho \"\"\n\nif [ $violations -gt 0 ]; then\n  echo \"❌ FAILURE: $violations OpenAPI specification(s) failed validation\"\n  echo \"\"\n  echo \"📘 Common issues:\"\n  echo \"   - Missing or invalid OpenAPI version\"\n  echo \"   - Schema validation errors\"\n  echo \"   - Missing required fields (info, paths, etc.)\"\n  echo \"   - Invalid references (\\$ref)\"\n  echo \"   - Security scheme issues\"\n  echo \"\"\n  echo \"💡 Fix the errors above and commit the changes.\"\n  echo \"   Run locally: spectral lint <spec-file>\"\n  exit 1\nfi\n\necho \"✅ All OpenAPI specifications are valid!\"",
+            "echo \"🔍 Checking OpenAPI versions...\"\necho \"\"\n\nviolations=0\n\nfor spec in $(find specs packages/openapi -name \"*.yml\" -o -name \"*.yaml\" 2>/dev/null); do\n  version=$(grep -E \"^openapi:\" \"$spec\" | head -1 | awk '{print $2}' | tr -d '\"' | tr -d \"'\")\n\n  if [ -z \"$version\" ]; then\n    echo \"❌ $spec - Missing openapi version field\"\n    violations=$((violations + 1))\n    continue\n  fi\n\n  # Check if version is 3.0.x or 3.1.x\n  if echo \"$version\" | grep -qE \"^3\\.[01]\\.[0-9]+$\"; then\n    echo \"✅ $spec - OpenAPI $version\"\n  else\n    echo \"❌ $spec - Unsupported version: $version\"\n    echo \"   Required: OpenAPI 3.0.x or 3.1.x\"\n    violations=$((violations + 1))\n  fi\ndone\n\necho \"\"\n\nif [ $violations -gt 0 ]; then\n  echo \"❌ FAILURE: $violations version issue(s)\"\n  echo \"\"\n  echo \"📘 All OpenAPI specs must use version 3.0.x or 3.1.x\"\n  echo \"   Add to spec: openapi: 3.0.3\"\n  exit 1\nfi\n\necho \"✅ All specs use supported OpenAPI versions\"",
+            "echo \"🔍 Checking for duplicate operationIds...\"\necho \"\"\n\nviolations=0\n\nfor spec in $(find specs packages/openapi -name \"*.yml\" -o -name \"*.yaml\" 2>/dev/null); do\n  echo \"Checking: $spec\"\n\n  # Extract all operationIds\n  operation_ids=$(grep -oP 'operationId:\\s*\\K[^\\s]+' \"$spec\" 2>/dev/null || true)\n\n  if [ -z \"$operation_ids\" ]; then\n    echo \"  ⚠️  No operationIds found (optional)\"\n    continue\n  fi\n\n  # Check for duplicates\n  duplicates=$(echo \"$operation_ids\" | sort | uniq -d)\n\n  if [ -n \"$duplicates\" ]; then\n    echo \"  ❌ Duplicate operationIds found:\"\n    echo \"$duplicates\" | while read dup; do\n      echo \"     - $dup\"\n    done\n    violations=$((violations + 1))\n  else\n    echo \"  ✅ No duplicate operationIds\"\n  fi\ndone\n\necho \"\"\n\nif [ $violations -gt 0 ]; then\n  echo \"❌ FAILURE: Duplicate operationIds detected\"\n  echo \"\"\n  echo \"📘 Each operation must have a unique operationId within a spec\"\n  exit 1\nfi\n\necho \"✅ No duplicate operationIds found\"",
+            "echo \"🔍 Checking for schemas directory...\"\n\nif [ -d \"packages/openapi\" ] && [ ! -d \"packages/openapi/schemas\" ]; then\n  echo \"⚠️  Recommendation: Create packages/openapi/schemas/ for shared schemas\"\n  echo \"   This allows reuse across multiple API specs using \\$ref\"\nelse\n  echo \"✅ Schemas directory structure looks good\"\nfi",
+            "echo \"📄 Generating validation report...\"\n\nmkdir -p docs/reports\nREPORT=\"docs/reports/openapi-validation-$(date +%Y%m%d).md\"\n\ncat > \"$REPORT\" << EOF\n# OpenAPI Validation Report\n\n**Date:** $(date -u +\"%Y-%m-%d %H:%M:%S UTC\")  \n**VTID:** DEV-CICDL-0033  \n**Branch:** $CI_COMMIT_REF_NAME\n\n## Validated Specifications\n\nEOF\n\nfor spec in $(find specs packages/openapi -name \"*.yml\" -o -name \"*.yaml\" 2>/dev/null); do\n  version=$(grep -E \"^openapi:\" \"$spec\" | head -1 | awk '{print $2}' | tr -d '\"' | tr -d \"'\")\n  echo \"- ✅ \\`$spec\\` (OpenAPI $version)\" >> \"$REPORT\"\ndone\n\ncat >> \"$REPORT\" << EOF\n\n## Validation Results\n\n- ✅ All specs passed Spectral validation\n- ✅ All specs use supported OpenAPI versions\n- ✅ No duplicate operationIds detected\n\n## Next Steps\n\n1. Review the validated specifications\n2. Deploy to API Gateway (if applicable)\n3. Generate client SDKs (optional)\n\n---\n\n**Validation Tool:** Spectral CLI  \n**CI Workflow:** CICDL-CORE-OPENAPI-ENFORCE\nEOF\n\necho \"✅ Report saved to: $REPORT\""
+          ]
+        },
+        "aurora-i18n-integration": {
+          "kind": "test",
+          "install": "gateway-npm",
+          "script": [
+            "npx jest aurora-integration --ci"
+          ],
+          "duration": {
+            "fixture": null,
+            "minutes": 2,
+            "note": "one Jest file"
+          }
+        },
+        "aurora-privilege-parity": {
+          "kind": "test",
+          "image": "python",
+          "script": [
+            "python3 -m unittest discover -s scripts/aws/test -p 'test_*.py' -v"
+          ],
+          "duration": {
+            "fixture": null,
+            "minutes": 1,
+            "note": "Python unittest of one directory"
+          }
+        },
+        "voice-pipeline-parity": {
+          "kind": "check",
+          "script": [
+            "apt-get update -qq && apt-get install -y -qq --no-install-recommends python3-pip >/dev/null",
+            "pip install --quiet --break-system-packages libcst",
+            "cd voice-pipeline-spec",
+            "npm ci --no-audit --no-fund",
+            "npm run validate-spec",
+            "npm run extract:ts",
+            "npm run extract:py",
+            "npm run diff"
+          ]
+        },
+        "voice-tools-manifest": {
+          "kind": "check",
+          "script": [
+            "node scripts/voice-tools-manifest-reconcile.mjs --check"
+          ]
+        },
+        "orb-tools-lift": {
+          "kind": "check",
+          "variables": {
+            "ORB_TOOLS_PARITY_GATE": "1"
+          },
+          "script": [
+            "node scripts/orb-tools-lift-scanner.mjs"
+          ]
+        },
+        "gateway-calendar-regression": {
+          "kind": "test",
+          "install": "gateway-pnpm",
+          "script": [
+            "npm run test:calendar -- --silent",
+            "git diff --exit-code -- test/calendar/__golden__"
+          ],
+          "duration": {
+            "fixture": null,
+            "minutes": 2,
+            "note": "the calendar subset of the gateway Jest suite"
+          }
+        },
+        "sql-live-room-cohost": {
+          "kind": "test",
+          "postgres": true,
+          "image": "postgres",
+          "script": [
+            "set -o pipefail\nscripts/ci/sql-tests/run-live-room-cohost-test.sh 2>&1 | tee /tmp/liveroomcohost.log",
+            "grep -q '^PASS vtid-05558 live room cohost' /tmp/liveroomcohost.log"
+          ],
+          "duration": {
+            "fixture": null,
+            "minutes": 1,
+            "note": "one SQL test file against an empty Postgres; not in the duration sample"
+          },
+          "github": "SQL-LIVE-ROOM-COHOST.yml"
+        },
+        "sql-activity-tiers": {
+          "kind": "test",
+          "postgres": true,
+          "image": "postgres",
+          "script": [
+            "set -o pipefail\nscripts/ci/sql-tests/run-activity-tiers-test.sh 2>&1 | tee /tmp/activity-tiers.log",
+            "grep -q '^PASS vtid-05167 activity tiers' /tmp/activity-tiers.log"
+          ],
+          "duration": {
+            "fixture": null,
+            "minutes": 1,
+            "note": "one SQL test file against an empty Postgres; not in the duration sample"
+          },
+          "github": "SQL-ACTIVITY-TIERS.yml"
+        },
+        "sql-auth-bridge": {
+          "kind": "test",
+          "postgres": true,
+          "image": "postgres",
+          "apt": [
+            "npm"
+          ],
+          "script": [
+            "set -o pipefail\nnpm run test:auth-bridge 2>&1 | tee /tmp/auth-bridge.log",
+            "grep -q '^PASS vtid-05023 auth bridge' /tmp/auth-bridge.log"
+          ],
+          "duration": {
+            "fixture": null,
+            "minutes": 1,
+            "note": "one SQL test file against an empty Postgres; not in the duration sample"
+          },
+          "github": "SQL-AUTH-BRIDGE.yml"
+        },
+        "sql-community-event-calendar": {
+          "kind": "test",
+          "postgres": true,
+          "image": "postgres",
+          "script": [
+            "set -o pipefail\nscripts/ci/sql-tests/run-community-event-calendar-test.sh 2>&1 | tee /tmp/calendar.log",
+            "grep -q \"^PASS vtid-04915 community event calendar\" /tmp/calendar.log"
+          ],
+          "duration": {
+            "fixture": null,
+            "minutes": 1,
+            "note": "one SQL test file against an empty Postgres; not in the duration sample"
+          },
+          "github": "SQL-COMMUNITY-EVENT-CALENDAR.yml"
+        },
+        "sql-companion-wiring": {
+          "kind": "test",
+          "postgres": true,
+          "image": "postgres",
+          "script": [
+            "set -o pipefail\nscripts/ci/sql-tests/run-companion-wiring-test.sh 2>&1 | tee /tmp/companion-wiring.log",
+            "grep -q '^PASS vtid-05171 companion wiring' /tmp/companion-wiring.log"
+          ],
+          "duration": {
+            "fixture": null,
+            "minutes": 1,
+            "note": "one SQL test file against an empty Postgres; not in the duration sample"
+          },
+          "github": "SQL-COMPANION-WIRING.yml"
+        },
+        "sql-erase-user-data": {
+          "kind": "test",
+          "postgres": true,
+          "image": "postgres",
+          "script": [
+            "set -o pipefail\nscripts/ci/sql-tests/run-erase-user-data-test.sh 2>&1 | tee /tmp/erase.log",
+            "grep -q '^PASS vtid-04765 erase_user_data' /tmp/erase.log\ngrep -q '^PASS vtid-05158 erase_user_data without auth.users' /tmp/erase.log"
+          ],
+          "duration": {
+            "fixture": null,
+            "minutes": 1,
+            "note": "one SQL test file against an empty Postgres; not in the duration sample"
+          },
+          "github": "SQL-ERASE-USER-DATA.yml"
+        },
+        "sql-health-sources": {
+          "kind": "test",
+          "postgres": true,
+          "image": "postgres",
+          "script": [
+            "set -o pipefail\nscripts/ci/sql-tests/run-health-sources-test.sh 2>&1 | tee /tmp/health-sources.log",
+            "grep -q '^PASS vtid-05161 health sources' /tmp/health-sources.log\ngrep -q '^PASS vtid-05161 placement guard' /tmp/health-sources.log"
+          ],
+          "duration": {
+            "fixture": null,
+            "minutes": 1,
+            "note": "one SQL test file against an empty Postgres; not in the duration sample"
+          },
+          "github": "SQL-HEALTH-SOURCES.yml"
+        },
+        "sql-health-store": {
+          "kind": "test",
+          "postgres": true,
+          "image": "postgres",
+          "script": [
+            "set -o pipefail\nscripts/ci/sql-tests/run-health-store-test.sh 2>&1 | tee /tmp/health-store.log",
+            "grep -q '^PASS vtid-05158 health store' /tmp/health-store.log\ngrep -q '^PASS vtid-05158 placement guard' /tmp/health-store.log"
+          ],
+          "duration": {
+            "fixture": null,
+            "minutes": 1,
+            "note": "one SQL test file against an empty Postgres; not in the duration sample"
+          },
+          "github": "SQL-HEALTH-STORE.yml"
+        },
+        "sql-index-movements": {
+          "kind": "test",
+          "postgres": true,
+          "image": "postgres",
+          "script": [
+            "set -o pipefail\nscripts/ci/sql-tests/run-index-movements-test.sh 2>&1 | tee /tmp/index-movements.log",
+            "grep -q '^PASS vtid-05168 index movements$' /tmp/index-movements.log"
+          ],
+          "duration": {
+            "fixture": null,
+            "minutes": 1,
+            "note": "one SQL test file against an empty Postgres; not in the duration sample"
+          },
+          "github": "SQL-INDEX-MOVEMENTS.yml"
+        },
+        "sql-live-room-calendar": {
+          "kind": "test",
+          "postgres": true,
+          "image": "postgres",
+          "script": [
+            "set -o pipefail\nscripts/ci/sql-tests/run-live-room-calendar-test.sh 2>&1 | tee /tmp/liveroom.log",
+            "grep -q \"^PASS vtid-04965 live room calendar\" /tmp/liveroom.log"
+          ],
+          "duration": {
+            "fixture": null,
+            "minutes": 1,
+            "note": "one SQL test file against an empty Postgres; not in the duration sample"
+          },
+          "github": "SQL-LIVE-ROOM-CALENDAR.yml"
+        },
+        "sql-live-room-host-calendar": {
+          "kind": "test",
+          "postgres": true,
+          "image": "postgres",
+          "script": [
+            "set -o pipefail\nscripts/ci/sql-tests/run-live-room-host-calendar-test.sh 2>&1 | tee /tmp/liveroomhost.log",
+            "grep -q \"^PASS vtid-04976 live room host calendar\" /tmp/liveroomhost.log"
+          ],
+          "duration": {
+            "fixture": null,
+            "minutes": 1,
+            "note": "one SQL test file against an empty Postgres; not in the duration sample"
+          },
+          "github": "SQL-LIVE-ROOM-HOST-CALENDAR.yml"
+        },
+        "sql-memory-functions-migrate-revoke": {
+          "kind": "test",
+          "postgres": true,
+          "image": "postgres",
+          "script": [
+            "set -o pipefail\nbash scripts/ci/sql-tests/run-memory-functions-migrate-revoke-test.sh 2>&1 | tee /tmp/migrate-revoke.log",
+            "grep -q '^PASS vtid-05125 memory functions migrate revoke' /tmp/migrate-revoke.log"
+          ],
+          "duration": {
+            "fixture": null,
+            "minutes": 1,
+            "note": "one SQL test file against an empty Postgres; not in the duration sample"
+          },
+          "github": "SQL-MEMORY-FUNCTIONS-MIGRATE-REVOKE.yml"
+        },
+        "sql-memory-sensitivity": {
+          "kind": "test",
+          "postgres": true,
+          "image": "postgres",
+          "script": [
+            "set -o pipefail\nscripts/ci/sql-tests/run-memory-sensitivity-test.sh 2>&1 | tee /tmp/sensitivity.log",
+            "grep -q '^PASS vtid-04798 memory sensitivity' /tmp/sensitivity.log"
+          ],
+          "duration": {
+            "fixture": null,
+            "minutes": 1,
+            "note": "one SQL test file against an empty Postgres; not in the duration sample"
+          },
+          "github": "SQL-MEMORY-SENSITIVITY.yml"
+        },
+        "sql-partner-review": {
+          "kind": "test",
+          "postgres": true,
+          "image": "postgres",
+          "script": [
+            "set -o pipefail\nscripts/ci/sql-tests/run-partner-review-test.sh 2>&1 | tee /tmp/review.log",
+            "grep -q \"^PASS vtid-04933 keep offline and allow listing\" /tmp/review.log"
+          ],
+          "duration": {
+            "fixture": null,
+            "minutes": 1,
+            "note": "one SQL test file against an empty Postgres; not in the duration sample"
+          },
+          "github": "SQL-PARTNER-REVIEW.yml"
+        },
+        "sql-partner-terms": {
+          "kind": "test",
+          "postgres": true,
+          "image": "postgres",
+          "script": [
+            "set -o pipefail\nscripts/ci/sql-tests/run-partner-terms-test.sh 2>&1 | tee /tmp/terms.log",
+            "grep -q \"^PASS vtid-04895 partner terms lifecycle\" /tmp/terms.log\ngrep -q \"^PASS vtid-04909 partner terms german binding\" /tmp/terms.log\ngrep -q \"^PASS vtid-04909 migration refuses unless empty\" /tmp/terms.log"
+          ],
+          "duration": {
+            "fixture": null,
+            "minutes": 1,
+            "note": "one SQL test file against an empty Postgres; not in the duration sample"
+          },
+          "github": "SQL-PARTNER-TERMS.yml"
+        },
+        "sql-record-migration-row": {
+          "kind": "test",
+          "postgres": true,
+          "image": "postgres",
+          "script": [
+            "set -o pipefail\nscripts/ci/sql-tests/run-record-migration-row-test.sh 2>&1 | tee /tmp/record-migration-row.log",
+            "grep -q '^PASS vtid-05123 record migration row' /tmp/record-migration-row.log"
+          ],
+          "duration": {
+            "fixture": null,
+            "minutes": 1,
+            "note": "one SQL test file against an empty Postgres; not in the duration sample"
+          },
+          "github": "SQL-RECORD-MIGRATION-ROW.yml"
+        },
+        "sql-reminders-in-calendar": {
+          "kind": "test",
+          "postgres": true,
+          "image": "postgres",
+          "script": [
+            "set -o pipefail\nscripts/ci/sql-tests/run-reminders-in-calendar-test.sh 2>&1 | tee /tmp/remindersincal.log",
+            "grep -q \"^PASS vtid-04978 reminders in calendar\" /tmp/remindersincal.log"
+          ],
+          "duration": {
+            "fixture": null,
+            "minutes": 1,
+            "note": "one SQL test file against an empty Postgres; not in the duration sample"
+          },
+          "github": "SQL-REMINDERS-IN-CALENDAR.yml"
+        },
+        "sql-subscription-dates-in-calendar": {
+          "kind": "test",
+          "postgres": true,
+          "image": "postgres",
+          "script": [
+            "set -o pipefail\nscripts/ci/sql-tests/run-subscription-dates-in-calendar-test.sh 2>&1 | tee /tmp/subscriptiondates.log",
+            "grep -q \"^PASS vtid-04994 subscription dates in calendar\" /tmp/subscriptiondates.log"
+          ],
+          "duration": {
+            "fixture": null,
+            "minutes": 1,
+            "note": "one SQL test file against an empty Postgres; not in the duration sample"
+          },
+          "github": "SQL-SUBSCRIPTION-DATES-IN-CALENDAR.yml"
+        },
+        "sql-supplier-listing-gate": {
+          "kind": "test",
+          "postgres": true,
+          "image": "postgres",
+          "script": [
+            "set -o pipefail\nscripts/ci/sql-tests/run-supplier-listing-gate-test.sh 2>&1 | tee /tmp/gate.log",
+            "grep -q \"^ *PASS vtid-04939 supplier listing gate\" /tmp/gate.log"
+          ],
+          "duration": {
+            "fixture": null,
+            "minutes": 1,
+            "note": "one SQL test file against an empty Postgres; not in the duration sample"
+          },
+          "github": "SQL-SUPPLIER-LISTING-GATE.yml"
+        },
+        "sql-tenant-foundation": {
+          "kind": "test",
+          "postgres": true,
+          "image": "postgres",
+          "script": [
+            "set -o pipefail\nbash scripts/ci/sql-tests/run-tenant-foundation-test.sh 2>&1 | tee /tmp/tenant-foundation.log",
+            "grep -q '^PASS vtid-05149 tenant foundation' /tmp/tenant-foundation.log"
+          ],
+          "duration": {
+            "fixture": null,
+            "minutes": 1,
+            "note": "one SQL test file against an empty Postgres; not in the duration sample"
+          },
+          "github": "SQL-TENANT-FOUNDATION.yml"
+        },
+        "sql-test-results-in-calendar": {
+          "kind": "test",
+          "postgres": true,
+          "image": "postgres",
+          "script": [
+            "set -o pipefail\nscripts/ci/sql-tests/run-test-results-in-calendar-test.sh 2>&1 | tee /tmp/testresults.log",
+            "grep -q \"^PASS vtid-04997 test results in calendar\" /tmp/testresults.log"
+          ],
+          "duration": {
+            "fixture": null,
+            "minutes": 1,
+            "note": "one SQL test file against an empty Postgres; not in the duration sample"
+          },
+          "github": "SQL-TEST-RESULTS-IN-CALENDAR.yml"
+        },
+        "sql-wearable-samples-rpc-revoke": {
+          "kind": "test",
+          "postgres": true,
+          "image": "postgres",
+          "script": [
+            "set -o pipefail\nbash scripts/ci/sql-tests/run-wearable-samples-rpc-revoke-test.sh 2>&1 | tee /tmp/wearable-revoke.log",
+            "grep -q '^PASS vtid-05156 wearable samples rpc revoke' /tmp/wearable-revoke.log"
+          ],
+          "duration": {
+            "fixture": null,
+            "minutes": 1,
+            "note": "one SQL test file against an empty Postgres; not in the duration sample"
+          },
+          "github": "SQL-WEARABLE-SAMPLES-RPC-REVOKE.yml"
+        }
+      },
+      "assist_rules": {},
+      "notify_platform_paths": [],
+      "github_workflows": {
+        "PR-GATE.yml": {
+          "fate": "t1",
+          "path_filter": false,
+          "jobs": [
+            "lane-scope",
+            "pr-gate-report",
+            "collab-handoff"
+          ],
+          "steps": {
+            "pr-gate/Gate self-test": "unit-scripts",
+            "pr-gate/Live PR title": "pr-gate-report",
+            "pr-gate/Kiro steering": [
+              "pr-gate-report",
+              "unit-scripts"
+            ],
+            "pr-gate/Scope guard": "pr-gate-report",
+            "pr-gate/Sparring record": "pr-gate-report",
+            "pr-gate/Test-weakening guard": "pr-gate-report",
+            "pr-gate/Gateway deps (only when a VTID in the title is a \"fix\")": "pr-gate-report",
+            "pr-gate/Red→green proof (fixes)": "pr-gate-report",
+            "pr-gate/Verdict": "pr-gate-report",
+            "collab-handoff/Collab tests": "unit-scripts",
+            "collab-handoff/Collab handoff": "collab-handoff",
+            "lane-scope/Lane scope": "lane-scope"
+          }
+        },
+        "UNIT.yml": {
+          "fate": "t1",
+          "path_filter": false,
+          "jobs": [
+            "unit-scripts"
+          ]
+        },
+        "STAGING-TESTS-REQUIRED.yml": {
+          "fate": "t1",
+          "path_filter": false,
+          "jobs": [
+            "change-suite"
+          ]
+        },
+        "TEST-SUITE.yml": {
+          "fate": "t1",
+          "path_filter": true,
+          "jobs": [
+            "gateway-jest",
+            "gateway-shard-union",
+            "oasis-projector-test",
+            "openclaw-bridge-test",
+            "vcaop-test"
+          ]
+        },
+        "CICDL-GATEWAY-CI.yml": {
+          "fate": "t1",
+          "path_filter": true,
+          "jobs": [
+            "gateway-typecheck"
+          ]
+        },
+        "CICDL-CORE-LINT-SERVICES.yml": {
+          "fate": "t1",
+          "path_filter": true,
+          "jobs": [
+            "cicdl-lint-services"
+          ]
+        },
+        "CICDL-CORE-OPENAPI-ENFORCE.yml": {
+          "fate": "t1",
+          "path_filter": true,
+          "jobs": [
+            "openapi-enforce"
+          ]
+        },
+        "OASIS-PERSISTENCE.yml": {
+          "fate": "t1",
+          "path_filter": true,
+          "jobs": [
+            "oasis-persistence",
+            "gateway-typecheck",
+            "gateway-jest",
+            "gateway-build"
+          ]
+        },
+        "VALIDATOR-CHECK.yml": {
+          "fate": "t1",
+          "path_filter": true,
+          "jobs": [
+            "validator-check"
+          ],
+          "steps": {
+            "validate-pr/Load ruleset": "validator-check",
+            "validate-pr/Collect PR text (title/body)": "validator-check",
+            "validate-pr/Require PR body declarations (profile + markers)": "validator-check",
+            "validate-pr/Extract VTID + Validation Profile": "validator-check",
+            "validate-pr/Compute changed files": "validator-check",
+            "validate-pr/Enforce Path Ownership Guard (profile-based)": "validator-check",
+            "validate-pr/Evidence Pack Gate": "validator-check",
+            "validate-pr/Acceptance Mapping Gate (no unmapped ACs)": "validator-check",
+            "validate-pr/CSP Governance Gate (scan added lines only)": "validator-check",
+            "validate-pr/Build Gate (profile-based)": "validator-check",
+            "validate-pr/Route Mount Evidence Gate (conditional)": "validator-check",
+            "validate-pr/OASIS Traceability Gate (conditional)": "validator-check",
+            "validate-pr/Merge Deploy Gate (VTID must be in merge title/message)": "validator-check",
+            "validate-pr/PASS summary": "validator-check"
+          }
+        },
+        "COMMAND-HUB-GUARDRAILS.yml": {
+          "fate": "t1",
+          "path_filter": true,
+          "jobs": [
+            "command-hub-guardrails"
+          ]
+        },
+        "CI-SCRIPTS-TEST.yml": {
+          "fate": "t1",
+          "path_filter": true,
+          "jobs": [
+            "ci-scripts-test"
+          ]
+        },
+        "AURORA-I18N-INTEGRATION.yml": {
+          "fate": "t1",
+          "path_filter": true,
+          "jobs": [
+            "aurora-i18n-integration"
+          ]
+        },
+        "AURORA-PRIVILEGE-PARITY-UNIT.yml": {
+          "fate": "t1",
+          "path_filter": true,
+          "jobs": [
+            "aurora-privilege-parity"
+          ]
+        },
+        "VOICE-PIPELINE-PARITY-SCANNER.yml": {
+          "fate": "t1",
+          "path_filter": true,
+          "jobs": [
+            "voice-pipeline-parity"
+          ]
+        },
+        "VOICE-TOOLS-MANIFEST-RECONCILE.yml": {
+          "fate": "t1",
+          "path_filter": true,
+          "jobs": [
+            "voice-tools-manifest"
+          ]
+        },
+        "ORB-TOOLS-LIFT-SCANNER.yml": {
+          "fate": "t1",
+          "path_filter": true,
+          "jobs": [
+            "orb-tools-lift"
+          ]
+        },
+        "CALENDAR-REGRESSION.yml": {
+          "fate": "t1",
+          "path_filter": true,
+          "jobs": [
+            "gateway-calendar-regression"
+          ]
+        },
+        "DEV-AUTOPILOT-IMPACT.yml": {
+          "fate": "t1",
+          "path_filter": false,
+          "jobs": [
+            "dev-autopilot-impact"
+          ],
+          "steps": {
+            "scan/Run impact scan": "dev-autopilot-impact",
+            "scan/Ingest impact findings into Developer Autopilot queue": {
+              "open": "push to main only: POSTs the findings to the staging gateway with the DEV_AUTOPILOT_SCAN_TOKEN secret. No GitLab job may: the untrusted class holds no secret and plan §7 gives the main class no role for this token. Open item for the driver (a role and a secret, then a live-mode main-class job); until the cut GitHub keeps ingesting."
+            },
+            "scan/Build PR comment body": {
+              "open": "formats the findings for the PR comment below; the findings stay in the job log and the dev-autopilot-impact-findings.json artifact"
+            },
+            "scan/Post or update PR comment": {
+              "open": "needs a token that may comment on the merge request; no T1 job holds one (plan §3.2). Open item for the driver (the bridge of plan §3.13 or a bot job)"
+            },
+            "scan/Fail if blocker findings (PR only, respecting dry_run)": "dev-autopilot-impact"
+          }
+        },
+        "VCAOP-GUARDRAILS-CI.yml": {
+          "fate": "t1",
+          "path_filter": true,
+          "jobs": [
+            "vcaop-guardrails"
+          ]
+        },
+        "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+          "fate": "t1",
+          "path_filter": false,
+          "jobs": [
+            "frontend-canonical-source"
+          ],
+          "note": "on GitLab it runs only when its own files change (plan §2.2)"
+        },
+        "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+          "fate": "t1",
+          "path_filter": false,
+          "jobs": [
+            "phase-2b-naming"
+          ],
+          "note": "on GitLab it runs only when its own files change (plan §2.2)"
+        },
+        "PHASE-2B-DOC-GATE.yml": {
+          "fate": "t1",
+          "path_filter": false,
+          "jobs": [
+            "phase-2b-doc-gate"
+          ],
+          "note": "on GitLab it runs only when its own files change (plan §2.2)"
+        },
+        "SQL-LIVE-ROOM-COHOST.yml": {
+          "fate": "t1",
+          "path_filter": true,
+          "jobs": [
+            "sql-live-room-cohost"
+          ]
+        },
+        "SQL-ACTIVITY-TIERS.yml": {
+          "fate": "t1",
+          "path_filter": true,
+          "jobs": [
+            "sql-activity-tiers"
+          ]
+        },
+        "SQL-AUTH-BRIDGE.yml": {
+          "fate": "t1",
+          "path_filter": true,
+          "jobs": [
+            "sql-auth-bridge"
+          ]
+        },
+        "SQL-COMMUNITY-EVENT-CALENDAR.yml": {
+          "fate": "t1",
+          "path_filter": true,
+          "jobs": [
+            "sql-community-event-calendar"
+          ]
+        },
+        "SQL-COMPANION-WIRING.yml": {
+          "fate": "t1",
+          "path_filter": true,
+          "jobs": [
+            "sql-companion-wiring"
+          ]
+        },
+        "SQL-ERASE-USER-DATA.yml": {
+          "fate": "t1",
+          "path_filter": true,
+          "jobs": [
+            "sql-erase-user-data"
+          ]
+        },
+        "SQL-HEALTH-SOURCES.yml": {
+          "fate": "t1",
+          "path_filter": true,
+          "jobs": [
+            "sql-health-sources"
+          ]
+        },
+        "SQL-HEALTH-STORE.yml": {
+          "fate": "t1",
+          "path_filter": true,
+          "jobs": [
+            "sql-health-store"
+          ]
+        },
+        "SQL-INDEX-MOVEMENTS.yml": {
+          "fate": "t1",
+          "path_filter": true,
+          "jobs": [
+            "sql-index-movements"
+          ]
+        },
+        "SQL-LIVE-ROOM-CALENDAR.yml": {
+          "fate": "t1",
+          "path_filter": true,
+          "jobs": [
+            "sql-live-room-calendar"
+          ]
+        },
+        "SQL-LIVE-ROOM-HOST-CALENDAR.yml": {
+          "fate": "t1",
+          "path_filter": true,
+          "jobs": [
+            "sql-live-room-host-calendar"
+          ]
+        },
+        "SQL-MEMORY-FUNCTIONS-MIGRATE-REVOKE.yml": {
+          "fate": "t1",
+          "path_filter": true,
+          "jobs": [
+            "sql-memory-functions-migrate-revoke"
+          ]
+        },
+        "SQL-MEMORY-SENSITIVITY.yml": {
+          "fate": "t1",
+          "path_filter": true,
+          "jobs": [
+            "sql-memory-sensitivity"
+          ]
+        },
+        "SQL-PARTNER-REVIEW.yml": {
+          "fate": "t1",
+          "path_filter": true,
+          "jobs": [
+            "sql-partner-review"
+          ]
+        },
+        "SQL-PARTNER-TERMS.yml": {
+          "fate": "t1",
+          "path_filter": true,
+          "jobs": [
+            "sql-partner-terms"
+          ]
+        },
+        "SQL-RECORD-MIGRATION-ROW.yml": {
+          "fate": "t1",
+          "path_filter": true,
+          "jobs": [
+            "sql-record-migration-row"
+          ]
+        },
+        "SQL-REMINDERS-IN-CALENDAR.yml": {
+          "fate": "t1",
+          "path_filter": true,
+          "jobs": [
+            "sql-reminders-in-calendar"
+          ]
+        },
+        "SQL-SUBSCRIPTION-DATES-IN-CALENDAR.yml": {
+          "fate": "t1",
+          "path_filter": true,
+          "jobs": [
+            "sql-subscription-dates-in-calendar"
+          ]
+        },
+        "SQL-SUPPLIER-LISTING-GATE.yml": {
+          "fate": "t1",
+          "path_filter": true,
+          "jobs": [
+            "sql-supplier-listing-gate"
+          ]
+        },
+        "SQL-TENANT-FOUNDATION.yml": {
+          "fate": "t1",
+          "path_filter": true,
+          "jobs": [
+            "sql-tenant-foundation"
+          ]
+        },
+        "SQL-TEST-RESULTS-IN-CALENDAR.yml": {
+          "fate": "t1",
+          "path_filter": true,
+          "jobs": [
+            "sql-test-results-in-calendar"
+          ]
+        },
+        "SQL-WEARABLE-SAMPLES-RPC-REVOKE.yml": {
+          "fate": "t1",
+          "path_filter": true,
+          "jobs": [
+            "sql-wearable-samples-rpc-revoke"
+          ]
+        },
+        "AWS-STAGE-DEPLOY-GATEWAY.yml": {
+          "fate": "t2",
+          "jobs": [
+            "build-image:gateway",
+            "push-image:gateway",
+            "deploy-staging:gateway",
+            "staging-verify:gateway",
+            "record:gateway"
+          ]
+        },
+        "AWS-STAGE-DEPLOY-ERP-BRIDGE.yml": {
+          "fate": "t2",
+          "jobs": [
+            "build-image:erp-bridge",
+            "push-image:erp-bridge",
+            "deploy-staging:erp-bridge"
+          ]
+        },
+        "AWS-STAGE-DEPLOY-KIRO-RUNNER.yml": {
+          "fate": "t2",
+          "path_filter": true,
+          "jobs": [
+            "build-image:kiro-runner",
+            "push-image:kiro-runner",
+            "deploy-staging:kiro-runner"
+          ],
+          "pr_jobs": [
+            "kiro-runner-test"
+          ]
+        },
+        "AWS-STAGE-DEPLOY-POSTGREST-AURORA-PROXY.yml": {
+          "fate": "t2",
+          "jobs": [
+            "build-image:postgrest-aurora-proxy",
+            "push-image:postgrest-aurora-proxy",
+            "deploy-staging:postgrest-aurora-proxy"
+          ]
+        },
+        "STAGING-VERIFY.yml": {
+          "fate": "t2",
+          "jobs": [
+            "staging-verify:gateway",
+            "record:gateway"
+          ]
+        },
+        "STAGING-VERIFY-NIGHTLY.yml": {
+          "fate": "t3",
+          "jobs": [
+            "staging-verify-nightly:gateway",
+            "record-nightly:gateway"
+          ]
+        },
+        "VTID-AUTO-CLOSE.yml": {
+          "fate": "t2",
+          "path_filter": false,
+          "jobs": [
+            "vtid-close"
+          ]
+        },
+        "TEST-SUITE-RERUN.yml": {
+          "fate": "t2",
+          "jobs": [],
+          "note": "replaced by GitLab retry on runner failure, at most once (the retry of every template)",
+          "replaced_by": "retry"
+        },
+        "PLAN-SPAR.yml": {
+          "fate": "kept",
+          "jobs": []
+        },
+        "MIGRATION-DRIFT-CHECK.yml": {
+          "fate": "kept",
+          "jobs": []
+        },
+        "VCAOP-CICD.yml": {
+          "fate": "dead",
+          "jobs": []
+        }
+      }
+    }
+  }
+}
