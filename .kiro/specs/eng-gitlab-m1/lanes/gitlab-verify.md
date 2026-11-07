@@ -1,6 +1,6 @@
 ---
 lane: gitlab-verify
-state: ready
+state: executing
 next_actor: kiro
 depends_on: [gitlab-infra]
 executor: kiro
@@ -13,8 +13,10 @@ paths:
   - infra/gitlab-engineering/host/ci-platform.yml
   - infra/gitlab-engineering/host/ci-v1.yml
   - infra/gitlab-engineering/RUNBOOK.md
-updated: 2026-11-05T10:49Z
+updated: 2026-11-07T11:46Z
 vtid: VTID-05555
+claimed_by: kiro-exafy-202611071142-d7ed
+branch: kiro/eng-gitlab-m1/gitlab-verify
 ---
 # Lane: gitlab-verify (repo vitana-platform)
 Tasks in `tasks.md` (group `<!-- lane: gitlab-verify -->`). Records the owner's runs of plan §6 steps 0 to 3 as evidence. VTID from PLAN-SPAR
@@ -27,3 +29,13 @@ same time. Next: PLAN-SPAR allocates its VTID; the lane starts when `gitlab-infr
 
 ### 2026-11-05T10:49Z · ci-plan-spar · ready (VTID allocated)
 VTID-05555 allocated after policy approval (converged-auto-v1).
+
+### 2026-11-07T11:46Z · kiro-exafy-202611071142-d7ed · ready → executing
+Claimed by Kiro seat exafy. V1 done: the owner's steps are in `docs/validation/VTID-05555/owner-steps.md`. V4 started: `acceptance.md` maps A01-A05 and the pipelines clause, each PENDING on an owner output. The GitHub side of step 1 is recorded (`outputs/github-main-runs.txt`, both green). The step-2 list includes the nginx lines of the restored gitlab.rb (gitlab-infra review note on `host/gitlab-install.sh:49-53`).
+Blocked on the owner: steps 0-3 run against the live GitLab and the engineering AWS account; a session never runs them. Next: the owner pastes each output; the lane records it (V2), fixes any defect (V3), then goes to in-review.
+
+### 2026-11-07T12:37Z · kiro-exafy-202611071142-d7ed · executing (owner read 1 recorded)
+The owner ran `bash ~/glv.sh read` in CloudShell (outputs/read-20261107T1234Z.txt; findings in outputs/read-1-findings.md). A03 passes (nightly backups 11-05, 11-06, 11-07). Step 0 is done by the M2 settings sync (ci-config hashes equal git main). Blocker: no runner serves tag `vitana-eng` since the M2 retag of `vitana-eng-1` to `vitana-legacy`; the fleet runner's token is not stored because every secret write of the settings sync fails (lane eng-gitlab-m2/settings-fix, PR #4780, held by kiro-exafy-202611062222-c262). Pipelines and A05 wait for it. The glv.sh runner line is fixed. Next: the owner runs `bash ~/glv.sh restore` (A04), which does not need a runner.
+
+### 2026-11-07T12:54Z · kiro-exafy-202611071142-d7ed · executing (restore run 1 recorded; V3 fix to RUNBOOK §8)
+Restore run 1 (outputs/restore-1-20261107T1239Z.txt): the 2026-11-07 backup restored on a scratch machine (`RESULT: DONE`, doctor:secrets 0 failures), and the machine was removed. A04 is not proven: step B discarded the result query's output (`2>/dev/null`), so there were no counts and no tip, and step C compared nothing. Fixed under V3 in `RUNBOOK.md` §8 and glv.sh: the query is retried, its error is kept, and a missing result fails the step. nginx lines recorded for the gitlab-infra note. Next: restore run 2 with the fixed commands.
