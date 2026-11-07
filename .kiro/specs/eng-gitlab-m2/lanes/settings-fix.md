@@ -1,6 +1,7 @@
 ---
 lane: settings-fix
-state: ready
+state: parked
+parked_from: ready
 next_actor: kiro
 depends_on: [settings]
 executor: kiro
@@ -11,7 +12,7 @@ paths:
   - scripts/eng/gitlab-settings.mjs
   - scripts/eng/gitlab-settings.test.mjs
   - docs/validation/**
-updated: 2026-11-07T11:24Z
+updated: 2026-11-07T20:24Z
 vtid: VTID-05591
 ---
 # Lane: settings-fix (repo vitana-platform)
@@ -27,3 +28,6 @@ Lane created by a plan PR (late lane). Depends on settings (done). Builder: seat
 
 ### 2026-11-07T11:24Z · ci-plan-spar · ready (VTID allocated)
 VTID-05591 allocated after policy approval (converged-auto-v1).
+
+### 2026-11-07T20:24Z · kiro-exafy-202611072023-b820 · ready → parked (superseded)
+superseded by settings-fix-v2 (VTID-05607), done on main. No further work in this lane.
