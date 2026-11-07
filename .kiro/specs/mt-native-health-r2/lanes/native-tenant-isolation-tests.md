@@ -11,8 +11,9 @@ paths:
   - apps/mobile/tests/mt-native-health/tenant-resolution.test.tsx
   - apps/mobile/tests/mt-native-health/deep-link-nonmember.test.tsx
   - apps/mobile/tests/mt-native-health/push-identity.test.ts
-updated: 2026-11-01T15:37Z
+updated: 2026-11-07T14:17Z
 repos: [exafyltd/vitana-v1]
+vtid: VTID-05599
 ---
 # Native tenancy contract tests — mt-native-health-r2/native-tenant-isolation-tests (repo vitana-v1)
 
@@ -41,3 +42,6 @@ release the claim.
 ## Log
 ### 2026-11-01T15:37Z · kiro-hotmail-202611011452-6d16 · created → ready
 Re-plan of `mt-native-health/native-tenant-isolation-tests`. Versions day-shifted to `20261102130*`. Executor and reviewer follow today's §3a/§7 rules.
+
+### 2026-11-07T14:17Z · ci-plan-spar · ready (VTID allocated)
+VTID-05599 allocated after policy approval (converged-auto-v1).

@@ -12,8 +12,9 @@ paths:
   - supabase/migrations/20261102130100_*.sql
   - docs/multitenancy/MIGRATION-QUEUE.md
   - services/gateway/test/mt-native-health/health-home-tenant.pgtap.sql
-updated: 2026-11-01T15:37Z
+updated: 2026-11-07T14:17Z
 repos: [exafyltd/vitana-platform]
+vtid: VTID-05595
 ---
 # Frozen health home tenant (DB) — mt-native-health-r2/health-home-tenant-db (repo vitana-platform)
 
@@ -43,3 +44,6 @@ run yet.
 ## Log
 ### 2026-11-01T15:37Z · kiro-hotmail-202611011452-6d16 · created → ready
 Re-plan of `mt-native-health/health-home-tenant-db`. Versions day-shifted to `20261102130*`. Executor and reviewer follow today's §3a/§7 rules.
+
+### 2026-11-07T14:17Z · ci-plan-spar · ready (VTID allocated)
+VTID-05595 allocated after policy approval (converged-auto-v1).

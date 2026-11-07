@@ -4,8 +4,10 @@ author: kiro
 author_seat: hotmail
 executor: kiro
 next_actor: kiro
-state: drafted
-updated: 2026-11-01T15:37Z
+state: approved
+updated: 2026-11-07T14:17Z
+sparring_record: .kiro/specs/mt-native-health-r2/sparring/verdict.md
+vtids: [VTID-05594, VTID-05595, VTID-05596, VTID-05597, VTID-05598, VTID-05599]
 ---
 # Handoff — mt-native-health-r2
 Re-plan of `mt-native-health` (branch `kiro/mt-native-health/plan`; PLAN-SPAR session `fca982e6` escalated at the
@@ -41,3 +43,6 @@ The plan PR opens when PLAN-SPAR capacity allows (`collaboration.md` §8a).
 ### 2026-11-07T14:30Z · kiro-hotmail-202611061752-cc1f · session 2 round 2 answered
 - R2-F1 accepted: new lane `health-writers-voice-orb` (voice and ORB health writers), long-tail writers deferred to
   `health-writers-long-tail` and pinned in the inventory test. Answers in `sparring/s2-responses-2.md`.
+
+### 2026-11-07T14:17Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 6 lane(s) got a VTID and are handed to Kiro.

@@ -18,8 +18,9 @@ paths:
   - services/gateway/scripts/gen-health-reader-inventory.mjs
   - services/gateway/test/mt-native-health/health-reader-inventory.test.ts
   - services/gateway/test/mt-native-health/health-db.test.ts
-updated: 2026-11-01T15:37Z
+updated: 2026-11-07T14:17Z
 repos: [exafyltd/vitana-platform]
+vtid: VTID-05596
 ---
 # User-keyed healthDb accessor + inventory lint — mt-native-health-r2/health-tenant-accessor (repo vitana-platform)
 
@@ -41,3 +42,6 @@ and `Collab-Lane: mt-native-health-r2/health-tenant-accessor`. When the PR is op
 ## Log
 ### 2026-11-01T15:37Z · kiro-hotmail-202611011452-6d16 · created → ready
 Re-plan of `mt-native-health/health-tenant-accessor`. Answers R3-F1 (`.maybeSingle()` with home-tenant semantics; the swallowed `PGRST116` is removed) and R3-F2 (each (b) inventory entry gets a `reason`).
+
+### 2026-11-07T14:17Z · ci-plan-spar · ready (VTID allocated)
+VTID-05596 allocated after policy approval (converged-auto-v1).

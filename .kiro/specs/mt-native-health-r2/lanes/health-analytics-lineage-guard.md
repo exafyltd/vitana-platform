@@ -13,8 +13,9 @@ paths:
   - services/gateway/test/mt-native-health/health-lineage-guard.pgtap.sql
   - services/gateway/src/constants/health-lineage-exempt.ts
   - services/gateway/test/mt-native-health/health-lineage-inventory.json
-updated: 2026-11-01T15:37Z
+updated: 2026-11-07T14:17Z
 repos: [exafyltd/vitana-platform]
+vtid: VTID-05594
 ---
 # Tenant-analytics/commerce health-read guard — mt-native-health-r2/health-analytics-lineage-guard (repo vitana-platform)
 
@@ -44,3 +45,6 @@ release the claim.
 ## Log
 ### 2026-11-01T15:37Z · kiro-hotmail-202611011452-6d16 · created → ready
 Re-plan of `mt-native-health/health-analytics-lineage-guard`. Versions day-shifted to `20261102130*`. Executor and reviewer follow today's §3a/§7 rules.
+
+### 2026-11-07T14:17Z · ci-plan-spar · ready (VTID allocated)
+VTID-05594 allocated after policy approval (converged-auto-v1).

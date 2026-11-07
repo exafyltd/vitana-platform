@@ -16,8 +16,9 @@ paths:
   - services/gateway/test/services/orb-tools/health-depth-tools.test.ts
   - services/gateway/test/mt-native-health/health-writers-voice-orb.test.ts
   - services/gateway/test/mt-native-health/health-reader-inventory.test.ts
-updated: 2026-11-07T14:30Z
+updated: 2026-11-07T14:17Z
 repos: [exafyltd/vitana-platform]
+vtid: VTID-05597
 ---
 # Voice and ORB health writers on healthDb — mt-native-health-r2/health-writers-voice-orb (repo vitana-platform)
 
@@ -42,3 +43,6 @@ and `Collab-Lane: mt-native-health-r2/health-writers-voice-orb`. When the PR is 
 Added by the session-2 round 2 answer (s2-R2-F1): the voice and ORB health writers use a session tenant and a zero-UUID
 fallback, so they convert with the same `MT_RESOLUTION_V2` flag. Split from `health-tenant-accessor` to keep each lane
 small; both land dark and the flag flips after both.
+
+### 2026-11-07T14:17Z · ci-plan-spar · ready (VTID allocated)
+VTID-05597 allocated after policy approval (converged-auto-v1).
