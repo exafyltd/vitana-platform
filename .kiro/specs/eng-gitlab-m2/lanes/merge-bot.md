@@ -1,6 +1,6 @@
 ---
 lane: merge-bot
-state: in-review
+state: done
 next_actor: kiro
 depends_on: [gitlab-client]
 executor: kiro
@@ -14,8 +14,8 @@ paths:
   - infra/gitlab-engineering/host/units/vitana-land.service
   - infra/gitlab-engineering/host/units/vitana-land.timer
   - docs/validation/**
-updated: 2026-11-05T16:38Z
-claimed_by: kiro-exafy-202611021438-cff7
+updated: 2026-11-06T22:44Z
+claimed_by: kiro-exafy-202611062222-c262
 branch: kiro/eng-gitlab-m2/merge-bot
 pr: https://github.com/exafyltd/vitana-platform/pull/4697
 vtid: VTID-05538
@@ -109,3 +109,16 @@ Findings: non-blocking: scripts/eng/gitlab-land.mjs:434-440 (new): after a refus
 Findings: non-blocking: .kiro/specs/eng-gitlab-m2/lanes/merge-bot.md:63: the 16:20Z answer defers items to lanes that do not record them on main. Lane settings' paths (lanes/settings.md:11-26) do not include vitana-land.service, so it cannot add User= and sandboxing to this unit as stated, and neither its lane file nor its tasks name the item. The merge-queue tasks of agentic-delivery do not name the pipeline-status item; its new review source does cover eventPages. Record both in the target lanes through _plan, or in this lane's closing record.
 Findings: non-blocking: CI on 363560d8 was not read by this review: gh pr view and gh pr checks need GraphQL here, and gh api is not an allowed command. The verdict relies on the caller's REST read at 16:50:53Z: 12 check names green, unit included, and the cancelled runs are superseded duplicates. land-guard.mjs checks said: ok, 12 checks green. The land step re-reads the checks on the head it merges.
 Next: the land step merges under §7b once lane gitlab-client is done on origin/main (closing record PR #4693), after bringing the branch up to date with main and re-checking on that head.
+
+### 2026-11-06T22:44Z · kiro-exafy-202611062222-c262 · in-review → verified
+Closing record written by the plan driver kiro-exafy-202611062222-c262, which took over this lane's stale claim (holder silent > 24 h).
+Review: the reviewer-agent accept by agent-vitana-lane-reviewer-202611051707-cc3b on head 363560d80e7428f61728e6fc91f27a51f30940e8 is in this log.
+PR https://github.com/exafyltd/vitana-platform/pull/4697 merged at 2026-11-05T21:47:53Z by DraganOffice (the gh identity of the plan driver's review desk) with head 3cf330bb9e395b7321bccfbbb826ab817358c685.
+`land-guard.mjs review --gh exafyltd/vitana-platform --repo . --pr 4697 --reviewed-head 363560d80e7428f61728e6fc91f27a51f30940e8` (run 2026-11-06T22:44Z): ok, only lane-file entries and clean merges of main after the reviewed head, so the accept counted for the merged head.
+Checks on the merged head (REST check-runs read, 2026-11-06T22:44Z): 12 of 12 completed/success; none red or missing.
+
+### 2026-11-06T22:44Z · kiro-exafy-202611062222-c262 · verified → done
+merge: 72dbefbaaee7622793091eab2edc092d0e10a16e
+authority: §7b PM rule (plan driver review desk; accept current on the merged head, checks green).
+Gap: the lane said in-review, not verified, when it merged, and no merge line was written at the time; this entry records both.
+Next: none; the lane is done.
