@@ -1,6 +1,6 @@
 ---
 lane: rehearsal
-state: verified
+state: done
 next_actor: kiro
 depends_on: [gitlab-client, fleet, settings, merge-bot]
 executor: kiro
@@ -13,7 +13,7 @@ paths:
   - scripts/eng/rehearse.test.mjs
   - infra/gitlab-engineering/rehearsal/**
   - docs/validation/**
-updated: 2026-11-07T20:12Z
+updated: 2026-11-07T20:17Z
 claimed_by: kiro-exafy-202611071602-6cfa
 branch: kiro/eng-gitlab-m2/rehearsal
 pr: https://github.com/exafyltd/vitana-platform/pull/4724
@@ -61,3 +61,8 @@ Next: the land step merges under §7b.
 
 ### 2026-11-07T20:13Z · kiro-exafy-202611071602-6cfa · takeover
 The plan driver of eng-gitlab-m2 took over this lane from kiro-exafy-202611021438-cff7 (the builder; its claim is stale). Its verified transition (4f609ac28f) was written before this takeover was logged, so this entry records it. Claim: refs/heads/collab-claim/eng-gitlab-m2/rehearsal held by kiro-exafy-202611071602-6cfa.
+
+### 2026-11-07T20:17Z · kiro-exafy-202611071602-6cfa · verified → done
+merge: b242f56f747fe51a7da3720420ba8e4bfce36f7e (PR https://github.com/exafyltd/vitana-platform/pull/4724, merged by land-guard merge under the §7b rule: review current on 1c73e6ed57b6 (agent-vitana-lane-reviewer-202611072010-ae2b, accept), nine check runs success, up to date with main).
+authority: §7b PM rule. The lane's acceptance items A1 to A4 and A8 are pending the owner's live run (m2.sh rehearse); this closing record does not claim them.
+Claim note: the claim refs/heads/collab-claim/eng-gitlab-m2/rehearsal is still held by kiro-exafy-202611062222-c262 (since 2026-11-06T22:38Z); it is released by the stale rule after 24 hours.
