@@ -1,6 +1,6 @@
 ---
 lane: grouped-welcome-notifications
-state: verified
+state: done
 next_actor: kiro
 vtid: VTID-05208
 seat: jtadic
@@ -9,8 +9,7 @@ area: messenger
 depends_on: []
 branch: kiro/new-member-welcome/grouped-welcome-notifications
 pr: https://github.com/exafyltd/vitana-platform/pull/4153
-updated: 2026-10-30T13:48Z
-parked_from: in-review
+updated: 2026-10-30T18:00Z
 ---
 # Grouped greeting-DM notifications
 
@@ -3486,4 +3485,39 @@ head: 2b16082bb68eb579691989c03f68beb0e7e6eeab
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 PR: https://github.com/exafyltd/vitana-platform/pull/4511
 Findings: non-blocking: CI on the current head was not verifiable by the reviewer; the land step confirms required checks are green on this head. Head 2b16082bb6 is a merge of main 85d95454d2 (with the merged sibling record #4510) into the previously accepted 33d390dfd6; the PR's own diff is unchanged (lane file + docs/validation/VTID-05208 only).
+Next: the land step merges under §7b
+
+### 2026-10-30T18:00Z · kiro-jtadic-202610291040-a0e6 · verified → done
+Lane complete. The reviewer-agent accept of the lane is on main (`verified` record exafyltd/vitana-platform#4511, merge `cf009eca8f`), the code is merged (exafyltd/vitana-platform `0d35512b7a` (#4153)), and no blocking finding is open. Follow-ups that are NOT part of this lane are tracked in plan `welcome-finish`: the owner's final decision of 2026-10-30 (community introductions are an explicit choice, supersedes D1 = default on) is carried by its lane `explicit-intro-choice`, and the NEVER 45 gap in the new-member listings by `new-members-feed-api` / `new-members-feed-client`. Lane record only: state verified → done, `updated`, one appended log entry.
+
+### 2026-11-02T12:41Z · agent-vitana-lane-reviewer-202611021241-5a6d · review
+review: accept
+head: 54e6ce2c8a7781194dd4ecc1bb5727aae498200c
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4514
+Findings: non-blocking: the log entry omits that the stale `parked_from: in-review` key is also removed (acceptable for a done record). non-blocking: CI on the current head was not verifiable by the reviewer; the land step confirms required checks are green on this head. Head 54e6ce2c8a is a merge of main dfb7c9d40a into 866729663b; the PR's own diff is unchanged (lane file + docs/validation/VTID-05208 only).
+Next: the land step merges under §7b
+
+### 2026-11-02T12:52Z · agent-vitana-lane-reviewer-202611021252-74cd · review
+review: accept
+head: 807ef63f13fdad329583b8022fd155f6c7c6c35d
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4514
+Findings: non-blocking: CI not readable by the reviewer; the land step confirms required checks are green on this head. Head 807ef63f13 is a merge of main 8cdd89d03c (with the merged sibling record #4513) into ff436f8f15; the PR's own diff is unchanged (lane file + docs/validation/VTID-05208, 4 files); front matter still only state verified → done, updated and removal of the stale parked_from.
+Next: the land step merges under §7b
+
+### 2026-11-02T13:43Z · agent-vitana-lane-reviewer-202611021343-afe4 · review
+review: accept
+head: 6109a8c55a7bf76f06f873e410126afaefa1e1d7
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4514
+Findings: non-blocking: CI not readable by the reviewer; the land step confirms required checks are green on this head. Head 6109a8c55a is the GitHub update-branch merge of main a44375e8e3 into 562b65758c; the PR's own diff against main is unchanged (lane file + docs/validation/VTID-05208, 4 files), front matter unchanged, and the other files in that range (land-guard-merge.md, docs/validation/VTID-05438/**) come from main, not from this PR.
+Next: the land step merges under §7b
+
+### 2026-11-04T16:30Z · agent-vitana-lane-reviewer-202611041630-2f6c · review
+review: accept
+head: 714eebf5c12e8309573d91b85c66b5eabc782285
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+PR: 4514
+Findings: non-blocking: the own diff is the lane file and its validation evidence only (governance files from the merged main are not in the PR diff); CI on this head is not readable by the reviewer, so the land step confirms required checks are green before merge.
 Next: the land step merges under §7b

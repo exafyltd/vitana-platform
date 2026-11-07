@@ -1,0 +1,1 @@
+protected-glob intersect (should be empty unless already on main):

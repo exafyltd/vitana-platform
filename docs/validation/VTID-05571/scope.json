@@ -1,0 +1,21 @@
+{
+  "vtid": "VTID-05571",
+  "kind": "feature",
+  "paths": [
+    "supabase/migrations/20261102040000_vtid_05571_orphan_analysis.sql",
+    "supabase/migrations/20261102040100_vtid_05571_orphan_quarantine_snapshots.sql",
+    "supabase/migrations/20261102040200_vtid_05571_orphan_move_logic.sql",
+    "supabase/migrations/20261102040300_vtid_05571_orphan_cleanup_run.sql",
+    "supabase/migrations/20261102040300_vtid_05571_orphan_cleanup_rollback.sql",
+    "supabase/migrations/20261102040400_vtid_05571_writer_repoint.sql",
+    "supabase/migrations/20261102040400_vtid_05571_writer_fallback_rollback.sql",
+    "supabase/tests/vtid_mt_data_cleanup_orphan_quarantine.test.sql",
+    "supabase/tests/vtid_mt_data_cleanup_orphan_writer_repoint.test.sql",
+    "docs/multitenancy/MIGRATION-QUEUE.md",
+    "scripts/ci/migration-drift-baseline.json",
+    "docs/validation/VTID-05571/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05571/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

@@ -1,0 +1,17 @@
+preflight: node scripts/collab/preflight.mjs --repo . --base origin/main --head HEAD --branch kiro/mt-track-s-authz/approvals-auth-v2 --title "VTID-05528 (mt-track-s-authz/approvals-auth-v2): give the generic live path's user_jwt to the approvals tools only"
+Run on code head a10b0417bf, with this evidence folder in the working tree. Exit 1. The full output lists every lane of the shared Collab queue, so it is not committed.
+
+PASS  Collab tests [required]
+FAIL  Collab handoff [required]
+      Collab-Lane mt-track-s-authz/approvals-auth-v2: .kiro/specs/mt-track-s-authz/lanes/approvals-auth-v2.md does not exist
+PASS  gh for plan( PR / vitana-platform lane files [required]
+FAIL  Lane scope [required]
+      lane mt-track-s-authz/approvals-auth-v2: .kiro/specs/mt-track-s-authz/lanes/approvals-auth-v2.md not found in this repo, an open plan( PR or vitana-platform
+PASS  PR-GATE scope [report-only in CI]
+FAIL  PR-GATE sparring [report-only in CI]
+      VTID-05528: .kiro/specs/mt-track-s-authz/sparring/verdict.md has no owner-approval line (the record is policy-approved, converged-auto-v1)
+PASS  PR-GATE weakening [report-only in CI]
+PASS  PR-GATE red-green [report-only in CI]
+PASS  Kiro steering [report-only in CI]
+
+Result: 3 failed. The two required failures come from the lane file. approvals-auth-v2.md is on plan PR #4653 (branch kiro/mt-track-s-authz/plan-amend-1, remote head 91f683c908) and is not on origin/main (checked at origin/main 4066f563e7). The Lane scope check also looks up open plan( PRs through gh, and gh cannot authenticate in this session (the GH_ENTERPRISE_TOKEN is rejected). Both clear when #4653 merges and gh works. The sparring failure is report-only (config enforce=false).

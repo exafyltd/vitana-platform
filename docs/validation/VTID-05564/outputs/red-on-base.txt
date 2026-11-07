@@ -1,0 +1,41 @@
+# VTID-05564 red on base: the existing suites of the three manifests replayed as run.mjs runExisting runs them (run.mjs:300-316)
+# checkout /projects/sandbox/.rv/svcwd at base origin/main d73fec53f96ab8fbfb5fbdf002ae9fa2cf00376d (manifests without cwd), 2026-11-05T21:51:57Z, node v22.23.4
+# harness: outputs/replay-existing.mjs (sha256 30049c469cdf7af84c107c4bddd0353f2e5d6cdf8d6fb09159e227d462f98c34; run from /projects/sandbox/.scratch/tools/svcwd/, the same bytes)
+# npx resolves jest@30.5.2 into $HOME/.npm/_npx/b8d86e6551a4f492/, the same version and npx cache key as STAGING-VERIFY run 42078889519
+#   (its log: "npm warn exec The following package was not found and will be installed: jest@30.5.2", stack frames in .npm/_npx/b8d86e6551a4f492/);
+#   it was installed into this HOME by a first replay of the same base manifests at 2026-11-05T21:44Z (same result, 0 passed, 3 failed) with that same warning, so this run takes it from the cache
+$ HOME=/projects/sandbox/.scratch/tools/svcwd/home node /projects/sandbox/.scratch/tools/svcwd/replay-existing.mjs --repo /projects/sandbox/.rv/svcwd --vtids VTID-05515,VTID-05516,VTID-05518
+[replay] VTID-05515 lib.validateManifest: ok=true errors=[]
+[replay] VTID-05515 › existing npx jest test/eng-platform-inventory-readonly.test.ts (manifest cwd undefined, runs in .; node_modules present, no npm ci (as run.mjs))
+    FAIL services/gateway/test/eng-platform-inventory-readonly.test.ts
+      ● Test suite failed to run
+        Jest failed to parse a file. This happens e.g. when your code or its dependencies use non-standard JavaScript syntax, or when Jest is not configured to support such syntax.
+        SyntaxError: /projects/sandbox/.rv/svcwd/services/gateway/test/eng-platform-inventory-readonly.test.ts: Missing semicolon. (16:8)
+    Test Suites: 1 failed, 1 total
+    Tests:       0 total
+    Ran all test suites matching test/eng-platform-inventory-readonly.test.ts.
+[replay] FAIL VTID-05515 › existing npx jest test/eng-platform-inventory-readonly.test.ts (exit 1) — FAIL services/gateway/test/eng-platform-inventory-readonly.test.ts | ● Test suite failed to run | Jest failed to parse a file. This happens e.g. when your code or its dependencies use non-standard JavaScript syntax, or when Jest is not configured to support such syntax. | SyntaxError: /projects/sandbox/.rv/svcwd/services/gateway/test/eng-platform-inventory-readonly.test.ts: Missing semicolon. (16:8) | Test Suites: 1 failed, 1 total
+[replay] VTID-05516 lib.validateManifest: ok=true errors=[]
+[replay] VTID-05516 › existing npx jest test/eng-platform-oidc-roles.test.ts (manifest cwd undefined, runs in .; node_modules present, no npm ci (as run.mjs))
+    FAIL services/gateway/test/eng-platform-oidc-roles.test.ts
+      ● Test suite failed to run
+        Jest failed to parse a file. This happens e.g. when your code or its dependencies use non-standard JavaScript syntax, or when Jest is not configured to support such syntax.
+        SyntaxError: /projects/sandbox/.rv/svcwd/services/gateway/test/eng-platform-oidc-roles.test.ts: Missing initializer in const declaration. (15:12)
+    Test Suites: 1 failed, 1 total
+    Tests:       0 total
+    Ran all test suites matching test/eng-platform-oidc-roles.test.ts.
+[replay] FAIL VTID-05516 › existing npx jest test/eng-platform-oidc-roles.test.ts (exit 1) — FAIL services/gateway/test/eng-platform-oidc-roles.test.ts | ● Test suite failed to run | Jest failed to parse a file. This happens e.g. when your code or its dependencies use non-standard JavaScript syntax, or when Jest is not configured to support such syntax. | SyntaxError: /projects/sandbox/.rv/svcwd/services/gateway/test/eng-platform-oidc-roles.test.ts: Missing initializer in const declaration. (15:12) | Test Suites: 1 failed, 1 total
+[replay] VTID-05518 lib.validateManifest: ok=true errors=[]
+[replay] VTID-05518 › existing npx jest test/eng-platform-stage-oidc-workflows.test.ts test/vtid-05009-provision-pack-token-workflow.test.ts (manifest cwd undefined, runs in .; node_modules present, no npm ci (as run.mjs))
+    FAIL services/gateway/test/vtid-05009-provision-pack-token-workflow.test.ts
+      ● Test suite failed to run
+        Must use import to load ES Module: /projects/sandbox/.rv/svcwd/services/gateway/test/vtid-05009-provision-pack-token-workflow.test.ts
+    FAIL services/gateway/test/eng-platform-stage-oidc-workflows.test.ts
+      ● Test suite failed to run
+        SyntaxError: /projects/sandbox/.rv/svcwd/services/gateway/test/eng-platform-stage-oidc-workflows.test.ts: Unexpected token, expected "," (12:15)
+    Test Suites: 2 failed, 2 total
+    Tests:       0 total
+    Ran all test suites matching test/eng-platform-stage-oidc-workflows.test.ts|test/vtid-05009-provision-pack-token-workflow.test.ts.
+[replay] FAIL VTID-05518 › existing npx jest test/eng-platform-stage-oidc-workflows.test.ts test/vtid-05009-provision-pack-token-workflow.test.ts (exit 1) — FAIL services/gateway/test/vtid-05009-provision-pack-token-workflow.test.ts | ● Test suite failed to run | FAIL services/gateway/test/eng-platform-stage-oidc-workflows.test.ts | ● Test suite failed to run | SyntaxError: /projects/sandbox/.rv/svcwd/services/gateway/test/eng-platform-stage-oidc-workflows.test.ts: Unexpected token, expected "," (12:15) | Test Suites: 2 failed, 2 total
+[replay] existing suites: 0 passed, 3 failed
+[exit 1]

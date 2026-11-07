@@ -1,0 +1,9 @@
+{
+  "vtid": "VTID-05463",
+  "service": "community-app",
+  "tests": [
+    { "kind": "existing", "ref": "npx vitest run src/lib/supabase-functions-retire.vtid-05008.test.ts", "cwd": ".",
+      "reason": "pins the retire workflow ALLOWLIST to the RETIRED names (now incl. linkedin-import), checks none is still shipped or called, and that the workflow is dispatch-only from main" }
+  ],
+  "not_verified_on_staging": "A dispatch-only workflow edit and a test list entry deploy nothing to staging; the Vitest suite is the proof."
+}

@@ -1,0 +1,21 @@
+# $ terraform version
+Terraform v1.17.1
+on linux_amd64
+
+# Scratch copy of infra/gitlab-engineering: main.tf of milestone 1 and monitoring.tf of this lane in one directory, with ../host for main.tf's file() calls.
+# $ cd infra/gitlab-engineering/terraform && terraform fmt -check -diff -recursive
+exit: 0
+
+# $ terraform init -backend=false -input=false -no-color   (providers only; the S3 backend is supplied by setup.sh)
+- Finding hashicorp/aws versions matching ">= 5.60.0, < 6.0.0"...
+- Installing hashicorp/aws v5.100.0...
+- Installed hashicorp/aws v5.100.0 (signed by HashiCorp)
+Terraform has been successfully initialized!
+exit: 0
+
+# $ terraform validate -no-color
+Success! The configuration is valid.
+
+exit: 0
+
+# $ terraform plan is not run: it needs the owner's AWS account. The policy documents are rendered instead (terraform-policy-render.txt).
