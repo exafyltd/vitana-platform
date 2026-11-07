@@ -1,6 +1,6 @@
 ---
 lane: orphan-analysis-and-quarantine
-state: ready
+state: in-review
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -12,9 +12,12 @@ paths:
   - supabase/tests/vtid_mt_data_cleanup_orphan_*.sql
   - docs/multitenancy/MIGRATION-QUEUE.md
   - scripts/ci/migration-drift-baseline.json
-updated: 2026-11-06T10:09Z
+updated: 2026-11-06T19:05Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05571
+claimed_by: kiro-hotmail-202611061752-cc1f
+branch: kiro/mt-data-cleanup-r2/orphan-analysis-and-quarantine
+pr: https://github.com/exafyltd/vitana-platform/pull/4773
 ---
 # Orphan analysis, snapshot, remap and quarantine — mt-data-cleanup (repo vitana-platform)
 
@@ -47,3 +50,13 @@ executor and reviewer on today's §3a/§7 rules.
 
 ### 2026-11-06T10:09Z · ci-plan-spar · ready (VTID allocated)
 VTID-05571 allocated after policy approval (converged-auto-v1).
+
+### 2026-11-06T17:52Z · kiro-hotmail-202611061752-cc1f · ready → executing
+Claim `collab-claim/mt-data-cleanup-r2/orphan-analysis-and-quarantine` held; branch `kiro/mt-data-cleanup-r2/orphan-analysis-and-quarantine` from origin/main.
+
+### 2026-11-06T19:05Z · kiro-hotmail-202611061752-cc1f · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/4773, head `e311022ad6`. Tasks O1-O9 done: 5 forward migrations + 2 rollbacks
+(`20261102040000`..`040400`), pgTAP `vtid_mt_data_cleanup_orphan_quarantine.test.sql` (47) and `…_writer_repoint.test.sql` (40) green in
+local PGlite (real pgTAP on the CI stack not run here), `docs/validation/VTID-05571/`, MIGRATION-QUEUE rows 21-25, drift baseline +5.
+Nothing is applied; owner approval per file is needed (§7d). Review notes: the gate/cleanup pass on an empty `user_tenants` so a
+fresh stack builds; see the PR body "Deviations". Next actor: kiro (reviewer seat exafy / agent:vitana-lane-reviewer). Claim released.
