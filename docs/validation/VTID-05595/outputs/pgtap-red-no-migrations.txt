@@ -1,0 +1,2 @@
+# loaded /projects/sandbox/wt-nh-a/docs/validation/VTID-05595/pglite-harness/base_schema.sql
+# SQL ERROR: column "health_home_tenant_id" does not exist

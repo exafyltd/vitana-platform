@@ -13,6 +13,9 @@ import { fileURLToPath } from 'node:url';
 import { fakeFetch } from './testing/fake-fetch.mjs';
 import * as settings from './gitlab-settings.mjs';
 
+// Value files the sync wrote through the AWS CLI during a test: each must be gone once the call ends.
+const seenSecretFiles = [];
+
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..', '..');
 const CONFIG_FILE = path.join(ROOT, 'infra', 'gitlab-engineering', 'settings', 'gitlab-settings.json');
@@ -389,6 +392,8 @@ function newAws() {
     const opt = (name) => { const i = args.indexOf(name); return i < 0 ? undefined : args[i + 1]; };
     assert.equal(opt('--region'), 'eu-central-1');
     const id = opt('--secret-id') ?? opt('--name');
+    const valueFile = args.find((a) => a.startsWith('file://'));
+    if (valueFile) seenSecretFiles.push(valueFile.slice('file://'.length));
     if (denied.has(`${op}:${id}`)) throw awsError('AccessDeniedException', 'not authorized');
     if (op === 'get-secret-value') {
       if (!secrets.has(id)) throw awsError('ResourceNotFoundException', "Secrets Manager can't find the specified secret.");
@@ -396,11 +401,16 @@ function newAws() {
       return { stdout: `${secrets.get(id)}\n` };
     }
     if (op === 'put-secret-value' || op === 'create-secret') {
-      assert.equal(opt('--secret-string'), 'file:///dev/stdin', 'a secret value is never a command-line argument');
-      assert.equal(typeof opts.input, 'string');
+      const src = opt('--secret-string');
+      assert.match(src, /^file:\/\/.+\/value$/, 'a secret value is never a command-line argument: the CLI reads it from a private file');
+      const stored = fs.readFileSync(src.slice('file://'.length), 'utf8');
+      assert.ok(stored.length > 8, 'the stored value is a real secret, not an empty placeholder');
+      assert.ok(!args.some((a) => a.includes(stored)), 'the value is not in the argument list');
+      assert.equal(fs.statSync(src.slice('file://'.length)).mode & 0o777, 0o600, 'the value file is private (0600)');
+      assert.equal(fs.statSync(path.dirname(src.slice('file://'.length))).mode & 0o777, 0o700, 'its directory is private (0700)');
       if (op === 'put-secret-value' && !secrets.has(id)) throw awsError('ResourceNotFoundException', "Secrets Manager can't find the specified secret.");
       if (op === 'create-secret' && secrets.has(id)) throw awsError('ResourceExistsException', 'already exists');
-      secrets.set(id, opts.input);
+      secrets.set(id, stored);
       return { stdout: '{"Name":"x"}' };
     }
     throw new Error(`unexpected aws call ${op}`);
@@ -858,7 +868,7 @@ test('membership: an owner named in the file who is not yet a member becomes a M
 const createsOf = (w, mark = 0) => callsOf(w.f, 'POST', /^\/api\/v4\/users\/\d+\/personal_access_tokens$/, mark);
 const rotatesOf = (w, mark = 0) => callsOf(w.f, 'POST', /^\/api\/v4\/personal_access_tokens\/\d+\/rotate$/, mark);
 
-test('tokens: created once with 90 days and the configured scopes; secrets are created or put through stdin, never as an argument', async () => {
+test('tokens: created once with 90 days and the configured scopes; secret values are written from a private file, never as an argument', async () => {
   const w = newWorld();
   await applied(w);
   assert.equal(createsOf(w).length, 7, 'one creation per account');
@@ -871,8 +881,12 @@ test('tokens: created once with 90 days and the configured scopes; secrets are c
   assert.deepEqual(creates, ACCOUNTS.map(SECRET_AGENT).sort(), 'agent secrets that do not exist yet are created');
   assert.ok(w.aws.calls.some((c) => c.args[1] === 'put-secret-value' && c.args.includes(SECRET_FLEET)), 'the pre-created fleet secret gets a value');
   for (const c of w.aws.writes()) {
-    assert.ok(c.args.includes('file:///dev/stdin') && typeof c.input === 'string' && c.input.length > 8);
-    assert.ok(!c.args.some((a) => a === c.input || a.includes(c.input)), 'the value is not in the argument list');
+    const src = c.args[c.args.indexOf('--secret-string') + 1];
+    assert.match(src, /^file:\/\//, 'the value is read from a private file, never passed as an argument');
+  }
+  for (const f of seenSecretFiles) {
+    assert.ok(!fs.existsSync(f), 'the value file is removed after the call');
+    assert.ok(!fs.existsSync(path.dirname(f)), 'its private directory is removed after the call');
   }
   // a second world where Terraform pre-created the secrets: they are put, not created
   const w2 = newWorld({ preCreateAgentSecrets: true });
@@ -1605,7 +1619,7 @@ test('real file writer: atomic, mode 0600 whatever the umask, replaces a looser 
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('real aws runner: the secret travels on stdin, never in the argument list; a failing call carries the AWS error text', async () => {
+test('real aws runner: the generic runner passes input on stdin, never in the argument list; a failing call carries the AWS error text', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'settings-aws-'));
   try {
     const bin = path.join(dir, 'aws');
@@ -1643,5 +1657,18 @@ test('free tier: every call of a full apply, a drift repair and a webhook run is
   for (const c of w.f.calls) {
     const rel = c.path.replace(/^\/api\/v4/, '');
     assert.ok(known.some(([m, re]) => m === c.method && re.test(rel)), `${c.method} ${rel} is not on the Free-tier endpoint list`);
+  }
+});
+
+test('tokens: a value file is removed even when Secrets Manager refuses the write', async () => {
+  const w = newWorld({ preCreateAgentSecrets: true });
+  w.aws.deny('put-secret-value', SECRET_AGENT('agent-reviewer'));
+  const r = await w.run('apply');
+  assert.equal(r.exitCode, 1, 'a refused write is an error');
+  assert.match(w.text(), /agent-reviewer/);
+  assert.ok(seenSecretFiles.length > 0, 'the refused write did create a value file');
+  for (const f of seenSecretFiles) {
+    assert.ok(!fs.existsSync(f), 'the value file is removed after a refusal');
+    assert.ok(!fs.existsSync(path.dirname(f)), 'its private directory is removed after a refusal');
   }
 });

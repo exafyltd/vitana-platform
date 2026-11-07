@@ -176,3 +176,35 @@ scripts/eng/testing/*.test.mjs` (dependency-free; `UNIT.yml` runs them on every 
 - Contract: plan §3.8 and the A1–A4 definitions of plan §9; the report format is documented in the script header.
 - Staging proof: not verified on staging: the rehearsal is the verification. It never touches production, the gateway,
   Supabase or a real repository.
+
+<!-- lane: settings-fix -->
+## Lane `settings-fix` (vitana-platform)
+- [ ] X1 Write the test first: `scripts/eng/gitlab-settings.test.mjs` asserts that every secret write passes `--secret-string file://<path>` (never `file:///dev/stdin`), that the file holds the value during the call, and that the file and its directory are removed after success and after failure. Record it red on `origin/main`.
+- [ ] X2 `scripts/eng/gitlab-settings.mjs` `makeSecrets.put`: write the value to a 0600 file in a 0700 temp directory; use it for `put-secret-value` and `create-secret`; remove it in `finally`. (Fix exists on `kiro/fix/gitlab-settings-stdin`, commit 279b590d7f.)
+- [ ] X3 Evidence: `docs/validation/<VTID>/` with the red and green `node --test` output and the test count.
+
+**Acceptance**
+- Change types: Tooling.
+- Outcome: the settings sync writes its secret values on the GitLab machine, so the drift check of `m2.sh status` clears for the 7 agent tokens and the fleet runner token.
+- States: a secret that does not exist yet is created; an AWS refusal names the step; no value in any argument, log or error.
+- Staging proof: not applicable: deploys nothing. Proven by the unit tests, then by the owner's `m2.sh settings` run (exit 0).
+
+
+<!-- lane: runner-pin-jq -->
+## Lane `runner-pin-jq` (vitana-platform; late lane)
+- [ ] J1 Write the tests first and record them red on `origin/main`: `scripts/eng/fleet-structure.test.mjs` asserts that both installers
+      install `gitlab-runner=$RUNNER_VERSION` and `gitlab-runner-helper-images=$RUNNER_VERSION` in one `apt install` and hold both;
+      `scripts/eng/free-tier-guard.test.mjs` (or the test that pins the central CI files) asserts that the `.gateway` jobs install `jq`
+      before their script.
+- [ ] J2 `host/fleet-manager-install.sh`, `host/runner-install.sh`: pin and hold both packages. `ci/platform.gitlab-ci.yml`: `.gateway`
+      before_script installs `jq` (`apt-get update -qq && apt-get install -y -qq jq`), nothing else changes in the jobs.
+- [ ] J3 `RUNBOOK-m2-fleet.md`: the helper pin, and the fleet size of 5 with `fleet_max_instances = 5` in `terraform.tfvars`.
+- [ ] J4 Evidence: `docs/validation/<VTID>/` with red and green output.
+
+**Acceptance**
+- Change types: Infrastructure/CI, Tooling/docs.
+- Outcome: a fresh fleet manager or M1 runner installs without "held broken packages"; the platform pipeline's gateway-jest shards
+  run the jq-based tests as GitHub does.
+- States: a helper version that exists (19.5.2-1 is in the repository) installs; a version that does not exist fails the installer
+  (exit 1) instead of taking another one.
+- Staging proof: not applicable: deploys nothing. Proven by the unit tests, then by the next GitLab main pipeline (gitlab-verify).
