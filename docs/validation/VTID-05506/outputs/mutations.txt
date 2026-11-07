@@ -1,0 +1,32 @@
+## mutation 1: guard matches only an explicit false (plan literal NOT(...)=NULL class: path absent never updates)
+not ok 1 - 01 first provision sets erp.bootstrap_requested = true
+not ok 2 - 02 feature_flags is the jev flag (Alkalma pattern) plus exactly the erp request
+not ok 14 - 14 the re-run of a pre-migration tenant records the flag (UPDATE after the ON CONFLICT DO NOTHING insert)
+not ok 17 - 17 a string erp value is repaired to an object holding the flag
+not ok 18 - 18 a JSON-null erp value is repaired
+not ok 19 - 19 an array erp value is repaired
+not ok 27 - 27 p_allow_governed = false: the stored erp flag is intact
+not ok 31 - 31 the RETURNING row shows the intact erp flag
+## mutation 2: erp not governed in the merge function
+not ok 27 - 27 p_allow_governed = false: the stored erp flag is intact
+not ok 30 - 30 nothing else changed in feature_flags
+not ok 31 - 31 the RETURNING row shows the intact erp flag
+not ok 34 - 34 the insert path of a non-governed caller drops erp and jev
+## mutation 3: non-object erp value not repaired
+# SQL ERROR: null value in column "feature_flags" of relation "tenant_settings" violates not-null constraint
+## mutation 4: dangling tenant ids get no row
+not ok 43 - 43 for every column the per-tenant rows sum to ci_tenant_isolation_health()
+not ok 44 - 44 totals equals ci_tenant_isolation_health() for every column
+not ok 46 - 46 a dangling tenant id gets its own row with its foreign rows (2 chat_messages + 1 user_notifications)
+not ok 47 - 47 a dangling tenant row has is_registered = false and slug null
+## mutation 5: null-tenant rows not counted
+not ok 43 - 43 for every column the per-tenant rows sum to ci_tenant_isolation_health()
+not ok 44 - 44 totals equals ci_tenant_isolation_health() for every column
+not ok 52 - 52 rows with no tenant (null tenant_id, zero/multi primary users, auth users without membership) sit in the one tenant_id null row
+## mutation 6: user_tenants drift not attributed
+not ok 43 - 43 for every column the per-tenant rows sum to ci_tenant_isolation_health()
+not ok 44 - 44 totals equals ci_tenant_isolation_health() for every column
+not ok 48 - 48 a dangling tenant id from user_tenants drift is attributed to it
+not ok 51 - 51 a user_tenants row without membership is attributed to its tenant
+## restored
+60

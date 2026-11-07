@@ -1,0 +1,27 @@
+{
+  "vtid": "VTID-05547",
+  "kind": "feature",
+  "paths": [
+    "services/gateway/src/services/gitlab-events/**",
+    "services/gateway/src/services/delivery-host.ts",
+    "services/gateway/src/services/github-service.ts",
+    "services/gateway/src/types/cicd.ts",
+    "services/gateway/src/routes/delivery.ts",
+    "services/gateway/src/index.ts",
+    "services/gateway/src/frontend/command-hub/delivery.js",
+    "services/gateway/src/frontend/command-hub/app.js",
+    "services/gateway/src/frontend/command-hub/navigation-config.js",
+    "services/gateway/src/frontend/command-hub/index.html",
+    "services/gateway/specs/dev-screen-inventory-v1.json",
+    "services/gateway/test/delivery/**",
+    "services/gateway/src/navigation/data/command-hub-screens.json",
+    "services/gateway/src/navigation/data/nav-embeddings.bin",
+    "services/gateway/src/navigation/data/nav-embeddings.json",
+    "scripts/ci/command-hub-ownership-guard.js",
+    "docs/validation/*/staging-tests.json",
+    "docs/validation/VTID-05547/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05547/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

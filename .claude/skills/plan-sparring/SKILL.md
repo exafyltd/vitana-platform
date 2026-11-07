@@ -1,9 +1,16 @@
 ---
 name: plan-sparring
-description: Mandatory ping-pong review of every new plan by an independent sparring partner BEFORE a VTID is allocated (Plan Sparring Gate, VTID-04868, owner decision 2026-10-03). Use whenever you have drafted a plan for any work that will get a VTID — features, fixes, refactors, infra, docs — and before calling allocate_global_vtid or /vtid/allocate.
+description: Ping-pong review of back-end and complex plans by an independent sparring partner BEFORE a VTID is allocated (Plan Sparring Gate, VTID-04868, amended 2026-11-07). Use for any back-end, schema, API, route, infra or CI plan. Simple front-end changes (class frontend-simple) need a VTID but no sparring; do not use this skill for them.
 ---
 
 # Plan Sparring Gate
+
+**When this skill applies (owner decision 2026-11-07).** Sparring is for back-end and complex work: `services/**`,
+`supabase/**` (migrations, RLS, edge functions), `.github/**`, `scripts/**`, governance, LLM routing, auth, and any change
+that adds or alters an API, a route, a schema or a deploy path. A **simple front-end change** (class `frontend-simple`,
+vitana-v1: diff inside `src/**` or `public/**`, no deny-listed file, at most 15 files; see CLAUDE.md rule 51a) needs
+a VTID from the ledger and **no sparring**: declare `"change_class": "frontend-simple"` in its `scope.json` and go
+straight to implementation. The PR gate checks the diff and sends a non-qualifying claim back here.
 
 Owner directive (2026-10-03, standing): *every new plan gets a ping-pong sparring partner, as a
 standard process, before a new VTID is generated.* No VTID is allocated for the sparring itself.

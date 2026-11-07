@@ -1129,6 +1129,11 @@ export interface GeminiLiveSession {
   connectionIssueEmitted?: boolean;
   // VTID-01224: Identity for context retrieval (server-verified from JWT)
   identity?: SupabaseIdentity;
+  // mt-track-s-authz (VTID-05528): the member's own bearer, kept only when it verified
+  // to this session's owner (WS and SSE transports). The voice approve and reject tools
+  // call the approvals routes with it, so those routes check that member's own rights.
+  // In memory only: never logged, emitted or returned.
+  callerAccessToken?: string | null;
   // VTID-01225-ROLE: User's application-level active_role (community/admin/developer/etc.)
   // Loaded from user_tenants at session start. NOT the JWT's "authenticated" DB role.
   active_role?: string | null;
@@ -7023,6 +7028,12 @@ async function executeLiveApiToolInner(
                 tenant_id: lens.tenant_id ?? null,
                 role: sessionServedRole(session) || session.identity?.role || null,
                 vitana_id: session.identity?.vitana_id ?? null,
+                // mt-track-s-authz (VTID-05452, VTID-05528): only the two approvals tools forward the caller's
+                // own token, which the WS and SSE transports bind to the session (callerAccessToken). Every
+                // other generic tool keeps the no-token identity it had before this lane.
+                user_jwt: (toolName === 'dev_approve_pr' || toolName === 'dev_reject_pr')
+                  ? (session.callerAccessToken ?? null)
+                  : null,
                 session_id: session.sessionId,
                 thread_id: session.thread_id || session.sessionId,
                 turn_number: session.turn_count,
@@ -16413,11 +16424,14 @@ router.get('/live/stream', optionalAuth, orbSseCrossTaskForward, async (req: Aut
 
   // VTID-ORBC: Resolve identity from token OR dev-sandbox fallback
   let identity: SupabaseIdentity | null = null;
+  // mt-track-s-authz (VTID-05528): the user id this token itself verified to.
+  let verifiedTokenUserId: string | null = null;
 
   if (token) {
     // Token provided - verify it
     const authResult = await verifyAndExtractIdentity(token);
     if (authResult) {
+      verifiedTokenUserId = authResult.identity.user_id;
       // VTID-MEMORY-BRIDGE: If JWT has user_id but no tenant_id, look it up from user_tenants.
       // provision_platform_user() creates user_tenants rows but does NOT set active_tenant_id
       // in JWT app_metadata, so many authenticated users have null tenant_id.
@@ -16458,6 +16472,13 @@ router.get('/live/stream', optionalAuth, orbSseCrossTaskForward, async (req: Aut
 
   if (!session.active) {
     return res.status(400).json({ ok: false, error: 'Session not active' });
+  }
+
+  // mt-track-s-authz (VTID-05528): keep the member's bearer for the voice approve and
+  // reject tools, only when that token verified to this session's owner. A mismatch is
+  // still let through below, so it must not be bound here.
+  if (token && verifiedTokenUserId && verifiedTokenUserId === session.identity?.user_id) {
+    session.callerAccessToken = token;
   }
 
   // VTID-ORBC: Log ownership mismatch but allow through — session IDs are UUIDs (unguessable).
@@ -18548,6 +18569,11 @@ async function handleWsStartMessage(clientSession: WsClientSession, message: WsC
   liveSession.greetingDeferred = true;
 
   clientSession.liveSession = liveSession;
+  // mt-track-s-authz (VTID-05528): keep the bearer this socket verified, for the voice
+  // approve and reject tools, only when it verified to the session owner.
+  if (clientSession.authToken && identity?.user_id && identity.user_id === liveSession.identity?.user_id) {
+    liveSession.callerAccessToken = clientSession.authToken;
+  }
 
   // Connect to Vertex AI Live API
   if (!googleAuth || !VERTEX_PROJECT_ID) {
@@ -19276,3 +19302,8 @@ export { connectToLiveAPI as __connectToLiveAPIForTest };
 // once-per-session stop contract is driven through the real code. Re-export
 // only: no behaviour, no new code path.
 export { handleWsStopSession as __handleWsStopSessionForTest };
+
+// VTID-05528 — test-only handle on the generic live tool executor, so the voice
+// approve/reject path (mt-track-s-authz approvals-auth) is driven through the real
+// code. Re-export only: no behaviour, no new code path.
+export { executeLiveApiTool as __executeLiveApiToolForTest };

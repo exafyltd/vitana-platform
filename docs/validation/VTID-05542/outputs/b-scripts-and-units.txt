@@ -1,0 +1,36 @@
+# b-scripts-and-units: syntax checks of the files of part B (lane eng-gitlab-m2/settings, VTID-05542). Paths are relative to the worktree.
+
+# $ bash -n infra/gitlab-engineering/m2.sh
+exit: 0
+# $ bash -n infra/gitlab-engineering/host/ops-install.sh
+exit: 0
+
+# $ node --check scripts/eng/free-tier-guard.test.mjs
+ok
+
+# $ systemd-analyze --version | head -1   (the machine of this session; the GitLab host runs Ubuntu 24.04, systemd 255, which knows every directive used here)
+systemd 252 (252.23-15.amzn2023)
+
+# $ systemd-analyze verify the four units   (no output = no unknown directive, no missing executable)
+exit: 0
+
+# negative control: copies of the two services with directives misspelled and an executable that does not exist (the verifier does report them)
+<scratch>/vitana-settings.service:18: Unknown key name 'NoNewPrivilegez' in section 'Service', ignoring.
+<scratch>/vitana-settings.service:23: Unknown key name 'ReadWritePath' in section 'Service', ignoring.
+<scratch>/vitana-platform-sync.service:10: Unknown key name 'TimeoutStartSecs' in section 'Service', ignoring.
+vitana-platform-sync.service: Command /usr/bin/flok is not executable: No such file or directory
+exit: 1
+
+# $ python3 -c 'yaml.safe_load(...)' for each file of infra/gitlab-engineering/ci   (PyYAML 6.0.3, PYTHONPATH=<tools>/pylib)
+infra/gitlab-engineering/ci/platform.gitlab-ci.yml   parses; top-level keys: workflow, default, stages, variables, .gateway, typecheck, gateway-jest; jobs: typecheck, gateway-jest
+                                                     workflow.rules: ['$CI_PIPELINE_SOURCE == "merge_request_event"', '$CI_COMMIT_BRANCH == "main"', '$CI_PIPELINE_SOURCE =~ /^(web|api|schedule)$/']
+                                                     default: tags=['vitana-eng'] interruptible=True retry={'max': 1, 'when': ['runner_system_failure', 'stuck_or_timeout_failure']}
+infra/gitlab-engineering/ci/rehearsal.gitlab-ci.yml  parses; top-level keys: workflow, default, stages, variables, unit; jobs: unit
+                                                     workflow.rules: ['$CI_PIPELINE_SOURCE == "merge_request_event"', '$CI_COMMIT_BRANCH == "main"', '$CI_PIPELINE_SOURCE =~ /^(web|api|schedule)$/']
+                                                     default: tags=['vitana-eng'] interruptible=True retry={'max': 1, 'when': ['runner_system_failure', 'stuck_or_timeout_failure']}
+infra/gitlab-engineering/ci/v1.gitlab-ci.yml         parses; top-level keys: workflow, default, stages, variables, .install, unit-tests, build, lint; jobs: unit-tests, build, lint
+                                                     workflow.rules: ['$CI_PIPELINE_SOURCE == "merge_request_event"', '$CI_COMMIT_BRANCH == "main"', '$CI_PIPELINE_SOURCE =~ /^(web|api|schedule)$/']
+                                                     default: tags=['vitana-eng'] interruptible=True retry={'max': 1, 'when': ['runner_system_failure', 'stuck_or_timeout_failure']}
+
+# The structural walk over rules, needs and extends runs inside the test (cases 'central CI: ...'), with a negative control of 22 broken files.
+# negative control of the YAML readers: a file with a tab in the indentation is refused by PyYAML (ScannerError: while scanning for the next token found character '\t' that cannot start any token   in "<unicode st) and by the test's reader (case 'central CI reader: it refuses what it cannot read')

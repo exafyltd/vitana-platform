@@ -13,6 +13,12 @@ on:
       - '.github/workflows/SQL-TEST-RESULTS-IN-CALENDAR.yml'
   workflow_dispatch:
 
+# Superseded PR runs are cancelled when a newer commit lands on the same PR.
+# Pushes to main and scheduled runs are never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   sql:
     runs-on: ubuntu-latest

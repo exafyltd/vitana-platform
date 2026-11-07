@@ -1,0 +1,155 @@
+# VTID-05540 green: the lane's test file on the final code, Node v22.23.4
+# $ node --test scripts/eng/rehearse.test.mjs
+ok 1 - plan: 12 landing merge requests lane-01 to lane-12, opened round robin by the four seat accounts, three each
+ok 2 - plan: every title is "VTID-05540 (rehearsal/<lane>): …" and the laneKeyOf of the merge bot finds the lane in it
+ok 3 - plan: five controls (no review, stale review, builder-pushed accept, red job, protected file), each with the reason code the bot must give
+ok 4 - plan: the controls are opened first, so they are the oldest merge requests and the bot reads them before the lanes
+ok 5 - plan: --agents N opens N landing merge requests; a number outside 1 to 12, or not whole, is a usage error
+ok 6 - plan: branch names carry the run, are unique, and pass the branch pattern of the merge bot; session ids are valid collab session ids
+ok 7 - args: --project and --agents parse, with the defaults of the plan; --key=value works
+ok 8 - args: usage mistakes throw UsageError (exit 2): no project, a bad number of agents, an unknown option, a missing value, bad run id, address, limits
+ok 9 - args: the command line of m2.sh (--project rehearsal --agents 12) parses, and the CLI answers --help with exit 0 and a bad option with exit 2, without any network
+ok 10 - refusal: the project of the repository today (rehearsal: true, native, landing, no webhook) is accepted, and its accounts are the 4 seats, the reviewer, the bot and the reader
+ok 11 - refusal: a project that is not in gitlab-settings.json, or is not marked rehearsal: true, is refused (vitana-platform and vitana-v1 are never rehearsed on)
+ok 12 - refusal: a mirrored project is refused, also when it is marked rehearsal (the settings schema itself says native)
+ok 13 - refusal: a project with a webhook in the settings file, or with landing: false, is refused
+ok 14 - refusal: the live project is accepted when it has no webhook, no mirror, and main is protected as the native profile says
+ok 15 - refusal: a live webhook, a live mirror (mirror: true or a remote mirror) and a project that is archived or has another default branch are refused
+ok 16 - refusal: main must be push No one, merge Maintainers, no force push; a user or group entry, Maintainers pushing and force push are each refused
+ok 17 - refusal: what cannot be read is not assumed safe (a 403 on the webhooks, a missing protection)
+ok 18 - seed: the manifest maps spec/ to .kiro/specs/rehearsal/, holds 12 lane files and the lane seed, and copies the collab tooling to tools/collab
+ok 19 - seed: the collab tooling is copied from the platform checkout, byte for byte, and only to tools/collab (never scripts/collab: protected gate files)
+ok 20 - seed: rehearsal.config.json carries the private address of the GitLab machine; without a valid address the seed cannot be built
+ok 21 - seed: not one path of the seed is a protected gate file or a governance path, so the merge bot can land the seed merge request
+ok 22 - seed: blobId is the git blob id (what the repository tree reports), also for non-ASCII text
+ok 23 - seed: diffSeed creates what main lacks, updates what differs, leaves what is equal, and never updates a file under a create-only prefix
+ok 24 - seed: pickPrivateIp takes the first private IPv4 of a real interface and skips loopback, docker, bridges and public addresses
+ok 25 - seed: the required job of the project is `unit`, the central CI file runs `npm test` for it, and the package.json of the seed defines that script (the three files agree)
+ok 26 - seed: unit passes with no npm install (no node_modules, no dependency) and prints exactly three NEGCTL lines, one per control
+ok 27 - seed: a repository with no test files fails npm test (nothing proves nothing), and the negative controls are still printed
+ok 28 - seed: a failing test makes npm test fail, but the negative controls are still printed (they never change the exit code, and the report decides)
+ok 29 - seed: a variable starting with AWS_ in the job makes aws-env print FAIL (names only, never the value); a missing address makes gitlab-host FAIL
+ok 30 - seed: a NEGCTL-INFO baseline line says whether the job reached GitLab (information only): it comes after the three controls and never changes a control line or the exit code
+ok 31 - negctl imds: PASS when no token is issued and no data is read — nothing answers (error or timeout), or the service answers 401, 403, 404 or 500; the statuses seen are in the detail
+ok 32 - negctl imds: FAIL when a metadata token is issued to a job — the token request answers 2xx — whatever the plain read does
+ok 33 - negctl imds: FAIL when a plain read without a token returns 2xx — the service gives data to an unauthenticated request — whatever the token request does; both together name both
+ok 34 - negctl imds: asks for a token with PUT (IMDSv2, with a TTL header) and reads with a GET that carries no token header; the control still prints exactly one line, with no detail on it
+ok 35 - negctl imds: on a real local server — the token request never answered and the read answered 401 (tokens required, hop limit 1) is a PASS; a token issued is a FAIL and its body is never printed
+ok 36 - negctl baseline: tells whether the job can reach GitLab (the host and port of CI_SERVER_URL), as information only — reachable, not reachable, or not checked; never the URL itself
+ok 37 - negctl gitlab-host: PASS when 22, 80, 443 and 8080 all refuse; FAIL when any accepts a connection; FAIL when no valid address is configured
+ok 38 - negctl aws-env: PASS without a variable starting AWS_; FAIL with one, naming the variables sorted and never their values; lines are exactly NEGCTL <name> PASS|FAIL
+ok 39 - commits: the builder commit and the accept of the reviewer are read by commitsInRange of the bot itself, with the trailers it trusts
+ok 40 - commits: an accept pushed by agent-reviewer is judged ok by judgeReviewCommit, still counts for the head (reviewCurrent), and with green checks the bot decides to land
+ok 41 - control no_review: a merge request with only the commit of the builder has no review for its lane; the bot answers no_review
+ok 42 - control builder_accept: the same words written by the account of the builder are read as an accept, but since agent-reviewer did not push them the bot answers review_forged
+ok 43 - control stale_review: code written after the accept ends the review (reviewCurrent) and the bot answers review_stale
+ok 44 - control red_job: a reviewed merge request whose required job `unit` failed is refused with checks_failed (checksFor and decide of the bot)
+ok 45 - control protected_file: a merge request that adds CLAUDE.md, even with a valid review and green checks, is refused with protected_gate_file
+ok 46 - commits: the review survives the merge of main into the branch by the bot after another lane landed (the files of two lanes are disjoint), and the bot then lands it
+ok 47 - commits: no two merge requests of a run touch the same path (so no conflict and the PR diff of a review never changes), and only the protected control touches a protected path
+ok 48 - commits: the review commit is one update of the lane file that keeps its old text and appends an entry; the reviewer and the builder never put the same session in a commit
+ok 49 - commits: the test of a lane passes and the test of the red-job control fails (the generated files really behave so)
+ok 50 - bot: the real evaluate() of the merge bot, run on branches made from the commit bodies of the rehearsal in a local git remote with a fake GitLab, lands a reviewed lane and gives each control the reason the report expects — and shows when a lane is refused only because GitLab has not recorded the push yet
+ok 51 - parseNegctl: reads the three lines from a GitLab trace with ANSI codes, CRLF and lone carriage returns; look-alikes are not lines
+ok 52 - parseNegctlFailures: for each control that printed FAIL, the detail line the job printed just before it (`negctl: <name>: <detail>`), or an empty detail when the job printed none
+ok 53 - parseBaseline: reads the NEGCTL-INFO baseline lines (reachable, not reachable, not checked) and nothing that only looks like one
+ok 54 - parseBotNote: reads the reason code and the head from the comment of bot-land; the same marker from anyone else, a bad head or no marker is nothing
+ok 55 - parseBotNote: the codes the controls expect are comments the bot really writes (COMMENT_TEXT of gitlab-land.mjs is read from its source)
+ok 56 - parseFleetSample: a machine counts as active when it is Pending or InService and not while Terminating; total counts every machine; an empty group has 0
+ok 57 - countLaunches: counts launch activities since the start of the run; a Failed or Cancelled launch is not a machine; terminations and older activities are ignored
+ok 58 - A1 PASS: the fleet reached 24 machines, 30 machines were launched for 29 jobs, and the group was back at 0 after 220 seconds
+ok 59 - A1 peak: 20 machines is enough, 19 is not (12 agents); the peak counts every machine in the group, Terminating ones too, and reports how many were active
+ok 60 - A1 with fewer than 12 agents: the 20-machine peak is not checked (and the report says why); the other two checks still decide
+ok 61 - A1 own machine: machines launched must be at least the jobs run (29 jobs: 29 pass, 28 fail); launches before the run and failed launches are not machines; jobs from before the run are not counted
+ok 62 - A1 back to zero: 900 seconds after the last job passes, 901 fails; a group that never returns to 0 fails once the wait is over and is unproven before; a zero from before the last job does not count
+ok 63 - A1 not proven: when the ASG cannot be read (AccessDenied) the verdict is NOT PROVEN and names the two IAM actions; the activity history unreadable is NOT PROVEN too
+ok 64 - A1 runner: a job that ran on another runner than the fleet runner fails A1 (the fleet must run the jobs of agent branches)
+ok 65 - A2 PASS: every successful job printed the three negative controls and all passed; the counts are per control
+ok 66 - A2 FAIL: one FAIL line in any job fails the acceptance, whichever control it is
+ok 67 - A2: a succeeded job that did not print all three lines fails; a failed job without them does not by itself; a control never seen, no traces and unreadable traces are NOT PROVEN
+ok 68 - A2 FAIL: the line of a failing control shows the first detail the job printed for it (from the first trace that failed it), cut to one line; a failing control with no detail line has none to show
+ok 69 - A2 baseline: the job traces say whether GitLab could be reached from the job; that is information only (a skipped check, never a verdict), and where it was not reached the report says the network controls prove nothing
+ok 70 - A3 PASS: main is push No one, the Maintainers are bot-land and the owner, every token expires within 90 days, and the settings check exits 0
+ok 71 - A3 FAIL: Maintainers may push, force push is allowed, an extra Maintainer or Owner exists, bot-land is not a Maintainer, or the settings check reports drift
+ok 72 - A3 tokens: 90 days left is the most allowed (91 fails); a token without expiry, an expired one, an inactive one and a revoked one fail
+ok 73 - A3 NOT PROVEN: a token, the members, the protection or the settings check that could not be read is not assumed fine; a definite failure still wins over an unknown
+ok 74 - A4 PASS: 12 lanes landed one at a time, each one commit with the VTID in the subject and one parent, in landing order, and every control refused with its reason
+ok 75 - A4 FAIL: a lane that did not land, an extra commit on main, a missing commit, a subject without a VTID, a merge commit, or commits out of landing order
+ok 76 - A4 VTID: a subject without a VTID fails on its own, even when it is the title of the merge request (the check is about the commit, not the match)
+ok 77 - A4 controls: a control that landed fails; a control whose refusal reason is wrong or missing fails; the lane comments of the bot do not matter
+ok 78 - A4 NOT PROVEN: when the commits on main could not be read; with no lanes at all it fails
+ok 79 - A8 PASS: no job of the run ran on the legacy runner, the fleet ran them, the settings check (tags and pause) is clean; the pause is only noted as the step of the owner after A1
+ok 80 - A8 FAIL: a job of the run on the legacy runner, or a settings check that is not clean; NOT PROVEN when no job ran on the fleet or the check did not run
+ok 81 - settle and the exit code: FAIL beats NOT PROVEN beats PASS; a skipped check is neither; exit 0 only when all five acceptances PASS and the run did not stop
+ok 82 - safety: the aws runner of the rehearsal reads the agent secrets and describes the fleet group, and refuses every other call
+ok 83 - safety: the writes of the rehearsal are four, below the project (open or add a commit, open a merge request, close one, delete a branch); a merge, a comment, a setting, a member, a hook, a variable, a project, main — anything else — is refused
+ok 84 - safety: no write is ever aimed at the branch main — a commit to it (also as refs/heads/main, or with no branch named), and a delete of it (also percent-encoded) are refused, whatever the path shape allows
+ok 85 - whole run, happy path: the seed lands, 12 lanes land one at a time, 5 controls are refused; A1, A2, A3, A4 and A8 PASS; exit 0; the report is on stdout
+ok 86 - whole run: the report is the only thing on stdout (one block, well under the 24,000 characters Systems Manager keeps), progress goes to stderr (a line a minute, one per write)
+ok 87 - whole run: every write is announced on stderr just before it is made (opening, reviewing, writing an accept, changing code, closing, deleting)
+ok 88 - whole run: who writes what — builders and the seats of the controls open and change their own merge requests, only agent-reviewer pushes accepts, bot-land and bot-metrics write nothing, every read is made by bot-land
+ok 89 - whole run: nothing but the rehearsal project is written — four kinds of write, all under /projects/vitana%2Frehearsal, never main; AWS is only read
+ok 90 - whole run: the fleet group is vitana-eng-fleet unless FLEET_ASG_NAME says otherwise (the environment of the machine)
+ok 91 - whole run: secrets are never printed — no token in stdout, stderr, or the report
+ok 92 - whole run: a GitLab error that echoes a token does not leak it (a 401 for the token of the reviewer): refused before any write
+ok 93 - whole run, wave 2: the reviewer pushes the accepts as soon as the first job of the first wave has started (not when the last one has), all together, and after all 17 merge requests were opened
+ok 94 - whole run, wave 2: only a job of a merge request of this run releases the second wave — a job on a pipeline of main (the one a landing starts) does not; when no such job starts, the reviewer waits 8 minutes, says so, and pushes anyway
+ok 95 - whole run: the commit main has before the lanes is read after the seed landed and before the first lane commit (the commits on main are counted from it)
+ok 96 - whole run: jobs that take 7 minutes are waited for — the report is written only when every job of the run has finished, and the run still passes
+ok 97 - whole run, fleet: the second wave overlaps the first, the group reaches the 24 machines of its maximum, and every job got a machine of its own
+ok 98 - dry run: reads and checks everything, writes nothing (no non-GET call), reads only the seven token secrets and the two preflight reads of the fleet group from AWS, and prints the plan: the seed and 17 merge requests with their seats
+ok 99 - dry run, current seed: says so; a run needs no seed merge request
+ok 100 - refusal, whole run: a project that is not marked rehearsal (vitana-platform) is refused before GitLab or AWS is touched at all
+ok 101 - refusal, whole run: a project with a settings webhook or without landing: refused from the file alone
+ok 102 - refusal, whole run: a live webhook on the project is refused, with the number of hooks
+ok 103 - refusal, whole run: a live mirror (mirror: true, or a remote mirror) is refused
+ok 104 - refusal, whole run: a live main that is not the native profile (Maintainers can push, force push on) is refused
+ok 105 - refusal, whole run: an open merge request that is not from a rehearsal run is refused (the bot would land it), and so is a default branch that is not main
+ok 106 - refusal, whole run: a token that belongs to another account, a missing secret and an unreadable secret are each refused
+ok 107 - refusal, whole run: no REGION, a protected-file control that would prove nothing, an unknown private address and an unreachable GitLab are each refused
+ok 108 - refusal, whole run: a refusal that names a value the user gave (a --url with a token in it) does not print the token once the run has read it
+ok 109 - refusal, whole run: a bad --url (plain http to a remote host) is refused; a missing or invalid settings file is refused
+ok 110 - preflight, whole run: the built seed must pass its own tests on this machine or the run is refused (exit 2, nothing written) — otherwise the job unit fails and the seed merge request never lands
+ok 111 - preflight, whole run: a copy of the collab tooling that drifted from the seed (a new local import in land-guard.mjs) is refused before the first write — with the real self-test, in a temporary directory
+ok 112 - seed self-test (real): runs the tests of the built seed in a temporary directory with a clean environment and removes the directory; passes on the real seed, fails on a broken one or on one with no tests
+ok 113 - seed self-test (real): the child gets no secret of this machine — only a PATH and a temporary directory, not the environment of the run
+ok 114 - hygiene: a merge request left open by an earlier run (branch rehearsal/…) is closed first; nothing else is touched; the run then goes on and passes
+ok 115 - whole run: a secret that reaches a line on stderr by a path the client does not guard is redacted too (here: the name of a leftover branch)
+ok 116 - cleanup: at the end the five control merge requests are closed and their branches deleted; the lane branches are left to GitLab (removed on merge); nothing else is deleted
+ok 117 - seed, whole run: on a project that holds only a README the seed goes through a merge request of lane rehearsal/seed — built by a seat, accepted by the reviewer, landed by the bot — before any lane is opened
+ok 118 - seed, whole run: a project whose main already holds the current seed gets no seed merge request, and the 17 merge requests of the run are the only ones
+ok 119 - seed, whole run: an outdated seed is updated through the same route; a lane file that earlier runs grew is not rewritten (create-only)
+ok 120 - seed, whole run: if the seed merge request does not land (the bot is down) the run stops there after 25 minutes, opens nothing else, still prints the report, and exits 1
+ok 121 - seed, whole run: if GitLab shows no push event of agent-reviewer for the commit of the reviewer the run stops after two minutes with the reason (the bot would refuse every accept), and exits 1
+ok 122 - failure: the bot goes down after the seed — the lanes do not land, the report lists each with what the bot said, A4 FAIL, exit 1; the controls are still cleaned up
+ok 123 - failure: the landing budget ends while the bot is still landing lanes — the note says the bot was working and the budget was too short; a bot that landed nothing is not described so
+ok 124 - failure: the fleet does not scale (no machine can be launched) — the report names the jobs still waiting and the launch failures AWS gave; nothing lands; exit 1
+ok 125 - preflight, whole run: the role of the GitLab machine may not read the fleet group (either operation denied, or both) — refused with exit 2 before anything is written, naming both actions and the one that was denied
+ok 126 - fleetReadProblems: reads each operation once for the named group (one activity), tells a denial from another failure by the message or by stderr, strips the runner prefix, and removes secrets from what it returns
+ok 127 - preflight, whole run: a dry run refuses in the same way (it is how the owner finds out before the run), and a role that may read the group passes it with the two reads as the only extra AWS calls
+ok 128 - preflight, whole run: a read of the fleet group that fails for another reason than a denial (a throttled call) does not refuse — it is noted, and the run goes on and passes
+ok 129 - failure: the first reads of the fleet group during the run fail (a transient AWS error) — sampling goes on with the next polls instead of stopping, A1 is decided from the samples that were read, and the failed reads are noted
+ok 130 - failure: the fleet group stays unreadable during the run for another reason than a denial — A1 is NOT PROVEN with the error and the two IAM actions, the rest of the run goes on and is decided, the wait at the end gives up after three failed reads, exit 1
+ok 131 - failure: a negative control prints FAIL in a job — A2 FAIL and exit 1, but the rest of the rehearsal still runs and passes (the control never blocks the job)
+ok 132 - A2 baseline, whole run: the report says whether GitLab was reached from the jobs — as a skipped line, so it can never fail the run — and flags the traces where it was not
+ok 133 - failure: the job traces cannot be read, or the jobs print no controls — A2 is NOT PROVEN, never a quiet pass
+ok 134 - failure: a job runs on the legacy runner — A8 FAIL and A1 FAIL (the retag did not hold), exit 1
+ok 135 - failure: the settings check reports drift — A3 and A8 FAIL, exit 1
+ok 136 - failure: when the settings check reports drift the report shows what it said (first lines), and a token in those lines is redacted
+ok 137 - writes are sent once: a 503 while closing a control is not repeated by the client; the run reports it (STOPPED in cleanup) and exits 1
+ok 138 - failure: an extra Maintainer, a token that never expires, or main that lost its protection after the start fails A3 (re-read at the end)
+ok 139 - failure: a control that the bot LANDS (here: it believes the accept of the builder) fails A4, named LANDED, and the commit count on main shows the extra commit
+ok 140 - partial run: --agents 5 opens 5 lanes and 5 controls, does not check the 20-machine peak (and says so), and exits 0 when everything else holds
+ok 141 - a report that cannot be made does not lose the run: it says what is known (the stop and the notes), exits 1, and never prints a token
+ok 142 - last resort: an error that nothing caught is one redacted line on stderr (every token shape removed, cut to one line) and exit 1; inside a run the secrets it read are removed as well, and run() ends with exit 1 instead of throwing
+ok 143 - the command line: main() runs a dry run to exit 0, refuses a usage mistake with exit 2 and the usage text, and prints --help with exit 0
+ok 144 - the settings check of a run is gitlab-settings.mjs `check` with --config and --url: with no REGION it answers its usage exit 2 at once (no AWS, no GitLab is reached)
+ok 145 - README: says that terraform/settings.tf grants the two autoscaling actions and that the rehearsal refuses to start without them, carries no Terraform snippet or follow-up wording, and describes the imds control as no token and no data
+ok 146 - the default aws runner and settings check are wired to the real modules (nothing is called here): defaultDeps has the injection points the run needs
+# tests 146
+# suites 0
+# pass 146
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
