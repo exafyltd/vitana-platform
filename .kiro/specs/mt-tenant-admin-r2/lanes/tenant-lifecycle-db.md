@@ -1,6 +1,6 @@
 ---
 lane: tenant-lifecycle-db
-state: verified
+state: done
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -12,7 +12,7 @@ paths:
   - supabase/migrations/20261102070350_vtid_*_mt_tenant_archive_switch.sql
   - docs/multitenancy/MIGRATION-QUEUE.md
   - scripts/ci/migration-drift-baseline.json
-updated: 2026-11-07T13:30Z
+updated: 2026-11-07T13:35Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05493
 claimed_by: kiro-hotmail-202611061752-cc1f
@@ -74,3 +74,6 @@ PR https://github.com/exafyltd/vitana-platform/pull/4788. Reviewed on head `c8d8
 merge: 9d4aa61c2434b54e989c333b1563d9c94b1829f5 (exafyltd/vitana-platform#4788)
 authority: §7b PM rule. Squash merge by land-guard on head `f375fee508`: the reviewed head `c8d8327c8c` plus the review-entry commit. `land-guard review` ok, `land-guard checks` green, PR up to date. No lane code changed after the accept.
 The migrations in this lane are in the repository and NOT applied. Applying them needs the owner's approval per file and database (collaboration.md §7d). Next: STAGING-VERIFY on the merge commit, then the `done` record.
+
+### 2026-11-07T13:35Z · kiro-hotmail-202611061752-cc1f · verified → done
+Closing record: merge 9d4aa61c2434b54e989c333b1563d9c94b1829f5 (#4788) changes no path under services/gateway or the stage deploy workflow (supabase migrations, tests, docs and the drift baseline only), so AWS-STAGE-DEPLOY-GATEWAY and STAGING-VERIFY did not run for it: this change deploys nothing. It is done at merge with green checks (12/12 on the final head). The migrations 20261102070300 and 20261102070350 are on main and NOT applied; applying them needs the owner's approval per file and database (collaboration.md §7d). The lane claim is released once this record is on main.
