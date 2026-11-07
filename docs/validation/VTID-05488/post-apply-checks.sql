@@ -20,7 +20,9 @@ SELECT count(DISTINCT r.tenant_id) AS tenants_seeded, count(*) AS rows, count(*)
 SELECT is_nullable, column_default FROM information_schema.columns
  WHERE table_schema = 'public' AND table_name = 'products' AND column_name = 'distribution';
 SELECT count(*) FILTER (WHERE distribution <> 'community') AS non_community, count(*) AS products_total FROM public.products;
-SELECT convalidated FROM pg_constraint WHERE conname = 'products_distribution_check' AND conrelid = 'public.products'::regclass;  -- true
+SELECT convalidated FROM pg_constraint WHERE conname = 'products_distribution_check' AND conrelid = 'public.products'::regclass;
+--   Expect false: 120100 deliberately leaves the CHECK NOT VALID (no scan under ACCESS EXCLUSIVE). A later
+--   VALIDATE CONSTRAINT in its own transaction flips it to true; that is optional.
 
 -- 4. [after 120200] partner_tenant. Expect: snapshot rows = partner_tenant rows before; tenant_id still text;
 --    mapped + unresolved = total. A table that does not exist yields NULL here and no 120200 objects.

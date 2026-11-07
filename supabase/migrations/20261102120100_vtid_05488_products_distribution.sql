@@ -43,6 +43,9 @@ BEGIN
       COMMENT ON COLUMN public.products.distribution IS
         'VTID-05488: community = only tenants with an active supplier_tenant_relationships row; network = every tenant. Default community.';
 
+      -- Network rows are the minority; a partial index keeps the policy term cheap.
+      CREATE INDEX IF NOT EXISTS idx_products_network ON public.products (merchant_id) WHERE distribution = 'network';
+
       EXIT;
     EXCEPTION WHEN lock_not_available THEN
       IF v_try >= 5 THEN RAISE; END IF;
@@ -52,8 +55,5 @@ BEGIN
   END LOOP;
 END
 $mig$;
-
--- Network rows are the minority; a partial index keeps the policy term cheap.
-CREATE INDEX IF NOT EXISTS idx_products_network ON public.products (merchant_id) WHERE distribution = 'network';
 
 COMMIT;
