@@ -1,6 +1,6 @@
 ---
 lane: merge-queue
-state: in-review
+state: verified
 next_actor: claude
 depends_on: []
 executor: claude
@@ -61,3 +61,7 @@ Next: the closing records of this lane, one state step per PR.
 ### 2026-11-07T21:45Z · session_01Cp885Gw1CMmPDvDVHc7kw8 · executing -> in-review (closing record, 1 of 3)
 Review accepted on head 3cd2f2c2af by exafyltd (exceptions seat), entry 2026-11-07T12:14Z. Code merged in PR #4782 (merge 3cd2f2c2af).
 merge: 3cd2f2c2af  authority: review accept (exafyltd) and the owner's instruction 2026-11-07 ("merge 4782")
+
+### 2026-11-07T21:50Z · session_01Cp885Gw1CMmPDvDVHc7kw8 · in-review -> verified (closing record, 2 of 3)
+Review accept by exafyltd on head 3cd2f2c2af is on main (entry 2026-11-07T12:14Z).
+merge: 3cd2f2c2af  authority: review accept (exafyltd)
