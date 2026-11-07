@@ -1,0 +1,1 @@
+bare-policy-lint: 0 bare current_tenant_id() policies on 0 tables (828 policies in 719 files; allowlisted 0)

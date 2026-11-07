@@ -1,0 +1,17 @@
+# Green on the lane head (origin/main ff1a55d50b + this lane). 2026-11-07T20:34:25Z
+## node --test scripts/eng/fleet-structure.test.mjs
+# tests 39
+# pass 39
+# fail 0
+# skipped 0
+## node --test scripts/eng/free-tier-guard.test.mjs
+## node --test scripts/eng/gitlab-m1-structure.test.mjs
+# tests 26
+# pass 26
+# fail 0
+# skipped 0
+## node --test scripts/eng/gitlab-settings.test.mjs
+# tests 56
+# pass 56
+# fail 0
+# skipped 0

@@ -10,6 +10,7 @@ specs:
   - vitana-platform:native-wave2-discover-commerce
   - vitana-platform:native-wave2-discover-commerce-r2
   - vitana-platform:native-wave2-events-calendar
+  - vitana-platform:native-wave2-events-calendar-r3
   - vitana-platform:native-wave2-health-biology
   - vitana-platform:native-wave2-health-biology-r3
   - vitana-platform:native-wave2-home-feed-news
@@ -25,6 +26,7 @@ specs:
   - vitana-platform:native-wave2-public-auth-onboarding
   - vitana-platform:native-wave2-public-auth-onboarding-r3
   - vitana-platform:native-wave2-role-modes
+  - vitana-platform:native-wave2-role-modes-r2
   - vitana-platform:native-wave2-sharing-business
   - vitana-platform:native-wave2-sharing-business-r2
   - vitana-platform:native-wave2-wallet

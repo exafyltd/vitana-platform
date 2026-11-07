@@ -1,0 +1,29 @@
+src/routes/internal-gitlab-webhook.ts(124,77): error TS2339: Property 'type' does not exist on type 'never'.
+  The intersection 'CicdOasisEvent & { type: GitlabOasisTopic; }' was reduced to 'never' because property 'type' has conflicting types in some constituents.
+src/routes/internal-gitlab-webhook.ts(124,99): error TS2339: Property 'vtid' does not exist on type 'never'.
+  The intersection 'CicdOasisEvent & { type: GitlabOasisTopic; }' was reduced to 'never' because property 'type' has conflicting types in some constituents.
+src/routes/internal-gitlab-webhook.ts(127,63): error TS2339: Property 'type' does not exist on type 'never'.
+  The intersection 'CicdOasisEvent & { type: GitlabOasisTopic; }' was reduced to 'never' because property 'type' has conflicting types in some constituents.
+src/routes/internal-gitlab-webhook.ts(127,89): error TS2339: Property 'vtid' does not exist on type 'never'.
+  The intersection 'CicdOasisEvent & { type: GitlabOasisTopic; }' was reduced to 'never' because property 'type' has conflicting types in some constituents.
+src/services/gitlab-events/mapper.ts(35,3): error TS2322: Type '"scm.gitlab.merge_request.opened"' is not assignable to type 'CicdEventType'.
+src/services/gitlab-events/mapper.ts(36,3): error TS2322: Type '"scm.gitlab.merge_request.merged"' is not assignable to type 'CicdEventType'.
+src/services/gitlab-events/mapper.ts(37,3): error TS2322: Type '"scm.gitlab.merge_request.closed"' is not assignable to type 'CicdEventType'.
+src/services/gitlab-events/mapper.ts(38,3): error TS2322: Type '"scm.gitlab.pipeline.succeeded"' is not assignable to type 'CicdEventType'.
+src/services/gitlab-events/mapper.ts(39,3): error TS2322: Type '"scm.gitlab.pipeline.failed"' is not assignable to type 'CicdEventType'.
+src/services/gitlab-events/mapper.ts(120,9): error TS2322: Type 'string' is not assignable to type 'never'.
+src/services/gitlab-events/mapper.ts(121,9): error TS2322: Type 'GitlabOasisTopic' is not assignable to type 'never'.
+  Type '"scm.gitlab.merge_request.opened"' is not assignable to type 'never'.
+src/services/gitlab-events/mapper.ts(122,9): error TS2322: Type 'string' is not assignable to type 'never'.
+src/services/gitlab-events/mapper.ts(123,9): error TS2322: Type '"info"' is not assignable to type 'never'.
+src/services/gitlab-events/mapper.ts(124,9): error TS2322: Type 'string' is not assignable to type 'never'.
+src/services/gitlab-events/mapper.ts(125,9): error TS2322: Type '"VALIDATOR"' is not assignable to type 'never'.
+src/services/gitlab-events/mapper.ts(126,9): error TS2322: Type '{ gitlab_event: string; webhook_id: string; action: string | null; project_id: number | null; project_path: string | null; merge_request_iid: number | null; state: string | null; ... 4 more ...; url: string | null; }' is not assignable to type 'never'.
+src/services/gitlab-events/mapper.ts(155,9): error TS2322: Type 'string' is not assignable to type 'never'.
+src/services/gitlab-events/mapper.ts(156,9): error TS2322: Type 'GitlabOasisTopic' is not assignable to type 'never'.
+  Type '"scm.gitlab.merge_request.opened"' is not assignable to type 'never'.
+src/services/gitlab-events/mapper.ts(157,9): error TS2322: Type 'string' is not assignable to type 'never'.
+src/services/gitlab-events/mapper.ts(158,9): error TS2322: Type '"error" | "info" | "success" | "warning"' is not assignable to type 'never'.
+  Type '"error"' is not assignable to type 'never'.
+src/services/gitlab-events/mapper.ts(159,9): error TS2322: Type 'string' is not assignable to type 'never'.
+src/services/gitlab-events/mapper.ts(160,9): error TS2322: Type '{ gitlab_event: string; webhook_id: string; status: string | null; project_id: number | null; project_path: string | null; pipeline_id: number | null; ref: string | null; sha: string | null; source: string | null; merge_request_iid: number | null; duration_s: number | null; url: string | null; }' is not assignable to type 'never'.

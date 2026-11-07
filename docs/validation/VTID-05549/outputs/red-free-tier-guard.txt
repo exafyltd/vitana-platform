@@ -1,0 +1,19 @@
+# Red of the free-tier guard of eng-gitlab-m2 lane settings (scripts/eng/free-tier-guard.test.mjs, on main since #4711), on the lane's tree after
+# the merge of origin/main (0e5a74a72a8fe26785df3133f4133b3e99b97efd), before the wording change: five user-visible strings of gitlab-land.mjs said "merge train", the name of
+# GitLab's Premium feature (rule 'merge trains'). The queue's own train is now called the landing train; the guard is not changed. 2026-11-05T22:47:11Z.
+# command: node --test --test-name-pattern='^free-tier guard: the repository today' scripts/eng/free-tier-guard.test.mjs
+
+not ok 1 - free-tier guard: the repository today names no Premium-only API path or setting (scans infra/gitlab-engineering and scripts/eng)
+      scripts/eng/gitlab-land.mjs:511 [merge trains] train_failed: 'Not landed: it failed in the merge train (its position merges `main` and the merge requests ahead of it). It is back with its
+      scripts/eng/gitlab-land.mjs:512 [merge trains] train_conflict: 'Not landed: it conflicts with a merge request ahead of it in the merge train. Merge `main` into the branch after that one h
+      scripts/eng/gitlab-land.mjs:513 [merge trains] merge_refused_too_long: 'Not landed: GitLab refused the merge of this merge request for more than 60 minutes (for example an unresolved thre
+      scripts/eng/gitlab-land.mjs:958 [merge trains] dropItem(ctx, state, byIid.get(p.iid), 'train_failed', `position ${p.k} of the merge train failed: ${verdicts[failedAt].detail}`);
+      scripts/eng/gitlab-land.mjs:977 [merge trains] else dropItem(ctx, state, next, 'train_conflict', `it conflicts with position ${k} of the merge train`);
+# tests 1
+# suites 0
+# pass 0
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+exit 1

@@ -1,0 +1,10 @@
+# S1: open PRs of exafyltd/vitana-platform that change one of the eight target lane files (PR list read 2026-11-05T12:20:27Z, files 12:20:56Z, branch details 12:30Z)
+$ gh api "repos/exafyltd/vitana-platform/pulls?state=open&per_page=100" --paginate   -> 121 open PRs
+$ for each: gh api "repos/exafyltd/vitana-platform/pulls/<n>/files?per_page=100" --paginate --jq ".[].filename" | grep -E "^\.kiro/specs/agentic-delivery/lanes/(prerequisites|pipelines|deploy-path|verify-on-gitlab|merge-queue|github-bridge|gateway-delivery|cutover)\.md$"
+result: 2 PRs
+#4689 kiro/agentic-delivery/github-bridge head 83f8b61669 draft=false "VTID-05548 (agentic-delivery/github-bridge): GitHub bridge for agent branches, pull requests and statuses"
+   changes .kiro/specs/agentic-delivery/lanes/github-bridge.md; on its branch: state: in-review seat: exafy claimed_by: kiro-exafy-202611050107-c4a6 
+   merge-base with origin/main 0ca24febdb (seat there: exafy); origin/main seat now: exafyltd
+#4690 kiro/agentic-delivery/prerequisites head 18a10349d8 draft=false "VTID-05551 (agentic-delivery/prerequisites): atlas claims for the GitLab route files, WORKFLOW input for record-oasis.sh"
+   changes .kiro/specs/agentic-delivery/lanes/prerequisites.md; on its branch: state: in-review seat: exafy claimed_by: kiro-exafy-202611050324-2956 
+   merge-base with origin/main 0ca24febdb (seat there: exafy); origin/main seat now: exafyltd

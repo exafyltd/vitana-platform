@@ -1,0 +1,9 @@
+# b-unit-all-node20 (Node v20.20.2): the whole script suite as .github/workflows/UNIT.yml runs it
+# FILES=$(find scripts -path '*/node_modules' -prune -o \( -name '*.test.cjs' -o -name '*.test.mjs' \) -print | sort); node --test $FILES   (36 files, includes scripts/eng/free-tier-guard.test.mjs: 51 tests, PyYAML on PYTHONPATH; the 1 skip is an existing win32-only case of another file)
+# tests 745
+# pass 744
+# fail 0
+# cancelled 0
+# skipped 1
+# todo 0
+# node --test exit 0
