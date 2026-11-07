@@ -1,4 +1,4 @@
-VTID-05607 local checks (scripts/eng), 2026-11-07, session kiro-exafy-202611062222-c262
+VTID-05607 local checks (scripts/eng), 2026-11-07, session kiro-exafy-202611071602-6cfa
 
 red on origin/main (new test file, source of origin/main):
 $ node --test scripts/eng/gitlab-settings.test.mjs

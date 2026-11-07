@@ -15,7 +15,6 @@ updated: 2026-11-07T17:06Z
 claimed_by: kiro-exafy-202611071602-6cfa
 branch: kiro/eng-gitlab-m2/settings-fix-v2
 vtid: VTID-05607
-vtid: VTID-05607
 ---
 # Lane: settings-fix-v2 (repo vitana-platform)
 Same fix as lane `settings-fix`: the settings sync wrote secret values through `file:///dev/stdin`, which the AWS CLI cannot
