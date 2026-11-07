@@ -37,3 +37,7 @@ The plan PR opens when PLAN-SPAR capacity allows (`collaboration.md` §8a).
 - Branch moved to `kiro/mt-native-health-r2/plan-r2` (new plan PR, #4615 closed as superseded): the old `_plan` branch
   carries commits from session `kiro-hotmail-202611011452-6d16`, which fails Collab handoff ("one session per lane") for
   the whole range. The spec and the sparring record are copied unchanged.
+
+### 2026-11-07T14:30Z · kiro-hotmail-202611061752-cc1f · session 2 round 2 answered
+- R2-F1 accepted: new lane `health-writers-voice-orb` (voice and ORB health writers), long-tail writers deferred to
+  `health-writers-long-tail` and pinned in the inventory test. Answers in `sparring/s2-responses-2.md`.

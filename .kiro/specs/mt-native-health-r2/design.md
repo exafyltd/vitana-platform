@@ -34,11 +34,18 @@ no read path changes in this lane.
 
 ### health-tenant-accessor (gateway)
 `healthDb(userId)` wraps the service-role client and resolves the frozen home tenant via `health_home_tenant_id()`,
-injecting it into health reads/writes so no caller supplies a session tenant. The four verified repos plus
-`health-repository.ts` are converted to call it. A generated inventory (grep of `.from('<health table>')` across
+injecting it into health reads/writes so no caller supplies a session tenant. The verified repos of this lane plus
+`health-repository.ts` (incl. `recommendations`) are converted to call it; the voice and ORB writers are the separate
+lane `health-writers-voice-orb`, a consumer of the accessor (s2-R2-F1). A generated inventory (grep of `.from('<health table>')` across
 `services/gateway/src`, table set = `isHealthTable()` from mt-identity) feeds a build-failing lint: every health
 read/write must route through `healthDb`, with an allowlist for the accessor and service-role platform jobs. Dark
 behind `MT_RESOLUTION_V2`; off = today's session-tenant behaviour.
+
+### health-writers-voice-orb (gateway)
+`voice-tools/health-log*` and `orb-tools/health-depth-tools*` stop resolving the tenant from `user_tenants ... limit(1)`
+with a zero-UUID fallback and read `healthDb(userId)` instead. Same flag as the accessor; flag off = today's path. The
+lane also pins the long-tail writers (`deferred_to: health-writers-long-tail`) in the inventory test and promotes the
+lint to build-failing. It depends on the accessor and has no other coupling.
 
 ### health-analytics-lineage-guard (gateway)
 A build-failing guard test over a generated inventory of tenant-analytics + commerce reader modules

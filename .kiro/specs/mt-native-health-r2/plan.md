@@ -72,6 +72,20 @@ cap). Every premise was re-verified on platform `origin/main` `62990ce285` and v
     `src/linking/resolve-link.ts` and `app/+native-intent.tsx` exist, and `apps/mobile/tests/resolve-link.test.ts` is the
     existing pattern. Task N0 of native-tenant-isolation-tests now writes that listing to
     `docs/validation/<VTID>/vitana-v1-premises.md` BEFORE any test is written, and parks the lane on a missing file.
+- **Session 2, round 2 (`5e927bc9`):**
+  - **s2-R2-F1** [major] (two more health writers: `voice-tools/health-log-repository.ts`,
+    `orb-tools/health-depth-tools-repository.ts`): accepted. Verified on `origin/main`: both upsert `health_features_daily`
+    with `onConflict: 'tenant_id,user_id,date,feature_key'` (`:42`, `:43`), take the tenant from `user_tenants ... limit(1)`
+    (`:21`, `:22`) and fall back to the zero UUID (`health-log.ts:146`, `health-depth-tools.ts:95,131`). The new lane
+    `health-writers-voice-orb` converts both with their callers and the existing tests
+    (`test/services/voice-tools/health-log.test.ts`, `test/services/orb-tools/health-depth-tools.test.ts`).
+    The "five verified sites" wording is replaced by "the inventory", with these two lanes' sites named. The inventory
+    generator already finds every `.from('<health table>')` site (task A3), so it also surfaced further writers that the
+    round did not name: `wearable-features-bridge-repository.ts:51` (tenant passed in by its caller),
+    `partner-health/ingestion.ts:210,245` (the order's tenant) and `connector-webhooks-repository.ts:38`,
+    `action-executors-repository.ts:23` (`wearable_workouts`). They are recorded as (a) entries with
+    `deferred_to: health-writers-long-tail`. That follow-on lane is tracked under "Out of scope" below; the lint ignores exactly those entries (an inline list in `health-reader-inventory.test.ts` pins them), and every other (a) is cleared by the two
+    lanes. Nothing is silently skipped.
 - **Line corrections:**
   - `notification-service.ts`: the token fetch in `sendPushToUser` is at `:415-416`, `notifyUser` at `:814` and
     `dispatchPush` at `:974`.
@@ -135,7 +149,7 @@ verified on platform origin/main:
   canonical `user_tenants.is_primary`).
 - **health-tenant-accessor** (vitana-platform, gateway). Add `healthDb(userId)`: a user-keyed accessor that
   resolves the frozen home tenant via `health_home_tenant_id()` and injects it, so no health reader/writer takes a
-  session tenant. Convert the five verified sites (`integrations-repository.ts`,
+  session tenant. Convert the verified sites of this lane (`integrations-repository.ts`,
   `diary-health-extractor-repository.ts`, `health-wellness-repository.ts`, `health-action-initiative-repository.ts`,
   `health-repository.ts`). **Generate the inventory FIRST** and classify each entry: (a) convert-to-`healthDb` (`health_features_daily`,
   `vitana_index_scores`, `biomarker_results`, `wearable_workouts`, `recommendations` (s2-R1-F1), written/read with a session tenant); (b) already
@@ -150,6 +164,23 @@ verified on platform origin/main:
   write and read tenant come from one resolver. Flag off = today's `limit(1)` path. The conflict target includes
   `tenant_id` (`:85`, `:24`), so the flip is a real change for dual members (see Risks). depends_on:
   health-home-tenant-db.
+- **health-writers-voice-orb** (vitana-platform, gateway; s2-R2-F1). The voice and ORB health writers carry the same
+  session-tenant pattern and a zero-UUID fallback, so they are class (a) and convert to `healthDb` behind the same
+  `MT_RESOLUTION_V2` flag:
+  - `voice-tools/health-log-repository.ts` (`fetchUserTenantIdForVoiceLog` `:20`, `fetchVitanaIndexScoreTotal` `:24`,
+    `upsertHealthFeatureDaily` `:28`) and its caller `voice-tools/health-log.ts:140-146`.
+  - `orb-tools/health-depth-tools-repository.ts` (`fetchTenantIdForUser` `:21`, `upsertHealthFeatureDaily` `:29`,
+    `fetchHealthFeatureValue` `:77`, `insertWearableSamples` `:88`, `insertLabReport` `:95`, `insertBiomarkerResult`
+    `:99`, `fetchVitanaIndexScoresHistory` `:118`, `fetchBiomarkerResults` `:135`) and its caller
+    `orb-tools/health-depth-tools.ts:95,131` (`resolveHealthTenantId`).
+  - With the flag on, `resolveHealthTenantId` and the voice fallback read `healthDb(userId)` and the zero-UUID fallback
+    is gone: a member with no home tenant gets `{ok:false}` (the orb tool already reports a thrown resolver error that
+    way), never a write under `00000000-…`. Flag off keeps today's path byte for byte.
+  - The lane is split from `health-tenant-accessor` so each stays small and separable (the accessor is the contract; the
+    voice and ORB tools are consumers of it). Both lanes land dark behind the flag. **The flag flips only after both have
+    merged** and the pre-flip count (R1-F2) is recorded, so write and read tenant still switch together (R1-F4). The
+    lint promotion to build-failing moves to this lane's last task.
+  - depends_on: health-tenant-accessor.
 - **health-analytics-lineage-guard** (vitana-platform, gateway). A build-failing guard test (modelled on the
   commerce §7.2 ranking guard) asserting that every module in the generated **tenant-analytics + commerce reader**
   inventory (tenant-admin overview/KPIs/health-index, tenant-owner analytics, exports, Discover feed/search, ORB
@@ -223,7 +254,7 @@ backfill is verified by the read-only post-check SQL Kiro runs after the owner-a
 Dark by default. Gateway health read+write changes gate on `MT_RESOLUTION_V2` (flip only after the backfill
 post-check passes); native direct push gates on
 `NATIVE_PUSH_DIRECT_ENABLED` (existing). The DB column + resolver are additive and inert until the accessor reads
-them. Order: health-home-tenant-db (DB, owner-applied) → health-tenant-accessor → health-analytics-lineage-guard.
+them. Order: health-home-tenant-db (DB, owner-applied) → health-tenant-accessor → health-writers-voice-orb → health-analytics-lineage-guard (the flag flips after the two writer lanes).
 native-push-tenant and native-tenant-isolation-tests are INDEPENDENT and may run any time (no dependency on
 health-home-tenant-db). Owner-only steps: applying the two migrations (RUN-MIGRATION) and the production PUBLISH at
 Gate 2.
@@ -242,6 +273,10 @@ Gate 2.
   → the test regenerates the inventory each build and fails on drift from the committed fixture.
 
 ## Out of scope
+- `health-writers-long-tail` (follow-on, planned after this lands; tracks s2-R2-F1's unnamed writers):
+  `wearable-features-bridge-repository.ts`, `partner-health/ingestion.ts`, `connector-webhooks-repository.ts`,
+  `action-executors-repository.ts`. Each is an (a) entry in the committed inventory with
+  `deferred_to: health-writers-long-tail`; an inline list in `health-reader-inventory.test.ts` pins it so it can only shrink.
 - Building the native app shell or any screen port (health-native, Native app VTID-05021).
 - The health-data pipeline itself: connectors, consent store, sync, labs, AI recommendations (health-native, Health
   Hub VTID-05020).
@@ -256,7 +291,7 @@ Gate 2.
   HARD for health-analytics-lineage-guard only, per O1; membership unification — SOFT: the backfill `RAISE EXCEPTION`
   guard self-enforces; TenantContext, resolver); mt-tenant-admin (S-L); health-native (native app + health pipeline
   this contract wraps). The other four lanes do not wait on mt-identity.
-- Lanes (within this spec): health-tenant-accessor → health-home-tenant-db; health-analytics-lineage-guard →
+- Lanes (within this spec): health-tenant-accessor → health-home-tenant-db; health-writers-voice-orb → health-tenant-accessor; health-analytics-lineage-guard →
   health-tenant-accessor. native-push-tenant and native-tenant-isolation-tests are independent (no in-spec deps).
 - Done VTIDs built on: VTID-05177 (native token fields + `NATIVE_PUSH_DIRECT_ENABLED`), VTID-05149 (`tenants.is_default`).
 

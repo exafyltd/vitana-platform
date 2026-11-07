@@ -62,14 +62,48 @@ Allowed paths:
       through one inventory-local `extra_health_tables` entry, not a new list: the test fails when
       `isHealthTable('recommendations')` becomes true. The existing `date`/`priority` clauses stay; note the open
       column question in the entry's `reason`.
-- [ ] A4 `health-reader-inventory.test.ts`: lint ships WARNING-ONLY and is promoted to build-failing in the SAME PR
-      that clears every (a) conversion (round-1 F5); allowlist = (b)+(c) + the accessor; fails on a planted
+- [ ] A4 `health-reader-inventory.test.ts`: lint ships WARNING-ONLY; it is promoted to build-failing by the last task
+      (W5) of `health-writers-voice-orb`, the PR that clears the last (a) conversion (round-1 F5, s2-R2-F1); allowlist = (b)+(c) + the accessor; fails on a planted
       session-tenant health read once promoted.
 - [ ] A5 `health-db.test.ts`: `healthDb` resolves the same tenant for a dual member in either session.
 
 Acceptance: Vitest green incl. the new lint; the five repos no longer read a session tenant for health; flag off
 preserves today's behaviour; `npm run test:support` / `npm run test:operator` green if the touched code intersects
 them. depends_on health-home-tenant-db. The lane adds its own `docs/validation/<vtid>/`.
+
+<!-- lane: health-writers-voice-orb -->
+## health-writers-voice-orb — voice and ORB health writers on healthDb (repo vitana-platform)
+
+Allowed paths:
+- `services/gateway/src/services/voice-tools/health-log-repository.ts`
+- `services/gateway/src/services/voice-tools/health-log.ts`
+- `services/gateway/src/services/orb-tools/health-depth-tools-repository.ts`
+- `services/gateway/src/services/orb-tools/health-depth-tools.ts`
+- `services/gateway/test/services/voice-tools/health-log.test.ts`
+- `services/gateway/test/services/orb-tools/health-depth-tools.test.ts`
+- `services/gateway/test/mt-native-health/health-writers-voice-orb.test.ts`
+- `services/gateway/test/mt-native-health/health-reader-inventory.test.ts`
+
+- [ ] W1 Tests first (`health-writers-voice-orb.test.ts`, supabase double), red on `origin/main`: for ab_dual with flag on,
+      `logHealthSignal` and the orb health tools write `health_features_daily` under the home tenant whichever tenant the
+      session carries, and a member with no home tenant gets `{ok:false}` with no write (no zero-UUID row).
+- [ ] W2 `voice-tools/health-log-repository.ts` + `health-log.ts:140-146`: tenant from `healthDb(userId)`; remove the
+      zero-UUID fallback when `MT_RESOLUTION_V2` is on; flag off = today's path.
+- [ ] W3 `orb-tools/health-depth-tools-repository.ts` + `health-depth-tools.ts:95,131`: `resolveHealthTenantId` reads
+      `healthDb(userId)` with the flag on; writers (`upsertHealthFeatureDaily`, `insertWearableSamples`,
+      `insertLabReport`, `insertBiomarkerResult`) and readers (`fetchHealthFeatureValue`, `fetchVitanaIndexScoresHistory`,
+      `fetchBiomarkerResults`) take the resolved home tenant; a DB error is still thrown, never a fallback.
+- [ ] W4 Update the two existing test files for the changed signatures; they stay green with the flag off.
+- [ ] W5 In `health-reader-inventory.test.ts`: pin the long-tail writers as an inline `DEFERRED_TO_LONG_TAIL` list (each
+      entry `deferred_to: health-writers-long-tail`; the list can only shrink), then
+      promote `health-reader-inventory.test.ts` from warning-only to build-failing for every other (a).
+
+Acceptance:
+  - Change types: Backend.
+  - With the flag on, no health write from the voice or ORB tools uses a session tenant or the zero UUID.
+  - Flag off: the two existing test files pass unchanged in behaviour.
+  - The lint fails on a planted session-tenant health read and passes on the tree; the deferred list is pinned in the test.
+depends_on health-tenant-accessor. Interface used: `healthDb(userId)` from `services/gateway/src/data/health-db.ts`.
 
 <!-- lane: health-analytics-lineage-guard -->
 ## health-analytics-lineage-guard — tenant-analytics/commerce health-read guard (repo vitana-platform)
@@ -180,3 +214,6 @@ Each finding is answered in `plan.md` "Re-plan answers"; the tasks carry the acc
   Acceptance: the inventory has a `recommendations` (a) entry; the drift test fails if `isHealthTable` starts to cover
   it; `fetchRecommendationsForDate` takes `userId`.
 - s2-R1-F2 [minor]: accepted. Task N0 of native-tenant-isolation-tests.
+- s2-R2-F1 [major]: accepted. New lane `health-writers-voice-orb` (W1-W5) and the long-tail deferral in `plan.md`
+  "Session 2, round 2" and "Out of scope". Acceptance: no voice or ORB health write uses a session tenant or the zero UUID
+  with the flag on; the planted-violation lint test fails; the deferred list is pinned in the test.
