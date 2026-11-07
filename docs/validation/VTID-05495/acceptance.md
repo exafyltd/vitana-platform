@@ -47,3 +47,6 @@ TEST: node --test docs/validation/VTID-05495/static-checks.test.cjs (the migrati
 
 - The FK targets `tenants(tenant_id)`, the live key (VTID-04716), not `tenants(id)` as the plan text says.
 - The queue row is numbered `8a` so it sits directly before row 9 without renumbering rows other lanes are editing.
+
+## Fix-forward 1: staging-tests.json manifest (reviewer finding on de2209b8fc)
+Decision taken: the manifest ref `node --test ...` is rejected by `EXISTING_REF` (scripts/ci/staging-verify/lib.cjs:123), which accepts only `npm run` or `npx jest|vitest run`. The static test lives under docs/validation and the gateway jest config does not pick it up, so a jest ref would not find it. Conservative option taken: a read-only `http` GET probe expecting 401 on an existing route, as VTID-05491 did. The static test still runs via `node --test`. Validator output: docs/validation/VTID-05495/outputs/manifest-validate.txt.
