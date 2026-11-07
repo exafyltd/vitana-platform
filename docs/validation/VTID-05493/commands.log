@@ -5,6 +5,6 @@ pglite-harness/lane.sh (070350 with the fallback IF forced to false)            
 pglite-harness/lane.sh pgtap/vtid_05493_tenant_lifecycle.test.sql                  -> outputs/pgtap-green.txt (72 ok)
 pglite-harness/lane.sh --twice ...                                                 -> outputs/pgtap-green-applied-twice.txt (72 ok)
 pglite-harness/checks.sh                                                           -> outputs/read-only-checks-and-rollback-pglite.txt
-jest (ts-jest, services/gateway/test/vtid-05493-tenant-lifecycle.test.ts) on origin/main -> outputs/jest-red-on-origin-main.txt (25 failed)
-jest (same file) on the branch                                                     -> outputs/jest-vtid-05493.txt (25 pass)
+node --test static-pins.test.mts on origin/main                                    -> outputs/static-pins-red-on-origin-main.txt (25 failed)
+node --test static-pins.test.mts on the branch                                     -> outputs/static-pins-green.txt (25 pass)
 node --test scripts/ci/check-migration-drift.test.cjs                              -> 8 pass

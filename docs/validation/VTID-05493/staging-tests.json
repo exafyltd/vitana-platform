@@ -5,8 +5,8 @@
   "tests": [
     {
       "kind": "existing",
-      "ref": "npx jest test/vtid-05493-tenant-lifecycle.test.ts",
-      "cwd": "services/gateway",
+      "ref": "node --test docs/validation/VTID-05493/static-pins.test.mts",
+      "cwd": ".",
       "reason": "Static assertions over the two migration files, the rollbacks, the read-only checks, the queue rows and the drift baseline."
     }
   ]

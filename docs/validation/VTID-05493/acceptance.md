@@ -18,7 +18,7 @@ ROUTE_MOUNT: none. FINAL_URL: n/a. Nothing is applied from the PR; each file is 
 | read-only checks | `live-before.sql`, `post-apply-checks.sql`, `rollback-check.sql` |
 | L3 pgTAP | `pgtap/vtid_05493_tenant_lifecycle.test.sql` (72 cases) + `pgtap/vtid_05493_fixture.sql` |
 | L4 queue / drift | `docs/multitenancy/MIGRATION-QUEUE.md` rows 30-31 (numbering may shift at landing); `scripts/ci/migration-drift-baseline.json` (+1 not-yet-live table, count 113) |
-| static gate | `services/gateway/test/vtid-05493-tenant-lifecycle.test.ts` (25 cases) |
+| static gate | `static-pins.test.mts` (25 cases, `node --test`, no dependencies) |
 
 Apply order: 070300 → 070350. Rollback order: 070350 → 070300 (the second refuses while `archive_tenant` exists).
 
@@ -54,7 +54,7 @@ TEST: `outputs/read-only-checks-and-rollback-pglite.txt` (rollback-check: `tenan
 
 AC-6 (L4) Queue rows and drift baseline: rows 30-31 `queued (pending owner approval)`; `bak_vtid_05493_tenant_lifecycle`
 listed in the drift baseline while unapplied.
-TEST: `outputs/jest-vtid-05493.txt`, `node --test scripts/ci/check-migration-drift.test.cjs`.
+TEST: `outputs/static-pins-green.txt`, `node --test scripts/ci/check-migration-drift.test.cjs`.
 
 ## Evidence (all local, PGlite = PostgreSQL 18 wasm; `pglite-harness/`)
 
@@ -66,13 +66,14 @@ TEST: `outputs/jest-vtid-05493.txt`, `node --test scripts/ci/check-migration-dri
 | `outputs/pgtap-green.txt` | 72 ok, 0 not ok |
 | `outputs/pgtap-green-applied-twice.txt` | 72 ok: both migrations applied twice (idempotent) |
 | `outputs/read-only-checks-and-rollback-pglite.txt` | live-before, post-apply-checks, use, rollbacks, rollback-check, re-run |
-| `outputs/jest-red-on-origin-main.txt` | 25 failed on origin/main |
-| `outputs/jest-vtid-05493.txt` | 25 passed |
+| `outputs/static-pins-red-on-origin-main.txt` | 25 failed on origin/main |
+| `outputs/static-pins-green.txt` | 25 passed |
 
 ## Deviations and limits (honest record)
 
 * **pgTAP location.** The lane `paths` do not include `supabase/tests/`; the pgTAP file lives under
   `docs/validation/VTID-05493/pgtap/` (exempt), written in pgTAP syntax. CI's `supabase test db` does not pick it up there.
+* **Static gate location.** The lane `paths` do not include `services/gateway/test/`, so the static pins are a dependency-free `node --test` file under `docs/validation/VTID-05493/` (exempt); CI's gateway Jest does not pick it up.
 * **Lane file and spec paths.** The lane's `paths` name `supabase/migrations/20261102070300_vtid_*_mt_tenant_deactivate.sql`
   and `…070350_vtid_*_mt_tenant_archive_switch.sql`; the files use VTID-05493 in the glob.
 * **`current_tenant_id()` is not changed.** About 50 RLS policies read it; the claim the gateway reads is set by the

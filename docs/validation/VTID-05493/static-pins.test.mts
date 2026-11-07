@@ -1,13 +1,38 @@
 /**
  * VTID-05493 (mt-tenant-admin-r2 / tenant-lifecycle-db) — static pins over the lane's files.
- * Behaviour is proven by docs/validation/VTID-05493/pgtap/vtid_05493_tenant_lifecycle.test.sql (PGlite evidence in
- * docs/validation/VTID-05493/outputs/); this suite pins that the migrations, rollbacks, read-only checks, queue rows and
- * drift baseline exist and keep their safety properties.
+ * Behaviour is proven by pgtap/vtid_05493_tenant_lifecycle.test.sql (PGlite evidence in outputs/); this suite pins that
+ * the migrations, rollbacks, read-only checks, queue rows and drift baseline exist and keep their safety properties.
+ * It lives here, not in services/gateway/test, because the lane's allowed paths do not include the gateway test folder.
+ * Run: node --test docs/validation/VTID-05493/static-pins.test.mts   (node >= 22.18, no dependencies)
  */
+import { describe as d, it as t } from 'node:test';
+import assert from 'node:assert/strict';
 import { existsSync, readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
 
-const ROOT = join(__dirname, '../../..');
+const describe = d;
+type Fn = () => void;
+const fmt = (s: string, a: unknown): string => s.replace('%s', String(Array.isArray(a) ? a[0] : a));
+const it: any = (name: string, fn: Fn) => t(name, fn);
+it.each = (rows: any[]) => (name: string, fn: (...a: any[]) => void) => {
+  for (const r of rows) t(fmt(name, r), () => fn(...(Array.isArray(r) ? r : [r])));
+};
+const matcher = (v: any, neg: boolean) => {
+  const chk = (ok: boolean, msg: string) => assert.ok(neg ? !ok : ok, (neg ? 'expected NOT: ' : 'expected: ') + msg);
+  return {
+    toMatch: (re: RegExp) => chk(re.test(String(v)), `${re} against ${String(v).slice(0, 120)}`),
+    toContain: (x: unknown) => chk(typeof v === 'string' ? v.includes(String(x)) : v.includes(x), `contain ${String(x)}`),
+    toBe: (x: unknown) => chk(Object.is(v, x), `${String(v)} is ${String(x)}`),
+    toEqual: (x: unknown) => { if (neg) assert.notDeepEqual(v, x); else assert.deepEqual(v, x); },
+    toHaveLength: (n: number) => chk(v.length === n, `length ${v?.length} is ${n}`),
+    toBeNull: () => chk(v === null, `${String(v)} is null`),
+    toBeGreaterThan: (n: number) => chk(v > n, `${v} > ${n}`),
+    toBeLessThan: (n: number) => chk(v < n, `${v} < ${n}`),
+  };
+};
+const expect: any = (v: unknown) => ({ ...matcher(v, false), not: matcher(v, true) });
+
+const ROOT = join(import.meta.dirname, '../../..');
 const MIG_DIR = join(ROOT, 'supabase/migrations');
 const VAL_DIR = join(ROOT, 'docs/validation/VTID-05493');
 
