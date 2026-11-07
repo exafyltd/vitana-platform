@@ -104,6 +104,10 @@ describe('VTID-05488 D2: products.distribution', () => {
     expect(sql).not.toMatch(/DROP DEFAULT/i);
     expect(sql).not.toMatch(/UPDATE\s+public\.products/i);
   });
+  it('does not scan products under the ADD COLUMN exclusive lock: CHECK stays NOT VALID, no VALIDATE', () => {
+    expect(sql).toMatch(/CHECK \(distribution IN \('community', 'network'\)\) NOT VALID/);
+    expect(sql).not.toMatch(/VALIDATE\s+CONSTRAINT/i);
+  });
 });
 
 describe('VTID-05488 D3: partner_tenant backfill', () => {
@@ -128,21 +132,23 @@ describe('VTID-05488 D3: partner_tenant backfill', () => {
 describe('VTID-05488 D4: helper and tenant-scoped RLS', () => {
   const sql = code(mig('rls'));
   it('discover_tenant_gate_enabled() is STABLE SECURITY DEFINER with a pinned search_path and no PUBLIC/anon execute', () => {
-    expect(sql).toMatch(/CREATE OR REPLACE FUNCTION public\.discover_tenant_gate_enabled\(\)\s+RETURNS boolean\s+LANGUAGE sql\s+STABLE\s+SECURITY DEFINER\s+SET search_path = public, pg_catalog/);
+    expect(sql).toMatch(/CREATE OR REPLACE FUNCTION public\.discover_tenant_gate_enabled\(\)\s+RETURNS boolean\s+LANGUAGE plpgsql\s+STABLE\s+SECURITY DEFINER\s+SET search_path = public, pg_catalog/);
     expect(sql).toMatch(/REVOKE ALL ON FUNCTION public\.discover_tenant_gate_enabled\(\) FROM PUBLIC, anon/);
     expect(sql).toMatch(/GRANT EXECUTE ON FUNCTION public\.discover_tenant_gate_enabled\(\) TO authenticated, service_role/);
   });
   it('covers both branches: NULL tenant = any gate on; non-NULL tenant = its own flag, false without a row', () => {
-    expect(sql).toMatch(/WHEN public\.current_tenant_id\(\) IS NULL THEN\s+EXISTS \(SELECT 1 FROM public\.tenant_settings ts/);
-    expect(sql).toMatch(/coalesce\(\(SELECT ts\.feature_flags -> 'mt' ->> 'discover_tenant_gate' = 'true'/);
-    expect(sql).toMatch(/, false\)/);
+    expect(sql).toMatch(/v_tenant uuid := public\.current_tenant_id\(\);/);
+    expect(sql).toMatch(/IF v_tenant IS NULL THEN\s+RETURN EXISTS \(SELECT 1 FROM public\.tenant_settings ts/);
+    expect(sql).toMatch(/WHERE ts\.tenant_id = v_tenant;\s+RETURN coalesce\(v_on, false\)/);
+    // the tenant is resolved exactly once inside the helper
+    expect(code(sql.slice(sql.indexOf('CREATE OR REPLACE FUNCTION'), sql.indexOf('REVOKE ALL'))).match(/current_tenant_id\(\)/g)).toHaveLength(1);
   });
   it('replaces products_select and merchants_select with gate-guarded policies built on existing helpers only', () => {
     expect(sql).toMatch(/DROP POLICY IF EXISTS products_select ON public\.products;\s+CREATE POLICY products_select ON public\.products\s+FOR SELECT TO authenticated/);
     expect(sql).toMatch(/DROP POLICY IF EXISTS merchants_select ON public\.merchants;\s+CREATE POLICY merchants_select ON public\.merchants\s+FOR SELECT TO authenticated/);
-    expect(sql.match(/NOT public\.discover_tenant_gate_enabled\(\)/g)).toHaveLength(2);
+    expect(sql.match(/NOT \(SELECT public\.discover_tenant_gate_enabled\(\)\)/g)).toHaveLength(2);
     expect(sql).toMatch(/distribution = 'network'/);
-    expect(sql.match(/r\.tenant_id = public\.current_tenant_id\(\)/g)).toHaveLength(2);
+    expect(sql.match(/r\.tenant_id = \(SELECT public\.current_tenant_id\(\)\)/g)).toHaveLength(2);
     expect(sql.match(/r\.status = 'active'/g)).toHaveLength(2);
     expect(sql.match(/is_active = TRUE/g)!.length).toBeGreaterThanOrEqual(2);
     // inert default: no policy for anon is created

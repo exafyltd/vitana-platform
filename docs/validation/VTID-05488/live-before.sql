@@ -38,3 +38,10 @@ SELECT count(*) AS tenants_with_gate_on FROM public.tenant_settings
 SELECT data_type FROM information_schema.columns
  WHERE table_schema = 'public' AND table_name = 'partner_tenant' AND column_name = 'tenant_id';
 SELECT tenant_id, count(*) FROM public.partner_tenant GROUP BY tenant_id ORDER BY count(*) DESC LIMIT 50;
+
+-- 7. partner_tenant keys that collide with a tenant slug (the 120200 backfill maps these to that tenant). Read-only;
+--    eyeball every row before apply. The mapping is reversible (snapshot + dropped tenant_uuid column).
+SELECT p.tenant_id AS partner_key, t.slug, t.tenant_id AS mapped_tenant_uuid, count(*) AS partner_rows
+  FROM public.partner_tenant p
+  JOIN public.tenants t ON t.slug = p.tenant_id
+ GROUP BY p.tenant_id, t.slug, t.tenant_id ORDER BY count(*) DESC;

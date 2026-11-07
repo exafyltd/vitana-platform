@@ -17,6 +17,11 @@
 --   * current_tenant_id() IS NULL     -> true iff ANY tenant_settings row has the gate on, so a session with no tenant
 --     sees only network rows instead of falling back to the unscoped read once any tenant enables the gate; false when
 --     every gate is off (then the result is today's is_active-only read). Never raises.
+-- Performance: the policies wrap both helper calls as (SELECT ...) so the planner evaluates them once per statement
+-- (InitPlan), and the helper resolves current_tenant_id() once. NULL-tenant coupling is global by design: a tenant-less
+-- authenticated session switches to network-only as soon as ANY tenant enables the gate (fail closed; owner to confirm).
+-- Rollout: merchants created after the 120000 seed need an active supplier_tenant_relationships row before a tenant
+-- turns the gate on, otherwise they are hidden from that tenant.
 -- Only existing helpers are used: public.current_tenant_id() (20260218000000_fix_maxina_signup_tenant_association.sql:33).
 -- No dependency on mt-identity-r2. This backstops authenticated (user-JWT) reads only; service_role bypasses RLS and
 -- is covered by the gateway's shared Discover predicate. anon has no SELECT policy on these tables and gets none.
@@ -57,20 +62,24 @@ BEGIN
 
       CREATE OR REPLACE FUNCTION public.discover_tenant_gate_enabled()
       RETURNS boolean
-      LANGUAGE sql
+      LANGUAGE plpgsql
       STABLE
       SECURITY DEFINER
       SET search_path = public, pg_catalog
       AS $fn$
-        SELECT CASE
-          WHEN public.current_tenant_id() IS NULL THEN
-            EXISTS (SELECT 1 FROM public.tenant_settings ts
-                     WHERE ts.feature_flags -> 'mt' ->> 'discover_tenant_gate' = 'true')
-          ELSE
-            coalesce((SELECT ts.feature_flags -> 'mt' ->> 'discover_tenant_gate' = 'true'
-                        FROM public.tenant_settings ts
-                       WHERE ts.tenant_id = public.current_tenant_id()), false)
-        END
+      DECLARE
+        v_tenant uuid := public.current_tenant_id();
+        v_on boolean;
+      BEGIN
+        IF v_tenant IS NULL THEN
+          RETURN EXISTS (SELECT 1 FROM public.tenant_settings ts
+                          WHERE ts.feature_flags -> 'mt' ->> 'discover_tenant_gate' = 'true');
+        END IF;
+        SELECT ts.feature_flags -> 'mt' ->> 'discover_tenant_gate' = 'true' INTO v_on
+          FROM public.tenant_settings ts
+         WHERE ts.tenant_id = v_tenant;
+        RETURN coalesce(v_on, false);
+      END
       $fn$;
 
       REVOKE ALL ON FUNCTION public.discover_tenant_gate_enabled() FROM PUBLIC, anon;
@@ -85,12 +94,12 @@ BEGIN
         USING (
           is_active = TRUE
           AND (
-            NOT public.discover_tenant_gate_enabled()
+            NOT (SELECT public.discover_tenant_gate_enabled())
             OR distribution = 'network'
             OR EXISTS (SELECT 1 FROM public.supplier_tenant_relationships r
                         WHERE r.merchant_id = products.merchant_id
                           AND r.status = 'active'
-                          AND r.tenant_id = public.current_tenant_id())
+                          AND r.tenant_id = (SELECT public.current_tenant_id()))
           )
         );
 
@@ -100,7 +109,7 @@ BEGIN
         USING (
           is_active = TRUE
           AND (
-            NOT public.discover_tenant_gate_enabled()
+            NOT (SELECT public.discover_tenant_gate_enabled())
             OR EXISTS (SELECT 1 FROM public.products p
                         WHERE p.merchant_id = merchants.id
                           AND p.is_active = TRUE
@@ -108,7 +117,7 @@ BEGIN
             OR EXISTS (SELECT 1 FROM public.supplier_tenant_relationships r
                         WHERE r.merchant_id = merchants.id
                           AND r.status = 'active'
-                          AND r.tenant_id = public.current_tenant_id())
+                          AND r.tenant_id = (SELECT public.current_tenant_id()))
           )
         );
 

@@ -7,7 +7,9 @@
 -- 20261102120300 and then only behind discover_tenant_gate_enabled().
 --
 -- Adding a column with a constant default does not rewrite the table (PostgreSQL 11+). The CHECK is added NOT VALID and
--- validated separately so the validation scan does not hold the exclusive lock. Safe to re-run.
+-- is deliberately NOT validated here: ADD COLUMN holds ACCESS EXCLUSIVE until commit, so a VALIDATE in this transaction
+-- would scan products under that lock. It is also redundant: the column is new and every row carries the compliant
+-- default 'community', and the constraint is enforced for all new writes even while NOT VALID. Safe to re-run.
 -- lock_timeout 3s with up to 5 retries on lock_not_available.
 -- Rollback: docs/validation/VTID-05488/rollback-120100-products-distribution.sql
 -- Order: docs/multitenancy/MIGRATION-QUEUE.md (row 27).
@@ -37,7 +39,6 @@ BEGIN
           ADD CONSTRAINT products_distribution_check
           CHECK (distribution IN ('community', 'network')) NOT VALID;
       END IF;
-      ALTER TABLE public.products VALIDATE CONSTRAINT products_distribution_check;
 
       COMMENT ON COLUMN public.products.distribution IS
         'VTID-05488: community = only tenants with an active supplier_tenant_relationships row; network = every tenant. Default community.';

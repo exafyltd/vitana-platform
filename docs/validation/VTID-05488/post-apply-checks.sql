@@ -45,3 +45,13 @@ SELECT tablename, policyname, qual ~ 'discover_tenant_gate_enabled' AS gate_guar
 SELECT count(*) AS tenants_with_gate_on FROM public.tenant_settings WHERE feature_flags -> 'mt' ->> 'discover_tenant_gate' = 'true';  -- 0
 SELECT (SELECT count(*) FROM public.merchants WHERE is_active) AS merchants_active,
        (SELECT count(*) FROM public.products WHERE is_active) AS products_active;
+
+-- 7. [after 120000] seed coverage. Expect seeded_active_rows = merchants_total (0 rows silently means the 'maxina' slug is absent).
+--    Merchants created AFTER the seed need an active supplier_tenant_relationships row before any tenant enables
+--    mt.discover_tenant_gate (rollout checklist), otherwise they are hidden from that tenant.
+SELECT (SELECT count(*) FROM public.merchants) AS merchants_total,
+       (SELECT count(*) FROM public.supplier_tenant_relationships r JOIN public.tenants t ON t.tenant_id = r.tenant_id
+         WHERE t.slug = 'maxina' AND r.status = 'active') AS seeded_active_rows,
+       (SELECT count(*) FROM public.merchants m
+         WHERE NOT EXISTS (SELECT 1 FROM public.supplier_tenant_relationships r JOIN public.tenants t ON t.tenant_id = r.tenant_id
+                            WHERE t.slug = 'maxina' AND r.status = 'active' AND r.merchant_id = m.id)) AS merchants_without_maxina_row;  -- 0

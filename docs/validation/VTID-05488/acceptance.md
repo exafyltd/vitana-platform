@@ -42,7 +42,7 @@ both readings naming different tenants); everything else is NULL. TEST: pgTAP ca
 
 AC-4 (D4) `discover_tenant_gate_enabled()` is STABLE SECURITY DEFINER with `search_path = public, pg_catalog`. Non-NULL
 tenant: that tenant's flag, false without a `tenant_settings` row, false for an absent / false / junk flag. NULL tenant:
-true iff any tenant has the gate on. Gate off everywhere ⇒ `products_select` / `merchants_select` return exactly the
+true iff any tenant has the gate on (global coupling by design, fail closed: a tenant-less session turns network-only as soon as ANY tenant enables the gate; owner to confirm). The policies wrap the helper and `current_tenant_id()` as `(SELECT ...)` InitPlans and the helper resolves the tenant once. Gate off everywhere ⇒ `products_select` / `merchants_select` return exactly the
 `is_active`-only rows for every user including a NULL tenant. Gate on ⇒ a T_B user reads 0 T_A-only supplier rows, a
 `network` product is visible to both tenants, a NULL tenant sees network rows only and never errors, a suspended or
 declined relationship grants nothing, `is_active` still filters. No `is_member()` / `tenant_id_for_policies()`
@@ -86,3 +86,13 @@ drift baseline entries. TEST: `outputs/read-only-checks-and-rollback-pglite.txt`
 * Local runs use stand-in tables and the REAL `current_tenant_id()` taken unmodified from
   `20260218000000_fix_maxina_signup_tenant_association.sql`. The full production schema and real pgTAP were not available
   (no docker, psql, supabase CLI): CI's pgTAP and the owner-approved read-only checks are authoritative.
+
+## Review round 2 (2026-11-07-121500) disposition
+
+1. D2 VALIDATE removed (fixed): the CHECK stays NOT VALID inside the ADD COLUMN transaction; the new column only holds the compliant default, so no scan under ACCESS EXCLUSIVE. Comment corrected.
+2. Per-row gate cost (fixed): `(SELECT ...)` InitPlans in both policies, single tenant resolution in the plpgsql helper, same semantics incl. the NULL-tenant branch. An EXPLAIN on a realistic catalogue is a staging pre-apply step (no live SQL here).
+3. New merchants (documented): `post-apply-checks.sql` check 7 asserts seeded rows = merchants_total and lists merchants without a Maxina row; rollout note: every new merchant needs an active relationship row before a tenant enables the gate.
+4. NULL-tenant coupling (documented): above and in MIGRATION-QUEUE row 29.
+5. pgTAP not run by CI (not fixed, justified): the lane's allowed paths exclude `supabase/tests/`; the suite is evidence, with the PGlite harness reproducing it. Moving it is a follow-up outside this lane.
+6. Stand-in schema (not fixable here, justified): no live SQL is allowed; `live-before.sql` and `post-apply-checks.sql` are the staging procedure.
+7. Slug collisions (fixed): `live-before.sql` check 7 lists partner keys colliding with tenant slugs.

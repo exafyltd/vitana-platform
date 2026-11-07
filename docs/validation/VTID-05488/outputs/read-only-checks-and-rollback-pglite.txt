@@ -40,6 +40,10 @@ unknown-partner-key | 1
 05488000-0000-4000-8000-0000000000ff | 1
 t05488a | 1
 
+partner_key | slug | mapped_tenant_uuid | partner_rows
+05488000-0000-4000-8000-0000000000a1 | 05488000-0000-4000-8000-0000000000a1 | 4c5f9e8e-4f4c-4dbf-8d37-d95d7518a835 | 1
+t05488a | t05488a | 05488000-0000-4000-8000-0000000000a1 | 1
+
 ## 20261102120000_vtid_05488_supplier_tenant_relationships.sql (loaded)
 ## 20261102120100_vtid_05488_products_distribution.sql (loaded)
 ## 20261102120200_vtid_05488_partner_tenant_backfill.sql (loaded)
@@ -65,7 +69,7 @@ non_community | products_total
 0 | 2
 
 convalidated
-true
+false
 
 snapshot
 bak_vtid_05488_partner_tenant
@@ -99,6 +103,9 @@ tenants_with_gate_on
 
 merchants_active | products_active
 1 | 1
+
+merchants_total | seeded_active_rows | merchants_without_maxina_row
+2 | 2 | 0
 
 ## rollback-120300-products-merchants-tenant-rls.sql (loaded)
 ## rollback-120200-partner-tenant-backfill.sql (loaded)
@@ -141,7 +148,7 @@ non_community | products_total
 0 | 2
 
 convalidated
-true
+false
 
 snapshot
 bak_vtid_05488_partner_tenant
@@ -175,4 +182,7 @@ tenants_with_gate_on
 
 merchants_active | products_active
 1 | 1
+
+merchants_total | seeded_active_rows | merchants_without_maxina_row
+2 | 2 | 0
 
