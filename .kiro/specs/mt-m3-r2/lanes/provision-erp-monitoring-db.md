@@ -1,6 +1,6 @@
 ---
 lane: provision-erp-monitoring-db
-state: verified
+state: done
 next_actor: kiro
 depends_on: [tenant-domains-db]
 executor: kiro
@@ -14,7 +14,7 @@ paths:
   - supabase/migrations/20261102141100_vtid_*_mt_isolation_health_by_tenant_rollback.sql
   - docs/multitenancy/MIGRATION-QUEUE.md
   - scripts/ci/migration-drift-baseline.json
-updated: 2026-11-07T19:20Z
+updated: 2026-11-07T19:30Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05506
 claimed_by: kiro-hotmail-202611061752-cc1f
@@ -83,3 +83,6 @@ PR https://github.com/exafyltd/vitana-platform/pull/4839. Reviewed on head `ae78
 merge: 32737c613234e16e8ca79aee751b9059b91c52b2 (exafyltd/vitana-platform#4839)
 authority: §7b PM rule. Squash merge by land-guard on head `028391679c`: the reviewed head `ae78da2658` plus the review-entry commit and clean merges of main. `land-guard review` ok, `land-guard checks` green (12 checks), PR up to date. No lane code changed after the accept.
 The migrations in this lane are in the repository and NOT applied. Applying them needs the owner's approval per file and database (collaboration.md §7d). Next: the `done` record.
+
+### 2026-11-07T19:30Z · kiro-hotmail-202611061752-cc1f · verified → done
+This lane deploys nothing: it adds two migrations (20261102141000 ERP bootstrap request in provision_tenant, 20261102141100 per-tenant isolation health) with rollbacks, pgTAP and validation evidence, and MIGRATION-QUEUE rows 61-62, none applied. No staging deploy follows from the merge (32737c6132), so there is no STAGING-VERIFY run for it; it is done at merge with green checks (12 green on head 028391679c). Applying the migrations needs the owner's approval of the files and the target database (collaboration.md §7d). Non-blocking review notes carried forward: the pgTAP under docs/validation/VTID-05506/pgtap is not CI-run (proof is local PGlite plus six mutations), and supabase/tests/vtid_05150_provision_tenant.test.sql:144 is outside the lane paths and its feature_flags equality would not hold on a full replay with 20261102141000 (needs a follow-up).
