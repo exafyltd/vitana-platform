@@ -24,30 +24,30 @@ side read with `gh api` (read only).
 
 Staging proof: not verified on staging: no product path changes. The evidence is the owner's runs against the live GitLab.
 
-AC-A01 — GitLab answers over HTTPS with a valid certificate on `gitlab.vitanaland.com`
+AC-1 (A01) — GitLab answers over HTTPS with a valid certificate on `gitlab.vitanaland.com`
   Status: observed 2026-11-04 (`/users/sign_in` 200, plan §6 "Done"). Confirmed again by step 1 (pipeline pages load over HTTPS).
   TEST: outputs/step1-gitlab-platform.txt (PENDING)
 
-AC-A02 — the infrastructure is created by Terraform and can be rebuilt from git
+AC-2 (A02) — the infrastructure is created by Terraform and can be rebuilt from git
   Status: files on main through lane gitlab-infra (VTID-05544, merge a8220f1059); structure test green (26/26, commands.log).
   The restore on a fresh machine (step 2) is the rebuild evidence for the GitLab config; the nginx lines are compared with
   `host/gitlab-install.sh:49-53` (gitlab-infra review note).
   TEST: scripts/eng/gitlab-m1-structure.test.mjs; outputs/restore-nginx.txt (PENDING)
 
-AC-A03 — storage is encrypted and a nightly backup exists in the backup bucket
+AC-3 (A03) — storage is encrypted and a nightly backup exists in the backup bucket
   Status: encryption pinned by the structure test; the listing is PENDING (step 3, after 02:15 UTC).
   TEST: outputs/backup-listing.txt (PENDING)
 
-AC-A04 — a restore on a scratch machine reproduces the project count and one commit hash
+AC-4 (A04) — a restore on a scratch machine reproduces the project count and one commit hash
   Status: PENDING (step 2). Passes when `RESULT: DONE`, `RESULT-COUNTS:` equals `LIVE-COUNTS:` in the project count, and
   `LIVE-HAS-TIP: true`.
   TEST: outputs/restore-step-b.txt, outputs/restore-step-c.txt (PENDING)
 
-AC-A05 — the runner is registered and runs jobs
+AC-5 (A05) — the runner is registered and runs jobs
   Status: runner verified 2026-11-04 (plan §6 "Done"); jobs running is PENDING (step 1).
   TEST: outputs/step1-gitlab-platform.txt, outputs/step1-gitlab-v1.txt (PENDING)
 
-AC-PIPELINES — first green pipelines on both mirrored projects, each job next to GitHub's result for the same main commit
+AC-6 (pipelines) — first green pipelines on both mirrored projects, each job next to GitHub's result for the same main commit
   Status: GitHub side recorded (outputs/github-main-runs.txt, both green); GitLab side PENDING (steps 0 and 1).
   TEST: outputs/step1-gitlab-platform.txt, outputs/step1-gitlab-v1.txt, outputs/github-main-runs.txt
 
