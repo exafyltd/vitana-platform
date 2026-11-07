@@ -8,7 +8,7 @@ BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET search_path = public, extensions;
 
-SELECT plan(50);
+SELECT plan(65);
 
 CREATE SCHEMA t05573;
 CREATE FUNCTION t05573.u(n int) RETURNS uuid LANGUAGE sql IMMUTABLE AS
@@ -139,6 +139,66 @@ SELECT ok(public.mt_legacy_context_tenant(t05573.u(1)) = t05573.t('a1') AND publ
 SELECT throws_ok($$INSERT INTO public.chat_messages (tenant_id, sender_id, receiver_id, content, scope)
     VALUES ('05573000-0000-4000-8000-0000000000a1', '05573000-0000-4000-8000-000000000001', '05573000-0000-4000-8000-000000000003', 'direct network write', 'network')$$,
   '42501', '50 the scope guard of VTID-05576 still refuses a direct network write after the migration ran');
+
+-- ── Fix attempt 1 (reviewer verdict `changes`): the drop guard, group_skipped, the platform tenant, the participant freeze ──
+DELETE FROM public.bak_messages WHERE id = t05573.m('f99');
+SELECT lives_ok($$SELECT public.mt_legacy_messages_assert_ready()$$, '51 the guard accepts again once the unplaceable row is gone');
+
+-- the guard compares the live legacy tables with their snapshots (a stale snapshot must stop the drop)
+CREATE TABLE public.messages (LIKE public.bak_messages INCLUDING DEFAULTS);
+SELECT lives_ok($$SELECT public.mt_legacy_messages_assert_ready()$$, '52 an empty live legacy table passes the guard');
+INSERT INTO public.messages SELECT * FROM public.bak_messages;
+SELECT lives_ok($$SELECT public.mt_legacy_messages_assert_ready()$$, '53 a live legacy table whose rows are all identical in the snapshot passes');
+INSERT INTO public.messages (id, tenant_id, sender_id, recipient_id, body)
+  VALUES (t05573.m('b09'), t05573.t('a1'), t05573.u(1), t05573.u(2), 'written after the snapshot');
+SELECT throws_ok($$SELECT public.mt_legacy_messages_assert_ready()$$, 'P0001', '54 a live legacy id that is absent from its snapshot stops the guard (stale snapshot)');
+DELETE FROM public.messages WHERE id = t05573.m('b09');
+UPDATE public.messages SET body = 'edited after the snapshot' WHERE id = t05573.m('f01');
+SELECT throws_ok($$SELECT public.mt_legacy_messages_assert_ready()$$, 'P0001', '55 a live legacy row that differs from its snapshot stops the guard');
+UPDATE public.messages SET body = 'm1 shared tenant dm' WHERE id = t05573.m('f01');
+SELECT lives_ok($$SELECT public.mt_legacy_messages_assert_ready()$$, '56 ... and passes again once the row matches');
+ALTER TABLE public.bak_global_messages RENAME TO bak_global_messages_hidden;
+SELECT throws_ok($$SELECT public.mt_legacy_messages_assert_ready()$$, 'P0001', '57 a missing snapshot table while a live legacy table exists stops the guard (no silent skip)');
+DROP TABLE public.messages;
+SELECT ok(public.mt_legacy_messages_assert_ready() ? 'skipped', '58 with no live legacy table left, a missing snapshot is only reported as skipped (nothing to lose)');
+ALTER TABLE public.bak_global_messages_hidden RENAME TO bak_global_messages;
+INSERT INTO public.thread_participants (thread_id, user_id) VALUES (t05573.t('e2'), t05573.u(7));
+SELECT throws_ok($$SELECT public.mt_legacy_messages_assert_ready()$$, 'P0001', '59 a live participant row that is absent from its snapshot stops the guard');
+DELETE FROM public.thread_participants WHERE user_id = t05573.u(7) AND thread_id = t05573.t('e2');
+
+-- a group with no active non-excluded member is unplaced unless a rule 43-45 account is actually involved
+INSERT INTO public.bak_global_message_threads (id, created_by, name, type) VALUES (t05573.t('b2'), t05573.u(1), 'Memberless', 'group');
+INSERT INTO public.bak_global_messages (id, thread_id, sender_id, body) VALUES (t05573.m('b01'), t05573.t('b2'), t05573.u(1), 'message in a group with no member rows');
+SELECT ok((public.mt_legacy_messages_migrate() -> 'global_messages' ->> 'unplaced') = '1'
+  AND (public.mt_legacy_messages_migrate() -> 'global_messages' ->> 'skipped_excluded') = '1'
+  AND (public.mt_legacy_messages_migrate() -> 'threads' ->> 'unplaced') = '1'
+  AND (public.mt_legacy_messages_migrate() -> 'threads' ->> 'group_skipped') = '1',
+  '60 a memberless group whose sender is a member is unplaced; group_skipped stays 1 (only the bots-only group d5)');
+SELECT throws_ok($$SELECT public.mt_legacy_messages_assert_ready()$$, 'P0001', '61 ... and the guard refuses the drop');
+DELETE FROM public.bak_global_messages WHERE id = t05573.m('b01');
+DELETE FROM public.bak_global_message_threads WHERE id = t05573.t('b2');
+
+-- the legacy row's own tenant is a fallback only when it is not the platform tenant
+INSERT INTO public.bak_messages (id, tenant_id, sender_id, recipient_id, thread_id, body)
+  VALUES (t05573.m('b03'), t05573.t('a3'), t05573.u(8), t05573.u(1), NULL, 'dm whose only tenant is the platform');
+SELECT ok((public.mt_legacy_messages_migrate() -> 'messages' ->> 'unplaced') = '1'
+  AND NOT EXISTS (SELECT 1 FROM public.chat_messages WHERE id = t05573.m('b03')),
+  '62 a DM with no member tenant and a platform legacy tenant is unplaced, never written with the platform tenant');
+SELECT throws_ok($$SELECT public.mt_legacy_messages_assert_ready()$$, 'P0001', '63 ... and the guard refuses the drop');
+DELETE FROM public.bak_messages WHERE id = t05573.m('b03');
+INSERT INTO public.bak_message_threads (id, name, type, tenant_id, created_by) VALUES (t05573.t('b4'), 'Platform only', 'group', t05573.t('a3'), t05573.u(8));
+INSERT INTO public.bak_thread_participants (thread_id, user_id) VALUES (t05573.t('b4'), t05573.u(8));
+SELECT ok((public.mt_legacy_messages_migrate() -> 'threads' ->> 'unplaced') = '1'
+  AND NOT EXISTS (SELECT 1 FROM public.chat_groups WHERE id = t05573.t('b4')),
+  '64 a group whose members have no tenant and whose legacy tenant is the platform is unplaced, never written with the platform tenant');
+DELETE FROM public.bak_thread_participants WHERE thread_id = t05573.t('b4');
+DELETE FROM public.bak_message_threads WHERE id = t05573.t('b4');
+
+-- the participant tables are frozen with the four legacy tables (they feed the migration)
+SELECT ok(NOT EXISTS (SELECT 1 FROM unnest(ARRAY['thread_participants', 'global_thread_participants']) t,
+      unnest(ARRAY['anon', 'authenticated', 'service_role']) r, unnest(ARRAY['INSERT', 'UPDATE', 'DELETE', 'TRUNCATE']) p
+    WHERE has_table_privilege(r, 'public.' || t, p)),
+  '65 the two participant tables take no write from any API role after the freeze');
 
 SELECT * FROM finish();
 ROLLBACK;

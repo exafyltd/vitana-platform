@@ -5,7 +5,7 @@
 # loaded /projects/sandbox/wt-legacy-msgs/supabase/migrations/20261102052100_vtid_05573_legacy_messages_functions.sql
 # loaded /projects/sandbox/wt-legacy-msgs/supabase/migrations/20261102052200_vtid_05573_legacy_messages_migrate_run.sql
 # loaded /projects/sandbox/wt-legacy-msgs/supabase/migrations/20261102052300_vtid_05573_legacy_messages_drop.sql
-1..50
+1..65
 ok 1 - 1 the four legacy tables are dropped
 ok 2 - 2 the two participant tables are not dropped (outside the lane's four)
 ok 3 - 3 bak_messages holds all 7 legacy messages
@@ -56,3 +56,18 @@ ok 47 - 47 the lane functions are SECURITY DEFINER with a pinned search_path
 ok 48 - 48 the shared-tenant helper: shared tenant, shared non-primary, none (platform tenant ignored)
 ok 49 - 49 the context-tenant helper picks the primary non-platform tenant, NULL when there is none
 ok 50 - 50 the scope guard of VTID-05576 still refuses a direct network write after the migration ran
+ok 51 - 51 the guard accepts again once the unplaceable row is gone
+ok 52 - 52 an empty live legacy table passes the guard
+ok 53 - 53 a live legacy table whose rows are all identical in the snapshot passes
+ok 54 - 54 a live legacy id that is absent from its snapshot stops the guard (stale snapshot)
+ok 55 - 55 a live legacy row that differs from its snapshot stops the guard
+ok 56 - 56 ... and passes again once the row matches
+ok 57 - 57 a missing snapshot table while a live legacy table exists stops the guard (no silent skip)
+ok 58 - 58 with no live legacy table left, a missing snapshot is only reported as skipped (nothing to lose)
+ok 59 - 59 a live participant row that is absent from its snapshot stops the guard
+ok 60 - 60 a memberless group whose sender is a member is unplaced; group_skipped stays 1 (only the bots-only group d5)
+ok 61 - 61 ... and the guard refuses the drop
+ok 62 - 62 a DM with no member tenant and a platform legacy tenant is unplaced, never written with the platform tenant
+ok 63 - 63 ... and the guard refuses the drop
+ok 64 - 64 a group whose members have no tenant and whose legacy tenant is the platform is unplaced, never written with the platform tenant
+ok 65 - 65 the two participant tables take no write from any API role after the freeze

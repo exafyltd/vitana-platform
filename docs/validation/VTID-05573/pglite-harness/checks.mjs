@@ -34,12 +34,15 @@ await run('dep 050000', mig('20261102050000_vtid_05576_chat_messages_scope.sql')
 await run('dep 051000', mig('20261102051000_vtid_05582_network_visible_profile.sql'));
 await run('live-before', join(V, 'live-before.sql'), true);
 
+await db.exec(`GRANT INSERT ON public.global_messages TO PUBLIC`);   // a PUBLIC grant before the freeze: rollback must give it back
 await run('apply 052000 (snapshot + freeze)', L[0]);
 await sql('freeze: the four legacy tables take no write from any API role; reads still work', `
   SELECT 'frozen' AS check_name, NOT (has_table_privilege('service_role','public.messages','INSERT') OR has_table_privilege('service_role','public.global_messages','UPDATE')
      OR has_table_privilege('authenticated','public.messages','DELETE') OR has_table_privilege('anon','public.global_message_threads','TRUNCATE')
      OR has_table_privilege('service_role','public.message_threads','INSERT')) AS ok;
-  SELECT 'participants_still_writable' AS check_name, has_table_privilege('service_role','public.thread_participants','INSERT') AS ok;
+  SELECT 'participants_frozen' AS check_name, NOT EXISTS (SELECT 1 FROM unnest(ARRAY['thread_participants','global_thread_participants']) t, unnest(ARRAY['anon','authenticated','service_role']) r,
+     unnest(ARRAY['INSERT','UPDATE','DELETE','TRUNCATE']) p WHERE has_table_privilege(r, 'public.' || t, p)) AS ok;
+  SELECT 'public_grant_revoked' AS check_name, NOT EXISTS (SELECT 1 FROM pg_class c, aclexplode(c.relacl) a WHERE c.oid = 'public.global_messages'::regclass AND a.grantee = 0) AS ok;
   SELECT 'snapshot_complete' AS check_name, (SELECT count(*) FROM public.bak_messages) = (SELECT count(*) FROM public.messages)
      AND (SELECT count(*) FROM public.bak_global_messages) = (SELECT count(*) FROM public.global_messages)
      AND (SELECT count(*) FROM public.bak_message_threads) = (SELECT count(*) FROM public.message_threads)
@@ -62,6 +65,19 @@ await db.exec(`INSERT INTO public.chat_messages (id, tenant_id, sender_id, recei
 await refused('drop 052300 when a migrated id is occupied by a foreign row', L[3]);
 await db.exec(`DELETE FROM public.chat_messages WHERE id = '05573000-0000-4000-8000-000000000f01'`);
 
+// Stale snapshot / unplaceable group / platform fallback cases of the guard, on the real tables.
+await db.exec(`INSERT INTO public.bak_global_message_threads (id, created_by, name, type) VALUES ('05573000-0000-4000-8000-0000000000b2', '05573000-0000-4000-8000-000000000001', 'Memberless', 'group');
+  INSERT INTO public.bak_global_messages (id, thread_id, sender_id, body) VALUES ('05573000-0000-4000-8000-000000000b01', '05573000-0000-4000-8000-0000000000b2', '05573000-0000-4000-8000-000000000001', 'x')`);
+await refused('drop 052300 with a group that has no active non-excluded member and no excluded account involved', L[3]);
+await db.exec(`DELETE FROM public.bak_global_messages WHERE id = '05573000-0000-4000-8000-000000000b01'; DELETE FROM public.bak_global_message_threads WHERE id = '05573000-0000-4000-8000-0000000000b2'`);
+await db.exec(`ALTER TABLE public.bak_messages RENAME TO bak_messages_hidden`);
+await refused('drop 052300 with a snapshot table missing while the live legacy tables exist', L[3]);
+await db.exec(`ALTER TABLE public.bak_messages_hidden RENAME TO bak_messages`);
+await db.exec(`INSERT INTO public.global_message_threads (id, created_by, name, type) VALUES ('05573000-0000-4000-8000-0000000000b3', '05573000-0000-4000-8000-000000000001', 'written after snapshot', 'direct')`);
+await refused('drop 052300 with a live legacy row that is not in its snapshot', L[3]);
+await db.exec(`DELETE FROM public.global_message_threads WHERE id = '05573000-0000-4000-8000-0000000000b3'`);
+await sql('legacy tables still there after the refused drops', `SELECT 'still_there_2' AS check_name, to_regclass('public.messages') IS NOT NULL AND to_regclass('public.global_message_threads') IS NOT NULL AND to_regclass('public.bak_messages') IS NOT NULL AS ok;`);
+
 await run('apply 052300 (drop)', L[3]);
 await run('post-apply-checks', join(V, 'post-apply-checks.sql'), true);
 
@@ -74,6 +90,16 @@ await run('rollback 052200', join(V, 'rollback-052200-migrated-rows.sql'));
 await run('rollback 052100', join(V, 'rollback-052100-functions.sql'));
 await run('rollback 052000', join(V, 'rollback-052000-snapshot-freeze.sql'));
 await run('rollback-check', join(V, 'rollback-check.sql'), true);
+await sql('rollback 052000 and 052300 restore the grants and the foreign keys', `
+  SELECT 'write_grants_restored' AS check_name, NOT EXISTS (SELECT 1 FROM unnest(ARRAY['messages','message_threads','global_message_threads','global_messages','thread_participants','global_thread_participants']) t,
+     unnest(ARRAY['anon','authenticated','service_role']) r, unnest(ARRAY['INSERT','UPDATE','DELETE','TRUNCATE']) p
+     WHERE NOT has_table_privilege(r, 'public.' || t, p)) AS ok;
+  SELECT 'public_grant_restored' AS check_name, EXISTS (SELECT 1 FROM pg_class c, aclexplode(c.relacl) a WHERE c.oid = 'public.global_messages'::regclass AND a.grantee = 0 AND a.privilege_type = 'INSERT') AS ok;
+  SELECT 'thread_participants_fk_restored' AS check_name, EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'public.thread_participants'::regclass AND contype = 'f' AND confrelid = 'public.message_threads'::regclass) AS ok;
+  SELECT 'global_thread_participants_fk_restored' AS check_name, EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'public.global_thread_participants'::regclass AND contype = 'f' AND confrelid = 'public.global_message_threads'::regclass) AS ok;`);
+await db.exec(`INSERT INTO public.global_message_threads (id, created_by, name, type) VALUES ('05573000-0000-4000-8000-0000000000b3', '05573000-0000-4000-8000-000000000001', 'written after rollback', 'direct')`);
+await refused('re-apply 052000 over a stale snapshot (a live row written after the unfreeze)', L[0]);
+await db.exec(`DELETE FROM public.global_message_threads WHERE id = '05573000-0000-4000-8000-0000000000b3'`);
 await sql('pre-existing platform rows untouched by apply + rollback', `SELECT 'platform_rows_intact' AS check_name, (SELECT count(*) FROM public.chat_messages) = 2 AND (SELECT count(*) FROM public.chat_groups) = 1 AS ok;`);
 
 // Re-apply from the restored state: the snapshot is kept, so it is not overwritten.

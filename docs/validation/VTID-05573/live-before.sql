@@ -29,3 +29,9 @@ SELECT 'target_triggers' AS check_name, event_object_table, trigger_name, action
 SELECT 'legacy_rows_with_listed_accounts' AS check_name,
   (SELECT count(*) FROM public.messages m WHERE public.is_network_excluded_account(m.sender_id) OR public.is_network_excluded_account(m.recipient_id)) AS messages,
   (SELECT count(*) FROM public.global_messages g WHERE public.is_network_excluded_account(g.sender_id)) AS global_messages;
+-- Grants as they are now: 052000 keeps these in the bak_* comment and rollback-052000 restores them. PUBLIC shows as grantee 0.
+SELECT 'legacy_table_acl' AS check_name, c.relname, c.relacl::text AS acl
+  FROM pg_class c WHERE c.relnamespace = 'public'::regnamespace
+   AND c.relname IN ('messages', 'message_threads', 'global_message_threads', 'global_messages', 'thread_participants', 'global_thread_participants') ORDER BY 2;
+-- PRECONDITION of owner approval: target_triggers above lists only trg_chat_messages_scope_guard (VTID-05576), fks_onto_legacy and
+-- views_or_policies_naming_legacy list nothing unexpected. See acceptance.md "Apply preconditions".

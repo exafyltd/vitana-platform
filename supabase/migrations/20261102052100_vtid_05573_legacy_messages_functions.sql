@@ -7,20 +7,24 @@
 --                                            classifies every legacy message and thread, and inserts the placeable ones into
 --                                            chat_messages / chat_groups / chat_group_members. Returns the reconcile figures.
 --                                            Idempotent: every row keeps its legacy id (ON CONFLICT DO NOTHING).
---   public.mt_legacy_messages_assert_ready() re-runs the migration (a no-op) and RAISES unless nothing is unplaced and every
---                                            classified row is present in the target. The drop file calls it first.
+--   public.mt_legacy_messages_assert_ready() the drop guard. RAISES when a snapshot table is missing while a live legacy table
+--                                            exists, when a live row (six tables) is absent from or differs from its snapshot (stale
+--                                            snapshot), when anything is unplaced, or when a classified row is missing from the
+--                                            target. It re-runs the migration (a no-op). The drop file calls it first.
 --
 -- The D15 mapping (docs/MULTI-TENANT-PLAN.md section 4.11 "One migration rule"):
 --   * a DM (legacy messages with a recipient, or a two-person direct thread): the two people share a non-platform tenant ->
 --     scope community, tenant_id = that tenant; otherwise scope network, tenant_id = the sender's context tenant (health
---     pattern: context only), falling back to the legacy row's own tenant_id when the sender has no tenant.
+--     pattern: context only), falling back to the legacy row's own tenant_id when the sender has no tenant AND that tenant is
+--     not the platform tenant (else the row is unplaced and the drop guard refuses).
 --   * a group thread: all members share a non-platform tenant -> a community chat_groups row of that tenant; otherwise a
 --     network group: chat_groups.tenant_id = the creator's context tenant, metadata.legacy_scope = 'network' (chat_groups has
 --     no scope column until network-groups-db, which backfills from this flag; docs/MULTI-TENANT-PLAN.md D27 keeps these
 --     legacy cross-tenant threads readable by their participants only). Group messages carry the group's scope.
 --   * rules 43-45: a service bot / notification test actor / platform-only account (public.is_network_excluded_account,
 --     VTID-05582) is never migrated as sender, recipient or group member; their rows stay in bak_* only and are counted as
---     skipped_excluded. The platform tenant is never written on member content.
+--     skipped_excluded. A group with no active non-excluded member is group_skipped only when such an account is a participant
+--     or sender of it; otherwise it (and its messages) is unplaced. The platform tenant is never written on member content.
 --   * a legacy thread id becomes the chat_groups id, a legacy message id becomes the chat_messages id; metadata keeps
 --     legacy_source, legacy_id and (when present) legacy_content_data and legacy_parent_message_id. network rows are written
 --     with the transaction-local flag vitana.chat_send_rpc = 'on' that the VTID-05576 scope guard requires.
@@ -93,6 +97,8 @@ BEGIN
   ALTER TABLE _lm_msg ADD COLUMN tkind text, ADD COLUMN tpeople uuid[], ADD COLUMN toutcome text, ADD COLUMN gtenant uuid,
     ADD COLUMN gscope text, ADD COLUMN mode text, ADD COLUMN rcv uuid, ADD COLUMN grp uuid, ADD COLUMN s_excl boolean,
     ADD COLUMN r_excl boolean, ADD COLUMN outcome text, ADD COLUMN tenant uuid, ADD COLUMN scope text;
+  -- The legacy row's own tenant is a fallback only; the platform tenant is never a fallback (it is never written on member content).
+  UPDATE _lm_msg SET legacy_tenant = NULL WHERE legacy_tenant IN (SELECT t.tenant_id FROM public.tenants t WHERE t.is_platform);
 
   CREATE TEMP TABLE _lm_thr AS
     SELECT 'messages'::text AS src, t.id, t.type, t.name, t.created_by, t.created_at, t.metadata, t.tenant_id AS legacy_tenant
@@ -101,7 +107,8 @@ BEGIN
     SELECT 'global_messages', t.id, t.type, t.name, t.created_by, t.created_at, t.metadata, NULL::uuid
       FROM public.bak_global_message_threads t;
   ALTER TABLE _lm_thr ADD COLUMN people uuid[], ADD COLUMN members uuid[], ADD COLUMN kind text, ADD COLUMN gtenant uuid,
-    ADD COLUMN gscope text, ADD COLUMN outcome text;
+    ADD COLUMN gscope text, ADD COLUMN outcome text, ADD COLUMN excl_involved boolean;
+  UPDATE _lm_thr SET legacy_tenant = NULL WHERE legacy_tenant IN (SELECT t.tenant_id FROM public.tenants t WHERE t.is_platform);
 
   CREATE TEMP TABLE _lm_mem AS
     SELECT 'messages'::text AS src, p.thread_id, p.user_id, p.role, p.joined_at, p.last_read_at
@@ -125,6 +132,8 @@ BEGIN
   UPDATE _lm_thr t SET members = coalesce((
     SELECT array_agg(m.user_id ORDER BY m.user_id) FROM _lm_mem m JOIN _lm_excl e ON e.user_id = m.user_id
      WHERE m.src = t.src AND m.thread_id = t.id AND NOT e.excl), '{}'::uuid[]);
+  -- A rule 43-45 account actually involved in the thread (an active participant or a sender).
+  UPDATE _lm_thr t SET excl_involved = EXISTS (SELECT 1 FROM _lm_excl e WHERE e.excl AND e.user_id = ANY (t.people));
   UPDATE _lm_thr SET kind = CASE
       WHEN people IS NULL OR cardinality(people) = 0 THEN 'empty'
       WHEN type = 'direct' AND cardinality(people) = 2 THEN 'dm'
@@ -139,7 +148,8 @@ BEGIN
       WHEN 'empty' THEN 'empty'
       WHEN 'dm' THEN 'dm'
       WHEN 'unplaced' THEN 'unplaced'
-      ELSE CASE WHEN cardinality(members) = 0 THEN 'group_skipped' WHEN gtenant IS NULL THEN 'unplaced' ELSE 'group_migrated' END END;
+      ELSE CASE WHEN cardinality(members) = 0 THEN CASE WHEN excl_involved THEN 'group_skipped' ELSE 'unplaced' END
+                WHEN gtenant IS NULL THEN 'unplaced' ELSE 'group_migrated' END END;
 
   -- Messages: DM or group message, the people, the tenant and scope, the outcome.
   UPDATE _lm_msg m SET tkind = t.kind, tpeople = t.people, toutcome = t.outcome, gtenant = t.gtenant, gscope = t.gscope
@@ -157,7 +167,6 @@ BEGIN
       WHEN sender_id IS NULL THEN 'unplaced'
       WHEN mode = 'dm' AND (rcv IS NULL OR rcv = sender_id) THEN 'unplaced'
       WHEN s_excl OR r_excl THEN 'skipped_excluded'
-      WHEN mode = 'group' AND toutcome = 'group_skipped' THEN 'skipped_excluded'
       WHEN mode = 'group' AND toutcome IS DISTINCT FROM 'group_migrated' THEN 'unplaced'
       ELSE 'migrate' END;
   UPDATE _lm_msg SET
@@ -230,8 +239,36 @@ CREATE OR REPLACE FUNCTION public.mt_legacy_messages_assert_ready()
  SET search_path TO 'public', 'pg_temp'
 AS $fn$
 DECLARE
-  v jsonb := public.mt_legacy_messages_migrate();
+  v jsonb;
+  v_table text;
+  v_n bigint;
+  v_all text[] := ARRAY['messages', 'message_threads', 'global_message_threads', 'global_messages',
+                        'thread_participants', 'global_thread_participants'];
+  v_legacy text[] := ARRAY['messages', 'message_threads', 'global_message_threads', 'global_messages'];
+  v_live_legacy boolean;
 BEGIN
+  -- 1. Snapshots. A live legacy table without every snapshot is never "nothing to do": refuse. Only when none of the four
+  --    legacy tables exists any more (already dropped, or a stack without the vitana-v1 schema) is a missing snapshot a skip.
+  SELECT bool_or(to_regclass('public.' || t) IS NOT NULL) INTO v_live_legacy FROM unnest(v_legacy) t;
+  FOREACH v_table IN ARRAY v_all LOOP
+    IF to_regclass('public.bak_' || v_table) IS NULL AND v_live_legacy THEN
+      RAISE EXCEPTION 'VTID-05573: snapshot bak_% is missing while a live legacy table exists, refusing to drop', v_table USING ERRCODE = 'P0001';
+    END IF;
+  END LOOP;
+  -- 2. Every live row (legacy tables and the two participant tables) must be in its snapshot unchanged. A snapshot left over
+  --    from an earlier apply (rollback-052000, writes, 052000 again) fails here instead of losing rows at the drop.
+  FOREACH v_table IN ARRAY v_all LOOP
+    IF to_regclass('public.' || v_table) IS NOT NULL AND to_regclass('public.bak_' || v_table) IS NOT NULL THEN
+      EXECUTE format('SELECT count(*) FROM public.%I l WHERE NOT EXISTS (SELECT 1 FROM public.%I b WHERE b.id = l.id AND to_jsonb(b) = to_jsonb(l))',
+                     v_table, 'bak_' || v_table) INTO v_n;
+      IF v_n > 0 THEN
+        RAISE EXCEPTION 'VTID-05573: % live row(s) of % are absent from bak_% or differ from it (stale snapshot), refusing to drop',
+          v_n, v_table, v_table USING ERRCODE = 'P0001';
+      END IF;
+    END IF;
+  END LOOP;
+
+  v := public.mt_legacy_messages_migrate();
   IF v ? 'skipped' THEN
     RETURN v;
   END IF;

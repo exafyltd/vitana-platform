@@ -59,6 +59,8 @@ CREATE TABLE public.global_thread_participants (
   id uuid NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY, thread_id uuid NOT NULL, user_id uuid NOT NULL,
   role text NOT NULL DEFAULT 'member', joined_at timestamptz NOT NULL DEFAULT now(), last_read_at timestamptz,
   is_active boolean NOT NULL DEFAULT true, UNIQUE (thread_id, user_id));
+ALTER TABLE public.global_thread_participants ADD CONSTRAINT fk_global_thread_participants_thread   -- vitana-v1 20250917153624
+  FOREIGN KEY (thread_id) REFERENCES public.global_message_threads(id) ON DELETE CASCADE;
 CREATE TABLE public.global_messages (
   id uuid NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY, thread_id uuid NOT NULL, sender_id uuid NOT NULL, body text NOT NULL,
   message_type text NOT NULL DEFAULT 'text', content_data jsonb, parent_message_id uuid,
