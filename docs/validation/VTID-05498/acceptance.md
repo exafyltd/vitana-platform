@@ -14,7 +14,7 @@ SQL against any live system; the local runs are in-process PGlite (`pglite-harne
 |---|---|
 | D1 expand-only column | `supabase/migrations/20261102080000_mt_packs_knowledge_docs_tenant_id.sql` |
 | D2 pgTAP (15 cases) | `supabase/tests/mt/mt_packs_knowledge_docs_tenant_id.sql` |
-| D3 queue row 37 / drift baseline | `docs/multitenancy/MIGRATION-QUEUE.md`; `scripts/ci/migration-drift-baseline.json` (comment only; this lane does not touch `count` or the list) |
+| D3 queue row 40 / drift baseline | `docs/multitenancy/MIGRATION-QUEUE.md`; `scripts/ci/migration-drift-baseline.json` (comment only; this lane does not touch `count` or the list) |
 | D3 rollback / read-only checks | `rollback.sql`, `pre-check.sql`, `post-check.sql` |
 | static gate | `static-checks.test.cjs` |
 
