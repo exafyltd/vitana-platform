@@ -1,6 +1,6 @@
 ---
 lane: policy-approval-record
-state: ready
+state: verified
 next_actor: kiro
 executor: kiro
 seat: hotmail
@@ -11,8 +11,11 @@ paths:
   - scripts/ci/pr-gate/lib.mjs
   - scripts/ci/pr-gate/__tests__/lib.test.mjs
 repos: [exafyltd/vitana-platform]
-updated: 2026-11-07T14:10Z
+updated: 2026-11-07T15:34Z
 vtid: VTID-05593
+claimed_by: kiro-hotmail-202611061752-cc1f
+branch: kiro/pr-gate-policy-sparring-record/policy-approval-record
+pr: https://github.com/exafyltd/vitana-platform/pull/4809
 ---
 # Lane: policy-approval-record (repo exafyltd/vitana-platform)
 
@@ -32,3 +35,14 @@ reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 PR: https://github.com/exafyltd/vitana-platform/pull/4809
 Findings: non-blocking: the policy form needs the word CONVERGED anywhere in the text, and the policy phrase match is case-insensitive, so a record holding both ESCALATED and CONVERGED plus the policy line would pass; this is text-only, no more forgeable than the owner form, and the vtid_ledger trigger is the authoritative gate (plan Risks). Non-blocking: the red run is recorded per test (15 pass, 1 fail), not per case. Non-blocking: CI taken from the caller (10/10 green), not read by the reviewer.
 Next: the land step merges under §7b
+
+### 2026-11-07T15:34Z · kiro-hotmail-202611061752-cc1f · ready → executing
+Built on branch kiro/pr-gate-policy-sparring-record/policy-approval-record; recorded here at the closing, because one transition per PR meant the PR carried no lane-state entry.
+
+### 2026-11-07T15:34Z · kiro-hotmail-202611061752-cc1f · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/4809. Reviewed on head `8b53a1299e` (accept entry above, reviewer agent claude-sonnet-5.5).
+
+### 2026-11-07T15:34Z · kiro-hotmail-202611061752-cc1f · in-review → verified
+merge: 70970ab14caaa600dc2323f47999cf0d624f57ad (exafyltd/vitana-platform#4809)
+authority: §7b PM rule. Squash merge by land-guard on head `e2ea1bfe57`: the reviewed head `8b53a1299e` plus the review-entry commit. `land-guard review` ok, `land-guard checks` green, PR up to date. No lane code changed after the accept.
+The migrations in this lane are in the repository and NOT applied. Applying them needs the owner's approval per file and database (collaboration.md §7d). Next: STAGING-VERIFY on the merge commit, then the `done` record.
