@@ -1,7 +1,7 @@
 ---
 lane: merge-queue
-state: ready
-next_actor: kiro
+state: executing
+next_actor: claude
 depends_on: []
 executor: claude
 reviewer_seat: exafyltd
@@ -36,3 +36,6 @@ reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
 
 ### 2026-11-06T23:43Z · kiro-exafy-202611061823-5cb2 · admin: executor kiro -> claude (admin lane VTID-05565)
 Reassigned by lane `claude-migration-lanes/reassign-migration` (lane_admin): `executor: kiro` -> `claude`, `reviewer_seat` -> `exafyltd`, `seat: exafy` removed; `paths` and `vtid` unchanged. On the owner's instruction (2026-11-06) the earlier Kiro PR for this lane was closed and its claim (older than 24 h) was released. Next: Claude Code claims and builds this lane from `ready`.
+
+### 2026-11-07T11:40Z · session_01Cp885Gw1CMmPDvDVHc7kw8 · ready -> executing (Claude Code)
+Built by Claude Code (executor claude, claimed by this session). Carried Kiro's files from kiro/agentic-delivery/merge-queue (8d0a34e559). Tests: review-source 14/14, gitlab-gates 8/8, assist-trigger 8/8, gitlab-land-queue 29/29. Dry run over the fake GitLab (docs/validation/VTID-05549/outputs/dry-run-12.mjs): 8 landed in vitana-platform, 3 in vitana-v1, one refused with one comment, every assertion passed. land-guard.mjs and queue.mjs untouched.
