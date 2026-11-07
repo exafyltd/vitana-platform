@@ -46,3 +46,11 @@ The plan PR opens when PLAN-SPAR capacity allows (`collaboration.md` §8a).
 
 ### 2026-11-07T14:17Z · ci-plan-spar · drafted → approved
 Converged; approved by policy converged-auto-v1. 6 lane(s) got a VTID and are handed to Kiro.
+
+### 2026-11-07T14:30Z · kiro-hotmail-202611061752-cc1f · converged, checks re-run on a real head
+- Session `5e927bc9` converged in round 3 and CI allocated VTID-05594..05599. This commit only gives the head real
+  checks (the bot head carries `plan-spar/needs-rebase`).
+- Round 3 left one minor, not answered because the session converged: R3-F1 notes that `computeVitanaIndexForUser`
+  (`voice-tools/health-log-repository.ts:61`, `orb-tools/health-depth-tools-repository.ts:62`) recomputes
+  `vitana_index_scores` through `recordIndexRecompute`. The lane `health-writers-voice-orb` executor must classify it
+  in the inventory (a) and pass the resolved home tenant, inside its allowed paths.
