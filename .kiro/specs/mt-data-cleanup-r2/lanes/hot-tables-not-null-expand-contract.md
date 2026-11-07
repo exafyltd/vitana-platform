@@ -47,3 +47,16 @@ executor and reviewer on today's §3a/§7 rules.
 
 ### 2026-11-06T10:09Z · ci-plan-spar · ready (VTID allocated)
 VTID-05569 allocated after policy approval (converged-auto-v1).
+
+### 2026-11-07T18:45:00Z · agent-vitana-lane-reviewer-202611071840-31f4 · review
+review: accept
+head: b4a9cd0da0dc92d4edae7e6311326654d828e18b
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4837
+Findings:
+- none blocking. The assert-and-pin migration matches tasks.md H1-H6 and the Acceptance (plan premise 5 holds: all three tenant_id columns are NOT NULL in DDL). All 27 files are in paths, no weakening, no live write, no protected file, no RLS or policy change, drift baseline untouched (120).
+- non-blocking: PR check status unreadable here (gh GraphQL unsupported, gh api denied); 12/12 is the builder's report and the land step must confirm every required check green on this head.
+- non-blocking: DATABASE_SCHEMA.md new section is inserted mid-entry and orphans the trailing connections_social line of the notification-categories entry (cosmetic).
+- non-blocking: fixture inserts on a real stack depend on triggers not read here (CI pgTAP is the proof); the embedded DO-block copy can drift from the migration; the orphan scan on a large product_analytics_events may approach the 120s statement_timeout on apply (fails loudly).
+- non-blocking: the migrations need owner approval per file and database (collaboration.md section 7d) and are not applied by this PR.
+Next: the land step merges under §7b
