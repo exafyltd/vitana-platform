@@ -1,6 +1,6 @@
 ---
 lane: hot-tables-not-null-expand-contract
-state: ready
+state: verified
 next_actor: kiro
 depends_on: [orphan-analysis-and-quarantine, profiles-tenant-backfill]
 executor: kiro
@@ -12,9 +12,12 @@ paths:
   - supabase/tests/vtid_mt_data_cleanup_notnull_*.sql
   - docs/multitenancy/MIGRATION-QUEUE.md
   - DATABASE_SCHEMA.md
-updated: 2026-11-06T10:09Z
+updated: 2026-11-07T18:55Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05569
+claimed_by: kiro-hotmail-202611061752-cc1f
+branch: kiro/mt-data-cleanup-r2/hot-tables-not-null-expand-contract
+pr: https://github.com/exafyltd/vitana-platform/pull/4837
 ---
 # Assert and pin NOT NULL on the hot tables — mt-data-cleanup (repo vitana-platform)
 
@@ -60,3 +63,14 @@ Findings:
 - non-blocking: fixture inserts on a real stack depend on triggers not read here (CI pgTAP is the proof); the embedded DO-block copy can drift from the migration; the orphan scan on a large product_analytics_events may approach the 120s statement_timeout on apply (fails loudly).
 - non-blocking: the migrations need owner approval per file and database (collaboration.md section 7d) and are not applied by this PR.
 Next: the land step merges under §7b
+
+### 2026-11-07T18:55Z · kiro-hotmail-202611061752-cc1f · ready → executing
+Built on branch kiro/mt-data-cleanup-r2/hot-tables-not-null-expand-contract; recorded here at the closing, because one transition per PR meant the PR carried no lane-state entry.
+
+### 2026-11-07T18:55Z · kiro-hotmail-202611061752-cc1f · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/4837. Reviewed on head `b4a9cd0da0` (accept entry above, reviewer agent claude-sonnet-5.5).
+
+### 2026-11-07T18:55Z · kiro-hotmail-202611061752-cc1f · in-review → verified
+merge: ececf7f9bda192db0d846813b1e3198c5c657472 (exafyltd/vitana-platform#4837)
+authority: §7b PM rule. Squash merge by land-guard on head `e34a5124bf`: the reviewed head `b4a9cd0da0` plus the review-entry commit and a clean merge of main. `land-guard review` ok, `land-guard checks` green (12 checks), PR up to date. No lane code changed after the accept.
+The migrations in this lane are in the repository and NOT applied. Applying them needs the owner's approval per file and database (collaboration.md §7d). Next: the `done` record.
