@@ -1,0 +1,16 @@
+# scripts and yaml of lane fleet (VTID-05536)
+# $ bash -n infra/gitlab-engineering/host/fleet-manager-install.sh
+exit: 0
+
+# $ bash -n docs/validation/VTID-05536/outputs/mutate-fleet.sh
+exit: 0
+
+# $ PYTHONPATH=/projects/sandbox/tools/pylib python3 (yaml.safe_load of host/fleet-image/component.yml, then the structure Image Builder needs)
+parsed OK; keys: ['description', 'name', 'parameters', 'phases', 'schemaVersion']
+schemaVersion: 1.0
+parameters: ['JobImage:string', 'RunnerHelperImage:string']
+phase build -> [('InstallPackages', 'ExecuteBash', 5), ('AllowUbuntuUserToUseDocker', 'ExecuteBash', 2), ('PullJobImages', 'ExecuteBash', 4), ('Clean', 'ExecuteBash', 3)]
+phase test -> [('CheckTheMachine', 'ExecuteBash', 9)]
+pull commands after YAML parsing: ['docker pull "{{ JobImage }}"', 'docker pull "{{ RunnerHelperImage }}"']
+all 23 commands are strings; {{ }} survived as text
+exit: 0

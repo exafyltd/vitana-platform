@@ -1,0 +1,34 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/wt-net-2/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+PASS services/gateway/test/mt-network-messaging-send-db.pgtap.test.ts
+  VTID-05576 migration files
+    ✓ exist, apply in order, and no other migration shares their version (2 ms)
+    ✓ each runs in one transaction with a lock timeout (3 ms)
+    ✓ adds no bare current_tenant_id() RLS policy (1 ms)
+  VTID-05576 task 1: scope column, expand then contract
+    ✓ adds scope text NOT NULL DEFAULT community with a CHECK (community, network) and backfills
+    ✓ drops the default only in the contract file (1 ms)
+    ✓ a guard trigger lets only the RPCs write a non-community scope
+  VTID-05576 task 2: send_message / send_message_as
+    ✓ all three functions are SECURITY DEFINER with a pinned search_path (1 ms)
+    ✓ send_message binds the sender to auth.uid(); send_message_as takes a trusted p_sender
+    ✓ EXECUTE: send_message to authenticated, send_message_as to service_role only, the core to nobody (1 ms)
+    ✓ the community branch needs a shared non-platform tenant and derives tenant_id from it
+    ✓ the network branch checks visibility, preference, connection, block, rate limit and rule-45 accounts (1 ms)
+    ✓ a network group send is refused until the groups lane
+  VTID-05576 task 3: client-write lockdown
+    ✓ asserts the catch-all policy stays gone and does not recreate it (1 ms)
+    ✓ replaces the client policies with narrow SELECT and read-marker UPDATE policies and drops both INSERT policies (1 ms)
+    ✓ revokes INSERT and UPDATE from the client roles and grants only read_at / delivered_at back
+  VTID-05576 tasks 4-5: rollback, read-only checks, pgTAP, queue
+    ✓ has the three rollbacks and the three read-only check files (1 ms)
+    ✓ the pgTAP plan covers the four lane cases and its plan count matches its assertions (1 ms)
+    ✓ is queued in MIGRATION-QUEUE.md in file order
+    ✓ keeps the drift baseline count equal to its list
+
+Test Suites: 1 passed, 1 total
+Tests:       19 passed, 19 total
+Snapshots:   0 total
+Time:        0.443 s
+Ran all test suites.

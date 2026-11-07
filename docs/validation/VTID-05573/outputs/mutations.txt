@@ -1,0 +1,46 @@
+### M1 rule 43-45 exclusion removed (the drop guard also refuses)  [exit 2]
+# FAILED loading /projects/sandbox/wt-legacy-msgs/supabase/migrations/20261102052300_vtid_05573_legacy_messages_drop.sql: VTID-05573: legacy rows could not be placed, refusing to drop: {"landed": {"gr
+### M2 platform-tenant filter removed from the shared-tenant helper  [exit 1]
+not ok 17 - 17 DM between members with no shared tenant (platform tenant ignored) -> network, sender context tenant
+not ok 23 - 23 global DM across tenants -> network, tenant = the sender's own context (TB)
+not ok 39 - 39 the platform tenant is never written on member content
+not ok 48 - 48 the shared-tenant helper: shared tenant, shared non-primary, none (platform tenant ignored)
+# Looks like you failed 4 test(s) of 65
+### M3 drop guard unplaced check removed  [exit 1]
+not ok 45 - 45 the drop guard refuses while a legacy row could not be placed
+not ok 63 - 63 ... and the guard refuses the drop
+# Looks like you failed 2 test(s) of 65
+### M4 admin role mapping broken  [exit 1]
+not ok 33 - 33 legacy role moderator -> member, admin kept
+# Looks like you failed 1 test(s) of 65
+### M5 bak_* client revoke removed  [exit 1]
+not ok 9 - 9 anon and authenticated cannot read any bak_* table
+# Looks like you failed 1 test(s) of 65
+### M6 guard: missing-snapshot refusal removed  [exit 1]
+not ok 57 - 57 a missing snapshot table while a live legacy table exists stops the guard (no silent skip)
+# Looks like you failed 1 test(s) of 65
+### M7 guard: live-row-vs-snapshot comparison removed  [exit 1]
+not ok 54 - 54 a live legacy id that is absent from its snapshot stops the guard (stale snapshot)
+not ok 55 - 55 a live legacy row that differs from its snapshot stops the guard
+not ok 59 - 59 a live participant row that is absent from its snapshot stops the guard
+# Looks like you failed 3 test(s) of 65
+### M8 memberless group always group_skipped again  [exit 1]
+not ok 60 - 60 a memberless group whose sender is a member is unplaced; group_skipped stays 1 (only the bots-only group d5)
+# Looks like you failed 1 test(s) of 65
+### M9 platform legacy tenant allowed as fallback again  [exit 1]
+not ok 62 - 62 a DM with no member tenant and a platform legacy tenant is unplaced, never written with the platform tenant
+not ok 63 - 63 ... and the guard refuses the drop
+# Looks like you failed 2 test(s) of 65
+### M10 participant tables not frozen  [exit 1]
+not ok 65 - 65 the two participant tables take no write from any API role after the freeze
+# Looks like you failed 1 test(s) of 65
+### M11 rollback-052000 grants service_role only  [exit 1]
+{"check_name":"write_grants_restored","ok":false}
+{"check_name":"public_grant_restored","ok":false}
+### M12 rollback-052300 skips the global_thread_participants foreign key  [exit 1]
+{"check_name":"global_thread_participants_fk_restored","ok":false}
+### M13 052000 stale-snapshot refusal removed  [exit 1]
+## re-apply 052000 over a stale snapshot (a live row written after the unfreeze): NOT REFUSED
+### restored
+1..65 ; failures: 0
+checks.mjs restored exit 0

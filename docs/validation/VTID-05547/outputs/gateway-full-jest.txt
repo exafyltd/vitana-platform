@@ -1,0 +1,14 @@
+# Whole gateway Jest suite, run as CI does (TEST-SUITE.yml): npx jest --silent --maxWorkers=8 --shard=k/4 --json   (k = 1..4, Node v22.23.4, 8 CPUs, AWS_REGION=eu-central-1)
+# 1771 test files = the 1771 of `npx jest --listTests`; shard sizes 443/443/443/442.
+shard 1/4: suites 443 (441 passed, 2 failed, 0 skipped); tests 8825 (8812 passed, 2 failed, 5 skipped, 6 todo)
+   FAIL test/vtid-04226-eventbridge-test-contract-schedules.test.ts :: VTID-04226: scripts parse and dry-run the token provisioning script is dry-run by default and never defaults to prod
+   FAIL test/navigation/vtid-04814-command-hub-navigation.test.ts :: the Command Hub screen list matches the Command Hub has exactly one screen per tab of NAVIGATION_CONFIG
+shard 2/4: suites 443 (441 passed, 0 failed, 2 skipped); tests 7210 (7171 passed, 0 failed, 39 skipped, 0 todo)
+shard 3/4: suites 443 (442 passed, 0 failed, 1 skipped); tests 7029 (7023 passed, 0 failed, 6 skipped, 0 todo)
+shard 4/4: suites 442 (442 passed, 0 failed, 0 skipped); tests 6484 (6480 passed, 0 failed, 4 skipped, 0 todo)
+TOTAL: suites 1771 (2 failed); tests 29548 (29486 passed, 2 failed, 54 skipped, 6 todo)
+
+The 2 failures, and why:
+  1. vtid-04226 "token provisioning script is dry-run by default": scripts/aws/setup-gateway-internal-token.sh calls openssl, which this sandbox does not have. Environmental; it fails identically on the lane base tree. CI runners have openssl.
+  2. vtid-04814 "has exactly one screen per tab of NAVIGATION_CONFIG": caused by this lane. The Delivery module adds three tabs to NAVIGATION_CONFIG; the Command Hub voice-screen list (src/navigation/data/command-hub-screens.json) and its stored Titan vectors (nav-embeddings.bin/.json) are outside the lane paths, and the vectors need Bedrock credentials. See acceptance.md "Open items" and the patch handed over with the report.
+  Note: AWS_REGION=eu-central-1 was set for the run because this sandbox exports another region, which fails test/providers/storage-provider.test.ts (it passes on the lane base tree with the region set). That is an environment difference, not a code difference.

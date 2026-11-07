@@ -1,0 +1,6 @@
+# VTID-05612 (eng-gitlab-m2/runner-pin-jq), session kiro-exafy-202611071142-d7ed, base origin/main ff1a55d50b
+$ node --test scripts/eng/fleet-structure.test.mjs scripts/eng/free-tier-guard.test.mjs   # with main's infra files -> outputs/red-on-base.txt
+$ node --test scripts/eng/{fleet-structure,free-tier-guard,gitlab-m1-structure,gitlab-settings}.test.mjs   # lane head -> outputs/green.txt
+# Live (engineering account 841276716213, owner instruction 2026-11-07; recorded in docs/validation/VTID-05555/outputs/read-1-findings.md):
+#   SSM 8febb596-2b4c-4895-acb3-cd47cc2dd64a on the fleet manager: apt-get install gitlab-runner-helper-images=19.5.2-1 gitlab-runner=19.5.2-1, installer re-run
+#   GitLab pipelines 154/155: gateway-jest "jq: not found" x22

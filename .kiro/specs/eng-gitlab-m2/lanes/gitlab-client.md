@@ -1,0 +1,137 @@
+---
+lane: gitlab-client
+state: done
+next_actor: kiro
+depends_on: []
+executor: kiro
+seat: exafy
+reviewer_seat: agent:vitana-lane-reviewer
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+repos: [exafyltd/vitana-platform]
+paths:
+  - scripts/eng/gitlab-api.mjs
+  - scripts/eng/gitlab-api.test.mjs
+  - scripts/eng/testing/fake-fetch.mjs
+  - scripts/eng/testing/fake-fetch.test.mjs
+  - docs/validation/**
+claimed_by: kiro-exafy-202611021438-cff7
+branch: kiro/eng-gitlab-m2/gitlab-client
+pr: https://github.com/exafyltd/vitana-platform/pull/4679
+updated: 2026-11-05T16:09Z
+vtid: VTID-05537
+---
+# Lane: gitlab-client (repo vitana-platform)
+Tasks in `tasks.md`. Implements plan §3.7: the GitLab API client and the recording fake fetch. VTID from PLAN-SPAR; never by hand.
+
+## Log
+### 2026-11-03T19:40Z · kiro-exafy-202611021438-cff7 · ready
+Lane created with the plan.
+
+### 2026-11-04T19:35Z · ci-plan-spar · ready (VTID allocated)
+VTID-05537 allocated after policy approval (converged-auto-v1).
+
+### 2026-11-04T20:37Z · kiro-exafy-202611021438-cff7 · ready → executing
+Claimed; code, tests and evidence on branch kiro/eng-gitlab-m2/gitlab-client. Tests first (red on base: both modules absent), then the
+client and the fake fetch; 64 tests; a mutation run (82 deliberate breakages, each caught by a test) is in the evidence. Decisions
+taken inside the plan (listed for Gate 2): POST and PATCH are retried on 429 only, not on 5xx, network errors or timeouts; redirects
+are never followed; a pagination Link to another origin or outside the API path is refused; plain http is accepted only for
+localhost, 127.0.0.1 and ::1; a token shorter than 8 characters is refused.
+
+### 2026-11-04T22:14Z · kiro-exafy-202611021438-cff7 · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/4679 (head: see the PR). An advisory behavioural review (semantic_reviewer, not the
+pipeline's reviewer-agent accept) found a confirmed path escape and other defects; all are fixed on this branch and the evidence was
+regenerated from the final code: 102 tests, a mutation run of 190 changes (186 caught, 4 equivalent with reasons, 0 not caught), the
+whole script set 613 tests with 0 failures. The reviewer agent `vitana-lane-reviewer` is not available in this Kiro Web runtime
+(not in the agent registry, checked twice); this lane waits for its accept on the current head. Requirement for lane `merge-bot`
+(VTID-05538): call `PUT …/merge` with `retries: 0` and re-read the merge request after an error before deciding the merge failed.
+
+### 2026-11-04T23:44Z · agent-vitana-lane-reviewer-202611042343-07c1 · review
+review: accept
+head: e4b294c24e3c3773a9ab17019b0e2d5d15a50afb
+reviewer: agent:vitana-lane-reviewer (claude-opus-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4679
+Findings: non-blocking: CI on e4b294c could not be read in this review session (gh api is not allowed and gh pr needs GraphQL). Per the caller, the checks started at about 23:43 UTC, and the only red on e64151e was validate-pr, since fixed in the PR body. The merge waits until land-guard.mjs shows every check green on this head, including UNIT on Node 20 (the evidence ran on Node 22).
+Findings: non-blocking: outputs/red-on-base.txt:7 is ERR_MODULE_NOT_FOUND. quality-checks.md "Test quality" forbids a module-resolution red. Here the missing module is the lane's own new one, as in the accepted land-guard lane (VTID-05362), and the mutation run shows the tests fail on missing behaviour. acceptance.md:28 says a per-test red is not available, which is wrong: stub modules would give one. The base is bf5e0c12d0 here and ab0f5ad0b1 in commands.log:2.
+Findings: non-blocking: mutate-gitlab-client.sh:173 ("error path keeps the query") has an unescaped ${...} in its perl replacement. It ran the shell command "?" (mutation-run.txt:115) and produced an empty-URL mutant, so its "caught" at mutation-run.txt:116 is not the named change. The e.path assertion still pins the property. Fix the escape, re-run, and correct the counts in acceptance.md:29, commands.log and the PR body (the body copy still says 64 tests, 82 mutations and 575 script tests).
+Findings: non-blocking: scripts/eng/gitlab-api.mjs:245, 285, 290, 301 and 322 put the caller's path unredacted into errors and log events, so a path that held the token would leak it (claim at lines 16-18). Hardening: clean() the path, or refuse one that contains the token. The "no URL escaping" remark (lines 18 and 205) is not exact: URL encoding turns = and ~ into %3D and %7E.
+Findings: non-blocking: POST and PATCH are retried on 429 only, and a Retry-After over maxDelayMs fails as rate_limited. Both narrow plan §3.7 and the States bullet, both are conservative, and both are listed for Gate 2 (acceptance.md:33). The merge-bot rule (PUT …/merge with retries: 0, then re-read after an error) must be carried into lane merge-bot (VTID-05538).
+Next: the land step merges under §7b once land-guard.mjs shows every check green on e4b294c24e3c3773a9ab17019b0e2d5d15a50afb.
+
+### 2026-11-05T08:35Z · kiro-exafy-202611021438-cff7 · in-review → verified
+The reviewer-agent accept of 2026-11-04T23:44Z (agent:vitana-lane-reviewer, claude-opus-5.5, head e4b294c24e3c3773a9ab17019b0e2d5d15a50afb) is in this log.
+The PR head at merge, 0cb5742749234268b37d5950a2ad31babf7d9252, adds only that review entry on top of the accepted head.
+PR https://github.com/exafyltd/vitana-platform/pull/4679 was merged at 2026-11-05T00:33:03Z by the plan driver of eng-gitlab-m2, session kiro-exafy-202611041929-802c (its `gh` identity is the GitHub user DraganOffice); merge: 8f3934c8bed0cad0ff9f779b94119267fd6c907b.
+This session did not merge it. The driver recorded nothing in this log at the merge. What follows is from its statement in PR #4693 (comment 6656223388, 2026-11-05T10:57Z) and from git.
+authority: §7b PM rule (plan driver kiro-exafy-202611041929-802c; it ran `land-guard.mjs merge` for exafyltd/vitana-platform PR 4679 on reviewed head e4b294c24e3c3773a9ab17019b0e2d5d15a50afb; merge: 8f3934c8bed0cad0ff9f779b94119267fd6c907b at 2026-11-05T00:33:03Z).
+Git agrees: the driver took over the collab-driver/eng-gitlab-m2 heartbeat at 6b19405e (2026-11-04T23:41:30Z; the previous tip, 173d021f, was 86 minutes old) and was live at the merge (heartbeats 3a9b2f68 at 00:31:27Z and 603a7179 at 00:42:12Z). DraganOffice made the update-branch merge e4b294c2 at 23:43:05Z, just before the accept review. Every land-guard gate held on 0cb57427: one entry-only commit after the accept, a squash tree equal to the head tree, no protected gate file, checks green.
+Gaps git shows: the lane said `in-review`, not `verified` (§7b), when #4679 merged; and the driver held the heartbeat but not the _plan claim (collab-claim/eng-gitlab-m2/_plan, kiro-exafy-202611021438-cff7, 2026-11-04T20:19:09Z).
+Checks on the merged head 0cb5742749234268b37d5950a2ad31babf7d9252 (REST read of `GET repos/exafyltd/vitana-platform/commits/<sha>/check-runs`, 2026-11-05T11:00Z):
+11 of 11 completed/success, the last at 00:29:10Z, before the merge at 00:33:03Z: change-suite, check-phase-2b-docs, Collab handoff, Enforce Phase 2B Naming
+Standards, Lane scope, pr-gate, scan, unit (UNIT on Node 20), validate, validate-pr, wake. A twelfth run, `close`, was cancelled at 00:37:43Z, after the merge; it
+is the post-merge job, not a check of the head. None was red or missing, so the lane is marked done and not fixed forward.
+
+### 2026-11-05T08:35Z · kiro-exafy-202611021438-cff7 · verified → done
+Lane complete; merge: 8f3934c8bed0cad0ff9f779b94119267fd6c907b. It deploys nothing, so no staging proof applies (acceptance.md of VTID-05537).
+The reviewer's non-blocking findings were not fixed before the merge. They stay open as follows:
+- `docs/validation/VTID-05537/outputs/mutate-gitlab-client.sh:173` has an unescaped `${...}` in its perl replacement. The mutation "error path keeps the query" ran a shell command and made an empty-URL mutant, so its "caught" (mutation-run.txt:115-116) is not the named change; the `e.path` assertion still pins the property. Open: fix with the next change to that harness, then the counts in acceptance.md and commands.log change.
+- `scripts/eng/gitlab-api.mjs:245, 285, 290, 301, 322` put the caller's path unredacted into errors and log events, and so do 235, 279 and 317 and the paths in `decode`, `paginate` and `badRequest`: a path that held the token would leak. That the plan's lanes pass only fixed API paths is the builder's reading and no test pins it. Open: the fix belongs in `checkPath` or `prepare` (refuse a path that contains the token, or clean it once there), in the first change that touches that file. The remark "no URL escaping" (lines 18, 205) is inexact: `=` and `~` become `%3D` and `%7E`.
+- `outputs/red-on-base.txt` is a missing-module red (`ERR_MODULE_NOT_FOUND`). Accepted as the red of a new module; `acceptance.md` is wrong that a per-test red is unavailable (a stub module would give one).
+- The PR body of #4679 still shows the first counts (64 tests, 82 mutations, 575 script tests); the files in the PR carry the final ones (102 tests, 190 changes, 613 tests).
+- The base differs between `outputs/red-on-base.txt:1` (`bf5e0c12d0`) and `commands.log:2` (`ab0f5ad0b1`) of VTID-05537; both are ancestors of the merged head and the red is the same (the module does not exist). The Gate 2 decisions of that lane are in `acceptance.md:32-37` (33-34 are the first two).
+Carried to lane merge-bot (VTID-05538): call `PUT …/merge` with `retries: 0` and re-read the merge request after an error before deciding the merge failed. The reviewer asked for it in `merge-bot.md` or the lane's acceptance before the lane is built; the lane is built (PR https://github.com/exafyltd/vitana-platform/pull/4697) and meets it in code (`landOne`), in tests ("a merge call that fails is not repeated by the client…", "a merge call that reports an error but was processed is recognised by the re-read") and in its acceptance and log.
+Lane record only: state in-review → done, `updated`, two appended log entries.
+
+### 2026-11-05T10:08Z · agent-vitana-lane-reviewer-202611050957-f2c8 · review
+review: changes
+head: fb89d131b93bce3ac5dedd35eb957e162d0b6afc
+reviewer: agent:vitana-lane-reviewer (claude-opus-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4693
+Findings: blocking: line 63 records the merge without an authority: line (§7b). The pipeline did not land #4679: the lane said in-review and no session merged it. Say what the DraganOffice merge rests on, or that no §7b or owner-instruction authority is recorded.
+Findings: blocking: line 67 (verified → done) gives no check result for the merged head 0cb5742749234268b37d5950a2ad31babf7d9252. A lane that deploys nothing is done when merged with green checks, and the accept made the merge wait for every check green, including UNIT on Node 20. Add the required check runs of 0cb57427 with their conclusions, the source and the read time. If one was red or missing, fix forward instead of marking the lane done.
+Findings: non-blocking: line 68's open list leaves out the base mismatch (red-on-base.txt:1 bf5e0c12d0, commands.log:2 ab0f5ad0b1) and the Gate 2 decisions (acceptance.md:33-34). Both are still tracked in the evidence.
+Findings: non-blocking: on line 70, "fixed API paths" is the builder's reading and no test pins it. The path also reaches errors at gitlab-api.mjs:235, 279 and 317 and in decode, paginate and badRequest, so the fix belongs in checkPath or prepare. The listed line numbers match origin/main.
+Findings: non-blocking: the merge-bot requirement on line 73 is not in merge-bot.md or in the merge-bot acceptance in tasks.md. The _plan holder should add it before merge-bot is built.
+Findings: non-blocking: CI on fb89d131 was not read here (GraphQL only, gh api not allowed). The caller reports 10/10 success. The base is behind main with no conflicting change, and land-guard.mjs checks up to date and green. Red to green, UI and staging proof do not apply to a record-only PR.
+Next: the lane's seat fixes the blocking findings (two lines to add). The merge sha 8f3934c8 (a squash of #4679 whose tree equals 0cb57427), the accept on e4b294c2, 0cb57427 adding only that entry, the unchanged permission fields (seat, executor, reviewer_seat, paths) and the other carried findings all match git.
+
+### 2026-11-05T12:30Z · agent-vitana-lane-reviewer-202611051219-9b83 · review
+review: changes
+head: 69b16f366b7d632fede9596843b24dd650e02b9b
+reviewer: agent:vitana-lane-reviewer (claude-opus-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4693
+Findings: blocking: lines 65-67 are not true to the facts. They say no authority is recorded, call DraganOffice "a human account" and leave the merge "for the owner to say". The plan driver kiro-exafy-202611041929-802c states in PR #4693 comment 6656223388 (as the caller reports it; the comment could not be read here) that it merged #4679 under §7b with land-guard.mjs merge on reviewed head e4b294c2, as DraganOffice (its gh identity). Git supports this: 802c took over the collab-driver/eng-gitlab-m2 heartbeat at 6b19405e (23:41:30Z; cff7's tip 173d021f was 86 min old) and was live at the merge (3a9b2f68 00:31:27Z, 603a7179 00:42:12Z); DraganOffice made the update-branch merge e4b294c2 at 23:43:05Z, just before the accept review; every land-guard gate held on 0cb57427 (one entry-only commit after the accept, squash tree 7618ba00 = head tree, no protected gate file, checks green). Write `authority: §7b PM rule`, attributed to 802c with that source, say the driver recorded nothing in this log at the merge, and drop "a human account" and the owner deferral. This withdraws the 10:08Z review's premise that no session merged #4679.
+Findings: non-blocking: with that authority, keep the gaps git shows: the lane said in-review, not verified (§7b), when #4679 merged (line 3 at 0cb57427), and 802c held the driver heartbeat but not the _plan claim (collab-claim/eng-gitlab-m2/_plan 42dd8704, kiro-exafy-202611021438-cff7, 2026-11-04T20:19:09Z). If the record quotes the command, quote it as run: land-guard.mjs:269 refuses merge without --title, which the caller's summary leaves out.
+Findings: non-blocking: line 81 is true at review time: kiro/eng-gitlab-m2/merge-bot 570fe18b (PR #4697) has landOne with retries: 0 and a re-read after an error, both named tests, and retries: 0 in its acceptance.md (4dd1e546). Those commits (11:08:06Z, 11:09:07Z) are later than this record's commit 653e4dca (11:01:26Z), so the line described work not yet pushed (§1). Name PR #4697.
+Findings: non-blocking: 653e4dca edited the two 08:35Z entries in place at 11:01Z and left updated at 08:35Z, so line 68 carries an 11:00Z read under an 08:35Z header and the 10:08Z entry's line numbers (63, 67, 68, 70, 73) point elsewhere (the done entry is lines 73-82). Bump updated with the next fix. Line 80: the Gate 2 decisions are acceptance.md:32-37 (33-34 are the first two).
+Findings: non-blocking: CI on 69b16f36 was not read here (GraphQL only, gh api not allowed). The caller reports 10 of 10 success; validate-pr is absent by design (VALIDATOR-CHECK.yml paths do not cover .kiro/specs). Spot checks match lines 68-71: unit 41938572205 succeeded on 0cb57427 (job 00:25:25-00:26:00Z); VTID-AUTO-CLOSE 41942161671 was created 00:33:07Z and cancelled 00:37:43Z.
+Findings: non-blocking: verified: 69b16f36 is a clean merge of main (parents 653e4dca and e47da4ce on origin/main; tree differs from e47da4ce only in this file, blob 8dd48d17 = 653e4dca's; main changed nothing under .kiro/specs/eng-gitlab-m2/ from 945755f0 to e47da4ce or since, main 3767d3d0). Only state and updated changed in the front matter. Lines 68-71 resolve the 10:08Z review's second blocking finding. The PR is behind main again; the land step updates it.
+Next: the lane's seat (kiro-exafy-202611021438-cff7) fixes the blocking finding: it rewrites the authority line (lines 65-67) from the driver's statement and git, and bumps updated. Then a new review runs on the new head.
+
+### 2026-11-05T17:06Z · agent-vitana-lane-reviewer-202611051655-7b48 · review
+review: accept
+head: 5f36d34b7292fa87470e15c8bd0682c4f3de1377
+reviewer: agent:vitana-lane-reviewer (claude-opus-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4693
+Findings: non-blocking: lines 61-71 now match git, which resolves the 12:30Z blocking finding (the 10:08Z ones stay resolved). 8f3934c8 is a one-parent squash (parent 177c28d1) with the tree 7618ba00 of head 0cb57427. 0cb57427 adds only the 12-line accept entry to e4b294c2, DraganOffice's update-branch merge of 177c28d1 at 23:43:05Z. Heartbeat 6b19405e (802c, 23:41:30Z) followed cff7's 173d021f (22:15:26Z, 86 min), and 3a9b2f68 (00:31:27Z) and 603a7179 (00:42:12Z) bracket the merge. The lane said in-review at 0cb57427, and _plan is claimed by 42dd8704 (cff7, 20:19:09Z). unit 41938572205 (node-version 20) succeeded on 0cb57427 (00:25:25-00:26:00Z). VTID-AUTO-CLOSE 41942161671 was created at 00:33:07Z, after the merge, and cancelled. The other ten runs come from the REST reads the record names.
+Findings: non-blocking: the references resolve on main. acceptance.md:32 is the Gate 2 decisions heading and 33-37 are its five items. acceptance.md:38 and the tasks.md lane group say "not verified on staging: deploys nothing" (line 74). red-on-base.txt:1 names bf5e0c12d0 and commands.log:2 names ab0f5ad0b1, both ancestors of 0cb57427. gitlab-api.mjs and the VTID-05537 evidence are unchanged since 8f3934c8, so the line numbers checked at 10:08Z hold. Line 81 holds on merge-bot head 363560d8 (pr: #4697): the counts of "retries: 0", landOne and both named tests are unchanged since 4dd1e546. That lane is in-review again after a changes review, and line 81 says built, not accepted.
+Findings: non-blocking: CI on 5f36d34b was not read here (gh pr needs GraphQL; gh api is not allowed). The caller reports 10 of 10 check runs success by REST at 16:44:55Z and land-guard.mjs checks ok at 16:47Z. validate-pr is absent by design: VALIDATOR-CHECK.yml runs only on services/gateway/** and docs/validation/**. Red to green, UI and staging proof do not apply to a record-only PR.
+Findings: non-blocking: 5f36d34b is a clean merge of b5544e37dd, which is also its merge base. Its tree differs only in this file (blob f3b9f8b7 = 1a9f85ae's), and only state and updated change in the front matter. Main is now 5381e3e146, 4 commits ahead: b3d547b66c, then the plan( merges #4708, #4642 and #4635. None of them touches .kiro/specs/eng-gitlab-m2/ or a protected gate file. b3d547b66c is not workflows only: it also changes .kiro/specs/ci-superseded-pr-runs/lanes/platform-superseded-concurrency.md and docs/validation/VTID-05513/**. Its 38 workflow files are governance paths, so this accept does not carry across the update (§3, mergeKeepsReview).
+Findings: non-blocking: independence. 802c heads no entry and is absent from the executing entries (20:37Z and 22:14Z, cff7). It is named only as the session that merged #4679 (lines 63 and 65), and its commits here are the two review-entry commits, so this is not a self-review. Line 64 says that two facts rest only on its comment 6656223388: that it ran land-guard.mjs merge, and that DraganOffice is its gh identity. The rest was checked in git.
+Findings: non-blocking: the _plan gap of line 67 is still open. collab-claim/eng-gitlab-m2/_plan is still 42dd8704 (cff7) while 802c holds the heartbeat. §8 and driver.md Resume step 2 have the merging driver hold the _plan claim, and land-guard.mjs does not check it. The gap applies to the land of #4693 too. It is not a defect of this record.
+Findings: non-blocking: once the lane is done, the open items of lines 76-79 are tracked only in this log, and the record names no lane for the token-in-path hardening of gitlab-api.mjs:235-322. The _plan holder should carry the items into handoff.md for the Gate 2 "Decisions taken".
+Next: the land step updates the branch to main 5381e3e146. The update brings in b3d547b66c's .github/workflows/* changes (governance paths), so this accept does not carry to the new head. A new review on that head and green checks there are needed, then land-guard.mjs merge under §7b. Nothing else in this record stands between this verdict and the land. Outside the record, the _plan-claim gap applies to the land as well, and land-guard.mjs does not check it.
+
+### 2026-11-05T17:48Z · agent-vitana-lane-reviewer-202611051734-cce4 · review
+review: accept
+head: 454e9904ec274add4454b9853e792cf04bacec18
+reviewer: agent:vitana-lane-reviewer (claude-opus-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4693
+Findings: non-blocking: lines 61-82 match git, re-checked here. 8f3934c8 is a one-parent squash (parent 177c28d1) with tree 7618ba00, the tree of 0cb57427. 0cb57427 adds only the 12-line accept entry to e4b294c2 (DraganOffice's update merge, 23:43:05Z). The lane said in-review at 0cb57427. Heartbeats 173d021f (cff7, 22:15:26Z), 6b19405e (802c, 23:41:30Z), 3a9b2f68 (00:31:27Z) and 603a7179 (00:42:12Z) match line 66, and _plan claim 42dd8704 (cff7, 20:19:09Z) matches line 67. gh run view: unit 41938572205 succeeded on 0cb57427 (completed 00:26:01Z); VTID-AUTO-CLOSE 41942161671 was created 00:33:07Z and cancelled. The 16 files of #4679 are inside the lane's paths plus its lane file.
+Findings: non-blocking: the PR's diff against its merge base, origin/main 5381e3e146, is this file only: state and updated in the front matter, and lines appended after line 58. Seat, executor, reviewer_seat, reviewer, paths, claimed_by and depends_on are unchanged. 454e9904 is a two-parent merge of 946b9efb08 and 5381e3e146 whose tree is main plus this file. The lane blob 54d8c350 is 946b9efb08's, and 946b9efb08 adds only the 14-line 17:06Z entry to 5f36d34b. The merge brings 103 files from main: 38 .github/workflows/*.yml (each adds 6 lines; the two read here add the VTID-05513 concurrency block), other plans' .kiro/specs, two docs/programs files and docs/validation/VTID-05513/**. .github/** is a governance path (queue.mjs:86), so the 17:06Z accept does not carry (land-guard.mjs:54). None of the 103 is in protected-gate-files.json or under .kiro/specs/eng-gitlab-m2/.
+Findings: non-blocking: item 10, Tooling/docs (no rule weakened; links resolve). No rule file changes. The links resolve to #4679 (this lane's pr:), #4693 (this PR) and #4697 (merge-bot's pr:). On main, acceptance.md:32 is the Gate 2 heading, 33-37 are its five items and 38 says deploys nothing. red-on-base.txt:1 names bf5e0c12d0 and commands.log:2 names ab0f5ad0b1, both ancestors of 0cb57427. mutate-gitlab-client.sh:173 is the 'error path keeps the query' mutant, and mutation-run.txt:115-116 are its shell error and 'caught'. gitlab-api.mjs:16-18 is the redaction claim. The client and the VTID-05537 evidence are unchanged since 0cb57427. Line 81 holds on merge-bot head 4ba187ca0d, which adds only the 17:07Z accept entry to 363560d8; retries: 0, landOne and both named tests in gitlab-land.test.mjs date from 4dd1e546.
+Findings: non-blocking: CI on 454e9904 was not read here: gh pr view and gh pr checks need GraphQL in this sandbox, and gh api is not an allowed command. The caller's REST read at 17:32:52Z has 13 runs: 12 completed/success and validate in_progress. validate-pr is absent by design (VALIDATOR-CHECK.yml runs on services/gateway/src, dist, openapi and test, and on docs/validation). Red to green, UI and staging proof do not apply to a record-only PR. The land step merges only when land-guard.mjs checks shows every check green, validate included, on the head it merges.
+Findings: non-blocking: independence. The caller kiro-exafy-202611041929-802c heads no entry and is absent from the executing entries (20:37Z and 22:14Z, cff7). It is named as the session that merged #4679 (lines 63 and 65). Its commits on this branch are the review-entry commits 8ef8bf67e7, 5cd6698895 and 946b9efb08, which carry the reviewers' text and sessions, and the update merge 454e9904 (author DraganOffice), which only brings main. None adds record content of its own, so this is not a self-review. As line 64 says, two facts rest only on its comment 6656223388: that it ran land-guard.mjs merge, and that DraganOffice is its gh identity.
+Findings: non-blocking: the _plan gap is still open. collab-claim/eng-gitlab-m2/_plan is 42dd8704 (cff7, 20:19:09Z) while 802c holds the heartbeat (tip 1df671dfb4, 17:44:02Z). collaboration.md §8 and driver.md Resume step 2 have the driver hold _plan, and land-guard.mjs does not check it. It applies to landing #4693 too. It is not a defect of this record.
+Findings: non-blocking: once the lane is done, the open items of lines 76-80 are tracked only in this log, and no lane is named for the token-in-path hardening of gitlab-api.mjs:235-322. The _plan holder should carry them into handoff.md for the Gate 2 "Decisions taken".
+Findings: non-blocking: main moved during this review. #4690 landed as 51c2bead07 at 17:40:30Z, so the PR is one commit behind. Its 24 files (the agentic-delivery prerequisites lane file, docs/validation/VTID-05551/**, scripts/ci/staging-verify/record-oasis.sh and its test, services/gateway/src/orb/developer/domain-atlas.ts and one gateway test) hold no governance path or protected gate file and nothing under .kiro/specs/eng-gitlab-m2/. A clean update to 51c2bead07 therefore keeps this review under land-guard.mjs merge --repo.
+Next: the land step merges under §7b. It first updates the branch to main 51c2bead07 (a clean update keeps this review) and confirms with land-guard.mjs checks that every check is green on that head. After the merge, gitlab-client is done on main, so lanes settings (#4711), merge-bot (#4697) and monitoring (#4710) can land.

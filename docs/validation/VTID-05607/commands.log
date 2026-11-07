@@ -1,0 +1,9 @@
+VTID-05607 local checks (scripts/eng), 2026-11-07, session kiro-exafy-202611071602-6cfa
+
+red on origin/main (new test file, source of origin/main):
+$ node --test scripts/eng/gitlab-settings.test.mjs
+  outputs/red-on-base.txt: 18 pass, 38 fail (every secret write expects a private file; origin/main writes via file:///dev/stdin)
+
+green after the fix (same test file):
+$ node --test scripts/eng/gitlab-settings.test.mjs
+  outputs/green.txt: 56 pass, 0 fail

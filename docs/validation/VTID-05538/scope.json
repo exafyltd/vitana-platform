@@ -1,0 +1,14 @@
+{
+  "vtid": "VTID-05538",
+  "kind": "feature",
+  "paths": [
+    "scripts/eng/gitlab-land.mjs",
+    "scripts/eng/gitlab-land.test.mjs",
+    "infra/gitlab-engineering/host/units/vitana-land.service",
+    "infra/gitlab-engineering/host/units/vitana-land.timer",
+    "docs/validation/VTID-05538/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05538/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

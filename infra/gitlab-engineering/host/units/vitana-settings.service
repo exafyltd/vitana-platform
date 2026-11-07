@@ -1,0 +1,26 @@
+[Unit]
+Description=Correct GitLab to match gitlab-settings.json (the settings sync, one tick)
+After=network-online.target
+
+[Service]
+Type=oneshot
+Nice=10
+CPUQuota=50%
+MemoryMax=512M
+# A tick that hangs is stopped well before the next one (the timer runs it every 10 minutes).
+TimeoutStartSec=480
+# REGION and DOMAIN come from the environment file that milestone 1 wrote on this machine.
+EnvironmentFile=/etc/vitana/env
+# aws is in /usr/local/bin, node in /usr/bin (ops-install.sh). The AWS CLI wants a home directory; the sandbox below leaves only the state directory writable.
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+Environment=HOME=/var/lib/vitana-settings
+StateDirectory=vitana-settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+# The sync writes the token files of the merge bot, the metrics job and its own admin token (and the temporary files next to them): /etc/vitana, nothing else.
+ReadWritePaths=/etc/vitana
+# The unit runs as root because those token files are root only (0600). The admin token is read from /etc/vitana/settings-admin-token by the script itself.
+# flock keeps two ticks from overlapping; a tick that finds the lock busy exits 0 and the next tick tries again.
+ExecStart=/usr/bin/flock -n -E 0 /run/vitana-settings.lock /usr/bin/node /opt/vitana/platform/scripts/eng/gitlab-settings.mjs apply
