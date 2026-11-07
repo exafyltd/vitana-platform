@@ -1,0 +1,10 @@
+{
+  "vtid": "VTID-05611",
+  "kind": "docs",
+  "paths": [
+    "DATABASE_SCHEMA.md",
+    "docs/validation/VTID-05611/**"
+  ],
+  "weakens_tests": [],
+  "red_green_exempt": []
+}
