@@ -6,6 +6,8 @@
 -- Members (ids ...0001..0008):
 --   U1 TA primary          U2 TA                U3 TB             U4 TA primary and TB   U5 service bot (rule 43)
 --   U6 notification actor  U7 TB (no activity)  U8 no tenant at all
+-- Supabase default: every table created in public is granted to the three API roles (RLS then gates rows).
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO anon, authenticated, service_role;
 CREATE TABLE public.tenants (tenant_id uuid PRIMARY KEY, slug text, is_platform boolean NOT NULL DEFAULT false);
 CREATE TABLE public.user_tenants (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(), tenant_id uuid NOT NULL, user_id uuid NOT NULL,
