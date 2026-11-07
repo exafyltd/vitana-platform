@@ -50,9 +50,10 @@ owner-approval form unchanged. The check stays report-only in CI.
 Both lanes have `depends_on: []` and touch different repositories, so they run in parallel.
 
 ## Tests and commands
-- `node --test scripts/ci/pr-gate/__tests__/*.test.mjs` is green in each repository. The new cases are: an owner-approved
+- `node --test scripts/ci/pr-gate/__tests__/*.test.mjs` is green in each repository. The six cases are (the first exists today, five are new): an owner-approved
   record passes (the existing case); a CONVERGED record with a policy approval and a plan hash passes; an ESCALATED record
-  with a policy approval fails; an unknown policy name fails; a record with neither approval fails.
+  with a policy approval fails; an unknown policy name fails; a CONVERGED record with a policy approval but no plan hash returns exactly one problem ('no plan hash'); a record with neither
+  approval fails.
 - Each new case is red on the base revision before the change.
 - After merge, the sparring check passes on `.kiro/specs/mt-guardrails-r2/sparring/verdict.md`, the record VTID-05520
   points to, with no change to that record.

@@ -2,7 +2,7 @@
 
 <!-- lane: policy-approval-record -->
 Repo `exafyltd/vitana-platform`. Code starts only after the VTID is allocated.
-- [ ] T1 Add the five cases of plan § Tests to `scripts/ci/pr-gate/__tests__/lib.test.mjs`. Record the new cases red on
+- [ ] T1 Add the five new cases of plan § Tests (six with the existing one) to `scripts/ci/pr-gate/__tests__/lib.test.mjs`. Record the new cases red on
       `origin/main`.
 - [ ] T2 Change `evaluateSparringRecord` in `scripts/ci/pr-gate/lib.mjs` (plan § Change 1–3). Nothing else.
 - [ ] T3 Run `node --test scripts/ci/pr-gate/__tests__/*.test.mjs`; save the output to `docs/validation/<VTID>/commands.log`.
@@ -27,7 +27,7 @@ Repo `exafyltd/vitana-v1`. The same change as the platform lane, applied to the 
 VTID is allocated.
 - [ ] T0 Before editing, re-confirm on the vitana-v1 base that `lib.mjs:202-209` and `lib.test.mjs:75-78` are as the plan cites;
       if they moved, use the real paths in `scope.json`.
-- [ ] T1 Add the same five cases to `scripts/ci/pr-gate/__tests__/lib.test.mjs`. Record the new cases red on `origin/main`.
+- [ ] T1 Add the same five new cases to `scripts/ci/pr-gate/__tests__/lib.test.mjs`. Record the new cases red on `origin/main`.
 - [ ] T2 Make the same change in `scripts/ci/pr-gate/lib.mjs`.
 - [ ] T3 Run `node --test scripts/ci/pr-gate/__tests__/*.test.mjs` (the vitana-v1 PR-GATE command, `PR-GATE.yml:61`); save
       the output to `docs/validation/<VTID>/commands.log`.
