@@ -11,7 +11,7 @@
 --
 -- Safe to re-run (IF NOT EXISTS). lock_timeout 3s with up to 5 retries on lock_not_available.
 -- Rollback: docs/validation/VTID-05595/rollback-130000-health-home-tenant-column.sql
--- Order: docs/multitenancy/MIGRATION-QUEUE.md (row 37).
+-- Order: docs/multitenancy/MIGRATION-QUEUE.md (row 43).
 
 BEGIN;
 

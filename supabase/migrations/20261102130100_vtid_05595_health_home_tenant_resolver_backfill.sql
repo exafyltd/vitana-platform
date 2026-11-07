@@ -21,7 +21,7 @@
 --
 -- Safe to re-run: the guard passes again, the backfill finds no NULL column left and the snapshot is never replaced.
 -- Rollback: docs/validation/VTID-05595/rollback-130100-health-home-tenant-resolver-backfill.sql
--- Order: docs/multitenancy/MIGRATION-QUEUE.md (row 38), after row 37 and after rows 14-16 (membership-unification).
+-- Order: docs/multitenancy/MIGRATION-QUEUE.md (row 44), after row 43 and after rows 14-16 (membership-unification).
 
 BEGIN;
 

@@ -14,7 +14,7 @@ ROUTE_MOUNT: none. FINAL_URL: n/a. Nothing is applied from the PR; each file is 
 |---|---|
 | H1 column + FK + index | `supabase/migrations/20261102130000_vtid_05595_health_home_tenant_column.sql` |
 | H2 resolver + batched backfill + guard | `supabase/migrations/20261102130100_vtid_05595_health_home_tenant_resolver_backfill.sql` |
-| H3 queue rows 37-38 | `docs/multitenancy/MIGRATION-QUEUE.md` |
+| H3 queue rows 43-44 | `docs/multitenancy/MIGRATION-QUEUE.md` |
 | H4 pgTAP | `services/gateway/test/mt-native-health/health-home-tenant.pgtap.sql` (40 cases) |
 | rollbacks | `rollback-130100-...sql` then `rollback-130000-...sql` |
 | read-only checks | `live-before.sql`, `post-apply-checks.sql`, `rollback-check.sql` |
@@ -48,7 +48,7 @@ post-check asserts every member has a home tenant; the rollback check proves the
 snapshot is kept.
 TEST: `pglite-harness/checks.sh` -> `outputs/read-only-checks-and-rollback-pglite.txt` (25 checks, all true).
 
-AC-6 (H3) `docs/multitenancy/MIGRATION-QUEUE.md` rows 37-38 sit after row 36 and cite rows 14-16 (membership unification),
+AC-6 (H3) `docs/multitenancy/MIGRATION-QUEUE.md` rows 43-44 sit after row 42 and cite rows 14-16 (membership unification),
 the rollback paths and the read-only pre/post-checks; the bare-policy lint still passes (the files add no RLS policy).
 TEST: `outputs/jest-bare-policy-lint.txt` (8 pass); `validateManifest(staging-tests.json)` ok.
 
