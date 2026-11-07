@@ -4,8 +4,10 @@ author: kiro
 author_seat: hotmail
 executor: kiro
 next_actor: kiro
-state: drafted
-updated: 2026-11-07T14:05Z
+state: approved
+updated: 2026-11-07T14:10Z
+sparring_record: .kiro/specs/pr-gate-policy-sparring-record/sparring/verdict.md
+vtids: [VTID-05592, VTID-05593]
 ---
 # Handoff — pr-gate-policy-sparring-record
 
@@ -21,3 +23,6 @@ the tooling fix separately. Nothing else is in scope.
 PR #4740 had commits from two sessions on this lane (Collab handoff: one session per lane), after round 1 had one minor
 finding (R1-F1, the vitana-v1 copy). Re-filed on `kiro/pr-gate-policy-sparring-record/plan-r2` as one clean commit; #4740
 is closed as superseded. The plan now cites the verified vitana-v1 lines (round-1 finding accepted). Scope unchanged.
+
+### 2026-11-07T14:10Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 2 lane(s) got a VTID and are handed to Kiro.

@@ -11,7 +11,8 @@ paths:
   - scripts/ci/pr-gate/lib.mjs
   - scripts/ci/pr-gate/__tests__/lib.test.mjs
 repos: [exafyltd/vitana-v1]
-updated: 2026-11-04T16:45Z
+updated: 2026-11-07T14:10Z
+vtid: VTID-05592
 ---
 # Lane: policy-approval-record-v1 (repo exafyltd/vitana-v1)
 
@@ -21,3 +22,6 @@ The same change as `policy-approval-record`, applied to the vitana-v1 copy of `e
 ## Log
 ### 2026-11-04T16:45Z · kiro-hotmail-202611011452-6d16 · ready
 Lane created with the plan. No VTID yet: CI PLAN-SPAR allocates it on convergence.
+
+### 2026-11-07T14:10Z · ci-plan-spar · ready (VTID allocated)
+VTID-05592 allocated after policy approval (converged-auto-v1).

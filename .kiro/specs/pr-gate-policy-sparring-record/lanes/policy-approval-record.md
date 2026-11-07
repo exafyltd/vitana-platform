@@ -11,7 +11,8 @@ paths:
   - scripts/ci/pr-gate/lib.mjs
   - scripts/ci/pr-gate/__tests__/lib.test.mjs
 repos: [exafyltd/vitana-platform]
-updated: 2026-11-04T16:45Z
+updated: 2026-11-07T14:10Z
+vtid: VTID-05593
 ---
 # Lane: policy-approval-record (repo exafyltd/vitana-platform)
 
@@ -20,3 +21,6 @@ Adds the policy-approval form to `evaluateSparringRecord`, and its tests. Tasks 
 ## Log
 ### 2026-11-04T16:45Z · kiro-hotmail-202611011452-6d16 · ready
 Lane created with the plan. No VTID yet: CI PLAN-SPAR allocates it on convergence.
+
+### 2026-11-07T14:10Z · ci-plan-spar · ready (VTID allocated)
+VTID-05593 allocated after policy approval (converged-auto-v1).
