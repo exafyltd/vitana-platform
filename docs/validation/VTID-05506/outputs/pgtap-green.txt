@@ -1,0 +1,69 @@
+# loaded /projects/sandbox/wt-erp-mon/supabase/tests/vtid_05150_fixture.sql
+# loaded /projects/sandbox/wt-erp-mon/supabase/migrations/20261014000100_vtid_05149_tenants_default_platform_flags.sql
+# loaded /projects/sandbox/wt-erp-mon/supabase/tests/vtid_05150_fixture_after_a.sql
+# loaded /projects/sandbox/wt-erp-mon/supabase/migrations/20261014000300_vtid_05149_ci_tenant_isolation_health.sql
+# loaded /projects/sandbox/wt-erp-mon/supabase/migrations/20261014000400_vtid_05150_tenant_brand_pack.sql
+# loaded /projects/sandbox/wt-erp-mon/supabase/migrations/20261014000500_vtid_05150_provision_tenant.sql
+# loaded /projects/sandbox/wt-erp-mon/supabase/migrations/20261102141000_vtid_05506_mt_provision_erp_request.sql
+# loaded /projects/sandbox/wt-erp-mon/supabase/migrations/20261102141100_vtid_05506_mt_isolation_health_by_tenant.sql
+1..60
+ok 1 - 01 first provision sets erp.bootstrap_requested = true
+ok 2 - 02 feature_flags is the jev flag (Alkalma pattern) plus exactly the erp request
+ok 3 - 03 the returned jsonb keeps its shape (no erp key added)
+ok 4 - 04 created:true, slug echoed, new invitation
+ok 5 - 05 brand-pack settings are written as before
+ok 6 - 06 the Vitana bot is in the system group as before
+ok 7 - 07 the instance data is ensured as before
+ok 8 - 08 a re-run is created:false and reuses the invitation
+ok 9 - 09 a re-run leaves feature_flags identical (the flag is true exactly once)
+ok 10 - 10 the guard makes a re-run a no-op (updated_at / updated_by untouched)
+ok 11 - 11 still one settings row
+ok 12 - 12 (setup) the pre-migration shape has no erp key
+ok 13 - 13 re-running an already provisioned tenant works
+ok 14 - 14 the re-run of a pre-migration tenant records the flag (UPDATE after the ON CONFLICT DO NOTHING insert)
+ok 15 - 15 the stored jev flag is kept whole
+ok 16 - 16 a false flag becomes true and other erp subkeys are kept
+ok 17 - 17 a string erp value is repaired to an object holding the flag
+ok 18 - 18 a JSON-null erp value is repaired
+ok 19 - 19 an array erp value is repaired
+ok 20 - 20 a hand-made slug is still SLUG_TAKEN
+ok 21 - 21 a reserved slug is still refused
+ok 22 - 22 only the provisioned tenant carries an erp key (legacy and hand-made tenants untouched)
+ok 23 - 23 the hand-made tenant keeps empty feature_flags
+ok 24 - 24 alkalma feature_flags untouched
+ok 25 - 25 provision_tenant is SECURITY DEFINER with search_path = public
+ok 26 - 26 provision_tenant: service_role only
+ok 27 - 27 p_allow_governed = false: the stored erp flag is intact
+ok 28 - 28 p_allow_governed = false: the stored jev flag is intact
+ok 29 - 29 an ordinary key still merges for a tenant admin
+ok 30 - 30 nothing else changed in feature_flags
+ok 31 - 31 the RETURNING row shows the intact erp flag
+ok 32 - 32 p_allow_governed = true (exafy_admin) can replace erp
+ok 33 - 33 p_allow_governed = true can still replace jev
+ok 34 - 34 the insert path of a non-governed caller drops erp and jev
+ok 35 - 35 the merge function stays SECURITY INVOKER with its pinned search_path
+ok 36 - 36 the merge function: service_role only
+ok 37 - 37 returns {generated_at, tenants[], totals{}, scan_errors[]}
+ok 38 - 38 no scan errors
+ok 39 - 39 every registered tenant is listed
+ok 40 - 40 each registered row carries its tenant_id and slug
+ok 41 - 41 a clean tenant is listed with zeros
+ok 42 - 42 no count column is null in any row
+ok 43 - 43 for every column the per-tenant rows sum to ci_tenant_isolation_health()
+ok 44 - 44 totals equals ci_tenant_isolation_health() for every column
+ok 45 - 45 (setup) the seeded drift is non-trivial in every column
+ok 46 - 46 a dangling tenant id gets its own row with its foreign rows (2 chat_messages + 1 user_notifications)
+ok 47 - 47 a dangling tenant row has is_registered = false and slug null
+ok 48 - 48 a dangling tenant id from user_tenants drift is attributed to it
+ok 49 - 49 a dangling tenant id from memberships drift is attributed to it
+ok 50 - 50 a membership without user_tenants is attributed to its tenant
+ok 51 - 51 a user_tenants row without membership is attributed to its tenant
+ok 52 - 52 rows with no tenant (null tenant_id, zero/multi primary users, auth users without membership) sit in the one tenant_id null row
+ok 53 - 53 exactly one tenant_id null row
+ok 54 - 54 default and platform flags are attributed to their own tenants
+ok 55 - 55 ci_tenant_isolation_health_by_tenant(): service_role only
+ok 56 - 56 ci_tenant_isolation_health_by_tenant() is STABLE SECURITY DEFINER, search_path public, pg_catalog, returns json
+ok 57 - 57 ci_tenant_isolation_health() body is unchanged (md5 of 20261014000300)
+ok 58 - 58 ci_tenant_isolation_health() grants unchanged
+ok 59 - 59 the lane adds no policy
+ok 60 - 60 exactly one by-tenant function (no overload)

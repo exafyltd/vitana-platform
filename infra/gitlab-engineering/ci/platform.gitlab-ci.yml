@@ -1,0 +1,64 @@
+# Central CI config for exafyltd/vitana-platform (plan eng-gitlab-m2 section 3.3). Lives in the GitLab project vitana/ci-config; the project
+# points at it (ci_config_path), so an application branch cannot change the pipeline that checks it. The settings sync
+# (scripts/eng/gitlab-settings.mjs) copies this file there; edit it here, never in GitLab.
+# The jobs are the ones of milestone 1 (host/ci-platform.yml): pnpm 9, Node 20, 4 Jest shards. What milestone 2 adds is in workflow and default:
+# merge-request pipelines (the mirrored project never gets a merge request, so for it only main and manual runs happen, as before),
+# one retry for a job that lost its machine (spot interruption) or got stuck, and jobs that a newer pipeline may cancel.
+# No deploy job, no secret, no variable that holds a credential, nothing that needs a licence.
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_PIPELINE_SOURCE =~ /^(web|api|schedule)$/
+
+default:
+  tags: [vitana-eng]
+  image: public.ecr.aws/docker/library/node:20-bookworm
+  interruptible: true
+  retry:
+    max: 1
+    when:
+      - runner_system_failure
+      - stuck_or_timeout_failure
+
+stages: [check]
+
+variables:
+  NODE_ENV: test
+  CI: "true"
+
+.gateway:
+  timeout: 40m
+  cache:
+    key:
+      files: [pnpm-lock.yaml]
+    paths: [.pnpm-store]
+  before_script:
+    # node:20-bookworm has no jq; GitHub's ubuntu-latest has it and gateway tests shell out to it.
+    - apt-get update -qq && apt-get install -y -qq jq
+    - npm install -g pnpm@9.0.0
+    - pnpm config set store-dir "$CI_PROJECT_DIR/.pnpm-store"
+    - cd services/gateway
+
+# Same install as GitHub's gateway type check (CICDL-GATEWAY-CI.yml: `npm ci` in services/gateway, then `pnpm run typecheck`).
+# With `pnpm install` here tsc fails on two `declare module 'express-serve-static-core'` augmentations (TS2664): pnpm's strict
+# node_modules layout hides that transitive type package. Checked on the base commit: npm ci then pnpm run typecheck = 0 errors.
+typecheck:
+  extends: .gateway
+  stage: check
+  variables:
+    NODE_OPTIONS: "--max-old-space-size=6144"
+  script:
+    - npm ci --no-audit --no-fund
+    - pnpm run typecheck
+
+gateway-jest:
+  extends: .gateway
+  stage: check
+  parallel: 4
+  variables:
+    NODE_OPTIONS: "--max-old-space-size=3072"
+  script:
+    # Same install as TEST-SUITE.yml (pnpm install --frozen-lockfile in services/gateway).
+    - pnpm install --frozen-lockfile
+    - npx jest --silent --maxWorkers=2 --shard=$CI_NODE_INDEX/$CI_NODE_TOTAL

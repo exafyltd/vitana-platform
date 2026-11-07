@@ -1,0 +1,682 @@
+# the tree of origin/main (no bundle) with an EMPTY file at each of the 11 paths of the bundle, and the final test file: every case must fail by assertion, not by a missing file
+# $ node --test scripts/eng/gitlab-m1-structure.test.mjs
+TAP version 13
+# Subtest: both machines: no public IP, IMDSv2 required with hop limit 1, encrypted root volume with the engineering key
+not ok 1 - both machines: no public IP, IMDSv2 required with hop limit 1, encrypted root volume with the engineering key
+  ---
+  duration_ms: 1.589975
+  type: 'test'
+  location: '<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:27:28'
+  failureType: 'testCodeFailure'
+  error: 'resource aws_instance.gitlab not found in main.tf'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: ~
+  operator: '=='
+  stack: |-
+    block (file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:33:10)
+    file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:51:15
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:27:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.start (node:internal/test_runner/test:944:17)
+    startSubtestAfterBootstrap (node:internal/test_runner/harness:296:17)
+  ...
+# Subtest: machine sizes are variables with the documented default
+not ok 2 - machine sizes are variables with the documented default
+  ---
+  duration_ms: 0.331771
+  type: 'test'
+  location: '<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:27:28'
+  failureType: 'testCodeFailure'
+  error: 'resource aws_instance.gitlab not found in main.tf'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: ~
+  operator: '=='
+  stack: |-
+    block (file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:33:10)
+    file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:66:18
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:27:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+# Subtest: volumes: 200 GB gp3 for GitLab, 100 GB gp3 for the runner
+not ok 3 - volumes: 200 GB gp3 for GitLab, 100 GB gp3 for the runner
+  ---
+  duration_ms: 0.205021
+  type: 'test'
+  location: '<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:27:28'
+  failureType: 'testCodeFailure'
+  error: 'resource aws_instance.gitlab not found in main.tf'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: ~
+  operator: '=='
+  stack: |-
+    block (file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:33:10)
+    file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:73:57
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:27:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: Terraform state: S3 backend with use_lockfile and encryption, supplied by setup.sh
+not ok 4 - Terraform state: S3 backend with use_lockfile and encryption, supplied by setup.sh
+  ---
+  duration_ms: 0.457874
+  type: 'test'
+  location: '<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:27:28'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /backend\s+"s3"\s*\{\s*\}/. Input:
+    
+    ''
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: ''
+  operator: 'match'
+  stack: |-
+    file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:81:10
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:27:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: backup bucket: KMS encryption, versioning, public access blocked, 30-day expiry, TLS only
+not ok 5 - backup bucket: KMS encryption, versioning, public access blocked, 30-day expiry, TLS only
+  ---
+  duration_ms: 0.275969
+  type: 'test'
+  location: '<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:27:28'
+  failureType: 'testCodeFailure'
+  error: 'resource aws_s3_bucket_server_side_encryption_configuration.backups not found in main.tf'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: ~
+  operator: '=='
+  stack: |-
+    block (file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:33:10)
+    file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:89:15
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:27:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: Secrets Manager: the three secrets use the engineering key and the documented names
+not ok 6 - Secrets Manager: the three secrets use the engineering key and the documented names
+  ---
+  duration_ms: 1.184121
+  type: 'test'
+  location: '<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:27:28'
+  failureType: 'testCodeFailure'
+  error: |-
+    no other secret
+    + actual - expected
+    
+    + []
+    - [
+    -   'github_token',
+    -   'root_password',
+    -   'runner_token'
+    - ]
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    0: 'github_token'
+    1: 'root_password'
+    2: 'runner_token'
+  actual:
+  operator: 'deepStrictEqual'
+  stack: |-
+    file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:111:10
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:27:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: GitLab accepts only the load balancer; the runner accepts nothing; the load balancer accepts 443 only
+not ok 7 - GitLab accepts only the load balancer; the runner accepts nothing; the load balancer accepts 443 only
+  ---
+  duration_ms: 0.671349
+  type: 'test'
+  location: '<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:27:28'
+  failureType: 'testCodeFailure'
+  error: |-
+    ingress exists for the load balancer and GitLab only
+    + actual - expected
+    
+    + []
+    - [
+    -   'alb',
+    -   'gitlab'
+    - ]
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    0: 'alb'
+    1: 'gitlab'
+  actual:
+  operator: 'deepStrictEqual'
+  stack: |-
+    file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:132:10
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:27:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: IAM: no wildcard action or resource (except the TLS-only deny and the backup bucket objects); policies are data documents only
+not ok 8 - IAM: no wildcard action or resource (except the TLS-only deny and the backup bucket objects); policies are data documents only
+  ---
+  duration_ms: 0.380701
+  type: 'test'
+  location: '<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:27:28'
+  failureType: 'testCodeFailure'
+  error: 'the policy documents of the bundle, found 0'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: false
+  operator: '=='
+  stack: |-
+    file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:143:10
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:27:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: the runner role may read only its own registration token and use the key to decrypt it
+not ok 9 - the runner role may read only its own registration token and use the key to decrypt it
+  ---
+  duration_ms: 0.495569
+  type: 'test'
+  location: '<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:27:28'
+  failureType: 'testCodeFailure'
+  error: 'data aws_iam_policy_document.runner not found in main.tf'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: ~
+  operator: '=='
+  stack: |-
+    block (file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:33:10)
+    file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:168:13
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:27:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: the GitLab role: backups bucket, writes only the two generated secrets, reads only the mirror token
+not ok 10 - the GitLab role: backups bucket, writes only the two generated secrets, reads only the mirror token
+  ---
+  duration_ms: 0.442916
+  type: 'test'
+  location: '<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:27:28'
+  failureType: 'testCodeFailure'
+  error: 'data aws_iam_policy_document.gitlab not found in main.tf'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: ~
+  operator: '=='
+  stack: |-
+    block (file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:33:10)
+    file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:182:13
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:27:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: load balancer: HTTPS 443 with the TLS 1.3 policy and no port-80 listener; health check on /users/sign_in
+not ok 11 - load balancer: HTTPS 443 with the TLS 1.3 policy and no port-80 listener; health check on /users/sign_in
+  ---
+  duration_ms: 0.384029
+  type: 'test'
+  location: '<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:27:28'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly deep-equal:
+    + actual - expected
+    
+    + []
+    - [
+    -   'https'
+    - ]
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    0: 'https'
+  actual:
+  operator: 'deepStrictEqual'
+  stack: |-
+    file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:189:10
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:27:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: network: own VPC 10.20.0.0/16 in two availability zones, one NAT gateway, an S3 endpoint, no peering
+not ok 12 - network: own VPC 10.20.0.0/16 in two availability zones, one NAT gateway, an S3 endpoint, no peering
+  ---
+  duration_ms: 1.630696
+  type: 'test'
+  location: '<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:27:28'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /vpc_cidr\s*=\s*"10\.20\.0\.0\/16"/. Input:
+    
+    ''
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: ''
+  operator: 'match'
+  stack: |-
+    file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:201:10
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:27:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: every host file the machines are built from exists
+not ok 13 - every host file the machines are built from exists
+  ---
+  duration_ms: 0.356251
+  type: 'test'
+  location: '<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:27:28'
+  failureType: 'testCodeFailure'
+  error: 'host_files list not found in main.tf'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: ~
+  operator: '=='
+  stack: |-
+    file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:211:10
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:27:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: every shell script passes bash -n
+not ok 14 - every shell script passes bash -n
+  ---
+  duration_ms: 0.30529
+  type: 'test'
+  location: '<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:27:28'
+  failureType: 'testCodeFailure'
+  error: 'setup.sh: a bash script (an empty file would pass bash -n)'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: ''
+  operator: 'match'
+  stack: |-
+    file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:221:12
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:27:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: no script turns on xtrace (it would write secrets into logs)
+not ok 15 - no script turns on xtrace (it would write secrets into logs)
+  ---
+  duration_ms: 0.233526
+  type: 'test'
+  location: '<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:27:28'
+  failureType: 'testCodeFailure'
+  error: 'setup.sh: a bash script (an empty file has no xtrace either)'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: ''
+  operator: 'match'
+  stack: |-
+    file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:230:12
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:27:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: the Cloudflare token is typed hidden, handed to curl on stdin, and used nowhere else
+not ok 16 - the Cloudflare token is typed hidden, handed to curl on stdin, and used nowhere else
+  ---
+  duration_ms: 0.285013
+  type: 'test'
+  location: '<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:27:28'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /read -rsp "[^"$`]*" CF_TOKEN/. Input:
+    
+    ''
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: ''
+  operator: 'match'
+  stack: |-
+    file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:239:10
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:27:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: the GitHub mirror token is typed hidden and goes to Secrets Manager only
+not ok 17 - the GitHub mirror token is typed hidden and goes to Secrets Manager only
+  ---
+  duration_ms: 0.240091
+  type: 'test'
+  location: '<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:27:28'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /read -rsp "[^"$`]*" t; echo/. Input:
+    
+    ''
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: ''
+  operator: 'match'
+  stack: |-
+    file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:254:10
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:27:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: setup.sh exports AWS_REGION as well as AWS_DEFAULT_REGION (CloudShell sets AWS_REGION and the CLI prefers it)
+not ok 18 - setup.sh exports AWS_REGION as well as AWS_DEFAULT_REGION (CloudShell sets AWS_REGION and the CLI prefers it)
+  ---
+  duration_ms: 0.227791
+  type: 'test'
+  location: '<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:27:28'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /^export AWS_PAGER="" AWS_REGION=eu-central-1 AWS_DEFAULT_REGION=eu-central-1$/m. Input:
+    
+    ''
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: ''
+  operator: 'match'
+  stack: |-
+    file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:270:10
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:27:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: files that hold a secret on a machine are created with umask 077; the mirror scrubs credentials from git output
+not ok 19 - files that hold a secret on a machine are created with umask 077; the mirror scrubs credentials from git output
+  ---
+  duration_ms: 0.168701
+  type: 'test'
+  location: '<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:27:28'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /\(umask 077; echo "\$PAT" > "\$PAT_FILE"\)/. Input:
+    
+    ''
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: ''
+  operator: 'match'
+  stack: |-
+    file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:275:10
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:27:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: instance settings: sign-up off, two-factor required, usage ping off, private by default
+not ok 20 - instance settings: sign-up off, two-factor required, usage ping off, private by default
+  ---
+  duration_ms: 0.127038
+  type: 'test'
+  location: '<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:27:28'
+  failureType: 'testCodeFailure'
+  error: 'signup_enabled=false'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: false
+  operator: '=='
+  stack: |-
+    file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:288:12
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:27:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: the nightly backup runs at 02:15 UTC, encrypted copy to the backup bucket
+not ok 21 - the nightly backup runs at 02:15 UTC, encrypted copy to the backup bucket
+  ---
+  duration_ms: 0.122164
+  type: 'test'
+  location: '<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:27:28'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /'15 2 \* \* \* root \/opt\/vitana\/backup\.sh/. Input:
+    
+    ''
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: ''
+  operator: 'match'
+  stack: |-
+    file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:298:10
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:27:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: central CI: only main and manual, API or schedule runs; stage check only
+not ok 22 - central CI: only main and manual, API or schedule runs; stage check only
+  ---
+  duration_ms: 0.293444
+  type: 'test'
+  location: '<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:27:28'
+  failureType: 'testCodeFailure'
+  error: 'platform: workflow rules'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  operator: '=='
+  stack: |-
+    file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:312:12
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:27:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: central CI: every job runs on the vitana-eng runner; no AWS credential, no deploy
+not ok 23 - central CI: every job runs on the vitana-eng runner; no AWS credential, no deploy
+  ---
+  duration_ms: 0.487535
+  type: 'test'
+  location: '<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:27:28'
+  failureType: 'testCodeFailure'
+  error: 'platform: default tag'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: ''
+  operator: 'match'
+  stack: |-
+    file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:324:12
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:27:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: central CI platform: gateway type check and four Jest shards with pnpm 9.0.0 (as CICDL-GATEWAY-CI and TEST-SUITE)
+not ok 24 - central CI platform: gateway type check and four Jest shards with pnpm 9.0.0 (as CICDL-GATEWAY-CI and TEST-SUITE)
+  ---
+  duration_ms: 0.239287
+  type: 'test'
+  location: '<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:27:28'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /npm install -g pnpm@9\.0\.0/. Input:
+    
+    ''
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: ''
+  operator: 'match'
+  stack: |-
+    file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:346:10
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:27:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: central CI vitana-v1: npm test and npm run build gate the pipeline; lint is reported only
+not ok 25 - central CI vitana-v1: npm test and npm run build gate the pipeline; lint is reported only
+  ---
+  duration_ms: 0.211729
+  type: 'test'
+  location: '<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:27:28'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /npm ci --no-audit --no-fund --prefer-offline/. Input:
+    
+    ''
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: ''
+  operator: 'match'
+  stack: |-
+    file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:365:10
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:27:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: RUNBOOK section 6 embeds the platform central CI file exactly
+not ok 26 - RUNBOOK section 6 embeds the platform central CI file exactly
+  ---
+  duration_ms: 0.183942
+  type: 'test'
+  location: '<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:27:28'
+  failureType: 'testCodeFailure'
+  error: 'the yaml block of step 0'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: ~
+  operator: '=='
+  stack: |-
+    file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:375:10
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-m1-structure.test.mjs:27:49)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+1..26
+# tests 26
+# suites 0
+# pass 0
+# fail 26
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 76.328792

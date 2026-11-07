@@ -1,0 +1,40 @@
+# VTID-05544: the gateway type check with the two installs (plan eng-gitlab-m1 section 5; premises P6 and P10)
+# Where: a throwaway checkout of exafyltd/vitana-platform at 4066f563e7 (the plan's base ref), directory services/gateway, no local changes.
+# Tools: pnpm 9.0.0 (as host/ci-platform.yml installs it) and node v20.20.2 (GitHub's TEST-SUITE.yml:65 and CICDL-GATEWAY-CI.yml:25 use node 20.x; the central CI image is node:20-bookworm).
+# Reading: A is what the file that ran does in the type check job (pnpm install); B is what GitHub's CICDL-GATEWAY-CI.yml does and what the corrected job does.
+
+node v20.20.2, pnpm 9.0.0, npm 11.4.2
+checkout: 4066f563e7232237f77c44469c77924b94d1e098
+
+##### A. pnpm install --frozen-lockfile, then pnpm run typecheck   (what the file that ran does in both jobs)
+Lockfile is up to date, resolution step is skipped
+Packages: +791
+Progress: resolved 791, reused 790, downloaded 0, added 791, done
+Done in 4.4s
+$ pnpm run typecheck
+> @vitana/gateway@1.0.1 typecheck /projects/sandbox/tools/gw-tc/services/gateway
+> tsc --noEmit
+src/middleware/server-timing.ts(36,16): error TS2664: Invalid module name in augmentation, module 'express-serve-static-core' cannot be found.
+src/orb/live/latency-tracker.ts(236,16): error TS2664: Invalid module name in augmentation, module 'express-serve-static-core' cannot be found.
+ ELIFECYCLE  Command failed with exit code 2.
+real	0m57.437s
+exit=2
+
+##### B. npm ci --no-audit --no-fund, then pnpm run typecheck   (what GitHub's CICDL-GATEWAY-CI.yml does, and the corrected typecheck job)
+npm warn EBADENGINE Unsupported engine {
+npm warn EBADENGINE   package: 'sanitize-html@2.17.7',
+npm warn EBADENGINE   required: { node: '>=22.12.0' },
+npm warn EBADENGINE   current: { node: 'v20.20.2', npm: '11.4.2' }
+npm warn EBADENGINE }
+$ pnpm run typecheck
+> @vitana/gateway@1.0.1 typecheck /projects/sandbox/tools/gw-tc/services/gateway
+> tsc --noEmit
+real	0m57.928s
+exit=0
+
+# Note: npm prints an EBADENGINE warning for sanitize-html@2.17.7 (wants node >=22.12) under node 20. It is a warning, not an error, and GitHub's own
+# gateway workflows run the same node 20.x, so the GitLab job sees what GitHub's job sees. Jest on GitLab is where a real difference would show.
+
+# The same two commands were first run with node v22.23.4 and gave the same result:
+#   A: src/middleware/server-timing.ts(36,16) and src/orb/live/latency-tracker.ts(236,16): error TS2664, exit 2 (44 s)
+#   B: no output from tsc, exit 0 (45 s)

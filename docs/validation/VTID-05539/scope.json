@@ -1,0 +1,17 @@
+{
+  "vtid": "VTID-05539",
+  "kind": "infra",
+  "paths": [
+    "infra/gitlab-engineering/terraform/monitoring.tf",
+    "infra/gitlab-engineering/host/ops.d/20-cwagent.sh",
+    "infra/gitlab-engineering/host/units/vitana-ci-metrics.service",
+    "infra/gitlab-engineering/host/units/vitana-ci-metrics.timer",
+    "scripts/eng/ci-metrics.mjs",
+    "scripts/eng/ci-metrics.test.mjs",
+    "scripts/eng/monitoring-structure.test.mjs",
+    "docs/validation/VTID-05539/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05539/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

@@ -1,0 +1,439 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in <red-base tree>/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in <red-base tree>/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in <red-base tree>/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in <red-base tree>/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in <red-base tree>/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+FAIL test/gitlab-events/dedupe.test.ts
+  ● Test suite failed to run
+
+    Cannot find module '../../src/services/gitlab-events/dedupe' from 'test/gitlab-events/dedupe.test.ts'
+
+       8 |  */
+       9 |
+    > 10 | import { DEDUPE_MAX_IDS, DEDUPE_TTL_MS, DeliveryDedupe } from '../../src/services/gitlab-events/dedupe';
+         | ^
+      11 |
+      12 | function deferred<T>() {
+      13 |   let resolve!: (v: T) => void;
+
+      at Resolver._throwModNotFoundError (node_modules/jest-resolve/build/resolver.js:427:11)
+      at Object.<anonymous> (test/gitlab-events/dedupe.test.ts:10:1)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+FAIL test/gitlab-events/mapper.test.ts
+  ● Test suite failed to run
+
+    Cannot find module '../../src/services/gitlab-events/mapper' from 'test/gitlab-events/mapper.test.ts'
+
+      17 | import * as fs from 'fs';
+      18 | import * as path from 'path';
+    > 19 | import { GITLAB_OASIS_TOPICS, GITLAB_EVENT_SOURCE, firstVtid, mapGitlabEvent } from '../../src/services/gitlab-events/mapper';
+         | ^
+      20 | import { EVENT_MAPPING_RULES, mapEventToTransition } from '../../src/services/autopilot-event-mapper';
+      21 | import type { AutopilotState } from '../../src/services/autopilot-controller';
+      22 |
+
+      at Resolver._throwModNotFoundError (node_modules/jest-resolve/build/resolver.js:427:11)
+      at Object.<anonymous> (test/gitlab-events/mapper.test.ts:19:1)
+
+FAIL test/gitlab-events/oasis-write.test.ts
+  ● Test suite failed to run
+
+    Cannot find module '../../src/routes/internal-gitlab-webhook' from 'test/gitlab-events/oasis-write.test.ts'
+
+      10 | import express from 'express';
+      11 | import request from 'supertest';
+    > 12 | import {
+         | ^
+      13 |   GITLAB_WEBHOOK_BODY_LIMIT,
+      14 |   createGitlabWebhookRouter,
+      15 |   gitlabWebhookBodyErrors,
+
+      at Resolver._throwModNotFoundError (node_modules/jest-resolve/build/resolver.js:427:11)
+      at Object.<anonymous> (test/gitlab-events/oasis-write.test.ts:12:1)
+
+FAIL test/routes/internal-gitlab-webhook.test.ts
+  ● Test suite failed to run
+
+    Cannot find module '../../src/routes/internal-gitlab-webhook' from 'test/routes/internal-gitlab-webhook.test.ts'
+
+      27 |
+      28 | import { emitOasisEvent } from '../../src/services/oasis-event-service';
+    > 29 | import {
+         | ^
+      30 |   GITLAB_WEBHOOK_BODY_LIMIT,
+      31 |   createGitlabWebhookRouter,
+      32 |   gitlabWebhookBodyErrors,
+
+      at Resolver._throwModNotFoundError (node_modules/jest-resolve/build/resolver.js:427:11)
+      at Object.<anonymous> (test/routes/internal-gitlab-webhook.test.ts:29:1)
+
+FAIL test/gitlab-events/staging-wiring.test.ts
+  W3 — AWS-STAGE-DEPLOY-GATEWAY.yml wires the key only when the secret exists
+    ✕ the workflow parses and the step resolves the staging secret by name, tolerating its absence (31 ms)
+    ✕ wires a secret reference into connected-apps.json, never a plain value, before the task definition is built (7 ms)
+    ✕ secret absent: the step succeeds, says so, and wires nothing (3 ms)
+    ✕ lookup denied: the step succeeds with a warning and wires nothing (4 ms)
+    ✕ secret present: the step adds exactly one secret reference and keeps everything else (4 ms)
+    ✓ sibling sweep: AWS-PROD-DEPLOY-GATEWAY.yml is intentionally not wired in this milestone (1 ms)
+  W4 — scripts/aws/setup-gitlab-webhook-secret.sh
+    ✕ passes bash -n (9 ms)
+    ✕ dry run by default: reads only, writes nothing, never reads a secret value (4 ms)
+    ✕ --apply, target missing: creates the staging secret from the engineering value, through a file, as the workload account (4 ms)
+    ✕ the engineering session credentials reach the CLI only through its environment, never an argument list (4 ms)
+    ✕ --apply, target holds another value: updates it with put-secret-value (4 ms)
+    ✕ --apply, target already holds the same value: writes nothing (4 ms)
+    ✕ refuses outside the workload account 472838866351, before any Secrets Manager call (4 ms)
+    ✕ refuses a source value that is not whsec_<base64>, and an empty one, writing nothing (4 ms)
+    ✕ refuses when the source secret does not exist yet, writing nothing (3 ms)
+    ✕ refuses when the engineering account cannot be found or assumed (5 ms)
+    ✕ --source-account skips the Organizations lookup and must be another 12-digit account (3 ms)
+    ✕ rejects an unknown argument (there is no production mode) before any AWS call (3 ms)
+
+  ● W3 — AWS-STAGE-DEPLOY-GATEWAY.yml wires the key only when the secret exists › the workflow parses and the step resolves the staging secret by name, tolerating its absence
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 1
+    Received length: 0
+    Received array:  []
+
+      108 |   const steps = Object.values(doc.jobs).flatMap((j) => j.steps || []);
+      109 |   const found = steps.filter((s) => s.name === STEP_NAME);
+    > 110 |   expect(found).toHaveLength(1);
+          |                 ^
+      111 |   return found[0];
+      112 | }
+      113 |
+
+      at parsedStep (test/gitlab-events/staging-wiring.test.ts:110:17)
+      at Object.<anonymous> (test/gitlab-events/staging-wiring.test.ts:118:18)
+
+  ● W3 — AWS-STAGE-DEPLOY-GATEWAY.yml wires the key only when the secret exists › wires a secret reference into connected-apps.json, never a plain value, before the task definition is built
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 1
+    Received length: 0
+    Received array:  []
+
+      108 |   const steps = Object.values(doc.jobs).flatMap((j) => j.steps || []);
+      109 |   const found = steps.filter((s) => s.name === STEP_NAME);
+    > 110 |   expect(found).toHaveLength(1);
+          |                 ^
+      111 |   return found[0];
+      112 | }
+      113 |
+
+      at parsedStep (test/gitlab-events/staging-wiring.test.ts:110:17)
+      at Object.<anonymous> (test/gitlab-events/staging-wiring.test.ts:127:18)
+
+  ● W3 — AWS-STAGE-DEPLOY-GATEWAY.yml wires the key only when the secret exists › secret absent: the step succeeds, says so, and wires nothing
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 1
+    Received length: 0
+    Received array:  []
+
+      108 |   const steps = Object.values(doc.jobs).flatMap((j) => j.steps || []);
+      109 |   const found = steps.filter((s) => s.name === STEP_NAME);
+    > 110 |   expect(found).toHaveLength(1);
+          |                 ^
+      111 |   return found[0];
+      112 | }
+      113 |
+
+      at parsedStep (test/gitlab-events/staging-wiring.test.ts:110:17)
+      at runStep (test/gitlab-events/staging-wiring.test.ts:152:40)
+      at Object.<anonymous> (test/gitlab-events/staging-wiring.test.ts:161:15)
+
+  ● W3 — AWS-STAGE-DEPLOY-GATEWAY.yml wires the key only when the secret exists › lookup denied: the step succeeds with a warning and wires nothing
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 1
+    Received length: 0
+    Received array:  []
+
+      108 |   const steps = Object.values(doc.jobs).flatMap((j) => j.steps || []);
+      109 |   const found = steps.filter((s) => s.name === STEP_NAME);
+    > 110 |   expect(found).toHaveLength(1);
+          |                 ^
+      111 |   return found[0];
+      112 | }
+      113 |
+
+      at parsedStep (test/gitlab-events/staging-wiring.test.ts:110:17)
+      at runStep (test/gitlab-events/staging-wiring.test.ts:152:40)
+      at Object.<anonymous> (test/gitlab-events/staging-wiring.test.ts:168:15)
+
+  ● W3 — AWS-STAGE-DEPLOY-GATEWAY.yml wires the key only when the secret exists › secret present: the step adds exactly one secret reference and keeps everything else
+
+    expect(received).toHaveLength(expected)
+
+    Expected length: 1
+    Received length: 0
+    Received array:  []
+
+      108 |   const steps = Object.values(doc.jobs).flatMap((j) => j.steps || []);
+      109 |   const found = steps.filter((s) => s.name === STEP_NAME);
+    > 110 |   expect(found).toHaveLength(1);
+          |                 ^
+      111 |   return found[0];
+      112 | }
+      113 |
+
+      at parsedStep (test/gitlab-events/staging-wiring.test.ts:110:17)
+      at runStep (test/gitlab-events/staging-wiring.test.ts:152:40)
+      at Object.<anonymous> (test/gitlab-events/staging-wiring.test.ts:175:15)
+
+  ● W4 — scripts/aws/setup-gitlab-webhook-secret.sh › passes bash -n
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 0
+    Received: 127
+
+      192 |   it('passes bash -n', () => {
+      193 |     const r = spawnSync('bash', ['-n', SCRIPT], { encoding: 'utf8' });
+    > 194 |     expect(r.status).toBe(0);
+          |                      ^
+      195 |   });
+      196 |
+      197 |   it('dry run by default: reads only, writes nothing, never reads a secret value', () => {
+
+      at Object.<anonymous> (test/gitlab-events/staging-wiring.test.ts:194:22)
+
+  ● W4 — scripts/aws/setup-gitlab-webhook-secret.sh › dry run by default: reads only, writes nothing, never reads a secret value
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 0
+    Received: 127
+
+      197 |   it('dry run by default: reads only, writes nothing, never reads a secret value', () => {
+      198 |     const r = runScript([]);
+    > 199 |     expect(r.status).toBe(0);
+          |                      ^
+      200 |     expect(r.out).toMatch(/dry run/i);
+      201 |     expect(r.out).toContain(TARGET);
+      202 |     expect(r.calls.some((c) => c.includes('sts get-caller-identity'))).toBe(true);
+
+      at Object.<anonymous> (test/gitlab-events/staging-wiring.test.ts:199:22)
+
+  ● W4 — scripts/aws/setup-gitlab-webhook-secret.sh › --apply, target missing: creates the staging secret from the engineering value, through a file, as the workload account
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 0
+    Received: 127
+
+      210 |   it('--apply, target missing: creates the staging secret from the engineering value, through a file, as the workload account', () => {
+      211 |     const r = runScript(['--apply']);
+    > 212 |     expect(r.status).toBe(0);
+          |                      ^
+      213 |     const writes = r.calls.filter(isWrite);
+      214 |     expect(writes).toHaveLength(1);
+      215 |     const [creds, argv] = writes[0].split('|');
+
+      at Object.<anonymous> (test/gitlab-events/staging-wiring.test.ts:212:22)
+
+  ● W4 — scripts/aws/setup-gitlab-webhook-secret.sh › the engineering session credentials reach the CLI only through its environment, never an argument list
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 0
+    Received: 127
+
+      228 |   it('the engineering session credentials reach the CLI only through its environment, never an argument list', () => {
+      229 |     const r = runScript(['--apply']);
+    > 230 |     expect(r.status).toBe(0);
+          |                      ^
+      231 |     expect(r.calls.some((c) => c.startsWith('ASIASTUBKEY|'))).toBe(true); // the source reads ran with them
+      232 |     const argLists = [...r.calls.map((c) => c.split('|').slice(1).join('|')), ...r.envCalls].join('\n');
+      233 |     for (const s of ['ASIASTUBKEY', 'stub-secret-key', 'stub-session-token']) expect(argLists).not.toContain(s);
+
+      at Object.<anonymous> (test/gitlab-events/staging-wiring.test.ts:230:22)
+
+  ● W4 — scripts/aws/setup-gitlab-webhook-secret.sh › --apply, target holds another value: updates it with put-secret-value
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 0
+    Received: 127
+
+      236 |   it('--apply, target holds another value: updates it with put-secret-value', () => {
+      237 |     const r = runScript(['--apply'], { STUB_TARGET_EXISTS: '1', STUB_TARGET_VALUE: 'whsec_b2xkLXZhbHVl' });
+    > 238 |     expect(r.status).toBe(0);
+          |                      ^
+      239 |     const writes = r.calls.filter(isWrite);
+      240 |     expect(writes).toHaveLength(1);
+      241 |     expect(writes[0]).toContain('secretsmanager put-secret-value');
+
+      at Object.<anonymous> (test/gitlab-events/staging-wiring.test.ts:238:22)
+
+  ● W4 — scripts/aws/setup-gitlab-webhook-secret.sh › --apply, target already holds the same value: writes nothing
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 0
+    Received: 127
+
+      247 |   it('--apply, target already holds the same value: writes nothing', () => {
+      248 |     const r = runScript(['--apply'], { STUB_TARGET_EXISTS: '1', STUB_TARGET_VALUE: SOURCE_VALUE });
+    > 249 |     expect(r.status).toBe(0);
+          |                      ^
+      250 |     expect(r.out).toMatch(/unchanged/i);
+      251 |     expect(r.calls.filter(isWrite)).toEqual([]);
+      252 |   });
+
+      at Object.<anonymous> (test/gitlab-events/staging-wiring.test.ts:249:22)
+
+  ● W4 — scripts/aws/setup-gitlab-webhook-secret.sh › refuses outside the workload account 472838866351, before any Secrets Manager call
+
+    expect(received).toContain(expected) // indexOf
+
+    Expected substring: "472838866351"
+    Received string:    "bash: <red-base tree>/scripts/aws/setup-gitlab-webhook-secret.sh: No such file or directory
+    "
+
+      255 |     const r = runScript(['--apply'], { STUB_ACCOUNT: '111122223333' });
+      256 |     expect(r.status).not.toBe(0);
+    > 257 |     expect(r.out).toContain('472838866351');
+          |                   ^
+      258 |     expect(r.calls.filter(isSecretsCall)).toEqual([]);
+      259 |   });
+      260 |
+
+      at Object.<anonymous> (test/gitlab-events/staging-wiring.test.ts:257:19)
+
+  ● W4 — scripts/aws/setup-gitlab-webhook-secret.sh › refuses a source value that is not whsec_<base64>, and an empty one, writing nothing
+
+    expect(received).toContain(expected) // indexOf
+
+    Expected substring: "is not in whsec_<base64> form"
+    Received string:    "bash: <red-base tree>/scripts/aws/setup-gitlab-webhook-secret.sh: No such file or directory
+    "
+
+      263 |       const r = runScript(['--apply'], { STUB_SOURCE_VALUE: bad });
+      264 |       expect(r.status).not.toBe(0);
+    > 265 |       expect(r.out).toContain('is not in whsec_<base64> form');
+          |                     ^
+      266 |       expect(r.calls.some((c) => c.includes('get-secret-value') && c.includes(SOURCE))).toBe(true);
+      267 |       expect(r.calls.filter(isWrite)).toEqual([]);
+      268 |       if (bad === 'plain-token-without-prefix') expect(r.out).not.toContain(bad);
+
+      at Object.<anonymous> (test/gitlab-events/staging-wiring.test.ts:265:21)
+
+  ● W4 — scripts/aws/setup-gitlab-webhook-secret.sh › refuses when the source secret does not exist yet, writing nothing
+
+    expect(received).toContain(expected) // indexOf
+
+    Expected substring: "vitana/engineering/gitlab/webhook-signing-token"
+    Received string:    "bash: <red-base tree>/scripts/aws/setup-gitlab-webhook-secret.sh: No such file or directory
+    "
+
+      273 |     const r = runScript(['--apply'], { STUB_SOURCE_EXISTS: '0' });
+      274 |     expect(r.status).not.toBe(0);
+    > 275 |     expect(r.out).toContain(SOURCE);
+          |                   ^
+      276 |     expect(r.calls.filter(isWrite)).toEqual([]);
+      277 |   });
+      278 |
+
+      at Object.<anonymous> (test/gitlab-events/staging-wiring.test.ts:275:19)
+
+  ● W4 — scripts/aws/setup-gitlab-webhook-secret.sh › refuses when the engineering account cannot be found or assumed
+
+    expect(received).toContain(expected) // indexOf
+
+    Expected substring: "--source-account"
+    Received string:    "bash: <red-base tree>/scripts/aws/setup-gitlab-webhook-secret.sh: No such file or directory
+    "
+
+      280 |     const notFound = runScript([], { STUB_ENG_ACCOUNT: '' });
+      281 |     expect(notFound.status).not.toBe(0);
+    > 282 |     expect(notFound.out).toContain('--source-account');
+          |                          ^
+      283 |     const denied = runScript(['--apply'], { STUB_ASSUME_FAIL: '1' });
+      284 |     expect(denied.status).not.toBe(0);
+      285 |     expect(denied.calls.filter(isWrite)).toEqual([]);
+
+      at Object.<anonymous> (test/gitlab-events/staging-wiring.test.ts:282:26)
+
+  ● W4 — scripts/aws/setup-gitlab-webhook-secret.sh › --source-account skips the Organizations lookup and must be another 12-digit account
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 0
+    Received: 127
+
+      288 |   it('--source-account skips the Organizations lookup and must be another 12-digit account', () => {
+      289 |     const r = runScript(['--source-account', '123456789012']);
+    > 290 |     expect(r.status).toBe(0);
+          |                      ^
+      291 |     expect(r.calls.some((c) => c.includes('organizations'))).toBe(false);
+      292 |     expect(r.calls.some((c) => c.includes('arn:aws:iam::123456789012:role/OrganizationAccountAccessRole'))).toBe(true);
+      293 |     for (const bad of ['12345', '472838866351']) {
+
+      at Object.<anonymous> (test/gitlab-events/staging-wiring.test.ts:290:22)
+
+  ● W4 — scripts/aws/setup-gitlab-webhook-secret.sh › rejects an unknown argument (there is no production mode) before any AWS call
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 2
+    Received: 127
+
+      300 |   it('rejects an unknown argument (there is no production mode) before any AWS call', () => {
+      301 |     const r = runScript(['--env', 'prod']);
+    > 302 |     expect(r.status).toBe(2);
+          |                      ^
+      303 |     expect(r.out).toContain('Unknown argument: --env');
+      304 |     expect(r.calls).toEqual([]);
+      305 |   });
+
+      at Object.<anonymous> (test/gitlab-events/staging-wiring.test.ts:302:22)
+
+Test Suites: 5 failed, 5 total
+Tests:       17 failed, 1 passed, 18 total
+Snapshots:   0 total
+Time:        1.356 s
+Ran all test suites matching /test\/routes\/internal-gitlab-webhook.test.ts|test\/gitlab-events/i.
+Test results written to: ../../../logs/red-A.json
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
