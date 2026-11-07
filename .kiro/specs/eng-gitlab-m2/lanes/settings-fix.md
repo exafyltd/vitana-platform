@@ -31,6 +31,6 @@ VTID-05591 allocated after policy approval (converged-auto-v1).
 ### 2026-11-07T12:00Z · kiro-exafy-202611062222-c262 · ready → executing
 Claimed by the plan driver. Red on origin/main first: `docs/validation/VTID-05591/outputs/red-on-base.txt` (18 pass, 37 fail). The fix is the diff of commit 279b590d7f on `scripts/eng/gitlab-settings.mjs`.
 
-### 2026-12-07T12:30Z · kiro-exafy-202611062222-c262 · executing → in-review
-Green: `outputs/green.txt`, 55 of 55. PR https://github.com/exafyltd/vitana-platform/pull/PENDING (branch kiro/eng-gitlab-m2/settings-fix).
+### 2026-11-07T12:30Z · kiro-exafy-202611062222-c262 · executing → in-review
+Green: `outputs/green.txt`, 55 of 55. PR https://github.com/exafyltd/vitana-platform/pull/4780 (branch kiro/eng-gitlab-m2/settings-fix).
 Next: the reviewer agent on the PR head, then the land step under §7b.
