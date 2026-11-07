@@ -1,6 +1,6 @@
 ---
 lane: health-home-tenant-db
-state: ready
+state: verified
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -12,9 +12,12 @@ paths:
   - supabase/migrations/20261102130100_*.sql
   - docs/multitenancy/MIGRATION-QUEUE.md
   - services/gateway/test/mt-native-health/health-home-tenant.pgtap.sql
-updated: 2026-11-07T14:17Z
+updated: 2026-11-07T17:16Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05595
+claimed_by: kiro-hotmail-202611061752-cc1f
+branch: kiro/mt-native-health-r2/health-home-tenant-db
+pr: https://github.com/exafyltd/vitana-platform/pull/4811
 ---
 # Frozen health home tenant (DB) — mt-native-health-r2/health-home-tenant-db (repo vitana-platform)
 
@@ -79,3 +82,14 @@ reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 PR: https://github.com/exafyltd/vitana-platform/pull/4811
 Findings: non-blocking: check runs on this head not readable in the reviewer session, land-guard checks must confirm green per §7b; non-blocking: queue diff vs origin/main (carrying #4800 rows 41-42, merge f8f095327b) is +3 lines (rows 43-44 and the note), rows 1-42 and their notes untouched, no renumbering, rows may shift at landing; lane migrations, pgTAP and docs/validation/VTID-05595 unchanged since c96ce545be
 Next: the land step merges under §7b after all checks are green on this head
+
+### 2026-11-07T17:16Z · kiro-hotmail-202611061752-cc1f · ready → executing
+Built on branch kiro/mt-native-health-r2/health-home-tenant-db; recorded here at the closing, because one transition per PR meant the PR carried no lane-state entry.
+
+### 2026-11-07T17:16Z · kiro-hotmail-202611061752-cc1f · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/4811. Reviewed on head `4436409f19` (accept entry above, reviewer agent claude-sonnet-5.5).
+
+### 2026-11-07T17:16Z · kiro-hotmail-202611061752-cc1f · in-review → verified
+merge: 6510f6f99dacacfa39a690a7dc82797d1994859c (exafyltd/vitana-platform#4811)
+authority: §7b PM rule. Squash merge by land-guard on head `39f4d2dc71`: the reviewed head `4436409f19` plus the review-entry commit. `land-guard review` ok, `land-guard checks` green, PR up to date. No lane code changed after the accept.
+The migrations in this lane are in the repository and NOT applied. Applying them needs the owner's approval per file and database (collaboration.md §7d). Next: STAGING-VERIFY on the merge commit, then the `done` record.
