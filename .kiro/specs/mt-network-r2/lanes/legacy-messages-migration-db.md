@@ -1,6 +1,6 @@
 ---
 lane: legacy-messages-migration-db
-state: ready
+state: verified
 next_actor: kiro
 depends_on: [messaging-send-db, network-visibility-db]
 executor: kiro
@@ -10,9 +10,12 @@ reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 paths:
   - supabase/migrations/20261102052***_*.sql
   - supabase/tests/mt-network-legacy-migration.pgtap.sql
-updated: 2026-11-06T10:10Z
+updated: 2026-11-07T19:45Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05573
+claimed_by: kiro-hotmail-202611061752-cc1f
+branch: kiro/mt-network-r2/legacy-messages-migration-db
+pr: https://github.com/exafyltd/vitana-platform/pull/4840
 ---
 # mt-network-r2/legacy-messages-migration-db — migrate & retire legacy message tables (repo vitana-platform (one tree per object, re-plan R1-F1))
 
@@ -42,3 +45,14 @@ Findings:
 - non-blocking: acceptance.md evidence bullets still say 50 ok / five mutations while outputs show 65 and M1-M13.
 - non-blocking: participant tables stay frozen after 052300; DATABASE_SCHEMA.md and MIGRATION-QUEUE.md rows for the bak_* tables and these migrations are a platform-side follow-up (outside the lane paths).
 Next: the land step merges under §7b
+
+### 2026-11-07T19:45Z · kiro-hotmail-202611061752-cc1f · ready → executing
+Built on branch kiro/mt-network-r2/legacy-messages-migration-db; recorded here at the closing, because one transition per PR meant the PR carried no lane-state entry.
+
+### 2026-11-07T19:45Z · kiro-hotmail-202611061752-cc1f · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/4840. Reviewed on head `d10821037d` (accept entry above, reviewer agent claude-sonnet-5.5).
+
+### 2026-11-07T19:45Z · kiro-hotmail-202611061752-cc1f · in-review → verified
+merge: 2c1a3d23ad278f8d674455aec3638e528526b4d5 (exafyltd/vitana-platform#4840)
+authority: §7b PM rule. Squash merge by land-guard on head `b2fcf1e628`: the reviewed head `d10821037d` plus the review-entry commit and clean merges of main. `land-guard review` ok, `land-guard checks` green (12 checks), PR up to date. No lane code changed after the accept.
+The migrations in this lane (20261102052000, 052100, 052200, 052300) are in the repository and NOT applied. Applying them needs the owner's approval per file and database (collaboration.md §7d), and the legacy readers and writers in vitana-v1 and the gateway must be retired before 052000. Next: the `done` record.
