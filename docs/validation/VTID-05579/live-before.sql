@@ -34,5 +34,12 @@ SELECT 'group_policies' AS check_name, tablename, policyname, cmd, qual FROM pg_
 SELECT 'allow_all_policies_already_gone' AS check_name, count(*) = 0 AS ok FROM pg_policies
  WHERE schemaname = 'public' AND tablename IN ('chat_groups', 'chat_group_members', 'chat_messages')
    AND (qual = 'true' OR with_check = 'true' OR (cmd = 'ALL' AND roles && ARRAY['public', 'authenticated', 'anon']::name[]));
+-- Apply precondition of 20261102054200: the exact predicate of its closing assertion. ok must be true BEFORE apply, otherwise
+-- the file raises and rolls back (any policy on the two tables with a command other than SELECT, USING (true), WITH CHECK (true),
+-- or one of the two dropped catch-all names is listed; the two catch-alls are dropped by the file itself first).
+SELECT 'p054200_assertion_would_trip' AS check_name, tablename, policyname, cmd, qual, with_check FROM pg_policies
+ WHERE schemaname = 'public' AND tablename IN ('chat_groups', 'chat_group_members')
+   AND policyname NOT IN ('chat_groups_service_role', 'chat_group_members_service_role', 'chat_groups_member_read', 'chat_group_members_read')
+   AND (cmd <> 'SELECT' OR qual = 'true' OR with_check = 'true');
 SELECT 'table_grants' AS check_name, relname, relacl FROM pg_class
  WHERE oid IN ('public.chat_groups'::regclass, 'public.chat_group_members'::regclass) ORDER BY relname;

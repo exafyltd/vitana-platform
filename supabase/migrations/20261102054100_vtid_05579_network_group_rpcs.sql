@@ -22,8 +22,11 @@
 --   (not_connected). An existing member returns false (no-op, also when the group is full). A group with 20 members refuses the
 --   21st (54000 group_full). The new member row has role member, scope network and tenant_id = the group's tenant (the creator's
 --   tenant as context, not the member's own). The group row is locked FOR UPDATE, so two adds cannot both take slot 20.
--- add, Community group: the caller must be a member; the invitee must belong to the group's tenant (not_in_group_tenant); no cap,
---   no connection rule (those are Network rules). Today's direct community writers are unchanged.
+-- add, any group that is not scope = 'network' (a community group, a system group): refused with 42501 not_network_group, before
+--   any membership check. Review fix (reviewer verdict `changes`, PR 4850): add_group_member is callable by every authenticated
+--   user, and a community branch would have let any member of any community group (is_system included) add any user of the
+--   group's tenant with no admin check, no consent and no cap. That is a new client write path beyond the converged plan, which
+--   covers Network rules only. Today's direct community writers are unchanged.
 -- No function writes a chat message, a notification or any system row: nothing is fanned out when a group is created or joined.
 -- Errors: 28000 not authenticated; 22023 bad argument; 42501 not allowed; P0002 no such group; 54000 group full.
 --
@@ -107,57 +110,48 @@ BEGIN
   IF NOT FOUND THEN
     RAISE EXCEPTION 'group_not_found' USING ERRCODE = 'P0002';
   END IF;
+  IF v_g.scope IS DISTINCT FROM 'network' THEN
+    -- Review fix: no client write path into a community (or system) group; today's direct community writers are unchanged.
+    RAISE EXCEPTION 'not_network_group' USING ERRCODE = '42501';
+  END IF;
   SELECT m.role INTO v_role FROM public.chat_group_members m WHERE m.group_id = p_group AND m.user_id = p_actor;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'not_a_member' USING ERRCODE = '42501';
   END IF;
 
-  IF v_g.scope = 'network' THEN
-    IF v_role <> 'admin' THEN
-      RAISE EXCEPTION 'not_group_admin' USING ERRCODE = '42501';
-    END IF;
-    IF public.is_network_excluded_account(p_actor)
-       OR NOT EXISTS (SELECT 1 FROM public.global_community_profiles WHERE user_id = p_actor AND network_visible) THEN
-      RAISE EXCEPTION 'actor_not_network_visible' USING ERRCODE = '42501';
-    END IF;
-    IF EXISTS (SELECT 1 FROM public.chat_group_members m WHERE m.group_id = p_group AND m.user_id = p_user) THEN
-      RETURN false;
-    END IF;
-    IF public.is_network_excluded_account(p_user) THEN
-      RAISE EXCEPTION 'account_not_eligible' USING ERRCODE = '42501';
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM public.global_community_profiles WHERE user_id = p_user AND network_visible) THEN
-      RAISE EXCEPTION 'target_not_network_visible' USING ERRCODE = '42501';
-    END IF;
-    IF EXISTS (SELECT 1 FROM public.user_blocklist b
-                WHERE b.expires_at > now()
-                  AND ((b.user_id = p_user AND b.blocked_user_id = p_actor) OR (b.user_id = p_actor AND b.blocked_user_id = p_user))) THEN
-      RAISE EXCEPTION 'blocked' USING ERRCODE = '42501';
-    END IF;
-    IF NOT EXISTS (SELECT 1 FROM public.connection_requests c
-                    WHERE c.status = 'accepted'
-                      AND ((c.from_user_id = p_actor AND c.to_user_id = p_user) OR (c.from_user_id = p_user AND c.to_user_id = p_actor))) THEN
-      RAISE EXCEPTION 'not_connected' USING ERRCODE = '42501';
-    END IF;
-    IF (SELECT count(*) FROM public.chat_group_members m WHERE m.group_id = p_group) >= 20 THEN
-      RAISE EXCEPTION 'group_full' USING ERRCODE = '54000';
-    END IF;
-    PERFORM set_config('vitana.chat_group_rpc', 'on', true);
-    INSERT INTO public.chat_group_members (group_id, user_id, tenant_id, role, scope)
-    VALUES (p_group, p_user, v_g.tenant_id, 'member', 'network');
-    PERFORM set_config('vitana.chat_group_rpc', '', true);
-    RETURN true;
+  IF v_role <> 'admin' THEN
+    RAISE EXCEPTION 'not_group_admin' USING ERRCODE = '42501';
   END IF;
-
-  -- Community group.
+  IF public.is_network_excluded_account(p_actor)
+     OR NOT EXISTS (SELECT 1 FROM public.global_community_profiles WHERE user_id = p_actor AND network_visible) THEN
+    RAISE EXCEPTION 'actor_not_network_visible' USING ERRCODE = '42501';
+  END IF;
   IF EXISTS (SELECT 1 FROM public.chat_group_members m WHERE m.group_id = p_group AND m.user_id = p_user) THEN
     RETURN false;
   END IF;
-  IF NOT EXISTS (SELECT 1 FROM public.user_tenants ut WHERE ut.tenant_id = v_g.tenant_id AND ut.user_id = p_user) THEN
-    RAISE EXCEPTION 'not_in_group_tenant' USING ERRCODE = '42501';
+  IF public.is_network_excluded_account(p_user) THEN
+    RAISE EXCEPTION 'account_not_eligible' USING ERRCODE = '42501';
   END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.global_community_profiles WHERE user_id = p_user AND network_visible) THEN
+    RAISE EXCEPTION 'target_not_network_visible' USING ERRCODE = '42501';
+  END IF;
+  IF EXISTS (SELECT 1 FROM public.user_blocklist b
+              WHERE b.expires_at > now()
+                AND ((b.user_id = p_user AND b.blocked_user_id = p_actor) OR (b.user_id = p_actor AND b.blocked_user_id = p_user))) THEN
+    RAISE EXCEPTION 'blocked' USING ERRCODE = '42501';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM public.connection_requests c
+                  WHERE c.status = 'accepted'
+                    AND ((c.from_user_id = p_actor AND c.to_user_id = p_user) OR (c.from_user_id = p_user AND c.to_user_id = p_actor))) THEN
+    RAISE EXCEPTION 'not_connected' USING ERRCODE = '42501';
+  END IF;
+  IF (SELECT count(*) FROM public.chat_group_members m WHERE m.group_id = p_group) >= 20 THEN
+    RAISE EXCEPTION 'group_full' USING ERRCODE = '54000';
+  END IF;
+  PERFORM set_config('vitana.chat_group_rpc', 'on', true);
   INSERT INTO public.chat_group_members (group_id, user_id, tenant_id, role, scope)
-  VALUES (p_group, p_user, v_g.tenant_id, 'member', 'community');
+  VALUES (p_group, p_user, v_g.tenant_id, 'member', 'network');
+  PERFORM set_config('vitana.chat_group_rpc', '', true);
   RETURN true;
 END;
 $$;

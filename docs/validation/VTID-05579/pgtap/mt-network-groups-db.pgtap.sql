@@ -230,13 +230,13 @@ SELECT ok(t05579.chk($q$SELECT EXISTS (SELECT 1 FROM public.chat_groups WHERE id
 SELECT is(t05579.add(1, t05579.g(1), 2), 'true', '71 the admin of a migrated legacy network group adds a connection');
 SELECT is(t05579.add(3, t05579.g(1), 4), 'error:42501:not_group_admin', '72 a plain member of the legacy group cannot invite');
 
--- ── Task 2: add_group_member, Community branch ───────────────────────────
-SELECT is(t05579.add(1, t05579.g(4), 60), 'true', '73 a community group member adds a member of the group''s tenant');
-SELECT ok(t05579.chk($q$SELECT EXISTS (SELECT 1 FROM public.chat_group_members WHERE group_id = t05579.g(4) AND user_id = t05579.u(60) AND scope = 'community' AND tenant_id = '05579000-0000-4000-8000-0000000000a1')$q$),
-  '74 ... as scope community, tenant = the group''s tenant');
-SELECT is(t05579.add(1, t05579.g(4), 3), 'error:42501:not_in_group_tenant', '75 a community group takes no one from outside its tenant');
-SELECT is(t05579.add(4, t05579.g(4), 61), 'error:42501:not_a_member', '76 a non-member cannot add to a community group either');
-SELECT is(t05579.add(1, t05579.g(5), 12), 'true', '77 the 20 cap is a Network rule: a community group of 22 members takes another');
+-- ── Task 2: add_group_member refuses every non-network group (review fix: no client write path into community groups) ──
+SELECT is(t05579.add(1, t05579.g(4), 60), 'error:42501:not_network_group', '73 a community group member cannot add a member of the tenant through add_group_member');
+SELECT is(t05579.val('postgres', NULL, format('SELECT count(*)::text FROM public.chat_group_members WHERE group_id = %L AND user_id = t05579.u(60)', t05579.g(4))), '0',
+  '74 ... and no member row was written');
+SELECT is(t05579.add(1, t05579.g(3), 60), 'error:42501:not_network_group', '75 the system group (is_system) refuses add_group_member too');
+SELECT is(t05579.add(4, t05579.g(4), 61), 'error:42501:not_network_group', '76 a non-member gets the same refusal for a community group');
+SELECT is(t05579.add(1, t05579.g(5), 12), 'error:42501:not_network_group', '77 the big community group takes no one through add_group_member either');
 
 -- ── Task 1: participant-only RLS ─────────────────────────────────────────
 SELECT is(t05579.val('authenticated', t05579.u(4), format('SELECT count(*)::text FROM public.chat_groups WHERE id = %L', (SELECT v FROM r WHERE k = 'g1'))), '0',

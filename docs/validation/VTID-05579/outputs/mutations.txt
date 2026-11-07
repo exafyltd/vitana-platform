@@ -33,7 +33,7 @@ not ok 12 - 12 a network group cannot be turned into a community group outside t
 not ok 13 - 13 a direct service-role INSERT of a member into a network group fails
 not ok 19 - 19 a bot can never be a member of a network group
 not ok 65 - 65 a rule 43-45 account cannot be inserted into a network group even with the RPC flag on
-... 9 red lines in total
+... 8 red lines in total
 ### M8 groups scope guard lets a direct network write through  [exit 1]
 not ok 10 - 10 a direct service-role INSERT of a network group fails
 not ok 11 - 11 a direct service-role UPDATE of a group to network fails
@@ -41,7 +41,7 @@ not ok 12 - 12 a network group cannot be turned into a community group outside t
 not ok 13 - 13 a direct service-role INSERT of a member into a network group fails
 not ok 14 - 14 the community writers still add members to a community group directly, scope community
 not ok 15 - 15 a member row can never carry another scope than its group (an explicit network is overridden)
-... 15 red lines in total
+... 13 red lines in total
 ### M9 network_not_system CHECK removed  [exit 1]
 not ok 18 - 18 a network group can never be a system group (no system fan-out target)
 ### M10 member scope no longer forced to the group scope  [exit 1]
@@ -67,9 +67,13 @@ not ok 86 - 86 a client cannot update a group (no UPDATE policy)
 not ok 88 - 88 no permissive FOR ALL USING (true) policy for PUBLIC/authenticated on chat_groups, chat_group_members or chat_messages
 not ok 89 - 89 the two groups tables carry SELECT policies only (the dropped service_role catch-alls stay gone)
 not ok 91 - 91 both read policies evaluate auth.uid() once per statement via (SELECT auth.uid())
-### M16 community branch ignores the group tenant  [exit 1]
-not ok 75 - 75 a community group takes no one from outside its tenant
+### M16 non-network groups no longer refused (the community client write path of the review)  [exit 1]
+not ok 73 - 73 a community group member cannot add a member of the tenant through add_group_member
+not ok 75 - 75 the system group (is_system) refuses add_group_member too
+not ok 76 - 76 a non-member gets the same refusal for a community group
+not ok 77 - 77 the big community group takes no one through add_group_member either
 ### M17 add_group_member_as executable by authenticated  [exit 1]
 not ok 34 - 34 authenticated gets the two caller-bound functions and not the _as pair
 not ok 69 - 69 a client cannot call add_group_member_as
+### restored: exit 0, 92 ok
 ### restored: exit 0, 92 ok

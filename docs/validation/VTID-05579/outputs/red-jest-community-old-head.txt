@@ -1,0 +1,127 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/wt-groups-db/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+FAIL ../../wt-groups-db/services/gateway/test/mt-network-groups-db.pgtap.test.ts
+  VTID-05579 migration files
+    ✓ exist, apply in order, and no other migration shares their version (3 ms)
+    ✓ each runs in one transaction with a lock timeout and drops no table or column (1 ms)
+    ✓ adds no bare current_tenant_id() RLS policy and evaluates auth.uid() once per statement
+  VTID-05579 task 1: scope columns, backfill, guards
+    ✓ adds scope text NOT NULL DEFAULT community with a CHECK (community, network) to both tables (1 ms)
+    ✓ backfills chat_groups.scope from the VTID-05573 flag metadata.legacy_scope = network, and the members from their group
+    ✓ a network group is never a system group and never has a bot member (no system fan-out target) (1 ms)
+    ✓ only the RPCs write a non-community group scope or add a network member (transaction-local flag)
+    ✓ the member guard re-checks rule 43-45 and the 20 cap, and forces the group scope (1 ms)
+    ✓ is expand only: the default stays so today's community writers keep working
+  VTID-05579 task 2: create_network_group / add_group_member
+    ✓ all six functions are SECURITY DEFINER with a pinned search_path (4 ms)
+    ✓ the caller-bound functions use auth.uid(); the _as pair takes a trusted p_actor (1 ms)
+    ✓ EXECUTE: callers to authenticated, the _as pair to service_role only, the cores to nobody
+    ✓ the network branch is admin-only, invite-only between accepted connections, bounded at 20, and refuses rule 43-45 accounts
+    ✓ the creator's tenant is the context: members carry the group tenant, the platform tenant never counts
+    ✕ add refuses every non-network group before any membership check, and has no community insert (review fix) (1 ms)
+    ✓ writes no message, notification or system row (no system fan-out)
+  VTID-05579 task 1: participant-only RLS
+    ✓ rewrites the two read policies to participant-only with the once-per-statement form
+    ✓ creates no INSERT / UPDATE / DELETE / ALL policy and asserts no allow-all policy remains (1 ms)
+  VTID-05579 tasks 3-4: rollback, read-only checks, pgTAP, queue
+    ✓ has the three rollbacks and the three read-only check files
+    ✓ the pgTAP plan covers the D27 limits and its plan count matches its assertions (1 ms)
+    ✓ is queued in MIGRATION-QUEUE.md as rows 63-65 in file order, after the last existing row (1 ms)
+    ✓ keeps the drift baseline count equal to its list
+
+  ● VTID-05579 task 2: create_network_group / add_group_member › add refuses every non-network group before any membership check, and has no community insert (review fix)
+
+    expect(received).toMatch(expected)
+
+    Expected pattern: /v_g\.scope IS DISTINCT FROM 'network'[\s\S]*?not_network_group/
+    Received string:  "FUNCTION public.chat_group_add_member_core(p_actor uuid, p_group uuid, p_user uuid)
+     RETURNS boolean
+     LANGUAGE plpgsql
+     SECURITY DEFINER
+     SET search_path TO 'public', 'pg_temp'
+    AS $$
+    DECLARE
+      v_g record;
+      v_role text;
+    BEGIN
+      IF p_actor IS NULL THEN
+        RAISE EXCEPTION 'not_authenticated' USING ERRCODE = '28000';
+      END IF;
+      IF p_group IS NULL OR p_user IS NULL THEN
+        RAISE EXCEPTION 'invalid_argument' USING ERRCODE = '22023';
+      END IF;
+      IF p_user = p_actor THEN
+        RAISE EXCEPTION 'invalid_member' USING ERRCODE = '22023';
+      END IF;·
+      SELECT g.id, g.tenant_id, g.scope INTO v_g FROM public.chat_groups g WHERE g.id = p_group FOR UPDATE;
+      IF NOT FOUND THEN
+        RAISE EXCEPTION 'group_not_found' USING ERRCODE = 'P0002';
+      END IF;
+      SELECT m.role INTO v_role FROM public.chat_group_members m WHERE m.group_id = p_group AND m.user_id = p_actor;
+      IF NOT FOUND THEN
+        RAISE EXCEPTION 'not_a_member' USING ERRCODE = '42501';
+      END IF;·
+      IF v_g.scope = 'network' THEN
+        IF v_role <> 'admin' THEN
+          RAISE EXCEPTION 'not_group_admin' USING ERRCODE = '42501';
+        END IF;
+        IF public.is_network_excluded_account(p_actor)
+           OR NOT EXISTS (SELECT 1 FROM public.global_community_profiles WHERE user_id = p_actor AND network_visible) THEN
+          RAISE EXCEPTION 'actor_not_network_visible' USING ERRCODE = '42501';
+        END IF;
+        IF EXISTS (SELECT 1 FROM public.chat_group_members m WHERE m.group_id = p_group AND m.user_id = p_user) THEN
+          RETURN false;
+        END IF;
+        IF public.is_network_excluded_account(p_user) THEN
+          RAISE EXCEPTION 'account_not_eligible' USING ERRCODE = '42501';
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM public.global_community_profiles WHERE user_id = p_user AND network_visible) THEN
+          RAISE EXCEPTION 'target_not_network_visible' USING ERRCODE = '42501';
+        END IF;
+        IF EXISTS (SELECT 1 FROM public.user_blocklist b
+                    WHERE b.expires_at > now()
+                      AND ((b.user_id = p_user AND b.blocked_user_id = p_actor) OR (b.user_id = p_actor AND b.blocked_user_id = p_user))) THEN
+          RAISE EXCEPTION 'blocked' USING ERRCODE = '42501';
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM public.connection_requests c
+                        WHERE c.status = 'accepted'
+                          AND ((c.from_user_id = p_actor AND c.to_user_id = p_user) OR (c.from_user_id = p_user AND c.to_user_id = p_actor))) THEN
+          RAISE EXCEPTION 'not_connected' USING ERRCODE = '42501';
+        END IF;
+        IF (SELECT count(*) FROM public.chat_group_members m WHERE m.group_id = p_group) >= 20 THEN
+          RAISE EXCEPTION 'group_full' USING ERRCODE = '54000';
+        END IF;
+        PERFORM set_config('vitana.chat_group_rpc', 'on', true);
+        INSERT INTO public.chat_group_members (group_id, user_id, tenant_id, role, scope)
+        VALUES (p_group, p_user, v_g.tenant_id, 'member', 'network');
+        PERFORM set_config('vitana.chat_group_rpc', '', true);
+        RETURN true;
+      END IF;····
+      IF EXISTS (SELECT 1 FROM public.chat_group_members m WHERE m.group_id = p_group AND m.user_id = p_user) THEN
+        RETURN false;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM public.user_tenants ut WHERE ut.tenant_id = v_g.tenant_id AND ut.user_id = p_user) THEN
+        RAISE EXCEPTION 'not_in_group_tenant' USING ERRCODE = '42501';
+      END IF;
+      INSERT INTO public.chat_group_members (group_id, user_id, tenant_id, role, scope)
+      VALUES (p_group, p_user, v_g.tenant_id, 'member', 'community');
+      RETURN true;
+    END;
+    $$;"
+
+      155 |   it('add refuses every non-network group before any membership check, and has no community insert (review fix)', () => {
+      156 |     const core = fnBody(rpcs, 'chat_group_add_member_core');
+    > 157 |     expect(core).toMatch(/v_g\.scope IS DISTINCT FROM 'network'[\s\S]*?not_network_group/);
+          |                  ^
+      158 |     expect(core.indexOf('not_network_group')).toBeLessThan(core.indexOf('not_a_member'));
+      159 |     expect(core).not.toMatch(/not_in_group_tenant/);
+      160 |     expect(core).not.toMatch(/'community'\)/);
+
+      at Object.<anonymous> (test/mt-network-groups-db.pgtap.test.ts:157:18)
+
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 21 passed, 22 total
+Snapshots:   0 total
+Time:        0.344 s, estimated 1 s
+Ran all test suites.

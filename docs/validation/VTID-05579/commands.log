@@ -16,3 +16,11 @@ fix attempt 1 (CI: vtid-05041-definer-lockdown, shard 1): chat_group_members_sco
 jest vtid-05041-definer-lockdown.test.ts               -> 7 pass (the SQL harness case is skipped without a local PostgreSQL server)
 lane.sh / lane.sh --twice / checks.sh / mutations re-run on the fixed head -> 92 ok / 92 ok / all ok / 17 red, restored 92 ok
 pglite-harness/mutations.py                            -> outputs/mutations.txt (the 17 mutations as a script; every one red, restored 92 ok)
+fix attempt 1 after reviewer verdict `changes` (community branch of add_group_member removed; add refuses non-network groups):
+merged origin/main (clean, no MIGRATION-QUEUE conflict)
+pgTAP cases 73-77 rewritten to expect 42501 not_network_group; pglite-harness/lane.sh on the OLD 054100 -> outputs/red-community-old-head.txt (5 not ok: 73-77)
+jest new static case on the OLD 054100 -> outputs/red-jest-community-old-head.txt (1 failed, 21 passed)
+pglite-harness/lane.sh / --twice on the fixed head -> outputs/green-run1.txt, green-run2-twice.txt (92 ok each)
+pglite-harness/mutations.py (M16 now removes the non-network refusal) -> outputs/mutations.txt (17 of 17 red, restored 92 ok)
+pglite-harness/checks.sh -> outputs/checks.txt; jest -> outputs/green-jest.txt (22 pass)
+live-before.sql: added p054200_assertion_would_trip (must return no rows before apply)

@@ -9,7 +9,9 @@
 --   2. Two CHECKs make a network group a place no system writer can target (no system fan-out, D27):
 --        chat_groups_network_not_system         a network group is never is_system;
 --        chat_group_members_network_no_bot      a network group never has a role = 'bot' member.
---   3. Guards (so scope is written by the RPCs of 20261102054100 only, service_role included):
+--   3. Guards (so scope is written by the RPCs of 20261102054100 only. service_role cannot write it through PostgREST or the gateway
+--      client; the flag is a transaction-local setting, so a raw-SQL session of a table-writing role could set it itself: a guard
+--      against mistakes and client paths, not an authentication):
 --        trg_chat_groups_scope_guard   BEFORE INSERT OR UPDATE OF scope ON chat_groups: a non-community scope on INSERT, or ANY
 --                                      change of an existing group's scope, needs the transaction-local flag
 --                                      vitana.chat_group_rpc = 'on'. Otherwise 42501.

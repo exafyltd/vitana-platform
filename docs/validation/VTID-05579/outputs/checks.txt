@@ -37,7 +37,7 @@
 {"check_name":"no_allow_all_or_write_policy","ok":true}
 {"check_name":"no_allow_all_on_chat_messages","ok":true}
 {"check_name":"no_bare_current_tenant_id_policy","ok":true}
-## created network group a33102ac-cc5e-4201-94d0-48f3ce18ec5d through create_network_group_as
+## created network group 43694527-2689-4620-acc2-27b488b15030 through create_network_group_as
 ## rollback 054000 first (functions present) is refused: VTID-05579 rollback refused: roll back 054100 (the functions) first
 ## rollback 054200
 ## rollback 054100

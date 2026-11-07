@@ -152,9 +152,13 @@ describe('VTID-05579 task 2: create_network_group / add_group_member', () => {
     expect(create).toMatch(/no_context_tenant/);
     expect(create).toMatch(/is_primary DESC/);
   });
-  it('the community branch needs membership of the group\'s tenant and has no cap', () => {
+  it('add refuses every non-network group before any membership check, and has no community insert (review fix)', () => {
     const core = fnBody(rpcs, 'chat_group_add_member_core');
-    expect(core).toMatch(/not_in_group_tenant/);
+    expect(core).toMatch(/v_g\.scope IS DISTINCT FROM 'network'[\s\S]*?not_network_group/);
+    expect(core.indexOf('not_network_group')).toBeLessThan(core.indexOf('not_a_member'));
+    expect(core).not.toMatch(/not_in_group_tenant/);
+    expect(core).not.toMatch(/'community'\)/);
+    expect(core.match(/INSERT INTO public\.chat_group_members/g)).toHaveLength(1);
     expect(core.match(/>= 20/g)).toHaveLength(1);
   });
   it('writes no message, notification or system row (no system fan-out)', () => {

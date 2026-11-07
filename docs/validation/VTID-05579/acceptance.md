@@ -34,8 +34,9 @@ adding an existing member is a no-op); the member row carries the creator's tena
 `chat_messages` (no system fan-out). The cap and the rule 43-45 exclusion also hold against a direct insert (table guard).
 TEST: pgTAP cases 37-69, 71-72; jest `the network branch is admin-only, invite-only between accepted connections`.
 
-AC-5 On a Community group `add_group_member()` needs a caller who is a member and an invitee who belongs to the group's tenant;
-the 20 cap is a Network rule only. The four functions are SECURITY DEFINER with a pinned search_path; the callers are granted to
+AC-5 `add_group_member()` refuses every group that is not `scope = 'network'` (a community group, a system group) with 42501
+`not_network_group`, before any membership check, and writes no row: there is no client write path into a community group
+(review fix of PR 4850). The four functions are SECURITY DEFINER with a pinned search_path; the callers are granted to
 `authenticated`, the `_as` pair to `service_role` only, the two cores to nobody; `anon` gets none.
 TEST: pgTAP cases 33-36, 73-77.
 
@@ -76,8 +77,21 @@ classify. Rollback order: 054200, 054100, 054000.
   It is expand only and dark (nothing calls it until `network-groups-gateway`, behind `mt.network_groups`).
 - **Admin-only invites.** The plan says "invite-only between connections"; the function lets only the group's admin invite
   (the creator is the first admin; the legacy admin role is kept). A later lane can widen it.
-- **Community branch kept minimal.** Caller must be a member, the invitee must belong to the group's tenant; no cap, no
-  connection rule (those are Network rules). Today's direct community writers are untouched.
+- **No community branch (review fix, fix attempt 1).** The first head let any member of any community group (is_system
+  included) add any user of the group's tenant through the authenticated-callable `add_group_member`, with no admin check, no
+  invitee consent and no cap. That is a client write path beyond the converged plan (Network rules only). The most
+  conservative option was taken: `add_group_member` and `add_group_member_as` refuse every non-network group
+  (`not_network_group`, pgTAP 73-77, red on the old head: `outputs/red-community-old-head.txt`, 5 not ok). Today's direct
+  community writers are untouched. This is an intended contract change; the old cases 73-77 asserted the removed branch.
+- **The scope flag is a guard, not an authentication.** `vitana.chat_group_rpc` is a transaction-local setting; any session that
+  can run raw SQL as a role allowed to INSERT into the tables (service_role, postgres) can set it itself, so "service_role
+  included" means service_role cannot write a network scope through PostgREST or the gateway client calls (which cannot
+  `set_config`), not that a raw-SQL session is stopped. The claim in 054000 is corrected accordingly. Tightening it (a secret
+  token or a `current_setting` check against a function-owned GUC) is deferred: the same residual exists for every
+  flag-guarded table here, and no authenticated client reaches it. Tracked with the sparring record's accepted residuals.
+- **Apply precondition (054200).** The assertion at the end of 054200 raises if any non-SELECT or allow-all policy remains on
+  the two tables. Before apply, `live-before.sql` (`group_policies`, `allow_all_policies_already_gone`) must show SELECT-only
+  policies; a non-SELECT policy there stops the apply and is fixed by its own change, not loosened here.
 - **No contract step.** `scope` keeps `DEFAULT 'community'`: a missed writer cannot write `network` (the guard) and writes the
   community default the table has today, so there is no writer to chase (unlike `chat_messages`, whose default is dropped later).
 - **No privilege revoke.** Both tables already have SELECT policies only (no client write policy), so a client write is denied
