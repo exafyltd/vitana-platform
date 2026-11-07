@@ -23,3 +23,14 @@
   `contacted_at`, not online): no fleet machine has registered with its token. Every job since the retag stays pending, as in read 1.
 - So A05 and the pipeline comparison wait for the fleet runner to come online (lane eng-gitlab-m2/settings-fix, PR #4780, stores its
   token). Nothing in this lane's paths can change it, and a manual retag would be reverted by the next settings sync.
+
+# Session diagnosis with the owner's 1-hour read-only engineering credentials (2026-11-07 ~18:00Z)
+- `vitana/engineering/gitlab/fleet-runner-token` was written at 17:36:20Z (DescribeSecret LastChangedDate): the settings-fix-v2 fix works.
+- Root cause of the offline fleet runner: the fleet manager (i-05bf5e08fa12864a9, started 2026-11-06T21:55Z) never installed the runner.
+  `/var/log/vitana-bootstrap.log` ends with `gitlab-runner : Depends: gitlab-runner-helper-images (= 19.5.2-1) but 19.5.3-1 is to be
+  installed` and `E: Unable to correct problems, you have held broken packages.`; `/etc/gitlab-runner/` does not exist; gitlab-runner is
+  inactive. `host/fleet-manager-install.sh:112` (and `host/runner-install.sh:26`) pin `gitlab-runner=$RUNNER_VERSION` (19.5.2-1) but not
+  `gitlab-runner-helper-images`, so apt takes the newest helper (19.5.3-1) and refuses. 19.5.2-1 of the helper is in the repository.
+- Fix in git: pin both packages to `$RUNNER_VERSION` in both installers (+ fleet-structure.test.mjs:614). Those files belong to the done
+  lane eng-gitlab-m2/fleet, so the fix is a new lane through `_plan` of eng-gitlab-m2. On the running manager the owner re-runs the
+  installer with the helper pinned (a live write; a session never does it).
