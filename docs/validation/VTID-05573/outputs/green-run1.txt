@@ -1,0 +1,73 @@
+# loaded /projects/sandbox/wt-legacy-msgs/docs/validation/VTID-05573/pgtap/vtid_05573_fixture.sql
+# loaded /projects/sandbox/wt-legacy-msgs/supabase/migrations/20261102050000_vtid_05576_chat_messages_scope.sql
+# loaded /projects/sandbox/wt-legacy-msgs/supabase/migrations/20261102051000_vtid_05582_network_visible_profile.sql
+# loaded /projects/sandbox/wt-legacy-msgs/supabase/migrations/20261102052000_vtid_05573_legacy_messages_snapshot_freeze.sql
+# loaded /projects/sandbox/wt-legacy-msgs/supabase/migrations/20261102052100_vtid_05573_legacy_messages_functions.sql
+# loaded /projects/sandbox/wt-legacy-msgs/supabase/migrations/20261102052200_vtid_05573_legacy_messages_migrate_run.sql
+# loaded /projects/sandbox/wt-legacy-msgs/supabase/migrations/20261102052300_vtid_05573_legacy_messages_drop.sql
+1..65
+ok 1 - 1 the four legacy tables are dropped
+ok 2 - 2 the two participant tables are not dropped (outside the lane's four)
+ok 3 - 3 bak_messages holds all 7 legacy messages
+ok 4 - 4 bak_message_threads holds all 3 threads
+ok 5 - 5 bak_global_messages holds all 7 messages
+ok 6 - 6 bak_global_message_threads holds all 6 threads
+ok 7 - 7 both participant snapshots are complete (7 + 12 rows)
+ok 8 - 8 every bak_* table has row level security on
+ok 9 - 9 anon and authenticated cannot read any bak_* table
+ok 10 - 10 a bak_* table carries its 30-day retention note
+ok 11 - 11 12 legacy messages landed in chat_messages (14 minus 2 rule-43 skips)
+ok 12 - 12 6 from messages
+ok 13 - 13 6 from global_messages
+ok 14 - 14 the 2 pre-existing platform messages are untouched
+ok 15 - 15 a message to or from a service bot / notification actor is not migrated (rule 43)
+ok 16 - 16 DM between members who share tenant A -> community, tenant A
+ok 17 - 17 DM between members with no shared tenant (platform tenant ignored) -> network, sender context tenant
+ok 18 - 18 DM between a TB member and a TA+TB member -> community, the shared tenant TB
+ok 19 - 19 a message in a two-person direct thread becomes a DM to the other participant
+ok 20 - 20 a message in a tenant group thread -> community group message in the same group id
+ok 21 - 21 a sender with no tenant at all -> network, falling back to the legacy row's tenant
+ok 22 - 22 global DM between two TA members -> community, tenant A (both directions)
+ok 23 - 23 global DM across tenants -> network, tenant = the sender's own context (TB)
+ok 24 - 24 global group whose members all share TA -> community group message
+ok 25 - 25 global group with members that share no tenant -> network group messages, creator's context tenant
+ok 26 - 26 text, created_at and read_at are preserved
+ok 27 - 27 the legacy id and content_data are kept in metadata
+ok 28 - 28 4 legacy groups migrated (2 tenant, 2 global)
+ok 29 - 29 tenant group e2 -> community group of tenant A, name kept
+ok 30 - 30 cross-tenant global group d4 -> flagged legacy_scope network (the network-groups-db lane reads this), tenant = creator context
+ok 31 - 31 a group of only service/test accounts, and an empty group, are not migrated
+ok 32 - 32 10 members migrated (3 + 1 + 3 + 3)
+ok 33 - 33 legacy role moderator -> member, admin kept
+ok 34 - 34 a service bot is not added as a group member
+ok 35 - 35 every migrated member row carries the group's context tenant
+ok 36 - 36 every community DM has both people as members of the row's tenant
+ok 37 - 37 no network DM exists between two people who share a non-platform tenant
+ok 38 - 38 no migrated message involves a service bot or notification test actor (rules 43-45)
+ok 39 - 39 the platform tenant is never written on member content
+ok 40 - 40 every migrated row has a valid scope
+ok 41 - 41 re-running the migration reports the same classification (messages: 6 migrated)
+ok 42 - 42 ... and adds no row (idempotent)
+ok 43 - 43 the reconcile figures balance: 7 = 6 + 1 + 0 and 9 threads = 3 + 4 + 1 + 1 + 0
+ok 44 - 44 the drop guard accepts a fully reconciled migration
+ok 45 - 45 the drop guard refuses while a legacy row could not be placed
+ok 46 - 46 the migration functions are service_role only
+ok 47 - 47 the lane functions are SECURITY DEFINER with a pinned search_path
+ok 48 - 48 the shared-tenant helper: shared tenant, shared non-primary, none (platform tenant ignored)
+ok 49 - 49 the context-tenant helper picks the primary non-platform tenant, NULL when there is none
+ok 50 - 50 the scope guard of VTID-05576 still refuses a direct network write after the migration ran
+ok 51 - 51 the guard accepts again once the unplaceable row is gone
+ok 52 - 52 an empty live legacy table passes the guard
+ok 53 - 53 a live legacy table whose rows are all identical in the snapshot passes
+ok 54 - 54 a live legacy id that is absent from its snapshot stops the guard (stale snapshot)
+ok 55 - 55 a live legacy row that differs from its snapshot stops the guard
+ok 56 - 56 ... and passes again once the row matches
+ok 57 - 57 a missing snapshot table while a live legacy table exists stops the guard (no silent skip)
+ok 58 - 58 with no live legacy table left, a missing snapshot is only reported as skipped (nothing to lose)
+ok 59 - 59 a live participant row that is absent from its snapshot stops the guard
+ok 60 - 60 a memberless group whose sender is a member is unplaced; group_skipped stays 1 (only the bots-only group d5)
+ok 61 - 61 ... and the guard refuses the drop
+ok 62 - 62 a DM with no member tenant and a platform legacy tenant is unplaced, never written with the platform tenant
+ok 63 - 63 ... and the guard refuses the drop
+ok 64 - 64 a group whose members have no tenant and whose legacy tenant is the platform is unplaced, never written with the platform tenant
+ok 65 - 65 the two participant tables take no write from any API role after the freeze
