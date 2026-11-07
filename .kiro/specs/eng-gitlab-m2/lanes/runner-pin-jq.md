@@ -1,6 +1,6 @@
 ---
 lane: runner-pin-jq
-state: ready
+state: executing
 next_actor: kiro
 depends_on: [fleet, settings]
 executor: kiro
@@ -16,8 +16,10 @@ paths:
   - scripts/eng/fleet-structure.test.mjs
   - scripts/eng/free-tier-guard.test.mjs
   - docs/validation/**
-updated: 2026-11-07T20:08Z
+updated: 2026-11-07T20:34Z
 vtid: VTID-05612
+claimed_by: kiro-exafy-202611071142-d7ed
+branch: kiro/eng-gitlab-m2/runner-pin-jq
 ---
 # Lane: runner-pin-jq (repo vitana-platform)
 Two defects the first runs on the live GitLab showed (eng-gitlab-m1/gitlab-verify, VTID-05555, evidence in
@@ -38,3 +40,6 @@ Depends on fleet and settings (done). Builder: seat exafy.
 
 ### 2026-11-07T20:08Z · ci-plan-spar · ready (VTID allocated)
 VTID-05612 allocated after policy approval (converged-auto-v1).
+
+### 2026-11-07T20:34Z · kiro-exafy-202611071142-d7ed · ready → executing
+Tests first: the new fleet-structure and free-tier-guard cases are red on origin/main (outputs/red-on-base.txt), green with the change (outputs/green.txt). Two existing assertions are tightened on purpose (acceptance.md, Contract). Both installers pin and hold the helper; .gateway installs jq; the fleet runbook records the recovery and the fleet size.
