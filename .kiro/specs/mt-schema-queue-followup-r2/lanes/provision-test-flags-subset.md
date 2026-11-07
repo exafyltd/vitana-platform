@@ -9,8 +9,9 @@ reviewer_seat: agent:vitana-lane-reviewer
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 paths:
   - supabase/tests/vtid_05150_provision_tenant.test.sql
-updated: 2026-11-07T20:00Z
+updated: 2026-11-07T19:28Z
 repos: [exafyltd/vitana-platform]
+vtid: VTID-05610
 ---
 # provision-test-flags-subset — feature_flags expectation tolerates erp key — mt-schema-queue-followup-r2
 
@@ -21,3 +22,6 @@ Rules (§7a): no VTID allocation, no merge outside §7b, no deploy, no live writ
 ## Log
 ### 2026-11-07T20:00Z · kiro-hotmail-202611061752-cc1f · created → ready
 Created with the plan.
+
+### 2026-11-07T19:28Z · ci-plan-spar · ready (VTID allocated)
+VTID-05610 allocated after policy approval (converged-auto-v1).
