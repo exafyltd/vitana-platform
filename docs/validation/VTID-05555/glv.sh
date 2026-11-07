@@ -3,16 +3,18 @@
 # which starts and later removes one scratch machine exactly as RUNBOOK section 8 does.
 #   bash glv.sh read      backup listing + latest GitLab main pipelines + ci-config file hashes   (2 minutes, read only)
 #   bash glv.sh restore   restore test on a scratch machine, compare with live, remove the machine (30-60 minutes)
+#   bash glv.sh fleet     read only: fleet runner token present?, settings sync journal, fleet manager log
 #   bash glv.sh resume    after CloudShell closed during "restore": read step B from the scratch machine, run step C, remove the machine
 #   bash glv.sh cleanup   remove a scratch machine left behind (if CloudShell closed during "restore")
 # Each run writes ~/glv-<word>-<time>.txt. Paste that file's content back into the Kiro session.
 set -uo pipefail
-WORD="${1:-}"; case "$WORD" in read|restore|resume|cleanup) ;; *) echo "usage: bash glv.sh read | restore | resume | cleanup"; exit 2 ;; esac
+WORD="${1:-}"; case "$WORD" in read|fleet|restore|resume|cleanup) ;; *) echo "usage: bash glv.sh read | fleet | restore | resume | cleanup"; exit 2 ;; esac
 OUTF=~/glv-$WORD-$(date -u +%Y%m%dT%H%MZ).txt
 exec > >(sed -u -E 's/(glpat-|glrt-|glptt-|whsec_)[A-Za-z0-9_+\/=-]+/\1<removed>/g' | tee "$OUTF") 2>&1
 echo "== glv.sh $WORD $(date -u +%FT%TZ)"
 
-# engineering-account credentials (RUNBOOK section 2)
+# engineering-account credentials (RUNBOOK section 2); start from CloudShell's own sign-in even if this tab holds others
+unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN
 ACCOUNT_ID=$(grep '^ACCOUNT_ID=' ~/vitana-eng/state.env | cut -d= -f2)
 [ -n "$ACCOUNT_ID" ] || { echo "no ~/vitana-eng/state.env with ACCOUNT_ID"; exit 1; }
 C=$(aws sts assume-role --role-arn arn:aws:iam::$ACCOUNT_ID:role/OrganizationAccountAccessRole --role-session-name vitana-eng --query Credentials --output json) || exit 1
@@ -63,6 +65,19 @@ Ci::Runner.all.each do |r|
 end
 RB
   ssm_run "$LIVE" "echo $(base64 -w0 /tmp/glv-read.rb) | base64 -d > /tmp/glv-read.rb && gitlab-rails runner /tmp/glv-read.rb 2>/tmp/glv-read.err | grep -E '^(PROJECT|PIPELINE|  JOB|CI-CONFIG|RUNNER)'; tail -3 /tmp/glv-read.err; rm -f /tmp/glv-read.rb /tmp/glv-read.err" 900
+  echo; echo "== done. Paste the content of $OUTF into the Kiro session."
+  exit 0
+fi
+
+if [ "$WORD" = fleet ]; then
+  T=$(aws secretsmanager get-secret-value --secret-id vitana/engineering/gitlab/fleet-runner-token --query SecretString --output text 2>&1)
+  case "$T" in glrt-*) echo "== fleet runner token: present (glrt-...)";; "") echo "== fleet runner token: EMPTY";; *) echo "== fleet runner token: not a runner token: $(cut -c1-80 <<<"$T")";; esac
+  unset T
+  echo; echo "== settings sync journal (GitLab machine $LIVE)"
+  ssm_run "$LIVE" "journalctl -u vitana-settings -n 20 --no-pager; systemctl list-timers 'vitana-*' --no-pager" 120
+  MGR=$(aws ec2 describe-instances --filters Name=tag:Name,Values=vitana-eng-fleet-manager Name=instance-state-name,Values=running --query 'Reservations[0].Instances[0].InstanceId' --output text)
+  echo; echo "== fleet manager ($MGR)"
+  if [ -n "$MGR" ] && [ "$MGR" != None ]; then ssm_run "$MGR" "tail -n 20 /var/log/vitana-bootstrap.log; systemctl is-active gitlab-runner" 120; else echo "no running fleet manager machine"; fi
   echo; echo "== done. Paste the content of $OUTF into the Kiro session."
   exit 0
 fi
