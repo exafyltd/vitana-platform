@@ -120,6 +120,15 @@ export const NAVIGATION_CONFIG = [
     ]
   },
   {
+    module: "delivery",
+    label: "Delivery",
+    tabs: [
+      { key: "merge-queue", label: "Merge Queue" },
+      { key: "pipeline-runs", label: "Pipeline Runs" },
+      { key: "releases", label: "Releases" }
+    ]
+  },
+  {
     module: "governance",
     label: "Governance",
     tabs: [

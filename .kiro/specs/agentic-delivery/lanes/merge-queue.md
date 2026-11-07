@@ -3,10 +3,9 @@ lane: merge-queue
 state: ready
 next_actor: kiro
 depends_on: []
-executor: kiro
-seat: exafy
-reviewer_seat: agent:vitana-lane-reviewer
-reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+executor: claude
+reviewer_seat: exafyltd
+reviewer: exafyltd (exceptions seat; the reviewer agent is refused on claude lanes)
 repos: [exafyltd/vitana-platform]
 paths:
   - scripts/eng/gitlab-land.mjs
@@ -18,7 +17,7 @@ paths:
   - scripts/eng/assist-trigger.mjs
   - scripts/eng/assist-trigger.test.mjs
   - docs/validation/**
-updated: 2026-11-05T02:59Z
+updated: 2026-11-06T23:43Z
 vtid: VTID-05549
 ---
 # Lane: merge-queue (repo vitana-platform)
@@ -34,3 +33,6 @@ VTID-05549 allocated after policy approval (converged-auto-v1).
 reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
 ### 2026-11-05T02:59Z · pm-agent · update
 reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
+
+### 2026-11-06T23:43Z · kiro-exafy-202611061823-5cb2 · admin: executor kiro -> claude (admin lane VTID-05565)
+Reassigned by lane `claude-migration-lanes/reassign-migration` (lane_admin): `executor: kiro` -> `claude`, `reviewer_seat` -> `exafyltd`, `seat: exafy` removed; `paths` and `vtid` unchanged. On the owner's instruction (2026-11-06) the earlier Kiro PR for this lane was closed and its claim (older than 24 h) was released. Next: Claude Code claims and builds this lane from `ready`.

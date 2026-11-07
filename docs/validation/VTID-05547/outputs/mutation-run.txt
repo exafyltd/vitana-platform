@@ -1,0 +1,135 @@
+baseline: 165 cases, 165 pass on the unmutated tree
+caught      flag value not trimmed  <- the flag — DELIVERY_HOST_<REPO> means GitLab only for the value "gitlab" (any case, trimmed); unset, empty and anythin
+caught      flag value case sensitive  <- the flag — DELIVERY_HOST_<REPO> means GitLab only for the value "gitlab" (any case, trimmed); unset, empty and anythin
+caught      flag name prefix changed  <- landing — a main pipeline with the trailers gives one delivery.landed a main pipeline with the trailers gives one deli  [+36]
+caught      refusal event renamed  <- the guard — merge and update-branch with the flag set mergePullRequest makes no GitHub call, refuses with merge_moved_  [+3]
+caught      refusal event status error  <- the guard — merge and update-branch with the flag set mergePullRequest makes no GitHub call, refuses with merge_moved_
+caught      refusal event loses its stage  <- the guard — merge and update-branch with the flag set mergePullRequest makes no GitHub call, refuses with merge_moved_
+caught      refusal key ignores the operation  <- the guard — merge and update-branch with the flag set mergePullRequest makes no GitHub call, refuses with merge_moved_  [+1]
+caught      refusal ignores the title VTID  <- the guard — merge and update-branch with the flag set mergePullRequest makes no GitHub call, refuses with merge_moved_  [+2]
+caught      guard does not refuse  <- the guard — merge and update-branch with the flag set mergePullRequest makes no GitHub call, refuses with merge_moved_  [+5]
+caught      guard inverted  <- the guard — merge and update-branch with the flag set mergePullRequest makes no GitHub call, refuses with merge_moved_  [+13]
+caught      refusal code renamed  <- the flag — DELIVERY_HOST_<REPO> checkGithubMerge is the same decision as plain data, with no event  [+3]
+caught      guard writes no event  <- the guard — merge and update-branch with the flag set mergePullRequest makes no GitHub call, refuses with merge_moved_  [+4]
+caught      a failing event write stops the refusal  <- the guard — merge and update-branch with the flag set a failing OASIS write never stops the refusal
+caught      any error counts as a refusal  <- the guard — flag unset: exactly as before a GitHub error still reaches the caller unchanged (the guard does not catch 
+caught      refusal marked shadow  <- the guard — merge and update-branch with the flag set mergePullRequest makes no GitHub call, refuses with merge_moved_
+caught      merge unguarded  <- the guard — merge and update-branch with the flag set mergePullRequest makes no GitHub call, refuses with merge_moved_  [+4]
+caught      update-branch unguarded  <- the guard — merge and update-branch with the flag set updatePullRequestBranch makes no GitHub call, refuses and emits 
+caught      merge guard labelled update_branch  <- the guard — merge and update-branch with the flag set mergePullRequest makes no GitHub call, refuses with merge_moved_
+caught      merge guard drops the commit title  <- the guard — merge and update-branch with the flag set mergePullRequest makes no GitHub call, refuses with merge_moved_  [+1]
+caught      landing without the trailer  <- landing — a main pipeline with the trailers gives one delivery.landed a main pipeline without the Merge-Request traile
+caught      accept-to-land reversed  <- landing — a main pipeline with the trailers gives one delivery.landed a main pipeline with the trailers gives one deli  [+2]
+caught      every run is live  <- stage → emitOasisEvent → oasis_events INSERT a shadow delivery is written, marked shadow, with no deploy and no landin  [+5]
+caught      a shadow run writes deploy rows  <- stage → emitOasisEvent → oasis_events INSERT a shadow delivery is written, marked shadow, with no deploy and no landin  [+2]
+caught      landing on any ref  <- landing — a main pipeline with the trailers gives one delivery.landed a pipeline of another ref, or of a tag, gives no  [+1]
+caught      landing on a tag pipeline  <- landing — a main pipeline with the trailers gives one delivery.landed a pipeline of another ref, or of a tag, gives no
+caught      failed deploy written as error  <- staging deploy — the deploy and rollback job statuses of a main pipeline the deploy job failure gives staging.deploy.f  [+2]
+caught      rollback written as success  <- staging deploy — the deploy and rollback job statuses of a main pipeline the rollback job gives staging.deploy.rolled_
+caught      a canceled deploy job counts  <- staging deploy — the deploy and rollback job statuses of a main pipeline a deploy job that was canceled or skipped, an
+caught      claude branches ignored  <- push — the branch, its merge request and the review and lane-file facts the agent branches are kiro, claude, assist an
+caught      cutover topic renamed  <- cut tags and moved pull requests the tags delivery/cutover-<repo> give scm.migration.cutover  [+1]
+caught      a tag of any repository counts  <- cut tags and moved pull requests another tag, a tag of another repository, and a deleted tag are ignored
+caught      any host counts as moved from  <- cut tags and moved pull requests only a GitHub pull request of the two repositories counts as moved
+caught      lane files matched under any specs dir  <- push — the branch, its merge request and the review and lane-file facts a pushed commit that changes a lane file gives
+caught      any verdict recorded  <- push — the branch, its merge request and the review and lane-file facts a verdict other than accept or changes, or a r
+caught      reviewed head not validated  <- push — the branch, its merge request and the review and lane-file facts a verdict other than accept or changes, or a r
+caught      commit cap raised  <- push — the branch, its merge request and the review and lane-file facts looks at no more than 20 commits and 100 event
+caught      landing key per pipeline  <- landing — a main pipeline with the trailers gives one delivery.landed the landing seen at running, success and failed 
+caught      paused is not a queue label  <- helpers queueLabel finds the queue-* label among objects or strings, and only those
+caught      a queue label change is not an update  <- merge request updates — the queue label and a new head a queue label change gives scm.gitlab.merge_request.updated  [+7]
+caught      a new head is not an update  <- merge request updates — the queue label and a new head a new head (oldrev) gives scm.gitlab.merge_request.updated with
+caught      nightly VTID changed  <- pipelines — started, canceled, finished, and the job summary success and failed with no VTID in either title use BOOTS  [+1]
+caught      job wait key renamed  <- pipelines — started, canceled, finished, and the job summary pipeline events carry each job's name, status, wait and r
+caught      shadow pipeline variable ignored  <- shadow — a run is marked, and writes no deploy and no landing DELIVERY_MODE=shadow in the pipeline variables makes the
+caught      moved pull request leaks the description  <- cut tags and moved pull requests a merge request opened with a "Moved from <PR URL>" line gives scm.migration.pr_moved  [+1]
+caught      merge request key without the time  <- merge request updates — the queue label and a new head a queue label change gives scm.gitlab.merge_request.updated
+caught      branch not remembered  <- push — the branch, its merge request and the review and lane-file facts a push to an agent branch gives scm.gitlab.pus  [+2]
+caught      queue label not read  <- merge request updates — the queue label and a new head opened, merged and closed keep the events of mapper.ts and add 
+caught      push key without the head  <- push — the branch, its merge request and the review and lane-file facts a push to an agent branch gives scm.gitlab.pus
+caught      pipeline key without the status  <- pipelines — started, canceled, finished, and the job summary pipeline running and canceled give scm.gitlab.pipeline.st  [+3]
+caught      repo is the project path  <- stage → emitOasisEvent → oasis_events INSERT a main pipeline: three rows, each with the delivery metadata and the righ  [+26]
+caught      landing source branch from the wrong trailer  <- landing — a main pipeline with the trailers gives one delivery.landed a main pipeline with the trailers gives one deli
+caught      deleted branch recorded  <- push — the branch, its merge request and the review and lane-file facts pushes to other branches, to refs that are not
+caught      update event loses the stage  <- merge request updates — the queue label and a new head a queue label change gives scm.gitlab.merge_request.updated  [+1]
+caught      deploy rows lose the commit  <- staging deploy — the deploy and rollback job statuses of a main pipeline the deploy job success gives staging.deploy.c  [+3]
+caught      mapper.ts events not kept (event rebuilt)  <- topics — members of CicdEventType, and mapper.ts kept as it is the events of mapper.ts are kept as they are: the deliv
+caught      webhook-id not remembered  <- the stage — exactly once a webhook-id that was recorded is a duplicate for good: another body with that id records not
+caught      no per-fact dedupe  <- the stage — exactly once the same fact from another delivery (another webhook-id) is one row: a duplicate dedupe_key r  [+1]
+caught      emit failure answers 500  <- stage → emitOasisEvent → oasis_events INSERT the OASIS write failing answers 502 and the retry records the row  [+2]
+caught      GET handled by the stage  <- the stage — every reply is JSON any method but POST falls through to Express (no GET handler, no HTML error page from 
+caught      duplicate webhook-id re-processed  <- the stage — exactly once a webhook-id that was recorded is a duplicate for good: another body with that id records not
+caught      signature gate skipped  <- stage → emitOasisEvent → oasis_events INSERT a main pipeline: three rows, each with the delivery metadata and the righ  [+20]
+caught      branch lookup returns many rows  <- the branch lookup in OASIS (read only) asks the merge request rows of the branch and returns the VTID of the newest
+caught      branch lookup accepts any VTID  <- the branch lookup in OASIS (read only) answers null for no row, an upstream error, a throw, a VTID that is not VTID-\d
+caught      reply lists no events  <- stage → emitOasisEvent → oasis_events INSERT the OASIS write failing answers 502 and the retry records the row  [+3]
+caught      lookup reads the wrong topics  <- the branch lookup in OASIS (read only) asks the merge request rows of the branch and returns the VTID of the newest
+caught      dedupe keeps the last row  <- the summary — built only from the ledger and OASIS shadow rows are left out unless ?include_shadow=1; a duplicate dedu  [+2]
+caught      shadow rows shown  <- the summary — built only from the ledger and OASIS shadow rows are left out unless ?include_shadow=1; a duplicate dedu  [+1]
+caught      queue rank swapped  <- Delivery → Merge queue draws one section and one named table per repository from the real summary, in queue order, wit  [+2]
+caught      blocked gets a position  <- the summary — built only from the ledger and OASIS the queue order comes from the labels: updating, then ready by acce
+caught      waiting time from the last event  <- the summary — built only from the ledger and OASIS the queue order comes from the labels: updating, then ready by acce
+caught      merged merge request stays queued  <- the summary — built only from the ledger and OASIS reads the delivery topics of the window from OASIS and the ledger r  [+3]
+caught      red main looks backwards  <- the metrics — a figure with no source is null, never 0 change failure: a landing followed within 24 hours by a red mai  [+1]
+caught      p95 rank rounds down  <- the metrics — a figure with no source is null, never 0 computes the figures that have a source  [+2]
+caught      pass rate denominator  <- the metrics — a figure with no source is null, never 0 computes the figures that have a source
+caught      cost per day is 0  <- the metrics — a figure with no source is null, never 0 with no events every figure is null  [+1]
+caught      landing to verify matches any verification  <- the metrics — the edges of each figure (plan §10) landing to verify: the first STAGING-VERIFY result at or after the l
+caught      main green and red swapped  <- the summary — built only from the ledger and OASIS the latest pipeline per merge request, the state of main, and the j  [+2]
+caught      every deploy is a GitHub deploy  <- the summary — built only from the ledger and OASIS releases: the latest staging deploy per service (GitHub-era and Git
+caught      time to restore ignores the red start  <- the metrics — the edges of each figure (plan §10) time to restore: the first failed main pipeline of a repository to i
+caught      summary without auth  <- auth — service token or exafy_admin no token → 401 JSON, and nothing is read  [+2]
+caught      metrics without auth  <- auth — service token or exafy_admin no token → 401 JSON, and nothing is read
+caught      window cap raised  <- the summary — built only from the ledger and OASIS the window: ?hours is clamped to 1..720 and a bad value uses the de
+caught      unreachable source answers 500  <- the summary — built only from the ledger and OASIS an unreachable source answers 502 JSON with no error text, for both
+caught      shadow shown by default  <- the summary — built only from the ledger and OASIS shadow rows are left out unless ?include_shadow=1; a duplicate dedu  [+1]
+caught      hosts read from the process env  <- the summary — built only from the ledger and OASIS reports the host of each repository from the cut flag, and the refu  [+3]
+caught      another source named  <- the summary — built only from the ledger and OASIS reads the delivery topics of the window from OASIS and the ledger r
+caught      reader writes  <- the builders and the PostgREST readers postgrestReaders reads with GET, the service role and the topic and window filt
+caught      metrics include shadow rows  <- the metrics — a figure with no source is null, never 0 shadow rows never count in a figure
+caught      missing credentials do not fail  <- the builders and the PostgREST readers postgrestReaders fails closed: no credentials, or an upstream error status, is 
+caught      read limit changed  <- the summary — built only from the ledger and OASIS one read is a bounded page of the newest 3000 events: a full page i
+caught      stage mounted after the router  <- index.ts — how the stage and the Delivery routes are mounted mounts the stage as middleware on the webhook path, just 
+caught      Delivery routes not mounted  <- index.ts — how the stage and the Delivery routes are mounted mounts the Delivery read routes once, through the route g
+caught      stage without the branch lookup  <- index.ts — how the stage and the Delivery routes are mounted mounts the stage as middleware on the webhook path, just 
+caught      Delivery route mounted at another path  <- index.ts — how the stage and the Delivery routes are mounted mounts the Delivery read routes once, through the route g
+caught      pipeline.started topic missing  <- topics — members of CicdEventType, and mapper.ts kept as it is every topic this layer writes is a literal of the CicdE
+caught      delivery.merge.refused topic missing  <- topics — members of CicdEventType, and mapper.ts kept as it is every topic this layer writes is a literal of the CicdE
+caught      rolled_back topic missing  <- topics — members of CicdEventType, and mapper.ts kept as it is every topic this layer writes is a literal of the CicdE
+caught      http links clickable  <- accessibility and the existing stylesheet only https URLs become links; fmtDuration and fmtAgo read as text
+caught      link rel dropped  <- Delivery → Merge queue draws one section and one named table per repository from the real summary, in queue order, wit
+caught      stale window shortened  <- Delivery — loading, error, retry, refresh, shadow a second render of a tab within 30 seconds reuses the data; after th
+caught      shadow query renamed  <- Delivery — loading, error, retry, refresh, shadow the Refresh button fetches again; the shadow toggle fetches with inc
+caught      failed pipeline drawn green  <- accessibility and the existing stylesheet every state draws with a pill of the AA family: five variants, each shown wi
+caught      column scope dropped  <- accessibility and the existing stylesheet every table is named and has column headers with scope; controls are real bu
+caught      table unnamed  <- Delivery → Merge queue draws one section and one named table per repository from the real summary, in queue order, wit  [+4]
+caught      button type dropped  <- accessibility and the existing stylesheet every table is named and has column headers with scope; controls are real bu
+caught      no retry on a re-render after an error  <- Delivery — loading, error, retry, refresh, shadow opening a tab after a failed refresh tries again even within 30 seco
+caught      pill replaced by a failing badge  <- Delivery → Merge queue draws one section and one named table per repository from the real summary, in queue order, wit  [+3]
+caught      title tooltip dropped  <- accessibility and the existing stylesheet every row is one line: identifiers use the monospace no-wrap cell, a ledger 
+caught      lane unclipped  <- accessibility and the existing stylesheet every row is one line: identifiers use the monospace no-wrap cell, a ledger 
+caught      innerHTML introduced  <- CSP and the page — no inline script or style, a bumped cache-buster delivery.js: no innerHTML, no inline handler, no e  [+5]
+caught      request without the auth headers  <- Delivery → Merge queue draws one section and one named table per repository from the real summary, in queue order, wit
+caught      unknown tab not the merge queue  <- Delivery — loading, error, retry, refresh, shadow a second render of a tab within 30 seconds reuses the data; after th
+caught      queue positions hidden  <- Delivery → Merge queue draws one section and one named table per repository from the real summary, in queue order, wit
+caught      PUBLISH hint removed  <- Delivery → Releases lists the staging deploys and the STAGING-VERIFY results, links only https run URLs, and points at
+caught      error alert role dropped  <- Delivery — loading, error, retry, refresh, shadow an error shows an alert with the reason and a Retry button that fetc  [+1]
+caught      Delivery tab not dispatched  <- navigation — the Delivery module is registered the render switch hands every Delivery tab to deliveryModule.view, whic
+caught      Delivery script path wrong  <- navigation — the Delivery module is registered the render switch hands every Delivery tab to deliveryModule.view, whic  [+1]
+caught      Delivery loader adds a script per view  <- app.js — the on-demand loader of delivery.js the first tab adds one same-origin script element; a tab opened while it 
+caught      Delivery loader ignores a loaded screen  <- app.js — the on-demand loader of delivery.js once loaded no element is added again; the screen is drawn at once
+caught      Delivery load failure is cached  <- app.js — the on-demand loader of delivery.js a script that does not load shows an alert, and the next tab that opens t
+caught      Delivery load failure is not an alert  <- app.js — the on-demand loader of delivery.js a script that does not load shows an alert, and the next tab that opens t
+caught      Delivery screen gets no auth headers  <- navigation — the Delivery module is registered the render switch hands every Delivery tab to deliveryModule.view, whic  [+1]
+caught      Delivery glue back to top-level functions  <- navigation — the Delivery module is registered the render switch hands every Delivery tab to deliveryModule.view, whic
+caught      Delivery section label missing  <- navigation — the Delivery module is registered the Delivery module is in NAVIGATION_CONFIG: app.js, the regenerated na
+caught      merge-queue tab key renamed  <- navigation — the Delivery module is registered the Delivery module is in NAVIGATION_CONFIG: app.js, the regenerated na
+caught      Delivery loaded from an inline-capable tag  <- CSP and the page — no inline script or style, a bumped cache-buster index.html keeps its script list and has no inline
+caught      app.js version not bumped  <- CSP and the page — no inline script or style, a bumped cache-buster app.js and styles.css were bumped together, to a n
+caught      styles.css version not bumped  <- CSP and the page — no inline script or style, a bumped cache-buster app.js and styles.css were bumped together, to a n
+caught      delivery.js added to index.html  <- CSP and the page — no inline script or style, a bumped cache-buster index.html keeps its script list and has no inline
+caught      Delivery removed from navigation-config.js  <- navigation — the Delivery module is registered the Delivery module is in NAVIGATION_CONFIG: app.js, the regenerated na  [+1]
+caught      inventory screen id renamed  <- navigation — the Delivery module is registered the Delivery module is in NAVIGATION_CONFIG: app.js, the regenerated na  [+1]
+caught      inventory module list missing delivery  <- navigation — the Delivery module is registered the Delivery module is in NAVIGATION_CONFIG: app.js, the regenerated na  [+1]
+
+132/132 mutations caught, 0 not caught
