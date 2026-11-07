@@ -1,6 +1,6 @@
 ---
 lane: legacy-messages-migration-db
-state: verified
+state: done
 next_actor: kiro
 depends_on: [messaging-send-db, network-visibility-db]
 executor: kiro
@@ -10,7 +10,7 @@ reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 paths:
   - supabase/migrations/20261102052***_*.sql
   - supabase/tests/mt-network-legacy-migration.pgtap.sql
-updated: 2026-11-07T19:45Z
+updated: 2026-11-07T19:55Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05573
 claimed_by: kiro-hotmail-202611061752-cc1f
@@ -56,3 +56,6 @@ PR https://github.com/exafyltd/vitana-platform/pull/4840. Reviewed on head `d108
 merge: 2c1a3d23ad278f8d674455aec3638e528526b4d5 (exafyltd/vitana-platform#4840)
 authority: §7b PM rule. Squash merge by land-guard on head `b2fcf1e628`: the reviewed head `d10821037d` plus the review-entry commit and clean merges of main. `land-guard review` ok, `land-guard checks` green (12 checks), PR up to date. No lane code changed after the accept.
 The migrations in this lane (20261102052000, 052100, 052200, 052300) are in the repository and NOT applied. Applying them needs the owner's approval per file and database (collaboration.md §7d), and the legacy readers and writers in vitana-v1 and the gateway must be retired before 052000. Next: the `done` record.
+
+### 2026-11-07T19:55Z · kiro-hotmail-202611061752-cc1f · verified → done
+This lane deploys nothing: it adds four migrations (20261102052000 snapshot and freeze, 052100 functions, 052200 migrate run, 052300 drop of the legacy messenger tables) with rollbacks, pgTAP (65 cases, PGlite) and validation evidence, none applied. No staging deploy follows from the merge (2c1a3d23ad), so there is no STAGING-VERIFY run for it; it is done at merge with green checks (12 green on head b2fcf1e628). Applying the migrations needs the owner's approval of the files and the target database (collaboration.md §7d). Non-blocking review notes carried forward: the apply precondition (retire the legacy readers and writers in vitana-v1 and the gateway before 052000) and a clean live-before.sql are prose only; acceptance.md evidence bullets still say 50 ok / five mutations while outputs show 65 and M1-M13; the participant tables stay frozen after 052300; the DATABASE_SCHEMA.md and MIGRATION-QUEUE.md rows for the bak_* tables and these migrations are a platform-side follow-up outside the lane paths.
