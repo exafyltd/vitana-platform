@@ -1,6 +1,6 @@
 ---
 lane: orphan-analysis-and-quarantine
-state: ready
+state: done
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -12,9 +12,12 @@ paths:
   - supabase/tests/vtid_mt_data_cleanup_orphan_*.sql
   - docs/multitenancy/MIGRATION-QUEUE.md
   - scripts/ci/migration-drift-baseline.json
-updated: 2026-11-06T10:09Z
+updated: 2026-11-07T12:55Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05571
+claimed_by: kiro-hotmail-202611061752-cc1f
+branch: kiro/mt-data-cleanup-r2/orphan-analysis-and-quarantine
+pr: https://github.com/exafyltd/vitana-platform/pull/4773
 ---
 # Orphan analysis, snapshot, remap and quarantine — mt-data-cleanup (repo vitana-platform)
 
@@ -68,3 +71,17 @@ reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 PR: https://github.com/exafyltd/vitana-platform/pull/4773
 Findings: non-blocking: drift-baseline sort order/uniqueness/count checked by diff reading, not by script (node denied in the review sandbox); non-blocking: CI (11/11 success on this head) taken from the caller's REST read, not my own query
 Next: the land step merges under §7b
+
+### 2026-11-07T12:50Z · kiro-hotmail-202611061752-cc1f · ready → executing
+Built on branch kiro/mt-data-cleanup-r2/orphan-analysis-and-quarantine; recorded here at the closing, because one transition per PR meant the PR carried no lane-state entry.
+
+### 2026-11-07T12:50Z · kiro-hotmail-202611061752-cc1f · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/4773. Reviewed on head `d38b8b47dd` (accept entry above, reviewer agent claude-sonnet-5.5).
+
+### 2026-11-07T12:50Z · kiro-hotmail-202611061752-cc1f · in-review → verified
+merge: 97eeca91487bd81c3682545eca3d4fba35bc23c3 (exafyltd/vitana-platform#4773)
+authority: §7b PM rule. Squash merge by land-guard on head `05875cee56`: the reviewed head `d38b8b47dd` plus the review-entry commit. `land-guard review` ok, `land-guard checks` green, PR up to date. No lane code changed after the accept.
+The migrations in this lane are in the repository and NOT applied. Applying them needs the owner's approval per file and database (collaboration.md §7d). Next: STAGING-VERIFY on the merge commit, then the `done` record.
+
+### 2026-11-07T12:55Z · kiro-hotmail-202611061752-cc1f · verified → done
+Closing record: merge 97eeca91487bd81c3682545eca3d4fba35bc23c3 (#4773) changes no path under services/gateway or the stage deploy workflow (supabase migrations, tests, docs and the drift baseline only), so AWS-STAGE-DEPLOY-GATEWAY and STAGING-VERIFY did not run for it: this change deploys nothing. It is done at merge with green checks (12/12 on the final head). The migrations 20261102040000 to 20261102040400 are on main and NOT applied; applying them needs the owner's approval per file and database (collaboration.md §7d). The lane claim is released once this record is on main.

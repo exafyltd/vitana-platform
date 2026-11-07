@@ -4,7 +4,7 @@ Plan: `.kiro/specs/mt-tenant-admin-r2/plan.md` (Fix item `tenant-admin-moderatio
 `tenant-admin-moderation-db` group of `tasks.md` (M1-M5). Design: `design.md` section "tenant-admin-moderation-db (O4)".
 Sparring record: `plan-sparring.md`.
 
-VALIDATION_PROFILE: database (migration files, pgTAP and read-only SQL only).
+VALIDATION_PROFILE: gateway_backend (migration files, pgTAP, read-only SQL and one static test; the PR body and the validator guard use this profile).
 ROUTE_MOUNT: none. FINAL_URL: n/a. Nothing is applied from the PR; each file is applied later through
 `RUN-MIGRATION.yml`, one dispatch per file, after the owner approves the files and the target database
 (collaboration.md §7d). Kiro ran no SQL against any live system; the local runs below are in-process PGlite.
@@ -19,12 +19,12 @@ ROUTE_MOUNT: none. FINAL_URL: n/a. Nothing is applied from the PR; each file is 
 | rollbacks | `rollback-070600-…`, `rollback-070150-…`, `rollback-070100-…` (apply in that order) |
 | read-only checks | `live-before.sql`, `post-apply-checks.sql`, `rollback-check.sql` |
 | M4 pgTAP | `pgtap/vtid_05491_tenant_moderation.test.sql` (73 cases) + `pgtap/vtid_05491_fixture.sql` |
-| M5 queue / drift | `docs/multitenancy/MIGRATION-QUEUE.md` rows 30-32; `scripts/ci/migration-drift-baseline.json` unchanged (no new public table: the only new tables are in `legacy_archive`, which the drift check ignores) |
+| M5 queue / drift | `docs/multitenancy/MIGRATION-QUEUE.md` rows 34-36; `scripts/ci/migration-drift-baseline.json` unchanged (no new public table: the only new tables are in `legacy_archive`, which the drift check ignores) |
 | static gate | `static/vtid-05491-tenant-moderation.test.ts` (20 cases; run locally with ts-jest, see `commands.log`; staging-tests.json uses a read-only http probe because the STAGING-VERIFY `existing` runner only accepts `npm run` / `npx jest` refs rooted in a package) |
 
 Apply order: 070100 → 070150 → (C3 `070160`, mt-community-isolation-r2, not here) → 070600. Rollback order: 070600 → 070150 → 070100
-(each earlier rollback refuses while a later file is still applied). The queue row numbers 30-32 may shift at landing: other lanes
-also add rows 30-31.
+(each earlier rollback refuses while a later file is still applied). The queue row numbers 34-36 may shift at landing: rows 30-31 belong to VTID-05507 (tenant-domains-db, merged) and rows 32-33 to VTID-05493
+(tenant-lifecycle-db, PR #4788); the C3 `070160` ordering note is unchanged.
 
 ## Acceptance
 
