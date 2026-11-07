@@ -1,0 +1,13 @@
+# VTID-05540: the offline PR-GATE checks of this commit against its stacked base (git and node only; no gateway, GitHub or GitLab call). CI runs them against the PR base.
+# $ node scripts/ci/pr-gate/gate.mjs scope --base b00fed38ce9 --head HEAD --title "VTID-05540 (eng-gitlab-m2/rehearsal): …"
+✅ **scope** — 46 changed file(s), all inside the scope of VTID-05540
+exit 0
+# $ node scripts/ci/pr-gate/gate.mjs sparring --base b00fed38ce9 --head HEAD --title "VTID-05540 (eng-gitlab-m2/rehearsal): …"
+✅ **sparring record** — present and approved for VTID-05540
+exit 0
+# $ node scripts/ci/pr-gate/gate.mjs weakening --base b00fed38ce9 --head HEAD --title "VTID-05540 (eng-gitlab-m2/rehearsal): …"
+✅ **test weakening** — 4 changed test file(s), none weakened without a declaration
+exit 0
+# $ node scripts/ci/pr-gate/gate.mjs red-green --base b00fed38ce9 --head HEAD --title "VTID-05540 (eng-gitlab-m2/rehearsal): …"
+➖ **red→green** — skipped: no VTID of kind "fix"
+exit 0
