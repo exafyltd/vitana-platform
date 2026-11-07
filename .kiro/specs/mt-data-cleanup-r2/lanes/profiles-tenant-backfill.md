@@ -1,6 +1,6 @@
 ---
 lane: profiles-tenant-backfill
-state: verified
+state: done
 next_actor: kiro
 depends_on: [orphan-analysis-and-quarantine]
 executor: kiro
@@ -11,7 +11,7 @@ paths:
   - supabase/migrations/20261102042*.sql
   - supabase/tests/vtid_mt_data_cleanup_profiles_*.sql
   - docs/multitenancy/MIGRATION-QUEUE.md
-updated: 2026-11-07T16:56Z
+updated: 2026-11-07T17:00Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05572
 claimed_by: kiro-hotmail-202611061752-cc1f
@@ -82,3 +82,6 @@ PR https://github.com/exafyltd/vitana-platform/pull/4800. Reviewed on head `b0fb
 merge: f8f095327bbf25cc989287697652843d0bec98f2 (exafyltd/vitana-platform#4800)
 authority: §7b PM rule. Squash merge by land-guard on head `5597628980`: the reviewed head `b0fbfe52cc` plus the review-entry commit. `land-guard review` ok, `land-guard checks` green, PR up to date. No lane code changed after the accept.
 The migrations in this lane are in the repository and NOT applied. Applying them needs the owner's approval per file and database (collaboration.md §7d). Next: STAGING-VERIFY on the merge commit, then the `done` record.
+
+### 2026-11-07T17:00Z · kiro-hotmail-202611061752-cc1f · verified → done
+Closing record 2 of 2. Merge f8f095327b (#4800) is verified: no deploy path is touched, so the lane is done at merge (§7b). The migrations in this lane are in the repository and NOT applied; applying them needs the owner's approval per file and database (collaboration.md §7d).
