@@ -1,6 +1,6 @@
 ---
 lane: messaging-send-db
-state: ready
+state: verified
 next_actor: kiro
 depends_on: [network-visibility-db]
 executor: kiro
@@ -12,9 +12,12 @@ paths:
   - docs/multitenancy/MIGRATION-QUEUE.md
   - scripts/ci/migration-drift-baseline.json
   - services/gateway/test/mt-network-messaging-send-db.pgtap.test.ts
-updated: 2026-11-06T10:10Z
+updated: 2026-11-07T18:13Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05576
+claimed_by: kiro-hotmail-202611061752-cc1f
+branch: kiro/mt-network-r2/messaging-send-db
+pr: https://github.com/exafyltd/vitana-platform/pull/4832
 ---
 # mt-network-r2/messaging-send-db — scope column, send/connection RPCs, client-write revokes (repo vitana-platform)
 
@@ -39,3 +42,14 @@ reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 PR: https://github.com/exafyltd/vitana-platform/pull/4832
 Findings: non-blocking: (1) add a HOLD marker to MIGRATION-QUEUE row 47; (2) guard network->community laundering by service_role in send_message_as; (3) add coverage for case 58 in the pgTAP test.
 Next: the land step merges under §7b
+
+### 2026-11-07T18:13Z · kiro-hotmail-202611061752-cc1f · ready → executing
+Built on branch kiro/mt-network-r2/messaging-send-db; recorded here at the closing, because one transition per PR meant the PR carried no lane-state entry.
+
+### 2026-11-07T18:13Z · kiro-hotmail-202611061752-cc1f · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/4832. Reviewed on head `9647397d6a` (accept entry above, reviewer agent claude-sonnet-5.5).
+
+### 2026-11-07T18:13Z · kiro-hotmail-202611061752-cc1f · in-review → verified
+merge: afeb5b7a816d2630271e28e96ef72c0a4d64b645 (exafyltd/vitana-platform#4832)
+authority: §7b PM rule. Squash merge by land-guard on head `c0568fbe81`: the reviewed head `9647397d6a` plus the review-entry commit. `land-guard review` ok, `land-guard checks` green, PR up to date. No lane code changed after the accept.
+The migrations in this lane are in the repository and NOT applied. Applying them needs the owner's approval per file and database (collaboration.md §7d). Next: STAGING-VERIFY on the merge commit, then the `done` record.
