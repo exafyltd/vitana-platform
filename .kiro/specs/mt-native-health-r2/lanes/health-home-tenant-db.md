@@ -1,6 +1,6 @@
 ---
 lane: health-home-tenant-db
-state: verified
+state: done
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -12,7 +12,7 @@ paths:
   - supabase/migrations/20261102130100_*.sql
   - docs/multitenancy/MIGRATION-QUEUE.md
   - services/gateway/test/mt-native-health/health-home-tenant.pgtap.sql
-updated: 2026-11-07T17:16Z
+updated: 2026-11-07T17:19Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05595
 claimed_by: kiro-hotmail-202611061752-cc1f
@@ -93,3 +93,6 @@ PR https://github.com/exafyltd/vitana-platform/pull/4811. Reviewed on head `4436
 merge: 6510f6f99dacacfa39a690a7dc82797d1994859c (exafyltd/vitana-platform#4811)
 authority: §7b PM rule. Squash merge by land-guard on head `39f4d2dc71`: the reviewed head `4436409f19` plus the review-entry commit. `land-guard review` ok, `land-guard checks` green, PR up to date. No lane code changed after the accept.
 The migrations in this lane are in the repository and NOT applied. Applying them needs the owner's approval per file and database (collaboration.md §7d). Next: STAGING-VERIFY on the merge commit, then the `done` record.
+
+### 2026-11-07T17:19Z · kiro-hotmail-202611061752-cc1f · verified → done
+Deploys nothing: the lane changes migration files, a pgTAP test, the migration queue and validation docs only, and touches no deploy path, so the lane is done at merge (6510f6f99d, #4811). The two migrations (20261102130000, 20261102130100) are in the repository and NOT applied; applying them needs the owner's approval per file and database (collaboration.md §7d). No staging deploy was triggered by this merge.
