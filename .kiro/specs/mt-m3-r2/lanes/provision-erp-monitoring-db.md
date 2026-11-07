@@ -1,6 +1,6 @@
 ---
 lane: provision-erp-monitoring-db
-state: ready
+state: verified
 next_actor: kiro
 depends_on: [tenant-domains-db]
 executor: kiro
@@ -14,9 +14,12 @@ paths:
   - supabase/migrations/20261102141100_vtid_*_mt_isolation_health_by_tenant_rollback.sql
   - docs/multitenancy/MIGRATION-QUEUE.md
   - scripts/ci/migration-drift-baseline.json
-updated: 2026-11-02T16:28Z
+updated: 2026-11-07T19:20Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05506
+claimed_by: kiro-hotmail-202611061752-cc1f
+branch: kiro/mt-m3-r2/provision-erp-monitoring-db
+pr: https://github.com/exafyltd/vitana-platform/pull/4839
 ---
 # ERP bootstrap request + per-tenant isolation health — mt-m3 (repo vitana-platform)
 
@@ -69,3 +72,14 @@ Findings:
 - non-blocking: supabase/tests/vtid_05150_provision_tenant.test.sql:144 is outside the lane paths and its feature_flags equality would not hold on a full replay with 20261102141000; needs a follow-up.
 - non-blocking: the migrations need owner approval per file and database (§7d).
 Next: the land step merges under §7b
+
+### 2026-11-07T19:20Z · kiro-hotmail-202611061752-cc1f · ready → executing
+Built on branch kiro/mt-m3-r2/provision-erp-monitoring-db; recorded here at the closing, because one transition per PR meant the PR carried no lane-state entry.
+
+### 2026-11-07T19:20Z · kiro-hotmail-202611061752-cc1f · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/4839. Reviewed on head `ae78da2658` (accept entry above, reviewer agent claude-sonnet-5.5); an earlier accept is on `892925c24e`.
+
+### 2026-11-07T19:20Z · kiro-hotmail-202611061752-cc1f · in-review → verified
+merge: 32737c613234e16e8ca79aee751b9059b91c52b2 (exafyltd/vitana-platform#4839)
+authority: §7b PM rule. Squash merge by land-guard on head `028391679c`: the reviewed head `ae78da2658` plus the review-entry commit and clean merges of main. `land-guard review` ok, `land-guard checks` green (12 checks), PR up to date. No lane code changed after the accept.
+The migrations in this lane are in the repository and NOT applied. Applying them needs the owner's approval per file and database (collaboration.md §7d). Next: the `done` record.
