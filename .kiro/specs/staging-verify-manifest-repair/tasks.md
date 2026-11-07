@@ -63,7 +63,7 @@ section names the retired path with evidence.
 - [ ] T1 `lib.test.cjs` cases first, red on `main`: `expect_json_in` passes for a listed value, fails for an unlisted value and for a missing path; `validateHttpTest` rejects a non-object, an empty list and a non-array entry.
 - [ ] T2 `lib.cjs`: evaluate `expect_json_in` in `evaluateHttp` next to `expect_json`; validate it in `validateHttpTest`.
 - [ ] T3 `VTID-05277` and `VTID-05281`: the `PM reports Kiro-fallback mode` probe becomes `PM mode route reports the executor mode` with `expect_json {"ok":true,"mode":"live"}` and `expect_json_in {"executor_mode":["kiro_fallback","claude_primary"],"enabled":[true,false]}`; `note` and `reason` texts corrected; `/alive`, the `/status` rejected probe and the `existing` jest entries unchanged.
-- [ ] T4 `node --test scripts/ci/staging-verify/lib.test.cjs scripts/ci/staging-verify/workflow.test.cjs` green; both manifests pass `validateManifest`.
+- [ ] T4 `node --test scripts/ci/staging-verify/lib.test.cjs scripts/ci/staging-verify/workflow.test.cjs` green (`workflow.test.cjs` is run, not modified); both manifests pass `validateManifest`.
 
 **Acceptance**
 - Change types: Tooling/docs, Integration
@@ -111,7 +111,7 @@ section names the retired path with evidence.
 
 <!-- lane: drift-guard -->
 ## Lane `drift-guard`
-- [ ] T1 `manifest-drift.test.cjs` per plan §3 (checks 1-4), written first; run against the base manifests restored from `4de8c4820e`: red naming the 12 manifests; record in `outputs/`.
+- [ ] T1 `manifest-drift.test.cjs` per plan §3 (checks 1-5, incl. the closed http-probe key set), written first; run against the base manifests restored from `4de8c4820e`: red naming the 12 manifests; record in `outputs/`.
 - [ ] T2 Add the file to the "Runner unit tests" step of `STAGING-TESTS-REQUIRED.yml` (`node --test` with both files); keep `workflow.test.cjs` green.
 - [ ] T3 On the head (all four fix lanes merged) the guard is green over all manifests.
 

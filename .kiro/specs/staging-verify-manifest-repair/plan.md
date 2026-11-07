@@ -168,14 +168,18 @@ action went to the owner. `docs/validation/VTID-04880/staging-tests.json` is **n
 ### Lane `drift-guard`: CI reads every manifest against the tree it describes
 New `scripts/ci/staging-verify/manifest-drift.test.cjs` (`node:test`, no dependencies), added to the existing
 "Runner unit tests" step of `.github/workflows/STAGING-TESTS-REQUIRED.yml` (`node --test scripts/ci/staging-verify/lib.test.cjs scripts/ci/staging-verify/manifest-drift.test.cjs`). It walks
-`docs/validation/*/staging-tests.json` (BOM-tolerant, like `loadManifest`) and fails with `VTID, probe, string` for:
+`docs/validation/*/staging-tests.json` (BOM-tolerant, like `loadManifest`) and fails with `VTID, probe, string` for these five checks:
 1. a manifest with `service` in `{gateway, community-app}` and a `tests` array that `lib.validateManifest` rejects
    (would have caught VTID-05331);
 2. an `http` probe of `/command-hub/<file>.js|.css` whose `expect_body_contains` string is not in
    `services/gateway/src/frontend/command-hub/<file>` (would have caught the nine);
 3. a `/command-hub/` index probe whose string is not in `index.html` (a `?v=` bump that outruns a manifest);
 4. an `existing` `npx jest|vitest run` ref whose file-like token (has an extension) does not exist under its `cwd`
-   (would have caught VTID-04784/05007). Directory prefixes (`test/navigation`) and flags are skipped.
+   (would have caught VTID-04784/05007). Directory prefixes (`test/navigation`) and flags are skipped;
+5. an `http` probe key outside the closed set `kind, name, target, method, path, expect_status, expect_content_type,
+   expect_json, expect_json_in, expect_body_contains, rejected_probe, reason` (a typo such as `expect_json_inn` would
+   otherwise be ignored and the probe would pass; the union of keys of all 883 http probes on `origin/main` is exactly
+   this set, so the guard is green on the head).
 Manifests without `service` + `tests` (the `not_verified_on_staging` shape of VTID-05438/05464/05507) and manifests of
 `community-app` for rule 2 and 4 (their files are in the other repo) are skipped by construction; the test says so.
 Red proof: run the test against the base manifests restored from `4de8c4820e` (`git show 4de8c4820e:<path>`): it
@@ -186,7 +190,7 @@ reports exactly the 12 manifests of §2.1, 2.2 and 2.5 (the PM and locale suites
   `lib.validateManifest`, checks every `expect_body_contains` string against the repo file the probe's path names, and
   checks every jest path exists: red on `origin/main`, green on the head.
 - `pm-mode-probes`: `node --test scripts/ci/staging-verify/lib.test.cjs scripts/ci/staging-verify/workflow.test.cjs`
-  (new cases red on main).
+  (new cases in `lib.test.cjs` red on main; `workflow.test.cjs` already exists and is only run, not modified).
 - `ref-05331`: `npm run test:collab-sequential-builders` passes; `lib.validateManifest` returns `ok:true`.
 - `drift-guard`: `node --test scripts/ci/staging-verify/manifest-drift.test.cjs scripts/ci/staging-verify/lib.test.cjs`.
 - Every lane: `node scripts/collab/preflight.mjs ...` before each push.
