@@ -1,0 +1,2 @@
+# loaded /projects/sandbox/wt-content-overrides/docs/validation/VTID-05495/pglite-harness/base_schema.sql
+# SQL ERROR: relation "public.tenant_content_overrides" does not exist
