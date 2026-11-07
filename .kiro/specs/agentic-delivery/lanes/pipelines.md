@@ -1,6 +1,6 @@
 ---
 lane: pipelines
-state: verified
+state: done
 next_actor: claude
 depends_on: []
 executor: claude
@@ -68,4 +68,8 @@ Next: in-review -> verified with this accept, then verified -> done, one step pe
 
 ### 2026-11-07T11:00Z · session_01Cp885Gw1CMmPDvDVHc7kw8 · in-review -> verified (closing record, 2 of 3)
 Review accepted on head 3a1fffe3f2 by Kiro seat exafyltd (exceptions seat), entry merged in PR #4775 (merge a991a511). Findings a to f pass; two non-blocking notes recorded in the entry.
+merge: 3a1fffe3f2  authority: review accept (exafyltd) and owner instruction 2026-11-07 ("merge 4775")
+
+### 2026-11-07T11:05Z · session_01Cp885Gw1CMmPDvDVHc7kw8 · verified -> done (closing record, 3 of 3)
+Lane pipelines done on main. Implementation PR #4769 (merge 3a1fffe3), closing steps #4772 and #4777, review accept PR #4775 (merge a991a511).
 merge: 3a1fffe3f2  authority: review accept (exafyltd) and owner instruction 2026-11-07 ("merge 4775")
