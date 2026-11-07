@@ -3,10 +3,11 @@
 # which starts and later removes one scratch machine exactly as RUNBOOK section 8 does.
 #   bash glv.sh read      backup listing + latest GitLab main pipelines + ci-config file hashes   (2 minutes, read only)
 #   bash glv.sh restore   restore test on a scratch machine, compare with live, remove the machine (30-60 minutes)
+#   bash glv.sh resume    after CloudShell closed during "restore": read step B from the scratch machine, run step C, remove the machine
 #   bash glv.sh cleanup   remove a scratch machine left behind (if CloudShell closed during "restore")
 # Each run writes ~/glv-<word>-<time>.txt. Paste that file's content back into the Kiro session.
 set -uo pipefail
-WORD="${1:-}"; case "$WORD" in read|restore|cleanup) ;; *) echo "usage: bash glv.sh read | restore | cleanup"; exit 2 ;; esac
+WORD="${1:-}"; case "$WORD" in read|restore|resume|cleanup) ;; *) echo "usage: bash glv.sh read | restore | resume | cleanup"; exit 2 ;; esac
 OUTF=~/glv-$WORD-$(date -u +%Y%m%dT%H%MZ).txt
 exec > >(sed -u -E 's/(glpat-|glrt-|glptt-|whsec_)[A-Za-z0-9_+\/=-]+/\1<removed>/g' | tee "$OUTF") 2>&1
 echo "== glv.sh $WORD $(date -u +%FT%TZ)"
@@ -80,6 +81,32 @@ cleanup() {
   aws ec2 describe-instances --filters Name=tag:Name,Values=vitana-eng-restore-test Name=instance-state-name,Values=pending,running,stopping,stopped --query 'Reservations[].Instances[].InstanceId' --output text
   echo "== done. Paste the content of $OUTF into the Kiro session."
 }
+if [ "$WORD" = resume ]; then
+  SCRATCH=$(aws ec2 describe-instances --filters Name=tag:Name,Values=vitana-eng-restore-test Name=instance-state-name,Values=pending,running --query 'Reservations[0].Instances[0].InstanceId' --output text)
+  if [ -z "$SCRATCH" ] || [ "$SCRATCH" = None ]; then echo "no running scratch machine: run 'bash glv.sh restore' again"; exit 1; fi
+  echo "scratch machine: $SCRATCH"
+  CID=$(aws ssm list-command-invocations --instance-id "$SCRATCH" --query 'sort_by(CommandInvocations,&RequestedDateTime)[-1].CommandId' --output text)
+  echo "restore command: $CID"
+  while :; do
+    S=$(aws ssm get-command-invocation --command-id "$CID" --instance-id "$SCRATCH" --query Status --output text 2>/dev/null)
+    case "$S" in Pending|InProgress|Delayed|"") printf . >&2; sleep 20 ;; *) break ;; esac
+  done
+  echo >&2; echo "== B (read back): status $S"
+  OUT=$(aws ssm get-command-invocation --command-id "$CID" --instance-id "$SCRATCH" --query StandardOutputContent --output text); echo "$OUT"
+  aws ssm get-command-invocation --command-id "$CID" --instance-id "$SCRATCH" --query StandardErrorContent --output text | tail -5
+  TIP=$(sed -n 's/^RESULT-MAIN-TIP: //p' <<<"$OUT" | head -1)
+  trap cleanup EXIT
+  echo; echo "== C: compare with the live GitLab (read only)"
+cat > live-check.rb <<'EOF'
+tip = ENV['TIP'].to_s
+p = Project.find_by_full_path('vitana/vitana-platform')
+puts "LIVE-COUNTS: #{[Project.count, Group.count, User.count].join(' ')}"
+puts "LIVE-HAS-TIP: #{(tip.empty? || tip == 'none') ? 'no tip to check (step B gave no RESULT-MAIN-TIP)' : (!p.nil? && !p.repository.commit(tip).nil?)}"
+EOF
+ssm_run "$LIVE" "echo $(base64 -w0 live-check.rb) | base64 -d > /tmp/live-check.rb && TIP=$TIP gitlab-rails runner /tmp/live-check.rb 2>/tmp/live-check.err | grep '^LIVE-' || tail -5 /tmp/live-check.err; rm -f /tmp/live-check.rb /tmp/live-check.err" 600
+  exit 0
+fi
+
 trap cleanup EXIT
 LEFT=$(aws ec2 describe-instances --filters Name=tag:Name,Values=vitana-eng-restore-test Name=instance-state-name,Values=pending,running,stopping,stopped --query 'Reservations[].Instances[].InstanceId' --output text)
 [ -z "$LEFT" ] || { echo "a scratch machine already exists: $LEFT (remove it first: aws ec2 terminate-instances --instance-ids $LEFT)"; trap - EXIT; exit 1; }
