@@ -5,7 +5,7 @@ author_seat: hotmail
 executor: kiro
 next_actor: kiro
 state: approved
-updated: 2026-11-07T14:10Z
+updated: 2026-11-07T14:14Z
 sparring_record: .kiro/specs/pr-gate-policy-sparring-record/sparring/verdict.md
 vtids: [VTID-05592, VTID-05593]
 ---
@@ -26,3 +26,8 @@ is closed as superseded. The plan now cites the verified vitana-v1 lines (round-
 
 ### 2026-11-07T14:10Z · ci-plan-spar · drafted → approved
 Converged; approved by policy converged-auto-v1. 2 lane(s) got a VTID and are handed to Kiro.
+
+### 2026-11-07T14:14Z · kiro-hotmail-202611061752-cc1f · approved (driver log)
+PLAN-SPAR converged in round 2 (policy `converged-auto-v1`, VTID-05592 and VTID-05593). The bot head started no checks, so
+this log entry is the commit that starts them. The plan PR merges under §7b once its checks are green; the two lanes then
+start in parallel (`depends_on: []`).
