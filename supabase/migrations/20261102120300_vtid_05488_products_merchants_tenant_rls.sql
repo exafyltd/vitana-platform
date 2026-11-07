@@ -99,7 +99,10 @@ BEGIN
             OR EXISTS (SELECT 1 FROM public.supplier_tenant_relationships r
                         WHERE r.merchant_id = products.merchant_id
                           AND r.status = 'active'
-                          AND r.tenant_id = (SELECT public.current_tenant_id()))
+                          AND r.tenant_id = (SELECT public.current_tenant_id())
+                          AND EXISTS (SELECT 1 FROM public.user_tenants ut
+                                       WHERE ut.tenant_id = r.tenant_id
+                                         AND ut.user_id = (SELECT auth.uid())))
           )
         );
 
@@ -117,7 +120,10 @@ BEGIN
             OR EXISTS (SELECT 1 FROM public.supplier_tenant_relationships r
                         WHERE r.merchant_id = merchants.id
                           AND r.status = 'active'
-                          AND r.tenant_id = (SELECT public.current_tenant_id()))
+                          AND r.tenant_id = (SELECT public.current_tenant_id())
+                          AND EXISTS (SELECT 1 FROM public.user_tenants ut
+                                       WHERE ut.tenant_id = r.tenant_id
+                                         AND ut.user_id = (SELECT auth.uid())))
           )
         );
 

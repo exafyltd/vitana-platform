@@ -149,6 +149,8 @@ describe('VTID-05488 D4: helper and tenant-scoped RLS', () => {
     expect(sql.match(/NOT \(SELECT public\.discover_tenant_gate_enabled\(\)\)/g)).toHaveLength(2);
     expect(sql).toMatch(/distribution = 'network'/);
     expect(sql.match(/r\.tenant_id = \(SELECT public\.current_tenant_id\(\)\)/g)).toHaveLength(2);
+    // each policy also ties the row to the caller (bare-policy lint, VTID-05465): membership through auth.uid()
+    expect(sql.match(/ut\.user_id = \(SELECT auth\.uid\(\)\)/g)).toHaveLength(2);
     expect(sql.match(/r\.status = 'active'/g)).toHaveLength(2);
     expect(sql.match(/is_active = TRUE/g)!.length).toBeGreaterThanOrEqual(2);
     // inert default: no policy for anon is created

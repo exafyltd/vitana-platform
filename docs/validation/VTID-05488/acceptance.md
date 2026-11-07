@@ -31,14 +31,17 @@ AC-1 (D1) `supplier_tenant_relationships(id, merchant_id, partner_organization_i
 proposed|active|declined|suspended, vertical_key, created_at, updated_at, decided_at)`. A member of T_B reads 0 T_A rows;
 members read only their tenant's rows through an inline `user_tenants` EXISTS on `auth.uid()`; `service_role` has ALL;
 authenticated has no write privilege; anon has no access. Every merchant that exists is `active` for Maxina and for no
-other tenant. TEST: pgTAP cases 1-12 and 18-35.
+other tenant.
+TEST: pgTAP cases 1-12 and 18-35.
 
 AC-2 (D2) `products.distribution text NOT NULL DEFAULT 'community'` with a `community|network` CHECK; the default stays;
-every existing product is `community`; a writer that omits the column gets `community`. TEST: pgTAP cases 8, 13-17, 21.
+every existing product is `community`; a writer that omits the column gets `community`.
+TEST: pgTAP cases 8, 13-17, 21.
 
 AC-3 (D3) `partner_tenant` is snapshotted into `bak_vtid_05488_partner_tenant` first; `partner_tenant.tenant_uuid` holds
 the real tenant only for an unambiguous row (a uuid text of exactly one tenant, or a slug of exactly one tenant, and not
-both readings naming different tenants); everything else is NULL. TEST: pgTAP cases 36-45.
+both readings naming different tenants); everything else is NULL.
+TEST: pgTAP cases 36-45.
 
 AC-4 (D4) `discover_tenant_gate_enabled()` is STABLE SECURITY DEFINER with `search_path = public, pg_catalog`. Non-NULL
 tenant: that tenant's flag, false without a `tenant_settings` row, false for an absent / false / junk flag. NULL tenant:
@@ -46,11 +49,13 @@ true iff any tenant has the gate on (global coupling by design, fail closed: a t
 `is_active`-only rows for every user including a NULL tenant. Gate on ⇒ a T_B user reads 0 T_A-only supplier rows, a
 `network` product is visible to both tenants, a NULL tenant sees network rows only and never errors, a suspended or
 declined relationship grants nothing, `is_active` still filters. No `is_member()` / `tenant_id_for_policies()`
-reference anywhere. No `product_orders` column. TEST: pgTAP cases 3-5, 9-12, 46-79.
+reference anywhere. No `product_orders` column.
+TEST: pgTAP cases 3-5, 9-12, 46-79.
 
 AC-5 (D5) each migration is idempotent, runs `SET LOCAL lock_timeout = '3s'` with up to 5 retries on
 `lock_not_available`; four rollbacks, three read-only check files, queue rows 26-29 (`queued (pending owner approval)`),
-drift baseline entries. TEST: `outputs/read-only-checks-and-rollback-pglite.txt`, the gateway static test.
+drift baseline entries.
+TEST: `outputs/read-only-checks-and-rollback-pglite.txt`, the gateway static test.
 
 ## Evidence (all local, PGlite = PostgreSQL 18 wasm; `pglite-harness/`)
 
