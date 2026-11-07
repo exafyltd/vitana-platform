@@ -1,0 +1,15 @@
+{
+  "vtid": "VTID-05529",
+  "kind": "feature",
+  "paths": [
+    "services/gateway/src/orb/profile/assistant-profile.ts",
+    "services/gateway/src/orb/live/session/live-session-controller.ts",
+    "services/gateway/src/routes/orb-livekit.ts",
+    "services/gateway/src/routes/conversation.ts",
+    "services/gateway/test/mt-track-s-authz-work-surface.test.ts",
+    "docs/validation/VTID-05529/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05529/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

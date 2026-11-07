@@ -1,0 +1,50 @@
+# Central CI config for exafyltd/vitana-v1. Lives in the GitLab project vitana/ci-config (see ci-platform.yml).
+# Mirrors the GitHub UNIT-TESTS and PR-GATE build steps. Lint runs but does not fail the pipeline yet: GitHub gates
+# it with a ratchet against the base branch, which is not ported.
+workflow:
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+    - if: $CI_PIPELINE_SOURCE =~ /^(web|api|schedule)$/
+
+default:
+  tags: [vitana-eng]
+  image: public.ecr.aws/docker/library/node:20-bookworm
+  interruptible: true
+
+stages: [check]
+
+variables:
+  CI: "true"
+  npm_config_cache: "$CI_PROJECT_DIR/.npm"
+
+.install:
+  timeout: 30m
+  cache:
+    key:
+      files: [package-lock.json]
+    paths: [.npm]
+  before_script:
+    - npm ci --no-audit --no-fund --prefer-offline
+
+unit-tests:
+  extends: .install
+  stage: check
+  variables:
+    NODE_OPTIONS: "--max-old-space-size=4096"
+  script:
+    - npm test
+
+build:
+  extends: .install
+  stage: check
+  variables:
+    NODE_OPTIONS: "--max-old-space-size=4096"
+  script:
+    - npm run build
+
+lint:
+  extends: .install
+  stage: check
+  allow_failure: true
+  script:
+    - npm run lint

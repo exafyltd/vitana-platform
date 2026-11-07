@@ -1,0 +1,16 @@
+# GitHub bridge, every minute (plan agentic-delivery §3.13, lane github-bridge, VTID-05548). Runbook:
+# infra/gitlab-engineering/RUNBOOK-github-bridge.md. Enabled by the cut (plan §8.2 step 5) and disabled by the rollback
+# (§8.4): systemctl enable --now / disable --now vitana-github-bridge.timer. A tick that is still running when the next one
+# is due is not started twice (systemd starts a running oneshot service once; flock in the service guards manual runs).
+[Unit]
+Description=Vitana GitHub bridge, every minute
+Documentation=file:///opt/vitana/platform/infra/gitlab-engineering/RUNBOOK-github-bridge.md
+
+[Timer]
+OnCalendar=minutely
+AccuracySec=1s
+Persistent=false
+Unit=vitana-github-bridge.service
+
+[Install]
+WantedBy=timers.target
