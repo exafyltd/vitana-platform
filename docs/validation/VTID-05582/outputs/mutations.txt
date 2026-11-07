@@ -1,0 +1,22 @@
+### M1 revoke removed
+1..52
+not ok 18 - 18 authenticated has no INSERT or UPDATE privilege
+not ok 20 - 20 no column-level INSERT or UPDATE privilege remains
+not ok 21 - 21 a self-inserted accepted connection fails
+#   have: 7a65c807-673f-4939-ab61-97deceba903b
+#   want: error:42501
+### M2 nobody check removed
+1..52
+not ok 42 - 42 a network request to a "nobody" recipient fails
+#   have: 707287f7-1353-44b1-9e72-584b82a5e922
+#   want: error:42501
+# Looks like you failed 1 test(s) of 52
+### M3 rule-45 guard removed
+1..52
+not ok 8 - 8 a service_bot_accounts member cannot be set network_visible = true
+#   have: true
+#   want: false
+not ok 9 - 9 a notification_test_actors member cannot be set network_visible = true
+#   have: true
+### restored
+52

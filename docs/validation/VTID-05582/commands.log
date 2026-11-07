@@ -1,0 +1,11 @@
+# VTID-05582 commands run in the sandbox (PGlite only; no live system, no docker/psql/supabase CLI available)
+pglite-harness/lane.sh --no-migrations                 -> outputs/red-origin-main.txt (RED: column "network_visible" does not exist)
+pglite-harness/lane.sh --only-columns                  -> outputs/red-columns-only.txt (RED: request_connection missing)
+pglite-harness/lane.sh                                 -> outputs/green-run1.txt (52 ok)
+pglite-harness/lane.sh --twice                         -> outputs/green-run2-twice.txt (52 ok, idempotent)
+three mutations of the migrations                      -> outputs/mutations.txt (each red; restored 52 ok)
+pglite-harness/checks.sh                               -> outputs/checks.txt (22 ok rows; opt-in rollback refused)
+node scripts/ci/bare-policy-lint.mjs                   -> 0 bare current_tenant_id() policies
+jest (ts-jest) services/gateway/test/mt-identity-bare-policy-lint.test.ts -> outputs/jest-bare-policy-lint.txt (8 pass)
+node --test scripts/ci/check-migration-drift.test.cjs  -> 8 pass
+validateManifest(staging-tests.json)                   -> outputs/validate-manifest.txt (ok)
