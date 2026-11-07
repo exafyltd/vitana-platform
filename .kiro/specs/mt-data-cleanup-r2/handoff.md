@@ -34,3 +34,7 @@ The plan PR opens when PLAN-SPAR capacity allows (`collaboration.md` §8a).
 
 ### 2026-11-06T10:09Z · ci-plan-spar · drafted → approved
 Converged; approved by policy converged-auto-v1. 5 lane(s) got a VTID and are handed to Kiro.
+
+### 2026-11-07T12:00Z · kiro-hotmail-202611061752-cc1f · driver takeover, plan landed
+Takeover: the `_plan` claim of kiro-hotmail-202611011452-6d16 (since 2026-11-01T15:22Z; no driver heartbeat existed) was released with `--stale`; this session held the claim and heartbeat.
+Plan PR #4618 carried a pushed commit (a211e57ce8) naming the build lane on the `_plan` branch, which failed Collab handoff and Lane scope and could not be removed without a force-push. The spec landed through #4779 (branch `kiro/mt-data-cleanup-r2/plan-r2`, from clean commit 91e040c10c plus a merge of origin/main), squash-merged as 64576734616e after 10 green checks; #4618 closed as superseded. Sparring record, policy approval and VTID-05568..05572 are unchanged. Lane PR #4773 now holds `origin/main` merged in (head 1d68213b02). Lane files stay `ready` until their lane PRs merge.
