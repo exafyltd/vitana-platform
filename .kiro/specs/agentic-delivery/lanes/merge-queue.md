@@ -1,6 +1,6 @@
 ---
 lane: merge-queue
-state: verified
+state: done
 next_actor: claude
 depends_on: []
 executor: claude
@@ -64,4 +64,8 @@ merge: 3cd2f2c2af  authority: review accept (exafyltd) and the owner's instructi
 
 ### 2026-11-07T21:50Z · session_01Cp885Gw1CMmPDvDVHc7kw8 · in-review -> verified (closing record, 2 of 3)
 Review accept by exafyltd on head 3cd2f2c2af is on main (entry 2026-11-07T12:14Z).
+merge: 3cd2f2c2af  authority: review accept (exafyltd)
+
+### 2026-11-07T21:55Z · session_01Cp885Gw1CMmPDvDVHc7kw8 · verified -> done (closing record, 3 of 3)
+Lane done on main. Implementation PR #4782 (merge 3cd2f2c2af), closing steps #4862 and #4863, review accept by exafyltd.
 merge: 3cd2f2c2af  authority: review accept (exafyltd)
