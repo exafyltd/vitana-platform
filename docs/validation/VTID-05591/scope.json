@@ -7,6 +7,6 @@
     "docs/validation/VTID-05591/**"
   ],
   "sparring_record": "docs/validation/VTID-05591/plan-sparring.md",
-  "weakens_tests": [],
+  "weakens_tests": ["the write loop of the 90-day token test no longer asserts that no argument contains the value (coverage: the argument check of the token test near the end of the file); the length check is kept as a check inside the mock"],
   "red_green_exempt": []
 }

@@ -10,11 +10,11 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { fakeFetch } from './testing/fake-fetch.mjs';
+import * as settings from './gitlab-settings.mjs';
 
 // Value files the sync wrote through the AWS CLI during a test: each must be gone once the call ends.
 const seenSecretFiles = [];
-import { fakeFetch } from './testing/fake-fetch.mjs';
-import * as settings from './gitlab-settings.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..', '..');
@@ -866,7 +866,7 @@ test('membership: an owner named in the file who is not yet a member becomes a M
 const createsOf = (w, mark = 0) => callsOf(w.f, 'POST', /^\/api\/v4\/users\/\d+\/personal_access_tokens$/, mark);
 const rotatesOf = (w, mark = 0) => callsOf(w.f, 'POST', /^\/api\/v4\/personal_access_tokens\/\d+\/rotate$/, mark);
 
-test('tokens: created once with 90 days and the configured scopes; secrets are created or put through stdin, never as an argument', async () => {
+test('tokens: created once with 90 days and the configured scopes; secret values are written from a private file, never as an argument', async () => {
   const w = newWorld();
   await applied(w);
   assert.equal(createsOf(w).length, 7, 'one creation per account');
@@ -1617,7 +1617,7 @@ test('real file writer: atomic, mode 0600 whatever the umask, replaces a looser 
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('real aws runner: stdin input reaches the CLI, never the argument list; a failing call carries the AWS error text', async () => {
+test('real aws runner: the generic runner passes input on stdin, never in the argument list; a failing call carries the AWS error text', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'settings-aws-'));
   try {
     const bin = path.join(dir, 'aws');

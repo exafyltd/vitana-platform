@@ -5,7 +5,7 @@ the AWS CLI cannot read stdin under systemd (ParamValidation, errno 6), so every
 (owner run 2026-11-07 10:33Z, 8 failures).
 
 AC-1 A secret value is never a command-line argument: it is written to a file and the argument is `file://<path>`.
-TEST: scripts/eng/gitlab-settings.test.mjs "tokens: created once with 90 days and the configured scopes; secrets are created or put through stdin, never as an argument" (the mock asserts `file://…/value` and reads the stored value from that file).
+TEST: scripts/eng/gitlab-settings.test.mjs "tokens: created once with 90 days and the configured scopes; secret values are written from a private file, never as an argument" (the mock asserts `file://…/value` and reads the stored value from that file).
 
 AC-2 The value file exists only for the call: it is removed after success and after a failure.
 TEST: scripts/eng/gitlab-settings.mjs `makeSecrets.put` removes the directory in `finally`; covered by the same test run (every write path goes through put).

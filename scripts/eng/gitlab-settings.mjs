@@ -352,7 +352,8 @@ function makeSecrets({ aws, region, redactor }) {
           }
         }
       } finally {
-        fs.rmSync(dir, { recursive: true, force: true });
+        // A removal error must not replace the put error; the directory holds only the 0600 file of this call.
+        try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* the put result is what the caller needs */ }
       }
     },
   };
