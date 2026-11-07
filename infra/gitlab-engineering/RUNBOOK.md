@@ -268,7 +268,12 @@ p = Project.find_by_full_path('vitana/vitana-platform')
 puts "RESULT-COUNTS: #{[Project.count, Group.count, User.count].join(' ')}"
 puts "RESULT-MAIN-TIP: #{p ? (p.repository.commit('main')&.id || 'none') : 'none'}"
 RB
-gitlab-rails runner /root/result.rb 2>/dev/null | grep '^RESULT-' | while IFS= read -r l; do say "$l"; done
+for n in 1 2 3; do   # the first runner after a restore can fail while GitLab finishes starting; keep its error, never hide it
+  gitlab-rails runner /root/result.rb >/root/result.out 2>/root/result.err && grep -q '^RESULT-COUNTS:' /root/result.out && break
+  sleep 60
+done
+grep '^RESULT-' /root/result.out | while IFS= read -r l; do say "$l"; done
+grep -q '^RESULT-COUNTS:' /root/result.out || fail "result query: $(tail -5 /root/result.err | tr '\n' ' ')"
 say "RESULT: DONE $ID"
 EOF
 bash -n restore-inner.sh && echo "script syntax ok"
@@ -296,10 +301,10 @@ cat > live-check.rb <<'EOF'
 tip = ENV['TIP'].to_s
 p = Project.find_by_full_path('vitana/vitana-platform')
 puts "LIVE-COUNTS: #{[Project.count, Group.count, User.count].join(' ')}"
-puts "LIVE-HAS-TIP: #{!p.nil? && !tip.empty? && tip != 'none' && !p.repository.commit(tip).nil?}"
+puts "LIVE-HAS-TIP: #{(tip.empty? || tip == 'none') ? 'no tip to check (step B gave no RESULT-MAIN-TIP)' : (!p.nil? && !p.repository.commit(tip).nil?)}"
 EOF
 LIVE=$(aws ec2 describe-instances --filters Name=tag:Name,Values=vitana-eng-gitlab Name=instance-state-name,Values=running --query 'Reservations[0].Instances[0].InstanceId' --output text)
-Q=$(jq -nc --arg c "echo $(base64 -w0 live-check.rb) | base64 -d > /tmp/live-check.rb && TIP=$TIP gitlab-rails runner /tmp/live-check.rb 2>/dev/null | grep '^LIVE-'; rm -f /tmp/live-check.rb" '{commands:[$c]}')
+Q=$(jq -nc --arg c "echo $(base64 -w0 live-check.rb) | base64 -d > /tmp/live-check.rb && TIP=$TIP gitlab-rails runner /tmp/live-check.rb 2>/tmp/live-check.err | grep '^LIVE-' || tail -5 /tmp/live-check.err; rm -f /tmp/live-check.rb /tmp/live-check.err" '{commands:[$c]}')
 QID=$(aws ssm send-command --instance-ids "$LIVE" --document-name AWS-RunShellScript --parameters "$Q" --query Command.CommandId --output text)
 while :; do
   S=$(aws ssm get-command-invocation --command-id "$QID" --instance-id "$LIVE" --query Status --output text 2>/dev/null)

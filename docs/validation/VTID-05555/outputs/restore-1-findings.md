@@ -1,0 +1,15 @@
+# Findings from restore run 1 (2026-11-07T12:39Z-12:52Z)
+
+- **The restore itself completed.** The latest backup (`1794017725_2026_11_07_19.5.3-ee`) and config archive (`gitlab-config-2026-11-07.tgz`)
+  restored on a fresh m6i.xlarge with GitLab `19.5.3-ee.0`; `gitlab:doctor:secrets` reports 0 failures; `RESULT: DONE`. About 11 minutes.
+  The scratch machine was removed (step D, nothing left).
+- **A04 not proven yet (RUNBOOK defect, fixed under V3).** Step B printed no `RESULT-COUNTS:` or `RESULT-MAIN-TIP:` line. The query ran
+  with `2>/dev/null`, so its error was discarded and step B still said `RESULT: DONE`. Step C then had no commit to look up, so
+  `LIVE-HAS-TIP: false` compares nothing. Fix in `RUNBOOK.md` §8 and `glv.sh` (identical text): the query runs up to 3 times 60 s apart,
+  its stderr is kept, and a missing `RESULT-COUNTS:` fails the step with the last 5 error lines instead of `RESULT: DONE`. Step C now
+  prints "no tip to check" for an empty tip, and shows its error instead of discarding it. Live counts: projects 4, groups 1, users 10.
+- **nginx (gitlab-infra review note on `host/gitlab-install.sh:49-53`).** The live machine's backed-up `/etc/gitlab/gitlab.rb` carries the
+  nested form `gitlab_rails['nginx'][...]` (lines 3-7), the same as `gitlab-install.sh`. The live GitLab answers through the load balancer,
+  so the form in use works on the running machine or is ignored without harm there. Whether a fresh build serves port 80 with it is still
+  open: this run did not probe port 80 on the scratch machine. `gitlab-install.sh` is outside this lane's paths; any change goes through
+  `_plan`.

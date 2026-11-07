@@ -14,8 +14,8 @@ GitHub's results.
 States: owner has not run a step (now); a pipeline fails on GitLab and passes on GitHub (recorded as a difference, fixed under V3);
 the restore fails (RUNBOOK fixed under V3); the backup bucket is empty after 02:15 UTC (finding for `backup.sh`, through `_plan`).
 
-Surfaces: `docs/validation/VTID-05555/`; `host/ci-platform.yml`, `host/ci-v1.yml`, `RUNBOOK.md` only when a run shows a defect
-(none changed in this PR).
+Surfaces: `docs/validation/VTID-05555/`; `RUNBOOK.md` §8 steps B and C changed under V3 (restore run 1 showed the result query's
+output discarded); `host/ci-*.yml` unchanged.
 
 Locales: n/a. Accessibility: n/a.
 
@@ -32,7 +32,7 @@ AC-2 (A02) — the infrastructure is created by Terraform and can be rebuilt fro
   Status: files on main through lane gitlab-infra (VTID-05544, merge a8220f1059); structure test green (26/26, commands.log).
   The restore on a fresh machine (step 2) is the rebuild evidence for the GitLab config; the nginx lines are compared with
   `host/gitlab-install.sh:49-53` (gitlab-infra review note).
-  TEST: scripts/eng/gitlab-m1-structure.test.mjs; outputs/restore-nginx.txt (PENDING)
+  TEST: scripts/eng/gitlab-m1-structure.test.mjs; outputs/restore-1-20261107T1239Z.txt (nginx lines 3-7: nested form, as gitlab-install.sh)
 
 AC-3 (A03) — storage is encrypted and a nightly backup exists in the backup bucket
   Status: PASS. Nightly backups and config archives 2026-11-05, -06, -07 at 02:15 UTC (outputs/read-20261107T1234Z.txt); encryption pinned
@@ -40,8 +40,9 @@ AC-3 (A03) — storage is encrypted and a nightly backup exists in the backup bu
   TEST: outputs/read-20261107T1234Z.txt, outputs/read-1-findings.md
 
 AC-4 (A04) — a restore on a scratch machine reproduces the project count and one commit hash
-  Status: PENDING (step 2). Passes when `RESULT: DONE`, `RESULT-COUNTS:` equals `LIVE-COUNTS:` in the project count, and
-  `LIVE-HAS-TIP: true`.
+  Status: PENDING. Run 1 (2026-11-07) restored the 2026-11-07 backup (`RESULT: DONE`, doctor:secrets 0 failures) but the RUNBOOK
+  step B discarded the result query's output, so there were no counts and no tip (outputs/restore-1-findings.md). RUNBOOK §8 fixed under V3;
+  run 2 proves it. Passes when `RESULT: DONE`, `RESULT-COUNTS:` equals `LIVE-COUNTS:` in the project count, and `LIVE-HAS-TIP: true`.
   TEST: outputs/restore-step-b.txt, outputs/restore-step-c.txt (PENDING)
 
 AC-5 (A05) — the runner is registered and runs jobs
