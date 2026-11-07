@@ -392,6 +392,8 @@ function newAws() {
     const opt = (name) => { const i = args.indexOf(name); return i < 0 ? undefined : args[i + 1]; };
     assert.equal(opt('--region'), 'eu-central-1');
     const id = opt('--secret-id') ?? opt('--name');
+    const valueFile = args.find((a) => a.startsWith('file://'));
+    if (valueFile) seenSecretFiles.push(valueFile.slice('file://'.length));
     if (denied.has(`${op}:${id}`)) throw awsError('AccessDeniedException', 'not authorized');
     if (op === 'get-secret-value') {
       if (!secrets.has(id)) throw awsError('ResourceNotFoundException', "Secrets Manager can't find the specified secret.");
@@ -403,9 +405,9 @@ function newAws() {
       assert.match(src, /^file:\/\/.+\/value$/, 'a secret value is never a command-line argument: the CLI reads it from a private file');
       const stored = fs.readFileSync(src.slice('file://'.length), 'utf8');
       assert.ok(stored.length > 8, 'the stored value is a real secret, not an empty placeholder');
+      assert.ok(!args.some((a) => a.includes(stored)), 'the value is not in the argument list');
       assert.equal(fs.statSync(src.slice('file://'.length)).mode & 0o777, 0o600, 'the value file is private (0600)');
       assert.equal(fs.statSync(path.dirname(src.slice('file://'.length))).mode & 0o777, 0o700, 'its directory is private (0700)');
-      seenSecretFiles.push(src.slice('file://'.length));
       if (op === 'put-secret-value' && !secrets.has(id)) throw awsError('ResourceNotFoundException', "Secrets Manager can't find the specified secret.");
       if (op === 'create-secret' && secrets.has(id)) throw awsError('ResourceExistsException', 'already exists');
       secrets.set(id, stored);

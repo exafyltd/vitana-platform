@@ -16,7 +16,7 @@
 // first write, so a GitLab that cannot be read changes nothing. Every write is sent with retries: 0 (an action is never repeated by
 // the client); the next run, ten minutes later, tries again from a fresh read.
 //
-// Secrets: tokens go to Secrets Manager through stdin (file:///dev/stdin), never as an argument; the bot token files are written
+// Secrets: tokens go to Secrets Manager through a private 0600 file (see makeSecrets.put), never as an argument; the bot token files are written
 // atomically with mode 0600; no log line, error or output contains a token (a redactor knows every secret the run has seen, and GitLab
 // token shapes). The admin token of the sync (/etc/vitana/settings-admin-token, created once by ops-install.sh) is rotated by the
 // sync itself with POST /personal_access_tokens/:id/rotate when fewer than 10 days are left; the file is checked writable first.
@@ -330,7 +330,7 @@ function makeSecrets({ aws, region, redactor }) {
         throw new Error(`reading the secret ${id} failed: ${oneLine(redactor(errText(e)), 220)}`);
       }
     },
-    /** Puts a value (stdin, never an argument); creates the secret when it does not exist. */
+    /** Puts a value (a private file, never an argument); creates the secret when it does not exist. */
     async put(id, value) {
       check(id);
       redactor.add(value);
