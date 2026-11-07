@@ -102,3 +102,10 @@ classify. Rollback order: 054200, 054100, 054000.
   `node --test scripts/ci/check-migration-drift.test.cjs` 8 pass. `scripts/ci/migration-drift-baseline.json` is not touched
   (count stays 120 = `len(known_missing_tables)`): no table is created.
 - NOT run here: real pgTAP on a Supabase stack and the full production schema (no docker/psql/supabase CLI). CI is authoritative.
+
+## Fix attempt 1 (CI: `vtid-05041-definer-lockdown`, gateway Jest shard 1)
+
+- `20261102054000` created the SECURITY DEFINER trigger function `chat_group_members_scope_guard()` and revoked only PUBLIC; the
+  repository rule (VTID-05041) wants PUBLIC and anon revoked in the same file. It now revokes `PUBLIC, anon, authenticated`
+  (a trigger function needs no EXECUTE grant to fire). Red: shard 1 on head e7ae389 (1 failed, `20261102054000_...` offender);
+  green: `vtid-05041-definer-lockdown.test.ts` 7 pass locally, pgTAP 92/92 (twice 92/92), checks.sh all ok, 17 mutations red.

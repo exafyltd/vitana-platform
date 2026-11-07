@@ -12,3 +12,7 @@ node scripts/ci/bare-policy-lint.mjs                   -> 0 bare current_tenant_
 jest (ts-jest) services/gateway/test/mt-identity-bare-policy-lint.test.ts -> 8 pass
 node --test scripts/ci/check-migration-drift.test.cjs  -> 8 pass
 validateManifest(staging-tests.json)                   -> outputs/validate-manifest.txt (ok)
+fix attempt 1 (CI: vtid-05041-definer-lockdown, shard 1): chat_group_members_scope_guard() is SECURITY DEFINER, so 054000 revokes PUBLIC, anon, authenticated
+jest vtid-05041-definer-lockdown.test.ts               -> 7 pass (the SQL harness case is skipped without a local PostgreSQL server)
+lane.sh / lane.sh --twice / checks.sh / mutations re-run on the fixed head -> 92 ok / 92 ok / all ok / 17 red, restored 92 ok
+pglite-harness/mutations.py                            -> outputs/mutations.txt (the 17 mutations as a script; every one red, restored 92 ok)

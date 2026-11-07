@@ -127,7 +127,7 @@ BEGIN
   RETURN NEW;
 END;
 $$;
-REVOKE ALL ON FUNCTION public.chat_group_members_scope_guard() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.chat_group_members_scope_guard() FROM PUBLIC, anon, authenticated;
 
 DROP TRIGGER IF EXISTS trg_chat_groups_scope_guard ON public.chat_groups;
 CREATE TRIGGER trg_chat_groups_scope_guard
