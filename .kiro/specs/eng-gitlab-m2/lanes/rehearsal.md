@@ -14,7 +14,7 @@ paths:
   - infra/gitlab-engineering/rehearsal/**
   - docs/validation/**
 updated: 2026-11-07T20:12Z
-claimed_by: kiro-exafy-202611021438-cff7
+claimed_by: kiro-exafy-202611071602-6cfa
 branch: kiro/eng-gitlab-m2/rehearsal
 pr: https://github.com/exafyltd/vitana-platform/pull/4724
 vtid: VTID-05540
@@ -58,3 +58,6 @@ Next: the land step merges under §7b
 ### 2026-11-07T20:12Z · kiro-exafy-202611071602-6cfa · in-review → verified
 The reviewer-agent accept of 2026-11-07T20:10Z (agent-vitana-lane-reviewer-202611072010-ae2b, claude-sonnet-5.5, head 1c73e6ed57b6) is in this log. Checks on 1c73e6ed57: nine runs success.
 Next: the land step merges under §7b.
+
+### 2026-11-07T20:13Z · kiro-exafy-202611071602-6cfa · takeover
+The plan driver of eng-gitlab-m2 took over this lane from kiro-exafy-202611021438-cff7 (the builder; its claim is stale). Its verified transition (4f609ac28f) was written before this takeover was logged, so this entry records it. Claim: refs/heads/collab-claim/eng-gitlab-m2/rehearsal held by kiro-exafy-202611071602-6cfa.
