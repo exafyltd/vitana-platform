@@ -1,0 +1,17 @@
+# VTID-05573 commands run in the sandbox (PGlite only; no live system, no docker/psql/supabase CLI available)
+pglite-harness/lane.sh --no-migrations                 -> outputs/red-origin-main.txt (RED: relation "public.bak_messages" does not exist; committed before any migration)
+pglite-harness/lane.sh --upto 2                        -> outputs/red-functions-only.txt (RED: 21 of 50 fail without the snapshot/migrate/drop steps)
+pglite-harness/lane.sh                                 -> outputs/green-run1.txt (50 ok)
+pglite-harness/lane.sh --twice                         -> outputs/green-run2-twice.txt (all four files applied twice, 50 ok)
+five mutations of the migrations                       -> outputs/mutations.txt (each red; restored 50 ok)
+pglite-harness/checks.sh                               -> outputs/checks.txt (freeze, idempotence, two refused drops, post-apply, refused + real rollback, rollback-check, re-apply)
+node scripts/ci/bare-policy-lint.mjs                   -> 0 bare current_tenant_id() policies
+jest (ts-jest) services/gateway/test/mt-identity-bare-policy-lint.test.ts -> outputs/jest-bare-policy-lint.txt (8 pass)
+node --test scripts/ci/check-migration-drift.test.cjs  -> 8 pass (baseline count 120 = len(known_missing_tables), file not touched)
+validateManifest(staging-tests.json)                   -> outputs/validate-manifest.txt (ok)
+fix attempt 1 (reviewer `changes`):
+pglite-harness/lane.sh (new cases on the previous head)  -> outputs/red-fix1-previous-head.txt (10 of 65 not ok)
+checks.mjs on the previous head's migrations              -> outputs/red-fix1-checks-previous-head.txt
+pglite-harness/lane.sh, --twice, checks.mjs               -> outputs/green-run1.txt, green-run2-twice.txt (65 ok), checks.txt
+13 mutations (.tools/tmp/mut.py)                          -> outputs/mutations.txt (each red; restored green)
+jest -c jest.05573.config.js (8 pass); bare-policy-lint 0; node --test check-migration-drift.test.cjs (8 pass)

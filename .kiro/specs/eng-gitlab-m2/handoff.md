@@ -5,9 +5,9 @@ author_seat: exafy
 executor: kiro
 next_actor: kiro
 state: approved
-updated: 2026-11-04T19:35Z
+updated: 2026-11-07T20:08Z
 sparring_record: .kiro/specs/eng-gitlab-m2/sparring/verdict.md
-vtids: [VTID-05536, VTID-05537, VTID-05538, VTID-05539, VTID-05540, VTID-05541, VTID-05542]
+vtids: [VTID-05536, VTID-05537, VTID-05538, VTID-05539, VTID-05540, VTID-05541, VTID-05542, VTID-05591, VTID-05607, VTID-05612]
 ---
 # Handoff — eng-gitlab-m2
 Milestone 2 of the self-hosted GitLab CI (program `engineering-platform`). Plan: `plan.md`.
@@ -29,3 +29,20 @@ GitLab job-status table for `checksVerdict` is in plan §3.4. Answers in `sparri
 
 ### 2026-11-04T19:35Z · ci-plan-spar · drafted → approved
 Converged; approved by policy converged-auto-v1. 7 lane(s) got a VTID and are handed to Kiro.
+
+### 2026-11-07T11:30Z · kiro-exafy-202611062222-c262 · late lane `settings-fix`
+Late lane added by this plan PR: the settings sync failed for every secret write on the GitLab machine (`file:///dev/stdin`
+unreadable by the AWS CLI under systemd, owner run 2026-11-07 10:33Z). Lane `settings-fix` (depends on `settings`, done).
+PLAN-SPAR allocates its VTID; the lane starts after the plan PR is merged.
+
+### 2026-11-07T11:24Z · ci-plan-spar · approved (late lane VTID)
+Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.
+
+### 2026-11-07T16:04Z · ci-plan-spar · approved (late lane VTID)
+Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.
+
+### 2026-11-07T20:06Z · kiro-exafy-202611071142-d7ed · approved (late lane runner-pin-jq)
+Plan claim taken over on the owner's instruction (2026-11-07, "execute all work in aws to migrate to gitlab" / "finish the full list"): the holder kiro-exafy-202611062222-c262 last wrote its driver heartbeat at 01:10Z. Late lane `runner-pin-jq` from the first runs on the live GitLab (eng-gitlab-m1/gitlab-verify). Live changes already made in the engineering account on the owner's instruction: helper pinned on the fleet manager, fleet MaxSize 1 -> 5 and runner concurrent 5, EC2 vCPU quota requests to 100. Next: PLAN-SPAR allocates the lane's VTID; the lane starts after this PR merges.
+
+### 2026-11-07T20:08Z · ci-plan-spar · approved (late lane VTID)
+Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.

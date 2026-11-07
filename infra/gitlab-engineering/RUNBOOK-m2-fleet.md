@@ -47,6 +47,8 @@ AWS usually answers within hours, for a new account sometimes a day. Check with 
 The plan keeps stopping until the value has really been raised. The always-on machines of milestone 1 (GitLab 4 vCPU, runner 4) and the
 manager (2) also use the On-Demand quota; at the default 80 % Spot the fleet uses about a fifth of its limit On-Demand, so 96 leaves room.
 A smaller fleet needs less: `terraform` variable `fleet_max_instances`, section 6.
+Fleet size in use since 2026-11-07: 5 machines (owner instruction; 32 vCPUs per Standard quota, requests to 100 filed). Keep
+`fleet_max_instances = 5` in `~/vitana-eng/terraform/terraform.tfvars`: without it the next apply sets the group back to 1.
 
 While AWS raises the quota, a smaller fleet lets the rest of milestone 2 apply now: put `fleet_max_instances = 1` (4 vCPUs in each quota) in `~/vitana-eng/terraform/terraform.tfvars`, next to `main.tf`,
 and set `fleet_alarm_running_jobs` (the at-maximum alarm of the monitoring file) to the same number, or that alarm never fires. Raise both when the quota is granted. Acceptance A1 of the rehearsal needs the full 24.
@@ -91,6 +93,10 @@ sleep 5; aws ssm get-command-invocation --command-id "$CID" --instance-id "$MGR"
 `== fleet manager install done` is the good end. `waiting for the runner token in vitana/engineering/gitlab/fleet-runner-token` means the settings sync has not
 written it yet. If the manager gave up (`no runner token after 24 hours`) or the token changed, run the installer again on it:
 `bash /opt/vitana/fleet-manager-install.sh >> /var/log/vitana-bootstrap.log 2>&1` (it is safe to repeat).
+
+If the log ends with `gitlab-runner : Depends: gitlab-runner-helper-images (= <version>) but <newer> is to be installed`, the installer
+predates the helper pin: install both at the runner version first, `apt-get install -y gitlab-runner-helper-images=<version>
+gitlab-runner=<version>`, then run the installer again. Done on the running manager on 2026-11-07 (runner verified 18:05Z).
 
 ## 4. When a job waits (what to read, in this order)
 

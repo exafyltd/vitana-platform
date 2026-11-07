@@ -1,0 +1,240 @@
+# VTID-05540 mutation run: outputs/mutate-rehearse.mjs on the final code (one behaviour broken at a time in a scratch copy; the test file must go red)
+# $ JOBS=8 node docs/validation/VTID-05540/outputs/mutate-rehearse.mjs .
+baseline: 146 tests pass on the unmutated tree
+caught    lanes are all opened by the first seat  <- plan: 12 landing merge requests lane-01 to lane-12, opened | plan: --agents N opens N landing merge requests; a number 
+caught    controls are opened after the lanes  <- plan: the controls are opened first, so they are the oldes | dry run: reads and checks everything, writes nothing (no n
+caught    a control expects the wrong reason  <- plan: five controls (no review, stale review, builder-push | A4 controls: a control that landed fails; a control whose 
+caught    a lane title has no VTID  <- plan: every title is "VTID-05540 (rehearsal/<lane>): …" an | bot: the real evaluate() of the merge bot, run on branches | whole run, happy path: the seed lands, 12 lanes land one a
+caught    13 agents are planned  <- plan: --agents N opens N landing merge requests; a number 
+caught    a branch name has no run id  <- plan: branch names carry the run, are unique, and pass the | dry run: reads and checks everything, writes nothing (no n
+caught    the control seats start at the first seat  <- plan: --agents N opens N landing merge requests; a number 
+caught    0 agents are accepted  <- args: usage mistakes throw UsageError (exit 2): no project
+caught    --project is optional  <- args: usage mistakes throw UsageError (exit 2): no project
+caught    an unknown option is accepted  <- the command line: main() runs a dry run to exit 0, refuses
+caught    any private address is accepted  <- args: usage mistakes throw UsageError (exit 2): no project
+caught    --max-minutes below 30 is accepted  <- args: usage mistakes throw UsageError (exit 2): no project
+caught    an unmarked project is accepted  <- refusal: a project that is not in gitlab-settings.json, or | refusal, whole run: a project that is not marked rehearsal
+caught    a mirror profile is accepted  <- refusal: a mirrored project is refused, also when it is ma | refusal, whole run: a project that is not marked rehearsal
+caught    a webhook in the file is accepted  <- refusal: a project with a webhook in the settings file, or
+caught    landing false is accepted  <- refusal: a project with a webhook in the settings file, or | refusal, whole run: a project with a settings webhook or w
+caught    live webhooks are not looked at  <- refusal: a live webhook, a live mirror (mirror: true or a  | refusal: what cannot be read is not assumed safe (a 403 on | refusal, whole run: a live webhook on the project is refus
+caught    a live mirror flag is not looked at  <- refusal: a live webhook, a live mirror (mirror: true or a  | refusal, whole run: a live mirror (mirror: true, or a remo
+caught    remote mirrors are not looked at  <- refusal: a live webhook, a live mirror (mirror: true or a  | refusal, whole run: a live mirror (mirror: true, or a remo
+caught    the default branch is not looked at  <- refusal: a live webhook, a live mirror (mirror: true or a  | refusal, whole run: an open merge request that is not from
+caught    who may push to main is not looked at  <- refusal: main must be push No one, merge Maintainers, no f | A3 FAIL: Maintainers may push, force push is allowed, an e | refusal, whole run: a live main that is not the native pro
+caught    who may merge to main is not looked at  <- refusal: main must be push No one, merge Maintainers, no f
+caught    force push to main is not looked at  <- refusal: main must be push No one, merge Maintainers, no f | A3 FAIL: Maintainers may push, force push is allowed, an e | refusal, whole run: a live main that is not the native pro
+caught    a user entry on push counts as No one  <- refusal: main must be push No one, merge Maintainers, no f
+caught    an unprotected main passes  <- refusal: main must be push No one, merge Maintainers, no f
+caught    unreadable live facts are taken as safe  <- refusal: what cannot be read is not assumed safe (a 403 on
+caught    foreign open merge requests are accepted  <- refusal, whole run: an open merge request that is not from
+caught    a token of another account is accepted  <- refusal, whole run: a token that belongs to another accoun
+caught    an unprotected CLAUDE.md control is accepted  <- refusal, whole run: no REGION, a protected-file control th
+caught    a missing REGION is accepted  <- refusal, whole run: no REGION, a protected-file control th
+caught    a seed with a protected file is accepted  <- refusal, whole run: no REGION, a protected-file control th
+caught    a token of 3 characters is accepted  <- refusal, whole run: a token that belongs to another accoun
+caught    an empty secret is accepted  <- refusal, whole run: a token that belongs to another accoun
+caught    any secret may be read  <- safety: the aws runner of the rehearsal reads the agent se
+caught    any autoscaling call is allowed  <- safety: the aws runner of the rehearsal reads the agent se
+caught    any merge request write is allowed  <- safety: the writes of the rehearsal are four, below the pr
+caught    any branch name is deletable  <- safety: the writes of the rehearsal are four, below the pr
+caught    commits may be posted anywhere below the repository  <- safety: the writes of the rehearsal are four, below the pr
+caught    closing sends another event  <- whole run, happy path: the seed lands, 12 lanes land one a | whole run: nothing but the rehearsal project is written —  | whole run: the fleet group is vitana-eng-fleet unless FLEE
+caught    writes are repeated by the client  <- writes are sent once: a 503 while closing a control is not
+caught    the observer reads as the first seat  <- whole run: who writes what — builders and the seats of the
+caught    a commit to main is allowed  <- safety: no write is ever aimed at the branch main — a comm
+caught    a commit with no branch is allowed  <- safety: no write is ever aimed at the branch main — a comm
+caught    refs/heads/main is not main  <- safety: no write is ever aimed at the branch main — a comm
+caught    a delete of main is allowed  <- safety: no write is ever aimed at the branch main — a comm
+caught    a branch name that cannot be decoded is trusted  <- safety: no write is ever aimed at the branch main — a comm
+caught    the writer does not show the body to the guard  <- safety: no write is ever aimed at the branch main — a comm | whole run, happy path: the seed lands, 12 lanes land one a | whole run: the report is the only thing on stdout (one blo
+caught    deleting main is not checked  <- safety: no write is ever aimed at the branch main — a comm
+caught    a commit is not checked for its branch  <- safety: no write is ever aimed at the branch main — a comm
+caught    the collab tooling goes to scripts/collab  <- seed: the manifest maps spec/ to .kiro/specs/rehearsal/, h | seed: the collab tooling is copied from the platform check | seed: not one path of the seed is a protected gate file or
+caught    the spec goes to another folder  <- seed: the manifest maps spec/ to .kiro/specs/rehearsal/, h | seed: unit passes with no npm install (no node_modules, no | seed: a variable starting with AWS_ in the job makes aws-e
+caught    lane files are rewritten by a refresh  <- seed, whole run: an outdated seed is updated through the s
+caught    the queue is not copied  <- seed: the manifest maps spec/ to .kiro/specs/rehearsal/, h | seed: the collab tooling is copied from the platform check | seed: unit passes with no npm install (no node_modules, no
+caught    the blob id counts characters, not bytes  <- seed: blobId is the git blob id (what the repository tree  | whole run, wave 2: only a job of a merge request of this r | dry run, current seed: says so; a run needs no seed merge 
+caught    equal files are updated again  <- seed: diffSeed creates what main lacks, updates what diffe | whole run, wave 2: only a job of a merge request of this r | dry run, current seed: says so; a run needs no seed merge 
+caught    a file that exists is created again  <- seed: diffSeed creates what main lacks, updates what diffe | whole run, wave 2: only a job of a merge request of this r | dry run, current seed: says so; a run needs no seed merge 
+caught    the config takes any address  <- seed: rehearsal.config.json carries the private address of
+caught    docker bridges are private addresses of the machine  <- seed: pickPrivateIp takes the first private IPv4 of a real
+caught    172.32 is private  <- seed: pickPrivateIp takes the first private IPv4 of a real
+caught    the package test script is not the job body  <- seed: the required job of the project is `unit`, the centr | seed: unit passes with no npm install (no node_modules, no | seed: a variable starting with AWS_ in the job makes aws-e
+caught    a lane file names another lane  <- seed: unit passes with no npm install (no node_modules, no | seed: a variable starting with AWS_ in the job makes aws-e | seed: a NEGCTL-INFO baseline line says whether the job rea
+caught    a token or data reaching a job passes imds  <- seed: unit passes with no npm install (no node_modules, no | seed: a variable starting with AWS_ in the job makes aws-e | seed: a NEGCTL-INFO baseline line says whether the job rea
+caught    the plain metadata read is not tried  <- seed: unit passes with no npm install (no node_modules, no | seed: a repository with no test files fails npm test (noth | seed: a failing test makes npm test fail, but the negative
+caught    the token request is not tried  <- seed: unit passes with no npm install (no node_modules, no | seed: a repository with no test files fails npm test (noth | seed: a failing test makes npm test fail, but the negative
+caught    a 401 or 403 counts as an answer that fails imds  <- seed: unit passes with no npm install (no node_modules, no | seed: a variable starting with AWS_ in the job makes aws-e | seed: a NEGCTL-INFO baseline line says whether the job rea
+caught    a 3xx counts as a token or data  <- negctl imds: PASS when no token is issued and no data is r
+caught    a token that was issued is not a failure  <- seed: unit passes with no npm install (no node_modules, no | seed: a variable starting with AWS_ in the job makes aws-e | seed: a NEGCTL-INFO baseline line says whether the job rea
+caught    data read without a token is not a failure  <- seed: unit passes with no npm install (no node_modules, no | seed: a variable starting with AWS_ in the job makes aws-e | seed: a NEGCTL-INFO baseline line says whether the job rea
+caught    the plain read carries a token header  <- negctl imds: asks for a token with PUT (IMDSv2, with a TTL
+caught    the token request has no TTL header  <- negctl imds: asks for a token with PUT (IMDSv2, with a TTL
+caught    the statuses are not in the detail  <- seed: unit passes with no npm install (no node_modules, no | seed: a variable starting with AWS_ in the job makes aws-e | seed: a NEGCTL-INFO baseline line says whether the job rea
+caught    the baseline is printed as a control line  <- seed: unit passes with no npm install (no node_modules, no | seed: a repository with no test files fails npm test (noth | seed: a failing test makes npm test fail, but the negative
+caught    the baseline names the whole URL  <- seed: unit passes with no npm install (no node_modules, no | seed: a variable starting with AWS_ in the job makes aws-e | seed: a NEGCTL-INFO baseline line says whether the job rea
+caught    https defaults to port 80 in the baseline  <- seed: unit passes with no npm install (no node_modules, no | seed: a variable starting with AWS_ in the job makes aws-e | seed: a NEGCTL-INFO baseline line says whether the job rea
+caught    an unreachable GitLab is reported as reachable  <- seed: unit passes with no npm install (no node_modules, no | seed: a variable starting with AWS_ in the job makes aws-e | seed: a NEGCTL-INFO baseline line says whether the job rea
+caught    an unset CI_SERVER_URL is tried  <- seed: a NEGCTL-INFO baseline line says whether the job rea
+caught    a non-http URL is tried  <- negctl baseline: tells whether the job can reach GitLab (t
+caught    IPv6 brackets are kept in the baseline address  <- negctl baseline: tells whether the job can reach GitLab (t
+caught    the baseline is not printed by the job  <- seed: a NEGCTL-INFO baseline line says whether the job rea
+caught    a baseline that is not reached fails the job  <- seed: a NEGCTL-INFO baseline line says whether the job rea
+caught    no address configured passes  <- seed: unit passes with no npm install (no node_modules, no | seed: a variable starting with AWS_ in the job makes aws-e | seed: a NEGCTL-INFO baseline line says whether the job rea
+caught    an open port of the machine passes  <- negctl gitlab-host: PASS when 22, 80, 443 and 8080 all ref
+caught    port 8080 is not tried  <- negctl gitlab-host: PASS when 22, 80, 443 and 8080 all ref
+caught    port 22 is not tried  <- negctl gitlab-host: PASS when 22, 80, 443 and 8080 all ref
+caught    only AWS_SECRET variables count  <- seed: unit passes with no npm install (no node_modules, no | seed: a variable starting with AWS_ in the job makes aws-e | seed: a NEGCTL-INFO baseline line says whether the job rea
+caught    the values of AWS variables are printed  <- seed: unit passes with no npm install (no node_modules, no | seed: a variable starting with AWS_ in the job makes aws-e | seed: a NEGCTL-INFO baseline line says whether the job rea
+caught    the control line has another format  <- seed: unit passes with no npm install (no node_modules, no | seed: a variable starting with AWS_ in the job makes aws-e | seed: a NEGCTL-INFO baseline line says whether the job rea
+caught    a failing control fails the job  <- seed: a variable starting with AWS_ in the job makes aws-e
+caught    failing tests do not fail the job  <- seed: a failing test makes npm test fail, but the negative
+caught    a repository without tests passes  <- seed: a repository with no test files fails npm test (noth
+caught    the controls are not printed when tests fail  <- seed: a repository with no test files fails npm test (noth | seed: a failing test makes npm test fail, but the negative
+caught    NEGCTL lines need not start the line  <- parseNegctl: reads the three lines from a GitLab trace wit
+caught    ANSI codes are not removed from traces  <- parseNegctl: reads the three lines from a GitLab trace wit | parseNegctlFailures: for each control that printed FAIL, t | parseBaseline: reads the NEGCTL-INFO baseline lines (reach
+caught    a lone carriage return is not a line end  <- parseNegctl: reads the three lines from a GitLab trace wit
+caught    a detail belongs to the wrong control  <- parseNegctlFailures: for each control that printed FAIL, t
+caught    a NEGCTL-INFO line is read by the failure parser  <- parseNegctlFailures: for each control that printed FAIL, t
+caught    indented baseline lines are read  <- parseBaseline: reads the NEGCTL-INFO baseline lines (reach
+caught    an unknown baseline state is read  <- parseBaseline: reads the NEGCTL-INFO baseline lines (reach
+caught    the first failure detail is not the one shown  <- A2 FAIL: the line of a failing control shows the first det
+caught    the failure detail is not cut to one line  <- A2 FAIL: the line of a failing control shows the first det
+caught    the failure detail is not shown in the line  <- A2 FAIL: the line of a failing control shows the first det | failure: a negative control prints FAIL in a job — A2 FAIL
+caught    a baseline that was not reached fails A2  <- A2 baseline: the job traces say whether GitLab could be re | A2 baseline, whole run: the report says whether GitLab was
+caught    the baseline is not reported  <- A2 baseline: the job traces say whether GitLab could be re | A2 baseline, whole run: the report says whether GitLab was
+caught    the baseline does not warn where GitLab was not reached  <- A2 baseline: the job traces say whether GitLab could be re | A2 baseline, whole run: the report says whether GitLab was
+caught    the baseline does not say where it was not checked  <- A2 baseline: the job traces say whether GitLab could be re
+caught    the baseline counts every trace as reached  <- A2 baseline: the job traces say whether GitLab could be re | A2 baseline, whole run: the report says whether GitLab was
+caught    another author's marker is a bot note  <- parseBotNote: reads the reason code and the head from the 
+caught    a short head is a bot note  <- parseBotNote: reads the reason code and the head from the 
+caught    Pending machines are not active  <- parseFleetSample: a machine counts as active when it is Pe
+caught    Terminating machines are active  <- parseFleetSample: a machine counts as active when it is Pe
+caught    a missing group is a sample  <- parseFleetSample: a machine counts as active when it is Pe
+caught    a cancelled launch is a machine  <- countLaunches: counts launch activities since the start of
+caught    a failed launch is a machine  <- countLaunches: counts launch activities since the start of | A1 own machine: machines launched must be at least the job | failure: the fleet does not scale (no machine can be launc
+caught    a launch at the start counts as before it  <- countLaunches: counts launch activities since the start of
+caught    older launches count  <- countLaunches: counts launch activities since the start of | A1 own machine: machines launched must be at least the job
+caught    terminations count as launches  <- countLaunches: counts launch activities since the start of
+caught    A1: 19 machines are enough  <- A1 peak: 20 machines is enough, 19 is not (12 agents); the
+caught    A1: the peak must exceed 20  <- A1 peak: 20 machines is enough, 19 is not (12 agents); the
+caught    A1: the peak counts only active machines  <- A1 peak: 20 machines is enough, 19 is not (12 agents); the | whole run, happy path: the seed lands, 12 lanes land one a | whole run: the fleet group is vitana-eng-fleet unless FLEE
+caught    A1: fewer machines than jobs are enough  <- A1 own machine: machines launched must be at least the job
+caught    A1: machines must outnumber jobs  <- A1 own machine: machines launched must be at least the job | whole run, happy path: the seed lands, 12 lanes land one a | whole run: the fleet group is vitana-eng-fleet unless FLEE
+caught    A1: 901 seconds to zero is enough  <- A1 back to zero: 900 seconds after the last job passes, 90
+caught    A1: exactly 900 seconds is too slow  <- A1 back to zero: 900 seconds after the last job passes, 90
+caught    A1: a zero before the last job counts  <- A1 PASS: the fleet reached 24 machines, 30 machines were l | A1 back to zero: 900 seconds after the last job passes, 90
+caught    A1: a desired capacity left is ignored  <- A1 back to zero: 900 seconds after the last job passes, 90
+caught    A1: a group that stays up is only unproven  <- A1 back to zero: 900 seconds after the last job passes, 90
+caught    A1: a group that stays up passes  <- A1 back to zero: 900 seconds after the last job passes, 90
+caught    A1: jobs on another runner are ignored  <- A1 runner: a job that ran on another runner than the fleet | failure: a job runs on the legacy runner — A8 FAIL and A1 
+caught    A1: jobs from before the run count  <- A1 own machine: machines launched must be at least the job
+caught    A1: the IAM actions are not named  <- A1 not proven: when the ASG cannot be read (AccessDenied)  | failure: the fleet group stays unreadable during the run f
+caught    A1: an unreadable group is a pass  <- A1 not proven: when the ASG cannot be read (AccessDenied) 
+caught    A1: unknown launches are a pass  <- A1 not proven: when the ASG cannot be read (AccessDenied) 
+caught    A1: fewer than 12 agents are held to 20  <- A1 with fewer than 12 agents: the 20-machine peak is not c | partial run: --agents 5 opens 5 lanes and 5 controls, does
+caught    A2: a FAIL line passes  <- A2 FAIL: one FAIL line in any job fails the acceptance, wh | A2 FAIL: the line of a failing control shows the first det | failure: a negative control prints FAIL in a job — A2 FAIL
+caught    A2: a control never seen passes  <- A2: a succeeded job that did not print all three lines fai | failure: the job traces cannot be read, or the jobs print 
+caught    A2: a job without the lines passes  <- A2: a succeeded job that did not print all three lines fai | failure: the job traces cannot be read, or the jobs print 
+caught    A2: lines of failed jobs are not counted  <- A2 PASS: every successful job printed the three negative c
+caught    A3: 91 days are enough  <- A3 tokens: 90 days left is the most allowed (91 fails); a 
+caught    A3: exactly 90 days is too long  <- A3 tokens: 90 days left is the most allowed (91 fails); a 
+caught    A3: a token that expires today is fine  <- A3 tokens: 90 days left is the most allowed (91 fails); a 
+caught    A3: inactive tokens are fine  <- A3 tokens: 90 days left is the most allowed (91 fails); a 
+caught    A3: revoked tokens are fine  <- A3 tokens: 90 days left is the most allowed (91 fails); a 
+caught    A3: extra Maintainers are fine  <- A3 FAIL: Maintainers may push, force push is allowed, an e | failure: an extra Maintainer, a token that never expires, 
+caught    A3: bot-land need not be a Maintainer  <- A3 FAIL: Maintainers may push, force push is allowed, an e
+caught    A3: the owner is not allowed  <- A3 PASS: main is push No one, the Maintainers are bot-land | A3 tokens: 90 days left is the most allowed (91 fails); a  | A3 NOT PROVEN: a token, the members, the protection or the
+caught    A3: Developers count as Maintainers  <- A3 PASS: main is push No one, the Maintainers are bot-land | A3 FAIL: Maintainers may push, force push is allowed, an e | A3 tokens: 90 days left is the most allowed (91 fails); a 
+caught    A3: a drifting settings check is fine  <- A3 FAIL: Maintainers may push, force push is allowed, an e | A3 NOT PROVEN: a token, the members, the protection or the | failure: the settings check reports drift — A3 and A8 FAIL
+caught    A3: an unread protection passes  <- A3 NOT PROVEN: a token, the members, the protection or the
+caught    A4: lanes that did not land pass  <- A4 FAIL: a lane that did not land, an extra commit on main | A4 NOT PROVEN: when the commits on main could not be read;
+caught    A4: no lanes at all pass  <- A4 NOT PROVEN: when the commits on main could not be read;
+caught    A4: equal landing times are one at a time  <- A4 FAIL: a lane that did not land, an extra commit on main
+caught    A4: the subjects on main are not compared with the merge requests  <- A4 FAIL: a lane that did not land, an extra commit on main
+caught    A4: only the first subjects are compared  <- A4 FAIL: a lane that did not land, an extra commit on main
+caught    A4: a subject without VTID is fine  <- A4 VTID: a subject without a VTID fails on its own, even w
+caught    A4: a merge commit is fine  <- A4 FAIL: a lane that did not land, an extra commit on main
+caught    A4: the landing order is not looked at  <- A4 FAIL: a lane that did not land, an extra commit on main
+caught    A4: a landed control passes  <- A4 controls: a control that landed fails; a control whose 
+caught    A4: any refusal reason is fine  <- A4 controls: a control that landed fails; a control whose 
+caught    A8: a job on the legacy runner is fine  <- A8 FAIL: a job of the run on the legacy runner, or a setti | failure: a job runs on the legacy runner — A8 FAIL and A1 
+caught    A8: no job on the fleet is fine  <- A8 FAIL: a job of the run on the legacy runner, or a setti | failure: the fleet does not scale (no machine can be launc
+caught    A8: a drifting settings check is fine  <- A8 FAIL: a job of the run on the legacy runner, or a setti | failure: the settings check reports drift — A3 and A8 FAIL
+caught    settle: a failure is only unproven  <- A1 peak: 20 machines is enough, 19 is not (12 agents); the | A1 with fewer than 12 agents: the 20-machine peak is not c | A1 own machine: machines launched must be at least the job
+caught    settle: unknown is a pass  <- A1 back to zero: 900 seconds after the last job passes, 90 | A1 not proven: when the ASG cannot be read (AccessDenied)  | A2: a succeeded job that did not print all three lines fai
+caught    exit 0 with unproven acceptances  <- settle and the exit code: FAIL beats NOT PROVEN beats PASS | failure: the fleet group stays unreadable during the run f | failure: the job traces cannot be read, or the jobs print 
+caught    a report that cannot be made exits 0  <- a report that cannot be made does not lose the run: it say
+caught    a report that cannot be made hides the stop  <- a report that cannot be made does not lose the run: it say
+caught    exit 0 after a stop  <- settle and the exit code: FAIL beats NOT PROVEN beats PASS | writes are sent once: a 503 while closing a control is not
+caught    wave 2 does not wait for the first jobs  <- whole run, happy path: the seed lands, 12 lanes land one a | whole run: the report is the only thing on stdout (one blo | whole run: the fleet group is vitana-eng-fleet unless FLEE
+caught    wave 2 waits for every first-wave job again  <- whole run, wave 2: the reviewer pushes the accepts as soon
+caught    a job on main releases wave 2  <- whole run, wave 2: only a job of a merge request of this r
+caught    a job that has not started releases wave 2  <- whole run, happy path: the seed lands, 12 lanes land one a | whole run: the report is the only thing on stdout (one blo | whole run: the fleet group is vitana-eng-fleet unless FLEE
+caught    wave 2 does not say that no first job started  <- whole run, wave 2: only a job of a merge request of this r | failure: the fleet does not scale (no machine can be launc
+caught    the no-review control is reviewed  <- whole run, happy path: the seed lands, 12 lanes land one a | whole run: who writes what — builders and the seats of the | whole run: the fleet group is vitana-eng-fleet unless FLEE
+caught    the builder's accept is pushed by the reviewer  <- whole run, happy path: the seed lands, 12 lanes land one a | whole run: who writes what — builders and the seats of the | whole run: the fleet group is vitana-eng-fleet unless FLEE
+caught    the reviews are made by the seat  <- whole run, happy path: the seed lands, 12 lanes land one a | whole run: the report is the only thing on stdout (one blo | whole run: every write is announced on stderr just before 
+caught    the stale control gets no later change  <- whole run, happy path: the seed lands, 12 lanes land one a | whole run: the fleet group is vitana-eng-fleet unless FLEE | whole run, wave 2: the reviewer pushes the accepts as soon
+caught    the push event is not proven for the seed  <- seed, whole run: if GitLab shows no push event of agent-re
+caught    the push event wait is endless  <- seed, whole run: if GitLab shows no push event of agent-re
+caught    the seed is always rebuilt  <- whole run, wave 2: only a job of a merge request of this r | seed, whole run: a project whose main already holds the cu | failure: the fleet does not scale (no machine can be launc
+caught    a seed that did not land is not a stop  <- seed, whole run: if the seed merge request does not land ( | a report that cannot be made does not lose the run: it say
+caught    the seed wait is short  <- whole run, happy path: the seed lands, 12 lanes land one a | whole run: the report is the only thing on stdout (one blo | whole run: every write is announced on stderr just before 
+caught    the base commit is read too late  <- whole run: the commit main has before the lanes is read af
+caught    the landing wait ends at the first landing  <- whole run, happy path: the seed lands, 12 lanes land one a | whole run: the report is the only thing on stdout (one blo | whole run: who writes what — builders and the seats of the
+caught    the end reserve is zero  <- failure: the bot goes down after the seed — the lanes do n | failure: the landing budget ends while the bot is still la
+caught    the controls' branches are kept  <- whole run: every write is announced on stderr just before  | cleanup: at the end the five control merge requests are cl
+caught    the controls are left open  <- whole run, happy path: the seed lands, 12 lanes land one a | whole run: every write is announced on stderr just before  | whole run: the fleet group is vitana-eng-fleet unless FLEE
+caught    the lane branches are deleted too  <- cleanup: at the end the five control merge requests are cl
+caught    merge requests of earlier runs are left open  <- hygiene: a merge request left open by an earlier run (bran
+caught    sampling stops after three early failures  <- failure: the first reads of the fleet group during the run | failure: the fleet group stays unreadable during the run f
+caught    a successful read does not end a run of failures  <- failure: the first reads of the fleet group during the run
+caught    the failed reads are said at every poll after the third  <- failure: the first reads of the fleet group during the run
+caught    the wait for the group to reach 0 never gives up  <- failure: the fleet group stays unreadable during the run f
+caught    the fleet group has another name  <- whole run: nothing but the rehearsal project is written —  | whole run: the fleet group is vitana-eng-fleet unless FLEE | preflight, whole run: the role of the GitLab machine may n
+caught    the history at the end has no cap  <- whole run: nothing but the rehearsal project is written — 
+caught    the history at the end is capped at 5000  <- whole run: nothing but the rehearsal project is written — 
+caught    jobs are not settled before the report  <- whole run: jobs that take 7 minutes are waited for — the r
+caught    a denied read is only noted  <- preflight, whole run: the role of the GitLab machine may n | fleetReadProblems: reads each operation once for the named | preflight, whole run: a dry run refuses in the same way (i
+caught    any failed read refuses  <- fleetReadProblems: reads each operation once for the named | preflight, whole run: a read of the fleet group that fails
+caught    the groups are not read before the run  <- dry run: reads and checks everything, writes nothing (no n | preflight, whole run: the role of the GitLab machine may n | fleetReadProblems: reads each operation once for the named
+caught    the activities are not read before the run  <- whole run: nothing but the rehearsal project is written —  | dry run: reads and checks everything, writes nothing (no n | preflight, whole run: the role of the GitLab machine may n
+caught    the preflight asks for the whole history  <- whole run: nothing but the rehearsal project is written —  | fleetReadProblems: reads each operation once for the named
+caught    a denial is not a refusal  <- preflight, whole run: the role of the GitLab machine may n | preflight, whole run: a dry run refuses in the same way (i
+caught    the refusal does not name the two actions  <- preflight, whole run: the role of the GitLab machine may n
+caught    the refusal does not name what was denied  <- preflight, whole run: the role of the GitLab machine may n | fleetReadProblems: reads each operation once for the named | preflight, whole run: a dry run refuses in the same way (i
+caught    the refusal does not say where the grant is  <- preflight, whole run: the role of the GitLab machine may n
+caught    the notes of the preflight are lost  <- preflight, whole run: a read of the fleet group that fails
+caught    the preflight reads another group  <- whole run: nothing but the rehearsal project is written —  | preflight, whole run: the role of the GitLab machine may n
+caught    the preflight message of a failed read is not redacted  <- fleetReadProblems: reads each operation once for the named
+caught    the seed is not tested here  <- preflight, whole run: the built seed must pass its own tes | preflight, whole run: a copy of the collab tooling that dr
+caught    a failing seed is accepted  <- preflight, whole run: the built seed must pass its own tes | preflight, whole run: a copy of the collab tooling that dr
+caught    a seed test that could not be run is accepted  <- preflight, whole run: the built seed must pass its own tes
+caught    a seed with no test files passes  <- seed self-test (real): runs the tests of the built seed in
+caught    the seed tests ignore the exit status  <- preflight, whole run: a copy of the collab tooling that dr | seed self-test (real): runs the tests of the built seed in
+caught    the seed tests run with the environment of this machine  <- preflight, whole run: a copy of the collab tooling that dr | seed self-test (real): runs the tests of the built seed in
+caught    the temporary directory of the seed tests is kept  <- seed self-test (real): runs the tests of the built seed in
+caught    the seed tests are run on the seed files of main, not of the build  <- preflight, whole run: the built seed must pass its own tes | preflight, whole run: a copy of the collab tooling that dr
+caught    the failed seed test shows nothing  <- preflight, whole run: the built seed must pass its own tes | preflight, whole run: a copy of the collab tooling that dr
+caught    a slow bot is not told from a broken one  <- failure: the landing budget ends while the bot is still la
+caught    every bot is called slow  <- failure: the landing budget ends while the bot is still la
+caught    the landing note does not count the lanes  <- failure: the landing budget ends while the bot is still la
+caught    the last resort prints the message unredacted  <- last resort: an error that nothing caught is one redacted 
+caught    the last resort of a run forgets what the run has read  <- last resort: an error that nothing caught is one redacted 
+caught    the last resort does not cut the message  <- last resort: an error that nothing caught is one redacted 
+caught    the last resort exits 0  <- last resort: an error that nothing caught is one redacted 
+caught    an unexpected error in a run is thrown, not handled  <- last resort: an error that nothing caught is one redacted 
+caught    tokens are not registered for redaction  <- refusal, whole run: a refusal that names a value the user  | whole run: a secret that reaches a line on stderr by a pat | failure: when the settings check reports drift the report 
+caught    the report string that is returned is not redacted  <- failure: when the settings check reports drift the report 
+caught    stdout is not redacted  <- refusal, whole run: a refusal that names a value the user 
+caught    stderr is not redacted  <- whole run: a secret that reaches a line on stderr by a pat
+caught    progress goes to stdout  <- whole run, happy path: the seed lands, 12 lanes land one a | whole run: the report is the only thing on stdout (one blo | whole run: every write is announced on stderr just before 
+caught    a refusal exits with 1  <- whole run: a GitLab error that echoes a token does not lea | refusal, whole run: a project that is not marked rehearsal | refusal, whole run: a project with a settings webhook or w
+caught    a dry run writes (opens the seed)  <- dry run: reads and checks everything, writes nothing (no n | dry run, current seed: says so; a run needs no seed merge  | preflight, whole run: a dry run refuses in the same way (i
+caught    the exit code of main is not returned  <- the command line: main() runs a dry run to exit 0, refuses
+caught    usage mistakes exit with 1  <- args: the command line of m2.sh (--project rehearsal --age | the command line: main() runs a dry run to exit 0, refuses
+caught    the progress line shows the active machines as the fleet  <- whole run: the report is the only thing on stdout (one blo
+
+mutations: 235   caught: 235   not caught: 0
