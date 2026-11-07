@@ -1,0 +1,61 @@
+## base_schema.sql (loaded)
+## 20261010180200_vtid_05043_s3_switch_tenant_open_signup_only.sql (loaded)
+## vtid_05493_fixture.sql (loaded)
+## live-before.sql
+tenant_id | slug | is_active | is_default | is_platform | open_signup
+00000000-0000-0000-0000-0000000000a0 | maxina | true | true | false | true
+00000000-0000-0000-0000-0000000000a3 | platform | true | false | true | false
+00000000-0000-0000-0000-0000000000a1 | t-a | true | false | false | false
+00000000-0000-0000-0000-0000000000a2 | t-b | true | false | false | false
+00000000-0000-0000-0000-0000000000a4 | t-c | true | false | false | false
+
+default_tenants | archived_at_col | deactivate_tenant | archive_tenant | snapshot_table
+1 | 0 | NULL | NULL | NULL
+
+switch_def_md5 | switch_has_open_signup | switch_has_fallback
+ff453ea8440aa5238b2477edc7aa15f8 | true | false
+
+## 20261102070300_vtid_05493_mt_tenant_deactivate.sql (loaded)
+## 20261102070350_vtid_05493_mt_tenant_archive_switch.sql (loaded)
+## post-apply-checks.sql
+deactivate_tenant | archive_tenant | archived_at_col | snapshot_rows | tenants_now
+deactivate_tenant(text) | archive_tenant(text) | 1 | 5 | 5
+
+authenticated_exec_deactivate | authenticated_exec_archive | anon_exec_switch | authenticated_exec_switch | service_role_exec_deactivate | service_role_exec_archive
+false | false | false | true | true | true
+
+switch_has_open_signup | switch_has_fallback
+true | true
+
+default_tenants | default_active | inactive_tenants | archived_tenants
+1 | true | 0 | 0
+
+## rollback-exercise.sql
+deactivated_t_a | archived_t_c
+true | true
+
+slug | is_active | archived
+maxina | true | false
+platform | true | false
+t-a | false | false
+t-b | true | false
+t-c | false | true
+
+## rollback-070350-tenant-archive-switch.sql (loaded)
+## rollback-070300-tenant-deactivate.sql (loaded)
+## rollback-check.sql
+deactivate_tenant | archive_tenant | archived_at_col | switch_has_fallback | switch_has_open_signup
+NULL | NULL | 0 | false | true
+
+tenants_differing_from_snapshot
+0
+
+## rollback-state.sql
+slug | is_active
+maxina | true
+platform | true
+t-a | true
+t-b | true
+t-c | true
+
+## rollback-070350-tenant-archive-switch.sql (loaded)
