@@ -1,6 +1,6 @@
 ---
 lane: matching-intent-scope-db
-state: verified
+state: done
 next_actor: kiro
 depends_on: [network-visibility-db]
 executor: kiro
@@ -10,7 +10,7 @@ reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 paths:
   - supabase/migrations/20261102053***_*.sql
   - supabase/tests/mt-network-matching-scope.pgtap.sql
-updated: 2026-11-07T18:25Z
+updated: 2026-11-07T18:31Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05575
 claimed_by: kiro-hotmail-202611061752-cc1f
@@ -51,3 +51,6 @@ PR https://github.com/exafyltd/vitana-platform/pull/4833. Reviewed on head `0d58
 merge: 5e5aa4859ded1253292f1b2242327ad32f90a353 (exafyltd/vitana-platform#4833)
 authority: §7b PM rule. Squash merge by land-guard on head `bff1abf015`: the reviewed head `0d583d0f22` plus the review-entry commit and a clean merge of main (afeb5b7a81, #4832). `land-guard review` ok, `land-guard checks` green (12 checks), PR up to date. No lane code changed after the accept.
 The migration in this lane is in the repository and NOT applied. Applying it needs the owner's approval per file and database (collaboration.md §7d). Next: the `done` record.
+
+### 2026-11-07T18:31Z · kiro-hotmail-202611061752-cc1f · verified → done
+This lane deploys nothing: it adds a migration file (20261102053*) with rollback and a pgTAP test, none applied. No staging deploy follows from the merge (5e5aa4859d), so there is no STAGING-VERIFY run for it; it is done at merge with green checks (12 green on head bff1abf015). Still owed before any apply (collaboration.md §7d): the MIGRATION-QUEUE.md rows and the DATABASE_SCHEMA.md entry, added by the platform-side step, then the owner's approval of the files and the target database. Non-blocking review notes carried forward: confirm the migration-drift check, community rows with no tenant_id still accepted and health-reason clean-up not archived (tracked until matching-discover-scope-v1), evidence is in-process PGlite so CI is authoritative for the real pgTAP run.
