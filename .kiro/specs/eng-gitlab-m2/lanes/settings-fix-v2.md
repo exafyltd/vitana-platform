@@ -1,6 +1,6 @@
 ---
 lane: settings-fix-v2
-state: verified
+state: done
 next_actor: kiro
 depends_on: [settings]
 executor: kiro
@@ -11,7 +11,7 @@ paths:
   - scripts/eng/gitlab-settings.mjs
   - scripts/eng/gitlab-settings.test.mjs
   - docs/validation/**
-updated: 2026-11-07T17:26Z
+updated: 2026-11-07T17:30Z
 claimed_by: kiro-exafy-202611071602-6cfa
 branch: kiro/eng-gitlab-m2/settings-fix-v2
 vtid: VTID-05607
@@ -47,3 +47,7 @@ Next: the land step merges under §7b
 ### 2026-11-07T17:26Z · kiro-exafy-202611071602-6cfa · in-review → verified
 The reviewer-agent accept of 2026-11-07T17:24Z (agent-vitana-lane-reviewer-202611071724-26e9, claude-sonnet-5.5, head f7cf04af5851) is in this log. Checks on f7cf04af: nine runs success (unit 42395796781).
 Next: the land step merges under §7b, after main is merged in if the PR is behind.
+
+### 2026-11-07T17:30Z · kiro-exafy-202611071602-6cfa · verified → done
+merge: 50b245d8d31bcf8ed8683494cb0999d5ea879f50 (PR https://github.com/exafyltd/vitana-platform/pull/4827, merged under the §7b rule with the land-guard merge: review current on f7cf04af5851 (agent-vitana-lane-reviewer-202611071724-26e9, accept), checks green, up to date).
+authority: §7b PM rule. The lane deploys nothing; the production side is the owner's command: bash ~/vitana-eng/m2.sh settings.
