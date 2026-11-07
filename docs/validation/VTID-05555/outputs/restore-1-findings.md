@@ -13,3 +13,9 @@
   so the form in use works on the running machine or is ignored without harm there. Whether a fresh build serves port 80 with it is still
   open: this run did not probe port 80 on the scratch machine. `gitlab-install.sh` is outside this lane's paths; any change goes through
   `_plan`.
+
+# Run 2 (2026-11-07T15:14Z, glv.sh 9a501533…)
+- The fix of run 1 worked as meant: step B now fails loudly and names the cause instead of printing `RESULT: DONE`.
+- Cause: `RESULT: FAIL result query: The file /root/result.rb could not be found`. `gitlab-rails runner` drops to the `git` user, which
+  cannot read `/root`. Step C works because it writes its Ruby file to `/tmp`. Fix (V3, RUNBOOK §8 step B and glv.sh): the query file is
+  `/tmp/result.rb`, mode 644. The restore itself completed again (doctor:secrets 0 failures, about 11 minutes); the scratch machine was removed.

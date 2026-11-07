@@ -263,13 +263,13 @@ GITLAB_ASSUME_YES=1 gitlab-backup restore BACKUP="$ID" || fail "gitlab-backup re
 gitlab-ctl reconfigure && gitlab-ctl restart || fail "reconfigure or restart after the restore"
 sleep 60
 say "doctor:secrets: $(gitlab-rake gitlab:doctor:secrets 2>&1 | tail -3 | tr '\n' ' ')"
-cat > /root/result.rb <<'RB'
+cat > /tmp/result.rb <<'RB'   # /tmp: gitlab-rails runner runs as user git, which cannot read /root
 p = Project.find_by_full_path('vitana/vitana-platform')
 puts "RESULT-COUNTS: #{[Project.count, Group.count, User.count].join(' ')}"
 puts "RESULT-MAIN-TIP: #{p ? (p.repository.commit('main')&.id || 'none') : 'none'}"
 RB
 for n in 1 2 3; do   # the first runner after a restore can fail while GitLab finishes starting; keep its error, never hide it
-  gitlab-rails runner /root/result.rb >/root/result.out 2>/root/result.err && grep -q '^RESULT-COUNTS:' /root/result.out && break
+  chmod 644 /tmp/result.rb; gitlab-rails runner /tmp/result.rb >/root/result.out 2>/root/result.err && grep -q '^RESULT-COUNTS:' /root/result.out && break
   sleep 60
 done
 grep '^RESULT-' /root/result.out | while IFS= read -r l; do say "$l"; done

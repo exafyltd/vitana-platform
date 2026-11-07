@@ -39,3 +39,6 @@ The owner ran `bash ~/glv.sh read` in CloudShell (outputs/read-20261107T1234Z.tx
 
 ### 2026-11-07T12:54Z · kiro-exafy-202611071142-d7ed · executing (restore run 1 recorded; V3 fix to RUNBOOK §8)
 Restore run 1 (outputs/restore-1-20261107T1239Z.txt): the 2026-11-07 backup restored on a scratch machine (`RESULT: DONE`, doctor:secrets 0 failures), and the machine was removed. A04 is not proven: step B discarded the result query's output (`2>/dev/null`), so there were no counts and no tip, and step C compared nothing. Fixed under V3 in `RUNBOOK.md` §8 and glv.sh: the query is retried, its error is kept, and a missing result fails the step. nginx lines recorded for the gitlab-infra note. Next: restore run 2 with the fixed commands.
+
+### 2026-11-07T15:46Z · kiro-exafy-202611071142-d7ed · executing (restore run 2 recorded; second V3 fix)
+Restore run 2 (outputs/restore-2-20261107T1514Z.txt): the restore completed again, and step B now failed loudly with the cause: `gitlab-rails runner` runs as user git and cannot read `/root/result.rb`. Fixed in `RUNBOOK.md` §8 and glv.sh: the query file is `/tmp/result.rb`. Scratch machine removed. Next: restore run 3.
