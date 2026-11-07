@@ -17,7 +17,7 @@ against any live system; the local runs are in-process PGlite (`pglite-harness/`
 | M1 apply (snapshot, merge, assert) | `supabase/migrations/20261102041200_vtid_05570_memfacts_merge_run.sql` |
 | M4 pgTAP | `supabase/tests/vtid_mt_data_cleanup_memfacts_supersede_merge.test.sql` (29 cases) |
 | M3 read-only checks | `pre-check.sql`, `post-check.sql`, `rollback-check.sql` |
-| M5 | `docs/multitenancy/MIGRATION-QUEUE.md` rows 34-36 |
+| M5 | `docs/multitenancy/MIGRATION-QUEUE.md` rows 37-39 |
 
 ## Acceptance
 

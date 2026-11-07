@@ -29,3 +29,11 @@ Re-plan of `mt-network/network-visibility-db`. Moved to the vitana-platform migr
 
 ### 2026-11-06T10:10Z · ci-plan-spar · ready (VTID allocated)
 VTID-05582 allocated after policy approval (converged-auto-v1).
+
+### 2026-11-07T13:45:00Z · agent-vitana-lane-reviewer-202611071337-6bb5 · review
+review: accept
+head: 4a76ead299ea3e0fd12f7578e343d5af0c9abce7
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4798
+Findings: non-blocking: aurora-cutover-restore-grants.sql:1664,3058 re-grants INSERT/UPDATE on replay (Aurora cutover lane must drop them); late-listed excluded account not flipped back until next profile write (documented); no client writer of connection_requests found in vitana-v1 src, supabase/functions or gateway src (local v1 checkout may be behind its main); CI 11/11 green is the caller's report, not read by the reviewer; queue rows and drift baseline follow in the platform follow-up per tasks.md task 4.
+Next: the land step merges under §7b (migration is not applied; applying needs the owner's approval of the files and target database, §7d)
