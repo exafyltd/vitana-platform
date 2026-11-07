@@ -1090,6 +1090,23 @@ error it fails open with a WARNING.
 **New index:** `idx_user_notifications_tenant_time`.
 
 **New member categories:** `posts_reactions` and `tips_updates`.
+
+### user_notifications / chat_messages — `tenant_id` pinned NOT NULL (VTID-05569)
+
+```
+user_notifications (
+  id UUID PK, user_id UUID NOT NULL,
+  tenant_id UUID NOT NULL,           -- NOT NULL since 20260225000000_notification_system.sql; asserted by VTID-05569
+  type TEXT NOT NULL, title TEXT NOT NULL, body TEXT, data JSONB, read_at TIMESTAMPTZ, created_at TIMESTAMPTZ
+  -- later additive columns (push_outcome, email_fallback_sent_at, ...) are recorded in their own entries
+);
+```
+
+`chat_messages.tenant_id` is `UUID NOT NULL` too (`20260225200000_chat_messages.sql`), as is `product_analytics_events.tenant_id`
+(entry below). Migration `20261102043000_vtid_05569_hot_tables_tenant_not_null_assert.sql` changes no schema and no row: it is a
+DO block that RAISEs if `tenant_id` on any of the three tables is nullable per `information_schema`, or if any row holds a
+tenant that is not in `tenants`. Rollback `20261102043100_..._rollback.sql` is a no-op. Not applied by the PR (RUN-MIGRATION
+after owner approval, collaboration.md section 7d).
 `connections_social` gains `new_follower`; `direct_messages` gains `message_reaction`.
 
 **Rules:** the gateway (`notification-controls-service.ts`) applies the same
@@ -2541,7 +2558,7 @@ an audit/system log; this absorbs high-volume clickstream. Ingested via
 product_analytics_events (
   id UUID PK, event_id TEXT UNIQUE,  -- client-generated, idempotency key
   event_name TEXT, event_type TEXT,  -- journey|assistant|feature|interest|friction|performance|content
-  tenant_id UUID, user_id_hash TEXT, -- SHA-256 of user id; never the raw id
+  tenant_id UUID NOT NULL, user_id_hash TEXT, -- NOT NULL since the bootstrap DDL (asserted by VTID-05569); SHA-256 of user id; never the raw id
   session_id TEXT, journey_id TEXT, conversation_id TEXT,
   screen_route TEXT, screen_id TEXT, feature_key TEXT,
   source TEXT,                       -- web|ios|android|gateway|assistant|orb
