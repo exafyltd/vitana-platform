@@ -45,3 +45,6 @@ Restore run 2 (outputs/restore-2-20261107T1514Z.txt): the restore completed agai
 
 ### 2026-11-07T17:23Z · kiro-exafy-202611071142-d7ed · executing (A04 passes)
 Restore run 3 (outputs/restore-3-20261107T1708Z.txt) passes A04: restored counts 4 1 10 equal live 4 1 10, and the restored main tip 1abd637af3 is in the live project. Status: A01 observed, A02 files on main, A03 passes, A04 passes. Still open: A05 and the green-pipeline comparison, blocked because no runner serves tag `vitana-eng` until eng-gitlab-m2/settings-fix (PR #4780) lands. Next: when settings-fix is merged, the owner runs `bash ~/glv.sh read` once more; then this lane goes to in-review.
+
+### 2026-11-07T17:26Z · kiro-exafy-202611071142-d7ed · executing (owner read 2; blocked on the fleet runner)
+Read 2 (outputs/read-2-20261107T1724Z.txt) confirms the blocker: runner `vitana-eng-fleet` (tag vitana-eng) has never contacted GitLab, and `vitana-eng-1` is online under tag vitana-legacy, so every main pipeline stays pending. A05 and the pipeline comparison wait for eng-gitlab-m2/settings-fix (PR #4780). Next: after the fleet runner is online, the owner runs `bash ~/glv.sh read` once more.

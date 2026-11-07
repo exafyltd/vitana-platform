@@ -17,3 +17,9 @@
   GitHub's UNIT-TESTS has no lint job; vitana-v1 lint runs elsewhere on GitHub. To be compared when pipelines run again.
 - **A05 not shown yet.** The `RUNNER` lines are missing: the read script's runner line raised an error (the `from bin/rails` trace),
   after the ci-config lines. A glv.sh fix reads tags another way. A05 still needs a job that runs, which waits for the blocker above.
+
+# Read 2 (2026-11-07T17:24Z): the runner blocker is confirmed
+- `vitana-eng-1` is online but tagged `vitana-legacy`. `vitana-eng-fleet` carries `vitana-eng` but has never contacted GitLab (no
+  `contacted_at`, not online): no fleet machine has registered with its token. Every job since the retag stays pending, as in read 1.
+- So A05 and the pipeline comparison wait for the fleet runner to come online (lane eng-gitlab-m2/settings-fix, PR #4780, stores its
+  token). Nothing in this lane's paths can change it, and a manual retag would be reverted by the next settings sync.
