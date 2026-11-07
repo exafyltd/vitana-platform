@@ -1,0 +1,15 @@
+# UNIT.yml's full command on the lane's tree (0e5a74a72a8fe26785df3133f4133b3e99b97efd + this lane), node v22.23.4, 2026-11-05T22:47:11Z
+# command: node --test $(find scripts -path '*/node_modules' -prune -o \( -name '*.test.cjs' -o -name '*.test.mjs' \) -print | sort)
+
+# tests 1085
+# suites 0
+# pass 1083
+# fail 0
+# cancelled 0
+# skipped 2
+# todo 0
+exit 0
+
+# the skipped tests (pre-existing on main: a win32-only case, and the PyYAML case of the settings guard, PyYAML is not installed here):
+ok 502 - workspace match is case-insensitive with normalised separators on win32 # SKIP
+ok 652 - central CI reader agrees with PyYAML on every file of the folder # SKIP PyYAML is not installed on this machine (set PYTHONPATH to a folder that has it)

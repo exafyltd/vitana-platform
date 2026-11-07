@@ -6,6 +6,8 @@
 //   node scripts/eng/gitlab-land.mjs merge  <project> <iid> [--dry-run]   decide and act on one merge request now
 //   node scripts/eng/gitlab-land.mjs status                        what the bot would do for every open merge request; writes nothing
 //   options: --settings <gitlab-settings.json>  --url <GitLab URL>  --token-file <file>  --workdir <dir>  --git-base <URL>
+//            --services <services.json>  --queue-projects <a,b>   (queue mode, below)
+//            --marker-file <delivery cutover marker>  --ci-dir <dir>   (read through gitlab-settings.mjs loadEffectiveProjects)
 //
 // The decisions are the ones the GitHub pipeline uses: `land-guard.mjs` (`laneKeyOf`, `localAfter`, `reviewCurrent`,
 // `checksVerdict`, `protectedTouched`, `mergeDecision`) and `queue.mjs` (`commitsInRange`, `PROTECTED_GATE_PATHS`) are imported
@@ -28,6 +30,15 @@
 // (head, reason). Logs are JSON lines without tokens; git gets the token through GIT_ASKPASS, never on a command line, and
 // every git command starts with `-c credential.helper=` so that no configured helper can store it.
 // Dependency-free Node 20.
+//
+// Queue mode (plan agentic-delivery §3.5, lane merge-queue): the two projects of the cut (`vitana-platform`, `vitana-v1`;
+// `--queue-projects a,b` changes the list, an empty value turns it off) and any project entry that carries `queue` (true, or
+// { positions: 1..12 }) are landed by the merge queue of the cut instead of the one-at-a-time loop above, once they have
+// `landing: true`. See the section "queue mode" below: cross-repo review source (review-source.mjs), order, red-main pause,
+// hot files, the train of up to 8 positions, plan merge requests, the squash trailers, the queue labels and the assist
+// trigger (assist-trigger.mjs). In queue mode the train holds the turn: a position whose merge GitLab refuses keeps it for
+// 60 minutes from its pipeline's creation and is then dropped, so the positions behind it are rebuilt without it.
+// `--services <config/delivery/services.json>` names the service list the assist rules come from.
 
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -36,6 +47,9 @@ import { fileURLToPath } from 'node:url';
 import { createClient, projectId, redact } from './gitlab-api.mjs';
 import { laneKeyOf, localAfter, reviewCurrent, checksVerdict, protectedTouched, mergeDecision } from '../collab/land-guard.mjs';
 import { commitsInRange, PROTECTED_GATE_PATHS, GOVERNANCE_PATHS } from '../collab/queue.mjs';
+import { crossRepoReview } from './review-source.mjs';
+import { loadAssistRules, matchingRules, assistActions, assistRuns, triggerAssist } from './assist-trigger.mjs';
+import * as gitlabSettings from './gitlab-settings.mjs';
 
 export const DEFAULTS = Object.freeze({
   reviewerUser: 'agent-reviewer',
@@ -47,6 +61,8 @@ export const DEFAULTS = Object.freeze({
   workdir: '/var/lib/vitana-land',
   settings: '/opt/vitana/platform/infra/gitlab-engineering/settings/gitlab-settings.json',
   url: 'http://127.0.0.1',
+  services: '/opt/vitana/platform/config/delivery/services.json',
+  queueProjects: Object.freeze(['vitana-platform', 'vitana-v1']),
 });
 
 const SHA = /^[0-9a-f]{40}$/;
@@ -384,6 +400,8 @@ function lostItsTurn(ctx, v) {
 const waitedMinutes = (ctx, v) => Math.round((ctx.now() - Date.parse(v.waitingSince)) / 60_000);
 
 export async function tickProject(ctx, project, { only, statusOnly = false } = {}) {
+  const queue = queueSetting(project, ctx);
+  if (queue) return tickQueue(ctx, { ...project, queue }, { only, statusOnly });
   const pid = projectId(project.path);
   const info = await ctx.client.get(`/projects/${pid}`);
   if (info?.default_branch !== 'main') {
@@ -462,6 +480,574 @@ export async function tick(ctx, options = {}) {
   return { rows, failed };
 }
 
+// ── queue mode (plan agentic-delivery §3.5, lane merge-queue) ────────────────
+// One tick of a queue project: read every open merge request and give it a queue state (ready, waiting, blocked, paused);
+// land the green positions of the train in order; drop a failed or conflicting position and rebuild the ones behind it;
+// fill the train up to its positions from the queue order; set each queue label once per state; comment once per
+// (head, reason). Position k is the bot ref `train/<k>` = main (or position k-1) merged with the head of merge request k,
+// tested by its own pipeline. Merge request k lands when position k is green and positions 1..k-1 have landed: the bot
+// merges `main` into it (ci.skip), checks that the tree equals position k's tested tree, and lands it pinned to that head.
+// The train is kept in `<workdir>/<project>.train.json`; a lost or unreadable file only makes the bot rebuild the train.
+
+export const QUEUE_LABELS = Object.freeze(['queue-ready', 'queue-updating', 'queue-waiting', 'queue-blocked', 'queue-paused']);
+export const PLATFORM_PROJECT = 'vitana-platform';
+const MAX_POSITIONS = 12;
+const PLAN_TITLE = /^plan\(([a-z0-9][a-z0-9-]*)\):/;
+const PLAN_PROGRAM = /^docs\/programs\/[a-z0-9][a-z0-9-]*\/program\.md$/;
+const PLAN_SPAR_STATUSES = new Set(['gitlab/plan-spar', 'PLAN-SPAR']);
+const GOVERNANCE_GLOBS = [...PROTECTED_GATE_PATHS, ...GOVERNANCE_PATHS];
+const HOT_LOOKBACK = 50;
+const JOB_FINAL = new Set(['success', 'failed', 'canceled', 'skipped']);
+const LABEL_OF = { ready: 'queue-ready', updating: 'queue-updating', waiting: 'queue-waiting', blocked: 'queue-blocked', paused: 'queue-paused', none: null };
+
+const QUEUE_COMMENT_TEXT = {
+  no_review: 'Not landed: there is no reviewer accept for this lane (on the merge request; for a vitana-v1 lane, in its vitana-platform lane file).',
+  review_model: 'Not landed: the accept was made by a model outside the reviewer chain.',
+  review_by_builder: 'Not landed: the reviewer session of the accept also committed to this merge request. A lane is never accepted by its builder.',
+  assist_failed: 'Not landed: an assist job failed for this head. Fix the source and push again.',
+  plan_scope: 'Not landed: a `plan(` merge request changes only its spec folder and the program entry. Move the other files to a lane.',
+  plan_parked: 'Not landed: the plan is parked (handoff.md).',
+  plan_spar_failed: 'Not landed: the last PLAN-SPAR run on this head failed.',
+  train_failed: 'Not landed: it failed in the landing train (its position merges `main` and the merge requests ahead of it). It is back with its builder; a new head enters the queue again.',
+  train_conflict: 'Not landed: it conflicts with a merge request ahead of it in the landing train. Merge `main` into the branch after that one has landed and resolve the conflict.',
+  merge_refused_too_long: 'Not landed: GitLab refused the merge of this merge request for more than 60 minutes (for example an unresolved thread or a merge setting), so it left the landing train and the merge requests behind it go on. Resolve it and push again; a new head enters the queue again.',
+};
+
+/** The `queue` setting of a project: true → 8 positions; { positions } → 1 to 12 (plan §5: 8, grown to 12 by its trigger). */
+export function normalizeQueue(value) {
+  if (value === true) return { positions: 8 };
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('queue: must be true or { "positions": 1..12 }');
+  const positions = value.positions === undefined ? 8 : value.positions;
+  if (!Number.isInteger(positions) || positions < 1 || positions > MAX_POSITIONS) throw new Error(`queue: positions must be an integer from 1 to ${MAX_POSITIONS}`);
+  return { positions };
+}
+
+/**
+ * Is a project landed by the queue, and with how many positions? → { positions } or null (M2's one-at-a-time loop). An entry's
+ * own `queue` wins (false = off); otherwise the projects of the cut (`ctx.queueProjects`, default vitana-platform and vitana-v1)
+ * get 8 positions. The settings schema of lane eng-gitlab-m2 `settings` has no `queue` key, so the cut's projects are named here.
+ */
+export function queueSetting(project, ctx = {}) {
+  if (project?.queue === false) return null;
+  if (project?.queue !== undefined && project?.queue !== null) return normalizeQueue(project.queue);
+  return (ctx.queueProjects || []).includes(project?.name) ? normalizeQueue(true) : null;
+}
+
+/** Revert and fix-main lanes (`<slug>/revert[-…]`, `<slug>/fix-main[-…]`) land first while main is red. */
+export function fixFirst(laneKey) {
+  const lane = String(laneKey ?? '').split('/')[1] ?? '';
+  return /^(revert|fix-main)(-[a-z0-9-]+)?$/.test(lane);
+}
+
+/** Is main red? The newest finished landing pipeline of main (source push; success or failed) decides. */
+export function mainRed(pipelines) {
+  const landings = (pipelines || []).filter((p) => p?.source === 'push' && (p.status === 'success' || p.status === 'failed')).sort((a, b) => b.id - a.id);
+  return landings[0] ? { red: landings[0].status === 'failed', pipeline: landings[0] } : { red: false, pipeline: null };
+}
+
+/** The hot files of collaboration.md §8a item 4, as keys: one merge request per key at a time. */
+export function hotKeys(files) {
+  const keys = new Set();
+  for (const f of files || []) {
+    let m;
+    if (/^(supabase|database)\/migrations\/./.test(f)) keys.add('migrations');
+    else if (['DATABASE_SCHEMA.md', 'src/App.tsx', 'CLAUDE.md', 'apps/mobile/parity/ledger.json'].includes(f)) keys.add(f);
+    else if (f === 'src/navigation/registry/screens.json' || f === 'src/navigation/registry/exclusions.json') keys.add('navigation-registry');
+    else if ((m = /^src\/i18n\/[a-z]{2,3}(?:-[A-Za-z]{2,4})?\/(.+)\.json$/.exec(f))) keys.add(`i18n:${m[1]}`);
+  }
+  return [...keys].sort();
+}
+
+/** The label write that puts exactly `label` (or no queue label for null) on a merge request; null = nothing to write. */
+export function labelChange(labels, label) {
+  const have = (labels || []).filter((l) => QUEUE_LABELS.includes(l));
+  const add = label && !have.includes(label) ? label : null;
+  const remove = have.filter((l) => l !== label);
+  if (!add && !remove.length) return null;
+  return { ...(add ? { add_labels: add } : {}), ...(remove.length ? { remove_labels: remove.join(',') } : {}) };
+}
+
+/** The squash message of the queue: the title (VTID first) and description, then the six review trailers (two for a plan). */
+export function queueSquashMessage(mr, accept) {
+  const trailers = [`Merge-Request: !${mr.iid}`, `Source-Branch: ${mr.source_branch}`];
+  if (accept) {
+    trailers.push(`Reviewed-Head: ${accept.reviewedHead}`, 'Review-Verdict: accept', `Reviewer: ${accept.reviewer}`, `Accepted-At: ${new Date(accept.acceptedAt).toISOString()}`);
+  }
+  return `${squashMessage(mr)}\n\n${trailers.join('\n')}`;
+}
+
+const timeOf = (s) => { const t = Date.parse(s ?? ''); return Number.isFinite(t) ? t : Number.MAX_SAFE_INTEGER; };
+const byAccept = (a, b) => (timeOf(a.acceptedAt) - timeOf(b.acceptedAt)) || (timeOf(a.createdAt) - timeOf(b.createdAt)) || (a.iid - b.iid);
+
+/** Queue order of the ready merge requests: the oldest accept first; while main is red only revert and fix-main go, the rest pause. */
+export function queueOrder(items, { red = false } = {}) {
+  const ready = (items || []).filter((x) => x.state === 'ready').sort(byAccept);
+  if (!red) return { order: ready, paused: [] };
+  return { order: ready.filter((x) => x.fixFirst), paused: ready.filter((x) => !x.fixFirst) };
+}
+
+/**
+ * The merge requests that join the train behind `kept`, in queue order, up to `capacity` positions: one per hot key, none
+ * that shares a file with one ahead (it waits for the next cycle), and none behind a governance change (its merge would
+ * end the review of every merge request behind it, land-guard.mjs mergeKeepsReview).
+ */
+export function trainSelect(order, { capacity = 8, kept = [] } = {}) {
+  const taken = [...kept];
+  const keptIids = new Set(kept.map((x) => x.iid));
+  const picked = [];
+  for (const it of order || []) {
+    if (keptIids.has(it.iid)) continue;
+    if (taken.length >= capacity) break;
+    if (taken.some((t) => protectedTouched(t.files || [], GOVERNANCE_GLOBS).length)) break;
+    const files = new Set(taken.flatMap((t) => t.files || []));
+    const hot = new Set(taken.flatMap((t) => t.hot || []));
+    if ((it.hot || []).some((h) => hot.has(h)) || (it.files || []).some((f) => files.has(f))) continue;
+    taken.push(it);
+    picked.push(it);
+  }
+  return picked;
+}
+
+/**
+ * The jobs that judge one merge request (its own diff, commits and lane: plan §3.4's governance jobs). They are required on
+ * each merge request's own head, which the bot reads before the merge request may join the train; a train position merges
+ * several merge requests (scopeCheck refuses a range of two lanes), so it is judged by the other required jobs (`gate`).
+ */
+export const MR_ONLY_JOBS = Object.freeze(['lane-scope', 'collab-handoff', 'change-suite', 'pr-gate-report']);
+
+/** The required jobs of a train position: the project's `train_required_jobs`, else its `required_jobs` without MR_ONLY_JOBS. */
+export function trainRequiredJobs(project) {
+  if (Array.isArray(project?.train_required_jobs)) return project.train_required_jobs.map(String);
+  return (project?.required_jobs || []).filter((j) => !MR_ONLY_JOBS.includes(j));
+}
+
+/** PLAN-SPAR's last run on a plan head: a `gitlab/plan-spar` or `PLAN-SPAR` commit status from a trusted account. */
+export function planSparVerdict(statuses, { users = [DEFAULTS.botUser] } = {}) {
+  const runs = (statuses || []).filter((s) => PLAN_SPAR_STATUSES.has(s?.name) && users.includes(s?.author?.username))
+    .sort((a, b) => (timeOf(b.created_at) - timeOf(a.created_at)) || ((b.id || 0) - (a.id || 0)));
+  const last = runs[0];
+  if (!last) return { state: 'pending', detail: 'no PLAN-SPAR or gitlab/plan-spar status from a trusted account on this head' };
+  if (last.status === 'success') return { state: 'pass', detail: `${last.name} succeeded on this head`, at: last.created_at };
+  if (last.status === 'failed' || last.status === 'canceled') return { state: 'fail', detail: `the last ${last.name} run on this head is ${last.status}` };
+  return { state: 'pending', detail: `${last.name} is ${last.status} on this head` };
+}
+
+function frontMatter(text) {
+  const m = /^---\r?\n([\s\S]*?)\r?\n---/.exec(String(text ?? ''));
+  const out = {};
+  for (const line of m ? m[1].split(/\r?\n/) : []) {
+    const kv = /^([a-z_]+):\s*(.*?)\s*$/.exec(line);
+    if (kv) out[kv[1]] = kv[2];
+  }
+  return out;
+}
+
+/** The gate of a `plan(` merge request (planning.md §6): spec files and the program entry only; handoff approved with a sparring_record. */
+export function planGate({ slug, files, handoffText }) {
+  const outside = (files || []).filter((f) => !f.startsWith(`.kiro/specs/${slug}/`) && !PLAN_PROGRAM.test(f));
+  if (outside.length) return { state: 'fail', code: 'plan_scope', reason: `a plan( merge request changes only its spec folder and the program entry; it also changes ${outside.slice(0, 5).join(', ')}` };
+  if (handoffText === null || handoffText === undefined) return { state: 'pending', code: 'plan_not_approved', reason: `.kiro/specs/${slug}/handoff.md is missing on this head` };
+  const fm = frontMatter(handoffText);
+  if (fm.state === 'parked') return { state: 'fail', code: 'plan_parked', reason: 'handoff.md says the plan is parked' };
+  if (fm.state !== 'approved') return { state: 'pending', code: 'plan_not_approved', reason: `handoff.md says state: ${fm.state || 'none'}, not approved` };
+  if (!fm.sparring_record) return { state: 'pending', code: 'plan_not_approved', reason: 'handoff.md is approved but names no sparring_record' };
+  return { state: 'pass', code: 'plan_ready', reason: `approved, sparring record ${fm.sparring_record}` };
+}
+
+// ── queue mode: IO ───────────────────────────────────────────────────────────
+
+const trainFile = (ctx, project) => path.join(ctx.workdir, `${project.name}.train.json`);
+const validPosition = (p) => p && Number.isInteger(p.k) && Number.isInteger(p.iid) && [p.head, p.sha, p.tree].every((s) => SHA.test(s || '')) && p.ref === `train/${p.k}`;
+
+function loadTrain(ctx, project) {
+  try {
+    const s = JSON.parse(fs.readFileSync(trainFile(ctx, project), 'utf8'));
+    return {
+      main: SHA.test(s?.main || '') ? s.main : null,
+      positions: Array.isArray(s?.positions) && s.positions.every(validPosition) ? s.positions : [],
+      dropped: s?.dropped && typeof s.dropped === 'object' && !Array.isArray(s.dropped) ? s.dropped : {},
+    };
+  } catch {
+    return { main: null, positions: [], dropped: {} };
+  }
+}
+
+function saveTrain(ctx, project, state) {
+  if (ctx.dryRun) return;
+  fs.mkdirSync(ctx.workdir, { recursive: true });
+  const file = trainFile(ctx, project);
+  fs.writeFileSync(`${file}.tmp`, `${JSON.stringify(state, null, 2)}\n`);
+  fs.renameSync(`${file}.tmp`, file);
+}
+
+const botIdentity = (ctx) => ({ GIT_AUTHOR_NAME: ctx.botUser, GIT_AUTHOR_EMAIL: ctx.botEmail, GIT_COMMITTER_NAME: ctx.botUser, GIT_COMMITTER_EMAIL: ctx.botEmail });
+const showAt = (ctx, repo, rev, file) => gitRun(ctx, repo, ['show', `${rev}:${file}`], { allowFail: true });
+const isAncestor = (ctx, repo, a, b) => gitRun(ctx, repo, ['merge-base', '--is-ancestor', a, b], { allowFail: true }) !== null;
+
+/** git merge-tree --write-tree: { tree } for a clean merge, null for a conflict; any other git failure throws. */
+function mergeTree(ctx, repo, a, b) {
+  try {
+    const out = execFileSync('git', [...GIT_CONFIG_ARGS, '-C', repo, 'merge-tree', '--write-tree', '--no-messages', a, b], {
+      encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: MAX_BUFFER, timeout: ctx.gitTimeoutMs, env: ctx.gitEnv,
+    });
+    const tree = out.split('\n')[0].trim();
+    if (!SHA.test(tree)) throw new Error('git merge-tree printed no tree');
+    return { tree };
+  } catch (e) {
+    if (e.status === 1) return null;
+    const err = new Error(`git merge-tree failed: ${redact(String(e.stderr || e.message).trim().split('\n').slice(-1)[0], ctx.token)}`);
+    err.code = 'git';
+    throw err;
+  }
+}
+
+const commitTree = (ctx, repo, tree, parents, message) => gitRun(ctx, repo, ['commit-tree', tree, ...parents.flatMap((p) => ['-p', p]), '-m', message], { env: botIdentity(ctx) });
+
+/** The bot's clone of vitana-platform with main and the kiro/<slug>/* branches of `slugs`. Throws (fails closed) when unreachable. */
+function platformClone(ctx, slugs) {
+  const platform = ctx.projects.find((p) => p.name === PLATFORM_PROJECT);
+  if (!platform) throw new Error(`the ${PLATFORM_PROJECT} project is not in the settings: cross-repo reviews cannot be read`);
+  const repo = ensureClone(ctx, platform);
+  for (const slug of slugs) gitRun(ctx, repo, ['fetch', '-q', '--prune', 'origin', `+refs/heads/kiro/${slug}/*:refs/remotes/origin/kiro/${slug}/*`]);
+  return repo;
+}
+
+/** The checks of the newest pipeline for exactly `sha` (on `ref`, when given), read as M2's checksFor reads them. */
+async function pipelineChecks(ctx, pid, project, sha, { ref } = {}) {
+  const list = await ctx.client.get(`/projects/${pid}/pipelines`, { query: { sha, ...(ref ? { ref } : {}), order_by: 'id', sort: 'desc', per_page: 20 } });
+  const pipeline = (Array.isArray(list) ? list : []).filter((p) => p.sha === sha && (!ref || p.ref === ref)).sort((a, b) => b.id - a.id)[0] || null;
+  const jobs = pipeline ? await ctx.client.paginate(`/projects/${pid}/pipelines/${pipeline.id}/jobs`, { maxPages: 20 }) : [];
+  const verdict = checksFor(pipeline, jobs, project.required_jobs, { onUnknown: (j) => ctx.log({ event: 'unknown_job_status', sha, job: j.name, status: String(j.status) }) });
+  return { ...verdict, createdAt: pipeline?.created_at ?? null };
+}
+
+/** Same-repo review: M2's push-identity check (judgeReviewCommit, pushedByReviewer), then reviewCurrent. */
+async function sameRepoReview(ctx, pid, repo, head, laneKey) {
+  const commits = commitsInRange(repo, 'origin/main', head);
+  const newest = commits.find((c) => c.review === laneKey && (c.verdict === 'accept' || c.verdict === 'changes'));
+  const pushed = newest && newest.verdict === 'accept' && REVIEWER_RE.test(newest.reviewer || '') && SHA.test(newest.reviewedHead || '')
+    ? await pushedByReviewer(ctx, pid, repo, newest.sha)
+    : false;
+  const judged = judgeReviewCommit(commits, laneKey, { pushed, reviewerUser: ctx.reviewerUser });
+  if (!judged.ok) return { ok: false, code: judged.code, reason: judged.reason };
+  const walk = localAfter(repo, judged.commit.reviewedHead, head, laneKey);
+  const current = reviewCurrent(judged.commit.reviewedHead, head, walk.after, laneKey, walk.prDiffSame);
+  if (!current.ok) return { ok: false, code: 'review_stale', reason: current.reason };
+  const at = gitRun(ctx, repo, ['log', '-1', '--format=%cI', judged.commit.sha]);
+  return { ok: true, code: 'review_found', reason: current.reason, entry: { sha: judged.commit.sha, reviewedHead: judged.commit.reviewedHead, reviewer: judged.commit.reviewer, at: new Date(at).toISOString() } };
+}
+
+/** Does a hot-file merge request wait? Yes while the previous landing of the same hot key has no STAGING-VERIFY result. */
+async function hotFileWait(ctx, pid, repo, keys) {
+  const log = gitRun(ctx, repo, ['log', '--first-parent', '-n', String(HOT_LOOKBACK), '--no-renames', '--name-only', '--format=%x1e%H%x1f%cI', 'origin/main']);
+  let prev = null;
+  for (const rec of log.split('\x1e').slice(1)) {
+    const [header, ...files] = rec.split('\n');
+    const [sha, at] = header.split('\x1f');
+    if (hotKeys(files.filter(Boolean)).some((k) => keys.includes(k))) { prev = { sha, at }; break; }
+  }
+  if (!prev) return { wait: false };
+  const short = prev.sha.slice(0, 8);
+  const list = await ctx.client.get(`/projects/${pid}/pipelines`, { query: { sha: prev.sha, ref: 'main', order_by: 'id', sort: 'desc', per_page: 20 } });
+  const pipe = (Array.isArray(list) ? list : []).filter((p) => p.sha === prev.sha && p.ref === 'main').sort((a, b) => b.id - a.id)[0];
+  if (!pipe) {
+    if (ctx.now() - timeOf(prev.at) > ctx.pipelineWaitMs) return { wait: false };
+    return { wait: true, reason: `the previous hot-file landing ${short} has no main pipeline yet` };
+  }
+  const jobs = await ctx.client.paginate(`/projects/${pid}/pipelines/${pipe.id}/jobs`, { maxPages: 20 });
+  const verify = jobs.filter((j) => /^staging-verify([:-].*)?$/.test(String(j.name || '')));
+  if (verify.length) {
+    return verify.every((j) => JOB_FINAL.has(j.status)) ? { wait: false } : { wait: true, reason: `STAGING-VERIFY of the previous hot-file landing ${short} has no result yet` };
+  }
+  return PIPELINE_FINAL.has(pipe.status) ? { wait: false } : { wait: true, reason: `the main pipeline of the previous hot-file landing ${short} is ${pipe.status}` };
+}
+
+/** One open merge request → its queue item: { iid, state, code, reason, head, files, hot, fixFirst, accept, acceptedAt, comment }. */
+async function queueItem(ctx, project, repo, mr, env) {
+  const base = { iid: mr.iid, mr, title: mr.title, head: mr.sha, labels: Array.isArray(mr.labels) ? [...mr.labels] : [], createdAt: mr.created_at, files: [], hot: [], fixFirst: false, accept: null };
+  const item = (state, code, reason, extra = {}) => ({ ...base, state, code, reason, ...extra });
+  if (!Number.isInteger(mr.iid) || !SHA.test(mr.sha || '') || !BRANCH_OK.test(mr.source_branch || '')) return item('none', 'bad_merge_request', 'the merge request has an unexpected iid, head or source branch');
+  if (mr.draft === true || mr.work_in_progress === true) return item('none', 'draft', 'draft merge request');
+  const plan = PLAN_TITLE.exec(mr.title || '');
+  const laneKey = plan ? null : laneKeyOf(mr.title);
+  if (!plan && (!laneKey || !VTID_TITLE.test(mr.title || ''))) return item('blocked', 'not_a_lane_mr', 'the title is not "VTID-nnnnn (<slug>/<lane>): …" or "plan(<slug>): …"', { comment: true });
+
+  const head = fetchMrHead(ctx, repo, mr.iid);
+  if (head !== mr.sha) return item('skip', 'head_moved', 'the head moved while the merge request was read; next tick');
+  const files = gitRun(ctx, repo, ['diff', '--name-only', '--no-renames', `origin/main...${head}`]).split('\n').filter(Boolean);
+  const protectedFiles = protectedTouched(files, PROTECTED_GATE_PATHS);
+  const facts = { laneKey, files, hot: hotKeys(files), fixFirst: fixFirst(laneKey), protectedFiles };
+  if (protectedFiles.length) return item('blocked', 'protected_gate_file', `protected gate file(s) changed (${protectedFiles.slice(0, 5).join(', ')}): the owner merges it`, { ...facts, comment: true });
+  const dropped = env.dropped[mr.iid];
+  if (dropped && dropped.head === head) return item('blocked', dropped.code, dropped.reason, { ...facts, comment: true });
+  const checksHead = env.checksHead(mr.iid, head);
+
+  if (plan) {
+    const slug = plan[1];
+    const gate = planGate({ slug, files, handoffText: showAt(ctx, repo, head, `.kiro/specs/${slug}/handoff.md`) });
+    if (gate.state === 'fail') return item('blocked', gate.code, gate.reason, { ...facts, comment: true });
+    if (gate.state === 'pending') return item('waiting', gate.code, gate.reason, facts);
+    const statuses = await ctx.client.paginate(`/projects/${env.pid}/repository/commits/${checksHead}/statuses`, { maxPages: 5 });
+    const spar = planSparVerdict(statuses, { users: ctx.statusUsers });
+    if (spar.state === 'fail') return item('blocked', 'plan_spar_failed', spar.detail, { ...facts, comment: true });
+    if (spar.state === 'pending') return item('waiting', 'plan_spar_pending', spar.detail, facts);
+    const checks = await pipelineChecks(ctx, env.pid, project, checksHead);
+    if (checks.state === 'fail') return item('blocked', checks.kind === 'required' ? 'required_job_missing' : 'checks_failed', checks.detail, { ...facts, comment: true });
+    if (checks.state === 'pending') return item('waiting', 'checks_pending', checks.detail, facts);
+    return item('ready', 'ready', `${gate.reason}; ${spar.detail}; ${checks.detail}`, { ...facts, acceptedAt: spar.at ?? mr.created_at });
+  }
+
+  const review = env.platformRepo
+    ? crossRepoReview({ platformRepo: env.platformRepo, repo, head, laneKey })
+    : await sameRepoReview(ctx, env.pid, repo, head, laneKey);
+
+  const matched = matchingRules(files, env.rules);
+  if (matched.length) {
+    const runs = await assistRuns(ctx, env.pid, mr.iid, matched);
+    const a = assistActions({ head, files, rules: matched, runs, accepted: review.ok, protectedFiles });
+    if (a.state === 'trigger') {
+      for (const rule of a.trigger) {
+        await triggerAssist({ ...ctx, git: (args) => gitRun(ctx, repo, args) }, { pid: env.pid, iid: mr.iid, head, rule, mainSha: env.mainSha, sourceBranch: mr.source_branch });
+      }
+      return item('waiting', 'assist_pending', a.reason, facts);
+    }
+    if (a.state === 'pending') return item('waiting', 'assist_pending', a.reason, facts);
+    if (a.state === 'failed') return item('blocked', 'assist_failed', a.reason, { ...facts, comment: true });
+  }
+
+  if (!review.ok) return item('blocked', review.code, review.reason, { ...facts, comment: true });
+  const checks = await pipelineChecks(ctx, env.pid, project, checksHead);
+  if (checks.state === 'fail') return item('blocked', checks.kind === 'required' ? 'required_job_missing' : 'checks_failed', checks.detail, { ...facts, comment: true });
+  if (checks.state === 'pending') return item('waiting', 'checks_pending', checks.detail, facts);
+  if (facts.hot.length) {
+    const w = await hotFileWait(ctx, env.pid, repo, facts.hot);
+    if (w.wait) return item('waiting', 'hot_file_waits', w.reason, facts);
+  }
+  if (Number(gitRun(ctx, repo, ['rev-list', '--count', `${head}..origin/main`])) > 0) {
+    // The landing merges main into the branch; reviewCurrent keeps the review only when no governance or protected gate
+    // file comes in (land-guard.mjs mergeKeepsReview), so such a branch is left alone, as M2's update step does.
+    const mb = gitRun(ctx, repo, ['merge-base', head, 'origin/main']);
+    const incoming = gitRun(ctx, repo, ['diff', '--name-only', '--no-renames', mb, 'origin/main']).split('\n').filter(Boolean);
+    const lapsing = protectedTouched(incoming, GOVERNANCE_GLOBS);
+    if (lapsing.length) return item('blocked', 'review_would_lapse', `main brought in governance or protected gate file(s) (${lapsing.slice(0, 5).join(', ')}): merging it would end the review's validity`, { ...facts, comment: true });
+  }
+  const accept = { reviewedHead: review.entry.reviewedHead, reviewer: review.entry.reviewer, acceptedAt: review.entry.at };
+  return item('ready', 'ready', `${review.reason}; ${checks.detail}`, { ...facts, accept, acceptedAt: accept.acceptedAt });
+}
+
+async function setQueueLabel(ctx, pid, it, label) {
+  const change = labelChange(it.labels, label);
+  if (!change) return false;
+  if (ctx.dryRun) { ctx.log({ event: 'would_label', mr: it.iid, label }); return false; }
+  await ctx.client.put(`/projects/${pid}/merge_requests/${it.iid}`, { body: change });
+  const remove = String(change.remove_labels || '').split(',').filter(Boolean);
+  it.labels = [...it.labels.filter((l) => !remove.includes(l)), ...(change.add_labels ? [change.add_labels] : [])];
+  ctx.log({ event: 'labelled', mr: it.iid, label });
+  return true;
+}
+
+async function ensureQueueNote(ctx, pid, it) {
+  const text = QUEUE_COMMENT_TEXT[it.code] ?? COMMENT_TEXT[it.code];
+  if (!text) return false;
+  const marker = `<!-- vitana-land:${it.code}:${it.head} -->`;
+  const notes = await ctx.client.paginate(`/projects/${pid}/merge_requests/${it.iid}/notes`, { query: { sort: 'desc', order_by: 'created_at' }, maxPages: 20 });
+  if (notes.some((n) => typeof n?.body === 'string' && n.body.includes(marker) && n.author?.username === ctx.botUser)) return false;
+  if (ctx.dryRun) { ctx.log({ event: 'would_comment', mr: it.iid, reason: it.code }); return false; }
+  await ctx.client.post(`/projects/${pid}/merge_requests/${it.iid}/notes`, { body: { body: `${text}\n\n${marker}` } });
+  ctx.log({ event: 'commented', mr: it.iid, reason: it.code });
+  return true;
+}
+
+/** Take a merge request out of the train until its head changes; it goes back to its builder with one comment. */
+function dropItem(ctx, state, it, code, reason) {
+  Object.assign(it, { state: 'blocked', code, reason, comment: true });
+  state.dropped[it.iid] = { head: it.head, code, reason };
+  ctx.log({ event: 'train_dropped', mr: it.iid, reason: code, detail: reason });
+}
+
+/** Land merge request `it` of a green position: merge main into it (ci.skip) when needed, check the tree, land pinned to that head. */
+async function landPosition(ctx, repo, pid, pos, it) {
+  const mr = it.mr;
+  const main = gitRun(ctx, repo, ['rev-parse', 'origin/main']);
+  let next = it.head;
+  if (isAncestor(ctx, repo, main, it.head)) {
+    if (gitRun(ctx, repo, ['rev-parse', `${it.head}^{tree}`]) !== pos.tree) {
+      ctx.log({ event: 'train_tree_mismatch', mr: it.iid, position: pos.k, detail: 'the head\'s tree is not the tested tree of its position' });
+      return { mismatch: true };
+    }
+  } else {
+    const merged = mergeTree(ctx, repo, it.head, main);
+    if (!merged || merged.tree !== pos.tree) {
+      ctx.log({ event: 'train_tree_mismatch', mr: it.iid, position: pos.k, detail: merged ? 'main merged into the branch is not the tested tree of its position' : 'main no longer merges cleanly into the branch' });
+      return { mismatch: true };
+    }
+    next = commitTree(ctx, repo, merged.tree, [it.head, main], `Merge branch 'main' into ${mr.source_branch}\n\nCollab-Session: ${ctx.botUser}`);
+  }
+  if (ctx.dryRun) { ctx.log({ event: 'would_land', mr: it.iid, position: pos.k, head: next }); return { landed: false }; }
+  if (next !== it.head) {
+    await setQueueLabel(ctx, pid, it, 'queue-updating');
+    gitRun(ctx, repo, ['push', '-q', '-o', 'ci.skip', 'origin', `${next}:refs/heads/${mr.source_branch}`]);
+    pos.updated = next;
+    ctx.log({ event: 'updated', mr: it.iid, from: it.head, to: next, ciSkip: true });
+    it.head = next; // the merge request's head is now the one the bot made: a drop or a comment in this tick is for it
+  }
+  const body = { sha: next, squash: true, squash_commit_message: queueSquashMessage(mr, it.accept), should_remove_source_branch: true };
+  let merged = false;
+  try {
+    const res = await ctx.client.put(`/projects/${pid}/merge_requests/${it.iid}/merge`, { body, retries: 0 });
+    merged = res?.state === 'merged';
+  } catch (e) {
+    ctx.log({ event: 'merge_call_failed', mr: it.iid, status: e.status ?? null, code: e.code ?? null, error: redact(e.message, ctx.token) });
+  }
+  if (!merged) {
+    const current = await ctx.client.get(`/projects/${pid}/merge_requests/${it.iid}`).catch(() => null);
+    merged = current?.state === 'merged';
+  }
+  if (!merged) { ctx.log({ event: 'not_landed', mr: it.iid, position: pos.k, reason: 'the merge call was refused; the next tick tries again' }); return { landed: false, refused: true }; }
+  gitRun(ctx, repo, ['fetch', '-q', 'origin', '+refs/heads/main:refs/remotes/origin/main']);
+  const tip = gitRun(ctx, repo, ['rev-parse', 'origin/main']);
+  const tested = gitRun(ctx, repo, ['rev-parse', `${tip}^{tree}`]) === pos.tree;
+  ctx.log({ event: 'landed', mr: it.iid, position: pos.k, head: next, main: tip, testedTree: tested });
+  return { landed: true, main: tip, testedTree: tested };
+}
+
+/** Land, drop and rebuild the train of one project; `items` are this tick's queue items (states may change here). */
+async function runTrain(ctx, project, repo, pid, state, items, order) {
+  const byIid = new Map(items.map((i) => [i.iid, i]));
+  let main = gitRun(ctx, repo, ['rev-parse', 'origin/main']);
+  let positions = [...state.positions].sort((a, b) => a.k - b.k);
+  if (positions.length && state.main !== main) {
+    ctx.log({ event: 'train_rebuilt', reason: 'main_moved', from: state.main, to: main });
+    positions = [];
+  }
+  const bad = positions.findIndex((p) => { const it = byIid.get(p.iid); return !it || it.state !== 'ready' || (it.head !== p.head && it.head !== p.updated); });
+  if (bad >= 0) positions = positions.slice(0, bad);
+
+  const verdicts = [];
+  const trainProject = { ...project, required_jobs: trainRequiredJobs(project) };
+  for (const p of positions) verdicts.push(await pipelineChecks(ctx, pid, trainProject, p.sha, { ref: p.ref }));
+  const failedAt = verdicts.findIndex((v) => v.state === 'fail');
+  let end = failedAt >= 0 ? failedAt : positions.length;
+  let landed = 0;
+  let mainMovedByUs = false;
+  for (let i = 0; i < end; i++) {
+    if (verdicts[i].state !== 'pass') break;
+    const it = byIid.get(positions[i].iid);
+    const r = await landPosition(ctx, repo, pid, positions[i], it);
+    if (r.mismatch) { end = i; break; }
+    if (!r.landed) {
+      const held = { waitingSince: verdicts[i].createdAt };
+      if (r.refused && lostItsTurn(ctx, held)) {
+        // GitLab keeps refusing this merge (an unresolved thread, a merge setting the bot does not read). As in M2's loop, it holds
+        // the turn for 60 minutes from its pipeline's creation and then loses it: it leaves the train (one comment, until a new
+        // head), and the positions behind it, which contain its change, are rebuilt without it.
+        ctx.log({ event: 'lost_its_turn', mr: it.iid, position: positions[i].k, reason: 'merge_refused', waitedMinutes: waitedMinutes(ctx, held) });
+        dropItem(ctx, state, it, 'merge_refused_too_long', `GitLab refused the merge of position ${positions[i].k} for more than ${Math.round(ctx.pipelineWaitMs / 60_000)} minutes`);
+        end = i;
+      }
+      break;
+    }
+    it.landed = true;
+    landed = i + 1;
+    main = r.main;
+    mainMovedByUs = true;
+    if (!r.testedTree) { end = i + 1; break; } // fail closed: main is not the tree this train tested; rebuild what is behind
+  }
+  if (failedAt >= 0 && end === failedAt) {
+    const p = positions[failedAt];
+    dropItem(ctx, state, byIid.get(p.iid), 'train_failed', `position ${p.k} of the landing train failed: ${verdicts[failedAt].detail}`);
+  }
+  const kept = positions.slice(landed, end);
+  const keptIids = new Set(kept.map((p) => p.iid));
+  if (mainMovedByUs && kept.length === 0) ctx.log({ event: 'train_cycle_done', landed });
+
+  // Fill the train behind the kept positions, in queue order.
+  const taken = kept.map((p) => byIid.get(p.iid));
+  let pool = order.filter((x) => x.state === 'ready' && !x.landed && !keptIids.has(x.iid));
+  let baseSha = kept.length ? kept[kept.length - 1].sha : main;
+  let k = kept.length ? kept[kept.length - 1].k : 0;
+  const built = [];
+  for (;;) {
+    const next = trainSelect(pool, { capacity: project.queue.positions, kept: taken })[0];
+    if (!next) break;
+    pool = pool.filter((x) => x.iid !== next.iid);
+    const merged = mergeTree(ctx, repo, baseSha, next.head);
+    if (!merged) {
+      if (k === 0) dropItem(ctx, state, next, 'conflict', 'merging main into this branch conflicts');
+      else dropItem(ctx, state, next, 'train_conflict', `it conflicts with position ${k} of the landing train`);
+      continue;
+    }
+    k += 1;
+    const sha = commitTree(ctx, repo, merged.tree, [baseSha, next.head], `train/${k}: !${next.iid} ${String(next.title || '').replace(/\s+/g, ' ').trim()}\n\nCollab-Session: ${ctx.botUser}`);
+    built.push({ k, iid: next.iid, head: next.head, ref: `train/${k}`, sha, tree: merged.tree });
+    taken.push(next);
+    baseSha = sha;
+  }
+  const train = [...kept, ...built];
+  for (const p of train) Object.assign(byIid.get(p.iid), { position: p.k });
+
+  // Move the train refs: delete every train/* ref that is not a wanted position, then push the new positions (never a force).
+  const remote = new Map(gitRun(ctx, repo, ['ls-remote', 'origin', 'refs/heads/train/*']).split('\n').filter(Boolean).map((l) => l.split('\t').reverse()));
+  const wanted = new Map(train.map((p) => [`refs/heads/${p.ref}`, p.sha]));
+  const stale = [...remote.keys()].filter((ref) => wanted.get(ref) !== remote.get(ref));
+  const fresh = train.filter((p) => remote.get(`refs/heads/${p.ref}`) !== p.sha);
+  if (ctx.dryRun) {
+    for (const p of fresh) ctx.log({ event: 'would_build_train', position: p.k, mr: p.iid, sha: p.sha });
+  } else {
+    if (stale.length) gitRun(ctx, repo, ['push', '-q', 'origin', ...stale.map((ref) => `:${ref}`)]);
+    if (fresh.length) gitRun(ctx, repo, ['push', '-q', 'origin', ...fresh.map((p) => `${p.sha}:refs/heads/${p.ref}`)]);
+    for (const p of fresh) ctx.log({ event: 'train_position', position: p.k, mr: p.iid, sha: p.sha });
+  }
+  const open = new Set(items.filter((i) => !i.landed).map((i) => String(i.iid)));
+  const dropped = Object.fromEntries(Object.entries(state.dropped).filter(([iid]) => open.has(iid)));
+  saveTrain(ctx, project, { main, positions: train, dropped });
+}
+
+/** One tick of a queue project. statusOnly (and `status`) reads and decides only. Rows: { project, iid, action: <queue state>, … }. */
+async function tickQueue(ctx, project, { only, statusOnly = false } = {}) {
+  const pid = projectId(project.path);
+  const info = await ctx.client.get(`/projects/${pid}`);
+  if (info?.default_branch !== 'main') {
+    ctx.log({ event: 'project_skipped', project: project.name, reason: `default branch is "${info?.default_branch}"; the land-guard functions read origin/main` });
+    return [];
+  }
+  const repo = ensureClone(ctx, project);
+  const mrs = await openMergeRequests(ctx, pid, 'main');
+  const slugs = [...new Set(mrs.map((m) => (laneKeyOf(m.title) || '').split('/')[0]).filter(Boolean))];
+  const platformRepo = project.name === PLATFORM_PROJECT ? null : platformClone(ctx, slugs);
+  const mainSha = gitRun(ctx, repo, ['rev-parse', 'origin/main']);
+  const mainPipelines = await ctx.client.get(`/projects/${pid}/pipelines`, { query: { ref: 'main', order_by: 'id', sort: 'desc', per_page: 20 } });
+  const { red } = mainRed(Array.isArray(mainPipelines) ? mainPipelines : []);
+  const rules = loadAssistRules(ctx.services, project.name);
+  const state = loadTrain(ctx, project);
+  const posByIid = new Map(state.positions.map((p) => [p.iid, p]));
+  const env = {
+    pid, platformRepo, rules, mainSha, dropped: state.dropped,
+    // a head the bot itself made (main merged in with ci.skip) is judged by the checks of the head it was made from
+    checksHead: (iid, head) => { const p = posByIid.get(iid); return p && p.updated === head ? p.head : head; },
+  };
+  const items = [];
+  for (const mr of mrs) items.push(await queueItem(ctx, project, repo, mr, env));
+  const { order, paused } = queueOrder(items, { red });
+  for (const it of paused) Object.assign(it, { state: 'paused', code: 'main_red', reason: 'main is red: only revert and fix-main merge requests land until it is green' });
+  if (!statusOnly) {
+    await runTrain(ctx, project, repo, pid, state, items, order);
+    for (const it of items) {
+      if (it.landed || it.state === 'skip') continue;
+      await setQueueLabel(ctx, pid, it, LABEL_OF[it.state] ?? null);
+      if (it.state === 'blocked' && it.comment) await ensureQueueNote(ctx, pid, it);
+    }
+  }
+  const rows = [];
+  for (const it of items) {
+    ctx.log({ event: 'queue_state', project: project.name, mr: it.iid, state: it.landed ? 'landed' : it.state, reason: it.code, position: it.position ?? null, detail: it.reason });
+    if (only === undefined || it.iid === only) {
+      rows.push({ project: project.name, iid: it.iid, title: it.title, head: it.head, action: it.landed ? 'landed' : it.state, reasonCode: it.code, reason: it.reason, laneKey: it.laneKey ?? null, position: it.position ?? null });
+    }
+  }
+  return rows;
+}
+
 // ── CLI ──────────────────────────────────────────────────────────────────────
 
 function parseArgs(argv) {
@@ -484,8 +1070,32 @@ export function loadProjects(settingsFile) {
   if (!s || typeof s !== 'object' || typeof s.group !== 'string' || !s.projects || typeof s.projects !== 'object') throw new Error(`${settingsFile}: needs "group" and "projects"`);
   return Object.entries(s.projects).map(([name, p]) => ({
     name, path: `${s.group}/${name}`, landing: p?.landing === true, required_jobs: Array.isArray(p?.required_jobs) ? p.required_jobs.map(String) : [],
+    ...(p?.queue !== undefined && p?.queue !== null ? { queue: p.queue === false ? false : normalizeQueue(p.queue) } : {}),
+    ...(Array.isArray(p?.train_required_jobs) ? { train_required_jobs: p.train_required_jobs.map(String) } : {}),
   }));
 }
+
+/**
+ * The projects as `run`, `merge` and `status` read them: through `loadEffectiveProjects` of scripts/eng/gitlab-settings.mjs,
+ * the view of the delivery cutover marker (plan agentic-delivery §8.2: after the cut the two projects land), when that module
+ * exports it; otherwise the settings file itself, as M2 reads it (the same view for a file without cutover blocks).
+ * `--marker-file` and `--ci-dir` reach the loader; without them its own defaults apply. A loader error fails closed.
+ */
+export async function readProjects(o, lib = gitlabSettings) {
+  const file = o.settings || DEFAULTS.settings;
+  if (typeof lib?.loadEffectiveProjects !== 'function') return loadProjects(file);
+  const opts = { ...(o['marker-file'] ? { markerFile: o['marker-file'] } : {}), ...(o['ci-dir'] ? { ciDir: o['ci-dir'] } : {}) };
+  const list = await lib.loadEffectiveProjects(file, opts);
+  if (!Array.isArray(list)) throw new Error(`${file}: loadEffectiveProjects returned no project list`);
+  return list.map((p) => ({
+    name: String(p.name), path: String(p.path), landing: p.landing === true, required_jobs: Array.isArray(p.required_jobs) ? p.required_jobs.map(String) : [],
+    ...(p.queue !== undefined && p.queue !== null ? { queue: p.queue === false ? false : normalizeQueue(p.queue) } : {}),
+    ...(Array.isArray(p.train_required_jobs) ? { train_required_jobs: p.train_required_jobs.map(String) } : {}),
+  }));
+}
+
+/** A list option: an array, or a comma-separated string (empty = none); absent → the default. */
+const nameList = (v, fallback) => (v === undefined || v === null ? [...fallback] : Array.isArray(v) ? v.map(String) : String(v).split(',').map((s) => s.trim()).filter(Boolean));
 
 export function makeContext(o, { env = process.env, fetch: fetchImpl, now = Date.now, write = (line) => process.stdout.write(`${line}\n`) } = {}) {
   const workdir = o.workdir || DEFAULTS.workdir;
@@ -505,6 +1115,9 @@ export function makeContext(o, { env = process.env, fetch: fetchImpl, now = Date
     botEmail: o.botEmail || DEFAULTS.botEmail,
     pipelineWaitMs: (o.pipelineWaitMinutes ?? DEFAULTS.pipelineWaitMinutes) * 60_000,
     eventPages: o.eventPages ?? DEFAULTS.eventPages,
+    services: o.services || DEFAULTS.services,
+    statusUsers: Array.isArray(o.statusUsers) ? o.statusUsers.map(String) : [o.botUser || DEFAULTS.botUser],
+    queueProjects: nameList(o.queueProjects ?? o['queue-projects'], DEFAULTS.queueProjects),
     dryRun: o.dryRun === true,
     log: (entry) => write(redact(JSON.stringify({ ts: new Date(now()).toISOString(), ...entry }), token)),
   };
@@ -516,8 +1129,11 @@ export async function main(argv, deps = {}) {
   try { o = { ...parseArgs(argv), ...(deps.overrides || {}) }; } catch (e) { out(`gitlab-land: ${e.message}\n`); return 1; }
   const cmd = o._[0];
   if (!['run', 'merge', 'status'].includes(cmd)) {
-    out('usage: gitlab-land.mjs run [--dry-run] | merge <project> <iid> [--dry-run] | status   [--settings f] [--url u] [--token-file f] [--workdir d] [--git-base u]\n');
+    out('usage: gitlab-land.mjs run [--dry-run] | merge <project> <iid> [--dry-run] | status   [--settings f] [--url u] [--token-file f] [--workdir d] [--git-base u] [--services f] [--queue-projects a,b] [--marker-file f] [--ci-dir d]\n');
     return 1;
+  }
+  if (!o.projectsOverride) {
+    try { o = { ...o, projectsOverride: await readProjects(o, deps.settingsLib ?? gitlabSettings) }; } catch (e) { out(`gitlab-land: ${String(e.message).split('\n')[0]}\n`); return 1; }
   }
   let ctx;
   try { ctx = makeContext(o, { ...deps, write: (line) => out(`${line}\n`) }); } catch (e) { out(`gitlab-land: ${String(e.message).split('\n')[0]}\n`); return 1; }
