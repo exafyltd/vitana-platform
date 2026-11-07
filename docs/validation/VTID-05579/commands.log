@@ -1,0 +1,3 @@
+# VTID-05579 commands run in the sandbox (PGlite only; no live system, no docker/psql/supabase CLI available)
+pglite-harness/lane.sh --no-migrations                 -> outputs/red-origin-main.txt (RED: 84 of 92 not ok; fixture + real 050000/051000, no lane file)
+jest (ts-jest) on a clean origin/main worktree + the new test file -> outputs/red-jest-origin-main.txt (RED: 18 failed, 4 passed)
