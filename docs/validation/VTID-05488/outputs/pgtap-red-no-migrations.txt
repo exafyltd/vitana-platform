@@ -1,0 +1,1 @@
+# SQL ERROR: relation "public.supplier_tenant_relationships" does not exist
