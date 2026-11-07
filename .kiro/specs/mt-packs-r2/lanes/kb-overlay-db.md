@@ -1,6 +1,6 @@
 ---
 lane: kb-overlay-db
-state: ready
+state: done
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -12,9 +12,12 @@ paths:
   - supabase/tests/mt/mt_packs_knowledge_docs_tenant_id.sql
   - scripts/ci/migration-drift-baseline.json
   - docs/multitenancy/MIGRATION-QUEUE.md
-updated: 2026-11-02T16:24Z
+updated: 2026-11-07T16:45Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05498
+claimed_by: kiro-hotmail-202611061752-cc1f
+branch: kiro/mt-packs-r2/kb-overlay-db
+pr: https://github.com/exafyltd/vitana-platform/pull/4795
 ---
 # kb-overlay-db — knowledge_docs tenant overlay column (repo vitana-platform)
 
@@ -52,3 +55,41 @@ Re-plan of `mt-packs/kb-overlay-db`. Version day-shifted to `20261102080000`.
 
 ### 2026-11-02T16:24Z · ci-plan-spar · ready (VTID allocated)
 VTID-05498 allocated after policy approval (converged-auto-v1).
+
+### 2026-11-07T13:55Z · agent-vitana-lane-reviewer-202611071352-7f28 · review
+review: accept
+head: 40789ca58dccc87f4d1844cf129d9ad7ed82d3b6
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4795
+Findings: non-blocking: branch behind origin/main a5d793aa, queue file changed upstream, so a further merge may conflict on row 37; static test de-scoping judged correct, not a weakening, with a duplicated assertion line; pgTAP case 7 column list to be checked against the live schema at apply; baseline-independence and "Before the first overlay write" verified in the evidence and acceptance.md; CI not independently verified (GraphQL and gh api denied), caller reports green with five cancelled runs each beside a successful same-name run.
+Next: the land step merges under §7b after bringing the branch up to date with latest main and confirming every check on that head; a hand-resolved conflict there needs a fresh review.
+
+### 2026-11-07T16:05:00Z · agent-vitana-lane-reviewer-202611071603-0524 · review
+review: accept
+head: 158ac7e7aa4f2c7180b2781c6256779541605f05
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4795
+Findings: non-blocking: known_missing_tables length not counted by hand (shell denied); the green drift check covers it. Otherwise none.
+Next: the land step merges under §7b
+
+### 2026-11-07T16:35:00Z · agent-vitana-lane-reviewer-202611071633-fb98 · review
+review: accept
+head: 744f3b7e6c2df540503107a5c8a4f52cd57b1f49
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4795
+Findings: non-blocking: CI not independently verified by the reviewer, caller reports 12/12 green; row 40 note on version ordering and apply order is accurate. Otherwise none. Verified: the hand-resolved merge of origin/main 9ab419f9d1 changed only MIGRATION-QUEUE.md; origin/main...HEAD adds only row 40 and its note there (rows 1-39 untouched, no renumbering); the lane's own files are unchanged since 158ac7e7aa apart from the lane-log entry; nothing applied.
+Next: the land step merges under §7b after confirming every check is green on this head and the branch is up to date with latest main
+
+### 2026-11-07T16:42Z · kiro-hotmail-202611061752-cc1f · ready → executing
+Built on branch kiro/mt-packs-r2/kb-overlay-db; recorded here at the closing, because one transition per PR meant the PR carried no lane-state entry.
+
+### 2026-11-07T16:42Z · kiro-hotmail-202611061752-cc1f · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/4795. Reviewed on head `744f3b7e6c` (accept entry above, reviewer agent claude-sonnet-5.5).
+
+### 2026-11-07T16:42Z · kiro-hotmail-202611061752-cc1f · in-review → verified
+merge: f65570b63726b8f71f36710e6a45f810934c9028 (exafyltd/vitana-platform#4795)
+authority: §7b PM rule. Squash merge by land-guard on head `2ac9545573`: the reviewed head `744f3b7e6c` plus the review-entry commit. `land-guard review` ok, `land-guard checks` green, PR up to date. No lane code changed after the accept.
+The migrations in this lane are in the repository and NOT applied. Applying them needs the owner's approval per file and database (collaboration.md §7d). Next: STAGING-VERIFY on the merge commit, then the `done` record.
+
+### 2026-11-07T16:45Z · kiro-hotmail-202611061752-cc1f · verified → done
+Closing record: merge f65570b63726b8f71f36710e6a45f810934c9028 (#4795) changes no path under services/gateway or the stage deploy workflow (supabase migrations, tests, docs and the drift baseline only), so AWS-STAGE-DEPLOY-GATEWAY and STAGING-VERIFY did not run for it: this change deploys nothing. It is done at merge with green checks (12/12 on the final head). The migration in this lane is on main and NOT applied; applying it needs the owner's approval per file and database (collaboration.md section 7d). The lane claim is released once this record is on main.
