@@ -1,6 +1,6 @@
 ---
 lane: kb-overlay-db
-state: ready
+state: verified
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -12,9 +12,12 @@ paths:
   - supabase/tests/mt/mt_packs_knowledge_docs_tenant_id.sql
   - scripts/ci/migration-drift-baseline.json
   - docs/multitenancy/MIGRATION-QUEUE.md
-updated: 2026-11-02T16:24Z
+updated: 2026-11-07T16:42Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05498
+claimed_by: kiro-hotmail-202611061752-cc1f
+branch: kiro/mt-packs-r2/kb-overlay-db
+pr: https://github.com/exafyltd/vitana-platform/pull/4795
 ---
 # kb-overlay-db — knowledge_docs tenant overlay column (repo vitana-platform)
 
@@ -76,3 +79,14 @@ reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 PR: https://github.com/exafyltd/vitana-platform/pull/4795
 Findings: non-blocking: CI not independently verified by the reviewer, caller reports 12/12 green; row 40 note on version ordering and apply order is accurate. Otherwise none. Verified: the hand-resolved merge of origin/main 9ab419f9d1 changed only MIGRATION-QUEUE.md; origin/main...HEAD adds only row 40 and its note there (rows 1-39 untouched, no renumbering); the lane's own files are unchanged since 158ac7e7aa apart from the lane-log entry; nothing applied.
 Next: the land step merges under §7b after confirming every check is green on this head and the branch is up to date with latest main
+
+### 2026-11-07T16:42Z · kiro-hotmail-202611061752-cc1f · ready → executing
+Built on branch kiro/mt-packs-r2/kb-overlay-db; recorded here at the closing, because one transition per PR meant the PR carried no lane-state entry.
+
+### 2026-11-07T16:42Z · kiro-hotmail-202611061752-cc1f · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/4795. Reviewed on head `744f3b7e6c` (accept entry above, reviewer agent claude-sonnet-5.5).
+
+### 2026-11-07T16:42Z · kiro-hotmail-202611061752-cc1f · in-review → verified
+merge: f65570b63726b8f71f36710e6a45f810934c9028 (exafyltd/vitana-platform#4795)
+authority: §7b PM rule. Squash merge by land-guard on head `2ac9545573`: the reviewed head `744f3b7e6c` plus the review-entry commit. `land-guard review` ok, `land-guard checks` green, PR up to date. No lane code changed after the accept.
+The migrations in this lane are in the repository and NOT applied. Applying them needs the owner's approval per file and database (collaboration.md §7d). Next: STAGING-VERIFY on the merge commit, then the `done` record.
