@@ -44,20 +44,23 @@ as `move_blocked`. TEST: pgTAP cases 36-41; `repollution-check.sql`.
 AC-5 Rollback restores the snapshot row for row and clears the lane's quarantine rows. TEST: pgTAP cases 42-47;
 `rollback-check.sql`.
 
-AC-6 Repoint (O8): gate RAISEs on a fixture with the column but zero primary rows; for each of the 19 functions a caller
+AC-6 Repoint (O8): gate RAISEs on a fixture with the column but zero primary rows, on an empty `user_tenants` while `auth.users` has accounts, and on a partial backfill (< 95% of `auth.users` with a primary row), and passes only on a fresh stack (both empty) or full coverage; for each of the 19 functions a caller
 with one primary row writes that tenant, callers with 0 and with 2 primaries fail closed (`TENANT_UNRESOLVED`; the
-`uuid` writer returns NULL; `d45_acknowledge_window` raises so its earlier UPDATE rolls back) and write no `…0001` row;
+`uuid` writer returns NULL; `d45_acknowledge_window` resolves the tenant before its UPDATE and returns the same JSON error, leaving the window unacknowledged) and write no `…0001` row;
 the five 01127 functions with a NULL `auth.uid()` return `UNAUTHENTICATED` and write no `…0099` row; no body contains
-either literal; ACL, SECURITY mode and search_path are unchanged. TEST: `…writer_repoint.test.sql` cases 1-40.
+either literal; ACL, SECURITY mode and search_path are unchanged. TEST: `…writer_repoint.test.sql` cases 1-47.
 
 ## Deviations and limits (honest record)
 
 * Local runs are PGlite (PG 18 wasm) with a pgTAP-compatible shim and stand-in tables (`pglite-harness/`), loading the REAL
   legacy writer migrations unmodified. The full production schema and real pgTAP (`supabase test db`) were not available in
   this sandbox (no docker, psql, supabase CLI): CI's pgTAP run is authoritative.
-* The gate passes on a completely empty `user_tenants` (a fresh local stack applies every migration to an empty database and
-  must still build); it RAISEs when the table has rows but none is primary, or the column/table is missing. The cleanup
-  file likewise only refuses an empty `user_tenants` when orphan rows have owners.
+* The gate passes on a completely empty `user_tenants` only when `auth.users` is also empty or absent (a fresh local stack applies
+  every migration to an empty database and must still build). On a database with accounts it RAISEs on an empty store, on rows
+  without any primary, and when fewer than 95% of `auth.users` own a primary row. The cleanup file likewise only refuses an
+  empty `user_tenants` when orphan rows have owners.
+* Dev-user `…0099` rows are deleted from live tenants as well, by design. The owner sizes them from `pre-check.sql` before approving row 24.
+* The `bak_mt_data_cleanup_*` snapshots are kept 30 days after the row 24 apply, then dropped (see MIGRATION-QUEUE.md).
 * Batches: a migration file is one transaction; the move runs each row in a sub-transaction, batches of up to 5,000, with
   `lock_timeout` 3s and 5 retries per batch. At the plan's volume (~1.5k orphan rows) that is one batch per table.
 * `availability_config` is seeded by 01127 with `tenant_id = …0001` and no owner: it is quarantined (`no_owner`) and restored

@@ -19,8 +19,7 @@
 --  * the branch that set the tenant to ...0001 now reads the caller's single is_primary public.user_tenants row;
 --  * 0 or 2+ primary rows fail closed with the function's existing error shape: {ok:false, error:'TENANT_UNRESOLVED'}
 --    where it already returns jsonb errors; d45_record_forecast_history (RETURNS uuid, existing NULL-on-failure
---    shape) returns NULL; d45_acknowledge_window raises TENANT_UNRESOLVED (P0001) so the window status update made
---    earlier in the same call rolls back with it. No branch writes ...0001.
+--    shape) returns NULL; d45_acknowledge_window resolves the tenant before its window UPDATE and returns the same JSON error. No branch writes ...0001.
 --  * the five 01127 functions no longer default a NULL auth.uid() to ...0099: they return
 --    {ok:false, error:'UNAUTHENTICATED'} before the tenant lookup and before any INSERT (R2-F1).
 -- CREATE OR REPLACE keeps each function's existing grants. A function that is not deployed yet would be created with
@@ -33,18 +32,25 @@ BEGIN;
 SET LOCAL lock_timeout = '3s';
 SET LOCAL statement_timeout = '120s';
 
--- Precondition gate (R1-F4, public.mt_orphan_repoint_gate() so pgTAP can call it): RAISEs if user_tenants or its
--- is_primary column is absent, or if the table has rows but no is_primary = true row. A completely empty table
--- passes, so a fresh local stack (supabase db reset applies every migration to an empty database) still builds.
--- Never repoint onto a membership store that cannot answer, or every writer would fail
--- closed for every member.
+-- Precondition gate (R1-F4, public.mt_orphan_repoint_gate() so pgTAP can call it). It RAISEs if:
+--  * user_tenants or its is_primary column is absent;
+--  * user_tenants is empty while auth.users has accounts (a real database whose membership backfill has not run: all 19
+--    writers would fail closed for every member). An empty user_tenants passes ONLY when auth.users is also empty (or
+--    absent), i.e. a fresh local stack: `supabase db reset` applies every migration to an empty database;
+--  * user_tenants has rows but none is primary (column added, backfill not run);
+--  * the backfill is partial: fewer than 95 percent of auth.users accounts own an is_primary row. Accounts without one
+--    would fail closed, so the repoint waits until the membership-unification backfill has covered the population.
+-- Never repoint onto a membership store that cannot answer, or every writer would fail closed for every member.
 CREATE OR REPLACE FUNCTION public.mt_orphan_repoint_gate()
 RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = ''
 AS $gate$
-DECLARE v_rows bigint; v_primary bigint;
+DECLARE
+  v_rows bigint; v_primary bigint;
+  v_users bigint := 0; v_covered bigint := 0;
+  c_min_coverage CONSTANT numeric := 0.95;
 BEGIN
   IF to_regclass('public.user_tenants') IS NULL THEN
     RAISE EXCEPTION 'VTID-05571 gate: public.user_tenants is missing; apply mt-identity-r2 membership-unification first';
@@ -54,10 +60,18 @@ BEGIN
     RAISE EXCEPTION 'VTID-05571 gate: public.user_tenants.is_primary is absent; apply mt-identity-r2 membership-unification first';
   END IF;
   EXECUTE 'SELECT count(*), count(*) FILTER (WHERE is_primary) FROM public.user_tenants' INTO v_rows, v_primary;
-  -- An empty store (a fresh local stack) has no member to fail closed for; rows without any primary mean the
-  -- column was added but the backfill has not run.
+  IF to_regclass('auth.users') IS NOT NULL THEN
+    EXECUTE 'SELECT count(*), count(*) FILTER (WHERE EXISTS (SELECT 1 FROM public.user_tenants ut WHERE ut.user_id = u.id AND ut.is_primary)) FROM auth.users u'
+      INTO v_users, v_covered;
+  END IF;
+  IF v_rows = 0 AND v_users > 0 THEN
+    RAISE EXCEPTION 'VTID-05571 gate: public.user_tenants is empty but auth.users has % account(s); the membership backfill has not run, every repointed writer would fail closed', v_users;
+  END IF;
   IF v_rows > 0 AND v_primary = 0 THEN
     RAISE EXCEPTION 'VTID-05571 gate: no user_tenants row has is_primary = true (column present, backfill not run); every repointed writer would fail closed';
+  END IF;
+  IF v_users > 0 AND v_covered::numeric / v_users < c_min_coverage THEN
+    RAISE EXCEPTION 'VTID-05571 gate: only % of % auth.users accounts have an is_primary membership row (minimum %); the backfill is partial', v_covered, v_users, c_min_coverage;
   END IF;
 END
 $gate$;
@@ -1254,6 +1268,24 @@ BEGIN
         RETURN jsonb_build_object('ok', false, 'error', 'NOT_FOUND');
     END IF;
 
+    -- VTID-05571: resolve the tenant before the window UPDATE so an unresolvable tenant returns the same JSON error as
+    -- the other 18 writers; nothing has been written yet when it does.
+    IF p_feedback IS NOT NULL THEN
+        SELECT raw_user_meta_data->>'tenant_id'
+        INTO v_tenant_id
+        FROM auth.users
+        WHERE id = v_user_id;
+
+        IF v_tenant_id IS NULL THEN
+            -- canonical primary membership; 0 or 2+ primary rows fail closed, never the dev tenant
+            SELECT count(*), (array_agg(ut.tenant_id))[1] INTO v_primary_n, v_tenant_id
+              FROM public.user_tenants ut WHERE ut.user_id = v_user_id AND ut.is_primary = true;
+            IF v_primary_n <> 1 THEN
+                RETURN jsonb_build_object('ok', false, 'error', 'TENANT_UNRESOLVED');
+            END IF;
+        END IF;
+    END IF;
+
     -- Update window status
     UPDATE d45_predictive_windows
     SET status = 'acknowledged',
@@ -1263,20 +1295,6 @@ BEGIN
 
     -- Record feedback if provided
     IF p_feedback IS NOT NULL THEN
-        SELECT raw_user_meta_data->>'tenant_id'
-        INTO v_tenant_id
-        FROM auth.users
-        WHERE id = v_user_id;
-
-        IF v_tenant_id IS NULL THEN
-            -- VTID-05571: canonical primary membership; 0 or 2+ primary rows fail closed, never the dev tenant
-            SELECT count(*), (array_agg(ut.tenant_id))[1] INTO v_primary_n, v_tenant_id
-              FROM public.user_tenants ut WHERE ut.user_id = v_user_id AND ut.is_primary = true;
-            IF v_primary_n <> 1 THEN
-                RAISE EXCEPTION 'TENANT_UNRESOLVED' USING ERRCODE = 'P0001';
-            END IF;
-        END IF;
-
         INSERT INTO d45_window_feedback (
             tenant_id, user_id, window_id, feedback_type, notes
         ) VALUES (

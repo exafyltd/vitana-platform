@@ -8,13 +8,15 @@
 --  * a caller with no primary row and a caller with two primary rows fail closed and write no row with ...0001;
 --  * the five 01127 functions called with a NULL auth.uid() return UNAUTHENTICATED and write no ...0099 row;
 --  * no repointed body contains the ...0001 / ...0099 literal (pg_get_functiondef); grants are unchanged;
---  * the precondition gate RAISEs on a fixture with the column but zero primary rows.
+--  * d45_acknowledge_window returns the JSON TENANT_UNRESOLVED error (no raise) and leaves the window unacknowledged;
+--  * the precondition gate RAISEs on a fixture with the column but zero primary rows, on an empty user_tenants while
+--    auth.users has accounts, and on a partial backfill; it passes on a fresh stack (both tables empty) and full coverage.
 BEGIN;
 
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET search_path = public, extensions;
 
-SELECT plan(40);
+SELECT plan(47);
 
 CREATE TEMP TABLE t05571w_ids (k text PRIMARY KEY, v uuid NOT NULL);
 INSERT INTO t05571w_ids VALUES
@@ -204,11 +206,42 @@ SELECT ok(NOT has_function_privilege('anon', 'public.mt_orphan_repoint_gate()', 
       AND has_function_privilege('service_role', 'public.mt_orphan_repoint_gate()', 'EXECUTE'),
   'the gate function is service_role only (the writers keep exactly their original ACL; the migration RAISEs otherwise)');
 
+-- d45_acknowledge_window: JSON error like its 18 siblings, no raise, window untouched -----------------------
+SELECT is((SELECT count(*) FROM t05571w_calls WHERE fn = 'd45_acknowledge_window' AND usr IN ('W0', 'W2')
+            AND pg_temp.jerr(res) = 'TENANT_UNRESOLVED' AND raised IS NULL), 2::bigint,
+  'd45_acknowledge_window returns {ok:false,error:TENANT_UNRESOLVED} (no raise) for the 0-primary and 2-primary callers');
+SELECT is((SELECT count(*) FROM public.d45_predictive_windows
+            WHERE user_id IN (pg_temp.id('W0'), pg_temp.id('W2')) AND (status = 'acknowledged' OR acknowledged_at IS NOT NULL)), 0::bigint,
+  'a fail-closed d45_acknowledge_window leaves the window unacknowledged (the tenant resolves before the UPDATE)');
+
 -- Gate ----------------------------------------------------------------------------------------------
 SELECT lives_ok($$ SELECT public.mt_orphan_repoint_gate() $$, 'gate passes while primary rows exist');
 UPDATE public.user_tenants SET is_primary = false;
 SELECT throws_ok($$ SELECT public.mt_orphan_repoint_gate() $$, 'P0001', NULL,
   'gate RAISEs on a fixture with the column but zero primary rows');
+
+-- empty user_tenants: refused on a database that has accounts, allowed on a fresh stack (both empty)
+DELETE FROM public.user_tenants;
+INSERT INTO auth.users (id, email)
+SELECT pg_temp.id(k), 'vtid05571w-' || lower(k) || '@vitanatest.exafy.io' FROM t05571w_ids WHERE k LIKE 'W%'
+ON CONFLICT (id) DO NOTHING;
+SELECT throws_ok($$ SELECT public.mt_orphan_repoint_gate() $$, 'P0001', NULL,
+  'gate RAISEs on an empty user_tenants while auth.users has accounts (backfill not run)');
+
+-- partial backfill: 1 of 3, then 2 of 3 accounts covered (minimum 95 percent)
+INSERT INTO public.user_tenants (tenant_id, user_id, is_primary) VALUES (pg_temp.id('TA'), pg_temp.id('W1'), true);
+SELECT throws_ok($$ SELECT public.mt_orphan_repoint_gate() $$, 'P0001', NULL,
+  'gate RAISEs when only 1 of 3 auth.users accounts has a primary row (partial backfill)');
+INSERT INTO public.user_tenants (tenant_id, user_id, is_primary) VALUES (pg_temp.id('TA'), pg_temp.id('W0'), true);
+SELECT throws_ok($$ SELECT public.mt_orphan_repoint_gate() $$, 'P0001', NULL,
+  'gate RAISEs when only 2 of 3 auth.users accounts have a primary row (below the 95 percent minimum)');
+INSERT INTO public.user_tenants (tenant_id, user_id, is_primary) VALUES (pg_temp.id('TA'), pg_temp.id('W2'), true);
+SELECT lives_ok($$ SELECT public.mt_orphan_repoint_gate() $$, 'gate passes when every auth.users account has a primary row');
+
+-- fresh local stack: no accounts and no memberships
+DELETE FROM public.user_tenants;
+DELETE FROM auth.users;
+SELECT lives_ok($$ SELECT public.mt_orphan_repoint_gate() $$, 'gate passes on a fresh stack (user_tenants and auth.users both empty)');
 
 SELECT * FROM finish();
 ROLLBACK;
