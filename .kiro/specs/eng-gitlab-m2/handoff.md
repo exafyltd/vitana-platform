@@ -29,3 +29,8 @@ GitLab job-status table for `checksVerdict` is in plan §3.4. Answers in `sparri
 
 ### 2026-11-04T19:35Z · ci-plan-spar · drafted → approved
 Converged; approved by policy converged-auto-v1. 7 lane(s) got a VTID and are handed to Kiro.
+
+### 2026-11-07T11:30Z · kiro-exafy-202611062222-c262 · late lane `settings-fix`
+Late lane added by this plan PR: the settings sync failed for every secret write on the GitLab machine (`file:///dev/stdin`
+unreadable by the AWS CLI under systemd, owner run 2026-11-07 10:33Z). Lane `settings-fix` (depends on `settings`, done).
+PLAN-SPAR allocates its VTID; the lane starts after the plan PR is merged.
