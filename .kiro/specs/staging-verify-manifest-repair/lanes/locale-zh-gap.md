@@ -11,7 +11,8 @@ reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 repos: [exafyltd/vitana-platform]
 paths:
   - docs/validation/VTID-*/**
-updated: 2026-11-07T14:40Z
+updated: 2026-11-07T14:43Z
+vtid: VTID-05603
 ---
 # Lane: locale-zh-gap (repo vitana-platform)
 Investigate the staging `locale-coverage` degraded state read-only (zh 259/260) and hand the owner one decision; the VTID-04880 probe is not edited.
@@ -20,3 +21,6 @@ Plan: `.kiro/specs/staging-verify-manifest-repair/plan.md` §3 and the `<!-- lan
 ## Log
 ### 2026-11-07T14:40Z · kiro-hotmail-202611061752-cc1f · created → ready
 Lane created with the plan.
+
+### 2026-11-07T14:43Z · ci-plan-spar · ready (VTID allocated)
+VTID-05603 allocated after policy approval (converged-auto-v1).

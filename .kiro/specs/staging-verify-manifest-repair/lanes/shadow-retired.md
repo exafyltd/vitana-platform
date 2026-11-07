@@ -13,7 +13,8 @@ paths:
   - docs/validation/VTID-04784/staging-tests.json
   - docs/validation/VTID-05007/staging-tests.json
   - docs/validation/VTID-*/**
-updated: 2026-11-07T14:40Z
+updated: 2026-11-07T14:43Z
+vtid: VTID-05606
 ---
 # Lane: shadow-retired (repo vitana-platform)
 Retire only the deleted recall-shadow jest path from VTID-04784 and VTID-05007, with the VTID-05556 evidence, and point 04784 at the surviving recall test.
@@ -22,3 +23,6 @@ Plan: `.kiro/specs/staging-verify-manifest-repair/plan.md` §3 and the `<!-- lan
 ## Log
 ### 2026-11-07T14:40Z · kiro-hotmail-202611061752-cc1f · created → ready
 Lane created with the plan.
+
+### 2026-11-07T14:43Z · ci-plan-spar · ready (VTID allocated)
+VTID-05606 allocated after policy approval (converged-auto-v1).

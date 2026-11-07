@@ -15,7 +15,8 @@ paths:
   - docs/validation/VTID-05277/staging-tests.json
   - docs/validation/VTID-05281/staging-tests.json
   - docs/validation/VTID-*/**
-updated: 2026-11-07T14:40Z
+updated: 2026-11-07T14:43Z
+vtid: VTID-05604
 ---
 # Lane: pm-mode-probes (repo vitana-platform)
 Add `expect_json_in` to the STAGING-VERIFY runner and make the VTID-05277/05281 PM mode probes mode-agnostic without dropping what they prove.
@@ -24,3 +25,6 @@ Plan: `.kiro/specs/staging-verify-manifest-repair/plan.md` §3 and the `<!-- lan
 ## Log
 ### 2026-11-07T14:40Z · kiro-hotmail-202611061752-cc1f · created → ready
 Lane created with the plan.
+
+### 2026-11-07T14:43Z · ci-plan-spar · ready (VTID allocated)
+VTID-05604 allocated after policy approval (converged-auto-v1).

@@ -13,7 +13,8 @@ paths:
   - scripts/ci/staging-verify/manifest-drift.test.cjs
   - .github/workflows/STAGING-TESTS-REQUIRED.yml
   - docs/validation/VTID-*/**
-updated: 2026-11-07T14:40Z
+updated: 2026-11-07T14:43Z
+vtid: VTID-05602
 ---
 # Lane: drift-guard (repo vitana-platform)
 A CI test that reads every gateway/community-app manifest against the tree it describes, run in STAGING-TESTS-REQUIRED.
@@ -22,3 +23,6 @@ Plan: `.kiro/specs/staging-verify-manifest-repair/plan.md` §3 and the `<!-- lan
 ## Log
 ### 2026-11-07T14:40Z · kiro-hotmail-202611061752-cc1f · created → ready
 Lane created with the plan.
+
+### 2026-11-07T14:43Z · ci-plan-spar · ready (VTID allocated)
+VTID-05602 allocated after policy approval (converged-auto-v1).
