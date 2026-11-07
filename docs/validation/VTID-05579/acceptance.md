@@ -84,3 +84,21 @@ classify. Rollback order: 054200, 054100, 054000.
   by RLS; the grants are left as they are and the pgTAP proves the denial (cases 85-87).
 - **Group messaging is not opened here.** `send_message` still refuses a network group (`network_group_not_supported`, VTID-05576);
   routing a group send is the gateway lane's work.
+
+## Evidence (all in-process PGlite, PostgreSQL 18 wasm, with a pgTAP-compatible shim)
+
+- RED on `origin/main` state (fixture + the two real dependency migrations, no lane file): `outputs/red-origin-main.txt`
+  (84 of 92 not ok; the 8 that pass are regression guards of things already true on main: read markers, the idempotent legacy
+  re-run, no allow-all policy, no client insert), committed before any migration. Jest on a clean `origin/main` worktree:
+  `outputs/red-jest-origin-main.txt` (18 of 22 fail). RED with only the scope file: `outputs/red-scope-only.txt` (64 not ok);
+  without the RLS file: `outputs/red-no-rls-file.txt` (case 91).
+- GREEN: `outputs/green-run1.txt` (92 ok), `outputs/green-run2-twice.txt` (applied twice, 92 ok), `outputs/green-jest.txt` (22 pass).
+- 17 mutations each turn the run red; restored -> 92 ok: `outputs/mutations.txt`. The cap, the connection rule, the admin rule, the
+  rule 43-45 exclusion and the scope guard are each checked in the function AND the table guard (M1/M2, M5/M6): removing one layer
+  alone is caught by the direct-insert cases 64-65, removing both is caught by the function cases.
+- Read-only checks, apply, post-apply, the two refused rollbacks, the rollbacks, `rollback-check.sql`, re-apply (the legacy network
+  group is classified again from its metadata): `outputs/checks.txt`.
+- `node scripts/ci/bare-policy-lint.mjs`: 0 bare policies; jest `mt-identity-bare-policy-lint` 8 pass;
+  `node --test scripts/ci/check-migration-drift.test.cjs` 8 pass. `scripts/ci/migration-drift-baseline.json` is not touched
+  (count stays 120 = `len(known_missing_tables)`): no table is created.
+- NOT run here: real pgTAP on a Supabase stack and the full production schema (no docker/psql/supabase CLI). CI is authoritative.

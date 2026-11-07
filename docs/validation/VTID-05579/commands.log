@@ -1,3 +1,14 @@
 # VTID-05579 commands run in the sandbox (PGlite only; no live system, no docker/psql/supabase CLI available)
 pglite-harness/lane.sh --no-migrations                 -> outputs/red-origin-main.txt (RED: 84 of 92 not ok; fixture + real 050000/051000, no lane file)
 jest (ts-jest) on a clean origin/main worktree + the new test file -> outputs/red-jest-origin-main.txt (RED: 18 failed, 4 passed)
+pglite-harness/lane.sh --upto 1                        -> outputs/red-scope-only.txt (RED without 054100/054200: 64 not ok)
+pglite-harness/lane.sh --upto 2                        -> outputs/red-no-rls-file.txt (RED without 054200: case 91)
+pglite-harness/lane.sh                                 -> outputs/green-run1.txt (92 ok)
+pglite-harness/lane.sh --twice                         -> outputs/green-run2-twice.txt (92 ok, idempotent)
+17 mutations of the migrations                         -> outputs/mutations.txt (each red; restored 92 ok)
+pglite-harness/checks.sh                               -> outputs/checks.txt (check rows ok; both refusals shown)
+jest (ts-jest) services/gateway/test/mt-network-groups-db.pgtap.test.ts -> outputs/green-jest.txt (22 pass)
+node scripts/ci/bare-policy-lint.mjs                   -> 0 bare current_tenant_id() policies
+jest (ts-jest) services/gateway/test/mt-identity-bare-policy-lint.test.ts -> 8 pass
+node --test scripts/ci/check-migration-drift.test.cjs  -> 8 pass
+validateManifest(staging-tests.json)                   -> outputs/validate-manifest.txt (ok)
