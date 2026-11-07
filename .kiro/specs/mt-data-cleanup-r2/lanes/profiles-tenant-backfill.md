@@ -1,6 +1,6 @@
 ---
 lane: profiles-tenant-backfill
-state: ready
+state: verified
 next_actor: kiro
 depends_on: [orphan-analysis-and-quarantine]
 executor: kiro
@@ -11,9 +11,12 @@ paths:
   - supabase/migrations/20261102042*.sql
   - supabase/tests/vtid_mt_data_cleanup_profiles_*.sql
   - docs/multitenancy/MIGRATION-QUEUE.md
-updated: 2026-11-06T10:09Z
+updated: 2026-11-07T16:56Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05572
+claimed_by: kiro-hotmail-202611061752-cc1f
+branch: kiro/mt-data-cleanup-r2/profiles-tenant-backfill
+pr: https://github.com/exafyltd/vitana-platform/pull/4800
 ---
 # Backfill profiles.tenant_id — mt-data-cleanup (repo vitana-platform)
 
@@ -68,3 +71,14 @@ reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 PR: https://github.com/exafyltd/vitana-platform/pull/4800
 Findings: non-blocking: a missing-tenant single membership is not listed in legacy_archive.mt_profiles_tenant_unresolved (carried over, follow-up); non-blocking: the merge's second parent is b7e52a6df4 (descendant of 7daa4ae3a7, row 40 landed with f65570b637), scope checked against b7e52a6df4; non-blocking: PR check status unreadable here (gh GraphQL unsupported), the land step must confirm every required check green on this head. Re-review scope: merge of origin/main into 9e9bfa0326 changes only MIGRATION-QUEUE.md (main rows 1-40 and notes untouched, this lane's rows 41-42 and note added after them, no renumbering); the lane's own migrations, tests and docs/validation/VTID-05572 are unchanged since 9e9bfa0326 apart from the lane-log entry.
 Next: the land step merges under §7b
+
+### 2026-11-07T16:56Z · kiro-hotmail-202611061752-cc1f · ready → executing
+Built on branch kiro/mt-data-cleanup-r2/profiles-tenant-backfill; recorded here at the closing, because one transition per PR meant the PR carried no lane-state entry.
+
+### 2026-11-07T16:56Z · kiro-hotmail-202611061752-cc1f · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/4800. Reviewed on head `b0fbfe52cc` (accept entry above, reviewer agent claude-sonnet-5.5).
+
+### 2026-11-07T16:56Z · kiro-hotmail-202611061752-cc1f · in-review → verified
+merge: f8f095327bbf25cc989287697652843d0bec98f2 (exafyltd/vitana-platform#4800)
+authority: §7b PM rule. Squash merge by land-guard on head `5597628980`: the reviewed head `b0fbfe52cc` plus the review-entry commit. `land-guard review` ok, `land-guard checks` green, PR up to date. No lane code changed after the accept.
+The migrations in this lane are in the repository and NOT applied. Applying them needs the owner's approval per file and database (collaboration.md §7d). Next: STAGING-VERIFY on the merge commit, then the `done` record.
