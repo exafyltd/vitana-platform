@@ -20,3 +20,9 @@ back into the session or into `outputs/` (remove token values first).
 
 If a pipeline job or a RUNBOOK command fails, paste the failing output too: the lane fixes `host/ci-platform.yml`, `host/ci-v1.yml`
 or `RUNBOOK.md` in its PR (task V3), never by loosening a check.
+
+## CloudShell script (owner, 2026-11-07: "I'm only working with Cloud Shell AWS")
+`glv.sh` in this folder does every step from CloudShell: `bash glv.sh read` (A03 backup listing, A05 runner and the latest `main`
+pipelines of both projects, the hashes of the ci-config files, read only) and `bash glv.sh restore` (RUNBOOK §8 steps A to D,
+including the nginx lines). Step 0 is no longer a paste: the M2 settings sync (lane `settings`, done) writes
+`infra/gitlab-engineering/ci/*.yml` to `vitana/ci-config` every 10 minutes, so `read` checks the hashes against git instead.
