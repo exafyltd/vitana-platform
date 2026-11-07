@@ -56,7 +56,10 @@ puts "CI-CONFIG main=#{cc&.repository&.commit('main')&.id} at #{cc&.repository&.
   blob = cc&.repository&.blob_at('main', f)
   puts "CI-CONFIG #{f} sha256=#{blob ? Digest::SHA256.hexdigest(blob.data) : 'missing'}"
 end
-Ci::Runner.all.each { |r| puts "RUNNER #{r.description} tags=#{r.tag_list.to_a.join(',')} paused=#{r.paused?} contacted=#{r.contacted_at&.utc&.iso8601}" }
+Ci::Runner.all.each do |r|
+  f = ->(&b) { begin; b.call; rescue StandardError => e; "?(#{e.class})"; end }
+  puts "RUNNER id=#{r.id} #{f.call { r.description }} tags=#{f.call { r.tags.map(&:name).join(',') }} active=#{f.call { r.active }} contacted=#{f.call { r.contacted_at&.utc&.iso8601 }} online=#{f.call { r.online? }}"
+end
 RB
   ssm_run "$LIVE" "echo $(base64 -w0 /tmp/glv-read.rb) | base64 -d > /tmp/glv-read.rb && gitlab-rails runner /tmp/glv-read.rb 2>/tmp/glv-read.err | grep -E '^(PROJECT|PIPELINE|  JOB|CI-CONFIG|RUNNER)'; tail -3 /tmp/glv-read.err; rm -f /tmp/glv-read.rb /tmp/glv-read.err" 900
   echo; echo "== done. Paste the content of $OUTF into the Kiro session."

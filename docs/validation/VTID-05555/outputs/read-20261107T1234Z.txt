@@ -1,0 +1,59 @@
+# Owner's CloudShell output of `bash ~/glv.sh read`, pasted 2026-11-07 (glv.sh sha256 6ae96309df00…, as committed on this branch). Unedited except this header.
+== glv.sh read 2026-11-07T12:34:20Z
+account 841276716213  bucket vitana-engineering-gitlab-backups-841276716213  gitlab machine i-01de2ad2e970a5225
+
+== A03: backup bucket (RUNBOOK section 7)
+2026-11-04 17:22:37 1010.0 KiB 1793812950_2026_11_04_19.5.3-ee_gitlab_backup.tar
+2026-11-05 02:15:40  716.3 MiB 1793844925_2026_11_05_19.5.3-ee_gitlab_backup.tar
+2026-11-06 02:15:42  783.5 MiB 1793931325_2026_11_06_19.5.3-ee_gitlab_backup.tar
+2026-11-07 02:15:45  811.0 MiB 1794017725_2026_11_07_19.5.3-ee_gitlab_backup.tar
+2026-11-04 17:22:38   11.1 KiB gitlab-config-2026-11-04.tgz
+2026-11-05 02:15:42   11.1 KiB gitlab-config-2026-11-05.tgz
+2026-11-06 02:15:44   11.1 KiB gitlab-config-2026-11-06.tgz
+2026-11-07 02:15:47   11.1 KiB gitlab-config-2026-11-07.tgz
+
+== A05 + pipelines: latest main pipelines on GitLab (read only rails runner)
+(ssm status: Success, command e80fd89e-dca1-43d3-9d20-a5a377ee5429)
+PROJECT vitana/vitana-platform ci_config_path="platform.gitlab-ci.yml@vitana/ci-config:main"
+PIPELINE 100 sha=24ffe87eab95a438129ac48c4589e928b99983f3 status=pending source=push created=2026-11-07T12:28:05Z https://gitlab.vitanaland.com/vitana/vitana-platform/-/pipelines/100
+  JOB typecheck status=pending duration=-s runner=
+  JOB gateway-jest 1/4 status=pending duration=-s runner=
+  JOB gateway-jest 2/4 status=pending duration=-s runner=
+  JOB gateway-jest 3/4 status=pending duration=-s runner=
+  JOB gateway-jest 4/4 status=pending duration=-s runner=
+PIPELINE 99 sha=3cd2f2c2af7153e839abe980730835626d1dab5d status=canceled source=push created=2026-11-07T12:02:16Z https://gitlab.vitanaland.com/vitana/vitana-platform/-/pipelines/99
+  JOB typecheck status=canceled duration=-s runner=
+  JOB gateway-jest 1/4 status=canceled duration=-s runner=
+  JOB gateway-jest 2/4 status=canceled duration=-s runner=
+  JOB gateway-jest 3/4 status=canceled duration=-s runner=
+  JOB gateway-jest 4/4 status=canceled duration=-s runner=
+PIPELINE 98 sha=713095e34208937435ee8aba71569edccba92951 status=canceled source=push created=2026-11-07T11:57:08Z https://gitlab.vitanaland.com/vitana/vitana-platform/-/pipelines/98
+  JOB typecheck status=canceled duration=-s runner=
+  JOB gateway-jest 1/4 status=canceled duration=-s runner=
+  JOB gateway-jest 2/4 status=canceled duration=-s runner=
+  JOB gateway-jest 3/4 status=canceled duration=-s runner=
+  JOB gateway-jest 4/4 status=canceled duration=-s runner=
+PROJECT vitana/vitana-v1 ci_config_path="v1.gitlab-ci.yml@vitana/ci-config:main"
+PIPELINE 93 sha=9fe36a8713f152dc84d00f8027556a6d0711f7cc status=pending source=push created=2026-11-07T10:43:15Z https://gitlab.vitanaland.com/vitana/vitana-v1/-/pipelines/93
+  JOB unit-tests status=failed duration=-s runner=
+  JOB build status=failed duration=-s runner=
+  JOB lint status=failed duration=-s runner=
+  JOB unit-tests status=pending duration=-s runner=
+  JOB build status=pending duration=-s runner=
+  JOB lint status=pending duration=-s runner=
+PIPELINE 91 sha=663d09a3463268231e24ee0748398fc118731c77 status=canceled source=push created=2026-11-07T10:32:59Z https://gitlab.vitanaland.com/vitana/vitana-v1/-/pipelines/91
+  JOB unit-tests status=canceled duration=-s runner=
+  JOB build status=canceled duration=-s runner=
+  JOB lint status=canceled duration=-s runner=
+PIPELINE 78 sha=f4eaf3042b0bfcf1676f6c7899b3c84cdfa6e2d2 status=success source=push created=2026-11-06T19:19:25Z https://gitlab.vitanaland.com/vitana/vitana-v1/-/pipelines/78
+  JOB unit-tests status=success duration=547s runner=vitana-eng-1
+  JOB build status=success duration=131s runner=vitana-eng-1
+  JOB lint status=failed duration=100s runner=vitana-eng-1
+CI-CONFIG main=c44ec2f9b8aa0b61ea55cbc8f0d247c67d004a3a at 2026-11-07T10:53:24Z
+CI-CONFIG platform.gitlab-ci.yml sha256=598d3ea1d3db9b9bcb8f645863bbe9b313cc3d72e6b9b293a83742bb0bb6ee0c
+CI-CONFIG v1.gitlab-ci.yml sha256=504907d2a6afcf2aab252fc8a5dcadf0049717de4d25494f72da918d17ed508e
+        from /opt/gitlab/embedded/lib/ruby/3.3.0/bundled_gems.rb:69:in `require'
+        from /opt/gitlab/embedded/lib/ruby/3.3.0/bundled_gems.rb:69:in `block (2 levels) in replace_require'
+        from bin/rails:4:in `<main>'
+
+== done. Paste the content of /home/cloudshell-user/glv-read-20261107T1234Z.txt into the Kiro session.

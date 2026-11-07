@@ -35,8 +35,9 @@ AC-2 (A02) — the infrastructure is created by Terraform and can be rebuilt fro
   TEST: scripts/eng/gitlab-m1-structure.test.mjs; outputs/restore-nginx.txt (PENDING)
 
 AC-3 (A03) — storage is encrypted and a nightly backup exists in the backup bucket
-  Status: encryption pinned by the structure test; the listing is PENDING (step 3, after 02:15 UTC).
-  TEST: outputs/backup-listing.txt (PENDING)
+  Status: PASS. Nightly backups and config archives 2026-11-05, -06, -07 at 02:15 UTC (outputs/read-20261107T1234Z.txt); encryption pinned
+  by the structure test.
+  TEST: outputs/read-20261107T1234Z.txt, outputs/read-1-findings.md
 
 AC-4 (A04) — a restore on a scratch machine reproduces the project count and one commit hash
   Status: PENDING (step 2). Passes when `RESULT: DONE`, `RESULT-COUNTS:` equals `LIVE-COUNTS:` in the project count, and
@@ -48,7 +49,9 @@ AC-5 (A05) — the runner is registered and runs jobs
   TEST: outputs/step1-gitlab-platform.txt, outputs/step1-gitlab-v1.txt (PENDING)
 
 AC-6 (pipelines) — first green pipelines on both mirrored projects, each job next to GitHub's result for the same main commit
-  Status: GitHub side recorded (outputs/github-main-runs.txt, both green); GitLab side PENDING (steps 0 and 1).
+  Status: GitHub side recorded (outputs/github-main-runs.txt, both green). Step 0 done by the M2 settings sync (ci-config hashes equal
+  git main). GitLab side BLOCKED: since the M2 runner retag no runner serves tag vitana-eng, waiting for eng-gitlab-m2/settings-fix
+  (PR #4780); outputs/read-1-findings.md.
   TEST: outputs/step1-gitlab-platform.txt, outputs/step1-gitlab-v1.txt, outputs/github-main-runs.txt
 
 Red to green: this lane adds no test and changes no code (its paths have no test file). The existing tests that pin the files a
