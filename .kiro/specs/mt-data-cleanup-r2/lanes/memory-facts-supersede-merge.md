@@ -40,3 +40,19 @@ executor and reviewer on today's §3a/§7 rules.
 
 ### 2026-11-06T10:09Z · ci-plan-spar · ready (VTID allocated)
 VTID-05570 allocated after policy approval (converged-auto-v1).
+
+### 2026-11-07T14:30:00Z · agent-vitana-lane-reviewer-202611071422-3202 · review
+review: accept
+head: 1748b72a05096ae2a7371cae773f4db72b22a907
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4799
+Findings: non-blocking: MIGRATION-QUEUE note says "row 36 apply", should be row 39 (stale after renumber); non-blocking: group key (tenant,user,fact_key,entity) narrower than "(user_id,key)" in the spec, matches write_fact, list under Decisions taken; non-blocking: late rollback could re-currentize a winner that write_fact superseded after the merge; non-blocking: run file's post-assert not covered by pgTAP; non-blocking: CI on this head not verifiable by the reviewer, caller reports all green
+Next: the land step merges under §7b (accept on the current head, all checks green on it, up to date with main); nothing is applied, migrations 37-39 still need owner approval under §7d
+
+### 2026-11-07T16:05:00Z · agent-vitana-lane-reviewer-202611071603-6066 · review
+review: accept
+head: 29f182066c93d3052e35946e463bc35b780c1fb1
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4799
+Findings: non-blocking: MIGRATION-QUEUE.md rows 37-39 note that row numbers may shift at landing; accurate, no change needed. Lane content (migrations 20261102041*, pgTAP, docs/validation/VTID-05570) unchanged since accept 1748b72a05; queue rows 37-39 follow main's row 36; drift baseline equals main's (count 120 == list length 120).
+Next: the land step merges under §7b
