@@ -1,0 +1,43 @@
+# Takeover re-proof by kiro-exafy-202611071142-d7ed on origin/main 49fa65fa8c (2026-11-07T17:29:29Z): the head test file of 2febf3c0c63dd212d3a8a2e57d9d7c3f4ef61fc6 run against main's gitlab-settings.mjs.
+# command: node --test scripts/eng/gitlab-settings.test.mjs
+not ok 8 - apply: a first apply on the M1 GitLab creates everything of plan 3.3, and the second apply makes zero writes
+not ok 9 - apply: reads come first, the legacy runner is retagged before any token exists, protections and memberships exist before the first token
+not ok 10 - profiles: native sets push No one, merge Maintainers, force push off and the merge settings of plan 3.3; mirror keeps M1
+not ok 11 - drift: a setting changed by hand is reported by check (exit 3, nothing written) and corrected by apply
+not ok 12 - membership: unmanaged members are never touched; an unexpected Maintainer of a native project is reported and not removed
+not ok 13 - membership: an owner named in the file who is not yet a member becomes a Maintainer of existing projects
+not ok 14 - tokens: created once with 90 days and the configured scopes; secret values are written from a private file, never as an argument
+not ok 15 - tokens: rotated only when fewer than 30 days are left (30 stays, 29 is rotated), the old token is revoked and the bot file follows
+not ok 16 - tokens: a lost or wrong secret is recovered by rotating the active token, never by creating a second one
+not ok 17 - tokens: a secret that cannot be read (access denied) is an error, not "lost": the run writes nothing
+not ok 18 - tokens: scopes changed in the file replace the token, the new one stored before the old one is revoked
+not ok 19 - tokens: a duplicate managed token and a token with no or a too-long expiry on a managed account are revoked
+not ok 20 - tokens: a token created but not stored (Secrets Manager refused) is recovered by the next run through rotation
+not ok 21 - tokens: no secret appears in any output or argument list, also when GitLab echoes tokens back in an error body
+not ok 22 - admin token: not rotated with 10 days left, rotated with 9; the file is rewritten atomically (0600) and the rest of the run uses the new token
+not ok 26 - fleet runner: created once with the plan values, its token goes to the secret; a missing, empty or placeholder secret resets the token
+not ok 27 - fleet runner: a token whose storing failed is regained by the next run (the runner exists, the secret is empty)
+not ok 28 - legacy runner: retagged and kept unpaused until the file says paused; a missing runner is reported and does not stop the run
+not ok 29 - webhook: created with the signing token read from Secrets Manager, only the configured events, nothing re-sent when unchanged
+not ok 30 - webhook: a rotated signing token, a changed URL or event, a missing signing token and a removed hook are all corrected
+not ok 31 - webhook: an empty, malformed or unreadable signing token is reported and no hook is written
+not ok 32 - central CI: only files that differ are written, in one commit, create vs update per file; nothing is deleted; other names are ignored
+not ok 33 - central CI: a project whose CI file exists nowhere is not pointed at it, and the run reports it
+not ok 35 - licence guard: a licence that appears later stops the next run even though there is drift to correct
+not ok 37 - unreachable GitLab: the run writes nothing and exits 1, the next run converges
+not ok 38 - unreachable GitLab: a read that fails half-way through the observation still writes nothing
+not ok 39 - failures: GitLab going away in the middle of the writes stops the run at the first network error; the next run finishes the job
+not ok 40 - every write passes retries: 0 — a 503 on a write is attempted once and left to the next run
+not ok 41 - failures: a failed legacy retag keeps every token from being created; a failed account keeps only its own dependants back
+not ok 42 - failures: three server errors in a row end the run, a single one does not
+not ok 43 - protection: when the re-creation after a removal fails, it is tried once more at once and then reported as unprotected
+not ok 44 - failures: a failed protection keeps every token back; a failed membership keeps back the token of that account only
+not ok 45 - rotation: a token that turned inactive between the read and the rotation is not rotated (reuse of a revoked token would revoke its whole family)
+not ok 46 - service accounts: near the 100-account cap the sync reports it; at the cap creation fails loudly and only that account is held back
+not ok 47 - service accounts: a username already taken by a person is an error for that account only; it gets no token and no membership
+not ok 48 - cli: apply is the default; check and --check never write and exit 3 on drift, 0 when clean; --dry-run writes nothing
+not ok 55 - free tier: every call of a full apply, a drift repair and a webhook run is on the documented endpoint list, with the documented method
+not ok 56 - tokens: a value file is removed even when Secrets Manager refuses the write
+# tests 56
+# pass 18
+# fail 38
