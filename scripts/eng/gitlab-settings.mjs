@@ -25,6 +25,7 @@
 
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -333,15 +334,25 @@ function makeSecrets({ aws, region, redactor }) {
     async put(id, value) {
       check(id);
       redactor.add(value);
+      // The AWS CLI cannot read file:///dev/stdin when a systemd unit runs it (ParamValidation, errno 6), so the value goes
+      // through a private file that exists only for this call: a 0700 directory holding a 0600 file, removed in finally.
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vitana-secret-'));
       try {
-        await aws(['secretsmanager', 'put-secret-value', '--secret-id', id, '--secret-string', 'file:///dev/stdin', '--region', region], { input: value });
-      } catch (e) {
-        if (!/ResourceNotFoundException/.test(errText(e))) throw new Error(`storing the secret ${id} failed: ${oneLine(redactor(errText(e)), 220)}`);
+        const file = path.join(dir, 'value');
+        fs.writeFileSync(file, value, { mode: 0o600 });
+        const secretString = `file://${file}`;
         try {
-          await aws(['secretsmanager', 'create-secret', '--name', id, '--description', 'Managed by scripts/eng/gitlab-settings.mjs (plan eng-gitlab-m2)', '--secret-string', 'file:///dev/stdin', '--region', region], { input: value });
-        } catch (e2) {
-          throw new Error(`creating the secret ${id} failed: ${oneLine(redactor(errText(e2)), 220)}`);
+          await aws(['secretsmanager', 'put-secret-value', '--secret-id', id, '--secret-string', secretString, '--region', region]);
+        } catch (e) {
+          if (!/ResourceNotFoundException/.test(errText(e))) throw new Error(`storing the secret ${id} failed: ${oneLine(redactor(errText(e)), 220)}`);
+          try {
+            await aws(['secretsmanager', 'create-secret', '--name', id, '--description', 'Managed by scripts/eng/gitlab-settings.mjs (plan eng-gitlab-m2)', '--secret-string', secretString, '--region', region]);
+          } catch (e2) {
+            throw new Error(`creating the secret ${id} failed: ${oneLine(redactor(errText(e2)), 220)}`);
+          }
         }
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
       }
     },
   };
