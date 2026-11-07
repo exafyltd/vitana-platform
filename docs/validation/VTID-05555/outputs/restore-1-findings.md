@@ -19,3 +19,10 @@
 - Cause: `RESULT: FAIL result query: The file /root/result.rb could not be found`. `gitlab-rails runner` drops to the `git` user, which
   cannot read `/root`. Step C works because it writes its Ruby file to `/tmp`. Fix (V3, RUNBOOK §8 step B and glv.sh): the query file is
   `/tmp/result.rb`, mode 644. The restore itself completed again (doctor:secrets 0 failures, about 11 minutes); the scratch machine was removed.
+
+# Run 3 (2026-11-07T17:08Z, glv.sh 4b66c186…): A04 PASSES
+- The 2026-11-07 02:15 UTC backup restored on a fresh m6i.xlarge in about 11 minutes; doctor:secrets 0 failures; `RESULT: DONE`.
+- Restored counts `4 1 10` (projects, groups, users) equal the live counts `4 1 10`.
+- The restored `vitana/vitana-platform` main tip is `1abd637af3ab16c7be5b1375ec1a585c35e462f3`, and the live project has that commit
+  (`LIVE-HAS-TIP: true`). The same commit is GitHub `main` in outputs/github-main-runs.txt, so the mirror, the backup and the restore agree.
+- The scratch machine was removed.

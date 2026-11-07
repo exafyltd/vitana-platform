@@ -40,10 +40,10 @@ AC-3 (A03) — storage is encrypted and a nightly backup exists in the backup bu
   TEST: outputs/read-20261107T1234Z.txt, outputs/read-1-findings.md
 
 AC-4 (A04) — a restore on a scratch machine reproduces the project count and one commit hash
-  Status: PENDING. Run 1 (2026-11-07) restored the 2026-11-07 backup (`RESULT: DONE`, doctor:secrets 0 failures) but the RUNBOOK
-  step B discarded the result query's output, so there were no counts and no tip (outputs/restore-1-findings.md). RUNBOOK §8 fixed under V3;
-  run 2 proves it. Passes when `RESULT: DONE`, `RESULT-COUNTS:` equals `LIVE-COUNTS:` in the project count, and `LIVE-HAS-TIP: true`.
-  TEST: outputs/restore-step-b.txt, outputs/restore-step-c.txt (PENDING)
+  Status: PASS (restore run 3, 2026-11-07T17:08Z). Backup 1794017725_2026_11_07_19.5.3-ee restored, doctor:secrets 0 failures;
+  RESULT-COUNTS 4 1 10 = LIVE-COUNTS 4 1 10; restored main tip 1abd637af3 is in the live project (LIVE-HAS-TIP: true).
+  Runs 1 and 2 failed on two RUNBOOK §8 defects, both fixed under V3 (outputs/restore-1-findings.md).
+  TEST: outputs/restore-3-20261107T1708Z.txt, outputs/restore-1-findings.md
 
 AC-5 (A05) — the runner is registered and runs jobs
   Status: runner verified 2026-11-04 (plan §6 "Done"); jobs running is PENDING (step 1).
