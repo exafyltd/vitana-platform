@@ -46,8 +46,9 @@ AC-4 (A04) — a restore on a scratch machine reproduces the project count and o
   TEST: outputs/restore-3-20261107T1708Z.txt, outputs/restore-1-findings.md
 
 AC-5 (A05) — the runner is registered and runs jobs
-  Status: runner verified 2026-11-04 (plan §6 "Done"); jobs running is PENDING (step 1).
-  TEST: outputs/step1-gitlab-platform.txt, outputs/step1-gitlab-v1.txt (PENDING)
+  Status: PASS. Fleet runner vitana-eng-fleet registered and verified 2026-11-07T18:05Z; vitana-v1 pipeline 136 ran all three jobs on it,
+  vitana-platform typecheck ran on it (pipelines 141-143). The M1 runner vitana-eng-1 is online under tag vitana-legacy.
+  TEST: outputs/pipelines-20261107T1835Z.txt, outputs/read-1-findings.md
 
 AC-6 (pipelines) — first green pipelines on both mirrored projects, each job next to GitHub's result for the same main commit
   Status: GitHub side recorded (outputs/github-main-runs.txt, both green). Step 0 done by the M2 settings sync (ci-config hashes equal

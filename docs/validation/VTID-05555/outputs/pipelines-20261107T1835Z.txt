@@ -1,0 +1,3 @@
+# Read by session kiro-exafy-202611071142-d7ed with the owner's 1-hour engineering credentials, 2026-11-07T18:35Z (gitlab-rails runner, read only). GitHub side by gh api.
+
+GitHub vitana-v1 on f837a9927d: Vitest (jsdom)=success, Edge data client=success, Realtime helper=success, ESLint native override + i18n rule tests=success

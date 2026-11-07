@@ -34,3 +34,16 @@
 - Fix in git: pin both packages to `$RUNNER_VERSION` in both installers (+ fleet-structure.test.mjs:614). Those files belong to the done
   lane eng-gitlab-m2/fleet, so the fix is a new lane through `_plan` of eng-gitlab-m2. On the running manager the owner re-runs the
   installer with the helper pinned (a live write; a session never does it).
+
+# First pipelines on the fleet runner (2026-11-07T18:35Z, pipelines-20261107T1835Z.txt)
+- **vitana-v1 pipeline 136 on f837a9927d: unit-tests success (471 s), build success (206 s), lint failed (173 s)**, all on vitana-eng-fleet.
+  GitHub on the same commit: Vitest (jsdom), Edge data client and Realtime helper success; GitHub's lint is "ESLint native override
+  (apps/mobile, packages) + i18n rule tests" (success). Difference recorded: GitLab's `lint` job runs the whole `npm run lint`
+  (host/ci-v1.yml), which GitHub does not run as a required check. Same result as GitLab pipeline 78 (2026-11-06). V3: the job should
+  run what GitHub runs; `host/ci-v1.yml` is in this lane's paths but the running file comes from `ci/v1.gitlab-ci.yml` (settings sync),
+  which is not, so the fix is in eng-gitlab-m2.
+- **vitana-platform: typecheck passes on GitLab** (pipelines 141, 142, 143 on 59a9045091, 4b493616bc, 5e5aa4859d): premise P10's
+  `pnpm install` failure is fixed by the corrected central file. **gateway-jest 1-4/4 never finish**: with one fleet machine
+  (autoscaling group MaxSize 1) the five jobs run one after another, and each new `main` push about every 5 minutes cancels the running
+  pipeline (interruptible jobs). The group needs more than one machine: MaxSize 1 against `fleet_max_instances` (Terraform) and an
+  EC2 Standard vCPU quota of 32 (14 in use by the GitLab, runner and manager machines plus one job machine).
