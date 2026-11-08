@@ -1466,6 +1466,16 @@
       "error": "function public.mt_legacy_messages_assert_ready() does not exist"
     },
     {
+      "file": "20261102054000_vtid_05579_chat_groups_scope.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.chat_groups\" does not exist"
+    },
+    {
+      "file": "20261102054200_vtid_05579_chat_groups_rls.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.chat_groups\" does not exist"
+    },
+    {
       "file": "20261102070100_vtid_05491_mt_tenant_admin_p2_moderation.sql",
       "reason": "a guard inside the migration refuses the replayed state: it asserts production data or a production function body that a fresh replay does not have",
       "error": "VTID-05491 P2: public.content_reports is missing"

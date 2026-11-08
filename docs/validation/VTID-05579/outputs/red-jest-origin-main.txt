@@ -1,0 +1,342 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/wt-groups-red/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+FAIL ../../wt-groups-red/services/gateway/test/mt-network-groups-db.pgtap.test.ts
+  VTID-05579 migration files
+    ✕ exist, apply in order, and no other migration shares their version (3 ms)
+    ✕ each runs in one transaction with a lock timeout and drops no table or column (1 ms)
+    ✓ adds no bare current_tenant_id() RLS policy and evaluates auth.uid() once per statement
+  VTID-05579 task 1: scope columns, backfill, guards
+    ✕ adds scope text NOT NULL DEFAULT community with a CHECK (community, network) to both tables (1 ms)
+    ✕ backfills chat_groups.scope from the VTID-05573 flag metadata.legacy_scope = network, and the members from their group
+    ✕ a network group is never a system group and never has a bot member (no system fan-out target) (1 ms)
+    ✕ only the RPCs write a non-community group scope or add a network member (transaction-local flag)
+    ✕ the member guard re-checks rule 43-45 and the 20 cap, and forces the group scope (1 ms)
+    ✓ is expand only: the default stays so today's community writers keep working (1 ms)
+  VTID-05579 task 2: create_network_group / add_group_member
+    ✕ all six functions are SECURITY DEFINER with a pinned search_path
+    ✕ the caller-bound functions use auth.uid(); the _as pair takes a trusted p_actor (1 ms)
+    ✕ EXECUTE: callers to authenticated, the _as pair to service_role only, the cores to nobody
+    ✕ the network branch is admin-only, invite-only between accepted connections, bounded at 20, and refuses rule 43-45 accounts
+    ✕ the creator's tenant is the context: members carry the group tenant, the platform tenant never counts (1 ms)
+    ✕ the community branch needs membership of the group's tenant and has no cap
+    ✓ writes no message, notification or system row (no system fan-out) (1 ms)
+  VTID-05579 task 1: participant-only RLS
+    ✕ rewrites the two read policies to participant-only with the once-per-statement form
+    ✕ creates no INSERT / UPDATE / DELETE / ALL policy and asserts no allow-all policy remains
+  VTID-05579 tasks 3-4: rollback, read-only checks, pgTAP, queue
+    ✕ has the three rollbacks and the three read-only check files
+    ✕ the pgTAP plan covers the D27 limits and its plan count matches its assertions
+    ✕ is queued in MIGRATION-QUEUE.md as rows 63-65 in file order, after the last existing row (1 ms)
+    ✓ keeps the drift baseline count equal to its list (1 ms)
+
+  ● VTID-05579 migration files › exist, apply in order, and no other migration shares their version
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+      35 | describe('VTID-05579 migration files', () => {
+      36 |   it('exist, apply in order, and no other migration shares their version', () => {
+    > 37 |     for (const f of [SCOPE, RPCS, RLS]) expect(exists(f)).toBe(true);
+         |                                                           ^
+      38 |     expect(path.basename(SCOPE) < path.basename(RPCS)).toBe(true);
+      39 |     expect(path.basename(RPCS) < path.basename(RLS)).toBe(true);
+      40 |     const versions = fs
+
+      at Object.<anonymous> (test/mt-network-groups-db.pgtap.test.ts:37:59)
+
+  ● VTID-05579 migration files › each runs in one transaction with a lock timeout and drops no table or column
+
+    expect(received).toMatch(expected)
+
+    Expected pattern: /^BEGIN;/m
+    Received string:  ""
+
+      49 |   it('each runs in one transaction with a lock timeout and drops no table or column', () => {
+      50 |     for (const sql of [scope, rpcs, rls]) {
+    > 51 |       expect(sql).toMatch(/^BEGIN;/m);
+         |                   ^
+      52 |       expect(sql).toMatch(/^COMMIT;/m);
+      53 |       expect(sql).toMatch(/SET LOCAL lock_timeout/);
+      54 |       expect(sql).not.toMatch(/\bTRUNCATE\b|\bDROP\s+(TABLE|COLUMN|SCHEMA)\b/i);
+
+      at Object.<anonymous> (test/mt-network-groups-db.pgtap.test.ts:51:19)
+
+  ● VTID-05579 task 1: scope columns, backfill, guards › adds scope text NOT NULL DEFAULT community with a CHECK (community, network) to both tables
+
+    expect(received).toMatch(expected)
+
+    Expected pattern: /ALTER TABLE public\.chat_groups ADD COLUMN IF NOT EXISTS scope text NOT NULL DEFAULT 'community'/
+    Received string:  ""
+
+      67 | describe('VTID-05579 task 1: scope columns, backfill, guards', () => {
+      68 |   it('adds scope text NOT NULL DEFAULT community with a CHECK (community, network) to both tables', () => {
+    > 69 |     expect(scope).toMatch(/ALTER TABLE public\.chat_groups ADD COLUMN IF NOT EXISTS scope text NOT NULL DEFAULT 'community'/);
+         |                   ^
+      70 |     expect(scope).toMatch(/ALTER TABLE public\.chat_group_members ADD COLUMN IF NOT EXISTS scope text NOT NULL DEFAULT 'community'/);
+      71 |     expect(scope).toMatch(/chat_groups_scope_check/);
+      72 |     expect(scope).toMatch(/chat_group_members_scope_check/);
+
+      at Object.<anonymous> (test/mt-network-groups-db.pgtap.test.ts:69:19)
+
+  ● VTID-05579 task 1: scope columns, backfill, guards › backfills chat_groups.scope from the VTID-05573 flag metadata.legacy_scope = network, and the members from their group
+
+    expect(received).toMatch(expected)
+
+    Expected pattern: /metadata ->> 'legacy_scope' = 'network'/
+    Received string:  ""
+
+      74 |   });
+      75 |   it('backfills chat_groups.scope from the VTID-05573 flag metadata.legacy_scope = network, and the members from their group', () => {
+    > 76 |     expect(scope).toMatch(/metadata ->> 'legacy_scope' = 'network'/);
+         |                   ^
+      77 |     expect(scope).toMatch(/UPDATE public\.chat_groups[\s\S]*?SET scope = 'network'/);
+      78 |     expect(scope).toMatch(/UPDATE public\.chat_group_members m[\s\S]*?SET scope = g\.scope/);
+      79 |   });
+
+      at Object.<anonymous> (test/mt-network-groups-db.pgtap.test.ts:76:19)
+
+  ● VTID-05579 task 1: scope columns, backfill, guards › a network group is never a system group and never has a bot member (no system fan-out target)
+
+    expect(received).toMatch(expected)
+
+    Expected pattern: /CHECK \(scope = 'community' OR is_system = false\)/
+    Received string:  ""
+
+      79 |   });
+      80 |   it('a network group is never a system group and never has a bot member (no system fan-out target)', () => {
+    > 81 |     expect(scope).toMatch(/CHECK \(scope = 'community' OR is_system = false\)/);
+         |                   ^
+      82 |     expect(scope).toMatch(/CHECK \(scope = 'community' OR role <> 'bot'\)/);
+      83 |   });
+      84 |   it('only the RPCs write a non-community group scope or add a network member (transaction-local flag)', () => {
+
+      at Object.<anonymous> (test/mt-network-groups-db.pgtap.test.ts:81:19)
+
+  ● VTID-05579 task 1: scope columns, backfill, guards › only the RPCs write a non-community group scope or add a network member (transaction-local flag)
+
+    expect(received).toMatch(expected)
+
+    Expected pattern: /BEFORE INSERT OR UPDATE OF scope ON public\.chat_groups/
+    Received string:  ""
+
+      83 |   });
+      84 |   it('only the RPCs write a non-community group scope or add a network member (transaction-local flag)', () => {
+    > 85 |     expect(scope).toMatch(/BEFORE INSERT OR UPDATE OF scope ON public\.chat_groups/);
+         |                   ^
+      86 |     expect(scope).toMatch(/BEFORE INSERT OR UPDATE ON public\.chat_group_members/);
+      87 |     expect(scope).toMatch(/current_setting\('vitana\.chat_group_rpc', true\)/);
+      88 |     expect(scope).toMatch(/ERRCODE = '42501'/);
+
+      at Object.<anonymous> (test/mt-network-groups-db.pgtap.test.ts:85:19)
+
+  ● VTID-05579 task 1: scope columns, backfill, guards › the member guard re-checks rule 43-45 and the 20 cap, and forces the group scope
+
+    expect(received).toMatch(expected)
+
+    Expected pattern: /SECURITY DEFINER/
+    Received string:  ""
+
+      92 |   it('the member guard re-checks rule 43-45 and the 20 cap, and forces the group scope', () => {
+      93 |     const g = fnBody(scope, 'chat_group_members_scope_guard');
+    > 94 |     expect(g).toMatch(/SECURITY DEFINER/);
+         |               ^
+      95 |     expect(g).toMatch(/SET search_path TO 'public', 'pg_temp'/);
+      96 |     expect(g).toMatch(/is_network_excluded_account\(NEW\.user_id\)/);
+      97 |     expect(g).toMatch(/>= 20/);
+
+      at Object.<anonymous> (test/mt-network-groups-db.pgtap.test.ts:94:15)
+
+  ● VTID-05579 task 2: create_network_group / add_group_member › all six functions are SECURITY DEFINER with a pinned search_path
+
+    expect(received).not.toBe(expected) // Object.is equality
+
+    Expected: not ""
+
+      109 |     for (const n of fns) {
+      110 |       const body = fnBody(rpcs, n);
+    > 111 |       expect(body).not.toBe('');
+          |                        ^
+      112 |       expect(body).toMatch(/SECURITY DEFINER/);
+      113 |       expect(body).toMatch(/SET search_path TO 'public', 'pg_temp'/);
+      114 |     }
+
+      at Object.<anonymous> (test/mt-network-groups-db.pgtap.test.ts:111:24)
+
+  ● VTID-05579 task 2: create_network_group / add_group_member › the caller-bound functions use auth.uid(); the _as pair takes a trusted p_actor
+
+    expect(received).toMatch(expected)
+
+    Expected pattern: /\(SELECT auth\.uid\(\)\)/
+    Received string:  ""
+
+      115 |   });
+      116 |   it('the caller-bound functions use auth.uid(); the _as pair takes a trusted p_actor', () => {
+    > 117 |     expect(fnBody(rpcs, 'create_network_group')).toMatch(/\(SELECT auth\.uid\(\)\)/);
+          |                                                  ^
+      118 |     expect(fnBody(rpcs, 'add_group_member')).toMatch(/\(SELECT auth\.uid\(\)\)/);
+      119 |     expect(fnBody(rpcs, 'add_group_member')).not.toMatch(/p_actor/);
+      120 |     expect(fnBody(rpcs, 'add_group_member_as')).toMatch(/p_actor uuid/);
+
+      at Object.<anonymous> (test/mt-network-groups-db.pgtap.test.ts:117:50)
+
+  ● VTID-05579 task 2: create_network_group / add_group_member › EXECUTE: callers to authenticated, the _as pair to service_role only, the cores to nobody
+
+    expect(received).toMatch(expected)
+
+    Expected pattern: /GRANT EXECUTE ON FUNCTION public\.create_network_group\(text, text\) TO authenticated;/
+    Received string:  ""
+
+      122 |   });
+      123 |   it('EXECUTE: callers to authenticated, the _as pair to service_role only, the cores to nobody', () => {
+    > 124 |     expect(rpcs).toMatch(/GRANT EXECUTE ON FUNCTION public\.create_network_group\(text, text\) TO authenticated;/);
+          |                  ^
+      125 |     expect(rpcs).toMatch(/GRANT EXECUTE ON FUNCTION public\.add_group_member\(uuid, uuid\) TO authenticated;/);
+      126 |     expect(rpcs).toMatch(/GRANT EXECUTE ON FUNCTION public\.create_network_group_as\(uuid, text, text\) TO service_role;/);
+      127 |     expect(rpcs).toMatch(/GRANT EXECUTE ON FUNCTION public\.add_group_member_as\(uuid, uuid, uuid\) TO service_role;/);
+
+      at Object.<anonymous> (test/mt-network-groups-db.pgtap.test.ts:124:18)
+
+  ● VTID-05579 task 2: create_network_group / add_group_member › the network branch is admin-only, invite-only between accepted connections, bounded at 20, and refuses rule 43-45 accounts
+
+    expect(received).toMatch(expected)
+
+    Expected pattern: /FOR UPDATE/
+    Received string:  ""
+
+      133 |   it('the network branch is admin-only, invite-only between accepted connections, bounded at 20, and refuses rule 43-45 accounts', () => {
+      134 |     const core = fnBody(rpcs, 'chat_group_add_member_core');
+    > 135 |     expect(core).toMatch(/FOR UPDATE/);
+          |                  ^
+      136 |     expect(core).toMatch(/not_a_member/);
+      137 |     expect(core).toMatch(/not_group_admin/);
+      138 |     expect(core).toMatch(/is_network_excluded_account\(p_user\)/);
+
+      at Object.<anonymous> (test/mt-network-groups-db.pgtap.test.ts:135:18)
+
+  ● VTID-05579 task 2: create_network_group / add_group_member › the creator's tenant is the context: members carry the group tenant, the platform tenant never counts
+
+    expect(received).toMatch(expected)
+
+    Expected pattern: /v_g\.tenant_id/
+    Received string:  ""
+
+      147 |   it('the creator\'s tenant is the context: members carry the group tenant, the platform tenant never counts', () => {
+      148 |     const core = fnBody(rpcs, 'chat_group_add_member_core');
+    > 149 |     expect(core).toMatch(/v_g\.tenant_id/);
+          |                  ^
+      150 |     const create = fnBody(rpcs, 'chat_group_create_core');
+      151 |     expect(create).toMatch(/is_platform/);
+      152 |     expect(create).toMatch(/no_context_tenant/);
+
+      at Object.<anonymous> (test/mt-network-groups-db.pgtap.test.ts:149:18)
+
+  ● VTID-05579 task 2: create_network_group / add_group_member › the community branch needs membership of the group's tenant and has no cap
+
+    expect(received).toMatch(expected)
+
+    Expected pattern: /not_in_group_tenant/
+    Received string:  ""
+
+      155 |   it('the community branch needs membership of the group\'s tenant and has no cap', () => {
+      156 |     const core = fnBody(rpcs, 'chat_group_add_member_core');
+    > 157 |     expect(core).toMatch(/not_in_group_tenant/);
+          |                  ^
+      158 |     expect(core.match(/>= 20/g)).toHaveLength(1);
+      159 |   });
+      160 |   it('writes no message, notification or system row (no system fan-out)', () => {
+
+      at Object.<anonymous> (test/mt-network-groups-db.pgtap.test.ts:157:18)
+
+  ● VTID-05579 task 1: participant-only RLS › rewrites the two read policies to participant-only with the once-per-statement form
+
+    expect(received).toMatch(expected)
+
+    Expected pattern: /CREATE POLICY chat_groups_member_read ON public\.chat_groups FOR SELECT/
+    Received string:  ""
+
+      166 | describe('VTID-05579 task 1: participant-only RLS', () => {
+      167 |   it('rewrites the two read policies to participant-only with the once-per-statement form', () => {
+    > 168 |     expect(rls).toMatch(/CREATE POLICY chat_groups_member_read ON public\.chat_groups FOR SELECT/);
+          |                 ^
+      169 |     expect(rls).toMatch(/CREATE POLICY chat_group_members_read ON public\.chat_group_members FOR SELECT/);
+      170 |     expect(rls.match(/is_chat_group_member\([^)]*\(SELECT auth\.uid\(\)\)\)/g)).toHaveLength(2);
+      171 |   });
+
+      at Object.<anonymous> (test/mt-network-groups-db.pgtap.test.ts:168:17)
+
+  ● VTID-05579 task 1: participant-only RLS › creates no INSERT / UPDATE / DELETE / ALL policy and asserts no allow-all policy remains
+
+    expect(received).toMatch(expected)
+
+    Expected pattern: /DROP POLICY IF EXISTS chat_groups_service_role ON public\.chat_groups/
+    Received string:  ""
+
+      172 |   it('creates no INSERT / UPDATE / DELETE / ALL policy and asserts no allow-all policy remains', () => {
+      173 |     expect(rls).not.toMatch(/CREATE POLICY[^;]*FOR (INSERT|UPDATE|DELETE|ALL)/);
+    > 174 |     expect(rls).toMatch(/DROP POLICY IF EXISTS chat_groups_service_role ON public\.chat_groups/);
+          |                 ^
+      175 |     expect(rls).toMatch(/DROP POLICY IF EXISTS chat_group_members_service_role ON public\.chat_group_members/);
+      176 |     expect(rls).toMatch(/RAISE EXCEPTION 'VTID-05579: chat_groups or chat_group_members still has/);
+      177 |     expect(rls).not.toMatch(/USING \(true\)/);
+
+      at Object.<anonymous> (test/mt-network-groups-db.pgtap.test.ts:174:17)
+
+  ● VTID-05579 tasks 3-4: rollback, read-only checks, pgTAP, queue › has the three rollbacks and the three read-only check files
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+      182 |   it('has the three rollbacks and the three read-only check files', () => {
+      183 |     for (const f of ['rollback-054000-chat-groups-scope.sql', 'rollback-054100-network-group-rpcs.sql', 'rollback-054200-chat-groups-rls.sql',
+    > 184 |       'live-before.sql', 'post-apply-checks.sql', 'rollback-check.sql']) expect(exists(`${VALIDATION}/${f}`)).toBe(true);
+          |                                                                                                               ^
+      185 |     expect(read(`${VALIDATION}/rollback-054000-chat-groups-scope.sql`)).toMatch(/rollback refused/);
+      186 |     expect(strip(read(`${VALIDATION}/rollback-054200-chat-groups-rls.sql`))).not.toMatch(/FOR ALL|USING \(true\)/);
+      187 |     for (const f of ['live-before.sql', 'post-apply-checks.sql', 'rollback-check.sql']) {
+
+      at Object.<anonymous> (test/mt-network-groups-db.pgtap.test.ts:184:111)
+
+  ● VTID-05579 tasks 3-4: rollback, read-only checks, pgTAP, queue › the pgTAP plan covers the D27 limits and its plan count matches its assertions
+
+    expect(received).toMatch(expected)
+
+    Expected pattern: /the 21st member is refused/
+    Received string:  ""
+
+      190 |   });
+      191 |   it('the pgTAP plan covers the D27 limits and its plan count matches its assertions', () => {
+    > 192 |     expect(pgtap).toMatch(/the 21st member is refused/);
+          |                   ^
+      193 |     expect(pgtap).toMatch(/a pending request is not a connection/);
+      194 |     expect(pgtap).toMatch(/a service bot is never a member/);
+      195 |     expect(pgtap).toMatch(/a caller who is not a member of the group is refused/);
+
+      at Object.<anonymous> (test/mt-network-groups-db.pgtap.test.ts:192:19)
+
+  ● VTID-05579 tasks 3-4: rollback, read-only checks, pgTAP, queue › is queued in MIGRATION-QUEUE.md as rows 63-65 in file order, after the last existing row
+
+    expect(received).toBeGreaterThan(expected)
+
+    Expected: > -1
+    Received:   -1
+
+      207 |     const b = q.indexOf('20261102054100_vtid_05579_network_group_rpcs.sql');
+      208 |     const c = q.indexOf('20261102054200_vtid_05579_chat_groups_rls.sql');
+    > 209 |     expect(a).toBeGreaterThan(-1);
+          |               ^
+      210 |     expect(b).toBeGreaterThan(a);
+      211 |     expect(c).toBeGreaterThan(b);
+      212 |     expect(a).toBeGreaterThan(q.indexOf('20261102141100_vtid_05506_mt_isolation_health_by_tenant.sql'));
+
+      at Object.<anonymous> (test/mt-network-groups-db.pgtap.test.ts:209:15)
+
+Test Suites: 1 failed, 1 total
+Tests:       18 failed, 4 passed, 22 total
+Snapshots:   0 total
+Time:        0.428 s
+Ran all test suites.
