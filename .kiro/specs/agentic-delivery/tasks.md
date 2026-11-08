@@ -464,3 +464,12 @@ six and eng-gitlab-m2 `settings`. Every new test is recorded red on `origin/main
 - [ ] B4 Regenerate `platform-delivery.gitlab-ci.yml` and `v1-delivery.gitlab-ci.yml` with `node scripts/eng/pipeline-gen.mjs`; `--check` exits 0.
 - [ ] B5 Green: deploy-path's `fleet-classes-structure.test.mjs` test 14 passes against the regenerated files.
 - [ ] B6 Validate and scope-check exit 0; PR; reviewer agent; merge under §7b after the merge gate above.
+
+<!-- lane: build-class-retag-2 -->
+## Lane `build-class-retag-2` (vitana-platform; late lane, replaces build-class-retag)
+- [ ] R1 Claim `agentic-delivery/build-class-retag-2` after its VTID is on main; branch `kiro/agentic-delivery/build-class-retag-2` from `origin/main`.
+- [ ] R2 Red first: test 14 of `fleet-classes-structure.test.mjs` and a generator test show the five `build-image:*` jobs on `vitana-eng-main`; save under `docs/validation/VTID-<new>/` and `docs/validation/VTID-05546/`.
+- [ ] R3 Set the build-job tag to `vitana-eng-build` in `pipeline-gen.mjs`; update the main-class classification in its test.
+- [ ] R4 Regenerate both CI files with `node scripts/eng/pipeline-gen.mjs`; `--check` exits 0; the diff is the five tags.
+- [ ] R5 Green: the generator tests pass; deploy-path test 14 passes against the regenerated files (naming check is deploy-path's, step 5).
+- [ ] R6 Validate and scope-check exit 0; PR; reviewer agent; merge under §7b after the merge gate.
