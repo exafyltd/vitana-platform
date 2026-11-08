@@ -10,6 +10,8 @@ AC-3 — Both CI files are regenerated; the diff is only the five tags.
   TEST: `node scripts/eng/pipeline-gen.mjs --check` exits 0; diff 5 added and 5 removed tag lines.
 
 AC-4 — Deploy-path test 14 against the regenerated CI files.
-  TEST: `docs/validation/VTID-05546/outputs/build-class-retag-2-test14.txt`. The only failure is deploy-path's naming check (`name === '.build-image'`), widened in deploy-path step 5.
+  TEST: `docs/validation/VTID-05546/outputs/build-class-retag-2-test14-as-is.txt` shows the file as it is in deploy-path (exit 1): the one failing assertion is the naming check (`name === '.build-image'`), which rejects the concrete `build-image:<svc>` jobs that now carry the build tag.
+  TEST: `docs/validation/VTID-05546/outputs/build-class-retag-2-test14-widened-check.txt` shows the same tree with only that naming line widened (deploy-path step 5): 21 of 21 pass, test 14 included.
+  The widening itself is deploy-path's change (its test file), so it lands with deploy-path, not in this lane.
 
 Not claimed here: image builds on a real `vitana-eng-build` machine. Merge gate: owner steps A2 and A3.
