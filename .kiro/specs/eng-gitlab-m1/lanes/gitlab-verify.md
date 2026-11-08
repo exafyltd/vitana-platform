@@ -13,7 +13,7 @@ paths:
   - infra/gitlab-engineering/host/ci-platform.yml
   - infra/gitlab-engineering/host/ci-v1.yml
   - infra/gitlab-engineering/RUNBOOK.md
-updated: 2026-11-08T11:15Z
+updated: 2026-11-08T11:40Z
 vtid: VTID-05555
 claimed_by: kiro-exafy-202611081113-5a2e
 branch: kiro/eng-gitlab-m1/gitlab-verify
@@ -62,3 +62,8 @@ Claim `eng-gitlab-m1/gitlab-verify` taken by seat exafy; the claim ref was free 
 Step 0 and step 1: the planner asked for the restore drill as evidence for both. That is only partly right. Step 0 (ci-config commit) is done by the M2 settings sync. Step 1 (one green GitLab `main` pipeline per project) is NOT done: the last recorded read (outputs/read-2-20261107T1724Z.txt, 2026-11-07T17:26Z) was blocked on the runner, and the jq fix (VTID-05612) landed at 20:50:19Z with no later read. Restore evidence used for A04: `outputs/restore-3-20261107T1708Z.txt` (RESULT-COUNTS 4 1 10 = LIVE-COUNTS 4 1 10, LIVE-HAS-TIP true). The planner named `/home/cloudshell-user/glv-restore-20261107T1829Z.txt`; that file is not in the session sandbox, so this log cites the repo copy and does not quote the CloudShell file.
 
 Next: the owner runs `bash ~/glv.sh read` once after a `main` push, with fresh 1-hour credentials. The output goes to `outputs/step1-gitlab-platform.txt` and `outputs/step1-gitlab-v1.txt`. The lane moves to `in-review` only after both are green. Not in-review yet.
+
+### 2026-11-08T11:40Z · kiro-exafy-202611081113-5a2e · executing (owner request; check diagnosis)
+Owner request: `bash ~/glv.sh read` after a `main` push, with fresh 1-hour credentials. The output is AC-6 (one green GitLab main pipeline per project, next to GitHub's result for the same commit). Record it as `outputs/step1-gitlab-platform.txt` and `outputs/step1-gitlab-v1.txt`. The lane moves to in-review only after that output is in, as the planner decided.
+
+Check diagnosis, head 6834fe67a6: five check runs were cancelled (PR-GATE, Validator Check, STAGING-TESTS-REQUIRED, and the Collab handoff and Lane scope jobs inside PR-GATE). Cause: the PR-GATE workflow has `cancel-in-progress: true` per PR number, so a newer `pull_request` event on #4783 at 11:16:00Z cancelled the first runs while they were fetching the repository ("The operation was canceled"). The replacement runs on the same head passed: PR-GATE 42474975115 (pr-gate, Collab handoff, Lane scope success), Validator Check 42474975070 success, STAGING-TESTS-REQUIRED success. No code change is needed, and none is in this lane's paths.
