@@ -5,3 +5,4 @@ $ node scripts/mt/stack/discover-skips.mjs --write   # 730 migrations, 424 apply
 $ node scripts/mt/stack/check-stack.mjs   # outputs/stack-report.txt: required 24, present 11, not replayable 13, PASS local-stack gate
 $ npm run test:mt-stack   # outputs/green.txt: 50 tests, 50 pass, 0 fail
 $ python3 mutation runner (9 + 1 breaks; sources restored after each)   # outputs/mutations.txt: every mutation fails at least one test
+$ node --test scripts/eng/services-parity.test.mjs scripts/eng/pipeline-gen.test.mjs   # after the trigger change: 33 pass (CI unit had failed: MT-LOCAL-STACK.yml not in the registry)

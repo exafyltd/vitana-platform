@@ -152,7 +152,9 @@ describe('docs, workflow and dependency', () => {
   test('MT-LOCAL-STACK.yml runs the suite on PGlite with no Docker, no service container and no secret', () => {
     const wf = read('.github/workflows/MT-LOCAL-STACK.yml');
     assert.match(wf, /^name: MT-LOCAL-STACK$/m);
-    assert.match(wf, /pull_request:/);
+    assert.match(wf, /^on:\n  push:\n    paths:/m);
+    assert.match(wf, /workflow_dispatch:/);
+    assert.doesNotMatch(wf, /^  pull_request:/m, 'a path-filtered pull_request workflow must be in config/delivery/services.json, which is outside this lane');
     assert.match(wf, /npm run test:mt-stack|pnpm run test:mt-stack/);
     // YAML comments explain the rule ("no Docker"); only the workflow's own keys and commands are checked.
     const code = wf.split('\n').filter((l) => !l.trim().startsWith('#')).join('\n');

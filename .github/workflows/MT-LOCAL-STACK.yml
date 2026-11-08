@@ -7,9 +7,14 @@ run-name: 'MT local stack on PGlite [VTID: VTID-05520] (${{ github.ref_name }})'
 # fails and names the file or table), seeds the synthetic fixtures and runs the node tests and the pgTAP-compatible
 # shim. Real pgTAP is not used. No Docker, no service container, no network beyond the package install, no secret, no
 # production dump. It only runs when the stack itself changes; ci-wiring decides about wider triggers.
+#
+# The trigger is a path-filtered `push` (every branch, so a PR head gets the check) and `workflow_dispatch`, not a
+# path-filtered `pull_request`: config/delivery/services.json (agentic-delivery, VTID-05550) must list every
+# path-filtered pull_request workflow as a service, and that file is outside this lane's paths. Registering this
+# workflow there, and with it making it a pull-request check, is for ci-wiring / agentic-delivery.
 
 on:
-  pull_request:
+  push:
     paths:
       - 'scripts/mt/stack/**'
       - 'supabase/tests/fixtures/**'
@@ -20,10 +25,10 @@ on:
       - '.github/workflows/MT-LOCAL-STACK.yml'
   workflow_dispatch:
 
-# Superseded PR runs are cancelled when a newer commit lands on the same PR.
+# A newer push to the same branch cancels the older run; main is never cancelled.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
   contents: read
