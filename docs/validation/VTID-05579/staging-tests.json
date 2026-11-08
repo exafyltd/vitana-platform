@@ -1,0 +1,20 @@
+{
+  "vtid": "VTID-05579",
+  "service": "gateway",
+  "not_verified_on_staging": true,
+  "not_verified_on_staging_reason": "This lane adds three migration files, a Jest source check, a pgTAP file, read-only check SQL and rollbacks. Nothing is applied from the PR: each file is applied later through RUN-MIGRATION.yml, one file per dispatch, after the owner approves the files and the target database (collaboration.md section 7d). Staging shares the production database, and nothing deployed calls create_network_group or add_group_member or reads chat_groups.scope (the gateway lane network-groups-gateway ships later behind mt.network_groups), so the staging deploy runs no code that reads anything new. Staging writes to the production Supabase project (rules 31/31b/48), so the functions are never called there: they are proven by the pgTAP file on a local stack. The post-apply check is read-only: docs/validation/VTID-05579/live-before.sql before, post-apply-checks.sql after, rollback-check.sql after a rollback, run by Kiro through RUN-MIGRATION's read-only check. No suite points at vitanaland.com.",
+  "tests": [
+    {
+      "kind": "existing",
+      "ref": "npx jest test/mt-network-groups-db.pgtap.test.ts",
+      "cwd": "services/gateway",
+      "reason": "Reads the three migration files and the pgTAP plan from source: the scope guards, the function grants and branches, the participant-only policies and the queue rows. No database, no network."
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/mt-identity-bare-policy-lint.test.ts",
+      "cwd": "services/gateway",
+      "reason": "The repository-wide bare-policy lint reads every migration, including the new files: they add no bare current_tenant_id() policy."
+    }
+  ]
+}
