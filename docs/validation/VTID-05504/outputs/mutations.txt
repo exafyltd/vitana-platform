@@ -1,0 +1,8 @@
+M1 call whole-db function instead of by_tenant -> Tests:       2 failed, 12 passed, 14 total
+M2 drop slug sanitising -> Tests:       1 failed, 13 passed, 14 total
+M3 drop the row cap -> Tests:       1 failed, 13 passed, 14 total
+M4 label a row FAIL -> Tests:       2 failed, 12 passed, 14 total
+M5 exit 1 on HTTP error -> Tests:       3 failed, 11 passed, 14 total
+M6 count dangling ids as registered -> Tests:       1 failed, 13 passed, 14 total
+M7 skip tenants-list guard -> Tests:       1 failed, 13 passed, 14 total
+restored -> Tests:       14 passed, 14 total

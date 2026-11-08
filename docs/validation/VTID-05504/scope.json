@@ -1,0 +1,11 @@
+{
+  "vtid": "VTID-05504",
+  "kind": "feature",
+  "paths": [
+    ".github/workflows/MORNING-SYSTEM-HEALTH-CHECK.yml",
+    "docs/validation/VTID-05504/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05504/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}
