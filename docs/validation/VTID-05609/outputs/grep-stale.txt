@@ -1,0 +1,8 @@
+# referenced docs/validation files that do not exist (expect none):
+# old-number grep (rows 48-50 reserved / rows 51-52 / #51 / row 52):
+70:| 52 | `20261102052200_vtid_05573_legacy_messages_migrate_run.sql` | mt-network-r2/legacy-messages-migration-db / VTID-05573 (step 3) | #50, #51 | `docs/validation/VTID-05573/rollback-052200-migrated-rows.sql` (removes the migrated rows; refuses when a migrated group already received new messages) | owner approval required (collaboration §7d); not applied by this PR; the one-time data move from the `bak_*` snapshots, idempotent (legacy ids kept); `docs/validation/VTID-05573/post-apply-checks.sql` after | queued (pending owner approval) |
+# lines mentioning 05569:
+75:| 57 | `20261102043000_vtid_05569_hot_tables_tenant_not_null_assert.sql` | mt-data-clea
+76:| 58 | `20261102043100_vtid_05569_hot_tables_tenant_not_null_assert_rollback.sql` | mt-
+101:- Rows 57-58 (VTID-05569, mt-data-cleanup-r2/hot-tables-not-null-expand-contract) run 
+102:- Rows 61–62 (VTID-05506, mt-m3-r2/provision-erp-monitoring-db) are the WS-M3 ERP boot
