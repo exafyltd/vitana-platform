@@ -8,6 +8,8 @@ no web screen, no backend, no gateway change, no migration, no `packages/core` c
 (`docs/programs/native-app/NATIVE-APP-PLAN.md`, VTID-05021).
 
 <!-- plan:begin -->
+Sparring note (2026-11-08T11:26Z): session 1 (`0e558e77`) escalated on round 1 with `evidence_floor_not_met` (0 premise checks), a partner-side failure; this line opens the re-plan session. No plan content changed.
+
 ## Goal
 Fix three bugs in the native app shell that reviewers of native Wave 2 lanes found, and mount the four public
 commerce routes the business lane's screens need. Two shell reads call the gateway with a doubled `/api/v1` prefix,
