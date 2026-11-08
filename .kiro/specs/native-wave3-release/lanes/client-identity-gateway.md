@@ -14,7 +14,8 @@ paths:
   - docs/validation/VTID-*/scope.json
   - docs/validation/VTID-*/staging-tests.json
   - docs/validation/VTID-*/plan-sparring.md
-updated: 2026-11-07T10:33Z
+updated: 2026-11-08T11:36Z
+vtid: VTID-05629
 ---
 # Gateway classification of native, Appilix and web requests (adoption measurement, gateway side)
 Plan: `.kiro/specs/native-wave3-release/` — `plan.md` (decision 2) and the `tasks.md` section marked
@@ -34,3 +35,6 @@ the existing `AI-27` routing rule, no VTID by hand.
 ## Log
 ### 2026-11-07T10:33Z · kiro-exafyltd-202611062257-540e · created → ready
 Drafted with the plan. Owner-visible numbers come only from the owner-run query described in the plan.
+
+### 2026-11-08T11:36Z · ci-plan-spar · ready (VTID allocated)
+VTID-05629 allocated after policy approval (converged-auto-v1).

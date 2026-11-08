@@ -12,7 +12,8 @@ paths:
   - docs/validation/native-wave3/beta-rollout-runbook.md
   - docs/validation/VTID-*/scope.json
   - docs/validation/VTID-*/plan-sparring.md
-updated: 2026-11-07T10:33Z
+updated: 2026-11-08T11:36Z
+vtid: VTID-05627
 ---
 # Beta and phased-rollout runbook (internal, TestFlight, closed track, 1 → 10 → 50 → 100 %)
 Plan: `.kiro/specs/native-wave3-release/` — `plan.md` (decision 5) and the `tasks.md` section marked
@@ -30,3 +31,6 @@ without performing it; it states the halt rule with its thresholds from the prog
 ## Log
 ### 2026-11-07T10:33Z · kiro-exafyltd-202611062257-540e · created → ready
 Drafted with the plan. Held by `depends_on: [prereq-exit]`.
+
+### 2026-11-08T11:36Z · ci-plan-spar · ready (VTID allocated)
+VTID-05627 allocated after policy approval (converged-auto-v1).

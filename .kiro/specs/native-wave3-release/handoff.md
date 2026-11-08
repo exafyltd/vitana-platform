@@ -3,9 +3,11 @@ slug: native-wave3-release
 author: kiro
 executor: kiro
 next_actor: kiro
-state: drafted
+state: approved
 author_seat: exafyltd
-updated: 2026-11-07T10:33Z
+updated: 2026-11-08T11:36Z
+sparring_record: .kiro/specs/native-wave3-release/sparring/verdict.md
+vtids: [VTID-05626, VTID-05627, VTID-05628, VTID-05629, VTID-05630, VTID-05631, VTID-05632, VTID-05633, VTID-05634, VTID-05635, VTID-05636]
 ---
 # Handoff — Native Wave 3: beta and release
 
@@ -41,3 +43,6 @@ until the owner opens its gate).
 ### 2026-11-07T10:33Z · kiro-exafyltd-202611062257-540e · created → drafted
 Wrote plan, tasks and 10 lane files from measured state on vitana-v1 `origin/main` `663d09a34` and vitana-platform
 `origin/main` `1abd637af3`. Nothing built, no VTID allocated, no live system touched, no build pointed at a real host.
+
+### 2026-11-08T11:36Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 11 lane(s) got a VTID and are handed to Kiro.

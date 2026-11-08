@@ -18,7 +18,8 @@ paths:
   - docs/validation/VTID-*/scope.json
   - docs/validation/VTID-*/staging-tests.json
   - docs/validation/VTID-*/plan-sparring.md
-updated: 2026-11-08T12:00Z
+updated: 2026-11-08T11:36Z
+vtid: VTID-05630
 ---
 # Gateway middleware, daily-seen storage and adoption query (adoption measurement, gateway side)
 Plan: `.kiro/specs/native-wave3-release/` — `plan.md` (decision 2) and the `tasks.md` section marked
@@ -41,3 +42,6 @@ applied by a session, no VTID by hand.
 ### 2026-11-08T12:00Z · kiro-exafyltd-202611072144-1c88 · created → ready
 Added in answer to sparring round 1 (R1-F1, R1-F3). A `_plan` commit cannot edit an existing lane file, so the
 middleware, storage and query scope is a new lane that depends on `client-identity-gateway`.
+
+### 2026-11-08T11:36Z · ci-plan-spar · ready (VTID allocated)
+VTID-05630 allocated after policy approval (converged-auto-v1).

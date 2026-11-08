@@ -14,7 +14,8 @@ paths:
   - docs/validation/VTID-*/scope.json
   - docs/validation/VTID-*/staging-tests.json
   - docs/validation/VTID-*/plan-sparring.md
-updated: 2026-11-07T10:33Z
+updated: 2026-11-08T11:36Z
+vtid: VTID-05631
 ---
 # Crash-free session port with a no-op default (provider-agnostic)
 Plan: `.kiro/specs/native-wave3-release/` — `plan.md` (decision 3) and the `tasks.md` section marked
@@ -33,3 +34,6 @@ pass in `apps/mobile`; `package.json` gains no dependency.
 ## Log
 ### 2026-11-07T10:33Z · kiro-exafyltd-202611062257-540e · created → ready
 Drafted with the plan. No crash-reporting SDK is wired on `origin/main`.
+
+### 2026-11-08T11:36Z · ci-plan-spar · ready (VTID allocated)
+VTID-05631 allocated after policy approval (converged-auto-v1).

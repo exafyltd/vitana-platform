@@ -1,7 +1,7 @@
 ---
 lane: crash-sdk-owner
 state: ready
-next_actor: owner
+next_actor: kiro
 depends_on: [crash-port]
 executor: kiro
 seat: exafyltd
@@ -10,7 +10,8 @@ area: frontend
 repos: [exafyltd/vitana-v1]
 paths:
   - docs/validation/native-wave3/crash-sdk.md
-updated: 2026-11-07T10:33Z
+updated: 2026-11-08T11:36Z
+vtid: VTID-05632
 ---
 # OWNER GATE — crash-reporting SDK and Firebase ownership (§8 decision 5; not built)
 Plan: `.kiro/specs/native-wave3-release/` — `plan.md` (owner gates) and the `tasks.md` section marked
@@ -26,3 +27,6 @@ that SDK.
 ## Log
 ### 2026-11-07T10:33Z · kiro-exafyltd-202611062257-540e · created → ready (owner)
 Drafted with the plan. Recorded as an owner gate.
+
+### 2026-11-08T11:36Z · ci-plan-spar · ready (VTID allocated)
+VTID-05632 allocated after policy approval (converged-auto-v1).
