@@ -18,7 +18,8 @@ paths:
   - apps/mobile/tests/discover-commerce/ai-picks-cold-start.test.tsx
   - apps/mobile/tests/screen-backfill/**
   - docs/validation/**
-updated: 2026-11-08T12:10Z
+updated: 2026-11-08T12:05Z
+vtid: VTID-05651
 ---
 # Screen backfill — journey ORB bridge, Connectors AI-key sheet, `/discover/ai-picks` screen
 Plan: `.kiro/specs/native-wave2-fix-forward-r2/` — `plan.md` (plan block) and the `tasks.md` section marked
@@ -38,3 +39,6 @@ Supabase/AWS, no test against production; the native app has no production profi
 ## Log
 ### 2026-11-08T12:10Z · kiro-exafyltd-202611072144-1c88 · ready
 Lane created with the plan (re-plan of `native-wave2-fix-forward/screen-backfill`, PR #4664).
+
+### 2026-11-08T12:05Z · ci-plan-spar · ready (VTID allocated)
+VTID-05651 allocated after policy approval (converged-auto-v1).
