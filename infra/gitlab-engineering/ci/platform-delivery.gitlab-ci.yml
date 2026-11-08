@@ -3753,7 +3753,7 @@ gate:
   stage: "build"
   needs: []
   tags:
-    - "vitana-eng-main"
+    - "vitana-eng-build"
   interruptible: false
   variables:
     DEPLOY_SERVICE: "gateway"
@@ -3952,7 +3952,7 @@ gate:
   stage: "build"
   needs: []
   tags:
-    - "vitana-eng-main"
+    - "vitana-eng-build"
   interruptible: false
   variables:
     DEPLOY_SERVICE: "erp-bridge"
@@ -4064,7 +4064,7 @@ gate:
   stage: "build"
   needs: []
   tags:
-    - "vitana-eng-main"
+    - "vitana-eng-build"
   interruptible: false
   variables:
     DEPLOY_SERVICE: "kiro-runner"
@@ -4176,7 +4176,7 @@ gate:
   stage: "build"
   needs: []
   tags:
-    - "vitana-eng-main"
+    - "vitana-eng-build"
   interruptible: false
   variables:
     DEPLOY_SERVICE: "postgrest-aurora-proxy"

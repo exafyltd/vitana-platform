@@ -1,0 +1,27 @@
+TAP version 13
+# Subtest: seccomp and AppArmor unconfined only for the build class's BuildKit service: no job container of any class loses either profile
+not ok 1 - seccomp and AppArmor unconfined only for the build class's BuildKit service: no job container of any class loses either profile
+  ---
+  duration_ms: 6.59624
+  type: 'test'
+  location: '/projects/sandbox/vitana-platform/scripts/eng/.t14-tmp.test.mjs:517:1'
+  failureType: 'testCodeFailure'
+  error: "Cannot read properties of undefined (reading 'docker')"
+  code: 'ERR_TEST_FAILURE'
+  name: 'TypeError'
+  stack: |-
+    TestContext.<anonymous> (file:///projects/sandbox/vitana-platform/scripts/eng/.t14-tmp.test.mjs:522:23)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.start (node:internal/test_runner/test:944:17)
+    startSubtestAfterBootstrap (node:internal/test_runner/harness:296:17)
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 0
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 60.104676

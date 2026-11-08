@@ -203,7 +203,7 @@ test('dependencies come from the cache keyed by the lockfile', () => {
 });
 
 test('main pipelines run every check once, are not interruptible, and use the main and deploy classes', () => {
-  const MAIN_CLASS = /^(full-suite:|build-image:|preview-build:main$|staging-verify:|staging-verify-nightly:|assist:|e2e-preview-orb$)/;
+  const MAIN_CLASS = /^(full-suite:|preview-build:main$|staging-verify:|staging-verify-nightly:|assist:|e2e-preview-orb$)/;
   const DEPLOY_CLASS = /^(push-image:|deploy-staging:|rollback-staging:|record:|record-nightly:|vtid-close$|notify-platform$|preview-upload|preview-stop)/;
   for (const repo of REPOS) {
     for (const ctx of [MAIN({ DELIVERY_MODE: 'live' }), MAIN(), NIGHTLY({ DELIVERY_MODE: 'live' })]) {
@@ -213,6 +213,7 @@ test('main pipelines run every check once, are not interruptible, and use the ma
       for (const [name, job] of Object.entries(jobs)) {
         assert.equal(job.interruptible, false, `${repo}: ${name} is interruptible on main`);
         if (MAIN_CLASS.test(name)) assert.deepEqual(job.tags, ['vitana-eng-main'], `${repo}: ${name}`);
+        else if (/^build-image:/.test(name)) assert.deepEqual(job.tags, ['vitana-eng-build'], `${repo}: ${name} (build class, VTID-05643)`);
         else if (DEPLOY_CLASS.test(name)) assert.deepEqual(job.tags, ['vitana-eng-deploy'], `${repo}: ${name}`);
         else assert.fail(`${repo}: ${name} runs on main in no known class`);
       }
@@ -540,5 +541,21 @@ test('build-image and preview-build:main do not wait for the full suite (review:
       for (let k = n + 1; k < lines.length && /^\s/.test(lines[k]); k++) block.push(lines[k]);
       assert.ok(block.some((l) => /^\s+needs: \[\]\s*$/.test(l)), `${f}: ${head.replace(/:\s*$/, '')} declares needs: []`);
     }
+  }
+});
+
+// VTID-05643 (build-class-retag): the image builds run on the build class. Its BuildKit daemon is the only service with an
+// unconfined seccomp and AppArmor profile (deploy-path, review 1ea5 finding 2), so no build job may run on the main class.
+test('build-image jobs run on the build class vitana-eng-build, in every repository and context', () => {
+  for (const repo of REPOS) {
+    const seen = new Set();
+    for (const ctx of [MAIN({ DELIVERY_MODE: 'live' }), MAIN(), NIGHTLY({ DELIVERY_MODE: 'live' })]) {
+      const jobs = jobsIn(repo, ctx);
+      for (const n of Object.keys(jobs).filter((x) => x.startsWith('build-image:'))) {
+        seen.add(n);
+        assert.deepEqual(jobs[n].tags, ['vitana-eng-build'], `${repo}: ${n}`);
+      }
+    }
+    assert.ok(seen.size > 0, `${repo}: has build-image jobs in some context`);
   }
 });
