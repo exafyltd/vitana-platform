@@ -3,11 +3,13 @@ slug: native-wave2-sharing-business-r3
 author: kiro
 executor: kiro
 next_actor: kiro
-state: drafted
+state: approved
 author_seat: exafyltd
-updated: 2026-11-08T13:00Z
+updated: 2026-11-08T12:00Z
 spar_refs:
   - exafyltd/vitana-v1: main
+sparring_record: .kiro/specs/native-wave2-sharing-business-r3/sparring/verdict.md
+vtids: [VTID-05645, VTID-05646]
 ---
 # Handoff — Native Wave 2: Sharing / Business hub screen ports
 Wave 2 screen-port batch of the native Maxina app program (`docs/programs/native-app/NATIVE-APP-PLAN.md`,
@@ -21,3 +23,6 @@ Re-plan of `native-wave2-sharing-business-r2` (PR #4656) under a new slug, one s
 ## Log
 ### 2026-11-08T13:00Z · kiro-exafyltd-202611072144-1c88 · created → drafted
 Re-plan of `native-wave2-sharing-business-r2` (PR #4656) under a new slug so the `_plan` lane has commits from one session only. Content is the version that converged there (session 47230fc6, 2026-11-08); lane `sharing` paths use `apps/mobile/app/(public)/pub/**` (R1-F1). No VTID allocated, no product code changed, no live system touched.
+
+### 2026-11-08T12:00Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 2 lane(s) got a VTID and are handed to Kiro.

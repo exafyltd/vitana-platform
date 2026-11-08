@@ -23,7 +23,8 @@ paths:
   - apps/mobile/parity/ledger.json
   - src/i18n/*/businessNative.json
   - docs/validation/**
-updated: 2026-11-08T13:00Z
+updated: 2026-11-08T12:00Z
+vtid: VTID-05645
 ---
 # Business hub port — `/business` shell (+ tabs) + opportunities + listings
 Plan: `.kiro/specs/native-wave2-sharing-business-r3/` — `plan.md` (plan block) and the `tasks.md` section marked
@@ -78,3 +79,6 @@ Supabase/AWS, no test against production; staging specs are read-only; the nativ
 ## Log
 ### 2026-11-08T13:00Z · kiro-exafyltd-202611072144-1c88 · ready
 Lane created with the plan (re-plan of `native-wave2-sharing-business-r2/business-hub`, PR #4656).
+
+### 2026-11-08T12:00Z · ci-plan-spar · ready (VTID allocated)
+VTID-05645 allocated after policy approval (converged-auto-v1).
