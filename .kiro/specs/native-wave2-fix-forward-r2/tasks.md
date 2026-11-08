@@ -108,7 +108,7 @@ depends_on: none in this plan. vitana-v1 #1553 (VTID-05451) is merged on main (c
 - [ ] 3. Red test `tests/public-entry/landing.test.tsx`: `/` signed out renders the storefront; signed in redirects to
   `/home`; loading shows the loader. Then `app/index.tsx` (design §3); move the signed-out case of
   `tests/index.test.tsx` to the storefront.
-- [ ] 4. Ledger: `PUBLIC.LANDING` → `native`, remove `/` from `native_only`; the ledger test green. If #1553 closed
+- [ ] 4. Ledger: `PUBLIC.LANDING` → `native`, delete the whole `{ "path": "/", … }` entry from `native_only` (`ledger.json:5-8`; not reworded, because its reason text becomes false), so no `native_only` `/` entry and a `native` `PUBLIC.LANDING` row never coexist; the ledger test green. If #1553 closed
   unmerged, skip tasks 3-4, keep task 2 (the link router still opens `/i/<code>`, which then renders Unported) and log
   the fallback.
 - [ ] 5. Verify and PR (header).
