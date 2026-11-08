@@ -132,3 +132,11 @@ Converged; approved by policy converged-auto-v1. 3 lane(s) got a VTID and are ha
 
 ### 2026-11-05T21:45Z · kiro-exafy-202611041929-802c · approved (driver: merging the late-lane plan PR)
 PLAN-SPAR allocated VTID-05563 (`nav-paths`), VTID-05564 (`sv-cwd`) and VTID-05562 (`cut-settings`) at 21:34Z.
+
+### 2026-11-08T11:45Z · kiro-exafy-202611081113-5a2e · late lane added (build-class-retag)
+Plan PR `plan(agentic-delivery)`, branch `kiro/agentic-delivery/plan-3`. The `_plan` claim held by `kiro-exafy-202611062222-c262` was
+stale (last commit 2026-11-05 21:45Z, claim 37h old, over the 24h rule). This session broke it with `release --stale` and claimed the
+plan. Added: the Late lanes note in `plan.md`, lane `build-class-retag` (`ready`), tasks group `build-class-retag`. Its VTID comes from
+PLAN-SPAR. Merge gate: not before the `vitana-eng-build` class runs (owner A2 and A3). Scope note: the generator's runner tag comes from
+`config.runner_tags.main` (`pipeline-gen.mjs:193`), and `config/delivery/services.json` has no build key. The lane is built inside its
+listed paths with a literal build tag in the generator. A `services.json` key would need that file in the lane's paths.
