@@ -1,6 +1,6 @@
 ---
 lane: morning-health-pertenant
-state: verified
+state: done
 next_actor: kiro
 depends_on: [provision-erp-monitoring-db]
 executor: kiro
@@ -9,7 +9,7 @@ reviewer_seat: agent:vitana-lane-reviewer
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 paths:
   - .github/workflows/MORNING-SYSTEM-HEALTH-CHECK.yml
-updated: 2026-11-08T13:38Z
+updated: 2026-11-08T13:41Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05504
 ---
@@ -52,3 +52,6 @@ PR https://github.com/exafyltd/vitana-platform/pull/4869. Reviewed on head `3a16
 merge: 1ec3d5bf26ac5a70887690f3efb225e4e76ca488 (exafyltd/vitana-platform#4869)
 authority: §7b PM rule. Squash merge by land-guard; `land-guard review` ok, `land-guard checks` green, PR up to date. No lane code changed after the accept.
 Next: the `done` record.
+
+### 2026-11-08T13:41Z · kiro-hotmail-202611061752-cc1f · verified → done
+This lane is a workflow-only, report-only change with no staging deploy, so there is no STAGING-VERIFY run for it; it is done at merge (1ec3d5bf26) with green checks (11 green).
