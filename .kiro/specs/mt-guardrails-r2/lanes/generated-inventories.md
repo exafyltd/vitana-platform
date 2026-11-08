@@ -6,11 +6,11 @@ executor: kiro
 seat: hotmail
 reviewer_seat: agent:vitana-lane-reviewer
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
-depends_on: [local-test-stack]
+depends_on: [local-test-stack-pglite]
 paths:
   - scripts/mt/inventory/**
   - scripts/mt/lint/**
-updated: 2026-11-01T17:06Z
+updated: 2026-11-08T14:21Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05445
 ---
@@ -38,3 +38,6 @@ Lane created with the re-plan `mt-guardrails-r2` (carried from `mt-guardrails`).
 
 ### 2026-11-01T17:06Z · ci-plan-spar · ready (VTID allocated)
 VTID-05445 allocated after policy approval (converged-auto-v1).
+
+### 2026-11-08T14:21Z · kiro-hotmail-202611061752-cc1f · ready (depends_on repointed)
+`depends_on` changed from `local-test-stack` to `local-test-stack-pglite` (VTID-05520, done) per plan.md Amendment 2, decision 1 and its Consequences. `local-test-stack` (VTID-05447) and `local-test-stack-v2` (VTID-05469) are parked as superseded (PRs #4881, #4882). No other change.
