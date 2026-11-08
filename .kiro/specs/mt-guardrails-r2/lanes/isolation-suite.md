@@ -70,3 +70,17 @@ Collab-Review: mt-guardrails-r2/isolation-suite
 Collab-Verdict: accept
 Collab-Reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 Collab-Reviewed-Head: 319ef180b809ffc779ae0324e42e6e8e0a650517
+
+### 2026-11-08T16:40:00Z · agent-vitana-lane-reviewer-202611081638-b3fc · review
+review: accept
+head: 30954a949f10e6392b86b52c1ef04d132579e6ab
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4912
+Findings: Round-1 blocking findings fixed. Runner is strict by default with no env override (exit 1, no PASS over 14 unverified claims). --report exits 0 and ends with "REPORT mt-isolation: ...", never PASS. ab_dual single-series assertion is not ok 58 by default and UNVERIFIED only in --report. Self-test, 8 mutations, red-before-fix evidence present; nothing else loosened; all 15 files inside lane paths; no protected gate file. Non-blocking: (1) the report-mode ab_dual line does not name 20251231000000_vtid_01103_health_compute_engine.sql (it is cited only in acceptance.md); (2) CI check runs not readable with reviewer tools, so land-guard must confirm green on this head; (3) the default run stays red until the 14 tables are replayable, as intended (Amendment 3 decision 3).
+Next: the land step merges under §7b after land-guard.mjs checks are green and the PR is up to date with main
+
+Collab-Session: agent-vitana-lane-reviewer-202611081638-b3fc
+Collab-Review: mt-guardrails-r2/isolation-suite
+Collab-Verdict: accept
+Collab-Reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+Collab-Reviewed-Head: 30954a949f10e6392b86b52c1ef04d132579e6ab
