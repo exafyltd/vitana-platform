@@ -1,0 +1,1 @@
+CI-only change. The only file in the validator's remit is this evidence record; scripts/ci and .github files are outside the remit and are reported, not rejected (validator-path-guard.cjs).
