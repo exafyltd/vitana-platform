@@ -1,6 +1,6 @@
 ---
 lane: network-groups-db
-state: ready
+state: verified
 next_actor: kiro
 depends_on: [messaging-send-db, legacy-messages-migration-db]
 executor: kiro
@@ -12,7 +12,7 @@ paths:
   - docs/multitenancy/MIGRATION-QUEUE.md
   - scripts/ci/migration-drift-baseline.json
   - services/gateway/test/mt-network-groups-db.pgtap.test.ts
-updated: 2026-11-06T10:10Z
+updated: 2026-11-08T14:27Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05579
 ---
@@ -75,3 +75,14 @@ Collab-Review: mt-network-r2/network-groups-db
 Collab-Verdict: accept
 Collab-Reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 Collab-Reviewed-Head: ad090d47c6d2dccb00913170564612e4792db442
+
+### 2026-11-08T14:27Z · kiro-hotmail-202611061752-cc1f · ready → executing
+Built on branch kiro/mt-network-r2/network-groups-db; recorded here at the closing, because one transition per PR meant the PR carried no lane-state entry.
+
+### 2026-11-08T14:27Z · kiro-hotmail-202611061752-cc1f · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/4850. Reviewed on head `ad090d47c6` (accept entry above, reviewer agent claude-sonnet-5.5).
+
+### 2026-11-08T14:27Z · kiro-hotmail-202611061752-cc1f · in-review → verified
+merge: b670aa2b992bf5410315202f77e93974d2f39c6d (exafyltd/vitana-platform#4850)
+authority: §7b PM rule. Squash merge by land-guard; `land-guard review` ok, `land-guard checks` green, PR up to date. No lane code changed after the accept.
+Next: the `done` record.
