@@ -37,23 +37,20 @@ describe('VTID-04646 publish gate wiring', () => {
     expect(alloc).toBeGreaterThan(gate);
   });
 
-  it('refuses with 409 staging_not_verified and records the refusal', () => {
+  it('does not refuse the publish on STAGING-VERIFY (owner decision 2026-11-08)', () => {
     const body = awsFlowBody();
-    expect(body).toMatch(/if \(!gate\.allowed\)/);
-    expect(body).toMatch(/production\.publish\.blocked/);
-    expect(body).toMatch(/status\(409\)[\s\S]{0,80}error: 'staging_not_verified'/);
-    expect(body).toMatch(/override_allowed: true/);
+    expect(body).not.toMatch(/status\(409\)[\s\S]{0,80}error: 'staging_not_verified'/);
+    expect(body).toMatch(/const gate = \{ \.\.\.verified, allowed: true \}/);
   });
 
-  it('records an override on the publish event and as its own event', () => {
+  it('records a publish without a passing STAGING-VERIFY as its own evidence event', () => {
     const body = awsFlowBody();
-    expect(body).toMatch(/staging_verify_gate: gate\.status/);
-    expect(body).toMatch(/override_reason: gate\.override_reason/);
-    expect(body).toMatch(/production\.publish\.verification_overridden/);
+    expect(body).toMatch(/if \(!verified\.allowed\)/);
+    expect(body).toMatch(/production\.publish\.gate_skipped/);
   });
 
-  it('declares the two new CICD event types', () => {
-    expect(cicdTypes).toContain("'production.publish.blocked'");
+  it('declares the CICD event types the publish flow emits', () => {
+    expect(cicdTypes).toContain("'production.publish.gate_skipped'");
     expect(cicdTypes).toContain("'production.publish.verification_overridden'");
   });
 
