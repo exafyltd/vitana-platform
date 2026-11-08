@@ -20,6 +20,8 @@ export function reasonFor(error) {
   if (/column "[^"]+"( of relation "[^"]+")? does not exist|referenced in foreign key constraint does not exist/.test(error)) {
     return 'expects a column the replayed schema does not have (its table has no committed creator, or comes from a skipped migration)';
   }
+  if (/^VTID-\d+/.test(error)) return 'a guard inside the migration refuses the replayed state: it asserts production data or a production function body that a fresh replay does not have';
+  if (/function "?[\w.]+\(\)"? does not exist|function [\w.]+\([^)]*\) does not exist/.test(error)) return 'changes a function that no replayed migration creates (its creator is a skipped migration or was never committed)';
   if (/pg_cron|cron\./.test(error)) return 'needs pg_cron, which PGlite does not bundle';
   return 'fails on a fresh replay on PGlite (see the error line)';
 }

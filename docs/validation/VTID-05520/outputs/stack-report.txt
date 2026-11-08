@@ -1,4 +1,3 @@
-$ node scripts/mt/stack/check-stack.mjs   # lane head
 replay: 424 applied, 306 skipped (replay-skip.json), 0 failed
 SKIP access_audit_log (unverified): no migration in either repository creates this table [needed by: isolation-suite, generated-inventories]
 PASS community_groups

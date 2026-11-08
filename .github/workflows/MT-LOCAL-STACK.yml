@@ -6,23 +6,19 @@ run-name: 'MT local stack on PGlite [VTID: VTID-05520] (${{ github.ref_name }})'
 # supabase/tests/local-stack/replay-skip.json, checks the required tables (a listed missing table is SKIP, anything else
 # fails and names the file or table), seeds the synthetic fixtures and runs the node tests and the pgTAP-compatible
 # shim. Real pgTAP is not used. No Docker, no service container, no network beyond the package install, no secret, no
-# production dump. It only runs when the stack itself changes; ci-wiring decides about wider triggers.
+# production dump. ci-wiring decides about wider triggers.
 #
-# The trigger is a path-filtered `push` (every branch, so a PR head gets the check) and `workflow_dispatch`, not a
-# path-filtered `pull_request`: config/delivery/services.json (agentic-delivery, VTID-05550) must list every
+# The trigger is `push` with no path filter, on `main` and on `kiro/mt-guardrails-r2/**` branches, plus
+# `workflow_dispatch`. A path filter skipped the run on an update-branch merge commit (no filtered path touched), which
+# left the lane head without the check. It is not a path-filtered `pull_request`: config/delivery/services.json (agentic-delivery, VTID-05550) must list every
 # path-filtered pull_request workflow as a service, and that file is outside this lane's paths. Registering this
 # workflow there, and with it making it a pull-request check, is for ci-wiring / agentic-delivery.
 
 on:
   push:
-    paths:
-      - 'scripts/mt/stack/**'
-      - 'supabase/tests/fixtures/**'
-      - 'supabase/tests/local-stack/**'
-      - 'docs/multitenancy/LOCAL-STACK.md'
-      - 'package.json'
-      - 'pnpm-lock.yaml'
-      - '.github/workflows/MT-LOCAL-STACK.yml'
+    branches:
+      - main
+      - 'kiro/mt-guardrails-r2/**'
   workflow_dispatch:
 
 # A newer push to the same branch cancels the older run; main is never cancelled.

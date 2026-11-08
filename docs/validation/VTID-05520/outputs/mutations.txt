@@ -71,3 +71,19 @@ failing tests:
   not ok 1 - without attemptSkipped it reaches the same required-table result and reports the numbers
   not ok 2 - LOCAL-STACK.md unverified-tables section lists exactly the tables of not-replayable.txt
 
+
+## M12-scanner-ignores-functions
+mutated: scripts/mt/stack/skipped-isolation.mjs (tenant-membership function branch removed)
+suite: supabase/tests/local-stack/skipped-isolation.test.mjs
+      not ok 2 - a tenant helper function is a reason, a function reading user_tenants is a reason, an unrelated one is not
+      not ok 1 - the section lists exactly the skipped migrations the scanner finds
+      not ok 2 - the four migrations the reviewer named are found and listed
+  # pass 4
+  # fail 3
+
+## M13-workflow-path-filter-back
+mutated: .github/workflows/MT-LOCAL-STACK.yml (path filter added to push)
+suite: supabase/tests/local-stack/repo-gate.test.mjs
+      not ok 4 - MT-LOCAL-STACK.yml runs the suite on PGlite with no Docker, no service container and no secret
+  # pass 13
+  # fail 1

@@ -207,12 +207,12 @@
     },
     {
       "file": "20260412000000_tenant_invitations.sql",
-      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "reason": "changes a function that no replayed migration creates (its creator is a skipped migration or was never committed)",
       "error": "function gen_random_bytes(integer) does not exist"
     },
     {
       "file": "20260412600000_fix_admin_tables.sql",
-      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "reason": "changes a function that no replayed migration creates (its creator is a skipped migration or was never committed)",
       "error": "function gen_random_bytes(integer) does not exist"
     },
     {
@@ -1272,7 +1272,7 @@
     },
     {
       "file": "20261010164100_vtid_05041_definer_functions_lockdown.sql",
-      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "reason": "a guard inside the migration refuses the replayed state: it asserts production data or a production function body that a fresh replay does not have",
       "error": "VTID-05041: expected all four memory functions to exist (found 3 overloads)"
     },
     {
@@ -1282,7 +1282,7 @@
     },
     {
       "file": "20261010180000_vtid_05043_s3_membership_side_effect_guard.sql",
-      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "reason": "changes a function that no replayed migration creates (its creator is a skipped migration or was never committed)",
       "error": "function public.claim_founding_seat_on_membership() does not exist"
     },
     {
@@ -1307,7 +1307,7 @@
     },
     {
       "file": "20261013090000_vtid_05125_memory_functions_revoke_migrate.sql",
-      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "reason": "a guard inside the migration refuses the replayed state: it asserts production data or a production function body that a fresh replay does not have",
       "error": "VTID-05125: expected all four memory functions to exist"
     },
     {
@@ -1327,12 +1327,12 @@
     },
     {
       "file": "20261014000100_vtid_05149_tenants_default_platform_flags.sql",
-      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "reason": "a guard inside the migration refuses the replayed state: it asserts production data or a production function body that a fresh replay does not have",
       "error": "VTID-05149 M1: expected exactly 2 tenants, one of them maxina; found 3 tenants, 1 maxina"
     },
     {
       "file": "20261014000200_vtid_05149_signup_default_tenant.sql",
-      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "reason": "changes a function that no replayed migration creates (its creator is a skipped migration or was never committed)",
       "error": "function \"public.handle_new_user()\" does not exist"
     },
     {
@@ -1342,7 +1342,7 @@
     },
     {
       "file": "20261014000500_vtid_05150_provision_tenant.sql",
-      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "reason": "a guard inside the migration refuses the replayed state: it asserts production data or a production function body that a fresh replay does not have",
       "error": "VTID-05150: apply 20261014000400_vtid_05150_tenant_brand_pack first"
     },
     {
@@ -1372,22 +1372,22 @@
     },
     {
       "file": "20261101100000_mt_packs_tenant_content_overrides.sql",
-      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "reason": "a guard inside the migration refuses the replayed state: it asserts production data or a production function body that a fresh replay does not have",
       "error": "VTID-05495: public.tenants(tenant_id) is missing; refusing to create tenant_content_overrides"
     },
     {
       "file": "20261101110000_mt_launch_tenant_pack_intake.sql",
-      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "reason": "a guard inside the migration refuses the replayed state: it asserts production data or a production function body that a fresh replay does not have",
       "error": "VTID-05324: public.tenants(tenant_id) is missing; refusing to create tenant_pack_intake"
     },
     {
       "file": "20261101110100_mt_launch_tenant_content_pipeline.sql",
-      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "reason": "a guard inside the migration refuses the replayed state: it asserts production data or a production function body that a fresh replay does not have",
       "error": "VTID-05324: apply 20261101110000_mt_launch_tenant_pack_intake.sql first"
     },
     {
       "file": "20261102030100_vtid_05465_bare_policy_rewrite.sql",
-      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "reason": "a guard inside the migration refuses the replayed state: it asserts production data or a production function body that a fresh replay does not have",
       "error": "VTID-05465: the live current_tenant_id() is not the 20260218 body (markers f, f, f); refusing the rewrite. The lane is parked for an owner decision (docs/validation/VTID-05465/acceptance.md)"
     },
     {
@@ -1412,12 +1412,12 @@
     },
     {
       "file": "20261102040300_vtid_05571_orphan_cleanup_rollback.sql",
-      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "reason": "changes a function that no replayed migration creates (its creator is a skipped migration or was never committed)",
       "error": "function public.mt_orphan_restore() does not exist"
     },
     {
       "file": "20261102040300_vtid_05571_orphan_cleanup_run.sql",
-      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "reason": "changes a function that no replayed migration creates (its creator is a skipped migration or was never committed)",
       "error": "function public.mt_orphan_snapshot_all() does not exist"
     },
     {
@@ -1427,12 +1427,12 @@
     },
     {
       "file": "20261102042100_vtid_05572_profiles_tenant_backfill_run.sql",
-      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "reason": "changes a function that no replayed migration creates (its creator is a skipped migration or was never committed)",
       "error": "function public.mt_profiles_tenant_backfill_run() does not exist"
     },
     {
       "file": "20261102043000_vtid_05569_hot_tables_tenant_not_null_assert.sql",
-      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "reason": "a guard inside the migration refuses the replayed state: it asserts production data or a production function body that a fresh replay does not have",
       "error": "VTID-05569: public.chat_messages.tenant_id does not exist"
     },
     {
@@ -1457,72 +1457,72 @@
     },
     {
       "file": "20261102052200_vtid_05573_legacy_messages_migrate_run.sql",
-      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "reason": "changes a function that no replayed migration creates (its creator is a skipped migration or was never committed)",
       "error": "function public.mt_legacy_messages_migrate() does not exist"
     },
     {
       "file": "20261102052300_vtid_05573_legacy_messages_drop.sql",
-      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "reason": "changes a function that no replayed migration creates (its creator is a skipped migration or was never committed)",
       "error": "function public.mt_legacy_messages_assert_ready() does not exist"
     },
     {
       "file": "20261102070100_vtid_05491_mt_tenant_admin_p2_moderation.sql",
-      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "reason": "a guard inside the migration refuses the replayed state: it asserts production data or a production function body that a fresh replay does not have",
       "error": "VTID-05491 P2: public.content_reports is missing"
     },
     {
       "file": "20261102070150_vtid_05491_mt_tenant_admin_p3_moderation.sql",
-      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "reason": "a guard inside the migration refuses the replayed state: it asserts production data or a production function body that a fresh replay does not have",
       "error": "VTID-05491 P3: content_reports.tenant_id is missing (apply 20261102070100 first)"
     },
     {
       "file": "20261102070300_vtid_05493_mt_tenant_deactivate.sql",
-      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "reason": "a guard inside the migration refuses the replayed state: it asserts production data or a production function body that a fresh replay does not have",
       "error": "VTID-05493: tenants.tenant_id/slug/is_active/is_default/is_platform missing - apply 20261014000100 (VTID-05149) first"
     },
     {
       "file": "20261102070350_vtid_05493_mt_tenant_archive_switch.sql",
-      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "reason": "a guard inside the migration refuses the replayed state: it asserts production data or a production function body that a fresh replay does not have",
       "error": "VTID-05493: apply 20261102070300_vtid_05493_mt_tenant_deactivate first"
     },
     {
       "file": "20261102070600_vtid_05491_mt_moderator_tenant_scope.sql",
-      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "reason": "a guard inside the migration refuses the replayed state: it asserts production data or a production function body that a fresh replay does not have",
       "error": "VTID-05491 scope: tenant_id columns are missing (apply 20261102070100 first)"
     },
     {
       "file": "20261102080000_mt_packs_knowledge_docs_tenant_id.sql",
-      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "reason": "a guard inside the migration refuses the replayed state: it asserts production data or a production function body that a fresh replay does not have",
       "error": "VTID-05498: public.tenants(tenant_id) is missing; refusing to add the tenant overlay column"
     },
     {
       "file": "20261102120000_vtid_05488_supplier_tenant_relationships.sql",
-      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "reason": "a guard inside the migration refuses the replayed state: it asserts production data or a production function body that a fresh replay does not have",
       "error": "VTID-05488: public.merchants is missing; refusing to create supplier_tenant_relationships"
     },
     {
       "file": "20261102120100_vtid_05488_products_distribution.sql",
-      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "reason": "a guard inside the migration refuses the replayed state: it asserts production data or a production function body that a fresh replay does not have",
       "error": "VTID-05488: public.products is missing; refusing to add products.distribution"
     },
     {
       "file": "20261102120300_vtid_05488_products_merchants_tenant_rls.sql",
-      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "reason": "a guard inside the migration refuses the replayed state: it asserts production data or a production function body that a fresh replay does not have",
       "error": "VTID-05488 D4: public.supplier_tenant_relationships is missing (apply 20261102120000 first)"
     },
     {
       "file": "20261102140000_vtid_05507_mt_tenant_domains.sql",
-      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "reason": "a guard inside the migration refuses the replayed state: it asserts production data or a production function body that a fresh replay does not have",
       "error": "VTID-05507: public.reserved_tenant_slugs is missing (VTID-05150); refusing to create tenant_domains"
     },
     {
       "file": "20261102140100_vtid_05507_mt_resolve_tenant_host.sql",
-      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "reason": "a guard inside the migration refuses the replayed state: it asserts production data or a production function body that a fresh replay does not have",
       "error": "VTID-05507: public.tenant_domains is missing; apply 20261102140000 first"
     },
     {
       "file": "20261102141000_vtid_05506_mt_provision_erp_request.sql",
-      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "reason": "a guard inside the migration refuses the replayed state: it asserts production data or a production function body that a fresh replay does not have",
       "error": "VTID-05506: apply 20261014000400 / 20261014000500 (VTID-05150: provision_tenant, tenant_settings_merge_feature_flags) first"
     },
     {
