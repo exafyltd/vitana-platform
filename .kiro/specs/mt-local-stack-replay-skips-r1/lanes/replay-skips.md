@@ -1,6 +1,6 @@
 ---
 lane: replay-skips
-state: executing
+state: in-review
 claimed_by: kiro-hotmail-202611061752-cc1f
 branch: kiro/mt-local-stack-replay-skips-r1/replay-skips
 next_actor: kiro
@@ -29,3 +29,8 @@ VTID-05673 allocated after policy approval (converged-auto-v1).
 
 ### 2026-11-08T15:24Z · kiro-hotmail-202611061752-cc1f · ready → executing
 Claimed. Red on base (outputs/red-on-base.txt): the gate names 20261102054000_vtid_05579_chat_groups_scope.sql. `discover-skips.mjs --write` added exactly two entries (054000, 054200).
+
+### 2026-11-08T15:30Z · kiro-hotmail-202611061752-cc1f · executing → in-review
+check-stack prints PASS local-stack gate and `npm run test:mt-stack` passes 57/57 (outputs/green.txt).
+PR: https://github.com/exafyltd/vitana-platform/pull/4905
+Next: reviewer agent.
