@@ -1,0 +1,10 @@
+# VTID-05609 mt-schema-queue-followup-r2/migration-queue-rows — commands.log (worktree /projects/sandbox/wt-queue-rows, base origin/main 6dce15765b)
+$ node scripts/collab/queue.mjs claim mt-schema-queue-followup-r2/migration-queue-rows --session kiro-hotmail-202611061752-cc1f   -> claim ref pushed (pass)
+$ node scripts/collab/plan-driver.mjs heartbeat --slug mt-schema-queue-followup-r2 --session kiro-hotmail-202611061752-cc1f   -> ok (pass)
+$ git worktree add -b kiro/mt-schema-queue-followup-r2/migration-queue-rows ../wt-queue-rows origin/main   -> HEAD 6dce15765b (pass)
+$ gh api repos/exafyltd/vitana-platform/pulls/4850 --jq '.state,.merged'   -> open, false (rows 63-65 not on main; this lane adds none)
+$ node docs/validation/VTID-05609/outputs/queue-check.mjs --repo .   (BEFORE the queue edit) -> outputs/red-origin-main.txt: 3 pass, 7 fail (exit 1, fail as expected)
+$ (edit) docs/multitenancy/MIGRATION-QUEUE.md: rows 48-49 (05582), 50-53 (05573), 54-56 (05575); 05569 rows 51-52 -> 57-58; row 46, row 58 and the 05569/05506 notes renumbered; Notes bullets for 05582, 05573, 05575
+$ node docs/validation/VTID-05609/outputs/queue-check.mjs --repo .   (AFTER) -> outputs/green.txt: 10 pass, 0 fail, 61 rows (exit 0)
+$ grep for old numbers, every docs/validation file named in rows 48-56 exists   -> outputs/grep-stale.txt: no missing file; the single grep hit is the new row 52 ", #51" (VTID-05573 step 3 depends on #50, #51), not a stale reference
+$ grep Depends/Needs header lines of the 05573/05575 migrations   -> outputs/headers.txt (R2-F1: 053000 none, 053100 -> 051000, 053200 -> 053100 + 05582; no 05575 row names row 45)

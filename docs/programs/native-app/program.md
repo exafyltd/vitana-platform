@@ -6,6 +6,7 @@ priority: 3
 repos: [vitana-v1, vitana-platform]
 specs:
   - vitana-platform:native-eas-builds-r2
+  - vitana-platform:native-shell-fixes-r2
   - vitana-platform:native-wave2-ai-pages
   - vitana-platform:native-wave2-ai-pages-r2
   - vitana-platform:native-wave2-discover-commerce
@@ -29,6 +30,7 @@ specs:
   - vitana-platform:native-wave2-role-modes
   - vitana-platform:native-wave2-role-modes-r2
   - vitana-platform:native-wave2-sharing-business
+  - vitana-platform:native-wave2-sharing-business-r3
   - vitana-platform:native-wave2-wallet
   - vitana-platform:native-wave2-wallet-r2
 docs:
