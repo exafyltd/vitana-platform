@@ -1,0 +1,46 @@
+# VTID-05546 round 2 — M2 lane fleet's own test (not edited) against the edited host/fleet-manager-install.sh
+# 2026-11-05T22:39:14Z, node v22.23.4
+$ node --test scripts/eng/fleet-structure.test.mjs
+ok 1 - ASG vitana-eng-fleet: min 0, desired 0 (later changes ignored: the runner sets it), max fleet_max_instances, nothing else scales it
+ok 2 - ASG: AZRebalance suspended, scale-in protection on, capacity rebalance off, forced delete so protected machines cannot block a destroy
+ok 3 - ASG: mixed instances m6i, m6a, m5 and m5a .xlarge; spot share from fleet_spot_percent; the custom service-linked role
+ok 4 - fleet variables: documented defaults and validation; none of the M1 variables is declared again; every one has a default
+ok 5 - launch template: 100 GB encrypted gp3 with the M1 key, no public IP, IMDSv2 required with hop limit 1, the job group and the job profile
+ok 6 - the job instance profile has no policy of any kind, and nothing else uses its role
+ok 7 - job group: tcp 22 in from the manager group only; out only tcp 80, tcp 443 and DNS (tcp and udp 53, inside the VPC)
+ok 8 - manager group: nothing comes in; out only tcp 22 to the job group, tcp 80, tcp 443 and DNS
+ok 9 - no 0.0.0.0/0 or ::/0 ingress anywhere, no inline rules, no legacy rule resources, only the two fleet groups exist
+ok 10 - manager machine: t3.medium in a private subnet, no public IP, IMDSv2 hop limit 1, encrypted root with the M1 key, its own group and profile
+ok 11 - manager starts only after the group exists, so a failed image build leaves no manager and no group
+ok 12 - manager user data: env file, the installer, output to /var/log/vitana-bootstrap.log; carries no secret
+ok 13 - manager role: exactly the actions of plan 3.2 and nothing more
+ok 14 - IAM in the fleet files: no wildcard action, a wildcard resource only where the plan names one, no broad managed policy, policies are data documents
+ok 15 - cache bucket vitana-engineering-ci-cache-<account>: SSE-KMS with the M1 key, 7-day expiry, public access blocked, TLS only, no versioning
+ok 16 - runner-token secret: the plan name, the M1 key, created empty (no secret version), no other secret
+ok 17 - quota check: both Standard vCPU quotas are read and compared with fleet_max_instances x 4; the failure prints the exact increase commands
+ok 18 - Auto Scaling and Spot can use the M1 key: custom-suffix service-linked role plus one grant each (the default key policy lets neither in)
+ok 19 - image: Image Builder component, recipe, infrastructure configuration and image; the AMI is encrypted and a failed build stops the apply
+ok 20 - image build machine: private subnet, the job group, IMDSv2 hop 1, terminated on failure; its role is separate from the job role
+ok 21 - component: Docker Engine, EC2 Instance Connect, ubuntu in group docker, both images pre-pulled, no runner binary, a test phase
+ok 22 - outputs carry names and ids, never a secret value; no key pair, no stored SSH key, no secret version anywhere in the fleet files
+ok 23 - every resource and data source the fleet files take from M1 exists in main.tf, and the fleet files add no name main.tf already has
+ok 24 - installer: bash, no xtrace, no Docker on the manager, pinned runner held back, plugin installed with gitlab-runner fleeting install
+ok 25 - installer waits for a glrt- token in the fleet secret before it writes config.toml, and never prints the token
+ok 26 - the env file Terraform writes defines every variable the installer reads
+ok 27 - config.toml (rendered): docker-autoscaler, plugin aws, one job per machine, max_instances = concurrent = fleet_max_instances, idle 0 for 10m0s
+ok 28 - config.toml (rendered): job containers are not privileged, no Docker socket, images pulled only when missing
+ok 29 - config.toml (rendered): cache in the S3 bucket of the account, SSE-KMS with the M1 key, regional endpoint, instance-profile credentials
+ok 30 - config.toml (rendered): every size comes from the inputs: max_instances and concurrent move together, idle_count follows fleet_idle_count
+ok 31 - config.toml (rendered): the token appears once, in the runner section, and nowhere else
+ok 32 - rendering fails closed: a bad size, token, bucket, key or name prints no config and exits non-zero without echoing the token
+ok 33 - the installer and the component pass the syntax checks the lane can run: bash -n, and the yaml is plain
+ok 34 - RUNBOOK-m2-fleet: quota commands, the apply, what to read when a job waits, how to drain, the monthly cost estimate
+ok 35 - names agree across the files: group, secret, bucket, region, images
+ok 36 - installer, run against stub commands: waits for the token, installs the pinned runner, writes config.toml private, installs the plugin, restarts, prints no token
+ok 37 - installer, run against stub commands: no token means no config.toml, no plugin, a non-zero exit and a plain message
+ok 38 - installer, run against stub commands: a secret value that is not a runner token is waited out, never written
+# tests 38
+# pass 38
+# fail 0
+# cancelled 0
+# skipped 0

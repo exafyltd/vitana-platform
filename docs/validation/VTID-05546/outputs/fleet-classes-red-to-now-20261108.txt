@@ -1,0 +1,20 @@
+# VTID-05546 fleet-classes-structure.test.mjs, 2026-11-08 (session kiro-exafy-202611081113-5a2e)
+## RED: WIP head adf7fffd7f (same test code, run from a temp copy in scripts/eng)
+not ok 14 - seccomp and AppArmor unconfined only for the build class's BuildKit service: no job container of any class loses either profile
+not ok 16 - a class renders only with its token; a wrong class input refuses the whole config, names the input and never echoes a token
+not ok 17 - installer with the class env file of step A2: reads each class token once after the untrusted one, renders the classes that have one, leaves the others off, prints no token
+not ok 18 - installer: a class token secret outside vitana/engineering/gitlab/ is never read, and a value that is not a runner token is never written
+# tests 21
+# pass 17
+# fail 4
+
+## NOW: this branch after the fixture fixes (node exit 1)
+not ok 14 - seccomp and AppArmor unconfined only for the build class's BuildKit service: no job container of any class loses either profile
+# tests 21
+# pass 20
+# fail 1
+
+## Failing test 14 cause (not fixed in this lane: build-image jobs in platform-delivery.gitlab-ci.yml are outside the lane paths)
+    platform-delivery.gitlab-ci.yml build-image:gateway: the BuildKit daemon runs only on the build class
+    + actual - expected
+    
