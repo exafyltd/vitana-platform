@@ -46,6 +46,7 @@ specs:
   - vitana-platform:e2e-autonomy
   - vitana-platform:step-order-gate
   - vitana-platform:sv-05308-coverage
+  - vitana-platform:mt-local-stack-replay-skips-r1
   - vitana-platform:kiro-web-parity
   - vitana-platform:kiro-web-reliability
   - vitana-platform:plan-spar-stuck-session
@@ -129,3 +130,4 @@ belong to none of the named programmes are listed here until the owner assigns t
 - `vitana-platform:ci-dockerhub-mirror` — vitana-v1 PR CI pulls its Postgres service image from Docker Hub, not the capped ECR Public mirror
 - `vitana-platform:review-survives-main-merge` — a reviewer-agent accept stays current across a clean, conflict-free merge of `main` into the PR (`land-guard.mjs`, collaboration §3)
 - `vitana-platform:staging-verify-manifest-repair` — repair the 14 stale change suites failing the nightly full gateway STAGING-VERIFY (console probes, PM mode, collab ref, recall shadow, locale-coverage investigation) and a manifest drift guard
+- `vitana-platform:mt-local-stack-replay-skips-r1` — list the two VTID-05579 migrations PGlite cannot replay so the MT local stack gate is green on main
