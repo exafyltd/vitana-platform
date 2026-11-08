@@ -1,6 +1,6 @@
 ---
 lane: migration-queue-rows
-state: verified
+state: done
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -9,7 +9,7 @@ reviewer_seat: agent:vitana-lane-reviewer
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 paths:
   - docs/multitenancy/MIGRATION-QUEUE.md
-updated: 2026-11-08T13:00Z
+updated: 2026-11-08T13:05Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05609
 ---
@@ -52,3 +52,6 @@ PR https://github.com/exafyltd/vitana-platform/pull/4854. Reviewed on head `9c78
 merge: bbdaa8646ffe399ec07499050ad9868642a49e50 (exafyltd/vitana-platform#4854)
 authority: §7b PM rule. Squash merge by land-guard; `land-guard review` ok, `land-guard checks` green (11 checks), PR up to date. No lane code changed after the accept.
 The change is docs only (MIGRATION-QUEUE.md rows 48-58 and validation evidence). Next: the `done` record.
+
+### 2026-11-08T13:05Z · kiro-hotmail-202611061752-cc1f · verified → done
+This lane deploys nothing: docs and tests only. No staging deploy follows from the merge (bbdaa8646f), so there is no STAGING-VERIFY run for it; it is done at merge with green checks (11 green).
