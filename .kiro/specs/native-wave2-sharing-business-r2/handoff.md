@@ -3,11 +3,13 @@ slug: native-wave2-sharing-business-r2
 author: kiro
 executor: kiro
 next_actor: kiro
-state: drafted
+state: approved
 author_seat: exafyltd
-updated: 2026-11-01T17:10Z
+updated: 2026-11-08T11:34Z
 spar_refs:
   - exafyltd/vitana-v1: main
+sparring_record: .kiro/specs/native-wave2-sharing-business-r2/sparring/verdict.md
+vtids: [VTID-05624, VTID-05625]
 ---
 # Handoff — Native Wave 2: Sharing / Business hub screen ports
 Wave 2 screen-port batch of the native Maxina app program (`docs/programs/native-app/NATIVE-APP-PLAN.md`,
@@ -21,3 +23,6 @@ Re-plan of `native-wave2-sharing-business` (PR #4349) under a new slug; the old 
 ## Log
 ### 2026-11-01T17:10Z · kiro-exafyltd-202611011658-9f52 · created → drafted
 Holder of the `native-wave2-sharing-business-r2/_plan` claim. Re-plan of `native-wave2-sharing-business` (PR #4349), because the old branch has commits without Collab trailers (and lane files with an empty `vtid:` key, which made CI PLAN-SPAR allocate 0 VTIDs). Copied the plan, tasks, requirements, design and lane files from the old PR head; lane `vtid` keys removed (CI allocates on convergence), lane `paths` widened to the shared native-infra files a screen port produces, lane logs restarted, sparring rounds left on the old PR. One commit, one session. No VTID allocated, no product code changed, no live system touched. Next: PLAN-SPAR spars the `plan(native-wave2-sharing-business-r2)` PR; this session answers each round in `sparring/responses-<n>.md`.
+
+### 2026-11-08T11:34Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 2 lane(s) got a VTID and are handed to Kiro.
