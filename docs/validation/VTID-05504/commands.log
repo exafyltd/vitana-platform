@@ -1,0 +1,3 @@
+# VTID-05504 commands run in the sandbox (no live system touched; curl is a stub in the test)
+git fetch --prune origin; worktree from origin/main d7c1d9668a
+jest --config .tools/jest/jest.05504.config.js (origin/main workflow, before the edit)   -> outputs/jest-red-origin-main.txt (RED: 13 failed, 1 passed)
