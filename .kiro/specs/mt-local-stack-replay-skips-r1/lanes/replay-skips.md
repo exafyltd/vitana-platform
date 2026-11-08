@@ -61,3 +61,8 @@ authority: §7b PM rule. Squash merge by land-guard; `land-guard review` ok, `la
 Next: the `done` record.
 
 ### 2026-11-08T15:39Z · kiro-hotmail-202611061752-cc1f · verified → done
+
+### 2026-11-08T15:43Z · kiro-hotmail-202611061752-cc1f · done (note)
+Deploys nothing: the change only adds two entries to the MT local stack skip list. No service, workflow or migration changed.
+Post-merge proof: MT-LOCAL-STACK push run on main commit e5cc3a7049 succeeded: https://github.com/exafyltd/vitana-platform/actions/runs/42495568853 (the two runs before it on main were red).
+Next: release the claim.
