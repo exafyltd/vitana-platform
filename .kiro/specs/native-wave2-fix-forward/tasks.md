@@ -10,10 +10,16 @@ ends with: `npm run typecheck`, `npm test`, `APP_PROFILE=development npm run bun
 `VTID-xxxxx (native-wave2-fix-forward/<lane>): …`, trailers `Collab-Session: <kiro id>`,
 `Collab-Lane: native-wave2-fix-forward/<lane>`; lane → `in-review`. No merge, deploy or live write.
 
+**Precedence (round 1):** where a lane file's "waits for open PR" / "Measured on `aac65bfeb`" text differs from this file or
+`plan.md`, this file and `plan.md` win: #1573, #1575, #1565, #1553, #1584 are merged on main (checked on `a763b4f01`),
+#1566 closed unmerged. Lane files are not edited on the `plan(` PR (one commit lane per file); each lane's owner updates its
+lane file in its own lane PR.
+
 <!-- lane: utility-bar -->
 ## Lane `utility-bar` · executor Kiro · seat exafyltd → reviewer_seat agent:vitana-lane-reviewer
-depends_on: none in this plan; waits for vitana-v1 #1573 (VTID-05510), #1575 (VTID-05511), #1565 (VTID-05461) and
-#1566 (VTID-05460, stacked on #1565) to merge.
+depends_on: none in this plan. vitana-v1 #1573 (VTID-05510), #1575 (VTID-05511) and #1565 (VTID-05461) are merged on
+main (checked on `a763b4f01`); #1566 (VTID-05460) closed unmerged, so there is no autopilot bar copy to touch. Start from
+latest `origin/main`.
 
 - [ ] 1. Red tests `tests/utility-bar/bar.test.tsx`: slot order children → Life Compass → Gift Voucher → after →
   trailing; Gift Voucher absent with `Platform.OS = 'ios'`; Life Compass and Gift Voucher emit their bus events
@@ -34,8 +40,8 @@ depends_on: none in this plan; waits for vitana-v1 #1573 (VTID-05510), #1575 (VT
 - [ ] 5. Remove the copies (design §1.5): discover, marketplace-orders and journey bars emit `gift-voucher:open`; delete
   `marketplace-orders/VoucherModal.tsx` and `journey/VoucherModal.tsx`; drop voucher functions left without a caller;
   point `tests/discover-commerce/voucher.test.tsx` and `tests/journey/voucher.test.tsx` at the shared modal with every
-  case kept. `git grep -n "VoucherModal" src` shows only `src/shell/utility/` and `OverlayHost.tsx`. If one of #1575 /
-  #1565 closed unmerged, its copy does not exist: skip it and log it.
+  case kept. `git grep -n "VoucherModal" src` shows only `src/shell/utility/` and `OverlayHost.tsx`. A copy that does not exist on
+  main (the #1566 autopilot copy) is skipped and logged.
 - [ ] 6. Verify and PR (header).
 
 **Acceptance (the reviewer agent checks these):**
@@ -67,8 +73,13 @@ depends_on: none.
   `{ topicId: 't1', reason }` once; idle 45 s after audio → `idle_after_lesson`; 5 min → `backstop_timeout`; no idle fire
   before any audio; close after audio → `overlay_closed_after_delivery`; a second trigger after the first is ignored;
   `OrbProvider` emits `vitana:guided-topic-teaching-complete` on the overlay bus.
-- [ ] 4. `orb-controller.ts`, `session.ts`, `OrbProvider.tsx` (design §2). Task 3 green; `tests/orb/**` unchanged and
-  green.
+- [ ] 4. `session.ts`: in the directive handler (`:355-358`) branch on the directive string; only
+  `end_guided_topic_teaching` first calls the optional dep `onGuidedTopicTeachingEnd(topic_id, reason)`, then drains and
+  ends as today; `end_conversation` / `end_teaching_session` unchanged (test: they emit nothing). `orb-controller.ts`:
+  new native logic, not present today: the per-topic record, idle clock, the 5 s check with the 45 s idle-after-audio
+  and 5 min ceiling backstops, the close-after-audio trigger, and the single `reportTeachingEnd(reason)` emitter with the
+  once-per-topic guard shared by all three triggers. `OrbProvider.tsx` emits the bus event. Task 3 green; `tests/orb/**`
+  unchanged and green.
 - [ ] 5. Verify and PR (header).
 
 **Acceptance (the reviewer agent checks these):**
@@ -88,12 +99,15 @@ depends_on: none.
 
 <!-- lane: public-entry -->
 ## Lane `public-entry` · executor Kiro · seat exafyltd → reviewer_seat agent:vitana-lane-reviewer
-depends_on: none in this plan; waits for vitana-v1 #1553 (VTID-05451) to merge.
+depends_on: none in this plan. vitana-v1 #1553 (VTID-05451) is merged on main (checked on `a763b4f01`).
 
-- [ ] 1. Red test `tests/public-entry/invite-cold-start.test.ts`: a router created signed out receives `/i/ABC123`
-  before `attachNavigator`; on attach the navigator gets `/i/ABC123`; a warm link navigates at once; the auth-port
-  handler still receives `{ kind: 'invite', code: 'ABC123' }`. Red on base (no navigation).
-- [ ] 2. `src/linking/link-router.ts` invite navigation (design §3). Task 1 green; `tests/g1-smoke/deep-link.test.ts`
+- [ ] 1. Red test `tests/public-entry/invite-cold-start.test.ts`: a router created with `isSignedIn: () => false`
+  receives `/i/ABC123` before `attachNavigator`; on attach the navigator gets `/i/ABC123` while still signed out (this
+  is the sign-in-hold bypass); a warm link navigates at once; the auth-port handler still receives
+  `{ kind: 'invite', code: 'ABC123' }`; a non-invite link still waits for sign-in (`held` / `flush()` unchanged). Red
+  on base (no navigation).
+- [ ] 2. `src/linking/link-router.ts` invite navigation (design §3): separate `heldPublic` slot and `flushPublic()`
+  without the `isSignedIn()` check, called by `case 'invite'` and by `attachNavigator`; `held`/`flush()` untouched. Task 1 green; `tests/g1-smoke/deep-link.test.ts`
   and `tests/resolve-link.test.ts` unchanged and green.
 - [ ] 3. Red test `tests/public-entry/landing.test.tsx`: `/` signed out renders the storefront; signed in redirects to
   `/home`; loading shows the loader. Then `app/index.tsx` (design §3); move the signed-out case of
@@ -119,7 +133,9 @@ depends_on: none in this plan; waits for vitana-v1 #1553 (VTID-05451) to merge.
 ## Lane `test-timeouts` · executor Kiro · seat exafyltd → reviewer_seat agent:vitana-lane-reviewer
 depends_on: none.
 
-- [ ] 1. Red test `tests/test-timeouts/harness.test.ts` (design §4). Red on base for all four helpers.
+- [ ] 1. Before editing, grep `tests/{memory,diary,community,ui}` for `configure(` and `jest.setTimeout(` and record the
+  (expected empty) result in `commands.log`; any hit is reconciled in that file's helper, not overridden. Red test
+  `tests/test-timeouts/harness.test.ts` (design §4). Red on base for all four helpers.
 - [ ] 2. Add `configure({ asyncUtilTimeout: 5000 })` and `jest.setTimeout(30000)` to `tests/memory/helpers.tsx`,
   `tests/diary/helpers.tsx`, `tests/community/helpers.tsx`, `tests/ui/helpers.tsx`. Task 1 green.
 - [ ] 3. Run `npx jest tests/memory tests/diary tests/community tests/ui` three times with default workers and record
@@ -163,8 +179,8 @@ depends_on: none.
 
 <!-- lane: screen-backfill -->
 ## Lane `screen-backfill` · executor Kiro · seat exafyltd → reviewer_seat agent:vitana-lane-reviewer
-depends_on: [orb-guided-topic]; waits for vitana-v1 #1565 + #1566 (journey), #1584 (VTID-05521, AI key sheet) and
-#1573 (discover) to merge.
+depends_on: [orb-guided-topic]. vitana-v1 #1565 (journey), #1584 (VTID-05521, AI key sheet) and #1573 (discover) are
+merged on main (checked on `a763b4f01`); #1566 closed unmerged and is not needed (`seams.ts` is on main from #1565).
 
 - [ ] 1. Red test `tests/screen-backfill/journey-bridge.test.tsx`: with no provider, `useActivateOrb()('t1')` calls
   `controller.focusGuidedTopic('t1')`; emitting `vitana:guided-topic-teaching-complete` reaches the catalog's handler;
@@ -175,8 +191,8 @@ depends_on: [orb-guided-topic]; waits for vitana-v1 #1565 + #1566 (journey), #15
   product drawer; add-to-cart; back → `/discover`; 11 locales without missing keys. Then
   `app/(app)/discover/ai-picks.tsx`, `src/screens/ai-picks/**`, `resolve.ts`, and move
   `tests/discover-commerce/ai-picks-cold-start.test.tsx` to the new route (design §6).
-- [ ] 4. Fallback per dependency: #1565/#1566 closed unmerged → skip task 1; #1584 → skip task 2; #1573 → skip task 3;
-  log each.
+- [ ] 4. Dependencies are merged (see header); if a file the task edits has changed on main, re-read it first. Log any
+  skipped task.
 - [ ] 5. Verify and PR (header).
 
 **Acceptance (the reviewer agent checks these):**

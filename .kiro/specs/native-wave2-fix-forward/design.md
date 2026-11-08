@@ -85,8 +85,11 @@ voice "open life compass" (registry `screens.json:3744`) starts working once thi
   `:4038`). A 5 s interval checks `idle ≥ 45 000 ms && audioDelivered` → `idle_after_lesson`, or
   `elapsed ≥ 300 000 ms` → `backstop_timeout`. `close()` after `audioDelivered` → `overlay_closed_after_delivery`
   (deferred one tick, widget `:5602-5605`). The guard `ended` makes each topic fire once (widget `:5451`).
-- `session.ts:355-358`: for `end_guided_topic_teaching` the session first calls a new dep
-  `onGuidedTopicTeachingEnd(msg.topic_id ?? null, msg.reason ?? null)`, then drains and ends as today.
+  All three triggers call one `reportTeachingEnd(reason)` on the controller (the single emitter and the once guard), so a
+  directive followed by a timer or a close fires once. The idle clock, the 5 s check and both backstops are new native
+  logic (task 4), not a re-statement of the widget lines.
+- `session.ts:355-358`: the handler branches on the directive string; only for `end_guided_topic_teaching` the session first calls a new dep
+  `onGuidedTopicTeachingEnd(msg.topic_id ?? null, msg.reason ?? null)`, then drains and ends as today; `end_conversation` and `end_teaching_session` are unchanged.
 - `OrbProvider.tsx`: `onGuidedTopicTeachingEnd: (topicId, reason) => overlayBus.emit('vitana:guided-topic-teaching-complete', { topicId, reason })`
   (web event name, `useOrbVoiceWidget.ts:292-294`).
 - Constants live next to the existing ORB constants with their widget line in a comment, so the ORB parity check can
@@ -108,7 +111,8 @@ voice "open life compass" (registry `screens.json:3744`) starts working once thi
   heldPublic = `/i/${encodeURIComponent(link.code)}`;
   flushPublic();   // navigate now if a navigator is attached; attachNavigator() also calls flushPublic()
   ```
-  `flushPublic` has no `isSignedIn()` gate (the web route has no `AuthGuard`, `src/App.tsx:877`). `InviteLandingScreen`
+  `held`/`flush()` stay as they are (they require `isSignedIn()`, `link-router.ts:44-50`, and `session` starts `null`,
+  `auth-port.ts:55`); the invite takes the separate `heldPublic` slot. `flushPublic` has no `isSignedIn()` gate (the web route has no `AuthGuard`, `src/App.tsx:877`). `InviteLandingScreen`
   (#1553) reads the route param and also receives the delivered link (`auth-port.ts` keeps it until the screen
   registers), and it remembers the code once (`rememberInviteCode` is idempotent for the same code).
 - `ledger.json`: `PUBLIC.LANDING` → `status: native`, `last_parity_check` set by the ledger script; remove the `/`

@@ -17,8 +17,21 @@ client; and a dedicated `/discover/ai-picks` screen. Owner instruction: "continu
 session `kiro-exafyltd-202611011658-9f52`, which holds the `native-wave2-fix-forward/_plan` claim). The follow-ups
 come from the driver tracker entries of 2026-11-02 (shell, ORB, public, tests, connectors, platform).
 
-## Today (vitana-v1 origin/main `aac65bfeb`)
-Every follow-up below was re-measured on this commit. None is fixed on main, so none is dropped.
+## Today (vitana-v1 origin/main `a763b4f01`)
+Every follow-up below was measured on `aac65bfeb` and **re-checked on `a763b4f01` for sparring round 1**: none is fixed
+on main, so none is dropped. The line numbers below are from `aac65bfeb`; a lane re-reads a file on main before editing
+it. What changed since: **#1573, #1575, #1565, #1553, #1584 and #1562 have merged** (their files below are now on main,
+not in open PRs); **#1566 (autopilot-audiobook) closed unmerged** and **#1567 (vitana-index-biology) is still open**.
+On main now: `screens/{discover,marketplace-orders,journey}/UtilityBar.tsx` and `VoucherModal.tsx`,
+`screens/discover/LifeCompassPopup.tsx`, `screens/health/HealthUtilityBar.tsx` (+ `events.ts`),
+`screens/journey/seams.ts` (no-op bridge, `:49-63`), `screens/public/{PublicLandingScreen,InviteLandingScreen}.tsx`
+(landing still "Not mounted yet"), `screens/ai-assistants/AIAssistantConnectSheet.tsx`, `app/(public)/i/[code].tsx`,
+`tests/discover-commerce/ai-picks-cold-start.test.tsx` and the `/discover/ai-picks` alias comment in
+`navigation/resolve.ts:65`. Still absent on main: `src/shell/utility/`, any `vitana:open-life-compass` /
+`gift-voucher:open` listener (`OverlayHost.tsx:10-21` is unchanged), `guided_topic_id`, `focusGuidedTopic`, an
+analytics client, a `/discover/ai-picks` route, a `/` storefront (`app/index.tsx` and `PUBLIC.LANDING` `not_started` at
+`ledger.json:1841-1847` unchanged), and the Connectors AI-key sheet (`ConnectorsScreen.tsx:181-183` unchanged). Home and
+Daily Diary still carry the deferral comments (`HomeScreen.tsx:16`, `DailyDiaryScreen.tsx:15`).
 
 1. **Utility bar.** The mobile-web bar is `UtilityActionButton` (`src/components/ui/utility-action-button.tsx`): page
    children → Life Compass → Gift Voucher (hidden when `isIAPRestricted()`, `:43`) → `afterGiftVoucherChildren` →
@@ -27,7 +40,7 @@ Every follow-up below was re-measured on this commit. None is fixed on main, so 
    on Daily Diary (`src/pages/MobileDailyDiary.tsx:86-108`: search, mode pill, calendar; then the two chips). Home is
    always the non-spotlight branch on a phone (`src/hooks/useSpotlightEnabled.ts:50`). Native main has no utility bar:
    `HomeScreen.tsx:16-21` and `DailyDiaryScreen.tsx:15-20` document the deferral and render only `MobileModePill`
-   (`HomeScreen.tsx:276`, `DailyDiaryScreen.tsx:79`). Four open lane PRs each build their own bar:
+   (`HomeScreen.tsx:276`, `DailyDiaryScreen.tsx:79`). Four lane PRs built their own bars (#1573, #1575, #1565 and #1562 are merged on main; #1566 and #1567 carry copies but #1566 is closed unmerged and #1567 is open):
    `screens/discover/UtilityBar.tsx` (#1573), `screens/marketplace-orders/UtilityBar.tsx` (#1575),
    `screens/journey/UtilityBar.tsx` (#1565, also in #1566), `screens/health/HealthUtilityBar.tsx` (#1562, also in #1567).
 2. **ORB guided topic.** Native `buildStartPayload` has no guided-topic field (`apps/mobile/src/orb/protocol.ts:239`,
@@ -72,8 +85,8 @@ Every follow-up below was re-measured on this commit. None is fixed on main, so 
    with `source: "web"` at `:251`) and a `screen_viewed` event per route change from `src/components/AnalyticsTracker.tsx:60-70`
    (mounted at `src/App.tsx:782`). The gateway schema accepts `source` `ios` and `android`
    (vitana-platform `services/gateway/src/routes/product-analytics.ts:68`). Web also posts `/api/v1/analytics/celebrate`
-   from `celebrate()` (`src/lib/celebrate.ts:130-180`); native main has no `celebrate()` caller, so that post has no
-   native source yet (decision 8).
+   from `celebrate()` (`src/lib/celebrate.ts:130-180`); the only native celebrate post is the journey-local `screens/journey/celebrate.ts` (`POST /api/v1/analytics/celebrate`,
+   VTID-05461), so a shared native `celebrate()` does not exist and is not part of this plan (decision 8).
 9. **AI picks.** Web `/discover/ai-picks` renders `AIPicksPage` (`src/App.tsx:1034-1038`; phone layout in the non-spotlight
    return of `src/pages/discover/AIPicksPage.tsx:303-437`, `isMobile` at `:312`, `:316`, `:369`). Native main has no route; #1573 aliases the path to
    `/discover?tab=suggested` in `src/navigation/resolve.ts:52-55` and tests it in
@@ -83,9 +96,11 @@ Every follow-up below was re-measured on this commit. None is fixed on main, so 
 ## Decisions
 1. **Six lanes, disjoint `paths`** (table below). `apps/mobile/src/orb/**` is only in `orb-guided-topic`. No file is in
    two lanes.
-2. **Open-PR dependencies stay explicit.** A lane opens its PR only after the vitana-v1 PRs it builds on have merged:
-   `utility-bar` waits for #1573, #1575, #1565 (+ stacked #1566); `public-entry` for #1553; `screen-backfill` for #1565
-   (+ #1566), #1584 and #1573. `depends_on` lists only lanes of this plan; each lane file names its PRs. **Fallback:** if
+2. **Dependencies are re-checked against main.** #1573, #1575, #1565, #1553, #1584 and #1562 are merged, so
+   `utility-bar`, `public-entry` and `screen-backfill` have no open-PR wait left except the stacked #1566, which closed
+   unmerged: its autopilot/audiobook bar copy does not exist on main, so `utility-bar` has no #1566 file to delete (the
+   journey `VoucherModal.tsx` arrived with #1565). #1567 (open) is not a dependency: `screens/health/HealthUtilityBar.tsx`
+   is on main from #1562, and if #1567 merges first its bar is left as it is (it already emits the bus events). `depends_on` lists only lanes of this plan; each lane file names its PRs. **Fallback:** if
    one of those PRs closes without merging, the lane drops only the task that needs it, keeps the rest, and logs it.
 3. **One utility bar, one voucher modal, one Life Compass popup** under `apps/mobile/src/shell/utility/`. The discover
    copies (the most complete: Life Compass popup and its data hook exist only there) move there; the marketplace and
@@ -100,13 +115,34 @@ Every follow-up below was re-measured on this commit. None is fixed on main, so 
    topic on the directive (`orb-widget.js:3908-3921`), the idle/ceiling backstop (45 s idle after audio, 5 min ceiling,
    checked every 5 s: `:5407-5408`, `:5432`, `:6349-6355`) or close after audio was delivered (`:5602-5605`), and is
    emitted on the overlay bus as `vitana:guided-topic-teaching-complete` `{ topicId, reason }`, the web event name.
+   **Implementation split (R1-F2):** (a) the session's directive handler (`session.ts:355-358`, today one branch for all
+   of `SESSION_END_DIRECTIVES`) compares the directive string and, only for `end_guided_topic_teaching`, first calls the
+   new optional dep `onGuidedTopicTeachingEnd(topic_id, reason)`, then drains and ends as today; `end_conversation` and
+   `end_teaching_session` take exactly today's path (a test pins that they emit nothing). (b) The idle (45 s) and
+   ceiling (5 min) backstops, the 5 s check, the idle clock and the close-after-audio trigger have no native
+   counterpart today: they are **new native logic** written in `orb-controller.ts` (explicit task 4 in `tasks.md`), not a
+   restatement of widget lines. (c) One controller `reportTeachingEnd(reason)` is the single emitter for all three
+   triggers and holds the once-per-topic guard, so a directive followed by a timer or a close fires once.
    Journey's bridge (`seams.ts`) is wired in `screen-backfill`, not in the ORB lane.
 6. **Storefront at `/`, invites through the router.** `app/index.tsx` renders #1553's `PublicLandingScreen` for a
    signed-out user (signed in: `/home`, as today). The link router also navigates an invite link to `/i/<code>` as soon as
    the navigator is attached, with no sign-in hold (the route is public, `src/App.tsx:877`), and still delivers it to
-   the auth port. The ledger row `PUBLIC.LANDING` becomes `native`; the `/` entry leaves `native_only`.
+   the auth port. **Bypass mechanism (R1-F1):** the existing `held`/`flush()` pair is untouched, because `flush()` requires
+   `deps.isSignedIn()` (`link-router.ts:44-50`) and a cold-start signed-out user has `session === null`
+   (`auth-port.ts:55`). `dispatch` `case 'invite'` calls `deliverInviteLink(link)` and then sets a separate slot
+   `heldPublic = '/i/' + encodeURIComponent(code)` and calls `flushPublic()`, which navigates when a navigator is attached
+   and has no sign-in check; `attachNavigator` calls `flushPublic()` as well as `flush()`. Latest invite wins; the slot
+   is cleared when it navigates. The red test builds a router with `isSignedIn: () => false`, delivers `/i/ABC123`
+   before `attachNavigator`, and asserts the navigator receives `/i/ABC123` on attach (and at once for a warm link). The ledger row `PUBLIC.LANDING` becomes `native`; the `/` entry leaves `native_only`.
 7. **Timeouts in each folder's `helpers.tsx`**, the settings pattern (`asyncUtilTimeout: 5000`, `jest.setTimeout(30000)`).
-   `jest.config.js` and `jest.setup.ts` are not touched.
+   `jest.config.js` and `jest.setup.ts` are not touched. **Conflict check (R1-F3), done on `a763b4f01`:** no file in
+   `tests/{memory,diary,community,ui}` calls `configure(` or `jest.setTimeout(` (the one `setTimeout` hit,
+   `memory/gateway-i18n.test.tsx:130`, is a plain `setTimeout(res, 0)` delay), so there is no per-test override to
+   conflict with. The two helpers that differ in shape (`community/helpers.tsx`, imports at `:10-17`; `ui/helpers.tsx`,
+   imports at `:2-9`) have no configure call today, and both are imported first-party by every test file of their folder
+   except `diary/app-config-plugins.test.ts` and `ui/tokens-contract.test.ts` (checked by listing imports). `configure`
+   is a module-global and `jest.setTimeout` is per test file, so the statements are placed right after the imports and
+   do not depend on import order. The lane re-runs the same grep before editing and records it in `commands.log`.
 8. **Analytics = `track()` + `screen_viewed`.** A native client with the web event shape, `source` = `Platform.OS`,
    consent and tenant hold as web, mounted once in `ShellRoot`. Call-site events (`track(...)` inside screens) and the
    celebrate post wait for the screens and the native `celebrate()` that would send them. No new endpoint.
