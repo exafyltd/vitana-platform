@@ -1060,6 +1060,7 @@ export type CicdEventType =
   | 'production.publish.failed'
   | 'production.publish.blocked'
   | 'production.publish.verification_overridden'
+  | 'production.publish.gate_skipped'
   | 'production.revert.completed'
   // Voice-first canary publish (added post-Phase 0). Sequence on a canary run:
   //   .requested   — operator clicked "Publish canary"; EXEC-DEPLOY dispatched

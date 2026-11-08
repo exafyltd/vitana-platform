@@ -1,0 +1,9 @@
+# VTID-05540 green on Node 20: the lane's test file on the final code, v20.20.2
+# $ node@20 --test scripts/eng/rehearse.test.mjs
+# tests 146
+# suites 0
+# pass 146
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0

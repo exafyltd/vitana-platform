@@ -1,6 +1,6 @@
 ---
 lane: reseat
-state: in-review
+state: done
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -18,10 +18,10 @@ paths:
   - .kiro/specs/agentic-delivery/lanes/github-bridge.md
   - .kiro/specs/agentic-delivery/lanes/gateway-delivery.md
   - .kiro/specs/agentic-delivery/lanes/cutover.md
-claimed_by: kiro-exafy-202611051218-d1d2
+claimed_by: kiro-exafy-202611071142-d7ed
 branch: kiro/agentic-delivery/reseat
 pr: https://github.com/exafyltd/vitana-platform/pull/4703
-updated: 2026-11-05T12:36Z
+updated: 2026-11-07T21:07Z
 vtid: VTID-05554
 ---
 # Lane `reseat`: give the eight lanes of this plan back to seat exafy (plan §9) through the reviewed lane_admin path
@@ -81,3 +81,13 @@ Findings: [non-blocking] CI could not be read here (gh pr view/checks: HTTP 400,
 Findings: [non-blocking] acceptance.md:71 misstates the PM rule: with a live driver heartbeat the PM never moves a ready lane (observe-live.ts:450, decide.ts:246); with a heartbeat older than 45 min the 2 h window (types.ts:390) runs from the target's updated: 02:59Z (observe-live.ts:446, kept by S2), so the next PM tick would move the still-ready targets off exafy again, as in #4688 (VTID-05421 does not change that). Keep the heartbeat under 45 min until builders claim them.
 Findings: [non-blocking] acceptance.md:19, :21, :70-71 and :81-84 cite lines of the base 3767d3d09d; on current main queue.mjs moved +34 after the validateRange hunk (#4377: :1062 → :1096, :1044 → :1078, :1015-1016 → :1049-1050) and decide.ts moved from :248 on (VTID-05421, brought in by 883cc980). Fine as base-pinned evidence.
 Next: the land step merges under §7b once land-guard.mjs merge shows every required check green on the merged head.
+
+### 2026-11-07T21:07Z · kiro-exafy-202611071142-d7ed · stale claim broken; closing record (owner instruction)
+The owner instructed (2026-11-07) to finish the GitLab migration. The builder's claim was older than 24 h with no new commit and was released with --stale. PR #4703 merged as 49cff4a9df with the reviewer-agent accept above in this log; this entry only writes the closing record.
+
+### 2026-11-07T21:07Z · kiro-exafy-202611071142-d7ed · in-review → verified
+merge: 49cff4a9df9b78776b61c019acd9a1f73c482313 (exafyltd/vitana-platform#4703)
+authority: §7b PM rule (the accept in this log; the PR was merged earlier without a closing record).
+
+### 2026-11-07T21:07Z · kiro-exafy-202611071142-d7ed · verified → done
+Closed.

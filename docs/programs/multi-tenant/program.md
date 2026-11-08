@@ -20,6 +20,7 @@ specs:
   - vitana-platform:mt-track-s-authz
   - vitana-platform:mt-track-s-r2
   - vitana-platform:mt-guardrails-r2
+  - vitana-platform:mt-schema-queue-followup-r2
 docs:
   - vitana-platform:docs/MULTI-TENANT-PLAN.md
   - vitana-platform:.kiro/specs/multi-tenant/plan-sparring.md
