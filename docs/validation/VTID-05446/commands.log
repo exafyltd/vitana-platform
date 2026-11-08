@@ -1,0 +1,7 @@
+# VTID-05446 (mt-guardrails-r2/isolation-suite), session kiro-hotmail-202611061752-cc1f, base origin/main d38dbe72d6
+$ bash scripts/ci/sql-tests/run-mt-isolation-test.sh   # on origin/main: runner absent -> outputs/red-on-base.txt (No such file, exit 127)
+$ bash scripts/ci/sql-tests/run-mt-isolation-test.sh   # lane head -> outputs/green.txt (44 run, 0 failed, 14 UNVERIFIED, last line PASS mt-isolation)
+$ bash scripts/ci/sql-tests/run-mt-isolation-test.sh --strict   # -> outputs/strict.txt (58 run, 14 failed, exit 1)
+$ bash scripts/ci/sql-tests/run-mt-isolation-test.sh --self-test   # -> outputs/self-test.txt (exit 0)
+$ PGHOST=db.abc.supabase.co bash scripts/ci/sql-tests/run-mt-isolation-test.sh   # -> outputs/guard.txt (exit 2)
+$ node docs/validation/VTID-05446/mutations.mjs   # -> outputs/mutations.txt (6 mutations, every one red; baseline green)
