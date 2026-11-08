@@ -51,7 +51,7 @@ ownership (§8 decision 5). The store submissions themselves are performed by th
    middleware (lane `client-identity-store`, `services/gateway/src/middleware/client-identity.ts`, using the pure
    classifier of lane `client-identity-gateway`; mounted once in `src/index.ts` after
    `delegatedTokenGuard()`, line 640) classifies every request: a well-formed `X-Vitana-Client: native/...` is
-   `native`, anything else (missing, malformed) is `web`. For an authenticated request it records one row per
+   `native`, anything else (missing, malformed) is `web`. **Mechanism (sparring R1-F1, R1-F2):** authentication is per route (`req.identity` is set by the route-level middleware of `auth-supabase-jwt.ts`, for example lines 422, 453, 775, 859), so at the global mount point `req.identity` is not yet set. The middleware therefore (a) sets `X-Vitana-Client-Class` synchronously with `res.setHeader` before `next()`, so it is present on every response including errors, and (b) registers `res.on('finish')` and reads `req.identity` there, after the route chain has run; it records one row only when `req.identity` is then set (`user_id`, `tenant_id`), otherwise nothing. No JWT is decoded or verified in the middleware. For an authenticated request it records one row per
    (day, member, class) in a new table `client_identity_daily_seen`. The `appilix` class is **derived per member**,
    not per request: a member is `appilix` when they hold an un-revoked `user_device_tokens` row whose `device_label`
    starts `Appilix ` (the label the wrapper registers, `vitana-v1:src/lib/pushNotifications.ts:284`; the existing

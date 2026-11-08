@@ -70,8 +70,9 @@ Acceptance:
 ## Client identity — gateway side (middleware, storage, adoption query)
 <!-- lane: client-identity-store -->
 - [ ] S1 Add `services/gateway/src/middleware/client-identity.ts` using `classifyClient`; mount it once in
-  `services/gateway/src/index.ts` after `delegatedTokenGuard()`. It sets `X-Vitana-Client-Class` on the response and,
-  when the request has an identity, records one (day, member, class) row on `res` finish, best effort, de-duplicated in
+  `services/gateway/src/index.ts` after `delegatedTokenGuard()`. It sets `X-Vitana-Client-Class` with `res.setHeader` before `next()` and,
+  when `req.identity` is set by the route-level auth by the time `res` emits `finish` (read there, never at mount time; no JWT decode in
+  the middleware), records one (day, tenant, member, class) row, best effort, de-duplicated in
   memory per instance, never failing or delaying the request.
 - [ ] S2 Add migration `supabase/migrations/<ts>_client_identity_daily_seen.sql` (table
   `client_identity_daily_seen(day, tenant_id, user_id, client_class)`, primary key on all four, RLS on with no policy, 35-day
