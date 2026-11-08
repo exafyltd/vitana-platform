@@ -1,6 +1,6 @@
 ---
 lane: provision-test-flags-subset
-state: verified
+state: done
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -9,7 +9,7 @@ reviewer_seat: agent:vitana-lane-reviewer
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 paths:
   - supabase/tests/vtid_05150_provision_tenant.test.sql
-updated: 2026-11-08T13:00Z
+updated: 2026-11-08T13:05Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05610
 ---
@@ -52,3 +52,6 @@ PR https://github.com/exafyltd/vitana-platform/pull/4856. Reviewed on head `7250
 merge: d132e0976e1cf0353d0d204afdee092076e26be9 (exafyltd/vitana-platform#4856)
 authority: §7b PM rule. Squash merge by land-guard; `land-guard review` ok, `land-guard checks` green (11 checks), PR up to date. No lane code changed after the accept.
 The change is tests and validation evidence only (supabase/tests/vtid_05150_provision_tenant.test.sql). Next: the `done` record.
+
+### 2026-11-08T13:05Z · kiro-hotmail-202611061752-cc1f · verified → done
+This lane deploys nothing: docs and tests only. No staging deploy follows from the merge (d132e0976e), so there is no STAGING-VERIFY run for it; it is done at merge with green checks (11 green).
