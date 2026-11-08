@@ -1,6 +1,6 @@
 ---
 lane: schema-entries
-state: ready
+state: verified
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -9,7 +9,7 @@ reviewer_seat: agent:vitana-lane-reviewer
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 paths:
   - DATABASE_SCHEMA.md
-updated: 2026-11-07T19:28Z
+updated: 2026-11-08T13:00Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05611
 ---
@@ -41,3 +41,14 @@ reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 PR: https://github.com/exafyltd/vitana-platform/pull/4855
 Findings: non-blocking: check runs could not be read from this session (gh GraphQL pass-through unsupported); the land step must confirm all required checks are green on this head. Re-review after merge of origin/main: PR's own diff vs origin/main is still only DATABASE_SCHEMA.md, the lane file and docs/validation/VTID-05611/**; DATABASE_SCHEMA.md and docs/validation/VTID-05611 are identical to the previously accepted head c592c53553; no protected file (CLAUDE.md, VTID-ALLOCATE.yml, plan-sparring SKILL.md) is in the PR's own diff; the VTID-05573 and VTID-05575 objects named in the doc match supabase/migrations on origin/main (052000 freeze file lines 52/54/74, 053100 guard file).
 Next: the land step merges under §7b once all required checks are green on this head
+
+### 2026-11-08T13:00Z · kiro-hotmail-202611061752-cc1f · ready → executing
+Built on branch kiro/mt-schema-queue-followup-r2/schema-entries; recorded here at the closing, because one transition per PR meant the PR carried no lane-state entry.
+
+### 2026-11-08T13:00Z · kiro-hotmail-202611061752-cc1f · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/4855. Reviewed on head `375cbc341e` (accept entry above, reviewer agent claude-sonnet-5.5).
+
+### 2026-11-08T13:00Z · kiro-hotmail-202611061752-cc1f · in-review → verified
+merge: 4c46ce7f0aacc53498df97f88faa0eb8e3008133 (exafyltd/vitana-platform#4855)
+authority: §7b PM rule. Squash merge by land-guard; `land-guard review` ok, `land-guard checks` green (11 checks), PR up to date. No lane code changed after the accept.
+The change is docs only (DATABASE_SCHEMA.md entries and validation evidence). Next: the `done` record.
