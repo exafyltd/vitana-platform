@@ -32,7 +32,8 @@ paths:
   - apps/mobile/tests/discover-commerce/voucher.test.tsx
   - apps/mobile/tests/journey/voucher.test.tsx
   - docs/validation/**
-updated: 2026-11-03T16:20Z
+updated: 2026-11-08T11:37Z
+vtid: VTID-05642
 ---
 # Utility bar — one shared bar, voucher modal and Life Compass popup; Home and Diary backfill; copies removed
 Plan: `.kiro/specs/native-wave2-fix-forward/` — `plan.md` (plan block) and the `tasks.md` section marked
@@ -51,3 +52,6 @@ Supabase/AWS, no test against production; the native app has no production profi
 ## Log
 ### 2026-11-03T16:20Z · kiro-exafyltd-202611011658-9f52 · ready
 Lane created with the plan.
+
+### 2026-11-08T11:37Z · ci-plan-spar · ready (VTID allocated)
+VTID-05642 allocated after policy approval (converged-auto-v1).

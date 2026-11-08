@@ -16,7 +16,8 @@ paths:
   - apps/mobile/tests/ui/helpers.tsx
   - apps/mobile/tests/test-timeouts/**
   - docs/validation/**
-updated: 2026-11-03T16:20Z
+updated: 2026-11-08T11:37Z
+vtid: VTID-05641
 ---
 # Test timeouts — per-folder wait budget for the memory, diary, community and ui suites
 Plan: `.kiro/specs/native-wave2-fix-forward/` — `plan.md` (plan block) and the `tasks.md` section marked
@@ -34,3 +35,6 @@ Supabase/AWS, no test against production.
 ## Log
 ### 2026-11-03T16:20Z · kiro-exafyltd-202611011658-9f52 · ready
 Lane created with the plan.
+
+### 2026-11-08T11:37Z · ci-plan-spar · ready (VTID allocated)
+VTID-05641 allocated after policy approval (converged-auto-v1).

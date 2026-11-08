@@ -13,7 +13,8 @@ paths:
   - apps/mobile/src/orb/**
   - apps/mobile/tests/orb/guided-topic/**
   - docs/validation/**
-updated: 2026-11-03T16:20Z
+updated: 2026-11-08T11:37Z
+vtid: VTID-05638
 ---
 # ORB guided topic — `guided_topic_id`, `focusGuidedTopic`, the teaching-end event
 Plan: `.kiro/specs/native-wave2-fix-forward/` — `plan.md` (plan block) and the `tasks.md` section marked
@@ -32,3 +33,6 @@ Supabase/AWS, no test against production; no live ORB session (fake transport on
 ## Log
 ### 2026-11-03T16:20Z · kiro-exafyltd-202611011658-9f52 · ready
 Lane created with the plan.
+
+### 2026-11-08T11:37Z · ci-plan-spar · ready (VTID allocated)
+VTID-05638 allocated after policy approval (converged-auto-v1).

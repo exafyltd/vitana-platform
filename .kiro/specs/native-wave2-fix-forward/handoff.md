@@ -3,11 +3,13 @@ slug: native-wave2-fix-forward
 author: kiro
 executor: kiro
 next_actor: kiro
-state: drafted
+state: approved
 author_seat: exafyltd
-updated: 2026-11-03T16:20Z
+updated: 2026-11-08T11:37Z
 spar_refs:
   - exafyltd/vitana-v1: main
+sparring_record: .kiro/specs/native-wave2-fix-forward/sparring/verdict.md
+vtids: [VTID-05637, VTID-05638, VTID-05639, VTID-05640, VTID-05641, VTID-05642]
 ---
 # Handoff — Native Wave 2 fix-forward
 Follow-ups recorded while building native Wave 2 lanes (vitana-v1 `apps/mobile/`) that no lane could close inside its
@@ -25,3 +27,6 @@ follow-up re-measured on vitana-v1 origin/main `aac65bfeb` with file:line in `pl
 dropped). Registered in `docs/programs/native-app/program.md`. No VTID allocated, no product code changed, no live
 system touched. Next: PLAN-SPAR spars the `plan(native-wave2-fix-forward)` PR; this session answers each round in
 `sparring/responses-<n>.md`.
+
+### 2026-11-08T11:37Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 6 lane(s) got a VTID and are handed to Kiro.
