@@ -3,11 +3,13 @@ slug: native-shell-fixes
 author: kiro
 executor: kiro
 next_actor: kiro
-state: drafted
+state: approved
 author_seat: exafyltd
-updated: 2026-11-03T15:35Z
+updated: 2026-11-08T11:43Z
 spar_refs:
   - exafyltd/vitana-v1: main
+sparring_record: .kiro/specs/native-shell-fixes/sparring/verdict.md
+vtids: [VTID-05644]
 ---
 # Handoff — Native shell fixes
 Three bugs in the native app shell (vitana-v1 `apps/mobile/`) found by reviewers of native Wave 2 lanes: two shell
@@ -21,3 +23,6 @@ Holder of the `native-shell-fixes/_plan` claim. Plan, requirements, design, task
 verified on vitana-v1 origin/main `aac65bfeb` with file:line in `plan.md`. Registered in
 `docs/programs/native-app/program.md`. No VTID allocated, no product code changed, no live system touched. Next:
 PLAN-SPAR spars the `plan(native-shell-fixes)` PR; this session answers each round in `sparring/responses-<n>.md`.
+
+### 2026-11-08T11:43Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.
