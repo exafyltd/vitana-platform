@@ -101,18 +101,13 @@ Share URLs: shorts `${config.webBaseUrl}/shorts/<id>` (web `src/lib/shareUrl.ts:
 - `npm run gen:core` regenerates `packages/core/src/extracted/media.generated.ts`, `packages/core/closure.generated.json`,
   `scripts/native/mobile-ci-paths.generated.json`.
 
-## 5. Expo config (`apps/mobile/app.config.ts`)
+## 5. Expo config (no change)
 
-`buildPlugins()` appends, after the existing entries:
-```ts
-['expo-video', { supportsBackgroundPlayback: false, supportsPictureInPicture: false }],
-['expo-audio', { enableBackgroundPlayback: false }],
-['expo-image-picker', { photosPermission: mediaHubNative.photosPermission }],
-'expo-document-picker',
-```
-Camera and microphone options stay unset: `false` would block Android `RECORD_AUDIO` / delete the iOS key the ORB
-voice plugin writes. The photo-library string is read from the `mediaHubNative` shard the same way the app reads its
-other build-time strings; per-locale `InfoPlist` localisation is checked on the G1 device build.
+`app.config.ts` is not edited. `buildPlugins()` already registers (vitana-v1 `origin/main` `a763b4f01`)
+`['expo-video', { supportsBackgroundPlayback: false, supportsPictureInPicture: false }]` (`chatMediaPlugins()`),
+`expo-image-picker` and `expo-audio` with `enableBackgroundPlayback: false` (`diaryCapturePlugins()`) and
+`expo-document-picker` (`contactsImportPlugins()`). Playback needs no background mode (the global mini player is not
+ported). Camera and microphone options are untouched, so the ORB voice plugin keeps its microphone string.
 
 ## 6. Tests (`apps/mobile/tests/media/**`)
 
@@ -125,7 +120,7 @@ other build-time strings; per-locale `InfoPlist` localisation is checked on the 
   feed, close replaces to `/comm/events-meetups?tab=hot`; music play/pause, bookmark, share payload (with and
   without `webBaseUrl`), empty; podcast play, empty; upload video / music / podcast with faked pickers calls the
   right port method; Autopilot / Calendar emit their bus events; `/community/media-hub` redirect keeps the query.
-- `app-config-media.test.ts` — the four plugin entries and options; no camera/microphone `false`.
+- `app-config-media.test.ts` — read-only: the four existing plugin entries and options; no camera/microphone `false`.
 - `assets.test.ts` — sha256 of the 3 thumbnails equals the web files.
 - i18n: no raw user-visible text in `src/screens/media/**`, no physical `left`/`right`, `ar` render uses RTL.
 

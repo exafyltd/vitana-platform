@@ -60,14 +60,17 @@ screen change, no `App.tsx` route, no `screens.json` / `exclusions.json` / scree
   `:77-206`) render only in the desktop podcasts column (`:1437`). Podcast delete (`:282-308`, `:1514-1537`) has no
   mobile trigger. Density control, filter chips and the filtered-empty state are inside the desktop grid (`:917-1019`).
 - **Native state:** no media screen, no `apps/mobile/app/(app)/comm/media-hub.tsx`; `NATIVE_ROUTES`
-  (`resolve.ts:42-63`) lacks it. `apps/mobile/package.json:22-48` has **no** video, audio, image-picker or
-  document-picker package. `app.config.ts:60-74` registers `expo-router`, `expo-localization`, `withVitanaVoice`
-  (writes `NSMicrophoneUsageDescription` from `orbNative.micUsageDescription` and Android `RECORD_AUDIO`:
-  `modules/vitana-voice/plugin/withVitanaVoiceIos.js:4-5,61`, `withVitanaVoiceAndroid.js:18`), `expo-secure-store`,
-  `expo-apple-authentication`; `tests/app-config.test.ts:137-143` asserts that exact plugin list with `toEqual`.
-  The shell already routes `calendar:open` (`MobileAppShell.tsx:50`) and emits `autopilot:open`
-  (`SideDrawer.tsx:245`) on the overlay bus (`src/navigation/overlay-bus.ts`). The Home port links to
-  `/comm/media-hub` (`src/screens/home/data/feed.ts:185`).
+  (`resolve.ts:42-63` at `a41e89a0d`) lacks it. **Native packages and plugins are already on `main`** (re-measured on
+  vitana-v1 `origin/main` `a763b4f01`, after the diary, conversation-chat and inbox-list lanes merged; sparring R1-F1/F2):
+  `apps/mobile/package.json` has `expo-audio` 57.0.5, `expo-document-picker` 57.0.3, `expo-image-picker` 57.0.20 and
+  `expo-video` 57.0.5. `app.config.ts` `buildPlugins()` (`:60-77`) already pushes `diaryCapturePlugins()` (`:130-139`:
+  `expo-image-picker` with `photosPermission`/`cameraPermission`/`microphonePermission`; `expo-audio` with
+  `microphonePermission`, `enableBackgroundPlayback: false`, `enableBackgroundRecording: false`), `chatMediaPlugins()`
+  (`:93-95`: `expo-video` with `supportsBackgroundPlayback: false, supportsPictureInPicture: false`) and
+  `contactsImportPlugins()` (`:153-159`: `expo-contacts` + `expo-document-picker`). `tests/app-config.test.ts:137-155`
+  already asserts all of them. `withVitanaVoice` still owns `NSMicrophoneUsageDescription`. The shell already routes
+  `calendar:open` (`MobileAppShell.tsx:50`) and emits `autopilot:open` (`SideDrawer.tsx:245`) on the overlay bus
+  (`src/navigation/overlay-bus.ts`). The Home port links to `/comm/media-hub` (`src/screens/home/data/feed.ts:185`).
 - **i18n:** `src/i18n/<locale>/mediaHub.json` exists in all 11 locales with 129 leaf keys each. Web hard-codes some
   user-visible English the native port must not copy: `'Community Member'` (`MediaHub.tsx:409,412`),
   `'Unknown Artist'` (`MobileMusicList.tsx:49`), the share texts (`MobileMusicList.tsx:62`,
@@ -127,23 +130,21 @@ Only `shortsTags.ts` is class-A end to end; no other module is promoted.
    `packages/core/closure.generated.json` and `scripts/native/mobile-ci-paths.generated.json`, all committed in the
    lane PR. The demo-short array cannot go through extract: its `thumbnailImage` fields are identifiers, which
    `isPureLiteral` rejects (`scripts/native/gen-core-extract.mjs:107-121`).
-5. **Playback and pickers on native Expo packages** (program library map `NATIVE-APP-PLAN.md:141-143`: `<video>` →
-   expo-video, audio → expo-audio, `navigator.share` → native share sheet). None is in
-   `apps/mobile/package.json:22-48`, so the lane adds `expo-video`, `expo-audio`, `expo-image-picker` (video file
-   for upload) and `expo-document-picker` (audio file for music/podcast upload) with `npx expo install` (SDK 57
-   versions; `package.json` + `package-lock.json`), and registers each config plugin in
-   `apps/mobile/app.config.ts` `buildPlugins()`:
-   `['expo-video', { supportsBackgroundPlayback: false, supportsPictureInPicture: false }]`,
-   `['expo-audio', { enableBackgroundPlayback: false }]`,
-   `['expo-image-picker', { photosPermission: <mediaHubNative string> }]`, `'expo-document-picker'`.
-   **Never pass `false` for a camera or microphone option:** `expo-image-picker` with `microphonePermission: false`
-   adds `RECORD_AUDIO` to Android's blocked permissions and `false` deletes the iOS key, which would break the ORB
-   voice module (`withVitanaVoice` writes both). Leaving them unset keeps `withVitanaVoice`'s microphone string in
-   either plugin order. `expo-document-picker` changes nothing unless `ios.usesIcloudStorage` is set (it is not).
-   `tests/app-config.test.ts:137-143` is updated to the new list, and `tests/media/app-config-media.test.ts` asserts
-   the four entries and options. Share uses React Native `Share`; URLs come from `config.webBaseUrl` (env port) with
-   the web path shapes, and the URL is omitted when `webBaseUrl` is unset (every non-production profile), like
-   `src/identity/web-console.ts:4-12`. No production host literal is added to `apps/mobile/**`.
+5. **Playback and pickers reuse the packages and plugins already on `main`; this lane adds none** (program library map
+   `NATIVE-APP-PLAN.md:141-143`: `<video>` → expo-video, audio → expo-audio, `navigator.share` → native share sheet).
+   `expo-video` (plugin from `chatMediaPlugins()`, no background playback, no PiP), `expo-audio` (plugin from
+   `diaryCapturePlugins()`, `enableBackgroundPlayback: false`, which is what media playback needs: the app-global
+   `MiniAudioPlayer` is not ported, see Open items), `expo-image-picker` (video file for upload; its camera / photos
+   permissions are already registered) and `expo-document-picker` (audio file for music/podcast upload; registered
+   by `contactsImportPlugins()`) need no new option. The lane therefore does **not** touch `package.json`,
+   `package-lock.json`, `app.config.ts` (including `diaryCapturePlugins()`, `chatMediaPlugins()`,
+   `contactsImportPlugins()`) or `tests/app-config.test.ts`, and adds no usage string and no `mediaHubNative`
+   `photosPermission` key. `tests/media/app-config-media.test.ts` is read-only: it asserts that
+   `buildConfig('development', …)` already registers the four plugins with the options above and that no camera or
+   microphone option is `false`, so a later lane cannot silently drop one. Share uses React Native `Share`; URLs
+   come from `config.webBaseUrl` (env port) with the web path shapes, and the URL is omitted when `webBaseUrl` is
+   unset (every non-production profile), like `src/identity/web-console.ts:4-12`. No production host literal is added
+   to `apps/mobile/**`.
 6. **Routes.** `apps/mobile/app/(app)/comm/media-hub.tsx` (the screen) and
    `apps/mobile/app/(app)/community/media-hub.tsx` (a `<Redirect>` to `/comm/media-hub` with the query kept,
    mirroring `App.tsx:1321`); both paths join `NATIVE_ROUTES` in `resolve.ts`; the redirect gets a ledger
@@ -187,9 +188,10 @@ Shared with other Wave 2 lanes by line or row (resolve a conflict by keeping bot
 (this lane edits its 4 rows and adds 1 `native_only` entry), `apps/mobile/src/navigation/resolve.ts` (2
 `NATIVE_ROUTES` lines), `apps/mobile/src/ports/**` (new `media.ts` only), `packages/core/manifest.json`,
 `packages/core/extract.json`, `packages/core/src/**` (new `media.ts`), the two generated files (always regenerate, never
-hand-merge), `apps/mobile/package.json` / `package-lock.json` / `app.config.ts` / `tests/app-config.test.ts` (the
-`native-wave2-memory-diary-r2` `diary` lane also adds `expo-image-picker` and an audio package: one plugin entry per
-package — the second lane to land merges options into the existing entry and keeps every permission string).
+hand-merge). `apps/mobile/package.json`, `package-lock.json`, `app.config.ts` and `tests/app-config.test.ts` are not
+edited by this lane (decision 5; the lane file's `paths` still list those four files from the first draft, and this plan block overrides them: the lane
+must not touch them, and the lane file is trimmed in the lane's first commit): the diary, conversation-chat and inbox-list lanes already merged the packages and
+plugins it needs.
 
 ## Test plan
 - Offline, from `apps/mobile/`: `npm run typecheck`, `npm test` (jest-expo + RNTL, `tests/media/**`: tab param
@@ -197,7 +199,7 @@ package — the second lane to land merges options into the existing entry and k
   toggle; comments read/add; share payload with and without `webBaseUrl`; owner-only kebab; delete-short confirm;
   edit-short save; `?short=<id>` opens the feed and close replaces to `/comm/events-meetups?tab=hot`; music list
   play/pause + bookmark + empty; podcast list play + empty; upload sheet video/music/podcast with faked pickers;
-  `/community/media-hub` redirect keeps the query; Calendar/Autopilot emit their bus events; app-config plugins;
+  `/community/media-hub` redirect keeps the query; Calendar/Autopilot emit their bus events; existing plugins asserted read-only;
   thumbnail sha256; no raw text; no physical `left`/`right`; `ar` RTL render; React 19 `ReactElement`),
   `APP_PROFILE=development npm run bundle`, `APP_PROFILE=development EXPO_OFFLINE=1 npm run deps:check`.
 - From the repo root: `node scripts/native/parity-ledger.mjs --check`, `node scripts/native/core-closure.mjs
@@ -208,9 +210,8 @@ package — the second lane to land merges options into the existing entry and k
 - No What's New entry (port of an existing screen).
 
 ## Risks
-- Expo SDK 57 package versions: `npx expo install` pins them and `deps:check` fails on a mismatch.
+- A later lane removing a media plugin from `app.config.ts`: `tests/media/app-config-media.test.ts` fails on it.
 - `expo-video` needs a development build (not Expo Go); jest mocks it, the real player is a G1 check.
-- Merge order with the `diary` lane on `app.config.ts` / `package.json` (shared-files rule above).
 
 ## Open owner / sparring items
 - G1 isolated test environment (program gate) for the device-runtime task, and macOS minutes / G3 for iOS on a

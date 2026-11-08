@@ -24,12 +24,12 @@ Ports `COMM.MEDIA_HUB /comm/media-hub`, `COMM.MEDIA_MUSIC ?tab=music`, `COMM.MED
 - [ ] 2. Port: `apps/mobile/src/ports/media.ts` — re-exports `@vitana/core/media`, declares `MediaHubData`,
   `MediaHubDataProvider`, `useMediaHubData` (design §3).
   Files: `apps/mobile/src/ports/media.ts`. Verify: `npm run typecheck`; `npm test -- tests/ports.test.ts`.
-- [ ] 3. Native packages + config plugins: `npx expo install expo-video expo-audio expo-image-picker
-  expo-document-picker`; register the four plugins in `apps/mobile/app.config.ts` exactly as design §5 (no camera or
-  microphone option set to `false`); update `apps/mobile/tests/app-config.test.ts:137-143`; add
-  `tests/media/app-config-media.test.ts`.
-  Files: `apps/mobile/package.json`, `apps/mobile/package-lock.json`, `apps/mobile/app.config.ts`,
-  `apps/mobile/tests/app-config.test.ts`, `apps/mobile/tests/media/**`.
+- [ ] 3. Existing native packages and plugins (no change to them): add `tests/media/app-config-media.test.ts`
+  asserting, on `buildConfig('development', …)`, that `expo-video` (no background playback / PiP), `expo-audio`
+  (`enableBackgroundPlayback: false`), `expo-image-picker` and `expo-document-picker` are already registered and that no
+  camera or microphone option is `false`. Do not edit `package.json`, `package-lock.json`, `app.config.ts` or
+  `tests/app-config.test.ts`.
+  Files: `apps/mobile/tests/media/**`.
   Verify: `npm test`; `APP_PROFILE=development EXPO_OFFLINE=1 npm run deps:check`.
 - [ ] 4. Data layer: `apps/mobile/src/screens/media/data/*.ts` implementing `MediaHubData` with the web tables,
   filters, limits, buckets and endpoints (design §3 table) on `getSupabase()` / `getGateway()`; the route file passes it to
@@ -42,7 +42,7 @@ Ports `COMM.MEDIA_HUB /comm/media-hub`, `COMM.MEDIA_MUSIC ?tab=music`, `COMM.MED
   `apps/mobile/src/screens/media/**`, `apps/mobile/src/navigation/resolve.ts`.
   Verify: `npm test -- tests/navigation.test.ts`; `npm run typecheck`.
 - [ ] 6. i18n + RTL: reuse `mediaHub.*` / `actionBar.*` / `toasts.community.*`; new keys (demo-short texts,
-  `communityMember`, `unknownArtist`, share texts, `photosPermission`, accessibility labels) in
+  `communityMember`, `unknownArtist`, share texts, accessibility labels) in
   `src/i18n/de/mediaHubNative.json` first, then ar en es fr pl pt ru sr tr zh — German du, Portuguese você, French tu,
   Russian ты, Arabic RTL; start/end only.
   Files: `src/i18n/*/mediaHubNative.json`, `apps/mobile/src/screens/media/**`.
@@ -92,7 +92,7 @@ Ports `COMM.MEDIA_HUB /comm/media-hub`, `COMM.MEDIA_MUSIC ?tab=music`, `COMM.MED
   `APP_PROFILE=development EXPO_OFFLINE=1 npm run deps:check` green; `parity-ledger --check`, `core-closure --check`,
   `gen-core-extract --check`, `npm run i18n:register`, `npm run i18n:gate` green.
 - The 4 rows `native`; `/community/media-hub` in `native_only`; both routes in `NATIVE_ROUTES`.
-- Config plugins as design §5; no camera/microphone option `false`; `tests/app-config.test.ts` updated.
+- Packages and plugins reused as on `main` (design §5); `package.json`, `package-lock.json`, `app.config.ts` and `tests/app-config.test.ts` unchanged; read-only plugin test passes.
 - Generated core files committed in the same PR; no `export *` from a web file.
 - `docs/validation/<VTID>/` has `scope.json`, `staging-tests.json` (only `npm run X` / `npx jest P` refs) and
   `plan-sparring.md`.

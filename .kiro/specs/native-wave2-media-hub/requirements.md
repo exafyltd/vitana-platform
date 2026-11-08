@@ -91,17 +91,17 @@ CI step writes to a live system.
 
 ## R3 — Native media packages
 
-3.1 `expo-video`, `expo-audio`, `expo-image-picker` and `expo-document-picker` are added with `npx expo install`
-(`apps/mobile/package.json` + `package-lock.json`); each config plugin is registered in `apps/mobile/app.config.ts`
-`buildPlugins()` (`:60-74`): expo-video without background playback or PiP, expo-audio without background playback,
-expo-image-picker with a `photosPermission` string from `mediaHubNative`, expo-document-picker without options.
+3.1 `expo-video`, `expo-audio`, `expo-image-picker` and `expo-document-picker` are already in `apps/mobile/package.json` and
+registered in `apps/mobile/app.config.ts` (`chatMediaPlugins()`, `diaryCapturePlugins()`, `contactsImportPlugins()`); this
+lane adds no package, no plugin and no usage string, and does not edit `package.json`, `package-lock.json`,
+`app.config.ts` or `tests/app-config.test.ts`.
 
 3.2 No plugin option sets a camera or microphone permission to `false` (that blocks Android `RECORD_AUDIO` and
 deletes the iOS key that `withVitanaVoice` writes, `modules/vitana-voice/plugin/withVitanaVoiceIos.js:61`,
 `withVitanaVoiceAndroid.js:18`).
 
-3.3 `apps/mobile/tests/app-config.test.ts:137-143` (exact plugin list) is updated; a lane test asserts the four
-entries and their options on `buildConfig('development', …)`.
+3.3 A lane test `tests/media/app-config-media.test.ts` asserts, read-only, the four existing entries and their options
+on `buildConfig('development', …)` and the 3.2 rule.
 
 3.4 Share uses React Native `Share`; the URL is built from `config.webBaseUrl` with the web path shapes and omitted
 when `webBaseUrl` is unset. No production host literal in `apps/mobile/**`.
