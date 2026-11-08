@@ -10,7 +10,7 @@ updated: 2026-11-07T10:33Z
 # Handoff — Native Wave 3: beta and release
 
 Native app program VTID-05021 (`docs/programs/native-app/NATIVE-APP-PLAN.md`), Wave 3 row at `:199`. Plan block:
-`plan.md`. Tasks: `tasks.md`. Lanes: `lanes/*.md` (10: 6 buildable now, 4 owner-gated; `appilix-retire` has no paths
+`plan.md`. Tasks: `tasks.md`. Lanes: `lanes/*.md` (11: 7 buildable now, 4 owner-gated; `appilix-retire` has no paths
 until the owner opens its gate).
 
 ## State at drafting
@@ -25,7 +25,7 @@ until the owner opens its gate).
 ## What Kiro does next (no owner question needed)
 1. PLAN-SPAR runs on the `plan(...)` PR. Kiro answers each round in `sparring/responses-<n>.md`.
 2. On convergence, CI allocates the VTIDs and writes them into the lane files.
-3. The buildable lanes with no `depends_on` start first: `client-identity-app`, `client-identity-gateway`,
+3. The buildable lanes with no `depends_on` start first: `client-identity-app`, `client-identity-gateway` (then `client-identity-store`),
    `crash-port`, `prereq-exit`. Then `store-declarations` and `beta-rollout-runbook` when `prereq-exit` is done.
 4. Owner stops stay limited to the rows of the stop table in `.kiro/steering/vitana-owner-autonomy.md`. The owner
    gate lanes wait for the owner. The ledger and Wave 1 evidence that `prereq-exit` checks come from earlier work,

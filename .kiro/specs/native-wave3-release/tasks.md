@@ -48,25 +48,52 @@ Acceptance:
 - Staging proof: the gateway lane's read-only probe proves the classification; not verified on staging for this
   lane alone: the header carries no member data and is covered by the unit tests in C3.
 
-## Client identity — gateway side
+## Client identity — gateway side (classifier)
 <!-- lane: client-identity-gateway -->
-- [ ] G1 Add `services/gateway/src/services/client-identity/` to classify each request as `native`, `appilix` or `web`
-  from `X-Vitana-Client`, with `appilix` for the Appilix web view and `web` as the fallback.
-- [ ] G2 Count distinct active members per class, aggregated, without storing member identifiers in new tables. Reads
-  only; no writes to user data.
-- [ ] G3 Tests under `services/gateway/test/client-identity*`: the three classes, a missing header, and an unknown
-  version.
+- [ ] G1 Add `services/gateway/src/services/client-identity/classify.ts`: a pure function from the `X-Vitana-Client`
+  header value to `native` (well-formed `native/<ios|android|test>/<version>`) or `web` (missing, malformed or unknown
+  platform), exported with its class type. No I/O, no Express import.
+- [ ] G2 Tests under `services/gateway/test/client-identity*`: native iOS and Android, a missing header, a malformed
+  header, an unknown platform and an unknown version.
 
 Acceptance:
-- Change types: Backend, Database (read-only aggregate), Tooling/docs
-- Outcome: the owner can read the native share of active mobile members; members see nothing.
+- Change types: Backend, Tooling/docs
+- Outcome: one tested definition of the request class that the middleware lane uses; members see nothing.
 - States: missing header → `web`; malformed header → `web`.
-- Surfaces: backend only; callers are the gateway request middleware.
+- Surfaces: backend only; the caller is the middleware of lane `client-identity-store`.
 - Locales: n/a: no user-visible text.
 - Accessibility: n/a.
-- Contract: the classification function, its input header and its aggregate output, with `file:line`. AI calls: none.
-- Staging proof: a read-only probe on `preview-aws-gateway.vitanaland.com` checks the classification of a native and a
-  web request. It writes nothing; the count query is tested in Jest, not on production.
+- Contract: `classifyClient(headerValue): 'native' | 'web'` with `file:line`. AI calls: none.
+- Staging proof: not verified on staging for this lane alone: it is a pure function covered by Jest; the staging probe
+  is in `client-identity-store`.
+
+## Client identity — gateway side (middleware, storage, adoption query)
+<!-- lane: client-identity-store -->
+- [ ] S1 Add `services/gateway/src/middleware/client-identity.ts` using `classifyClient`; mount it once in
+  `services/gateway/src/index.ts` after `delegatedTokenGuard()`. It sets `X-Vitana-Client-Class` on the response and,
+  when the request has an identity, records one (day, member, class) row on `res` finish, best effort, de-duplicated in
+  memory per instance, never failing or delaying the request.
+- [ ] S2 Add migration `database/migrations/<ts>_client_identity_daily_seen.sql` (table
+  `client_identity_daily_seen(day, user_id, client_class)`, primary key on all three, RLS on with no policy, 35-day
+  purge) and its `DATABASE_SCHEMA.md` entry. Add `services/gateway/src/services/client-adoption/adoption.sql` and
+  `adoption.ts`: the read-only adoption counts, where the `appilix` class is a member with an un-revoked
+  `user_device_tokens` row labelled `Appilix %` and no `native` row in the window. The migration is applied only after
+  the owner approves the file and the target database (`collaboration.md` §7d).
+- [ ] S3 Tests under `services/gateway/test/client-adoption*`: header echo, no write without identity, a write
+  failure never fails the request, one upsert per member/class/day, and the count query for native-only, Appilix-only,
+  both and plain-web members.
+
+Acceptance:
+- Change types: Backend, Database (new table, migration file only), Tooling/docs
+- Outcome: the owner can read the native share of active mobile members; members see nothing.
+- States: table missing (migration not applied) → the write fails soft and the request is unaffected.
+- Surfaces: backend only; the middleware runs on every gateway request.
+- Locales: n/a: no user-visible text.
+- Accessibility: n/a.
+- Contract: the middleware, the table and the aggregate output, with `file:line`. AI calls: none.
+- Staging proof: a read-only probe on `preview-aws-gateway.vitanaland.com` sends an unauthenticated request with a
+  native and with no `X-Vitana-Client` header and checks the echoed `X-Vitana-Client-Class`. It writes nothing; the
+  count query is tested in Jest, never against production.
 
 ## Crash-free sessions — port
 <!-- lane: crash-port -->
@@ -154,7 +181,7 @@ Acceptance (all three owner lanes):
 
 ## Appilix retirement — gated on adoption
 <!-- lane: appilix-retire -->
-- [ ] A1 Owner opens the gate only when the gateway count (`client-identity-gateway`) shows ≥95 % of active mobile
+- [ ] A1 Owner opens the gate only when the gateway count (`client-identity-store`, which must be `done`) shows ≥95 % of active mobile
   members on `native` and the crash-free gate holds on the last ramp step.
 - [ ] A2 After the gate opens, a kiro lane with a fixed `paths` list removes the Appilix push and bridge code from the
   web app (the 106 files under `src/` that reference Appilix). The paths are fixed then, against the inventory on

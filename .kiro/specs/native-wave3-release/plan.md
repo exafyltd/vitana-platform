@@ -37,8 +37,8 @@ ownership (§8 decision 5). The store submissions themselves are performed by th
   flags and a minimum supported version, fail-safe to defaults). It is the in-app kill switch and the forced-update
   path, and the rollout runbook uses it.
 - **Nothing measures native share today.** The app does not send a client-identity header that the gateway can
-  count, so the adoption threshold (≥95 %) cannot be measured. Lanes `client-identity-app` and
-  `client-identity-gateway` add that.
+  count, so the adoption threshold (≥95 %) cannot be measured. Lanes `client-identity-app`,
+  `client-identity-gateway` and `client-identity-store` add that.
 
 ## Decisions (each decided by Kiro, grounded in the cited code)
 1. **Wave 3 is gated, not started in parallel with its prerequisites.** Every lane that changes store-facing or
@@ -47,9 +47,28 @@ ownership (§8 decision 5). The store submissions themselves are performed by th
    program row does not allow.
 2. **Adoption is measured by a client-identity header plus gateway counting, not by Appilix or user agents.** The app
    adds `X-Vitana-Client` (`native/<platform>/<version>`) to gateway calls from `src/config/http.ts`. The gateway
-   classifies each request as `native`, `appilix` (web view inside the wrapper) or `web`, and counts distinct
-   active members per class. Reason: the user agent alone cannot separate the Appilix web view from native. Rejected:
-   a separate analytics SDK (a new third-party dependency that needs owner approval).
+   middleware (lane `client-identity-store`, `services/gateway/src/middleware/client-identity.ts`, using the pure
+   classifier of lane `client-identity-gateway`; mounted once in `src/index.ts` after
+   `delegatedTokenGuard()`, line 640) classifies every request: a well-formed `X-Vitana-Client: native/...` is
+   `native`, anything else (missing, malformed) is `web`. For an authenticated request it records one row per
+   (day, member, class) in a new table `client_identity_daily_seen`. The `appilix` class is **derived per member**,
+   not per request: a member is `appilix` when they hold an un-revoked `user_device_tokens` row whose `device_label`
+   starts `Appilix ` (the label the wrapper registers, `vitana-v1:src/lib/pushNotifications.ts:284`; the existing
+   gateway query is `scheduled-notifications-repository.ts:365-372`) and have no `native` row in the window. Reason:
+   the wrapper sends no distinguishing request header and the user agent is not a reliable signal (the only Appilix UA
+   use is the push label, and `routes/orb-livekit.ts:764` uses a loose regex), so the only grounded Appilix signal is the
+   push registration. Adoption = members with a `native` row in the last 7 days divided by members with a `native`
+   row or (an Appilix token and any row) in the last 7 days. Plain-web members without an Appilix token are not
+   "mobile" and are outside the denominator. Rejected: a separate analytics SDK (a new third-party dependency that
+   needs owner approval); a new header from the web app (gateway calls are spread over many hooks, for example
+   `src/hooks/useChatApi.ts`, so it would touch dozens of files).
+   **Storage and privacy.** `client_identity_daily_seen(day date, user_id uuid, client_class text,
+   primary key (day, user_id, client_class))`, RLS on with no policy (service role only), rows older than 35 days
+   deleted by the gateway. It holds `user_id` because the join to device tokens and the distinct count need it; only
+   aggregates leave the table (the owner-run query). Writes are best effort and de-duplicated in memory (one upsert
+   per member, class and day per instance); a failed write never fails or delays the request. Applying the migration is
+   an owner-approved step (`collaboration.md` §7d); until it is applied the middleware's write fails soft and the
+   classification still works.
 3. **Crash-free sessions use a provider-agnostic port first.** `crash-port` (`apps/mobile/src/telemetry/`) defines
    session start and end and a crashed-session flag, with a no-op default, the same pattern as
    `apps/mobile/src/push/provider.ts:53` (`setPushProvider`). The SDK behind it is an owner decision (`crash-sdk-owner`). Reason:
@@ -70,7 +89,8 @@ ownership (§8 decision 5). The store submissions themselves are performed by th
    lane (`executor: claude`) and G3, so they are owner-gated and not in this spec. Reason: keeps every buildable lane
    `executor: kiro` with a reviewer agent (`collaboration.md` §3a).
 8. **Cross-repo work is one lane per repo.** The adoption metric is split into `client-identity-app`
-   (vitana-v1) and `client-identity-gateway` (vitana-platform), because a lane has one branch and PR (the rule in
+   (vitana-v1) and, on vitana-platform, `client-identity-gateway` (pure classifier) and `client-identity-store`
+   (middleware, mount, table, adoption query; depends on the classifier), because a lane has one branch and PR (the rule in
    `native-g1-wiring` `plan.md`, R1-F4).
 
 ## Lanes
@@ -78,7 +98,8 @@ ownership (§8 decision 5). The store submissions themselves are performed by th
 |---|---|---|---|---|---|
 | `prereq-exit` | vitana-v1 | kiro / exafyltd → hotmail | `docs/validation/native-wave3/prereq-exit.md` | — | kiro |
 | `client-identity-app` | vitana-v1 | kiro / exafyltd → hotmail | `apps/mobile/src/config/client-identity.ts`, `apps/mobile/src/config/http.ts`, `apps/mobile/tests/client-identity*` | — | kiro |
-| `client-identity-gateway` | vitana-platform | kiro / exafyltd → hotmail | `services/gateway/src/services/client-identity/**`, `services/gateway/test/client-identity*` | — | kiro |
+| `client-identity-gateway` | vitana-platform | kiro / exafyltd → hotmail | `services/gateway/src/services/client-identity/**`, `services/gateway/test/client-identity*` (the pure classifier only) | — | kiro |
+| `client-identity-store` | vitana-platform | kiro / exafyltd → hotmail | `services/gateway/src/middleware/client-identity.ts`, `services/gateway/src/index.ts`, `services/gateway/src/services/client-adoption/**`, `database/migrations/*_client_identity_daily_seen.sql`, `DATABASE_SCHEMA.md`, `services/gateway/test/client-adoption*` | client-identity-gateway | kiro |
 | `crash-port` | vitana-v1 | kiro / exafyltd → hotmail | `apps/mobile/src/telemetry/**`, `apps/mobile/tests/telemetry/**` | — | kiro |
 | `store-declarations` | vitana-v1 | kiro / exafyltd → hotmail | `apps/mobile/app.config.ts`, `apps/mobile/src/i18n/*/healthStore.json`, `apps/mobile/tests/store/**`, `docs/validation/native-wave3/store-declarations.md` | prereq-exit | kiro |
 | `beta-rollout-runbook` | vitana-v1 | kiro / exafyltd → hotmail | `docs/validation/native-wave3/beta-rollout-runbook.md` | prereq-exit | kiro |
@@ -87,6 +108,8 @@ ownership (§8 decision 5). The store submissions themselves are performed by th
 | `crash-sdk-owner` | vitana-v1 | owner (§8 decision 5) | `docs/validation/native-wave3/crash-sdk.md` | crash-port | **owner** |
 | `appilix-retire` | vitana-v1 | kiro / exafyltd → hotmail (after owner gate) | set when the owner opens the gate (see below) | client-identity-gateway, store-submission-owner, beta-rollout-runbook | **owner** |
 
+`appilix-retire` keeps `client-identity-gateway` in its `depends_on` (its lane file is fixed); the owner's gate (task A1)
+additionally requires `client-identity-store` to be `done`, because the count comes from there.
 `appilix-retire` has no `paths` yet on purpose. Its file list is the 106-file bridge inventory above, and it is fixed
 when the owner opens the gate, against the measured adoption. A `ready` lane with no `paths` is not claimable while
 `next_actor` is `owner`.
@@ -106,8 +129,9 @@ files: `apps/mobile/app.config.ts` is edited only by `store-declarations`; `apps
 ## Tests and verification
 - Each app lane runs `cd apps/mobile && npm ci && npm test && npm run typecheck` and the offline bundle for the
   `development` and `test-g1` profiles. No lane runs a store build.
-- `client-identity-gateway` runs its gateway unit tests (Jest) and proves the classification with a read-only probe on
-  staging (`docs/validation/<VTID>/staging-tests.json`). It writes nothing to the production database.
+- `client-identity-gateway` runs the classifier unit tests (Jest). `client-identity-store` runs the middleware and the
+  count query tests over an in-memory store, and proves the classification with a read-only probe on staging (an unauthenticated request to a public route; the
+  middleware echoes `X-Vitana-Client-Class` on the response and records nothing without an identity) (`docs/validation/<VTID>/staging-tests.json`). It writes nothing to the production database.
 - `store-declarations`: a test checks that every HealthKit and Health Connect type declared in `app.config.ts` appears
   in the Health Sync contract, and that every user-visible string exists in all 11 locales (de first).
 - `crash-port`: unit tests for session start and end, crashed-session flagging, and the no-op default.
@@ -117,7 +141,7 @@ files: `apps/mobile/app.config.ts` is edited only by `store-declarations`; `apps
   specs are read-only; no lane writes to production.
 
 ## Measurement
-- Adoption: `native` share of active mobile members over the last 7 days, from the `client-identity-gateway` counts.
+- Adoption: `native` share of active mobile members over the last 7 days, from the `client-identity-store` counts.
   Threshold: ≥95 % (program row). Reported in `docs/validation/native-wave3/adoption.md` by the owner-run query, never
   from a session tool against production.
 - Crash-free sessions: from `crash-port` once `crash-sdk-owner` picks an SDK. Threshold: ≥99.5 %.
@@ -127,8 +151,12 @@ files: `apps/mobile/app.config.ts` is edited only by `store-declarations`; `apps
 - **Wave 2 and Wave 1 slip.** The sentinel holds Wave 3 back. Cost: the store dates move with Wave 2.
 - **Health declarations drift from runtime use.** Store rejection or a privacy incident. Mitigation: the contract
   test in `store-declarations`.
-- **Adoption counting is wrong.** The `appilix` class could be counted as `native`. Mitigation: the classification
-  test covers the Appilix web view, and `appilix-retire` waits for the owner's review of the counts.
+- **Adoption counting is wrong.** An Appilix member could be counted as `native`, or a member with no push token
+  could be missed from the denominator. Mitigation: the tests cover a native-only, an Appilix-only, a both and a
+  plain-web member, and `appilix-retire` waits for the owner's review of the counts. Known limit: an Appilix member
+  without a push token is not in the denominator; the owner reads the counts with that in mind.
+- **`src/index.ts` is a hot file.** Only `client-identity-store` edits it in this plan; any other plan touching it is
+  sequenced by the merge rule (§8a).
 - **Crash SDK choice delays the crash-free gate.** Mitigation: the port ships first with a no-op default, so the
   metric is built before the vendor is chosen.
 
