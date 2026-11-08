@@ -61,6 +61,6 @@ ok 43 - ab_dual reads the series it wrote, in the T_A context
 ok 44 - ab_dual sees no other member's health rows (health data is member-private)
 # UNVERIFIED ab_dual single health series across contexts: the replayed policy scopes rows by tenant_id = current_tenant_id(); production policy is in a skipped migration; no claim is made
 PASS local-stack mt-isolation.tap.sql (44 run, 0 failed, planned 44)
-mt-isolation: 14 claim(s) UNVERIFIED (not passed, not failed); strict=0. Passed claims are on non-production tenant resolution (docs/multitenancy/LOCAL-STACK.md).
-PASS mt-isolation
+mt-isolation: 14 claim(s) UNVERIFIED (not passed); strict=0. Passed claims are on non-production tenant resolution (docs/multitenancy/LOCAL-STACK.md).
+REPORT mt-isolation: 14 unverified (report mode is not a pass)
 exit 0

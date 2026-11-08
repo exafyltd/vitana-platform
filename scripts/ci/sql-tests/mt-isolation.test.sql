@@ -3,8 +3,9 @@
 -- Run it with scripts/ci/sql-tests/run-mt-isolation-test.sh. The runner prepends three settings:
 --   mt.health_tables    comma list from scripts/mt/inventory/health-tables.json (the shared health-table list, never copied here)
 --   mt.required_tables  comma list from supabase/tests/local-stack/required-tables.txt
---   mt.strict           '1': a table the stack cannot replay FAILS the suite; '0' (default): it is reported "UNVERIFIED" and
---                       counted as neither passed nor failed (plan.md Amendment 3, decision 3: never reported as passing)
+--   mt.strict           '1' (default, also when unset): a table or claim the stack cannot verify FAILS the suite; '0' (the runner's
+--                       --report mode): it is reported "UNVERIFIED" and counted as neither passed nor failed (plan.md Amendment 3,
+--                       decision 3: never reported as passing)
 --
 -- WHAT A GREEN RUN MEANS: on the tables that were replayed, b_member does not see T_A / CANARY_A rows and cannot write a T_A
 -- row, under the tenant resolution and policies that were REPLAYED. 44 migrations that redefine tenant resolution or policies on
@@ -124,12 +125,12 @@ SELECT plan((
   4
   + (SELECT coalesce(sum(CASE WHEN mode = 'rows' THEN 2 ELSE 1 END), 0) FROM tap.mt_tables WHERE present)
   + (SELECT coalesce(sum(CASE WHEN control_sql IS NULL THEN 1 ELSE 2 END), 0) FROM tap.mt_write WHERE present)
-  + (SELECT count(*) FROM tap.mt_tables WHERE NOT present AND (NOT listed OR coalesce(current_setting('mt.strict', true), '0') = '1'))
-  + (SELECT CASE WHEN (SELECT bool_and(single_series) FROM tap.mt_probe) OR coalesce(current_setting('mt.strict', true), '0') = '1' THEN 1 ELSE 0 END)
+  + (SELECT count(*) FROM tap.mt_tables WHERE NOT present AND (NOT listed OR coalesce(current_setting('mt.strict', true), '1') = '1'))
+  + (SELECT CASE WHEN (SELECT bool_and(single_series) FROM tap.mt_probe) OR coalesce(current_setting('mt.strict', true), '1') = '1' THEN 1 ELSE 0 END)
 )::int);
 
 SELECT diag('NON-PRODUCTION tenant resolution: claims carry tenant_id, replayed current_tenant_id() body; skipped migrations redefine tenant resolution and policies on present tables (docs/multitenancy/LOCAL-STACK.md)');
-SELECT diag('mode: ' || CASE WHEN coalesce(current_setting('mt.strict', true), '0') = '1' THEN 'strict (unverified tables FAIL)' ELSE 'report (unverified tables are listed, never counted as passed)' END);
+SELECT diag('mode: ' || CASE WHEN coalesce(current_setting('mt.strict', true), '1') = '1' THEN 'strict (unverified tables FAIL)' ELSE 'report (unverified tables are listed, never counted as passed)' END);
 
 -- P1a: the subject set equals the required-tables list (no table silently dropped or added)
 SELECT set_eq(
@@ -138,7 +139,7 @@ SELECT set_eq(
   'suite subjects = required-tables.txt (18 tenant tables + health tables from health-tables.json + user_tenants)');
 
 -- tables the stack cannot create: strict => fail via require_table; otherwise UNVERIFIED (never ok)
-SELECT CASE WHEN t.listed AND coalesce(current_setting('mt.strict', true), '0') = '0'
+SELECT CASE WHEN t.listed AND coalesce(current_setting('mt.strict', true), '1') = '0'
             THEN '# UNVERIFIED ' || t.name || ': not replayable on PGlite (' || (SELECT n.reason FROM tap.not_replayable n WHERE n.table_name = t.name) || '); no isolation claim is made'
             ELSE tap.require_table(t.name, 'isolation of ' || t.name || ' can be checked (table is replayed)') END
 FROM tap.mt_tables t WHERE NOT t.present ORDER BY t.name;
@@ -178,7 +179,7 @@ SELECT set_config('request.jwt.claims', '{"sub":"0000000c-0000-4000-8000-0000000
 SELECT CASE
   WHEN (SELECT count(*) FROM public.health_features_daily WHERE user_id = '0000000c-0000-4000-8000-000000000001' AND feature_key = 'mt_series') = 1
     THEN ok(true, 'ab_dual reads the same single health series from the T_B context')
-  WHEN coalesce(current_setting('mt.strict', true), '0') = '1'
+  WHEN coalesce(current_setting('mt.strict', true), '1') = '1'
     THEN ok(false, 'ab_dual reads the same single health series from the T_B context') || E'\n#   unverified: the replayed policy scopes health rows by tenant_id'
   ELSE '# UNVERIFIED ab_dual single health series across contexts: the replayed policy scopes rows by tenant_id = current_tenant_id(); production policy is in a skipped migration; no claim is made' END;
 RESET ROLE;

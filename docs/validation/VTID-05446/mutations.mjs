@@ -3,6 +3,8 @@
 import { readFileSync } from 'node:fs';
 import { writeFileSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { spawnSync } from 'node:child_process';
+import { copyFileSync, unlinkSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { createStack, runTapFile } from '../../../scripts/mt/stack/stack.mjs';
 import { HEALTH_TABLES } from '../../../scripts/mt/inventory/health-tables.mjs';
@@ -34,5 +36,24 @@ for (const [name, sql, wantFail, strict] of mutations) {
   console.log(`${verdict}: ${name} -> suite ${red ? 'RED' : 'GREEN'} (${r.run} run, ${r.failed} failed)`);
   for (const l of r.lines.filter((x) => x.startsWith('not ok')).slice(0, 3)) console.log(`    ${l}`);
   await db.close();
+}
+// runner-level mutations: flip the strict default back, or let the report mode print the PASS marker; --self-test-default must go red
+const runner = join(root, 'scripts/ci/sql-tests/run-mt-isolation-test.sh');
+const runnerMutations = [
+  // the PASS-over-unverified guard in the runner is a second layer, so the revert removes both layers
+  ['runner: default flipped back to STRICT=0 (and the unverified guard removed)', (t) => t.replace('STRICT=1   #', 'STRICT=0   #').replace('if [ "$UNVERIFIED" -gt 0 ]; then', 'if false; then')],
+  ['runner: report mode prints the PASS marker', (t) => t.replace('echo "REPORT mt-isolation:', 'echo "PASS mt-isolation"; echo "REPORT mt-isolation:')],
+];
+for (const [name, edit] of runnerMutations) {
+  const src = readFileSync(runner, 'utf8');
+  const mutated = edit(src);
+  if (mutated === src) { console.log(`UNEXPECTED: ${name} -> mutation did not apply`); bad = true; continue; }
+  const tmp = join(root, 'scripts/ci/sql-tests/run-mt-isolation-test.mutant.sh');
+  writeFileSync(tmp, mutated);
+  const r = spawnSync('bash', [tmp, '--self-test-default'], { encoding: 'utf8' });
+  unlinkSync(tmp);
+  const red = r.status !== 0;
+  if (!red) bad = true;
+  console.log(`${red ? 'AS EXPECTED' : 'UNEXPECTED'}: ${name} -> self-test-default ${red ? 'RED' : 'GREEN'} (exit ${r.status}) ${(r.stderr || '').trim().split('\n').pop()}`);
 }
 process.exit(bad ? 1 : 0);

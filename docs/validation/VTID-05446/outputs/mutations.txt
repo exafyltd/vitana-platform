@@ -30,3 +30,5 @@ AS EXPECTED: strict mode: unverified tables fail -> suite RED (58 run, 14 failed
     not ok 4 - isolation of consents can be checked (table is replayed)
 #   unverified: table consents is not replayable on this stack: no migration in either repository creates this table
 #   needed by: isolation-suite, generated-inventories
+AS EXPECTED: runner: default flipped back to STRICT=0 (and the unverified guard removed) -> self-test-default RED (exit 1) self-test-default FAILED: default run with 14 unverified claim(s) exited 0, expected 1
+AS EXPECTED: runner: report mode prints the PASS marker -> self-test-default RED (exit 1) self-test-default FAILED: --report printed the PASS marker
