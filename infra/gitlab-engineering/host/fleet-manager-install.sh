@@ -14,7 +14,7 @@
 #
 #   fleet-manager-install.sh --render-config   print config.toml on stdout from the environment (FLEET_RUNNER_TOKEN, FLEET_MAX_INSTANCES,
 #                                              FLEET_IDLE_COUNT, FLEET_ASG_NAME, FLEET_CACHE_BUCKET, FLEET_CACHE_KMS_KEY_ARN, DOMAIN, REGION;
-#                                              per class to render: CLASS_<MAIN|DEPLOY>_RUNNER_TOKEN, _ASG_NAME, _MAX_INSTANCES).
+#                                              per class to render: CLASS_<MAIN|DEPLOY|BUILD>_RUNNER_TOKEN, _ASG_NAME, _MAX_INSTANCES).
 #                                              Needs no root, no network and no file. A bad value prints nothing and exits 2.
 set -u
 
@@ -42,7 +42,7 @@ check_inputs() {
 
 # The runner classes. A class is rendered only when its runner token is set; its other inputs are then checked like the untrusted ones,
 # and its group must be its own (two runner blocks on one group would fight over its size).
-CLASSES="MAIN DEPLOY"
+CLASSES="MAIN DEPLOY BUILD"
 class_on() { local v="CLASS_${1}_RUNNER_TOKEN"; [ -n "${!v:-}" ]; }
 check_class_inputs() {
   local bad=0 c g seen=" ${FLEET_ASG_NAME:-} "
@@ -65,13 +65,14 @@ check_class_inputs() {
 
 # One more runner block per class: the machine rules of the untrusted block (one job per machine, deleted after it, not privileged, no
 # Docker socket), the class's own token, group and size, a job limit of that size, and its own cache path, so no class reads another
-# class's cache. Only the main class's service containers run without the seccomp and AppArmor profiles: there .build-image starts its
+# class's cache. Only the build class's service containers run without the seccomp and AppArmor profiles: there .build-image starts its
 # rootless BuildKit daemon (plan agentic-delivery R5). Job containers keep both profiles in every class.
-render_class() {   # MAIN or DEPLOY
+render_class() {   # MAIN, DEPLOY or BUILD
   local c="$1" lc tag note v gv mv
   lc="${c,,}"
   case "$c" in
     MAIN) tag="vitana-eng-main"; note=", a protected runner (refs main and assist/*)" ;;
+    BUILD) tag="vitana-eng-build"; note=", a protected runner (refs main and assist/*), image builds only" ;;
     *) tag="vitana-eng-deploy"; note="" ;;
   esac
   v="CLASS_${c}_RUNNER_TOKEN"
@@ -105,7 +106,7 @@ render_class() {   # MAIN or DEPLOY
     pull_policy = ["if-not-present"]
     volumes = ["/cache"]
 EOF
-  if [ "$c" = MAIN ]; then echo '    services_security_opt = ["seccomp=unconfined", "apparmor=unconfined"]'; fi
+  if [ "$c" = BUILD ]; then echo '    services_security_opt = ["seccomp=unconfined", "apparmor=unconfined"]'; fi
   cat <<EOF
 
   [runners.autoscaler]
@@ -242,7 +243,7 @@ done
 # untrusted runner starts anyway. Run the installer again once a class token exists.
 if [ -f /etc/vitana/env.classes ]; then
   . /etc/vitana/env.classes
-  unset CLASS_MAIN_RUNNER_TOKEN CLASS_DEPLOY_RUNNER_TOKEN
+  unset CLASS_MAIN_RUNNER_TOKEN CLASS_DEPLOY_RUNNER_TOKEN CLASS_BUILD_RUNNER_TOKEN
   for c in $CLASSES; do
     sv="CLASS_${c}_TOKEN_SECRET"
     sid="${!sv:-}"
@@ -262,7 +263,7 @@ TMPCONF="$(umask 077; mktemp /root/config.toml.XXXXXX)"
 FLEET_RUNNER_TOKEN="$TOKEN" render_config > "$TMPCONF" || { echo "config.toml could not be rendered"; exit 1; }
 install -m 0600 -o root -g root "$TMPCONF" /etc/gitlab-runner/config.toml
 rm -f "$TMPCONF"
-unset CLASS_MAIN_RUNNER_TOKEN CLASS_DEPLOY_RUNNER_TOKEN
+unset CLASS_MAIN_RUNNER_TOKEN CLASS_DEPLOY_RUNNER_TOKEN CLASS_BUILD_RUNNER_TOKEN
 
 export FLEETING_PLUGIN_PATH="$PLUGIN_DIR"
 CONFIG_FILE=/etc/gitlab-runner/config.toml gitlab-runner fleeting install || { echo "gitlab-runner fleeting install failed"; exit 1; }

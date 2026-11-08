@@ -31,6 +31,7 @@ const BUILD = join(ROOT, 'scripts', 'eng', 'deploy', 'build-image.sh');
 const UNTRUSTED = 'vitana-eng';
 const MAIN = 'vitana-eng-main';
 const DEPLOY = 'vitana-eng-deploy';
+const BUILDC = 'vitana-eng-build';
 
 // ── Terraform helpers ─────────────────────────────────────────────────────────────────────────────────────────────
 const tf = () => readFileSync(TF, 'utf8');
@@ -187,13 +188,15 @@ const scriptLines = (j) => [...(j.before_script || []), ...(j.script || []), ...
 const tagsOf = (j) => (Array.isArray(j.tags) ? j.tags : []);
 
 // ── Terraform: the two classes ────────────────────────────────────────────────────────────────────────────────────
-test('two new groups, main and deploy: min 0, desired left to the runner, scale-in protection, maxima of plan §5', () => {
+test('three new groups, main, deploy and build: min 0, desired left to the runner, scale-in protection, maxima of plan §5', () => {
   const src = code(tf());
   const classes = block(src, 'locals').match(/fleet_classes\s*=\s*\{([\s\S]*)\n {2}\}/);
   assert.ok(classes, 'local.fleet_classes');
   assert.match(classes[1], /\bmain\s*=\s*\{[^}]*name\s*=\s*"vitana-eng-fleet-main"[^}]*tag\s*=\s*"vitana-eng-main"[^}]*max_instances\s*=\s*var\.fleet_main_max_instances/);
   assert.match(classes[1], /\bdeploy\s*=\s*\{[^}]*name\s*=\s*"vitana-eng-fleet-deploy"[^}]*tag\s*=\s*"vitana-eng-deploy"[^}]*max_instances\s*=\s*var\.fleet_deploy_max_instances[^}]*spot_percent\s*=\s*0/);
-  assert.equal((classes[1].match(/^\s{4}[a-z]+\s*=\s*\{/gm) || []).length, 2, 'exactly two classes');
+  assert.match(classes[1], /\bbuild\s*=\s*\{[^}]*name\s*=\s*"vitana-eng-fleet-build"[^}]*tag\s*=\s*"vitana-eng-build"[^}]*max_instances\s*=\s*var\.fleet_build_max_instances/);
+  assert.equal((classes[1].match(/^\s{4}[a-z]+\s*=\s*\{/gm) || []).length, 3, 'exactly three classes');
+  assert.match(block(src, 'variable "fleet_build_max_instances"'), /default\s*=\s*4\b/);
   assert.match(block(src, 'variable "fleet_main_max_instances"'), /default\s*=\s*12\b/);
   assert.match(block(src, 'variable "fleet_deploy_max_instances"'), /default\s*=\s*6\b/);
   const asg = block(src, 'resource "aws_autoscaling_group" "fleet_class"');
@@ -346,13 +349,13 @@ test('a job tagged vitana-eng-deploy runs no repository script', () => {
   }
 });
 
-test('tpl-deploy defines the six jobs of plan §9: build on the main class, the rest on the deploy class', () => {
+test('tpl-deploy defines the six jobs of plan §9: build on the build class, the rest on the deploy class', () => {
   const doc = parseYaml(readFileSync(TPL, 'utf8'));
   for (const k of Object.keys(doc)) assert.ok(k.startsWith('.'), `${k}: only hidden jobs`);
   const byName = Object.fromEntries(allJobs().filter((j) => j.file === 'tpl-deploy.yml').map((j) => [j.name, j.job]));
   const auds = (j) => Object.values(j.id_tokens || {}).map((t) => t.aud).sort();
   const build = byName['.build-image'];
-  assert.deepEqual(build.tags, [MAIN]);
+  assert.deepEqual(build.tags, [BUILDC], 'image builds run on their own class, the only one whose services are unconfined');
   assert.equal(build.id_tokens, undefined, 'the build has no AWS access');
   assert.match(String(build.variables.BUILDKITD_FLAGS), /--oci-worker-no-process-sandbox/);
   assert.match(String(build.image.name), /^docker\.io\/moby\/buildkit:v[0-9.]+-rootless@sha256:[0-9a-f]{64}$/, 'rootless BuildKit pinned by digest');
@@ -421,6 +424,7 @@ const tok = (s) => ['glrt', s].join('-');
 const FLEET_TOKEN = tok('t1_FLEETTESTONLY');
 const MAIN_TOKEN = tok('t1_MAINTESTONLY');
 const DEPLOY_TOKEN = tok('t1_DEPLOYTESTONLY');
+const BUILD_TOKEN = tok('t1_BUILDTESTONLY');
 const KEY_ARN = 'arn:aws:kms:eu-central-1:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab';
 const FLEET_SECRET = 'vitana/engineering/gitlab/fleet-runner-token';
 
@@ -443,6 +447,7 @@ const A2_MANAGER_ENV = { FLEET_MAX_INSTANCES: '96', FLEET_IDLE_COUNT: '4' };
 const A2_CLASS_ENV = {
   CLASS_MAIN_ASG_NAME: 'vitana-eng-fleet-main', CLASS_MAIN_MAX_INSTANCES: '12', CLASS_MAIN_TOKEN_SECRET: 'vitana/engineering/gitlab/vitana-eng-fleet-main-runner-token',
   CLASS_DEPLOY_ASG_NAME: 'vitana-eng-fleet-deploy', CLASS_DEPLOY_MAX_INSTANCES: '6', CLASS_DEPLOY_TOKEN_SECRET: 'vitana/engineering/gitlab/vitana-eng-fleet-deploy-runner-token',
+  CLASS_BUILD_ASG_NAME: 'vitana-eng-fleet-build', CLASS_BUILD_MAX_INSTANCES: '4', CLASS_BUILD_TOKEN_SECRET: 'vitana/engineering/gitlab/vitana-eng-fleet-build-runner-token',
 };
 /** The manager's environment after step A2, with a runner token for every block. */
 function fullEnv() {
@@ -451,6 +456,7 @@ function fullEnv() {
     FLEET_CACHE_BUCKET: 'vitana-engineering-ci-cache-111122223333', FLEET_CACHE_KMS_KEY_ARN: KEY_ARN, FLEET_RUNNER_TOKEN: FLEET_TOKEN,
     CLASS_MAIN_ASG_NAME: A2_CLASS_ENV.CLASS_MAIN_ASG_NAME, CLASS_MAIN_MAX_INSTANCES: A2_CLASS_ENV.CLASS_MAIN_MAX_INSTANCES, CLASS_MAIN_RUNNER_TOKEN: MAIN_TOKEN,
     CLASS_DEPLOY_ASG_NAME: A2_CLASS_ENV.CLASS_DEPLOY_ASG_NAME, CLASS_DEPLOY_MAX_INSTANCES: A2_CLASS_ENV.CLASS_DEPLOY_MAX_INSTANCES, CLASS_DEPLOY_RUNNER_TOKEN: DEPLOY_TOKEN,
+    CLASS_BUILD_ASG_NAME: A2_CLASS_ENV.CLASS_BUILD_ASG_NAME, CLASS_BUILD_MAX_INSTANCES: A2_CLASS_ENV.CLASS_BUILD_MAX_INSTANCES, CLASS_BUILD_RUNNER_TOKEN: BUILD_TOKEN,
   };
 }
 /** Runs the installer in render mode: environment in, config.toml out. No network, no file, no root. */
@@ -464,18 +470,18 @@ function rendered(env) {
   assert.equal(r.status, 0, `render failed (${r.status}): ${r.stderr}`);
   return { text: r.stdout, toml: parseToml(r.stdout) };
 }
-const NAMES = ['vitana-eng-fleet', 'vitana-eng-fleet-main', 'vitana-eng-fleet-deploy'];
+const NAMES = ['vitana-eng-fleet', 'vitana-eng-fleet-main', 'vitana-eng-fleet-deploy', 'vitana-eng-fleet-build'];
 
-test('the manager renders three runner blocks: vitana-eng on the untrusted group with the warm pool of 4, vitana-eng-main and vitana-eng-deploy on their own groups, at the maxima of plan §5', () => {
+test('the manager renders four runner blocks: vitana-eng on the untrusted group with the warm pool of 4, vitana-eng-main and vitana-eng-deploy on their own groups, at the maxima of plan §5', () => {
   const { text, toml } = rendered(fullEnv());
   assert.deepEqual(toml.runners.map((r) => r.name), NAMES);
   assert.deepEqual(toml.runners.map((r) => r.autoscaler.plugin_config.name), NAMES, 'each block scales its own group (fleet.tf, fleet-classes.tf)');
-  assert.deepEqual(toml.runners.map((r) => r.autoscaler.max_instances), [96, 12, 6], 'plan §5: 96 / 12 / 6');
-  const [untrusted, main, deploy] = toml.runners;
+  assert.deepEqual(toml.runners.map((r) => r.autoscaler.max_instances), [96, 12, 6, 4], 'plan §5: 96 / 12 / 6, plus 4 build machines');
+  const [untrusted, main, deploy, build] = toml.runners;
   assert.deepEqual(untrusted.autoscaler.policy, [{ idle_count: 4, idle_time: '10m0s' }], 'the warm pool of 4 ready machines (plan §3.2)');
-  for (const r of [main, deploy]) assert.deepEqual(r.autoscaler.policy, [{ idle_count: 0, idle_time: '10m0s' }], `${r.name}: no machine waits idle`);
-  assert.equal(toml.concurrent, 96 + 12 + 6, 'concurrent covers every block, so one class never uses up the job slots of another');
-  assert.deepEqual([main.limit, deploy.limit], [12, 6], 'a class runs at most its own maximum of jobs');
+  for (const r of [main, deploy, build]) assert.deepEqual(r.autoscaler.policy, [{ idle_count: 0, idle_time: '10m0s' }], `${r.name}: no machine waits idle`);
+  assert.equal(toml.concurrent, 96 + 12 + 6 + 4, 'concurrent covers every block, so one class never uses up the job slots of another');
+  assert.deepEqual([main.limit, deploy.limit, build.limit], [12, 6, 4], 'a class runs at most its own maximum of jobs');
   for (const r of toml.runners) {
     assert.equal(r.url, 'https://gitlab.vitanaland.com');
     assert.equal(r.executor, 'docker-autoscaler');
@@ -484,9 +490,9 @@ test('the manager renders three runner blocks: vitana-eng on the untrusted group
     assert.deepEqual(r.autoscaler.connector_config, { username: 'ubuntu', use_external_addr: false });
   }
   // Tags belong to a runner's token in GitLab: each block takes the token of its own class.
-  assert.deepEqual(toml.runners.map((r) => r.token), [FLEET_TOKEN, MAIN_TOKEN, DEPLOY_TOKEN]);
+  assert.deepEqual(toml.runners.map((r) => r.token), [FLEET_TOKEN, MAIN_TOKEN, DEPLOY_TOKEN, BUILD_TOKEN]);
   const classes = block(code(tf()), 'locals').match(/fleet_classes\s*=\s*\{([\s\S]*)\n {2}\}/)[1];
-  for (const [cls, tag] of [['main', MAIN], ['deploy', DEPLOY]]) {
+  for (const [cls, tag] of [['main', MAIN], ['deploy', DEPLOY], ['build', BUILDC]]) {
     assert.match(classes, new RegExp(`\\b${cls}\\s*=\\s*\\{[^}]*name\\s*=\\s*"vitana-eng-fleet-${cls}"[^}]*tag\\s*=\\s*"${tag}"`));
     assert.match(text, new RegExp(`^# vitana-eng-fleet-${cls}: runner tag ${tag}\\b`, 'm'), `the block says which tag its token carries (${tag})`);
   }
@@ -495,7 +501,7 @@ test('the manager renders three runner blocks: vitana-eng on the untrusted group
 
 test('every block: one job per single-use machine, privileged = false, no Docker socket and no extra power', () => {
   const { text, toml } = rendered(fullEnv());
-  assert.equal(toml.runners.length, 3);
+  assert.equal(toml.runners.length, 4);
   for (const r of toml.runners) {
     assert.equal(r.autoscaler.capacity_per_instance, 1, `${r.name}: one job per machine`);
     assert.equal(r.autoscaler.max_use_count, 1, `${r.name}: a machine is deleted after its job`);
@@ -508,13 +514,15 @@ test('every block: one job per single-use machine, privileged = false, no Docker
     'no socket mount, no privileged service, no extra capability');
 });
 
-test("seccomp and AppArmor unconfined only for the main class's build service: no job container of any class loses either profile", () => {
+test("seccomp and AppArmor unconfined only for the build class's BuildKit service: no job container of any class loses either profile", () => {
   const { toml } = rendered(fullEnv());
-  const [untrusted, main, deploy] = toml.runners;
+  const [untrusted, main, deploy, build] = toml.runners;
   for (const r of toml.runners) assert.equal(r.docker.security_opt, undefined, `${r.name}: job containers keep the default seccomp and AppArmor profiles`);
   assert.equal(untrusted.docker.services_security_opt, undefined, 'untrusted: services keep both profiles');
   assert.equal(deploy.docker.services_security_opt, undefined, 'deploy: services keep both profiles');
-  assert.deepEqual(main.docker.services_security_opt, ['seccomp=unconfined', 'apparmor=unconfined'], 'main: the rootless BuildKit daemon that .build-image starts as its service (plan R5)');
+  assert.equal(main.docker.services_security_opt, undefined, 'main: services (postgres and the rest) keep both profiles (review d1ea5: unconfined only for build jobs)');
+  assert.deepEqual(build.docker.services_security_opt, ['seccomp=unconfined', 'apparmor=unconfined'], 'build: the rootless BuildKit daemon that .build-image starts as its service (plan R5)');
+  for (const { file, name, job } of allJobs()) if (tagsOf(job).includes(BUILDC)) assert.equal(name, '.build-image', `${file} ${name}: only the image build runs on the build class`);
   // The daemon is a service of .build-image on the main class only; every other job image stays a plain client.
   const withBuildkit = allJobs().filter(({ job }) => (job.services || []).some((s) => /moby\/buildkit/.test(typeof s === 'string' ? s : String(s.name))));
   assert.ok(withBuildkit.some(({ name }) => name === '.build-image'));

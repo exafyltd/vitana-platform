@@ -65,6 +65,7 @@ M2 fleet manager scales all three, one runner block each (`host/fleet-manager-in
 | untrusted (M2) | `vitana-eng-fleet` | `vitana-eng` | 96, 4 kept ready | single use, 80 % spot |
 | main | `vitana-eng-fleet-main` | `vitana-eng-main` (protected runner) | 12 | single use, 80 % spot |
 | deploy | `vitana-eng-fleet-deploy` | `vitana-eng-deploy` | 6 | single use, On-Demand only |
+| build | `vitana-eng-fleet-build` | `vitana-eng-build` (protected runner) | 4 | single use, 80 % spot; `.build-image` only, the one class whose service containers run without seccomp and AppArmor |
 
 All three: min 0 and desired 0 (the runner scales them), one job per machine and the machine deleted after it,
 `privileged = false`, IMDSv2 with hop limit 1, no public IP, egress 80, 443 and DNS only, SSH in only from the fleet
@@ -97,6 +98,9 @@ container keeps both. Each class keeps its own cache path, so no class reads ano
      "echo CLASS_DEPLOY_ASG_NAME=vitana-eng-fleet-deploy >> /etc/vitana/env.classes",
      "echo CLASS_DEPLOY_MAX_INSTANCES=6 >> /etc/vitana/env.classes",
      "echo CLASS_DEPLOY_TOKEN_SECRET=vitana/engineering/gitlab/vitana-eng-fleet-deploy-runner-token >> /etc/vitana/env.classes",
+     "echo CLASS_BUILD_ASG_NAME=vitana-eng-fleet-build >> /etc/vitana/env.classes",
+     "echo CLASS_BUILD_MAX_INSTANCES=4 >> /etc/vitana/env.classes",
+     "echo CLASS_BUILD_TOKEN_SECRET=vitana/engineering/gitlab/vitana-eng-fleet-build-runner-token >> /etc/vitana/env.classes",
      "bash /opt/vitana/fleet-manager-install.sh >> /var/log/vitana-bootstrap.log 2>&1"]}' --query Command.CommandId --output text
    ```
 

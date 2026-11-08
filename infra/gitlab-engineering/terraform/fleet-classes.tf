@@ -3,6 +3,8 @@
 #
 #   main   (tag vitana-eng-main, a protected runner: protected refs only, main and assist/*): full suites after
 #          landing, image builds, STAGING-VERIFY, nightly, assist jobs. Max 12 single-use machines.
+#   build  (tag vitana-eng-build, a protected runner like main): only .build-image. The one class whose service containers
+#          run without seccomp and AppArmor (the rootless BuildKit daemon), so no other job's services lose them. Max 4.
 #   deploy (tag vitana-eng-deploy): only central-script jobs (push image, staging deploy and rollback, previews,
 #          record, VTID close, notify). Max 6 single-use machines, On-Demand only (a deploy never loses its machine).
 #
@@ -21,6 +23,11 @@ variable "fleet_main_max_instances" {
 variable "fleet_deploy_max_instances" {
   type    = number
   default = 6
+}
+
+variable "fleet_build_max_instances" {
+  type    = number
+  default = 4
 }
 
 variable "fleet_main_spot_percent" {
@@ -48,6 +55,13 @@ locals {
       name           = "vitana-eng-fleet-main"
       tag            = "vitana-eng-main"
       max_instances  = var.fleet_main_max_instances
+      on_demand_base = 0
+      spot_percent   = var.fleet_main_spot_percent
+    }
+    build = {
+      name           = "vitana-eng-fleet-build"
+      tag            = "vitana-eng-build"
+      max_instances  = var.fleet_build_max_instances
       on_demand_base = 0
       spot_percent   = var.fleet_main_spot_percent
     }
