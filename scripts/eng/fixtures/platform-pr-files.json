@@ -1,0 +1,3710 @@
+{
+ "schema": "vitana.delivery-pr-files/v1",
+ "repository": "exafyltd/vitana-platform",
+ "read_at": "2026-11-05T15:54:39.419Z",
+ "source": "gh api GET repos/exafyltd/vitana-platform/pulls?state=closed (merged, newest 60), pulls/<n>/files, actions/runs?head_sha=<head> (event pull_request|pull_request_target), actions/runs/<id>/jobs",
+ "job_durations": {
+  "CICDL-GATEWAY-CI.yml#Gateway Validation (Minimal CI)": {
+   "runs": 11,
+   "median_minutes": 2.08,
+   "max_minutes": 3.07
+  },
+  "OASIS-PERSISTENCE.yml#Gateway Service Tests": {
+   "runs": 11,
+   "median_minutes": 8.67,
+   "max_minutes": 9.47
+  },
+  "OASIS-PERSISTENCE.yml#Prisma Schema Check": {
+   "runs": 11,
+   "median_minutes": 0.47,
+   "max_minutes": 2.22
+  },
+  "OASIS-PERSISTENCE.yml#Reporter Script Validation": {
+   "runs": 11,
+   "median_minutes": 0.2,
+   "max_minutes": 0.28
+  },
+  "TEST-SUITE.yml#Gateway (Jest, shard 1/4)": {
+   "runs": 10,
+   "median_minutes": 2.68,
+   "max_minutes": 2.98
+  },
+  "TEST-SUITE.yml#Gateway (Jest, shard 2/4)": {
+   "runs": 10,
+   "median_minutes": 1.5,
+   "max_minutes": 2.4
+  },
+  "TEST-SUITE.yml#Gateway (Jest, shard 3/4)": {
+   "runs": 10,
+   "median_minutes": 2.23,
+   "max_minutes": 3.1
+  },
+  "TEST-SUITE.yml#Gateway (Jest, shard 4/4)": {
+   "runs": 10,
+   "median_minutes": 1.5,
+   "max_minutes": 2.7
+  },
+  "TEST-SUITE.yml#Test Suite Summary": {
+   "runs": 10,
+   "median_minutes": 0.07,
+   "max_minutes": 0.12
+  },
+  "TEST-SUITE.yml#gateway-shard-union": {
+   "runs": 10,
+   "median_minutes": 0.33,
+   "max_minutes": 1.53
+  },
+  "TEST-SUITE.yml#oasis-projector (jest)": {
+   "runs": 10,
+   "median_minutes": 0.46,
+   "max_minutes": 2.23
+  },
+  "TEST-SUITE.yml#openclaw-bridge (vitest)": {
+   "runs": 10,
+   "median_minutes": 0.43,
+   "max_minutes": 1.03
+  },
+  "TEST-SUITE.yml#vcaop (jest)": {
+   "runs": 10,
+   "median_minutes": 0.73,
+   "max_minutes": 1.93
+  },
+  "UNIT.yml#unit": {
+   "runs": 12,
+   "median_minutes": 0.6,
+   "max_minutes": 1.22
+  }
+ },
+ "prs": [
+  {
+   "number": 4692,
+   "title": "VTID-05544 (eng-gitlab-m1/gitlab-infra): put the running GitLab bundle under review, with a structure test and evidence",
+   "merged_at": "2026-11-05T15:45:03Z",
+   "head_sha": "6378b2c69ce0f62dc616e528f94ae2894b46714f",
+   "files": [
+    ".kiro/specs/eng-gitlab-m1/lanes/gitlab-infra.md",
+    "docs/validation/VTID-05544/acceptance.md",
+    "docs/validation/VTID-05544/commands.log",
+    "docs/validation/VTID-05544/outputs/compare-with-v6.sh",
+    "docs/validation/VTID-05544/outputs/cost-estimate.py",
+    "docs/validation/VTID-05544/outputs/cost-estimate.txt",
+    "docs/validation/VTID-05544/outputs/diff-vs-running-bundle.txt",
+    "docs/validation/VTID-05544/outputs/gateway-typecheck.txt",
+    "docs/validation/VTID-05544/outputs/green.txt",
+    "docs/validation/VTID-05544/outputs/mutate-gitlab-m1.sh",
+    "docs/validation/VTID-05544/outputs/mutation-run.txt",
+    "docs/validation/VTID-05544/outputs/owner-cloudshell-block-v6.txt",
+    "docs/validation/VTID-05544/outputs/red-on-base.txt",
+    "docs/validation/VTID-05544/outputs/red-on-empty-bundle.txt",
+    "docs/validation/VTID-05544/outputs/restore-script-test.txt",
+    "docs/validation/VTID-05544/outputs/scripts-and-yaml.txt",
+    "docs/validation/VTID-05544/outputs/secret-scan.txt",
+    "docs/validation/VTID-05544/outputs/terraform-checks.txt",
+    "docs/validation/VTID-05544/outputs/test-restore-inner.sh",
+    "docs/validation/VTID-05544/outputs/unit-all-node20.txt",
+    "docs/validation/VTID-05544/outputs/unit-all.txt",
+    "docs/validation/VTID-05544/plan-sparring.md",
+    "docs/validation/VTID-05544/scope.json",
+    "infra/gitlab-engineering/RUNBOOK.md",
+    "infra/gitlab-engineering/host/backup.sh",
+    "infra/gitlab-engineering/host/ci-platform.yml",
+    "infra/gitlab-engineering/host/ci-v1.yml",
+    "infra/gitlab-engineering/host/gitlab-configure.sh",
+    "infra/gitlab-engineering/host/gitlab-install.sh",
+    "infra/gitlab-engineering/host/mirror.sh",
+    "infra/gitlab-engineering/host/runner-fix.sh",
+    "infra/gitlab-engineering/host/runner-install.sh",
+    "infra/gitlab-engineering/setup.sh",
+    "infra/gitlab-engineering/terraform/main.tf",
+    "scripts/eng/gitlab-m1-structure.test.mjs"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "VALIDATOR-CHECK.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 4703,
+   "title": "VTID-05554 (agentic-delivery/reseat): seat exafy again for the eight agentic-delivery lanes (plan §9)",
+   "merged_at": "2026-11-05T15:33:43Z",
+   "head_sha": "f05715c653bc3c9f6d2a10375f1d3b85a27fe53f",
+   "files": [
+    ".kiro/specs/agentic-delivery/lanes/cutover.md",
+    ".kiro/specs/agentic-delivery/lanes/deploy-path.md",
+    ".kiro/specs/agentic-delivery/lanes/gateway-delivery.md",
+    ".kiro/specs/agentic-delivery/lanes/github-bridge.md",
+    ".kiro/specs/agentic-delivery/lanes/merge-queue.md",
+    ".kiro/specs/agentic-delivery/lanes/pipelines.md",
+    ".kiro/specs/agentic-delivery/lanes/prerequisites.md",
+    ".kiro/specs/agentic-delivery/lanes/reseat.md",
+    ".kiro/specs/agentic-delivery/lanes/verify-on-gitlab.md",
+    "docs/validation/VTID-05554/acceptance.md",
+    "docs/validation/VTID-05554/commands.log",
+    "docs/validation/VTID-05554/outputs/check-pr.txt",
+    "docs/validation/VTID-05554/outputs/green.txt",
+    "docs/validation/VTID-05554/outputs/negative-proof.sh",
+    "docs/validation/VTID-05554/outputs/negative-proof.txt",
+    "docs/validation/VTID-05554/outputs/open-prs.txt",
+    "docs/validation/VTID-05554/outputs/positive-proof.sh",
+    "docs/validation/VTID-05554/outputs/preflight.txt",
+    "docs/validation/VTID-05554/outputs/queue.test.txt",
+    "docs/validation/VTID-05554/outputs/red-on-base.txt",
+    "docs/validation/VTID-05554/outputs/scope-check.txt",
+    "docs/validation/VTID-05554/outputs/target-diff-check.sh",
+    "docs/validation/VTID-05554/outputs/target-diff-check.txt",
+    "docs/validation/VTID-05554/outputs/validate.txt",
+    "docs/validation/VTID-05554/plan-sparring.md",
+    "docs/validation/VTID-05554/scope.json"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "VALIDATOR-CHECK.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 4681,
+   "title": "plan(operator-chat-service-token): Operator Chat approve and reject send the gateway service token",
+   "merged_at": "2026-11-05T15:18:11Z",
+   "head_sha": "282b661b43277138ec47d88e1207c889e478e4ae",
+   "files": [
+    ".kiro/specs/operator-chat-service-token/handoff.md",
+    ".kiro/specs/operator-chat-service-token/lanes/operator-chat-service-token.md",
+    ".kiro/specs/operator-chat-service-token/plan.md",
+    ".kiro/specs/operator-chat-service-token/sparring/responses-1.md",
+    ".kiro/specs/operator-chat-service-token/sparring/round-1.md",
+    ".kiro/specs/operator-chat-service-token/sparring/round-2.md",
+    ".kiro/specs/operator-chat-service-token/sparring/state.json",
+    ".kiro/specs/operator-chat-service-token/sparring/verdict.md",
+    ".kiro/specs/operator-chat-service-token/tasks.md",
+    "docs/programs/standalone/program.md"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PLAN-SPAR.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 4695,
+   "title": "plan(eng-gitlab-m1): late lane gitlab-verify takes the owner-run evidence",
+   "merged_at": "2026-11-05T15:01:55Z",
+   "head_sha": "57a01e804c3d8609aa9c71f615e663346464ba9d",
+   "files": [
+    ".kiro/specs/eng-gitlab-m1/handoff.md",
+    ".kiro/specs/eng-gitlab-m1/lanes/gitlab-verify.md",
+    ".kiro/specs/eng-gitlab-m1/plan.md",
+    ".kiro/specs/eng-gitlab-m1/sparring/verdict.md",
+    ".kiro/specs/eng-gitlab-m1/tasks.md"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PLAN-SPAR.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 4702,
+   "title": "VTID-05309 (messenger-ux-v2/_plan): closing records for the Messenger UX v2 plan",
+   "merged_at": "2026-11-05T14:56:30Z",
+   "head_sha": "6de357a9c3be8e5fd66c31862c632c79b2e9fe26",
+   "files": [
+    ".kiro/specs/messenger-ux-v2/handoff.md",
+    "docs/validation/VTID-05309/acceptance.md",
+    "docs/validation/VTID-05309/timings.json"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "VALIDATOR-CHECK.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 4556,
+   "title": "fix(pm): stale reassignment writes nothing when nothing changed; never seat == reviewer_seat (VTID-05421)",
+   "merged_at": "2026-11-05T14:46:10Z",
+   "head_sha": "798f1259911d2088bc17e1b8c2b39bd655587dcf",
+   "files": [
+    ".github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml",
+    ".kiro/specs/pm-reassign-idempotent-r3/lanes/reassign-noop-r3.md",
+    "docs/validation/VTID-05421/acceptance.md",
+    "docs/validation/VTID-05421/commands.log",
+    "docs/validation/VTID-05421/outputs/archive-r2-green-on-head.txt",
+    "docs/validation/VTID-05421/outputs/changed-files.txt",
+    "docs/validation/VTID-05421/outputs/jest-project-manager.log",
+    "docs/validation/VTID-05421/outputs/protected-check.txt",
+    "docs/validation/VTID-05421/outputs/red-on-base.txt",
+    "docs/validation/VTID-05421/outputs/test-change-explanation.md",
+    "docs/validation/VTID-05421/outputs/test-operator.txt",
+    "docs/validation/VTID-05421/outputs/test-removals-count.txt",
+    "docs/validation/VTID-05421/outputs/test-removals.txt",
+    "docs/validation/VTID-05421/plan-sparring.md",
+    "docs/validation/VTID-05421/scope.json",
+    "docs/validation/VTID-05421/staging-tests.json",
+    "services/gateway/src/services/conversation/conversation-flag-pins.generated.ts",
+    "services/gateway/src/services/project-manager/act.ts",
+    "services/gateway/src/services/project-manager/decide.ts",
+    "services/gateway/src/services/project-manager/types.ts",
+    "services/gateway/src/services/project-manager/writers.ts",
+    "services/gateway/test/kaf-staging-claude-available-wiring.test.ts",
+    "services/gateway/test/project-manager/act.test.ts",
+    "services/gateway/test/project-manager/decide.test.ts",
+    "services/gateway/test/project-manager/fallback.test.ts",
+    "services/gateway/test/project-manager/governance.test.ts",
+    "services/gateway/test/project-manager/loop.test.ts",
+    "services/gateway/test/project-manager/observe-live.test.ts",
+    "services/gateway/test/project-manager/reassign-idempotent.test.ts",
+    "services/gateway/test/project-manager/reassign-seat.test.ts"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "TEST-SUITE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "CICDL-CORE-LINT-SERVICES.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "OASIS-PERSISTENCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "VALIDATOR-CHECK.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "CICDL-GATEWAY-CI.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 4377,
+   "title": "VTID-05331 (collab-multi-builder-handoff/sequential-builders): Collab handoff accepts sequential sessions of the lane's own seat",
+   "merged_at": "2026-11-05T13:13:58Z",
+   "head_sha": "e9e7f67b4429cd81e743410a1768541ea287e049",
+   "files": [
+    ".kiro/specs/collab-multi-builder-handoff/lanes/sequential-builders.md",
+    "docs/validation/VTID-05331/acceptance.md",
+    "docs/validation/VTID-05331/commands.log",
+    "docs/validation/VTID-05331/outputs/collab-suite-green.txt",
+    "docs/validation/VTID-05331/outputs/red-on-main.txt",
+    "docs/validation/VTID-05331/outputs/vtid-05331-green.txt",
+    "docs/validation/VTID-05331/plan-sparring.md",
+    "docs/validation/VTID-05331/scope.json",
+    "docs/validation/VTID-05331/staging-tests.json",
+    "scripts/collab/queue.mjs",
+    "scripts/collab/queue.test.mjs"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "VALIDATOR-CHECK.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "CI-SCRIPTS-TEST.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 4691,
+   "title": "plan(agentic-delivery): late lane reseat restores seat exafy (plan §9)",
+   "merged_at": "2026-11-05T12:14:41Z",
+   "head_sha": "3935fca2d08aa28bbae35433de552cb87203703d",
+   "files": [
+    ".kiro/specs/agentic-delivery/handoff.md",
+    ".kiro/specs/agentic-delivery/lanes/reseat.md",
+    ".kiro/specs/agentic-delivery/plan.md",
+    ".kiro/specs/agentic-delivery/sparring/verdict.md",
+    ".kiro/specs/agentic-delivery/tasks.md"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PLAN-SPAR.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 4698,
+   "title": "plan(memory-legacy-read-retire-r2): the ORB reads memory only through recall(); the legacy six-table read and its shadow go",
+   "merged_at": "2026-11-05T12:01:00Z",
+   "head_sha": "22c3dcb974efa4435275a9b584e0843356a6d4f9",
+   "files": [
+    ".kiro/specs/memory-legacy-read-retire-r2/design.md",
+    ".kiro/specs/memory-legacy-read-retire-r2/handoff.md",
+    ".kiro/specs/memory-legacy-read-retire-r2/lanes/bridge-recall-only.md",
+    ".kiro/specs/memory-legacy-read-retire-r2/plan.md",
+    ".kiro/specs/memory-legacy-read-retire-r2/requirements.md",
+    ".kiro/specs/memory-legacy-read-retire-r2/sparring/responses-1.md",
+    ".kiro/specs/memory-legacy-read-retire-r2/sparring/round-1.md",
+    ".kiro/specs/memory-legacy-read-retire-r2/sparring/round-2.md",
+    ".kiro/specs/memory-legacy-read-retire-r2/sparring/state.json",
+    ".kiro/specs/memory-legacy-read-retire-r2/sparring/verdict.md",
+    ".kiro/specs/memory-legacy-read-retire-r2/tasks.md",
+    "docs/programs/standalone/program.md"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PLAN-SPAR.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 4633,
+   "title": "VTID-05479 (mt-identity-r2/migration-records): MIGRATION-QUEUE rows and drift baseline for the identity migrations",
+   "merged_at": "2026-11-05T10:53:43Z",
+   "head_sha": "a34da8c03d0e6ef13b6cfd40ee9854682d314bbd",
+   "files": [
+    ".kiro/specs/mt-identity-r2/lanes/migration-records.md",
+    "docs/multitenancy/MIGRATION-QUEUE.md",
+    "docs/validation/VTID-05479/acceptance.md",
+    "docs/validation/VTID-05479/commands.log",
+    "docs/validation/VTID-05479/outputs/json-check.txt",
+    "docs/validation/VTID-05479/plan-sparring.md",
+    "docs/validation/VTID-05479/scope.json",
+    "docs/validation/VTID-05479/staging-tests.json",
+    "scripts/ci/migration-drift-baseline.json"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "MIGRATION-DRIFT-CHECK.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "VALIDATOR-CHECK.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 4673,
+   "title": "VTID-05529 (mt-track-s-authz/work-surface-permission-v2): per-screen permission mirrors the screen gate",
+   "merged_at": "2026-11-05T08:49:01Z",
+   "head_sha": "c3211106f3e382354b66bb0ba9702d6781445415",
+   "files": [
+    ".kiro/specs/mt-track-s-authz/lanes/work-surface-permission-v2.md",
+    "docs/validation/VTID-05529/acceptance.md",
+    "docs/validation/VTID-05529/commands.log",
+    "docs/validation/VTID-05529/outputs/baseline-origin-main.txt",
+    "docs/validation/VTID-05529/outputs/full-suite-summary.txt",
+    "docs/validation/VTID-05529/outputs/green.txt",
+    "docs/validation/VTID-05529/outputs/livekit-route-suite.txt",
+    "docs/validation/VTID-05529/outputs/test-operator.txt",
+    "docs/validation/VTID-05529/outputs/test-roles.txt",
+    "docs/validation/VTID-05529/outputs/test-support.txt",
+    "docs/validation/VTID-05529/outputs/test-voice-identity.txt",
+    "docs/validation/VTID-05529/outputs/tsc.txt",
+    "docs/validation/VTID-05529/plan-sparring.md",
+    "docs/validation/VTID-05529/red.txt",
+    "docs/validation/VTID-05529/scope.json",
+    "docs/validation/VTID-05529/staging-tests.json",
+    "services/gateway/src/orb/live/session/live-session-controller.ts",
+    "services/gateway/src/orb/profile/assistant-profile.ts",
+    "services/gateway/src/routes/conversation.ts",
+    "services/gateway/src/routes/orb-livekit.ts",
+    "services/gateway/test/mt-track-s-authz-work-surface.test.ts",
+    "services/gateway/test/routes/orb-livekit.test.ts"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "VALIDATOR-CHECK.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "CICDL-GATEWAY-CI.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "CICDL-CORE-LINT-SERVICES.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "TEST-SUITE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "OASIS-PERSISTENCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 4688,
+   "title": "VTID-05545 (agentic-delivery/_plan): PM bookkeeping",
+   "merged_at": "2026-11-05T04:02:52Z",
+   "head_sha": "31efc396f107b653b13be58c9da9b394d9b52e07",
+   "files": [
+    ".kiro/specs/agentic-delivery/lanes/cutover.md",
+    ".kiro/specs/agentic-delivery/lanes/deploy-path.md",
+    ".kiro/specs/agentic-delivery/lanes/gateway-delivery.md",
+    ".kiro/specs/agentic-delivery/lanes/github-bridge.md",
+    ".kiro/specs/agentic-delivery/lanes/merge-queue.md",
+    ".kiro/specs/agentic-delivery/lanes/pipelines.md",
+    ".kiro/specs/agentic-delivery/lanes/prerequisites.md",
+    ".kiro/specs/agentic-delivery/lanes/verify-on-gitlab.md"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "cancelled"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 4684,
+   "title": "plan(agentic-delivery): hard cutover of delivery to our own GitLab, both repositories",
+   "merged_at": "2026-11-05T00:49:30Z",
+   "head_sha": "6310199c4f58bdd1675c36bb3f1b3c12e63a5283",
+   "files": [
+    ".kiro/specs/agentic-delivery/handoff.md",
+    ".kiro/specs/agentic-delivery/lanes/cutover.md",
+    ".kiro/specs/agentic-delivery/lanes/deploy-path.md",
+    ".kiro/specs/agentic-delivery/lanes/gateway-delivery.md",
+    ".kiro/specs/agentic-delivery/lanes/github-bridge.md",
+    ".kiro/specs/agentic-delivery/lanes/merge-queue.md",
+    ".kiro/specs/agentic-delivery/lanes/pipelines.md",
+    ".kiro/specs/agentic-delivery/lanes/prerequisites.md",
+    ".kiro/specs/agentic-delivery/lanes/verify-on-gitlab.md",
+    ".kiro/specs/agentic-delivery/plan.md",
+    ".kiro/specs/agentic-delivery/sparring/responses-1.md",
+    ".kiro/specs/agentic-delivery/sparring/round-1.md",
+    ".kiro/specs/agentic-delivery/sparring/round-2.md",
+    ".kiro/specs/agentic-delivery/sparring/state.json",
+    ".kiro/specs/agentic-delivery/sparring/verdict.md",
+    ".kiro/specs/agentic-delivery/tasks.md",
+    "docs/programs/engineering-platform/program.md"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "cancelled"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PLAN-SPAR.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 4679,
+   "title": "VTID-05537 (eng-gitlab-m2/gitlab-client): GitLab API client and recording fake fetch",
+   "merged_at": "2026-11-05T00:33:03Z",
+   "head_sha": "0cb5742749234268b37d5950a2ad31babf7d9252",
+   "files": [
+    ".kiro/specs/eng-gitlab-m2/lanes/gitlab-client.md",
+    "docs/validation/VTID-05537/acceptance.md",
+    "docs/validation/VTID-05537/commands.log",
+    "docs/validation/VTID-05537/outputs/green.txt",
+    "docs/validation/VTID-05537/outputs/mutate-gitlab-client.sh",
+    "docs/validation/VTID-05537/outputs/mutation-run.txt",
+    "docs/validation/VTID-05537/outputs/red-on-base.txt",
+    "docs/validation/VTID-05537/outputs/redirect-check.mjs",
+    "docs/validation/VTID-05537/outputs/redirect-check.txt",
+    "docs/validation/VTID-05537/outputs/unit-all.txt",
+    "docs/validation/VTID-05537/plan-sparring.md",
+    "docs/validation/VTID-05537/scope.json",
+    "scripts/eng/gitlab-api.mjs",
+    "scripts/eng/gitlab-api.test.mjs",
+    "scripts/eng/testing/fake-fetch.mjs",
+    "scripts/eng/testing/fake-fetch.test.mjs"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "cancelled"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "VALIDATOR-CHECK.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 4677,
+   "title": "plan(eng-gitlab-m1): self-hosted GitLab CI, milestone 1",
+   "merged_at": "2026-11-04T22:15:49Z",
+   "head_sha": "828c41b01286bb7ea83a2f552c0a49af86769c71",
+   "files": [
+    ".kiro/specs/eng-gitlab-m1/handoff.md",
+    ".kiro/specs/eng-gitlab-m1/lanes/gitlab-infra.md",
+    ".kiro/specs/eng-gitlab-m1/plan.md",
+    ".kiro/specs/eng-gitlab-m1/sparring/responses-1.md",
+    ".kiro/specs/eng-gitlab-m1/sparring/round-1.md",
+    ".kiro/specs/eng-gitlab-m1/sparring/s2-responses-1.md",
+    ".kiro/specs/eng-gitlab-m1/sparring/s2-round-1.md",
+    ".kiro/specs/eng-gitlab-m1/sparring/s2-round-2.md",
+    ".kiro/specs/eng-gitlab-m1/sparring/state.json",
+    ".kiro/specs/eng-gitlab-m1/sparring/verdict.md",
+    ".kiro/specs/eng-gitlab-m1/tasks.md",
+    "docs/programs/engineering-platform/program.md"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PLAN-SPAR.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 4653,
+   "title": "plan(mt-track-s-authz): amendment 1 — approvals-auth-v2 supersedes approvals-auth; the test path is in scope",
+   "merged_at": "2026-11-04T21:54:20Z",
+   "head_sha": "b50b5f1d8ad2c1dc15d84b95316967853e1f5b89",
+   "files": [
+    ".kiro/specs/mt-track-s-authz/handoff.md",
+    ".kiro/specs/mt-track-s-authz/lanes\u002fapprovals-auth-v2.md",
+    ".kiro/specs/mt-track-s-authz/plan.md",
+    ".kiro/specs/mt-track-s-authz/sparring/verdict.md",
+    ".kiro/specs/mt-track-s-authz/tasks.md"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PLAN-SPAR.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 4678,
+   "title": "plan(e2e-autonomy): the owner's end-to-end autonomy rule joins the standing steering",
+   "merged_at": "2026-11-04T20:42:20Z",
+   "head_sha": "e2b12a6771688e2f2cdaf754bf391ce0f84e53d3",
+   "files": [
+    ".kiro/specs/e2e-autonomy/handoff.md",
+    ".kiro/specs/e2e-autonomy/lanes/steering.md",
+    ".kiro/specs/e2e-autonomy/plan.md",
+    ".kiro/specs/e2e-autonomy/rule-text.md",
+    ".kiro/specs/e2e-autonomy/sparring/responses-1.md",
+    ".kiro/specs/e2e-autonomy/sparring/round-1.md",
+    ".kiro/specs/e2e-autonomy/sparring/round-2.md",
+    ".kiro/specs/e2e-autonomy/sparring/state.json",
+    ".kiro/specs/e2e-autonomy/sparring/verdict.md",
+    ".kiro/specs/e2e-autonomy/tasks.md",
+    "docs/programs/standalone/program.md"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PLAN-SPAR.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 4667,
+   "title": "plan(eng-gitlab-m2): GitLab ready for many agents, on the Free tier",
+   "merged_at": "2026-11-04T20:01:30Z",
+   "head_sha": "7944571d38e3915d935e02699c90b2e8ccf62819",
+   "files": [
+    ".kiro/specs/eng-gitlab-m2/handoff.md",
+    ".kiro/specs/eng-gitlab-m2/lanes/fleet.md",
+    ".kiro/specs/eng-gitlab-m2/lanes/gitlab-client.md",
+    ".kiro/specs/eng-gitlab-m2/lanes/merge-bot.md",
+    ".kiro/specs/eng-gitlab-m2/lanes/monitoring.md",
+    ".kiro/specs/eng-gitlab-m2/lanes/rehearsal.md",
+    ".kiro/specs/eng-gitlab-m2/lanes/scm-webhook.md",
+    ".kiro/specs/eng-gitlab-m2/lanes/settings.md",
+    ".kiro/specs/eng-gitlab-m2/plan.md",
+    ".kiro/specs/eng-gitlab-m2/sparring/responses-1.md",
+    ".kiro/specs/eng-gitlab-m2/sparring/round-1.md",
+    ".kiro/specs/eng-gitlab-m2/sparring/round-2.md",
+    ".kiro/specs/eng-gitlab-m2/sparring/state.json",
+    ".kiro/specs/eng-gitlab-m2/sparring/verdict.md",
+    ".kiro/specs/eng-gitlab-m2/tasks.md",
+    "docs/programs/engineering-platform/program.md"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PLAN-SPAR.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 4646,
+   "title": "plan(group-chat-realtime-status): group chat reload after realtime drops, latency logs",
+   "merged_at": "2026-11-04T17:51:41Z",
+   "head_sha": "9b14a480ce884f620bfcdd21b1817bf5bbaa9e32",
+   "files": [
+    ".kiro/specs/group-chat-realtime-status/handoff.md",
+    ".kiro/specs/group-chat-realtime-status/lanes/groupchat-realtime.md",
+    ".kiro/specs/group-chat-realtime-status/plan.md",
+    ".kiro/specs/group-chat-realtime-status/sparring/responses-1.md",
+    ".kiro/specs/group-chat-realtime-status/sparring/responses-2.md",
+    ".kiro/specs/group-chat-realtime-status/sparring/round-1.md",
+    ".kiro/specs/group-chat-realtime-status/sparring/round-2.md",
+    ".kiro/specs/group-chat-realtime-status/sparring/round-3.md",
+    ".kiro/specs/group-chat-realtime-status/sparring/state.json",
+    ".kiro/specs/group-chat-realtime-status/sparring/verdict.md",
+    ".kiro/specs/group-chat-realtime-status/tasks.md",
+    "docs/programs/standalone/program.md"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PLAN-SPAR.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 4514,
+   "title": "VTID-05208 (new-member-welcome/grouped-welcome-notifications): close lane record — verified → done",
+   "merged_at": "2026-11-04T17:20:59Z",
+   "head_sha": "db4350ea14b59fe959c06974cf0ef32f63d3f437",
+   "files": [
+    ".kiro/specs/new-member-welcome/lanes/grouped-welcome-notifications.md",
+    "docs/validation/VTID-05208/commands.log",
+    "docs/validation/VTID-05208/done-acceptance.md",
+    "docs/validation/VTID-05208/outputs/done-preflight.txt"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "cancelled"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "VALIDATOR-CHECK.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 4655,
+   "title": "plan(mt-track-s-authz): amendment wsp-1 — work-surface-permission-v2 supersedes work-surface-permission; the orb-livekit test path is in scope",
+   "merged_at": "2026-11-04T16:08:38Z",
+   "head_sha": "863b2ed98e5b589d14071f52338bb568bc0bfa76",
+   "files": [
+    ".kiro/specs/mt-track-s-authz/handoff.md",
+    ".kiro/specs/mt-track-s-authz/lanes/work-surface-permission-v2.md",
+    ".kiro/specs/mt-track-s-authz/plan.md",
+    ".kiro/specs/mt-track-s-authz/sparring/verdict.md",
+    ".kiro/specs/mt-track-s-authz/tasks.md"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 4636,
+   "title": "plan(mt-guardrails-r2): amendment 2 — the local stack runs on PGlite, not Docker",
+   "merged_at": "2026-11-04T16:08:23Z",
+   "head_sha": "489b793a207e51679430e4c2f32b8145da6085d6",
+   "files": [
+    ".kiro/specs/mt-guardrails-r2/handoff.md",
+    ".kiro/specs/mt-guardrails-r2/lanes/local-test-stack-pglite.md",
+    ".kiro/specs/mt-guardrails-r2/plan.md",
+    ".kiro/specs/mt-guardrails-r2/sparring/verdict.md",
+    ".kiro/specs/mt-guardrails-r2/tasks.md"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 4649,
+   "title": "VTID-05477 (welcome-finish-r2/new-members-feed-api): new-member listing endpoint excluding test/service/bot accounts",
+   "merged_at": "2026-11-04T15:31:43Z",
+   "head_sha": "06fd12e8c3bb4987263096ce5ac14fb9c770f9fa",
+   "files": [
+    ".kiro/specs/welcome-finish-r2/lanes/new-members-feed-api.md",
+    "docs/validation/VTID-05477/acceptance.md",
+    "docs/validation/VTID-05477/commands.log",
+    "docs/validation/VTID-05477/outputs/green.txt",
+    "docs/validation/VTID-05477/outputs/red-on-base.txt",
+    "docs/validation/VTID-05477/plan-sparring.md",
+    "docs/validation/VTID-05477/scope.json",
+    "docs/validation/VTID-05477/staging-tests.json",
+    "services/gateway/src/index.ts",
+    "services/gateway/src/routes/community-new-members.ts",
+    "services/gateway/test/vtid-05477-new-members-feed.test.ts"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "TEST-SUITE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "CICDL-GATEWAY-CI.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "CICDL-CORE-LINT-SERVICES.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "VALIDATOR-CHECK.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "OASIS-PERSISTENCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 4621,
+   "title": "plan(ci-superseded-pr-runs): cancel superseded PR runs and remove the queue pile-up",
+   "merged_at": "2026-11-04T13:42:22Z",
+   "head_sha": "42c0bfe635ff6a3104dd3df6f521fcd46024b209",
+   "files": [
+    ".kiro/specs/ci-superseded-pr-runs/handoff.md",
+    ".kiro/specs/ci-superseded-pr-runs/lanes/platform-superseded-concurrency.md",
+    ".kiro/specs/ci-superseded-pr-runs/lanes/v1-superseded-concurrency.md",
+    ".kiro/specs/ci-superseded-pr-runs/plan.md",
+    ".kiro/specs/ci-superseded-pr-runs/sparring/responses-1.md",
+    ".kiro/specs/ci-superseded-pr-runs/sparring/round-1.md",
+    ".kiro/specs/ci-superseded-pr-runs/sparring/round-2.md",
+    ".kiro/specs/ci-superseded-pr-runs/sparring/state.json",
+    ".kiro/specs/ci-superseded-pr-runs/sparring/verdict.md",
+    ".kiro/specs/ci-superseded-pr-runs/tasks.md",
+    "docs/programs/standalone/program.md"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 4625,
+   "title": "VTID-05465 (mt-identity-r2/helpers-and-policy-rewrite): tenant_id_for_policies() helpers, 32 bare policies rewritten, bare-policy lint",
+   "merged_at": "2026-11-03T18:43:36Z",
+   "head_sha": "840ce7659c8e0e8a88d1c88b8d7d78d0035747fe",
+   "files": [
+    ".kiro/specs/mt-identity-r2/lanes/helpers-and-policy-rewrite.md",
+    "docs/validation/VTID-05465/acceptance.md",
+    "docs/validation/VTID-05465/commands.log",
+    "docs/validation/VTID-05465/green.txt",
+    "docs/validation/VTID-05465/migration-queue-rows.md",
+    "docs/validation/VTID-05465/outputs/jest-green.txt",
+    "docs/validation/VTID-05465/outputs/jest-live-body-guard-green.txt",
+    "docs/validation/VTID-05465/outputs/jest-live-body-guard-red.txt",
+    "docs/validation/VTID-05465/outputs/jest-red-origin-main.txt",
+    "docs/validation/VTID-05465/outputs/live-body-guard-green.txt",
+    "docs/validation/VTID-05465/outputs/live-body-guard-red.txt",
+    "docs/validation/VTID-05465/outputs/pglite-apply-rollback-reapply.txt",
+    "docs/validation/VTID-05465/outputs/pglite-run-after-guard.txt",
+    "docs/validation/VTID-05465/outputs/pre-post-check-fixture.txt",
+    "docs/validation/VTID-05465/plan-sparring.md",
+    "docs/validation/VTID-05465/post-check.sql",
+    "docs/validation/VTID-05465/pre-check.sql",
+    "docs/validation/VTID-05465/red.txt",
+    "docs/validation/VTID-05465/scope.json",
+    "docs/validation/VTID-05465/staging-tests.json",
+    "scripts/ci/bare-policy-lint.mjs",
+    "services/gateway/test/mt-identity-bare-policy-lint.test.ts",
+    "supabase/migrations/20261102030000_vtid_05465_tenant_id_for_policies_is_member.sql",
+    "supabase/migrations/20261102030100_vtid_05465_bare_policy_rewrite.sql",
+    "supabase/migrations/20261102030100_vtid_05465_bare_policy_rewrite_rollback.sql",
+    "supabase/tests/mt_identity_helpers_fixture.sql",
+    "supabase/tests/mt_identity_helpers_live_body_guard.test.sql",
+    "supabase/tests/mt_identity_helpers_live_body_guard_fixture.sql",
+    "supabase/tests/mt_identity_helpers_rls.test.sql",
+    "supabase/tests/mt_identity_helpers_rollback.test.sql"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "cancelled"
+    },
+    "TEST-SUITE.yml": {
+     "ran": true,
+     "conclusion": "cancelled"
+    },
+    "OASIS-PERSISTENCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "VALIDATOR-CHECK.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "CICDL-CORE-LINT-SERVICES.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "MIGRATION-DRIFT-CHECK.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "CICDL-GATEWAY-CI.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 4639,
+   "title": "VTID-05516 (eng-platform-p01/oidc-roles): keyless OIDC roles and narrowed prod trust",
+   "merged_at": "2026-11-03T14:52:04Z",
+   "head_sha": "60b39956203a6b731546b996f2864fcd721bdd34",
+   "files": [
+    ".kiro/specs/eng-platform-p01/lanes/oidc-roles.md",
+    "docs/validation/VTID-05516/acceptance.md",
+    "docs/validation/VTID-05516/commands.log",
+    "docs/validation/VTID-05516/outputs/README.md",
+    "docs/validation/VTID-05516/outputs/red-on-base.txt",
+    "docs/validation/VTID-05516/outputs/red-secret-coverage.txt",
+    "docs/validation/VTID-05516/red-on-base.txt",
+    "docs/validation/VTID-05516/scope.json",
+    "docs/validation/VTID-05516/staging-tests.json",
+    "scripts/aws/iam/eng-platform-oidc-drift-readonly-policy.json",
+    "scripts/aws/iam/eng-platform-oidc-drift-readonly-trust.json",
+    "scripts/aws/iam/eng-platform-oidc-prod-deploy-trust.json",
+    "scripts/aws/iam/eng-platform-oidc-staging-deploy-policy.json",
+    "scripts/aws/iam/eng-platform-oidc-staging-deploy-trust.json",
+    "scripts/aws/iam/eng-platform-oidc-v1-preview-policy.json",
+    "scripts/aws/iam/eng-platform-oidc-v1-preview-trust.json",
+    "scripts/aws/setup-github-oidc-roles.sh",
+    "services/gateway/test/eng-platform-oidc-roles.test.ts"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "CICDL-GATEWAY-CI.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "OASIS-PERSISTENCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "CICDL-CORE-LINT-SERVICES.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "VALIDATOR-CHECK.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "TEST-SUITE.yml": {
+     "ran": true,
+     "conclusion": "cancelled"
+    }
+   }
+  },
+  {
+   "number": 4641,
+   "title": "VTID-05518 (eng-platform-p01/stage-oidc-platform): staging and drift workflows use OIDC when configured",
+   "merged_at": "2026-11-03T14:49:57Z",
+   "head_sha": "413257779d96363a4c377d77aac4d46e3131894b",
+   "files": [
+    ".github/workflows/ALERT-APP-USERS-IDENTITY-DRIFT.yml",
+    ".github/workflows/AWS-PROVISION-APPILIX-SECRETS.yml",
+    ".github/workflows/AWS-PROVISION-DEV-MEMORY-PACK-TOKEN.yml",
+    ".github/workflows/AWS-STAGE-DEPLOY-ERP-BRIDGE.yml",
+    ".github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml",
+    ".github/workflows/AWS-STAGE-DEPLOY-KIRO-RUNNER.yml",
+    ".github/workflows/AWS-STAGE-DEPLOY-POSTGREST-AURORA-PROXY.yml",
+    ".github/workflows/I18N-DB-SEED.yml",
+    ".github/workflows/MIGRATION-DRIFT-CHECK.yml",
+    ".kiro/specs/eng-platform-p01/lanes/stage-oidc-platform.md",
+    "docs/validation/VTID-05518/acceptance.md",
+    "docs/validation/VTID-05518/commands.log",
+    "docs/validation/VTID-05518/outputs/README.md",
+    "docs/validation/VTID-05518/outputs/red-on-base.txt",
+    "docs/validation/VTID-05518/red-on-base.txt",
+    "docs/validation/VTID-05518/scope.json",
+    "docs/validation/VTID-05518/staging-tests.json",
+    "services/gateway/test/eng-platform-stage-oidc-workflows.test.ts",
+    "services/gateway/test/vtid-05009-provision-pack-token-workflow.test.ts"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "CICDL-GATEWAY-CI.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "VALIDATOR-CHECK.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "CICDL-CORE-LINT-SERVICES.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "OASIS-PERSISTENCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "TEST-SUITE.yml": {
+     "ran": true,
+     "conclusion": "cancelled"
+    },
+    "AWS-STAGE-DEPLOY-KIRO-RUNNER.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 4638,
+   "title": "VTID-05515 (eng-platform-p01/aws-inventory): read-only AWS inventory script",
+   "merged_at": "2026-11-03T14:47:38Z",
+   "head_sha": "9ddb67e4a3cc3791547efafcb090d6f488b2ca53",
+   "files": [
+    ".kiro/specs/eng-platform-p01/lanes/aws-inventory.md",
+    "docs/validation/VTID-05515/acceptance.md",
+    "docs/validation/VTID-05515/commands.log",
+    "docs/validation/VTID-05515/outputs/README.md",
+    "docs/validation/VTID-05515/outputs/red-on-base.txt",
+    "docs/validation/VTID-05515/scope.json",
+    "docs/validation/VTID-05515/staging-tests.json",
+    "scripts/aws/inventory-readonly.sh",
+    "services/gateway/test/eng-platform-inventory-readonly.test.ts"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "OASIS-PERSISTENCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "VALIDATOR-CHECK.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "CICDL-GATEWAY-CI.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "CICDL-CORE-LINT-SERVICES.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "TEST-SUITE.yml": {
+     "ran": true,
+     "conclusion": "cancelled"
+    }
+   }
+  },
+  {
+   "number": 4640,
+   "title": "VTID-05517 (eng-platform-p01/program-doc): engineering platform program document",
+   "merged_at": "2026-11-03T14:35:40Z",
+   "head_sha": "8e54fc022535fc2420d18b6cbc4482922fc1bd36",
+   "files": [
+    ".kiro/specs/eng-platform-p01/lanes/program-doc.md",
+    "docs/ENGINEERING-PLATFORM-PLAN.md",
+    "docs/validation/VTID-05517/acceptance.md",
+    "docs/validation/VTID-05517/commands.log",
+    "docs/validation/VTID-05517/outputs/README.md",
+    "docs/validation/VTID-05517/scope.json",
+    "docs/validation/VTID-05517/staging-tests.json"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "VALIDATOR-CHECK.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 4652,
+   "title": "docs(agents): run end to end to verified staging",
+   "merged_at": "2026-11-03T14:08:17Z",
+   "head_sha": "2ccdab26fb8316bb0feb0df1a5a947263f83dc9f",
+   "files": [
+    "AGENTS.md"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 4634,
+   "title": "plan(native-wave2-ai-pages-r2): Wave 2 — port the AI assistant text pages to native (re-plan, clean trailers)",
+   "merged_at": "2026-11-03T13:30:52Z",
+   "head_sha": "7ad5487add264e901a31dfce4a9962009177c1e6",
+   "files": [
+    ".kiro/specs/native-wave2-ai-pages-r2/design.md",
+    ".kiro/specs/native-wave2-ai-pages-r2/handoff.md",
+    ".kiro/specs/native-wave2-ai-pages-r2/lanes/ai-assistants.md",
+    ".kiro/specs/native-wave2-ai-pages-r2/lanes/ai-chat.md",
+    ".kiro/specs/native-wave2-ai-pages-r2/lanes/ai-coach.md",
+    ".kiro/specs/native-wave2-ai-pages-r2/plan.md",
+    ".kiro/specs/native-wave2-ai-pages-r2/requirements.md",
+    ".kiro/specs/native-wave2-ai-pages-r2/sparring/responses-1.md",
+    ".kiro/specs/native-wave2-ai-pages-r2/sparring/round-1.md",
+    ".kiro/specs/native-wave2-ai-pages-r2/sparring/round-2.md",
+    ".kiro/specs/native-wave2-ai-pages-r2/sparring/state.json",
+    ".kiro/specs/native-wave2-ai-pages-r2/sparring/verdict.md",
+    ".kiro/specs/native-wave2-ai-pages-r2/tasks.md",
+    "docs/programs/native-app/program.md"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PLAN-SPAR.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 4609,
+   "title": "plan(welcome-finish-r2): explicit community-introduction choice, new-member feed bot/test exclusion, native extract regen",
+   "merged_at": "2026-11-03T12:04:00Z",
+   "head_sha": "95e139dd9cda54218c0a06df3503cd7875399197",
+   "files": [
+    ".kiro/specs/welcome-finish-r2/handoff.md",
+    ".kiro/specs/welcome-finish-r2/lanes/explicit-intro-choice.md",
+    ".kiro/specs/welcome-finish-r2/lanes/native-extract-regen.md",
+    ".kiro/specs/welcome-finish-r2/lanes/new-members-feed-api.md",
+    ".kiro/specs/welcome-finish-r2/lanes/new-members-feed-client.md",
+    ".kiro/specs/welcome-finish-r2/plan.md",
+    ".kiro/specs/welcome-finish-r2/sparring/responses-1.md",
+    ".kiro/specs/welcome-finish-r2/sparring/round-1.md",
+    ".kiro/specs/welcome-finish-r2/sparring/round-2.md",
+    ".kiro/specs/welcome-finish-r2/sparring/state.json",
+    ".kiro/specs/welcome-finish-r2/sparring/verdict.md",
+    ".kiro/specs/welcome-finish-r2/tasks.md",
+    "docs/programs/standalone/program.md"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PLAN-SPAR.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 4562,
+   "title": "VTID-05238 (commerce-step-owner/gateway-step-owner): rebuild under one session (r2)",
+   "merged_at": "2026-11-03T02:01:30Z",
+   "head_sha": "343bbf20aee9dbb39583611c29fd5344d2a7f08d",
+   "files": [
+    ".kiro/specs/commerce-step-owner/lanes/gateway-step-owner.md",
+    "docs/validation/VTID-05238/acceptance.md",
+    "docs/validation/VTID-05238/commands.log",
+    "docs/validation/VTID-05238/outputs/green-on-head.txt",
+    "docs/validation/VTID-05238/outputs/jest-gateway-suites.txt",
+    "docs/validation/VTID-05238/outputs/red-on-base.txt",
+    "docs/validation/VTID-05238/outputs/tsc-noemit.txt",
+    "docs/validation/VTID-05238/plan-sparring.md",
+    "docs/validation/VTID-05238/scope.json",
+    "docs/validation/VTID-05238/staging-tests.json",
+    "services/gateway/src/services/commerce-mcp.ts",
+    "services/gateway/src/services/partner-onboarding-checklist.ts",
+    "services/gateway/test/vtid-04941-commerce-mcp-automation.test.ts",
+    "services/gateway/test/vtid-05238-step-owner.test.ts"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "TEST-SUITE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "VALIDATOR-CHECK.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "CICDL-GATEWAY-CI.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "CICDL-CORE-LINT-SERVICES.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "OASIS-PERSISTENCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 4421,
+   "title": "VTID-05352 (pm-ci-load/pm-app-token): the Project Manager uses a GitHub App installation token when configured",
+   "merged_at": "2026-11-03T00:24:01Z",
+   "head_sha": "9a05a602162ea5a5b6a3c5dbb7955acecdb28279",
+   "files": [
+    ".kiro/specs/pm-ci-load/lanes/pm-app-token.md",
+    "docs/project-manager/github-app.md",
+    "docs/validation/VTID-05352/acceptance.md",
+    "docs/validation/VTID-05352/commands.log",
+    "docs/validation/VTID-05352/outputs/red-on-base.txt",
+    "docs/validation/VTID-05352/plan-sparring.md",
+    "docs/validation/VTID-05352/scope.json",
+    "docs/validation/VTID-05352/staging-tests.json",
+    "services/gateway/src/services/project-manager/github-app-token.ts",
+    "services/gateway/src/services/project-manager/github-rest.ts",
+    "services/gateway/test/project-manager/github-app-token.test.ts"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "OASIS-PERSISTENCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "CICDL-GATEWAY-CI.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "CICDL-CORE-LINT-SERVICES.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "VALIDATOR-CHECK.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "TEST-SUITE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 4604,
+   "title": "plan(native-wave2-discover-commerce-r2): Wave 2 — port discover, commerce, cart and orders to native (re-plan, clean trailers)",
+   "merged_at": "2026-11-02T23:07:43Z",
+   "head_sha": "ff491d94cea50059038d499e08dc77cdfa32c25e",
+   "files": [
+    ".kiro/specs/native-wave2-discover-commerce-r2/design.md",
+    ".kiro/specs/native-wave2-discover-commerce-r2/handoff.md",
+    ".kiro/specs/native-wave2-discover-commerce-r2/lanes/discover.md",
+    ".kiro/specs/native-wave2-discover-commerce-r2/lanes/marketplace-orders.md",
+    ".kiro/specs/native-wave2-discover-commerce-r2/lanes/product-cart-checkout.md",
+    ".kiro/specs/native-wave2-discover-commerce-r2/plan.md",
+    ".kiro/specs/native-wave2-discover-commerce-r2/requirements.md",
+    ".kiro/specs/native-wave2-discover-commerce-r2/sparring/responses-1.md",
+    ".kiro/specs/native-wave2-discover-commerce-r2/sparring/round-1.md",
+    ".kiro/specs/native-wave2-discover-commerce-r2/sparring/round-2.md",
+    ".kiro/specs/native-wave2-discover-commerce-r2/sparring/state.json",
+    ".kiro/specs/native-wave2-discover-commerce-r2/sparring/verdict.md",
+    ".kiro/specs/native-wave2-discover-commerce-r2/tasks.md",
+    "docs/programs/native-app/program.md"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PLAN-SPAR.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 4614,
+   "title": "plan(mt-discover-r2): mt-discover — Commerce & Discover × tenancy (WS11 + Discover scope of §4.11) — mt-discover-r2 (re-plan)",
+   "merged_at": "2026-11-02T21:53:01Z",
+   "head_sha": "ab01328935a9897592f9df84def2a2ded022bd6e",
+   "files": [
+    ".kiro/specs/mt-discover-r2/design.md",
+    ".kiro/specs/mt-discover-r2/handoff.md",
+    ".kiro/specs/mt-discover-r2/lanes/discover-mode-ui.md",
+    ".kiro/specs/mt-discover-r2/lanes/discover-shared-predicate.md",
+    ".kiro/specs/mt-discover-r2/lanes/supplier-onboarding-communities.md",
+    ".kiro/specs/mt-discover-r2/lanes/supplier-relationships-db.md",
+    ".kiro/specs/mt-discover-r2/plan.md",
+    ".kiro/specs/mt-discover-r2/requirements.md",
+    ".kiro/specs/mt-discover-r2/sparring/responses-1.md",
+    ".kiro/specs/mt-discover-r2/sparring/round-1.md",
+    ".kiro/specs/mt-discover-r2/sparring/round-2.md",
+    ".kiro/specs/mt-discover-r2/sparring/state.json",
+    ".kiro/specs/mt-discover-r2/sparring/verdict.md",
+    ".kiro/specs/mt-discover-r2/tasks.md",
+    "docs/programs/multi-tenant/program.md"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PLAN-SPAR.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 4616,
+   "title": "plan(mt-packs-r2): mt-packs (WS5) — Assistant & content packs: Maxina becomes tenant pack #1 — mt-packs-r2 (re-plan)",
+   "merged_at": "2026-11-02T21:10:58Z",
+   "head_sha": "10739436138cb925cf977eeac0e47f4f9777ae96",
+   "files": [
+    ".kiro/specs/mt-packs-r2/design.md",
+    ".kiro/specs/mt-packs-r2/handoff.md",
+    ".kiro/specs/mt-packs-r2/lanes/brand-content-templating.md",
+    ".kiro/specs/mt-packs-r2/lanes/content-overrides-db.md",
+    ".kiro/specs/mt-packs-r2/lanes/frontend-brand-neutralise.md",
+    ".kiro/specs/mt-packs-r2/lanes/kb-overlay-code.md",
+    ".kiro/specs/mt-packs-r2/lanes/kb-overlay-db.md",
+    ".kiro/specs/mt-packs-r2/lanes/persona-pack.md",
+    ".kiro/specs/mt-packs-r2/lanes/whats-new-drafter-prompt.md",
+    ".kiro/specs/mt-packs-r2/lanes/whats-new-golden-regen.md",
+    ".kiro/specs/mt-packs-r2/plan.md",
+    ".kiro/specs/mt-packs-r2/requirements.md",
+    ".kiro/specs/mt-packs-r2/sparring/responses-1.md",
+    ".kiro/specs/mt-packs-r2/sparring/round-1.md",
+    ".kiro/specs/mt-packs-r2/sparring/round-2.md",
+    ".kiro/specs/mt-packs-r2/sparring/state.json",
+    ".kiro/specs/mt-packs-r2/sparring/verdict.md",
+    ".kiro/specs/mt-packs-r2/tasks.md",
+    "docs/programs/multi-tenant/program.md"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PLAN-SPAR.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 4622,
+   "title": "plan(eng-platform-p01): engineering platform phase 0+1 — program doc, read-only AWS inventory, keyless staging CI",
+   "merged_at": "2026-11-02T20:57:26Z",
+   "head_sha": "252f1b3aaf3d8ed06562b80e2d4a672641ba6f99",
+   "files": [
+    ".kiro/specs/eng-platform-p01/handoff.md",
+    ".kiro/specs/eng-platform-p01/lanes/aws-inventory.md",
+    ".kiro/specs/eng-platform-p01/lanes/oidc-roles.md",
+    ".kiro/specs/eng-platform-p01/lanes/program-doc.md",
+    ".kiro/specs/eng-platform-p01/lanes/stage-oidc-platform.md",
+    ".kiro/specs/eng-platform-p01/lanes/stage-oidc-v1.md",
+    ".kiro/specs/eng-platform-p01/plan.md",
+    ".kiro/specs/eng-platform-p01/sparring/responses-1.md",
+    ".kiro/specs/eng-platform-p01/sparring/round-1.md",
+    ".kiro/specs/eng-platform-p01/sparring/round-2.md",
+    ".kiro/specs/eng-platform-p01/sparring/state.json",
+    ".kiro/specs/eng-platform-p01/sparring/verdict.md",
+    ".kiro/specs/eng-platform-p01/tasks.md",
+    "docs/programs/engineering-platform/program.md"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PLAN-SPAR.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 4613,
+   "title": "plan(mt-frontend-brand-r3): amend brand-surface paths and theme-tokens approach",
+   "merged_at": "2026-11-02T19:42:41Z",
+   "head_sha": "72644b6cdd2a390e368d12ed7c67e9e256ad317d",
+   "files": [
+    ".kiro/specs/mt-frontend-brand-r3/design.md",
+    ".kiro/specs/mt-frontend-brand-r3/handoff.md",
+    ".kiro/specs/mt-frontend-brand-r3/lanes/brand-surface-r3.md",
+    ".kiro/specs/mt-frontend-brand-r3/lanes/theme-tokens-r3.md",
+    ".kiro/specs/mt-frontend-brand-r3/plan.md",
+    ".kiro/specs/mt-frontend-brand-r3/sparring/responses-1.md",
+    ".kiro/specs/mt-frontend-brand-r3/sparring/round-1.md",
+    ".kiro/specs/mt-frontend-brand-r3/sparring/round-2.md",
+    ".kiro/specs/mt-frontend-brand-r3/sparring/state.json",
+    ".kiro/specs/mt-frontend-brand-r3/sparring/verdict.md",
+    ".kiro/specs/mt-frontend-brand-r3/tasks.md",
+    "docs/programs/multi-tenant/program.md"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PLAN-SPAR.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 4632,
+   "title": "VTID-04905: cover no-VTID commit 6028392a (#4539) in commit-coverage",
+   "merged_at": "2026-11-02T19:39:31Z",
+   "head_sha": "926ea5afdfa9078ae50b131e41cd134b43db7291",
+   "files": [
+    "docs/validation/commit-coverage.json"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "VALIDATOR-CHECK.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 4612,
+   "title": "plan(mt-tenant-admin-r2): mt-tenant-admin — provisioning rest, scoped tenant-admin, invitation accept, deactivate/archive (WS4) — mt-tenant-admin-r2 (re-plan)",
+   "merged_at": "2026-11-02T18:36:47Z",
+   "head_sha": "0829500c01547ead4a9522c6edc9c8b45de40229",
+   "files": [
+    ".kiro/specs/mt-tenant-admin-r2/design.md",
+    ".kiro/specs/mt-tenant-admin-r2/handoff.md",
+    ".kiro/specs/mt-tenant-admin-r2/lanes/command-hub-tenant-module.md",
+    ".kiro/specs/mt-tenant-admin-r2/lanes/tenant-admin-api.md",
+    ".kiro/specs/mt-tenant-admin-r2/lanes/tenant-admin-moderation-db.md",
+    ".kiro/specs/mt-tenant-admin-r2/lanes/tenant-admin-pages.md",
+    ".kiro/specs/mt-tenant-admin-r2/lanes/tenant-lifecycle-db.md",
+    ".kiro/specs/mt-tenant-admin-r2/plan.md",
+    ".kiro/specs/mt-tenant-admin-r2/requirements.md",
+    ".kiro/specs/mt-tenant-admin-r2/sparring/responses-1.md",
+    ".kiro/specs/mt-tenant-admin-r2/sparring/round-1.md",
+    ".kiro/specs/mt-tenant-admin-r2/sparring/round-2.md",
+    ".kiro/specs/mt-tenant-admin-r2/sparring/state.json",
+    ".kiro/specs/mt-tenant-admin-r2/sparring/verdict.md",
+    ".kiro/specs/mt-tenant-admin-r2/tasks.md",
+    "docs/programs/multi-tenant/program.md"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PLAN-SPAR.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 4611,
+   "title": "plan(mt-m3-r2): M3 generally-provisionable — custom domains, tenant switching UI, monitoring, ERP bootstrap, offboarding runbook — mt-m3-r2 (re-plan)",
+   "merged_at": "2026-11-02T17:45:34Z",
+   "head_sha": "32576ef893ad0d94cdef412fbb1908d09d3f9350",
+   "files": [
+    ".kiro/specs/mt-m3-r2/design.md",
+    ".kiro/specs/mt-m3-r2/handoff.md",
+    ".kiro/specs/mt-m3-r2/lanes/host-resolution-gw.md",
+    ".kiro/specs/mt-m3-r2/lanes/monitoring-erp-gw.md",
+    ".kiro/specs/mt-m3-r2/lanes/morning-health-pertenant.md",
+    ".kiro/specs/mt-m3-r2/lanes/native-domains-aasa.md",
+    ".kiro/specs/mt-m3-r2/lanes/provision-erp-monitoring-db.md",
+    ".kiro/specs/mt-m3-r2/lanes/tenant-domains-db.md",
+    ".kiro/specs/mt-m3-r2/lanes/tenant-switcher-ui.md",
+    ".kiro/specs/mt-m3-r2/lanes/wizard-price-polish.md",
+    ".kiro/specs/mt-m3-r2/plan.md",
+    ".kiro/specs/mt-m3-r2/requirements.md",
+    ".kiro/specs/mt-m3-r2/sparring/responses-1.md",
+    ".kiro/specs/mt-m3-r2/sparring/round-1.md",
+    ".kiro/specs/mt-m3-r2/sparring/round-2.md",
+    ".kiro/specs/mt-m3-r2/sparring/state.json",
+    ".kiro/specs/mt-m3-r2/sparring/verdict.md",
+    ".kiro/specs/mt-m3-r2/tasks.md",
+    "docs/programs/multi-tenant/program.md"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PLAN-SPAR.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 4610,
+   "title": "plan(sparring-token-efficiency-r2): Plan — sparring-token-efficiency — sparring-token-efficiency-r2 (re-plan)",
+   "merged_at": "2026-11-02T17:45:07Z",
+   "head_sha": "575b5e370965099639ad21ae1ada50a874a72a64",
+   "files": [
+    ".kiro/specs/sparring-token-efficiency-r2/design.md",
+    ".kiro/specs/sparring-token-efficiency-r2/handoff.md",
+    ".kiro/specs/sparring-token-efficiency-r2/lanes/llm-cache-telemetry.md",
+    ".kiro/specs/sparring-token-efficiency-r2/lanes/partner-budget.md",
+    ".kiro/specs/sparring-token-efficiency-r2/lanes/plan-spar-reasons.md",
+    ".kiro/specs/sparring-token-efficiency-r2/plan.md",
+    ".kiro/specs/sparring-token-efficiency-r2/requirements.md",
+    ".kiro/specs/sparring-token-efficiency-r2/sparring/responses-1.md",
+    ".kiro/specs/sparring-token-efficiency-r2/sparring/round-1.md",
+    ".kiro/specs/sparring-token-efficiency-r2/sparring/round-2.md",
+    ".kiro/specs/sparring-token-efficiency-r2/sparring/state.json",
+    ".kiro/specs/sparring-token-efficiency-r2/sparring/verdict.md",
+    ".kiro/specs/sparring-token-efficiency-r2/tasks.md",
+    "docs/programs/standalone/program.md"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PLAN-SPAR.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 4624,
+   "title": "plan(mt-identity-r2): amendment 1 — policy audience, memberships stays a table, migration-records lane",
+   "merged_at": "2026-11-02T17:44:40Z",
+   "head_sha": "4a8abe96b5d4e83f1163f529fa74ed2956d96161",
+   "files": [
+    ".kiro/specs/mt-identity-r2/handoff.md",
+    ".kiro/specs/mt-identity-r2/lanes/migration-records.md",
+    ".kiro/specs/mt-identity-r2/plan.md",
+    ".kiro/specs/mt-identity-r2/sparring/verdict.md",
+    ".kiro/specs/mt-identity-r2/tasks.md"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PLAN-SPAR.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 4623,
+   "title": "VTID-05442 (mt-track-s-r2/s-j-route-inventory): close lane record — done, merge c3d71c8 under §7b",
+   "merged_at": "2026-11-02T16:13:02Z",
+   "head_sha": "f7041cfec0869e5ad81db8e47cd48868c273a74c",
+   "files": [
+    ".kiro/specs/mt-track-s-r2/lanes/s-j-route-inventory.md",
+    "docs/validation/VTID-05442/acceptance.md",
+    "docs/validation/VTID-05442/commands.log",
+    "docs/validation/VTID-05442/outputs/queue-validate.txt",
+    "docs/validation/VTID-05442/plan-sparring.md",
+    "docs/validation/VTID-05442/scope.json"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "VALIDATOR-CHECK.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 4619,
+   "title": "plan(mt-guardrails-r2): local-test-stack-v2 runs its boot spike in its own CI job",
+   "merged_at": "2026-11-02T16:09:31Z",
+   "head_sha": "2bb9710a6347574a87503ed6cda6bb2e2fb63172",
+   "files": [
+    ".kiro/specs/mt-guardrails-r2/handoff.md",
+    ".kiro/specs/mt-guardrails-r2/lanes/local-test-stack-v2.md",
+    ".kiro/specs/mt-guardrails-r2/plan.md",
+    ".kiro/specs/mt-guardrails-r2/sparring/verdict.md",
+    ".kiro/specs/mt-guardrails-r2/tasks.md"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PLAN-SPAR.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 4581,
+   "title": "plan(mt-identity-r2): WS1 identity, tenancy resolution and roles (re-plan)",
+   "merged_at": "2026-11-02T15:27:54Z",
+   "head_sha": "b1a9ebf1497af5448f1633204cfd22d4d4f409da",
+   "files": [
+    ".kiro/specs/mt-identity-r2/design.md",
+    ".kiro/specs/mt-identity-r2/handoff.md",
+    ".kiro/specs/mt-identity-r2/lanes/access-token-hook-shadow.md",
+    ".kiro/specs/mt-identity-r2/lanes/helpers-and-policy-rewrite.md",
+    ".kiro/specs/mt-identity-r2/lanes/membership-unification.md",
+    ".kiro/specs/mt-identity-r2/lanes/role-source-and-bootstrap.md",
+    ".kiro/specs/mt-identity-r2/lanes/tenant-db-and-slug-cleanup.md",
+    ".kiro/specs/mt-identity-r2/plan.md",
+    ".kiro/specs/mt-identity-r2/requirements.md",
+    ".kiro/specs/mt-identity-r2/sparring/responses-1.md",
+    ".kiro/specs/mt-identity-r2/sparring/round-1.md",
+    ".kiro/specs/mt-identity-r2/sparring/round-2.md",
+    ".kiro/specs/mt-identity-r2/sparring/state.json",
+    ".kiro/specs/mt-identity-r2/sparring/verdict.md",
+    ".kiro/specs/mt-identity-r2/tasks.md",
+    "docs/programs/multi-tenant/program.md"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "cancelled"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PLAN-SPAR.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 4593,
+   "title": "plan(native-wave2-health-biology-r3): Wave 2 — port health, Vitana Index, biology and Health Sync to native (re-plan after partner evidence-floor park)",
+   "merged_at": "2026-11-02T14:41:33Z",
+   "head_sha": "db1897de77327eb2986968d1a12590c90a541a99",
+   "files": [
+    ".kiro/specs/native-wave2-health-biology-r3/handoff.md",
+    ".kiro/specs/native-wave2-health-biology-r3/lanes/health-hub.md",
+    ".kiro/specs/native-wave2-health-biology-r3/lanes/health-plans-services.md",
+    ".kiro/specs/native-wave2-health-biology-r3/lanes/vitana-index-biology.md",
+    ".kiro/specs/native-wave2-health-biology-r3/plan.md",
+    ".kiro/specs/native-wave2-health-biology-r3/sparring/responses-1.md",
+    ".kiro/specs/native-wave2-health-biology-r3/sparring/round-1.md",
+    ".kiro/specs/native-wave2-health-biology-r3/sparring/round-2.md",
+    ".kiro/specs/native-wave2-health-biology-r3/sparring/state.json",
+    ".kiro/specs/native-wave2-health-biology-r3/sparring/verdict.md",
+    ".kiro/specs/native-wave2-health-biology-r3/tasks.md",
+    "docs/programs/native-app/program.md"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PLAN-SPAR.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 4584,
+   "title": "plan(native-wave2-inbox-chat-calls-r2): Wave 2 — port inbox, chat and calls to native (re-plan, clean trailers)",
+   "merged_at": "2026-11-02T14:41:24Z",
+   "head_sha": "c6bf7677cbe67cc0d19eac682b1c04b3d7769a0f",
+   "files": [
+    ".kiro/specs/native-wave2-inbox-chat-calls-r2/design.md",
+    ".kiro/specs/native-wave2-inbox-chat-calls-r2/handoff.md",
+    ".kiro/specs/native-wave2-inbox-chat-calls-r2/lanes/conversation-chat.md",
+    ".kiro/specs/native-wave2-inbox-chat-calls-r2/lanes/inbox-list.md",
+    ".kiro/specs/native-wave2-inbox-chat-calls-r2/plan.md",
+    ".kiro/specs/native-wave2-inbox-chat-calls-r2/requirements.md",
+    ".kiro/specs/native-wave2-inbox-chat-calls-r2/sparring/round-1.md",
+    ".kiro/specs/native-wave2-inbox-chat-calls-r2/sparring/s2-responses-1.md",
+    ".kiro/specs/native-wave2-inbox-chat-calls-r2/sparring/s2-round-1.md",
+    ".kiro/specs/native-wave2-inbox-chat-calls-r2/sparring/s2-round-2.md",
+    ".kiro/specs/native-wave2-inbox-chat-calls-r2/sparring/state.json",
+    ".kiro/specs/native-wave2-inbox-chat-calls-r2/sparring/verdict.md",
+    ".kiro/specs/native-wave2-inbox-chat-calls-r2/tasks.md",
+    "docs/programs/native-app/program.md"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PLAN-SPAR.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 4583,
+   "title": "plan(native-wave2-journey-autopilot-r2): Wave 2 — port journey, guided mode and autopilot to native (re-plan, clean trailers)",
+   "merged_at": "2026-11-02T14:41:15Z",
+   "head_sha": "8a86b150750724becdddd3f45a3bcc9337bbe409",
+   "files": [
+    ".kiro/specs/native-wave2-journey-autopilot-r2/design.md",
+    ".kiro/specs/native-wave2-journey-autopilot-r2/handoff.md",
+    ".kiro/specs/native-wave2-journey-autopilot-r2/lanes/autopilot-audiobook.md",
+    ".kiro/specs/native-wave2-journey-autopilot-r2/lanes/journey.md",
+    ".kiro/specs/native-wave2-journey-autopilot-r2/plan.md",
+    ".kiro/specs/native-wave2-journey-autopilot-r2/requirements.md",
+    ".kiro/specs/native-wave2-journey-autopilot-r2/sparring/round-1.md",
+    ".kiro/specs/native-wave2-journey-autopilot-r2/sparring/s2-responses-1.md",
+    ".kiro/specs/native-wave2-journey-autopilot-r2/sparring/s2-round-1.md",
+    ".kiro/specs/native-wave2-journey-autopilot-r2/sparring/s2-round-2.md",
+    ".kiro/specs/native-wave2-journey-autopilot-r2/sparring/state.json",
+    ".kiro/specs/native-wave2-journey-autopilot-r2/sparring/verdict.md",
+    ".kiro/specs/native-wave2-journey-autopilot-r2/tasks.md",
+    "docs/programs/native-app/program.md"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PLAN-SPAR.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 4603,
+   "title": "plan(mt-track-s-r2): retire lane lands the allowlist and its pinned test together",
+   "merged_at": "2026-11-02T13:25:25Z",
+   "head_sha": "32eba8af44add9e0f85236db44b2c720bfc87004",
+   "files": [
+    ".kiro/specs/mt-track-s-r2/handoff.md",
+    ".kiro/specs/mt-track-s-r2/lanes/s-j-retire-allowlist-v2.md",
+    ".kiro/specs/mt-track-s-r2/plan.md",
+    ".kiro/specs/mt-track-s-r2/sparring/verdict.md",
+    ".kiro/specs/mt-track-s-r2/tasks.md"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PLAN-SPAR.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 4599,
+   "title": "VTID-05438 (review-survives-main-merge/land-guard-merge): land-guard keeps a review across a clean merge of main",
+   "merged_at": "2026-11-02T13:00:04Z",
+   "head_sha": "9120c2cd718e14313351918a7f73e51e4a6c91cf",
+   "files": [
+    ".claude/rules/collaboration.md",
+    ".kiro/specs/review-survives-main-merge/lanes/land-guard-merge.md",
+    "docs/validation/VTID-05438/acceptance.md",
+    "docs/validation/VTID-05438/commands.log",
+    "docs/validation/VTID-05438/outputs/README.md",
+    "docs/validation/VTID-05438/outputs/red-on-base.txt",
+    "docs/validation/VTID-05438/red-on-base.txt",
+    "docs/validation/VTID-05438/scope.json",
+    "docs/validation/VTID-05438/staging-tests.json",
+    "scripts/collab/land-guard.mjs",
+    "scripts/collab/land-guard.test.mjs"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "VALIDATOR-CHECK.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 4513,
+   "title": "VTID-05206 (new-member-welcome/new-member-card-optin): close lane record — verified → done",
+   "merged_at": "2026-11-02T12:48:42Z",
+   "head_sha": "2ca012e772811c8ad9db00ad0943f40154383998",
+   "files": [
+    ".kiro/specs/new-member-welcome/lanes/new-member-card-optin.md",
+    "docs/validation/VTID-05206/commands.log",
+    "docs/validation/VTID-05206/done-acceptance.md",
+    "docs/validation/VTID-05206/outputs/done-preflight.txt"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "VALIDATOR-CHECK.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 4598,
+   "title": "VTID-05368 (messenger-vitana-cards-v2/messenger-companion-verification): companion DM send-path verification",
+   "merged_at": "2026-11-02T12:34:58Z",
+   "head_sha": "fdce0d4862cc75c66a14322c2dcb1fc616f876d2",
+   "files": [
+    ".kiro/specs/messenger-vitana-cards-v2/lanes/messenger-companion-verification.md",
+    "docs/validation/VTID-05368/acceptance.md",
+    "docs/validation/VTID-05368/commands.log",
+    "docs/validation/VTID-05368/outputs/jest-companion.txt",
+    "docs/validation/VTID-05368/outputs/tsc.txt",
+    "docs/validation/VTID-05368/run-mode.md",
+    "docs/validation/VTID-05368/staging-tests.json",
+    "services/gateway/test/vtid-05368-messenger-companion-verification.test.ts"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "CICDL-GATEWAY-CI.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "VALIDATOR-CHECK.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "CICDL-CORE-LINT-SERVICES.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "OASIS-PERSISTENCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "TEST-SUITE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 4579,
+   "title": "plan(mt-track-s-authz): server-side authorization for the approvals actions, ORB work surfaces and the text-path role",
+   "merged_at": "2026-11-02T10:50:38Z",
+   "head_sha": "05d1f84c68f65135162d97240c71777da5dd5b52",
+   "files": [
+    ".kiro/specs/mt-track-s-authz/handoff.md",
+    ".kiro/specs/mt-track-s-authz/lanes\u002fapprovals-auth.md",
+    ".kiro/specs/mt-track-s-authz/lanes/work-surface-permission.md",
+    ".kiro/specs/mt-track-s-authz/plan.md",
+    ".kiro/specs/mt-track-s-authz/sparring/responses-1.md",
+    ".kiro/specs/mt-track-s-authz/sparring/round-1.md",
+    ".kiro/specs/mt-track-s-authz/sparring/round-2.md",
+    ".kiro/specs/mt-track-s-authz/sparring/state.json",
+    ".kiro/specs/mt-track-s-authz/sparring/verdict.md",
+    ".kiro/specs/mt-track-s-authz/tasks.md",
+    "docs/programs/multi-tenant/program.md"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "cancelled"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PLAN-SPAR.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 4596,
+   "title": "spec(desktop-spotlight-finish): colours-batch-2 owns AppLayout chrome (VTID-05286)",
+   "merged_at": "2026-11-02T08:44:45Z",
+   "head_sha": "df590d272e98ed834c08489d0215ef36d07b8871",
+   "files": [
+    ".kiro/specs/desktop-spotlight-finish/lanes/colours-batch-2.md"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "failure"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 4589,
+   "title": "VTID-05366 (messenger-vitana-cards-v2/companion-enrichment-moments): 11 profile-enrichment moments",
+   "merged_at": "2026-11-02T07:15:10Z",
+   "head_sha": "bd052ec25a7825a30b5c93f7fee6980bd26c0ec9",
+   "files": [
+    ".kiro/specs/messenger-vitana-cards-v2/lanes/companion-enrichment-moments.md",
+    "docs/validation/VTID-05366/acceptance.md",
+    "docs/validation/VTID-05366/commands.log",
+    "docs/validation/VTID-05366/outputs/jest-companion.txt",
+    "docs/validation/VTID-05366/outputs/tsc.txt",
+    "docs/validation/VTID-05366/staging-tests.json",
+    "services/gateway/src/services/companion/moments.ts",
+    "services/gateway/test/vtid-05099-companion-messages.test.ts",
+    "services/gateway/test/vtid-05100-companion-delivery.test.ts",
+    "services/gateway/test/vtid-05101-companion-generators.test.ts",
+    "services/gateway/test/vtid-05366-companion-enrichment-moments.test.ts"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "CICDL-CORE-LINT-SERVICES.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "CICDL-GATEWAY-CI.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "VALIDATOR-CHECK.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "OASIS-PERSISTENCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "TEST-SUITE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 4592,
+   "title": "VTID-05427 (native-wave2-memory-diary-r2/memory): close lane record — ready → done, merge ec8682f under §7b",
+   "merged_at": "2026-11-02T00:17:02Z",
+   "head_sha": "a928f3c0c0370f288c814838376ccba00bc624fc",
+   "files": [
+    ".kiro/specs/native-wave2-memory-diary-r2/lanes/memory.md"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "failure"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 4563,
+   "title": "plan(wallet-fx-rate-url): the wallet's live EUR/USD rate loads from api.frankfurter.dev, not the CORS-blocked redirect",
+   "merged_at": "2026-11-01T22:15:15Z",
+   "head_sha": "740eeedbf5673203bb5d3754112b39bacbde78ca",
+   "files": [
+    ".kiro/specs/wallet-fx-rate-url/handoff.md",
+    ".kiro/specs/wallet-fx-rate-url/lanes/fx-url.md",
+    ".kiro/specs/wallet-fx-rate-url/plan.md",
+    ".kiro/specs/wallet-fx-rate-url/sparring/responses-1.md",
+    ".kiro/specs/wallet-fx-rate-url/sparring/round-1.md",
+    ".kiro/specs/wallet-fx-rate-url/sparring/round-2.md",
+    ".kiro/specs/wallet-fx-rate-url/sparring/state.json",
+    ".kiro/specs/wallet-fx-rate-url/sparring/verdict.md",
+    ".kiro/specs/wallet-fx-rate-url/tasks.md",
+    "docs/programs/standalone/program.md"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PLAN-SPAR.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 4554,
+   "title": "plan(review-survives-main-merge): a review stays current across a clean merge of main",
+   "merged_at": "2026-11-01T22:13:02Z",
+   "head_sha": "80554b94f0d5579daac44bae4e5dbd848092613f",
+   "files": [
+    ".kiro/specs/review-survives-main-merge/handoff.md",
+    ".kiro/specs/review-survives-main-merge/lanes/land-guard-merge.md",
+    ".kiro/specs/review-survives-main-merge/lanes/lane-land-repo.md",
+    ".kiro/specs/review-survives-main-merge/plan.md",
+    ".kiro/specs/review-survives-main-merge/sparring/responses-1.md",
+    ".kiro/specs/review-survives-main-merge/sparring/round-1.md",
+    ".kiro/specs/review-survives-main-merge/sparring/round-2.md",
+    ".kiro/specs/review-survives-main-merge/sparring/state.json",
+    ".kiro/specs/review-survives-main-merge/sparring/verdict.md",
+    ".kiro/specs/review-survives-main-merge/tasks.md",
+    "docs/programs/standalone/program.md"
+   ],
+   "workflows": {
+    "VTID-AUTO-CLOSE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "DEV-AUTOPILOT-IMPACT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "ENFORCE-FRONTEND-CANONICAL-SOURCE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-DOC-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PHASE-2B-NAMING-ENFORCEMENT.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PLAN-SPAR.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  }
+ ]
+}

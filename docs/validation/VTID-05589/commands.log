@@ -1,0 +1,15 @@
+VTID-05589 local checks, 2026-11-06, session kiro-exafy-202611061658-9ca9
+
+$ npx vitest run (the 3 settings/hook suites)
+ Test Files  3 passed (3)
+      Tests  21 passed (21)
+
+$ npx vitest run --silent (full suite)
+ Test Files  494 passed (494)
+      Tests  3972 passed (3972)
+
+$ npx eslint <the 4 changed/new source and test files> -> exit 0
+$ npx tsc --noEmit -p tsconfig.app.json -> no error in the changed files (177 pre-existing errors elsewhere, same count on base)
+$ npm run build -> exit 0
+$ npm run i18n:gate -> identical to base (10 pre-existing failing checks, none new)
+$ npm run i18n:register -> No formal-register violations.

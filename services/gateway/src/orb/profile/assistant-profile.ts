@@ -47,12 +47,17 @@ export const WORK_SURFACE_ROLE: Record<Exclude<OrbSurface, 'vitanaland'>, string
  *  - `declared`   the screen declared its surface/role and it was accepted;
  *  - `route`      no declaration (older client) — derived from the route;
  *  - `narrowed`   a declared member role the surface does not allow was
- *                 narrowed (e.g. `developer` on community screens → community);
- *  - `unverified` a work surface whose role the token cannot confirm yet
- *                 (tool handlers still re-check the role server-side);
+ *                 narrowed (e.g. `developer` on community screens → community),
+ *                 or a declared work surface the caller may not open was served
+ *                 the member surface (VTID-05453);
+ *  - `unverified` a work surface whose role the token cannot confirm yet. The
+ *                 resolver returns it; a session start verifies it before any
+ *                 consumer reads the profile (VTID-05453);
+ *  - `permitted`  a declared work surface the caller holds a permitted role for
+ *                 (VTID-05453);
  *  - `anonymous`  no verified identity.
  */
-export type ProfileResolution = 'declared' | 'route' | 'narrowed' | 'unverified' | 'anonymous';
+export type ProfileResolution = 'declared' | 'route' | 'narrowed' | 'unverified' | 'permitted' | 'anonymous';
 
 export interface AssistantProfile {
   surface: OrbSurface;
@@ -149,6 +154,72 @@ export function resolveAssistantProfile(input: ResolveAssistantProfileInput): As
     resolution,
     declared,
   };
+}
+
+/**
+ * VTID-05453: the permitted roles that keep a work surface, one set per screen,
+ * mirroring that screen's own gate. Command Hub: routes/command-hub.ts
+ * COMMAND_HUB_ROLES. Admin and BackOffice: the owner's per-screen rule
+ * (2026-11-03). Commerce is not listed: it is unchanged and never checked here.
+ */
+const WORK_SURFACE_PERMITTED_ROLES: Partial<Record<OrbSurface, readonly string[]>> = {
+  'command-hub': ['developer', 'admin', 'infra', 'staff'],
+  admin: ['admin', 'developer', 'infra'],
+  backoffice: ['backoffice', 'admin', 'developer', 'infra'],
+};
+
+/**
+ * VTID-05453: whether a profile needs the permitted-roles read: a work surface
+ * other than commerce, for a signed-in caller who is not exafy_admin.
+ */
+export function needsWorkSurfacePermit(
+  profile: AssistantProfile,
+  caller: { isAnonymous: boolean; isExafyAdmin: boolean },
+): boolean {
+  return profile.isWorkSurface && profile.surface !== 'commerce' && !caller.isAnonymous && !caller.isExafyAdmin;
+}
+
+/**
+ * VTID-05453: keep a declared work surface only for a caller who holds a
+ * permitted role for that screen. Pure: the caller reads `permittedRoles`
+ * (lib/permitted-roles.ts) and passes it in. The exafy_admin claim keeps the
+ * resolver's value. A caller without a permitted role, or an unreadable
+ * permitted set (`null`), gets the member surface; the declared values stay
+ * in `declared` for telemetry. Commerce, the member surface and anonymous
+ * sessions pass through unchanged.
+ */
+export function verifyWorkSurfaceProfile(
+  profile: AssistantProfile,
+  input: { isExafyAdmin: boolean; permittedRoles: readonly string[] | null },
+): AssistantProfile {
+  const gate = WORK_SURFACE_PERMITTED_ROLES[profile.surface];
+  if (!profile.isWorkSurface || !gate || input.isExafyAdmin) return profile;
+  if (input.permittedRoles?.some((r) => gate.includes(r.trim().toLowerCase()))) {
+    return { ...profile, resolution: 'permitted' };
+  }
+  return { ...profile, surface: 'vitanaland', role: null, isWorkSurface: false, personaKey: null, resolution: 'narrowed' };
+}
+
+/** VTID-05453: the body roles of a text turn that need no permission check. */
+export function isPlainTurnRole(requested: string): boolean {
+  const r = requested.trim().toLowerCase();
+  return r === 'user' || r === 'community';
+}
+
+/**
+ * VTID-05453: the role a text turn serves. The body's `role` is a request, not
+ * a grant. 'user' and 'community' pass as before. Any other role is served
+ * only to exafy_admin, or to a caller whose effective role (resolveEffectiveRole,
+ * already clamped to the permitted set) is that same role. Everyone else gets
+ * 'user'.
+ */
+export function servedTurnRole(
+  requested: string,
+  input: { isExafyAdmin: boolean; effectiveRole: string | null | undefined },
+): string {
+  if (isPlainTurnRole(requested) || input.isExafyAdmin) return requested;
+  const held = typeof input.effectiveRole === 'string' ? input.effectiveRole.trim().toLowerCase() : '';
+  return held !== '' && held === requested.trim().toLowerCase() ? requested : 'user';
 }
 
 /**

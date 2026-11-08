@@ -1,0 +1,15 @@
+# Governance checks run locally on this lane's commit (read-only; CI stays the gate). Base = origin/main 7fd4106862d (the lane commit cherry-picked onto it).
+
+$ node scripts/collab/preflight.mjs --repo <worktree> --base origin/main --head HEAD --branch kiro/agentic-delivery/gateway-delivery --title "VTID-05547 (agentic-delivery/gateway-delivery): GitLab delivery stage, Delivery screen and cut guards"
+PASS  Collab tests [required]
+PASS  Collab handoff [required]
+PASS  Lane scope [required]
+PASS  PR-GATE scope [report-only in CI (until config.enforce=true)]
+PASS  PR-GATE sparring [report-only in CI (until config.enforce=true)]
+PASS  PR-GATE weakening [report-only in CI (until config.enforce=true)]
+PASS  PR-GATE red-green [report-only in CI (until config.enforce=true)]
+PASS  Kiro steering [report-only in CI (until config.enforce=true)]
+preflight: every check passed
+
+$ node scripts/ci/staging-verify/run.mjs check-pr --service gateway --repo-root <worktree> --base origin/main --head HEAD --title "VTID-05547 (agentic-delivery/gateway-delivery): GitLab delivery stage, Delivery screen and cut guards"
+[staging-verify] ✓ change suite present and valid for VTID-05547

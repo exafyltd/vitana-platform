@@ -33,6 +33,8 @@ function getGitHubToken(override?: string): string {
 // tests that mock this module keep them); re-exported here.
 export { VITANA_REPOS, isVitanaRepo, repoGitHubToken } from './vitana-repos';
 import { repoGitHubToken } from './vitana-repos';
+// VTID-05547: the cut guard (DELIVERY_HOST_<REPO>=gitlab) for the two merge-side calls below.
+import { assertGithubMergeAllowed } from './delivery-host';
 
 /**
  * VTID-04633: the thrown message keeps the `GitHub API error: <status> - <text>`
@@ -674,6 +676,9 @@ export async function getCommitsBetween(
  * makes GitHub refuse if the head moved since we looked.
  */
 export async function updatePullRequestBranch(repo: string, prNumber: number, expectedHeadSha: string): Promise<void> {
+  // VTID-05547 (plan agentic-delivery §3.13): with DELIVERY_HOST_<REPO>=gitlab this makes no GitHub call,
+  // writes one delivery.merge.refused event and throws merge_moved_to_gitlab. Unset: no change.
+  await assertGithubMergeAllowed(repo, 'update_branch', { prNumber });
   await githubRequest(`/repos/${repo}/pulls/${prNumber}/update-branch`, {
     method: 'PUT',
     body: JSON.stringify({ expected_head_sha: expectedHeadSha }),
@@ -690,6 +695,9 @@ export async function mergePullRequest(
   mergeStrategy: 'squash' | 'merge' | 'rebase' = 'squash',
   tokenOverride?: string
 ): Promise<{ sha: string; merged: boolean; message: string }> {
+  // VTID-05547 (plan agentic-delivery §3.13): same guard as updatePullRequestBranch. A throw, not a result,
+  // because routes/cicd.ts reads `.sha` of the result; every caller's catch reports it as a refused merge.
+  await assertGithubMergeAllowed(repo, 'merge', { prNumber, commitTitle });
   return githubRequest<{ sha: string; merged: boolean; message: string }>(
     `/repos/${repo}/pulls/${prNumber}/merge`,
     {

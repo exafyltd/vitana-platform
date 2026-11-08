@@ -2,6 +2,7 @@
 // VTID-04613 — STAGING-VERIFY runner.
 //
 //   node run.mjs verify    --service gateway|community-app --sha <full sha> --repo-root <dir> --out <dir>
+//                          [--deploy-runs-file <file>]   (VTID-05552, GitLab: the deploy runs, in place of the GitHub API)
 //   node run.mjs check-pr  --service gateway|community-app --repo-root <dir> --base <sha> --head <sha> --title "<PR title>"
 //
 // verify   — after a staging deploy: confirm staging serves <sha>, run the
@@ -197,6 +198,61 @@ function listStageDeployRuns(service, runStart) {
     log(`could not list ${cfg.stageDeployWorkflow} runs: ${String(e.message || e).split('\n')[0]} — attribution cutoff = run start`);
     return null;
   }
+}
+
+// VTID-05552 (plan agentic-delivery §3.6 step 3): on GitLab the deploy job writes the staging deploy runs to a file,
+// [{ service, sha, started_at, finished_at, outcome }] (lane deploy-path), and `--deploy-runs-file` reads it in place
+// of the GitHub API call above. Each entry of this service becomes the run shape deployCutoff reads: started_at →
+// created_at, finished_at → updated_at (none = still running), outcome → conclusion (only `skipped` is special, as on
+// GitHub). A file that is not a list of such entries is refused as a whole; it is never partly read.
+export function deployRunsFromEntries(entries, service) {
+  if (!Array.isArray(entries)) return { ok: false, error: 'not a JSON array' };
+  const runs = [];
+  for (const [i, e] of entries.entries()) {
+    if (!e || typeof e !== 'object' || Array.isArray(e) || typeof e.service !== 'string' || !e.service) return { ok: false, error: `entry ${i} has no service` };
+    if (e.service !== service) continue;
+    if (typeof e.started_at !== 'string' || !Number.isFinite(Date.parse(e.started_at))) return { ok: false, error: `entry ${i} has no valid started_at` };
+    const finished = e.finished_at === undefined || e.finished_at === null ? null : e.finished_at;
+    runs.push({
+      created_at: e.started_at,
+      updated_at: finished,
+      status: finished === null ? 'in_progress' : 'completed',
+      conclusion: typeof e.outcome === 'string' ? e.outcome : null,
+    });
+  }
+  return { ok: true, runs };
+}
+
+// A missing, empty, unreadable or malformed file returns null → T_cut = run start (fail closed: nothing attributed),
+// and the log says why. There is no GitHub fallback.
+export function readDeployRuns(file, service) {
+  const why = (reason) => {
+    log(`deploy-runs file ${file || '(no path given)'} ${reason} — attribution cutoff = run start (no GitHub fallback)`);
+    return null;
+  };
+  if (!file) return why('missing');
+  let text;
+  try {
+    text = readFileSync(file, 'utf8');
+  } catch (e) {
+    return why(e.code === 'ENOENT' ? 'missing' : `unreadable (${e.code || e.message})`);
+  }
+  let entries;
+  try {
+    entries = JSON.parse(text);
+  } catch (e) {
+    return why(`is not JSON (${String(e.message).split('\n')[0]})`);
+  }
+  const r = deployRunsFromEntries(entries, service);
+  return r.ok ? r.runs : why(`is malformed: ${r.error}`);
+}
+
+// VTID-05552: the deploy runs that bound T_cut. Given `--deploy-runs-file` (even with no value), only that file is
+// read; otherwise the GitHub listing, exactly as before.
+export function deployRunsFor(service, runStart, args) {
+  return Object.prototype.hasOwnProperty.call(args, 'deploy-runs-file')
+    ? readDeployRuns(args['deploy-runs-file'], service)
+    : listStageDeployRuns(service, runStart);
 }
 
 export function loadManifest(repoRoot, vtid) {
@@ -420,7 +476,7 @@ async function verify(args) {
         // VTID-05144: staging moved to a descendant mid-run. Attribute each
         // result by the earliest instant a newer image could have served.
         supersededBy = after.full;
-        const tCut = lib.deployCutoff(listStageDeployRuns(service, runStart), runStart);
+        const tCut = lib.deployCutoff(deployRunsFor(service, runStart, args), runStart);
         attributionCutoff = new Date(tCut).toISOString();
         results = lib.attributeResults(results, tCut);
         log(`superseded by ${supersededBy}; attribution cutoff ${attributionCutoff}: ${results.filter((r) => r.attributed).length}/${results.length} results attributed`);

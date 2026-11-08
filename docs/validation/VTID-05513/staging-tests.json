@@ -1,0 +1,11 @@
+{
+  "vtid": "VTID-05513",
+  "service": "gateway",
+  "note": "Read-only. CI-only change that deploys nothing. The probes below prove only that the staging gateway, which is in place after the staging deploy of this merge, is alive and serving. They do not prove the workflow concurrency behaviour; that is observed in the Actions run list after merge. Nothing targets production.",
+  "tests": [
+    { "kind": "http", "name": "gateway alive after deploy", "target": "gateway", "method": "GET", "path": "/alive", "expect_status": 200,
+      "reason": "read-only GET: the staging gateway serves after the deploy" },
+    { "kind": "http", "name": "project-manager mode endpoint serves", "target": "gateway", "method": "GET", "path": "/api/v1/project-manager/mode", "expect_status": 200,
+      "reason": "read-only GET of the public PM mode route on the deployed commit" }
+  ]
+}

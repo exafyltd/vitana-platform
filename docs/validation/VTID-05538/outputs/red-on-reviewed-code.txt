@@ -1,0 +1,481 @@
+# the review of 2026-11-05T14:13Z judged head 570fe18b55450e3a37e2ea4cfe1e883fd0acb7a8. This run: the module as it was at that head (git show 570fe18b55450e3a37e2ea4cfe1e883fd0acb7a8:scripts/eng/gitlab-land.mjs),
+# the units, and the FINAL scripts/eng/gitlab-land.test.mjs. The cases that pin the review fixes must be red, every other case green.
+# $ node --test scripts/eng/gitlab-land.test.mjs
+TAP version 13
+# Subtest: jobToCheckRun follows the plan §3.4 table for every documented status, and checksVerdict reads the result
+ok 1 - jobToCheckRun follows the plan §3.4 table for every documented status, and checksVerdict reads the result
+  ---
+  duration_ms: 1.759909
+  type: 'test'
+  ...
+# Subtest: jobToCheckRun: an unknown status is pending (fails closed) and is reported once through onUnknown
+ok 2 - jobToCheckRun: an unknown status is pending (fails closed) and is reported once through onUnknown
+  ---
+  duration_ms: 0.276854
+  type: 'test'
+  ...
+# Subtest: jobToCheckRun keeps name, id and started_at, so the latest attempt of a job is the one checksVerdict reads
+ok 3 - jobToCheckRun keeps name, id and started_at, so the latest attempt of a job is the one checksVerdict reads
+  ---
+  duration_ms: 0.205979
+  type: 'test'
+  ...
+# Subtest: requiredJobsVerdict: every required name must be present and success; skipped, neutral or absent does not pass
+ok 4 - requiredJobsVerdict: every required name must be present and success; skipped, neutral or absent does not pass
+  ---
+  duration_ms: 0.441793
+  type: 'test'
+  ...
+# Subtest: checksFor: no pipeline is pending, a finished pipeline with no jobs fails, optional failures do not block, fail beats pending
+ok 5 - checksFor: no pipeline is pending, a finished pipeline with no jobs fails, optional failures do not block, fail beats pending
+  ---
+  duration_ms: 0.309379
+  type: 'test'
+  ...
+# Subtest: decide gives the verdicts of mergeDecision itself for every combination of review, checks, behind and protected files
+ok 6 - decide gives the verdicts of mergeDecision itself for every combination of review, checks, behind and protected files
+  ---
+  duration_ms: 0.519572
+  type: 'test'
+  ...
+# Subtest: judgeReviewCommit: the newest review of the lane decides; it must be an accept by the reviewer agent, pushed by the reviewer account
+ok 7 - judgeReviewCommit: the newest review of the lane decides; it must be an accept by the reviewer agent, pushed by the reviewer account
+  ---
+  duration_ms: 0.361297
+  type: 'test'
+  ...
+# Subtest: squashMessage is the title with the VTID first and the description
+ok 8 - squashMessage is the title with the VTID first and the description
+  ---
+  duration_ms: 0.175177
+  type: 'test'
+  ...
+# Subtest: lands a reviewed, green, up-to-date merge request: one merge call pinned to the head, squash, title and description, source branch removed
+ok 9 - lands a reviewed, green, up-to-date merge request: one merge call pinned to the head, squash, title and description, source branch removed
+  ---
+  duration_ms: 213.140455
+  type: 'test'
+  ...
+# Subtest: a lane-file entry after the accept still counts; the review is read against the head, not the accepted sha
+ok 10 - a lane-file entry after the accept still counts; the review is read against the head, not the accepted sha
+  ---
+  duration_ms: 256.979868
+  type: 'test'
+  ...
+# Subtest: a merge call that fails is not repeated by the client; the merge request is read again and the bot says it will try next tick
+ok 11 - a merge call that fails is not repeated by the client; the merge request is read again and the bot says it will try next tick
+  ---
+  duration_ms: 246.674236
+  type: 'test'
+  ...
+# Subtest: a merge call that reports an error but was processed is recognised by the re-read
+ok 12 - a merge call that reports an error but was processed is recognised by the re-read
+  ---
+  duration_ms: 183.556
+  type: 'test'
+  ...
+# Subtest: a 200 answer whose merge request is not merged is not a landing unless the re-read says so
+ok 13 - a 200 answer whose merge request is not merged is not a landing unless the re-read says so
+  ---
+  duration_ms: 184.289657
+  type: 'test'
+  ...
+# Subtest: the merge is refused when GitLab says the head changed (409): nothing else is done
+ok 14 - the merge is refused when GitLab says the head changed (409): nothing else is done
+  ---
+  duration_ms: 185.925195
+  type: 'test'
+  ...
+# Subtest: no reviewer accept: nothing lands and the reason is written once per head
+ok 15 - no reviewer accept: nothing lands and the reason is written once per head
+  ---
+  duration_ms: 180.004651
+  type: 'test'
+  ...
+# Subtest: a note by someone else that contains the marker does not stand in for the bot's comment
+ok 16 - a note by someone else that contains the marker does not stand in for the bot's comment
+  ---
+  duration_ms: 151.259397
+  type: 'test'
+  ...
+# Subtest: an accept pushed by a builder is forged: it does not land and says why
+ok 17 - an accept pushed by a builder is forged: it does not land and says why
+  ---
+  duration_ms: 149.535914
+  type: 'test'
+  ...
+# Subtest: an accept whose commit is in no push of the reviewer (a builder committed the trailers) is forged
+ok 18 - an accept whose commit is in no push of the reviewer (a builder committed the trailers) is forged
+  ---
+  duration_ms: 154.849562
+  type: 'test'
+  ...
+# Subtest: a reviewer push without commit_from proves only its tip: an accept below the tip is not counted, an accept that is the tip is
+not ok 19 - a reviewer push without commit_from proves only its tip: an accept below the tip is not counted, an accept that is the tip is
+  ---
+  duration_ms: 216.6512
+  type: 'test'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:457:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    the accept is two commits below the pushed tip: the push does not prove it
+    
+    1 !== 0
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 1
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:466:10)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: an accept that does not name the reviewer agent is forged
+ok 20 - an accept that does not name the reviewer agent is forged
+  ---
+  duration_ms: 154.351749
+  type: 'test'
+  ...
+# Subtest: code changed after the accept: the review no longer counts for the head
+ok 21 - code changed after the accept: the review no longer counts for the head
+  ---
+  duration_ms: 221.831642
+  type: 'test'
+  ...
+# Subtest: a force-push after the review removes the accept with it: nothing lands
+ok 22 - a force-push after the review removes the accept with it: nothing lands
+  ---
+  duration_ms: 185.082578
+  type: 'test'
+  ...
+# Subtest: a changes verdict after an accept: the lane is back with its builder
+ok 23 - a changes verdict after an accept: the lane is back with its builder
+  ---
+  duration_ms: 181.850987
+  type: 'test'
+  ...
+# Subtest: a red required job does not land and names the job; a required job that is absent in a finished pipeline does not land either
+ok 24 - a red required job does not land and names the job; a required job that is absent in a finished pipeline does not land either
+  ---
+  duration_ms: 544.131227
+  type: 'test'
+  ...
+# Subtest: the pipeline is read for exactly the head: a green pipeline of another sha does not count
+ok 25 - the pipeline is read for exactly the head: a green pipeline of another sha does not count
+  ---
+  duration_ms: 180.692223
+  type: 'test'
+  ...
+# Subtest: a pipeline of another sha is never used, even when the server returns it for the query
+ok 26 - a pipeline of another sha is never used, even when the server returns it for the query
+  ---
+  duration_ms: 182.951284
+  type: 'test'
+  ...
+# Subtest: a merge request with an unexpected iid, head or source branch name is not touched
+ok 27 - a merge request with an unexpected iid, head or source branch name is not touched
+  ---
+  duration_ms: 639.916746
+  type: 'test'
+  ...
+# Subtest: a pending pipeline waits: no write at all, and the next merge request of the project is not even read
+ok 28 - a pending pipeline waits: no write at all, and the next merge request of the project is not even read
+  ---
+  duration_ms: 318.896069
+  type: 'test'
+  ...
+# Subtest: a merge request that waited more than 60 minutes for its pipeline loses its turn to the next one
+not ok 29 - a merge request that waited more than 60 minutes for its pipeline loses its turn to the next one
+  ---
+  duration_ms: 320.595608
+  type: 'test'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:599:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    The expression evaluated to a falsy value:
+    
+      assert.ok(r.events().some((e) => e.event === 'lost_its_turn' && e.mr === 7 && e.reason === 'pipeline_pending'))
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: false
+  operator: '=='
+  stack: |-
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:607:10)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: a merge that GitLab keeps refusing keeps the turn for 60 minutes (counted from its pipeline), then loses it to the next merge request
+not ok 30 - a merge that GitLab keeps refusing keeps the turn for 60 minutes (counted from its pipeline), then loses it to the next merge request
+  ---
+  duration_ms: 527.844655
+  type: 'test'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:611:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    the refused one was tried, then the next one landed in the same tick
+    + actual - expected
+    
+      [
+        '7',
+    -   '8'
+      ]
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    0: '7'
+    1: '8'
+  actual:
+    0: '7'
+  operator: 'deepStrictEqual'
+  stack: |-
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:630:10)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: two ready merge requests: the oldest lands, the other is not touched in the same tick
+ok 31 - two ready merge requests: the oldest lands, the other is not touched in the same tick
+  ---
+  duration_ms: 262.955187
+  type: 'test'
+  ...
+# Subtest: a merge request that needs a human is skipped, not waited for: the next one lands
+ok 32 - a merge request that needs a human is skipped, not waited for: the next one lands
+  ---
+  duration_ms: 288.607967
+  type: 'test'
+  ...
+# Subtest: behind main: main is merged INTO the source branch by bot-land, pushed, and the merge request is not landed in the same tick; the next tick lands it
+ok 33 - behind main: main is merged INTO the source branch by bot-land, pushed, and the merge request is not landed in the same tick; the next tick lands it
+  ---
+  duration_ms: 339.285078
+  type: 'test'
+  ...
+# Subtest: main's own change decides, not the branch's: a branch that itself changes a governance file is still updated when main brought in something unrelated
+ok 34 - main's own change decides, not the branch's: a branch that itself changes a governance file is still updated when main brought in something unrelated
+  ---
+  duration_ms: 247.710377
+  type: 'test'
+  ...
+# Subtest: behind a main that changed a governance or protected gate file: the branch is left alone, because the merge would end the review; one comment says so
+ok 35 - behind a main that changed a governance or protected gate file: the branch is left alone, because the merge would end the review; one comment says so
+  ---
+  duration_ms: 1052.67096
+  type: 'test'
+  ...
+# Subtest: the update is never a force push: a branch that moved meanwhile keeps the builder's commit and the tick fails
+ok 36 - the update is never a force push: a branch that moved meanwhile keeps the builder's commit and the tick fails
+  ---
+  duration_ms: 260.66045
+  type: 'test'
+  ...
+# Subtest: behind main with a conflict: nothing is pushed, the branch is left alone, one comment says so
+not ok 37 - behind main with a conflict: nothing is pushed, the branch is left alone, one comment says so
+  ---
+  duration_ms: 237.942309
+  type: 'test'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:738:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    a conflict needs a human: it is a skip, not an update
+    
+    'update' !== 'skip'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 'skip'
+  actual: 'update'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:743:10)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: a merge request whose merge of main conflicts is skipped, not waited for: the younger one lands in the same tick, and the conflict is commented once per head
+not ok 38 - a merge request whose merge of main conflicts is skipped, not waited for: the younger one lands in the same tick, and the conflict is commented once per head
+  ---
+  duration_ms: 322.38252
+  type: 'test'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:755:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    the older one was looked at first, then the younger one
+    + actual - expected
+    
+      [
+        7,
+    -   8
+      ]
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    0: 7
+    1: 8
+  actual:
+    0: 7
+  operator: 'deepStrictEqual'
+  stack: |-
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:761:10)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: a protected gate file in the diff is never landed by the bot; one comment per head
+ok 39 - a protected gate file in the diff is never landed by the bot; one comment per head
+  ---
+  duration_ms: 296.975189
+  type: 'test'
+  ...
+# Subtest: a title that is not "VTID-nnnnn (<slug>/<lane>): …" is not landed and says why once; a draft is skipped silently
+ok 40 - a title that is not "VTID-nnnnn (<slug>/<lane>): …" is not landed and says why once; a draft is skipped silently
+  ---
+  duration_ms: 341.468545
+  type: 'test'
+  ...
+# Subtest: --dry-run writes nothing: no merge call, no comment, no push
+ok 41 - --dry-run writes nothing: no merge call, no comment, no push
+  ---
+  duration_ms: 555.366774
+  type: 'test'
+  ...
+# Subtest: an API error half-way lands nothing: the tick fails, the project is reported, no merge call is made
+ok 42 - an API error half-way lands nothing: the tick fails, the project is reported, no merge call is made
+  ---
+  duration_ms: 158.919579
+  type: 'test'
+  ...
+# Subtest: a git error lands nothing: a merge request whose head ref is missing on the remote fails the tick
+ok 43 - a git error lands nothing: a merge request whose head ref is missing on the remote fails the tick
+  ---
+  duration_ms: 137.112758
+  type: 'test'
+  ...
+# Subtest: a head that moved between the list and the fetch is left for the next tick
+ok 44 - a head that moved between the list and the fetch is left for the next tick
+  ---
+  duration_ms: 147.811676
+  type: 'test'
+  ...
+# Subtest: only projects with landing: true are looked at, and only the default branch main
+ok 45 - only projects with landing: true are looked at, and only the default branch main
+  ---
+  duration_ms: 220.21713
+  type: 'test'
+  ...
+# Subtest: an unknown job status is logged once and the merge request waits
+ok 46 - an unknown job status is logged once and the merge request waits
+  ---
+  duration_ms: 178.956794
+  type: 'test'
+  ...
+# Subtest: the requests the bot makes are exactly the ones listed here (a new request is a deliberate change)
+ok 47 - the requests the bot makes are exactly the ones listed here (a new request is a deliberate change)
+  ---
+  duration_ms: 326.825
+  type: 'test'
+  ...
+# Subtest: no log line carries the token, also when GitLab echoes it back in an error
+ok 48 - no log line carries the token, also when GitLab echoes it back in an error
+  ---
+  duration_ms: 331.186398
+  type: 'test'
+  ...
+# Subtest: git gets the token through GIT_ASKPASS: the script answers the username and the password, and no git environment value holds the token
+ok 49 - git gets the token through GIT_ASKPASS: the script answers the username and the password, and no git environment value holds the token
+  ---
+  duration_ms: 116.00496
+  type: 'test'
+  ...
+# Subtest: every git command the bot runs neutralises a global credential helper, so the token that GIT_ASKPASS supplies can never be stored
+not ok 50 - every git command the bot runs neutralises a global credential helper, so the token that GIT_ASKPASS supplies can never be stored
+  ---
+  duration_ms: 258.126512
+  type: 'test'
+  location: '<scratch>/scripts/eng/gitlab-land.test.mjs:941:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    git -C /projects/sandbox/tools/land-test-BMIp0n/land/rehearsal.git remote add origin starts with the flag
+    + actual - expected
+    
+      [
+    +   '-C',
+    +   '/projects/sandbox/tools/land-test-BMIp0n/land/rehearsal.git'
+    -   '-c',
+    -   'credential.helper='
+      ]
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    0: '-c'
+    1: 'credential.helper='
+  actual:
+    0: '-C'
+    1: '/projects/sandbox/tools/land-test-BMIp0n/land/rehearsal.git'
+  operator: 'deepStrictEqual'
+  stack: |-
+    TestContext.<anonymous> (file://<scratch>/scripts/eng/gitlab-land.test.mjs:954:36)
+    async Test.run (node:internal/test_runner/test:1054:7)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: the log redacts the token by itself, whatever is put into an entry
+ok 51 - the log redacts the token by itself, whatever is put into an entry
+  ---
+  duration_ms: 107.087457
+  type: 'test'
+  ...
+# Subtest: CLI status prints what the bot would do for every open merge request and writes nothing
+ok 52 - CLI status prints what the bot would do for every open merge request and writes nothing
+  ---
+  duration_ms: 316.980693
+  type: 'test'
+  ...
+# Subtest: CLI run lands one tick's worth and exits 0; merge <project> <iid> acts on that merge request only
+ok 53 - CLI run lands one tick's worth and exits 0; merge <project> <iid> acts on that merge request only
+  ---
+  duration_ms: 439.903594
+  type: 'test'
+  ...
+# Subtest: CLI exit codes: 1 for a failed tick, an unknown project, an unknown command, a missing option value or an unreadable token file
+ok 54 - CLI exit codes: 1 for a failed tick, an unknown project, an unknown command, a missing option value or an unreadable token file
+  ---
+  duration_ms: 822.460898
+  type: 'test'
+  ...
+# Subtest: loadProjects reads the group and the projects of gitlab-settings.json
+ok 55 - loadProjects reads the group and the projects of gitlab-settings.json
+  ---
+  duration_ms: 0.955887
+  type: 'test'
+  ...
+# Subtest: the decision functions are imported from land-guard.mjs and queue.mjs, not copied
+ok 56 - the decision functions are imported from land-guard.mjs and queue.mjs, not copied
+  ---
+  duration_ms: 1.293714
+  type: 'test'
+  ...
+# Subtest: vitana-land.service: one tick under flock, niced and limited, with the token in a root-only file and not in the unit
+ok 57 - vitana-land.service: one tick under flock, niced and limited, with the token in a root-only file and not in the unit
+  ---
+  duration_ms: 0.447293
+  type: 'test'
+  ...
+# Subtest: vitana-land.timer: every minute, for vitana-land.service
+ok 58 - vitana-land.timer: every minute, for vitana-land.service
+  ---
+  duration_ms: 0.278816
+  type: 'test'
+  ...
+1..58
+# tests 58
+# suites 0
+# pass 52
+# fail 6
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 13804.962371

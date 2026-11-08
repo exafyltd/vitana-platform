@@ -1,0 +1,31 @@
+{
+  "vtid": "VTID-05352",
+  "service": "gateway",
+  "note": "Read-only. pm-ci-load/pm-app-token: the PM's GitHub token resolution prefers a GitHub App installation token only when PM_GITHUB_APP_* are set; staging does not set them yet, so the deployed behaviour must be unchanged. The token exchange itself is write-free but needs the App, so its behaviour is proven by the jest suite below; the HTTP probes prove the PM module (which imports github-rest.ts) loaded and serves on the deployed commit. Nothing targets production.",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "gateway alive after deploy",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/alive",
+      "expect_status": 200,
+      "reason": "read-only GET: the build carrying the github-rest.ts / github-app-token.ts change boots and serves"
+    },
+    {
+      "kind": "http",
+      "name": "project-manager mode endpoint serves",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/api/v1/project-manager/mode",
+      "expect_status": 200,
+      "reason": "read-only GET of the public PM mode route: the project-manager module that imports github-rest.ts loaded on the deployed commit"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/project-manager",
+      "cwd": "services/gateway",
+      "reason": "Pins the App token (JWT claims, least-privilege request body, cache/refresh, single-flight, fallback with a status-only log line) and that without the variables every PM call uses exactly today's token."
+    }
+  ]
+}

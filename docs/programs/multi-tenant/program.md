@@ -8,10 +8,19 @@ specs:
   - vitana-platform:multi-tenant
   - vitana-platform:mt-jobs
   - vitana-platform:mt-launch
+  - vitana-platform:mt-native-health-r2
+  - vitana-platform:mt-network-r2
+  - vitana-platform:mt-data-cleanup-r2
+  - vitana-platform:mt-discover-r2
+  - vitana-platform:mt-packs-r2
+  - vitana-platform:mt-frontend-brand-r3
+  - vitana-platform:mt-tenant-admin-r2
+  - vitana-platform:mt-m3-r2
   - vitana-platform:mt-identity-r2
   - vitana-platform:mt-track-s-authz
   - vitana-platform:mt-track-s-r2
   - vitana-platform:mt-guardrails-r2
+  - vitana-platform:mt-schema-queue-followup-r2
 docs:
   - vitana-platform:docs/MULTI-TENANT-PLAN.md
   - vitana-platform:.kiro/specs/multi-tenant/plan-sparring.md
