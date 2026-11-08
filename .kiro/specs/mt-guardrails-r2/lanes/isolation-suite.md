@@ -1,6 +1,6 @@
 ---
 lane: isolation-suite
-state: ready
+state: verified
 next_actor: kiro
 executor: kiro
 seat: hotmail
@@ -10,7 +10,7 @@ depends_on: [local-test-stack-pglite, generated-inventories]
 paths:
   - scripts/ci/sql-tests/mt-isolation.test.sql
   - scripts/ci/sql-tests/run-mt-isolation-test.sh
-updated: 2026-11-08T14:22Z
+updated: 2026-11-08T16:44Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05446
 ---
@@ -84,3 +84,14 @@ Collab-Review: mt-guardrails-r2/isolation-suite
 Collab-Verdict: accept
 Collab-Reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 Collab-Reviewed-Head: 30954a949f10e6392b86b52c1ef04d132579e6ab
+
+### 2026-11-08T16:44Z · kiro-hotmail-202611061752-cc1f · ready → executing
+Built on branch kiro/mt-guardrails-r2/isolation-suite; recorded here at the closing, because one transition per PR meant the PR carried no lane-state entry.
+
+### 2026-11-08T16:44Z · kiro-hotmail-202611061752-cc1f · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/4912. Reviewed on head `30954a949f` (accept entry above, reviewer agent claude-sonnet-5.5).
+
+### 2026-11-08T16:44Z · kiro-hotmail-202611061752-cc1f · in-review → verified
+merge: 2ea9ca18e72dcf8242a855b73e497f54347096f5 (exafyltd/vitana-platform#4912)
+authority: §7b PM rule. Squash merge by land-guard; `land-guard review` ok, `land-guard checks` green, PR up to date. No lane code changed after the accept.
+Next: the `done` record.
