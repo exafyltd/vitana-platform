@@ -1,0 +1,18 @@
+# deploy-path test 14 on the build-class-retag-2 CI files, as-is (deploy-path d82a0d04f4 + regenerated CI files). node exit 1
+not ok 1 - seccomp and AppArmor unconfined only for the build class's BuildKit service: no job container of any class loses either profile
+  ---
+  duration_ms: 41.722413
+  type: 'test'
+--
+  error: |-
+    platform-delivery.gitlab-ci.yml build-image:gateway: only the image build runs on the build class
+    + actual - expected
+    
+--
+# tests 1
+# suites 0
+# pass 0
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
