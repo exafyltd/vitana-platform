@@ -1,5 +1,7 @@
 # Owner outputs (VTID-05555)
 
+Already in this directory: owner read 1 and 2, restore runs 1 to 3 and the pipeline read (see `acceptance.md`, status per AC). The table below lists the outputs still pending. Status as of 2026-11-08T11:15Z: the step 1 pipeline outputs are the only blocker for AC-6.
+
 Waiting for the owner. Each file below is the owner's pasted output, with token values removed before commit.
 
 | File | Step (RUNBOOK) | Status |

@@ -13,9 +13,9 @@ paths:
   - infra/gitlab-engineering/host/ci-platform.yml
   - infra/gitlab-engineering/host/ci-v1.yml
   - infra/gitlab-engineering/RUNBOOK.md
-updated: 2026-11-07T11:46Z
+updated: 2026-11-08T11:15Z
 vtid: VTID-05555
-claimed_by: kiro-exafy-202611071142-d7ed
+claimed_by: kiro-exafy-202611081113-5a2e
 branch: kiro/eng-gitlab-m1/gitlab-verify
 ---
 # Lane: gitlab-verify (repo vitana-platform)
@@ -55,3 +55,10 @@ Write made: SSM command 8febb596-2b4c-4895-acb3-cd47cc2dd64a on the fleet manage
 
 ### 2026-11-07T20:53Z · kiro-exafy-202611071142-d7ed · executing (fleet 5 machines; jq fix landed)
 On the owner's instruction (AWS work for the migration, engineering account only): EC2 Standard vCPU quota requests to 100 (on-demand and spot, PENDING), fleet group MaxSize 1 -> 5, runner concurrent/max_instances 5 (installer re-run). With 5 machines the platform pipeline runs to the end: typecheck green, gateway-jest red with 28 tests failing on `jq: not found`. Fixed by eng-gitlab-m2/runner-pin-jq (VTID-05612, #4858, merge 3e8770f4ea, closing record #4861); the settings sync wrote the new central file at 20:50:19Z. The owner's 1-hour credentials expired at 20:53Z before the first pipeline on that file finished. Next: one `bash ~/glv.sh read` after a main push; if both main pipelines are green, record the comparison and move this lane to in-review. Owner: put `fleet_max_instances = 5` in ~/vitana-eng/terraform/terraform.tfvars.
+
+### 2026-11-08T11:15Z · kiro-exafy-202611081113-5a2e · executing (claim taken by planner decision D-A)
+Claim `eng-gitlab-m1/gitlab-verify` taken by seat exafy; the claim ref was free on origin. The lane branch is kept (`kiro/eng-gitlab-m1/gitlab-verify`, PR #4783) and `origin/main` (d7c1d9668a) is merged in, not rebased, so the push fast-forwards. The merge adds no change to the lane's own files. Only lane paths changed on the branch.
+
+Step 0 and step 1: the planner asked for the restore drill as evidence for both. That is only partly right. Step 0 (ci-config commit) is done by the M2 settings sync. Step 1 (one green GitLab `main` pipeline per project) is NOT done: the last recorded read (outputs/read-2-20261107T1724Z.txt, 2026-11-07T17:26Z) was blocked on the runner, and the jq fix (VTID-05612) landed at 20:50:19Z with no later read. Restore evidence used for A04: `outputs/restore-3-20261107T1708Z.txt` (RESULT-COUNTS 4 1 10 = LIVE-COUNTS 4 1 10, LIVE-HAS-TIP true). The planner named `/home/cloudshell-user/glv-restore-20261107T1829Z.txt`; that file is not in the session sandbox, so this log cites the repo copy and does not quote the CloudShell file.
+
+Next: the owner runs `bash ~/glv.sh read` once after a `main` push, with fresh 1-hour credentials. The output goes to `outputs/step1-gitlab-platform.txt` and `outputs/step1-gitlab-v1.txt`. The lane moves to `in-review` only after both are green. Not in-review yet.
