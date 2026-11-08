@@ -17,7 +17,8 @@ paths:
   - docs/validation/VTID-*/scope.json
   - docs/validation/VTID-*/staging-tests.json
   - docs/validation/VTID-*/plan-sparring.md
-updated: 2026-11-08T12:30Z
+updated: 2026-11-08T12:07Z
+vtid: VTID-05663
 ---
 # Store declarations: HealthKit, Health Connect and the iOS privacy manifest
 Plan: `.kiro/specs/native-wave3-release-r2/` — `plan.md` (decision 4) and the `tasks.md` section marked
@@ -40,3 +41,6 @@ credential, no production host.
 ## Log
 ### 2026-11-08T12:30Z · kiro-exafyltd-202611072144-1c88 · ready
 Lane created with the plan (re-plan of `native-wave3-release/store-declarations`, PR #4770).
+
+### 2026-11-08T12:07Z · ci-plan-spar · ready (VTID allocated)
+VTID-05663 allocated after policy approval (converged-auto-v1).

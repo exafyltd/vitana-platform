@@ -1,7 +1,7 @@
 ---
 lane: appilix-retire
 state: ready
-next_actor: owner
+next_actor: kiro
 depends_on: [client-identity-gateway, store-submission-owner, beta-rollout-runbook]
 executor: kiro
 seat: exafyltd
@@ -9,7 +9,8 @@ reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 reviewer_seat: agent:vitana-lane-reviewer
 area: frontend
 repos: [exafyltd/vitana-v1]
-updated: 2026-11-08T12:30Z
+updated: 2026-11-08T12:07Z
+vtid: VTID-05654
 ---
 # OWNER GATE — retire Appilix push and bridge code after the adoption threshold (not built)
 Plan: `.kiro/specs/native-wave3-release-r2/` — `plan.md` (decision 6) and the `tasks.md` section marked
@@ -25,3 +26,6 @@ that reference Appilix, fixed against `origin/main` at that time. Until then it 
 ## Log
 ### 2026-11-08T12:30Z · kiro-exafyltd-202611072144-1c88 · ready
 Lane created with the plan (re-plan of `native-wave3-release/appilix-retire`, PR #4770).
+
+### 2026-11-08T12:07Z · ci-plan-spar · ready (VTID allocated)
+VTID-05654 allocated after policy approval (converged-auto-v1).

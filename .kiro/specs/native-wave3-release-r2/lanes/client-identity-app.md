@@ -16,7 +16,8 @@ paths:
   - docs/validation/VTID-*/scope.json
   - docs/validation/VTID-*/staging-tests.json
   - docs/validation/VTID-*/plan-sparring.md
-updated: 2026-11-08T12:30Z
+updated: 2026-11-08T12:07Z
+vtid: VTID-05656
 ---
 # Native client-identity header on gateway calls (adoption measurement, app side)
 Plan: `.kiro/specs/native-wave3-release-r2/` — `plan.md` (decision 2) and the `tasks.md` section marked
@@ -35,3 +36,6 @@ the offline bundle passes for `development` and `test-g1`; `docs/validation/<VTI
 ## Log
 ### 2026-11-08T12:30Z · kiro-exafyltd-202611072144-1c88 · ready
 Lane created with the plan (re-plan of `native-wave3-release/client-identity-app`, PR #4770).
+
+### 2026-11-08T12:07Z · ci-plan-spar · ready (VTID allocated)
+VTID-05656 allocated after policy approval (converged-auto-v1).

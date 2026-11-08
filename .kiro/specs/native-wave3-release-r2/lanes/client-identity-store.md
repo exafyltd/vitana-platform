@@ -19,7 +19,8 @@ paths:
   - docs/validation/VTID-*/scope.json
   - docs/validation/VTID-*/staging-tests.json
   - docs/validation/VTID-*/plan-sparring.md
-updated: 2026-11-08T12:30Z
+updated: 2026-11-08T12:07Z
+vtid: VTID-05658
 ---
 # Gateway middleware, daily-seen storage and adoption query (adoption measurement, gateway side)
 Plan: `.kiro/specs/native-wave3-release-r2/` — `plan.md` (decision 2) and the `tasks.md` section marked
@@ -41,3 +42,6 @@ applied by a session, no VTID by hand.
 ## Log
 ### 2026-11-08T12:30Z · kiro-exafyltd-202611072144-1c88 · ready
 Lane created with the plan (re-plan of `native-wave3-release/client-identity-store`, PR #4770).
+
+### 2026-11-08T12:07Z · ci-plan-spar · ready (VTID allocated)
+VTID-05658 allocated after policy approval (converged-auto-v1).

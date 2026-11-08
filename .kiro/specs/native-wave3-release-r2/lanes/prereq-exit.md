@@ -11,7 +11,8 @@ area: frontend
 repos: [exafyltd/vitana-v1]
 paths:
   - docs/validation/native-wave3/prereq-exit.md
-updated: 2026-11-08T12:30Z
+updated: 2026-11-08T12:07Z
+vtid: VTID-05662
 ---
 # Prerequisite exit gate — Wave 2 ledger and Wave 1 smoke (sentinel)
 Plan: `.kiro/specs/native-wave3-release-r2/` — `plan.md` (decision 1) and the `tasks.md` section marked
@@ -32,3 +33,6 @@ marked done.
 ## Log
 ### 2026-11-08T12:30Z · kiro-exafyltd-202611072144-1c88 · ready
 Lane created with the plan (re-plan of `native-wave3-release/prereq-exit`, PR #4770).
+
+### 2026-11-08T12:07Z · ci-plan-spar · ready (VTID allocated)
+VTID-05662 allocated after policy approval (converged-auto-v1).

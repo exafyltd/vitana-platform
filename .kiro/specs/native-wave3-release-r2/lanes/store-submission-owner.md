@@ -1,7 +1,7 @@
 ---
 lane: store-submission-owner
 state: ready
-next_actor: owner
+next_actor: kiro
 depends_on: [prereq-exit, store-declarations]
 executor: kiro
 seat: exafyltd
@@ -11,7 +11,8 @@ area: frontend
 repos: [exafyltd/vitana-v1]
 paths:
   - docs/validation/native-wave3/store-submission.md
-updated: 2026-11-08T12:30Z
+updated: 2026-11-08T12:07Z
+vtid: VTID-05664
 ---
 # OWNER GATE — G3: store accounts, signing key and EAS cloud builds (not built)
 Plan: `.kiro/specs/native-wave3-release-r2/` — `plan.md` (owner gates) and the `tasks.md` section marked
@@ -27,3 +28,6 @@ workflow and would need an `executor: claude` lane, so they are not in this spec
 ## Log
 ### 2026-11-08T12:30Z · kiro-exafyltd-202611072144-1c88 · ready
 Lane created with the plan (re-plan of `native-wave3-release/store-submission-owner`, PR #4770).
+
+### 2026-11-08T12:07Z · ci-plan-spar · ready (VTID allocated)
+VTID-05664 allocated after policy approval (converged-auto-v1).

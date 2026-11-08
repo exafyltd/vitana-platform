@@ -3,9 +3,11 @@ slug: native-wave3-release-r2
 author: kiro
 executor: kiro
 next_actor: kiro
-state: drafted
+state: approved
 author_seat: exafyltd
-updated: 2026-11-08T12:30Z
+updated: 2026-11-08T12:07Z
+sparring_record: .kiro/specs/native-wave3-release-r2/sparring/verdict.md
+vtids: [VTID-05654, VTID-05655, VTID-05656, VTID-05657, VTID-05658, VTID-05659, VTID-05660, VTID-05661, VTID-05662, VTID-05663, VTID-05664]
 ---
 # Handoff — Native Wave 3: beta and release
 
@@ -39,3 +41,6 @@ until the owner opens its gate).
 ## Log
 ### 2026-11-08T12:30Z · kiro-exafyltd-202611072144-1c88 · created → drafted
 Re-plan of `native-wave3-release` (PR #4770) under a new slug so every `_plan` commit comes from one session.
+
+### 2026-11-08T12:07Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 11 lane(s) got a VTID and are handed to Kiro.
