@@ -44,3 +44,9 @@ AC-8 — a table of not-replayable.txt is `unverified` in the inventories and th
 3. Realtime tables are the union of `pg_publication_tables` and `ALTER PUBLICATION ... ADD TABLE` in migration text, because a migration that fails on PGlite is a skip.
 4. Routes are listed per source file with the path as written, the mount prefix is not resolved (like aurora-migration-inventory.cjs, an inventory of call sites).
 5. No CI workflow and no package.json script: both are outside the lane's paths. The tests run with `node --test`; wiring is ci-wiring's.
+
+## Measured (outputs/green.txt, outputs/lint-report.txt, outputs/drift-check.txt)
+- Inventories from the real stack: 471 tables (458 verified, 13 unverified = the 13 of not-replayable.txt), 395 functions (97 SECURITY DEFINER, executable, no caller check), 1562 route call sites in 271 files, 2 edge functions, 4 realtime tables (3 unverified), 2 buckets, 9 storage policies. Generation takes about 6 s.
+- Lint report on the real schema (no allowlist entries): nullable tenant_id 20, missing tenant policy 232, DEFINER without guard 97, realtime without tenant RLS 1, storage policy 2; bare policies 21 (reported, not asserted 0; a lower bound because skipped migrations and the 13 unverified tables are not counted). 29 lint results are unverified.
+- Tests: node tests, all green; red on base: 2 of 2 files fail (outputs/red-on-base.txt).
+- Not run here: any CI job (the lane adds no workflow, package script or path outside its allowed paths).

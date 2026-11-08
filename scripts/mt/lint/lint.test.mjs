@@ -140,3 +140,24 @@ describe('bare-policy counter', () => {
     assert.equal(r.unverified_tables, 1);
   });
 });
+
+describe('committed inventories', () => {
+  test('every table of not-replayable.txt is unverified in the committed data and in the lint report, never passing', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const { DATA_DIR, INVENTORY_FILES } = await import('../inventory/generate.mjs');
+    const { loadNotReplayable } = await import('../stack/stack.mjs');
+    const { loadAllowlist } = await import('./lints.mjs');
+    const inv = Object.fromEntries(Object.entries(INVENTORY_FILES).map(([k, f]) => [k, JSON.parse(readFileSync(join(DATA_DIR, f), 'utf8'))]));
+    const listed = loadNotReplayable().map((e) => e.table);
+    assert.ok(listed.length > 0);
+    const report = runLints(inv, loadAllowlist());
+    for (const t of listed) {
+      assert.equal(inv.tables.rows.find((r) => r.name === t).status, 'unverified', t);
+      assert.ok(report.unverified.some((u) => u.subject === t && u.lint === 'missing-tenant-policy'), t);
+      assert.ok(!report.findings.some((f) => f.subject === t), `${t} is neither a finding nor a pass`);
+    }
+    assert.equal(typeof report.bare_policies.count, 'number');
+    assert.equal(report.bare_policies.asserted, false);
+  });
+});
