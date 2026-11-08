@@ -83,3 +83,6 @@ Blocked: test 14 (BuildKit daemon only on the build class). Five build jobs stil
 D-B (planner decision: build evidence from rehearsal A4, done on main) does not hold yet. eng-gitlab-m2/rehearsal on main records A1 to A4 and A8 as "pending the owner's live run (m2.sh rehearse)"; the evidence there is a simulation. So no real rootless build timing exists. D7 is amended in this log as the planner asked: the D7 build timings come from the owner's `m2.sh rehearse` run (A4), and until that run exists D7 stays open.
 
 Next actor: planner. Decide (1) the paths amendment or follow-up lane for the five build jobs, and (2) whether D7 waits for the owner's rehearsal run. The lane stays `executing`, not `in-review`: a red test is not reviewable. The claim is released after the push. cutover and cut-settings stay blocked behind this lane.
+
+### 2026-11-08T11:32Z · kiro-exafy-202611081113-5a2e · takeover note
+Previous builder: kiro-exafy-202611071142-d7ed wrote the WIP commits adf7fffd7f and edf7b5af50 (2026-11-08 10:58 to 10:59Z). Its handover states the lane was released. This session takes over from that WIP head, and the commits of kiro-exafy-202611051643-bc0a (the builder of the review round) stay as they are.
