@@ -522,7 +522,12 @@ test("seccomp and AppArmor unconfined only for the build class's BuildKit servic
   assert.equal(deploy.docker.services_security_opt, undefined, 'deploy: services keep both profiles');
   assert.equal(main.docker.services_security_opt, undefined, 'main: services (postgres and the rest) keep both profiles (review d1ea5: unconfined only for build jobs)');
   assert.deepEqual(build.docker.services_security_opt, ['seccomp=unconfined', 'apparmor=unconfined'], 'build: the rootless BuildKit daemon that .build-image starts as its service (plan R5)');
-  for (const { file, name, job } of allJobs()) if (tagsOf(job).includes(BUILDC)) assert.equal(name, '.build-image', `${file} ${name}: only the image build runs on the build class`);
+  // Strict (planner decision 2, 2026-11-08): a job on the build class is the image build, either the hidden template or a
+  // concrete build-image:<service> job; and every concrete build-image:<service> job is on the build class.
+  for (const { file, name, job } of allJobs()) {
+    if (tagsOf(job).includes(BUILDC)) assert.ok(name === '.build-image' || name.startsWith('build-image:'), `${file} ${name}: only the image build runs on the build class`);
+    if (name.startsWith('build-image:')) assert.deepEqual(tagsOf(job), [BUILDC], `${file} ${name}: every image build runs on the build class`);
+  }
   // The daemon is a service of .build-image on the build class only; every other job image stays a plain client.
   const withBuildkit = allJobs().filter(({ job }) => (job.services || []).some((s) => /moby\/buildkit/.test(typeof s === 'string' ? s : String(s.name))));
   assert.ok(withBuildkit.some(({ name }) => name === '.build-image'));
