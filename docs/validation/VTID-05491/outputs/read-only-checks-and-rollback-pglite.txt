@@ -1,0 +1,136 @@
+## base_schema.sql (loaded)
+## vtid_05491_fixture.sql (loaded)
+## live-before.sql
+content_reports | moderation_actions | memberships | user_tenants
+content_reports | moderation_actions | memberships | user_tenants
+
+table_name | has_tenant_id
+content_reports | 0
+moderation_actions | 0
+
+reports | actions
+4 | 3
+
+tablename | policyname | cmd
+content_reports | Staff and admins can update reports | UPDATE
+content_reports | Staff and admins can view all reports | SELECT
+content_reports | Users can create content reports | INSERT
+moderation_actions | Admins view moderation actions | SELECT
+
+proname
+
+## 20261102070100_vtid_05491_mt_tenant_admin_p2_moderation.sql (loaded)
+## 20261102070150_vtid_05491_mt_tenant_admin_p3_moderation.sql (loaded)
+## 20261102070600_vtid_05491_mt_moderator_tenant_scope.sql (loaded)
+## post-apply-checks.sql
+table_name | has_tenant_id
+content_reports | 1
+moderation_actions | 1
+
+proname | security_definer
+content_reports_review_guard | true
+content_reports_stamp_tenant | true
+is_tenant_moderator | true
+moderation_home_tenant | true
+moderation_list_reports | true
+moderation_resolve_report | true
+moderator_tenant_scope_enabled | true
+
+tgname | on_table
+trg_content_reports_review_guard | content_reports
+trg_content_reports_stamp_tenant | content_reports
+
+tablename | policyname | cmd | scope_aware
+content_reports | Staff and admins can update reports | UPDATE | true
+content_reports | Staff and admins can view all reports | SELECT | true
+content_reports | Users can create content reports | INSERT | false
+moderation_actions | Admins view moderation actions | SELECT | true
+
+snapshot_reports | reports | snapshot_actions | actions
+4 | 4 | 3 | 3
+
+reports_null_tenant | actions_null_tenant
+2 | 1
+
+tenants_with_flag_on
+0
+
+## rollback-070600-moderator-tenant-scope.sql (loaded)
+## rollback-070150-p3-moderation.sql (loaded)
+## rollback-070100-p2-moderation.sql (loaded)
+## rollback-check.sql
+table_name | has_tenant_id
+content_reports | 0
+moderation_actions | 0
+
+leftover_functions
+0
+
+leftover_triggers
+0
+
+tablename | policyname | cmd | scope_aware
+content_reports | Staff and admins can update reports | UPDATE | false
+content_reports | Staff and admins can view all reports | SELECT | false
+content_reports | Users can create content reports | INSERT | false
+moderation_actions | Admins view moderation actions | SELECT | false
+
+## 20261102070100_vtid_05491_mt_tenant_admin_p2_moderation.sql (loaded)
+## 20261102070150_vtid_05491_mt_tenant_admin_p3_moderation.sql (loaded)
+## 20261102070600_vtid_05491_mt_moderator_tenant_scope.sql (loaded)
+## post-apply-checks.sql
+table_name | has_tenant_id
+content_reports | 1
+moderation_actions | 1
+
+proname | security_definer
+content_reports_review_guard | true
+content_reports_stamp_tenant | true
+is_tenant_moderator | true
+moderation_home_tenant | true
+moderation_list_reports | true
+moderation_resolve_report | true
+moderator_tenant_scope_enabled | true
+
+tgname | on_table
+trg_content_reports_review_guard | content_reports
+trg_content_reports_stamp_tenant | content_reports
+
+tablename | policyname | cmd | scope_aware
+content_reports | Staff and admins can update reports | UPDATE | true
+content_reports | Staff and admins can view all reports | SELECT | true
+content_reports | Users can create content reports | INSERT | false
+moderation_actions | Admins view moderation actions | SELECT | true
+
+snapshot_reports | reports | snapshot_actions | actions
+4 | 4 | 3 | 3
+
+reports_null_tenant | actions_null_tenant
+2 | 1
+
+tenants_with_flag_on
+0
+
+## rollback-070600-moderator-tenant-scope.sql (loaded)
+## rollback-070150-p3-moderation.sql (loaded)
+## rollback-070100-p2-moderation.sql (loaded)
+## rollback-check.sql
+table_name | has_tenant_id
+content_reports | 0
+moderation_actions | 0
+
+leftover_functions
+0
+
+leftover_triggers
+0
+
+tablename | policyname | cmd | scope_aware
+content_reports | Staff and admins can update reports | UPDATE | false
+content_reports | Staff and admins can view all reports | SELECT | false
+content_reports | Users can create content reports | INSERT | false
+moderation_actions | Admins view moderation actions | SELECT | false
+
+## guard: P2 rollback must refuse while P3 exists
+## rollback-070600-moderator-tenant-scope.sql (loaded)
+ERROR in rollback-070100-p2-moderation.sql: VTID-05491: roll back 20261102070150 first (the P3 RPCs still exist)

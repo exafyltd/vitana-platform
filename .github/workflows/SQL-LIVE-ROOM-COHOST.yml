@@ -1,0 +1,47 @@
+name: SQL-LIVE-ROOM-COHOST
+run-name: 'live room co-host authorization against a throwaway Postgres [VTID: VTID-05558] (${{ github.ref_name }})'
+
+# VTID-05558 — runs the live room co-host migration (host helper, co-host validation, the 13 host gates, the
+# co_hosts write guard) against a disposable Postgres service container. Never runs against Supabase.
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/migrations/*live_room_cohost_authz*.sql'
+      - 'scripts/ci/sql-tests/*live-room-cohost*'
+      - '.github/workflows/SQL-LIVE-ROOM-COHOST.yml'
+  workflow_dispatch:
+
+# Superseded PR runs are cancelled when a newer commit lands on the same PR.
+# Pushes to main and scheduled runs are never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  sql:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run the live room co-host test
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: '5432'
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -o pipefail
+          scripts/ci/sql-tests/run-live-room-cohost-test.sh 2>&1 | tee /tmp/liveroomcohost.log
+      - name: Assert the test ran to the end
+        run: grep -q "^PASS vtid-05558 live room cohost" /tmp/liveroomcohost.log

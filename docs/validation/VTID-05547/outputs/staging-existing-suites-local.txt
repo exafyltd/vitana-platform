@@ -1,0 +1,21 @@
+# the four 'existing' suites of docs/validation/VTID-05547/staging-tests.json, run the way the staging runner runs them (cwd services/gateway), v22.23.4; base origin/main 7fd4106862d
+
+$ npx jest test/delivery
+Test Suites: 6 passed, 6 total
+Tests:       165 passed, 165 total
+exit=0
+
+$ npx jest test/routes/internal-gitlab-webhook.test.ts test/gitlab-events test/project-manager test/vtid-05019-cicd-pr-routes-auth.test.ts
+Test Suites: 19 passed, 19 total
+Tests:       350 passed, 350 total
+exit=0
+
+$ npx jest test/command-hub test/vtid-04696-staging-checks-follow-asset-bumps.test.ts
+Test Suites: 1 skipped, 48 passed, 48 of 49 total
+Tests:       15 skipped, 855 passed, 870 total
+exit=0
+
+$ npm run test:roles
+Test Suites: 1 passed, 1 total
+Tests:       105 passed, 105 total
+exit=0
