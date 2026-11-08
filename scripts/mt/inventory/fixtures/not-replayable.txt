@@ -1,0 +1,2 @@
+# fixture: tables the fixture stack cannot replay
+data_sharing_consents | fixture: no committed creator | isolation-suite, generated-inventories
