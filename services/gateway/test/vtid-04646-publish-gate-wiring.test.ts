@@ -1,10 +1,10 @@
 /**
  * VTID-04646 — where the PUBLISH gate sits, pinned against the source.
  *
- * The gate must run on the commit AWS staging actually serves, before the
- * bake check, the VTID allocation and the workflow dispatch, so a refused
- * publish leaves nothing behind. Both Command Hub publish buttons must go
- * through the override prompt.
+ * The gate evaluates the commit AWS staging actually serves, before the bake
+ * check, the VTID allocation and the workflow dispatch. It no longer refuses:
+ * owner decision 2026-11-08 removed the STAGING-VERIFY block from PUBLISH. A
+ * publish without a passing run is recorded as production.publish.gate_skipped.
  */
 import * as fs from 'fs';
 import * as path from 'path';
