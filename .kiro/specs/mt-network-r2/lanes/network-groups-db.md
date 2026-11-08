@@ -31,3 +31,11 @@ Re-plan of `mt-network/network-groups-db`. Versions day-shifted to `20261102050*
 
 ### 2026-11-06T10:10Z · ci-plan-spar · ready (VTID allocated)
 VTID-05579 allocated after policy approval (converged-auto-v1).
+
+### 2026-11-08T11:30Z · agent-vitana-lane-reviewer-202611081128-cd1d · review
+review: accept
+head: c8d6c78effcc19fb2de834221d969594ea79d793
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4850
+Findings: none blocking. The blocking finding of the previous review on 394875b4f2 is fixed: add_group_member and add_group_member_as refuse every non-network group with 42501 not_network_group before the membership check; the community branch is removed; pgTAP cases 73-77 rewritten (red on the old head per red-community-old-head.txt, 92/92 green incl. double apply, jest 22/22), mutation M16 retargeted and caught. Non-blocking items addressed: the vitana.chat_group_rpc claim corrected (a guard, not authentication; tightening deferred), the 054200 non-SELECT-policy precondition added to live-before.sql. Standing rules hold: RLS with auth.uid(), tenant context, rules 43-45, SECURITY DEFINER lockdown, drift baseline 120 unchanged, MIGRATION-QUEUE rows 63-65 appended without altering existing rows. Non-blocking: check runs unreadable by the reviewer; the land step must confirm every required check green on this head.
+Next: the land step merges under §7b
