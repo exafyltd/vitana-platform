@@ -1,6 +1,8 @@
 ---
 lane: replay-skips
-state: ready
+state: executing
+claimed_by: kiro-hotmail-202611061752-cc1f
+branch: kiro/mt-local-stack-replay-skips-r1/replay-skips
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -24,3 +26,6 @@ Lane created with the plan.
 
 ### 2026-11-08T14:58Z · ci-plan-spar · ready (VTID allocated)
 VTID-05673 allocated after policy approval (converged-auto-v1).
+
+### 2026-11-08T15:24Z · kiro-hotmail-202611061752-cc1f · ready → executing
+Claimed. Red on base (outputs/red-on-base.txt): the gate names 20261102054000_vtid_05579_chat_groups_scope.sql. `discover-skips.mjs --write` added exactly two entries (054000, 054200).
