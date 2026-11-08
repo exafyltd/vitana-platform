@@ -93,6 +93,8 @@ jobs:
     # ~45 min on its own; 45 cancelled the proof run during its final deploy check.
     timeout-minutes: 75
     env:
+      # VTID-05672: suites overlap up to this many at once (GitLab runners set their own).
+      STAGING_VERIFY_JOBS: '4'
       SERVICE: ${{ github.event_name == 'repository_dispatch' && 'community-app' || github.event_name == 'workflow_dispatch' && inputs.service || 'gateway' }}
       # The commit the event names. For a gateway deploy this is the deploy
       # run's head_sha — main HEAD even when a commit_sha pin (VTID-04709)
