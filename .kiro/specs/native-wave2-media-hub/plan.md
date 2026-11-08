@@ -145,6 +145,14 @@ Only `shortsTags.ts` is class-A end to end; no other module is promoted.
    come from `config.webBaseUrl` (env port) with the web path shapes, and the URL is omitted when `webBaseUrl` is
    unset (every non-production profile), like `src/identity/web-console.ts:4-12`. No production host literal is added
    to `apps/mobile/**`.
+   **Provenance (sparring R2-F1/F2):** `expo-video` and `chatMediaPlugins()` landed in vitana-v1 commit `409359e2a`
+   (VTID-05458, conversation-chat, #1561); `expo-document-picker` and `contactsImportPlugins()` in `b443a955b`
+   (VTID-05459, inbox-list, #1564); `diaryCapturePlugins()` earlier (VTID-05426). All are ancestors of `origin/main`
+   `a763b4f01`. **Base rule for the builder:** the lane branches from the then-current `origin/main` and, first,
+   re-checks the four packages in `apps/mobile/package.json` and the four registrations in `buildConfig('development', …)`;
+   if any is missing on that base (it is not on `main` today), the lane adds **only the missing** package with
+   `npx expo install` plus its single plugin entry in a new `mediaHubPlugins()` pushed from `buildPlugins()`, with the
+   options above, and updates `tests/app-config.test.ts` for that entry only. It never edits an existing plugin function.
 6. **Routes.** `apps/mobile/app/(app)/comm/media-hub.tsx` (the screen) and
    `apps/mobile/app/(app)/community/media-hub.tsx` (a `<Redirect>` to `/comm/media-hub` with the query kept,
    mirroring `App.tsx:1321`); both paths join `NATIVE_ROUTES` in `resolve.ts`; the redirect gets a ledger

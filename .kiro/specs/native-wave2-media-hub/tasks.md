@@ -27,7 +27,8 @@ Ports `COMM.MEDIA_HUB /comm/media-hub`, `COMM.MEDIA_MUSIC ?tab=music`, `COMM.MED
 - [ ] 3. Existing native packages and plugins (no change to them): add `tests/media/app-config-media.test.ts`
   asserting, on `buildConfig('development', …)`, that `expo-video` (no background playback / PiP), `expo-audio`
   (`enableBackgroundPlayback: false`), `expo-image-picker` and `expo-document-picker` are already registered and that no
-  camera or microphone option is `false`. Do not edit `package.json`, `package-lock.json`, `app.config.ts` or
+  camera or microphone option is `false`. First re-check the base (plan Decision 5, base rule): on today's `main` all four are
+  present; only if one is missing, add just that package + plugin in `mediaHubPlugins()` and its test line. Otherwise do not edit `package.json`, `package-lock.json`, `app.config.ts` or
   `tests/app-config.test.ts`.
   Files: `apps/mobile/tests/media/**`.
   Verify: `npm test`; `APP_PROFILE=development EXPO_OFFLINE=1 npm run deps:check`.
