@@ -14,7 +14,8 @@ paths:
   - docs/validation/VTID-*/scope.json
   - docs/validation/VTID-*/staging-tests.json
   - docs/validation/VTID-*/plan-sparring.md
-updated: 2026-11-08T11:48Z
+updated: 2026-11-08T12:11Z
+vtid: VTID-05665
 ---
 # Manual EAS cloud build workflow for `development` and `test-g1` (decisions 1, 2, 4, 8)
 Plan: `.kiro/specs/native-eas-builds-r2/` — `plan.md` and the `tasks.md` section marked `<!-- lane: eas-build-workflow -->`
@@ -51,3 +52,6 @@ store, no write to Supabase, AWS, the gateway or any store, no test against prod
 ## Log
 ### 2026-11-08T11:48Z · kiro-exafyltd-202611072144-1c88 · ready
 Lane created with the plan (re-plan of `native-eas-builds/eas-build-workflow`, PR #4771).
+
+### 2026-11-08T12:11Z · ci-plan-spar · ready (VTID allocated)
+VTID-05665 allocated after policy approval (converged-auto-v1).

@@ -14,7 +14,8 @@ paths:
   - docs/validation/VTID-*/scope.json
   - docs/validation/VTID-*/staging-tests.json
   - docs/validation/VTID-*/plan-sparring.md
-updated: 2026-11-08T11:48Z
+updated: 2026-11-08T12:11Z
+vtid: VTID-05668
 ---
 # Runbook section in `apps/mobile/README.md` (decision 8; owner inputs O1–O6)
 Plan: `.kiro/specs/native-eas-builds-r2/` — `plan.md` and the `tasks.md` section marked `<!-- lane: native-eas-runbook -->`
@@ -42,3 +43,6 @@ wrong.
 ## Log
 ### 2026-11-08T11:48Z · kiro-exafyltd-202611072144-1c88 · ready
 Lane created with the plan (re-plan of `native-eas-builds/native-eas-runbook`, PR #4771).
+
+### 2026-11-08T12:11Z · ci-plan-spar · ready (VTID allocated)
+VTID-05668 allocated after policy approval (converged-auto-v1).

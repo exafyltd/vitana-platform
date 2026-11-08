@@ -15,7 +15,8 @@ paths:
   - docs/validation/VTID-*/scope.json
   - docs/validation/VTID-*/staging-tests.json
   - docs/validation/VTID-*/plan-sparring.md
-updated: 2026-11-08T11:48Z
+updated: 2026-11-08T12:11Z
+vtid: VTID-05666
 ---
 # Guard for `apps/mobile/eas.json` (decisions 3 and 6)
 Plan: `.kiro/specs/native-eas-builds-r2/` — `plan.md` (plan block) and the `tasks.md` section marked
@@ -44,3 +45,6 @@ write to Supabase, AWS, the gateway or any store, no test against production.
 ## Log
 ### 2026-11-08T11:48Z · kiro-exafyltd-202611072144-1c88 · ready
 Lane created with the plan (re-plan of `native-eas-builds/eas-profile-guard`, PR #4771).
+
+### 2026-11-08T12:11Z · ci-plan-spar · ready (VTID allocated)
+VTID-05666 allocated after policy approval (converged-auto-v1).

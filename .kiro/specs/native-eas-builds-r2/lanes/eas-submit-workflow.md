@@ -15,7 +15,8 @@ paths:
   - docs/validation/VTID-*/scope.json
   - docs/validation/VTID-*/staging-tests.json
   - docs/validation/VTID-*/plan-sparring.md
-updated: 2026-11-08T11:48Z
+updated: 2026-11-08T12:11Z
+vtid: VTID-05667
 ---
 # TestFlight internal and Play internal track upload for `test-g1` (decisions 7, 8, 9, 10)
 Plan: `.kiro/specs/native-eas-builds-r2/` — `plan.md` and the `tasks.md` section marked `<!-- lane: eas-submit-workflow -->`
@@ -52,3 +53,6 @@ gateway or any production system.
 ## Log
 ### 2026-11-08T11:48Z · kiro-exafyltd-202611072144-1c88 · ready
 Lane created with the plan (re-plan of `native-eas-builds/eas-submit-workflow`, PR #4771).
+
+### 2026-11-08T12:11Z · ci-plan-spar · ready (VTID allocated)
+VTID-05667 allocated after policy approval (converged-auto-v1).

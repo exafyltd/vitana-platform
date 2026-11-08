@@ -11,7 +11,8 @@ reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 repos: [exafyltd/vitana-v1]
 paths:
   - docs/validation/g3/**
-updated: 2026-11-08T11:48Z
+updated: 2026-11-08T12:11Z
+vtid: VTID-05669
 ---
 # Owner records for G3: store, signing and Expo accounts (decisions 3, 4, 5, 6; owner inputs O1–O6)
 Plan: `.kiro/specs/native-eas-builds-r2/` — `plan.md` ("Owner-gated inputs") and the `tasks.md` section marked
@@ -48,3 +49,6 @@ gateway.
 ## Log
 ### 2026-11-08T11:48Z · kiro-exafyltd-202611072144-1c88 · ready
 Lane created with the plan (re-plan of `native-eas-builds/store-owner-gate`, PR #4771).
+
+### 2026-11-08T12:11Z · ci-plan-spar · ready (VTID allocated)
+VTID-05669 allocated after policy approval (converged-auto-v1).
