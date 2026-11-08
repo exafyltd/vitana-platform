@@ -45,6 +45,11 @@ production profile is added: it waits for gate G3 and an owner decision (`NATIVE
   Its `PR-GATE.yml:81-95` fetches the single platform copy from `exafyltd/vitana-platform@main` and runs
   `queue.mjs validate`, so the governance and protected-gate lists below apply to vitana-v1 lane PRs unchanged and
   cannot diverge.
+- No workflow catalog applies to the two new workflows. The only catalog is `vitana-platform:services/gateway/specs/loop-catalog-v1.json`;
+  its CI test `vitana-platform:services/gateway/test/loop-catalog.test.ts:44-46` lists `.github/workflows` of the
+  platform checkout and keeps only files with a `schedule:` trigger. `NATIVE-EAS-BUILD.yml` and `NATIVE-EAS-SUBMIT.yml`
+  are `workflow_dispatch`-only, live in vitana-v1, and have no schedule, so no registration is needed. vitana-v1
+  `origin/main` has no loop-catalog file (`git ls-tree` finds none).
 - Governance check (`vitana-platform:scripts/collab/queue.mjs:86`): `.github/**` is a governance path. It is not in
   `vitana-platform:scripts/collab/protected-gate-files.json`, so a Kiro lane may change a new
   `.github/workflows/NATIVE-EAS-*.yml` if its `reviewer_seat` is `agent:vitana-lane-reviewer`. The lane does not need
