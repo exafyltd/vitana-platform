@@ -146,3 +146,13 @@ Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are ha
 
 ### 2026-11-08T12:42Z · ci-plan-spar · approved (late lane VTID)
 Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.
+
+### 2026-11-08T14:40Z · kiro-exafy-202611081113-5a2e · owner command: class runner tokens (not done here)
+Owner instruction (PR #4889 comment 6724678844): write the authentication tokens of GitLab runners 3, 4 and 5 (vitana/vitana-platform; tags vitana-eng-main, vitana-eng-deploy, vitana-eng-build) to their secrets, by running `scripts/eng/gitlab-settings.mjs`. Secrets: `vitana/engineering/gitlab/vitana-eng-fleet-main-runner-token` (runner 3), `vitana/engineering/gitlab/vitana-eng-fleet-deploy-runner-token` (runner 4), `vitana/engineering/gitlab/vitana-eng-fleet-build-runner-token` (runner 5). Then the fleet manager log must show the three class lines after the next install.
+
+Result: not done in this session, for three reasons, all checked:
+1. The sync does not handle class runners. It stores three secrets only (`agent/*`, `fleet-runner-token`, `webhook-signing-token`; `scripts/eng/gitlab-settings.mjs`, SECRETS), and its settings file manages the legacy and fleet runners only. Running it would not write the class tokens.
+2. The session has no AWS credentials (`aws sts get-caller-identity`: NoCredentials) and no authenticated GitLab session (`glab`: No user principal found). The sync reads `/etc/vitana` and the admin token file, which exist on the fleet manager only.
+3. A token reset (`POST /runners/:id/reset_authentication_token`) and the Secrets Manager writes are live writes. Session tools do not make them (collaboration §7a).
+
+Needed from the owner: run the sync (or the reset and put) on the fleet manager, or give one-hour role credentials for the engineering account (841276716213) as before. Token values must never be printed. After the write, run the installer once on the manager and check for `class main`, `class deploy` and `class build` lines in `/var/log/vitana-bootstrap.log`. PR #4889 is not merged until the class runners pick up jobs.
