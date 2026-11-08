@@ -14,7 +14,8 @@ paths:
   - infra/gitlab-engineering/ci/platform-delivery.gitlab-ci.yml
   - infra/gitlab-engineering/ci/v1-delivery.gitlab-ci.yml
   - docs/validation/VTID-05546/**
-updated: 2026-11-08T11:39Z
+  - docs/validation/VTID-05643/**
+updated: 2026-11-08T12:12Z
 vtid: VTID-05643
 ---
 # Lane: build-class-retag (repo vitana-platform)
