@@ -755,3 +755,4 @@ eu-central-1: https://www.doit.com/compute/compute/aws/eu-central-1/m6i.xlarge
   `scripts/eng/pipeline-gen.mjs:193`. Lane file `lanes/build-class-retag.md`, tasks group `build-class-retag`. Merge gate: not
   before the `vitana-eng-build` class runs (owner steps A2 and A3), or the image builds wait for a runner that does not exist.
   The sparred text above is unchanged.
+- `build-class-retag` paths change (2026-11-08 12:10Z, planner decision): the lane gains `docs/validation/VTID-05643/**`. Its PR's validator needs the evidence dir of the lane's own VTID (`acceptance.md`, `commands.log`, `outputs/`). The paths of the late lane above are otherwise unchanged.
