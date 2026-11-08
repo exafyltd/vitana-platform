@@ -1,0 +1,18 @@
+loaded base_schema.sql
+loaded pae05569.sql
+## pre-check.sql
+table_name | nullable | orphan_rows
+chat_messages | NO | 0
+product_analytics_events | NO | 0
+user_notifications | NO | 0
+
+loaded 20261102043000_vtid_05569_hot_tables_tenant_not_null_assert.sql
+## post-check.sql
+all_not_null | no_orphans | no_object_added
+true | true | true
+
+loaded 20261102043100_vtid_05569_hot_tables_tenant_not_null_assert_rollback.sql
+## rollback-check.sql
+still_not_null | nothing_left_behind
+true | true
+
