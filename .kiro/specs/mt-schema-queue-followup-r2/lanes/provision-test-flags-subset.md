@@ -1,6 +1,6 @@
 ---
 lane: provision-test-flags-subset
-state: ready
+state: verified
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -9,7 +9,7 @@ reviewer_seat: agent:vitana-lane-reviewer
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 paths:
   - supabase/tests/vtid_05150_provision_tenant.test.sql
-updated: 2026-11-07T19:28Z
+updated: 2026-11-08T13:00Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05610
 ---
@@ -41,3 +41,14 @@ reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 PR: https://github.com/exafyltd/vitana-platform/pull/4856
 Findings: non-blocking: earlier erp note closed. docs/validation/VTID-05506/pgtap/vtid_05506_erp_monitoring.test.sql on origin/main pins erp.bootstrap_requested = true (assertions 01, 02, 14). The PR's own diff against origin/main is still only supabase/tests/vtid_05150_provision_tenant.test.sql, docs/validation/VTID-05610/** and this lane log. Its content is identical to the head accepted before, d04f1d47ec: jev is pinned exactly and feature_flags - 'jev' - 'erp' = '{}'. No protected gate file is in the PR's own diff. Non-blocking: reviewer could not read the check runs (gh GraphQL unsupported, gh api not allowed), so the land step must confirm every required check is green on this head.
 Next: the land step merges under §7b once every required check is confirmed green on this head and the PR is up to date with main
+
+### 2026-11-08T13:00Z · kiro-hotmail-202611061752-cc1f · ready → executing
+Built on branch kiro/mt-schema-queue-followup-r2/provision-test-flags-subset; recorded here at the closing, because one transition per PR meant the PR carried no lane-state entry.
+
+### 2026-11-08T13:00Z · kiro-hotmail-202611061752-cc1f · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/4856. Reviewed on head `7250af9501` (accept entry above, reviewer agent claude-sonnet-5.5).
+
+### 2026-11-08T13:00Z · kiro-hotmail-202611061752-cc1f · in-review → verified
+merge: d132e0976e1cf0353d0d204afdee092076e26be9 (exafyltd/vitana-platform#4856)
+authority: §7b PM rule. Squash merge by land-guard; `land-guard review` ok, `land-guard checks` green (11 checks), PR up to date. No lane code changed after the accept.
+The change is tests and validation evidence only (supabase/tests/vtid_05150_provision_tenant.test.sql). Next: the `done` record.
