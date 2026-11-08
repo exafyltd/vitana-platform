@@ -1,6 +1,6 @@
 ---
 lane: local-test-stack-pglite
-state: verified
+state: done
 next_actor: kiro
 executor: kiro
 seat: hotmail
@@ -15,7 +15,7 @@ paths:
   - .github/workflows/MT-LOCAL-STACK.yml
   - package.json
   - pnpm-lock.yaml
-updated: 2026-11-08T14:08Z
+updated: 2026-11-08T14:12Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05520
 ---
@@ -62,3 +62,6 @@ PR https://github.com/exafyltd/vitana-platform/pull/4879. Reviewed on head `5cbb
 merge: 932da573be7360831e5f5822f81da9b9b5972338 (exafyltd/vitana-platform#4879)
 authority: §7b PM rule. Squash merge by land-guard; `land-guard review` ok, `land-guard checks` green, PR up to date. No lane code changed after the accept.
 Next: the `done` record.
+
+### 2026-11-08T14:12Z · kiro-hotmail-202611061752-cc1f · verified → done
+Merged and verified under §7b (record 1). This lane deploys nothing: it adds the MT local stack (PGlite) workflow, fixtures and shim, which run in CI only. No staging deploy and no STAGING-VERIFY apply; the lane is done at merge with green checks and these closing records.
