@@ -1,7 +1,7 @@
 ---
 lane: deploy-path
-state: in-review
-claimed_by: kiro-exafy-202611051643-bc0a
+state: executing
+claimed_by: kiro-exafy-202611081113-5a2e
 branch: kiro/agentic-delivery/deploy-path
 pr: https://github.com/exafyltd/vitana-platform/pull/4714
 next_actor: kiro
@@ -22,7 +22,7 @@ paths:
   - scripts/aws/iam/gitlab-oidc-*.json
   - scripts/aws/setup-gitlab-oidc.sh
   - docs/validation/**
-updated: 2026-11-05T22:44Z
+updated: 2026-11-08T11:30Z
 vtid: VTID-05546
 ---
 # Lane: deploy-path (repo vitana-platform)
@@ -72,3 +72,14 @@ Findings: non-blocking — awscli and skopeo are installed unpinned at job start
 Findings: non-blocking — services/gateway/BUILD_INFO is not refreshed in the GitLab build (build-image.sh).
 Paths: all inside the lane. CI: 11 of 11 check runs on the head succeeded. Red to green: credible (19/19 and 39/39 red on base round 1, 14/21 red round 2, 51/51 green). No tests weakened. The caller session does not appear in the executing log.
 Next: the lane's seat fixes the blocking findings
+
+### 2026-11-08T11:30Z · kiro-exafy-202611081113-5a2e · in-review → executing (claim taken by planner decision D-A; blocked)
+Claim `agentic-delivery/deploy-path` taken by seat exafy. The branch already contains origin/main (no merge needed), so the new commit fast-forwards the WIP head adf7fffd7f.
+
+Tests (outputs/fleet-classes-red-to-now-20261108.txt): at adf7fffd7f, 17 of 21 pass and tests 14, 16, 17, 18 are red. Fixed in the test fixtures: test 16 unsets and test 17 expects the build class token like the other two classes; test 17 and 18 expect the installer to read the build token secret (the installer does). Now 20 of 21 pass. Test 14 is still red for a reason outside this lane (below). No test was weakened: the test 14 expectation changed from the main class to the build class, which matches this lane's own build class design.
+
+Blocked: test 14 (BuildKit daemon only on the build class). Five build jobs still run on `vitana-eng-main`, so their BuildKit service runs on the class without the unconfined profile: `build-image:gateway`, `build-image:erp-bridge`, `build-image:kiro-runner`, `build-image:postgrest-aurora-proxy` (infra/gitlab-engineering/ci/platform-delivery.gitlab-ci.yml) and `build-image:community-app` (ci/v1-delivery.gitlab-ci.yml). Those files are outside this lane's `paths`, so the lane cannot change them. Fix: tag those five jobs `vitana-eng-build`. Needs the planner to amend the paths or open a follow-up lane.
+
+D-B (planner decision: build evidence from rehearsal A4, done on main) does not hold yet. eng-gitlab-m2/rehearsal on main records A1 to A4 and A8 as "pending the owner's live run (m2.sh rehearse)"; the evidence there is a simulation. So no real rootless build timing exists. D7 is amended in this log as the planner asked: the D7 build timings come from the owner's `m2.sh rehearse` run (A4), and until that run exists D7 stays open.
+
+Next actor: planner. Decide (1) the paths amendment or follow-up lane for the five build jobs, and (2) whether D7 waits for the owner's rehearsal run. The lane stays `executing`, not `in-review`: a red test is not reviewable. The claim is released after the push. cutover and cut-settings stay blocked behind this lane.

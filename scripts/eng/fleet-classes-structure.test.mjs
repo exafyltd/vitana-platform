@@ -523,10 +523,10 @@ test("seccomp and AppArmor unconfined only for the build class's BuildKit servic
   assert.equal(main.docker.services_security_opt, undefined, 'main: services (postgres and the rest) keep both profiles (review d1ea5: unconfined only for build jobs)');
   assert.deepEqual(build.docker.services_security_opt, ['seccomp=unconfined', 'apparmor=unconfined'], 'build: the rootless BuildKit daemon that .build-image starts as its service (plan R5)');
   for (const { file, name, job } of allJobs()) if (tagsOf(job).includes(BUILDC)) assert.equal(name, '.build-image', `${file} ${name}: only the image build runs on the build class`);
-  // The daemon is a service of .build-image on the main class only; every other job image stays a plain client.
+  // The daemon is a service of .build-image on the build class only; every other job image stays a plain client.
   const withBuildkit = allJobs().filter(({ job }) => (job.services || []).some((s) => /moby\/buildkit/.test(typeof s === 'string' ? s : String(s.name))));
   assert.ok(withBuildkit.some(({ name }) => name === '.build-image'));
-  for (const { file, name, job } of withBuildkit) assert.deepEqual(tagsOf(job), [MAIN], `${file} ${name}: the BuildKit daemon runs only on the main class`);
+  for (const { file, name, job } of withBuildkit) assert.deepEqual(tagsOf(job), [BUILDC], `${file} ${name}: the BuildKit daemon runs only on the build class`);
 });
 
 test("each block has its own token, once, and each class its own cache path: no class reads another class's cache", () => {
@@ -546,10 +546,10 @@ test("each block has its own token, once, and each class its own cache path: no 
 });
 
 test('a class renders only with its token; a wrong class input refuses the whole config, names the input and never echoes a token', () => {
-  const none = rendered({ ...fullEnv(), CLASS_MAIN_RUNNER_TOKEN: undefined, CLASS_DEPLOY_RUNNER_TOKEN: undefined });
+  const none = rendered({ ...fullEnv(), CLASS_MAIN_RUNNER_TOKEN: undefined, CLASS_DEPLOY_RUNNER_TOKEN: undefined, CLASS_BUILD_RUNNER_TOKEN: undefined });
   assert.deepEqual(none.toml.runners.map((r) => r.name), ['vitana-eng-fleet'], 'no class token: the M2 configuration alone');
   assert.equal(none.toml.concurrent, 96);
-  const onlyMain = rendered({ ...fullEnv(), CLASS_DEPLOY_RUNNER_TOKEN: '' });
+  const onlyMain = rendered({ ...fullEnv(), CLASS_DEPLOY_RUNNER_TOKEN: '', CLASS_BUILD_RUNNER_TOKEN: '' });
   assert.deepEqual(onlyMain.toml.runners.map((r) => r.name), ['vitana-eng-fleet', 'vitana-eng-fleet-main']);
   assert.equal(onlyMain.toml.concurrent, 96 + 12);
   const bad = [
@@ -610,10 +610,10 @@ function runInstaller({ classes, answers }) {
 
 test('installer with the class env file of step A2: reads each class token once after the untrusted one, renders the classes that have one, leaves the others off, prints no token', () => {
   const classEnv = A2_CLASS_ENV;
-  const r = runInstaller({ classes: classEnv, answers: { [FLEET_SECRET]: FLEET_TOKEN, [classEnv.CLASS_MAIN_TOKEN_SECRET]: MAIN_TOKEN, [classEnv.CLASS_DEPLOY_TOKEN_SECRET]: null } });
+  const r = runInstaller({ classes: classEnv, answers: { [FLEET_SECRET]: FLEET_TOKEN, [classEnv.CLASS_MAIN_TOKEN_SECRET]: MAIN_TOKEN, [classEnv.CLASS_DEPLOY_TOKEN_SECRET]: null, [classEnv.CLASS_BUILD_TOKEN_SECRET]: null } });
   assert.equal(r.status, 0, `exit ${r.status}: ${r.out}`);
   const reads = r.calls.split('\n').filter((l) => l.startsWith('aws secretsmanager get-secret-value')).map((l) => l.split(' ').at(-1));
-  assert.deepEqual(reads, [FLEET_SECRET, classEnv.CLASS_MAIN_TOKEN_SECRET, classEnv.CLASS_DEPLOY_TOKEN_SECRET], 'the untrusted token first, then each class once');
+  assert.deepEqual(reads, [FLEET_SECRET, classEnv.CLASS_MAIN_TOKEN_SECRET, classEnv.CLASS_DEPLOY_TOKEN_SECRET, classEnv.CLASS_BUILD_TOKEN_SECRET], 'the untrusted token first, then each class once');
   const toml = parseToml(r.config);
   assert.deepEqual(toml.runners.map((x) => x.name), ['vitana-eng-fleet', 'vitana-eng-fleet-main'], 'deploy has no token yet: it stays off, its jobs wait');
   assert.equal(toml.concurrent, 24 + 12);
@@ -623,7 +623,7 @@ test('installer with the class env file of step A2: reads each class token once 
   assert.match(r.out, /class deploy: no runner token in vitana\/engineering\/gitlab\/vitana-eng-fleet-deploy-runner-token yet; the class stays off/);
   for (const t of [FLEET_TOKEN, MAIN_TOKEN]) assert.equal(r.out.includes(t) || r.calls.includes(t), false, 'no token in the output or on any command line');
   assert.match(r.calls, /^systemctl restart gitlab-runner$/m);
-  const wrong = rendered({ ...fullEnv(), CLASS_MAIN_RUNNER_TOKEN: undefined, CLASS_DEPLOY_RUNNER_TOKEN: undefined });
+  const wrong = rendered({ ...fullEnv(), CLASS_MAIN_RUNNER_TOKEN: undefined, CLASS_DEPLOY_RUNNER_TOKEN: undefined, CLASS_BUILD_RUNNER_TOKEN: undefined });
   assert.equal(wrong.toml.runners.length, 1, 'control: without class tokens the same inputs give the M2 block alone');
 });
 
@@ -631,10 +631,10 @@ test('installer: a class token secret outside vitana/engineering/gitlab/ is neve
   const classEnv = A2_CLASS_ENV;
   const odd = { ...classEnv, CLASS_DEPLOY_TOKEN_SECRET: 'vitana/ci/test-user' };
   const notToken = ['glpat', 'NOT-A-RUNNER-TOKEN-0000'].join('-');
-  const r = runInstaller({ classes: odd, answers: { [FLEET_SECRET]: FLEET_TOKEN, [classEnv.CLASS_MAIN_TOKEN_SECRET]: notToken } });
+  const r = runInstaller({ classes: odd, answers: { [FLEET_SECRET]: FLEET_TOKEN, [classEnv.CLASS_MAIN_TOKEN_SECRET]: notToken, [classEnv.CLASS_BUILD_TOKEN_SECRET]: null } });
   assert.equal(r.status, 0, r.out);
   const reads = r.calls.split('\n').filter((l) => l.startsWith('aws secretsmanager get-secret-value')).map((l) => l.split(' ').at(-1));
-  assert.deepEqual(reads, [FLEET_SECRET, classEnv.CLASS_MAIN_TOKEN_SECRET], 'the odd secret name is not read');
+  assert.deepEqual(reads, [FLEET_SECRET, classEnv.CLASS_MAIN_TOKEN_SECRET, classEnv.CLASS_BUILD_TOKEN_SECRET], 'the odd secret name is not read');
   assert.match(r.out, /CLASS_DEPLOY_TOKEN_SECRET has an unexpected form; class deploy stays off/);
   assert.deepEqual(parseToml(r.config).runners.map((x) => x.name), ['vitana-eng-fleet']);
   assert.equal((r.out + r.calls + r.config).includes(notToken), false, 'a wrong value is neither written nor echoed');
