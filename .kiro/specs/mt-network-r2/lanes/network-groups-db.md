@@ -1,6 +1,6 @@
 ---
 lane: network-groups-db
-state: verified
+state: done
 next_actor: kiro
 depends_on: [messaging-send-db, legacy-messages-migration-db]
 executor: kiro
@@ -12,7 +12,7 @@ paths:
   - docs/multitenancy/MIGRATION-QUEUE.md
   - scripts/ci/migration-drift-baseline.json
   - services/gateway/test/mt-network-groups-db.pgtap.test.ts
-updated: 2026-11-08T14:27Z
+updated: 2026-11-08T14:31Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05579
 ---
@@ -86,3 +86,8 @@ PR https://github.com/exafyltd/vitana-platform/pull/4850. Reviewed on head `ad09
 merge: b670aa2b992bf5410315202f77e93974d2f39c6d (exafyltd/vitana-platform#4850)
 authority: §7b PM rule. Squash merge by land-guard; `land-guard review` ok, `land-guard checks` green, PR up to date. No lane code changed after the accept.
 Next: the `done` record.
+
+### 2026-11-08T14:31Z · kiro-hotmail-202611061752-cc1f · verified → done
+Deploys nothing: the lane adds migrations 20261102054000, 20261102054100 and 20261102054200 only, so there is no staging deploy and no Gate 2.
+The three migrations are unapplied. Applying them needs the owner's approval of the files and the target database (§7d), after the VTID-05573 apply.
+Closed: merged under §7b with green checks (exafyltd/vitana-platform#4850).
