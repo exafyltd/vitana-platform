@@ -440,7 +440,14 @@ test('central CI: the platform and vitana-v1 jobs are those of milestone 1, unch
     assert.deepEqual(defaultWithoutRetry, m1.default, `${key}: default, except the added retry`);
     const jobs = (d) => Object.keys(d).filter((k) => !RESERVED.has(k));
     assert.deepEqual(jobs(ours).sort(), jobs(m1).sort(), `${key}: the same job names`);
-    for (const j of jobs(m1)) assert.deepEqual(ours[j], m1[j], `${key}: job ${j} is word for word the milestone 1 job`);
+    // runner-pin-jq: the one allowed difference is the jq install first in .gateway's before_script (node:20-bookworm has no jq).
+    const JQ = 'apt-get update -qq && apt-get install -y -qq jq';
+    for (const j of jobs(m1)) {
+      if (key === 'platform' && j === '.gateway') {
+        assert.equal(ours[j].before_script[0], JQ, 'platform: .gateway installs jq first');
+        assert.deepEqual({ ...ours[j], before_script: ours[j].before_script.slice(1) }, m1[j], 'platform: .gateway is otherwise word for word the milestone 1 job');
+      } else assert.deepEqual(ours[j], m1[j], `${key}: job ${j} is word for word the milestone 1 job`);
+    }
   }
   const p = parseYaml(CI.platform);
   assert.deepEqual(p.typecheck.script, ['npm ci --no-audit --no-fund', 'pnpm run typecheck']);
@@ -1519,3 +1526,17 @@ test('the pieces agree: ops-install.sh installs what the units run (git helper p
   assert.equal(OPS.includes('gitlab-configure.sh') && /sed -i|>> *"?\$?\{?[A-Za-z_]*\}?\/?gitlab-configure/.test(OPS), false);
 });
 
+
+// eng-gitlab-m2/runner-pin-jq: node:20-bookworm has no jq, GitHub's ubuntu-latest has it; on GitLab 28 gateway tests failed with
+// "jq: not found" (pipelines 154, 155). The .gateway jobs install jq before their script, so they run what GitHub runs.
+nodeTest('the platform .gateway jobs install jq before their script', () => {
+  const ci = read('ci/platform.gitlab-ci.yml');
+  const block = ci.slice(ci.indexOf('\n.gateway:'), ci.indexOf('\n', ci.indexOf('before_script:', ci.indexOf('\n.gateway:'))) + 400);
+  const bs = block.slice(block.indexOf('before_script:')).split('\n').slice(1).filter((l) => /^\s+- /.test(l)).map((l) => l.trim());
+  assert.ok(bs.some((l) => /apt-get install -y -qq jq\b/.test(l)), `.gateway before_script installs jq: ${JSON.stringify(bs)}`);
+  for (const job of ['typecheck', 'gateway-jest']) {
+    const j = ci.slice(ci.indexOf(`\n${job}:`), ci.indexOf('\n\n', ci.indexOf(`\n${job}:`) + 2));
+    assert.match(j, /extends: \.gateway/, `${job} extends .gateway`);
+    assert.equal(/before_script:/.test(j), false, `${job} keeps the .gateway before_script`);
+  }
+});
