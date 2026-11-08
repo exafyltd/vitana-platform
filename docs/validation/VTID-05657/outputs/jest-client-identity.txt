@@ -1,0 +1,22 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/wt/b-client-identity-gateway/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+PASS test/client-identity-classify.test.ts
+  classifyClient
+    ✓ classifies native iOS (16 ms)
+    ✓ classifies native Android (1 ms)
+    ✓ classifies the test platform as native
+    ✓ treats a missing header as web
+    ✓ treats a malformed header as web (1 ms)
+    ✓ treats an unknown platform as web
+    ✓ classifies a well-formed but unknown (future) version as native (1 ms)
+    ✓ treats an unparseable version as web
+    ✓ uses the first value of an array header and ignores non-strings (1 ms)
+Test Suites: 1 passed, 1 total
+Tests:       9 passed, 9 total
+Snapshots:   0 total
+Time:        0.546 s
+Ran all test suites matching /test\/client-identity/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
