@@ -1,0 +1,15 @@
+VTID-05610 local runs, 2026-11-07, session kiro-hotmail-202611061752-cc1f (PGlite only; no psql/docker/supabase CLI; no live system)
+run-pglite.mjs mirrors database 1 of scripts/ci/test-vtid-05150-provision-tenant.sh up to the SQL assertions:
+fixture -> Lane A M1 (20261014000100) -> fixture_after_a -> 05150 M1 x2 -> 05150 M2 x2 -> [20261102141000 x2] -> test file (psql \ lines stripped).
+
+OLD assertion (origin/main test file):
+$ node docs/validation/VTID-05610/run-pglite.mjs                  -> outputs/old-assertion-without-141000.txt        (exit 0, green)
+$ node docs/validation/VTID-05610/run-pglite.mjs --with-141000    -> outputs/old-assertion-with-141000-RED.txt       (exit 1, red: jev flag assertion)
+
+NEW assertion (this lane):
+$ node docs/validation/VTID-05610/run-pglite.mjs                  -> outputs/new-assertion-without-141000-GREEN.txt  (exit 0)
+$ node docs/validation/VTID-05610/run-pglite.mjs --with-141000    -> outputs/new-assertion-with-141000-GREEN.txt     (exit 0)
+
+MUTATION (trigger adds an unknown key feature_flags.rogue on provisioned tenants):
+$ node docs/validation/VTID-05610/run-pglite.mjs --mutate-unknown-key                -> outputs/mutation-unknown-key-without-141000-RED.txt (exit 1)
+$ node docs/validation/VTID-05610/run-pglite.mjs --with-141000 --mutate-unknown-key  -> outputs/mutation-unknown-key-with-141000-RED.txt    (exit 1)
