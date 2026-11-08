@@ -1,6 +1,6 @@
 ---
 lane: generated-inventories
-state: verified
+state: done
 next_actor: kiro
 executor: kiro
 seat: hotmail
@@ -10,7 +10,7 @@ depends_on: [local-test-stack-pglite]
 paths:
   - scripts/mt/inventory/**
   - scripts/mt/lint/**
-updated: 2026-11-08T15:57Z
+updated: 2026-11-08T16:01Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05445
 ---
@@ -66,3 +66,7 @@ PR https://github.com/exafyltd/vitana-platform/pull/4899. Reviewed on head `ba0a
 merge: 39e093fc82c1ed15cecc04d91e06ebb08f9bbf50 (exafyltd/vitana-platform#4899)
 authority: §7b PM rule. Squash merge by land-guard; `land-guard review` ok, `land-guard checks` green, PR up to date. No lane code changed after the accept.
 Next: the `done` record.
+
+### 2026-11-08T16:01Z · kiro-hotmail-202611061752-cc1f · verified → done
+Deploys nothing: the lane adds generated inventories and PGlite tests only. No service, workflow or migration changed.
+Next: release the claim.
