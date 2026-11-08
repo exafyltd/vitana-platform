@@ -1,0 +1,2 @@
+# VTID-05445 (mt-guardrails-r2/generated-inventories), session kiro-hotmail-202611061752-cc1f, base origin/main e9168deed9
+$ ln -s .tools/pglite/node_modules /projects/sandbox/node_modules   # sandbox only, resolves @electric-sql/pglite for the worktree; nothing tracked

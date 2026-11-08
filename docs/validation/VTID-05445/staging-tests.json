@@ -1,0 +1,8 @@
+{
+  "vtid": "VTID-05445",
+  "service": "none",
+  "tests": [
+    { "kind": "existing", "ref": "node --test scripts/mt/inventory/*.test.mjs scripts/mt/lint/*.test.mjs",
+      "reason": "the lane deploys nothing; its node tests run the generators and lints over a tiny fixture schema and check that the committed inventories regenerate byte-identically from the PGlite stack" }
+  ]
+}
