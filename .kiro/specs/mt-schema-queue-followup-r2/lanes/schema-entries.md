@@ -1,6 +1,6 @@
 ---
 lane: schema-entries
-state: verified
+state: done
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -9,7 +9,7 @@ reviewer_seat: agent:vitana-lane-reviewer
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 paths:
   - DATABASE_SCHEMA.md
-updated: 2026-11-08T13:00Z
+updated: 2026-11-08T13:05Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05611
 ---
@@ -52,3 +52,6 @@ PR https://github.com/exafyltd/vitana-platform/pull/4855. Reviewed on head `375c
 merge: 4c46ce7f0aacc53498df97f88faa0eb8e3008133 (exafyltd/vitana-platform#4855)
 authority: §7b PM rule. Squash merge by land-guard; `land-guard review` ok, `land-guard checks` green (11 checks), PR up to date. No lane code changed after the accept.
 The change is docs only (DATABASE_SCHEMA.md entries and validation evidence). Next: the `done` record.
+
+### 2026-11-08T13:05Z · kiro-hotmail-202611061752-cc1f · verified → done
+This lane deploys nothing: docs and tests only. No staging deploy follows from the merge (4c46ce7f0a), so there is no STAGING-VERIFY run for it; it is done at merge with green checks (11 green).
