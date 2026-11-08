@@ -1,6 +1,6 @@
 ---
 lane: isolation-suite
-state: verified
+state: done
 next_actor: kiro
 executor: kiro
 seat: hotmail
@@ -10,7 +10,7 @@ depends_on: [local-test-stack-pglite, generated-inventories]
 paths:
   - scripts/ci/sql-tests/mt-isolation.test.sql
   - scripts/ci/sql-tests/run-mt-isolation-test.sh
-updated: 2026-11-08T16:44Z
+updated: 2026-11-08T16:48Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05446
 ---
@@ -95,3 +95,6 @@ PR https://github.com/exafyltd/vitana-platform/pull/4912. Reviewed on head `3095
 merge: 2ea9ca18e72dcf8242a855b73e497f54347096f5 (exafyltd/vitana-platform#4912)
 authority: §7b PM rule. Squash merge by land-guard; `land-guard review` ok, `land-guard checks` green, PR up to date. No lane code changed after the accept.
 Next: the `done` record.
+
+### 2026-11-08T16:48Z · kiro-hotmail-202611061752-cc1f · verified → done
+Deploys nothing. The lane is merged and every acceptance item holds. The default suite run stays red until the 14 unverified claims are replayable (Amendment 3 decision 3); that is the ci-wiring follow-up, not a defect of this lane.
