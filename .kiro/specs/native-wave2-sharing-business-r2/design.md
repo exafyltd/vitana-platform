@@ -18,7 +18,7 @@ Route-file plan (Expo Router, paths = web paths):
 
 | Lane | Native route file(s) under `apps/mobile/app/` | Web path(s) |
 |---|---|---|
-| `sharing` | `(app)/sharing/index.tsx`, `(app)/sharing/campaigns/index.tsx`, `(app)/sharing/campaigns/[id].tsx`, `(app)/sharing/distribution.tsx`, `(app)/sharing/data-consent.tsx`, `(app)/invite.tsx`, `(app)/creator/onboarded.tsx`, `(app)/pub/campaigns/[id].tsx` | `/sharing`, `/sharing/campaigns`, `/sharing/campaigns/:id`, `/sharing/distribution`, `/sharing/data-consent`, `/invite`, `/creator/onboarded`, `/pub/campaigns/:id` |
+| `sharing` | `(app)/sharing/index.tsx`, `(app)/sharing/campaigns/index.tsx`, `(app)/sharing/campaigns/[id].tsx`, `(app)/sharing/distribution.tsx`, `(app)/sharing/data-consent.tsx`, `(app)/invite.tsx`, `(app)/creator/onboarded.tsx`, `(public)/pub/campaigns/[id].tsx` | `/sharing`, `/sharing/campaigns`, `/sharing/campaigns/:id`, `/sharing/distribution`, `/sharing/data-consent`, `/invite`, `/creator/onboarded`, `/pub/campaigns/:id` |
 | `business-hub` | `(app)/business/index.tsx` (tabs `services`/`clients`/`sell-earn`/`analytics` + `?tab=…` via nested route / search param), `(app)/business/services.tsx`, `(app)/business/clients.tsx`, `(app)/business/sell-earn.tsx`, `(app)/business/analytics.tsx`, `(app)/business/opportunities.tsx`, `(app)/business/listings.tsx` | `/business` (+ `?tab=services.*|sales.*|insights.*`), `/business/services`, `/business/clients`, `/business/sell-earn`, `/business/analytics`, `/business/opportunities`, `/business/listings` |
 
 Query-string variants (`?tab=services.events`, `?tab=sales.promotions`, `?tab=insights.earnings`, etc.) are the **same
@@ -59,9 +59,10 @@ automation rules (`AutomationRuleDialog.tsx`, 111) and scheduled / distribution 
   `html2canvas` (`:2,52`). The native universal-share surface produces the same card image with
   `react-native-view-shot` (`captureRef`) or an equivalent native capture, feeding the OS share sheet. Flagged as a
   named port note; the image and flow match the web, only the capture mechanism differs.
-- The two public landing routes (`/creator/onboarded` → `CreatorOnboarded.tsx`, `/pub/campaigns/:id` →
-  `PublicCampaignLanding.tsx`) are leaf screens opened from a push / universal link; they are ported as plain screens
-  on the shell.
+- The two exclusion routes are leaf screens opened from a push / universal link, with different auth models matching
+  the web (sparring R1-F1): `/pub/campaigns/:id` (`App.tsx:860`, no `AuthGuard`) is public and lives in the
+  `app/(public)/` group (`PublicLayout`, no member shell, no session needed); `/creator/onboarded` (`App.tsx:1108-1112`,
+  wrapped in `AuthGuard`) lives in `app/(app)/` under the AuthGate.
 
 ### 2b. Business-hub lane specifics (one shell + the Commerce UX contract)
 
@@ -94,7 +95,7 @@ organizer event-sales / reseller tabs `src/components/reseller/**` (`ResellerAva
   `BUSINESS.INSIGHTS_GROWTH`, `BUSINESS.OPPORTUNITIES`, `BUSINESS.LISTINGS`). **8 + 13 = 21.** Each row named
   explicitly in the lane file.
 - **Native files:** each lane owns a disjoint subtree of `apps/mobile/app/` and `apps/mobile/src/screens/` (one folder
-  per lane: `app/(app)/sharing/**` + `app/(app)/invite.tsx` + `app/(app)/creator/**` + `app/(app)/pub/**` +
+  per lane: `app/(app)/sharing/**` + `app/(app)/invite.tsx` + `app/(app)/creator/**` + `app/(public)/pub/**` +
   `src/screens/sharing/`; `app/(app)/business/**` + `src/screens/business/`). No file is in two lanes.
 - **Tests:** each lane owns its `apps/mobile/tests/<cluster>/**` folder (`tests/sharing/`, `tests/business/`) and its
   `docs/validation/<VTID>/` folder.
@@ -144,8 +145,7 @@ organizer event-sales / reseller tabs `src/components/reseller/**` (`ResellerAva
 - **Unit (jest-expo + RNTL, fake gateway):** each screen renders its loaded state from fixture data, its empty state,
   its error state. Sharing: campaign list/detail load & empty & error; distribution / scheduled-posts render; channel
   connector connect/disconnect state (native re-implemented data mocked with fixtures); universal share dialog opens
-  and the share-image capture is invoked (mocked `captureRef`); data-consent toggles; invite flow; the two public
-  landings render from a fixture. Business-hub: the shell renders each tab (`services`/`clients`/`sell-earn`/
+  and the share-image capture is invoked (mocked `captureRef`); data-consent toggles; invite flow; `/pub/campaigns/:id` renders from a fixture with no session and `/creator/onboarded` renders only under the AuthGate. Business-hub: the shell renders each tab (`services`/`clients`/`sell-earn`/
   `analytics` + the `?tab=` variants) from fixtures; opportunities and listings load/empty/error; reseller tabs and
   earnings render. Pure-module tests for any core helper a lane adds.
 - **i18n/RTL:** a test asserts no hardcoded user-visible string in the lane's screens and no physical `left`/`right`;

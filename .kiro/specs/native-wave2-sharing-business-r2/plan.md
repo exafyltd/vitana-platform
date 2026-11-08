@@ -48,8 +48,8 @@ surfaces.
 
 ## Decisions (made by Kiro as planner under the owner's "finish the native apps" instruction; sparring may revise)
 1. **Two disjoint lanes by cluster.** The 21 `sharing-business` rows split along the ledger's own key prefixes: the 8
-   non-`BUSINESS.` rows (all `SHARING.*`, `COMM.INVITE`, and the two public exclusion routes `/creator/onboarded`,
-   `/pub/campaigns/:id`) form the **`sharing`** lane; the 13 `BUSINESS.*` rows form the **`business-hub`** lane. The
+   non-`BUSINESS.` rows (all `SHARING.*`, `COMM.INVITE`, and the two exclusion routes `/creator/onboarded` (auth-guarded, `(app)/`),
+   `/pub/campaigns/:id` (public, `(public)/`)) form the **`sharing`** lane; the 13 `BUSINESS.*` rows form the **`business-hub`** lane. The
    two touch disjoint route files and component folders (`src/components/sharing/**` vs `src/components/business/**` +
    `src/components/reseller/**`), build/review independently, and each leaves the app buildable.
    **Partition: sharing 8 + business-hub 13 = 21** (0 overlap, 0 orphan). Each row named explicitly in its lane file.
@@ -103,7 +103,7 @@ in parallel.
 ## Test plan
 - **Per lane, offline (fixture / fake gateway, no network):** from `apps/mobile/` — `npm run typecheck`, `npm test`
   (jest-expo + RNTL: loaded/empty/error per screen; sharing: campaign list/detail, distribution/scheduled, channel
-  connect state, universal share dialog + `captureRef` invoked, data-consent, invite, both public landings;
+  connect state, universal share dialog + `captureRef` invoked, data-consent, invite, `/pub/campaigns/:id` renders from a fixture with no session (public, `app/(public)/pub/campaigns/[id].tsx`), `/creator/onboarded` renders only under the AuthGate (`app/(app)/creator/onboarded.tsx`);
   business-hub: shell per tab + `?tab=` variants, opportunities/listings, reseller tabs + earnings; i18n no-raw-text +
   RTL start/end; `pt` Brazilian você-form; React 19 `ReactElement`), `APP_PROFILE=development npm run bundle`,
   `APP_PROFILE=development EXPO_OFFLINE=1 npm run deps:check`. From the repo root —

@@ -41,9 +41,9 @@ Ports (8 ledger rows under `"lane": "sharing-business"`): `SHARING.OVERVIEW /sha
   `npm run typecheck` green.
 - [ ] 4. Invite + the two public landings: `apps/mobile/app/(app)/invite.tsx` (twin of `InviteFriends.tsx`),
   `apps/mobile/app/(app)/creator/onboarded.tsx` (twin of `CreatorOnboarded.tsx`),
-  `apps/mobile/app/(app)/pub/campaigns/[id].tsx` (twin of `PublicCampaignLanding.tsx`) + `src/screens/sharing/**`.
+  `apps/mobile/app/(public)/pub/campaigns/[id].tsx` (twin of `PublicCampaignLanding.tsx`; public, unauthenticated, outside `(app)/` like web `App.tsx:860`; `/creator/onboarded` stays inside `(app)/` under the AuthGate like web `App.tsx:1108-1112`). **Lane-file follow-up:** `lanes/sharing.md` `paths` still lists `apps/mobile/app/(app)/pub/**`; a `_plan` commit may not edit a lane file (queue.mjs rule), so the sharing builder replaces that entry with `apps/mobile/app/(public)/pub/**` as the first commit of its own lane PR (`Collab-Lane: …/sharing`), before any screen code + `src/screens/sharing/**`.
   Leaf screens opened from a push / universal link.
-  Files: `apps/mobile/app/(app)/invite.tsx`, `apps/mobile/app/(app)/creator/**`, `apps/mobile/app/(app)/pub/**`,
+  Files: `apps/mobile/app/(app)/invite.tsx`, `apps/mobile/app/(app)/creator/**`, `apps/mobile/app/(public)/pub/**`,
   `apps/mobile/src/screens/sharing/**`.
   Verify: `npm test` (each resolves from a fixture + deep link) + `npm run typecheck` green.
 - [ ] 5. i18n + RTL: user-visible strings from the web shards; any genuinely new key added to
@@ -53,7 +53,7 @@ Ports (8 ledger rows under `"lane": "sharing-business"`): `SHARING.OVERVIEW /sha
   Verify: `npm run typecheck`; `npm test` — the no-raw-text and no-physical-direction tests pass.
 - [ ] 6. Unit tests (fake gateway / fixtures, no network): campaign list/detail load/empty/error; distribution &
   scheduled-posts render; channel connect/disconnect state; universal share dialog opens and `captureRef` invoked;
-  data-consent toggles; invite flow; both public landings render. React 19 — `ReactElement`, no global `JSX`.
+  data-consent toggles; invite flow; `/pub/campaigns/:id` renders from a fixture with no session; `/creator/onboarded` renders under the AuthGate and a guest is gated away from it. React 19 — `ReactElement`, no global `JSX`.
   Files: `apps/mobile/tests/sharing/**`.
   Verify: `npm test` green; `APP_PROFILE=development npm run bundle` and
   `APP_PROFILE=development EXPO_OFFLINE=1 npm run deps:check` green.
