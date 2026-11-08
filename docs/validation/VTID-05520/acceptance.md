@@ -45,3 +45,15 @@ AC-8 — the workflow has no Docker, service container or secret; @electric-sql/
 5. Tests use `node --test` (no jest dependency added); the only new dependency is `@electric-sql/pglite` 0.5.15, exact, as a root devDependency.
 6. The shim lives in schema `tap` (not `extensions`) so it cannot collide with a migration; it is added after the replay and is not part of the replayed schema.
 7. `node_modules/` is tracked in git in this repository; it was left untouched and no file under it is staged.
+8. The stub schema also gives `anon`, `authenticated`, `service_role` ALL on tables, sequences and functions created in `public` (default privileges, as Supabase does), so RLS policies and not missing grants decide a result. Nothing is added to schema `auth`; `service_role` has BYPASSRLS like Supabase's.
+9. Fixtures load inside a transaction with `session_replication_role = replica` so the welcome-chat and notification fan-out triggers (VTID-03990, VTID-03506) never act on them.
+10. The workflow runs only when the stack itself changes (its scripts, fixtures, tests, doc, `package.json`, lockfile, the workflow), plus `workflow_dispatch`. A migration-only PR does not run it; whether it should is `ci-wiring`'s decision (Amendment 2, decision 6: replaying the whole tree is not a gate). `pnpm install --ignore-scripts` is used, so prisma's postinstall is not run.
+11. Smaller than the stub-auth text: `auth.users` carries `id, email, raw_user_meta_data, raw_app_meta_data, created_at, updated_at` (columns, not objects). `auth.role()` is not defined (10 migrations that call it are skips; test M5 pins it).
+
+## Measured (outputs/stack-report.txt, outputs/green.txt, outputs/mutations.txt)
+- Migrations: 730 top-level files; 424 apply, 306 are skips in `replay-skip.json` (each with reason and first error line); 0 unlisted failures; replay takes about 5 s.
+- Skip reasons: 188 need a table no replayed migration creates, 62 fail on replay for other reasons, 27 expect a missing column, 12 need pgvector, 10 call `auth.role()`, 5 need the `storage` schema, 2 need pg_cron.
+- Required tables: 24; present 11; not replayable (SKIP, unverified) 13 = 5 with no committed creator (access_audit_log, consents, retrieval_traces, role_sessions, user_roles) + 5 whose creator fails on replay (live_rooms, live_highlights, live_room_attendance, event_attendance, community_listings) + 3 needing pgvector (tenant_catalog_overrides, partner_health_test_orders, data_sharing_consents). This is Amendment 3's 24 / 13 (5 / 5 / 3), measured here and not copied.
+- Tests: 50 node tests, all green; red on base: 4 of 4 files fail (outputs/red-on-base.txt).
+- Mutations: 10 deliberate breaks of the loader, stub, shim, fixtures and lists each fail at least one test (outputs/mutations.txt).
+- Not run here: the MT-LOCAL-STACK job (it runs on the PR head) and the Docker path (none exists).

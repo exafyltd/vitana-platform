@@ -1,0 +1,67 @@
+$ npm run test:mt-stack   # lane head
+    ok 1 - tenants T_A and T_B exist with synthetic slugs
+    ok 2 - the five users are in the stub auth.users
+    ok 3 - memberships: a_* in T_A, b_* in T_B, ab_dual in both; admins carry the admin role
+    ok 4 - CANARY_A_<uuid> markers sit in representative T_A rows (at least three tables, one a health table) and never in T_B
+    ok 5 - T_B has its own rows in the same tables, marked CANARY_B_
+    ok 6 - loading the fixtures again changes nothing
+ok 1 - fixtures
+    ok 1 - required-tables.txt: the 18 tenant tables of docs/MULTI-TENANT-PLAN.md section 2, the 5 health tables and user_tenants (24)
+    ok 2 - not-replayable.txt: every entry is a required table with a reason and at least one lane; no duplicates
+    ok 3 - replay-skip.json: sorted, unique, each skip has file, reason and error, and the file exists
+ok 2 - the lists
+    ok 1 - every migration either applies or is a listed skip: no unlisted failure, no stale skip
+    ok 2 - each listed skip still fails with the error line recorded for it
+    ok 3 - required tables: present + SKIP (listed) = all, no failure
+ok 3 - replay of supabase/migrations on PGlite
+    ok 1 - without attemptSkipped it reaches the same required-table result and reports the numbers
+    ok 2 - a stale not-replayable listing makes createStack throw and name the table
+    ok 3 - an unlisted missing required table makes createStack throw and name the table
+ok 4 - createStack
+    ok 1 - LOCAL-STACK.md reports every listed table as unverified with its reason, states pgTAP is not used and what is not covered
+    ok 2 - LOCAL-STACK.md unverified-tables section lists exactly the tables of not-replayable.txt
+    ok 3 - LOCAL-STACK.md loader references point at the line that defines the named function
+    ok 4 - MT-LOCAL-STACK.yml runs the suite on PGlite with no Docker, no service container and no secret
+    ok 5 - package.json pins @electric-sql/pglite exactly and the lockfile carries that version
+ok 5 - docs, workflow and dependency
+    ok 1 - holds auth.users, auth.uid(), auth.jwt() and nothing else in schema auth
+    ok 2 - has the three roles anon, authenticated, service_role
+    ok 3 - auth.uid() and auth.jwt() read the request claims
+ok 6 - stub auth schema (Amendment 2, decision 4)
+    ok 1 - two openDb() calls do not share state
+ok 7 - one in-process database per call
+    ok 1 - lists only top-level .sql files, sorted by name
+    ok 2 - applies in timestamp order
+    ok 3 - a failing file that is not listed is reported with its name and its error line
+    ok 4 - a failed file with BEGIN/COMMIT leaves the session usable and rolls back
+    ok 5 - a listed skip is not executed and keeps its reason and error line
+    ok 6 - attemptSkipped: a listed file that still fails stays a skip; one that now succeeds is a stale skip
+    ok 7 - a skip entry naming a file that does not exist is reported as a stale skip
+ok 8 - replay
+    ok 1 - parseTableList ignores comments and blanks
+    ok 2 - parseNotReplayable reads table | reason | lanes
+    ok 3 - parseNotReplayable rejects a line without a reason or lanes
+ok 9 - list parsers
+    ok 1 - present tables pass; a listed missing table is SKIP with its reason and lanes
+    ok 2 - an unlisted missing required table fails and names the table
+    ok 3 - a listed table that exists is a stale listing and fails
+    ok 4 - a listing for a table that is not required fails (the list would never be read)
+ok 10 - required-table gate (Amendment 3)
+    ok 1 - loadFixtures runs *.sql in name order and is safe to run twice
+ok 11 - fixtures
+    ok 1 - smoke.tap.sql passes: plan, ok, is, isnt, matches, lives_ok, throws_ok, is_empty, results_eq, set_eq, finish
+    ok 2 - role switching works: authenticated sees the claims, and the shim stays callable
+    ok 3 - negative/failing-assertion.tap.sql fails (the shim does not pass what it should fail)
+    ok 4 - negative/plan-mismatch.tap.sql fails (the shim does not pass what it should fail)
+    ok 5 - negative/plan-mismatch-no-finish.tap.sql fails (the shim does not pass what it should fail)
+    ok 6 - negative/no-plan.tap.sql fails (the shim does not pass what it should fail)
+    ok 7 - negative/sql-error.tap.sql fails (the shim does not pass what it should fail)
+    ok 8 - negative/listed-table.tap.sql fails (the shim does not pass what it should fail)
+    ok 9 - require_table on a listed table is "not ok", names the reason, and on a present table is "ok"
+ok 12 - shim
+    ok 1 - exits 0 and prints PASS on a green file
+    ok 2 - exits 1 and prints FAIL on a red file, never PASS
+ok 13 - run-tap.mjs CLI
+# tests 50
+# pass 50
+# fail 0

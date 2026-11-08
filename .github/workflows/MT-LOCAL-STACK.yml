@@ -1,0 +1,57 @@
+name: MT-LOCAL-STACK
+run-name: 'MT local stack on PGlite [VTID: VTID-05520] (${{ github.ref_name }})'
+
+# VTID-05520 (mt-guardrails-r2/local-test-stack-pglite) — plan.md Amendments 2 and 3.
+# The D11 local stack runs in-process on PGlite: it replays supabase/migrations in timestamp order with the skips of
+# supabase/tests/local-stack/replay-skip.json, checks the required tables (a listed missing table is SKIP, anything else
+# fails and names the file or table), seeds the synthetic fixtures and runs the node tests and the pgTAP-compatible
+# shim. Real pgTAP is not used. No Docker, no service container, no network beyond the package install, no secret, no
+# production dump. It only runs when the stack itself changes; ci-wiring decides about wider triggers.
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/mt/stack/**'
+      - 'supabase/tests/fixtures/**'
+      - 'supabase/tests/local-stack/**'
+      - 'docs/multitenancy/LOCAL-STACK.md'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - '.github/workflows/MT-LOCAL-STACK.yml'
+  workflow_dispatch:
+
+# Superseded PR runs are cancelled when a newer commit lands on the same PR.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  local-stack:
+    name: MT local stack (PGlite)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      # pnpm version comes from the root package.json packageManager field.
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+      - name: Install
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Build the stack and print the numbers
+        run: |
+          set -o pipefail
+          node scripts/mt/stack/check-stack.mjs 2>&1 | tee /tmp/mt-stack-report.log
+          grep -q '^PASS local-stack gate$' /tmp/mt-stack-report.log
+      - name: Run the suites
+        run: |
+          set -o pipefail
+          npm run test:mt-stack 2>&1 | tee /tmp/mt-stack-tests.log
+      - name: Assert the suites ran
+        run: |
+          grep -Eq '^# fail 0$' /tmp/mt-stack-tests.log
+          grep -Eq '^# tests [1-9][0-9]*$' /tmp/mt-stack-tests.log

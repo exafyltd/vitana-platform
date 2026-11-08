@@ -1,0 +1,26 @@
+# VTID-05520: required tables the PGlite replay cannot create (plan.md Amendment 3).
+# Format: table | reason | lanes that need it.   One line per table. # starts a comment.
+# A table listed here is reported SKIP (unverified). The gate FAILS if a listed table exists (stale listing: remove its
+# line), if a listed table is not in required-tables.txt, and for any required table that is missing and not listed.
+# Every claim that touches a listed table is unverified (docs/multitenancy/LOCAL-STACK.md); the isolation suite fails on one.
+# Close an entry by: a committed migration that creates the table (owner decision), removing it from required-tables.txt
+# (a plan change), or a replay fix inside a lane of mt-guardrails-r2.
+#
+# No committed creator in supabase/migrations/ of vitana-platform or vitana-v1 (5)
+access_audit_log | no migration in either repository creates this table | isolation-suite, generated-inventories
+consents | no migration in either repository creates this table | isolation-suite, generated-inventories
+retrieval_traces | no migration in either repository creates this table | isolation-suite, generated-inventories
+role_sessions | no migration in either repository creates this table | isolation-suite, generated-inventories
+user_roles | no migration in either repository creates this table | isolation-suite, generated-inventories
+#
+# Creator fails on a fresh replay (5)
+live_rooms | created by 20251231000001_vtid_01090_live_rooms_events_graph.sql, which fails on a fresh replay: column "source_type" does not exist | isolation-suite, generated-inventories
+live_highlights | created by 20251231000001_vtid_01090_live_rooms_events_graph.sql, which fails on a fresh replay: column "source_type" does not exist | isolation-suite, generated-inventories
+live_room_attendance | created by 20251231000001_vtid_01090_live_rooms_events_graph.sql, which fails on a fresh replay: column "source_type" does not exist | isolation-suite, generated-inventories
+event_attendance | created by 20251231000001_vtid_01090_live_rooms_events_graph.sql, which fails on a fresh replay: column "source_type" does not exist | isolation-suite, generated-inventories
+community_listings | created by 20260727090000_bootstrap_community_marketplace.sql, which fails on a fresh replay: column "tenant_id" referenced in foreign key constraint does not exist | isolation-suite, generated-inventories
+#
+# Needs pgvector, which PGlite does not bundle (3)
+tenant_catalog_overrides | created by 20260416120000_vtid_02000_marketplace_foundation.sql, which needs the vector extension | isolation-suite, generated-inventories
+partner_health_test_orders | created by 20260914090000_vtid_03885_partner_health_test_integration.sql, which needs public.product_orders from the pgvector-dependent marketplace foundation | isolation-suite, generated-inventories
+data_sharing_consents | created by 20260914090000_vtid_03885_partner_health_test_integration.sql, which needs public.product_orders from the pgvector-dependent marketplace foundation | isolation-suite, generated-inventories
