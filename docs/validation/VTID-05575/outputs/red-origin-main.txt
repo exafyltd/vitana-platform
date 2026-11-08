@@ -1,0 +1,4 @@
+# loaded /projects/sandbox/wt-net-1/docs/validation/VTID-05575/pgtap/vtid_05575_fixture.sql
+# loaded /projects/sandbox/wt-net-1/supabase/migrations/20261102051000_vtid_05582_network_visible_profile.sql
+# loaded /projects/sandbox/wt-net-1/supabase/migrations/20261005120000_vtid_04888_rule45_intents_profiles.sql (4 matchers)
+# SQL ERROR: column "scope" does not exist
