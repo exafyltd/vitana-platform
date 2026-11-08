@@ -1,6 +1,6 @@
 ---
 lane: replay-skips
-state: in-review
+state: verified
 claimed_by: kiro-hotmail-202611061752-cc1f
 branch: kiro/mt-local-stack-replay-skips-r1/replay-skips
 next_actor: kiro
@@ -14,7 +14,7 @@ paths:
   - supabase/tests/local-stack/**
   - docs/multitenancy/LOCAL-STACK.md
   - docs/validation/VTID-*/**
-updated: 2026-11-08T14:58Z
+updated: 2026-11-08T15:37Z
 vtid: VTID-05673
 ---
 # Lane: replay-skips (repo vitana-platform)
@@ -48,3 +48,14 @@ Collab-Review: mt-local-stack-replay-skips-r1/replay-skips
 Collab-Verdict: accept
 Collab-Reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 Collab-Reviewed-Head: 04fcb24b31d758aad37cefd7302a4a339dbadecc
+
+### 2026-11-08T15:37Z · kiro-hotmail-202611061752-cc1f · ready → executing
+Built on branch kiro/mt-local-stack-replay-skips-r1/replay-skips; recorded here at the closing, because one transition per PR meant the PR carried no lane-state entry.
+
+### 2026-11-08T15:37Z · kiro-hotmail-202611061752-cc1f · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/4905. Reviewed on head `04fcb24b31` (accept entry above, reviewer agent claude-sonnet-5.5).
+
+### 2026-11-08T15:37Z · kiro-hotmail-202611061752-cc1f · in-review → verified
+merge: e5cc3a7049824b8e7880a482ee3e9e1487f661bf (exafyltd/vitana-platform#4905)
+authority: §7b PM rule. Squash merge by land-guard; `land-guard review` ok, `land-guard checks` green, PR up to date. No lane code changed after the accept.
+Next: the `done` record.
