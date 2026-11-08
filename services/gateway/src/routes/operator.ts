@@ -2262,25 +2262,8 @@ async function publishAwsFlow(
       confirm_short_sha: typeof req.body?.confirm_short_sha === 'string' ? req.body.confirm_short_sha : null,
       staging_verify_gate: gate.status,
       staging_verify: gate.verification,
-      override_reason: gate.override_reason,
     },
   });
-
-  // VTID-04646: an overridden gate gets its own event, so a publish that
-  // skipped verification is findable without reading every requested event.
-  if (gate.status === 'overridden') {
-    await emitOasisEvent({
-      vtid,
-      type: 'production.publish.verification_overridden',
-      source: 'gateway-operator',
-      status: 'warning',
-      message: `publish(aws) of ${stagingCommit.slice(0, 7)} without a passing STAGING-VERIFY: ${gate.override_reason}`,
-      actor_id: identity.user_id,
-      actor_role: 'admin',
-      surface: 'command-hub',
-      payload: { request_id: requestId, source_commit: stagingCommit, gate_reason: gate.reason, override_reason: gate.override_reason, staging_verify: gate.verification },
-    });
-  }
 
   // Step 7: dispatch the promotion. promote-staging + expected_commit means
   // the workflow ships the EXACT ECR image staging runs and fails (before

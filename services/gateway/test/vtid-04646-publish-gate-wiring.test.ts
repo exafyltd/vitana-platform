@@ -49,12 +49,11 @@ describe('VTID-04646 publish gate wiring', () => {
     expect(body).toMatch(/production\.publish\.gate_skipped/);
   });
 
-  it('declares the CICD event types the publish flow emits', () => {
+  it('declares the CICD event type the publish flow emits', () => {
     expect(cicdTypes).toContain("'production.publish.gate_skipped'");
-    expect(cicdTypes).toContain("'production.publish.verification_overridden'");
   });
 
-  it('routes both Command Hub publish buttons through the override prompt', () => {
+  it('keeps the retired Command Hub override prompt in place (unreachable, not removed)', () => {
     expect(stagingJs).toMatch(/function postPublish\(payload, headers\)/);
     expect(stagingJs).toMatch(/error !== 'staging_not_verified'/);
     expect(stagingJs).toMatch(/override_reason: reason\.trim\(\)/);
