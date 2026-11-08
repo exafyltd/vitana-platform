@@ -6,11 +6,11 @@ executor: kiro
 seat: hotmail
 reviewer_seat: agent:vitana-lane-reviewer
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
-depends_on: [local-test-stack]
+depends_on: [local-test-stack-pglite]
 paths:
   - scripts/mt/inventory/**
   - scripts/mt/lint/**
-updated: 2026-11-01T17:06Z
+updated: 2026-11-08T14:21Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05445
 ---
@@ -38,3 +38,20 @@ Lane created with the re-plan `mt-guardrails-r2` (carried from `mt-guardrails`).
 
 ### 2026-11-01T17:06Z · ci-plan-spar · ready (VTID allocated)
 VTID-05445 allocated after policy approval (converged-auto-v1).
+
+### 2026-11-08T14:21Z · kiro-hotmail-202611061752-cc1f · ready (depends_on repointed)
+`depends_on` changed from `local-test-stack` to `local-test-stack-pglite` (VTID-05520, done) per plan.md Amendment 2, decision 1 and its Consequences. `local-test-stack` (VTID-05447) and `local-test-stack-v2` (VTID-05469) are parked as superseded (PRs #4881, #4882). No other change.
+
+### 2026-11-08T14:50:00Z · agent-vitana-lane-reviewer-202611081444-4b0f · review
+review: accept
+head: ba0adc833242a060a1ce0314832d244d1df9d9e4
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4899
+Findings: non-blocking: the 31 *.pglite-tests.mjs tests are run by no required CI job (wiring is outside this lane's paths; green output committed; ci-wiring must add them); non-blocking: the missing-tenant-policy lint and the bare-policy count (21, reported not asserted) are coarse lower bounds; non-blocking: tasks.md prose still says local-test-stack while depends_on is local-test-stack-pglite per Amendment 2; non-blocking: the allowlist ships empty by design (owner decision); non-blocking: this session could not read the CI check runs, so the land step must confirm all required checks are green on the current head.
+Next: the land step merges under §7b after confirming every required check is green on this head and the PR is up to date with main
+
+Collab-Session: agent-vitana-lane-reviewer-202611081444-4b0f
+Collab-Review: mt-guardrails-r2/generated-inventories
+Collab-Verdict: accept
+Collab-Reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+Collab-Reviewed-Head: ba0adc833242a060a1ce0314832d244d1df9d9e4

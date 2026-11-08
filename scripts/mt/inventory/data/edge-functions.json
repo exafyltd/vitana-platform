@@ -1,0 +1,29 @@
+{
+  "generated_by": "scripts/mt/inventory/generate.mjs",
+  "inventory": "edge_functions",
+  "rows": [
+    {
+      "file": "supabase/functions/og-match/index.ts",
+      "name": "og-match",
+      "reads_authorization_header": true,
+      "uses_service_role": true,
+      "verify_jwt": null
+    },
+    {
+      "file": "supabase/functions/request-account-deletion/index.ts",
+      "name": "request-account-deletion",
+      "reads_authorization_header": true,
+      "uses_service_role": true,
+      "verify_jwt": null
+    }
+  ],
+  "schema_version": 1,
+  "source": "supabase/functions/<name>/index.* and the [functions.<name>] verify_jwt of config.toml when present",
+  "summary": {
+    "reads_authorization_header": 2,
+    "total": 2,
+    "uses_service_role": 2,
+    "verify_jwt_false": 0,
+    "verify_jwt_unknown": 2
+  }
+}
