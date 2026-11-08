@@ -1,0 +1,51 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04646-publish-gate-wiring.test.ts
+  VTID-04646 publish gate wiring
+    ✓ evaluates the gate on the staging commit before bake, allocation and dispatch (5 ms)
+    ✓ does not refuse the publish on STAGING-VERIFY (owner decision 2026-11-08) (2 ms)
+    ✓ records a publish without a passing STAGING-VERIFY as its own evidence event (1 ms)
+    ✓ declares the CICD event type the publish flow emits (1 ms)
+    ✓ keeps the retired Command Hub override prompt in place (unreachable, not removed) (1 ms)
+    ✓ bumps the staging script cache-bust (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/services/testing/publish-gate.test.ts
+  publish gate — pure pieces
+    ✓ is on unless PUBLISH_REQUIRE_STAGING_VERIFY is exactly "false" (2 ms)
+    ✓ accepts an override reason only at or above the minimum, and clips it (1 ms)
+    ✓ maps an OASIS row, including failed test names (2 ms)
+    ✓ verifies only a passed run for the same commit (1 ms)
+    ✓ blocks a failed run without a reason (1 ms)
+    ✓ blocks a superseded run without a reason (1 ms)
+    ✓ blocks a weird run without a reason (7 ms)
+    ✓ blocks when no run exists and when the lookup failed (1 ms)
+    ✓ lets a blocked publish through with a written reason, keeping why it was blocked (1 ms)
+    ✓ ignores a too-short reason (1 ms)
+    ✓ reports disabled when the kill switch is off
+  publish gate — evaluatePublishGate
+    ✓ uses the newest row for the service and commit (1 ms)
+    ✓ prefers the newest passed row over a newer superseded one (1 ms)
+    ✓ prefers the newest failed row over a newer superseded one — still blocked as failed (1 ms)
+    ✓ still blocks when only superseded rows exist (1 ms)
+    ✓ pickVerificationRow: newest decisive row, else the newest row, else null (1 ms)
+    ✓ fails closed on a lookup error and when Supabase is not configured (1 ms)
+    ✓ skips the lookup entirely when disabled (1 ms)
+    ✓ passes the service through
+
+Test Suites: 2 passed, 2 total
+Tests:       25 passed, 25 total
+Snapshots:   0 total
+Time:        0.579 s, estimated 1 s
+Ran all test suites matching /test\/vtid-04646-publish-gate-wiring.test.ts|test\/services\/testing\/publish-gate.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
