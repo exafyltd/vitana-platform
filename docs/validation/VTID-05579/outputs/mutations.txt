@@ -1,0 +1,79 @@
+### M1 cap 20 -> 21 in the function AND the table guard  [exit 1]
+not ok 61 - 61 the 21st member is refused
+not ok 62 - 62 the refusal added nobody
+not ok 81 - 81 a participant sees all 20
+### M2 cap removed from the table guard only (the function still refuses)  [exit 1]
+not ok 64 - 64 the cap also holds against a direct insert that sets the RPC flag (the table guard, not only the function)
+not ok 81 - 81 a participant sees all 20
+### M3 connection rule removed  [exit 1]
+not ok 41 - 41 a pending request is not a connection
+not ok 42 - 42 a member with no connection at all is refused
+not ok 43 - 43 a declined request is not a connection
+not ok 57 - 57 the member count is unchanged by the refusals and the no-op (U1, U2, U3)
+not ok 59 - 59 17 more connections are added (the group reaches 20)
+not ok 67 - 67 add_group_member_as enforces the same connection rule
+### M4 admin-only invite removed  [exit 1]
+not ok 45 - 45 a plain member cannot invite (invite-only, admin only), even a connection of their own
+not ok 57 - 57 the member count is unchanged by the refusals and the no-op (U1, U2, U3)
+not ok 59 - 59 17 more connections are added (the group reaches 20)
+not ok 72 - 72 a plain member of the legacy group cannot invite
+### M5 rule 43-45 check removed from the table guard only  [exit 1]
+not ok 65 - 65 a rule 43-45 account cannot be inserted into a network group even with the RPC flag on
+### M6 rule 43-45 check removed from the add function AND the table guard  [exit 1]
+not ok 47 - 47 a service bot is never a member, even connected and visible (rule 43-45)
+not ok 48 - 48 a notification test actor is never a member (rule 43-45)
+not ok 49 - 49 a platform-only account is never a member (rule 43-45)
+not ok 57 - 57 the member count is unchanged by the refusals and the no-op (U1, U2, U3)
+not ok 59 - 59 17 more connections are added (the group reaches 20)
+not ok 65 - 65 a rule 43-45 account cannot be inserted into a network group even with the RPC flag on
+### M7 legacy backfill removed  [exit 1]
+not ok 5 - 5 the legacy cross-tenant group (metadata.legacy_scope = network) is backfilled to network
+not ok 6 - 6 its members are backfilled to network
+not ok 12 - 12 a network group cannot be turned into a community group outside the RPCs
+not ok 13 - 13 a direct service-role INSERT of a member into a network group fails
+not ok 19 - 19 a bot can never be a member of a network group
+not ok 65 - 65 a rule 43-45 account cannot be inserted into a network group even with the RPC flag on
+... 8 red lines in total
+### M8 groups scope guard lets a direct network write through  [exit 1]
+not ok 10 - 10 a direct service-role INSERT of a network group fails
+not ok 11 - 11 a direct service-role UPDATE of a group to network fails
+not ok 12 - 12 a network group cannot be turned into a community group outside the RPCs
+not ok 13 - 13 a direct service-role INSERT of a member into a network group fails
+not ok 14 - 14 the community writers still add members to a community group directly, scope community
+not ok 15 - 15 a member row can never carry another scope than its group (an explicit network is overridden)
+... 13 red lines in total
+### M9 network_not_system CHECK removed  [exit 1]
+not ok 18 - 18 a network group can never be a system group (no system fan-out target)
+### M10 member scope no longer forced to the group scope  [exit 1]
+not ok 15 - 15 a member row can never carry another scope than its group (an explicit network is overridden)
+not ok 17 - 17 an UPDATE of a member scope cannot leave the group scope
+not ok 19 - 19 a bot can never be a member of a network group
+not ok 71 - 71 the admin of a migrated legacy network group adds a connection
+### M11 member row takes the invitee tenant instead of the creator tenant  [exit 1]
+not ok 40 - 40 the member row carries the creator's tenant as context, not the member's own
+### M12 platform tenant allowed as context tenant  [exit 1]
+not ok 25 - 25 a member with only the platform tenant cannot create one
+### M13 block check removed  [exit 1]
+not ok 50 - 50 a block by the inviter stops the invite
+not ok 51 - 51 a block by the invitee stops the invite
+not ok 57 - 57 the member count is unchanged by the refusals and the no-op (U1, U2, U3)
+not ok 59 - 59 17 more connections are added (the group reaches 20)
+### M14 read policies back to the per-row auth.uid() form  [exit 1]
+not ok 91 - 91 both read policies evaluate auth.uid() once per statement via (SELECT auth.uid())
+### M15 an allow-all FOR ALL policy for authenticated is added (assertion removed)  [exit 1]
+not ok 78 - 78 a non-participant (U4) sees no row of a network group
+not ok 82 - 82 a migrated legacy network group is participant-only too
+not ok 86 - 86 a client cannot update a group (no UPDATE policy)
+not ok 88 - 88 no permissive FOR ALL USING (true) policy for PUBLIC/authenticated on chat_groups, chat_group_members or chat_messages
+not ok 89 - 89 the two groups tables carry SELECT policies only (the dropped service_role catch-alls stay gone)
+not ok 91 - 91 both read policies evaluate auth.uid() once per statement via (SELECT auth.uid())
+### M16 non-network groups no longer refused (the community client write path of the review)  [exit 1]
+not ok 73 - 73 a community group member cannot add a member of the tenant through add_group_member
+not ok 75 - 75 the system group (is_system) refuses add_group_member too
+not ok 76 - 76 a non-member gets the same refusal for a community group
+not ok 77 - 77 the big community group takes no one through add_group_member either
+### M17 add_group_member_as executable by authenticated  [exit 1]
+not ok 34 - 34 authenticated gets the two caller-bound functions and not the _as pair
+not ok 69 - 69 a client cannot call add_group_member_as
+### restored: exit 0, 92 ok
+### restored: exit 0, 92 ok
