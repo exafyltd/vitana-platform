@@ -14,7 +14,8 @@ paths:
   - infra/gitlab-engineering/ci/platform-delivery.gitlab-ci.yml
   - infra/gitlab-engineering/ci/v1-delivery.gitlab-ci.yml
   - docs/validation/VTID-05546/**
-updated: 2026-11-08T11:45Z
+updated: 2026-11-08T11:39Z
+vtid: VTID-05643
 ---
 # Lane: build-class-retag (repo vitana-platform)
 Tasks in `tasks.md` (group `<!-- lane: build-class-retag -->`). Late lane of plan `agentic-delivery` (see the Late lanes note
@@ -32,3 +33,6 @@ jobs would wait for a runner with that tag.
 ### 2026-11-08T11:45Z · kiro-exafy-202611081113-5a2e · created → ready
 Lane added through `_plan` (plan PR `plan(agentic-delivery)`, branch `kiro/agentic-delivery/plan-3`), by planner decision 1 of
 2026-11-08. Next: PLAN-SPAR allocates its VTID; a builder of seat `exafy` claims it.
+
+### 2026-11-08T11:39Z · ci-plan-spar · ready (VTID allocated)
+VTID-05643 allocated after policy approval (converged-auto-v1).

@@ -7,9 +7,9 @@ next_actor: kiro
 state: approved
 spar_refs:
   - exafyltd/vitana-v1: 7829ef2f2ef12364862961d339161229c286d6f0
-updated: 2026-11-05T21:45Z
+updated: 2026-11-08T11:39Z
 sparring_record: .kiro/specs/agentic-delivery/sparring/verdict.md
-vtids: [VTID-05545, VTID-05546, VTID-05547, VTID-05548, VTID-05549, VTID-05550, VTID-05551, VTID-05552, VTID-05554, VTID-05562, VTID-05563, VTID-05564]
+vtids: [VTID-05545, VTID-05546, VTID-05547, VTID-05548, VTID-05549, VTID-05550, VTID-05551, VTID-05552, VTID-05554, VTID-05562, VTID-05563, VTID-05564, VTID-05643]
 ---
 # Handoff — agentic-delivery
 Milestone 3 of program `engineering-platform`: the hard cutover of delivery for both repositories to our own GitLab,
@@ -140,3 +140,6 @@ plan. Added: the Late lanes note in `plan.md`, lane `build-class-retag` (`ready`
 PLAN-SPAR. Merge gate: not before the `vitana-eng-build` class runs (owner A2 and A3). Scope note: the generator's runner tag comes from
 `config.runner_tags.main` (`pipeline-gen.mjs:193`), and `config/delivery/services.json` has no build key. The lane is built inside its
 listed paths with a literal build tag in the generator. A `services.json` key would need that file in the lane's paths.
+
+### 2026-11-08T11:39Z · ci-plan-spar · approved (late lane VTID)
+Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.
