@@ -19,6 +19,12 @@ depends_on: none in this plan; waits for vitana-v1 #1587 to merge.
 - [ ] 3. Red test, journey state path: same file, asserts `GuidedModeProvider` requests exactly
   `https://gw.test/api/v1/journey/state`. Record red.
 - [ ] 4. Fix 2: `src/identity/GuidedModeProvider.tsx:71` → `'/journey/state'`. Task 3 test green.
+- [ ] 4b. Caller audit (sparring R1-F1): run `git grep -nE "gatewayGet|gatewayJson|getGateway" -- src app` and confirm that
+  the only `gatewayGet` callers are `useMyPartnerOrgs.ts` and `GuidedModeProvider.tsx` (fixed above), and that no
+  `getGateway()` / `gatewayJson(getGateway(), ...)` caller passes a path starting with `/api/v1` (the screens under
+  `src/screens/**/data/` pass bare paths). Write the grep output and the result in `docs/validation/<VTID>/commands.log`
+  and the lane log so the reviewer can check completeness. A further doubled caller found here is fixed in the same PR
+  only if its file is in the lane `paths`; otherwise log it and raise it as a follow-up in the PR body.
 - [ ] 5. Red test, commerce redirect: `tests/shell-fixes/auth-gate.test.tsx` (mocked `expo-router`) asserts signed
   out on `/commerce/team` → `/commerce/join?redirectTo=%2Fcommerce%2Fteam`, on `/home` → `/maxina?redirectTo=%2Fhome`,
   on `/commerce` → guest shell. Record red (the first case goes to `/maxina`).

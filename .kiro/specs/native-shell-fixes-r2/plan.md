@@ -88,6 +88,10 @@ Exact `paths` are in `lanes/shell-fixes.md`. Shared files: `apps/mobile/src/navi
 three shell files or `tests/identity.test.tsx`).
 
 ## Test plan
+- Caller audit (sparring R1-F1): a grep step in `tasks.md` (4b) proves the two fixed call sites are the only
+  `gatewayGet` callers and that no `getGateway()` caller passes a `/api/v1`-prefixed path; the output goes in the
+  lane log and `commands.log`. Measured on vitana-v1 origin/main: `gatewayGet` is imported only by
+  `useMyPartnerOrgs.ts:7` and `GuidedModeProvider.tsx:14`; the other `getGateway()` callers use bare paths.
 - **Red first, offline.** New tests under `apps/mobile/tests/shell-fixes/`:
   - partner orgs and journey state: install a real `createGatewayFetch` with origin `https://gw.test` and a fake
     `fetchImpl` through `__setGatewayForTests` (`apps/mobile/src/auth/gateway.ts:19`), render the hook / provider,
