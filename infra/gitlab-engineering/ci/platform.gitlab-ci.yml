@@ -34,6 +34,8 @@ variables:
       files: [pnpm-lock.yaml]
     paths: [.pnpm-store]
   before_script:
+    # node:20-bookworm has no jq; GitHub's ubuntu-latest has it and gateway tests shell out to it.
+    - apt-get update -qq && apt-get install -y -qq jq
     - npm install -g pnpm@9.0.0
     - pnpm config set store-dir "$CI_PROJECT_DIR/.pnpm-store"
     - cd services/gateway
