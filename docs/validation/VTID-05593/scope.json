@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-05593",
+  "kind": "infra",
+  "paths": [
+    "scripts/ci/pr-gate/lib.mjs",
+    "scripts/ci/pr-gate/__tests__/lib.test.mjs",
+    "docs/validation/VTID-05593/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05593/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

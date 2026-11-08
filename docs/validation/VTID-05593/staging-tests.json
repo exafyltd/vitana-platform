@@ -1,0 +1,11 @@
+{
+  "vtid": "VTID-05593",
+  "service": "gateway",
+  "not_verified_on_staging": true,
+  "not_verified_on_staging_reason": "CI tooling only: this lane changes scripts/ci/pr-gate/lib.mjs and its node test, which PR-GATE runs on the PR head. Nothing deploys, so the staging build does not contain the change. The covering test is `node --test scripts/ci/pr-gate/__tests__/*.test.mjs` (output in commands.log, red on base, green with the change). No write and no suite against production.",
+  "tests": [
+    { "kind": "http", "target": "gateway", "method": "GET", "path": "/alive",
+      "expect_status": 200,
+      "reason": "read-only liveness probe; the change deploys nothing, so this only confirms staging is unaffected" }
+  ]
+}
