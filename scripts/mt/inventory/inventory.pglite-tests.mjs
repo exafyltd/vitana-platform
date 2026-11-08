@@ -1,5 +1,5 @@
 // VTID-05445 (mt-guardrails-r2/generated-inventories): tests of the inventory generators over a tiny fixture schema,
-// and the drift guard over the real repo. Run: node --test scripts/mt/inventory/*.test.mjs
+// and the drift guard over the real repo. Run: node --test scripts/mt/inventory/inventory.pglite-tests.mjs
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
