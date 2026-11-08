@@ -21,7 +21,8 @@ paths:
   - apps/mobile/tests/identity.test.tsx
   - apps/mobile/tests/shell-fixes/**
   - docs/validation/**
-updated: 2026-11-08T11:47Z
+updated: 2026-11-08T12:04Z
+vtid: VTID-05647
 ---
 # Shell fixes — doubled `/api/v1` gateway paths, the commerce sign-in redirect, public commerce route mounts
 Plan: `.kiro/specs/native-shell-fixes-r2/` — `plan.md` (plan block) and the `tasks.md` section marked
@@ -40,3 +41,6 @@ Supabase/AWS, no test against production; the native app has no production profi
 ## Log
 ### 2026-11-08T11:47Z · kiro-exafyltd-202611072144-1c88 · ready
 Lane created with the plan (re-plan of `native-shell-fixes/shell-fixes`, PR #4657).
+
+### 2026-11-08T12:04Z · ci-plan-spar · ready (VTID allocated)
+VTID-05647 allocated after policy approval (converged-auto-v1).
