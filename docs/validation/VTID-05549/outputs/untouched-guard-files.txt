@@ -1,0 +1,36 @@
+# land-guard.mjs and queue.mjs are not edited by this lane (tasks.md Q2/Q3). Lane diff = 0e5a74a72a8fe26785df3133f4133b3e99b97efd (origin/main when the lane was rebuilt) ... the lane's tree, 2026-11-05T22:47:11Z.
+$ git diff --stat 0e5a74a72a8fe26785df3133f4133b3e99b97efd... -- scripts/collab/land-guard.mjs scripts/collab/queue.mjs scripts/collab/protected-gate-files.json   (and the staged tree)
+(empty: untouched)
+$ git hash-object scripts/collab/land-guard.mjs scripts/collab/queue.mjs scripts/collab/protected-gate-files.json; git rev-parse 0e5a74a72a8fe26785df3133f4133b3e99b97efd:<each>
+d37f3bf71bd889ff041a113590bd0d9627220536
+c76800f33182388113a41a8ac3dbf9b225bf5b2c
+c50b9e3d6eed2e019ed6ccd0227ab223c4a689b3
+d37f3bf71bd889ff041a113590bd0d9627220536
+c76800f33182388113a41a8ac3dbf9b225bf5b2c
+c50b9e3d6eed2e019ed6ccd0227ab223c4a689b3
+$ git diff --name-only 0e5a74a72a8fe26785df3133f4133b3e99b97efd... ; git diff --cached --name-only   (every file the lane changes, committed and staged)
+docs/validation/VTID-05549/acceptance.md
+docs/validation/VTID-05549/commands.log
+docs/validation/VTID-05549/outputs/dry-run-12.mjs
+docs/validation/VTID-05549/outputs/dry-run-12.txt
+docs/validation/VTID-05549/outputs/green.txt
+docs/validation/VTID-05549/outputs/red-adapt.txt
+docs/validation/VTID-05549/outputs/red-effective.txt
+docs/validation/VTID-05549/outputs/red-fix-same-tick.txt
+docs/validation/VTID-05549/outputs/red-free-tier-guard.txt
+docs/validation/VTID-05549/outputs/red-on-base.txt
+docs/validation/VTID-05549/outputs/red-on-stub.txt
+docs/validation/VTID-05549/outputs/staging-check-pr.txt
+docs/validation/VTID-05549/outputs/unit-all.txt
+docs/validation/VTID-05549/outputs/untouched-guard-files.txt
+docs/validation/VTID-05549/plan-sparring.md
+docs/validation/VTID-05549/scope.json
+.kiro/specs/agentic-delivery/lanes/merge-queue.md
+scripts/eng/assist-trigger.mjs
+scripts/eng/assist-trigger.test.mjs
+scripts/eng/gitlab-gates.mjs
+scripts/eng/gitlab-gates.test.mjs
+scripts/eng/gitlab-land.mjs
+scripts/eng/gitlab-land-queue.test.mjs
+scripts/eng/review-source.mjs
+scripts/eng/review-source.test.mjs

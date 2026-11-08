@@ -1,6 +1,6 @@
 ---
 lane: settings
-state: in-review
+state: done
 next_actor: kiro
 depends_on: [gitlab-client]
 executor: kiro
@@ -24,8 +24,8 @@ paths:
   - docs/ENGINEERING-PLATFORM-PLAN.md
   - docs/ENGINEERING-PLATFORM-LICENCES.md
   - docs/validation/**
-updated: 2026-11-05T19:43Z
-claimed_by: kiro-exafy-202611021438-cff7
+updated: 2026-11-06T22:44Z
+claimed_by: kiro-exafy-202611062222-c262
 branch: kiro/eng-gitlab-m2/settings
 pr: https://github.com/exafyltd/vitana-platform/pull/4711
 vtid: VTID-05542
@@ -87,3 +87,16 @@ Findings: non-blocking: CI: 10 of 10 checks succeeded on eec9c243, read with gh 
 Findings: non-blocking: the other 16:54Z findings are answered, and the answers hold. gitlab-client is done on main. The a-red-on-base.txt header and acceptance.md describe the red run accurately. settings/README.md has the gitlab-configure.sh note. The Node.js row cites ops-install.sh:29 (NODE_VERSION=20.20.2). The update merge 800d8114 is clean: its diff from main ec7f45cc holds only lane files, and no lane file differs from e40c31ad.
 Findings: non-blocking: check (d), independence and scope. The evidence shows no write to GitLab, AWS or any other live system. The 'Not done by rule' section of commands.log stands, the fix commits add no output, and both secret scans found 0 matches. The phrase 'found after a 75-minute run' in eec9c243's message refers to the owner's future run (acceptance.md:97). The caller kiro-exafy-202611041929-802c is not in the lane log, and its only commit here is the 82f7dfbb review entry. Every changed file is inside the lane's paths or is the lane's own file, and none is a protected gate file.
 Next: the land step merges under §7b. It updates the branch to main 0f45367b (main's commits since ec7f45cc touch no governance path or protected gate file; land-guard.mjs decides whether this accept carries over), confirms with land-guard.mjs checks that every check is green on that head, then lands. #4705 and #4709 land after this lane is done (plan agentic-delivery §9). The _plan holder carries the webhook-secret owner step and the approvals-rule fix into handoff.md for Gate 2.
+
+### 2026-11-06T22:44Z · kiro-exafy-202611062222-c262 · in-review → verified
+Closing record written by the plan driver kiro-exafy-202611062222-c262, which took over this lane's stale claim (holder silent > 24 h).
+Review: the reviewer-agent accept by agent-vitana-lane-reviewer-202611052154-0846 on head eec9c243136510cea6b1cb3935fdc8892002330d is in this log.
+PR https://github.com/exafyltd/vitana-platform/pull/4711 merged at 2026-11-05T22:40:39Z by DraganOffice (the gh identity of the plan driver's review desk) with head d28e8c960afce87939e2633016caaca89b1ac475.
+`land-guard.mjs review --gh exafyltd/vitana-platform --repo . --pr 4711 --reviewed-head eec9c243136510cea6b1cb3935fdc8892002330d` (run 2026-11-06T22:44Z): ok, only lane-file entries and clean merges of main after the reviewed head, so the accept counted for the merged head.
+Checks on the merged head (REST check-runs read, 2026-11-06T22:44Z): 12 of 12 completed/success; none red or missing.
+
+### 2026-11-06T22:44Z · kiro-exafy-202611062222-c262 · verified → done
+merge: 0e5a74a72a8fe26785df3133f4133b3e99b97efd
+authority: §7b PM rule (plan driver review desk; accept current on the merged head, checks green).
+Gap: the lane said in-review, not verified, when it merged, and no merge line was written at the time; this entry records both.
+Next: none; the lane is done.

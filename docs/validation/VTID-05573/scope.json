@@ -1,0 +1,15 @@
+{
+  "vtid": "VTID-05573",
+  "kind": "feature",
+  "paths": [
+    "supabase/migrations/20261102052000_vtid_05573_legacy_messages_snapshot_freeze.sql",
+    "supabase/migrations/20261102052100_vtid_05573_legacy_messages_functions.sql",
+    "supabase/migrations/20261102052200_vtid_05573_legacy_messages_migrate_run.sql",
+    "supabase/migrations/20261102052300_vtid_05573_legacy_messages_drop.sql",
+    "supabase/tests/mt-network-legacy-migration.pgtap.sql",
+    "docs/validation/VTID-05573/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05573/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

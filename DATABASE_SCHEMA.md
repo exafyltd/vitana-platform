@@ -1090,6 +1090,23 @@ error it fails open with a WARNING.
 **New index:** `idx_user_notifications_tenant_time`.
 
 **New member categories:** `posts_reactions` and `tips_updates`.
+
+### user_notifications / chat_messages — `tenant_id` pinned NOT NULL (VTID-05569)
+
+```
+user_notifications (
+  id UUID PK, user_id UUID NOT NULL,
+  tenant_id UUID NOT NULL,           -- NOT NULL since 20260225000000_notification_system.sql; asserted by VTID-05569
+  type TEXT NOT NULL, title TEXT NOT NULL, body TEXT, data JSONB, read_at TIMESTAMPTZ, created_at TIMESTAMPTZ
+  -- later additive columns (push_outcome, email_fallback_sent_at, ...) are recorded in their own entries
+);
+```
+
+`chat_messages.tenant_id` is `UUID NOT NULL` too (`20260225200000_chat_messages.sql`), as is `product_analytics_events.tenant_id`
+(entry below). Migration `20261102043000_vtid_05569_hot_tables_tenant_not_null_assert.sql` changes no schema and no row: it is a
+DO block that RAISEs if `tenant_id` on any of the three tables is nullable per `information_schema`, or if any row holds a
+tenant that is not in `tenants`. Rollback `20261102043100_..._rollback.sql` is a no-op. Not applied by the PR (RUN-MIGRATION
+after owner approval, collaboration.md section 7d).
 `connections_social` gains `new_follower`; `direct_messages` gains `message_reaction`.
 
 **Rules:** the gateway (`notification-controls-service.ts`) applies the same
@@ -1737,6 +1754,7 @@ CREATE TABLE my_new_table (
 | 2026-10-10 | `ci_welcome_greeting_health()` (CI-only, `service_role`): `signups_24h` and `unflagged_24h` now exclude `service_bot_accounts` and `notification_test_actors`, the accounts the welcome trigger never greets; return keys, `SECURITY DEFINER`, `search_path` and grants unchanged. Removes the false "signups but zero greetings" alarm a test-account-only 24h window raised (2026-10-08). Migration `20261010170000_vtid_05052_ci_welcome_greeting_health_exclude_test_accounts.sql`. | Claude | VTID-05052 |
 | 2026-10-12 | `ci_memory_health()` (CI-only, `service_role`): two new keys, `user_speech_turns_24h` (user turns whose summed `input_transcription` fragments exceed 20 chars, from `oasis_events`) and `transcript_turns_24h` (`memory_transcript_turns`). Every existing key, `SECURITY DEFINER`, `search_path` and grants unchanged. MORNING-SYSTEM-HEALTH-CHECK row 21 fails on zero writes only when somebody spoke. Migration `20261012160000_vtid_05088_ci_memory_health_speech_input.sql`. | Claude | VTID-05088 |
 | 2026-10-14 | `tenants.is_default` / `tenants.is_platform` (+ index `tenants_one_default`, CHECK `tenants_default_not_platform`, constraint trigger `tenants_exactly_one_default` / `tenants_assert_one_default()`); `handle_new_user()` / `provision_platform_user()` honour a signup slug only for an open, active, non-platform tenant and fall back to the `is_default` tenant instead of the oldest; new CI-only `ci_tenant_isolation_health()` (`service_role`). Committed, NOT yet applied. Migrations `20261014000100_vtid_05149_tenants_default_platform_flags.sql`, `20261014000200_vtid_05149_signup_default_tenant.sql`, `20261014000300_vtid_05149_ci_tenant_isolation_health.sql`. | Claude | VTID-05149 |
+| 2026-11-05 | **VTID-05558 — Live Room co-hosts.** New functions `live_room_is_host(room, user)` (the creator, or a user listed in `community_live_streams.co_hosts` for that room who is in the room's tenant; `service_role` only) and `live_room_filter_co_hosts(creator, ids)` (same tenant, not the creator, no test or service account, de-duplicated; `service_role` only). The host gate of 13 functions now calls the helper: `live_room_transition_status`, `live_room_end_session`, `live_room_set_host_present`, `live_room_get_lobby`, `live_room_admit_user`, `live_room_reject_user`, `live_room_admit_all`, `live_room_kick_user`, `live_room_ban_user`, `live_room_join_session` (role `host`), `live_room_get_state` (viewer role), `live_room_check_access` (3 arguments) and `live_room_update_metadata`; arguments, return types and grants are unchanged. `kick`/`ban` return `TARGET_IS_HOST` when a co-host targets a host. `live_room_set_host_present(false)` keeps the flag while another host is still in the session, and its session UPDATE no longer filters on the non-existent `live_room_sessions.current_session_id`. New trigger `trg_live_stream_co_hosts_gateway_only` on `community_live_streams`: database roles `authenticated` and `anon` cannot set or change `co_hosts` (`CO_HOSTS_GATEWAY_ONLY`). No table or column change. Migration `20261105170000_live_room_cohost_authz.sql`. | Kiro | VTID-05558 |
 
 ---
 
@@ -2540,7 +2558,7 @@ an audit/system log; this absorbs high-volume clickstream. Ingested via
 product_analytics_events (
   id UUID PK, event_id TEXT UNIQUE,  -- client-generated, idempotency key
   event_name TEXT, event_type TEXT,  -- journey|assistant|feature|interest|friction|performance|content
-  tenant_id UUID, user_id_hash TEXT, -- SHA-256 of user id; never the raw id
+  tenant_id UUID NOT NULL, user_id_hash TEXT, -- NOT NULL since the bootstrap DDL (asserted by VTID-05569); SHA-256 of user id; never the raw id
   session_id TEXT, journey_id TEXT, conversation_id TEXT,
   screen_route TEXT, screen_id TEXT, feature_key TEXT,
   source TEXT,                       -- web|ios|android|gateway|assistant|orb

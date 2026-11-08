@@ -1,0 +1,19 @@
+# Red on origin/main ff1a55d50b: this lane's test files (fleet-structure, free-tier-guard) against main's installers and CI file. 2026-11-07T20:34:25Z, session kiro-exafy-202611071142-d7ed.
+## node --test scripts/eng/fleet-structure.test.mjs
+not ok 24 - installer: bash, no xtrace, no Docker on the manager, pinned runner held back, plugin installed with gitlab-runner fleeting install
+not ok 36 - installer, run against stub commands: waits for the token, installs the pinned runner, writes config.toml private, installs the plugin, restarts, prints no token
+not ok 39 - both runner installers pin and hold gitlab-runner-helper-images at the runner version, in the same apt install
+# tests 39
+# pass 36
+# fail 3
+# skipped 0
+  error: 'the runner version of M1, exactly, with its helper images at the same version'
+  error: 'host/fleet-manager-install.sh: helper and runner pinned together'
+## node --test scripts/eng/free-tier-guard.test.mjs
+not ok 10 - central CI: the platform and vitana-v1 jobs are those of milestone 1, unchanged (typecheck: npm ci then pnpm run typecheck; gateway-jest: pnpm install --frozen-lockfile)
+not ok 52 - the platform .gateway jobs install jq before their script
+# tests 52
+# pass 49
+# fail 2
+# skipped 1
+  error: '.gateway before_script installs jq: ["- npm install -g pnpm@9.0.0","- pnpm config set store-dir \\"$CI_PROJECT_DIR/.pnpm-store\\"","- cd services/gateway"]'
