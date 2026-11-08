@@ -1,0 +1,2 @@
+# VTID-05520 (mt-guardrails-r2/local-test-stack-pglite), session kiro-hotmail-202611061752-cc1f, base origin/main d7c1d9668a
+$ node --test supabase/tests/local-stack/*.test.mjs   # tests written first, scripts/mt/stack/ absent -> outputs/red-on-base.txt (4 of 4 files fail: ERR_MODULE_NOT_FOUND)
