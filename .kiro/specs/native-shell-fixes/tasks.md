@@ -26,7 +26,9 @@ depends_on: none in this plan; waits for vitana-v1 #1587 to merge.
   `app/(public)/commerce-login.tsx`, `app/(public)/commerce/connect/index.tsx`,
   `app/(public)/commerce/connect/privacy.tsx`, each a default-export mount of its `src/screens/business/` component
   (design §3), plus `tests/shell-fixes/commerce-routes.test.tsx` (mocked screen modules, each route renders its
-  component). If #1587 merged with these files present, skip the files and log it; if #1587 closed unmerged, skip this
+  component). Add `'/commerce-login'`, `'/commerce/connect'`, `'/commerce/connect/privacy'`, `'/commerce/join'` to
+  `NATIVE_ROUTES` in `src/navigation/resolve.ts`; `npx jest tests/navigation.test.tsx` green (red with the files but
+  without the entries). If #1587 merged with these files present, skip the files and log it; if #1587 closed unmerged, skip this
   task and task 7's commerce branch and log the fallback (plan decision 5).
 - [ ] 7. Fix 3: `src/shell/AuthGate.tsx:46` picks `/commerce/join` for paths starting with `/commerce/`, else
   `/maxina` (design §2); update the header comment at `AuthGate.tsx:3`. Task 5 test green.
@@ -46,7 +48,7 @@ depends_on: none in this plan; waits for vitana-v1 #1587 to merge.
 - **States** — signed out on guest path (guest shell), signed out on `/commerce/*` (join), signed out elsewhere
   (`/maxina`), signed in (unchanged role guard); gateway error keeps today's fallbacks (`[]` orgs, `full` mode).
 - **Surfaces** — native `AuthGate` (`(app)/_layout.tsx`), role switcher via `useMyPartnerOrgs`, `GuidedModeProvider`,
-  the four `(public)` commerce routes. Desktop: n/a (native only).
+  the four `(public)` commerce routes and their `NATIVE_ROUTES` entries. Desktop: n/a (native only).
 - **Locales** — n/a: no new or changed text.
 - **Accessibility** — n/a: no new control; the mounted screens are the business lane's.
 - **Contract** — `GET /api/v1/partner-orgs/mine` and `GET /api/v1/journey/state` with Bearer token

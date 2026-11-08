@@ -34,6 +34,8 @@ assertions.
 `(public)/commerce-login.tsx` renders `CommercePortalLoginScreen`; `(public)/commerce/connect/index.tsx` renders
 `CommerceConnectDocsScreen`; `(public)/commerce/connect/privacy.tsx` renders `CommerceConnectPrivacyScreen`. All
 four import from `apps/mobile/src/screens/business/` (added by #1587) and hold no logic.
+4.2 The four paths are added to `NATIVE_ROUTES` in `apps/mobile/src/navigation/resolve.ts` together with their files,
+so `tests/navigation.test.tsx` ("NATIVE_ROUTES equals the concrete route files in app/") stays green.
 
 ## R5 — Verification and safety
 5.1 Each fix has a test under `apps/mobile/tests/shell-fixes/` that is red on `origin/main` for the bug it fixes and

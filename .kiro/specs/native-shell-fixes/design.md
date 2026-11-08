@@ -37,6 +37,10 @@ export default function CommerceJoinRoute() { return <CommerceJoinScreen />; }
 | `app/(public)/commerce/connect/index.tsx` | `CommerceConnectDocsScreen` | `src/App.tsx:1855` |
 | `app/(public)/commerce/connect/privacy.tsx` | `CommerceConnectPrivacyScreen` (in `CommerceConnectDocsScreen.tsx`) | `src/App.tsx:1856` |
 
+The lane also adds `'/commerce-login'`, `'/commerce/connect'`, `'/commerce/connect/privacy'` and `'/commerce/join'`
+to `NATIVE_ROUTES` in `apps/mobile/src/navigation/resolve.ts`, because `tests/navigation.test.tsx:67-84` keeps that
+list equal to the route files on disk (sparring s2 R1-F1). Only after #1587 merged; no entry without its file.
+
 The `(public)` and `(app)` groups both hold a `commerce` folder; Expo Router allows that as long as no two files
 resolve to the same URL, and the business lane's `(app)/commerce/**` files cover different URLs.
 

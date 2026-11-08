@@ -59,7 +59,12 @@ link land on the community sign-in instead of the supplier front door the web se
 4. **Public commerce routes:** the lane creates `apps/mobile/app/(public)/commerce/join.tsx`,
    `(public)/commerce-login.tsx`, `(public)/commerce/connect/index.tsx` and `(public)/commerce/connect/privacy.tsx`,
    each a thin default-export mount of the business lane's screen component, with no logic. They live in the public
-   group because the web routes have no `AuthGuard` (`src/App.tsx:1830`, `:1855-1856`).
+   group because the web routes have no `AuthGuard` (`src/App.tsx:1830`, `:1855-1856`). The lane adds the four paths
+   `/commerce-login`, `/commerce/connect`, `/commerce/connect/privacy` and `/commerce/join` to `NATIVE_ROUTES` in
+   `apps/mobile/src/navigation/resolve.ts` (`:42`), because `apps/mobile/tests/navigation.test.tsx:67-84` keeps that
+   list equal to the route files on disk and existing public routes are listed there (`resolve.ts:49`, `:92`, `:113`,
+   `:142`). #1587 adds only its `(app)` commerce paths to that list and its comment leaves these four to this plan;
+   this lane edits `resolve.ts` only after #1587 merged, so the two never edit it at once (sparring s2 R1-F1).
 5. **Order: PR #1587 lands first.** The four route files import screens that only exist after #1587, and fix 3
    needs `/commerce/join` to resolve to a real public screen. Fixes 1 and 2 have no such dependency but ship in the
    same PR. `depends_on: []` because the dependency is on another plan's lane; the lane log records it and the lane
@@ -76,8 +81,9 @@ link land on the community sign-in instead of the supplier front door the web se
 |---|---|---|---|
 | `shell-fixes` | exafyltd → agent:vitana-lane-reviewer | fixes 1–3, four public commerce route mounts, red-first tests | — (waits for vitana-v1 #1587, decision 5) |
 
-Exact `paths` are in `lanes/shell-fixes.md`. Shared files: none. Hot files: none (no open PR touches the three shell
-files or `tests/identity.test.tsx`).
+Exact `paths` are in `lanes/shell-fixes.md`. Shared files: `apps/mobile/src/navigation/resolve.ts` with vitana-v1
+#1587, sequenced (this lane edits it only after #1587 merged, decision 4/5). Hot files: none (no open PR touches the
+three shell files or `tests/identity.test.tsx`).
 
 ## Test plan
 - **Red first, offline.** New tests under `apps/mobile/tests/shell-fixes/`:
@@ -89,6 +95,8 @@ files or `tests/identity.test.tsx`).
     out on `/home` → `/maxina?redirectTo=%2Fhome` (unchanged); signed out on `/commerce` → guest shell (unchanged).
     Red on base: the commerce case redirects to `/maxina`.
   - route mounts: each of the four route files renders its business screen component (mocked module).
+  - route list: `tests/navigation.test.tsx` ("NATIVE_ROUTES equals the concrete route files in app/") stays green
+    with the four files and the four `NATIVE_ROUTES` entries; it goes red if either is added without the other.
 - From `apps/mobile/`: `npm run typecheck`, `npm test`, `APP_PROFILE=development npm run bundle`.
 - `docs/validation/<VTID>/staging-tests.json` lists only `npm run X` / `npx jest P` refs (e.g. `npx jest tests/shell-fixes`,
   `npm run typecheck`).
@@ -99,6 +107,8 @@ files or `tests/identity.test.tsx`).
 - If #1587 merges with its own `(public)` route files, this lane's route task becomes a no-op on files it does not
   own; the lane then logs that and does not edit them.
 - Ledger rows for the four routes belong to the business lane; this lane does not flip them.
+- If #1587 closes unmerged (fallback, decision 5), the lane adds neither the four route files nor their
+  `NATIVE_ROUTES` entries, so `tests/navigation.test.tsx` stays green.
 
 ## Unchanged
 `packages/core/**`, `apps/mobile/src/auth/gateway.ts`, `guest-paths.ts`, the web app, the parity ledger, i18n

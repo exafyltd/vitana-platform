@@ -13,6 +13,7 @@ paths:
   - apps/mobile/src/identity/useMyPartnerOrgs.ts
   - apps/mobile/src/identity/GuidedModeProvider.tsx
   - apps/mobile/src/shell/AuthGate.tsx
+  - apps/mobile/src/navigation/resolve.ts
   - apps/mobile/app/(public)/commerce-login.tsx
   - apps/mobile/app/(public)/commerce/connect/index.tsx
   - apps/mobile/app/(public)/commerce/connect/privacy.tsx
