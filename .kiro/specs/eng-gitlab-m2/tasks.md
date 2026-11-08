@@ -189,3 +189,22 @@ scripts/eng/testing/*.test.mjs` (dependency-free; `UNIT.yml` runs them on every 
 - States: a secret that does not exist yet is created; an AWS refusal names the step; no value in any argument, log or error.
 - Staging proof: not applicable: deploys nothing. Proven by the unit tests, then by the owner's `m2.sh settings` run (exit 0).
 
+
+<!-- lane: runner-pin-jq -->
+## Lane `runner-pin-jq` (vitana-platform; late lane)
+- [ ] J1 Write the tests first and record them red on `origin/main`: `scripts/eng/fleet-structure.test.mjs` asserts that both installers
+      install `gitlab-runner=$RUNNER_VERSION` and `gitlab-runner-helper-images=$RUNNER_VERSION` in one `apt install` and hold both;
+      `scripts/eng/free-tier-guard.test.mjs` (or the test that pins the central CI files) asserts that the `.gateway` jobs install `jq`
+      before their script.
+- [ ] J2 `host/fleet-manager-install.sh`, `host/runner-install.sh`: pin and hold both packages. `ci/platform.gitlab-ci.yml`: `.gateway`
+      before_script installs `jq` (`apt-get update -qq && apt-get install -y -qq jq`), nothing else changes in the jobs.
+- [ ] J3 `RUNBOOK-m2-fleet.md`: the helper pin, and the fleet size of 5 with `fleet_max_instances = 5` in `terraform.tfvars`.
+- [ ] J4 Evidence: `docs/validation/<VTID>/` with red and green output.
+
+**Acceptance**
+- Change types: Infrastructure/CI, Tooling/docs.
+- Outcome: a fresh fleet manager or M1 runner installs without "held broken packages"; the platform pipeline's gateway-jest shards
+  run the jq-based tests as GitHub does.
+- States: a helper version that exists (19.5.2-1 is in the repository) installs; a version that does not exist fails the installer
+  (exit 1) instead of taking another one.
+- Staging proof: not applicable: deploys nothing. Proven by the unit tests, then by the next GitLab main pipeline (gitlab-verify).
