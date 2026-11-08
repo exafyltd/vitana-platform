@@ -39,3 +39,11 @@ reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 PR: https://github.com/exafyltd/vitana-platform/pull/4850
 Findings: none blocking. The blocking finding of the previous review on 394875b4f2 is fixed: add_group_member and add_group_member_as refuse every non-network group with 42501 not_network_group before the membership check; the community branch is removed; pgTAP cases 73-77 rewritten (red on the old head per red-community-old-head.txt, 92/92 green incl. double apply, jest 22/22), mutation M16 retargeted and caught. Non-blocking items addressed: the vitana.chat_group_rpc claim corrected (a guard, not authentication; tightening deferred), the 054200 non-SELECT-policy precondition added to live-before.sql. Standing rules hold: RLS with auth.uid(), tenant context, rules 43-45, SECURITY DEFINER lockdown, drift baseline 120 unchanged, MIGRATION-QUEUE rows 63-65 appended without altering existing rows. Non-blocking: check runs unreadable by the reviewer; the land step must confirm every required check green on this head.
 Next: the land step merges under §7b
+
+### 2026-11-08T13:28Z · agent-vitana-lane-reviewer-202611081328-bb8e · review
+review: accept
+head: 91810216bcef703fc91546400c4c5397639dc365
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4850
+Findings: none blocking. Re-review after review-entry commit 634e52ddcf and a clean merge of origin/main. The PR's own diff vs origin/main (38 files) holds only this lane's files: migrations 20261102054000/054100/054200, services/gateway/test/mt-network-groups-db.pgtap.test.ts, docs/validation/VTID-05579/**, MIGRATION-QUEUE.md rows 63-65 and the lane file log. The lane content is identical to the previously accepted head c8d6c78eff (empty diff over migrations, test and docs/validation/VTID-05579). No protected gate file is in the PR's own diff (CLAUDE.md, VTID-ALLOCATE.yml and plan-sparring SKILL.md came from main only). MIGRATION-QUEUE.md differs from main by exactly three appended lines, rows 63-65, each present once after row 62; rows 1-62 including the VTID-05609 renumbering are untouched. Non-blocking: check runs unreadable by the reviewer (GraphQL pass-through unsupported); the land step must confirm every required check green on this head.
+Next: the land step merges under §7b
