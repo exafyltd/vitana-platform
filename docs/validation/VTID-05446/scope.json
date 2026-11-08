@@ -1,6 +1,6 @@
 {
   "vtid": "VTID-05446",
-  "kind": "test",
+  "kind": "infra",
   "paths": [
     "scripts/ci/sql-tests/mt-isolation.test.sql",
     "scripts/ci/sql-tests/run-mt-isolation-test.sh",
