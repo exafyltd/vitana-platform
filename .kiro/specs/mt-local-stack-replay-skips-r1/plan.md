@@ -16,7 +16,8 @@ Orchestrator task: fix the red "MT local stack (PGlite)" check on `main` without
   (Amendment 3 of `mt-guardrails-r2`, by design).
 - Failing on `main` pushes `b670aa2b99`, `e7969bd82f` and `4294d5cd57`:
   `migration 20261102054000_vtid_05579_chat_groups_scope.sql failed and is not listed in replay-skip.json: relation public.chat_groups does not exist`.
-  `chat_groups` is created by vitana-v1, so no migration in this repository creates it.
+  `chat_groups` is created in this repository by `20260525000000_VTID_03089_chat_groups.sql:12`, but that migration is
+  itself skipped on PGlite (it needs `chat_messages`, `replay-skip.json`), so the table is absent during replay.
 - Read-only investigation on `origin/main` `4294d5cd57`: `node scripts/mt/stack/discover-skips.mjs` finds 733
   migrations, 425 apply, 308 skipped, and the only difference from the committed `replay-skip.json` is two entries:
   `20261102054000_vtid_05579_chat_groups_scope.sql` and `20261102054200_vtid_05579_chat_groups_rls.sql`, both

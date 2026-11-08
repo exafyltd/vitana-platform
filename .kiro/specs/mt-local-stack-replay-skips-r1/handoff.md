@@ -8,7 +8,7 @@ state: drafted
 updated: 2026-11-08T15:00Z
 ---
 # Handoff — mt-local-stack-replay-skips-r1
-Adds the two VTID-05579 migrations that cannot replay on PGlite (`chat_groups` comes from vitana-v1) to
+Adds the two VTID-05579 migrations that cannot replay on PGlite  to
 `replay-skip.json`, so the "MT local stack (PGlite)" check on `main` is green. Plan: `plan.md`.
 
 ## Log
