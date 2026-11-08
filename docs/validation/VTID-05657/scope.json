@@ -1,6 +1,6 @@
 {
   "vtid": "VTID-05657",
-  "kind": "backend",
+  "kind": "feature",
   "paths": [
     "services/gateway/src/services/client-identity/**",
     "services/gateway/test/client-identity*",
