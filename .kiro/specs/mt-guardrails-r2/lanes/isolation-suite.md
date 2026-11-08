@@ -6,11 +6,11 @@ executor: kiro
 seat: hotmail
 reviewer_seat: agent:vitana-lane-reviewer
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
-depends_on: [local-test-stack, generated-inventories]
+depends_on: [local-test-stack-pglite, generated-inventories]
 paths:
   - scripts/ci/sql-tests/mt-isolation.test.sql
   - scripts/ci/sql-tests/run-mt-isolation-test.sh
-updated: 2026-11-01T17:06Z
+updated: 2026-11-08T14:22Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05446
 ---
@@ -53,3 +53,20 @@ Lane created with the re-plan `mt-guardrails-r2` (carried from `mt-guardrails`).
 
 ### 2026-11-01T17:06Z · ci-plan-spar · ready (VTID allocated)
 VTID-05446 allocated after policy approval (converged-auto-v1).
+
+### 2026-11-08T14:22Z · kiro-hotmail-202611061752-cc1f · ready (depends_on repointed)
+`depends_on` changed from `local-test-stack` to `local-test-stack-pglite` (VTID-05520, done) per plan.md Amendment 2, decision 1 and its Consequences. `local-test-stack` (VTID-05447) and `local-test-stack-v2` (VTID-05469) are parked as superseded (PRs #4881, #4882). No other change.
+
+### 2026-11-08T14:45:00Z · agent-vitana-lane-reviewer-202611081444-4bdc · review
+review: accept
+head: 319ef180b809ffc779ae0324e42e6e8e0a650517
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4900
+Findings: none blocking. The diff against origin/main (origin/main...319ef180b8) is one file, .kiro/specs/mt-guardrails-r2/lanes/isolation-suite.md, with only three changes: depends_on [local-test-stack, generated-inventories] -> [local-test-stack-pglite, generated-inventories], the updated field, and one appended log entry citing plan.md Amendment 2 decision 1 and Consequences. Amendment 2 says the lane keeps depends_on local-test-stack, which now means local-test-stack-pglite. local-test-stack-pglite is state done (VTID-05520, merge 932da573be) on origin/main. Same change as #4901 (ci-wiring). No protected gate file, test, workflow or live system touched. Non-blocking: CI check results on this head could not be read by this role (gh statusCheckRollup and gh pr checks returned HTTP 400, GraphQL pass-through unsupported); land-guard checks must confirm every required check green on this head.
+Next: the land step merges under §7b once land-guard confirms every check green on this head
+
+Collab-Session: agent-vitana-lane-reviewer-202611081444-4bdc
+Collab-Review: mt-guardrails-r2/isolation-suite
+Collab-Verdict: accept
+Collab-Reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+Collab-Reviewed-Head: 319ef180b809ffc779ae0324e42e6e8e0a650517
