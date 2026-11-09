@@ -328,7 +328,7 @@ export default defineConfig({
 // already in the job log above).
 // VTID-05672: a shared command (same tree, cwd, env and argv) runs once per verify;
 // later suites reuse its result and say so (reused_from). Failures are reused too.
-async function runExisting(repoRoot, t, suite) {
+export async function runExisting(repoRoot, t, suite) {
   const cwdAbs = inside(repoRoot, t.cwd || '.');
   if (!cwdAbs) return { ok: false, problems: ['cwd outside repo'] };
   return cwdLock(cwdAbs, async () => {
@@ -358,7 +358,7 @@ async function runExisting(repoRoot, t, suite) {
   });
 }
 
-async function runSuite(service, repoRoot, outDir, suite, tests) {
+export async function runSuite(service, repoRoot, outDir, suite, tests) {
   const results = [];
   for (const [i, t] of tests.entries()) {
     const name = t.name || `${t.kind} ${t.path || t.spec || t.ref || i}`;
