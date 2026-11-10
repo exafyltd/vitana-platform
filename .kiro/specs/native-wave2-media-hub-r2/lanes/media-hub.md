@@ -24,7 +24,8 @@ paths:
   - apps/mobile/parity/ledger.json
   - src/i18n/*/mediaHubNative.json
   - docs/validation/**
-updated: 2026-11-10T10:05Z
+updated: 2026-11-10T10:30Z
+vtid: VTID-05677
 ---
 # Media Hub port — the 4 `media` ledger rows under `/comm/media-hub*`
 Plan: `.kiro/specs/native-wave2-media-hub-r2/` — `plan.md` (plan block) and the `tasks.md` section marked
@@ -59,3 +60,6 @@ Supabase/AWS, no test against production; staging specs are read-only; the nativ
 ## Log
 ### 2026-11-10T10:05:00Z · kiro-exafyltd-202611072144-1c88 · ready
 Lane created with the plan (re-plan of `native-wave2-media-hub/media-hub`, PR #4658).
+
+### 2026-11-10T10:30Z · ci-plan-spar · ready (VTID allocated)
+VTID-05677 allocated after policy approval (converged-auto-v1).
