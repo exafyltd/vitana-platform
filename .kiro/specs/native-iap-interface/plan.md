@@ -29,9 +29,21 @@ Pinned: vitana-v1 origin/main `e31bf4627ff3c705c20f8e6b718ce4dd03353b7f`, vitana
   false (`:12-17` doc block, `:69-71` `defaultFlags`). The file is shared native infra with its own tests.
 - **The decision is the owner's.** `vitana-platform:.kiro/specs/native-wave3-release-r2/lanes/iap-decision-owner.md`
   (`next_actor: owner`) records the payment classification per purchase type
+  (frontmatter `next_actor: kiro`, depends on `prereq-exit`; the body says "OWNER GATE — no payment code is written" and
+  "Next actor is the owner", `:19-26`; the decision is the owner's either way)
   (`vitana-v1:docs/programs/native-app/NATIVE-APP-PLAN.md:221`, §8 decision 4). The product-cart-checkout lane
   (vitana-v1 PR #1619, `docs/validation/VTID-05512/lane-brief.md:30`) keeps "iOS IAP gate exactly as today, flagged per
   surface".
+
+- **Excerpts of the cited vitana-v1 code** (read at the pinned SHA with `git show`, inlined so a reviewer without
+  vitana-v1 access can check the pattern):
+  `push/provider.ts:46` `let current: PushProvider = NoopPushProvider;`, `:48-50` `export function getPushProvider():
+  PushProvider { return current; }`, `:53-55` `export function setPushProvider(provider: PushProvider): void { current =
+  provider; }`; `:35-44` the Noop object (`isAvailable: () => false`, `getToken: async () => null`, `requestPermission:
+  async () => 'unavailable'`, ...). `remote-config.ts:38` `export const KNOWN_FLAGS = ['push_enabled',
+  'health_sync_enabled', 'orb_native_enabled'] as const;`, `:69-71` `defaultFlags()` maps every known flag to `false`.
+  `wallet-home/iap.ts:12-14` `export function isIAPRestricted(): boolean { return Platform.OS === 'ios'; }`.
+  The crash-port lane of `native-wave3-release-r2` (`lanes/crash-port.md:25`) cites the same `push/provider.ts` pattern.
 
 ## Decisions
 1. **One lane, one repo.** The change is a handful of new files in `apps/mobile/src/iap/` plus tests: a small task. Lane
