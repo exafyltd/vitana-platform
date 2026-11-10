@@ -9,6 +9,6 @@ file, so `targetOfAdmin` is false for the admin lane's own permission fields (it
 Edit to each target: only the `paths:` list, adding the lines in `requirements.md` R1. Everything after the added lines is
 byte-identical; a byte check (`diff` of base and head restricted to the target) shows exactly three added lines in total.
 Precedents: `agentic-delivery/nav-paths` (added four paths to `gateway-delivery`, VTID-05563, merged as 7ec024340a) and
-`say-hello-lane-reassign/reassign` (VTID-05410). `collaboration.md` §3a says "narrow"; R1 of `kiro-lane-admin` says
+`say-hello-lane-reassign/reassign` (VTID-05410). `collaboration.md` §7a (line 250, "Lane administration") says "narrow"; R1 of `kiro-lane-admin` says
 "add/narrow", and `queue.mjs` accepts any permission-field change by a covered target — recorded, as the reviewer
 noted for VTID-05563.

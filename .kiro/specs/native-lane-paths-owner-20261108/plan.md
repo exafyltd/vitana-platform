@@ -34,7 +34,14 @@ loosening Lane scope. Owner decision (final, 2026-11-08):
    merges and they are brought up to date with `main`.
 3. **What each lane may change in the added files stays limited by the owner quote** (the lane PR body lists it); the
    admin lane gives path permission only. The reviewer of each lane PR checks the diff of those files against the quote.
-4. **The plan PR is not merged by the author.** The lane is built after the plan is merged under §7b; the builder is a
+5. **Mechanism is the one the session instruction names; the §7a wording is not changed here.** The task given to this session
+   (2026-11-08) names a `lane_admin` lane that adds exactly these three paths as the legal mechanism. This plan does not claim
+   an owner acknowledgement of the §7a wording ("narrow its `paths`"): the use is accepted by the code (`queue.mjs:1014-1021`,
+   no narrowing-only constraint), `kiro-lane-admin` requirements R1 ("add/narrow"), and the precedents VTID-05563 and
+   VTID-05410, as in the reviewer entry of `agentic-delivery/lanes/nav-paths.md`. A one-word change of `collaboration.md`
+   §7a to "add/narrow" is a separate governance change (a governance path: executor kiro, reviewer agent accept), outside this
+   plan's single lane; it stays recorded as the follow-up named in `handoff.md` and is not a condition of this plan.
+6. **The plan PR is not merged by the author.** The lane is built after the plan is merged under §7b; the builder is a
    session that is not the plan driver and the reviewer is `vitana-lane-reviewer`.
 
 ## Lanes
@@ -50,7 +57,7 @@ loosening Lane scope. Owner decision (final, 2026-11-08):
 - **Staging proof:** not verified on staging: deploys nothing; proven by Collab handoff and Lane scope plus the two proofs.
 
 ## Risks
-- `collaboration.md` §3a says an admin lane may "narrow" a target's paths; this lane adds three. `kiro-lane-admin`
+- `collaboration.md` §7a (line 250, "Lane administration") says an admin lane may "narrow" a target's paths; this lane adds three. `kiro-lane-admin`
   requirements R1 says "add/narrow", `queue.mjs` accepts any covered permission change, and VTID-05563 and VTID-05410 added
   paths the same way; the reviewer of VTID-05563 recorded this and asked for a §7a alignment follow-up (not done here).
 - Both target lanes are `ready` with a claim held by the author session; the admin lane's builder takes the targets as
