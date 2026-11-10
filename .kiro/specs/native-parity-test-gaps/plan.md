@@ -4,6 +4,7 @@ Author: Kiro, seat `exafyltd`. Repo of the change: `exafyltd/vitana-v1` (native 
 `tasks.md`, `lanes/route-tests.md` in this folder.
 
 <!-- plan:begin -->
+Re-plan note (2026-11-10T18:50Z): session 1 escalated at round 3 on one finding (R3-F1, repeated from R1-F1/R2-F1): vitana-v1 was not pinned for that session, because `spar_refs` is read only when a session is created. `handoff.md` now declares `spar_refs: exafyltd/vitana-v1 @ e31bf4627ff3c705c20f8e6b718ce4dd03353b7f`, so this re-plan session pins vitana-v1 from its first round (the partner's option 1). The plan content is otherwise unchanged from round 3.
 ## Goal
 Owner instruction, verbatim: "Parity audit: check the parity ledger on main against the screen list. Find mismatches, stale rows, and missing tests. Report them. Do not change ledger status without evidence."
 
