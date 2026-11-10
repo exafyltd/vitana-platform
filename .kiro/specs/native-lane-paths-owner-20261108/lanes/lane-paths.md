@@ -13,7 +13,8 @@ repos: [exafyltd/vitana-platform]
 paths:
   - .kiro/specs/native-wave2-events-calendar-r3/lanes/events-meetups.md
   - .kiro/specs/native-wave2-fix-forward-r2/lanes/public-entry.md
-updated: 2026-11-08T14:30Z
+updated: 2026-11-10T10:45Z
+vtid: VTID-05679
 ---
 # Lane `lane-paths`: add the three test files the owner allowed to the `paths` of two native lanes
 Tasks in `tasks.md` (group `<!-- lane: lane-paths -->`). VTID from PLAN-SPAR; never by hand.
@@ -35,3 +36,6 @@ Supabase/AWS, no test against production, no `--admin`, no loosening of Lane sco
 ## Log
 ### 2026-11-08T14:30Z · kiro-exafyltd-202611072144-1c88 · ready
 Lane created with the plan.
+
+### 2026-11-10T10:45Z · ci-plan-spar · ready (VTID allocated)
+VTID-05679 allocated after policy approval (converged-auto-v1).
