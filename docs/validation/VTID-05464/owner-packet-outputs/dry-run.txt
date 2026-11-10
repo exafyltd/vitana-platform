@@ -1,0 +1,38 @@
+# VTID-05464 owner-packet dry-run. PGlite in process; nothing applied anywhere.
+# node v22.23.4
+
+## A. replayed local stack (supabase/migrations/*.sql replayed on PGlite, replay-skip.json honoured)
+replay: 422 applied, 308 skipped, 0 failed
+idx_user_tenants_user present: {"present":true}
+supabase_auth_admin role present on the stack: {"present":false}
+state before: {"hook":false,"log":false}
+harness added the supabase_auth_admin role (Supabase always has it; the stack does not)
+PASS apply 20261102032000_vtid_05464_access_token_hook_shadow.sql
+PASS apply 20261102032100_vtid_05464_tenant_claim_mismatch_log.sql
+state after both forward files: {"hook":true,"log":true}
+--- POST: post-check.sql: 4 result sets
+  [0] 1 row(s); first: {"hook":"custom_access_token_hook_shadow(jsonb)","log":"tenant_claim_mismatch_log"}
+  [1] 5 row(s); first: {"indexname":"idx_user_tenants_role","indexdef":"CREATE INDEX idx_user_tenants_role ON public.user_tenants USING btree (active_role)"}
+  [2] 1 row(s); first: {"prosecdef":true,"provolatile":"v","proconfig":["search_path=\"\"","lock_timeout=100ms","statement_timeout=500ms"],"auth_admin_exec":true,"authenticated_exec":false,"anon_exec":false,"service_role_exec":false}
+  [3] 1 row(s); first: {"relrowsecurity":true,"authenticated_select":false,"anon_select":false,"service_role_select":true,"policies":0,"rows":0}
+PASS re-apply 20261102032000_vtid_05464_access_token_hook_shadow.sql (idempotent)
+PASS re-apply 20261102032100_vtid_05464_tenant_claim_mismatch_log.sql (idempotent)
+PASS apply rollback 20261102032000_vtid_05464_access_token_hook_shadow_rollback.sql
+state after rollback: {"hook":false,"log":false}
+PASS rollback again (no-op)
+PASS re-apply 20261102032000_vtid_05464_access_token_hook_shadow.sql after rollback
+PASS re-apply 20261102032100_vtid_05464_tenant_claim_mismatch_log.sql after rollback
+state after re-apply: {"hook":true,"log":true}
+
+## B. lane fixture + the lane pgTAP shim (36-assertion plan)
+PASS fixture mt_identity_hook_fixture.sql
+PASS apply 20261102032000_vtid_05464_access_token_hook_shadow.sql
+PASS apply 20261102032100_vtid_05464_tenant_claim_mismatch_log.sql
+PASS pgTAP mt_identity_hook_shadow.test.sql after apply: 36 ok of 36
+PASS apply rollback 20261102032000_vtid_05464_access_token_hook_shadow_rollback.sql
+state after rollback: {"hook":false,"log":false}
+PASS re-apply 20261102032000_vtid_05464_access_token_hook_shadow.sql
+PASS re-apply 20261102032100_vtid_05464_tenant_claim_mismatch_log.sql
+PASS pgTAP mt_identity_hook_shadow.test.sql after rollback + re-apply: 36 ok of 36
+
+RESULT: ALL PASS

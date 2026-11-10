@@ -12,12 +12,12 @@ paths:
   - supabase/migrations/20261102032100_vtid_*_tenant_claim_mismatch_log.sql
   - supabase/migrations/20261102032000_vtid_*_access_token_hook_shadow_rollback.sql
   - supabase/tests/mt_identity_hook_*.sql
-updated: 2026-11-05T22:31Z
+updated: 2026-11-10T09:50Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05464
 branch: kiro/mt-identity-r2/access-token-hook-shadow
 pr: https://github.com/exafyltd/vitana-platform/pull/4627
-claimed_by: kiro-hotmail-202611011452-6d16
+claimed_by: kiro-hotmail-202611061752-cc1f
 ---
 # access-token-hook-shadow — custom access-token hook in SHADOW only (DB)
 
@@ -78,3 +78,9 @@ authority: §7b PM rule. Merged by kiro-hotmail-202611011452-6d16 on the reviewe
 
 ### 2026-11-05T22:31Z · kiro-hotmail-202611011452-6d16 · verified → done
 Closing record: the code and evidence are on main from merge 78bb4b3969982bfb71f2a3d412447ac5088056e6. The lane claim is released once this record is on main.
+
+### 2026-11-10T09:50Z · kiro-hotmail-202611061752-cc1f · done → done
+Docs-only follow-up, no code change: owner packet for queue rows 17-18 at `docs/validation/VTID-05464/owner-packet.md`
+(M0 directive stream S1). The previous claim of `kiro-hotmail-202611011452-6d16` was stale metadata on a `done` lane (no claim
+ref existed); this session claimed the lane ref and took over `claimed_by` so Collab handoff matches the commits. Nothing applied,
+no RUN-MIGRATION dispatch, no live database or Auth config contacted. Dry-run output: `docs/validation/VTID-05464/owner-packet-outputs/`.
