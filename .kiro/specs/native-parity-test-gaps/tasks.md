@@ -7,12 +7,15 @@ helper, source file or ledger row is edited. No production host, no live system,
 
 ## Route tests
 <!-- lane: route-tests -->
-- [ ] T1 Add `apps/mobile/tests/parity-gaps/intents-mine-route.test.tsx`: import `tests/helpers/no-network`; mock `expo-router`
-  so `Redirect` records its `href` prop; render the default export of `app/(app)/intents/mine.tsx`; assert the recorded href is
+- [ ] T0 Add `apps/mobile/tests/parity-gaps/mocks.ts` (imported before the code under test): `jest.mock('expo-router', …)` with a `Redirect`
+  spy that records its `href`, a `useLocalSearchParams` returning a mutable exported params object, and `router`, `usePathname`,
+  `useGlobalSearchParams` stubs; copies of the async-storage, expo-secure-store and safe-area stubs of `tests/community/mocks.ts`.
+  Do not import `tests/community/mocks.ts`.
+- [ ] T1 Add `apps/mobile/tests/parity-gaps/intents-mine-route.test.tsx`: import `tests/helpers/no-network`; use the T0 mock so `Redirect` records its `href` prop; render the default export of `app/(app)/intents/mine.tsx`; assert the recorded href is
   `/comm/find-partner?view=posts`. Also read `apps/mobile/parity/ledger.json` (read-only) and assert row `INTENTS.MINE` has
   `web_path: /intents/mine`, `status: native`, `lane: home-feed`, and that `NATIVE_ROUTES` contains `/intents/mine`.
-- [ ] T2 Add `apps/mobile/tests/parity-gaps/my-groups-route.test.tsx`: reuse the community mocks and Supabase double by import
-  (not by edit); make `useLocalSearchParams` return `{ id: 'g-1' }`; render the default export of
+- [ ] T2 Add `apps/mobile/tests/parity-gaps/my-groups-route.test.tsx`: use the T0 mock and the Supabase double and wrapper of
+  `tests/community/helpers.tsx` by import (not by edit); set the T0 params to `{ id: 'g-1' }`; render the default export of
   `app/(app)/comm/my-groups/[id].tsx`; assert `screen-group-detail` and the group name for a seeded group, and
   `group-detail-not-found` for an id that is not seeded. Assert the ledger row `/comm/my-groups/:id` is `native`,
   `source: exclusion`, `lane: home-feed`. Do not assert `resolveWebPath` for this path (plan Finding 4).
