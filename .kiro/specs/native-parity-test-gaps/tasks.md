@@ -16,11 +16,11 @@ helper, source file or ledger row is edited. No production host, no live system,
   `app/(app)/comm/my-groups/[id].tsx`; assert `screen-group-detail` and the group name for a seeded group, and
   `group-detail-not-found` for an id that is not seeded. Assert the ledger row `/comm/my-groups/:id` is `native`,
   `source: exclusion`, `lane: home-feed`. Do not assert `resolveWebPath` for this path (plan Finding 4).
-- [ ] T3 Prove each test can fail (uncommitted mutation, then restore) and record red and green runs, the commands and the
+- [ ] T3 Prove each test can fail (mutations are made only in a throwaway second worktree, never the lane worktree) and record red and green runs, the commands and the
   empty source diff in `docs/validation/<VTID>/commands.log`; write `docs/validation/<VTID>/acceptance.md`, `scope.json`
   and a short `docs/validation/<VTID>/findings.md` that lists plan Findings 1-5 and the out-of-scope list.
 - [ ] T4 Run `cd apps/mobile && npm ci && npx jest tests/parity-gaps --maxWorkers=2 && npm run typecheck && npx jest --maxWorkers=2`
-  and root `node scripts/native/parity-ledger.mjs --check`; record the results.
+  and, from the vitana-v1 repository root, `node scripts/native/parity-ledger.mjs --check`; record the results.
 
 Acceptance:
 - Change types: Tooling/docs (tests and evidence only)

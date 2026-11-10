@@ -12,11 +12,12 @@ two `native` rows whose route file no test touches. This plan closes exactly tho
 ledger status, no source and no existing test.
 
 ## Measured state
+Evidence: vitana-v1 is not pinned in the PLAN-SPAR session, so every vitana-v1 premise below is also quoted verbatim, with line numbers and file hashes, in `evidence.md` of this folder (generated with `git show <sha>:<path>`).
 Pinned: vitana-v1 origin/main e31bf4627ff3c705c20f8e6b718ce4dd03353b7f, vitana-platform origin/main 6dc6e1ba0c18252ec2f3fbf5651d245e200f9835 (2026-11-10T17:55Z).
 - `node scripts/native/parity-ledger.mjs --check` passes at that SHA: 435 rows, 121 native routes (audit §1). 0 screen-list entries without a row, 0 stale rows, 0 native rows without a route file (audit §2, §3).
 - `vitana-v1:apps/mobile/app/(app)/intents/mine.tsx:7-11` is a redirect-only route: `<Redirect href={'/comm/find-partner?view=posts' as never} />`. Its ledger row is `INTENTS.MINE`, `status: native`, `last_parity_check: 2026-10-21` (`vitana-v1:apps/mobile/parity/ledger.json:1601-1610`). `/intents/mine` is in `NATIVE_ROUTES` (`vitana-v1:apps/mobile/src/navigation/resolve.ts:90`). No file under `apps/mobile/tests` mentions `intents/mine` (audit §4).
 - `vitana-v1:apps/mobile/app/(app)/comm/my-groups/[id].tsx:6-12` reads `id` from `useLocalSearchParams` and renders `<GroupDetailScreen id={id} />` (screen at `apps/mobile/src/screens/community/GroupDetailScreen`). Its ledger row is `/comm/my-groups/:id`, `source: exclusion`, `status: native` (`ledger.json:2464-2475`). `GroupDetailScreen` is tested directly (`vitana-v1:apps/mobile/tests/community/groups.test.tsx:110-125`: loaded, not-found, query error), but no test goes through this route file (audit §4).
-- `/comm/my-groups/:id` is not in `NATIVE_ROUTES` and `NATIVE_PATTERNS` is only `['/discover/provider/:id']` (`resolve.ts:154`), which `tests/discover-commerce/routes.test.tsx` pins. By the code at `resolve.ts:176-206`, `resolveWebPath('/comm/my-groups/g-1')` therefore falls to the ledger-row match and returns `unported`, not `native`. This is reported as a finding (see Findings); it is not asserted as expected behaviour and not changed.
+- `/comm/my-groups/:id` is not in `NATIVE_ROUTES` and `NATIVE_PATTERNS` is only `['/discover/provider/:id']` (`resolve.ts:154`), which `tests/discover-commerce/routes.test.tsx` pins. By the code at `resolve.ts:195-221`, `resolveWebPath('/comm/my-groups/g-1')` therefore falls to the ledger-row match and returns `unported`, not `native`. This is reported as a finding (see Findings); it is not asserted as expected behaviour and not changed.
 - Test layout: `apps/mobile/jest.config.js` uses `roots: ['<rootDir>/tests']`, `testMatch: **/*.test.ts(x)`, so a new folder `tests/parity-gaps/` is picked up with no config change. The community test helpers (`tests/community/mocks.ts`, `tests/community/helpers`, `tests/helpers/no-network`) provide the expo-router stub, a Supabase double and a query wrapper; they are imported, not edited.
 
 ## Findings (reported, no change made)
@@ -41,7 +42,7 @@ One lane, no shared file, no hot file (no `ledger.json`, `resolve.ts`, `packages
 
 ## Tests and verification
 - New: `apps/mobile/tests/parity-gaps/intents-mine-route.test.tsx`, `apps/mobile/tests/parity-gaps/my-groups-route.test.tsx`. Red-on-base for a tests-only lane: the tests pass on base by design (the behaviour exists; the tests are missing). The builder therefore proves each test can fail by a local, uncommitted mutation in its worktree (change the redirect target; render a different screen in the my-groups route; make the ledger row key differ), records the failing runs in \`docs/validation/<VTID>/commands.log\`, and restores the files before committing (\`git diff\` on \`apps/mobile/app\` and \`apps/mobile/src\` must be empty).
-- `cd apps/mobile && npm ci && npx jest tests/parity-gaps --maxWorkers=2 && npm run typecheck`, then the full `npm test --maxWorkers=2`; root `node scripts/native/parity-ledger.mjs --check` (must be unchanged).
+- `cd apps/mobile && npm ci && npx jest tests/parity-gaps --maxWorkers=2 && npm run typecheck`, then the full `npm test --maxWorkers=2`; `node scripts/native/parity-ledger.mjs --check` run from the vitana-v1 repository root (the script lives at `vitana-v1:scripts/native/parity-ledger.mjs`; must stay `OK — 435 rows`).
 - Staging proof: not verified on staging: the lane adds test files only and deploys nothing; the Jest tests are the proof.
 
 ## Measurement
