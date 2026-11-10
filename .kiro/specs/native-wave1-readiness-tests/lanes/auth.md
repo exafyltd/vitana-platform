@@ -16,7 +16,8 @@ paths:
   - docs/validation/VTID-*/scope.json
   - docs/validation/VTID-*/staging-tests.json
   - docs/validation/VTID-*/plan-sparring.md
-updated: 
+updated: 2026-11-10T17:08Z
+vtid: VTID-05681
 ---
 # Auth: sign-in helpers, AuthGate, gateway-get, error keys (mock tests, new files only)
 Plan: `.kiro/specs/native-wave1-readiness-tests/` — `plan.md` (decisions 1–7) and the `tasks.md` section marked
@@ -35,3 +36,6 @@ not prove the Wave 1 exit, which needs G1 (`NATIVE-APP-PLAN.md` §5).
 ## Log
 ###  · kiro-exafyltd-202611072144-1c88 · ready
 Lane created with the plan.
+
+### 2026-11-10T17:08Z · ci-plan-spar · ready (VTID allocated)
+VTID-05681 allocated after policy approval (converged-auto-v1).

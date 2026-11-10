@@ -3,9 +3,11 @@ slug: native-wave1-readiness-tests
 author: kiro
 executor: kiro
 next_actor: kiro
-state: drafted
+state: approved
 author_seat: exafyltd
-updated: 
+updated: 2026-11-10T17:08Z
+sparring_record: .kiro/specs/native-wave1-readiness-tests/sparring/verdict.md
+vtids: [VTID-05681, VTID-05682, VTID-05683, VTID-05684]
 ---
 # Handoff — Native Wave 1 readiness tests (no G1)
 
@@ -25,3 +27,6 @@ Tasks: `tasks.md`. Lanes: `lanes/*.md` (4: `auth`, `roles`, `push`, `deeplinks-i
 ## Log
 ###  · kiro-exafyltd-202611072144-1c88 · created → drafted
 Plan drafted from the measured state at the pinned SHAs.
+
+### 2026-11-10T17:08Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 4 lane(s) got a VTID and are handed to Kiro.
