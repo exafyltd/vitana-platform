@@ -61,3 +61,9 @@ Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are ha
 Amendment 3 replaces amendment 2, decision 3: a required table that is listed in `not-replayable.txt` with its reason is a SKIP,
 not a stop. It answers decision D1 of lane `local-test-stack-pglite` (VTID-05520, `docs/validation/VTID-05520/acceptance.md`).
 Sparred through this `plan(` PR (CI PLAN-SPAR). No lane file changes in this amendment.
+
+### 2026-11-10T12:00Z · kiro-hotmail-202611061752-cc1f · amendment 4 proposed (late lane `seat-move`)
+Owner directive decision 1 (`docs/multitenancy/KIRO-HOTMAIL-DIRECTIVE-M0.md`, branch `claude/youthful-cannon-vzsnio`) moves
+`maxina-golden-suite` (VTID-05448), `gateway-scope-lint-contract` (VTID-05444) and `mt-identity-r2/tenant-db-and-slug-cleanup`
+(VTID-05468) from seat jtadic to seat hotmail. A `_plan` commit cannot edit a lane file, so late lane `seat-move`
+(`lane_admin: true`) does it through the reviewed route. Sparred through this `plan(` PR; PLAN-SPAR allocates its VTID.
