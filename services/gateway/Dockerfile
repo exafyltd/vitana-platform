@@ -7,7 +7,8 @@ COPY BUILD_INFO ./
 COPY src ./src
 COPY config ./config
 COPY specs ./specs
-RUN npm run build
+# The tsc build ran out of the default Node heap on the GitLab runner (exit 134, heap out of memory).
+RUN NODE_OPTIONS=--max-old-space-size=4096 npm run build
 
 FROM public.ecr.aws/docker/library/node:20-alpine
 WORKDIR /app
