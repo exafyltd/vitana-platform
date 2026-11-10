@@ -6,13 +6,13 @@ executor: kiro
 seat: hotmail
 reviewer_seat: agent:vitana-lane-reviewer
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
-depends_on: [local-test-stack, generated-inventories, isolation-suite, gateway-scope-lint-contract, maxina-golden-suite]
+depends_on: [local-test-stack-pglite, generated-inventories, isolation-suite, gateway-scope-lint-contract, maxina-golden-suite]
 paths:
   - .github/workflows/MT-GUARDRAILS.yml
   - .github/workflows/SQL-MT-ISOLATION.yml
   - .github/workflows/MORNING-SYSTEM-HEALTH-CHECK.yml
   - scripts/ci/mt/**
-updated: 2026-11-01T17:06Z
+updated: 2026-11-08T14:23Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05443
 ---
@@ -52,3 +52,14 @@ Lane created with the re-plan `mt-guardrails-r2` (carried from `mt-guardrails`).
 
 ### 2026-11-01T17:06Z · ci-plan-spar · ready (VTID allocated)
 VTID-05443 allocated after policy approval (converged-auto-v1).
+
+### 2026-11-08T14:23Z · kiro-hotmail-202611061752-cc1f · ready (depends_on repointed)
+`depends_on` changed from `local-test-stack` to `local-test-stack-pglite` (VTID-05520, done) per plan.md Amendment 2, decision 1 and its Consequences. `local-test-stack` (VTID-05447) and `local-test-stack-v2` (VTID-05469) are parked as superseded (PRs #4881, #4882). No other change.
+
+### 2026-11-08T14:46Z · agent-vitana-lane-reviewer-202611081442-6833 · review
+review: accept
+head: a918b7cfa5855fb71c9850d5a1b988b65aaea0d6
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4901
+Findings: none blocking. The single changed file is the lane file. depends_on local-test-stack → local-test-stack-pglite matches plan.md Amendment 2 on origin/main, where the dependency "now means local-test-stack-pglite". local-test-stack-pglite is done (VTID-05520, merge 932da573be), and local-test-stack is parked as superseded. The other four dependencies, paths, state, executor, seat and vtid are unchanged, and the log entry is appended. Trailers are correct, the identity is kiro-agent[bot], and no protected gate file is touched. Non-blocking: the PR is behind main (merge-base e9168deed9, main 4294d5cd57; no spec files differ), so the land step must update it and re-check before merging. Check runs and queue.mjs validate on this head were not readable from this role, so land-guard must confirm every required check is green. The log cites PRs #4881 and #4882; these were not checked against GitHub.
+Next: the land step merges under §7b once land-guard confirms the PR is up to date and every check is green on the current head

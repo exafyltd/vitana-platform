@@ -437,6 +437,32 @@ jobs:
           fi
           mv "$F.tmp" "$F"
           jq -c '{env, sec: [.sec[].name]}' "$F"
+      # VTID-05541 (plan eng-gitlab-m2 3.5): the signing key of the GitLab webhook route
+      # POST /api/v1/internal/gitlab/webhook. Daily-key pattern: wired only when
+      # vitana/gateway/staging/gitlab-webhook-signing-token exists (the owner copies it
+      # from the engineering account with scripts/aws/setup-gitlab-webhook-secret.sh
+      # --apply); absent => not wired and the deploy never fails: the route then answers
+      # 401 to an unsigned request and 500 not_configured to a signed one. STAGING ONLY:
+      # AWS-PROD-DEPLOY-GATEWAY.yml is not wired in this milestone (no project has a hook
+      # before the cutover). Rides on connected-apps.json, merged by name in the roll step.
+      - name: Resolve GitLab webhook signing token
+        run: |
+          set -euo pipefail
+          NAME="vitana/gateway/staging/gitlab-webhook-signing-token"
+          ERR="$RUNNER_TEMP/gitlab-webhook-describe.err"
+          ARN=$(aws secretsmanager describe-secret --secret-id "$NAME" --query ARN --output text 2>"$ERR" || true)
+          F="$RUNNER_TEMP/connected-apps.json"
+          if [ -z "$ARN" ] || [ "$ARN" = "None" ]; then
+            if grep -q ResourceNotFoundException "$ERR"; then
+              echo "  $NAME not found - GITLAB_WEBHOOK_SIGNING_TOKEN not wired (VTID-05541; expected until provisioned)"
+            else
+              echo "::warning::$NAME lookup failed - GITLAB_WEBHOOK_SIGNING_TOKEN not wired: $(head -c 300 "$ERR")"
+            fi
+          else
+            echo "  resolved $NAME -> GITLAB_WEBHOOK_SIGNING_TOKEN"
+            jq -c --arg a "$ARN" '.sec += [{name:"GITLAB_WEBHOOK_SIGNING_TOKEN", valueFrom:$a}]' "$F" > "$F.tmp" && mv "$F.tmp" "$F"
+          fi
+          jq -c '{env, sec: [.sec[].name]}' "$F"
       # VTID-04542 latency plan (comment kept outside the run: scalar, VTID-03788
       # size guard): four exact-'true' flags pinned on STAGING ONLY until re-measured
       # here, prod untouched -- Devon pre-connect (04549), cascade sentence streaming
@@ -1225,7 +1251,7 @@ jobs:
                           {name:"GATEWAY_URL", value:"https://preview-aws-gateway.vitanaland.com"},
                           {name:"AUTOMATIONS_DELIVERY_MODE", value:"shadow"},
                           {name:"AUTOPILOT_HEARTBEAT_ENABLED", value:"true"},
-                          {name:"PM_AGENT_ENABLED", value:"true"},
+                          {name:"PM_AGENT_ENABLED", value:"false"},
                           {name:"PM_MODE", value:"live"}, {name:"CLAUDE_AVAILABLE", value:$CLAUDE_AVAILABLE},
                           {name:"DEFAULT_TENANT_ID", value:"2e7528b8-472a-4356-88da-0280d4639cce"},
                           {name:"TTS_PROVIDER", value:"polly"},

@@ -1,0 +1,11 @@
+# VTID-05446 (mt-guardrails-r2/isolation-suite), session kiro-hotmail-202611061752-cc1f, base origin/main d38dbe72d6
+$ bash scripts/ci/sql-tests/run-mt-isolation-test.sh   # on origin/main: runner absent -> outputs/red-on-base.txt (No such file, exit 127)
+$ bash scripts/ci/sql-tests/run-mt-isolation-test.sh --self-test   # -> outputs/self-test.txt (exit 0)
+$ PGHOST=db.abc.supabase.co bash scripts/ci/sql-tests/run-mt-isolation-test.sh   # -> outputs/guard.txt (exit 2)
+$ node docs/validation/VTID-05446/mutations.mjs   # -> outputs/mutations.txt (6 mutations, every one red; baseline green)
+# fix attempt 1 (reviewer verdict changes on d87cce51a8)
+$ bash scripts/ci/sql-tests/run-mt-isolation-test.sh --self-test-default   # new test, red on the previous head behaviour -> outputs/red-strict-default-test.txt (default exited 0 over 14 unverified)
+$ bash scripts/ci/sql-tests/run-mt-isolation-test.sh   # -> outputs/strict-default.txt (58 run, 14 failed, exit 1, no PASS marker)
+$ bash scripts/ci/sql-tests/run-mt-isolation-test.sh --report   # -> outputs/report-mode.txt (exit 0, last line REPORT mt-isolation, no PASS marker)
+$ bash scripts/ci/sql-tests/run-mt-isolation-test.sh --self-test-default   # -> outputs/self-test-default.txt (exit 0)
+$ node docs/validation/VTID-05446/mutations.mjs   # -> outputs/mutations.txt (8 mutations, every one red incl. the two runner mutations)

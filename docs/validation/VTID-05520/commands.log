@@ -1,0 +1,8 @@
+# VTID-05520 (mt-guardrails-r2/local-test-stack-pglite), session kiro-hotmail-202611061752-cc1f, base origin/main d7c1d9668a
+$ node --test supabase/tests/local-stack/*.test.mjs   # tests written first, scripts/mt/stack/ absent -> outputs/red-on-base.txt (4 of 4 files fail: ERR_MODULE_NOT_FOUND)
+$ pnpm add -D -E @electric-sql/pglite@0.5.15 --store-dir <workspace store>   # package.json + pnpm-lock.yaml only; tracked node_modules/ restored untouched (git checkout)
+$ node scripts/mt/stack/discover-skips.mjs --write   # 730 migrations, 424 apply, 306 skipped -> supabase/tests/local-stack/replay-skip.json
+$ node scripts/mt/stack/check-stack.mjs   # outputs/stack-report.txt: required 24, present 11, not replayable 13, PASS local-stack gate
+$ npm run test:mt-stack   # outputs/green.txt: 50 tests, 50 pass, 0 fail
+$ python3 mutation runner (9 + 1 breaks; sources restored after each)   # outputs/mutations.txt: every mutation fails at least one test
+$ node --test scripts/eng/services-parity.test.mjs scripts/eng/pipeline-gen.test.mjs   # after the trigger change: 33 pass (CI unit had failed: MT-LOCAL-STACK.yml not in the registry)

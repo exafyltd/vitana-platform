@@ -1,0 +1,25 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true", see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+PASS ../../wt-mhp/docs/validation/VTID-05504/morning-health-pertenant.test.ts
+  morning row 21c (per-tenant isolation breakdown, report-only)
+    ✓ exists, is report-only, and reads only the by-tenant function (2 ms)
+    ✓ keeps row 21b on the whole-database function, unchanged
+    ✓ puts 21c after 21b and before the self-audit
+    ✓ posts only to the by-tenant rpc, once (25 ms)
+    ✓ writes one INFO row per tenant with findings, each with its own numbers only (27 ms)
+    ✓ adds a summary row that counts the tenants and those with findings (25 ms)
+    ✓ labels the row without a tenant as unattributed and an unregistered id as unregistered (23 ms)
+    ✓ caps the rows and says how many were left out (25 ms)
+    ✓ cleans a hostile slug so it cannot break the table (23 ms)
+    ✓ shows scan errors without failing (24 ms)
+    ✓ HTTP 404 (function not applied yet) → one INFO row, exit 0 (9 ms)
+    ✓ HTTP 500 → one INFO row, exit 0 (7 ms)
+    ✓ a reply that is not an object → one INFO row, exit 0 (10 ms)
+    ✓ an object with no tenants list → one INFO row, exit 0 (11 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       14 passed, 14 total
+Snapshots:   0 total
+Time:        0.576 s
+Ran all test suites.

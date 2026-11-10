@@ -1,0 +1,15 @@
+{
+  "vtid": "VTID-05467",
+  "kind": "feature",
+  "paths": [
+    "supabase/migrations/20261102033000_vtid_05467_single_role_source.sql",
+    "supabase/migrations/20261102033100_vtid_05467_fix_bootstrap_admin_user.sql",
+    "supabase/migrations/20261102033000_vtid_05467_role_source_rollback.sql",
+    "supabase/tests/mt_identity_roles_single_source.test.sql",
+    "supabase/tests/mt_identity_roles_bootstrap.test.sql",
+    "docs/validation/VTID-05467/"
+  ],
+  "sparring_record": "docs/validation/VTID-05467/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

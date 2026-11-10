@@ -28,7 +28,9 @@ specs:
   - vitana-platform:pm-reassign-idempotent-r2
   - vitana-platform:pm-reassign-idempotent-r3
   - vitana-platform:matches-scroll-end
+  - vitana-platform:staging-verify-manifest-repair
   - vitana-platform:spotlight-commit-coverage
+  - vitana-platform:group-chat-realtime-status
   - vitana-platform:ci-superseded-pr-runs
   - vitana-platform:wallet-fx-rate-url
   - vitana-platform:profile-posts-full-width
@@ -38,14 +40,18 @@ specs:
   - vitana-platform:i18n-audit-nightly-off
   - vitana-platform:fix-deeplink-scroll-test
   - vitana-platform:pipeline-speed
+  - vitana-platform:pr-gate-policy-sparring-record
   - vitana-platform:kiro-web-steering
   - vitana-platform:owner-autonomy
+  - vitana-platform:e2e-autonomy
   - vitana-platform:step-order-gate
   - vitana-platform:sv-05308-coverage
+  - vitana-platform:mt-local-stack-replay-skips-r1
   - vitana-platform:kiro-web-parity
   - vitana-platform:kiro-web-reliability
   - vitana-platform:plan-spar-stuck-session
   - vitana-platform:session-title-stable
+  - vitana-platform:live-room-edit-cohost
   - vitana-platform:pipeline-lane-state-efficiency
   - vitana-platform:operating-workflow
   - vitana-platform:pm-ci-load
@@ -64,6 +70,8 @@ specs:
   - vitana-platform:sparring-floor-retry
   - vitana-platform:ci-dockerhub-mirror
   - vitana-platform:review-survives-main-merge
+  - vitana-platform:operator-chat-service-token
+  - vitana-platform:memory-legacy-read-retire-r2
 docs:
   - vitana-platform:.kiro/specs/pm-agent/plan-sparring.md
   - vitana-platform:.kiro/specs/claude-sessions-handover/handoff.md
@@ -103,6 +111,7 @@ belong to none of the named programmes are listed here until the owner assigns t
 - `vitana-platform:pipeline-speed` — Kiro pipeline time-to-completion: zero-cost empty slots, one-pass preflight, restart watchdog
 - `vitana-platform:kiro-web-steering` — Kiro Web sessions load both repos' steering and the pipeline driver (generated workspace-root steering, AGENTS.md trigger, Configuration Sync file)
 - `vitana-platform:owner-autonomy` — one standing autonomy rule for every Vitana session and process; one complete stop table; guard-checked (both repos)
+- `vitana-platform:e2e-autonomy` — the owner's end-to-end autonomy rule (2026-11-04) merged into that file in both repos; guard anchors for each section
 - `vitana-platform:step-order-gate` — pipeline step order enforced in code (`scripts/collab/land-guard.mjs`)
 - `vitana-platform:sv-05308-coverage` — the missing VTID-05308 staging suite so gateway STAGING-VERIFY passes
 - `vitana-platform:pipeline-lane-state-efficiency` — one closing record may carry a chain of legal lane/plan transitions (every edge, its evidence and the append-only log checked)
@@ -120,3 +129,5 @@ belong to none of the named programmes are listed here until the owner assigns t
 - `vitana-platform:reviewer-session-id-permission` — the reviewer agent generates its own reviewer session id via the existing queue.mjs command (narrowest shell permission; protected gate file, owner-authorized)
 - `vitana-platform:ci-dockerhub-mirror` — vitana-v1 PR CI pulls its Postgres service image from Docker Hub, not the capped ECR Public mirror
 - `vitana-platform:review-survives-main-merge` — a reviewer-agent accept stays current across a clean, conflict-free merge of `main` into the PR (`land-guard.mjs`, collaboration §3)
+- `vitana-platform:staging-verify-manifest-repair` — repair the 14 stale change suites failing the nightly full gateway STAGING-VERIFY (console probes, PM mode, collab ref, recall shadow, locale-coverage investigation) and a manifest drift guard
+- `vitana-platform:mt-local-stack-replay-skips-r1` — list the two VTID-05579 migrations PGlite cannot replay so the MT local stack gate is green on main

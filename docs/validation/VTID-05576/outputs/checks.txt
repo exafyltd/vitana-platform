@@ -1,0 +1,51 @@
+## fixture
+## live-before
+{"check_name":"scope_column_absent","ok":true}
+{"check_name":"rpcs_absent","ok":true}
+{"check_name":"catch_all_policy_already_gone","ok":true}
+{"check_name":"chat_messages_policies","policyname":"users_mark_received_read","cmd":"UPDATE"}
+{"check_name":"chat_messages_policies","policyname":"users_read_group_messages","cmd":"SELECT"}
+{"check_name":"chat_messages_policies","policyname":"users_read_own_messages","cmd":"SELECT"}
+{"check_name":"chat_messages_policies","policyname":"users_send_group_messages","cmd":"INSERT"}
+{"check_name":"chat_messages_policies","policyname":"users_send_messages","cmd":"INSERT"}
+{"check_name":"chat_messages_rows","n":2}
+{"check_name":"client_grants","auth_insert":true,"auth_update":true,"anon_insert":false}
+{"check_name":"network_inputs_present","ok":true}
+## apply 20261102050000_vtid_05576_chat_messages_scope.sql
+## apply 20261102050100_vtid_05576_send_message_rpcs.sql
+## apply 20261102050200_vtid_05576_chat_messages_lockdown.sql
+## post-apply-checks
+{"check_name":"scope_column","ok":true}
+{"check_name":"scope_check","ok":true}
+{"check_name":"every_row_has_a_scope","ok":true}
+{"check_name":"guard_trigger","ok":true}
+{"check_name":"functions_definer_pinned","ok":true}
+{"check_name":"execute_grants","ok":true}
+{"check_name":"catch_all_policy_gone","ok":true}
+{"check_name":"narrow_policies","ok":true}
+{"check_name":"client_write_revoked","ok":true}
+## rollback 050000 first (network message and RPCs present) is refused: VTID-05576 rollback refused: network messages exist; move or archive them first
+## rollback 050200
+## rollback 050100
+## rollback 050000 while a network message exists is refused: VTID-05576 rollback refused: network messages exist; move or archive them first
+## rollback 050000
+## rollback-check
+{"check_name":"scope_column_gone","ok":true}
+{"check_name":"functions_gone","ok":true}
+{"check_name":"trigger_gone","ok":true}
+{"check_name":"original_client_policies_back","ok":true}
+{"check_name":"catch_all_policy_still_gone","ok":true}
+{"check_name":"client_write_restored","ok":true}
+## re-apply 20261102050000_vtid_05576_chat_messages_scope.sql
+## re-apply 20261102050100_vtid_05576_send_message_rpcs.sql
+## re-apply 20261102050200_vtid_05576_chat_messages_lockdown.sql
+## post-apply-checks (after re-apply)
+{"check_name":"scope_column","ok":true}
+{"check_name":"scope_check","ok":true}
+{"check_name":"every_row_has_a_scope","ok":true}
+{"check_name":"guard_trigger","ok":true}
+{"check_name":"functions_definer_pinned","ok":true}
+{"check_name":"execute_grants","ok":true}
+{"check_name":"catch_all_policy_gone","ok":true}
+{"check_name":"narrow_policies","ok":true}
+{"check_name":"client_write_revoked","ok":true}

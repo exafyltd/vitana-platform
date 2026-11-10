@@ -1,0 +1,2 @@
+refusing: PGHOST=db.abc.supabase.co is not a throwaway database
+exit 2
