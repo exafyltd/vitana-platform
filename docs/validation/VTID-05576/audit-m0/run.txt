@@ -1,0 +1,325 @@
+# audit-m0 VTID-05576 on 6dc6e1ba0c18252ec2f3fbf5651d245e200f9835 (2026-11-10T09:37:34Z); node v22.23.4
+
+$ /projects/sandbox/wt-audit-m0/docs/validation/VTID-05576/pglite-harness/lane.sh
+# loaded /projects/sandbox/wt-audit-m0/docs/validation/VTID-05576/pgtap/vtid_05576_fixture.sql
+# loaded /projects/sandbox/wt-audit-m0/supabase/migrations/20261102050000_vtid_05576_chat_messages_scope.sql
+# loaded /projects/sandbox/wt-audit-m0/supabase/migrations/20261102050100_vtid_05576_send_message_rpcs.sql
+# loaded /projects/sandbox/wt-audit-m0/supabase/migrations/20261102050200_vtid_05576_chat_messages_lockdown.sql
+1..62
+ok 1 - 1 chat_messages.scope text NOT NULL with the migration default dropped
+ok 2 - 2 a CHECK limits scope to community and network
+ok 3 - 3 a pre-existing DM was backfilled to community
+ok 4 - 4 a pre-existing group message was backfilled to community
+ok 5 - 5 the scope guard trigger exists on chat_messages
+ok 6 - 6 a bare authenticated client INSERT fails (no INSERT privilege)
+ok 7 - 7 an anon INSERT fails
+ok 8 - 8 a direct service-role INSERT of scope = network fails
+ok 9 - 9 a direct service-role INSERT without a scope fails (no default)
+ok 10 - 10 a system writer can still INSERT scope = community explicitly
+ok 11 - 11 a direct service-role UPDATE of scope to network fails
+ok 12 - 12 the catch-all service_role_manage_chat policy is gone
+ok 13 - 13 no allow-all or ALL-command policy exists on chat_messages
+ok 14 - 14 no INSERT policy remains on chat_messages (writes only through the RPCs and the guarded system writers)
+ok 15 - 15 one narrow recipient UPDATE policy exists
+ok 16 - 16 the SELECT policies are the participant policy and the group-member policy
+ok 17 - 17 a recipient cannot rewrite the content of a message
+ok 18 - 18 a recipient cannot change the scope of a message
+ok 19 - 19 the recipient can mark a message read
+ok 20 - 20 the sender cannot mark the recipient's message read (row policy)
+ok 21 - 21 a participant still reads their message
+ok 22 - 22 a non-participant reads nothing
+ok 23 - 23 a group member still reads the group message
+ok 24 - 24 all three functions are SECURITY DEFINER with a pinned search_path
+ok 25 - 25 send_message, send_message_as and the shared core each exist once
+ok 26 - 26 send_message takes no sender argument (the sender is auth.uid())
+ok 27 - 27 send_message: EXECUTE for authenticated, not anon
+ok 28 - 28 send_message_as: EXECUTE for service_role only
+ok 29 - 29 the shared core is not executable by any client role
+ok 30 - 30 anon cannot call send_message
+ok 31 - 31 send_message without an authenticated user fails (28000)
+ok 32 - 32 an unknown scope fails
+ok 33 - 33 an empty body fails
+ok 34 - 34 a send to yourself fails
+ok 35 - 35 neither a peer nor a group fails
+ok 36 - 36 both a peer and a group fails
+ok 37 - 37 send_message_as with no sender fails (28000)
+ok 38 - 38 a community send between members of a shared tenant succeeds
+ok 39 - 39 the row carries sender = auth.uid(), scope = community and the shared tenant
+ok 40 - 40 a community send with no shared tenant fails (the platform tenant does not count)
+ok 41 - 41 a community send to an unknown member fails
+ok 42 - 42 the tenant is derived from the shared tenant (member 4 and 3 share only TB)
+ok 43 - 43 a repeated client_message_id returns the stored row, no second row
+ok 44 - 44 a group member can send to the group; the tenant is the group's
+ok 45 - 45 a non-member cannot send to the group
+ok 46 - 46 a network group send is not supported yet
+ok 47 - 47 a network send to a recipient who is not network_visible fails
+ok 48 - 48 a network send to a "nobody" recipient fails
+ok 49 - 49 a network send by a sender who is not network_visible fails
+ok 50 - 50 send_message_as applies the same network check
+ok 51 - 51 a "connections" recipient without an accepted connection fails
+ok 52 - 52 a pending connection is not enough
+ok 53 - 53 an accepted connection (either direction) allows it; scope = network, tenant = the sender's primary tenant
+ok 54 - 54 an "everyone" recipient in another tenant is reachable; the context tenant is the sender's
+ok 55 - 55 a block by the recipient stops a network send
+ok 56 - 56 a block by the sender stops a network send
+ok 57 - 57 an expired block no longer stops it
+ok 58 - 58 a service bot is never a network recipient (rule 45), even if its profile row were visible
+ok 59 - 59 send_message_as community also needs a shared tenant
+ok 60 - 60 send_message_as trusts p_sender: the row is the named member's
+ok 61 - 61 the 21st new network contact in 24 hours is rate limited
+ok 62 - 62 an existing contact is not a new contact and is not limited
+[exit 0]
+
+$ /projects/sandbox/wt-audit-m0/docs/validation/VTID-05576/pglite-harness/lane.sh --twice
+# loaded /projects/sandbox/wt-audit-m0/docs/validation/VTID-05576/pgtap/vtid_05576_fixture.sql
+# loaded /projects/sandbox/wt-audit-m0/supabase/migrations/20261102050000_vtid_05576_chat_messages_scope.sql
+# loaded /projects/sandbox/wt-audit-m0/supabase/migrations/20261102050100_vtid_05576_send_message_rpcs.sql
+# loaded /projects/sandbox/wt-audit-m0/supabase/migrations/20261102050200_vtid_05576_chat_messages_lockdown.sql
+# loaded /projects/sandbox/wt-audit-m0/supabase/migrations/20261102050000_vtid_05576_chat_messages_scope.sql
+# loaded /projects/sandbox/wt-audit-m0/supabase/migrations/20261102050100_vtid_05576_send_message_rpcs.sql
+# loaded /projects/sandbox/wt-audit-m0/supabase/migrations/20261102050200_vtid_05576_chat_messages_lockdown.sql
+1..62
+ok 1 - 1 chat_messages.scope text NOT NULL with the migration default dropped
+ok 2 - 2 a CHECK limits scope to community and network
+ok 3 - 3 a pre-existing DM was backfilled to community
+ok 4 - 4 a pre-existing group message was backfilled to community
+ok 5 - 5 the scope guard trigger exists on chat_messages
+ok 6 - 6 a bare authenticated client INSERT fails (no INSERT privilege)
+ok 7 - 7 an anon INSERT fails
+ok 8 - 8 a direct service-role INSERT of scope = network fails
+ok 9 - 9 a direct service-role INSERT without a scope fails (no default)
+ok 10 - 10 a system writer can still INSERT scope = community explicitly
+ok 11 - 11 a direct service-role UPDATE of scope to network fails
+ok 12 - 12 the catch-all service_role_manage_chat policy is gone
+ok 13 - 13 no allow-all or ALL-command policy exists on chat_messages
+ok 14 - 14 no INSERT policy remains on chat_messages (writes only through the RPCs and the guarded system writers)
+ok 15 - 15 one narrow recipient UPDATE policy exists
+ok 16 - 16 the SELECT policies are the participant policy and the group-member policy
+ok 17 - 17 a recipient cannot rewrite the content of a message
+ok 18 - 18 a recipient cannot change the scope of a message
+ok 19 - 19 the recipient can mark a message read
+ok 20 - 20 the sender cannot mark the recipient's message read (row policy)
+ok 21 - 21 a participant still reads their message
+ok 22 - 22 a non-participant reads nothing
+ok 23 - 23 a group member still reads the group message
+ok 24 - 24 all three functions are SECURITY DEFINER with a pinned search_path
+ok 25 - 25 send_message, send_message_as and the shared core each exist once
+ok 26 - 26 send_message takes no sender argument (the sender is auth.uid())
+ok 27 - 27 send_message: EXECUTE for authenticated, not anon
+ok 28 - 28 send_message_as: EXECUTE for service_role only
+ok 29 - 29 the shared core is not executable by any client role
+ok 30 - 30 anon cannot call send_message
+ok 31 - 31 send_message without an authenticated user fails (28000)
+ok 32 - 32 an unknown scope fails
+ok 33 - 33 an empty body fails
+ok 34 - 34 a send to yourself fails
+ok 35 - 35 neither a peer nor a group fails
+ok 36 - 36 both a peer and a group fails
+ok 37 - 37 send_message_as with no sender fails (28000)
+ok 38 - 38 a community send between members of a shared tenant succeeds
+ok 39 - 39 the row carries sender = auth.uid(), scope = community and the shared tenant
+ok 40 - 40 a community send with no shared tenant fails (the platform tenant does not count)
+ok 41 - 41 a community send to an unknown member fails
+ok 42 - 42 the tenant is derived from the shared tenant (member 4 and 3 share only TB)
+ok 43 - 43 a repeated client_message_id returns the stored row, no second row
+ok 44 - 44 a group member can send to the group; the tenant is the group's
+ok 45 - 45 a non-member cannot send to the group
+ok 46 - 46 a network group send is not supported yet
+ok 47 - 47 a network send to a recipient who is not network_visible fails
+ok 48 - 48 a network send to a "nobody" recipient fails
+ok 49 - 49 a network send by a sender who is not network_visible fails
+ok 50 - 50 send_message_as applies the same network check
+ok 51 - 51 a "connections" recipient without an accepted connection fails
+ok 52 - 52 a pending connection is not enough
+ok 53 - 53 an accepted connection (either direction) allows it; scope = network, tenant = the sender's primary tenant
+ok 54 - 54 an "everyone" recipient in another tenant is reachable; the context tenant is the sender's
+ok 55 - 55 a block by the recipient stops a network send
+ok 56 - 56 a block by the sender stops a network send
+ok 57 - 57 an expired block no longer stops it
+ok 58 - 58 a service bot is never a network recipient (rule 45), even if its profile row were visible
+ok 59 - 59 send_message_as community also needs a shared tenant
+ok 60 - 60 send_message_as trusts p_sender: the row is the named member's
+ok 61 - 61 the 21st new network contact in 24 hours is rate limited
+ok 62 - 62 an existing contact is not a new contact and is not limited
+[exit 0]
+
+$ /projects/sandbox/wt-audit-m0/docs/validation/VTID-05576/pglite-harness/checks.sh
+## fixture
+## live-before
+{"check_name":"scope_column_absent","ok":true}
+{"check_name":"rpcs_absent","ok":true}
+{"check_name":"catch_all_policy_already_gone","ok":true}
+{"check_name":"chat_messages_policies","policyname":"users_mark_received_read","cmd":"UPDATE"}
+{"check_name":"chat_messages_policies","policyname":"users_read_group_messages","cmd":"SELECT"}
+{"check_name":"chat_messages_policies","policyname":"users_read_own_messages","cmd":"SELECT"}
+{"check_name":"chat_messages_policies","policyname":"users_send_group_messages","cmd":"INSERT"}
+{"check_name":"chat_messages_policies","policyname":"users_send_messages","cmd":"INSERT"}
+{"check_name":"chat_messages_rows","n":2}
+{"check_name":"client_grants","auth_insert":true,"auth_update":true,"anon_insert":false}
+{"check_name":"network_inputs_present","ok":true}
+## apply 20261102050000_vtid_05576_chat_messages_scope.sql
+## apply 20261102050100_vtid_05576_send_message_rpcs.sql
+## apply 20261102050200_vtid_05576_chat_messages_lockdown.sql
+## post-apply-checks
+{"check_name":"scope_column","ok":true}
+{"check_name":"scope_check","ok":true}
+{"check_name":"every_row_has_a_scope","ok":true}
+{"check_name":"guard_trigger","ok":true}
+{"check_name":"functions_definer_pinned","ok":true}
+{"check_name":"execute_grants","ok":true}
+{"check_name":"catch_all_policy_gone","ok":true}
+{"check_name":"narrow_policies","ok":true}
+{"check_name":"client_write_revoked","ok":true}
+## rollback 050000 first (network message and RPCs present) is refused: VTID-05576 rollback refused: network messages exist; move or archive them first
+## rollback 050200
+## rollback 050100
+## rollback 050000 while a network message exists is refused: VTID-05576 rollback refused: network messages exist; move or archive them first
+## rollback 050000
+## rollback-check
+{"check_name":"scope_column_gone","ok":true}
+{"check_name":"functions_gone","ok":true}
+{"check_name":"trigger_gone","ok":true}
+{"check_name":"original_client_policies_back","ok":true}
+{"check_name":"catch_all_policy_still_gone","ok":true}
+{"check_name":"client_write_restored","ok":true}
+## re-apply 20261102050000_vtid_05576_chat_messages_scope.sql
+## re-apply 20261102050100_vtid_05576_send_message_rpcs.sql
+## re-apply 20261102050200_vtid_05576_chat_messages_lockdown.sql
+## post-apply-checks (after re-apply)
+{"check_name":"scope_column","ok":true}
+{"check_name":"scope_check","ok":true}
+{"check_name":"every_row_has_a_scope","ok":true}
+{"check_name":"guard_trigger","ok":true}
+{"check_name":"functions_definer_pinned","ok":true}
+{"check_name":"execute_grants","ok":true}
+{"check_name":"catch_all_policy_gone","ok":true}
+{"check_name":"narrow_policies","ok":true}
+{"check_name":"client_write_revoked","ok":true}
+[exit 0]
+
+$ node /projects/sandbox/.tools/jest/node_modules/jest/bin/jest.js --config /projects/sandbox/.tools/jest/jest.audit-m0.config.js --runInBand
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/wt-audit-m0/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+PASS services/gateway/test/mt-network-messaging-send-db.pgtap.test.ts
+  VTID-05576 migration files
+    ✓ exist, apply in order, and no other migration shares their version (3 ms)
+    ✓ each runs in one transaction with a lock timeout (1 ms)
+    ✓ adds no bare current_tenant_id() RLS policy
+  VTID-05576 task 1: scope column, expand then contract
+    ✓ adds scope text NOT NULL DEFAULT community with a CHECK (community, network) and backfills
+    ✓ drops the default only in the contract file
+    ✓ a guard trigger lets only the RPCs write a non-community scope (1 ms)
+  VTID-05576 task 2: send_message / send_message_as
+    ✓ all three functions are SECURITY DEFINER with a pinned search_path
+    ✓ send_message binds the sender to auth.uid(); send_message_as takes a trusted p_sender (1 ms)
+    ✓ EXECUTE: send_message to authenticated, send_message_as to service_role only, the core to nobody
+    ✓ the community branch needs a shared non-platform tenant and derives tenant_id from it (1 ms)
+    ✓ the network branch checks visibility, preference, connection, block, rate limit and rule-45 accounts
+    ✓ a network group send is refused until the groups lane (1 ms)
+  VTID-05576 task 3: client-write lockdown
+    ✓ asserts the catch-all policy stays gone and does not recreate it
+    ✓ replaces the client policies with narrow SELECT and read-marker UPDATE policies and drops both INSERT policies (4 ms)
+    ✓ revokes INSERT and UPDATE from the client roles and grants only read_at / delivered_at back
+  VTID-05576 tasks 4-5: rollback, read-only checks, pgTAP, queue
+    ✓ has the three rollbacks and the three read-only check files (1 ms)
+    ✓ the pgTAP plan covers the four lane cases and its plan count matches its assertions
+    ✓ is queued in MIGRATION-QUEUE.md in file order
+    ✓ keeps the drift baseline count equal to its list
+
+Test Suites: 1 passed, 1 total
+Tests:       19 passed, 19 total
+Snapshots:   0 total
+Time:        0.602 s
+Ran all test suites.
+[exit 0]
+
+$ node scripts/ci/bare-policy-lint.mjs
+bare-policy-lint: 0 bare current_tenant_id() policies on 0 tables (828 policies in 731 files; allowlisted 0)
+[exit 0]
+
+$ node --test scripts/ci/check-migration-drift.test.cjs
+TAP version 13
+# Subtest: Aurora-only table absent from Supabase passes and is not reported missing
+ok 1 - Aurora-only table absent from Supabase passes and is not reported missing
+  ---
+  duration_ms: 1.160829
+  type: 'test'
+  ...
+# Subtest: Aurora-only table present in the Supabase snapshot fails
+ok 2 - Aurora-only table present in the Supabase snapshot fails
+  ---
+  duration_ms: 0.124548
+  type: 'test'
+  ...
+# Subtest: a non-listed declared table missing from Supabase still fails as before
+ok 3 - a non-listed declared table missing from Supabase still fails as before
+  ---
+  duration_ms: 0.109248
+  type: 'test'
+  ...
+# Subtest: without an Aurora-only list the store table would be reported as new drift
+ok 4 - without an Aurora-only list the store table would be reported as new drift
+  ---
+  duration_ms: 0.962618
+  type: 'test'
+  ...
+# Subtest: aurora_only_tables entries need table, VTID and reason
+ok 5 - aurora_only_tables entries need table, VTID and reason
+  ---
+  duration_ms: 0.433142
+  type: 'test'
+  ...
+# Subtest: the repo baseline lists every table the health store migration declares, and nothing else of VTID-05158
+ok 6 - the repo baseline lists every table the health store migration declares, and nothing else of VTID-05158
+  ---
+  duration_ms: 57.788141
+  type: 'test'
+  ...
+# Subtest: every table declared behind the health store placement guard is aurora_only (incl. health_sources)
+ok 7 - every table declared behind the health store placement guard is aurora_only (incl. health_sources)
+  ---
+  duration_ms: 29.804224
+  type: 'test'
+  ...
+# Subtest: CLI: passes on a snapshot without the store tables, fails when one appears on Supabase
+ok 8 - CLI: passes on a snapshot without the store tables, fails when one appears on Supabase
+  ---
+  duration_ms: 230.54727
+  type: 'test'
+  ...
+1..8
+# tests 8
+# suites 0
+# pass 8
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 374.651982
+[exit 0]
+
+$ node /projects/sandbox/.tools/jest/node_modules/jest/bin/jest.js --config /projects/sandbox/.tools/jest/jest.audit-m0.config.js --runInBand
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/wt-audit-m0/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+PASS services/gateway/test/mt-identity-bare-policy-lint.test.ts
+  VTID-05465 N3 bare-policy lint
+    ✓ reads ZERO bare current_tenant_id() policies over supabase/migrations (454 ms)
+    ✓ the rollback restores exactly the recount set (32 policies on 15 tables) (451 ms)
+  VTID-05465 helpers and rewrite migrations
+    ✓ ships tenant_id_for_policies() and is_member(uuid) as STABLE SECURITY DEFINER and leaves current_tenant_id() alone (2 ms)
+    ✓ rewrites every recounted policy to tenant_id_for_policies() and nothing else (amendment 1) (101 ms)
+    ✓ the rollback recreates each policy exactly as the migration that created it, and the rewrite only swaps the helper (528 ms)
+  VTID-05465 live-body guard
+    ✓ reads the live current_tenant_id() body in DO $pre$ and raises before any policy is touched unless the three 20260218 markers match
+  VTID-05465 lint parser
+    ✓ counts only bare policies left after drops, re-definitions and DO blocks (35 ms)
+    ✓ applies a paired _rollback.sql only when asked (42 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       8 passed, 8 total
+Snapshots:   0 total
+Time:        2.011 s
+Ran all test suites.
+[exit 0]
