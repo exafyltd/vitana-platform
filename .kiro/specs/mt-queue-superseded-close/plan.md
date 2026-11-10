@@ -46,8 +46,9 @@ mt-track-s-r2, mt-guardrails-r2, mt-track-s-authz."*
    Anything else keeps the existing error and names the lane(s) that block, e.g. `a plan chain may end "done" only when
    every lane is done, or parked with superseded_by naming a done lane of the plan (blocking: <lane> (<state>) …)`.
    The text keeps the substring `every lane` for existing callers. When only `laneStates` is passed (old callers, old
-   tests) the behaviour is the old one: all `done`. `validateRange` builds `lanes` from the same lane files it reads for
-   `laneStates` and passes both.
+   tests) the behaviour is the old one: all `done`. `validateRange` (`:820-823`) builds `lanes` in **one** pass over the
+   plan's lane files (one `showFile` + `parseFrontMatter` per file, mapped to `{id, state, superseded_by}`) and derives
+   `laneStates` from that same array, so it adds no second read of any lane file (round 1, R1-F1).
 3. **What does not change.** A bare parked lane (no `superseded_by`) still blocks. `superseded_by` naming a lane that is
    not `done` (`ready`, `executing`, `in-review`, `verified`, `parked`), a lane outside the plan, or the lane itself still
    blocks. A chain of supersessions does not close either: A superseded_by B where B is parked does not pass; only a
