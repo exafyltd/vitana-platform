@@ -5,7 +5,7 @@ author_seat: exafyltd
 executor: claude
 next_actor: kiro
 state: approved
-updated: 2026-10-31T14:29Z
+updated: 2026-11-01T12:15Z
 sparring_record: .kiro/specs/ci-dockerhub-mirror/sparring/verdict.md
 vtids: [VTID-05415]
 ---
@@ -28,3 +28,9 @@ Next: PLAN-SPAR spars this PR.
 
 ### 2026-10-31T14:29Z · ci-plan-spar · drafted → approved
 Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.
+### 2026-11-01T12:15Z · kiro-ide-202610272306-27b0 · merge record (lane v1-service-images)
+exafyltd/vitana-v1#1522 squash-merged under §7b.
+merge: 988a3c5070a9459453a67793f15784ad8d361f9e (2026-11-01T00:00:13Z, no --admin)
+authority: owner instruction (named plan) + reviewer accept + §7b. Owner, 2026-10-31, session kiro-ide-202610272306-27b0, after the parent recommended plan ci-dockerhub-mirror by name: "come on, you execute your recommendations. move ahead". Protected gate file `.github/workflows/PR-GATE.yml` (§3a).
+Review: accept by agent:vitana-lane-reviewer (claude-sonnet-5.5) on 77c09476914834872dc4c185ae112ee3f6bdf220 (lane log). Before merge the branch was updated from `main`; head 8011266ce70b1577d25acdb9356fdacd9587abde adds only main's commits (`lane-land.md` 3d). Required checks green on 8011266 (pr-gate, Vitest (jsdom), Edge data client, Realtime helper). NATIVE-CI "Parity ledger" / "core/tokens generators + native script tests" red, not required, red on `main` too (77ec053163).
+Next: the lane's seat (exafyltd) moves lane v1-service-images ready → done with this merge sha (Lane scope refuses a lane edit from another seat), then the plan approved → done. Nothing deploys, so no Gate 2.
