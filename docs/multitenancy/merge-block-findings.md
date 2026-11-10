@@ -5,7 +5,7 @@ Checked: 2026-11-10, via `gh api` (read-only). No merge was attempted and nothin
 ## What was read
 
 - `main` head: `6dc6e1ba0c` (merge of PR #4714, committed 2026-11-08 18:27:41Z). Last merge into main.
-- Open PRs: 46 open at check time. The list response does not fill `mergeable_state`, so each PR needs its own fetch.
+- Open PRs: the first page (`per_page=50`) returned 50 open PRs, and I did not paginate. The total is at least 50, not the 15 the handover lists. The list response does not fill `mergeable_state`, so each PR needs its own fetch.
 - PR #4935 (seat move, plan `mt-guardrails-r2`), head `ef32c06420`:
   - `mergeable: true`, `mergeable_state: blocked`, `rebaseable: true`, `draft: false`.
   - Reviews: none. `review_decision` is empty.
