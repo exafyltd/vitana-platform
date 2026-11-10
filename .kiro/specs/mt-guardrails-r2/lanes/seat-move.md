@@ -13,7 +13,8 @@ paths:
   - .kiro/specs/mt-guardrails-r2/lanes/maxina-golden-suite.md
   - .kiro/specs/mt-guardrails-r2/lanes/gateway-scope-lint-contract.md
   - .kiro/specs/mt-identity-r2/lanes/tenant-db-and-slug-cleanup.md
-updated: 2026-11-10T12:00Z
+updated: 2026-11-10T10:36Z
+vtid: VTID-05678
 ---
 # Lane `seat-move`: move three M0 lanes from seat jtadic to seat hotmail (owner directive decision 1)
 Tasks in `tasks.md` (group `<!-- lane: seat-move -->`). VTID from PLAN-SPAR (a late lane of the converged plan); never by hand.
@@ -29,3 +30,6 @@ target stay unchanged. A builder session of seat `hotmail` that is not the plan 
 ## Log
 ### 2026-11-10T12:00Z · kiro-hotmail-202611061752-cc1f · created → ready
 Lane added through `_plan` by the plan driver (plan PR `plan(mt-guardrails-r2): …`, Amendment 4).
+
+### 2026-11-10T10:36Z · ci-plan-spar · ready (VTID allocated)
+VTID-05678 allocated after policy approval (converged-auto-v1).
