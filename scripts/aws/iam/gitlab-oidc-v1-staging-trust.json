@@ -1,0 +1,19 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "GitLabGlV1Staging",
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws:iam::472838866351:oidc-provider/gitlab.vitanaland.com"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "gitlab.vitanaland.com:aud": "aws:v1:staging",
+          "gitlab.vitanaland.com:sub": "project_path:vitana/vitana-v1:ref_type:branch:ref:main"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,57 @@
+# Red on base: the four new test files (final versions) run against origin/main 0e5a74a72a8fe26785df3133f4133b3e99b97efd
+# (main after eng-gitlab-m2 merge-bot #4697 = 72dbefbaae and settings #4711 = 0e5a74a72a; it also holds #4718, #4689, #4716), without this lane's code.
+# Run in /projects/sandbox/.scratch/tools/6eb1/base (git archive of the base's scripts/ plus the four test files; outside the repo), 2026-11-05T22:47:11Z.
+# command: node --test scripts/eng/review-source.test.mjs scripts/eng/gitlab-gates.test.mjs scripts/eng/assist-trigger.test.mjs scripts/eng/gitlab-land-queue.test.mjs
+# result: tests 32, pass 0, fail 32. The three new modules do not exist on base, so each of their files fails as a whole (ERR_MODULE_NOT_FOUND;
+# per-test counts against no-behaviour stubs: red-on-stub.txt, 30 of 30 fail); all 29 tests of gitlab-land-queue.test.mjs fail (no queue mode on base).
+# The six tests added on the rebuilt branch are also red on the lane's code before them: red-adapt.txt (four), red-fix-same-tick.txt (one), red-effective.txt (one).
+
+# throw new ERR_MODULE_NOT_FOUND(
+# Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/projects/sandbox/.scratch/tools/6eb1/base/scripts/eng/assist-trigger.mjs' imported from /projects/sandbox/.scratch/tools/6eb1/base/scripts/eng/assist-trigger.test.mjs
+# code: 'ERR_MODULE_NOT_FOUND',
+not ok 1 - scripts/eng/assist-trigger.test.mjs
+# throw new ERR_MODULE_NOT_FOUND(
+# Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/projects/sandbox/.scratch/tools/6eb1/base/scripts/eng/gitlab-gates.mjs' imported from /projects/sandbox/.scratch/tools/6eb1/base/scripts/eng/gitlab-gates.test.mjs
+# code: 'ERR_MODULE_NOT_FOUND',
+not ok 2 - scripts/eng/gitlab-gates.test.mjs
+not ok 3 - queueOrder: the oldest accept first; while main is red only revert and fix-main go, first, and the rest are paused
+not ok 4 - fixFirst names the revert and fix-main lanes; mainRed reads the newest finished landing pipeline of main
+not ok 5 - hotKeys: the hot files of collaboration.md §8a item 4, i18n shards by namespace
+not ok 6 - labelChange sets exactly one queue label, once per state, and leaves other labels alone
+not ok 7 - queueSquashMessage starts with the VTID and ends with the six trailers git reads as trailers; a plan merge request has two
+not ok 8 - trainSelect: up to the position count, in queue order; one merge request per hot key; overlapping files wait; nothing behind a governance file
+not ok 9 - planSparVerdict and planGate: approved, a sparring_record and a successful gitlab/plan-spar or PLAN-SPAR status from a trusted account
+not ok 10 - a train position needs the checks and gate, not the governance jobs that judge one merge request
+not ok 11 - loadProjects reads the queue setting; normalizeQueue allows 1 to 12 positions
+not ok 12 - queue mode is on for the two projects of the cut by name (the settings schema has no queue key), off for any other project; an explicit setting wins
+not ok 13 - the train: positions train/1..k in queue order, each the merge of main and the first k merge requests; queue labels set once
+not ok 14 - lands merge request k only when its position is green and every earlier position has landed; main merged in with ci.skip; the tree on main is the tested tree
+not ok 15 - a failed position drops its merge request (one comment, queue-blocked) and the positions behind it are rebuilt without it
+not ok 16 - a conflicting position (a file where another adds a directory) is dropped with one comment; the next merge request takes the position
+not ok 17 - a merge request whose merge of main conflicts is skipped with one comment, and the younger ones go on in the same tick (M2's conflict rule, in queue mode)
+not ok 18 - a position whose merge GitLab keeps refusing holds the train for at most 60 minutes from its pipeline's creation; then it is dropped and the positions behind it are rebuilt without it
+not ok 19 - a merge request dropped in the tick in which the bot merged main into it stays out for the head the bot made, with one comment
+not ok 20 - every git command of a queue tick starts with -c credential.helper=, as M2's bot does, so no configured helper can store the token
+not ok 21 - the update's tree must equal the tested tree: a mismatch lands nothing and rebuilds the train; so does main moved by someone else
+not ok 22 - a red main pauses the rest (queue-paused); a fix-main lane lands first; landing resumes when main is green
+not ok 23 - a hot-file merge request waits until the previous hot-file landing has its STAGING-VERIFY result
+not ok 24 - a plan( merge request lands only with approved, a sparring_record and a successful plan-spar status on its head
+not ok 25 - a plan( merge request that changes more than its spec folder and the program entry is refused once
+not ok 26 - a protected gate file is refused with one comment and never enters the train; an accept on an old head is refused
+not ok 27 - assist: one assist/<iid>-<rule> pipeline per head and rule; the merge request waits for it; never after an accept
+not ok 28 - cross-repo: vitana-v1 lanes land on their platform review entries; a reviewer session on a merge-request commit is refused; an unreachable platform lands nothing
+not ok 29 - --dry-run writes nothing: no train ref, no label, no comment, no merge, no state file
+not ok 30 - run and status read the projects through loadEffectiveProjects of gitlab-settings.mjs (the cut configuration) when it exports it, else the settings file as M2 does; a loader error lands nothing
+not ok 31 - status in queue mode prints each merge request's queue state and writes nothing
+# throw new ERR_MODULE_NOT_FOUND(
+# Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/projects/sandbox/.scratch/tools/6eb1/base/scripts/eng/review-source.mjs' imported from /projects/sandbox/.scratch/tools/6eb1/base/scripts/eng/review-source.test.mjs
+# code: 'ERR_MODULE_NOT_FOUND',
+not ok 4 - scripts/eng/review-source.test.mjs
+# tests 32
+# suites 0
+# pass 0
+# fail 32
+# cancelled 0
+# skipped 0
+# todo 0
+exit 1

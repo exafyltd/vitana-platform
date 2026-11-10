@@ -1,0 +1,184 @@
+TAP version 13
+# Subtest: renders both project files from the service list, byte for byte
+ok 1 - renders both project files from the service list, byte for byte
+  ---
+  duration_ms: 14.366649
+  type: 'test'
+  ...
+# Subtest: --check exits 0 when the files are current and 3 on drift, and writes nothing
+ok 2 - --check exits 0 when the files are current and 3 on drift, and writes nothing
+  ---
+  duration_ms: 18.145743
+  type: 'test'
+  ...
+# Subtest: GitLab glob semantics: dir/**/* is recursive, a trailing ** is one level, braces and dotfiles match
+ok 3 - GitLab glob semantics: dir/**/* is recursive, a trailing ** is one level, braces and dotfiles match
+  ---
+  duration_ms: 3.10512
+  type: 'test'
+  ...
+# Subtest: each T1 check job has rules: changes: from its service paths plus the shared and other paths
+ok 4 - each T1 check job has rules: changes: from its service paths plus the shared and other paths
+  ---
+  duration_ms: 22.349224
+  type: 'test'
+  ...
+# Subtest: a shared path, or an area no single service owns, selects every check
+ok 5 - a shared path, or an area no single service owns, selects every check
+  ---
+  duration_ms: 9.968095
+  type: 'test'
+  ...
+# Subtest: a change to one service selects only that service checks; a documentation-only change selects none
+ok 6 - a change to one service selects only that service checks; a documentation-only change selects none
+  ---
+  duration_ms: 19.626877
+  type: 'test'
+  ...
+# Subtest: an unknown path makes gate fail and name it, so the merge request cannot land with fewer checks
+ok 7 - an unknown path makes gate fail and name it, so the merge request cannot land with fewer checks
+  ---
+  duration_ms: 5.420819
+  type: 'test'
+  ...
+# Subtest: gate needs every check with optional: true and runs only when they passed
+ok 8 - gate needs every check with optional: true and runs only when they passed
+  ---
+  duration_ms: 11.409809
+  type: 'test'
+  ...
+# Subtest: governance jobs carry no path rule, come first, and are the only jobs besides gate that always run
+ok 9 - governance jobs carry no path rule, come first, and are the only jobs besides gate that always run
+  ---
+  duration_ms: 9.29085
+  type: 'test'
+  ...
+# Subtest: no T1 job declares id_tokens or a secret, no file uses include: local, and T1 jobs are untrusted and interruptible
+ok 10 - no T1 job declares id_tokens or a secret, no file uses include: local, and T1 jobs are untrusted and interruptible
+  ---
+  duration_ms: 15.33877
+  type: 'test'
+  ...
+# Subtest: every test job is sharded so its fixture duration is under 4 minutes
+ok 11 - every test job is sharded so its fixture duration is under 4 minutes
+  ---
+  duration_ms: 13.98188
+  type: 'test'
+  ...
+# Subtest: dependencies come from the cache keyed by the lockfile
+ok 12 - dependencies come from the cache keyed by the lockfile
+  ---
+  duration_ms: 8.245087
+  type: 'test'
+  ...
+# Subtest: main pipelines run every check once, are not interruptible, and use the main and deploy classes
+ok 13 - main pipelines run every check once, are not interruptible, and use the main and deploy classes
+  ---
+  duration_ms: 50.580477
+  type: 'test'
+  ...
+# Subtest: DELIVERY_MODE defaults to shadow; in shadow mode record, vtid-close, notify-platform and assists are absent and no env_overrides pass
+ok 14 - DELIVERY_MODE defaults to shadow; in shadow mode record, vtid-close, notify-platform and assists are absent and no env_overrides pass
+  ---
+  duration_ms: 23.505649
+  type: 'test'
+  ...
+# Subtest: the generated files include the deploy and verify templates by the job names of plan §9
+ok 15 - the generated files include the deploy and verify templates by the job names of plan §9
+  ---
+  duration_ms: 9.28418
+  type: 'test'
+  ...
+# Subtest: sibling sweep: every workflow has its plan §2.2 fate, and every moved workflow has its jobs in a generated file
+ok 16 - sibling sweep: every workflow has its plan §2.2 fate, and every moved workflow has its jobs in a generated file
+  ---
+  duration_ms: 12.469311
+  type: 'test'
+  ...
+# Subtest: every generated job: its image provides each tool its script runs, or an earlier line installs it; no GitHub Actions variable
+ok 17 - every generated job: its image provides each tool its script runs, or an earlier line installs it; no GitHub Actions variable
+  ---
+  duration_ms: 21.406517
+  type: 'test'
+  ...
+# Subtest: validator-check reads the merge request title and description only in merge-request pipelines and logs why it skips them elsewhere
+ok 18 - validator-check reads the merge request title and description only in merge-request pipelines and logs why it skips them elsewhere
+  ---
+  duration_ms: 9.875754
+  type: 'test'
+  ...
+# Subtest: android-module: Node from the image, JDK 17 and an Android SDK home with accepted licences before gradlew, cached
+ok 19 - android-module: Node from the image, JDK 17 and an Android SDK home with accepted licences before gradlew, cached
+  ---
+  duration_ms: 7.174655
+  type: 'test'
+  ...
+# Subtest: pr-gate-report passes the merge request title to every gate.mjs check and installs what red-green runs
+ok 20 - pr-gate-report passes the merge request title to every gate.mjs check and installs what red-green runs
+  ---
+  duration_ms: 9.944217
+  type: 'test'
+  ...
+# Subtest: dev-autopilot-impact scans against the merge request target (main for trains, the pushed range on main), never HEAD~1
+ok 21 - dev-autopilot-impact scans against the merge request target (main for trains, the pushed range on main), never HEAD~1
+  ---
+  duration_ms: 8.737045
+  type: 'test'
+  ...
+# Subtest: the multi-gate ports: every run step of the GitHub workflow has a GitLab job (or is a listed open item); no partial port is left
+ok 22 - the multi-gate ports: every run step of the GitHub workflow has a GitLab job (or is a listed open item); no partial port is left
+  ---
+  duration_ms: 9.095747
+  type: 'test'
+  ...
+# Subtest: vitana-v1: PR-GATE preview-e2e on a local vite preview without a session; the gate and Kiro steering self-tests; E2E-PREVIEW-ORB by hand
+ok 23 - vitana-v1: PR-GATE preview-e2e on a local vite preview without a session; the gate and Kiro steering self-tests; E2E-PREVIEW-ORB by hand
+  ---
+  duration_ms: 7.021846
+  type: 'test'
+  ...
+# Subtest: T7 assist commits the i18n stamps with the translations (review: stamps dropped)
+ok 24 - T7 assist commits the i18n stamps with the translations (review: stamps dropped)
+  ---
+  duration_ms: 0.303412
+  type: 'test'
+  ...
+# Subtest: T7 assist never uses a Google provider (review: AI-27)
+ok 25 - T7 assist never uses a Google provider (review: AI-27)
+  ---
+  duration_ms: 0.245093
+  type: 'test'
+  ...
+# Subtest: the i18n fan-out translates from the English pivot, not from de (review: wrong source)
+ok 26 - the i18n fan-out translates from the English pivot, not from de (review: wrong source)
+  ---
+  duration_ms: 0.987971
+  type: 'test'
+  ...
+# Subtest: dev-autopilot-impact runs for migrations and scripts, not only gateway (review: blockers never enforced)
+ok 27 - dev-autopilot-impact runs for migrations and scripts, not only gateway (review: blockers never enforced)
+  ---
+  duration_ms: 0.907072
+  type: 'test'
+  ...
+# Subtest: build-image and preview-build:main do not wait for the full suite (review: plan §3.6 step 1)
+ok 28 - build-image and preview-build:main do not wait for the full suite (review: plan §3.6 step 1)
+  ---
+  duration_ms: 2.689937
+  type: 'test'
+  ...
+# Subtest: build-image jobs run on the build class vitana-eng-build, in every repository and context
+ok 29 - build-image jobs run on the build class vitana-eng-build, in every repository and context
+  ---
+  duration_ms: 29.715106
+  type: 'test'
+  ...
+1..29
+# tests 29
+# suites 0
+# pass 29
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 430.341338

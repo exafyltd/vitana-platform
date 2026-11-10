@@ -1,0 +1,93 @@
+# stack: required 24, present 11, skipped (unverified) 13
+1..58
+# NON-PRODUCTION tenant resolution: claims carry tenant_id, replayed current_tenant_id() body; skipped migrations redefine tenant resolution and policies on present tables (docs/multitenancy/LOCAL-STACK.md)
+# mode: strict (unverified tables FAIL)
+ok 1 - suite subjects = required-tables.txt (18 tenant tables + health tables from health-tables.json + user_tenants)
+not ok 2 - isolation of access_audit_log can be checked (table is replayed)
+#   unverified: table access_audit_log is not replayable on this stack: no migration in either repository creates this table
+#   needed by: isolation-suite, generated-inventories
+not ok 3 - isolation of community_listings can be checked (table is replayed)
+#   unverified: table community_listings is not replayable on this stack: created by 20260727090000_bootstrap_community_marketplace.sql, which fails on a fresh replay: column "tenant_id" referenced in foreign key constraint does not exist
+#   needed by: isolation-suite, generated-inventories
+not ok 4 - isolation of consents can be checked (table is replayed)
+#   unverified: table consents is not replayable on this stack: no migration in either repository creates this table
+#   needed by: isolation-suite, generated-inventories
+not ok 5 - isolation of data_sharing_consents can be checked (table is replayed)
+#   unverified: table data_sharing_consents is not replayable on this stack: created by 20260914090000_vtid_03885_partner_health_test_integration.sql, which needs public.product_orders from the pgvector-dependent marketplace foundation
+#   needed by: isolation-suite, generated-inventories
+not ok 6 - isolation of event_attendance can be checked (table is replayed)
+#   unverified: table event_attendance is not replayable on this stack: created by 20251231000001_vtid_01090_live_rooms_events_graph.sql, which fails on a fresh replay: column "source_type" does not exist
+#   needed by: isolation-suite, generated-inventories
+not ok 7 - isolation of live_highlights can be checked (table is replayed)
+#   unverified: table live_highlights is not replayable on this stack: created by 20251231000001_vtid_01090_live_rooms_events_graph.sql, which fails on a fresh replay: column "source_type" does not exist
+#   needed by: isolation-suite, generated-inventories
+not ok 8 - isolation of live_room_attendance can be checked (table is replayed)
+#   unverified: table live_room_attendance is not replayable on this stack: created by 20251231000001_vtid_01090_live_rooms_events_graph.sql, which fails on a fresh replay: column "source_type" does not exist
+#   needed by: isolation-suite, generated-inventories
+not ok 9 - isolation of live_rooms can be checked (table is replayed)
+#   unverified: table live_rooms is not replayable on this stack: created by 20251231000001_vtid_01090_live_rooms_events_graph.sql, which fails on a fresh replay: column "source_type" does not exist
+#   needed by: isolation-suite, generated-inventories
+not ok 10 - isolation of partner_health_test_orders can be checked (table is replayed)
+#   unverified: table partner_health_test_orders is not replayable on this stack: created by 20260914090000_vtid_03885_partner_health_test_integration.sql, which needs public.product_orders from the pgvector-dependent marketplace foundation
+#   needed by: isolation-suite, generated-inventories
+not ok 11 - isolation of retrieval_traces can be checked (table is replayed)
+#   unverified: table retrieval_traces is not replayable on this stack: no migration in either repository creates this table
+#   needed by: isolation-suite, generated-inventories
+not ok 12 - isolation of role_sessions can be checked (table is replayed)
+#   unverified: table role_sessions is not replayable on this stack: no migration in either repository creates this table
+#   needed by: isolation-suite, generated-inventories
+not ok 13 - isolation of tenant_catalog_overrides can be checked (table is replayed)
+#   unverified: table tenant_catalog_overrides is not replayable on this stack: created by 20260416120000_vtid_02000_marketplace_foundation.sql, which needs the vector extension
+#   needed by: isolation-suite, generated-inventories
+not ok 14 - isolation of user_roles can be checked (table is replayed)
+#   unverified: table user_roles is not replayable on this stack: no migration in either repository creates this table
+#   needed by: isolation-suite, generated-inventories
+ok 15 - biomarker_results: T_A / CANARY_A rows exist (a zero below is not an empty table)
+ok 16 - community_groups: T_A / CANARY_A rows exist (a zero below is not an empty table)
+ok 17 - community_meetups: T_A / CANARY_A rows exist (a zero below is not an empty table)
+ok 18 - d42_domain_weights: T_A / CANARY_A rows exist (a zero below is not an empty table)
+ok 19 - health_features_daily: T_A / CANARY_A rows exist (a zero below is not an empty table)
+ok 20 - products_catalog: T_A / CANARY_A rows exist (a zero below is not an empty table)
+ok 21 - relationship_edges: T_A / CANARY_A rows exist (a zero below is not an empty table)
+ok 22 - services_catalog: T_A / CANARY_A rows exist (a zero below is not an empty table)
+ok 23 - user_tenants: T_A / CANARY_A rows exist (a zero below is not an empty table)
+ok 24 - wearable_samples: T_A / CANARY_A rows exist (a zero below is not an empty table)
+ok 25 - biomarker_results (health): b_member sees 0 T_A / CANARY_A rows
+ok 26 - community_groups: b_member sees 0 T_A / CANARY_A rows
+ok 27 - community_meetups: b_member sees 0 T_A / CANARY_A rows
+ok 28 - d42_domain_weights: b_member sees 0 T_A / CANARY_A rows
+ok 29 - health_features_daily (health): b_member sees 0 T_A / CANARY_A rows
+ok 30 - products_catalog: b_member sees 0 T_A / CANARY_A rows
+ok 31 - relationship_edges: b_member sees 0 T_A / CANARY_A rows
+ok 32 - services_catalog: b_member sees 0 T_A / CANARY_A rows
+ok 33 - tenants: b_member sees 0 T_A / CANARY_A rows of content (tenant rows are listable by policy USING (true))
+ok 34 - user_tenants: b_member sees 0 T_A / CANARY_A rows
+ok 35 - wearable_samples (health): b_member sees 0 T_A / CANARY_A rows
+ok 36 - biomarker_results: b_member insert with a T_A tenant_id is rejected by RLS
+ok 37 - community_groups: b_member insert with a T_A tenant_id is rejected by RLS
+ok 38 - community_meetups: b_member insert with a T_A tenant_id is rejected by RLS
+ok 39 - d42_domain_weights: b_member insert with a T_A tenant_id is rejected by RLS
+ok 40 - health_features_daily: b_member insert with a T_A tenant_id is rejected by RLS
+ok 41 - products_catalog: b_member insert with a T_A tenant_id is rejected by RLS
+ok 42 - relationship_edges: b_member insert with a T_A tenant_id is rejected by RLS
+ok 43 - services_catalog: b_member insert with a T_A tenant_id is rejected by RLS
+ok 44 - tenants: b_member insert with a T_A tenant_id is rejected by RLS
+ok 45 - user_tenants: b_member insert with a T_A tenant_id is rejected by RLS
+ok 46 - wearable_samples: b_member insert with a T_A tenant_id is rejected by RLS
+ok 47 - biomarker_results: control, the same insert with a T_B tenant_id is accepted
+ok 48 - community_groups: control, the same insert with a T_B tenant_id is accepted
+ok 49 - community_meetups: control, the same insert with a T_B tenant_id is accepted
+ok 50 - health_features_daily: control, the same insert with a T_B tenant_id is accepted
+ok 51 - products_catalog: control, the same insert with a T_B tenant_id is accepted
+ok 52 - relationship_edges: control, the same insert with a T_B tenant_id is accepted
+ok 53 - services_catalog: control, the same insert with a T_B tenant_id is accepted
+ok 54 - wearable_samples: control, the same insert with a T_B tenant_id is accepted
+ok 55 - ab_dual writes a health row in the T_A context
+ok 56 - ab_dual reads the series it wrote, in the T_A context
+ok 57 - ab_dual sees no other member's health rows (health data is member-private)
+not ok 58 - ab_dual reads the same single health series from the T_B context
+#   unverified: the replayed policy scopes health rows by tenant_id
+# Looks like you failed 14 test(s) of 58
+FAIL local-stack mt-isolation.tap.sql (58 run, 14 failed, planned 58)
+FAIL mt-isolation (run-tap exit 1)
+exit 1

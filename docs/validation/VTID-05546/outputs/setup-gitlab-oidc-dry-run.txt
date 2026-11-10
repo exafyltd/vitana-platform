@@ -1,0 +1,126 @@
+# Dry-run transcript of scripts/aws/setup-gitlab-oidc.sh against a STUB aws on PATH (never AWS), 2026-11-05T17:10:22Z.
+# The stub answers every read with sample values (no provider, no role, no secret yet; sample task roles and target groups).
+# On the owner's run (A1, CloudShell) the [READ] calls return the live values; the [DRY-RUN] lines are exactly what --apply runs.
+$ AWS_REGION=eu-central-1 scripts/aws/setup-gitlab-oidc.sh --preview-distribution-id E1SAMPLEDIST23
+[READ] aws sts get-caller-identity --query Account --output text
+account 472838866351, region eu-central-1, mode DRY-RUN
+
+== 1. OIDC provider arn:aws:iam::472838866351:oidc-provider/gitlab.vitanaland.com
+[READ] aws iam get-open-id-connect-provider --open-id-connect-provider-arn arn:aws:iam::472838866351:oidc-provider/gitlab.vitanaland.com
+  provider missing: create it with audiences ["aws:v1:staging","aws:platform:staging","aws:v1:preview","aws:verify","aws:record","aws:assist"]
+[DRY-RUN] aws iam create-open-id-connect-provider --cli-input-json file:///projects/sandbox/.rv/deploy/scripts/aws/iam/gitlab-oidc-provider.json
+[READ] aws ecs describe-services --cluster Vitana-ECS-Cluster --services vitana-community-app-staging --query services\[0\].taskDefinition --output text
+[READ] aws ecs describe-task-definition --task-definition arn:aws:ecs:eu-central-1:472838866351:task-definition/sample-vitana-community-app-staging:1 --query taskDefinition.\[taskRoleArn\,executionRoleArn\] --output json
+
+== role gl-v1-staging (trust gitlab-oidc-v1-staging-trust.json)
+  trust: {"StringEquals":{"gitlab.vitanaland.com:aud":"aws:v1:staging","gitlab.vitanaland.com:sub":"project_path:vitana/vitana-v1:ref_type:branch:ref:main"}}
+[READ] aws iam get-role --role-name gl-v1-staging
+[DRY-RUN] aws iam create-role --role-name gl-v1-staging --assume-role-policy-document file:///projects/sandbox/.rv/deploy/scripts/aws/iam/gitlab-oidc-v1-staging-trust.json --max-session-duration 3600 --description agentic-delivery\ GitLab\ delivery\ role\ \(plan\ section\ 7\)
+  policy gl-v1-staging: {"Version":"2012-10-17","Statement":[{"Sid":"EcrLogin","Effect":"Allow","Action":["ecr:GetAuthorizationToken"],"Resource":"*"},{"Sid":"EcrPushOwnRepositories","Effect":"Allow","Action":["ecr:BatchCheckLayerAvailability","ecr:GetDownloadUrlForLayer","ecr:BatchGetImage","ecr:PutImage","ecr:InitiateLayerUpload","ecr:UploadLayerPart","ecr:CompleteLayerUpload","ecr:DescribeImages"],"Resource":["arn:aws:ecr:eu-central-1:472838866351:repository/vitana/community-app"]},{"Sid":"EcsReadTaskDefinitions","Effect":"Allow","Action":["ecs:DescribeTaskDefinition"],"Resource":"*"},{"Sid":"EcsRegisterTaskDefinitionNoResourceLevel","Effect":"Allow","Action":["ecs:RegisterTaskDefinition"],"Resource":"*"},{"Sid":"EcsDeployOwnStagingServices","Effect":"Allow","Action":["ecs:DescribeServices","ecs:UpdateService"],"Resource":["arn:aws:ecs:eu-central-1:472838866351:service/Vitana-ECS-Cluster/vitana-community-app-staging"]},{"Sid":"PassTaskRolesToEcsOnly","Effect":"Allow","Action":["iam:PassRole"],"Resource":["arn:aws:iam::472838866351:role/sample-ecs-execution-role","arn:aws:iam::472838866351:role/sample-staging-task-role"],"Condition":{"StringEquals":{"iam:PassedToService":"ecs-tasks.amazonaws.com"}}}]}
+[DRY-RUN] aws iam put-role-policy --role-name gl-v1-staging --policy-name gl-v1-staging --policy-document file:///tmp/tmp.XXXXXX/gl-v1-staging-policy.json
+[READ] aws ecs describe-services --cluster Vitana-ECS-Cluster --services vitana-gateway --query services\[0\].taskDefinition --output text
+[READ] aws ecs describe-task-definition --task-definition arn:aws:ecs:eu-central-1:472838866351:task-definition/sample-vitana-gateway:1 --query taskDefinition.\[taskRoleArn\,executionRoleArn\] --output json
+[READ] aws ecs describe-services --cluster Vitana-ECS-Cluster --services vitana-erp-bridge --query services\[0\].taskDefinition --output text
+[READ] aws ecs describe-task-definition --task-definition arn:aws:ecs:eu-central-1:472838866351:task-definition/sample-vitana-erp-bridge:1 --query taskDefinition.\[taskRoleArn\,executionRoleArn\] --output json
+[READ] aws ecs describe-services --cluster Vitana-ECS-Cluster --services vitana-kiro-runner --query services\[0\].taskDefinition --output text
+[READ] aws ecs describe-task-definition --task-definition arn:aws:ecs:eu-central-1:472838866351:task-definition/sample-vitana-kiro-runner:1 --query taskDefinition.\[taskRoleArn\,executionRoleArn\] --output json
+[READ] aws ecs describe-services --cluster Vitana-ECS-Cluster --services vitana-postgrest-aurora-proxy --query services\[0\].taskDefinition --output text
+[READ] aws ecs describe-task-definition --task-definition arn:aws:ecs:eu-central-1:472838866351:task-definition/sample-vitana-postgrest-aurora-proxy:1 --query taskDefinition.\[taskRoleArn\,executionRoleArn\] --output json
+
+== role gl-platform-staging (trust gitlab-oidc-platform-staging-trust.json)
+  trust: {"StringEquals":{"gitlab.vitanaland.com:aud":"aws:platform:staging","gitlab.vitanaland.com:sub":"project_path:vitana/vitana-platform:ref_type:branch:ref:main"}}
+[READ] aws iam get-role --role-name gl-platform-staging
+[DRY-RUN] aws iam create-role --role-name gl-platform-staging --assume-role-policy-document file:///projects/sandbox/.rv/deploy/scripts/aws/iam/gitlab-oidc-platform-staging-trust.json --max-session-duration 3600 --description agentic-delivery\ GitLab\ delivery\ role\ \(plan\ section\ 7\)
+  policy gl-platform-staging: {"Version":"2012-10-17","Statement":[{"Sid":"EcrLogin","Effect":"Allow","Action":["ecr:GetAuthorizationToken"],"Resource":"*"},{"Sid":"EcrPushOwnRepositories","Effect":"Allow","Action":["ecr:BatchCheckLayerAvailability","ecr:GetDownloadUrlForLayer","ecr:BatchGetImage","ecr:PutImage","ecr:InitiateLayerUpload","ecr:UploadLayerPart","ecr:CompleteLayerUpload","ecr:DescribeImages"],"Resource":["arn:aws:ecr:eu-central-1:472838866351:repository/vitana/gateway","arn:aws:ecr:eu-central-1:472838866351:repository/vitana/erp-bridge","arn:aws:ecr:eu-central-1:472838866351:repository/vitana/kiro-runner","arn:aws:ecr:eu-central-1:472838866351:repository/vitana/postgrest-aurora-proxy"]},{"Sid":"EcsReadTaskDefinitions","Effect":"Allow","Action":["ecs:DescribeTaskDefinition"],"Resource":"*"},{"Sid":"EcsRegisterTaskDefinitionNoResourceLevel","Effect":"Allow","Action":["ecs:RegisterTaskDefinition"],"Resource":"*"},{"Sid":"EcsDeployOwnStagingServices","Effect":"Allow","Action":["ecs:DescribeServices","ecs:UpdateService"],"Resource":["arn:aws:ecs:eu-central-1:472838866351:service/Vitana-ECS-Cluster/vitana-gateway","arn:aws:ecs:eu-central-1:472838866351:service/Vitana-ECS-Cluster/vitana-erp-bridge","arn:aws:ecs:eu-central-1:472838866351:service/Vitana-ECS-Cluster/vitana-kiro-runner","arn:aws:ecs:eu-central-1:472838866351:service/Vitana-ECS-Cluster/vitana-postgrest-aurora-proxy"]},{"Sid":"PassTaskRolesToEcsOnly","Effect":"Allow","Action":["iam:PassRole"],"Resource":["arn:aws:iam::472838866351:role/sample-ecs-execution-role","arn:aws:iam::472838866351:role/sample-staging-task-role"],"Condition":{"StringEquals":{"iam:PassedToService":"ecs-tasks.amazonaws.com"}}}]}
+[DRY-RUN] aws iam put-role-policy --role-name gl-platform-staging --policy-name gl-platform-staging --policy-document file:///tmp/tmp.XXXXXX/gl-platform-staging-policy.json
+
+== role gl-v1-preview (trust gitlab-oidc-v1-preview-trust.json)
+  trust: {"StringEquals":{"gitlab.vitanaland.com:aud":"aws:v1:preview"},"StringLike":{"gitlab.vitanaland.com:sub":"project_path:vitana/vitana-v1:ref_type:branch:ref:*"}}
+[READ] aws iam get-role --role-name gl-v1-preview
+[DRY-RUN] aws iam create-role --role-name gl-v1-preview --assume-role-policy-document file:///projects/sandbox/.rv/deploy/scripts/aws/iam/gitlab-oidc-v1-preview-trust.json --max-session-duration 3600 --description agentic-delivery\ GitLab\ delivery\ role\ \(plan\ section\ 7\)
+  policy gl-v1-preview: {"Version":"2012-10-17","Statement":[{"Sid":"PreviewListOwnPrefixes","Effect":"Allow","Action":["s3:ListBucket"],"Resource":"arn:aws:s3:::vitana-pr-previews","Condition":{"StringLike":{"s3:prefix":["mr-*","gl-main/*"]}}},{"Sid":"PreviewWriteOwnPrefixes","Effect":"Allow","Action":["s3:GetObject","s3:PutObject","s3:DeleteObject"],"Resource":["arn:aws:s3:::vitana-pr-previews/mr-*","arn:aws:s3:::vitana-pr-previews/gl-main/*"]},{"Sid":"PreviewInvalidate","Effect":"Allow","Action":["cloudfront:CreateInvalidation"],"Resource":"arn:aws:cloudfront::472838866351:distribution/E1SAMPLEDIST23"}]}
+[DRY-RUN] aws iam put-role-policy --role-name gl-v1-preview --policy-name gl-v1-preview --policy-document file:///tmp/tmp.XXXXXX/gl-v1-preview-policy.json
+
+== role gl-verify (trust gitlab-oidc-verify-trust.json)
+  trust: {"StringEquals":{"gitlab.vitanaland.com:aud":"aws:verify","gitlab.vitanaland.com:sub":["project_path:vitana/vitana-v1:ref_type:branch:ref:main","project_path:vitana/vitana-platform:ref_type:branch:ref:main"]}}
+[READ] aws iam get-role --role-name gl-verify
+[DRY-RUN] aws iam create-role --role-name gl-verify --assume-role-policy-document file:///projects/sandbox/.rv/deploy/scripts/aws/iam/gitlab-oidc-verify-trust.json --max-session-duration 3600 --description agentic-delivery\ GitLab\ delivery\ role\ \(plan\ section\ 7\)
+  policy gl-verify: {"Version":"2012-10-17","Statement":[{"Sid":"ReadTestUser","Effect":"Allow","Action":["secretsmanager:GetSecretValue"],"Resource":["arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/ci/test-user-??????"]}]}
+[DRY-RUN] aws iam put-role-policy --role-name gl-verify --policy-name gl-verify --policy-document file:///tmp/tmp.XXXXXX/gl-verify-policy.json
+
+== role gl-record (trust gitlab-oidc-record-trust.json)
+  trust: {"StringEquals":{"gitlab.vitanaland.com:aud":"aws:record","gitlab.vitanaland.com:sub":["project_path:vitana/vitana-v1:ref_type:branch:ref:main","project_path:vitana/vitana-platform:ref_type:branch:ref:main"]}}
+[READ] aws iam get-role --role-name gl-record
+[DRY-RUN] aws iam create-role --role-name gl-record --assume-role-policy-document file:///projects/sandbox/.rv/deploy/scripts/aws/iam/gitlab-oidc-record-trust.json --max-session-duration 3600 --description agentic-delivery\ GitLab\ delivery\ role\ \(plan\ section\ 7\)
+  policy gl-record: {"Version":"2012-10-17","Statement":[{"Sid":"ReadRecorderSecrets","Effect":"Allow","Action":["secretsmanager:GetSecretValue"],"Resource":["arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/ci/oasis-recorder-??????","arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/ci/gateway-service-token-??????"]}]}
+[DRY-RUN] aws iam put-role-policy --role-name gl-record --policy-name gl-record --policy-document file:///tmp/tmp.XXXXXX/gl-record-policy.json
+
+== role gl-assist (trust gitlab-oidc-assist-trust.json)
+  trust: {"StringEquals":{"gitlab.vitanaland.com:aud":"aws:assist"},"StringLike":{"gitlab.vitanaland.com:sub":["project_path:vitana/vitana-v1:ref_type:branch:ref:assist/*","project_path:vitana/vitana-v1:ref_type:branch:ref:main"]}}
+[READ] aws iam get-role --role-name gl-assist
+[DRY-RUN] aws iam create-role --role-name gl-assist --assume-role-policy-document file:///projects/sandbox/.rv/deploy/scripts/aws/iam/gitlab-oidc-assist-trust.json --max-session-duration 3600 --description agentic-delivery\ GitLab\ delivery\ role\ \(plan\ section\ 7\)
+  policy gl-assist: {"Version":"2012-10-17","Statement":[{"Sid":"ReadLlmKeys","Effect":"Allow","Action":["secretsmanager:GetSecretValue"],"Resource":["arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/ci/llm-keys-??????"]}]}
+[DRY-RUN] aws iam put-role-policy --role-name gl-assist --policy-name gl-assist --policy-document file:///tmp/tmp.XXXXXX/gl-assist-policy.json
+
+== 3. secrets (Secrets Manager, eu-central-1)
+[READ] aws secretsmanager describe-secret --secret-id vitana/ci/test-user
+  vitana/ci/test-user: missing, NEEDS A VALUE
+[DRY-RUN] aws secretsmanager create-secret --name vitana/ci/test-user --description agentic-delivery\ GitLab\ CI\ secret\ \(plan\ section\ 7\)\;\ JSON\ keyed\ by\ the\ GitHub\ secret\ names\ it\ replaces
+[READ] aws secretsmanager describe-secret --secret-id vitana/ci/oasis-recorder
+  vitana/ci/oasis-recorder: missing, NEEDS A VALUE
+[DRY-RUN] aws secretsmanager create-secret --name vitana/ci/oasis-recorder --description agentic-delivery\ GitLab\ CI\ secret\ \(plan\ section\ 7\)\;\ JSON\ keyed\ by\ the\ GitHub\ secret\ names\ it\ replaces
+[READ] aws secretsmanager describe-secret --secret-id vitana/ci/gateway-service-token
+  vitana/ci/gateway-service-token: missing, NEEDS A VALUE
+[DRY-RUN] aws secretsmanager create-secret --name vitana/ci/gateway-service-token --description agentic-delivery\ GitLab\ CI\ secret\ \(plan\ section\ 7\)\;\ JSON\ keyed\ by\ the\ GitHub\ secret\ names\ it\ replaces
+[READ] aws secretsmanager describe-secret --secret-id vitana/ci/llm-keys
+  vitana/ci/llm-keys: missing, NEEDS A VALUE
+[DRY-RUN] aws secretsmanager create-secret --name vitana/ci/llm-keys --description agentic-delivery\ GitLab\ CI\ secret\ \(plan\ section\ 7\)\;\ JSON\ keyed\ by\ the\ GitHub\ secret\ names\ it\ replaces
+  fill each secret that needs a value (JSON keyed by the GitHub secret names it replaces; RUNBOOK-delivery-aws.md):
+    aws secretsmanager put-secret-value --region eu-central-1 --secret-id vitana/ci/test-user --secret-string file://<json file>
+    aws secretsmanager put-secret-value --region eu-central-1 --secret-id vitana/ci/oasis-recorder --secret-string file://<json file>
+    aws secretsmanager put-secret-value --region eu-central-1 --secret-id vitana/ci/gateway-service-token --secret-string file://<json file>
+    aws secretsmanager put-secret-value --region eu-central-1 --secret-id vitana/ci/llm-keys --secret-string file://<json file>
+
+== 4. staging target groups: deregistration delay 30 s
+[READ] aws sts get-caller-identity --query Account --output text
+[READ] aws ecs describe-services --cluster Vitana-ECS-Cluster --services vitana-gateway vitana-community-app-staging vitana-erp-bridge vitana-kiro-runner vitana-postgrest-aurora-proxy --query services\[\].loadBalancers\[\].targetGroupArn --output json
+[READ] aws elbv2 describe-target-group-attributes --target-group-arn arn:aws:elasticloadbalancing:eu-central-1:472838866351:targetgroup/sample-community-staging/0000000000000002 --query Attributes\[\?Key==\'deregistration_delay.timeout_seconds\'\].Value\ \|\ \[0\] --output text
+  arn:aws:elasticloadbalancing:eu-central-1:472838866351:targetgroup/sample-community-staging/0000000000000002: deregistration delay 300s -> 30s
+[DRY-RUN] aws elbv2 modify-target-group-attributes --target-group-arn arn:aws:elasticloadbalancing:eu-central-1:472838866351:targetgroup/sample-community-staging/0000000000000002 --attributes Key=deregistration_delay.timeout_seconds\,Value=30
+[READ] aws elbv2 describe-target-group-attributes --target-group-arn arn:aws:elasticloadbalancing:eu-central-1:472838866351:targetgroup/sample-gateway-staging/0000000000000001 --query Attributes\[\?Key==\'deregistration_delay.timeout_seconds\'\].Value\ \|\ \[0\] --output text
+  arn:aws:elasticloadbalancing:eu-central-1:472838866351:targetgroup/sample-gateway-staging/0000000000000001: deregistration delay 300s -> 30s
+[DRY-RUN] aws elbv2 modify-target-group-attributes --target-group-arn arn:aws:elasticloadbalancing:eu-central-1:472838866351:targetgroup/sample-gateway-staging/0000000000000001 --attributes Key=deregistration_delay.timeout_seconds\,Value=30
+
+Done (DRY-RUN). GitLab CI variables for the preview jobs (not secrets; set them on both projects, or let the M2 settings sync set them):
+  PREVIEW_CF_DISTRIBUTION_ID=E1SAMPLEDIST23   PREVIEW_CF_DOMAIN=<the preview CloudFront domain>
+Role ARNs are fixed: arn:aws:iam::472838866351:role/<gl-v1-staging|gl-platform-staging|gl-v1-preview|gl-verify|gl-record|gl-assist>.
+exit=0
+
+# every call the stub received (reads only; no create-, put-, update-, add-, modify-, attach-, delete-):
+aws sts get-caller-identity --query Account --output text
+aws iam get-open-id-connect-provider --open-id-connect-provider-arn arn:aws:iam::472838866351:oidc-provider/gitlab.vitanaland.com
+aws ecs describe-services --cluster Vitana-ECS-Cluster --services vitana-community-app-staging --query services[0].taskDefinition --output text
+aws ecs describe-task-definition --task-definition arn:aws:ecs:eu-central-1:472838866351:task-definition/sample-vitana-community-app-staging:1 --query taskDefinition.[taskRoleArn,executionRoleArn] --output json
+aws iam get-role --role-name gl-v1-staging
+aws ecs describe-services --cluster Vitana-ECS-Cluster --services vitana-gateway --query services[0].taskDefinition --output text
+aws ecs describe-task-definition --task-definition arn:aws:ecs:eu-central-1:472838866351:task-definition/sample-vitana-gateway:1 --query taskDefinition.[taskRoleArn,executionRoleArn] --output json
+aws ecs describe-services --cluster Vitana-ECS-Cluster --services vitana-erp-bridge --query services[0].taskDefinition --output text
+aws ecs describe-task-definition --task-definition arn:aws:ecs:eu-central-1:472838866351:task-definition/sample-vitana-erp-bridge:1 --query taskDefinition.[taskRoleArn,executionRoleArn] --output json
+aws ecs describe-services --cluster Vitana-ECS-Cluster --services vitana-kiro-runner --query services[0].taskDefinition --output text
+aws ecs describe-task-definition --task-definition arn:aws:ecs:eu-central-1:472838866351:task-definition/sample-vitana-kiro-runner:1 --query taskDefinition.[taskRoleArn,executionRoleArn] --output json
+aws ecs describe-services --cluster Vitana-ECS-Cluster --services vitana-postgrest-aurora-proxy --query services[0].taskDefinition --output text
+aws ecs describe-task-definition --task-definition arn:aws:ecs:eu-central-1:472838866351:task-definition/sample-vitana-postgrest-aurora-proxy:1 --query taskDefinition.[taskRoleArn,executionRoleArn] --output json
+aws iam get-role --role-name gl-platform-staging
+aws iam get-role --role-name gl-v1-preview
+aws iam get-role --role-name gl-verify
+aws iam get-role --role-name gl-record
+aws iam get-role --role-name gl-assist
+aws secretsmanager describe-secret --secret-id vitana/ci/test-user
+aws secretsmanager describe-secret --secret-id vitana/ci/oasis-recorder
+aws secretsmanager describe-secret --secret-id vitana/ci/gateway-service-token
+aws secretsmanager describe-secret --secret-id vitana/ci/llm-keys
+aws sts get-caller-identity --query Account --output text
+aws ecs describe-services --cluster Vitana-ECS-Cluster --services vitana-gateway vitana-community-app-staging vitana-erp-bridge vitana-kiro-runner vitana-postgrest-aurora-proxy --query services[].loadBalancers[].targetGroupArn --output json
+aws elbv2 describe-target-group-attributes --target-group-arn arn:aws:elasticloadbalancing:eu-central-1:472838866351:targetgroup/sample-community-staging/0000000000000002 --query Attributes[?Key=='deregistration_delay.timeout_seconds'].Value | [0] --output text
+aws elbv2 describe-target-group-attributes --target-group-arn arn:aws:elasticloadbalancing:eu-central-1:472838866351:targetgroup/sample-gateway-staging/0000000000000001 --query Attributes[?Key=='deregistration_delay.timeout_seconds'].Value | [0] --output text
+write calls received: 0

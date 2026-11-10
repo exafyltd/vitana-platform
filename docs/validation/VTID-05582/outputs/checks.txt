@@ -1,0 +1,36 @@
+## fixture
+## live-before
+{"check_name":"columns_absent","ok":true}
+{"check_name":"rpcs_absent","ok":true}
+{"check_name":"profile_rows","n":7}
+{"check_name":"authenticated_can_write_connection_requests","can_insert":true,"can_update":true}
+## apply 20261102051000_vtid_05582_network_visible_profile.sql
+## apply 20261102051100_vtid_05582_connection_rpcs.sql
+## post-apply-checks
+{"check_name":"columns_present","ok":true}
+{"check_name":"nobody_opted_in_by_the_migration","ok":true}
+{"check_name":"no_excluded_account_visible","ok":true}
+{"check_name":"trigger_present","ok":true}
+{"check_name":"client_write_revoked","ok":true}
+{"check_name":"rpcs_definer_pinned","ok":true}
+{"check_name":"rpc_execute_grants","ok":true}
+{"check_name":"connection_requests_rows_unchanged_shape","ok":true}
+## rollback 051100
+## rollback 051000 with an opt-in is refused: VTID-05582 rollback: 1 profile(s) carry an opt-in or a messaging preference; set mt.rollback_force=on to drop them
+## rollback 051000
+## rollback-check
+{"check_name":"columns_gone","ok":true}
+{"check_name":"functions_gone","ok":true}
+{"check_name":"trigger_gone","ok":true}
+{"check_name":"client_write_restored","ok":true}
+## re-apply 20261102051000_vtid_05582_network_visible_profile.sql
+## re-apply 20261102051100_vtid_05582_connection_rpcs.sql
+## post-apply-checks (after re-apply)
+{"check_name":"columns_present","ok":true}
+{"check_name":"nobody_opted_in_by_the_migration","ok":true}
+{"check_name":"no_excluded_account_visible","ok":true}
+{"check_name":"trigger_present","ok":true}
+{"check_name":"client_write_revoked","ok":true}
+{"check_name":"rpcs_definer_pinned","ok":true}
+{"check_name":"rpc_execute_grants","ok":true}
+{"check_name":"connection_requests_rows_unchanged_shape","ok":true}

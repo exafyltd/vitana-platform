@@ -1,0 +1,2 @@
+self-test-default ok: 14 unverified; default exit 1 without PASS marker; --report exit 0 without PASS marker
+exit 0
