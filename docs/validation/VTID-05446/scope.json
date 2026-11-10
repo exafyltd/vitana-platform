@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-05446",
+  "kind": "infra",
+  "paths": [
+    "scripts/ci/sql-tests/mt-isolation.test.sql",
+    "scripts/ci/sql-tests/run-mt-isolation-test.sh",
+    "docs/validation/VTID-05446/**"
+  ],
+  "sparring_record": ".kiro/specs/mt-guardrails-r2/sparring/verdict.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

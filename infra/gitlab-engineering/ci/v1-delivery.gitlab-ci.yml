@@ -1945,7 +1945,7 @@ e2e-preview-orb:
   stage: "build"
   needs: []
   tags:
-    - "vitana-eng-main"
+    - "vitana-eng-build"
   interruptible: false
   variables:
     DEPLOY_SERVICE: "community-app"

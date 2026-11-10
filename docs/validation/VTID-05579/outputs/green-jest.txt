@@ -1,0 +1,37 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/wt-groups-db/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+PASS ../../wt-groups-db/services/gateway/test/mt-network-groups-db.pgtap.test.ts
+  VTID-05579 migration files
+    ✓ exist, apply in order, and no other migration shares their version (3 ms)
+    ✓ each runs in one transaction with a lock timeout and drops no table or column (4 ms)
+    ✓ adds no bare current_tenant_id() RLS policy and evaluates auth.uid() once per statement
+  VTID-05579 task 1: scope columns, backfill, guards
+    ✓ adds scope text NOT NULL DEFAULT community with a CHECK (community, network) to both tables (1 ms)
+    ✓ backfills chat_groups.scope from the VTID-05573 flag metadata.legacy_scope = network, and the members from their group
+    ✓ a network group is never a system group and never has a bot member (no system fan-out target) (1 ms)
+    ✓ only the RPCs write a non-community group scope or add a network member (transaction-local flag)
+    ✓ the member guard re-checks rule 43-45 and the 20 cap, and forces the group scope (1 ms)
+    ✓ is expand only: the default stays so today's community writers keep working
+  VTID-05579 task 2: create_network_group / add_group_member
+    ✓ all six functions are SECURITY DEFINER with a pinned search_path (1 ms)
+    ✓ the caller-bound functions use auth.uid(); the _as pair takes a trusted p_actor
+    ✓ EXECUTE: callers to authenticated, the _as pair to service_role only, the cores to nobody
+    ✓ the network branch is admin-only, invite-only between accepted connections, bounded at 20, and refuses rule 43-45 accounts (1 ms)
+    ✓ the creator's tenant is the context: members carry the group tenant, the platform tenant never counts
+    ✓ add refuses every non-network group before any membership check, and has no community insert (review fix)
+    ✓ writes no message, notification or system row (no system fan-out) (1 ms)
+  VTID-05579 task 1: participant-only RLS
+    ✓ rewrites the two read policies to participant-only with the once-per-statement form
+    ✓ creates no INSERT / UPDATE / DELETE / ALL policy and asserts no allow-all policy remains
+  VTID-05579 tasks 3-4: rollback, read-only checks, pgTAP, queue
+    ✓ has the three rollbacks and the three read-only check files (1 ms)
+    ✓ the pgTAP plan covers the D27 limits and its plan count matches its assertions (1 ms)
+    ✓ is queued in MIGRATION-QUEUE.md as rows 63-65 in file order, after the last existing row
+    ✓ keeps the drift baseline count equal to its list
+
+Test Suites: 1 passed, 1 total
+Tests:       22 passed, 22 total
+Snapshots:   0 total
+Time:        0.406 s
+Ran all test suites.

@@ -1,0 +1,7 @@
+{
+  "vtid": "VTID-05609",
+  "service": "gateway",
+  "not_verified_on_staging": true,
+  "not_verified_on_staging_reason": "Docs only: one Markdown table (docs/multitenancy/MIGRATION-QUEUE.md) is edited and nothing deploys. The covering check is docs/validation/VTID-05609/outputs/queue-check.mjs (red on base, green on the lane) plus preflight. No migration is applied and no live system is touched; no suite points at vitanaland.com.",
+  "tests": []
+}

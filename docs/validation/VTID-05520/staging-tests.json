@@ -1,0 +1,8 @@
+{
+  "vtid": "VTID-05520",
+  "service": "none",
+  "tests": [
+    { "kind": "existing", "ref": "npm run test:mt-stack",
+      "reason": "the lane deploys nothing; its node tests run the PGlite stack, the gate and the shim in CI (MT-LOCAL-STACK)" }
+  ]
+}

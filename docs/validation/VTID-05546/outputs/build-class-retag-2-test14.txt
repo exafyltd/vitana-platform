@@ -1,0 +1,13 @@
+# deploy-path test 14 against the build-class-retag-2 CI files (tree: deploy-path head d82a0d04f4 + regenerated CI files)
+# Expected to fail only on deploy-path's naming check (name === .build-image), widened in deploy-path step 5.
+# node exit 1
+  error: |-
+    platform-delivery.gitlab-ci.yml build-image:gateway: only the image build runs on the build class
+    + actual - expected
+--
+# tests 1
+# suites 0
+# pass 0
+# fail 1
+# cancelled 0
+# skipped 0
