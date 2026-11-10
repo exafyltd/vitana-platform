@@ -1,0 +1,44 @@
+# VTID-05465 owner-packet dry-run. PGlite in process; nothing applied anywhere.
+# node v22.23.4
+
+## A. replayed local stack (scripts/mt/stack: supabase/migrations/*.sql replayed, replay-skip.json honoured)
+replay: 423 applied, 307 skipped, 0 failed
+replay-skip.json lists 20261102030100_vtid_05465_bare_policy_rewrite.sql: true
+helpers before: {"tenant_id_for_policies":false,"is_member":false}
+PASS apply 20261102030000_vtid_05465_tenant_id_for_policies_is_member.sql
+PASS apply 20261102030100_vtid_05465_bare_policy_rewrite.sql (the live current_tenant_id() here is not the 20260218 body): refused as expected: VTID-05465: the live current_tenant_id() is not the 20260218 body (markers f, f, f); refusing the rewrite. The lane is parked for an owner decision (docs/validation/VTID-05465/acceptance.md)
+[{"marker_1":false,"marker_2":false,"marker_3":false}]
+[{"bare_policies_on_replayed_stack":173}]
+
+## B. lane fixture (20260218 body) on a fresh PGlite, lane harness order
+PASS fixture mt_identity_helpers_fixture.sql
+--- PRE (before the helpers and the rewrite): pre-check.sql: 7 result sets
+  [0] 32 row(s); first: {"tbl":"community_groups","pol":"community_groups_delete","cmd":"DELETE","table_present":true,"policy_present":true,"live_cmd":"DELETE","live_roles":["authenticated"],"qual":"(tenant_id = current_tenant_id())","with_check":null}
+  [1] 2 row(s); first: {"table_name":"event_attendance"}
+  [2] 1 row(s); first: {"is_member":null,"tenant_id_for_policies":null,"user_tenants_unique_indexes":"user_tenants_pkey, user_tenants_tenant_id_user_id_key","current_tenant_id_md5":"f0491929b9d38c9bc1e3541d92b51c7d"}
+  [3] 32 row(s); first: {"tablename":"community_groups","policyname":"community_groups_delete","cmd":"DELETE","roles":["authenticated"]}
+  [4] 1 row(s); first: {"live_body_first_200":"CREATE OR REPLACE FUNCTION public.current_tenant_id()\n RETURNS uuid\n LANGUAGE plpgsql\n STABLE\nAS $function$\nDECLARE\n    v_tenant_id UUID;\n    v_jwt_claims JSONB;\nBEGIN\n    -- Priority 1: Request conte","marker_1_app_metadata_fallback":true,"marker_2_user_tenants_fallback":true,"marker_3_own_membership_lookup":true}
+  [5] 1 row(s); first: {"active_set_no_membership_row":1,"active_set_non_primary_membership":1,"active_set_not_a_membership":0,"total_resolving_differently":2}
+  [6] 1 row(s); first: {"multi_membership_no_primary_no_active_tenant":0}
+PASS apply 20261102030000_vtid_05465_tenant_id_for_policies_is_member.sql
+PASS apply 20261102030100_vtid_05465_bare_policy_rewrite.sql
+PASS re-apply 20261102030000_vtid_05465_tenant_id_for_policies_is_member.sql (idempotent)
+PASS re-apply 20261102030100_vtid_05465_bare_policy_rewrite.sql (idempotent)
+--- POST (after both): post-check.sql: 5 result sets
+  [0] 2 row(s); first: {"fn":"is_member(uuid)","security_definer":true,"stable":true,"authenticated_exec":true,"anon_exec":false}
+  [1] 0 rows
+  [2] 1 row(s); first: {"rewrite_set_live":32,"rewritten_on_helper":32,"on_is_member":0}
+  [3] 32 row(s); first: {"tablename":"community_groups","policyname":"community_groups_delete","cmd":"DELETE","qual":"(tenant_id = ( SELECT tenant_id_for_policies() AS tenant_id_for_policies))","with_check":null}
+  [4] 1 row(s); first: {"current_tenant_id_md5":"f0491929b9d38c9bc1e3541d92b51c7d"}
+PASS pgTAP mt_identity_helpers_rls.test.sql (after rewrite): 160 run, 0 not ok, plan 160
+PASS apply rollback 20261102030100_vtid_05465_bare_policy_rewrite_rollback.sql
+PASS pgTAP mt_identity_helpers_rollback.test.sql (after rollback): 10 run, 0 not ok
+PASS re-apply helpers after rollback
+PASS re-apply rewrite after rollback
+PASS pgTAP mt_identity_helpers_rls.test.sql (after rollback + re-apply): 160 run, 0 not ok
+
+## C. live-body guard: the rewrite on the OLD (20251229) current_tenant_id() body must refuse
+PASS apply 20261102030100_vtid_05465_bare_policy_rewrite.sql on the old body: refused as expected: VTID-05465: the live current_tenant_id() is not the 20260218 body (markers f, f, f); refusing the rewrite. The lane is parked for an owner decision (docs/validation/VTID-05465/acceptance.md)
+PASS pgTAP mt_identity_helpers_live_body_guard.test.sql: 5 run, 0 not ok
+
+RESULT: ALL PASS
