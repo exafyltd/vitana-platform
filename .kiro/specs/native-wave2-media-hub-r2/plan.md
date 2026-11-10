@@ -161,7 +161,7 @@ Only `shortsTags.ts` is class-A end to end; no other module is promoted.
    `native_only` entry with its reason (the mechanism `parity-ledger.mjs:255` names and the `/` landing redirect
    already uses, `ledger.json:5-8`). Deep link `?short=<id>`: the screen opens the feed at that short once shorts
    load and, on close, replaces to `/comm/events-meetups?tab=hot` exactly when the feed was deep-link-opened
-   (`:1455-1461`). The web `window.history.replaceState` (`:482-486`) is an Appilix WebView workaround with no
+   (`:1455-1461`). Until the `events-calendar` lane (`scripts/native/parity-scope.json:93`, plan `native-wave2-events-calendar-r3`) ports that screen, `resolveWebPath` returns `unported` for it (`resolve.ts:195-222`) and the shell renders the `Unported` screen (`apps/mobile/src/screens/Unported.tsx`), not a WebView; the destination string is unchanged, so it becomes native with no edit here (sparring R1-F2). The web `window.history.replaceState` (`:482-486`) is an Appilix WebView workaround with no
    native counterpart and is not ported. The feed is a full-screen modal over the shell (hides bottom bar and ORB,
    as `document.body.dataset.shortsOpen` does at `MobileShortsFeed.tsx:48-51`); Android back closes it
    (`MobileShortsFeed.tsx:52-62`).
