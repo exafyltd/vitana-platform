@@ -28,7 +28,7 @@ Pinned: vitana-v1 origin/main `e31bf4627ff3c705c20f8e6b718ce4dd03353b7f`, vitana
   flags (`push_enabled`, `health_sync_enabled`, `orb_native_enabled`); unknown flags are ignored and a missing flag is
   false (`:12-17` doc block, `:69-71` `defaultFlags`). The file is shared native infra with its own tests.
 - **The decision is the owner's.** `vitana-platform:.kiro/specs/native-wave3-release-r2/lanes/iap-decision-owner.md`
-  (`next_actor: owner`) records the payment classification per purchase type
+  records the payment classification per purchase type
   (frontmatter `next_actor: kiro`, depends on `prereq-exit`; the body says "OWNER GATE — no payment code is written" and
   "Next actor is the owner", `:19-26`; the decision is the owner's either way)
   (`vitana-v1:docs/programs/native-app/NATIVE-APP-PLAN.md:221`, §8 decision 4). The product-cart-checkout lane
