@@ -13,7 +13,8 @@ paths:
   - apps/mobile/src/iap/**
   - apps/mobile/tests/iap/**
   - docs/validation/**
-updated: 2026-11-10T17:10Z
+updated: 2026-11-10T17:03Z
+vtid: VTID-05680
 ---
 # Vendor-neutral purchase interface, no-op default, flag OFF
 Plan: `.kiro/specs/native-iap-interface/` — `plan.md` and the `tasks.md` section marked `<!-- lane: iap-interface -->`
@@ -29,3 +30,6 @@ drawer screens, no edit to an existing test, no VTID by hand.
 ## Log
 ### 2026-11-10T17:10Z · kiro-exafyltd-202611072144-1c88 · ready
 Lane created with the plan.
+
+### 2026-11-10T17:03Z · ci-plan-spar · ready (VTID allocated)
+VTID-05680 allocated after policy approval (converged-auto-v1).
