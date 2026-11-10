@@ -12,7 +12,8 @@ repos: [exafyltd/vitana-v1]
 paths:
   - apps/mobile/tests/parity-gaps/**
   - docs/validation/**
-updated: 2026-11-10T18:10Z
+updated: 2026-11-10T18:28Z
+vtid: VTID-05685
 ---
 # Route tests for the two untested native parity rows
 Plan: `.kiro/specs/native-parity-test-gaps/` — `plan.md` and the `tasks.md` section marked `<!-- lane: route-tests -->`
@@ -31,3 +32,6 @@ Plan: `.kiro/specs/native-parity-test-gaps/` — `plan.md` and the `tasks.md` se
 ## Log
 ### 2026-11-10T18:10Z · kiro-exafyltd-202611072144-1c88 · ready
 Lane created with the plan.
+
+### 2026-11-10T18:28Z · ci-plan-spar · ready (VTID allocated)
+VTID-05685 allocated after policy approval (converged-auto-v1).

@@ -3,13 +3,13 @@ slug: native-parity-test-gaps
 author: kiro
 executor: kiro
 next_actor: kiro
-state: sparred
+state: approved
 author_seat: exafyltd
-updated: 2026-11-10T18:24Z
+updated: 2026-11-10T18:28Z
 spar_refs:
   - exafyltd/vitana-v1: e31bf4627ff3c705c20f8e6b718ce4dd03353b7f
 sparring_record: .kiro/specs/native-parity-test-gaps/sparring/verdict.md
-reason: allocation_pending
+vtids: [VTID-05685]
 ---
 # Handoff — Native parity audit: close the two route-test gaps
 
@@ -30,3 +30,6 @@ Plan written from the read-only parity audit.
 
 ### 2026-11-10T18:24Z · ci-plan-spar · drafted → sparred
 Converged; approved by policy converged-auto-v1. 0 lane(s) got a VTID and are handed to Kiro. VTID allocation failed for lane route-tests (allocate: HTTP 0 null); 1 lane(s) still lack a VTID — the next PLAN-SPAR run on this PR retries them.
+
+### 2026-11-10T18:28Z · ci-plan-spar · sparred → approved
+Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.
