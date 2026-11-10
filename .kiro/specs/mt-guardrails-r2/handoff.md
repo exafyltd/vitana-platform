@@ -70,3 +70,9 @@ Owner directive decision 1 (`docs/multitenancy/KIRO-HOTMAIL-DIRECTIVE-M0.md`, br
 
 ### 2026-11-10T10:36Z · ci-plan-spar · approved (late lane VTID)
 Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.
+
+### 2026-11-10T10:40Z · kiro-hotmail-202611061752-cc1f · approved (driver: late lane seat-move, ready to merge)
+PLAN-SPAR converged Amendment 4 with no findings and allocated VTID-05678 to lane `seat-move` (policy `converged-auto-v1`). This
+entry starts the PR checks that PLAN-SPAR's own push does not start. The PR waits for GitHub merges to work again (every
+PR on main has been unmergeable since #4714); then a hotmail builder that is not the driver builds `seat-move`, and the
+driver requests its review. The three build lanes start only after `seat-move` is merged.
