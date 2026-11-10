@@ -1,0 +1,18 @@
+# red check: the same test against the workflow of the parent of the merge (1ec3d5bf26^1), no step 21c; VTID_ROOT = temp tree
+$ VTID_ROOT=/tmp/tmp.zlSC5ZIDVw jest (same config)
+    ✕ exists, is report-only, and reads only the by-tenant function (1 ms)
+    ✓ keeps row 21b on the whole-database function, unchanged (1 ms)
+    ✕ puts 21c after 21b and before the self-audit (1 ms)
+    ✕ posts only to the by-tenant rpc, once
+    ✕ writes one INFO row per tenant with findings, each with its own numbers only
+    ✕ adds a summary row that counts the tenants and those with findings
+    ✕ labels the row without a tenant as unattributed and an unregistered id as unregistered (1 ms)
+    ✕ caps the rows and says how many were left out (1 ms)
+    ✕ cleans a hostile slug so it cannot break the table (1 ms)
+    ✕ shows scan errors without failing (1 ms)
+    ✕ HTTP 404 (function not applied yet) → one INFO row, exit 0
+    ✕ HTTP 500 → one INFO row, exit 0
+    ✕ a reply that is not an object → one INFO row, exit 0
+    ✕ an object with no tenants list → one INFO row, exit 0
+Tests:       13 failed, 1 passed, 14 total
+[exit 1] (expected non-zero = RED)
