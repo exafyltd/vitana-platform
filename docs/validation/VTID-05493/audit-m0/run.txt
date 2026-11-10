@@ -1,0 +1,492 @@
+# audit-m0 VTID-05493 on 6dc6e1ba0c18252ec2f3fbf5651d245e200f9835 (2026-11-10T09:38:45Z); node v22.23.4
+
+$ /projects/sandbox/wt-audit-m0/docs/validation/VTID-05493/pglite-harness/lane.sh /projects/sandbox/wt-audit-m0/docs/validation/VTID-05493/pgtap/vtid_05493_tenant_lifecycle.test.sql
+# loaded /projects/sandbox/wt-audit-m0/docs/validation/VTID-05493/pglite-harness/base_schema.sql
+# loaded /projects/sandbox/wt-audit-m0/supabase/migrations/20261010180200_vtid_05043_s3_switch_tenant_open_signup_only.sql
+# loaded /projects/sandbox/wt-audit-m0/docs/validation/VTID-05493/pgtap/vtid_05493_fixture.sql
+# loaded /projects/sandbox/wt-audit-m0/supabase/migrations/20261102070300_vtid_05493_mt_tenant_deactivate.sql
+# loaded /projects/sandbox/wt-audit-m0/supabase/migrations/20261102070350_vtid_05493_mt_tenant_archive_switch.sql
+1..72
+ok 1 - deactivate_tenant(text) exists
+ok 2 - archive_tenant(text) exists
+ok 3 - tenants.archived_at is a nullable timestamptz (expand only)
+ok 4 - snapshot holds one row per tenant that existed at apply
+ok 5 - authenticated cannot execute deactivate_tenant
+ok 6 - anon cannot execute deactivate_tenant
+ok 7 - service_role can execute deactivate_tenant
+ok 8 - authenticated cannot execute archive_tenant
+ok 9 - anon cannot execute archive_tenant
+ok 10 - service_role can execute archive_tenant
+ok 11 - a member calling deactivate_tenant is refused (42501)
+ok 12 - authenticated keeps EXECUTE on switch_to_tenant_by_slug
+ok 13 - anon has no EXECUTE on switch_to_tenant_by_slug
+ok 14 - switch keeps the open_signup join rule (VTID-05043 co-ownership guard)
+ok 15 - switch resolves a deactivated tenant through is_default
+ok 16 - the lane adds no policy on tenants
+ok 17 - the snapshot table is closed to authenticated and anon
+ok 18 - a member switches to an active tenant
+ok 19 - the claim points at the active tenant
+ok 20 - a non-member cannot join an invite-only active tenant
+ok 21 - a non-member joins the open_signup default tenant
+ok 22 - the join wrote one user_tenants row
+ok 23 - an unknown slug raises
+ok 24 - an exafy admin switches to any tenant
+ok 25 - the exafy admin claim points at the tenant
+ok 26 - deactivate_tenant reports changed:true on the first call
+ok 27 - the tenant is inactive
+ok 28 - a second call is idempotent (changed:false)
+ok 29 - exactly one tenant is inactive
+ok 30 - every other tenant is untouched
+ok 31 - the slug is trimmed and lower-cased
+ok 32 - unknown slug -> TENANT_NOT_FOUND
+ok 33 - the default tenant cannot be deactivated
+ok 34 - the platform tenant cannot be deactivated
+ok 35 - a blank slug -> INVALID_SLUG
+ok 36 - a NULL slug -> INVALID_SLUG
+ok 37 - a member of a deactivated tenant is not locked out
+ok 38 - the claim resolves to the default tenant
+ok 39 - the member is enrolled in the default tenant (open_signup rule)
+ok 40 - one audit row records the fallback
+ok 41 - repeating the switch succeeds
+ok 42 - the repeat is write-free (no second audit row)
+ok 43 - a member of both the deactivated and the default tenant switches
+ok 44 - that member resolves to the default tenant
+ok 45 - no extra membership was created
+ok 46 - a non-member cannot reach a deactivated tenant
+ok 47 - an exafy admin can still switch to the deactivated tenant
+ok 48 - the exafy admin claim stays on the deactivated tenant
+ok 49 - an exafy admin can still read the deactivated tenant row
+ok 50 - a multi-tenant member switching to the deactivated tenant resolves to default
+ok 51 - multi-tenant member claim is the default tenant
+ok 52 - the membership in the deactivated tenant is kept (data untouched)
+ok 53 - before archiving, the member switches to t-c
+ok 54 - claim is t-c
+ok 55 - archive_tenant reports changed:true
+ok 56 - an archived tenant is inactive
+ok 57 - archived_at is set
+ok 58 - a second archive is idempotent (changed:false)
+ok 59 - archived_at is not rewritten
+ok 60 - a member of an archived tenant is not locked out
+ok 61 - and resolves to the default tenant
+ok 62 - archiving an already-deactivated tenant sets archived_at
+ok 63 - it stays inactive and is archived
+ok 64 - deactivating an archived tenant changes nothing
+ok 65 - and keeps archived_at
+ok 66 - the default tenant cannot be archived
+ok 67 - the platform tenant cannot be archived
+ok 68 - unknown slug -> TENANT_NOT_FOUND
+ok 69 - NULL slug -> INVALID_SLUG
+ok 70 - a member calling archive_tenant is refused (42501)
+ok 71 - an exafy admin can still read the archived tenant row
+ok 72 - an untouched tenant is still active
+[exit 0]
+
+$ /projects/sandbox/wt-audit-m0/docs/validation/VTID-05493/pglite-harness/lane.sh --twice /projects/sandbox/wt-audit-m0/docs/validation/VTID-05493/pgtap/vtid_05493_tenant_lifecycle.test.sql
+# loaded /projects/sandbox/wt-audit-m0/docs/validation/VTID-05493/pglite-harness/base_schema.sql
+# loaded /projects/sandbox/wt-audit-m0/supabase/migrations/20261010180200_vtid_05043_s3_switch_tenant_open_signup_only.sql
+# loaded /projects/sandbox/wt-audit-m0/docs/validation/VTID-05493/pgtap/vtid_05493_fixture.sql
+# loaded /projects/sandbox/wt-audit-m0/supabase/migrations/20261102070300_vtid_05493_mt_tenant_deactivate.sql
+# loaded /projects/sandbox/wt-audit-m0/supabase/migrations/20261102070350_vtid_05493_mt_tenant_archive_switch.sql
+# loaded /projects/sandbox/wt-audit-m0/supabase/migrations/20261102070300_vtid_05493_mt_tenant_deactivate.sql
+# loaded /projects/sandbox/wt-audit-m0/supabase/migrations/20261102070350_vtid_05493_mt_tenant_archive_switch.sql
+1..72
+ok 1 - deactivate_tenant(text) exists
+ok 2 - archive_tenant(text) exists
+ok 3 - tenants.archived_at is a nullable timestamptz (expand only)
+ok 4 - snapshot holds one row per tenant that existed at apply
+ok 5 - authenticated cannot execute deactivate_tenant
+ok 6 - anon cannot execute deactivate_tenant
+ok 7 - service_role can execute deactivate_tenant
+ok 8 - authenticated cannot execute archive_tenant
+ok 9 - anon cannot execute archive_tenant
+ok 10 - service_role can execute archive_tenant
+ok 11 - a member calling deactivate_tenant is refused (42501)
+ok 12 - authenticated keeps EXECUTE on switch_to_tenant_by_slug
+ok 13 - anon has no EXECUTE on switch_to_tenant_by_slug
+ok 14 - switch keeps the open_signup join rule (VTID-05043 co-ownership guard)
+ok 15 - switch resolves a deactivated tenant through is_default
+ok 16 - the lane adds no policy on tenants
+ok 17 - the snapshot table is closed to authenticated and anon
+ok 18 - a member switches to an active tenant
+ok 19 - the claim points at the active tenant
+ok 20 - a non-member cannot join an invite-only active tenant
+ok 21 - a non-member joins the open_signup default tenant
+ok 22 - the join wrote one user_tenants row
+ok 23 - an unknown slug raises
+ok 24 - an exafy admin switches to any tenant
+ok 25 - the exafy admin claim points at the tenant
+ok 26 - deactivate_tenant reports changed:true on the first call
+ok 27 - the tenant is inactive
+ok 28 - a second call is idempotent (changed:false)
+ok 29 - exactly one tenant is inactive
+ok 30 - every other tenant is untouched
+ok 31 - the slug is trimmed and lower-cased
+ok 32 - unknown slug -> TENANT_NOT_FOUND
+ok 33 - the default tenant cannot be deactivated
+ok 34 - the platform tenant cannot be deactivated
+ok 35 - a blank slug -> INVALID_SLUG
+ok 36 - a NULL slug -> INVALID_SLUG
+ok 37 - a member of a deactivated tenant is not locked out
+ok 38 - the claim resolves to the default tenant
+ok 39 - the member is enrolled in the default tenant (open_signup rule)
+ok 40 - one audit row records the fallback
+ok 41 - repeating the switch succeeds
+ok 42 - the repeat is write-free (no second audit row)
+ok 43 - a member of both the deactivated and the default tenant switches
+ok 44 - that member resolves to the default tenant
+ok 45 - no extra membership was created
+ok 46 - a non-member cannot reach a deactivated tenant
+ok 47 - an exafy admin can still switch to the deactivated tenant
+ok 48 - the exafy admin claim stays on the deactivated tenant
+ok 49 - an exafy admin can still read the deactivated tenant row
+ok 50 - a multi-tenant member switching to the deactivated tenant resolves to default
+ok 51 - multi-tenant member claim is the default tenant
+ok 52 - the membership in the deactivated tenant is kept (data untouched)
+ok 53 - before archiving, the member switches to t-c
+ok 54 - claim is t-c
+ok 55 - archive_tenant reports changed:true
+ok 56 - an archived tenant is inactive
+ok 57 - archived_at is set
+ok 58 - a second archive is idempotent (changed:false)
+ok 59 - archived_at is not rewritten
+ok 60 - a member of an archived tenant is not locked out
+ok 61 - and resolves to the default tenant
+ok 62 - archiving an already-deactivated tenant sets archived_at
+ok 63 - it stays inactive and is archived
+ok 64 - deactivating an archived tenant changes nothing
+ok 65 - and keeps archived_at
+ok 66 - the default tenant cannot be archived
+ok 67 - the platform tenant cannot be archived
+ok 68 - unknown slug -> TENANT_NOT_FOUND
+ok 69 - NULL slug -> INVALID_SLUG
+ok 70 - a member calling archive_tenant is refused (42501)
+ok 71 - an exafy admin can still read the archived tenant row
+ok 72 - an untouched tenant is still active
+[exit 0]
+
+$ /projects/sandbox/wt-audit-m0/docs/validation/VTID-05493/pglite-harness/checks.sh
+## base_schema.sql (loaded)
+## 20261010180200_vtid_05043_s3_switch_tenant_open_signup_only.sql (loaded)
+## vtid_05493_fixture.sql (loaded)
+## live-before.sql
+tenant_id | slug | is_active | is_default | is_platform | open_signup
+00000000-0000-0000-0000-0000000000a0 | maxina | true | true | false | true
+00000000-0000-0000-0000-0000000000a3 | platform | true | false | true | false
+00000000-0000-0000-0000-0000000000a1 | t-a | true | false | false | false
+00000000-0000-0000-0000-0000000000a2 | t-b | true | false | false | false
+00000000-0000-0000-0000-0000000000a4 | t-c | true | false | false | false
+
+default_tenants | archived_at_col | deactivate_tenant | archive_tenant | snapshot_table
+1 | 0 | NULL | NULL | NULL
+
+switch_def_md5 | switch_has_open_signup | switch_has_fallback
+ff453ea8440aa5238b2477edc7aa15f8 | true | false
+
+## 20261102070300_vtid_05493_mt_tenant_deactivate.sql (loaded)
+## 20261102070350_vtid_05493_mt_tenant_archive_switch.sql (loaded)
+## post-apply-checks.sql
+deactivate_tenant | archive_tenant | archived_at_col | snapshot_rows | tenants_now
+deactivate_tenant(text) | archive_tenant(text) | 1 | 5 | 5
+
+authenticated_exec_deactivate | authenticated_exec_archive | anon_exec_switch | authenticated_exec_switch | service_role_exec_deactivate | service_role_exec_archive
+false | false | false | true | true | true
+
+switch_has_open_signup | switch_has_fallback
+true | true
+
+default_tenants | default_active | inactive_tenants | archived_tenants
+1 | true | 0 | 0
+
+## rollback-exercise.sql
+deactivated_t_a | archived_t_c
+true | true
+
+slug | is_active | archived
+maxina | true | false
+platform | true | false
+t-a | false | false
+t-b | true | false
+t-c | false | true
+
+## rollback-070350-tenant-archive-switch.sql (loaded)
+## rollback-070300-tenant-deactivate.sql (loaded)
+## rollback-check.sql
+deactivate_tenant | archive_tenant | archived_at_col | switch_has_fallback | switch_has_open_signup
+NULL | NULL | 0 | false | true
+
+tenants_differing_from_snapshot
+0
+
+## rollback-state.sql
+slug | is_active
+maxina | true
+platform | true
+t-a | true
+t-b | true
+t-c | true
+
+## rollback-070350-tenant-archive-switch.sql (loaded)
+[exit 0]
+
+$ node --test /projects/sandbox/wt-audit-m0/docs/validation/VTID-05493/static-pins.test.mts
+TAP version 13
+# Subtest: VTID-05493: migration files
+    # Subtest: are exactly the two lane files, sorted around mt-community-isolation-r2 C3 (070160)
+    ok 1 - are exactly the two lane files, sorted around mt-community-isolation-r2 C3 (070160)
+      ---
+      duration_ms: 1.653251
+      type: 'test'
+      ...
+    # Subtest: 20261102070300_vtid_05493_mt_tenant_deactivate.sql: one transaction with a lock_timeout
+    ok 2 - 20261102070300_vtid_05493_mt_tenant_deactivate.sql: one transaction with a lock_timeout
+      ---
+      duration_ms: 0.471587
+      type: 'test'
+      ...
+    # Subtest: 20261102070350_vtid_05493_mt_tenant_archive_switch.sql: one transaction with a lock_timeout
+    ok 3 - 20261102070350_vtid_05493_mt_tenant_archive_switch.sql: one transaction with a lock_timeout
+      ---
+      duration_ms: 0.216281
+      type: 'test'
+      ...
+    # Subtest: the ALTER TABLE on tenants retries on lock_not_available
+    ok 4 - the ALTER TABLE on tenants retries on lock_not_available
+      ---
+      duration_ms: 1.152711
+      type: 'test'
+      ...
+    # Subtest: is expand-only: no DROP, no DELETE, no TRUNCATE, no NOT NULL / DEFAULT on the new column
+    ok 5 - is expand-only: no DROP, no DELETE, no TRUNCATE, no NOT NULL / DEFAULT on the new column
+      ---
+      duration_ms: 0.50665
+      type: 'test'
+      ...
+    # Subtest: adds no RLS policy and no bare current_tenant_id()
+    ok 6 - adds no RLS policy and no bare current_tenant_id()
+      ---
+      duration_ms: 0.319368
+      type: 'test'
+      ...
+    # Subtest: snapshots tenants.is_active before any change and closes the snapshot table to clients
+    ok 7 - snapshots tenants.is_active before any change and closes the snapshot table to clients
+      ---
+      duration_ms: 0.232203
+      type: 'test'
+      ...
+    1..7
+ok 1 - VTID-05493: migration files
+  ---
+  duration_ms: 5.503502
+  type: 'suite'
+  ...
+# Subtest: VTID-05493: lifecycle RPCs
+    # Subtest: deactivate_tenant: SECURITY DEFINER with a pinned search_path, guards, service_role only
+    ok 1 - deactivate_tenant: SECURITY DEFINER with a pinned search_path, guards, service_role only
+      ---
+      duration_ms: 0.451628
+      type: 'test'
+      ...
+    # Subtest: archive_tenant: SECURITY DEFINER with a pinned search_path, guards, service_role only
+    ok 2 - archive_tenant: SECURITY DEFINER with a pinned search_path, guards, service_role only
+      ---
+      duration_ms: 0.355433
+      type: 'test'
+      ...
+    # Subtest: are idempotent: the UPDATE only touches a row that still needs the change
+    ok 3 - are idempotent: the UPDATE only touches a row that still needs the change
+      ---
+      duration_ms: 0.356112
+      type: 'test'
+      ...
+    1..3
+ok 2 - VTID-05493: lifecycle RPCs
+  ---
+  duration_ms: 1.485647
+  type: 'suite'
+  ...
+# Subtest: VTID-05493: closing switch RPC
+    # Subtest: keeps the VTID-05043 contract (open_signup join rule, TENANT_NOT_JOINABLE, grants)
+    ok 1 - keeps the VTID-05043 contract (open_signup join rule, TENANT_NOT_JOINABLE, grants)
+      ---
+      duration_ms: 0.36791
+      type: 'test'
+      ...
+    # Subtest: resolves a member of an inactive tenant to the active default tenant, never a lockout
+    ok 2 - resolves a member of an inactive tenant to the active default tenant, never a lockout
+      ---
+      duration_ms: 0.139749
+      type: 'test'
+      ...
+    # Subtest: lets a non-member nowhere near a deactivated tenant and an exafy admin still switch to it
+    ok 3 - lets a non-member nowhere near a deactivated tenant and an exafy admin still switch to it
+      ---
+      duration_ms: 0.411755
+      type: 'test'
+      ...
+    # Subtest: audits the fallback and stays write-free on a repeat call
+    ok 4 - audits the fallback and stays write-free on a repeat call
+      ---
+      duration_ms: 0.214818
+      type: 'test'
+      ...
+    # Subtest: does not touch current_tenant_id() (an RLS-wide helper; out of this lane)
+    ok 5 - does not touch current_tenant_id() (an RLS-wide helper; out of this lane)
+      ---
+      duration_ms: 0.176742
+      type: 'test'
+      ...
+    1..5
+ok 3 - VTID-05493: closing switch RPC
+  ---
+  duration_ms: 1.481171
+  type: 'suite'
+  ...
+# Subtest: VTID-05493: rollbacks and read-only checks
+    # Subtest: rollback-070300-tenant-deactivate.sql exists
+    ok 1 - rollback-070300-tenant-deactivate.sql exists
+      ---
+      duration_ms: 0.211394
+      type: 'test'
+      ...
+    # Subtest: rollback-070350-tenant-archive-switch.sql exists
+    ok 2 - rollback-070350-tenant-archive-switch.sql exists
+      ---
+      duration_ms: 0.758228
+      type: 'test'
+      ...
+    # Subtest: live-before.sql exists
+    ok 3 - live-before.sql exists
+      ---
+      duration_ms: 0.100509
+      type: 'test'
+      ...
+    # Subtest: post-apply-checks.sql exists
+    ok 4 - post-apply-checks.sql exists
+      ---
+      duration_ms: 0.071944
+      type: 'test'
+      ...
+    # Subtest: rollback-check.sql exists
+    ok 5 - rollback-check.sql exists
+      ---
+      duration_ms: 0.078935
+      type: 'test'
+      ...
+    # Subtest: the read-only checks are SELECT only
+    ok 6 - the read-only checks are SELECT only
+      ---
+      duration_ms: 0.865736
+      type: 'test'
+      ...
+    # Subtest: rollback-070350 restores the VTID-05043 body, restores is_active from the snapshot, then drops the column
+    ok 7 - rollback-070350 restores the VTID-05043 body, restores is_active from the snapshot, then drops the column
+      ---
+      duration_ms: 0.235682
+      type: 'test'
+      ...
+    # Subtest: rollback-070300 refuses while archive_tenant exists and restores is_active before dropping the function
+    ok 8 - rollback-070300 refuses while archive_tenant exists and restores is_active before dropping the function
+      ---
+      duration_ms: 0.143141
+      type: 'test'
+      ...
+    1..8
+ok 4 - VTID-05493: rollbacks and read-only checks
+  ---
+  duration_ms: 2.698906
+  type: 'suite'
+  ...
+# Subtest: VTID-05493: queue rows and drift baseline
+    # Subtest: MIGRATION-QUEUE lists both files with their rollbacks
+    ok 1 - MIGRATION-QUEUE lists both files with their rollbacks
+      ---
+      duration_ms: 0.360656
+      type: 'test'
+      ...
+    # Subtest: the not-yet-live snapshot table is in the drift baseline and the count matches
+    ok 2 - the not-yet-live snapshot table is in the drift baseline and the count matches
+      ---
+      duration_ms: 0.235829
+      type: 'test'
+      ...
+    1..2
+ok 5 - VTID-05493: queue rows and drift baseline
+  ---
+  duration_ms: 0.688549
+  type: 'suite'
+  ...
+1..5
+# tests 25
+# suites 5
+# pass 25
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 124.679778
+[exit 0]
+
+$ node scripts/ci/bare-policy-lint.mjs
+bare-policy-lint: 0 bare current_tenant_id() policies on 0 tables (828 policies in 731 files; allowlisted 0)
+[exit 0]
+
+$ node --test scripts/ci/check-migration-drift.test.cjs
+TAP version 13
+# Subtest: Aurora-only table absent from Supabase passes and is not reported missing
+ok 1 - Aurora-only table absent from Supabase passes and is not reported missing
+  ---
+  duration_ms: 1.192419
+  type: 'test'
+  ...
+# Subtest: Aurora-only table present in the Supabase snapshot fails
+ok 2 - Aurora-only table present in the Supabase snapshot fails
+  ---
+  duration_ms: 0.129234
+  type: 'test'
+  ...
+# Subtest: a non-listed declared table missing from Supabase still fails as before
+ok 3 - a non-listed declared table missing from Supabase still fails as before
+  ---
+  duration_ms: 0.110827
+  type: 'test'
+  ...
+# Subtest: without an Aurora-only list the store table would be reported as new drift
+ok 4 - without an Aurora-only list the store table would be reported as new drift
+  ---
+  duration_ms: 0.93878
+  type: 'test'
+  ...
+# Subtest: aurora_only_tables entries need table, VTID and reason
+ok 5 - aurora_only_tables entries need table, VTID and reason
+  ---
+  duration_ms: 0.425573
+  type: 'test'
+  ...
+# Subtest: the repo baseline lists every table the health store migration declares, and nothing else of VTID-05158
+ok 6 - the repo baseline lists every table the health store migration declares, and nothing else of VTID-05158
+  ---
+  duration_ms: 65.238092
+  type: 'test'
+  ...
+# Subtest: every table declared behind the health store placement guard is aurora_only (incl. health_sources)
+ok 7 - every table declared behind the health store placement guard is aurora_only (incl. health_sources)
+  ---
+  duration_ms: 27.622234
+  type: 'test'
+  ...
+# Subtest: CLI: passes on a snapshot without the store tables, fails when one appears on Supabase
+ok 8 - CLI: passes on a snapshot without the store tables, fails when one appears on Supabase
+  ---
+  duration_ms: 233.032817
+  type: 'test'
+  ...
+1..8
+# tests 8
+# suites 0
+# pass 8
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 380.312835
+[exit 0]
