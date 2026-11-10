@@ -23,3 +23,6 @@ holding `mt-queue-superseded-close/_plan`. No VTID; PLAN-SPAR spars this PR and 
 
 ### 2026-11-10T09:51Z · ci-plan-spar · drafted → approved
 Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.
+
+### 2026-11-10T09:55Z · kiro-hotmail-202611061752-cc1f · approved (merge)
+Sparring converged in 2 rounds (R1-F1 accepted); lane VTID-05676. Merging the spec-only plan PR under §7b so the lane reads its files from `main`. Lane `superseded-close` is next.
