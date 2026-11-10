@@ -34,6 +34,19 @@ Existing coverage per area (so the lanes add only gaps). Jest runs `tests/**/*.t
 - **push:** `usePushLifecycle` (`src/push/registration.ts:205`: token-refresh re-register, badge sync on sign-in and on return to foreground, cleanup) has no test; `PUSH_TIMEOUT_MS` (`:30`) has no test; `onTokenRefresh` has no test; the push-open path of `useLinkRouting` (`src/linking/link-router.ts:113`: cold-start `getInitialOpen`, live `onOpen`, cleanup) has no test; `createG1TestPushProvider` (`src/push/g1-test-provider.ts:75`) is only used over the loopback fixture, never with an injected `fetchImpl`.
 - **deeplinks-i18n:** `useLinkRouting` (session replay and cleanup) and `configuredLinkHosts` (`src/linking/link-router.ts:89`) have no test; `localeFromDevice` (`src/i18n/index.ts`) has no test; nothing checks, across the whole composed catalog, that each of the 11 locales has the same shard file set, that placeholders (`{name}`) match `de`, and that `de` carries no Sie/Ihr/Ihnen; `tests/i18n.test.ts:37` checks only that the generated map lists the shards on disk.
 
+## Premise evidence (vitana-v1, pinned e31bf4627ff3c705c20f8e6b718ce4dd03353b7f)
+The sparring partner reads only vitana-platform, so the vitana-v1 premises the lanes rest on are quoted here (`git show <sha>:<path>`), and every lane re-checks them first (task 0).
+- `apps/mobile/jest.config.js`: `roots: ['<rootDir>/tests']`, `testMatch: ['**/*.test.ts', '**/*.test.tsx']`, `preset: 'jest-expo'`.
+- `apps/mobile/package.json`: `"test": "jest"`, `"typecheck": "tsc --noEmit"`.
+- `apps/mobile/tests/helpers/providers.tsx`: `export function fakeGateway(routes)` (`:24`), `export function makeWrapper(opts)` (`:34`); `supabase-double.ts`: `export function fakeSession` (`:16`), `export function createSupabaseDouble` (`:25`); `mocks.ts` and `no-network.ts` are `export {}` side-effect files.
+- `src/i18n/index.ts:16` `export const LOCALES = ['de','en','es','sr','fr','pl','pt','ru','tr','zh','ar'] as const`; `:40` `export function isRTL`; `:68` `export function localeFromDevice`; `RTL_LOCALES` is `new Set(['ar'])`.
+- `src/shell/AuthGate.tsx:19` `export function isGuestPath(path)`, `:24` `useCurrentHref`, `:36` `AuthGate({ member, guest })`; signed-out member path returns `<Redirect href={`/maxina?redirectTo=${encodeURIComponent(href)}`}>` (`:46`); a bounce returns `<Redirect href={bounce}>` (`:50`).
+- `src/shell/logic/route-guard.ts:17` `export function routeGuard(path, dbRole, reg)`; `:10` `COMMUNITY_PREFIXES` (11 entries); `:31` backoffice always returns `/home`.
+- `src/identity/useRole.ts:29` `if (!activeTenantId) return { ok: false, error: 'NO_ACTIVE_TENANT' }`; `:43` `const dbRole: UserRole = (query.data as UserRole | null) || 'community'`.
+- `src/push/registration.ts:30` `PUSH_TIMEOUT_MS = 10000`; `:205` `usePushLifecycle` subscribes `onTokenRefresh`, `subscribeSession` and `AppState` `change`; `:108` posts `{ fcm_token, device_type, app_version }`.
+- `src/push/g1-test-provider.ts:75` `createG1TestPushProvider(config)` with `fetchImpl` defaulting to global `fetch`; posts `{ token, device_type }`.
+- `src/linking/link-router.ts:89` `configuredLinkHosts`, `:113` `useLinkRouting` (cold start `getInitialOpen`, `onOpen`, `subscribeSession` replay).
+
 ## Decisions (each decided by Kiro, grounded in the cited code)
 1. **Four lanes, one per area with a gap, each owning one new folder.** `auth`, `roles`, `push`, `deeplinks-i18n`, folders `apps/mobile/tests/wave1-readiness/{auth,roles,push,deeplinks-i18n}/`. Reason: disjoint paths, so the lanes run in parallel with no shared file.
 2. **New files only.** No edit to an existing test, helper, mock or config; no `jest.mock` factory is added to a shared file. Each new file declares its own `jest.mock(...)` calls and imports `tests/helpers/**` read-only. Reason: owner rule for this run.
@@ -46,13 +59,13 @@ Existing coverage per area (so the lanes add only gaps). Jest runs `tests/**/*.t
 ## Lanes
 | Lane | Repo | Executor / seat → reviewer | Scope | depends_on | next_actor |
 |---|---|---|---|---|---|
-| `auth` | vitana-v1 | kiro / exafyltd → vitana-lane-reviewer | `apps/mobile/tests/wave1-readiness/auth/**`, `docs/validation/VTID-*/{scope.json,staging-tests.json,plan-sparring.md}` | — | kiro |
+| `auth` | vitana-v1 | kiro / exafyltd → vitana-lane-reviewer | `apps/mobile/tests/wave1-readiness/auth/**`, `docs/validation/VTID-*/{acceptance.md,commands.log,scope.json,staging-tests.json,plan-sparring.md}` | — | kiro |
 | `roles` | vitana-v1 | same | `apps/mobile/tests/wave1-readiness/roles/**`, same docs globs | — | kiro |
 | `push` | vitana-v1 | same | `apps/mobile/tests/wave1-readiness/push/**`, same docs globs | — | kiro |
 | `deeplinks-i18n` | vitana-v1 | same | `apps/mobile/tests/wave1-readiness/deeplinks-i18n/**`, same docs globs | — | kiro |
 
 The `docs/validation/VTID-*/...` globs are the per-lane evidence files that every lane PR carries under its own VTID
-(`land-guard.mjs:40`: `acceptance.md`, `commands.log`, `scope.json`); they are the `docs/validation/**` part of each lane and are the
+(`land-guard.mjs:31` `EVIDENCE_FILES`, enforced at `:38-41`: `acceptance.md`, `commands.log`, `scope.json`); they are the `docs/validation/**` part of each lane and are the
 same shape as the merged `native-wave3-release-r2/lanes/crash-port.md`. No two lanes share a test file. **Parallelism:** all four
 lanes run at once (up to 4 of the cap 6). No hot file (`App.tsx`, `screens.json`, ledger, migrations, i18n shards) is touched.
 

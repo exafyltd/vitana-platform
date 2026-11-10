@@ -13,6 +13,8 @@ divergence from the web contract is recorded as a finding in `acceptance.md`, no
 needs G1 is `it.skip('<name>', ...)` with the line above it `// needs G1 (isolated test backend): <reason>`, listed in
 `acceptance.md` under "Skipped, needs G1 (NOT counted toward the Wave 1 exit)".
 
+**Task 0 (every lane, before any test file).** Re-check every premise the lane's cases rest on against `origin/main` of vitana-v1: the file exists, the cited symbol and line, the helper export names, and `jest.config.js` `roots`/`testMatch`; record the result and the checked SHA in `commands.log`. If a premise is stale, adapt the case to what main does now and note it in `acceptance.md`; if a case's subject is gone, drop the case and say so. Never edit source to make a premise true.
+
 **Readiness statement (every lane's `acceptance.md` opens with it).** These tests are readiness evidence only. They do not
 prove the Wave 1 exit ("signed-in G1 member navigates the full shell in all modes, receives a push and opens its deep link, on
 both platforms", `NATIVE-APP-PLAN.md:196`), which needs G1 (`NATIVE-APP-PLAN.md` §5, §2a). Skipped cases are not counted
