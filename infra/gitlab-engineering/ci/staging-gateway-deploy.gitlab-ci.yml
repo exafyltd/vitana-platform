@@ -1,0 +1,90 @@
+# Staging gateway from GitLab (manual). Builds services/gateway from the commit, then registers the CURRENT staging task definition
+# with only the image and the commit stamp changed, rolls vitana-gateway, checks build-info, and rolls back on failure.
+# NOT production: target is vitana-gateway in Vitana-ECS-Cluster, smoke check is preview-aws-gateway.vitanaland.com.
+stages: [build, deploy]
+
+.oidc-base:
+  id_tokens:
+    GITLAB_OIDC_TOKEN:
+      aud: https://sts.amazonaws.com
+  variables:
+    AWS_REGION: eu-central-1
+    AWS_ROLE_ARN: $AWS_STAGING_ROLE_ARN
+    AWS_WEB_IDENTITY_TOKEN_FILE: /tmp/oidc-token
+
+gateway-staging-build:
+  extends: .oidc-base
+  stage: build
+  tags: [vitana-eng-v1]
+  image: docker:27
+  services:
+    - name: docker:27-dind
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
+  script:
+    - |
+      apk add --no-cache aws-cli git >/dev/null
+      # Stage the codeintel sources inside the build context, as AWS-STAGE-DEPLOY-GATEWAY.yml does.
+      rm -rf services/gateway/codeintel-src && mkdir -p services/gateway/codeintel-src/platform services/gateway/codeintel-src/vitana-v1
+      tar --exclude=node_modules --exclude=services/gateway/codeintel-src -cf - . | tar -xf - -C services/gateway/codeintel-src/platform
+      git clone --depth 1 https://github.com/exafyltd/vitana-v1 services/gateway/codeintel-src/vitana-v1
+      rm -rf services/gateway/codeintel-src/vitana-v1/.git
+      printf '%s' "$GITLAB_OIDC_TOKEN" > "$AWS_WEB_IDENTITY_TOKEN_FILE"
+      ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+      REGISTRY="$ACCOUNT.dkr.ecr.eu-central-1.amazonaws.com"
+      aws ecr get-login-password | docker login --username AWS --password-stdin "$REGISTRY"
+      SHORT=$(echo "$CI_COMMIT_SHA" | cut -c1-12)
+      IMAGE="$REGISTRY/vitana/gateway:$SHORT"
+      sed -i '/RUN npm run build/i ENV NODE_OPTIONS=--max-old-space-size=4096' services/gateway/Dockerfile
+      docker build -t "$IMAGE" -t "$REGISTRY/vitana/gateway:staging-latest" services/gateway
+      docker push "$IMAGE"
+      docker push "$REGISTRY/vitana/gateway:staging-latest"
+      echo "$IMAGE" > image.txt
+      echo "$CI_COMMIT_SHA" > commit.txt
+  artifacts:
+    paths: [image.txt, commit.txt]
+    expire_in: 1 day
+
+gateway-staging-deploy:
+  extends: .oidc-base
+  stage: deploy
+  tags: [vitana-eng-v1]
+  image: docker:27
+  timeout: 40m
+  needs: [gateway-staging-build]
+  variables:
+    ECS_CLUSTER: Vitana-ECS-Cluster
+    ECS_SERVICE: vitana-gateway
+    STAGING_URL: https://preview-aws-gateway.vitanaland.com
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
+      when: manual
+  script:
+    - |
+      apk add --no-cache aws-cli jq curl >/dev/null
+      printf '%s' "$GITLAB_OIDC_TOKEN" > "$AWS_WEB_IDENTITY_TOKEN_FILE"
+      IMAGE=$(cat image.txt)
+      SHA=$(cat commit.txt)
+      PREV_TD=$(aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE" --query 'services[0].taskDefinition' --output text)
+      echo "Rollback target: $PREV_TD  new image: $IMAGE"
+      aws ecs describe-task-definition --task-definition "$PREV_TD" --query taskDefinition --output json | jq --arg IMG "$IMAGE" --arg SHA "$SHA" 'del(.taskDefinitionArn,.revision,.status,.requiresAttributes,.compatibilities,.registeredAt,.registeredBy) | .containerDefinitions[0].image = $IMG | (.containerDefinitions[0].environment[]? | select(.name=="GIT_COMMIT_SHA" or .name=="COMMIT_SHA") | .value) |= $SHA' > new-td.json
+      NEW_TD=$(aws ecs register-task-definition --cli-input-json file://new-td.json --query 'taskDefinition.taskDefinitionArn' --output text)
+      echo "New task definition: $NEW_TD"
+      aws ecs update-service --cluster "$ECS_CLUSTER" --service "$ECS_SERVICE" --task-definition "$NEW_TD" >/dev/null
+      aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE"
+      ok=0; B=""
+      for i in 1 2 3 4 5 6; do
+        B=$(curl -fsS "$STAGING_URL/api/v1/admin/build-info" 2>/dev/null | jq -r '.git_commit // empty' || true)
+        if [ "$B" = "$SHA" ]; then ok=1; break; fi
+        sleep 20
+      done
+      if [ "$ok" != "1" ]; then
+        echo "SMOKE FAILED: staging serves '$B', expected '$SHA'. Rolling back to $PREV_TD"
+        aws ecs update-service --cluster "$ECS_CLUSTER" --service "$ECS_SERVICE" --task-definition "$PREV_TD" >/dev/null
+        exit 1
+      fi
+      echo "Smoke OK: staging serves $SHA"
