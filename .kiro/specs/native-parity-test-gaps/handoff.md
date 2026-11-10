@@ -6,6 +6,8 @@ next_actor: kiro
 state: drafted
 author_seat: exafyltd
 updated: 2026-11-10T18:10Z
+spar_refs:
+  - exafyltd/vitana-v1: e31bf4627ff3c705c20f8e6b718ce4dd03353b7f
 ---
 # Handoff — Native parity audit: close the two route-test gaps
 
