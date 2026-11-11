@@ -1,0 +1,21 @@
+# console-probes-a: probe string check after fix (repo files)
+GREEN 04887 tests[4] /command-hub/ (2 strings)
+GREEN 04887 tests[5] /command-hub/overview/live-metrics/ (1 strings)
+GREEN 04887 tests[6] /command-hub/app.js?v=20261121-vtid-05082-vtid-05547 (5 strings)
+GREEN 04887 tests[7] /command-hub/operator-console.js?v=20261121-vtid-05082 (1 strings)
+GREEN 04887 tests[8] /command-hub/styles.css?v=20261121-vtid-05082-vtid-05547 (3 strings)
+GREEN 04975 tests[3] /command-hub/ (2 strings)
+GREEN 04975 tests[4] /command-hub/operator-console.js (2 strings)
+GREEN 04975 tests[5] /command-hub/styles.css?v=20261121-vtid-05082-vtid-05547 (2 strings)
+GREEN 04975 tests[6] /command-hub/kiro-console.js?v=20261114-vtid-05071 (2 strings)
+GREEN 04975 tests[7] /command-hub/kiro-console.css?v=20261114-vtid-05071 (1 strings)
+GREEN 04984 tests[1] /command-hub/ (2 strings)
+GREEN 04984 tests[2] /command-hub/operator-console.js (2 strings)
+GREEN 04999 tests[2] /command-hub/ (2 strings)
+GREEN 04999 tests[3] /command-hub/operator-console.js (3 strings)
+red: 0
+grep: warning: stray \ before "
+grep: warning: stray \ before "
+grep: warning: stray \ before "
+grep: warning: stray \ before "
+# existing entries changed in diff: 0
