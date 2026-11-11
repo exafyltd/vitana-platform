@@ -66,6 +66,12 @@ jobs:
           node --test scripts/ci/kiro-steering/guard.test.cjs
           node scripts/ci/kiro-steering/guard.cjs .
 
+# VTID-05023 Phase B1: a migration changed in this PR must not use Supabase-only schema, roles or extensions.
+      - name: Aurora compatibility (changed migrations)
+        run: |
+          node --test scripts/aws/test/aurora-compat-lint.test.mjs
+          node scripts/aws/aurora-compat-lint.mjs --base "$BASE" --head "$HEAD"
+
       - name: Scope guard
         id: scope
         continue-on-error: true

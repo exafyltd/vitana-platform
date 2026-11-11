@@ -4,37 +4,77 @@ Lane key: `vtid-05023/cutover` (queue slug `vtid-05023`, lane `cutover`). Not th
 
 ## Claim
 
-- Session id: `kiro-202611111450-a7d2` (generated for this session; the queue requires this form. Lane claim commit `78db61ff54aecb0f28aa5088807bcea3d8ea9235`.)
-- Claimed through `node scripts/collab/queue.mjs claim vtid-05023/cutover --session kiro-202611111450-a7d2`.
+- Session id: `kiro-202611111450-a7d2`. The queue requires this form and no session id value was available to me, so I generated it for this claim.
+- Claim commit `78db61ff54aecb0f28aa5088807bcea3d8ea9235`, made with `node scripts/collab/queue.mjs claim vtid-05023/cutover --session kiro-202611111450-a7d2`.
 
 ## Blockers (exact)
 
-| ID | Task | Error or state | Next |
+| ID | Task | Exact error or state | Next step |
 |---|---|---|---|
-| B-MR | Open draft MRs for `console-probes-a`, `console-probes-b`, `pm-mode-probes` | Branches exist on GitLab. The sandbox cannot create MRs: `GET /api/v4/projects/vitana%2Fvitana-platform/merge_requests` returns `400 {"message":"Missing header field, please provide AuthToken"}`. A push with `-o merge_request.create` returned `Everything up-to-date`. | Owner or a session with GitLab API access opens the MRs. Links below. |
-| B-MERGE | Merge the three MRs after green CI | Depends on B-MR | Same |
-| B-AWS-V1 | `aws sts get-caller-identity` | `NoCredentials` (sandbox has no AWS credentials) | Owner attaches permissions to `kiro-1-dstevanovic` and registers the role; the sandbox does not yet pick up the role. |
-| B-AWS-C/D | Phases C1 to D4 | Depend on B-AWS-V1 | Start at C1 once V1 passes. |
+| B-MR | Open draft MRs for `console-probes-a`, `console-probes-b`, `pm-mode-probes` | The GitLab API via the sandbox gateway returns `400 {"message":"Missing header field, please provide AuthToken"}` for `GET /api/v4/projects/vitana%2Fvitana-platform/merge_requests`. `git push -o merge_request.create` returned `Everything up-to-date` because the branches already exist on the remote. `glab` cannot write its config (`mkdir /root/.config/glab-cli: read-only file system`). | Owner (or a session with GitLab API access) opens the three MRs. Links are in the section below. |
+| B-MERGE | Merge the three MRs after CI is green | Depends on B-MR | Same as B-MR |
+| B-STAGING | STAGING-VERIFY green on one commit (Phase A acceptance) | Depends on B-MERGE | Watch the deploy after the third merge |
+| B-AWS-V1 | `aws sts get-caller-identity` (preflight V1) | `NoCredentials: Unable to locate credentials`. The Kiro role `arn:aws:iam::472838866351:role/kiro-1-dstevanovic` exists, but no permission policies are attached and the sandbox does not get credentials from it. | Owner attaches permissions and confirms the role is registered for this sandbox. |
+| B-AWS-C | Phase C (C1 to C9) | Depends on B-AWS-V1 | Start at C1 when V1 passes. |
+| B-AWS-D | Phase D (D1 to D4) | Depends on C | Same |
+| B-O5 | Migration list for the Aurora apply set (B2) | The handover names a 12 or 13 file list, but the repo does not define it. Owner step O5 is still open. | Owner confirms the list. See Phase B below. |
 
-## MR links (open these to create the drafts)
+## Merge requests to open (drafts, target `main`)
 
 - console-probes-a: https://gitlab.vitanaland.com/vitana/vitana-platform/-/merge_requests/new?merge_request[source_branch]=kiro/staging-verify-manifest-repair/console-probes-a&merge_request[target_branch]=main
 - console-probes-b: https://gitlab.vitanaland.com/vitana/vitana-platform/-/merge_requests/new?merge_request[source_branch]=kiro/staging-verify-manifest-repair/console-probes-b&merge_request[target_branch]=main
 - pm-mode-probes: https://gitlab.vitanaland.com/vitana/vitana-platform/-/merge_requests/new?merge_request[source_branch]=kiro/staging-verify-manifest-repair/pm-mode-probes&merge_request[target_branch]=main
 
+Suggested title and description (VTID-05023, Phase A):
+- `Draft: VTID-05023 Phase A: staging gate probe fixes (<lane>)`
+- console-probes-a fixes 04887, 04975, 04984, 04999. Commit `42dfc93727`.
+- console-probes-b fixes 05003, 05004, 05064, 05069, 05071. Commit `fc46e215a1`.
+- pm-mode-probes fixes 05277, 05281 (runner gains `expect_json_in`). Commit `6f73cd6b01`.
+
 ## Phase A status
 
 | Task | Status | Evidence |
 |---|---|---|
-| A1 (12 tests) | Fixed on branches, not merged | console-probes-a `42dfc93727`, console-probes-b `fc46e215a1`, pm-mode-probes `6f73cd6b01`; `docs/validation/VTID-04887/console-probes-a-check.log`, `docs/validation/VTID-05064/console-probes-b-check.log`, `docs/validation/VTID-05277/pm-mode-probes-runner-tests.log` |
-| A2 (track PR #4964) | Not started | |
-| STAGING-VERIFY green on one commit | Not run (needs merged MRs) | |
+| A1: 12 failing staging gate tests | Fixed on three branches. Not merged. Not verified on staging. | `docs/validation/VTID-04887/console-probes-a-check.log`, `docs/validation/VTID-05064/console-probes-b-check.log`, `docs/validation/VTID-05277/pm-mode-probes-runner-tests.log` |
+| A2: track PR #4964 | Not started | |
+| STAGING-VERIFY green on one commit | Not run (B-MERGE) | |
 
 ## Phase B status
 
-Not started at time of writing; see updates below.
+| Task | Status | Evidence |
+|---|---|---|
+| B1: Aurora-compatibility lint, wired into PR-GATE | Done on this branch. Lint and tests pass (4 of 4). PR-GATE step `Aurora compatibility (changed migrations)` added; YAML parses. The step fails a PR only for migrations it changes. | `scripts/aws/aurora-compat-lint.mjs`, `scripts/aws/test/aurora-compat-lint.test.mjs`, fixtures `scripts/aws/test/fixtures/aurora-compat/{pass,fail}.sql`, `.github/workflows/PR-GATE.yml` |
+| B2: run lint over the 12/13 migrations and fix every flagged file | Blocked on B-O5. The lint over all migrations flags 369 of 733 files. Not fixed. | `docs/validation/VTID-05023/aurora-compat-lint-full.txt` (by rule: auth-schema 1198 hits, supabase-role 1700, storage-schema 68) |
+| B3: PGlite/pgTAP harness over the set | Not started | |
+
+Held drop `20261102052300_vtid_05573_legacy_messages_drop.sql`: not modified.
+
+### Why B2 is not done
+
+Fixing all 369 flagged files means rewriting `auth.uid()`, `auth.users` and Supabase role grants across hundreds of migrations that were already applied. Each rewrite needs a decision on the replacement (auth_user_fk_map or the auth bridge). The apply set is also undefined in the repo, so B2 is not scoped. Owner step O5 must confirm the list first.
+
+## Phase C and D status (all blocked on B-AWS-V1)
+
+| Task | Blocked by | Exact error |
+|---|---|---|
+| C1 rehearsal clone | AWS credentials | `aws: [ERROR]: An error occurred (NoCredentials): Unable to locate credentials.` |
+| C2 to C9 | AWS credentials | Same |
+| D1 to D4 | AWS credentials and C | Same |
+
+## Owner steps still open
+
+| ID | Step | State |
+|---|---|---|
+| O1 | IAM check and policy attach | Role `kiro-1-dstevanovic` created. No policies attached yet. |
+| O2 | GitLab OIDC trust | Open |
+| O3 | Port-4000 security-group rule | Open |
+| O4 | Cloudflare token | Open |
+| O5 | Confirm migration list | Open. Blocks B2. |
+| O6 | Revoke the token exposed in chat | Open |
 
 ## Updates
 
-- Claim recorded.
-- MR creation blocked (B-MR); Phase B proceeds.
+- Claim recorded (`78db61ff`).
+- Phase A branches pushed (`42dfc93727`, `fc46e215a1`, `6f73cd6b01`). MR creation blocked (B-MR).
+- Phase B1 lint and PR-GATE wiring pushed on this lane branch.
+- Phase C and D blocked on AWS (B-AWS-V1).
