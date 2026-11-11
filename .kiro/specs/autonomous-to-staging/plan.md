@@ -26,7 +26,7 @@ suite ever targets production; staging tests stay read-only against any shared d
 | H2 | Protected gate files need an owner instruction | `CLAUDE.md:82`; `collaboration.md:136-145, 218, 228, 270-271`; v1 `CLAUDE.md:107` | rule |
 | H3 | Same, enforced | `scripts/collab/queue.mjs:91-107, 240, 1033-1034`; `scripts/collab/land-guard.mjs:108-110, 54`; `services/gateway/src/services/project-manager/governance.ts:4-22, 48-107`; `PR-GATE.yml:168-174` | code |
 | H4 | Migrations need owner approval of file and target | `collaboration.md:209-213, 312-322`; `.kiro/steering/vitana-owner-autonomy.md:40`; `.kiro/pipeline/quality-checks.md:73` | rule (RUN-MIGRATION.yml and v1 `apply-*.yml` have no environment reviewers) |
-| H5 | 3 failed fix-forwards park the lane: `next_actor: owner` in `.kiro/pipeline/driver.md:52` and `common-rules.md:30`, but `next_actor: claude` (when available) in `collaboration.md:247-248`; the two texts disagree and `rules-platform` resolves both to quarantine | rule |
+| H5 | 3 failed fix-forwards park the lane: `next_actor: owner` in `.kiro/pipeline/driver.md:52` (`common-rules.md:30-31` names the stop and the five-part message without a `next_actor`), but `next_actor: claude` (when available) in `collaboration.md:247-248`; the two texts disagree and `rules-platform` resolves both to quarantine | rule |
 | H6 | Escalated sparring verdict goes to the owner; escalated session needs `exafy_admin` approval | `collaboration.md:209-210`; `planning.md:65`; `driver.md:49`; `plan-sparring-service.ts:461-480`; `scripts/collab/plan-spar.mjs:398-411` (parks to `claude`) | rule + code |
 | H7 | Product autonomy settings need explicit approval | `CLAUDE.md:201` (NEVER 34) | rule |
 | H8 | Owner stop table | `.kiro/steering/vitana-owner-autonomy.md:40-52` (rows 1, 3, 4, 5, 6, 7, 12, 13); v1 copy | rule |
@@ -78,13 +78,20 @@ No CODEOWNERS file and no GitHub `environment:` reviewers exist in either repo (
    - the existing staging PostgREST-Aurora proxy (`AWS-STAGE-DEPLOY-POSTGREST-AURORA-PROXY.yml`) repointed at it;
    - gateway staging (`AWS-STAGE-DEPLOY-GATEWAY.yml`) and the v1 staging frontend use only staging endpoints and
      staging keys;
-   - a guard script, run in every staging workflow, that fails when a staging config names the production project
-     ref `inmkhvwdcuyhnxkgfvsb`, the production Aurora cluster, or a production secret ARN.
+   - a guard script, run in every staging workflow, that fails when a staging config, a staging workflow YAML or a
+     staging task-definition template names the production project ref `inmkhvwdcuyhnxkgfvsb`, the production Aurora
+     cluster, a production role secret (`AWS_PROD_ROLE_ARN`) or a production secret name or ARN, including
+     `vitana/aurora/prod/postgrest-authenticator-uri` hardcoded today in
+     `AWS-STAGE-DEPLOY-POSTGREST-AURORA-PROXY.yml:116,139`.
    Auth: staging needs its own auth issuer. Decision taken (conservative, no new SaaS): a separate Supabase project
    for staging auth only is **not** chosen without cost approval; the lane implements staging auth on the existing
    gateway JWT path against the staging database and records the gap if a flow still needs Supabase GoTrue.
 4. **Autonomous staging migrations:** `RUN-MIGRATION.yml` gains target `staging`, which resolves only to the isolated
-   cluster; a new job runs on merge to `main` for changed `supabase/migrations/**` files in timestamp order: dry-run
+   cluster. Today `scripts/aws/aurora-apply-migration.sh:37` hardcodes `CLUSTER=vitana-aurora-prod` and the Aurora job
+   assumes `secrets.AWS_PROD_ROLE_ARN` (`RUN-MIGRATION.yml:151`). The lane parameterises the script (`--cluster`,
+   required, no default; the script refuses `vitana-aurora-prod` unless `--target aurora`) and the `staging` target
+   assumes a dedicated staging migration role (`AWS_STAGING_MIGRATION_ROLE_ARN`, permitted only on
+   `vitana-aurora-staging` and its secret), never `AWS_PROD_ROLE_ARN`; a new job runs on merge to `main` for changed `supabase/migrations/**` files in timestamp order: dry-run
    lint, apply, schema drift check (`MIGRATION-DRIFT-CHECK`), app compatibility suite (gateway Jest DB tests against
    the cluster), and on failure restore the pre-apply Aurora snapshot (taken by the job) and quarantine the lane.
    Evidence: run URL, snapshot id, schema hash in `docs/validation/<VTID>/`. The production targets `supabase` and
@@ -166,9 +173,11 @@ owner instruction plus a reviewer-agent accept; after `machine-gate-protected` l
   re-plan action for a quarantined lane and keeps independent lanes; quarantine is never `done`.
 - `pipeline-b-*`: allowed/denied fixtures per surface; VTID-ALLOCATE dry-run on a fixture PR allocates exactly once
   and refuses a non-qualifying diff.
-- `staging-db-isolation`: the guard fails on each production identifier in a fixture config; provisioning workflow
+- `staging-db-isolation`: the guard fails on each production identifier in a fixture config, a fixture workflow YAML
+  and a fixture task-definition template (including `vitana/aurora/prod/postgrest-authenticator-uri`); provisioning workflow
   `--plan` mode prints no production ARN.
-- `staging-migrations-auto`: target `staging` never resolves to a production cluster or project ref; rollback path
+- `staging-migrations-auto`: target `staging` never resolves to a production cluster, project ref or
+  `AWS_PROD_ROLE_ARN`; `aurora-apply-migration.sh` without `--cluster` fails; rollback path
   covered with a failing fixture migration on a local Postgres.
 - `kiro-aws-access`: policy unit test: every production ARN in the pinned list is denied in `kiro-staging-operator`, the boundary blocks `iam:*` on the role itself, and the GitLab delete denies are present in `kiro-engineering-admin`.
 STAGING-VERIFY on each merge commit that deploys; `docs/validation/<VTID>/staging-tests.json` per lane.
