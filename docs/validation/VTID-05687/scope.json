@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-05687",
+  "kind": "docs",
+  "paths": [
+    "docs/programs/strategy-execution/command-hub-discovery.md",
+    "docs/validation/VTID-05687/**",
+    ".kiro/specs/strategy-execution-wave1/lanes/ch-discovery.md"
+  ],
+  "sparring_record": ".kiro/specs/strategy-execution-wave1/sparring/verdict.md",
+  "weakens_tests": [],
+  "red_green_exempt": ["docs-only lane: no behaviour, no test"]
+}

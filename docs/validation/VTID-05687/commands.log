@@ -1,0 +1,142 @@
+# VTID-05687 commands.log (strategy-execution-wave1/ch-discovery)
+# Worktree: vitana-platform at origin/main 6dc6e1ba0c18252ec2f3fbf5651d245e200f9835. Run from the worktree root.
+# No live system was called: no gateway, Supabase, AWS or GitLab request. Reads are local git and files only.
+# Pinned SHA = start SHA (the lane started on the pinned origin/main), so no re-verification on a newer main was needed.
+
+## Analysis (read-only; helper scripts kept outside the repository, not part of the lane)
+# The per-tab inventory in section 3 was produced from these local reads:
+#   sed -n 3236,3549p services/gateway/src/frontend/command-hub/app.js        (NAVIGATION_CONFIG)
+#   sed -n 8050,8446p services/gateway/src/frontend/command-hub/app.js        (renderModuleContent)
+#   grep -n 'mountRouterSync(app' services/gateway/src/index.ts               (304 mounts)
+#   grep -nE '\.(get|post|put|patch|delete|all)\(' services/gateway/src/routes/**/*.ts   (1772 route definitions)
+#   per render function: string literals starting /api/v1 in the function and its helpers (3 levels), method from fetch options
+#   git log -S 'removed by owner decision 2026-11-08' -- services/gateway/src/routes/operator.ts  -> 2daf4efef2 VTID-05620 (#4868)
+
+## step 1: pinned HEAD
+$ git rev-parse HEAD
+6dc6e1ba0c18252ec2f3fbf5651d245e200f9835
+
+## step 2: collab tests
+$ node --test scripts/collab/*.test.mjs
+# tests 257
+# pass 256
+# fail 0
+# skipped 1
+exit=0
+
+## step 3: citation check (inline script, run with python3 from the worktree root)
+$ python3 - <<'EOF'
+#!/usr/bin/env python3
+"""Citation check for docs/programs/strategy-execution/command-hub-discovery.md (VTID-05687).
+Extracts every `path:N`, `path:a-b`, `path:a,b-c` and `:N` continuation inside backticks, resolves short prefixes,
+and checks the file exists at HEAD and has at least that many lines. Also checks every backticked bare repo path exists.
+Run from the worktree root. Exit 1 on any failure."""
+import os, re, sys
+DOC = 'docs/programs/strategy-execution/command-hub-discovery.md'
+GW = 'services/gateway/src/'
+CH = GW + 'frontend/command-hub/'
+SHORT = [('app.js', CH + 'app.js'), ('frontend/', GW + 'frontend/'), ('routes/', GW + 'routes/'), ('services/gitlab-events/', GW + 'services/gitlab-events/'),
+         ('services/project-manager/', GW + 'services/project-manager/'), ('services/oasis-event-service.ts', GW + 'services/oasis-event-service.ts'),
+         ('index.ts', GW + 'index.ts'), ('governance/', GW + 'governance/'), ('middleware/', GW + 'middleware/')]
+def resolve(p):
+    if os.path.exists(p): return p
+    for a, b in SHORT:
+        if p == a or (a.endswith('/') and p.startswith(a)):
+            q = b + p[len(a):] if a.endswith('/') else b
+            if os.path.exists(q): return q
+    return None
+# Not in this repository at the pinned HEAD, by design: the strategy repo (GitLab vitana/vitanaland-strategy) and the
+# plan spec, which lands on main with the plan(strategy-execution-wave1) PR before this lane merges.
+EXTERNAL = {'.kiro/specs/strategy-execution-wave1/plan.md': 'plan PR, not on the pinned HEAD',
+            '02-PLATFORM/command-hub-modernisation.md': 'strategy repo', '13-EXISTING-PLATFORM-AND-IMPLEMENTATION-INVENTORY/command-hub.md': 'strategy repo'}
+nlines = {}
+def count(f):
+    if f not in nlines:
+        with open(f, 'rb') as h: nlines[f] = h.read().count(b'\n') + 1
+    return nlines[f]
+text = open(DOC, encoding='utf-8').read()
+cites = 0; fails = []
+PATHRE = r"((?:[\w.@-]+/)*[\w.@-]+\.(?:js|ts|mjs|cjs|md|sql|yaml|yml|json|html|css))"
+for code in re.findall(r"`([^`\n]+)`", text):
+    m = re.fullmatch(PATHRE + r"((?::[0-9][0-9,\- ]*)?)", code.strip())
+    if not m: continue
+    path, spec = m.group(1), m.group(2)
+    if '/' not in path and path not in ('app.js', 'index.ts', 'CLAUDE.md') and not spec: continue
+    if path in EXTERNAL:
+        print(f"external (not checked): {path} [{EXTERNAL[path]}]"); continue
+    f = resolve(path)
+    if not f:
+        fails.append(f"missing file: {code}"); continue
+    if not spec: cites += 1; continue
+    nums = [int(x) for x in re.findall(r"\d+", spec)]
+    n = count(f); cites += 1
+    if max(nums) > n: fails.append(f"{code}: {f} has {n} lines")
+    for a, b in re.findall(r"(\d+)-(\d+)", spec):
+        if int(a) > int(b): fails.append(f"{code}: bad range")
+# continuation citations like (`:13076`) refer to the file cited earlier on the same line
+for line in text.split('\n'):
+    last = None
+    for code in re.findall(r"`([^`\n]+)`", line):
+        m = re.fullmatch(PATHRE + r"(?::[0-9][0-9,\- ]*)?", code.strip())
+        if m: last = resolve(m.group(1)); continue
+        c = re.fullmatch(r":([0-9][0-9,\- ]*)", code.strip())
+        if c:
+            cites += 1
+            if not last: fails.append(f"continuation without file: {code} in: {line[:80]}"); continue
+            if max(int(x) for x in re.findall(r"\d+", c.group(1))) > count(last): fails.append(f"{code} beyond {last}")
+# Content checks: a route citation after an arrow must point at a route definition; a render citation must name the
+# function it is cited for.
+def line_of(f, n):
+    with open(f, encoding='utf-8', errors='replace') as h:
+        for i, l in enumerate(h, 1):
+            if i == n: return l
+    return ''
+content = 0
+for m in re.finditer(r"→ `((?:routes|index)[^`:]*):(\d+)`", text):
+    f = resolve(m.group(1)); n = int(m.group(2)); content += 1
+    if not f or not re.search(r"\.(get|post|put|patch|delete|all)\(", line_of(f, n)): fails.append(f"not a route definition: {m.group(1)}:{n}")
+for m in re.finditer(r"`(\w+)` \(`((?:app\.js|frontend/[^`:]+)):(\d+)`\)", text):
+    f = resolve(m.group(2)); n = int(m.group(3)); content += 1
+    if not f or m.group(1) not in line_of(f, n): fails.append(f"{m.group(1)} not at {m.group(2)}:{n}")
+print(f"content checks: {content}")
+print(f"citations checked: {cites}")
+print(f"failures: {len(fails)}")
+for x in fails: print('  ' + x)
+sys.exit(1 if fails else 0)
+EOF
+external (not checked): .kiro/specs/strategy-execution-wave1/plan.md [plan PR, not on the pinned HEAD]
+external (not checked): 02-PLATFORM/command-hub-modernisation.md [strategy repo]
+external (not checked): 13-EXISTING-PLATFORM-AND-IMPLEMENTATION-INVENTORY/command-hub.md [strategy repo]
+content checks: 528
+citations checked: 909
+failures: 0
+exit=0
+
+## step 4: tab coverage check
+$ python3 - docs/programs/strategy-execution/command-hub-discovery.md <<'EOF'
+import re,sys
+t=open(sys.argv[1]).read()
+secs=re.findall(r"^### 3\.\d+ ", t, re.M)
+blocks=re.split(r"\n- \*\*`", t.split('## 3. Section and tab inventory')[1].split('## 4. ')[0])[1:]
+bad=[b.split('`')[0] for b in blocks if not re.search(r"API → route|API: none\..*app\.js:|API note: .*app\.js:|no route definition", b)]
+norender=[b.split('`')[0] for b in blocks if not re.search(r"Render: .*:\d+", b)]
+print('sections', len(secs), 'tab blocks', len(blocks), 'without API or cited static line', len(bad), 'without render file:line', len(norender))
+EOF
+sections 26 tab blocks 135 without API or cited static line 0 without render file:line 0
+
+## step 5: status classes and style
+$ grep -c '^  - Status:' docs/programs/strategy-execution/command-hub-discovery.md
+135
+$ grep -c 'Status: Verified operational' docs/programs/strategy-execution/command-hub-discovery.md
+0
+$ grep -c '—' docs/programs/strategy-execution/command-hub-discovery.md
+0
+
+## step 6: changed paths
+$ git status --porcelain
+?? docs/programs/strategy-execution/
+?? docs/validation/VTID-05687/
+
+## step 7: preflight
+# node scripts/collab/preflight.mjs judges the committed HEAD; this lane does not commit. The orchestrator runs:
+#   node scripts/collab/preflight.mjs --repo . --base origin/main --head HEAD --branch kiro/strategy-execution-wave1/ch-discovery --title "VTID-05687 (strategy-execution-wave1/ch-discovery): Command Hub discovery"
