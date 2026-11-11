@@ -48,8 +48,18 @@ new identity model.
      `:18009`, both with `{'Content-Type': 'application/json'}` only, no Authorization.
   5. `POST /api/v1/llm/routing-policy/reset` (`routes/llm.ts:236`): `x-actor-role` defaults to `'developer'`, an allowed
      role (`:243-255`), so an anonymous call passes. Sibling `POST /api/v1/llm/routing-policy` (`:165`, same header logic
-     `:182-192`) writes an arbitrary policy. Callers: `app.js:30433` (`buildContextHeaders`), `app.js:28673` (sends
-     `x-actor-id` / `x-actor-role: developer`, no Authorization).
+     `:182-192`) writes an arbitrary policy. Callers: `app.js:30433` (`buildContextHeaders`), `app.js:28670-28674` (sends
+     `x-actor-id` / `x-actor-role: developer`, no Authorization), and outside the Command Hub
+     `services/openclaw-bridge/src/skills/vitana-llm-routing.ts:94,121` (`callGateway` `:57-63` sends no Authorization).
+- Caller census at the pin (`grep -n -F` of each path over the repo and over vitana-v1 `e31bf4627f` `src apps supabase`;
+  the lane re-runs it into `commands.log`): `app.js` has exactly one PATCH of `/api/v1/specs/:vtid` (`:10054`; `:9432`,
+  `:9775`, `:9938` are GETs), one `/agents/triage/investigate` (`:18512`), one ai-personality PUT (`:17974`) and one
+  reset (`:18009`) (`:17925` is the GET list), one routing-policy POST (`:28670`) and one reset (`:30433`) (`:16273`,
+  `:28613`, `:30078` are GETs, unchanged). The only other caller in the repo is the openclaw-bridge skill above;
+  vitana-v1 has 0 hits. `'x-actor-'` occurs once in `app.js` (`:28673`).
+- The triage stream `GET /api/v1/agents/triage/:sessionId/stream` (`routes/triage-agent.ts:351`) is opened with
+  `new EventSource(result.stream_url)` (`app.js:18550`); `EventSource` cannot send an Authorization header, so the
+  stream cannot take a bearer gate without a design change.
 - `x-actor-role` / `x-actor-id` are read only in `routes/llm.ts:182-183,243-244`. Other header-based identity was removed
   earlier (e.g. `routes/specs.ts:1168`, `routes/governance-controls.ts:32-33`).
 - Upstream boundary: `scripts/deploy/deploy-service.sh:152,168,183,193` deploys Cloud Run services with
@@ -83,9 +93,12 @@ the handler runs:
 - `POST /api/v1/agents/triage/investigate` → `requireAdminOnly`.
 - `PUT /api/v1/ai-personality/:surface_key`, `POST /api/v1/ai-personality/:surface_key/reset` → `requireAdminOnly`;
   audit `updated_by` / role from `getControlPlaneActor`, not from the never-set `req.identity`.
-- `POST /api/v1/llm/routing-policy`, `POST /api/v1/llm/routing-policy/reset` → `requireAdminOnly`; remove the
-  `x-actor-role` / `x-actor-id` reads and the role allow-list; actor from `getControlPlaneActor`.
-- Command Hub: `app.js:17974`, `:18009`, `:28673` send `buildContextHeaders(...)` and no `x-actor-*` header.
+- `POST /api/v1/llm/routing-policy`, `POST /api/v1/llm/routing-policy/reset` → `requireServiceOrAdmin` (a service caller
+  exists); remove the `x-actor-role` / `x-actor-id` reads and the role allow-list; actor from `getControlPlaneActor`.
+- Command Hub: `app.js:17974`, `:18009`, `:28670-28674` send `buildContextHeaders(...)` and no `x-actor-*` header.
+- openclaw-bridge `set_policy` / reset (`vitana-llm-routing.ts:94,121`) get 401 after this lane: they fail closed with
+  the existing error path (`:64-67`). The lane does not give that service a token (credential change, owner-gated); it
+  records this in the PR body and the inventory as a proposed follow-up. Its GET actions are unchanged.
 
 Tests (red on the pin, green after):
 - `services/gateway/test/gateway-write-route-auth.test.ts` (supertest, services mocked): for each of the seven routes,
@@ -93,8 +106,11 @@ Tests (red on the pin, green after):
   service); for `PATCH /specs/:vtid` also the service token → handler runs; a request with only
   `x-actor-role: admin` → 401 (header cannot grant privilege). Asserts the mocked write function is never called on a
   401 or 403.
-- `services/gateway/test/command-hub/gateway-write-route-auth-callers.test.ts` (static, VTID-05122 pattern): the three
-  callers use `buildContextHeaders`; `app.js` contains no `'x-actor-role'` and no `'x-actor-id'`.
+- `services/gateway/test/command-hub/gateway-write-route-auth-callers.test.ts` (static, VTID-05122 pattern): for each
+  of the seven routes the number of write call sites in `app.js` equals the census above (1 each), and each call
+  site's fetch init uses `buildContextHeaders(`; the routing-policy POST and reset call sites carry no `x-actor-`
+  header; and `app.js` as a whole contains no `'x-actor-role'` / `'x-actor-id'` (the census shows the only occurrence is
+  the header being removed).
 
 Staging proof (`docs/validation/<VTID>/staging-tests.json`, rejected probes only, no token, nil-UUID or invalid keys,
 staging only): seven `rejected_probe` entries expecting 401, plus the two jest files as `existing`. These run only
@@ -109,7 +125,10 @@ Paths: `services/gateway/src/routes/specs.ts`, `services/gateway/src/routes/tria
 `services/gateway/src/routes/*.ts` (and inline routes in `index.ts`) with mount path, gate (router-level, inline,
 in-handler, signature or token check, none), identity source, effect (tables, external calls, cost), callers, and one
 verdict: gated; gated in handler; public by design (named reason, e.g. signed webhook, beacon); unauthenticated and
-needs a gate; Unknown. For "needs a gate": severity (critical / high / medium / low by effect), the existing gate to
+needs a gate; Unknown. It also covers every GET route that returns data produced by one of the seven routes, starting
+with the triage stream (`routes/triage-agent.ts:351`, `EventSource` caller `app.js:18550`), as a proposed follow-up with
+severity and a gate design that works with `EventSource` (e.g. a short-lived stream token issued by the gated
+`/investigate`); and the openclaw-bridge routing-policy writes that fail closed after `route-auth`. For "needs a gate": severity (critical / high / medium / low by effect), the existing gate to
 use, and the callers that must change. The worker-orchestrator routes are cross-referenced with the autonomy risk
 register of VTID-05686 (claim fail-open). The command that reproduces the heuristic list is in `commands.log`.
 
@@ -130,8 +149,8 @@ Seven routes: 401 without a token on staging (STAGING-VERIFY run id recorded). I
 verdict; count per verdict; list of "needs a gate" with severity.
 
 ## 8. Risks
-- A legitimate caller without a token breaks. Mitigation: all repo callers are listed above and changed; no other
-  caller was found (vitana-v1 does not call these routes: lane re-checks with a grep of vitana-v1 and records it).
+- A legitimate caller without a token breaks. Mitigation: the census above lists every caller; the Command Hub callers
+  are changed; the openclaw-bridge write actions fail closed by design until the owner approves a token for it.
 - Cognito-authenticated admins cannot pass an `exafy_admin` gate today (`auth-supabase-jwt.ts:267`); unchanged, stated
   in the lane doc.
 - Production stays unchanged until an owner-commanded PUBLISH; until then the routes stay open in production if they
@@ -139,5 +158,6 @@ verdict; count per verdict; list of "needs a gate" with severity.
 
 ## 9. Unchanged
 Auth middleware, JWT verification, service token, tenant resolution, RLS, migrations, flags, secrets, CLAUDE.md, the
-plan-sparring gate mode, the triage stream route (`routes/triage-agent.ts:351`, listed by the inventory).
+plan-sparring gate mode, the triage stream route (`routes/triage-agent.ts:351`, a proposed follow-up of the inventory),
+openclaw-bridge code and configuration.
 <!-- plan:end -->
