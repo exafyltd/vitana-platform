@@ -105,3 +105,9 @@ TEST: services/gateway/test/worker-orchestrator-auth.test.ts ("logs one error pe
 
 ## Known change for developers
 `mcp/vitana-work` (`src/lib/gateway-client.ts:73,89`) sends `Bearer ${VITANA_API_KEY}`. After this lane its orchestrator calls work only when that value is the service token or an exafy_admin JWT. It is a developer-run MCP, not a deployed service; not changed here (plan sparring R1-F1 of PR #4971).
+
+## Route mount evidence (Validator Check)
+No route is added: the routes and their mounts exist on `main`; the change inserts a middleware or verification into existing registrations.
+ROUTE_MOUNT: unchanged — `services/gateway/src/index.ts:870` (router at `/`)
+FINAL_URL: the 12 POST/DELETE routes under /api/v1/worker/ of routes/worker-orchestrator.ts (paths unchanged)
+CURL_PROOF: not run. No live or staging request was made; the staging proof is `staging-tests.json`, run by STAGING-VERIFY after a staging deploy, recorded here only with a run id.
