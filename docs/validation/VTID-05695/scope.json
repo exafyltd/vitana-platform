@@ -1,0 +1,13 @@
+{
+  "vtid": "VTID-05695",
+  "kind": "infra",
+  "paths": [
+    "CLAUDE.md",
+    "scripts/collab/session-handover-rule.test.mjs",
+    ".kiro/specs/session-handover-gitlab/lanes/claude-md-platform.md",
+    "docs/validation/VTID-05695/**"
+  ],
+  "sparring_record": ".kiro/specs/session-handover-gitlab/sparring/verdict.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

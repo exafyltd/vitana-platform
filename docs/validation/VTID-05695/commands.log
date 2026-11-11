@@ -1,0 +1,12 @@
+$ node --test scripts/collab/session-handover-rule.test.mjs
+# tests 2
+# pass 2
+# fail 0
+$ git diff --numstat origin/main -- CLAUDE.md
+20	0	CLAUDE.md
+$ node --test scripts/collab/*.test.mjs
+# tests 259
+# pass 258
+# fail 0
+$ node scripts/ci/kiro-steering/guard.cjs
+kiro-steering: OK
