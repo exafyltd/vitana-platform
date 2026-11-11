@@ -4,8 +4,9 @@ author: kiro
 author_seat: exafy
 executor: kiro
 next_actor: kiro
-state: drafted
-updated: 2026-11-11T11:50Z
+state: sparred
+updated: 2026-11-11T23:40Z
+sparring_record: .kiro/specs/kiro-fleet-register/sparring/verdict.md
 ---
 # Handoff — kiro-fleet-register
 Record the owner's 12-slot Kiro account fleet in `docs/programs/areas.yaml` by seat name and slot number, no email.
@@ -22,3 +23,6 @@ because its earlier commits carried account addresses, which the owner's privacy
 Restarted from #4962: its `sparring/state.json` named session `b217b935-…`, which the gateway no longer holds
 in progress, so `plan-spar.mjs:326-329` refused every run and a new session could not start on that branch. Same plan,
 plus Kiro 7 (`admin`) and Kiro 8 (`tasks`), named by the owner 2026-11-11.
+
+### 2026-11-11T23:40Z · ci-plan-spar · drafted → sparred
+Converged; approved by policy converged-auto-v1. 0 lane(s) got a VTID and are handed to Kiro.
