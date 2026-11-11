@@ -57,8 +57,8 @@ Any of 13 executors (12 Kiro seats, 1 Claude Code seat) takes a task and carries
 question on the way. Every gate before staging is answered by a machine and recorded in OASIS: class, VTID, plan,
 sparring, tests, review, visual and audio checks, landing, deploy, verification. The one human message is Gate 2,
 *"Staging verified — ready for deployment to production?"*. PUBLISH stays the owner's command. A simple front-end change
-gets its VTID in minutes on GitHub today (seconds on GitLab after the cut), skips sparring, and goes from first push to
-staging verified in about 30 minutes of pipeline time.
+gets its VTID in seconds on GitLab after the cut (until then by today's `VTID-ALLOCATE.yml`; nothing new is built on
+GitHub, §6.1), skips sparring, and goes from first push to staging verified in about 30 minutes of pipeline time.
 
 ## 2. Owner decisions (2026-11-11, final) and where they land
 | # | Decision | In this plan |
@@ -73,6 +73,7 @@ staging verified in about 30 minutes of pipeline time.
 | D8 | A dispatcher replaces the hourly wake-ups | Wave 2 lanes `dispatch`, `runner-launch` |
 | D11 | Phase 0 starts immediately | §17 |
 | D12 | Opus 5.5 and Sonnet 5.5 for the delivery stages; Opus 4.6 and Sonnet 4.6 when 5.5 is not available on quota; record the model that served each call | §14 |
+| D14 | The bridge is the GitHub-kept list of `agentic-delivery` §2.2. Nothing else stays on GitHub; nothing new is built on GitHub (owner, 2026-11-11) | §6.1 (bridge table); lanes `vtid-on-pr`, `review-workflow`, `review-dispatch-v1` withdrawn |
 | D9 (open) | Lifetime of the GitLab token in each Kiro integration | default stays 90 days with rotation at 30 left, which breaks the integration about every 60 days (§10) |
 | D10 (open) | Shape of the cut | the approved hard cut stays |
 | **D13 (open)** | **D4 and D5 conflict: DeepSeek's endpoint is outside the EU** | **§14.3, recommendation given; must be answered before this plan converges** |
@@ -132,12 +133,16 @@ staging verified in about 30 minutes of pipeline time.
 8. One human message, Gate 2; any stop parks one item and never the rest.
 
 ## 6. Target design, in two stages
-**Before the cut (GitHub, now):** Wave 1 removes the stalls where the work happens today.
-- A frontend-simple PR gets its VTID from CI within minutes (lane `vtid-on-pr`).
-- A lane PR that is green gets its review from a Bedrock reviewer run by CI, written as the existing review entry, so
-  `land-guard.mjs`, the Project Manager and Lane scope stay as they are (lanes `review-service`, `review-workflow`,
-  `review-dispatch-v1`, `reviewer-identity`).
-- Sparring answers itself: a Bedrock responder answers a round when the planner does not (lane `spar-responder`).
+**Before the cut (GitHub, now):** nothing new is built on GitHub (D14). Wave 1 builds the pieces both hosts use, in the
+gateway and in shared scripts:
+- the review service and its Bedrock role (lanes `review-service`, `delivery-bedrock`, `reviewer-identity`); until the
+  GitLab review job exists, lane PRs are reviewed by the reviewer agent as today;
+- the sparring responder inside `plan-spar.mjs`, whose answers PLAN-SPAR's existing commit step commits
+  (`PLAN-SPAR.yml:102-115`, `git add .kiro/specs`), with no change to the workflow file (lane `spar-responder`);
+- the change classes, the GitLab accounts and the merge-request VTID handler for the cut (lanes `change-classes`,
+  `gitlab-accounts`, `gitlab-mr-vtid`).
+
+A frontend-simple PR keeps today's path (`VTID-ALLOCATE.yml`) until the cut.
 
 **After the cut (GitLab):** the same functions as GitLab events.
 - The delivery service in the gateway (`routes/internal-gitlab-webhook.ts`, signed webhooks, VTID-05541) classifies a
@@ -148,12 +153,48 @@ staging verified in about 30 minutes of pipeline time.
 | Component | Runs where | Status |
 |---|---|---|
 | Seats (12 Kiro, 1 Claude Code) | Kiro Web cloud sessions; Claude Code cloud | 7 Kiro accounts and Claude Code active; 5 placeholders |
-| VTID-ON-PR (GitHub) | v1 Actions, `pull_request_target`, no PR code checked out | new (Wave 1) |
+| VTID-ON-PR (GitHub) | — | withdrawn (D14) |
 | Review service | gateway `POST /api/v1/delivery/review` | new (Wave 1) |
 | Bedrock delivery stages | role in `vitana-engineering`, assumed by the gateway | new (Wave 1 `delivery-bedrock`) |
 | Delivery service (GitLab) | gateway webhook route | route and event mapper on `main`; handlers new |
 | GitLab CI, merge bot, train, STAGING-VERIFY on GitLab | engineering account | built, shadow or dormant (`agentic-delivery`) |
 | Secrets | AWS Secrets Manager and OIDC roles | roles scripted (`scripts/aws/setup-gitlab-oidc.sh`), not applied |
+
+### 6.1 The bridge: what stays on GitHub (D14, owner 2026-11-11)
+The bridge is the "kept" rows of `agentic-delivery` §2.2 (`.kiro/specs/agentic-delivery/plan.md:102-112`) and nothing
+else. After the cut nothing else stays on GitHub, and nothing new is built on GitHub. GitLab jobs are named as
+`scripts/eng/pipeline-gen.mjs` and `config/delivery/services.json` render them on `main` (`a9a36a8e1d`). The generator
+has no T5 or T6 template today (`pipeline-gen.mjs:19`, header `:426`), so most kept workflows have no GitLab job yet and
+stay on GitHub until a later plan (`agentic-delivery` §8.5) builds and verifies it.
+
+| Repo | Workflows (`.github/workflows/*.yml`) | GitLab job that replaces it | Cut step | Owner | Rollback |
+|---|---|---|---|---|---|
+| v1 | `i18n-translate`, `i18n-audit-llm`, `i18n-long-words`, `WHATS-NEW-DRAFT` | none yet (template T7; v1 `assist_rules` has only `i18n-propagate` and `i18n-nightly`, `services.json:603-631`) | kept at the cut (cut step 4 disables only the disable list); after cut step 1 they are dispatched on a branch, because GitHub `main` takes pushes only from the mirror; retired by a §8.5 step 2 plan once the T7 job is verified | any seat (no area in `docs/programs/areas.yaml` covers `.github/workflows/**`) | the cut does not touch them (§8.4); after a move, re-enable the GitHub file, which stays until the owner deletes it |
+| v1 | `SCREENS-CATALOG-TRIGGER` | `notify-platform` (`pipeline-gen.mjs:210`; `services.json:802`), active once `DELIVERY_MODE=live` | kept; retired when `notify-platform` is verified live | any seat | as above |
+| v1 | `AWS-PROD-DEPLOY-FRONTEND`, `DEPLOY` | none yet (T5) | kept, dispatch only (PUBLISH); `DEPLOY`'s push path stays frozen by `cutover_gate`; §8.5 step 2 | owner (`AWS-PROD-*.yml` is protected; the plan calls `DEPLOY` protected, but no glob matches it) | PUBLISH dispatches the GitHub files until T5 is verified |
+| v1 | `supabase-functions-deploy`, `SUPABASE-FUNCTIONS-RETIRE`, and 21 `apply-<x>-migration` (x = comment-reactions-replies, cumulative-like-notifications, feed-video-interactions, fix-community-notify-name-fallback, july-19-kira-ticket-price, live-stream-interested-list, live-subscribers, localize-post-interaction-notifications, mentions, notify-name-fallback-full-name, notify-on-community-publish, notify-on-post-mention, post-interaction-notifications, post-notification-deeplink, vtid-03319-phase2, vtid-04916-event-share-posts, vtid-04955-group-participants, vtid-04960-thread-join-hardening, vtid-05126-calendar-entry-share, vtid-05133-ai-discoverable, vtid-05206-community-intro-opt-in) | none: they target Supabase, which is being shut down, and retire with it; Aurora migrations run through `RUN-MIGRATION` with `target=aurora` | kept, dispatch only (§7d) until the Supabase shutdown | owner (§7d) | untouched |
+| platform | `PLAN-SPAR` | `plan-spar` twin (planned, `agentic-delivery` plan.md:431; `services.json:2855` has `jobs: []`) | kept for plan PRs; §8.5 step 1 starts the twin; retired on the owner's instruction naming a plan | owner (protected) | untouched |
+| platform | `AWS-PROD-DEPLOY-AUTOPILOT-EXECUTOR`, `-GATEWAY`, `-KIRO-RUNNER`, `-OASIS-OPERATOR`, `-OASIS-PROJECTOR`, `-ORB-AGENT`, `-POSTGREST-AURORA-PROXY`, `-REALTIME-AURORA`, `-VERIFICATION-ENGINE`; `VISUAL-VERIFY-FRONTEND` | none yet (T5) | kept, dispatch only (PUBLISH); §8.5 step 2 | owner (protected `AWS-PROD-*`); `VISUAL-VERIFY-FRONTEND`: any seat | PUBLISH dispatches the GitHub files until T5 is verified; the gateway keeps its own automatic rollback |
+| platform | `AWS-PROD-SETUP-POSTGREST-AURORA-PROXY-EDGE`, `AWS-PROD-SETUP-SCHEDULED-EDGE-CALLS` | none yet (T6) | kept, dispatch only; §8.5 step 2 | owner (protected) | untouched |
+| platform | `RUN-MIGRATION`, `AWS-PROVISION-APPILIX-SECRETS`, `AWS-PROVISION-DEV-MEMORY-PACK-TOKEN`, `AWS-OPS-ECS-SCALE-UNGOVERNED`, `AWS-REHEARSAL-AURORA-CLONE`, `AWS-STAGING-VALIDATION`, `SET-STAGING-TENANT-CONSENT`, `SETUP-OPERATOR-MEDIA-BUCKET`, `JOURNEY-TRANSLATIONS-BACKFILL`, `BOOTSTRAP-CLOUDFLARE-KV`, `ANDROID-DEVICE-E2E`, `MOBILE-DEVICE-E2E`, `E2E-TEST-RUN`, `OPS-TOGGLE-FLOW-V3-STAGING` | none yet (T6; `RUN-MIGRATION` becomes one owner-dispatched T6 job, `agentic-delivery` plan.md:442) | kept, dispatch only; migrations keep §7d; §8.5 step 2 | owner for `RUN-MIGRATION` (§7d) and the clone (D15); the rest: any seat | untouched |
+| platform | `ALERT-APP-USERS-IDENTITY-DRIFT`, `ALERT-NEWDAY-BRIEFING-LOOP`, `ALERT-OASIS-LEDGER-INTEGRITY`, `ALERT-ORB-BOOTSTRAP-LATENCY`, `ALERT-ORB-SESSION-STATE-HEALTH`, `ALERT-PUSH-DISPATCH-HEALTH`, `ALERT-WELCOME-GREETING-HEALTH`, `CRON-AUTO-PROMOTER`, `CRON-GRADUATION-RECOMMENDER`, `CRON-SHADOW-COMPARISON-REPORT`, `E2E-ORB-MONITOR`, `MORNING-SYSTEM-HEALTH-CHECK`, `SCREEN-LOAD-DAILY`, `SCREEN-LOAD-TIMING`, `EXERCISE-STAGING-SHADOW`, `EXERCISE-STAGING-SHADOW-CORPUS`, `MARKETPLACE-SYNC-CRON`, `DEV-AUTOPILOT`, `VCAOP-HEALTH`, `TENANT-RESERVED-SLUGS-DRIFT`, `SMOKE-WELCOME-GREETING`, `CI-HEALTH`, `DAILY-STATUS-UPDATE`, `TEST-CATALOG`, `CODEINTEL-INDEX`, `DRIVER-WAKE`, `I18N-DB-SEED`, `APPLY-FB061-DEBOUNCER-FIX`, `MIGRATION-DRIFT-CHECK` | none yet (T6; `MIGRATION-DRIFT-CHECK`: `services.json:2859`, `jobs: []`) | kept (schedules and dispatch); `MIGRATION-DRIFT-CHECK` stays path-filtered on PRs; §8.5 step 2 | any seat | untouched; the cut's rollback also lifts the Dev Autopilot pause |
+| platform | `REGEN-SCREENS-CATALOG` | none yet (T7; platform `assist_rules` is empty, `services.json:2421`) | kept; its PRs go through the bridge | any seat | untouched |
+| platform | `REUSABLE-NOTIFY` | stays (called by other workflows; no job planned) | stays | any seat | — |
+| platform | `DEPLOY-CLOUDFLARE-WORKERS` | none: `agentic-delivery` owner decision C2 | kept; deploys production Workers on the mirror's push of `cloudflare/**` | owner (C2) | none stated while C2 is open |
+
+89 files: 59 of 116 in vitana-platform, 30 of 46 in vitana-v1. Lane `cutover` (`agentic-delivery`, PR #4725) gives each
+of them `action: keep` in `scripts/eng/github-workflows.json`. Nothing is added to this table without the owner's
+answer.
+
+What follows from D14:
+- Not on the list, so disabled at the cut: `VTID-ALLOCATE.yml` and `MT-LOCAL-STACK.yml`. Both are newer than lane
+  `cutover`'s list, which must classify them before the cut (its completeness test fails on an unclassified file).
+- Nothing new on GitHub: lanes `vtid-on-pr` (`VTID-ON-PR.yml`), `review-workflow` (`REVIEW-BEDROCK.yml`) and
+  `review-dispatch-v1` (`REVIEW-BEDROCK-DISPATCH.yml`) are withdrawn. Their functions arrive on GitLab: the merge-request
+  VTID through `gitlab-mr-vtid`, the review as a merge-request pipeline job that a late lane adds after this re-plan
+  converges. `spar-responder` changes no workflow file.
+- Until the cut, a frontend-simple PR gets its VTID as it does today (`VTID-ALLOCATE.yml`); the fast path arrives with
+  the cut.
 
 ## 7. Work classes
 | Class | Mechanical test on the diff (a declared class can only be raised) | Plan and sparring | Review |
@@ -176,10 +217,10 @@ PR as today (R1-F1).
 | Step | Who | What | Record | Target |
 |---|---|---|---|---|
 | 1 | seat | branch from `main`, first commit, PR or MR (draft) | host event | 1 min |
-| 2 | CI (`vtid-on-pr`) or delivery service | classify; allocate; ledger `in_progress`/`approved`; title becomes `VTID-xxxxx: …`; one comment | ledger row; `vtid.allocated` (GitLab) | GitHub: one runner wait; GitLab: < 10 s |
+| 2 | delivery service (GitLab); until the cut `VTID-ALLOCATE.yml` | classify; allocate; ledger `in_progress`/`approved`; title becomes `VTID-xxxxx: …`; one note | ledger row; `vtid.allocated` | GitLab: < 10 s |
 | 3 | seat | code, tests, `docs/validation/<VTID>/` evidence and staging spec | pushes | agent time |
 | 4 | CI | checks of the changed paths, preview build, screenshots (Wave 2), governance gates | check runs | 5–10 min |
-| 5 | review workflow | Bedrock review on the green head → review entry (GitHub) or commit status (GitLab) | `delivery.review.verdict` | 2–5 min |
+| 5 | GitLab review job (late lane, §6.1); until then the reviewer agent | Bedrock review on the green head → commit status | `delivery.review.verdict` | 2–5 min |
 | 6 | seat (fix loop) | findings or red checks go back to the seat; at most 3 rounds per failure | `delivery.fix.requested` | — |
 | 7 | merge (PM rule §7b on GitHub; train on GitLab) | land | `delivery.landed` | 5–15 min |
 | 8 | deploy and STAGING-VERIFY | staging deploy per service; read-only verify on the deployed commit | `staging.deploy.*`, `staging.verify.*` | 10–20 min |
@@ -196,21 +237,14 @@ protected files changed, migrations applied and pending (D2), the model that ser
 
 ## 9. VTID and OASIS: one rule
 > Every change gets a VTID. Sessions never allocate one. CI allocates it: PLAN-SPAR for planned work (classes B and P);
-> VTID-ON-PR for a frontend-simple PR on GitHub until the cut; the delivery service when a merge request opens on GitLab
-> after the cut. A session that needs its VTID opens its draft PR or MR and reads the title.
+> the delivery service when a merge request opens on GitLab after the cut; until the cut, `VTID-ALLOCATE.yml` as today.
+> A session that needs its VTID opens its draft PR or MR and reads the title.
 
-- **VTID-ON-PR (lane `vtid-on-pr`, vitana-v1):** `pull_request_target` on `opened`, `reopened`, `synchronize`,
-  `edited`; same-repository heads only; checks out the base (`main`) only and reads the PR's file list through the REST
-  API; runs `frontendSimpleViolations` from `main`; when the live title has no VTID and the diff qualifies, it calls
-  `POST /api/v1/vtid/allocate` (`source: ci-vtid-on-pr`, the PR title), sets the ledger row to `in_progress`/`approved`,
-  prefixes the PR title with the VTID and comments once. A diff that does not qualify gets one comment ("needs a plan")
-  and no VTID. One run per PR at a time (concurrency group); an allocation error fails the run once, without retries.
-  It needs `GATEWAY_SERVICE_TOKEN` in the vitana-v1 Actions secrets (Phase 0 P8). It is disabled at the GitLab cut,
-  when `gitlab-mr-vtid` takes over (lane `cutover` of `agentic-delivery` lists it).
-- **VTID-ALLOCATE.yml is retired** (lane `retire-vtid-allocate`, after `vtid-on-pr` lands; R1-F2). It allocates for any
-  caller with dispatch rights and checks no class, so under the one rule it has no use: planned work gets VTIDs from
-  PLAN-SPAR, frontend-simple PRs from VTID-ON-PR, for Claude Code like every other seat. `rules-platform` removes it from
-  the rule texts.
+- **VTID-ON-PR: withdrawn** (D14, nothing new is built on GitHub). On GitLab the delivery service does its job.
+- **VTID-ALLOCATE.yml is retired at the cut** (lane `retire-vtid-allocate`, after the cut; R1-F2). It is not on the
+  bridge list, so the cut disables it, and the lane deletes it once `gitlab-mr-vtid` serves frontend-simple merge
+  requests. Until the cut it stays the frontend-simple path, for Claude Code like every other seat. It allocates for any
+  caller with dispatch rights and checks no class; `rules-platform` removes it from the rule texts.
 - **Delivery service (lane `gitlab-mr-vtid`):** the same steps on the GitLab `merge_request` `open` event, with the
   `bot-delivery` account (lane `gitlab-accounts`) for title, labels and the note; idempotent per project and MR;
   emits `vtid.allocated` with class, MR and seat. In the rehearsal project allocations carry `is_test = true`.
@@ -259,11 +293,11 @@ about every 60 days; recommended answer for D9: 365-day tokens for the agent acc
   `services/dev-autopilot-llm-review.ts` (files read at the head, CI evidence), on Bedrock only. Class A: Sonnet 5.5;
   class B: Opus 5.5; class P: both must accept (D3). Fallbacks 4.6, last tier per D13. Output: verdict JSON
   `{verdict, findings, reviewed_head, model, tier}` and OASIS `delivery.review.verdict`.
-- **Trigger and record on GitHub (lanes `review-workflow`, `review-dispatch-v1`):** when the required checks of a lane
-  PR in state `in-review` are green on its head, the workflow calls the review service and writes the verdict as the
-  existing §3 review entry (trailers `Collab-Review`, `Collab-Verdict`, `Collab-Reviewer: agent:vitana-lane-reviewer
-  (bedrock:<model>)`, `Collab-Reviewed-Head`) with a token that starts the PR's checks. v1 PRs dispatch the platform
-  workflow. Merge authority is unchanged except for the model names (lane `reviewer-identity`, protected).
+- **Trigger and record:** a GitLab merge-request pipeline job calls the review service on the green head and posts the
+  verdict as a commit status (a late lane after this re-plan converges; the job is named by `pipeline-gen.mjs`). Lanes
+  `review-workflow` and `review-dispatch-v1` are withdrawn (D14). Until the job exists, the reviewer agent reviews as
+  today and writes the §3 review entry. Merge authority is unchanged except for the model names (lane
+  `reviewer-identity`, protected).
 - **Independence:** the reviewer runs under its own identity (`agent-vitana-lane-reviewer-…` session ids, the
   `agent-reviewer` account on GitLab), never as a seat.
 - **Prompt injection:** diff text is data; an accept never overrides a red deterministic check; class P needs two models.
@@ -390,7 +424,7 @@ and tier into OASIS and into Gate 2.
 | P5 | Verify A1 (Kiro Web pushes to GitLab) | With P4 done for one seat: that seat pushes a branch to `vitana/rehearsal` and opens a merge request from a Kiro Web session; recorded in this plan's handoff | open |
 | P6 | GitLab accounts for 13 seats | 4 exist (`agent-kiro-exafy`, `-exafyltd`, `-jtadic`, `-hotmail`); 8 new and `bot-delivery` come from lane `gitlab-accounts` and the settings sync; Claude Code needs none (bridge, D6), but the bridge needs owner step A3 of `agentic-delivery` (its two tokens) | 4 of 12 Kiro accounts exist |
 | P7 | Kiro API keys | Only for the dispatcher (Wave 2) and DRIVER-WAKE. Per Kiro account: sign in, account settings → generate an API key ([headless mode](https://kiro.dev/docs/cli/headless/)); store it as `vitana/engineering/kiro/seats/<seat>` in the engineering account | not needed before Wave 2 |
-| P8 | `GATEWAY_SERVICE_TOKEN` in vitana-v1 | vitana-v1 → Settings → Secrets and variables → Actions → New repository secret, same value as the platform secret (needed by lane `vtid-on-pr`) | open |
+| P8 | `GATEWAY_SERVICE_TOKEN` in vitana-v1 | not needed: lane `vtid-on-pr` is withdrawn (D14) | dropped |
 | P9 | Rendered pipelines in `vitana/ci-config` | `bash ~/vitana-eng/m2.sh status` in CloudShell (runs `gitlab-settings.mjs check`; exit 0 = no drift), or GitLab → `vitana/ci-config` → Repository: the 11 files of `infra/gitlab-engineering/ci/` with today's content. The code writes every `*.yml` of that folder in one commit when content differs (`scripts/eng/gitlab-settings.mjs:447-450`) | unverified from a session (no GitLab access) |
 | P10 | Runner count | GitLab Admin Area → CI/CD → Runners (or `GET /api/v4/runners/all` with an admin token), and EC2 Auto Scaling groups `vitana-eng-fleet*` (desired and in service) in the engineering account | unverified from a session |
 | P11 | Answer D13, D9, D10 | §2 | open |
@@ -415,10 +449,10 @@ Each rule text carries the existing convention: a mechanism takes effect when th
 then the previous mechanism stays in force.
 
 ## 19. Lanes
-### 19.1 Wave 1 (this plan's VTIDs; 14 lanes since round 1)
+### 19.1 Wave 1 (this plan's VTIDs; 14 lanes since round 1, 3 of them withdrawn by D14)
 | Lane | Repo | Executor (seat) | Paths | depends_on |
 |---|---|---|---|---|
-| `vtid-on-pr` | vitana-v1 | kiro (exafyltd) | `.github/workflows/VTID-ON-PR.yml`, `scripts/ci/pr-gate/vtid-on-pr.mjs`, `scripts/ci/pr-gate/__tests__/vtid-on-pr.test.mjs` | — |
+| `vtid-on-pr` (withdrawn, D14) | vitana-v1 | kiro (exafyltd) | `.github/workflows/VTID-ON-PR.yml`, `scripts/ci/pr-gate/vtid-on-pr.mjs`, `scripts/ci/pr-gate/__tests__/vtid-on-pr.test.mjs` | — |
 | `rules-platform` | vitana-platform | claude | `CLAUDE.md`, `AGENTS.md`, `.claude/rules/collaboration.md`, `.kiro/pipeline/{common-rules,driver,planning,lane-code}.md`, `.kiro/steering/{vitana-pipeline,vitana-kiro-notes,vitana-owner-autonomy}.md`, `.claude/hooks/pretooluse-plan-sparring-reminder.sh` | — |
 | `rules-v1` | vitana-v1 | claude | `CLAUDE.md`, `AGENTS.md`, `.claude/rules/collaboration.md`, `.kiro/steering/{vitana-pipeline,vitana-kiro-notes,vitana-owner-autonomy}.md`, `.claude/hooks/pretooluse-plan-sparring-reminder.sh` | `rules-platform` |
 | `change-classes` | vitana-platform | kiro (exafy) | `config/delivery/change-classes.json`, `scripts/eng/change-class.mjs`, `scripts/eng/change-class.test.mjs` | — |
@@ -428,10 +462,10 @@ then the previous mechanism stays in force.
 | `delivery-bedrock` | vitana-platform | kiro (exafy) | `scripts/aws/setup-delivery-bedrock.sh`, `services/gateway/src/providers/bedrock.ts`, `services/gateway/test/delivery/bedrock-role.test.ts` | — |
 | `review-service` | vitana-platform | kiro (exafy) | `services/gateway/src/services/delivery/review/**`, `services/gateway/src/routes/delivery-review.ts`, `services/gateway/src/index.ts`, `services/gateway/src/orb/developer/domain-atlas.ts`, `services/gateway/src/constants/llm-defaults.ts`, `services/gateway/test/delivery/review.test.ts` | `delivery-bedrock` |
 | `reviewer-identity` | vitana-platform | claude | `services/gateway/src/services/project-manager/{governance,types}.ts`, `services/gateway/test/project-manager/governance.test.ts`, `scripts/ci/kiro-steering/guard.cjs`, `scripts/ci/kiro-steering/guard.test.cjs` | — |
-| `review-workflow` | vitana-platform | kiro (exafy) | `.github/workflows/REVIEW-BEDROCK.yml`, `scripts/ci/review-bedrock/review-bedrock.mjs`, `scripts/ci/review-bedrock/review-bedrock.test.mjs` | `review-service`, `reviewer-identity` |
-| `review-dispatch-v1` | vitana-v1 | kiro (exafyltd) | `.github/workflows/REVIEW-BEDROCK-DISPATCH.yml`, `scripts/ci/pr-gate/__tests__/review-dispatch.test.mjs` | `review-workflow` |
+| `review-workflow` (withdrawn, D14) | vitana-platform | kiro (exafy) | `.github/workflows/REVIEW-BEDROCK.yml`, `scripts/ci/review-bedrock/review-bedrock.mjs`, `scripts/ci/review-bedrock/review-bedrock.test.mjs` | `review-service`, `reviewer-identity` |
+| `review-dispatch-v1` (withdrawn, D14) | vitana-v1 | kiro (exafyltd) | `.github/workflows/REVIEW-BEDROCK-DISPATCH.yml`, `scripts/ci/pr-gate/__tests__/review-dispatch.test.mjs` | `review-workflow` |
 | `spar-responder` | vitana-platform | claude | `services/gateway/src/services/plan-sparring/**`, `scripts/collab/plan-spar.mjs`, `scripts/collab/plan-spar.test.mjs`, `.github/workflows/PLAN-SPAR.yml`, `scripts/ci/plan-spar-slot/**`, `services/gateway/test/vtid-04868-plan-sparring-*.test.ts` | `review-service`, `delivery-bedrock` |
-| `retire-vtid-allocate` | vitana-platform | kiro (exafy) | `.github/workflows/VTID-ALLOCATE.yml` | `vtid-on-pr` |
+| `retire-vtid-allocate` | vitana-platform | kiro (exafy) | `.github/workflows/VTID-ALLOCATE.yml` | the cut (D14; its lane file still names `vtid-on-pr`) |
 
 Shared and hot files: `services/gateway/src/index.ts` and `orb/developer/domain-atlas.ts` (hot key `gateway-registry`)
 belong to `review-service` only; `llm-defaults.ts` belongs to `review-service` only (it also sets the partner's model
@@ -439,9 +473,10 @@ constants for `spar-responder`); `docs/programs/areas.yaml` is shared with the c
 `.claude/rules/collaboration.md` stays byte-identical in both repositories, so `rules-v1` lands right after
 `rules-platform`. No other file is in two lanes.
 
-Order of value: `vtid-on-pr` and `rules-*` first (they end the VTID stall); `delivery-bedrock`, `review-service`,
-`reviewer-identity`, `review-workflow`, `review-dispatch-v1` next (they end the review wait); `spar-responder` (it ends the
-sparring wait; waits for D13 on its last tier); `change-classes`, `gitlab-accounts`, `seats`, `gitlab-mr-vtid` for the cut.
+Order of value: `rules-*` first; `delivery-bedrock`, `review-service`, `reviewer-identity` next (the review engine);
+`spar-responder` (it ends the sparring wait; its last tier waits for D13); `change-classes`, `gitlab-accounts`, `seats`,
+`gitlab-mr-vtid` for the cut. The three withdrawn lanes are parked by their seats after this plan merges, because a
+`_plan` commit cannot edit a lane file. The GitLab review job is a late lane added after the re-plan converges.
 
 ### 19.2 Wave 2 (late lanes through `_plan` after Wave 1 lands; designs in §§9–15)
 `state-out-of-git`, `visual-capture`, `visual-baselines`, `a11y-check`, `staging-screens`, `hub-visual`, `audio-harness`,
@@ -450,8 +485,8 @@ sparring wait; waits for D13 on its last tier); `change-classes`, `gitlab-accoun
 
 ### 19.3 Relationship to `agentic-delivery`
 Its lanes `cutover` and `cut-settings` stay there. `cut-settings` adds the agent and `bot-delivery` memberships of the
-real projects at the cut; `cutover` lists `VTID-ON-PR.yml`, `REVIEW-BEDROCK.yml` and `REVIEW-BEDROCK-DISPATCH.yml` for
-disabling at the cut. Its stale lane files (`deploy-path` and `build-class-retag-2` merged but `executing`;
+real projects at the cut; `cutover` must also classify `VTID-ALLOCATE.yml` and `MT-LOCAL-STACK.yml`, which its list
+predates (both are disabled at the cut, D14); the three withdrawn workflows are never created. Its stale lane files (`deploy-path` and `build-class-retag-2` merged but `executing`;
 `build-class-retag` superseded) are closed by its own driver; while `deploy-path` reads `executing`, its driver does not
 start `cutover`.
 
