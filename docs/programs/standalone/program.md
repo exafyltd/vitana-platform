@@ -73,6 +73,7 @@ specs:
   - vitana-platform:operator-chat-service-token
   - vitana-platform:memory-legacy-read-retire-r2
   - vitana-platform:privacy-ledger-auth
+  - vitana-platform:agentic-delivery-v2-r2
 docs:
   - vitana-platform:.kiro/specs/pm-agent/plan-sparring.md
   - vitana-platform:.kiro/specs/claude-sessions-handover/handoff.md
@@ -133,3 +134,4 @@ belong to none of the named programmes are listed here until the owner assigns t
 - `vitana-platform:staging-verify-manifest-repair` — repair the 14 stale change suites failing the nightly full gateway STAGING-VERIFY (console probes, PM mode, collab ref, recall shadow, locale-coverage investigation) and a manifest drift guard
 - `vitana-platform:mt-local-stack-replay-skips-r1` — list the two VTID-05579 migrations PGlite cannot replay so the MT local stack gate is green on main
 - `vitana-platform:privacy-ledger-auth` — the seat file keeps seat names only (no account addresses), and production ledger writes can be switched to `enforce` by the owner (protected gate file, owner instruction 2026-11-11); history-rewrite proposal, not run
+- `vitana-platform:agentic-delivery-v2-r2` — re-plan sparring session for `agentic-delivery-v2` after the owner spec v5; no lanes, closed without merging once its verdict is recorded
