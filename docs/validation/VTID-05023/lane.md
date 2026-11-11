@@ -80,3 +80,42 @@ Fixing all 369 flagged files means rewriting `auth.uid()`, `auth.users` and Supa
 - Phase A branches pushed (`42dfc93727`, `fc46e215a1`, `6f73cd6b01`). MR creation blocked (B-MR).
 - Phase B1 lint and PR-GATE wiring pushed on this lane branch.
 - Phase C and D blocked on AWS (B-AWS-V1).
+
+## Staging changes (owner decisions 1 to 4)
+
+Branch: `cutover/vtid-05023-staging-hygiene` (not merged). Commits: `faa752f20f` (step 1), `0a2b003ae7` (step 3).
+
+### Step 1: remove production Aurora credentials from staging
+
+- Done in repo: `AURORA_DATABASE_URL` and `AURORA_RLS_DATABASE_URL` removed from the add-list and the lookup loop of `.github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml`. The two names stay in the strip list, so a carried-forward copy is removed on deploy. Output: `yaml ok`; deploy-step script passes `bash -n`.
+- Not deployed. `AWS-STAGE-DEPLOY-GATEWAY.yml` runs on push to `main` or `workflow_dispatch`. This sandbox cannot push to `main` (branch policy) and cannot dispatch the workflow (no GitLab API token).
+- Not verified on a running task. Smoke test not run. Blocker: `aws sts get-caller-identity` → `NoCredentials: Unable to locate credentials`.
+- Effect to know before deploy: the staging DB-i18n seam and the Aurora RLS diagnostic (`/api/v1/admin/aurora-rls-health`) lose their connection string and report unconfigured.
+
+### Step 2: align Supabase keys
+
+- Not done. Checking the Secrets Manager entries needs AWS access, which fails with `NoCredentials` (see step 1).
+- Repo evidence: the staging workflow binds `SUPABASE_JWT_SECRET` and `SUPABASE_ANON_KEY` from `vitana/supabase/prod/*`. Its comment says staging talks to the production Supabase project through `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE`.
+- Consequence: switching the JWT secret and anon key alone would make every token from the production Supabase project fail validation, and logins would break. The URL and service-role key must change in the same deploy. That depends on a staging Supabase project existing, which the repo does not show. Stopped here. Needs owner confirmation of the staging project ref.
+
+### Step 3: plan a staging Aurora cluster
+
+- Done as a plan only: `docs/validation/VTID-05023/plan-staging-aurora.md` (commit `0a2b003ae7`). Covers scope, steps 0 to 6, test plan and rollback.
+- Plan PR not opened: blocker B-MR (no GitLab API token). Cluster not created. The plan depends on step 0 (staging Supabase project exists), which is unverified.
+
+### Step 4: `vitana-postgres-staging`
+
+- Not touched. No stop, delete, restore or modify was run.
+
+### Still blocked
+
+| ID | Blocked by | Exact error |
+|---|---|---|
+| S1-DEPLOY | No deploy path from sandbox | `NoCredentials` for AWS; no GitLab API token for MR or dispatch |
+| S1-VERIFY | No running-task access | `NoCredentials` |
+| S2 | No Secrets Manager access | `NoCredentials` |
+| S3-PR | No MR creation | `400 Missing header field, please provide AuthToken` |
+
+### Lane claim
+
+Still no queue claim. The real session id is `8e42cb36-56f1-4d98-b4e4-96425028a531`, and the queue refuses it (see L-CLAIM above).
