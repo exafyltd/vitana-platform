@@ -139,7 +139,7 @@ describe('POST /semantic/search', () => {
     expect(mockSemanticSearch).not.toHaveBeenCalled();
   });
 
-  it('rejects a lens with a non-UUID tenant_id/user_id (not the caller\'s ids) before calling any service', async () => {
+  it('rejects a lens with a non-UUID tenant_id/user_id (not the the caller ids) before calling any service', async () => {
     const res = await request(app)
       .post('/semantic/search')
       .set(AUTH, USER_A_TOKEN)
@@ -150,7 +150,7 @@ describe('POST /semantic/search', () => {
     expect(mockSemanticSearch).not.toHaveBeenCalled();
   });
 
-  it('generates a query embedding when none is supplied, then forwards the caller\'s identity lens to semanticSearch', async () => {
+  it('generates a query embedding when none is supplied, then forwards the the caller identity lens to semanticSearch', async () => {
     mockGenerateEmbedding.mockResolvedValue({ ok: true, embedding: EMBEDDING, model: 'amazon.titan-embed-text-v2:0' });
     mockSemanticSearch.mockResolvedValue({ ok: true, results: [], query: 'hello', total_found: 0 });
 
@@ -237,7 +237,7 @@ describe('POST /semantic/write', () => {
     expect(mockWriteMemoryItem).not.toHaveBeenCalled();
   });
 
-  it('forwards the caller\'s identity lens to writeMemoryItem on a valid write, and 201s', async () => {
+  it('forwards the the caller identity lens to writeMemoryItem on a valid write, and 201s', async () => {
     mockGenerateEmbedding.mockResolvedValue({ ok: true, embedding: EMBEDDING, model: 'amazon.titan-embed-text-v2:0' });
     mockWriteMemoryItem.mockResolvedValue({ ok: true, id: 'mem-1' });
 
@@ -299,7 +299,7 @@ describe('POST /semantic/context', () => {
     expect(mockBuildSemanticContext).not.toHaveBeenCalled();
   });
 
-  it('builds context using the generated embedding and the caller\'s identity lens', async () => {
+  it('builds context using the generated embedding and the the caller identity lens', async () => {
     mockGenerateEmbedding.mockResolvedValue({ ok: true, embedding: EMBEDDING, model: 'm' });
     mockBuildSemanticContext.mockResolvedValue({ ok: true, context: 'CTX', results: [{ id: '1' }] });
 
