@@ -19,7 +19,8 @@ paths:
   - services/gateway/test/gateway-write-route-auth.test.ts
   - services/gateway/test/command-hub/gateway-write-route-auth-callers.test.ts
   - docs/validation/VTID-*/**
-updated: 2026-11-11T09:40Z
+updated: 2026-11-11T09:48Z
+vtid: VTID-05697
 ---
 # Lane: route-auth (repo vitana-platform)
 Tasks in `tasks.md`. The VTID is allocated by PLAN-SPAR.
@@ -27,3 +28,6 @@ Tasks in `tasks.md`. The VTID is allocated by PLAN-SPAR.
 ## Log
 ### 2026-11-11T09:40Z · kiro-exafy-202611110920-270b · ready
 Lane created with the plan.
+
+### 2026-11-11T09:48Z · ci-plan-spar · ready (VTID allocated)
+VTID-05697 allocated after policy approval (converged-auto-v1).
