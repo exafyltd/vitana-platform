@@ -1,0 +1,32 @@
+# Caller census at 6dc6e1ba0c18252ec2f3fbf5651d245e200f9835 (vitana-platform) and vitana-v1 e31bf4627ff3c705c20f8e6b718ce4dd03353b7f
+## grep -n -F "/api/v1/specs/" services/gateway/src/frontend/command-hub/app.js (fetch lines)
+9432:            fetch('/api/v1/specs/' + vtid, { headers: buildContextHeaders({}) })
+9765:                    var response = await fetch('/api/v1/specs/' + vtid + '/generate', {
+9775:                            var specResp = await fetch('/api/v1/specs/' + vtid, {
+9815:                    var response = await fetch('/api/v1/specs/' + vtid + '/validate', {
+9855:                    var response = await fetch('/api/v1/specs/' + vtid + '/quality-check', {
+9902:                    var response = await fetch('/api/v1/specs/' + vtid + '/approve', {
+9938:                    var response = await fetch('/api/v1/specs/' + vtid, {
+10054:                var resp = await fetch('/api/v1/specs/' + encodeURIComponent(vtid), {
+42348:                    fetch('/api/v1/specs/' + encodeURIComponent(task.vtid) + '/approve', {
+## grep -n -F "agents/triage/investigate" services/gateway/src/frontend/command-hub/app.js (fetch lines)
+18512:                fetch('/api/v1/agents/triage/investigate', {
+## grep -n -F "ai-personality" services/gateway/src/frontend/command-hub/app.js (fetch lines)
+17925:    fetch('/api/v1/ai-personality')
+17974:    fetch('/api/v1/ai-personality/' + surfaceKey, {
+18009:    fetch('/api/v1/ai-personality/' + surfaceKey + '/reset', {
+## grep -n -F "llm/routing-policy" services/gateway/src/frontend/command-hub/app.js (fetch lines)
+16273:        var response = await fetch('/api/v1/llm/routing-policy', {
+28613:    fetch('/api/v1/llm/routing-policy?environment=DEV', { credentials: 'include' }).then(function (r) { return r.json(); }),
+28670:  fetch('/api/v1/llm/routing-policy?environment=DEV', {
+30078:    fetch('/api/v1/llm/routing-policy', { headers: buildContextHeaders() })
+30433:        fetch('/api/v1/llm/routing-policy/reset', {
+## repo callers outside app.js (POST/PUT/PATCH of these paths)
+origin/main:services/gateway/src/frontend/command-hub/app.js.backup:11072:        var response = await fetch('/api/v1/llm/routing-policy', {
+origin/main:services/gateway/src/frontend/command-hub/app.js.backup2:11072:        var response = await fetch('/api/v1/llm/routing-policy', {
+origin/main:services/openclaw-bridge/src/skills/vitana-llm-routing.ts:94:    const data = await callGateway('/routing-policy', 'POST', {
+origin/main:services/openclaw-bridge/src/skills/vitana-llm-routing.ts:121:    const data = await callGateway('/routing-policy/reset', 'POST', {
+## vitana-v1 (src apps supabase)
+hits: 0
+## 'x-actor-' in app.js at the pin
+28673:    headers: { 'Content-Type': 'application/json', 'x-actor-id': 'command-hub-ui', 'x-actor-role': 'developer' },
