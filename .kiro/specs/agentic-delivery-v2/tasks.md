@@ -201,3 +201,18 @@ Acceptance:
 - **Contract** — round caps, evidence floor and policy approval unchanged.
 - **Staging proof** — the gateway smoke suite; sparring proven by the tests.
 - Protected gate files: the owner's instruction naming this plan plus a reviewer-agent accept on the current head.
+
+<!-- lane: retire-vtid-allocate -->
+Repo `exafyltd/vitana-platform`. Plan §9 (R1-F2). Starts after `vtid-on-pr` is done.
+- [ ] T1 Delete `.github/workflows/VTID-ALLOCATE.yml`.
+- [ ] T2 Check that no workflow, script or test still dispatches or reads it (`git grep -n VTID-ALLOCATE` outside
+      `.kiro/specs/**` and `docs/validation/**`); the rule texts are changed by `rules-platform`.
+- [ ] T3 PR `VTID-xxxxx (agentic-delivery-v2/retire-vtid-allocate): …`.
+
+Acceptance:
+- Change types: Infrastructure/CI.
+- **Outcome** — CI allocates VTIDs only through PLAN-SPAR and VTID-ON-PR.
+- **States / Surfaces / Locales / Accessibility** — n/a: no UI change.
+- **Contract** — no remaining caller of the workflow.
+- **Staging proof** — not verified on staging: CI-only change.
+- Diff only inside the lane `paths`.

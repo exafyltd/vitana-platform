@@ -46,9 +46,10 @@ that it's not each time asking for the tokens."* Owner decisions of 2026-11-11 (
    (`scripts/ci/plan-spar-slot/slot.mjs:22`).
 8. Seats: `docs/programs/areas.yaml:14-18` (four seats); `scripts/collab/queue.mjs:65` (`SEAT_RE = /^[a-z]{1,12}$/`).
 9. Runner fleet: `infra/gitlab-engineering/RUNBOOK.md` §1 (AWS account `vitana-engineering`, region `eu-central-1`; the
-   owner works from CloudShell in the management account); `terraform/fleet.tf:9-17,48-49,92-110` (untrusted class at
-   most 24 machines of 4 vCPUs; quota precondition); `terraform/fleet-classes.tf:18-47` (main 12, deploy 6, build 4;
-   reserved 398 On-Demand and 384 Spot vCPUs).
+   owner works from CloudShell in the management account); `infra/gitlab-engineering/terraform/fleet.tf:9-17,48-49,92-110`
+   (untrusted class at most 24 machines of 4 vCPUs; quota precondition);
+   `infra/gitlab-engineering/terraform/fleet-classes.tf:18-47` (main 12, deploy 6, build 4; reserved 398 On-Demand and
+   384 Spot vCPUs).
 10. Staging shares the production database: `CLAUDE.md` rule 48 (Staging Verification Gate).
 
 ## 1. Goal
@@ -166,6 +167,10 @@ One rule file, `config/delivery/change-classes.json` (lane `change-classes`), ho
 copied from `lib.mjs:223-238` and a test pins the copy. A diff that outgrows its class is moved up a class, and the
 author is asked for a plan; nothing dead-ends.
 
+**Before the cut only A1 has a CI path without a plan** (VTID-ON-PR, vitana-v1). Class A2 and the classes table as a
+whole take effect on GitLab when `gitlab-mr-vtid` lands; until then a docs- or tests-only change goes through a `plan(`
+PR as today (R1-F1).
+
 ## 8. The flow
 ### Class A
 | Step | Who | What | Record | Target |
@@ -202,6 +207,10 @@ protected files changed, migrations applied and pending (D2), the model that ser
   and no VTID. One run per PR at a time (concurrency group); an allocation error fails the run once, without retries.
   It needs `GATEWAY_SERVICE_TOKEN` in the vitana-v1 Actions secrets (Phase 0 P8). It is disabled at the GitLab cut,
   when `gitlab-mr-vtid` takes over (lane `cutover` of `agentic-delivery` lists it).
+- **VTID-ALLOCATE.yml is retired** (lane `retire-vtid-allocate`, after `vtid-on-pr` lands; R1-F2). It allocates for any
+  caller with dispatch rights and checks no class, so under the one rule it has no use: planned work gets VTIDs from
+  PLAN-SPAR, frontend-simple PRs from VTID-ON-PR, for Claude Code like every other seat. `rules-platform` removes it from
+  the rule texts.
 - **Delivery service (lane `gitlab-mr-vtid`):** the same steps on the GitLab `merge_request` `open` event, with the
   `bot-delivery` account (lane `gitlab-accounts`) for title, labels and the note; idempotent per project and MR;
   emits `vtid.allocated` with class, MR and seat. In the rehearsal project allocations carry `is_test = true`.
@@ -406,7 +415,7 @@ Each rule text carries the existing convention: a mechanism takes effect when th
 then the previous mechanism stays in force.
 
 ## 19. Lanes
-### 19.1 Wave 1 (this plan's VTIDs)
+### 19.1 Wave 1 (this plan's VTIDs; 14 lanes since round 1)
 | Lane | Repo | Executor (seat) | Paths | depends_on |
 |---|---|---|---|---|
 | `vtid-on-pr` | vitana-v1 | kiro (exafyltd) | `.github/workflows/VTID-ON-PR.yml`, `scripts/ci/pr-gate/vtid-on-pr.mjs`, `scripts/ci/pr-gate/__tests__/vtid-on-pr.test.mjs` | — |
@@ -422,6 +431,7 @@ then the previous mechanism stays in force.
 | `review-workflow` | vitana-platform | kiro (exafy) | `.github/workflows/REVIEW-BEDROCK.yml`, `scripts/ci/review-bedrock/review-bedrock.mjs`, `scripts/ci/review-bedrock/review-bedrock.test.mjs` | `review-service`, `reviewer-identity` |
 | `review-dispatch-v1` | vitana-v1 | kiro (exafyltd) | `.github/workflows/REVIEW-BEDROCK-DISPATCH.yml`, `scripts/ci/pr-gate/__tests__/review-dispatch.test.mjs` | `review-workflow` |
 | `spar-responder` | vitana-platform | claude | `services/gateway/src/services/plan-sparring/**`, `scripts/collab/plan-spar.mjs`, `scripts/collab/plan-spar.test.mjs`, `.github/workflows/PLAN-SPAR.yml`, `scripts/ci/plan-spar-slot/**`, `services/gateway/test/vtid-04868-plan-sparring-*.test.ts` | `review-service`, `delivery-bedrock` |
+| `retire-vtid-allocate` | vitana-platform | kiro (exafy) | `.github/workflows/VTID-ALLOCATE.yml` | `vtid-on-pr` |
 
 Shared and hot files: `services/gateway/src/index.ts` and `orb/developer/domain-atlas.ts` (hot key `gateway-registry`)
 belong to `review-service` only; `llm-defaults.ts` belongs to `review-service` only (it also sets the partner's model
