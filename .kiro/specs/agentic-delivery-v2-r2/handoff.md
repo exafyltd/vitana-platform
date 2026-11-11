@@ -10,8 +10,8 @@ updated: 2026-11-11T16:03Z
 # Handoff — agentic-delivery-v2-r2
 
 Re-plan session for plan `agentic-delivery-v2` (plan PR #4959). The plan block of `plan.md` is byte-identical to the
-block of `.kiro/specs/agentic-delivery-v2/plan.md` on #4959 at `47656fb333`: the sha256 of the lines from
-`<!-- plan:begin -->` to `<!-- plan:end -->` is `b7a0047f4203a3f7ec03f36971a85c76231c1444e3fbeacfd32fb31da4315a79` in
+block of `.kiro/specs/agentic-delivery-v2/plan.md` on #4959 after round 1: the sha256 of the lines from
+`<!-- plan:begin -->` to `<!-- plan:end -->` is `4379341f43503d9fa2b17f0626315fc370452e0faa26d94a3f81d65c33f400c2` in
 both files. No lanes, no VTIDs.
 
 ## Log
