@@ -53,9 +53,10 @@ rewrite of a shared branch needs the owner's explicit go, and it is a separate s
 
 ### Lane `ledger-auth-enforce` (vitana-platform, executor claude: protected gate file)
 - `AWS-PROD-DEPLOY-GATEWAY.yml`: add `{name:"LEDGER_WRITE_AUTH_MODE", value:$LWA}` to the existing task-definition
-  environment edit, with `LWA` from the repository variable `PROD_LEDGER_WRITE_AUTH_MODE`, default `log`. With the
-  variable unset (today) production gets `log` written explicitly, which is the mode it runs now. **Merging this lane
-  changes nothing in production.**
+  environment edit. The step gets `PROD_LEDGER_WRITE_AUTH_MODE: ${{ vars.PROD_LEDGER_WRITE_AUTH_MODE }}` as step
+  environment and sets `LWA="${PROD_LEDGER_WRITE_AUTH_MODE:-log}"` in its shell before the edit, so the entry is always
+  `log` or the variable's value, never an empty string (R1-F1). With the variable unset (today) production gets `log`
+  written explicitly, which is the mode it runs now. **Merging this lane changes nothing in production.**
 - Regenerate `conversation-flag-pins.generated.ts` (`prod` becomes `dynamic`, premise 4).
 - Tests, in `services/gateway/test/vtid-04727-ledger-write-auth.test.ts`:
   - the assertion "production does not set the mode" becomes: production takes the mode only from
@@ -63,7 +64,9 @@ rewrite of a shared branch needs the owner's explicit go, and it is a separate s
   - new: with the environment production gets when the variable is `enforce`, an anonymous `POST /api/v1/vtid/allocate`
     answers 401 JSON and the allocator is never called (supertest against the `vtid` router, allocator mocked, no
     database);
-  - new: with the variable unset, the resolved production mode is `log`.
+  - new: with the variable unset, the resolved production mode is `log`;
+  - new: the workflow defaults the shell value (`${PROD_LEDGER_WRITE_AUTH_MODE:-log}`), and running the step's environment
+    edit on a fixture task definition with the variable unset yields `LEDGER_WRITE_AUTH_MODE=log`, not an empty value.
 - Staging proof: the staging gateway enforces already. The lane's `staging-tests.json` adds one `http` `rejected_probe`:
   an anonymous `POST /api/v1/oasis/tasks/VTID-00000/complete` on the staging gateway, expecting 401. That route carries
   the same middleware, and VTID-00000 does not exist, so even a staging gateway that had lost its pin answers 404 and

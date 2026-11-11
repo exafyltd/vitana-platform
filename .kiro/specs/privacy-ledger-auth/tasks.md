@@ -23,8 +23,9 @@ Acceptance:
 Repo `exafyltd/vitana-platform`. Executor claude (protected gate file). Code starts only after the VTID is allocated.
 - [ ] T1 Write the new and changed tests of plan § Change in `services/gateway/test/vtid-04727-ledger-write-auth.test.ts`;
       record them red on `origin/main`.
-- [ ] T2 `.github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml`: the `LEDGER_WRITE_AUTH_MODE` entry from
-      `vars.PROD_LEDGER_WRITE_AUTH_MODE`, default `log`. No new workflow input; nothing else in the file changes.
+- [ ] T2 `.github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml`: the `LEDGER_WRITE_AUTH_MODE` entry with
+      `LWA="${PROD_LEDGER_WRITE_AUTH_MODE:-log}"` from `vars.PROD_LEDGER_WRITE_AUTH_MODE`, so the value is never empty. No
+      new workflow input; nothing else in the file changes.
 - [ ] T3 Regenerate `conversation-flag-pins.generated.ts`; `node scripts/conversation/generate-flag-pins.mjs --check`.
 - [ ] T4 `docs/validation/<VTID>/staging-tests.json` with the `rejected_probe` of plan § Change (completion route,
       VTID-00000, expect 401). Never a probe of the allocate route.
