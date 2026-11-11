@@ -143,7 +143,10 @@ gateway and in shared scripts:
 - the review service and its Bedrock role (lanes `review-service`, `delivery-bedrock`, `reviewer-identity`); until the
   GitLab review job exists, lane PRs are reviewed by the reviewer agent as today;
 - the sparring responder inside `plan-spar.mjs`, whose answers PLAN-SPAR's existing commit step commits
-  (`PLAN-SPAR.yml:102-115`, `git add .kiro/specs`), with no change to the workflow file (lane `spar-responder`);
+  (`PLAN-SPAR.yml:102-115`, `git add .kiro/specs`) (lane `spar-responder`). The lane keeps `PLAN-SPAR.yml` in its
+  paths and changes it only if calling the responder needs a workflow step; that file is a protected gate file, and the
+  lane is protected already (`plan-spar.mjs`, `plan-sparring/**`), so it is class P (two reviews, D3) either way and a
+  workflow change is named in its PR;
 - the change classes, the GitLab accounts and the merge-request VTID handler for the cut (lanes `change-classes`,
   `gitlab-accounts`, `gitlab-mr-vtid`).
 
@@ -339,7 +342,9 @@ a missing prerequisite of that seat (§17) and the other seats continue.
   verdict as a commit status (a late lane after this re-plan converges; the job is named by `pipeline-gen.mjs`). Lanes
   `review-workflow` and `review-dispatch-v1` are withdrawn (D14). Until the job exists, the reviewer agent reviews as
   today and writes the §3 review entry. Merge authority is unchanged except for the model names (lane
-  `reviewer-identity`, protected).
+  `reviewer-identity`, protected). That reverses today's order (`governance.ts:39-43`, `guard.cjs:106`: Sonnet 5.5 →
+  Opus 5.5 → Sonnet 4.5) to Opus first, as v5 M4 fixes it, and replaces the 4.5 tier by the two 4.6 tiers; a review
+  costs more per call (§16).
 - **Independence:** the reviewer runs under its own identity (`agent-vitana-lane-reviewer-…` session ids, the
   `agent-reviewer` account on GitLab), never as a seat.
 - **Prompt injection:** diff text is data; an accept never overrides a red deterministic check; class P needs two models.
@@ -473,7 +478,10 @@ and tier into OASIS and into Gate 2.
   untrusted class at its current maximum of 24 machines (`fleet.tf` precondition). The trusted classes at their maxima
   (main 12, build 4, deploy 6) need 88 more On-Demand vCPUs and the GitLab and runner hosts about 14; with 96 the classes
   share the quota and wait when it is full. `fleet-classes.tf`'s check, sized for 96 untrusted machines, warns below
-  486 On-Demand and 440 Spot vCPUs. Keep 4 warm machines in working hours (`fleet_idle_count`).
+  486 On-Demand and 440 Spot vCPUs. Keep 4 warm machines in working hours: `fleet_idle_count` is 0 today
+  (`infra/gitlab-engineering/terraform/fleet.tf:19`) and is raised with the runner capacity of prerequisite P1
+  (Terraform in the engineering account); until then each job waits about a minute for its machine, which the targets
+  below do not include.
 - **Full suite** once per landed train batch (per MR it would need about 130 machines at 40 landings an hour).
 - **Bedrock:** quotas are per account and Region ([AWS quotas](https://docs.aws.amazon.com/bedrock/latest/userguide/quotas.html));
   delivery stages in the engineering account get their own. Rough cost from third-party price figures (verify with the
@@ -543,7 +551,7 @@ then the previous mechanism stays in force.
 | `review-workflow` (withdrawn, D14) | vitana-platform | kiro (exafy) | `.github/workflows/REVIEW-BEDROCK.yml`, `scripts/ci/review-bedrock/review-bedrock.mjs`, `scripts/ci/review-bedrock/review-bedrock.test.mjs` | `review-service`, `reviewer-identity` |
 | `review-dispatch-v1` (withdrawn, D14) | vitana-v1 | kiro (exafyltd) | `.github/workflows/REVIEW-BEDROCK-DISPATCH.yml`, `scripts/ci/pr-gate/__tests__/review-dispatch.test.mjs` | `review-workflow` |
 | `spar-responder` | vitana-platform | claude | `services/gateway/src/services/plan-sparring/**`, `scripts/collab/plan-spar.mjs`, `scripts/collab/plan-spar.test.mjs`, `.github/workflows/PLAN-SPAR.yml`, `scripts/ci/plan-spar-slot/**`, `services/gateway/test/vtid-04868-plan-sparring-*.test.ts` | `review-service`, `delivery-bedrock` |
-| `retire-vtid-allocate` | vitana-platform | kiro (exafy) | `.github/workflows/VTID-ALLOCATE.yml` | the cut (D14; its lane file still names `vtid-on-pr`) |
+| `retire-vtid-allocate` | vitana-platform | kiro (exafy) | `.github/workflows/VTID-ALLOCATE.yml` | after the cut: lane `cutover` of plan `agentic-delivery` done (D14). Its lane file still names the withdrawn `vtid-on-pr`; the lane's seat removes that entry in its first lane commit (`depends_on` is not a permission field, `scripts/collab/queue.mjs:1000`), and no driver starts it before `cutover` is done |
 
 Shared and hot files: `services/gateway/src/index.ts` and `orb/developer/domain-atlas.ts` (hot key `gateway-registry`)
 belong to `review-service` only; `llm-defaults.ts` belongs to `review-service` only (it also sets the partner's model
