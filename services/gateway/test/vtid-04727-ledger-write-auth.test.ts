@@ -10,8 +10,13 @@
  */
 
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
+import { execFileSync } from 'child_process';
+import express from 'express';
 import type { Request, Response, NextFunction } from 'express';
+import request from 'supertest';
+import * as yaml from 'js-yaml';
 
 let optionalAuthImpl: (req: any, res: any, next: () => void) => unknown = (_req, _res, next) => next();
 jest.mock('../src/middleware/auth-supabase-jwt', () => ({
@@ -220,10 +225,103 @@ describe('VTID-04727 wiring', () => {
     );
   });
 
-  it('staging pins enforce; production does not (it runs the log default)', () => {
+  it('staging pins enforce; production takes the mode only from PROD_LEDGER_WRITE_AUTH_MODE, default log (VTID-05700)', () => {
     const stage = read('.github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml');
     expect(stage).toContain('"LEDGER_WRITE_AUTH_MODE"');
     expect(stage).toContain('{name:"LEDGER_WRITE_AUTH_MODE", value:"enforce"}');
-    expect(read('.github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml')).not.toContain('LEDGER_WRITE_AUTH_MODE');
+    const prod = read('.github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml');
+    expect(prod.match(/\{name:"LEDGER_WRITE_AUTH_MODE"/g)).toHaveLength(1);
+    expect(prod).toContain('{name:"LEDGER_WRITE_AUTH_MODE", value:$LWA}');
+    expect(prod).toContain('LWA="${PROD_LEDGER_WRITE_AUTH_MODE:-log}"');
+    expect(prod.match(/vars\.PROD_LEDGER_WRITE_AUTH_MODE\b/g)).toHaveLength(1);
+    expect(prod).not.toMatch(/LEDGER_WRITE_AUTH_MODE"\s*,\s*value:\s*"enforce"/);
+  });
+});
+
+/**
+ * VTID-05700 (plan privacy-ledger-auth, lane ledger-auth-enforce): production gets its mode from the repository
+ * variable through the deploy step, never a hardcoded enforce. These tests run that step's own shell on a fixture task
+ * definition, then send the resulting mode through the real `vtid` router. No database, no network, no live gateway.
+ */
+describe('VTID-05700 production ledger write mode', () => {
+  const STEP = 'Build task-definition (ledger write auth mode)';
+  const ENV = { ...process.env };
+  afterEach(() => { process.env = { ...ENV }; });
+
+  type Step = { name?: string; env?: Record<string, string>; run?: string };
+  function prodStep(): Step {
+    const doc = yaml.load(read('.github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml')) as { jobs: Record<string, { steps?: Step[] }> };
+    const steps = Object.values(doc.jobs).flatMap((j) => j.steps ?? []).filter((s) => s.name === STEP);
+    expect(steps).toHaveLength(1);
+    return steps[0];
+  }
+
+  /** Runs the step on a fixture task definition. `variable` is what Actions renders for `vars.X` (unset → ''). */
+  function productionMode(variable: string | undefined): string {
+    const step = prodStep();
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vtid-05700-'));
+    const def = path.join(dir, 'task-def.json');
+    fs.writeFileSync(def, JSON.stringify({ containerDefinitions: [{ environment: [
+      { name: 'OTHER_FLAG', value: 'kept' }, { name: 'LEDGER_WRITE_AUTH_MODE', value: 'stale' },
+    ] }] }));
+    const script = path.join(dir, 'step.sh');
+    fs.writeFileSync(script, String(step.run).split('/tmp/vitana-new-task-def.json').join(def));
+    const env: Record<string, string> = { PATH: process.env.PATH ?? '' };
+    if (variable !== undefined) env.PROD_LEDGER_WRITE_AUTH_MODE = variable;
+    try {
+      execFileSync('bash', [script], { env, stdio: 'pipe' });
+      const out = JSON.parse(fs.readFileSync(def, 'utf8')).containerDefinitions[0].environment as { name: string; value: string }[];
+      expect(out.find((e) => e.name === 'OTHER_FLAG')?.value).toBe('kept');
+      const hits = out.filter((e) => e.name === 'LEDGER_WRITE_AUTH_MODE');
+      expect(hits).toHaveLength(1);
+      return hits[0].value;
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
+  it('the step reads the repository variable and defaults the shell value to log', () => {
+    const step = prodStep();
+    expect(step.env).toEqual({ PROD_LEDGER_WRITE_AUTH_MODE: '${{ vars.PROD_LEDGER_WRITE_AUTH_MODE }}' });
+    expect(step.run).toContain('LWA="${PROD_LEDGER_WRITE_AUTH_MODE:-log}"');
+  });
+
+  it('with the variable unset, production gets LEDGER_WRITE_AUTH_MODE=log, never an empty value', () => {
+    for (const unset of [undefined, '']) {
+      const mode = productionMode(unset);
+      expect(mode).toBe('log');
+      expect(resolveLedgerWriteAuthMode(mode)).toBe('log');
+    }
+  });
+
+  it('with the variable enforce, an anonymous POST /api/v1/vtid/allocate answers 401 JSON and nothing is allocated', async () => {
+    const mode = productionMode('enforce');
+    expect(mode).toBe('enforce');
+    process.env.LEDGER_WRITE_AUTH_MODE = mode;
+    process.env.GATEWAY_SERVICE_TOKEN = 'svc-token';
+    const allocatorGate = jest.fn(async () => true);
+    const fetchMock = jest.fn();
+    const realFetch = (globalThis as any).fetch;
+    (globalThis as any).fetch = fetchMock;
+    let router: any;
+    jest.isolateModules(() => {
+      jest.doMock('../src/services/system-controls-service', () => ({ isVtidAllocatorEnabled: allocatorGate, getSystemControl: jest.fn() }));
+      jest.doMock('../src/services/plan-sparring/plan-sparring-service', () => ({ emitAllocationSparringEvent: jest.fn() }));
+      jest.doMock('../src/services/oasis-event-service', () => ({ emitOasisEvent: jest.fn() }));
+      router = require('../src/routes/vtid').vtidRouter;
+    });
+    try {
+      const app = express();
+      app.use(express.json());
+      app.use('/api/v1/vtid', router);
+      const res = await request(app).post('/api/v1/vtid/allocate').send({ source: 'vtid-05700-test' });
+      expect(res.status).toBe(401);
+      expect(res.headers['content-type']).toMatch(/^application\/json/);
+      expect(res.body.ok).toBe(false);
+      expect(allocatorGate).not.toHaveBeenCalled();
+      expect(fetchMock).not.toHaveBeenCalled();
+    } finally {
+      (globalThis as any).fetch = realFetch;
+    }
   });
 });

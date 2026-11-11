@@ -1,0 +1,8 @@
+{
+  "vtid": "VTID-05700",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "ledger completion route rejects an anonymous write on staging (enforce; VTID-00000 does not exist, so nothing is written)", "method": "POST", "path": "/api/v1/oasis/tasks/VTID-00000/complete", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "existing", "name": "production mode comes only from PROD_LEDGER_WRITE_AUTH_MODE, default log; enforce answers 401 on allocate", "ref": "npx jest test/vtid-04727-ledger-write-auth.test.ts", "cwd": "services/gateway" }
+  ]
+}

@@ -1231,6 +1231,28 @@ jobs:
           PHONE_VERIFY_ENABLED_VAR: ${{ vars.PHONE_VERIFY_PROD_ENABLED }}
         run: bash scripts/ci/phone-verify-wiring.sh /tmp/vitana-new-task-def.json
 
+      - name: Build task-definition (ledger write auth mode)
+        # VTID-05700 (plan privacy-ledger-auth): the VTID ledger's write routes
+        # (VTID-04727) take their mode from the repository variable
+        # PROD_LEDGER_WRITE_AUTH_MODE. Unset or empty -> "log", the mode
+        # production has always run, now written explicitly; merging this step
+        # changes nothing. The owner switches to enforce: read 7 days of
+        # production logs for "ledger write would be rejected" and fix every
+        # legitimate caller, set PROD_LEDGER_WRITE_AUTH_MODE=enforce, PUBLISH.
+        # Rollback: delete the variable and PUBLISH again. Staging pins enforce
+        # (AWS-STAGE-DEPLOY-GATEWAY.yml). Never hardcode enforce here.
+        env:
+          PROD_LEDGER_WRITE_AUTH_MODE: ${{ vars.PROD_LEDGER_WRITE_AUTH_MODE }}
+        run: |
+          set -e
+          LWA="${PROD_LEDGER_WRITE_AUTH_MODE:-log}"
+          NEW_DEF=$(jq --arg LWA "$LWA" '
+            .containerDefinitions[0].environment |=
+              ( [ (. // [])[] | select(.name != "LEDGER_WRITE_AUTH_MODE") ]
+                + [ {name:"LEDGER_WRITE_AUTH_MODE", value:$LWA} ] )' /tmp/vitana-new-task-def.json)
+          echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
+          echo "LEDGER_WRITE_AUTH_MODE=$LWA"
+
       - name: Build task-definition (2/2 — optional overrides) + register + roll the service
         id: roll
         env:
