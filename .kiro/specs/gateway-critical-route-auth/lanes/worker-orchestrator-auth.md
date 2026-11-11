@@ -1,6 +1,6 @@
 ---
 lane: worker-orchestrator-auth
-state: in-review
+state: done
 next_actor: kiro
 claimed_by: kiro-exafy-202611110920-270b
 pr: https://github.com/exafyltd/vitana-platform/pull/4974
@@ -20,7 +20,7 @@ paths:
   - services/gateway/src/services/self-healing-reconciler.ts
   - services/gateway/test/worker-orchestrator-await-autopilot.test.ts
   - docs/validation/VTID-*/**
-updated: 2026-11-11T16:30Z
+updated: 2026-11-11T18:30Z
 vtid: VTID-05731
 ---
 # Lane: worker-orchestrator-auth (repo vitana-platform)
@@ -49,3 +49,10 @@ Findings: (non-blocking) check runs not readable from the reviewer session; land
 Findings: (non-blocking) worker-runner service-token note to be confirmed in the PR body
 Findings: (non-blocking) the origin/main merge brings only main content; the PR diff stays within the lane's paths
 Next: the land step merges under §7b
+
+### 2026-11-11T18:30Z · kiro-exafy-202611110920-270b · in-review → verified
+merge: 0dc9a0646a33de0c8cfbad862c44d53fb81e3131 (exafyltd/vitana-platform#4974)
+authority: §7b PM rule, applied by the plan driver through `land-guard.mjs merge` (review current on the PR head, every check green, up to date with main).
+
+### 2026-11-11T18:30Z · kiro-exafy-202611110920-270b · verified → done
+STAGING-VERIFY passed: https://github.com/exafyltd/vitana-platform/actions/runs/43076546511 (0dc9a0646a, 32/32). Production is unchanged until an owner PUBLISH.
