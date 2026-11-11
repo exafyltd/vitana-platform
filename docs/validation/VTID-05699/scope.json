@@ -1,6 +1,6 @@
 {
   "vtid": "VTID-05699",
-  "kind": "fix",
+  "kind": "docs",
   "paths": [
     "docs/programs/areas.yaml",
     "scripts/collab/areas-no-email.test.mjs",
