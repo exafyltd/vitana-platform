@@ -28,5 +28,8 @@ Lane created with the plan.
 ### 2026-11-11T11:41Z · ci-plan-spar · ready (VTID allocated)
 VTID-05717 allocated after policy approval (converged-auto-v1).
 
-### 2026-11-11T16:30Z · kiro-exafy-202611110920-270b · ready → executing → in-review
-Built in PR #4965; plan on `main`. Waiting for the reviewer agent.
+### 2026-11-11T16:29Z · kiro-exafy-202611110920-270b · ready → executing
+Claimed and built on branch; plan on `main`.
+
+### 2026-11-11T16:30Z · kiro-exafy-202611110920-270b · executing → in-review
+PR #4965 open; waiting for the reviewer agent.
