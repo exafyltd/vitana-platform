@@ -5,7 +5,7 @@ author_seat: exafyltd
 executor: kiro
 next_actor: kiro
 state: approved
-updated: 2026-11-11T16:01Z
+updated: 2026-11-11T16:42Z
 sparring_record: .kiro/specs/agentic-delivery-v2/sparring/verdict.md
 vtids: [VTID-05701, VTID-05702, VTID-05703, VTID-05704, VTID-05705, VTID-05706, VTID-05707, VTID-05708, VTID-05709, VTID-05710, VTID-05711, VTID-05712, VTID-05713, VTID-05714]
 ---
@@ -123,3 +123,11 @@ Pre-check before the re-plan (owner decision A): address grep of the block, 0 ma
 at `main` (`ba5f26b4d8`), 7 hold address-shaped strings: 4 noreply or example values and 3 credential-URL or bot
 templates, none a former seat address and none on a cited line (counts only, nothing printed). The branch merged
 `main` first, so this PR's own `docs/programs/areas.yaml` holds seat names only.
+
+### 2026-11-11T16:42Z · kiro-exafyltd-202611111044-8f1d · approved (driver: re-plan session converged)
+Re-plan session `f1f9716e-3a3c-40a1-9542-906dda729358` on `plan(agentic-delivery-v2-r2)` (#4982) converged in round 2 and
+was approved by policy `converged-auto-v1` at 2026-11-11T16:31:58Z; final plan hash
+`d9fa9cf9a448e17ee008f650e832656a9258eccf6d241209a229a09da554abf2` (record:
+`.kiro/specs/agentic-delivery-v2-r2/sparring/verdict.md` on that branch). Round 1 had 4 findings, all accepted; the
+same block is in this plan (`sha256` of the block `4379341f43503d9f…` in both files). #4982 is closed without merging
+(a lane-less plan cannot be `approved` without VTIDs). This plan PR merges under §7b once its checks are green.
