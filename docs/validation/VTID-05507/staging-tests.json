@@ -5,7 +5,7 @@
   "tests": [
     {
       "kind": "existing",
-      "ref": "node --test scripts/ci/check-migration-drift.test.cjs",
+      "ref": "npm run test:migration-drift",
       "cwd": ".",
       "reason": "The drift baseline now lists tenant_domains; the drift check test pins the baseline format and count."
     },
