@@ -1,9 +1,10 @@
 ---
 lane: console-probes-a
-state: executing
+state: in-review
 next_actor: kiro
 claimed_by: kiro-exafy-202611111326-7e9b
 branch: kiro/staging-verify-manifest-repair/console-probes-a
+pr: https://github.com/exafyltd/vitana-platform/pull/4975
 depends_on: []
 executor: kiro
 seat: exafy
@@ -39,3 +40,6 @@ Claimed by kiro-exafy-202611111326-7e9b. Evidence in docs/validation/VTID-05600/
 - T4: each manifest's /command-hub/ index probe expects operator-console.js?v=20261121-vtid-05082.
 - T5: 30 of 30 expected strings present in their served files; all four manifests validate; existing entries untouched.
 - Not run: the staging STAGING-VERIFY (needs merge). Covered by the next full run.
+
+### 2026-11-11T14:20Z · kiro-exafy-202611111326-7e9b · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/4975 (head 8bd76c077e). Preflight every check passed. Waiting for the reviewer agent (vitana-lane-reviewer). Next actor: reviewer agent.
