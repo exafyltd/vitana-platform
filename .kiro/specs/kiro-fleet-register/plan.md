@@ -65,6 +65,11 @@ Built after VTID-05699 is on `main` (it edits the same seat lines; sequenced, no
 
 Paths: `docs/programs/areas.yaml`, `docs/validation/VTID-*/**`.
 
+Lane identity: this plan's lane is `.kiro/specs/kiro-fleet-register/lanes/seats.md` (key `kiro-fleet-register/seats`,
+`seat: exafy`). It is not the lane `agentic-delivery-v2/seats` (`seat: exafyltd`, NATO-alphabet automation paths);
+`queue.mjs:185-191` (`classifyPath`) keys every lane by `<slug>/<lane>`, and scope-check reads the trusted front
+matter of this plan's own lane file, so that other lane's `seat` and `paths` never apply here.
+
 ## 5. Parallel / hot files
 Single lane, sequenced after `privacy-ledger-auth/areas-emails` (VTID-05699): both edit `docs/programs/areas.yaml`, so
 this lane starts from the `main` that contains VTID-05699. The edit adds keys and lines only (no seat renamed or removed).
