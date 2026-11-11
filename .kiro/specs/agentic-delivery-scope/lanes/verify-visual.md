@@ -14,7 +14,8 @@ paths:
   - scripts/ci/staging-verify/lib.test.cjs
   - scripts/ci/staging-verify/visual.mjs
   - scripts/ci/staging-verify/visual.test.mjs
-updated: 2026-11-11T16:23Z
+updated: 2026-11-11T16:49Z
+vtid: VTID-05748
 ---
 
 # Lane: verify-visual (repo exafyltd/vitana-platform)
@@ -24,3 +25,6 @@ Opt-in visual tests on staging: screenshots at 1400×900 and 390×844, vision ve
 ## Log
 ### 2026-11-11T16:23Z · kiro-exafyltd-202611111044-8f1d · ready
 Lane created with the plan.
+
+### 2026-11-11T16:49Z · ci-plan-spar · ready (VTID allocated)
+VTID-05748 allocated after policy approval (converged-auto-v1).

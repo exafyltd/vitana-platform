@@ -14,7 +14,8 @@ paths:
   - services/gateway/src/services/delivery/timeline.ts
   - services/gateway/test/delivery/timeline.test.ts
   - services/gateway/test/delivery/oasis-step-events.test.ts
-updated: 2026-11-11T16:23Z
+updated: 2026-11-11T16:49Z
+vtid: VTID-05746
 ---
 
 # Lane: traceability (repo exafyltd/vitana-platform)
@@ -24,3 +25,6 @@ Step events with server timestamps, the allocation event, and a per-VTID timelin
 ## Log
 ### 2026-11-11T16:23Z · kiro-exafyltd-202611111044-8f1d · ready
 Lane created with the plan.
+
+### 2026-11-11T16:49Z · ci-plan-spar · ready (VTID allocated)
+VTID-05746 allocated after policy approval (converged-auto-v1).

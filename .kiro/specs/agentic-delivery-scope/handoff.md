@@ -4,8 +4,10 @@ author: kiro
 author_seat: exafyltd
 executor: kiro
 next_actor: kiro
-state: drafted
-updated: 2026-11-11T16:23Z
+state: approved
+updated: 2026-11-11T16:49Z
+sparring_record: .kiro/specs/agentic-delivery-scope/sparring/verdict.md
+vtids: [VTID-05734, VTID-05735, VTID-05736, VTID-05737, VTID-05738, VTID-05739, VTID-05740, VTID-05741, VTID-05742, VTID-05743, VTID-05744, VTID-05745, VTID-05746, VTID-05747, VTID-05748, VTID-05749]
 ---
 # Handoff — agentic-delivery-scope
 
@@ -49,3 +51,6 @@ AccessDenied (no identity-based policy for the session role). That is the sessio
 
 W7: `AWS-REHEARSAL-AURORA-CLONE` `action: status` (run 43053659836) stopped at its pre-check: "source cluster
 vitana-aurora-prod not found" (the script hides whether it is absent or unreadable, premise 18). `create` was not run.
+
+### 2026-11-11T16:49Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 16 lane(s) got a VTID and are handed to Kiro.

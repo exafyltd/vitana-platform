@@ -11,7 +11,8 @@ reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 paths:
   - scripts/ci/staging-verify/smoke/gateway.json
   - services/gateway/test/orb/live/voice-round-trip.test.ts
-updated: 2026-11-11T16:23Z
+updated: 2026-11-11T16:49Z
+vtid: VTID-05747
 ---
 
 # Lane: verify-audio (repo exafyltd/vitana-platform)
@@ -21,3 +22,6 @@ Read-only bootstrap-latency probe in the gateway smoke suite; a CI voice round-t
 ## Log
 ### 2026-11-11T16:23Z · kiro-exafyltd-202611111044-8f1d · ready
 Lane created with the plan.
+
+### 2026-11-11T16:49Z · ci-plan-spar · ready (VTID allocated)
+VTID-05747 allocated after policy approval (converged-auto-v1).
