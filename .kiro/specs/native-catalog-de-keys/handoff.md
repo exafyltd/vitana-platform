@@ -3,9 +3,11 @@ slug: native-catalog-de-keys
 author: kiro
 executor: kiro
 next_actor: kiro
-state: drafted
+state: approved
 author_seat: exafyltd
-updated: 2026-11-11T19:55Z
+updated: 2026-11-11T20:00Z
+sparring_record: .kiro/specs/native-catalog-de-keys/sparring/verdict.md
+vtids: [VTID-05761]
 ---
 # Handoff — native-catalog-de-keys
 
@@ -26,3 +28,6 @@ Plan block: `plan.md`. Tasks: `tasks.md`. Lane: `lanes/de-keys.md`.
 ## Log
 ### 2026-11-11T19:55Z · kiro-exafyltd-202611072144-1c88 · created → drafted
 Plan drafted from the owner's decision of 2026-11-11.
+
+### 2026-11-11T20:00Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.

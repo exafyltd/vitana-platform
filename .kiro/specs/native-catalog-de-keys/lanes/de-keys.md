@@ -14,7 +14,8 @@ paths:
   - src/i18n/*/aiAssistantsNative.json
   - src/i18n/*/aiCoachNative.json
   - docs/validation/VTID-*/**
-updated: 2026-11-11T19:55Z
+updated: 2026-11-11T20:00Z
+vtid: VTID-05761
 ---
 # Catalog: remove the `_pending_review` flags in three namespaces, keep the German keys (de-keys)
 Plan: `.kiro/specs/native-catalog-de-keys/` — `plan.md` (decisions 1–3) and the `tasks.md` section marked
@@ -34,3 +35,6 @@ key-diff evidence lists the 113 removed flag leaves.
 ## Log
 ### 2026-11-11T19:55Z · kiro-exafyltd-202611072144-1c88 · ready
 Lane created with the plan.
+
+### 2026-11-11T20:00Z · ci-plan-spar · ready (VTID allocated)
+VTID-05761 allocated after policy approval (converged-auto-v1).
