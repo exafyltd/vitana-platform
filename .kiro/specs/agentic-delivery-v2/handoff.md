@@ -5,7 +5,7 @@ author_seat: exafyltd
 executor: kiro
 next_actor: kiro
 state: approved
-updated: 2026-11-11T15:00Z
+updated: 2026-11-11T16:01Z
 sparring_record: .kiro/specs/agentic-delivery-v2/sparring/verdict.md
 vtids: [VTID-05701, VTID-05702, VTID-05703, VTID-05704, VTID-05705, VTID-05706, VTID-05707, VTID-05708, VTID-05709, VTID-05710, VTID-05711, VTID-05712, VTID-05713, VTID-05714]
 ---
@@ -108,3 +108,18 @@ gives a day estimate for any step ("not estimated").
 
 Open: O1 (Opus 4.6 invoke) unchanged. O2 closed: D13 does not block (owner). O3 unchanged: `main` needs one approving
 review; the only merge since 2026-11-08 (#4968) had a human approval.
+
+### 2026-11-11T16:01Z · kiro-exafyltd-202611111044-8f1d · approved (driver: owner spec v5 amendments; re-plan session r2)
+The owner spec `agentic-delivery-scope` v5 (2026-11-11) changes the plan block: a privacy line first; D9 and D10
+undefined; D13 settled as config (A, B, C; default off); C2 corrected with the W4 reproduction; §11 sparring chain M1,
+§12 review chain M4 with two reviews for protected files, §13.2 vision M5, §13.3 Kiro dispatches the clone (W7), §17
+prerequisites instead of gates, §20 stops recorded instead of waited on, §19.2 the lanes that move to plan
+`agentic-delivery-scope`. The converged hash (`8085b412a4`) no longer matches. PLAN-SPAR does not re-spar a converged
+session (`scripts/collab/plan-spar.mjs:307`, `:336-347`), so the re-plan session runs on
+`plan(agentic-delivery-v2-r2)`, a lane-less spec on a new branch with a byte-identical block. Its verdict and hash are
+recorded here when it lands; the lanes keep VTID-05701 to VTID-05714.
+
+Pre-check before the re-plan (owner decision A): address grep of the block, 0 matches; of the 59 cited files that exist
+at `main` (`ba5f26b4d8`), 7 hold address-shaped strings: 4 noreply or example values and 3 credential-URL or bot
+templates, none a former seat address and none on a cited line (counts only, nothing printed). The branch merged
+`main` first, so this PR's own `docs/programs/areas.yaml` holds seat names only.
