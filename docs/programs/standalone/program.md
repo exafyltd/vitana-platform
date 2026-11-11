@@ -5,6 +5,9 @@ status: active
 priority: 3
 repos: [vitana-platform, vitana-v1]
 specs:
+  - vitana-platform:architecture-mt-alignment
+  - vitana-platform:gateway-critical-route-auth
+  - vitana-platform:gateway-write-route-auth
   - vitana-platform:pm-agent
   - vitana-platform:sparring-token-efficiency-r2
   - vitana-platform:claude-sessions-handover
@@ -133,3 +136,6 @@ belong to none of the named programmes are listed here until the owner assigns t
 - `vitana-platform:staging-verify-manifest-repair` — repair the 14 stale change suites failing the nightly full gateway STAGING-VERIFY (console probes, PM mode, collab ref, recall shadow, locale-coverage investigation) and a manifest drift guard
 - `vitana-platform:mt-local-stack-replay-skips-r1` — list the two VTID-05579 migrations PGlite cannot replay so the MT local stack gate is green on main
 - `vitana-platform:privacy-ledger-auth` — the seat file keeps seat names only (no account addresses), and production ledger writes can be switched to `enforce` by the owner (protected gate file, owner instruction 2026-11-11); history-rewrite proposal, not run
+- `vitana-platform:gateway-write-route-auth` — gate the SB-CON-22 gateway write routes (specs PATCH, triage investigate, ai-personality update/reset, LLM routing-policy set/reset) with the existing auth middleware, and give every other gateway write route a verdict
+- `vitana-platform:gateway-critical-route-auth` — close the semantic-memory, Stripe dance webhook and worker-orchestrator critical write routes with existing gates
+- `vitana-platform:architecture-mt-alignment` — verify the 41-module Vitanaland architecture map against the code and record Multi-Tenant alignment for the 18 workstreams (docs only)

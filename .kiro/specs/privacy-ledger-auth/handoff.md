@@ -4,8 +4,8 @@ author: kiro
 author_seat: exafyltd
 executor: kiro
 next_actor: kiro
-state: approved
-updated: 2026-11-11T14:33Z
+state: executing
+updated: 2026-11-11T15:52Z
 sparring_record: .kiro/specs/privacy-ledger-auth/sparring/verdict.md
 vtids: [VTID-05699, VTID-05700]
 ---
@@ -55,3 +55,20 @@ Decisions taken:
    paths, not into a new file.
 2. Heartbeats for this plan's driver are written at most 30 minutes apart (owner, 2026-11-11), inside the 45-minute
    liveness window of `plan-driver.mjs`.
+
+### 2026-11-11T15:52Z · kiro-exafyltd-202611111044-8f1d · approved → executing
+merge: 3a0202317f65b9e2ef81aaf95670d58ac4e64059 (plan PR #4958, squash, 2026-11-11T15:18:48Z, head `6aae0f6c70`, 10 of
+10 checks green). authority: `collaboration.md` §7b (spec-only `plan(` PR, policy approval converged-auto-v1) and the
+owner's decision A of 2026-11-11 ("merge #4958 then #4961"); spec `agentic-delivery-scope` v5 W1 ("merge by policy").
+
+Lanes:
+- `areas-emails` (VTID-05699): PR #4978 (replaces draft #4961) merged `ba5f26b4d8`; lane `in-review`, review pending
+  (gate M4). The grep of `main` is in the lane log.
+- `ledger-auth-enforce` (VTID-05700): PR #4979 (replaces draft #4963); it changes the protected gate file
+  `.github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml`, so it needs two reviews on the review chain (v5 §4 M4) before it
+  merges. No chain model can review from this session (Bedrock probe 2026-11-11T15:34Z: every Opus and Sonnet 5.5
+  profile AccessDenied for the session role). Recorded as blocked on M4; never merged without the reviews.
+
+Open: the probe amendment (`VTID-PROBE`, `2c1e7d6089`) is on `main`, but its plan block has no sparring session of its
+own (`f9faf3597d` is the converged hash of the block before it). The re-plan PR #4977 was closed under decision A. A
+fresh re-plan `privacy-ledger-auth-r3` runs when the 2-session sparring cap allows; its verdict is recorded here.

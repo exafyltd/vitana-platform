@@ -11,7 +11,8 @@
       "expect_body_contains": [
         "kiro-console.js?v=20261114-vtid-05071",
         "kiro-console.css?v=20261114-vtid-05071",
-        "app.js?v=20261121-vtid-05082-vtid-05547"
+        "app.js?v=20261121-vtid-05082-vtid-05547",
+        "operator-console.js?v=20261121-vtid-05082"
       ]
     },
     {
@@ -40,8 +41,8 @@
     },
     {
       "kind": "http",
-      "name": "served app.js puts the badge on each thread row",
-      "path": "/command-hub/app.js?v=20261121-vtid-05082-vtid-05547",
+      "name": "served operator-console.js puts the badge on each thread row",
+      "path": "/command-hub/operator-console.js?v=20261121-vtid-05082",
       "expect_status": 200,
       "expect_content_type": "javascript",
       "expect_body_contains": [
