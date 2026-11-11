@@ -4,8 +4,10 @@ author: kiro
 author_seat: exafyltd
 executor: kiro
 next_actor: kiro
-state: drafted
-updated: 2026-11-11T16:03Z
+state: sparred
+updated: 2026-11-11T16:37Z
+sparring_record: .kiro/specs/agentic-delivery-v2-r2/sparring/verdict.md
+reason: lanes_missing
 ---
 # Handoff — agentic-delivery-v2-r2
 
@@ -25,3 +27,6 @@ Pre-check (owner decision A), at `main` `ba5f26b4d8`: address grep of the block,
 exist there, 7 hold address-shaped strings: 4 noreply or example values and 3 credential-URL or bot templates, none a
 former seat address and none on a cited line. Counts only; nothing was printed. `docs/programs/areas.yaml` holds seat
 names only (PR #4978).
+
+### 2026-11-11T16:37Z · ci-plan-spar · drafted → sparred
+Converged; approved by policy converged-auto-v1. No lane files yet; add them in a `_plan` commit on this PR and the next PLAN-SPAR run allocates their VTIDs.
