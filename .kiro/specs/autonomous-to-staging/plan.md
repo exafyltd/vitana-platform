@@ -26,7 +26,7 @@ suite ever targets production; staging tests stay read-only against any shared d
 | H2 | Protected gate files need an owner instruction | `CLAUDE.md:82`; `collaboration.md:136-145, 218, 228, 270-271`; v1 `CLAUDE.md:107` | rule |
 | H3 | Same, enforced | `scripts/collab/queue.mjs:91-107, 240, 1033-1034`; `scripts/collab/land-guard.mjs:108-110, 54`; `services/gateway/src/services/project-manager/governance.ts:4-22, 48-107`; `PR-GATE.yml:168-174` | code |
 | H4 | Migrations need owner approval of file and target | `collaboration.md:209-213, 312-322`; `.kiro/steering/vitana-owner-autonomy.md:40`; `.kiro/pipeline/quality-checks.md:73` | rule (RUN-MIGRATION.yml and v1 `apply-*.yml` have no environment reviewers) |
-| H5 | 3 failed fix-forwards park the lane with `next_actor: owner` | `collaboration.md:243-245`; `.kiro/pipeline/driver.md:52`; `common-rules.md:30` | rule |
+| H5 | 3 failed fix-forwards park the lane with `next_actor: owner` | `collaboration.md:247-248`; `.kiro/pipeline/driver.md:52`; `common-rules.md:30` | rule |
 | H6 | Escalated sparring verdict goes to the owner; escalated session needs `exafy_admin` approval | `collaboration.md:209-210`; `planning.md:65`; `driver.md:49`; `plan-sparring-service.ts:461-480`; `scripts/collab/plan-spar.mjs:398-411` (parks to `claude`) | rule + code |
 | H7 | Product autonomy settings need explicit approval | `CLAUDE.md:201` (NEVER 34) | rule |
 | H8 | Owner stop table | `.kiro/steering/vitana-owner-autonomy.md:40-52` (rows 1, 3, 4, 5, 6, 7, 12, 13); v1 copy | rule |
@@ -42,14 +42,21 @@ No CODEOWNERS file and no GitHub `environment:` reviewers exist in either repo (
    - Gate 1 is replaced by machine sparring for all plans (local sparring records go through PLAN-SPAR).
    - Protected gate files merge on **two independent reviewer-agent accepts from two different chain models** on the
      current head plus every required check green (lane `machine-gate-protected`). Two models, not one, because these
-     files define the gates themselves.
+     files define the gates themselves. Because both models are one vendor family, a **mechanical invariant check**
+     is added as a required CI step (`scripts/collab/gate-invariants.mjs`, run in `Collab tests`): the protected list
+     is non-empty and still contains every gate file, including itself; `mergeDecision` still refuses zero or one
+     accept and two accepts of one model; scope-check still refuses a protected file from an untrusted lane; the
+     staging prod-reference guard still lists every production identifier. The check fails closed and cannot be
+     changed in the same PR that changes the files it protects (it reads its expectations from the merge-base).
    - Migrations: applied by the pipeline to the **isolated staging database only** (lanes `staging-db-isolation`,
      `staging-migrations-auto`). Until that database exists, a migration lane waits in machine state
      `blocked: isolated-staging-db` (not an owner question). No migration ever reaches the production database before
      PUBLISH.
    - 3 failed repairs, an escalated sparring verdict, or a security/data-loss finding → **machine quarantine**: lane
      `state: quarantined`, `next_actor: kiro`, exceptions seat; the driver opens a re-plan revision, continues other
-     eligible lanes, and never reports the quarantined work as staging verified.
+     eligible lanes, and never reports the quarantined work as staging verified. Every transition into and out of
+     quarantine emits an OASIS event (`collab.lane.quarantined` / `collab.lane.unquarantined`, payload: lane key,
+     VTID, reason, evidence link) through the existing `/api/v1/events/ingest` path.
    - NEVER 34 is narrowed to production autonomy settings; staging-scoped settings change through the pipeline.
    - The owner stop table is replaced by: production publish (human) and the machine quarantine rules.
 2. **Pipeline B everywhere (H10):** `frontend-simple` covers vitana-v1 `src/**`, `public/**`, `apps/mobile/src/**` (deny
@@ -61,7 +68,8 @@ No CODEOWNERS file and no GitHub `environment:` reviewers exist in either repo (
    no reviewer round; PR-GATE, build and STAGING-VERIFY stay.
 3. **Isolated staging database (H11):** a separate staging data plane in account `472838866351`, `eu-central-1`:
    - a dedicated Aurora PostgreSQL cluster `vitana-aurora-staging`, built from `supabase/migrations/**` (schema) plus a
-     synthetic seed; never restored from production data;
+     synthetic seed; never restored from production data; its own KMS key, subnet group and security group, which
+     admits only the staging gateway and staging PostgREST tasks;
    - the existing staging PostgREST-Aurora proxy (`AWS-STAGE-DEPLOY-POSTGREST-AURORA-PROXY.yml`) repointed at it;
    - gateway staging (`AWS-STAGE-DEPLOY-GATEWAY.yml`) and the v1 staging frontend use only staging endpoints and
      staging keys;
@@ -78,10 +86,22 @@ No CODEOWNERS file and no GitHub `environment:` reviewers exist in either repo (
    `aurora` stay dispatch-only and are used only after PUBLISH.
 5. **Kiro AWS execution access (H12):** IAM as code in `infra/kiro-access/`:
    - account `841276716213`: role `kiro-engineering-admin` (AdministratorAccess) assumable by the Kiro automation
-     principal;
-   - account `472838866351`: role `kiro-staging-operator` with write access to staging resources only (names
-     `*-staging*`, the `vitana-gateway` service, staging secrets); production resources (`*-awsdr`, `*-prod*`,
-     `vitana-aurora-prod`) are denied explicitly so production stays the PUBLISH decision;
+     principal. Premise: the account holds the engineering platform only, GitLab EE `gitlab.vitanaland.com`, its
+     runners, backup buckets and CI cache (`.kiro/specs/eng-gitlab-m1/plan.md:13-14, 87-92`; `eng-gitlab-m2/plan.md:65,
+     86`); no Vitana customer service runs there. The lane first records a read-only inventory of the account (resource
+     list from the apply workflow) in `docs/KIRO-AWS-ACCESS.md`. Because the account holds every repository copy and
+     its backups, the role keeps explicit denies on deleting the GitLab instances, their EBS volumes and the backup
+     buckets (`ec2:TerminateInstances`, `ec2:DeleteVolume`, `s3:DeleteBucket`, `s3:DeleteObject*` on those ARNs);
+   - account `472838866351`: role `kiro-staging-operator` with write access to staging resources only, enforced by
+     **explicit `Deny` statements on exact ARNs**, not name patterns: the `vitana-aurora-prod` cluster and its
+     instances, every production secret ARN (`vitana/*/prod*`, listed one by one from Secrets Manager at apply time
+     and pinned in the policy), the production ECS services (`vitana-gateway-awsdr`, `vitana-community-app-awsdr`,
+     every `*-awsdr` and the fixed-count services), `vitana-alb-prod` listener rules, and the production KMS keys; plus
+     an IAM **permissions boundary** that the role cannot remove (`iam:*` on itself denied). Account
+     `472838866351` is the Organizations management account (it assumes `OrganizationAccountAccessRole` into
+     `841276716213`), where SCPs do not apply, so the boundary and explicit denies are the control. A separate staging
+     data account is the stronger boundary; it is deferred as a decision (strategy repository, new DEC) because it
+     needs cross-account networking for the shared ECS cluster;
    - every assumption tagged with the session id and logged to CloudTrail; an OASIS `infra.kiro_access.*` event per
      session start.
    Applied by a `workflow_dispatch` workflow on the existing OIDC role. The credential the Kiro environment uses as
@@ -90,13 +110,29 @@ No CODEOWNERS file and no GitHub `environment:` reviewers exist in either repo (
 6. **Strategy repository:** its MRs from `kiro/*` merge automatically when the pipeline passes (done directly on
    GitLab, outside this plan; recorded in the strategy repo).
 
+## 3a. Bootstrap (how the first protected-gate lanes merge)
+Today `land-guard.mjs:107-108` and `governance.ts:15-19` never merge a protected gate file; the authority is the owner
+instruction naming the plan plus a reviewer-agent accept on the current head (`collaboration.md` §3a, §7b). This
+plan has that instruction (owner directive 2026-11-11, recorded in `handoff.md`). So, until `machine-gate-protected`
+is on `main`, each protected-gate lane merges like this, with no further human step:
+1. reviewer-agent accept on the current head (`land-guard.mjs review` passes);
+2. every check run's latest attempt green and the PR up to date (`land-guard.mjs checks` passes);
+3. the driver merges with `gh api -X PUT repos/<repo>/pulls/<n>/merge -f sha=<reviewed head> -f merge_method=squash`
+   (sha-pinned, never `--admin`), and logs `merge: <sha>`, `authority: owner instruction 2026-11-11 (plan
+   autonomous-to-staging) + reviewer-agent accept <head>`.
+`machine-gate-protected` lands first. From then on protected files merge through `land-guard.mjs merge` under the
+two-model rule and the invariant check. The protected-gate lanes are `executor: claude` only because `queue.mjs:1032`
+admits protected files for that executor; while Claude Code is unavailable a Kiro seat builds them (exceptions path,
+§7), and the reviewer agent accepts. `rules-platform` also removes the sentence "Only protected gate files (§3a) still
+wait for owner/Claude review" (`collaboration.md:228`).
+
 ## 4. Lanes
 | Lane | Repo | Paths (summary) | Depends on |
 |---|---|---|---|
 | `rules-platform` | vitana-platform | `CLAUDE.md`, `.claude/rules/collaboration.md`, `.kiro/steering/vitana-owner-autonomy.md`, `.kiro/steering/vitana-pipeline.md`, `.kiro/pipeline/{driver,common-rules,planning,quality-checks}.md`, `docs/DEPLOYMENT-PIPELINE.md` | `machine-gate-protected`, `quarantine` |
 | `rules-v1` | vitana-v1 | `CLAUDE.md`, `.kiro/steering/vitana-owner-autonomy.md`, `.claude/rules/design.md` | `rules-platform` |
-| `machine-gate-protected` | vitana-platform | `scripts/collab/queue.mjs`, `scripts/collab/land-guard.mjs`, `scripts/collab/protected-gate-files.json`, `services/gateway/src/services/project-manager/governance.ts`, tests | none |
-| `quarantine` | vitana-platform | `scripts/collab/plan-spar.mjs`, `scripts/collab/plan-driver.mjs`, `services/gateway/src/services/plan-sparring/plan-sparring-service.ts` (escalation → quarantine, no `exafy_admin` path needed for staging), tests | none |
+| `machine-gate-protected` | vitana-platform | `scripts/collab/queue.mjs`, `scripts/collab/land-guard.mjs`, `scripts/collab/protected-gate-files.json`, `scripts/collab/gate-invariants.mjs`, `services/gateway/src/services/project-manager/governance.ts`, tests | none |
+| `quarantine` | vitana-platform | `scripts/collab/plan-spar.mjs`, `scripts/collab/plan-driver.mjs`, OASIS event emitter in `scripts/collab/`, `services/gateway/src/services/plan-sparring/plan-sparring-service.ts` (escalation → quarantine, no `exafy_admin` path needed for staging), tests | none |
 | `pipeline-b-v1` | vitana-v1 | `scripts/ci/pr-gate/lib.mjs`, `scripts/ci/pr-gate/__tests__/**` | none |
 | `pipeline-b-platform` | vitana-platform | `scripts/ci/pr-gate/**`, `.github/workflows/PR-GATE.yml`, `.github/workflows/VTID-ALLOCATE.yml`, tests | none |
 | `staging-db-isolation` | vitana-platform | `infra/staging-db/**`, `.github/workflows/AWS-STAGE-PROVISION-DB.yml`, `scripts/aws/staging-db-*.sh`, `scripts/ci/staging-prod-ref-guard.mjs`, `.github/workflows/AWS-STAGE-DEPLOY-{GATEWAY,POSTGREST-AURORA-PROXY}.yml`, `docs/STAGING.md` | none |
@@ -114,10 +150,10 @@ Hot files sequenced: `CLAUDE.md` (only `rules-platform`), `PR-GATE.yml` (only `p
 owner instruction plus a reviewer-agent accept; after `machine-gate-protected` lands, later ones use the two-model rule.
 
 ## 5. Tests (each red on base first)
-- `machine-gate-protected`: land-guard refuses a protected file with one accept, merges with two accepts from
+- `machine-gate-protected`: `gate-invariants.mjs` fails when any invariant is removed (mutation fixtures); land-guard refuses a protected file with one accept, merges with two accepts from
   different chain models on the current head; queue scope-check accepts a protected file for a Kiro lane only with
   `protected_gate: two-model` from a trusted source; governance.ts mirrors it.
-- `quarantine`: plan-spar escalation writes `state: quarantined`, `next_actor: kiro`; plan-driver `next` lists a
+- `quarantine`: plan-spar escalation writes `state: quarantined`, `next_actor: kiro` and emits the OASIS event; plan-driver `next` lists a
   re-plan action for a quarantined lane and keeps independent lanes; quarantine is never `done`.
 - `pipeline-b-*`: allowed/denied fixtures per surface; VTID-ALLOCATE dry-run on a fixture PR allocates exactly once
   and refuses a non-qualifying diff.
@@ -125,7 +161,7 @@ owner instruction plus a reviewer-agent accept; after `machine-gate-protected` l
   `--plan` mode prints no production ARN.
 - `staging-migrations-auto`: target `staging` never resolves to a production cluster or project ref; rollback path
   covered with a failing fixture migration on a local Postgres.
-- `kiro-aws-access`: policy unit test: every production resource pattern is denied in `kiro-staging-operator`.
+- `kiro-aws-access`: policy unit test: every production ARN in the pinned list is denied in `kiro-staging-operator`, the boundary blocks `iam:*` on the role itself, and the GitLab delete denies are present in `kiro-engineering-admin`.
 STAGING-VERIFY on each merge commit that deploys; `docs/validation/<VTID>/staging-tests.json` per lane.
 
 ## 6. Risks

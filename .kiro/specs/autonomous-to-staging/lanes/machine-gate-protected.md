@@ -12,6 +12,7 @@ paths:
   - scripts/collab/queue.mjs
   - scripts/collab/land-guard.mjs
   - scripts/collab/protected-gate-files.json
+  - scripts/collab/gate-invariants.mjs
   - services/gateway/src/services/project-manager/governance.ts
   - scripts/collab/*.test.mjs
   - services/gateway/test/**
