@@ -1,7 +1,9 @@
 ---
 lane: worker-orchestrator-auth
-state: ready
+state: in-review
 next_actor: kiro
+claimed_by: kiro-exafy-202611110920-270b
+pr: https://github.com/exafyltd/vitana-platform/pull/4974
 branch: kiro/gateway-critical-route-auth/worker-orchestrator-auth
 depends_on: []
 executor: kiro
@@ -18,7 +20,7 @@ paths:
   - services/gateway/src/services/self-healing-reconciler.ts
   - services/gateway/test/worker-orchestrator-await-autopilot.test.ts
   - docs/validation/VTID-*/**
-updated: 2026-11-11T13:18Z
+updated: 2026-11-11T16:30Z
 vtid: VTID-05731
 ---
 # Lane: worker-orchestrator-auth (repo vitana-platform)
@@ -30,3 +32,6 @@ Lane created with the plan.
 
 ### 2026-11-11T13:18Z · ci-plan-spar · ready (VTID allocated)
 VTID-05731 allocated after policy approval (converged-auto-v1).
+
+### 2026-11-11T16:30Z · kiro-exafy-202611110920-270b · ready → executing → in-review
+Built in PR #4974; plan on `main`. Waiting for the reviewer agent.
