@@ -28,7 +28,7 @@ Repo `exafyltd/vitana-platform`. Executor claude (protected gate file). Code sta
       new workflow input; nothing else in the file changes.
 - [ ] T3 Regenerate `conversation-flag-pins.generated.ts`; `node scripts/conversation/generate-flag-pins.mjs --check`.
 - [ ] T4 `docs/validation/<VTID>/staging-tests.json` with the `rejected_probe` of plan § Change (completion route,
-      VTID-00000, expect 401). Never a probe of the allocate route.
+      `VTID-PROBE`, expect 401). Never a probe of the allocate route, never a well-formed VTID.
 - [ ] T5 Gateway Jest: `vtid-04727-ledger-write-auth`, `vtid-04677-scheduled-notifications-auth` and the flag-pins
       test green; preflight green.
 - [ ] T6 PR `VTID-xxxxx (privacy-ledger-auth/ledger-auth-enforce): production ledger writes can be switched to enforce

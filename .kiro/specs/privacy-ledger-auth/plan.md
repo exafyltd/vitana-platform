@@ -38,8 +38,11 @@ rewrite of a shared branch needs the owner's explicit go, and it is a separate s
    No test proves it for the allocate route under the production configuration.
 6. `AWS-PROD-DEPLOY-GATEWAY.yml` has 25 `workflow_dispatch` inputs, the GitHub maximum, so the switch cannot be a new
    input. The file is a protected gate file (`scripts/collab/protected-gate-files.json`: `.github/workflows/AWS-PROD-*.yml`).
-7. `services/gateway/src/routes/oasis-tasks.ts` (completion route, `:550` onward) answers 404 `NOT_FOUND` for a VTID that
-   is not in the ledger, before it writes anything.
+7. `services/gateway/src/routes/oasis-tasks.ts`, completion route (`:550`): the handler checks the path VTID against
+   `^VTID-\d{4,}$` first and answers 400 `INVALID_VTID_FORMAT` (`:555-563`) before any database call. A well-formed VTID
+   is read from `vtid_ledger` (`:586`): no row gives 404 (`:598`); a row is updated (`PATCH`, `:663`) and an OASIS event
+   follows. STAGING-VERIFY sends a rejected probe with the bearer `staging-verify.invalid.probe` and the body `{}`
+   (`scripts/ci/staging-verify/lib.cjs:375-383`).
 
 ## Change
 ### Lane `areas-emails` (vitana-platform, executor kiro, seat exafyltd)
@@ -66,12 +69,20 @@ rewrite of a shared branch needs the owner's explicit go, and it is a separate s
     database);
   - new: with the variable unset, the resolved production mode is `log`;
   - new: the workflow defaults the shell value (`${PROD_LEDGER_WRITE_AUTH_MODE:-log}`), and running the step's environment
-    edit on a fixture task definition with the variable unset yields `LEDGER_WRITE_AUTH_MODE=log`, not an empty value.
+    edit on a fixture task definition with the variable unset yields `LEDGER_WRITE_AUTH_MODE=log`, not an empty value;
+  - new (probe safety): the exact request STAGING-VERIFY builds for the probe below, sent through the gateway's own
+    middleware order (CORS, `sseHeaders`, compression, `express.json`, `delegatedTokenGuard`) and the real tasks router
+    with the real `optionalAuth`, answers 401 in `enforce` and 400 `INVALID_VTID_FORMAT` in `log` and `off`, and nothing
+    leaves the process: no `fetch`, no JWKS download, no Supabase client call, no OASIS event, no active-day write.
 - Staging proof: the staging gateway enforces already. The lane's `staging-tests.json` adds one `http` `rejected_probe`:
-  an anonymous `POST /api/v1/oasis/tasks/VTID-00000/complete` on the staging gateway, expecting 401. That route carries
-  the same middleware, and VTID-00000 does not exist, so even a staging gateway that had lost its pin answers 404 and
-  writes nothing (premise 7). The allocate route is never probed on a live gateway: a gateway in `log` would allocate a
-  real VTID.
+  `POST /api/v1/oasis/tasks/VTID-PROBE/complete` on the staging gateway with STAGING-VERIFY's invalid bearer, expecting
+  401. That route carries the same middleware. `VTID-PROBE` is not a VTID, so a staging gateway that had lost its pin
+  answers 400 before any database call and writes nothing, and the probe still fails, because 400 is not 401
+  (premise 7). The allocate route is never probed on a live gateway: a gateway in `log` would allocate a real VTID.
+  **Decision (owner, 2026-11-11):** the probe uses `VTID-PROBE`, not `VTID-00000`. A well-formed VTID reaches the ledger
+  read, and in `log` mode an existing `VTID-00000` row would be updated; the gateway tags its own system events with
+  `VTID-00000` (`services/gateway/src/validator-core/oasis-pipeline.ts:17`), so the code cannot show that no such row
+  exists.
 - **The flip is the owner's command, outside this lane.** After Gate 2 the owner, when ready:
   1. reads seven days of production gateway logs for `ledger write would be rejected` (CloudWatch Logs Insights on the
      log group of the live `vitana-gateway-awsdr` task definition: `fields @timestamp, @message | filter @message like

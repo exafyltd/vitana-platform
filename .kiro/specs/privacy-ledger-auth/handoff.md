@@ -5,7 +5,7 @@ author_seat: exafyltd
 executor: kiro
 next_actor: kiro
 state: approved
-updated: 2026-11-11T11:26Z
+updated: 2026-11-11T14:33Z
 sparring_record: .kiro/specs/privacy-ledger-auth/sparring/verdict.md
 vtids: [VTID-05699, VTID-05700]
 ---
@@ -40,3 +40,18 @@ Plan driver for this plan. PLAN-SPAR pushed round 2 with `GITHUB_TOKEN`, which s
 The drafted entry here said 11:40Z by mistake; it is corrected to 11:03Z, the commit time of 072ebc37b2. The `ready`
 entries of both lane files keep the same wrong 11:40Z, because a `_plan` commit may create a lane file but never edit
 one (`queue.mjs`); their real time is also 11:03Z.
+
+### 2026-11-11T14:33Z · kiro-exafyltd-202611111044-8f1d · approved (driver: probe amendment, re-plan session)
+Owner instruction 2026-11-11 (after the owner answers), item 4: the STAGING-VERIFY probe of lane `ledger-auth-enforce`
+targets `VTID-PROBE` instead of `VTID-00000`. `plan.md` changes inside the plan block (premise 7, the Staging proof
+bullet with the decision, one new probe-safety test) and `tasks.md` T4, so the converged plan hash changes.
+PLAN-SPAR does not re-spar a converged session: `scripts/collab/plan-spar.mjs:307` opens a re-plan session only after
+an escalation, and `:336-347` answer `nothing_to_do` otherwise. The one re-plan session therefore runs on plan PR
+`plan(privacy-ledger-auth-r2)`, with the same partner and a plan block byte-identical to this one, and no lanes of its
+own. Its verdict and plan hash are recorded here when it lands. The lanes keep VTID-05699 and VTID-05700.
+
+Decisions taken:
+1. The probe-safety test goes into `services/gateway/test/vtid-04727-ledger-write-auth.test.ts`, inside the lane's
+   paths, not into a new file.
+2. Heartbeats for this plan's driver are written at most 30 minutes apart (owner, 2026-11-11), inside the 45-minute
+   liveness window of `plan-driver.mjs`.
