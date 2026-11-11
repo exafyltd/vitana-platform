@@ -33,6 +33,17 @@ import { recordSpecMemory } from './voice-spec-memory';
 import { getVoiceSpecHint, parseVoiceClassFromEndpoint } from './voice-spec-hints';
 import { appendVerdict, evaluateAndQuarantine, resolveRecurrenceAfterFixMs } from './voice-recurrence-sentinel';
 import { probeEndpoint as sharedProbeEndpoint } from './self-healing-probe';
+import { gatewayServiceAuthHeader } from '../middleware/require-service-or-admin';
+
+// VTID-05731: the orchestrator routes need the service token; say so once per process when it is missing,
+// instead of a silent 401 on every dispatch.
+let warnedNoServiceToken = false;
+function warnIfNoServiceToken(): void {
+  if (warnedNoServiceToken || process.env.GATEWAY_SERVICE_TOKEN) return;
+  warnedNoServiceToken = true;
+  console.error('[worker-orchestrator-auth] GATEWAY_SERVICE_TOKEN unset: orchestrator dispatch will get 401');
+}
+
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
@@ -161,9 +172,12 @@ async function attemptRedispatch(
   }
 
   try {
+    warnIfNoServiceToken();
     const dispatchRes = await fetch(`${GATEWAY_URL}/api/v1/worker/orchestrator/route`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      // The orchestrator write routes are requireServiceOrAdmin (VTID-05731,
+      // plan gateway-critical-route-auth).
+      headers: { 'Content-Type': 'application/json', ...gatewayServiceAuthHeader() },
       body: JSON.stringify({
         vtid: row.vtid,
         title,
