@@ -1,4 +1,10 @@
 FAIL test/command-hub/gateway-write-route-auth-callers.test.ts
+    ✓ PATCH /api/v1/specs/:vtid: one write call site in app.js, using buildContextHeaders
+    ✓ POST /api/v1/agents/triage/investigate: one write call site in app.js, using buildContextHeaders
+    ✕ PUT /api/v1/ai-personality/:surface_key: one write call site in app.js, using buildContextHeaders
+    ✕ POST /api/v1/ai-personality/:surface_key/reset: one write call site in app.js, using buildContextHeaders
+    ✕ POST /api/v1/llm/routing-policy: one write call site in app.js, using buildContextHeaders
+    ✓ POST /api/v1/llm/routing-policy/reset: one write call site in app.js, using buildContextHeaders
     ✓ PATCH /api/v1/specs/:vtid: exactly one write call site, and it uses buildContextHeaders
     ✓ POST /api/v1/agents/triage/investigate: exactly one write call site, and it uses buildContextHeaders
     ✕ PUT /api/v1/ai-personality/:surface_key: exactly one write call site, and it uses buildContextHeaders
@@ -41,38 +47,44 @@ FAIL test/gateway-write-route-auth.test.ts
       ✕ rejects a request with no token (401) and writes nothing
       ✕ rejects x-actor-role: admin without a token (401): a caller header cannot grant privilege
       ✕ rejects a token that is neither the service token nor a valid JWT (401)
+      ✕ rejects a signed-in non-admin who also sends x-actor-role: admin (403)
       ✕ rejects a signed-in user without exafy_admin (403) and writes nothing
       ✓ lets an exafy_admin JWT reach the handler
       ✓ lets the service token reach the handler
       ✕ rejects a request with no token (401) and writes nothing
       ✕ rejects x-actor-role: admin without a token (401): a caller header cannot grant privilege
       ✕ rejects a token that is neither the service token nor a valid JWT (401)
+      ✕ rejects a signed-in non-admin who also sends x-actor-role: admin (403)
       ✕ rejects a signed-in user without exafy_admin (403) and writes nothing
       ✓ lets an exafy_admin JWT reach the handler
       ✕ rejects the service token (admin only)
       ✕ rejects a request with no token (401) and writes nothing
       ✕ rejects x-actor-role: admin without a token (401): a caller header cannot grant privilege
       ✕ rejects a token that is neither the service token nor a valid JWT (401)
+      ✕ rejects a signed-in non-admin who also sends x-actor-role: admin (403)
       ✕ rejects a signed-in user without exafy_admin (403) and writes nothing
       ✓ lets an exafy_admin JWT reach the handler
       ✕ rejects the service token (admin only)
       ✕ rejects a request with no token (401) and writes nothing
       ✕ rejects x-actor-role: admin without a token (401): a caller header cannot grant privilege
       ✕ rejects a token that is neither the service token nor a valid JWT (401)
+      ✕ rejects a signed-in non-admin who also sends x-actor-role: admin (403)
       ✕ rejects a signed-in user without exafy_admin (403) and writes nothing
       ✓ lets an exafy_admin JWT reach the handler
       ✕ rejects the service token (admin only)
       ✕ rejects a request with no token (401) and writes nothing
       ✕ rejects x-actor-role: admin without a token (401): a caller header cannot grant privilege
       ✕ rejects a token that is neither the service token nor a valid JWT (401)
+      ✕ rejects a signed-in non-admin who also sends x-actor-role: admin (403)
       ✕ rejects a signed-in user without exafy_admin (403) and writes nothing
       ✓ lets an exafy_admin JWT reach the handler
       ✓ lets the service token reach the handler
       ✕ rejects a request with no token (401) and writes nothing
       ✕ rejects x-actor-role: admin without a token (401): a caller header cannot grant privilege
       ✕ rejects a token that is neither the service token nor a valid JWT (401)
+      ✕ rejects a signed-in non-admin who also sends x-actor-role: admin (403)
       ✕ rejects a signed-in user without exafy_admin (403) and writes nothing
       ✓ lets an exafy_admin JWT reach the handler
       ✓ lets the service token reach the handler
 Test Suites: 2 failed, 2 total
-Tests:       33 failed, 13 passed, 46 total
+Tests:       42 failed, 16 passed, 58 total

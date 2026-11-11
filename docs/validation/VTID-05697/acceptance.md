@@ -16,31 +16,31 @@ Route count: the plan text says "seven routes"; the routes it lists are six (the
 | `POST /api/v1/llm/routing-policy` | `requireServiceOrAdmin` | `x-actor-role`, default `developer` allowed (`routes/llm.ts:165,182-192`) |
 | `POST /api/v1/llm/routing-policy/reset` | `requireServiceOrAdmin` | same (`:236,243-255`) |
 
-AC-1 No token, an invalid token, or `x-actor-role: admin` without a token → 401 on all six routes; no write function and no outbound fetch runs.
+AC-1 No token, an invalid token, or `x-actor-role: admin` without a token → 401 on all six routes; no write function (for triage: no LLM router call) and no outbound fetch runs.
 TEST: services/gateway/test/gateway-write-route-auth.test.ts ("rejects a request with no token (401) and writes nothing", "rejects x-actor-role: admin without a token (401): a caller header cannot grant privilege", "rejects a token that is neither the service token nor a valid JWT (401)")
 
-AC-2 A signed-in user without `exafy_admin` → 403 on all six routes; nothing is written.
-TEST: services/gateway/test/gateway-write-route-auth.test.ts ("rejects a signed-in user without exafy_admin (403) and writes nothing")
+AC-2 A signed-in user without `exafy_admin` → 403 on all six routes, also when it sends `x-actor-role: admin`; nothing is written.
+TEST: services/gateway/test/gateway-write-route-auth.test.ts ("rejects a signed-in user without exafy_admin (403) and writes nothing", "rejects a signed-in non-admin who also sends x-actor-role: admin (403)")
 
 AC-3 An `exafy_admin` JWT reaches the handler on all six; the service token reaches the three `requireServiceOrAdmin` routes and is refused (401) on the three admin-only routes.
 TEST: services/gateway/test/gateway-write-route-auth.test.ts ("lets an exafy_admin JWT reach the handler", "lets the service token reach the handler", "rejects the service token (admin only)", "the handlers ran for an admin: …")
 
-AC-4 Audit actor comes from the gate, never from `x-actor-*` (sparring R2-F1): admin JWT → (`<user_id>`, `exafy_admin`); service token → (`internal`, `service`).
+AC-4 Audit actor comes from the gate, never from `x-actor-*` (sparring R2-F1), on all four audited handlers (ai-personality PUT and reset, routing-policy POST and reset): admin JWT → (`<user_id>`, `exafy_admin`); admin JWT with an empty user id → (`unknown`, `exafy_admin`); service token → (`internal`, `service`).
 TEST: services/gateway/test/gateway-write-route-auth.test.ts ("audit actor comes from the gate: …")
 
-AC-5 Command Hub: exactly one write call site per route in `app.js`, each building headers with `buildContextHeaders(`; no `x-actor-id` / `x-actor-role` anywhere in `app.js`.
+AC-5 Command Hub: exactly one write call site per route in `app.js`, matched by path pattern and HTTP method (so another write caller of the same route written differently is counted), each building headers with `buildContextHeaders(`; no `x-actor-id` / `x-actor-role` anywhere in `app.js`.
 TEST: services/gateway/test/command-hub/gateway-write-route-auth-callers.test.ts
 
-AC-6 Red on base, green after: 33 of 46 fail on the pin, 46 of 46 pass with the change.
+AC-6 Red on base, green after: 42 of 58 fail with the five source files of the pin, 58 of 58 pass with the change.
 TEST: docs/validation/VTID-05697/outputs/jest-red-on-base.txt, docs/validation/VTID-05697/outputs/jest-green.txt
 
 AC-7 No regression: 127 existing gateway suites that touch these routes or `app.js` pass (2293 tests); the gateway typechecks and builds.
-TEST: docs/validation/VTID-05697/outputs/tsc-gateway.txt; commands.log
+TEST: docs/validation/VTID-05697/outputs/tsc-gateway.txt, docs/validation/VTID-05697/outputs/build.txt; commands.log
 
 ## Callers (census, outputs/caller-census.txt)
 - Command Hub write call sites: `app.js:10054`, `:18512`, `:17974`, `:18009`, `:28670`, `:30433`. The other hits are GETs and stay as they are.
 - vitana-v1: 0 hits.
-- `services/openclaw-bridge/src/skills/vitana-llm-routing.ts:94,121` posts to `/routing-policy` and `/routing-policy/reset` with no Authorization (`:57-63`). After this lane those two actions get 401 and fail closed through the existing error path (`:64-67`). Giving that service a token is a credential change for the owner; proposed follow-up, recorded by lane `write-route-inventory` (VTID-05698). Its GET actions are unchanged.
+- `services/openclaw-bridge/src/skills/vitana-llm-routing.ts:94,121` posts to `/routing-policy` and `/routing-policy/reset` with no Authorization (`:57-63`). Its `update_policy` body does not match `UpdatePolicySchema`, so it already got 400 on the pin; `reset_policy` is the one that loses a working, unauthenticated path. After this lane both actions get 401 and fail closed through the existing error path (`:64-67`). Giving that service a token is a credential change for the owner; proposed follow-up, recorded by lane `write-route-inventory` (VTID-05698). Its GET actions are unchanged.
 
 ## Unchanged
 Auth middleware, JWT verification, service token, `index.ts`, tenant resolution, RLS, migrations, flags, secrets; the triage stream `GET /:sessionId/stream` (`routes/triage-agent.ts:351`, opened with `EventSource` at `app.js:18550`, which cannot send a bearer; follow-up in VTID-05698).
