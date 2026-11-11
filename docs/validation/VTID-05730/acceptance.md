@@ -56,3 +56,9 @@ parser for the path, then `express.json()`, router at `/`), mocks `routes/paymen
 - `staging-tests.json` uses an `existing` jest ref instead of an http probe. The route rejects with 400/500, and
   `scripts/ci/staging-verify/lib.cjs:169` only allows write probes with `rejected_probe` and `expect_status` 401|403.
   `validateManifest(..., { service: 'gateway' })` returns `{ ok: true }`.
+
+## Route mount evidence (Validator Check)
+No route is added: the routes and their mounts exist on `main`; the change inserts a middleware or verification into existing registrations.
+ROUTE_MOUNT: unchanged — `services/gateway/src/index.ts:1425` (router at `/`); raw-body parser added for `/webhooks/stripe-dance` before `express.json`
+FINAL_URL: POST /webhooks/stripe-dance (paths unchanged)
+CURL_PROOF: not run. No live or staging request was made; the staging proof is `staging-tests.json`, run by STAGING-VERIFY after a staging deploy, recorded here only with a run id.
