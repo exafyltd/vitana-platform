@@ -24,7 +24,7 @@ AC-7: A dispatch failure ends that burst (dispatch_exception) with no retry loop
 TEST: test/vtid-05718-chat-burst-sweep.test.ts > "a dispatch failure gives up on that burst (dispatch_exception), with no retry loop"
 
 AC-8: Push-dispatch and the push health check ignore held and claimed rows; rows with a NULL push_outcome still dispatch.
-TEST: test/vtid-05718-chat-burst-sweep.test.ts > "bursts in different conversations are sent separately"
+TEST: test/vtid-05718-push-dispatch-filter.test.ts > "applies the NULL-safe push_outcome filter"
 CURL: GET /alive on the staging gateway returns 200 after the sweep starts (docs/validation/VTID-05718/staging-tests.json)
 
 AC-9: The 5-minute coalescing window (VTID-05137) and CHAT_PUSH_COALESCING_ENABLED=false keep their behaviour; a new message is held and joins a pending burst as coalesced.
