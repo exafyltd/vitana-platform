@@ -13,7 +13,9 @@ accounts. Do not collapse them into one 'exafy', 'exafyltd' or other generic ide
 exact login email [...] Register the six newly identified email accounts that are not already represented. Preserve
 Kiro 7–11 as pending slots."* *"The account inventory must be maintained in the existing authoritative
 collaboration/account configuration, not in a newly invented account database."* *"Do not change permissions or share
-credentials between accounts without approval."*
+credentials between accounts without approval."* A later owner roster the same day named Kiro 7 and Kiro 8 as accounts
+("Kiro 7 … ExafyAdmin, Kiro 8 … ExafyTasks"), which supersedes "preserve Kiro 7–11 as pending" for those two: they
+become seats `admin` and `tasks` with `surface: pending`; only Kiro 9–11 stay pending, in the comment block.
 
 The owner's list numbers twelve slots: Kiro 1 is seat `hotmail`, Kiro 2 `exafy`, Kiro 3 `exafyltd`, Kiro 12 `jtadic`;
 Kiro 4 to 8 are further accounts the owner named (no seat yet; the owner's roster of 2026-11-11 with each account's
@@ -50,7 +52,7 @@ Built after VTID-05699 is on `main` (it edits the same seat lines; sequenced, no
 - Add five seats, no `account`, no `automation`, no area: `vitanaland` (`kiro: 4`), `office` (`kiro: 5`), `support`
   (`kiro: 6`), `admin` (`kiro: 7`), `tasks` (`kiro: 8`), each with `surface: pending` until the account's first session records its surface. Every seat line,
   new and existing, keeps the one-line inline form `  <seat>: { key: value, … }` (e.g. `  vitanaland: { surface: pending, kiro: 4 }`),
-  because `automations.test.mjs:29` parses only that form while `queue.mjs:1194` reads any `  <seat>:` key.
+  because `automations.test.mjs:30` parses only that form while `queue.mjs:1194` reads any `  <seat>:` key.
 - Add a comment block, indented two spaces inside `seats:` (e.g. `  # Kiro 9–11: reserved …`) so `loadSeats`
   (`queue.mjs:1193`, which ends the block at any column-0 line) and `automations.test.mjs:23` (which skips comments)
   both keep reading seats added below it, listing slots 9–11 as reserved (no seat until the owner names the account),
@@ -69,10 +71,10 @@ this lane starts from the `main` that contains VTID-05699. The edit adds keys an
 
 ## 6. Tests and commands
 `node --test scripts/collab/automations.test.mjs scripts/collab/queue.test.mjs scripts/collab/areas-no-email.test.mjs`,
-`node scripts/collab/queue.mjs validate` via preflight, a check that `loadSeats` returns the seven seats.
+`node scripts/collab/queue.mjs validate` via preflight, a check that `loadSeats` returns the nine seats.
 
 ## 7. Measurement
-Seven seats, each with `kiro:` and no `account:`; slots 7–11 listed as reserved; tests green.
+Nine seats, each with `kiro:` and no `account:`; slots 9–11 listed as reserved; tests green.
 
 ## 8. Risks
 - A seat without `automation` is never woken by a Kiro Web automation; its lanes are built only when its account runs a
