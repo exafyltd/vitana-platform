@@ -1,6 +1,6 @@
 ---
 lane: shadow-retired
-state: executing
+state: in-review
 next_actor: kiro
 claimed_by: kiro-exafy-202611111326-7e9b
 branch: kiro/staging-verify-manifest-repair/shadow-retired
@@ -31,3 +31,7 @@ VTID-05606 allocated after policy approval (converged-auto-v1).
 
 ### 2026-11-11T18:40Z · kiro-exafy-202611111326-7e9b · ready → executing
 Claimed. Evidence in docs/validation/VTID-05606/. Source: PR #4964 (its VTID-04784 part).
+pr: https://github.com/exafyltd/vitana-platform/pull/4992
+
+### 2026-11-11T19:10Z · kiro-exafy-202611111326-7e9b · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/4992. Preflight every check passed.
