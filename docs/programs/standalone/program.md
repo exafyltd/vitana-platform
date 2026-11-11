@@ -13,6 +13,7 @@ specs:
   - vitana-platform:plan-spar-stale-session
   - vitana-platform:fix-4182-test-fallout
   - vitana-platform:collab-queue-perf
+  - vitana-platform:collab-lane-close-exception
   - vitana-v1:chat-ux
   - vitana-v1:vitana-chat-markdown
   - vitana-platform:collab-multi-builder-handoff
