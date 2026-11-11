@@ -18,6 +18,8 @@ import {
   invokeBedrock,
   type BedrockContentBlock,
 } from '../../src/providers/bedrock';
+// plan sparring-eu-guard C2: tests set the region explicitly (there is no default region)
+process.env.AWS_REGION = process.env.AWS_REGION || 'eu-central-1';
 
 describe('VTID-03496 parseBedrockContent', () => {
   it('extracts a tool_use block into a typed toolCall', () => {

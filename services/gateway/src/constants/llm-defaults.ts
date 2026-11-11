@@ -153,9 +153,13 @@ export function resolvePlanSparringLastResortModel(): string {
   return process.env.PLAN_SPARRING_LAST_RESORT_MODEL || PLAN_SPARRING_LAST_RESORT_MODEL;
 }
 
-/** On unless PLAN_SPARRING_DEEPSEEK_FALLBACK_ENABLED is exactly 'false'. */
+/**
+ * Off unless PLAN_SPARRING_DEEPSEEK_FALLBACK_ENABLED is exactly 'true'. The tier calls DeepSeek's own API
+ * (api.deepseek.com), outside the EU; owner decision D5 (Bedrock EU only) keeps it off by default
+ * (plan sparring-eu-guard, C1).
+ */
 export function isPlanSparringDeepseekFallbackEnabled(): boolean {
-  return process.env.PLAN_SPARRING_DEEPSEEK_FALLBACK_ENABLED !== 'false';
+  return process.env.PLAN_SPARRING_DEEPSEEK_FALLBACK_ENABLED === 'true';
 }
 
 /**
