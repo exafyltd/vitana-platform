@@ -14,6 +14,7 @@ paths:
   - services/gateway/src/routes/payments-stripe-webhook.ts
   - services/gateway/src/index.ts
   - services/gateway/test/payments-stripe-dance-signature.test.ts
+  - services/gateway/test/routes/payments-stripe-webhook.test.ts
   - docs/validation/VTID-*/**
 updated: 2026-11-11T12:20Z
 ---

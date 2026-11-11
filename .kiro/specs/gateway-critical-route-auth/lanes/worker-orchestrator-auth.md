@@ -15,6 +15,8 @@ paths:
   - services/gateway/src/services/autopilot-event-loop.ts
   - services/gateway/src/services/orb-tools/developer-tools.ts
   - services/gateway/test/worker-orchestrator-auth.test.ts
+  - services/gateway/src/services/self-healing-reconciler.ts
+  - services/gateway/test/worker-orchestrator-await-autopilot.test.ts
   - docs/validation/VTID-*/**
 updated: 2026-11-11T12:20Z
 ---

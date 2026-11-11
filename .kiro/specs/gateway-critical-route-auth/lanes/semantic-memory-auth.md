@@ -13,6 +13,7 @@ repos: [exafyltd/vitana-platform]
 paths:
   - services/gateway/src/routes/semantic-memory.ts
   - services/gateway/test/semantic-memory-auth.test.ts
+  - services/gateway/test/routes/semantic-memory.test.ts
   - docs/validation/VTID-*/**
 updated: 2026-11-11T12:20Z
 ---

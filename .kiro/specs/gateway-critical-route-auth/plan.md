@@ -43,10 +43,13 @@ Three lanes, disjoint files. `stripe-dance-signature` is the only lane that edit
 ## 4. Lanes
 ### Lane `semantic-memory-auth` (seat `exafy`)
 `requireAuthWithTenant` on search, write and context; the lens `tenant_id` and `user_id` come from `req.identity`
-(a body lens with a different tenant or user → 403, never used); `requireAdminAuth` on `/admin/embeddings/generate` and
-`/reembed`. Tests (supertest, mocked services): no token → 401; body lens naming another user → 403 and no service call;
+(a body lens with a different tenant or user → 403, never used); `requireAdminAuth` (the existing export of `middleware/auth-supabase-jwt.ts:831`, already used at `routes/llm.ts:24,520`)
+on `POST /admin/embeddings/generate`, `POST /admin/embeddings/reembed` and `GET /admin/embeddings/status` (`:585`). Tests (supertest, mocked services): no token → 401; body lens naming another user → 403 and no service call;
 own lens → handler runs with the identity's ids; admin routes refuse a non-admin. Red on the pin, green after.
+The existing suite `services/gateway/test/routes/semantic-memory.test.ts` posts without a token; it is updated to send
+one through the same mocks and to expect the lens built from the caller's identity.
 Paths: `services/gateway/src/routes/semantic-memory.ts`, `services/gateway/test/semantic-memory-auth.test.ts`,
+`services/gateway/test/routes/semantic-memory.test.ts`,
 `docs/validation/VTID-*/**`.
 
 ### Lane `stripe-dance-signature` (seat `exafy`)
@@ -55,17 +58,28 @@ Raw-body parser for `/webhooks/stripe-dance` in `index.ts` (next to `:614`); the
 `WEBHOOK_NOT_CONFIGURED`, missing or bad signature → 400, nothing written. Tests with a signed fixture (Stripe's
 `generateTestHeaderString`): valid → state moves; forged → 400 and no write; unset secret → 500. Which signing secret
 the Stripe endpoint uses is the owner's (no secret is set by the lane).
+The existing suite `services/gateway/test/routes/payments-stripe-webhook.test.ts` posts unsigned JSON; it is rewritten
+with signed events (`generateTestHeaderString`) for the same three behaviours.
 Paths: `services/gateway/src/routes/payments-stripe-webhook.ts`, `services/gateway/src/index.ts`,
+`services/gateway/test/routes/payments-stripe-webhook.test.ts`,
 `services/gateway/test/payments-stripe-dance-signature.test.ts`, `docs/validation/VTID-*/**`.
 
 ### Lane `worker-orchestrator-auth` (seat `exafy`)
-`requireServiceOrAdmin` on the 12 write routes; every in-repo caller sends `gatewayServiceAuthHeader()` (event loop,
-`gatewayApiCall`); the lane first records a caller census in `commands.log`. Tests: each route no token → 401, service
+`requireServiceOrAdmin` on the 12 write routes; the lane first records a caller census in `commands.log`. Callers:
+`autopilot-event-loop.ts:530` and `self-healing-reconciler.ts:164` add `...gatewayServiceAuthHeader()` to their fetch;
+`gatewayApiCall` (`orb-tools/developer-tools.ts:112-117`) adds the service header only when the normalised path starts
+with `/api/v1/worker/` (a caller's own `Authorization` wins), which covers `vtid-lifecycle-tools.ts:364,428` and
+`worker-orchestrator-tools.ts:86,135,174` without editing them. It is not added to every call: `gatewayApiCall` has
+about 250 call sites, many to routes behind `requireServiceOrAdmin` (e.g. `self-healing-tools.ts:63`), and a global
+default would give them service authority unseen. Tests: a worker path gets the header, a non-worker path and a
+`../` or `%2e%2e` escape do not. The existing suite `test/worker-orchestrator-await-autopilot.test.ts` sends the
+service token. Tests: each route no token → 401, service
 token → handler runs; the event-loop dispatch and `gatewayApiCall` send the header. The worker-runner (no source) is named
 in the PR body as a caller that must send the service token before production. No migration; the claim fail-open of
 `:1260-1264` stays with the autonomy-risk plan.
 Paths: `services/gateway/src/routes/worker-orchestrator.ts`, `services/gateway/src/services/autopilot-event-loop.ts`,
-`services/gateway/src/services/orb-tools/developer-tools.ts`, `services/gateway/test/worker-orchestrator-auth.test.ts`,
+`services/gateway/src/services/self-healing-reconciler.ts`, `services/gateway/src/services/orb-tools/developer-tools.ts`,
+`services/gateway/test/worker-orchestrator-auth.test.ts`, `services/gateway/test/worker-orchestrator-await-autopilot.test.ts`,
 `docs/validation/VTID-*/**`.
 
 ## 5. Parallel / hot files

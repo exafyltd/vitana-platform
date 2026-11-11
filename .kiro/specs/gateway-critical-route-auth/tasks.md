@@ -11,7 +11,7 @@ Common acceptance:
 <!-- lane: semantic-memory-auth -->
 ## Lane `semantic-memory-auth`
 - [ ] T1 `requireAuthWithTenant` on search/write/context; lens ids from `req.identity`; mismatch → 403.
-- [ ] T2 `requireAdminAuth` on `/admin/embeddings/generate` and `/reembed`.
+- [ ] T2 `requireAdminAuth` on `/admin/embeddings/generate`, `/reembed` and `GET /admin/embeddings/status`; existing suite updated.
 
 **Acceptance**
 - No token → 401; another user's lens → 403 with no service call; own lens → service called with the identity's ids.
@@ -26,7 +26,7 @@ Common acceptance:
 <!-- lane: worker-orchestrator-auth -->
 ## Lane `worker-orchestrator-auth`
 - [ ] T1 Caller census; `requireServiceOrAdmin` on the 12 write routes.
-- [ ] T2 Event loop and `gatewayApiCall` send `gatewayServiceAuthHeader()`.
+- [ ] T2 Event loop and reconciler send `gatewayServiceAuthHeader()`; `gatewayApiCall` adds it for `/api/v1/worker/*` only; existing suite sends the token.
 
 **Acceptance**
 - Each of the 12 routes: no token → 401, service token → handler runs; the two in-repo caller paths send the header.
