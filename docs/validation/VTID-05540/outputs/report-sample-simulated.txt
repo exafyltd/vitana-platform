@@ -1,0 +1,74 @@
+# VTID-05540 sample report. SIMULATION: a fake GitLab with a scripted merge bot, a fake fleet and a fake aws runner on a virtual clock (scripts/eng/rehearse.test.mjs, section 9).
+# This is the FORMAT of the report, not the owner's run: the owner's run on the real system is what proves A1 to A4 and A8, and its report is attached to the PR.
+# $ node scripts/eng/rehearse.mjs --project rehearsal --agents 12      (simulated happy path; stdout)
+
+REHEARSAL REPORT (plan eng-gitlab-m2, section 3.8)
+run r202611051400 | project vitana/rehearsal | 12 agents + 5 controls | started 2026-11-05T14:00:00.000Z | took 40 min
+RESULT: PASS   A1 PASS | A2 PASS | A3 PASS | A4 PASS | A8 PASS
+
+SEED          landed through !1 in 2 min (26 file(s) created, 0 updated)
+OPENED        agent-kiro-exafy 5, agent-kiro-exafyltd 4, agent-kiro-jtadic 4, agent-kiro-hotmail 4
+
+A1 FLEET       PASS
+  [ok  ] peak fleet size 24 machine(s) in the group, 18 of them booting or serving at the most (needs at least 20)
+  [ok  ] 48 job(s) ran, 48 machine(s) launched (needs launched >= jobs run)
+  [ok  ] back at 0 machines 35 s after the last job (needs at most 15 min)
+
+A2 ISOLATION   PASS
+  [ok  ] imds: 42 PASS, 0 FAIL
+  [ok  ] gitlab-host: 42 PASS, 0 FAIL
+  [ok  ] aws-env: 42 PASS, 0 FAIL
+  [skip] baseline (information only): GitLab was reached from the job in 42 of 42 trace(s)
+  traces read 42, with all three lines 42, unreadable 0
+
+A3 ACCESS      PASS
+  [ok  ] main: push No one, merge Maintainers, no force push
+  [ok  ] Maintainers: bot-land, root
+  [ok  ] 7 token(s) checked, the latest expires in 76 day(s) (needs at most 90)
+  [ok  ] gitlab-settings.mjs check exit 0
+
+A4 LANDING     PASS
+  [ok  ] 12 of 12 lane merge request(s) landed
+  [ok  ] landing times strictly increase
+  [ok  ] 12 commit(s) on main since the run began, 12 expected, subjects are the merge request titles
+  [ok  ] every subject starts with a VTID
+  [ok  ] every commit has exactly one parent (no merge commit)
+  [ok  ] the commits are in the order the merge requests landed
+  [ok  ] ctl-no-review: refused, reason no_review
+  [ok  ] ctl-stale-review: refused, reason review_stale
+  [ok  ] ctl-builder-accept: refused, reason review_forged
+  [ok  ] ctl-red-job: refused, reason checks_failed
+  [ok  ] ctl-protected-file: refused, reason protected_gate_file
+
+A8 LEGACY      PASS
+  [ok  ] 0 job(s) ran on the legacy runner vitana-eng-1
+  [ok  ] 48 job(s) ran on the fleet runner vitana-eng-fleet
+  [ok  ] the settings check (tags and pause of both runners) exit 0
+  pausing the legacy runner (runners.legacy.paused: true) is the owner step after A1
+
+COMMITS ON MAIN (oldest first)
+   1. VTID-05540 (rehearsal/lane-01): rehearsal lane 1 of 12
+   2. VTID-05540 (rehearsal/lane-02): rehearsal lane 2 of 12
+   3. VTID-05540 (rehearsal/lane-03): rehearsal lane 3 of 12
+   4. VTID-05540 (rehearsal/lane-04): rehearsal lane 4 of 12
+   5. VTID-05540 (rehearsal/lane-05): rehearsal lane 5 of 12
+   6. VTID-05540 (rehearsal/lane-06): rehearsal lane 6 of 12
+   7. VTID-05540 (rehearsal/lane-07): rehearsal lane 7 of 12
+   8. VTID-05540 (rehearsal/lane-08): rehearsal lane 8 of 12
+   9. VTID-05540 (rehearsal/lane-09): rehearsal lane 9 of 12
+  10. VTID-05540 (rehearsal/lane-10): rehearsal lane 10 of 12
+  11. VTID-05540 (rehearsal/lane-11): rehearsal lane 11 of 12
+  12. VTID-05540 (rehearsal/lane-12): rehearsal lane 12 of 12
+
+BOT REFUSALS (comments of bot-land on the controls)
+  ctl-no-review        expected no_review            bot said: no_review
+  ctl-stale-review     expected review_stale         bot said: no_review, review_stale
+  ctl-builder-accept   expected review_forged        bot said: no_review, review_forged
+  ctl-red-job          expected checks_failed        bot said: no_review, checks_failed
+  ctl-protected-file   expected protected_gate_file  bot said: protected_gate_file
+  comments on the lane merge requests: no_review x12 (no_review before the review commit is expected; so can be review_forged right after it, because GitLab records the push of a review a moment after the push and the next tick of the bot lands the lane; what counts is the lane that did not land)
+
+NEGATIVE CONTROLS (from the job traces)
+  imds         PASS 42  FAIL 0
+  gitlab-host  PASS 42  FAIL 0
+  aws-env      PASS 42  FAIL 0

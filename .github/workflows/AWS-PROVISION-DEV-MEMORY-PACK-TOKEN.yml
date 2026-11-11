@@ -27,6 +27,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write # eng-platform-p01: OIDC for the staging AWS role
 
 concurrency:
   group: aws-provision-dev-memory-pack-token
@@ -41,8 +42,10 @@ jobs:
       - name: Configure AWS credentials (staging static keys)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_STAGING_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_STAGING_SECRET_ACCESS_KEY }}
+          # eng-platform-p01: OIDC when vars.AWS_STAGING_ROLE_ARN is set; the static keys only while it is unset.
+          role-to-assume: ${{ vars.AWS_STAGING_ROLE_ARN }}
+          aws-access-key-id: ${{ !vars.AWS_STAGING_ROLE_ARN && secrets.AWS_STAGING_ACCESS_KEY_ID || '' }}
+          aws-secret-access-key: ${{ !vars.AWS_STAGING_ROLE_ARN && secrets.AWS_STAGING_SECRET_ACCESS_KEY || '' }}
           aws-region: eu-central-1
 
       - name: Create the secret if it does not exist

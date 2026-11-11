@@ -1,0 +1,34 @@
+# VTID-05520: tables the guard-rail lanes of mt-guardrails-r2 need on the local stack (plan.md Amendments 2 and 3).
+# After the replay every table here exists, or it is listed in not-replayable.txt (reported SKIP, unverified).
+# 24 = the 18 tenant tables of docs/MULTI-TENANT-PLAN.md section 2 (this includes tenants)
+#      + the 5 health tables + user_tenants. A test derives the 18 from that document.
+
+# The 18 tenant tables (docs/MULTI-TENANT-PLAN.md section 2)
+access_audit_log
+community_groups
+community_listings
+community_meetups
+consents
+d42_domain_weights
+event_attendance
+live_highlights
+live_room_attendance
+live_rooms
+products_catalog
+relationship_edges
+retrieval_traces
+role_sessions
+services_catalog
+tenant_catalog_overrides
+tenants
+user_roles
+
+# Health tables (docs/MULTI-TENANT-PLAN.md section 2)
+health_features_daily
+biomarker_results
+wearable_samples
+partner_health_test_orders
+data_sharing_consents
+
+# Membership
+user_tenants

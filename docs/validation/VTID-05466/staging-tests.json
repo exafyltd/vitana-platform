@@ -1,0 +1,14 @@
+{
+  "vtid": "VTID-05466",
+  "service": "gateway",
+  "not_verified_on_staging": true,
+  "not_verified_on_staging_reason": "This lane adds migration files only. Nothing is applied from the PR: the files are applied later through RUN-MIGRATION.yml after the owner approves them and the target database (collaboration.md §7d), and staging shares the production database, so the staging deploy runs no code that reads anything new. The plan names no gateway suite for this lane. The SQL is proven by the pgTAP files (supabase test db on the local stack) and the PGlite run in docs/validation/VTID-05466/outputs/; after apply, by the read-only post-apply-checks.sql.",
+  "tests": [
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-05147-effective-role-permitted.test.ts",
+      "cwd": "services/gateway",
+      "reason": "Pins the gateway's only membership read path that this lane's backfill feeds (lib/permitted-roles.ts reads user_permitted_roles and active memberships rows as grants; the selected role never widens them). The suite stays green because the lane changes no gateway code; it is the regression guard, not proof of the migrations."
+    }
+  ]
+}

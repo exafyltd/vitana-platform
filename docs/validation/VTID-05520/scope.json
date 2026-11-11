@@ -1,0 +1,17 @@
+{
+  "vtid": "VTID-05520",
+  "kind": "infra",
+  "paths": [
+    "supabase/tests/fixtures/**",
+    "supabase/tests/local-stack/**",
+    "scripts/mt/stack/**",
+    "docs/multitenancy/LOCAL-STACK.md",
+    ".github/workflows/MT-LOCAL-STACK.yml",
+    "package.json",
+    "pnpm-lock.yaml",
+    "docs/validation/VTID-05520/**"
+  ],
+  "sparring_record": ".kiro/specs/mt-guardrails-r2/sparring/verdict.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

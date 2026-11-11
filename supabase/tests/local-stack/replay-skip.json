@@ -1,0 +1,1544 @@
+{
+  "skips": [
+    {
+      "file": "20251128000001_software_versions.sql",
+      "reason": "calls auth.role(), which the stub auth schema does not define (Amendment 2, decision 4)",
+      "error": "function auth.role() does not exist"
+    },
+    {
+      "file": "20251231000000_vtid_01103_health_compute_engine.sql",
+      "reason": "expects a column the replayed schema does not have (its table has no committed creator, or comes from a skipped migration)",
+      "error": "column \"recorded_at\" does not exist"
+    },
+    {
+      "file": "20251231000001_vtid_01088_matchmaking_engine.sql",
+      "reason": "expects a column the replayed schema does not have (its table has no committed creator, or comes from a skipped migration)",
+      "error": "column \"is_active\" does not exist"
+    },
+    {
+      "file": "20251231000001_vtid_01090_live_rooms_events_graph.sql",
+      "reason": "expects a column the replayed schema does not have (its table has no committed creator, or comes from a skipped migration)",
+      "error": "column \"source_type\" does not exist"
+    },
+    {
+      "file": "20251231000001_vtid_01091_locations_memory_graph.sql",
+      "reason": "expects a column the replayed schema does not have (its table has no committed creator, or comes from a skipped migration)",
+      "error": "column \"source_type\" does not exist"
+    },
+    {
+      "file": "20251231000001_vtid_01094_match_feedback_loop.sql",
+      "reason": "expects a column the replayed schema does not have (its table has no committed creator, or comes from a skipped migration)",
+      "error": "column \"score\" does not exist"
+    },
+    {
+      "file": "20251231000001_vtid_01098_memory_timeline_causality.sql",
+      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "error": "syntax error at or near \"window\""
+    },
+    {
+      "file": "20251231100000_vtid_01082_memory_garden_diary.sql",
+      "reason": "expects a column the replayed schema does not have (its table has no committed creator, or comes from a skipped migration)",
+      "error": "column \"domain\" does not exist"
+    },
+    {
+      "file": "20260102200000_vtid_01127_availability_readiness_engine.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.profiles\" does not exist"
+    },
+    {
+      "file": "20260103000000_vtid_01145_overload_detection.sql",
+      "reason": "expects a column the replayed schema does not have (its table has no committed creator, or comes from a skipped migration)",
+      "error": "column \"created_at\" does not exist"
+    },
+    {
+      "file": "20260116000000_vtid_01179_autopilot_event_loop.sql",
+      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "error": "functions in index predicate must be marked IMMUTABLE"
+    },
+    {
+      "file": "20260117000000_vtid_01183_worker_agent_connector.sql",
+      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "error": "syntax error at or near \"NOT\""
+    },
+    {
+      "file": "20260117140000_vtid_01184_pgvector_semantic_memory.sql",
+      "reason": "needs pgvector, which PGlite does not bundle",
+      "error": "extension \"vector\" is not available"
+    },
+    {
+      "file": "20260119100000_vtid_01194_execution_trigger_semantics.sql",
+      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "error": "could not find a function named \"get_pending_worker_tasks\""
+    },
+    {
+      "file": "20260205000000_fix_oasis_events_disk_io_indexes.sql",
+      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "error": "syntax error at or near \"SELECT\""
+    },
+    {
+      "file": "20260209_vtid_01228_daily_co_live_rooms.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"live_rooms\" does not exist"
+    },
+    {
+      "file": "20260209_vtid_01228_daily_co_live_rooms_down.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"live_rooms\" does not exist"
+    },
+    {
+      "file": "20260209_vtid_01228_daily_co_live_rooms_fixed.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"live_rooms\" does not exist"
+    },
+    {
+      "file": "20260210000000_vtid_01090_fix_live_room_creation.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"live_rooms\" does not exist"
+    },
+    {
+      "file": "20260210100000_vtid_01228_live_room_session_mgmt.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.live_rooms\" does not exist"
+    },
+    {
+      "file": "20260211000000_fix_live_room_create_for_permanent_rooms.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.live_rooms\" does not exist"
+    },
+    {
+      "file": "20260215000000_cleanup_stuck_live_sessions.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.live_room_sessions\" does not exist"
+    },
+    {
+      "file": "20260216000000_security_linter_fixes.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.admin_user_analytics\" does not exist"
+    },
+    {
+      "file": "20260218000000_fix_maxina_signup_tenant_association.sql",
+      "reason": "expects a column the replayed schema does not have (its table has no committed creator, or comes from a skipped migration)",
+      "error": "column \"tenant_id\" referenced in foreign key constraint does not exist"
+    },
+    {
+      "file": "20260220000001_memory_facts_embedding_support.sql",
+      "reason": "needs pgvector, which PGlite does not bundle",
+      "error": "type \"vector\" does not exist"
+    },
+    {
+      "file": "20260221000000_fix_embedding_dimensions_768.sql",
+      "reason": "expects a column the replayed schema does not have (its table has no committed creator, or comes from a skipped migration)",
+      "error": "column \"embedding\" does not exist"
+    },
+    {
+      "file": "20260225200000_chat_messages.sql",
+      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "error": "publication \"supabase_realtime\" does not exist"
+    },
+    {
+      "file": "20260226000000_signup_funnel_tracking.sql",
+      "reason": "expects a column the replayed schema does not have (its table has no committed creator, or comes from a skipped migration)",
+      "error": "column \"tenant_id\" referenced in foreign key constraint does not exist"
+    },
+    {
+      "file": "20260226100000_backfill_app_users_from_auth.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "column \"tenant_id\" of relation \"app_users\" does not exist"
+    },
+    {
+      "file": "20260227000000_admin_rls_policies.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.live_rooms\" does not exist"
+    },
+    {
+      "file": "20260227100000_user_feedback_reports.sql",
+      "reason": "expects a column the replayed schema does not have (its table has no committed creator, or comes from a skipped migration)",
+      "error": "column \"tenant_id\" referenced in foreign key constraint does not exist"
+    },
+    {
+      "file": "20260312000000_chat_conversations_rpc.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"chat_messages\" does not exist"
+    },
+    {
+      "file": "20260315000000_chat_messages_type_metadata.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"chat_messages\" does not exist"
+    },
+    {
+      "file": "20260315000001_vitana_bot_user.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "column \"instance_id\" of relation \"users\" does not exist"
+    },
+    {
+      "file": "20260315000002_rpc_add_message_type.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"chat_messages\" does not exist"
+    },
+    {
+      "file": "20260318100000_role_admission_system.sql",
+      "reason": "expects a column the replayed schema does not have (its table has no committed creator, or comes from a skipped migration)",
+      "error": "column \"tenant_id\" referenced in foreign key constraint does not exist"
+    },
+    {
+      "file": "20260321000000_community_user_analyzer.sql",
+      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "error": "cannot change return type of existing function"
+    },
+    {
+      "file": "20260327000000_vtid_01250_social_connections.sql",
+      "reason": "calls auth.role(), which the stub auth schema does not define (Amendment 2, decision 4)",
+      "error": "function auth.role() does not exist"
+    },
+    {
+      "file": "20260402000000_self_healing_tables.sql",
+      "reason": "calls auth.role(), which the stub auth schema does not define (Amendment 2, decision 4)",
+      "error": "function auth.role() does not exist"
+    },
+    {
+      "file": "20260410000000_agents_registry.sql",
+      "reason": "calls auth.role(), which the stub auth schema does not define (Amendment 2, decision 4)",
+      "error": "function auth.role() does not exist"
+    },
+    {
+      "file": "20260411000100_nav_catalog_seed.sql",
+      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "error": "column \"related_kb_topics\" is of type jsonb but expression is of type text[]"
+    },
+    {
+      "file": "20260412000000_tenant_invitations.sql",
+      "reason": "changes a function that no replayed migration creates (its creator is a skipped migration or was never committed)",
+      "error": "function gen_random_bytes(integer) does not exist"
+    },
+    {
+      "file": "20260412600000_fix_admin_tables.sql",
+      "reason": "changes a function that no replayed migration creates (its creator is a skipped migration or was never committed)",
+      "error": "function gen_random_bytes(integer) does not exist"
+    },
+    {
+      "file": "20260413000000_intelligent_calendar.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.calendar_events\" does not exist"
+    },
+    {
+      "file": "20260416100000_dev_autopilot.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"agents_registry\" does not exist"
+    },
+    {
+      "file": "20260416120000_vtid_02000_marketplace_foundation.sql",
+      "reason": "needs pgvector, which PGlite does not bundle",
+      "error": "extension \"vector\" is not available"
+    },
+    {
+      "file": "20260416120100_vtid_02000_marketplace_seed.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.canonical_fact_keys\" does not exist"
+    },
+    {
+      "file": "20260416150000_vtid_02000_debug_products.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.products\" does not exist"
+    },
+    {
+      "file": "20260416170000_vtid_02000_fix_products.sql",
+      "reason": "needs pgvector, which PGlite does not bundle",
+      "error": "type \"vector\" does not exist"
+    },
+    {
+      "file": "20260416180000_vtid_02000_fix_products_v2.sql",
+      "reason": "needs pgvector, which PGlite does not bundle",
+      "error": "type \"vector\" does not exist"
+    },
+    {
+      "file": "20260416200000_vtid_02000_seed_demo_catalog.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.catalog_sources\" does not exist"
+    },
+    {
+      "file": "20260418010000_vtid_02200_seed_shopify_demo.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.catalog_sources\" does not exist"
+    },
+    {
+      "file": "20260418030000_vtid_02000_backfill_demo_images_descriptions.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.products\" does not exist"
+    },
+    {
+      "file": "20260418040000_vtid_02000_product_detail_columns.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.products\" does not exist"
+    },
+    {
+      "file": "20260418050000_vtid_02000_description_long.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.products\" does not exist"
+    },
+    {
+      "file": "20260418060000_vtid_02000_demo_discounts.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.products\" does not exist"
+    },
+    {
+      "file": "20260419000000_vtid_02403_ai_assistants_phase1.sql",
+      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "error": "column ut.is_active does not exist"
+    },
+    {
+      "file": "20260419120000_vtid_01928_social_connections_google.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.social_connections\" does not exist"
+    },
+    {
+      "file": "20260419130000_vtid_01928_test_google_insert.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.social_connections\" does not exist"
+    },
+    {
+      "file": "20260420110000_vtid_01942_capability_preferences.sql",
+      "reason": "calls auth.role(), which the stub auth schema does not define (Amendment 2, decision 4)",
+      "error": "function auth.role() does not exist"
+    },
+    {
+      "file": "20260420120000_BOOTSTRAP_history_aware_timeline.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.user_activity_log\" does not exist"
+    },
+    {
+      "file": "20260420130000_BOOTSTRAP_ai_usage_log.sql",
+      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "error": "syntax error at or near \"refresh\""
+    },
+    {
+      "file": "20260420140000_BOOTSTRAP_seed_ai_policies_all_tenants.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.ai_provider_policies\" does not exist"
+    },
+    {
+      "file": "20260420170000_BOOTSTRAP_seed_ai_policies_fixed.sql",
+      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "error": "syntax error at or near \"\\\""
+    },
+    {
+      "file": "20260421000000_add_account_profile_fields.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.profiles\" does not exist"
+    },
+    {
+      "file": "20260421140000_BOOTSTRAP_awareness_registry.sql",
+      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "error": "column u.exafy_admin does not exist"
+    },
+    {
+      "file": "20260421220000_BOOTSTRAP_admin_kpi_surface.sql",
+      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "error": "syntax error at or near \"\\\""
+    },
+    {
+      "file": "20260421230000_BOOTSTRAP_admin_kpi_retention_fix.sql",
+      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "error": "syntax error at or near \"\\\""
+    },
+    {
+      "file": "20260421250000_BOOTSTRAP_admin_insights.sql",
+      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "error": "syntax error at or near \"\\\""
+    },
+    {
+      "file": "20260422120000_BOOTSTRAP_admin_insights_notified_at.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.admin_insights\" does not exist"
+    },
+    {
+      "file": "20260422150000_vitana_index_prosperity_and_weights.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.vitana_index_config\" does not exist"
+    },
+    {
+      "file": "20260423110000_vitana_index_5pillar_cleanup.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.vitana_index_config\" does not exist"
+    },
+    {
+      "file": "20260423150000_BOOTSTRAP_archive_false_positive_findings.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "column \"auto_archive_at\" of relation \"autopilot_recommendations\" does not exist"
+    },
+    {
+      "file": "20260423150000_vitana_index_contribution_vector.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.calendar_events\" does not exist"
+    },
+    {
+      "file": "20260423150500_BOOTSTRAP_dev_autopilot_auto_approve.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.dev_autopilot_config\" does not exist"
+    },
+    {
+      "file": "20260423190000_vitana_pillar_agents_v1.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.agents_registry\" does not exist"
+    },
+    {
+      "file": "20260424140000_user_pillar_recent_activity_view.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.calendar_events\" does not exist"
+    },
+    {
+      "file": "20260424200000_BOOTSTRAP_autopilot_recommendations_impact_source.sql",
+      "reason": "expects a column the replayed schema does not have (its table has no committed creator, or comes from a skipped migration)",
+      "error": "column \"signal_fingerprint\" does not exist"
+    },
+    {
+      "file": "20260424300000_BOOTSTRAP_dev_autopilot_auto_approve_impact.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.dev_autopilot_config\" does not exist"
+    },
+    {
+      "file": "20260424400000_BOOTSTRAP_archive_route_auth_stale_findings.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "column \"auto_archive_at\" of relation \"autopilot_recommendations\" does not exist"
+    },
+    {
+      "file": "20260424500000_BOOTSTRAP_archive_findings_pending_rollup.sql",
+      "reason": "expects a column the replayed schema does not have (its table has no committed creator, or comes from a skipped migration)",
+      "error": "column \"risk_class\" does not exist"
+    },
+    {
+      "file": "20260425200000_BOOTSTRAP_dev_autopilot_executions_auto_archive.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.dev_autopilot_executions\" does not exist"
+    },
+    {
+      "file": "20260426000000_vtid_01952_memory_provenance_columns.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.live_rooms\" does not exist"
+    },
+    {
+      "file": "20260427000001_vtid_01978_fix_semantic_search_float8.sql",
+      "reason": "needs pgvector, which PGlite does not bundle",
+      "error": "type vector does not exist"
+    },
+    {
+      "file": "20260427090000_user_diary_streak_view.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.diary_entries\" does not exist"
+    },
+    {
+      "file": "20260427100000_BOOTSTRAP_autopilot_realign_substrate.sql",
+      "reason": "expects a column the replayed schema does not have (its table has no committed creator, or comes from a skipped migration)",
+      "error": "column \"risk_class\" does not exist"
+    },
+    {
+      "file": "20260427120000_vtid_01985_earthlinks_to_maxina_cleanup.sql",
+      "reason": "expects a column the replayed schema does not have (its table has no committed creator, or comes from a skipped migration)",
+      "error": "column \"tenant_id\" does not exist"
+    },
+    {
+      "file": "20260427121500_BOOTSTRAP_autopilot_enable_stale_flag.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.dev_autopilot_config\" does not exist"
+    },
+    {
+      "file": "20260427130000_vtid_01985_earthlinks_to_maxina_v2.sql",
+      "reason": "expects a column the replayed schema does not have (its table has no committed creator, or comes from a skipped migration)",
+      "error": "column \"tenant_id\" does not exist"
+    },
+    {
+      "file": "20260427140000_vtid_01985_earthlinks_to_maxina_v3.sql",
+      "reason": "expects a column the replayed schema does not have (its table has no committed creator, or comes from a skipped migration)",
+      "error": "column \"tenant_id\" does not exist"
+    },
+    {
+      "file": "20260427150000_vtid_01985_earthlinks_to_maxina_v4.sql",
+      "reason": "expects a column the replayed schema does not have (its table has no committed creator, or comes from a skipped migration)",
+      "error": "column \"tenant_id\" does not exist"
+    },
+    {
+      "file": "20260427180000_vtid_02003_phase_5a_tier2_schema.sql",
+      "reason": "needs pgvector, which PGlite does not bundle",
+      "error": "type \"vector\" does not exist"
+    },
+    {
+      "file": "20260427200000_vtid_01992_intent_embedding_index.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.user_intents\" does not exist"
+    },
+    {
+      "file": "20260427210000_vtid_01992_register_ledger.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"VtidLedger\" does not exist"
+    },
+    {
+      "file": "20260427220000_vtid_01992_register_ledger_v2.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"VtidLedger\" does not exist"
+    },
+    {
+      "file": "20260428000000_calendar_pillar_contribution_vector.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.calendar_events\" does not exist"
+    },
+    {
+      "file": "20260428100000_vtid_02007_phase_5c_legacy_backfill.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.mem_graph_edges\" does not exist"
+    },
+    {
+      "file": "20260428160000_vtid_02050_mem_episodes_semantic_search.sql",
+      "reason": "needs pgvector, which PGlite does not bundle",
+      "error": "type vector does not exist"
+    },
+    {
+      "file": "20260428200000_vtid_02047_unified_feedback_pipeline_init.sql",
+      "reason": "needs pgvector, which PGlite does not bundle",
+      "error": "type \"vector\" does not exist"
+    },
+    {
+      "file": "20260429100000_vtid_02603_feedback_handoff.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.feedback_tickets\" does not exist"
+    },
+    {
+      "file": "20260429120000_vtid_02047_phase5_management_schema.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.agent_personas\" does not exist"
+    },
+    {
+      "file": "20260430120000_BOOTSTRAP_pause_dev_autopilot_auto_approve.sql",
+      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "error": "syntax error at or near \"\\\""
+    },
+    {
+      "file": "20260501000000_VTID_02639_autopilot_finding_completed_state.sql",
+      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "error": "syntax error at or near \"\\\""
+    },
+    {
+      "file": "20260501010000_VTID_02640_dev_autopilot_get_table_schema.sql",
+      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "error": "syntax error at or near \"\\\""
+    },
+    {
+      "file": "20260501100000_vtid_02651_persona_voice_greeting.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.agent_personas\" does not exist"
+    },
+    {
+      "file": "20260501150000_vtid_02652_phase6_tenant_overrides.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.agent_personas\" does not exist"
+    },
+    {
+      "file": "20260501230000_vtid_02665_feedback_execution_bridge.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.feedback_tickets\" does not exist"
+    },
+    {
+      "file": "20260502090000_vtid_02669_feedback_autonomous_close.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.feedback_tickets\" does not exist"
+    },
+    {
+      "file": "20260502100000_forwarding_v2_phrase_expansion.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.agent_personas\" does not exist"
+    },
+    {
+      "file": "20260502110000_persona_identity_lock_prepend.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.agent_personas\" does not exist"
+    },
+    {
+      "file": "20260502120000_forwarding_v2c_coverage.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.agent_personas\" does not exist"
+    },
+    {
+      "file": "20260502120000_vtid_02690_seed_orb_agent_google_cascade.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"agents_registry\" does not exist"
+    },
+    {
+      "file": "20260507000100_account_visibility_helper_fns.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.user_follows\" does not exist"
+    },
+    {
+      "file": "20260507000200_profile_partner_service_offerings.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.profiles\" does not exist"
+    },
+    {
+      "file": "20260507100000_vtid_livekit_foundation_voice_tables.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"agents_registry\" does not exist"
+    },
+    {
+      "file": "20260508000000_forwarding_rules_two_gate.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.agent_personas\" does not exist"
+    },
+    {
+      "file": "20260509000000_dev_autopilot_inflight_unique_index.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.dev_autopilot_executions\" does not exist"
+    },
+    {
+      "file": "20260509000000_vtid_02702_feedback_rollback.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.feedback_tickets\" does not exist"
+    },
+    {
+      "file": "20260510000000_BOOTSTRAP_agents_registry_truth.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"agents_registry\" does not exist"
+    },
+    {
+      "file": "20260510000100_BOOTSTRAP_architecture_investigator.sql",
+      "reason": "calls auth.role(), which the stub auth schema does not define (Amendment 2, decision 4)",
+      "error": "function auth.role() does not exist"
+    },
+    {
+      "file": "20260510000200_BOOTSTRAP_agents_provider_check_extend.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"agents_registry\" does not exist"
+    },
+    {
+      "file": "20260512000000_BOOTSTRAP_intent_cover_url.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"user_intents\" does not exist"
+    },
+    {
+      "file": "20260513000000_VTID_02806_intent_cover_library.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"profiles\" does not exist"
+    },
+    {
+      "file": "20260514000000_VTID_02806d_intent_covers_storage_policies.sql",
+      "reason": "needs the Supabase storage schema, which the stub does not reproduce",
+      "error": "schema \"storage\" does not exist"
+    },
+    {
+      "file": "20260515000000_VTID_02806h_intent_covers_staging_path.sql",
+      "reason": "needs the Supabase storage schema, which the stub does not reproduce",
+      "error": "schema \"storage\" does not exist"
+    },
+    {
+      "file": "20260519000000_BOOTSTRAP_autopilot_alignment_fields.sql",
+      "reason": "expects a column the replayed schema does not have (its table has no committed creator, or comes from a skipped migration)",
+      "error": "column \"auto_exec_eligible\" does not exist"
+    },
+    {
+      "file": "20260521000000_VTID_02954_test_contracts.sql",
+      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "error": "generation expression is not immutable"
+    },
+    {
+      "file": "20260522000000_chat_attachments_rls_dm_and_groups.sql",
+      "reason": "needs the Supabase storage schema, which the stub does not reproduce",
+      "error": "schema \"storage\" does not exist"
+    },
+    {
+      "file": "20260522010000_chat_group_members_recursion_fix.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.chat_group_members\" does not exist"
+    },
+    {
+      "file": "20260523000000_VTID_03031_devon_male_voice.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"agent_voice_configs\" does not exist"
+    },
+    {
+      "file": "20260523010000_VTID_03032_devon_registry_and_voice.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"agents_registry\" does not exist"
+    },
+    {
+      "file": "20260524000000_VTID_03036_bootstrap_cache.sql",
+      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "error": "syntax error at or near \"||\""
+    },
+    {
+      "file": "20260524030000_VTID_03039_devon_question_cap.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.agent_personas\" does not exist"
+    },
+    {
+      "file": "20260524050000_VTID_03044_devon_only_specialist.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.agent_personas\" does not exist"
+    },
+    {
+      "file": "20260524060000_VTID_03047_restore_vitana_prompt.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.agent_personas\" does not exist"
+    },
+    {
+      "file": "20260524080000_VTID_03049_livekit_canary_enable.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"system_config\" does not exist"
+    },
+    {
+      "file": "20260525000000_VTID_03089_chat_groups.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.chat_messages\" does not exist"
+    },
+    {
+      "file": "20260526050000_VTID_03107_cron_cleanup.sql",
+      "reason": "extension pg_cron is not bundled with PGlite",
+      "error": "extension \"pg_cron\" is not available"
+    },
+    {
+      "file": "20260526080000_VTID_03107_lifecycle_notifications.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"cron.job\" does not exist"
+    },
+    {
+      "file": "20260526090000_VTID_03107_lifecycle_notified_at.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.lifecycle_notification_state\" does not exist"
+    },
+    {
+      "file": "20260528220000_VTID_03180_community_cache_materialized_views.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"autopilot_recs\" does not exist"
+    },
+    {
+      "file": "20260601000000_PHASE0_staging_software_versions.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"software_versions\" does not exist"
+    },
+    {
+      "file": "20260604123000_support_surface_human_only_queue.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.feedback_tickets\" does not exist"
+    },
+    {
+      "file": "20260605000000_VTID_03186_universal_cart_schema.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.products\" does not exist"
+    },
+    {
+      "file": "20260607000000_VTID_03237_video_shop_schema.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.products\" does not exist"
+    },
+    {
+      "file": "20260608120000_phase_a_security_hotfix.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.test_user_applications\" does not exist"
+    },
+    {
+      "file": "20260608140000_phase_b_enable_rls_42_tables.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.handle_aliases\" does not exist"
+    },
+    {
+      "file": "20260612140000_BOOTSTRAP_product_analytics_events.sql",
+      "reason": "calls auth.role(), which the stub auth schema does not define (Amendment 2, decision 4)",
+      "error": "function auth.role() does not exist"
+    },
+    {
+      "file": "20260612140100_BOOTSTRAP_product_analytics_rollups.sql",
+      "reason": "calls auth.role(), which the stub auth schema does not define (Amendment 2, decision 4)",
+      "error": "function auth.role() does not exist"
+    },
+    {
+      "file": "20260618000000_BOOTSTRAP_canonical_people_search.sql",
+      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "error": "operator class \"gin_trgm_ops\" does not exist for access method \"gin\""
+    },
+    {
+      "file": "20260625000000_alle_beisammen_chat_group.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.chat_groups\" does not exist"
+    },
+    {
+      "file": "20260629120000_vtid_02000_discover_admitad_real_catalog.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"merchants\" does not exist"
+    },
+    {
+      "file": "20260629140000_vtid_02000_bodylab24_product_deeplinks.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"products\" does not exist"
+    },
+    {
+      "file": "20260630120000_BOOTSTRAP_reap_stale_live_streams.sql",
+      "reason": "extension pg_cron is not bundled with PGlite",
+      "error": "extension \"pg_cron\" is not available"
+    },
+    {
+      "file": "20260702120000_vtid_02000_amazon_ae_recommendations_seed.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"merchants\" does not exist"
+    },
+    {
+      "file": "20260704060000_vtid_01250_automations_engine_safe_part.sql",
+      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "error": "policy \"Service role full access on automation_runs\" for table \"automation_runs\" already exists"
+    },
+    {
+      "file": "20260705100000_vtid_01250_relationship_edges_allow_connected.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "constraint \"relationship_edges_edge_type_check\" of relation \"relationship_edges\" does not exist"
+    },
+    {
+      "file": "20260709120000_vtid_02000_bodylab24_real_deeplinks_admitad_cleanup.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"products\" does not exist"
+    },
+    {
+      "file": "20260709140000_vtid_02000_amazon_ae_real_photos.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"products\" does not exist"
+    },
+    {
+      "file": "20260709150000_vtid_02000_bodylab24_real_photos.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"products\" does not exist"
+    },
+    {
+      "file": "20260712100000_SECURITY_fix_public_writable_wallet_and_cache_rls.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"bootstrap_cache\" does not exist"
+    },
+    {
+      "file": "20260712110000_SECURITY_revoke_anon_grants_vtid_ledger_marketplace.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.merchants\" does not exist"
+    },
+    {
+      "file": "20260715120000_vtid_02950_recommendation_commissions.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.merchants\" does not exist"
+    },
+    {
+      "file": "20260717120000_harden_wallet_rpc_ownership_and_rate_lookup.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.user_wallets\" does not exist"
+    },
+    {
+      "file": "20260717120000_vtid_02000_discover_doctorbox_seed.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"merchants\" does not exist"
+    },
+    {
+      "file": "20260717120100_reset_all_user_wallet_balances_to_zero.sql",
+      "reason": "calls auth.role(), which the stub auth schema does not define (Amendment 2, decision 4)",
+      "error": "function auth.role() does not exist"
+    },
+    {
+      "file": "20260717121500_vtid_02000_doctorbox_feed_category_mix.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"default_feed_config\" does not exist"
+    },
+    {
+      "file": "20260720081500_vtid_02000_doctorbox_feed_featured.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"default_feed_config\" does not exist"
+    },
+    {
+      "file": "20260720190000_fix_wallet_rpc_atomicity_and_transaction_logging.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "constraint \"wallet_transactions_transaction_type_check\" of relation \"wallet_transactions\" does not exist"
+    },
+    {
+      "file": "20260720200000_fold_vtna_balance_into_credits.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.user_wallets\" does not exist"
+    },
+    {
+      "file": "20260721000000_vtid_02000_doctorbox_real_photos.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"products\" does not exist"
+    },
+    {
+      "file": "20260721180000_add_wallet_transactions_profile_fkeys.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.profiles\" does not exist"
+    },
+    {
+      "file": "20260723000000_vtid_02000_doctorbox_per_product_deeplinks.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"products\" does not exist"
+    },
+    {
+      "file": "20260723010000_vtid_02000_doctorbox_new_products.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"products\" does not exist"
+    },
+    {
+      "file": "20260727090000_bootstrap_community_marketplace.sql",
+      "reason": "expects a column the replayed schema does not have (its table has no committed creator, or comes from a skipped migration)",
+      "error": "column \"tenant_id\" referenced in foreign key constraint does not exist"
+    },
+    {
+      "file": "20260727170000_bootstrap_community_marketplace_storage.sql",
+      "reason": "needs the Supabase storage schema, which the stub does not reproduce",
+      "error": "relation \"storage.buckets\" does not exist"
+    },
+    {
+      "file": "20260729150000_bootstrap_community_marketplace_seller_suspensions.sql",
+      "reason": "expects a column the replayed schema does not have (its table has no committed creator, or comes from a skipped migration)",
+      "error": "column \"tenant_id\" referenced in foreign key constraint does not exist"
+    },
+    {
+      "file": "20260804100000_vtid_03492_ci_health_rpcs_v2.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.chat_messages\" does not exist"
+    },
+    {
+      "file": "20260805120000_vtid_03493_recent_conversations_order.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"chat_messages\" does not exist"
+    },
+    {
+      "file": "20260911120000_BOOTSTRAP_deepseek_v4_1_flash.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"agents_registry\" does not exist"
+    },
+    {
+      "file": "20260912120000_vtid_03819_ledger_dedup_embedding.sql",
+      "reason": "needs pgvector, which PGlite does not bundle",
+      "error": "type \"vector\" does not exist"
+    },
+    {
+      "file": "20260913000000_vtid_03832_vitana_role_add_values.sql",
+      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "error": "type \"public.vitana_role\" does not exist"
+    },
+    {
+      "file": "20260913000001_vtid_03832_tenant_role_add_values.sql",
+      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "error": "type \"public.tenant_role\" does not exist"
+    },
+    {
+      "file": "20260913100000_vtid_03844_outcomes_source_type_allowlist.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.dev_autopilot_outcomes\" does not exist"
+    },
+    {
+      "file": "20260914090000_vtid_03885_partner_health_test_integration.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.product_orders\" does not exist"
+    },
+    {
+      "file": "20260914182357_vtid_03889_dev_agent_memory.sql",
+      "reason": "needs pgvector, which PGlite does not bundle",
+      "error": "type \"vector\" does not exist"
+    },
+    {
+      "file": "20260915100000_vtid_03894_supplier_verticals.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.products\" does not exist"
+    },
+    {
+      "file": "20260915100100_vtid_03894_seed_verticals.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.catalog_verticals\" does not exist"
+    },
+    {
+      "file": "20260915103000_vtid_03894_supplier_affiliate_link.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.merchants\" does not exist"
+    },
+    {
+      "file": "20260915120000_vtid_03932_partner_organizations.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.partner_registry\" does not exist"
+    },
+    {
+      "file": "20260915130000_vtid_03914_role_preferences_check_backoffice.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.role_preferences\" does not exist"
+    },
+    {
+      "file": "20260915131400_vtid_03916_widen_role_preferences_check.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.role_preferences\" does not exist"
+    },
+    {
+      "file": "20260915132000_vtid_03894_catalog_vertical_rls.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.catalog_verticals\" does not exist"
+    },
+    {
+      "file": "20260916130000_vtid_03974_commerce_vertical.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.partner_organizations\" does not exist"
+    },
+    {
+      "file": "20260916150000_vtid_03972_widen_oasis_events_retention.sql",
+      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "error": "CREATE INDEX CONCURRENTLY cannot run inside a transaction block"
+    },
+    {
+      "file": "20260917210000_vtid_04005_dev_autopilot_allow_scope_widen.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"dev_autopilot_config\" does not exist"
+    },
+    {
+      "file": "20260918000000_vtid_04029_dev_autopilot_executions_awaiting_approval.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.dev_autopilot_executions\" does not exist"
+    },
+    {
+      "file": "20260918100000_vtid_04044_lab_reports_rls_user_scoped.sql",
+      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "error": "column new.processing_status does not exist"
+    },
+    {
+      "file": "20260921120000_bootstrap_dev_agent_memory_file_scope.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"dev_agent_memory\" does not exist"
+    },
+    {
+      "file": "20260923120000_vtid_04319_orchestrator_run_ledger.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"agents_registry\" does not exist"
+    },
+    {
+      "file": "20260923120000_vtid_04321_rsvp_calendar_global_events.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.global_community_events\" does not exist"
+    },
+    {
+      "file": "20260923120000_vtid_04337_partner_org_members_rls_no_recursion.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.partner_organization_members\" does not exist"
+    },
+    {
+      "file": "20260923130000_vtid_04331_calendar_data_model.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.calendar_events\" does not exist"
+    },
+    {
+      "file": "20260923130000_vtid_04342_memory_embeddings_titan_v2.sql",
+      "reason": "expects a column the replayed schema does not have (its table has no committed creator, or comes from a skipped migration)",
+      "error": "column \"embedding\" does not exist"
+    },
+    {
+      "file": "20260923140000_vtid_04345_ci_memory_health.sql",
+      "reason": "expects a column the replayed schema does not have (its table has no committed creator, or comes from a skipped migration)",
+      "error": "column \"embedding\" does not exist"
+    },
+    {
+      "file": "20260923160000_vtid_04356_calendar_source_producers.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.profiles\" does not exist"
+    },
+    {
+      "file": "20260923170000_vtid_04389_garden_legacy_backfill.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "column \"provenance_source\" of relation \"memory_items\" does not exist"
+    },
+    {
+      "file": "20260923180000_vtid_04372_calendar_google_sync.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.calendar_events\" does not exist"
+    },
+    {
+      "file": "20260923190000_vtid_04407_dev_agent_memory_handoff.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"dev_agent_memory\" does not exist"
+    },
+    {
+      "file": "20260923200000_vtid_04402_connected_apps.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.social_connections\" does not exist"
+    },
+    {
+      "file": "20260923210000_vtid_04431_support_resolution_search.sql",
+      "reason": "needs pgvector, which PGlite does not bundle",
+      "error": "type vector does not exist"
+    },
+    {
+      "file": "20260923210000_vtid_04446_run_leases.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"agent_runs\" does not exist"
+    },
+    {
+      "file": "20260923220000_vtid_04445_persona_voice_gender.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"agent_voice_configs\" does not exist"
+    },
+    {
+      "file": "20260924090000_vtid_04436_calendar_push.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.calendar_events\" does not exist"
+    },
+    {
+      "file": "20260924090000_vtid_04460_intent_ledger_embeddings_titan_v2.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.user_intents\" does not exist"
+    },
+    {
+      "file": "20260924100000_vtid_04449_outlook_contacts_app.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.connected_app_settings\" does not exist"
+    },
+    {
+      "file": "20260924130000_vtid_04471_partner_account_model.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.partner_organizations\" does not exist"
+    },
+    {
+      "file": "20260924150000_vtid_04478_partner_onboarding_engine.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.partner_organizations\" does not exist"
+    },
+    {
+      "file": "20260925120000_vtid_04561_one_role_truth.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.role_preferences\" does not exist"
+    },
+    {
+      "file": "20260926140000_vtid_04666_recommendation_noise.sql",
+      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "error": "cannot change return type of existing function"
+    },
+    {
+      "file": "20260926150000_vtid_04655_me_set_active_role_writes_role_preferences.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.role_preferences\" does not exist"
+    },
+    {
+      "file": "20260926190000_vtid_04674_notification_type_controls.sql",
+      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "error": "column t.tenant_id does not exist"
+    },
+    {
+      "file": "20260928200400_vtid_04717_risk_mitigations.sql",
+      "reason": "expects a column the replayed schema does not have (its table has no committed creator, or comes from a skipped migration)",
+      "error": "column \"tenant_id\" referenced in foreign key constraint does not exist"
+    },
+    {
+      "file": "20260929120000_vtid_04740_referrer_on_click_anonymous_buyers.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.product_clicks\" does not exist"
+    },
+    {
+      "file": "20260929120100_vtid_04741_recommendation_commission_hold.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.recommendation_commissions\" does not exist"
+    },
+    {
+      "file": "20260929120200_vtid_04740_product_orders_tenant_nullable.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.product_orders\" does not exist"
+    },
+    {
+      "file": "20260929120300_vtid_04741_commission_confirm_reverse_functions.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"recommendation_commissions\" does not exist"
+    },
+    {
+      "file": "20260929120400_vtid_04741_confirm_commission_order_lock_exclusions.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"recommendation_commissions\" does not exist"
+    },
+    {
+      "file": "20260929120500_vtid_04741_reverse_commission_order_recheck.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"recommendation_commissions\" does not exist"
+    },
+    {
+      "file": "20260929120600_vtid_04741_confirm_commission_refresh_terms.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"recommendation_commissions\" does not exist"
+    },
+    {
+      "file": "20260929120700_vtid_04740_product_clicks_select_own_only.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.product_clicks\" does not exist"
+    },
+    {
+      "file": "20261001120000_VTID_04762_audiobook_season0_prolog.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "column \"vitana_voice_script\" of relation \"journey_checklist_translations\" does not exist"
+    },
+    {
+      "file": "20261001120000_vtid_04769_supplier_go_live_lists_products.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.products\" does not exist"
+    },
+    {
+      "file": "20261001140000_vtid_04783_discover_categories.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.catalog_verticals\" does not exist"
+    },
+    {
+      "file": "20261001140000_vtid_04790_deny_scope_name_contains.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.dev_autopilot_config\" does not exist"
+    },
+    {
+      "file": "20261001180000_vtid_04809_vtna_reward_ledger.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.user_wallets\" does not exist"
+    },
+    {
+      "file": "20261003100000_vtid_04859_founding_1000.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.notification_test_actors\" does not exist"
+    },
+    {
+      "file": "20261005100000_vtid_04878_claim_capped_reward.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.notification_test_actors\" does not exist"
+    },
+    {
+      "file": "20261005120000_vtid_04888_rule45_intents_profiles.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.notification_test_actors\" does not exist"
+    },
+    {
+      "file": "20261005130000_vtid_04895_partner_terms_lifecycle.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.partner_terms_acceptances\" does not exist"
+    },
+    {
+      "file": "20261006120000_vtid_04909_partner_terms_german_binding.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.partner_terms_versions\" does not exist"
+    },
+    {
+      "file": "20261006140000_vtid_04915_community_event_host_and_time_sync.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.global_community_events\" does not exist"
+    },
+    {
+      "file": "20261006150000_vtid_04926_mention_notification_types.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.notification_type_controls\" does not exist"
+    },
+    {
+      "file": "20261007200000_vtid_04965_live_room_reminder_calendar.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.community_live_streams\" does not exist"
+    },
+    {
+      "file": "20261008100000_vtid_04968_mcp_oauth_client_info.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"auth.oauth_clients\" does not exist"
+    },
+    {
+      "file": "20261008130000_vtid_04976_live_room_follows_host.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.community_live_streams\" does not exist"
+    },
+    {
+      "file": "20261008150000_vtid_04978_reminders_in_calendar.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.calendar_events\" does not exist"
+    },
+    {
+      "file": "20261009090000_vtid_04994_subscription_dates_in_calendar.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.calendar_events\" does not exist"
+    },
+    {
+      "file": "20261010100000_vtid_04997_test_results_in_calendar.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.calendar_events\" does not exist"
+    },
+    {
+      "file": "20261010120000_vtid_05027_push_reach_active.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"notification_test_actors\" does not exist"
+    },
+    {
+      "file": "20261010150000_vtid_04917_audiobook_source_type.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.calendar_events\" does not exist"
+    },
+    {
+      "file": "20261010160000_vtid_05035_reward_shop_images_bucket.sql",
+      "reason": "needs the Supabase storage schema, which the stub does not reproduce",
+      "error": "relation \"storage.buckets\" does not exist"
+    },
+    {
+      "file": "20261010160000_vtid_05038_welcome_trigger_enrollment_restore.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.chat_groups\" does not exist"
+    },
+    {
+      "file": "20261010160000_vtid_05057_contacts_phone_matching.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.contacts\" does not exist"
+    },
+    {
+      "file": "20261010164100_vtid_05041_definer_functions_lockdown.sql",
+      "reason": "a guard inside the migration refuses the replayed state: it asserts production data or a production function body that a fresh replay does not have",
+      "error": "VTID-05041: expected all four memory functions to exist (found 3 overloads)"
+    },
+    {
+      "file": "20261010170000_vtid_05052_ci_welcome_greeting_health_exclude_test_accounts.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.notification_test_actors\" does not exist"
+    },
+    {
+      "file": "20261010180000_vtid_05043_s3_membership_side_effect_guard.sql",
+      "reason": "changes a function that no replayed migration creates (its creator is a skipped migration or was never committed)",
+      "error": "function public.claim_founding_seat_on_membership() does not exist"
+    },
+    {
+      "file": "20261010190000_vtid_05055_partner_health_member_link_confirmation.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.partner_health_result_inbox\" does not exist"
+    },
+    {
+      "file": "20261012110000_vtid_05077_plan_version_planner_model.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.dev_autopilot_plan_versions\" does not exist"
+    },
+    {
+      "file": "20261012160000_vtid_05088_ci_memory_health_speech_input.sql",
+      "reason": "expects a column the replayed schema does not have (its table has no committed creator, or comes from a skipped migration)",
+      "error": "column \"embedding\" does not exist"
+    },
+    {
+      "file": "20261012180000_vtid_05095_phone_verification.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.profiles\" does not exist"
+    },
+    {
+      "file": "20261013090000_vtid_05125_memory_functions_revoke_migrate.sql",
+      "reason": "a guard inside the migration refuses the replayed state: it asserts production data or a production function body that a fresh replay does not have",
+      "error": "VTID-05125: expected all four memory functions to exist"
+    },
+    {
+      "file": "20261013150000_vtid_05146_autopilot_overlap_hold.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.dev_autopilot_executions\" does not exist"
+    },
+    {
+      "file": "20261013200000_vtid_05143_unified_card_system.sql",
+      "reason": "calls auth.role(), which the stub auth schema does not define (Amendment 2, decision 4)",
+      "error": "function auth.role() does not exist"
+    },
+    {
+      "file": "20261013233000_vtid_05147_s_m_membership_role_lockdown.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.role_preferences\" does not exist"
+    },
+    {
+      "file": "20261014000100_vtid_05149_tenants_default_platform_flags.sql",
+      "reason": "a guard inside the migration refuses the replayed state: it asserts production data or a production function body that a fresh replay does not have",
+      "error": "VTID-05149 M1: expected exactly 2 tenants, one of them maxina; found 3 tenants, 1 maxina"
+    },
+    {
+      "file": "20261014000200_vtid_05149_signup_default_tenant.sql",
+      "reason": "changes a function that no replayed migration creates (its creator is a skipped migration or was never committed)",
+      "error": "function \"public.handle_new_user()\" does not exist"
+    },
+    {
+      "file": "20261014000400_vtid_05150_tenant_brand_pack.sql",
+      "reason": "expects a column the replayed schema does not have (its table has no committed creator, or comes from a skipped migration)",
+      "error": "column \"tenant_id\" does not exist"
+    },
+    {
+      "file": "20261014000500_vtid_05150_provision_tenant.sql",
+      "reason": "a guard inside the migration refuses the replayed state: it asserts production data or a production function body that a fresh replay does not have",
+      "error": "VTID-05150: apply 20261014000400_vtid_05150_tenant_brand_pack first"
+    },
+    {
+      "file": "20261014000600_vtid_05151_public_tenant_registry.sql",
+      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "error": "column \"tenant_id\" specified in USING clause does not exist in left table"
+    },
+    {
+      "file": "20261014000700_vtid_05151_seed_legacy_tenant_landing.sql",
+      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "error": "column t.tenant_id does not exist"
+    },
+    {
+      "file": "20261014130000_vtid_05167_activity_tiers.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.user_activity_log\" does not exist"
+    },
+    {
+      "file": "20261021140000_vtid_05310_chat_send_reliability.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.chat_messages\" does not exist"
+    },
+    {
+      "file": "20261022090000_vtid_05309_chat_message_search.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.chat_messages\" does not exist"
+    },
+    {
+      "file": "20261101100000_mt_packs_tenant_content_overrides.sql",
+      "reason": "a guard inside the migration refuses the replayed state: it asserts production data or a production function body that a fresh replay does not have",
+      "error": "VTID-05495: public.tenants(tenant_id) is missing; refusing to create tenant_content_overrides"
+    },
+    {
+      "file": "20261101110000_mt_launch_tenant_pack_intake.sql",
+      "reason": "a guard inside the migration refuses the replayed state: it asserts production data or a production function body that a fresh replay does not have",
+      "error": "VTID-05324: public.tenants(tenant_id) is missing; refusing to create tenant_pack_intake"
+    },
+    {
+      "file": "20261101110100_mt_launch_tenant_content_pipeline.sql",
+      "reason": "a guard inside the migration refuses the replayed state: it asserts production data or a production function body that a fresh replay does not have",
+      "error": "VTID-05324: apply 20261101110000_mt_launch_tenant_pack_intake.sql first"
+    },
+    {
+      "file": "20261102030100_vtid_05465_bare_policy_rewrite.sql",
+      "reason": "a guard inside the migration refuses the replayed state: it asserts production data or a production function body that a fresh replay does not have",
+      "error": "VTID-05465: the live current_tenant_id() is not the 20260218 body (markers f, f, f); refusing the rewrite. The lane is parked for an owner decision (docs/validation/VTID-05465/acceptance.md)"
+    },
+    {
+      "file": "20261102031000_vtid_05466_user_tenants_canonical.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.memberships\" does not exist"
+    },
+    {
+      "file": "20261102031100_vtid_05466_memberships_view_dualwrite.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.memberships\" does not exist"
+    },
+    {
+      "file": "20261102033000_vtid_05467_single_role_source.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.role_preferences\" does not exist"
+    },
+    {
+      "file": "20261102040100_vtid_05571_orphan_quarantine_snapshots.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.chat_messages\" does not exist"
+    },
+    {
+      "file": "20261102040300_vtid_05571_orphan_cleanup_rollback.sql",
+      "reason": "changes a function that no replayed migration creates (its creator is a skipped migration or was never committed)",
+      "error": "function public.mt_orphan_restore() does not exist"
+    },
+    {
+      "file": "20261102040300_vtid_05571_orphan_cleanup_run.sql",
+      "reason": "changes a function that no replayed migration creates (its creator is a skipped migration or was never committed)",
+      "error": "function public.mt_orphan_snapshot_all() does not exist"
+    },
+    {
+      "file": "20261102042000_vtid_05572_profiles_tenant_backfill_fn.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.profiles\" does not exist"
+    },
+    {
+      "file": "20261102042100_vtid_05572_profiles_tenant_backfill_run.sql",
+      "reason": "changes a function that no replayed migration creates (its creator is a skipped migration or was never committed)",
+      "error": "function public.mt_profiles_tenant_backfill_run() does not exist"
+    },
+    {
+      "file": "20261102043000_vtid_05569_hot_tables_tenant_not_null_assert.sql",
+      "reason": "a guard inside the migration refuses the replayed state: it asserts production data or a production function body that a fresh replay does not have",
+      "error": "VTID-05569: public.chat_messages.tenant_id does not exist"
+    },
+    {
+      "file": "20261102050000_vtid_05576_chat_messages_scope.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.chat_messages\" does not exist"
+    },
+    {
+      "file": "20261102050100_vtid_05576_send_message_rpcs.sql",
+      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "error": "type \"public.chat_messages\" does not exist"
+    },
+    {
+      "file": "20261102050200_vtid_05576_chat_messages_lockdown.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.chat_messages\" does not exist"
+    },
+    {
+      "file": "20261102052100_vtid_05573_legacy_messages_functions.sql",
+      "reason": "fails on a fresh replay on PGlite (see the error line)",
+      "error": "column t.tenant_id does not exist"
+    },
+    {
+      "file": "20261102052200_vtid_05573_legacy_messages_migrate_run.sql",
+      "reason": "changes a function that no replayed migration creates (its creator is a skipped migration or was never committed)",
+      "error": "function public.mt_legacy_messages_migrate() does not exist"
+    },
+    {
+      "file": "20261102052300_vtid_05573_legacy_messages_drop.sql",
+      "reason": "changes a function that no replayed migration creates (its creator is a skipped migration or was never committed)",
+      "error": "function public.mt_legacy_messages_assert_ready() does not exist"
+    },
+    {
+      "file": "20261102054000_vtid_05579_chat_groups_scope.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.chat_groups\" does not exist"
+    },
+    {
+      "file": "20261102054200_vtid_05579_chat_groups_rls.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.chat_groups\" does not exist"
+    },
+    {
+      "file": "20261102070100_vtid_05491_mt_tenant_admin_p2_moderation.sql",
+      "reason": "a guard inside the migration refuses the replayed state: it asserts production data or a production function body that a fresh replay does not have",
+      "error": "VTID-05491 P2: public.content_reports is missing"
+    },
+    {
+      "file": "20261102070150_vtid_05491_mt_tenant_admin_p3_moderation.sql",
+      "reason": "a guard inside the migration refuses the replayed state: it asserts production data or a production function body that a fresh replay does not have",
+      "error": "VTID-05491 P3: content_reports.tenant_id is missing (apply 20261102070100 first)"
+    },
+    {
+      "file": "20261102070300_vtid_05493_mt_tenant_deactivate.sql",
+      "reason": "a guard inside the migration refuses the replayed state: it asserts production data or a production function body that a fresh replay does not have",
+      "error": "VTID-05493: tenants.tenant_id/slug/is_active/is_default/is_platform missing - apply 20261014000100 (VTID-05149) first"
+    },
+    {
+      "file": "20261102070350_vtid_05493_mt_tenant_archive_switch.sql",
+      "reason": "a guard inside the migration refuses the replayed state: it asserts production data or a production function body that a fresh replay does not have",
+      "error": "VTID-05493: apply 20261102070300_vtid_05493_mt_tenant_deactivate first"
+    },
+    {
+      "file": "20261102070600_vtid_05491_mt_moderator_tenant_scope.sql",
+      "reason": "a guard inside the migration refuses the replayed state: it asserts production data or a production function body that a fresh replay does not have",
+      "error": "VTID-05491 scope: tenant_id columns are missing (apply 20261102070100 first)"
+    },
+    {
+      "file": "20261102080000_mt_packs_knowledge_docs_tenant_id.sql",
+      "reason": "a guard inside the migration refuses the replayed state: it asserts production data or a production function body that a fresh replay does not have",
+      "error": "VTID-05498: public.tenants(tenant_id) is missing; refusing to add the tenant overlay column"
+    },
+    {
+      "file": "20261102120000_vtid_05488_supplier_tenant_relationships.sql",
+      "reason": "a guard inside the migration refuses the replayed state: it asserts production data or a production function body that a fresh replay does not have",
+      "error": "VTID-05488: public.merchants is missing; refusing to create supplier_tenant_relationships"
+    },
+    {
+      "file": "20261102120100_vtid_05488_products_distribution.sql",
+      "reason": "a guard inside the migration refuses the replayed state: it asserts production data or a production function body that a fresh replay does not have",
+      "error": "VTID-05488: public.products is missing; refusing to add products.distribution"
+    },
+    {
+      "file": "20261102120300_vtid_05488_products_merchants_tenant_rls.sql",
+      "reason": "a guard inside the migration refuses the replayed state: it asserts production data or a production function body that a fresh replay does not have",
+      "error": "VTID-05488 D4: public.supplier_tenant_relationships is missing (apply 20261102120000 first)"
+    },
+    {
+      "file": "20261102140000_vtid_05507_mt_tenant_domains.sql",
+      "reason": "a guard inside the migration refuses the replayed state: it asserts production data or a production function body that a fresh replay does not have",
+      "error": "VTID-05507: public.reserved_tenant_slugs is missing (VTID-05150); refusing to create tenant_domains"
+    },
+    {
+      "file": "20261102140100_vtid_05507_mt_resolve_tenant_host.sql",
+      "reason": "a guard inside the migration refuses the replayed state: it asserts production data or a production function body that a fresh replay does not have",
+      "error": "VTID-05507: public.tenant_domains is missing; apply 20261102140000 first"
+    },
+    {
+      "file": "20261102141000_vtid_05506_mt_provision_erp_request.sql",
+      "reason": "a guard inside the migration refuses the replayed state: it asserts production data or a production function body that a fresh replay does not have",
+      "error": "VTID-05506: apply 20261014000400 / 20261014000500 (VTID-05150: provision_tenant, tenant_settings_merge_feature_flags) first"
+    },
+    {
+      "file": "20261105170000_live_room_cohost_authz.sql",
+      "reason": "needs a table that no replayed migration creates (no committed creator, or an earlier skipped migration)",
+      "error": "relation \"public.live_rooms\" does not exist"
+    }
+  ]
+}

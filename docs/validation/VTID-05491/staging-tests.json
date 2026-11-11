@@ -1,0 +1,8 @@
+{
+  "vtid": "VTID-05491",
+  "service": "gateway",
+  "not_verified_on_staging": "This lane adds three migration files, a pgTAP test, read-only check SQL and one static test. Nothing is applied from the PR: each file is applied later through RUN-MIGRATION.yml, one file per dispatch, after the owner approves the files and the target database (collaboration.md section 7d), and staging shares the production database, so the staging deploy runs no code that reads anything new (no gateway code calls the new RPCs; they ship with the tenant-admin-api lane). The migrations are proven by pgTAP and the static test in CI and locally (docs/validation/VTID-05491/outputs/); the post-apply check is read-only: live-before.sql before, post-apply-checks.sql after, rollback-check.sql after a rollback, run by Kiro through RUN-MIGRATION's read-only check. No suite points at vitanaland.com.",
+  "tests": [
+    { "kind": "http", "name": "existing moderation reports route is still mounted and requires auth", "path": "/api/v1/admin/moderation/reports", "expect_status": 401 }
+  ]
+}

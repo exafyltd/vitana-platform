@@ -1,0 +1,84 @@
+# VTID-05465 (mt-identity-r2 / helpers-and-policy-rewrite) — commands run
+# Worktree: /projects/sandbox/wt-id-helpers-and-policy-rewrite, branch kiro/mt-identity-r2/helpers-and-policy-rewrite,
+# base origin/main 50e55fd3a4. No database, gateway, Supabase or AWS endpoint was contacted. Nothing was applied.
+
+## setup
+(services/gateway) npm ci --no-audit --no-fund --ignore-scripts                 -> exit 0 (850 packages)
+
+## recount (premise check) on origin/main migrations
+node scripts/ci/bare-policy-lint.mjs   (before the vtid_05465 migrations existed) -> exit 1
+  32 bare current_tenant_id() policies on 15 tables (824 policies in 673 files); full list in red.txt
+  same set, policy names and file:line as the plan (match_targets :238/:242/:246, relationship_nodes :134-:153,
+  social_alignment_signals :286/:293, topic_registry :73-:94).
+column evidence: CREATE TABLE of each of the 15 tables read (file:line in acceptance.md) + ALTER TABLE … ADD COLUMN
+  grep over supabase/migrations -> only event_attendance and live_room_attendance have a user_id column.
+grep scripts/ci/migration-drift-baseline.json -> 8 of the 15 tables are recorded as absent in production.
+grep FUNCTION public.current_tenant_id -> last definition 20260218000000_fix_maxina_signup_tenant_association.sql:33
+  (falls back to app_metadata.active_tenant_id and the caller's user_tenants row).
+
+## red (test written first)
+(services/gateway) npx jest test/mt-identity-bare-policy-lint.test.ts   [lint script absent, no migrations] -> exit 1, 7/7 failed
+(services/gateway) npx jest test/mt-identity-bare-policy-lint.test.ts   [lint script, no migrations]        -> exit 1, 4 failed / 3 passed
+  failing: "reads ZERO …" (lint reports the 32), helpers file missing, rewrite file missing, rollback file missing.
+
+## green
+(services/gateway) npx jest test/mt-identity-bare-policy-lint.test.ts   -> exit 0, 7/7 passed
+node scripts/ci/bare-policy-lint.mjs                                  -> exit 0, 0 bare (824 policies in 675 files)
+node scripts/ci/bare-policy-lint.mjs --include-rollbacks              -> exit 1, the 32 again (rollback restores them)
+node -e lintMigration(…) (scripts/ci/pr-gate/lib.mjs) on the 3 SQL files -> [] [] [] (wrapped in BEGIN/COMMIT, idempotent)
+node -e validateManifest(staging-tests.json) (scripts/ci/staging-verify/lib.cjs) -> {"ok":true}
+
+## SQL (pgTAP files)
+pgTAP, Docker (podman: no conmon) and a Postgres server are not available here, so the files could not run under
+pg_prove / the D11 Supabase local stack. Instead they ran on a throwaway in-process Postgres (npm
+@electric-sql/pglite 0.5.14, WASM, installed in /projects/sandbox/pglite-05465, outside the repo), with a minimal local
+shim for the four pgTAP functions the files use (no_plan, ok, is, finish; the shim RAISEs on the first "not ok").
+Order and results (green.txt):
+  fixture -> helpers -> rewrite -> helpers again -> rewrite again (both re-apply)        PASS
+  mt_identity_helpers_rls.test.sql                                                       PASS, 127 assertions
+  rollback -> mt_identity_helpers_rollback.test.sql                                      PASS, 10 assertions
+  helpers -> rewrite again after the rollback -> mt_identity_helpers_rls.test.sql        PASS, 127 assertions
+  rewrite without the helpers                                                            refuses (expected)
+  rewrite with a rewrite-set policy missing live (drift)                                 refuses (expected)
+  rewrite + rollback with match_targets / topic_registry absent                          skip them with a NOTICE
+Red for the pgTAP suite (fixture + helpers, rewrite NOT applied, non-raising shim): 127 assertions, 9 not ok (red.txt).
+pre-check.sql on the fixture: 32/32 policies present, user_id tables = event_attendance, live_room_attendance, 32 bare.
+post-check.sql after both migrations: helpers SECURITY DEFINER + STABLE, authenticated EXECUTE yes, anon no; 0 bare;
+  32 policies on is_member / tenant_id_for_policies.
+Not run: the D11 Supabase local stack and pg_prove with real pgTAP. The repo has no runner script for these files
+(a scripts/ci/test-*.sh like test-vtid-05147-s-m-lockdown.sh is outside this lane's paths).
+
+## not run
+scripts/collab/preflight.mjs (needs a commit; this step does not commit). No git commit, no push.
+
+## plan amendment 1 (2026-11-02) — revision, same worktree, still uncommitted
+Read /projects/sandbox/wt-ida/.kiro/specs/mt-identity-r2/plan.md lane 1 "Amendment 1".
+Edited: 20261102030100_…_bare_policy_rewrite.sql (every policy -> tenant_id = (select public.tenant_id_for_policies()),
+  extra predicates kept, no user_id / auth.uid() term, no is_member(); user_id-column refusal guard removed, it no
+  longer protects anything), helpers + rollback header comments, the Jest test (new expectations + "rewrite equals
+  the original with only the helper swapped"), mt_identity_helpers_rls.test.sql (§2/§3/§4/§5/§6), pre/post-check
+  comments, migration-queue-rows.md rollback note, acceptance.md. Lint script, fixture and rollback pgTAP unchanged.
+(services/gateway) npx jest test/mt-identity-bare-policy-lint.test.ts                    -> exit 0, 7/7 passed
+red, throwaway detached worktree at origin/main 50e55fd3a4 (git worktree add --detach, removed + pruned after):
+  amended test only                                                                    -> exit 1, 7/7 failed
+  amended test + lint script                                                           -> exit 1, 4 failed / 3 passed
+node scripts/ci/bare-policy-lint.mjs                                                   -> exit 0, 0 bare
+node scripts/ci/bare-policy-lint.mjs --include-rollbacks                               -> exit 1, the 32 again
+lintMigration on the 3 SQL files                                                       -> [] [] []
+PGlite (/projects/sandbox/pglite-05465): node run.mjs                                  -> all PASS, pgTAP 160 / 10 / 160
+  node red.mjs (origin/main policies, helpers applied)                                 -> 160 assertions, 4 not ok
+    (only the structural ones; every audience assertion passes on main = same audience)
+  node checks.mjs (pre/post-check)                                                     -> 32 present, 0 bare left, 32 rewritten
+No database, gateway, Supabase or AWS endpoint was contacted. Nothing was applied. No commit, no push.
+
+## fix-forward 1 (reviewer finding: live-body guard, section 6 count, post-check scope, AC-8 status)
+In-process PGlite only (WASM, no network, no server database). Harness outside the repo: /projects/sandbox/pglite-05465.
+  node guard.mjs            red, before the guard in 20261102030100: rewrite COMMITTED on the old body; pgTAP FAIL "have 0, want 32"
+                            (outputs/live-body-guard-red.txt)
+  npx jest test/mt-identity-bare-policy-lint.test.ts  red, before the guard: 7 passed, 1 failed (outputs/jest-live-body-guard-red.txt)
+  node guard.mjs            green, after the guard: rewrite REFUSED (markers f, f, f); pgTAP 5 assertions ok (outputs/live-body-guard-green.txt)
+  node run.mjs              positive path on the 20260218 body: every step PASS, rls 160 / rollback 10 / rls 160 (outputs/pglite-run-after-guard.txt)
+  npx jest test/mt-identity-bare-policy-lint.test.ts  green: 8 of 8 (outputs/jest-live-body-guard-green.txt)
+  node scripts/ci/bare-policy-lint.mjs                 exit 0, 0 bare
+  node checks2.mjs          pre-check and post-check on the fixture in both states, incl. NOTICE lines (outputs/pre-post-check-fixture.txt)
+No live database, gateway, Supabase or AWS endpoint was contacted. Nothing was applied.

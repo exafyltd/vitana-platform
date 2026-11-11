@@ -1,0 +1,111 @@
+# loaded /projects/sandbox/wt-groups-db/docs/validation/VTID-05579/pgtap/vtid_05579_fixture.sql
+# loaded /projects/sandbox/wt-groups-db/supabase/migrations/20261102050000_vtid_05576_chat_messages_scope.sql
+# loaded /projects/sandbox/wt-groups-db/supabase/migrations/20261102051000_vtid_05582_network_visible_profile.sql
+# loaded /projects/sandbox/wt-groups-db/docs/validation/VTID-05579/pgtap/vtid_05579_fixture_data.sql
+# loaded /projects/sandbox/wt-groups-db/supabase/migrations/20261102054000_vtid_05579_chat_groups_scope.sql
+# loaded /projects/sandbox/wt-groups-db/supabase/migrations/20261102054100_vtid_05579_network_group_rpcs.sql
+# loaded /projects/sandbox/wt-groups-db/supabase/migrations/20261102054200_vtid_05579_chat_groups_rls.sql
+1..92
+ok 1 - 1 chat_groups.scope text NOT NULL DEFAULT community
+ok 2 - 2 chat_group_members.scope text NOT NULL DEFAULT community
+ok 3 - 3 a CHECK limits chat_groups.scope to community and network
+ok 4 - 4 a CHECK limits chat_group_members.scope to community and network
+ok 5 - 5 the legacy cross-tenant group (metadata.legacy_scope = network) is backfilled to network
+ok 6 - 6 its members are backfilled to network
+ok 7 - 7 a legacy group with legacy_scope = community stays community
+ok 8 - 8 the system group, an ordinary group and the big group (no legacy_scope) stay community
+ok 9 - 9 the members of every community group stay community
+ok 10 - 10 a direct service-role INSERT of a network group fails
+ok 11 - 11 a direct service-role UPDATE of a group to network fails
+ok 12 - 12 a network group cannot be turned into a community group outside the RPCs
+ok 13 - 13 a direct service-role INSERT of a member into a network group fails
+ok 14 - 14 the community writers still add members to a community group directly, scope community
+ok 15 - 15 a member row can never carry another scope than its group (an explicit network is overridden)
+ok 16 - 16 read markers of a network group member can still be updated
+ok 17 - 17 an UPDATE of a member scope cannot leave the group scope
+ok 18 - 18 a network group can never be a system group (no system fan-out target)
+ok 19 - 19 a bot can never be a member of a network group
+ok 20 - 20 a re-run of the idempotent legacy migration over an existing network member is a no-op, not an error
+ok 21 - 21 a network-visible member creates a network group
+ok 22 - 22 scope network, tenant = the creator's primary non-platform tenant (context only), created_by = the creator, not a system group
+ok 23 - 23 the creator is the first member and the admin of it
+ok 24 - 24 the context tenant is the creator's own (TB), never the platform tenant it also belongs to
+ok 25 - 25 a member with only the platform tenant cannot create one
+ok 26 - 26 a member who is not network_visible cannot create one
+ok 27 - 27 a service bot cannot create one (rule 43-45)
+ok 28 - 28 a notification test actor cannot create one (rule 43-45)
+ok 29 - 29 a platform-only account cannot create one (rule 43-45)
+ok 30 - 30 without a session it fails
+ok 31 - 31 a blank name is refused
+ok 32 - 32 a name over 100 characters is refused
+ok 33 - 33 anon can execute none of the four
+ok 34 - 34 authenticated gets the two caller-bound functions and not the _as pair
+ok 35 - 35 the _as pair is service_role-only and the two cores are executable by nobody
+ok 36 - 36 all six functions are SECURITY DEFINER with a pinned search_path
+ok 37 - 37 the admin adds a connected member (accepted request, same tenant)
+ok 38 - 38 the new member row has scope network and role member
+ok 39 - 39 a member of ANOTHER tenant (TB) connected the other way round (U3 -> U1) is added
+ok 40 - 40 the member row carries the creator's tenant as context, not the member's own
+ok 41 - 41 a pending request is not a connection
+ok 42 - 42 a member with no connection at all is refused
+ok 43 - 43 a declined request is not a connection
+ok 44 - 44 a caller who is not a member of the group is refused
+ok 45 - 45 a plain member cannot invite (invite-only, admin only), even a connection of their own
+ok 46 - 46 a connection who is not network_visible is refused
+ok 47 - 47 a service bot is never a member, even connected and visible (rule 43-45)
+ok 48 - 48 a notification test actor is never a member (rule 43-45)
+ok 49 - 49 a platform-only account is never a member (rule 43-45)
+ok 50 - 50 a block by the inviter stops the invite
+ok 51 - 51 a block by the invitee stops the invite
+ok 52 - 52 adding yourself is refused (no self-join)
+ok 53 - 53 a NULL argument is refused
+ok 54 - 54 without a session it fails
+ok 55 - 55 an unknown group is refused
+ok 56 - 56 adding an existing member is a no-op (false)
+ok 57 - 57 the member count is unchanged by the refusals and the no-op (U1, U2, U3)
+ok 58 - 58 no system fan-out: creating the group and adding members wrote no message
+ok 59 - 59 17 more connections are added (the group reaches 20)
+ok 60 - 60 the group has 20 members
+ok 61 - 61 the 21st member is refused
+ok 62 - 62 the refusal added nobody
+ok 63 - 63 adding an existing member to a full group is a no-op, not group_full
+ok 64 - 64 the cap also holds against a direct insert that sets the RPC flag (the table guard, not only the function)
+ok 65 - 65 a rule 43-45 account cannot be inserted into a network group even with the RPC flag on
+ok 66 - 66 add_group_member_as adds on behalf of the group admin (U3 -> U1 is a connection)
+ok 67 - 67 add_group_member_as enforces the same connection rule
+ok 68 - 68 add_group_member_as enforces the same membership rule
+ok 69 - 69 a client cannot call add_group_member_as
+ok 70 - 70 create_network_group_as creates it for the named member, their tenant as context
+ok 71 - 71 the admin of a migrated legacy network group adds a connection
+ok 72 - 72 a plain member of the legacy group cannot invite
+not ok 73 - 73 a community group member cannot add a member of the tenant through add_group_member
+#   have: true
+#   want: error:42501:not_network_group
+not ok 74 - 74 ... and no member row was written
+#   have: 1
+#   want: 0
+not ok 75 - 75 the system group (is_system) refuses add_group_member too
+#   have: true
+#   want: error:42501:not_network_group
+not ok 76 - 76 a non-member gets the same refusal for a community group
+#   have: error:42501:not_a_member
+#   want: error:42501:not_network_group
+not ok 77 - 77 the big community group takes no one through add_group_member either
+#   have: true
+#   want: error:42501:not_network_group
+ok 78 - 78 a non-participant (U4) sees no row of a network group
+ok 79 - 79 a participant sees it
+ok 80 - 80 a non-participant sees none of its members
+ok 81 - 81 a participant sees all 20
+ok 82 - 82 a migrated legacy network group is participant-only too
+ok 83 - 83 anon sees no group
+ok 84 - 84 service_role (the gateway) still reads every group
+ok 85 - 85 a client cannot insert a member (no INSERT policy)
+ok 86 - 86 a client cannot update a group (no UPDATE policy)
+ok 87 - 87 a client cannot remove a member (no DELETE policy)
+ok 88 - 88 no permissive FOR ALL USING (true) policy for PUBLIC/authenticated on chat_groups, chat_group_members or chat_messages
+ok 89 - 89 the two groups tables carry SELECT policies only (the dropped service_role catch-alls stay gone)
+ok 90 - 90 no bare current_tenant_id() policy on the groups tables
+ok 91 - 91 both read policies evaluate auth.uid() once per statement via (SELECT auth.uid())
+ok 92 - 92 the three scope triggers exist
+# Looks like you failed 5 test(s) of 92

@@ -98,8 +98,9 @@ the retired-number index at the end of Part 1 says where its substance lives now
 ### Source of Truth & Governance
 1. **Always treat OASIS as the single source of truth** for task state, lifecycle, and governance.
 2. **Always verify VTID existence** before execution, deployment, or automation.
-2b. **Every task that results in a commit gets its own VTID — allocated only after its plan is sparred and approved**
-    (rules 51–55): owner Gate 1 for a locally sparred plan, or CI policy `converged-auto-v1`. A Kiro plan's VTIDs are
+2b. **Every task that results in a commit gets its own VTID.** Back-end and complex work: allocated only after its plan
+    is sparred and approved (rules 51–55): owner Gate 1 for a locally sparred plan, or CI policy `converged-auto-v1`.
+    A simple front-end change (rule 51a) is allocated straight from the ledger, with no sparring. A Kiro plan's VTIDs are
     allocated by CI PLAN-SPAR on convergence, never by hand. A bug report, a feature ask, a "fix this", a doc change —
     all count. **Never ask the user whether a VTID is needed, never ask them to supply one**, and once the plan is
     approved, allocate without waiting for confirmation. When the user directly instructed the work, that instruction
@@ -294,26 +295,52 @@ Owner decision 2026-09-26. Full process: `docs/DEPLOYMENT-PIPELINE.md`. Applies 
     verification (automatic rollback on failure, VTID-04647) and scheduled health checks — unauthenticated GETs of
     health and build-info endpoints, no sign-in, no writes, no browser suite. A browser suite runs on staging
     (VTID-04648).
-49. **Ready message — two channels only.** **IF** STAGING-VERIFY passes → **THEN** the Claude Code session that merged
-    the change, and the Command Hub Operator Chat, ask the developer: *"Staging verified — ready for deployment to
-    production?"*, with the verified commit, what passed, and **every commit between production and the verified
-    commit**. Not DevOps Chat, not push, not a PR comment. The merging session keeps watching until the result exists;
-    merging is not a stopping point.
-50. **"Yes" goes directly to PUBLISH** (the Command Hub promotion, or the same prod workflows dispatched from Claude
-    Code pinned to the verified commit). Only the commit that passed is promoted — if staging now serves a newer,
+49. **Ready message — two channels only.** **IF** STAGING-VERIFY passes → **THEN** the Kiro or Claude Code session
+    that merged the change (or drives its plan), and the Command Hub Operator Chat, ask the developer: *"Staging
+    verified — ready for deployment to production?"*, with the verified commit, what passed, and **every commit between
+    production and the verified commit**. Not DevOps Chat, not push, not a PR comment. The merging session keeps
+    watching until the result exists; merging is not a stopping point.
+50. **"Yes" goes directly to PUBLISH** — by any of three equal routes, each pinned to the verified commit: the Command
+    Hub PUBLISH button; a Kiro session, when the owner explicitly commands the publish in that conversation; or a
+    Claude Code session the same way. Only the commit that passed is promoted — if staging now serves a newer,
     unverified commit, wait for its own verification. **IF** STAGING-VERIFY fails → **THEN** no ready message and no
     PUBLISH: fix forward and re-verify; never skip, disable or loosen a test to get green.
+50a. **A session publish has two scopes** (owner decisions 2026-10-22/23, `.claude/rules/collaboration.md` §7c):
+    - **Full publish**: the same promotion as the Command Hub button, i.e. the whole verified staging build.
+    - **Session-scoped publish**: only the changes one session made (this session, or a session id the owner names),
+      found by the `Collab-Session` trailer or the session id in the PR body. It is pinned per service to that
+      session's last merge commit (IF–THEN 26). It does **not** have to ship everything on staging. **IF** the range
+      between production and that commit holds a commit that is neither that session's nor owner-approved → **THEN
+      STOP** and tell the owner exactly what else would ship; nothing is cherry-picked onto production.
 
-### Plan Sparring Gate (STANDING RULE — VTID-04868)
-Owner decision 2026-10-03: *"Every new plan must have a ping pong sparring agent to support improvement of the plan …
-before a new VTID is generated, and it must be a standard process no matter how many new plans we create."* Applies to
-both repos and to every plan producer — Claude Code sessions, Operator Chat/Console, task intake, Dev Autopilot,
-self-healing, voice, email intake, routines. Procedure: skill `.claude/skills/plan-sparring/`. There is no
-trivial-change exemption.
+    Both scopes need all of these:
+    - the owner's explicit command in the conversation. A question, "later", silence or an inference is not a
+      command, and an unattended run (seat automation, workflow step, automation-started driver) or a reviewer agent
+      never publishes;
+    - a passed STAGING-VERIFY on the exact commit shipped;
+    - any migration in the range named to the owner first; a publish never applies one;
+    - never `publish-to-prod.sh` or `EXEC-DEPLOY.yml`;
+    - a `reason` naming the VTID(s), the scope, the session id and the STAGING-VERIFY run;
+    - afterwards, only the read-only production deploy check.
 
-51. **Plan → sparring → owner approval (or, for a CI-sparred plan that converged, policy approval
-    `converged-auto-v1`, VTID-05214) → VTID → code.** No VTID is allocated for a plan that has not been sparred, and no
-    VTID is ever allocated for the sparring itself.
+### Plan Sparring Gate (STANDING RULE — VTID-04868, amended 2026-11-07)
+Owner decision 2026-10-03 (*"every new plan gets a ping-pong sparring partner before a new VTID is generated"*) is
+amended by the owner decision of 2026-11-07: **sparring is for back-end and complex work; a simple front-end change
+needs a VTID but no sparring.** Two tracks, one rule: every change gets a VTID from the ledger. Procedure: skill
+`.claude/skills/plan-sparring/`.
+
+51. **Back-end and complex work: plan → sparring → owner approval (or, for a CI-sparred plan that converged, policy
+    approval `converged-auto-v1`, VTID-05214) → VTID → code.** No VTID is allocated for such a plan before it is sparred,
+    and no VTID is ever allocated for the sparring itself. "Back-end and complex" means every change under
+    `services/**`, `supabase/**` (migrations, edge functions, RLS, SQL), `.github/**`, `scripts/**`, governance, LLM
+    routing or auth, and any change that adds or alters an API, a route, a schema, a deploy path, or more than a
+    simple front-end change.
+51a. **Simple front-end change: VTID → code, no sparring.** Class `frontend-simple` (vitana-v1): the diff is inside
+    `src/**` or `public/**`, touches no deny-listed file (`src/App.tsx`, `src/navigation/**`, `src/design/**`,
+    `src/integrations/**`, `src/routes/guards/**`, auth contexts, `src/generated/**`), and changes at most 15 files.
+    Declared in `docs/validation/<VTID>/scope.json` (`"change_class": "frontend-simple"`). The PR gate verifies the diff
+    and fails a claim the diff does not support, which then needs sparring. Execution allocates a fresh VTID from the
+    ledger and runs through implementation, PR, merge and STAGING-VERIFY without waiting for sparring.
 52. **The partner is independent and adversarial.** It sees the plan and the code, never the planner's reasoning; it
     verifies the plan's premises against the code (`file:line`) and its findings are kept verbatim. Every finding gets
     an answer — accepted (plan changed), rejected (reason) or deferred (where tracked) — and goes back to the same
@@ -409,17 +436,20 @@ await page.reload();
 
 ### CI/CD Pipeline — STAGING-FIRST
 Automatic (push/merge) deploys land on **staging only**; each deploy workflow's `cutover_gate` job keeps them away
-from production. Production is reached **only** via the Command Hub PUBLISH button or a deliberate manual
+from production. Production is reached **only** via the Command Hub PUBLISH button, or a deliberate manual
 `workflow_dispatch` of the relevant `AWS-PROD-DEPLOY-*.yml`, pinned and with a recorded reason (manual dispatch is
-never frozen).
+never frozen). That manual dispatch includes a publish a Kiro or Claude Code session runs on the owner's explicit
+command, either full or only one session's changes (rule 50a).
 
 21. **IF** you push/merge to `main` → **THEN it deploys to STAGING** (gateway via `AWS-STAGE-DEPLOY-GATEWAY.yml` → ECS
     service `vitana-gateway`), not production. Verify on `preview-aws-gateway.vitanaland.com`, not prod.
 22. **IF** you need code on PRODUCTION → **THEN do NOT push and expect prod to update.** Click PUBLISH in the Command
-    Hub (promotes the tested staging build) or run the pinned manual dispatch of `AWS-PROD-DEPLOY-*.yml` with a
-    recorded reason (IF–THEN 26).
+    Hub (promotes the tested staging build), or run the pinned manual dispatch of `AWS-PROD-DEPLOY-*.yml` with a
+    recorded reason (IF–THEN 26). A Kiro session does this itself when the owner commands it: a full publish, or only
+    one session's changes (rule 50a).
 23. **IF** you are tempted to manually dispatch a prod deploy workflow "to be safe" → **THEN STOP.** That is the old
-    auto-to-prod habit. Auto = staging; prod = PUBLISH or a deliberate manual dispatch with a recorded reason only.
+    auto-to-prod habit. Auto = staging; prod = PUBLISH, or a deliberate manual dispatch with a recorded reason (an
+    owner-commanded session publish, rule 50a) only.
 24. **IF** `worker-runner` / `orb-agent` / the autopilot executor needs a prod update → **THEN** use the relevant
     `AWS-PROD-DEPLOY-*.yml` workflow's manual `workflow_dispatch`. They have no staging twin: manual-dispatch-only.
 25. **IF** making frontend CSS/JS changes (Command Hub) → **THEN bump the `?v=` cache-busting parameter in
@@ -495,7 +525,8 @@ whatever files a session opens.
 ## 4. VTID SYSTEM
 ### 4.1 Allocation (STANDING RULE — VTID-03448, VTID-04868)
 **Settled: never ask the user "should this have a VTID" or "do you have a VTID for this".** Every task that results
-in a commit gets one. **It is allocated only after its plan is sparred and approved** (Part 1 rules 51–55): owner
+in a commit gets one. **Back-end and complex work is allocated only after its plan is sparred and approved** (Part 1 rules 51–55); a simple
+front-end change (rule 51a) is allocated directly from the ledger. Owner
 Gate 1 for a plan sparred with a local partner (skill `plan-sparring`), or CI policy `converged-auto-v1` for a
 `plan(` PR. A Kiro plan's lane VTIDs are allocated by CI PLAN-SPAR on convergence — Kiro never allocates by hand
 (`.claude/rules/collaboration.md` §7a). A session that allocates itself passes the sparring id (`p_sparring_id`) once

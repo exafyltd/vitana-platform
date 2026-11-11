@@ -568,6 +568,61 @@ jobs:
           [ "${ERRS:-0}" != "0" ] && D="$D, scan errors $ERRS"
           echo "| 21b | Tenant isolation health | INFO | $D |" >> "$REPORT"
 
+      # 21c — Tenant isolation, per tenant (VTID-05504). REPORT-ONLY like 21b:
+      # always INFO, never FAIL, not counted in the check totals, never exits
+      # non-zero. One read-only POST of ci_tenant_isolation_health_by_tenant()
+      # (VTID-05506, 20261102141100). One row per tenant that has a finding,
+      # each row built from that tenant's own entry only, worst first, at most
+      # 15 rows. The entry without a tenant is "unattributed"; a tenant id that
+      # is not in tenants is "unregistered <id>". 21b keeps the whole-database
+      # totals.
+      - name: '21c. Tenant isolation per tenant (report-only, VTID-05504)'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+        run: |
+          set +e
+          HTTP=$(curl -sS -o iso_t.json -w '%{http_code}' \
+            -X POST "${SUPABASE_URL%/}/rest/v1/rpc/ci_tenant_isolation_health_by_tenant" \
+            -H "apikey: $SUPABASE_SERVICE_ROLE" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE" \
+            -H 'Content-Type: application/json' -d '{}')
+          if [ "$HTTP" != "200" ]; then
+            echo "| 21c | Tenant isolation per tenant | INFO | RPC HTTP $HTTP (not applied yet?) |" >> "$REPORT"
+            exit 0
+          fi
+          if ! jq -e 'type == "object"' iso_t.json >/dev/null 2>&1; then
+            echo "| 21c | Tenant isolation per tenant | INFO | RPC HTTP 200 but the reply is not a JSON object |" >> "$REPORT"
+            exit 0
+          fi
+          if ! jq -e '(.tenants | type) == "array"' iso_t.json >/dev/null 2>&1; then
+            echo "| 21c | Tenant isolation per tenant | INFO | RPC HTTP 200 but the reply has no tenants list |" >> "$REPORT"
+            exit 0
+          fi
+          MAXROWS=15
+          # Sum of the seven finding counts of one entry; the two *_tenant_count
+          # columns describe the tenant, they are not findings.
+          DEFS='def n(k): (.[k] // 0);
+            def finds: n("foreign_tenant_rows") + n("null_tenant_rows") + n("users_zero_primary") + n("users_multi_primary") + n("auth_users_without_membership") + n("memberships_not_in_user_tenants") + n("user_tenants_not_in_memberships");
+            def clean: tostring | gsub("[^A-Za-z0-9._-]"; "_");
+            def who: if .tenant_id == null then "unattributed"
+              elif .is_registered == false then "unregistered " + (.tenant_id | clean)
+              else ((.slug // .tenant_id) | clean) end;'
+          NT=$(jq -r '.tenants | length' iso_t.json 2>/dev/null)
+          NF=$(jq -r "$DEFS"' [.tenants[] | select(finds > 0)] | length' iso_t.json 2>/dev/null)
+          ERRS=$(jq -r '(.scan_errors // []) | length' iso_t.json 2>/dev/null)
+          S="${NT:-0} tenants, ${NF:-0} with findings"
+          [ "${ERRS:-0}" != "0" ] && S="$S, scan errors $ERRS"
+          echo "| 21c | Tenant isolation per tenant | INFO | $S |" >> "$REPORT"
+          jq -r --argjson max "$MAXROWS" "$DEFS"'
+            [.tenants[] | select(finds > 0)] | sort_by(-finds) | .[:$max][]
+            | "| 21c | Tenant isolation: \(who) | INFO | foreign \(n("foreign_tenant_rows")), null \(n("null_tenant_rows")), primary 0/2+: \(n("users_zero_primary"))/\(n("users_multi_primary")), no-membership \(n("auth_users_without_membership")), drift \(n("memberships_not_in_user_tenants"))/\(n("user_tenants_not_in_memberships")) |"' \
+            iso_t.json >> "$REPORT" 2>/dev/null
+          if [ "${NF:-0}" -gt "$MAXROWS" ] 2>/dev/null; then
+            echo "| 21c | Tenant isolation per tenant | INFO | +$((NF - MAXROWS)) more with findings |" >> "$REPORT"
+          fi
+          exit 0
+
       # VTID-03666: watchlist extended with the three newer ALERT-*.yml
       # workflows that did not exist when this list was first written —
       # leaving them off defeats the exact purpose of this self-audit.

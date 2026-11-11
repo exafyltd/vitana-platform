@@ -1,0 +1,1 @@
+NOTE: this file predates the lane head. It counts all workflows in the repo that contain a concurrency block (42), which includes the 3 pre-existing blocks (UNIT, TEST-SUITE, PHASE-2B-DOC-GATE) and workflows already on main. The lane-specific count is in yaml-parse.txt (38 of 38).

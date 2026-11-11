@@ -1,0 +1,124 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "EcrLogin",
+      "Effect": "Allow",
+      "Action": [
+        "ecr:GetAuthorizationToken"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "EcrPushStagingRepos",
+      "Effect": "Allow",
+      "Action": [
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:GetDownloadUrlForLayer",
+        "ecr:BatchGetImage",
+        "ecr:PutImage",
+        "ecr:InitiateLayerUpload",
+        "ecr:UploadLayerPart",
+        "ecr:CompleteLayerUpload",
+        "ecr:DescribeRepositories",
+        "ecr:DescribeImages"
+      ],
+      "Resource": [
+        "arn:aws:ecr:eu-central-1:472838866351:repository/vitana/gateway",
+        "arn:aws:ecr:eu-central-1:472838866351:repository/vitana/kiro-runner",
+        "arn:aws:ecr:eu-central-1:472838866351:repository/vitana/erp-bridge",
+        "arn:aws:ecr:eu-central-1:472838866351:repository/vitana/postgrest-aurora-proxy",
+        "arn:aws:ecr:eu-central-1:472838866351:repository/vitana/community-app"
+      ]
+    },
+    {
+      "Sid": "EcsReadAndRegister",
+      "Effect": "Allow",
+      "Action": [
+        "ecs:DescribeServices",
+        "ecs:DescribeTaskDefinition",
+        "ecs:DescribeTasks",
+        "ecs:DescribeClusters",
+        "ecs:ListServices",
+        "ecs:ListTasks",
+        "ecs:RegisterTaskDefinition"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "EcsDeployStagingServicesOnly",
+      "Effect": "Allow",
+      "Action": [
+        "ecs:UpdateService",
+        "ecs:CreateService"
+      ],
+      "Resource": [
+        "arn:aws:ecs:eu-central-1:472838866351:service/Vitana-ECS-Cluster/vitana-gateway",
+        "arn:aws:ecs:eu-central-1:472838866351:service/Vitana-ECS-Cluster/vitana-kiro-runner",
+        "arn:aws:ecs:eu-central-1:472838866351:service/Vitana-ECS-Cluster/vitana-erp-bridge",
+        "arn:aws:ecs:eu-central-1:472838866351:service/Vitana-ECS-Cluster/vitana-postgrest-aurora-proxy",
+        "arn:aws:ecs:eu-central-1:472838866351:service/Vitana-ECS-Cluster/vitana-community-app-staging"
+      ]
+    },
+    {
+      "Sid": "TagNewStagingServiceOnCreate",
+      "Effect": "Allow",
+      "Action": [
+        "ecs:TagResource"
+      ],
+      "Resource": "arn:aws:ecs:eu-central-1:472838866351:service/Vitana-ECS-Cluster/vitana-community-app-staging",
+      "Condition": {
+        "StringEquals": {
+          "ecs:CreateAction": "CreateService"
+        }
+      }
+    },
+    {
+      "Sid": "PassTaskRolesToEcsOnly",
+      "Effect": "Allow",
+      "Action": [
+        "iam:PassRole"
+      ],
+      "Resource": "${STAGING_TASK_ROLE_ARNS}",
+      "Condition": {
+        "StringEquals": {
+          "iam:PassedToService": "ecs-tasks.amazonaws.com"
+        }
+      }
+    },
+    {
+      "Sid": "DescribeSecretsTheStagingDeploysWire",
+      "Effect": "Allow",
+      "Action": [
+        "secretsmanager:DescribeSecret"
+      ],
+      "Resource": [
+        "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/*/staging/*",
+        "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/supabase/prod/anon-key-*",
+        "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/supabase/prod/jwt-secret-*",
+        "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/supabase/prod/service-role-key-*",
+        "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/aurora/prod/database-url-*",
+        "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/aurora/prod/postgrest-authenticator-uri-*",
+        "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/github/pat-*",
+        "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/gateway/appilix-*"
+      ]
+    },
+    {
+      "Sid": "ProvisionDevMemoryPackToken",
+      "Effect": "Allow",
+      "Action": [
+        "secretsmanager:CreateSecret",
+        "secretsmanager:PutSecretValue"
+      ],
+      "Resource": "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/gateway/staging/dev-memory-pack-token*"
+    },
+    {
+      "Sid": "DescribeAuroraCluster",
+      "Effect": "Allow",
+      "Action": [
+        "rds:DescribeDBClusters"
+      ],
+      "Resource": "arn:aws:rds:eu-central-1:472838866351:cluster:vitana-aurora-prod"
+    }
+  ]
+}

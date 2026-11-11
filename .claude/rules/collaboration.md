@@ -100,8 +100,15 @@ A new plan starts at `drafted`, a new lane at `ready`.
   `### <ISO time> · <session> · review`, then `review: accept|changes`, `head: <sha>`,
   `reviewer: agent:vitana-lane-reviewer (<model>)`, PR link, findings summary, next actor. The reviewer
   session is never a session in the lane's executing log. An entry counts for the **current head** when
-  `Collab-Reviewed-Head` equals the PR head, or every commit after it only appends review entries to this lane file
-  (front matter unchanged) or is a `pm-agent` lane-state commit.
+  `Collab-Reviewed-Head` equals the PR head, or every commit after it either only appends review entries to this lane
+  file (front matter unchanged), is a `pm-agent` lane-state commit, or is a **clean merge of `main`**: a two-parent
+  merge whose second parent is on `origin/main`, whose tree equals Git's automatic merge of its parents (no conflict
+  resolution, no extra edits), that changes no protected gate file, and after which the PR's own diff
+  (`git diff <merge-base> <head>` over the PR's paths) is byte-identical to its diff at the reviewed head. A rebase, a
+  conflict resolution or any change to the PR's own diff needs a new review; required checks must be green on the final
+  head; a merge that brings in a change to a governance path or protected gate file (§3a) still needs a new review.
+  `land-guard.mjs review|merge --repo` enforces this for merges by the plan driver; the Project Manager does not apply
+  the clean-merge clause yet, so on the PM path a merge of `main` still needs a new review.
 - Branch per lane: `<kiro|claude>/<slug>/<lane-id>` (a cloud session whose branch name is assigned by the harness
   keeps it; the trailers then carry the match). PR title: `VTID-xxxxx (<slug>/<lane-id>): …`; PR body names the
   session id. **Match a PR to its lane only by these keys — never by recency or "the last thing Kiro did".**
@@ -129,8 +136,7 @@ comments cannot address one account — each account **pulls** its own work inst
 - **Governance paths** (`.github/**`, `.claude/**`, `.kiro/steering/**`, `.kiro/automations/**`, `scripts/collab/**`,
   `CLAUDE.md`, `docs/programs/areas.yaml`): a Kiro lane may change one when the reviewer agent accepts on the current
   head and every check is green — **except the protected gate files**, which never merge on a reviewer-agent accept
-  alone: they need the owner's instruction naming the plan plus a reviewer-agent accept on the current head (Claude
-  Code is retired). The list lives in
+  alone: they need the owner's instruction naming the plan plus a reviewer-agent accept on the current head. The list lives in
   `scripts/collab/protected-gate-files.json` (globs, `queue.mjs` glob semantics):
   `CLAUDE.md`, `scripts/collab/plan-spar.mjs`, `scripts/collab/queue.mjs`, `scripts/collab/protected-gate-files.json`,
   `services/gateway/src/services/plan-sparring/**`, `services/gateway/src/services/project-manager/governance.ts`,
@@ -243,7 +249,8 @@ attempts park with the five-part stop message (§7); `next_actor: claude` only w
 
 **Lane administration — the one reviewed exception to "edit another lane's file" (kiro-lane-admin).** An authorized
 `executor: kiro` lane carrying `lane_admin: true` with `reviewer_seat: agent:vitana-lane-reviewer`, whose `paths`
-cover the target lane file, may reassign that TARGET lane's `seat` and narrow its `paths` — a reviewed, auditable
+cover the target lane file, may reassign that TARGET lane's `seat`, `executor`, `reviewer_seat` and narrow its `paths` — the
+fields the code already allows (`scripts/collab/queue.mjs` scopeCheck, `targetOfAdmin`) — a reviewed, auditable
 reassignment that preserves seat ownership (the admin lane builds from its own seat, the target's new seat owns its
 future PRs), scope (the admin lane's `paths` bound what it touches) and independent review (the reviewer agent
 accepts; the builder never does). The admin lane is recognised only from a trusted source (merge-base, a qualifying
@@ -261,7 +268,7 @@ The Project Manager merges a lane PR — and **the plan driver (Kiro) applies th
 - every `depends_on` lane is `done`;
 - the PR targets `main` and its deploy path is **staging only** (`AWS-STAGE-DEPLOY-*` and preview workflows);
 - no protected gate file (§3a) is changed without the owner's instruction naming the plan plus a reviewer-agent
-  accept on the current head (Claude Code is retired; a reviewer-agent accept alone never unlocks it).
+  accept on the current head (a reviewer-agent accept alone never unlocks it).
 
 The merge is recorded in the lane log with `merge: <sha>` and `authority: §7b PM rule` (or the owner instruction it
 relies on). Production is never part of a merge: it stays the owner's PUBLISH at Gate 2. `gh pr merge --admin` only

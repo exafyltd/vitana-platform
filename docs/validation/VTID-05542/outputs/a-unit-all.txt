@@ -1,0 +1,8 @@
+# a-unit-all (Node v22.23.4): the whole script suite as .github/workflows/UNIT.yml runs it
+# FILES=$(find scripts -path '*/node_modules' -prune -o \( -name '*.test.cjs' -o -name '*.test.mjs' \) -print | sort); node --test $FILES   (35 files, includes scripts/eng/gitlab-settings.test.mjs: 55 tests; the 1 skip is an existing win32-only case of another file)
+# tests 694
+# pass 693
+# fail 0
+# cancelled 0
+# skipped 1
+# todo 0

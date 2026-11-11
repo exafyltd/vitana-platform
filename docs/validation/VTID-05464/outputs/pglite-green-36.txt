@@ -1,0 +1,93 @@
+PASS fixture (roles, user_tenants; pgtap line replaced by the shim)  (mt_identity_hook_fixture.sql)
+PASS forward 032000 (hook), apply 1  (20261102032000_vtid_05464_access_token_hook_shadow.sql)
+PASS forward 032000 (hook), apply 2  (20261102032000_vtid_05464_access_token_hook_shadow.sql)
+state after forward 032000: {"hook":true,"log":false}
+PASS rollback 032000, in-order replay (expect NOTICE, no-op)  (20261102032000_vtid_05464_access_token_hook_shadow_rollback.sql)
+state after in-order replay: {"hook":true,"log":false}
+PASS forward 032100 (mismatch log), apply 1  (20261102032100_vtid_05464_tenant_claim_mismatch_log.sql)
+PASS forward 032100 (mismatch log), apply 2  (20261102032100_vtid_05464_tenant_claim_mismatch_log.sql)
+state after both forward files: {"hook":true,"log":true}
+PASS pgTAP plan 36, after both forward files  (mt_identity_hook_shadow.test.sql)
+  ok 1 - hook function exists
+  ok 2 - hook returns jsonb
+  ok 3 - hook is SECURITY DEFINER
+  ok 4 - hook pins search_path, lock_timeout and statement_timeout
+  ok 5 - anon cannot execute the hook
+  ok 6 - authenticated cannot execute the hook
+  ok 7 - service_role cannot execute the hook
+  ok 8 - supabase_auth_admin can execute the hook
+  ok 9 - supabase_auth_admin has USAGE on schema public
+  ok 10 - forced error (user_tenants missing): original event returned unchanged
+  ok 11 - forced error (user_id not a uuid): original event returned unchanged
+  ok 12 - forced error (claims not an object): original event returned unchanged
+  ok 13 - forced error (active_tenant_id not a uuid): original event returned unchanged
+  ok 14 - NULL event: returned as is
+  ok 15 - no preference: shadow is the primary membership
+  ok 16 - no top-level tenant_id claim is emitted
+  ok 17 - tenant_id_shadow is the only change to the event
+  ok 18 - preference for a tenant the user is a member of is honoured
+  ok 19 - agreeing calls write no mismatch row
+  ok 20 - preference for a non-member tenant is ignored: shadow is the primary membership
+  ok 21 - disagreement: still no top-level tenant_id
+  ok 22 - mismatch log: one preference_not_member row, repeat counted (seen_count 2)
+  ok 23 - no is_primary row: shadow is the oldest membership
+  ok 24 - mismatch log: primary_missing row
+  ok 25 - no membership: event unchanged (no shadow claim)
+  ok 26 - mismatch log: no_membership row with the claimed tenant
+  ok 27 - log unavailable: the hook still returns the shadow claim
+  ok 28 - mismatch log refuses an unknown decision
+  ok 29 - supabase_auth_admin (the Auth server) gets the shadow claim
+  ok 30 - authenticated cannot call the hook
+  ok 31 - authenticated cannot read the mismatch log
+  ok 32 - authenticated cannot write the mismatch log
+  ok 33 - anon cannot read the mismatch log
+  ok 34 - service_role reads the mismatch log (3 rows)
+  ok 35 - RLS is enabled on the mismatch log
+  ok 36 - the mismatch log carries no policy
+  36 of 36 assertions ok
+PASS rollback 032000 (drops hook and log), run 1  (20261102032000_vtid_05464_access_token_hook_shadow_rollback.sql)
+state after rollback: {"hook":false,"log":false}
+PASS rollback 032000, run 2 (expect NOTICE, no-op)  (20261102032000_vtid_05464_access_token_hook_shadow_rollback.sql)
+state after second rollback: {"hook":false,"log":false}
+PASS re-apply forward 032000  (20261102032000_vtid_05464_access_token_hook_shadow.sql)
+PASS re-apply forward 032100  (20261102032100_vtid_05464_tenant_claim_mismatch_log.sql)
+state after re-apply: {"hook":true,"log":true}
+PASS pgTAP plan 36, after rollback and re-apply  (mt_identity_hook_shadow.test.sql)
+  ok 1 - hook function exists
+  ok 2 - hook returns jsonb
+  ok 3 - hook is SECURITY DEFINER
+  ok 4 - hook pins search_path, lock_timeout and statement_timeout
+  ok 5 - anon cannot execute the hook
+  ok 6 - authenticated cannot execute the hook
+  ok 7 - service_role cannot execute the hook
+  ok 8 - supabase_auth_admin can execute the hook
+  ok 9 - supabase_auth_admin has USAGE on schema public
+  ok 10 - forced error (user_tenants missing): original event returned unchanged
+  ok 11 - forced error (user_id not a uuid): original event returned unchanged
+  ok 12 - forced error (claims not an object): original event returned unchanged
+  ok 13 - forced error (active_tenant_id not a uuid): original event returned unchanged
+  ok 14 - NULL event: returned as is
+  ok 15 - no preference: shadow is the primary membership
+  ok 16 - no top-level tenant_id claim is emitted
+  ok 17 - tenant_id_shadow is the only change to the event
+  ok 18 - preference for a tenant the user is a member of is honoured
+  ok 19 - agreeing calls write no mismatch row
+  ok 20 - preference for a non-member tenant is ignored: shadow is the primary membership
+  ok 21 - disagreement: still no top-level tenant_id
+  ok 22 - mismatch log: one preference_not_member row, repeat counted (seen_count 2)
+  ok 23 - no is_primary row: shadow is the oldest membership
+  ok 24 - mismatch log: primary_missing row
+  ok 25 - no membership: event unchanged (no shadow claim)
+  ok 26 - mismatch log: no_membership row with the claimed tenant
+  ok 27 - log unavailable: the hook still returns the shadow claim
+  ok 28 - mismatch log refuses an unknown decision
+  ok 29 - supabase_auth_admin (the Auth server) gets the shadow claim
+  ok 30 - authenticated cannot call the hook
+  ok 31 - authenticated cannot read the mismatch log
+  ok 32 - authenticated cannot write the mismatch log
+  ok 33 - anon cannot read the mismatch log
+  ok 34 - service_role reads the mismatch log (3 rows)
+  ok 35 - RLS is enabled on the mismatch log
+  ok 36 - the mismatch log carries no policy
+  36 of 36 assertions ok
+TOTAL green run: 36 of 36 on the first pass, 36 of 36 after rollback and re-apply (plan 36)

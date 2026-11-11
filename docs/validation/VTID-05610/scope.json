@@ -1,0 +1,11 @@
+{
+  "vtid": "VTID-05610",
+  "kind": "feature",
+  "paths": [
+    "supabase/tests/vtid_05150_provision_tenant.test.sql",
+    "docs/validation/VTID-05610/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05610/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}
