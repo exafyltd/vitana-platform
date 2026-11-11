@@ -46,7 +46,10 @@ No CODEOWNERS file and no GitHub `environment:` reviewers exist in either repo (
      is added as a required CI step (`scripts/collab/gate-invariants.mjs`, run in `Collab tests`): the protected list
      is non-empty and still contains every gate file, including itself; `mergeDecision` still refuses zero or one
      accept and two accepts of one model; scope-check still refuses a protected file from an untrusted lane; the
-     staging prod-reference guard still lists every production identifier. The check fails closed and cannot be
+     staging prod-reference guard still lists every production identifier (conditional: while
+     `scripts/ci/staging-prod-ref-guard.mjs` is absent the invariant is skipped with the logged note
+     `staging-prod-ref-guard: not yet present, invariant deferred`; once `staging-db-isolation` lands, the daily run on
+     `main` enforces it). The check fails closed and cannot be
      changed in the same PR that changes the files it protects: in PR CI both the script and its expectations are
      loaded from the merge-base (`git show "$BASE:scripts/collab/gate-invariants.mjs" > "$RUNNER_TEMP/…"`, the pattern
      `PR-GATE.yml:169` uses for `queue.mjs`); only `GATE-INVARIANTS.yml` on `main` runs the `main` version.
@@ -79,7 +82,9 @@ No CODEOWNERS file and no GitHub `environment:` reviewers exist in either repo (
    the base branch; the PR's files are read as data with `git show <pr head>:<path>` and its file list from the API;
    no PR code is executed) that allocates when a PR declares `change_class: frontend-simple` and the diff qualifies,
    and commits the VTID into `scope.json` as `ci-vtid-allocate` (`permissions: contents: write` on that job only, same-
-   repo branches only). `VTID-ALLOCATE.yml` is added to `protected-gate-files.json` (lane `machine-gate-protected`). No sparring,
+   repo branches only). `VTID-ALLOCATE.yml`, `GATE-INVARIANTS.yml` and `scripts/collab/gate-invariants.mjs` are added to
+   `protected-gate-files.json` (lane `machine-gate-protected`); the invariant check asserts that `GATE-INVARIANTS.yml`
+   exists and keeps its push-to-`main` trigger. No sparring,
    no reviewer round; PR-GATE, build and STAGING-VERIFY stay.
 3. **Isolated staging database (H11):** a separate staging data plane in account `472838866351`, `eu-central-1`:
    - a dedicated Aurora PostgreSQL cluster `vitana-aurora-staging`, built from `supabase/migrations/**` (schema) plus a
