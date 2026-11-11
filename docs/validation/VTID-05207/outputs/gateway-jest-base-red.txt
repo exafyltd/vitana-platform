@@ -1,0 +1,127 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /tmp/base-wt/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /tmp/base-wt/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /tmp/base-wt/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /tmp/base-wt/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /tmp/base-wt/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+FAIL test/vtid-05207-greeting-guard.test.ts
+  ● Test suite failed to run
+
+    Cannot find module '../src/services/new-member-greeting-guard' from 'test/vtid-05207-greeting-guard.test.ts'
+
+       7 |  * unit-tested directly; the entry point is tested end to end.
+       8 |  */
+    >  9 | import {
+         | ^
+      10 |   checkGreetingSend,
+      11 |   receiverIsGreetableNewcomer,
+      12 |   evaluateGreetingHistory,
+
+      at Resolver._throwModNotFoundError (../../../../projects/sandbox/vitana-platform/services/gateway/node_modules/jest-resolve/build/resolver.js:427:11)
+      at Object.<anonymous> (test/vtid-05207-greeting-guard.test.ts:9:1)
+
+FAIL test/vtid-05208-greeting-send-route.test.ts
+  ● Test suite failed to run
+
+    Cannot find module '../src/services/new-member-greeting-guard' from 'test/vtid-05208-greeting-send-route.test.ts'
+
+      65 | // push path. This Lane-D suite covers the push grouping, so the guard is
+      66 | // mocked as allowing — its own logic is covered by vtid-05207-greeting-guard*.
+    > 67 | jest.mock('../src/services/new-member-greeting-guard', () => {
+         |      ^
+      68 |   const actual = jest.requireActual('../src/services/new-member-greeting-guard');
+      69 |   return { ...actual, checkGreetingSend: jest.fn().mockResolvedValue({ ok: true }) };
+      70 | });
+
+      at Resolver._throwModNotFoundError (../../../../projects/sandbox/vitana-platform/services/gateway/node_modules/jest-resolve/build/resolver.js:427:11)
+      at Object.<anonymous> (test/vtid-05208-greeting-send-route.test.ts:67:6)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+FAIL test/vtid-05207-greeting-suggestion-route.test.ts
+  ● Test suite failed to run
+
+    Cannot find module '../src/services/new-member-greeting-guard' from 'test/vtid-05207-greeting-suggestion-route.test.ts'
+
+      28 | }));
+      29 | const mockProfile = jest.fn();
+    > 30 | jest.mock('../src/services/new-member-greeting-guard', () => {
+         |      ^
+      31 |   const actual = jest.requireActual('../src/services/new-member-greeting-guard');
+      32 |   return { ...actual, fetchNewMemberProfile: (...a: any[]) => mockProfile(...a) };
+      33 | });
+
+      at Resolver._throwModNotFoundError (../../../../projects/sandbox/vitana-platform/services/gateway/node_modules/jest-resolve/build/resolver.js:427:11)
+      at Object.<anonymous> (test/vtid-05207-greeting-suggestion-route.test.ts:30:6)
+
+FAIL test/vtid-05207-greeting-guard-send-route.test.ts
+  ● Test suite failed to run
+
+    Cannot find module '../src/services/new-member-greeting-guard' from 'test/vtid-05207-greeting-guard-send-route.test.ts'
+
+      59 | // refusal short-circuits, success flows on). The guard's own logic is covered
+      60 | // by vtid-05207-greeting-guard.test.ts.
+    > 61 | jest.mock('../src/services/new-member-greeting-guard', () => {
+         |      ^
+      62 |   const actual = jest.requireActual('../src/services/new-member-greeting-guard');
+      63 |   return { ...actual, checkGreetingSend: jest.fn() };
+      64 | });
+
+      at Resolver._throwModNotFoundError (../../../../projects/sandbox/vitana-platform/services/gateway/node_modules/jest-resolve/build/resolver.js:427:11)
+      at Object.<anonymous> (test/vtid-05207-greeting-guard-send-route.test.ts:61:6)
+
+FAIL test/vtid-05207-greeting-suggestion.test.ts
+  ● Test suite failed to run
+
+    Cannot find module '../src/services/new-member-greeting-suggestion' from 'test/vtid-05207-greeting-suggestion.test.ts'
+
+      10 |  *     { suggestion, language }, and NEVER sends a DM (suggest only).
+      11 |  */
+    > 12 | import {
+         | ^
+      13 |   composeGreetingSuggestion,
+      14 |   validateGreetingSuggestion,
+      15 |   buildGreetingSuggestionPrompt,
+
+      at Resolver._throwModNotFoundError (../../../../projects/sandbox/vitana-platform/services/gateway/node_modules/jest-resolve/build/resolver.js:427:11)
+      at Object.<anonymous> (test/vtid-05207-greeting-suggestion.test.ts:12:1)
+
+Test Suites: 5 failed, 5 total
+Tests:       0 total
+Snapshots:   0 total
+Time:        1.107 s
+Ran all test suites matching /test\/vtid-05207|test\/vtid-05208-greeting-send-route.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
+exit=1
