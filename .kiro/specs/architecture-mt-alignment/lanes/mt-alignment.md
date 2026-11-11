@@ -13,7 +13,8 @@ repos: [exafyltd/vitana-platform]
 paths:
   - docs/programs/strategy-execution/multi-tenant-alignment.md
   - docs/validation/VTID-*/**
-updated: 2026-11-11T11:10Z
+updated: 2026-11-11T11:41Z
+vtid: VTID-05717
 ---
 # Lane: mt-alignment (repo vitana-platform)
 Tasks in `tasks.md`. The VTID is allocated by PLAN-SPAR.
@@ -21,3 +22,6 @@ Tasks in `tasks.md`. The VTID is allocated by PLAN-SPAR.
 ## Log
 ### 2026-11-11T11:10Z · kiro-exafy-202611110920-270b · ready
 Lane created with the plan.
+
+### 2026-11-11T11:41Z · ci-plan-spar · ready (VTID allocated)
+VTID-05717 allocated after policy approval (converged-auto-v1).
