@@ -11,7 +11,7 @@ Authoritative plan: `plan.md`. VTIDs from CI PLAN-SPAR. Branch `kiro/session-han
 **Acceptance**
 - Change types: Tooling/docs.
 - Only `CLAUDE.md`, the test and the evidence change; the section text equals plan §3; no other line of `CLAUDE.md` changes.
-- Protected gate file: owner instruction (plan §1) plus reviewer-agent accept on the current head.
+- Protected gate file: owner instruction (plan §1) plus an accept from reviewer seat `exafyltd` on the current head.
 
 <!-- lane: claude-md-v1 -->
 ## Lane `claude-md-v1`

@@ -45,7 +45,7 @@ Each repo gets a test that fails on base and passes when the section is present:
 ## 4. Lanes
 1. `claude-md-platform` (vitana-platform): `CLAUDE.md`, the test, `docs/validation/VTID-*/**`.
 2. `claude-md-v1` (vitana-v1): `CLAUDE.md`, the test, `docs/validation/VTID-*/**`.
-`CLAUDE.md` is a protected gate file, so both lanes are `executor: claude`; while Claude is unavailable the exceptions mode of `collaboration.md` §7 applies (a Kiro session builds, the reviewer agent reviews, the owner instruction in §1 is the merge authority). Independent, may run in parallel. `CLAUDE.md` is a hot file: only these lanes touch it while open.
+`CLAUDE.md` is a protected gate file, so both lanes are `executor: claude`; while Claude is unavailable the exceptions mode of `collaboration.md` §7 applies (a Kiro session builds, a Kiro session of the reviewer seat `exafyltd` reviews, the owner instruction in §1 is the merge authority). Independent, may run in parallel. `CLAUDE.md` is a hot file: only these lanes touch it while open.
 ## 5. Tests and commands
 platform: `node --test scripts/collab/session-handover-rule.test.mjs`, `node --test scripts/collab/*.test.mjs`, Kiro steering
 guard, preflight. v1: `npx vitest run src/lib/claude-md-session-handover.test.ts`, `npm test`. Red on base recorded.

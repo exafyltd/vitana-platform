@@ -6,8 +6,7 @@ branch: kiro/session-handover-gitlab/claude-md-v1
 depends_on: []
 executor: claude
 area: frontend
-reviewer_seat: agent:vitana-lane-reviewer
-reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+reviewer_seat: exafyltd
 repos: [exafyltd/vitana-v1]
 paths:
   - CLAUDE.md
