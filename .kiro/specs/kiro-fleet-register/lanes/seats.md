@@ -13,7 +13,8 @@ repos: [exafyltd/vitana-platform]
 paths:
   - docs/programs/areas.yaml
   - docs/validation/VTID-*/**
-updated: 2026-11-11T11:00Z
+updated: 2026-11-11T11:40Z
+vtid: VTID-05715
 ---
 # Lane: seats (repo vitana-platform)
 Tasks in `tasks.md`. The VTID is allocated by PLAN-SPAR.
@@ -21,3 +22,6 @@ Tasks in `tasks.md`. The VTID is allocated by PLAN-SPAR.
 ## Log
 ### 2026-11-11T11:00Z · kiro-exafy-202611110920-270b · ready
 Lane created with the plan.
+
+### 2026-11-11T11:40Z · ci-plan-spar · ready (VTID allocated)
+VTID-05715 allocated after policy approval (converged-auto-v1).
