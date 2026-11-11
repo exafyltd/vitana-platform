@@ -11,6 +11,7 @@ evidence in `docs/validation/<VTID>/` (`acceptance.md`, `commands.log`, `scope.j
 
 **Acceptance**
 - Change types: Tooling/docs.
+- Every seat line uses the one-line `{ … }` form; `loadSeats` and the `loadAreas` of `automations.test.mjs` return the same seven seats;
 - `loadSeats` returns exactly `jtadic, exafyltd, hotmail, exafy, vitanaland, office, support`; no seat renamed or removed.
 - No seat line has `account` and every seat line has `kiro`; `scripts/collab/areas-no-email.test.mjs` (VTID-05699) passes; the `kiro` values are 1, 2, 3, 4, 5, 6, 12, each once.
 - `node --test scripts/collab/automations.test.mjs scripts/collab/queue.test.mjs` passes; preflight passes.

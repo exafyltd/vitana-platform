@@ -45,7 +45,9 @@ One lane. It edits `docs/programs/areas.yaml` only (a governance path, `queue.mj
 Built after VTID-05699 is on `main` (it edits the same seat lines; sequenced, not parallel). Edits on top of that file:
 - Add `kiro: <n>` (the owner's slot number) to each existing seat: `hotmail` 1, `exafy` 2, `exafyltd` 3, `jtadic` 12.
 - Add three seats, no `account`, no `automation`, no area: `vitanaland` (`kiro: 4`), `office` (`kiro: 5`), `support`
-  (`kiro: 6`), each with `surface: pending` until the account's first session records its surface.
+  (`kiro: 6`), each with `surface: pending` until the account's first session records its surface. Every seat line,
+  new and existing, keeps the one-line inline form `  <seat>: { key: value, … }` (e.g. `  vitanaland: { surface: pending, kiro: 4 }`),
+  because `automations.test.mjs:29` parses only that form while `queue.mjs:1194` reads any `  <seat>:` key.
 - Add a comment block, indented two spaces inside `seats:` (e.g. `  # Kiro 7–11: reserved …`) so `loadSeats`
   (`queue.mjs:1193`, which ends the block at any column-0 line) and `automations.test.mjs:23` (which skips comments)
   both keep reading seats added below it, listing slots 7–11 as reserved (no seat until the owner names the account),

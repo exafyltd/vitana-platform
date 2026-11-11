@@ -2,6 +2,6 @@
 
 ```json
 [
-  {"finding_id": "R1-F1", "disposition": "accepted", "rationale": "scripts/collab/areas-no-email.test.mjs is added by lane privacy-ledger-auth/areas-emails (VTID-05699, PR #4961) and is not on main at the pin. Plan §4 now states the start condition: the seats lane is claimed and built only after that lane is merged to main, so the test exists whenever this lane runs; until then the lane stays ready and unclaimed. §5 already sequences the two lanes on areas.yaml.", "deferred_to": ""}
+  {"finding_id": "R1-F1", "disposition": "accepted", "rationale": "Plan §4 now requires every seat line, new and existing, to keep the one-line inline form `  <seat>: { key: value, … }` (example `  vitanaland: { surface: pending, kiro: 4 }`), because automations.test.mjs:29 parses only that form while queue.mjs:1194 reads any two-space seat key. tasks.md acceptance adds that loadSeats and loadAreas return the same seven seats. (Also recorded in plan §4: the lane starts only after lane privacy-ledger-auth/areas-emails, which adds scripts/collab/areas-no-email.test.mjs, is on main.)", "deferred_to": ""}
 ]
 ```
