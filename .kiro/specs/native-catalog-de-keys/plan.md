@@ -31,6 +31,18 @@ es sr fr pl pt ru tr zh ar. For every marker leaf, the same path without `_pendi
 
 Markers are repo-wide: about 1,500 shards carry them. Only the three namespaces above are in scope.
 
+### Premise excerpts (quoted at the pin, so the sparring partner can audit them without reading vitana-v1)
+- Exact-key assertion, `apps/mobile/tests/settings/i18n-rtl.test.tsx:88-93`: `it.each([...LOCALES])('%s has exactly the German keys, none empty', (l) => { const shard = load(l); expect(keys(shard).sort()).toEqual(de); ...`. `keys()` flattens every leaf, so a `true` leaf counts. The ai-assistants test (`:73`) and ai-coach test (`:68`) use the same first assertion. Their placeholder checks run after it.
+- Flag object, `src/i18n/es/settingsNative.json:8-10`: `"_pending_review": { "chat": true }` under `notifications`, next to `"chat": …` at the German path `src/i18n/de/settingsNative.json:4` = `"chat": "Chat"`.
+- Existing value, `src/i18n/es/settingsNative.json` `security.sessionPhone` = "iPhone 15 Pro" (same as `src/i18n/de/settingsNative.json:30`); the flag for it is at es:36.
+- Consumers of the flag (grep at the pin, vitana-v1):
+  - `scripts/i18n-audit.mjs:142-152`: a flag in a GA locale is recorded as an error. The audit runs report-only in `.github/workflows/i18n-check.yml:47`. Removing the flag clears those errors for the three namespaces.
+  - `scripts/i18n-audit.mjs:69`: the audit's flatten skips `_`-prefixed keys. Runtime lookups read the normal path, so removing a flag changes no rendered text.
+  - `scripts/translate-keys.mjs:255-257` and `.github/workflows/i18n-translate.yml:3`: the translator queues every `true` flag, translates it from the English source and clears it. After the lane, nothing is queued in these three namespaces, so the translator cannot overwrite the existing values.
+  - `scripts/apply-jsx-keys.mjs:74-75`, `scripts/apply-toast-keys.mjs:4`: writers only (one-time seeding). Not affected.
+  - Test and runtime files that mention the flag only to exclude it: `src/components/calendar/vcal/vcal.test.ts:187`, `tests/e2e/staging/vtid-05186-native-shard.staging.spec.ts:53`, `tests/e2e/staging/vtid-05182-orbnative-shard.staging.spec.ts:106`, `src/config/backoffice-navigation.test.ts:30`. `src/contexts/LanguageContext.tsx:38` is a comment. No runtime code reads the flag.
+- Per-namespace and per-locale flag leaves (the 113 accepted values, listed in the lane evidence): settingsNative es 7, sr 8, fr 6, pl 8, pt 9, ru 3, tr 4, zh 5, ar 5 (55); aiAssistantsNative es 2, sr 3, pl 3, pt 4, ru 3, tr 3, zh 3, ar 2 (23); aiCoachNative es 4, sr 5, pl 5, pt 5, ru 4, tr 4, zh 4, ar 4 (35).
+
 ## Decisions
 1. **No new German key.** Every pending path already has its German key and a non-empty value in all 10 locales, so there is
    no text to translate and nothing new to invent. The owner's step "add the German keys" resolves to a no-op on `de`. Reason: the
