@@ -356,7 +356,7 @@ describe('prepareNewMemberGreetingPush', () => {
     seedGreeting('u-en', 's9', NOW - HOUR, true);
     const { sb, calls } = fakeSupabase();
     const p = await prepareNewMemberGreetingPush(sb, { senderId: 's1', receiverId: 'u-en', payload: greetingPayload('s1') }, NOW);
-    expect(p!.opts).toBeUndefined();
+    expect(p!.opts).toEqual({ holdForBurst: { dueAt: expect.any(String) } });
     expect(p!.payload.tag).toBe('chat:dm:s1');
     expect(calls.some((c) => c[0] === 'eq' && c[1] === 'data->>greeting_group')).toBe(false);
     expect(calls).toEqual(expect.arrayContaining([['eq', 'data->>conversation_key', 'dm:s1']]));
