@@ -1,0 +1,10 @@
+{
+  "vtid": "VTID-05718",
+  "service": "gateway",
+  "tests": [
+    { "kind": "existing", "ref": "npx jest test/vtid-05718-chat-burst-sweep.test.ts test/vtid-05137-chat-push-coalescing.test.ts", "cwd": "services/gateway",
+      "reason": "a burst of chat messages leaves as one push with the latest text and the count; a single message keeps its text; read during the hold sends nothing; a claim is sent once; the 5-minute window and the off switch still hold" },
+    { "kind": "http", "name": "gateway health (alive) after the sweep starts", "method": "GET", "path": "/alive", "expect_status": 200,
+      "reason": "the gateway still boots and serves health with the new in-process sweep" }
+  ]
+}
