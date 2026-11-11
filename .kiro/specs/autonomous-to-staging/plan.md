@@ -47,12 +47,18 @@ No CODEOWNERS file and no GitHub `environment:` reviewers exist in either repo (
      is non-empty and still contains every gate file, including itself; `mergeDecision` still refuses zero or one
      accept and two accepts of one model; scope-check still refuses a protected file from an untrusted lane; the
      staging prod-reference guard still lists every production identifier. The check fails closed and cannot be
-     changed in the same PR that changes the files it protects (it reads its expectations from the merge-base).
+     changed in the same PR that changes the files it protects: in PR CI both the script and its expectations are
+     loaded from the merge-base (`git show "$BASE:scripts/collab/gate-invariants.mjs" > "$RUNNER_TEMP/…"`, the pattern
+     `PR-GATE.yml:169` uses for `queue.mjs`); only `GATE-INVARIANTS.yml` on `main` runs the `main` version.
      Bootstrap: on the `machine-gate-protected` PR itself the merge-base has no expectations, so the check prints
      `gate-invariants: no baseline on merge-base (bootstrap)` and passes; that PR's authority is the owner instruction
      plus the reviewer-agent accept (§3a). A new workflow `GATE-INVARIANTS.yml` (lane `gate-invariants-ci`, after `machine-gate-protected`; today no workflow runs
      `scripts/collab/*.test.mjs` on push: `PR-GATE.yml:14-16` is `pull_request` only and `CI-SCRIPTS-TEST.yml:19-26`
-     filters other paths) runs on every push to `main` and daily, and checks `main` itself and fails loudly if any invariant is missing, so the first version is verified as soon
+     filters other paths) runs on every push to `main` and daily, and checks `main` itself; it also checks every merge commit on `main`
+     that touches a protected gate file: the merged PR must carry two review entries (`Collab-Verdict: accept`, distinct
+     `Collab-Reviewer` models from the chain, `Collab-Reviewed-Head` equal to the merged head) or, for the bootstrap
+     lanes only, the logged owner-instruction authority of this plan; otherwise the run fails loudly and emits an
+     OASIS event `collab.gate.bypass_detected` and fails loudly if any invariant is missing, so the first version is verified as soon
      as it lands.
    - Migrations: applied by the pipeline to the **isolated staging database only** (lanes `staging-db-isolation`,
      `staging-migrations-auto`). Until that database exists, a migration lane waits in machine state
@@ -69,8 +75,11 @@ No CODEOWNERS file and no GitHub `environment:` reviewers exist in either repo (
    list extended: native navigation, parity ledger, `app.json`/`eas.json`, generated) and vitana-platform Command Hub
    frontend `services/gateway/src/frontend/command-hub/**` (deny: `app.js` routing/auth sections are not separable, so
    only `*.css`, `index.html` cache-bust and `src/**` view modules qualify; exact list in lane). VTIDs come from CI:
-   `VTID-ALLOCATE.yml` gains a `pull_request` trigger that allocates when a PR declares `change_class:
-   frontend-simple` and the diff qualifies, and commits the VTID into `scope.json` as `ci-vtid-allocate`. No sparring,
+   `VTID-ALLOCATE.yml` gains a `pull_request_target` trigger (the workflow definition and scripts always come from
+   the base branch; the PR's files are read as data with `git show <pr head>:<path>` and its file list from the API;
+   no PR code is executed) that allocates when a PR declares `change_class: frontend-simple` and the diff qualifies,
+   and commits the VTID into `scope.json` as `ci-vtid-allocate` (`permissions: contents: write` on that job only, same-
+   repo branches only). `VTID-ALLOCATE.yml` is added to `protected-gate-files.json` (lane `machine-gate-protected`). No sparring,
    no reviewer round; PR-GATE, build and STAGING-VERIFY stay.
 3. **Isolated staging database (H11):** a separate staging data plane in account `472838866351`, `eu-central-1`:
    - a dedicated Aurora PostgreSQL cluster `vitana-aurora-staging`, built from `supabase/migrations/**` (schema) plus a
@@ -88,9 +97,12 @@ No CODEOWNERS file and no GitHub `environment:` reviewers exist in either repo (
    for staging auth only is **not** chosen without cost approval; the lane implements staging auth on the existing
    gateway JWT path against the staging database and records the gap if a flow still needs Supabase GoTrue.
 4. **Autonomous staging migrations:** `RUN-MIGRATION.yml` gains target `staging`, which resolves only to the isolated
-   cluster. Today `scripts/aws/aurora-apply-migration.sh:37` hardcodes `CLUSTER=vitana-aurora-prod` and the Aurora job
-   assumes `secrets.AWS_PROD_ROLE_ARN` (`RUN-MIGRATION.yml:151`). The lane parameterises the script (`--cluster`,
-   required, no default; the script refuses `vitana-aurora-prod` unless `--target aurora`) and the `staging` target
+   cluster. Today `scripts/aws/aurora-apply-migration.sh:37` hardcodes `CLUSTER=vitana-aurora-prod` (arguments today:
+   `--file`, `--dry-run`, `--allow-non-transactional`) and the Aurora job assumes `secrets.AWS_PROD_ROLE_ARN`
+   (`RUN-MIGRATION.yml:151`). New interface: a separate entry point `scripts/aws/staging-db-apply-migration.sh --cluster
+   <name> --file <f>` (cluster required, no default, refuses `vitana-aurora-prod` unconditionally, no override); the
+   existing production script and its hardcoded path stay as they are, dispatch-only after PUBLISH. The workflow's
+   `target: staging` resolves to `--cluster vitana-aurora-staging`, and the `staging` target
    assumes a dedicated staging migration role (`AWS_STAGING_MIGRATION_ROLE_ARN`, permitted only on
    `vitana-aurora-staging` and its secret), never `AWS_PROD_ROLE_ARN`; a new job runs on merge to `main` for changed `supabase/migrations/**` files in timestamp order: dry-run
    lint, apply, schema drift check (`MIGRATION-DRIFT-CHECK`), app compatibility suite (gateway Jest DB tests against
@@ -155,7 +167,7 @@ wait for owner/Claude review" (`collaboration.md:228`).
 | `pipeline-b-platform` | vitana-platform | `scripts/ci/pr-gate/**`, `.github/workflows/PR-GATE.yml`, `.github/workflows/VTID-ALLOCATE.yml`, tests | none |
 | `staging-db-isolation` | vitana-platform | `infra/staging-db/**`, `.github/workflows/AWS-STAGE-PROVISION-DB.yml`, `scripts/aws/staging-db-*.sh`, `scripts/ci/staging-prod-ref-guard.mjs`, `.github/workflows/AWS-STAGE-DEPLOY-{GATEWAY,POSTGREST-AURORA-PROXY}.yml`, `docs/STAGING.md` | none |
 | `staging-frontend-isolation` | vitana-v1 | `.github/workflows/{STAGE,AWS-STAGE}-DEPLOY-FRONTEND.yml`, `.env.staging` | `staging-db-isolation` |
-| `staging-migrations-auto` | vitana-platform | `.github/workflows/RUN-MIGRATION.yml`, `.github/workflows/STAGING-MIGRATE.yml`, `scripts/aws/aurora-apply-migration.sh`, tests | `staging-db-isolation` |
+| `staging-migrations-auto` | vitana-platform | `.github/workflows/RUN-MIGRATION.yml`, `.github/workflows/STAGING-MIGRATE.yml`, `scripts/aws/staging-db-*.sh`, tests | `staging-db-isolation` |
 | `kiro-aws-access` | vitana-platform | `infra/kiro-access/**`, `.github/workflows/AWS-KIRO-ACCESS.yml`, `docs/KIRO-AWS-ACCESS.md` | none |
 
 Lanes that change a protected gate file (`rules-platform`, `rules-v1`, `machine-gate-protected`, `quarantine`,
@@ -180,7 +192,7 @@ owner instruction plus a reviewer-agent accept; after `machine-gate-protected` l
   and a fixture task-definition template (including `vitana/aurora/prod/postgrest-authenticator-uri`); provisioning workflow
   `--plan` mode prints no production ARN.
 - `staging-migrations-auto`: target `staging` never resolves to a production cluster, project ref or
-  `AWS_PROD_ROLE_ARN`; `aurora-apply-migration.sh` without `--cluster` fails; rollback path
+  `AWS_PROD_ROLE_ARN`; `staging-db-apply-migration.sh` without `--cluster`, or with `--cluster vitana-aurora-prod`, fails; rollback path
   covered with a failing fixture migration on a local Postgres.
 - `kiro-aws-access`: policy unit test: every production ARN in the pinned list is denied in `kiro-staging-operator`, the boundary blocks `iam:*` on the role itself, and the GitLab delete denies are present in `kiro-engineering-admin`.
 STAGING-VERIFY on each merge commit that deploys; `docs/validation/<VTID>/staging-tests.json` per lane.
