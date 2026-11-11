@@ -1,0 +1,13 @@
+{
+  "vtid": "VTID-05729",
+  "kind": "fix",
+  "paths": [
+    "services/gateway/src/routes/semantic-memory.ts",
+    "services/gateway/test/semantic-memory-auth.test.ts",
+    "services/gateway/test/routes/semantic-memory.test.ts",
+    "docs/validation/VTID-05729/**"
+  ],
+  "weakens_tests": [],
+  "red_green_exempt": [],
+  "sparring_record": ".kiro/specs/gateway-critical-route-auth/sparring/verdict.md"
+}
