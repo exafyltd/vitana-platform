@@ -27,10 +27,12 @@ Author: Claude Code, seat `claude`, session id recorded in handoff.md, 2026-11-1
 ## 2. Change (code lands only after this plan converges and a VTID is allocated)
 C1. The DeepSeek direct-API tier is OFF unless `PLAN_SPARRING_DEEPSEEK_FALLBACK_ENABLED` is exactly `true`.
     The default flips from on to off. `partner.ts` and `llm-defaults.ts` change together.
-C2. The Bedrock region has no default. With neither `AWS_BEDROCK_REGION` nor `AWS_REGION` set, the adapter returns
-    `not_configured` with the message "AWS_BEDROCK_REGION or AWS_REGION must be set (EU region)". It never falls back.
+C2. The Bedrock region has no default, in both `providers/bedrock.ts:148-150` and `services/dev-memory-embedding.ts:42-43`
+    (round 1, R1-F1). With neither `AWS_BEDROCK_REGION` nor `AWS_REGION` set, the adapter returns `not_configured` with the
+    message "AWS_BEDROCK_REGION or AWS_REGION must be set (EU region)". It never falls back.
 C3. Tests (red on base first): (a) with the flag unset, no deepseek tier is in `tiers`; (b) with the flag `true`, the tier
-    is present; (c) with both region variables unset, `bedrock.ts` returns `not_configured` and sends no request.
+    is present; (c) with both region variables unset, `bedrock.ts` and `dev-memory-embedding.ts` each return `not_configured`
+    and send no request.
 C4. Nothing else changes. D13 (Bedrock DeepSeek V3.2 in eu-north-1 versus the other options) is a follow-up plan.
 
 ## 3. Acceptance
