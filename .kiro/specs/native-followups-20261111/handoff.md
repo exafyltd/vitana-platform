@@ -3,9 +3,11 @@ slug: native-followups-20261111
 author: kiro
 executor: kiro
 next_actor: kiro
-state: drafted
+state: approved
 author_seat: exafyltd
-updated: 2026-11-11T12:40Z
+updated: 2026-11-11T12:56Z
+sparring_record: .kiro/specs/native-followups-20261111/sparring/verdict.md
+vtids: [VTID-05724, VTID-05725, VTID-05726, VTID-05727, VTID-05728]
 ---
 # Handoff — Native follow-ups (2026-11-11)
 
@@ -25,3 +27,6 @@ Evidence for both: `plan.md`.
 ## Log
 ### 2026-11-11T12:40Z · kiro-exafyltd-202611072144-1c88 · created → drafted
 Plan written and opened as a `plan(` PR for CI sparring.
+
+### 2026-11-11T12:56Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 5 lane(s) got a VTID and are handed to Kiro.

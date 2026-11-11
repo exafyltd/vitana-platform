@@ -12,7 +12,8 @@ repos: [exafyltd/vitana-v1]
 paths:
   - apps/mobile/tests/settings/i18n-rtl.test.tsx
   - docs/validation/**
-updated: 2026-11-11T12:40Z
+updated: 2026-11-11T12:56Z
+vtid: VTID-05724
 ---
 # Make `tests/settings/i18n-rtl.test.tsx` deterministic
 Plan: `.kiro/specs/native-followups-20261111/` — `plan.md` and the `tasks.md` section marked `<!-- lane: i18n-rtl-deterministic -->` are authoritative. VTID: assigned by CI after PLAN-SPAR converges; do not start before `vtid:` is set here.
@@ -26,3 +27,6 @@ Plan: `.kiro/specs/native-followups-20261111/` — `plan.md` and the `tasks.md` 
 ## Log
 ### 2026-11-11T12:40Z · kiro-exafyltd-202611072144-1c88 · ready
 Lane created with the plan.
+
+### 2026-11-11T12:56Z · ci-plan-spar · ready (VTID allocated)
+VTID-05724 allocated after policy approval (converged-auto-v1).

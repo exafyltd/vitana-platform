@@ -14,7 +14,8 @@ paths:
   - apps/mobile/tests/discover-commerce/routes.test.tsx
   - apps/mobile/tests/followups/my-groups/**
   - docs/validation/**
-updated: 2026-11-11T12:40Z
+updated: 2026-11-11T12:56Z
+vtid: VTID-05725
 ---
 # Make `/comm/my-groups/:id` resolve native
 Plan: `.kiro/specs/native-followups-20261111/` — `plan.md` and the `tasks.md` section marked `<!-- lane: my-groups-deeplink -->` are authoritative. VTID: assigned by CI after PLAN-SPAR converges; do not start before `vtid:` is set here.
@@ -28,3 +29,6 @@ Plan: `.kiro/specs/native-followups-20261111/` — `plan.md` and the `tasks.md` 
 ## Log
 ### 2026-11-11T12:40Z · kiro-exafyltd-202611072144-1c88 · ready
 Lane created with the plan.
+
+### 2026-11-11T12:56Z · ci-plan-spar · ready (VTID allocated)
+VTID-05725 allocated after policy approval (converged-auto-v1).
