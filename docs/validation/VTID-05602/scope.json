@@ -1,0 +1,7 @@
+{
+  "vtid": "VTID-05602",
+  "kind": "fix",
+  "paths": ["scripts/ci/staging-verify/manifest-drift.test.cjs", ".github/workflows/STAGING-TESTS-REQUIRED.yml", "docs/validation/VTID-05602/**"],
+  "sparring_record": ".kiro/specs/staging-verify-manifest-repair/sparring/verdict.md",
+  "red_green_exempt": [{"file": "scripts/ci/staging-verify/manifest-drift.test.cjs", "reason": "new test file: its red proof is outputs/baseline-red.txt, run on the current tree (check 1 red on the four remainder manifests)"}]
+}
