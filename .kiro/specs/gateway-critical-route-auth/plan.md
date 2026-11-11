@@ -32,7 +32,9 @@ Not authorised: production deploy or PUBLISH, secrets or repository variables, m
   with no auth; mounted at `/` (`index.ts:870`). In-repo callers send no Authorization:
   `services/autopilot-event-loop.ts:530-533`, the ORB tools through `gatewayApiCall`
   (`services/orb-tools/developer-tools.ts:112-117`, used by `vtid-lifecycle-tools.ts:364,428` and
-  `worker-orchestrator-tools.ts`); `mcp/vitana-work/src/lib/gateway-client.ts:89` sends `Bearer <apiKey>`. The
+  `worker-orchestrator-tools.ts:18,86`, which imports `gatewayApiCall` and posts to `/tasks/:vtid/release` at `:86`);
+  `mcp/vitana-work/src/lib/gateway-client.ts:89` sends `Bearer ${VITANA_API_KEY}` (`:73`), a developer-run MCP, not a
+  deployed service. `GATEWAY_SERVICE_TOKEN` is set on the staging gateway task (`AWS-STAGE-DEPLOY-GATEWAY.yml:1320`). The
   worker-runner has no source in the repo (AR-12). Existing gate: `requireServiceOrAdmin` and the in-process header
   `gatewayServiceAuthHeader()` (`middleware/require-service-or-admin.ts:64-106`).
 
@@ -69,13 +71,18 @@ Paths: `services/gateway/src/routes/payments-stripe-webhook.ts`, `services/gatew
 `autopilot-event-loop.ts:530` and `self-healing-reconciler.ts:164` add `...gatewayServiceAuthHeader()` to their fetch;
 `gatewayApiCall` (`orb-tools/developer-tools.ts:112-117`) adds the service header only when the normalised path starts
 with `/api/v1/worker/` (a caller's own `Authorization` wins), which covers `vtid-lifecycle-tools.ts:364,428` and
-`worker-orchestrator-tools.ts:86,135,174` without editing them. It is not added to every call: `gatewayApiCall` has
+`worker-orchestrator-tools.ts:86` without editing them. It is not added to every call: `gatewayApiCall` has
 about 250 call sites, many to routes behind `requireServiceOrAdmin` (e.g. `self-healing-tools.ts:63`), and a global
 default would give them service authority unseen. Tests: a worker path gets the header, a non-worker path and a
 `../` or `%2e%2e` escape do not. The existing suite `test/worker-orchestrator-await-autopilot.test.ts` sends the
 service token. Tests: each route no token → 401, service
 token → handler runs; the event-loop dispatch and `gatewayApiCall` send the header. The worker-runner (no source) is named
-in the PR body as a caller that must send the service token before production. No migration; the claim fail-open of
+in the PR body as a caller that must send the service token before production. The vitana-work MCP works only when
+`VITANA_API_KEY` is the service token or an exafy_admin JWT; that is stated in the MCP's README note in the PR body and
+in `acceptance.md` as a known change for developers, not fixed here (the MCP is outside this lane). When
+`GATEWAY_SERVICE_TOKEN` is unset, the event loop and the reconciler log one error per process
+(`[worker-orchestrator-auth] GATEWAY_SERVICE_TOKEN unset: orchestrator dispatch will get 401`) on their first dispatch,
+tested, so the misconfiguration is visible instead of a silent 401. No migration; the claim fail-open of
 `:1260-1264` stays with the autonomy-risk plan.
 Paths: `services/gateway/src/routes/worker-orchestrator.ts`, `services/gateway/src/services/autopilot-event-loop.ts`,
 `services/gateway/src/services/self-healing-reconciler.ts`, `services/gateway/src/services/orb-tools/developer-tools.ts`,
