@@ -1,6 +1,6 @@
 ---
 lane: mt-alignment
-state: in-review
+state: done
 next_actor: kiro
 claimed_by: kiro-exafy-202611110920-270b
 pr: https://github.com/exafyltd/vitana-platform/pull/4965
@@ -15,7 +15,7 @@ repos: [exafyltd/vitana-platform]
 paths:
   - docs/programs/strategy-execution/multi-tenant-alignment.md
   - docs/validation/VTID-*/**
-updated: 2026-11-11T16:30Z
+updated: 2026-11-11T18:30Z
 vtid: VTID-05717
 ---
 # Lane: mt-alignment (repo vitana-platform)
@@ -42,3 +42,10 @@ PR: https://github.com/exafyltd/vitana-platform/pull/4965
 Findings: (non-blocking) CI from the caller's REST read (11/11 success on d69e6a8a); land step confirms with land-guard checks.
 Findings: (non-blocking) check-citations.mjs checks that each cited file exists and the line is in range, not what the line says.
 Next: the land step merges under §7b
+
+### 2026-11-11T18:30Z · kiro-exafy-202611110920-270b · in-review → verified
+merge: 2fabaf5d3f41121c429d55763b4dfa1d49ba5243 (exafyltd/vitana-platform#4965)
+authority: §7b PM rule, applied by the plan driver through `land-guard.mjs merge` (review current on the PR head, every check green, up to date with main).
+
+### 2026-11-11T18:30Z · kiro-exafy-202611110920-270b · verified → done
+Docs-only lane; nothing deploys, so there is no STAGING-VERIFY. Done at merge with green checks. Production is unchanged until an owner PUBLISH.
