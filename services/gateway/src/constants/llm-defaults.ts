@@ -159,7 +159,7 @@ export function resolvePlanSparringLastResortModel(): string {
  * (plan sparring-eu-guard, C1).
  */
 export function isPlanSparringDeepseekFallbackEnabled(): boolean {
-  return process.env.PLAN_SPARRING_DEEPSEEK_FALLBACK_ENABLED === 'true';
+  return (process.env.PLAN_SPARRING_DEEPSEEK_FALLBACK_ENABLED ?? 'false') === 'true';
 }
 
 /**
