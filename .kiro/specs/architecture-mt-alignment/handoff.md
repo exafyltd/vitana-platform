@@ -21,3 +21,9 @@ only from PLAN-SPAR.
 
 ### 2026-11-11T11:41Z · ci-plan-spar · drafted → approved
 Converged; approved by policy converged-auto-v1. 2 lane(s) got a VTID and are handed to Kiro.
+
+### 2026-11-11T11:58Z · kiro-exafy-202611110920-270b · approved (recorded)
+PLAN-SPAR converged in round 2 with no finding, approved by policy converged-auto-v1 at 2026-11-11T11:39:06Z; VTID-05716
+(`arch-map-verify`, seat exafyltd = Kiro 3), VTID-05717 (`mt-alignment`, seat exafy = Kiro 2). `arch-map-verify` is the
+second-account pilot: it waits for a session of seat exafyltd; this session does not build it. Merge of this plan PR
+waits on GitHub `main` (blocked since 2026-11-08; the merge API answers 405).
