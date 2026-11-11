@@ -1,0 +1,17 @@
+{
+  "vtid": "VTID-05692",
+  "kind": "docs",
+  "paths": [
+    "docs/programs/strategy-execution/oasis-vtid-traceability.md",
+    "docs/validation/VTID-05692/**",
+    ".kiro/specs/strategy-execution-wave1/lanes/oasis-traceability.md"
+  ],
+  "sparring_record": ".kiro/specs/strategy-execution-wave1/sparring/verdict.md",
+  "weakens_tests": [],
+  "red_green_exempt": [
+    {
+      "file": "docs/programs/strategy-execution/oasis-vtid-traceability.md",
+      "reason": "docs-only lane: no behaviour, no test"
+    }
+  ]
+}
