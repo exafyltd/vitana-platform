@@ -1,0 +1,299 @@
+# VTID-05686 commands (strategy-execution-wave1/autonomy-risks). Local worktree, nothing committed or pushed.
+# No live system contacted, no database connected. Paths are repo-relative; worktree prefix removed.
+
+## 1. Pins
+$ git rev-parse HEAD
+6dc6e1ba0c18252ec2f3fbf5651d245e200f9835
+exit=0
+
+$ git rev-parse origin/main
+6dc6e1ba0c18252ec2f3fbf5651d245e200f9835
+exit=0
+
+## 2. Changed files (must all be inside the lane globs)
+$ git status --porcelain --untracked-files=all
+?? docs/programs/strategy-execution/autonomy-risk-register.md
+?? docs/validation/VTID-05686/acceptance.md
+?? docs/validation/VTID-05686/citation-check.mjs
+?? docs/validation/VTID-05686/commands.log
+?? docs/validation/VTID-05686/scope.json
+exit=0
+
+## 3. Absences stated in AR-12
+$ ls services/worker-runner; ls .github/workflows/AWS-PROD-DEPLOY-WORKER-RUNNER.yml; ls .github/workflows/EXEC-DEPLOY.yml
+ls: cannot access 'services/worker-runner': No such file or directory
+ls: cannot access '.github/workflows/AWS-PROD-DEPLOY-WORKER-RUNNER.yml': No such file or directory
+ls: cannot access '.github/workflows/EXEC-DEPLOY.yml': No such file or directory
+exit=2
+
+$ ls services/
+agents
+erp-bridge
+gateway
+kiro-runner
+mcp
+mcp-gateway
+oasis-operator
+oasis-projector
+openclaw-bridge
+postgrest-aurora-proxy
+realtime-aurora
+vaea
+validators
+vcaop
+vcaop-mcp
+exit=0
+
+$ find services -maxdepth 3 -iname '*dispatcher*' -not -path '*/node_modules/*'
+exit=0
+
+$ find services/gateway/src -iname '*dispatcher*' -not -path '*/node_modules/*'
+services/gateway/src/connectors/runtime/dispatcher-repository.ts
+services/gateway/src/connectors/runtime/dispatcher.ts
+services/gateway/src/services/orchestrator/dispatcher.ts
+exit=0
+
+$ grep -n 'worker-runner' .claude/rules/infrastructure.md config/delivery/services.json
+.claude/rules/infrastructure.md:59:| worker-runner | VTID-03411 | ECS service `vitana-worker-runner`, fixed `desiredCount` | No public ALB/DNS — polls outward to gateway; verify via ECS `healthStatus` (`/alive`) | `AWS-PROD-DEPLOY-WORKER-RUNNER.yml` |
+.claude/rules/infrastructure.md:135:- **Never** autoscale `oasis-projector`, `worker-runner`, or
+exit=0
+
+$ grep -rn 'REVOKE.*claim_vtid_task' supabase/migrations
+exit=1
+
+$ grep -c -i tenant services/gateway/src/services/dev-autopilot-retry-breaker.ts services/gateway/src/services/dev-autopilot-scanner-breaker.ts
+services/gateway/src/services/dev-autopilot-retry-breaker.ts:0
+services/gateway/src/services/dev-autopilot-scanner-breaker.ts:0
+exit=1
+
+## 4. Anchor check: the cited line contains the code the register describes
+ok   services/gateway/src/services/self-healing-snapshot-service.ts:17
+ok   services/gateway/src/services/self-healing-snapshot-service.ts:66
+ok   services/gateway/src/services/self-healing-snapshot-service.ts:78
+ok   services/gateway/src/services/self-healing-snapshot-service.ts:117
+ok   services/gateway/src/services/self-healing-snapshot-service.ts:234
+ok   services/gateway/src/services/self-healing-snapshot-service.ts:266
+ok   services/gateway/src/services/self-healing-snapshot-service.ts:364
+ok   services/gateway/src/services/self-healing-snapshot-service.ts:395
+ok   services/gateway/src/services/self-healing-snapshot-service.ts:416
+ok   services/gateway/src/services/self-healing-snapshot-service.ts:446
+ok   services/gateway/src/services/self-healing-snapshot-service.ts:462
+ok   services/gateway/src/services/self-healing-snapshot-service.ts:465
+ok   services/gateway/src/services/self-healing-diagnosis-service.ts:247
+ok   services/gateway/src/services/autopilot-event-loop.ts:877
+ok   services/gateway/src/services/autopilot-event-loop.ts:903
+ok   services/gateway/src/services/autopilot-event-loop.ts:909
+ok   services/gateway/src/services/autopilot-event-loop.ts:924
+ok   services/gateway/src/services/autopilot-event-loop.ts:931
+ok   services/gateway/src/routes/worker-orchestrator.ts:1263
+ok   services/gateway/src/routes/worker-orchestrator.ts:1264
+ok   supabase/migrations/20260413000000_fix_claim_accepts_scheduled.sql:38
+ok   supabase/migrations/20260117000000_vtid_01183_worker_agent_connector.sql:366
+ok   services/gateway/src/routes/self-healing.ts:143
+ok   services/gateway/src/routes/self-healing.ts:152
+ok   services/gateway/src/services/self-healing-injector-service.ts:36
+ok   services/gateway/src/services/voice-self-healing-adapter.ts:301
+ok   services/gateway/src/routes/self-healing.ts:480
+ok   services/gateway/src/routes/self-healing.ts:495
+ok   scripts/ci/report-to-self-healing.sh:59
+ok   scripts/ci/report-to-self-healing.sh:61
+ok   services/gateway/src/routes/operator.ts:2202
+ok   services/gateway/src/routes/operator.ts:2206
+ok   services/gateway/src/routes/operator.ts:2210
+ok   services/gateway/src/routes/operator.ts:2372
+ok   services/gateway/src/routes/operator.ts:2384
+ok   services/gateway/src/routes/operator.ts:2387
+ok   services/gateway/src/index.ts:1808
+ok   services/gateway/src/index.ts:2135
+ok   services/gateway/src/services/routine-runner/runner.ts:66
+ok   services/gateway/src/index.ts:2279
+ok   services/gateway/src/index.ts:2293
+ok   services/gateway/src/env.ts:89
+ok   services/gateway/src/services/self-healing-reconciler.ts:282
+ok   services/gateway/src/services/voice-synthetic-probe.ts:76
+ok   services/gateway/src/types/cicd.ts:823
+ok   .claude/rules/infrastructure.md:59
+ok   .github/workflows/AUTO-DEPLOY.yml:29
+ok   services/gateway/src/services/orchestrator/dispatcher.ts:2
+ok   services/gateway/src/connectors/runtime/dispatcher.ts:2
+ok   services/vcaop/README.md:4
+ok   CLAUDE.md:286
+ok   CLAUDE.md:306
+ok   CLAUDE.md:201
+anchors: 53, failures: 0
+
+## 5. Citation check (every path:line exists with enough lines), then a mutation of the checker
+$ node docs/validation/VTID-05686/citation-check.mjs . docs/programs/strategy-execution/autonomy-risk-register.md
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:14 services/gateway/src/services/self-healing-injector-service.ts:31-36
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:15 services/gateway/src/index.ts:2135
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:16 services/gateway/src/services/routine-runner/runner.ts:66
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:17 services/gateway/src/routes/worker-orchestrator.ts:1260-1264
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:34 services/gateway/src/index.ts:1808
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:34 services/gateway/src/services/autopilot-event-loop.ts:1104,1214
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:35 services/gateway/src/index.ts:2135
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:35 services/gateway/src/services/routine-runner/runner.ts:66
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:36 services/gateway/src/index.ts:2279
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:37 services/gateway/src/index.ts:2293
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:38 services/gateway/src/routes/worker-orchestrator.ts:1233-1242
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:38 services/gateway/src/services/autopilot-event-loop.ts:865,902-910
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:39 services/gateway/src/routes/self-healing.ts:108-137
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:39 services/gateway/src/routes/self-healing.ts:258
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:39 services/gateway/src/routes/self-healing.ts:267
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:52 services/gateway/src/services/self-healing-snapshot-service.ts:66,71,78
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:52 services/gateway/src/services/self-healing-snapshot-service.ts:225
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:52 services/gateway/src/services/self-healing-snapshot-service.ts:232-234
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:52 services/gateway/src/services/self-healing-snapshot-service.ts:241
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:52 services/gateway/src/routes/self-healing.ts:480,484
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:52 services/gateway/src/services/self-healing-reconciler.ts:282,289-291
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:52 services/gateway/src/services/voice-synthetic-probe.ts:76
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:52 services/gateway/src/services/self-healing-reconciler.ts:241-243
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:53 services/gateway/src/services/self-healing-snapshot-service.ts:17
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:53 services/gateway/src/services/self-healing-snapshot-service.ts:71
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:53 services/gateway/src/routes/self-healing.ts:1096,1112
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:53 services/gateway/src/services/autopilot-event-loop.ts:351-353
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:53 services/gateway/src/env.ts:86-90
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:53 services/gateway/src/services/self-healing-reconciler.ts:39
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:53 services/gateway/src/services/voice-synthetic-probe.ts:35
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:53 CLAUDE.md:292-297
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:54 services/gateway/src/services/self-healing-snapshot-service.ts:364-473
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:54 services/gateway/src/services/self-healing-snapshot-service.ts:370
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:54 services/gateway/src/services/self-healing-snapshot-service.ts:395
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:54 services/gateway/src/services/self-healing-snapshot-service.ts:413-416
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:54 services/gateway/src/services/self-healing-snapshot-service.ts:431
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:54 services/gateway/src/services/self-healing-snapshot-service.ts:445
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:54 services/gateway/src/services/self-healing-snapshot-service.ts:462
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:54 services/gateway/src/services/self-healing-snapshot-service.ts:117
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:54 services/gateway/src/services/self-healing-snapshot-service.ts:288
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:54 services/gateway/src/routes/self-healing.ts:1122,1156
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:54 services/gateway/src/routes/ops-action-required.ts:163,203
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:54 services/gateway/src/services/self-healing-snapshot-service.ts:266
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:55 services/gateway/src/services/self-healing-snapshot-service.ts:460-472
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:55 services/gateway/src/types/cicd.ts:822-823
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:55 services/gateway/src/types/cicd.ts:835
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:57 services/gateway/src/index.ts:1808
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:57 services/gateway/src/services/autopilot-event-loop.ts:872-882
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:57 services/gateway/src/services/autopilot-event-loop.ts:902-910
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:57 services/gateway/src/services/autopilot-event-loop.ts:913-931
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:58 services/gateway/src/routes/worker-orchestrator.ts:1260-1264
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:58 services/gateway/src/routes/worker-orchestrator.ts:1290
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:58 supabase/migrations/20260413000000_fix_claim_accepts_scheduled.sql:36-64
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:58 supabase/migrations/20260413000000_fix_claim_accepts_scheduled.sql:66-74
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:58 supabase/migrations/20260117000000_vtid_01183_worker_agent_connector.sql:366
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:58 services/gateway/src/routes/worker-orchestrator.ts:1233-1242
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:59 services/gateway/src/routes/self-healing.ts:143-175
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:59 services/gateway/src/services/self-healing-injector-service.ts:31-36
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:59 services/gateway/src/services/dev-autopilot-retry-breaker.ts:1-37
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:59 services/gateway/src/services/dev-autopilot-scanner-breaker.ts:12,72
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:59 services/gateway/src/services/voice-self-healing-adapter.ts:301
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:60 services/gateway/src/routes/self-healing.ts:402
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:60 services/gateway/src/routes/self-healing.ts:480-484
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:60 services/gateway/src/routes/self-healing.ts:487-497
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:60 scripts/ci/report-to-self-healing.sh:55-61
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:61 services/gateway/src/routes/operator.ts:2274-2278
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:61 services/gateway/src/routes/operator.ts:2279-2282
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:61 services/gateway/src/routes/operator.ts:2366-2377
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:61 services/gateway/src/routes/operator.ts:2382-2387
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:61 services/gateway/src/routes/operator.ts:2362-2364
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:61 services/gateway/src/routes/operator.ts:2387
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:61 .claude/rules/infrastructure.md:397-418
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:62 services/gateway/src/routes/operator.ts:2202-2206
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:62 services/gateway/src/routes/operator.ts:2207-2219
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:62 services/gateway/src/routes/operator.ts:2202-2204
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:62 CLAUDE.md:286-289
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:62 CLAUDE.md:303-307
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:63 .claude/rules/infrastructure.md:59
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:63 .github/workflows/AUTO-DEPLOY.yml:29,164,205-220
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:63 services/kiro-runner/src/index.ts:1-3
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:63 services/gateway/src/services/orchestrator/dispatcher.ts:1-12
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:63 services/gateway/src/connectors/runtime/dispatcher.ts:1-10
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:63 services/vcaop/README.md:1-4
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:64 services/gateway/src/services/self-healing-snapshot-service.ts:445-451
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:64 services/gateway/src/routes/worker-orchestrator.ts:1087-1099
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:64 services/gateway/src/routes/self-healing.ts:150-153
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:69 CLAUDE.md:201
+ok   docs/programs/strategy-execution/autonomy-risk-register.md:91 services/gateway/src/index.ts:2279,2293
+citations: 88, failures: 0
+exit=0
+
+$ D=$(mktemp -d); sed 's#services/gateway/src/index.ts:1808#services/gateway/src/index.ts:99999#' docs/programs/strategy-execution/autonomy-risk-register.md > $D/m.md; printf '%s\n' '`services/does-not-exist.ts:1`' >> $D/m.md; node docs/validation/VTID-05686/citation-check.mjs . $D/m.md | grep -E '^FAIL|^citations'; ec=${PIPESTATUS[0]}; rm -rf $D; exit $ec
+FAIL <tmpdir>/m.md:34 services/gateway/src/index.ts:99999 (file has 2422 lines)
+FAIL <tmpdir>/m.md:57 services/gateway/src/index.ts:99999 (file has 2422 lines)
+FAIL <tmpdir>/m.md:108 services/does-not-exist.ts:1 (file missing)
+citations: 89, failures: 3
+exit=1
+
+## 6. Row and column check
+$ grep -c '^| \*\*AR-' docs/programs/strategy-execution/autonomy-risk-register.md; grep '^| \*\*AR-' docs/programs/strategy-execution/autonomy-risk-register.md | sed 's/[\][|]//g' | awk -F'|' '{print $2" cells="NF-2}' | sed 's/\*\*//g'
+13
+ AR-01 (a) No exact-sensor verification of a repair [final review row 7]  cells=11
+ AR-02 (b) Verifier `GATEWAY_URL` defaults to production [SB-CON-04]  cells=11
+ AR-03 (c) Rollback reported without a rollback mechanism [SB-CON-05, final review row 9]  cells=11
+ AR-04 (c, event type) `self-healing.rollback.completed` is emitted when only a request was recorded (plan §4.3)  cells=11
+ AR-05 (d) `SH-FALLBACK-<ts>` id when VTID allocation fails [SB-CON-06, row 10]  cells=11
+ AR-06 (e) Event Loop cursor drops events [SB-CON-07, row 11]  cells=11
+ AR-07 (f) Worker claim fails open [SB-CON-08, row 12]  cells=11
+ AR-08 (g) Dedupe and breakers ignore tenant [SB-CON-10, row 13]  cells=11
+ AR-09 (h) Workflow alert sensors rejected; sender cannot fail [SB-CON-11, row 14]  cells=11
+ AR-10 (i) Publish recorded as success at dispatch [SB-CON-02, row 15]  cells=11
+ AR-11 (k) PUBLISH not gated on STAGING-VERIFY by owner decision, against rules 46 and 50 [SB-CON-01, SB-CON-16, row 17]  cells=11
+ AR-12 (j) Worker-runner has no source or deploy workflow; no Dispatcher service [SB-CON-12, SB-CON-21, rows 16 and 31]  cells=11
+ AR-13 (found) Rollback replaces ledger `metadata`  cells=11
+exit=0
+
+## 7. Wording check: no recommendation to enable, arm, activate or raise an autonomy setting
+$ grep -n -i -E 'enabl|activat|arm(ed|ing)? |raise' docs/programs/strategy-execution/autonomy-risk-register.md | cut -c1-220
+15:- `services/gateway/src/index.ts:2135` is a comment; the `ROUTINE_RUNNER_ENABLED` check itself is
+34:| `AUTOPILOT_LOOP_ENABLED` | `services/gateway/src/index.ts:1808` (`=== 'true'`); also `services/gateway/src/services/autopilot-event-loop.ts:1104,1214` | Off | Legacy Event Loop (AR-05) does not start |
+35:| `ROUTINE_RUNNER_ENABLED` | Comment at `services/gateway/src/index.ts:2135`; the check is `services/gateway/src/services/routine-runner/runner.ts:66` (`!== 'true'` refuses) | Off | Daily routines do not run; the comm
+36:| `DEV_AUTOPILOT_EXECUTOR_ENABLED` | `services/gateway/src/index.ts:2279` (`!== 'false'`) | **On** | Dev Autopilot background executor starts |
+37:| `DEV_AUTOPILOT_WATCHERS_ENABLED` | `services/gateway/src/index.ts:2293` (`!== 'false'`) | **On** | Dev Autopilot watchers start |
+38:| `autopilot_execution_enabled` control (EXECUTION_DISARMED) | Checked before a worker claim, `services/gateway/src/routes/worker-orchestrator.ts:1233-1242`, and by the Event Loop, `services/gateway/src/services/autop
+55:| **AR-04 (c, event type)** `self-healing.rollback.completed` is emitted when only a request was recorded (plan §4.3) | **Critical** (same harm as AR-03, and it persists in the event history even after the mechanism i
+57:| **AR-06 (e)** Event Loop cursor drops events [SB-CON-07, row 11] | **High** while the loop is off; **critical before** `AUTOPILOT_LOOP_ENABLED` is ever set | Verified implemented, not operational; off by default (`s
+58:| **AR-07 (f)** Worker claim fails open [SB-CON-08, row 12] | **Critical**: two writers on one VTID (the VTID-03516 failure) | Verified implemented, not operational. The claim route reads the ledger row; if the read f
+66:## 3. Order before any broader autonomy activation
+68:This section orders fixes. It does not recommend activating anything: every autonomy flag, control and level stays as
+72:the self-healing autonomy level, arming execution for more producers, enabling the Event Loop, or adding autonomous
+83:4. **AR-06, Event Loop cursor.** This is critical only if the loop is to run. While `AUTOPILOT_LOOP_ENABLED` stays off it
+90:Two defaults stay on today and are not changed by this register: `DEV_AUTOPILOT_EXECUTOR_ENABLED` and
+91:`DEV_AUTOPILOT_WATCHERS_ENABLED` (`services/gateway/src/index.ts:2279,2293`). Their live values are Unknown. The
+exit=0
+
+$ grep -c '—' docs/programs/strategy-execution/autonomy-risk-register.md
+0
+exit=1
+
+## 8. Evidence validity and collab tests
+$ node -e "import('./scripts/ci/pr-gate/lib.mjs').then(m=>{const e=m.validateScope(JSON.parse(require('fs').readFileSync('docs/validation/VTID-05686/scope.json','utf8')),'VTID-05686');console.log(e.length?e:'validateScope: ok');process.exit(e.length?1:0)})"
+validateScope: ok
+exit=0
+
+$ node -e "const {checkAcceptanceMapping}=require('./scripts/ci/validate-pr-locally.cjs');const r=checkAcceptanceMapping('docs/validation/VTID-05686/acceptance.md');console.log(r.messages.join('\n'));process.exit(r.code)"
+Acceptance mapping OK
+exit=0
+
+$ node --test scripts/collab/*.test.mjs 2>&1 | grep -E '^# (tests|pass|fail|skipped)'
+# tests 257
+# pass 256
+# fail 0
+# skipped 1
+exit=0
+
+## 9. PR-GATE scope rule on the working-tree change list (offline stand-in for preflight; see note)
+$ node -e "import('./scripts/ci/pr-gate/lib.mjs').then(m=>{const cp=require('child_process');const changed=cp.execSync('git status --porcelain --untracked-files=all').toString().split('\n').filter(Boolean).map(l=>l.slice(3));const scopes={'VTID-05686':JSON.parse(require('fs').readFileSync('docs/validation/VTID-05686/scope.json','utf8'))};const r=m.evaluateScope({vtids:['VTID-05686'],scopes,changed});console.log(JSON.stringify({changed,...r}));process.exit(r.ok?0:1)})"
+{"changed":["docs/programs/strategy-execution/autonomy-risk-register.md","docs/validation/VTID-05686/acceptance.md","docs/validation/VTID-05686/citation-check.mjs","docs/validation/VTID-05686/commands.log","docs/validation/VTID-05686/scope.json"],"ok":true,"outside":[],"missing":[]}
+exit=0
+
+$ node --test scripts/ci/kiro-steering/guard.test.cjs 2>&1 | grep -E '^# (tests|pass|fail)'
+# tests 67
+# pass 67
+# fail 0
+exit=0
+
+$ node scripts/ci/kiro-steering/guard.cjs .
+kiro-steering: OK
+exit=0
+
+# Note: scripts/collab/preflight.mjs was not run. It diffs --base..--head commits (this lane is uncommitted by
+# instruction) and calls gh for plan( PR lane files (a live GitHub read, excluded by instruction). Its offline
+# parts are run above: Collab tests (step 8), PR-GATE scope (step 9), Kiro steering guard (step 9).
