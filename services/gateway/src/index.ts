@@ -2021,6 +2021,20 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         console.warn('⚠️ VTNA reward sweep loop initialization failed (non-fatal):', error);
       }
 
+      // VTID-05718: chat burst sweep — sends one push per held chat burst (every 5 s). ECS only: it reads and
+      // writes the same user_notifications rows the other gateway tasks use, which is safe across tasks.
+      try {
+        const { startChatBurstSweep } = require('./services/chat-burst-sweep');
+        const { getSupabase } = require('./lib/supabase');
+        if (startChatBurstSweep(getSupabase)) {
+          console.log('💬 Chat burst sweep started (VTID-05718)');
+        } else {
+          console.log('⏸️ Chat burst sweep not started (coalescing or hold disabled)');
+        }
+      } catch (error) {
+        console.warn('⚠️ Chat burst sweep initialization failed (non-fatal):', error);
+      }
+
       // VTID-04982: Rewards shop — releases unpaid shipping holds every 5 minutes
       // (backstop for checkout.session.expired). ECS only; never on staging.
       try {

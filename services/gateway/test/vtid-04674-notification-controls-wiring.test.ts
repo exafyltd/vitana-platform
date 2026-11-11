@@ -156,8 +156,13 @@ describe('source contracts', () => {
       }
     };
     walk(root);
-    // The two gated routes; a new one must add the switch check and be listed here.
-    expect(offenders.sort()).toEqual([path.join('routes', 'scheduled-notifications.ts'), path.join('services', 'reminders-dispatch.ts')]);
+    // The gated routes; a new one must add the switch check and be listed here.
+    // VTID-05718: chat-burst-sweep.ts sends held chat bursts and checks isNotificationTypeAllowed before dispatchPush.
+    expect(offenders.sort()).toEqual([
+      path.join('routes', 'scheduled-notifications.ts'),
+      path.join('services', 'chat-burst-sweep.ts'),
+      path.join('services', 'reminders-dispatch.ts'),
+    ]);
   });
 });
 
