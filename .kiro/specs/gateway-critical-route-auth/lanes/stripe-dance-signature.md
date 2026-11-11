@@ -1,7 +1,9 @@
 ---
 lane: stripe-dance-signature
-state: ready
+state: in-review
 next_actor: kiro
+claimed_by: kiro-exafy-202611110920-270b
+pr: https://github.com/exafyltd/vitana-platform/pull/4973
 branch: kiro/gateway-critical-route-auth/stripe-dance-signature
 depends_on: []
 executor: kiro
@@ -16,7 +18,7 @@ paths:
   - services/gateway/test/payments-stripe-dance-signature.test.ts
   - services/gateway/test/routes/payments-stripe-webhook.test.ts
   - docs/validation/VTID-*/**
-updated: 2026-11-11T13:18Z
+updated: 2026-11-11T16:30Z
 vtid: VTID-05730
 ---
 # Lane: stripe-dance-signature (repo vitana-platform)
@@ -28,3 +30,6 @@ Lane created with the plan.
 
 ### 2026-11-11T13:18Z · ci-plan-spar · ready (VTID allocated)
 VTID-05730 allocated after policy approval (converged-auto-v1).
+
+### 2026-11-11T16:30Z · kiro-exafy-202611110920-270b · ready → executing → in-review
+Built in PR #4973; plan on `main`. Waiting for the reviewer agent.
