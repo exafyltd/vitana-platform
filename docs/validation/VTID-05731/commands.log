@@ -140,3 +140,7 @@ $ npx jest test/self-healing-reconciler-autopilot-link.test.ts test/vtid-04636-r
 
 $ npx tsc --noEmit --preserveSymlinks
 # -> outputs/tsc-gateway.txt: EXIT_CODE=0
+
+# CLAUDE.md 42e: operator pipeline regression suite on the lane code (2026-11-11)
+$ cd services/gateway && npm run test:operator
+# -> 1 suite, 71 passed of 71, exit 0 (outputs/jest-operator-regression.txt)
