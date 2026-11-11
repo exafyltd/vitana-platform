@@ -3,9 +3,9 @@ slug: staging-verify-runner-fix
 author: kiro
 executor: kiro
 next_actor: kiro
-state: approved
+state: done
 author_seat: exafyltd
-updated: 2026-10-22T12:20Z
+updated: 2026-11-11T12:09Z
 spar_refs:
   - exafyltd/vitana-v1: main
 sparring_record: .kiro/specs/staging-verify-runner-fix/sparring/verdict.md
@@ -47,3 +47,10 @@ serves `13bd83a0c`. The valid trigger is a staging deploy of vitana-v1 `main` (`
 push or `workflow_dispatch`), which dispatches STAGING-VERIFY for the deployed commit itself. Agents do not dispatch
 it (§7a), so it comes from the next app merge or from the owner.
 Next: STAGING-VERIFY community-app on the first staging deploy at or after `3b446e6f`; then Gate 2.
+### 2026-11-11T12:09Z · session_01Cp885JNj3BnQzQqwppFc9t · approved → done
+Plan closed. Merged: vitana-platform#4309 (plan, 2026-10-22T11:21:46Z), vitana-platform#4311 (runner, 2026-10-22T11:41:33Z), vitana-v1#1491 (manifests, 2026-10-22T12:12:46Z). Lanes `runner` and `manifests` done. The STAGING-VERIFY result for the verified commit is not checked in this record; Gate 2 for VTID-05330 is not sent from this entry.
+### 2026-11-11T12:09Z · session_01Cp885JNj3BnQzQqwppFc9t · stale release (logged)
+Stale-claim release: `queue.mjs release staging-verify-runner-fix/_plan --session session_01Cp885JNj3BnQzQqwppFc9t --stale` ran; the ref delete was refused by the session's git proxy (HTTP 403, policy denial), so `collab-claim/staging-verify-runner-fix/_plan` (held by kiro-exafyltd-202610220818-5273, ~480 h old) is still on origin. Not retried. Needs a delete by someone with ref-delete rights.
+Stale-claim release (runner): `queue.mjs release staging-verify-runner-fix/runner --session session_01Cp885JNj3BnQzQqwppFc9t --stale` ran; the ref delete was refused by the session's git proxy (HTTP 403, policy denial), so `collab-claim/staging-verify-runner-fix/runner` (held by kiro-exafyltd-202610220818-5273, ~480 h old) is still on origin. Not retried. Needs a delete by someone with ref-delete rights.
+Stale-claim release (manifests): `queue.mjs release staging-verify-runner-fix/manifests --session session_01Cp885JNj3BnQzQqwppFc9t --stale` ran; the ref delete was refused by the session's git proxy (HTTP 403, policy denial), so `collab-claim/staging-verify-runner-fix/manifests` (held by kiro-exafyltd-202610220818-5273, ~480 h old) is still on origin. Not retried. Needs a delete by someone with ref-delete rights.
+Driver heartbeat `collab-driver/staging-verify-runner-fix`: `git push origin --delete` refused the same way (HTTP 403); still on origin.
