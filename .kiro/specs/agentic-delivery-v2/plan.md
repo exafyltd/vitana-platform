@@ -63,7 +63,7 @@ GitHub, §6.1), skips sparring, and goes from first push to staging verified in 
 ## 2. Owner decisions (2026-11-11, final) and where they land
 | # | Decision | In this plan |
 |---|---|---|
-| D1 | A separate test database for write flows and the live voice test. Until it exists those checks stay BLOCKED, and Gate 2 says so | §13.3; Wave 2 lane `test-database` |
+| D1 | A separate test database for write flows and the live voice test: an Aurora clone made by `AWS-REHEARSAL-AURORA-CLONE`, not a Supabase project (owner answer 2026-11-11). Until it exists those checks stay BLOCKED, and Gate 2 says so | §13.3; Wave 2 lane `test-database` |
 | D2 | Only additive migrations are automatic, after a dry run on an Aurora copy; everything else waits for Gate 2 | §18; Wave 2 lane `migration-autoapply`. Until it lands, `collaboration.md` §7d applies unchanged |
 | D3 | Protected files: two Bedrock reviews, no owner sign-off | `review-service` (class P needs two accepts), `rules-platform`, `rules-v1`. Until they land §3a applies; the owner's instruction naming this plan covers this plan's own protected files |
 | D4 | Keep DeepSeek as the last tier of the sparring and review chains | §14.3 (conflict D13) |
@@ -72,17 +72,19 @@ GitHub, §6.1), skips sparring, and goes from first push to staging verified in 
 | D7 | Seats: keep `exafy`, `exafyltd`, `jtadic`, `hotmail`; add 8 for Kiro 4–11; names only | lanes `seats`, `gitlab-accounts` |
 | D8 | A dispatcher replaces the hourly wake-ups | Wave 2 lanes `dispatch`, `runner-launch` |
 | D11 | Phase 0 starts immediately | §17 |
-| D12 | Opus 5.5 and Sonnet 5.5 for the delivery stages; Opus 4.6 and Sonnet 4.6 when 5.5 is not available on quota; record the model that served each call | §14 |
+| D12 | Opus 5.5 and Sonnet 5.5 for the delivery stages; Opus 4.6 and Sonnet 4.6 when 5.5 is not available on quota; record the model that served each call. Sonnet 5.5 adopted (owner, 2026-11-11) | §14; quota in §14.1 |
 | D14 | The bridge is the GitHub-kept list of `agentic-delivery` §2.2. Nothing else stays on GitHub; nothing new is built on GitHub (owner, 2026-11-11) | §6.1 (bridge table); lanes `vtid-on-pr`, `review-workflow`, `review-dispatch-v1` withdrawn |
 | D9 (open) | Lifetime of the GitLab token in each Kiro integration | default stays 90 days with rotation at 30 left, which breaks the integration about every 60 days (§10) |
 | D10 (open) | Shape of the cut | the approved hard cut stays |
-| **D13 (open)** | **D4 and D5 conflict: DeepSeek's endpoint is outside the EU** | **§14.3, recommendation given; must be answered before this plan converges** |
+| D13 (open) | D4 and D5 conflict: DeepSeek's endpoint is outside the EU. It does not block the pipeline (owner, 2026-11-11) | §14.3; recommendation given, option A is offered in `eu-north-1` |
+| D15 | The Aurora cutover date is set jointly by the owner and Claude Code from migration progress, as soon as possible; Kiro reports the progress data and never sets the date | §9.1; progress table in `handoff.md` |
+| D16 | No new code calls Supabase directly: no new Supabase REST, RPC or client call and no new Supabase project (Supabase is being shut down). Every database write goes through a gateway API (ALWAYS 25); the database target comes from one config value | §9.1 |
 
 ## 3. Corrections to the previous draft
 | # | Item | Correct statement and evidence |
 |---|---|---|
 | C1 | `frontendSimpleViolations` location and effect | v1 `scripts/ci/pr-gate/lib.mjs:244`, not `:217` (`:217` is the comment header). It **only reports**: premise 2. A diff that breaks the class shows a warning in the PR-GATE summary and still merges. |
-| C2 | Pipeline 229 (vitana/vitana-platform, job `gateway-jest` 4/4, job 1084) | The job log cannot be read from a Kiro Web session: the Kiro GitLab connection answers 403 and direct HTTPS to `gitlab.vitanaland.com` needs a credential the session does not have. The same command (premise 5) run locally at `6dc6e1ba0c` (the newest `main`, 2026-11-08): 443 suites, 6,506 tests, 0 failed, 4 skipped, 43 s. The failing test is therefore not named here: either pipeline 229 ran another commit or the failure is environmental, as in pipelines 154/155 (`jq` missing, lane `runner-pin-jq`). It is read with `GET /api/v4/projects/2/jobs/1084/trace` by an account that can read the project (Phase 0 item P4). |
+| C2 | Pipeline 229 (vitana/vitana-platform, job `gateway-jest` 4/4, job 1084) | **Not known yet: the job log has not been read.** The Kiro GitLab connection answers 403, and direct HTTPS to `gitlab.vitanaland.com` needs a credential the session does not have. The same command (premise 5) run locally at `6dc6e1ba0c` (2026-11-08): 443 suites, 6,506 tests, 0 failed, 4 skipped, 43 s. Two hypotheses, neither verified: pipeline 229 ran another commit, or the failure was environmental, as in pipelines 154/155 (`jq` missing, lane `runner-pin-jq`). The failing test is named once `GET /api/v4/projects/2/jobs/1084/trace` is read by an account that can read the project (Phase 0 P4). |
 | C3 | "63% of `main` commits are bookkeeping" | Reproduced on a full, non-shallow clone of `exafyltd/vitana-platform`, fetched 2026-11-11 10:43 UTC, `origin/main` = `6dc6e1ba0c18252ec2f3fbf5651d245e200f9835`: 396 of 625 first-parent commits between 2026-10-11 and 2026-11-10 touch only `.kiro/specs/`, `docs/validation/` or `docs/programs/` (63.4%). Command in §4. A count of 10 of 38 does not come from this history (704 commits in the window without `--first-parent`); it fits a shallow clone or another repository's history, such as the GitLab copy. |
 | C4 | "Kiro Web pushes directly to GitLab" | **Open assumption A1, unverified.** Kiro's documentation describes a GitLab integration for instances reachable from the internet ([Kiro: GitLab](https://kiro.dev/docs/web/gitlab/)), and `gitlab.vitanaland.com` is internet-facing (`terraform/main.tf:225-227,528`), but this session's GitLab connection answers 403 for both projects. **The GitHub bridge stays for every seat until A1 is verified** (Phase 0 P5). |
 | C5 | Seat names | Keep `exafy`, `exafyltd`, `jtadic`, `hotmail` (no renames). Add `delta`, `echo`, `foxtrot`, `golf`, `hotel`, `india`, `juliet`, `kilo` (letters only, at most 12, `SEAT_RE`). Claude Code is seat `claude` (executor `claude`). |
@@ -231,7 +233,7 @@ PR as today (R1-F1).
 seats, two lanes with the same hot key never at once.
 
 **Gate 2 content:** the VTIDs, the verified commit, every commit between production and it, test counts, visual and voice
-results with each gap and its reason (D1: write flows and the live voice test BLOCKED until the test database exists),
+results with each gap and its reason (D1: write flows and the live voice test BLOCKED until the Aurora clone and its test instance exist),
 protected files changed, migrations applied and pending (D2), the model that served each review and sparring call
 (D12), OASIS links, decisions taken.
 
@@ -254,6 +256,39 @@ protected files changed, migrations applied and pending (D2), the model that ser
 - **Production allocate auth:** companion plan `privacy-ledger-auth`, lane `ledger-auth-enforce`; the flip is the
   owner's command.
 - **OASIS:** after the cut every step writes its event with its VTID and a `dedupe_key` (`agentic-delivery` §3.11).
+
+### 9.1 Database target (D16, owner 2026-11-11)
+- No new code in this plan calls Supabase directly: no new Supabase REST, RPC or client call, no new Supabase project.
+  Every database write it adds goes through a gateway API (ALWAYS 25) with `GATEWAY_SERVICE_TOKEN`.
+- **The one config value.** A pipeline step names only the gateway: repository variable `PLAN_SPAR_GATEWAY_URL`, read as
+  env `GATEWAY_URL` (default `https://preview-aws-gateway.vitanaland.com`; `PLAN-SPAR.yml:92`, `VTID-ALLOCATE.yml:36`).
+  The database behind the gateway is its task definition's `SUPABASE_URL`, which only the deploy input `data_backend`
+  changes (`scripts/aws/taskdef-data-backend.py`, "the one place"; `AWS-STAGE-DEPLOY-GATEWAY.yml:1357-1372`,
+  `AWS-PROD-DEPLOY-GATEWAY.yml:1182-1214`). At the Aurora cut (D15) the pipeline's writes move with the gateway, and no
+  pipeline file changes.
+- **VTID allocation** is `POST /api/v1/vtid/allocate` (`routes/vtid.ts:144`, `requireLedgerWriteAuth`) for every
+  allocator: PLAN-SPAR (`plan-spar.mjs:185-188`), `VTID-ALLOCATE.yml:55-61` until the cut, and the delivery service
+  (`gitlab-mr-vtid`), which calls the route with `serviceAuthHeaders()` (`middleware/ledger-write-auth.ts`) instead of
+  calling `allocate_global_vtid` in-process. The ledger state (`in_progress`/`approved`) is set through
+  `PATCH /api/v1/oasis/tasks/:id` (`routes/oasis-tasks.ts:332`). The route reaches the database through `SUPABASE_URL`
+  (`vtid.ts:185-198`), so it follows the switch.
+- **Every database write in this plan today:**
+
+| Write | Path today | Target key |
+|---|---|---|
+| lane VTIDs (PLAN-SPAR) | gateway `POST /api/v1/vtid/allocate` | `PLAN_SPAR_GATEWAY_URL` |
+| sparring sessions and rounds | gateway `/api/v1/plans/spar` and `/:id/rounds` (`routes/plans-spar.ts:46,56`) | `PLAN_SPAR_GATEWAY_URL` |
+| frontend-simple VTID until the cut | `VTID-ALLOCATE.yml` → gateway allocate | `PLAN_SPAR_GATEWAY_URL` |
+| merge-request VTID and ledger state (`gitlab-mr-vtid`) | gateway calls its own allocate and tasks routes | the gateway's `SUPABASE_URL` |
+| review verdict (`review-service`) | review entry or commit status (no database); OASIS `delivery.review.verdict` through the gateway's `emitOasisEvent` | the gateway's `SUPABASE_URL` |
+| STAGING-VERIFY OASIS (`record-oasis.sh`) and the deploy steps (`software_versions`, `oasis_events`) | **direct REST, no gateway** (`record-oasis.sh:63-65`; `AWS-STAGE-DEPLOY-GATEWAY.yml:1466-1495`; `AWS-PROD-DEPLOY-GATEWAY.yml:1750-1787`) | `vars.DATA_REST_URL \|\| secrets.SUPABASE_URL` |
+| VTID close (`VTID-AUTO-CLOSE.yml`) | completion route of the production gateway (`vtid-auto-close.cjs:135` default) | `https://gateway.vitanaland.com` |
+| `vtid_ledger` gate log | database trigger (`plan_sparring_shadow_log`) | — |
+| claims, heartbeats, lane files, `timings.json` | git only | — |
+
+  The direct writers are existing pieces reused as built (§13.4). They add a second key that has to flip with the
+  gateway at the Aurora cut (`DATA_REST_URL`). Moving them behind the gateway's OASIS route (`POST /api/v1/oasis/events`,
+  `routes/events.ts:480`) is a late lane with its own sparring.
 
 ## 10. Credentials: one place, one connection per seat
 "One place" is AWS Secrets Manager: the engineering account for delivery secrets, the main account for application
@@ -328,11 +363,26 @@ red-green computed by CI, test weakening, migration lint. On GitHub `config.json
 | Real providers | after landing: Polly speaks the user line, the voice pipeline in a harness instance with an in-memory database, Nova Sonic or the cascade answers, Transcribe reads the reply; time to first audio, total latency, language, persona pitch (female 198–238 Hz, male 104–140 Hz, `orb/live/voice/persona-voice-gender.ts:54-55`), a Bedrock judge for meaning (VTID-03622) | no |
 | Static | voice-gender tests, tool manifests, VOICE-PIPELINE-PARITY-SCANNER made blocking | no |
 | Staging | read-only `/orb/health`, `/orb/nova-sonic/health`, bootstrap latency, build-info | no |
-| Live round trip on staging | **BLOCKED until the test database exists (D1)**: a spoken turn writes `chat_messages`, `user_intents`, memory and OASIS rows, and staging shares the production database | — |
+| Live round trip on staging | **BLOCKED until the Aurora clone and its test instance exist (D1)**: a spoken turn writes `chat_messages`, `user_intents`, memory and OASIS rows, and staging shares the production database | — |
 
-**Test database (D1, lane `test-database`):** a separate Aurora database for write flows and the live voice test, with a
-test tenant and only registered test accounts (`service_bot_accounts`, `notification_test_actors`), and a staging
-gateway instance pointed at it for those suites. Until it exists those checks are BLOCKED and Gate 2 says so.
+**Test database (D1, lane `test-database`): an Aurora clone made by `AWS-REHEARSAL-AURORA-CLONE`.** Never a Supabase
+project, never the production cluster.
+- What the workflow makes (`.github/workflows/AWS-REHEARSAL-AURORA-CLONE.yml`, `scripts/aws/rehearsal-clone.sh`): a
+  copy-on-write clone `vitana-aurora-rehearsal` of `vitana-aurora-prod` at its latest restorable time, with its own
+  parameter group and master secret, Data API on, not publicly accessible, in production's subnet group and security
+  groups. Every mutating call is guarded to the clone; `delete` is the only teardown (no lifetime limit). It has never
+  run (0 runs, 2026-11-11) and uses the production deploy role (`AWS_PROD_ROLE_ARN`).
+- **The clone holds production data, real members' rows included,** and is handled as production data: only registered
+  test accounts act (`service_bot_accounts`, `notification_test_actors`); the rehearsal's neutralise step runs first
+  (FCM tokens revoked, lifecycle rows marked notified, `docs/validation/VTID-05023/rehearsal.md:200-203`); the test
+  gateway instance runs with every scheduler and outbound sender off (push, email, payments).
+- How a suite reaches it: a staging-test gateway instance whose `SUPABASE_URL` points at a PostgREST proxy whose
+  `PGRST_DB_URI` is the clone (`rehearsal.md:109-114, 198-199, 228-236`). Missing today: the secret
+  `vitana/aurora/rehearsal/postgrest-authenticator-uri`, the overlay and proxy inputs (`rehearsal.md:328-340`), and the
+  check that the deploy role may restore the clone (`rehearsal.md:377-382`).
+- The owner or Claude Code creates the clone, with the Aurora cutover work (D15); Kiro does not dispatch it.
+- Until the clone, its proxy and the test instance exist, the write-flow and live voice checks stay BLOCKED and Gate 2
+  says so.
 
 ### 13.4 STAGING-VERIFY
 Kept as built (deployed-commit check, every commit between production and the deployed commit, superseded handling,
@@ -349,6 +399,9 @@ read-only probes.
 | DeepSeek V3.2 | in-Region `eu-north-1` (Stockholm) | Stockholm | no geo or global profile; also London |
 
 Documented availability is not account quota: the quotas of the account that makes the calls decide whether 5.5 serves.
+Sonnet 5.5 is adopted (owner, 2026-11-11). In `472838866351`, `eu-central-1`, Service Quotas lists 6,000,000 tokens per
+minute for Sonnet 5.5 cross-Region (`L-94A31E46`) and global (`L-31AB82D0`) inference, the AWS defaults (read
+2026-11-11); `eu.anthropic.claude-sonnet-5-5` is ACTIVE. The engineering account is not checked.
 When a 5.5 call is refused for quota or access, the chain moves to 4.6 at once, and the call's record says which model
 served (D12). Sources: [Opus 5.5 model card](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-opus-5-5.html),
 [Sonnet 5.5 model card](https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-sonnet-5-5.html),
@@ -365,11 +418,14 @@ and tier into OASIS and into Gate 2.
 - **Recommendation (option A):** keep DeepSeek as the last tier, but call DeepSeek V3.2 on Amazon Bedrock in-Region in
   `eu-north-1` (Stockholm), from the engineering account. That keeps a DeepSeek model last (D4) and the data in the EU
   (D5). Cost: an older DeepSeek version than `deepseek-v4-pro`, and model access plus quota in `eu-north-1` (Phase 0 P2).
+  Offered: `aws bedrock list-foundation-models --region eu-north-1 --by-provider deepseek` lists `deepseek.v3.2`
+  (ACTIVE, ON_DEMAND, no inference profile), and `get-foundation-model-availability` answers AUTHORIZED and AVAILABLE
+  in `472838866351` (2026-11-11). Not invoked; the engineering account is not checked. The owner chooses.
 - Option B: keep `api.deepseek.com`; this breaks D5.
 - Option C: drop DeepSeek; the last tier becomes the 4.6 pair.
 - **Until the owner answers:** the new delivery stages (review, responder) run without a DeepSeek tier, the stricter
   rule; the existing partner chain is unchanged (its files are protected and lane `spar-responder` waits for the answer
-  on this point). The plan must not converge with D13 open.
+  on this point). D13 does not block the pipeline (owner, 2026-11-11).
 
 ## 15. Thirteen executors in parallel without conflicts
 ### Hotspots (30 days unless stated)
@@ -387,7 +443,8 @@ and tier into OASIS and into Gate 2.
 | `CLAUDE.md` and `.claude/rules/**` | 10 and 15 (platform), 15 and 11 (v1) | class P; lands alone |
 
 ### Rules
-- Wave 1 keeps today's scheduler (`plan-driver.mjs`, hot keys, 6 build lanes per plan).
+- Wave 1 keeps today's scheduler (`plan-driver.mjs`, hot keys, 6 build lanes per plan), with driver heartbeats at most
+  30 minutes apart (owner, 2026-11-11), inside the 45-minute liveness window.
 - Wave 2 (D8) dispatcher: one item per session, a per-seat session limit (start at 2); hot keys from lane paths (B) or
   area (A); two items with the same hot key never at once; an area is an affinity, not an ownership (the area's seat
   gets the first offer for 2 minutes); hot-key scheduling replaces "6 build lanes per plan".
@@ -418,7 +475,7 @@ and tier into OASIS and into Gate 2.
 | # | Item | What the owner does | Status 2026-11-11 |
 |---|---|---|---|
 | P1 | vCPU quotas, both classes, 96 | In the **`vitana-engineering`** account (switch role from `472838866351`, as `setup.sh` does), region `eu-central-1`, Service Quotas → Amazon EC2: "Running On-Demand Standard (A, C, D, H, I, M, R, T, Z) instances" (`L-1216C47A`) and "All Standard (A, C, D, H, I, M, R, T, Z) Spot Instance Requests" (`L-34B43A08`) → Request increase → 96. CLI: `aws service-quotas request-service-quota-increase --region eu-central-1 --service-code ec2 --quota-code L-1216C47A --desired-value 96` and the same for `L-34B43A08`. | prepared; not requested (no session has AWS rights, RUNBOOK §1) |
-| P2 | Bedrock models and quotas, EU | In the engineering account, Bedrock console, `eu-central-1`: open Claude Opus 5.5 and Sonnet 5.5 in the model catalog and complete Anthropic's first-use form if asked; keep Opus 4.6 and Sonnet 4.6 enabled. Service Quotas → Amazon Bedrock → the cross-Region (geo) tokens-per-minute and requests-per-minute quotas for Opus 5.5 and Sonnet 5.5 → request about 1,000,000 tokens and 100 requests per minute each (8 parallel reviews of about 80,000 input tokens). If D13 = A: DeepSeek V3.2 model access and quota in `eu-north-1`. | prepared; availability verified in AWS documentation (§14.1); account quota unverified |
+| P2 | Bedrock models and quotas, EU | In the engineering account, Bedrock console, `eu-central-1`: open Claude Opus 5.5 and Sonnet 5.5 in the model catalog and complete Anthropic's first-use form if asked; keep Opus 4.6 and Sonnet 4.6 enabled. Service Quotas → Amazon Bedrock → the cross-Region (geo) tokens-per-minute and requests-per-minute quotas for Opus 5.5 and Sonnet 5.5 → request about 1,000,000 tokens and 100 requests per minute each (8 parallel reviews of about 80,000 input tokens). If D13 = A: DeepSeek V3.2 model access and quota in `eu-north-1`. | Sonnet 5.5 available, 6,000,000 tokens per minute in `472838866351` (§14.1); engineering account unverified; Opus 4.6 invoke open (handoff O1) |
 | P3 | Bedrock for parallel sparring and review, outside production | After lane `delivery-bedrock`: run `scripts/aws/setup-delivery-bedrock.sh` (dry run first, then `--apply`) in CloudShell; it creates role `vitana-delivery-bedrock` in the engineering account for the staging gateway's task role | waits for the lane |
 | P4 | GitLab access for sessions | Kiro Settings → Integrations → GitLab → Connect → instance `https://gitlab.vitanaland.com` → paste the token of the seat's account from `vitana/engineering/gitlab/agents/agent-kiro-<seat>` (engineering account Secrets Manager). Today the four existing accounts are members of `vitana/rehearsal` only; reading `vitana/vitana-platform` (pipeline 229) needs an account that is a member, for example the owner's own | not connected: this session's GitLab connection answers 403, direct HTTPS asks for a credential |
 | P5 | Verify A1 (Kiro Web pushes to GitLab) | With P4 done for one seat: that seat pushes a branch to `vitana/rehearsal` and opens a merge request from a Kiro Web session; recorded in this plan's handoff | open |
@@ -427,7 +484,7 @@ and tier into OASIS and into Gate 2.
 | P8 | `GATEWAY_SERVICE_TOKEN` in vitana-v1 | not needed: lane `vtid-on-pr` is withdrawn (D14) | dropped |
 | P9 | Rendered pipelines in `vitana/ci-config` | `bash ~/vitana-eng/m2.sh status` in CloudShell (runs `gitlab-settings.mjs check`; exit 0 = no drift), or GitLab → `vitana/ci-config` → Repository: the 11 files of `infra/gitlab-engineering/ci/` with today's content. The code writes every `*.yml` of that folder in one commit when content differs (`scripts/eng/gitlab-settings.mjs:447-450`) | unverified from a session (no GitLab access) |
 | P10 | Runner count | GitLab Admin Area → CI/CD → Runners (or `GET /api/v4/runners/all` with an admin token), and EC2 Auto Scaling groups `vitana-eng-fleet*` (desired and in service) in the engineering account | unverified from a session |
-| P11 | Answer D13, D9, D10 | §2 | open |
+| P11 | Answer D9, D10 and D13 (D13 does not block, owner 2026-11-11) | §2 | open |
 
 ## 18. Rule changes (each through this plan's sparring; protected files on the owner's instruction naming this plan)
 1. One VTID rule (§9): platform `CLAUDE.md` (2b, 51a, IF–THEN 1, §4.1), `collaboration.md` §5, §7, §7a,
@@ -445,6 +502,8 @@ and tier into OASIS and into Gate 2.
 6. Claude Code is one executor among 13 (`CLAUDE.md` says it is retired); it builds the protected-file lanes.
 7. Seats by name only; areas are affinities (Wave 2).
 8. Model rule 53 names Opus 5.5 first with the 4.6 fallbacks (D12); the last tier per D13.
+9. Driver heartbeat interval: at most 30 minutes (owner, 2026-11-11); the liveness window stays 45 minutes
+   (`collaboration.md` §8, `driver.md`) (`rules-platform`).
 Each rule text carries the existing convention: a mechanism takes effect when the lane that builds it is on `main`; until
 then the previous mechanism stays in force.
 
@@ -510,6 +569,7 @@ One five-part message each, in the Command Hub owner inbox; only the affected it
   ([GitLab support](https://support.gitlab.com/hc/en-us/articles/31365024559516-AWS-OIDC-authentication-with-ID-tokens-fails-after-upgrade-to-GitLab-19-3-6-19-4-3-or-19-5-1));
   the instance is pinned to 19.5.3; the deploy roles are checked in the rehearsal.
 - Staging shares the production database until D1; additive migrations reach production before Gate 2 by D2.
+- The D1 Aurora clone is a copy of production data, real members' rows included (§13.3).
 - The size of the hard cut (159 workflow files); Aurora freeze windows during rehearsals.
 - Self-modifying governance: a change to the reviewer or responder takes effect only after it lands; the previous version
   reviews it.
