@@ -1,0 +1,11 @@
+# VTID-05207 (new-member-welcome/say-hello-composer) gateway verification commands
+# Rebuilt on origin/main 64ef6213aa from the reviewed local commits 77e663eb78, 9f48505118, cb86a4494a.
+cd services/gateway && npx tsc --noEmit                      -> outputs/gateway-tsc.txt (exit 0)
+cd services/gateway && npx jest test/vtid-05207 test/vtid-05208-greeting-send-route.test.ts test/vtid-05104 -> outputs/gateway-jest.txt (6 suites, 101 tests, exit 0)
+# Review fixes (reviewer verdict `changes` on 8e68016644)
+git worktree add --detach /tmp/base-wt $(git merge-base origin/main HEAD); cp the new test files into it; symlink node_modules
+cd /tmp/base-wt/services/gateway && npx jest test/vtid-05207 test/vtid-05208-greeting-send-route.test.ts -> outputs/gateway-jest-base-red.txt (5 suites failed, exit 1); git worktree remove --force /tmp/base-wt
+cd services/gateway && npx tsc --noEmit -> outputs/gateway-tsc.txt (exit 0)
+cd services/gateway && npx jest test/vtid-05207 test/vtid-05208-greeting-send-route.test.ts test/vtid-05104 test/vtid-04560-role-separation-regression.test.ts -> outputs/gateway-jest.txt (7 suites, 215 tests, exit 0)
+git diff --cached --name-status $(git merge-base origin/main HEAD) -> outputs/pr-name-status.txt
+node (matchesAny from scripts/collab/queue.mjs over lane paths) -> outputs/pr-scope-vs-lane-paths.txt
