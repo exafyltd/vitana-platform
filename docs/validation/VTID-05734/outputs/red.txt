@@ -1,0 +1,89 @@
+== guard: production targets are refused (no AWS call at all)
+  ok   refused: aws rds delete-db-cluster --db-cluster-identifier vitana-aurora-prod --skip-final-snapshot
+  ok   refused: aws rds delete-db-cluster --db-cluster-identifier=vitana-aurora-prod
+  ok   refused: aws rds delete-db-instance --db-instance-identifier vitana-aurora-prod-writer
+  ok   refused: aws rds modify-db-cluster --db-cluster-identifier vitana-aurora-prod --manage-master-user-password
+  ok   refused: aws rds modify-db-cluster-parameter-group --db-cluster-parameter-group-name vitana-aurora-pg17-prod --parameters x
+  ok   refused: aws rds restore-db-cluster-to-point-in-time --source-db-cluster-identifier vitana-aurora-rehearsal --db-cluster-identifier vitana-aurora-prod
+  ok   refused: aws rds restore-db-cluster-to-point-in-time --source-db-cluster-identifier vitana-aurora-prod --db-cluster-identifier vitana-aurora-prod-2
+  ok   refused: aws rds enable-http-endpoint --resource-arn arn:aws:rds:eu-central-1:472838866351:cluster:vitana-aurora-prod
+  ok   refused: aws rds-data execute-statement --resource-arn arn:aws:rds:eu-central-1:472838866351:cluster:vitana-aurora-prod --sql x
+  ok   refused: aws rds reboot-db-instance --db-instance-identifier vitana-aurora-rehearsal-writer
+  ok   refused: aws rds failover-db-cluster --db-cluster-identifier vitana-aurora-rehearsal
+  ok   refused: aws rds delete-db-cluster --skip-final-snapshot
+  ok   refused: aws rds create-db-instance --db-instance-identifier vitana-aurora-rehearsal-writer --db-cluster-identifier vitana-aurora-prod
+  ok   refused: aws rds copy-db-cluster-parameter-group --source-db-cluster-parameter-group-identifier vitana-aurora-pg17-prod --target-db-cluster-parameter-group-identifier vitana-aurora-pg17-prod
+  ok   refused: aws rds delete-db-cluster --db-cluster-identifier vitana-aurora-rehearsal --tags Key=x,Value=vitana-aurora-prod
+  ok   allowed: aws rds delete-db-cluster --db-cluster-identifier vitana-aurora-rehearsal --skip-final-snapshot
+  ok   allowed: aws rds restore-db-cluster-to-point-in-time --source-db-cluster-identifier vitana-aurora-prod --db-cluster-identifier vitana-aurora-rehearsal
+  ok   guard-check made no AWS call
+== delete refuses every identifier but the clone (before any AWS call)
+  ok   delete --identifier 'vitana-aurora-prod' refused, no AWS call
+  ok   delete --identifier 'vitana-aurora-prod-writer' refused, no AWS call
+  ok   delete --identifier 'vitana-aurora-rehearsal-2' refused, no AWS call
+  ok   delete --identifier 'vitana-aurora-rehearsa' refused, no AWS call
+  ok   delete --identifier '' refused, no AWS call
+  ok   delete --identifier 'vitana-aurora-rehearsal ' refused, no AWS call
+  ok   delete --identifier 'VITANA-AURORA-REHEARSAL' refused, no AWS call
+  ok   create --identifier vitana-aurora-prod refused
+== VTID-05734: the source pre-check says why it cannot read the cluster
+  FAIL describe AccessDenied: rc=2 out=rehearsal-clone: source cluster vitana-aurora-prod not found
+  ok   access denied: no mutating call
+  FAIL describe Throttling: rc=2 out=rehearsal-clone: source cluster vitana-aurora-prod not found
+  ok   absent source -> 'not found', exit 2
+  ok   readable source, no clone -> status says absent, exit 0
+== create --dry-run: no mutating call
+  ok   dry-run create exits 0
+  ok   dry-run create made no mutating call
+  ok   dry-run shows the copy-on-write restore from vitana-aurora-prod
+  ok   clone gets its own parameter group
+  ok   same subnet group and security groups as the source
+  ok   same KMS key as the source
+  ok   writer has the source writer's class and instance parameter group
+  ok   --logical-replication changes only the clone's parameter group
+== create (fake aws): only the clone is touched
+  ok   create exits 0
+  ok   every mutating call of create names only the clone
+  ok   create called copy-db-cluster-parameter-group
+  ok   create called restore-db-cluster-to-point-in-time
+  ok   create called create-db-instance
+  ok   create called enable-http-endpoint
+  ok   create called modify-db-cluster
+  ok   clone gets its own managed master secret
+  ok   Data API enabled on the clone
+  ok   clone has no deletion protection
+  ok   no modify/delete/reboot on vitana-aurora-prod
+  ok   create on a complete clone changes nothing (only the idempotent parameter set)
+== sql: clone only, clone's own secret
+  ok   sql ran 2 statements
+  ok   sql targets only the clone with the clone's secret
+  ok   sql used the clone's secret
+  ok   sql --dry-run executes nothing
+  ok   sql refuses when the clone reports the production secret
+== delete
+  ok   delete --dry-run makes no mutating call
+  ok   delete refuses a cluster without the rehearsal tag
+  ok   delete refuses a member that is not the rehearsal writer
+  ok   delete exits 0
+  ok   every mutating call of delete names only the clone
+  ok   cluster deleted with --skip-final-snapshot
+  ok   writer deleted first
+  ok   clone parameter group deleted
+  ok   delete on an absent clone changes nothing
+== wrong account: no mutating call
+  ok   wrong account refused
+== status is read-only
+  ok   status (absent) read-only
+== workflow
+  ok   workflow parses a trigger block
+  ok   dispatch-only; reason required; action create|delete|status
+  ok   workflow makes no AWS call besides the identity check (everything else via the guarded script)
+  ok   workflow delete needs confirm=vitana-aurora-rehearsal
+== neutralize SQL refuses to run off the clone
+  ok   all 2 statements start with the clone-identity guard
+
+  ok   every AWS action the clone script calls is in the deploy-role policy
+  ok   create resumes a half-built clone: writer, Data API and secret added, no second restore
+  ok   create resumes a clone missing only its master secret
+  ok   create refuses an existing clone without the rehearsal tag
+rehearsal-clone: 74 passed, 2 failed

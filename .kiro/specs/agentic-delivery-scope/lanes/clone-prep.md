@@ -1,7 +1,9 @@
 ---
 lane: clone-prep
-state: ready
+state: executing
 next_actor: kiro
+claimed_by: kiro-exafyltd-202611111044-8f1d
+branch: kiro/agentic-delivery-scope/clone-prep
 depends_on: []
 executor: kiro
 seat: exafyltd
@@ -11,7 +13,7 @@ reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 paths:
   - scripts/aws/rehearsal-clone.sh
   - scripts/aws/test/rehearsal-clone.sh
-updated: 2026-11-11T16:49Z
+updated: 2026-11-11T16:59Z
 vtid: VTID-05734
 ---
 
@@ -25,3 +27,7 @@ Lane created with the plan.
 
 ### 2026-11-11T16:49Z · ci-plan-spar · ready (VTID allocated)
 VTID-05734 allocated after policy approval (converged-auto-v1).
+
+### 2026-11-11T16:59Z · kiro-exafyltd-202611111044-8f1d · ready → executing
+Claimed (claim ref `refs/heads/collab-claim/agentic-delivery-scope/clone-prep`). Test first: two new cases red on `origin/main`
+(74 passed, 2 failed), then the describe change: 76 passed, 0 failed. Evidence in `docs/validation/VTID-05734/`.
