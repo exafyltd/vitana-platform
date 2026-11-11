@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-05699",
+  "kind": "docs",
+  "paths": [
+    "docs/programs/areas.yaml",
+    "scripts/collab/areas-no-email.test.mjs",
+    "docs/validation/VTID-05699/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05699/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}
