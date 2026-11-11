@@ -47,7 +47,7 @@ The three lanes touch disjoint files, so they run in parallel. None of them chan
   reports one finding per manifest (check 1 for 05504, 05506, 05507, 05609).
 - Green on the head: the same guard passes 6 of 6 checks; `node --test scripts/ci/check-migration-drift.test.cjs` still
   passes (the test is unchanged, only its runner changes).
-- `node --test services/gateway/test/vtid-05504-morning-health-pertenant.test.ts` runs from `services/gateway` (jest).
+- `cd services/gateway && npx jest test/vtid-05504-morning-health-pertenant.test.ts` (jest, ts-jest preset from services/gateway/jest.config.js).
 
 ## 5. Measurement
 Lane timings in each lane's log, as in the other plans.
