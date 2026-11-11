@@ -35,8 +35,17 @@ Every `vitana-v1:` reference below was read with `git show f2d652001:<path>`.
   `tests/staff/chrome.test.tsx:26`. They are **not** edited. After the fix the fake answers 404 for the old key; `useMyPartnerOrgs`
   then has `data === undefined` and `useBusinessMode` falls back to `EMPTY` (`src/identity/useBusinessMode.ts:15-17`), the same
   result as `organizations: []`. The lane must run both and show they stay green; they remain stale fixtures (listed, not edited).
-- `gh api repos/exafyltd/vitana-v1/pulls/1645/files` lists: `GuidedModeProvider.tsx`, `AuthGate.tsx`, `tests/shell-fixes/auth-gate.test.tsx`,
-  `tests/shell-fixes/gateway-paths.test.tsx` and `docs/validation/VTID-05647/*`. None of the three files of this lane. No overlap.
+- **Overlap with lane `native-shell-fixes-r2/shell-fixes` (VTID-05647), stated exactly.** That lane file *declares* `apps/mobile/src/identity/useMyPartnerOrgs.ts` and
+  `apps/mobile/tests/identity.test.tsx` in its `paths` (`.kiro/specs/native-shell-fixes-r2/lanes/shell-fixes.md:12,21`) and its plan intended to fix both
+  (`native-shell-fixes-r2/plan.md:29,55,77`). Its open PR #1645 does **not** edit them: `gh api repos/exafyltd/vitana-v1/pulls/1645/files` lists only `GuidedModeProvider.tsx`,
+  `AuthGate.tsx`, `tests/shell-fixes/{auth-gate,gateway-paths}.test.tsx` and `docs/validation/VTID-05647/*`; its builder left the hook out because fixing it turns
+  `tests/shell.test.tsx:49` red and that file was outside the lane (`gateway-paths.test.tsx` header). Neither of the three files of this lane is touched by #1645 today.
+  `tests/shell.test.tsx` is in no other lane.
+- **Coordination (option c of sparring R1-F1).** `partner-orgs-path` takes over those edits from `shell-fixes`: the owner's instruction names the test-key edits and the hook fix as a
+  follow-up to #1645 and approves them here. The `shell-fixes` lane file is another plan's file and a `_plan` commit may not edit it, so it keeps its declared paths unchanged;
+  the handoff is recorded in this plan and in the `partner-orgs-path` lane log. Ordering rule, checked by the lane at claim time and again before the PR: if #1645's file list
+  (or its merged diff) contains `useMyPartnerOrgs.ts`, `tests/identity.test.tsx` or `tests/shell.test.tsx`, this lane stops, merges `origin/main` and does only what is left; it never
+  re-applies an edit already on main. Whichever PR merges second takes a trivial conflict only on the one changed line.
 
 ### 2. `my-groups-deeplink`
 - `apps/mobile/app/(app)/comm/my-groups/[id].tsx` renders `GroupDetailScreen` (ledger row `/comm/my-groups/:id`, `status: native`,
@@ -104,7 +113,7 @@ Every `vitana-v1:` reference below was read with `git show f2d652001:<path>`.
 1. **Five lanes, no shared file except the documented hot ones.** `resolve.ts` is edited by `my-groups-deeplink` (`NATIVE_PATTERNS`) and by `screen-backfill` (`NATIVE_ROUTES`);
    `screen-backfill` therefore `depends_on: [my-groups-deeplink]` (collaboration §8a: hot files are sequenced). `ledger.json` is edited only by `screen-backfill`.
 2. **`partner-orgs-path` fixes the code at `:23` and the two fixtures in one PR** because the fixtures go red the moment the path is right (owner: "in the same change").
-   Key-only edits: line 49 and line 149, nothing else in those files.
+   Key-only edits: line 49 and line 149, nothing else in those files. Ownership of those files relative to the `shell-fixes` lane: see "Overlap" in Measured state §1.
 3. **`my-groups-deeplink` uses `NATIVE_PATTERNS`, not `NATIVE_ROUTES`**, because `tests/navigation.test.tsx:67-84` ties `NATIVE_ROUTES` to concrete files. The pin test changes from
    `toEqual(['/discover/provider/:id'])` to `toEqual(['/discover/provider/:id', '/comm/my-groups/:id'])` and its title is updated; the second assertion
    (`resolveWebPath('/discover/provider').kind` not native) stays. The PR body lists this one change.

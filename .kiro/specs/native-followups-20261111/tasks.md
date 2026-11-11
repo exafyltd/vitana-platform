@@ -12,12 +12,14 @@ Held back (not lanes): the German "Sie" string and the push body, see `plan.md`.
 ## Lane `partner-orgs-path` · executor Kiro · seat exafyltd → reviewer_seat agent:vitana-lane-reviewer
 depends_on: []. Owner-approved existing-test edits: `tests/shell.test.tsx:49` and `tests/identity.test.tsx:149`, the fake-gateway key only.
 
+- [ ] 0. Ownership check (sparring R1-F1), at claim time and again before opening the PR: `gh api repos/exafyltd/vitana-v1/pulls/1645/files --jq '.[].filename'` and `git log origin/main -- apps/mobile/src/identity/useMyPartnerOrgs.ts apps/mobile/tests/identity.test.tsx apps/mobile/tests/shell.test.tsx`.
+  The lane `native-shell-fixes-r2/shell-fixes` (VTID-05647) declares the hook and `identity.test.tsx` in its paths but its PR does not edit them. If any of the three files is already changed by #1645 or on main, stop, merge `origin/main` and do only what is left; record the finding in the lane log. Say in the PR body that this lane took over those edits from `shell-fixes`.
 - [ ] 1. Red test `tests/followups/partner-orgs/partner-orgs-url.test.tsx`: install a real `createGatewayFetch` with a recording `fetchImpl` (pattern of
   `tests/shell-fixes/gateway-paths.test.tsx` in #1645, copied, not imported), render `useMyPartnerOrgs` signed in, and assert the requested URL list equals
   `['https://gw.test/api/v1/partner-orgs/mine']` and the hook returns the organizations. Red on base: the URL is `https://gw.test/api/v1/api/v1/partner-orgs/mine`.
 - [ ] 2. `apps/mobile/src/identity/useMyPartnerOrgs.ts:23`: `gatewayGet('/partner-orgs/mine')`; update the header comment (`:3`) to say the prefix is added by the gateway client.
 - [ ] 3. `tests/shell.test.tsx:49` and `tests/identity.test.tsx:149`: change the key `'/api/v1/partner-orgs/mine'` to `'/partner-orgs/mine'`. Nothing else in either file. Show the two-line diff in the PR body.
-- [ ] 4. Run `tests/shell.test.tsx`, `tests/identity.test.tsx`, `tests/professional/bottom-tabs.test.tsx`, `tests/staff/chrome.test.tsx`, `tests/shell-fixes` (if #1645 has merged) and the full suite.
+- [ ] 4. Must-pass list, recorded one by one in `commands.log` and the PR body (sparring R1-F2): `tests/shell.test.tsx`, `tests/identity.test.tsx`, `tests/professional/bottom-tabs.test.tsx`, `tests/staff/chrome.test.tsx`, `tests/shell-fixes` (if #1645 has merged) and the full suite.
   The last two professional/staff files still key the doubled path with `organizations: []`; they are **not edited** and must stay green (`data` is `undefined` → `EMPTY`, `useBusinessMode.ts:15-17`). Record them in the PR as stale fixtures.
 - [ ] 5. If #1645 has merged, re-read `GuidedModeProvider.tsx` and `AuthGate.tsx` on the new `origin/main`; this lane does not touch them. Verify and PR.
 
@@ -29,6 +31,7 @@ depends_on: []. Owner-approved existing-test edits: `tests/shell.test.tsx:49` an
 - **Locales** — n/a: no text. **Accessibility** — n/a: no UI.
 - **Contract** — request `GET /api/v1/partner-orgs/mine` with bearer; response `{ organizations?: MyOrgRow[] }` (client `useMyPartnerOrgs.ts:23-24`; gateway route `/api/v1/partner-orgs/*`, VTID-03932/03935, web `src/hooks/useOrgMembers.ts:85`). The URL is built by `createGatewayFetch` (`packages/core/src/gateway.ts:22`).
 - **Staging proof** — not verified on staging (no native staging deploy); covered by the new URL test and the two key-edited tests.
+- `tests/professional/bottom-tabs.test.tsx` and `tests/staff/chrome.test.tsx` (stale doubled key, not edited) are run and green after the fix, named in the PR body.
 - The diff of `tests/shell.test.tsx` and `tests/identity.test.tsx` is exactly one changed line each (the key). New test red on base; no file outside `paths`; NATIVE-CI, **Collab handoff**, **Lane scope** green.
 
 <!-- lane: my-groups-deeplink -->
