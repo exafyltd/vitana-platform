@@ -26,7 +26,7 @@ suite ever targets production; staging tests stay read-only against any shared d
 | H2 | Protected gate files need an owner instruction | `CLAUDE.md:82`; `collaboration.md:136-145, 218, 228, 270-271`; v1 `CLAUDE.md:107` | rule |
 | H3 | Same, enforced | `scripts/collab/queue.mjs:91-107, 240, 1033-1034`; `scripts/collab/land-guard.mjs:108-110, 54`; `services/gateway/src/services/project-manager/governance.ts:4-22, 48-107`; `PR-GATE.yml:168-174` | code |
 | H4 | Migrations need owner approval of file and target | `collaboration.md:209-213, 312-322`; `.kiro/steering/vitana-owner-autonomy.md:40`; `.kiro/pipeline/quality-checks.md:73` | rule (RUN-MIGRATION.yml and v1 `apply-*.yml` have no environment reviewers) |
-| H5 | 3 failed fix-forwards park the lane with `next_actor: owner` | `collaboration.md:247-248`; `.kiro/pipeline/driver.md:52`; `common-rules.md:30` | rule |
+| H5 | 3 failed fix-forwards park the lane: `next_actor: owner` in `.kiro/pipeline/driver.md:52` and `common-rules.md:30`, but `next_actor: claude` (when available) in `collaboration.md:247-248`; the two texts disagree and `rules-platform` resolves both to quarantine | rule |
 | H6 | Escalated sparring verdict goes to the owner; escalated session needs `exafy_admin` approval | `collaboration.md:209-210`; `planning.md:65`; `driver.md:49`; `plan-sparring-service.ts:461-480`; `scripts/collab/plan-spar.mjs:398-411` (parks to `claude`) | rule + code |
 | H7 | Product autonomy settings need explicit approval | `CLAUDE.md:201` (NEVER 34) | rule |
 | H8 | Owner stop table | `.kiro/steering/vitana-owner-autonomy.md:40-52` (rows 1, 3, 4, 5, 6, 7, 12, 13); v1 copy | rule |
@@ -48,6 +48,11 @@ No CODEOWNERS file and no GitHub `environment:` reviewers exist in either repo (
      accept and two accepts of one model; scope-check still refuses a protected file from an untrusted lane; the
      staging prod-reference guard still lists every production identifier. The check fails closed and cannot be
      changed in the same PR that changes the files it protects (it reads its expectations from the merge-base).
+     Bootstrap: on the `machine-gate-protected` PR itself the merge-base has no expectations, so the check prints
+     `gate-invariants: no baseline on merge-base (bootstrap)` and passes; that PR's authority is the owner instruction
+     plus the reviewer-agent accept (§3a). A post-merge job on `main` (in `Collab tests` on push) runs the check
+     against `main` itself and fails loudly if any invariant is missing, so the first version is verified as soon
+     as it lands.
    - Migrations: applied by the pipeline to the **isolated staging database only** (lanes `staging-db-isolation`,
      `staging-migrations-auto`). Until that database exists, a migration lane waits in machine state
      `blocked: isolated-staging-db` (not an owner question). No migration ever reaches the production database before
@@ -91,17 +96,21 @@ No CODEOWNERS file and no GitHub `environment:` reviewers exist in either repo (
      86`); no Vitana customer service runs there. The lane first records a read-only inventory of the account (resource
      list from the apply workflow) in `docs/KIRO-AWS-ACCESS.md`. Because the account holds every repository copy and
      its backups, the role keeps explicit denies on deleting the GitLab instances, their EBS volumes and the backup
-     buckets (`ec2:TerminateInstances`, `ec2:DeleteVolume`, `s3:DeleteBucket`, `s3:DeleteObject*` on those ARNs);
-   - account `472838866351`: role `kiro-staging-operator` with write access to staging resources only, enforced by
-     **explicit `Deny` statements on exact ARNs**, not name patterns: the `vitana-aurora-prod` cluster and its
-     instances, every production secret ARN (`vitana/*/prod*`, listed one by one from Secrets Manager at apply time
-     and pinned in the policy), the production ECS services (`vitana-gateway-awsdr`, `vitana-community-app-awsdr`,
-     every `*-awsdr` and the fixed-count services), `vitana-alb-prod` listener rules, and the production KMS keys; plus
-     an IAM **permissions boundary** that the role cannot remove (`iam:*` on itself denied). Account
-     `472838866351` is the Organizations management account (it assumes `OrganizationAccountAccessRole` into
-     `841276716213`), where SCPs do not apply, so the boundary and explicit denies are the control. A separate staging
-     data account is the stronger boundary; it is deferred as a decision (strategy repository, new DEC) because it
-     needs cross-account networking for the shared ECS cluster;
+     buckets (`ec2:TerminateInstances`, `ec2:DeleteVolume`, `s3:DeleteBucket`, `s3:DeleteObject*` on those ARNs), and an
+     explicit deny on `secretsmanager:GetSecretValue` and `PutSecretValue` for `vitana/engineering/gitlab/root-password`,
+     `runner-token` and `github-mirror-token`;
+   - account `472838866351`: role `kiro-staging-operator` built as an **allow-list**: it grants write actions only on
+     staging resources named by exact ARN (the `vitana-aurora-staging` cluster and its snapshots, the `vitana-gateway`
+     staging service and task family, the staging PostgREST service, `vitana/*/staging*` secrets, the staging KMS key,
+     the staging security and subnet groups) and read-only (`Describe*`, `List*`, `Get*` except secret values) on the
+     rest; everything else is implicitly denied. On top, explicit `Deny` statements on the known production ARNs
+     (`vitana-aurora-prod`, `*-awsdr` ECS services, `vitana-alb-prod`, production secrets and KMS keys) and an IAM
+     permissions boundary the role cannot change (`iam:*` on itself denied). Account `472838866351` is the
+     Organizations management account (SCPs do not apply), so this is the control. Drift check: a required CI step on
+     every PR touching `infra/kiro-access/**` and a daily scheduled run list every ECS service, RDS cluster, secret and
+     KMS key in the account and fail when an allow-list entry matches a non-staging resource or a production resource
+     lacks its explicit deny. A separate staging data account stays the stronger boundary; the lane records it as a
+     strategy decision with target date 2026-12-31;
    - every assumption tagged with the session id and logged to CloudTrail; an OASIS `infra.kiro_access.*` event per
      session start.
    Applied by a `workflow_dispatch` workflow on the existing OIDC role. The credential the Kiro environment uses as

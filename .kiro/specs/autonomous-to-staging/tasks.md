@@ -37,7 +37,7 @@ Common acceptance:
 - [ ] T1 land-guard `mergeDecision`: a protected file merges only with two accept entries for the current head from two different `REVIEWER_AGENT_MODELS`.
 - [ ] T2 queue.mjs scope-check: a Kiro lane with `protected_gate: two-model` from a trusted source may change a protected file.
 - [ ] T3 governance.ts mirrors T1 for the PM.
-- [ ] T4 `gate-invariants.mjs` (expectations read from the merge-base) as a required step in Collab tests.
+- [ ] T4 `gate-invariants.mjs` (expectations read from the merge-base; bootstrap pass when none; post-merge run on `main`) as a required step in Collab tests.
 - [ ] T5 Tests red on base, green after.
 
 **Acceptance**
@@ -113,7 +113,7 @@ Common acceptance:
 <!-- lane: kiro-aws-access -->
 ## Lane `kiro-aws-access` (vitana-platform)
 - [ ] T0 Read-only inventory of 841276716213 recorded in `docs/KIRO-AWS-ACCESS.md`.
-- [ ] T1 `kiro-engineering-admin` in 841276716213 (GitLab delete denies); `kiro-staging-operator` in 472838866351 with exact-ARN production denies and a permissions boundary.
+- [ ] T1 `kiro-engineering-admin` in 841276716213 (GitLab delete denies); `kiro-staging-operator` in 472838866351 as an allow-list of staging ARNs, exact-ARN production denies, a permissions boundary, and a required + daily drift check; GitLab credential secrets denied in the admin role.
 - [ ] T2 Apply workflow on the existing OIDC role; credential delivered to the Kiro environment secret store, never to chat or git.
 - [ ] T3 CloudTrail and OASIS evidence per session.
 
