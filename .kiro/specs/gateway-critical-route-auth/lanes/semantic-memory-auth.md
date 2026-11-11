@@ -1,7 +1,9 @@
 ---
 lane: semantic-memory-auth
-state: ready
+state: in-review
 next_actor: kiro
+claimed_by: kiro-exafy-202611110920-270b
+pr: https://github.com/exafyltd/vitana-platform/pull/4972
 branch: kiro/gateway-critical-route-auth/semantic-memory-auth
 depends_on: []
 executor: kiro
@@ -15,7 +17,7 @@ paths:
   - services/gateway/test/semantic-memory-auth.test.ts
   - services/gateway/test/routes/semantic-memory.test.ts
   - docs/validation/VTID-*/**
-updated: 2026-11-11T13:18Z
+updated: 2026-11-11T16:30Z
 vtid: VTID-05729
 ---
 # Lane: semantic-memory-auth (repo vitana-platform)
@@ -27,3 +29,6 @@ Lane created with the plan.
 
 ### 2026-11-11T13:18Z · ci-plan-spar · ready (VTID allocated)
 VTID-05729 allocated after policy approval (converged-auto-v1).
+
+### 2026-11-11T16:30Z · kiro-exafy-202611110920-270b · ready → executing → in-review
+Built in PR #4972; plan on `main`. Waiting for the reviewer agent.
