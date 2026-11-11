@@ -20,6 +20,8 @@ import {
   DEV_MEMORY_EMBEDDING_MODEL,
   DEV_MEMORY_EMBEDDING_DIMENSIONS,
 } from '../../src/services/dev-memory-embedding';
+// plan sparring-eu-guard C2: tests set the region explicitly (there is no default region)
+process.env.AWS_REGION = process.env.AWS_REGION || 'eu-central-1';
 
 function encodeBody(payload: unknown): Uint8Array {
   return new TextEncoder().encode(JSON.stringify(payload));

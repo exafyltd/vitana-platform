@@ -145,8 +145,10 @@ export interface BedrockInvokeError {
 function bedrockRoleArn(): string | undefined {
   return process.env.BEDROCK_ROLE_ARN;
 }
-function bedrockRegion(): string {
-  return process.env.AWS_BEDROCK_REGION || process.env.AWS_REGION || 'us-east-1';
+// Plan sparring-eu-guard C2: no default region. A process without either variable must fail closed, not send
+// EU model ids to a US region (the old default was us-east-1).
+function bedrockRegion(): string | undefined {
+  return process.env.AWS_BEDROCK_REGION || process.env.AWS_REGION || undefined;
 }
 
 /**
@@ -208,6 +210,14 @@ export async function invokeBedrock(
       message: 'BEDROCK_ROLE_ARN env var not set; Bedrock is dormant until AWS provisioning lands (VTID-03403)',
     };
   }
+  const region = bedrockRegion();
+  if (!region) {
+    return {
+      ok: false,
+      error: 'not_configured',
+      message: 'AWS_BEDROCK_REGION or AWS_REGION must be set (EU region); there is no default region',
+    };
+  }
 
   const start = Date.now();
   try {
@@ -216,7 +226,7 @@ export async function invokeBedrock(
     // sandboxed network stack (NGHTTP2_PROTOCOL_ERROR — confirmed via a real
     // staging call in VTID-03403). NodeHttpHandler forces HTTP/1.1.
     const client = new BedrockRuntimeClient({
-      region: bedrockRegion(),
+      region,
       requestHandler: new NodeHttpHandler(),
     });
     const body = JSON.stringify(buildBedrockRequestBody(req));
