@@ -5,7 +5,7 @@ author_seat: exafyltd
 executor: kiro
 next_actor: kiro
 state: approved
-updated: 2026-11-11T11:16Z
+updated: 2026-11-11T11:26Z
 sparring_record: .kiro/specs/privacy-ledger-auth/sparring/verdict.md
 vtids: [VTID-05699, VTID-05700]
 ---
@@ -17,7 +17,7 @@ this plan runs.
 
 ## Log
 
-### 2026-11-11T11:40Z · kiro-exafyltd-202611111044-8f1d · drafted
+### 2026-11-11T11:03Z · kiro-exafyltd-202611111044-8f1d · drafted
 Owner instructions of 2026-11-11 (items 4 and 5, and the history-rewrite proposal), quoted in `plan.md`. Pushed as a
 `plan(` PR for PLAN-SPAR. No VTID before convergence; CI allocates them.
 
@@ -33,3 +33,10 @@ Decisions taken:
 
 ### 2026-11-11T11:16Z · ci-plan-spar · drafted → approved
 Converged; approved by policy converged-auto-v1. 2 lane(s) got a VTID and are handed to Kiro.
+
+### 2026-11-11T11:26Z · kiro-exafyltd-202611111044-8f1d · approved (driver: merge the plan PR)
+Plan driver for this plan. PLAN-SPAR pushed round 2 with `GITHUB_TOKEN`, which starts no checks (status
+`plan-spar/needs-rebase`), so this commit starts them; the spec-only `plan(` PR merges under §7b once they are green.
+The drafted entry here said 11:40Z by mistake; it is corrected to 11:03Z, the commit time of 072ebc37b2. The `ready`
+entries of both lane files keep the same wrong 11:40Z, because a `_plan` commit may create a lane file but never edit
+one (`queue.mjs`); their real time is also 11:03Z.
