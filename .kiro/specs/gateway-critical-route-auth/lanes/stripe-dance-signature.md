@@ -1,6 +1,6 @@
 ---
 lane: stripe-dance-signature
-state: in-review
+state: done
 next_actor: kiro
 claimed_by: kiro-exafy-202611110920-270b
 pr: https://github.com/exafyltd/vitana-platform/pull/4973
@@ -18,7 +18,7 @@ paths:
   - services/gateway/test/payments-stripe-dance-signature.test.ts
   - services/gateway/test/routes/payments-stripe-webhook.test.ts
   - docs/validation/VTID-*/**
-updated: 2026-11-11T16:30Z
+updated: 2026-11-11T18:30Z
 vtid: VTID-05730
 ---
 # Lane: stripe-dance-signature (repo vitana-platform)
@@ -46,3 +46,10 @@ Findings: non-blocking — delta since accept on d6a40224f8 is only the AC mappi
 Findings: non-blocking — CI taken from driver REST check-run evidence (25/25 success); reviewer re-read blocked by permission profile
 Findings: non-blocking — the Stripe endpoint for /webhooks/stripe-dance must sign with STRIPE_WEBHOOK_SECRET before production (owner's call, stated in the PR)
 Next: the land step merges under §7b
+
+### 2026-11-11T18:30Z · kiro-exafy-202611110920-270b · in-review → verified
+merge: b33257e4d7c09aabad1b027fea4f9f07f642d4f6 (exafyltd/vitana-platform#4973)
+authority: §7b PM rule, applied by the plan driver through `land-guard.mjs merge` (review current on the PR head, every check green, up to date with main).
+
+### 2026-11-11T18:30Z · kiro-exafy-202611110920-270b · verified → done
+STAGING-VERIFY passed: https://github.com/exafyltd/vitana-platform/actions/runs/43074858964 (cde215c41f, includes this merge) and https://github.com/exafyltd/vitana-platform/actions/runs/43076546511 (0dc9a0646a, 32/32). Production is unchanged until an owner PUBLISH.
