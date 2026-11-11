@@ -4,8 +4,10 @@ Lane key: `vtid-05023/cutover` (queue slug `vtid-05023`, lane `cutover`). Not th
 
 ## Claim
 
-- Session id: `kiro-202611111450-a7d2`. The queue requires this form and no session id value was available to me, so I generated it for this claim.
-- Claim commit `78db61ff54aecb0f28aa5088807bcea3d8ea9235`, made with `node scripts/collab/queue.mjs claim vtid-05023/cutover --session kiro-202611111450-a7d2`.
+- **Status: no claim held.** The earlier claim (`78db61ff`, session `kiro-202611111450-a7d2`) used a session id I generated myself. It was not my real session id. I released it with `queue.mjs release vtid-05023/cutover --session kiro-202611111450-a7d2`, which returned `{"ok":true}`.
+- **Real session id:** `KIRO_SESSION_ID` in this environment is `8e42cb36-56f1-4d98-b4e4-96425028a531`.
+- **Blocker L-CLAIM:** the queue refuses that id. `queue.mjs claim vtid-05023/cutover --session "$KIRO_SESSION_ID"` fails with `--session <id> is required (session_… or kiro-YYYYMMDDHHMM-xxxx)`. The queue accepts only `session_<alnum>`, `kiro-[seat-]YYYYMMDDHHMM-xxxx`, `agent-…`, `pm-agent` and `ci-plan-spar`. The lane cannot be re-claimed under the real id until the queue accepts UUID session ids or the owner gives this session a queue-format id.
+- Work after this point (the compat layer task) is on hold per the instructions: "If you cannot find that id, say so in the lane and stop there."
 
 ## Blockers (exact)
 
