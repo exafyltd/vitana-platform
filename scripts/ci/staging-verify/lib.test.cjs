@@ -802,3 +802,26 @@ test('quality-checks: run.mjs loadManifest reads a BOM staging-tests.json from d
     fs.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('expect_json_in passes when the field is one of the listed values', () => {
+  const t = { kind: 'http', path: '/api/v1/project-manager/mode', expect_json_in: { executor_mode: ['kiro_fallback', 'claude_primary'], enabled: [true, false] } };
+  assert.equal(lib.evaluateHttp(t, { status: 200, contentType: 'application/json', json: { executor_mode: 'claude_primary', enabled: false } }).ok, true);
+  assert.equal(lib.evaluateHttp(t, { status: 200, contentType: 'application/json', json: { executor_mode: 'kiro_fallback', enabled: true } }).ok, true);
+});
+
+test('expect_json_in fails for an unlisted value, a typo, or a missing field', () => {
+  const t = { kind: 'http', path: '/api/v1/project-manager/mode', expect_json_in: { executor_mode: ['kiro_fallback', 'claude_primary'] } };
+  const r1 = lib.evaluateHttp(t, { status: 200, contentType: 'application/json', json: { executor_mode: 'retired_mode' } });
+  assert.equal(r1.ok, false);
+  assert.match(r1.problems.join(' '), /executor_mode = "retired_mode"/);
+  assert.equal(lib.evaluateHttp(t, { status: 200, contentType: 'application/json', json: {} }).ok, false);
+});
+
+test('expect_json_in rejects a non-object, an empty list, and a non-array entry', () => {
+  const base = { kind: 'http', path: '/api/v1/project-manager/mode', expect_status: 200 };
+  const manifest = t => lib.validateManifest({ vtid: 'VTID-99999', service: 'gateway', tests: [{ ...base, ...t }] }, { vtid: 'VTID-99999', service: 'gateway' });
+  assert.equal(manifest({ expect_json_in: 'kiro_fallback' }).ok, false);
+  assert.equal(manifest({ expect_json_in: { executor_mode: [] } }).ok, false);
+  assert.equal(manifest({ expect_json_in: { executor_mode: 'kiro_fallback' } }).ok, false);
+  assert.equal(manifest({ expect_json_in: { executor_mode: ['kiro_fallback'] } }).ok, true);
+});

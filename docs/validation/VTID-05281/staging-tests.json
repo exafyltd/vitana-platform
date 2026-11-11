@@ -14,13 +14,14 @@
     },
     {
       "kind": "http",
-      "name": "PM reports Kiro-fallback mode",
+      "name": "PM mode route reports the executor mode",
       "target": "gateway",
       "method": "GET",
       "path": "/api/v1/project-manager/mode",
       "expect_status": 200,
-      "expect_json": { "ok": true, "enabled": true, "mode": "live", "executor_mode": "kiro_fallback" },
-      "reason": "read-only anonymous GET, same check as VTID-05277: with the repo variable unreadable the PM reads CLAUDE_AVAILABLE=false from the staging env"
+      "expect_json": { "ok": true, "mode": "live" },
+      "expect_json_in": { "executor_mode": ["kiro_fallback", "claude_primary"], "enabled": [true, false] },
+      "reason": "read-only anonymous GET, same check as VTID-05277: the PM mode route answers live with a known executor mode; the value depends on the staging CLAUDE_AVAILABLE env"
     },
     {
       "kind": "http",

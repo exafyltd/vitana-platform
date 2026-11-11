@@ -158,6 +158,18 @@ function validateHttpTest(t, where) {
   if (t.expect_status !== undefined && !Number.isInteger(t.expect_status)) {
     errors.push(`${where}: expect_status must be an integer`);
   }
+  if (t.expect_json_in !== undefined) {
+    const spec = t.expect_json_in;
+    if (!spec || typeof spec !== 'object' || Array.isArray(spec)) {
+      errors.push(`${where}: expect_json_in must be an object of field -> list of allowed values`);
+    } else {
+      for (const [p, list] of Object.entries(spec)) {
+        if (!Array.isArray(list) || list.length === 0) {
+          errors.push(`${where}: expect_json_in.${p} must be a non-empty array`);
+        }
+      }
+    }
+  }
   if (READ_METHODS.has(method)) return errors;
   if (!WRITE_METHODS.has(method)) {
     errors.push(`${where}: method ${method} not allowed`);
@@ -406,6 +418,15 @@ function evaluateHttp(t, res) {
       const got = getJsonPath(res.json, p);
       if (JSON.stringify(got) !== JSON.stringify(v)) {
         problems.push(`${p} = ${JSON.stringify(got)}, expected ${JSON.stringify(v)}`);
+      }
+    }
+  }
+  if (t.expect_json_in) {
+    // Each field must strictly equal one of the listed values. A missing field fails.
+    for (const [p, list] of Object.entries(t.expect_json_in)) {
+      const got = getJsonPath(res.json, p);
+      if (!list.some(v => JSON.stringify(v) === JSON.stringify(got))) {
+        problems.push(`${p} = ${JSON.stringify(got)}, expected one of ${JSON.stringify(list)}`);
       }
     }
   }
