@@ -22,17 +22,17 @@ parser for the path, then `express.json()`, router at `/`), mocks `routes/paymen
 
 | AC | Behaviour | TEST |
 |----|-----------|------|
-| AC1 | Signed `payment_intent.succeeded` fixture → 200, `updateServicePaymentState(sb, 'pay_dance_1', 'authorized')` | `valid signature → 200 and the service_payments state moves` |
-| AC2 | Signature made with a different secret → 400 `BAD_SIGNATURE`, no lookup, write or OASIS event | `forged signature (signed with another secret) …` |
-| AC3 | Malformed signature header → 400 `BAD_SIGNATURE`, nothing written | `garbage signature header …` |
-| AC4 | No `stripe-signature` header → 400, nothing written | `missing stripe-signature header …` |
-| AC5 | `STRIPE_WEBHOOK_SECRET` unset → 500 `WEBHOOK_NOT_CONFIGURED`, nothing written | `STRIPE_WEBHOOK_SECRET unset …` |
-| AC6 | Body changed after signing → 400 `BAD_SIGNATURE`, nothing written | `body altered after signing …` |
-| AC7 | Verified event keeps the existing lookup-error (500 `LOOKUP_FAILED`) and unknown-PI (200 `unknown_pi`) paths | `signed event, lookup error …`, `signed event, unknown payment_intent …` |
-| AC8 | index.ts mounts the raw parser for the path before `express.json()` | `index.ts mounts express.raw for /webhooks/stripe-dance before express.json()` |
+| AC-1 | Signed `payment_intent.succeeded` fixture → 200, `updateServicePaymentState(sb, 'pay_dance_1', 'authorized')` | `valid signature → 200 and the service_payments state moves` |
+| AC-2 | Signature made with a different secret → 400 `BAD_SIGNATURE`, no lookup, write or OASIS event | `forged signature (signed with another secret) …` |
+| AC-3 | Malformed signature header → 400 `BAD_SIGNATURE`, nothing written | `garbage signature header …` |
+| AC-4 | No `stripe-signature` header → 400, nothing written | `missing stripe-signature header …` |
+| AC-5 | `STRIPE_WEBHOOK_SECRET` unset → 500 `WEBHOOK_NOT_CONFIGURED`, nothing written | `STRIPE_WEBHOOK_SECRET unset …` |
+| AC-6 | Body changed after signing → 400 `BAD_SIGNATURE`, nothing written | `body altered after signing …` |
+| AC-7 | Verified event keeps the existing lookup-error (500 `LOOKUP_FAILED`) and unknown-PI (200 `unknown_pi`) paths | `signed event, lookup error …`, `signed event, unknown payment_intent …` |
+| AC-8 | index.ts mounts the raw parser for the path before `express.json()` | `index.ts mounts express.raw for /webhooks/stripe-dance before express.json()` |
 
 ## Results
-- Red on base (origin/main versions of both source files in place): 8 failed, 1 passed of 9. The passing case is AC4,
+- Red on base (origin/main versions of both source files in place): 8 failed, 1 passed of 9. The passing case is AC-4,
   because base already returned 400 for a missing header when the secret is set. `outputs/jest-red-on-base.txt`.
 - Green: 9 passed of 9. `outputs/jest-green.txt`.
 - `npx tsc --noEmit --preserveSymlinks` (services/gateway): exit 0. `outputs/tsc-gateway.txt`. `--preserveSymlinks`
