@@ -35,4 +35,4 @@ VTID-05730 allocated after policy approval (converged-auto-v1).
 Claimed and built on branch; plan on `main`.
 
 ### 2026-11-11T16:30Z · kiro-exafy-202611110920-270b · executing → in-review
-PR #4973 open; waiting for the reviewer agent.
+PR https://github.com/exafyltd/vitana-platform/pull/4973 open; waiting for the reviewer agent.
