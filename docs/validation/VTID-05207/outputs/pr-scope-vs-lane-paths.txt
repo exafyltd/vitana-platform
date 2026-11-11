@@ -1,0 +1,25 @@
+NOMATCH .kiro/specs/new-member-welcome/lanes/say-hello-composer.md
+MATCH docs/validation/VTID-05207/acceptance.md
+MATCH docs/validation/VTID-05207/commands.log
+MATCH docs/validation/VTID-05207/outputs/gateway-jest-base-red.txt
+MATCH docs/validation/VTID-05207/outputs/gateway-jest.txt
+MATCH docs/validation/VTID-05207/outputs/gateway-tsc.txt
+MATCH docs/validation/VTID-05207/outputs/pr-name-status.txt
+MATCH docs/validation/VTID-05207/outputs/pr-scope-vs-lane-paths.txt
+MATCH docs/validation/VTID-05207/plan-sparring.md
+MATCH docs/validation/VTID-05207/scope.json
+MATCH docs/validation/VTID-05207/staging-tests.json
+MATCH services/gateway/src/index.ts
+MATCH services/gateway/src/orb/developer/domain-atlas.ts
+MATCH services/gateway/src/routes/chat.ts
+MATCH services/gateway/src/routes/new-member-greeting-repository.ts
+MATCH services/gateway/src/routes/new-member-greeting.ts
+MATCH services/gateway/src/services/new-member-greeting-guard.ts
+MATCH services/gateway/src/services/new-member-greeting-suggestion.ts
+MATCH services/gateway/test/vtid-05207-greeting-guard-send-route.test.ts
+MATCH services/gateway/test/vtid-05207-greeting-guard.test.ts
+MATCH services/gateway/test/vtid-05207-greeting-suggestion-route.test.ts
+MATCH services/gateway/test/vtid-05207-greeting-suggestion.test.ts
+MATCH services/gateway/test/vtid-05208-greeting-send-route.test.ts
+RESULT: 1 NOMATCH
+NOTE: the only NOMATCH is the lane file itself (the lane's own log, log entries only, permission fields unchanged).
