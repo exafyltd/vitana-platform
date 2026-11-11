@@ -5,7 +5,7 @@ author_seat: exafyltd
 executor: kiro
 next_actor: kiro
 state: approved
-updated: 2026-11-11T11:34Z
+updated: 2026-11-11T15:00Z
 sparring_record: .kiro/specs/agentic-delivery-v2/sparring/verdict.md
 vtids: [VTID-05701, VTID-05702, VTID-05703, VTID-05704, VTID-05705, VTID-05706, VTID-05707, VTID-05708, VTID-05709, VTID-05710, VTID-05711, VTID-05712, VTID-05713, VTID-05714]
 ---
@@ -56,3 +56,55 @@ Open:
 Corrections: the drafted entry here said 12:00Z by mistake and is corrected to 11:10Z, the commit time of 28c42b0446.
 The `ready` entries of the lane files keep the wrong 12:00Z (11:30Z for `retire-vtid-allocate`), because a `_plan`
 commit may create a lane file but never edit one; their real times are 11:10Z and 11:20Z.
+
+### 2026-11-11T15:00Z · kiro-exafyltd-202611111044-8f1d · approved (driver: owner answers applied; re-plan held)
+Owner answers of 2026-11-11 applied to the plan block: `13698bf924` adds the bridge table (§6.1, D14: the kept list of
+`agentic-delivery` §2.2, nothing else stays on GitHub, nothing new is built there) and withdraws lanes `vtid-on-pr`,
+`review-workflow` and `review-dispatch-v1`; `adfa21355b` adds the database target (§9.1, D16), the Aurora-clone test
+database (§13.3, D1), C2 as hypotheses only, the Sonnet 5.5 quota and DeepSeek `eu-north-1` listings (§14), "D13 does
+not block", D15 and heartbeats at most 30 minutes. The plan hash changes.
+
+Re-plan session: PLAN-SPAR does not re-spar a converged session (`scripts/collab/plan-spar.mjs:307`, `:336-347`), so it
+runs on a lane-less spec `agentic-delivery-v2-r2` whose plan block is byte-identical to this one (sha256 of the lines from
+`<!-- plan:begin -->` to `<!-- plan:end -->`: `8085b412a43d10f75312e1de9bade127a79c55c47e47452819edd1d81498928d`). It is
+prepared but not pushed: round 1 of the companion re-plan (`privacy-ledger-auth-r2`, PR #4977, commit `399e9333e8`)
+copied one seat account address from `docs/programs/areas.yaml:14` into `sparring/round-1.md`. The owner's rule is "no
+email addresses anywhere", and every round that reads that file can copy one again until lane `areas-emails` is on
+`main`. Owner stop (privacy), raised in the session report.
+
+Decisions taken:
+1. The bridge table is in this plan (§6.1); `agentic-delivery` §2.2 itself is unchanged.
+2. The withdrawn lanes keep `state: ready` until their seats park them after this plan merges; a `_plan` commit cannot
+   edit a lane file.
+3. `gitlab-mr-vtid` allocates through `POST /api/v1/vtid/allocate` with `serviceAuthHeaders()`, not in-process (D16).
+4. Driver heartbeats at most 30 minutes apart (owner).
+
+Aurora progress for the owner and Claude Code (D15), all read-only, live AWS read 2026-11-11 14:35-14:41 UTC in
+`472838866351`. Newest status source: `.kiro/specs/claude-sessions-handover/sessions/aurora-cutover.md` (committed
+2026-10-15, content 2026-10-13); no Aurora commit on `main` since 2026-10-14; nothing moved since 2026-10-13. No source
+gives a day estimate for any step ("not estimated").
+
+| Step | State | Blocker | Owner | Verified |
+|---|---|---|---|---|
+| Schema | partly synced in the 2026-10-09 rehearsal; migrations still target Supabase; 120 migration files added since then not re-diffed | freeze and re-sync in the window | not named | target and counts yes; Aurora DDL no |
+| Data | last full load 2026-10-09 (663 tables, 0 errors); no DMS task running; CDC failed 2026-09-15; Aurora data 33 days old | final load in the write-freeze window | owner (window) | yes |
+| RLS and grants (part 0) | gate script and unit tests exist; never run live | pass on the clone, before the data host, after every load | not named | no |
+| RPCs | 202 inventoried (106 auth-dependent, 42 not in tracked migrations); presence on Aurora unknown | no function-existence check | not named | no |
+| Edge functions | 64 on Supabase; Aurora data client merged, switched off | data host, edge-secret flip, unschedule 25 cron jobs and 2 HTTP triggers | not named | code yes |
+| Gateway code paths | 711 of 2,006 files call Supabase directly; one switch (`data_backend`), off; the `url-aurora-proxy` secrets do not exist | secrets, production proxy, part-0 pass, window | owner | yes |
+| Frontend | 105 of 2,276 files call Supabase directly; `VITE_DATA_API_URL` unset | data host and an app PUBLISH | owner | code yes |
+| Auth | stays on Supabase; bridge code merged (#4003); bridge SQL not on production Aurora as of 2026-10-13 | SQL before the production proxy | not named | no |
+| Storage | stays on Supabase; reverse CDC needs `rds.logical_replication=1` (live: 0) | reboot, approved 2026-10-10, not done | owner | parameter yes |
+| Realtime | not deployed; workflow never run | reboot, IAM, port 4000 rule, Cloudflare token | owner | yes |
+| IAM for the cutover workflows | requested, not recorded as done | blocks realtime, proxy, data host, clone | owner | no |
+| Production proxy | staging proxy runs; production service does not exist | IAM, auth-bridge SQL | not named | yes |
+| Data host | `data.vitanaland.com` not set up | parity pass, token, proxy | owner | yes |
+| Side effects | cron, outbox and scheduled-call scripts written; SQL not on Aurora as of 2026-10-13 | unschedule on Supabase at the flip | not named | partly |
+| Other services | `data_backend` input on four services; none flipped | gateway first | not named | partly |
+| Rehearsal on the clone (part 10) | never run; no clone exists | IAM, rehearsal secret, staging data host | owner or admin | yes |
+| Cutover window (part 11) | not scheduled; the date follows a passed part 10 (`docs/validation/VTID-05023/plan-sparring.md:154-157`) | all rows above | owner and Claude Code (D15) | from docs |
+| Rollback 12(i) | chosen; tested against a fake `aws` only | logical replication | owner | yes |
+| Supabase decommission | not started | the cutover | not named | no status newer than 2026-09-20 |
+
+Open: O1 (Opus 4.6 invoke) unchanged. O2 closed: D13 does not block (owner). O3 unchanged: `main` needs one approving
+review; the only merge since 2026-11-08 (#4968) had a human approval.
