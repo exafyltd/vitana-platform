@@ -17,6 +17,11 @@ paths:
   - services/gateway/src/providers/bedrock.ts
   - services/gateway/test/plan-sparring/sparring-eu-guard.test.ts
   - services/gateway/test/providers/bedrock-region.test.ts
+  - services/gateway/src/services/dev-memory-embedding.ts
+  - services/gateway/test/services/dev-memory-embedding.test.ts
+  - services/gateway/test/providers/bedrock-vision-tools.test.ts
+  - services/gateway/test/vtid-04868-plan-sparring-service.test.ts
+  - services/gateway/test/vtid-04868-plan-sparring-stage.test.ts
 vtid: VTID-05762
 ---
 # Lane sparring-eu-guard (C1–C3 of plan sparring-eu-guard)
