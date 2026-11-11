@@ -49,3 +49,10 @@ Auth middleware, JWT verification, service token, `index.ts`, tenant resolution,
 - STAGING-VERIFY on a staging gateway that runs this commit (`staging-tests.json`: five rejected probes expecting 401; the routing-policy reset has no probe, see its `reason`).
 - Production: unchanged until an owner-commanded PUBLISH. If these routes are reachable in production today, they stay reachable until then.
 - Cognito-authenticated admins cannot pass an `exafy_admin` gate (`middleware/auth-supabase-jwt.ts:267`, known gap, unchanged).
+
+## Route mount evidence (Validator Check)
+No route is added: the six routes and their mounts exist on `main`; the change inserts a middleware into existing
+registrations, which the route-evidence gate reads as a changed registration line.
+ROUTE_MOUNT: unchanged — `services/gateway/src/index.ts:832` (`/api/v1/specs`), `:864` (`/api/v1/llm`), `:885` (`/api/v1/agents/triage`), `:1148` (`/api/v1/ai-personality`)
+FINAL_URL: `PATCH /api/v1/specs/:vtid`, `POST /api/v1/agents/triage/investigate`, `PUT /api/v1/ai-personality/:surface_key`, `POST /api/v1/ai-personality/:surface_key/reset`, `POST /api/v1/llm/routing-policy`, `POST /api/v1/llm/routing-policy/reset` (paths unchanged)
+CURL_PROOF: not run. No live or staging request was made; the staging proof is the rejected probes of `staging-tests.json`, run by STAGING-VERIFY after a staging deploy, and is recorded here only when it has a run id.
