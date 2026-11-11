@@ -280,7 +280,11 @@ export type PushOutcome =
   // VTID-05312: the recipient is viewing that conversation (chat-viewing-presence.ts).
   | 'suppressed_viewing'
   // VTID-05312: a second notification row for the same message and recipient.
-  | 'suppressed_duplicate';
+  | 'suppressed_duplicate'
+  // VTID-05718: a chat message held for its burst (push sent later by chat-burst-sweep.ts).
+  | 'pending_burst'
+  // VTID-05718: the held burst had no unread message left when it was due (read during the hold).
+  | 'suppressed_read';
 
 /**
  * VTID-05137: per-call options. `suppressPush: 'coalesced'` writes the in-app
@@ -289,6 +293,8 @@ export type PushOutcome =
  */
 export interface NotifyUserOptions {
   suppressPush?: 'coalesced';
+  /** VTID-05718: write the row held (push_outcome 'pending_burst', data.burst_due_at); chat-burst-sweep.ts sends the push when due. */
+  holdForBurst?: { dueAt: string };
 }
 
 /** The delivery outcome of one notification after FCM and Appilix ran. */
@@ -880,7 +886,9 @@ export async function notifyUser(
   // /push-dispatch never sends it later) with outcome suppressed_viewing.
   const pushViewing = pushAllowed && !pushCoalesced && CHAT_PUSH_TYPES.has(type)
     && (await isViewingChat(supabase, userId, tenantId, type, payload.data));
-  const shouldSendPush = pushAllowed && !pushCoalesced && !pushViewing;
+  // VTID-05718: a held chat message writes its row now and waits for the burst sweep.
+  const burstHeld = !!opts?.holdForBurst && pushAllowed && !pushCoalesced && !pushViewing;
+  const shouldSendPush = pushAllowed && !pushCoalesced && !pushViewing && !burstHeld;
 
   // VTID-05312: dedup — an unpushed row for the same recipient and message
   // (e.g. written by the vitana-v1 trigger) is marked handled; this row is the
@@ -918,6 +926,10 @@ export async function notifyUser(
       data: pushCoalesced ? { ...(payload.data || {}), push_coalesced: 'true' } : payload.data || {},
       ...(recipientVitanaId && { recipient_vitana_id: recipientVitanaId }),
     };
+    if (burstHeld && opts?.holdForBurst) {
+      insertData.push_outcome = 'pending_burst';
+      insertData.data = { ...(insertData.data || {}), burst_due_at: opts.holdForBurst.dueAt };
+    }
     if (shouldSendPush || pushCoalesced || pushViewing) {
       insertData.push_sent_at = new Date().toISOString();
     }
@@ -991,7 +1003,7 @@ export async function notifyUser(
 
   // VTID-04962: record what actually happened on the row this call wrote.
   // Push-capable rows only; a push the member's settings held back says so.
-  if (notificationId && (meta.channel === 'push' || meta.channel === 'push_and_inapp')) {
+  if (notificationId && !burstHeld && (meta.channel === 'push' || meta.channel === 'push_and_inapp')) {
     const outcome: PushOutcome = shouldSendPush
       ? classifyPushOutcome(fcmTally, appilixSent)
       : pushViewing
@@ -1009,6 +1021,7 @@ export async function notifyUser(
     `inapp=${inappWritten} push=${pushed} appilix=${appilixSent} ch=${meta.channel} pri=${meta.priority}` +
     (pushBlockedByDnd ? ' (DND)' : '') +
     (pushCoalesced ? ' (coalesced)' : '') +
+    (burstHeld ? ' (held for burst)' : '') +
     (pushViewing ? ' (viewing)' : '') +
     (meta.channel === 'silent' ? ' (silent)' : '')
   );
