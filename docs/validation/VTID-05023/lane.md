@@ -119,3 +119,40 @@ Branch: `cutover/vtid-05023-staging-hygiene` (not merged). Commits: `faa752f20f`
 ### Lane claim
 
 Still no queue claim. The real session id is `8e42cb36-56f1-4d98-b4e4-96425028a531`, and the queue refuses it (see L-CLAIM above).
+
+## Round 2: staging hygiene, plan and MR !12
+
+### Step 1: plan fixed to a read-only snapshot
+
+- Plan moved to its own branch `plan/vtid-05023-staging-aurora` (cut from `main`), commit `e444cc392b`. File: `docs/validation/VTID-05023/plan-staging-aurora.md`.
+- The plan now copies production Supabase with a `pg_dump` snapshot (read-only transaction) using an existing credential the owner names. It has no DMS, replication, logical decoding, publication, slot, role creation or setting change on production.
+- The staging gateway switch is step 6 of the plan and is marked as a separate, owner-gated change. It is not executed under this plan, so the staging URL and service-role key do not change.
+
+### Step 2: plan PR
+
+- Opened: MR !13, `plan(VTID-05023): staging Aurora cluster from a read-only Supabase snapshot`, target `main`. Opened by the `merge_request.create` push option on the new branch. Output: `View merge request for plan/vtid-05023-staging-aurora: https://gitlab.vitanaland.com/vitana/vitana-platform/-/merge_requests/13`.
+- CI plan sparring is not yet verified. No AWS resource is created.
+
+### Step 3: MR !12 diff contains only the workflow
+
+- Hygiene branch `cutover/vtid-05023-staging-hygiene` was reset in a new commit (no force push): `51e3f4f63e` reverts lint, PR-GATE, lane and plan files to `main`.
+- Output of `git diff --name-only origin/main origin/cutover/vtid-05023-staging-hygiene`: `.github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml`.
+- Branch history: `faa752f20f` (remove Aurora secrets from staging workflow), `0a2b003ae7` (earlier plan, now superseded on the plan branch), `51e3f4f63e`.
+
+### Step 4: MR !12 green, merge, staging verification
+
+- Not done. Blocked: the GitLab MR page returns a sign-in page to this sandbox (`https://gitlab.vitanaland.com/vitana/vitana-platform/-/merge_requests/12`), and the GitLab API needs an `AuthToken` the sandbox does not have. I cannot read the pipeline status, merge it, or see the deploy.
+- Post-deploy check (`AURORA_DATABASE_URL` and `AURORA_RLS_DATABASE_URL` absent from the running task) is not run. Needs AWS credentials: `aws ecs describe-services` and `describe-task-definition` for the staging service. Today: `NoCredentials: Unable to locate credentials`.
+
+### Step 5: `vitana-postgres-staging`
+
+- Not touched.
+
+### Step 6: open items
+
+- **Staging Supabase project does not exist.** Staging still reads and writes production Supabase (`https://inmkhvwdcuyhnxkgfvsb.supabase.co`). Creating a staging project is an owner decision. The staging URL and service-role key stay unchanged. The plan does not depend on it.
+- **Owner decision:** which existing read-only credential the plan's `pg_dump` uses (plan step 0).
+- **O5:** migration list for the staging restore's drift check (plan step 4).
+- **Plan convergence:** MR !13 must converge before any AWS resource is created.
+- **Compatibility layer** (round 1 task): not started; blocked on the queue claim.
+- **Queue claim:** still not held. The real session id `8e42cb36-56f1-4d98-b4e4-96425028a531` is refused by the queue.
