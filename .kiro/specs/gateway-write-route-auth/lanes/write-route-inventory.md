@@ -1,6 +1,6 @@
 ---
 lane: write-route-inventory
-state: in-review
+state: done
 next_actor: kiro
 claimed_by: kiro-exafy-202611110920-270b
 pr: https://github.com/exafyltd/vitana-platform/pull/4960
@@ -15,7 +15,7 @@ repos: [exafyltd/vitana-platform]
 paths:
   - docs/programs/security/gateway-write-route-inventory.md
   - docs/validation/VTID-*/**
-updated: 2026-11-11T16:30Z
+updated: 2026-11-11T18:30Z
 vtid: VTID-05698
 ---
 # Lane: write-route-inventory (repo vitana-platform)
@@ -42,3 +42,10 @@ PR: https://github.com/exafyltd/vitana-platform/pull/4960
 Findings: non-blocking: acceptance.md:5 says red-green exempt "per scope.json" but scope.json red_green_exempt is [] (kind docs)
 Findings: non-blocking: CI status taken from the caller's REST evidence (11/11 success). Since b7940985 the only lane change is fe0b54feed (acceptance.md TEST-line format, AC-4 TEST line); the merge of origin/main adds no out-of-lane change.
 Next: the land step merges under §7b
+
+### 2026-11-11T18:30Z · kiro-exafy-202611110920-270b · in-review → verified
+merge: b2c838b057a7bd6015655902617210db0cf2a97b (exafyltd/vitana-platform#4960)
+authority: §7b PM rule, applied by the plan driver through `land-guard.mjs merge` (review current on the PR head, every check green, up to date with main).
+
+### 2026-11-11T18:30Z · kiro-exafy-202611110920-270b · verified → done
+Docs-only lane; nothing deploys, so there is no STAGING-VERIFY. Done at merge with green checks. Production is unchanged until an owner PUBLISH.
