@@ -4,8 +4,10 @@ author: kiro
 author_seat: exafyltd
 executor: kiro
 next_actor: kiro
-state: drafted
-updated: 2026-11-11T11:40Z
+state: approved
+updated: 2026-11-11T11:16Z
+sparring_record: .kiro/specs/privacy-ledger-auth/sparring/verdict.md
+vtids: [VTID-05699, VTID-05700]
 ---
 # Handoff — privacy-ledger-auth
 
@@ -28,3 +30,6 @@ Decisions taken:
 3. `areas-emails` changes only `areas.yaml`, the scope the owner named. The other files that hold the addresses are
    counted and listed by command in the proposal (step 0) and are cleaned in later lanes.
 4. Both lanes have no `depends_on`. Lane `seats` of `agentic-delivery-v2` waits for `areas-emails` (same file).
+
+### 2026-11-11T11:16Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 2 lane(s) got a VTID and are handed to Kiro.

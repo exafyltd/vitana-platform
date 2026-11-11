@@ -12,7 +12,8 @@ reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 paths:
   - docs/programs/areas.yaml
   - scripts/collab/areas-no-email.test.mjs
-updated: 2026-11-11T11:40Z
+updated: 2026-11-11T11:16Z
+vtid: VTID-05699
 ---
 
 # Lane: areas-emails (repo exafyltd/vitana-platform)
@@ -22,3 +23,6 @@ Removes the account addresses from the seat file and adds a test that keeps them
 ## Log
 ### 2026-11-11T11:40Z · kiro-exafyltd-202611111044-8f1d · ready
 Lane created with the plan. Paths are the two files the change needs.
+
+### 2026-11-11T11:16Z · ci-plan-spar · ready (VTID allocated)
+VTID-05699 allocated after policy approval (converged-auto-v1).
