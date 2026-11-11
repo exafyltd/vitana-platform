@@ -223,6 +223,9 @@ export function fetchPendingPushNotifications(sb: any, lookbackCutoff: string) {
     .from('user_notifications')
     .select('id, user_id, tenant_id, type, title, body, data, channel, priority, created_at')
     .is('push_sent_at', null)
+    // VTID-05718: held chat bursts (pending_burst) and claimed ones (sending) belong to chat-burst-sweep.ts.
+    // NULL-safe: a plain neq would drop every row whose push_outcome is NULL.
+    .or('push_outcome.is.null,push_outcome.not.in.(pending_burst,sending)')
     .in('channel', ['push', 'push_and_inapp'])
     .gte('created_at', lookbackCutoff)
     .order('created_at', { ascending: true })
