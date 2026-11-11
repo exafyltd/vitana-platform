@@ -49,8 +49,13 @@ Each repo gets a test that fails on base and passes when the section is present:
 ## 5. Tests and commands
 platform: `node --test scripts/collab/session-handover-rule.test.mjs`, `node --test scripts/collab/*.test.mjs`, Kiro steering
 guard, preflight. v1: `npx vitest run src/lib/claude-md-session-handover.test.ts`, `npm test`. Red on base recorded.
-Kiro Web picks the rule up automatically: `scripts/collab/kiro-web-steering.mjs` regenerates the root steering from
-`CLAUDE.md` at session start.
+Kiro Web picks the rule up automatically: `.kiro/steering/vitana-standing-rules.md` links `CLAUDE.md` with
+`#[[file:CLAUDE.md]]`, and `scripts/collab/kiro-web-steering.mjs` mirrors that steering file (with a prefixed link) into
+the workspace at session start.
+Verified for v1 at the pin: the collaboration section is `CLAUDE.md:96-110` (next heading `## Overview` at `:112`);
+`vitest.config.ts` includes `src/**/*.{test,spec}.{ts,tsx}`; `package.json:30` `npm test` ends with `vitest run`. The
+builder re-checks these three facts on its base and records them in the lane log; if the structure differs it inserts
+after the collaboration section wherever it is.
 ## 6. Merge
 Protected gate file: merges only with this owner instruction plus a reviewer-agent accept on the current head (§3a, §7b).
 Deploys nothing; done when merged green.
