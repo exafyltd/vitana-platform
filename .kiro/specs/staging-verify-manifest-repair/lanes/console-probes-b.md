@@ -1,6 +1,6 @@
 ---
 lane: console-probes-b
-state: executing
+state: in-review
 next_actor: kiro
 claimed_by: kiro-exafy-202611111326-7e9b
 branch: kiro/staging-verify-manifest-repair/console-probes-b
@@ -34,3 +34,7 @@ VTID-05601 allocated after policy approval (converged-auto-v1).
 
 ### 2026-11-11T15:00Z · kiro-exafy-202611111326-7e9b · ready → executing
 Claimed by kiro-exafy-202611111326-7e9b. Evidence in docs/validation/VTID-05601/.
+
+### 2026-11-11T15:40Z · kiro-exafy-202611111326-7e9b · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/4976. Preflight every check passed. Waiting for the reviewer agent. Next actor: reviewer agent.
+pr: https://github.com/exafyltd/vitana-platform/pull/4976
