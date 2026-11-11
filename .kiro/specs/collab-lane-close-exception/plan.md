@@ -23,7 +23,8 @@ before `in-review → verified`. The owner chose a narrow, written exception ins
   lanes this exception covers. Their PRs are merged (verified via GitHub, 2026-11-11).
 
 ## Change
-1. `queue.mjs`: a lane's `in-review → verified` edge is also accepted when the lane file's front matter carries
+1. `queue.mjs`: `transitionChain` takes the spec slug in its options (`{ reviewCommits, laneStates, slug }`), passed
+   from `validateRange` as `c.slug` (R1-F2). A lane's `in-review → verified` edge is also accepted when the lane file's front matter carries
    `reviewer_exception:` with `owner_approval` (the owner's decision reference and date), `pr` and `merge_sha`, AND the
    lane's spec slug is in the explicit allowlist `CLOSED_BY_OWNER_EXCEPTION = ['profile-posts-full-width',
    'staging-verify-runner-fix']` in the same file. Any other lane still needs the reviewer accept.
@@ -32,8 +33,13 @@ before `in-review → verified`. The owner chose a narrow, written exception ins
    extend to new lanes.
 4. Tests in `queue.test.mjs`: (a) exception accepted for an allowlisted slug, (b) same record rejected for a
    non-allowlisted slug, (c) normal reviewer accept path unchanged, (d) missing merge SHA still rejected.
-5. Then the two lane files and handoffs are moved (`parked → in-review → verified → done`) with the exception
-   record, in a separate PR after this plan converges.
+5. Then the lane files and handoffs are moved with the exception record, in a separate PR after this plan converges.
+   Chains per file at the pinned commit (R1-F1):
+   - `profile-posts-full-width/lanes/card-layout` (parked, parked_from in-review): `parked → in-review → verified → done`.
+   - `staging-verify-runner-fix/lanes/runner` (parked, parked_from executing): `parked → executing → in-review → verified → done`.
+   - `staging-verify-runner-fix/lanes/manifests` (ready): `ready → executing → in-review → verified → done`.
+   - both handoffs (approved): `approved → executing → in-review → verified → done`.
+   Each `executing → in-review` entry carries its PR URL (queue.mjs around line 372); `verified → done` carries the merge SHA.
 
 ## Tests
 `node --test scripts/collab/queue.test.mjs` (existing tests plus the four new cases above). No staging or production
@@ -42,6 +48,9 @@ test; this changes only repository scripts and records.
 ## Risks
 - An exception that spreads: mitigated by the explicit allowlist in code, not in a config value.
 - It changes a governance gate: this plan goes through sparring and owner approval before any change to `queue.mjs`.
+- `queue.mjs` is a protected gate file (`PROTECTED_GATE_BUILTIN`, collaboration §3a). The implementation PR merges
+  only after the owner's instruction naming this plan AND a reviewer-agent accept on the final head. The exception in
+  this plan does not waive that rule for the implementation itself (R1-F3).
 
 ## Unchanged
 Reviewer-accept rule for every other lane; merge rules (§7b); production publish rules (§7c); the plan-sparring gate.
