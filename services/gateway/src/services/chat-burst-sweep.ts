@@ -16,6 +16,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { tt } from '../i18n/catalog';
 import { bulkGetUserLocales } from '../i18n/server-locale';
 import { dispatchPush } from './push-routing';
+import { isNotificationTypeAllowed } from './notification-controls/notification-controls-service';
 import {
   classifyPushOutcome,
   newPushFanoutOutcome,
@@ -43,6 +44,7 @@ interface BurstRow {
   id: string;
   user_id: string;
   tenant_id: string;
+  type: string;
   title: string;
   body: string;
   created_at: string;
@@ -171,7 +173,7 @@ async function flushGroup(
   // What the recipient still has unread in this conversation, newest first.
   const { data: unreadRaw, error: unreadErr } = await sb
     .from('user_notifications')
-    .select('id, user_id, tenant_id, title, body, created_at, data')
+    .select('id, user_id, tenant_id, type, title, body, created_at, data')
     .eq('user_id', userId)
     .in('type', CHAT_NOTIFICATION_TYPES)
     .eq('data->>conversation_key', key)
@@ -201,6 +203,12 @@ async function flushGroup(
     tag,
     data: { ...burstPayloadData(newest.data), conversation_key: key, tag },
   } as NotificationPayload;
+
+  // VTID-05718: the admin switch (VTID-04674) applies at send time too, as in notifyUser.
+  if (!(await isNotificationTypeAllowed(sb, newest.tenant_id, newest.type, ''))) {
+    await markClaimed(sb, claimed, 'suppressed_type_disabled', null);
+    return { pushed: 0, suppressed: claimed.length };
+  }
 
   const tally = newPushFanoutOutcome();
   let outcome: PushOutcome;
