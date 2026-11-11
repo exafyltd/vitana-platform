@@ -7,7 +7,7 @@ evidence in `docs/validation/<VTID>/` (`acceptance.md`, `commands.log`, `scope.j
 ## Lane `seats`
 - [ ] T1 `kiro: <n>` on the four existing seats (hotmail 1, exafy 2, exafyltd 3, jtadic 12).
 - [ ] T2 Seats `vitanaland` (4), `office` (5), `support` (6): `account`, `surface: pending`, `kiro`; no `automation`.
-- [ ] T3 Comment block: slots 7–11 reserved; account / seat / operator / session definitions.
+- [ ] T3 Comment block, indented inside `seats:`: slots 7–11 reserved; account / seat / operator / session definitions.
 
 **Acceptance**
 - Change types: Tooling/docs.

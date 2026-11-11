@@ -41,7 +41,9 @@ One lane. It edits `docs/programs/areas.yaml` only (a governance path, `queue.mj
 - Add three seats, no `automation`, no area: `vitanaland` (`kiro: 4`, `d.stevanovic@vitanaland.com`), `office`
   (`kiro: 5`, `office@exafy.io`), `support` (`kiro: 6`, `support@exafy.io`), each with `surface: pending` until the
   account's first session records its surface.
-- Add a comment block listing slots 7–11 as reserved (no seat until the owner names the account), and the rule that an
+- Add a comment block, indented two spaces inside `seats:` (e.g. `  # Kiro 7–11: reserved …`) so `loadSeats`
+  (`queue.mjs:1193`, which ends the block at any column-0 line) and `automations.test.mjs:23` (which skips comments)
+  both keep reading seats added below it, listing slots 7–11 as reserved (no seat until the owner names the account), and the rule that an
   account is a login, a seat is its configured identity, a session is one execution context; two seats run by one
   operator are two accounts, not two independent agents unless their sessions are.
 - `docs/validation/<VTID>/`: `acceptance.md`, `commands.log`, `scope.json`, the before/after seat table.
