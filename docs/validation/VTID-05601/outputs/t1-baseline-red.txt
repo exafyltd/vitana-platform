@@ -1,0 +1,12 @@
+## T1 baseline on origin/main d5669d9425 (before edits)
+RED VTID-05003 tests[2] /command-hub/app.js?v=20261121-vtid-05082-vtid-05547 -> app.js missing: "function applyDefaultOperatorEngine"
+RED VTID-05003 tests[2] /command-hub/app.js?v=20261121-vtid-05082-vtid-05547 -> app.js missing: "function renderKiroFallbackAction"
+RED VTID-05003 tests[2] /command-hub/app.js?v=20261121-vtid-05082-vtid-05547 -> app.js missing: "function continueInOperator"
+RED VTID-05004 tests[1] /command-hub/app.js?v=20261121-vtid-05082-vtid-05547 -> app.js missing: "kiro-key-manage"
+RED VTID-05004 tests[1] /command-hub/app.js?v=20261121-vtid-05082-vtid-05547 -> app.js missing: "kiro-key-ok"
+RED VTID-05004 tests[1] /command-hub/app.js?v=20261121-vtid-05082-vtid-05547 -> app.js missing: "✓ Connected"
+RED VTID-05064 tests[1] /command-hub/app.js?v=20261121-vtid-05082-vtid-05547 -> app.js missing: "kiro-stopped-early"
+RED VTID-05069 tests[6] /command-hub/app.js?v=20261121-vtid-05082-vtid-05547 -> app.js missing: "window.PipelineTree.renderThreadCards(state.operatorActiveThreadId)"
+RED VTID-05069 tests[6] /command-hub/app.js?v=20261121-vtid-05082-vtid-05547 -> app.js missing: "window.PipelineTree.threadDot(thread.id)"
+RED VTID-05071 tests[3] /command-hub/app.js?v=20261121-vtid-05082-vtid-05547 -> app.js missing: "window.KiroConsole.waitingBadge(thread.id)"
+checked 33 strings: 10 missing
