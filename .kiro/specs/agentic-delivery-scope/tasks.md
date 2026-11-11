@@ -36,7 +36,7 @@ Acceptance:
 
 <!-- lane: traceability -->
 Repo `exafyltd/vitana-platform`.
-- [ ] T1 Tests first: `delivery.*` types outside the allowlist rejected (400); auth via `requireLedgerWriteAuth` (log passes, enforce rejects without token); `/allocate` emits `delivery.vtid.allocated`; timeline orders steps by `created_at`, minutes from recorded times only, `null` when missing.
+- [ ] T1 Tests first: `delivery.*` types outside the allowlist rejected (400); `delivery.checks.passed` stored with status `success`, `delivery.blocked` with `error`; an authenticated caller's `role`/`model` kept; auth via `requireLedgerWriteAuth` (log passes, enforce rejects without token); `/allocate` emits `delivery.vtid.allocated`; timeline orders steps by `created_at`, minutes from recorded times only, `null` when missing.
 - [ ] T2 Implement in `events.ts`, `vtid.ts`, `delivery/timeline.ts`.
 - [ ] T3 Gateway typecheck and Jest for the two files green.
 - [ ] T4 `docs/validation/<VTID>/staging-tests.json`: read-only GET of the timeline route with the service token (JSON 200), and the unauthenticated step write as a rejected probe once staging pins enforce.
@@ -66,17 +66,32 @@ Acceptance:
 - No address in the diff, the PR body, a commit message or `docs/validation/<VTID>/**`.
 
 <!-- lane: dispatcher -->
-Repo `exafyltd/vitana-platform`.
-- [ ] T1 Tests first: schedule 15/30/60/120/240/480 min, at most 6 in 24 h, then blocked with `next_actor: owner`; non-retryable reasons never retried; a dry-run tick only decides.
-- [ ] T2 `retry.ts`, the `retry` kind in `types.ts`, wiring in `decide.ts`.
-- [ ] T3 Gateway typecheck; `npm run test:operator` and the PM tests green.
+Repo `exafyltd/vitana-platform`. Changes `retry.ts` and its test only (plan §5).
+- [ ] T1 Test first (`retry.test.ts`), red on `origin/main`: schedule 15/30/60/120/240/480 min, at most 6 attempts in 24 h, the 7th → blocked with `next_actor: owner`; non-retryable reasons (security, data loss, production write, protected file without its reviews, escalated sparring) never retried.
+- [ ] T2 `retry.ts`: pure functions `nextRetry(lane, history, now)` and `isRetryable(reason)`.
+- [ ] T3 Gateway typecheck and the test green.
 - [ ] T4 PR `VTID-xxxxx (agentic-delivery-scope/dispatcher): …`.
+
+Acceptance:
+- Change types: Backend.
+- **Outcome** — the retry schedule and eligibility exist as tested pure functions; nothing calls them yet.
+- **States / Surfaces / Locales / Accessibility** — n/a: no member-facing UI.
+- **Contract** — `nextRetry` returns `{attempt, at}` or `{blocked: true}`; no I/O.
+- **Staging proof** — not verified on staging: nothing calls the functions until `dispatcher-pm`.
+- No address in the diff, the PR body, a commit message or `docs/validation/<VTID>/**`.
+
+<!-- lane: dispatcher-pm -->
+Repo `exafyltd/vitana-platform`. Builds after `dispatcher`.
+- [ ] T1 Test first (`retry-act.test.ts`): a dry-run tick decides `retry` for an eligible parked lane and writes nothing; a live tick unparks it to `parked_from` through the pm-agent writer (only `PM_AGENT_KEYS` change) and records `delivery.retry.scheduled`; after the 6th attempt it records `delivery.blocked`.
+- [ ] T2 `types.ts` (`RetryDecision` in the union), `decide.ts`, `act.ts` (`actRetry`).
+- [ ] T3 Gateway typecheck; `npm run test:operator` and the PM tests green.
+- [ ] T4 PR `VTID-xxxxx (agentic-delivery-scope/dispatcher-pm): …`.
 
 Acceptance:
 - Change types: Backend.
 - **Outcome** — a parked lane with a retryable reason is retried by the machine and, after 6 attempts, recorded as blocked.
 - **States / Surfaces / Locales / Accessibility** — n/a: no member-facing UI.
-- **Contract** — PM decision `{kind:"retry", slug, lane, attempt, at}`; written through the existing pm-agent writer keys only.
+- **Contract** — PM decision `{kind:"retry", slug, lane, attempt, at}`; written through `applyLaneChange` (`writers.ts:73`) only.
 - **Staging proof** — not verified on staging: the PM runs in dry-run there; covered by the lane tests.
 - No address in the diff, the PR body, a commit message or `docs/validation/<VTID>/**`.
 

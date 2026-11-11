@@ -109,22 +109,33 @@ Every model call records its tier. A gate with no tier available blocks the chan
 
 ## 4. Traceability (v5 §5)
 - **Steps:** one OASIS event per step through `POST /api/v1/oasis/events`, `created_at` set by the server (premise 1).
-  Lane `traceability` adds an allowlist of the v5 step names under `delivery.` (`delivery.vtid.allocated`,
+  Lane `traceability` adds an allowlist of the v5 step names: under `delivery.` (`delivery.vtid.allocated`,
   `delivery.lane.claimed`, `delivery.checks.passed|failed`, `delivery.review.verdict`, `delivery.merge.landed`,
-  `delivery.deploy.staging.started|finished`, `delivery.staging.verify.passed|failed`, `delivery.retry.scheduled`,
-  `delivery.blocked`, `delivery.gate2.requested`); other types are accepted as today. The route gets
-  `requireLedgerWriteAuth` (mode `log` by default, so no caller breaks; staging pins `enforce` as for the ledger routes).
+  `delivery.deploy.staging.started|finished`, `delivery.retry.scheduled`, `delivery.blocked`,
+  `delivery.gate2.requested`), plus the existing `staging.verify.passed|failed`, kept unprefixed because the Project
+  Manager and the Gate 2 poster read that topic. Each allowlisted name carries its own status (`*.passed` → success,
+  `*.failed` and `delivery.blocked` → error, `delivery.retry.scheduled` → warning, the rest info), so the substring rule
+  of `events.ts:511-518` no longer decides them (R1-F1); other types keep that rule. Other `delivery.` types are refused
+  (400). The route gets `requireLedgerWriteAuth` (mode `log` by default, so no caller breaks; staging pins `enforce` as
+  for the ledger routes). For an authenticated caller it also takes `role` and `model` from the body (defaults `CICD`
+  and the current value) and keeps writing `details` into `metadata` (`:531-535`), so record-oasis's fields survive the
+  move (R1-F3).
 - **Allocation:** `/allocate` emits `delivery.vtid.allocated` (fire-and-forget, as `:254-256`).
 - **Timeline:** `GET /api/v1/vtid/:vtid/timeline` joins the ledger row with the VTID's events (by `vtid` and by
   `metadata.vtids`), in `created_at` order, with minutes between consecutive steps computed only from recorded timestamps
   (`null` when one is missing, never 0). No migration: ledger state times are the row timestamps plus the step events.
 - **STAGING-VERIFY:** lane `staging-verify-wiring` sends its result through the staging gateway route with
-  `GATEWAY_SERVICE_TOKEN`, one event per VTID of the result, and keeps the direct write as the fallback when the token is
+  `GATEWAY_SERVICE_TOKEN`: one `staging.verify.<outcome>` event per VTID of the result, `details` = today's `metadata`
+  object (`record-oasis.sh:41-51`), `role`/`model` as today. It keeps the direct write as the fallback when the token is
   absent (so verification is never lost). Every write still goes to the same database as today (premise 4).
 
 ## 5. Retries instead of questions (v5 §2)
-Lane `dispatcher`: a Project Manager decision `retry` for a lane parked with a retryable reason (failed check, model
-tier unavailable, missing prerequisite, infra failure). Backoff 15, 30, 60, 120, 240, 480 minutes: at most 6 attempts in
+Lanes `dispatcher` (the pure part: `retry.ts`, schedule and eligibility, with its test) and `dispatcher-pm` (the wiring:
+the `retry` kind in `types.ts`, `decide.ts`, and its act handler in `act.ts`, which writes through the existing pm-agent
+lane writer, `writers.ts:73` `applyLaneChange`, so no new seam; R1-F2). `decide.ts` and `types.ts` were in
+`dispatcher`'s paths from the first draft and a `_plan` commit cannot edit a lane file; only `dispatcher-pm` changes
+them, after `dispatcher` (depends_on). The decision: `retry` for a lane parked with a retryable reason (failed check,
+model tier unavailable, missing prerequisite, infra failure). Backoff 15, 30, 60, 120, 240, 480 minutes: at most 6 attempts in
 24 hours; each attempt unparks the lane to its `parked_from` state and records `delivery.retry.scheduled`; after the 6th
 the lane stays parked with `next_actor: owner` and `delivery.blocked`. Never retried: security or data-loss risk, a
 production write, a protected-file merge without its reviews, an escalated sparring verdict. The PM's own guards stay
@@ -177,7 +188,8 @@ it lands after v2 `rules-platform` and `rules-v1` change the rule text in both r
 | `model-probes` | platform | kiro (exafy) | `scripts/eng/model-probe.mjs`, `scripts/eng/model-probe.test.mjs` | `model-config` |
 | `traceability` | platform | kiro (exafyltd) | `services/gateway/src/routes/events.ts`, `services/gateway/src/routes/vtid.ts`, `services/gateway/src/services/delivery/timeline.ts`, `services/gateway/test/delivery/timeline.test.ts`, `services/gateway/test/delivery/oasis-step-events.test.ts` | — |
 | `staging-verify-wiring` | platform | kiro (exafyltd) | `.github/workflows/STAGING-VERIFY.yml`, `scripts/ci/staging-verify/record-oasis.sh`, `scripts/ci/staging-verify/record-oasis.test.cjs` | `traceability` |
-| `dispatcher` | platform | kiro (exafyltd) | `services/gateway/src/services/project-manager/retry.ts`, `services/gateway/src/services/project-manager/decide.ts`, `services/gateway/src/services/project-manager/types.ts`, `services/gateway/test/project-manager/retry.test.ts` | — |
+| `dispatcher` | platform | kiro (exafyltd) | `services/gateway/src/services/project-manager/retry.ts`, `services/gateway/test/project-manager/retry.test.ts` (its paths also list `decide.ts` and `types.ts`, which only `dispatcher-pm` changes, §5) | — |
+| `dispatcher-pm` | platform | kiro (exafyltd) | `services/gateway/src/services/project-manager/types.ts`, `services/gateway/src/services/project-manager/decide.ts`, `services/gateway/src/services/project-manager/act.ts`, `services/gateway/test/project-manager/retry-act.test.ts` | `dispatcher` |
 | `heartbeat-30` | platform | kiro (exafyltd) | `scripts/collab/plan-driver.mjs`, `scripts/collab/plan-driver.test.mjs` | — (after v2 `rules-platform`, `rules-v1`) |
 | `vision-review` | platform | kiro (exafy) | `services/gateway/src/services/delivery/vision/**`, `services/gateway/test/delivery/vision.test.ts` | `model-config` |
 | `verify-visual` | platform | kiro (exafyltd) | `scripts/ci/staging-verify/run.mjs`, `scripts/ci/staging-verify/lib.cjs`, `scripts/ci/staging-verify/lib.test.cjs`, `scripts/ci/staging-verify/visual.mjs`, `scripts/ci/staging-verify/visual.test.mjs` | `model-config`, `staging-verify-wiring` |
@@ -208,7 +220,8 @@ address-shaped strings (noreply, invalid and example domains excepted), prints p
   `details.{lane, seat, attempt, model, tier}`.
 
 ## 10. Parallel and hot files
-At most 6 build lanes at once and at most 2 sparring sessions. No file is in two lanes of this plan. Across plans:
+At most 6 build lanes at once and at most 2 sparring sessions. No file is changed by two lanes of this plan
+(`decide.ts` and `types.ts` are listed in two, changed by `dispatcher-pm` only, §5). Across plans:
 `.kiro/automations/*.md` is also in v2 `seats` (it waits for `addr-08`..`addr-10`); `scripts/collab/plan-driver.mjs`
 follows v2 `rules-platform`. Governance-path lanes (`staging-verify-wiring`, `heartbeat-30`, and the automation-file and
 guard lanes of §8a) carry `reviewer_seat: agent:vitana-lane-reviewer`.

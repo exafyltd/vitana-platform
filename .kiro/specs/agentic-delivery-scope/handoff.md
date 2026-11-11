@@ -9,7 +9,7 @@ updated: 2026-11-11T16:23Z
 ---
 # Handoff — agentic-delivery-scope
 
-Plan: `plan.md`. Tasks: `tasks.md`. 15 lanes (`lanes/*.md`); the 11 address-cleanup lanes of plan §8a are added after convergence. It reuses
+Plan: `plan.md`. Tasks: `tasks.md`. 16 lanes (`lanes/*.md`); the 11 address-cleanup lanes of plan §8a are added after convergence. It reuses
 the Wave 1 lanes of `agentic-delivery-v2` (#4959) instead of duplicating them.
 
 ## Log
