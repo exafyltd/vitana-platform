@@ -6,7 +6,7 @@
  *  - per tenant: one row per tenant that has a finding, each row carries only that tenant's own numbers;
  *  - read-only: the only call is the POST of ci_tenant_isolation_health_by_tenant(); row 21b is unchanged.
  *
- * Run: JEST_ROOT=<checkout> npx jest --config <jest config with rootDir = this folder> morning-health-pertenant
+ * Run: cd services/gateway && npx jest test/vtid-05504-morning-health-pertenant.test.ts
  */
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
