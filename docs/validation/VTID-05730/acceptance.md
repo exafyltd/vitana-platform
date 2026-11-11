@@ -31,6 +31,24 @@ parser for the path, then `express.json()`, router at `/`), mocks `routes/paymen
 | AC-7 | Verified event keeps the existing lookup-error (500 `LOOKUP_FAILED`) and unknown-PI (200 `unknown_pi`) paths | `signed event, lookup error …`, `signed event, unknown payment_intent …` |
 | AC-8 | index.ts mounts the raw parser for the path before `express.json()` | `index.ts mounts express.raw for /webhooks/stripe-dance before express.json()` |
 
+## AC mapping (Validator Check format)
+AC-1 Signed `payment_intent.succeeded` → 200 and the state moves to `authorized`.
+TEST: services/gateway/test/payments-stripe-dance-signature.test.ts ("valid signature → 200 and the service_payments state moves")
+AC-2 Signature made with another secret → 400 `BAD_SIGNATURE`, nothing read or written.
+TEST: services/gateway/test/payments-stripe-dance-signature.test.ts ("forged signature (signed with another secret)")
+AC-3 Malformed signature header → 400 `BAD_SIGNATURE`, nothing written.
+TEST: services/gateway/test/payments-stripe-dance-signature.test.ts ("garbage signature header")
+AC-4 No `stripe-signature` header → 400, nothing written.
+TEST: services/gateway/test/payments-stripe-dance-signature.test.ts ("missing stripe-signature header")
+AC-5 `STRIPE_WEBHOOK_SECRET` unset → 500 `WEBHOOK_NOT_CONFIGURED`, nothing written.
+TEST: services/gateway/test/payments-stripe-dance-signature.test.ts ("STRIPE_WEBHOOK_SECRET unset")
+AC-6 Body changed after signing → 400 `BAD_SIGNATURE`, nothing written.
+TEST: services/gateway/test/payments-stripe-dance-signature.test.ts ("body altered after signing")
+AC-7 Lookup-error and unknown-PI paths unchanged on a verified event.
+TEST: services/gateway/test/payments-stripe-dance-signature.test.ts ("signed event, lookup error", "signed event, unknown payment_intent")
+AC-8 Raw parser for the path is mounted before `express.json()`.
+TEST: services/gateway/test/payments-stripe-dance-signature.test.ts ("index.ts mounts express.raw for /webhooks/stripe-dance before express.json()")
+
 ## Results
 - Red on base (origin/main versions of both source files in place): 8 failed, 1 passed of 9. The passing case is AC-4,
   because base already returned 400 for a missing header when the secret is set. `outputs/jest-red-on-base.txt`.
