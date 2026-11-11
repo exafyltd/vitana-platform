@@ -3,9 +3,9 @@
  *
  * The routes now need an exafy_admin JWT (or the service token). The Command Hub sends the Bearer token only
  * through buildContextHeaders() (app.js `function buildContextHeaders`), so every write call site of these routes
- * must build its headers with it. The caller census at the pin found exactly one write call site per route; the
- * counts below fail if a new call site appears that this test does not check. x-actor-id / x-actor-role are no
- * longer read by the gateway and must not be sent.
+ * must build its headers with it. The caller census at the pin found exactly one write call site per route. Each
+ * route is matched by its path and HTTP method (any quoting or concatenation of the path), so a new write caller
+ * of the same route is counted too. x-actor-id / x-actor-role are no longer read by the gateway and must not be sent.
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -32,6 +32,36 @@ const WRITE_CALLS: Array<{ route: string; anchor: string; method: string }> = [
   { route: 'POST /api/v1/llm/routing-policy', anchor: "fetch('/api/v1/llm/routing-policy?environment=DEV', {", method: 'POST' },
   { route: 'POST /api/v1/llm/routing-policy/reset', anchor: "fetch('/api/v1/llm/routing-policy/reset', {", method: 'POST' },
 ];
+
+/** Every `fetch(` whose URL starts with `path` and whose init (up to the closing `})`) has `method: '<method>'`. */
+function writeSites(pathRe: RegExp, method: string): string[] {
+  const out: string[] = [];
+  const re = new RegExp(String.raw`fetch\(\s*['"\`]` + pathRe.source, 'g');
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(APP_JS)) !== null) {
+    const end = APP_JS.indexOf('})', m.index);
+    const site = APP_JS.slice(m.index, end < 0 ? undefined : end + 2);
+    if (new RegExp(`method:\\s*['"]${method}['"]`).test(site)) out.push(site);
+  }
+  return out;
+}
+
+const ROUTE_PATHS: Array<{ route: string; path: RegExp; method: string; rest?: RegExp }> = [
+  { route: 'PATCH /api/v1/specs/:vtid', path: /\/api\/v1\/specs\/['"\`]\s*\+\s*[\w.()]+\s*,/, method: 'PATCH' },
+  { route: 'POST /api/v1/agents/triage/investigate', path: /\/api\/v1\/agents\/triage\/investigate['"\`?]/, method: 'POST' },
+  { route: 'PUT /api/v1/ai-personality/:surface_key', path: /\/api\/v1\/ai-personality\//, method: 'PUT' },
+  { route: 'POST /api/v1/ai-personality/:surface_key/reset', path: /\/api\/v1\/ai-personality\/['"\`]\s*\+\s*\w+\s*\+\s*['"\`]\/reset/, method: 'POST' },
+  { route: 'POST /api/v1/llm/routing-policy', path: /\/api\/v1\/llm\/routing-policy['"\`?]/, method: 'POST' },
+  { route: 'POST /api/v1/llm/routing-policy/reset', path: /\/api\/v1\/llm\/routing-policy\/reset/, method: 'POST' },
+];
+
+describe('VTID-05697 every write caller of the six routes, matched by path and method', () => {
+  it.each(ROUTE_PATHS)('$route: one write call site in app.js, using buildContextHeaders', ({ path: p, method }) => {
+    const sites = writeSites(p, method);
+    expect(sites).toHaveLength(1);
+    expect(sites[0]).toMatch(/headers:\s*(Object\.assign\([^)]*)?buildContextHeaders\(/);
+  });
+});
 
 describe('VTID-05697 Command Hub write callers send the Bearer helper', () => {
   it.each(WRITE_CALLS)('$route: exactly one write call site, and it uses buildContextHeaders', ({ anchor, method }) => {

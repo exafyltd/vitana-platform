@@ -24,6 +24,7 @@ jest.mock('../src/middleware/auth-supabase-jwt', () => ({
     const h = String(req.headers.authorization || '');
     if (h === 'Bearer admin-jwt') req.identity = { user_id: 'u-admin', exafy_admin: true, role: 'authenticated' };
     else if (h === 'Bearer user-jwt') req.identity = { user_id: 'u-user', exafy_admin: false, role: 'authenticated' };
+    else if (h === 'Bearer admin-no-id-jwt') req.identity = { user_id: '', exafy_admin: true, role: 'authenticated' };
     next();
   },
   requireAdminAuth: (_req: any, res: any) => res.status(401).json({ ok: false }),
@@ -50,7 +51,8 @@ jest.mock('../src/services/llm-routing-policy-service', () => ({
   getActivePolicy: jest.fn(async () => null),
 }));
 jest.mock('../src/services/llm-telemetry-service', () => ({ queryLLMTelemetry: jest.fn(), getLLMTelemetrySummary: jest.fn() }));
-jest.mock('../src/services/llm-router', () => ({ verifyProvider: jest.fn(), callViaRouter: jest.fn() }));
+const mockCallViaRouter = jest.fn();
+jest.mock('../src/services/llm-router', () => ({ verifyProvider: jest.fn(), callViaRouter: (...a: unknown[]) => mockCallViaRouter(...a) }));
 jest.mock('../src/services/oasis-event-service', () => ({ emitOasisEvent: jest.fn(async () => ({ ok: true })) }));
 
 import aiPersonalityRouter from '../src/routes/ai-personality';
@@ -85,7 +87,7 @@ const ROUTES: RouteCase[] = [
   { name: 'PATCH /api/v1/specs/:vtid', method: 'patch', path: '/api/v1/specs/VTID-00001',
     body: { spec_markdown: 'short' }, serviceToken: true, writes: () => [] },
   { name: 'POST /api/v1/agents/triage/investigate', method: 'post', path: '/api/v1/agents/triage/investigate',
-    body: {}, serviceToken: false, writes: () => [] },
+    body: {}, serviceToken: false, writes: () => [mockCallViaRouter] },
   { name: 'PUT /api/v1/ai-personality/:surface_key', method: 'put', path: '/api/v1/ai-personality/voice_live',
     body: { config: { tone: 'x' }, reason: 'test' }, serviceToken: false, writes: () => [mockUpdatePersonality] },
   { name: 'POST /api/v1/ai-personality/:surface_key/reset', method: 'post', path: '/api/v1/ai-personality/voice_live/reset',
@@ -108,7 +110,7 @@ describe('VTID-05697 gateway write routes require the existing control-plane gat
 
   beforeEach(() => {
     process.env.GATEWAY_SERVICE_TOKEN = 'test-service-token';
-    for (const m of [mockUpdatePersonality, mockResetPersonality, mockUpdatePolicy, mockResetPolicy]) m.mockReset();
+    for (const m of [mockUpdatePersonality, mockResetPersonality, mockUpdatePolicy, mockResetPolicy, mockCallViaRouter]) m.mockReset();
     mockUpdatePersonality.mockResolvedValue({ ok: true });
     mockResetPersonality.mockResolvedValue({ ok: true });
     mockUpdatePolicy.mockResolvedValue({ ok: true, policy: { version: 2 } });
@@ -144,6 +146,12 @@ describe('VTID-05697 gateway write routes require the existing control-plane gat
     it('rejects a token that is neither the service token nor a valid JWT (401)', async () => {
       const res = await send(c, { Authorization: 'Bearer forged' });
       expect(res.status).toBe(401);
+      expectNoWrite(c);
+    });
+
+    it('rejects a signed-in non-admin who also sends x-actor-role: admin (403)', async () => {
+      const res = await send(c, { Authorization: 'Bearer user-jwt', 'x-actor-role': 'admin', 'x-actor-id': 'attacker' });
+      expect(res.status).toBe(403);
       expectNoWrite(c);
     });
 
@@ -189,6 +197,12 @@ describe('VTID-05697 gateway write routes require the existing control-plane gat
 
     await send(ROUTES[5], { Authorization: 'Bearer test-service-token', 'x-actor-id': 'spoof', 'x-actor-role': 'admin' });
     expect(mockResetPolicy).toHaveBeenCalledWith({ actor_id: 'internal', actor_role: 'service', reason: 'test' }, 'DEV');
+
+    await send(ROUTES[3], { Authorization: 'Bearer admin-jwt', 'x-actor-role': 'infra' });
+    expect(mockResetPersonality).toHaveBeenCalledWith('voice_live', 'test', 'u-admin', 'exafy_admin');
+
+    await send(ROUTES[2], { Authorization: 'Bearer admin-no-id-jwt' });
+    expect(mockUpdatePersonality).toHaveBeenLastCalledWith('voice_live', { tone: 'x' }, 'test', 'unknown', 'exafy_admin');
 
     await send(ROUTES[4], { Authorization: 'Bearer admin-jwt', 'x-actor-id': 'spoof' });
     expect(mockUpdatePolicy).toHaveBeenCalledWith(

@@ -25,6 +25,15 @@ import { requireAdminAuth } from '../middleware/auth-supabase-jwt';
 import { requireServiceOrAdmin, getControlPlaneActor } from '../middleware/require-service-or-admin';
 import * as repo from './llm-repository';
 
+import {
+  LLM_SAFE_DEFAULTS,
+  VALID_STAGES,
+  VALID_PROVIDERS,
+  getProviderFlagship,
+  type LLMProvider,
+} from '../constants/llm-defaults';
+import { getSupabase } from '../lib/supabase';
+
 /**
  * VTID-05697: audit actor from the control-plane gate (never from caller headers).
  * `admin:<user_id>` -> { id: <user_id>, role: 'exafy_admin' }; `service:internal` -> { id: 'internal', role: 'service' }.
@@ -36,14 +45,6 @@ function auditActor(req: Request): { id: string; role: string } {
   const id = i < 0 ? 'unknown' : label.slice(i + 1) || 'unknown';
   return { id, role: kind === 'admin' ? 'exafy_admin' : kind };
 }
-import {
-  LLM_SAFE_DEFAULTS,
-  VALID_STAGES,
-  VALID_PROVIDERS,
-  getProviderFlagship,
-  type LLMProvider,
-} from '../constants/llm-defaults';
-import { getSupabase } from '../lib/supabase';
 
 const router = Router();
 
@@ -502,7 +503,7 @@ router.get('/providers/health', (_req: Request, res: Response) => {
 // Real preflight: actually invoke a provider/model and report what happened.
 // =============================================================================
 // Gated with real middleware, NOT the x-actor-role header the older handlers in
-// this file use (VTID-03565). Two reasons: this endpoint spends money on every
+// this file used before VTID-05697 (VTID-03565). Two reasons: this endpoint spends money on every
 // call — it performs a genuine provider completion — and a spoofable request
 // header is not a gate for that. As a NEW route it has no existing caller to
 // break, so it can start at the standard the rest of the admin surface already
