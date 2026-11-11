@@ -1,6 +1,6 @@
 ---
 lane: drift-guard
-state: executing
+state: in-review
 next_actor: kiro
 claimed_by: kiro-exafy-202611111326-7e9b
 branch: kiro/staging-verify-manifest-repair/drift-guard
@@ -31,3 +31,7 @@ VTID-05602 allocated after policy approval (converged-auto-v1).
 
 ### 2026-11-11T20:00Z · kiro-exafy-202611111326-7e9b · ready → executing
 Claimed. Dependencies console-probes-a, console-probes-b, ref-05331, shadow-retired are merged (#4975, #4976, #4986, #4992). Evidence in docs/validation/VTID-05602/.
+pr: https://github.com/exafyltd/vitana-platform/pull/4993
+
+### 2026-11-11T21:10Z · kiro-exafy-202611111326-7e9b · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/4993. Preflight every check passed. CI is red by design until staging-manifest-remainder lands (four manifests).
