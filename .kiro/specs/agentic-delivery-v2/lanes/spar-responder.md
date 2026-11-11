@@ -1,7 +1,7 @@
 ---
 lane: spar-responder
 state: ready
-next_actor: claude
+next_actor: kiro
 branch: claude/agentic-delivery-v2/spar-responder
 depends_on: [review-service, delivery-bedrock]
 executor: claude
@@ -14,7 +14,8 @@ paths:
   - .github/workflows/PLAN-SPAR.yml
   - scripts/ci/plan-spar-slot/**
   - services/gateway/test/vtid-04868-plan-sparring-*.test.ts
-updated: 2026-11-11T12:00Z
+updated: 2026-11-11T11:27Z
+vtid: VTID-05713
 ---
 
 # Lane: spar-responder (repo exafyltd/vitana-platform)
@@ -26,3 +27,6 @@ files: the owner's instruction of 2026-11-11 names this plan.
 ## Log
 ### 2026-11-11T12:00Z · kiro-exafyltd-202611111044-8f1d · ready
 Lane created with the plan.
+
+### 2026-11-11T11:27Z · ci-plan-spar · ready (VTID allocated)
+VTID-05713 allocated after policy approval (converged-auto-v1).

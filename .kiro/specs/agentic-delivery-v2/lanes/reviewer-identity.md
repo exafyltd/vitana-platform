@@ -1,7 +1,7 @@
 ---
 lane: reviewer-identity
 state: ready
-next_actor: claude
+next_actor: kiro
 branch: claude/agentic-delivery-v2/reviewer-identity
 depends_on: []
 executor: claude
@@ -13,7 +13,8 @@ paths:
   - services/gateway/test/project-manager/governance.test.ts
   - scripts/ci/kiro-steering/guard.cjs
   - scripts/ci/kiro-steering/guard.test.cjs
-updated: 2026-11-11T12:00Z
+updated: 2026-11-11T11:27Z
+vtid: VTID-05709
 ---
 
 # Lane: reviewer-identity (repo exafyltd/vitana-platform)
@@ -24,3 +25,6 @@ The merge rule accepts review entries from `agent:vitana-lane-reviewer (bedrock:
 ## Log
 ### 2026-11-11T12:00Z · kiro-exafyltd-202611111044-8f1d · ready
 Lane created with the plan.
+
+### 2026-11-11T11:27Z · ci-plan-spar · ready (VTID allocated)
+VTID-05709 allocated after policy approval (converged-auto-v1).

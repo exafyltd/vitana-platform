@@ -11,7 +11,8 @@ reviewer_seat: agent:vitana-lane-reviewer
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 paths:
   - .github/workflows/VTID-ALLOCATE.yml
-updated: 2026-11-11T11:30Z
+updated: 2026-11-11T11:27Z
+vtid: VTID-05705
 ---
 
 # Lane: retire-vtid-allocate (repo exafyltd/vitana-platform)
@@ -21,3 +22,6 @@ Removes the unclassified CI allocator once VTID-ON-PR exists (plan §9, sparring
 ## Log
 ### 2026-11-11T11:30Z · kiro-exafyltd-202611111044-8f1d · ready
 Lane created in the answer to sparring round 1.
+
+### 2026-11-11T11:27Z · ci-plan-spar · ready (VTID allocated)
+VTID-05705 allocated after policy approval (converged-auto-v1).

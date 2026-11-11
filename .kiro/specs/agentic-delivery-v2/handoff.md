@@ -4,8 +4,10 @@ author: kiro
 author_seat: exafyltd
 executor: kiro
 next_actor: kiro
-state: drafted
-updated: 2026-11-11T12:00Z
+state: approved
+updated: 2026-11-11T11:27Z
+sparring_record: .kiro/specs/agentic-delivery-v2/sparring/verdict.md
+vtids: [VTID-05701, VTID-05702, VTID-05703, VTID-05704, VTID-05705, VTID-05706, VTID-05707, VTID-05708, VTID-05709, VTID-05710, VTID-05711, VTID-05712, VTID-05713, VTID-05714]
 ---
 # Handoff — agentic-delivery-v2
 
@@ -31,3 +33,6 @@ Decisions taken:
 4. The runner quota goes to the `vitana-engineering` account, not `472838866351` (plan §3 C6).
 5. Lane `seats` waits for `privacy-ledger-auth/areas-emails` (same file).
 6. The GitLab clones asked for on 2026-11-10/11 could not be made from this session (plan §3 C2, Phase 0 P4).
+
+### 2026-11-11T11:27Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 14 lane(s) got a VTID and are handed to Kiro.

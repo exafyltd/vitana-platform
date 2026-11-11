@@ -1,7 +1,7 @@
 ---
 lane: rules-v1
 state: ready
-next_actor: claude
+next_actor: kiro
 branch: claude/agentic-delivery-v2/rules-v1
 depends_on: [rules-platform]
 executor: claude
@@ -15,7 +15,8 @@ paths:
   - .kiro/steering/vitana-kiro-notes.md
   - .kiro/steering/vitana-owner-autonomy.md
   - .claude/hooks/pretooluse-plan-sparring-reminder.sh
-updated: 2026-11-11T12:00Z
+updated: 2026-11-11T11:27Z
+vtid: VTID-05711
 ---
 
 # Lane: rules-v1 (repo exafyltd/vitana-v1)
@@ -26,3 +27,6 @@ Protected gate file `CLAUDE.md`: the owner's instruction of 2026-11-11 names thi
 ## Log
 ### 2026-11-11T12:00Z · kiro-exafyltd-202611111044-8f1d · ready
 Lane created with the plan.
+
+### 2026-11-11T11:27Z · ci-plan-spar · ready (VTID allocated)
+VTID-05711 allocated after policy approval (converged-auto-v1).

@@ -17,7 +17,8 @@ paths:
   - services/gateway/src/orb/developer/domain-atlas.ts
   - services/gateway/src/constants/llm-defaults.ts
   - services/gateway/test/delivery/review.test.ts
-updated: 2026-11-11T12:00Z
+updated: 2026-11-11T11:27Z
+vtid: VTID-05707
 ---
 
 # Lane: review-service (repo exafyltd/vitana-platform)
@@ -28,3 +29,6 @@ Hot files `index.ts` and `domain-atlas.ts` (hot key `gateway-registry`).
 ## Log
 ### 2026-11-11T12:00Z · kiro-exafyltd-202611111044-8f1d · ready
 Lane created with the plan.
+
+### 2026-11-11T11:27Z · ci-plan-spar · ready (VTID allocated)
+VTID-05707 allocated after policy approval (converged-auto-v1).

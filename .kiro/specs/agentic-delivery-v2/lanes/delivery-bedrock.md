@@ -13,7 +13,8 @@ paths:
   - scripts/aws/setup-delivery-bedrock.sh
   - services/gateway/src/providers/bedrock.ts
   - services/gateway/test/delivery/bedrock-role.test.ts
-updated: 2026-11-11T12:00Z
+updated: 2026-11-11T11:27Z
+vtid: VTID-05702
 ---
 
 # Lane: delivery-bedrock (repo exafyltd/vitana-platform)
@@ -24,3 +25,6 @@ Phase 0 P3). The owner applies the script.
 ## Log
 ### 2026-11-11T12:00Z · kiro-exafyltd-202611111044-8f1d · ready
 Lane created with the plan.
+
+### 2026-11-11T11:27Z · ci-plan-spar · ready (VTID allocated)
+VTID-05702 allocated after policy approval (converged-auto-v1).

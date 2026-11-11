@@ -12,7 +12,8 @@ reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 paths:
   - .github/workflows/REVIEW-BEDROCK-DISPATCH.yml
   - scripts/ci/pr-gate/__tests__/review-dispatch.test.mjs
-updated: 2026-11-11T12:00Z
+updated: 2026-11-11T11:27Z
+vtid: VTID-05706
 ---
 
 # Lane: review-dispatch-v1 (repo exafyltd/vitana-v1)
@@ -22,3 +23,6 @@ A v1 lane PR whose checks are green asks the platform review workflow for its Be
 ## Log
 ### 2026-11-11T12:00Z · kiro-exafyltd-202611111044-8f1d · ready
 Lane created with the plan.
+
+### 2026-11-11T11:27Z · ci-plan-spar · ready (VTID allocated)
+VTID-05706 allocated after policy approval (converged-auto-v1).

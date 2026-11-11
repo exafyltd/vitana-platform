@@ -23,7 +23,8 @@ paths:
   - .kiro/automations/juliet.md
   - .kiro/automations/kilo.md
   - scripts/collab/automations.test.mjs
-updated: 2026-11-11T12:00Z
+updated: 2026-11-11T11:27Z
+vtid: VTID-05712
 ---
 
 # Lane: seats (repo exafyltd/vitana-platform)
@@ -34,3 +35,6 @@ Twelve Kiro seats by name, one automation file each, no address in any seat file
 ## Log
 ### 2026-11-11T12:00Z · kiro-exafyltd-202611111044-8f1d · ready
 Lane created with the plan.
+
+### 2026-11-11T11:27Z · ci-plan-spar · ready (VTID allocated)
+VTID-05712 allocated after policy approval (converged-auto-v1).
