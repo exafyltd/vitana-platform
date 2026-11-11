@@ -51,7 +51,9 @@ Built after VTID-05699 is on `main` (it edits the same seat lines; sequenced, no
   both keep reading seats added below it, listing slots 7–11 as reserved (no seat until the owner names the account),
   and the rule that an account is a login, a seat is its configured identity, a session is one execution context;
   two seats run by one operator are two accounts, not two independent agents unless their sessions are.
-- Keep the no-email test of VTID-05699 (`scripts/collab/areas-no-email.test.mjs`) green.
+- Keep the no-email test of VTID-05699 (`scripts/collab/areas-no-email.test.mjs`) green. Start condition: the lane begins
+  only when that file is on `main` (lane `privacy-ledger-auth/areas-emails` merged); before that the lane stays `ready`
+  and is not claimed, so the test it depends on always exists when it runs.
 - `docs/validation/<VTID>/`: `acceptance.md`, `commands.log`, `scope.json`, the before/after seat table (no email).
 
 Paths: `docs/programs/areas.yaml`, `docs/validation/VTID-*/**`.
