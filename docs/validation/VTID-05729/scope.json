@@ -1,0 +1,18 @@
+{
+  "vtid": "VTID-05729",
+  "kind": "fix",
+  "paths": [
+    "services/gateway/src/routes/semantic-memory.ts",
+    "services/gateway/test/semantic-memory-auth.test.ts",
+    "services/gateway/test/routes/semantic-memory.test.ts",
+    "docs/validation/VTID-05729/**"
+  ],
+  "weakens_tests": [
+    {
+      "file": "services/gateway/test/routes/semantic-memory.test.ts",
+      "reason": "No test removed: 26 it() cases on base and 26 after. The counter also matched the words 'in front of it (' in the base file's header comment, which this lane rewrote to describe the new auth gate."
+    }
+  ],
+  "red_green_exempt": [],
+  "sparring_record": ".kiro/specs/gateway-critical-route-auth/sparring/verdict.md"
+}

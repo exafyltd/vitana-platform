@@ -1,7 +1,9 @@
 ---
 lane: semantic-memory-auth
-state: ready
+state: in-review
 next_actor: kiro
+claimed_by: kiro-exafy-202611110920-270b
+pr: https://github.com/exafyltd/vitana-platform/pull/4972
 branch: kiro/gateway-critical-route-auth/semantic-memory-auth
 depends_on: []
 executor: kiro
@@ -15,7 +17,7 @@ paths:
   - services/gateway/test/semantic-memory-auth.test.ts
   - services/gateway/test/routes/semantic-memory.test.ts
   - docs/validation/VTID-*/**
-updated: 2026-11-11T13:18Z
+updated: 2026-11-11T16:30Z
 vtid: VTID-05729
 ---
 # Lane: semantic-memory-auth (repo vitana-platform)
@@ -27,3 +29,18 @@ Lane created with the plan.
 
 ### 2026-11-11T13:18Z · ci-plan-spar · ready (VTID allocated)
 VTID-05729 allocated after policy approval (converged-auto-v1).
+
+### 2026-11-11T16:29Z · kiro-exafy-202611110920-270b · ready → executing
+Claimed and built on branch; plan on `main`.
+
+### 2026-11-11T16:30Z · kiro-exafy-202611110920-270b · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/4972 open; waiting for the reviewer agent.
+
+### 2026-11-11T16:57Z · agent-vitana-lane-reviewer-202611111657-55ee · review
+review: accept
+head: 414043c0ad41f1c2bb609f92a72df09431fb197f
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4972
+Findings: (non-blocking) CI relied on the caller's REST evidence of 25/25 check runs success on this head; the diff from f165aae5 to this head is only the merge of origin/main, nothing changed in the lane's paths.
+Findings: (non-blocking) test/routes/semantic-memory.test.ts updated to the new auth contract, 26 it() before and after, none removed; "the the" typo in several titles.
+Next: the land step merges under §7b
