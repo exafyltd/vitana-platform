@@ -4,8 +4,10 @@ author: kiro
 author_seat: exafy
 executor: kiro
 next_actor: kiro
-state: drafted
-updated: 2026-11-11T21:30Z
+state: approved
+updated: 2026-11-11T23:41Z
+sparring_record: .kiro/specs/autonomous-to-staging/sparring/verdict.md
+vtids: [VTID-05763, VTID-05764, VTID-05765, VTID-05766, VTID-05767, VTID-05768, VTID-05769, VTID-05770, VTID-05771, VTID-05772, VTID-05773]
 ---
 # Handoff — autonomous-to-staging
 Remove every human gate before staging verification. Plan: `plan.md`. Tasks: `tasks.md`.
@@ -21,3 +23,6 @@ First opened as PR #4998; round 1 (session `01e8f715-215c-4c57-a081-651f835939e4
 into this plan (bootstrap merge §3a, exact-ARN denies and permissions boundary, invariant check, OASIS quarantine
 events, engineering-account premise, a citation). #4998 was closed because its branch history held a commit the
 Collab handoff check rejects; this PR restarts sparring on the corrected plan.
+
+### 2026-11-11T23:41Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 11 lane(s) got a VTID and are handed to Kiro.
