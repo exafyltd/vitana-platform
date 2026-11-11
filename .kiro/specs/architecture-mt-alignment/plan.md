@@ -28,8 +28,20 @@ any new store, resolver or ledger.
   `mt-track-s-authz`, `mt-guardrails-r2`, `mt-packs-r2`, `mt-frontend-brand-r3`), plan `docs/MULTI-TENANT-PLAN.md`,
   migration queue `docs/multitenancy/MIGRATION-QUEUE.md`. The strategy records open MT lanes VTID-05221 (v1 PR #1438),
   VTID-05267..05270 and VTID-05323..05327 and M0 published 2026-10-14 (`19-EXECUTION-PROGRAMME/SESSION-HANDOVER.md` §6).
-- Wave 1 already covers destination identity (VTID-05689, PR #4944) and Healthy Million readiness (VTID-05690, PR
-  #4950), owned by session `kiro-exafy-202611110004-e38b`; this plan does not repeat them and cites them.
+- Wave 1 (plan `strategy-execution-wave1`, open plan PR #4943 at `366850e45102ce7c7c7f5f12609e74bc2e19cdfc`, VTIDs allocated by
+  PLAN-SPAR on that PR, not on `main`) covers destination identity (VTID-05689, PR #4944, branch
+  `kiro/strategy-execution-wave1/destination-identity` at `b8f4cb7f5f`) and Healthy Million readiness (VTID-05690, PR #4950,
+  branch `kiro/strategy-execution-wave1/hm-readiness` at `4502288c18`), owned by session `kiro-exafy-202611110004-e38b`.
+  This plan does not repeat them; `mt-alignment` cites those branch SHAs and marks the wave-1 findings "draft, not merged".
+- The 18 workstreams are the strategy registry's (`19-EXECUTION-PROGRAMME/master-task-registry.json` `workstreams`, at
+  `e5dd629`): WS01 Strategy Repository and Governance, WS02 Integrated Architecture and Modularisation, WS03 Multi-Tenant,
+  WS04 Vitana AI and Conversation Intelligence, WS05 Memory and Personal Context, WS06 Vitanaland Knowledge Graph, WS07
+  Five Foundational Health Pillars, WS08 Native Mobile Applications, WS09 Website Factory and Skeleton, WS10 Online
+  Presence and Destination Websites, WS11 B2B Commerce Portal, WS12 Exafy Back Office, WS13 Marketing Studio and
+  Marketing Automation, WS14 Command Hub Modernisation, WS15 Healthy Million Complete Tenant Replication, WS16 AI-Powered
+  Tenant/Destination Builder, WS17 Autonomous Operations and Continuous Improvement, WS18 System Integration, Validation
+  and Launch. They are not the Multi-Tenant plan's own work streams (`docs/MULTI-TENANT-PLAN.md`: WS-S and WS0–WS11),
+  which `mt-alignment` maps onto WS03 as a separate column.
 
 ## 3. Interfaces between lanes
 Both lanes write Markdown under `docs/programs/strategy-execution/` plus `docs/validation/<VTID>/`, read code only, and
