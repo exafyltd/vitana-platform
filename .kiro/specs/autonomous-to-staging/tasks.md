@@ -37,7 +37,7 @@ Common acceptance:
 - [ ] T1 land-guard `mergeDecision`: a protected file merges only with two accept entries for the current head from two different `REVIEWER_AGENT_MODELS`.
 - [ ] T2 queue.mjs scope-check: a Kiro lane with `protected_gate: two-model` from a trusted source may change a protected file.
 - [ ] T3 governance.ts mirrors T1 for the PM.
-- [ ] T4 `gate-invariants.mjs` (expectations read from the merge-base; bootstrap pass when none; post-merge run on `main`) as a required step in Collab tests.
+- [ ] T4 `gate-invariants.mjs` (expectations read from the merge-base; bootstrap pass when none) plus `.github/workflows/GATE-INVARIANTS.yml` on push to `main` and daily as a required step in Collab tests.
 - [ ] T5 Tests red on base, green after.
 
 **Acceptance**

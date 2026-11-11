@@ -50,8 +50,9 @@ No CODEOWNERS file and no GitHub `environment:` reviewers exist in either repo (
      changed in the same PR that changes the files it protects (it reads its expectations from the merge-base).
      Bootstrap: on the `machine-gate-protected` PR itself the merge-base has no expectations, so the check prints
      `gate-invariants: no baseline on merge-base (bootstrap)` and passes; that PR's authority is the owner instruction
-     plus the reviewer-agent accept (§3a). A post-merge job on `main` (in `Collab tests` on push) runs the check
-     against `main` itself and fails loudly if any invariant is missing, so the first version is verified as soon
+     plus the reviewer-agent accept (§3a). A new workflow `GATE-INVARIANTS.yml` (in the lane's paths; today no workflow runs
+     `scripts/collab/*.test.mjs` on push: `PR-GATE.yml:14-16` is `pull_request` only and `CI-SCRIPTS-TEST.yml:19-26`
+     filters other paths) runs on every push to `main` and daily, and checks `main` itself and fails loudly if any invariant is missing, so the first version is verified as soon
      as it lands.
    - Migrations: applied by the pipeline to the **isolated staging database only** (lanes `staging-db-isolation`,
      `staging-migrations-auto`). Until that database exists, a migration lane waits in machine state
@@ -147,7 +148,7 @@ wait for owner/Claude review" (`collaboration.md:228`).
 |---|---|---|---|
 | `rules-platform` | vitana-platform | `CLAUDE.md`, `.claude/rules/collaboration.md`, `.kiro/steering/vitana-owner-autonomy.md`, `.kiro/steering/vitana-pipeline.md`, `.kiro/pipeline/{driver,common-rules,planning,quality-checks}.md`, `docs/DEPLOYMENT-PIPELINE.md` | `machine-gate-protected`, `quarantine` |
 | `rules-v1` | vitana-v1 | `CLAUDE.md`, `.kiro/steering/vitana-owner-autonomy.md`, `.claude/rules/design.md` | `rules-platform` |
-| `machine-gate-protected` | vitana-platform | `scripts/collab/queue.mjs`, `scripts/collab/land-guard.mjs`, `scripts/collab/protected-gate-files.json`, `scripts/collab/gate-invariants.mjs`, `services/gateway/src/services/project-manager/governance.ts`, tests | none |
+| `machine-gate-protected` | vitana-platform | `scripts/collab/queue.mjs`, `scripts/collab/land-guard.mjs`, `scripts/collab/protected-gate-files.json`, `scripts/collab/gate-invariants.mjs`, `.github/workflows/GATE-INVARIANTS.yml`, `services/gateway/src/services/project-manager/governance.ts`, tests | none |
 | `quarantine` | vitana-platform | `scripts/collab/plan-spar.mjs`, `scripts/collab/plan-driver.mjs`, OASIS event emitter in `scripts/collab/`, `services/gateway/src/services/plan-sparring/plan-sparring-service.ts` (escalation → quarantine, no `exafy_admin` path needed for staging), tests | none |
 | `pipeline-b-v1` | vitana-v1 | `scripts/ci/pr-gate/lib.mjs`, `scripts/ci/pr-gate/__tests__/**` | none |
 | `pipeline-b-platform` | vitana-platform | `scripts/ci/pr-gate/**`, `.github/workflows/PR-GATE.yml`, `.github/workflows/VTID-ALLOCATE.yml`, tests | none |
@@ -166,7 +167,8 @@ Hot files sequenced: `CLAUDE.md` (only `rules-platform`), `PR-GATE.yml` (only `p
 owner instruction plus a reviewer-agent accept; after `machine-gate-protected` lands, later ones use the two-model rule.
 
 ## 5. Tests (each red on base first)
-- `machine-gate-protected`: `gate-invariants.mjs` fails when any invariant is removed (mutation fixtures); land-guard refuses a protected file with one accept, merges with two accepts from
+- `machine-gate-protected`: `gate-invariants.mjs` fails when any invariant is removed (mutation fixtures);
+  `GATE-INVARIANTS.yml` runs on push to `main` (asserted by a workflow-trigger unit test); land-guard refuses a protected file with one accept, merges with two accepts from
   different chain models on the current head; queue scope-check accepts a protected file for a Kiro lane only with
   `protected_gate: two-model` from a trusted source; governance.ts mirrors it.
 - `quarantine`: plan-spar escalation writes `state: quarantined`, `next_actor: kiro` and emits the OASIS event; plan-driver `next` lists a
