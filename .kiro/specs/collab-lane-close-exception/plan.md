@@ -25,7 +25,9 @@ before `in-review → verified`. The owner chose a narrow, written exception ins
 ## Change
 1. `queue.mjs`: `transitionChain` takes the spec slug in its options (`{ reviewCommits, laneStates, slug }`), passed
    from `validateRange` as `c.slug` (R1-F2). A lane's `in-review → verified` edge is also accepted when the lane file's front matter carries
-   `reviewer_exception:` with `owner_approval` (the owner's decision reference and date), `pr` and `merge_sha`, AND the
+   flat top-level fields `reviewer_exception: true`, `reviewer_exception_approval` (the owner's decision reference and
+   date), `reviewer_exception_pr` and `reviewer_exception_merge_sha` (R2-F1: `parseFrontMatter` reads top-level scalars
+   only, so no nested object), AND the
    lane's spec slug is in the explicit allowlist `CLOSED_BY_OWNER_EXCEPTION = ['profile-posts-full-width',
    'staging-verify-runner-fix']` in the same file. Any other lane still needs the reviewer accept.
 2. The `verified → done` merge-SHA check is unchanged: the exception still needs a merge SHA.
