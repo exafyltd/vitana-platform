@@ -1,0 +1,2 @@
+$ npx tsc --noEmit --preserveSymlinks
+EXIT_CODE=0
