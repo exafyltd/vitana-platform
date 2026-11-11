@@ -9,21 +9,33 @@ today (the middleware default), so merging changes nothing in production. When t
 
 AC-1: Red on base: the four new and changed tests in `services/gateway/test/vtid-04727-ledger-write-auth.test.ts` fail
   on `origin/main` 6dc6e1ba0c (4 failed, 24 passed); `commands.log`.
+TEST: `git stash push -- .github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml services/gateway/src/services/conversation/conversation-flag-pins.generated.ts && (cd services/gateway && CI=1 npx jest test/vtid-04727-ledger-write-auth.test.ts)` → exit 1 (`outputs/red-green.txt`)
+
 AC-2: Production mode only from the variable: one `LEDGER_WRITE_AUTH_MODE` entry in `AWS-PROD-DEPLOY-GATEWAY.yml`,
   `value:$LWA` with `LWA="${PROD_LEDGER_WRITE_AUTH_MODE:-log}"`, one reference to `vars.PROD_LEDGER_WRITE_AUTH_MODE`,
   and no hardcoded `enforce` (test "staging pins enforce; production takes the mode only from …").
+TEST: `cd services/gateway && CI=1 npx jest test/vtid-04727-ledger-write-auth.test.ts -t "production takes the mode only from"`
+
 AC-3: Unset gives `log`, never an empty value: the step's own shell, run on a fixture task definition with the variable
   absent and with the empty string Actions renders for an unset variable, writes exactly one `LEDGER_WRITE_AUTH_MODE=log`
   and keeps the other entries (test "with the variable unset …").
+TEST: `cd services/gateway && CI=1 npx jest test/vtid-04727-ledger-write-auth.test.ts -t "with the variable unset"`
+
 AC-4: Enforce gives 401: the same step with the variable `enforce` yields `enforce`; with that mode, an anonymous
   `POST /api/v1/vtid/allocate` through the real `vtid` router (supertest, allocator gate and `fetch` mocked) answers 401
   `application/json` with `ok: false`, and neither the allocator gate nor `fetch` is called.
+TEST: `cd services/gateway && CI=1 npx jest test/vtid-04727-ledger-write-auth.test.ts -t "with the variable enforce"`
+
 AC-5: Contract: no route or middleware code changes; staging is unchanged (it still pins `enforce`); no workflow input
   is added (still 25). `conversation-flag-pins.generated.ts` records `prod: "dynamic"`, and
   `node scripts/conversation/generate-flag-pins.mjs --check` passes.
+TEST: `node scripts/conversation/generate-flag-pins.mjs --check` (exit 0); the js-yaml count of `on.workflow_dispatch.inputs` gives base=25 head=25 (`commands.log`)
+
 AC-6: Regression: the 109 gateway test files that name `AWS-PROD-DEPLOY-GATEWAY` (this one included), plus
   `vtid-04677-scheduled-notifications-auth` and `vtid-04525-conversation-flag-registry`: 110 suites, 1,414 tests, 0
   failed.
+TEST: `cd services/gateway && CI=1 npx jest test/vtid-04727-ledger-write-auth.test.ts test/vtid-04677-scheduled-notifications-auth.test.ts test/services/conversation/vtid-04525-conversation-flag-registry.test.ts $(grep -rlE AWS-PROD-DEPLOY-GATEWAY test)` → exit 0
+
 - Staging proof: `staging-tests.json` has one `http` `rejected_probe`, an anonymous
   `POST /api/v1/oasis/tasks/VTID-00000/complete` expecting 401 (same middleware; VTID-00000 does not exist, so a gateway
   that lost its pin answers 404 and writes nothing), plus the Jest suite as an `existing` test. The allocate route is
