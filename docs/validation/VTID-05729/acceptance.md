@@ -95,3 +95,9 @@ Callers outside both repositories are unknown.
   token, or sends another user's lens, will start getting 401 or 403 (plan §8). A PUBLISH needs the owner's reading of the
   gateway request logs for `/api/v1/memory/semantic/*` and `/api/v1/memory/admin/embeddings/*` first.
 - STAGING-VERIFY run id: none yet.
+
+## Route mount evidence (Validator Check)
+No route is added: the routes and their mounts exist on `main`; the change inserts a middleware or verification into existing registrations.
+ROUTE_MOUNT: unchanged — `services/gateway/src/index.ts:1209` (`/api/v1/memory`)
+FINAL_URL: POST /api/v1/memory/semantic/search, /semantic/write, /semantic/context; POST /api/v1/memory/admin/embeddings/generate, /reembed; GET /api/v1/memory/admin/embeddings/status (paths unchanged)
+CURL_PROOF: not run. No live or staging request was made; the staging proof is `staging-tests.json`, run by STAGING-VERIFY after a staging deploy, recorded here only with a run id.
