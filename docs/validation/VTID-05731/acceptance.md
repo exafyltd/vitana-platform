@@ -69,9 +69,10 @@ redispatch path; fetch serves one stale non-voice row and its ledger spec.
 TEST: services/gateway/test/worker-orchestrator-auth.test.ts ("self-healing reconciler redispatch …")
 
 AC-8 Red on base, green after. With the `origin/main` versions of the four source files (`worker-orchestrator.ts`,
-`autopilot-event-loop.ts`, `developer-tools.ts`, `self-healing-reconciler.ts`) in place: 30 failed, 24 passed of 54
-(outputs/jest-red-on-base.txt). After: 54 passed (outputs/jest-green.txt). `npx tsc --noEmit --preserveSymlinks`
-exits 0 (outputs/tsc-gateway.txt).
+`autopilot-event-loop.ts`, `developer-tools.ts`, `self-healing-reconciler.ts`) in place: 31 failed, 25 passed of 56
+(outputs/jest-red-on-base.txt). After: 56 passed, plus 11 of 11 in the await-autopilot suite (outputs/jest-green.txt).
+`npx tsc --noEmit --preserveSymlinks` exits 0 (outputs/tsc-gateway.txt).
+TEST: docs/validation/VTID-05731/outputs/jest-red-on-base.txt, docs/validation/VTID-05731/outputs/jest-green.txt
 
 ## Callers that will get 401 and need a follow-up (outside this lane's files, not edited)
 
