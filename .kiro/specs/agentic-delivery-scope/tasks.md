@@ -96,7 +96,7 @@ Acceptance:
 - No address in the diff, the PR body, a commit message or `docs/validation/<VTID>/**`.
 
 <!-- lane: heartbeat-30 -->
-Repo `exafyltd/vitana-platform`.
+Repo `exafyltd/vitana-platform`. Round 2 finding R2-F1 (minor, deferred to this lane): a 30-minute heartbeat with the 45-minute alive window leaves no margin for one missed heartbeat. The builder keeps a 15-minute check, caps commits at one per 30 minutes, and does not merge until v2 `rules-platform` settles the alive window (`plan-driver.mjs:30`, `project-manager/types.ts:393`).
 - [ ] T1 Test first: `HEARTBEAT_INTERVAL_MS` 30 min; `heartbeat()` skips (ok, `skipped: true`) when its own tip is younger than 30 min.
 - [ ] T2 `plan-driver.mjs`.
 - [ ] T3 `node --test scripts/collab/*.test.mjs` green.
@@ -242,3 +242,166 @@ Acceptance:
 - **Contract** — n/a: documents only.
 - **Staging proof** — not verified on staging: the change deploys nothing; covered by the lane test.
 - No address in the diff, the PR body, a commit message or `docs/validation/<VTID>/**`.
+
+<!-- lane: addr-01 -->
+Repo `exafyltd/vitana-platform`. Late lane (plan §8a).
+- [ ] T1 Count before (`grep -cE <pattern> <file>`, count only) in `docs/validation/<VTID>/commands.log`.
+- [ ] T2 Replace each address with the seat or role name; no other change. 
+- [ ] T3 Count after = 0; `node --test scripts/collab/*.test.mjs` and `queue.mjs validate` green.
+- [ ] T4 PR `VTID-xxxxx (agentic-delivery-scope/addr-01): no address in this file`.
+
+Acceptance:
+- Change types: Tooling/docs.
+- **Outcome** — the file holds no address; every other line is unchanged.
+- **States / Surfaces / Locales / Accessibility** — n/a: no UI or runtime change.
+- **Contract** — n/a: a document.
+- **Staging proof** — not verified on staging: the change deploys nothing.
+- No address in the diff text of added lines, the PR body, a commit message or `docs/validation/<VTID>/**` (the removed lines are the only place an old value appears).
+
+<!-- lane: addr-02 -->
+Repo `exafyltd/vitana-platform`. Late lane (plan §8a).
+- [ ] T1 Count before (`grep -cE <pattern> <file>`, count only) in `docs/validation/<VTID>/commands.log`.
+- [ ] T2 Replace each address with the seat or role name; no other change. 
+- [ ] T3 Count after = 0; `node --test scripts/collab/*.test.mjs` and `queue.mjs validate` green.
+- [ ] T4 PR `VTID-xxxxx (agentic-delivery-scope/addr-02): no address in this file`.
+
+Acceptance:
+- Change types: Tooling/docs.
+- **Outcome** — the file holds no address; every other line is unchanged.
+- **States / Surfaces / Locales / Accessibility** — n/a: no UI or runtime change.
+- **Contract** — n/a: a document.
+- **Staging proof** — not verified on staging: the change deploys nothing.
+- No address in the diff text of added lines, the PR body, a commit message or `docs/validation/<VTID>/**` (the removed lines are the only place an old value appears).
+
+<!-- lane: addr-03 -->
+Repo `exafyltd/vitana-platform`. Late lane (plan §8a).
+- [ ] T1 Count before (`grep -cE <pattern> <file>`, count only) in `docs/validation/<VTID>/commands.log`.
+- [ ] T2 Replace each address with the seat or role name; no other change. 
+- [ ] T3 Count after = 0; `node --test scripts/collab/*.test.mjs` and `queue.mjs validate` green.
+- [ ] T4 PR `VTID-xxxxx (agentic-delivery-scope/addr-03): no address in this file`.
+
+Acceptance:
+- Change types: Tooling/docs.
+- **Outcome** — the file holds no address; every other line is unchanged.
+- **States / Surfaces / Locales / Accessibility** — n/a: no UI or runtime change.
+- **Contract** — n/a: a document.
+- **Staging proof** — not verified on staging: the change deploys nothing.
+- No address in the diff text of added lines, the PR body, a commit message or `docs/validation/<VTID>/**` (the removed lines are the only place an old value appears).
+
+<!-- lane: addr-04 -->
+Repo `exafyltd/vitana-platform`. Late lane (plan §8a).
+- [ ] T1 Count before (`grep -cE <pattern> <file>`, count only) in `docs/validation/<VTID>/commands.log`.
+- [ ] T2 Replace each address with the seat or role name; no other change. 
+- [ ] T3 Count after = 0; `node --test scripts/collab/*.test.mjs` and `queue.mjs validate` green.
+- [ ] T4 PR `VTID-xxxxx (agentic-delivery-scope/addr-04): no address in this file`.
+
+Acceptance:
+- Change types: Tooling/docs.
+- **Outcome** — the file holds no address; every other line is unchanged.
+- **States / Surfaces / Locales / Accessibility** — n/a: no UI or runtime change.
+- **Contract** — n/a: a document.
+- **Staging proof** — not verified on staging: the change deploys nothing.
+- No address in the diff text of added lines, the PR body, a commit message or `docs/validation/<VTID>/**` (the removed lines are the only place an old value appears).
+
+<!-- lane: addr-05 -->
+Repo `exafyltd/vitana-platform`. Late lane (plan §8a).
+- [ ] T1 Count before (`grep -cE <pattern> <file>`, count only) in `docs/validation/<VTID>/commands.log`.
+- [ ] T2 Replace each address with the seat or role name; no other change. The edit is a `collab-kiro-governance/_plan` commit (a handoff file is edited only by its plan coordinator, `queue.mjs` `classifyPath`); the plan state is unchanged.
+- [ ] T3 Count after = 0; `node --test scripts/collab/*.test.mjs` and `queue.mjs validate` green.
+- [ ] T4 PR `VTID-xxxxx (agentic-delivery-scope/addr-05): no address in this file`.
+
+Acceptance:
+- Change types: Tooling/docs.
+- **Outcome** — the file holds no address; every other line is unchanged.
+- **States / Surfaces / Locales / Accessibility** — n/a: no UI or runtime change.
+- **Contract** — n/a: a document.
+- **Staging proof** — not verified on staging: the change deploys nothing.
+- No address in the diff text of added lines, the PR body, a commit message or `docs/validation/<VTID>/**` (the removed lines are the only place an old value appears).
+
+<!-- lane: addr-06 -->
+Repo `exafyltd/vitana-platform`. Late lane (plan §8a).
+- [ ] T1 Count before (`grep -cE <pattern> <file>`, count only) in `docs/validation/<VTID>/commands.log`.
+- [ ] T2 Replace each address with the seat or role name; no other change. 
+- [ ] T3 Count after = 0; `node --test scripts/collab/*.test.mjs` and `queue.mjs validate` green.
+- [ ] T4 PR `VTID-xxxxx (agentic-delivery-scope/addr-06): no address in this file`.
+
+Acceptance:
+- Change types: Tooling/docs.
+- **Outcome** — the file holds no address; every other line is unchanged.
+- **States / Surfaces / Locales / Accessibility** — n/a: no UI or runtime change.
+- **Contract** — n/a: a document.
+- **Staging proof** — not verified on staging: the change deploys nothing.
+- No address in the diff text of added lines, the PR body, a commit message or `docs/validation/<VTID>/**` (the removed lines are the only place an old value appears).
+
+<!-- lane: addr-07 -->
+Repo `exafyltd/vitana-platform`. Late lane (plan §8a).
+- [ ] T1 Count before (`grep -cE <pattern> <file>`, count only) in `docs/validation/<VTID>/commands.log`.
+- [ ] T2 Replace each address with the seat or role name; no other change. The edit goes through `lane_admin: true` (another plan's lane file); no field of that lane changes except the one line.
+- [ ] T3 Count after = 0; `node --test scripts/collab/*.test.mjs` and `queue.mjs validate` green.
+- [ ] T4 PR `VTID-xxxxx (agentic-delivery-scope/addr-07): no address in this file`.
+
+Acceptance:
+- Change types: Tooling/docs.
+- **Outcome** — the file holds no address; every other line is unchanged.
+- **States / Surfaces / Locales / Accessibility** — n/a: no UI or runtime change.
+- **Contract** — n/a: a document.
+- **Staging proof** — not verified on staging: the change deploys nothing.
+- No address in the diff text of added lines, the PR body, a commit message or `docs/validation/<VTID>/**` (the removed lines are the only place an old value appears).
+
+<!-- lane: addr-08 -->
+Repo `exafyltd/vitana-platform`. Late lane (plan §8a).
+- [ ] T1 Count before (`grep -cE <pattern> <file>`, count only) in `docs/validation/<VTID>/commands.log`.
+- [ ] T2 Replace each address with the seat or role name; no other change. 
+- [ ] T3 Count after = 0; `node --test scripts/collab/*.test.mjs` and `queue.mjs validate` green.
+- [ ] T4 PR `VTID-xxxxx (agentic-delivery-scope/addr-08): no address in this file`.
+
+Acceptance:
+- Change types: Tooling/docs.
+- **Outcome** — the file holds no address; every other line is unchanged.
+- **States / Surfaces / Locales / Accessibility** — n/a: no UI or runtime change.
+- **Contract** — n/a: a document.
+- **Staging proof** — not verified on staging: the change deploys nothing.
+- No address in the diff text of added lines, the PR body, a commit message or `docs/validation/<VTID>/**` (the removed lines are the only place an old value appears).
+
+<!-- lane: addr-09 -->
+Repo `exafyltd/vitana-platform`. Late lane (plan §8a).
+- [ ] T1 Count before (`grep -cE <pattern> <file>`, count only) in `docs/validation/<VTID>/commands.log`.
+- [ ] T2 Replace each address with the seat or role name; no other change. 
+- [ ] T3 Count after = 0; `node --test scripts/collab/*.test.mjs` and `queue.mjs validate` green.
+- [ ] T4 PR `VTID-xxxxx (agentic-delivery-scope/addr-09): no address in this file`.
+
+Acceptance:
+- Change types: Tooling/docs.
+- **Outcome** — the file holds no address; every other line is unchanged.
+- **States / Surfaces / Locales / Accessibility** — n/a: no UI or runtime change.
+- **Contract** — n/a: a document.
+- **Staging proof** — not verified on staging: the change deploys nothing.
+- No address in the diff text of added lines, the PR body, a commit message or `docs/validation/<VTID>/**` (the removed lines are the only place an old value appears).
+
+<!-- lane: addr-10 -->
+Repo `exafyltd/vitana-platform`. Late lane (plan §8a).
+- [ ] T1 Count before (`grep -cE <pattern> <file>`, count only) in `docs/validation/<VTID>/commands.log`.
+- [ ] T2 Replace each address with the seat or role name; no other change. 
+- [ ] T3 Count after = 0; `node --test scripts/collab/*.test.mjs` and `queue.mjs validate` green.
+- [ ] T4 PR `VTID-xxxxx (agentic-delivery-scope/addr-10): no address in this file`.
+
+Acceptance:
+- Change types: Tooling/docs.
+- **Outcome** — the file holds no address; every other line is unchanged.
+- **States / Surfaces / Locales / Accessibility** — n/a: no UI or runtime change.
+- **Contract** — n/a: a document.
+- **Staging proof** — not verified on staging: the change deploys nothing.
+- No address in the diff text of added lines, the PR body, a commit message or `docs/validation/<VTID>/**` (the removed lines are the only place an old value appears).
+
+<!-- lane: addr-guard -->
+Repo `exafyltd/vitana-platform`. Late lane (plan §8a). Builds after `addr-01`..`addr-10`.
+- [ ] T1 Write `scripts/collab/no-address.test.mjs`; it prints paths and counts only; red on `origin/main` before the cleanup lanes, green after.
+- [ ] T2 `node --test scripts/collab/*.test.mjs` green.
+- [ ] T3 PR `VTID-xxxxx (agentic-delivery-scope/addr-guard): no address in agent-written folders`.
+
+Acceptance:
+- Change types: Tooling/docs.
+- **Outcome** — a new address in those folders fails CI with its path and count.
+- **States / Surfaces / Locales / Accessibility** — n/a.
+- **Contract** — the test never prints a matched value.
+- **Staging proof** — not verified on staging: the change deploys nothing.

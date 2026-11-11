@@ -54,3 +54,10 @@ vitana-aurora-prod not found" (the script hides whether it is absent or unreadab
 
 ### 2026-11-11T16:49Z · ci-plan-spar · drafted → approved
 Converged; approved by policy converged-auto-v1. 16 lane(s) got a VTID and are handed to Kiro.
+
+### 2026-11-11T16:51Z · kiro-exafyltd-202611111044-8f1d · approved (driver: late lanes; round 2 note)
+Converged in round 2 (session `90113972-d727-470c-b3c4-677c7e2478d9`, final plan hash `4bfbb4b411`), policy approved at
+2026-11-11T16:44:43Z; 16 lanes got VTID-05734 to VTID-05749. Round 2 had one minor finding, R2-F1 (heartbeat margin),
+deferred to lane `heartbeat-30` (`tasks.md`). The 11 cleanup lanes of plan §8a (`addr-01`..`addr-10`, `addr-guard`) are
+added now, after convergence, so their paths never reached a round; the next PLAN-SPAR run allocates their VTIDs.
+
