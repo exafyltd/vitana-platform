@@ -1,7 +1,9 @@
 ---
 lane: console-probes-a
-state: ready
+state: executing
 next_actor: kiro
+claimed_by: kiro-exafy-202611111326-7e9b
+branch: kiro/staging-verify-manifest-repair/console-probes-a
 depends_on: []
 executor: kiro
 seat: exafy
@@ -28,3 +30,12 @@ Lane created with the plan.
 
 ### 2026-11-07T14:43Z · ci-plan-spar · ready (VTID allocated)
 VTID-05600 allocated after policy approval (converged-auto-v1).
+
+### 2026-11-11T13:50Z · kiro-exafy-202611111326-7e9b · ready → executing
+Claimed by kiro-exafy-202611111326-7e9b. Evidence in docs/validation/VTID-05600/ (commands.log, acceptance.md).
+- Baseline on origin/main b9839e1f4f: 8 strings red, all in app.js (04887 tests[6] 1, 04975 tests[4] 2, 04984 tests[2] 2, 04999 tests[3] 3).
+- T2: 04887 tests[6] split; the fetch string now lives in a new operator-console.js probe.
+- T3: 04975 tests[4], 04984 tests[2], 04999 tests[3] re-pathed to operator-console.js?v=20261121-vtid-05082; strings unchanged.
+- T4: each manifest's /command-hub/ index probe expects operator-console.js?v=20261121-vtid-05082.
+- T5: 30 of 30 expected strings present in their served files; all four manifests validate; existing entries untouched.
+- Not run: the staging STAGING-VERIFY (needs merge). Covered by the next full run.
