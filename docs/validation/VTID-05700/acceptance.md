@@ -36,10 +36,20 @@ AC-6: Regression: the 109 gateway test files that name `AWS-PROD-DEPLOY-GATEWAY`
   failed.
 TEST: `cd services/gateway && CI=1 npx jest test/vtid-04727-ledger-write-auth.test.ts test/vtid-04677-scheduled-notifications-auth.test.ts test/services/conversation/vtid-04525-conversation-flag-registry.test.ts $(grep -rlE AWS-PROD-DEPLOY-GATEWAY test)` → exit 0
 
-- Staging proof: `staging-tests.json` has one `http` `rejected_probe`, an anonymous
-  `POST /api/v1/oasis/tasks/VTID-00000/complete` expecting 401 (same middleware; VTID-00000 does not exist, so a gateway
-  that lost its pin answers 404 and writes nothing), plus the Jest suite as an `existing` test. The allocate route is
-  never probed on a live gateway.
+AC-7: Probe safety. The exact request STAGING-VERIFY builds for the probe (`httpRequestInit`, bearer
+  `staging-verify.invalid.probe`, body `{}`), sent through the gateway's middleware order and the real tasks router with
+  the real `optionalAuth`, answers 401 in `enforce` and 400 `INVALID_VTID_FORMAT` in `log` and `off`, and nothing leaves
+  the process: no `fetch`, no JWKS download, no Supabase client call, no OASIS event, no active-day write. A control
+  with a well-formed ES256 bearer shows that the watchers do see a JWKS download. The test also passes on base: it pins
+  the handler order the probe relies on (`oasis-tasks.ts:555-563` before `:586`); with the format check removed it fails
+  (`commands.log`).
+TEST: `cd services/gateway && CI=1 npx jest test/vtid-04727-ledger-write-auth.test.ts -t "staging probe safety"`
+
+- Staging proof: `staging-tests.json` has one `http` `rejected_probe`, `POST /api/v1/oasis/tasks/VTID-PROBE/complete`
+  with STAGING-VERIFY's invalid bearer, expecting 401 (same middleware). `VTID-PROBE` is not a VTID, so a gateway that
+  lost its pin answers 400 before any database call and writes nothing, and the probe still fails (AC-7). The Jest
+  suite runs as an `existing` test. The allocate route is never probed on a live gateway. Owner decision 2026-11-11:
+  `VTID-PROBE` replaces `VTID-00000`, which is well-formed and would reach the ledger read.
 - No production deploy is dispatched and no repository variable is set by this lane. The switch is the owner's: read
   seven days of production logs for `ledger write would be rejected` and fix every legitimate caller, set
   `PROD_LEDGER_WRITE_AUTH_MODE=enforce`, PUBLISH. Rollback: delete the variable and PUBLISH again.

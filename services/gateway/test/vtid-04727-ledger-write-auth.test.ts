@@ -325,3 +325,142 @@ describe('VTID-05700 production ledger write mode', () => {
     }
   });
 });
+
+/**
+ * VTID-05700 (owner decision 2026-11-11): the STAGING-VERIFY rejected probe of this lane targets VTID-PROBE. The exact
+ * request STAGING-VERIFY builds goes through the gateway's own middleware order (index.ts: setupCors, sseHeaders,
+ * compression, express.json, delegatedTokenGuard) and the real tasks router, with the real optionalAuth. Every way out
+ * of the process is watched: fetch (Supabase REST, OASIS), http/https.get (remote JWKS), the Supabase client, the OASIS
+ * emitter and the active-day writer. It passes on the base too: it pins the handler order the probe relies on.
+ */
+describe('VTID-05700 staging probe safety (VTID-PROBE)', () => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { httpRequestInit } = require('../../../scripts/ci/staging-verify/lib.cjs');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const http = require('http');
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const https = require('https');
+  const PROBE = { kind: 'http', method: 'POST', path: '/api/v1/oasis/tasks/VTID-PROBE/complete', rejected_probe: true, expect_status: 401 };
+  const ENV = { ...process.env };
+  const net: string[] = [];
+  const oasis = jest.fn();
+  const activeDay = jest.fn();
+  const supabaseCall = jest.fn();
+  let app: any;
+  let realOptionalAuth: typeof optionalAuthImpl;
+  let classifyBearer: (token: string, s: unknown, env: NodeJS.ProcessEnv) => Promise<unknown>;
+  let realFetch: unknown;
+
+  beforeAll(() => {
+    jest.isolateModules(() => {
+      jest.doMock('../src/lib/supabase', () => ({
+        getSupabase: () => ({
+          rpc: (...a: unknown[]) => { supabaseCall('rpc', ...a); return Promise.resolve({ data: null, error: null }); },
+          from: (...a: unknown[]) => { supabaseCall('from', ...a); throw new Error('no database in this test'); },
+        }),
+      }));
+      jest.doMock('../src/services/oasis-event-service', () => ({
+        emitOasisEvent: (...a: unknown[]) => { oasis(...a); return Promise.resolve({ ok: true }); },
+      }));
+      jest.doMock('../src/services/guide/active-usage', () => ({
+        upsertActiveDay: (...a: unknown[]) => { activeDay(...a); return Promise.resolve(); },
+      }));
+      realOptionalAuth = jest.requireActual('../src/middleware/auth-supabase-jwt').optionalAuth;
+      const { setupCors, sseHeaders } = require('../src/middleware/cors');
+      const guard = require('../src/services/delegation-guard');
+      classifyBearer = guard.classifyBearer;
+      const { oasisTasksRouter } = require('../src/routes/oasis-tasks');
+      const compression = require('compression');
+      app = express();
+      setupCors(app);
+      app.use(sseHeaders);
+      app.use(compression());
+      app.use(express.json({ limit: '2mb' }));
+      app.use(guard.delegatedTokenGuard());
+      app.use('/', oasisTasksRouter);
+    });
+  });
+
+  beforeEach(() => {
+    net.length = 0;
+    oasis.mockReset();
+    activeDay.mockReset();
+    supabaseCall.mockReset();
+    Object.assign(process.env, {
+      SUPABASE_URL: 'https://project.example.supabase.co',
+      SUPABASE_SERVICE_ROLE: 'svc-role',
+      SUPABASE_JWT_SECRET: 'x'.repeat(40),
+      SUPABASE_AUTH_JWKS_URL: 'https://project.example.supabase.co/auth/v1/.well-known/jwks.json',
+      COGNITO_USER_POOL_ID: 'eu-central-1_TESTPOOL',
+      GATEWAY_SERVICE_TOKEN: 'svc-token',
+    });
+    delete process.env.DELEGATION_GUARD; // default: enforce
+    optionalAuthImpl = realOptionalAuth;
+    realFetch = (globalThis as any).fetch;
+    (globalThis as any).fetch = jest.fn(async (url: unknown, init?: { method?: string }) => {
+      net.push(`fetch ${init?.method ?? 'GET'} ${String(url)}`);
+      return new Response(JSON.stringify([{ vtid: 'VTID-PROBE', status: 'scheduled', is_terminal: false }]), {
+        status: 200, headers: { 'content-type': 'application/json' },
+      });
+    });
+    for (const [name, mod] of [['http', http], ['https', https]] as const) {
+      jest.spyOn(mod, 'get').mockImplementation(((u: unknown) => {
+        net.push(`${name}.get ${String(u)}`);
+        throw new Error('network blocked in this test');
+      }) as any);
+    }
+    jest.spyOn(console, 'log').mockImplementation(() => {});
+    jest.spyOn(console, 'warn').mockImplementation(() => {});
+    jest.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    (globalThis as any).fetch = realFetch;
+    jest.restoreAllMocks();
+    optionalAuthImpl = (_req, _res, next) => next();
+    process.env = { ...ENV };
+  });
+
+  it('sends exactly the request STAGING-VERIFY builds for this probe', () => {
+    expect(httpRequestInit(PROBE)).toEqual({
+      method: 'POST',
+      headers: { accept: 'application/json, text/html;q=0.9', authorization: 'Bearer staging-verify.invalid.probe', 'content-type': 'application/json' },
+      body: '{}',
+    });
+  });
+
+  it('the delegation guard skips the probe bearer without a session lookup', async () => {
+    const rpc = jest.fn();
+    expect(await classifyBearer('staging-verify.invalid.probe', { rpc }, process.env)).toEqual({ verdict: 'skip', claims: null });
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['enforce', 401, 'invalid or expired token'],
+    ['log', 400, 'INVALID_VTID_FORMAT'],
+    ['off', 400, 'INVALID_VTID_FORMAT'],
+  ])('mode %s: answers %i before any call out of the process', async (mode, status, error) => {
+    process.env.LEDGER_WRITE_AUTH_MODE = mode as string;
+    const init = httpRequestInit(PROBE);
+    let r = request(app).post(PROBE.path);
+    for (const [k, v] of Object.entries(init.headers as Record<string, string>)) r = r.set(k, v);
+    const res = await r.send(init.body);
+    expect(res.status).toBe(status);
+    expect(res.headers['content-type']).toMatch(/^application\/json/);
+    expect(res.body.ok).toBe(false);
+    expect(res.body.error).toBe(error);
+    expect(net).toEqual([]);
+    expect(supabaseCall).not.toHaveBeenCalled();
+    expect(oasis).not.toHaveBeenCalled();
+    expect(activeDay).not.toHaveBeenCalled();
+  });
+
+  it('control: a well-formed ES256 bearer does reach the JWKS download, so the watchers above see network calls', async () => {
+    process.env.LEDGER_WRITE_AUTH_MODE = 'enforce';
+    const b64 = (o: object) => Buffer.from(JSON.stringify(o)).toString('base64url');
+    const token = `${b64({ alg: 'ES256', kid: 'k1', typ: 'JWT' })}.${b64({ sub: 'u1', role: 'authenticated' })}.c2ln`;
+    const res = await request(app).post(PROBE.path).set('authorization', `Bearer ${token}`).send({});
+    expect(res.status).toBe(401);
+    expect(net.some((c) => c.startsWith('https.get https://project.example.supabase.co/auth/v1/.well-known/jwks.json'))).toBe(true);
+  });
+});
