@@ -12,8 +12,7 @@ strategy `e5dd629d77a8e1032148e3c28688613924b6bd9c`. Acceptance source: `plan-mt
 - [x] AC-C2 Only the lane `paths` change; no code, schema, migration, flag, RLS, MT spec, `CLAUDE.md` or `areas.yaml`
   change. Evidence: `git status --porcelain` in `commands.log` lists only
   `docs/programs/strategy-execution/multi-tenant-alignment.md` and `docs/validation/VTID-05717/`. Lane paths:
-  `plan-mt-align/.kiro/specs/architecture-mt-alignment/lanes/mt-alignment.md:13`. Nothing was committed or pushed by
-  this session.
+  `plan-mt-align/.kiro/specs/architecture-mt-alignment/lanes/mt-alignment.md:13`. The lane commits are on PR #4965.
 - [x] AC-C3 Every `file:line` resolves at the pins; the strategy SHA is recorded. Evidence: `check-citations.mjs` run and
   its output in `commands.log` (ok and failed counts, exit code 0); SHAs in the doc header and in `commands.log`.
 - [x] AC-C4 Every statement carries one status class. Evidence: the doc's legend (VO, VI, II, DN, DS, UK) and a class
@@ -38,6 +37,22 @@ strategy `e5dd629d77a8e1032148e3c28688613924b6bd9c`. Acceptance source: `plan-mt
   superseded ones), §2.2 open PRs, §2.3 queue rows not applied (56 of 64).
 - [x] T3 18-workstream table with contracts consumed, must-not-duplicate, conflicts, and the MT-plan work stream
   mapping onto WS03: doc §3 and §3.1; follow-ups in §4.
+
+## AC mapping (Validator Check format)
+AC-1 Change types: Tooling/docs only (AC-C1).
+TEST: `scope.json` `"kind":"docs"`; Lane scope check in preflight and CI.
+AC-2 Only the lane `paths` change (AC-C2).
+TEST: `git diff --name-only origin/main...HEAD` lists only the lane file, the doc and `docs/validation/VTID-05717/**` (Lane scope check).
+AC-3 Every `file:line` resolves at the pins (AC-C3).
+TEST: `node docs/validation/VTID-05717/check-citations.mjs` → ok=525 failed=0, exit 0 (`outputs/check-citations.txt`).
+AC-4 Every statement carries one status class (AC-C4).
+TEST: doc legend and class column in every §1 table (manual check recorded in `commands.log`).
+AC-5 Every needed change is a proposed follow-up, none presented as done (AC-C5).
+TEST: doc §4 F1-F8, each with owning MT spec and gate.
+AC-6 18 of 18 workstreams, each conflict names the MT spec and file (AC-L1).
+TEST: doc §3 rows WS01-WS18; citations covered by check-citations.mjs.
+AC-7 No duplicate resolver, identity, membership or authorisation model (AC-L2).
+TEST: doc §4 preamble and F1, F2, F3, F6 cite the existing contracts.
 
 ## Limits
 

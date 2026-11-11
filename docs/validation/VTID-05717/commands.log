@@ -1,5 +1,5 @@
 # VTID-05717 (architecture-mt-alignment/mt-alignment) commands log
-# Session: Kiro, seat exafy. Date: 2026-11-11 (UTC). Read-only: no commit, push or repository-modifying git command.
+# Session: Kiro, seat exafy. Date: 2026-11-11 (UTC). The investigation was read-only; the lane commits were pushed to PR #4965 afterwards (preflight run before each push).
 # The only state-changing command was the requested `git fetch` of the two wave-1 branches (remote-tracking refs only).
 #
 # SHAs
