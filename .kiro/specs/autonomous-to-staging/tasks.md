@@ -37,7 +37,7 @@ Common acceptance:
 - [ ] T1 land-guard `mergeDecision`: a protected file merges only with two accept entries for the current head from two different `REVIEWER_AGENT_MODELS`.
 - [ ] T2 queue.mjs scope-check: a Kiro lane with `protected_gate: two-model` from a trusted source may change a protected file.
 - [ ] T3 governance.ts mirrors T1 for the PM.
-- [ ] T4 `gate-invariants.mjs` (expectations read from the merge-base; bootstrap pass when none) plus `.github/workflows/GATE-INVARIANTS.yml` on push to `main` and daily as a required step in Collab tests.
+- [ ] T4 `gate-invariants.mjs` (expectations read from the merge-base; bootstrap pass when none) as a required step in Collab tests.
 - [ ] T5 Tests red on base, green after.
 
 **Acceptance**
@@ -121,3 +121,12 @@ Common acceptance:
 - Change types: Infrastructure/CI.
 - Policy test: every production resource pattern denied in `kiro-staging-operator`.
 - No static key in git.
+
+<!-- lane: gate-invariants-ci -->
+## Lane `gate-invariants-ci` (vitana-platform)
+- [ ] T1 `.github/workflows/GATE-INVARIANTS.yml`: runs `node scripts/collab/gate-invariants.mjs --against main` on every push to `main` and daily (cron).
+- [ ] T2 `scripts/ci/workflow-trigger-check.test.mjs` asserts the push and schedule triggers.
+
+**Acceptance**
+- Change types: Infrastructure/CI.
+- The first run on `main` after merge is green and its run URL is in `commands.log`.
