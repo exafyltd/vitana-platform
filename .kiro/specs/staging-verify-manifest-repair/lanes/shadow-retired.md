@@ -1,7 +1,9 @@
 ---
 lane: shadow-retired
-state: ready
+state: executing
 next_actor: kiro
+claimed_by: kiro-exafy-202611111326-7e9b
+branch: kiro/staging-verify-manifest-repair/shadow-retired
 depends_on: []
 executor: kiro
 seat: exafy
@@ -26,3 +28,6 @@ Lane created with the plan.
 
 ### 2026-11-07T14:43Z · ci-plan-spar · ready (VTID allocated)
 VTID-05606 allocated after policy approval (converged-auto-v1).
+
+### 2026-11-11T18:40Z · kiro-exafy-202611111326-7e9b · ready → executing
+Claimed. Evidence in docs/validation/VTID-05606/. Source: PR #4964 (its VTID-04784 part).
