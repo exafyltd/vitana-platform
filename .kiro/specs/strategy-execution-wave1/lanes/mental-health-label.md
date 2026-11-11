@@ -20,6 +20,7 @@ paths:
   - src/i18n/pillar-mental-health-label.test.ts
   - tests/e2e/staging/mental-health-label.staging.spec.ts
   - docs/SCREEN_INVENTORY.md
+  - src/components/calendar/__regression__/__golden__/calendar-screen.json
   - docs/validation/VTID-*/**
 updated: 2026-11-11T00:19Z
 vtid: VTID-05691
@@ -33,3 +34,7 @@ Lane created with the plan.
 
 ### 2026-11-11T00:19Z · ci-plan-spar · ready (VTID allocated)
 VTID-05691 allocated after policy approval (converged-auto-v1).
+
+### 2026-11-11T01:05Z · kiro-exafy-202611110004-e38b · ready (paths amended under _plan)
+Added `src/components/calendar/__regression__/__golden__/calendar-screen.json`: the de `vcal.kinds.mental` label change
+re-records one line of the calendar golden snapshot (`UPDATE_CALENDAR_GOLDEN=1 npm run test:calendar`).
