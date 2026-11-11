@@ -612,6 +612,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01230: Raw body parser for Stripe Connect webhooks (MUST come BEFORE express.json())
   app.use('/api/v1/stripe/webhook', express.raw({ type: 'application/json' }));
+  // VTID-05730 (gateway-critical-route-auth): raw body so routes/payments-stripe-webhook.ts can verify the Stripe signature
+  app.use('/webhooks/stripe-dance', express.raw({ type: 'application/json' }));
   // VTID-03107: Raw body parser for customer-side Stripe billing webhook (separate signing secret)
   app.use('/api/v1/billing/webhooks/stripe', express.raw({ type: 'application/json' }));
   // VTID-03413: AWS SNS posts Content-Type: text/plain (even though the body is JSON) —
