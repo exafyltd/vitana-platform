@@ -5,6 +5,9 @@ change_class: standard
 Author: Kiro, seat `exafy`, session `kiro-exafy-202611110004-e38b` (Kiro Web). Repos `exafyltd/vitana-platform`, `exafyltd/vitana-v1`.
 Premises pinned to `origin/main` vitana-platform `6dc6e1ba0c`, vitana-v1 `e31bf4627f`.
 <!-- plan:begin -->
+Pins (both repos, every file:line below and in the lanes is checked against these): vitana-platform `6dc6e1ba0c18252ec2f3fbf5651d245e200f9835`,
+vitana-v1 `e31bf4627ff3c705c20f8e6b718ce4dd03353b7f`. A lane that starts on a newer `origin/main` re-verifies its citations
+there first and records both SHAs in `commands.log`.
 ## 1. Goal
 Owner, 2026-11-11 ("Final strategy review — conditional approval and execution authorisation", strategy commit
 `fb77090e1ffc7d1ef3c250b0aa721768c3df9425` in GitLab project `vitana/vitanaland-strategy`): *"Proceed with the approved
@@ -66,7 +69,9 @@ that changes product text (vitana-v1 i18n JSON values only; no key renames, no c
    unchanged.
 3. `autonomy-risks` (vitana-platform) → `.../autonomy-risk-register.md`: each risk with severity, current status,
    tenant-isolation, security, execution-integrity and financial/publishing impact, owner, dependencies, remediation,
-   verification; Dispatcher and worker-runner facts stated as found.
+   verification; Dispatcher and worker-runner facts stated as found. It has an explicit entry for the event-type gap:
+   `self-healing.rollback.completed` (`self-healing-snapshot-service.ts:460-472`) is emitted when only a rollback request
+   was recorded, so the follow-up must fix the event semantics as well as the missing rollback mechanism.
 4. `delivery-capacity` (vitana-platform) → `.../delivery-capacity.md`: actual seats, sessions in lane logs and trailers,
    GitHub/GitLab identities, Claude Code status; available capacity vs the 13-account target; proposed CLAUDE.md and
    `areas.yaml` wording for the owner.
@@ -84,7 +89,12 @@ that changes product text (vitana-v1 i18n JSON values only; no key renames, no c
    (`health.json`, `vitanaIndex.json`, `newsCard.json`, `healthNative.json` pillar name only, `screens.json` pillar-name
    keys, `vcal.json`) reads "Mental Health" in its language (de "Mentale Gesundheit" first, du-form unaffected); keys
    unchanged; sentences and plan names that already say mental health are left alone; layout checked for the longer
-   label (desktop 1400×900, mobile 390×844, RTL ar).
+   label (desktop 1400×900, mobile 390×844, RTL ar). The lane's `docs/validation/<VTID>/acceptance.md` lists every other
+   surface that still names the fifth pillar "mental" without "health", each as a proposed follow-up with file:line: the
+   gateway `pillarLabel()` (`vitana-platform/services/gateway/src/lib/vitana-pillars.ts:29-32`, "Human-facing label for
+   voice/UI") and its call sites, the native app (`apps/mobile`) labels, and server-shipped UI text. Those surfaces are
+   code changes (gateway behaviour, native build) and get their own sparred plan; this lane does not claim to finish the
+   owner's instruction for them.
 
 ## 5. Parallel, shared and hot files
 Lanes 1–7 are independent (separate files) and may run in parallel up to the cap. Lane 8 touches i18n shards (hot
