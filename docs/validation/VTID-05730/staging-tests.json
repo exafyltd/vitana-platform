@@ -1,0 +1,10 @@
+{
+  "vtid": "VTID-05730",
+  "service": "gateway",
+  "tests": [
+    { "kind": "existing", "ref": "npx jest test/payments-stripe-dance-signature.test.ts", "cwd": "services/gateway",
+      "reason": "POST /webhooks/stripe-dance now verifies the Stripe signature over the raw body: valid signed fixture moves state, forged/missing/altered signature 400 and unset secret 500 with nothing written, and index.ts mounts express.raw before express.json. Covered as a CI jest suite instead of an http probe because the route rejects with 400/500, not 401/403, and lib.cjs validateHttpTest only allows write probes with rejected_probe expect_status 401|403 (staging writes reach production data)" },
+    { "kind": "http", "name": "gateway health endpoint is served", "method": "GET", "path": "/alive", "expect_status": 200,
+      "reason": "the gateway build containing the raw-body parser line and the verifying handler is served" }
+  ]
+}

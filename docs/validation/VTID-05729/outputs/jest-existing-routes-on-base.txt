@@ -1,0 +1,182 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/wt-crit-semantic-memory-auth/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.error
+    [VTID-01184] Batch embedding failed: rate limited
+
+      476 |
+      477 |       if (!embeddingResult.ok || !embeddingResult.embeddings) {
+    > 478 |         console.error(`[${VTID}] Batch embedding failed:`, embeddingResult.error);
+          |                 ^
+      479 |         errors += batch.length;
+      480 |         continue;
+      481 |       }
+
+      at src/routes/semantic-memory.ts:478:17
+
+FAIL test/routes/semantic-memory.test.ts
+  POST /semantic/search
+    ✕ rejects an anonymous request (no token, no lens) before calling any service (401, no downstream call) (35 ms)
+    ✕ rejects a lens with a non-UUID tenant_id/user_id (not the caller's ids) before calling any service (11 ms)
+    ✕ generates a query embedding when none is supplied, then forwards the caller's identity lens to semanticSearch (4 ms)
+    ✓ never mixes tenants: two callers with their own lenses hit the service with their own tenant_id/user_id, not the other request's (6 ms)
+    ✓ skips embedding generation when query_embedding is already supplied (5 ms)
+    ✓ returns 500 EMBEDDING_GENERATION_FAILED when embedding generation fails, without calling semanticSearch (2 ms)
+    ✓ propagates a service-layer failure as 500 (3 ms)
+  POST /semantic/write
+    ✕ rejects an anonymous write (no token, no lens) before calling writeMemoryItem (401) (4 ms)
+    ✓ rejects an invalid source enum value (3 ms)
+    ✕ forwards the caller's identity lens to writeMemoryItem on a valid write, and 201s (2 ms)
+    ✓ does not fail the write when embedding generation fails (embedding stays undefined) (2 ms)
+    ✓ skips embedding generation entirely for very short content (<=10 chars) (1 ms)
+    ✓ propagates a write failure as 500 (1 ms)
+  POST /semantic/context
+    ✕ rejects an anonymous request (no token, no lens) before calling any service (401) (2 ms)
+    ✕ builds context using the generated embedding and the caller's identity lens (2 ms)
+    ✓ returns 500 when embedding generation fails, without calling buildSemanticContext (2 ms)
+  GET /semantic/health
+    ✓ reports embedding service availability (2 ms)
+  POST /admin/embeddings/generate
+    ✓ reports zero processed when no items need embeddings (2 ms)
+    ✓ processes items in batches and emits an OASIS event on success (2 ms)
+    ✓ counts a failed batch as errors and still returns 200 with status=warning (8 ms)
+    ✓ rejects an out-of-range limit (2 ms)
+  POST /admin/embeddings/reembed
+    ✓ forwards tenant_id/user_id scoping filters to markForReembed (2 ms)
+    ✓ rejects a malformed tenant_id (2 ms)
+    ✓ propagates a service failure as 500 (2 ms)
+  GET /admin/embeddings/status
+    ✓ reports items_needing_embeddings=true when the sample query returns items (2 ms)
+    ✓ reports migration_available=false when the underlying query fails (2 ms)
+
+  ● POST /semantic/search › rejects an anonymous request (no token, no lens) before calling any service (401, no downstream call)
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 401
+    Received: 400
+
+      135 |   it('rejects an anonymous request (no token, no lens) before calling any service (401, no downstream call)', async () => {
+      136 |     const res = await request(app).post('/semantic/search').send({ query: 'hello' });
+    > 137 |     expect(res.status).toBe(401);
+          |                        ^
+      138 |     expect(mockGenerateEmbedding).not.toHaveBeenCalled();
+      139 |     expect(mockSemanticSearch).not.toHaveBeenCalled();
+      140 |   });
+
+      at Object.<anonymous> (test/routes/semantic-memory.test.ts:137:24)
+
+  ● POST /semantic/search › rejects a lens with a non-UUID tenant_id/user_id (not the caller's ids) before calling any service
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 403
+    Received: 400
+
+      145 |       .set(AUTH, USER_A_TOKEN)
+      146 |       .send({ query: 'hello', lens: { tenant_id: 'not-a-uuid', user_id: 'also-not-a-uuid', workspace_scope: 'product' } });
+    > 147 |     expect(res.status).toBe(403);
+          |                        ^
+      148 |     expect(res.body.error).toBe('LENS_MISMATCH');
+      149 |     expect(mockGenerateEmbedding).not.toHaveBeenCalled();
+      150 |     expect(mockSemanticSearch).not.toHaveBeenCalled();
+
+      at Object.<anonymous> (test/routes/semantic-memory.test.ts:147:24)
+
+  ● POST /semantic/search › generates a query embedding when none is supplied, then forwards the caller's identity lens to semanticSearch
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 400
+
+      161 |       .send({ query: 'hello', lens: { workspace_scope: 'product' } });
+      162 |
+    > 163 |     expect(res.status).toBe(200);
+          |                        ^
+      164 |     expect(mockGenerateEmbedding).toHaveBeenCalledWith('hello');
+      165 |     expect(mockSemanticSearch).toHaveBeenCalledTimes(1);
+      166 |     const call = mockSemanticSearch.mock.calls[0][0];
+
+      at Object.<anonymous> (test/routes/semantic-memory.test.ts:163:24)
+
+  ● POST /semantic/write › rejects an anonymous write (no token, no lens) before calling writeMemoryItem (401)
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 401
+    Received: 400
+
+      225 |       .post('/semantic/write')
+      226 |       .send({ content: 'hello world this is content', source: 'orb_text' });
+    > 227 |     expect(res.status).toBe(401);
+          |                        ^
+      228 |     expect(mockWriteMemoryItem).not.toHaveBeenCalled();
+      229 |   });
+      230 |
+
+      at Object.<anonymous> (test/routes/semantic-memory.test.ts:227:24)
+
+  ● POST /semantic/write › forwards the caller's identity lens to writeMemoryItem on a valid write, and 201s
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 201
+    Received: 400
+
+      248 |       .send({ content: 'the user really likes hiking', source: 'orb_text', lens: { workspace_scope: 'product' } });
+      249 |
+    > 250 |     expect(res.status).toBe(201);
+          |                        ^
+      251 |     expect(mockWriteMemoryItem).toHaveBeenCalledTimes(1);
+      252 |     const call = mockWriteMemoryItem.mock.calls[0][0];
+      253 |     expect(call.lens.tenant_id).toBe(TENANT_A);
+
+      at Object.<anonymous> (test/routes/semantic-memory.test.ts:250:24)
+
+  ● POST /semantic/context › rejects an anonymous request (no token, no lens) before calling any service (401)
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 401
+    Received: 400
+
+      296 |   it('rejects an anonymous request (no token, no lens) before calling any service (401)', async () => {
+      297 |     const res = await request(app).post('/semantic/context').send({ query: 'sleep tips' });
+    > 298 |     expect(res.status).toBe(401);
+          |                        ^
+      299 |     expect(mockBuildSemanticContext).not.toHaveBeenCalled();
+      300 |   });
+      301 |
+
+      at Object.<anonymous> (test/routes/semantic-memory.test.ts:298:24)
+
+  ● POST /semantic/context › builds context using the generated embedding and the caller's identity lens
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 400
+
+      310 |       .send({ query: 'sleep tips', lens: { workspace_scope: 'product' } });
+      311 |
+    > 312 |     expect(res.status).toBe(200);
+          |                        ^
+      313 |     expect(res.body.context).toBe('CTX');
+      314 |     expect(res.body.results_count).toBe(1);
+      315 |     expect(mockBuildSemanticContext).toHaveBeenCalledWith('sleep tips', EMBEDDING, expect.objectContaining({ tenant_id: TENANT_A, user_id: USER_A }), 10);
+
+      at Object.<anonymous> (test/routes/semantic-memory.test.ts:312:24)
+
+Test Suites: 1 failed, 1 total
+Tests:       7 failed, 19 passed, 26 total
+Snapshots:   0 total
+Time:        0.758 s
+Ran all test suites matching /test\/routes\/semantic-memory.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
+exit 1
