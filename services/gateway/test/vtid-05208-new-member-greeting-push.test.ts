@@ -344,7 +344,8 @@ describe('prepareNewMemberGreetingPush', () => {
     seedGreeting('u-en', 's9', NOW - HOUR, true);
     const { sb, calls } = fakeSupabase({ failGreetingRead: true });
     const p = await prepareNewMemberGreetingPush(sb, { senderId: 's1', receiverId: 'u-en', payload: greetingPayload('s1') }, NOW);
-    expect(p!.opts).toBeUndefined(); // nothing unread in dm:s1 → pushes as before
+    // VTID-05718 (owner Option A): a greeting message is held for its burst like any chat message.
+    expect(p!.opts).toEqual({ holdForBurst: { dueAt: expect.any(String) } });
     expect(p!.payload.tag).toBe('chat:dm:s1');
     expect(p!.payload.data).not.toHaveProperty('greeting_group');
     expect(calls).toEqual(expect.arrayContaining([['eq', 'data->>conversation_key', 'dm:s1']]));
