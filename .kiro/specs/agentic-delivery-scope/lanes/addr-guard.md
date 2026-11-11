@@ -10,7 +10,8 @@ reviewer_seat: agent:vitana-lane-reviewer
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 paths:
   - scripts/collab/no-address.test.mjs
-updated: 2026-11-11T16:51Z
+updated: 2026-11-11T16:53Z
+vtid: VTID-05760
 ---
 
 # Lane: addr-guard (repo exafyltd/vitana-platform)
@@ -20,3 +21,6 @@ A test that keeps address-shaped strings out of `.kiro/specs/**`, `.kiro/automat
 ## Log
 ### 2026-11-11T16:51Z · kiro-exafyltd-202611111044-8f1d · ready
 Late lane added after convergence (plan §8a); its VTID comes from the next PLAN-SPAR run.
+
+### 2026-11-11T16:53Z · ci-plan-spar · ready (VTID allocated)
+VTID-05760 allocated after policy approval (converged-auto-v1).

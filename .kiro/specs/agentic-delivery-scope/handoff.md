@@ -5,9 +5,9 @@ author_seat: exafyltd
 executor: kiro
 next_actor: kiro
 state: approved
-updated: 2026-11-11T16:49Z
+updated: 2026-11-11T16:53Z
 sparring_record: .kiro/specs/agentic-delivery-scope/sparring/verdict.md
-vtids: [VTID-05734, VTID-05735, VTID-05736, VTID-05737, VTID-05738, VTID-05739, VTID-05740, VTID-05741, VTID-05742, VTID-05743, VTID-05744, VTID-05745, VTID-05746, VTID-05747, VTID-05748, VTID-05749]
+vtids: [VTID-05734, VTID-05735, VTID-05736, VTID-05737, VTID-05738, VTID-05739, VTID-05740, VTID-05741, VTID-05742, VTID-05743, VTID-05744, VTID-05745, VTID-05746, VTID-05747, VTID-05748, VTID-05749, VTID-05750, VTID-05751, VTID-05752, VTID-05753, VTID-05754, VTID-05755, VTID-05756, VTID-05757, VTID-05758, VTID-05759, VTID-05760]
 ---
 # Handoff — agentic-delivery-scope
 
@@ -61,3 +61,5 @@ Converged in round 2 (session `90113972-d727-470c-b3c4-677c7e2478d9`, final plan
 deferred to lane `heartbeat-30` (`tasks.md`). The 11 cleanup lanes of plan §8a (`addr-01`..`addr-10`, `addr-guard`) are
 added now, after convergence, so their paths never reached a round; the next PLAN-SPAR run allocates their VTIDs.
 
+### 2026-11-11T16:53Z · ci-plan-spar · approved (late lane VTID)
+Converged; approved by policy converged-auto-v1. 11 lane(s) got a VTID and are handed to Kiro.
