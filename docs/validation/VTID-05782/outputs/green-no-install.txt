@@ -2,489 +2,495 @@ TAP version 13
 # Subtest: provision --plan makes no AWS call and prints no production identifier
 ok 1 - provision --plan makes no AWS call and prints no production identifier
   ---
-  duration_ms: 20.477245
+  duration_ms: 19.749368
   type: 'test'
   ...
 # Subtest: provision --plan option B: min 0.5 ACU, no auto-pause
 ok 2 - provision --plan option B: min 0.5 ACU, no auto-pause
   ---
-  duration_ms: 14.656039
+  duration_ms: 14.66165
   type: 'test'
   ...
 # Subtest: provision refuses cluster "vitana-aurora-prod" before any AWS call (plan and apply)
 ok 3 - provision refuses cluster "vitana-aurora-prod" before any AWS call (plan and apply)
   ---
-  duration_ms: 9.300411
+  duration_ms: 8.437497
   type: 'test'
   ...
 # Subtest: provision refuses cluster "vitana-aurora-staging-prod" before any AWS call (plan and apply)
 ok 4 - provision refuses cluster "vitana-aurora-staging-prod" before any AWS call (plan and apply)
   ---
-  duration_ms: 8.497575
+  duration_ms: 8.42135
   type: 'test'
   ...
 # Subtest: provision refuses cluster "vitana-aurora" before any AWS call (plan and apply)
 ok 5 - provision refuses cluster "vitana-aurora" before any AWS call (plan and apply)
   ---
-  duration_ms: 10.251411
+  duration_ms: 10.756035
   type: 'test'
   ...
 # Subtest: provision refuses cluster "my-db" before any AWS call (plan and apply)
 ok 6 - provision refuses cluster "my-db" before any AWS call (plan and apply)
   ---
-  duration_ms: 10.690869
+  duration_ms: 10.459543
   type: 'test'
   ...
 # Subtest: provision refuses cluster "vitana-aurora-stagingx" before any AWS call (plan and apply)
 ok 7 - provision refuses cluster "vitana-aurora-stagingx" before any AWS call (plan and apply)
   ---
-  duration_ms: 10.755387
+  duration_ms: 10.91306
   type: 'test'
   ...
 # Subtest: provision refuses cluster "VITANA-AURORA-STAGING" before any AWS call (plan and apply)
 ok 8 - provision refuses cluster "VITANA-AURORA-STAGING" before any AWS call (plan and apply)
   ---
-  duration_ms: 10.663047
+  duration_ms: 10.133708
   type: 'test'
   ...
 # Subtest: provision refuses cluster "vitana-aurora-staging;rm" before any AWS call (plan and apply)
 ok 9 - provision refuses cluster "vitana-aurora-staging;rm" before any AWS call (plan and apply)
   ---
-  duration_ms: 10.437018
+  duration_ms: 11.883089
   type: 'test'
   ...
 # Subtest: provision refuses capacity above the 2 ACU cap and an engine below 16.3
 ok 10 - provision refuses capacity above the 2 ACU cap and an engine below 16.3
   ---
-  duration_ms: 46.234821
+  duration_ms: 48.812898
   type: 'test'
   ...
 # Subtest: provision --apply refuses without the cost approval, with no AWS call
 ok 11 - provision --apply refuses without the cost approval, with no AWS call
   ---
-  duration_ms: 36.564382
+  duration_ms: 39.168887
   type: 'test'
   ...
 # Subtest: provision --apply refuses credentials of another account
 ok 12 - provision --apply refuses credentials of another account
   ---
-  duration_ms: 11.266919
+  duration_ms: 10.833321
   type: 'test'
   ...
 # Subtest: provision --apply creates cluster and writer from the stack outputs, then enables the Data API
 ok 13 - provision --apply creates cluster and writer from the stack outputs, then enables the Data API
   ---
-  duration_ms: 58.926205
+  duration_ms: 54.481128
   type: 'test'
   ...
 # Subtest: provision --apply leaves an existing cluster as it is
 ok 14 - provision --apply leaves an existing cluster as it is
   ---
-  duration_ms: 48.575072
+  duration_ms: 49.259093
   type: 'test'
   ...
 # Subtest: load --dry-run checks the bundle and makes no AWS call
 ok 15 - load --dry-run checks the bundle and makes no AWS call
   ---
-  duration_ms: 161.360735
+  duration_ms: 165.251455
   type: 'test'
   ...
 # Subtest: load refuses a non-staging cluster and a tampered bundle before any AWS call
 ok 16 - load refuses a non-staging cluster and a tampered bundle before any AWS call
   ---
-  duration_ms: 46.42347
+  duration_ms: 47.051246
   type: 'test'
   ...
 # Subtest: load refuses a bundle that names production outside the reviewed allow list
 ok 17 - load refuses a bundle that names production outside the reviewed allow list
   ---
-  duration_ms: 38.867667
+  duration_ms: 41.274218
   type: 'test'
   ...
 # Subtest: load refuses without the cost approval (verify-only needs none)
 ok 18 - load refuses without the cost approval (verify-only needs none)
   ---
-  duration_ms: 183.112946
+  duration_ms: 193.410479
   type: 'test'
   ...
 # Subtest: load applies each part in one Data API transaction and passes when the cluster hash matches
 ok 19 - load applies each part in one Data API transaction and passes when the cluster hash matches
   ---
-  duration_ms: 232.200752
+  duration_ms: 236.021909
   type: 'test'
   ...
 # Subtest: load refuses a schema hash mismatch (stubbed Data API)
 ok 20 - load refuses a schema hash mismatch (stubbed Data API)
   ---
-  duration_ms: 345.38634
+  duration_ms: 339.519825
   type: 'test'
   ...
 # Subtest: load refuses a cluster whose public schema is not empty, or that is not tagged staging
 ok 21 - load refuses a cluster whose public schema is not empty, or that is not tagged staging
   ---
-  duration_ms: 204.412745
+  duration_ms: 198.739327
   type: 'test'
   ...
 # Subtest: a failing statement rolls the part back and stops the load
 ok 22 - a failing statement rolls the part back and stops the load
   ---
-  duration_ms: 224.540228
+  duration_ms: 220.328487
   type: 'test'
   ...
 # Subtest: smoke objects are the ledger and OASIS tables the gateway smoke reads, and the VTID allocator
 ok 23 - smoke objects are the ledger and OASIS tables the gateway smoke reads, and the VTID allocator
   ---
-  duration_ms: 1.525819
+  duration_ms: 1.902087
   type: 'test'
   ...
 # Subtest: missingSmokeObjects names every object that is not there
 ok 24 - missingSmokeObjects names every object that is not there
   ---
-  duration_ms: 0.305286
+  duration_ms: 0.411606
   type: 'test'
   ...
 # Subtest: bundle round trip keeps every part byte-exact and checks each sha256
 ok 25 - bundle round trip keeps every part byte-exact and checks each sha256
   ---
-  duration_ms: 1.391009
+  duration_ms: 2.081271
   type: 'test'
   ...
 # Subtest: production references in the bundle must be in the allow list, with the exact count; stale entries fail
 ok 26 - production references in the bundle must be in the allow list, with the exact count; stale entries fail
   ---
-  duration_ms: 1.124658
+  duration_ms: 1.244846
   type: 'test'
   ...
 # Subtest: the allow list in the repo names only migration parts and gives a reason for each
 ok 27 - the allow list in the repo names only migration parts and gives a reason for each
   ---
-  duration_ms: 0.594349
+  duration_ms: 0.534178
   type: 'test'
   ...
 # Subtest: verifyBundle refuses a tampered bundle, a missing manifest and a wrong schema
 ok 28 - verifyBundle refuses a tampered bundle, a missing manifest and a wrong schema
   ---
-  duration_ms: 1.295859
+  duration_ms: 1.341137
   type: 'test'
   ...
 # Subtest: CLI usage: --out is required; --verify takes one directory
 ok 29 - CLI usage: --out is required; --verify takes one directory
   ---
-  duration_ms: 0.341195
+  duration_ms: 0.284221
   type: 'test'
   ...
 # Subtest: build-schema succeeds on this checkout: hash, bundle, smoke objects, seed, no live production reference
 ok 30 - build-schema succeeds on this checkout: hash, bundle, smoke objects, seed, no live production reference # SKIP @electric-sql/pglite not installed (runs in STAGING-DB-SCHEMA.yml)
   ---
-  duration_ms: 0.073521
+  duration_ms: 0.063307
   type: 'test'
   ...
 # Subtest: build-schema fails when a required table is removed from the replay (fixture skip list)
 ok 31 - build-schema fails when a required table is removed from the replay (fixture skip list) # SKIP @electric-sql/pglite not installed (runs in STAGING-DB-SCHEMA.yml)
   ---
-  duration_ms: 0.244497
+  duration_ms: 0.214079
   type: 'test'
   ...
 # Subtest: build-schema fails when the creator of the VTID ledger is skipped (smoke object missing)
 ok 32 - build-schema fails when the creator of the VTID ledger is skipped (smoke object missing) # SKIP @electric-sql/pglite not installed (runs in STAGING-DB-SCHEMA.yml)
   ---
-  duration_ms: 0.420386
+  duration_ms: 0.25079
   type: 'test'
   ...
 # Subtest: build-schema fails when a production call-out is not neutralized by the seed (live check)
 ok 33 - build-schema fails when a production call-out is not neutralized by the seed (live check) # SKIP @electric-sql/pglite not installed (runs in STAGING-DB-SCHEMA.yml)
   ---
-  duration_ms: 0.222157
+  duration_ms: 0.131901
   type: 'test'
   ...
 # Subtest: guard lists every production identifier of plan §3.3 and the gate invariant
 ok 34 - guard lists every production identifier of plan §3.3 and the gate invariant
   ---
-  duration_ms: 1.267269
+  duration_ms: 1.74775
   type: 'test'
   ...
 # Subtest: --enforce fails on the config.json fixture (supabase-project-ref)
 ok 35 - --enforce fails on the config.json fixture (supabase-project-ref)
   ---
-  duration_ms: 41.204149
+  duration_ms: 39.308741
   type: 'test'
   ...
 # Subtest: --enforce fails on the workflow.yml fixture (prod-role-secret)
 ok 36 - --enforce fails on the workflow.yml fixture (prod-role-secret)
   ---
-  duration_ms: 32.310516
+  duration_ms: 33.089153
   type: 'test'
   ...
 # Subtest: --enforce fails on the taskdef.json fixture (aurora-prod-secret)
 ok 37 - --enforce fails on the taskdef.json fixture (aurora-prod-secret)
   ---
-  duration_ms: 32.055959
+  duration_ms: 32.257751
   type: 'test'
   ...
 # Subtest: --enforce fails on the cluster.sh fixture (aurora-cluster)
 ok 38 - --enforce fails on the cluster.sh fixture (aurora-cluster)
   ---
-  duration_ms: 31.425717
+  duration_ms: 32.596311
   type: 'test'
   ...
 # Subtest: --enforce fails on the awsdr-service.sh fixture (awsdr-service)
 ok 39 - --enforce fails on the awsdr-service.sh fixture (awsdr-service)
   ---
-  duration_ms: 31.813769
+  duration_ms: 31.787727
   type: 'test'
   ...
 # Subtest: --enforce fails on the supabase-secret.yml fixture (supabase-prod-secret-prefix)
 ok 40 - --enforce fails on the supabase-secret.yml fixture (supabase-prod-secret-prefix)
   ---
-  duration_ms: 29.403115
+  duration_ms: 30.554144
   type: 'test'
   ...
 # Subtest: --enforce fails on the kms-allow.json fixture (kms-key)
 ok 41 - --enforce fails on the kms-allow.json fixture (kms-key)
   ---
-  duration_ms: 31.694523
+  duration_ms: 33.611743
   type: 'test'
   ...
 # Subtest: --report lists the same findings and exits 0 (default mode)
 ok 42 - --report lists the same findings and exits 0 (default mode)
   ---
-  duration_ms: 29.256334
+  duration_ms: 33.446064
   type: 'test'
   ...
 # Subtest: a clean staging file passes --enforce
 ok 43 - a clean staging file passes --enforce
   ---
-  duration_ms: 32.165875
+  duration_ms: 34.2297
   type: 'test'
   ...
 # Subtest: CloudFormation: an identifier inside an Effect=Deny statement is not a finding; the same outside is
 ok 44 - CloudFormation: an identifier inside an Effect=Deny statement is not a finding; the same outside is
   ---
-  duration_ms: 33.731626
+  duration_ms: 31.849748
   type: 'test'
   ...
 # Subtest: usage errors exit 2
 ok 45 - usage errors exit 2
   ---
-  duration_ms: 89.832563
+  duration_ms: 91.546533
   type: 'test'
   ...
 # Subtest: the default set covers staging workflows, staging scripts and infra/staging-db, never fixtures or tests
 ok 46 - the default set covers staging workflows, staging scripts and infra/staging-db, never fixtures or tests
   ---
-  duration_ms: 5.635849
+  duration_ms: 6.13857
   type: 'test'
   ...
 # Subtest: report mode over the default set exits 0 even though today's shared staging deploy names production
 ok 47 - report mode over the default set exits 0 even though today's shared staging deploy names production
   ---
-  duration_ms: 12.332583
+  duration_ms: 15.461761
   type: 'test'
   ...
 # Subtest: the isolated staging plane of this lane has no production reference (--enforce over its own files)
 ok 48 - the isolated staging plane of this lane has no production reference (--enforce over its own files)
   ---
-  duration_ms: 35.852999
+  duration_ms: 36.59778
   type: 'test'
   ...
 # Subtest: the stack is a product-account CloudFormation template with the resources of design.md §4
 ok 49 - the stack is a product-account CloudFormation template with the resources of design.md §4
   ---
-  duration_ms: 1.857846
+  duration_ms: 1.952381
   type: 'test'
   ...
 # Subtest: capacity defaults are option A (min 0 ACU, auto-pause 300 s, max 2 ACU) and max 2 ACU is a hard cap
 ok 50 - capacity defaults are option A (min 0 ACU, auto-pause 300 s, max 2 ACU) and max 2 ACU is a hard cap
   ---
-  duration_ms: 0.298112
+  duration_ms: 0.277205
   type: 'test'
   ...
 # Subtest: role and boundary carry the same statements; the role has the boundary attached
 ok 51 - role and boundary carry the same statements; the role has the boundary attached
   ---
-  duration_ms: 0.519961
+  duration_ms: 0.507516
   type: 'test'
   ...
 # Subtest: trust: GitHub OIDC only, this repository, main only, audience sts
 ok 52 - trust: GitHub OIDC only, this repository, main only, audience sts
   ---
-  duration_ms: 0.197525
+  duration_ms: 0.164335
   type: 'test'
   ...
 # Subtest: staging: create, modify, Data API and staging secrets are allowed; create needs the staging tag
 ok 53 - staging: create, modify, Data API and staging secrets are allowed; create needs the staging tag
   ---
-  duration_ms: 5.284431
+  duration_ms: 5.417832
   type: 'test'
   ...
 # Subtest: any cluster other than vitana-aurora-staging cannot be created or changed
 ok 54 - any cluster other than vitana-aurora-staging cannot be created or changed
   ---
-  duration_ms: 1.077813
+  duration_ms: 1.111981
   type: 'test'
   ...
 # Subtest: every production resource is denied explicitly, in the role and in the boundary
 ok 55 - every production resource is denied explicitly, in the role and in the boundary
   ---
-  duration_ms: 0.524446
+  duration_ms: 1.760254
+  type: 'test'
+  ...
+# Subtest: RDS-managed master secrets: only the staging cluster's, only through RDS, no rotation grant
+ok 56 - RDS-managed master secrets: only the staging cluster's, only through RDS, no rotation grant
+  ---
+  duration_ms: 0.708816
   type: 'test'
   ...
 # Subtest: deletes are denied everywhere, staging included (deletion stays an owner action)
-ok 56 - deletes are denied everywhere, staging included (deletion stays an owner action)
+ok 57 - deletes are denied everywhere, staging included (deletion stays an owner action)
   ---
-  duration_ms: 0.29085
+  duration_ms: 0.529144
   type: 'test'
   ...
 # Subtest: no IAM change is possible, except the RDS service-linked role
-ok 57 - no IAM change is possible, except the RDS service-linked role
+ok 58 - no IAM change is possible, except the RDS service-linked role
   ---
-  duration_ms: 1.05673
+  duration_ms: 0.776962
   type: 'test'
   ...
 # Subtest: no write to ECS, EC2 or any other service: the role only creates and loads the staging cluster
-ok 58 - no write to ECS, EC2 or any other service: the role only creates and loads the staging cluster
+ok 59 - no write to ECS, EC2 or any other service: the role only creates and loads the staging cluster
   ---
-  duration_ms: 1.253929
+  duration_ms: 1.284618
   type: 'test'
   ...
 # Subtest: KMS: own key, rotated, retained; role use only through RDS and Secrets Manager
-ok 59 - KMS: own key, rotated, retained; role use only through RDS and Secrets Manager
+ok 60 - KMS: own key, rotated, retained; role use only through RDS and Secrets Manager
   ---
-  duration_ms: 0.351897
+  duration_ms: 0.21201
   type: 'test'
   ...
 # Subtest: network isolation: the database SG admits 5432 only from the staging-only client SG
-ok 60 - network isolation: the database SG admits 5432 only from the staging-only client SG
+ok 61 - network isolation: the database SG admits 5432 only from the staging-only client SG
   ---
-  duration_ms: 0.183761
+  duration_ms: 0.154394
   type: 'test'
   ...
 # Subtest: budget alarm: 60 USD a month on tag vitana-env=staging, actual and forecast, to the owner e-mail
-ok 61 - budget alarm: 60 USD a month on tag vitana-env=staging, actual and forecast, to the owner e-mail
+ok 62 - budget alarm: 60 USD a month on tag vitana-env=staging, actual and forecast, to the owner e-mail
   ---
-  duration_ms: 0.274596
+  duration_ms: 0.160275
   type: 'test'
   ...
 # Subtest: candidate services are optional, at desired count 0, and can only run the -iso task-definition families
-ok 62 - candidate services are optional, at desired count 0, and can only run the -iso task-definition families
+ok 63 - candidate services are optional, at desired count 0, and can only run the -iso task-definition families
   ---
-  duration_ms: 0.395329
+  duration_ms: 0.38852
   type: 'test'
   ...
 # Subtest: no credential or secret value in the template
-ok 63 - no credential or secret value in the template
+ok 64 - no credential or secret value in the template
   ---
-  duration_ms: 1.071146
+  duration_ms: 0.462394
   type: 'test'
   ...
 # Subtest: AWS-STAGE-PROVISION-DB.yml: dispatch only, fail-closed owner gate, staging role only, guard first
-ok 64 - AWS-STAGE-PROVISION-DB.yml: dispatch only, fail-closed owner gate, staging role only, guard first
+ok 65 - AWS-STAGE-PROVISION-DB.yml: dispatch only, fail-closed owner gate, staging role only, guard first
   ---
-  duration_ms: 2.451592
+  duration_ms: 2.793511
   type: 'test'
   ...
 # Subtest: STAGING-DB-SCHEMA.yml: push/dispatch, no AWS, guard report-only, bundle artifact
-ok 65 - STAGING-DB-SCHEMA.yml: push/dispatch, no AWS, guard report-only, bundle artifact
+ok 66 - STAGING-DB-SCHEMA.yml: push/dispatch, no AWS, guard report-only, bundle artifact
   ---
-  duration_ms: 0.680562
+  duration_ms: 0.509761
   type: 'test'
   ...
 # Subtest: mutation: AWS-STAGE-PROVISION-DB.yml with a push trigger fails
-ok 66 - mutation: AWS-STAGE-PROVISION-DB.yml with a push trigger fails
+ok 67 - mutation: AWS-STAGE-PROVISION-DB.yml with a push trigger fails
   ---
-  duration_ms: 0.672245
+  duration_ms: 0.510287
   type: 'test'
   ...
 # Subtest: mutation: AWS-STAGE-PROVISION-DB.yml with no cost check fails
-ok 67 - mutation: AWS-STAGE-PROVISION-DB.yml with no cost check fails
+ok 68 - mutation: AWS-STAGE-PROVISION-DB.yml with no cost check fails
   ---
-  duration_ms: 0.476646
+  duration_ms: 0.410922
   type: 'test'
   ...
 # Subtest: mutation: AWS-STAGE-PROVISION-DB.yml with no role check fails
-ok 68 - mutation: AWS-STAGE-PROVISION-DB.yml with no role check fails
+ok 69 - mutation: AWS-STAGE-PROVISION-DB.yml with no role check fails
   ---
-  duration_ms: 1.255569
+  duration_ms: 1.532533
   type: 'test'
   ...
 # Subtest: mutation: AWS-STAGE-PROVISION-DB.yml with a gate that never fails fails
-ok 69 - mutation: AWS-STAGE-PROVISION-DB.yml with a gate that never fails fails
+ok 70 - mutation: AWS-STAGE-PROVISION-DB.yml with a gate that never fails fails
   ---
-  duration_ms: 0.290685
+  duration_ms: 0.289121
   type: 'test'
   ...
 # Subtest: mutation: AWS-STAGE-PROVISION-DB.yml with the shared staging deploy role fails
-ok 70 - mutation: AWS-STAGE-PROVISION-DB.yml with the shared staging deploy role fails
+ok 71 - mutation: AWS-STAGE-PROVISION-DB.yml with the shared staging deploy role fails
   ---
-  duration_ms: 0.385601
+  duration_ms: 0.563141
   type: 'test'
   ...
 # Subtest: mutation: AWS-STAGE-PROVISION-DB.yml with the production role fails
-ok 71 - mutation: AWS-STAGE-PROVISION-DB.yml with the production role fails
+ok 72 - mutation: AWS-STAGE-PROVISION-DB.yml with the production role fails
   ---
-  duration_ms: 0.22649
+  duration_ms: 0.400752
   type: 'test'
   ...
 # Subtest: mutation: AWS-STAGE-PROVISION-DB.yml with apply without the gate fails
-ok 72 - mutation: AWS-STAGE-PROVISION-DB.yml with apply without the gate fails
+ok 73 - mutation: AWS-STAGE-PROVISION-DB.yml with apply without the gate fails
   ---
-  duration_ms: 0.414888
+  duration_ms: 0.682985
   type: 'test'
   ...
 # Subtest: mutation: AWS-STAGE-PROVISION-DB.yml with id-token at the top level fails
-ok 73 - mutation: AWS-STAGE-PROVISION-DB.yml with id-token at the top level fails
+ok 74 - mutation: AWS-STAGE-PROVISION-DB.yml with id-token at the top level fails
   ---
-  duration_ms: 0.551158
+  duration_ms: 0.78937
   type: 'test'
   ...
 # Subtest: mutation: AWS-STAGE-PROVISION-DB.yml with credentials before the guard fails
-ok 74 - mutation: AWS-STAGE-PROVISION-DB.yml with credentials before the guard fails
+ok 75 - mutation: AWS-STAGE-PROVISION-DB.yml with credentials before the guard fails
   ---
-  duration_ms: 0.625072
+  duration_ms: 0.554767
   type: 'test'
   ...
 # Subtest: mutation: AWS-STAGE-PROVISION-DB.yml with an input in a run script fails
-ok 75 - mutation: AWS-STAGE-PROVISION-DB.yml with an input in a run script fails
+ok 76 - mutation: AWS-STAGE-PROVISION-DB.yml with an input in a run script fails
   ---
-  duration_ms: 0.317068
+  duration_ms: 0.29166
   type: 'test'
   ...
 # Subtest: mutation: STAGING-DB-SCHEMA.yml with a pull_request trigger fails
-ok 76 - mutation: STAGING-DB-SCHEMA.yml with a pull_request trigger fails
+ok 77 - mutation: STAGING-DB-SCHEMA.yml with a pull_request trigger fails
   ---
-  duration_ms: 0.882139
+  duration_ms: 0.303499
   type: 'test'
   ...
 # Subtest: mutation: STAGING-DB-SCHEMA.yml with AWS credentials fails
-ok 77 - mutation: STAGING-DB-SCHEMA.yml with AWS credentials fails
+ok 78 - mutation: STAGING-DB-SCHEMA.yml with AWS credentials fails
   ---
-  duration_ms: 0.141603
+  duration_ms: 0.709516
   type: 'test'
   ...
 # Subtest: mutation: STAGING-DB-SCHEMA.yml with the guard in enforce mode fails
-ok 78 - mutation: STAGING-DB-SCHEMA.yml with the guard in enforce mode fails
+ok 79 - mutation: STAGING-DB-SCHEMA.yml with the guard in enforce mode fails
   ---
-  duration_ms: 0.093484
+  duration_ms: 0.20303
   type: 'test'
   ...
 # Subtest: mutation: STAGING-DB-SCHEMA.yml with no verify fails
-ok 79 - mutation: STAGING-DB-SCHEMA.yml with no verify fails
+ok 80 - mutation: STAGING-DB-SCHEMA.yml with no verify fails
   ---
-  duration_ms: 0.143821
+  duration_ms: 0.231094
   type: 'test'
   ...
 # Subtest: mutation: STAGING-DB-SCHEMA.yml with no migrations path fails
-ok 80 - mutation: STAGING-DB-SCHEMA.yml with no migrations path fails
+ok 81 - mutation: STAGING-DB-SCHEMA.yml with no migrations path fails
   ---
-  duration_ms: 0.106131
+  duration_ms: 0.157649
   type: 'test'
   ...
-1..80
-# tests 80
+1..81
+# tests 81
 # suites 0
-# pass 76
+# pass 77
 # fail 0
 # cancelled 0
 # skipped 4
 # todo 0
-# duration_ms 1812.429707
+# duration_ms 1819.450275

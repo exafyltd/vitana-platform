@@ -48,12 +48,14 @@ TEST: scripts/ci/staging-db/workflows.test.mjs ("AWS-STAGE-PROVISION-DB.yml: dis
 TEST: scripts/ci/staging-db/aws-scripts.test.mjs ("provision --apply refuses without the cost approval, with no AWS call"; "load refuses without the cost approval (verify-only needs none)"; "provision --apply refuses credentials of another account")
 
 AC-6 The stack carries the IAM of design.md §4 (staging-only writes, explicit production denies in role and boundary, no delete, no IAM change), the isolation SG, the own KMS key, the 60 USD budget and capacity option A by default; it creates no cluster; cfn-lint passes.
-TEST: scripts/ci/staging-db/stack.test.mjs ("every production resource is denied explicitly, in the role and in the boundary"; "staging: create, modify, Data API and staging secrets are allowed; create needs the staging tag"; "any cluster other than vitana-aurora-staging cannot be created or changed"; "deletes are denied everywhere, staging included (deletion stays an owner action)"; "no IAM change is possible, except the RDS service-linked role"; "no write to ECS, EC2 or any other service: the role only creates and loads the staging cluster")
+TEST: scripts/ci/staging-db/stack.test.mjs ("every production resource is denied explicitly, in the role and in the boundary"; "staging: create, modify, Data API and staging secrets are allowed; create needs the staging tag"; "any cluster other than vitana-aurora-staging cannot be created or changed"; "deletes are denied everywhere, staging included (deletion stays an owner action)"; "no IAM change is possible, except the RDS service-linked role"; "no write to ECS, EC2 or any other service: the role only creates and loads the staging cluster"; "RDS-managed master secrets: only the staging cluster's, only through RDS, no rotation grant")
 TEST: scripts/ci/staging-db/stack.test.mjs ("trust: GitHub OIDC only, this repository, main only, audience sts"; "network isolation: the database SG admits 5432 only from the staging-only client SG"; "KMS: own key, rotated, retained; role use only through RDS and Secrets Manager"; "budget alarm: 60 USD a month on tag vitana-env=staging, actual and forecast, to the owner e-mail"; "capacity defaults are option A (min 0 ACU, auto-pause 300 s, max 2 ACU) and max 2 ACU is a hard cap"; "candidate services are optional, at desired count 0, and can only run the -iso task-definition families"; "no credential or secret value in the template")
 
 Red on base: `outputs/red-on-base.txt` (5 test files fail, modules and files absent). Green: `outputs/green.txt` (80/80 with
-PGlite), `outputs/green-no-install.txt` (76 pass, 4 PGlite cases skipped, as in UNIT.yml). Mutations: removing
-`DenyProduction`, the cost check or the hash comparison each fails a test (`outputs/mutation-*.txt`). `cfn-lint` exit 0.
+PGlite, on 64e8361a), `outputs/green-no-install.txt` (after the review fix: 81 tests, 77 pass, 4 PGlite cases skipped, as in
+UNIT.yml). Mutations: removing `DenyProduction`, the cost check or the hash comparison each fails a test
+(`outputs/mutation-*.txt`); for the review fix, removing any of the four managed-secret Denies, adding `RotateSecret` back or
+dropping the `aws:ViaAWSService` condition each fails a test (`outputs/mutation-managed-secret-*.txt`). `cfn-lint` exit 0.
 
 ## Decisions taken
 - **Stack file is JSON in `stack.yaml`** (valid YAML; cfn-lint reads it): the plan names `stack.yaml`, and the no-install
@@ -63,10 +65,34 @@ PGlite), `outputs/green-no-install.txt` (76 pass, 4 PGlite cases skipped, as in 
   so admitting it would admit production tasks. Stage 3 attaches `vitana-aurora-staging-client-sg` to the isolated
   task revisions.
 - **IAM additions beyond the design.md §4 table**, all scoped: `cloudformation:DescribeStacks` on this stack only (the
-  provision script reads the KMS key, SG and capacity from the stack outputs); `secretsmanager:CreateSecret/TagResource/RotateSecret`
-  on `rds!cluster-*` (required by RDS for `--manage-master-user-password`); the staging tag condition is a separate
+  provision script reads the KMS key, SG and capacity from the stack outputs); `secretsmanager:CreateSecret/TagResource`
+  on `rds!cluster-*` (required by RDS for `--manage-master-user-password`, see the next item; this grant is not scoped by
+  itself, the denies of the next item scope it); the staging tag condition is a separate
   explicit Deny (`CreateNeedsStagingTag`); `DenyIam` is `iam:*` with `NotResource` the RDS service-linked role (so the
   SLR statement still works); `DenyProdSecrets` also covers `vitana/gateway-awsdr/*`.
+- **RDS-managed master secret (review finding on 64e8361a, corrected).** The first version allowed
+  `secretsmanager:CreateSecret/TagResource/RotateSecret` on `rds!cluster-*` with no condition and called that "scoped"; it was
+  not: the production master secret of `vitana-aurora-prod` has exactly that name pattern
+  (`rds!cluster-eba8a4f2-3caa-4f11-88f0-c3102c3c176a-QR8ox2`, docs/AURORA-MIGRATION-STATUS-2026-09-10.md:336-338, 860-872;
+  since the 2026-10-01 restore `rds!cluster-4dab93b8-…`, docs/AURORA-CUTOVER-RUNBOOK-2026-09-20.md:7,
+  docs/validation/VTID-04930/commands.log:4) and `DenyProdSecrets` did not cover it. Now, in role and boundary alike:
+  - `RotateSecret` is removed. The Aurora guide ("Permissions required for Secrets Manager integration") needs only
+    `kms:DescribeKey`, `secretsmanager:CreateSecret` and `secretsmanager:TagResource` for create/modify/restore;
+    `RotateSecret` is needed only to rotate the master password by hand, which this lane never does (RDS rotates it itself).
+  - `CreateSecret/TagResource` keep the `rds!cluster-*` name (RDS chooses `rds!cluster-<cluster resource id>`, so the name
+    cannot be pinned to staging in advance) and gain `Bool aws:ViaAWSService = true`: only RDS, acting on the caller's
+    request, can create or tag such a secret; the role cannot call them directly. An `aws:RequestTag/vitana-env` condition,
+    as the review suggested, would fail: RDS adds only its own `aws:rds:primaryDBClusterArn` tag, and `aws:`-prefixed
+    tags cannot be set by a caller, so the create would always be refused.
+  - Defense in depth, four explicit Denies: `DenyProdManagedSecretByName` (`secretsmanager:*` on
+    `rds!cluster-4dab93b8-*` and `rds!cluster-eba8a4f2-3caa-4f11-88f0-c3102c3c176a-*`), `DenyProdManagedSecretByTag`
+    (`secretsmanager:*` on any secret whose `aws:ResourceTag/aws:rds:primaryDBClusterArn` is the vitana-aurora-prod cluster
+    ARN), `DenyProdManagedSecretRequestTag` (`CreateSecret/TagResource` that would label a secret for vitana-aurora-prod)
+    and `DenyOtherClustersManagedSecrets` (`secretsmanager:*` on `rds!cluster-*` whose cluster tag exists and is not
+    vitana-aurora-staging; the `Null` guard leaves the not-yet-existing staging secret creatable). The name Deny holds even
+    if a tag is missing; the tag Denies hold if the production cluster is restored again under a new resource id.
+  - Limit: the test evaluator (infra/kiro-access/lib.mjs) models only String conditions, so `aws:ViaAWSService` and
+    `DenyOtherClustersManagedSecrets` are pinned structurally (with mutations), the other three Denies are evaluated.
 - **Candidate services are conditional** (created only when stage 3 passes `-iso` task-definition ARNs, an app SG and a
   listener); the first apply creates none. Their task-definition parameters accept only the `vitana-gateway-iso` /
   `vitana-postgrest-aurora-staging-iso` families.

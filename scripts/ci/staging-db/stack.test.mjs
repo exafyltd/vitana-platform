@@ -105,6 +105,40 @@ test('every production resource is denied explicitly, in the role and in the bou
     ['secretsmanager:GetSecretValue', sec('vitana/gateway-awsdr/env-AbC')],
   ];
   for (const [a, arn] of prod) assert.ok(explicitDenyBoth(a, arn), `${a} ${arn} must be an explicit Deny`);
+  // The RDS-managed master secret of vitana-aurora-prod (rds!cluster-…, docs/AURORA-MIGRATION-STATUS-2026-09-10.md:336-338,
+  // 860-872; restored cluster rds!cluster-4dab93b8-…, docs/AURORA-CUTOVER-RUNBOOK-2026-09-20.md:7): denied by its
+  // production cluster tag and, independently, by its name.
+  const PROD_TAG = { 'aws:ResourceTag/aws:rds:primaryDBClusterArn': rds('cluster:vitana-aurora-prod') };
+  const managedActs = ['secretsmanager:GetSecretValue', 'secretsmanager:PutSecretValue', 'secretsmanager:RotateSecret',
+    'secretsmanager:TagResource', 'secretsmanager:CreateSecret', 'secretsmanager:UpdateSecret', 'secretsmanager:DeleteSecret'];
+  for (const a of managedActs) {
+    assert.ok(explicitDenyBoth(a, sec('rds!cluster-0000aaaa-unknown-name-XyZ12'), { context: PROD_TAG }), `${a} on a secret tagged vitana-aurora-prod`);
+    for (const n of ['rds!cluster-4dab93b8-0000-0000-0000-000000000000-AbCdEf', 'rds!cluster-eba8a4f2-3caa-4f11-88f0-c3102c3c176a-QR8ox2']) {
+      assert.ok(explicitDenyBoth(a, sec(n)), `${a} ${n} by name, without any tag`);
+    }
+  }
+  assert.ok(explicitDenyBoth('secretsmanager:CreateSecret', sec('rds!cluster-new-AbC'), { context: { 'aws:RequestTag/aws:rds:primaryDBClusterArn': rds('cluster:vitana-aurora-prod') } }),
+    'a new secret labelled for vitana-aurora-prod');
+});
+
+test('RDS-managed master secrets: only the staging cluster\'s, only through RDS, no rotation grant', () => {
+  const st = role.filter((s) => s.Sid === 'ManagedMasterSecretCreate');
+  assert.equal(st.length, 1);
+  assert.deepEqual(st[0].Action, ['secretsmanager:CreateSecret', 'secretsmanager:TagResource'], 'no RotateSecret');
+  assert.deepEqual(st[0].Condition, { Bool: { 'aws:ViaAWSService': 'true' } }, 'only RDS, on the caller\'s behalf, creates or tags it');
+  const allowed = role.filter((s) => s.Effect === 'Allow').flatMap((s) => [].concat(s.Action));
+  assert.ok(!allowed.some((a) => /^secretsmanager:(RotateSecret|CancelRotateSecret|UpdateSecret|DeleteSecret|PutResourcePolicy|\*)$/i.test(a)), allowed.join(','));
+  // The staging cluster's own secret stays readable; any other cluster's tagged rds!cluster secret is denied.
+  const other = role.find((s) => s.Sid === 'DenyOtherClustersManagedSecrets');
+  assert.deepEqual(other.Condition, {
+    Null: { 'aws:ResourceTag/aws:rds:primaryDBClusterArn': 'false' },
+    StringNotEquals: { 'aws:ResourceTag/aws:rds:primaryDBClusterArn': rds('cluster:vitana-aurora-staging') },
+  });
+  assert.equal(other.Action, 'secretsmanager:*');
+  assert.equal(both('secretsmanager:GetSecretValue', sec('rds!cluster-1234-AbC'), { context: { 'aws:ResourceTag/aws:rds:primaryDBClusterArn': rds('cluster:vitana-aurora-staging') } }), 'allow');
+  for (const sid of ['DenyProdManagedSecretByName', 'DenyProdManagedSecretByTag', 'DenyProdManagedSecretRequestTag', 'DenyOtherClustersManagedSecrets']) {
+    assert.ok(boundary.some((s) => s.Sid === sid && s.Effect === 'Deny'), `${sid} in the boundary`);
+  }
 });
 
 test('deletes are denied everywhere, staging included (deletion stays an owner action)', () => {

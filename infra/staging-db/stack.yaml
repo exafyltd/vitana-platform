@@ -453,11 +453,15 @@
               "Effect": "Allow",
               "Action": [
                 "secretsmanager:CreateSecret",
-                "secretsmanager:TagResource",
-                "secretsmanager:RotateSecret"
+                "secretsmanager:TagResource"
               ],
               "Resource": {
                 "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:rds!cluster-*"
+              },
+              "Condition": {
+                "Bool": {
+                  "aws:ViaAWSService": "true"
+                }
               }
             },
             {
@@ -539,6 +543,70 @@
                   "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:vitana/gateway-awsdr/*"
                 }
               ]
+            },
+            {
+              "Sid": "DenyProdManagedSecretByName",
+              "Effect": "Deny",
+              "Action": "secretsmanager:*",
+              "Resource": [
+                {
+                  "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:rds!cluster-4dab93b8-*"
+                },
+                {
+                  "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:rds!cluster-eba8a4f2-3caa-4f11-88f0-c3102c3c176a-*"
+                }
+              ]
+            },
+            {
+              "Sid": "DenyProdManagedSecretByTag",
+              "Effect": "Deny",
+              "Action": "secretsmanager:*",
+              "Resource": {
+                "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:*"
+              },
+              "Condition": {
+                "StringEquals": {
+                  "aws:ResourceTag/aws:rds:primaryDBClusterArn": {
+                    "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster:vitana-aurora-prod"
+                  }
+                }
+              }
+            },
+            {
+              "Sid": "DenyProdManagedSecretRequestTag",
+              "Effect": "Deny",
+              "Action": [
+                "secretsmanager:CreateSecret",
+                "secretsmanager:TagResource"
+              ],
+              "Resource": {
+                "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:*"
+              },
+              "Condition": {
+                "StringEquals": {
+                  "aws:RequestTag/aws:rds:primaryDBClusterArn": {
+                    "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster:vitana-aurora-prod"
+                  }
+                }
+              }
+            },
+            {
+              "Sid": "DenyOtherClustersManagedSecrets",
+              "Effect": "Deny",
+              "Action": "secretsmanager:*",
+              "Resource": {
+                "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:rds!cluster-*"
+              },
+              "Condition": {
+                "Null": {
+                  "aws:ResourceTag/aws:rds:primaryDBClusterArn": "false"
+                },
+                "StringNotEquals": {
+                  "aws:ResourceTag/aws:rds:primaryDBClusterArn": {
+                    "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster:vitana-aurora-staging"
+                  }
+                }
+              }
             },
             {
               "Sid": "DenyDelete",
@@ -741,11 +809,15 @@
                   "Effect": "Allow",
                   "Action": [
                     "secretsmanager:CreateSecret",
-                    "secretsmanager:TagResource",
-                    "secretsmanager:RotateSecret"
+                    "secretsmanager:TagResource"
                   ],
                   "Resource": {
                     "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:rds!cluster-*"
+                  },
+                  "Condition": {
+                    "Bool": {
+                      "aws:ViaAWSService": "true"
+                    }
                   }
                 },
                 {
@@ -827,6 +899,70 @@
                       "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:vitana/gateway-awsdr/*"
                     }
                   ]
+                },
+                {
+                  "Sid": "DenyProdManagedSecretByName",
+                  "Effect": "Deny",
+                  "Action": "secretsmanager:*",
+                  "Resource": [
+                    {
+                      "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:rds!cluster-4dab93b8-*"
+                    },
+                    {
+                      "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:rds!cluster-eba8a4f2-3caa-4f11-88f0-c3102c3c176a-*"
+                    }
+                  ]
+                },
+                {
+                  "Sid": "DenyProdManagedSecretByTag",
+                  "Effect": "Deny",
+                  "Action": "secretsmanager:*",
+                  "Resource": {
+                    "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:*"
+                  },
+                  "Condition": {
+                    "StringEquals": {
+                      "aws:ResourceTag/aws:rds:primaryDBClusterArn": {
+                        "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster:vitana-aurora-prod"
+                      }
+                    }
+                  }
+                },
+                {
+                  "Sid": "DenyProdManagedSecretRequestTag",
+                  "Effect": "Deny",
+                  "Action": [
+                    "secretsmanager:CreateSecret",
+                    "secretsmanager:TagResource"
+                  ],
+                  "Resource": {
+                    "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:*"
+                  },
+                  "Condition": {
+                    "StringEquals": {
+                      "aws:RequestTag/aws:rds:primaryDBClusterArn": {
+                        "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster:vitana-aurora-prod"
+                      }
+                    }
+                  }
+                },
+                {
+                  "Sid": "DenyOtherClustersManagedSecrets",
+                  "Effect": "Deny",
+                  "Action": "secretsmanager:*",
+                  "Resource": {
+                    "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:rds!cluster-*"
+                  },
+                  "Condition": {
+                    "Null": {
+                      "aws:ResourceTag/aws:rds:primaryDBClusterArn": "false"
+                    },
+                    "StringNotEquals": {
+                      "aws:ResourceTag/aws:rds:primaryDBClusterArn": {
+                        "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster:vitana-aurora-staging"
+                      }
+                    }
+                  }
                 },
                 {
                   "Sid": "DenyDelete",

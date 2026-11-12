@@ -1,2 +1,2 @@
-cfn=0
 cfn-lint 1.60.1
+cfn=0
