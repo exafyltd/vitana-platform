@@ -1,6 +1,6 @@
 ---
 lane: staging-db-provision
-state: executing
+state: in-review
 next_actor: kiro
 branch: kiro/autonomous-to-staging-r2/staging-db-provision
 depends_on: []
@@ -19,7 +19,7 @@ paths:
   - .github/workflows/STAGING-DB-SCHEMA.yml
   - docs/STAGING.md
   - docs/validation/VTID-*/**
-updated: 2026-11-12T21:23Z
+updated: 2026-11-12T21:26Z
 vtid: VTID-05782
 ---
 # Lane: staging-db-provision (repo vitana-platform)
@@ -48,3 +48,6 @@ Next: the lane's seat fixes the blocking finding
 
 ### 2026-11-12T21:23Z · kiro-exafy-202611110920-270b · in-review → executing
 Fixing the blocking review finding (rds!cluster-* secret scope).
+
+### 2026-11-12T21:26Z · kiro-exafy-202611110920-270b · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/5053. Review fix (64834f63): RotateSecret dropped; CreateSecret/TagResource on rds!cluster-* only via RDS (aws:ViaAWSService); explicit Denies on the vitana-aurora-prod managed secret by name (rds!cluster-4dab93b8-*, rds!cluster-eba8a4f2-…-*), by cluster tag and request tag, and on any other cluster's managed secret, in role and boundary; acceptance.md "scoped" claim corrected. Tests 81 (77 + 4 PGlite skipped), 6 new mutations caught, cfn-lint 0. Next: reviewer agent.
