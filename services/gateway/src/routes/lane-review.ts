@@ -5,7 +5,6 @@
  *
  * Auth: GATEWAY_SERVICE_TOKEN or an exafy_admin JWT (requireServiceOrAdmin, same as /plans/spar).
  * Read-only: no database writes, no GitHub writes, no merge. The caller (CI) records the verdict.
- * impact-allow-no-oasis: the review result is returned to the caller; OASIS events are not used for lane reviews.
  */
 import { Router, Request, Response } from 'express';
 import { requireServiceOrAdmin } from '../middleware/require-service-or-admin';
@@ -56,6 +55,7 @@ export const bedrockCallReviewModel: CallReviewModel = async ({ model, system, u
 export function createLaneReviewRouter(callModel: CallReviewModel = bedrockCallReviewModel): Router {
   const router = Router();
   router.post('/', requireServiceOrAdmin, async (req: Request, res: Response) => {
+    // impact-allow-no-oasis: the review result is returned to the caller; no state changes, so no OASIS event.
     const input = parseLaneReviewBody(req.body);
     if (typeof input === 'string') return res.status(400).json({ ok: false, error: input });
     try {
