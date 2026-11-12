@@ -270,3 +270,34 @@ No GitHub workflow was used. The GitHub token was not used for deploys and is no
 - `vitana-postgres-staging`: not touched.
 - Compat layer, REST switch, window runbook, `verify-cutover.sh`: not started (lane claim still refused by the queue).
 - GitHub: not used. GitHub `main` still binds production Aurora secrets. Do not dispatch the GitHub staging workflow.
+
+## Round 6: revision 1007 still carried Aurora secrets. Root cause and fix
+
+### Root cause
+- `vitana-gateway:1007` (built from `5282e7815d`) still had `AURORA_*` names. MR !12 and MR !15 changed `AWS-STAGE-DEPLOY-GATEWAY.yml`, a GitHub workflow. The job that deploys staging on GitLab is `gateway-staging-deploy` in `infra/gitlab-engineering/ci/staging-gateway-deploy.gitlab-ci.yml`. It copies the previous task definition and changes only the image and SHA. It never stripped Aurora names, so every GitLab deploy carried them forward.
+- Job log, deploy 1268 (`fe182590`): `Rollback target: …vitana-gateway:1008`, `New task definition: …vitana-gateway:1009`, `Smoke OK`. Those messages come from this GitLab script, not the GitHub workflow.
+
+### Fix (MR !16, merge commit `a02b8918f3`)
+- Strip `AURORA_DATABASE_URL`, `AURORA_RLS_DATABASE_URL`, `AURORA_CA_BUNDLE_PATH` from environment and secrets of every container, in the same jq that sets the image.
+- Gate before `register-task-definition`: fail if any `AURORA_` name remains in any container.
+- Test `services/gateway/test/vtid-05023-gitlab-aurora-strip.test.ts`:
+  - before (unpatched file): `Tests: 2 failed, 2 total`
+  - after (patched): `Tests: 2 passed, 2 total`
+- Pipeline 278 (MR !16): all five jobs `success`. Pipeline 279 (merge commit): `gateway-jest` 1/4 to 4/4 and `typecheck` `success`.
+
+### Deploy
+- Build job 1279 (manual, played): `success`.
+- Deploy job 1280 (manual, played), https://gitlab.vitanaland.com/vitana/vitana-platform/-/jobs/1280: `success`.
+  - `Rollback target: …vitana-gateway:1009  new image: …gateway:a02b8918f38a`
+  - `New task definition: arn:aws:ecs:eu-central-1:472838866351:task-definition/vitana-gateway:1010`
+  - `Smoke OK: staging serves a02b8918f38a57f7b0b6910a365e2a70629d6b89`
+  - `Job succeeded`
+
+### Open problem
+- The job log does not contain the gate line `Aurora gate: no AURORA_ names …`, and the trace has no output from the gate code. The job did run commit `a02b8918f3`, and that file on `main` contains the gate. I could not find why the gate did not print. So revision `1010` is not confirmed clean.
+- Needed: a read-only check of `vitana-gateway:1010`. `aws ecs describe-task-definition --task-definition vitana-gateway:1010` must show no `AURORA_` names in `containerDefinitions[*].environment` or `.secrets`. Kiro's role has no ECS read permission.
+
+### Other
+- `vtid-05005` flaky test: not changed.
+- Staging Supabase URL and keys: not changed.
+- `vitana-postgres-staging`: not touched.
