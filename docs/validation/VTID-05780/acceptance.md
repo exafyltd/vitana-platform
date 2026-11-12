@@ -74,6 +74,13 @@ gate-audit 1 (module missing), workflow-trigger-check 1 fail), `outputs/red-on-b
 No migration, no production write; deploys nothing (no `staging-tests.json`). The `report` job writes one OASIS event
 only when GATE-INVARIANTS fails on `main`.
 
+OASIS_PROOF: new event type `collab.gate.bypass_detected` (source `gate-invariants`, status `error`, surface `cicd`,
+vtid VTID-05780, payload `{ run_url, sha, trigger }`), posted by GATE-INVARIANTS.yml job `report` through the existing
+`POST /api/v1/events/ingest` (`services/gateway/src/routes/events.ts`, IngestEventSchema) only when job `invariants`
+fails on `main`; no event is written by this PR, its tests or a green run. Asserted statically by
+`scripts/ci/workflow-trigger-check.test.mjs` (event type and endpoint in job `report`, `if: failure()`,
+`needs: [invariants]`, secret only there).
+
 ## Tests changed on purpose (contract change, plan §3.1)
 - `land-guard.test.mjs` "merge: a protected gate file needs two accepts …": fixture accepts carry distinct sessions;
   `parseReviewEntry` now also returns `session`.
