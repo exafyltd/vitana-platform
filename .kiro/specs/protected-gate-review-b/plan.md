@@ -59,7 +59,7 @@ the current rule. The owner-plan path applies only after this PR lands.
   four cases: valid verdict + trailer → allowed; missing or non-converged verdict → refused; changed file outside
   `protected_files:` → refused; no trailer → refused. The suite is part of the implementation PR's test plan.
 - **Plan validation (R1-F3):** `validatePlan` rejects a `protected_files:` entry that matches no `PROTECTED_GATE_PATHS`
-  glob, and rejects `protected_files:` on a plan that is not `change_class: standard`.
+  glob, (R3-F1: the `change_class` guard is dropped, because `change_class` is not a handoff field and the verdict and subset checks carry the safety.)
 - **Mutation tests (R1-F4):** `gate-invariants.test.mjs` adds two mutations: removing the verdict-convergence check in
   `isOwnerPlanLane` must fail; removing the `protected_files` subset check must fail.
 - **Deployment (R1-F5):** `governance.ts` takes effect when the gateway next deploys. Staging verification of the
