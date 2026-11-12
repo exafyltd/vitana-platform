@@ -71,7 +71,8 @@ Red on base (new tests against `origin/main` code): `outputs/red-on-base.txt` (l
 gate-audit 1 (module missing), workflow-trigger-check 1 fail), `outputs/red-on-base-governance.txt` (5 fail). Green: see
 `commands.log`.
 
-No migration, no production write; deploys nothing (no `staging-tests.json`). The `report` job writes one OASIS event
+No migration, no production write. `governance.ts` is on the gateway deploy path, so `staging-tests.json` names the
+existing `npx jest test/project-manager` suite (rule 47; merge-decision logic, no new route), as VTID-05765 did. The `report` job writes one OASIS event
 only when GATE-INVARIANTS fails on `main`.
 
 OASIS_PROOF: new event type `collab.gate.bypass_detected` (source `gate-invariants`, status `error`, surface `cicd`,
@@ -106,4 +107,6 @@ fails on `main`; no event is written by this PR, its tests or a green run. Asser
   entry; the PM uses the lane's `executing_log` (every non-review, non-PM log session), a superset.
 - An accept without a `Collab-Session` never counts for a protected file (distinct sessions cannot be shown).
 - The audit skips the repository's root commit (it merges nothing) and audits with the current protected list.
+- `staging-tests.json` added (fix-forward 1): CI `change-suite` requires it because `governance.ts` is a gateway deploy
+  path (CLAUDE.md rule 47); the lane brief said none, the stricter rule wins (IF–THEN 9).
 - The audit step runs `if: always()` so the audit is reported even when an earlier invariant step failed.
