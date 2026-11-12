@@ -238,7 +238,8 @@ describe('co-host routes (VTID-05559)', () => {
   });
 
   it('enter: a listed co-host gets host rights; an unlisted member does not', async () => {
-    installFetch({});
+    // A live room: enter answers 409 NOT_LIVE for a room that is neither live nor in the lobby.
+    installFetch({ status: 'live' });
     mockSupa = { rpc: async (fn: string, params: any) => ({ data: fn === 'live_room_is_host' && params.p_user_id === COHOST, error: null }) };
     const cohost = await request(app()).post(`/api/v1/live/rooms/${ROOM}/enter`).set('Authorization', `Bearer valid-${COHOST}`).send({});
     expect(cohost.status).toBe(200);
