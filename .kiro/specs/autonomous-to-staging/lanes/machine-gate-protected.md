@@ -1,6 +1,6 @@
 ---
 lane: machine-gate-protected
-state: executing
+state: in-review
 next_actor: kiro
 branch: kiro/autonomous-to-staging/machine-gate-protected
 depends_on: []
@@ -47,3 +47,6 @@ Passed: every Acceptance bullet; paths; CI 25/25; two-model rule in land-guard.m
 
 ### 2026-11-12T06:43Z · kiro-exafy-202611110920-270b · in-review → executing
 Fixing the review findings.
+
+### 2026-11-12T06:43Z · kiro-exafy-202611110920-270b · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/5002. Findings fixed: red-on-base for queue (3 fail) and governance (1 fail) in outputs/; stray blank lines removed; $BASE-loading, trailer trust and follow-up lane recorded under Decisions taken. Blocking finding needs only the owner instruction cited (handoff.md, plan §3a).
