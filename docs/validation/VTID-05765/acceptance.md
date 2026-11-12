@@ -14,8 +14,8 @@ reviewer-agent accept on the current head (`collaboration.md` §3a, §7b; plan �
   pinned from the trusted revision (`TRUSTED_PINNED`), so a PR head cannot grant it.
 - `protected-gate-files.json`, `PROTECTED_GATE_BUILTIN`, `governance.ts` `PROTECTED_GATE_GLOBS`: add
   `.github/workflows/VTID-ALLOCATE.yml`, `scripts/collab/gate-invariants.test.mjs`.
-- `governance.ts` `governanceMergeAllowed(lane, pr, review, reviews)`: same two-model rule for the PM; `decide.ts`
-  and `act.ts` pass `lane.reviews`.
+- `governance.ts` `governanceMergeAllowed(lane, pr, review, reviews)`: same two-model rule for the PM; `reviews` defaults to
+  `lane.reviews`, so `decide.ts` and `act.ts` are unchanged.
 - `scripts/collab/gate-invariants.test.mjs` (new): the mechanical invariants; `gate-invariants.test.mjs` runs the
   `origin/main` copy against the checkout (bootstrap note when absent) plus mutation fixtures.
 
@@ -27,7 +27,7 @@ reviewer-agent accept on the current head (`collaboration.md` §3a, §7b; plan �
 - `gate-invariants.mjs` fails when an invariant is removed: mutation tests (drop CLAUDE.md, required accepts 1,
   governance glob removed, prod-ref guard and workflow deferred then enforced).
 - Red on base: `outputs/red-on-base.txt` (3 new tests fail on `origin/main`); green: `outputs/collab-green.txt`
-  (269/269), gateway `npx jest test/project-manager` 13 suites / 231 tests, `npx tsc --noEmit` exit 0.
+  (269/269), gateway `npx jest test/project-manager` 13 suites / 230 tests, `npx tsc --noEmit` exit 0.
 
 No migration, no secret, no workflow change, no production write.
 
