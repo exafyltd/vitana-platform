@@ -98,3 +98,10 @@ rc=3
 - `DMS_TASK_ARN`: owner supplies the staging sync task ARN.
 - Task family `vitana-gateway`: confirm with `aws ecs describe-services` once AWS access exists.
 - Draft MR: the brief asks for a draft MR with a title starting `VTID-05023`. GitLab marks a draft by a `Draft:` title prefix, so the MR is open, not draft.
+
+## Open decisions
+
+These match the open items in `docs/validation/VTID-05023/window-runbook.md` (MR !17). The script does not change for either one.
+
+1. (a) FREEZE VERSUS MIGRATIONS: `MIGRATION_FREEZE=true` blocks `RUN-MIGRATION.yml`, so step 3 (migrations) cannot run inside the freeze as written. The owner must decide how step 3 runs.
+2. (b) ROLLBACK ORDER: the runbook (step 7) and this drill put REST first, then gateway, then sync stop. `storage-auth.md` says stop the tasks first. The owner must decide the order.
