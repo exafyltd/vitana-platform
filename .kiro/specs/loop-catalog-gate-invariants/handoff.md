@@ -16,6 +16,9 @@ the loop catalog. CI sparring (`PLAN-SPAR`) runs on this `plan(` PR; a converged
 allocates the lane's VTID.
 
 ## Log
+### 2026-11-12T12:45Z · claude-code session_01Cp885FGVuZp27dQmDP6eMH · approved
+Sparring converged in round 2 (no findings in either round); policy-approved at 12:36Z; VTID-05778 allocated for lane owner-gate-invariants. The fix is on kiro/loop-catalog-gate-invariants/owner-gate-invariants (PR #5015). This plan PR lands the spec on main so the lane file resolves for Lane scope.
+
 ### 2026-11-12T12:30Z · claude-code session_01Cp885FGVuZp27dQmDP6eMH · drafted
 Written on the owner's request. Evidence in plan.md "Today". The fix is the one line the test needs.
 
