@@ -1,13 +1,12 @@
 ---
 lane: deploy-path
-state: executing
-claimed_by: kiro-exafy-202611081113-5a2e
+state: parked
 branch: kiro/agentic-delivery/deploy-path
 pr: https://github.com/exafyltd/vitana-platform/pull/4714
 next_actor: kiro
 depends_on: []
 executor: kiro
-seat: exafy
+seat: exafyltd
 reviewer_seat: agent:vitana-lane-reviewer
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 repos: [exafyltd/vitana-platform]
@@ -22,8 +21,9 @@ paths:
   - scripts/aws/iam/gitlab-oidc-*.json
   - scripts/aws/setup-gitlab-oidc.sh
   - docs/validation/**
-updated: 2026-11-08T11:30Z
+updated: 2026-11-12T20:15Z
 vtid: VTID-05546
+parked_from: executing
 ---
 # Lane: deploy-path (repo vitana-platform)
 Tasks in `tasks.md`. Implements plan §3.2 (classes), §3.6 step 2, §3.7, §3.8 and the roles of §7. Starts when eng-gitlab-m2 lane fleet is done (plan §9). VTID from PLAN-SPAR; never by hand.
@@ -93,3 +93,5 @@ head: e8a7eb0e4f
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 PR: https://github.com/exafyltd/vitana-platform/pull/4714
 findings: test 14 is strict; 21 of 21 (outputs/fleet-classes-after-main-merge-20261108.txt, checked against e8a7eb0e4f); red to green from 17 of 21 at adf7fffd7f; all 11 check runs on e8a7eb0e4f success; every changed file inside the lane paths; protected-gate-files.json unchanged.
+### 2026-11-12T20:15Z · pm-agent · executing → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
