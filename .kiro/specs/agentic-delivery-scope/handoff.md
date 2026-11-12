@@ -5,7 +5,7 @@ author_seat: exafyltd
 executor: kiro
 next_actor: kiro
 state: approved
-updated: 2026-11-12T07:09Z
+updated: 2026-11-12T07:11Z
 sparring_record: .kiro/specs/agentic-delivery-scope/sparring/verdict.md
 vtids: [VTID-05734, VTID-05735, VTID-05736, VTID-05737, VTID-05738, VTID-05739, VTID-05740, VTID-05741, VTID-05742, VTID-05743, VTID-05744, VTID-05745, VTID-05746, VTID-05747, VTID-05748, VTID-05749, VTID-05750, VTID-05751, VTID-05752, VTID-05753, VTID-05754, VTID-05755, VTID-05756, VTID-05757, VTID-05758, VTID-05759, VTID-05760, VTID-05774]
 ---
@@ -82,3 +82,7 @@ bedrock:InvokeModel action").
 
 ### 2026-11-12T07:09Z · ci-plan-spar · approved (late lane VTID)
 Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.
+
+### 2026-11-12T07:11Z · kiro-exafyltd-202611111044-8f1d · approved (driver: merge the plan PR)
+PLAN-SPAR allocated VTID-05774 to the late lane `bedrock-invoke-policy` without a round. Its commit started no checks
+(the runs wait for approval), so this commit starts them; the spec-only `plan(` PR merges under §7b once they are green.
