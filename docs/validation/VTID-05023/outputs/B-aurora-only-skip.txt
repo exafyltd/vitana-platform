@@ -1,0 +1,7 @@
+$ bash scripts/aws/test/aurora-only-skip.sh
+ok - marked file is skipped on Supabase without a network call
+ok - marker below line 30 does not skip the file on Supabase
+ok - plain file is applied on Supabase
+ok - marked file is accepted by the Aurora path
+# all 4 passed
+exit 0

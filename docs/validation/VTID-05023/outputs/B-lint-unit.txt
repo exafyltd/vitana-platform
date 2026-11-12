@@ -1,0 +1,5 @@
+$ node scripts/aws/test/aurora-compat-lint.test.mjs
+# tests 4
+# pass 4
+# fail 0
+exit 0

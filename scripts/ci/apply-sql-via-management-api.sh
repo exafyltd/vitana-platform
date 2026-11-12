@@ -91,6 +91,17 @@ if [ "$RECORD" = "1" ] && [ "$MODE" != "file" ]; then
   exit 2
 fi
 
+# VTID-05023: a file whose header (first 30 lines) carries the AURORA-ONLY marker
+# must not run on Supabase; it would replace Supabase's own auth schema and roles.
+# Skip it before any token or network check. scripts/aws/aurora-apply-migration.sh applies it.
+if [ "$MODE" = "file" ] && [ -f "$ARG" ]; then
+  AURORA_HIT=$(grep -nE -m1 '^--[[:space:]]*AURORA-ONLY:' "$ARG" || true)
+  if [ -n "$AURORA_HIT" ] && [ "${AURORA_HIT%%:*}" -le 30 ]; then
+    echo "::notice::$ARG is marked AURORA-ONLY; skipped for Supabase (not applied, not recorded)"
+    exit 0
+  fi
+fi
+
 if [ -z "${SUPABASE_ACCESS_TOKEN:-}" ]; then
   echo "::error::SUPABASE_ACCESS_TOKEN is not set. This workflow applies SQL over the Supabase Management API because psql cannot reach the database from GitHub Actions (network allow-list). Create a personal access token at https://supabase.com/dashboard/account/tokens and add it as the repo secret SUPABASE_ACCESS_TOKEN."
   exit 1

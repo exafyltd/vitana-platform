@@ -1,0 +1,737 @@
+$ node docs/validation/VTID-05023/pglite/full-set.mjs
+ok   20251026235959_aurora_compat_layer.sql
+ok   20251027_oasis_events_v1.sql
+ok   20251120000000_init_governance.sql
+ok   20251120000001_add_migration_governance_rules.sql
+ok   20251120000002_init_governance_proposals.sql
+ok   20251120171937_oasis_gov_0102.sql
+ok   20251120174934_validate_oasis_gov_0103.sql
+ok   20251120232139_oasis_gov_0108_rules_seed_fixed.sql
+ok   20251128000001_software_versions.sql
+ok   20251203000000_governance_catalog_init.sql
+ok   20251203120000_fix_governance_rule_levels.sql
+ok   20251207000000_fix_governance_rules_rule_id_constraint.sql
+ok   20251209000000_add_task_stage.sql
+ok   20251213000000_knowledge_docs.sql
+ok   20251217000000_vtid_ledger_and_allocator.sql
+ok   20251218000000_vtid_0543_atomic_create.sql
+ok   20251228000000_vtid_01050_dev_bootstrap_context.sql
+FAIL 20251229000000_vtid_01051_me_active_role_fix.sql: relation "auth.users" does not exist
+ok   20251229000000_vtid_01052_soft_delete.sql
+ok   20251230000000_vtid_01080_terminal_completion.sql
+FAIL 20251231000000_vtid_01078_health_brain_phase_c1.sql: function public.current_tenant_id() does not exist
+FAIL 20251231000000_vtid_01101_phase_a_bootstrap.sql: relation "auth.users" does not exist
+FAIL 20251231000000_vtid_01103_health_compute_engine.sql: relation "auth.users" does not exist
+FAIL 20251231000000_vtid_01104_memory_core_v1.sql: function public.current_tenant_id() does not exist
+FAIL 20251231000001_vtid_01083_longevity_signal_layer.sql: function public.current_tenant_id() does not exist
+FAIL 20251231000001_vtid_01085_memory_retrieve_router.sql: function public.current_tenant_id() does not exist
+ok   20251231000001_vtid_01086_memory_garden_progress.sql
+FAIL 20251231000001_vtid_01087_relationship_graph_memory.sql: function public.current_tenant_id() does not exist
+FAIL 20251231000001_vtid_01088_matchmaking_engine.sql: function public.current_tenant_id() does not exist
+FAIL 20251231000001_vtid_01089_autopilot_prompts.sql: relation "public.tenants" does not exist
+FAIL 20251231000001_vtid_01090_live_rooms_events_graph.sql: function public.current_tenant_id() does not exist
+FAIL 20251231000001_vtid_01091_locations_memory_graph.sql: function public.current_tenant_id() does not exist
+FAIL 20251231000001_vtid_01093_topics_layer.sql: function public.current_tenant_id() does not exist
+FAIL 20251231000001_vtid_01094_match_feedback_loop.sql: function public.current_tenant_id() does not exist
+FAIL 20251231000001_vtid_01095_daily_scheduler.sql: relation "auth.users" does not exist
+FAIL 20251231000001_vtid_01098_memory_timeline_causality.sql: syntax error at or near "window"
+FAIL 20251231100000_vtid_01082_memory_garden_diary.sql: function public.current_tenant_id() does not exist
+FAIL 20251231100000_vtid_01084_community_personalization_v1.sql: function public.current_tenant_id() does not exist
+FAIL 20251231100000_vtid_01092_services_products_memory.sql: function public.current_tenant_id() does not exist
+FAIL 20251231100000_vtid_01099_memory_governance_v1.sql: function public.current_tenant_id() does not exist
+FAIL 20251231100000_vtid_01100_memory_quality_metrics.sql: function public.current_tenant_id() does not exist
+FAIL 20260101000000_vtid_01116_memory_confidence_trust_engine.sql: relation "public.memory_items" does not exist
+FAIL 20260102000000_vtid_01112_context_assembly_engine.sql: function public.current_tenant_id() does not exist
+FAIL 20260102000000_vtid_01117_context_window_metrics.sql: relation "tenants" does not exist
+FAIL 20260102000000_vtid_01120_emotional_cognitive_signals.sql: function public.current_tenant_id() does not exist
+FAIL 20260102000000_vtid_01121_feedback_trust_repair.sql: function public.current_tenant_id() does not exist
+FAIL 20260102000000_vtid_01136_context_fusion_engine.sql: function public.current_tenant_id() does not exist
+FAIL 20260102000001_vtid_01129_social_context_relationships.sql: relation "public.relationship_nodes" does not exist
+FAIL 20260102100000_vtid_01119_user_preference_modeling_v1.sql: function public.current_tenant_id() does not exist
+FAIL 20260102100000_vtid_01124_life_stage_awareness.sql: function public.current_tenant_id() does not exist
+FAIL 20260102110000_vtid_01133_taste_alignment_engine_v1.sql: function public.current_tenant_id() does not exist
+FAIL 20260102200000_vtid_01122_health_capacity_awareness.sql: function public.current_tenant_id() does not exist
+FAIL 20260102200000_vtid_01127_availability_readiness_engine.sql: relation "public.profiles" does not exist
+FAIL 20260102200000_vtid_01130_financial_monetization_engine.sql: function public.current_tenant_id() does not exist
+FAIL 20260103000000_vtid_01145_overload_detection.sql: column "created_at" does not exist
+FAIL 20260103000001_vtid_01141_d47_social_alignment_engine.sql: relation "public.relationship_nodes" does not exist
+ok   20260105_vtid_01146_d46_anticipatory_guidance.sql
+ok   20260106000000_add_oasis_only_task_truth_rule.sql
+FAIL 20260108000000_vtid_debug_memory_retention_fix.sql: relation "public.memory_categories" does not exist
+FAIL 20260116000000_vtid_01179_autopilot_event_loop.sql: functions in index predicate must be marked IMMUTABLE
+FAIL 20260117000000_vtid_01183_worker_agent_connector.sql: syntax error at or near "NOT"
+FAIL 20260117100000_vtid_01180_recommendation_inbox.sql: relation "recommendations" does not exist
+FAIL 20260117120000_vtid_01180_autopilot_recommendations.sql: relation "auth.users" does not exist
+FAIL 20260117130000_vtid_01185_recommendation_engine.sql: relation "autopilot_recommendations" does not exist
+FAIL 20260117140000_vtid_01184_pgvector_semantic_memory.sql: extension "vector" is not available
+ok   20260117150000_vtid_01181_governance_controls.sql
+ok   20260119000000_vtid_01188_unified_spec_generation.sql
+ok   20260119000000_vtid_01190_persistent_vtid_specs.sql
+ok   20260119000000_vtid_01192_infinite_memory_v2.sql
+FAIL 20260119100000_vtid_01186_profile_avatar.sql: relation "public.app_users" does not exist
+FAIL 20260119100000_vtid_01194_execution_trigger_semantics.sql: could not find a function named "get_pending_worker_tasks"
+ok   20260121000000_vtid_01201_claim_scheduled_tasks.sql
+ok   20260123000000_vtid_01208_llm_routing_policy.sql
+FAIL 20260201000000_vtid_01225_cognee_extractor.sql: function public.current_tenant_id() does not exist
+ok   20260203000000_vtid_01225_extend_memory_category_mapping.sql
+FAIL 20260203000001_vtid_01225_rpc_service_role_grants.sql: function public.relationship_ensure_node(text, text, uuid, text, jsonb) does not exist
+FAIL 20260205000000_fix_oasis_events_disk_io_indexes.sql: syntax error at or near "SELECT"
+FAIL 20260209_vtid_01228_daily_co_live_rooms.sql: relation "live_rooms" does not exist
+FAIL 20260209_vtid_01228_daily_co_live_rooms_down.sql: relation "live_rooms" does not exist
+FAIL 20260209_vtid_01228_daily_co_live_rooms_fixed.sql: relation "live_rooms" does not exist
+FAIL 20260209_vtid_01231_stripe_connect.sql: relation "app_users" does not exist
+FAIL 20260210000000_vtid_01090_fix_live_room_creation.sql: relation "live_rooms" does not exist
+FAIL 20260210100000_vtid_01228_live_room_session_mgmt.sql: relation "public.live_rooms" does not exist
+FAIL 20260211000000_fix_live_room_create_for_permanent_rooms.sql: relation "public.live_rooms" does not exist
+ok   20260214000000_oasis_actor_surface_tracking.sql
+FAIL 20260215000000_cleanup_stuck_live_sessions.sql: relation "public.live_room_sessions" does not exist
+FAIL 20260216000000_security_linter_fixes.sql: relation "public.admin_user_analytics" does not exist
+ok   20260217000000_fix_write_fact_fk_order.sql
+FAIL 20260218000000_fix_maxina_signup_tenant_association.sql: relation "public.app_users" does not exist
+ok   20260220000000_write_fact_integrity_fixes.sql
+FAIL 20260220000001_memory_facts_embedding_support.sql: type "vector" does not exist
+FAIL 20260221000000_fix_embedding_dimensions_768.sql: column "embedding" does not exist
+ok   20260225000000_notification_system.sql
+ok   20260225100000_notification_system_v2.sql
+FAIL 20260225200000_chat_messages.sql: publication "supabase_realtime" does not exist
+ok   20260225200000_notification_db_triggers.sql
+ok   20260225300000_chat_and_invite_notifications.sql
+ok   20260225400000_push_dispatch_column.sql
+ok   20260226000000_conversation_messages.sql
+FAIL 20260226000000_signup_funnel_tracking.sql: relation "public.tenants" does not exist
+FAIL 20260226100000_backfill_app_users_from_auth.sql: relation "public.app_users" does not exist
+FAIL 20260227000000_admin_rls_policies.sql: relation "public.app_users" does not exist
+FAIL 20260227100000_user_feedback_reports.sql: relation "auth.users" does not exist
+FAIL 20260310000000_fix_memory_tenant_resolution.sql: relation "auth.users" does not exist
+FAIL 20260312000000_chat_conversations_rpc.sql: relation "chat_messages" does not exist
+FAIL 20260315000000_chat_messages_type_metadata.sql: relation "chat_messages" does not exist
+FAIL 20260315000001_vitana_bot_user.sql: relation "auth.users" does not exist
+FAIL 20260315000002_rpc_add_message_type.sql: relation "chat_messages" does not exist
+ok   20260317000000_openclaw_bridge_tables.sql
+ok   20260318000000_fix_activate_recommendation_on_conflict.sql
+ok   20260318000000_vtid_01250_autopilot_automations_engine.sql
+FAIL 20260318100000_role_admission_system.sql: relation "auth.users" does not exist
+ok   20260318100000_spec_quality_reports.sql
+ok   20260318110000_spec_quality_status_values.sql
+FAIL 20260321000000_community_user_analyzer.sql: relation "autopilot_recommendations" does not exist
+ok   20260321000000_fix_recommendation_vtid_format.sql
+ok   20260322000000_vtid_task_retry_lifecycle.sql
+ok   20260322100000_fix_activate_recommendation_sha256.sql
+ok   20260324000000_testing_qa_tables.sql
+ok   20260327000000_vtid_01250_social_connections.sql
+ok   20260402000000_self_healing_tables.sql
+FAIL 20260402100000_welcome_chat_sent_column.sql: relation "public.app_users" does not exist
+FAIL 20260409000000_add_avatar_position_offsets.sql: relation "public.app_users" does not exist
+ok   20260410000000_agents_registry.sql
+ok   20260411000000_nav_catalog.sql
+FAIL 20260411000100_nav_catalog_seed.sql: column "related_kb_topics" is of type jsonb but expression is of type text[]
+FAIL 20260412000000_tenant_invitations.sql: function gen_random_bytes(integer) does not exist
+FAIL 20260412100000_tenant_autopilot_config.sql: relation "tenants" does not exist
+ok   20260412120000_verify_autopilot_tables.sql
+FAIL 20260412130000_create_autopilot_tables_debug.sql: relation "tenants" does not exist
+ok   20260412140000_check_tenants_schema.sql
+FAIL 20260412150000_create_autopilot_tables_fixed.sql: relation "tenants" does not exist
+ok   20260412160000_check_autopilot_actions.sql
+FAIL 20260412200000_tenant_assistant_config.sql: relation "public.tenants" does not exist
+FAIL 20260412300000_tenant_settings.sql: relation "public.tenants" does not exist
+FAIL 20260412400000_seed_maxina_settings.sql: relation "public.tenant_settings" does not exist
+FAIL 20260412500000_fix_maxina_settings_seed.sql: relation "public.tenant_settings" does not exist
+FAIL 20260412600000_fix_admin_tables.sql: relation "public.tenants" does not exist
+FAIL 20260412700000_content_moderation.sql: relation "auth.users" does not exist
+FAIL 20260413000000_autopilot_wave_config.sql: relation "tenant_autopilot_settings" does not exist
+ok   20260413000000_fix_claim_accepts_scheduled.sql
+FAIL 20260413000000_intelligent_calendar.sql: relation "public.calendar_events" does not exist
+ok   20260415000000_vtid_01900_longevity_news_feed.sql
+ok   20260415100000_vtid_01900_news_items_image_url.sql
+ok   20260415200000_vtid_01900_news_items_language.sql
+ok   20260416000000_notification_categories.sql
+ok   20260416000100_notification_categories_seed.sql
+FAIL 20260416100000_dev_autopilot.sql: relation "autopilot_recommendations" does not exist
+FAIL 20260416120000_vtid_02000_marketplace_foundation.sql: extension "vector" is not available
+FAIL 20260416120100_vtid_02000_marketplace_seed.sql: relation "public.canonical_fact_keys" does not exist
+ok   20260416120200_vtid_02000_marketplace_helpers.sql
+ok   20260416130000_vtid_02000_register_ledger.sql
+ok   20260416140000_vtid_02000_pgrst_reload.sql
+ok   20260416150000_nav_catalog_my_journey_news.sql
+FAIL 20260416150000_vtid_02000_debug_products.sql: relation "public.products" does not exist
+ok   20260416160000_nav_catalog_home_news_by_screen_id.sql
+ok   20260416160000_vtid_02000_inspect_state.sql
+FAIL 20260416170000_vtid_02000_fix_products.sql: type "vector" does not exist
+ok   20260416180000_nav_catalog_seed_fixed.sql
+FAIL 20260416180000_vtid_02000_fix_products_v2.sql: type "vector" does not exist
+FAIL 20260416200000_vtid_02000_seed_demo_catalog.sql: relation "public.catalog_sources" does not exist
+ok   20260416200100_nav_autopilot_priority_down.sql
+ok   20260417000000_vtid_02100_connector_framework.sql
+ok   20260417000100_vtid_02100_connector_registry_seed.sql
+ok   20260417000200_vtid_02100_register_ledger.sql
+ok   20260417010000_vtid_02100_connector_registry_update.sql
+FAIL 20260418000000_proactive_guide_phase0.sql: relation "autopilot_recommendations" does not exist
+ok   20260418000000_vtid_02200_marketplace_sources_config.sql
+ok   20260418000100_vtid_02200_register_ledger.sql
+FAIL 20260418010000_vtid_02200_seed_shopify_demo.sql: relation "public.catalog_sources" does not exist
+ok   20260418020000_vtid_02300_outbound_actions.sql
+FAIL 20260418030000_vtid_02000_backfill_demo_images_descriptions.sql: relation "public.products" does not exist
+ok   20260418030000_vtid_02400_vaea_phase0.sql
+FAIL 20260418040000_vtid_02000_product_detail_columns.sql: relation "public.products" does not exist
+ok   20260418040000_vtid_02401_vaea_phase1_observe.sql
+FAIL 20260418050000_vtid_02000_description_long.sql: relation "public.products" does not exist
+ok   20260418050000_vtid_02402_vaea_phase15_ledger.sql
+FAIL 20260418060000_tenant_assistant_speeches.sql: relation "public.tenants" does not exist
+FAIL 20260418060000_vtid_02000_demo_discounts.sql: relation "public.products" does not exist
+ok   20260418060000_vtid_02406_vaea_knowledge_hub_seed.sql
+FAIL 20260419000000_vtid_02403_ai_assistants_phase1.sql: extension "pgcrypto" is not available
+FAIL 20260419000000_vtid_02407_vaea_kb_documents_admin.sql: relation "public.kb_documents" does not exist
+FAIL 20260419010000_vtid_02408_autopilot_referrals_rebrand.sql: relation "public.kb_documents" does not exist
+ok   20260419094000_vtid_02409_register_ledger.sql
+FAIL 20260419100000_user_feature_introductions.sql: relation "auth.users" does not exist
+FAIL 20260419110000_user_session_summaries.sql: relation "auth.users" does not exist
+FAIL 20260419120000_user_routines.sql: relation "auth.users" does not exist
+ok   20260419120000_vtid_01928_social_connections_google.sql
+FAIL 20260419130000_user_proactive_touches.sql: relation "auth.users" does not exist
+ok   20260419130000_vtid_01928_test_google_insert.sql
+ok   20260420110000_vtid_01942_capability_preferences.sql
+FAIL 20260420120000_BOOTSTRAP_history_aware_timeline.sql: relation "public.user_activity_log" does not exist
+FAIL 20260420130000_BOOTSTRAP_ai_usage_log.sql: syntax error at or near "refresh"
+FAIL 20260420140000_BOOTSTRAP_seed_ai_policies_all_tenants.sql: relation "public.ai_provider_policies" does not exist
+FAIL 20260420170000_BOOTSTRAP_seed_ai_policies_fixed.sql: syntax error at or near "\"
+FAIL 20260421000000_add_account_profile_fields.sql: relation "public.profiles" does not exist
+FAIL 20260421140000_BOOTSTRAP_awareness_registry.sql: relation "auth.users" does not exist
+FAIL 20260421220000_BOOTSTRAP_admin_kpi_surface.sql: syntax error at or near "\"
+FAIL 20260421230000_BOOTSTRAP_admin_kpi_retention_fix.sql: syntax error at or near "\"
+ok   20260421230500_BOOTSTRAP_dev_autopilot_worker_queue.sql
+FAIL 20260421250000_BOOTSTRAP_admin_insights.sql: syntax error at or near "\"
+FAIL 20260422120000_BOOTSTRAP_admin_insights_notified_at.sql: relation "public.admin_insights" does not exist
+ok   20260422130000_BOOTSTRAP_tenant_health_index.sql
+FAIL 20260422150000_vitana_index_prosperity_and_weights.sql: relation "public.vitana_index_config" does not exist
+ok   20260422160000_vitana_index_kb_docs.sql
+FAIL 20260423080000_vitana_index_scores_schema_repair.sql: relation "public.vitana_index_scores" does not exist
+FAIL 20260423081500_vitana_index_scores_rls_simplify.sql: relation "public.vitana_index_scores" does not exist
+ok   20260423090000_vitana_index_book_ch0_to_6.sql
+FAIL 20260423110000_vitana_index_5pillar_cleanup.sql: relation "public.vitana_index_scores" does not exist
+ok   20260423130000_vitana_index_compute_v3.sql
+ok   20260423140000_vitana_index_compute_for_user.sql
+FAIL 20260423150000_BOOTSTRAP_archive_false_positive_findings.sql: relation "autopilot_recommendations" does not exist
+FAIL 20260423150000_vitana_index_contribution_vector.sql: relation "public.autopilot_recommendations" does not exist
+FAIL 20260423150500_BOOTSTRAP_dev_autopilot_auto_approve.sql: relation "public.dev_autopilot_config" does not exist
+ok   20260423151000_BOOTSTRAP_dev_autopilot_prompt_learnings.sql
+FAIL 20260423160000_vitana_index_rescore_existing.sql: relation "public.vitana_index_baseline_survey" does not exist
+FAIL 20260423170000_vitana_index_rescore_retry.sql: relation "public.vitana_index_baseline_survey" does not exist
+ok   20260423180000_vitana_index_book_ch7_8_plus_rewrites.sql
+FAIL 20260423190000_vitana_pillar_agents_v1.sql: relation "auth.users" does not exist
+FAIL 20260423200000_vitana_integrations_v1.sql: relation "auth.users" does not exist
+FAIL 20260423210000_health_features_daily_schema_repair.sql: relation "public.health_features_daily" does not exist
+ok   20260424000000_BOOTSTRAP_dev_autopilot_scanners_registry.sql
+ok   20260424000001_public_vitana_index_rpc.sql
+ok   20260424100000_BOOTSTRAP_dev_autopilot_impact_rules.sql
+FAIL 20260424120000_pillar_tags_community_engagement.sql: relation "public.autopilot_recommendations" does not exist
+ok   20260424120100_vitana_index_book_ch09_community_is_mental.sql
+ok   20260424130000_vitana_index_book_ch10_life_compass.sql
+FAIL 20260424140000_user_pillar_recent_activity_view.sql: relation "public.calendar_events" does not exist
+FAIL 20260424200000_BOOTSTRAP_autopilot_recommendations_impact_source.sql: relation "public.autopilot_recommendations" does not exist
+FAIL 20260424300000_BOOTSTRAP_dev_autopilot_auto_approve_impact.sql: relation "public.dev_autopilot_config" does not exist
+FAIL 20260424400000_BOOTSTRAP_archive_route_auth_stale_findings.sql: relation "autopilot_recommendations" does not exist
+FAIL 20260424400000_BOOTSTRAP_dyk_user_active_days.sql: relation "auth.users" does not exist
+FAIL 20260424500000_BOOTSTRAP_archive_findings_pending_rollup.sql: relation "autopilot_recommendations" does not exist
+ok   20260425100000_BOOTSTRAP_dyk_flag_on.sql
+ok   20260425100000_how_to_kb_corpus.sql
+ok   20260425160000_how_to_kb_corpus_v2.sql
+FAIL 20260425200000_BOOTSTRAP_dev_autopilot_executions_auto_archive.sql: relation "public.dev_autopilot_executions" does not exist
+ok   20260425600000_vtid_01959_voice_healing_dedupe.sql
+ok   20260425700000_vtid_01960_voice_healing_spec_memory.sql
+ok   20260425800000_vtid_01962_voice_healing_sentinel.sql
+ok   20260425900000_vtid_01963_voice_architecture_reports.sql
+FAIL 20260426000000_vtid_01952_memory_provenance_columns.sql: relation "public.memory_items" does not exist
+ok   20260426000000_vtid_01964_voice_healing_shadow_log.sql
+ok   20260426000001_vtid_01952_memory_identity_lock_trigger.sql
+ok   20260426000002_vtid_01952_relax_provenance_check_constraint.sql
+FAIL 20260426120000_clear_dyk_test_user_touches.sql: relation "public.user_proactive_touches" does not exist
+ok   20260426154100_BOOTSTRAP_llm_routing_extended_stages.sql
+ok   20260427000000_vtid_01966_memory_audit_log.sql
+FAIL 20260427000001_vtid_01978_fix_semantic_search_float8.sql: type vector does not exist
+ok   20260427000002_vtid_01984_exec_deploy_terminal_gate_auth.sql
+FAIL 20260427090000_user_diary_streak_view.sql: relation "public.diary_entries" does not exist
+FAIL 20260427100000_BOOTSTRAP_autopilot_realign_substrate.sql: relation "public.autopilot_recommendations" does not exist
+ok   20260427100000_vtid_01994_voice_quality_failure_trigger.sql
+FAIL 20260427120000_vtid_01985_earthlinks_to_maxina_cleanup.sql: relation "public.tenants" does not exist
+FAIL 20260427121500_BOOTSTRAP_autopilot_enable_stale_flag.sql: relation "public.dev_autopilot_config" does not exist
+ok   20260427130000_vtid_01981_routines_catalog.sql
+FAIL 20260427130000_vtid_01985_earthlinks_to_maxina_v2.sql: relation "public.tenants" does not exist
+FAIL 20260427140000_vtid_01985_earthlinks_to_maxina_v3.sql: relation "public.tenants" does not exist
+FAIL 20260427150000_vtid_01985_earthlinks_to_maxina_v4.sql: relation "public.tenants" does not exist
+FAIL 20260427170000_clear_initiative_touches_for_smoke.sql: relation "public.user_proactive_touches" does not exist
+ok   20260427180000_vtid_01990_vitana_id_mirror_reconcile.sql
+FAIL 20260427180000_vtid_02003_phase_5a_tier2_schema.sql: type "vector" does not exist
+ok   20260427180000_vtid_02004_routines_tier_a.sql
+ok   20260427190000_vtid_01991_intent_matches_archival_cron.sql
+ok   20260427200000_vtid_01990_conversation_tracking_read_rpcs.sql
+FAIL 20260427200000_vtid_01992_intent_embedding_index.sql: relation "public.user_intents" does not exist
+FAIL 20260427210000_vtid_01992_register_ledger.sql: relation "VtidLedger" does not exist
+ok   20260427210000_vtid_02006_routines_tier_b.sql
+FAIL 20260427220000_vtid_01992_register_ledger_v2.sql: relation "VtidLedger" does not exist
+ok   20260428000000_activate_recommendation_in_progress.sql
+FAIL 20260428000000_calendar_pillar_contribution_vector.sql: relation "public.calendar_events" does not exist
+ok   20260428000000_proactive_initiative_flag.sql
+FAIL 20260428001000_analytics_celebrate_events.sql: relation "auth.users" does not exist
+ok   20260428010000_initiative_flag_on.sql
+FAIL 20260428100000_vtid_02007_phase_5c_legacy_backfill.sql: relation "public.mem_graph_edges" does not exist
+ok   20260428110000_vtid_02017_routines_tier_c_batch_1.sql
+ok   20260428120000_vtid_02018_routines_tier_c_batch_2.sql
+FAIL 20260428160000_vtid_02050_mem_episodes_semantic_search.sql: type vector does not exist
+FAIL 20260428200000_vtid_02047_unified_feedback_pipeline_init.sql: type "vector" does not exist
+ok   20260429100000_vtid_02601_create_reminders.sql
+FAIL 20260429100000_vtid_02603_feedback_handoff.sql: relation "public.feedback_tickets" does not exist
+ok   20260429110000_vtid_02604_feedback_classifier.sql
+FAIL 20260429120000_vtid_02047_phase5_management_schema.sql: relation "public.agent_personas" does not exist
+ok   20260429160000_vtid_02047_auto_triage.sql
+ok   20260429210000_vtid_02632_phase_8_consolidator.sql
+ok   20260430072429_instruction_manual_maxina_seed.sql
+FAIL 20260430120000_BOOTSTRAP_pause_dev_autopilot_auto_approve.sql: syntax error at or near "\"
+FAIL 20260501000000_VTID_02639_autopilot_finding_completed_state.sql: syntax error at or near "\"
+FAIL 20260501010000_VTID_02640_dev_autopilot_get_table_schema.sql: syntax error at or near "\"
+FAIL 20260501100000_vtid_02651_persona_voice_greeting.sql: relation "public.agent_personas" does not exist
+FAIL 20260501150000_vtid_02652_phase6_tenant_overrides.sql: relation "public.agent_personas" does not exist
+FAIL 20260501230000_vtid_02665_feedback_execution_bridge.sql: relation "public.feedback_tickets" does not exist
+FAIL 20260502090000_vtid_02669_feedback_autonomous_close.sql: relation "public.feedback_tickets" does not exist
+FAIL 20260502100000_forwarding_v2_phrase_expansion.sql: relation "public.agent_personas" does not exist
+FAIL 20260502110000_persona_identity_lock_prepend.sql: relation "public.agent_personas" does not exist
+FAIL 20260502120000_forwarding_v2c_coverage.sql: relation "public.agent_personas" does not exist
+FAIL 20260502120000_vtid_02690_seed_orb_agent_google_cascade.sql: relation "agent_voice_configs" does not exist
+ok   20260502230000_vtid_02686_autopilot_gemini_3_1_pro_preview.sql
+FAIL 20260507000100_account_visibility_helper_fns.sql: relation "public.user_follows" does not exist
+FAIL 20260507000200_profile_partner_service_offerings.sql: relation "public.profiles" does not exist
+ok   20260507000300_resolver_chat_peer_promotion.sql
+ok   20260507100000_vtid_livekit_foundation_voice_tables.sql
+FAIL 20260508000000_forwarding_rules_two_gate.sql: relation "public.agent_personas" does not exist
+ok   20260508001000_forwarding_rules_drop_old_rpc.sql
+ok   20260508002000_forwarding_rules_tenant_two_gate.sql
+FAIL 20260509000000_dev_autopilot_inflight_unique_index.sql: relation "public.dev_autopilot_executions" does not exist
+FAIL 20260509000000_vtid_02702_feedback_rollback.sql: relation "public.feedback_tickets" does not exist
+ok   20260510000000_BOOTSTRAP_agents_registry_truth.sql
+FAIL 20260510000000_vtid_02754_community_search_history.sql: relation "auth.users" does not exist
+FAIL 20260510000100_BOOTSTRAP_architecture_investigator.sql: new row for relation "agents_registry" violates check constraint "agents_registry_llm_provider_check"
+ok   20260510000200_BOOTSTRAP_agents_provider_check_extend.sql
+ok   20260511111340_vtid_02866_voice_experience_scanner_seed.sql
+FAIL 20260512000000_BOOTSTRAP_intent_cover_url.sql: relation "user_intents" does not exist
+FAIL 20260513000000_VTID_02806_intent_cover_library.sql: relation "profiles" does not exist
+FAIL 20260514000000_VTID_02806d_intent_covers_storage_policies.sql: schema "storage" does not exist
+FAIL 20260515000000_VTID_02806h_intent_covers_staging_path.sql: schema "storage" does not exist
+FAIL 20260516000000_VTID_02909_user_assistant_state.sql: relation "user_tenants" does not exist
+FAIL 20260517000000_VTID_02917_orb_wake_timelines.sql: relation "user_tenants" does not exist
+FAIL 20260518000000_VTID_02920_capability_awareness.sql: relation "user_tenants" does not exist
+ok   20260518205049_instruction_manual_maxina_seed.sql
+FAIL 20260519000000_BOOTSTRAP_autopilot_alignment_fields.sql: relation "public.autopilot_recommendations" does not exist
+FAIL 20260519000000_VTID_02924_capability_awareness_events.sql: relation "system_capabilities" does not exist
+FAIL 20260519010000_VTID_03091_capability_manual_path_and_extras.sql: relation "system_capabilities" does not exist
+FAIL 20260520000000_VTID_02932_continuity_tables.sql: relation "user_tenants" does not exist
+FAIL 20260521000000_VTID_02954_test_contracts.sql: generation expression is not immutable
+ok   20260521000001_VTID_02955_test_contracts_fix.sql
+ok   20260521000002_VTID_02958_test_contract_runs.sql
+ok   20260521000003_VTID_02970_repair_patterns.sql
+ok   20260521000004_VTID_02978_worker_runner_contracts.sql
+FAIL 20260522000000_chat_attachments_rls_dm_and_groups.sql: schema "storage" does not exist
+ok   20260522000001_VTID_03025_livekit_hourly_tests.sql
+FAIL 20260522010000_chat_group_members_recursion_fix.sql: relation "public.chat_group_members" does not exist
+FAIL 20260523000000_VTID_03031_devon_male_voice.sql: insert or update on table "agent_voice_configs" violates foreign key constraint "agent_voice_configs_agent_id_fkey"
+ok   20260523010000_VTID_03032_devon_registry_and_voice.sql
+ok   20260523020000_VTID_03025_livekit_test_seed_fixes.sql
+FAIL 20260524000000_VTID_03036_bootstrap_cache.sql: syntax error at or near "||"
+ok   20260524010000_VTID_03025_livekit_tests_full_coverage.sql
+ok   20260524020000_VTID_03025_livekit_tests_smoke10_fixes.sql
+ok   20260524030000_VTID_03025_livekit_tests_smoke11_fixes.sql
+FAIL 20260524030000_VTID_03039_devon_question_cap.sql: relation "public.agent_personas" does not exist
+ok   20260524040000_VTID_03025_livekit_tests_smoke12_fixes.sql
+ok   20260524050000_VTID_03025_livekit_tests_smoke13_final.sql
+FAIL 20260524050000_VTID_03044_devon_only_specialist.sql: relation "public.agent_personas" does not exist
+FAIL 20260524060000_VTID_03047_restore_vitana_prompt.sql: relation "public.agent_personas" does not exist
+FAIL 20260524080000_VTID_03049_livekit_canary_enable.sql: relation "app_users" does not exist
+FAIL 20260525000000_VTID_03089_chat_groups.sql: relation "public.chat_messages" does not exist
+ok   20260526000000_VTID_03107_wallet_reconciliation.sql
+FAIL 20260526000000_VTID_03108_capability_pedagogical_order.sql: relation "system_capabilities" does not exist
+ok   20260526010000_VTID_03107_subscription_core.sql
+FAIL 20260526010000_VTID_03152_goal_plan.sql: relation "public.app_users" does not exist
+ok   20260526020000_VTID_03107_openclaw_compat.sql
+ok   20260526030000_VTID_03107_seed_plans.sql
+ok   20260526040000_VTID_03107_usage_helpers.sql
+FAIL 20260526050000_VTID_03107_cron_cleanup.sql: extension "pg_cron" is not available
+ok   20260526060000_VTID_03107_redemption_codes.sql
+ok   20260526070000_VTID_03107_features_json_seed.sql
+FAIL 20260526080000_VTID_03107_lifecycle_notifications.sql: relation "cron.job" does not exist
+FAIL 20260526090000_VTID_03107_lifecycle_notified_at.sql: relation "public.lifecycle_notification_state" does not exist
+ok   20260526100000_VTID_03107_rolling_windows.sql
+FAIL 20260526110000_VTID_03107_launch_auto_grant.sql: relation "public.app_users" does not exist
+FAIL 20260527000000_VTID_03113_decision_policy.sql: relation "user_tenants" does not exist
+FAIL 20260527000000_VTID_03120_teacher_highlights_intros.sql: relation "system_capabilities" does not exist
+FAIL 20260527010000_VTID_03113_policy_render_block.sql: relation "user_tenants" does not exist
+FAIL 20260527020000_VTID_03114_policy_seeds.sql: relation "decision_policy" does not exist
+FAIL 20260527130000_VTID_03152_goal_plans_drop_user_fk.sql: relation "public.goal_plans" does not exist
+FAIL 20260528000000_VTID_03124_voice_thresholds_seeds.sql: relation "decision_policy" does not exist
+FAIL 20260528010000_VTID_03125_voice_connection_issue_seeds.sql: relation "policy_render_block" does not exist
+FAIL 20260528020000_VTID_03126_live_api_voice_seeds.sql: relation "decision_policy" does not exist
+FAIL 20260528030000_VTID_03127_voice_cascade_default_seed.sql: relation "decision_policy" does not exist
+FAIL 20260528040000_VTID_03130_autopilot_recommendations_provenance.sql: relation "autopilot_recommendations" does not exist
+FAIL 20260528050000_VTID_03131_ranker_pillar_weighter_seeds.sql: relation "decision_policy" does not exist
+FAIL 20260528060000_VTID_03134_voice_mapping_tables_seeds.sql: relation "decision_policy" does not exist
+FAIL 20260528070000_VTID_03135_engine_thresholds_seeds.sql: relation "decision_policy" does not exist
+FAIL 20260528080000_VTID_03136_d33_readiness_thresholds_seeds.sql: relation "decision_policy" does not exist
+FAIL 20260528090000_VTID_03137_feed_ranker_weights_seeds.sql: relation "decision_policy" does not exist
+FAIL 20260528100000_VTID_03138_marketplace_community_seeds.sql: relation "decision_policy" does not exist
+FAIL 20260528110000_VTID_03140_signal_impact_maps_seeds.sql: relation "decision_policy" does not exist
+ok   20260528120000_BOOTSTRAP_vitana_index_daily_stage.sql
+FAIL 20260528120000_VTID_03142_decision_conflict_pair.sql: relation "user_tenants" does not exist
+ok   20260528130000_BOOTSTRAP_fix_longevity_stub_tenants_column.sql
+ok   20260528184700_BOOTSTRAP_fix_longevity_stub_drift_proof.sql
+FAIL 20260528220000_VTID_03180_community_cache_materialized_views.sql: relation "autopilot_recs" does not exist
+FAIL 20260529000000_VTID_03200_wallet_stripe_deposits.sql: relation "auth.users" does not exist
+ok   20260529120000_VTID_03180_complete_autopilot_recommendation_rpc.sql
+ok   20260601000000_PHASE0_staging_software_versions.sql
+FAIL 20260601000000_VTID_03089_welcome_chat_db_trigger.sql: relation "public.user_tenants" does not exist
+FAIL 20260601000000_VTID_03249_wallet_spend_earning.sql: relation "public.wallet_ledger_entries" does not exist
+FAIL 20260601100000_VTID_03147_longevity_economy_knowledge_base.sql: relation "system_capabilities" does not exist
+FAIL 20260602000000_VTID_03150_longevity_whitepaper_verbatim.sql: relation "system_capabilities" does not exist
+FAIL 20260602000000_VTID_03255_journey_foundation.sql: relation "auth.users" does not exist
+FAIL 20260603000000_VTID_03152_user_journey_table.sql: relation "public.app_users" does not exist
+FAIL 20260603000000_VTID_03152b_goal_plan_i18n.sql: relation "public.goal_plans" does not exist
+FAIL 20260603100000_VTID_03159_user_journey_missing_columns.sql: relation "public.user_journey" does not exist
+FAIL 20260604000000_VTID_03152c_goal_plan_goal_text_i18n.sql: relation "public.goal_plan_i18n" does not exist
+FAIL 20260604000000_VTID_03161_decision_compatibility_score.sql: relation "user_tenants" does not exist
+FAIL 20260604123000_support_surface_human_only_queue.sql: relation "public.feedback_tickets" does not exist
+FAIL 20260605000000_VTID_03169_seed_compatibility_matrices.sql: relation "decision_compatibility_score" does not exist
+FAIL 20260605000000_VTID_03186_universal_cart_schema.sql: relation "public.app_users" does not exist
+FAIL 20260606000000_DEV_COMHU_0503_orb_session_state.sql: relation "app_users" does not exist
+ok   20260606010000_BOOTSTRAP_training_cycle_tracker.sql
+ok   20260606020000_BOOTSTRAP_training_cycle_day1_attempt2.sql
+FAIL 20260607000000_BOOTSTRAP_seed_community_onboarding_autopilot.sql: extension "pgcrypto" is not available
+FAIL 20260607000000_VTID_03237_video_shop_schema.sql: relation "public.app_users" does not exist
+ok   20260607000100_VTID_03237_register_ledger.sql
+ok   20260607010000_BOOTSTRAP_ORB_R4_teacher_capability_refresh_schedule.sql
+FAIL 20260608120000_phase_a_security_hotfix.sql: relation "public.test_user_applications" does not exist
+ok   20260608130000_phase_c_rpc_anon_lockdown.sql
+FAIL 20260608140000_phase_b_enable_rls_42_tables.sql: relation "public.handle_aliases" does not exist
+FAIL 20260608160000_VTID_03276_guided_journey_mode_state.sql: relation "auth.users" does not exist
+ok   20260608170000_VTID_03277_journey_checklist_schema.sql
+ok   20260608170100_VTID_03277_journey_checklist_seed.sql
+ok   20260609120000_VTID_03288_journey_checklist_grounding.sql
+ok   20260610093000_nav_catalog_mobile.sql
+ok   20260610120000_BOOTSTRAP_journey_session_index_award.sql
+ok   20260610130000_BOOTSTRAP_journey_checklist_translations.sql
+ok   20260612000000_BOOTSTRAP_content_i18n_catalog_cache.sql
+FAIL 20260612000000_bootstrap_orb_latency_phase1_retune.sql: relation "decision_policy" does not exist
+FAIL 20260612140000_BOOTSTRAP_product_analytics_events.sql: extension "pgcrypto" is not available
+ok   20260612140100_BOOTSTRAP_product_analytics_rollups.sql
+FAIL 20260613003000_BOOTSTRAP_first_time_onboarding_sessions.sql: relation "user_guided_journey_state" does not exist
+ok   20260613080000_BOOTSTRAP_journey_checklist_de_labels.sql
+ok   20260615120000_nav_catalog_platform.sql
+ok   20260616120000_nav_catalog_desktop.sql
+ok   20260616130000_nav_catalog_mobile_drift_fixes.sql
+ok   20260616140000_nav_catalog_desktop_tabs.sql
+ok   20260616150000_nav_catalog_desktop_tabs2.sql
+FAIL 20260618000000_BOOTSTRAP_canonical_people_search.sql: relation "public.app_users" does not exist
+ok   20260618120000_BOOTSTRAP_resolver_match_quality_dominant.sql
+ok   20260621150000_BOOTSTRAP_publish_journey_checklist_v2.sql
+FAIL 20260625000000_alle_beisammen_chat_group.sql: relation "public.chat_groups" does not exist
+ok   20260625120000_nav_catalog_role.sql
+ok   20260625130000_fix_feedback_classifier_two_gate_fields.sql
+FAIL 20260626220000_add_last_full_briefing_date.sql: relation "public.user_journey" does not exist
+FAIL 20260627100000_add_recent_nbas.sql: relation "public.user_journey" does not exist
+ok   20260628120000_conversation_flow_test_impact_rule.sql
+ok   20260628120000_fix_allocate_global_vtid_seq_drift.sql
+FAIL 20260629120000_vtid_02000_discover_admitad_real_catalog.sql: relation "merchants" does not exist
+FAIL 20260629140000_vtid_02000_bodylab24_product_deeplinks.sql: relation "products" does not exist
+ok   20260630100000_transport_flow_parity_impact_rule.sql
+FAIL 20260630120000_BOOTSTRAP_reap_stale_live_streams.sql: extension "pg_cron" is not available
+FAIL 20260702120000_vtid_02000_amazon_ae_recommendations_seed.sql: relation "merchants" does not exist
+ok   20260702160000_vtid_02000_admitad_feed_source_network.sql
+FAIL 20260704060000_vtid_01250_automations_engine_safe_part.sql: policy "Service role full access on automation_runs" for table "automation_runs" already exists
+ok   20260704120000_nav_catalog_my_journey_sessions_disambiguation.sql
+ok   20260704200000_vtid_01142_contextual_opportunities_table.sql
+FAIL 20260705100000_vtid_01250_relationship_edges_allow_connected.sql: relation "relationship_edges" does not exist
+ok   20260705181500_transport_flow_parity_flip_blocker.sql
+ok   20260706100000_vtid_02779_voice_clock.sql
+FAIL 20260709120000_vtid_02000_bodylab24_real_deeplinks_admitad_cleanup.sql: relation "products" does not exist
+FAIL 20260709140000_vtid_02000_amazon_ae_real_photos.sql: relation "products" does not exist
+FAIL 20260709150000_vtid_02000_bodylab24_real_photos.sql: relation "products" does not exist
+ok   20260710120000_fix_reaction_notification_deeplink.sql
+FAIL 20260712100000_SECURITY_fix_public_writable_wallet_and_cache_rls.sql: relation "wallet_accounts" does not exist
+FAIL 20260712110000_SECURITY_revoke_anon_grants_vtid_ledger_marketplace.sql: relation "public.merchants" does not exist
+FAIL 20260715120000_vtid_02950_recommendation_commissions.sql: relation "public.merchants" does not exist
+FAIL 20260717120000_harden_wallet_rpc_ownership_and_rate_lookup.sql: relation "public.user_wallets" does not exist
+FAIL 20260717120000_vtid_02000_discover_doctorbox_seed.sql: relation "merchants" does not exist
+FAIL 20260717120100_reset_all_user_wallet_balances_to_zero.sql: relation "public.user_wallets" does not exist
+FAIL 20260717121500_vtid_02000_doctorbox_feed_category_mix.sql: relation "default_feed_config" does not exist
+FAIL 20260720081500_vtid_02000_doctorbox_feed_featured.sql: relation "default_feed_config" does not exist
+FAIL 20260720090000_bridge_credit_deposit_into_legacy_user_wallets.sql: relation "wallet_deposits" does not exist
+FAIL 20260720190000_fix_wallet_rpc_atomicity_and_transaction_logging.sql: constraint "wallet_transactions_transaction_type_check" of relation "wallet_transactions" does not exist
+FAIL 20260720200000_fold_vtna_balance_into_credits.sql: relation "public.user_wallets" does not exist
+FAIL 20260721000000_vtid_02000_doctorbox_real_photos.sql: relation "products" does not exist
+FAIL 20260721180000_add_wallet_transactions_profile_fkeys.sql: relation "public.profiles" does not exist
+FAIL 20260723000000_vtid_02000_doctorbox_per_product_deeplinks.sql: relation "products" does not exist
+FAIL 20260723010000_vtid_02000_doctorbox_new_products.sql: relation "products" does not exist
+FAIL 20260723150000_bootstrap_feature_announcements.sql: relation "public.user_tenants" does not exist
+ok   20260724170000_bootstrap_daily_feature_tip_state.sql
+ok   20260726120000_vtid_03413_bedrock_worker_routing.sql
+FAIL 20260727090000_bootstrap_community_marketplace.sql: relation "public.tenants" does not exist
+FAIL 20260727170000_bootstrap_community_marketplace_storage.sql: relation "storage.buckets" does not exist
+ok   20260729120000_nav_catalog_settings_tenant_drift_fix.sql
+FAIL 20260729150000_bootstrap_community_marketplace_seller_suspensions.sql: relation "public.app_users" does not exist
+ok   20260731160000_VTID_03460_watcher_steps.sql
+ok   20260731180000_VTID_03461_watcher_lessons_rules.sql
+ok   20260731200000_VTID_03462_watcher_feedback.sql
+ok   20260803200000_vtid_03481_device_token_ownership.sql
+FAIL 20260804080000_vtid_03486_ci_health_rpcs.sql: relation "public.orb_session_state" does not exist
+FAIL 20260804100000_vtid_03492_ci_health_rpcs_v2.sql: relation "public.app_users" does not exist
+FAIL 20260805120000_vtid_03493_recent_conversations_order.sql: relation "chat_messages" does not exist
+ok   20260806090000_VTID_03515_db_i18n_locale_registry.sql
+ok   20260806160000_vtid_03516_ledger_integrity_check.sql
+ok   20260810120000_vtid_03565_seed_bedrock_allowlist.sql
+ok   20260810160000_VTID_03575_zh_register_hint.sql
+ok   20260810230000_VTID_03580_promote_pt_ru_pl_ga.sql
+ok   20260811210000_vtid_03599_llm_telemetry_summary.sql
+FAIL 20260811230000_vtid_03604_day_close.sql: relation "public.user_journey" does not exist
+ok   20260812140200_VTID_03623_resolver_drift_fix_chat_peer_flag.sql
+ok   20260818090000_vtid_03666_ci_vital_systems_health.sql
+ok   20260819085846_vtid_03679_fix_de_locale_journey_checklist_false_positive.sql
+ok   20260827090000_vtid_03767_fix_seed_community_onboarding_autopilot.sql
+ok   20260911120000_BOOTSTRAP_deepseek_v4_1_flash.sql
+FAIL 20260912120000_vtid_03819_ledger_dedup_embedding.sql: type "vector" does not exist
+FAIL 20260913000000_vtid_03832_vitana_role_add_values.sql: type "public.vitana_role" does not exist
+FAIL 20260913000001_vtid_03832_tenant_role_add_values.sql: type "public.tenant_role" does not exist
+ok   20260913000002_vtid_03832_role_functions.sql
+ok   20260913010000_vtid_03834_erp_capability_grants.sql
+ok   20260913020000_vtid_03842_erp_commands_approvals_audit.sql
+FAIL 20260913100000_vtid_03844_outcomes_source_type_allowlist.sql: relation "public.dev_autopilot_outcomes" does not exist
+FAIL 20260914090000_vtid_03885_partner_health_test_integration.sql: relation "public.product_orders" does not exist
+ok   20260914130000_vtid_03842_erp_tables_revoke_browser_roles.sql
+FAIL 20260914182357_vtid_03889_dev_agent_memory.sql: type "vector" does not exist
+FAIL 20260915100000_vtid_03894_supplier_verticals.sql: relation "public.products" does not exist
+FAIL 20260915100100_vtid_03894_seed_verticals.sql: relation "public.catalog_verticals" does not exist
+FAIL 20260915103000_vtid_03894_supplier_affiliate_link.sql: relation "public.merchants" does not exist
+FAIL 20260915120000_vtid_03932_partner_organizations.sql: relation "public.partner_registry" does not exist
+FAIL 20260915130000_vtid_03914_role_preferences_check_backoffice.sql: relation "public.role_preferences" does not exist
+FAIL 20260915131400_vtid_03916_widen_role_preferences_check.sql: relation "public.role_preferences" does not exist
+FAIL 20260915132000_vtid_03894_catalog_vertical_rls.sql: relation "public.catalog_verticals" does not exist
+FAIL 20260916130000_vtid_03974_commerce_vertical.sql: relation "public.partner_organizations" does not exist
+FAIL 20260916150000_vtid_03972_widen_oasis_events_retention.sql: CREATE INDEX CONCURRENTLY cannot run inside a transaction block
+ok   20260917084341_vtid_03990_service_bot_accounts_skip_welcome_chat.sql
+ok   20260917100000_vtid_03995_role_switch_community_and_membership_roles.sql
+FAIL 20260917210000_vtid_04005_dev_autopilot_allow_scope_widen.sql: relation "dev_autopilot_config" does not exist
+ok   20260917230000_vtid_04022_operator_threads.sql
+FAIL 20260918000000_vtid_04029_dev_autopilot_executions_awaiting_approval.sql: relation "public.dev_autopilot_executions" does not exist
+FAIL 20260918100000_vtid_04044_lab_reports_rls_user_scoped.sql: relation "public.lab_reports" does not exist
+FAIL 20260921120000_bootstrap_dev_agent_memory_file_scope.sql: relation "dev_agent_memory" does not exist
+FAIL 20260923120000_vtid_04319_orchestrator_run_ledger.sql: relation "dev_autopilot_executions" does not exist
+FAIL 20260923120000_vtid_04321_rsvp_calendar_global_events.sql: relation "public.global_community_events" does not exist
+FAIL 20260923120000_vtid_04337_partner_org_members_rls_no_recursion.sql: relation "public.partner_organization_members" does not exist
+ok   20260923120000_vtid_04341_write_fact_skip_same_value.sql
+FAIL 20260923130000_vtid_04331_calendar_data_model.sql: relation "public.calendar_events" does not exist
+ok   20260923130000_vtid_04333_auto_triage_all_bug_priorities.sql
+FAIL 20260923130000_vtid_04342_memory_embeddings_titan_v2.sql: relation "public.memory_items" does not exist
+ok   20260923140000_vtid_04338_calendar_default_reminders.sql
+FAIL 20260923140000_vtid_04345_ci_memory_health.sql: relation "memory_items" does not exist
+ok   20260923140000_vtid_04371_conversation_metrics_hourly.sql
+FAIL 20260923150000_vtid_04365_session_summary_episodes.sql: relation "public.memory_categories" does not exist
+FAIL 20260923160000_vtid_04356_calendar_source_producers.sql: relation "public.profiles" does not exist
+ok   20260923160000_vtid_04387_memory_transcript_turns.sql
+ok   20260923160000_vtid_04399_metrics_context_setup.sql
+FAIL 20260923170000_vtid_04358_calendar_feed_tokens.sql: relation "auth.users" does not exist
+FAIL 20260923170000_vtid_04389_garden_legacy_backfill.sql: relation "public.memory_categories" does not exist
+FAIL 20260923180000_vtid_04372_calendar_google_sync.sql: relation "auth.users" does not exist
+FAIL 20260923180000_vtid_04391_daily_learning_episodes.sql: relation "public.memory_categories" does not exist
+FAIL 20260923190000_vtid_04407_dev_agent_memory_handoff.sql: relation "dev_agent_memory" does not exist
+ok   20260923190000_vtid_04421_conversation_offer_outcomes.sql
+FAIL 20260923200000_vtid_04402_connected_apps.sql: relation "auth.users" does not exist
+FAIL 20260923200000_vtid_04411_customer_support_memory.sql: relation "public.memory_categories" does not exist
+ok   20260923200000_vtid_04422_conversation_scoring_weights.sql
+FAIL 20260923210000_vtid_04431_support_resolution_search.sql: type vector does not exist
+FAIL 20260923210000_vtid_04446_run_leases.sql: relation "agent_runs" does not exist
+ok   20260923220000_vtid_04441_memory_fact_forgotten.sql
+FAIL 20260923220000_vtid_04445_persona_voice_gender.sql: relation "decision_policy" does not exist
+FAIL 20260924090000_vtid_04436_calendar_push.sql: relation "auth.users" does not exist
+FAIL 20260924090000_vtid_04460_intent_ledger_embeddings_titan_v2.sql: relation "public.user_intents" does not exist
+FAIL 20260924100000_vtid_04449_outlook_contacts_app.sql: relation "public.connected_app_settings" does not exist
+FAIL 20260924130000_vtid_04471_partner_account_model.sql: relation "public.partner_organizations" does not exist
+FAIL 20260924150000_vtid_04478_partner_onboarding_engine.sql: relation "public.partner_organizations" does not exist
+FAIL 20260924150000_vtid_04483_profile_health_summary.sql: relation "public.vitana_index_scores" does not exist
+ok   20260924150000_vtid_04494_write_fact_one_current_fact.sql
+FAIL 20260924170000_vtid_04489_index_boost.sql: relation "public.vitana_index_scores" does not exist
+FAIL 20260924180000_vtid_04500_autopilot_role_scope.sql: relation "public.autopilot_recommendations" does not exist
+ok   20260924190000_vtid_04498_index_standing.sql
+FAIL 20260924190000_vtid_04503_autopilot_recommendation_action.sql: relation "public.autopilot_recommendations" does not exist
+ok   20260924200000_vtid_04508_invite_attribution.sql
+FAIL 20260925120000_vtid_04561_one_role_truth.sql: relation "public.role_preferences" does not exist
+ok   20260926110000_vtid_04624_operator_readonly_query.sql
+ok   20260926120000_vtid_04657_activate_keeps_spec_snapshot.sql
+ok   20260926130000_vtid_04641_ci_test_results.sql
+ok   20260926140000_vtid_04666_recommendation_noise.sql
+FAIL 20260926150000_vtid_04655_me_set_active_role_writes_role_preferences.sql: relation "public.role_preferences" does not exist
+FAIL 20260926160000_vtid_04668_recommendation_priority.sql: relation "public.autopilot_recommendations" does not exist
+FAIL 20260926190000_vtid_04674_notification_type_controls.sql: relation "public.tenants" does not exist
+FAIL 20260928100000_vtid_04680_goal_plans_keep_calendar_clean.sql: type public.goal_plan_steps does not exist
+FAIL 20260928200000_vtid_04716_autopilot_prompts_data_layer.sql: relation "public.tenants" does not exist
+ok   20260928200100_vtid_04718_overload_detection_data_layer.sql
+ok   20260928200200_vtid_04719_taste_alignment_data_layer.sql
+ok   20260928200300_vtid_04720_preference_modeling_data_layer.sql
+FAIL 20260928200400_vtid_04717_risk_mitigations.sql: relation "public.tenants" does not exist
+FAIL 20260928200500_vtid_04716_feature_functions_no_anon.sql: function public.is_in_quiet_hours(jsonb, time without time zone) does not exist
+FAIL 20260929120000_vtid_04740_referrer_on_click_anonymous_buyers.sql: relation "public.product_clicks" does not exist
+FAIL 20260929120100_vtid_04741_recommendation_commission_hold.sql: relation "public.recommendation_commissions" does not exist
+FAIL 20260929120200_vtid_04740_product_orders_tenant_nullable.sql: relation "public.product_orders" does not exist
+FAIL 20260929120300_vtid_04741_commission_confirm_reverse_functions.sql: relation "recommendation_commissions" does not exist
+FAIL 20260929120400_vtid_04741_confirm_commission_order_lock_exclusions.sql: relation "recommendation_commissions" does not exist
+FAIL 20260929120500_vtid_04741_reverse_commission_order_recheck.sql: relation "recommendation_commissions" does not exist
+FAIL 20260929120600_vtid_04741_confirm_commission_refresh_terms.sql: relation "recommendation_commissions" does not exist
+FAIL 20260929120700_vtid_04740_product_clicks_select_own_only.sql: relation "public.product_clicks" does not exist
+ok   20261001100000_vtid_04754_jev_spend_and_shadow.sql
+FAIL 20261001120000_VTID_04762_audiobook_season0_prolog.sql: relation "user_guided_journey_state" does not exist
+ok   20261001120000_vtid_04765_erase_user_data.sql
+FAIL 20261001120000_vtid_04769_supplier_go_live_lists_products.sql: relation "public.products" does not exist
+ok   20261001120000_vtid_04776_voice_session_facts.sql
+FAIL 20261001130000_VTID_04763_audiobook_daily_reminder_claim.sql: relation "user_guided_journey_state" does not exist
+FAIL 20261001140000_vtid_04783_discover_categories.sql: relation "public.catalog_verticals" does not exist
+FAIL 20261001140000_vtid_04790_deny_scope_name_contains.sql: relation "public.dev_autopilot_config" does not exist
+FAIL 20261001160000_vtid_04798_memory_sensitivity.sql: relation "public.memory_items" does not exist
+FAIL 20261001180000_vtid_04809_vtna_reward_ledger.sql: relation "public.user_wallets" does not exist
+FAIL 20261003100000_vtid_04859_founding_1000.sql: relation "public.user_tenants" does not exist
+ok   20261003120000_vtid_04860_knowledge_docs_vtna_name.sql
+ok   20261003130000_vtid_04864_autopilot_completion_no_double_reward.sql
+ok   20261003140000_vtid_04864_claim_invite_reward.sql
+ok   20261004100000_vtid_04872_jev_member_quota.sql
+ok   20261004110000_vtid_04868_plan_sparring_gate.sql
+ok   20261004120000_vtid_04868_plan_sparring_hardening.sql
+ok   20261004130000_vtid_04876_ops_attention_state.sql
+ok   20261005090000_vtid_04880_archive_nav_catalog.sql
+FAIL 20261005100000_vtid_04878_claim_capped_reward.sql: relation "public.notification_test_actors" does not exist
+ok   20261005100000_vtid_04886_ops_attention_acks.sql
+FAIL 20261005120000_vtid_04888_rule45_intents_profiles.sql: relation "public.notification_test_actors" does not exist
+FAIL 20261005130000_vtid_04892_onboarding_coach.sql: relation "auth.users" does not exist
+FAIL 20261005130000_vtid_04895_partner_terms_lifecycle.sql: relation "public.partner_terms_acceptances" does not exist
+FAIL 20261006120000_vtid_04909_partner_terms_german_binding.sql: relation "public.partner_terms_versions" does not exist
+FAIL 20261006140000_vtid_04915_community_event_host_and_time_sync.sql: relation "public.global_community_events" does not exist
+FAIL 20261006150000_vtid_04926_mention_notification_types.sql: relation "public.notification_type_controls" does not exist
+ok   20261007190000_vtid_04962_user_notifications_push_outcome.sql
+FAIL 20261007200000_vtid_04965_live_room_reminder_calendar.sql: relation "public.community_live_streams" does not exist
+FAIL 20261008100000_vtid_04968_mcp_oauth_client_info.sql: relation "auth.oauth_clients" does not exist
+ok   20261008120000_vtid_04975_operator_thread_engine.sql
+FAIL 20261008130000_vtid_04976_live_room_follows_host.sql: relation "public.community_live_streams" does not exist
+FAIL 20261008150000_vtid_04978_reminders_in_calendar.sql: relation "public.calendar_events" does not exist
+ok   20261008170000_vtid_04981_consume_credits_lockdown.sql
+ok   20261008180000_vtid_04982_rewards_shop.sql
+ok   20261008190000_vtid_04988_earned_vtna_rewards_only.sql
+FAIL 20261009090000_vtid_04994_subscription_dates_in_calendar.sql: relation "public.calendar_events" does not exist
+ok   20261009120000_vtid_05012_jev_gate_observability.sql
+ok   20261009180000_vtid_05006_kiro_mcp_confirmations.sql
+FAIL 20261010100000_vtid_04997_test_results_in_calendar.sql: relation "public.calendar_events" does not exist
+FAIL 20261010120000_vtid_05027_push_reach_active.sql: relation "notification_test_actors" does not exist
+ok   20261010130000_vtid_05029_email_fallback.sql
+ok   20261010140000_vtid_05030_user_connections_token_grants.sql
+FAIL 20261010150000_vtid_04917_audiobook_source_type.sql: relation "public.calendar_events" does not exist
+FAIL 20261010160000_vtid_05035_reward_shop_images_bucket.sql: relation "storage.buckets" does not exist
+FAIL 20261010160000_vtid_05038_welcome_trigger_enrollment_restore.sql: relation "public.user_tenants" does not exist
+FAIL 20261010160000_vtid_05057_contacts_phone_matching.sql: relation "public.contacts" does not exist
+FAIL 20261010164100_vtid_05041_definer_functions_lockdown.sql: VTID-05041: expected all four memory functions to exist (found 3 overloads)
+FAIL 20261010170000_vtid_05052_ci_welcome_greeting_health_exclude_test_accounts.sql: relation "public.app_users" does not exist
+FAIL 20261010180000_vtid_05043_s3_membership_side_effect_guard.sql: relation "public.user_tenants" does not exist
+ok   20261010180200_vtid_05043_s3_switch_tenant_open_signup_only.sql
+FAIL 20261010190000_vtid_05055_partner_health_member_link_confirmation.sql: relation "public.partner_health_result_inbox" does not exist
+ok   20261010210000_vtid_05065_kiro_runs.sql
+ok   20261010220000_vtid_05068_kiro_run_reattach.sql
+ok   20261011090000_vtid_05067_operator_media.sql
+FAIL 20261012110000_vtid_05077_plan_version_planner_model.sql: relation "public.dev_autopilot_plan_versions" does not exist
+FAIL 20261012160000_vtid_05088_ci_memory_health_speech_input.sql: relation "memory_items" does not exist
+FAIL 20261012180000_vtid_05095_phone_verification.sql: relation "public.profiles" does not exist
+ok   20261012190000_vtid_05098_retire_duplicate_routines.sql
+FAIL 20261012200000_vtid_05099_companion_messages.sql: relation "auth.users" does not exist
+ok   20261012210000_vtid_05103_routine_runner_claim.sql
+ok   20261012235118_vtid_05118_welcome_discount_trigger_secret.sql
+FAIL 20261013090000_vtid_05125_memory_functions_revoke_migrate.sql: VTID-05125: expected all four memory functions to exist
+FAIL 20261013150000_vtid_05133_ai_connection_grants.sql: relation "auth.users" does not exist
+FAIL 20261013150000_vtid_05146_autopilot_overlap_hold.sql: relation "public.dev_autopilot_executions" does not exist
+ok   20261013180000_vtid_05137_chat_push_coalescing.sql
+ok   20261013190000_vtid_05141_phase3b_routine_seeds.sql
+FAIL 20261013200000_vtid_05143_unified_card_system.sql: relation "auth.users" does not exist
+ok   20261013210000_vtid_05148_learn_outcomes_routine_seed.sql
+FAIL 20261013233000_vtid_05147_s_m_membership_role_lockdown.sql: relation "public.user_tenants" does not exist
+ok   20261014000000_vtid_05153_supplier_catalog_check_routine_seed.sql
+FAIL 20261014000100_vtid_05149_tenants_default_platform_flags.sql: relation "public.tenants" does not exist
+FAIL 20261014000200_vtid_05149_signup_default_tenant.sql: function "public.handle_new_user()" does not exist
+ok   20261014000300_vtid_05149_ci_tenant_isolation_health.sql
+FAIL 20261014000400_vtid_05150_tenant_brand_pack.sql: relation "public.tenant_settings" does not exist
+FAIL 20261014000500_vtid_05150_provision_tenant.sql: VTID-05150: apply 20261014000400_vtid_05150_tenant_brand_pack first
+FAIL 20261014000600_vtid_05151_public_tenant_registry.sql: relation "public.tenants" does not exist
+FAIL 20261014000700_vtid_05151_seed_legacy_tenant_landing.sql: relation "public.tenant_settings" does not exist
+ok   20261014100000_vtid_05158_erase_user_data_aurora_safe.sql
+ok   20261014100100_vtid_05158_health_store.sql
+FAIL 20261014100200_vtid_05161_health_sources.sql: relation "public.user_integrations" does not exist
+FAIL 20261014100300_vtid_05161_user_integrations_revoke_browser_writes.sql: VTID-05161: public.user_integrations does not exist on this database
+FAIL 20261014120000_vtid_05156_revoke_wearable_samples_rpc.sql: function public.health_ingest_wearable_samples(jsonb) does not exist
+FAIL 20261014130000_vtid_05167_activity_tiers.sql: relation "public.user_activity_log" does not exist
+FAIL 20261014140000_vtid_05168_index_movements.sql: type "public.vitana_index_scores" does not exist
+FAIL 20261014150000_vtid_05171_companion_wiring.sql: relation "public.user_routines" does not exist
+FAIL 20261015150000_vtid_05205_welcome_team_claims.sql: relation "auth.users" does not exist
+ok   20261015180000_vtid_05214_plan_sparring_policy_approval.sql
+FAIL 20261021140000_vtid_05310_chat_send_reliability.sql: relation "public.chat_messages" does not exist
+ok   20261021150000_vtid_05312_chat_viewing_presence.sql
+FAIL 20261022090000_vtid_05309_chat_message_search.sql: extension "pg_trgm" is not available
+FAIL 20261101100000_mt_packs_tenant_content_overrides.sql: VTID-05495: public.tenants(tenant_id) is missing; refusing to create tenant_content_overrides
+FAIL 20261101110000_mt_launch_tenant_pack_intake.sql: VTID-05324: public.tenants(tenant_id) is missing; refusing to create tenant_pack_intake
+FAIL 20261101110100_mt_launch_tenant_content_pipeline.sql: VTID-05324: apply 20261101110000_mt_launch_tenant_pack_intake.sql first
+FAIL 20261102030000_vtid_05465_tenant_id_for_policies_is_member.sql: VTID-05465: public.user_tenants is missing; refusing to create the policy helpers
+FAIL 20261102030100_vtid_05465_bare_policy_rewrite.sql: VTID-05465: apply 20261102030000_vtid_05465_tenant_id_for_policies_is_member.sql first
+ok   20261102030100_vtid_05465_bare_policy_rewrite_rollback.sql
+FAIL 20261102031000_vtid_05466_membership_unification_rollback.sql: relation "public.user_tenants" does not exist
+FAIL 20261102031000_vtid_05466_user_tenants_canonical.sql: relation "public.memberships" does not exist
+FAIL 20261102031100_vtid_05466_memberships_view_dualwrite.sql: relation "public.memberships" does not exist
+ok   20261102031200_vtid_05466_membership_drift_report.sql
+ok   20261102032000_vtid_05464_access_token_hook_shadow.sql
+ok   20261102032000_vtid_05464_access_token_hook_shadow_rollback.sql
+ok   20261102032100_vtid_05464_tenant_claim_mismatch_log.sql
+ok   20261102033000_vtid_05467_role_source_rollback.sql
+FAIL 20261102033000_vtid_05467_single_role_source.sql: relation "public.user_tenants" does not exist
+ok   20261102033100_vtid_05467_fix_bootstrap_admin_user.sql
+ok   20261102040000_vtid_05571_orphan_analysis.sql
+FAIL 20261102040100_vtid_05571_orphan_quarantine_snapshots.sql: relation "public.memory_items" does not exist
+ok   20261102040200_vtid_05571_orphan_move_logic.sql
+FAIL 20261102040300_vtid_05571_orphan_cleanup_rollback.sql: function public.mt_orphan_restore() does not exist
+FAIL 20261102040300_vtid_05571_orphan_cleanup_run.sql: VTID-05571: public.user_tenants is missing; apply mt-identity-r2 membership-unification first
+ok   20261102040400_vtid_05571_writer_fallback_rollback.sql
+FAIL 20261102040400_vtid_05571_writer_repoint.sql: VTID-05571 gate: public.user_tenants is missing; apply mt-identity-r2 membership-unification first
+ok   20261102041000_vtid_05570_memfacts_merge_functions.sql
+ok   20261102041100_vtid_05570_memfacts_merge_rollback.sql
+ok   20261102041200_vtid_05570_memfacts_merge_run.sql
+FAIL 20261102042000_vtid_05572_profiles_tenant_backfill_fn.sql: relation "public.profiles" does not exist
+FAIL 20261102042100_vtid_05572_profiles_tenant_backfill_run.sql: function public.mt_profiles_tenant_backfill_run() does not exist
+FAIL 20261102043000_vtid_05569_hot_tables_tenant_not_null_assert.sql: VTID-05569: public.tenants has neither tenant_id nor id
+ok   20261102043100_vtid_05569_hot_tables_tenant_not_null_assert_rollback.sql
+FAIL 20261102050000_vtid_05576_chat_messages_scope.sql: relation "public.chat_messages" does not exist
+FAIL 20261102050100_vtid_05576_send_message_rpcs.sql: type "public.chat_messages" does not exist
+FAIL 20261102050200_vtid_05576_chat_messages_lockdown.sql: relation "public.chat_messages" does not exist
+ok   20261102051000_vtid_05582_network_visible_profile.sql
+ok   20261102051100_vtid_05582_connection_rpcs.sql
+ok   20261102052000_vtid_05573_legacy_messages_snapshot_freeze.sql
+FAIL 20261102052100_vtid_05573_legacy_messages_functions.sql: relation "public.user_tenants" does not exist
+FAIL 20261102052200_vtid_05573_legacy_messages_migrate_run.sql: function public.mt_legacy_messages_migrate() does not exist
+skip 20261102052300_vtid_05573_legacy_messages_drop.sql (held drop, excluded)
+ok   20261102053000_vtid_05575_daily_matches_scope.sql
+ok   20261102053100_vtid_05575_daily_matches_guard.sql
+ok   20261102053200_vtid_05575_intent_matchers_scope.sql
+FAIL 20261102054000_vtid_05579_chat_groups_scope.sql: relation "public.chat_groups" does not exist
+ok   20261102054100_vtid_05579_network_group_rpcs.sql
+FAIL 20261102054200_vtid_05579_chat_groups_rls.sql: relation "public.chat_groups" does not exist
+FAIL 20261102070100_vtid_05491_mt_tenant_admin_p2_moderation.sql: VTID-05491 P2: public.content_reports is missing
+FAIL 20261102070150_vtid_05491_mt_tenant_admin_p3_moderation.sql: VTID-05491 P3: content_reports.tenant_id is missing (apply 20261102070100 first)
+FAIL 20261102070300_vtid_05493_mt_tenant_deactivate.sql: VTID-05493: tenants.tenant_id/slug/is_active/is_default/is_platform missing - apply 20261014000100 (VTID-05149) first
+FAIL 20261102070350_vtid_05493_mt_tenant_archive_switch.sql: VTID-05493: apply 20261102070300_vtid_05493_mt_tenant_deactivate first
+FAIL 20261102070600_vtid_05491_mt_moderator_tenant_scope.sql: VTID-05491 scope: tenant_id columns are missing (apply 20261102070100 first)
+FAIL 20261102080000_mt_packs_knowledge_docs_tenant_id.sql: VTID-05498: public.tenants(tenant_id) is missing; refusing to add the tenant overlay column
+FAIL 20261102120000_vtid_05488_supplier_tenant_relationships.sql: VTID-05488: public.merchants is missing; refusing to create supplier_tenant_relationships
+FAIL 20261102120100_vtid_05488_products_distribution.sql: VTID-05488: public.products is missing; refusing to add products.distribution
+ok   20261102120200_vtid_05488_partner_tenant_backfill.sql
+FAIL 20261102120300_vtid_05488_products_merchants_tenant_rls.sql: VTID-05488 D4: public.supplier_tenant_relationships is missing (apply 20261102120000 first)
+FAIL 20261102130000_vtid_05595_health_home_tenant_column.sql: VTID-05595: public.app_users is missing; refusing to add health_home_tenant_id
+FAIL 20261102130100_vtid_05595_health_home_tenant_resolver_backfill.sql: VTID-05595: public.app_users or public.user_tenants is missing; refusing to backfill
+FAIL 20261102140000_vtid_05507_mt_tenant_domains.sql: VTID-05507: public.tenants is missing; refusing to create tenant_domains
+FAIL 20261102140100_vtid_05507_mt_resolve_tenant_host.sql: VTID-05507: public.tenant_domains is missing; apply 20261102140000 first
+FAIL 20261102141000_vtid_05506_mt_provision_erp_request.sql: VTID-05506: apply 20261014000400 / 20261014000500 (VTID-05150: provision_tenant, tenant_settings_merge_feature_flags) first
+ok   20261102141100_vtid_05506_mt_isolation_health_by_tenant.sql
+FAIL 20261105170000_live_room_cohost_authz.sql: relation "public.live_rooms" does not exist
+# full set in order: 733 files, pass 296, fail 437
+exit 1

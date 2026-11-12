@@ -1,0 +1,778 @@
+# VTID-05023: Supabase-only objects in supabase/migrations (Aurora compatibility inventory)
+
+Generated on branch cutover/vtid-05023-B-compat-layer from origin/main (a02b8918f3). This file did not exist on main before this change. The lane branch had only a lint text dump (aurora-compat-lint-full.txt), with no per-object counts.
+
+## How it was produced
+
+- `node scripts/aws/aurora-compat-lint.mjs --all` checks all 733 files in supabase/migrations. Result: `checked 733 file(s); flagged 369; clean 364`, exit 1.
+- The lint prints each match cut to 80 characters, so role names in long GRANT clauses are cut off. The per-object counts below come from the same rules (`RULES` exported by the lint module) applied to the full match text, over the same 733 files.
+- Match counts are per match, file counts are distinct files. The extension rule (pg_graphql, pgsodium, supabase_vault, pg_net) has 0 matches.
+
+## Decisions for the compatibility layer (migration 20251026235959_aurora_compat_layer.sql)
+
+- Covered: roles `anon`, `authenticated`, `service_role` (created NOLOGIN if absent), schema `auth`, `auth.jwt()`, `auth.uid()`, `auth.role()`.
+- Not covered, `auth.users`: 76 files reference it, mostly as `REFERENCES auth.users(id)` foreign keys. A view cannot be a foreign key target. `auth_user_fk_map` (defined in scripts/aws/aurora-cutover-auth-bridge.sql, not in a migration) holds FK cleanup rules, not user rows, so a view over it has no `id` column. Not created. Owner decision needed for the 32 FK failures seen in the PGlite run.
+- Not covered, `auth.sessions`, `auth.oauth_clients`, `auth.oauth_authorizations`: Supabase Auth internal tables used by 2 to 3 files (MCP OAuth and partner terms). Not created.
+- Not covered, `storage.*`: Storage stays on Supabase (option B).
+- `auth.md` is a false positive: a file path inside a seed migration's string text (`kb/instruction-manual/maxina/01-public/auth.md`).
+
+## Summary by object
+
+| Object | Kind | Matches | Files | Covered by compat layer |
+|---|---|---:|---:|---|
+| `service_role` | role | 575 | 208 | yes |
+| `auth.uid` | auth schema | 950 | 184 | yes |
+| `authenticated` | role | 1109 | 169 | yes |
+| `auth.users` | auth schema | 163 | 76 | no |
+| `auth.role` | auth schema | 40 | 19 | yes |
+| `auth.jwt` | auth schema | 38 | 12 | yes |
+| `anon` | role | 16 | 10 | yes |
+| `storage.objects` | storage schema | 27 | 5 | no |
+| `storage.foldername` | storage schema | 38 | 5 | no |
+| `storage.buckets` | storage schema | 3 | 2 | no |
+| `auth.oauth_clients` | auth schema | 3 | 2 | no |
+| `auth.md` | auth schema | 1 | 1 | no |
+| `auth.sessions` | auth schema | 1 | 1 | no |
+| `auth.oauth_authorizations` | auth schema | 2 | 1 | no |
+
+Total: 2966 matches in 369 of 733 files (364 clean). Extension rule (pg_graphql, pgsodium, supabase_vault, pg_net): 0 matches.
+
+## Files per object
+
+### `service_role` (208 files)
+
+- 20251120000000_init_governance.sql
+- 20251120000002_init_governance_proposals.sql
+- 20251203000000_governance_catalog_init.sql
+- 20251209000000_add_task_stage.sql
+- 20251213000000_knowledge_docs.sql
+- 20251217000000_vtid_ledger_and_allocator.sql
+- 20251218000000_vtid_0543_atomic_create.sql
+- 20251228000000_vtid_01050_dev_bootstrap_context.sql
+- 20251231000000_vtid_01101_phase_a_bootstrap.sql
+- 20251231000001_vtid_01087_relationship_graph_memory.sql
+- 20251231000001_vtid_01089_autopilot_prompts.sql
+- 20251231000001_vtid_01090_live_rooms_events_graph.sql
+- 20251231000001_vtid_01094_match_feedback_loop.sql
+- 20251231000001_vtid_01095_daily_scheduler.sql
+- 20260102000000_vtid_01112_context_assembly_engine.sql
+- 20260102000000_vtid_01117_context_window_metrics.sql
+- 20260102000000_vtid_01121_feedback_trust_repair.sql
+- 20260102000001_vtid_01129_social_context_relationships.sql
+- 20260102200000_vtid_01127_availability_readiness_engine.sql
+- 20260103000001_vtid_01141_d47_social_alignment_engine.sql
+- 20260105_vtid_01146_d46_anticipatory_guidance.sql
+- 20260116000000_vtid_01179_autopilot_event_loop.sql
+- 20260117000000_vtid_01183_worker_agent_connector.sql
+- 20260117100000_vtid_01180_recommendation_inbox.sql
+- 20260117120000_vtid_01180_autopilot_recommendations.sql
+- 20260117130000_vtid_01185_recommendation_engine.sql
+- 20260117140000_vtid_01184_pgvector_semantic_memory.sql
+- 20260117150000_vtid_01181_governance_controls.sql
+- 20260119000000_vtid_01188_unified_spec_generation.sql
+- 20260119000000_vtid_01190_persistent_vtid_specs.sql
+- 20260119000000_vtid_01192_infinite_memory_v2.sql
+- 20260119100000_vtid_01186_profile_avatar.sql
+- 20260123000000_vtid_01208_llm_routing_policy.sql
+- 20260201000000_vtid_01225_cognee_extractor.sql
+- 20260203000001_vtid_01225_rpc_service_role_grants.sql
+- 20260205000000_fix_oasis_events_disk_io_indexes.sql
+- 20260210000000_vtid_01090_fix_live_room_creation.sql
+- 20260218000000_fix_maxina_signup_tenant_association.sql
+- 20260220000001_memory_facts_embedding_support.sql
+- 20260221000000_fix_embedding_dimensions_768.sql
+- 20260226000000_signup_funnel_tracking.sql
+- 20260312000000_chat_conversations_rpc.sql
+- 20260315000002_rpc_add_message_type.sql
+- 20260318100000_role_admission_system.sql
+- 20260410000000_agents_registry.sql
+- 20260412000000_tenant_invitations.sql
+- 20260412100000_tenant_autopilot_config.sql
+- 20260412150000_create_autopilot_tables_fixed.sql
+- 20260412200000_tenant_assistant_config.sql
+- 20260412300000_tenant_settings.sql
+- 20260412600000_fix_admin_tables.sql
+- 20260412700000_content_moderation.sql
+- 20260416100000_dev_autopilot.sql
+- 20260416120000_vtid_02000_marketplace_foundation.sql
+- 20260416120200_vtid_02000_marketplace_helpers.sql
+- 20260416170000_vtid_02000_fix_products.sql
+- 20260416180000_vtid_02000_fix_products_v2.sql
+- 20260417000000_vtid_02100_connector_framework.sql
+- 20260418000000_vtid_02200_marketplace_sources_config.sql
+- 20260418020000_vtid_02300_outbound_actions.sql
+- 20260418030000_vtid_02400_vaea_phase0.sql
+- 20260418040000_vtid_02401_vaea_phase1_observe.sql
+- 20260418060000_tenant_assistant_speeches.sql
+- 20260419000000_vtid_02403_ai_assistants_phase1.sql
+- 20260420120000_BOOTSTRAP_history_aware_timeline.sql
+- 20260421220000_BOOTSTRAP_admin_kpi_surface.sql
+- 20260421250000_BOOTSTRAP_admin_insights.sql
+- 20260422130000_BOOTSTRAP_tenant_health_index.sql
+- 20260423140000_vitana_index_compute_for_user.sql
+- 20260427000000_vtid_01966_memory_audit_log.sql
+- 20260427100000_BOOTSTRAP_autopilot_realign_substrate.sql
+- 20260427180000_vtid_01990_vitana_id_mirror_reconcile.sql
+- 20260427200000_vtid_01990_conversation_tracking_read_rpcs.sql
+- 20260428001000_analytics_celebrate_events.sql
+- 20260428200000_vtid_02047_unified_feedback_pipeline_init.sql
+- 20260429100000_vtid_02601_create_reminders.sql
+- 20260429100000_vtid_02603_feedback_handoff.sql
+- 20260429110000_vtid_02604_feedback_classifier.sql
+- 20260429120000_vtid_02047_phase5_management_schema.sql
+- 20260429160000_vtid_02047_auto_triage.sql
+- 20260501010000_VTID_02640_dev_autopilot_get_table_schema.sql
+- 20260501150000_vtid_02652_phase6_tenant_overrides.sql
+- 20260507100000_vtid_livekit_foundation_voice_tables.sql
+- 20260510000100_BOOTSTRAP_architecture_investigator.sql
+- 20260519000000_BOOTSTRAP_autopilot_alignment_fields.sql
+- 20260526010000_VTID_03107_subscription_core.sql
+- 20260526040000_VTID_03107_usage_helpers.sql
+- 20260526050000_VTID_03107_cron_cleanup.sql
+- 20260526060000_VTID_03107_redemption_codes.sql
+- 20260526080000_VTID_03107_lifecycle_notifications.sql
+- 20260526100000_VTID_03107_rolling_windows.sql
+- 20260528120000_BOOTSTRAP_vitana_index_daily_stage.sql
+- 20260528184700_BOOTSTRAP_fix_longevity_stub_drift_proof.sql
+- 20260529120000_VTID_03180_complete_autopilot_recommendation_rpc.sql
+- 20260604123000_support_surface_human_only_queue.sql
+- 20260605000000_VTID_03186_universal_cart_schema.sql
+- 20260607000000_VTID_03237_video_shop_schema.sql
+- 20260607010000_BOOTSTRAP_ORB_R4_teacher_capability_refresh_schedule.sql
+- 20260625130000_fix_feedback_classifier_two_gate_fields.sql
+- 20260628120000_fix_allocate_global_vtid_seq_drift.sql
+- 20260630120000_BOOTSTRAP_reap_stale_live_streams.sql
+- 20260706100000_vtid_02779_voice_clock.sql
+- 20260712100000_SECURITY_fix_public_writable_wallet_and_cache_rls.sql
+- 20260723150000_bootstrap_feature_announcements.sql
+- 20260724170000_bootstrap_daily_feature_tip_state.sql
+- 20260727090000_bootstrap_community_marketplace.sql
+- 20260804080000_vtid_03486_ci_health_rpcs.sql
+- 20260804100000_vtid_03492_ci_health_rpcs_v2.sql
+- 20260806160000_vtid_03516_ledger_integrity_check.sql
+- 20260811210000_vtid_03599_llm_telemetry_summary.sql
+- 20260818090000_vtid_03666_ci_vital_systems_health.sql
+- 20260819085846_vtid_03679_fix_de_locale_journey_checklist_false_positive.sql
+- 20260912120000_vtid_03819_ledger_dedup_embedding.sql
+- 20260913010000_vtid_03834_erp_capability_grants.sql
+- 20260913020000_vtid_03842_erp_commands_approvals_audit.sql
+- 20260914182357_vtid_03889_dev_agent_memory.sql
+- 20260915132000_vtid_03894_catalog_vertical_rls.sql
+- 20260916150000_vtid_03972_widen_oasis_events_retention.sql
+- 20260917230000_vtid_04022_operator_threads.sql
+- 20260921120000_bootstrap_dev_agent_memory_file_scope.sql
+- 20260923130000_vtid_04333_auto_triage_all_bug_priorities.sql
+- 20260923140000_vtid_04345_ci_memory_health.sql
+- 20260923140000_vtid_04371_conversation_metrics_hourly.sql
+- 20260923160000_vtid_04387_memory_transcript_turns.sql
+- 20260923160000_vtid_04399_metrics_context_setup.sql
+- 20260923190000_vtid_04407_dev_agent_memory_handoff.sql
+- 20260923190000_vtid_04421_conversation_offer_outcomes.sql
+- 20260923210000_vtid_04431_support_resolution_search.sql
+- 20260923220000_vtid_04441_memory_fact_forgotten.sql
+- 20260924090000_vtid_04460_intent_ledger_embeddings_titan_v2.sql
+- 20260926110000_vtid_04624_operator_readonly_query.sql
+- 20260926190000_vtid_04674_notification_type_controls.sql
+- 20260928200000_vtid_04716_autopilot_prompts_data_layer.sql
+- 20260928200400_vtid_04717_risk_mitigations.sql
+- 20260929120300_vtid_04741_commission_confirm_reverse_functions.sql
+- 20261001100000_vtid_04754_jev_spend_and_shadow.sql
+- 20261001120000_vtid_04765_erase_user_data.sql
+- 20261001120000_vtid_04769_supplier_go_live_lists_products.sql
+- 20261001120000_vtid_04776_voice_session_facts.sql
+- 20261001130000_VTID_04763_audiobook_daily_reminder_claim.sql
+- 20261001140000_vtid_04783_discover_categories.sql
+- 20261001180000_vtid_04809_vtna_reward_ledger.sql
+- 20261003100000_vtid_04859_founding_1000.sql
+- 20261003130000_vtid_04864_autopilot_completion_no_double_reward.sql
+- 20261003140000_vtid_04864_claim_invite_reward.sql
+- 20261004100000_vtid_04872_jev_member_quota.sql
+- 20261004110000_vtid_04868_plan_sparring_gate.sql
+- 20261004120000_vtid_04868_plan_sparring_hardening.sql
+- 20261004130000_vtid_04876_ops_attention_state.sql
+- 20261005090000_vtid_04880_archive_nav_catalog.sql
+- 20261005100000_vtid_04878_claim_capped_reward.sql
+- 20261005100000_vtid_04886_ops_attention_acks.sql
+- 20261005120000_vtid_04888_rule45_intents_profiles.sql
+- 20261005130000_vtid_04892_onboarding_coach.sql
+- 20261005130000_vtid_04895_partner_terms_lifecycle.sql
+- 20261006120000_vtid_04909_partner_terms_german_binding.sql
+- 20261008100000_vtid_04968_mcp_oauth_client_info.sql
+- 20261008170000_vtid_04981_consume_credits_lockdown.sql
+- 20261008180000_vtid_04982_rewards_shop.sql
+- 20261008190000_vtid_04988_earned_vtna_rewards_only.sql
+- 20261009120000_vtid_05012_jev_gate_observability.sql
+- 20261010120000_vtid_05027_push_reach_active.sql
+- 20261010170000_vtid_05052_ci_welcome_greeting_health_exclude_test_accounts.sql
+- 20261010190000_vtid_05055_partner_health_member_link_confirmation.sql
+- 20261012160000_vtid_05088_ci_memory_health_speech_input.sql
+- 20261012180000_vtid_05095_phone_verification.sql
+- 20261012200000_vtid_05099_companion_messages.sql
+- 20261012210000_vtid_05103_routine_runner_claim.sql
+- 20261013150000_vtid_05133_ai_connection_grants.sql
+- 20261014000300_vtid_05149_ci_tenant_isolation_health.sql
+- 20261014000400_vtid_05150_tenant_brand_pack.sql
+- 20261014000500_vtid_05150_provision_tenant.sql
+- 20261014100000_vtid_05158_erase_user_data_aurora_safe.sql
+- 20261014100100_vtid_05158_health_store.sql
+- 20261014100200_vtid_05161_health_sources.sql
+- 20261014120000_vtid_05156_revoke_wearable_samples_rpc.sql
+- 20261014130000_vtid_05167_activity_tiers.sql
+- 20261014140000_vtid_05168_index_movements.sql
+- 20261015150000_vtid_05205_welcome_team_claims.sql
+- 20261015180000_vtid_05214_plan_sparring_policy_approval.sql
+- 20261101100000_mt_packs_tenant_content_overrides.sql
+- 20261101110000_mt_launch_tenant_pack_intake.sql
+- 20261101110100_mt_launch_tenant_content_pipeline.sql
+- 20261102031000_vtid_05466_user_tenants_canonical.sql
+- 20261102031100_vtid_05466_memberships_view_dualwrite.sql
+- 20261102031200_vtid_05466_membership_drift_report.sql
+- 20261102032100_vtid_05464_tenant_claim_mismatch_log.sql
+- 20261102033000_vtid_05467_single_role_source.sql
+- 20261102033100_vtid_05467_fix_bootstrap_admin_user.sql
+- 20261102040400_vtid_05571_writer_repoint.sql
+- 20261102041000_vtid_05570_memfacts_merge_functions.sql
+- 20261102042000_vtid_05572_profiles_tenant_backfill_fn.sql
+- 20261102050100_vtid_05576_send_message_rpcs.sql
+- 20261102051000_vtid_05582_network_visible_profile.sql
+- 20261102052100_vtid_05573_legacy_messages_functions.sql
+- 20261102053100_vtid_05575_daily_matches_guard.sql
+- 20261102053200_vtid_05575_intent_matchers_scope.sql
+- 20261102054100_vtid_05579_network_group_rpcs.sql
+- 20261102070100_vtid_05491_mt_tenant_admin_p2_moderation.sql
+- 20261102070300_vtid_05493_mt_tenant_deactivate.sql
+- 20261102070350_vtid_05493_mt_tenant_archive_switch.sql
+- 20261102120000_vtid_05488_supplier_tenant_relationships.sql
+- 20261102120200_vtid_05488_partner_tenant_backfill.sql
+- 20261102130100_vtid_05595_health_home_tenant_resolver_backfill.sql
+- 20261102140000_vtid_05507_mt_tenant_domains.sql
+- 20261102141000_vtid_05506_mt_provision_erp_request.sql
+- 20261102141100_vtid_05506_mt_isolation_health_by_tenant.sql
+- 20261105170000_live_room_cohost_authz.sql
+
+### `auth.uid` (184 files)
+
+- 20251229000000_vtid_01051_me_active_role_fix.sql
+- 20251231000000_vtid_01078_health_brain_phase_c1.sql
+- 20251231000000_vtid_01101_phase_a_bootstrap.sql
+- 20251231000000_vtid_01103_health_compute_engine.sql
+- 20251231000000_vtid_01104_memory_core_v1.sql
+- 20251231000001_vtid_01083_longevity_signal_layer.sql
+- 20251231000001_vtid_01085_memory_retrieve_router.sql
+- 20251231000001_vtid_01086_memory_garden_progress.sql
+- 20251231000001_vtid_01087_relationship_graph_memory.sql
+- 20251231000001_vtid_01088_matchmaking_engine.sql
+- 20251231000001_vtid_01089_autopilot_prompts.sql
+- 20251231000001_vtid_01091_locations_memory_graph.sql
+- 20251231000001_vtid_01093_topics_layer.sql
+- 20251231000001_vtid_01098_memory_timeline_causality.sql
+- 20251231100000_vtid_01082_memory_garden_diary.sql
+- 20251231100000_vtid_01084_community_personalization_v1.sql
+- 20251231100000_vtid_01092_services_products_memory.sql
+- 20251231100000_vtid_01099_memory_governance_v1.sql
+- 20251231100000_vtid_01100_memory_quality_metrics.sql
+- 20260101000000_vtid_01116_memory_confidence_trust_engine.sql
+- 20260102000000_vtid_01112_context_assembly_engine.sql
+- 20260102000000_vtid_01117_context_window_metrics.sql
+- 20260102000000_vtid_01120_emotional_cognitive_signals.sql
+- 20260102000000_vtid_01136_context_fusion_engine.sql
+- 20260102000001_vtid_01129_social_context_relationships.sql
+- 20260102100000_vtid_01119_user_preference_modeling_v1.sql
+- 20260102100000_vtid_01124_life_stage_awareness.sql
+- 20260102110000_vtid_01133_taste_alignment_engine_v1.sql
+- 20260102200000_vtid_01122_health_capacity_awareness.sql
+- 20260102200000_vtid_01127_availability_readiness_engine.sql
+- 20260102200000_vtid_01130_financial_monetization_engine.sql
+- 20260103000000_vtid_01145_overload_detection.sql
+- 20260103000001_vtid_01141_d47_social_alignment_engine.sql
+- 20260105_vtid_01146_d46_anticipatory_guidance.sql
+- 20260117100000_vtid_01180_recommendation_inbox.sql
+- 20260117120000_vtid_01180_autopilot_recommendations.sql
+- 20260117140000_vtid_01184_pgvector_semantic_memory.sql
+- 20260119100000_vtid_01186_profile_avatar.sql
+- 20260201000000_vtid_01225_cognee_extractor.sql
+- 20260209_vtid_01228_daily_co_live_rooms.sql
+- 20260209_vtid_01228_daily_co_live_rooms_fixed.sql
+- 20260209_vtid_01231_stripe_connect.sql
+- 20260210100000_vtid_01228_live_room_session_mgmt.sql
+- 20260218000000_fix_maxina_signup_tenant_association.sql
+- 20260225000000_notification_system.sql
+- 20260225200000_chat_messages.sql
+- 20260225300000_chat_and_invite_notifications.sql
+- 20260226000000_conversation_messages.sql
+- 20260227100000_user_feedback_reports.sql
+- 20260318000000_vtid_01250_autopilot_automations_engine.sql
+- 20260318100000_role_admission_system.sql
+- 20260327000000_vtid_01250_social_connections.sql
+- 20260409000000_add_avatar_position_offsets.sql
+- 20260412000000_tenant_invitations.sql
+- 20260412100000_tenant_autopilot_config.sql
+- 20260412150000_create_autopilot_tables_fixed.sql
+- 20260412200000_tenant_assistant_config.sql
+- 20260412300000_tenant_settings.sql
+- 20260412700000_content_moderation.sql
+- 20260416000000_notification_categories.sql
+- 20260416120000_vtid_02000_marketplace_foundation.sql
+- 20260416170000_vtid_02000_fix_products.sql
+- 20260416180000_vtid_02000_fix_products_v2.sql
+- 20260417000000_vtid_02100_connector_framework.sql
+- 20260418000000_proactive_guide_phase0.sql
+- 20260418020000_vtid_02300_outbound_actions.sql
+- 20260418030000_vtid_02400_vaea_phase0.sql
+- 20260418040000_vtid_02401_vaea_phase1_observe.sql
+- 20260418060000_tenant_assistant_speeches.sql
+- 20260419000000_vtid_02403_ai_assistants_phase1.sql
+- 20260419100000_user_feature_introductions.sql
+- 20260419110000_user_session_summaries.sql
+- 20260419120000_user_routines.sql
+- 20260419130000_user_proactive_touches.sql
+- 20260420110000_vtid_01942_capability_preferences.sql
+- 20260420120000_BOOTSTRAP_history_aware_timeline.sql
+- 20260420130000_BOOTSTRAP_ai_usage_log.sql
+- 20260421140000_BOOTSTRAP_awareness_registry.sql
+- 20260421220000_BOOTSTRAP_admin_kpi_surface.sql
+- 20260421250000_BOOTSTRAP_admin_insights.sql
+- 20260422150000_vitana_index_prosperity_and_weights.sql
+- 20260423081500_vitana_index_scores_rls_simplify.sql
+- 20260423110000_vitana_index_5pillar_cleanup.sql
+- 20260423130000_vitana_index_compute_v3.sql
+- 20260423190000_vitana_pillar_agents_v1.sql
+- 20260423200000_vitana_integrations_v1.sql
+- 20260424120000_pillar_tags_community_engagement.sql
+- 20260424400000_BOOTSTRAP_dyk_user_active_days.sql
+- 20260427000001_vtid_01978_fix_semantic_search_float8.sql
+- 20260428001000_analytics_celebrate_events.sql
+- 20260428160000_vtid_02050_mem_episodes_semantic_search.sql
+- 20260428200000_vtid_02047_unified_feedback_pipeline_init.sql
+- 20260429100000_vtid_02601_create_reminders.sql
+- 20260429100000_vtid_02603_feedback_handoff.sql
+- 20260429210000_vtid_02632_phase_8_consolidator.sql
+- 20260501150000_vtid_02652_phase6_tenant_overrides.sql
+- 20260510000000_vtid_02754_community_search_history.sql
+- 20260513000000_VTID_02806_intent_cover_library.sql
+- 20260514000000_VTID_02806d_intent_covers_storage_policies.sql
+- 20260515000000_VTID_02806h_intent_covers_staging_path.sql
+- 20260516000000_VTID_02909_user_assistant_state.sql
+- 20260517000000_VTID_02917_orb_wake_timelines.sql
+- 20260518000000_VTID_02920_capability_awareness.sql
+- 20260519000000_VTID_02924_capability_awareness_events.sql
+- 20260520000000_VTID_02932_continuity_tables.sql
+- 20260522000000_chat_attachments_rls_dm_and_groups.sql
+- 20260522010000_chat_group_members_recursion_fix.sql
+- 20260525000000_VTID_03089_chat_groups.sql
+- 20260526010000_VTID_03107_subscription_core.sql
+- 20260526010000_VTID_03152_goal_plan.sql
+- 20260526060000_VTID_03107_redemption_codes.sql
+- 20260526080000_VTID_03107_lifecycle_notifications.sql
+- 20260527000000_VTID_03113_decision_policy.sql
+- 20260527010000_VTID_03113_policy_render_block.sql
+- 20260528120000_VTID_03142_decision_conflict_pair.sql
+- 20260529000000_VTID_03200_wallet_stripe_deposits.sql
+- 20260602000000_VTID_03255_journey_foundation.sql
+- 20260603000000_VTID_03152_user_journey_table.sql
+- 20260603000000_VTID_03152b_goal_plan_i18n.sql
+- 20260604000000_VTID_03161_decision_compatibility_score.sql
+- 20260605000000_VTID_03186_universal_cart_schema.sql
+- 20260606000000_DEV_COMHU_0503_orb_session_state.sql
+- 20260607000000_VTID_03237_video_shop_schema.sql
+- 20260607010000_BOOTSTRAP_ORB_R4_teacher_capability_refresh_schedule.sql
+- 20260608160000_VTID_03276_guided_journey_mode_state.sql
+- 20260704060000_vtid_01250_automations_engine_safe_part.sql
+- 20260704200000_vtid_01142_contextual_opportunities_table.sql
+- 20260706100000_vtid_02779_voice_clock.sql
+- 20260715120000_vtid_02950_recommendation_commissions.sql
+- 20260717120000_harden_wallet_rpc_ownership_and_rate_lookup.sql
+- 20260717120100_reset_all_user_wallet_balances_to_zero.sql
+- 20260720190000_fix_wallet_rpc_atomicity_and_transaction_logging.sql
+- 20260723150000_bootstrap_feature_announcements.sql
+- 20260727090000_bootstrap_community_marketplace.sql
+- 20260727170000_bootstrap_community_marketplace_storage.sql
+- 20260913000002_vtid_03832_role_functions.sql
+- 20260913010000_vtid_03834_erp_capability_grants.sql
+- 20260913020000_vtid_03842_erp_commands_approvals_audit.sql
+- 20260917100000_vtid_03995_role_switch_community_and_membership_roles.sql
+- 20260918100000_vtid_04044_lab_reports_rls_user_scoped.sql
+- 20260923160000_vtid_04387_memory_transcript_turns.sql
+- 20260924150000_vtid_04483_profile_health_summary.sql
+- 20260924170000_vtid_04489_index_boost.sql
+- 20260924190000_vtid_04498_index_standing.sql
+- 20260925120000_vtid_04561_one_role_truth.sql
+- 20260926150000_vtid_04655_me_set_active_role_writes_role_preferences.sql
+- 20260928200000_vtid_04716_autopilot_prompts_data_layer.sql
+- 20260928200100_vtid_04718_overload_detection_data_layer.sql
+- 20260928200200_vtid_04719_taste_alignment_data_layer.sql
+- 20260928200300_vtid_04720_preference_modeling_data_layer.sql
+- 20260928200400_vtid_04717_risk_mitigations.sql
+- 20260929120700_vtid_04740_product_clicks_select_own_only.sql
+- 20261001180000_vtid_04809_vtna_reward_ledger.sql
+- 20261003100000_vtid_04859_founding_1000.sql
+- 20261005130000_vtid_04892_onboarding_coach.sql
+- 20261008180000_vtid_04982_rewards_shop.sql
+- 20261010180200_vtid_05043_s3_switch_tenant_open_signup_only.sql
+- 20261012200000_vtid_05099_companion_messages.sql
+- 20261013150000_vtid_05133_ai_connection_grants.sql
+- 20261013200000_vtid_05143_unified_card_system.sql
+- 20261013233000_vtid_05147_s_m_membership_role_lockdown.sql
+- 20261014100100_vtid_05158_health_store.sql
+- 20261014100200_vtid_05161_health_sources.sql
+- 20261014100300_vtid_05161_user_integrations_revoke_browser_writes.sql
+- 20261014140000_vtid_05168_index_movements.sql
+- 20261014150000_vtid_05171_companion_wiring.sql
+- 20261102030000_vtid_05465_tenant_id_for_policies_is_member.sql
+- 20261102033000_vtid_05467_role_source_rollback.sql
+- 20261102033000_vtid_05467_single_role_source.sql
+- 20261102033100_vtid_05467_fix_bootstrap_admin_user.sql
+- 20261102040400_vtid_05571_writer_fallback_rollback.sql
+- 20261102040400_vtid_05571_writer_repoint.sql
+- 20261102050100_vtid_05576_send_message_rpcs.sql
+- 20261102050200_vtid_05576_chat_messages_lockdown.sql
+- 20261102051100_vtid_05582_connection_rpcs.sql
+- 20261102054100_vtid_05579_network_group_rpcs.sql
+- 20261102054200_vtid_05579_chat_groups_rls.sql
+- 20261102070100_vtid_05491_mt_tenant_admin_p2_moderation.sql
+- 20261102070150_vtid_05491_mt_tenant_admin_p3_moderation.sql
+- 20261102070350_vtid_05493_mt_tenant_archive_switch.sql
+- 20261102070600_vtid_05491_mt_moderator_tenant_scope.sql
+- 20261102120000_vtid_05488_supplier_tenant_relationships.sql
+- 20261102120300_vtid_05488_products_merchants_tenant_rls.sql
+- 20261105170000_live_room_cohost_authz.sql
+
+### `authenticated` (169 files)
+
+- 20251120000000_init_governance.sql
+- 20251120000002_init_governance_proposals.sql
+- 20251203000000_governance_catalog_init.sql
+- 20251209000000_add_task_stage.sql
+- 20251213000000_knowledge_docs.sql
+- 20251217000000_vtid_ledger_and_allocator.sql
+- 20251229000000_vtid_01051_me_active_role_fix.sql
+- 20251231000000_vtid_01078_health_brain_phase_c1.sql
+- 20251231000000_vtid_01101_phase_a_bootstrap.sql
+- 20251231000000_vtid_01103_health_compute_engine.sql
+- 20251231000000_vtid_01104_memory_core_v1.sql
+- 20251231000001_vtid_01083_longevity_signal_layer.sql
+- 20251231000001_vtid_01085_memory_retrieve_router.sql
+- 20251231000001_vtid_01086_memory_garden_progress.sql
+- 20251231000001_vtid_01087_relationship_graph_memory.sql
+- 20251231000001_vtid_01088_matchmaking_engine.sql
+- 20251231000001_vtid_01089_autopilot_prompts.sql
+- 20251231000001_vtid_01090_live_rooms_events_graph.sql
+- 20251231000001_vtid_01091_locations_memory_graph.sql
+- 20251231000001_vtid_01093_topics_layer.sql
+- 20251231000001_vtid_01094_match_feedback_loop.sql
+- 20251231000001_vtid_01095_daily_scheduler.sql
+- 20251231000001_vtid_01098_memory_timeline_causality.sql
+- 20251231100000_vtid_01082_memory_garden_diary.sql
+- 20251231100000_vtid_01084_community_personalization_v1.sql
+- 20251231100000_vtid_01092_services_products_memory.sql
+- 20251231100000_vtid_01099_memory_governance_v1.sql
+- 20251231100000_vtid_01100_memory_quality_metrics.sql
+- 20260101000000_vtid_01116_memory_confidence_trust_engine.sql
+- 20260102000000_vtid_01112_context_assembly_engine.sql
+- 20260102000000_vtid_01117_context_window_metrics.sql
+- 20260102000000_vtid_01120_emotional_cognitive_signals.sql
+- 20260102000000_vtid_01121_feedback_trust_repair.sql
+- 20260102000000_vtid_01136_context_fusion_engine.sql
+- 20260102000001_vtid_01129_social_context_relationships.sql
+- 20260102100000_vtid_01119_user_preference_modeling_v1.sql
+- 20260102100000_vtid_01124_life_stage_awareness.sql
+- 20260102110000_vtid_01133_taste_alignment_engine_v1.sql
+- 20260102200000_vtid_01122_health_capacity_awareness.sql
+- 20260102200000_vtid_01127_availability_readiness_engine.sql
+- 20260102200000_vtid_01130_financial_monetization_engine.sql
+- 20260103000000_vtid_01145_overload_detection.sql
+- 20260103000001_vtid_01141_d47_social_alignment_engine.sql
+- 20260105_vtid_01146_d46_anticipatory_guidance.sql
+- 20260117100000_vtid_01180_recommendation_inbox.sql
+- 20260117120000_vtid_01180_autopilot_recommendations.sql
+- 20260117130000_vtid_01185_recommendation_engine.sql
+- 20260117140000_vtid_01184_pgvector_semantic_memory.sql
+- 20260117150000_vtid_01181_governance_controls.sql
+- 20260119000000_vtid_01188_unified_spec_generation.sql
+- 20260119000000_vtid_01190_persistent_vtid_specs.sql
+- 20260119100000_vtid_01186_profile_avatar.sql
+- 20260123000000_vtid_01208_llm_routing_policy.sql
+- 20260201000000_vtid_01225_cognee_extractor.sql
+- 20260210000000_vtid_01090_fix_live_room_creation.sql
+- 20260218000000_fix_maxina_signup_tenant_association.sql
+- 20260220000001_memory_facts_embedding_support.sql
+- 20260221000000_fix_embedding_dimensions_768.sql
+- 20260227000000_admin_rls_policies.sql
+- 20260312000000_chat_conversations_rpc.sql
+- 20260315000002_rpc_add_message_type.sql
+- 20260318100000_role_admission_system.sql
+- 20260411000000_nav_catalog.sql
+- 20260412000000_tenant_invitations.sql
+- 20260412100000_tenant_autopilot_config.sql
+- 20260412150000_create_autopilot_tables_fixed.sql
+- 20260412200000_tenant_assistant_config.sql
+- 20260412300000_tenant_settings.sql
+- 20260412700000_content_moderation.sql
+- 20260416000000_notification_categories.sql
+- 20260416120000_vtid_02000_marketplace_foundation.sql
+- 20260416120200_vtid_02000_marketplace_helpers.sql
+- 20260416170000_vtid_02000_fix_products.sql
+- 20260416180000_vtid_02000_fix_products_v2.sql
+- 20260417000000_vtid_02100_connector_framework.sql
+- 20260418020000_vtid_02300_outbound_actions.sql
+- 20260418030000_vtid_02400_vaea_phase0.sql
+- 20260418040000_vtid_02401_vaea_phase1_observe.sql
+- 20260418060000_tenant_assistant_speeches.sql
+- 20260419000000_vtid_02403_ai_assistants_phase1.sql
+- 20260420130000_BOOTSTRAP_ai_usage_log.sql
+- 20260421220000_BOOTSTRAP_admin_kpi_surface.sql
+- 20260421250000_BOOTSTRAP_admin_insights.sql
+- 20260424120000_pillar_tags_community_engagement.sql
+- 20260424140000_user_pillar_recent_activity_view.sql
+- 20260427090000_user_diary_streak_view.sql
+- 20260427100000_BOOTSTRAP_autopilot_realign_substrate.sql
+- 20260428160000_vtid_02050_mem_episodes_semantic_search.sql
+- 20260428200000_vtid_02047_unified_feedback_pipeline_init.sql
+- 20260429100000_vtid_02601_create_reminders.sql
+- 20260429100000_vtid_02603_feedback_handoff.sql
+- 20260429120000_vtid_02047_phase5_management_schema.sql
+- 20260501100000_vtid_02651_persona_voice_greeting.sql
+- 20260501150000_vtid_02652_phase6_tenant_overrides.sql
+- 20260508000000_forwarding_rules_two_gate.sql
+- 20260508001000_forwarding_rules_drop_old_rpc.sql
+- 20260508002000_forwarding_rules_tenant_two_gate.sql
+- 20260516000000_VTID_02909_user_assistant_state.sql
+- 20260517000000_VTID_02917_orb_wake_timelines.sql
+- 20260518000000_VTID_02920_capability_awareness.sql
+- 20260519000000_BOOTSTRAP_autopilot_alignment_fields.sql
+- 20260519000000_VTID_02924_capability_awareness_events.sql
+- 20260520000000_VTID_02932_continuity_tables.sql
+- 20260522010000_chat_group_members_recursion_fix.sql
+- 20260526010000_VTID_03107_subscription_core.sql
+- 20260526010000_VTID_03152_goal_plan.sql
+- 20260526020000_VTID_03107_openclaw_compat.sql
+- 20260526060000_VTID_03107_redemption_codes.sql
+- 20260526080000_VTID_03107_lifecycle_notifications.sql
+- 20260527000000_VTID_03113_decision_policy.sql
+- 20260527010000_VTID_03113_policy_render_block.sql
+- 20260528120000_VTID_03142_decision_conflict_pair.sql
+- 20260529120000_VTID_03180_complete_autopilot_recommendation_rpc.sql
+- 20260603000000_VTID_03152_user_journey_table.sql
+- 20260603000000_VTID_03152b_goal_plan_i18n.sql
+- 20260604000000_VTID_03161_decision_compatibility_score.sql
+- 20260605000000_VTID_03186_universal_cart_schema.sql
+- 20260607000000_VTID_03237_video_shop_schema.sql
+- 20260607010000_BOOTSTRAP_ORB_R4_teacher_capability_refresh_schedule.sql
+- 20260612000000_BOOTSTRAP_content_i18n_catalog_cache.sql
+- 20260706100000_vtid_02779_voice_clock.sql
+- 20260723150000_bootstrap_feature_announcements.sql
+- 20260727090000_bootstrap_community_marketplace.sql
+- 20260913010000_vtid_03834_erp_capability_grants.sql
+- 20260913020000_vtid_03842_erp_commands_approvals_audit.sql
+- 20260914090000_vtid_03885_partner_health_test_integration.sql
+- 20260914130000_vtid_03842_erp_tables_revoke_browser_roles.sql
+- 20260915132000_vtid_03894_catalog_vertical_rls.sql
+- 20260923160000_vtid_04387_memory_transcript_turns.sql
+- 20260924090000_vtid_04460_intent_ledger_embeddings_titan_v2.sql
+- 20260924150000_vtid_04478_partner_onboarding_engine.sql
+- 20260924150000_vtid_04483_profile_health_summary.sql
+- 20260924170000_vtid_04489_index_boost.sql
+- 20260924190000_vtid_04498_index_standing.sql
+- 20260928200000_vtid_04716_autopilot_prompts_data_layer.sql
+- 20260928200100_vtid_04718_overload_detection_data_layer.sql
+- 20260928200200_vtid_04719_taste_alignment_data_layer.sql
+- 20260928200300_vtid_04720_preference_modeling_data_layer.sql
+- 20260928200400_vtid_04717_risk_mitigations.sql
+- 20260929120700_vtid_04740_product_clicks_select_own_only.sql
+- 20261001180000_vtid_04809_vtna_reward_ledger.sql
+- 20261003100000_vtid_04859_founding_1000.sql
+- 20261003130000_vtid_04864_autopilot_completion_no_double_reward.sql
+- 20261005130000_vtid_04892_onboarding_coach.sql
+- 20261005130000_vtid_04895_partner_terms_lifecycle.sql
+- 20261008180000_vtid_04982_rewards_shop.sql
+- 20261010180200_vtid_05043_s3_switch_tenant_open_signup_only.sql
+- 20261012200000_vtid_05099_companion_messages.sql
+- 20261013150000_vtid_05133_ai_connection_grants.sql
+- 20261013233000_vtid_05147_s_m_membership_role_lockdown.sql
+- 20261014100100_vtid_05158_health_store.sql
+- 20261014100200_vtid_05161_health_sources.sql
+- 20261014100300_vtid_05161_user_integrations_revoke_browser_writes.sql
+- 20261014130000_vtid_05167_activity_tiers.sql
+- 20261014140000_vtid_05168_index_movements.sql
+- 20261014150000_vtid_05171_companion_wiring.sql
+- 20261102030000_vtid_05465_tenant_id_for_policies_is_member.sql
+- 20261102030100_vtid_05465_bare_policy_rewrite.sql
+- 20261102030100_vtid_05465_bare_policy_rewrite_rollback.sql
+- 20261102050100_vtid_05576_send_message_rpcs.sql
+- 20261102050200_vtid_05576_chat_messages_lockdown.sql
+- 20261102051100_vtid_05582_connection_rpcs.sql
+- 20261102054100_vtid_05579_network_group_rpcs.sql
+- 20261102070100_vtid_05491_mt_tenant_admin_p2_moderation.sql
+- 20261102070150_vtid_05491_mt_tenant_admin_p3_moderation.sql
+- 20261102070350_vtid_05493_mt_tenant_archive_switch.sql
+- 20261102070600_vtid_05491_mt_moderator_tenant_scope.sql
+- 20261102120000_vtid_05488_supplier_tenant_relationships.sql
+- 20261102120300_vtid_05488_products_merchants_tenant_rls.sql
+
+### `auth.users` (76 files)
+
+- 20251229000000_vtid_01051_me_active_role_fix.sql
+- 20251231000000_vtid_01101_phase_a_bootstrap.sql
+- 20251231000000_vtid_01103_health_compute_engine.sql
+- 20251231000001_vtid_01095_daily_scheduler.sql
+- 20260117100000_vtid_01180_recommendation_inbox.sql
+- 20260117120000_vtid_01180_autopilot_recommendations.sql
+- 20260119100000_vtid_01186_profile_avatar.sql
+- 20260218000000_fix_maxina_signup_tenant_association.sql
+- 20260226000000_signup_funnel_tracking.sql
+- 20260226100000_backfill_app_users_from_auth.sql
+- 20260227100000_user_feedback_reports.sql
+- 20260310000000_fix_memory_tenant_resolution.sql
+- 20260315000001_vitana_bot_user.sql
+- 20260318100000_role_admission_system.sql
+- 20260409000000_add_avatar_position_offsets.sql
+- 20260412000000_tenant_invitations.sql
+- 20260412200000_tenant_assistant_config.sql
+- 20260412300000_tenant_settings.sql
+- 20260412700000_content_moderation.sql
+- 20260418000000_proactive_guide_phase0.sql
+- 20260418060000_tenant_assistant_speeches.sql
+- 20260419100000_user_feature_introductions.sql
+- 20260419110000_user_session_summaries.sql
+- 20260419120000_user_routines.sql
+- 20260419130000_user_proactive_touches.sql
+- 20260420120000_BOOTSTRAP_history_aware_timeline.sql
+- 20260421140000_BOOTSTRAP_awareness_registry.sql
+- 20260423190000_vitana_pillar_agents_v1.sql
+- 20260423200000_vitana_integrations_v1.sql
+- 20260424400000_BOOTSTRAP_dyk_user_active_days.sql
+- 20260427120000_vtid_01985_earthlinks_to_maxina_cleanup.sql
+- 20260427130000_vtid_01985_earthlinks_to_maxina_v2.sql
+- 20260427140000_vtid_01985_earthlinks_to_maxina_v3.sql
+- 20260427150000_vtid_01985_earthlinks_to_maxina_v4.sql
+- 20260428001000_analytics_celebrate_events.sql
+- 20260507000300_resolver_chat_peer_promotion.sql
+- 20260509000000_vtid_02702_feedback_rollback.sql
+- 20260510000000_vtid_02754_community_search_history.sql
+- 20260513000000_VTID_02806_intent_cover_library.sql
+- 20260524080000_VTID_03049_livekit_canary_enable.sql
+- 20260529000000_VTID_03200_wallet_stripe_deposits.sql
+- 20260602000000_VTID_03255_journey_foundation.sql
+- 20260608160000_VTID_03276_guided_journey_mode_state.sql
+- 20260618000000_BOOTSTRAP_canonical_people_search.sql
+- 20260618120000_BOOTSTRAP_resolver_match_quality_dominant.sql
+- 20260812140200_VTID_03623_resolver_drift_fix_chat_peer_flag.sql
+- 20260913000002_vtid_03832_role_functions.sql
+- 20260917100000_vtid_03995_role_switch_community_and_membership_roles.sql
+- 20260923170000_vtid_04358_calendar_feed_tokens.sql
+- 20260923180000_vtid_04372_calendar_google_sync.sql
+- 20260923200000_vtid_04402_connected_apps.sql
+- 20260924090000_vtid_04436_calendar_push.sql
+- 20260925120000_vtid_04561_one_role_truth.sql
+- 20260926150000_vtid_04655_me_set_active_role_writes_role_preferences.sql
+- 20261003100000_vtid_04859_founding_1000.sql
+- 20261005100000_vtid_04878_claim_capped_reward.sql
+- 20261005130000_vtid_04892_onboarding_coach.sql
+- 20261010160000_vtid_05057_contacts_phone_matching.sql
+- 20261010180200_vtid_05043_s3_switch_tenant_open_signup_only.sql
+- 20261012200000_vtid_05099_companion_messages.sql
+- 20261013150000_vtid_05133_ai_connection_grants.sql
+- 20261013200000_vtid_05143_unified_card_system.sql
+- 20261014000200_vtid_05149_signup_default_tenant.sql
+- 20261014000300_vtid_05149_ci_tenant_isolation_health.sql
+- 20261014000500_vtid_05150_provision_tenant.sql
+- 20261014150000_vtid_05171_companion_wiring.sql
+- 20261015150000_vtid_05205_welcome_team_claims.sql
+- 20261102031000_vtid_05466_user_tenants_canonical.sql
+- 20261102033000_vtid_05467_role_source_rollback.sql
+- 20261102033000_vtid_05467_single_role_source.sql
+- 20261102033100_vtid_05467_fix_bootstrap_admin_user.sql
+- 20261102040400_vtid_05571_writer_fallback_rollback.sql
+- 20261102040400_vtid_05571_writer_repoint.sql
+- 20261102070350_vtid_05493_mt_tenant_archive_switch.sql
+- 20261102141000_vtid_05506_mt_provision_erp_request.sql
+- 20261102141100_vtid_05506_mt_isolation_health_by_tenant.sql
+
+### `auth.role` (19 files)
+
+- 20251128000001_software_versions.sql
+- 20260102200000_vtid_01127_availability_readiness_engine.sql
+- 20260117000000_vtid_01183_worker_agent_connector.sql
+- 20260227100000_user_feedback_reports.sql
+- 20260327000000_vtid_01250_social_connections.sql
+- 20260402000000_self_healing_tables.sql
+- 20260410000000_agents_registry.sql
+- 20260420110000_vtid_01942_capability_preferences.sql
+- 20260507100000_vtid_livekit_foundation_voice_tables.sql
+- 20260510000100_BOOTSTRAP_architecture_investigator.sql
+- 20260612140000_BOOTSTRAP_product_analytics_events.sql
+- 20260612140100_BOOTSTRAP_product_analytics_rollups.sql
+- 20260715120000_vtid_02950_recommendation_commissions.sql
+- 20260717120100_reset_all_user_wallet_balances_to_zero.sql
+- 20261013200000_vtid_05143_unified_card_system.sql
+- 20261101100000_mt_packs_tenant_content_overrides.sql
+- 20261101110000_mt_launch_tenant_pack_intake.sql
+- 20261101110100_mt_launch_tenant_content_pipeline.sql
+- 20261102053100_vtid_05575_daily_matches_guard.sql
+
+### `auth.jwt` (12 files)
+
+- 20260227000000_admin_rls_policies.sql
+- 20260411000000_nav_catalog.sql
+- 20260913000002_vtid_03832_role_functions.sql
+- 20260917100000_vtid_03995_role_switch_community_and_membership_roles.sql
+- 20260925120000_vtid_04561_one_role_truth.sql
+- 20260926150000_vtid_04655_me_set_active_role_writes_role_preferences.sql
+- 20261013233000_vtid_05147_s_m_membership_role_lockdown.sql
+- 20261102033000_vtid_05467_role_source_rollback.sql
+- 20261102033000_vtid_05467_single_role_source.sql
+- 20261102033100_vtid_05467_fix_bootstrap_admin_user.sql
+- 20261102070100_vtid_05491_mt_tenant_admin_p2_moderation.sql
+- 20261102070600_vtid_05491_mt_moderator_tenant_scope.sql
+
+### `anon` (10 files)
+
+- 20251217000000_vtid_ledger_and_allocator.sql
+- 20260416150000_vtid_02000_debug_products.sql
+- 20260424000001_public_vitana_index_rpc.sql
+- 20260608120000_phase_a_security_hotfix.sql
+- 20260608140000_phase_b_enable_rls_42_tables.sql
+- 20260923120000_vtid_04337_partner_org_members_rls_no_recursion.sql
+- 20261001140000_vtid_04783_discover_categories.sql
+- 20261010164100_vtid_05041_definer_functions_lockdown.sql
+- 20261014000600_vtid_05151_public_tenant_registry.sql
+- 20261102140100_vtid_05507_mt_resolve_tenant_host.sql
+
+### `storage.objects` (5 files)
+
+- 20260514000000_VTID_02806d_intent_covers_storage_policies.sql
+- 20260515000000_VTID_02806h_intent_covers_staging_path.sql
+- 20260522000000_chat_attachments_rls_dm_and_groups.sql
+- 20260522010000_chat_group_members_recursion_fix.sql
+- 20260727170000_bootstrap_community_marketplace_storage.sql
+
+### `storage.foldername` (5 files)
+
+- 20260514000000_VTID_02806d_intent_covers_storage_policies.sql
+- 20260515000000_VTID_02806h_intent_covers_staging_path.sql
+- 20260522000000_chat_attachments_rls_dm_and_groups.sql
+- 20260522010000_chat_group_members_recursion_fix.sql
+- 20260727170000_bootstrap_community_marketplace_storage.sql
+
+### `storage.buckets` (2 files)
+
+- 20260727170000_bootstrap_community_marketplace_storage.sql
+- 20261010160000_vtid_05035_reward_shop_images_bucket.sql
+
+### `auth.oauth_clients` (2 files)
+
+- 20261008100000_vtid_04968_mcp_oauth_client_info.sql
+- 20261013150000_vtid_05133_ai_connection_grants.sql
+
+### `auth.md` (1 files)
+
+- 20260518205049_instruction_manual_maxina_seed.sql
+
+### `auth.sessions` (1 files)
+
+- 20261005130000_vtid_04895_partner_terms_lifecycle.sql
+
+### `auth.oauth_authorizations` (1 files)
+
+- 20261013150000_vtid_05133_ai_connection_grants.sql
+

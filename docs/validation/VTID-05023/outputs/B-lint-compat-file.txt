@@ -1,0 +1,12 @@
+$ node scripts/aws/aurora-compat-lint.mjs supabase/migrations/20251026235959_aurora_compat_layer.sql
+20251026235959_aurora_compat_layer.sql:24 [supabase-role] ROLE anon
+20251026235959_aurora_compat_layer.sql:27 [supabase-role] ROLE authenticated
+20251026235959_aurora_compat_layer.sql:30 [supabase-role] ROLE service_role
+20251026235959_aurora_compat_layer.sql:35 [supabase-role] GRANT USAGE ON SCHEMA auth TO anon
+20251026235959_aurora_compat_layer.sql:39 [auth-schema] auth.jwt
+20251026235959_aurora_compat_layer.sql:44 [auth-schema] auth.uid
+20251026235959_aurora_compat_layer.sql:46 [auth-schema] auth.jwt
+20251026235959_aurora_compat_layer.sql:49 [auth-schema] auth.role
+20251026235959_aurora_compat_layer.sql:51 [auth-schema] auth.jwt
+checked 1 file(s); flagged 1; clean 0
+exit 1

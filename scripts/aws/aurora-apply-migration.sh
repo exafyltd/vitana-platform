@@ -100,6 +100,10 @@ else
   echo "Mode: NO transaction — $N statement(s) run one by one; a failure stops the run but does NOT undo earlier statements"
 fi
 
+if grep -nE -m1 '^--[[:space:]]*AURORA-ONLY:' "$FILE" | awk -F: '$1 <= 30 {found=1} END {exit !found}'; then
+  echo "AURORA-ONLY file: applied to Aurora (Supabase skips it)"
+fi
+
 if [ "$DRY_RUN" = 1 ]; then
   echo "Dry run: no AWS call made"
   exit 0
