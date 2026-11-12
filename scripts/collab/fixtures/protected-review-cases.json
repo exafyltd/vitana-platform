@@ -1,0 +1,78 @@
+{
+  "schema": "vitana.protected-review-cases/v1",
+  "description": "VTID-05780 (plan autonomous-to-staging-r2, lane protect-gate-workflow): shared cases for the two-model exact-head rule on protected gate files. Run by scripts/collab/land-guard.test.mjs (protectedReviewCurrent + protectedAcceptModels) and services/gateway/test/project-manager/governance-protected-review.test.ts (governanceMergeAllowed); both layers must give `expect` for every case. `commits` is the PR history in order (the last one is the PR head): kind `code` changes a protected file, `lane` changes only the lane file, `merge` is a clean merge of main. A review names the commit id it reviewed, its chain model and its Collab-Session. `builders` are the lane's builder sessions.",
+  "lane": "s/l",
+  "protected_file": "scripts/collab/queue.mjs",
+  "cases": [
+    {
+      "name": "valid: two accepts from two models and two sessions on the exact head",
+      "commits": [{ "id": "c1", "kind": "code" }],
+      "builders": ["kiro-exafy-202611110920-aaaa"],
+      "reviews": [
+        { "reviewed": "c1", "model": "claude-sonnet-5.5", "session": "agent-vitana-lane-reviewer-202611120000-0001" },
+        { "reviewed": "c1", "model": "claude-opus-5.5", "session": "agent-vitana-lane-reviewer-202611120000-0002" }
+      ],
+      "expect": "allow"
+    },
+    {
+      "name": "stale: one accept on an older head (a code commit came after it)",
+      "commits": [{ "id": "c1", "kind": "code" }, { "id": "c2", "kind": "code" }],
+      "builders": ["kiro-exafy-202611110920-aaaa"],
+      "reviews": [
+        { "reviewed": "c1", "model": "claude-sonnet-5.5", "session": "agent-vitana-lane-reviewer-202611120000-0001" },
+        { "reviewed": "c2", "model": "claude-opus-5.5", "session": "agent-vitana-lane-reviewer-202611120000-0002" }
+      ],
+      "expect": "refuse"
+    },
+    {
+      "name": "code after review: both accepts precede a code commit",
+      "commits": [{ "id": "c1", "kind": "code" }, { "id": "c2", "kind": "code" }],
+      "builders": ["kiro-exafy-202611110920-aaaa"],
+      "reviews": [
+        { "reviewed": "c1", "model": "claude-sonnet-5.5", "session": "agent-vitana-lane-reviewer-202611120000-0001" },
+        { "reviewed": "c1", "model": "claude-opus-5.5", "session": "agent-vitana-lane-reviewer-202611120000-0002" }
+      ],
+      "expect": "refuse"
+    },
+    {
+      "name": "merge of main after review: a clean merge of main voids both accepts",
+      "commits": [{ "id": "c1", "kind": "code" }, { "id": "m1", "kind": "merge" }],
+      "builders": ["kiro-exafy-202611110920-aaaa"],
+      "reviews": [
+        { "reviewed": "c1", "model": "claude-sonnet-5.5", "session": "agent-vitana-lane-reviewer-202611120000-0001" },
+        { "reviewed": "c1", "model": "claude-opus-5.5", "session": "agent-vitana-lane-reviewer-202611120000-0002" }
+      ],
+      "expect": "refuse"
+    },
+    {
+      "name": "same model twice: two sessions, one chain model",
+      "commits": [{ "id": "c1", "kind": "code" }],
+      "builders": ["kiro-exafy-202611110920-aaaa"],
+      "reviews": [
+        { "reviewed": "c1", "model": "claude-sonnet-5.5", "session": "agent-vitana-lane-reviewer-202611120000-0001" },
+        { "reviewed": "c1", "model": "claude-sonnet-5.5", "session": "agent-vitana-lane-reviewer-202611120000-0002" }
+      ],
+      "expect": "refuse"
+    },
+    {
+      "name": "same session twice: one session, two chain models",
+      "commits": [{ "id": "c1", "kind": "code" }],
+      "builders": ["kiro-exafy-202611110920-aaaa"],
+      "reviews": [
+        { "reviewed": "c1", "model": "claude-sonnet-5.5", "session": "agent-vitana-lane-reviewer-202611120000-0001" },
+        { "reviewed": "c1", "model": "claude-opus-5.5", "session": "agent-vitana-lane-reviewer-202611120000-0001" }
+      ],
+      "expect": "refuse"
+    },
+    {
+      "name": "builder self-review: one of the two accepts comes from a builder session",
+      "commits": [{ "id": "c1", "kind": "code" }],
+      "builders": ["kiro-exafy-202611110920-aaaa"],
+      "reviews": [
+        { "reviewed": "c1", "model": "claude-sonnet-5.5", "session": "agent-vitana-lane-reviewer-202611120000-0001" },
+        { "reviewed": "c1", "model": "claude-opus-5.5", "session": "kiro-exafy-202611110920-aaaa" }
+      ],
+      "expect": "refuse"
+    }
+  ]
+}

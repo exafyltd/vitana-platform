@@ -301,14 +301,17 @@ test('merge: a protected gate file needs two accepts from different chain models
   assert.equal(mergeDecision({ ...base, protectedModels: ['claude-sonnet-5.5', 'claude-sonnet-5.5'] }).code, 1);
   assert.equal(mergeDecision({ ...base, protectedModels: ['claude-sonnet-5.5', 'claude-opus-5.5'] }).ok, true);
   assert.equal(mergeDecision({ ...base, checks: { state: 'fail', detail: 'x' }, protectedModels: ['claude-sonnet-5.5', 'claude-opus-5.5'] }).code, 1);
-  const e = (m, current = true, verdict = 'accept') => ({ verdict, reviewer: `agent:vitana-lane-reviewer (${m})`, current });
+  // VTID-05780: an accept counts only with a Collab-Session (two distinct sessions are required); each fixture gets its own.
+  let n = 0;
+  const e = (m, current = true, verdict = 'accept') => ({ verdict, reviewer: `agent:vitana-lane-reviewer (${m})`, current, session: `agent-vitana-lane-reviewer-202611120000-${String(++n).padStart(4, '0')}` });
   assert.deepEqual(protectedAcceptModels([e('claude-sonnet-5.5'), e('claude-opus-5.5')]).sort(), ['claude-opus-5.5', 'claude-sonnet-5.5']);
   assert.deepEqual(protectedAcceptModels([e('claude-sonnet-5.5'), e('claude-opus-5.5', false)]), ['claude-sonnet-5.5']);
   assert.deepEqual(protectedAcceptModels([e('claude-sonnet-5.5'), e('claude-opus-5.5', true, 'changes')]), ['claude-sonnet-5.5']);
   assert.deepEqual(protectedAcceptModels([e('gpt-5')]), []);
   assert.deepEqual(protectedAcceptModels([{ verdict: 'accept', reviewer: 'agent:someone-else (claude-opus-5.5)', current: true }]), []);
   const msg = `t\n\nCollab-Session: s\nCollab-Review: a/b\nCollab-Verdict: accept\nCollab-Reviewer: agent:vitana-lane-reviewer (claude-opus-5.5)\nCollab-Reviewed-Head: ${'c'.repeat(40)}\n`;
-  assert.deepEqual(parseReviewEntry(msg), { review: 'a/b', verdict: 'accept', reviewer: 'agent:vitana-lane-reviewer (claude-opus-5.5)', reviewedHead: 'c'.repeat(40) });
+  // VTID-05780: the entry carries its Collab-Session (contract change on purpose: distinct sessions, builder exclusion).
+  assert.deepEqual(parseReviewEntry(msg), { review: 'a/b', verdict: 'accept', reviewer: 'agent:vitana-lane-reviewer (claude-opus-5.5)', reviewedHead: 'c'.repeat(40), session: 's' });
   assert.equal(parseReviewEntry('plain commit'), null);
 });
 
@@ -317,4 +320,103 @@ test('merge: land-guard REVIEWER_MODELS mirrors governance.ts REVIEWER_AGENT_MOD
   const src = (await import('node:fs')).readFileSync(new URL('../../services/gateway/src/services/project-manager/governance.ts', import.meta.url), 'utf8');
   const block = /REVIEWER_AGENT_MODELS: readonly string\[\] = Object\.freeze\(\[([\s\S]*?)\]\)/.exec(src)[1];
   assert.deepEqual([...block.matchAll(/'([^']+)'/g)].map((m) => m[1]), [...REVIEWER_MODELS]);
+});
+
+// ── VTID-05780 (plan autonomous-to-staging-r2, lane protect-gate-workflow): the two-model exact-head rule ─────────
+const CASES = JSON.parse(fs.readFileSync(new URL('./fixtures/protected-review-cases.json', import.meta.url), 'utf8'));
+const shaOf = (id) => (Buffer.from(id).toString('hex') + '0'.repeat(40)).slice(0, 40);
+/** One shared fixture case → the land-guard verdict ('allow' | 'refuse'). */
+function landGuardVerdict(c) {
+  const [slug, lane] = CASES.lane.split('/');
+  const laneFile = `.kiro/specs/${slug}/lanes/${lane}.md`;
+  const builder = c.builders[0] || 'kiro-exafy-202611110920-aaaa';
+  const toAfter = (k) => {
+    const sha = shaOf(k.id);
+    if (k.kind === 'lane') return { sha, session: builder, files: [laneFile] };
+    if (k.kind === 'merge') return { sha, session: builder, files: ['b.txt'], merge: { parents: [shaOf('p1'), shaOf('p2')], secondParentOnMain: true, autoMergeTree: 't', commitTree: 't', protectedFiles: [] } };
+    return { sha, session: builder, files: [CASES.protected_file] };
+  };
+  const head = shaOf(c.commits[c.commits.length - 1].id);
+  const entries = c.reviews.map((r) => {
+    const i = c.commits.findIndex((k) => k.id === r.reviewed);
+    const after = c.commits.slice(i + 1).map(toAfter);
+    // The fixture's merge is clean and leaves the PR diff unchanged: only the strict protected rule voids it.
+    const cur = lg.protectedReviewCurrent(shaOf(r.reviewed), head, after, CASES.lane, { prDiffSame: true, protectedSame: true });
+    return { verdict: 'accept', reviewer: `agent:vitana-lane-reviewer (${r.model})`, session: r.session, current: cur.ok };
+  });
+  const models = lg.protectedAcceptModels(entries, { builders: c.builders });
+  const d = mergeDecision({ review: { ok: true, reason: 'x' }, checks: { state: 'pass', detail: 'x' }, behindBy: 0, protectedFiles: [CASES.protected_file], protectedModels: models });
+  return d.ok ? 'allow' : 'refuse';
+}
+
+test('VTID-05780 shared fixtures: each protected-review case gives its expected verdict in land-guard', () => {
+  assert.equal(CASES.cases.length, 7);
+  for (const c of CASES.cases) assert.equal(landGuardVerdict(c), c.expect, c.name);
+});
+
+test('VTID-05780 protectedReviewCurrent: only lane-file-only commits may follow; merges, other files, pm handoff and changed protected bytes void', () => {
+  const R = H('a');
+  const HEAD = H('b');
+  const laneFile = '.kiro/specs/s/lanes/l.md';
+  const ok = { prDiffSame: true, protectedSame: true };
+  assert.equal(lg.protectedReviewCurrent(HEAD, HEAD, [], 's/l', ok).ok, true, 'exact head');
+  assert.equal(lg.protectedReviewCurrent(R, HEAD, [{ sha: HEAD, session: 'x', files: [laneFile] }], 's/l', ok).ok, true, 'a review entry after the reviewed head');
+  const merge = { sha: HEAD, session: 'x', files: ['b.txt'], merge: { parents: [H('c'), H('d')], secondParentOnMain: true, autoMergeTree: 't', commitTree: 't', protectedFiles: [] } };
+  assert.equal(reviewCurrent(R, HEAD, [merge], 's/l', true).ok, true, 'the single-review rule keeps a clean merge of main');
+  assert.match(lg.protectedReviewCurrent(R, HEAD, [merge], 's/l', ok).reason, /merge/);
+  assert.equal(lg.protectedReviewCurrent(R, HEAD, [{ sha: HEAD, session: 'pm-agent', files: [laneFile, '.kiro/specs/s/handoff.md'] }], 's/l', ok).ok, false, 'pm handoff edits are not lane-file-only');
+  assert.equal(lg.protectedReviewCurrent(R, HEAD, [{ sha: HEAD, session: 'x', files: ['scripts/collab/queue.mjs'] }], 's/l', ok).ok, false);
+  assert.equal(lg.protectedReviewCurrent(R, HEAD, [{ sha: HEAD, session: 'x', files: [laneFile] }], 's/l', { prDiffSame: true, protectedSame: false }).ok, false, 'protected bytes changed');
+  assert.equal(lg.protectedReviewCurrent(R, HEAD, [{ sha: HEAD, session: 'x', files: [laneFile] }], 's/l', { prDiffSame: true }).ok, false, 'protected bytes not compared (API walk)');
+  assert.equal(lg.protectedReviewCurrent(R, HEAD, [{ sha: HEAD, session: 'x', files: [laneFile] }], undefined, ok).ok, false, 'no lane key');
+  assert.equal(lg.protectedReviewCurrent(R, HEAD, [], 's/l', ok).ok, false, 'not an ancestor');
+});
+
+test('VTID-05780 protectedAcceptModels: two models need two sessions; a builder session or a missing session never counts', () => {
+  const e = (m, session) => ({ verdict: 'accept', reviewer: `agent:vitana-lane-reviewer (${m})`, current: true, session });
+  const S = 'claude-sonnet-5.5';
+  const O = 'claude-opus-5.5';
+  assert.deepEqual(lg.protectedAcceptModels([e(S, 'a1'), e(O, 'a2')]).sort(), [O, S]);
+  assert.equal(lg.protectedAcceptModels([e(S, 'a1'), e(O, 'a1')]).length, 1, 'one session');
+  assert.equal(lg.protectedAcceptModels([e(S, 'a1'), e(O, undefined)]).length, 1, 'no session');
+  assert.equal(lg.protectedAcceptModels([e(S, 'a1'), e(O, 'b1')], { builders: ['b1'] }).length, 1, 'builder');
+  assert.deepEqual(lg.protectedAcceptModels([e(S, 'a1'), e(O, 'a1'), e(S, 'a2')]).sort(), [O, S], 'a valid pair exists (opus a1 + sonnet a2)');
+});
+
+test('VTID-05780 builderSessions: lane-log build entries and Collab-Lane commits that are not review entries', () => {
+  const lane = '---\nlane: l\n---\n## Log\n### 2026-11-12T19:00Z · kiro-a · ready\nx\n### 2026-11-12T19:01Z · kiro-b · ready → executing\nx\n### 2026-11-12T19:02Z · kiro-c · executing → in-review\nPR x\n### 2026-11-12T19:03Z · agent-r · review\nreview: accept\n';
+  const msgs = ['code\n\nCollab-Session: kiro-d\nCollab-Lane: s/l\n', 'review\n\nCollab-Session: agent-r\nCollab-Review: s/l\nCollab-Lane: s/l\n', 'other\n\nCollab-Session: kiro-e\nCollab-Lane: s/other\n'];
+  assert.deepEqual(lg.builderSessions(lane, msgs, 's/l').sort(), ['kiro-b', 'kiro-c', 'kiro-d']);
+});
+
+test('VTID-05780 local walk (k): a clean merge of main after two accepts voids them for a protected file', (t) => {
+  const f = mergeFixture(t);
+  f.write('scripts/collab/queue.mjs', 'export const X = 1;\n');
+  f.commit('protected change');
+  const R = f.head();
+  f.write('.kiro/specs/s/lanes/l.md', '---\nlane: l\n---\n## Log\n### review\nreview: accept\n');
+  f.commit('review entry');
+  let w = lg.localAfter(f.work, R, f.head(), 's/l');
+  assert.equal(w.protectedSame, true);
+  assert.equal(lg.protectedReviewCurrent(R, f.head(), w.after, 's/l', w).ok, true, 'review entry only');
+  f.onMain('b.txt', 'b changed on main\n');
+  f.g('merge', '-q', '--no-edit', 'origin/main');
+  w = lg.localAfter(f.work, R, f.head(), 's/l');
+  assert.equal(reviewCurrent(R, f.head(), w.after, 's/l', w.prDiffSame).ok, true, 'single-review rule keeps it');
+  assert.equal(lg.protectedReviewCurrent(R, f.head(), w.after, 's/l', w).ok, false, 'protected rule voids it');
+});
+
+test('VTID-05780 CLI: merge refuses a protected-file PR without --repo (local walk required)', { skip: process.platform === 'win32' && 'stub gh needs a POSIX shebang' }, (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'lg-p-'));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const bin = path.join(tmp, 'bin');
+  fs.mkdirSync(bin);
+  const pr = JSON.stringify({ number: 1, title: 'VTID-1 (s/l): x', head: { sha: H('b') }, base: { ref: 'main' }, merged: false });
+  const files = JSON.stringify([{ filename: 'scripts/collab/queue.mjs' }]);
+  fs.writeFileSync(path.join(bin, 'gh'), `#!/usr/bin/env node\nconst p = process.argv[3] || '';\nif (process.argv[2] === 'api' && /\\/pulls\\/1$/.test(p)) console.log(${JSON.stringify(pr)});\nelse if (process.argv[2] === 'api' && /\\/pulls\\/1\\/files/.test(p)) console.log(${JSON.stringify(files)});\nelse process.exit(1);\n`, { mode: 0o755 });
+  let out = '';
+  let code = 0;
+  try { out = execFileSync(process.execPath, [SCRIPT, 'merge', '--gh', 'o/r', '--pr', '1', '--reviewed-head', H('b'), '--title', 'x'], { encoding: 'utf8', env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}` }, stdio: ['ignore', 'pipe', 'pipe'] }); } catch (e) { code = e.status; out = String(e.stdout); }
+  assert.equal(code, 1, out);
+  assert.match(out, /--repo/);
 });

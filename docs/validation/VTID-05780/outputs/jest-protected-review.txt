@@ -1,0 +1,12 @@
+    ✓ has the seven cases (3 ms)
+    ✓ allow: valid: two accepts from two models and two sessions on the exact head (2 ms)
+    ✓ refuse: stale: one accept on an older head (a code commit came after it)
+    ✓ refuse: code after review: both accepts precede a code commit (1 ms)
+    ✓ refuse: merge of main after review: a clean merge of main voids both accepts
+    ✓ refuse: same model twice: two sessions, one chain model (1 ms)
+    ✓ refuse: same session twice: one session, two chain models
+    ✓ refuse: builder self-review: one of the two accepts comes from a builder session
+    ✓ two models in two sessions count (1 ms)
+    ✓ review_only_since is not used for protected files (exact head only)
+    ✓ one session with two models, a builder session or an empty session never makes a pair (4 ms)
+Tests:       11 passed, 11 total

@@ -97,7 +97,9 @@ export const PROTECTED_GATE_BUILTIN = ['CLAUDE.md', 'scripts/collab/plan-spar.mj
   '.github/workflows/PR-GATE.yml', '.github/workflows/AWS-PROD-*.yml', '.kiro/agents/vitana-lane-reviewer.md',
   'supabase/migrations/*vtid_ledger*.sql', 'supabase/migrations/*plan_sparring*.sql',
   // VTID-05765 (plan autonomous-to-staging): VTID allocation and the gate-invariant check and its workflow.
-  '.github/workflows/VTID-ALLOCATE.yml', 'scripts/collab/gate-invariants.test.mjs'];
+  '.github/workflows/VTID-ALLOCATE.yml', 'scripts/collab/gate-invariants.test.mjs',
+  // VTID-05780 (plan autonomous-to-staging-r2): the post-merge workflow, its static test and the post-merge audit.
+  '.github/workflows/GATE-INVARIANTS.yml', 'scripts/ci/workflow-trigger-check.test.mjs', 'scripts/collab/gate-audit.mjs'];
 /** VTID-05765: the lane marker that lets an executor: kiro lane change a protected gate file, under the two-model rule
  * (two reviewer-agent accepts from different chain models on the current head, land-guard.mjs mergeDecision). Read only
  * from a trusted revision of the lane file (merge-base or a qualifying plan( PR), never the PR head. */
@@ -292,15 +294,17 @@ const MERGE_SHA_RE = /\bmerge[:\s]+`?([0-9a-f]{7,40})\b/i;
 const REVIEW_RE = /^review:\s*(accept|changes)\b/m;
 const REVIEW_HEAD_RE = /^head:\s*([0-9a-f]{40})\b/m;
 
-/** The `## Log` section of a spec file (CRLF normalised), '' when there is none. */
-function logSection(text) {
+/** The `## Log` section of a spec file (CRLF normalised), '' when there is none. Exported for land-guard.mjs
+ * (VTID-05780: builder sessions of a protected-file lane), read-only. */
+export function logSection(text) {
   const t = String(text || '').replace(/\r\n/g, '\n');
   const i = t.search(/^## Log[ \t]*$/m);
   return i < 0 ? '' : t.slice(i);
 }
 
-/** Log entries `{ time, session, change, body }` in file order; text before the first `### ` is ignored. */
-function logEntries(log) {
+/** Log entries `{ time, session, change, body }` in file order; text before the first `### ` is ignored. Exported for
+ * land-guard.mjs (VTID-05780), read-only. */
+export function logEntries(log) {
   const out = [];
   for (const line of log.split('\n')) {
     if (line.startsWith('### ')) {
