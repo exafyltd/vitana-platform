@@ -4,8 +4,10 @@ author: kiro
 author_seat: exafy
 executor: kiro
 next_actor: kiro
-state: drafted
-updated: 2026-11-11T21:30Z
+state: approved
+updated: 2026-11-12T11:55Z
+sparring_record: .kiro/specs/staging-manifest-remainder/sparring/verdict.md
+vtids: [VTID-05775, VTID-05776, VTID-05777]
 ---
 # Handoff - staging-manifest-remainder
 
@@ -20,3 +22,6 @@ merges once this plan has merged.
 
 ### 2026-11-11T21:30Z · kiro-exafy · drafted
 Pushed as a `plan(` PR for CI PLAN-SPAR.
+
+### 2026-11-12T11:55Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 3 lane(s) got a VTID and are handed to Kiro.
