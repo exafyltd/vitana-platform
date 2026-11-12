@@ -27,3 +27,5 @@ Red on base: `outputs/red-on-base.txt` (3 fail). Green: `outputs/green.txt`.
 - The evidence test lives in `docs/validation/VTID-05715/` because the lane's paths are the seat file and evidence only.
 - Slot 12 = seat `jtadic` is the converged plan's mapping; the owner roster of 2026-11-11 does not name Kiro 12, so the
   fleet inventory marks it "owner to confirm".
+
+Not verified on staging: this lane deploys nothing (no gateway, frontend or database change), so it has no staging manifest; the tests above prove it.

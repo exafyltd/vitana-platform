@@ -1,6 +1,0 @@
-{
-  "vtid": "VTID-05715",
-  "service": "gateway",
-  "not_verified_on_staging": "Seat registry data only (docs/programs/areas.yaml): no gateway, frontend or database change, nothing deploys. Proven by the collab tests that parse the seat map (queue.mjs loadSeats, automations.test.mjs, areas-no-email.test.mjs) and docs/validation/VTID-05715/areas-seats.test.mjs.",
-  "tests": []
-}
