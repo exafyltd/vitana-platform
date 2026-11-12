@@ -26,8 +26,17 @@ reviewer-agent accept on the current head (`collaboration.md` §3a, §7b; plan �
   `queue.test.mjs` SECTION_43, extended on purpose with the two new protected globs (contract change, plan §3.2).
 - `gate-invariants.mjs` fails when an invariant is removed: mutation tests (drop CLAUDE.md, required accepts 1,
   governance glob removed, prod-ref guard and workflow deferred then enforced).
-- Red on base: `outputs/red-on-base.txt` (3 new tests fail on `origin/main`); green: `outputs/collab-green.txt`
+- Red on base (new tests against `origin/main` code): `outputs/red-on-base.txt` (land-guard + gate-invariants, 4 fail), `outputs/red-on-base-queue.txt` (3 fail, incl. the extended SECTION_43 T16), `outputs/red-on-base-governance.txt` (1 fail); green: `outputs/collab-green.txt`
   (269/269), gateway `npx jest test/project-manager` 13 suites / 230 tests, `npx tsc --noEmit` exit 0.
+
+- `scripts/collab/gate-invariants.test.mjs` runs from the PR head and imports the `origin/main` copy, not a `$BASE`
+  copy loaded by a workflow, so one PR could still drop that baseline test. Moving the check to base-loading (as
+  PR-GATE.yml loads `queue.mjs` from `$BASE`) belongs with the workflow, so it goes to lane `gate-invariants-ci` /
+  follow-up `protect-gate-workflow`; the file is itself on the protected list, so changing it already needs two
+  distinct-model accepts.
+- The two accepts are read from `Collab-*` commit trailers, the same trust model as single reviews today. Excluding a
+  reviewer session that also appears in the lane's executing log is left to a later lane.
+- Follow-up lane `protect-gate-workflow` is added to the plan by a `_plan` commit after this lane merges.
 
 ## Acceptance criteria → tests
 

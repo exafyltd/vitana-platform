@@ -33,7 +33,6 @@ export const REQUIRED_PROTECTED = Object.freeze([
   'supabase/migrations/*vtid_ledger*.sql',
   'supabase/migrations/*plan_sparring*.sql',
   '.github/workflows/VTID-ALLOCATE.yml',
- 
   'scripts/collab/gate-invariants.test.mjs',
 ]);
 /** Production identifiers the staging guard must keep refusing (lane staging-db-isolation). */

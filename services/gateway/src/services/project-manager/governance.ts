@@ -59,7 +59,6 @@ export const PROTECTED_GATE_GLOBS: readonly string[] = Object.freeze([
   'supabase/migrations/*vtid_ledger*.sql',
   'supabase/migrations/*plan_sparring*.sql',
   '.github/workflows/VTID-ALLOCATE.yml',
- 
   'scripts/collab/gate-invariants.test.mjs',
 ]);
 
