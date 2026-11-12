@@ -34,7 +34,12 @@ describe('VTID-04868 Plan Sparring Gate — session layer', () => {
     // ("… owner approval (or, for a CI-sparred plan that converged, policy approval
     // converged-auto-v1, VTID-05214) → VTID → code."). Pin the stable endpoints of the
     // flow rather than the exact middle clause so a future wording tweak does not re-break it.
-    expect(md).toMatch(/[Pp]lan → sparring → owner approval[\s\S]*?→ VTID → code\./);
+    // Bridge period (owner instruction 2026-11-12, #5021) reworded the middle clause again, from
+    // "owner approval" to "machine approval on convergence". Per this test's own stated intent
+    // above — pin the stable endpoints, not one enumerated middle-clause word, so a future
+    // wording tweak (e.g. "policy approval") does not re-break this again (sparring round 1,
+    // R1-F1, VTID-05785).
+    expect(md).toMatch(/[Pp]lan → sparring → \w+ approval[\s\S]*?→ VTID → code\./);
     expect(md).toContain('Claude Opus 4.6 on AWS Bedrock');
     // Owner decision 2026-10-19: Opus 4.6 → Sonnet 4.6 → DeepSeek, never Google.
     expect(md).toContain('**Fallback chain');

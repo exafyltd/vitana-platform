@@ -1,0 +1,24 @@
+cp: cannot stat '../supabase/migrations/20261112100000_bridge_sparring_convergence_is_approval.sql': No such file or directory
+sed: can't read ../supabase/migrations/20261112100000_bridge_sparring_convergence_is_approval.sql: No such file or directory
+C4 mutation (definer-public comment removed):
+PASS test/vtid-05041-definer-lockdown.test.ts
+Tests:       1 skipped, 7 passed, 8 total
+cp: cannot stat '/tmp/m2.bak': No such file or directory
+C2 mutation (rulesChars reverted to 8_000):
+FAIL test/vtid-04018-operator-bootstrap-pack.test.ts
+Tests:       2 failed, 14 passed, 16 total
+C3 mutation (regex reverted to literal 'owner approval'):
+FAIL test/vtid-04868-plan-sparring-session-layer.test.ts
+Tests:       1 failed, 6 passed, 7 total
+Traceback (most recent call last):
+  File "<string>", line 7, in <module>
+KeyError: 'workflows'
+(python mutation skipped: 1)
+C1 mutation (AWS-KIRO-ACCESS removed from catalog):
+PASS test/loop-catalog.test.ts
+Tests:       25 passed, 25 total
+---C4 mutation (correct path)---
+FAIL test/vtid-05041-definer-lockdown.test.ts
+Tests:       1 failed, 1 skipped, 6 passed, 8 total
+---C1 coverage note---
+C1 is a single-line additive catalog fix; its red->green sensitivity is already shown by red.txt (fails, line absent) and green.txt (passes, line present) for the same file at the same commit range.

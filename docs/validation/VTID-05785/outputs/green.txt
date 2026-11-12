@@ -1,0 +1,116 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/.wt/bdf-lane/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-05041-definer-lockdown.test.ts
+  VTID-05041 SECURITY DEFINER lockdown (S2)
+    ✓ sorts after VTID-04981, which it requires (4 ms)
+    ✓ revokes members from every overload of the four memory functions and keeps the gateway (3 ms)
+    ✓ recreates the profile lookup without email and re-grants anon/authenticated/service_role (2 ms)
+    ✓ checks the end state on apply, by effect (1 ms)
+    ✓ no later migration grants the locked functions to members again or re-adds email to the profile lookup (13 ms)
+    ✓ every gateway caller of the memory functions uses the service-role key (1 ms)
+    ✓ a migration newer than S2 that creates a SECURITY DEFINER function revokes PUBLIC and anon, or says why not (7 ms)
+    ○ skipped reproduces the live exposure, refuses before VTID-04981, applies twice and passes the SQL assertions
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.warn
+    [VTID-04018] bootstrap pack failed open: deps.readRepoFile is not a function
+
+    [0m [90m 441 |[39m     [36mreturn[39m assembleBootstrapPack([[33m...[39mentry[33m.[39msections[33m,[39m flags[33m,[39m catalog][33m,[39m entry[33m.[39mbuiltAtIso)[33m;[39m
+     [90m 442 |[39m   } [36mcatch[39m (err) {
+    [31m[1m>[22m[39m[90m 443 |[39m     console[33m.[39mwarn([32m`[VTID-04018] bootstrap pack failed open: ${err instanceof Error ? err.message : String(err)}`[39m)[33m;[39m
+     [90m     |[39m             [31m[1m^[22m[39m
+     [90m 444 |[39m     [36mreturn[39m [32m''[39m[33m;[39m
+     [90m 445 |[39m   }
+     [90m 446 |[39m }[0m
+
+      at getOperatorBootstrapPack (src/services/operator-bootstrap-pack.ts:443:13)
+      at Object.<anonymous> (test/vtid-04018-operator-bootstrap-pack.test.ts:172:18)
+
+PASS test/vtid-04018-operator-bootstrap-pack.test.ts
+  VTID-04018 pure renderers
+    ✓ extracts CLAUDE.md Part 1 (the rules), bounded, and never the change log (1 ms)
+    ✓ compresses the newest change-log rows to one line each with date + VTID (5 ms)
+    ✓ indexes DATABASE_SCHEMA.md table headings and the service path map (2 ms)
+    ✓ renders the tool catalog from declarations (first sentence only), PRs, events and build-info (1 ms)
+    ✓ parses build-info targets and the flag (1 ms)
+    ✓ assembles sections with a header, renders failures inline, and clips at the size budget (1 ms)
+    ✓ withTimeout rejects late promises (37 ms)
+  VTID-04018 sections, fail-open and cache
+    ✓ builds every section from the injected sources (3 ms)
+    ✓ a failing or hanging source renders as unavailable and does not block the others (1502 ms)
+    ✓ a missing build-info target is one unavailable line, not a failed section (2 ms)
+    ✓ is empty when disabled and never calls a source (1 ms)
+    ✓ caches the fetched sections for 5 minutes, coalesces concurrent builds, and renders the catalog per call (24 ms)
+    ✓ never throws — a broken deps set fails open to an empty pack (24 ms)
+  VTID-04018 wiring
+    ✓ the main operator turn appends the pack after the VTID-03930 orientation block and passes the same tool defs it renders (1 ms)
+    ✓ the tool-result turn carries the same pack (§4.1) (1 ms)
+    ✓ staging pins the flag and the two build-info targets; prod declares the same (VTID-04230) (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/loop-catalog.test.ts
+  VTID-05084 loop catalog — contract
+    ✓ is valid: every loop carries the full contract (1 ms)
+    ✓ has 14 loops: 6 platform, 8 product, unique ids L1..L14 (1 ms)
+    ✓ R2/R3 loops have a human gate and R3 loops never execute on their own (1 ms)
+    ✓ every loop that writes member-facing health, product or creator text uses the claim verifier (1 ms)
+    ✓ the guard loop only escalates (L0)
+    ✓ folds every one of the 100 v1 cases in exactly once (loops + shared verifiers) (7 ms)
+    ✓ every existing_ref points at something real in this repo (55 ms)
+    ✓ PARTIAL and PLANNED loops name their gap; LIVE and PARTIAL loops say where they run today (2 ms)
+    ✓ lists the known overlaps as the Simplify backlog (2 ms)
+    ✓ VTID-05098: every overlap says what the Simplify loop did with it (1 ms)
+    ✓ VTID-05098: the five retired routines are gone from the repo and from every loop (4 ms)
+  VTID-05084 coverage rule — every sensor owned by exactly one loop
+    ✓ health_groups: no orphans, nothing owned twice, no dangling names
+    ✓ routines: no orphans, nothing owned twice, no dangling names (1 ms)
+    ✓ workflows: no orphans, nothing owned twice, no dangling names (6 ms)
+    ✓ test_contracts: no orphans, nothing owned twice, no dangling names (1 ms)
+    ✓ the service reports the same clean coverage for the registries compiled into the gateway (6 ms)
+    ✓ computeCoverage detects an orphan, a double owner and an unknown name
+  VTID-05084 validateCatalog rejects broken contracts
+    ✓ VTID-05098: flags an unknown overlap status and a closed overlap without a resolution
+    ✓ flags a missing field, an R2 loop without a gate and an R3 loop at L3 (1 ms)
+    ✓ loadCatalog throws loudly on an invalid file (16 ms)
+  VTID-05084 plane signal (agent_runs_unified, read-only)
+    ✓ counts 7 days of runs per status for one plane (1 ms)
+    ✓ marks a capped window (1 ms)
+    ✓ degrades to unavailable on a view error or no client, never throws (1 ms)
+    ✓ caches a plane for 60 s (1 ms)
+    ✓ buildCatalogResponse serves the catalog even when no signal is available (2 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04868-plan-sparring-session-layer.test.ts
+  VTID-04868 Plan Sparring Gate — session layer
+    ✓ CLAUDE.md carries rules 51-55 and puts allocation after sparring (3 ms)
+    ✓ the partner agent is read-only and pinned to Opus 4.6
+    ✓ the skill defines >=2 passes, round caps and the record location
+    ✓ hook DENIES an allocation that references no sparring record (before it runs) (21 ms)
+    ✓ hook also denies /vtid/allocate and direct ledger inserts, including multi-line SQL (73 ms)
+    ✓ hook allows the call when a sparring record is referenced, and ignores unrelated commands (40 ms)
+    ✓ settings.json registers the hook for Bash and execute_sql (1 ms)
+
+Test Suites: 4 passed, 4 total
+Tests:       1 skipped, 55 passed, 56 total
+Snapshots:   0 total
+Time:        5.028 s
+Ran all test suites matching /test\/loop-catalog.test.ts|test\/vtid-04018-operator-bootstrap-pack.test.ts|test\/vtid-05041-definer-lockdown.test.ts|test\/vtid-04868-plan-sparring-session-layer.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
