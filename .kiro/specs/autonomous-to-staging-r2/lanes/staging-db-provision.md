@@ -1,6 +1,6 @@
 ---
 lane: staging-db-provision
-state: in-review
+state: done
 next_actor: kiro
 branch: kiro/autonomous-to-staging-r2/staging-db-provision
 depends_on: []
@@ -19,7 +19,8 @@ paths:
   - .github/workflows/STAGING-DB-SCHEMA.yml
   - docs/STAGING.md
   - docs/validation/VTID-*/**
-updated: 2026-11-12T21:26Z
+updated: 2026-11-12T21:54Z
+pr: https://github.com/exafyltd/vitana-platform/pull/5053
 vtid: VTID-05782
 ---
 # Lane: staging-db-provision (repo vitana-platform)
@@ -59,3 +60,10 @@ reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 PR: https://github.com/exafyltd/vitana-platform/pull/5053
 Findings: the blocking finding of 590b018366 is resolved in role and boundary: ManagedMasterSecretCreate allows only CreateSecret/TagResource on rds!cluster-* with aws:ViaAWSService=true; RotateSecret removed; four explicit Denies (by production name prefixes 4dab93b8/eba8a4f2, by production resource tag, by production request tag, any other cluster's managed secret). Departures checked against the repo docs. No regression; the update-branch merge brings only main's plan-only spec. Non-blocking: two conditions tested by structure only (evaluator limit, mutations cover them); IAM not yet proven against AWS (first owner-approved apply fails closed); CI on this head to be confirmed green by the land step.
 Next: the land step merges under §7b after every check is green on 7e6689c7
+
+### 2026-11-12T21:54Z · kiro-exafy-202611110920-270b · in-review → verified
+merge: c2c02ef30aee6ec4af808908b88b1e379156d68d (exafyltd/vitana-platform#5053)
+authority: §7b PM rule, applied by the plan driver through `land-guard.mjs merge` (accept current on 7e6689c7 plus a clean merge of main, every check green, up to date with main).
+
+### 2026-11-12T21:54Z · kiro-exafy-202611110920-270b · verified → done
+Stage 2 code complete: STAGING-DB-SCHEMA on the merge commit (completed success): https://github.com/exafyltd/vitana-platform/actions/runs/43314667777; GATE-INVARIANTS green: https://github.com/exafyltd/vitana-platform/actions/runs/43314667722. Nothing is provisioned, nothing deploys (Auto Deploy ran cutover_gate only; no STAGING-VERIFY). Open owner actions: STAGING_DB_COST_APPROVED=yes, deploy infra/staging-db/stack.yaml, set AWS_STAGING_DB_ROLE_ARN (docs/STAGING.md). Production unchanged.
