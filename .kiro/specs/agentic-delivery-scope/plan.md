@@ -12,6 +12,9 @@ Owner, 2026-11-11 (spec `agentic-delivery-scope` v5): *"Execute the whole spec i
 add any approval, sign-off, confirmation or 'owner decides' step. Do not write a question to the owner. The only human
 step in the whole flow is Gate 2."*
 
+Late lanes added after convergence, outside the sparred block: `addr-01`..`addr-10` and `addr-guard` (§8a), and
+`bedrock-invoke-policy` (owner instruction 2026-11-12: the P7 Bedrock policy as a file). See `handoff.md`.
+
 <!-- plan:begin -->
 Privacy rule for this plan and its sparring (owner spec v5): no plan text, finding, response or record quotes an email
 address; cite `file:line` instead, and verify an address premise by a count, never by quoting a line.
