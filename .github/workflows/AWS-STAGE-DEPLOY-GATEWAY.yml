@@ -1285,7 +1285,6 @@ jobs:
                           {name:"MEMORY_ORB_RECALL_SHADOW", value:"true"},
                           {name:"BEDROCK_ROLE_ARN", value:$TASK_ROLE},
                           {name:"AWS_BEDROCK_REGION", value:"eu-central-1"},
-                          {name:"AURORA_CA_BUNDLE_PATH", value:"/app/certs/rds-combined-ca-bundle.pem"},
                           {name:"GOOGLE_CLOUD_PROJECT", value:"project-da3eb05a-c86e-47cb-85f"},
                           {name:"VERTEX_AI_LOCATION", value:"global"},
                           {name:"VERTEX_SERBIAN_BRIDGE_ENABLED", value:"true"}, {name:"VERTEX_RUSSIAN_BRIDGE_ENABLED", value:"true"}, {name:"GOOGLE_AUTH_AWS_SUPPLIER_ENABLED", value:"true"},
@@ -1346,6 +1345,10 @@ jobs:
                     else . end )
                 | .containerDefinitions[0].environment |= ( [ .[] | select(.name as $n | ($CA[0].env + $CA[0].sec) | map(.name) | index($n) | not) ] + $CA[0].env )
                 | .containerDefinitions[0].secrets |= ( [ .[] | select(.name as $n | $CA[0].sec | map(.name) | index($n) | not) ] + $CA[0].sec )
+                # VTID-05023: strip production Aurora bindings from EVERY container, in both lists, last.
+                | .containerDefinitions |= map(
+                    if .environment then .environment |= [ .[] | select(.name | IN("AURORA_DATABASE_URL","AURORA_RLS_DATABASE_URL","AURORA_CA_BUNDLE_PATH") | not) ] else . end
+                    | if .secrets then .secrets |= [ .[] | select(.name | IN("AURORA_DATABASE_URL","AURORA_RLS_DATABASE_URL","AURORA_CA_BUNDLE_PATH") | not) ] else . end )
                 | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
                       .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)')
           printf '%s' "$NEW_DEF" > "$RUNNER_TEMP/new-task-def.json"
@@ -1366,6 +1369,13 @@ jobs:
           elif [ "$DATA_BACKEND" != keep ]; then
             echo "::error::data_backend=$DATA_BACKEND needs $DB_SCRIPT, which this commit predates"; exit 1
           fi
+          # VTID-05023 gate: refuse to register a revision that still binds an Aurora name in ANY container, env or secrets.
+          AURORA_LEAK_JQ='[ .containerDefinitions[] | ((.environment // [])[], (.secrets // [])[]) | .name | select(startswith("AURORA_")) ] | unique | join(" ")'
+          LEAK=$(printf '%s' "$NEW_DEF" | jq -r "$AURORA_LEAK_JQ")
+          if [ -n "$LEAK" ]; then
+            echo "::error::refusing to register: Aurora names still bound on the task definition: $LEAK"; exit 1
+          fi
+          echo "Aurora gate: no AURORA_ names in any container's environment or secrets"
           NEW_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_DEF" \
             --query 'taskDefinition.taskDefinitionArn' --output text)
           echo "Registered $NEW_ARN"
