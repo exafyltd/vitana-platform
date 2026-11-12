@@ -61,7 +61,7 @@ const SLUG_RE = /^[a-z0-9][a-z0-9-]*$/;
 // VTID-05213: two automation literals — `pm-agent` (the Project Manager's lane-file commits) and `ci-plan-spar`
 // (PLAN-SPAR.yml's sparring-round commits).
 // VTID-05276: a reviewer agent's own id, agent-<name>-YYYYMMDDHHMM-xxxx (`session-id --agent agent:<name>`).
-const SESSION_RE = /^(session_[A-Za-z0-9]+|kiro-(?:[a-z]{1,12}-)?\d{12}-[0-9a-f]{4}|agent-[a-z][a-z0-9-]{0,40}-\d{12}-[0-9a-f]{4}|pm-agent|ci-plan-spar)$/;
+const SESSION_RE = /^(session_[A-Za-z0-9]+|kiro-(?:[a-z]{1,12}-)?\d{12}-[0-9a-f]{4}|agent-[a-z][a-z0-9-]{0,40}-\d{12}-[0-9a-f]{4}|pm-agent|ci-plan-spar|ci-lane-review)$/;
 export const SEAT_RE = /^[a-z]{1,12}$/;
 export const isSessionId = (s) => SESSION_RE.test(s || '');
 const CI_PLAN_SPAR = 'ci-plan-spar';
@@ -72,7 +72,7 @@ export const seatOf = (s) => (/^kiro-([a-z]{1,12})-\d{12}-[0-9a-f]{4}$/.exec(s |
 // VTID-05276 (plan kiro-autonomy-fallback §4.1): reviewer agents — a `reviewer_seat` value that is not a Kiro seat. A
 // lane with `executor: kiro` and `reviewer_seat: agent:vitana-lane-reviewer` may change governance paths (never a
 // protected gate file); its review entries come from the agent's own session id.
-export const REVIEWER_AGENTS = ['agent:vitana-lane-reviewer'];
+export const REVIEWER_AGENTS = ['agent:vitana-lane-reviewer', 'agent:bedrock-lane-reviewer'];
 export const isReviewerAgent = (v) => REVIEWER_AGENTS.includes(v);
 /** The reviewer agent named in an agent session id (`agent:<name>`), else ''. */
 export const agentOf = (s) => {
