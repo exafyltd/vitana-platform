@@ -4,8 +4,10 @@ author: kiro
 author_seat: exafy
 executor: kiro
 next_actor: kiro
-state: drafted
-updated: 2026-11-12T19:00Z
+state: approved
+updated: 2026-11-12T19:30Z
+sparring_record: .kiro/specs/autonomous-to-staging-r2/sparring/verdict.md
+vtids: [VTID-05780, VTID-05781, VTID-05782, VTID-05783, VTID-05784]
 ---
 # Handoff — autonomous-to-staging-r2
 Revision of `autonomous-to-staging` (#5000): the missing `protect-gate-workflow` lane, and the isolated staging
@@ -20,3 +22,6 @@ VTID-05771 into AWS access, provisioning and a reversible cutover; approval to r
 cost, provision or cut over. Same owner instruction chain as `autonomous-to-staging` for the protected gate files
 `protect-gate-workflow` changes; that lane merges under the two-model rule now on `main`. VTIDs come only from
 PLAN-SPAR.
+
+### 2026-11-12T19:30Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 5 lane(s) got a VTID and are handed to Kiro.

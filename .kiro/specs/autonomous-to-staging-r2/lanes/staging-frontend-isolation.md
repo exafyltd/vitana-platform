@@ -4320,7 +4320,8 @@ paths:
   - docs/validation/VTID-05778/commands.log
   - docs/validation/VTID-05778/outputs
   - docs/validation/VTID-05778/staging-tests.json
-updated: 2026-11-12T19:00Z
+updated: 2026-11-12T19:30Z
+vtid: VTID-05783
 ---
 # Lane: staging-frontend-isolation (repo vitana-v1)
 Tasks in `tasks.md`. The VTID is allocated by PLAN-SPAR.
@@ -4328,3 +4329,6 @@ Tasks in `tasks.md`. The VTID is allocated by PLAN-SPAR.
 ## Log
 ### 2026-11-12T19:00Z · kiro-exafy-202611110920-270b · ready
 Lane created with the plan.
+
+### 2026-11-12T19:30Z · ci-plan-spar · ready (VTID allocated)
+VTID-05783 allocated after policy approval (converged-auto-v1).

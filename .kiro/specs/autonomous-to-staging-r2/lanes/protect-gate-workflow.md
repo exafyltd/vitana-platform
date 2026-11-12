@@ -23,7 +23,8 @@ paths:
   - .github/workflows/GATE-INVARIANTS.yml
   - scripts/ci/workflow-trigger-check.test.mjs
   - docs/validation/VTID-*/**
-updated: 2026-11-12T19:00Z
+updated: 2026-11-12T19:30Z
+vtid: VTID-05780
 ---
 # Lane: protect-gate-workflow (repo vitana-platform)
 Tasks in `tasks.md`. The VTID is allocated by PLAN-SPAR.
@@ -31,3 +32,6 @@ Tasks in `tasks.md`. The VTID is allocated by PLAN-SPAR.
 ## Log
 ### 2026-11-12T19:00Z · kiro-exafy-202611110920-270b · ready
 Lane created with the plan.
+
+### 2026-11-12T19:30Z · ci-plan-spar · ready (VTID allocated)
+VTID-05780 allocated after policy approval (converged-auto-v1).

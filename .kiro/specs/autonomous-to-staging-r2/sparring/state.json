@@ -3,15 +3,16 @@
     {
       "id": "87068fbf-b3ce-4623-94c3-a8e18b3e28fd",
       "submitted": [
-        1
+        1,
+        2
       ],
-      "plan_text_sha": "facab1af",
-      "rounds": 2,
-      "verdict": "in_progress",
+      "plan_text_sha": "e56cbbd7",
+      "rounds": 3,
+      "verdict": "converged",
       "infra": false,
       "retryable": false,
-      "final_plan_hash": null,
-      "policy_approved_at": null
+      "final_plan_hash": "45f28cb0e3fb28bae0e88b6eaa8412cdd509cf6abf28a8c4ffe7ab00aacb54db",
+      "policy_approved_at": "2026-11-12T19:26:26.282+00:00"
     }
   ]
 }
