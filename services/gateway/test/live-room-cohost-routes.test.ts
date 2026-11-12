@@ -241,10 +241,11 @@ describe('co-host routes (VTID-05559)', () => {
     installFetch({});
     mockSupa = { rpc: async (fn: string, params: any) => ({ data: fn === 'live_room_is_host' && params.p_user_id === COHOST, error: null }) };
     const cohost = await request(app()).post(`/api/v1/live/rooms/${ROOM}/enter`).set('Authorization', `Bearer valid-${COHOST}`).send({});
-    expect(cohost.body.error).not.toBe('NOT_HOST');
-    if (cohost.status === 200) expect(cohost.body.is_host).toBe(true);
+    expect(cohost.status).toBe(200);
+    expect(cohost.body.is_host).toBe(true);
 
     const stranger = await request(app()).post(`/api/v1/live/rooms/${ROOM}/enter`).set('Authorization', `Bearer valid-${STRANGER}`).send({});
-    if (stranger.status === 200) expect(stranger.body.is_host).not.toBe(true);
+    expect(stranger.status).toBe(200);
+    expect(stranger.body.is_host).not.toBe(true);
   });
 });

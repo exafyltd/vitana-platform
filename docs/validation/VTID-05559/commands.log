@@ -1,6 +1,6 @@
 # VTID-05559 commands.log
 
-Head reviewed: f59191cbd67d0253d0c5df31096f6dc888966594 (branch kiro/live-room-edit-cohost/gateway-cohost).
+Head reviewed: see the PR head at the time of the run (1d97263a7bc35c8cb36ade5af12e8a1762ffc194 is the last green head before the enter-test fix). (branch kiro/live-room-edit-cohost/gateway-cohost).
 
 ## CI (GitHub Actions, run on the head above)
 - Gateway (Jest, shards 1-4): completed/success.
@@ -11,6 +11,7 @@ Head reviewed: f59191cbd67d0253d0c5df31096f6dc888966594 (branch kiro/live-room-e
 
 ## Red on base
 The helper tests failed on the base before the implementation existed (module not found).
+NOT RECORDED: a red-on-base run for the edit and route suites. Writing one needs a CI run on a base without the implementation; it is outstanding.
 
 ## Local
 Not run locally: no npm registry access from the build session. CI is the record.
