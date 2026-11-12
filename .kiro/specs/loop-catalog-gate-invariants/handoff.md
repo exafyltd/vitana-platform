@@ -3,9 +3,11 @@ slug: loop-catalog-gate-invariants
 author: claude
 author_seat: none
 executor: kiro
-next_actor: claude
-state: drafted
-updated: 2026-11-12T12:30Z
+next_actor: kiro
+state: approved
+updated: 2026-11-12T12:39Z
+sparring_record: .kiro/specs/loop-catalog-gate-invariants/sparring/verdict.md
+vtids: [VTID-05778]
 ---
 # Handoff — loop-catalog-gate-invariants
 
@@ -16,3 +18,6 @@ allocates the lane's VTID.
 ## Log
 ### 2026-11-12T12:30Z · claude-code session_01Cp885FGVuZp27dQmDP6eMH · drafted
 Written on the owner's request. Evidence in plan.md "Today". The fix is the one line the test needs.
+
+### 2026-11-12T12:39Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.

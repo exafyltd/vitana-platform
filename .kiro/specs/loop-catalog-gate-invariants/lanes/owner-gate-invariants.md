@@ -11,7 +11,8 @@ reviewer_seat: agent:vitana-lane-reviewer
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 paths:
   - services/gateway/specs/loop-catalog-v1.json
-updated: 2026-11-12T12:30Z
+updated: 2026-11-12T12:39Z
+vtid: VTID-05778
 ---
 
 # Lane: owner-gate-invariants (repo exafyltd/vitana-platform)
@@ -22,3 +23,6 @@ Tasks in `tasks.md`.
 ## Log
 ### 2026-11-12T12:30Z · claude-code session_01Cp885FGVuZp27dQmDP6eMH · ready
 Lane created with the plan. Not claimed.
+
+### 2026-11-12T12:39Z · ci-plan-spar · ready (VTID allocated)
+VTID-05778 allocated after policy approval (converged-auto-v1).
