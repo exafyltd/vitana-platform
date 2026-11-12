@@ -1,11 +1,20 @@
 {
   "AWSTemplateFormatVersion": "2010-09-09",
-  "Description": "VTID-05764 (plan autonomous-to-staging, lane kiro-aws-access): kiro-staging-operator in 472838866351. Allow-list of staging resources by exact ARN, read-only elsewhere (no secret values), explicit denies on every production resource, a permissions boundary the role cannot change, and a read-only OIDC role for the daily drift check. Applied once by the owner; no CI role applies it.",
-  "Metadata": { "Account": "product" },
+  "Description": "VTID-05764 (plan autonomous-to-staging, lane kiro-aws-access): kiro-staging-operator in 472838866351. Allow-list of staging resources by exact ARN, read-only elsewhere (no secret values), explicit denies on every production resource, a permissions boundary the role cannot change, no iam:PassRole (staging and production share the gateway task role, so none is passable until dedicated staging roles exist), and a read-only OIDC role for the daily drift check. Applied once by the owner; no CI role applies it.",
+  "Metadata": {
+    "Account": "product"
+  },
   "Parameters": {
-    "ExternalId": { "Type": "String", "NoEcho": true, "MinLength": 32, "Description": "Shared with the Kiro environment secret store together with the source key; never in git." },
-    "StagingTaskRoleArns": { "Type": "CommaDelimitedList", "Default": "arn:aws:iam::472838866351:role/none", "Description": "Task and execution role ARNs of the staging services (iam:PassRole on these only, to ecs-tasks)." },
-    "GitHubOidcProviderArn": { "Type": "String", "Default": "arn:aws:iam::472838866351:oidc-provider/token.actions.githubusercontent.com" }
+    "ExternalId": {
+      "Type": "String",
+      "NoEcho": true,
+      "MinLength": 32,
+      "Description": "Shared with the Kiro environment secret store together with the source key; never in git."
+    },
+    "GitHubOidcProviderArn": {
+      "Type": "String",
+      "Default": "arn:aws:iam::472838866351:oidc-provider/token.actions.githubusercontent.com"
+    }
   },
   "Resources": {
     "StagingBoundary": {
@@ -16,24 +25,183 @@
         "PolicyDocument": {
           "Version": "2012-10-17",
           "Statement": [
-            { "Sid": "Ceiling", "Effect": "Allow", "Action": "*", "Resource": "*" },
-            { "Sid": "NoIamChanges", "Effect": "Deny",
-              "Action": ["iam:Create*", "iam:Delete*", "iam:Put*", "iam:Attach*", "iam:Detach*", "iam:Update*", "iam:Add*", "iam:Remove*", "iam:Set*", "iam:Tag*", "iam:Untag*", "iam:Upload*", "iam:Change*", "iam:Reset*", "iam:Enable*", "iam:Deactivate*", "iam:Resync*", "organizations:*", "account:*", "sts:AssumeRole"],
-              "Resource": "*" },
-            { "Sid": "NoProdEcs", "Effect": "Deny",
-              "Action": ["ecs:UpdateService", "ecs:DeleteService", "ecs:CreateService", "ecs:UpdateServicePrimaryTaskSet", "ecs:CreateTaskSet", "ecs:DeleteTaskSet", "ecs:TagResource", "ecs:UntagResource"],
-              "Resource": [{ "Fn::Sub": "arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:service/Vitana-ECS-Cluster/*-awsdr" }, { "Fn::Sub": "arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:service/Vitana-ECS-Cluster/*-prod" }] },
-            { "Sid": "NoProdData", "Effect": "Deny",
-              "Action": ["rds:Modify*", "rds:Delete*", "rds:Reboot*", "rds:Stop*", "rds:Start*", "rds:Failover*", "rds:Restore*", "rds:Create*", "rds:Add*", "rds:Remove*", "rds:Promote*", "rds:Copy*", "rds:Enable*", "rds:Disable*", "rds:Register*", "rds:Deregister*", "rds:Reset*", "rds:Apply*", "rds:Backtrack*", "rds-data:*", "rds-db:connect"],
-              "Resource": [{ "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster:vitana-aurora-prod" }, { "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:db:vitana-aurora-prod*" }, { "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:db-proxy:vitana-rds-proxy-prod" }, { "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:db-proxy:*" }, { "Fn::Sub": "arn:aws:rds-db:${AWS::Region}:${AWS::AccountId}:dbuser:*" }] },
-            { "Sid": "NoProdSecrets", "Effect": "Deny",
-              "Action": ["secretsmanager:GetSecretValue", "secretsmanager:PutSecretValue", "secretsmanager:UpdateSecret", "secretsmanager:DeleteSecret", "secretsmanager:RestoreSecret", "secretsmanager:RotateSecret", "secretsmanager:CancelRotateSecret", "secretsmanager:TagResource", "secretsmanager:UntagResource", "secretsmanager:PutResourcePolicy", "secretsmanager:DeleteResourcePolicy", "secretsmanager:ReplicateSecretToRegions", "secretsmanager:RemoveRegionsFromReplication", "secretsmanager:StopReplicationToReplica", "secretsmanager:UpdateSecretVersionStage"],
-              "Resource": [{ "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:vitana/aurora/prod/*" }, { "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:vitana/supabase/prod/*" }] },
-            { "Sid": "NoProdKms", "Effect": "Deny", "Action": "kms:*", "Resource": "arn:aws:kms:eu-central-1:472838866351:key/1cd1f8d1-fc05-4de8-acdd-76e76b8a39d1" },
-            { "Sid": "NoProdAlb", "Effect": "Deny",
-              "Action": ["elasticloadbalancing:Modify*", "elasticloadbalancing:Delete*", "elasticloadbalancing:Create*", "elasticloadbalancing:Add*", "elasticloadbalancing:Remove*", "elasticloadbalancing:Set*", "elasticloadbalancing:Register*", "elasticloadbalancing:Deregister*"],
-              "Resource": [{ "Fn::Sub": "arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:loadbalancer/app/vitana-alb-prod/*" }, { "Fn::Sub": "arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:listener/app/vitana-alb-prod/*" }, { "Fn::Sub": "arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:listener-rule/app/vitana-alb-prod/*" }] },
-            { "Sid": "NoAuditTampering", "Effect": "Deny", "Action": ["cloudtrail:StopLogging", "cloudtrail:DeleteTrail", "cloudtrail:UpdateTrail", "cloudtrail:PutEventSelectors"], "Resource": "*" }
+            {
+              "Sid": "Ceiling",
+              "Effect": "Allow",
+              "Action": "*",
+              "Resource": "*"
+            },
+            {
+              "Sid": "NoIamChanges",
+              "Effect": "Deny",
+              "Action": [
+                "iam:Create*",
+                "iam:Delete*",
+                "iam:Put*",
+                "iam:Attach*",
+                "iam:Detach*",
+                "iam:Update*",
+                "iam:Add*",
+                "iam:Remove*",
+                "iam:Set*",
+                "iam:Tag*",
+                "iam:Untag*",
+                "iam:Upload*",
+                "iam:Change*",
+                "iam:Reset*",
+                "iam:Enable*",
+                "iam:Deactivate*",
+                "iam:Resync*",
+                "organizations:*",
+                "account:*",
+                "sts:AssumeRole",
+                "iam:PassRole"
+              ],
+              "Resource": "*"
+            },
+            {
+              "Sid": "NoProdEcs",
+              "Effect": "Deny",
+              "Action": [
+                "ecs:UpdateService",
+                "ecs:DeleteService",
+                "ecs:CreateService",
+                "ecs:UpdateServicePrimaryTaskSet",
+                "ecs:CreateTaskSet",
+                "ecs:DeleteTaskSet",
+                "ecs:TagResource",
+                "ecs:UntagResource"
+              ],
+              "Resource": [
+                {
+                  "Fn::Sub": "arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:service/Vitana-ECS-Cluster/*-awsdr"
+                },
+                {
+                  "Fn::Sub": "arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:service/Vitana-ECS-Cluster/*-prod"
+                }
+              ]
+            },
+            {
+              "Sid": "NoProdData",
+              "Effect": "Deny",
+              "Action": [
+                "rds:Modify*",
+                "rds:Delete*",
+                "rds:Reboot*",
+                "rds:Stop*",
+                "rds:Start*",
+                "rds:Failover*",
+                "rds:Restore*",
+                "rds:Create*",
+                "rds:Add*",
+                "rds:Remove*",
+                "rds:Promote*",
+                "rds:Copy*",
+                "rds:Enable*",
+                "rds:Disable*",
+                "rds:Register*",
+                "rds:Deregister*",
+                "rds:Reset*",
+                "rds:Apply*",
+                "rds:Backtrack*",
+                "rds-data:*",
+                "rds-db:connect"
+              ],
+              "Resource": [
+                {
+                  "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster:vitana-aurora-prod"
+                },
+                {
+                  "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:db:vitana-aurora-prod*"
+                },
+                {
+                  "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:db-proxy:vitana-rds-proxy-prod"
+                },
+                {
+                  "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:db-proxy:*"
+                },
+                {
+                  "Fn::Sub": "arn:aws:rds-db:${AWS::Region}:${AWS::AccountId}:dbuser:*"
+                }
+              ]
+            },
+            {
+              "Sid": "NoProdSecrets",
+              "Effect": "Deny",
+              "Action": [
+                "secretsmanager:GetSecretValue",
+                "secretsmanager:PutSecretValue",
+                "secretsmanager:UpdateSecret",
+                "secretsmanager:DeleteSecret",
+                "secretsmanager:RestoreSecret",
+                "secretsmanager:RotateSecret",
+                "secretsmanager:CancelRotateSecret",
+                "secretsmanager:TagResource",
+                "secretsmanager:UntagResource",
+                "secretsmanager:PutResourcePolicy",
+                "secretsmanager:DeleteResourcePolicy",
+                "secretsmanager:ReplicateSecretToRegions",
+                "secretsmanager:RemoveRegionsFromReplication",
+                "secretsmanager:StopReplicationToReplica",
+                "secretsmanager:UpdateSecretVersionStage"
+              ],
+              "Resource": [
+                {
+                  "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:vitana/aurora/prod/*"
+                },
+                {
+                  "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:vitana/supabase/prod/*"
+                },
+                {
+                  "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:vitana/gateway-awsdr/*"
+                },
+                {
+                  "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:vitana/kiro/production/*"
+                }
+              ]
+            },
+            {
+              "Sid": "NoProdKms",
+              "Effect": "Deny",
+              "Action": "kms:*",
+              "Resource": "arn:aws:kms:eu-central-1:472838866351:key/1cd1f8d1-fc05-4de8-acdd-76e76b8a39d1"
+            },
+            {
+              "Sid": "NoProdAlb",
+              "Effect": "Deny",
+              "Action": [
+                "elasticloadbalancing:Modify*",
+                "elasticloadbalancing:Delete*",
+                "elasticloadbalancing:Create*",
+                "elasticloadbalancing:Add*",
+                "elasticloadbalancing:Remove*",
+                "elasticloadbalancing:Set*",
+                "elasticloadbalancing:Register*",
+                "elasticloadbalancing:Deregister*"
+              ],
+              "Resource": [
+                {
+                  "Fn::Sub": "arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:loadbalancer/app/vitana-alb-prod/*"
+                },
+                {
+                  "Fn::Sub": "arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:listener/app/vitana-alb-prod/*"
+                },
+                {
+                  "Fn::Sub": "arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:listener-rule/app/vitana-alb-prod/*"
+                }
+              ]
+            },
+            {
+              "Sid": "NoAuditTampering",
+              "Effect": "Deny",
+              "Action": [
+                "cloudtrail:StopLogging",
+                "cloudtrail:DeleteTrail",
+                "cloudtrail:UpdateTrail",
+                "cloudtrail:PutEventSelectors"
+              ],
+              "Resource": "*"
+            }
           ]
         }
       }
@@ -44,85 +212,392 @@
         "RoleName": "kiro-staging-operator",
         "Description": "Kiro staging operations: staging writes by exact ARN, read elsewhere, production denied.",
         "MaxSessionDuration": 3600,
-        "PermissionsBoundary": { "Ref": "StagingBoundary" },
-        "Tags": [{ "Key": "vitana-env", "Value": "staging" }, { "Key": "vtid", "Value": "VTID-05764" }],
+        "PermissionsBoundary": {
+          "Ref": "StagingBoundary"
+        },
+        "Tags": [
+          {
+            "Key": "vitana-env",
+            "Value": "staging"
+          },
+          {
+            "Key": "vtid",
+            "Value": "VTID-05764"
+          }
+        ],
         "AssumeRolePolicyDocument": {
           "Version": "2012-10-17",
           "Statement": [
-            { "Sid": "KiroSource", "Effect": "Allow",
-              "Principal": { "AWS": "arn:aws:iam::841276716213:user/kiro-agent-source" },
-              "Action": ["sts:AssumeRole"],
-              "Condition": { "StringEquals": { "sts:ExternalId": { "Ref": "ExternalId" } }, "StringLike": { "aws:RequestTag/kiro-session": "kiro-*" } } },
-            { "Sid": "KiroSourceTags", "Effect": "Allow",
-              "Principal": { "AWS": "arn:aws:iam::841276716213:user/kiro-agent-source" },
-              "Action": ["sts:TagSession"],
-              "Condition": { "StringLike": { "aws:RequestTag/kiro-session": "kiro-*" } } }
+            {
+              "Sid": "KiroSource",
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": "arn:aws:iam::841276716213:user/kiro-agent-source"
+              },
+              "Action": [
+                "sts:AssumeRole"
+              ],
+              "Condition": {
+                "StringEquals": {
+                  "sts:ExternalId": {
+                    "Ref": "ExternalId"
+                  }
+                },
+                "StringLike": {
+                  "aws:RequestTag/kiro-session": "kiro-*"
+                }
+              }
+            },
+            {
+              "Sid": "KiroSourceTags",
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": "arn:aws:iam::841276716213:user/kiro-agent-source"
+              },
+              "Action": [
+                "sts:TagSession"
+              ],
+              "Condition": {
+                "StringLike": {
+                  "aws:RequestTag/kiro-session": "kiro-*"
+                }
+              }
+            }
           ]
         },
-        "Policies": [{
-          "PolicyName": "kiro-staging-operator",
-          "PolicyDocument": {
-            "Version": "2012-10-17",
-            "Statement": [
-              { "Sid": "Read", "Effect": "Allow",
-                "Action": ["ecs:Describe*", "ecs:List*", "rds:Describe*", "rds:ListTagsForResource", "logs:Describe*", "logs:GetLogEvents", "logs:FilterLogEvents", "logs:StartQuery", "logs:GetQueryResults", "cloudwatch:GetMetricData", "cloudwatch:GetMetricStatistics", "cloudwatch:ListMetrics", "cloudwatch:DescribeAlarms", "ec2:Describe*", "elasticloadbalancing:Describe*", "secretsmanager:DescribeSecret", "secretsmanager:ListSecrets", "kms:DescribeKey", "kms:ListKeys", "kms:ListAliases", "cloudtrail:LookupEvents", "ecr:DescribeImages", "ecr:DescribeRepositories", "ecr:ListImages"],
-                "Resource": "*" },
-              { "Sid": "EcsStagingServices", "Effect": "Allow",
-                "Action": ["ecs:UpdateService"],
-                "Resource": [
-                  { "Fn::Sub": "arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:service/Vitana-ECS-Cluster/vitana-gateway" },
-                  { "Fn::Sub": "arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:service/Vitana-ECS-Cluster/vitana-kiro-runner" },
-                  { "Fn::Sub": "arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:service/Vitana-ECS-Cluster/vitana-erp-bridge" },
-                  { "Fn::Sub": "arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:service/Vitana-ECS-Cluster/vitana-postgrest-aurora-proxy" },
-                  { "Fn::Sub": "arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:service/Vitana-ECS-Cluster/vitana-community-app-staging" },
-                  { "Fn::Sub": "arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:service/Vitana-ECS-Cluster/vitana-gateway-iso" },
-                  { "Fn::Sub": "arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:service/Vitana-ECS-Cluster/vitana-postgrest-aurora-staging-iso" }
-                ] },
-              { "Sid": "EcsTaskDefinitions", "Effect": "Allow", "Action": ["ecs:RegisterTaskDefinition"], "Resource": "*" },
-              { "Sid": "PassStagingTaskRoles", "Effect": "Allow", "Action": ["iam:PassRole"], "Resource": { "Ref": "StagingTaskRoleArns" },
-                "Condition": { "StringEquals": { "iam:PassedToService": "ecs-tasks.amazonaws.com" } } },
-              { "Sid": "RdsStagingCluster", "Effect": "Allow",
-                "Action": ["rds:ModifyDBCluster", "rds:ModifyDBInstance", "rds:CreateDBClusterSnapshot", "rds:RebootDBInstance", "rds:StartDBCluster", "rds:StopDBCluster", "rds:AddTagsToResource"],
-                "Resource": [
-                  { "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster:vitana-aurora-staging" },
-                  { "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:db:vitana-aurora-staging-*" },
-                  { "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster-snapshot:vitana-aurora-staging-*" }
-                ] },
-              { "Sid": "RdsDataStaging", "Effect": "Allow",
-                "Action": ["rds-data:ExecuteStatement", "rds-data:BatchExecuteStatement", "rds-data:BeginTransaction", "rds-data:CommitTransaction", "rds-data:RollbackTransaction"],
-                "Resource": { "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster:vitana-aurora-staging" } },
-              { "Sid": "StagingDbSecretValue", "Effect": "Allow", "Action": ["secretsmanager:GetSecretValue"],
-                "Resource": { "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:vitana/aurora/staging-db/*" } },
-              { "Sid": "StagingSecretsWrite", "Effect": "Allow",
-                "Action": ["secretsmanager:PutSecretValue", "secretsmanager:UpdateSecret", "secretsmanager:TagResource"],
-                "Resource": [
-                  { "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:vitana/gateway/staging/*" },
-                  { "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:vitana/supabase/staging/*" },
-                  { "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:vitana/erp-bridge/staging/*" },
-                  { "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:vitana/aurora/staging-db/*" }
-                ] },
-              { "Sid": "StagingKms", "Effect": "Allow", "Action": ["kms:Decrypt", "kms:Encrypt", "kms:GenerateDataKey*"], "Resource": "*",
-                "Condition": { "StringEquals": { "aws:ResourceTag/vitana-env": "staging" } } },
-              { "Sid": "DenyProdEcs", "Effect": "Deny",
-                "Action": ["ecs:UpdateService", "ecs:DeleteService", "ecs:CreateService", "ecs:UpdateServicePrimaryTaskSet", "ecs:CreateTaskSet", "ecs:DeleteTaskSet", "ecs:TagResource", "ecs:UntagResource"],
-                "Resource": [{ "Fn::Sub": "arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:service/Vitana-ECS-Cluster/*-awsdr" }, { "Fn::Sub": "arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:service/Vitana-ECS-Cluster/*-prod" }] },
-              { "Sid": "DenyProdData", "Effect": "Deny",
-                "Action": ["rds:Modify*", "rds:Delete*", "rds:Reboot*", "rds:Stop*", "rds:Start*", "rds:Failover*", "rds:Restore*", "rds:Create*", "rds:Add*", "rds:Remove*", "rds:Promote*", "rds:Copy*", "rds:Enable*", "rds:Disable*", "rds:Register*", "rds:Deregister*", "rds:Reset*", "rds:Apply*", "rds:Backtrack*", "rds-data:*", "rds-db:connect"],
-                "Resource": [{ "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster:vitana-aurora-prod" }, { "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:db:vitana-aurora-prod*" }, { "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:db-proxy:vitana-rds-proxy-prod" }, { "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:db-proxy:*" }] },
-              { "Sid": "DenyProdSecrets", "Effect": "Deny",
-                "Action": ["secretsmanager:GetSecretValue", "secretsmanager:PutSecretValue", "secretsmanager:UpdateSecret", "secretsmanager:DeleteSecret", "secretsmanager:RestoreSecret", "secretsmanager:RotateSecret", "secretsmanager:TagResource", "secretsmanager:UntagResource", "secretsmanager:PutResourcePolicy", "secretsmanager:DeleteResourcePolicy", "secretsmanager:UpdateSecretVersionStage"],
-                "Resource": [{ "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:vitana/aurora/prod/*" }, { "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:vitana/supabase/prod/*" }] },
-              { "Sid": "DenyProdKms", "Effect": "Deny", "Action": "kms:*", "Resource": "arn:aws:kms:eu-central-1:472838866351:key/1cd1f8d1-fc05-4de8-acdd-76e76b8a39d1" },
-              { "Sid": "DenyProdAlb", "Effect": "Deny",
-                "Action": ["elasticloadbalancing:Modify*", "elasticloadbalancing:Delete*", "elasticloadbalancing:Create*", "elasticloadbalancing:Add*", "elasticloadbalancing:Remove*", "elasticloadbalancing:Set*", "elasticloadbalancing:Register*", "elasticloadbalancing:Deregister*"],
-                "Resource": [{ "Fn::Sub": "arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:loadbalancer/app/vitana-alb-prod/*" }, { "Fn::Sub": "arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:listener/app/vitana-alb-prod/*" }, { "Fn::Sub": "arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:listener-rule/app/vitana-alb-prod/*" }] },
-              { "Sid": "DenyStagingDelete", "Effect": "Deny", "Action": ["rds:DeleteDBCluster", "rds:DeleteDBInstance", "rds:DeleteDBClusterSnapshot", "ecs:DeleteService", "ecs:DeleteCluster", "secretsmanager:DeleteSecret"], "Resource": "*" },
-              { "Sid": "DenySelfIam", "Effect": "Deny",
-                "Action": ["iam:Create*", "iam:Delete*", "iam:Put*", "iam:Attach*", "iam:Detach*", "iam:Update*", "iam:Tag*", "iam:Untag*"],
-                "Resource": "*" }
-            ]
+        "Policies": [
+          {
+            "PolicyName": "kiro-staging-operator",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Sid": "Read",
+                  "Effect": "Allow",
+                  "Action": [
+                    "ecs:Describe*",
+                    "ecs:List*",
+                    "rds:Describe*",
+                    "rds:ListTagsForResource",
+                    "logs:Describe*",
+                    "logs:GetLogEvents",
+                    "logs:FilterLogEvents",
+                    "logs:StartQuery",
+                    "logs:GetQueryResults",
+                    "cloudwatch:GetMetricData",
+                    "cloudwatch:GetMetricStatistics",
+                    "cloudwatch:ListMetrics",
+                    "cloudwatch:DescribeAlarms",
+                    "ec2:Describe*",
+                    "elasticloadbalancing:Describe*",
+                    "secretsmanager:DescribeSecret",
+                    "secretsmanager:ListSecrets",
+                    "kms:DescribeKey",
+                    "kms:ListKeys",
+                    "kms:ListAliases",
+                    "cloudtrail:LookupEvents",
+                    "ecr:DescribeImages",
+                    "ecr:DescribeRepositories",
+                    "ecr:ListImages"
+                  ],
+                  "Resource": "*"
+                },
+                {
+                  "Sid": "EcsStagingServices",
+                  "Effect": "Allow",
+                  "Action": [
+                    "ecs:UpdateService"
+                  ],
+                  "Resource": [
+                    {
+                      "Fn::Sub": "arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:service/Vitana-ECS-Cluster/vitana-gateway"
+                    },
+                    {
+                      "Fn::Sub": "arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:service/Vitana-ECS-Cluster/vitana-kiro-runner"
+                    },
+                    {
+                      "Fn::Sub": "arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:service/Vitana-ECS-Cluster/vitana-erp-bridge"
+                    },
+                    {
+                      "Fn::Sub": "arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:service/Vitana-ECS-Cluster/vitana-postgrest-aurora-proxy"
+                    },
+                    {
+                      "Fn::Sub": "arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:service/Vitana-ECS-Cluster/vitana-community-app-staging"
+                    },
+                    {
+                      "Fn::Sub": "arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:service/Vitana-ECS-Cluster/vitana-gateway-iso"
+                    },
+                    {
+                      "Fn::Sub": "arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:service/Vitana-ECS-Cluster/vitana-postgrest-aurora-staging-iso"
+                    }
+                  ]
+                },
+                {
+                  "Sid": "RdsStagingCluster",
+                  "Effect": "Allow",
+                  "Action": [
+                    "rds:ModifyDBCluster",
+                    "rds:ModifyDBInstance",
+                    "rds:CreateDBClusterSnapshot",
+                    "rds:RebootDBInstance",
+                    "rds:StartDBCluster",
+                    "rds:StopDBCluster",
+                    "rds:AddTagsToResource"
+                  ],
+                  "Resource": [
+                    {
+                      "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster:vitana-aurora-staging"
+                    },
+                    {
+                      "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:db:vitana-aurora-staging-*"
+                    },
+                    {
+                      "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster-snapshot:vitana-aurora-staging-*"
+                    }
+                  ]
+                },
+                {
+                  "Sid": "RdsDataStaging",
+                  "Effect": "Allow",
+                  "Action": [
+                    "rds-data:ExecuteStatement",
+                    "rds-data:BatchExecuteStatement",
+                    "rds-data:BeginTransaction",
+                    "rds-data:CommitTransaction",
+                    "rds-data:RollbackTransaction"
+                  ],
+                  "Resource": {
+                    "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster:vitana-aurora-staging"
+                  }
+                },
+                {
+                  "Sid": "StagingDbSecretValue",
+                  "Effect": "Allow",
+                  "Action": [
+                    "secretsmanager:GetSecretValue"
+                  ],
+                  "Resource": {
+                    "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:vitana/aurora/staging-db/*"
+                  }
+                },
+                {
+                  "Sid": "StagingSecretsWrite",
+                  "Effect": "Allow",
+                  "Action": [
+                    "secretsmanager:PutSecretValue",
+                    "secretsmanager:UpdateSecret",
+                    "secretsmanager:TagResource"
+                  ],
+                  "Resource": [
+                    {
+                      "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:vitana/gateway/staging/*"
+                    },
+                    {
+                      "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:vitana/supabase/staging/*"
+                    },
+                    {
+                      "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:vitana/erp-bridge/staging/*"
+                    },
+                    {
+                      "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:vitana/aurora/staging-db/*"
+                    },
+                    {
+                      "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:vitana/kiro-runner/staging/*"
+                    }
+                  ]
+                },
+                {
+                  "Sid": "StagingKms",
+                  "Effect": "Allow",
+                  "Action": [
+                    "kms:Decrypt",
+                    "kms:Encrypt",
+                    "kms:GenerateDataKey*"
+                  ],
+                  "Resource": "*",
+                  "Condition": {
+                    "StringEquals": {
+                      "aws:ResourceTag/vitana-env": "staging"
+                    }
+                  }
+                },
+                {
+                  "Sid": "DenyProdEcs",
+                  "Effect": "Deny",
+                  "Action": [
+                    "ecs:UpdateService",
+                    "ecs:DeleteService",
+                    "ecs:CreateService",
+                    "ecs:UpdateServicePrimaryTaskSet",
+                    "ecs:CreateTaskSet",
+                    "ecs:DeleteTaskSet",
+                    "ecs:TagResource",
+                    "ecs:UntagResource"
+                  ],
+                  "Resource": [
+                    {
+                      "Fn::Sub": "arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:service/Vitana-ECS-Cluster/*-awsdr"
+                    },
+                    {
+                      "Fn::Sub": "arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:service/Vitana-ECS-Cluster/*-prod"
+                    }
+                  ]
+                },
+                {
+                  "Sid": "DenyProdData",
+                  "Effect": "Deny",
+                  "Action": [
+                    "rds:Modify*",
+                    "rds:Delete*",
+                    "rds:Reboot*",
+                    "rds:Stop*",
+                    "rds:Start*",
+                    "rds:Failover*",
+                    "rds:Restore*",
+                    "rds:Create*",
+                    "rds:Add*",
+                    "rds:Remove*",
+                    "rds:Promote*",
+                    "rds:Copy*",
+                    "rds:Enable*",
+                    "rds:Disable*",
+                    "rds:Register*",
+                    "rds:Deregister*",
+                    "rds:Reset*",
+                    "rds:Apply*",
+                    "rds:Backtrack*",
+                    "rds-data:*",
+                    "rds-db:connect"
+                  ],
+                  "Resource": [
+                    {
+                      "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster:vitana-aurora-prod"
+                    },
+                    {
+                      "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:db:vitana-aurora-prod*"
+                    },
+                    {
+                      "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:db-proxy:vitana-rds-proxy-prod"
+                    },
+                    {
+                      "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:db-proxy:*"
+                    }
+                  ]
+                },
+                {
+                  "Sid": "DenyProdSecrets",
+                  "Effect": "Deny",
+                  "Action": [
+                    "secretsmanager:GetSecretValue",
+                    "secretsmanager:PutSecretValue",
+                    "secretsmanager:UpdateSecret",
+                    "secretsmanager:DeleteSecret",
+                    "secretsmanager:RestoreSecret",
+                    "secretsmanager:RotateSecret",
+                    "secretsmanager:TagResource",
+                    "secretsmanager:UntagResource",
+                    "secretsmanager:PutResourcePolicy",
+                    "secretsmanager:DeleteResourcePolicy",
+                    "secretsmanager:UpdateSecretVersionStage"
+                  ],
+                  "Resource": [
+                    {
+                      "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:vitana/aurora/prod/*"
+                    },
+                    {
+                      "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:vitana/supabase/prod/*"
+                    },
+                    {
+                      "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:vitana/gateway-awsdr/*"
+                    },
+                    {
+                      "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:vitana/kiro/production/*"
+                    }
+                  ]
+                },
+                {
+                  "Sid": "DenyProdKms",
+                  "Effect": "Deny",
+                  "Action": "kms:*",
+                  "Resource": "arn:aws:kms:eu-central-1:472838866351:key/1cd1f8d1-fc05-4de8-acdd-76e76b8a39d1"
+                },
+                {
+                  "Sid": "DenyProdAlb",
+                  "Effect": "Deny",
+                  "Action": [
+                    "elasticloadbalancing:Modify*",
+                    "elasticloadbalancing:Delete*",
+                    "elasticloadbalancing:Create*",
+                    "elasticloadbalancing:Add*",
+                    "elasticloadbalancing:Remove*",
+                    "elasticloadbalancing:Set*",
+                    "elasticloadbalancing:Register*",
+                    "elasticloadbalancing:Deregister*"
+                  ],
+                  "Resource": [
+                    {
+                      "Fn::Sub": "arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:loadbalancer/app/vitana-alb-prod/*"
+                    },
+                    {
+                      "Fn::Sub": "arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:listener/app/vitana-alb-prod/*"
+                    },
+                    {
+                      "Fn::Sub": "arn:aws:elasticloadbalancing:${AWS::Region}:${AWS::AccountId}:listener-rule/app/vitana-alb-prod/*"
+                    }
+                  ]
+                },
+                {
+                  "Sid": "DenyStagingDelete",
+                  "Effect": "Deny",
+                  "Action": [
+                    "rds:DeleteDBCluster",
+                    "rds:DeleteDBInstance",
+                    "rds:DeleteDBClusterSnapshot",
+                    "ecs:DeleteService",
+                    "ecs:DeleteCluster",
+                    "secretsmanager:DeleteSecret"
+                  ],
+                  "Resource": "*"
+                },
+                {
+                  "Sid": "DenySelfIam",
+                  "Effect": "Deny",
+                  "Action": [
+                    "iam:Create*",
+                    "iam:Delete*",
+                    "iam:Put*",
+                    "iam:Attach*",
+                    "iam:Detach*",
+                    "iam:Update*",
+                    "iam:Tag*",
+                    "iam:Untag*",
+                    "iam:PassRole",
+                    "sts:AssumeRole"
+                  ],
+                  "Resource": "*"
+                },
+                {
+                  "Sid": "DenyProdTaskDefinitionOnStaging",
+                  "Effect": "Deny",
+                  "Action": [
+                    "ecs:UpdateService",
+                    "ecs:RunTask",
+                    "ecs:StartTask"
+                  ],
+                  "Resource": "*",
+                  "Condition": {
+                    "StringLike": {
+                      "ecs:task-definition": [
+                        "arn:aws:ecs:*:*:task-definition/*-awsdr:*",
+                        "arn:aws:ecs:*:*:task-definition/*-prod:*"
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
           }
-        }]
+        ]
       }
     },
     "DriftReadRole": {
@@ -133,20 +608,71 @@
         "MaxSessionDuration": 3600,
         "AssumeRolePolicyDocument": {
           "Version": "2012-10-17",
-          "Statement": [{ "Effect": "Allow", "Principal": { "Federated": { "Ref": "GitHubOidcProviderArn" } }, "Action": "sts:AssumeRoleWithWebIdentity",
-            "Condition": { "StringEquals": { "token.actions.githubusercontent.com:aud": "sts.amazonaws.com", "token.actions.githubusercontent.com:sub": "repo:exafyltd/vitana-platform:ref:refs/heads/main" } } }]
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Federated": {
+                  "Ref": "GitHubOidcProviderArn"
+                }
+              },
+              "Action": "sts:AssumeRoleWithWebIdentity",
+              "Condition": {
+                "StringEquals": {
+                  "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+                  "token.actions.githubusercontent.com:sub": "repo:exafyltd/vitana-platform:ref:refs/heads/main"
+                }
+              }
+            }
+          ]
         },
-        "Policies": [{
-          "PolicyName": "kiro-access-drift-read",
-          "PolicyDocument": { "Version": "2012-10-17", "Statement": [
-            { "Sid": "ListOnly", "Effect": "Allow", "Action": ["ecs:ListClusters", "ecs:ListServices", "rds:DescribeDBClusters", "rds:DescribeDBProxies", "secretsmanager:ListSecrets", "kms:ListKeys", "kms:ListResourceTags", "iam:GetRole", "iam:GetRolePolicy", "iam:GetPolicy", "iam:GetPolicyVersion"], "Resource": "*" }
-          ] }
-        }]
+        "Policies": [
+          {
+            "PolicyName": "kiro-access-drift-read",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Sid": "ListOnly",
+                  "Effect": "Allow",
+                  "Action": [
+                    "ecs:ListClusters",
+                    "ecs:ListServices",
+                    "rds:DescribeDBClusters",
+                    "rds:DescribeDBProxies",
+                    "secretsmanager:ListSecrets",
+                    "kms:ListKeys",
+                    "kms:ListResourceTags",
+                    "iam:GetRole",
+                    "iam:GetRolePolicy",
+                    "iam:GetPolicy",
+                    "iam:GetPolicyVersion"
+                  ],
+                  "Resource": "*"
+                }
+              ]
+            }
+          }
+        ]
       }
     }
   },
   "Outputs": {
-    "StagingOperatorRoleArn": { "Value": { "Fn::GetAtt": ["StagingOperatorRole", "Arn"] } },
-    "DriftReadRoleArn": { "Value": { "Fn::GetAtt": ["DriftReadRole", "Arn"] } }
+    "StagingOperatorRoleArn": {
+      "Value": {
+        "Fn::GetAtt": [
+          "StagingOperatorRole",
+          "Arn"
+        ]
+      }
+    },
+    "DriftReadRoleArn": {
+      "Value": {
+        "Fn::GetAtt": [
+          "DriftReadRole",
+          "Arn"
+        ]
+      }
+    }
   }
 }

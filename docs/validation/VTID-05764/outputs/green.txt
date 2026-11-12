@@ -12,5 +12,13 @@ ok 11 - kiro-engineering-admin: AdministratorAccess with the GitLab deletes and 
 ok 12 - source principal: may only assume the two Kiro roles; no inline admin, no console
 ok 13 - static drift: no allow-list entry names a production resource
 ok 14 - no static credential in the templates or docs
-# pass 14
+ok 15 - kiro-staging-operator: no iam:PassRole at all (staging shares the production gateway task role)
+ok 16 - kiro-staging-operator: a staging service cannot be pointed at a production task definition
+ok 17 - kiro-staging-operator: every production secret prefix is denied explicitly
+ok 18 - kiro-engineering-admin: no IAM escalation path (create, attach, pass, chain)
+ok 19 - kiro-engineering-admin: KMS keys cannot be disabled, deleted or re-policied
+ok 20 - kiro-engineering-admin: no shell or re-root on the GitLab host; no volume or snapshot deletion anywhere
+ok 21 - kiro-engineering-admin: every GitLab runner token, including fleet class tokens, is denied
+ok 22 - evaluator: resources match case-sensitively, actions case-insensitively
+# pass 22
 # fail 0

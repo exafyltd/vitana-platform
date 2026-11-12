@@ -40,7 +40,7 @@ export function drift({ services, clusters, secrets }, ids, template) {
     const arn = `arn:aws:secretsmanager:${R}:${A}:secret:${s}-AbCdEf`;
     const write = evaluate(st, 'secretsmanager:PutSecretValue', arn) === 'allow';
     if (write && !ids.staging.secret_prefixes.some((p) => s.startsWith(p))) findings.push(`secret ${s} is writable but not a staging secret`);
-    if (/\/prod\//.test(s) && evaluate(st, 'secretsmanager:GetSecretValue', arn, { explicitOnly: true }) !== 'deny') findings.push(`production secret ${s} has no explicit Deny`);
+    if ((ids.production.secret_prefixes.some((p) => s.startsWith(p)) || /\/prod\//.test(s)) && evaluate(st, 'secretsmanager:GetSecretValue', arn, { explicitOnly: true }) !== 'deny') findings.push(`production secret ${s} has no explicit Deny`);
   }
   return findings;
 }

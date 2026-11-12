@@ -1,12 +1,15 @@
 // VTID-05764 (plan autonomous-to-staging, lane kiro-aws-access): a small IAM evaluator and the static drift check
 // for the Kiro role templates. It models what these templates use: Allow/Deny, Action/NotAction, Resource/NotResource
 // with `*` and `?` wildcards, the StringEquals/StringLike conditions on context keys, Fn::Sub with the pseudo
-// parameters, and the AWS managed AdministratorAccess policy. It is a test aid, not a replacement for the IAM policy
-// simulator; the live check after apply is `drift.mjs`.
+// parameters, and the AWS managed AdministratorAccess policy. Actions match case-insensitively, resources
+// case-sensitively (as IAM does). It evaluates one direct request at a time: it does NOT model privilege escalation
+// paths (PassRole, role chaining, KMS key loss, SSM on a host), tag preconditions an attacker could change, or
+// service-specific condition keys beyond those listed. Those paths are closed by explicit denies that the tests
+// check one by one. It is a test aid, not a replacement for the IAM policy simulator; the live check is `drift.mjs`.
 
 const ACCOUNT_OF = { product: '472838866351', engineering: '841276716213' };
 
-const wild = (pattern) => new RegExp(`^${String(pattern).replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.')}$`, 'i');
+const wild = (pattern, flags = '') => new RegExp(`^${String(pattern).replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.')}$`, flags);
 const arr = (x) => (x === undefined ? [] : Array.isArray(x) ? x : [x]);
 
 /** Resolve the intrinsic functions these templates use into plain strings. */
@@ -58,7 +61,7 @@ function condOk(cond, context) {
 }
 
 function matches(s, action, arn, context) {
-  const actOk = s.NotAction ? !arr(s.NotAction).some((a) => wild(a).test(action)) : arr(s.Action).some((a) => wild(a).test(action));
+  const actOk = s.NotAction ? !arr(s.NotAction).some((a) => wild(a, 'i').test(action)) : arr(s.Action).some((a) => wild(a, 'i').test(action));
   if (!actOk) return false;
   const resOk = s.NotResource ? !arr(s.NotResource).some((r) => wild(r).test(arn)) : arr(s.Resource).some((r) => wild(r).test(arn));
   return resOk && condOk(s.Condition, context);

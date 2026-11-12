@@ -25,9 +25,9 @@ const adm = load('engineering-admin.json');
 const src = load('source-principal.json');
 const opRole = statementsOf(op, 'StagingOperatorRole');
 const opBoundary = statementsOf(op, 'StagingBoundary');
-const both = (action, arn) => {
-  const a = evaluate(opRole, action, arn);
-  const b = evaluate(opBoundary, action, arn);
+const both = (action, arn, opts = {}) => {
+  const a = evaluate(opRole, action, arn, opts);
+  const b = evaluate(opBoundary, action, arn, opts);
   return a === 'allow' && b === 'allow' ? 'allow' : 'deny';
 };
 
@@ -145,4 +145,67 @@ test('no static credential in the templates or docs', () => {
     assert.doesNotMatch(t, /AKIA[0-9A-Z]{16}/, `${f} holds an access key id`);
     assert.doesNotMatch(t, /aws_secret_access_key\s*=\s*\S{20,}/i, `${f} holds a secret key`);
   }
+});
+
+// ── Review findings of 2026-11-12 (agent-vitana-lane-reviewer-202611121915-6516) ─────────────────────────────────
+test('kiro-staging-operator: no iam:PassRole at all (staging shares the production gateway task role)', () => {
+  for (const r of [...ids.production.shared_task_roles, `arn:aws:iam::${P}:role/vitana-ecs-execution-role`, `arn:aws:iam::${P}:role/anything`]) {
+    assert.equal(both('iam:PassRole', r), 'deny', r);
+  }
+  assert.ok(!JSON.stringify(op.Resources.StagingOperatorRole.Properties.Policies).includes('"iam:PassRole"') ||
+    opRole.filter((s) => s.Effect === 'Allow').every((s) => ![].concat(s.Action).includes('iam:PassRole')), 'no Allow for iam:PassRole');
+  assert.equal(both('ecs:RegisterTaskDefinition', '*'), 'deny', 'no task-definition registration without PassRole');
+});
+
+test('kiro-staging-operator: a staging service cannot be pointed at a production task definition', () => {
+  for (const td of [`arn:aws:ecs:${R}:${P}:task-definition/vitana-gateway-awsdr:41`, `arn:aws:ecs:${R}:${P}:task-definition/vitana-postgrest-aurora-prod:3`]) {
+    assert.equal(both('ecs:UpdateService', svc('vitana-gateway'), { context: { 'ecs:task-definition': td } }), 'deny', td);
+  }
+  assert.equal(evaluate(opRole, 'ecs:UpdateService', svc('vitana-gateway'), { context: { 'ecs:task-definition': `arn:aws:ecs:${R}:${P}:task-definition/vitana-gateway:900` } }), 'allow');
+});
+
+test('kiro-staging-operator: every production secret prefix is denied explicitly', () => {
+  for (const pre of ids.production.secret_prefixes) {
+    const arn = `arn:aws:secretsmanager:${R}:${P}:secret:${pre}x-AbCdEf`;
+    for (const a of ['secretsmanager:GetSecretValue', 'secretsmanager:PutSecretValue']) {
+      assert.equal(evaluate(opRole, a, arn, { explicitOnly: true }), 'deny', `${a} ${pre}`);
+      assert.equal(evaluate(opBoundary, a, arn, { explicitOnly: true }), 'deny', `boundary ${a} ${pre}`);
+    }
+  }
+});
+
+test('kiro-engineering-admin: no IAM escalation path (create, attach, pass, chain)', () => {
+  const st = statementsOf(adm, 'EngineeringAdminRole');
+  for (const [a, r] of [['iam:CreateRole', `arn:aws:iam::${E}:role/x`], ['iam:CreatePolicyVersion', `arn:aws:iam::${E}:policy/x`], ['iam:AttachRolePolicy', `arn:aws:iam::${E}:role/vitana-eng-gitlab`], ['iam:PutUserPolicy', `arn:aws:iam::${E}:user/x`], ['iam:CreateUser', `arn:aws:iam::${E}:user/x`], ['iam:PassRole', `arn:aws:iam::${E}:role/vitana-eng-runner`], ['sts:AssumeRole', `arn:aws:iam::${E}:role/OrganizationAccountAccessRole`], ['iam:UpdateAssumeRolePolicy', `arn:aws:iam::${E}:role/x`]]) {
+    assert.equal(evaluate(st, a, r), 'deny', `${a} ${r}`);
+  }
+});
+
+test('kiro-engineering-admin: KMS keys cannot be disabled, deleted or re-policied', () => {
+  const st = statementsOf(adm, 'EngineeringAdminRole');
+  const k = `arn:aws:kms:${R}:${E}:key/1111-2222`;
+  for (const a of ['kms:ScheduleKeyDeletion', 'kms:DisableKey', 'kms:PutKeyPolicy', 'kms:DeleteAlias', 'kms:DisableKeyRotation']) assert.equal(evaluate(st, a, k), 'deny', a);
+  assert.equal(evaluate(st, 'kms:Decrypt', k), 'allow', 'use stays allowed');
+});
+
+test('kiro-engineering-admin: no shell or re-root on the GitLab host; no volume or snapshot deletion anywhere', () => {
+  const st = statementsOf(adm, 'EngineeringAdminRole');
+  const inst = `arn:aws:ec2:${R}:${E}:instance/i-0123456789abcdef0`;
+  const tag = { 'aws:ResourceTag/Name': 'vitana-eng-gitlab' };
+  for (const a of ['ssm:SendCommand', 'ssm:StartSession', 'ec2-instance-connect:SendSSHPublicKey', 'ec2:CreateReplaceRootVolumeTask', 'ec2:ModifyInstanceAttribute']) assert.equal(evaluate(st, a, inst, { context: tag }), 'deny', a);
+  for (const [a, r] of [['ec2:DeleteVolume', `arn:aws:ec2:${R}:${E}:volume/vol-untagged`], ['ec2:DeleteSnapshot', `arn:aws:ec2:${R}::snapshot/snap-untagged`]]) assert.equal(evaluate(st, a, r), 'deny', `${a} without any tag`);
+  assert.equal(evaluate(st, 'ssm:SendCommand', inst, { context: { 'aws:ResourceTag/Name': 'vitana-eng-runner' } }), 'allow', 'runners stay operable');
+});
+
+test('kiro-engineering-admin: every GitLab runner token, including fleet class tokens, is denied', () => {
+  const st = statementsOf(adm, 'EngineeringAdminRole');
+  for (const n of ['runner-token', 'docker-runner-token', 'heavy-runner-token', 'github-bridge-token', 'root-password']) {
+    assert.equal(evaluate(st, 'secretsmanager:GetSecretValue', `arn:aws:secretsmanager:${R}:${E}:secret:vitana/engineering/gitlab/${n}-AbCdEf`), 'deny', n);
+  }
+});
+
+test('evaluator: resources match case-sensitively, actions case-insensitively', () => {
+  const st = [{ Effect: 'Allow', Action: 'S3:GetObject', Resource: 'arn:aws:s3:::Bucket/*' }];
+  assert.equal(evaluate(st, 's3:getobject', 'arn:aws:s3:::Bucket/x'), 'allow');
+  assert.equal(evaluate(st, 's3:GetObject', 'arn:aws:s3:::bucket/x'), 'deny');
 });

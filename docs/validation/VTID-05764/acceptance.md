@@ -40,7 +40,14 @@ TEST: infra/kiro-access/policy.test.mjs ("static drift: no allow-list entry name
 AC-6 No static key in git.
 TEST: infra/kiro-access/policy.test.mjs ("no static credential in the templates or docs"; "source principal: may only assume the two Kiro roles; no inline admin, no console")
 
-Red on base: `outputs/red-on-base.txt` (modules absent). Green: `outputs/green.txt` (14/14). Mutation: removing
+AC-7 (review 2026-11-12) No escalation or indirect path: no `iam:PassRole` or task-definition registration for the
+staging operator; a staging service cannot select a production task definition; every production secret prefix
+denied explicitly; the engineering admin has no IAM write, PassRole or role chaining, cannot disable/delete/re-policy a
+KMS key, cannot SSM/SSH/re-root the GitLab host, cannot delete any volume or snapshot, and every runner token is denied.
+TEST: infra/kiro-access/policy.test.mjs ("kiro-staging-operator: no iam:PassRole at all (staging shares the production gateway task role)"; "kiro-staging-operator: a staging service cannot be pointed at a production task definition"; "kiro-staging-operator: every production secret prefix is denied explicitly")
+TEST: infra/kiro-access/policy.test.mjs ("kiro-engineering-admin: no IAM escalation path (create, attach, pass, chain)"; "kiro-engineering-admin: KMS keys cannot be disabled, deleted or re-policied"; "kiro-engineering-admin: no shell or re-root on the GitLab host; no volume or snapshot deletion anywhere"; "kiro-engineering-admin: every GitLab runner token, including fleet class tokens, is denied")
+
+Red on base: `outputs/red-on-base.txt` (modules absent). Green: `outputs/green.txt` (22/22). Mutation: removing
 `DenyProdData` fails 2 tests (`outputs/mutation-deny-removed.txt`). `cfn-lint` exit 0 (`outputs/cfn-lint.txt`).
 
 No migration, no production write, nothing applied; deploys nothing.
@@ -56,6 +63,7 @@ No migration, no production write, nothing applied; deploys nothing.
   the handoff.
 - The workflow has a `pull_request` trigger without a path filter (a filtered one needs a services-registry entry
   outside the lane's paths); its validate job exits early when the PR does not touch these files.
+- Review 2026-11-12 (changes): PassRole removed entirely, because staging and production share `vitana-ecs-task-role`; dedicated staging task/execution roles are an owner prerequisite recorded in the doc. The evaluator's limits are stated in `lib.mjs` and the doc.
 - `staging-operator.json` lists the r2 candidate services `vitana-gateway-iso` and `vitana-postgrest-aurora-staging-iso`
   ahead of their creation (r2 §3.4); they match no production pattern.
 

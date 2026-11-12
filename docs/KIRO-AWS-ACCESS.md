@@ -11,8 +11,8 @@ user or key exists until the owner runs the handoff below. No workflow applies I
 ## 1. What Kiro gets
 | Role | Account | Can | Cannot |
 |---|---|---|---|
-| `kiro-staging-operator` | `472838866351` (product, also the Organizations management account) | read everything except secret values (`Describe*`, `List*`, logs, metrics, CloudTrail lookup); `ecs:UpdateService` on the 7 staging services; register task definitions and pass only the listed staging task roles; modify, snapshot, start/stop the `vitana-aurora-staging` cluster and run Data API statements on it; write `vitana/{gateway,supabase,erp-bridge}/staging/*` and `vitana/aurora/staging-db/*` secrets; use KMS keys tagged `vitana-env=staging` | any write to a `*-awsdr` / `*-prod` ECS service, `vitana-aurora-prod`, RDS proxies, `vitana-alb-prod`, `vitana/aurora/prod/*` and `vitana/supabase/prod/*` secrets, the production KMS key (explicit Deny in the role **and** in its permissions boundary); delete any cluster, instance, snapshot, service or secret; change IAM (including itself); stop CloudTrail |
-| `kiro-engineering-admin` | `841276716213` (engineering platform: GitLab EE, runners, backups, CI cache) | `AdministratorAccess` | terminate, detach or delete the GitLab instances/volumes/snapshots (tag `Name=vitana-eng-gitlab*`) or change those tags; delete or re-policy the backup bucket `vitana-engineering-gitlab-backups-841276716213`; read or change `vitana/engineering/gitlab/{root-password,runner-token,github-mirror-token}`; change its own policies or the source user; create access keys; stop CloudTrail; Organizations |
+| `kiro-staging-operator` | `472838866351` (product, also the Organizations management account) | read everything except secret values (`Describe*`, `List*`, logs, metrics, CloudTrail lookup); `ecs:UpdateService` (scale, force a new deployment, or select an existing staging task-definition revision) on the 7 staging services; modify, snapshot, start/stop the `vitana-aurora-staging` cluster and run Data API statements on it; write `vitana/{gateway,supabase,erp-bridge}/staging/*` and `vitana/aurora/staging-db/*` secrets; use KMS keys tagged `vitana-env=staging` | `iam:PassRole` and task-definition registration (staging and production share the gateway task role `vitana-ecs-task-role`, `AWS-PROD-DEPLOY-GATEWAY.yml:819-822`, so no role is passable until dedicated staging roles exist); pointing a staging service at a `*-awsdr` / `*-prod` task definition; any write to a `*-awsdr` / `*-prod` ECS service, `vitana-aurora-prod`, RDS proxies, `vitana-alb-prod`, `vitana/aurora/prod/*`, `vitana/supabase/prod/*`, `vitana/gateway-awsdr/*` and `vitana/kiro/production/*` secrets, the production KMS key (explicit Deny in the role **and** in its permissions boundary); delete any cluster, instance, snapshot, service or secret; change IAM (including itself); stop CloudTrail |
+| `kiro-engineering-admin` | `841276716213` (engineering platform: GitLab EE, runners, backups, CI cache) | `AdministratorAccess` | any IAM write, `iam:PassRole` or role chaining (`sts:AssumeRole`), so no escalation path to a role without these denies; terminate, re-root, detach, change tags of, SSM into or SSH into the GitLab host (`Name=vitana-eng-gitlab*`); delete any EBS volume or snapshot in the account (the GitLab root volume and snapshots are untagged); disable, delete or re-policy any KMS key (`alias/vitana-engineering` encrypts the GitLab volume, backups and secrets); delete or re-policy the backup bucket `vitana-engineering-gitlab-backups-841276716213`; read or change the GitLab root password, any runner token (`*runner-token`, incl. the fleet class tokens), the GitHub mirror and bridge tokens; stop CloudTrail; Organizations |
 
 Both roles are assumable only by IAM user `kiro-agent-source` (`841276716213`), only with the ExternalId, and only
 with a session tag `kiro-session=kiro-…` (the Kiro session id), so every action in CloudTrail names the session.
@@ -41,26 +41,25 @@ aws cloudformation deploy --region eu-central-1 --stack-name kiro-engineering-ad
   --template-file infra/kiro-access/engineering-admin.json --capabilities CAPABILITY_NAMED_IAM \
   --parameter-overrides ExternalId="$EXT"
 
-# 2. Product account 472838866351: the staging task/execution roles the operator may pass
-for f in vitana-gateway vitana-postgrest-aurora-staging vitana-kiro-runner vitana-erp-bridge; do
-  aws ecs describe-task-definition --region eu-central-1 --task-definition "$f" \
-    --query 'taskDefinition.[taskRoleArn,executionRoleArn]' --output text; done   # collect the distinct ARNs
-
-# 3. Product account: the operator role, its boundary and the read-only drift role
+# 2. Product account 472838866351: the operator role, its boundary and the read-only drift role
 aws cloudformation deploy --region eu-central-1 --stack-name kiro-staging-operator \
   --template-file infra/kiro-access/staging-operator.json --capabilities CAPABILITY_NAMED_IAM \
-  --parameter-overrides ExternalId="$EXT" StagingTaskRoleArns="<comma-separated ARNs from step 2>"
+  --parameter-overrides ExternalId="$EXT"
 
-# 4. Engineering account: one access key for the source user (the only static credential)
+# 3. Engineering account: one access key for the source user (the only static credential)
 aws iam create-access-key --user-name kiro-agent-source
 ```
-5. Put `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` (step 4) and `KIRO_AWS_EXTERNAL_ID` (`$EXT`) into the Kiro
+5. Put `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` (step 3) and `KIRO_AWS_EXTERNAL_ID` (`$EXT`) into the Kiro
    environment's secret store. Never in chat, git, a PR, an issue or a log.
 6. Set repository variable `AWS_KIRO_ACCESS_DRIFT_ROLE_ARN` on `exafyltd/vitana-platform` to the stack output
    `DriftReadRoleArn` (enables the daily drift job).
 7. Rotation: replace the key every 90 days (`create-access-key`, update the secret store, `delete-access-key` on the
    old one). Revocation at any time: `aws iam update-access-key --user-name kiro-agent-source --access-key-id <id>
    --status Inactive`.
+
+**Prerequisite for staging redeploys by Kiro (owner, later):** dedicated staging task and execution roles that no
+production service uses. Until then Kiro can only scale or force-redeploy existing staging revisions; new task-definition
+revisions keep coming from the staging deploy workflows.
 
 ## 4. How a Kiro session uses it
 ```bash
@@ -77,5 +76,8 @@ roles are then used read-only from sessions, and staging writes go through the s
   ExternalId and the session tag; the admin role's GitLab and credential denies; the source user can only assume the
   two roles; static drift; no static credential in the directory.
 - `infra/kiro-access/drift.test.mjs` + `drift.mjs`: live inventory vs the allow-list and deny list.
+- Limits of the static evaluator (`lib.mjs`): it checks one direct request at a time; it does not model escalation
+  paths (PassRole, role chaining, KMS key loss, SSM on a host) or tags an attacker could change. Those paths are closed by
+  explicit denies, each checked by its own test.
 - `.github/workflows/AWS-KIRO-ACCESS.yml`: unit tests and `cfn-lint` on every PR that changes these files and on
   every push to `main`; the live drift check daily once the stacks exist (read-only role).
