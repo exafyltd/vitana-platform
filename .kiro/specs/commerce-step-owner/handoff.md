@@ -53,3 +53,18 @@ branch: carrying the gateway-lane trailer here made Lane scope validate the `_pl
 `_plan`-only (tip 59166d0da); Lane scope reports "not a lane PR". The gateway lane's `in-review` state and PR link
 live with lane PR #4198. Remaining validator note "`_plan`: commits from 2 sessions (jtadic, ci-plan-spar)" is the
 PLAN-SPAR multi-session case, report-only until 2026-10-20 — not worked around.
+
+### 2026-11-12T16:05Z · session_01Cp885HR7P3g5JuA767Q3DC · lane takeover (frontend-still-needed)
+Stale-claim release: the owner deleted the claim branch `collab-claim/commerce-step-owner/frontend-still-needed`
+(previous holder `kiro-jtadic-202611051321-537e`, created 2026-11-05 13:21:58 UTC, older than 24 h) after it had
+been released by hand. The `queue.mjs release --stale` attempt from this session failed with GitHub HTTP 403 on
+the branch delete; the owner removed the branch instead.
+Claim: `queue.mjs claim commerce-step-owner/frontend-still-needed` by `session_01Cp885HR7P3g5JuA767Q3DC`,
+claim commit 05397c895cdcae418d87d1845011a1627a5801f9 (2026-11-12 15:46:38 UTC).
+Merge: `origin/main` (0f0695034) merged into `kiro/commerce-step-owner/frontend-still-needed` in vitana-v1 as a
+non-fast-forward merge commit, no rebase, no force push. Old PR head 99d624c79a5f4777f64290aadae602c969ec1915
+(VTID-05237, PR #1605) → new head 3674ee487628850aecbd69b65aeefdd67df87de3. Dry merge was conflict-free.
+PR #1605 is not merged. The reviewer-agent accept on the new head is still needed before any merge (§7b).
+Required checks on 3674ee48: queued at the last read (Lane scope, preview-e2e, pr-gate, ORB parity). Collab
+handoff had not appeared in the check-run list. Results to be recorded here when they settle.
+Not done: no deploy, no live writes, no staging writes.
