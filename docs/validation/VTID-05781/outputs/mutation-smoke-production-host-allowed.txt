@@ -1,0 +1,6 @@
+# mutation smoke-production-host-allowed: scripts/aws/staging-cutover-smoke.mjs
+# replaced: const origin = lib.assertStagingTarget(base);
+# with:     const origin = new URL(base).origin;
+not ok 27 - smoke: a production host is refused before any request; a write is never sent
+# pass 26
+# fail 1

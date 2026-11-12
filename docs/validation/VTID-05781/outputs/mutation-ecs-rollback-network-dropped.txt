@@ -1,0 +1,8 @@
+# mutation ecs-rollback-network-dropped: scripts/aws/staging-cutover-ecs.sh
+# replaced: --task-definition "$td" --network-configuration "$net"
+      say "rolling
+# with:     --task-definition "$td"
+      say "rolling
+not ok 8 - ecs: rollback after a forced post-flip failure restores both recorded revisions and network configurations
+# pass 15
+# fail 1
