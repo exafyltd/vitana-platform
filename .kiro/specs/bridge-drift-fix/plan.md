@@ -59,9 +59,10 @@ migration).
   `operator-bootstrap-pack.ts`, with a comment naming why; update the test's pinned
   `rules.length <= 8_000 + 20` to `<= 12_000 + 20`. `PACK_MAX_CHARS` (overall budget, 40_000) is untouched; this
   section still fits comfortably alongside the pack's other sections.
-- **C3 (session-layer regex):** widen the one assertion from `owner approval` to `(?:owner|machine) approval`,
-  keeping every other assertion in the test (and the adjacent "partner agent" test) unchanged. The stable endpoints
-  the test's own comment names — "Plan → sparring →", an approval word, "→ VTID → code." — still all hold.
+- **C3 (session-layer regex):** widen the one assertion from the literal `owner approval` to `\w+ approval` (any one
+  word before "approval"), keeping every other assertion in the test (and the adjacent "partner agent" test)
+  unchanged. This matches the test's own stated intent — pin the stable endpoints, "Plan → sparring →", an approval
+  word, "→ VTID → code." — without enumerating which approval-type word is current (sparring round 1, R1-F1).
 - **C4 (migration comment):** add one `-- definer-public: <reason>` line to
   `20261112100000_bridge_sparring_convergence_is_approval.sql`, naming the migration that already holds the
   function's `REVOKE`/`GRANT` pair. No SQL statement changes; the migration still does only what its own header says
