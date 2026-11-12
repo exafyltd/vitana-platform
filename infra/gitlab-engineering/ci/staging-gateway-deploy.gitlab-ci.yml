@@ -75,8 +75,8 @@ gateway-staging-deploy:
       # VTID-05023 gate: refuse to register if any AURORA_ name remains in any container, env or secrets.
       AURORA_LEAK_JQ='[ .containerDefinitions[] | ((.environment // [])[], (.secrets // [])[]) | .name | select(startswith("AURORA_")) ] | unique | join(" ")'
       LEAK=$(jq -r "$AURORA_LEAK_JQ" new-td.json)
-      if [ -n "$LEAK" ]; then echo "ERROR refusing to register: Aurora names still bound: $LEAK"; exit 1; fi
-      echo "Aurora gate: no AURORA_ names in any container environment or secrets"
+      if [ -n "$LEAK" ]; then echo "VTID-05023 AURORA GATE: FAIL $LEAK" | tee aurora-gate.txt; exit 1; fi
+      echo "VTID-05023 AURORA GATE: PASS no AURORA_ names" | tee aurora-gate.txt
       NEW_TD=$(aws ecs register-task-definition --cli-input-json file://new-td.json --query 'taskDefinition.taskDefinitionArn' --output text)
       echo "New task definition: $NEW_TD"
       aws ecs update-service --cluster "$ECS_CLUSTER" --service "$ECS_SERVICE" --task-definition "$NEW_TD" >/dev/null
@@ -93,3 +93,7 @@ gateway-staging-deploy:
         exit 1
       fi
       echo "Smoke OK: staging serves $SHA"
+  artifacts:
+    when: always
+    paths: [aurora-gate.txt]
+    expire_in: 1 week
