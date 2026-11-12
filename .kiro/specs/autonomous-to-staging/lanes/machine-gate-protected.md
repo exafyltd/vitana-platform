@@ -1,6 +1,6 @@
 ---
 lane: machine-gate-protected
-state: ready
+state: executing
 next_actor: kiro
 branch: kiro/autonomous-to-staging/machine-gate-protected
 depends_on: []
@@ -29,3 +29,6 @@ Lane created with the plan.
 
 ### 2026-11-11T23:41Z · ci-plan-spar · ready (VTID allocated)
 VTID-05765 allocated after policy approval (converged-auto-v1).
+
+### 2026-11-12T00:30Z · kiro-exafy-202611110920-270b · ready → executing
+Claimed (`queue.mjs claim`); building on `origin/main` bf1cb134e6+.
