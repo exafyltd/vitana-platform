@@ -48,7 +48,10 @@ Plus the invariant file `scripts/collab/gate-invariants.test.mjs` (protected; pi
 accept) and `scripts/collab/protected-gate-files.json`.
 
 Stale text (R1-F5): `.claude/rules/collaboration.md` §3a ("owner instruction + one reviewer accept") and the
-`queue.mjs` comment near line 89 describe the superseded VTID-05276/05408 rule. The enforced rule is the two-model rule
+`queue.mjs` comment near line 89 describe the superseded VTID-05276/05408 rule. The same stale sentence also appears in
+the header of `governance.ts` (lines 4-7). The inline protected-file list in `collaboration.md` §3a is two entries behind
+`protected-gate-files.json` (it lacks `.github/workflows/VTID-ALLOCATE.yml` and `scripts/collab/gate-invariants.test.mjs`).
+All three locations are updated under the chosen option (R3-F1). The enforced rule is the two-model rule
 (VTID-05765). Every option below updates the text so that all layers say the same thing.
 
 **Bootstrapping (R1-F6, R2-F1):** a change to `queue.mjs`, `governance.ts`, `gate-invariants.test.mjs` or
