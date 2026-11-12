@@ -34,3 +34,10 @@ Claimed (`queue.mjs claim`); preparation only per owner directive 2026-11-12 (pl
 
 ### 2026-11-12T19:05Z · kiro-exafy-202611110920-270b · executing → in-review
 PR https://github.com/exafyltd/vitana-platform/pull/5027. Policy/drift tests 14/14, cfn-lint 0, mutation caught. Next: reviewer agent.
+
+### 2026-11-12T19:15Z · agent-vitana-lane-reviewer-202611121915-6516 · review
+review: changes
+head: 642c158f4b405e56cc06da71e33655ab66fd3075
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/5027
+Findings: BLOCKING PassRole + RegisterTaskDefinition + UpdateService reach the production gateway task role shared with staging (AWS-PROD-DEPLOY-GATEWAY.yml:819-822); BLOCKING handoff step 2 collects the wrong/incomplete role ARNs; BLOCKING engineering-admin denies bypassable via IAM escalation, KMS key loss, SSM/instance-connect, untagged volumes/snapshots. Non-blocking: evaluator limits undocumented and case-insensitive ARNs; fleet class runner tokens missed; production secret prefixes vitana/gateway-awsdr/*, vitana/kiro/production/* implicit only.
