@@ -13,8 +13,9 @@ paths:
   - services/gateway/test/project-manager/governance.test.ts
   - scripts/ci/kiro-steering/guard.cjs
   - scripts/ci/kiro-steering/guard.test.cjs
-updated: 2026-11-11T11:27Z
+updated: 2026-11-12T21:26Z
 vtid: VTID-05709
+seat: exafyltd
 ---
 
 # Lane: reviewer-identity (repo exafyltd/vitana-platform)
@@ -28,3 +29,5 @@ Lane created with the plan.
 
 ### 2026-11-11T11:27Z · ci-plan-spar · ready (VTID allocated)
 VTID-05709 allocated after policy approval (converged-auto-v1).
+### 2026-11-12T21:26Z · pm-agent · update
+reassign lane →exafyltd (stale_ready, Claude unavailable)
