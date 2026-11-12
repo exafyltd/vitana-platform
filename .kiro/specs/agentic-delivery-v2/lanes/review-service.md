@@ -5,7 +5,7 @@ next_actor: kiro
 branch: kiro/agentic-delivery-v2/review-service
 depends_on: [delivery-bedrock]
 executor: kiro
-seat: exafy
+seat: exafyltd
 area: platform
 repos: [exafyltd/vitana-platform]
 reviewer_seat: agent:vitana-lane-reviewer
@@ -17,7 +17,7 @@ paths:
   - services/gateway/src/orb/developer/domain-atlas.ts
   - services/gateway/src/constants/llm-defaults.ts
   - services/gateway/test/delivery/review.test.ts
-updated: 2026-11-11T11:27Z
+updated: 2026-11-12T21:26Z
 vtid: VTID-05707
 ---
 
@@ -32,3 +32,5 @@ Lane created with the plan.
 
 ### 2026-11-11T11:27Z · ci-plan-spar · ready (VTID allocated)
 VTID-05707 allocated after policy approval (converged-auto-v1).
+### 2026-11-12T21:26Z · pm-agent · update
+reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
