@@ -5,7 +5,7 @@ author_seat: exafyltd
 executor: kiro
 next_actor: kiro
 state: approved
-updated: 2026-11-12T21:28Z
+updated: 2026-11-12T21:29Z
 sparring_record: .kiro/specs/bridge-drift-fix/sparring/verdict.md
 vtids: [VTID-05785]
 ---
@@ -31,3 +31,8 @@ Decisions taken:
 
 ### 2026-11-12T21:28Z · ci-plan-spar · drafted → approved
 Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.
+
+### 2026-11-12T21:29Z · kiro-exafyltd-202611122052-a6df · approved (driver: merge the plan PR)
+PLAN-SPAR converged in round 2, policy approved. VTID-05785 allocated to lane `fix`. Its commit used
+`GITHUB_TOKEN`, which starts no checks, so this commit starts them; the spec-only `plan(` PR merges under §7b
+once they are green.
