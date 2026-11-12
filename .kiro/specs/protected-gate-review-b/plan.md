@@ -49,9 +49,11 @@ still required for every other lane. Two stages, as R1-F4 requires:
 the current rule. The owner-plan path applies only after this PR lands.
 
 ## Round 1 answers — concrete mechanism (R1-F1 … R1-F5)
-- **Data path to the PM (R1-F1, option a):** the observer that builds `ObservedPr` adds `ownerPlanApproved: boolean`,
-  computed by the same function that `land-guard.mjs` uses for the trailer and verdict check (one implementation, shared
-  by the observer and land-guard). `governanceMergeAllowed` reads only `pr.ownerPlanApproved`; its signature is
+- **Data path to the PM (R1-F1, option a; R2-F1 corrected):** the observer that builds `ObservedPr` adds
+  `ownerPlanApproved: boolean`. The gateway cannot import `scripts/collab/`, so the check is implemented twice, as the
+  repo already does for accept counting (`governance.ts` and `land-guard.mjs`): a TypeScript port in the observer and
+  the `isOwnerPlanLane` function in `queue.mjs`. A parity test (`services/gateway/test/project-manager/owner-plan-parity.test.ts`)
+  feeds both the same representative inputs and asserts the same verdict. `governanceMergeAllowed` reads only `pr.ownerPlanApproved`; its signature is
   unchanged apart from that optional field. Without it the PM path stays two-model, as today.
 - **Gateway tests (R1-F2):** a jest suite `services/gateway/test/project-manager/governance-owner-plan.test.ts` with the
   four cases: valid verdict + trailer → allowed; missing or non-converged verdict → refused; changed file outside
@@ -63,9 +65,11 @@ the current rule. The owner-plan path applies only after this PR lands.
 - **Deployment (R1-F5):** `governance.ts` takes effect when the gateway next deploys. Staging verification of the
   PM merge-guard on a test PR comes before any production promotion, under the normal staging gate.
 
-## Tests
-`node --test scripts/collab/queue.test.mjs` and `scripts/collab/gate-invariants.test.mjs` green for the option B
-invariants. No staging or production test; repository scripts and rules only.
+## Tests (R2-F2: gateway tests are listed and the qualifier is removed)
+- `node --test scripts/collab/queue.test.mjs` and `scripts/collab/gate-invariants.test.mjs` for the option B invariants.
+- Gateway jest: `services/gateway/test/project-manager/governance-owner-plan.test.ts` (four cases from R1-F2) and
+  `services/gateway/test/project-manager/owner-plan-parity.test.ts` (R2-F1 parity).
+- Staging is verified only after merge, under the normal staging gate (R1-F5).
 
 ## Risks
 - Loosening the protected-file rule could let an unreviewed change land. Mitigation: the owner-plan path needs a
