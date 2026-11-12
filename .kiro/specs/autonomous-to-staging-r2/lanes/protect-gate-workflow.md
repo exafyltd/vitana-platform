@@ -1,6 +1,6 @@
 ---
 lane: protect-gate-workflow
-state: ready
+state: executing
 next_actor: kiro
 branch: kiro/autonomous-to-staging-r2/protect-gate-workflow
 depends_on: []
@@ -23,7 +23,7 @@ paths:
   - .github/workflows/GATE-INVARIANTS.yml
   - scripts/ci/workflow-trigger-check.test.mjs
   - docs/validation/VTID-*/**
-updated: 2026-11-12T19:30Z
+updated: 2026-11-12T20:00Z
 vtid: VTID-05780
 ---
 # Lane: protect-gate-workflow (repo vitana-platform)
@@ -35,3 +35,6 @@ Lane created with the plan.
 
 ### 2026-11-12T19:30Z · ci-plan-spar · ready (VTID allocated)
 VTID-05780 allocated after policy approval (converged-auto-v1).
+
+### 2026-11-12T20:00Z · kiro-exafy-202611110920-270b · ready → executing
+Claimed (`queue.mjs claim`); building T1–T4 (plan autonomous-to-staging-r2 §3.1) under the two-model rule.
