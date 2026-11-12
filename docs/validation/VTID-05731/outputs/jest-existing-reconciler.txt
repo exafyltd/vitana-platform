@@ -1,0 +1,142 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/wt-crit-worker-orchestrator-auth/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/wt-crit-worker-orchestrator-auth/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/wt-crit-worker-orchestrator-auth/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-05023-auth-bridge-reconciler.test.ts
+  VTID-05023 auth-bridge reconciler
+    ✓ provisions an auth user created since the flip that has no app_users row (lost webhook) (19 ms)
+    ✓ never touches users created before AUTH_BRIDGE_RECONCILE_SINCE (1 ms)
+    ✓ provisions nobody when AUTH_BRIDGE_RECONCILE_SINCE is unset, and says so (10 ms)
+    ✓ pages through GoTrue until a short page and sees every user (2 ms)
+    ✓ asks for one more page when the last full page ends exactly at the total (1 ms)
+    ✓ is idempotent: a second run provisions nothing
+    ✓ cleans up a user deleted on Supabase (profile left, GoTrue 404) (1 ms)
+    ✓ does not delete a user GoTrue still knows (created after the listing) (1 ms)
+    ✓ skips users whose deletion was already processed (1 ms)
+    ✓ a failed GoTrue page aborts the run before any deletion (1 ms)
+    ✓ deletes nothing when more profiles than the limit lack an auth user (1 ms)
+    ✓ reports a provisioning failure without stopping the others (1 ms)
+    ✓ env: off by default, SINCE and MAX_DELETES parsed, never on staging (5 ms)
+  VTID-05023 ensureProvisioned(userId)
+    ✓ is inert unless AUTH_BRIDGE_ENABLED=true (1 ms)
+    ✓ one lookup for a provisioned member, then served from cache (1 ms)
+    ✓ provisions a brand-new member from GoTrue before the gateway writes (1 ms)
+    ✓ concurrent calls for one member share one provisioning
+    ✓ never throws: unknown auth user, bad id and failures are reported (1 ms)
+  VTID-05023 PostgREST store and GoTrue admin client
+    ✓ calls ensure_provisioned with the auth user fields (1 ms)
+    ✓ surfaces RPC errors (23 ms)
+    ✓ pages /auth/v1/admin/users, maps 404 to null and merges app_metadata (2 ms)
+
+  console.log
+    [OASIS Event] Emitted: self-healing.completed for VTID-90001 (51bc8104-170e-434a-bb28-7747bc6a2c2b)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:144:13)
+
+  console.log
+    [self-healing-reconciler] VTID-90001 terminalized success via autopilot execution exec-goo
+
+      at reconcileAutopilotLinkedSelfHealingVtids (src/services/self-healing-reconciler.ts:591:17)
+
+  console.log
+    [OASIS Event] Emitted: self-healing.execution.failed for VTID-90002 (37401f98-18e9-445d-9cc2-60cde460aac8)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:144:13)
+
+  console.log
+    [self-healing-reconciler] VTID-90002 terminalized failed via autopilot execution exec-bad (failed)
+
+      at reconcileAutopilotLinkedSelfHealingVtids (src/services/self-healing-reconciler.ts:652:17)
+
+  console.log
+    [OASIS Event] Emitted: self-healing.execution.failed for VTID-90003 (83fd61da-7c87-4ce6-a853-54641711b933)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:144:13)
+
+  console.log
+    [self-healing-reconciler] VTID-90003 terminalized failed via autopilot execution exec-esc (failed_escalated)
+
+      at reconcileAutopilotLinkedSelfHealingVtids (src/services/self-healing-reconciler.ts:652:17)
+
+  console.log
+    [OASIS Event] Emitted: self-healing.completed for VTID-A (db9e43bd-0126-4695-b0e5-2a9c9c4494cd)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:144:13)
+
+  console.log
+    [self-healing-reconciler] VTID-A terminalized success via autopilot execution exec-A
+
+      at reconcileAutopilotLinkedSelfHealingVtids (src/services/self-healing-reconciler.ts:591:17)
+
+  console.log
+    [OASIS Event] Emitted: self-healing.execution.failed for VTID-C (93cc0f09-7b1e-46df-ab54-d6b5f8562e9f)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:144:13)
+
+  console.log
+    [self-healing-reconciler] VTID-C terminalized failed via autopilot execution exec-C (reverted)
+
+      at reconcileAutopilotLinkedSelfHealingVtids (src/services/self-healing-reconciler.ts:652:17)
+
+  console.log
+    [OASIS Event] Emitted: self-healing.execution.failed for VTID-03862 (1ddb48c2-66b4-4f50-b531-b19054ece59a)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:144:13)
+
+  console.log
+    [self-healing-reconciler] VTID-03862 terminalized failed via autopilot execution exec-onr (reverted)
+
+      at reconcileAutopilotLinkedSelfHealingVtids (src/services/self-healing-reconciler.ts:652:17)
+
+PASS test/self-healing-reconciler-autopilot-link.test.ts
+  reconcileAutopilotLinkedSelfHealingVtids
+    ✓ terminalizes success when execution.status=completed (27 ms)
+    ✓ terminalizes failed when execution.status=failed (2 ms)
+    ✓ terminalizes failed when execution.status=failed_escalated (2 ms)
+    ✓ leaves VTID alone when execution.status=cooling (still in flight)
+    ✓ leaves VTID alone when execution.status=queued (still in flight) (1 ms)
+    ✓ leaves VTID alone when execution.status=running (still in flight)
+    ✓ leaves VTID alone when execution.status=ci (still in flight)
+    ✓ leaves VTID alone when execution.status=merging (still in flight) (1 ms)
+    ✓ leaves VTID alone when execution.status=deploying (still in flight)
+    ✓ leaves VTID alone when execution.status=verifying (still in flight)
+    ✓ handles multiple rows in one scan (success + failure mixed) (4 ms)
+    ✓ VTID-03877: terminalizes a non-self-healing VTID (e.g. operator-onramp) that has a linked execution (5 ms)
+    ✓ no-op when no autopilot-linked self-healing rows exist (1 ms)
+
+PASS test/vtid-04636-reconciler-lineage.test.ts
+  VTID-04636 lineage-aware reconciliation
+    ✓ leaves the VTID open while the fix-mode child of a reverted parent is still in CI (6 ms)
+    ✓ closes success when the parent is self_healed and its child completed (the live VTID-04614 shape) (4 ms)
+    ✓ walks more than one generation and judges by the newest descendant (1 ms)
+    ✓ a reverted parent with no child still closes failed (unchanged behaviour) (1 ms)
+    ✓ never terminalizes on a partial view: a failed child lookup leaves the VTID open (1 ms)
+    ✓ does not look for children of an in-flight or completed row (1 ms)
+
+Test Suites: 3 passed, 3 total
+Tests:       40 passed, 40 total
+Snapshots:   0 total
+Time:        1.55 s
+Ran all test suites matching /test\/self-healing-reconciler-autopilot-link.test.ts|test\/vtid-04636-reconciler-lineage.test.ts|test\/vtid-05023-auth-bridge-reconciler.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
+EXIT_CODE=0

@@ -1,0 +1,815 @@
+TAP version 13
+# Subtest: every seat automation exists and every automation file is referenced by a seat
+ok 1 - every seat automation exists and every automation file is referenced by a seat
+  ---
+  duration_ms: 2.446135
+  type: 'test'
+  ...
+# Subtest: exceptions_seat names a kiro-web seat and only its file has the Exceptions section
+ok 2 - exceptions_seat names a kiro-web seat and only its file has the Exceptions section
+  ---
+  duration_ms: 0.671506
+  type: 'test'
+  ...
+# Subtest: one item per run, and the item order line
+ok 3 - one item per run, and the item order line
+  ---
+  duration_ms: 1.214403
+  type: 'test'
+  ...
+# Subtest: gh run rerun appears only beside the allowlist; merge/deploy/dispatch/migration words only in never sentences
+ok 4 - gh run rerun appears only beside the allowlist; merge/deploy/dispatch/migration words only in never sentences
+  ---
+  duration_ms: 2.134254
+  type: 'test'
+  ...
+# Subtest: no automation hands work to next_actor: claude (only the legacy executor: claude sentence names it)
+ok 5 - no automation hands work to next_actor: claude (only the legacy executor: claude sentence names it)
+  ---
+  duration_ms: 0.496581
+  type: 'test'
+  ...
+# Subtest: shared sections are identical across the three files after seat normalisation
+ok 6 - shared sections are identical across the three files after seat normalisation
+  ---
+  duration_ms: 0.796559
+  type: 'test'
+  ...
+# Subtest: owner setup cron: 5 fields, hourly every day
+ok 7 - owner setup cron: 5 fields, hourly every day
+  ---
+  duration_ms: 0.573748
+  type: 'test'
+  ...
+# Subtest: routine-prompt.md carries the retired header
+ok 8 - routine-prompt.md carries the retired header
+  ---
+  duration_ms: 1.226199
+  type: 'test'
+  ...
+# Subtest: driver.md exists, names the heartbeat command and contract, and needs no subagents
+ok 9 - driver.md exists, names the heartbeat command and contract, and needs no subagents
+  ---
+  duration_ms: 0.726101
+  type: 'test'
+  ...
+# Subtest: heartbeat: first call creates the ref, the second fast-forwards it, the tree is main's tree
+ok 10 - heartbeat: first call creates the ref, the second fast-forwards it, the tree is main's tree
+  ---
+  duration_ms: 202.939726
+  type: 'test'
+  ...
+# Subtest: heartbeat: a foreign tip younger than 45 min is refused (exit code 3); an older one is taken over
+ok 11 - heartbeat: a foreign tip younger than 45 min is refused (exit code 3); an older one is taken over
+  ---
+  duration_ms: 148.501661
+  type: 'test'
+  ...
+# Subtest: heartbeat-age: none without a ref; heartbeat refuses a bad slug or session
+ok 12 - heartbeat-age: none without a ref; heartbeat refuses a bad slug or session
+  ---
+  duration_ms: 40.110837
+  type: 'test'
+  ...
+# Subtest: next: answering an open round comes before review, review before build
+ok 13 - next: answering an open round comes before review, review before build
+  ---
+  duration_ms: 8.123455
+  type: 'test'
+  ...
+# Subtest: next: open rounds per session prefix; a verdict closes sparring
+ok 14 - next: open rounds per session prefix; a verdict closes sparring
+  ---
+  duration_ms: 0.18257
+  type: 'test'
+  ...
+# Subtest: next: a failed check fixes forward (attempt n+1); after 3 attempts the lane is parked
+ok 15 - next: a failed check fixes forward (attempt n+1); after 3 attempts the lane is parked
+  ---
+  duration_ms: 0.703552
+  type: 'test'
+  ...
+# Subtest: next: a lane whose dependency is not done is not built
+ok 16 - next: a lane whose dependency is not done is not built
+  ---
+  duration_ms: 0.910053
+  type: 'test'
+  ...
+# Subtest: next: 8 unblocked ready lanes → 6 builds; 6 active → 0; claimed ready lanes count as active
+ok 17 - next: 8 unblocked ready lanes → 6 builds; 6 active → 0; claimed ready lanes count as active
+  ---
+  duration_ms: 2.120585
+  type: 'test'
+  ...
+# Subtest: next: two lanes on the same hot file → only the lower lane id starts; an active holder blocks too
+ok 18 - next: two lanes on the same hot file → only the lower lane id starts; an active holder blocks too
+  ---
+  duration_ms: 1.940715
+  type: 'test'
+  ...
+# Subtest: next: a small task (1 lane, ≤ 3 files) runs without fan-out
+ok 19 - next: a small task (1 lane, ≤ 3 files) runs without fan-out
+  ---
+  duration_ms: 0.826001
+  type: 'test'
+  ...
+# Subtest: next: done once Gate 2 is logged or the plan is parked
+ok 20 - next: done once Gate 2 is logged or the plan is parked
+  ---
+  duration_ms: 0.174016
+  type: 'test'
+  ...
+# Subtest: next: reads the plan, lanes and sparring files from git (collect/buildQueue)
+ok 21 - next: reads the plan, lanes and sparring files from git (collect/buildQueue)
+  ---
+  duration_ms: 90.796045
+  type: 'test'
+  ...
+# Subtest: detectSlug / parseResponses / setFrontMatter
+ok 22 - detectSlug / parseResponses / setFrontMatter
+  ---
+  duration_ms: 3.6543
+  type: 'test'
+  ...
+# Subtest: round 1 is written, then the session waits for the planner
+ok 23 - round 1 is written, then the session waits for the planner
+  ---
+  duration_ms: 4.529547
+  type: 'test'
+  ...
+# Subtest: responses → converged + policy-approved; without allocation the plan goes to Claude as sparred
+ok 24 - responses → converged + policy-approved; without allocation the plan goes to Claude as sparred
+  ---
+  duration_ms: 2.938662
+  type: 'test'
+  ...
+# Subtest: with allocation on: one VTID per lane, the first bound to the sparring record; plan approved, lanes to Kiro
+ok 25 - with allocation on: one VTID per lane, the first bound to the sparring record; plan approved, lanes to Kiro
+  ---
+  duration_ms: 2.732373
+  type: 'test'
+  ...
+# Subtest: escalation: one re-plan session on a changed plan, a second escalation parks the plan
+ok 26 - escalation: one re-plan session on a changed plan, a second escalation parks the plan
+  ---
+  duration_ms: 2.097517
+  type: 'test'
+  ...
+# Subtest: a partner outage hands the plan to Claude, is never parked, and the retry does not use up a session
+ok 27 - a partner outage hands the plan to Claude, is never parked, and the retry does not use up a session
+  ---
+  duration_ms: 1.093805
+  type: 'test'
+  ...
+# Subtest: gateway client: a lost long call is recovered by polling the session
+ok 28 - gateway client: a lost long call is recovered by polling the session
+  ---
+  duration_ms: 0.775026
+  type: 'test'
+  ...
+# Subtest: review fix: a round is only submitted to this plan's own in-progress session
+ok 29 - review fix: a round is only submitted to this plan's own in-progress session
+  ---
+  duration_ms: 1.263771
+  type: 'test'
+  ...
+# Subtest: review fix: partner_output_invalid goes to Claude but is not auto-retried (the gateway would dedup it)
+ok 30 - review fix: partner_output_invalid goes to Claude but is not auto-retried (the gateway would dedup it)
+  ---
+  duration_ms: 1.160067
+  type: 'test'
+  ...
+# Subtest: late lane: a converged, policy-approved plan allocates a lane added after convergence
+ok 31 - late lane: a converged, policy-approved plan allocates a lane added after convergence
+  ---
+  duration_ms: 2.658406
+  type: 'test'
+  ...
+# Subtest: late lane: the retry never re-sends the sparring id once the session is bound
+ok 32 - late lane: the retry never re-sends the sparring id once the session is bound
+  ---
+  duration_ms: 2.382271
+  type: 'test'
+  ...
+# Subtest: no lanes at convergence: handoff goes to kiro with reason lanes_missing, not "allocation is off"
+ok 33 - no lanes at convergence: handoff goes to kiro with reason lanes_missing, not "allocation is off"
+  ---
+  duration_ms: 1.010728
+  type: 'test'
+  ...
+# Subtest: lanes added later to a lane-less converged plan: first lane gets the bound VTID
+ok 34 - lanes added later to a lane-less converged plan: first lane gets the bound VTID
+  ---
+  duration_ms: 1.509728
+  type: 'test'
+  ...
+# Subtest: allocation failure keeps the VTIDs already allocated and retries the rest on the next run
+ok 35 - allocation failure keeps the VTIDs already allocated and retries the rest on the next run
+  ---
+  duration_ms: 1.945235
+  type: 'test'
+  ...
+# Subtest: orphaned bound VTID is adopted, not re-allocated
+ok 36 - orphaned bound VTID is adopted, not re-allocated
+  ---
+  duration_ms: 0.965548
+  type: 'test'
+  ...
+# Subtest: retry refuses a state.json that names another plan's session
+ok 37 - retry refuses a state.json that names another plan's session
+  ---
+  duration_ms: 2.368451
+  type: 'test'
+  ...
+# Subtest: retry with every lane allocated is a no-op with zero writes
+ok 38 - retry with every lane allocated is a no-op with zero writes
+  ---
+  duration_ms: 0.845231
+  type: 'test'
+  ...
+# Subtest: allocation off: a converged plan with a late lane is not retried and still goes to claude
+ok 39 - allocation off: a converged plan with a late lane is not retried and still goes to claude
+  ---
+  duration_ms: 0.497964
+  type: 'test'
+  ...
+# Subtest: spar_refs: a declared 40-hex SHA is forwarded as extra_refs with no GitHub API call (AC2, AC4)
+ok 40 - spar_refs: a declared 40-hex SHA is forwarded as extra_refs with no GitHub API call (AC2, AC4)
+  ---
+  duration_ms: 0.866093
+  type: 'test'
+  ...
+# Subtest: spar_refs: a declared branch is resolved to a SHA via the GitHub API and forwarded (AC3)
+ok 41 - spar_refs: a declared branch is resolved to a SHA via the GitHub API and forwarded (AC3)
+  ---
+  duration_ms: 0.798575
+  type: 'test'
+  ...
+# Subtest: spar_refs: absent → the create body is byte-identical to the current 6-key body, no extra_refs (AC1, AC6)
+ok 42 - spar_refs: absent → the create body is byte-identical to the current 6-key body, no extra_refs (AC1, AC6)
+  ---
+  duration_ms: 0.810614
+  type: 'test'
+  ...
+# Subtest: spar_refs: an inline-commented or multi-token entry fails loud rather than silently truncating (AC5)
+ok 43 - spar_refs: an inline-commented or multi-token entry fails loud rather than silently truncating (AC5)
+  ---
+  duration_ms: 1.006212
+  type: 'test'
+  ...
+# Subtest: spar_refs: a disallowed repo and the plan's own repo both fail loud (AC5, FR5)
+ok 44 - spar_refs: a disallowed repo and the plan's own repo both fail loud (AC5, FR5)
+  ---
+  duration_ms: 0.965211
+  type: 'test'
+  ...
+# Subtest: spar_refs: a resolve failure (non-200) is fatal and nothing is sent to create (AC5)
+ok 45 - spar_refs: a resolve failure (non-200) is fatal and nothing is sent to create (AC5)
+  ---
+  duration_ms: 0.879525
+  type: 'test'
+  ...
+# Subtest: spar_refs: a re-plan reuses the same resolved companion ref on the second create (round reuse)
+ok 46 - spar_refs: a re-plan reuses the same resolved companion ref on the second create (round reuse)
+  ---
+  duration_ms: 1.15087
+  type: 'test'
+  ...
+# Subtest: parseSparRefs: parses entries, defaults to [] when absent, and rejects malformed entries
+ok 47 - parseSparRefs: parses entries, defaults to [] when absent, and rejects malformed entries
+  ---
+  duration_ms: 0.239591
+  type: 'test'
+  ...
+# Subtest: resolveRef: a 40-hex SHA is returned verbatim with no fetch; a branch resolves via the API
+ok 48 - resolveRef: a 40-hex SHA is returned verbatim with no fetch; a branch resolves via the API
+  ---
+  duration_ms: 0.26511
+  type: 'test'
+  ...
+# Subtest: parseFrontMatter: scalars, inline lists, block lists, comments
+ok 49 - parseFrontMatter: scalars, inline lists, block lists, comments
+  ---
+  duration_ms: 3.003053
+  type: 'test'
+  ...
+# Subtest: classifyPath
+ok 50 - classifyPath
+  ---
+  duration_ms: 0.428759
+  type: 'test'
+  ...
+# Subtest: validatePlan: valid passes, each bad field is named
+ok 51 - validatePlan: valid passes, each bad field is named
+  ---
+  duration_ms: 0.912575
+  type: 'test'
+  ...
+# Subtest: validateLane: plan-only states rejected, vtid required once working, deps must exist
+ok 52 - validateLane: plan-only states rejected, vtid required once working, deps must exist
+  ---
+  duration_ms: 0.862072
+  type: 'test'
+  ...
+# Subtest: checkTransition: plan and lane tables, done terminal, parked returns only where it came from
+ok 53 - checkTransition: plan and lane tables, done terminal, parked returns only where it came from
+  ---
+  duration_ms: 0.660852
+  type: 'test'
+  ...
+# Subtest: sessionId format
+ok 54 - sessionId format
+  ---
+  duration_ms: 0.801618
+  type: 'test'
+  ...
+# Subtest: queue: empty repo → no rows; one row per lane; blocked dependency; newest version across branches wins
+ok 55 - queue: empty repo → no rows; one row per lane; blocked dependency; newest version across branches wins
+  ---
+  duration_ms: 152.948289
+  type: 'test'
+  ...
+# Subtest: queue: a spec without lanes is one implicit lane "main"
+ok 56 - queue: a spec without lanes is one implicit lane "main"
+  ---
+  duration_ms: 74.998495
+  type: 'test'
+  ...
+# Subtest: claims: atomic — second session is refused; release by holder; stale break only after 24 h; nested refs listed
+ok 57 - claims: atomic — second session is refused; release by holder; stale break only after 24 h; nested refs listed
+  ---
+  duration_ms: 278.132948
+  type: 'test'
+  ...
+# Subtest: validate: a correct lane PR passes
+ok 58 - validate: a correct lane PR passes
+  ---
+  duration_ms: 111.005789
+  type: 'test'
+  ...
+# Subtest: validate: foreign lane file, branch/lane mismatch, claimed_by ≠ session, missing trailers, two lanes, illegal transition all fail
+ok 59 - validate: foreign lane file, branch/lane mismatch, claimed_by ≠ session, missing trailers, two lanes, illegal transition all fail
+  ---
+  duration_ms: 161.688255
+  type: 'test'
+  ...
+# Subtest: validate: reviewer may append a log entry with Collab-Review, but not change front matter
+ok 60 - validate: reviewer may append a log entry with Collab-Review, but not change front matter
+  ---
+  duration_ms: 144.577505
+  type: 'test'
+  ...
+# Subtest: validate: new plan must start drafted unless --allow-initial; _plan may create lanes but not edit them
+ok 61 - validate: new plan must start drafted unless --allow-initial; _plan may create lanes but not edit them
+  ---
+  duration_ms: 149.650747
+  type: 'test'
+  ...
+# Subtest: validate: PR without spec changes and without trailers passes untouched
+ok 62 - validate: PR without spec changes and without trailers passes untouched
+  ---
+  duration_ms: 83.394592
+  type: 'test'
+  ...
+# Subtest: seat session ids: generated with a seat, old form still valid, bad seat refused
+ok 63 - seat session ids: generated with a seat, old form still valid, bad seat refused
+  ---
+  duration_ms: 0.532711
+  type: 'test'
+  ...
+# Subtest: lane seat: valid seat passes, malformed seat fails
+ok 64 - lane seat: valid seat passes, malformed seat fails
+  ---
+  duration_ms: 0.167194
+  type: 'test'
+  ...
+# Subtest: queue rows carry seat; a seat-session lane PR validates
+ok 65 - queue rows carry seat; a seat-session lane PR validates
+  ---
+  duration_ms: 117.516125
+  type: 'test'
+  ...
+# Subtest: session ids: pm-agent and ci-plan-spar literals; seatOf
+ok 66 - session ids: pm-agent and ci-plan-spar literals; seatOf
+  ---
+  duration_ms: 0.41374
+  type: 'test'
+  ...
+# Subtest: globs: ** spans segments, * stays in one, dir/** matches dir; governance detection
+ok 67 - globs: ** spans segments, * stays in one, dir/** matches dir; governance detection
+  ---
+  duration_ms: 1.372983
+  type: 'test'
+  ...
+# Subtest: validateLane: executor, reviewer_seat ≠ seat, paths required once working, Kiro lanes never declare governance paths
+ok 68 - validateLane: executor, reviewer_seat ≠ seat, paths required once working, Kiro lanes never declare governance paths
+  ---
+  duration_ms: 0.693566
+  type: 'test'
+  ...
+# Subtest: scope-check: changes inside paths + own spec + own evidence pass
+ok 69 - scope-check: changes inside paths + own spec + own evidence pass
+  ---
+  duration_ms: 85.366576
+  type: 'test'
+  ...
+# Subtest: scope-check: outside paths, governance path, foreign seat, missing trailer, wrong reviewer all fail
+ok 70 - scope-check: outside paths, governance path, foreign seat, missing trailer, wrong reviewer all fail
+  ---
+  duration_ms: 149.921597
+  type: 'test'
+  ...
+# Subtest: scope-check: a governance path inside paths still needs executor claude; claude lanes may
+ok 71 - scope-check: a governance path inside paths still needs executor claude; claude lanes may
+  ---
+  duration_ms: 167.972585
+  type: 'test'
+  ...
+# Subtest: scope-check: legacy lane without paths is report-only; non-lane PR does not apply; lane file fetched from platform
+ok 72 - scope-check: legacy lane without paths is report-only; non-lane PR does not apply; lane file fetched from platform
+  ---
+  duration_ms: 129.482454
+  type: 'test'
+  ...
+# Subtest: programme registry: shape, a spec in two programmes, queue --program column
+ok 73 - programme registry: shape, a spec in two programmes, queue --program column
+  ---
+  duration_ms: 133.511067
+  type: 'test'
+  ...
+# Subtest: validate: a lane whose spec lives in the other repo is read through fetchLane
+ok 74 - validate: a lane whose spec lives in the other repo is read through fetchLane
+  ---
+  duration_ms: 77.678019
+  type: 'test'
+  ...
+# Subtest: VTID-05214: a ci-plan-spar commit may take a plan drafted → approved and write VTIDs into ready lanes; nobody else may
+ok 75 - VTID-05214: a ci-plan-spar commit may take a plan drafted → approved and write VTIDs into ready lanes; nobody else may
+  ---
+  duration_ms: 188.879901
+  type: 'test'
+  ...
+# Subtest: VTID-05213 review: a lane PR cannot widen its own permissions; Claude may adjust a claude lane
+ok 76 - VTID-05213 review: a lane PR cannot widen its own permissions; Claude may adjust a claude lane
+  ---
+  duration_ms: 123.286012
+  type: 'test'
+  ...
+# Subtest: VTID-05213 review: unanchored globs that reach governance files are refused for Kiro lanes
+ok 77 - VTID-05213 review: unanchored globs that reach governance files are refused for Kiro lanes
+  ---
+  duration_ms: 0.597328
+  type: 'test'
+  ...
+# Subtest: VTID-05213 review: seats must exist in areas.yaml; a touched spec must be in a programme once the registry exists
+ok 78 - VTID-05213 review: seats must exist in areas.yaml; a touched spec must be in a programme once the registry exists
+  ---
+  duration_ms: 53.822996
+  type: 'test'
+  ...
+# Subtest: catFileBatch: byte-accurate multi-byte, CRLF, empty, no trailing LF, binary, large, missing, newline query — one process
+ok 79 - catFileBatch: byte-accurate multi-byte, CRLF, empty, no trailing LF, binary, large, missing, newline query — one process
+  ---
+  duration_ms: 105.909945
+  type: 'test'
+  ...
+# Subtest: collect: batched read equals the old implementation; 6 git spawns with origin/HEAD set
+ok 80 - collect: batched read equals the old implementation; 6 git spawns with origin/HEAD set
+  ---
+  duration_ms: 1020.170777
+  type: 'test'
+  ...
+# Subtest: collect guard: a stale branch that modified a lane file main deleted does not bring it back
+ok 81 - collect guard: a stale branch that modified a lane file main deleted does not bring it back
+  ---
+  duration_ms: 189.303471
+  type: 'test'
+  ...
+# Subtest: listClaims: one for-each-ref + one cat-file; equals the old implementation
+ok 82 - listClaims: one for-each-ref + one cat-file; equals the old implementation
+  ---
+  duration_ms: 165.246013
+  type: 'test'
+  ...
+# Subtest: collect: spawn count does not grow with branch count (3 and 8 recent branches)
+ok 83 - collect: spawn count does not grow with branch count (3 and 8 recent branches)
+  ---
+  duration_ms: 468.841234
+  type: 'test'
+  ...
+# Subtest: collect: spec blobs over 2 MB in total read back in full (maxBuffer)
+ok 84 - collect: spec blobs over 2 MB in total read back in full (maxBuffer)
+  ---
+  duration_ms: 223.834859
+  type: 'test'
+  ...
+# Subtest: loadPrograms: ls-tree + one cat-file (2 git spawns); same result as one git show per file
+ok 85 - loadPrograms: ls-tree + one cat-file (2 git spawns); same result as one git show per file
+  ---
+  duration_ms: 90.048504
+  type: 'test'
+  ...
+# Subtest: VTID-05276 T1-T3: validateLane — kiro lane with the agent reviewer may declare governance paths, never a protected gate file; the agent needs executor kiro
+ok 86 - VTID-05276 T1-T3: validateLane — kiro lane with the agent reviewer may declare governance paths, never a protected gate file; the agent needs executor kiro
+  ---
+  duration_ms: 0.856198
+  type: 'test'
+  ...
+# Subtest: VTID-05276 guard: validateLane does not newly refuse Kiro lanes on non-governance gate code (scope-check refuses the change itself)
+ok 87 - VTID-05276 guard: validateLane does not newly refuse Kiro lanes on non-governance gate code (scope-check refuses the change itself)
+  ---
+  duration_ms: 0.840499
+  type: 'test'
+  ...
+# Subtest: VTID-05276 T4: scope-check passes a governance file on a kiro lane with the agent reviewer from main
+ok 88 - VTID-05276 T4: scope-check passes a governance file on a kiro lane with the agent reviewer from main
+  ---
+  duration_ms: 84.984794
+  type: 'test'
+  ...
+# Subtest: VTID-05276 T5: protected gate files never pass for a kiro lane, whatever its reviewer or paths
+ok 89 - VTID-05276 T5: protected gate files never pass for a kiro lane, whatever its reviewer or paths
+  ---
+  duration_ms: 86.714107
+  type: 'test'
+  ...
+# Subtest: VTID-05276 T6: a lane PR cannot grant itself the agent reviewer
+ok 90 - VTID-05276 T6: a lane PR cannot grant itself the agent reviewer
+  ---
+  duration_ms: 86.571098
+  type: 'test'
+  ...
+# Subtest: VTID-05276 T7: an agent review entry passes scope-check and validate; the same entry from a Kiro seat fails
+ok 91 - VTID-05276 T7: an agent review entry passes scope-check and validate; the same entry from a Kiro seat fails
+  ---
+  duration_ms: 137.47681
+  type: 'test'
+  ...
+# Subtest: VTID-05276 T8: agent session ids — format, agentOf, session-id for a listed agent only
+ok 92 - VTID-05276 T8: agent session ids — format, agentOf, session-id for a listed agent only
+  ---
+  duration_ms: 0.400307
+  type: 'test'
+  ...
+# Subtest: VTID-05407: reviewer session-id round-trips to its agent and a reviewer id names no seat
+ok 93 - VTID-05407: reviewer session-id round-trips to its agent and a reviewer id names no seat
+  ---
+  duration_ms: 0.46343
+  type: 'test'
+  ...
+# Subtest: VTID-05276 T9: a lane only on a qualifying open plan( PR is read from there and trusted
+ok 94 - VTID-05276 T9: a lane only on a qualifying open plan( PR is read from there and trusted
+  ---
+  duration_ms: 63.822814
+  type: 'test'
+  ...
+# Subtest: VTID-05276 T10: plan-PR permissions win over a lane file the lane PR widened
+ok 95 - VTID-05276 T10: plan-PR permissions win over a lane file the lane PR widened
+  ---
+  duration_ms: 62.774944
+  type: 'test'
+  ...
+# Subtest: VTID-05276 T11: an unqualified plan( PR is never trusted for a governance change
+ok 96 - VTID-05276 T11: an unqualified plan( PR is never trusted for a governance change
+  ---
+  duration_ms: 120.457029
+  type: 'test'
+  ...
+# Subtest: VTID-05276 T12: a lane file only in the lane PR head gets no governance exemption
+ok 97 - VTID-05276 T12: a lane file only in the lane PR head gets no governance exemption
+  ---
+  duration_ms: 63.754753
+  type: 'test'
+  ...
+# Subtest: VTID-05276 T13: findPlanPr picks the one same-repo plan(<slug>) PR; ghPlanLaneFetcher reads the ci-plan-spar revision and fails closed
+ok 98 - VTID-05276 T13: findPlanPr picks the one same-repo plan(<slug>) PR; ghPlanLaneFetcher reads the ci-plan-spar revision and fails closed
+  ---
+  duration_ms: 0.751133
+  type: 'test'
+  ...
+# Subtest: VTID-05276 T14: the registry accepts the reviewer agent as reviewer_seat
+ok 99 - VTID-05276 T14: the registry accepts the reviewer agent as reviewer_seat
+  ---
+  duration_ms: 54.064308
+  type: 'test'
+  ...
+# Subtest: VTID-05276 T15: pm-agent lane-state commits are exempt from one-session-per-lane and claimed_by; any other change is refused
+ok 100 - VTID-05276 T15: pm-agent lane-state commits are exempt from one-session-per-lane and claimed_by; any other change is refused
+  ---
+  duration_ms: 285.608847
+  type: 'test'
+  ...
+# Subtest: VTID-05276 T16: protected-gate-files.json parses, equals plan §4.3 and the loaded list; every entry is governance or gate code
+ok 101 - VTID-05276 T16: protected-gate-files.json parses, equals plan §4.3 and the loaded list; every entry is governance or gate code
+  ---
+  duration_ms: 2.080149
+  type: 'test'
+  ...
+# Subtest: VTID-05276 T17: PR-GATE runs a "Collab handoff" job over every collab test and Lane scope with the base revision's checker
+ok 102 - VTID-05276 T17: PR-GATE runs a "Collab handoff" job over every collab test and Lane scope with the base revision's checker
+  ---
+  duration_ms: 0.500751
+  type: 'test'
+  ...
+# Subtest: VTID-05331 1: builder A releases, B of the same seat takes over and logs it, claimed_by B → pass
+ok 103 - VTID-05331 1: builder A releases, B of the same seat takes over and logs it, claimed_by B → pass
+  ---
+  duration_ms: 130.718767
+  type: 'test'
+  ...
+# Subtest: VTID-05331 2: interleaved builders A, B, A → fail (overlap)
+ok 104 - VTID-05331 2: interleaved builders A, B, A → fail (overlap)
+  ---
+  duration_ms: 126.583181
+  type: 'test'
+  ...
+# Subtest: VTID-05331 3: a session of another seat continues the lane → fail (seat), and scope-check still refuses it
+ok 105 - VTID-05331 3: a session of another seat continues the lane → fail (seat), and scope-check still refuses it
+  ---
+  duration_ms: 128.203745
+  type: 'test'
+  ...
+# Subtest: VTID-05331 4: the reviewer seat, a reviewer agent, or a session that reviewed the lane may not continue the build
+ok 106 - VTID-05331 4: the reviewer seat, a reviewer agent, or a session that reviewed the lane may not continue the build
+  ---
+  duration_ms: 362.781516
+  type: 'test'
+  ...
+# Subtest: VTID-05331 5: sequential same-seat builders do not widen the lane paths (scope-check still fails)
+ok 107 - VTID-05331 5: sequential same-seat builders do not widen the lane paths (scope-check still fails)
+  ---
+  duration_ms: 130.704
+  type: 'test'
+  ...
+# Subtest: VTID-05331 6: a single-builder lane passes unchanged, and its claimed_by is still checked
+ok 108 - VTID-05331 6: a single-builder lane passes unchanged, and its claimed_by is still checked
+  ---
+  duration_ms: 226.718244
+  type: 'test'
+  ...
+# Subtest: VTID-05331 7: a takeover not named in the lane log → fail
+ok 109 - VTID-05331 7: a takeover not named in the lane log → fail
+  ---
+  duration_ms: 118.426691
+  type: 'test'
+  ...
+# Subtest: VTID-05331 8: claimed_by still names the earlier builder after a takeover → fail
+ok 110 - VTID-05331 8: claimed_by still names the earlier builder after a takeover → fail
+  ---
+  duration_ms: 116.93134
+  type: 'test'
+  ...
+# Subtest: transitionChain: valid lane chains (both merge-sha conventions, changes loop, intermediate parked)
+ok 111 - transitionChain: valid lane chains (both merge-sha conventions, changes loop, intermediate parked)
+  ---
+  duration_ms: 2.181749
+  type: 'test'
+  ...
+# Subtest: transitionChain: valid plan chain, one entry per edge; plan → done needs every lane done
+ok 112 - transitionChain: valid plan chain, one entry per edge; plan → done needs every lane done
+  ---
+  duration_ms: 0.217041
+  type: 'test'
+  ...
+# Subtest: transitionChain: invalid chains each fail with their own error
+ok 113 - transitionChain: invalid chains each fail with their own error
+  ---
+  duration_ms: 0.751307
+  type: 'test'
+  ...
+# Subtest: validate: a closing-record PR may carry executing → in-review → verified → done; authorization still applies
+ok 114 - validate: a closing-record PR may carry executing → in-review → verified → done; authorization still applies
+  ---
+  duration_ms: 196.783488
+  type: 'test'
+  ...
+# Subtest: validate: a chain whose accept entry has no Collab-Review commit fails; a single legal edge needs no new evidence
+ok 115 - validate: a chain whose accept entry has no Collab-Review commit fails; a single legal edge needs no new evidence
+  ---
+  duration_ms: 385.497474
+  type: 'test'
+  ...
+# Subtest: VTID-05408 T-A: validateLane recognises the lane_admin marker and requires kiro + the reviewer agent + a lane-file path
+ok 116 - VTID-05408 T-A: validateLane recognises the lane_admin marker and requires kiro + the reviewer agent + a lane-file path
+  ---
+  duration_ms: 1.293352
+  type: 'test'
+  ...
+# Subtest: VTID-05408 T-B: a trusted lane_admin lane reassigns a TARGET lane seat + narrows its paths → Collab handoff and Lane scope pass
+ok 117 - VTID-05408 T-B: a trusted lane_admin lane reassigns a TARGET lane seat + narrows its paths → Collab handoff and Lane scope pass
+  ---
+  duration_ms: 124.950181
+  type: 'test'
+  ...
+# Subtest: VTID-05408 T-C: the same cross-lane-file reassignment from an ordinary (non lane_admin) lane is refused
+ok 118 - VTID-05408 T-C: the same cross-lane-file reassignment from an ordinary (non lane_admin) lane is refused
+  ---
+  duration_ms: 109.331226
+  type: 'test'
+  ...
+# Subtest: VTID-05408 T-D: a PR that self-grants lane_admin: true in its own head does not unlock the exemption (lane_admin pinned to trusted)
+ok 119 - VTID-05408 T-D: a PR that self-grants lane_admin: true in its own head does not unlock the exemption (lane_admin pinned to trusted)
+  ---
+  duration_ms: 134.82376
+  type: 'test'
+  ...
+# Subtest: VTID-05408 T-E: a lane_admin lane that changes a protected gate file is still refused
+ok 120 - VTID-05408 T-E: a lane_admin lane that changes a protected gate file is still refused
+  ---
+  duration_ms: 92.674641
+  type: 'test'
+  ...
+# Subtest: VTID-05408 T-F: an ordinary lane PR editing a foreign seat’s own lane file is still refused (seat ownership preserved)
+ok 121 - VTID-05408 T-F: an ordinary lane PR editing a foreign seat’s own lane file is still refused (seat ownership preserved)
+  ---
+  duration_ms: 86.415434
+  type: 'test'
+  ...
+# Subtest: VTID-05408 T-G: validateRange cross-lane-file exemption passes only for a trusted lane_admin lane
+ok 122 - VTID-05408 T-G: validateRange cross-lane-file exemption passes only for a trusted lane_admin lane
+  ---
+  duration_ms: 108.5007
+  type: 'test'
+  ...
+# Subtest: VTID-05408 T-H: an ordinary cross-lane-file edit with a mismatched Collab-Lane is still refused
+ok 123 - VTID-05408 T-H: an ordinary cross-lane-file edit with a mismatched Collab-Lane is still refused
+  ---
+  duration_ms: 121.191193
+  type: 'test'
+  ...
+# Subtest: VTID-05408 T-I: a lane_admin lane cannot widen/change its OWN PERM fields or lane_admin (self-widen impossible)
+ok 124 - VTID-05408 T-I: a lane_admin lane cannot widen/change its OWN PERM fields or lane_admin (self-widen impossible)
+  ---
+  duration_ms: 374.730599
+  type: 'test'
+  ...
+# Subtest: VTID-05408 T-J: lane_admin parses as the STRING ‘true’ and still unlocks the carve-outs (toBool, never === true)
+ok 125 - VTID-05408 T-J: lane_admin parses as the STRING ‘true’ and still unlocks the carve-outs (toBool, never === true)
+  ---
+  duration_ms: 119.612291
+  type: 'test'
+  ...
+# Subtest: VTID-05408 T-K: the validateRange exemption resolves a trusted admin lane via fetchPlanLane from a qualifying plan( PR (symmetric with scope-check)
+ok 126 - VTID-05408 T-K: the validateRange exemption resolves a trusted admin lane via fetchPlanLane from a qualifying plan( PR (symmetric with scope-check)
+  ---
+  duration_ms: 193.083022
+  type: 'test'
+  ...
+# Subtest: VTID-05365 R1: a planner commit and a ci-plan-spar commit on `_plan` are one session
+ok 127 - VTID-05365 R1: a planner commit and a ci-plan-spar commit on `_plan` are one session
+  ---
+  duration_ms: 94.900291
+  type: 'test'
+  ...
+# Subtest: VTID-05365 R1 negative: a second kiro session on `_plan` still fails
+ok 128 - VTID-05365 R1 negative: a second kiro session on `_plan` still fails
+  ---
+  duration_ms: 104.261165
+  type: 'test'
+  ...
+# Subtest: VTID-05365 R1 negative: a ci-plan-spar commit that edits the paths of a lane past `ready` still fails
+ok 129 - VTID-05365 R1 negative: a ci-plan-spar commit that edits the paths of a lane past `ready` still fails
+  ---
+  duration_ms: 99.846354
+  type: 'test'
+  ...
+# Subtest: VTID-05365 silent failure: validate --summary prints the problems as ::error:: annotations on stderr
+ok 130 - VTID-05365 silent failure: validate --summary prints the problems as ::error:: annotations on stderr
+  ---
+  duration_ms: 278.08787
+  type: 'test'
+  ...
+# Subtest: VTID-05365 silent failure: scope-check --summary prints ::error::lane scope: annotations; newlines escaped
+ok 131 - VTID-05365 silent failure: scope-check --summary prints ::error::lane scope: annotations; newlines escaped
+  ---
+  duration_ms: 129.70059
+  type: 'test'
+  ...
+# Subtest: VTID-05365 batching: validateRange and scopeCheck start as many git processes for 3 as for 30 commits; output equals the reference
+ok 132 - VTID-05365 batching: validateRange and scopeCheck start as many git processes for 3 as for 30 commits; output equals the reference
+  ---
+  duration_ms: 1111.706507
+  type: 'test'
+  ...
+# Subtest: VTID-05365 batching: commit files equal diff-tree per commit (add, delete, rename, nested, unusual names)
+ok 133 - VTID-05365 batching: commit files equal diff-tree per commit (add, delete, rename, nested, unusual names)
+  ---
+  duration_ms: 78.348297
+  type: 'test'
+  ...
+# Subtest: VTID-05365 batching: commitFileReader equals git show in memory and through the temporary file; 2 git spawns
+ok 134 - VTID-05365 batching: commitFileReader equals git show in memory and through the temporary file; 2 git spawns
+  ---
+  duration_ms: 141.765721
+  type: 'test'
+  ...
+1..134
+# tests 134
+# suites 0
+# pass 134
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 11242.235454
+exit=0
