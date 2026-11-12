@@ -47,15 +47,19 @@ const PROD_WORKFLOW = path.resolve(
 
 const stagingYml = fs.readFileSync(STAGING_WORKFLOW, 'utf8');
 
-describe('VTID-03813: staging pins AURORA_RLS_DATABASE_URL', () => {
-  it('resolves the authenticator-role secret ARN via describe-secret, not a hardcoded ARN', () => {
-    expect(stagingYml).toMatch(
+// VTID-05023 (MR !12): staging no longer binds production Aurora secrets. These
+// assertions used to pin the VTID-03813 wiring. They now pin its removal. The
+// strip-list test below is unchanged: the names stay there so a copy carried
+// forward from an older task definition is still removed on deploy.
+describe('VTID-03813 / VTID-05023: staging does not bind production Aurora secrets', () => {
+  it('no longer resolves the authenticator-role secret ARN on staging', () => {
+    expect(stagingYml).not.toMatch(
       /"SEC_AURORA_RLS:vitana\/aurora\/prod\/postgrest-authenticator-uri"/,
     );
   });
 
-  it('passes the resolved ARN into the jq filter as $SEC_AURORA_RLS', () => {
-    expect(stagingYml).toMatch(/--arg SEC_AURORA_RLS "\$SEC_AURORA_RLS"/);
+  it('does not pass $SEC_AURORA_RLS into the jq filter', () => {
+    expect(stagingYml).not.toMatch(/--arg SEC_AURORA_RLS/);
   });
 
   it('strips the inherited secret first, so a stale one cannot survive', () => {
@@ -70,18 +74,18 @@ describe('VTID-03813: staging pins AURORA_RLS_DATABASE_URL', () => {
     expect(strip).toContain('"AURORA_RLS_DATABASE_URL"');
   });
 
-  it('upserts the AURORA_RLS_DATABASE_URL secret pointed at $SEC_AURORA_RLS', () => {
-    expect(stagingYml).toMatch(
-      /\{name:"AURORA_RLS_DATABASE_URL",\s*valueFrom:\$SEC_AURORA_RLS\}/,
+  it('does not upsert AURORA_RLS_DATABASE_URL on staging', () => {
+    expect(stagingYml).not.toMatch(
+      /\{name:"AURORA_RLS_DATABASE_URL",\s*valueFrom:/,
     );
   });
 
-  it('does not collide with the separately-wired AURORA_DATABASE_URL (VTID-03773, vitana_admin secret)', () => {
-    expect(stagingYml).toMatch(
+  it('does not bind AURORA_DATABASE_URL on staging (VTID-03773 secret removed by VTID-05023)', () => {
+    expect(stagingYml).not.toMatch(
       /"SEC_AURORA:vitana\/aurora\/prod\/database-url"/,
     );
-    expect(stagingYml).toMatch(
-      /\{name:"AURORA_DATABASE_URL",\s*valueFrom:\$SEC_AURORA\}/,
+    expect(stagingYml).not.toMatch(
+      /\{name:"AURORA_DATABASE_URL",\s*valueFrom:/,
     );
   });
 
