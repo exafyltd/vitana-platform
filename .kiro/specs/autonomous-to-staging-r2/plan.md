@@ -64,31 +64,53 @@ their r1 lane files and VTIDs.
 
 ## 3. Target
 ### 3.1 `protect-gate-workflow` (one lane, the existing mechanisms only)
-1. Protected list (all four copies, kept equal by the existing invariant check): add
-   `.github/workflows/GATE-INVARIANTS.yml`, `scripts/ci/workflow-trigger-check.test.mjs` and
-   `scripts/collab/gate-audit.mjs`. `REQUIRED_PROTECTED` gains the same three.
+1. Protected list: the three entries `.github/workflows/GATE-INVARIANTS.yml`,
+   `scripts/ci/workflow-trigger-check.test.mjs` and `scripts/collab/gate-audit.mjs` go into all four copies:
+   `scripts/collab/protected-gate-files.json` `globs`, `PROTECTED_GATE_BUILTIN` in `scripts/collab/queue.mjs:94-100`,
+   `PROTECTED_GATE_GLOBS` in `governance.ts:48-63`, and `REQUIRED_PROTECTED` in `gate-invariants.test.mjs:22-37`
+   (R1-F5). The invariant check's working-tree test runs in the lane's own PR, so a mismatch fails there, not only on
+   `main`.
 2. Exact-head rule, both layers:
-   - `land-guard.mjs merge`: when the PR touches a protected file, `--repo` is required (refused without it); an accept
-     counts only when (a) its `Collab-Reviewed-Head` is an ancestor of the merged head, (b) every commit after it
-     changes only the lane's own lane file (no merge commit, no other path), and (c) `git diff` of the protected paths
-     between merge-base and reviewed head is byte-identical to that between merge-base and merged head. A PR brought
-     up to date with `main` after the accepts needs new accepts on the new head (an automatic merge of `main` no longer
-     carries a protected-file accept forward). Two accepts must come from two distinct chain models and two distinct
-     `Collab-Session` ids, neither of which is a session in the lane's `executing` log entries (self-review exclusion).
-   - `governance.ts` (`protectedAcceptModels`, `reviewOnCurrentHead`): the same three conditions from the observed PR
-     (head SHA, commit list with files, review entries), the same distinct-model and distinct-session rule.
+   - Rule chosen (R1-F2, option a, strict): for a protected-file accept, **every commit after the reviewed head must be
+     a lane-file-only commit; a merge commit (including an automatic merge of `main`) or any other path voids the
+     accept**. A PR brought up to date with `main` after its accepts needs new accepts on the new head. This is a
+     deliberate behaviour change from `reviewCurrent` (`land-guard.mjs:63-85`), which keeps a single review across a
+     clean merge of `main` when `prDiffSame === true`; single-review behaviour stays as it is. Implementation: a new
+     exported `protectedReviewCurrent(reviewed, head, after, laneKey)` in `land-guard.mjs` that refuses any `after`
+     entry with `merge` facts or with a file other than the lane file, then requires `reviewCurrent(...).ok`; the
+     `merge` command uses it for the protected-accept walk (`:315-333`) instead of `reviewCurrent`.
+   - `land-guard.mjs merge`: when the PR touches a protected file, `--repo` is required (refused without it), so the
+     walk is always local (`localAfter`) and `prDiffSame` is defined; an accept also needs (c) the protected paths'
+     diff between merge-base and reviewed head byte-identical to that between merge-base and merged head.
+   - Distinct models and sessions, self-review exclusion (R1-F3): `parseReviewEntry` (`:127-131`) is extended to return
+     `session` from the entry's `Collab-Session` trailer. `protectedAcceptModels` (`land-guard.mjs:117`) counts an
+     accept only when its session is not a session of the lane's `ready → executing` / `executing → in-review` log
+     entries (the builders; read with the existing `logSection` helper of `queue.mjs`), and the two counted accepts
+     must have two distinct chain models **and** two distinct sessions.
+   - `governance.ts`: `ReviewEntry` gains `session`; `protectedAcceptModels` (`:67`) uses a new
+     `protectedReviewOnCurrentHead(r, pr)` that accepts only `r.head_sha === pr.head_sha`, or a head followed in
+     `pr.review_only_since` exclusively by lane-file-only commits (the observer already computes that list; merge
+     commits are excluded from it for this check), and applies the same distinct-model, distinct-session and builder
+     exclusion (builders from `lane.log` sessions).
    - Shared fixtures `scripts/collab/fixtures/protected-review-cases.json` (stale head, code after review, merge of
      `main` after review, same model twice, same session twice, builder self-review, two valid accepts) are run by
      `land-guard.test.mjs` and `governance.test.ts`; both must give the same verdict per case.
 3. Post-merge audit, existing workflow: `GATE-INVARIANTS.yml` gains a step `node scripts/collab/gate-audit.mjs
-   --since <last 14 days> --gh exafyltd/vitana-platform` (read-only, `GITHUB_TOKEN` with `contents: read`,
-   `pull-requests: read`). For each merge commit on `main` touching a protected file it reads the merged PR's commits
-   and applies the same `land-guard.mjs` functions (imported, not copied). Allowed authorities: two valid accepts on
-   the merged head, or the bootstrap list `scripts/collab/fixtures/gate-audit-bootstrap.json` (PR #5002 merge
-   `e7077f27c3`, plus merges before the two-model rule landed, listed by SHA). A violation fails the job, and a second
-   job `report` (`if: failure()`, `needs: invariants`) emits OASIS `collab.gate.bypass_detected` through the existing
-   `/api/v1/events/ingest` path with `GATEWAY_SERVICE_TOKEN` (that job only; `workflow-trigger-check.test.mjs` allows a
-   secret only in job `report`).
+   --since <14 days> --repo . --gh exafyltd/vitana-platform`. Walk strategy (R1-F4, option b): the job's checkout uses
+   `fetch-depth: 0`, and for each squash-merge commit on `main` in the window that touches a protected file the
+   script finds its PR (`repos/{gh}/commits/{sha}/pulls`), fetches `refs/pull/<n>/head` into the local clone, and runs
+   the same `land-guard.mjs` functions (imported, not copied: `parseReviewEntry`, `localAfter`,
+   `protectedReviewCurrent`, `protectedAcceptModels`) against the PR's final head, which the squash commit's tree must
+   equal. Allowed authorities: two valid accepts on the merged head, or the bootstrap list
+   `scripts/collab/fixtures/gate-audit-bootstrap.json` (PR #5002 merge `e7077f27c3`, plus protected merges before the
+   two-model rule landed, listed by SHA). A violation fails the job.
+   Permissions (R1-F1): top-level `permissions: contents: read` only; job `invariants` declares exactly
+   `contents: read` and `pull-requests: read`; job `report` (`needs: [invariants]`, `if: failure()`) declares exactly
+   `contents: read` and is the only place `secrets.` appears (`GATEWAY_SERVICE_TOKEN`, to emit OASIS
+   `collab.gate.bypass_detected` through the existing `/api/v1/events/ingest`). `workflow-trigger-check.test.mjs` is
+   rewritten to parse the jobs and assert each of these (exact permission sets, secret only in `report`, `report`'s
+   `if: failure()` and `needs: [invariants]`, `fetch-depth: 0` on the invariants checkout), with a mutation case for
+   each.
 4. Nothing new besides those files: no new queue, ledger, allocator or merge path.
 
 ### 3.2 Stage 1, AWS access foundation (r1 lane `kiro-aws-access`, VTID-05764, plus `staging-db-provision` IAM)
@@ -178,11 +200,15 @@ in this plan; r1 `quarantine` and `pipeline-b-platform` do not touch them); `AWS
 
 ## 5. Tests (each red on base first)
 - `protect-gate-workflow`: the seven shared fixture cases give the same verdict in `land-guard.test.mjs` and
-  `governance.test.ts`; `merge` without `--repo` on a protected PR is refused; gate-invariants mutation: dropping
+  `governance.test.ts`, including a merge of `main` after two valid accepts (voided), two sessions with one model, one
+  session with two models, and an accept from a builder session; `merge` without `--repo` on a protected PR is
+  refused; `parseReviewEntry` returns the session; gate-invariants mutation: dropping
   `GATE-INVARIANTS.yml` from any of the four lists fails; `gate-audit.mjs` on fixture commit histories: a protected
   merge with one accept, with a stale accept, or with two same-model accepts is reported; a bootstrap-listed SHA and a
-  valid two-model merge pass; `workflow-trigger-check.test.mjs` asserts the audit step, the `report` job's
-  `if: failure()` and that no other job uses a secret.
+  valid two-model merge pass, using a fixture git history built in a temp repo; `workflow-trigger-check.test.mjs`
+  asserts the audit step, `fetch-depth: 0`, the exact permission set of each job (top level `contents: read`;
+  `invariants` `contents: read` + `pull-requests: read`; `report` `contents: read`), `report`'s `if: failure()` and
+  `needs: [invariants]`, and that no job other than `report` names a secret; each assertion has a failing mutation.
 - `staging-db-provision`: provision `--plan` prints no production identifier and refuses `vitana-aurora-prod` and any
   non-staging name; guard fixtures (config, workflow YAML, task-definition JSON) each fail under `--enforce`;
   `build-schema.mjs` fails when a required table is dropped from the replay (fixture skip list); load script refuses a
