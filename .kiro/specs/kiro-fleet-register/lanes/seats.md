@@ -1,6 +1,6 @@
 ---
 lane: seats
-state: executing
+state: in-review
 next_actor: kiro
 branch: kiro/kiro-fleet-register/seats
 depends_on: []
@@ -13,7 +13,8 @@ repos: [exafyltd/vitana-platform]
 paths:
   - docs/programs/areas.yaml
   - docs/validation/VTID-*/**
-updated: 2026-11-12T18:36Z
+updated: 2026-11-12T18:37Z
+pr: https://github.com/exafyltd/vitana-platform/pull/5025
 vtid: VTID-05715
 ---
 # Lane: seats (repo vitana-platform)
@@ -28,3 +29,6 @@ VTID-05715 allocated after policy approval (converged-auto-v1).
 
 ### 2026-11-12T18:36Z · kiro-exafy-202611110920-270b · ready → executing
 Claimed (`queue.mjs claim`); building on `origin/main` f0f88de2b5 (VTID-05699 is on main).
+
+### 2026-11-12T18:37Z · kiro-exafy-202611110920-270b · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/5025. Evidence test red on base 3 fail, green 4/4; collab 101/0. Next: reviewer agent.
