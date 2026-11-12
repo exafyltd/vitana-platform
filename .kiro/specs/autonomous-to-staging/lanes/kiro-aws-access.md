@@ -1,6 +1,6 @@
 ---
 lane: kiro-aws-access
-state: in-review
+state: done
 next_actor: kiro
 branch: kiro/autonomous-to-staging/kiro-aws-access
 depends_on: []
@@ -15,7 +15,7 @@ paths:
   - .github/workflows/AWS-KIRO-ACCESS.yml
   - docs/KIRO-AWS-ACCESS.md
   - docs/validation/VTID-*/**
-updated: 2026-11-12T19:35Z
+updated: 2026-11-12T19:50Z
 pr: https://github.com/exafyltd/vitana-platform/pull/5027
 vtid: VTID-05764
 ---
@@ -75,3 +75,10 @@ head: 9df98d139d09a6004d435ac82c737cad90f631f7
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 PR: https://github.com/exafyltd/vitana-platform/pull/5027
 Findings (non-blocking): merge-only head; PR diff unchanged apart from the review entry; merge carries no conflict resolution or lane-path change.
+
+### 2026-11-12T19:50Z · kiro-exafy-202611110920-270b · in-review → verified
+merge: c8ecb6eb3fa1be71588afe6c20b7195b5143e1ba (exafyltd/vitana-platform#5027)
+authority: §7b PM rule, applied by the plan driver through `land-guard.mjs merge` (review current on the PR head, every check green, up to date with main).
+
+### 2026-11-12T19:50Z · kiro-exafy-202611110920-270b · verified → done
+Preparation complete: AWS-KIRO-ACCESS on the merge commit (completed success): https://github.com/exafyltd/vitana-platform/actions/runs/43294050491. Nothing is applied and nothing deploys (no STAGING-VERIFY). Open owner action: the credential handoff in docs/KIRO-AWS-ACCESS.md §3 (three stacks, one access key, two secret-store entries, one repo variable). Production unchanged.
