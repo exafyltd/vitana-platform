@@ -798,3 +798,67 @@ awk -F'|' '/^\| [0-9]+ \| `/ {f=$3; h=$4; gsub(/[ `]/,"",f); gsub(/ /,"",h); pri
 grep -cE '^\| [0-9]+ \| `' docs/validation/VTID-05023/migration-order.md   # expect 732
 ```
 
+## Step to run once the rehearsal Data API works
+
+Status: **the list above is still pending owner confirmation (O5).** This step only reads what the rehearsal clone already holds. It removes nothing from the 732 candidates. Only the owner removes files, after O5 is confirmed.
+
+### Which table records applied migrations
+
+- The Aurora apply path, `scripts/aws/aurora-apply-migration.sh`, writes no record of what it applied. It sends the file's statements and `NOTIFY pgrst`, and nothing else. The repo has no Aurora migration table.
+- The one recorded log is `supabase_migrations.schema_migrations`. The Supabase path writes it through `scripts/ci/apply-sql-via-management-api.sh --record-migration`. That change is planned in `docs/validation/VTID-05123/` (plan-sparring and acceptance) and is not confirmed live on Aurora.
+- Columns used: `version` (the leading digits of the filename), `name` (the rest of the name), and `idempotency_key` (the full filename, for example `20260102000000_vtid_01112_context_assembly_engine.sql`). Match on `idempotency_key`, not `version`. Several candidates share a version prefix, for example the four files that start with `20251231000000_`.
+- If the rehearsal clone does not have this table, the query returns no rows and says nothing about what Aurora holds. That result goes to the owner. It does not mean no migration was applied.
+
+### Pre-check (read-only)
+
+Run only after the rehearsal Data API answers. Confirm the endpoint is on:
+
+```
+aws rds describe-db-clusters --region eu-central-1 --db-cluster-identifier vitana-aurora-rehearsal --query 'DBClusters[0].HttpEndpointEnabled'
+```
+
+Expect `true`. If it is `false`, stop. Do not enable it from this step.
+
+### The read-only query
+
+Run two SELECTs. The first checks that the table exists. The second reads it.
+
+```sql
+SELECT to_regclass('supabase_migrations.schema_migrations') IS NOT NULL AS table_present;
+```
+
+```sql
+SELECT idempotency_key, version, name
+FROM supabase_migrations.schema_migrations
+ORDER BY idempotency_key;
+```
+
+Both are plain SELECTs. Do not add a transaction, a write, or an `ALTER`. If `table_present` is `false`, skip the second query and report that the clone has no migration record.
+
+### The call
+
+Target: the rehearsal clone `vitana-aurora-rehearsal` only. Never the production cluster `vitana-aurora-prod`.
+
+```
+REHEARSAL_ARN=arn:aws:rds:eu-central-1:472838866351:cluster:vitana-aurora-rehearsal
+REHEARSAL_SECRET=$(aws rds describe-db-clusters --region eu-central-1 --db-cluster-identifier vitana-aurora-rehearsal --query 'DBClusters[0].MasterUserSecret.SecretArn' --output text)
+aws rds-data execute-statement --region eu-central-1 \
+  --resource-arn "$REHEARSAL_ARN" --secret-arn "$REHEARSAL_SECRET" --database vitana \
+  --sql "SELECT idempotency_key, version, name FROM supabase_migrations.schema_migrations ORDER BY idempotency_key"
+```
+
+The database name `vitana` is the one the production apply path uses. Confirm it against the rehearsal clone before the first run. Do not pass `--transaction-id`. A call without a transaction runs in autocommit, and the SELECT changes nothing.
+
+### Comparing the result with the 732 candidates
+
+1. Save the `idempotency_key` values from the query as the recorded set R.
+2. Take the File column of the candidate table (rows 1 to 732), with the same filename form, as the candidate set C.
+3. Report three groups:
+   - **Recorded and in C:** the rehearsal clone holds these. They are candidates for removal from the apply set, but only if the owner confirms O5.
+   - **In C, not recorded:** these are still to apply, or the record is missing. The owner decides which.
+   - **In R, not in C:** the clone holds these from outside the candidate list. Report them. Do not add or remove anything.
+4. A filename in R that matches a candidate by name but has a different version or name is a mismatch. Report it. Do not treat it as applied.
+5. Store the result in a new file under `docs/validation/VTID-05023/`. Do not edit this list from the result.
+
+The list stays pending owner confirmation until O5 is closed. The comparison does not close O5.
+
