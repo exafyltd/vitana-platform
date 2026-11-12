@@ -4,14 +4,14 @@ state: ready
 next_actor: kiro
 depends_on: []
 executor: kiro
-seat: exafy
+seat: exafyltd
 reviewer_seat: agent:vitana-lane-reviewer
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 paths:
   - apps/mobile/tests/mt-native-health/tenant-resolution.test.tsx
   - apps/mobile/tests/mt-native-health/deep-link-nonmember.test.tsx
   - apps/mobile/tests/mt-native-health/push-identity.test.ts
-updated: 2026-11-07T14:17Z
+updated: 2026-11-12T20:16Z
 repos: [exafyltd/vitana-v1]
 vtid: VTID-05599
 ---
@@ -45,3 +45,5 @@ Re-plan of `mt-native-health/native-tenant-isolation-tests`. Versions day-shifte
 
 ### 2026-11-07T14:17Z · ci-plan-spar · ready (VTID allocated)
 VTID-05599 allocated after policy approval (converged-auto-v1).
+### 2026-11-12T20:16Z · pm-agent · update
+reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
