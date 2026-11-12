@@ -1,10 +1,10 @@
 ---
 lane: native-extract-regen
-state: ready
+state: parked
 next_actor: kiro
 depends_on: []
 executor: kiro
-seat: jtadic
+seat: exafyltd
 area: frontend
 reviewer_seat: agent:vitana-lane-reviewer
 repos: [exafyltd/vitana-v1]
@@ -12,8 +12,9 @@ paths:
   - packages/core/src/extracted/news-feed-ranker.generated.ts
   - packages/core/src/extracted/feed-compose.generated.ts
   - docs/validation/VTID-*/**
-updated: 2026-11-02T15:59Z
+updated: 2026-11-12T20:18Z
 vtid: VTID-05476
+parked_from: ready
 ---
 # Lane `native-extract-regen`
 Plan: `.kiro/specs/welcome-finish-r2/` — `plan.md` and the `tasks.md` section `<!-- lane: native-extract-regen -->` are authoritative.
@@ -25,3 +26,5 @@ Lane drafted with the plan.
 
 ### 2026-11-02T15:59Z · ci-plan-spar · ready (VTID allocated)
 VTID-05476 allocated after policy approval (converged-auto-v1).
+### 2026-11-12T20:18Z · pm-agent · ready → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
