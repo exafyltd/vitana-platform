@@ -1,8 +1,7 @@
 ---
 lane: areas-emails
-state: in-review
+state: parked
 next_actor: kiro
-claimed_by: kiro-exafyltd-202611111044-8f1d
 pr: https://github.com/exafyltd/vitana-platform/pull/4978
 branch: kiro/privacy-ledger-auth/areas-emails
 depends_on: []
@@ -14,8 +13,9 @@ reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 paths:
   - docs/programs/areas.yaml
   - scripts/collab/areas-no-email.test.mjs
-updated: 2026-11-12T20:17Z
+updated: 2026-11-12T21:27Z
 vtid: VTID-05699
+parked_from: in-review
 ---
 
 # Lane: areas-emails (repo exafyltd/vitana-platform)
@@ -73,3 +73,5 @@ Each file gets one cleanup lane in plan `agentic-delivery-scope`. Git history st
 before `ba5f26b4d8`, and `399e9333e8` on the closed #4977 branch); the history rewrite is never run.
 ### 2026-11-12T20:17Z · pm-agent · update
 reassign review agent:vitana-lane-reviewer→exafyltd (stale_review, Claude unavailable)
+### 2026-11-12T21:27Z · pm-agent · in-review → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
