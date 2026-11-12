@@ -1,6 +1,6 @@
 ---
 lane: kiro-aws-access
-state: in-review
+state: executing
 next_actor: kiro
 branch: kiro/autonomous-to-staging/kiro-aws-access
 depends_on: []
@@ -15,7 +15,7 @@ paths:
   - .github/workflows/AWS-KIRO-ACCESS.yml
   - docs/KIRO-AWS-ACCESS.md
   - docs/validation/VTID-*/**
-updated: 2026-11-12T19:05Z
+updated: 2026-11-12T19:23Z
 pr: https://github.com/exafyltd/vitana-platform/pull/5027
 vtid: VTID-05764
 ---
@@ -41,3 +41,6 @@ head: 642c158f4b405e56cc06da71e33655ab66fd3075
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 PR: https://github.com/exafyltd/vitana-platform/pull/5027
 Findings: BLOCKING PassRole + RegisterTaskDefinition + UpdateService reach the production gateway task role shared with staging (AWS-PROD-DEPLOY-GATEWAY.yml:819-822); BLOCKING handoff step 2 collects the wrong/incomplete role ARNs; BLOCKING engineering-admin denies bypassable via IAM escalation, KMS key loss, SSM/instance-connect, untagged volumes/snapshots. Non-blocking: evaluator limits undocumented and case-insensitive ARNs; fleet class runner tokens missed; production secret prefixes vitana/gateway-awsdr/*, vitana/kiro/production/* implicit only.
+
+### 2026-11-12T19:23Z · kiro-exafy-202611110920-270b · in-review → executing
+Fixing the three blocking findings and the non-blocking ones.
