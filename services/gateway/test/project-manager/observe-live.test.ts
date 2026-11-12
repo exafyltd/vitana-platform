@@ -186,6 +186,32 @@ describe('GithubObserver', () => {
     expect(b.claude!.flag).toBeNull();
   });
 
+  it('bookkeeping PR: files and commits are reused while head_sha is unchanged and dropped once the PR closes', async () => {
+    const bk = (head: string): GhPull => ({ number: 4300, html_url: `https://github.com/${P}/pull/4300`, title: 'VTID-05274 (kiro-autonomy-fallback/_plan): PM bookkeeping', head_ref: 'pm-agent/kiro-autonomy-fallback', head_sha: head, created_at: '2026-10-20T19:00:00Z' });
+    let open: GhPull[] = [bk(HEAD)];
+    const calls = { pullFiles: 0, pullCommits: 0, checkRuns: 0 };
+    const r = reader({
+      openPulls: async (repo) => (repo === P ? open : []),
+      pullFiles: async () => { calls.pullFiles++; return ['.kiro/specs/kiro-autonomy-fallback/handoff.md']; },
+      pullCommits: async () => { calls.pullCommits++; return [{ sha: HEAD, message: 'pm\n\nCollab-Session: pm-agent', date: '2026-10-20T19:45:00Z' }]; },
+      checkRuns: async () => { calls.checkRuns++; return []; },
+    });
+    const o = new GithubObserver({ gh: r, data: data(), repos: [P], now: () => NOW, env: {} });
+    const s1 = await o.observe('live');
+    const s2 = await o.observe('live');
+    expect(calls).toEqual({ pullFiles: 1, pullCommits: 1, checkRuns: 2 });
+    expect(s2.bookkeeping_prs).toEqual(s1.bookkeeping_prs);
+    expect(s2.bookkeeping_prs![0]).toMatchObject({ slug: 'kiro-autonomy-fallback', head_sha: HEAD, files: ['.kiro/specs/kiro-autonomy-fallback/handoff.md'], commit_sessions: ['pm-agent'] });
+    open = [bk(C1)];
+    await o.observe('live');
+    expect(calls.pullFiles).toBe(2);
+    open = [];
+    await o.observe('live');
+    open = [bk(C1)];
+    await o.observe('live');
+    expect(calls.pullFiles).toBe(3);
+  });
+
   it('4 h rule inputs: oldest item with next_actor claude, newest session_ commit', async () => {
     const r = reader({ commitsSince: async () => [{ sha: 'x', message: 'm\n\nCollab-Session: session_abc', date: '2026-10-20T18:00:00Z' }] });
     const s = await new GithubObserver({ gh: r, data: data(), repos: [P], now: () => NOW, env: {} }).observe('live');
