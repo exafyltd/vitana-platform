@@ -1,12 +1,12 @@
 ---
 lane: new-members-feed-client
 state: ready
-next_actor: kiro
+next_actor: claude
 depends_on: [new-members-feed-api]
 executor: claude
 seat: jtadic
 area: frontend
-reviewer_seat: agent:vitana-lane-reviewer
+reviewer_seat: claude
 repos: [exafyltd/vitana-v1]
 paths:
   - src/hooks/useAllNewsFeed.ts
