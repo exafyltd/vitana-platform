@@ -12,6 +12,7 @@ specs:
   - vitana-platform:agentic-delivery-v2
   - vitana-platform:claude-migration-lanes
   - vitana-platform:agentic-delivery-scope
+  - vitana-platform:sparring-eu-guard
 docs:
   - vitana-platform:docs/ENGINEERING-PLATFORM-PLAN.md
 exit_criteria:

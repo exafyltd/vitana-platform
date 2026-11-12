@@ -5,7 +5,9 @@ status: active
 priority: 3
 repos: [vitana-platform, vitana-v1]
 specs:
+  - vitana-platform:kiro-fleet-register
   - vitana-platform:architecture-mt-alignment
+  - vitana-platform:autonomous-to-staging
   - vitana-platform:gateway-critical-route-auth
   - vitana-platform:gateway-write-route-auth
   - vitana-platform:pm-agent
@@ -32,6 +34,7 @@ specs:
   - vitana-platform:pm-reassign-idempotent-r3
   - vitana-platform:matches-scroll-end
   - vitana-platform:staging-verify-manifest-repair
+  - vitana-platform:staging-manifest-remainder
   - vitana-platform:spotlight-commit-coverage
   - vitana-platform:group-chat-realtime-status
   - vitana-platform:ci-superseded-pr-runs
@@ -55,6 +58,7 @@ specs:
   - vitana-platform:plan-spar-stuck-session
   - vitana-platform:session-title-stable
   - vitana-platform:live-room-edit-cohost
+  - vitana-platform:loop-catalog-gate-invariants
   - vitana-platform:pipeline-lane-state-efficiency
   - vitana-platform:operating-workflow
   - vitana-platform:pm-ci-load
@@ -138,4 +142,6 @@ belong to none of the named programmes are listed here until the owner assigns t
 - `vitana-platform:privacy-ledger-auth` — the seat file keeps seat names only (no account addresses), and production ledger writes can be switched to `enforce` by the owner (protected gate file, owner instruction 2026-11-11); history-rewrite proposal, not run
 - `vitana-platform:gateway-write-route-auth` — gate the SB-CON-22 gateway write routes (specs PATCH, triage investigate, ai-personality update/reset, LLM routing-policy set/reset) with the existing auth middleware, and give every other gateway write route a verdict
 - `vitana-platform:gateway-critical-route-auth` — close the semantic-memory, Stripe dance webhook and worker-orchestrator critical write routes with existing gates
+- `vitana-platform:autonomous-to-staging` — remove every human gate before staging verification: rules, two-model protected-file merge, machine quarantine, Pipeline B everywhere, isolated staging database, autonomous staging migrations, Kiro AWS execution access
+- `vitana-platform:kiro-fleet-register` — record the owner's Kiro account fleet in areas.yaml as seats, no email
 - `vitana-platform:architecture-mt-alignment` — verify the 41-module Vitanaland architecture map against the code and record Multi-Tenant alignment for the 18 workstreams (docs only)
