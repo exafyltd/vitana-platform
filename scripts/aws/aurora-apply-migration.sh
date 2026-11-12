@@ -34,7 +34,13 @@ set -euo pipefail
 
 R=eu-central-1
 ACCOUNT=472838866351
-CLUSTER=vitana-aurora-prod
+# AURORA_APPLY_CLUSTER aims the apply at the rehearsal clone (scripts/aws/rehearsal-apply-migrations.sh).
+# Unset, the target is production exactly as before. Any other name is refused.
+CLUSTER="${AURORA_APPLY_CLUSTER:-vitana-aurora-prod}"
+case "$CLUSTER" in
+  vitana-aurora-prod|vitana-aurora-rehearsal) ;;
+  *) echo "::error::AURORA_APPLY_CLUSTER=$CLUSTER is not an apply target (vitana-aurora-prod or vitana-aurora-rehearsal)" >&2; exit 2 ;;
+esac
 DB=vitana
 HERE="$(cd "$(dirname "$0")" && pwd)"
 RETRY_SLEEP="${AURORA_DATAAPI_RETRY_SLEEP:-15}"
