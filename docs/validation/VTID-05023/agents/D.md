@@ -23,6 +23,11 @@ Output: `docs/validation/VTID-05023/window-runbook.md`.
 - `migration-order.md`: agent G's branch. Cited by path only. Pending owner confirmation O5.
 - Prod gateway URL, sample `/rest/v1` table and column, watch dashboards, DMS start and stop commands, workflow names for verification-engine, orb-agent and autopilot-executor, and the psql invocations for the Supabase scripts. None of these is defined in the handover or the repo. All are listed as TODO in the runbook.
 
+## Merge request
+
+- MR !17: https://gitlab.vitanaland.com/vitana/vitana-platform/-/merge_requests/17 (draft, target `main`, not merged).
+- The title is `Draft: VTID-05023 window runbook (option B, readiness only)`. The brief asked for a title starting with VTID-05023. GitLab marks a draft with the `Draft:` prefix, so both cannot hold. Draft was kept.
+
 ## Commands
 
 No commands were run against production, AWS, Supabase, Aurora or DNS. Reads were limited to GitLab API file reads and local file reads and searches in the cloned repo.
