@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-05445",
+  "kind": "infra",
+  "paths": [
+    "scripts/mt/inventory/**",
+    "scripts/mt/lint/**",
+    "docs/validation/VTID-05445/**"
+  ],
+  "sparring_record": ".kiro/specs/mt-guardrails-r2/sparring/verdict.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

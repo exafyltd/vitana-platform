@@ -1,0 +1,15 @@
+    ✓ 401 without a token (22 ms)
+    ✓ 403 for a member who is not an exafy admin (21 ms)
+    ✓ 400 for an unknown moment_key, or any user id in the body (strict) (9 ms)
+    ✓ 409 STAGING_DISABLED on staging (3 ms)
+    ✓ 409 SEND_NOT_AVAILABLE when the mode is off (the kill switch stops test cards) (3 ms)
+    ✓ 409 SEND_NOT_AVAILABLE when the mode is shadow (the kill switch stops test cards) (2 ms)
+    ✓ works in staff mode too (16 ms)
+    ✓ 422 NO_VITANA_INDEX when the caller has no Index, and writes nothing (4 ms)
+    ✓ 502 COMPOSE_FAILED when composition fails, and writes nothing (2 ms)
+    ✓ 503 when no service-role client is configured (2 ms)
+    ✓ sends exactly one Vitana-bot DM to the caller with the tick card metadata plus test: true (4 ms)
+    ✓ a refused or failed press does not use up the minute (5 ms)
+    ✓ 429 RATE_LIMITED for a second press inside 60 s (4 ms)
+Test Suites: 1 passed, 1 total
+Tests:       13 passed, 13 total

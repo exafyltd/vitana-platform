@@ -1,0 +1,5 @@
+# Responses to round 2
+
+```json
+[{"finding_id":"R2-F1","disposition":"accepted","rationale":"Verified on the pinned tree. getClientWithContext returns tenantId (services/gateway/src/services/d46-anticipatory-guidance-engine.ts:799), but the storage path never reads it. The insert writes tenant_id: userContext.tenant_id (:932), and userContext is request.user_context or is built from request.window_bundle.tenant_id (:802-804). A guard at :153 or on the tenantId local would leave the insert unguarded. plan.md now corrects the d46 diagnosis and moves the fix to the insert: userContext.tenant_id is checked before insertAnticipatoryGuidanceRecords (:952). An empty or …0001 value returns TENANT_UNRESOLVED and nothing is written. The Jest test asserts the tenant_id of the records passed to that call, not the return of getClientWithContext. The lane Scope text in lanes/engine-tenant-fallbacks.md still names the old target. The builder corrects it in its first commit, because a _plan commit does not edit a lane file.","deferred_to":""}]
+```

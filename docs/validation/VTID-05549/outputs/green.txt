@@ -1,0 +1,127 @@
+# Green: the four new test files and M2's gitlab-land.test.mjs (as merged with #4697, unchanged; M2 mode still green) on the lane's code, 2026-11-05T22:47:11Z
+# command: node --test scripts/eng/review-source.test.mjs scripts/eng/gitlab-gates.test.mjs scripts/eng/assist-trigger.test.mjs scripts/eng/gitlab-land-queue.test.mjs scripts/eng/gitlab-land.test.mjs
+
+ok 1 - assistRef and the rule names: assist/<iid>-<rule>, a rule id is a plain lowercase name
+ok 2 - matchingRules: a rule applies when the merge request changes one of its paths
+ok 3 - assistActions: one trigger per head and rule; a run for this head is pending, done or failed; a new head triggers again
+ok 4 - assistActions: never after an accept, never for a protected-file merge request
+ok 5 - loadAssistRules reads the assist rules of a project from the service list; no file is no rules; a bad file fails closed
+ok 6 - assistRuns reads the newest api pipeline of each rule's assist ref and the head it was started for
+ok 7 - triggerAssist moves assist/<iid>-<rule> to main with ci.skip, never by force, and starts one pipeline with the merge request's id and head
+ok 8 - triggerAssist --dry-run writes nothing
+ok 9 - lane-scope for a vitana-v1 merge request gives the verdict of scopeCheck with the platform lane file
+ok 10 - lane-scope refuses a file outside the lane's paths exactly as scopeCheck does
+ok 11 - collab-handoff for a vitana-v1 merge request gives the verdict of validateRange with the platform lane file
+ok 12 - in the platform project lane-scope and collab-handoff give the verdicts of `queue.mjs scope-check` and `queue.mjs validate`
+ok 13 - a lane that exists only in an approved plan( branch of the platform project is read as the plan-PR source
+ok 14 - the jobs read the GitLab CI variables and print the queue.mjs status line
+ok 15 - an unreachable platform project fails closed: exit 3 for both jobs, nothing passes
+ok 16 - usage errors exit 2; the job token reaches git only through an askpass script, never a command line or the script text
+ok 17 - queueOrder: the oldest accept first; while main is red only revert and fix-main go, first, and the rest are paused
+ok 18 - fixFirst names the revert and fix-main lanes; mainRed reads the newest finished landing pipeline of main
+ok 19 - hotKeys: the hot files of collaboration.md §8a item 4, i18n shards by namespace
+ok 20 - labelChange sets exactly one queue label, once per state, and leaves other labels alone
+ok 21 - queueSquashMessage starts with the VTID and ends with the six trailers git reads as trailers; a plan merge request has two
+ok 22 - trainSelect: up to the position count, in queue order; one merge request per hot key; overlapping files wait; nothing behind a governance file
+ok 23 - planSparVerdict and planGate: approved, a sparring_record and a successful gitlab/plan-spar or PLAN-SPAR status from a trusted account
+ok 24 - a train position needs the checks and gate, not the governance jobs that judge one merge request
+ok 25 - loadProjects reads the queue setting; normalizeQueue allows 1 to 12 positions
+ok 26 - queue mode is on for the two projects of the cut by name (the settings schema has no queue key), off for any other project; an explicit setting wins
+ok 27 - the train: positions train/1..k in queue order, each the merge of main and the first k merge requests; queue labels set once
+ok 28 - lands merge request k only when its position is green and every earlier position has landed; main merged in with ci.skip; the tree on main is the tested tree
+ok 29 - a failed position drops its merge request (one comment, queue-blocked) and the positions behind it are rebuilt without it
+ok 30 - a conflicting position (a file where another adds a directory) is dropped with one comment; the next merge request takes the position
+ok 31 - a merge request whose merge of main conflicts is skipped with one comment, and the younger ones go on in the same tick (M2's conflict rule, in queue mode)
+ok 32 - a position whose merge GitLab keeps refusing holds the train for at most 60 minutes from its pipeline's creation; then it is dropped and the positions behind it are rebuilt without it
+ok 33 - a merge request dropped in the tick in which the bot merged main into it stays out for the head the bot made, with one comment
+ok 34 - every git command of a queue tick starts with -c credential.helper=, as M2's bot does, so no configured helper can store the token
+ok 35 - the update's tree must equal the tested tree: a mismatch lands nothing and rebuilds the train; so does main moved by someone else
+ok 36 - a red main pauses the rest (queue-paused); a fix-main lane lands first; landing resumes when main is green
+ok 37 - a hot-file merge request waits until the previous hot-file landing has its STAGING-VERIFY result
+ok 38 - a plan( merge request lands only with approved, a sparring_record and a successful plan-spar status on its head
+ok 39 - a plan( merge request that changes more than its spec folder and the program entry is refused once
+ok 40 - a protected gate file is refused with one comment and never enters the train; an accept on an old head is refused
+ok 41 - assist: one assist/<iid>-<rule> pipeline per head and rule; the merge request waits for it; never after an accept
+ok 42 - cross-repo: vitana-v1 lanes land on their platform review entries; a reviewer session on a merge-request commit is refused; an unreachable platform lands nothing
+ok 43 - --dry-run writes nothing: no train ref, no label, no comment, no merge, no state file
+ok 44 - run and status read the projects through loadEffectiveProjects of gitlab-settings.mjs (the cut configuration) when it exports it, else the settings file as M2 does; a loader error lands nothing
+ok 45 - status in queue mode prints each merge request's queue state and writes nothing
+ok 46 - jobToCheckRun follows the plan §3.4 table for every documented status, and checksVerdict reads the result
+ok 47 - jobToCheckRun: an unknown status is pending (fails closed) and is reported once through onUnknown
+ok 48 - jobToCheckRun keeps name, id and started_at, so the latest attempt of a job is the one checksVerdict reads
+ok 49 - requiredJobsVerdict: every required name must be present and success; skipped, neutral or absent does not pass
+ok 50 - checksFor: no pipeline is pending, a finished pipeline with no jobs fails, optional failures do not block, fail beats pending
+ok 51 - decide gives the verdicts of mergeDecision itself for every combination of review, checks, behind and protected files
+ok 52 - judgeReviewCommit: the newest review of the lane decides; it must be an accept by the reviewer agent, pushed by the reviewer account
+ok 53 - squashMessage is the title with the VTID first and the description
+ok 54 - lands a reviewed, green, up-to-date merge request: one merge call pinned to the head, squash, title and description, source branch removed
+ok 55 - a lane-file entry after the accept still counts; the review is read against the head, not the accepted sha
+ok 56 - a merge call that fails is not repeated by the client; the merge request is read again and the bot says it will try next tick
+ok 57 - a merge call that reports an error but was processed is recognised by the re-read
+ok 58 - a 200 answer whose merge request is not merged is not a landing unless the re-read says so
+ok 59 - the merge is refused when GitLab says the head changed (409): nothing else is done
+ok 60 - no reviewer accept: nothing lands and the reason is written once per head
+ok 61 - a note by someone else that contains the marker does not stand in for the bot's comment
+ok 62 - an accept pushed by a builder is forged: it does not land and says why
+ok 63 - an accept whose commit is in no push of the reviewer (a builder committed the trailers) is forged
+ok 64 - a reviewer push without commit_from proves only its tip: an accept below the tip is not counted, an accept that is the tip is
+ok 65 - an accept that does not name the reviewer agent is forged
+ok 66 - code changed after the accept: the review no longer counts for the head
+ok 67 - a force-push after the review removes the accept with it: nothing lands
+ok 68 - a changes verdict after an accept: the lane is back with its builder
+ok 69 - a red required job does not land and names the job; a required job that is absent in a finished pipeline does not land either
+ok 70 - the pipeline is read for exactly the head: a green pipeline of another sha does not count
+ok 71 - a pipeline of another sha is never used, even when the server returns it for the query
+ok 72 - a merge request with an unexpected iid, head or source branch name is not touched
+ok 73 - a pending pipeline waits: no write at all, and the next merge request of the project is not even read
+ok 74 - a merge request that waited more than 60 minutes for its pipeline loses its turn to the next one
+ok 75 - a merge that GitLab keeps refusing keeps the turn for 60 minutes (counted from its pipeline), then loses it to the next merge request
+ok 76 - two ready merge requests: the oldest lands, the other is not touched in the same tick
+ok 77 - a merge request that needs a human is skipped, not waited for: the next one lands
+ok 78 - behind main: main is merged INTO the source branch by bot-land, pushed, and the merge request is not landed in the same tick; the next tick lands it
+ok 79 - main's own change decides, not the branch's: a branch that itself changes a governance file is still updated when main brought in something unrelated
+ok 80 - behind a main that changed a governance or protected gate file: the branch is left alone, because the merge would end the review; one comment says so
+ok 81 - the update is never a force push: a branch that moved meanwhile keeps the builder's commit and the tick fails
+ok 82 - behind main with a conflict: nothing is pushed, the branch is left alone, one comment says so
+ok 83 - a merge request whose merge of main conflicts is skipped, not waited for: the younger one lands in the same tick, and the conflict is commented once per head
+ok 84 - a protected gate file in the diff is never landed by the bot; one comment per head
+ok 85 - a title that is not "VTID-nnnnn (<slug>/<lane>): …" is not landed and says why once; a draft is skipped silently
+ok 86 - --dry-run writes nothing: no merge call, no comment, no push
+ok 87 - an API error half-way lands nothing: the tick fails, the project is reported, no merge call is made
+ok 88 - a git error lands nothing: a merge request whose head ref is missing on the remote fails the tick
+ok 89 - a head that moved between the list and the fetch is left for the next tick
+ok 90 - only projects with landing: true are looked at, and only the default branch main
+ok 91 - an unknown job status is logged once and the merge request waits
+ok 92 - the requests the bot makes are exactly the ones listed here (a new request is a deliberate change)
+ok 93 - no log line carries the token, also when GitLab echoes it back in an error
+ok 94 - git gets the token through GIT_ASKPASS: the script answers the username and the password, and no git environment value holds the token
+ok 95 - every git command the bot runs neutralises a global credential helper, so the token that GIT_ASKPASS supplies can never be stored
+ok 96 - the log redacts the token by itself, whatever is put into an entry
+ok 97 - CLI status prints what the bot would do for every open merge request and writes nothing
+ok 98 - CLI run lands one tick's worth and exits 0; merge <project> <iid> acts on that merge request only
+ok 99 - CLI exit codes: 1 for a failed tick, an unknown project, an unknown command, a missing option value or an unreadable token file
+ok 100 - loadProjects reads the group and the projects of gitlab-settings.json
+ok 101 - the decision functions are imported from land-guard.mjs and queue.mjs, not copied
+ok 102 - vitana-land.service: one tick under flock, niced and limited, with the token in a root-only file and not in the unit
+ok 103 - vitana-land.timer: every minute, for vitana-land.service
+ok 104 - the reviewer chain is the one the pipeline uses, and reviewerModel reads the model of a Collab-Reviewer value
+ok 105 - judgeEntries: no entry, a newest changes, the newest current accept, a stale accept, and the identity rules
+ok 106 - finds the accept for <slug>/<lane> on platform main
+ok 107 - then on kiro/<slug>/* branches of the platform project, bridged or native
+ok 108 - an accept on main and one on a branch: the newest current one counts; an entry on both is read once
+ok 109 - entries of other lanes, and commits without review trailers, are not review entries
+ok 110 - refuses an entry that reviewCurrent rejects for the merge request's commits (code changed after the reviewed head)
+ok 111 - an accept on an old head that is no longer in the merge request's history (force-push) is refused
+ok 112 - a clean merge of main into the merge request after the review keeps the accept
+ok 113 - refuses an accept whose reviewer session appears on a commit of the merge request
+ok 114 - refuses an accept by a model outside the chain
+ok 115 - refuses a changes verdict, also when an older accept exists
+ok 116 - an entry that is not from a reviewer agent session is refused
+ok 117 - a platform clone without main fails closed: an error, never an accept
+# tests 117
+# suites 0
+# pass 117
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0

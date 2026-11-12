@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-05607",
+  "kind": "fix",
+  "paths": [
+    "scripts/eng/gitlab-settings.mjs",
+    "scripts/eng/gitlab-settings.test.mjs",
+    "docs/validation/VTID-05607/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05607/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

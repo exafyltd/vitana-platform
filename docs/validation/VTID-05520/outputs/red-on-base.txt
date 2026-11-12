@@ -1,0 +1,10 @@
+# VTID-05520 (mt-guardrails-r2/local-test-stack-pglite) tests on origin/main d7c1d9668a: scripts/mt/stack/ does not exist there, so all four suites fail
+$ node --test supabase/tests/local-stack/*.test.mjs
+# Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/projects/sandbox/wt-lts-pglite/scripts/mt/stack/stack.mjs' imported from /projects/sandbox/wt-lts-pglite/supabase/tests/local-stack/fixtures.test.mjs
+# Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/projects/sandbox/wt-lts-pglite/scripts/mt/stack/stack.mjs' imported from /projects/sandbox/wt-lts-pglite/supabase/tests/local-stack/repo-gate.test.mjs
+# Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/projects/sandbox/wt-lts-pglite/scripts/mt/stack/stack.mjs' imported from /projects/sandbox/wt-lts-pglite/supabase/tests/local-stack/stack-unit.test.mjs
+# Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/projects/sandbox/wt-lts-pglite/scripts/mt/stack/stack.mjs' imported from /projects/sandbox/wt-lts-pglite/supabase/tests/local-stack/tap-shim.test.mjs
+# tests 4
+# pass 0
+# fail 4
+exit=1

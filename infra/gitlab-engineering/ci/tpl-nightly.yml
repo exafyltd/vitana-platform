@@ -1,0 +1,27 @@
+# VTID-05550 — T3 nightly (plan agentic-delivery §3.3 T3, §5 "Flaky tests", §6 I1/I2; lane pipelines).
+# At 02:17 UTC every day a scheduled pipeline on main (variable DELIVERY_SCHEDULE=nightly) runs every check of the
+# repository (the full-suite:<check> jobs of the generated file, which run on main and on this schedule) and the full
+# STAGING-VERIFY of each verified service (staging-verify-nightly:<svc> extends lane verify-on-gitlab's
+# .staging-verify-nightly, full=true, its own resource group) with its record (live mode only).
+# GitLab creates pipeline schedules only through the API, never in YAML: the settings sync (M2 §3.3) creates the
+# schedules below for each project, as it applies the resource-group modes of tpl-verify.yml.
+
+.schedules:
+  nightly:
+    description: "T3 nightly: every check and the full STAGING-VERIFY (plan agentic-delivery §3.3)"
+    cron: "17 2 * * *"
+    cron_timezone: UTC
+    ref: main
+    variables:
+      DELIVERY_SCHEDULE: nightly
+
+# The CI-HEALTH report rules the nightly report applies (CI-HEALTH.yml today), read by the report that M2's
+# monitoring metrics feed (plan §3.3 T3; §6 I1 and I2 open the improve tasks):
+.ci-health-rules:
+  slow_job_median_minutes: 4
+  slow_job_window_days: 7
+  flaky: "a job that fails and then passes on the same SHA"
+  flaky_tasks_after: 3
+  flaky_window_days: 7
+  retry_only_on: [runner_system_failure, stuck_or_timeout_failure, scheduler_failure]
+  never: "a failing test is never retried automatically, skipped or quarantined"

@@ -1,0 +1,2 @@
+# loaded /projects/sandbox/wt-net-2/docs/validation/VTID-05576/pgtap/vtid_05576_fixture.sql
+# SQL ERROR: column "scope" does not exist

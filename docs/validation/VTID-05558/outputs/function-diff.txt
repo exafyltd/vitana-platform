@@ -1,0 +1,90 @@
+Each of the 13 redefined functions, new body vs the previous (latest) definition. Only changed lines are shown.
+
+=== live_room_transition_status: +1 -4
+    -  IF NOT EXISTS (
+    -    SELECT 1 FROM public.live_rooms
+    -    WHERE id = p_room_id AND host_user_id = auth.uid()
+    -  ) THEN
+    +  IF NOT public.live_room_is_host(p_room_id, auth.uid()) THEN
+=== live_room_set_host_present: +11 -6
+    -  IF NOT EXISTS (
+    -    SELECT 1 FROM public.live_rooms
+    -    WHERE id = p_room_id AND host_user_id = auth.uid()
+    +  IF NOT public.live_room_is_host(p_room_id, auth.uid()) THEN
+    +    RETURN jsonb_build_object('ok', false, 'error', 'NOT_HOST');
+    +  END IF;
+    +
+    +  -- Another host still in the session keeps the room 'host present'.
+    +  IF NOT p_present AND EXISTS (
+    +    SELECT 1 FROM public.live_room_attendance a
+    +    WHERE a.session_id = (SELECT current_session_id FROM public.live_rooms WHERE id = p_room_id)
+    +      AND a.role = 'host' AND a.left_at IS NULL AND a.user_id <> auth.uid()
+    -    RETURN jsonb_build_object('ok', false, 'error', 'NOT_HOST');
+    +    RETURN jsonb_build_object('ok', true, 'host_present', true);
+    -  WHERE id = (SELECT current_session_id FROM public.live_rooms WHERE id = p_room_id)
+    -    AND current_session_id IS NOT NULL;
+    +  WHERE id = (SELECT current_session_id FROM public.live_rooms WHERE id = p_room_id);
+=== live_room_end_session: +1 -1
+    -  IF v_room.host_user_id != auth.uid() THEN
+    +  IF NOT public.live_room_is_host(p_room_id, auth.uid()) THEN
+=== live_room_get_lobby: +1 -3
+    -  IF NOT EXISTS (
+    -    SELECT 1 FROM public.live_rooms WHERE id = p_room_id AND host_user_id = auth.uid()
+    -  ) THEN
+    +  IF NOT public.live_room_is_host(p_room_id, auth.uid()) THEN
+=== live_room_admit_user: +1 -3
+    -  IF NOT EXISTS (
+    -    SELECT 1 FROM public.live_rooms WHERE id = p_room_id AND host_user_id = auth.uid()
+    -  ) THEN
+    +  IF NOT public.live_room_is_host(p_room_id, auth.uid()) THEN
+=== live_room_reject_user: +1 -3
+    -  IF NOT EXISTS (
+    -    SELECT 1 FROM public.live_rooms WHERE id = p_room_id AND host_user_id = auth.uid()
+    -  ) THEN
+    +  IF NOT public.live_room_is_host(p_room_id, auth.uid()) THEN
+=== live_room_admit_all: +1 -3
+    -  IF NOT EXISTS (
+    -    SELECT 1 FROM public.live_rooms WHERE id = p_room_id AND host_user_id = auth.uid()
+    -  ) THEN
+    +  IF NOT public.live_room_is_host(p_room_id, auth.uid()) THEN
+=== live_room_kick_user: +7 -3
+    -  IF NOT EXISTS (
+    -    SELECT 1 FROM public.live_rooms WHERE id = p_room_id AND host_user_id = auth.uid()
+    -  ) THEN
+    +  IF NOT public.live_room_is_host(p_room_id, auth.uid()) THEN
+    +  END IF;
+    +
+    +  -- A co-host cannot remove the creator or another co-host; the creator can still remove a co-host.
+    +  IF public.live_room_is_host(p_room_id, p_user_id)
+    +     AND NOT EXISTS (SELECT 1 FROM public.live_rooms WHERE id = p_room_id AND host_user_id = auth.uid()) THEN
+    +    RETURN jsonb_build_object('ok', false, 'error', 'TARGET_IS_HOST');
+=== live_room_ban_user: +7 -3
+    -  IF NOT EXISTS (
+    -    SELECT 1 FROM public.live_rooms WHERE id = p_room_id AND host_user_id = auth.uid()
+    -  ) THEN
+    +  IF NOT public.live_room_is_host(p_room_id, auth.uid()) THEN
+    +  END IF;
+    +
+    +  -- A co-host cannot remove the creator or another co-host; the creator can still remove a co-host.
+    +  IF public.live_room_is_host(p_room_id, p_user_id)
+    +     AND NOT EXISTS (SELECT 1 FROM public.live_rooms WHERE id = p_room_id AND host_user_id = auth.uid()) THEN
+    +    RETURN jsonb_build_object('ok', false, 'error', 'TARGET_IS_HOST');
+=== live_room_join_session: +1 -1
+    -  IF v_room.host_user_id = v_user_id THEN
+    +  IF public.live_room_is_host(p_room_id, v_user_id) THEN
+=== live_room_get_state: +2 -2
+    -        'role', COALESCE(a.role, CASE WHEN v_room.host_user_id = v_viewer_user_id THEN 'host' ELSE NULL END),
+    +        'role', COALESCE(a.role, CASE WHEN public.live_room_is_host(p_room_id, v_viewer_user_id) THEN 'host' ELSE NULL END),
+    -          'role', CASE WHEN v_room.host_user_id = v_viewer_user_id THEN 'host' ELSE NULL END,
+    +          'role', CASE WHEN public.live_room_is_host(p_room_id, v_viewer_user_id) THEN 'host' ELSE NULL END,
+=== live_room_check_access: +5 -0
+    +  -- A listed co-host of this room needs no access grant either.
+    +  IF public.live_room_is_host(p_room_id, p_user_id) THEN
+    +    RETURN TRUE;
+    +  END IF;
+    +
+=== live_room_update_metadata: +1 -1
+    -    AND host_user_id = auth.uid(); -- Only owner
+    +    AND public.live_room_is_host(id, auth.uid()); -- creator or listed co-host
+
+TOTAL +40 -33

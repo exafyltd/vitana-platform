@@ -1,0 +1,70 @@
+# New tests run against base origin/main 5381e3e1462fc0ed0cc12a1af620c158b49430a6 (no implementation), 2026-11-05T17:16:38Z, node v22.23.4
+# command (in a scratch copy of base + the five new test files, outside the repo): node --test scripts/eng/deploy/deploy-ecs.test.mjs scripts/eng/deploy/push-image.test.mjs scripts/eng/deploy/preview.test.mjs scripts/eng/gitlab-oidc-structure.test.mjs scripts/eng/fleet-classes-structure.test.mjs
+not ok 1 - scripts/eng/deploy/deploy-ecs.test.mjs
+not ok 2 - scripts/eng/deploy/preview.test.mjs
+not ok 3 - scripts/eng/deploy/push-image.test.mjs
+not ok 4 - two new groups, main and deploy: min 0, desired left to the runner, scale-in protection, maxima of plan §5
+not ok 5 - IMDSv2 required with hop limit 1, no public IP, encrypted gp3 with the engineering key
+not ok 6 - no instance policy: no instance profile and no IAM resource for the classes
+not ok 7 - egress tcp 80, tcp 443 and DNS only, and no ingress
+not ok 8 - a quota that is too low makes the Terraform check print the request
+not ok 9 - a job tagged vitana-eng declares no id_tokens and names no secret
+not ok 10 - a job tagged vitana-eng-deploy runs no repository script
+not ok 11 - tpl-deploy defines the six jobs of plan §9: build on the main class, the rest on the deploy class
+not ok 12 - build-image.sh refuses without --oci-worker-no-process-sandbox
+not ok 13 - the OIDC provider is gitlab.vitanaland.com with exactly the six audiences
+not ok 14 - each trust policy: StringEquals on aud, sub pinned to the plan §7 project paths and refs, no * principal
+not ok 15 - each permission policy names only the resources of plan §7
+not ok 16 - there is no production role
+not ok 17 - the setup script is a dry run by default and prints every call it would make
+not ok 18 - the setup script skips the preview role without a distribution id
+not ok 19 - the setup script stops outside account 472838866351 or region eu-central-1
+# tests 19
+# suites 0
+# pass 0
+# fail 19
+
+# The three script tests fail as whole files on base (their modules do not exist). Per-test counts against no-behaviour stubs (exports only, no behaviour; placed outside the repo):
+not ok 1 - live mode changes only the image digest, the commit variables and the env overrides
+not ok 2 - shadow mode renders the definition and makes no ECS write
+not ok 3 - a service outside the plan §3.10 allowlist is refused before any AWS call
+not ok 4 - an image outside the service ECR repository is refused before any AWS call
+not ok 5 - a deploy that finds a newer descendant served ends superseded and writes nothing
+not ok 6 - a served commit that is not a descendant does not supersede
+not ok 7 - a stabilise failure re-points to the captured revision and ends red
+not ok 8 - a wrong build stamp re-points to the captured revision and ends red
+not ok 9 - a missing role fails the job and names the role
+not ok 10 - the rollback job re-points when the deploy job stopped after the update
+not ok 11 - the rollback job changes nothing when the deploy job changed nothing or already rolled back
+not ok 12 - it writes the deploy-runs file of the contract lane verify-on-gitlab reads
+not ok 13 - an env override cannot replace a secret or a commit variable
+not ok 14 - the CLI refuses a service outside the allowlist (exit 2) and its rollback without a state does nothing
+not ok 15 - a merge request preview is uploaded to mr-<iid>/ only and that path is invalidated
+not ok 16 - only the prefixes mr-<iid>/ and gl-main/ exist
+not ok 17 - shadow mode writes only the gl-main/ preview
+not ok 18 - teardown removes only its own prefix
+not ok 19 - only the community app has a preview, and the distribution id is required
+not ok 20 - it pushes the archive, outputs the digest and the image by digest
+not ok 21 - shadow mode pushes only a shadow-<sha12> tag
+not ok 22 - it refuses a target outside the service ECR repository
+not ok 23 - a push without a digest fails the job
+not ok 24 - two new groups, main and deploy: min 0, desired left to the runner, scale-in protection, maxima of plan §5
+not ok 25 - IMDSv2 required with hop limit 1, no public IP, encrypted gp3 with the engineering key
+not ok 26 - no instance policy: no instance profile and no IAM resource for the classes
+not ok 27 - egress tcp 80, tcp 443 and DNS only, and no ingress
+not ok 28 - a quota that is too low makes the Terraform check print the request
+not ok 29 - a job tagged vitana-eng declares no id_tokens and names no secret
+not ok 30 - a job tagged vitana-eng-deploy runs no repository script
+not ok 31 - tpl-deploy defines the six jobs of plan §9: build on the main class, the rest on the deploy class
+not ok 32 - build-image.sh refuses without --oci-worker-no-process-sandbox
+not ok 33 - the OIDC provider is gitlab.vitanaland.com with exactly the six audiences
+not ok 34 - each trust policy: StringEquals on aud, sub pinned to the plan §7 project paths and refs, no * principal
+not ok 35 - each permission policy names only the resources of plan §7
+not ok 36 - there is no production role
+not ok 37 - the setup script is a dry run by default and prints every call it would make
+not ok 38 - the setup script skips the preview role without a distribution id
+not ok 39 - the setup script stops outside account 472838866351 or region eu-central-1
+# tests 39
+# suites 0
+# pass 0
+# fail 39

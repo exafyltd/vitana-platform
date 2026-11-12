@@ -1,0 +1,115 @@
+{
+  "vtid": "VTID-05547",
+  "service": "gateway",
+  "note": "Read-only. Lane gateway-delivery of plan agentic-delivery: the GitLab delivery stage in front of the webhook route, the Delivery read routes and screen of the Command Hub, and the cut guard on the GitHub merge calls (DELIVERY_HOST_<REPO>, unset on staging, so nothing changes there). Staging shares the production database (CLAUDE.md rule 48), so no signed GitLab event and no merge is sent: the probes below read, or are rejected before any handler runs, and everything that needs a write is proven by the Jest suites.",
+  "tests": [
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "Delivery summary is mounted and answers JSON 401 without a token (never 404 or HTML)",
+      "method": "GET",
+      "path": "/api/v1/delivery/summary",
+      "expect_status": 401,
+      "expect_json": { "ok": false },
+      "reason": "read-only GET without a token: the route exists behind requireServiceOrAdmin and reads nothing"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "Delivery metrics is mounted and answers JSON 401 without a token",
+      "method": "GET",
+      "path": "/api/v1/delivery/metrics",
+      "expect_status": 401,
+      "expect_json": { "ok": false },
+      "reason": "read-only GET without a token: the route exists behind requireServiceOrAdmin and reads nothing"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "Delivery summary refuses an invalid bearer",
+      "method": "GET",
+      "path": "/api/v1/delivery/summary",
+      "rejected_probe": true,
+      "expect_status": 401,
+      "expect_json": { "ok": false },
+      "reason": "read-only GET with the runner's invalid bearer: refused before the ledger or OASIS is read"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "The Command Hub serves the Delivery screen script",
+      "method": "GET",
+      "path": "/command-hub/delivery.js",
+      "expect_status": 200,
+      "expect_content_type": "javascript",
+      "expect_body_contains": ["window.DeliveryScreen", "/api/v1/delivery/summary", "Include shadow runs"],
+      "reason": "read-only GET: the on-demand module is reachable and is the Delivery screen"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "The Command Hub app.js carries the Delivery module and loads delivery.js from the same origin",
+      "method": "GET",
+      "path": "/command-hub/app.js?v=20261121-vtid-05082-vtid-05547",
+      "expect_status": 200,
+      "expect_body_contains": ["\"section\": \"delivery\"", "script.src = '/command-hub/delivery.js", "var deliveryModule = {"],
+      "reason": "read-only GET: the bumped app.js has the Delivery sidebar section and the loader"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "The Command Hub index loads the bumped app.js and styles.css",
+      "method": "GET",
+      "path": "/command-hub/",
+      "expect_status": 200,
+      "expect_body_contains": ["app.js?v=20261121-vtid-05082-vtid-05547", "styles.css?v=20261121-vtid-05082-vtid-05547"],
+      "reason": "read-only GET: index.html names the new cache-buster, so browsers and the CDN fetch the new app.js (IF-THEN 25)"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "The GitLab webhook route still refuses an unsigned POST with JSON 401 signature_missing (the stage in front of it keeps the M2 signature check)",
+      "method": "POST",
+      "path": "/api/v1/internal/gitlab/webhook",
+      "rejected_probe": true,
+      "expect_status": 401,
+      "expect_json": { "ok": false, "error": "signature_missing" },
+      "reason": "POST only as a rejected probe: the signature gate answers before anything is read from the body or written"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "safe-merge is still mounted and refuses an invalid caller (the cut guard sits behind this gate; the flag is unset on staging)",
+      "method": "POST",
+      "path": "/api/v1/github/safe-merge",
+      "rejected_probe": true,
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "POST only as a rejected probe (invalid bearer); nothing is merged. Merge behaviour with the flag unset is proven by test/delivery/delivery-host-guard.test.ts"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/delivery",
+      "cwd": "services/gateway",
+      "reason": "VTID-05547 change suite: the event mapping and the staging deploy and landing rows, the stage's exactly-once rules and signature check, the Delivery routes and their null-not-zero figures, the cut guard with the flag set and unset (a merge with the flag unset behaves as before), the screen on a DOM, the on-demand loader, accessibility and contrast, the navigation catalog and the cache-buster."
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/routes/internal-gitlab-webhook.test.ts test/gitlab-events test/project-manager test/vtid-05019-cicd-pr-routes-auth.test.ts",
+      "cwd": "services/gateway",
+      "reason": "The neighbours of the changed files: the M2 webhook route and mapper stay as they are, the Project Manager and the cicd merge routes behave as before with the cut flag unset."
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/command-hub test/vtid-04696-staging-checks-follow-asset-bumps.test.ts",
+      "cwd": "services/gateway",
+      "reason": "The Command Hub bundle guards: the function set of the bundle is unchanged (VTID-05073), the bundle manifest equals index.html (VTID-05072), and every staging suite names the app.js and styles.css version index.html loads (VTID-04696) after this change's bump."
+    },
+    {
+      "kind": "existing",
+      "ref": "npm run test:roles",
+      "cwd": "services/gateway",
+      "reason": "CLAUDE.md rule 42h: the atlas drift guard of the role separation suite must claim the new route file routes/delivery.ts (it is claimed by the deploy domain)."
+    }
+  ]
+}

@@ -11,9 +11,13 @@
     "test:realtime-local": "bash services/realtime-aurora/test/local-delivery.sh",
     "test:reverse-cdc": "bash scripts/aws/test/reverse-cdc.sh",
     "test:aurora-migrations": "bash scripts/aws/test/aurora-apply-migration.sh",
-    "test:rehearsal-clone": "bash scripts/aws/test/rehearsal-clone.sh"
+    "test:rehearsal-clone": "bash scripts/aws/test/rehearsal-clone.sh",
+    "test:mt-stack": "node --test supabase/tests/local-stack/*.test.mjs",
+    "mt-stack:report": "node scripts/mt/stack/check-stack.mjs",
+    "test:collab-rules": "node --test scripts/collab/queue.test.mjs scripts/collab/plan-spar.test.mjs scripts/collab/plan-driver.test.mjs scripts/collab/automations.test.mjs"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.5.15",
     "prisma": "^6.18.0"
   },
   "dependencies": {

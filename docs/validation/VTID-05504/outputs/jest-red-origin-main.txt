@@ -1,0 +1,244 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true", see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+FAIL ../../wt-mhp/docs/validation/VTID-05504/morning-health-pertenant.test.ts
+  morning row 21c (per-tenant isolation breakdown, report-only)
+    ✕ exists, is report-only, and reads only the by-tenant function (1 ms)
+    ✓ keeps row 21b on the whole-database function, unchanged (2 ms)
+    ✕ puts 21c after 21b and before the self-audit (1 ms)
+    ✕ posts only to the by-tenant rpc, once (1 ms)
+    ✕ writes one INFO row per tenant with findings, each with its own numbers only
+    ✕ adds a summary row that counts the tenants and those with findings (6 ms)
+    ✕ labels the row without a tenant as unattributed and an unregistered id as unregistered
+    ✕ caps the rows and says how many were left out (4 ms)
+    ✕ cleans a hostile slug so it cannot break the table
+    ✕ shows scan errors without failing
+    ✕ HTTP 404 (function not applied yet) → one INFO row, exit 0
+    ✕ HTTP 500 → one INFO row, exit 0
+    ✕ a reply that is not an object → one INFO row, exit 0
+    ✕ an object with no tenants list → one INFO row, exit 0
+
+  ● morning row 21c (per-tenant isolation breakdown, report-only) › exists, is report-only, and reads only the by-tenant function
+
+    step 21c. not found
+
+      21 |   const lines = WF_TEXT.split('\n');
+      22 |   const start = lines.findIndex((l) => l.startsWith("      - name: '" + prefix));
+    > 23 |   if (start < 0) throw new Error(`step ${prefix} not found`);
+         |                        ^
+      24 |   let end = lines.length;
+      25 |   for (let i = start + 1; i < lines.length; i++) {
+      26 |     if (/^      (- name:|#)/.test(lines[i])) { end = i; break; }
+
+      at stepBlock (morning-health-pertenant.test.ts:23:24)
+      at Object.<anonymous> (morning-health-pertenant.test.ts:83:19)
+
+  ● morning row 21c (per-tenant isolation breakdown, report-only) › puts 21c after 21b and before the self-audit
+
+    expect(received).toBeGreaterThan(expected)
+
+    Expected: > 32288
+    Received:   -1
+
+       98 |     const i = (s: string) => WF_TEXT.indexOf("- name: '" + s);
+       99 |     expect(i('21b.')).toBeGreaterThan(0);
+    > 100 |     expect(i('21c.')).toBeGreaterThan(i('21b.'));
+          |                       ^
+      101 |     expect(i('22.')).toBeGreaterThan(i('21c.'));
+      102 |   });
+      103 |
+
+      at Object.<anonymous> (morning-health-pertenant.test.ts:100:23)
+
+  ● morning row 21c (per-tenant isolation breakdown, report-only) › posts only to the by-tenant rpc, once
+
+    step 21c. not found
+
+      21 |   const lines = WF_TEXT.split('\n');
+      22 |   const start = lines.findIndex((l) => l.startsWith("      - name: '" + prefix));
+    > 23 |   if (start < 0) throw new Error(`step ${prefix} not found`);
+         |                        ^
+      24 |   let end = lines.length;
+      25 |   for (let i = start + 1; i < lines.length; i++) {
+      26 |     if (/^      (- name:|#)/.test(lines[i])) { end = i; break; }
+
+      at stepBlock (morning-health-pertenant.test.ts:23:24)
+      at stepScript (morning-health-pertenant.test.ts:33:17)
+      at run21c (morning-health-pertenant.test.ts:68:31)
+      at Object.<anonymous> (morning-health-pertenant.test.ts:105:23)
+
+  ● morning row 21c (per-tenant isolation breakdown, report-only) › writes one INFO row per tenant with findings, each with its own numbers only
+
+    step 21c. not found
+
+      21 |   const lines = WF_TEXT.split('\n');
+      22 |   const start = lines.findIndex((l) => l.startsWith("      - name: '" + prefix));
+    > 23 |   if (start < 0) throw new Error(`step ${prefix} not found`);
+         |                        ^
+      24 |   let end = lines.length;
+      25 |   for (let i = start + 1; i < lines.length; i++) {
+      26 |     if (/^      (- name:|#)/.test(lines[i])) { end = i; break; }
+
+      at stepBlock (morning-health-pertenant.test.ts:23:24)
+      at stepScript (morning-health-pertenant.test.ts:33:17)
+      at run21c (morning-health-pertenant.test.ts:68:31)
+      at Object.<anonymous> (morning-health-pertenant.test.ts:113:24)
+
+  ● morning row 21c (per-tenant isolation breakdown, report-only) › adds a summary row that counts the tenants and those with findings
+
+    step 21c. not found
+
+      21 |   const lines = WF_TEXT.split('\n');
+      22 |   const start = lines.findIndex((l) => l.startsWith("      - name: '" + prefix));
+    > 23 |   if (start < 0) throw new Error(`step ${prefix} not found`);
+         |                        ^
+      24 |   let end = lines.length;
+      25 |   for (let i = start + 1; i < lines.length; i++) {
+      26 |     if (/^      (- name:|#)/.test(lines[i])) { end = i; break; }
+
+      at stepBlock (morning-health-pertenant.test.ts:23:24)
+      at stepScript (morning-health-pertenant.test.ts:33:17)
+      at run21c (morning-health-pertenant.test.ts:68:31)
+      at Object.<anonymous> (morning-health-pertenant.test.ts:136:24)
+
+  ● morning row 21c (per-tenant isolation breakdown, report-only) › labels the row without a tenant as unattributed and an unregistered id as unregistered
+
+    step 21c. not found
+
+      21 |   const lines = WF_TEXT.split('\n');
+      22 |   const start = lines.findIndex((l) => l.startsWith("      - name: '" + prefix));
+    > 23 |   if (start < 0) throw new Error(`step ${prefix} not found`);
+         |                        ^
+      24 |   let end = lines.length;
+      25 |   for (let i = start + 1; i < lines.length; i++) {
+      26 |     if (/^      (- name:|#)/.test(lines[i])) { end = i; break; }
+
+      at stepBlock (morning-health-pertenant.test.ts:23:24)
+      at stepScript (morning-health-pertenant.test.ts:33:17)
+      at run21c (morning-health-pertenant.test.ts:68:31)
+      at Object.<anonymous> (morning-health-pertenant.test.ts:146:24)
+
+  ● morning row 21c (per-tenant isolation breakdown, report-only) › caps the rows and says how many were left out
+
+    step 21c. not found
+
+      21 |   const lines = WF_TEXT.split('\n');
+      22 |   const start = lines.findIndex((l) => l.startsWith("      - name: '" + prefix));
+    > 23 |   if (start < 0) throw new Error(`step ${prefix} not found`);
+         |                        ^
+      24 |   let end = lines.length;
+      25 |   for (let i = start + 1; i < lines.length; i++) {
+      26 |     if (/^      (- name:|#)/.test(lines[i])) { end = i; break; }
+
+      at stepBlock (morning-health-pertenant.test.ts:23:24)
+      at stepScript (morning-health-pertenant.test.ts:33:17)
+      at run21c (morning-health-pertenant.test.ts:68:31)
+      at Object.<anonymous> (morning-health-pertenant.test.ts:161:24)
+
+  ● morning row 21c (per-tenant isolation breakdown, report-only) › cleans a hostile slug so it cannot break the table
+
+    step 21c. not found
+
+      21 |   const lines = WF_TEXT.split('\n');
+      22 |   const start = lines.findIndex((l) => l.startsWith("      - name: '" + prefix));
+    > 23 |   if (start < 0) throw new Error(`step ${prefix} not found`);
+         |                        ^
+      24 |   let end = lines.length;
+      25 |   for (let i = start + 1; i < lines.length; i++) {
+      26 |     if (/^      (- name:|#)/.test(lines[i])) { end = i; break; }
+
+      at stepBlock (morning-health-pertenant.test.ts:23:24)
+      at stepScript (morning-health-pertenant.test.ts:33:17)
+      at run21c (morning-health-pertenant.test.ts:68:31)
+      at Object.<anonymous> (morning-health-pertenant.test.ts:168:24)
+
+  ● morning row 21c (per-tenant isolation breakdown, report-only) › shows scan errors without failing
+
+    step 21c. not found
+
+      21 |   const lines = WF_TEXT.split('\n');
+      22 |   const start = lines.findIndex((l) => l.startsWith("      - name: '" + prefix));
+    > 23 |   if (start < 0) throw new Error(`step ${prefix} not found`);
+         |                        ^
+      24 |   let end = lines.length;
+      25 |   for (let i = start + 1; i < lines.length; i++) {
+      26 |     if (/^      (- name:|#)/.test(lines[i])) { end = i; break; }
+
+      at stepBlock (morning-health-pertenant.test.ts:23:24)
+      at stepScript (morning-health-pertenant.test.ts:33:17)
+      at run21c (morning-health-pertenant.test.ts:68:31)
+      at Object.<anonymous> (morning-health-pertenant.test.ts:175:24)
+
+  ● morning row 21c (per-tenant isolation breakdown, report-only) › HTTP 404 (function not applied yet) → one INFO row, exit 0
+
+    step 21c. not found
+
+      21 |   const lines = WF_TEXT.split('\n');
+      22 |   const start = lines.findIndex((l) => l.startsWith("      - name: '" + prefix));
+    > 23 |   if (start < 0) throw new Error(`step ${prefix} not found`);
+         |                        ^
+      24 |   let end = lines.length;
+      25 |   for (let i = start + 1; i < lines.length; i++) {
+      26 |     if (/^      (- name:|#)/.test(lines[i])) { end = i; break; }
+
+      at stepBlock (morning-health-pertenant.test.ts:23:24)
+      at stepScript (morning-health-pertenant.test.ts:33:17)
+      at run21c (morning-health-pertenant.test.ts:68:31)
+      at morning-health-pertenant.test.ts:185:24
+
+  ● morning row 21c (per-tenant isolation breakdown, report-only) › HTTP 500 → one INFO row, exit 0
+
+    step 21c. not found
+
+      21 |   const lines = WF_TEXT.split('\n');
+      22 |   const start = lines.findIndex((l) => l.startsWith("      - name: '" + prefix));
+    > 23 |   if (start < 0) throw new Error(`step ${prefix} not found`);
+         |                        ^
+      24 |   let end = lines.length;
+      25 |   for (let i = start + 1; i < lines.length; i++) {
+      26 |     if (/^      (- name:|#)/.test(lines[i])) { end = i; break; }
+
+      at stepBlock (morning-health-pertenant.test.ts:23:24)
+      at stepScript (morning-health-pertenant.test.ts:33:17)
+      at run21c (morning-health-pertenant.test.ts:68:31)
+      at morning-health-pertenant.test.ts:185:24
+
+  ● morning row 21c (per-tenant isolation breakdown, report-only) › a reply that is not an object → one INFO row, exit 0
+
+    step 21c. not found
+
+      21 |   const lines = WF_TEXT.split('\n');
+      22 |   const start = lines.findIndex((l) => l.startsWith("      - name: '" + prefix));
+    > 23 |   if (start < 0) throw new Error(`step ${prefix} not found`);
+         |                        ^
+      24 |   let end = lines.length;
+      25 |   for (let i = start + 1; i < lines.length; i++) {
+      26 |     if (/^      (- name:|#)/.test(lines[i])) { end = i; break; }
+
+      at stepBlock (morning-health-pertenant.test.ts:23:24)
+      at stepScript (morning-health-pertenant.test.ts:33:17)
+      at run21c (morning-health-pertenant.test.ts:68:31)
+      at morning-health-pertenant.test.ts:185:24
+
+  ● morning row 21c (per-tenant isolation breakdown, report-only) › an object with no tenants list → one INFO row, exit 0
+
+    step 21c. not found
+
+      21 |   const lines = WF_TEXT.split('\n');
+      22 |   const start = lines.findIndex((l) => l.startsWith("      - name: '" + prefix));
+    > 23 |   if (start < 0) throw new Error(`step ${prefix} not found`);
+         |                        ^
+      24 |   let end = lines.length;
+      25 |   for (let i = start + 1; i < lines.length; i++) {
+      26 |     if (/^      (- name:|#)/.test(lines[i])) { end = i; break; }
+
+      at stepBlock (morning-health-pertenant.test.ts:23:24)
+      at stepScript (morning-health-pertenant.test.ts:33:17)
+      at run21c (morning-health-pertenant.test.ts:68:31)
+      at morning-health-pertenant.test.ts:185:24
+
+Test Suites: 1 failed, 1 total
+Tests:       13 failed, 1 passed, 14 total
+Snapshots:   0 total
+Time:        0.767 s
+Ran all test suites.

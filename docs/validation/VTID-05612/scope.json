@@ -1,0 +1,17 @@
+{
+  "vtid": "VTID-05612",
+  "kind": "infra",
+  "paths": [
+    "infra/gitlab-engineering/host/fleet-manager-install.sh",
+    "infra/gitlab-engineering/host/runner-install.sh",
+    "infra/gitlab-engineering/ci/platform.gitlab-ci.yml",
+    "infra/gitlab-engineering/RUNBOOK-m2-fleet.md",
+    "scripts/eng/fleet-structure.test.mjs",
+    "scripts/eng/free-tier-guard.test.mjs",
+    "docs/validation/VTID-05612/**",
+    ".kiro/specs/eng-gitlab-m2/lanes/runner-pin-jq.md"
+  ],
+  "sparring_record": "docs/validation/VTID-05536/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

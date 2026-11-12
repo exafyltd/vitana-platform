@@ -16,7 +16,7 @@
 // first write, so a GitLab that cannot be read changes nothing. Every write is sent with retries: 0 (an action is never repeated by
 // the client); the next run, ten minutes later, tries again from a fresh read.
 //
-// Secrets: tokens go to Secrets Manager through stdin (file:///dev/stdin), never as an argument; the bot token files are written
+// Secrets: tokens go to Secrets Manager through a private 0600 file (see makeSecrets.put), never as an argument; the bot token files are written
 // atomically with mode 0600; no log line, error or output contains a token (a redactor knows every secret the run has seen, and GitLab
 // token shapes). The admin token of the sync (/etc/vitana/settings-admin-token, created once by ops-install.sh) is rotated by the
 // sync itself with POST /personal_access_tokens/:id/rotate when fewer than 10 days are left; the file is checked writable first.
@@ -25,6 +25,7 @@
 
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -329,19 +330,30 @@ function makeSecrets({ aws, region, redactor }) {
         throw new Error(`reading the secret ${id} failed: ${oneLine(redactor(errText(e)), 220)}`);
       }
     },
-    /** Puts a value (stdin, never an argument); creates the secret when it does not exist. */
+    /** Puts a value (a private file, never an argument); creates the secret when it does not exist. */
     async put(id, value) {
       check(id);
       redactor.add(value);
+      // The AWS CLI cannot read file:///dev/stdin when a systemd unit runs it (ParamValidation, errno 6), so the value goes
+      // through a private file that exists only for this call: a 0700 directory holding a 0600 file, removed in finally.
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vitana-secret-'));
       try {
-        await aws(['secretsmanager', 'put-secret-value', '--secret-id', id, '--secret-string', 'file:///dev/stdin', '--region', region], { input: value });
-      } catch (e) {
-        if (!/ResourceNotFoundException/.test(errText(e))) throw new Error(`storing the secret ${id} failed: ${oneLine(redactor(errText(e)), 220)}`);
+        const file = path.join(dir, 'value');
+        fs.writeFileSync(file, value, { mode: 0o600 });
+        const secretString = `file://${file}`;
         try {
-          await aws(['secretsmanager', 'create-secret', '--name', id, '--description', 'Managed by scripts/eng/gitlab-settings.mjs (plan eng-gitlab-m2)', '--secret-string', 'file:///dev/stdin', '--region', region], { input: value });
-        } catch (e2) {
-          throw new Error(`creating the secret ${id} failed: ${oneLine(redactor(errText(e2)), 220)}`);
+          await aws(['secretsmanager', 'put-secret-value', '--secret-id', id, '--secret-string', secretString, '--region', region]);
+        } catch (e) {
+          if (!/ResourceNotFoundException/.test(errText(e))) throw new Error(`storing the secret ${id} failed: ${oneLine(redactor(errText(e)), 220)}`);
+          try {
+            await aws(['secretsmanager', 'create-secret', '--name', id, '--description', 'Managed by scripts/eng/gitlab-settings.mjs (plan eng-gitlab-m2)', '--secret-string', secretString, '--region', region]);
+          } catch (e2) {
+            throw new Error(`creating the secret ${id} failed: ${oneLine(redactor(errText(e2)), 220)}`);
+          }
         }
+      } finally {
+        // A removal error must not replace the put error; the directory holds only the 0600 file of this call.
+        try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* the put result is what the caller needs */ }
       }
     },
   };

@@ -1,0 +1,2 @@
+[functions.fn-quiet]
+verify_jwt = false

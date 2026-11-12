@@ -1,0 +1,199 @@
+{
+  "results": [
+    {
+      "name": "desktop",
+      "tab": "merge-queue",
+      "file": "<worktree>/docs/validation/VTID-05547/outputs/desktop-merge-queue.png",
+      "scrolled": {
+        "scrollHeight": 1122,
+        "clientHeight": 700,
+        "moved": true
+      },
+      "errors": [],
+      "tabs": [],
+      "titles": [
+        "Merge queue",
+        "vitana-platform · GitLab",
+        "vitana-v1 · GitLab"
+      ],
+      "tables": [
+        "vitana-platform merge queue (6 rows)",
+        "vitana-v1 merge queue (2 rows)"
+      ],
+      "docScrollW": 1400,
+      "innerW": 1400,
+      "deliveryNav": true
+    },
+    {
+      "name": "desktop",
+      "tab": "pipeline-runs",
+      "file": "<worktree>/docs/validation/VTID-05547/outputs/desktop-pipeline-runs.png",
+      "scrolled": {
+        "scrollHeight": 1022,
+        "clientHeight": 700,
+        "moved": true
+      },
+      "errors": [],
+      "tabs": [],
+      "titles": [
+        "Pipelines",
+        "vitana-platform · GitLab",
+        "vitana-v1 · GitLab"
+      ],
+      "tables": [
+        "vitana-platform latest pipeline per merge request (4 rows)",
+        "vitana-v1 latest pipeline per merge request (2 rows)"
+      ],
+      "docScrollW": 1400,
+      "innerW": 1400,
+      "deliveryNav": true
+    },
+    {
+      "name": "desktop",
+      "tab": "releases",
+      "file": "<worktree>/docs/validation/VTID-05547/outputs/desktop-releases.png",
+      "scrolled": {
+        "scrollHeight": 1025,
+        "clientHeight": 700,
+        "moved": true
+      },
+      "errors": [],
+      "tabs": [],
+      "titles": [
+        "Releases",
+        "Staging deploys",
+        "STAGING-VERIFY"
+      ],
+      "tables": [
+        "Staging deploys (2 rows)",
+        "STAGING-VERIFY results (2 rows)"
+      ],
+      "docScrollW": 1400,
+      "innerW": 1400,
+      "deliveryNav": true
+    },
+    {
+      "name": "mobile",
+      "tab": "merge-queue",
+      "file": "<worktree>/docs/validation/VTID-05547/outputs/mobile-merge-queue.png",
+      "scrolled": {
+        "scrollHeight": 1579,
+        "clientHeight": 644,
+        "moved": true
+      },
+      "errors": [],
+      "tabs": [],
+      "titles": [
+        "Merge queue",
+        "vitana-platform · GitLab",
+        "vitana-v1 · GitLab"
+      ],
+      "tables": [
+        "vitana-platform merge queue (6 rows)",
+        "vitana-v1 merge queue (2 rows)"
+      ],
+      "docScrollW": 390,
+      "innerW": 390,
+      "deliveryNav": true,
+      "collapsed": {
+        "docScrollW": 390,
+        "innerW": 390,
+        "wrapper": {
+          "clientWidth": 292,
+          "scrollWidth": 918
+        }
+      }
+    },
+    {
+      "name": "mobile",
+      "tab": "pipeline-runs",
+      "file": "<worktree>/docs/validation/VTID-05547/outputs/mobile-pipeline-runs.png",
+      "scrolled": {
+        "scrollHeight": 1535,
+        "clientHeight": 644,
+        "moved": true
+      },
+      "errors": [],
+      "tabs": [],
+      "titles": [
+        "Pipelines",
+        "vitana-platform · GitLab",
+        "vitana-v1 · GitLab"
+      ],
+      "tables": [
+        "vitana-platform latest pipeline per merge request (4 rows)",
+        "vitana-v1 latest pipeline per merge request (2 rows)"
+      ],
+      "docScrollW": 390,
+      "innerW": 390,
+      "deliveryNav": true,
+      "collapsed": {
+        "docScrollW": 390,
+        "innerW": 390,
+        "wrapper": {
+          "clientWidth": 292,
+          "scrollWidth": 895
+        }
+      }
+    },
+    {
+      "name": "mobile",
+      "tab": "releases",
+      "file": "<worktree>/docs/validation/VTID-05547/outputs/mobile-releases.png",
+      "scrolled": {
+        "scrollHeight": 1781,
+        "clientHeight": 644,
+        "moved": true
+      },
+      "errors": [],
+      "tabs": [],
+      "titles": [
+        "Releases",
+        "Staging deploys",
+        "STAGING-VERIFY"
+      ],
+      "tables": [
+        "Staging deploys (2 rows)",
+        "STAGING-VERIFY results (2 rows)"
+      ],
+      "docScrollW": 390,
+      "innerW": 390,
+      "deliveryNav": true,
+      "collapsed": {
+        "docScrollW": 390,
+        "innerW": 390,
+        "wrapper": {
+          "clientWidth": 292,
+          "scrollWidth": 549
+        }
+      }
+    }
+  ],
+  "apiCallsSample": [
+    "GET /api/v1/admin/health",
+    "GET /api/v1/me",
+    "GET /api/v1/auth/me?_t=1793900461443",
+    "GET /api/v1/roles/my-roles",
+    "GET /api/v1/commandhub/board?limit=50",
+    "GET /api/v1/telemetry/snapshot?limit=100&hours=48",
+    "GET /api/v1/cicd/approvals",
+    "GET /api/v1/dev-autopilot/pending-approvals/count",
+    "POST /api/v1/orb/live/session/prewarm",
+    "GET /api/v1/orb/live/transport",
+    "GET /api/v1/orb/live/ws?token=fixture-token",
+    "GET /api/v1/admin/health/summary",
+    "GET /api/v1/delivery/summary",
+    "GET /api/v1/admin/health-registry",
+    "GET /api/v1/auth/health",
+    "GET /api/v1/cicd/health",
+    "GET /api/v1/execute/health",
+    "GET /api/v1/operator/health",
+    "GET /api/v1/operator/deployments/health",
+    "GET /api/v1/telemetry/health",
+    "GET /api/v1/assistant/health",
+    "GET /api/v1/assistant/knowledge/health",
+    "GET /api/v1/orb/health",
+    "GET /api/v1/voice-lab/health",
+    "GET /api/v1/conversation/health"
+  ]
+}

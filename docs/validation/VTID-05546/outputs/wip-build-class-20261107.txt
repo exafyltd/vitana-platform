@@ -1,0 +1,252 @@
+TAP version 13
+# Subtest: three new groups, main, deploy and build: min 0, desired left to the runner, scale-in protection, maxima of plan §5
+ok 1 - three new groups, main, deploy and build: min 0, desired left to the runner, scale-in protection, maxima of plan §5
+  ---
+  duration_ms: 2.145639
+  type: 'test'
+  ...
+# Subtest: IMDSv2 required with hop limit 1, no public IP, encrypted gp3 with the engineering key
+ok 2 - IMDSv2 required with hop limit 1, no public IP, encrypted gp3 with the engineering key
+  ---
+  duration_ms: 0.408299
+  type: 'test'
+  ...
+# Subtest: no instance policy: the class machines get no instance profile, and the only IAM resource here is the fleet manager policy for the two classes
+ok 3 - no instance policy: the class machines get no instance profile, and the only IAM resource here is the fleet manager policy for the two classes
+  ---
+  duration_ms: 0.897431
+  type: 'test'
+  ...
+# Subtest: egress tcp 80, tcp 443 and DNS only; ingress only tcp 22 from the fleet manager
+ok 4 - egress tcp 80, tcp 443 and DNS only; ingress only tcp 22 from the fleet manager
+  ---
+  duration_ms: 1.274647
+  type: 'test'
+  ...
+# Subtest: the fleet manager may scale only the two class groups, open SSH only to their machines as ubuntu, and read only their two runner tokens
+ok 5 - the fleet manager may scale only the two class groups, open SSH only to their machines as ubuntu, and read only their two runner tokens
+  ---
+  duration_ms: 1.384873
+  type: 'test'
+  ...
+# Subtest: the classes run on the M2 job image and launch through the Auto Scaling role that holds the key grant
+ok 6 - the classes run on the M2 job image and launch through the Auto Scaling role that holds the key grant
+  ---
+  duration_ms: 0.720928
+  type: 'test'
+  ...
+# Subtest: a quota that is too low makes the Terraform check print the request
+ok 7 - a quota that is too low makes the Terraform check print the request
+  ---
+  duration_ms: 0.328671
+  type: 'test'
+  ...
+# Subtest: a job tagged vitana-eng declares no id_tokens and names no secret
+ok 8 - a job tagged vitana-eng declares no id_tokens and names no secret
+  ---
+  duration_ms: 21.65692
+  type: 'test'
+  ...
+# Subtest: a job tagged vitana-eng-deploy runs no repository script
+ok 9 - a job tagged vitana-eng-deploy runs no repository script
+  ---
+  duration_ms: 13.42627
+  type: 'test'
+  ...
+# Subtest: tpl-deploy defines the six jobs of plan §9: build on the build class, the rest on the deploy class
+ok 10 - tpl-deploy defines the six jobs of plan §9: build on the build class, the rest on the deploy class
+  ---
+  duration_ms: 15.310946
+  type: 'test'
+  ...
+# Subtest: build-image.sh refuses without --oci-worker-no-process-sandbox
+ok 11 - build-image.sh refuses without --oci-worker-no-process-sandbox
+  ---
+  duration_ms: 3.477679
+  type: 'test'
+  ...
+# Subtest: the manager renders four runner blocks: vitana-eng on the untrusted group with the warm pool of 4, vitana-eng-main and vitana-eng-deploy on their own groups, at the maxima of plan §5
+ok 12 - the manager renders four runner blocks: vitana-eng on the untrusted group with the warm pool of 4, vitana-eng-main and vitana-eng-deploy on their own groups, at the maxima of plan §5
+  ---
+  duration_ms: 14.363341
+  type: 'test'
+  ...
+# Subtest: every block: one job per single-use machine, privileged = false, no Docker socket and no extra power
+ok 13 - every block: one job per single-use machine, privileged = false, no Docker socket and no extra power
+  ---
+  duration_ms: 12.890028
+  type: 'test'
+  ...
+# Subtest: seccomp and AppArmor unconfined only for the build class's BuildKit service: no job container of any class loses either profile
+not ok 14 - seccomp and AppArmor unconfined only for the build class's BuildKit service: no job container of any class loses either profile
+  ---
+  duration_ms: 34.846759
+  type: 'test'
+  location: '/projects/sandbox/wt-dp/scripts/eng/fleet-classes-structure.test.mjs:517:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    tpl-deploy.yml .build-image: the BuildKit daemon runs only on the main class
+    + actual - expected
+    
+      [
+    +   'vitana-eng-build'
+    -   'vitana-eng-main'
+      ]
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    0: 'vitana-eng-main'
+  actual:
+    0: 'vitana-eng-build'
+  operator: 'deepStrictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///projects/sandbox/wt-dp/scripts/eng/fleet-classes-structure.test.mjs:529:58)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: each block has its own token, once, and each class its own cache path: no class reads another class's cache
+ok 15 - each block has its own token, once, and each class its own cache path: no class reads another class's cache
+  ---
+  duration_ms: 13.199989
+  type: 'test'
+  ...
+# Subtest: a class renders only with its token; a wrong class input refuses the whole config, names the input and never echoes a token
+not ok 16 - a class renders only with its token; a wrong class input refuses the whole config, names the input and never echoes a token
+  ---
+  duration_ms: 8.130758
+  type: 'test'
+  location: '/projects/sandbox/wt-dp/scripts/eng/fleet-classes-structure.test.mjs:548:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    no class token: the M2 configuration alone
+    + actual - expected
+    
+      [
+        'vitana-eng-fleet',
+    +   'vitana-eng-fleet-build'
+      ]
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    0: 'vitana-eng-fleet'
+  actual:
+    0: 'vitana-eng-fleet'
+    1: 'vitana-eng-fleet-build'
+  operator: 'deepStrictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///projects/sandbox/wt-dp/scripts/eng/fleet-classes-structure.test.mjs:550:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: installer with the class env file of step A2: reads each class token once after the untrusted one, renders the classes that have one, leaves the others off, prints no token
+not ok 17 - installer with the class env file of step A2: reads each class token once after the untrusted one, renders the classes that have one, leaves the others off, prints no token
+  ---
+  duration_ms: 51.066599
+  type: 'test'
+  location: '/projects/sandbox/wt-dp/scripts/eng/fleet-classes-structure.test.mjs:611:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    the untrusted token first, then each class once
+    + actual - expected
+    
+      [
+        'vitana/engineering/gitlab/fleet-runner-token',
+        'vitana/engineering/gitlab/vitana-eng-fleet-main-runner-token',
+        'vitana/engineering/gitlab/vitana-eng-fleet-deploy-runner-token',
+    +   'vitana/engineering/gitlab/vitana-eng-fleet-build-runner-token'
+      ]
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    0: 'vitana/engineering/gitlab/fleet-runner-token'
+    1: 'vitana/engineering/gitlab/vitana-eng-fleet-main-runner-token'
+    2: 'vitana/engineering/gitlab/vitana-eng-fleet-deploy-runner-token'
+  actual:
+    0: 'vitana/engineering/gitlab/fleet-runner-token'
+    1: 'vitana/engineering/gitlab/vitana-eng-fleet-main-runner-token'
+    2: 'vitana/engineering/gitlab/vitana-eng-fleet-deploy-runner-token'
+    3: 'vitana/engineering/gitlab/vitana-eng-fleet-build-runner-token'
+  operator: 'deepStrictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///projects/sandbox/wt-dp/scripts/eng/fleet-classes-structure.test.mjs:616:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: installer: a class token secret outside vitana/engineering/gitlab/ is never read, and a value that is not a runner token is never written
+not ok 18 - installer: a class token secret outside vitana/engineering/gitlab/ is never read, and a value that is not a runner token is never written
+  ---
+  duration_ms: 42.806026
+  type: 'test'
+  location: '/projects/sandbox/wt-dp/scripts/eng/fleet-classes-structure.test.mjs:630:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    the odd secret name is not read
+    + actual - expected
+    
+      [
+        'vitana/engineering/gitlab/fleet-runner-token',
+        'vitana/engineering/gitlab/vitana-eng-fleet-main-runner-token',
+    +   'vitana/engineering/gitlab/vitana-eng-fleet-build-runner-token'
+      ]
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+    0: 'vitana/engineering/gitlab/fleet-runner-token'
+    1: 'vitana/engineering/gitlab/vitana-eng-fleet-main-runner-token'
+  actual:
+    0: 'vitana/engineering/gitlab/fleet-runner-token'
+    1: 'vitana/engineering/gitlab/vitana-eng-fleet-main-runner-token'
+    2: 'vitana/engineering/gitlab/vitana-eng-fleet-build-runner-token'
+  operator: 'deepStrictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///projects/sandbox/wt-dp/scripts/eng/fleet-classes-structure.test.mjs:637:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: step A2 gives the manager the groups, sizes and token secrets of fleet-classes.tf, and the untrusted sizes of plan §3.2
+ok 19 - step A2 gives the manager the groups, sizes and token secrets of fleet-classes.tf, and the untrusted sizes of plan §3.2
+  ---
+  duration_ms: 0.994443
+  type: 'test'
+  ...
+# Subtest: .build-image starts rootless BuildKit as its service with --oci-worker-no-process-sandbox; the job container is only its client
+ok 20 - .build-image starts rootless BuildKit as its service with --oci-worker-no-process-sandbox; the job container is only its client
+  ---
+  duration_ms: 7.781848
+  type: 'test'
+  ...
+# Subtest: build-image.sh builds through the BuildKit service when BUILDKIT_HOST is set, and with the daemonless helper otherwise
+ok 21 - build-image.sh builds through the BuildKit service when BUILDKIT_HOST is set, and with the daemonless helper otherwise
+  ---
+  duration_ms: 26.655991
+  type: 'test'
+  ...
+1..21
+# tests 21
+# suites 0
+# pass 17
+# fail 4
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 337.509961

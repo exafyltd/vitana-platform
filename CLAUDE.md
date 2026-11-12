@@ -98,8 +98,9 @@ the retired-number index at the end of Part 1 says where its substance lives now
 ### Source of Truth & Governance
 1. **Always treat OASIS as the single source of truth** for task state, lifecycle, and governance.
 2. **Always verify VTID existence** before execution, deployment, or automation.
-2b. **Every task that results in a commit gets its own VTID — allocated only after its plan is sparred and approved**
-    (rules 51–55): owner Gate 1 for a locally sparred plan, or CI policy `converged-auto-v1`. A Kiro plan's VTIDs are
+2b. **Every task that results in a commit gets its own VTID.** Back-end and complex work: allocated only after its plan
+    is sparred and approved (rules 51–55): owner Gate 1 for a locally sparred plan, or CI policy `converged-auto-v1`.
+    A simple front-end change (rule 51a) is allocated straight from the ledger, with no sparring. A Kiro plan's VTIDs are
     allocated by CI PLAN-SPAR on convergence, never by hand. A bug report, a feature ask, a "fix this", a doc change —
     all count. **Never ask the user whether a VTID is needed, never ask them to supply one**, and once the plan is
     approved, allocate without waiting for confirmation. When the user directly instructed the work, that instruction
@@ -322,16 +323,24 @@ Owner decision 2026-09-26. Full process: `docs/DEPLOYMENT-PIPELINE.md`. Applies 
     - a `reason` naming the VTID(s), the scope, the session id and the STAGING-VERIFY run;
     - afterwards, only the read-only production deploy check.
 
-### Plan Sparring Gate (STANDING RULE — VTID-04868)
-Owner decision 2026-10-03: *"Every new plan must have a ping pong sparring agent to support improvement of the plan …
-before a new VTID is generated, and it must be a standard process no matter how many new plans we create."* Applies to
-both repos and to every plan producer — Claude Code sessions, Operator Chat/Console, task intake, Dev Autopilot,
-self-healing, voice, email intake, routines. Procedure: skill `.claude/skills/plan-sparring/`. There is no
-trivial-change exemption.
+### Plan Sparring Gate (STANDING RULE — VTID-04868, amended 2026-11-07)
+Owner decision 2026-10-03 (*"every new plan gets a ping-pong sparring partner before a new VTID is generated"*) is
+amended by the owner decision of 2026-11-07: **sparring is for back-end and complex work; a simple front-end change
+needs a VTID but no sparring.** Two tracks, one rule: every change gets a VTID from the ledger. Procedure: skill
+`.claude/skills/plan-sparring/`.
 
-51. **Plan → sparring → owner approval (or, for a CI-sparred plan that converged, policy approval
-    `converged-auto-v1`, VTID-05214) → VTID → code.** No VTID is allocated for a plan that has not been sparred, and no
-    VTID is ever allocated for the sparring itself.
+51. **Back-end and complex work: plan → sparring → owner approval (or, for a CI-sparred plan that converged, policy
+    approval `converged-auto-v1`, VTID-05214) → VTID → code.** No VTID is allocated for such a plan before it is sparred,
+    and no VTID is ever allocated for the sparring itself. "Back-end and complex" means every change under
+    `services/**`, `supabase/**` (migrations, edge functions, RLS, SQL), `.github/**`, `scripts/**`, governance, LLM
+    routing or auth, and any change that adds or alters an API, a route, a schema, a deploy path, or more than a
+    simple front-end change.
+51a. **Simple front-end change: VTID → code, no sparring.** Class `frontend-simple` (vitana-v1): the diff is inside
+    `src/**` or `public/**`, touches no deny-listed file (`src/App.tsx`, `src/navigation/**`, `src/design/**`,
+    `src/integrations/**`, `src/routes/guards/**`, auth contexts, `src/generated/**`), and changes at most 15 files.
+    Declared in `docs/validation/<VTID>/scope.json` (`"change_class": "frontend-simple"`). The PR gate verifies the diff
+    and fails a claim the diff does not support, which then needs sparring. Execution allocates a fresh VTID from the
+    ledger and runs through implementation, PR, merge and STAGING-VERIFY without waiting for sparring.
 52. **The partner is independent and adversarial.** It sees the plan and the code, never the planner's reasoning; it
     verifies the plan's premises against the code (`file:line`) and its findings are kept verbatim. Every finding gets
     an answer — accepted (plan changed), rejected (reason) or deferred (where tracked) — and goes back to the same
@@ -516,7 +525,8 @@ whatever files a session opens.
 ## 4. VTID SYSTEM
 ### 4.1 Allocation (STANDING RULE — VTID-03448, VTID-04868)
 **Settled: never ask the user "should this have a VTID" or "do you have a VTID for this".** Every task that results
-in a commit gets one. **It is allocated only after its plan is sparred and approved** (Part 1 rules 51–55): owner
+in a commit gets one. **Back-end and complex work is allocated only after its plan is sparred and approved** (Part 1 rules 51–55); a simple
+front-end change (rule 51a) is allocated directly from the ledger. Owner
 Gate 1 for a plan sparred with a local partner (skill `plan-sparring`), or CI policy `converged-auto-v1` for a
 `plan(` PR. A Kiro plan's lane VTIDs are allocated by CI PLAN-SPAR on convergence — Kiro never allocates by hand
 (`.claude/rules/collaboration.md` §7a). A session that allocates itself passes the sparring id (`p_sparring_id`) once

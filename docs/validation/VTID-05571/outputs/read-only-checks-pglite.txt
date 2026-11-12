@@ -1,0 +1,93 @@
+## pre-check.sql
+user_tenants_rows | primary_rows | members | members_with_exactly_one_primary | members_with_no_primary | members_with_2plus_primaries
+1 | 1 | 1 | 1 | 0 | 0
+
+table_name | on_dev_tenant | dev_user_0099 | bot_owner | fake_550e8400
+memory_facts | 2 | 1 | 0 | 0
+memory_items | 0 | 0 | 0 | 0
+chat_messages (owner = sender_id) | 1 | 0 | 1 | 0
+user_notifications | 0 | 0 | 0 | 0
+
+sender_id | rows
+00000000-0000-0000-0000-000000000001 | 1
+
+table_name | table_present | tenant_class | owner_class | decision | row_count
+anticipatory_guidance | false |  |  |  | 0
+availability_assessments | true |  |  |  | 0
+availability_config | true | dev_0001 | no_owner | no_owner | 1
+availability_overrides | true |  |  |  | 0
+boundary_check_audit | true |  |  |  | 0
+chat_messages | true | dev_0001 | bot_0001 | bot_sender_dev_tenant | 1
+contextual_opportunities | false |  |  |  | 0
+d43_adaptation_plans | true |  |  |  | 0
+d43_drift_events | true |  |  |  | 0
+d43_longitudinal_data_points | true |  |  |  | 0
+d43_preference_snapshots | true |  |  |  | 0
+d44_intervention_history | true |  |  |  | 0
+d44_predictive_signals | true |  |  |  | 0
+d44_signal_evidence | true |  |  |  | 0
+d45_forecast_history | true |  |  |  | 0
+d45_predictive_windows | true |  |  |  | 0
+d45_window_feedback | true |  |  |  | 0
+d50_positive_reinforcements | true |  |  |  | 0
+d50_trajectory_eligibility_cache | true |  |  |  | 0
+memory_facts | true | dev_0001 | dev_0099 | dev_user_test_data | 1
+memory_facts | true | dev_0001 | member_single | remap | 1
+memory_items | true |  |  |  | 0
+product_analytics_events | false |  |  |  | 0
+risk_mitigations | false |  |  |  | 0
+user_consent_states | true |  |  |  | 0
+user_notifications | true |  |  |  | 0
+user_personal_boundaries | true |  |  |  | 0
+
+## 20261102040400_vtid_05571_writer_repoint.sql
+mt_orphan_repoint_gate
+
+
+## post-check.sql
+table_name | tenant_class | owner_class | decision | row_count
+
+source_table | reason | rows | still_in_source
+availability_config | no_owner | 1 | 0
+chat_messages | bot_sender_dev_tenant | 1 | 0
+memory_facts | dev_user_test_data | 1 | 0
+
+table_name | tenant_class | row_count
+
+snapshot | rows
+bak_mt_data_cleanup_memory_facts | 2
+bak_mt_data_cleanup_memory_items | 0
+bak_mt_data_cleanup_chat_messages | 1
+bak_mt_data_cleanup_user_notifications | 0
+
+function
+
+repointed_functions_present
+19
+
+members_with_exactly_one_primary | members_with_no_primary | members_with_2plus_primaries
+1 | 0 | 0
+
+user_id | primaries
+
+## repollution-check.sql
+table_name | owner_class | rows_on_dev_tenant
+
+sender_class | rows_on_dev_tenant_after_cleanup
+
+memory_facts | memory_items | chat_messages | user_notifications
+0 | 0 | 0 | 0
+
+## rollback-check.sql
+memory_facts_not_restored | memory_items_not_restored | chat_messages_not_restored | user_notifications_not_restored
+0 | 0 | 0 | 0
+
+lane_quarantine_rows
+0
+
+table_name | tenant_class | owner_class | decision | row_count
+availability_config | dev_0001 | no_owner | no_owner | 1
+chat_messages | dev_0001 | bot_0001 | bot_sender_dev_tenant | 1
+memory_facts | dev_0001 | dev_0099 | dev_user_test_data | 1
+memory_facts | dev_0001 | member_single | remap | 1
+

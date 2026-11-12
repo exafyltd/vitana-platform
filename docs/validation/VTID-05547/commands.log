@@ -1,0 +1,128 @@
+VTID-05547 commands.log (agentic-delivery/gateway-delivery), plain text, in the order they ran. Paths are shown as <worktree>.
+Builder session kiro-exafy-202611021438-cff7. Node v22.23.4, pnpm 9.0.0, 8 CPUs. <scratch> is a scratch directory outside the repository.
+Sections 1-11 ran on the stacked base 4c3d2341f2b; section 12 re-ran every code-dependent check on base = origin/main 7fd4106862d
+(7fd4106862d5a922606969e9c4006c57c1fb4991) plus the cherry-picked lane commit; its outputs replace the earlier ones of the same name.
+Nothing here called a network service, AWS, GitLab, GitHub or Cloudflare with credentials, or any live system; no secret was read.
+
+== 1. Setup
+$ cd <worktree>/services/gateway && npm ci --prefer-offline --no-audit --no-fund
+  850 packages. package-lock.json and pnpm-lock.yaml are byte-identical to the main checkout (cmp).
+
+== 2. Tests first, red on base
+Scratch base tree: git archive HEAD services/gateway (4c3d2341f2b), node_modules linked, the lane's test files copied in, the new
+source files replaced by stubs that do nothing, delivery.js empty.
+$ cd <base>/services/gateway && npx jest test/delivery --silent --json
+  First recording (157 tests): 135 failed, 22 passed, 0 suites that did not run. The tests were then tightened (vacuous cases made
+  real, two trivial ones removed) and the seven mutation gaps of section 5 closed; the final recording is the one in
+  outputs/red-on-base.txt:
+  Final: 6 suites, 165 tests, 149 failed, 16 passed (deliberate no-change guards), 0 suites that did not run.
+
+== 3. Implementation checks
+$ cd <worktree>/services/gateway && pnpm run typecheck
+  exit 0 (re-run after the last source and test edit: outputs/gateway-typecheck.txt)
+$ cd <worktree>/services/gateway && VITANA_V1_ROOT=<scratch>/.no-such-vitana-v1 node scripts/regen-screens-catalog.mjs
+  regenerated navigation-config.js and specs/dev-screen-inventory-v1.json (the Delivery module, three DEV-* screens; last_synced 2026-11-05)
+$ node scripts/validate-dev-frontend-spec.mjs ; npm run test:screens-catalog-sync
+  FRONTEND SPEC OK, 26 modules, 135 screens, canonical order; regen-screens-catalog.mjs --check exits 0 (outputs/catalog-checks.txt)
+$ npx jest test/delivery --silent
+  6 suites, 165 tests passed (outputs/green.txt)
+
+== 4. Screenshots (Delivery at 1400x900 and 390x844)
+Scratch harness: serves the real Command Hub files; /api/v1/delivery/summary is answered by the REAL route over invented rows (no
+gateway, Supabase or network); Playwright with chrome-headless-shell.
+  15 PNG (desktop and mobile, three tabs, plus scrolled and, on the phone, sidebar-collapsed) and outputs/shoot-report.json; every image
+  was viewed; page error count 0; no page-level horizontal overflow at 390 px (document width 390 = viewport). Contrast of the first
+  version failed AA for the stylesheet's status badges (4.48, 3.40, 3.29); replaced by the pill family (4.6 to 6.9).
+
+== 5. Mutation check
+$ WORKERS=8 node outputs/mutate-gateway-delivery.mjs <worktree>
+  Run 1: baseline 156 cases pass; 119/126 mutations caught, 7 not caught: the webhook-id remembered/checked (two), the red-main time
+  order (the find string matched nothing), the verification matched by VTID, the red start of a restore, the read limit, and the retry
+  of a render after an error. All seven closed by tests only (source unchanged for them): 6 new cases.
+  Run 2: baseline 162 cases; 126/126 caught, 0 not caught.
+  Run 3 (after section 7 moved the loader into one object and added 3 loader cases and 6 loader mutations): baseline 165 cases;
+  132/132 caught, 0 not caught (outputs/mutation-run.txt).
+
+== 6. Whole gateway Jest, as CI runs it (TEST-SUITE.yml)
+$ npx jest --listTests | wc -l                       1771 files; shards 443 / 443 / 443 / 442
+$ npx jest --silent --maxWorkers=8 --shard=k/4 --json --outputFile=<scratch>/shard-k.json     (k = 1..4)
+  First run (before the fixes of section 7): 5 failing tests in 5 suites:
+    - test/vtid-04696-staging-checks-follow-asset-bumps.test.ts (70 staging suites named the old app.js and styles.css version)  fixed
+    - test/command-hub/vtid-05073-operator-console-extraction.test.ts (b) (two new top-level functions in app.js)               fixed
+    - test/navigation/vtid-04814-command-hub-navigation.test.ts "has exactly one screen per tab of NAVIGATION_CONFIG"          open item 1
+    - test/vtid-04226-eventbridge-test-contract-schedules.test.ts (openssl is not installed in this sandbox)                   environment
+    - test/providers/storage-provider.test.ts (the sandbox exports another AWS_REGION; passes with eu-central-1 on the base tree) environment
+  Final run (AWS_REGION=eu-central-1): 1771 suites, 29548 tests: 29486 passed, 2 failed, 54 skipped, 6 todo.
+  The 2 failures: vtid-04226 (openssl) and vtid-04814 (open item 1). outputs/gateway-full-jest.txt
+$ npm run test:operator   71 passed.   $ npm run test:support   4 suites, 87 passed.   $ npm run test:roles   105 passed.
+
+== 7. Fixes the whole run asked for (all inside the lane paths)
+- The cache-buster bump (app.js and styles.css, index.html) leaves older staging suites naming the old version (VTID-04696). Replaced the
+  old version token in the 30 staging-tests.json files that name it, 68 tokens, as the VTID-05082 bump did.
+  $ git show HEAD:<file> compared with <file> after putting the old token back: 30 of 30 identical (outputs/asset-bump-follow.txt)
+- VTID-05073 (b) pins the set of top-level function names of the Command Hub bundle against a frozen fixture. loadDeliveryScreen and
+  renderDeliveryView became one object, "var deliveryModule = {...}" (no top-level function declaration). Three behaviour tests for the
+  loader were added (one script element, reuse, retry after an error) and six mutations.
+- VTID-04814: the voice screens and the stored vectors are outside the paths and need an AWS call. Tried the three screen entries and the
+  ownership-guard line temporarily to see the effect, saved them as outputs/outside-lane-paths.patch, and reverted both files
+  (git checkout -- <the two files>). The commit contains neither file.
+- A test run rewrites specs/command-hub-symbol-index.json as a side effect; it was restored with git checkout after every run.
+
+== 8. Neighbour suites and the staging manifest
+$ npx jest test/delivery | test/routes/internal-gitlab-webhook.test.ts test/gitlab-events test/project-manager test/vtid-05019-cicd-pr-routes-auth.test.ts | test/command-hub test/vtid-04696-... | npm run test:roles
+  165 | 350 (19 suites) | 855 (15 skipped) | 105 passed (outputs/staging-existing-suites-local.txt)
+$ node -e "validateManifest(docs/validation/VTID-05547/staging-tests.json)"      { ok: true }, 12 tests: 8 http, 4 existing
+  The strings the probes look for were found in the served sources (outputs/staging-manifest-check.txt)
+
+== 9. Whole script suite, as UNIT.yml runs it (35 files)
+$ FILES=$(find scripts -path '*/node_modules' -prune -o \( -name '*.test.cjs' -o -name '*.test.mjs' \) -print | sort); node --test $FILES
+  Node 22.23.4: 662 tests, 661 pass, 0 fail, 1 skipped (outputs/unit-all.txt)
+$ npx -y node@20 --test $FILES
+  Node 20.20.2: 662 tests, 661 pass, 0 fail, 1 skipped (outputs/unit-all-node20.txt)
+
+== 10. Governance checks on the commit (read-only, local; outputs/preflight-check-pr.txt)
+$ node scripts/collab/preflight.mjs --repo <worktree> --base HEAD~1 --head HEAD --branch kiro/agentic-delivery/gateway-delivery --title "<PR title>"
+  8 of 8 passed: Collab tests, Collab handoff, Lane scope, PR-GATE scope, sparring, weakening, red-green, Kiro steering
+  (base = the stacked base, so only this commit is judged)
+$ node scripts/ci/staging-verify/run.mjs check-pr --service gateway --repo-root <worktree> --base HEAD~1 --head HEAD --title "<PR title>"
+  change suite present and valid for VTID-05547
+$ cd <worktree>/services/gateway && pnpm run typecheck       (committed tree)   exit 0
+
+== 11. Secret scan and commit
+$ bash <tools>/scan-secrets.sh <worktree> VTID-05547      see outputs/secret-scan.txt
+$ git add <files by name> && git commit (one commit, identity by environment variables, trailers Collab-Session and Collab-Lane)
+  Not pushed. The lane file, handoff.md, plan.md, tasks.md and sparring/ were not touched.
+
+== 12. Re-run on base = origin/main 7fd4106862d (lane commit cherry-picked), with the voice screens and the ownership-guard line
+The lane paths on main include command-hub-screens.json, nav-embeddings.bin/.json and the ownership guard since #4722 (VTID-05563).
+outputs/outside-lane-paths.patch applied to the tree, then: $ git rm outputs/outside-lane-paths.patch
+  three Delivery screens in services/gateway/src/navigation/data/command-hub-screens.json; VTID-05547 in ALLOWED_VTID_PATTERN of
+  scripts/ci/command-hub-ownership-guard.js (one alternation, one comment line). nav-embeddings.bin/.json not touched.
+$ cd <worktree>/services/gateway && pnpm install --frozen-lockfile
+  fails in this sandbox on the default store path (seen by the caller); with --store-dir <tools>/pnpm-store it works (pnpm 9.0.0, "Done").
+  The Jest runs below use that pnpm install, as TEST-SUITE.yml does.
+$ npm run test:roles -- --silent        1 suite, 105 passed
+$ npm run test:operator -- --silent     1 suite, 71 passed
+$ npm run test:support -- --silent      4 suites, 87 passed
+$ AWS_REGION=eu-central-1 npx jest --silent --maxWorkers=8 --json <187 files>
+  the files of test/ that import or read a changed file (grep for routes/delivery, services/delivery-host, services/github-service,
+  services/gitlab-events/, types/cicd, index.ts, the Command Hub frontend files, the screen catalog, command-hub-screens,
+  nav-embeddings), plus test/delivery, test/command-hub, test/navigation, test/nav-golden; *.test.ts only.
+  187 suites (181 passed, 5 failed, 1 skipped); 3245 tests: 3099 passed, 129 failed, 17 skipped.
+  All 129 failures: `no stored vector for "<text>"` (128) and the bundled-vectors check listing the 18 new texts (1), in the 5 suites of
+  outputs/pending-vectors.txt. outputs/gateway-related-jest.txt
+$ npx jest test/delivery --silent --verbose          6 suites, 165 passed (outputs/green.txt)
+$ the four 'existing' suites of staging-tests.json   165 | 350 (19 suites) | 855 (15 skipped) | 105 (outputs/staging-existing-suites-local.txt)
+  (a test run rewrites specs/command-hub-symbol-index.json; restored with git checkout after each run)
+$ cd <worktree>/services/gateway && rm -rf node_modules && npm ci --no-audit --no-fund && pnpm run typecheck
+  850 packages; tsc --noEmit exit 0 (the install CICDL-GATEWAY-CI.yml uses for the type check). outputs/gateway-typecheck.txt
+$ FILES=$(find scripts -path '*/node_modules' -prune -o \( -name '*.test.cjs' -o -name '*.test.mjs' \) -print | sort); node --test $FILES
+  48 files. Node 22.23.4: 1088 tests, 1086 pass, 0 fail, 2 skipped (outputs/unit-all.txt)
+$ npx -y node@20 --test $FILES
+  Node 20.20.2: 1088 tests, 1086 pass, 0 fail, 2 skipped (outputs/unit-all-node20.txt)
+$ bash <tools>/scan-secrets.sh <worktree> VTID-05547     0 matches (outputs/secret-scan.txt)
+$ git commit --amend (the one lane commit, message and trailers kept)
+$ GITHUB_BASE_REF=main GITHUB_HEAD_REF=kiro/agentic-delivery/gateway-delivery PR_TITLE="<PR title>" node scripts/ci/command-hub-ownership-guard.js
+  as COMMAND-HUB-GUARDRAILS.yml calls it (outputs/ownership-guard.txt)
+$ node scripts/collab/preflight.mjs --repo <worktree> --base origin/main --head HEAD --branch kiro/agentic-delivery/gateway-delivery --title "<PR title>"
+  (outputs/preflight-check-pr.txt)

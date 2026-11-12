@@ -1400,7 +1400,7 @@ router.post('/upload', async (req: Request, res: Response) => {
 import deployOrchestrator from '../services/deploy-orchestrator';
 import { triggerWorkflow, getWorkflowRuns } from '../services/github-service';
 import { emitOasisEvent } from '../services/oasis-event-service';
-import { evaluatePublishGate, OVERRIDE_REASON_MIN } from '../services/testing/publish-gate';
+import { evaluatePublishGate } from '../services/testing/publish-gate';
 import { withDependencyHealth } from '../services/dependency-probe';
 // VTID-0525-B: DeployCommandSchema and TaskCommandSchema unused in MVP
 // import { DeployCommandSchema, TaskCommandSchema } from '../types/operator-command';
@@ -2199,29 +2199,22 @@ async function publishAwsFlow(
   }
   const stagingRevShort = staging.marker || stagingCommit.slice(0, 12);
 
-  // Step 3b (VTID-04646): STAGING-VERIFY gate. Only a passing run for this
-  // exact commit clears it; otherwise an exafy admin must write down why they
-  // publish anyway (body.override_reason, >= 10 chars), which is recorded.
-  const gate = await evaluatePublishGate({ commit: stagingCommit, service: 'gateway', overrideReason: req.body?.override_reason });
-  if (!gate.allowed) {
+  // Step 3b (VTID-04646), removed by owner decision 2026-11-08: PUBLISH is not gated on STAGING-VERIFY.
+  // The verification record is still read and written on the event as evidence, but a missing or failing
+  // run no longer refuses the publish, and no override reason is asked for.
+  const verified = await evaluatePublishGate({ commit: stagingCommit, service: 'gateway' });
+  const gate = { ...verified, allowed: true };
+  if (!verified.allowed) {
     await emitOasisEvent({
       vtid: 'BOOTSTRAP-PUBLISH',
-      type: 'production.publish.blocked',
+      type: 'production.publish.gate_skipped',
       source: 'gateway-operator',
       status: 'warning',
-      message: `publish(aws) refused: ${gate.reason}`,
+      message: `publish(aws) of ${stagingCommit.slice(0, 7)} without a passing STAGING-VERIFY (gate removed by owner decision): ${verified.reason}`,
       actor_id: identity.user_id,
       actor_role: 'admin',
       surface: 'command-hub',
-      payload: { request_id: requestId, source_commit: stagingCommit, platform: 'aws-ecs', staging_verify: gate.verification, reason: gate.reason },
-    });
-    return res.status(409).json({
-      ok: false,
-      error: 'staging_not_verified',
-      detail: `${gate.reason} Publish anyway only with a written reason (override_reason, at least ${OVERRIDE_REASON_MIN} characters); it is recorded.`,
-      source_commit: stagingCommit,
-      staging_verify: gate.verification,
-      override_allowed: true,
+      payload: { request_id: requestId, source_commit: stagingCommit, platform: 'aws-ecs', staging_verify: verified.verification, reason: verified.reason },
     });
   }
 
@@ -2269,25 +2262,8 @@ async function publishAwsFlow(
       confirm_short_sha: typeof req.body?.confirm_short_sha === 'string' ? req.body.confirm_short_sha : null,
       staging_verify_gate: gate.status,
       staging_verify: gate.verification,
-      override_reason: gate.override_reason,
     },
   });
-
-  // VTID-04646: an overridden gate gets its own event, so a publish that
-  // skipped verification is findable without reading every requested event.
-  if (gate.status === 'overridden') {
-    await emitOasisEvent({
-      vtid,
-      type: 'production.publish.verification_overridden',
-      source: 'gateway-operator',
-      status: 'warning',
-      message: `publish(aws) of ${stagingCommit.slice(0, 7)} without a passing STAGING-VERIFY: ${gate.override_reason}`,
-      actor_id: identity.user_id,
-      actor_role: 'admin',
-      surface: 'command-hub',
-      payload: { request_id: requestId, source_commit: stagingCommit, gate_reason: gate.reason, override_reason: gate.override_reason, staging_verify: gate.verification },
-    });
-  }
 
   // Step 7: dispatch the promotion. promote-staging + expected_commit means
   // the workflow ships the EXACT ECR image staging runs and fails (before

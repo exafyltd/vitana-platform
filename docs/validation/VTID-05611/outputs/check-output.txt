@@ -1,0 +1,41 @@
+OK   20261102053000_vtid_05575_daily_matches_scope.sql:34  ADD COLUMN IF NOT EXISTS scope text NOT NULL DEFAULT 'community'
+OK   20261102053000_vtid_05575_daily_matches_scope.sql:35  ADD COLUMN IF NOT EXISTS tenant_id uuid
+OK   20261102053000_vtid_05575_daily_matches_scope.sql:38  daily_matches_scope_check
+OK   20261102053000_vtid_05575_daily_matches_scope.sql:43  idx_daily_matches_scope_tenant
+OK   20261102053100_vtid_05575_daily_matches_guard.sql:30  FUNCTION public.is_network_candidate
+OK   20261102053100_vtid_05575_daily_matches_guard.sql:48  FUNCTION public.strip_health_match_reasons
+OK   20261102053100_vtid_05575_daily_matches_guard.sql:74  FUNCTION public.daily_matches_scope_guard
+OK   20261102053100_vtid_05575_daily_matches_guard.sql:134  CREATE TRIGGER trg_daily_matches_scope_guard
+OK   20261102053100_vtid_05575_daily_matches_guard.sql:98  network_candidate_not_visible
+OK   20261102053100_vtid_05575_daily_matches_guard.sql:108  no_shared_tenant
+OK   20261102053100_vtid_05575_daily_matches_guard.sql:7  active_member
+OK   20261102053200_vtid_05575_intent_matchers_scope.sql:34  FUNCTION public.intent_pool_allows
+OK   20261102053200_vtid_05575_intent_matchers_scope.sql:62  search_intent_catalog(uuid
+OK   20261102053200_vtid_05575_intent_matchers_scope.sql:63  search_intent_catalog_v2(uuid
+OK   20261102053200_vtid_05575_intent_matchers_scope.sql:64  compute_intent_matches(uuid
+OK   20261102053200_vtid_05575_intent_matchers_scope.sql:65  compute_intent_matches_v2(uuid
+OK   20261102053200_vtid_05575_intent_matchers_scope.sql:81  DEFAULT ''community''
+OK   20261102052000_vtid_05573_legacy_messages_snapshot_freeze.sql:54  CREATE TABLE public.%I (LIKE public.%I
+OK   20261102052000_vtid_05573_legacy_messages_snapshot_freeze.sql:60  interval '30 days'
+OK   20261102052000_vtid_05573_legacy_messages_snapshot_freeze.sql:70  ENABLE ROW LEVEL SECURITY
+OK   20261102052000_vtid_05573_legacy_messages_snapshot_freeze.sql:72  GRANT SELECT ON public.%I TO service_role
+OK   20261102052000_vtid_05573_legacy_messages_snapshot_freeze.sql:74  REVOKE INSERT, UPDATE, DELETE, TRUNCATE
+OK   20261102052000_vtid_05573_legacy_messages_snapshot_freeze.sql:42  'thread_participants', 'global_thread_participants'
+OK   20261102052000_vtid_05573_legacy_messages_snapshot_freeze.sql:61  pre-freeze-acl=
+OK   20261102052100_vtid_05573_legacy_messages_functions.sql:40  FUNCTION public.mt_legacy_common_tenant
+OK   20261102052100_vtid_05573_legacy_messages_functions.sql:57  FUNCTION public.mt_legacy_context_tenant
+OK   20261102052100_vtid_05573_legacy_messages_functions.sql:71  FUNCTION public.mt_legacy_messages_migrate
+OK   20261102052100_vtid_05573_legacy_messages_functions.sql:235  FUNCTION public.mt_legacy_messages_assert_ready
+OK   20261102052100_vtid_05573_legacy_messages_functions.sql:21  legacy_scope
+OK   20261102052200_vtid_05573_legacy_messages_migrate_run.sql:18  SELECT public.mt_legacy_messages_migrate()
+OK   20261102052300_vtid_05573_legacy_messages_drop.sql:38  DROP TABLE IF EXISTS public.global_messages
+OK   20261102052300_vtid_05573_legacy_messages_drop.sql:39  DROP TABLE IF EXISTS public.messages
+OK   20261102052300_vtid_05573_legacy_messages_drop.sql:40  DROP TABLE IF EXISTS public.global_message_threads
+OK   20261102052300_vtid_05573_legacy_messages_drop.sql:41  DROP TABLE IF EXISTS public.message_threads
+OK   20261102052300_vtid_05573_legacy_messages_drop.sql:19  SELECT public.mt_legacy_messages_assert_ready()
+OK   notification entry holds the connections_social line
+`connections_social` gains `new_follower`; `direct_messages` gains `message_reaction`.
+**Rules:** the gateway (`notification-controls-service.ts`) applies the same
+decision before pushing: in `notifyUser`, `/push-dispatch` and the reminders push.
+Every automation send carries `data.automation_id`.
+(above = every removed line)

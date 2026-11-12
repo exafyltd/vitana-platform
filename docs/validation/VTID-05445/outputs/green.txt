@@ -1,0 +1,266 @@
+TAP version 13
+# Subtest: fixture inventories
+    # Subtest: six inventories are produced
+    ok 1 - six inventories are produced
+      ---
+      duration_ms: 1.379605
+      type: 'test'
+      ...
+    # Subtest: tables: tenant_id nullability, RLS flag and policies come from the catalog
+    ok 2 - tables: tenant_id nullability, RLS flag and policies come from the catalog
+      ---
+      duration_ms: 0.31734
+      type: 'test'
+      ...
+    # Subtest: tables: rows are sorted by name
+    ok 3 - tables: rows are sorted by name
+      ---
+      duration_ms: 0.232017
+      type: 'test'
+      ...
+    # Subtest: functions: SECURITY DEFINER, who may execute, and the caller check
+    ok 4 - functions: SECURITY DEFINER, who may execute, and the caller check
+      ---
+      duration_ms: 0.24257
+      type: 'test'
+      ...
+    # Subtest: functions: extension functions are not listed
+    ok 5 - functions: extension functions are not listed
+      ---
+      duration_ms: 0.192075
+      type: 'test'
+      ...
+    # Subtest: routes: one row per route with its middleware; test files are skipped
+    ok 6 - routes: one row per route with its middleware; test files are skipped
+      ---
+      duration_ms: 0.196753
+      type: 'test'
+      ...
+    # Subtest: edge functions: directory, Authorization header, service role, verify_jwt from config.toml
+    ok 7 - edge functions: directory, Authorization header, service role, verify_jwt from config.toml
+      ---
+      duration_ms: 0.183963
+      type: 'test'
+      ...
+    # Subtest: realtime tables: publication and migration text are merged, with the source of each
+    ok 8 - realtime tables: publication and migration text are merged, with the source of each
+      ---
+      duration_ms: 0.330046
+      type: 'test'
+      ...
+    # Subtest: buckets and storage policies come from migration text, a later DROP removes a policy
+    ok 9 - buckets and storage policies come from migration text, a later DROP removes a policy
+      ---
+      duration_ms: 0.321819
+      type: 'test'
+      ...
+    1..9
+ok 1 - fixture inventories
+  ---
+  duration_ms: 1909.249312
+  type: 'suite'
+  ...
+# Subtest: unverified tables
+    # Subtest: a not-replayable table is listed as unverified with its reason and lanes, never verified
+    ok 1 - a not-replayable table is listed as unverified with its reason and lanes, never verified
+      ---
+      duration_ms: 1376.857587
+      type: 'test'
+      ...
+    1..1
+ok 2 - unverified tables
+  ---
+  duration_ms: 1377.12065
+  type: 'suite'
+  ...
+# Subtest: health table list
+    # Subtest: is the five tables of docs/MULTI-TENANT-PLAN.md section 2
+    ok 1 - is the five tables of docs/MULTI-TENANT-PLAN.md section 2
+      ---
+      duration_ms: 0.572178
+      type: 'test'
+      ...
+    1..1
+ok 3 - health table list
+  ---
+  duration_ms: 0.671264
+  type: 'suite'
+  ...
+# Subtest: determinism
+    # Subtest: two runs render byte-identical files; keys sorted, no timestamp, trailing newline
+    ok 1 - two runs render byte-identical files; keys sorted, no timestamp, trailing newline
+      ---
+      duration_ms: 2642.289608
+      type: 'test'
+      ...
+    # Subtest: writeInventories then checkInventories finds no drift; a changed file is named
+    ok 2 - writeInventories then checkInventories finds no drift; a changed file is named
+      ---
+      duration_ms: 1305.450958
+      type: 'test'
+      ...
+    1..2
+ok 4 - determinism
+  ---
+  duration_ms: 3948.043124
+  type: 'suite'
+  ...
+# Subtest: drift guard
+    # Subtest: the committed inventories regenerate byte-identically from the repo (node scripts/mt/inventory/generate.mjs)
+    ok 1 - the committed inventories regenerate byte-identically from the repo (node scripts/mt/inventory/generate.mjs)
+      ---
+      duration_ms: 5254.469524
+      type: 'test'
+      ...
+    1..1
+ok 5 - drift guard
+  ---
+  duration_ms: 5254.732044
+  type: 'suite'
+  ...
+# Subtest: db lints
+    # Subtest: the five lints are named
+    ok 1 - the five lints are named
+      ---
+      duration_ms: 1.39157
+      type: 'test'
+      ...
+    # Subtest: nullable tenant_id flags the nullable column only
+    ok 2 - nullable tenant_id flags the nullable column only
+      ---
+      duration_ms: 1.581923
+      type: 'test'
+      ...
+    # Subtest: missing tenant policy flags RLS off and RLS on with no tenant policy, not a membership policy
+    ok 3 - missing tenant policy flags RLS off and RLS on with no tenant policy, not a membership policy
+      ---
+      duration_ms: 0.380566
+      type: 'test'
+      ...
+    # Subtest: DEFINER without revoke or caller check flags the open one, passes revoked, checked and invoker functions
+    ok 4 - DEFINER without revoke or caller check flags the open one, passes revoked, checked and invoker functions
+      ---
+      duration_ms: 0.233005
+      type: 'test'
+      ...
+    # Subtest: realtime table without tenant RLS flags rt_bad, passes rt_good, and marks a table that is not in the schema unverified
+    ok 5 - realtime table without tenant RLS flags rt_bad, passes rt_good, and marks a table that is not in the schema unverified
+      ---
+      duration_ms: 0.139428
+      type: 'test'
+      ...
+    # Subtest: storage policy flags a policy with no user or tenant scoping, passes a scoped one
+    ok 6 - storage policy flags a policy with no user or tenant scoping, passes a scoped one
+      ---
+      duration_ms: 0.116319
+      type: 'test'
+      ...
+    # Subtest: a clean fixture of one good table has no finding
+    ok 7 - a clean fixture of one good table has no finding
+      ---
+      duration_ms: 0.186924
+      type: 'test'
+      ...
+    1..7
+ok 6 - db lints
+  ---
+  duration_ms: 1949.511941
+  type: 'suite'
+  ...
+# Subtest: unverified tables
+    # Subtest: a not-replayable table is never passing: it is unverified in every table lint and counted apart
+    ok 1 - a not-replayable table is never passing: it is unverified in every table lint and counted apart
+      ---
+      duration_ms: 1316.009711
+      type: 'test'
+      ...
+    # Subtest: an allowlist entry cannot turn an unverified table into a pass
+    ok 2 - an allowlist entry cannot turn an unverified table into a pass
+      ---
+      duration_ms: 1302.677476
+      type: 'test'
+      ...
+    1..2
+ok 7 - unverified tables
+  ---
+  duration_ms: 2619.27786
+  type: 'suite'
+  ...
+# Subtest: allowlist
+    # Subtest: entries need lint, subject, owner and reason; the lint must be known
+    ok 1 - entries need lint, subject, owner and reason; the lint must be known
+      ---
+      duration_ms: 0.652601
+      type: 'test'
+      ...
+    # Subtest: an allowlisted finding moves to allowed with its owner; a stale entry is reported
+    ok 2 - an allowlisted finding moves to allowed with its owner; a stale entry is reported
+      ---
+      duration_ms: 1338.62299
+      type: 'test'
+      ...
+    # Subtest: the committed allowlist is valid
+    ok 3 - the committed allowlist is valid
+      ---
+      duration_ms: 0.467167
+      type: 'test'
+      ...
+    1..3
+ok 8 - allowlist
+  ---
+  duration_ms: 1340.230341
+  type: 'suite'
+  ...
+# Subtest: bare-policy counter
+    # Subtest: counts current_tenant_id() policies without auth.uid(), current_user_id(), is_member or is_tenant_admin
+    ok 1 - counts current_tenant_id() policies without auth.uid(), current_user_id(), is_member or is_tenant_admin
+      ---
+      duration_ms: 1315.654772
+      type: 'test'
+      ...
+    # Subtest: the allowlist (by table) takes a policy out of the count; the number is reported, never asserted 0
+    ok 2 - the allowlist (by table) takes a policy out of the count; the number is reported, never asserted 0
+      ---
+      duration_ms: 1351.154304
+      type: 'test'
+      ...
+    # Subtest: a policy that adds is_tenant_admin or current_user_id is not bare
+    ok 3 - a policy that adds is_tenant_admin or current_user_id is not bare
+      ---
+      duration_ms: 0.584744
+      type: 'test'
+      ...
+    # Subtest: a policy on an unverified table is not counted and the count says so
+    ok 4 - a policy on an unverified table is not counted and the count says so
+      ---
+      duration_ms: 1297.406531
+      type: 'test'
+      ...
+    1..4
+ok 9 - bare-policy counter
+  ---
+  duration_ms: 3965.617427
+  type: 'suite'
+  ...
+# Subtest: committed inventories
+    # Subtest: every table of not-replayable.txt is unverified in the committed data and in the lint report, never passing
+    ok 1 - every table of not-replayable.txt is unverified in the committed data and in the lint report, never passing
+      ---
+      duration_ms: 4.077319
+      type: 'test'
+      ...
+    1..1
+ok 10 - committed inventories
+  ---
+  duration_ms: 4.337982
+  type: 'suite'
+  ...
+1..10
+# tests 31
+# suites 10
+# pass 31
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 12611.26328

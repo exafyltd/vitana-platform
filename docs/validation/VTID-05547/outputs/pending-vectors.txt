@@ -1,0 +1,34 @@
+# VTID-05547: the gateway Jest suites that wait on the stored vectors of the three Delivery voice screens
+# Cause: src/navigation/data/command-hub-screens.json has the three screens (DEVHUB.DELIVERY.MERGE_QUEUE, DEVHUB.DELIVERY.PIPELINE_RUNS,
+# DEVHUB.DELIVERY.RELEASES); their 18 texts (3 titles, 3 "shows" lines, 12 phrasings) have no vector yet in
+# src/navigation/data/nav-embeddings.bin / nav-embeddings.json. Every failure below is `no stored vector for "<text>"` or the
+# bundled-vectors check listing those 18 texts. Nothing else fails (outputs/gateway-related-jest.txt).
+# The vectors come from the owner's one-off run of the same Titan v2 call (test/nav-golden/build-embeddings.ts) in CloudShell.
+# Once they are in the two files, these 5 suites (129 tests) must pass with no other change.
+
+test/nav-golden/nav-registry-loo.test.ts            4 tests
+test/nav-golden/nav-golden-registry.test.ts         4 tests
+test/navigation/vtid-04814-command-hub-navigation.test.ts   57 tests
+test/navigation/vtid-04846-registry-only.test.ts    30 tests
+test/navigation/nav-dispatch.test.ts                34 tests
+total                                               129 tests
+
+The 18 texts without a vector:
+Merge Queue
+open Merge Queue
+show me the Merge Queue
+go to the Merge Queue tab in Delivery
+what is waiting to land
+The GitLab merge queue of each project: position, state and waiting time of every merge request.
+Delivery Pipelines
+open Delivery Pipelines
+show me Delivery Pipelines
+go to the Pipelines tab in Delivery
+is main green
+The latest GitLab pipeline of each merge request and the state of main for each project.
+Releases
+open Releases
+show me Releases
+go to the Releases tab in Delivery
+what is deployed on staging
+The staging deploys and the latest STAGING-VERIFY result of each service, with links to the runs.

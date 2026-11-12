@@ -1,6 +1,7 @@
 ---
 lane: s-j-retire-allowlist
-state: ready
+state: parked
+parked_from: ready
 next_actor: kiro
 depends_on: [s-j-route-inventory]
 executor: kiro
@@ -11,7 +12,7 @@ repos: [exafyltd/vitana-v1]
 paths:
   - .github/workflows/SUPABASE-FUNCTIONS-RETIRE.yml
   - docs/validation/**
-updated: 2026-11-01T16:59Z
+updated: 2026-11-08T12:07Z
 vtid: VTID-05441
 ---
 # Lane: s-j-retire-allowlist (repo vitana-v1)
@@ -25,3 +26,6 @@ Lane created with the plan.
 
 ### 2026-11-01T16:59Z · ci-plan-spar · ready (VTID allocated)
 VTID-05441 allocated after policy approval (converged-auto-v1).
+
+### 2026-11-08T12:07Z · kiro-hotmail-202611061752-cc1f · ready → parked (superseded)
+superseded by s-j-retire-allowlist-v2 (VTID-05463), done on main. No further work in this lane.

@@ -1,6 +1,6 @@
 ---
 lane: nav-paths
-state: in-review
+state: done
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -11,10 +11,10 @@ lane_admin: true
 repos: [exafyltd/vitana-platform]
 paths:
   - .kiro/specs/agentic-delivery/lanes/gateway-delivery.md
-claimed_by: kiro-exafy-202611052207-653d
+claimed_by: kiro-exafy-202611071142-d7ed
 branch: kiro/agentic-delivery/nav-paths
 pr: https://github.com/exafyltd/vitana-platform/pull/4722
-updated: 2026-11-05T22:19Z
+updated: 2026-11-07T21:07Z
 vtid: VTID-05563
 ---
 # Lane `nav-paths`: lane gateway-delivery may change the four voice-navigation files its Delivery screen needs
@@ -62,3 +62,13 @@ Findings: [non-blocking] Independence judged satisfied: the caller kiro-exafy-20
 Findings: [non-blocking] The branch is behind main (merge-base 0f45367bb6, origin/main 0e5a74a72a, 3 commits); none of them touches the agentic-delivery spec, scripts/collab/, .kiro/pipeline/, collaboration.md, the navigation data or the ownership guard. The land step brings it up to date and re-checks under §7b.
 Findings: [non-blocking] For lane gateway-delivery's own review: it may now commit nav-embeddings.bin/.json, which plan.md:740-742 says come from one Bedrock call by the owner or CI, never from a session; its reviewer should check where the vectors came from. tasks.md G2 does not list the four files; plan.md:740-742 is their plan reference. This lane's evidence uses only placeholder bytes in scratch commits that were never pushed, with no Bedrock, AWS, gateway or Supabase call.
 Next: the land step merges under §7b once the PR is up to date with main and land-guard.mjs merge shows every required check green on that head.
+
+### 2026-11-07T21:07Z · kiro-exafy-202611071142-d7ed · stale claim broken; closing record (owner instruction)
+The owner instructed (2026-11-07) to finish the GitLab migration. The builder's claim was older than 24 h with no new commit and was released with --stale. PR #4722 merged as 7ec024340a with the reviewer-agent accept above in this log; this entry only writes the closing record.
+
+### 2026-11-07T21:07Z · kiro-exafy-202611071142-d7ed · in-review → verified
+merge: 7ec024340aaa0995e44f31cbad82d8dd9109b145 (exafyltd/vitana-platform#4722)
+authority: §7b PM rule (the accept in this log; the PR was merged earlier without a closing record).
+
+### 2026-11-07T21:07Z · kiro-exafy-202611071142-d7ed · verified → done
+Closed.

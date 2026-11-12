@@ -1,6 +1,6 @@
 ---
 lane: tenant-lifecycle-db
-state: ready
+state: done
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -12,9 +12,12 @@ paths:
   - supabase/migrations/20261102070350_vtid_*_mt_tenant_archive_switch.sql
   - docs/multitenancy/MIGRATION-QUEUE.md
   - scripts/ci/migration-drift-baseline.json
-updated: 2026-11-02T16:20Z
+updated: 2026-11-07T13:35Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05493
+claimed_by: kiro-hotmail-202611061752-cc1f
+branch: kiro/mt-tenant-admin-r2/tenant-lifecycle-db
+pr: https://github.com/exafyltd/vitana-platform/pull/4788
 ---
 # Tenant lifecycle DB — deactivate/archive + closing switch RPC (repo vitana-platform)
 
@@ -44,3 +47,33 @@ Re-plan of `mt-tenant-admin/tenant-lifecycle-db`. Versions day-shifted to `20261
 
 ### 2026-11-02T16:20Z · ci-plan-spar · ready (VTID allocated)
 VTID-05493 allocated after policy approval (converged-auto-v1).
+
+### 2026-11-07T12:45Z · agent-vitana-lane-reviewer-202611071241-c2a8 · review
+review: accept
+head: 1eb7538e52067114364359b8184231cef8b0ed68
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4788
+Findings: non-blocking: default-tenant fallback depends on open_signup (owner to confirm); non-blocking: queue rows 30-31 collide with PR #4787, renumber on second landing; non-blocking: current_tenant_id() unchanged by design; non-blocking: migrations need owner approval before apply, CI result taken from the caller
+Next: the land step merges under §7b
+
+### 2026-11-07T13:20:00Z · agent-vitana-lane-reviewer-202611071317-ab43 · review
+review: accept
+head: c8d8327c8c7e604e5e70b2c1a05581f5c1c47ea2
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4788
+Findings: non-blocking: acceptance.md still says queue rows 30-31 and count 113 (now 32-33 and 119); MIGRATION-QUEUE note says "Row 30 creates the snapshot table" (should be row 32); route 401 not independently confirmed by me (shell blocked the grep), relying on the caller's account, validator output and green CI; pgTAP and static pins sit under docs/validation/ and are not run by CI (recorded deviation); nothing applied, migrations need owner approval (section 7d)
+Next: the land step merges under §7b
+
+### 2026-11-07T13:30Z · kiro-hotmail-202611061752-cc1f · ready → executing
+Built on branch kiro/mt-tenant-admin-r2/tenant-lifecycle-db; recorded here at the closing, because one transition per PR meant the PR carried no lane-state entry.
+
+### 2026-11-07T13:30Z · kiro-hotmail-202611061752-cc1f · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/4788. Reviewed on head `c8d8327c8c` (accept entry above, reviewer agent claude-sonnet-5.5).
+
+### 2026-11-07T13:30Z · kiro-hotmail-202611061752-cc1f · in-review → verified
+merge: 9d4aa61c2434b54e989c333b1563d9c94b1829f5 (exafyltd/vitana-platform#4788)
+authority: §7b PM rule. Squash merge by land-guard on head `f375fee508`: the reviewed head `c8d8327c8c` plus the review-entry commit. `land-guard review` ok, `land-guard checks` green, PR up to date. No lane code changed after the accept.
+The migrations in this lane are in the repository and NOT applied. Applying them needs the owner's approval per file and database (collaboration.md §7d). Next: STAGING-VERIFY on the merge commit, then the `done` record.
+
+### 2026-11-07T13:35Z · kiro-hotmail-202611061752-cc1f · verified → done
+Closing record: merge 9d4aa61c2434b54e989c333b1563d9c94b1829f5 (#4788) changes no path under services/gateway or the stage deploy workflow (supabase migrations, tests, docs and the drift baseline only), so AWS-STAGE-DEPLOY-GATEWAY and STAGING-VERIFY did not run for it: this change deploys nothing. It is done at merge with green checks (12/12 on the final head). The migrations 20261102070300 and 20261102070350 are on main and NOT applied; applying them needs the owner's approval per file and database (collaboration.md §7d). The lane claim is released once this record is on main.

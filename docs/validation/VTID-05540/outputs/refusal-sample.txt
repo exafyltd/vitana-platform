@@ -1,0 +1,7 @@
+# VTID-05540 sample refusal (SIMULATION): the project is vitana-platform
+# $ node scripts/eng/rehearse.mjs --project vitana-platform --agents 12
+
+rehearse: refusing to start; nothing was written:
+  - project "vitana-platform" is not marked rehearsal: true in gitlab-settings.json
+  - project "vitana-platform" has profile "mirror", not native (a mirrored project is never rehearsed on)
+  - project "vitana-platform" has landing: false, so the merge bot would never land anything there

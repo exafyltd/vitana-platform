@@ -337,3 +337,9 @@ deferred here on purpose), the gateway's provider abstraction for the Project Ma
 into AWS on a trusted runner, rootless image builds, per-merge-request previews, a batch merge queue, retiring the legacy
 runner, RDS and a second GitLab node.
 <!-- plan:end -->
+
+- `settings-fix` (2026-11-07, late lane): the settings sync wrote secrets through `file:///dev/stdin`, which the AWS CLI cannot read under systemd, so every secret write failed on the GitLab machine. The lane changes only `scripts/eng/gitlab-settings.mjs` and its test to write from a private file. It depends on `settings` (done). PLAN-SPAR allocates its VTID.
+
+## Late lanes
+- `settings-fix-v2` (2026-11-07, late lane, executor kiro, seat exafy, reviewer agent): the same fix as `settings-fix` (secret values through a 0600 file in a 0700 temp directory, removed in finally; see `lanes/settings-fix.md`), on a new branch `kiro/eng-gitlab-m2/settings-fix-v2`, because the branch and the lane id must match. Paths as `settings-fix`; depends on `settings` (done). PLAN-SPAR allocates its VTID.
+- `runner-pin-jq` (2026-11-07, late lane, executor kiro, seat exafy, reviewer agent): pin `gitlab-runner-helper-images` with `gitlab-runner` in both installers (the fleet manager never installed the runner), install `jq` in the platform `.gateway` jobs (28 gateway tests fail on GitLab with `jq: not found`), and record the fleet size in the fleet runbook. Evidence: `docs/validation/VTID-05555/outputs/read-1-findings.md`. Depends on `fleet` and `settings` (done). PLAN-SPAR allocates its VTID.

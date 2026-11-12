@@ -1,0 +1,19 @@
+{
+  "vtid": "VTID-05558",
+  "slug": "live-room-edit-cohost",
+  "lane": "db-cohost-authz",
+  "kind": "feature",
+  "sparring_record": "docs/validation/VTID-05558/plan-sparring.md",
+  "summary": "Host helper live_room_is_host, co-host validation live_room_filter_co_hosts, the host gate of 13 live-room functions, and a guard that only the gateway writes community_live_streams.co_hosts.",
+  "paths": [
+    "supabase/migrations/20261105170000_live_room_cohost_authz.sql",
+    "scripts/ci/sql-tests/run-live-room-cohost-test.sh",
+    "scripts/ci/sql-tests/live-room-cohost.sql",
+    ".github/workflows/SQL-LIVE-ROOM-COHOST.yml",
+    "DATABASE_SCHEMA.md",
+    ".kiro/specs/live-room-edit-cohost/lanes/db-cohost-authz.md",
+    "docs/validation/VTID-05558/**"
+  ],
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

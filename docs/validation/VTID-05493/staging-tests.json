@@ -1,0 +1,13 @@
+{
+  "vtid": "VTID-05493",
+  "service": "gateway",
+  "not_verified_on_staging": "This lane adds migration files, a pgTAP test, read-only check SQL and one static gateway test. Nothing is applied from the PR: each file is applied later through RUN-MIGRATION.yml, one file per dispatch, after the owner approves the files and the target database (collaboration.md section 7d). Staging shares the production database, so the staging deploy runs no code that reads anything new (the gateway routes that call the RPCs ship in the tenant-admin-api lane). The static test over the migration files runs in the gateway CI (docs/validation/VTID-05493/static-pins.test.mts, outputs/) and is not a staging suite. The staging check is read-only: docs/validation/VTID-05493/live-before.sql before, post-apply-checks.sql after, rollback-check.sql after a rollback. No suite points at vitanaland.com.",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "existing tenant admin route is still mounted and requires auth",
+      "path": "/api/v1/admin/tenants",
+      "expect_status": 401
+    }
+  ]
+}

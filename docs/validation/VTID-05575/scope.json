@@ -1,0 +1,14 @@
+{
+  "vtid": "VTID-05575",
+  "kind": "feature",
+  "paths": [
+    "supabase/migrations/20261102053000_vtid_05575_daily_matches_scope.sql",
+    "supabase/migrations/20261102053100_vtid_05575_daily_matches_guard.sql",
+    "supabase/migrations/20261102053200_vtid_05575_intent_matchers_scope.sql",
+    "supabase/tests/mt-network-matching-scope.pgtap.sql",
+    "docs/validation/VTID-05575/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05575/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

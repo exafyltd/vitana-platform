@@ -1,0 +1,6 @@
+# docs/validation/VTID-05547/staging-tests.json checked with scripts/ci/staging-verify/lib.cjs validateManifest (the validator run.mjs check-pr uses)
+validateManifest: {"ok":true,"errors":[]}  (12 tests: 8 http, 4 existing)
+found   /command-hub/delivery.js  <- "window.DeliveryScreen", "/api/v1/delivery/summary", "Include shadow runs"
+found   /command-hub/app.js?v=20261121-vtid-05082-vtid-05547  <- "\"section\": \"delivery\"", "script.src = '/command-hub/delivery.js", "var deliveryModule = {"
+found   /command-hub/  <- "app.js?v=20261121-vtid-05082-vtid-05547", "styles.css?v=20261121-vtid-05082-vtid-05547"
+route probes (served by the lane code, read-only, no write): GET /api/v1/delivery/summary 401, GET /api/v1/delivery/metrics 401, GET summary with the runner invalid bearer 401, POST /api/v1/internal/gitlab/webhook rejected 401 signature_missing, POST /api/v1/github/safe-merge rejected 401

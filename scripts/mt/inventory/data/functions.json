@@ -1,0 +1,4309 @@
+{
+  "generated_by": "scripts/mt/inventory/generate.mjs",
+  "inventory": "functions",
+  "rows": [
+    {
+      "args": "p_categories text[]",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "_ai_connection_categories",
+      "search_path_set": true,
+      "security_definer": false
+    },
+    {
+      "args": "p_redirect_uris text",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "_ai_connection_redirect_host",
+      "search_path_set": true,
+      "security_definer": false
+    },
+    {
+      "args": "p text",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "_index_boost_activity_key",
+      "search_path_set": false,
+      "security_definer": false
+    },
+    {
+      "args": "p_source text",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "_memory_provenance_rank",
+      "search_path_set": false,
+      "security_definer": false
+    },
+    {
+      "args": "p_vtid text, p_metadata jsonb, p_actor text",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "_plan_sparring_gate_eval",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "_plan_sparring_mode",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "_plan_sparring_sessions_touch",
+      "search_path_set": true,
+      "security_definer": false
+    },
+    {
+      "args": "p_recommendation_id uuid, p_user_id uuid, p_action_taken jsonb",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "accept_recommendation",
+      "search_path_set": false,
+      "security_definer": true
+    },
+    {
+      "args": "p_recommendation_id uuid, p_user_id uuid",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "activate_autopilot_recommendation",
+      "search_path_set": false,
+      "security_definer": true
+    },
+    {
+      "args": "p_tenant_id uuid, p_user_id uuid, p_capability_key text, p_event_name text, p_idempotency_key text, p_decision_id text, p_source_surface text, p_occurred_at timestamp with time zone, p_metadata jsonb",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "advance_capability_awareness",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_authorization_id text",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "ai_connection_authorization_info",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_authorization_id text, p_categories text[]",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "ai_connection_grant_from_authorization",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_client_id uuid",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "ai_connection_grant_revoke",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_client_id uuid, p_categories text[]",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "ai_connection_grant_update",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_suggestion_id uuid, p_action text, p_feedback jsonb",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "alignment_act_on_suggestion",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "alignment_cleanup_expired",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_max_suggestions integer, p_alignment_domains text[], p_min_relevance integer, p_min_shared_signals integer",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "alignment_generate_suggestions",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_status text[], p_alignment_domains text[], p_limit integer",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "alignment_get_suggestions",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_suggestion_id uuid",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "alignment_mark_shown",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_source text, p_layer text, p_module text, p_sparring_id uuid, p_plan_hash text",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "allocate_global_vtid",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "analyze_orphan_rows",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "anticipatory_guidance_update_timestamp",
+      "search_path_set": false,
+      "security_definer": false
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "assistant_promises_touch_updated_at",
+      "search_path_set": false,
+      "security_definer": false
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "auto_triage_pending_feedback_tickets",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "autopilot_recommendations_set_role_scope",
+      "search_path_set": true,
+      "security_definer": false
+    },
+    {
+      "args": "p_session_id uuid",
+      "caller_check": true,
+      "executable_by": [],
+      "kind": "function",
+      "name": "availability_clear_override",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_session_id uuid, p_turn_id uuid, p_availability_level text, p_availability_confidence integer, p_availability_factors jsonb, p_time_window text, p_time_window_confidence integer, p_estimated_minutes integer, p_time_window_factors jsonb, p_readiness_score numeric, p_readiness_confidence integer, p_readiness_factors jsonb, p_risk_flags jsonb, p_action_depth jsonb, p_availability_tag text, p_was_user_override boolean",
+      "caller_check": true,
+      "executable_by": [],
+      "kind": "function",
+      "name": "availability_compute",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_session_id uuid",
+      "caller_check": true,
+      "executable_by": [],
+      "kind": "function",
+      "name": "availability_get_override",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_session_id uuid, p_limit integer",
+      "caller_check": true,
+      "executable_by": [],
+      "kind": "function",
+      "name": "availability_get_recent",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_session_id uuid, p_availability_level text, p_time_available_minutes integer, p_readiness_override text, p_reason text",
+      "caller_check": true,
+      "executable_by": [],
+      "kind": "function",
+      "name": "availability_set_override",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_batch integer",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "backfill_health_home_tenant",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "billing_bump_updated_at",
+      "search_path_set": false,
+      "security_definer": false
+    },
+    {
+      "args": "p_user_id uuid, p_user_email text",
+      "caller_check": true,
+      "executable_by": [],
+      "kind": "function",
+      "name": "bootstrap_admin_user",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_step goal_plan_steps",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "calendar_sync_goal_plan_step",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "caller_tenant_id",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_message text, p_session_id uuid, p_self_reported_energy text, p_self_reported_note text, p_include_wearables boolean",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "capacity_compute",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_actions jsonb, p_respect_capacity boolean",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "capacity_filter_actions",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_session_id uuid",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "capacity_get_current",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_energy_state text, p_note text, p_duration_minutes integer",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "capacity_override",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_payload jsonb",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "catalog_add_product",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_payload jsonb",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "catalog_add_service",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_constraint_type text, p_constraint_key text",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "check_behavior_constraint",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_key text, p_sample_value text",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "check_canonical_fact_key",
+      "search_path_set": false,
+      "security_definer": false
+    },
+    {
+      "args": "p_target_user_id uuid, p_requester_user_id uuid, p_access_type text",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "check_memory_access_grant",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_lookback_days integer",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "ci_ledger_integrity_check",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "ci_orb_session_state_health",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "ci_schema_inventory",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "ci_tenant_isolation_health",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "ci_tenant_isolation_health_by_tenant",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "ci_vital_systems_health",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_user_id uuid, p_tenant_id uuid, p_local_date date, p_mode text, p_sender text, p_moment_key text, p_card_type text, p_facts jsonb",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "claim_companion_message",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_limit integer",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "claim_due_audiobook_reminders",
+      "search_path_set": true,
+      "security_definer": false
+    },
+    {
+      "args": "p_referral_id uuid, p_inviter_id uuid, p_amount integer, p_cap integer, p_window_days integer, p_now timestamp with time zone",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "claim_invite_reward",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_user_id uuid, p_tenant_id uuid, p_local_day date, p_action_key text, p_channel text",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "claim_onboarding_touch",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_name text",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "claim_routine_run",
+      "search_path_set": true,
+      "security_definer": false
+    },
+    {
+      "args": "p_vtid text, p_worker_id text, p_expires_minutes integer",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "claim_vtid_task",
+      "search_path_set": false,
+      "security_definer": false
+    },
+    {
+      "args": "p_user_id uuid, p_tenant_id uuid, p_sender_slug text",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "claim_welcome_message",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "classify_pending_feedback_tickets",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "cleanup_expired_autopilot_recommendations",
+      "search_path_set": false,
+      "security_definer": true
+    },
+    {
+      "args": "p_session_id text, p_transcript_hash text, p_status text, p_entities_count integer, p_relationships_count integer, p_signals_count integer, p_error_message text, p_processing_ms integer",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "cognee_track_extraction",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_payload jsonb",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "community_create_group",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_payload jsonb",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "community_create_meetup",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "community_get_matching_rules",
+      "search_path_set": false,
+      "security_definer": false
+    },
+    {
+      "args": "p_recommendation_id uuid",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "community_get_recommendation_explain",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_user_id uuid, p_date date, p_type text",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "community_get_recommendations",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_group_id uuid",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "community_join_group",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_user_id uuid, p_date date",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "community_recompute_recommendations",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_recommendation_id uuid, p_user_id uuid",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "complete_autopilot_recommendation",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_run_id text, p_status text, p_recommendations_generated integer, p_duplicates_skipped integer, p_errors jsonb, p_analysis_summary jsonb",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "complete_autopilot_recommendation_run",
+      "search_path_set": false,
+      "security_definer": true
+    },
+    {
+      "args": "p_user_id uuid, p_pillar text, p_reference_date date",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "compute_trend_delta",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_user_id uuid",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "compute_user_lifecycle_stage",
+      "search_path_set": false,
+      "security_definer": false
+    },
+    {
+      "args": "p_type text, p_key text",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "constraint_delete",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_type text, p_key text, p_value jsonb, p_severity text, p_reason text",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "constraint_set",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_bundle_id text",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "context_assembly_get_bundle_details",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_limit integer, p_offset integer",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "context_assembly_get_history",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_bundle_id text, p_bundle_hash text, p_tenant_id uuid, p_user_id uuid, p_active_role text, p_intent text, p_memory_ids text[], p_diary_ids text[], p_garden_node_ids text[], p_domain_weights jsonb, p_items_considered integer, p_items_included integer, p_assembly_duration_ms integer, p_constraints jsonb, p_assembled_at timestamp with time zone",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "context_assembly_log",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_hours integer",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "conversation_metrics_backfill",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_hour timestamp with time zone",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "conversation_metrics_rollup_hour",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_since timestamp with time zone, p_ignored_after interval, p_user_id uuid",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "conversation_offer_outcome_stats",
+      "search_path_set": true,
+      "security_definer": false
+    },
+    {
+      "args": "since_time timestamp with time zone",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "count_events_by_stage",
+      "search_path_set": false,
+      "security_definer": true
+    },
+    {
+      "args": "p_tenant_id uuid, p_user_id uuid",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "count_prompts_today",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_sources text[], p_trigger_type text, p_triggered_by text",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "create_autopilot_recommendation_run",
+      "search_path_set": false,
+      "security_definer": true
+    },
+    {
+      "args": "p_family text, p_module text, p_title text, p_status text, p_tenant text, p_is_test boolean, p_summary text, p_metadata jsonb",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "create_vtid_atomic",
+      "search_path_set": false,
+      "security_definer": true
+    },
+    {
+      "args": "p_vtid text, p_tenant_id text, p_spec_content jsonb, p_primary_domain text, p_system_surface text[], p_created_by text, p_metadata jsonb",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "create_vtid_spec",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_deposit_id uuid, p_stripe_event_id text, p_stripe_pi_id text",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "credit_deposit",
+      "search_path_set": false,
+      "security_definer": true
+    },
+    {
+      "args": "p_tenant_id uuid, p_user_id uuid, p_amount integer, p_type text, p_source text, p_source_event_id text, p_description text",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "credit_wallet",
+      "search_path_set": false,
+      "security_definer": true
+    },
+    {
+      "args": "p_account_id uuid, p_amount_minor bigint, p_currency text, p_reference_type text, p_reference_id text, p_description text, p_metadata jsonb",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "credit_wallet_for_earning",
+      "search_path_set": false,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": true,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "current_active_role",
+      "search_path_set": false,
+      "security_definer": false
+    },
+    {
+      "args": "",
+      "caller_check": true,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "current_tenant",
+      "search_path_set": false,
+      "security_definer": false
+    },
+    {
+      "args": "",
+      "caller_check": true,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "current_tenant_id",
+      "search_path_set": false,
+      "security_definer": false
+    },
+    {
+      "args": "",
+      "caller_check": true,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "current_user_id",
+      "search_path_set": false,
+      "security_definer": false
+    },
+    {
+      "args": "event jsonb",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "custom_access_token_hook_shadow",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_topic text, p_status text, p_expires_at timestamp with time zone, p_reason text",
+      "caller_check": true,
+      "executable_by": [],
+      "kind": "function",
+      "name": "d41_set_consent",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_boundary_type text, p_value text, p_reason text",
+      "caller_check": true,
+      "executable_by": [],
+      "kind": "function",
+      "name": "d41_set_personal_boundary",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_session_id uuid",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "d42_get_cached_priority",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "d42_get_domain_weights",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_limit integer, p_offset integer",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "d42_get_fusion_history",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_session_id uuid",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "d42_invalidate_cache",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_session_id uuid, p_primary_domain text, p_secondary_domains text[], p_priority_tags text[], p_stability_seconds integer, p_context_hash text",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "d42_set_cached_priority",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_session_id uuid, p_turn_id uuid, p_input_summary jsonb, p_resolved_plan jsonb, p_conflicts_count integer, p_conflicts_resolved jsonb, p_rules_applied text[], p_duration_ms integer, p_input_hash text",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "d42_store_audit",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_plan jsonb",
+      "caller_check": true,
+      "executable_by": [],
+      "kind": "function",
+      "name": "d43_create_adaptation_plan",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_snapshot_type text, p_adaptation_plan_id uuid",
+      "caller_check": true,
+      "executable_by": [],
+      "kind": "function",
+      "name": "d43_create_snapshot",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_domain text, p_key text, p_value jsonb, p_numeric_value double precision, p_source text, p_confidence integer, p_metadata jsonb",
+      "caller_check": true,
+      "executable_by": [],
+      "kind": "function",
+      "name": "d43_record_data_point",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_signal_id uuid, p_evidence jsonb",
+      "caller_check": true,
+      "executable_by": [],
+      "kind": "function",
+      "name": "d44_add_signal_evidence",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_signal jsonb",
+      "caller_check": true,
+      "executable_by": [],
+      "kind": "function",
+      "name": "d44_create_signal",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_signal_id uuid, p_action_type text, p_action_details jsonb",
+      "caller_check": true,
+      "executable_by": [],
+      "kind": "function",
+      "name": "d44_record_intervention",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_signal_id uuid, p_status text, p_feedback text",
+      "caller_check": true,
+      "executable_by": [],
+      "kind": "function",
+      "name": "d44_update_signal_status",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_window_id uuid, p_feedback text, p_notes text",
+      "caller_check": true,
+      "executable_by": [],
+      "kind": "function",
+      "name": "d45_acknowledge_window",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_horizons text[], p_domains text[], p_signals_analyzed integer, p_patterns_matched integer, p_risk_windows integer, p_opportunity_windows integer, p_duration_ms integer, p_input_summary jsonb",
+      "caller_check": true,
+      "executable_by": [],
+      "kind": "function",
+      "name": "d45_record_forecast_history",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_window jsonb",
+      "caller_check": true,
+      "executable_by": [],
+      "kind": "function",
+      "name": "d45_store_window",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_trajectory_type text, p_confidence integer, p_what_is_working text, p_why_it_matters text, p_suggested_focus text, p_source_signals uuid[], p_source_trends text[], p_context_snapshot jsonb, p_dismissible boolean",
+      "caller_check": true,
+      "executable_by": [],
+      "kind": "function",
+      "name": "d50_store_reinforcement",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_trajectory_type text, p_is_eligible boolean, p_confidence integer, p_days_sustained integer, p_evidence_summary text",
+      "caller_check": true,
+      "executable_by": [],
+      "kind": "function",
+      "name": "d50_update_eligibility_cache",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": true,
+      "executable_by": [],
+      "kind": "function",
+      "name": "daily_matches_scope_guard",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_account_id uuid, p_amount_minor bigint, p_currency text, p_reference_type text, p_reference_id text, p_description text, p_metadata jsonb",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "debit_wallet_for_spend",
+      "search_path_set": false,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "dev_autopilot_worker_queue_touch_updated_at",
+      "search_path_set": false,
+      "security_definer": false
+    },
+    {
+      "args": "p_tenant_id uuid, p_active_role text",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "dev_bootstrap_request_context",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_tenant_id uuid, p_user_id uuid, p_active_role text",
+      "caller_check": true,
+      "executable_by": [],
+      "kind": "function",
+      "name": "dev_set_request_context",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_recommendation_id uuid, p_user_id uuid, p_feedback_note text",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "dismiss_recommendation",
+      "search_path_set": false,
+      "security_definer": true
+    },
+    {
+      "args": "p_message text, p_session_id uuid, p_turn_id uuid, p_response_time_seconds integer, p_correction_count integer, p_interaction_count integer",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "emotional_cognitive_compute",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_signal_id uuid",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "emotional_cognitive_explain",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_session_id uuid",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "emotional_cognitive_get_current",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_signal_id uuid, p_override jsonb",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "emotional_cognitive_override",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "enforce_identity_lock_memory_facts",
+      "search_path_set": false,
+      "security_definer": false
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "enforce_vtid_spec_immutability",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_user_id uuid, p_dry_run boolean",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "erase_user_data",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "erp_audit_log_immutable",
+      "search_path_set": false,
+      "security_definer": false
+    },
+    {
+      "args": "p_id bigint, p_status text, p_composed_text text, p_composed_by_model text, p_chat_message_id uuid",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "finish_companion_message",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_id bigint, p_status text",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "finish_onboarding_touch",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_id uuid, p_status text, p_summary text, p_findings jsonb, p_error text",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "finish_routine_run",
+      "search_path_set": true,
+      "security_definer": false
+    },
+    {
+      "args": "p_user_id uuid, p_sender_slug text, p_status text, p_chat_message_id uuid",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "finish_welcome_message",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "fire_welcome_chat_on_membership",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_tenant_id uuid, p_user_id uuid, p_credits integer, p_bucket text, p_feature_key text, p_idempotency_key text",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "fn_consume_credits",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_tenant_id uuid, p_user_id uuid, p_feature_key text, p_window_seconds integer",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "fn_get_feature_usage",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_tenant_id uuid, p_user_id uuid, p_feature_key text, p_window_seconds integer",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "fn_get_feature_usage_in_window",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_tenant_id uuid, p_user_id uuid, p_feature_key text, p_amount integer, p_window_seconds integer",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "fn_increment_feature_usage",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_code text",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "fn_normalize_code",
+      "search_path_set": false,
+      "security_definer": false
+    },
+    {
+      "args": "p_tenant_id uuid, p_user_id uuid, p_code text",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "fn_redeem_code",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "gcp_network_visible_guard",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_environment text",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "get_active_llm_policy",
+      "search_path_set": false,
+      "security_definer": true
+    },
+    {
+      "args": "p_thread_id uuid, p_limit integer",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "get_active_thread_messages",
+      "search_path_set": false,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "get_autopilot_analyzer_sources",
+      "search_path_set": false,
+      "security_definer": true
+    },
+    {
+      "args": "p_limit integer, p_offset integer, p_trigger_type text",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "get_autopilot_recommendation_history",
+      "search_path_set": false,
+      "security_definer": true
+    },
+    {
+      "args": "p_status text[], p_limit integer, p_offset integer, p_user_id uuid",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "get_autopilot_recommendations",
+      "search_path_set": false,
+      "security_definer": true
+    },
+    {
+      "args": "p_user_id uuid",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "get_autopilot_recommendations_count",
+      "search_path_set": false,
+      "security_definer": true
+    },
+    {
+      "args": "p_constraint_type text",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "get_behavior_constraints",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_user_id uuid, p_days integer",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "get_context_exclusion_breakdown",
+      "search_path_set": false,
+      "security_definer": false
+    },
+    {
+      "args": "p_user_id uuid, p_days integer",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "get_context_window_stats",
+      "search_path_set": false,
+      "security_definer": false
+    },
+    {
+      "args": "p_limit integer, p_offset integer, p_feedback_type text",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "get_correction_history",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_tenant_id uuid, p_user_id uuid, p_entity text, p_fact_keys text[]",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "get_current_facts",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_user_id uuid",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "get_index_boost",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_user_id uuid",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "get_index_standing",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": true,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "get_my_permitted_roles",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_vtid text",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "get_next_spec_version",
+      "search_path_set": false,
+      "security_definer": true
+    },
+    {
+      "args": "p_vtid text, p_environment text",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "get_or_create_vtid_policy_snapshot",
+      "search_path_set": false,
+      "security_definer": true
+    },
+    {
+      "args": "p_limit integer",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "get_pending_worker_tasks",
+      "search_path_set": false,
+      "security_definer": false
+    },
+    {
+      "args": "p_user_id uuid",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "get_profile_health_summary",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_user_id uuid",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "get_public_vitana_index",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_user_id uuid, p_status text[], p_limit integer, p_offset integer",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "get_recommendation_inbox",
+      "search_path_set": false,
+      "security_definer": true
+    },
+    {
+      "args": "p_user_id uuid",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "get_recommendation_inbox_count",
+      "search_path_set": false,
+      "security_definer": true
+    },
+    {
+      "args": "p_thread_id uuid, p_summary_type text",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "get_thread_summary",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "get_trust_scores",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_user_id uuid",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "get_user_limitations_impact",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_user_id uuid",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "get_user_profile",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_tenant_id uuid, p_user_id uuid",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "get_user_prompt_prefs",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_user_id uuid",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "get_user_stripe_account",
+      "search_path_set": false,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "get_user_stripe_status",
+      "search_path_set": false,
+      "security_definer": true
+    },
+    {
+      "args": "p_vtid text, p_verify_checksum boolean",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "get_vtid_spec",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "get_worker_connector_stats",
+      "search_path_set": false,
+      "security_definer": false
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "goal_plan_touch_updated_at",
+      "search_path_set": false,
+      "security_definer": false
+    },
+    {
+      "args": "p_date date",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "health_compute_vitana_index",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_date date, p_model_version text",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "health_compute_vitana_index",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_user_id uuid, p_date date, p_model_version text",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "health_compute_vitana_index_core",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_user_id uuid, p_date date, p_model_version text",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "health_compute_vitana_index_for_user",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_from date, p_to date",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "health_get_summary",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_user uuid",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "health_home_tenant_id",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_payload jsonb",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "health_ingest_lab_report",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_payload jsonb",
+      "caller_check": true,
+      "executable_by": [],
+      "kind": "function",
+      "name": "health_ingest_wearable_samples",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_user uuid, p_codes smallint[], p_from date, p_to date",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "health_series_daily_resolved",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "health_sources_bump_updated",
+      "search_path_set": true,
+      "security_definer": false
+    },
+    {
+      "args": "p_is_active boolean, p_disconnected_at timestamp with time zone",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "health_sources_connection_status",
+      "search_path_set": true,
+      "security_definer": false
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "health_sources_reconcile_counts",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_now timestamp with time zone",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "health_store_ensure_partitions",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_tenant uuid, p_user uuid, p_batch_id uuid, p_source_id uuid, p_source_kind text, p_source_rank smallint, p_consent_id uuid, p_tz text, p_series jsonb, p_records jsonb",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "health_store_ingest",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_now timestamp with time zone",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "health_store_partition_check",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_now timestamp with time zone",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "health_store_purge",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_user uuid, p_category text, p_source_id uuid, p_at timestamp with time zone",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "health_store_suppress",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_user uuid, p_category text, p_source_id uuid",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "health_store_unsuppress",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "identity_authorized_sources",
+      "search_path_set": false,
+      "security_definer": false
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "identity_locked_fact_keys",
+      "search_path_set": false,
+      "security_definer": false
+    },
+    {
+      "args": "p_tenant_id uuid, p_user_id uuid, p_thread_id uuid",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "increment_thread_turn",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_inference_id uuid, p_reason text",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "inference_downgrade",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_inference_id uuid, p_evidence text",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "inference_reinforce",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_title text, p_summary text, p_domain text, p_risk_level text, p_impact_score integer, p_effort_score integer, p_source_type text, p_source_ref text, p_fingerprint text, p_run_id text, p_suggested_files text[], p_suggested_endpoints text[], p_suggested_tests text[], p_expires_days integer",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "insert_autopilot_recommendation",
+      "search_path_set": false,
+      "security_definer": true
+    },
+    {
+      "args": "p_cand_tenant uuid, p_src_tenant uuid, p_cand_user uuid, p_scope text",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "intent_pool_allows",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_quiet_hours jsonb, p_current_time time without time zone",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "is_in_quiet_hours",
+      "search_path_set": true,
+      "security_definer": false
+    },
+    {
+      "args": "p_user_id uuid",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "is_network_candidate",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_user_id uuid",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "is_network_excluded_account",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_tenant_id uuid, p_user_id uuid",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "jev_member_quota_bump",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_tenant_id uuid, p_plane text, p_input_tokens bigint, p_cost_usd numeric",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "jev_record_spend",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_days integer",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "jev_shadow_gate_stats",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_session_id uuid, p_include_goals boolean, p_include_trajectory boolean, p_context_window_days integer",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "life_stage_assess",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_message text, p_session_id uuid, p_source text",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "life_stage_detect_goal",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_assessment_id uuid",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "life_stage_explain",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_session_id uuid",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "life_stage_get_current",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "life_stage_get_goals",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_assessment_id uuid, p_override jsonb",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "life_stage_override",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_actions jsonb, p_session_id uuid, p_include_trade_offs boolean",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "life_stage_score_trajectory",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_goal_id uuid, p_updates jsonb",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "life_stage_update_goal",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "lifestyle_profile_get",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_routine_style text, p_social_orientation text, p_convenience_bias text, p_experience_type text, p_novelty_tolerance text",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "lifestyle_profile_set",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_hours integer, p_env text",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "llm_telemetry_summary",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_user_id uuid, p_date date",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "longevity_compute_daily",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_date date",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "longevity_explain_daily",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_from date, p_to date",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "longevity_get_daily",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_user_id uuid",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "mark_companion_replied",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_recommendation_id uuid, p_user_id uuid",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "mark_recommendation_read",
+      "search_path_set": false,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "marketplace_sources_config_bump_updated",
+      "search_path_set": false,
+      "security_definer": false
+    },
+    {
+      "args": "",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "me_context",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_role text",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "me_set_active_role",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "membership_drift_report",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_memory_item_id uuid, p_reason_code text, p_context jsonb",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "memory_adjust_confidence",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_decay_threshold_days integer",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "memory_apply_time_decay",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_tenant_id text, p_user_id uuid, p_op text, p_tier text, p_actor_id text, p_policy_version text, p_source_engine text, p_confidence real, p_source_event_id text, p_health_scope boolean, p_identity_scope boolean, p_details jsonb",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "memory_audit_log_insert",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_reason_code text, p_current_confidence integer, p_context jsonb",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "memory_calculate_adjustment_delta",
+      "search_path_set": false,
+      "security_definer": false
+    },
+    {
+      "args": "p_source_classification text, p_verification_level text, p_sensitivity_flag text",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "memory_compute_initial_confidence",
+      "search_path_set": false,
+      "security_definer": false
+    },
+    {
+      "args": "p_user_id uuid, p_date date",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "memory_compute_quality",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_memory_item_id uuid, p_confirmation_notes text",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "memory_confirm_item",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_memory_item_id uuid, p_correction_notes text, p_new_content text",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "memory_correct_item",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_entity_type text, p_entity_id uuid",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "memory_delete_entity",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "memory_facts_set_sensitivity",
+      "search_path_set": true,
+      "security_definer": false
+    },
+    {
+      "args": "p_memory_item_id uuid, p_limit integer",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "memory_get_confidence_history",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_limit integer, p_categories text[], p_since timestamp with time zone",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "memory_get_context",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_limit integer, p_categories text[], p_since timestamp with time zone",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "memory_get_context_for_personalization",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_limit integer, p_min_confidence integer, p_categories text[], p_since timestamp with time zone, p_include_low_confidence boolean",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "memory_get_context_with_confidence",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_export_id uuid",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "memory_get_export_status",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "memory_get_garden_progress",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_entity_type text",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "memory_get_locked_entities",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_user_id uuid",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "memory_get_quality",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "memory_get_settings",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_entity_type text, p_entity_id uuid",
+      "caller_check": true,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "memory_is_entity_deleted",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_entity_type text, p_entity_id uuid",
+      "caller_check": true,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "memory_is_entity_locked",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "memory_items_set_sensitivity",
+      "search_path_set": true,
+      "security_definer": false
+    },
+    {
+      "args": "p_entity_type text, p_entity_id uuid, p_reason text",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "memory_lock_entity",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "memory_log_confidence_change",
+      "search_path_set": false,
+      "security_definer": false
+    },
+    {
+      "args": "p_source text",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "memory_map_source_classification",
+      "search_path_set": false,
+      "security_definer": false
+    },
+    {
+      "args": "p_domains text[], p_format text",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "memory_request_export",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_payload jsonb",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "memory_retrieve",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_text text",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "memory_sensitivity_of",
+      "search_path_set": true,
+      "security_definer": false
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "memory_set_initial_confidence",
+      "search_path_set": false,
+      "security_definer": false
+    },
+    {
+      "args": "p_domain text, p_visibility text, p_custom_rules jsonb",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "memory_set_visibility",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_entity_type text, p_entity_id uuid",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "memory_unlock_entity",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_payload jsonb",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "memory_write_item",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_readiness_score numeric, p_trust_score integer, p_has_emotional_vulnerability boolean, p_session_id text",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "monetization_check_gating",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "monetization_get_active_cooldowns",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_limit integer, p_offset integer",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "monetization_get_history",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_attempt_type text, p_outcome text, p_readiness_score numeric, p_envelope jsonb, p_user_response text, p_session_id text",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "monetization_record_attempt",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_signal_type text, p_indicator text, p_weight integer, p_context text, p_session_id text",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "monetization_record_signal",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "mt_memfacts_merge",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "mt_memfacts_restore",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_table text",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "mt_orphan_classified_sql",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_table text, p_batch integer",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "mt_orphan_cleanup_batch",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_batch integer",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "mt_orphan_cleanup_run",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "mt_orphan_live_tenants",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "mt_orphan_registry",
+      "search_path_set": true,
+      "security_definer": false
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "mt_orphan_repoint_gate",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "notify_on_global_message",
+      "search_path_set": false,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "notify_on_group_invitation",
+      "search_path_set": false,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "notify_on_lab_report_processed",
+      "search_path_set": false,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "notify_on_memory_garden_grew",
+      "search_path_set": false,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "notify_on_opportunity_surfaced",
+      "search_path_set": false,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "notify_on_predictive_signal",
+      "search_path_set": false,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "notify_on_reaction",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "notify_on_risk_mitigation",
+      "search_path_set": false,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "notify_on_tenant_message",
+      "search_path_set": false,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "notify_welcome_discount",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_limit integer, p_target_type text, p_state text",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "offers_get_memory",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_limit integer, p_target_type text",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "offers_get_recommendations",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_payload jsonb",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "offers_record_outcome",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_payload jsonb",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "offers_set_state",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "q text",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "operator_readonly_query",
+      "search_path_set": true,
+      "security_definer": false
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "orb_session_state_gc",
+      "search_path_set": false,
+      "security_definer": false
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "orb_wake_timelines_touch_updated_at",
+      "search_path_set": false,
+      "security_definer": false
+    },
+    {
+      "args": "p_dimensions text[]",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "overload_compute_baselines",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_time_window_days integer, p_dimensions text[]",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "overload_detect",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_overload_id uuid, p_reason text",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "overload_dismiss",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_overload_id uuid",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "overload_explain",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_dimensions text[]",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "overload_get_baselines",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_include_dismissed boolean, p_limit integer",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "overload_get_detections",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_pattern_type text, p_dimension text, p_signal_sources text[], p_intensity integer, p_trend_direction text, p_supporting_evidence text",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "overload_record_pattern",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "pending_actions_bump_updated",
+      "search_path_set": false,
+      "security_definer": false
+    },
+    {
+      "args": "p_text text",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "pick_specialist_for_text",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_text text, p_tenant_id uuid",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "pick_specialist_for_text_tenant",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_session uuid, p_round jsonb, p_expected_round integer",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "plan_sparring_append_round",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "plan_sparring_check",
+      "search_path_set": true,
+      "security_definer": false
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "plan_sparring_trigger_status",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "preference_bundle_get",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_preference_id uuid",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "preference_confirm",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_category text, p_key text, p_scope text, p_scope_domain text",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "preference_delete",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_limit integer, p_offset integer, p_target_type text",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "preference_get_audit",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_category text, p_key text, p_value jsonb, p_priority integer, p_scope text, p_scope_domain text",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "preference_set",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "provision_platform_user",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "provision_wallet_accounts",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_days integer",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "purge_memory_transcript_turns",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_user_id uuid, p_since timestamp with time zone, p_until timestamp with time zone, p_topic_hint text",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "recall_at_time_range",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "reconcile_vitana_id_mirror",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "record_membership_drift_report",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_tenant_id uuid, p_user_id uuid, p_capability_key text, p_next_ok_at timestamp with time zone, p_is_refresh boolean",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "record_teacher_refresh",
+      "search_path_set": false,
+      "security_definer": true
+    },
+    {
+      "args": "p_payload jsonb",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "record_user_correction",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_tenant_id uuid, p_user_id uuid, p_item_id uuid, p_idempotency_key text, p_currency text, p_country text, p_address jsonb, p_birth_date date, p_age_confirmed boolean, p_now timestamp with time zone",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "redeem_reward_item",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "refresh_all_user_lifecycle_stages",
+      "search_path_set": false,
+      "security_definer": false
+    },
+    {
+      "args": "p_recommendation_id uuid, p_reason text",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "reject_autopilot_recommendation",
+      "search_path_set": false,
+      "security_definer": true
+    },
+    {
+      "args": "p_from_node_id uuid, p_to_node_id uuid, p_relationship_type text, p_origin text, p_context jsonb",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "relationship_add_edge",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_node_type text, p_title text, p_ref_id uuid, p_domain text, p_metadata jsonb",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "relationship_ensure_node",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_domain text, p_node_types text[], p_relationship_types text[], p_min_strength integer, p_limit integer",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "relationship_get_graph",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_min_confidence integer, p_signal_keys text[]",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "relationship_get_signals",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_signal_key text, p_confidence integer, p_evidence jsonb",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "relationship_update_signal",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_item uuid, p_now timestamp with time zone",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "release_expired_reward_reservations",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_order uuid, p_reason text",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "release_reward_reservation",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_lookahead_seconds integer, p_limit integer",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "reminders_claim_due",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "reminders_notify_fire",
+      "search_path_set": false,
+      "security_definer": false
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "reminders_touch_updated_at",
+      "search_path_set": false,
+      "security_definer": false
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "repair_patterns_set_updated_at",
+      "search_path_set": false,
+      "security_definer": false
+    },
+    {
+      "args": "p_payload jsonb",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "repair_trust",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_to uuid, p_scope text, p_message text",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "request_connection",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_actor uuid, p_token text, p_limit integer, p_global boolean",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "resolve_recipient_candidates",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_tenant_id uuid, p_user_id uuid, p_active_role text, p_provided_thread_id uuid, p_session_timeout_hours integer",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "resolve_thread_id",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_request uuid, p_accept boolean",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "respond_connection",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_user_id uuid, p_date date",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "scheduler_community_recompute_recommendations",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_tenant_id uuid, p_date date, p_limit integer, p_cursor uuid",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "scheduler_get_users_batch",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_user_id uuid, p_date date",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "scheduler_longevity_compute_daily",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_user_id uuid, p_date date",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "scheduler_match_recompute_daily",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_user_id uuid, p_date date",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "scheduler_topics_recompute_user_profile",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_user_id uuid, p_date date",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "scheduler_vitana_index_compute_daily",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "search_query text, max_results integer",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "search_knowledge_docs",
+      "search_path_set": false,
+      "security_definer": true
+    },
+    {
+      "args": "p_user_id uuid",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "seed_community_onboarding_autopilot",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "seed_onboarding_autopilot_on_membership",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_order_id uuid, p_status text, p_reason text",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "set_reward_order_status",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_tenant_id uuid, p_role text",
+      "caller_check": true,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "set_role_preference",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_order_id uuid, p_session_id text, p_payment_intent text, p_now timestamp with time zone",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "settle_reward_order_shipping",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_recommendation_id uuid, p_hours integer",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "snooze_autopilot_recommendation",
+      "search_path_set": false,
+      "security_definer": true
+    },
+    {
+      "args": "p_recommendation_id uuid, p_user_id uuid, p_snooze_hours integer",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "snooze_recommendation",
+      "search_path_set": false,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "social_cleanup_expired_cache",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_domain text, p_intent_type text, p_emotional_state text, p_social_intent boolean, p_max_connections integer",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "social_compute_context",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_node_id uuid, p_context_domain text",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "social_compute_proximity",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "social_get_comfort_profile",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_context_domain text, p_limit integer",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "social_get_relevant_connections",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_node_id uuid",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "social_invalidate_cache",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_field text, p_value text, p_source text",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "social_update_comfort_profile",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_reasons jsonb",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "strip_health_match_reasons",
+      "search_path_set": true,
+      "security_definer": false
+    },
+    {
+      "args": "p_plan_id uuid, p_plan_hash text, p_producer text, p_change_class text, p_rounds jsonb, p_base_ref text, p_final_plan_hash text, p_model_log jsonb, p_escalation_reasons text[]",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "submit_plan_sparring_record",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_recommendation_id uuid, p_user_id uuid, p_rating integer, p_note text",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "submit_recommendation_feedback",
+      "search_path_set": false,
+      "security_definer": true
+    },
+    {
+      "args": "p_tenant_slug text",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "switch_to_tenant_by_slug",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "system_capabilities_touch_updated_at",
+      "search_path_set": false,
+      "security_definer": false
+    },
+    {
+      "args": "p_limit integer, p_offset integer, p_target_type text",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "taste_alignment_audit_get",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "taste_alignment_bundle_get",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "taste_profile_get",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_simplicity_preference text, p_premium_orientation text, p_aesthetic_style text, p_tone_affinity text",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "taste_profile_set",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_action_id text, p_action_type text, p_reaction text, p_action_attributes jsonb, p_alignment_score numeric, p_session_id text, p_context jsonb",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "taste_reaction_record",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "teacher_capability_refresh_schedule_touch_updated_at",
+      "search_path_set": false,
+      "security_definer": false
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "test_contracts_set_updated_at",
+      "search_path_set": false,
+      "security_definer": false
+    },
+    {
+      "args": "p_payload jsonb",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "topics_create_registry_entry",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_category text",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "topics_get_registry",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_user_id uuid",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "topics_get_user_profile",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_user_id uuid, p_date date",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "topics_recompute_user_profile",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_topic_keys text[]",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "topics_validate_keys",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_source_type text, p_status text, p_items_scanned integer, p_items_found integer, p_recommendations_generated integer, p_last_scan_run_id text, p_last_scan_duration_ms integer, p_last_error text",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "update_autopilot_analyzer_source",
+      "search_path_set": false,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "update_autopilot_updated_at",
+      "search_path_set": false,
+      "security_definer": false
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "update_governance_proposals_updated_at",
+      "search_path_set": false,
+      "security_definer": false
+    },
+    {
+      "args": "p_display_name text, p_avatar_url text, p_bio text",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "update_user_profile",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_display_name text, p_avatar_url text, p_bio text, p_avatar_offset_x smallint, p_avatar_offset_y smallint",
+      "caller_check": true,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "update_user_profile",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_stripe_account_id text",
+      "caller_check": true,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "update_user_stripe_account",
+      "search_path_set": false,
+      "security_definer": true
+    },
+    {
+      "args": "p_stripe_account_id text, p_charges_enabled boolean, p_payouts_enabled boolean",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "update_user_stripe_status",
+      "search_path_set": false,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "update_wallet_balance",
+      "search_path_set": false,
+      "security_definer": true
+    },
+    {
+      "args": "p_title text, p_path text, p_content text, p_source_type text, p_tags text[]",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "upsert_knowledge_doc",
+      "search_path_set": false,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "user_assistant_state_touch_updated_at",
+      "search_path_set": false,
+      "security_definer": false
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "user_capability_awareness_touch_updated_at",
+      "search_path_set": false,
+      "security_definer": false
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "user_connections_bump_updated",
+      "search_path_set": false,
+      "security_definer": false
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "user_journey_touch_updated_at",
+      "search_path_set": false,
+      "security_definer": false
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "user_open_threads_touch_updated_at",
+      "search_path_set": false,
+      "security_definer": false
+    },
+    {
+      "args": "p_user_id uuid, p_user_tz text",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "user_sessions_today_window",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "vaea_config_bump_updated",
+      "search_path_set": false,
+      "security_definer": false
+    },
+    {
+      "args": "p_user_id uuid, p_tenant_id uuid, p_role text",
+      "caller_check": true,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "validate_role_assignment",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_vtid text",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "verify_vtid_spec_checksum",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_source_ref text",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "vitana_contribution_vector_from_source_ref",
+      "search_path_set": false,
+      "security_definer": false
+    },
+    {
+      "args": "p_user_id uuid, p_date date, p_trigger text, p_source_kind text, p_source_ref text, p_model_version text",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "vitana_index_recompute_and_record",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_user_id uuid, p_pillar_key text",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "vitana_pillar_streak_days",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "vitana_trg_calendar_completion_recompute",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "voice_healing_dedupe_prune",
+      "search_path_set": false,
+      "security_definer": false
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "voice_healing_history_prune",
+      "search_path_set": false,
+      "security_definer": false
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "voice_healing_shadow_log_prune",
+      "search_path_set": false,
+      "security_definer": false
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "voice_healing_spec_memory_prune",
+      "search_path_set": false,
+      "security_definer": false
+    },
+    {
+      "args": "p_since timestamp with time zone",
+      "caller_check": false,
+      "executable_by": [],
+      "kind": "function",
+      "name": "voice_session_facts_backfill",
+      "search_path_set": true,
+      "security_definer": false
+    },
+    {
+      "args": "",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "voice_session_facts_touch_updated_at",
+      "search_path_set": false,
+      "security_definer": false
+    },
+    {
+      "args": "p_vtid text",
+      "caller_check": false,
+      "executable_by": [
+        "anon",
+        "authenticated",
+        "public"
+      ],
+      "kind": "function",
+      "name": "vtid_spec_exists",
+      "search_path_set": true,
+      "security_definer": true
+    },
+    {
+      "args": "p_tenant_id uuid, p_user_id uuid, p_fact_key text, p_fact_value text, p_entity text, p_fact_value_type text, p_provenance_source text, p_provenance_utterance_id uuid, p_provenance_confidence numeric, p_thread_id uuid",
+      "caller_check": false,
+      "executable_by": [
+        "authenticated"
+      ],
+      "kind": "function",
+      "name": "write_fact",
+      "search_path_set": true,
+      "security_definer": true
+    }
+  ],
+  "schema_version": 1,
+  "source": "PGlite catalog (schema public, extension members excluded)",
+  "summary": {
+    "security_definer": 322,
+    "security_definer_executable": 226,
+    "security_definer_without_caller_check": 97,
+    "total": 395
+  }
+}

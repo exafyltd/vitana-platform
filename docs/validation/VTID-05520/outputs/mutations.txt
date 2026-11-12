@@ -1,0 +1,89 @@
+## M7-shim-ignores-plan-mismatch
+mutated: scripts/mt/stack/stack.mjs
+suite: supabase/tests/local-stack/tap-shim.test.mjs
+exit: 1  # pass 10 # fail 1
+failing tests:
+  not ok 5 - negative/plan-mismatch-no-finish.tap.sql fails (the shim does not pass what it should fail)
+
+## M10-shim-accepts-missing-plan
+mutated: scripts/mt/stack/stack.mjs
+suite: supabase/tests/local-stack/tap-shim.test.mjs
+exit: 1  # pass 10 # fail 1
+failing tests:
+  not ok 6 - negative/no-plan.tap.sql fails (the shim does not pass what it should fail)
+
+## M1-stale-listing-is-skip
+mutated: scripts/mt/stack/stack.mjs
+suite: supabase/tests/local-stack/stack-unit.test.mjs
+exit: 1  # pass 18 # fail 1
+failing tests:
+  not ok 3 - a listed table that exists is a stale listing and fails
+
+## M2-unlisted-missing-passes
+mutated: scripts/mt/stack/stack.mjs
+suite: supabase/tests/local-stack/stack-unit.test.mjs
+exit: 1  # pass 18 # fail 1
+failing tests:
+  not ok 2 - an unlisted missing required table fails and names the table
+
+## M3-listed-table-passes-in-shim
+mutated: scripts/mt/stack/tap-shim.sql
+suite: supabase/tests/local-stack/tap-shim.test.mjs
+exit: 1  # pass 9 # fail 2
+failing tests:
+  not ok 8 - negative/listed-table.tap.sql fails (the shim does not pass what it should fail)
+  not ok 9 - require_table on a listed table is "not ok", names the reason, and on a present table is "ok"
+
+## M4-no-rollback-after-failed-file
+mutated: scripts/mt/stack/stack.mjs
+suite: supabase/tests/local-stack/stack-unit.test.mjs
+exit: 1  # pass 18 # fail 1
+failing tests:
+  not ok 4 - a failed file with BEGIN/COMMIT leaves the session usable and rolls back
+
+## M5-stub-auth-gains-auth-role
+mutated: scripts/mt/stack/stub-auth.sql
+suite: supabase/tests/local-stack/stack-unit.test.mjs
+exit: 1  # pass 18 # fail 1
+failing tests:
+  not ok 1 - holds auth.users, auth.uid(), auth.jwt() and nothing else in schema auth
+
+## M6-stale-skip-not-detected
+mutated: scripts/mt/stack/stack.mjs
+suite: supabase/tests/local-stack/stack-unit.test.mjs
+exit: 1  # pass 18 # fail 1
+failing tests:
+  not ok 6 - attemptSkipped: a listed file that still fails stays a skip; one that now succeeds is a stale skip
+
+## M8-fixtures-not-idempotent
+mutated: supabase/tests/fixtures/020_canary_rows.sql
+suite: supabase/tests/local-stack/fixtures.test.mjs
+exit: 1  # pass 5 # fail 1
+failing tests:
+  not ok 6 - loading the fixtures again changes nothing
+
+## M9-skip-removed-from-list
+mutated: supabase/tests/local-stack/not-replayable.txt
+suite: supabase/tests/local-stack/repo-gate.test.mjs
+exit: 1  # pass 11 # fail 3
+failing tests:
+  not ok 3 - required tables: present + SKIP (listed) = all, no failure
+  not ok 1 - without attemptSkipped it reaches the same required-table result and reports the numbers
+  not ok 2 - LOCAL-STACK.md unverified-tables section lists exactly the tables of not-replayable.txt
+
+
+## M12-scanner-ignores-functions
+mutated: scripts/mt/stack/skipped-isolation.mjs (tenant-membership function branch removed)
+suite: supabase/tests/local-stack/skipped-isolation.test.mjs
+      not ok 2 - a tenant helper function is a reason, a function reading user_tenants is a reason, an unrelated one is not
+      not ok 1 - the section lists exactly the skipped migrations the scanner finds
+      not ok 2 - the four migrations the reviewer named are found and listed
+  # pass 4
+  # fail 3
+
+## M13-workflow-path-filter-back
+mutated: .github/workflows/MT-LOCAL-STACK.yml (path filter added to push)
+suite: supabase/tests/local-stack/repo-gate.test.mjs
+      not ok 4 - MT-LOCAL-STACK.yml runs the suite on PGlite with no Docker, no service container and no secret
+  # pass 13
+  # fail 1

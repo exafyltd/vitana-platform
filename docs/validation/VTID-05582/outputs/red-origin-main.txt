@@ -1,0 +1,2 @@
+# loaded /projects/sandbox/wt-network-visibility/docs/validation/VTID-05582/pgtap/vtid_05582_fixture.sql
+# SQL ERROR: column "network_visible" does not exist

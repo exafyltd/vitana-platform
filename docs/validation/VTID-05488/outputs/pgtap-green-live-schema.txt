@@ -1,0 +1,87 @@
+# loaded /projects/sandbox/wt-supplier-rel/docs/validation/VTID-05488/pglite-harness/base_schema.sql
+# loaded /projects/sandbox/wt-supplier-rel/supabase/migrations/20260218000000_fix_maxina_signup_tenant_association.sql (current_tenant_id only)
+# loaded /projects/sandbox/wt-supplier-rel/docs/validation/VTID-05488/pgtap/vtid_05488_fixture.sql
+# loaded /projects/sandbox/wt-supplier-rel/supabase/migrations/20261102120000_vtid_05488_supplier_tenant_relationships.sql
+# loaded /projects/sandbox/wt-supplier-rel/supabase/migrations/20261102120100_vtid_05488_products_distribution.sql
+# loaded /projects/sandbox/wt-supplier-rel/supabase/migrations/20261102120200_vtid_05488_partner_tenant_backfill.sql
+# loaded /projects/sandbox/wt-supplier-rel/supabase/migrations/20261102120300_vtid_05488_products_merchants_tenant_rls.sql
+1..79
+ok 1 - supplier_tenant_relationships exists
+ok 2 - discover_tenant_gate_enabled() exists
+ok 3 - discover_tenant_gate_enabled() is STABLE SECURITY DEFINER
+ok 4 - discover_tenant_gate_enabled() pins search_path = public, pg_catalog
+ok 5 - authenticated may execute the helper, anon may not
+ok 6 - supplier_tenant_relationships has the nine designed columns
+ok 7 - RLS is enabled on supplier_tenant_relationships
+ok 8 - products.distribution is NOT NULL DEFAULT community (the default stays)
+ok 9 - products/merchants policies reference neither is_member() nor tenant_id_for_policies()
+ok 10 - supplier_tenant_relationships policies reference neither is_member() nor tenant_id_for_policies()
+ok 11 - the helper body references neither is_member() nor tenant_id_for_policies()
+ok 12 - products_select and merchants_select are the gate-guarded policies
+ok 13 - every product that existed before the migration is community
+ok 14 - distribution CHECK rejects a value outside community|network
+ok 15 - distribution accepts network
+ok 16 - a writer that omits distribution gets community
+ok 17 - distribution is NOT NULL
+ok 18 - every existing merchant is active for Maxina
+ok 19 - no other tenant is seeded
+ok 20 - seeded rows carry decided_at
+ok 21 - status CHECK rejects a value outside proposed|active|declined|suspended
+ok 22 - a proposed relationship is accepted
+ok 23 - one relationship per supplier, tenant and vertical
+ok 24 - tenant_id must reference a tenant
+ok 25 - T_A member reads the 2 T_A rows
+ok 26 - T_B member reads 0 T_A rows (R1-F2)
+ok 27 - T_B member reads only its own tenant's row (the declined one)
+ok 28 - Maxina member reads exactly the Maxina seed rows
+ok 29 - a user without membership reads 0 rows
+ok 30 - a session without auth.uid() reads 0 rows
+ok 31 - a member cannot write (no INSERT privilege)
+ok 32 - a member cannot update
+ok 33 - anon has no access
+ok 34 - service_role reads every row
+ok 35 - service_role can write
+ok 36 - the snapshot holds the 6 original partner_tenant rows
+ok 37 - a uuid text of one tenant maps
+ok 38 - a slug text (case, spaces) of one tenant maps
+ok 39 - the slug of T_A maps to T_A
+ok 40 - an unknown key stays NULL
+ok 41 - a uuid naming no tenant stays NULL
+ok 42 - a text that names two tenants (uuid of one, slug of another) stays NULL
+ok 43 - the free-text tenant_id column is untouched (expand only)
+ok 44 - partner_tenant.tenant_id is still text for the Prisma writers
+ok 45 - the snapshot table is not readable by client roles
+ok 46 - no gate anywhere: helper false (T_A)
+ok 47 - no gate anywhere: helper false for a NULL tenant
+ok 48 - gate off: T_A sees exactly the is_active products
+ok 49 - gate off: T_B sees exactly the is_active products
+ok 50 - gate off: NULL tenant sees exactly the is_active products
+ok 51 - gate off: Maxina sees exactly the is_active merchants
+ok 52 - gate off: NULL tenant sees exactly the is_active merchants
+ok 53 - T_A gate on: helper true for T_A
+ok 54 - T_B has no tenant_settings row: helper false for a non-NULL tenant
+ok 55 - Maxina has no row: helper false
+ok 56 - NULL tenant and any gate on: helper true (round-2 R1-F1)
+ok 57 - T_A: its own supplier and the network product, not Maxina's community product
+ok 58 - NULL tenant with a gate on somewhere: network rows only, no error
+ok 59 - T_B gate off: still the is_active-only result
+ok 60 - T_A merchants: own supplier and the network supplier
+ok 61 - NULL tenant merchants: the network supplier only
+ok 62 - a JWT that names T_B (no row) resolves a non-NULL tenant: false, not the any-gate branch
+ok 63 - gate on for T_B: 0 T_A-only products (R1-F2)
+ok 64 - gate on for T_B: 0 T_A-only merchants (R1-F2; the declined relationship grants nothing)
+ok 65 - gate on for T_B: the network product is visible
+ok 66 - the same network product is visible to T_A
+ok 67 - gate on for Maxina: its seeded supplier and the network product, not T_A's
+ok 68 - gate on for Maxina: the seeded active merchant and the network supplier
+ok 69 - a suspended relationship hides the supplier from its tenant
+ok 70 - active again: visible again
+ok 71 - an inactive network product is hidden
+ok 72 - a merchant whose only network product is inactive is not reached through the network term
+ok 73 - flag false: helper false
+ok 74 - row without the flag: helper false
+ok 75 - junk flag value: helper false, no error
+ok 76 - every gate off + NULL tenant: helper false
+ok 77 - every gate off + NULL tenant: the is_active-only result
+ok 78 - every gate off + NULL tenant: the is_active-only merchants
+ok 79 - service_role is untouched by the policy (sees inactive rows too)

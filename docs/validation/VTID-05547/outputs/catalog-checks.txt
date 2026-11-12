@@ -1,0 +1,14 @@
+# cd services/gateway && node scripts/validate-dev-frontend-spec.mjs   (v22.23.4)
+
+✅ FRONTEND SPEC OK
+   ├─ Modules: 26 (expected: 26)
+   ├─ Screens: 135 (expected: 135)
+   └─ Order: Canonical
+
+exit=0
+
+# cd services/gateway && npm run test:screens-catalog-sync   (REGEN_SCREENS_CHECK=1 jest test/vtid-05080-regen-screens-catalog-check.test.ts: navigation-config.js and the inventory are what regen-screens-catalog.mjs makes from app.js)
+    ✓ regen-screens-catalog.mjs --check exits 0 (DEV rows, navigation-config.js, overrides) (516 ms)
+Test Suites: 1 passed, 1 total
+Tests:       1 passed, 1 total
+exit=0

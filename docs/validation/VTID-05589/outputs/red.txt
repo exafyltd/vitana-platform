@@ -1,0 +1,28 @@
+VTID-05589 (companion-test-card/v1-test-card-button) — red on base
+base: origin/main 4d9361db38a6084c942252aa52dc3cf2359329b4: VitanaMessagesSettings.tsx as on base, useCompanionTestCard.ts absent, the two new test files added
+command: npx vitest run src/hooks/useCompanionTestCard.test.ts src/components/settings/VitanaMessagesSettings.test-card.test.tsx
+     ✓ a member sees no test-card row and nothing is sent 76ms
+     × an exafy admin sees the row; one press sends once and disables the button while pending 1015ms
+     × success shows the sent message and a link to the chat with Vitana 1010ms
+     × status 409 with {"ok":false,"error":"STAGING_DISABLED"} shows the unavailable message and no chat link 1009ms
+     × status 422 with {"ok":false,"error":"NO_VITANA_INDEX"} shows the noIndex message and no chat link 1010ms
+     × status 429 with {"ok":false,"error":"RATE_LIMITED","retry_after_s":30} shows the rateLimited message and no chat link 1009ms
+     × status 502 with {"ok":false,"error":"COMPOSE_FAILED"} shows the failed message and no chat link 1011ms
+ FAIL  src/hooks/useCompanionTestCard.test.ts [ src/hooks/useCompanionTestCard.test.ts ]
+Error: Failed to resolve import "./useCompanionTestCard" from "src/hooks/useCompanionTestCard.test.ts". Does the file exist?
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 6 ⎯⎯⎯⎯⎯⎯⎯
+ FAIL  src/components/settings/VitanaMessagesSettings.test-card.test.tsx > VitanaMessagesSettings — admin test card (VTID-05589) > an exafy admin sees the row; one press sends once and disables the button while pending
+TestingLibraryElementError: Unable to find an element by: [data-testid="vitana-messages-test-card"]
+ FAIL  src/components/settings/VitanaMessagesSettings.test-card.test.tsx > VitanaMessagesSettings — admin test card (VTID-05589) > success shows the sent message and a link to the chat with Vitana
+TestingLibraryElementError: Unable to find an element by: [data-testid="vitana-messages-test-card"]
+ FAIL  src/components/settings/VitanaMessagesSettings.test-card.test.tsx > VitanaMessagesSettings — admin test card (VTID-05589) > status 409 with {"ok":false,"error":"STAGING_DISABLED"} shows the unavailable message and no chat link
+ FAIL  src/components/settings/VitanaMessagesSettings.test-card.test.tsx > VitanaMessagesSettings — admin test card (VTID-05589) > status 422 with {"ok":false,"error":"NO_VITANA_INDEX"} shows the noIndex message and no chat link
+ FAIL  src/components/settings/VitanaMessagesSettings.test-card.test.tsx > VitanaMessagesSettings — admin test card (VTID-05589) > status 429 with {"ok":false,"error":"RATE_LIMITED","retry_after_s":30} shows the rateLimited message and no chat link
+ FAIL  src/components/settings/VitanaMessagesSettings.test-card.test.tsx > VitanaMessagesSettings — admin test card (VTID-05589) > status 502 with {"ok":false,"error":"COMPOSE_FAILED"} shows the failed message and no chat link
+TestingLibraryElementError: Unable to find an element by: [data-testid="vitana-messages-test-card"]
+ Test Files  2 failed (2)
+      Tests  6 failed | 1 passed (7)
+
+green on the lane head (same suites plus the existing VTID-05100 settings suite):
+ Test Files  3 passed (3)
+      Tests  21 passed (21)

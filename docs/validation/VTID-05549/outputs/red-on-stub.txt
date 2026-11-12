@@ -1,0 +1,42 @@
+# Red on stubs: review-source, gitlab-gates and assist-trigger tests (final versions) against no-behaviour stubs of their modules, OUTSIDE the repo:
+# /projects/sandbox/.scratch/tools/6eb1/stub-run = git archive of the base's scripts/ (0e5a74a72a8fe26785df3133f4133b3e99b97efd) + the test files + stub modules that export the names and do nothing (/projects/sandbox/.scratch/tools/6eb1/stubs/scripts/eng/*.mjs).
+# command (in the stub dir): node --test scripts/eng/review-source.test.mjs scripts/eng/gitlab-gates.test.mjs scripts/eng/assist-trigger.test.mjs (2026-11-05T22:47:11Z)
+
+not ok 1 - assistRef and the rule names: assist/<iid>-<rule>, a rule id is a plain lowercase name
+not ok 2 - matchingRules: a rule applies when the merge request changes one of its paths
+not ok 3 - assistActions: one trigger per head and rule; a run for this head is pending, done or failed; a new head triggers again
+not ok 4 - assistActions: never after an accept, never for a protected-file merge request
+not ok 5 - loadAssistRules reads the assist rules of a project from the service list; no file is no rules; a bad file fails closed
+not ok 6 - assistRuns reads the newest api pipeline of each rule's assist ref and the head it was started for
+not ok 7 - triggerAssist moves assist/<iid>-<rule> to main with ci.skip, never by force, and starts one pipeline with the merge request's id and head
+not ok 8 - triggerAssist --dry-run writes nothing
+not ok 9 - lane-scope for a vitana-v1 merge request gives the verdict of scopeCheck with the platform lane file
+not ok 10 - lane-scope refuses a file outside the lane's paths exactly as scopeCheck does
+not ok 11 - collab-handoff for a vitana-v1 merge request gives the verdict of validateRange with the platform lane file
+not ok 12 - in the platform project lane-scope and collab-handoff give the verdicts of `queue.mjs scope-check` and `queue.mjs validate`
+not ok 13 - a lane that exists only in an approved plan( branch of the platform project is read as the plan-PR source
+not ok 14 - the jobs read the GitLab CI variables and print the queue.mjs status line
+not ok 15 - an unreachable platform project fails closed: exit 3 for both jobs, nothing passes
+not ok 16 - usage errors exit 2; the job token reaches git only through an askpass script, never a command line or the script text
+not ok 17 - the reviewer chain is the one the pipeline uses, and reviewerModel reads the model of a Collab-Reviewer value
+not ok 18 - judgeEntries: no entry, a newest changes, the newest current accept, a stale accept, and the identity rules
+not ok 19 - finds the accept for <slug>/<lane> on platform main
+not ok 20 - then on kiro/<slug>/* branches of the platform project, bridged or native
+not ok 21 - an accept on main and one on a branch: the newest current one counts; an entry on both is read once
+not ok 22 - entries of other lanes, and commits without review trailers, are not review entries
+not ok 23 - refuses an entry that reviewCurrent rejects for the merge request's commits (code changed after the reviewed head)
+not ok 24 - an accept on an old head that is no longer in the merge request's history (force-push) is refused
+not ok 25 - a clean merge of main into the merge request after the review keeps the accept
+not ok 26 - refuses an accept whose reviewer session appears on a commit of the merge request
+not ok 27 - refuses an accept by a model outside the chain
+not ok 28 - refuses a changes verdict, also when an older accept exists
+not ok 29 - an entry that is not from a reviewer agent session is refused
+not ok 30 - a platform clone without main fails closed: an error, never an accept
+# tests 30
+# suites 0
+# pass 0
+# fail 30
+# cancelled 0
+# skipped 0
+# todo 0
+exit 1

@@ -1,0 +1,78 @@
+# loaded /projects/sandbox/wt-tenant-lifecycle/docs/validation/VTID-05493/pglite-harness/base_schema.sql
+# loaded /projects/sandbox/wt-tenant-lifecycle/supabase/migrations/20261010180200_vtid_05043_s3_switch_tenant_open_signup_only.sql
+# loaded /projects/sandbox/wt-tenant-lifecycle/docs/validation/VTID-05493/pgtap/vtid_05493_fixture.sql
+# loaded /projects/sandbox/wt-tenant-lifecycle/supabase/migrations/20261102070300_vtid_05493_mt_tenant_deactivate.sql
+# loaded /projects/sandbox/wt-tenant-lifecycle/supabase/migrations/20261102070350_vtid_05493_mt_tenant_archive_switch.sql
+1..72
+ok 1 - deactivate_tenant(text) exists
+ok 2 - archive_tenant(text) exists
+ok 3 - tenants.archived_at is a nullable timestamptz (expand only)
+ok 4 - snapshot holds one row per tenant that existed at apply
+ok 5 - authenticated cannot execute deactivate_tenant
+ok 6 - anon cannot execute deactivate_tenant
+ok 7 - service_role can execute deactivate_tenant
+ok 8 - authenticated cannot execute archive_tenant
+ok 9 - anon cannot execute archive_tenant
+ok 10 - service_role can execute archive_tenant
+ok 11 - a member calling deactivate_tenant is refused (42501)
+ok 12 - authenticated keeps EXECUTE on switch_to_tenant_by_slug
+ok 13 - anon has no EXECUTE on switch_to_tenant_by_slug
+ok 14 - switch keeps the open_signup join rule (VTID-05043 co-ownership guard)
+ok 15 - switch resolves a deactivated tenant through is_default
+ok 16 - the lane adds no policy on tenants
+ok 17 - the snapshot table is closed to authenticated and anon
+ok 18 - a member switches to an active tenant
+ok 19 - the claim points at the active tenant
+ok 20 - a non-member cannot join an invite-only active tenant
+ok 21 - a non-member joins the open_signup default tenant
+ok 22 - the join wrote one user_tenants row
+ok 23 - an unknown slug raises
+ok 24 - an exafy admin switches to any tenant
+ok 25 - the exafy admin claim points at the tenant
+ok 26 - deactivate_tenant reports changed:true on the first call
+ok 27 - the tenant is inactive
+ok 28 - a second call is idempotent (changed:false)
+ok 29 - exactly one tenant is inactive
+ok 30 - every other tenant is untouched
+ok 31 - the slug is trimmed and lower-cased
+ok 32 - unknown slug -> TENANT_NOT_FOUND
+ok 33 - the default tenant cannot be deactivated
+ok 34 - the platform tenant cannot be deactivated
+ok 35 - a blank slug -> INVALID_SLUG
+ok 36 - a NULL slug -> INVALID_SLUG
+ok 37 - a member of a deactivated tenant is not locked out
+ok 38 - the claim resolves to the default tenant
+ok 39 - the member is enrolled in the default tenant (open_signup rule)
+ok 40 - one audit row records the fallback
+ok 41 - repeating the switch succeeds
+ok 42 - the repeat is write-free (no second audit row)
+ok 43 - a member of both the deactivated and the default tenant switches
+ok 44 - that member resolves to the default tenant
+ok 45 - no extra membership was created
+ok 46 - a non-member cannot reach a deactivated tenant
+ok 47 - an exafy admin can still switch to the deactivated tenant
+ok 48 - the exafy admin claim stays on the deactivated tenant
+ok 49 - an exafy admin can still read the deactivated tenant row
+ok 50 - a multi-tenant member switching to the deactivated tenant resolves to default
+ok 51 - multi-tenant member claim is the default tenant
+ok 52 - the membership in the deactivated tenant is kept (data untouched)
+ok 53 - before archiving, the member switches to t-c
+ok 54 - claim is t-c
+ok 55 - archive_tenant reports changed:true
+ok 56 - an archived tenant is inactive
+ok 57 - archived_at is set
+ok 58 - a second archive is idempotent (changed:false)
+ok 59 - archived_at is not rewritten
+ok 60 - a member of an archived tenant is not locked out
+ok 61 - and resolves to the default tenant
+ok 62 - archiving an already-deactivated tenant sets archived_at
+ok 63 - it stays inactive and is archived
+ok 64 - deactivating an archived tenant changes nothing
+ok 65 - and keeps archived_at
+ok 66 - the default tenant cannot be archived
+ok 67 - the platform tenant cannot be archived
+ok 68 - unknown slug -> TENANT_NOT_FOUND
+ok 69 - NULL slug -> INVALID_SLUG
+ok 70 - a member calling archive_tenant is refused (42501)
+ok 71 - an exafy admin can still read the archived tenant row
+ok 72 - an untouched tenant is still active

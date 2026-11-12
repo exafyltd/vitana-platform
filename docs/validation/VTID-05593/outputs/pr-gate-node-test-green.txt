@@ -1,0 +1,106 @@
+TAP version 13
+# Subtest: vtidsFromTitle finds every VTID once
+ok 1 - vtidsFromTitle finds every VTID once
+  ---
+  duration_ms: 2.225455
+  type: 'test'
+  ...
+# Subtest: globToRegExp: ** spans dirs, * stays in a segment
+ok 2 - globToRegExp: ** spans dirs, * stays in a segment
+  ---
+  duration_ms: 0.783176
+  type: 'test'
+  ...
+# Subtest: scope: outside file fails, bot-only and always-allowed files pass, no VTID skips
+ok 3 - scope: outside file fails, bot-only and always-allowed files pass, no VTID skips
+  ---
+  duration_ms: 1.245969
+  type: 'test'
+  ...
+# Subtest: validateScope rejects bad shapes
+ok 4 - validateScope rejects bad shapes
+  ---
+  duration_ms: 0.387297
+  type: 'test'
+  ...
+# Subtest: ratchet: worse fails, new erroring file fails, improvements pass
+ok 5 - ratchet: worse fails, new erroring file fails, improvements pass
+  ---
+  duration_ms: 0.468537
+  type: 'test'
+  ...
+# Subtest: countTsc parses compiler output per file
+ok 6 - countTsc parses compiler output per file
+  ---
+  duration_ms: 0.398787
+  type: 'test'
+  ...
+# Subtest: countEslint strips the root and keeps only files with errors
+ok 7 - countEslint strips the root and keeps only files with errors
+  ---
+  duration_ms: 0.350424
+  type: 'test'
+  ...
+# Subtest: weakening: deletion, skip, fewer cases, fewer assertions; declared ones do not block
+ok 8 - weakening: deletion, skip, fewer cases, fewer assertions; declared ones do not block
+  ---
+  duration_ms: 1.178639
+  type: 'test'
+  ...
+# Subtest: testStats does not count method calls like foo.it( or .test( on regexes
+ok 9 - testStats does not count method calls like foo.it( or .test( on regexes
+  ---
+  duration_ms: 0.493134
+  type: 'test'
+  ...
+# Subtest: sparring record needs verdict, owner approval and plan hash
+ok 10 - sparring record needs verdict, owner approval and plan hash
+  ---
+  duration_ms: 0.879762
+  type: 'test'
+  ...
+# Subtest: sparring record accepts a policy approval only for CONVERGED with the exact policy and a plan hash
+ok 11 - sparring record accepts a policy approval only for CONVERGED with the exact policy and a plan hash
+  ---
+  duration_ms: 0.419509
+  type: 'test'
+  ...
+# Subtest: migration lint: wrapper, idempotency, non-transactional declaration
+ok 12 - migration lint: wrapper, idempotency, non-transactional declaration
+  ---
+  duration_ms: 3.020704
+  type: 'test'
+  ...
+# Subtest: regex edge cases: extra whitespace cannot sneak past the idempotency check
+ok 13 - regex edge cases: extra whitespace cannot sneak past the idempotency check
+  ---
+  duration_ms: 0.220255
+  type: 'test'
+  ...
+# Subtest: a skipped test counts once as a skip, not also as a dropped case
+ok 14 - a skipped test counts once as a skip, not also as a dropped case
+  ---
+  duration_ms: 0.189469
+  type: 'test'
+  ...
+# Subtest: dry run: own BEGIN/COMMIT replaced by an always-rollback wrapper
+ok 15 - dry run: own BEGIN/COMMIT replaced by an always-rollback wrapper
+  ---
+  duration_ms: 0.196402
+  type: 'test'
+  ...
+# Subtest: dry run classification: missing objects are unverifiable, real errors fail
+ok 16 - dry run classification: missing objects are unverifiable, real errors fail
+  ---
+  duration_ms: 0.41403
+  type: 'test'
+  ...
+1..16
+# tests 16
+# suites 0
+# pass 16
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 91.133736

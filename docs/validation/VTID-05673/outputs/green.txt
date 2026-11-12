@@ -1,0 +1,6 @@
+required tables: 24, present 11, not replayable (unverified) 13
+fixtures: 010_tenants_members.sql, 020_canary_rows.sql
+PASS local-stack gate
+# tests 57
+# pass 57
+# fail 0

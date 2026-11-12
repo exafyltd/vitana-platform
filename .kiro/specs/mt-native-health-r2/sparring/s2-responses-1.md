@@ -1,0 +1,8 @@
+# Responses to session 2, round 1 (session `5e927bc9`)
+
+```json
+[
+  {"finding_id": "R1-F1", "disposition": "accepted", "rationale": "Confirmed on origin/main: recommendations has tenant_id and user_id (20251231000000_vtid_01078_health_brain_phase_c1.sql:161-172) and holds AI health recommendations, while fetchRecommendationsForDate (health-repository.ts:62) filters on neither. It is now an (a) inventory entry in plan.md and tasks.md A3: the reader gets the (sb, userId, date) signature with the home tenant via healthDb, and fetchRecentRecommendations (health-wellness-repository.ts:85) converts in the same PR. isHealthTable() stays mt-identity-r2's only list: the inventory carries one inventory-local extra_health_tables entry, and a drift test fails once isHealthTable('recommendations') is true. The date/priority clauses are kept unchanged because the pinned migration shows no such columns; the question is recorded in the entry's reason and the column fix is health-data-pipeline work, out of scope in plan.md."},
+  {"finding_id": "R1-F2", "disposition": "accepted", "rationale": "Re-verified on vitana-v1 origin/main cd142ed5: apps/mobile/src/identity/TenantProvider.tsx, tenant-registry.ts, useMemberships.ts, apps/mobile/src/linking/resolve-link.ts and apps/mobile/app/+native-intent.tsx all exist, and apps/mobile/tests/resolve-link.test.ts is the existing test pattern. Task N0 is added to native-tenant-isolation-tests: it records the path listing and commit in docs/validation/<VTID>/vitana-v1-premises.md before any test is written, and parks the lane (next_actor: owner) on a missing file."}
+]
+```

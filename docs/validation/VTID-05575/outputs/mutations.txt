@@ -1,0 +1,26 @@
+## mutation: network write guard disabled
+not ok 26 - 24 a network row for a member who has not opted in is refused
+not ok 28 - 26 a service bot is never a network candidate (rule 43)
+not ok 29 - 27 a notification test actor is never a network candidate (rule 43)
+not ok 30 - 28 an account registered AFTER it opted in is refused at write time (rule 44 residual)
+# Looks like you failed 4 test(s) of 59
+## mutation: search default left public
+not ok 42 - 40 search_intent_catalog_v2 with no scope: community only (the old default was everyone)
+not ok 47 - 45 search_intent_catalog (non-v2) follows the same rule
+not ok 48 - 46 the p_visibility default is community on both search functions
+# Looks like you failed 3 test(s) of 59
+## mutation: pillar no longer health-derived
+not ok 11 - 11 backfill removed shared_pillar and similar_index, kept the rest
+not ok 16 - 16 strip_health_match_reasons drops every code that names the index, a pillar or health
+not ok 20 - 19 the trigger strips it on INSERT
+not ok 23 - 21 no row of the fixture members carries a health reason code
+not ok 24 - 22 a member update keeps the action but cannot change scope, tenant or reasons
+# Looks like you failed 5 test(s) of 59
+## mutation: network pool not restricted to opted-in
+not ok 46 - 44 a member who opts out leaves the network pool at once
+# Looks like you failed 1 test(s) of 59
+## mutation: member can change scope
+not ok 24 - 22 a member update keeps the action but cannot change scope, tenant or reasons
+# Looks like you failed 1 test(s) of 59
+## restored
+59

@@ -1,0 +1,14 @@
+{
+  "vtid": "VTID-05611",
+  "service": "gateway",
+  "not_verified_on_staging": true,
+  "not_verified_on_staging_reason": "This lane changes documentation only (DATABASE_SCHEMA.md) and adds its evidence folder. No code, migration or deployed behaviour changes, so the staging deploy runs nothing that reads or depends on it. Staging writes to the production Supabase project (rules 31/31b/48), and nothing here writes. The covering check is docs/validation/VTID-05611/outputs/check.sh, which greps every named object in the migration files on main. No suite points at vitanaland.com.",
+  "tests": [
+    {
+      "kind": "existing",
+      "ref": "npx jest test/mt-identity-bare-policy-lint.test.ts",
+      "cwd": "services/gateway",
+      "reason": "The repository-wide bare-policy lint reads every migration; this lane adds none, so it must stay green."
+    }
+  ]
+}

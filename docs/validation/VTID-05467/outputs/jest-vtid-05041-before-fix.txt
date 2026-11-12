@@ -1,0 +1,48 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/wt-id-role-source-and-bootstrap/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+FAIL test/vtid-05041-definer-lockdown.test.ts
+  VTID-05041 SECURITY DEFINER lockdown (S2)
+    ✓ sorts after VTID-04981, which it requires (15 ms)
+    ✓ revokes members from every overload of the four memory functions and keeps the gateway (2 ms)
+    ✓ recreates the profile lookup without email and re-grants anon/authenticated/service_role (1 ms)
+    ✓ checks the end state on apply, by effect
+    ✓ no later migration grants the locked functions to members again or re-adds email to the profile lookup (5 ms)
+    ✓ every gateway caller of the memory functions uses the service-role key (1 ms)
+    ✕ a migration newer than S2 that creates a SECURITY DEFINER function revokes PUBLIC and anon, or says why not (10 ms)
+    ○ skipped reproduces the live exposure, refuses before VTID-04981, applies twice and passes the SQL assertions
+
+  ● VTID-05041 SECURITY DEFINER lockdown (S2) › a migration newer than S2 that creates a SECURITY DEFINER function revokes PUBLIC and anon, or says why not
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 4
+
+    - Array []
+    + Array [
+    +   "20261102033000_vtid_05467_role_source_rollback.sql",
+    +   "20261102033100_vtid_05467_fix_bootstrap_admin_user.sql",
+    + ]
+
+      135 |       if (!reasoned && !(revokesPublic && revokesAnon)) offenders.push(f);
+      136 |     }
+    > 137 |     expect(offenders).toEqual([]);
+          |                       ^
+      138 |   });
+      139 |
+      140 |   const pgBin = (() => {
+
+      at Object.<anonymous> (test/vtid-05041-definer-lockdown.test.ts:137:23)
+
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 1 skipped, 6 passed, 8 total
+Snapshots:   0 total
+Time:        0.556 s
+Ran all test suites matching /test\/vtid-05041-definer-lockdown.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

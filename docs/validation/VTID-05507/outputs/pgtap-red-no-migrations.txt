@@ -1,0 +1,4 @@
+# loaded /projects/sandbox/wt-tenant-domains/docs/validation/VTID-05507/pglite-harness/base_schema.sql
+# loaded /projects/sandbox/wt-tenant-domains/docs/validation/VTID-05507/pgtap/vtid_05507_fixture.sql
+# loaded /projects/sandbox/wt-tenant-domains/supabase/migrations/20261014000600_vtid_05151_public_tenant_registry.sql
+# SQL ERROR: relation "public.tenant_domains" does not exist

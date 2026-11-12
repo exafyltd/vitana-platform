@@ -1,0 +1,49 @@
+{
+  "caveat": "A realtime table that is not in the replayed schema is unverified.",
+  "generated_by": "scripts/mt/inventory/generate.mjs",
+  "inventory": "realtime_tables",
+  "rows": [
+    {
+      "in_schema": false,
+      "reason": "the table is not in the replayed schema (a migration that creates it is a skip)",
+      "status": "unverified",
+      "table": "chat_group_members",
+      "via": [
+        "migrations"
+      ]
+    },
+    {
+      "in_schema": false,
+      "reason": "the table is not in the replayed schema (a migration that creates it is a skip)",
+      "status": "unverified",
+      "table": "chat_groups",
+      "via": [
+        "migrations"
+      ]
+    },
+    {
+      "in_schema": false,
+      "reason": "the table is not in the replayed schema (a migration that creates it is a skip)",
+      "status": "unverified",
+      "table": "chat_messages",
+      "via": [
+        "migrations"
+      ]
+    },
+    {
+      "in_schema": true,
+      "status": "verified",
+      "table": "conversation_messages",
+      "via": [
+        "migrations"
+      ]
+    }
+  ],
+  "schema_version": 1,
+  "source": "pg_publication_tables (supabase_realtime) of the replayed schema + ALTER PUBLICATION in migration text",
+  "summary": {
+    "total": 4,
+    "unverified": 3,
+    "verified": 1
+  }
+}

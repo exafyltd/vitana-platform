@@ -1,0 +1,13 @@
+{
+  "vtid": "VTID-05582",
+  "kind": "feature",
+  "paths": [
+    "supabase/migrations/20261102051000_vtid_05582_network_visible_profile.sql",
+    "supabase/migrations/20261102051100_vtid_05582_connection_rpcs.sql",
+    "supabase/tests/mt-network-visibility-db.pgtap.sql",
+    "docs/validation/VTID-05582/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05582/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

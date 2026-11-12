@@ -23,8 +23,10 @@ if [ ! -f /swapfile ]; then
 fi
 
 curl -fsSL https://packages.gitlab.com/install/repositories/runner/gitlab-runner/script.deb.sh | bash
-apt install -y "gitlab-runner=$RUNNER_VERSION" || exit 1
-apt-mark hold gitlab-runner
+# The helper images package is pinned with the runner: unpinned, apt takes the newest helper and refuses the pinned runner
+# ("held broken packages"; the fleet manager never installed the runner, 2026-11-06).
+apt install -y "gitlab-runner-helper-images=$RUNNER_VERSION" "gitlab-runner=$RUNNER_VERSION" || exit 1
+apt-mark hold gitlab-runner gitlab-runner-helper-images
 systemctl enable --now docker
 usermod -aG docker gitlab-runner
 

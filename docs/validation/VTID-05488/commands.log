@@ -1,0 +1,9 @@
+# VTID-05488 commands run in the sandbox (PGlite only; no live system, no docker/psql/supabase CLI available)
+pglite-harness/lane.sh pgtap/vtid_05488_supplier_tenant_relationships.test.sql              -> outputs/pgtap-green-live-schema.txt (79 ok)
+pglite-harness/lane.sh --twice ...                                                         -> outputs/pgtap-green-applied-twice.txt (79 ok)
+pglite-harness/lane.sh --schema id ...                                                     -> outputs/pgtap-green-bootstrap-id-schema.txt (79 ok)
+pglite-harness/lane.sh --no-migrations ...                                                 -> outputs/pgtap-red-no-migrations.txt (red)
+pglite-harness/lane.sh --without-rls ...                                                   -> outputs/pgtap-red-without-rls-migration.txt (27 not ok)
+pglite-harness/checks.sh                                                                   -> outputs/read-only-checks-and-rollback-pglite.txt
+jest (ts-jest, services/gateway/test/vtid-05488-supplier-tenant-relationships.test.ts)     -> outputs/jest-vtid-05488.txt (30 pass)
+node --test scripts/ci/check-migration-drift.test.cjs                                      -> 8 pass

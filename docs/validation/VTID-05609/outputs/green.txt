@@ -1,0 +1,12 @@
+PASS  row numbers are unique
+PASS  row numbers increase monotonically down the table
+PASS  every migration file named in a row exists under supabase/migrations/
+PASS  every VTID-05582/05573/05575/05569 migration on main has a queue row
+PASS  queue order is 05582, 05573, 05575, 05569
+PASS  VTID-05569 rows are 57,58
+PASS  no stale reference to the old rows 51-52 / 48-50
+PASS  row 54 (053000) is expand only and declares no dependency on row 45
+PASS  rows 55-56 depend on #48 and not on #45
+PASS  row 50 carries the 05573 apply preconditions
+
+10 pass, 0 fail (61 rows parsed)

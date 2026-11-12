@@ -1,0 +1,57 @@
+# node scripts/ci/validate-pr-locally.cjs --title '<PR title>' --body-file <PR body> --base main, 2026-11-05T17:15:15Z
+Detected VTID=VTID-05546 PROFILE=gateway_backend
+Changed files: 39
+NOT JUDGED — 29 file(s) outside this gate's remit:
+  .kiro/specs/agentic-delivery/lanes/deploy-path.md
+  infra/gitlab-engineering/RUNBOOK-delivery-aws.md
+  infra/gitlab-engineering/ci/tpl-deploy.yml
+  infra/gitlab-engineering/terraform/fleet-classes.tf
+  scripts/aws/iam/gitlab-oidc-assist-policy.json
+  scripts/aws/iam/gitlab-oidc-assist-trust.json
+  scripts/aws/iam/gitlab-oidc-platform-staging-policy.json
+  scripts/aws/iam/gitlab-oidc-platform-staging-trust.json
+  scripts/aws/iam/gitlab-oidc-provider.json
+  scripts/aws/iam/gitlab-oidc-record-policy.json
+  scripts/aws/iam/gitlab-oidc-record-trust.json
+  scripts/aws/iam/gitlab-oidc-v1-preview-policy.json
+  scripts/aws/iam/gitlab-oidc-v1-preview-trust.json
+  scripts/aws/iam/gitlab-oidc-v1-staging-policy.json
+  scripts/aws/iam/gitlab-oidc-v1-staging-trust.json
+  scripts/aws/iam/gitlab-oidc-verify-policy.json
+  scripts/aws/iam/gitlab-oidc-verify-trust.json
+  scripts/aws/setup-gitlab-oidc.sh
+  scripts/eng/deploy/build-image.sh
+  scripts/eng/deploy/deploy-ecs.mjs
+  scripts/eng/deploy/deploy-ecs.test.mjs
+  scripts/eng/deploy/lib.mjs
+  scripts/eng/deploy/preview.mjs
+  scripts/eng/deploy/preview.test.mjs
+  scripts/eng/deploy/push-image.mjs
+  ...and 4 more
+  These trees have no governance gate of their own. That is a real gap,
+  not an approval — see VTID-03696.
+APPROVED: 10 in-remit file(s) match the gateway_backend allowlist
+Acceptance mapping OK
+CSP scan: no pattern hits in added lines.
+Build Gate SKIPPED (pass --build to run npm ci && npm run build locally too).
+Route Mount Evidence Gate: no route registration added, skipped.
+OASIS Traceability Gate: OASIS_IMPACT=no.
+APPROVED
+VTID=VTID-05546
+PROFILE=gateway_backend
+Evidence=docs/validation/VTID-05546/
+
+# round 2, 2026-11-05T22:46:41Z, PR body of #4714 updated for round 2, head 0d2dacefad
+$ node scripts/ci/validate-pr-locally.cjs --title "VTID-05546 (agentic-delivery/deploy-path): GitLab deploy path, runner classes and OIDC roles" --body-file <round-2 PR body> --base main
+  These trees have no governance gate of their own. That is a real gap,
+  not an approval — see VTID-03696.
+APPROVED: 16 in-remit file(s) match the gateway_backend allowlist
+Acceptance mapping OK
+CSP scan: no pattern hits in added lines.
+Build Gate SKIPPED (pass --build to run npm ci && npm run build locally too).
+Route Mount Evidence Gate: no route registration added, skipped.
+OASIS Traceability Gate: OASIS_IMPACT=no.
+APPROVED
+VTID=VTID-05546
+PROFILE=gateway_backend
+Evidence=docs/validation/VTID-05546/

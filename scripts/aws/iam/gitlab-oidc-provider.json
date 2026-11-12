@@ -1,0 +1,11 @@
+{
+  "Url": "https://gitlab.vitanaland.com",
+  "ClientIDList": [
+    "aws:v1:staging",
+    "aws:platform:staging",
+    "aws:v1:preview",
+    "aws:verify",
+    "aws:record",
+    "aws:assist"
+  ]
+}

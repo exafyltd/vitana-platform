@@ -1,0 +1,10 @@
+# VTID-05493 commands run in the sandbox (PGlite only; no live system, no docker/psql/supabase CLI available)
+pglite-harness/lane.sh --no-migrations pgtap/vtid_05493_tenant_lifecycle.test.sql  -> outputs/pgtap-red-no-migrations.txt (red)
+pglite-harness/lane.sh --only-deactivate ...                                       -> outputs/pgtap-red-without-070350.txt (red)
+pglite-harness/lane.sh (070350 with the fallback IF forced to false)               -> outputs/pgtap-red-mutation-no-fallback.txt (6 not ok)
+pglite-harness/lane.sh pgtap/vtid_05493_tenant_lifecycle.test.sql                  -> outputs/pgtap-green.txt (72 ok)
+pglite-harness/lane.sh --twice ...                                                 -> outputs/pgtap-green-applied-twice.txt (72 ok)
+pglite-harness/checks.sh                                                           -> outputs/read-only-checks-and-rollback-pglite.txt
+node --test static-pins.test.mts on origin/main                                    -> outputs/static-pins-red-on-origin-main.txt (25 failed)
+node --test static-pins.test.mts on the branch                                     -> outputs/static-pins-green.txt (25 pass)
+node --test scripts/ci/check-migration-drift.test.cjs                              -> 8 pass

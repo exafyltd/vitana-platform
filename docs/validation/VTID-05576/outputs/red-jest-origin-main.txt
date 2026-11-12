@@ -1,0 +1,20 @@
+    ✕ exist, apply in order, and no other migration shares their version (4 ms)
+    ✕ each runs in one transaction with a lock timeout (1 ms)
+    ✓ adds no bare current_tenant_id() RLS policy
+    ✕ adds scope text NOT NULL DEFAULT community with a CHECK (community, network) and backfills
+    ✕ drops the default only in the contract file
+    ✕ a guard trigger lets only the RPCs write a non-community scope
+    ✕ all three functions are SECURITY DEFINER with a pinned search_path
+    ✕ send_message binds the sender to auth.uid(); send_message_as takes a trusted p_sender (1 ms)
+    ✕ EXECUTE: send_message to authenticated, send_message_as to service_role only, the core to nobody
+    ✕ the community branch needs a shared non-platform tenant and derives tenant_id from it
+    ✕ the network branch checks visibility, preference, connection, block, rate limit and rule-45 accounts (1 ms)
+    ✕ a network group send is refused until the groups lane
+    ✕ asserts the catch-all policy stays gone and does not recreate it (1 ms)
+    ✕ replaces the client policies with narrow SELECT and read-marker UPDATE policies and drops both INSERT policies
+    ✕ revokes INSERT and UPDATE from the client roles and grants only read_at / delivered_at back
+    ✕ has the three rollbacks and the three read-only check files
+    ✕ the pgTAP plan covers the four lane cases and its plan count matches its assertions
+    ✕ is queued in MIGRATION-QUEUE.md in file order
+    ✓ keeps the drift baseline count equal to its list (1 ms)
+Tests:       17 failed, 2 passed, 19 total

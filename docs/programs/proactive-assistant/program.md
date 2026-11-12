@@ -8,6 +8,7 @@ specs:
   - vitana-platform:new-member-welcome
   - vitana-platform:profile-vitana-cards
   - vitana-platform:messenger-vitana-cards-v2
+  - vitana-platform:companion-test-card
 docs:
   - vitana-platform:docs/plans/VITANA-ONBOARDING-ASSISTANT-PLAN.md
   - vitana-platform:docs/validation/VTID-05099/plan-sparring.md

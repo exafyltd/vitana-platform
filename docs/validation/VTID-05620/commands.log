@@ -1,0 +1,7 @@
+# Commands run for VTID-05620 (services/gateway), in order
+
+$ cd services/gateway && npx jest test/vtid-04646-publish-gate-wiring.test.ts test/services/testing/publish-gate.test.ts
+  -> exit 0; output in outputs/jest-publish-gate.txt (25 of 25 pass)
+
+$ NODE_OPTIONS=--max-old-space-size=8192 npx tsc --noEmit -p tsconfig.json
+  -> exit 0; output in outputs/tsc-gateway.txt (no errors)

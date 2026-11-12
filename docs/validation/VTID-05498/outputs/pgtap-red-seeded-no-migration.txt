@@ -1,0 +1,3 @@
+# loaded /projects/sandbox/wt-kb-overlay/docs/validation/VTID-05498/pglite-harness/base_schema.sql
+# loaded /projects/sandbox/wt-kb-overlay/docs/validation/VTID-05498/pglite-harness/seed_extra_docs.sql
+# SQL ERROR: column "tenant_id" does not exist

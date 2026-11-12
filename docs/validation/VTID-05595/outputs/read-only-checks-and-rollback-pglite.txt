@@ -1,0 +1,101 @@
+## base_schema.sql (loaded)
+## fixture-members.sql (loaded)
+## live-before.sql
+check_name | ok
+column_absent | true
+
+check_name | ok
+functions_absent | true
+
+check_name | ok
+is_primary_present | true
+
+check_name | n
+members_without_exactly_one_primary | 0
+
+check_name | n
+members_with_zero_primary | 0
+
+check_name | n
+members_with_two_or_more_primary | 0
+
+check_name | n
+members_total | 2
+
+check_name | user_id | primary_rows
+
+## 20261102130000_vtid_05595_health_home_tenant_column.sql (loaded)
+## 20261102130100_vtid_05595_health_home_tenant_resolver_backfill.sql (loaded)
+## post-apply-checks.sql
+check_name | ok
+column_present | true
+
+check_name | ok
+index_present | true
+
+check_name | ok
+fk_present | true
+
+check_name | ok
+functions_definer_pinned | true
+
+check_name | ok
+execute_service_role_only | true
+
+check_name | ok
+every_member_has_a_home_tenant | true
+
+check_name | ok
+frozen_equals_resolved_for_every_frozen_member | true
+
+check_name | ok
+snapshot_covers_every_backfilled_member | true
+
+check_name | ok
+snapshot_not_readable_by_members | true
+
+## rollback-130100-health-home-tenant-resolver-backfill.sql (loaded)
+## rollback-130000-health-home-tenant-column.sql (loaded)
+## rollback-check.sql
+check_name | ok
+column_gone | true
+
+check_name | ok
+index_gone | true
+
+check_name | ok
+functions_gone | true
+
+check_name | ok
+snapshot_kept | true
+
+## 20261102130000_vtid_05595_health_home_tenant_column.sql (loaded)
+## 20261102130100_vtid_05595_health_home_tenant_resolver_backfill.sql (loaded)
+## post-apply-checks.sql
+check_name | ok
+column_present | true
+
+check_name | ok
+index_present | true
+
+check_name | ok
+fk_present | true
+
+check_name | ok
+functions_definer_pinned | true
+
+check_name | ok
+execute_service_role_only | true
+
+check_name | ok
+every_member_has_a_home_tenant | true
+
+check_name | ok
+frozen_equals_resolved_for_every_frozen_member | true
+
+check_name | ok
+snapshot_covers_every_backfilled_member | true
+
+check_name | ok
+snapshot_not_readable_by_members | true
+

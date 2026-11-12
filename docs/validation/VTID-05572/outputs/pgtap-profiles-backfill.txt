@@ -1,0 +1,23 @@
+1..22
+ok 1 - the backfill function is not executable by anon or authenticated
+ok 2 - the restore function is not executable by anon or authenticated
+ok 3 - single-membership member gets its tenant
+ok 4 - a member with no membership stays NULL
+ok 5 - a member with two memberships stays NULL
+ok 6 - an existing tenant_id is never overwritten
+ok 7 - a service-bot account is never backfilled
+ok 8 - no backfilled profile holds a tenant it is not a member of (nobody defaulted to Maxina)
+ok 9 - the member with no membership is listed as no_membership
+ok 10 - the member with two memberships is listed as multiple_memberships
+ok 11 - a resolved member is not listed
+ok 12 - a service-bot account is not listed
+ok 13 - the listing records the membership count
+ok 14 - the snapshot holds the NULL prior value of the four NULL profiles
+ok 15 - the snapshot holds the prior non-NULL value
+ok 16 - a second run sets nothing
+ok 17 - profiles.tenant_id is still nullable
+ok 18 - the log holds exactly this test's one backfilled profile
+ok 19 - the restore runs
+ok 20 - the restore puts the snapshot value back for the backfilled profile
+ok 21 - the restore leaves profiles the backfill did not touch alone
+ok 22 - the restore keeps a value changed after the backfill

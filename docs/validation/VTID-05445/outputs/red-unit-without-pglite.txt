@@ -1,0 +1,3 @@
+# red: the first PR head ran the PGlite tests as *.test.mjs in the required `unit` check (no install)
+#   Error [ERR_MODULE_NOT_FOUND]: Cannot find package '@electric-sql/pglite' imported from scripts/mt/stack/stack.mjs
+#   not ok 57 - scripts/mt/inventory/inventory.test.mjs  (run 42490091509, unit)

@@ -1,0 +1,51 @@
+1..50
+ok 1 - analyze_orphan_rows() is STABLE, so PostgreSQL itself rejects any write from it
+ok 2 - analyze_orphan_rows() changed no row anywhere
+ok 3 - dev user on the dead tenant is reported as dev_0099 / dev_user_test_data
+ok 4 - dev user in a live tenant is reported too
+ok 5 - ...0001 as bot sender on tenant ...0001 is split from ...0001 as tenant (R3-F1)
+ok 6 - a bot-sent row with a real tenant is reported as keep
+ok 7 - the fake 550e8400 tenant is its own class
+ok 8 - every registry table is listed, present or absent
+ok 9 - analyze_orphan_rows(): service_role only
+ok 10 - the move, snapshot and restore functions are not executable by anon/authenticated
+ok 11 - mt_orphan_quarantine: RLS on, service_role only
+ok 12 - bak_mt_data_cleanup_*: RLS on, not readable by authenticated
+ok 13 - the move refuses rows that are not in the bak_* snapshot yet
+ok 14 - nothing moved before the snapshot
+ok 15 - snapshot holds every memory_facts row that will move (F1-F4, F6)
+ok 16 - snapshot does not hold the untouched live row
+ok 17 - snapshot holds the chat_messages that will move, not the bot row with a real tenant
+ok 18 - a second snapshot captures nothing new (first capture is never overwritten)
+ok 19 - authenticated cannot run the move
+ok 20 - dev user ...0099 has no row left in memory_facts, in any tenant
+ok 21 - F1 (dev user, dead tenant) is in quarantine
+ok 22 - F6 (dev user, live tenant) is in quarantine
+ok 23 - the quarantine keeps the original row in payload
+ok 24 - single-membership owner is remapped to its tenant
+ok 25 - the good live row is unchanged
+ok 26 - owner with 0 memberships -> quarantine
+ok 27 - owner with 2+ memberships -> quarantine
+ok 28 - no quarantined row is in any live tenant (never Maxina)
+ok 29 - bot row with tenant ...0001 -> quarantine bot_sender_dev_tenant
+ok 30 - and it is in no live tenant
+ok 31 - bot row with a real tenant is untouched
+ok 32 - unattributable cross-tenant DM -> quarantine
+ok 33 - DM to the bot -> sender tenant
+ok 34 - DM inside the tenant -> sender tenant
+ok 35 - group message (receiver_id NULL) on the dead tenant -> sender tenant, not NULL and not blocked
+ok 36 - the group message is neither quarantined nor move_blocked
+ok 37 - row under the fake 550e8400 tenant is remapped to the owner's tenant
+ok 38 - re-pollution check: no ...0001 row left in memory_facts, chat_messages, user_notifications
+ok 39 - analysis after the move: zero rows left to move in any table
+ok 40 - the run reports per table
+ok 41 - a second run moves nothing
+ok 42 - a row that cannot move is recorded as move_blocked
+ok 43 - and it stays in place (nothing is lost)
+ok 44 - rollback re-inserts the quarantined memory_facts and keeps the remapped one
+ok 45 - rollback puts the remapped row back on its original tenant_id
+ok 46 - rollback restores the chat_messages counts (C1, C3, C4, C5, C6 back under ...0001)
+ok 47 - rollback restores the group message with receiver_id NULL and its group_id
+ok 48 - the bot row with a real tenant is identical after rollback
+ok 49 - rollback clears this lane's quarantine rows
+ok 50 - the bak_* snapshot is kept after rollback

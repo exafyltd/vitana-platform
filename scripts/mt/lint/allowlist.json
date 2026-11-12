@@ -1,0 +1,5 @@
+{
+  "schema_version": 1,
+  "note": "Owner-tagged exceptions to the DB lints and the bare-policy counter. Every entry needs lint, subject, owner and reason. Subject: a table name (nullable-tenant-id, missing-tenant-policy, realtime-without-tenant-rls, bare-policy), name(identity args) for definer-without-guard, a policy name for storage-policy. An entry that matches nothing is reported stale. An entry never turns an unverified table into a pass. Which tables are tenant-shared is an owner decision (docs/MULTI-TENANT-PLAN.md section 4.3): no entry is invented here.",
+  "entries": []
+}

@@ -1,0 +1,195 @@
+TAP version 13
+# Subtest: VTID-05493: migration files
+    # Subtest: are exactly the two lane files, sorted around mt-community-isolation-r2 C3 (070160)
+    ok 1 - are exactly the two lane files, sorted around mt-community-isolation-r2 C3 (070160)
+      ---
+      duration_ms: 1.949833
+      type: 'test'
+      ...
+    # Subtest: 20261102070300_vtid_05493_mt_tenant_deactivate.sql: one transaction with a lock_timeout
+    ok 2 - 20261102070300_vtid_05493_mt_tenant_deactivate.sql: one transaction with a lock_timeout
+      ---
+      duration_ms: 0.47238
+      type: 'test'
+      ...
+    # Subtest: 20261102070350_vtid_05493_mt_tenant_archive_switch.sql: one transaction with a lock_timeout
+    ok 3 - 20261102070350_vtid_05493_mt_tenant_archive_switch.sql: one transaction with a lock_timeout
+      ---
+      duration_ms: 0.226579
+      type: 'test'
+      ...
+    # Subtest: the ALTER TABLE on tenants retries on lock_not_available
+    ok 4 - the ALTER TABLE on tenants retries on lock_not_available
+      ---
+      duration_ms: 1.201428
+      type: 'test'
+      ...
+    # Subtest: is expand-only: no DROP, no DELETE, no TRUNCATE, no NOT NULL / DEFAULT on the new column
+    ok 5 - is expand-only: no DROP, no DELETE, no TRUNCATE, no NOT NULL / DEFAULT on the new column
+      ---
+      duration_ms: 0.501361
+      type: 'test'
+      ...
+    # Subtest: adds no RLS policy and no bare current_tenant_id()
+    ok 6 - adds no RLS policy and no bare current_tenant_id()
+      ---
+      duration_ms: 0.271274
+      type: 'test'
+      ...
+    # Subtest: snapshots tenants.is_active before any change and closes the snapshot table to clients
+    ok 7 - snapshots tenants.is_active before any change and closes the snapshot table to clients
+      ---
+      duration_ms: 0.193891
+      type: 'test'
+      ...
+    1..7
+ok 1 - VTID-05493: migration files
+  ---
+  duration_ms: 5.69247
+  type: 'suite'
+  ...
+# Subtest: VTID-05493: lifecycle RPCs
+    # Subtest: deactivate_tenant: SECURITY DEFINER with a pinned search_path, guards, service_role only
+    ok 1 - deactivate_tenant: SECURITY DEFINER with a pinned search_path, guards, service_role only
+      ---
+      duration_ms: 0.431698
+      type: 'test'
+      ...
+    # Subtest: archive_tenant: SECURITY DEFINER with a pinned search_path, guards, service_role only
+    ok 2 - archive_tenant: SECURITY DEFINER with a pinned search_path, guards, service_role only
+      ---
+      duration_ms: 0.325618
+      type: 'test'
+      ...
+    # Subtest: are idempotent: the UPDATE only touches a row that still needs the change
+    ok 3 - are idempotent: the UPDATE only touches a row that still needs the change
+      ---
+      duration_ms: 0.351712
+      type: 'test'
+      ...
+    1..3
+ok 2 - VTID-05493: lifecycle RPCs
+  ---
+  duration_ms: 1.374292
+  type: 'suite'
+  ...
+# Subtest: VTID-05493: closing switch RPC
+    # Subtest: keeps the VTID-05043 contract (open_signup join rule, TENANT_NOT_JOINABLE, grants)
+    ok 1 - keeps the VTID-05043 contract (open_signup join rule, TENANT_NOT_JOINABLE, grants)
+      ---
+      duration_ms: 0.407856
+      type: 'test'
+      ...
+    # Subtest: resolves a member of an inactive tenant to the active default tenant, never a lockout
+    ok 2 - resolves a member of an inactive tenant to the active default tenant, never a lockout
+      ---
+      duration_ms: 0.146383
+      type: 'test'
+      ...
+    # Subtest: lets a non-member nowhere near a deactivated tenant and an exafy admin still switch to it
+    ok 3 - lets a non-member nowhere near a deactivated tenant and an exafy admin still switch to it
+      ---
+      duration_ms: 0.273191
+      type: 'test'
+      ...
+    # Subtest: audits the fallback and stays write-free on a repeat call
+    ok 4 - audits the fallback and stays write-free on a repeat call
+      ---
+      duration_ms: 0.166948
+      type: 'test'
+      ...
+    # Subtest: does not touch current_tenant_id() (an RLS-wide helper; out of this lane)
+    ok 5 - does not touch current_tenant_id() (an RLS-wide helper; out of this lane)
+      ---
+      duration_ms: 0.095049
+      type: 'test'
+      ...
+    1..5
+ok 3 - VTID-05493: closing switch RPC
+  ---
+  duration_ms: 1.228495
+  type: 'suite'
+  ...
+# Subtest: VTID-05493: rollbacks and read-only checks
+    # Subtest: rollback-070300-tenant-deactivate.sql exists
+    ok 1 - rollback-070300-tenant-deactivate.sql exists
+      ---
+      duration_ms: 0.143395
+      type: 'test'
+      ...
+    # Subtest: rollback-070350-tenant-archive-switch.sql exists
+    ok 2 - rollback-070350-tenant-archive-switch.sql exists
+      ---
+      duration_ms: 0.60488
+      type: 'test'
+      ...
+    # Subtest: live-before.sql exists
+    ok 3 - live-before.sql exists
+      ---
+      duration_ms: 0.082051
+      type: 'test'
+      ...
+    # Subtest: post-apply-checks.sql exists
+    ok 4 - post-apply-checks.sql exists
+      ---
+      duration_ms: 0.04706
+      type: 'test'
+      ...
+    # Subtest: rollback-check.sql exists
+    ok 5 - rollback-check.sql exists
+      ---
+      duration_ms: 0.045738
+      type: 'test'
+      ...
+    # Subtest: the read-only checks are SELECT only
+    ok 6 - the read-only checks are SELECT only
+      ---
+      duration_ms: 0.43174
+      type: 'test'
+      ...
+    # Subtest: rollback-070350 restores the VTID-05043 body, restores is_active from the snapshot, then drops the column
+    ok 7 - rollback-070350 restores the VTID-05043 body, restores is_active from the snapshot, then drops the column
+      ---
+      duration_ms: 0.182478
+      type: 'test'
+      ...
+    # Subtest: rollback-070300 refuses while archive_tenant exists and restores is_active before dropping the function
+    ok 8 - rollback-070300 refuses while archive_tenant exists and restores is_active before dropping the function
+      ---
+      duration_ms: 0.094375
+      type: 'test'
+      ...
+    1..8
+ok 4 - VTID-05493: rollbacks and read-only checks
+  ---
+  duration_ms: 1.792603
+  type: 'suite'
+  ...
+# Subtest: VTID-05493: queue rows and drift baseline
+    # Subtest: MIGRATION-QUEUE lists both files with their rollbacks
+    ok 1 - MIGRATION-QUEUE lists both files with their rollbacks
+      ---
+      duration_ms: 0.166182
+      type: 'test'
+      ...
+    # Subtest: the not-yet-live snapshot table is in the drift baseline and the count matches
+    ok 2 - the not-yet-live snapshot table is in the drift baseline and the count matches
+      ---
+      duration_ms: 0.133404
+      type: 'test'
+      ...
+    1..2
+ok 5 - VTID-05493: queue rows and drift baseline
+  ---
+  duration_ms: 0.366095
+  type: 'suite'
+  ...
+1..5
+# tests 25
+# suites 5
+# pass 25
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 107.027322

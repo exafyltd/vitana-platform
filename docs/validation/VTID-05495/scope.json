@@ -1,0 +1,14 @@
+{
+  "vtid": "VTID-05495",
+  "kind": "feature",
+  "paths": [
+    "supabase/migrations/20261101100000_mt_packs_tenant_content_overrides.sql",
+    "supabase/tests/mt/mt_packs_tenant_content_overrides.sql",
+    "scripts/ci/migration-drift-baseline.json",
+    "docs/multitenancy/MIGRATION-QUEUE.md",
+    "docs/validation/VTID-05495/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05495/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

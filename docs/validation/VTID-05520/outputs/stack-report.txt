@@ -1,0 +1,28 @@
+replay: 424 applied, 306 skipped (replay-skip.json), 0 failed
+SKIP access_audit_log (unverified): no migration in either repository creates this table [needed by: isolation-suite, generated-inventories]
+PASS community_groups
+SKIP community_listings (unverified): created by 20260727090000_bootstrap_community_marketplace.sql, which fails on a fresh replay: column "tenant_id" referenced in foreign key constraint does not exist [needed by: isolation-suite, generated-inventories]
+PASS community_meetups
+SKIP consents (unverified): no migration in either repository creates this table [needed by: isolation-suite, generated-inventories]
+PASS d42_domain_weights
+SKIP event_attendance (unverified): created by 20251231000001_vtid_01090_live_rooms_events_graph.sql, which fails on a fresh replay: column "source_type" does not exist [needed by: isolation-suite, generated-inventories]
+SKIP live_highlights (unverified): created by 20251231000001_vtid_01090_live_rooms_events_graph.sql, which fails on a fresh replay: column "source_type" does not exist [needed by: isolation-suite, generated-inventories]
+SKIP live_room_attendance (unverified): created by 20251231000001_vtid_01090_live_rooms_events_graph.sql, which fails on a fresh replay: column "source_type" does not exist [needed by: isolation-suite, generated-inventories]
+SKIP live_rooms (unverified): created by 20251231000001_vtid_01090_live_rooms_events_graph.sql, which fails on a fresh replay: column "source_type" does not exist [needed by: isolation-suite, generated-inventories]
+PASS products_catalog
+PASS relationship_edges
+SKIP retrieval_traces (unverified): no migration in either repository creates this table [needed by: isolation-suite, generated-inventories]
+SKIP role_sessions (unverified): no migration in either repository creates this table [needed by: isolation-suite, generated-inventories]
+PASS services_catalog
+SKIP tenant_catalog_overrides (unverified): created by 20260416120000_vtid_02000_marketplace_foundation.sql, which needs the vector extension [needed by: isolation-suite, generated-inventories]
+PASS tenants
+SKIP user_roles (unverified): no migration in either repository creates this table [needed by: isolation-suite, generated-inventories]
+PASS health_features_daily
+PASS biomarker_results
+PASS wearable_samples
+SKIP partner_health_test_orders (unverified): created by 20260914090000_vtid_03885_partner_health_test_integration.sql, which needs public.product_orders from the pgvector-dependent marketplace foundation [needed by: isolation-suite, generated-inventories]
+SKIP data_sharing_consents (unverified): created by 20260914090000_vtid_03885_partner_health_test_integration.sql, which needs public.product_orders from the pgvector-dependent marketplace foundation [needed by: isolation-suite, generated-inventories]
+PASS user_tenants
+required tables: 24, present 11, not replayable (unverified) 13
+fixtures: 010_tenants_members.sql, 020_canary_rows.sql
+PASS local-stack gate

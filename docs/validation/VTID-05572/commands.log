@@ -1,0 +1,8 @@
+# VTID-05572 commands run in the sandbox (PGlite only; no live system, no docker/psql/supabase CLI available)
+git worktree add /projects/sandbox/wt-profiles-backfill -b kiro/mt-data-cleanup-r2/profiles-tenant-backfill origin/main   # faf6921a83
+# RED first: pgTAP file on origin/main state (no lane migration loaded)
+docs/validation/VTID-05572/pglite-harness/lane.sh supabase/tests/vtid_mt_data_cleanup_profiles_tenant_backfill.test.sql -> outputs/pgtap-profiles-backfill-RED-on-faf6921a83.txt (SQL ERROR: relation legacy_archive.mt_profiles_tenant_unresolved does not exist)
+# GREEN: with the lane migration
+EXTRA_MIG=supabase/migrations/20261102042000_vtid_05572_profiles_tenant_backfill_fn.sql docs/validation/VTID-05572/pglite-harness/lane.sh supabase/tests/vtid_mt_data_cleanup_profiles_tenant_backfill.test.sql -> outputs/pgtap-profiles-backfill.txt (22 ok, 0 not ok)
+node docs/validation/VTID-05572/pglite-harness/checks.mjs -> outputs/read-only-checks-pglite.txt (both migrations, pre/post/rollback checks, rollback file)
+node -e "validateManifest(staging-tests.json)" -> outputs/staging-manifest-validation.txt ({"ok":true,"errors":[]})

@@ -1,0 +1,11 @@
+$ curl -s -X POST http://127.0.0.1:18588/api/v1/companion/test-card -H "Content-Type: application/json" -d "{}"
+{"ok":false,"error":"UNAUTHENTICATED","message":"Missing or invalid Authorization header. Expected: Bearer <token>"}
+HTTP 401
+$ curl -s -X POST .../test-card -H "Authorization: Bearer not-a-jwt" -d "{\"user_id\":\"x\"}"
+{"ok":false,"error":"UNAUTHENTICATED","message":"Invalid or expired token"}
+HTTP 401
+$ curl -s -X GET .../test-card   (only POST is routed)
+HTTP 404
+$ curl -s .../status
+{"ok":true,"mode":"off","reason":"feature_off","env":"production"}
+HTTP 200

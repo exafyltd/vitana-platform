@@ -1,0 +1,11 @@
+{
+  "vtid": "VTID-05589",
+  "service": "community-app",
+  "tests": [
+    { "kind": "existing", "ref": "npx vitest run src/hooks/useCompanionTestCard.test.ts src/components/settings/VitanaMessagesSettings.test-card.test.tsx src/components/settings/VitanaMessagesSettings.vtid-05100.test.tsx", "cwd": ".",
+      "reason": "the admin-only test-card row: hidden for members, one POST per press with only moment_key, disabled while pending, success links to the Vitana DM, 409/422/429/5xx each show their own message; the existing Vitana messages settings stay unchanged. Pressing the button on staging is not done: the gateway answers 409 there (shared production database, rule 48)." },
+    { "kind": "http", "target": "frontend", "method": "GET", "path": "/",
+      "expect_status": 200, "expect_body_contains": "id=\"root\"",
+      "reason": "the staging build containing the change is served" }
+  ]
+}

@@ -1,0 +1,4 @@
+# loaded /projects/sandbox/wt-tenant-moderation/docs/validation/VTID-05491/pglite-harness/base_schema.sql
+# loaded /projects/sandbox/wt-tenant-moderation/docs/validation/VTID-05491/pgtap/vtid_05491_fixture.sql
+# SQL ERROR: column "tenant_id" does not exist
+exit 1

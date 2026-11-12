@@ -1,0 +1,8 @@
+# VTID-05540 red on a stub: scripts/eng/rehearse.mjs replaced by a stub with every export of the real module (75), each returning undefined; no seed folder, no README
+# $ node --test scripts/eng/rehearse.test.mjs
+# tests 146
+# pass 0
+# fail 146
+# cancelled 0
+# skipped 0
+# todo 0

@@ -1,0 +1,14 @@
+{
+  "vtid": "VTID-05575",
+  "service": "gateway",
+  "not_verified_on_staging": true,
+  "not_verified_on_staging_reason": "This lane adds three migration files, a pgTAP test, read-only check SQL and rollbacks. Nothing is applied from the PR: each file is applied later through RUN-MIGRATION.yml, one file per dispatch, after the owner approves the files and the target database (collaboration.md section 7d). Staging shares the production database, and nothing deployed reads daily_matches.scope or calls intent_pool_allows (the recompute and screens that do ship in later lanes behind mt.network_enabled; the gateway still passes p_visibility 'public' to search_intent_catalog_v2, which after the apply means the network rule), so the staging deploy runs no code that reads anything new. Staging writes to the production Supabase project (rules 31/31b/48), so the matchers and the guard trigger are never exercised there: they are proven by the pgTAP file on a local stack. The post-apply check is read-only: docs/validation/VTID-05575/live-before.sql before, post-apply-checks.sql after, rollback-check.sql after a rollback, run by Kiro through RUN-MIGRATION's read-only check. No suite points at vitanaland.com.",
+  "tests": [
+    {
+      "kind": "existing",
+      "ref": "npx jest test/mt-identity-bare-policy-lint.test.ts",
+      "cwd": "services/gateway",
+      "reason": "The repository-wide bare-policy lint reads every migration, including the three new files: they add no RLS policy."
+    }
+  ]
+}

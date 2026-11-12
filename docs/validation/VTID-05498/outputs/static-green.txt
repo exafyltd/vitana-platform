@@ -1,0 +1,46 @@
+TAP version 13
+# Subtest: migration adds one nullable tenant_id column with a live-key FK and lock_timeout, nothing else
+ok 1 - migration adds one nullable tenant_id column with a live-key FK and lock_timeout, nothing else
+  ---
+  duration_ms: 1.055995
+  type: 'test'
+  ...
+# Subtest: expand-only: no DML, no DROP, no index, no policy, no bare current_tenant_id()
+ok 2 - expand-only: no DML, no DROP, no index, no policy, no bare current_tenant_id()
+  ---
+  duration_ms: 0.410343
+  type: 'test'
+  ...
+# Subtest: rollback drops exactly the new column; pre/post checks are read-only
+ok 3 - rollback drops exactly the new column; pre/post checks are read-only
+  ---
+  duration_ms: 0.520972
+  type: 'test'
+  ...
+# Subtest: MIGRATION-QUEUE has the row with rollback and checks, and the version is unique in the queue
+ok 4 - MIGRATION-QUEUE has the row with rollback and checks, and the version is unique in the queue
+  ---
+  duration_ms: 0.34058
+  type: 'test'
+  ...
+# Subtest: drift baseline: the column is noted without a bogus table entry (this lane leaves count and list alone)
+ok 5 - drift baseline: the column is noted without a bogus table entry (this lane leaves count and list alone)
+  ---
+  duration_ms: 1.033487
+  type: 'test'
+  ...
+# Subtest: the pgTAP file exists and plans the cases it runs
+ok 6 - the pgTAP file exists and plans the cases it runs
+  ---
+  duration_ms: 0.286956
+  type: 'test'
+  ...
+1..6
+# tests 6
+# suites 0
+# pass 6
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 55.701014

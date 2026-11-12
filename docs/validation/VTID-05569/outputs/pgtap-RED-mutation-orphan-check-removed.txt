@@ -1,0 +1,17 @@
+1..11
+ok 1 - assertion passes on the real schema
+ok 2 - chat_messages.tenant_id is NOT NULL
+ok 3 - user_notifications.tenant_id is NOT NULL
+ok 4 - product_analytics_events.tenant_id is NOT NULL
+ok 5 - nullable chat_messages.tenant_id raises
+ok 6 - nullable user_notifications.tenant_id raises
+ok 7 - nullable product_analytics_events.tenant_id raises
+not ok 8 - chat_messages row on a non-existent tenant raises
+#   no exception thrown
+not ok 9 - user_notifications row on a non-existent tenant raises
+#   no exception thrown
+not ok 10 - product_analytics_events row on a non-existent tenant raises
+#   no exception thrown
+ok 11 - assertion passes again after the fixtures are removed
+# Looks like you failed 3 test(s) of 11
+exit 0

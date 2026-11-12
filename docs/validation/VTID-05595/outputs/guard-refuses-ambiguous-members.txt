@@ -1,0 +1,43 @@
+## base_schema.sql (loaded)
+## fixture-ambiguous.sql (loaded)
+## live-before.sql
+check_name | ok
+column_absent | true
+
+check_name | ok
+functions_absent | true
+
+check_name | ok
+is_primary_present | true
+
+check_name | n
+members_without_exactly_one_primary | 2
+
+check_name | n
+members_with_zero_primary | 1
+
+check_name | n
+members_with_two_or_more_primary | 1
+
+check_name | n
+members_total | 2
+
+check_name | user_id | primary_rows
+ambiguous_member_ids | 00000000-0000-4000-8000-000000000003 | 2
+ambiguous_member_ids | 00000000-0000-4000-8000-000000000004 | 0
+
+## 20261102130000_vtid_05595_health_home_tenant_column.sql (loaded)
+## 20261102130100_vtid_05595_health_home_tenant_resolver_backfill.sql refused as expected: VTID-05595: 2 member(s) do not have exactly one primary user_tenants row; run mt-identity-r2 membership unification (queue rows 14-16) first. Nothing was changed.
+## guard-check.sql
+check_name | ok
+resolver_not_created | true
+
+check_name | ok
+backfill_not_created | true
+
+check_name | ok
+no_column_value_written | true
+
+check_name | ok
+snapshot_not_created | true
+

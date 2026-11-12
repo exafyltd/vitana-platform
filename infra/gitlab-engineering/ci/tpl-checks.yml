@@ -1,0 +1,119 @@
+# VTID-05550 — T1 merge-request checks (plan agentic-delivery §3.4; lane pipelines). Hidden jobs only: the generated
+# v1-delivery.gitlab-ci.yml and platform-delivery.gitlab-ci.yml (scripts/eng/pipeline-gen.mjs) extend them.
+# Every T1 job runs on the untrusted class (tag vitana-eng, plan §3.2): no AWS role, no secret, no ID token. It reads
+# the vitana-platform project only with its own job token (CI_JOB_TOKEN), and every gate runs code from main (principle
+# 3): the platform scripts from a clone of platform main, the repository's own gate scripts from its main.
+#   governance (always, first, no path rule): lane-scope, change-suite (required), pr-gate-report (report-only, the
+#   enforce switch of scripts/ci/pr-gate/config.json), collab-handoff (required on vitana-platform, report-only on
+#   vitana-v1). The service checks are path-selected (rules:changes). gate needs every check (optional: true) and
+#   proves the selection: every check the change needs ran and passed, and a path no service claims fails closed.
+# Train refs (train/<k>, plan §3.5) run the same jobs; the merge bot passes GATE_BASE, GATE_HEAD, GATE_BRANCH and
+# GATE_TITLE as pipeline variables, which override the defaults of the generated file.
+
+.t1-base:
+  image: public.ecr.aws/docker/library/node:20-bookworm
+  tags: [vitana-eng]
+  interruptible: true
+  retry:
+    max: 1
+    when: [runner_system_failure, stuck_or_timeout_failure, scheduler_failure]
+  variables:
+    CI: "true"
+    npm_config_cache: $CI_PROJECT_DIR/.npm
+    npm_config_store_dir: $CI_PROJECT_DIR/.pnpm-store
+
+# The platform scripts of main: a sparse, shallow clone of vitana/vitana-platform through the job token.
+.central-tools:
+  variables:
+    CENTRAL_DIR: /tmp/vitana-central
+  before_script:
+    - rm -rf "$CENTRAL_DIR"
+    - git clone --quiet --depth 1 --branch main --filter=blob:none --sparse "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/vitana/vitana-platform.git" "$CENTRAL_DIR"
+    - git -C "$CENTRAL_DIR" sparse-checkout set --no-cone /scripts/ /config/delivery/
+    - 'echo "central scripts: vitana/vitana-platform main @ $(git -C "$CENTRAL_DIR" rev-parse HEAD)"'
+
+# Governance: platform main (scripts and lane files) plus a worktree of this repository's main for its own gate.mjs.
+.governance:
+  extends: .t1-base
+  needs: []
+  timeout: 10m
+  variables:
+    GIT_DEPTH: "0"
+    CENTRAL_DIR: /tmp/vitana-central
+    MAIN_TREE: /tmp/vitana-main
+  before_script:
+    - rm -rf "$CENTRAL_DIR" "$MAIN_TREE"
+    - git clone --quiet --depth 1 --branch main --filter=blob:none --sparse "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/vitana/vitana-platform.git" "$CENTRAL_DIR"
+    - git -C "$CENTRAL_DIR" sparse-checkout set --no-cone /scripts/ /config/delivery/ /.kiro/specs/
+    - git fetch --quiet --depth 1 origin main
+    - git worktree add --quiet --detach "$MAIN_TREE" FETCH_HEAD
+    - 'echo "governance: platform main @ $(git -C "$CENTRAL_DIR" rev-parse HEAD), $DELIVERY_REPOSITORY main @ $(git -C "$MAIN_TREE" rev-parse HEAD), head $GATE_HEAD"'
+
+# Lane scope: scopeCheck of queue.mjs unchanged, lane files from platform main (lane merge-queue's wrapper).
+.lane-scope:
+  script:
+    - node "$CENTRAL_DIR/scripts/eng/gitlab-gates.mjs" lane-scope --repository "$DELIVERY_REPOSITORY" --repo-root "$CI_PROJECT_DIR" --platform-dir "$CENTRAL_DIR" --base "$GATE_BASE" --head "$GATE_HEAD" --branch "$GATE_BRANCH"
+
+# No suite, no merge: run.mjs check-pr from platform main, as STAGING-TESTS-REQUIRED does.
+.change-suite:
+  script:
+    - node "$CENTRAL_DIR/scripts/ci/staging-verify/run.mjs" check-pr --service "$CHANGE_SUITE_SERVICE" --repo-root "$CI_PROJECT_DIR" --base "$GATE_BASE" --head "$GATE_HEAD" --title "$GATE_TITLE"
+
+# PR-GATE's checks from this repository's main, report-only unless its config says enforce (the owner's switch).
+# gate.mjs reads the VTIDs from --title (gate.mjs:22-23; without it scope, sparring and red-green skip). red-green runs
+# the change's tests on the base commit with the checkout's node_modules, so a "fix" VTID installs them first in the
+# red_green cwd of main's config.json (vitana-v1 the root, vitana-platform services/gateway), as PR-GATE.yml does.
+.pr-gate-report:
+  script:
+    - FAILED=""
+    - 'for v in $(printf "%s" "$GATE_TITLE" | grep -Eo "VTID-[0-9]{4,5}" | sort -u || true); do f="docs/validation/$v/scope.json"; if [ -f "$f" ] && [ "$(node -p "require(\"./$f\").kind")" = "fix" ]; then RG_CWD=$(node -p "(require(process.env.MAIN_TREE + \"/scripts/ci/pr-gate/config.json\").red_green || {}).cwd || \".\""); echo "red-green: $v is a fix: npm ci in $RG_CWD"; (cd "$RG_CWD" && npm ci --no-audit --no-fund --prefer-offline >/dev/null) || FAILED="$FAILED red-green-install"; break; fi; done'
+    - for c in scope sparring weakening red-green; do node "$MAIN_TREE/scripts/ci/pr-gate/gate.mjs" "$c" --base "$GATE_BASE" --head "$GATE_HEAD" --title "$GATE_TITLE" || FAILED="$FAILED $c"; done
+    - node "$MAIN_TREE/scripts/ci/kiro-steering/guard.cjs" . || FAILED="$FAILED kiro-steering"
+    - ENFORCE=$(node -p "require('$MAIN_TREE/scripts/ci/pr-gate/config.json').enforce === true")
+    - 'if [ -z "$FAILED" ]; then echo "PR-GATE passed"; elif [ "$ENFORCE" = "true" ]; then echo "PR-GATE failed:$FAILED"; exit 1; else echo "PR-GATE (report-only) would fail:$FAILED"; fi'
+
+# Collab handoff: validateRange of queue.mjs unchanged (lane merge-queue's wrapper).
+.collab-handoff:
+  script:
+    - node "$CENTRAL_DIR/scripts/eng/gitlab-gates.mjs" collab-handoff --repository "$DELIVERY_REPOSITORY" --repo-root "$CI_PROJECT_DIR" --platform-dir "$CENTRAL_DIR" --base "$GATE_BASE" --head "$GATE_HEAD" --branch "$GATE_BRANCH"
+
+# A service check. The concrete job adds its install and check lines, its cache and its rules:changes. A check that
+# passed leaves a marker the gate reads (.delivery-ran/<job id>.json with the check name).
+.check:
+  extends: .t1-base
+  timeout: 15m
+  after_script:
+    - 'if [ "$CI_JOB_STATUS" = "success" ]; then mkdir -p "$CI_PROJECT_DIR/.delivery-ran" && printf "{\"check\":\"%s\",\"job\":\"%s\"}\n" "$DELIVERY_CHECK" "$CI_JOB_NAME" > "$CI_PROJECT_DIR/.delivery-ran/$CI_JOB_ID.json"; fi'
+  artifacts:
+    when: on_success
+    expire_in: 1 day
+    paths: [.delivery-ran/]
+
+# The only other required job. It runs when every selected check passed (a failed check leaves it unrun, so the merge
+# request cannot land) and fails closed on an unknown path or a check the change needs that did not run.
+.gate:
+  extends: .t1-base
+  timeout: 5m
+  variables:
+    GIT_DEPTH: "0"
+  script:
+    - node "$CENTRAL_DIR/scripts/eng/pipeline-gen.mjs" gate --root "$CENTRAL_DIR" --repo "$DELIVERY_REPOSITORY" --repo-root "$CI_PROJECT_DIR" --base "$GATE_BASE" --head "$GATE_HEAD" --ran-dir "$CI_PROJECT_DIR/.delivery-ran"
+
+# T4 build half (plan §3.7): the community app built for its preview path against the staging gateway, as
+# PREVIEW-DEPLOY-FRONTEND does; lane deploy-path's .preview-upload publishes dist/ from the deploy class.
+.preview-build:
+  timeout: 15m
+  cache:
+    key:
+      files: [package-lock.json]
+      prefix: preview-build
+    paths: [.npm]
+  variables:
+    VITE_GATEWAY_URL: https://preview-aws-gateway.vitanaland.com
+  script:
+    - npm ci --no-audit --no-fund --prefer-offline
+    - npx vite build --base="$PREVIEW_BASE"
+  artifacts:
+    when: on_success
+    expire_in: 1 day
+    paths: [dist/]

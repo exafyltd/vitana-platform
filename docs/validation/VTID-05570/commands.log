@@ -1,0 +1,8 @@
+# VTID-05570 commands run in the sandbox (PGlite only; no live system, no docker/psql/supabase CLI available)
+cd /projects/sandbox/wt-memfacts
+# RED: test against origin/main (faf6921a83), migrations absent
+EXTRA_NONE=1 docs/validation/VTID-05570/pglite-harness/t.sh supabase/tests/vtid_mt_data_cleanup_memfacts_supersede_merge.test.sql -> outputs/pgtap-memfacts-RED-on-origin-main.txt ("function public.mt_memfacts_merge() does not exist")
+# GREEN: with 041000 + 041100 loaded
+docs/validation/VTID-05570/pglite-harness/t.sh supabase/tests/vtid_mt_data_cleanup_memfacts_supersede_merge.test.sql -> outputs/pgtap-memfacts.txt (29 ok, 0 not ok)
+# fix-forward 1: own test counted 7 superseded rows, fixture has 6 -> corrected the test, migration unchanged
+node -e "validateManifest(staging-tests.json)" -> outputs/staging-manifest-validate.txt ({"ok":true,"errors":[]})

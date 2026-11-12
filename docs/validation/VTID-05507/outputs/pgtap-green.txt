@@ -1,0 +1,54 @@
+# loaded /projects/sandbox/wt-tenant-domains/docs/validation/VTID-05507/pglite-harness/base_schema.sql
+# loaded /projects/sandbox/wt-tenant-domains/docs/validation/VTID-05507/pgtap/vtid_05507_fixture.sql
+# loaded /projects/sandbox/wt-tenant-domains/supabase/migrations/20261014000600_vtid_05151_public_tenant_registry.sql
+# loaded /projects/sandbox/wt-tenant-domains/supabase/migrations/20261102140000_vtid_05507_mt_tenant_domains.sql
+# loaded /projects/sandbox/wt-tenant-domains/supabase/migrations/20261102140100_vtid_05507_mt_resolve_tenant_host.sql
+1..48
+ok 1 - 1 tenant_domains exists
+ok 2 - 2 RLS is enabled
+ok 3 - 3 no client policy exists
+ok 4 - 4 anon cannot read
+ok 5 - 5 authenticated cannot read
+ok 6 - 6 authenticated cannot write
+ok 7 - 7 anon cannot write
+ok 8 - 8 authenticated cannot delete
+ok 9 - 9 service_role can write
+ok 10 - 10 service_role can read (RLS bypass, no policy)
+ok 11 - 11 upper-case host rejected
+ok 12 - 12 padded host rejected
+ok 13 - 13 underscore host rejected
+ok 14 - 14 leading hyphen rejected
+ok 15 - 15 trailing dot rejected
+ok 16 - 16 empty host rejected
+ok 17 - 17 host longer than 253 characters rejected
+ok 18 - 18 a normal multi-label host is accepted
+ok 19 - 19 duplicate host rejected
+ok 20 - 20 a second primary host for one tenant rejected
+ok 21 - 21 a primary host for another tenant accepted
+ok 22 - 22 unknown tenant rejected (FK)
+ok 23 - 23 INSERT of a reserved-slug host raises (trigger)
+ok 24 - 24 UPDATE of a host to a reserved slug raises (trigger)
+ok 25 - 25 UPDATE of another column is not blocked
+ok 26 - 26 the reserved-slug trigger exists and is enabled
+ok 27 - 27 the trigger function is not executable by a client role
+ok 28 - 28 a VERIFIED host resolves its tenant
+ok 29 - 29 the host is matched after lower(btrim())
+ok 30 - 30 an UNVERIFIED host resolves empty
+ok 31 - 31 an unverified host falls through to the slug arm
+ok 32 - 32 a verified host on an INACTIVE tenant resolves empty
+ok 33 - 33 a verified host on a PLATFORM tenant resolves empty
+ok 34 - 34 an inactive-tenant host falls through to the slug arm
+ok 35 - 35 a verified host wins over the slug
+ok 36 - 36 an unknown host falls through to the slug
+ok 37 - 37 unknown host and unknown slug resolve empty
+ok 38 - 38 NULL host and NULL slug resolve empty
+ok 39 - 39 authenticated can call the overload
+ok 40 - 40 resolve_tenant(p_slug) body is byte-identical to the VTID-05151 migration
+ok 41 - 41 a {p_slug}-only call still binds the one-argument function
+ok 42 - 42 both overloads return the same 8 columns
+ok 43 - 43 no tenant_domains column is returned
+ok 44 - 44 the two-argument overload has no parameter defaults
+ok 45 - 45 anon executes both overloads
+ok 46 - 46 the internal registry is still not executable by anon
+ok 47 - 47 exactly two resolve_tenant overloads exist
+ok 48 - 48 deleting a tenant removes its hosts

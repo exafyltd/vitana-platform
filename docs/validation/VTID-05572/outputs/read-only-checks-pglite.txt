@@ -1,0 +1,34 @@
+
+== pre-check
+-- SELECT count(*) AS profi
+[{"profiles":5,"profiles_without_tenant_id":5,"profiles_with_tenant_id":0}]
+-- SELECT n AS memberships, count(*) AS profiles_with_null_tena
+[{"memberships":0,"profiles_with_null_tenant":2},{"memberships":1,"profiles_with_null_tenant":2},{"memberships":2,"profiles_with_null_tenant":1}]
+-- SELECT is_nullable FROM information_schema.columns WHERE ta
+[{"is_nullable":"YES"}]
+
+== post-check
+-- SELECT count(*) AS profi
+[{"profiles":5,"profiles_without_tenant_id":3,"profiles_with_tenant_id":2}]
+-- SELECT count(*) AS bad_backfilled FROM legacy_archive.mt_p
+[{"bad_backfilled":0}]
+-- SELECT count(*) AS bad_single_membership_still_null FROM p
+[{"bad_single_membership_still_null":0}]
+-- SELECT reason, count(*) AS members FROM legacy_archive.mt_pr
+[{"reason":"multiple_memberships","members":1},{"reason":"no_membership","members":2}]
+-- SELECT is_nullable AS tenant_id_nullable FROM information_sc
+[{"tenant_id_nullable":"YES"}]
+-- profiles
+[{"u":"10","has_tenant":true},{"u":"11","has_tenant":false},{"u":"12","has_tenant":true},{"u":"13","has_tenant":false},{"u":"14","has_tenant":false}]
+-- second apply is a no-op
+[{"log_rows":2}]
+
+== rollback-check
+-- SELECT count(*) AS backfill_log_rows_left FROM legacy_archiv
+[{"backfill_log_rows_left":0}]
+-- SELECT count(*) AS unresolved_rows_left FROM legacy_archiv
+[{"unresolved_rows_left":0}]
+-- SELECT count(*) AS profiles_differing_from_snapshot FROM l
+[{"profiles_differing_from_snapshot":0}]
+-- profiles after rollback
+[{"with_tenant":0}]

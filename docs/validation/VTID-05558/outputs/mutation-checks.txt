@@ -1,0 +1,18 @@
+##### MUTATION 1: live_room_admit_user gate reverted to host_user_id only
+psql:live-room-cohost.sql:217: ERROR:  co-host admits
+CONTEXT:  PL/pgSQL function inline_code_block line 12 at ASSERT
+exit=3
+
+##### MUTATION 2: live_room_is_host ignores the tenant
+psql:live-room-cohost.sql:121: ERROR:  listed member of ANOTHER tenant is not host
+CONTEXT:  PL/pgSQL function inline_code_block line 7 at ASSERT
+exit=3
+
+##### MUTATION 3: kick_user target guard removed
+psql:live-room-cohost.sql:245: ERROR:  co-host cannot kick the creator
+CONTEXT:  PL/pgSQL function inline_code_block line 12 at ASSERT
+exit=3
+
+##### restored migration is byte-identical and green
+identical
+PASS vtid-05558 live room cohost

@@ -1,0 +1,14 @@
+{
+  "vtid": "VTID-05588",
+  "kind": "feature",
+  "paths": [
+    "services/gateway/src/routes/companion.ts",
+    "services/gateway/src/services/companion/test-card.ts",
+    "services/gateway/src/types/cicd.ts",
+    "services/gateway/test/companion-test-card.test.ts",
+    "docs/validation/VTID-05588/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05588/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

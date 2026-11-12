@@ -1,0 +1,10 @@
+# VTID-05556 lane head 6e518856f3, 2026-11-05T12:18:05Z
+$ npx jest test/services/memory/recall-bridge-wiring.test.ts test/services/orb-memory-bridge.test.ts test/vtid-05147-effective-role-permitted.test.ts test/vtid-04452-staging-orb-recall-pinned.test.ts test/services/memory/recall.test.ts test/routes/orb-live.test.ts
+PASS test/vtid-04452-staging-orb-recall-pinned.test.ts
+PASS test/services/memory/recall.test.ts
+PASS test/services/memory/recall-bridge-wiring.test.ts
+PASS test/services/orb-memory-bridge.test.ts
+PASS test/vtid-05147-effective-role-permitted.test.ts
+PASS test/routes/orb-live.test.ts
+Test Suites: 6 passed, 6 total
+Tests:       181 passed, 181 total (after review round 1: +1 dev-sandbox test)

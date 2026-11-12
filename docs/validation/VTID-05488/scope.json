@@ -1,0 +1,18 @@
+{
+  "vtid": "VTID-05488",
+  "kind": "feature",
+  "paths": [
+    "supabase/migrations/20261102120000_vtid_05488_supplier_tenant_relationships.sql",
+    "supabase/migrations/20261102120100_vtid_05488_products_distribution.sql",
+    "supabase/migrations/20261102120200_vtid_05488_partner_tenant_backfill.sql",
+    "supabase/migrations/20261102120300_vtid_05488_products_merchants_tenant_rls.sql",
+    "services/gateway/test/vtid-05488-supplier-tenant-relationships.test.ts",
+    "docs/multitenancy/MIGRATION-QUEUE.md",
+    "scripts/ci/migration-drift-baseline.json",
+    "docs/validation/VTID-05488/**",
+    ".kiro/specs/mt-discover-r2/lanes/supplier-relationships-db.md"
+  ],
+  "sparring_record": "docs/validation/VTID-05488/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

@@ -1,0 +1,2 @@
+yaml ok | triggers: ['pull_request', 'workflow_dispatch'] | jobs: ['sql'] | steps: 3 | concurrency: per-PR, cancels only pull_request events
+CI grep matches the test output: 1

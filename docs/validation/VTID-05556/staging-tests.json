@@ -1,0 +1,19 @@
+{
+  "vtid": "VTID-05556",
+  "service": "gateway",
+  "note": "Read-only. The deployed gateway must load the recall-only bridge; behaviour is proven by the jest suites below. Nothing writes, nothing targets production.",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "gateway alive after the change",
+      "path": "/alive",
+      "expect_status": 200
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/services/memory/recall-bridge-wiring.test.ts test/services/orb-memory-bridge.test.ts test/services/memory/recall.test.ts test/vtid-04452-staging-orb-recall-pinned.test.ts test/vtid-05147-effective-role-permitted.test.ts",
+      "cwd": "services/gateway",
+      "reason": "recall-only read, no fallback and no shadow, tenant scoping on the recall identity, flag pins unchanged. Mocks and in-memory fixtures only."
+    }
+  ]
+}

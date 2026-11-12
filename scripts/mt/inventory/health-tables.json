@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "source": "docs/MULTI-TENANT-PLAN.md section 2 (health tables: member-private, tenant_id is context only)",
+  "note": "Single source of truth for the isolation-suite lane and the lints until mt-identity's isHealthTable() ships; then they switch to it (CROSS-SPEC O1).",
+  "tables": [
+    "health_features_daily",
+    "biomarker_results",
+    "wearable_samples",
+    "partner_health_test_orders",
+    "data_sharing_consents"
+  ]
+}

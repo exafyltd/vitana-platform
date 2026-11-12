@@ -1,0 +1,10 @@
+{
+  "vtid": "VTID-05558",
+  "service": "gateway",
+  "note": "Read-only. This lane is a database migration; applying it is an owner decision (collaboration.md 7d), so it is NOT applied when this merges and nothing user-visible changes. NOT VERIFIED ON STAGING: the new host gates run only after the owner approves and applies the migration. They are proven by the throwaway-Postgres test (SQL-LIVE-ROOM-COHOST). The only staging check is that the gateway, unchanged by this lane, is alive.",
+  "read_only": true,
+  "tests": [
+    { "kind": "http", "name": "gateway alive (unchanged by this lane)", "target": "gateway", "method": "GET", "path": "/alive", "expect_status": 200,
+      "reason": "read-only GET: the staging gateway serves after the deploy" }
+  ]
+}

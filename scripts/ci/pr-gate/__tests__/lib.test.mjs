@@ -77,6 +77,17 @@ test('sparring record needs verdict, owner approval and plan hash', () => {
   assert.equal(L.evaluateSparringRecord('CONVERGED').length, 2);
 });
 
+test('sparring record accepts a policy approval only for CONVERGED with the exact policy and a plan hash', () => {
+  const policy = 'CONVERGED and approved by policy `converged-auto-v1` at 2026-11-07T14:09:03+00:00.';
+  assert.deepEqual(L.evaluateSparringRecord(`${policy}\nfinal plan hash \`7f359aeb\``), []);
+  assert.ok(L.evaluateSparringRecord('ESCALATED and approved by policy `converged-auto-v1`.\nplan hash abc').length > 0);
+  assert.ok(L.evaluateSparringRecord('CONVERGED and approved by policy `other-policy-v9`.\nplan hash abc').length > 0);
+  assert.deepEqual(L.evaluateSparringRecord(policy), ['no plan hash']);
+  const none = L.evaluateSparringRecord('CONVERGED\nplan hash abc');
+  assert.equal(none.length, 1);
+  assert.ok(/owner-approval/.test(none[0]) && /converged-auto-v1/.test(none[0]));
+});
+
 test('migration lint: wrapper, idempotency, non-transactional declaration', () => {
   const good = 'BEGIN;\nCREATE TABLE IF NOT EXISTS t (id int);\nCREATE OR REPLACE FUNCTION f() RETURNS int AS $$ BEGIN CREATE TABLE inner_t(x int); RETURN 1; END $$ LANGUAGE plpgsql;\nALTER TABLE t ADD COLUMN IF NOT EXISTS c int;\nCOMMIT;';
   assert.deepEqual(L.lintMigration(good), []);

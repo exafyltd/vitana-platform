@@ -1,0 +1,8 @@
+{
+  "vtid": "VTID-05673",
+  "service": "none",
+  "tests": [
+    { "kind": "existing", "ref": "npm run test:mt-stack",
+      "reason": "the lane deploys nothing; it lists two migrations in replay-skip.json and the PGlite stack gate and its node tests prove it in CI (MT-LOCAL-STACK)" }
+  ]
+}

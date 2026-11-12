@@ -1,0 +1,152 @@
+# VTID-05467 (mt-identity-r2 / role-source-and-bootstrap): commands run for this lane
+# Worktree /projects/sandbox/wt-id-role-source-and-bootstrap, base origin/main 058251d550. No database and no live system
+# was connected at any point. Every check below reads a file or runs an in-memory Postgres (PGlite 0.5.14, PostgreSQL 18.6,
+# wasm). Scratch tools (the verbatim-block generator, the smoke test, the install) live in /projects/sandbox/pglite-05467 and
+# are not committed.
+
+# 1. Repository state
+$ git fetch --prune origin main                       -> origin/main 058251d550
+$ git worktree add -b kiro/mt-identity-r2/role-source-and-bootstrap /projects/sandbox/wt-id-role-source-and-bootstrap origin/main
+  -> created; branch tracks origin/main (set by git); no push is made from this branch
+$ git ls-tree origin/kiro/mt-identity-r2/plan-amend-1 .kiro/specs/mt-identity-r2/   -> spec files read with git show
+$ git diff -U0 origin/main origin/kiro/mt-identity-r2/plan-amend-1 -- .kiro/specs/mt-identity-r2/plan.md | grep '^@@'
+  -> hunks at old lines 127 and 145 only; lane 4 (role-source-and-bootstrap, plan lines ~182-190) is unchanged
+
+# 2. Premise checks (read-only, file reads)
+$ git grep -n -E 'role_preferences|user_permitted_roles' origin/main -- supabase/          -> 16 files (see acceptance.md premises)
+$ git grep -n -E 'SET +active_role' origin/main -- supabase/migrations                    -> no switch writes user_tenants.active_role
+$ git grep -n -E '(INSERT INTO|UPDATE|DELETE FROM) +(public\.)?(role_preferences|user_active_roles|user_permitted_roles|user_tenants)' origin/main -- supabase/migrations
+  -> writer list used for the design (set_role_preference 20261013233000, me_set_active_role 20260926150000,
+     switch_to_tenant_by_slug 20261010180200, handle_new_user and provision_platform_user 20261014000200)
+$ git grep -n -E 'FUNCTION (public\.)?(set_role_preference|me_set_active_role|check_role_permitted|switch_to_tenant_by_slug|bootstrap_admin_user)\(' origin/main
+  -> last definitions: set_role_preference 20261013233000; me_set_active_role 20260926150000; check_role_permitted 20260318100000;
+     switch 20261010180200; bootstrap only in vitana-v1 20250915132930 (not in vitana-platform)
+$ git -C /projects/sandbox/vitana-v1 show origin/main:supabase/migrations/20250915132930_57b924d9-8a27-470e-ad21-6d2ac5be7a37.sql | grep -n -E 'bootstrap_admin_user|name IN|name = .Maxina|INSERT INTO public.memberships|tenant_role'
+  -> 166 (CREATE), 170 (SET search_path = ''), 200/217/246/254 (name = 'Maxina'), 233-236 (memberships, name IN), 234 ('admin'::tenant_role)
+$ git grep -n -E 'readdirSync|migrations' origin/main -- services/gateway/test/vtid-04560-role-separation-regression.test.ts
+  -> reads 20260925120000 (:459-473) and 20260926150000 (:1013-1028) by name
+$ git grep -n -E 'coalesce|tenant_id|REFERENCES public.tenants' origin/main -- supabase/tests/vtid_05147_fixture.sql | head
+  -> tenants keyed by tenant_id in the 05147 live copies; canonical DDL keyed by id (20251231000000:30)
+
+# 3. Verbatim blocks (scratch generator; the bodies are copied from their last migrations, not retyped)
+$ node gen-blocks.mjs      -> BOOT=101 lines (vitana-v1 20250915132930), ME=74 (20260926150000), RP=67 (20261013233000)
+$ node gen-artifacts.mjs   -> wrote supabase/migrations/20261102033000_vtid_05467_role_source_rollback.sql (291 lines)
+                              and docs/validation/VTID-05467/fixture-stub.sql (480 lines, @TPK@ placeholder)
+
+# 4. PGlite smoke and full check
+$ npm i @electric-sql/pglite   (scratch dir)  -> 0.5.14
+$ node smoke.mjs tenant_id   -> fixture OK; rollback on base OK (no-op); forward R1 OK; forward R2 OK
+$ node smoke.mjs id          -> the same on the id shape OK
+$ cp docs/validation/VTID-05467/pglite-check.mjs run.mjs && node run.mjs <worktree>
+  -> ALL CHECKS PASSED (outputs/pglite-summary.txt). Phases: red base; rollback no-op on base; apply (no data moved,
+     snapshots 2/2/1); pgTAP after apply (single source 28/28, bootstrap 20/20); rollback after a post-apply switch
+     (selected role restored, preference kept, catalog identical to base); re-apply and pgTAP again; negative control
+     (8 failing assertions without the trigger); id shape (red then pass).
+$ node checkfiles.mjs (scratch) -> live-before.sql and post-apply-checks.sql run on the applied stub, SELECT only
+$ grep -n -i -E '^\s*(insert|update|delete|drop|alter|create|truncate|grant|revoke|do|call|perform)\b' live-before.sql post-apply-checks.sql
+  -> no output (AC-18)
+
+# 5. Staging manifest
+$ node -e "validateManifest(JSON.parse(staging-tests.json))"  (scripts/ci/staging-verify/lib.cjs)  -> {"ok":true,"errors":[]}
+
+# 6. Impact scan (before commit): no commits yet, so the scan saw changed=0
+$ IMPACT_SCAN_BASE=origin/main node scripts/ci/dev-autopilot-impact-scan.mjs  -> blocker=0 warning=0 info=0 (changed=0)
+  -> the generated dev-autopilot-impact-findings.json was deleted and not committed
+
+# 7. Preflight script identity
+$ git show origin/main:scripts/collab/preflight.mjs | diff -q - /projects/sandbox/vitana-platform/scripts/collab/preflight.mjs  -> identical
+
+# Not run here
+- supabase test db / supabase db reset / Docker: not available in this sandbox. The pgTAP files are written for pg_prove and
+  ran through the PGlite shim.
+- npm run test:roles (services/gateway has no node_modules in this worktree; no gateway file changed).
+- RUN-MIGRATION, any dispatch, any live read or write: not allowed for this lane before owner approval (collaboration.md §7d).
+- The post-commit impact scan, preflight and validate-pr-locally run are recorded after the first commit (see the lane report).
+
+# 8. After the first commit (8d7b8d57fc), the checks on the committed head
+# (The grep patterns in sections 2 and 3 are summaries of the searches run; the full result set is the repository state
+#  they describe. Premise facts are cited with file:line in acceptance.md.)
+
+$ node /projects/sandbox/vitana-platform/scripts/collab/preflight.mjs --repo . --base origin/main --head HEAD \
+    --branch kiro/mt-identity-r2/role-source-and-bootstrap --title "VTID-05467 (mt-identity-r2/role-source-and-bootstrap): one selected-role source and the bootstrap fix"
+  -> head 8d7b8d57fc: exit 1. FAIL PR-GATE sparring: docs/validation/VTID-05467/plan-sparring.md has no owner-approval line
+     (scripts/ci/pr-gate/lib.mjs:157 requires /owner approval/i). Fixed by a new commit, not an amendment.
+  -> head 61be2d39f2: exit 0. PASS Collab tests, Collab handoff, Lane scope, PR-GATE scope, PR-GATE sparring,
+     PR-GATE weakening, PR-GATE red-green, Kiro steering. "preflight: every check passed"
+
+$ IMPACT_SCAN_BASE=origin/main node scripts/ci/dev-autopilot-impact-scan.mjs
+  -> changed=23, findings: blocker=0 warning=0 info=0 total=0. The generated dev-autopilot-impact-findings.json was deleted.
+
+$ node scripts/ci/validate-pr-locally.cjs --title "VTID-05467 (mt-identity-r2/role-source-and-bootstrap): one selected-role source and the bootstrap fix" \
+    --body-file <scratch PR body> --base main
+  -> with VALIDATION_PROFILE: database: exit 21, "unknown VALIDATION_PROFILE=database" (known: command_hub_frontend, gateway_backend)
+  -> with VALIDATION_PROFILE: gateway_backend (the profile the membership lane uses for migration-only lanes): exit 0, APPROVED.
+     Acceptance mapping OK. CSP scan clean. OASIS_IMPACT=no. Build Gate skipped (--build not given).
+     NOT JUDGED: the five files under supabase/migrations and supabase/tests. The validator says those trees have no governance
+     gate of their own (see VTID-03696). They are covered here by the pgTAP files, the PGlite run and CI's drift check.
+
+$ node lockdown-sim.mjs (scratch) replays the offender rules of services/gateway/test/vtid-05147-s-m-membership-role-lockdown.test.ts
+  (lines ~96-150: no later migration gives members writes on the role tables back; no policy recreated; set_role_preference keeps
+  "Not a member of this tenant") on the three lane migrations -> 0 offenders.
+
+$ git grep -l -E "supabase[/\\]migrations" origin/main -- services/gateway/test services/gateway/src (test files)
+  -> 116 files name the migrations directory, most of them as an include or deny pattern. Gateway tests that read migrations by
+     name pin historical files (for example vtid-05147-s-m-membership-role-lockdown.test.ts reads 20261013233000).
+     services/gateway/test/loop-catalog.test.ts concatenates every migration to check catalog contents; this lane removes no
+     name from them. The full gateway Jest suite was NOT run (no node_modules in this worktree).
+
+# Final state
+- Commits: 8d7b8d57fc (migrations, pgTAP, evidence) and 61be2d39f2 (owner-approval line). Local only; nothing pushed.
+- Preflight on 61be2d39f2: every check passed.
+
+# 9. Rerun on the merged head (origin/main 78bb4b3969 merged into the lane branch in d9b4d37398)
+$ cp docs/validation/VTID-05467/pglite-check.mjs /projects/sandbox/pglite-05467/run.mjs && node run.mjs <worktree>
+  -> ALL CHECKS PASSED. R1 single_source after apply 28/28 and R2 bootstrap 20/20 on the id variant; the tenant_id
+     variant passed on the first run. Two committed outputs differ from the first run only in random tenant UUIDs printed
+     on red lines (pglite-red-base.txt line 47, pglite-variant-id.txt line 16). Pass and fail results are identical; the
+     rerun output is committed as it came out.
+$ node scripts/collab/preflight.mjs --repo . --base origin/main --head HEAD --branch kiro/mt-identity-r2/role-source-and-bootstrap --title "VTID-05467 (mt-identity-r2/role-source-and-bootstrap): one selected-role source and the bootstrap fix"
+  -> every check passed on d9b4d37398 (Collab tests, Collab handoff, Lane scope, PR-GATE scope, PR-GATE sparring,
+     PR-GATE weakening, PR-GATE red-green, Kiro steering)
+# Premises rechecked on the merged head: the last definitions of set_role_preference (20261013233000), me_set_active_role
+# (20260926150000), check_role_permitted (20260318100000) and switch_to_tenant_by_slug (20261010180200) are unchanged.
+# bootstrap_admin_user is defined only by this lane's own files. No migration name collides with 2026110203300x.
+
+# 10. Fix round after the reviewer's `changes` on f96ad6be20d
+# Three blocking findings from the reviewer (agent-vitana-lane-reviewer-202611052248-7739): (1) bootstrap_admin_user (R2) is
+# SECURITY DEFINER with no REVOKE from PUBLIC and anon and no definer-public reason, which fails
+# services/gateway/test/vtid-05041-definer-lockdown.test.ts (the rule at lines 125-137); (2) the rollback (R3) has the same gap;
+# (3) no gateway Jest ran on this supabase-only PR, so npm run test:roles was unevidenced.
+$ cd services/gateway && npm ci   -> added 850 packages, exit 0 (gateway dependencies were absent in this worktree)
+$ npx jest test/vtid-05041-definer-lockdown.test.ts   (on f96ad6be20d, before the fix) -> outputs/jest-vtid-05041-before-fix.txt:
+  1 failed (the SECURITY DEFINER rule), 6 passed, 1 skipped
+Fix:
+  - 20261102033100 (R2): REVOKE ALL ON FUNCTION public.bootstrap_admin_user(uuid, text) FROM PUBLIC, anon, authenticated;
+    GRANT EXECUTE ON FUNCTION public.bootstrap_admin_user(uuid, text) TO service_role; the self-check raises if anon or
+    authenticated can execute it. The header now names the grant change.
+  - 20261102033000_role_source_rollback (R3): a `-- definer-public:` reason. The file has no GRANT or REVOKE statement.
+    CREATE OR REPLACE keeps each function's ACL, so the rollback does not reopen bootstrap_admin_user. Restoring PUBLIC
+    EXECUTE would re-expose it, against the S2 rule.
+  - supabase/tests/mt_identity_roles_bootstrap.test.sql: plan 20 -> 24. Assertions 21-24 check anon, authenticated, PUBLIC
+    and service_role. They fail on the previous body and pass after apply.
+  - docs/validation/VTID-05467/pglite-check.mjs: the rollback check compares the catalog exactly except bootstrap's ACL, which
+    it checks by its end state. The first run failed there, as designed (the ACL differs from base). The second run failed on
+    a lookup bug: regprocedure::text omits the schema for functions on the search path. The lookup now matches on the name.
+$ node run.mjs <worktree>   (PGlite; copy of pglite-check.mjs in /projects/sandbox/pglite-05467)
+  -> ALL CHECKS PASSED. Red base: R1 13 of 28 failing; R2 16 of 24 failing, including assertions 21-23.
+     After apply and after re-apply: R1 28/28, R2 24/24. Rollback on base: fingerprint identical.
+     Rollback after a switch: catalog identical except the bootstrap ACL, which is {postgres=X/postgres,service_role=X/postgres}.
+     Negative control: 8 failing assertions (expected). Id variant: red, then pass.
+$ npm run test:roles   -> outputs/jest-test-roles.txt: Tests 105 passed, 105 total, exit 0
+$ npx jest test/vtid-05041-definer-lockdown.test.ts   -> outputs/jest-vtid-05041.txt: 7 passed, 1 skipped, exit 0
+  The skipped case runs the SQL harness (scripts/ci/test-vtid-05041-definer-lockdown.sh), which needs a local PostgreSQL
+  binary. /usr/lib/postgresql is absent on this sandbox.
+$ npx jest test/vtid-05147-s-m-membership-role-lockdown.test.ts   -> outputs/jest-vtid-05147.txt: 6 passed, 1 skipped, exit 0
+  The skipped case has the same reason.
+$ node -e "validateManifest(JSON.parse(staging-tests.json))"   -> {"ok":true,"errors":[]}
+$ IMPACT_SCAN_BASE=origin/main node scripts/ci/dev-autopilot-impact-scan.mjs  -> changed=24, blocker=0 warning=0 info=0.
+  The generated dev-autopilot-impact-findings.json was deleted and not committed.
+$ acceptance mapping (every AC- line has a TEST: line within 12 lines)  -> 24 AC entries, none unmapped
+Harness tightened on the same fix round: the rollback check no longer checks bootstrap_admin_user's ACL by its end state
+only. It pins that ACL to the value that apply and the switch left it, captured before the rollback runs. Everything
+else is still compared exactly to the base. Rerun on the fix head: ALL CHECKS PASSED (outputs refreshed).

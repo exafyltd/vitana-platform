@@ -1,0 +1,5 @@
+# VTID-05540: files the lane must not touch (the sibling lanes' files, the lane file, the plan) are unchanged: git status of those paths is empty, and so is the diff of this commit against its stacked base
+# $ git status --short -- scripts/eng/gitlab-*.mjs scripts/eng/gitlab-*.test.mjs scripts/eng/fleet-structure.test.mjs scripts/eng/free-tier-guard.test.mjs scripts/eng/testing scripts/collab infra/gitlab-engineering/settings infra/gitlab-engineering/ci infra/gitlab-engineering/host infra/gitlab-engineering/terraform infra/gitlab-engineering/m2.sh .kiro
+(no lines above = unchanged)
+# $ git diff --name-only HEAD~1 | grep -v -E '^(scripts/eng/rehearse(\.test)?\.mjs|infra/gitlab-engineering/rehearsal/|docs/validation/VTID-05540/)'     (the working tree against the stacked base b00fed38ce9)
+(no lines above = every changed path is inside the paths of the lane)

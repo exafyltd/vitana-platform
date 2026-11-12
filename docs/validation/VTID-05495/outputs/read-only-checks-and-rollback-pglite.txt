@@ -1,0 +1,8 @@
+pre-check (before)    {"tenants_key_present":true,"table_exists":false}
+migration             "ok"
+post-check (applied)  {"table_exists":true,"rls_on":true,"anon_denied":true,"authenticated_denied":true,"service_role_allowed":true,"has_pk":true}
+rollback              "ok"
+pre-check (rolled)   {"tenants_key_present":true,"table_exists":false}
+migration (re-apply)  "ok"
+post-check (re-apply) {"table_exists":true,"rls_on":true,"anon_denied":true,"authenticated_denied":true,"service_role_allowed":true,"has_pk":true}
+ALL OK

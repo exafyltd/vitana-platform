@@ -56,48 +56,6 @@ export async function insertMemoryItem(sb: SupabaseClient, row: Record<string, u
   return sb.from('memory_items').insert(row).select('id, category_key').single();
 }
 
-/** Persistent (no time filter), ordered by importance — parallel-batch variant, chains .abortSignal(). */
-export async function fetchPersistentMemoryItemsParallel(
-  sb: SupabaseClient,
-  tenantId: string,
-  userId: string,
-  categories: string[],
-  limit: number,
-  signal: AbortSignal,
-) {
-  return sb
-    .from('memory_items')
-    .select('id, category_key, source, content, content_json, importance, occurred_at, created_at')
-    .eq('tenant_id', tenantId)
-    .eq('user_id', userId)
-    .in('category_key', categories)
-    .order('importance', { ascending: false })
-    .limit(limit)
-    .abortSignal(signal);
-}
-
-/** Time-sensitive (time-filtered), ordered by importance — parallel-batch variant, chains .abortSignal(). */
-export async function fetchTimeSensitiveMemoryItemsParallel(
-  sb: SupabaseClient,
-  tenantId: string,
-  userId: string,
-  categories: string[],
-  sinceIso: string,
-  limit: number,
-  signal: AbortSignal,
-) {
-  return sb
-    .from('memory_items')
-    .select('id, category_key, source, content, content_json, importance, occurred_at, created_at')
-    .eq('tenant_id', tenantId)
-    .eq('user_id', userId)
-    .in('category_key', categories)
-    .gte('occurred_at', sinceIso)
-    .order('importance', { ascending: false })
-    .limit(limit)
-    .abortSignal(signal);
-}
-
 /** Persistent (no time filter), ordered by importance — sequential dev-bootstrap variant. */
 export async function fetchPersistentMemoryItemsByImportance(
   sb: SupabaseClient,
@@ -157,55 +115,6 @@ export async function fetchTimeSensitiveMemoryItemsByOccurredAt(
 }
 
 // ==================== memory_diary_entries / diary_entries / ai_memory ====================
-
-export async function fetchMemoryDiaryEntriesParallel(
-  sb: SupabaseClient,
-  tenantId: string,
-  userId: string,
-  limit: number,
-  signal: AbortSignal,
-) {
-  return sb
-    .from('memory_diary_entries')
-    .select('id, raw_text, tags, entry_date, created_at, entry_type')
-    .eq('tenant_id', tenantId)
-    .eq('user_id', userId)
-    .order('created_at', { ascending: false })
-    .limit(limit)
-    .abortSignal(signal);
-}
-
-export async function fetchLovableDiaryEntriesParallel(
-  sb: SupabaseClient,
-  userId: string,
-  limit: number,
-  signal: AbortSignal,
-) {
-  return sb
-    .from('diary_entries')
-    .select('id, text, source, tags, created_at')
-    .eq('user_id', userId)
-    .order('created_at', { ascending: false })
-    .limit(limit)
-    .abortSignal(signal);
-}
-
-export async function fetchLovableAiMemoryParallel(
-  sb: SupabaseClient,
-  userId: string,
-  limit: number,
-  signal: AbortSignal,
-) {
-  return sb
-    .from('ai_memory')
-    .select('id, content, memory_type, category, created_at')
-    .eq('user_id', userId)
-    .order('created_at', { ascending: false })
-    .limit(limit)
-    .abortSignal(signal);
-}
-
-// ==================== RPCs ====================
 
 export async function rpcDevBootstrapRequestContextByTenantId(
   sb: SupabaseClient,

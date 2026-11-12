@@ -1,0 +1,22 @@
+{
+  "vtid": "VTID-05556",
+  "kind": "refactor",
+  "paths": [
+    "services/gateway/src/services/orb-memory-bridge.ts",
+    "services/gateway/src/services/orb-memory-bridge-repository.ts",
+    "services/gateway/src/services/memory/recall-shadow.ts",
+    "services/gateway/test/services/memory/recall-bridge-wiring.test.ts",
+    "services/gateway/test/services/memory/vtid-04784-recall-shadow.test.ts",
+    "services/gateway/test/services/orb-memory-bridge.test.ts",
+    "docs/MEMORY-SYSTEM-PLAN.md",
+    "docs/validation/VTID-05556/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05556/plan-sparring.md",
+  "weakens_tests": [
+    {
+      "file": "services/gateway/test/services/memory/vtid-04784-recall-shadow.test.ts",
+      "reason": "Deleted together with the code it tests (services/memory/recall-shadow.ts), which this plan removes (memory-legacy-read-retire-r2, premise 5). The replacing behaviour, no shadow read after a successful or failed recall, is pinned by recall-bridge-wiring.test.ts."
+    }
+  ],
+  "red_green_exempt": []
+}

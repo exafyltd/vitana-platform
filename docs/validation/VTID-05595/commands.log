@@ -1,0 +1,12 @@
+# VTID-05595 commands run in the sandbox (PGlite only; no live system, no docker/psql/supabase CLI available)
+pglite-harness/lane.sh services/gateway/test/mt-native-health/health-home-tenant.pgtap.sql             -> outputs/pgtap-green-live-schema.txt (40 ok)
+pglite-harness/lane.sh --twice ...                                                                     -> outputs/pgtap-green-applied-twice.txt (40 ok)
+pglite-harness/lane.sh --schema id ...                                                                 -> outputs/pgtap-green-bootstrap-id-schema.txt (40 ok)
+pglite-harness/lane.sh --no-migrations ...                                                             -> outputs/pgtap-red-no-migrations.txt (red: resolver missing)
+pglite-harness/lane.sh --only-column ...                                                               -> outputs/pgtap-red-column-only.txt (red: resolver missing)
+run.mjs with a session-tenant resolver mutation                                                        -> outputs/pgtap-red-mutation-session-tenant-resolver.txt (2 not ok)
+run.mjs with a backfill that drops the exactly-one-primary filter                                      -> outputs/pgtap-red-mutation-backfill-ambiguous.txt (6 not ok)
+pglite-harness/checks.sh                                                                               -> outputs/read-only-checks-and-rollback-pglite.txt (25 true)
+pglite-harness/checks.sh guard                                                                         -> outputs/guard-refuses-ambiguous-members.txt (refused, nothing changed)
+jest (ts-jest, services/gateway/test/mt-identity-bare-policy-lint.test.ts)                             -> outputs/jest-bare-policy-lint.txt (8 pass)
+node -e validateManifest(docs/validation/VTID-05595/staging-tests.json)                                -> {"ok":true,"errors":[]}

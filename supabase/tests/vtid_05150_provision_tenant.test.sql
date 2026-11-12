@@ -141,7 +141,9 @@ DO $$ DECLARE r jsonb := (SELECT j FROM r1); tid uuid := ((SELECT j FROM r1) ->>
   SELECT * INTO s FROM public.tenant_settings WHERE tenant_id = tid;
   ASSERT s.provisioned_at IS NOT NULL AND s.provisioned_by = (SELECT exafy FROM k), 'settings provisioned_at/by';
   ASSERT s.display_name = 'Well Circle' AND s.timezone = 'Europe/Berlin' AND s.currency = 'EUR' AND s.default_locale = 'de', 'settings pack params';
-  ASSERT s.feature_flags = '{"jev":{"enabled":true,"planes":["internal","system_autopilot","member"],"monthly_budget_usd":25}}'::jsonb, 'jev flag (Alkalma pattern, budget param)';
+  -- VTID-05610: jev exactly; the only other key allowed is `erp` (VTID-05506 / 20261102141000 sets erp.bootstrap_requested). An unknown key still fails.
+  ASSERT s.feature_flags -> 'jev' = '{"enabled":true,"planes":["internal","system_autopilot","member"],"monthly_budget_usd":25}'::jsonb, 'jev flag (Alkalma pattern, budget param)';
+  ASSERT s.feature_flags - 'jev' - 'erp' = '{}'::jsonb, 'feature_flags holds no key besides jev (and erp, VTID-05506)';
   -- notification baseline = the 16 types every legacy tenant holds; maxina's local rows excluded; bool_or
   ASSERT (SELECT count(*) FROM public.notification_type_controls WHERE tenant_id = tid) = 16, '16 baseline controls';
   ASSERT (SELECT count(*) FROM public.notification_type_controls WHERE tenant_id = tid AND enabled) = 16, 'all baseline controls ON (bool_or)';

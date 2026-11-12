@@ -1,0 +1,45 @@
+# VTID-05556 commands.log (session kiro-exafyltd-202611042048-44bc, 2026-11-05, cwd services/gateway)
+
+## Red: the lane's tests on origin/main code (3b5292f6d6)
+$ npx jest test/services/memory/recall-bridge-wiring.test.ts test/services/orb-memory-bridge.test.ts
+    ✕ the prompt is built from recall items
+    ✕ recall is used whatever MEMORY_ORB_RECALL_ENABLED says
+    ✕ recall not ok: ok:false with no items, and no legacy query runs
+    ✕ a successful read starts no background shadow read
+    ✕ reads through recall() with exactly the given identity, never another tenant's, and runs no direct memory_items query
+    ✕ returns ok:true with an empty item set when recall() returns no items (no crash on all-empty data)
+Tests:       6 failed, 54 passed, 60 total
+
+## Green: lane head
+$ npx jest test/services/memory/recall-bridge-wiring.test.ts test/services/orb-memory-bridge.test.ts \
+    test/vtid-05147-effective-role-permitted.test.ts test/vtid-04452-staging-orb-recall-pinned.test.ts \
+    test/services/memory/recall.test.ts test/routes/orb-live.test.ts
+Test Suites: 6 passed, 6 total
+Tests:       180 passed, 180 total
+
+$ npx jest test/services/memory
+Test Suites: 48 passed, 48 total
+Tests:       693 passed, 693 total
+
+$ npx tsc --noEmit -p .
+(no output: clean)
+
+## Full suite (prototype on 29b639da, same diff)
+$ npx jest --silent
+Test Suites: 3 failed, 3 skipped, 1750 passed
+Tests:       2 failed, 54 skipped, 6 todo, 29164 passed
+- test/providers/storage-provider.test.ts and test/vtid-04226-eventbridge-test-contract-schedules.test.ts:
+  fail identically on clean origin/main in this sandbox (the sandbox sets AWS_REGION=us-east-1). Not lane files.
+- test/services/memory/vtid-04784-recall-shadow.test.ts: deleted by this lane together with recall-shadow.ts.
+CI (unit) on the PR head is the reference run.
+
+## Premise 7 (D1)
+$ aws sts get-caller-identity
+NoCredentials. The 14-day production count cannot be taken from this session; see the 'Merge precondition' section of acceptance.md.
+
+## Review round 1 fix (2026-11-05T20:20Z): dev-sandbox no-identity path
+$ npx jest test/services/memory/recall-bridge-wiring.test.ts -t "dev sandbox: DEV_IDENTITY"   # main's bridge, repository and recall-shadow
+    ✕ no identity, dev sandbox: DEV_IDENTITY is read through recall()
+Tests:       1 failed, 5 skipped, 6 total
+$ npx jest test/services/memory/recall-bridge-wiring.test.ts   # lane head
+Tests:       6 passed, 6 total

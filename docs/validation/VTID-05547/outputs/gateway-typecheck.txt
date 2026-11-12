@@ -1,0 +1,7 @@
+# cd services/gateway && npm ci --no-audit --no-fund && pnpm run typecheck   (as CICDL-GATEWAY-CI.yml: npm ci install, pnpm run; v22.23.4, pnpm 9.0.0); base origin/main 7fd4106862d
+# install: npm ci --no-audit --no-fund (added 850 packages)
+
+> @vitana/gateway@1.0.1 typecheck <worktree>/services/gateway
+> tsc --noEmit
+
+exit=0

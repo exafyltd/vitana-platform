@@ -1,0 +1,14 @@
+{
+  "vtid": "VTID-05572",
+  "service": "gateway",
+  "not_verified_on_staging": true,
+  "not_verified_on_staging_reason": "This lane adds two migration files, a pgTAP test and read-only check SQL only. Nothing is applied from the PR: the files are applied later through RUN-MIGRATION.yml, one file per dispatch, after the owner approves the files and the target database (collaboration.md \u00a77d), and staging shares the production database, so the staging deploy runs no code that reads anything new (profiles.tenant_id stays nullable and no gateway code changes). Staging writes to the production Supabase project (rules 31/31b/48), so the backfill is never called there: it is proven by the pgTAP file on the local stack. The staging check is read-only: docs/validation/VTID-05572/pre-check.sql before, post-check.sql after, rollback-check.sql after a rollback, run by Kiro through RUN-MIGRATION's read-only check. No suite points at vitanaland.com.",
+  "tests": [
+    {
+      "kind": "existing",
+      "ref": "npx jest test/d50-positive-trajectory-reinforcement.test.ts",
+      "cwd": "services/gateway",
+      "reason": "Regression guard that the gateway suite still passes; the lane changes no gateway code, so it is not proof of the migrations."
+    }
+  ]
+}

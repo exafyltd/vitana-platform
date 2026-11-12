@@ -1,0 +1,46 @@
+TAP version 13
+# Subtest: migration creates the table with the plan columns, PK, locale CHECK and a live-key FK
+ok 1 - migration creates the table with the plan columns, PK, locale CHECK and a live-key FK
+  ---
+  duration_ms: 1.042047
+  type: 'test'
+  ...
+# Subtest: service-role-only: RLS on, client privileges revoked, service_role policy, no bare current_tenant_id()
+ok 2 - service-role-only: RLS on, client privileges revoked, service_role policy, no bare current_tenant_id()
+  ---
+  duration_ms: 0.363067
+  type: 'test'
+  ...
+# Subtest: rollback drops exactly the new table; pre/post checks are read-only
+ok 3 - rollback drops exactly the new table; pre/post checks are read-only
+  ---
+  duration_ms: 0.600838
+  type: 'test'
+  ...
+# Subtest: MIGRATION-QUEUE row sits directly before the mt-launch rows with rollback and checks
+ok 4 - MIGRATION-QUEUE row sits directly before the mt-launch rows with rollback and checks
+  ---
+  duration_ms: 0.388756
+  type: 'test'
+  ...
+# Subtest: drift baseline lists the not-yet-live table and its count matches
+ok 5 - drift baseline lists the not-yet-live table and its count matches
+  ---
+  duration_ms: 1.084142
+  type: 'test'
+  ...
+# Subtest: the migration version sorts before mt-launch 20261101110000
+ok 6 - the migration version sorts before mt-launch 20261101110000
+  ---
+  duration_ms: 0.19763
+  type: 'test'
+  ...
+1..6
+# tests 6
+# suites 0
+# pass 6
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 56.503627

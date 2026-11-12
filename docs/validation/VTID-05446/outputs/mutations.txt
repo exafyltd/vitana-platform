@@ -1,0 +1,34 @@
+AS EXPECTED: baseline (no mutation) -> suite GREEN (44 run, 0 failed)
+AS EXPECTED: community_groups: RLS disabled -> suite RED (44 run, 2 failed)
+    not ok 13 - community_groups: b_member sees 0 T_A / CANARY_A rows
+#   have: 1
+#   want: 0
+    not ok 24 - community_groups: b_member insert with a T_A tenant_id is rejected by RLS
+#   no exception thrown
+AS EXPECTED: services_catalog: select policy opened to all tenants -> suite RED (44 run, 1 failed)
+    not ok 19 - services_catalog: b_member sees 0 T_A / CANARY_A rows
+#   have: 1
+#   want: 0
+AS EXPECTED: products_catalog: insert policy without tenant check -> suite RED (44 run, 1 failed)
+    not ok 28 - products_catalog: b_member insert with a T_A tenant_id is rejected by RLS
+#   no exception thrown
+AS EXPECTED: health_features_daily: policy drops the user_id predicate -> suite RED (44 run, 1 failed)
+    not ok 44 - ab_dual sees no other member's health rows (health data is member-private)
+#   have: 1
+#   want: 0
+AS EXPECTED: user_tenants: select opened to all rows -> suite RED (44 run, 1 failed)
+    not ok 21 - user_tenants: b_member sees 0 T_A / CANARY_A rows
+#   have: 3
+#   want: 0
+AS EXPECTED: strict mode: unverified tables fail -> suite RED (58 run, 14 failed)
+    not ok 2 - isolation of access_audit_log can be checked (table is replayed)
+#   unverified: table access_audit_log is not replayable on this stack: no migration in either repository creates this table
+#   needed by: isolation-suite, generated-inventories
+    not ok 3 - isolation of community_listings can be checked (table is replayed)
+#   unverified: table community_listings is not replayable on this stack: created by 20260727090000_bootstrap_community_marketplace.sql, which fails on a fresh replay: column "tenant_id" referenced in foreign key constraint does not exist
+#   needed by: isolation-suite, generated-inventories
+    not ok 4 - isolation of consents can be checked (table is replayed)
+#   unverified: table consents is not replayable on this stack: no migration in either repository creates this table
+#   needed by: isolation-suite, generated-inventories
+AS EXPECTED: runner: default flipped back to STRICT=0 (and the unverified guard removed) -> self-test-default RED (exit 1) self-test-default FAILED: default run with 14 unverified claim(s) exited 0, expected 1
+AS EXPECTED: runner: report mode prints the PASS marker -> self-test-default RED (exit 1) self-test-default FAILED: --report printed the PASS marker

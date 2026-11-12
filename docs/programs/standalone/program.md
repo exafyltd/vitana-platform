@@ -5,6 +5,11 @@ status: active
 priority: 3
 repos: [vitana-platform, vitana-v1]
 specs:
+  - vitana-platform:kiro-fleet-register
+  - vitana-platform:architecture-mt-alignment
+  - vitana-platform:autonomous-to-staging
+  - vitana-platform:gateway-critical-route-auth
+  - vitana-platform:gateway-write-route-auth
   - vitana-platform:pm-agent
   - vitana-platform:sparring-token-efficiency-r2
   - vitana-platform:claude-sessions-handover
@@ -28,6 +33,7 @@ specs:
   - vitana-platform:pm-reassign-idempotent-r2
   - vitana-platform:pm-reassign-idempotent-r3
   - vitana-platform:matches-scroll-end
+  - vitana-platform:staging-verify-manifest-repair
   - vitana-platform:spotlight-commit-coverage
   - vitana-platform:group-chat-realtime-status
   - vitana-platform:ci-superseded-pr-runs
@@ -39,11 +45,13 @@ specs:
   - vitana-platform:i18n-audit-nightly-off
   - vitana-platform:fix-deeplink-scroll-test
   - vitana-platform:pipeline-speed
+  - vitana-platform:pr-gate-policy-sparring-record
   - vitana-platform:kiro-web-steering
   - vitana-platform:owner-autonomy
   - vitana-platform:e2e-autonomy
   - vitana-platform:step-order-gate
   - vitana-platform:sv-05308-coverage
+  - vitana-platform:mt-local-stack-replay-skips-r1
   - vitana-platform:kiro-web-parity
   - vitana-platform:kiro-web-reliability
   - vitana-platform:plan-spar-stuck-session
@@ -69,6 +77,7 @@ specs:
   - vitana-platform:review-survives-main-merge
   - vitana-platform:operator-chat-service-token
   - vitana-platform:memory-legacy-read-retire-r2
+  - vitana-platform:privacy-ledger-auth
 docs:
   - vitana-platform:.kiro/specs/pm-agent/plan-sparring.md
   - vitana-platform:.kiro/specs/claude-sessions-handover/handoff.md
@@ -126,3 +135,11 @@ belong to none of the named programmes are listed here until the owner assigns t
 - `vitana-platform:reviewer-session-id-permission` — the reviewer agent generates its own reviewer session id via the existing queue.mjs command (narrowest shell permission; protected gate file, owner-authorized)
 - `vitana-platform:ci-dockerhub-mirror` — vitana-v1 PR CI pulls its Postgres service image from Docker Hub, not the capped ECR Public mirror
 - `vitana-platform:review-survives-main-merge` — a reviewer-agent accept stays current across a clean, conflict-free merge of `main` into the PR (`land-guard.mjs`, collaboration §3)
+- `vitana-platform:staging-verify-manifest-repair` — repair the 14 stale change suites failing the nightly full gateway STAGING-VERIFY (console probes, PM mode, collab ref, recall shadow, locale-coverage investigation) and a manifest drift guard
+- `vitana-platform:mt-local-stack-replay-skips-r1` — list the two VTID-05579 migrations PGlite cannot replay so the MT local stack gate is green on main
+- `vitana-platform:privacy-ledger-auth` — the seat file keeps seat names only (no account addresses), and production ledger writes can be switched to `enforce` by the owner (protected gate file, owner instruction 2026-11-11); history-rewrite proposal, not run
+- `vitana-platform:gateway-write-route-auth` — gate the SB-CON-22 gateway write routes (specs PATCH, triage investigate, ai-personality update/reset, LLM routing-policy set/reset) with the existing auth middleware, and give every other gateway write route a verdict
+- `vitana-platform:gateway-critical-route-auth` — close the semantic-memory, Stripe dance webhook and worker-orchestrator critical write routes with existing gates
+- `vitana-platform:autonomous-to-staging` — remove every human gate before staging verification: rules, two-model protected-file merge, machine quarantine, Pipeline B everywhere, isolated staging database, autonomous staging migrations, Kiro AWS execution access
+- `vitana-platform:kiro-fleet-register` — record the owner's Kiro account fleet in areas.yaml as seats, no email
+- `vitana-platform:architecture-mt-alignment` — verify the 41-module Vitanaland architecture map against the code and record Multi-Tenant alignment for the 18 workstreams (docs only)

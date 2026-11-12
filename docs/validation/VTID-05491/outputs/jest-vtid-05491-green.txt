@@ -1,0 +1,33 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true", see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+PASS ../../wt-tenant-moderation/docs/validation/VTID-05491/static/vtid-05491-tenant-moderation.test.ts
+  VTID-05491: migration files
+    ✓ exist, are the only VTID-05491 migrations, and sort around the reserved C3 slot 20261102070160 (4 ms)
+    ✓ p2: lock_timeout, retry on lock_not_available, one transaction (1 ms)
+    ✓ p3: lock_timeout, retry on lock_not_available, one transaction (1 ms)
+    ✓ scope: lock_timeout, retry on lock_not_available, one transaction
+    ✓ none of them destroys data: no DROP TABLE, DROP COLUMN, TRUNCATE or DELETE
+    ✓ none of them uses a bare current_tenant_id() or the non-existent is_member()/tenant_id_for_policies() (1 ms)
+    ✓ every SECURITY DEFINER function pins its search_path (1 ms)
+    ✓ P2 snapshots before it moves data, and only backfills rows still NULL
+    ✓ P2 never grants the internal helper to anon/authenticated
+    ✓ P3 RPCs are not executable by anon and check the caller before reading (1 ms)
+    ✓ scope migration keeps the policy names and has a legacy branch (flag off = today) (1 ms)
+  VTID-05491: rollbacks and read-only checks
+    ✓ rollback-070100-p2-moderation.sql exists, is transactional and lock-timed
+    ✓ rollback-070150-p3-moderation.sql exists, is transactional and lock-timed
+    ✓ rollback-070600-moderator-tenant-scope.sql exists, is transactional and lock-timed
+    ✓ the P2 and P3 rollbacks refuse while a later file is still applied; no rollback drops a snapshot (1 ms)
+    ✓ the scope rollback restores the three original policies
+    ✓ live-before.sql is SELECT-only (1 ms)
+    ✓ post-apply-checks.sql is SELECT-only
+    ✓ rollback-check.sql is SELECT-only
+  VTID-05491: queue rows
+    ✓ MIGRATION-QUEUE lists the three files in order P2 -> P3 -> scope, queued pending owner approval (2 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       20 passed, 20 total
+Snapshots:   0 total
+Time:        0.412 s
+Ran all test suites.

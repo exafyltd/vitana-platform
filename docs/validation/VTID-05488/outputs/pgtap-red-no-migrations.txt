@@ -1,0 +1,4 @@
+# loaded /projects/sandbox/wt-supplier-rel/docs/validation/VTID-05488/pglite-harness/base_schema.sql
+# loaded /projects/sandbox/wt-supplier-rel/supabase/migrations/20260218000000_fix_maxina_signup_tenant_association.sql (current_tenant_id only)
+# loaded /projects/sandbox/wt-supplier-rel/docs/validation/VTID-05488/pgtap/vtid_05488_fixture.sql
+# SQL ERROR: relation "public.supplier_tenant_relationships" does not exist

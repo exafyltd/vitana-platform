@@ -1,0 +1,27 @@
+# loaded /projects/sandbox/wt-content-overrides/docs/validation/VTID-05495/pglite-harness/base_schema.sql
+# loaded /projects/sandbox/wt-content-overrides/supabase/migrations/20261101100000_mt_packs_tenant_content_overrides.sql
+# loaded /projects/sandbox/wt-content-overrides/supabase/migrations/20261101100000_mt_packs_tenant_content_overrides.sql
+1..23
+ok 1 - tenant_content_overrides exists
+ok 2 - primary key is (tenant_id, locale, key)
+ok 3 - one foreign key to tenants
+ok 4 - columns and nullability
+ok 5 - RLS is on
+ok 6 - anon has no SELECT privilege
+ok 7 - authenticated has no SELECT privilege
+ok 8 - authenticated has no INSERT privilege
+ok 9 - service_role has full DML
+ok 10 - service_role can insert
+ok 11 - service_role can read
+ok 12 - a region locale (pt-BR) is accepted
+ok 13 - updated_at defaults to now()
+ok 14 - updated_by is optional
+ok 15 - anon SELECT denied
+ok 16 - authenticated SELECT denied
+ok 17 - authenticated INSERT denied
+ok 18 - anon INSERT denied
+ok 19 - a bad locale (DE) fails the CHECK
+ok 20 - a bad locale (deu) fails the CHECK
+ok 21 - the same (tenant, locale, key) twice violates the primary key
+ok 22 - an unknown tenant violates the foreign key
+ok 23 - another tenant may use the same locale and key

@@ -241,6 +241,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
     gitlabWebhookBodyErrors,
     GITLAB_WEBHOOK_BODY_LIMIT,
   } = require('./routes/internal-gitlab-webhook');
+  // VTID-05547 (plan agentic-delivery §3.11, §3.12): the GitLab delivery stage in front of that router, and the
+  // Delivery read routes (GET /api/v1/delivery/summary and /metrics, service token or exafy_admin).
+  const { createGitlabDeliveryStage, oasisBranchVtidLookup } = require('./services/gitlab-events/delivery-stage');
+  const deliveryRouter = require('./routes/delivery').default;
   // VTID-02000: User limitations CRUD + impact counter
   const userLimitationsRouter = require('./routes/user-limitations').default;
   // VTID-02000: Wearables waitlist (Phase 0 stub — still works alongside Phase 1 connector flow)
@@ -471,6 +475,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const communityNewMembersRouter = require('./routes/community-new-members').default;
   // VTID-02754: find-one-community-member voice search endpoint
   const communityFindMemberRouter = require('./routes/community-find-member').default;
+  // VTID-05207: "Say Hello 👋" greeting-suggestion endpoint (new-member welcome).
+  const newMemberGreetingRouter = require('./routes/new-member-greeting').default;
   // E2: profile partner_preferences + service_offerings PATCH endpoints
   const profilePrefsRouter = require('./routes/profile-prefs').default;
   // VTID-DANCE-D7: open-asks public feed (cold-start primer; flag-gated with intent engine)
@@ -608,6 +614,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01230: Raw body parser for Stripe Connect webhooks (MUST come BEFORE express.json())
   app.use('/api/v1/stripe/webhook', express.raw({ type: 'application/json' }));
+  // VTID-05730 (gateway-critical-route-auth): raw body so routes/payments-stripe-webhook.ts can verify the Stripe signature
+  app.use('/webhooks/stripe-dance', express.raw({ type: 'application/json' }));
   // VTID-03107: Raw body parser for customer-side Stripe billing webhook (separate signing secret)
   app.use('/api/v1/billing/webhooks/stripe', express.raw({ type: 'application/json' }));
   // VTID-03413: AWS SNS posts Content-Type: text/plain (even though the body is JSON) —
@@ -1281,6 +1289,11 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/internal/marketplace', internalMarketplaceSyncRouter, { owner: 'marketplace-sync' });
   mountRouterSync(app, '/api/v1/internal/auth-bridge', authBridgeRouter, { owner: 'auth-bridge' });
   mountRouterSync(app, '/api/v1/internal/health-erasure', healthErasureInternalRouter, { owner: 'health-erasure-internal' });
+  // VTID-05547: the delivery stage answers every POST /api/v1/internal/gitlab/webhook (signature checked by the
+  // M2 route's own gate, unchanged) and records the delivery events; it is middleware, not a second route, so the
+  // route guard still sees one handler for the endpoint. The router below stays mounted unchanged: its mount line
+  // and tests are pinned by VTID-05541, and a request the stage does not take falls through to it.
+  app.use('/api/v1/internal/gitlab/webhook', createGitlabDeliveryStage({ map: { lookupBranchVtid: oasisBranchVtidLookup() } }));
   // VTID-05541: POST /api/v1/internal/gitlab/webhook (raw body parser above, before express.json()).
   mountRouterSync(app, '/api/v1/internal/gitlab', internalGitlabWebhookRouter, { owner: 'internal-gitlab-webhook' });
 
@@ -1407,6 +1420,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1', communityMembersRouter, { owner: 'community-members' });
   mountRouterSync(app, '/api/v1', communityNewMembersRouter, { owner: 'community-new-members' });
   mountRouterSync(app, '/api/v1', communityFindMemberRouter, { owner: 'community-find-member' });
+  // VTID-05207: greeting-suggestion route self-includes 'community/new-member/...'.
+  mountRouterSync(app, '/api/v1', newMemberGreetingRouter, { owner: 'new-member-greeting' });
   mountRouterSync(app, '/api/v1', profilePrefsRouter, { owner: 'profile-prefs' });
   if (intentOpenAsksRouter) mountRouterSync(app, '/api/v1', intentOpenAsksRouter, { owner: 'intent-open-asks' });
   if (intentScanRouter) mountRouterSync(app, '/api/v1', intentScanRouter, { owner: 'intent-scan' });
@@ -1529,6 +1544,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/ops/health', opsHealthChecksRouter, { owner: 'ops-health-checks' });
   // VTID-04664: GET /api/v1/ops/runtime/* — deploy, AWS runtime, autopilot, voice, data, support checks
   mountRouterSync(app, '/api/v1/ops/runtime', opsRuntimeHealthRouter, { owner: 'ops-runtime-health' });
+  // VTID-05547: GET /api/v1/delivery/summary and /metrics — the Command Hub Delivery module (service token or exafy_admin)
+  mountRouterSync(app, '/api/v1/delivery', deliveryRouter, { owner: 'delivery' });
 
   // VTID-01097: Diary Templates - guided diary templates for memory quality
   mountRouterSync(app, '/api/v1/diary', diaryRouter, { owner: 'diary' });
@@ -2008,6 +2025,20 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         }
       } catch (error) {
         console.warn('⚠️ VTNA reward sweep loop initialization failed (non-fatal):', error);
+      }
+
+      // VTID-05718: chat burst sweep — sends one push per held chat burst (every 5 s). ECS only: it reads and
+      // writes the same user_notifications rows the other gateway tasks use, which is safe across tasks.
+      try {
+        const { startChatBurstSweep } = require('./services/chat-burst-sweep');
+        const { getSupabase } = require('./lib/supabase');
+        if (startChatBurstSweep(getSupabase)) {
+          console.log('💬 Chat burst sweep started (VTID-05718)');
+        } else {
+          console.log('⏸️ Chat burst sweep not started (coalescing or hold disabled)');
+        }
+      } catch (error) {
+        console.warn('⚠️ Chat burst sweep initialization failed (non-fatal):', error);
       }
 
       // VTID-04982: Rewards shop — releases unpaid shipping holds every 5 minutes

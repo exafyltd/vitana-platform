@@ -611,8 +611,8 @@ test('installer: bash, no xtrace, no Docker on the manager, pinned runner held b
   const code = INSTALL.split('\n').map(stripComment).join('\n');
   assert.equal(/apt(-get)?\s+install[^\n]*docker/.test(code), false, 'the manager has no Docker');
   assert.equal(/systemctl[^\n]*\bdocker\b|usermod[^\n]*docker/.test(code), false, 'and no Docker service or group');
-  assert.match(code, /apt install -y "gitlab-runner=\$RUNNER_VERSION" \|\| exit 1/, 'the runner version of M1, exactly');
-  assert.match(code, /apt-mark hold gitlab-runner/);
+  assert.match(code, /apt install -y "gitlab-runner-helper-images=\$RUNNER_VERSION" "gitlab-runner=\$RUNNER_VERSION" \|\| exit 1/, 'the runner version of M1, exactly, with its helper images at the same version');
+  assert.match(code, /apt-mark hold gitlab-runner gitlab-runner-helper-images/);
   assert.match(code, /gitlab-runner fleeting install/);
   assert.match(code, /gitlab-runner fleeting list/, 'the plugin version that was installed is logged');
   assert.match(code, /FLEETING_PLUGIN_PATH=/, 'the service and the installer use the same plugin folder');
@@ -869,8 +869,8 @@ test('installer, run against stub commands: waits for the token, installs the pi
   assert.equal(r.calls.split('\n').filter((l) => l.startsWith('aws secretsmanager')).length, 3, 'asked three times: two empty answers, then the token');
   assert.equal(r.calls.split('\n').filter((l) => l === 'sleep 30').length, 2, 'one 30 s pause after each empty answer');
   // the pinned runner, held back; no Docker
-  assert.match(r.calls, /apt-get -o DPkg::Lock::Timeout=900 install -y gitlab-runner=19\.5\.2-1$/m);
-  assert.match(r.calls, /^apt-mark hold gitlab-runner$/m);
+  assert.match(r.calls, /apt-get -o DPkg::Lock::Timeout=900 install -y gitlab-runner-helper-images=19\.5\.2-1 gitlab-runner=19\.5\.2-1$/m);
+  assert.match(r.calls, /^apt-mark hold gitlab-runner gitlab-runner-helper-images$/m);
   assert.equal(/docker/.test(r.calls.replace(/docker-autoscaler/g, '')), false, 'nothing about Docker is installed on the manager');
   // config.toml: private, from the env file, with the token
   assert.equal(r.mode, 0o600, 'config.toml holds the token and is mode 0600');
@@ -917,4 +917,16 @@ test('installer, run against stub commands: a secret value that is not a runner 
   assert.equal(parseToml(r.config).runners[0].token, FAKE_TOKEN, 'only the real token reaches config.toml');
   assert.equal(r.config.includes(wrong), false);
   assert.equal((r.stdout + r.stderr + r.calls).includes(wrong), false, 'a wrong value is not echoed either');
+});
+
+// eng-gitlab-m2/runner-pin-jq: apt took the newest gitlab-runner-helper-images (19.5.3-1) next to gitlab-runner 19.5.2-1 and refused
+// ("held broken packages"), so the fleet manager never installed the runner (bootstrap log 2026-11-06T21:55Z). Both installers pin
+// and hold the helper with the runner, in the same apt call.
+nodeTest('both runner installers pin and hold gitlab-runner-helper-images at the runner version, in the same apt install', () => {
+  for (const f of ['host/fleet-manager-install.sh', 'host/runner-install.sh']) {
+    const code = read(f).split('\n').map((l) => l.replace(/(^|\s)#.*$/, '')).join('\n');
+    assert.match(code, /apt install -y "gitlab-runner-helper-images=\$RUNNER_VERSION" "gitlab-runner=\$RUNNER_VERSION" \|\| exit 1/, `${f}: helper and runner pinned together`);
+    assert.match(code, /apt-mark hold gitlab-runner gitlab-runner-helper-images/, `${f}: both held`);
+    assert.equal(/apt install -y "gitlab-runner=\$RUNNER_VERSION" \|\| exit 1/.test(code), false, `${f}: no runner install without the helper`);
+  }
 });

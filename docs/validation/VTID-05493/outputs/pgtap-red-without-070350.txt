@@ -1,0 +1,5 @@
+# loaded /projects/sandbox/wt-tenant-lifecycle/docs/validation/VTID-05493/pglite-harness/base_schema.sql
+# loaded /projects/sandbox/wt-tenant-lifecycle/supabase/migrations/20261010180200_vtid_05043_s3_switch_tenant_open_signup_only.sql
+# loaded /projects/sandbox/wt-tenant-lifecycle/docs/validation/VTID-05493/pgtap/vtid_05493_fixture.sql
+# loaded /projects/sandbox/wt-tenant-lifecycle/supabase/migrations/20261102070300_vtid_05493_mt_tenant_deactivate.sql
+# SQL ERROR: function "public.archive_tenant(text)" does not exist
