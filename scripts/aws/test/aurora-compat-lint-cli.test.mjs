@@ -6,7 +6,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { copyFileSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -36,6 +36,18 @@ test('file mode: a Supabase-only file exits 1 and names its rule; a clean file e
   const good = lint(here, LINT, PASS);
   assert.equal(good.status, 0, good.stdout + good.stderr);
   assert.match(good.stdout, /flagged 0; clean 1/);
+});
+
+// PR-GATE is the only caller in CI. If its step is removed or made non-blocking, nothing else
+// would notice, so this pins the step's commands and its blocking status.
+test('PR-GATE runs the lint command and its unit test in a blocking step', () => {
+  const yml = readFileSync(resolve(here, '..', '..', '..', '.github', 'workflows', 'PR-GATE.yml'), 'utf8');
+  const start = yml.indexOf('- name: Aurora compatibility (changed migrations)');
+  assert.ok(start > 0, 'PR-GATE.yml has the Aurora compatibility step');
+  const step = yml.slice(start, yml.indexOf('- name: Scope guard', start));
+  assert.match(step, /node --test scripts\/aws\/test\/aurora-compat-lint\.test\.mjs/);
+  assert.match(step, /node scripts\/aws\/aurora-compat-lint\.mjs --base "\$BASE" --head "\$HEAD"/);
+  assert.doesNotMatch(step, /continue-on-error/);
 });
 
 test('no arguments exits 2 with a usage line', () => {
