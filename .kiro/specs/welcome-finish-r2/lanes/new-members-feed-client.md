@@ -15,6 +15,7 @@ paths:
   - src/hooks/community-intro-feed.vtid-05206.test.ts
   - src/hooks/useNewMembersFeed.ts
   - src/hooks/useNewMembersFeed.test.ts
+  - src/hooks/useNewsFeed.community-error-logging.test.ts
   - tests/e2e/staging/vtid-*-new-members-feed.staging.spec.ts
   - docs/validation/VTID-*/**
 updated: 2026-11-02T15:59Z
