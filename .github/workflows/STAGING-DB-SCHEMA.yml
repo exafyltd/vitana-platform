@@ -1,0 +1,77 @@
+name: STAGING-DB-SCHEMA
+run-name: 'Staging DB schema bundle [VTID: VTID-05782] (${{ github.ref_name }})'
+
+# VTID-05782 (plan autonomous-to-staging-r2 §3.3, lane staging-db-provision; design.md §5).
+# Builds the schema bundle of the isolated staging database in CI, with no AWS call, no credential, no secret and no
+# production data: supabase/migrations replayed on PGlite (scripts/mt/stack/stack.mjs, replay-skip.json), the
+# synthetic fixtures and the staging seed, then one SQL bundle plus a schema hash (artifact). It also runs the
+# staging-db unit tests with PGlite installed (UNIT.yml runs them without it) and the production-reference guard in
+# report mode over the staging workflows and scripts (scripts/ci/staging-prod-ref-guard.mjs; the shared staging
+# deploys still name production until the staging-cutover lane, so this is a report, not a gate).
+#
+# Triggers: push to main when the inputs change, push to this plan's lane branches (so a lane PR head shows the build),
+# and workflow_dispatch. No pull_request trigger: a path-filtered pull_request workflow must be registered in the
+# services registry (scripts/eng/services-parity.test.mjs), which is outside this lane (plan §2).
+on:
+  push:
+    branches:
+      - main
+      - 'kiro/autonomous-to-staging-r2/**'
+    paths:
+      - 'supabase/migrations/**'
+      - 'supabase/tests/fixtures/**'
+      - 'supabase/tests/local-stack/**'
+      - 'scripts/mt/stack/**'
+      - 'infra/staging-db/**'
+      - 'scripts/ci/staging-db/**'
+      - 'scripts/ci/staging-prod-ref-guard.mjs'
+      - 'scripts/aws/staging-db-*.sh'
+      - '.github/workflows/STAGING-DB-SCHEMA.yml'
+      - '.github/workflows/AWS-STAGE-PROVISION-DB.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  schema:
+    name: Staging DB schema bundle (PGlite)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+      - name: Install
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Production-reference guard (report)
+        run: node scripts/ci/staging-prod-ref-guard.mjs --report
+      - name: Unit tests (with PGlite)
+        run: |
+          set -o pipefail
+          node --test scripts/ci/staging-db/*.test.mjs 2>&1 | tee "$RUNNER_TEMP/tests.log"
+          grep -Eq '^# fail 0$' "$RUNNER_TEMP/tests.log"
+          grep -Eq '^# skipped 0$' "$RUNNER_TEMP/tests.log"
+      - name: Build the bundle
+        run: |
+          set -o pipefail
+          node scripts/ci/staging-db/build-schema.mjs --out "$RUNNER_TEMP/staging-db-bundle" | tee "$RUNNER_TEMP/build.log"
+          grep -q '^PASS staging-db schema build$' "$RUNNER_TEMP/build.log"
+          node scripts/ci/staging-db/build-schema.mjs --verify "$RUNNER_TEMP/staging-db-bundle"
+          {
+            echo "### Staging DB schema bundle"
+            echo '```'
+            cat "$RUNNER_TEMP/build.log"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: staging-db-bundle-${{ github.sha }}
+          path: ${{ runner.temp }}/staging-db-bundle/
+          retention-days: 14
