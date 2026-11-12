@@ -1,0 +1,8 @@
+{
+  "vtid": "VTID-05715",
+  "kind": "feature",
+  "paths": ["docs/programs/areas.yaml", "docs/validation/VTID-05715/**"],
+  "weakens_tests": [],
+  "red_green_exempt": [],
+  "sparring_record": ".kiro/specs/kiro-fleet-register/sparring/verdict.md"
+}
