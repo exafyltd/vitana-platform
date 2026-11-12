@@ -23,6 +23,7 @@ specs:
   - vitana-platform:collab-multi-builder-handoff
   - vitana-platform:collab-kiro-governance
   - vitana-platform:kiro-primary-executor
+  - vitana-platform:bridge-drift-fix
   - vitana-platform:kiro-autonomy-fallback
   - vitana-platform:kaf-fallback-env
   - vitana-platform:claude-md-cleanup
@@ -146,4 +147,5 @@ belong to none of the named programmes are listed here until the owner assigns t
 - `vitana-platform:autonomous-to-staging` — remove every human gate before staging verification: rules, two-model protected-file merge, machine quarantine, Pipeline B everywhere, isolated staging database, autonomous staging migrations, Kiro AWS execution access
 - `vitana-platform:autonomous-to-staging-r2` — revision: protect-gate-workflow (GATE-INVARIANTS.yml protected, exact-head two-model accepts, post-merge audit) and the isolated staging database in three reversible stages (AWS access, provisioning with synthetic data, cutover), with the owner decision record
 - `vitana-platform:kiro-fleet-register` — record the owner's Kiro account fleet in areas.yaml as seats, no email
+- `vitana-platform:bridge-drift-fix` — four independent fixes for the main breakage left by #5021 and #5027 (loop catalog, CLAUDE.md Part 1 extract budget, session-layer wording regex, migration SECURITY DEFINER comment)
 - `vitana-platform:architecture-mt-alignment` — verify the 41-module Vitanaland architecture map against the code and record Multi-Tenant alignment for the 18 workstreams (docs only)
