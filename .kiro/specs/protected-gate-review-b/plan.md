@@ -48,6 +48,21 @@ still required for every other lane. Two stages, as R1-F4 requires:
 `protected-gate-files.json`, so it needs two reviewer-agent accepts from different chain models on its final head under
 the current rule. The owner-plan path applies only after this PR lands.
 
+## Round 1 answers — concrete mechanism (R1-F1 … R1-F5)
+- **Data path to the PM (R1-F1, option a):** the observer that builds `ObservedPr` adds `ownerPlanApproved: boolean`,
+  computed by the same function that `land-guard.mjs` uses for the trailer and verdict check (one implementation, shared
+  by the observer and land-guard). `governanceMergeAllowed` reads only `pr.ownerPlanApproved`; its signature is
+  unchanged apart from that optional field. Without it the PM path stays two-model, as today.
+- **Gateway tests (R1-F2):** a jest suite `services/gateway/test/project-manager/governance-owner-plan.test.ts` with the
+  four cases: valid verdict + trailer → allowed; missing or non-converged verdict → refused; changed file outside
+  `protected_files:` → refused; no trailer → refused. The suite is part of the implementation PR's test plan.
+- **Plan validation (R1-F3):** `validatePlan` rejects a `protected_files:` entry that matches no `PROTECTED_GATE_PATHS`
+  glob, and rejects `protected_files:` on a plan that is not `change_class: standard`.
+- **Mutation tests (R1-F4):** `gate-invariants.test.mjs` adds two mutations: removing the verdict-convergence check in
+  `isOwnerPlanLane` must fail; removing the `protected_files` subset check must fail.
+- **Deployment (R1-F5):** `governance.ts` takes effect when the gateway next deploys. Staging verification of the
+  PM merge-guard on a test PR comes before any production promotion, under the normal staging gate.
+
 ## Tests
 `node --test scripts/collab/queue.test.mjs` and `scripts/collab/gate-invariants.test.mjs` green for the option B
 invariants. No staging or production test; repository scripts and rules only.
