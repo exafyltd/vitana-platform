@@ -1,0 +1,342 @@
+# audit-m0 VTID-05573 on 6dc6e1ba0c18252ec2f3fbf5651d245e200f9835 (2026-11-10T09:37:52Z); node v22.23.4
+
+$ /projects/sandbox/wt-audit-m0/docs/validation/VTID-05573/pglite-harness/lane.sh
+# loaded /projects/sandbox/wt-audit-m0/docs/validation/VTID-05573/pgtap/vtid_05573_fixture.sql
+# loaded /projects/sandbox/wt-audit-m0/supabase/migrations/20261102050000_vtid_05576_chat_messages_scope.sql
+# loaded /projects/sandbox/wt-audit-m0/supabase/migrations/20261102051000_vtid_05582_network_visible_profile.sql
+# loaded /projects/sandbox/wt-audit-m0/supabase/migrations/20261102052000_vtid_05573_legacy_messages_snapshot_freeze.sql
+# loaded /projects/sandbox/wt-audit-m0/supabase/migrations/20261102052100_vtid_05573_legacy_messages_functions.sql
+# loaded /projects/sandbox/wt-audit-m0/supabase/migrations/20261102052200_vtid_05573_legacy_messages_migrate_run.sql
+# loaded /projects/sandbox/wt-audit-m0/supabase/migrations/20261102052300_vtid_05573_legacy_messages_drop.sql
+1..65
+ok 1 - 1 the four legacy tables are dropped
+ok 2 - 2 the two participant tables are not dropped (outside the lane's four)
+ok 3 - 3 bak_messages holds all 7 legacy messages
+ok 4 - 4 bak_message_threads holds all 3 threads
+ok 5 - 5 bak_global_messages holds all 7 messages
+ok 6 - 6 bak_global_message_threads holds all 6 threads
+ok 7 - 7 both participant snapshots are complete (7 + 12 rows)
+ok 8 - 8 every bak_* table has row level security on
+ok 9 - 9 anon and authenticated cannot read any bak_* table
+ok 10 - 10 a bak_* table carries its 30-day retention note
+ok 11 - 11 12 legacy messages landed in chat_messages (14 minus 2 rule-43 skips)
+ok 12 - 12 6 from messages
+ok 13 - 13 6 from global_messages
+ok 14 - 14 the 2 pre-existing platform messages are untouched
+ok 15 - 15 a message to or from a service bot / notification actor is not migrated (rule 43)
+ok 16 - 16 DM between members who share tenant A -> community, tenant A
+ok 17 - 17 DM between members with no shared tenant (platform tenant ignored) -> network, sender context tenant
+ok 18 - 18 DM between a TB member and a TA+TB member -> community, the shared tenant TB
+ok 19 - 19 a message in a two-person direct thread becomes a DM to the other participant
+ok 20 - 20 a message in a tenant group thread -> community group message in the same group id
+ok 21 - 21 a sender with no tenant at all -> network, falling back to the legacy row's tenant
+ok 22 - 22 global DM between two TA members -> community, tenant A (both directions)
+ok 23 - 23 global DM across tenants -> network, tenant = the sender's own context (TB)
+ok 24 - 24 global group whose members all share TA -> community group message
+ok 25 - 25 global group with members that share no tenant -> network group messages, creator's context tenant
+ok 26 - 26 text, created_at and read_at are preserved
+ok 27 - 27 the legacy id and content_data are kept in metadata
+ok 28 - 28 4 legacy groups migrated (2 tenant, 2 global)
+ok 29 - 29 tenant group e2 -> community group of tenant A, name kept
+ok 30 - 30 cross-tenant global group d4 -> flagged legacy_scope network (the network-groups-db lane reads this), tenant = creator context
+ok 31 - 31 a group of only service/test accounts, and an empty group, are not migrated
+ok 32 - 32 10 members migrated (3 + 1 + 3 + 3)
+ok 33 - 33 legacy role moderator -> member, admin kept
+ok 34 - 34 a service bot is not added as a group member
+ok 35 - 35 every migrated member row carries the group's context tenant
+ok 36 - 36 every community DM has both people as members of the row's tenant
+ok 37 - 37 no network DM exists between two people who share a non-platform tenant
+ok 38 - 38 no migrated message involves a service bot or notification test actor (rules 43-45)
+ok 39 - 39 the platform tenant is never written on member content
+ok 40 - 40 every migrated row has a valid scope
+ok 41 - 41 re-running the migration reports the same classification (messages: 6 migrated)
+ok 42 - 42 ... and adds no row (idempotent)
+ok 43 - 43 the reconcile figures balance: 7 = 6 + 1 + 0 and 9 threads = 3 + 4 + 1 + 1 + 0
+ok 44 - 44 the drop guard accepts a fully reconciled migration
+ok 45 - 45 the drop guard refuses while a legacy row could not be placed
+ok 46 - 46 the migration functions are service_role only
+ok 47 - 47 the lane functions are SECURITY DEFINER with a pinned search_path
+ok 48 - 48 the shared-tenant helper: shared tenant, shared non-primary, none (platform tenant ignored)
+ok 49 - 49 the context-tenant helper picks the primary non-platform tenant, NULL when there is none
+ok 50 - 50 the scope guard of VTID-05576 still refuses a direct network write after the migration ran
+ok 51 - 51 the guard accepts again once the unplaceable row is gone
+ok 52 - 52 an empty live legacy table passes the guard
+ok 53 - 53 a live legacy table whose rows are all identical in the snapshot passes
+ok 54 - 54 a live legacy id that is absent from its snapshot stops the guard (stale snapshot)
+ok 55 - 55 a live legacy row that differs from its snapshot stops the guard
+ok 56 - 56 ... and passes again once the row matches
+ok 57 - 57 a missing snapshot table while a live legacy table exists stops the guard (no silent skip)
+ok 58 - 58 with no live legacy table left, a missing snapshot is only reported as skipped (nothing to lose)
+ok 59 - 59 a live participant row that is absent from its snapshot stops the guard
+ok 60 - 60 a memberless group whose sender is a member is unplaced; group_skipped stays 1 (only the bots-only group d5)
+ok 61 - 61 ... and the guard refuses the drop
+ok 62 - 62 a DM with no member tenant and a platform legacy tenant is unplaced, never written with the platform tenant
+ok 63 - 63 ... and the guard refuses the drop
+ok 64 - 64 a group whose members have no tenant and whose legacy tenant is the platform is unplaced, never written with the platform tenant
+ok 65 - 65 the two participant tables take no write from any API role after the freeze
+[exit 0]
+
+$ /projects/sandbox/wt-audit-m0/docs/validation/VTID-05573/pglite-harness/lane.sh --twice
+# loaded /projects/sandbox/wt-audit-m0/docs/validation/VTID-05573/pgtap/vtid_05573_fixture.sql
+# loaded /projects/sandbox/wt-audit-m0/supabase/migrations/20261102050000_vtid_05576_chat_messages_scope.sql
+# loaded /projects/sandbox/wt-audit-m0/supabase/migrations/20261102051000_vtid_05582_network_visible_profile.sql
+# loaded /projects/sandbox/wt-audit-m0/supabase/migrations/20261102052000_vtid_05573_legacy_messages_snapshot_freeze.sql
+# loaded /projects/sandbox/wt-audit-m0/supabase/migrations/20261102052100_vtid_05573_legacy_messages_functions.sql
+# loaded /projects/sandbox/wt-audit-m0/supabase/migrations/20261102052200_vtid_05573_legacy_messages_migrate_run.sql
+# loaded /projects/sandbox/wt-audit-m0/supabase/migrations/20261102052300_vtid_05573_legacy_messages_drop.sql
+# loaded /projects/sandbox/wt-audit-m0/supabase/migrations/20261102052000_vtid_05573_legacy_messages_snapshot_freeze.sql
+# loaded /projects/sandbox/wt-audit-m0/supabase/migrations/20261102052100_vtid_05573_legacy_messages_functions.sql
+# loaded /projects/sandbox/wt-audit-m0/supabase/migrations/20261102052200_vtid_05573_legacy_messages_migrate_run.sql
+# loaded /projects/sandbox/wt-audit-m0/supabase/migrations/20261102052300_vtid_05573_legacy_messages_drop.sql
+1..65
+ok 1 - 1 the four legacy tables are dropped
+ok 2 - 2 the two participant tables are not dropped (outside the lane's four)
+ok 3 - 3 bak_messages holds all 7 legacy messages
+ok 4 - 4 bak_message_threads holds all 3 threads
+ok 5 - 5 bak_global_messages holds all 7 messages
+ok 6 - 6 bak_global_message_threads holds all 6 threads
+ok 7 - 7 both participant snapshots are complete (7 + 12 rows)
+ok 8 - 8 every bak_* table has row level security on
+ok 9 - 9 anon and authenticated cannot read any bak_* table
+ok 10 - 10 a bak_* table carries its 30-day retention note
+ok 11 - 11 12 legacy messages landed in chat_messages (14 minus 2 rule-43 skips)
+ok 12 - 12 6 from messages
+ok 13 - 13 6 from global_messages
+ok 14 - 14 the 2 pre-existing platform messages are untouched
+ok 15 - 15 a message to or from a service bot / notification actor is not migrated (rule 43)
+ok 16 - 16 DM between members who share tenant A -> community, tenant A
+ok 17 - 17 DM between members with no shared tenant (platform tenant ignored) -> network, sender context tenant
+ok 18 - 18 DM between a TB member and a TA+TB member -> community, the shared tenant TB
+ok 19 - 19 a message in a two-person direct thread becomes a DM to the other participant
+ok 20 - 20 a message in a tenant group thread -> community group message in the same group id
+ok 21 - 21 a sender with no tenant at all -> network, falling back to the legacy row's tenant
+ok 22 - 22 global DM between two TA members -> community, tenant A (both directions)
+ok 23 - 23 global DM across tenants -> network, tenant = the sender's own context (TB)
+ok 24 - 24 global group whose members all share TA -> community group message
+ok 25 - 25 global group with members that share no tenant -> network group messages, creator's context tenant
+ok 26 - 26 text, created_at and read_at are preserved
+ok 27 - 27 the legacy id and content_data are kept in metadata
+ok 28 - 28 4 legacy groups migrated (2 tenant, 2 global)
+ok 29 - 29 tenant group e2 -> community group of tenant A, name kept
+ok 30 - 30 cross-tenant global group d4 -> flagged legacy_scope network (the network-groups-db lane reads this), tenant = creator context
+ok 31 - 31 a group of only service/test accounts, and an empty group, are not migrated
+ok 32 - 32 10 members migrated (3 + 1 + 3 + 3)
+ok 33 - 33 legacy role moderator -> member, admin kept
+ok 34 - 34 a service bot is not added as a group member
+ok 35 - 35 every migrated member row carries the group's context tenant
+ok 36 - 36 every community DM has both people as members of the row's tenant
+ok 37 - 37 no network DM exists between two people who share a non-platform tenant
+ok 38 - 38 no migrated message involves a service bot or notification test actor (rules 43-45)
+ok 39 - 39 the platform tenant is never written on member content
+ok 40 - 40 every migrated row has a valid scope
+ok 41 - 41 re-running the migration reports the same classification (messages: 6 migrated)
+ok 42 - 42 ... and adds no row (idempotent)
+ok 43 - 43 the reconcile figures balance: 7 = 6 + 1 + 0 and 9 threads = 3 + 4 + 1 + 1 + 0
+ok 44 - 44 the drop guard accepts a fully reconciled migration
+ok 45 - 45 the drop guard refuses while a legacy row could not be placed
+ok 46 - 46 the migration functions are service_role only
+ok 47 - 47 the lane functions are SECURITY DEFINER with a pinned search_path
+ok 48 - 48 the shared-tenant helper: shared tenant, shared non-primary, none (platform tenant ignored)
+ok 49 - 49 the context-tenant helper picks the primary non-platform tenant, NULL when there is none
+ok 50 - 50 the scope guard of VTID-05576 still refuses a direct network write after the migration ran
+ok 51 - 51 the guard accepts again once the unplaceable row is gone
+ok 52 - 52 an empty live legacy table passes the guard
+ok 53 - 53 a live legacy table whose rows are all identical in the snapshot passes
+ok 54 - 54 a live legacy id that is absent from its snapshot stops the guard (stale snapshot)
+ok 55 - 55 a live legacy row that differs from its snapshot stops the guard
+ok 56 - 56 ... and passes again once the row matches
+ok 57 - 57 a missing snapshot table while a live legacy table exists stops the guard (no silent skip)
+ok 58 - 58 with no live legacy table left, a missing snapshot is only reported as skipped (nothing to lose)
+ok 59 - 59 a live participant row that is absent from its snapshot stops the guard
+ok 60 - 60 a memberless group whose sender is a member is unplaced; group_skipped stays 1 (only the bots-only group d5)
+ok 61 - 61 ... and the guard refuses the drop
+ok 62 - 62 a DM with no member tenant and a platform legacy tenant is unplaced, never written with the platform tenant
+ok 63 - 63 ... and the guard refuses the drop
+ok 64 - 64 a group whose members have no tenant and whose legacy tenant is the platform is unplaced, never written with the platform tenant
+ok 65 - 65 the two participant tables take no write from any API role after the freeze
+[exit 0]
+
+$ /projects/sandbox/wt-audit-m0/docs/validation/VTID-05573/pglite-harness/checks.sh
+## fixture
+## dep 050000
+## dep 051000
+## live-before
+{"check_name":"legacy_row_counts","messages":7,"message_threads":3,"global_message_threads":6,"global_messages":7,"thread_participants":7,"global_thread_participants":12}
+{"check_name":"chat_rows_before","chat_messages":2,"chat_groups":1,"chat_group_members":1}
+{"check_name":"bak_absent","ok":true}
+{"check_name":"migrate_functions_absent","ok":true}
+{"check_name":"dependencies_present","chat_messages_scope":true,"exclusion_helper":true}
+{"check_name":"fks_onto_legacy","from_table":"thread_participants","conname":"thread_participants_thread_id_fkey","onto":"message_threads"}
+{"check_name":"fks_onto_legacy","from_table":"messages","conname":"messages_parent_message_id_fkey","onto":"messages"}
+{"check_name":"fks_onto_legacy","from_table":"global_thread_participants","conname":"fk_global_thread_participants_thread","onto":"global_message_threads"}
+{"check_name":"target_triggers","event_object_table":"chat_messages","trigger_name":"trg_chat_messages_scope_guard","action_timing":"BEFORE","event_manipulation":"INSERT"}
+{"check_name":"target_triggers","event_object_table":"chat_messages","trigger_name":"trg_chat_messages_scope_guard","action_timing":"BEFORE","event_manipulation":"UPDATE"}
+{"check_name":"legacy_rows_with_listed_accounts","messages":1,"global_messages":1}
+{"check_name":"legacy_table_acl","relname":"global_message_threads","acl":"{postgres=arwdDxtm/postgres,anon=arwdDxtm/postgres,authenticated=arwdDxtm/postgres,service_role=arwdDxtm/postgres}"}
+{"check_name":"legacy_table_acl","relname":"global_messages","acl":"{postgres=arwdDxtm/postgres,anon=arwdDxtm/postgres,authenticated=arwdDxtm/postgres,service_role=arwdDxtm/postgres}"}
+{"check_name":"legacy_table_acl","relname":"global_thread_participants","acl":"{postgres=arwdDxtm/postgres,anon=arwdDxtm/postgres,authenticated=arwdDxtm/postgres,service_role=arwdDxtm/postgres}"}
+{"check_name":"legacy_table_acl","relname":"message_threads","acl":"{postgres=arwdDxtm/postgres,anon=arwdDxtm/postgres,authenticated=arwdDxtm/postgres,service_role=arwdDxtm/postgres}"}
+{"check_name":"legacy_table_acl","relname":"messages","acl":"{postgres=arwdDxtm/postgres,anon=arwdDxtm/postgres,authenticated=arwdDxtm/postgres,service_role=arwdDxtm/postgres}"}
+{"check_name":"legacy_table_acl","relname":"thread_participants","acl":"{postgres=arwdDxtm/postgres,anon=arwdDxtm/postgres,authenticated=arwdDxtm/postgres,service_role=arwdDxtm/postgres}"}
+## apply 052000 (snapshot + freeze)
+## freeze: the four legacy tables take no write from any API role; reads still work
+{"check_name":"frozen","ok":true}
+{"check_name":"participants_frozen","ok":true}
+{"check_name":"public_grant_revoked","ok":true}
+{"check_name":"snapshot_complete","ok":true}
+## apply 052100 (functions)
+## apply 052200 (migrate)
+## migrate run twice adds nothing
+{"check_name":"idempotent","before_rerun":14}
+{"x":true}
+{"check_name":"idempotent_after","ok":true}
+## drop 052300 with an unplaceable legacy row is refused: VTID-05573: legacy rows could not be placed, refusing to drop: {"landed": {"groups": 4, "messages": 6, "global_messages": 6}, "threads": {"dm": 3, "empty": 1, "unplaced": 0, "group_skipped": 1, "group_migrated": 4}, "messages": {"total": 8, "migrated": 6, "unplaced": 1, "skipped_excluded": 1}, "global_messages": {"total": 7, "migrated": 6, "unplaced": 0, "skipped_excluded": 1}}
+## legacy tables still there after the refused drop
+{"check_name":"still_there","ok":true}
+## drop 052300 when a migrated id is occupied by a foreign row is refused: VTID-05573: migrated rows are missing from the target, refusing to drop: {"landed": {"groups": 4, "messages": 5, "global_messages": 6}, "threads": {"dm": 3, "empty": 1, "unplaced": 0, "group_skipped": 1, "group_migrated": 4}, "messages": {"total": 7, "migrated": 6, "unplaced": 0, "skipped_excluded": 1}, "global_messages": {"total": 7, "migrated": 6, "unplaced": 0, "skipped_excluded": 1}}
+## drop 052300 with a group that has no active non-excluded member and no excluded account involved is refused: VTID-05573: legacy rows could not be placed, refusing to drop: {"landed": {"groups": 4, "messages": 6, "global_messages": 6}, "threads": {"dm": 3, "empty": 1, "unplaced": 1, "group_skipped": 1, "group_migrated": 4}, "messages": {"total": 7, "migrated": 6, "unplaced": 0, "skipped_excluded": 1}, "global_messages": {"total": 8, "migrated": 6, "unplaced": 1, "skipped_excluded": 1}}
+## drop 052300 with a snapshot table missing while the live legacy tables exist is refused: VTID-05573: snapshot bak_messages is missing while a live legacy table exists, refusing to drop
+## drop 052300 with a live legacy row that is not in its snapshot is refused: VTID-05573: 1 live row(s) of global_message_threads are absent from bak_global_message_threads or differ from it (stale snapshot), refusing to drop
+## legacy tables still there after the refused drops
+{"check_name":"still_there_2","ok":true}
+## apply 052300 (drop)
+## post-apply-checks
+{"check_name":"legacy_tables_gone","ok":true}
+{"check_name":"bak_tables_present_rls_no_client_grant","ok":true}
+{"check_name":"snapshot_row_counts","messages":7,"message_threads":3,"global_message_threads":6,"global_messages":7}
+{"check_name":"migrated_row_counts","from_messages":6,"from_global_messages":6,"groups":4,"group_members":10}
+{"check_name":"migrated_by_scope","scope":"community","n":7}
+{"check_name":"migrated_by_scope","scope":"network","n":5}
+{"check_name":"every_migrated_row_has_valid_scope","ok":true}
+{"check_name":"no_listed_account_migrated","ok":true}
+{"check_name":"no_listed_group_member","ok":true}
+{"check_name":"no_platform_tenant_on_migrated_content","ok":true}
+{"check_name":"functions_service_role_only","ok":true}
+## rollback 052300
+## rollback 052200 while a migrated group has a new message is refused: VTID-05573 rollback refused: a migrated group received new messages; move them first
+## rollback 052200
+## rollback 052100
+## rollback 052000
+## rollback-check
+{"check_name":"legacy_tables_back","ok":true}
+{"check_name":"exact_row_counts_restored","ok":true}
+{"check_name":"exact_rows_restored","ok":true}
+{"check_name":"migrated_rows_gone","ok":true}
+{"check_name":"functions_gone","ok":true}
+{"check_name":"restored_tables_not_client_readable","ok":true}
+{"check_name":"snapshots_kept","ok":true}
+## rollback 052000 and 052300 restore the grants and the foreign keys
+{"check_name":"write_grants_restored","ok":true}
+{"check_name":"public_grant_restored","ok":true}
+{"check_name":"thread_participants_fk_restored","ok":true}
+{"check_name":"global_thread_participants_fk_restored","ok":true}
+## re-apply 052000 over a stale snapshot (a live row written after the unfreeze) is refused: VTID-05573: snapshot bak_global_message_threads already exists and 1 live row(s) of global_message_threads are absent from it or differ from it (stale snapshot); drop the stale snapshot deliberately before applying again
+## pre-existing platform rows untouched by apply + rollback
+{"check_name":"platform_rows_intact","ok":true}
+## re-apply 20261102052000_vtid_05573_legacy_messages_snapshot_freeze.sql
+## re-apply 20261102052100_vtid_05573_legacy_messages_functions.sql
+## re-apply 20261102052200_vtid_05573_legacy_messages_migrate_run.sql
+## re-apply 20261102052300_vtid_05573_legacy_messages_drop.sql
+## post-apply-checks (after re-apply)
+{"check_name":"legacy_tables_gone","ok":true}
+{"check_name":"bak_tables_present_rls_no_client_grant","ok":true}
+{"check_name":"snapshot_row_counts","messages":7,"message_threads":3,"global_message_threads":6,"global_messages":7}
+{"check_name":"migrated_row_counts","from_messages":6,"from_global_messages":6,"groups":4,"group_members":10}
+{"check_name":"migrated_by_scope","scope":"community","n":7}
+{"check_name":"migrated_by_scope","scope":"network","n":5}
+{"check_name":"every_migrated_row_has_valid_scope","ok":true}
+{"check_name":"no_listed_account_migrated","ok":true}
+{"check_name":"no_listed_group_member","ok":true}
+{"check_name":"no_platform_tenant_on_migrated_content","ok":true}
+{"check_name":"functions_service_role_only","ok":true}
+[exit 0]
+
+$ node scripts/ci/bare-policy-lint.mjs
+bare-policy-lint: 0 bare current_tenant_id() policies on 0 tables (828 policies in 731 files; allowlisted 0)
+[exit 0]
+
+$ node --test scripts/ci/check-migration-drift.test.cjs
+TAP version 13
+# Subtest: Aurora-only table absent from Supabase passes and is not reported missing
+ok 1 - Aurora-only table absent from Supabase passes and is not reported missing
+  ---
+  duration_ms: 1.252577
+  type: 'test'
+  ...
+# Subtest: Aurora-only table present in the Supabase snapshot fails
+ok 2 - Aurora-only table present in the Supabase snapshot fails
+  ---
+  duration_ms: 0.132017
+  type: 'test'
+  ...
+# Subtest: a non-listed declared table missing from Supabase still fails as before
+ok 3 - a non-listed declared table missing from Supabase still fails as before
+  ---
+  duration_ms: 0.119541
+  type: 'test'
+  ...
+# Subtest: without an Aurora-only list the store table would be reported as new drift
+ok 4 - without an Aurora-only list the store table would be reported as new drift
+  ---
+  duration_ms: 1.045794
+  type: 'test'
+  ...
+# Subtest: aurora_only_tables entries need table, VTID and reason
+ok 5 - aurora_only_tables entries need table, VTID and reason
+  ---
+  duration_ms: 0.44375
+  type: 'test'
+  ...
+# Subtest: the repo baseline lists every table the health store migration declares, and nothing else of VTID-05158
+ok 6 - the repo baseline lists every table the health store migration declares, and nothing else of VTID-05158
+  ---
+  duration_ms: 55.22526
+  type: 'test'
+  ...
+# Subtest: every table declared behind the health store placement guard is aurora_only (incl. health_sources)
+ok 7 - every table declared behind the health store placement guard is aurora_only (incl. health_sources)
+  ---
+  duration_ms: 32.234885
+  type: 'test'
+  ...
+# Subtest: CLI: passes on a snapshot without the store tables, fails when one appears on Supabase
+ok 8 - CLI: passes on a snapshot without the store tables, fails when one appears on Supabase
+  ---
+  duration_ms: 231.392891
+  type: 'test'
+  ...
+1..8
+# tests 8
+# suites 0
+# pass 8
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 376.768902
+[exit 0]
+
+$ node /projects/sandbox/.tools/jest/node_modules/jest/bin/jest.js --config /projects/sandbox/.tools/jest/jest.audit-m0.config.js --runInBand
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/wt-audit-m0/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+PASS services/gateway/test/mt-identity-bare-policy-lint.test.ts
+  VTID-05465 N3 bare-policy lint
+    ✓ reads ZERO bare current_tenant_id() policies over supabase/migrations (455 ms)
+    ✓ the rollback restores exactly the recount set (32 policies on 15 tables) (486 ms)
+  VTID-05465 helpers and rewrite migrations
+    ✓ ships tenant_id_for_policies() and is_member(uuid) as STABLE SECURITY DEFINER and leaves current_tenant_id() alone (2 ms)
+    ✓ rewrites every recounted policy to tenant_id_for_policies() and nothing else (amendment 1) (107 ms)
+    ✓ the rollback recreates each policy exactly as the migration that created it, and the rewrite only swaps the helper (575 ms)
+  VTID-05465 live-body guard
+    ✓ reads the live current_tenant_id() body in DO $pre$ and raises before any policy is touched unless the three 20260218 markers match (1 ms)
+  VTID-05465 lint parser
+    ✓ counts only bare policies left after drops, re-definitions and DO blocks (34 ms)
+    ✓ applies a paired _rollback.sql only when asked (45 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       8 passed, 8 total
+Snapshots:   0 total
+Time:        2.035 s
+Ran all test suites.
+[exit 0]
