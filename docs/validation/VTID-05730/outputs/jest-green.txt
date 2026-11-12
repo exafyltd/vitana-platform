@@ -1,0 +1,184 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/wt-crit-stripe-dance-signature/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.error
+    [stripe-dance webhook] Signature verification failed: No signatures found matching the expected signature for payload. Are you passing the raw request body you received from Stripe? 
+     If a webhook request is being forwarded by a third-party tool, ensure that the exact request body, including JSON formatting and new line style, is preserved.
+    
+    Learn more about webhook signing and explore webhook integration examples for various frameworks at https://docs.stripe.com/webhooks/signature
+
+      71 |     event = Stripe.webhooks.constructEvent(rawBody, sig, expectedSecret) as unknown as StripeEvent;
+      72 |   } catch (err: any) {
+    > 73 |     console.error('[stripe-dance webhook] Signature verification failed:', err?.message);
+         |             ^
+      74 |     return res.status(400).json({ ok: false, error: 'BAD_SIGNATURE' });
+      75 |   }
+      76 |
+
+      at src/routes/payments-stripe-webhook.ts:73:13
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/route.js:149:13)
+      at Route.dispatch (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/route.js:119:3)
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:284:15
+      at Function.process_params (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:175:3)
+      at router (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:328:13)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at jsonParser (../../../wt-gwra-route-auth/services/gateway/node_modules/body-parser/lib/types/json.js:108:7)
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:328:13)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (../../../wt-gwra-route-auth/services/gateway/node_modules/raw-body/index.js:238:16)
+      at done (../../../wt-gwra-route-auth/services/gateway/node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (../../../wt-gwra-route-auth/services/gateway/node_modules/raw-body/index.js:287:7)
+
+  console.error
+    [stripe-dance webhook] Signature verification failed: No signatures found matching the expected signature for payload. Are you passing the raw request body you received from Stripe? 
+     If a webhook request is being forwarded by a third-party tool, ensure that the exact request body, including JSON formatting and new line style, is preserved.
+    
+    Learn more about webhook signing and explore webhook integration examples for various frameworks at https://docs.stripe.com/webhooks/signature
+
+      71 |     event = Stripe.webhooks.constructEvent(rawBody, sig, expectedSecret) as unknown as StripeEvent;
+      72 |   } catch (err: any) {
+    > 73 |     console.error('[stripe-dance webhook] Signature verification failed:', err?.message);
+         |             ^
+      74 |     return res.status(400).json({ ok: false, error: 'BAD_SIGNATURE' });
+      75 |   }
+      76 |
+
+      at src/routes/payments-stripe-webhook.ts:73:13
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/route.js:149:13)
+      at Route.dispatch (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/route.js:119:3)
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:284:15
+      at Function.process_params (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:175:3)
+      at router (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:328:13)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at jsonParser (../../../wt-gwra-route-auth/services/gateway/node_modules/body-parser/lib/types/json.js:108:7)
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:328:13)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (../../../wt-gwra-route-auth/services/gateway/node_modules/raw-body/index.js:238:16)
+      at done (../../../wt-gwra-route-auth/services/gateway/node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (../../../wt-gwra-route-auth/services/gateway/node_modules/raw-body/index.js:287:7)
+
+  console.error
+    [stripe-dance webhook] STRIPE_WEBHOOK_SECRET not configured
+
+      49 |   const expectedSecret = process.env.STRIPE_WEBHOOK_SECRET;
+      50 |   if (!expectedSecret) {
+    > 51 |     console.error('[stripe-dance webhook] STRIPE_WEBHOOK_SECRET not configured');
+         |             ^
+      52 |     return res.status(500).json({ ok: false, error: 'WEBHOOK_NOT_CONFIGURED' });
+      53 |   }
+      54 |
+
+      at src/routes/payments-stripe-webhook.ts:51:13
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/route.js:149:13)
+      at Route.dispatch (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/route.js:119:3)
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:284:15
+      at Function.process_params (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:175:3)
+      at router (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:328:13)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at jsonParser (../../../wt-gwra-route-auth/services/gateway/node_modules/body-parser/lib/types/json.js:108:7)
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:328:13)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (../../../wt-gwra-route-auth/services/gateway/node_modules/raw-body/index.js:238:16)
+      at done (../../../wt-gwra-route-auth/services/gateway/node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (../../../wt-gwra-route-auth/services/gateway/node_modules/raw-body/index.js:287:7)
+
+  console.error
+    [stripe-dance webhook] Signature verification failed: No signatures found matching the expected signature for payload. Are you passing the raw request body you received from Stripe? 
+     If a webhook request is being forwarded by a third-party tool, ensure that the exact request body, including JSON formatting and new line style, is preserved.
+    
+    Learn more about webhook signing and explore webhook integration examples for various frameworks at https://docs.stripe.com/webhooks/signature
+
+      71 |     event = Stripe.webhooks.constructEvent(rawBody, sig, expectedSecret) as unknown as StripeEvent;
+      72 |   } catch (err: any) {
+    > 73 |     console.error('[stripe-dance webhook] Signature verification failed:', err?.message);
+         |             ^
+      74 |     return res.status(400).json({ ok: false, error: 'BAD_SIGNATURE' });
+      75 |   }
+      76 |
+
+      at src/routes/payments-stripe-webhook.ts:73:13
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/route.js:149:13)
+      at Route.dispatch (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/route.js:119:3)
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:284:15
+      at Function.process_params (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:175:3)
+      at router (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:328:13)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at jsonParser (../../../wt-gwra-route-auth/services/gateway/node_modules/body-parser/lib/types/json.js:108:7)
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:328:13)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (../../../wt-gwra-route-auth/services/gateway/node_modules/raw-body/index.js:238:16)
+      at done (../../../wt-gwra-route-auth/services/gateway/node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (../../../wt-gwra-route-auth/services/gateway/node_modules/raw-body/index.js:287:7)
+
+PASS test/payments-stripe-dance-signature.test.ts
+  POST /webhooks/stripe-dance signature verification
+    ✓ valid signature → 200 and the service_payments state moves (26 ms)
+    ✓ forged signature (signed with another secret) → 400 BAD_SIGNATURE, nothing written (14 ms)
+    ✓ garbage signature header → 400 BAD_SIGNATURE, nothing written (4 ms)
+    ✓ missing stripe-signature header → 400, nothing written (2 ms)
+    ✓ STRIPE_WEBHOOK_SECRET unset → 500 WEBHOOK_NOT_CONFIGURED, nothing written (4 ms)
+    ✓ signed event, lookup error → 500 LOOKUP_FAILED, no state write (3 ms)
+    ✓ signed event, unknown payment_intent → 200 unknown_pi, no state write (3 ms)
+    ✓ body altered after signing → 400 BAD_SIGNATURE, nothing written (3 ms)
+    ✓ index.ts mounts express.raw for /webhooks/stripe-dance before express.json() (1 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       9 passed, 9 total
+Snapshots:   0 total
+Time:        0.63 s, estimated 1 s
+Ran all test suites matching /test\/payments-stripe-dance-signature.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
+exit 0

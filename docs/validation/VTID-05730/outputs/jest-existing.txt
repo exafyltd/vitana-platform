@@ -1,0 +1,469 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/wt-crit-stripe-dance-signature/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/routes/payments-stripe-webhook.test.ts
+  payments-stripe-webhook
+    ✓ returns 500 (not "unknown payment_intent") when the service_payments lookup errors (30 ms)
+    ✓ acks unknown-but-not-erroring payment_intent as info, unchanged (8 ms)
+    ✓ advances state on a found payment, unchanged (3 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/delivery/gitlab-delivery-webhook.test.ts
+  VTID-05547 the stage — the signature check is the M2 route's, unchanged
+    ✓ the unsigned staging probe → 401 signature_missing JSON, with the key set and with no key configured (8 ms)
+    ✓ a signed delivery with no key configured → 500 not_configured, nothing recorded (3 ms)
+    ✓ a signature made with another key, an altered body, a stale timestamp and svix-* headers only are refused 401 (10 ms)
+  VTID-05547 the stage — a signed delivery records every event it maps to
+    ✓ a main pipeline records the pipeline, the landing and the staging deploy, in order, and replies with all three (5 ms)
+    ✓ a push with a review entry records the push, the review and the lane update (4 ms)
+    ✓ a merge request opened and then pushed to: the push takes the VTID of the merge request seen by this task (6 ms)
+    ✓ the stage answers the delivery itself: the M2 router behind it does not emit a second, plain event (2 ms)
+  VTID-05547 the stage — exactly once
+    ✓ a duplicate webhook-id answers 200 duplicate and records nothing more (8 ms)
+    ✓ a webhook-id that was recorded is a duplicate for good: another body with that id records nothing and reads nothing (6 ms)
+    ✓ the same fact from another delivery (another webhook-id) is one row: a duplicate dedupe_key records nothing (6 ms)
+    ✓ the second event failing answers 502, and the retry of the same delivery writes only what is missing (6 ms)
+    ✓ the OASIS write throwing answers 502 without the error text (2 ms)
+  VTID-05547 the stage — every reply is JSON
+    ✓ an event it does not map is acknowledged and ignored with the reason (202) (4 ms)
+    ✓ malformed JSON with a valid signature → 400 invalid_json (3 ms)
+    ✓ a body over the limit → 413 payload_too_large, as JSON (7 ms)
+    ✓ any method but POST falls through to Express (no GET handler, no HTML error page from the stage) (4 ms)
+  VTID-05547 the branch lookup in OASIS (read only)
+    ✓ asks the merge request rows of the branch and returns the VTID of the newest (1 ms)
+    ✓ answers null for no row, an upstream error, a throw, a VTID that is not VTID-\d{5}, no project and no credentials (1 ms)
+    ✓ a push handled by a task that has not seen the merge request uses the lookup (2 ms)
+  VTID-05547 index.ts — how the stage and the Delivery routes are mounted
+    ✓ mounts the stage as middleware on the webhook path, just before the unchanged M2 router mount, after the raw body parser (1 ms)
+    ✓ mounts the Delivery read routes once, through the route guard (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.error
+    [gitlab-webhook] OASIS write failed: scm.gitlab.pipeline.failed VTID-05541 (webhook-id msg_test_598_10)
+
+      122 |       if (outcome === 'duplicate') return reply(res, 200, { ok: true, duplicate: true });
+      123 |       if (outcome === 'failed') {
+    > 124 |         console.error(`[gitlab-webhook] OASIS write failed: ${mapping.event.type} ${mapping.event.vtid} (webhook-id ${id.slice(0, 64)})`);
+          |                 ^
+      125 |         return reply(res, 502, { ok: false, error: 'oasis_emit_failed' });
+      126 |       }
+      127 |       return reply(res, 200, { ok: true, topic: mapping.event.type, vtid: mapping.event.vtid, event_id: eventId });
+
+      at src/routes/internal-gitlab-webhook.ts:124:17
+
+  console.error
+    [gitlab-webhook] OASIS write failed: scm.gitlab.merge_request.closed VTID-05541 (webhook-id msg_test_598_11)
+
+      122 |       if (outcome === 'duplicate') return reply(res, 200, { ok: true, duplicate: true });
+      123 |       if (outcome === 'failed') {
+    > 124 |         console.error(`[gitlab-webhook] OASIS write failed: ${mapping.event.type} ${mapping.event.vtid} (webhook-id ${id.slice(0, 64)})`);
+          |                 ^
+      125 |         return reply(res, 502, { ok: false, error: 'oasis_emit_failed' });
+      126 |       }
+      127 |       return reply(res, 200, { ok: true, topic: mapping.event.type, vtid: mapping.event.vtid, event_id: eventId });
+
+      at src/routes/internal-gitlab-webhook.ts:124:17
+
+PASS test/routes/internal-gitlab-webhook.test.ts
+  index.ts mounting (VTID-05541)
+    ✓ mounts the raw body parser and its JSON error handler for the route before express.json() (1 ms)
+    ✓ mounts the router at /api/v1/internal/gitlab through the route guard
+  POST /api/v1/internal/gitlab/webhook — signed deliveries (VTID-05541)
+    ✓ merge_request open → 200 and one scm.gitlab.merge_request.opened event (5 ms)
+    ✓ merge_request reopen → 200 and one scm.gitlab.merge_request.opened event (3 ms)
+    ✓ merge_request merge → 200 and one scm.gitlab.merge_request.merged event (2 ms)
+    ✓ merge_request close → 200 and one scm.gitlab.merge_request.closed event (3 ms)
+    ✓ pipeline success → 200 and one scm.gitlab.pipeline.succeeded event (3 ms)
+    ✓ pipeline failed → 200 and one scm.gitlab.pipeline.failed event (2 ms)
+    ✓ carries the webhook-id into the event and verifies the exact bytes, not a re-serialization (6 ms)
+    ✓ decides by the signed body, not by the unsigned X-Gitlab-Event header (3 ms)
+    ✓ a duplicate webhook-id answers 200 and records nothing more (4 ms)
+    ✓ a retry is dropped by its webhook-id before its body is looked at (4 ms)
+    ✓ the OASIS write failing answers 502 and leaves the id open, so the retry records it (8 ms)
+    ✓ the OASIS write throwing answers 502 without the error text (4 ms)
+    ✓ no VTID in the title → 202 (no_vtid), acknowledged and ignored, nothing recorded (4 ms)
+    ✓ pipeline without a VTID → 202 (no_vtid), acknowledged and ignored, nothing recorded (4 ms)
+    ✓ an unknown event → 202 (unknown_event), acknowledged and ignored, nothing recorded (4 ms)
+    ✓ an unmapped action → 202 (unmapped_action), acknowledged and ignored, nothing recorded (4 ms)
+    ✓ an unmapped pipeline status → 202 (unmapped_status), acknowledged and ignored, nothing recorded (4 ms)
+    ✓ a JSON value that is not an object → 202 (unknown_event), acknowledged and ignored, nothing recorded (3 ms)
+    ✓ malformed JSON with a valid signature → 400 invalid_json (4 ms)
+  POST /api/v1/internal/gitlab/webhook — refused deliveries (VTID-05541)
+    ✓ a signature made with another key → 401 signature_invalid (2 ms)
+    ✓ a body altered after signing → 401 signature_invalid (2 ms)
+    ✓ a signed webhook-id swapped for another → 401 signature_invalid (1 ms)
+    ✓ a stale or future timestamp (over 300 s) → 401 timestamp_out_of_tolerance (4 ms)
+    ✓ without webhook-id → 401 signature_missing (2 ms)
+    ✓ without webhook-timestamp → 401 signature_missing (2 ms)
+    ✓ without webhook-signature → 401 signature_missing (4 ms)
+    ✓ a correctly signed request carrying only svix-* headers → 401 signature_missing (2 ms)
+    ✓ a non-numeric timestamp → 401 signature_missing (2 ms)
+    ✓ a body over the limit → 413 payload_too_large, as JSON (17 ms)
+  POST /api/v1/internal/gitlab/webhook — the key (VTID-05541)
+    ✓ the unsigned staging probe → 401 signature_missing JSON with the key set (3 ms)
+    ✓ the unsigned staging probe → 401 signature_missing JSON with no key configured (2 ms)
+    ✓ a signed delivery with no key configured → 500 not_configured JSON, nothing recorded (5 ms)
+    ✓ reads the key at request time (a rotated key applies without a restart) (4 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.error
+    [wallet-webhook] missing stripe-signature header
+
+      48 |
+      49 |   if (!sig) {
+    > 50 |     console.error('[wallet-webhook] missing stripe-signature header');
+         |             ^
+      51 |     return res.status(400).json({ error: 'Missing signature' });
+      52 |   }
+      53 |   if (!secret) {
+
+      at src/routes/wallet-stripe-webhook.ts:50:13
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/route.js:149:13)
+      at Route.dispatch (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/route.js:119:3)
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:284:15
+      at Function.process_params (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:175:3)
+      at router (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:328:13)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (../../../wt-gwra-route-auth/services/gateway/node_modules/raw-body/index.js:238:16)
+      at done (../../../wt-gwra-route-auth/services/gateway/node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (../../../wt-gwra-route-auth/services/gateway/node_modules/raw-body/index.js:287:7)
+
+  console.error
+    [wallet-webhook] signature verification failed: Invalid signature
+
+      60 |     event = getWalletStripe().webhooks.constructEvent(req.body, sig, secret);
+      61 |   } catch (err: any) {
+    > 62 |     console.error('[wallet-webhook] signature verification failed:', err?.message ?? err);
+         |             ^
+      63 |     return res.status(400).json({ error: `Webhook Error: ${err?.message ?? 'invalid signature'}` });
+      64 |   }
+      65 |
+
+      at src/routes/wallet-stripe-webhook.ts:62:13
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/route.js:149:13)
+      at Route.dispatch (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/route.js:119:3)
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:284:15
+      at Function.process_params (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:175:3)
+      at router (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:328:13)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (../../../wt-gwra-route-auth/services/gateway/node_modules/raw-body/index.js:238:16)
+      at done (../../../wt-gwra-route-auth/services/gateway/node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (../../../wt-gwra-route-auth/services/gateway/node_modules/raw-body/index.js:287:7)
+
+  console.log
+    [wallet-webhook] credited deposit 11111111-1111-1111-1111-111111111111 (duplicate=false, balance_minor=5000)
+
+      at handleWalletEvent (src/routes/wallet-stripe-webhook.ts:137:15)
+
+  console.log
+    [wallet-webhook] duplicate event evt_test_1 (checkout.session.completed) — ack 200
+
+      at src/routes/wallet-stripe-webhook.ts:86:15
+
+  console.log
+    [wallet-webhook] ignoring event type customer.subscription.updated
+
+      at src/routes/wallet-stripe-webhook.ts:95:13
+
+  console.warn
+    [wallet-webhook] checkout.session.completed cs_test_1 has no wallet metadata; skipping
+
+      117 |       const metadata = decodeCheckoutMetadata(session.metadata as Record<string, string> | null);
+      118 |       if (!metadata) {
+    > 119 |         console.warn(
+          |                 ^
+      120 |           `[wallet-webhook] checkout.session.completed ${session.id} has no wallet metadata; skipping`
+      121 |         );
+      122 |         return;
+
+      at handleWalletEvent (src/routes/wallet-stripe-webhook.ts:119:17)
+      at src/routes/wallet-stripe-webhook.ts:101:11
+
+  console.log
+    [wallet-webhook] session cs_test_1 completed but payment_status=unpaid; waiting for payment_intent
+
+      at handleWalletEvent (src/routes/wallet-stripe-webhook.ts:127:17)
+
+  console.error
+    [wallet-webhook] processing failed for evt_test_pi_succeeded (payment_intent.succeeded): deposit lookup failed
+
+      104 |   } catch (err: any) {
+      105 |     const message = err?.message ?? String(err);
+    > 106 |     console.error(`[wallet-webhook] processing failed for ${event.id} (${event.type}):`, message);
+          |             ^
+      107 |     await markEventProcessed(event.id, message);
+      108 |     // 500 → Stripe will retry. Idempotency guards make retries safe.
+      109 |     return res.status(500).json({ error: 'Webhook processing failed' });
+
+      at src/routes/wallet-stripe-webhook.ts:106:13
+
+  console.error
+    [wallet-webhook] processing failed for evt_test_pi_failed (payment_intent.payment_failed): deposit lookup failed
+
+      104 |   } catch (err: any) {
+      105 |     const message = err?.message ?? String(err);
+    > 106 |     console.error(`[wallet-webhook] processing failed for ${event.id} (${event.type}):`, message);
+          |             ^
+      107 |     await markEventProcessed(event.id, message);
+      108 |     // 500 → Stripe will retry. Idempotency guards make retries safe.
+      109 |     return res.status(500).json({ error: 'Webhook processing failed' });
+
+      at src/routes/wallet-stripe-webhook.ts:106:13
+
+  console.error
+    [wallet-webhook] processing failed for evt_test_1 (checkout.session.completed): rpc explode
+
+      104 |   } catch (err: any) {
+      105 |     const message = err?.message ?? String(err);
+    > 106 |     console.error(`[wallet-webhook] processing failed for ${event.id} (${event.type}):`, message);
+          |             ^
+      107 |     await markEventProcessed(event.id, message);
+      108 |     // 500 → Stripe will retry. Idempotency guards make retries safe.
+      109 |     return res.status(500).json({ error: 'Webhook processing failed' });
+
+      at src/routes/wallet-stripe-webhook.ts:106:13
+
+PASS test/wallet-stripe-webhook.test.ts
+  wallet-stripe-webhook
+    ✓ rejects requests with no stripe-signature header (9 ms)
+    ✓ rejects requests whose signature fails verification (4 ms)
+    ✓ credits a valid checkout.session.completed once on first delivery (4 ms)
+    ✓ returns 200 + duplicate=true on replayed stripe_event_id without re-dispatching (3 ms)
+    ✓ ignores unhandled event types but still marks them processed (3 ms)
+    ✓ does not credit when checkout.session.completed metadata is missing required fields (3 ms)
+    ✓ does not credit when payment_status is not "paid" (2 ms)
+    ✓ marks deposit expired on checkout.session.expired (2 ms)
+    ✓ returns 500 (not a silent skip) when payment_intent.succeeded's deposit lookup errors (3 ms)
+    ✓ returns 500 when payment_intent.payment_failed's deposit lookup errors (3 ms)
+    ✓ returns 500 when the handler throws (Stripe will retry) (3 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-05031-webhook-verification.test.ts
+  verifyTerra (VTID-05031)
+    ✓ accepts the vendor scheme (1 ms)
+    ✓ accepts when any of several v1 signatures matches
+    ✓ rejects a tampered body and a wrong secret (1 ms)
+    ✓ rejects a timestamp outside ±300 s, in either direction
+    ✓ rejects a missing t, a missing v1, a missing header (1 ms)
+    ✓ fails closed without a secret
+  verifySvix (VTID-05031)
+    ✓ matches Svix's published test vector
+    ✓ accepts when one of several space-separated signatures matches (1 ms)
+    ✓ rejects a wrong id, a tampered body, a stale timestamp
+    ✓ rejects missing svix headers
+    ✓ fails closed without a secret
+  verifyHexHmac (VTID-05031)
+    ✓ accepts a valid hex HMAC and rejects an invalid one (1 ms)
+    ✓ fails closed without a secret
+  connectors fail closed without a secret (VTID-05031)
+    ✓ Terra, Vital and DoctorBox reject every delivery when the secret is unset (1 ms)
+    ✓ no connector keeps a dev-mode verification bypass (1 ms)
+    ✓ index.ts mounts the raw body parser for the webhook route before express.json() (1 ms)
+  POST /api/v1/connectors/webhook/:connector (VTID-05031)
+    ✓ verifies over the exact bytes sent, even when they differ from JSON.stringify (8 ms)
+    ✓ answers 401 and logs the row for an invalid delivery (2 ms)
+    ✓ answers 401 when the secret is not configured (2 ms)
+    ✓ a handler exception answers 500 without the exception text (2 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    [OASIS Event] Emitted: scm.gitlab.pipeline.succeeded for VTID-05547 (bde95822-b8ab-48ce-b237-32ef909192a0)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:144:13)
+
+  console.log
+    [OASIS Event] Emitted: delivery.landed for VTID-05547 (c8485d34-07c6-484e-b0ee-fcdcc470c26f)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:144:13)
+
+  console.log
+    [OASIS Event] Emitted: staging.deploy.completed for VTID-05547 (e38171f9-1606-46ed-a82e-bbff3d3d911a)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:144:13)
+
+  console.log
+    [OASIS Event] Emitted: scm.gitlab.merge_request.merged for VTID-05547 (ea3a9b30-8386-45a8-a1e0-17c95c37a604)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:144:13)
+
+  console.log
+    [OASIS Event] Emitted: scm.gitlab.push for BOOTSTRAP-DELIVERY (d2bdd554-dade-40ce-aae0-a3ed9537812a)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:144:13)
+
+  console.log
+    [OASIS Event] Emitted: delivery.review.recorded for BOOTSTRAP-DELIVERY (c0b86b9f-47d0-473a-9229-d0d5233d519d)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:144:13)
+
+  console.log
+    [OASIS Event] Emitted: delivery.lane.updated for BOOTSTRAP-DELIVERY (3ddb4837-42b5-43af-a8c4-b4c928de8bcb)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:144:13)
+
+  console.log
+    [OASIS Event] Emitted: scm.gitlab.pipeline.succeeded for VTID-05547 (f0cef1a0-79f8-4506-b804-b05b0d62bc64)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:144:13)
+
+  console.log
+    [OASIS Event] Emitted: scm.gitlab.pipeline.started for VTID-05547 (98b3f213-106a-4164-b767-de3d614c54c6)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:144:13)
+
+  console.log
+    [OASIS Event] Emitted: scm.gitlab.merge_request.opened for VTID-05547 (7e4d89ac-e8d3-4d91-9c8c-a68c5721bcdb)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:144:13)
+
+  console.log
+    [OASIS Event] Emitted: scm.migration.pr_moved for VTID-05547 (8865ffec-23c8-4795-9c8d-cd9f99754ef5)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:144:13)
+
+  console.log
+    [OASIS Event] Emitted: scm.gitlab.pipeline.succeeded for VTID-05547 (2560ec3c-3b37-4a01-9613-fd0fb835a38d)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:144:13)
+
+  console.log
+    [OASIS Event] Emitted: delivery.landed for VTID-05547 (3bf2da31-cd90-4ff7-9961-dc55a56763ce)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:144:13)
+
+PASS test/delivery/gitlab-delivery-oasis-write.test.ts
+  VTID-05547 stage → emitOasisEvent → oasis_events INSERT
+    ✓ a main pipeline: three rows, each with the delivery metadata and the right stage (15 ms)
+    ✓ the merge request topics are written with the VALIDATOR stage, never an inferred Deploy stage (3 ms)
+    ✓ a push with a review entry: push, review and lane rows; the review row names the lane, verdict and model (4 ms)
+    ✓ a shadow delivery is written, marked shadow, with no deploy and no landing row (6 ms)
+    ✓ the OASIS write failing answers 502 and the retry records the row (5 ms)
+    ✓ the stored metadata never holds the description, the user, a variable or a raw build (7 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    [OASIS Event] Emitted: scm.gitlab.pipeline.failed for VTID-05541 (fbee1ce2-f2da-4f35-ae77-3e31b72fb62a)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:144:13)
+
+  console.log
+    [OASIS Event] Emitted: scm.gitlab.merge_request.merged for VTID-05541 (0ae4e4fd-2b3f-4bca-8cf9-7a09df13075d)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:144:13)
+
+  console.error
+    [OASIS Event] Failed to emit event: 503 - upstream unavailable
+
+      138 |     if (!response.ok) {
+      139 |       const errorText = await response.text();
+    > 140 |       console.error(`[OASIS Event] Failed to emit event: ${response.status} - ${errorText}`);
+          |               ^
+      141 |       return { ok: false, error: `Failed to emit event: ${response.status}` };
+      142 |     }
+      143 |
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:140:15)
+      at src/routes/internal-gitlab-webhook.ts:118:19
+      at src/services/gitlab-events/dedupe.ts:63:17
+      at DeliveryDedupe.once (src/services/gitlab-events/dedupe.ts:71:12)
+      at src/routes/internal-gitlab-webhook.ts:117:23
+
+  console.error
+    [gitlab-webhook] OASIS write failed: scm.gitlab.merge_request.opened VTID-05541 (webhook-id msg_oasis_3)
+
+      122 |       if (outcome === 'duplicate') return reply(res, 200, { ok: true, duplicate: true });
+      123 |       if (outcome === 'failed') {
+    > 124 |         console.error(`[gitlab-webhook] OASIS write failed: ${mapping.event.type} ${mapping.event.vtid} (webhook-id ${id.slice(0, 64)})`);
+          |                 ^
+      125 |         return reply(res, 502, { ok: false, error: 'oasis_emit_failed' });
+      126 |       }
+      127 |       return reply(res, 200, { ok: true, topic: mapping.event.type, vtid: mapping.event.vtid, event_id: eventId });
+
+      at src/routes/internal-gitlab-webhook.ts:124:17
+
+  console.log
+    [OASIS Event] Emitted: scm.gitlab.merge_request.opened for VTID-05541 (8db02fe9-b09e-4685-8c0a-097fc364b285)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:144:13)
+
+PASS test/gitlab-events/oasis-write.test.ts
+  VTID-05541 route → emitOasisEvent → oasis_events INSERT
+    ✓ a failed pipeline: one row, topic scm.gitlab.pipeline.failed, status warning, no stage (8 ms)
+    ✓ a merged merge request: topic scm.gitlab.merge_request.merged, status info, stage VALIDATOR (not the inferred DEPLOY) (4 ms)
+    ✓ the database refusing the row → 502, and the same delivery retried writes one row (10 ms)
+    ✓ an ignored or refused delivery writes nothing (5 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    [billing] Webhook event: customer.subscription.updated (id=evt_test_1)
+
+      at src/routes/billing.ts:820:11
+
+  console.log
+    [billing] Webhook event: customer.subscription.updated (id=evt_test_1)
+
+      at src/routes/billing.ts:820:11
+
+PASS test/routes/billing-webhook-subscription-plan-price.test.ts
+  POST /webhooks/stripe — customer.subscription.updated plan_key resolution
+    ✓ on fetchPlanPriceByStripePriceId returning {error}: logs it loudly, and still upserts using the metadata fallback (unchanged behavior) (12 ms)
+    ✓ on a successful lookup: logs nothing, and uses the resolved plan_key (3 ms)
+
+Test Suites: 8 passed, 8 total
+Tests:       102 passed, 102 total
+Snapshots:   0 total
+Time:        2.951 s
+Ran all test suites matching /test\/routes\/payments-stripe-webhook.test.ts|test\/wallet-stripe-webhook.test.ts|test\/routes\/billing-webhook-subscription-plan-price.test.ts|test\/vtid-05031-webhook-verification.test.ts|test\/routes\/internal-gitlab-webhook.test.ts|test\/delivery\/gitlab-delivery-webhook.test.ts|test\/delivery\/gitlab-delivery-oasis-write.test.ts|test\/gitlab-events\/oasis-write.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
+exit 0

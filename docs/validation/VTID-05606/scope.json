@@ -1,0 +1,10 @@
+{
+  "vtid": "VTID-05606",
+  "kind": "fix",
+  "paths": ["docs/validation/VTID-04784/staging-tests.json", "docs/validation/VTID-05007/staging-tests.json", "docs/validation/VTID-05606/**"],
+  "sparring_record": ".kiro/specs/staging-verify-manifest-repair/sparring/verdict.md",
+  "red_green_exempt": [
+    {"file": "docs/validation/VTID-04784/staging-tests.json", "reason": "manifest-only lane: the red proof is the missing test file in outputs/baseline-red.txt (deleted by VTID-05556 on origin/main)"},
+    {"file": "docs/validation/VTID-05007/staging-tests.json", "reason": "manifest-only lane: one deleted path removed from a ref; the red proof is the same missing test file in outputs/baseline-red.txt"}
+  ]
+}

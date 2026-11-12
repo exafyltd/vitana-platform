@@ -14,6 +14,9 @@
  *                  window. Worker releases the claim; reconciler finishes.
  *
  * Auth:
+ *   - the route is requireServiceOrAdmin (VTID-05731, plan
+ *     gateway-critical-route-auth); every request here sends
+ *     `Authorization: Bearer <GATEWAY_SERVICE_TOKEN>`, as the worker-runner must
  *   - 400 when vtid / autopilot_execution_id missing
  *   - 401 when worker_id missing or unregistered
  *   - 403 when caller does not hold the claim on the VTID
@@ -24,6 +27,9 @@ import request from 'supertest';
 import { workerOrchestratorRouter } from '../src/routes/worker-orchestrator';
 
 const ORIGINAL_FETCH = global.fetch;
+const SERVICE_TOKEN = 'svc-token-await-autopilot-test';
+const SERVICE_AUTH = `Bearer ${SERVICE_TOKEN}`;
+const ORIGINAL_SERVICE_TOKEN = process.env.GATEWAY_SERVICE_TOKEN;
 
 function buildApp() {
   const app = express();
@@ -35,10 +41,13 @@ function buildApp() {
 beforeEach(() => {
   process.env.SUPABASE_URL = 'https://supabase.test';
   process.env.SUPABASE_SERVICE_ROLE = 'svc-role';
+  process.env.GATEWAY_SERVICE_TOKEN = SERVICE_TOKEN;
 });
 
 afterEach(() => {
   global.fetch = ORIGINAL_FETCH;
+  if (ORIGINAL_SERVICE_TOKEN === undefined) delete process.env.GATEWAY_SERVICE_TOKEN;
+  else process.env.GATEWAY_SERVICE_TOKEN = ORIGINAL_SERVICE_TOKEN;
 });
 
 interface FetchHandlers {
@@ -89,6 +98,7 @@ describe('POST /api/v1/worker/orchestrator/await-autopilot-execution — auth', 
     mockFetch({ workerExists: true });
     const res = await request(buildApp())
       .post('/api/v1/worker/orchestrator/await-autopilot-execution')
+      .set('Authorization', SERVICE_AUTH)
       .send({ worker_id: 'wk-1', autopilot_execution_id: 'exec-1' });
     expect(res.status).toBe(400);
   });
@@ -97,6 +107,7 @@ describe('POST /api/v1/worker/orchestrator/await-autopilot-execution — auth', 
     mockFetch({ workerExists: true });
     const res = await request(buildApp())
       .post('/api/v1/worker/orchestrator/await-autopilot-execution')
+      .set('Authorization', SERVICE_AUTH)
       .send({ vtid: 'VTID-00001', worker_id: 'wk-1' });
     expect(res.status).toBe(400);
   });
@@ -105,6 +116,7 @@ describe('POST /api/v1/worker/orchestrator/await-autopilot-execution — auth', 
     mockFetch({ workerExists: true });
     const res = await request(buildApp())
       .post('/api/v1/worker/orchestrator/await-autopilot-execution')
+      .set('Authorization', SERVICE_AUTH)
       .send({ vtid: 'VTID-00001', autopilot_execution_id: 'exec-1' });
     expect(res.status).toBe(401);
   });
@@ -113,6 +125,7 @@ describe('POST /api/v1/worker/orchestrator/await-autopilot-execution — auth', 
     mockFetch({ workerExists: false });
     const res = await request(buildApp())
       .post('/api/v1/worker/orchestrator/await-autopilot-execution')
+      .set('Authorization', SERVICE_AUTH)
       .send({ vtid: 'VTID-00001', autopilot_execution_id: 'exec-1', worker_id: 'wk-x' });
     expect(res.status).toBe(401);
   });
@@ -124,6 +137,7 @@ describe('POST /api/v1/worker/orchestrator/await-autopilot-execution — auth', 
     });
     const res = await request(buildApp())
       .post('/api/v1/worker/orchestrator/await-autopilot-execution')
+      .set('Authorization', SERVICE_AUTH)
       .send({ vtid: 'VTID-00001', autopilot_execution_id: 'exec-1', worker_id: 'wk-1' });
     expect(res.status).toBe(403);
   });
@@ -135,6 +149,7 @@ describe('POST /api/v1/worker/orchestrator/await-autopilot-execution — auth', 
     });
     const res = await request(buildApp())
       .post('/api/v1/worker/orchestrator/await-autopilot-execution')
+      .set('Authorization', SERVICE_AUTH)
       .send({ vtid: 'VTID-00001', autopilot_execution_id: 'exec-1', worker_id: 'wk-1' });
     expect(res.status).toBe(403);
   });
@@ -167,6 +182,7 @@ describe('POST /api/v1/worker/orchestrator/await-autopilot-execution — four-st
 
     const res = await request(buildApp())
       .post('/api/v1/worker/orchestrator/await-autopilot-execution')
+      .set('Authorization', SERVICE_AUTH)
       .send({ vtid: 'VTID-00001', autopilot_execution_id: 'exec-1', worker_id: 'wk-1' });
 
     expect(res.status).toBe(200);
@@ -194,6 +210,7 @@ describe('POST /api/v1/worker/orchestrator/await-autopilot-execution — four-st
 
     const res = await request(buildApp())
       .post('/api/v1/worker/orchestrator/await-autopilot-execution')
+      .set('Authorization', SERVICE_AUTH)
       .send({ vtid: 'VTID-00002', autopilot_execution_id: 'exec-1', worker_id: 'wk-1' });
 
     expect(res.status).toBe(200);
@@ -218,6 +235,7 @@ describe('POST /api/v1/worker/orchestrator/await-autopilot-execution — four-st
 
     const res = await request(buildApp())
       .post('/api/v1/worker/orchestrator/await-autopilot-execution')
+      .set('Authorization', SERVICE_AUTH)
       .send({ vtid: 'VTID-00003', autopilot_execution_id: 'exec-1', worker_id: 'wk-1' });
 
     expect(res.status).toBe(200);
@@ -243,6 +261,7 @@ describe('POST /api/v1/worker/orchestrator/await-autopilot-execution — four-st
     // 60_000ms is the minimum cap; use it so the test completes quickly.
     const res = await request(buildApp())
       .post('/api/v1/worker/orchestrator/await-autopilot-execution')
+      .set('Authorization', SERVICE_AUTH)
       .send({
         vtid: 'VTID-00004',
         autopilot_execution_id: 'exec-1',
@@ -264,6 +283,7 @@ describe('POST /api/v1/worker/orchestrator/await-autopilot-execution — four-st
 
     const res = await request(buildApp())
       .post('/api/v1/worker/orchestrator/await-autopilot-execution')
+      .set('Authorization', SERVICE_AUTH)
       .send({ vtid: 'VTID-00005', autopilot_execution_id: 'exec-missing', worker_id: 'wk-1' });
 
     expect(res.status).toBe(200);

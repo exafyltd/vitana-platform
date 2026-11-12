@@ -1,0 +1,157 @@
+# VTID-05717 (architecture-mt-alignment/mt-alignment) commands log
+# Session: Kiro, seat exafy. Date: 2026-11-11 (UTC). The investigation was read-only; the lane commits were pushed to PR #4965 afterwards (preflight run before each push).
+# The only state-changing command was the requested `git fetch` of the two wave-1 branches (remote-tracking refs only).
+#
+# SHAs
+#   vitana-platform pin (worktree /projects/sandbox/wt-mt-align, branch kiro/architecture-mt-alignment/mt-alignment):
+#     6dc6e1ba0c18252ec2f3fbf5651d245e200f9835
+#   vitana-v1 origin/main:             e31bf4627ff3c705c20f8e6b718ce4dd03353b7f
+#   vitanaland-strategy (kiro/phase-three-strategy): e5dd629d77a8e1032148e3c28688613924b6bd9c
+#   plan branch kiro/architecture-mt-alignment/plan: 1723f77dd2960db4c689af4e6ae9f9dbe786ba83
+#   wave-1 destination-identity (VTID-05689, draft, not merged): b8f4cb7f5f327c6f408b2544bb20da17c3a0fe17
+#   wave-1 hm-readiness (VTID-05690, draft, not merged):         4502288c182e8acd1d659d3cab184bc004927461
+#   node v22.23.4
+
+## Workspace and pins
+git -C wt-mt-align log -1 --format=%H                      # 6dc6e1ba0c18252ec2f3fbf5651d245e200f9835
+git -C wt-mt-align branch --show-current                   # kiro/architecture-mt-alignment/mt-alignment
+git -C wt-mt-align status --short                          # clean before this lane
+git -C vitanaland-strategy branch --show-current; git -C vitanaland-strategy log -1 --format=%H   # kiro/phase-three-strategy e5dd629d77…
+git -C vitana-v1 rev-parse origin/main                     # e31bf4627ff3c705c20f8e6b718ce4dd03353b7f
+git -C wt-mt-align rev-parse --git-common-dir              # /projects/sandbox/vitana-platform/.git (shared objects)
+date -u +%Y-%m-%dT%H:%MZ                                   # 2026-11-11T11:56Z
+
+## Plan and tasks (plan branch)
+git -C vitana-platform show origin/kiro/architecture-mt-alignment/plan:.kiro/specs/architecture-mt-alignment/plan.md
+git -C vitana-platform ls-tree -r --name-only origin/kiro/architecture-mt-alignment/plan .kiro/specs/architecture-mt-alignment/
+git -C vitana-platform show origin/kiro/architecture-mt-alignment/plan:.kiro/specs/architecture-mt-alignment/tasks.md
+git -C vitana-platform rev-parse origin/kiro/architecture-mt-alignment/plan    # 1723f77dd2960db4c689af4e6ae9f9dbe786ba83
+git -C vitana-platform show origin/kiro/architecture-mt-alignment/plan:.kiro/specs/architecture-mt-alignment/{lanes/mt-alignment.md,handoff.md,sparring/verdict.md}
+git show 1723f77dd2…:.kiro/specs/architecture-mt-alignment/plan.md | grep -n "No duplicate tenant|Not authorised|### Lane `mt-alignment`|which `mt-alignment` maps"
+git show 1723f77dd2…:.kiro/specs/architecture-mt-alignment/tasks.md | grep -n "Common acceptance|18 of 18|No duplicate|…"
+
+## MT programme documents (worktree)
+ls docs/programs/strategy-execution docs/validation; ls -d .kiro/specs/mt-* .kiro/specs/multi-tenant*
+wc -l docs/MULTI-TENANT-PLAN.md docs/multitenancy/MIGRATION-QUEUE.md docs/programs/multi-tenant/program.md   # 191, 105, 40
+read docs/MULTI-TENANT-PLAN.md (full), docs/multitenancy/MIGRATION-QUEUE.md (full), docs/programs/multi-tenant/program.md
+grep -n "^- \*\*WS|^## |^### " docs/MULTI-TENANT-PLAN.md; sed -n '115,191p' docs/MULTI-TENANT-PLAN.md
+grep -n "review rule|Lane number ranges|…" docs/multitenancy/MIGRATION-QUEUE.md; grep -n "nothing in this file is built yet|^1\. \*\*Resolution|…" docs/MULTI-TENANT-PLAN.md
+awk -F'|' '/^\| [0-9]+a? \|/{…}' docs/multitenancy/MIGRATION-QUEUE.md   # rows: applied 8, pending 3, queued 53 (64 total)
+
+## Gateway (services/gateway/src)
+grep -rn "interface TenantContext|export function requireTenant|…|MT_RESOLUTION_V2" --include=*.ts .
+ls services/tenancy services/jobs; wc -l services/tenancy/*.ts services/mt-flags.ts middleware/require-tenant-admin.ts middleware/auth-supabase-jwt.ts
+cat -n services/tenancy/tenant-context.ts; cat -n services/tenancy/tenant-context-repository.ts; read services/mt-flags.ts
+grep -n "tenant|Tenant" middleware/auth-supabase-jwt.ts; sed -n '540,580p;690,790p;270,290p;500,530p' middleware/auth-supabase-jwt.ts
+sed -n '1,70p;95,191p' middleware/require-tenant-admin.ts
+ls routes | grep -i "tenant|role|member|invit"; grep -n "router\.(get|post|…)" routes/admin-tenants.ts; cat -n services/jobs/job-tenant-loop.ts | head -80
+sed -n '1,75p' routes/admin-tenants.ts; grep -n "provision_tenant|rpc(|…" routes/admin-tenants.ts routes/admin-tenants-repository.ts; grep -n "admin-tenants" index.ts
+ls routes/tenant-admin; grep -rn "requireTenantAdmin" --include=*.ts routes | … | uniq -c; grep -rln "tenantDb|TENANT_TABLES" --include=*.ts .
+ls services/tenant-provisioning; grep -rn "export.*getEffectiveConfig"; sed -n '1,30p' routes/role-admin.ts
+sed -n '125,175p' services/memory/diary.ts; grep -n tenant services/oasis-event-service.ts; grep -n "…0001" services/orb-memory-bridge.ts
+ls services/memory; grep -rn tenant_id services/memory/*.ts; ls services | grep -i "memory|retriev|context-pack|broker"
+head -40 services/memory/README.md; grep -n tenant services/memory-broker.ts services/memory-facts-service.ts
+sed -n '1,40p' services/memory-identity-lock.ts; grep -n "export async function|tenant" services/memory-facts.ts
+grep -n "export async function resolveJobTenants|activeTenantIds" services/jobs/job-tenant-loop.ts; grep -n rememberFact services/memory/remember.ts; …
+grep -rn "DEFAULT_TENANT_ID" services/gateway/src --include=*.ts | grep -v test | wc -l   # 45 lines in 16 files
+sed -n '160,180p' routes/universal-cart.ts; sed -n '40,60p' services/orb-tools/marketplace-va-shared.ts; sed -n '165,172p' services/dev-autopilot/context-loader.ts
+grep -rn "export async function fetchTenantIdForUser|fetchUserTenantId|…" --include=*.ts .   # 10 local lookups
+for x in <10 repository functions>; do sed -n … | grep -o "from('…')"; done                  # 7 user_tenants, 3 app_users
+for p in <lookup files>; do grep -l "$p" .kiro/specs/*/lanes/*.md; done                      # 6 in no lane
+grep -n "export function requireExafyAdmin" middleware/*.ts; grep -rln "function verifyExafyAdmin" routes   # 3 route-local copies
+grep -rn "requireAuthWithTenant" routes | wc -l (78); grep -rn "requireTenant[,)]" routes | wc -l (81); sed -n '75,100p' lib/tenant-role-auth.ts
+sed -n '20,74p' lib/tenant-role-auth.ts | grep -n "active_role|tenant_id|me_context|exafy"; grep -rln "tenant-role-auth" .
+grep -n "Step 6 (VTID-05147)|Step 4|VTID-05042: platform-scope guard" middleware/require-tenant-admin.ts; grep -n "verifyExafyAdmin(req)|router.post('/'" routes/admin-tenants.ts
+
+## Supabase migrations (worktree)
+for f in "FUNCTION public.current_tenant_id" … ; do grep -n -i "CREATE OR REPLACE $f|CREATE $f" supabase/migrations/*.sql; done
+grep -n -i "create table…reserved_tenant_slugs|tenant_content_overrides|user_permitted_roles|…" supabase/migrations/*.sql
+sed -n '25,90p' supabase/migrations/20260218000000_fix_maxina_signup_tenant_association.sql
+sed -n '25,45p;86,111p' supabase/migrations/20251231000000_vtid_01101_phase_a_bootstrap.sql
+sed -n '1,30p;55,120p' supabase/migrations/20261102030000_vtid_05465_tenant_id_for_policies_is_member.sql
+sed -n '1,60p' supabase/migrations/20261102030100_vtid_05465_bare_policy_rewrite.sql; grep -n "ALTER POLICY|CREATE POLICY|DROP POLICY" <same>
+sed -n '55,75p' supabase/migrations/20261014000500_vtid_05150_provision_tenant.sql; grep -n "REVOKE|GRANT|exafy_admin" <same>
+sed -n '125,150p' supabase/migrations/20261014000600_vtid_05151_public_tenant_registry.sql
+grep -n "CREATE OR REPLACE|CREATE TRIGGER|CREATE VIEW" supabase/migrations/20261102031000_* 20261102031100_* 20261102033000_*
+sed -n '8,20p' supabase/migrations/20260412300000_tenant_settings.sql; grep -n "ADD COLUMN" 20261014000400_* 20261014000100_*
+grep -n -i memberships supabase/migrations/20251231100000_vtid_01084_community_personalization_v1.sql supabase/migrations/20261102031000_vtid_05466_user_tenants_canonical.sql
+grep -n "ADD COLUMN|CREATE OR REPLACE FUNCTION" 20261102130000_* 20261102130100_* 20261102080000_* 20261102050000_* 20261102051000_* 20261102050100_* 20261102070600_* 20261102120300_*
+sed -n '1,12p' supabase/migrations/20261102032000_vtid_05464_access_token_hook_shadow.sql; grep -n user_tenants_select_own supabase/migrations/20251231000000_vtid_01101_phase_a_bootstrap.sql
+
+## vitana-v1 (origin/main e31bf4627f)
+git -C vitana-v1 ls-tree -r --name-only origin/main src | grep -i "tenant|brand|domain"
+git -C vitana-v1 show origin/main:src/config/domain-tenant-mapping.ts; …:src/lib/tenant-registry.ts | grep -n "export|rpc(|…"
+git -C vitana-v1 show origin/main:src/hooks/useTenant.tsx | grep -n …; sed -n '38,70p'
+git -C vitana-v1 show origin/main:src/hooks/useTenantFeatureFlag.ts | grep -n …; …:src/hooks/useTenantRegistry.ts; …:src/components/TenantDetector.tsx
+git -C vitana-v1 grep -n "DOMAIN_TENANT_MAP|getTenantFromDomain" origin/main -- src
+git -C vitana-v1 ls-tree -r --name-only origin/main supabase/migrations | grep -i "05245|tenant"
+git -C vitana-v1 show origin/main:supabase/migrations/20261101090000_vtid_05245_tenant_email_branding.sql | grep -n "ADD COLUMN|CREATE"
+git -C vitana-v1 show origin/main:supabase/migrations/20250831074859_3d469276-a217-499e-a67e-03e97240262c.sql | grep -n -i "create table.*memberships|tenant_role"
+git -C vitana-v1 ls-tree -r --name-only origin/main apps/mobile | grep -i "tenant|identity|brand"; …:apps/mobile/app.config.ts | grep -n …
+git -C vitana-v1 show origin/main:apps/mobile/src/identity/tenant-registry.ts | grep -n …; …:apps/mobile/src/identity/TenantProvider.tsx | grep -n …
+
+## Lane files and specs (worktree .kiro/specs)
+for s in multi-tenant mt-*; do for f in $s/lanes/*.md; do grep -m1 "^state:|^vtid:|^pr:" $f; done; done
+#   90 lane files: done 34, ready 48, executing 2, in-review 2, parked 4  -> 56 not done
+grep -n -i "hot file|protected path|hot_files" multi-tenant/*.md mt-*/*.md
+git grep -n -i "hot files\b|hot_files|HOT_FILES" -- '*.md' '*.json' '*.yaml' '*.mjs'; read .claude/rules/collaboration.md (offset 350)
+for f in <not-done lanes>; do awk '/^paths:/…'; done            # paths per lane
+for f in <not-done lanes>; do awk … ; done | sort | awk '{…}'    # files listed by more than one open lane
+grep -n "<shared path>$" <lane files>                            # line numbers of shared paths
+grep -n -i supersed mt-frontend-brand-r3/plan.md mt-track-s-authz/handoff.md … mt-guardrails-r2/lanes/local-test-stack-pglite.md
+for s in multi-tenant mt-*; do grep "^state:" $s/handoff.md; ls $s/lanes | wc -l; done
+grep -n "tenant-db.ts$|tenant-tables.ts$|health-db" mt-identity-r2/lanes/tenant-db-and-slug-cleanup.md mt-native-health-r2/lanes/health-tenant-accessor.md
+grep -n "health-db|healthDb" mt-identity-r2/{plan,tasks}.md mt-identity-r2/lanes/tenant-db-and-slug-cleanup.md mt-native-health-r2/plan.md mt-native-health-r2/lanes/health-tenant-accessor.md
+grep -n "O1|mt-identity-r2|tenancy/health-db|data/health-db" mt-native-health-r2/plan.md; sed -n '150,153p' mt-native-health-r2/plan.md
+grep -n "MT_RESOLUTION_V2|feature_flags.mt" mt-m3-r2/plan.md mt-packs-r2/plan.md mt-network-r2/plan.md mt-discover-r2/plan.md mt-launch/plan.md mt-tenant-admin-r2/plan.md
+for s in mt-*; do grep -n -m1 -o "WS-S|WS1[01]|WS[0-9]|Track S|WS-M3|M3" $s/plan.md; done
+grep -n -m3 "WS10|WS9" mt-native-health-r2/plan.md; sed -n '1,6p' mt-frontend-brand-r3/plan.md …
+
+## GitHub (REST, read-only)
+gh api "repos/exafyltd/vitana-platform/pulls?state=open&per_page=100" --paginate --jq '.[] | [.number,.head.ref,.head.sha[0:10],.title] | @tsv'   # 156 open
+gh api "repos/exafyltd/vitana-v1/pulls?state=open&per_page=100" --paginate --jq …                                                             # 52 open
+#   MT-related open PRs: platform 4935 4932 4931 4930 4929 4928 4927 4926 4925 4924 4923 4922 4921 4920 4919 4755 4602 4601 4588 4586 4582 4526 4525 4524 4481 4171 (26); v1 1438 (1)
+#   related, not an MT spec: platform 4948 (VTID-05693), 4957 (this plan)
+gh api repos/exafyltd/vitana-platform/pulls/4319 --jq …   # closed merged=true  kiro/mt-jobs/jobs-community-scan-tenant 2026-10-28T13:14:24Z
+gh api repos/exafyltd/vitana-platform/pulls/4265 --jq …   # closed merged=true  kiro/mt-launch/pack-intake-db 2026-10-21T18:51:42Z
+gh api repos/exafyltd/vitana-v1/pulls/1485 --jq …         # closed merged=false kiro/mt-frontend-brand/brand-surface 2026-10-31T12:50:27Z
+gh api repos/exafyltd/vitana-v1/pulls/1464 --jq …         # closed merged=true  kiro/mt-frontend-brand/email-brand-db 2026-10-21T19:22:37Z
+gh api repos/exafyltd/vitana-v1/pulls/1438 --jq …         # open   merged=false kiro/multi-tenant/provisioning-ui
+
+## Strategy repository (git show e5dd629d77…, no copy into this repository)
+git show e5dd629…:19-EXECUTION-PROGRAMME/master-task-registry.json | node -e '…workstreams…'      # WS01..WS18
+git show e5dd629…:19-EXECUTION-PROGRAMME/master-task-registry.json | grep -n '"id": "WS'          # lines 13..198
+git show e5dd629…:19-EXECUTION-PROGRAMME/master-task-registry.json | sed -n '10,210p'
+git show e5dd629…:02-PLATFORM/module-ownership.json | node -e '…modules…'                         # 41 modules
+git show e5dd629…:02-PLATFORM/module-ownership.json | grep -n '"id": "MOD-'
+git show e5dd629…:19-EXECUTION-PROGRAMME/master-task-registry.json | grep -n '"id": "SB-MT-|SB-HM-0|SB-TB-0|SB-WEB-0'
+git show e5dd629…:19-EXECUTION-PROGRAMME/master-task-registry.json | node -e '…tasks SB-(MT|HM|TB|WEB|WF|MOB|MEM)…'
+git show e5dd629…:19-EXECUTION-PROGRAMME/SESSION-HANDOVER.md | grep -n "^## |VTID-05221|M0 |05323"
+git show e5dd629…:19-EXECUTION-PROGRAMME/master-task-registry.json | sed -n '1313,1320p;1379,1386p;1456,1470p'; grep -n '"authority_statement"'
+git show e5dd629…:02-PLATFORM/module-ownership.json | node -e '…paths per module…'
+
+## Wave-1 drafts (draft, not merged)
+git -C vitana-platform fetch origin kiro/strategy-execution-wave1/destination-identity kiro/strategy-execution-wave1/hm-readiness
+git -C vitana-platform rev-parse origin/kiro/strategy-execution-wave1/destination-identity origin/kiro/strategy-execution-wave1/hm-readiness
+#   b8f4cb7f5f327c6f408b2544bb20da17c3a0fe17  4502288c182e8acd1d659d3cab184bc004927461
+git diff --stat origin/main...origin/kiro/strategy-execution-wave1/{destination-identity,hm-readiness}
+git show b8f4cb7f5f…:docs/programs/strategy-execution/destination-identity-strategy.md | grep -n …; sed -n '1,20p;105,140p;165,200p;224,233p'
+git show 4502288c18…:docs/programs/strategy-execution/healthy-million-readiness.md | grep -n …; sed -n '1,30p;420,453p'
+
+## Deliverable checks
+grep -n "<cited line>" <files>             # spot checks of cited lines (tenants policy 44-45, user_tenants_select_own 111, README :24, …)
+node docs/validation/VTID-05717/check-citations.mjs /tmp/neg.md   # negative self-test: 2 failed, exit 1 (temp file removed)
+grep -rnE "<email pattern>" docs/programs/strategy-execution/multi-tenant-alignment.md docs/validation/VTID-05717/   # no email addresses
+git status --porcelain
+#   ?? docs/programs/strategy-execution/
+#   ?? docs/validation/VTID-05717/
+node docs/validation/VTID-05717/check-citations.mjs
+citations ok=525 failed=0
+pins platform=6dc6e1ba0c18252ec2f3fbf5651d245e200f9835 v1=e31bf4627ff3c705c20f8e6b718ce4dd03353b7f strategy=e5dd629d77a8e1032148e3c28688613924b6bd9c
+# exit=0
+
+## Plan §6 suite
+timeout 600 node --test scripts/collab/*.test.mjs
+# tests 257, pass 256, fail 0, skipped 1, duration_ms 12313
+# Preflight script: not run by this session (no network to live systems; the reviewer runs it at commit time).
+git status --porcelain   # only the two lane paths, untracked
