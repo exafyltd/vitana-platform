@@ -11,8 +11,9 @@ paths:
   - .github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml
   - services/gateway/test/vtid-04727-ledger-write-auth.test.ts
   - services/gateway/src/services/conversation/conversation-flag-pins.generated.ts
-updated: 2026-11-11T11:16Z
+updated: 2026-11-12T21:27Z
 vtid: VTID-05700
+seat: exafyltd
 ---
 
 # Lane: ledger-auth-enforce (repo exafyltd/vitana-platform)
@@ -26,3 +27,5 @@ Lane created with the plan. Owner instruction for the protected file: 2026-11-11
 
 ### 2026-11-11T11:16Z · ci-plan-spar · ready (VTID allocated)
 VTID-05700 allocated after policy approval (converged-auto-v1).
+### 2026-11-12T21:27Z · pm-agent · update
+reassign lane →exafyltd (stale_ready, Claude unavailable)
