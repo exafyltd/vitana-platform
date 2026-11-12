@@ -230,3 +230,43 @@ Checked from the Kiro sandbox, read-only. Time of checks: about 07:13 UTC, 12 No
 1. Fix or revert: the failing staging-aurora pinned test on red `main`.
 2. Queue acceptance of the real session id, or an approved id for this lane.
 3. GitHub token for `exafyltd/vitana-platform` that returns 200, so the staging workflow can be dispatched.
+
+## Round 5: MR !12 deploy through GitLab (owner decisions 1 to 3)
+
+No GitHub workflow was used. The GitHub token was not used for deploys and is not stored anywhere.
+
+### Step 1: fix the four assertions
+- Branch `cutover/vtid-05023-aurora-pin-test`, commit `b46a9f51e0`, from GitLab `main` `a3806711a0`.
+- File: `services/gateway/test/orb/live/upstream/staging-aurora-database-url-pinned.test.ts`. Four assertions changed from "pinned" to "not bound"; titles updated. Strip-list test and production test unchanged. No other code changed. MR description says the change was on purpose.
+- Local: `npx jest test/orb/live/upstream/staging-aurora-database-url-pinned.test.ts` → `Tests: 6 passed, 6 total`.
+
+### Step 2: pipeline green
+- Local full gateway Jest (`npx jest --silent`): `Test Suites: 2 failed, 3 skipped, 1770 passed`; `Tests: 2 failed, 54 skipped, 6 todo, 29697 passed`. Failing suites were environmental in this sandbox: `vtid-04226` needs `openssl` (not installed here); `storage-provider` expects region `eu-central-1` while this sandbox sets `AWS_REGION=us-east-1` (passes with `AWS_REGION=eu-central-1`). Both suites passed in CI pipeline 272.
+- MR !14 (`merge_request.create` push): pipeline 272 `success`, all five jobs green.
+- Main pipeline 273 (merge commit): `gateway-jest 4/4` failed once with `Tests: 1 failed` in `test/vtid-05005-kiro-dev-tools-mcp.test.ts` (`the session pass › refuses a forged, tampered, cross-environment or garbage pass`, line 38). That test replaces the last two signature characters with `AA`, so it fails when the real signature already ends that way. The signature includes a timestamp, so the failure is random. Not related to this change. Retried once: job 1250 `success`, pipeline 273 green. The flaky test is still in the repo. A fix needs owner approval.
+
+### Step 3: merge
+- MR !14 merged 2026-11-12T11:25:09Z, merge commit `5282e7815d0960d4a76619e4a571d8d41ce04830`.
+
+### Step 4: staging deploy on GitLab
+- Build job `gateway-staging-build` (1248, manual, played): `success`.
+- Deploy job `gateway-staging-deploy` (1249, manual, played): `success`. Job log, key lines:
+  - `Rollback target: arn:aws:ecs:eu-central-1:472838866351:task-definition/vitana-gateway:1006  new image: 472838866351.dkr.ecr.eu-central-1.amazonaws.com/vitana/gateway:5282e7815d09`
+  - `New task definition: arn:aws:ecs:eu-central-1:472838866351:task-definition/vitana-gateway:1007`
+  - `Smoke OK: staging serves 5282e7815d0960d4a76619e4a571d8d41ce04830`
+  - `Job succeeded`
+- Job link: https://gitlab.vitanaland.com/vitana/vitana-platform/-/jobs/1249
+
+### Step 5: running task check (Claude or Kiro, read-only)
+- Kiro's ECS read is denied: `AccessDeniedException ... ecs:DescribeTaskDefinition ... no identity-based policy allows`. Not verified from this session.
+- Task definition `vitana-gateway:1007` is the one the deploy registered. The deploy job's own jq removes `AURORA_DATABASE_URL` and `AURORA_RLS_DATABASE_URL` and does not re-add them. Claude must confirm on the live task: `aws ecs describe-task-definition --task-definition vitana-gateway:1007` shows no `AURORA_*` names in `environment` or `secrets`. Commit to check: `5282e7815d0960d4a76619e4a571d8d41ce04830`.
+- Public smoke (read-only GET): `GET /alive` → `200 {"status":"ok","service":"gateway"}`. `GET /api/v1/admin/build-info` → `git_commit 5282e7815d0960d4a76619e4a571d8d41ce04830`, `booted_at 2026-11-12T11:42:17.733Z`. `GET /api/v1/admin/health` → `env staging`, `supabase_host inmkhvwdcuyhnxkgfvsb.supabase.co` (unchanged, as decided).
+
+### Open items
+- Owner approval: fix the flaky `vtid-05005` tamper check (test change).
+- Owner approval: the `openssl` and `AWS_REGION` environment issues are local only; no action needed in CI.
+- Claude: run the step 5 read-only check on `vitana-gateway:1007`.
+- Staging Supabase project: not created (owner decision). Staging still uses production Supabase.
+- `vitana-postgres-staging`: not touched.
+- Compat layer, REST switch, window runbook, `verify-cutover.sh`: not started (lane claim still refused by the queue).
+- GitHub: not used. GitHub `main` still binds production Aurora secrets. Do not dispatch the GitHub staging workflow.
