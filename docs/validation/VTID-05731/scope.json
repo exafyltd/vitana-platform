@@ -1,0 +1,16 @@
+{
+  "vtid": "VTID-05731",
+  "kind": "fix",
+  "paths": [
+    "services/gateway/src/routes/worker-orchestrator.ts",
+    "services/gateway/src/services/autopilot-event-loop.ts",
+    "services/gateway/src/services/orb-tools/developer-tools.ts",
+    "services/gateway/test/worker-orchestrator-auth.test.ts",
+    "services/gateway/src/services/self-healing-reconciler.ts",
+    "services/gateway/test/worker-orchestrator-await-autopilot.test.ts",
+    "docs/validation/VTID-05731/**"
+  ],
+  "weakens_tests": [],
+  "red_green_exempt": [],
+  "sparring_record": ".kiro/specs/gateway-critical-route-auth/sparring/verdict.md"
+}

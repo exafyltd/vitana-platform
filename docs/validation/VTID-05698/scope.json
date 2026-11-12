@@ -1,0 +1,11 @@
+{
+  "vtid": "VTID-05698",
+  "kind": "docs",
+  "paths": [
+    "docs/programs/security/gateway-write-route-inventory.md",
+    "docs/validation/VTID-05698/**"
+  ],
+  "sparring_record": ".kiro/specs/gateway-write-route-auth/sparring/verdict.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}
