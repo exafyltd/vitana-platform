@@ -68,3 +68,17 @@ PR #1605 is not merged. The reviewer-agent accept on the new head is still neede
 Required checks on 3674ee48: queued at the last read (Lane scope, preview-e2e, pr-gate, ORB parity). Collab
 handoff had not appeared in the check-run list. Results to be recorded here when they settle.
 Not done: no deploy, no live writes, no staging writes.
+
+### 2026-11-12T16:10Z · session_01Cp885HR7P3g5JuA767Q3DC · correction to the 16:05Z takeover entry
+The 16:05Z entry above is superseded by this one. Verified read-only against GitHub at 16:1xZ:
+- PR #1605 is MERGED: squash merge `bd68f96760e9354ac0b2288cd812c99faef58df8` (2026-11-12 15:52:42 UTC, `merged_by: exafyltd`),
+  pinned to head `3674ee487628850aecbd69b65aeefdd67df87de3`. This session did not perform the merge. The commit message
+  reads "Merged on the owner's instruction naming PR #1605 (reviewer accept not obtained; checks green on the pinned head)."
+- Checks on `3674ee48` at the last read: 16 success, 5 skipped, 0 failing (21 runs). Among them Lane scope, preview-e2e,
+  pr-gate, ORB parity and preview-deploy are all success. `preview-teardown` ran after the merge. The "Collab handoff"
+  check did not appear in the check-run list.
+- No reviewer-agent accept was obtained. The merge rests on the owner's instruction naming PR #1605 (§7b per-PR owner
+  exception). Recorded as `authority: owner instruction naming PR #1605`.
+- The claim was NOT stale: `05397c895` was created 2026-11-12 15:46 UTC. The takeover was a manual override of a fresh
+  claim, approved by the owner.
+- Next: STAGING-VERIFY on `bd68f967`, then Gate 2. Nothing has been deployed to production.
