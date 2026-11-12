@@ -7,7 +7,7 @@
       "kind": "existing",
       "ref": "npx jest test/vtid-05504-morning-health-pertenant.test.ts",
       "cwd": "services/gateway",
-      "reason": "Runs the real row 21c script against a stubbed curl: report-only INFO rows, one read-only POST to the by-tenant function, row 21b unchanged."
+      "reason": "Runs row-21c script against stubbed curl; proves report-only semantics and the read-only call."
     }
   ]
 }
