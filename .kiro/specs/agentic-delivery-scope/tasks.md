@@ -405,3 +405,18 @@ Acceptance:
 - **States / Surfaces / Locales / Accessibility** — n/a.
 - **Contract** — the test never prints a matched value.
 - **Staging proof** — not verified on staging: the change deploys nothing.
+
+<!-- lane: bedrock-invoke-policy -->
+Repo `exafyltd/vitana-platform`. Late lane (owner instruction 2026-11-12, item 3). Nothing in this lane changes IAM.
+- [ ] T1 Test first: `scripts/aws/test/test_delivery_bedrock_policy.py` (stdlib `unittest`; `AURORA-PRIVILEGE-PARITY-UNIT.yml` discovers `scripts/aws/test/test_*.py`), red on `origin/main` (the file is missing): Allow only; actions exactly `bedrock:InvokeModel` and `bedrock:InvokeModelWithResponseStream`; every resource in one of the six EU destination Regions that `aws bedrock get-inference-profile` lists; the four chain profiles in `eu-central-1` of account `472838866351`; each chain model in all six Regions; DeepSeek V3.2 only in `eu-north-1`; no wildcard.
+- [ ] T2 `scripts/aws/iam/delivery-bedrock-invoke-policy.json`.
+- [ ] T3 The test green; `aws iam simulate-custom-policy` (read-only) shows every chain call allowed and a non-EU call denied, recorded in `outputs/`.
+- [ ] T4 PR `VTID-xxxxx (agentic-delivery-scope/bedrock-invoke-policy): …` whose body gives the owner's apply, check and rollback commands.
+
+Acceptance:
+- Change types: Infrastructure/CI.
+- **Outcome** — the owner gives a Kiro session role the Bedrock rights the M1, M4 and M5 chains need with two commands; nothing changes until the owner runs them.
+- **States / Surfaces / Locales / Accessibility** — n/a: no UI.
+- **Contract** — an IAM identity policy document (version 2012-10-17), created as the customer-managed policy `vitana-delivery-bedrock-invoke`.
+- **Staging proof** — not verified on staging: the change deploys nothing; covered by the test and the policy simulation.
+- No address in the diff, the PR body, a commit message or `docs/validation/<VTID>/**`.
