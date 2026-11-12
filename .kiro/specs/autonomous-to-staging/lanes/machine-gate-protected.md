@@ -1,6 +1,6 @@
 ---
 lane: machine-gate-protected
-state: in-review
+state: done
 next_actor: kiro
 branch: kiro/autonomous-to-staging/machine-gate-protected
 depends_on: []
@@ -17,7 +17,7 @@ paths:
   - scripts/collab/*.test.mjs
   - services/gateway/test/**
   - docs/validation/VTID-*/**
-updated: 2026-11-12T06:43Z
+updated: 2026-11-12T07:18Z
 vtid: VTID-05765
 ---
 # Lane: machine-gate-protected (repo vitana-platform)
@@ -58,3 +58,10 @@ reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 PR: https://github.com/exafyltd/vitana-platform/pull/5002
 Findings: non-blocking — protected gate files changed; authority is the owner directive 2026-11-11 recorded in handoff.md and plan.md §1/§3a (bootstrap merge). $BASE-loading of gate-invariants deferred to gate-invariants-ci / protect-gate-workflow (recorded). Trailer trust model and no self-review exclusion (recorded). protect-gate-workflow to be added to plan §4 by a _plan commit. CI 26/26 from driver evidence.
 Next: land under plan §3a bootstrap, sha-pinned.
+
+### 2026-11-12T07:18Z · kiro-exafy-202611110920-270b · in-review → verified
+merge: e7077f27c3cf82f2c78bf6dab86fcb0397cb1f1a (exafyltd/vitana-platform#5002)
+authority: plan autonomous-to-staging §3a bootstrap: owner instruction 2026-11-11 naming the plan + reviewer-agent accept (claude-sonnet-5.5) on ab667a10 + 26/26 checks green on the merged head 039f49af (land-guard checks/review ok). Sha-pinned squash merge, no --admin.
+
+### 2026-11-12T07:18Z · kiro-exafy-202611110920-270b · verified → done
+STAGING-VERIFY passed: https://github.com/exafyltd/vitana-platform/actions/runs/43173948820 (e7077f27c3, 33/33). Production is unchanged until an owner PUBLISH.

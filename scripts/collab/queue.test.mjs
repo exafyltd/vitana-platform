@@ -2022,6 +2022,18 @@ test('VTID-05365 batching: commitFileReader equals git show in memory and throug
   } finally { f.done(); }
 });
 
+// Bedrock lane reviewer (plan-r3): the CI review session is the fixed literal ci-lane-review, and the Bedrock reviewer
+// identity is a reviewer agent. Suffixed variants are refused, so a CI run id can never enter the session trailer.
+test('ci-lane-review is a valid CI session literal; suffixed variants are not', () => {
+  assert.ok(isSessionId('ci-lane-review'));
+  for (const bad of ['ci-lane-review-12345678901', 'ci-lane-review-', 'ci-lane']) assert.ok(!isSessionId(bad), bad);
+});
+
+test('agent:bedrock-lane-reviewer is accepted as a reviewer agent', () => {
+  assert.ok(Q.REVIEWER_AGENTS.includes('agent:bedrock-lane-reviewer'));
+  assert.ok(Q.REVIEWER_AGENTS.includes('agent:vitana-lane-reviewer'));
+});
+
 // VTID-05765 (plan autonomous-to-staging): a trusted `protected_gate: two-model` Kiro lane may declare and change a
 // protected gate file; the merge then needs two accepts from different chain models (land-guard.mjs).
 test('VTID-05765: validateLane accepts a protected path only for a two-model kiro lane with the agent reviewer', () => {
