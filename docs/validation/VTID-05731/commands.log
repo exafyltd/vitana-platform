@@ -1,0 +1,146 @@
+# VTID-05731 — gateway-critical-route-auth, lane worker-orchestrator-auth
+# Worktree /projects/sandbox/wt-crit-worker-orchestrator-auth, branch kiro/gateway-critical-route-auth/worker-orchestrator-auth,
+# base origin/main 6dc6e1ba0c (exafyltd/vitana-platform). No commit, no push, no network calls.
+
+# ---------------------------------------------------------------------------
+# 1. Caller census (before any edit)
+# ---------------------------------------------------------------------------
+
+$ grep -n "workerOrchestratorRouter\.\(get\|post\|put\|patch\|delete\)" services/gateway/src/routes/worker-orchestrator.ts
+# Write routes on base (12; no put/patch exist). Line numbers base -> after this change.
+#   POST   /api/v1/worker/orchestrator/route                        :223  -> :226
+#   POST   /api/v1/worker/subagent/start                            :317  -> :320
+#   POST   /api/v1/worker/subagent/complete                         :362  -> :365
+#   POST   /api/v1/worker/orchestrator/complete                     :519  -> :522
+#   POST   /api/v1/worker/orchestrator/register                     :891  -> :894
+#   DELETE /api/v1/worker/orchestrator/register/:worker_id          :989  -> :992
+#   POST   /api/v1/worker/orchestrator/tasks/:vtid/claim            :1230 -> :1233
+#   POST   /api/v1/worker/orchestrator/tasks/:vtid/release          :1332 -> :1335
+#   POST   /api/v1/worker/orchestrator/tasks/:vtid/progress         :1379 -> :1382
+#   POST   /api/v1/worker/orchestrator/heartbeat                    :1447 -> :1450
+#   POST   /api/v1/worker/orchestrator/await-autopilot-execution    :1589 -> :1592 (multi-line; gate at :1594)
+#   POST   /api/v1/worker/orchestrator/cleanup                      :1715 -> :1719
+# GET routes (unchanged, stay open): health :707, subagents :742, skills :788, workers :1042, tasks/pending :1124, stats :1480.
+
+$ grep -rn --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=dist -E "worker/(orchestrator|subagent)" .
+$ grep -rn ... -i -E "orchestrator/|worker/subagent|subagent/(start|complete)|/heartbeat|await-autopilot|tasks/\$\{|/claim|/release|/progress" \
+    services scripts packages mcp crew_template .github integrations infra cloudflare e2e routines skills vcaop
+$ git -C /projects/sandbox/vitana-v1 grep -n -E "worker/(orchestrator|subagent)|await-autopilot" origin/main -- .   # origin/main e31bf462
+# -> vitana-v1: no hits.
+# -> scripts/, packages/, .github/, integrations/, infra/, cloudflare/, e2e/: no caller of a write route
+#    (hits were /api/v1/agents/registry/heartbeat, /api/v1/oasis/tasks/*, /api/v1/automations/heartbeat: other routers).
+# -> docs / .claude/rules / second-brain / specs: route tables only, not callers.
+#
+# Callers of the 12 write routes (file:line on base, route, Authorization sent today):
+#   services/gateway/src/services/autopilot-event-loop.ts:530         POST route              NO  -> fixed in this lane (gatewayServiceAuthHeader)
+#   services/gateway/src/services/orb-tools/vtid-lifecycle-tools.ts:364   POST route (gatewayApiCall)  NO  -> fixed via gatewayApiCall
+#   services/gateway/src/services/orb-tools/vtid-lifecycle-tools.ts:428   POST subagent/complete (gatewayApiCall) NO -> fixed via gatewayApiCall
+#   services/gateway/src/services/orb-tools/worker-orchestrator-tools.ts:86  POST tasks/:vtid/release (gatewayApiCall) NO -> fixed via gatewayApiCall
+#   services/gateway/src/services/orb-tools/worker-orchestrator-tools.ts:135 POST cleanup (gatewayApiCall)  NO  -> fixed via gatewayApiCall
+#   services/gateway/src/services/orb-tools/worker-orchestrator-tools.ts:174 POST route (gatewayApiCall)    NO  -> fixed via gatewayApiCall
+#   services/gateway/src/services/self-healing-reconciler.ts:164      POST route (raw fetch to gatewayBaseUrl())  NO  -> WILL GET 401 (file outside lane; follow-up)
+#   services/gateway/src/services/test-contract-commands.ts:230       POST await-autopilot-execution (live probe, no token on purpose)
+#                                                                     expects status [400,401] (supabase/migrations/20260521000001_VTID_02955_test_contracts_fix.sql:195) -> 401 still passes
+#   mcp/vitana-work/src/lib/gateway-client.ts:150 (header at :89)    POST route   YES if VITANA_API_KEY is set (`Bearer <VITANA_API_KEY>`); passes only if that
+#                                                                     value equals GATEWAY_SERVICE_TOKEN or is an exafy_admin JWT; else 401 (developer-run MCP; follow-up)
+#   crew_template/crew.yaml:147                                       gateway_endpoint config value only; no code in the repo reads it (grep "gateway_endpoint")
+#   worker-runner (register / heartbeat / tasks/pending / claim / progress / release / subagent/* / orchestrator/complete / await-autopilot-execution)
+#                                                                     NO SOURCE IN REPO: removed by 9dec0c4399 "Retire worker-runner and autopilot-worker (VTID-04327) (#3610)";
+#                                                                     .github/workflows/AUTO-DEPLOY.yml:29,164,214 still reference services/worker-runner/**.
+#                                                                     Whether a deployed instance still runs is unknown here. It must send the service token before production.
+#   services/gateway/test/worker-orchestrator-await-autopilot.test.ts:91..266  supertest, no token -> 9 tests now 401 (test file outside lane; follow-up)
+#
+# gatewayApiCall reach (to decide the scope of the header):
+$ grep -rln "gatewayApiCall" services/gateway/src        # 31 files, ~250 call sites (ORB voice tools + gemini-operator)
+$ grep -rn "requireServiceOrAdmin" services/gateway/src/routes   # approvals, cicd, delivery, governance-controls, self-healing (/report), specs, plans-spar, ...
+# e.g. services/gateway/src/services/orb-tools/self-healing-tools.ts:63 POST /api/v1/self-healing/report sends no header today (route is
+# requireServiceOrAdmin, self-healing.ts:402); adding the service token to EVERY gatewayApiCall would silently give that call, and any other
+# header-less call to a requireServiceOrAdmin route, service authority. So the header is added only for /api/v1/worker/* paths (normalised
+# pathname), and a caller-supplied Authorization still wins.
+# Host: gatewayBaseUrl() = process.env.GATEWAY_URL || http://localhost:${PORT||8080} (developer-tools.ts:101-103). Staging container env sets
+# GATEWAY_URL=https://preview-aws-gateway.vitanaland.com (.github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml:1251), the gateway's own URL.
+# The token is not sent to a non-gateway host.
+
+# ---------------------------------------------------------------------------
+# 2. Baseline of existing related suites, unmodified base
+# ---------------------------------------------------------------------------
+$ cd services/gateway && npx jest test/worker-orchestrator-await-autopilot.test.ts test/worker-orchestrator-autonomous-ownership.test.ts \
+    test/worker-orchestrator-pending.test.ts test/vtid-01202-pending-api-claimed-tasks.test.ts test/services/autopilot-event-loop.test.ts \
+    test/orb-tools/developer-tools.test.ts test/orb-tools/worker-orchestrator-tools.test.ts test/autopilot-pipeline.test.ts \
+    test/mt-track-s-authz-approvals-auth.test.ts test/vtid-05019-cicd-pr-routes-auth.test.ts test/services/orb-tools/admin-users-rbac-tools.test.ts
+# -> Test Suites: 11 passed, 11 total; Tests: 380 passed, 380 total
+
+# ---------------------------------------------------------------------------
+# 3. Edits
+# ---------------------------------------------------------------------------
+# services/gateway/src/routes/worker-orchestrator.ts: import requireServiceOrAdmin (:37); first middleware on the 12 write routes.
+#   Claim fail-open (base :1260-1264, now :1263-1267) untouched.
+# services/gateway/src/services/autopilot-event-loop.ts:531-533: ...gatewayServiceAuthHeader() in the dispatch fetch headers.
+# services/gateway/src/services/orb-tools/developer-tools.ts: workerOrchestratorServiceHeader(path) (:105-123) spread into gatewayApiCall
+#   headers before init.headers (:137-141).
+# services/gateway/test/worker-orchestrator-auth.test.ts: new.
+
+# ---------------------------------------------------------------------------
+# 4. Tests
+# ---------------------------------------------------------------------------
+$ cd services/gateway && npx jest test/worker-orchestrator-auth.test.ts
+# -> outputs/jest-green.txt: Tests: 52 passed, 52 total (EXIT_CODE=0)
+
+# Red on base: the three source files replaced by `git show origin/main:<file>`, test run, files restored (git diff --stat identical before/after).
+$ cd services/gateway && npx jest test/worker-orchestrator-auth.test.ts
+# -> outputs/jest-red-on-base.txt: Tests: 29 failed, 23 passed, 52 total (EXIT_CODE=1)
+#    failed: 12 x "no token -> 401", 12 x "wrong token -> 401", event-loop "sends Authorization", 4 x gatewayApiCall worker-path header.
+#    passed on base too (by design): 12 x "service token -> handler runs", GET stays open x2, route count, unset-token x2,
+#    caller Authorization wins, non-worker paths x3, dot-segment paths x2.
+
+$ cd services/gateway && npx jest <the 11 suites above> test/vtid-04662-service-health-registered-routes.test.ts
+# -> outputs/jest-existing.txt: Test Suites: 1 failed, 11 passed; Tests: 9 failed, 408 passed, 417 total
+#    The failing suite is test/worker-orchestrator-await-autopilot.test.ts (sends no Authorization; every request now 401 at the gate).
+#    Proof the fix is only a header: a temporary copy with `GATEWAY_SERVICE_TOKEN` set and a middleware that sets
+#    `Authorization: Bearer <token>` -> Tests: 11 passed, 11 total. Temporary copy deleted. The real file is outside this lane.
+
+$ cd services/gateway && npx tsc --noEmit
+# -> outputs/tsc-gateway.txt: EXIT_CODE=2, 59 errors, all TS2742, none in touched files. Cause: node_modules is a symlink to
+#    /projects/sandbox/wt-gwra-route-auth/services/gateway/node_modules (outside the worktree).
+$ cd services/gateway && npx tsc --noEmit --preserveSymlinks
+# -> EXIT_CODE=0
+
+# ---------------------------------------------------------------------------
+# 5. Pass 2 (supersedes the results of §4)
+# ---------------------------------------------------------------------------
+# Edits:
+#   services/gateway/src/services/self-healing-reconciler.ts: import gatewayServiceAuthHeader (:36); redispatch POST to
+#     /api/v1/worker/orchestrator/route sends ...gatewayServiceAuthHeader() (:166-170).
+#   services/gateway/test/worker-orchestrator-auth.test.ts: section D (reconciler redispatch sends / omits the bearer),
+#     driven through startReconciler() under fake timers, module loaded with jest.isolateModules after env is set,
+#     self-healing-probe mocked unhealthy.
+#   services/gateway/test/worker-orchestrator-await-autopilot.test.ts: GATEWAY_SERVICE_TOKEN set in beforeEach (restored
+#     in afterEach); .set('Authorization', `Bearer <token>`) on all 11 requests; no assertion changed.
+
+# Red on base: the four source files replaced by `git show origin/main:<file>`, test run, files restored from
+# /projects/sandbox/.agents/crit/woa (git diff --stat -- src identical before/after).
+$ cd services/gateway && for f in src/routes/worker-orchestrator.ts src/services/autopilot-event-loop.ts \
+    src/services/orb-tools/developer-tools.ts src/services/self-healing-reconciler.ts; do git show origin/main:services/gateway/$f > $f; done
+$ npx jest test/worker-orchestrator-auth.test.ts
+# -> outputs/jest-red-on-base.txt: Tests: 30 failed, 24 passed, 54 total (EXIT_CODE=1)
+#    failed: 12 x no token, 12 x wrong token, event-loop and reconciler "sends Authorization", 4 x gatewayApiCall worker-path header.
+
+$ npx jest test/worker-orchestrator-auth.test.ts
+# -> outputs/jest-green.txt: Tests: 54 passed, 54 total (EXIT_CODE=0)
+
+$ npx jest test/worker-orchestrator-await-autopilot.test.ts test/worker-orchestrator-autonomous-ownership.test.ts \
+    test/worker-orchestrator-pending.test.ts test/vtid-01202-pending-api-claimed-tasks.test.ts test/services/autopilot-event-loop.test.ts \
+    test/orb-tools/developer-tools.test.ts test/orb-tools/worker-orchestrator-tools.test.ts test/autopilot-pipeline.test.ts \
+    test/mt-track-s-authz-approvals-auth.test.ts test/vtid-05019-cicd-pr-routes-auth.test.ts \
+    test/services/orb-tools/admin-users-rbac-tools.test.ts test/vtid-04662-service-health-registered-routes.test.ts
+# -> outputs/jest-existing.txt: Test Suites: 12 passed, 12 total; Tests: 417 passed, 417 total (EXIT_CODE=0)
+
+$ npx jest test/self-healing-reconciler-autopilot-link.test.ts test/vtid-04636-reconciler-lineage.test.ts test/vtid-05023-auth-bridge-reconciler.test.ts
+# -> outputs/jest-existing-reconciler.txt: Test Suites: 3 passed; Tests: 40 passed, 40 total (EXIT_CODE=0)
+
+$ npx tsc --noEmit --preserveSymlinks
+# -> outputs/tsc-gateway.txt: EXIT_CODE=0
+
+# CLAUDE.md 42e: operator pipeline regression suite on the lane code (2026-11-11)
+$ cd services/gateway && npm run test:operator
+# -> 1 suite, 71 passed of 71, exit 0 (outputs/jest-operator-regression.txt)

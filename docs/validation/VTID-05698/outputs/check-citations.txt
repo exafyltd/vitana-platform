@@ -1,0 +1,5 @@
+doc: /projects/sandbox/wt-gwra-inventory/docs/programs/security/gateway-write-route-inventory.md
+vitana-v1 root: /projects/sandbox/vitana-v1
+citations: 3986 occurrences, 2366 distinct, 512 files
+ok: 2366, failed: 0
+exit 0
