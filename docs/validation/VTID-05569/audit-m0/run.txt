@@ -1,0 +1,37 @@
+# audit-m0 VTID-05569 on 6dc6e1ba0c18252ec2f3fbf5651d245e200f9835 (2026-11-10T09:37:58Z); node v22.23.4
+
+$ env WT=/projects/sandbox/wt-audit-m0 /projects/sandbox/wt-audit-m0/docs/validation/VTID-05569/pglite-harness/h05569.sh /projects/sandbox/wt-audit-m0/supabase/tests/vtid_mt_data_cleanup_notnull_assert.test.sql /projects/sandbox/wt-audit-m0/supabase/migrations/20261102043000_vtid_05569_hot_tables_tenant_not_null_assert.sql
+1..11
+ok 1 - assertion passes on the real schema
+ok 2 - chat_messages.tenant_id is NOT NULL
+ok 3 - user_notifications.tenant_id is NOT NULL
+ok 4 - product_analytics_events.tenant_id is NOT NULL
+ok 5 - nullable chat_messages.tenant_id raises
+ok 6 - nullable user_notifications.tenant_id raises
+ok 7 - nullable product_analytics_events.tenant_id raises
+ok 8 - chat_messages row on a non-existent tenant raises
+ok 9 - user_notifications row on a non-existent tenant raises
+ok 10 - product_analytics_events row on a non-existent tenant raises
+ok 11 - assertion passes again after the fixtures are removed
+[exit 0]
+
+$ env WT=/projects/sandbox/wt-audit-m0 /projects/sandbox/wt-audit-m0/docs/validation/VTID-05569/pglite-harness/checks.sh
+loaded base_schema.sql
+loaded pae05569.sql
+## pre-check.sql
+table_name | nullable | orphan_rows
+chat_messages | NO | 0
+product_analytics_events | NO | 0
+user_notifications | NO | 0
+
+loaded 20261102043000_vtid_05569_hot_tables_tenant_not_null_assert.sql
+## post-check.sql
+all_not_null | no_orphans | no_object_added
+true | true | true
+
+loaded 20261102043100_vtid_05569_hot_tables_tenant_not_null_assert_rollback.sql
+## rollback-check.sql
+still_not_null | nothing_left_behind
+true | true
+
+[exit 0]
