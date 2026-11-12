@@ -11,7 +11,8 @@ reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 paths:
   - scripts/aws/iam/delivery-bedrock-invoke-policy.json
   - scripts/aws/test/test_delivery_bedrock_policy.py
-updated: 2026-11-12T07:07Z
+updated: 2026-11-12T07:09Z
+vtid: VTID-05774
 ---
 
 # Lane: bedrock-invoke-policy (repo exafyltd/vitana-platform)
@@ -23,3 +24,6 @@ nothing in this lane changes IAM. Late lane (owner instruction 2026-11-12). Task
 ## Log
 ### 2026-11-12T07:07Z · kiro-exafyltd-202611111044-8f1d · ready
 Late lane added after convergence (owner instruction 2026-11-12, item 3); its VTID comes from the next PLAN-SPAR run.
+
+### 2026-11-12T07:09Z · ci-plan-spar · ready (VTID allocated)
+VTID-05774 allocated after policy approval (converged-auto-v1).
