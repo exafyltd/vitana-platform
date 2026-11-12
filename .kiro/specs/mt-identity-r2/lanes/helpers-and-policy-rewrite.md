@@ -14,12 +14,12 @@ paths:
   - scripts/ci/bare-policy-lint.mjs
   - services/gateway/test/mt-identity-bare-policy-lint.test.ts
   - supabase/tests/mt_identity_helpers_*.sql
-updated: 2026-11-03T18:43Z
+updated: 2026-11-10T09:49Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05465
 branch: kiro/mt-identity-r2/helpers-and-policy-rewrite
 pr: https://github.com/exafyltd/vitana-platform/pull/4625
-claimed_by: kiro-hotmail-202611011452-6d16
+claimed_by: kiro-hotmail-202611061752-cc1f
 ---
 # helpers-and-policy-rewrite — tenant_id_for_policies() + is_member() + the bare-policy rewrite (DB)
 
@@ -155,3 +155,9 @@ authority: §7b PM rule. Merged by kiro-hotmail-202611011452-6d16 on head `840ce
 
 ### 2026-11-03T18:43Z · kiro-hotmail-202611011452-6d16 · verified → done
 Closing record: the code and evidence are on main from merge 3dc28e5fa74f314b2193ef11a141a8bcc0d8d85c. The lane claim is released once this record is on main.
+
+### 2026-11-10T09:49Z · kiro-hotmail-202611061752-cc1f · done → done
+Docs-only follow-up, no code change: owner packet for queue rows 12-13 at `docs/validation/VTID-05465/owner-packet.md`
+(M0 directive stream S1). The previous claim of `kiro-hotmail-202611011452-6d16` was stale metadata on a `done` lane (no claim
+ref existed); this session claimed the lane ref and took over `claimed_by` so Collab handoff matches the commits. Nothing applied,
+no RUN-MIGRATION dispatch, no live database contacted. Dry-run output: `docs/validation/VTID-05465/owner-packet-outputs/`.
