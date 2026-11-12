@@ -1,0 +1,6 @@
+not ok 2 - working-tree invariants hold on this checkout
+not ok 4 - mutation: one accept unlocking a protected gate file fails
+not ok 29 - merge: a protected gate file needs two accepts from different chain models on the current head
+not ok 30 - merge: land-guard REVIEWER_MODELS mirrors governance.ts REVIEWER_AGENT_MODELS
+# pass 26
+# fail 4
