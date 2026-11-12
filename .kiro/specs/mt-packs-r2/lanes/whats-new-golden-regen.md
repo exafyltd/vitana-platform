@@ -4,12 +4,12 @@ state: ready
 next_actor: kiro
 depends_on: []
 executor: kiro
-seat: jtadic
+seat: exafyltd
 reviewer_seat: agent:vitana-lane-reviewer
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 paths:
   - services/gateway/test/golden/v1-golden-edge.*
-updated: 2026-11-02T16:24Z
+updated: 2026-11-12T20:17Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05501
 ---
@@ -39,3 +39,5 @@ Re-plan of `mt-packs/whats-new-golden-regen`. The executor moves from claude to 
 
 ### 2026-11-02T16:24Z · ci-plan-spar · ready (VTID allocated)
 VTID-05501 allocated after policy approval (converged-auto-v1).
+### 2026-11-12T20:17Z · pm-agent · update
+reassign lane jtadic→exafyltd (stale_ready, Claude unavailable)
