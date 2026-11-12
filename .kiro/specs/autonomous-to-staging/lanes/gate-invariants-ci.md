@@ -1,6 +1,6 @@
 ---
 lane: gate-invariants-ci
-state: in-review
+state: done
 next_actor: kiro
 branch: kiro/autonomous-to-staging/gate-invariants-ci
 depends_on: [machine-gate-protected]
@@ -14,7 +14,7 @@ paths:
   - .github/workflows/GATE-INVARIANTS.yml
   - scripts/ci/workflow-trigger-check.test.mjs
   - docs/validation/VTID-*/**
-updated: 2026-11-12T07:07Z
+updated: 2026-11-12T07:39Z
 pr: https://github.com/exafyltd/vitana-platform/pull/5003
 vtid: VTID-05763
 ---
@@ -41,3 +41,10 @@ reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 PR: https://github.com/exafyltd/vitana-platform/pull/5003
 Findings (non-blocking): bypass audit + OASIS event deferred to protect-gate-workflow, which a _plan commit must add before Gate 2; AC-3 is post-merge, lane not done until the first green run URL is recorded; the PR-time static test runs in UNIT.yml `unit`, not TEST-SUITE (wording); CI taken from driver evidence; gate-invariants.test.mjs used instead of gate-invariants.mjs --against main (equivalent, recorded).
 Next: land under §7b; closing record appends the first GATE-INVARIANTS run URL on main.
+
+### 2026-11-12T07:39Z · kiro-exafy-202611110920-270b · in-review → verified
+merge: e4b4b48511d0356a4a2a508e3adf20b4420d1d80 (exafyltd/vitana-platform#5003)
+authority: §7b PM rule, applied by the plan driver through `land-guard.mjs merge` (review current on the PR head, every check green, up to date with main).
+
+### 2026-11-12T07:39Z · kiro-exafy-202611110920-270b · verified → done
+AC-3: first GATE-INVARIANTS run on main is green: https://github.com/exafyltd/vitana-platform/actions/runs/43176698424 (e4b4b48511, gate invariants 6/6, trigger check 3/3; staging-prod-ref-guard still deferred until staging-db-isolation lands). The lane deploys nothing, so no STAGING-VERIFY. Wording note from review: the PR-time static test runs in UNIT.yml `unit`, not TEST-SUITE.
