@@ -60,6 +60,37 @@ accepts from different chain models on the final head, merged under the owner's 
 `land-guard.mjs` needs one governance-level accept. Option A needs no change. Options B and C cannot land without those two accepts, because the rule being
 changed is the one that gates the change. This is the owner's decision to make at Gate 1.
 
+## Chosen option: B (owner decision, 2026-11-12) — code-level spec (R2-F2, R2-F3)
+Owner-approved sparred plan replaces the reviewer accept for the protected files the plan lists. The reviewer agent is
+still required for every other lane. Two stages, as R1-F4 requires:
+
+**Stage 1 — lane declaration (`queue.mjs`, PR-GATE).**
+- A plan's front matter lists `protected_files:` (exact paths, no globs beyond the existing protected list).
+- A lane may declare `protected_gate: owner-plan` and `plan: <slug>`. Accepted only if (a) the plan's verdict file
+  `sparring/verdict.md` says `CONVERGED and approved by policy converged-auto-v1`, (b) the lane's changed protected
+  paths are a subset of the plan's `protected_files:`, and (c) the lane declaration is read from the trusted base
+  revision of the lane file (as `isTwoModelLane` does today).
+- New export `isOwnerPlanLane(fm, planFm, verdictText, changedProtected)` in `queue.mjs`.
+
+**Stage 2 — merge time (`land-guard.mjs` `mergeDecision`, and `governance.ts`).**
+- A protected change is mergeable on the owner-plan path only if the PR carries the commit trailer
+  `Owner-Approved-Plan: <slug>` on a commit authored by the owner's account (`exafyltd`), and the same stage-1 checks
+  hold at the merge head. Otherwise the two-model rule (two accepts, different models) still applies.
+- One reviewer accept alone never unlocks a protected file. The owner-plan path needs no accept.
+
+**Invariants (`gate-invariants.test.mjs`, new assertions, protected):**
+1. Without `protected_gate: owner-plan`, zero, one or two same-model accepts still refuse a protected change.
+2. With the owner-plan path, a missing or non-converged verdict refuses the merge.
+3. With the owner-plan path, a changed protected path outside `protected_files:` refuses the merge.
+4. A `PROTECTED_ACCEPTS_REQUIRED` value of 1 still fails the mutation test.
+
+**Text:** `collaboration.md` §3a and the `queue.mjs` comment rewritten to describe both paths; the protected list in
+§3a brought up to date (R3-F1).
+
+**Bootstrapping (unchanged):** this change edits `queue.mjs`, `governance.ts`, `gate-invariants.test.mjs` and
+`protected-gate-files.json`, so it needs two reviewer-agent accepts from different chain models on its final head under
+the current rule. The owner-plan path applies only after this PR lands.
+
 ## Change (after the owner picks an option at Gate 1)
 1. Update `.claude/rules/collaboration.md` §3a, the `queue.mjs` comment, `land-guard.mjs`, `governance.ts`,
    `gate-invariants.test.mjs` and `protected-gate-files.json` to the chosen option, with tests in `queue.test.mjs`
