@@ -1,6 +1,6 @@
 ---
 lane: kiro-aws-access
-state: executing
+state: in-review
 next_actor: kiro
 branch: kiro/autonomous-to-staging/kiro-aws-access
 depends_on: []
@@ -44,3 +44,6 @@ Findings: BLOCKING PassRole + RegisterTaskDefinition + UpdateService reach the p
 
 ### 2026-11-12T19:23Z · kiro-exafy-202611110920-270b · in-review → executing
 Fixing the three blocking findings and the non-blocking ones.
+
+### 2026-11-12T19:23Z · kiro-exafy-202611110920-270b · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/5027. Fixed: PassRole and task-definition registration removed from the staging operator (shared vitana-ecs-task-role), deny on production task definitions for staging services, all production secret prefixes denied in role and boundary; engineering admin denies IAM writes/PassRole/role chaining, destructive KMS, SSM/instance-connect/re-root on the GitLab host, every volume/snapshot deletion, all runner tokens; handoff step 2 removed (no role to pass), owner prerequisite recorded; evaluator limits documented, resources case-sensitive. Tests 22/22, cfn-lint 0.
