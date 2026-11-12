@@ -4,6 +4,10 @@ import path from 'path';
 import fs from 'fs';
 import cors from 'cors';
 import compression from 'compression';
+import { installDataRestRouting } from './lib/data-rest-base';
+
+// VTID-05023: DATA_REST_BASE_MODE=aurora_proxy sends /rest/v1 to the proxy. Unset means Supabase, as before.
+installDataRestRouting();
 
 const app = express();
 const PORT = process.env.PORT || 8080;
