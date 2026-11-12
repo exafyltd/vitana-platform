@@ -18,7 +18,7 @@ paths:
   - docs/validation/VTID-05069/staging-tests.json
   - docs/validation/VTID-05071/staging-tests.json
   - docs/validation/VTID-*/**
-updated: 2026-11-07T14:43Z
+updated: 2026-11-12T20:17Z
 vtid: VTID-05601
 ---
 # Lane: console-probes-b (repo vitana-platform)
@@ -38,3 +38,5 @@ Claimed by kiro-exafy-202611111326-7e9b. Evidence in docs/validation/VTID-05601/
 ### 2026-11-11T15:40Z · kiro-exafy-202611111326-7e9b · executing → in-review
 PR https://github.com/exafyltd/vitana-platform/pull/4976. Preflight every check passed. Waiting for the reviewer agent. Next actor: reviewer agent.
 pr: https://github.com/exafyltd/vitana-platform/pull/4976
+### 2026-11-12T20:17Z · pm-agent · update
+reassign review agent:vitana-lane-reviewer→exafyltd (stale_review, Claude unavailable)
