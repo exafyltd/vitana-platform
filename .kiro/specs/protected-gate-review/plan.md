@@ -35,9 +35,29 @@ gate file cannot land (PR #5009: the exception implementation for `collab-lane-c
 **Recommendation: B** for changes whose plan lists exact files, because the sparring round already reviewed them.
 Option A remains the rule for any change not covered by a converged plan.
 
+## Scope of enforcement (R1-F1, R1-F3, R1-F4, R1-F5)
+Three enforcement points, all protected, all must change consistently for any option other than A:
+1. `scripts/collab/queue.mjs` — lane declaration check (`scopeCheck`, `isTwoModelLane`, `PROTECTED_GATE_TWO_MODEL`).
+   Runs at PR-GATE time on the lane file.
+2. `scripts/collab/land-guard.mjs` — merge-time count (`PROTECTED_ACCEPTS_REQUIRED = 2`, `mergeDecision`).
+3. `services/gateway/src/services/project-manager/governance.ts` — PM merge-time count (`PROTECTED_ACCEPTS_REQUIRED`,
+   `protectedAcceptModels`).
+Plus the invariant file `scripts/collab/gate-invariants.test.mjs` (protected; pins the two-model rule and refuses one
+accept) and `scripts/collab/protected-gate-files.json`.
+
+Stale text (R1-F5): `.claude/rules/collaboration.md` §3a ("owner instruction + one reviewer accept") and the
+`queue.mjs` comment near line 89 describe the superseded VTID-05276/05408 rule. The enforced rule is the two-model rule
+(VTID-05765). Every option below updates the text so that all layers say the same thing.
+
+**Bootstrapping (R1-F6):** a change to any of these files is itself a protected-gate change. Under the current code it
+needs two reviewer-agent accepts from different chain models on the final head, merged under the owner's named
+instruction. Option A needs no change. Options B and C cannot land without those two accepts, because the rule being
+changed is the one that gates the change. This is the owner's decision to make at Gate 1.
+
 ## Change (after the owner picks an option at Gate 1)
-1. Update `.claude/rules/collaboration.md` §3a and the lane-validation text in `scripts/collab/queue.mjs` to the chosen
-   option, with its tests in `scripts/collab/queue.test.mjs`.
+1. Update `.claude/rules/collaboration.md` §3a, the `queue.mjs` comment, `land-guard.mjs`, `governance.ts`,
+   `gate-invariants.test.mjs` and `protected-gate-files.json` to the chosen option, with tests in `queue.test.mjs`
+   and `gate-invariants.test.mjs`, all in one PR under the bootstrapping rule above.
 2. Re-open the implementation of `collab-lane-close-exception` (PR #5009) under the chosen rule.
 
 ## Tests
