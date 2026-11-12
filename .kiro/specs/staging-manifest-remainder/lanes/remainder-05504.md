@@ -1,7 +1,9 @@
 ---
 lane: remainder-05504
-state: ready
+state: executing
 next_actor: kiro
+claimed_by: kiro-exafy-202611111326-7e9b
+branch: kiro/staging-manifest-remainder/remainder-05504
 depends_on: []
 executor: kiro
 seat: exafy
@@ -25,3 +27,6 @@ Lane created with the plan.
 
 ### 2026-11-12T11:55Z · ci-plan-spar · ready (VTID allocated)
 VTID-05775 allocated after policy approval (converged-auto-v1).
+
+### 2026-11-12T13:00Z · kiro-exafy-202611111326-7e9b · ready → executing
+Claimed. Baseline red (check 1: tests must be a non-empty array) in docs/validation/VTID-05775/outputs/baseline-red.txt.
