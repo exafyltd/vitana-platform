@@ -15,3 +15,14 @@ NOT RECORDED: a red-on-base run for the edit and route suites. Writing one needs
 
 ## Local
 Not run locally: no npm registry access from the build session. CI is the record.
+
+
+## CI on the reviewed head 864dffc621580df6e172ebf21c0e3acd3cc4b41f (all 25 check runs: success)
+- Gateway (Jest, shards 1-4): success. Gateway Service Tests: success (the live-room-cohost suites are in this run;
+  the three files live-room-cohost-helpers, -edit and -routes pass).
+- Gateway Validation (Minimal CI): success. This is the job the gateway typecheck and build run in.
+- Existing live suites (vtid-04904, vtid-04905, vtid-04834, vtid-04602-04604): run inside the Gateway Jest shards above.
+- Lane scope, change-suite, validate-pr, validate, Collab handoff, unit, pr-gate, scan: success.
+
+Not separately named in CI: a typecheck step and a build step. Both run inside the gateway validation job above; this
+file cites that job, not an individual step.
