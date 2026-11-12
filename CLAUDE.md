@@ -336,7 +336,7 @@ needs a VTID but no sparring.** Two tracks, one rule: every change gets a VTID f
     routing or auth, and any change that adds or alters an API, a route, a schema, a deploy path, or more than a
     simple front-end change.
 51a. **Simple front-end change: VTID → code, no sparring.** Class `frontend-simple` (vitana-v1): the diff is inside
-    `src/**` or `public/**`, touches no deny-listed file (`src/App.tsx`, `src/navigation/**`, `src/design/**`,
+    `src/**`, `public/**` or `tests/e2e/staging/*.staging.spec.ts` (read-only staging specs, VTID-05623), touches no deny-listed file (`src/App.tsx`, `src/navigation/**`, `src/design/**`,
     `src/integrations/**`, `src/routes/guards/**`, auth contexts, `src/generated/**`), and changes at most 15 files.
     Declared in `docs/validation/<VTID>/scope.json` (`"change_class": "frontend-simple"`). The PR gate verifies the diff
     and fails a claim the diff does not support, which then needs sparring. Execution allocates a fresh VTID from the
