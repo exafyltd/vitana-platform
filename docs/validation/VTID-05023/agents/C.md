@@ -60,3 +60,8 @@ Type check: `npx tsc --noEmit -p tsconfig.json` exits 0.
 ## Staging mode
 
 Set in a separate MR from `cutover/vtid-05023-C-staging-aurora-mode`. That MR is not merged in this run, because the staging proxy URL is not verified yet (agent H).
+
+- `gateway-staging-deploy` sets `DATA_REST_BASE_MODE=aurora_proxy` and `DATA_REST_PROXY_URL` in the registered task definition. The URL comes from the GitLab CI variable `STAGING_DATA_REST_PROXY_URL`, which must be set as a staging-scoped variable. The job refuses to register when it is empty.
+- Production has no job in this file, so production is unchanged.
+- The `jq` transform was dry-run on a sample task definition. AURORA names were removed, and `SUPABASE_URL` and the other env vars were kept.
+- No deploy was triggered.
