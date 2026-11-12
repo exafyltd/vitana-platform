@@ -1,6 +1,6 @@
 ---
 lane: gate-invariants-ci
-state: ready
+state: in-review
 next_actor: kiro
 branch: kiro/autonomous-to-staging/gate-invariants-ci
 depends_on: [machine-gate-protected]
@@ -14,7 +14,8 @@ paths:
   - .github/workflows/GATE-INVARIANTS.yml
   - scripts/ci/workflow-trigger-check.test.mjs
   - docs/validation/VTID-*/**
-updated: 2026-11-11T23:41Z
+updated: 2026-11-12T07:07Z
+pr: https://github.com/exafyltd/vitana-platform/pull/5003
 vtid: VTID-05763
 ---
 # Lane: gate-invariants-ci (repo vitana-platform)
@@ -26,3 +27,17 @@ Lane created with the plan (answer to R3-F1).
 
 ### 2026-11-11T23:41Z · ci-plan-spar · ready (VTID allocated)
 VTID-05763 allocated after policy approval (converged-auto-v1).
+
+### 2026-11-12T07:06Z · kiro-exafy-202611110920-270b · ready → executing
+Claimed (`queue.mjs claim`); building on `origin/main` e7077f27c3 (after machine-gate-protected #5002).
+
+### 2026-11-12T07:07Z · kiro-exafy-202611110920-270b · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/5003. Trigger check red on base 2 fail, green 3/3; gate invariants 6/6; Collab 268/0. Next: reviewer agent on the current head.
+
+### 2026-11-12T07:30Z · agent-vitana-lane-reviewer-202611120730-f060 · review
+review: accept
+head: af99c149427db53f1f5dd95399f73ee41064be8f
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/5003
+Findings (non-blocking): bypass audit + OASIS event deferred to protect-gate-workflow, which a _plan commit must add before Gate 2; AC-3 is post-merge, lane not done until the first green run URL is recorded; the PR-time static test runs in UNIT.yml `unit`, not TEST-SUITE (wording); CI taken from driver evidence; gate-invariants.test.mjs used instead of gate-invariants.mjs --against main (equivalent, recorded).
+Next: land under §7b; closing record appends the first GATE-INVARIANTS run URL on main.

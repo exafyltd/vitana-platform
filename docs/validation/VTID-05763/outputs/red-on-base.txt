@@ -1,0 +1,6 @@
+# origin/main e7077f27c3, GATE-INVARIANTS.yml absent
+not ok 1 - GATE-INVARIANTS.yml exists
+not ok 2 - GATE-INVARIANTS.yml runs the invariants on every push to main and daily, read-only
+ok 3 - mutations: each weakened trigger or step is caught
+# pass 1
+# fail 2
