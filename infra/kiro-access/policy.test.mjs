@@ -60,9 +60,13 @@ test('kiro-staging-operator: production denies are explicit, not only implicit',
 });
 
 test('kiro-staging-operator: staging writes are allowed only on the pinned staging ARNs', () => {
-  for (const n of ids.staging.ecs_services) assert.equal(both('ecs:UpdateService', svc(n)), 'allow', n);
-  assert.equal(both('ecs:UpdateService', svc('vitana-oasis-operator-awsdr')), 'deny');
-  assert.equal(both('ecs:UpdateService', svc('some-new-service')), 'deny', 'a service not on the allow-list');
+  // Review 2026-11-12 (round 2): no ECS write at all, staging services included (shared cluster, task role, ALB, Cloud Map).
+  for (const n of [...ids.staging.ecs_services, 'vitana-oasis-operator-awsdr', 'some-new-service']) {
+    for (const a of ['ecs:UpdateService', 'ecs:RunTask', 'ecs:StartTask', 'ecs:ExecuteCommand']) {
+      assert.equal(both(a, svc(n)), 'deny', `${a} ${n}`);
+      assert.equal(evaluate(opRole, a, svc(n), { explicitOnly: true }), 'deny', `no explicit Deny for ${a} ${n}`);
+    }
+  }
   const cl = `arn:aws:rds:${R}:${P}:cluster:${ids.staging.rds_cluster}`;
   assert.equal(both('rds-data:ExecuteStatement', cl), 'allow');
   assert.equal(both('rds:ModifyDBCluster', cl), 'allow');
@@ -152,16 +156,14 @@ test('kiro-staging-operator: no iam:PassRole at all (staging shares the producti
   for (const r of [...ids.production.shared_task_roles, `arn:aws:iam::${P}:role/vitana-ecs-execution-role`, `arn:aws:iam::${P}:role/anything`]) {
     assert.equal(both('iam:PassRole', r), 'deny', r);
   }
-  assert.ok(!JSON.stringify(op.Resources.StagingOperatorRole.Properties.Policies).includes('"iam:PassRole"') ||
-    opRole.filter((s) => s.Effect === 'Allow').every((s) => ![].concat(s.Action).includes('iam:PassRole')), 'no Allow for iam:PassRole');
+  assert.ok(opRole.filter((s) => s.Effect === 'Allow').every((s) => ![].concat(s.Action).some((a) => /^iam:(PassRole|\*)$|^\*$/.test(a))), 'no Allow statement names iam:PassRole');
   assert.equal(both('ecs:RegisterTaskDefinition', '*'), 'deny', 'no task-definition registration without PassRole');
 });
 
-test('kiro-staging-operator: a staging service cannot be pointed at a production task definition', () => {
-  for (const td of [`arn:aws:ecs:${R}:${P}:task-definition/vitana-gateway-awsdr:41`, `arn:aws:ecs:${R}:${P}:task-definition/vitana-postgrest-aurora-prod:3`]) {
+test('kiro-staging-operator: no service can be pointed at any task definition (no family deny-list to bypass)', () => {
+  for (const td of [`arn:aws:ecs:${R}:${P}:task-definition/vitana-autopilot-executor:7`, 'vitana-gateway-awsdr', 'vitana-gateway:900']) {
     assert.equal(both('ecs:UpdateService', svc('vitana-gateway'), { context: { 'ecs:task-definition': td } }), 'deny', td);
   }
-  assert.equal(evaluate(opRole, 'ecs:UpdateService', svc('vitana-gateway'), { context: { 'ecs:task-definition': `arn:aws:ecs:${R}:${P}:task-definition/vitana-gateway:900` } }), 'allow');
 });
 
 test('kiro-staging-operator: every production secret prefix is denied explicitly', () => {
@@ -193,7 +195,8 @@ test('kiro-engineering-admin: no shell or re-root on the GitLab host; no volume 
   const inst = `arn:aws:ec2:${R}:${E}:instance/i-0123456789abcdef0`;
   const tag = { 'aws:ResourceTag/Name': 'vitana-eng-gitlab' };
   for (const a of ['ssm:SendCommand', 'ssm:StartSession', 'ec2-instance-connect:SendSSHPublicKey', 'ec2:CreateReplaceRootVolumeTask', 'ec2:ModifyInstanceAttribute']) assert.equal(evaluate(st, a, inst, { context: tag }), 'deny', a);
-  for (const [a, r] of [['ec2:DeleteVolume', `arn:aws:ec2:${R}:${E}:volume/vol-untagged`], ['ec2:DeleteSnapshot', `arn:aws:ec2:${R}::snapshot/snap-untagged`]]) assert.equal(evaluate(st, a, r), 'deny', `${a} without any tag`);
+  for (const [a, r] of [['ec2:DeleteVolume', `arn:aws:ec2:${R}:${E}:volume/vol-untagged`], ['ec2:DeleteSnapshot', `arn:aws:ec2:${R}::snapshot/snap-untagged`], ['ec2:CreateSnapshot', `arn:aws:ec2:${R}:${E}:volume/vol-untagged`], ['ec2:CopySnapshot', `arn:aws:ec2:${R}::snapshot/snap-untagged`], ['ec2:CreateVolume', `arn:aws:ec2:${R}:${E}:volume/*`]]) assert.equal(evaluate(st, a, r), 'deny', `${a} without any tag`);
+  assert.equal(evaluate(st, 'ec2:AttachVolume', inst, { context: tag }), 'deny', 'no volume swapped into the GitLab host');
   assert.equal(evaluate(st, 'ssm:SendCommand', inst, { context: { 'aws:ResourceTag/Name': 'vitana-eng-runner' } }), 'allow', 'runners stay operable');
 });
 

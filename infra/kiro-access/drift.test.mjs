@@ -36,6 +36,6 @@ test('a production secret or cluster without an explicit Deny is reported', () =
 test('a production service without an explicit Deny is reported', () => {
   const weak = JSON.parse(JSON.stringify(tpl));
   const p = weak.Resources.StagingOperatorRole.Properties.Policies[0].PolicyDocument;
-  p.Statement = p.Statement.filter((s) => s.Sid !== 'DenyProdEcs');
+  p.Statement = p.Statement.filter((s) => !['DenyProdEcs', 'NoEcsWrites'].includes(s.Sid));
   assert.ok(drift(clean, ids, weak).some((x) => /production service vitana-gateway-awsdr/.test(x)));
 });

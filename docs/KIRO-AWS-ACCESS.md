@@ -11,7 +11,7 @@ user or key exists until the owner runs the handoff below. No workflow applies I
 ## 1. What Kiro gets
 | Role | Account | Can | Cannot |
 |---|---|---|---|
-| `kiro-staging-operator` | `472838866351` (product, also the Organizations management account) | read everything except secret values (`Describe*`, `List*`, logs, metrics, CloudTrail lookup); `ecs:UpdateService` (scale, force a new deployment, or select an existing staging task-definition revision) on the 7 staging services; modify, snapshot, start/stop the `vitana-aurora-staging` cluster and run Data API statements on it; write `vitana/{gateway,supabase,erp-bridge}/staging/*` and `vitana/aurora/staging-db/*` secrets; use KMS keys tagged `vitana-env=staging` | `iam:PassRole` and task-definition registration (staging and production share the gateway task role `vitana-ecs-task-role`, `AWS-PROD-DEPLOY-GATEWAY.yml:819-822`, so no role is passable until dedicated staging roles exist); pointing a staging service at a `*-awsdr` / `*-prod` task definition; any write to a `*-awsdr` / `*-prod` ECS service, `vitana-aurora-prod`, RDS proxies, `vitana-alb-prod`, `vitana/aurora/prod/*`, `vitana/supabase/prod/*`, `vitana/gateway-awsdr/*` and `vitana/kiro/production/*` secrets, the production KMS key (explicit Deny in the role **and** in its permissions boundary); delete any cluster, instance, snapshot, service or secret; change IAM (including itself); stop CloudTrail |
+| `kiro-staging-operator` | `472838866351` (product, also the Organizations management account) | read everything except secret values (`Describe*`, `List*`, logs, metrics, CloudTrail lookup); modify, snapshot, start/stop the `vitana-aurora-staging` cluster and run Data API statements on it; write `vitana/{gateway,supabase,erp-bridge}/staging/*` and `vitana/aurora/staging-db/*` secrets; use KMS keys tagged `vitana-env=staging` | **any ECS write** (`UpdateService`, `RunTask`, `StartTask`, `RegisterTaskDefinition`, `ExecuteCommand`, …, explicit Deny): staging and production share `Vitana-ECS-Cluster`, the gateway task role `vitana-ecs-task-role` (`AWS-PROD-DEPLOY-GATEWAY.yml:819-822`), the ALB and Cloud Map, so no ECS write can be scoped to staging yet, and unsuffixed production families (e.g. `vitana-autopilot-executor`) defeat a name deny-list; staging deploys stay in the staging workflows; `iam:PassRole`; any write to a `*-awsdr` / `*-prod` ECS service, `vitana-aurora-prod`, RDS proxies, `vitana-alb-prod`, `vitana/aurora/prod/*`, `vitana/supabase/prod/*`, `vitana/gateway-awsdr/*` and `vitana/kiro/production/*` secrets, the production KMS key (explicit Deny in the role **and** in its permissions boundary); delete any cluster, instance, snapshot, service or secret; change IAM (including itself); stop CloudTrail |
 | `kiro-engineering-admin` | `841276716213` (engineering platform: GitLab EE, runners, backups, CI cache) | `AdministratorAccess` | any IAM write, `iam:PassRole` or role chaining (`sts:AssumeRole`), so no escalation path to a role without these denies; terminate, re-root, detach, change tags of, SSM into or SSH into the GitLab host (`Name=vitana-eng-gitlab*`); delete any EBS volume or snapshot in the account (the GitLab root volume and snapshots are untagged); disable, delete or re-policy any KMS key (`alias/vitana-engineering` encrypts the GitLab volume, backups and secrets); delete or re-policy the backup bucket `vitana-engineering-gitlab-backups-841276716213`; read or change the GitLab root password, any runner token (`*runner-token`, incl. the fleet class tokens), the GitHub mirror and bridge tokens; stop CloudTrail; Organizations |
 
 Both roles are assumable only by IAM user `kiro-agent-source` (`841276716213`), only with the ExternalId, and only
@@ -57,9 +57,14 @@ aws iam create-access-key --user-name kiro-agent-source
    old one). Revocation at any time: `aws iam update-access-key --user-name kiro-agent-source --access-key-id <id>
    --status Inactive`.
 
-**Prerequisite for staging redeploys by Kiro (owner, later):** dedicated staging task and execution roles that no
-production service uses. Until then Kiro can only scale or force-redeploy existing staging revisions; new task-definition
-revisions keep coming from the staging deploy workflows.
+**Prerequisite before Kiro gets any ECS write (owner, later plan):** staging services isolated from production —
+a separate ECS cluster, dedicated staging task and execution roles, staging-only target groups and Cloud Map namespace.
+Until then every staging deploy goes through the staging deploy workflows.
+
+**Accepted read exposure:** the read grant includes `ecs:DescribeTaskDefinition` (plain-text environment values of
+production task definitions) and production log groups. It is read-only, but production configuration and log content
+reach the Kiro session. **Before applying:** confirm with `aws iam simulate-custom-policy` that the denies behave as
+the tests assume (the evaluator is not the IAM engine).
 
 ## 4. How a Kiro session uses it
 ```bash
@@ -78,6 +83,9 @@ roles are then used read-only from sessions, and staging writes go through the s
 - `infra/kiro-access/drift.test.mjs` + `drift.mjs`: live inventory vs the allow-list and deny list.
 - Limits of the static evaluator (`lib.mjs`): it checks one direct request at a time; it does not model escalation
   paths (PassRole, role chaining, KMS key loss, SSM on a host) or tags an attacker could change. Those paths are closed by
-  explicit denies, each checked by its own test.
+  explicit denies, each checked by its own test. Remaining non-destructive paths in the engineering account: network,
+  security-group, EIP and Route 53 changes can take GitLab offline (availability, not data loss); SSM into hosts other
+  than GitLab uses their instance-profile credentials. The backup bucket is versioned
+  (`infra/gitlab-engineering/terraform/main.tf:274-279`), so an overwrite does not destroy a backup.
 - `.github/workflows/AWS-KIRO-ACCESS.yml`: unit tests and `cfn-lint` on every PR that changes these files and on
   every push to `main`; the live drift check daily once the stacks exist (read-only role).

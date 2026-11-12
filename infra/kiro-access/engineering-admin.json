@@ -90,7 +90,9 @@
                     "ssm:SendCommand",
                     "ssm:StartSession",
                     "ec2-instance-connect:SendSSHPublicKey",
-                    "ec2-instance-connect:SendSerialConsoleSSHPublicKey"
+                    "ec2-instance-connect:SendSerialConsoleSSHPublicKey",
+                    "ec2:CreateImage",
+                    "ec2:AttachVolume"
                   ],
                   "Resource": "*",
                   "Condition": {
@@ -100,7 +102,7 @@
                   }
                 },
                 {
-                  "Sid": "KeepAllVolumesAndSnapshots",
+                  "Sid": "KeepAllVolumesAndSnapshotsPrivate",
                   "Effect": "Deny",
                   "Action": [
                     "ec2:DeleteVolume",
@@ -108,7 +110,13 @@
                     "ec2:ModifySnapshotAttribute",
                     "ec2:DeregisterImage",
                     "ec2:DisableEbsEncryptionByDefault",
-                    "ec2:ModifyEbsDefaultKmsKeyId"
+                    "ec2:ModifyEbsDefaultKmsKeyId",
+                    "ec2:CreateSnapshot",
+                    "ec2:CreateSnapshots",
+                    "ec2:CopySnapshot",
+                    "ec2:CreateVolume",
+                    "ec2:EnableSnapshotBlockPublicAccess",
+                    "ec2:DisableSnapshotBlockPublicAccess"
                   ],
                   "Resource": "*"
                 },

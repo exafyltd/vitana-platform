@@ -1,6 +1,6 @@
 {
   "AWSTemplateFormatVersion": "2010-09-09",
-  "Description": "VTID-05764 (plan autonomous-to-staging, lane kiro-aws-access): kiro-staging-operator in 472838866351. Allow-list of staging resources by exact ARN, read-only elsewhere (no secret values), explicit denies on every production resource, a permissions boundary the role cannot change, no iam:PassRole (staging and production share the gateway task role, so none is passable until dedicated staging roles exist), and a read-only OIDC role for the daily drift check. Applied once by the owner; no CI role applies it.",
+  "Description": "VTID-05764: kiro-staging-operator in 472838866351. Read-only on the account (no secret values); writes only on the isolated staging database plane (vitana-aurora-staging cluster, its Data API, staging secrets, staging-tagged KMS); no ECS writes at all (staging and production share Vitana-ECS-Cluster, the gateway task role, the ALB and Cloud Map, so an ECS write cannot be scoped to staging yet; staging deploys stay in the staging workflows); explicit denies on every production resource; a permissions boundary the role cannot change; a read-only OIDC role for the daily drift check. Applied once by the owner.",
   "Metadata": {
     "Account": "product"
   },
@@ -303,36 +303,6 @@
                   "Resource": "*"
                 },
                 {
-                  "Sid": "EcsStagingServices",
-                  "Effect": "Allow",
-                  "Action": [
-                    "ecs:UpdateService"
-                  ],
-                  "Resource": [
-                    {
-                      "Fn::Sub": "arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:service/Vitana-ECS-Cluster/vitana-gateway"
-                    },
-                    {
-                      "Fn::Sub": "arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:service/Vitana-ECS-Cluster/vitana-kiro-runner"
-                    },
-                    {
-                      "Fn::Sub": "arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:service/Vitana-ECS-Cluster/vitana-erp-bridge"
-                    },
-                    {
-                      "Fn::Sub": "arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:service/Vitana-ECS-Cluster/vitana-postgrest-aurora-proxy"
-                    },
-                    {
-                      "Fn::Sub": "arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:service/Vitana-ECS-Cluster/vitana-community-app-staging"
-                    },
-                    {
-                      "Fn::Sub": "arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:service/Vitana-ECS-Cluster/vitana-gateway-iso"
-                    },
-                    {
-                      "Fn::Sub": "arn:aws:ecs:${AWS::Region}:${AWS::AccountId}:service/Vitana-ECS-Cluster/vitana-postgrest-aurora-staging-iso"
-                    }
-                  ]
-                },
-                {
                   "Sid": "RdsStagingCluster",
                   "Effect": "Allow",
                   "Action": [
@@ -577,22 +547,22 @@
                   "Resource": "*"
                 },
                 {
-                  "Sid": "DenyProdTaskDefinitionOnStaging",
+                  "Sid": "NoEcsWrites",
                   "Effect": "Deny",
                   "Action": [
                     "ecs:UpdateService",
+                    "ecs:CreateService",
+                    "ecs:DeleteService",
                     "ecs:RunTask",
-                    "ecs:StartTask"
+                    "ecs:StartTask",
+                    "ecs:StopTask",
+                    "ecs:RegisterTaskDefinition",
+                    "ecs:UpdateServicePrimaryTaskSet",
+                    "ecs:CreateTaskSet",
+                    "ecs:DeleteTaskSet",
+                    "ecs:ExecuteCommand"
                   ],
-                  "Resource": "*",
-                  "Condition": {
-                    "StringLike": {
-                      "ecs:task-definition": [
-                        "arn:aws:ecs:*:*:task-definition/*-awsdr:*",
-                        "arn:aws:ecs:*:*:task-definition/*-prod:*"
-                      ]
-                    }
-                  }
+                  "Resource": "*"
                 }
               ]
             }

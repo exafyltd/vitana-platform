@@ -13,7 +13,7 @@ ok 12 - source principal: may only assume the two Kiro roles; no inline admin, n
 ok 13 - static drift: no allow-list entry names a production resource
 ok 14 - no static credential in the templates or docs
 ok 15 - kiro-staging-operator: no iam:PassRole at all (staging shares the production gateway task role)
-ok 16 - kiro-staging-operator: a staging service cannot be pointed at a production task definition
+ok 16 - kiro-staging-operator: no service can be pointed at any task definition (no family deny-list to bypass)
 ok 17 - kiro-staging-operator: every production secret prefix is denied explicitly
 ok 18 - kiro-engineering-admin: no IAM escalation path (create, attach, pass, chain)
 ok 19 - kiro-engineering-admin: KMS keys cannot be disabled, deleted or re-policied

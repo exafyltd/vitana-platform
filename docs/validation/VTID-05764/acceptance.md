@@ -24,7 +24,7 @@ preparation only; the owner applies the stacks (credential handoff).
 AC-1 Every production resource pattern is denied in `kiro-staging-operator`, explicitly, in the role and the boundary.
 TEST: infra/kiro-access/policy.test.mjs ("kiro-staging-operator: every production resource is denied (role and boundary)"; "kiro-staging-operator: production denies are explicit, not only implicit")
 
-AC-2 Staging writes only on the pinned staging ARNs; reads allowed without secret values; deletes denied.
+AC-2 Staging writes only on the pinned staging database plane (cluster, Data API, staging secrets); no ECS write; reads allowed without secret values; deletes denied.
 TEST: infra/kiro-access/policy.test.mjs ("kiro-staging-operator: staging writes are allowed only on the pinned staging ARNs"; "kiro-staging-operator: reads are allowed, secret values are not read")
 
 AC-3 The permissions boundary blocks IAM changes, including to the role itself; trust needs ExternalId and session tag.
@@ -44,10 +44,15 @@ AC-7 (review 2026-11-12) No escalation or indirect path: no `iam:PassRole` or ta
 staging operator; a staging service cannot select a production task definition; every production secret prefix
 denied explicitly; the engineering admin has no IAM write, PassRole or role chaining, cannot disable/delete/re-policy a
 KMS key, cannot SSM/SSH/re-root the GitLab host, cannot delete any volume or snapshot, and every runner token is denied.
-TEST: infra/kiro-access/policy.test.mjs ("kiro-staging-operator: no iam:PassRole at all (staging shares the production gateway task role)"; "kiro-staging-operator: a staging service cannot be pointed at a production task definition"; "kiro-staging-operator: every production secret prefix is denied explicitly")
+TEST: infra/kiro-access/policy.test.mjs ("kiro-staging-operator: no iam:PassRole at all (staging shares the production gateway task role)"; "kiro-staging-operator: no service can be pointed at any task definition (no family deny-list to bypass)"; "kiro-staging-operator: every production secret prefix is denied explicitly")
 TEST: infra/kiro-access/policy.test.mjs ("kiro-engineering-admin: no IAM escalation path (create, attach, pass, chain)"; "kiro-engineering-admin: KMS keys cannot be disabled, deleted or re-policied"; "kiro-engineering-admin: no shell or re-root on the GitLab host; no volume or snapshot deletion anywhere"; "kiro-engineering-admin: every GitLab runner token, including fleet class tokens, is denied")
 
-Red on base: `outputs/red-on-base.txt` (modules absent). Green: `outputs/green.txt` (22/22). Mutation: removing
+Red on base: `outputs/red-on-base.txt` (modules absent). Green: `outputs/green.txt` (22/22).
+
+Review round 2 (changes, 2026-11-12T19:30Z): the staging operator gets no ECS write at all (explicit Deny), because a
+family deny-list is bypassable by unsuffixed production families and service attachments (ALB target groups, Cloud
+Map) cannot be scoped while staging and production share the cluster; the engineering admin also cannot snapshot, copy
+or create volumes, image the GitLab host or attach a volume to it. Mutation: removing
 `DenyProdData` fails 2 tests (`outputs/mutation-deny-removed.txt`). `cfn-lint` exit 0 (`outputs/cfn-lint.txt`).
 
 No migration, no production write, nothing applied; deploys nothing.

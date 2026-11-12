@@ -57,10 +57,6 @@
     ],
     "supabase_project_ref": "inmkhvwdcuyhnxkgfvsb",
     "github_secret": "AWS_PROD_ROLE_ARN",
-    "task_definition_families": [
-      "*-awsdr",
-      "*-prod"
-    ],
     "shared_task_roles": [
       "arn:aws:iam::472838866351:role/vitana-ecs-task-role"
     ]
