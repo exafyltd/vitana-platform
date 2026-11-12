@@ -182,13 +182,13 @@ Order: switch REST back to Supabase first, then the gateway to the previous revi
 ## Open items for the owner
 
 1. Final-copy method. The brief says "pg_dump snapshot plus the storage-auth DMS scope". The handover says "Aurora final copy" and "DMS start" and does not name pg_dump. Confirm the method.
-2. Freeze and migrations conflict. `MIGRATION_FREEZE=true` blocks `RUN-MIGRATION.yml`. Decide how step 3 runs during the freeze.
+2. (a) FREEZE VERSUS MIGRATIONS: `MIGRATION_FREEZE=true` blocks `RUN-MIGRATION.yml`, so step 3 (migrations) cannot run inside the freeze as written. The owner must decide how step 3 runs.
 3. REST switch order. The brief puts the REST switch at step 4, and `other-services.md` puts the gateway first and `DATA_REST_URL` after. Confirm the order.
 4. `DATA_REST_BASE_MODE` vs `DATA_REST_URL`. Confirm which setting controls REST, and that agent C's setting is on `main` before the window.
 5. Gateway deploy mode. `env-only` does not pin a commit. The handover requires the pinned verified commit. Choose the mode and the commit.
 6. `verify-cutover.sh`. The file was not readable on `gitlab-migration-prep` (404 on the check). Confirm its branch.
 7. Migration list. Confirm O5 and the path of `migration-order.md` on `main`.
-8. Storage-auth task order. `storage-auth.md` says stop the tasks first in rollback. The brief's rollback order says REST first, gateway second, sync third. Both are followed as written: the sync stop is step 7c, and within 7c the tasks stop before the trigger rollback.
+8. (b) ROLLBACK ORDER: this runbook (step 7) and the rollback drill (`scripts/cutover/rollback-dry-run.sh`) put REST first, then gateway, then sync stop. `storage-auth.md` says stop the tasks first. The owner must decide the order.
 
 ## Owner commands still needed (TODO list)
 
