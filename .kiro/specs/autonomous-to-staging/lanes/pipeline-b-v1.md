@@ -1,6 +1,6 @@
 ---
 lane: pipeline-b-v1
-state: in-review
+state: done
 next_actor: kiro
 branch: kiro/autonomous-to-staging/pipeline-b-v1
 depends_on: []
@@ -14,7 +14,7 @@ paths:
   - scripts/ci/pr-gate/lib.mjs
   - scripts/ci/pr-gate/__tests__/**
   - docs/validation/VTID-*/**
-updated: 2026-11-12T18:45Z
+updated: 2026-11-12T19:25Z
 vtid: VTID-05767
 claimed_by: kiro-exafy-202611110920-270b
 pr: https://github.com/exafyltd/vitana-v1/pull/1679
@@ -49,3 +49,10 @@ reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 PR: https://github.com/exafyltd/vitana-v1/pull/1679 (lane record: https://github.com/exafyltd/vitana-platform/pull/5026)
 Findings (non-blocking): apps/mobile/src/identity/** and push/** now in the class (matches web; follow-up candidate); fixture swap is not a weakening; deny-surface fixtures green on base by construction; v1 CLAUDE.md Plan Sparring Gate item 2 text owned by rules-v1; CI from driver evidence.
 Next: land under §7b.
+
+### 2026-11-12T19:25Z · kiro-exafy-202611110920-270b · in-review → verified
+merge: 70546df8cd2c68fa135bd51301215ee37a6e76f8 (exafyltd/vitana-v1#1679)
+authority: §7b PM rule, applied by the plan driver through `land-guard.mjs merge` (review current on the PR head, every check green, up to date with main).
+
+### 2026-11-12T19:25Z · kiro-exafy-202611110920-270b · verified → done
+CI-only change (PR-gate classifier), deploys nothing: on the merge commit DEPLOY.yml ran cutover_gate only (aws_prod skipped, run 43289269251); no staging deploy, so no STAGING-VERIFY. Production unchanged.
