@@ -34,6 +34,7 @@ specs:
   - vitana-platform:pm-reassign-idempotent-r3
   - vitana-platform:matches-scroll-end
   - vitana-platform:staging-verify-manifest-repair
+  - vitana-platform:staging-manifest-remainder
   - vitana-platform:spotlight-commit-coverage
   - vitana-platform:group-chat-realtime-status
   - vitana-platform:ci-superseded-pr-runs
