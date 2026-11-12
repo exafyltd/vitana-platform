@@ -7,8 +7,9 @@ Plan: `.kiro/specs/autonomous-to-staging/plan.md` §3.1, merged as `bf1cb134e6` 
 - `.github/workflows/GATE-INVARIANTS.yml` (new): on every push to `main`, daily at 04:17 UTC and on dispatch, fetches
   `origin/main` and runs `node --test scripts/collab/gate-invariants.test.mjs` (the VTID-05765 invariants: protected list
   complete, two-model rule intact in land-guard and the PM, prod-reference guard and this workflow enforced once they
-  exist) and `scripts/ci/workflow-trigger-check.test.mjs`. Top-level `permissions: contents: read`, no secrets. A
-  `pull_request` trigger limited to this workflow and its test checks changes to them.
+  exist) and `scripts/ci/workflow-trigger-check.test.mjs`. Top-level `permissions: contents: read`, no secrets. No
+  `pull_request` trigger (a path-filtered PR workflow would need a services-registry entry outside this lane's paths);
+  on PRs the static test runs in TEST-SUITE's `unit` job.
 - `scripts/ci/workflow-trigger-check.test.mjs` (new): asserts the push-to-main (no path filter) and daily schedule
   triggers, that the invariant suite runs, that `origin/main` is fetched, read-only permissions, no secrets and no
   `continue-on-error`, with mutation fixtures for each.

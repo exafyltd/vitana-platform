@@ -3,4 +3,5 @@ node --test scripts/ci/workflow-trigger-check.test.mjs (workflow absent, origin/
 node --test scripts/ci/workflow-trigger-check.test.mjs                 -> 3 pass, 0 fail (outputs/trigger-check-green.txt)
 node --test scripts/collab/gate-invariants.test.mjs                    -> 6 pass, 0 fail (outputs/gate-invariants-green.txt)
 node --test scripts/collab/*.test.mjs                                  -> 268 pass, 0 fail (outputs/collab-green.txt)
+node --test scripts/eng/services-parity.test.mjs                       -> pass (no PR trigger, not a registry entry)
 First GATE-INVARIANTS run on main after merge: (appended by the closing record)

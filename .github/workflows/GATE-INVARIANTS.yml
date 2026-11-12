@@ -4,17 +4,13 @@ name: GATE-INVARIANTS
 # Runs the mechanical gate invariants (scripts/collab/gate-invariants.test.mjs, VTID-05765) against `main` itself on
 # every push to `main` and once a day, so a weakened gate on `main` fails loudly even when no PR touched it. The suite
 # loads its baseline copy from origin/main, so origin/main is fetched first. Read-only: no secrets, no writes.
-# The PR trigger only checks changes to this workflow and its static test.
+# Pull requests: its static test (scripts/ci/workflow-trigger-check.test.mjs) runs in the unit job of TEST-SUITE.
 on:
   push:
     branches: [main]
   schedule:
     - cron: '17 4 * * *'
   workflow_dispatch:
-  pull_request:
-    paths:
-      - '.github/workflows/GATE-INVARIANTS.yml'
-      - 'scripts/ci/workflow-trigger-check.test.mjs'
 permissions:
   contents: read
 concurrency:
