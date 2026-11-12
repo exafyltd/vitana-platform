@@ -4,12 +4,13 @@
  * Pure: the Bedrock call is injected, so the logic is testable without AWS. Production wires `invokeBedrock`.
  *
  * Rules enforced here, not left to the model:
+ *   - a changed file outside the lane's allowed paths is refused with `changes` and NO model call;
  *   - a diff that touches a protected gate file is refused with `changes` and NO model call;
  *   - a model that returns no valid submit call, or fails, moves the review to the next tier;
  *   - an `accept` with any blocking finding is downgraded to `changes`;
  *   - if every tier fails, the result is `model_unavailable`, never an accept.
  */
-import { protectedFilesIn } from '../project-manager/governance';
+import { globToRegex, protectedFilesIn } from '../project-manager/governance';
 import { LANE_REVIEWER_CHAIN, type LaneReviewerModel } from './models';
 import { LANE_REVIEW_SYSTEM_PROMPT, LANE_REVIEW_TOOL, LANE_REVIEW_TOOL_NAME } from './prompt';
 
@@ -22,6 +23,8 @@ export interface LaneReviewInput {
   laneKey: string;
   /** The lane's acceptance criteria, as written in tasks.md / the lane file. */
   acceptance: string;
+  /** Globs the lane may change (its `paths` declaration). A changed file outside them is refused without a model call. */
+  allowedPaths: string[];
   /** Files the PR changes, repo-relative. */
   changedFiles: string[];
   /** Unified diff text. */
@@ -71,6 +74,9 @@ function userPrompt(input: LaneReviewInput): string {
     `Pull request: #${input.pr} at head ${input.headSha}`,
     `Lane: ${input.laneKey}`,
     '',
+    'Lane allowed paths (globs):',
+    ...input.allowedPaths.map((p) => `- ${p}`),
+    '',
     'Acceptance criteria:',
     input.acceptance,
     '',
@@ -89,6 +95,23 @@ export async function runLaneReview(
   callModel: CallReviewModel,
   chain: readonly LaneReviewerModel[] = LANE_REVIEWER_CHAIN,
 ): Promise<LaneReviewResult> {
+  const allowedRes = input.allowedPaths.map((g) => globToRegex(g.trim()));
+  const outOfScope = input.changedFiles.filter((f) => !allowedRes.some((re) => re.test(f.replace(/^\.?\//, ''))));
+  if (outOfScope.length > 0) {
+    return {
+      ok: true,
+      verdict: 'changes',
+      model: null,
+      headSha: input.headSha,
+      findings: outOfScope.map((file) => ({
+        file,
+        line: null,
+        severity: 'blocking' as const,
+        summary: 'outside the lane allowed paths; not reviewed for acceptance',
+      })),
+    };
+  }
+
   const protectedHits = protectedFilesIn(input.changedFiles);
   if (protectedHits.length > 0) {
     return {

@@ -13,6 +13,7 @@ const good = {
   acceptance: 'criteria',
   diff: 'diff text',
   changed_files: ['services/gateway/src/x.ts'],
+  allowed_paths: ['services/gateway/src/**'],
 };
 
 function app(callModel: CallReviewModel) {
@@ -31,6 +32,10 @@ describe('POST /api/v1/lane-review', () => {
     const r = await request(app(async () => ({ ok: true, toolInput: { verdict: 'accept', findings: [] } })))
       .post('/api/v1/lane-review').send(good);
     expect([401, 403]).toContain(r.status);
+  });
+
+  it('rejects a body without allowed_paths', () => {
+    expect(parseLaneReviewBody({ ...good, allowed_paths: undefined })).toBe('allowed_paths_required');
   });
 
   it('rejects a body with a bad head sha', async () => {

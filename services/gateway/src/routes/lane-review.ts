@@ -26,6 +26,7 @@ export function parseLaneReviewBody(body: unknown): LaneReviewInput | string {
   const diff = str('diff');
   const pr = typeof b.pr === 'number' && Number.isInteger(b.pr) && b.pr > 0 ? b.pr : null;
   const changedFiles = Array.isArray(b.changed_files) && b.changed_files.every((f) => typeof f === 'string') ? (b.changed_files as string[]) : null;
+  const allowedPaths = Array.isArray(b.allowed_paths) && b.allowed_paths.length > 0 && b.allowed_paths.every((f) => typeof f === 'string') ? (b.allowed_paths as string[]) : null;
   if (!repo) return 'repo_required';
   if (pr === null) return 'pr_required';
   if (!headSha || !/^[0-9a-f]{40}$/.test(headSha)) return 'head_sha_invalid';
@@ -34,7 +35,8 @@ export function parseLaneReviewBody(body: unknown): LaneReviewInput | string {
   if (diff === null) return 'diff_required';
   if (diff.length > MAX_DIFF_CHARS) return 'diff_too_large';
   if (!changedFiles) return 'changed_files_required';
-  return { repo, pr, headSha, laneKey, acceptance, diff, changedFiles };
+  if (!allowedPaths) return 'allowed_paths_required';
+  return { repo, pr, headSha, laneKey, acceptance, diff, changedFiles, allowedPaths };
 }
 
 /** Production model call: one forced submit_lane_review tool call on Bedrock. */

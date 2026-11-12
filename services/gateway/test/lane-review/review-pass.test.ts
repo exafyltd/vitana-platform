@@ -8,6 +8,7 @@ const base: LaneReviewInput = {
   headSha: 'a'.repeat(40),
   laneKey: 'x/y',
   acceptance: 'criteria',
+  allowedPaths: ['services/gateway/src/**'],
   changedFiles: ['services/gateway/src/x.ts'],
   diff: 'diff',
 };
@@ -20,6 +21,13 @@ describe('runLaneReview', () => {
     const call = jest.fn(ok(accept));
     const r = await runLaneReview({ ...base, changedFiles: ['scripts/collab/queue.mjs'] }, call as unknown as CallReviewModel);
     expect(r.ok && r.verdict).toBe('changes');
+    expect(call).not.toHaveBeenCalled();
+  });
+
+  it('refuses a file outside the lane allowed paths without calling a model', async () => {
+    const call = jest.fn(ok(accept));
+    const r = await runLaneReview({ ...base, changedFiles: ['services/other/y.ts'] }, call as unknown as CallReviewModel);
+    expect(r).toMatchObject({ ok: true, verdict: 'changes' });
     expect(call).not.toHaveBeenCalled();
   });
 
