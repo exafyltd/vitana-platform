@@ -55,3 +55,6 @@ Next: the `done` record.
 
 ### 2026-11-08T13:41Z · kiro-hotmail-202611061752-cc1f · verified → done
 This lane is a workflow-only, report-only change with no staging deploy, so there is no STAGING-VERIFY run for it; it is done at merge (1ec3d5bf26) with green checks (11 green).
+
+### 2026-11-10T09:45Z · kiro-hotmail-202611061752-cc1f · audit
+Suites ran 1/1 pass (jest 14 passed on merge head 1ec3d5bf26 running the real step 21c script against a stubbed curl); red check: same test on the parent workflow 13 failed 1 passed (docs/validation/VTID-05504/audit-m0/red-parent.txt); #4869 head 3a1608213e has the same workflow file as the merge (git diff empty) on origin/main 6dc6e1ba0c; flag gate: no flag; step 21c is report-only (every row INFO, exit 0 on every failure shape, not counted in TOTAL_CHECKS) at .github/workflows/MORNING-SYSTEM-HEALTH-CHECK.yml:572-624; no MT_RESOLUTION_V2 or feature_flags.mt.* read; pre-migration safe: yes, the RPC reply HTTP 404 (function not applied yet) gives one INFO row and exit 0 (test case 'HTTP 404', workflow 21c lines 591-592); reviewer had no shell on #4869 and this run is the independent re-run; evidence: docs/validation/VTID-05504/audit-m0/run.txt (command and exit code per suite).
