@@ -4,13 +4,13 @@ state: ready
 next_actor: kiro
 depends_on: [provision-erp-monitoring-db]
 executor: kiro
-seat: jtadic
+seat: exafyltd
 reviewer_seat: agent:vitana-lane-reviewer
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 paths:
   - services/gateway/src/routes/admin-health.ts
   - services/gateway/test/mt-m3-monitoring-erp*.test.ts
-updated: 2026-11-02T16:28Z
+updated: 2026-11-12T20:16Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05503
 ---
@@ -34,3 +34,5 @@ Re-plan of `mt-m3/monitoring-erp-gw`. Answers R3-F2: a new route `/health/tenant
 
 ### 2026-11-02T16:28Z · ci-plan-spar · ready (VTID allocated)
 VTID-05503 allocated after policy approval (converged-auto-v1).
+### 2026-11-12T20:16Z · pm-agent · update
+reassign lane jtadic→exafyltd (stale_ready, Claude unavailable)
