@@ -71,7 +71,12 @@ gateway-staging-deploy:
       SHA=$(cat commit.txt)
       PREV_TD=$(aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE" --query 'services[0].taskDefinition' --output text)
       echo "Rollback target: $PREV_TD  new image: $IMAGE"
-      aws ecs describe-task-definition --task-definition "$PREV_TD" --query taskDefinition --output json | jq --arg IMG "$IMAGE" --arg SHA "$SHA" 'del(.taskDefinitionArn,.revision,.status,.requiresAttributes,.compatibilities,.registeredAt,.registeredBy) | .containerDefinitions[0].image = $IMG | (.containerDefinitions[0].environment[]? | select(.name=="GIT_COMMIT_SHA" or .name=="COMMIT_SHA") | .value) |= $SHA' > new-td.json
+      aws ecs describe-task-definition --task-definition "$PREV_TD" --query taskDefinition --output json | jq --arg IMG "$IMAGE" --arg SHA "$SHA" 'del(.taskDefinitionArn,.revision,.status,.requiresAttributes,.compatibilities,.registeredAt,.registeredBy) | .containerDefinitions[0].image = $IMG | (.containerDefinitions[0].environment[]? | select(.name=="GIT_COMMIT_SHA" or .name=="COMMIT_SHA") | .value) |= $SHA | .containerDefinitions |= map( if .environment then .environment |= [ .[] | select(.name | IN("AURORA_DATABASE_URL","AURORA_RLS_DATABASE_URL","AURORA_CA_BUNDLE_PATH") | not) ] else . end | if .secrets then .secrets |= [ .[] | select(.name | IN("AURORA_DATABASE_URL","AURORA_RLS_DATABASE_URL","AURORA_CA_BUNDLE_PATH") | not) ] else . end )' > new-td.json
+      # VTID-05023 gate: refuse to register if any AURORA_ name remains in any container, env or secrets.
+      AURORA_LEAK_JQ='[ .containerDefinitions[] | ((.environment // [])[], (.secrets // [])[]) | .name | select(startswith("AURORA_")) ] | unique | join(" ")'
+      LEAK=$(jq -r "$AURORA_LEAK_JQ" new-td.json)
+      if [ -n "$LEAK" ]; then echo "ERROR refusing to register: Aurora names still bound: $LEAK"; exit 1; fi
+      echo "Aurora gate: no AURORA_ names in any container environment or secrets"
       NEW_TD=$(aws ecs register-task-definition --cli-input-json file://new-td.json --query 'taskDefinition.taskDefinitionArn' --output text)
       echo "New task definition: $NEW_TD"
       aws ecs update-service --cluster "$ECS_CLUSTER" --service "$ECS_SERVICE" --task-definition "$NEW_TD" >/dev/null
