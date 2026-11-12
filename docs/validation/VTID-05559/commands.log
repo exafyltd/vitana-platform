@@ -30,3 +30,10 @@ Not run locally: no npm registry access from the build session. CI is the record
 
 Not separately named in CI: a typecheck step and a build step. Both run inside the gateway validation job above; this
 file cites that job, not an individual step.
+
+
+## Red on base: helpers suite
+Throwaway draft PR #5020 (branch red-base/vtid-05559-helpers, based on origin/main with only
+services/gateway/test/live-room-cohost-helpers.test.ts added). CI run 43247072844, job 131282493703 (Gateway (Jest,
+shard 3/4)): FAIL test/live-room-cohost-helpers.test.ts with "Cannot find module '../src/services/live-cohosts'".
+PR #5020 is closed without merging; the test file is not merged to main.
