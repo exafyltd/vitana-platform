@@ -1,0 +1,56 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "VTID-05764 (plan autonomous-to-staging, lane kiro-aws-access): kiro-engineering-admin in 841276716213 (engineering platform only: GitLab EE, runners, backups, CI cache). AdministratorAccess with explicit denies: never delete the GitLab instances, volumes, snapshots or backup bucket; never read or change the GitLab credential secrets; never remove its own denies; never stop the audit trail. Applied once by the owner.",
+  "Metadata": { "Account": "engineering" },
+  "Parameters": {
+    "ExternalId": { "Type": "String", "NoEcho": true, "MinLength": 32 }
+  },
+  "Resources": {
+    "EngineeringAdminRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": "kiro-engineering-admin",
+        "Description": "Kiro administrator of the engineering account, GitLab assets protected.",
+        "MaxSessionDuration": 3600,
+        "ManagedPolicyArns": ["arn:aws:iam::aws:policy/AdministratorAccess"],
+        "Tags": [{ "Key": "vtid", "Value": "VTID-05764" }],
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            { "Sid": "KiroSource", "Effect": "Allow", "Principal": { "AWS": { "Fn::Sub": "arn:aws:iam::${AWS::AccountId}:user/kiro-agent-source" } }, "Action": ["sts:AssumeRole"],
+              "Condition": { "StringEquals": { "sts:ExternalId": { "Ref": "ExternalId" } }, "StringLike": { "aws:RequestTag/kiro-session": "kiro-*" } } },
+            { "Sid": "KiroSourceTags", "Effect": "Allow", "Principal": { "AWS": { "Fn::Sub": "arn:aws:iam::${AWS::AccountId}:user/kiro-agent-source" } }, "Action": ["sts:TagSession"],
+              "Condition": { "StringLike": { "aws:RequestTag/kiro-session": "kiro-*" } } }
+          ]
+        },
+        "Policies": [{
+          "PolicyName": "kiro-engineering-admin-denies",
+          "PolicyDocument": {
+            "Version": "2012-10-17",
+            "Statement": [
+              { "Sid": "KeepGitLabInstancesAndVolumes", "Effect": "Deny",
+                "Action": ["ec2:TerminateInstances", "ec2:DeleteVolume", "ec2:DetachVolume", "ec2:DeleteSnapshot", "ec2:ModifyInstanceAttribute", "ec2:DeleteTags", "ec2:CreateTags"],
+                "Resource": "*", "Condition": { "StringLike": { "aws:ResourceTag/Name": "vitana-eng-gitlab*" } } },
+              { "Sid": "KeepGitLabBackups", "Effect": "Deny",
+                "Action": ["s3:DeleteBucket", "s3:DeleteObject", "s3:DeleteObjectVersion", "s3:PutLifecycleConfiguration", "s3:PutBucketPolicy", "s3:DeleteBucketPolicy", "s3:PutBucketVersioning", "s3:PutBucketObjectLockConfiguration"],
+                "Resource": [{ "Fn::Sub": "arn:aws:s3:::vitana-engineering-gitlab-backups-${AWS::AccountId}" }, { "Fn::Sub": "arn:aws:s3:::vitana-engineering-gitlab-backups-${AWS::AccountId}/*" }] },
+              { "Sid": "NoGitLabCredentials", "Effect": "Deny",
+                "Action": ["secretsmanager:GetSecretValue", "secretsmanager:PutSecretValue", "secretsmanager:UpdateSecret", "secretsmanager:DeleteSecret", "secretsmanager:RotateSecret", "secretsmanager:PutResourcePolicy", "secretsmanager:DeleteResourcePolicy", "secretsmanager:UpdateSecretVersionStage"],
+                "Resource": [
+                  { "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:vitana/engineering/gitlab/root-password-*" },
+                  { "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:vitana/engineering/gitlab/runner-token-*" },
+                  { "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:vitana/engineering/gitlab/github-mirror-token-*" }
+                ] },
+              { "Sid": "NoSelfChange", "Effect": "Deny",
+                "Action": ["iam:Put*", "iam:Delete*", "iam:Attach*", "iam:Detach*", "iam:Update*", "iam:Tag*", "iam:Untag*", "iam:CreateAccessKey", "iam:CreateLoginProfile", "iam:UpdateLoginProfile"],
+                "Resource": [{ "Fn::Sub": "arn:aws:iam::${AWS::AccountId}:role/kiro-engineering-admin" }, { "Fn::Sub": "arn:aws:iam::${AWS::AccountId}:user/kiro-agent-source" }] },
+              { "Sid": "KeepAuditTrail", "Effect": "Deny", "Action": ["cloudtrail:StopLogging", "cloudtrail:DeleteTrail", "cloudtrail:UpdateTrail", "cloudtrail:PutEventSelectors"], "Resource": "*" },
+              { "Sid": "NoOrganizations", "Effect": "Deny", "Action": ["organizations:*", "account:*"], "Resource": "*" }
+            ]
+          }
+        }]
+      }
+    }
+  },
+  "Outputs": { "EngineeringAdminRoleArn": { "Value": { "Fn::GetAtt": ["EngineeringAdminRole", "Arn"] } } }
+}

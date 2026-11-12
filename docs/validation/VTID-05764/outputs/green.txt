@@ -1,0 +1,16 @@
+ok 1 - a clean inventory has no finding
+ok 2 - an unclassified service is reported
+ok 3 - a production secret or cluster without an explicit Deny is reported
+ok 4 - a production service without an explicit Deny is reported
+ok 5 - kiro-staging-operator: every production resource is denied (role and boundary)
+ok 6 - kiro-staging-operator: production denies are explicit, not only implicit
+ok 7 - kiro-staging-operator: staging writes are allowed only on the pinned staging ARNs
+ok 8 - kiro-staging-operator: reads are allowed, secret values are not read
+ok 9 - kiro-staging-operator: the boundary blocks IAM changes, including to the role itself
+ok 10 - kiro-staging-operator: trust is the engineering source principal with an external id and a session tag
+ok 11 - kiro-engineering-admin: AdministratorAccess with the GitLab deletes and credential secrets denied
+ok 12 - source principal: may only assume the two Kiro roles; no inline admin, no console
+ok 13 - static drift: no allow-list entry names a production resource
+ok 14 - no static credential in the templates or docs
+# pass 14
+# fail 0

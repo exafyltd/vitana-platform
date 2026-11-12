@@ -1,0 +1,5 @@
+# mutation: DenyProdData removed from kiro-staging-operator
+not ok 1 - a clean inventory has no finding
+not ok 6 - kiro-staging-operator: production denies are explicit, not only implicit
+# pass 12
+# fail 2

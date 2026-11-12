@@ -1,0 +1,6 @@
+{
+  "vtid": "VTID-05764",
+  "service": "gateway",
+  "not_verified_on_staging": "IAM templates, their tests, a validation/drift workflow and a document. Nothing is applied and nothing deploys: the owner applies the stacks once (docs/KIRO-AWS-ACCESS.md §3). Proven by infra/kiro-access/policy.test.mjs and drift.test.mjs (14 tests) and cfn-lint in AWS-KIRO-ACCESS.yml.",
+  "tests": []
+}
