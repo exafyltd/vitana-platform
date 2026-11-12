@@ -3,7 +3,7 @@ lane: new-members-feed-client
 state: ready
 next_actor: kiro
 depends_on: [new-members-feed-api]
-executor: kiro
+executor: claude
 seat: jtadic
 area: frontend
 reviewer_seat: agent:vitana-lane-reviewer
