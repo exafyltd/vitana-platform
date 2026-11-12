@@ -1,6 +1,6 @@
 ---
 lane: staging-db-provision
-state: in-review
+state: executing
 next_actor: kiro
 branch: kiro/autonomous-to-staging-r2/staging-db-provision
 depends_on: []
@@ -19,7 +19,7 @@ paths:
   - .github/workflows/STAGING-DB-SCHEMA.yml
   - docs/STAGING.md
   - docs/validation/VTID-*/**
-updated: 2026-11-12T21:12Z
+updated: 2026-11-12T21:23Z
 vtid: VTID-05782
 ---
 # Lane: staging-db-provision (repo vitana-platform)
@@ -45,3 +45,6 @@ reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 PR: https://github.com/exafyltd/vitana-platform/pull/5053
 Findings: BLOCKING infra/staging-db/stack.yaml:452 (role copy ~735): Sid ManagedMasterSecretCreate allows secretsmanager:CreateSecret/TagResource/RotateSecret on secret:rds!cluster-* with no condition; the production vitana-aurora-prod RDS-managed master secret matches and no Deny covers it. Drop RotateSecret, tag-condition CreateSecret/TagResource, explicit Deny on secrets tagged aws:rds:primaryDBClusterArn = vitana-aurora-prod, test + mutation in stack.test.mjs, correct the acceptance.md "scoped" claim. Non-blocking: prod-deny test list lacks an rds!cluster prod secret case; client-SG deviation from design.md §4 is tighter and accepted; load --verify-only has no cost check (read-only, workflow-gated); red-on-base is module-absent, mutations make the tests meaningful.
 Next: the lane's seat fixes the blocking finding
+
+### 2026-11-12T21:23Z · kiro-exafy-202611110920-270b · in-review → executing
+Fixing the blocking review finding (rds!cluster-* secret scope).
