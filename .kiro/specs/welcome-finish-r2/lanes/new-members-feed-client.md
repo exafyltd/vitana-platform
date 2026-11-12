@@ -12,6 +12,7 @@ paths:
   - src/hooks/useAllNewsFeed.ts
   - src/hooks/useNewsFeed.ts
   - src/hooks/useAllNewsFeed.new-members.test.ts
+  - src/hooks/useNewsFeed.community-error-logging.test.ts
   - src/hooks/community-intro-feed.vtid-05206.test.ts
   - src/hooks/useNewMembersFeed.ts
   - src/hooks/useNewMembersFeed.test.ts
