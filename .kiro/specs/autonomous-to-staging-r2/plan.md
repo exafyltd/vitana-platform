@@ -85,13 +85,17 @@ their r1 lane files and VTIDs.
    - Distinct models and sessions, self-review exclusion (R1-F3): `parseReviewEntry` (`:127-131`) is extended to return
      `session` from the entry's `Collab-Session` trailer. `protectedAcceptModels` (`land-guard.mjs:117`) counts an
      accept only when its session is not a session of the lane's `ready → executing` / `executing → in-review` log
-     entries (the builders; read with the existing `logSection` helper of `queue.mjs`), and the two counted accepts
-     must have two distinct chain models **and** two distinct sessions.
-   - `governance.ts`: `ReviewEntry` gains `session`; `protectedAcceptModels` (`:67`) uses a new
-     `protectedReviewOnCurrentHead(r, pr)` that accepts only `r.head_sha === pr.head_sha`, or a head followed in
-     `pr.review_only_since` exclusively by lane-file-only commits (the observer already computes that list; merge
-     commits are excluded from it for this check), and applies the same distinct-model, distinct-session and builder
-     exclusion (builders from `lane.log` sessions).
+     entries (the builders). The lane exports `logSection` and `logEntries` from `queue.mjs` (`:296`, `:302`, today
+     module-private; R2-F1) so `land-guard.mjs` imports them instead of copying them; that widens a protected file's
+     exported API by two read-only functions and is listed in the lane's evidence. The two counted accepts must have
+     two distinct chain models **and** two distinct sessions.
+   - `governance.ts` (R2-F2 option a, R2-F3): `protectedAcceptModels` (`:67`) counts a protected-file accept only when
+     `r.head_sha === pr.head_sha` (exact head; `review_only_since` is not used for protected files, so the PM is at
+     least as strict as land-guard: a review-entry commit after the accepts means the PM waits for the land step,
+     which applies the land-guard rule). Distinct sessions and the builder exclusion use the existing
+     `ReviewEntry.session_id` (`types.ts:57-60`); builders are the `session` of the lane's `ready → executing` /
+     `executing → in-review` log entries. The shared fixtures carry `session` and the governance test maps it to
+     `session_id`.
    - Shared fixtures `scripts/collab/fixtures/protected-review-cases.json` (stale head, code after review, merge of
      `main` after review, same model twice, same session twice, builder self-review, two valid accepts) are run by
      `land-guard.test.mjs` and `governance.test.ts`; both must give the same verdict per case.
