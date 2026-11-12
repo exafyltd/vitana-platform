@@ -4,8 +4,10 @@ author: kiro
 author_seat: exafyltd
 executor: kiro
 next_actor: kiro
-state: drafted
-updated: 2026-11-12T20:55Z
+state: approved
+updated: 2026-11-12T21:28Z
+sparring_record: .kiro/specs/bridge-drift-fix/sparring/verdict.md
+vtids: [VTID-05785]
 ---
 # Handoff — bridge-drift-fix
 
@@ -26,3 +28,6 @@ Decisions taken:
 2. C3 and C4 are widen-the-tolerance / add-a-reasoned-comment fixes, not reverts of #5021's content — the bridge
    period wording and the migration's logic both stay as the owner's 2026-11-12 instruction set them.
 3. The migration stays unapplied; this PR only edits its text.
+
+### 2026-11-12T21:28Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.

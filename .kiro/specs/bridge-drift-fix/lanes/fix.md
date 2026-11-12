@@ -14,7 +14,8 @@ paths:
   - services/gateway/test/vtid-04018-operator-bootstrap-pack.test.ts
   - services/gateway/test/vtid-04868-plan-sparring-session-layer.test.ts
   - supabase/migrations/20261112100000_bridge_sparring_convergence_is_approval.sql
-updated: 2026-11-12T20:55Z
+updated: 2026-11-12T21:28Z
+vtid: VTID-05785
 ---
 
 # Lane: fix (repo exafyltd/vitana-platform)
@@ -26,3 +27,6 @@ Part 1 extract budget, the session-layer wording regex, and the migration's SECU
 ## Log
 ### 2026-11-12T20:55Z · kiro-exafyltd-202611122052-a6df · ready
 Lane created with the plan.
+
+### 2026-11-12T21:28Z · ci-plan-spar · ready (VTID allocated)
+VTID-05785 allocated after policy approval (converged-auto-v1).
