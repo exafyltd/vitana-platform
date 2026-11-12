@@ -58,3 +58,5 @@ No migration, no production write, nothing applied; deploys nothing.
   outside the lane's paths); its validate job exits early when the PR does not touch these files.
 - `staging-operator.json` lists the r2 candidate services `vitana-gateway-iso` and `vitana-postgrest-aurora-staging-iso`
   ahead of their creation (r2 §3.4); they match no production pattern.
+
+Not verified on staging: this lane deploys nothing (no gateway, frontend or database change), so it has no staging manifest; the tests above prove it.
