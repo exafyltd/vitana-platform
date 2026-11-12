@@ -1,6 +1,6 @@
 # VTID-05559 commands.log
 
-Head reviewed: see the PR head at the time of the run (1d97263a7bc35c8cb36ade5af12e8a1762ffc194 is the last green head before the enter-test fix). (branch kiro/live-room-edit-cohost/gateway-cohost).
+Head of the code under review: 864dffc621580df6e172ebf21c0e3acd3cc4b41f (CI results below). Later commits on the branch change only this log. (branch kiro/live-room-edit-cohost/gateway-cohost).
 
 ## CI (GitHub Actions, run on the head above)
 - Gateway (Jest, shards 1-4): completed/success.
