@@ -36,10 +36,12 @@ gate file cannot land (PR #5009: the exception implementation for `collab-lane-c
 Option A remains the rule for any change not covered by a converged plan.
 
 ## Scope of enforcement (R1-F1, R1-F3, R1-F4, R1-F5)
-Three enforcement points, all protected, all must change consistently for any option other than A:
+Enforcement points for any option other than A (R2-F1 corrected: only the first, third and fourth items are protected):
 1. `scripts/collab/queue.mjs` — lane declaration check (`scopeCheck`, `isTwoModelLane`, `PROTECTED_GATE_TWO_MODEL`).
    Runs at PR-GATE time on the lane file.
-2. `scripts/collab/land-guard.mjs` — merge-time count (`PROTECTED_ACCEPTS_REQUIRED = 2`, `mergeDecision`).
+2. `scripts/collab/land-guard.mjs` — merge-time count (`PROTECTED_ACCEPTS_REQUIRED = 2`, `mergeDecision`). NOT a protected
+   gate file (R2-F1): it is a governance path (`scripts/collab/**`), so changing it needs one governance-level
+   reviewer-agent accept, not two distinct-model accepts. It must not be added to `protected-gate-files.json`.
 3. `services/gateway/src/services/project-manager/governance.ts` — PM merge-time count (`PROTECTED_ACCEPTS_REQUIRED`,
    `protectedAcceptModels`).
 Plus the invariant file `scripts/collab/gate-invariants.test.mjs` (protected; pins the two-model rule and refuses one
@@ -49,9 +51,10 @@ Stale text (R1-F5): `.claude/rules/collaboration.md` §3a ("owner instruction + 
 `queue.mjs` comment near line 89 describe the superseded VTID-05276/05408 rule. The enforced rule is the two-model rule
 (VTID-05765). Every option below updates the text so that all layers say the same thing.
 
-**Bootstrapping (R1-F6):** a change to any of these files is itself a protected-gate change. Under the current code it
-needs two reviewer-agent accepts from different chain models on the final head, merged under the owner's named
-instruction. Option A needs no change. Options B and C cannot land without those two accepts, because the rule being
+**Bootstrapping (R1-F6, R2-F1):** a change to `queue.mjs`, `governance.ts`, `gate-invariants.test.mjs` or
+`protected-gate-files.json` is itself a protected-gate change. Under the current code it needs two reviewer-agent
+accepts from different chain models on the final head, merged under the owner's named instruction. A change to
+`land-guard.mjs` needs one governance-level accept. Option A needs no change. Options B and C cannot land without those two accepts, because the rule being
 changed is the one that gates the change. This is the owner's decision to make at Gate 1.
 
 ## Change (after the owner picks an option at Gate 1)
