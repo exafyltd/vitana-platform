@@ -1,6 +1,6 @@
 ---
 lane: seats
-state: in-review
+state: done
 next_actor: kiro
 branch: kiro/kiro-fleet-register/seats
 depends_on: []
@@ -13,7 +13,7 @@ repos: [exafyltd/vitana-platform]
 paths:
   - docs/programs/areas.yaml
   - docs/validation/VTID-*/**
-updated: 2026-11-12T18:37Z
+updated: 2026-11-12T19:26Z
 pr: https://github.com/exafyltd/vitana-platform/pull/5025
 vtid: VTID-05715
 ---
@@ -40,3 +40,10 @@ reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 PR: https://github.com/exafyltd/vitana-platform/pull/5025
 Findings (non-blocking): tasks.md says "seven seats" where the plan requires nine (diff correct); evidence test compares loadSeats with its own parse (automations loadAreas covered by the 101/0 run); red-on-base output lists 3 of 4 tests; CI taken from driver evidence; Decisions taken acceptable (slot 12 = jtadic, owner to confirm).
 Next: land under §7b.
+
+### 2026-11-12T19:26Z · kiro-exafy-202611110920-270b · in-review → verified
+merge: 49b7a32b25e589712c13974ba9fb49715da4dbb6 (exafyltd/vitana-platform#5025)
+authority: §7b PM rule, applied by the plan driver through `land-guard.mjs merge` (review current on the PR head, every check green, up to date with main).
+
+### 2026-11-12T19:26Z · kiro-exafy-202611110920-270b · verified → done
+Seat registry data only, deploys nothing (no staging deploy, no STAGING-VERIFY). `loadSeats` on main returns the nine seats. Production unchanged.
