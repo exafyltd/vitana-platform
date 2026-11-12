@@ -2050,3 +2050,26 @@ test('VTID-05765: scope-check lets a trusted two-model lane change a protected g
     assert.ok(scopeCheck(g.work, { base, head }).errors.some((x) => x.includes('protected gate file')));
   } finally { g.done(); }
 });
+
+// ── collab-lane-close-exception: owner exception for the two closed specs, flat front-matter fields ──
+
+const EXC = { reviewer_exception: 'true', reviewer_exception_approval: 'owner-decision 2026-11-11', reviewer_exception_pr: PR_URL, reviewer_exception_merge_sha: MERGE };
+const inReviewBase = laneLog({ state: 'in-review' }, [E.created, E.claim, E.inReview()]);
+test('owner exception: allowlisted slug with all four fields closes in-review → verified → done without a reviewer accept', () => {
+  const head = laneLog({ state: 'done', ...EXC }, [E.created, E.claim, E.inReview(), E.verified(), E.done()]);
+  assert.deepEqual(chain('lane', inReviewBase, head, { slug: 'profile-posts-full-width' }), []);
+  assert.deepEqual(chain('lane', inReviewBase, head, { slug: 'staging-verify-runner-fix' }), []);
+});
+test('owner exception: a slug not on the allowlist still needs the reviewer accept', () => {
+  const head = laneLog({ state: 'done', ...EXC }, [E.created, E.claim, E.inReview(), E.verified(), E.done()]);
+  hasErr(chain('lane', inReviewBase, head, { slug: 'some-other-spec' }), 'has no accept review entry');
+});
+test('owner exception: a missing field (here the PR) does not count', () => {
+  const { reviewer_exception_pr: _omit, ...partial } = EXC;
+  const head = laneLog({ state: 'done', ...partial }, [E.created, E.claim, E.inReview(), E.verified(), E.done()]);
+  hasErr(chain('lane', inReviewBase, head, { slug: 'profile-posts-full-width' }), 'has no accept review entry');
+});
+test('owner exception: the merge sha on verified → done is still required', () => {
+  const head = laneLog({ state: 'done', ...EXC }, [E.created, E.claim, E.inReview(), E.verified(), E.done('2026-10-27T11:30Z', 'Closed without a sha.')]);
+  hasErr(chain('lane', inReviewBase, head, { slug: 'profile-posts-full-width' }), 'has no merge sha');
+});

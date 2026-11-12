@@ -324,6 +324,17 @@ function entryEdge(kind, entry) {
 }
 
 /**
+ * Owner exception (plan collab-lane-close-exception, owner decision 2026-11-11): these two closed specs may pass
+ * `in-review → verified` without a reviewer-agent accept, when the head front matter carries the four flat fields
+ * below. The allowlist is in code, never configuration; the merge-sha check on `verified → done` still applies.
+ */
+export const CLOSED_BY_OWNER_EXCEPTION = ['profile-posts-full-width', 'staging-verify-runner-fix'];
+export function ownerExceptionCovers(slug, fm) {
+  return CLOSED_BY_OWNER_EXCEPTION.includes(slug) && fm?.reviewer_exception === 'true'
+    && !!fm.reviewer_exception_approval && !!fm.reviewer_exception_pr && !!fm.reviewer_exception_merge_sha;
+}
+
+/**
  * Validates a change of `state` that spans several edges in one PR (plan pipeline-lane-state-efficiency §3.1).
  * Every edge must be its own newly appended log entry, connect base → head, be legal on its own (done terminal,
  * parked returns only to the parked_from tracked through the chain), be in time order, and carry its evidence:
@@ -335,7 +346,7 @@ function entryEdge(kind, entry) {
  * the `in-review → verified` entry. A plan chain ending `done` needs every lane at the head `done` (`laneStates`).
  * Returns the list of errors ([] = valid). Fails closed: an unknown header carries no edge.
  */
-export function transitionChain(kind, beforeText, afterText, { reviewCommits = [], laneStates = null } = {}) {
+export function transitionChain(kind, beforeText, afterText, { reviewCommits = [], laneStates = null, slug = null } = {}) {
   const before = parseFrontMatter(beforeText);
   const after = parseFrontMatter(afterText);
   if (!before || !after) return ['chain needs the file at both the merge-base and the head'];
@@ -380,7 +391,7 @@ export function transitionChain(kind, beforeText, afterText, { reviewCommits = [
   for (const x of edges) {
     const edge = `${x.a} → ${x.b}`;
     if (kind === 'lane' && x.a === 'executing' && x.b === 'in-review' && !PR_URL_RE.test(x.e.body)) errors.push(`${edge} has no PR URL (or owner/repo#N) in its entry`);
-    if (kind === 'lane' && x.a === 'in-review' && (x.b === 'verified' || x.b === 'executing')) {
+    if (kind === 'lane' && x.a === 'in-review' && (x.b === 'verified' || x.b === 'executing') && !(x.b === 'verified' && ownerExceptionCovers(slug, after))) {
       const verdict = x.b === 'verified' ? 'accept' : 'changes';
       const r = review(x.i, verdict);
       if (!r) errors.push(`${edge} has no ${verdict} review entry (review: ${verdict}, head: <sha>) as the latest review since the last changes round`);
@@ -831,7 +842,7 @@ export function validateRange(repo, { base, head, branch = '', allowInitial = []
         ? specFilesAt(repo, head).filter((f) => classifyPath(f)?.slug === c.slug && classifyPath(f).kind === 'lane')
           .map((f) => parseFrontMatter(showFile(repo, head, f))?.state)
         : null;
-      for (const x of transitionChain(c.kind, beforeText, afterText, { reviewCommits, laneStates })) errors.push(`${p}: ${x}`);
+      for (const x of transitionChain(c.kind, beforeText, afterText, { reviewCommits, laneStates, slug: c.slug })) errors.push(`${p}: ${x}`);
       continue;
     }
     for (const x of single) errors.push(`${p}: ${x}`);
