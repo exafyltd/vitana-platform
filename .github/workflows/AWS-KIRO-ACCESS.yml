@@ -1,0 +1,88 @@
+name: AWS-KIRO-ACCESS
+# VTID-05764 (plan autonomous-to-staging, lane kiro-aws-access; amended by plan autonomous-to-staging-r2 §3.2).
+#
+# Validates the Kiro AWS role templates in infra/kiro-access/ and, once the owner has applied them, checks them for
+# drift against the live account every day. This workflow NEVER applies IAM and never assumes a production role: the
+# owner applies the three stacks once (docs/KIRO-AWS-ACCESS.md). The drift job uses only the read-only role
+# vitana-gha-kiro-access-drift created by those stacks, and skips with a notice until vars.AWS_KIRO_ACCESS_DRIFT_ROLE_ARN
+# is set. Pull requests: the validate job runs its checks only when the PR changes infra/kiro-access/** or this file
+# (no path filter on the trigger, so the services registry is not involved).
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '41 5 * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: aws-kiro-access-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  validate:
+    name: Kiro access policies
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Changed?
+        id: changed
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then echo "run=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          if git diff --name-only "origin/${{ github.base_ref }}...HEAD" | grep -qE '^(infra/kiro-access/|\.github/workflows/AWS-KIRO-ACCESS\.yml$)'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"
+            echo "No change to infra/kiro-access/** or this workflow: nothing to validate."
+          fi
+      - uses: actions/setup-node@v4
+        if: steps.changed.outputs.run == 'true'
+        with:
+          node-version: '20.x'
+      - name: Policy and drift unit tests
+        if: steps.changed.outputs.run == 'true'
+        run: node --test infra/kiro-access/*.test.mjs
+      - name: cfn-lint
+        if: steps.changed.outputs.run == 'true'
+        run: |
+          python3 -m pip install --quiet 'cfn-lint==1.*'
+          cfn-lint --regions eu-central-1 -- infra/kiro-access/staging-operator.json infra/kiro-access/engineering-admin.json infra/kiro-access/source-principal.json
+
+  drift:
+    name: Kiro access drift (live, read-only)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+      - name: Not applied yet?
+        id: role
+        run: |
+          if [ -z "${{ vars.AWS_KIRO_ACCESS_DRIFT_ROLE_ARN }}" ]; then
+            echo "::notice::kiro-access drift skipped: the stacks are not applied yet (vars.AWS_KIRO_ACCESS_DRIFT_ROLE_ARN unset)."
+            echo "set=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "set=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: aws-actions/configure-aws-credentials@v4
+        if: steps.role.outputs.set == 'true'
+        with:
+          role-to-assume: ${{ vars.AWS_KIRO_ACCESS_DRIFT_ROLE_ARN }}
+          aws-region: eu-central-1
+      - name: Inventory (list calls only)
+        if: steps.role.outputs.set == 'true'
+        run: |
+          D="$RUNNER_TEMP/inv"; mkdir -p "$D"
+          aws ecs list-services --cluster Vitana-ECS-Cluster --max-items 500 --output json > "$D/services.json"
+          aws rds describe-db-clusters --query '{DBClusters: DBClusters[].{DBClusterIdentifier: DBClusterIdentifier}}' --output json > "$D/clusters.json"
+          aws secretsmanager list-secrets --query '{SecretList: SecretList[].{Name: Name}}' --output json > "$D/secrets.json"
+          node infra/kiro-access/drift.mjs --from "$D"
