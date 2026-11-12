@@ -30,6 +30,8 @@ import { z } from 'zod';
 import { randomUUID } from 'crypto';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { DailyClient, computeDailyRoomExpiry } from '../services/daily-client';
+import { isRoomHostNow, filterCoHosts, CoHostValidationUnavailableError, lockedFieldsRequested, buildSessionEditPatch, type RpcClient } from '../services/live-cohosts';
+import { getSupabase } from '../lib/supabase';
 // VTID-03107: Live Room hosting quota enforcement
 import { verifyAndExtractIdentity, optionalAuth, requireAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import {
@@ -185,6 +187,8 @@ const MeetupRsvpSchema = z.object({
 // VTID-01228: Session management schemas
 const CreateSessionSchema = z.object({
   session_title: z.string().optional(),
+  // VTID-05559: co-hosts are validated against the room's tenant before any write.
+  co_hosts: z.array(z.string().uuid()).max(5).optional(),
   topic_keys: z.array(z.string()).optional(),
   starts_at: z.string().datetime(),
   ends_at: z.string().datetime().optional(),
@@ -1119,7 +1123,7 @@ router.post('/rooms/:id/enter', requireAuth, async (req: Request, res: Response)
 
     let room = stateResult.data.room;
     let session = stateResult.data.session;
-    const isHost = room.host_user_id === identity.user_id;
+    const isHost = await isRoomHostNow(roomId, identity.user_id, room.host_user_id);
 
     if (!room.current_session_id || !session) {
       return res.status(409).json({ ok: false, error: 'NOT_LIVE' });
@@ -1370,7 +1374,7 @@ router.post('/rooms/:id/daily', optionalAuth, dailyRoomLimiter, async (req: Requ
     }
 
     const room = roomResult.data;
-    if (room.host_user_id !== identity.user_id) {
+    if (!(await isRoomHostNow(roomId, identity.user_id, room.host_user_id))) {
       return res.status(403).json({ ok: false, error: 'NOT_HOST' });
     }
 
@@ -2056,6 +2060,26 @@ router.post('/rooms/:id/sessions', optionalAuth, sessionCreateLimiter, async (re
     }
   }
 
+  // VTID-05559: co-hosts are checked with the service-role validator before
+  // the session exists. The creator is the verified identity (not a decoded token).
+  let coHosts: string[] = [];
+  if (validation.data.co_hosts && validation.data.co_hosts.length > 0) {
+    const creatorId = (req as any).identity?.user_id as string | undefined;
+    const supaForCoHosts = getSupabase();
+    if (!creatorId) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+    if (!supaForCoHosts) return res.status(503).json({ ok: false, error: 'CO_HOST_VALIDATION_UNAVAILABLE' });
+    try {
+      const filtered = await filterCoHosts(supaForCoHosts as unknown as RpcClient, roomId, creatorId, validation.data.co_hosts);
+      if (!filtered.ok) return res.status(400).json({ ok: false, error: 'INVALID_CO_HOSTS', dropped: filtered.dropped });
+      coHosts = filtered.ids;
+    } catch (err) {
+      if (err instanceof CoHostValidationUnavailableError) {
+        return res.status(503).json({ ok: false, error: 'CO_HOST_VALIDATION_UNAVAILABLE' });
+      }
+      return res.status(502).json({ ok: false, error: 'CO_HOST_VALIDATION_FAILED' });
+    }
+  }
+
   // VTID-04905 (B8): a session always gets an end, so auto-end can fire:
   // ends_at = starts_at + duration_minutes (default 60) unless given.
   const sessionPayload = { ...validation.data, ends_at: validation.data.ends_at || defaultSessionEndsAt(validation.data) };
@@ -2117,7 +2141,13 @@ router.post('/rooms/:id/sessions', optionalAuth, sessionCreateLimiter, async (re
           scheduled_for: validation.data.starts_at,
           access_level: validation.data.access_level || 'public',
           tags: validation.data.topic_keys || [],
-          enable_chat: true,
+          // VTID-05559: the validated co-host list (always written, [] when none).
+          co_hosts: coHosts,
+          // VTID-05559: chat, polls and recording switches come from the request;
+          // polls and recording are written only when the request sets them.
+          enable_chat: validation.data.metadata?.enable_chat ?? true,
+          ...(validation.data.metadata?.enable_polls !== undefined ? { enable_polls: !!validation.data.metadata.enable_polls } : {}),
+          ...(validation.data.metadata?.enable_recording !== undefined ? { enable_recording: !!validation.data.metadata.enable_recording } : {}),
           viewer_count: 0,
           // Planned session length → deterministic finish (start + duration).
           // The staleness guard / reaper use this to auto-move a finished room
@@ -2231,7 +2261,7 @@ router.patch('/rooms/:id', async (req: Request, res: Response) => {
  *
  * Host moves room from scheduled → lobby.
  */
-router.post('/rooms/:id/open-lobby', async (req: Request, res: Response) => {
+router.post('/rooms/:id/open-lobby', requireAuth, async (req: Request, res: Response) => {
   const roomId = req.params.id;
   console.log(`[VTID-01228] POST /live/rooms/${roomId}/open-lobby`);
 
@@ -2244,12 +2274,13 @@ router.post('/rooms/:id/open-lobby', async (req: Request, res: Response) => {
     return res.status(400).json({ ok: false, error: 'Invalid room ID format' });
   }
 
-  const { user_id } = req.body;
-  if (!user_id) {
-    return res.status(400).json({ ok: false, error: 'USER_ID_REQUIRED' });
+  // VTID-05559: the acting user is the verified identity; a body user_id is ignored.
+  const actorId = (req as any).identity?.user_id as string | undefined;
+  if (!actorId) {
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
   }
 
-  const result = await sessionManager.transition(roomId, { type: 'OPEN_LOBBY', userId: user_id }, token);
+  const result = await sessionManager.transition(roomId, { type: 'OPEN_LOBBY', userId: actorId }, token);
 
   if (!result.ok) {
     const statusCode =
@@ -2260,6 +2291,15 @@ router.post('/rooms/:id/open-lobby', async (req: Request, res: Response) => {
     return res.status(statusCode).json({ ok: false, error: result.error, message: result.message });
   }
 
+  await emitOasisEvent({
+    vtid: 'VTID-05559',
+    type: 'live.room.lobby_opened' as any,
+    source: 'live-routes',
+    status: 'success',
+    message: `Lobby opened on room ${roomId}`,
+    payload: { room_id: roomId, actor_id: actorId, status: result.newStatus },
+  });
+
   return res.json({ ok: true, status: result.newStatus });
 });
 
@@ -2269,7 +2309,7 @@ router.post('/rooms/:id/open-lobby', async (req: Request, res: Response) => {
  * Cancel current session + refunds + reset to idle.
  * Host-only.
  */
-router.post('/rooms/:id/cancel', async (req: Request, res: Response) => {
+router.post('/rooms/:id/cancel', requireAuth, async (req: Request, res: Response) => {
   const roomId = req.params.id;
   console.log(`[VTID-01228] POST /live/rooms/${roomId}/cancel`);
 
@@ -2282,9 +2322,10 @@ router.post('/rooms/:id/cancel', async (req: Request, res: Response) => {
     return res.status(400).json({ ok: false, error: 'Invalid room ID format' });
   }
 
-  const { user_id } = req.body;
+  // VTID-05559: the acting user is the verified identity; a body user_id is ignored.
+  const user_id = (req as any).identity?.user_id as string | undefined;
   if (!user_id) {
-    return res.status(400).json({ ok: false, error: 'USER_ID_REQUIRED' });
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
   }
 
   // Initialize Stripe for refunds
@@ -2294,6 +2335,7 @@ router.post('/rooms/:id/cancel', async (req: Request, res: Response) => {
     stripe = new Stripe(stripeKey);
   }
 
+  // impact-allow-no-oasis: cancelSession (room-session-manager) emits live.room.cancelled itself.
   const result = await sessionManager.cancelSession(roomId, user_id, token, stripe);
 
   if (!result.ok) {
@@ -2573,6 +2615,168 @@ router.post('/rooms/:id/disconnect', async (req: Request, res: Response) => {
   }
 
   return res.json({ ok: true });
+});
+
+/**
+ * VTID-05559: PATCH /rooms/:id/sessions/current — the creator edits the current
+ * session. Creator only. Locked fields refused while live or in the lobby. Writes
+ * the session row first, then the listing; a listing failure is 502 and a retry
+ * repeats the same writes.
+ */
+const PatchSessionSchema = z.object({
+  session_title: z.string().min(1).max(200).optional(),
+  topic_keys: z.array(z.string()).min(1).max(3).optional(),
+  starts_at: z.string().datetime().optional(),
+  duration_minutes: z.number().int().min(5).max(480).optional(),
+  co_hosts: z.array(z.string().uuid()).max(5).optional(),
+  description: z.string().max(1000).nullable().optional(),
+  cover_image_url: z.string().url().nullable().optional(),
+  stream_type: z.enum(['audio', 'video']).optional(),
+  access_level: z.enum(['public', 'group']).optional(),
+  enable_chat: z.boolean().optional(),
+  enable_polls: z.boolean().optional(),
+  enable_recording: z.boolean().optional(),
+}).strict();
+
+router.patch('/rooms/:id/sessions/current', requireAuth, async (req: Request, res: Response) => {
+  const roomId = req.params.id;
+  const token = getBearerToken(req);
+  const actorId = (req as any).identity?.user_id as string | undefined;
+  if (!token || !actorId) {
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  }
+  if (!UUID_REGEX.test(roomId)) {
+    return res.status(400).json({ ok: false, error: 'Invalid room ID format' });
+  }
+
+  const parsed = PatchSessionSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      ok: false,
+      error: 'VALIDATION',
+      details: parsed.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', '),
+    });
+  }
+  const body = parsed.data;
+  if (Object.keys(body).length === 0) {
+    return res.status(400).json({ ok: false, error: 'NOTHING_TO_EDIT' });
+  }
+
+  // Creator only: the same comparison the room was created with.
+  const roomResult = await callRpc(token, 'live_room_get', { p_live_room_id: roomId });
+  if (!roomResult.ok) {
+    return res.status(502).json({ ok: false, error: 'ROOM_READ_FAILED' });
+  }
+  if (!roomResult.data) {
+    return res.status(404).json({ ok: false, error: 'ROOM_NOT_FOUND' });
+  }
+  if (roomResult.data.host_user_id !== actorId) {
+    return res.status(403).json({ ok: false, error: 'NOT_HOST' });
+  }
+
+  const stateResult = await sessionManager.getState(roomId, token);
+  const session = stateResult.data?.session;
+  if (!stateResult.ok || !session?.id) {
+    return res.status(409).json({ ok: false, error: 'NO_ACTIVE_SESSION' });
+  }
+  if (session.status === 'ended' || session.status === 'cancelled') {
+    return res.status(409).json({ ok: false, error: 'SESSION_CLOSED', status: session.status });
+  }
+
+  const locked = lockedFieldsRequested(body, session.status);
+  if (locked.length > 0) {
+    return res.status(409).json({ ok: false, error: 'SESSION_LOCKED', fields: locked });
+  }
+  if (body.starts_at && Date.parse(body.starts_at) <= Date.now()) {
+    return res.status(400).json({ ok: false, error: 'START_IN_PAST' });
+  }
+
+  const creds = getSupabaseCredentials();
+  if (!creds) {
+    return res.status(503).json({ ok: false, error: 'SERVICE_UNAVAILABLE' });
+  }
+
+  // An access-level change is refused while valid access grants exist (paid or granted).
+  const accessChanging = body.access_level !== undefined && body.access_level !== session.access_level;
+  if (accessChanging) {
+    const grantHeaders = { 'apikey': creds.key, 'Authorization': `Bearer ${creds.key}` };
+    const grantQueries = [
+      `${creds.url}/rest/v1/live_room_access_grants?select=id&session_id=eq.${session.id}&is_valid=eq.true&is_revoked=eq.false&limit=1`,
+      `${creds.url}/rest/v1/live_room_access_grants?select=id&room_id=eq.${roomId}&session_id=is.null&is_valid=eq.true&is_revoked=eq.false&limit=1`,
+    ];
+    try {
+      for (const u of grantQueries) {
+        const g = await fetch(u, { headers: grantHeaders });
+        if (!g.ok) return res.status(502).json({ ok: false, error: 'GRANT_CHECK_FAILED' });
+        const rows = (await g.json()) as unknown[];
+        if (Array.isArray(rows) && rows.length > 0) {
+          return res.status(409).json({ ok: false, error: 'HAS_ACCESS_GRANTS' });
+        }
+      }
+    } catch {
+      return res.status(502).json({ ok: false, error: 'GRANT_CHECK_FAILED' });
+    }
+  }
+
+  if (body.co_hosts && body.co_hosts.length > 0) {
+    const supaForCoHosts = getSupabase();
+    if (!supaForCoHosts) {
+      return res.status(503).json({ ok: false, error: 'CO_HOST_VALIDATION_UNAVAILABLE' });
+    }
+    try {
+      const filtered = await filterCoHosts(supaForCoHosts as unknown as RpcClient, roomId, actorId, body.co_hosts);
+      if (!filtered.ok) return res.status(400).json({ ok: false, error: 'INVALID_CO_HOSTS', dropped: filtered.dropped });
+      body.co_hosts = filtered.ids; // write the validated list, never the raw one
+    } catch (err) {
+      if (err instanceof CoHostValidationUnavailableError) {
+        return res.status(503).json({ ok: false, error: 'CO_HOST_VALIDATION_UNAVAILABLE' });
+      }
+      return res.status(502).json({ ok: false, error: 'CO_HOST_VALIDATION_FAILED' });
+    }
+  }
+
+  const patch = buildSessionEditPatch(body, { starts_at: session.starts_at, ends_at: session.ends_at });
+  const serviceHeaders = {
+    'Content-Type': 'application/json',
+    'apikey': creds.key,
+    'Authorization': `Bearer ${creds.key}`,
+    'Prefer': 'return=minimal',
+  };
+
+  // 1) the session row
+  if (Object.keys(patch.session).length > 0) {
+    const r = await fetch(`${creds.url}/rest/v1/live_room_sessions?id=eq.${session.id}`, {
+      method: 'PATCH', headers: serviceHeaders, body: JSON.stringify(patch.session),
+    });
+    if (!r.ok) return res.status(502).json({ ok: false, error: 'SESSION_UPDATE_FAILED' });
+  }
+
+  // 2) the room's access level, when it changes
+  if (accessChanging) {
+    const r = await fetch(`${creds.url}/rest/v1/live_rooms?id=eq.${roomId}`, {
+      method: 'PATCH', headers: serviceHeaders, body: JSON.stringify({ access_level: body.access_level }),
+    });
+    if (!r.ok) return res.status(502).json({ ok: false, error: 'SESSION_UPDATE_FAILED' });
+  }
+
+  // 3) the listing (repeatable: the same request writes the same values)
+  if (Object.keys(patch.listing).length > 0) {
+    const r = await fetch(`${creds.url}/rest/v1/community_live_streams?id=eq.${roomId}`, {
+      method: 'PATCH', headers: serviceHeaders, body: JSON.stringify(patch.listing),
+    });
+    if (!r.ok) return res.status(502).json({ ok: false, error: 'LISTING_SYNC_FAILED' });
+  }
+
+  await emitOasisEvent({
+    vtid: 'VTID-05559',
+    type: 'live.session.updated' as any,
+    source: 'live-routes',
+    status: 'success',
+    message: `Session edited on room ${roomId}`,
+    payload: { room_id: roomId, session_id: session.id, fields: Object.keys(body) },
+  });
+
+  return res.json({ ok: true, session: { id: session.id, ...patch.session } });
 });
 
 export default router;

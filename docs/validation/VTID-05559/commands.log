@@ -1,0 +1,39 @@
+# VTID-05559 commands.log
+
+Head of the code under review: 864dffc621580df6e172ebf21c0e3acd3cc4b41f (CI results below). Later commits on the branch change only this log. (branch kiro/live-room-edit-cohost/gateway-cohost).
+
+## CI (GitHub Actions, run on the head above)
+- Gateway (Jest, shards 1-4): completed/success.
+- PASS test/live-room-cohost-helpers.test.ts (isRoomHost, filterCoHosts).
+- PASS test/live-room-cohost-edit.test.ts (edit rules: locked fields, payloads).
+- PASS test/live-room-cohost-routes.test.ts (PATCH refusals and writes, open-lobby without a login).
+- All 24 check runs on the head: success.
+
+## Red on base
+The helper tests failed on the base before the implementation existed (module not found).
+RED-ON-BASE RUN for the edit and route suites: draft PR #5019 (throwaway branch red-base/vtid-05559-route-edit-tests,
+based on origin/main at df495d9b12 with only the two test files added). CI run 43246200293, job 131279393382 (Gateway (Jest,
+shard 4/4)): FAIL test/live-room-cohost-edit.test.ts (Cannot find module '../src/services/live-cohosts') and
+FAIL test/live-room-cohost-routes.test.ts (the PATCH, open-lobby, create and grant-check cases fail). PR #5019 is closed
+without merging; the test files are not merged to main.
+
+## Local
+Not run locally: no npm registry access from the build session. CI is the record.
+
+
+## CI on the reviewed head 864dffc621580df6e172ebf21c0e3acd3cc4b41f (all 25 check runs: success)
+- Gateway (Jest, shards 1-4): success. Gateway Service Tests: success (the live-room-cohost suites are in this run;
+  the three files live-room-cohost-helpers, -edit and -routes pass).
+- Gateway Validation (Minimal CI): success. This is the job the gateway typecheck and build run in.
+- Existing live suites (vtid-04904, vtid-04905, vtid-04834, vtid-04602-04604): run inside the Gateway Jest shards above.
+- Lane scope, change-suite, validate-pr, validate, Collab handoff, unit, pr-gate, scan: success.
+
+Not separately named in CI: a typecheck step and a build step. Both run inside the gateway validation job above; this
+file cites that job, not an individual step.
+
+
+## Red on base: helpers suite
+Throwaway draft PR #5020 (branch red-base/vtid-05559-helpers, based on origin/main with only
+services/gateway/test/live-room-cohost-helpers.test.ts added). CI run 43247072844, job 131282493703 (Gateway (Jest,
+shard 3/4)): FAIL test/live-room-cohost-helpers.test.ts with "Cannot find module '../src/services/live-cohosts'".
+PR #5020 is closed without merging; the test file is not merged to main.
