@@ -4,7 +4,7 @@ state: ready
 next_actor: kiro
 depends_on: []
 executor: kiro
-seat: jtadic
+seat: exafyltd
 reviewer_seat: agent:vitana-lane-reviewer
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 paths:
@@ -19,7 +19,7 @@ paths:
   - services/gateway/test/orb/live/characterization/no-hardcoded-spoken-wording.test.ts
   - services/gateway/test/orb/instruction/first-time-welcome.test.ts
   - services/gateway/test/mt-packs-persona-*.test.ts
-updated: 2026-11-02T16:24Z
+updated: 2026-11-12T20:17Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05499
 ---
@@ -55,3 +55,5 @@ Re-plan of `mt-packs/persona-pack`. Answers R3-F1 (a scoped guard block; the liv
 
 ### 2026-11-02T16:24Z · ci-plan-spar · ready (VTID allocated)
 VTID-05499 allocated after policy approval (converged-auto-v1).
+### 2026-11-12T20:17Z · pm-agent · update
+reassign lane jtadic→exafyltd (stale_ready, Claude unavailable)
