@@ -1,6 +1,6 @@
 ---
 lane: machine-gate-protected
-state: in-review
+state: executing
 next_actor: kiro
 branch: kiro/autonomous-to-staging/machine-gate-protected
 depends_on: []
@@ -17,7 +17,7 @@ paths:
   - scripts/collab/*.test.mjs
   - services/gateway/test/**
   - docs/validation/VTID-*/**
-updated: 2026-11-11T23:41Z
+updated: 2026-11-12T06:43Z
 vtid: VTID-05765
 ---
 # Lane: machine-gate-protected (repo vitana-platform)
@@ -44,3 +44,6 @@ reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 PR: https://github.com/exafyltd/vitana-platform/pull/5002
 Findings: blocking — protected gate files changed and the review prompt cited no owner instruction (recorded in handoff.md and plan §3a; re-review with it cited). Non-blocking — gate-invariants harness not $BASE-loaded; red-on-base missing for queue/governance tests; follow-up lane protect-gate-workflow not in the plan; whitespace lines in protected-glob arrays; trailer trust model / no self-review exclusion.
 Passed: every Acceptance bullet; paths; CI 25/25; two-model rule in land-guard.mjs and governance.ts; protected_gate pinned from the trusted revision; no other gate loosened.
+
+### 2026-11-12T06:43Z · kiro-exafy-202611110920-270b · in-review → executing
+Fixing the review findings.
