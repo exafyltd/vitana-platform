@@ -1,14 +1,13 @@
 ---
 lane: build-class-retag-2
-state: executing
+state: parked
 next_actor: kiro
 depends_on: []
 executor: kiro
-seat: exafy
+seat: exafyltd
 reviewer_seat: agent:vitana-lane-reviewer
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 vtid: VTID-05671
-claimed_by: kiro-exafy-202611081113-5a2e
 branch: kiro/agentic-delivery/build-class-retag-2
 repos: [exafyltd/vitana-platform]
 paths:
@@ -17,8 +16,9 @@ paths:
   - infra/gitlab-engineering/ci/platform-delivery.gitlab-ci.yml
   - infra/gitlab-engineering/ci/v1-delivery.gitlab-ci.yml
   - docs/validation/**
-updated: 2026-11-08T13:20Z
+updated: 2026-11-12T20:15Z
 
+parked_from: executing
 ---
 # Lane: build-class-retag-2 (repo vitana-platform)
 Tasks in `tasks.md` (group `<!-- lane: build-class-retag-2 -->`). Late lane of plan `agentic-delivery`, replacing `build-class-retag`
@@ -47,3 +47,5 @@ reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 PR: https://github.com/exafyltd/vitana-platform/pull/4889
 findings (non-blocking): (1) the merge gate (vitana-eng-build class runs, owner A2 and A3) is not covered by CI; (2) AC-4 widening lives in deploy-path test file, which must land after this lane or with it; (3) the AC-4 evidence sits under VTID-05546 and copies under VTID-05671; (4) the widened check accepts any build-image:* job, a deploy-path decision.
 Next actor: planner (merge decision, see the executor's note on the PR).
+### 2026-11-12T20:15Z · pm-agent · executing → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
