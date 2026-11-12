@@ -1,0 +1,6 @@
+# VTID-05774 — commands (results only)
+2026-11-12T07:19Z  aws bedrock get-inference-profile --region eu-central-1 --inference-profile-identifier <each of the 4 EU profiles>   # ACTIVE; 6 EU destination Regions each
+2026-11-12T07:19Z  python3 -m unittest discover -s scripts/aws/test -p 'test_delivery_bedrock_policy.py' -v   # without the policy file: 8 failures (outputs/red.txt)
+2026-11-12T07:19Z  python3 -m unittest discover -s scripts/aws/test -p 'test_delivery_bedrock_policy.py' -v   # with the policy: 8 passed (outputs/green.txt)
+2026-11-12T07:19Z  python3 -m unittest discover -s scripts/aws/test -p 'test_*.py'                             # 85 passed (outputs/all-aws-tests.txt)
+2026-11-12T07:19Z  aws iam simulate-custom-policy …                                                           # 58 allowed; non-EU and non-invoke implicitDeny (outputs/simulate.txt)

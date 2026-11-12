@@ -1,0 +1,13 @@
+test_actions_are_invoke_only (test_delivery_bedrock_policy.DeliveryBedrockPolicy.test_actions_are_invoke_only) ... ok
+test_chain_profiles_are_in_frankfurt (test_delivery_bedrock_policy.DeliveryBedrockPolicy.test_chain_profiles_are_in_frankfurt) ... ok
+test_deepseek_only_in_stockholm (test_delivery_bedrock_policy.DeliveryBedrockPolicy.test_deepseek_only_in_stockholm) ... ok
+test_each_chain_model_is_allowed_in_all_six_regions (test_delivery_bedrock_policy.DeliveryBedrockPolicy.test_each_chain_model_is_allowed_in_all_six_regions) ... ok
+test_every_resource_is_in_an_eu_destination_region (test_delivery_bedrock_policy.DeliveryBedrockPolicy.test_every_resource_is_in_an_eu_destination_region) ... ok
+test_no_wildcard_and_no_duplicate (test_delivery_bedrock_policy.DeliveryBedrockPolicy.test_no_wildcard_and_no_duplicate) ... ok
+test_nothing_else_is_allowed (test_delivery_bedrock_policy.DeliveryBedrockPolicy.test_nothing_else_is_allowed) ... ok
+test_version_and_allow_only (test_delivery_bedrock_policy.DeliveryBedrockPolicy.test_version_and_allow_only) ... ok
+
+----------------------------------------------------------------------
+Ran 8 tests in 0.001s
+
+OK

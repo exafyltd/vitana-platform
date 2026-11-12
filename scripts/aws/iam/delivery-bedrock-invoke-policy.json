@@ -1,0 +1,64 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "InvokeDeliveryChainEuProfiles",
+      "Effect": "Allow",
+      "Action": [
+        "bedrock:InvokeModel",
+        "bedrock:InvokeModelWithResponseStream"
+      ],
+      "Resource": [
+        "arn:aws:bedrock:eu-central-1:472838866351:inference-profile/eu.anthropic.claude-opus-5-5",
+        "arn:aws:bedrock:eu-central-1:472838866351:inference-profile/eu.anthropic.claude-sonnet-5-5",
+        "arn:aws:bedrock:eu-central-1:472838866351:inference-profile/eu.anthropic.claude-opus-4-6-v1",
+        "arn:aws:bedrock:eu-central-1:472838866351:inference-profile/eu.anthropic.claude-sonnet-4-6"
+      ]
+    },
+    {
+      "Sid": "InvokeDeliveryChainModelsInEuDestinationRegions",
+      "Effect": "Allow",
+      "Action": [
+        "bedrock:InvokeModel",
+        "bedrock:InvokeModelWithResponseStream"
+      ],
+      "Resource": [
+        "arn:aws:bedrock:eu-central-1::foundation-model/anthropic.claude-opus-5-5",
+        "arn:aws:bedrock:eu-north-1::foundation-model/anthropic.claude-opus-5-5",
+        "arn:aws:bedrock:eu-south-1::foundation-model/anthropic.claude-opus-5-5",
+        "arn:aws:bedrock:eu-south-2::foundation-model/anthropic.claude-opus-5-5",
+        "arn:aws:bedrock:eu-west-1::foundation-model/anthropic.claude-opus-5-5",
+        "arn:aws:bedrock:eu-west-3::foundation-model/anthropic.claude-opus-5-5",
+        "arn:aws:bedrock:eu-central-1::foundation-model/anthropic.claude-sonnet-5-5",
+        "arn:aws:bedrock:eu-north-1::foundation-model/anthropic.claude-sonnet-5-5",
+        "arn:aws:bedrock:eu-south-1::foundation-model/anthropic.claude-sonnet-5-5",
+        "arn:aws:bedrock:eu-south-2::foundation-model/anthropic.claude-sonnet-5-5",
+        "arn:aws:bedrock:eu-west-1::foundation-model/anthropic.claude-sonnet-5-5",
+        "arn:aws:bedrock:eu-west-3::foundation-model/anthropic.claude-sonnet-5-5",
+        "arn:aws:bedrock:eu-central-1::foundation-model/anthropic.claude-opus-4-6-v1",
+        "arn:aws:bedrock:eu-north-1::foundation-model/anthropic.claude-opus-4-6-v1",
+        "arn:aws:bedrock:eu-south-1::foundation-model/anthropic.claude-opus-4-6-v1",
+        "arn:aws:bedrock:eu-south-2::foundation-model/anthropic.claude-opus-4-6-v1",
+        "arn:aws:bedrock:eu-west-1::foundation-model/anthropic.claude-opus-4-6-v1",
+        "arn:aws:bedrock:eu-west-3::foundation-model/anthropic.claude-opus-4-6-v1",
+        "arn:aws:bedrock:eu-central-1::foundation-model/anthropic.claude-sonnet-4-6",
+        "arn:aws:bedrock:eu-north-1::foundation-model/anthropic.claude-sonnet-4-6",
+        "arn:aws:bedrock:eu-south-1::foundation-model/anthropic.claude-sonnet-4-6",
+        "arn:aws:bedrock:eu-south-2::foundation-model/anthropic.claude-sonnet-4-6",
+        "arn:aws:bedrock:eu-west-1::foundation-model/anthropic.claude-sonnet-4-6",
+        "arn:aws:bedrock:eu-west-3::foundation-model/anthropic.claude-sonnet-4-6"
+      ]
+    },
+    {
+      "Sid": "InvokeDeepSeekV32EuNorth1OptionA",
+      "Effect": "Allow",
+      "Action": [
+        "bedrock:InvokeModel",
+        "bedrock:InvokeModelWithResponseStream"
+      ],
+      "Resource": [
+        "arn:aws:bedrock:eu-north-1::foundation-model/deepseek.v3.2"
+      ]
+    }
+  ]
+}

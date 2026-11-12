@@ -1,7 +1,9 @@
 ---
 lane: bedrock-invoke-policy
-state: ready
+state: executing
 next_actor: kiro
+claimed_by: kiro-exafyltd-202611111044-8f1d
+branch: kiro/agentic-delivery-scope/bedrock-invoke-policy
 depends_on: []
 executor: kiro
 seat: exafyltd
@@ -11,7 +13,7 @@ reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 paths:
   - scripts/aws/iam/delivery-bedrock-invoke-policy.json
   - scripts/aws/test/test_delivery_bedrock_policy.py
-updated: 2026-11-12T07:09Z
+updated: 2026-11-12T07:19Z
 vtid: VTID-05774
 ---
 
@@ -27,3 +29,8 @@ Late lane added after convergence (owner instruction 2026-11-12, item 3); its VT
 
 ### 2026-11-12T07:09Z · ci-plan-spar · ready (VTID allocated)
 VTID-05774 allocated after policy approval (converged-auto-v1).
+
+### 2026-11-12T07:19Z · kiro-exafyltd-202611111044-8f1d · ready → executing
+Claimed (claim ref `refs/heads/collab-claim/agentic-delivery-scope/bedrock-invoke-policy`). Test first: 8 failures on
+`origin/main` (no policy file), 8 passed with the policy; IAM simulation 58 allowed. Evidence in
+`docs/validation/VTID-05774/`.

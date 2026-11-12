@@ -1,0 +1,10 @@
+$ aws iam simulate-custom-policy --policy-input-list "$(cat scripts/aws/iam/delivery-bedrock-invoke-policy.json)" --action-names bedrock:InvokeModel bedrock:InvokeModelWithResponseStream --resource-arns <the 29 resources of the policy> --query 'EvaluationResults[].ResourceSpecificResults[].EvalResourceDecision'
+     58 allowed
+$ aws iam simulate-custom-policy --policy-input-list "$(cat scripts/aws/iam/delivery-bedrock-invoke-policy.json)" --action-names bedrock:InvokeModel --resource-arns <4 ARNs outside the policy> --query 'EvaluationResults[].ResourceSpecificResults[].[EvalResourceName,EvalResourceDecision]'
+arn:aws:bedrock:us-east-1::foundation-model/anthropic.claude-opus-5-5	implicitDeny
+arn:aws:bedrock:eu-west-2::foundation-model/anthropic.claude-opus-5-5	implicitDeny
+arn:aws:bedrock:eu-central-1:472838866351:inference-profile/global.anthropic.claude-opus-5-5	implicitDeny
+arn:aws:bedrock:us-east-1::foundation-model/deepseek.v3.2	implicitDeny
+$ aws iam simulate-custom-policy --policy-input-list "$(cat scripts/aws/iam/delivery-bedrock-invoke-policy.json)" --action-names bedrock:CreateModelCustomizationJob bedrock:DeleteInferenceProfile --resource-arns arn:aws:bedrock:eu-central-1:472838866351:inference-profile/eu.anthropic.claude-opus-5-5
+bedrock:CreateModelCustomizationJob	implicitDeny
+bedrock:DeleteInferenceProfile	implicitDeny
