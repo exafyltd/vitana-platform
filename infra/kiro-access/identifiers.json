@@ -1,0 +1,77 @@
+{
+  "$comment": "VTID-05764 (plan autonomous-to-staging, lane kiro-aws-access): the pinned resource identifiers the Kiro roles are built from and tested against. Production entries must be explicitly denied in kiro-staging-operator; staging entries are the only write targets. Engineering entries are the GitLab assets kiro-engineering-admin may never delete.",
+  "region": "eu-central-1",
+  "accounts": {
+    "product": "472838866351",
+    "engineering": "841276716213"
+  },
+  "ecs_cluster": "Vitana-ECS-Cluster",
+  "staging": {
+    "ecs_services": [
+      "vitana-gateway",
+      "vitana-kiro-runner",
+      "vitana-erp-bridge",
+      "vitana-postgrest-aurora-proxy",
+      "vitana-community-app-staging",
+      "vitana-gateway-iso",
+      "vitana-postgrest-aurora-staging-iso"
+    ],
+    "rds_cluster": "vitana-aurora-staging",
+    "secret_prefixes": [
+      "vitana/gateway/staging/",
+      "vitana/supabase/staging/",
+      "vitana/erp-bridge/staging/",
+      "vitana/aurora/staging-db/",
+      "vitana/kiro-runner/staging/"
+    ],
+    "log_group_prefixes": [
+      "/ecs/vitana-gateway",
+      "/ecs/vitana-postgrest-aurora",
+      "/ecs/vitana-kiro-runner",
+      "/ecs/vitana-erp-bridge",
+      "/ecs/vitana-community-app-staging"
+    ]
+  },
+  "production": {
+    "ecs_service_patterns": [
+      "*-awsdr",
+      "*-prod"
+    ],
+    "rds_clusters": [
+      "vitana-aurora-prod"
+    ],
+    "rds_proxies": [
+      "vitana-rds-proxy-prod"
+    ],
+    "load_balancers": [
+      "vitana-alb-prod"
+    ],
+    "secret_prefixes": [
+      "vitana/aurora/prod/",
+      "vitana/supabase/prod/",
+      "vitana/gateway-awsdr/",
+      "vitana/kiro/production/"
+    ],
+    "kms_keys": [
+      "arn:aws:kms:eu-central-1:472838866351:key/1cd1f8d1-fc05-4de8-acdd-76e76b8a39d1"
+    ],
+    "supabase_project_ref": "inmkhvwdcuyhnxkgfvsb",
+    "github_secret": "AWS_PROD_ROLE_ARN",
+    "shared_task_roles": [
+      "arn:aws:iam::472838866351:role/vitana-ecs-task-role"
+    ]
+  },
+  "engineering_protected": {
+    "instance_name_tag_prefix": "vitana-eng-gitlab",
+    "buckets": [
+      "vitana-engineering-gitlab-backups-841276716213"
+    ],
+    "secrets": [
+      "vitana/engineering/gitlab/root-password",
+      "vitana/engineering/gitlab/runner-token",
+      "vitana/engineering/gitlab/github-mirror-token",
+      "vitana/engineering/gitlab/github-bridge-token",
+      "vitana/engineering/gitlab/<class>-runner-token"
+    ]
+  }
+}
