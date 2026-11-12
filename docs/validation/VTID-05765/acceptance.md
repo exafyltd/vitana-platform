@@ -29,6 +29,27 @@ reviewer-agent accept on the current head (`collaboration.md` §3a, §7b; plan �
 - Red on base: `outputs/red-on-base.txt` (3 new tests fail on `origin/main`); green: `outputs/collab-green.txt`
   (269/269), gateway `npx jest test/project-manager` 13 suites / 230 tests, `npx tsc --noEmit` exit 0.
 
+## Acceptance criteria → tests
+
+AC-1 One accept, or two accepts from the same chain model, never merges a protected gate file; two accepts from
+different chain models on the current head do.
+TEST: scripts/collab/land-guard.test.mjs ("merge: a protected gate file needs two accepts from different chain models on the current head")
+TEST: services/gateway/test/project-manager/governance.test.ts ("one accept, or two of the same model, is refused"; "two models on the current head are allowed")
+
+AC-2 An accept on an older head, or from a model outside the reviewer chain, does not count.
+TEST: services/gateway/test/project-manager/governance.test.ts ("an accept on an older head does not count"; "a model outside the chain does not count")
+
+AC-3 land-guard and the Project Manager use the same reviewer chain.
+TEST: scripts/collab/land-guard.test.mjs ("merge: land-guard REVIEWER_MODELS mirrors governance.ts REVIEWER_AGENT_MODELS")
+
+AC-4 Only a trusted `protected_gate: two-model` kiro lane with the agent reviewer may change a protected gate file;
+a PR head cannot grant itself that field.
+TEST: scripts/collab/queue.test.mjs ("VTID-05765: validateLane accepts a protected path only for a two-model kiro lane with the agent reviewer"; "VTID-05765: scope-check lets a trusted two-model lane change a protected gate file, never a head-granted one")
+
+AC-5 The invariant check fails when a protected glob is dropped, when one accept unlocks a protected file, or when
+governance.ts loses a protected glob.
+TEST: scripts/collab/gate-invariants.test.mjs ("mutation: dropping a glob from the protected list fails"; "mutation: one accept unlocking a protected gate file fails"; "mutation: governance.ts losing a protected glob fails")
+
 No migration, no secret, no workflow change, no production write.
 
 ## Decisions taken
