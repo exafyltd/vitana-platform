@@ -4,7 +4,7 @@ state: ready
 next_actor: kiro
 depends_on: []
 executor: kiro
-seat: jtadic
+seat: exafyltd
 repos: [exafyltd/vitana-platform]
 reviewer_seat: agent:vitana-lane-reviewer
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
@@ -15,7 +15,7 @@ paths:
   - scripts/eng/pipeline-gen.test.mjs
   - infra/gitlab-engineering/ci/platform-delivery.gitlab-ci.yml
   - infra/gitlab-engineering/ci/v1-delivery.gitlab-ci.yml
-updated: 2026-11-11T16:49Z
+updated: 2026-11-12T21:26Z
 vtid: VTID-05745
 ---
 
@@ -29,3 +29,5 @@ Lane created with the plan.
 
 ### 2026-11-11T16:49Z · ci-plan-spar · ready (VTID allocated)
 VTID-05745 allocated after policy approval (converged-auto-v1).
+### 2026-11-12T21:26Z · pm-agent · update
+reassign lane jtadic→exafyltd (stale_ready, Claude unavailable)
