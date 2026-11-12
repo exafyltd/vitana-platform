@@ -1,0 +1,6 @@
+{
+  "vtid": "VTID-05767",
+  "service": "community-app",
+  "not_verified_on_staging": "CI-only PR-gate classifier change, deploys nothing; covered by scripts/ci/pr-gate/__tests__",
+  "tests": []
+}
