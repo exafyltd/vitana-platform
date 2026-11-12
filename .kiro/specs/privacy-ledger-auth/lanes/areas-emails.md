@@ -14,7 +14,7 @@ reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 paths:
   - docs/programs/areas.yaml
   - scripts/collab/areas-no-email.test.mjs
-updated: 2026-11-11T15:52Z
+updated: 2026-11-12T20:17Z
 vtid: VTID-05699
 ---
 
@@ -71,3 +71,5 @@ Grep of `main` at `ba5f26b4d8` (counts and paths only, no values printed), patte
 
 Each file gets one cleanup lane in plan `agentic-delivery-scope`. Git history still holds the old values (commits
 before `ba5f26b4d8`, and `399e9333e8` on the closed #4977 branch); the history rewrite is never run.
+### 2026-11-12T20:17Z · pm-agent · update
+reassign review agent:vitana-lane-reviewer→exafyltd (stale_review, Claude unavailable)
