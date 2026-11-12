@@ -1,6 +1,6 @@
 ---
 lane: kiro-aws-access
-state: executing
+state: in-review
 next_actor: kiro
 branch: kiro/autonomous-to-staging/kiro-aws-access
 depends_on: []
@@ -57,3 +57,6 @@ Findings: previous three blocking findings fixed. BLOCKING: production task-defi
 
 ### 2026-11-12T19:35Z · kiro-exafy-202611110920-270b · in-review → executing
 Review round 2 (fix-forward 2 of 3).
+
+### 2026-11-12T19:35Z · kiro-exafy-202611110920-270b · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/5027. Round-2 findings: the staging operator has no ECS write at all (explicit Deny; no family deny-list), so neither unsuffixed production families nor service attachments are reachable; engineering admin also denies CreateSnapshot(s)/CopySnapshot/CreateVolume account-wide and CreateImage/AttachVolume on the GitLab host; doc records the read exposure, simulate-before-apply, availability residuals and backup versioning; weak PassRole assertion fixed. Tests 22/22, cfn-lint 0.
