@@ -17,6 +17,7 @@ specs:
   - vitana-platform:plan-spar-stale-session
   - vitana-platform:fix-4182-test-fallout
   - vitana-platform:collab-queue-perf
+  - vitana-platform:protected-gate-review-b
   - vitana-v1:chat-ux
   - vitana-v1:vitana-chat-markdown
   - vitana-platform:collab-multi-builder-handoff
