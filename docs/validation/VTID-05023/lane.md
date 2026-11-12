@@ -156,3 +156,40 @@ Still no queue claim. The real session id is `8e42cb36-56f1-4d98-b4e4-96425028a5
 - **Plan convergence:** MR !13 must converge before any AWS resource is created.
 - **Compatibility layer** (round 1 task): not started; blocked on the queue claim.
 - **Queue claim:** still not held. The real session id `8e42cb36-56f1-4d98-b4e4-96425028a531` is refused by the queue.
+
+## Round 3: MR !12 merged, staging checks (12 Nov 2026)
+
+Checked from the Kiro sandbox, read-only. Time of checks: about 07:13 UTC, 12 Nov.
+
+### AWS access
+- `aws sts get-caller-identity`: account `472838866351`, assumed role `kiro-1-dstevanovic`. Access works now.
+- The role has no ECS permissions. Output of `aws ecs describe-services --cluster Vitana-ECS-Cluster --services vitana-gateway`:
+  `AccessDeniedException ... User: arn:aws:sts::472838866351:assumed-role/kiro-1-dstevanovic/... is not authorized to perform: ecs:DescribeServices ... because no identity-based policy allows the ecs:DescribeServices action`
+- `ecs:ListClusters` is also denied.
+
+### Step 1: staging deploy from MR !12
+- Not verified. I cannot see the `AWS-STAGE-DEPLOY-GATEWAY.yml` run (no GitLab API access, and the GitLab remote now returns `403`).
+- Indirect evidence: the staging gateway still serves a build that booted before the merge. `GET /api/v1/admin/build-info` returns `git_commit 0dc9a0646a33de0c8cfbad862c44d53fb81e3131`, `booted_at 2026-11-11T18:16:13Z`. The merge was 12 Nov 07:11 UTC. That commit is not in the sandbox's local history, so I cannot tell whether it contains MR !12.
+
+### Step 2: running task
+- Blocked by IAM (see AWS access). `AURORA_DATABASE_URL` and `AURORA_RLS_DATABASE_URL` are not verified absent.
+
+### Step 3: staging smoke test (read-only GET, `https://preview-aws-gateway.vitanaland.com`)
+- `GET /alive`: `200 application/json` `{"status":"ok","service":"gateway"}`
+- `GET /api/v1/admin/health`: `200` `{"ok":true,"env":"staging","supabase_host":"inmkhvwdcuyhnxkgfvsb.supabase.co",...,"booted_at":"2026-11-11T18:16:13.335Z"}`. Staging still uses the production Supabase project, as expected.
+- `GET /api/v1/admin/build-info`: `200` `{"ok":true,"env":"staging","git_commit":"0dc9a06…","booted_at":"2026-11-11T18:16:13.335Z"}`
+
+### Step 4: MR !13 (plan)
+- Not checked. The MR page returns a sign-in page to the sandbox. `git fetch origin` returns `403` (`resource match not found for entity '472838866351'`). Convergence status unknown.
+
+### Step 5: read-only snapshot of production Supabase
+- Not run. Gated on MR !13 converging, and convergence is unverified. No connection was made to production Supabase in this round.
+
+### Step 6: `vitana-postgres-staging`
+- Not touched.
+
+### Open items
+- **Owner: attach ECS read policy** to `kiro-1-dstevanovic` (at least `ecs:DescribeServices`, `ecs:DescribeTaskDefinition`, `ecs:DescribeTasks`, `ecs:ListTasks`, `ecs:ListClusters`), so the running task can be read.
+- **Owner: restore GitLab access for this sandbox** (the remote returns 403). Without it, MR state and pipeline results cannot be read.
+- **Staging still uses the production Supabase project.** Creating a staging project is an owner decision.
+- **Lane claim not held.** The queue refuses the real session id `8e42cb36-56f1-4d98-b4e4-96425028a531`.
