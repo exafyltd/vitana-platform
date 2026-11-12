@@ -11,7 +11,11 @@ Head reviewed: see the PR head at the time of the run (1d97263a7bc35c8cb36ade5af
 
 ## Red on base
 The helper tests failed on the base before the implementation existed (module not found).
-NOT RECORDED: a red-on-base run for the edit and route suites. Writing one needs a CI run on a base without the implementation; it is outstanding.
+RED-ON-BASE RUN for the edit and route suites: draft PR #5019 (throwaway branch red-base/vtid-05559-route-edit-tests,
+based on origin/main at df495d9b12 with only the two test files added). CI run 43246200293, job 131279393382 (Gateway (Jest,
+shard 4/4)): FAIL test/live-room-cohost-edit.test.ts (Cannot find module '../src/services/live-cohosts') and
+FAIL test/live-room-cohost-routes.test.ts (the PATCH, open-lobby, create and grant-check cases fail). PR #5019 is closed
+without merging; the test files are not merged to main.
 
 ## Local
 Not run locally: no npm registry access from the build session. CI is the record.
