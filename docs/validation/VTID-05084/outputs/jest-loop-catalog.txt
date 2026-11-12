@@ -1,0 +1,45 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/loop-catalog.test.ts
+  VTID-05084 loop catalog — contract
+    ✓ is valid: every loop carries the full contract (4 ms)
+    ✓ has 14 loops: 6 platform, 8 product, unique ids L1..L14 (1 ms)
+    ✓ R2/R3 loops have a human gate and R3 loops never execute on their own (2 ms)
+    ✓ every loop that writes member-facing health, product or creator text uses the claim verifier (3 ms)
+    ✓ the guard loop only escalates (L0)
+    ✓ folds every one of the 100 v1 cases in exactly once (loops + shared verifiers) (6 ms)
+    ✓ every existing_ref points at something real in this repo (43 ms)
+    ✓ PARTIAL and PLANNED loops name their gap; LIVE and PARTIAL loops say where they run today (1 ms)
+    ✓ lists the known overlaps as the Simplify backlog (1 ms)
+    ✓ VTID-05098: every overlap says what the Simplify loop did with it (1 ms)
+    ✓ VTID-05098: the five retired routines are gone from the repo and from every loop (3 ms)
+  VTID-05084 coverage rule — every sensor owned by exactly one loop
+    ✓ health_groups: no orphans, nothing owned twice, no dangling names
+    ✓ routines: no orphans, nothing owned twice, no dangling names
+    ✓ workflows: no orphans, nothing owned twice, no dangling names (6 ms)
+    ✓ test_contracts: no orphans, nothing owned twice, no dangling names
+    ✓ the service reports the same clean coverage for the registries compiled into the gateway (7 ms)
+    ✓ computeCoverage detects an orphan, a double owner and an unknown name (1 ms)
+  VTID-05084 validateCatalog rejects broken contracts
+    ✓ VTID-05098: flags an unknown overlap status and a closed overlap without a resolution (1 ms)
+    ✓ flags a missing field, an R2 loop without a gate and an R3 loop at L3
+    ✓ loadCatalog throws loudly on an invalid file (17 ms)
+  VTID-05084 plane signal (agent_runs_unified, read-only)
+    ✓ counts 7 days of runs per status for one plane (2 ms)
+    ✓ marks a capped window (1 ms)
+    ✓ degrades to unavailable on a view error or no client, never throws (1 ms)
+    ✓ caches a plane for 60 s
+    ✓ buildCatalogResponse serves the catalog even when no signal is available (3 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       25 passed, 25 total
+Snapshots:   0 total
+Time:        0.539 s, estimated 2 s
+Ran all test suites matching /test\/loop-catalog.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
