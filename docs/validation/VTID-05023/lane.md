@@ -193,3 +193,40 @@ Checked from the Kiro sandbox, read-only. Time of checks: about 07:13 UTC, 12 No
 - **Owner: restore GitLab access for this sandbox** (the remote returns 403). Without it, MR state and pipeline results cannot be read.
 - **Staging still uses the production Supabase project.** Creating a staging project is an owner decision.
 - **Lane claim not held.** The queue refuses the real session id `8e42cb36-56f1-4d98-b4e4-96425028a531`.
+
+## Round 4: owner instruction (two-day cutover), status after first checks
+
+### Lane claim
+- Not held. Real session id `8e42cb36-56f1-4d98-b4e4-96425028a531` is refused by `queue.mjs claim`. `queue.mjs claims` shows no VTID-05023 claim.
+- Per the instruction, lane-dependent work stops here until the queue accepts this session's id.
+
+### Step 1: trigger staging deploy from main (AWS-STAGE-DEPLOY-GATEWAY.yml on GitHub)
+- Blocked. `GH_Token` is set, but `curl -H "Authorization: Bearer $GH_Token" https://api.github.com/repos/exafyltd/vitana-platform` returns `401`. The workflow cannot be dispatched.
+- Context, from GitLab read-only checks (GitLab `vitana/vitana-platform`, project id 2):
+  - MR !12 merged 07:11:52 UTC. Merge-commit pipeline 270 (`a3806711a0`) failed in `gateway-jest 2/4` (job 1230).
+  - Jest summary: `Tests: 4 failed, 39 skipped, 7221 passed`; `Test Suites: 1 failed`. The failing file is `services/gateway/test/orb/live/upstream/staging-aurora-database-url-pinned.test.ts`, which pins the removed `SEC_AURORA_RLS` wiring.
+  - `gateway-staging-build` and `gateway-staging-deploy` were skipped in pipeline 270.
+- Dispatching the deploy from a red `main` needs a decision: fix the test (a test change, owner approval needed), or revert MR !12.
+
+### Step 2: Aurora compatibility layer
+- Not started in this round. Depends on the lane claim (`compat-objects.md` inventory exists at `docs/validation/VTID-05023/compat-objects.md` only in the earlier local clone; not regenerated here).
+
+### Step 3: gateway REST switch
+- Not started. Same dependency.
+
+### Step 4: window runbook
+- Not started. Same dependency.
+
+### Step 5: verify-cutover.sh
+- Not run in this round. Reading `scripts/cutover/verify-cutover.sh` from `gitlab-migration-prep` is read-only and can be done once the lane is claimed.
+
+### Step 6: MR !13
+- `opened`, head pipeline 257 `success`, merge status `unchecked`. Convergence not recorded. Snapshot not run.
+
+### Claude (AWS) items
+- Claude must check the running staging task has no `AURORA_DATABASE_URL` or `AURORA_RLS_DATABASE_URL` once the deploy runs. This is not confirmed until step 1 runs.
+
+### Owner decisions needed
+1. Fix or revert: the failing staging-aurora pinned test on red `main`.
+2. Queue acceptance of the real session id, or an approved id for this lane.
+3. GitHub token for `exafyltd/vitana-platform` that returns 200, so the staging workflow can be dispatched.
