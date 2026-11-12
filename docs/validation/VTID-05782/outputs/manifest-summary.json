@@ -1,0 +1,47 @@
+{
+  "schema": "vitana.staging-db-bundle/v1",
+  "schema_hash": "d9118a134c63324216109d16dc41975ccc292add01d8ab16676215ade945183f",
+  "objects": 14045,
+  "bundle_sha256": "5a62ffad2e4fbc68ba002211b706bd474ae0e4d2922e96595ac29978c87886e0",
+  "bundle_bytes": 4652220,
+  "counts": {
+    "parts": 431,
+    "migrations_applied": 426,
+    "migrations_skipped": 308,
+    "fixtures": 2,
+    "seed": 2,
+    "required_tables_present": 11,
+    "required_tables_not_replayable": 13
+  },
+  "smoke_objects": [
+    "table public.vtid_ledger",
+    "table public.oasis_events",
+    "function public.allocate_global_vtid"
+  ],
+  "production_references": [
+    {
+      "part": "supabase/migrations/20260726120000_vtid_03413_bedrock_worker_routing.sql",
+      "id": "awsdr-service",
+      "match": "vitana-gateway-awsdr",
+      "line": 26
+    },
+    {
+      "part": "supabase/migrations/20260731180000_VTID_03461_watcher_lessons_rules.sql",
+      "id": "alb",
+      "match": "vitana-alb-prod",
+      "line": 245
+    },
+    {
+      "part": "supabase/migrations/20260811210000_vtid_03599_llm_telemetry_summary.sql",
+      "id": "awsdr-service",
+      "match": "vitana-gateway-awsdr",
+      "line": 29
+    },
+    {
+      "part": "supabase/migrations/20261012235118_vtid_05118_welcome_discount_trigger_secret.sql",
+      "id": "supabase-project-ref",
+      "match": "inmkhvwdcuyhnxkgfvsb",
+      "line": 28
+    }
+  ]
+}
