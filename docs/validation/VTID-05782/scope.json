@@ -1,0 +1,18 @@
+{
+  "vtid": "VTID-05782",
+  "kind": "feature",
+  "paths": [
+    "infra/staging-db/**",
+    "scripts/aws/staging-db-*.sh",
+    "scripts/ci/staging-db/**",
+    "scripts/ci/staging-prod-ref-guard.mjs",
+    ".github/workflows/AWS-STAGE-PROVISION-DB.yml",
+    ".github/workflows/STAGING-DB-SCHEMA.yml",
+    "docs/STAGING.md",
+    "docs/validation/VTID-05782/**",
+    ".kiro/specs/autonomous-to-staging-r2/lanes/staging-db-provision.md"
+  ],
+  "weakens_tests": [],
+  "red_green_exempt": [],
+  "sparring_record": ".kiro/specs/autonomous-to-staging-r2/sparring/verdict.md"
+}

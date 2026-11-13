@@ -1,6 +1,13 @@
 {
   "vtid": "VTID-05504",
   "service": "gateway",
-  "not_verified_on_staging": "This lane edits one GitHub Actions workflow (MORNING-SYSTEM-HEALTH-CHECK.yml) and adds evidence files. No gateway, frontend or database code changes, so the staging deploy runs no new code path. The new step 21c runs only on the morning schedule in GitHub Actions: it is report-only (always INFO, never counted in TOTAL_CHECKS) and its one call is the POST of the read-only function ci_tenant_isolation_health_by_tenant(). It is proven by CI Jest runs of the real step script against a stubbed curl, in docs/validation/VTID-05504/morning-health-pertenant.test.ts. No suite points at vitanaland.com.",
-  "tests": []
+  "not_verified_on_staging": "This lane edits one GitHub Actions workflow (MORNING-SYSTEM-HEALTH-CHECK.yml) and adds evidence files. No gateway, frontend or database code changes, so the staging deploy runs no new code path. The new step 21c runs only on the morning schedule in GitHub Actions: it is report-only (always INFO, never counted in TOTAL_CHECKS) and its one call is the POST of the read-only function ci_tenant_isolation_health_by_tenant(). It is proven by CI Jest runs of the real step script against a stubbed curl, in services/gateway/test/vtid-05504-morning-health-pertenant.test.ts (a copy of docs/validation/VTID-05504/morning-health-pertenant.test.ts). No suite points at vitanaland.com.",
+  "tests": [
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-05504-morning-health-pertenant.test.ts",
+      "cwd": "services/gateway",
+      "reason": "Runs row-21c script against stubbed curl; proves report-only semantics and the read-only call."
+    }
+  ]
 }

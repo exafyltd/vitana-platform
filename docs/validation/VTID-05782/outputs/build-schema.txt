@@ -1,0 +1,4 @@
+staging-db bundle: 431 part(s), 426 migration(s) applied, 308 skipped (replay-skip.json)
+schema hash d9118a134c63324216109d16dc41975ccc292add01d8ab16676215ade945183f over 14045 object(s); bundle 4652220 bytes sha256 5a62ffad2e4fbc68ba002211b706bd474ae0e4d2922e96595ac29978c87886e0
+production references in the bundle: 4, all in bundle-prod-ref-allow.json; none in a live function, default or view
+PASS staging-db schema build
