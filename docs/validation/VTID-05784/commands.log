@@ -1,0 +1,16 @@
+# VTID-05784 — base origin/main 4e215b0198b0aca3637b623d7e1abf50c411c2e1 (outputs/base-sha.txt)
+# No AWS call, no aws CLI against the account, no credential, no dispatch, no migration applied to any database (owner directive 2026-11-12).
+# The AWS and gh CLIs in every test are stubs (docs/validation/VTID-05784/fixtures/bin); the Data API stub is a local Postgres (PGlite 0.5.15).
+(origin/main + the new tests and fixtures only) node --test docs/validation/VTID-05784/tests/*.test.mjs  -> 27 tests, 1 pass, 26 fail (scripts/workflow absent) (outputs/red-on-base.txt)
+node --test docs/validation/VTID-05784/tests/*.test.mjs  (PGlite installed) -> 27 tests, 27 pass, 0 fail, 0 skipped (outputs/green.txt)
+node --test docs/validation/VTID-05784/tests/*.test.mjs  (no install) -> 27 tests, 21 pass, 0 fail, 6 skipped (PGlite cases; the selftest job fails on a skip) (outputs/green-no-install.txt)
+node --test scripts/ci/staging-db/*.test.mjs scripts/ci/workflow-trigger-check.test.mjs -> 191 tests, 191 pass (unchanged suites of VTID-05781/05782)
+npx jest eng-platform-stage-oidc-workflows workflow-dispatch-input-limit vtid-04225-no-dead-gcp-urls-in-workflows test-catalog-lib routine-runner/status-route-and-workflows orb-tools/database-migrations-tools services/testing/test-launcher vtid-04858-agent-deploys-drop-dead-db-secret loop-catalog -> 152 pass, 2 fail (loop-catalog: orphan AWS-KIRO-ACCESS, identical on origin/main; known, fix pending #5057)
+node scripts/ci/staging-prod-ref-guard.mjs --report -> 31 files, 35 production references (unchanged count; the new staging scripts add 0) (outputs/guard-report.txt)
+node scripts/ci/staging-prod-ref-guard.mjs --enforce --files <STAGING-MIGRATE.yml + the four staging-db scripts> -> exit 0, 0 references (outputs/guard-enforce.txt)
+diff <(git show origin/main:.github/workflows/RUN-MIGRATION.yml) .github/workflows/RUN-MIGRATION.yml -> additions only, all inside '# >>> VTID-05784' blocks except the replaced options line (outputs/run-migration.diff)
+node scripts/collab/land-guard.mjs evidence --repo . --vtid VTID-05784 -> evidence present
+# Fix forward 1: UNIT failed on scripts/eng/services-parity.test.mjs (a pull_request path filter must be in the services registry, outside this lane) -> self-test moved to lane-branch pushes (STAGING-DB-SCHEMA.yml pattern)
+node --test scripts/eng/services-parity.test.mjs -> 5 pass
+node --test docs/validation/VTID-05784/tests/*.test.mjs (PGlite) -> 27 pass, 0 skipped (outputs/green.txt)
+node --test <UNIT.yml file set> -> 1628 tests, 1621 pass, 6 skipped, 1 fail (staging-db aws-scripts 'load refuses without the cost approval', passes alone 22/22 and passed in CI on this PR: local flake)
