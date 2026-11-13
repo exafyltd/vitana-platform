@@ -34,6 +34,11 @@ export const REQUIRED_PROTECTED = Object.freeze([
   'supabase/migrations/*plan_sparring*.sql',
   '.github/workflows/VTID-ALLOCATE.yml',
   'scripts/collab/gate-invariants.test.mjs',
+  // VTID-05780 (plan autonomous-to-staging-r2, lane protect-gate-workflow): the post-merge workflow, its static test
+  // and the post-merge audit.
+  '.github/workflows/GATE-INVARIANTS.yml',
+  'scripts/ci/workflow-trigger-check.test.mjs',
+  'scripts/collab/gate-audit.mjs',
 ]);
 /** Production identifiers the staging guard must keep refusing (lane staging-db-isolation). */
 export const REQUIRED_PROD_REFS = Object.freeze([
@@ -57,6 +62,11 @@ export async function checkInvariants(root) {
   for (const g of REQUIRED_PROTECTED) if (!globs.includes(g)) failures.push(`protected-gate-files.json no longer lists ${g}`);
   const gov = read(root, 'services/gateway/src/services/project-manager/governance.ts') || '';
   for (const g of REQUIRED_PROTECTED) if (!gov.includes(`'${g}'`)) failures.push(`governance.ts PROTECTED_GATE_GLOBS no longer lists ${g}`);
+  // 1b. VTID-05780: this file's own REQUIRED_PROTECTED in the checkout still names every required glob (so the list
+  // checked here cannot shrink in the same PR that shrinks the others).
+  const self = read(root, 'scripts/collab/gate-invariants.test.mjs') || '';
+  const block = (/REQUIRED_PROTECTED = Object\.freeze\(\[([\s\S]*?)\]\)/.exec(self) || [])[1] || '';
+  for (const g of REQUIRED_PROTECTED) if (!block.includes(`'${g}'`)) failures.push(`gate-invariants.test.mjs REQUIRED_PROTECTED no longer lists ${g}`);
   // 2. queue.mjs: compiled-in list, and scope-check semantics.
   try {
     const q = await import(pathToFileURL(path.join(root, 'scripts/collab/queue.mjs')).href);
@@ -74,6 +84,19 @@ export async function checkInvariants(root) {
     if (!lg.mergeDecision({ ...base, protectedModels: MODELS }).ok) failures.push('land-guard.mjs refuses two accepts from different models (rule not in force)');
     if (lg.protectedAcceptModels([{ verdict: 'accept', reviewer: 'agent:vitana-lane-reviewer (gpt-x)', current: true }]).length) failures.push('land-guard.mjs counts a model outside the chain');
     if (lg.protectedAcceptModels([{ verdict: 'accept', reviewer: `agent:vitana-lane-reviewer (${MODELS[0]})`, current: false }]).length) failures.push('land-guard.mjs counts an accept that is not on the current head');
+    // VTID-05780: the exact-head rule — a merge of main after the accepts voids them; one session or a builder session
+    // never makes the second accept.
+    if (typeof lg.protectedReviewCurrent !== 'function') failures.push('land-guard.mjs has no protectedReviewCurrent (exact-head rule missing)');
+    else {
+      const R = 'a'.repeat(40);
+      const H = 'b'.repeat(40);
+      const merge = { sha: H, session: 'x', files: ['.kiro/specs/s/lanes/l.md'], merge: { parents: ['c'.repeat(40), 'd'.repeat(40)], secondParentOnMain: true, autoMergeTree: 't', commitTree: 't', protectedFiles: [] } };
+      if (lg.protectedReviewCurrent(R, H, [merge], 's/l', { prDiffSame: true, protectedSame: true }).ok) failures.push('land-guard.mjs keeps a protected accept across a merge of main');
+      if (lg.protectedReviewCurrent(R, H, [{ sha: H, session: 'x', files: ['scripts/collab/queue.mjs'] }], 's/l', { prDiffSame: true, protectedSame: true }).ok) failures.push('land-guard.mjs keeps a protected accept across a code commit');
+    }
+    const acc = (m, session) => ({ verdict: 'accept', reviewer: `agent:vitana-lane-reviewer (${m})`, current: true, session });
+    if (lg.protectedAcceptModels([acc(MODELS[0], 's1'), acc(MODELS[1], 's1')]).length >= 2) failures.push('land-guard.mjs counts two accepts from one session');
+    if (lg.protectedAcceptModels([acc(MODELS[0], 's1'), acc(MODELS[1], 'b1')], { builders: ['b1'] }).length >= 2) failures.push('land-guard.mjs counts a builder self-review');
   } catch (e) { failures.push(`land-guard.mjs could not be loaded: ${e.message}`); }
   // 4. The staging production-reference guard (lane staging-db-isolation) — conditional until it exists.
   const guard = read(root, 'scripts/ci/staging-prod-ref-guard.mjs');
@@ -82,7 +105,11 @@ export async function checkInvariants(root) {
   // 5. The post-merge workflow (lane gate-invariants-ci) — conditional until it exists.
   const wf = read(root, '.github/workflows/GATE-INVARIANTS.yml');
   if (wf === null) notes.push('GATE-INVARIANTS.yml: not yet present, invariant deferred');
-  else if (!/\bpush:\s*\n\s*branches:\s*\[\s*main\s*\]/.test(wf)) failures.push('GATE-INVARIANTS.yml no longer runs on push to main');
+  else {
+    if (!/\bpush:\s*\n\s*branches:\s*\[\s*main\s*\]/.test(wf)) failures.push('GATE-INVARIANTS.yml no longer runs on push to main');
+    // VTID-05780: the post-merge audit of protected merges on main.
+    if (!/node scripts\/collab\/gate-audit\.mjs/.test(wf)) failures.push('GATE-INVARIANTS.yml no longer runs scripts/collab/gate-audit.mjs');
+  }
   return { failures, notes };
 }
 
@@ -115,7 +142,7 @@ T('working-tree invariants hold on this checkout', async () => {
 function fixture() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gate-fix-'));
   for (const rel of ['scripts/collab/protected-gate-files.json', 'scripts/collab/queue.mjs', 'scripts/collab/land-guard.mjs',
-    'services/gateway/src/services/project-manager/governance.ts']) {
+    'services/gateway/src/services/project-manager/governance.ts', 'scripts/collab/gate-invariants.test.mjs']) {
     fs.mkdirSync(path.join(dir, path.dirname(rel)), { recursive: true });
     fs.copyFileSync(path.join(ROOT, rel), path.join(dir, rel));
   }
@@ -155,4 +182,40 @@ T('prod-reference guard and GATE-INVARIANTS.yml are deferred until present, then
   r = await checkInvariants(dir);
   assert.ok(r.failures.some((f) => /no longer lists vitana-aurora-prod/.test(f)), r.failures.join('\n'));
   assert.ok(r.failures.some((f) => /no longer runs on push to main/.test(f)), r.failures.join('\n'));
+});
+
+// VTID-05780 (plan autonomous-to-staging-r2, lane protect-gate-workflow): GATE-INVARIANTS.yml is on all four lists.
+T('mutation: dropping GATE-INVARIANTS.yml from any of the four protected lists fails', async () => {
+  const W = '.github/workflows/GATE-INVARIANTS.yml';
+  const lists = [
+    ['scripts/collab/protected-gate-files.json', (s) => s.replace(`    "${W}",\n`, ''), /protected-gate-files\.json no longer lists/],
+    ['scripts/collab/queue.mjs', (s) => s.replace(`'${W}', `, ''), /queue\.mjs PROTECTED_GATE_BUILTIN no longer lists/],
+    ['services/gateway/src/services/project-manager/governance.ts', (s) => s.replace(`  '${W}',\n`, ''), /governance\.ts PROTECTED_GATE_GLOBS no longer lists/],
+    ['scripts/collab/gate-invariants.test.mjs', (s) => s.replace(`  '${W}',\n`, ''), /gate-invariants\.test\.mjs REQUIRED_PROTECTED no longer lists/],
+  ];
+  for (const [rel, fn, re] of lists) {
+    const dir = fixture();
+    const before = fs.readFileSync(path.join(dir, rel), 'utf8');
+    edit(dir, rel, fn);
+    assert.notEqual(fs.readFileSync(path.join(dir, rel), 'utf8'), before, `${rel}: the mutation did not apply`);
+    const { failures } = await checkInvariants(dir);
+    assert.ok(failures.some((f) => re.test(f) && f.includes(W)), `${rel}: ${failures.join('\n')}`);
+  }
+});
+
+T('mutation: the exact-head rule weakened (merge of main, one session, builder) fails', async () => {
+  const cases = [
+    [(s) => s.replace("if (c.merge) return { ok: false", "if (false) return { ok: false"), /across a merge of main/],
+    [(s) => s.replace('const PAIR_NEEDS_DISTINCT_SESSIONS = true;', 'const PAIR_NEEDS_DISTINCT_SESSIONS = false;'), /from one session/],
+    [(s) => s.replace('const EXCLUDE_BUILDERS = true;', 'const EXCLUDE_BUILDERS = false;'), /builder self-review/],
+  ];
+  for (const [fn, re] of cases) {
+    const dir = fixture();
+    const rel = 'scripts/collab/land-guard.mjs';
+    const before = fs.readFileSync(path.join(dir, rel), 'utf8');
+    edit(dir, rel, fn);
+    assert.notEqual(fs.readFileSync(path.join(dir, rel), 'utf8'), before, 'the mutation did not apply');
+    const { failures } = await checkInvariants(dir);
+    assert.ok(failures.some((f) => re.test(f)), failures.join('\n'));
+  }
 });

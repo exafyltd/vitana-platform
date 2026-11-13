@@ -288,7 +288,9 @@ describe('VTID-05765 protected gate files merge on two agent accepts from differ
   });
   it('two models on the current head are allowed', () => {
     const l = lane({ pr: pr({ files: [file] }) });
-    expect(governanceMergeAllowed(l, l.pr, agentAccept(), [agentAccept(), agentAccept({ reviewer: opus })])).toEqual({ ok: true });
+    // VTID-05780: the two accepts must also come from two distinct reviewer sessions (contract change on purpose).
+    expect(governanceMergeAllowed(l, l.pr, agentAccept(), [agentAccept(), agentAccept({ reviewer: opus, session_id: 'agent-vitana-lane-reviewer-202610201200-ef01' })])).toEqual({ ok: true });
+    expect(governanceMergeAllowed(l, l.pr, agentAccept(), [agentAccept(), agentAccept({ reviewer: opus })])).toEqual({ ok: false, reason: 'protected_gate_file' });
   });
   it('an accept on an older head does not count', () => {
     const l = lane({ pr: pr({ files: [file] }) });

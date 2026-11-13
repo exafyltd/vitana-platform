@@ -918,7 +918,10 @@ const SECTION_43 = ['CLAUDE.md', 'scripts/collab/plan-spar.mjs', 'scripts/collab
   '.github/workflows/PLAN-SPAR.yml', '.github/workflows/PR-GATE.yml', '.github/workflows/AWS-PROD-*.yml',
   '.kiro/agents/vitana-lane-reviewer.md', 'supabase/migrations/*vtid_ledger*.sql', 'supabase/migrations/*plan_sparring*.sql',
   // VTID-05765 (plan autonomous-to-staging): contract change on purpose — VTID allocation and the gate-invariant check join the list.
-  '.github/workflows/VTID-ALLOCATE.yml', 'scripts/collab/gate-invariants.test.mjs'];
+  '.github/workflows/VTID-ALLOCATE.yml', 'scripts/collab/gate-invariants.test.mjs',
+  // VTID-05780 (plan autonomous-to-staging-r2): contract change on purpose — the post-merge workflow, its static test and
+  // the post-merge audit join the list.
+  '.github/workflows/GATE-INVARIANTS.yml', 'scripts/ci/workflow-trigger-check.test.mjs', 'scripts/collab/gate-audit.mjs'];
 
 test('VTID-05276 T1-T3: validateLane — kiro lane with the agent reviewer may declare governance paths, never a protected gate file; the agent needs executor kiro', () => {
   const v = (o) => validateLane(parseFrontMatter(laneMd('a', o)), 'cards', 'a', new Set(['a']));
@@ -1175,7 +1178,9 @@ test('VTID-05276 T16: protected-gate-files.json parses, equals plan §4.3 and th
   assert.deepEqual([...Q.PROTECTED_GATE_PATHS], SECTION_43);
   assert.deepEqual(Q.PROTECTED_GATE_BUILTIN, SECTION_43, 'the compiled-in copy (single-file runs in CI and vitana-v1) equals the JSON');
   const GATE_CODE = ['services/gateway/src/services/plan-sparring/', 'services/gateway/src/services/project-manager/governance.ts',
-    '.kiro/agents/vitana-lane-reviewer.md', 'supabase/migrations/'];
+    '.kiro/agents/vitana-lane-reviewer.md', 'supabase/migrations/',
+    // VTID-05780: the static test of GATE-INVARIANTS.yml (gate code outside the governance paths).
+    'scripts/ci/workflow-trigger-check.test.mjs'];
   for (const g of json.globs) {
     assert.equal(typeof g, 'string');
     assert.ok(Q.globTouchesGovernance(g) || GATE_CODE.some((p) => g.startsWith(p)), g);

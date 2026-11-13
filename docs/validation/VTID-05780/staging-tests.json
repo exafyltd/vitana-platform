@@ -1,0 +1,8 @@
+{
+  "vtid": "VTID-05780",
+  "service": "gateway",
+  "tests": [
+    { "kind": "existing", "ref": "npx jest test/project-manager", "cwd": "services/gateway",
+      "reason": "the Project Manager merge guard for protected gate files: an accept counts only on the exact head, two accepts need two chain models and two reviewer sessions, a builder session never counts (shared fixtures scripts/collab/fixtures/protected-review-cases.json). The change is merge-decision logic only, proven in CI; it serves no new route" }
+  ]
+}
