@@ -17,7 +17,8 @@
 // target may be a production host. Process: docs/DEPLOYMENT-PIPELINE.md.
 
 import { createRequire } from 'node:module';
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
+import { createLimiter, createLocks } from './pool.mjs';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, copyFileSync, appendFileSync, readdirSync } from 'node:fs';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -280,12 +281,38 @@ async function runHttp(service, t) {
   return lib.evaluateHttp(t, res);
 }
 
+// VTID-05672: parallel runner state. Commands in one directory are serialised by
+// cwdLock (writers and readers alike), directories overlap, suites overlap up to
+// STAGING_VERIFY_JOBS, HTTP checks up to 2. memo reuses a shared command's result.
+const cwdLock = createLocks();
+const JOBS = Number.parseInt(process.env.STAGING_VERIFY_JOBS || '4', 10) || 4;
+const limitSuites = createLimiter(JOBS);
+const limitHttp = createLimiter(2);
+const memo = new Map();
+
+// Async child process (replaces spawnSync so directories can overlap).
+function execCmd(bin, argv, opts) {
+  const { timeout, ...spawnOpts } = opts;
+  return new Promise((resolveP) => {
+    const child = spawn(bin, argv, spawnOpts);
+    let stdout = '';
+    let stderr = '';
+    const timer = setTimeout(() => child.kill('SIGKILL'), timeout);
+    child.stdout?.on('data', (d) => { stdout += d; });
+    child.stderr?.on('data', (d) => { stderr += d; });
+    child.on('error', (e) => { clearTimeout(timer); resolveP({ status: null, stdout, stderr: stderr + String(e) }); });
+    child.on('close', (code) => { clearTimeout(timer); resolveP({ status: code, stdout, stderr }); });
+  });
+}
+
 const installed = new Set();
-function ensureDeps(cwdAbs) {
+async function ensureDeps(cwdAbs) {
   if (installed.has(cwdAbs) || !existsSync(join(cwdAbs, 'package.json'))) return;
   if (!existsSync(join(cwdAbs, 'node_modules'))) {
     log(`npm ci in ${cwdAbs}`);
-    execFileSync('npm', ['ci', '--no-audit', '--no-fund'], { cwd: cwdAbs, stdio: 'inherit' });
+    const r = await execCmd('npm', ['ci', '--no-audit', '--no-fund'], { cwd: cwdAbs, stdio: ['ignore', 'pipe', 'pipe'], timeout: 20 * 60_000 });
+    process.stdout.write(r.stdout + r.stderr);
+    if (r.status !== 0) throw new Error(`npm ci failed in ${cwdAbs}`);
   }
   installed.add(cwdAbs);
 }
@@ -295,7 +322,7 @@ function passthrough(names) {
 }
 
 let browsersInstalled = false;
-function runPlaywright(service, repoRoot, t, outDir) {
+async function runPlaywright(service, repoRoot, t, outDir) {
   const cwdAbs = inside(repoRoot, t.cwd || '.');
   const specAbs = inside(repoRoot, t.spec);
   if (!cwdAbs || !specAbs || !specAbs.startsWith(cwdAbs)) return { ok: false, problems: ['spec must live under cwd inside the repo'] };
@@ -306,9 +333,11 @@ function runPlaywright(service, repoRoot, t, outDir) {
   // The canonical guard is copied next to the spec on every run, so no repo
   // can carry a stale or weakened copy.
   copyFileSync(join(HERE, 'staging-guard.ts'), join(dirname(specAbs), 'staging-guard.ts'));
-  ensureDeps(cwdAbs);
+  await ensureDeps(cwdAbs);
   if (!browsersInstalled && !(process.env.STAGING_VERIFY_SKIP_BROWSER_INSTALL ?? '')) {
-    execFileSync('npx', ['playwright', 'install', 'chromium', '--with-deps'], { cwd: cwdAbs, stdio: 'inherit' });
+    const ins = await execCmd('npx', ['playwright', 'install', 'chromium', '--with-deps'], { cwd: cwdAbs, stdio: ['ignore', 'pipe', 'pipe'], timeout: 20 * 60_000 });
+    process.stdout.write(ins.stdout + ins.stderr);
+    if (ins.status !== 0) throw new Error('playwright install failed');
     browsersInstalled = true;
   }
   const cfg = join(cwdAbs, '.staging-verify.playwright.config.mjs');
@@ -329,9 +358,9 @@ export default defineConfig({
 `,
   );
   const base = lib.assertStagingTarget(lib.STAGING_TARGETS[t.target || lib.SERVICES[service].target]);
-  const r = spawnSync('npx', ['playwright', 'test', relative(cwdAbs, specAbs), `--config=${cfg}`], {
+  const r = await execCmd('npx', ['playwright', 'test', relative(cwdAbs, specAbs), `--config=${cfg}`], {
     cwd: cwdAbs,
-    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
     timeout: 15 * 60_000,
     env: {
       PATH: process.env.PATH,
@@ -353,25 +382,39 @@ export default defineConfig({
 
 // The few lines that say what broke, not the whole reporter output (which is
 // already in the job log above).
-function runExisting(repoRoot, t) {
+// VTID-05672: a shared command (same tree, cwd, env and argv) runs once per verify;
+// later suites reuse its result and say so (reused_from). Failures are reused too.
+export async function runExisting(repoRoot, t, suite) {
   const cwdAbs = inside(repoRoot, t.cwd || '.');
   if (!cwdAbs) return { ok: false, problems: ['cwd outside repo'] };
-  ensureDeps(cwdAbs);
-  const [bin, ...argv] = t.ref.split(' ');
-  // No secrets: CI-level suites never need staging or test-user credentials.
-  const r = spawnSync(bin, argv, {
-    cwd: cwdAbs,
-    encoding: 'utf8',
-    timeout: 20 * 60_000,
-    // Plus only the manifest's allowlisted, non-secret env (lib.existingEnv), e.g. the native bundle's APP_PROFILE.
-    env: { PATH: process.env.PATH, HOME: process.env.HOME, CI: '1', NODE_ENV: 'test', ...lib.existingEnv(t) },
+  return cwdLock(cwdAbs, async () => {
+    const env = lib.existingEnv(t);
+    const rel = relative(repoRoot, cwdAbs);
+    const tree = git(repoRoot, ['rev-parse', `HEAD:${rel}`], { allowFail: true }) || 'no-tree';
+    const key = JSON.stringify([t.ref, cwdAbs, tree, Object.entries(env).sort()]);
+    if (memo.has(key)) {
+      const first = memo.get(key);
+      return { ok: first.ok, problems: first.problems, reused_from: first.first };
+    }
+    await ensureDeps(cwdAbs);
+    const [bin, ...argv] = t.ref.split(' ');
+    // No secrets: CI-level suites never need staging or test-user credentials.
+    const r = await execCmd(bin, argv, {
+      cwd: cwdAbs,
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 20 * 60_000,
+      // Plus only the manifest's allowlisted, non-secret env (lib.existingEnv), e.g. the native bundle's APP_PROFILE.
+      env: { PATH: process.env.PATH, HOME: process.env.HOME, CI: '1', NODE_ENV: 'test', ...env },
+    });
+    const output = `${r.stdout || ''}${r.stderr || ''}`;
+    process.stdout.write(output);
+    const result = r.status === 0 ? { ok: true, problems: [] } : { ok: false, problems: [lib.summarizeFailure(output)] };
+    memo.set(key, { ...result, first: suite });
+    return result;
   });
-  const output = `${r.stdout || ''}${r.stderr || ''}`;
-  process.stdout.write(output);
-  return r.status === 0 ? { ok: true, problems: [] } : { ok: false, problems: [lib.summarizeFailure(output)] };
 }
 
-async function runSuite(service, repoRoot, outDir, suite, tests) {
+export async function runSuite(service, repoRoot, outDir, suite, tests) {
   const results = [];
   for (const [i, t] of tests.entries()) {
     const name = t.name || `${t.kind} ${t.path || t.spec || t.ref || i}`;
@@ -379,15 +422,18 @@ async function runSuite(service, repoRoot, outDir, suite, tests) {
     const startedAt = new Date(started).toISOString();
     let r;
     try {
-      if (t.kind === 'http') r = await runHttp(service, t);
-      else if (t.kind === 'playwright') r = runPlaywright(service, repoRoot, t, outDir);
-      else r = runExisting(repoRoot, t);
+      if (t.kind === 'http') r = await limitHttp(() => runHttp(service, t));
+      else if (t.kind === 'playwright') {
+        const cwdAbs = inside(repoRoot, t.cwd || '.') || repoRoot;
+        r = await cwdLock(cwdAbs, () => runPlaywright(service, repoRoot, t, outDir));
+      } else r = await runExisting(repoRoot, t, suite);
     } catch (e) {
       r = { ok: false, problems: [lib.describeFetchError(e)] };
     }
     const ended = Date.now();
     // VTID-05144: wall-clock bounds per result, for attribution after a mid-run redeploy.
     const row = { suite, name, kind: t.kind, ok: r.ok, problems: r.problems, ms: ended - started, started_at: startedAt, ended_at: new Date(ended).toISOString() };
+    if (r.reused_from) row.reused_from = r.reused_from;
     log(`${row.ok ? 'PASS' : 'FAIL'} ${suite} › ${name}${row.ok ? '' : ` — ${row.problems.join('; ')}`}`);
     results.push(row);
   }
@@ -455,7 +501,13 @@ async function verify(args) {
     const v = lib.validateManifest(smoke, { service });
     if (!v.ok) throw new Error(`smoke/${service}.json invalid: ${v.errors.join('; ')}`);
     results.push(...(await runSuite(service, repoRoot, outDir, 'smoke', smoke.tests)));
-    for (const s of plan.suites) results.push(...(await runSuite(service, repoRoot, outDir, s.vtid, s.tests)));
+    // VTID-05672: prewarm gen:i18n once per directory, so no suite reads a missing catalog file.
+    const prewarm = new Set();
+    for (const s of plan.suites) for (const t of s.tests) if (t.kind === 'existing' && /gen:i18n/.test(t.ref || '')) prewarm.add(t.cwd || '.');
+    for (const cwd of prewarm) await runExisting(repoRoot, { ref: 'npm run gen:i18n', cwd }, 'prewarm');
+    // Suites overlap (bounded by STAGING_VERIFY_JOBS); rows keep manifest order.
+    const perSuite = await Promise.all(plan.suites.map((s) => limitSuites(() => runSuite(service, repoRoot, outDir, s.vtid, s.tests))));
+    for (const rows of perSuite) results.push(...rows);
     if (args.full === 'true') {
       // VTID-04949 (C2): nightly full run — every other suite for this service too.
       const all = {};
@@ -464,7 +516,8 @@ async function verify(args) {
       const full = lib.planFullRun({ service, manifests: all, alreadyRun: plan.suites.map((x) => x.vtid) });
       log(`full run: ${full.suites.length} more suite(s), ${full.invalid.length} invalid`);
       for (const iv of full.invalid) results.push({ suite: iv.vtid, name: 'manifest valid', kind: 'manifest', ok: false, problems: iv.errors, ms: 0, static: true });
-      for (const s of full.suites) results.push(...(await runSuite(service, repoRoot, outDir, s.vtid, s.tests)));
+      const fullRows = await Promise.all(full.suites.map((s) => limitSuites(() => runSuite(service, repoRoot, outDir, s.vtid, s.tests))));
+      for (const rows of fullRows) results.push(...rows);
     }
     // VTID-05129: three attempts, and the problem lists every sample (null =
     // unreadable) so a dropped request can't pass for a different commit.
