@@ -47,7 +47,8 @@ until it passes, then push.
 1. **Answer an open sparring round** (a `round-<n>.md` without its `responses` file): one disposition per finding,
    update the plan block, commit `responses-<n>.md` + `plan.md` on the `plan(` PR branch, run preflight, then push. PLAN-SPAR runs the next
    round. An escalated verdict is an owner stop. VTIDs come only from CI PLAN-SPAR after policy approval, never by hand.
-2. **Merge the `plan(` PR** after convergence, under §7b, so the lanes read their files from `main`.
+2. **Merge the `plan(` PR** after convergence, under §7b, so the lanes read their files from `main`. (After the cut tag of
+   vitana-platform the merge bot lands it: "After the cut" below.)
 3. **Fix forward** a lane whose PR head has a failed check: read the log, fix inside the lane's `paths`, run preflight, then push. At most
    3 attempts per lane; the 4th failure parks the lane (`parked`, `parked_from`, `next_actor: owner`) with the
    five-part message. A failed PLAN-SPAR, PR-GATE or STAGING-VERIFY run on attempt 1 that failed for infra reasons may
@@ -71,7 +72,7 @@ until it passes, then push.
 6. **Land an accepted lane** under the §7b merge rule: accept on the current head, every check run green, up to date
    with latest `main` and re-checked on that head, no conflict, every `depends_on` lane done, target `main` with a
    staging-only deploy path. One merge per repo at a time. Record `merge: <sha>` and `authority: §7b PM rule` in the lane
-   log. The Project Manager merges when it acts first.
+   log. The Project Manager merges when it acts first. For a repository whose cut tag exists the driver does not merge: "After the cut".
 7. **Watch staging** for a lane that deploys: STAGING-VERIFY on the merge commit. Failed → fix forward as a new lane
    added through `_plan` (a `done` lane is never reopened), at most 3, then park the plan with the five-part message.
 8. **Gate 2** when every lane is `done` and STAGING-VERIFY passed on the last merge commit: *"Staging verified — ready for
@@ -84,6 +85,23 @@ until it passes, then push.
    (`git push origin --delete refs/heads/collab-driver/<slug>`; it holds no work).
 10. **Wait**: nothing to do now (checks running, review pending) → heartbeat, poll every 2–3 min, loop.
 
+## After the cut (plan agentic-delivery §3.5, §3.13, §8.2)
+A repository is cut over when its tag exists: `git ls-remote --tags origin "refs/tags/delivery/cutover-<repo>"` prints a line
+(`<repo>` is `vitana-platform` or `vitana-v1`; `delivery-cutover.sh apply` creates the tag, `delivery-rollback.sh` deletes it). Look
+before every merge step. Before the tag, steps 2 and 6 are as written.
+- **After the tag the driver does not merge in that repository** (steps 2 and 6): GitHub `main` takes pushes from the push mirror only, and
+  the gateway refuses a GitHub merge with `merge_moved_to_gitlab`. Everything before the merge is unchanged: agents push `kiro/*` and `claude/*`
+  branches to GitHub and open pull requests, the bridge keeps one GitLab merge request per pull request and posts each job as the status
+  `gitlab/<job>`, the reviewer agent's entry is written as in step 4, a failed check is fixed as in step 3.
+- The merge bot lands the merge request (squash, the VTID first in the subject) once the accept is on its current head and `lane-scope`,
+  `change-suite` and `gate` are green. The driver **waits for `delivery.landed`** instead of merging: the squash commit with the lane's VTID in
+  its subject is on `origin/main` (the push mirror copies it about a minute after GitLab), the bridge has closed the pull request with a link, and
+  `delivery.landed` for that VTID is in OASIS. Then it records `merge: <sha>` and `authority: merge bot (plan agentic-delivery §3.5)` in the lane
+  log and goes on with step 7. Not landed after 90 min: read the merge request's queue label (`queue-blocked`, `queue-waiting`, `queue-paused`)
+  before anything else; the stop cases of §7 apply as before.
+- A `plan(` pull request lands the same way once PLAN-SPAR has converged. A protected gate file is never landed by the bot (§3a). A lane that
+  spans both repositories lands per repository: vitana-v1 may still be before its tag when vitana-platform is after it.
+
 ## Automation-started driver (wake-up item W)
 A driver started from an automation run never merges (steps 2 and 6 are left to the Project Manager or an
 interactive driver; the lane stops at `verified`), never builds a governance lane or an `executor: claude` lane, and
@@ -94,4 +112,4 @@ wake-up resumes from git.
 Never allocate a VTID by hand, never deploy to production or dispatch a production workflow except an owner-commanded
 publish in an interactive session (§7c), never run `publish-to-prod.sh`, never write to Supabase or any live system from a session tool (a database change is a migration
 file in the lane's PR), never test against production, never skip, disable or loosen a test, never force-push, never
-accept your own lane.
+accept your own lane, never merge a pull request of a repository whose cut tag exists (the merge bot lands it).

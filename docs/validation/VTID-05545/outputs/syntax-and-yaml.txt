@@ -1,0 +1,29 @@
+# VTID-05545: syntax checks and the independent YAML cross-check (after the review fixes B1 to B5)
+$ bash -n scripts/eng/delivery-cutover.sh scripts/eng/delivery-rollback.sh docs/validation/VTID-05545/outputs/mutate-cutover.sh
+ok  scripts/eng/delivery-cutover.sh
+ok  scripts/eng/delivery-rollback.sh
+ok  docs/validation/VTID-05545/outputs/mutate-cutover.sh
+$ node --check scripts/eng/gitlab-settings.mjs scripts/eng/delivery-metrics.mjs scripts/eng/parity-report.mjs
+ok  scripts/eng/gitlab-settings.mjs
+ok  scripts/eng/delivery-metrics.mjs
+ok  scripts/eng/parity-report.mjs
+$ JSON.parse of the settings file, the workflow list and scope.json
+ok  infra/gitlab-engineering/settings/gitlab-settings.json
+ok  scripts/eng/github-workflows.json
+ok  docs/validation/VTID-05545/scope.json
+$ every bash block of infra/gitlab-engineering/RUNBOOK-cutover.md (bash -n)
+ok  block 1 (4 lines)
+ok  block 2 (2 lines)
+ok  block 3 (8 lines)
+ok  block 4 (5 lines)
+ok  block 5 (1 lines)
+ok  block 6 (1 lines)
+ok  block 7 (4 lines)
+blocks: 7
+$ PYTHONPATH=/projects/sandbox/tools/pylib python3 docs/validation/VTID-05545/outputs/check-workflow-triggers.py .github/workflows <vitana-v1>/.github/workflows scripts/eng/github-workflows.json
+files compared with PyYAML: 159 (platform 113, vitana-v1 46)
+differences: 0
+$ VITANA_V1_WORKFLOWS_DIR=<vitana-v1>/.github/workflows node --test scripts/eng/github-workflows.test.mjs
+# tests 11
+# pass 11
+# fail 0

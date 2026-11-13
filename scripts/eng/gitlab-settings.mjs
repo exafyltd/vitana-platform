@@ -73,6 +73,33 @@ export const SCHEMA_KEYS = Object.freeze({
   project: ['profile', 'landing', 'rehearsal', 'required_jobs', 'ci_file', 'webhook'],
   webhook: ['url', 'events'],
 });
+// ── the delivery cutover (plan agentic-delivery §3.6 step 8, §8.2 step 3, lane cutover) ───────────────────────────────────────
+// A project with a `cutover` block has four states. inactive: its generated pipeline file (cutover.ci_file) is not in the CI folder yet,
+// so the project is exactly what milestone 2 made it. shadow: the file is there, the marker is not: the project stays `mirror`, runs the
+// delivery pipeline with DELIVERY_MODE=shadow and sends merge-request and pipeline events to the gateway. rehearsal: the marker says
+// "rehearsal": shadow, but DELIVERY_MODE=live (plan §8.1 step 5). live: the marker says "live": the `native` profile, landing, the required
+// jobs, push and tag-push events, the push mirror of protected branches to GitHub (divergent refs kept), a protected assist/*, "skipped
+// pipelines count as successful" and DELIVERY_MODE=live. Removing the marker converges back to shadow. The marker is a host file written by
+// scripts/eng/delivery-cutover.sh; the merge bot reads the same view through loadEffectiveProjects().
+export const CUTOVER = Object.freeze({
+  markerFile: '/etc/vitana/delivery-cutover',
+  markerSchema: 'vitana.delivery-cutover-marker/v1',
+  modes: Object.freeze(['rehearsal', 'live']),
+  variable: 'DELIVERY_MODE',
+  states: Object.freeze(['inactive', 'shadow', 'rehearsal', 'live']),
+});
+export const CUTOVER_KEYS = Object.freeze({
+  top: ['cutover'],
+  projectExtra: ['cutover'],
+  topBlock: ['accounts'],
+  project: ['github', 'ci_file', 'webhook_url', 'mirror_user', 'shadow', 'live'],
+  shadow: ['webhook_events', 'mirror_user_role'],
+  live: ['landing', 'required_jobs', 'webhook_events', 'mirror_user_role', 'push_mirror', 'protected_branches', 'allow_merge_on_skipped_pipeline'],
+  pushMirror: ['token_file', 'only_protected_branches', 'keep_divergent_refs'],
+  branch: ['name', 'push', 'merge'],
+  account: ['username', 'name', 'scopes', 'token_file', 'shadow_role', 'live_role', 'projects'],
+});
+export const CUTOVER_WEBHOOK_EVENTS = Object.freeze({ ...WEBHOOK_EVENTS, push: 'push_events', tag_push: 'tag_push_events' });
 export const DEFAULTS = Object.freeze({ url: 'http://127.0.0.1', adminTokenFile: '/etc/vitana/settings-admin-token' });
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const defaultConfigPath = () => path.resolve(HERE, '..', '..', 'infra', 'gitlab-engineering', 'settings', 'gitlab-settings.json');
@@ -124,7 +151,7 @@ function httpsUrl(v, where) {
 /** Validates schema version 1 and returns the normalised configuration. Every error names the key (for example accounts[2].role). */
 export function validateConfig(raw) {
   if (!isObj(raw)) bad('settings', 'must be a JSON object');
-  onlyKeys(raw, SCHEMA_KEYS.top, '');
+  onlyKeys(raw, [...SCHEMA_KEYS.top, ...CUTOVER_KEYS.top], '');
   if (raw.schema_version !== SCHEMA_VERSION) bad('schema_version', `must be ${SCHEMA_VERSION} (got ${JSON.stringify(raw.schema_version)})`);
   const gitlabUrl = httpsUrl(raw.gitlab_url, 'gitlab_url');
   const group = str(raw.group, 'group', GROUP_OK, 'a GitLab group path (letters, digits, _ . -)');
@@ -163,7 +190,7 @@ export function validateConfig(raw) {
     str(name, where, NAME_OK, 'a lower-case project path');
     if (name === CI_PROJECT) bad(where, `${CI_PROJECT} is managed by the sync itself and must not be listed`);
     if (!isObj(p)) bad(where, 'must be an object');
-    onlyKeys(p, SCHEMA_KEYS.project, where);
+    onlyKeys(p, [...SCHEMA_KEYS.project, ...CUTOVER_KEYS.projectExtra], where);
     if (!Object.hasOwn(PROFILES, p.profile)) bad(key(where, 'profile'), `must be one of ${Object.keys(PROFILES).join(', ')} (got ${JSON.stringify(p.profile)})`);
     for (const flag of ['landing', 'rehearsal']) if (p[flag] !== undefined && typeof p[flag] !== 'boolean') bad(key(where, flag), 'must be true or false');
     const out = {
@@ -171,6 +198,7 @@ export function validateConfig(raw) {
       required_jobs: p.required_jobs === undefined ? [] : list(p.required_jobs, key(where, 'required_jobs'), { itemRe: /^.{1,255}$/, itemWhat: 'a job name' }),
       ci_file: p.ci_file === undefined || p.ci_file === null ? null : str(p.ci_file, key(where, 'ci_file'), CI_FILE_OK, 'a file name ending in .yml, without a path'),
       webhook: null,
+      cutover: p.cutover === undefined || p.cutover === null ? null : validateProjectCutover(p.cutover, key(where, 'cutover')),
     };
     if (out.landing && out.profile !== 'native') bad(key(where, 'landing'), 'needs profile native: a mirror project is pushed to by the mirror user, not landed by the bot');
     if (out.rehearsal && out.profile !== 'native') bad(key(where, 'rehearsal'), 'needs profile native (plan §3.8: a rehearsal project is native, with no webhook and no mirror)');
@@ -182,6 +210,7 @@ export function validateConfig(raw) {
       if (out.rehearsal) bad(wwhere, 'a rehearsal project must not have a webhook');
       out.webhook = { url: httpsUrl(wh.url, key(wwhere, 'url')), events: list(wh.events, key(wwhere, 'events'), { min: 1, itemRe: new RegExp(`^(${Object.keys(WEBHOOK_EVENTS).join('|')})$`), itemWhat: `one of ${Object.keys(WEBHOOK_EVENTS).join(', ')}` }) };
     }
+    if (out.cutover && out.profile !== 'mirror') bad(key(where, 'cutover'), 'needs profile mirror: the cutover turns a mirror project into a native one');
     projects[name] = out;
   }
 
@@ -209,7 +238,157 @@ export function validateConfig(raw) {
     const name = a.name === undefined ? username : str(a.name, key(where, 'name'), /^.{1,100}$/, 'a display name');
     return { username, name, role: a.role, projects: projs, scopes, token_file: tokenFile };
   });
-  return { schema_version: SCHEMA_VERSION, gitlab_url: gitlabUrl, group, owners, tokens: { lifetime_days: life, rotate_below_days: below }, runners: { legacy, fleet }, projects, accounts };
+  const cutover = raw.cutover === undefined || raw.cutover === null ? null : validateTopCutover(raw.cutover, projects, seen, owners, files);
+  return { schema_version: SCHEMA_VERSION, gitlab_url: gitlabUrl, group, owners, tokens: { lifetime_days: life, rotate_below_days: below }, runners: { legacy, fleet }, projects, accounts, cutover };
+}
+
+const GH_REPO_OK = /^[A-Za-z0-9][A-Za-z0-9._-]{0,38}\/[A-Za-z0-9._-]{1,100}$/;
+const BRANCH_RULE_OK = /^[A-Za-z0-9][A-Za-z0-9._/*-]{0,100}$/;
+const CUTOVER_EVENTS = Object.keys(CUTOVER_WEBHOOK_EVENTS);
+function bool(v, where) { if (typeof v !== 'boolean') bad(where, 'must be true or false'); return v; }
+function roleOf(v, where) { if (!Object.hasOwn(ROLES, v)) bad(where, `must be one of ${Object.keys(ROLES).join(', ')} (got ${JSON.stringify(v)})`); return v; }
+function eventList(v, where) {
+  return list(v, where, { min: 1, itemRe: new RegExp(`^(${CUTOVER_EVENTS.join('|')})$`), itemWhat: `one of ${CUTOVER_EVENTS.join(', ')}` });
+}
+/** The `cutover` block of a project (plan agentic-delivery §8.2 step 3). Every error names the key. */
+function validateProjectCutover(c, where) {
+  if (!isObj(c)) bad(where, 'must be an object');
+  onlyKeys(c, CUTOVER_KEYS.project, where);
+  const sh = c.shadow;
+  const lv = c.live;
+  if (!isObj(sh)) bad(key(where, 'shadow'), 'must be an object');
+  if (!isObj(lv)) bad(key(where, 'live'), 'must be an object');
+  onlyKeys(sh, CUTOVER_KEYS.shadow, key(where, 'shadow'));
+  onlyKeys(lv, CUTOVER_KEYS.live, key(where, 'live'));
+  const out = {
+    github: str(c.github, key(where, 'github'), GH_REPO_OK, 'a GitHub repository (owner/name)'),
+    ci_file: str(c.ci_file, key(where, 'ci_file'), CI_FILE_OK, 'a file name ending in .yml, without a path'),
+    webhook_url: httpsUrl(c.webhook_url, key(where, 'webhook_url')),
+    mirror_user: c.mirror_user === undefined ? null : str(c.mirror_user, key(where, 'mirror_user'), NAME_OK, 'a lower-case GitLab username'),
+    shadow: { webhook_events: eventList(sh.webhook_events, key(where, 'shadow.webhook_events')), mirror_user_role: sh.mirror_user_role === undefined ? null : roleOf(sh.mirror_user_role, key(where, 'shadow.mirror_user_role')) },
+    live: {
+      landing: bool(lv.landing, key(where, 'live.landing')),
+      required_jobs: list(lv.required_jobs, key(where, 'live.required_jobs'), { min: 1, itemRe: /^.{1,255}$/, itemWhat: 'a job name' }),
+      webhook_events: eventList(lv.webhook_events, key(where, 'live.webhook_events')),
+      mirror_user_role: lv.mirror_user_role === undefined ? null : roleOf(lv.mirror_user_role, key(where, 'live.mirror_user_role')),
+      push_mirror: null,
+      protected_branches: [],
+      allow_merge_on_skipped_pipeline: bool(lv.allow_merge_on_skipped_pipeline, key(where, 'live.allow_merge_on_skipped_pipeline')),
+    },
+  };
+  if (out.mirror_user && (out.shadow.mirror_user_role === null || out.live.mirror_user_role === null)) bad(key(where, 'mirror_user'), 'needs shadow.mirror_user_role and live.mirror_user_role');
+  const pm = lv.push_mirror;
+  if (!isObj(pm)) bad(key(where, 'live.push_mirror'), 'must be an object');
+  onlyKeys(pm, CUTOVER_KEYS.pushMirror, key(where, 'live.push_mirror'));
+  out.live.push_mirror = {
+    token_file: str(pm.token_file, key(where, 'live.push_mirror.token_file'), TOKEN_FILE_OK, 'a file directly under /etc/vitana'),
+    only_protected_branches: bool(pm.only_protected_branches, key(where, 'live.push_mirror.only_protected_branches')),
+    keep_divergent_refs: bool(pm.keep_divergent_refs, key(where, 'live.push_mirror.keep_divergent_refs')),
+  };
+  if (out.live.push_mirror.only_protected_branches !== true) bad(key(where, 'live.push_mirror.only_protected_branches'), 'must be true: only protected branches (main) are mirrored to GitHub (plan §3.13)');
+  if (out.live.push_mirror.keep_divergent_refs !== true) bad(key(where, 'live.push_mirror.keep_divergent_refs'), 'must be true: a divergent GitHub ref is kept, never overwritten (plan §3.13)');
+  if (!Array.isArray(lv.protected_branches)) bad(key(where, 'live.protected_branches'), 'must be a list');
+  const seen = new Set();
+  lv.protected_branches.forEach((b, i) => {
+    const w = `${key(where, 'live.protected_branches')}[${i}]`;
+    if (!isObj(b)) bad(w, 'must be an object');
+    onlyKeys(b, CUTOVER_KEYS.branch, w);
+    const name = str(b.name, key(w, 'name'), BRANCH_RULE_OK, 'a branch name or wildcard such as assist/*');
+    if (name === MAIN_BRANCH || seen.has(name)) bad(key(w, 'name'), `${name} is ${name === MAIN_BRANCH ? 'protected by the profile already' : 'listed twice'}`);
+    seen.add(name);
+    for (const k of ['push', 'merge']) if (![0, 30, 40].includes(b[k])) bad(key(w, k), 'must be 0 (No one), 30 (Developers) or 40 (Maintainers)');
+    out.live.protected_branches.push({ name, push: b.push, merge: b.merge });
+  });
+  return out;
+}
+/** The top-level `cutover` block: the accounts that exist while a project is in shadow or live (the bridge). */
+function validateTopCutover(c, projects, usernames, owners, tokenFiles) {
+  if (!isObj(c)) bad('cutover', 'must be an object');
+  onlyKeys(c, CUTOVER_KEYS.topBlock, 'cutover');
+  if (!Array.isArray(c.accounts)) bad('cutover.accounts', 'must be a list');
+  const names = new Set();
+  const accounts = c.accounts.map((a, i) => {
+    const where = `cutover.accounts[${i}]`;
+    if (!isObj(a)) bad(where, 'must be an object');
+    onlyKeys(a, CUTOVER_KEYS.account, where);
+    const username = str(a.username, key(where, 'username'), NAME_OK, 'a lower-case GitLab username');
+    if (usernames.has(username) || names.has(username)) bad(key(where, 'username'), `${username} is already an account of this file`);
+    if (owners.includes(username)) bad(key(where, 'username'), `${username} is an owner (a person), not a service account`);
+    names.add(username);
+    const projs = list(a.projects, key(where, 'projects'), { min: 1, itemRe: NAME_OK, itemWhat: 'a project of this file' });
+    projs.forEach((p, j) => { if (!projects[p]?.cutover) bad(`${where}.projects[${j}]`, `${p} has no cutover block`); });
+    const tokenFile = a.token_file === undefined || a.token_file === null ? null : str(a.token_file, key(where, 'token_file'), TOKEN_FILE_OK, 'a file directly under /etc/vitana');
+    if (tokenFile) { if (tokenFiles.has(tokenFile)) bad(key(where, 'token_file'), `${tokenFile} is already used by another account`); tokenFiles.add(tokenFile); }
+    const scopes = a.scopes === undefined ? [...DEFAULT_SCOPES.developer] : list(a.scopes, key(where, 'scopes'), { min: 1, itemRe: new RegExp(`^(${SCOPES.join('|')})$`), itemWhat: `one of ${SCOPES.join(', ')}` });
+    return {
+      username, name: a.name === undefined ? username : str(a.name, key(where, 'name'), /^.{1,100}$/, 'a display name'),
+      shadow_role: roleOf(a.shadow_role, key(where, 'shadow_role')), live_role: roleOf(a.live_role, key(where, 'live_role')), projects: projs, scopes, token_file: tokenFile,
+    };
+  });
+  return { accounts };
+}
+
+// ── the view of the delivery cutover: marker, state of a project, the configuration the rest of the run works on ─────────────────
+/** The marker file: { present, mode, at, problem }. A file that is not a marker counts as absent and is reported. */
+export async function readMarker(fsDep, file = CUTOVER.markerFile) {
+  const f = await fsDep.readFile(file).catch(() => null);
+  if (!f) return { present: false, mode: null, at: null, problem: null };
+  let j;
+  try { j = JSON.parse(f.text); } catch { return { present: false, mode: null, at: null, problem: `${file} is not valid JSON; treated as absent` }; }
+  if (!isObj(j) || j.schema !== CUTOVER.markerSchema) return { present: false, mode: null, at: null, problem: `${file} does not carry the schema ${CUTOVER.markerSchema}; treated as absent` };
+  if (!CUTOVER.modes.includes(j.mode)) return { present: false, mode: null, at: null, problem: `${file}: mode must be ${CUTOVER.modes.join(' or ')}; treated as absent` };
+  return { present: true, mode: j.mode, at: typeof j.at === 'string' ? j.at : null, problem: null };
+}
+/** inactive | shadow | rehearsal | live (see the comment at CUTOVER). */
+export function projectState(p, marker, deliveryFiles) {
+  if (!p.cutover || !deliveryFiles.has(p.cutover.ci_file)) return 'inactive';
+  if (marker?.present && marker.mode === 'live') return 'live';
+  if (marker?.present && marker.mode === 'rehearsal') return 'rehearsal';
+  return 'shadow';
+}
+/**
+ * The configuration a run works on: the validated file with each cutover project turned into its state (pure). An inactive project and a
+ * file without cutover blocks come out unchanged, so milestone 2 behaves exactly as before until a generated pipeline file exists.
+ */
+export function effectiveConfig(config, { marker = null, deliveryFiles = new Set() } = {}) {
+  const projects = {};
+  const states = {};
+  for (const [name, p] of Object.entries(config.projects)) {
+    const state = projectState(p, marker, deliveryFiles);
+    states[name] = state;
+    if (state === 'inactive') { projects[name] = { ...p, cutoverState: 'inactive', cutoverPlan: null }; continue; }
+    const c = p.cutover;
+    const live = state === 'live';
+    const block = live ? c.live : c.shadow;
+    projects[name] = {
+      ...p, cutoverState: state,
+      profile: live ? 'native' : p.profile, landing: live ? c.live.landing : p.landing, required_jobs: live ? c.live.required_jobs : p.required_jobs,
+      ci_file: c.ci_file, webhook: { url: c.webhook_url, events: block.webhook_events },
+      cutoverPlan: {
+        github: c.github, mode: state === 'shadow' ? 'shadow' : 'live', live, pushMirror: live ? c.live.push_mirror : null,
+        managedBranches: c.live.protected_branches, wantBranches: live ? c.live.protected_branches : [], allowSkipped: live && c.live.allow_merge_on_skipped_pipeline,
+        mirrorUser: c.mirror_user ? { username: c.mirror_user, role: block.mirror_user_role } : null,
+      },
+    };
+  }
+  const active = Object.entries(projects).filter(([, p]) => p.cutoverState !== 'inactive').map(([n]) => n);
+  const liveNames = new Set(active.filter((n) => projects[n].cutoverState === 'live'));
+  const accounts = config.accounts.map((a) => (a.role === 'maintainer' && liveNames.size ? { ...a, projects: [...new Set([...a.projects, ...liveNames])] } : a));
+  for (const a of config.cutover?.accounts ?? []) {
+    const mine = a.projects.filter((n) => active.includes(n));
+    if (!mine.length) continue;
+    accounts.push({ username: a.username, name: a.name, role: mine.some((n) => liveNames.has(n)) ? a.live_role : a.shadow_role, projects: mine, scopes: a.scopes, token_file: a.token_file });
+  }
+  return { ...config, projects, accounts, cutoverStates: states };
+}
+/** The projects as the merge bot reads them ({ name, path, landing, required_jobs }), in the view of the marker: landing is on for a live project. */
+export async function loadEffectiveProjects(settingsFile, { fs: fsDep = realFs(), markerFile = CUTOVER.markerFile, ciDir = defaultCiDir() } = {}) {
+  const f = await fsDep.readFile(settingsFile);
+  if (!f) throw new Error(`${settingsFile} cannot be read`);
+  const config = validateConfig(JSON.parse(f.text));
+  const files = new Set(await fsDep.listYml(ciDir).catch(() => []));
+  const eff = effectiveConfig(config, { marker: await readMarker(fsDep, markerFile), deliveryFiles: files });
+  return Object.entries(eff.projects).map(([name, p]) => ({ name, path: `${eff.group}/${name}`, landing: p.landing === true, required_jobs: [...p.required_jobs] }));
 }
 
 // ── small helpers ────────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -421,6 +600,10 @@ async function observe(ctx) {
       P.branches = await readAll(ctx, `/projects/${obj.id}/protected_branches`);
       P.membersAll = await readAll(ctx, `/projects/${obj.id}/members/all`);
       P.hooks = await readAll(ctx, `/projects/${obj.id}/hooks`);
+      if (cfg.projects[name].cutoverPlan) { // only a project in shadow, rehearsal or live is asked for its variables and its remote mirrors
+        P.variables = await readAll(ctx, `/projects/${obj.id}/variables`);
+        P.mirrors = await readAll(ctx, `/projects/${obj.id}/remote_mirrors`);
+      }
     }
     S.projects.set(name, P);
   }
@@ -469,6 +652,14 @@ async function observe(ctx) {
   }
   S.fleetSecret = await ctx.secrets.get(SECRETS.fleet);
   S.webhookSecret = Object.values(cfg.projects).some((p) => p.webhook) ? await ctx.secrets.get(SECRETS.webhook) : null;
+  S.pushMirrorTokens = new Map(); // project -> the GitHub token of its push mirror (a file under /etc/vitana), or null
+  for (const [name, p] of Object.entries(cfg.projects)) {
+    const pm = p.cutoverPlan?.pushMirror;
+    if (!pm) continue;
+    const f = await ctx.deps.fs.readFile(pm.token_file).catch(() => null);
+    const token = f ? f.text.trim() : '';
+    if (TOKEN_OK.test(token)) { ctx.redactor.add(token); S.pushMirrorTokens.set(name, { token, mode: f.mode }); } else S.pushMirrorTokens.set(name, null);
+  }
   return S;
 }
 
@@ -624,7 +815,7 @@ function planProjects(ctx, S, plan) {
     }
     const requires = P.exists ? [] : [createId];
 
-    const want = { ...(P.exists && ciPath ? { ci_config_path: ciPath } : {}), ...(prof.merge ?? {}) };
+    const want = { ...(P.exists && ciPath ? { ci_config_path: ciPath } : {}), ...(prof.merge ?? {}), ...(p.cutoverPlan ? { allow_merge_on_skipped_pipeline: p.cutoverPlan.allowSkipped } : {}) };
     const body = {};
     for (const [k, v] of Object.entries(want)) if (!P.exists || (k in P.obj && P.obj[k] !== v)) body[k] = v;
     if (Object.keys(body).length) {
@@ -653,7 +844,7 @@ function planProjects(ctx, S, plan) {
         plan.finding('warn', area, `webhook not written: the signing token in ${SECRETS.webhook} is ${signing ? 'not a whsec_ value of 32 bytes' : 'empty'}`);
       } else {
         const flags = Object.fromEntries(HOOK_FLAGS.map((f) => [f, false]));
-        for (const e of p.webhook.events) flags[WEBHOOK_EVENTS[e]] = true;
+        for (const e of p.webhook.events) flags[CUTOVER_WEBHOOK_EVENTS[e]] = true;
         const hook = { url: p.webhook.url, name: WEBHOOK_NAME, description: `Managed by gitlab-settings; signing token fingerprint ${sha12(signing)}`, enable_ssl_verification: true, signing_token: signing, ...flags };
         if (!mine) {
           plan.add({ id: hookId, area, requires, summary: `add the webhook ${p.webhook.url} (${p.webhook.events.join(', ')})`, apply: () => send(ctx, 'POST', `/projects/${ctx.projectIdOf(name)}/hooks`, hook) });
@@ -717,10 +908,104 @@ function planMembers(ctx, S, plan) {
     }
     if (p.profile !== 'native') continue;
     for (const m of P.membersAll) {
+      if (plan.has(`member:${name}:${m.username}`) && p.cutoverPlan?.mirrorUser?.username === m.username) continue; // this run lowers the milestone-1 mirror user itself
       if (m.access_level >= ROLES.maintainer && !allowedMaintainers.has(m.username)) {
         plan.finding('drift', `project ${name}`, `@${m.username} is ${levelName(m.access_level)}, but only ${[...allowedMaintainers].join(', ')} may hold that role here; the sync does not change people: add them to "owners" or lower the role in GitLab`);
       }
     }
+  }
+}
+
+// ── the delivery cutover: the CI variable, the push mirror, the extra protected branches, the milestone-1 mirror user ───────────
+/** The path of a GitHub mirror target as GitLab returns it (credentials are masked), or null when the target is not on github.com. */
+const mirrorPath = (m) => { try { const u = new URL(m.url); return u.hostname === 'github.com' ? u.pathname : null; } catch { return null; } };
+
+/** Free tier: the access levels of a protected branch can only be set when it is created, so a changed rule is removed and protected again. */
+async function applyExtraProtection(ctx, project, want, cur) {
+  const base = `/projects/${ctx.projectIdOf(project)}/protected_branches`;
+  const body = { name: want.name, push_access_level: want.push, merge_access_level: want.merge, allow_force_push: false };
+  if (cur) await send(ctx, 'DELETE', `${base}/${encodeURIComponent(want.name)}`);
+  try {
+    await send(ctx, 'POST', base, body);
+  } catch (first) {
+    ctx.log({ event: 'protection_retry', project, branch: want.name, error: ctx.redactor(oneLine(first.message)) });
+    await send(ctx, 'POST', base, body);
+  }
+}
+
+function planCutover(ctx, S, plan) {
+  for (const [name, p] of Object.entries(ctx.config.projects)) {
+    const c = p.cutoverPlan;
+    if (!c) continue;
+    const P = S.projects.get(name);
+    if (!P.exists) continue; // the project is created above (milestone 2); the next run applies the cutover to it
+    const area = `project ${name} (delivery ${p.cutoverState})`;
+    const pid = () => ctx.projectIdOf(name);
+
+    const cur = P.variables.find((v) => v.key === CUTOVER.variable && (v.environment_scope ?? '*') === '*');
+    if (!cur) {
+      plan.add({ id: `project:${name}:variable`, area, summary: `set the CI variable ${CUTOVER.variable} = ${c.mode}`, apply: () => send(ctx, 'POST', `/projects/${pid()}/variables`, { key: CUTOVER.variable, value: c.mode, protected: false, masked: false }) });
+    } else if (cur.value !== c.mode || cur.protected === true || cur.masked === true) {
+      plan.add({ id: `project:${name}:variable`, area, summary: `the CI variable ${CUTOVER.variable} is ${oneLine(cur.value, 20)}${cur.protected ? ' (protected)' : ''}${cur.masked ? ' (masked)' : ''}, should be ${c.mode}`, apply: () => send(ctx, 'PUT', `/projects/${pid()}/variables/${CUTOVER.variable}`, { value: c.mode, protected: false, masked: false }) });
+    }
+
+    const target = `/${c.github}.git`;
+    const mine = P.mirrors.filter((m) => mirrorPath(m) === target);
+    const removeMirror = (m) => plan.add({ id: `project:${name}:mirror:${m.id}:remove`, area, summary: `remove the push mirror to github.com${target}${c.pushMirror ? ': a second one' : ': the project is not live'}`, apply: () => ctx.client.raw('DELETE', `/projects/${pid()}/remote_mirrors/${m.id}`, { okStatuses: [404], retries: 0 }) });
+    if (!c.pushMirror) {
+      for (const m of mine) removeMirror(m);
+    } else {
+      const flags = { enabled: true, only_protected_branches: c.pushMirror.only_protected_branches, keep_divergent_refs: c.pushMirror.keep_divergent_refs };
+      const tok = S.pushMirrorTokens.get(name);
+      if (tok && tok.mode !== undefined && tok.mode !== 0o600) plan.finding('warn', area, `${c.pushMirror.token_file} has mode ${tok.mode.toString(8)}, expected 600`);
+      if (mine.length === 0) {
+        if (!tok) plan.finding('drift', area, `the push mirror to github.com${target} cannot be created: ${c.pushMirror.token_file} is missing or does not hold a token`);
+        else plan.add({ id: `project:${name}:mirror`, area, summary: `create the push mirror to github.com${target} (protected branches only, divergent refs kept; token from ${c.pushMirror.token_file})`, apply: () => send(ctx, 'POST', `/projects/${pid()}/remote_mirrors`, { url: `https://x-access-token:${tok.token}@github.com${target}`, auth_method: 'password', ...flags }) });
+      } else {
+        const [first, ...extra] = mine;
+        for (const m of extra) removeMirror(m);
+        const why = [];
+        if (first.enabled !== true) why.push('it is disabled');
+        if (first.only_protected_branches !== flags.only_protected_branches) why.push('it does not mirror protected branches only');
+        if (first.keep_divergent_refs !== flags.keep_divergent_refs) why.push('it does not keep divergent refs');
+        if (why.length) plan.add({ id: `project:${name}:mirror`, area, summary: `the push mirror to github.com${target}: ${why.join('; ')}`, apply: () => send(ctx, 'PUT', `/projects/${pid()}/remote_mirrors/${first.id}`, flags) });
+        if (first.last_error) plan.finding('warn', area, `the push mirror to github.com${target} reports an error: ${oneLine(first.last_error, 160)}`);
+      }
+    }
+
+    for (const b of c.managedBranches) {
+      const have = P.branches.find((x) => x.name === b.name);
+      const id = `project:${name}:branch:${b.name}`;
+      if (!c.wantBranches.some((w) => w.name === b.name)) {
+        if (have) plan.add({ id, area, summary: `remove the protected branch rule ${b.name}: the project is not live`, apply: () => ctx.client.raw('DELETE', `/projects/${pid()}/protected_branches/${encodeURIComponent(b.name)}`, { okStatuses: [404], retries: 0 }) });
+        continue;
+      }
+      const why = [];
+      if (!have) why.push(`${b.name} is not protected`);
+      else {
+        if (!onlyLevel(have.push_access_levels, b.push)) why.push(`push is ${levelsText(have.push_access_levels)}, should be ${levelName(b.push)}`);
+        if (!onlyLevel(have.merge_access_levels, b.merge)) why.push(`merge is ${levelsText(have.merge_access_levels)}, should be ${levelName(b.merge)}`);
+        if (have.allow_force_push !== false) why.push('force push is allowed, should be off');
+      }
+      if (why.length) plan.add({ id, area, gate: true, summary: `protected branch ${b.name}: ${why.join('; ')}`, apply: () => applyExtraProtection(ctx, name, b, have) });
+    }
+
+    if (c.mirrorUser) {
+      const m = P.members.find((x) => x.username === c.mirrorUser.username);
+      const level = ROLES[c.mirrorUser.role];
+      if (m && m.access_level !== level) {
+        plan.add({ id: `member:${name}:${m.username}`, area, gate: true, summary: `${m.username} (the milestone-1 mirror user) is ${levelName(m.access_level)}, should be ${levelName(level)}`, apply: () => send(ctx, 'PUT', `/projects/${pid()}/members/${m.id}`, { access_level: level }) });
+      }
+    }
+  }
+}
+
+function planCutoverNotes(ctx, plan) {
+  const m = ctx.marker;
+  if (m?.problem) plan.finding('warn', 'delivery cutover', m.problem);
+  if (!m?.present) return;
+  for (const [name, p] of Object.entries(ctx.config.projects)) {
+    if (p.cutover && p.cutoverState === 'inactive') plan.finding('drift', `project ${name}`, `the cutover marker (${m.mode}) is set, but ${p.cutover.ci_file} is not in the CI folder, so the project stays as it is; the generated pipeline file must reach this checkout first`);
   }
 }
 
@@ -883,8 +1168,9 @@ async function execute(ctx, plan) {
 
 const hasLicence = (d) => (Array.isArray(d) ? d.length > 0 : isObj(d) && ['id', 'plan', 'starts_at', 'expires_at'].some((k) => d[k] !== undefined && d[k] !== null));
 
-const USAGE = `usage: gitlab-settings.mjs [apply|check] [--config FILE] [--ci-dir DIR] [--url URL] [--admin-token-file FILE] [--dry-run]
+const USAGE = `usage: gitlab-settings.mjs [apply|check] [--config FILE] [--ci-dir DIR] [--url URL] [--admin-token-file FILE] [--marker-file FILE] [--dry-run]
   apply (default) corrects GitLab to match the settings file; check (or --check) writes nothing and exits 3 on drift.
+  --marker-file is the delivery cutover marker (default ${CUTOVER.markerFile}): without it a project with a cutover block runs the shadow pipelines.
   exit: 0 done / no drift, 1 error, 2 usage mistake, 3 drift. REGION (and DOMAIN) come from /etc/vitana/env.`;
 
 /** The whole run. Returns { exitCode, licence, drift, findings, applied, failed, skipped, aborted }; prints JSON log lines and drift lines. */
@@ -913,6 +1199,10 @@ export async function run(opts, depsIn = {}) {
     throw e;
   }
 
+  const marker = await readMarker(deps.fs, opts.markerFile ?? CUTOVER.markerFile);
+  const deliveryFiles = new Set(await deps.fs.listYml(opts.ciDir ?? defaultCiDir()).catch(() => []));
+  config = effectiveConfig(config, { marker, deliveryFiles });
+
   const adminTokenFile = opts.adminTokenFile ?? DEFAULTS.adminTokenFile;
   const af = await deps.fs.readFile(adminTokenFile).catch(() => null);
   if (!af) return stop(1, `the admin token file ${adminTokenFile} cannot be read; ops-install.sh creates it (m2.sh install)`);
@@ -922,7 +1212,7 @@ export async function run(opts, depsIn = {}) {
 
   const ctx = {
     config, deps, redactor, log, nowMs: deps.now(), region, baseUrl: opts.url ?? DEFAULTS.url, adminTokenFile, ciDir: opts.ciDir ?? defaultCiDir(),
-    adminFile: af, ids: { users: new Map(), projects: new Map() }, groupId: null, client: null,
+    adminFile: af, ids: { users: new Map(), projects: new Map() }, groupId: null, client: null, marker,
   };
   ctx.secrets = makeSecrets({ aws: deps.aws, region, redactor });
   ctx.userId = (u) => { const id = ctx.ids.users.get(u); if (!id) throw new Error(`there is no GitLab user id for ${u}`); return id; };
@@ -939,6 +1229,8 @@ export async function run(opts, depsIn = {}) {
   }
 
   log({ event: 'start', command, dryRun: command === 'check' || opts.dryRun === true, gitlab: ctx.baseUrl });
+  result.cutover = Object.fromEntries(Object.entries(config.projects).filter(([, p]) => p.cutoverState !== 'inactive').map(([n, p]) => [n, p.cutoverState]));
+  if (Object.keys(result.cutover).length) log({ event: 'cutover_state', projects: result.cutover, marker: marker.present ? marker.mode : null });
   let S;
   try {
     const lic = await ctx.client.raw('GET', '/license', { okStatuses: [404] });
@@ -966,10 +1258,12 @@ export async function run(opts, depsIn = {}) {
   planAccounts(ctx, S, plan);
   planCentralCi(ctx, S, plan);
   planProjects(ctx, S, plan);
+  planCutover(ctx, S, plan);
   planMembers(ctx, S, plan);
   planFleetRunner(ctx, S, plan);
   planTokens(ctx, S, plan);
   planNotes(ctx, plan);
+  planCutoverNotes(ctx, plan);
 
   for (const ch of plan.changes) {
     result.drift.push({ id: ch.id, area: ch.area, summary: ch.summary });
@@ -1007,7 +1301,7 @@ export async function run(opts, depsIn = {}) {
 // ── command line ─────────────────────────────────────────────────────────────────────────────────────────────────────────────
 export function parseArgs(argv) {
   const o = { command: null, dryRun: false, help: false };
-  const valueFlags = { '--config': 'configFile', '--ci-dir': 'ciDir', '--url': 'url', '--admin-token-file': 'adminTokenFile' };
+  const valueFlags = { '--config': 'configFile', '--ci-dir': 'ciDir', '--url': 'url', '--admin-token-file': 'adminTokenFile', '--marker-file': 'markerFile' };
   const setCommand = (c) => { if (o.command && o.command !== c) throw new UsageError('give one command: apply or check'); o.command = c; };
   const args = [...argv];
   while (args.length > 0) {

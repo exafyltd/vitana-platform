@@ -1,0 +1,235 @@
+# VTID-05545: the final test files against a copy of the tree of the stacked base (commit 89a83b23b00 of the branch, before this lane's change)
+# Method (BUILDER-GUIDE step 1): git archive of that commit into a scratch folder, the five test files copied in, and every implementation file this lane adds
+# replaced by an empty stub, so that each case fails by its own assertion and not by one crash:
+#   scripts/eng/delivery-cutover.sh, delivery-rollback.sh, delivery-metrics.mjs, parity-report.mjs: empty files
+#   scripts/eng/github-workflows.json: {"repositories":{"vitana-platform":{"workflows":{}},"vitana-v1":{"workflows":{}}}}
+#   infra/gitlab-engineering/RUNBOOK-cutover.md: empty file
+#   scripts/eng/gitlab-settings.mjs, infra/gitlab-engineering/settings/gitlab-settings.json, .kiro/pipeline/driver.md and lane-land.md: the base versions (this lane edits them)
+
+== scripts/eng/gitlab-settings-cutover.test.mjs: tests 19, pass 2, fail 17
+  not ok  config: the shipped file has a cutover block on both mirror projects and the bridge account, with the values o
+          -> "Cannot read properties of undefined (reading 'github')"
+  not ok  config: every invalid cutover input is refused with an error that names the key; the plain webhook of mileston
+          -> "Cannot set properties of undefined (setting 'surprise')"
+  not ok  the milestone-2 view is untouched: the shipped base keys, the exported key tables and the script text keep wha
+          -> Cannot convert undefined or null to object
+  not ok  config: the runbook documents every key of the cutover block, the four states, the marker file and the token f
+          -> Cannot convert undefined or null to object
+  ok      free tier: the script and the settings file name none of the Premium-only APIs or settings the cutover could be mistaken to need
+  not ok  inactive: without the generated pipeline files in the CI folder the sync is exactly what milestone 2 made it (
+          -> Expected values to be strictly deep-equal:
+  not ok  shadow: the pipeline files and no marker keep the mirror profile, point at the generated files, send merge-req
+          -> Expected values to be strictly deep-equal:
+  not ok  live: the marker turns both projects native in one run: landing and the three required jobs for the bot, push 
+          -> Expected values to be strictly deep-equal:
+  not ok  removing the marker converges back to shadow: mirror profile, the push mirror and assist/* removed, skipped pi
+          -> Expected values to be strictly equal:
+  not ok  rehearsal: the marker "rehearsal" is shadow with DELIVERY_MODE=live and nothing else: still the mirror profile
+          -> Expected values to be strictly deep-equal:
+  not ok  merge bot: before the marker the bot reads what it reads today; with the marker it lands on both projects with
+          -> settings.loadEffectiveProjects is not a function
+  not ok  live without the GitHub token file: the push mirror is not created and the run reports it as drift (check exit
+          -> the rest of the cut still converged
+  not ok  live: a token file that is not mode 600 is warned about, a malformed one counts as missing
+          -> The input did not match the regular expression /warning: project vitana-platform \(delivery live\): \/etc\/vitana\/github-push-mirror-token 
+  not ok  live: a mirror that was changed by hand is corrected (disabled, every branch, divergent refs overwritten), a s
+          -> "Cannot set properties of undefined (setting 'enabled')"
+  not ok  live: a protected branch rule for assist/* changed by hand is repaired (removed and protected again), and its 
+          -> "Cannot read properties of undefined (reading 'push_access_levels')"
+  not ok  failures: a push mirror that GitLab refuses does not hold back the rest of the cut; the next run creates it; a
+          -> Expected values to be strictly equal:
+  not ok  a marker that is not valid is ignored and reported (the projects stay in shadow); the CLI accepts --marker-fil
+          -> The input did not match the regular expression /warning: delivery cutover: .*treated as absent/. Input:
+  ok      no secret appears in any output, finding or argument list: not the GitHub token of the push mirror, not the bridge token, not the admin token
+  not ok  free tier: every call of the shadow, rehearsal, live and back runs is on the documented endpoint list with the
+          -> the runs used GET /projects/:id/variables
+
+== scripts/eng/github-workflows.test.mjs: tests 10, pass 2, fail 8
+  not ok  list: 159 workflow files of both repositories (113 platform, 46 vitana-v1), each with exactly one action, disa
+          -> Expected values to be strictly equal:
+  not ok  list: the platform entries are exactly the files of .github/workflows on this tree, and the recorded triggers 
+          -> Expected values to be strictly deep-equal:
+  not ok  list: the vitana-v1 entries are exactly the files of the vitana-v1 checkout when VITANA_V1_WORKFLOWS_DIR names
+          -> Expected values to be strictly deep-equal:
+  not ok  plan 2.2: the disabled workflows are the ones of the table, family by family (70 of 159), and nothing else is 
+          -> SQL-* (21)
+  not ok  plan 2.2: the kept workflows are the families of the table (89 of 159): dispatch-only production and migration
+          -> Expected values to be strictly deep-equal:
+  ok      kept workflows: only PLAN-SPAR (plan PRs) and the path-filtered MIGRATION-DRIFT-CHECK run on a pull request; nothing else that runs on a pull request 
+  not ok  kept workflows: none pushes to main, and the only one that a push to main starts and that deploys production i
+          -> the kept workflows a push to main starts
+  not ok  protected gate files: PR-GATE (both repositories), PLAN-SPAR and AWS-PROD-* are flagged, as scripts/collab/pro
+          -> Expected values to be strictly deep-equal:
+  not ok  negative controls: each rule of the list fails with its own message when it is the only thing broken, and the 
+          -> Expected values to be strictly deep-equal:
+  ok      on: reader: block, inline list, inline map, quoted key, branch and path lists in both YAML list styles
+
+== scripts/eng/delivery-metrics.test.mjs: tests 9, pass 0, fail 9
+  not ok  targets: the typical and slowest 5 % columns of plan §5 and the GitHub baseline of §2.1, in seconds
+          -> Expected values to be strictly deep-equal:
+  not ok  percentile: nearest rank, the median and the 95th percentile of small and large samples, null for no sample
+          -> metrics.percentile is not a function
+  not ok  pipeline timings: first result at the first finished job, required checks at the last of lane-scope, change-su
+          -> metrics.pipelineTimings is not a function
+  not ok  compute: every field of vitana.delivery-metrics/v1 from fixture rows, with samples, target, met and the GitHub
+          -> metrics.computeMetrics is not a function
+  not ok  a field without a source is null, never 0: an empty input, a window without landings, no verify results, no co
+          -> metrics.computeMetrics is not a function
+  not ok  compute: the baseline of the input overrides the plan values field by field; a cost above the budget per day i
+          -> metrics.computeMetrics is not a function
+  not ok  cli: compute reads the input file and prints or writes the document; a wrong schema, a missing file or bad JSO
+          -> metrics.main is not a function
+  not ok  pipelines: reads the latest pipelines of a ref with their jobs using GET only, newest first, and the token app
+          -> metrics.main is not a function
+  not ok  pipelines: a GitLab that refuses the token is exit 1 with the status, and the token is not printed
+          -> metrics.main is not a function
+
+== scripts/eng/parity-report.test.mjs: tests 14, pass 0, fail 14
+  not ok  map: reads the shape of config/delivery/services.json, a plain object, and refuses a document that has no map 
+          -> parity.mapFrom is not a function
+  not ok  pairing: a GitHub workflow is compared with the jobs of its map entry in the GitLab pipeline of the same SHA; 
+          -> parity.jobKey is not a function
+  not ok  report: commits on which both hosts agree are compared, match, and make the checklist items true (10 commits, 
+          -> parity.buildReport is not a function
+  not ok  report: every unexplained difference is listed with its SHA, workflow, jobs, both results and a reason
+          -> parity.buildReport is not a function
+  not ok  report: a difference with a reason is explained: GitHub cancelled or skipped the workflow, or both hosts are r
+          -> parity.buildReport is not a function
+  not ok  report: a commit staging never served is not comparable for the deploy and verification workflows (counted on 
+          -> parity.buildReport is not a function
+  not ok  report: the staging fates are t2 and t3: a commit staging never served is not comparable for the deploy workfl
+          -> parity.buildReport is not a function
+  not ok  report: the default minimum is ten shadow commits
+          -> parity.buildReport is not a function
+  not ok  report: a commit older than the first GitLab pipeline is before the shadow period; a newer commit with no pipe
+          -> parity.buildReport is not a function
+  not ok  report: the latest run of a workflow counts when GitHub re-ran it
+          -> parity.buildReport is not a function
+  not ok  report: the checklist verdict needs enough shadow commits, no unexplained difference and the §5 targets for fi
+          -> parity.buildReport is not a function
+  not ok  cli: reads GitHub and GitLab with GET only, pairs the three commits by SHA, treats the commit staging did not 
+          -> parity.main is not a function
+  not ok  cli: --gate exits 3 when the report is not ready and 0 when it is; --out writes the report to a file and print
+          -> parity.main is not a function
+  not ok  cli: a GitHub or GitLab that refuses a token, a missing file and a map without the repository are exit 1 and t
+          -> parity.main is not a function
+
+== scripts/eng/delivery-cutover.test.mjs: tests 32, pass 0, fail 32
+  not ok  structure: both scripts are strict bash, have no xtrace, name the management account, and reach the world only
+          -> The input did not match the regular expression /^#!\/bin\/bash\n/. Input:
+  not ok  usage: no command, an unknown command and extra words are exit 2 with the usage; --help is exit 0; nothing is 
+          -> /projects/sandbox/tools/redbase/scripts/eng/delivery-cutover.sh
+  not ok  status: with every item true it prints the 14 items of plan §8.1 one by one, green, says the cut may start, ex
+          -> the items, in the order of the plan
+  not ok  status --item: each red condition turns exactly its own item red, names the reason, makes the exit code 1; the
+          -> write EPIPE
+  not ok  status --item: a green item is green and exits 0, an unknown item is a usage mistake, and the full status mark
+          -> Expected values to be strictly deep-equal:
+  not ok  status: when git cannot fetch origin/main, the four lane items fail by name and the others still run
+          -> Expected values to be strictly equal:
+  not ok  preflight: the wrong AWS account, a missing tool, a GitHub token GitHub does not accept and one without admin 
+          -> Expected values to be strictly equal:
+  not ok  the GitHub token is typed hidden when GH_TOKEN is not set, and it appears in no output, no argument and no fil
+          -> Expected values to be strictly equal:
+  not ok  apply: without the plan slug, or with --dry-run, it is a dry run: it shows every change as WOULD, makes none, 
+          -> The input did not match the regular expression /apply: DRY RUN: nothing will be changed/. Input:
+  not ok  apply: a wrong plan slug, an unknown option, a real run without --mirror-account and a mirror account that can
+          -> Expected values to be strictly equal:
+  not ok  apply: with a red checklist it refuses, names the red item, and changes nothing
+          -> Expected values to be strictly equal:
+  not ok  apply: the cut, step by step in the order of plan §8.2, each change printed before it is made, and every effec
+          -> Expected values to be strictly equal:
+  not ok  apply: step 7 stops when DELIVERY_MODE of a project is not live after the sync, and no tag is made
+          -> 0 !== 1
+  not ok  apply: step 2 does not run the GitHub-to-GitLab copy when the cutover marker is already set (it would overwrit
+          -> 0 !== 1
+  not ok  apply: run again after the cut it does nothing: every step says already done, no state-changing call is made, 
+          -> The input did not match the regular expression /resuming a cut that this script started/. Input:
+  not ok  apply: waits for the owner at step 6 (exit 3), is resumed from step 6 when the switch is on, and a switch that
+          -> 0 !== 3
+  not ok  failure at step 1: the protection of the first repository is put back, the cut stops, and the next run (after 
+          -> 0 !== 1
+  not ok  failure at step 2: a final copy that fails leaves the copy running and changes nothing else; at step 3: a sync
+          -> 0 !== 1
+  not ok  failure at step 4: the workflows disabled in that step are enabled again, the cut stops, and the next run disa
+          -> 0 !== 1
+  not ok  failure at step 8: the tags made in that step are deleted again on both hosts
+          -> 0 !== 1
+  not ok  rollback: it reverses the cut in the order of plan §8.4, restores exactly what the cut changed, loses no commi
+          -> The input did not match the regular expression /rollback: done\./. Input:
+  not ok  rollback: it enables again only the workflows the cut disabled; one that was already disabled before the cut s
+          -> "undefined" is not valid JSON
+  not ok  rollback: a staging gateway that still carries the cut settings is redeployed through the GitHub path; without
+          -> The input did not match the regular expression /CHANGE: dispatch AWS-STAGE-DEPLOY-GATEWAY\.yml on main so that the staging gateway loses the
+  not ok  rollback: it refuses while GitHub main is not GitLab main, and while branches exist only on GitLab, and restor
+          -> Expected values to be strictly equal:
+  not ok  rollback: from a cut that stopped half way (the settings sync failed at step 3) it undoes what exists and skip
+          -> Expected values to be strictly equal:
+  not ok  rehearse: it needs --merges-paused, opens with the marker "rehearsal", waits (exit 3) until a live pipeline on
+          -> Expected values to be strictly equal:
+  not ok  rehearse --dry-run: opening, closing and aborting print every change as WOULD, make none, and claim no result
+          -> The input did not match the regular expression /WOULD: write \/etc\/vitana\/delivery-cutover with mode rehearsal/. Input:
+  not ok  rehearse: a red checklist blocks it, --abort closes an open rehearsal without a pass, and an aborted rehearsal
+          -> Expected values to be strictly equal:
+  not ok  machine scripts: every script sent to the GitLab machine starts with its read or write line, parses in plain s
+          -> a read probe script was sent
+  not ok  machine scripts, run for real in sh on stand-ins: the converge script writes and removes the marker and runs t
+          -> "Cannot read properties of undefined (reading 'replaceAll')"
+  not ok  runbook: every bash block parses, it explains every checklist item, shows the commands of the scripts and stat
+          -> the runbook has command blocks
+  not ok  pipeline runbooks: after the cut tag of a repository the merge bot lands and the driver waits for delivery.lan
+          -> driver.md names the cut tag
+
+total: tests 84, pass 4, fail 80
+
+The 4 cases that pass on the base are guards of behaviour the base already has or cannot have wrong; each is exercised against the real code in outputs/green.txt:
+  - gitlab-settings-cutover: free tier: the script and the settings file name none of the Premium-only APIs or settings the cutover could be mistaken to need
+  - gitlab-settings-cutover: no secret appears in any output, finding or argument list: not the GitHub token of the push mirror, not the bridge token, not the admin toke
+  - github-workflows: kept workflows: only PLAN-SPAR (plan PRs) and the path-filtered MIGRATION-DRIFT-CHECK run on a pull request; nothing else that runs on a pul
+  - github-workflows: on: reader: block, inline list, inline map, quoted key, branch and path lists in both YAML list styles
+
+# ═══ review fixes B1 to B5: the new cases, red on the lane commit before the fixes (e72873478436) ═══
+# git archive e72873478436 -> scratch tree; the final delivery-cutover.test.mjs and github-workflows.test.mjs copied in; scripts, list and runbook of e72873478436
+# cd <scratch> && node --test --test-name-pattern='^B[1-5]' scripts/eng/delivery-cutover.test.mjs; node --test scripts/eng/github-workflows.test.mjs
+# every failing case below fails on its own assertion (ERR_ASSERTION), none by a crash; first line of each error:
+not ok 1 - B1: a backup write that Secrets Manager refuses, or one that reads back different, stops step 1 before that GitHub main is changed
+          write refused: == the checklist of plan section 8.1
+not ok 2 - B1: the record of a started cut, and the list of step 4, are read back too: a write that fails stops apply before the change they protect
+          == the checklist of plan section 8.1
+not ok 3 - B1: a 502 on the protection GET stops step 1 and saves nothing; only GitHub's 404 "Branch not protected" counts as no protection, and it is restored by a DELETE
+          == resuming a cut that this script started (vitana/engineering/gitlab/delivery-cutover/state says so): the checklist was green then and is not asked again
+not ok 4 - B1: a rollback whose protection backup is deleted or cannot be read exits 1 with the manual instruction, never says done, and leaves GitHub main locked
+        code: 'ERR_ASSERTION'
+not ok 5 - B1: when step 1 cannot put a protection back it says NOT undone, never "undone"
+          The input did not match the regular expression /GitHub refused the restore of the protection of main of vitana-platform/. Input:
+not ok 6 - B1: rollback step 4 without its saved list exits 1 with the manual instruction while workflows of the disable list are disabled; an unreadable list stops it too
+          The input did not match the regular expression /vitana-v1: no saved list of disabled workflows \(.*does not exist\), but these workflows of the disable list
+not ok 7 - B2: a second rollback after a good one restores no protection and enables no workflow, even when the team changed both since; only disabled_manually workflows of the list are enabled
+          == ROLLBACK STEP 1 of 11: stop landing on GitLab
+not ok 8 - B2: the rollback records rolling-back before its first change; apply refuses to resume such a cut; the next rollback continues and finishes it
+        code: 'ERR_ASSERTION'
+not ok 9 - B2: apply resumes a started cut only within 24 hours; an older record needs the checklist green again; the saved protection is kept; another mirror account is refused
+          == resuming a cut that this script started (vitana/engineering/gitlab/delivery-cutover/state says so): the checklist was green then and is not asked again
+not ok 10 - B2: a lock keeps runs apart: apply, rehearse and the rollback refuse while it exists; --break-lock clears only a lock older than 6 hours; a run releases its lock
+          == the checklist of plan section 8.1
+not ok 11 - B3: the restore body carries bypass allowances and dismissal restrictions, sends a null app_id as -1, and gives checks or contexts, never both
+          Expected values to be strictly deep-equal:
+not ok 12 - B3: a cut and its rollback restore a protection with bypass allowances and an any-app check through the documented schema, exactly
+          == ROLLBACK STEP 1 of 11: stop landing on GitLab
+not ok 13 - B3: rehearse first runs the round trip of the protection (PUT the restore body back, GET, compare) before the marker; the checklist item is green only on the protection of today
+          
+not ok 14 - B4: the rollback refuses while a branch on both hosts has GitLab commits that GitHub lacks, lists it and restores nothing; a GitLab head that GitHub contains is fine
+          The input did not match the regular expression /branches of vitana-v1 whose GitLab commits GitHub does not have: kiro\/a\(GitLab:444444444444,GitHub:[0-9a-f
+not ok 15 - B4: the bot refs train/* and assist/* are left out of the GitLab-only check; a full 30th page of GitLab branches stops the rollback instead of being cut short
+          The input did not match the regular expression /GitLab lists more than 3000 branches of vitana-v1 \(page 30 of 100 is full\)/. Input:
+not ok 16 - B4: on the machine the GitLab branch listing prints every head, stops at a short page, and says truncated when page 30 is still full
+          The input did not match the regular expression /^truncated=0$/m. Input:
+not ok 17 - B5: the rollback waits for the redeploy, reads the staging task definition again, and stops with the owner command while DELIVERY_HOST_* is still gitlab
+          The input did not match the regular expression /AWS-STAGE-DEPLOY-GATEWAY\.yml ran on main and succeeded \(https:\/\/github\.com\/exafyltd\/vitana-platform\/
+not ok 18 - B5: closing the rehearsal waits for both staging redeploys and checks the gateway; with DELIVERY_HOST_* still gitlab the rehearsal stays open and the owner command is printed
+            vitana-platform: a live pipeline on main deployed to staging (1 job(s)) and STAGING-VERIFY passed (1)
+# tests 18 # pass 0 # fail 18 
+not ok 11 - kept workflows: a push to the dispatched ref (github.ref_name) counts as a push to main unless the entry records it; the three i18n workflows record it with a note
+          Expected values to be strictly deep-equal:
+# tests 11 # pass 10 # fail 1 
+# 19 new cases, 19 red on the lane commit before the fixes

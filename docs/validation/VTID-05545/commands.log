@@ -1,0 +1,77 @@
+VTID-05545 (agentic-delivery/cutover): commands run and what they showed. Paths are shown as <worktree>. Nothing here touched AWS, GitHub, GitLab or any
+live system: the scripts were run against stand-ins, and the only network use was the Node 20 download for the whole-suite run.
+
+== reading (no change)
+read BUILDER-GUIDE.md and BUILDER-GUIDE-AD.md; plan agentic-delivery sections 2.2, 3.3, 3.5, 3.6, 3.9, 3.11, 3.13, 7, 8, 9, 10; tasks.md group `cutover`;
+lanes/cutover.md (paths); scripts/collab/protected-gate-files.json (14 patterns: .kiro/pipeline/* is NOT among them)
+git show origin/kiro/agentic-delivery/{pipelines,verify-on-gitlab,github-bridge,prerequisites}:<path>   read-only: job names, the bridge CLI and runbook, the service list schema
+infra/gitlab-engineering/terraform/main.tf: the GitLab machine's IAM role can read ONE secret (the mirror token) -> the two GitHub tokens are host files (decision 4)
+infra/gitlab-engineering/setup.sh: SIZE_GITLAB=m6i.xlarge in `grow`; no lane of the plan changes it -> manual step in the runbook (decision 10)
+
+== tests first, red on base (BUILDER-GUIDE step 1)
+git archive <stacked base commit> -> scratch folder; the five new test files copied in; every implementation file this lane adds replaced by an empty stub
+cd <scratch> && node --test scripts/eng/<each of the five>.test.mjs
+  -> outputs/red-on-base.txt: tests 84, pass 4, fail 80 (the 4 that pass are guards that hold there for lack of the feature; each failing case fails on its own assertion)
+
+== implementation, then green (step 2)
+node --test scripts/eng/gitlab-settings-cutover.test.mjs scripts/eng/github-workflows.test.mjs scripts/eng/delivery-metrics.test.mjs scripts/eng/parity-report.test.mjs scripts/eng/delivery-cutover.test.mjs
+  -> 19 + 10 + 9 + 14 + 32 = 84 cases, 84 pass, 0 fail (outputs/green.txt; delivery-cutover.test.mjs takes about 100 s: it runs both scripts in bash 400+ times)
+node --test scripts/eng/gitlab-settings.test.mjs scripts/eng/gitlab-land.test.mjs scripts/eng/free-tier-guard.test.mjs   (milestone 2, unchanged tests, run against the changed settings module)
+  -> 164 tests, 163 pass, 0 fail, 1 skipped (the skip is theirs)
+VITANA_V1_WORKFLOWS_DIR=<vitana-v1>/.github/workflows node --test scripts/eng/github-workflows.test.mjs   -> 10 pass (the vitana-v1 half, 46 files, read from a checkout)
+One bug found by running the whole delivery-cutover file after a helper change (a "brand new workflow" case appended to a trimmed listing); fixed in the test, not loosened.
+
+== mutation check (step 3)
+bash outputs/mutate-cutover.sh <worktree>      (JOBS=6; 119 mutations; baseline 84/84 on the unmutated copy)
+  first run 100 mutations: 88 caught, 12 survived -> 12 real gaps in the tests (token file mode, force push on assist/*, one IAM role, one lane, a read-only mirror account,
+  the tag names, step 7, the step-2 guard, a deploy without a verification, rollback enabling a workflow that was off before the cut, the t3 fate, the default minimum of 10 commits)
+  -> added the cases (no test weakened), then the runbook / pipeline-runbook mutations, then the rehearse --dry-run ones; second round of survivors (4 runbook / lane-land checks that
+  matched elsewhere in the file) -> made the checks specific; two secret-redaction mutations were masked by a second layer (output redaction) -> combined into one mutation each
+  final: outputs/mutation-run.txt   mutations: 119   caught: 119   not caught: 0
+
+== whole script suite as UNIT.yml runs it (step 4)
+FILES=$(find scripts -path '*/node_modules' -prune -o \( -name '*.test.cjs' -o -name '*.test.mjs' \) -print | sort); node --test $FILES
+  Node v22.23.4: 45 files, tests 1037, pass 1035, fail 0, skipped 2           (outputs/unit-all.txt)
+  Node v20.20.2 (npx -y node@20): tests 1037, pass 1035, fail 0, skipped 2    (outputs/unit-all-node20.txt)
+
+== shell, JSON, YAML (step 5; no Terraform in this lane)
+bash -n scripts/eng/delivery-cutover.sh scripts/eng/delivery-rollback.sh outputs/mutate-cutover.sh; node --check of the three modules; JSON.parse of the settings file, the workflow list, scope.json
+bash -n of the 7 bash blocks of RUNBOOK-cutover.md; the machine scripts parse in dash (a test case)
+PYTHONPATH=/projects/sandbox/tools/pylib python3 outputs/check-workflow-triggers.py ...   -> 159 files compared with PyYAML, 0 differences (outputs/syntax-and-yaml.txt)
+terraform: n/a (no .tf file in the lane paths)
+
+== the pipeline runbooks this lane edits
+node scripts/ci/kiro-steering/guard.cjs -> kiro-steering: OK
+node --test scripts/ci/kiro-steering/guard.test.cjs scripts/collab/{automations,preflight,quality-checks,kiro-web-steering}.test.mjs -> 106 pass (outputs/pipeline-runbooks-checks.txt)
+git diff --stat HEAD -- .kiro/pipeline -> driver.md +24/-3, lane-land.md +6 (small, separate); not a protected gate file
+
+== secret scan (step 6)
+scan of the 28 files of this lane for tokens, keys and literal secret assignments -> matches: 0   (outputs/secret-scan.txt; the fixtures are assembled at run time)
+
+== governance checks on the commit (run on the commit before this log was extended; the extension changes no code)
+node scripts/collab/preflight.mjs --repo <worktree> --base <stacked base 89a83b23b00> --head HEAD --branch kiro/agentic-delivery/cutover --title "VTID-05545 (agentic-delivery/cutover): ..."
+  -> PASS Collab tests, Collab handoff, Lane scope [required]; PASS PR-GATE scope, sparring, weakening, red-green, Kiro steering   "preflight: every check passed"
+  (the base is the stacked base on purpose: against origin/main the diff would also hold the sibling lanes' files that the stacked base brings in)
+node scripts/ci/staging-verify/run.mjs check-pr --service gateway|community-app --base HEAD~1 --head HEAD
+  -> "PR touches no gateway deploy path" / "no community-app deploy path - nothing deploys, no staging suite needed" (so no staging-tests.json)
+
+== review fixes B1 to B5 (independent review, /projects/sandbox/tools/review-cutover.md), amended into the lane commit
+read the review, its probes (rv-cutover/probe/scripts/eng/probe.mjs, probe-out.txt) and the GitHub doc copy gh-branch-protection.txt (app_id: "Pass -1 to explicitly
+allow any app"; bypass_pull_request_allowances); web search: the API refuses contexts and checks in one call (integrations/terraform-provider-github#1212)
+.github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml:1083-1204 read: the task definition is the service's current one, every variable it does not name is kept -> B5 owner command
+tests first: 18 cases "B1: ..." to "B5: ..." in delivery-cutover.test.mjs, one case for github.ref_name in github-workflows.test.mjs; stand-ins extended (GET protection 404 body
+and message, PUT schema validation, compare and workflow-runs endpoints, delete-secret, failure injections)
+git archive e72873478436 -> scratch tree; the two final test files copied in
+  node --test --test-name-pattern='^B[1-5]' scripts/eng/delivery-cutover.test.mjs   -> tests 18, pass 0, fail 18 (each on its own assertion)
+  node --test scripts/eng/github-workflows.test.mjs                                  -> tests 11, pass 10, fail 1 (the new case)        (appended to outputs/red-on-base.txt)
+implementation: delivery-cutover.sh, delivery-rollback.sh, github-workflows.json (three notes), RUNBOOK-cutover.md (sections 4, 5, 6, 8, 10, 11, new 12)
+  two bugs found by the tests on the way: a pipefail SIGPIPE in `printf | grep -q` (the 404 check), and the second staging dispatch printed without its CHANGE line; both fixed in the script
+  the free-tier guard (milestone 2) flagged the words "merge train" in a comment of delivery-rollback.sh -> comment reworded
+node --test of the five lane test files -> 19 + 11 + 9 + 14 + 50 = 103 cases, 103 pass (outputs/green.txt; delivery-cutover.test.mjs about 230 s)
+node --test scripts/eng/gitlab-settings.test.mjs scripts/eng/gitlab-land.test.mjs scripts/eng/free-tier-guard.test.mjs -> 164 tests, 163 pass, 0 fail, 1 skipped
+VITANA_V1_WORKFLOWS_DIR=<vitana-v1>/.github/workflows node --test scripts/eng/github-workflows.test.mjs -> 11 pass
+bash outputs/mutate-cutover.sh <worktree> in two parts (background runs do not survive in this sandbox): part 1 every mutation but B (with the baseline 19/11/9/14/50),
+  part 2 ONLY='^B[1-5]:' -> 161 mutations, 161 caught, 0 not caught (outputs/mutation-run.txt); after the comment change the B4 bot-refs mutation was run again: caught
+whole script set as UNIT.yml runs it: Node v22.23.4 1056 tests, 1054 pass, 0 fail, 2 skipped; Node v20.20.2 the same (outputs/unit-all.txt, unit-all-node20.txt)
+bash -n, node --check, JSON.parse, the 7 runbook bash blocks, PyYAML cross-check 159 files 0 differences (outputs/syntax-and-yaml.txt)
+secret scan of the 28 files of the lane commit and its amendment -> matches: 0 (outputs/secret-scan.txt)
