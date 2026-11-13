@@ -1,6 +1,6 @@
 ---
 lane: pm-mode-probes
-state: executing
+state: in-review
 next_actor: kiro
 claimed_by: kiro-exafy-202611111326-7e9b
 branch: kiro/pm-mode-probes/kiro-fallback
@@ -33,3 +33,6 @@ VTID-05604 allocated after policy approval (converged-auto-v1).
 
 ### 2026-11-13T09:00Z · kiro-exafy-202611111326-7e9b · ready → executing
 Claimed. Owner decision 2026-11-11: the two mode probes expect enabled true and executor_mode kiro_fallback, the state staging is in. This replaces the plan design (expect_json_in, mode-agnostic) with the fixed owner-set value. Baseline: both probes pin claude_primary (PR 5012) and fail against staging.
+
+### 2026-11-13T09:20Z · kiro-exafy-202611111326-7e9b · executing → in-review
+Manifests VTID-05277 and VTID-05281 changed (mode probe name, expect_json, reason). Only those lines change. PR https://github.com/exafyltd/vitana-platform/pull/5061. Next: CI, then merge.
