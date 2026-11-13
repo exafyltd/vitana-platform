@@ -42,3 +42,5 @@ Add a manual, main-only GitLab production deploy for the vitana-v1 community app
 
 ## Sparring record
 Rounds: 3 (local partner plan-sparring-partner). Verdict: converged. Findings and planner responses are kept in the scratchpad copy; they are to be committed as docs/validation/<VTID>/plan-sparring.md after allocation.
+
+CI PLAN-SPAR run 43518530657 escalated on round 1 with evidence_floor_not_met (the gateway partner's read_file calls returned HTTP 403; session eaabfd60-7137-4175-ae9d-1e3afac661a1, plan hash 5ff30873e05e5be1b9eee0dd8742ff5179ceeac72b283313f414fbfb403df309). This commit resubmits the same plan text for a new CI sparring session. Owner approval at Gate 1 was given in chat.
