@@ -206,8 +206,16 @@ def split_sql(text: str) -> SplitResult:
             i = j
             continue
         if c == "\\":
+            # VTID-05023: \set and \echo are psql session settings, not SQL. They are blanked out so the
+            # SQL around them runs unchanged. Every other meta-command (\i, \ir, \copy, ...) is still refused.
+            eol = text.find("\n", i)
+            eol = n if eol == -1 else eol
+            word = re.match(r"\\(\w+)", text[i:eol])
+            if word and word.group(1) in ("set", "echo"):
+                i = eol
+                continue
             raise SplitError(line, "psql meta-command (backslash) is not SQL and cannot run over the "
-                             "RDS Data API: " + text[i:text.find("\n", i) if "\n" in text[i:] else n].strip()[:80])
+                             "RDS Data API: " + text[i:eol].strip()[:80])
         mark_start()
         if c == "'":
             i, line = _skip_string(text, i, line, backslash=False)
