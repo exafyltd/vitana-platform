@@ -4,7 +4,7 @@ author: kiro
 author_seat: exafyltd
 executor: kiro
 next_actor: kiro
-state: approved
+state: done
 updated: 2026-11-12T21:29Z
 sparring_record: .kiro/specs/bridge-drift-fix/sparring/verdict.md
 vtids: [VTID-05785]
@@ -36,3 +36,17 @@ Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are ha
 PLAN-SPAR converged in round 2, policy approved. VTID-05785 allocated to lane `fix`. Its commit used
 `GITHUB_TOKEN`, which starts no checks, so this commit starts them; the spec-only `plan(` PR merges under §7b
 once they are green.
+
+### 2026-11-12T22:10Z · kiro-exafyltd-202611122052-a6df · approved → executing
+The plan's one lane (`fix`, VTID-05785) started building in worktree `.wt/bdf-lane`.
+
+### 2026-11-13T08:28Z · kiro-exafyltd-202611122052-a6df · executing → in-review
+Lane `fix` opened PR #5057 with all 5 fixes and evidence; see `lanes/fix.md` for detail.
+
+### 2026-11-13T09:50Z · kiro-exafyltd-202611122052-a6df · in-review → verified
+Lane `fix` reviewed and accepted (M4 Bedrock chain, eu.anthropic.claude-opus-5-5) on head 89a98a06724f64511ad60ab86e363900e43790a4 — full verdict in `lanes/fix.md`.
+
+### 2026-11-13T09:51Z · kiro-exafyltd-202611122052-a6df · verified → done
+The plan's one lane (`fix`, VTID-05785) merged at `575d70e9aeff7986177fea505dab70b9ba36abc6` (PR #5057) — see
+`lanes/fix.md` for the review and merge record. The plan is done pending STAGING-VERIFY on the merge commit (owner
+spec v5's default end point); Gate 2 follows once that result exists.
