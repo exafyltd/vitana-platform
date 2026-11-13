@@ -1,0 +1,23 @@
+#!/usr/bin/env node
+// VTID-05784 test stub of the gh CLI (only `gh api <path> --jq <expr>`), answering from $STUB_GH_RUNS (JSON:
+// { runs: [{ id, event, apply: "success"|"failure"|"skipped"|null }] }, newest first). Calls go to $STUB_LOG.
+import fs from 'node:fs';
+import { execFileSync } from 'node:child_process';
+
+const argv = process.argv.slice(2);
+fs.appendFileSync(process.env.STUB_LOG, `gh ${argv.join(' ')}\n`);
+if (process.env.STUB_GH_FAIL) { process.stderr.write('gh: HTTP 500\n'); process.exit(1); }
+if (argv[0] !== 'api') { process.stderr.write('stub gh: only api\n'); process.exit(2); }
+const url = argv[1];
+const jq = argv[argv.indexOf('--jq') + 1];
+const { runs } = JSON.parse(fs.readFileSync(process.env.STUB_GH_RUNS, 'utf8'));
+const APPLY = 'Apply to the isolated staging database';
+let body;
+let m;
+if (/\/actions\/workflows\/STAGING-MIGRATE\.yml\/runs\?/.test(url)) {
+  body = { workflow_runs: runs.map((r) => ({ id: r.id, event: r.event, conclusion: 'x' })) };
+} else if ((m = url.match(/\/actions\/runs\/(\d+)\/jobs/))) {
+  const r = runs.find((x) => String(x.id) === m[1]);
+  body = { jobs: [{ name: 'Gate', conclusion: 'success' }, ...(r && r.apply ? [{ name: APPLY, conclusion: r.apply }] : [])] };
+} else { process.stderr.write(`stub gh: unknown ${url}\n`); process.exit(1); }
+process.stdout.write(execFileSync('jq', ['-r', jq], { input: JSON.stringify(body) }));

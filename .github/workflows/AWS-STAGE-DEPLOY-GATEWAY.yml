@@ -1362,6 +1362,10 @@ jobs:
         env:
           DATA_BACKEND: ${{ inputs.data_backend || 'keep' }}
           DATA_BACKEND_AURORA_URL_SECRET_ARN: ${{ vars.SUPABASE_URL_AURORA_PROXY_STAGING_ARN }}
+          # >>> VTID-05781 STAGING_DATA_PLANE (unset/shared = this step exactly as before)
+          STAGING_DATA_PLANE: ${{ vars.STAGING_DATA_PLANE }}
+          STAGING_CUTOVER_APPROVED: ${{ vars.STAGING_CUTOVER_APPROVED }}
+          # <<< VTID-05781
         run: |
           set -e
           NEW_DEF="$(cat "$RUNNER_TEMP/new-task-def.json")"
@@ -1371,6 +1375,12 @@ jobs:
           elif [ "$DATA_BACKEND" != keep ]; then
             echo "::error::data_backend=$DATA_BACKEND needs $DB_SCRIPT, which this commit predates"; exit 1
           fi
+          # >>> VTID-05781 STAGING_DATA_PLANE (unset/shared and an unmarked task definition = nothing runs here)
+          if [ "${STAGING_DATA_PLANE:-shared}" != shared ] || printf '%s' "$NEW_DEF" | grep -q '"STAGING_DATA_PLANE"'; then
+            [ "${STAGING_DATA_PLANE:-shared}" = shared ] || [ "$DATA_BACKEND" = keep ] || { echo "::error::STAGING_DATA_PLANE=isolated needs data_backend=keep"; exit 1; }
+            NEW_DEF=$(printf '%s' "$NEW_DEF" | bash scripts/aws/staging-cutover-select.sh --service gateway)
+          fi
+          # <<< VTID-05781
           NEW_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_DEF" \
             --query 'taskDefinition.taskDefinitionArn' --output text)
           echo "Registered $NEW_ARN"

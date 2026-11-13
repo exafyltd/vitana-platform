@@ -1,0 +1,6 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Resources": { "R": { "Type": "AWS::IAM::ManagedPolicy", "Properties": { "PolicyDocument": { "Version": "2012-10-17", "Statement": [
+    { "Sid": "UsesProdKey", "Effect": "Allow", "Action": "kms:Decrypt", "Resource": "arn:aws:kms:eu-central-1:472838866351:key/1cd1f8d1-fc05-4de8-acdd-76e76b8a39d1" }
+  ] } } } }
+}
