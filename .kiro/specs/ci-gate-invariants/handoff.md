@@ -2,10 +2,12 @@
 slug: ci-gate-invariants
 author: kiro
 executor: kiro
-next_actor: kiro
-state: drafted
+next_actor: owner
+state: parked
+parked_from: drafted
+sparring_record: .kiro/specs/ci-gate-invariants/sparring/state.json
 author_seat: exafyltd
-updated: 2026-11-13T15:01Z
+updated: 2026-11-13T15:10Z
 ---
 # Handoff — ci-gate-invariants
 
@@ -41,4 +43,12 @@ Not converged after 2 sparring sessions (evidence_floor_not_met). Parked with th
 Premises re-cited as file:line at vitana-platform `4c4694b7977bbbff1610f1558ac91baeaf7a472b` and vitana-v1 `447e46a82ea9e5dded5dc56b1876dfcde105e361`
 (`plan.md` "Measured state" and the `evidence.md` tables). Goal, lanes and VTIDs unchanged. Corrections: #5050 and #5068 are closed
 (not open); the PR #5070 head is `8d1faca3c`; `575d70e9ae` is not a merge commit. Premises with no citable source were removed (`plan.md` "Removed").
-Re-run of PLAN-SPAR on this plan commit; if the new session escalates with `evidence_floor_not_met`, stop and do not re-run.
+PLAN-SPAR re-run on this commit started no session (see the entry below).
+
+### 2026-11-13T15:10Z · kiro-exafyltd-202611072144-1c88 · re-plan PLAN-SPAR run 43448576743 (head 8beea5da23) → parked (owner)
+PLAN-SPAR ran but started no sparring session. `scripts/collab/plan-spar.mjs` (`MAX_SESSIONS = 2`, the re-plan condition at line 307) allows two
+sessions per plan, and both are used: `d288c7fe-940d-4452-9baa-884ce42f7178` (round 1, `evidence_floor_not_met`) and
+`ae4c9ffa-a5c7-43f6-8d15-0ef68cbb0e8b` (round 1, `evidence_floor_not_met`). The run took `nothing_to_do`; the job log shows "nothing to commit".
+Re-running it returns the same result. No session id is produced for this re-run, so there is no new verdict and no VTID.
+Parked with `next_actor: owner`. Kiro did not edit `sparring/state.json` or `plan-spar.mjs` (the latter is a protected gate file).
+Decision for the owner: whether a third session is allowed for this plan (a change to the session cap, or a new plan), or the plan stays parked.
