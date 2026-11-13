@@ -1,0 +1,90 @@
+FAIL test/command-hub/gateway-write-route-auth-callers.test.ts
+    ✓ PATCH /api/v1/specs/:vtid: one write call site in app.js, using buildContextHeaders
+    ✓ POST /api/v1/agents/triage/investigate: one write call site in app.js, using buildContextHeaders
+    ✕ PUT /api/v1/ai-personality/:surface_key: one write call site in app.js, using buildContextHeaders
+    ✕ POST /api/v1/ai-personality/:surface_key/reset: one write call site in app.js, using buildContextHeaders
+    ✕ POST /api/v1/llm/routing-policy: one write call site in app.js, using buildContextHeaders
+    ✓ POST /api/v1/llm/routing-policy/reset: one write call site in app.js, using buildContextHeaders
+    ✓ PATCH /api/v1/specs/:vtid: exactly one write call site, and it uses buildContextHeaders
+    ✓ POST /api/v1/agents/triage/investigate: exactly one write call site, and it uses buildContextHeaders
+    ✕ PUT /api/v1/ai-personality/:surface_key: exactly one write call site, and it uses buildContextHeaders
+    ✕ POST /api/v1/ai-personality/:surface_key/reset: exactly one write call site, and it uses buildContextHeaders
+    ✕ POST /api/v1/llm/routing-policy: exactly one write call site, and it uses buildContextHeaders
+    ✓ POST /api/v1/llm/routing-policy/reset: exactly one write call site, and it uses buildContextHeaders
+    ✕ the routing-policy write call sites carry no x-actor-* header
+    ✕ app.js sends no x-actor-id / x-actor-role header anywhere
+        thead.innerhtml = '<tr><th>s</th><th>#</th><th>label</th><th>chapter</th><th>gate</th><th>status</th><th>✓</th></tr>';
+            tr.appendchild(td(kbtopiccomplete(t) ? '✓' : '·'));
+            var bh = kbel('div', null, (s.validation.ok ? '✓ valid — ' : '✗ not publishable — ')
+                    statusicon.textcontent = '✓';
+                    '<td style=\"padding:0.5rem;text-align:center;\">' + (c.is_active ? '✓' : '✗') + '</td>' +
+            icon.textcontent = ispending ? '⏳' : (isok ? '✓' : '✗');
+                    ciindicator.innerhtml = '<span class=\"status-pass\">✓</span> pass';
+                    mergeableindicator.innerhtml = '<span class=\"status-pass\">✓</span> true';
+                const statusicon = v.status === 'success' ? '✓' : '⚠';
+        return { cls: 'ops-tile-ok', icon: '✓', label: 'ok', note: 'nothing open' };
+        closebtn.textcontent = '✕';
+                            + '<span style=\"color:' + color + ';font-weight:bold;\">' + run.passed + '✓/' + run.failed + '✗</span>'
+                authemailel.textcontent = '✓ signed in as ' + (session.email || '(unknown email)');
+                ? '<span style=\"color:#22c55e;\">✓</span>'
+                label = '✓ opus 4.6 · plan v' + c.version + ' produced';
+            empty.innerhtml = '<div style=\"font-size: 48px; margin-bottom: 12px;\">✓</div><div>nothing pending. the system is quiet.</div>';
+                    showtoast(autonomypulseactionspec(action).label + ' ✓', 'success');
+            none.innerhtml = '✓ no action items right now. voice quality looks healthy.';
+            btn.textcontent = (current === p ? '✓ ' : '') + 'use ' + (p === 'vertex' ? 'nova sonic (gateway transport)' : 'livekit');
+                badge.textcontent = '✓ pass';
+                '<td style=\"padding:0.5rem;color:' + (row.enabled ? '#10b981' : '#ef4444') + ';\">' + (row.enabled ? '✓' : '✕') + '</td>';
+            none.textcontent = '✓ every registered endpoint has a contract. nothing to scan.';
+            if (s.auto_approved) { pillcolor = '#4ade80'; pilltext = '✓ auto'; }
+                wiredbadge.textcontent = '✓ wired';
+                            createbtn.textcontent = resp.idempotent ? '↻ ' + resp.vtid : '✓ ' + resp.vtid;
+                    showtoast(label + ' ✓', 'success');
+                    showtoast('persona saved ✓', 'success');
+                    var loopsummary = loops.map(function (l) { return l.loop + ':' + (l.ok ? '✓' : '✗') + l.processed; }).join(' ');
+FAIL test/gateway-write-route-auth.test.ts
+    ✓ the handlers ran for an admin: specs and triage reach their own validation (400), the writes are called
+    ✕ audit actor comes from the gate: admin JWT -> user id + exafy_admin; service token -> internal + service
+      ✕ rejects a request with no token (401) and writes nothing
+      ✕ rejects x-actor-role: admin without a token (401): a caller header cannot grant privilege
+      ✕ rejects a token that is neither the service token nor a valid JWT (401)
+      ✕ rejects a signed-in non-admin who also sends x-actor-role: admin (403)
+      ✕ rejects a signed-in user without exafy_admin (403) and writes nothing
+      ✓ lets an exafy_admin JWT reach the handler
+      ✓ lets the service token reach the handler
+      ✕ rejects a request with no token (401) and writes nothing
+      ✕ rejects x-actor-role: admin without a token (401): a caller header cannot grant privilege
+      ✕ rejects a token that is neither the service token nor a valid JWT (401)
+      ✕ rejects a signed-in non-admin who also sends x-actor-role: admin (403)
+      ✕ rejects a signed-in user without exafy_admin (403) and writes nothing
+      ✓ lets an exafy_admin JWT reach the handler
+      ✕ rejects the service token (admin only)
+      ✕ rejects a request with no token (401) and writes nothing
+      ✕ rejects x-actor-role: admin without a token (401): a caller header cannot grant privilege
+      ✕ rejects a token that is neither the service token nor a valid JWT (401)
+      ✕ rejects a signed-in non-admin who also sends x-actor-role: admin (403)
+      ✕ rejects a signed-in user without exafy_admin (403) and writes nothing
+      ✓ lets an exafy_admin JWT reach the handler
+      ✕ rejects the service token (admin only)
+      ✕ rejects a request with no token (401) and writes nothing
+      ✕ rejects x-actor-role: admin without a token (401): a caller header cannot grant privilege
+      ✕ rejects a token that is neither the service token nor a valid JWT (401)
+      ✕ rejects a signed-in non-admin who also sends x-actor-role: admin (403)
+      ✕ rejects a signed-in user without exafy_admin (403) and writes nothing
+      ✓ lets an exafy_admin JWT reach the handler
+      ✕ rejects the service token (admin only)
+      ✕ rejects a request with no token (401) and writes nothing
+      ✕ rejects x-actor-role: admin without a token (401): a caller header cannot grant privilege
+      ✕ rejects a token that is neither the service token nor a valid JWT (401)
+      ✕ rejects a signed-in non-admin who also sends x-actor-role: admin (403)
+      ✕ rejects a signed-in user without exafy_admin (403) and writes nothing
+      ✓ lets an exafy_admin JWT reach the handler
+      ✓ lets the service token reach the handler
+      ✕ rejects a request with no token (401) and writes nothing
+      ✕ rejects x-actor-role: admin without a token (401): a caller header cannot grant privilege
+      ✕ rejects a token that is neither the service token nor a valid JWT (401)
+      ✕ rejects a signed-in non-admin who also sends x-actor-role: admin (403)
+      ✕ rejects a signed-in user without exafy_admin (403) and writes nothing
+      ✓ lets an exafy_admin JWT reach the handler
+      ✓ lets the service token reach the handler
+Test Suites: 2 failed, 2 total
+Tests:       42 failed, 16 passed, 58 total

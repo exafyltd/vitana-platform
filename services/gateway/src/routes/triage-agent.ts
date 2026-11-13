@@ -138,6 +138,7 @@ interface InvestigateRequest {
 
 import { randomUUID } from 'crypto';
 import { getActivePolicy } from '../services/llm-routing-policy-service';
+import { requireAdminOnly } from '../middleware/require-service-or-admin';
 
 interface CachedRouterTriageResult {
   orb_session_id: string;
@@ -165,7 +166,8 @@ async function getTriagePrimaryProvider(): Promise<string> {
   }
 }
 
-triageAgentRouter.post('/investigate', async (req: Request, res: Response) => {
+// VTID-05697: exafy_admin only; it spends LLM credit and reads OASIS events of any session.
+triageAgentRouter.post('/investigate', requireAdminOnly, async (req: Request, res: Response) => {
   try {
     const body = req.body as InvestigateRequest;
 

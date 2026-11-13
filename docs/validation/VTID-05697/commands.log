@@ -1,0 +1,16 @@
+# VTID-05697 commands (session kiro-exafy-202611110920-270b, 2026-11-11, Kiro Web sandbox, Linux, node v22.23.4)
+# base origin/main 6dc6e1ba0c18252ec2f3fbf5651d245e200f9835
+cd services/gateway && npm ci --no-audit --no-fund                       # added 850 packages
+npx jest test/gateway-write-route-auth.test.ts test/command-hub/gateway-write-route-auth-callers.test.ts
+  # green: 2 suites, 58 of 58 pass                                     -> outputs/jest-green.txt
+git checkout origin/main -- src/routes/{specs,triage-agent,ai-personality,llm}.ts src/frontend/command-hub/app.js && npx jest <same two files>; git checkout HEAD -- <same files>
+  # red on base: 42 failed, 16 passed of 58                            -> outputs/jest-red-on-base.txt
+npx jest $(grep -rlE "routes/(specs|llm|ai-personality|triage-agent)'|routing-policy|ai-personality|triage/investigate|command-hub/app\.js|app\.js'" test)
+  # 127 suites passed, 2293 tests passed
+npx tsc --noEmit                                                         # exit 0 -> outputs/tsc-gateway.txt
+npm run build                                                            # exit 0 -> outputs/build.txt
+  # the build rewrites specs/command-hub-symbol-index.json (line offsets only); not committed, as in other app.js lanes
+caller census (plan §2)                                                  -> outputs/caller-census.txt
+GITHUB_REPOSITORY=exafyltd/vitana-platform node scripts/collab/preflight.mjs --repo . --base origin/main --head HEAD --branch kiro/gateway-write-route-auth/route-auth --title "<PR title>"
+  # exit 1: Collab handoff and Lane scope cannot find .kiro/specs/gateway-write-route-auth/lanes/route-auth.md and PR-GATE sparring cannot find
+  # sparring/verdict.md, because the plan is not on main yet (plan PR #4954 open). All other checks pass. Re-run after the plan merges.

@@ -6,8 +6,8 @@
  * Endpoints:
  * - GET  /api/v1/ai-personality                     — List all surfaces
  * - GET  /api/v1/ai-personality/:surface_key        — Get single surface
- * - PUT  /api/v1/ai-personality/:surface_key        — Update surface config
- * - POST /api/v1/ai-personality/:surface_key/reset  — Reset to defaults
+ * - PUT  /api/v1/ai-personality/:surface_key        — Update surface config (exafy_admin, VTID-05697)
+ * - POST /api/v1/ai-personality/:surface_key/reset  — Reset to defaults (exafy_admin, VTID-05697)
  */
 
 import { Router, Request, Response } from 'express';
@@ -19,8 +19,21 @@ import {
   VALID_SURFACE_KEYS,
   PersonalitySurfaceKey,
 } from '../services/ai-personality-service';
+import { requireAdminOnly, getControlPlaneActor } from '../middleware/require-service-or-admin';
 
 const router = Router();
+
+/**
+ * VTID-05697: audit actor from the control-plane gate (never from caller headers).
+ * `admin:<user_id>` -> { id: <user_id>, role: 'exafy_admin' }; `service:internal` -> { id: 'internal', role: 'service' }.
+ */
+function auditActor(req: Request): { id: string; role: string } {
+  const label = getControlPlaneActor(req);
+  const i = label.indexOf(':');
+  const kind = i < 0 ? label : label.slice(0, i);
+  const id = i < 0 ? 'unknown' : label.slice(i + 1) || 'unknown';
+  return { id, role: kind === 'admin' ? 'exafy_admin' : kind };
+}
 
 /**
  * GET / — List all personality surfaces with current config and defaults
@@ -66,7 +79,7 @@ router.get('/:surface_key', async (req: Request, res: Response) => {
  *
  * Body: { config: Record<string, unknown>, reason: string }
  */
-router.put('/:surface_key', async (req: Request, res: Response) => {
+router.put('/:surface_key', requireAdminOnly, async (req: Request, res: Response) => {
   const surfaceKey = req.params.surface_key as PersonalitySurfaceKey;
 
   if (!VALID_SURFACE_KEYS.includes(surfaceKey)) {
@@ -86,9 +99,8 @@ router.put('/:surface_key', async (req: Request, res: Response) => {
     return res.status(400).json({ ok: false, error: 'Missing "reason" string in body' });
   }
 
-  // Extract identity from request (if auth middleware is present)
-  const updatedBy = (req as any).identity?.user_id || 'command-hub-user';
-  const updatedByRole = (req as any).identity?.role || 'developer';
+  // VTID-05697: identity comes from requireAdminOnly.
+  const { id: updatedBy, role: updatedByRole } = auditActor(req);
 
   try {
     const result = await updatePersonalityConfig(
@@ -117,7 +129,7 @@ router.put('/:surface_key', async (req: Request, res: Response) => {
  *
  * Body: { reason: string }
  */
-router.post('/:surface_key/reset', async (req: Request, res: Response) => {
+router.post('/:surface_key/reset', requireAdminOnly, async (req: Request, res: Response) => {
   const surfaceKey = req.params.surface_key as PersonalitySurfaceKey;
 
   if (!VALID_SURFACE_KEYS.includes(surfaceKey)) {
@@ -130,8 +142,7 @@ router.post('/:surface_key/reset', async (req: Request, res: Response) => {
   const { reason } = req.body;
   const resetReason = (reason && typeof reason === 'string') ? reason.trim() : 'Manual reset from Command Hub';
 
-  const updatedBy = (req as any).identity?.user_id || 'command-hub-user';
-  const updatedByRole = (req as any).identity?.role || 'developer';
+  const { id: updatedBy, role: updatedByRole } = auditActor(req);
 
   try {
     const result = await resetPersonalityConfig(surfaceKey, resetReason, updatedBy, updatedByRole);

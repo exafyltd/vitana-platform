@@ -1,0 +1,17 @@
+{
+  "vtid": "VTID-05697",
+  "kind": "fix",
+  "paths": [
+    "services/gateway/src/routes/specs.ts",
+    "services/gateway/src/routes/triage-agent.ts",
+    "services/gateway/src/routes/ai-personality.ts",
+    "services/gateway/src/routes/llm.ts",
+    "services/gateway/src/frontend/command-hub/app.js",
+    "services/gateway/test/gateway-write-route-auth.test.ts",
+    "services/gateway/test/command-hub/gateway-write-route-auth-callers.test.ts",
+    "docs/validation/VTID-05697/**"
+  ],
+  "weakens_tests": [],
+  "red_green_exempt": [],
+  "sparring_record": ".kiro/specs/gateway-write-route-auth/sparring/verdict.md"
+}

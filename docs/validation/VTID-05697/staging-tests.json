@@ -1,0 +1,13 @@
+{
+  "vtid": "VTID-05697",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "spec save requires the service token or an exafy_admin JWT (rejected write probe)", "method": "PATCH", "path": "/api/v1/specs/VTID-00000", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "http", "name": "triage investigate requires an exafy_admin JWT (rejected write probe)", "method": "POST", "path": "/api/v1/agents/triage/investigate", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "http", "name": "AI personality update requires an exafy_admin JWT (rejected write probe, invalid surface key)", "method": "PUT", "path": "/api/v1/ai-personality/__staging_probe__", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "http", "name": "AI personality reset requires an exafy_admin JWT (rejected write probe, invalid surface key)", "method": "POST", "path": "/api/v1/ai-personality/__staging_probe__/reset", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "http", "name": "LLM routing policy update requires the service token or an exafy_admin JWT (rejected write probe)", "method": "POST", "path": "/api/v1/llm/routing-policy", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "existing", "ref": "npx jest test/gateway-write-route-auth.test.ts test/command-hub/gateway-write-route-auth-callers.test.ts", "cwd": "services/gateway",
+      "reason": "covers all six routes including POST /api/v1/llm/routing-policy/reset, which has no staging probe: its handler ignores the body, so on a gateway that still runs the old code the probe body {} would reset the routing policy, and staging writes reach production data" }
+  ]
+}
