@@ -16,3 +16,8 @@ VTID-05787, allocated by the VTID-ALLOCATE workflow.
 
 ## Allocation record
 - VTID-05787 was allocated through the VTID-ALLOCATE workflow (run 43397162744, VTID_RESULT=VTID-05787), dispatched over the REST API from the Claude Code session.
+
+## Route evidence
+ROUTE_MOUNT: services/gateway/src/index.ts mounts /api/v1/lane-review (see outputs/route-mount.txt)
+FINAL_URL: not yet available. The route is not deployed. It has no staging URL until this PR merges and AWS-STAGE-DEPLOY-GATEWAY runs.
+CURL_PROOF: not yet available. No curl has been run against a deployed route. Required after staging deploy; the staging-tests.json probe covers it.

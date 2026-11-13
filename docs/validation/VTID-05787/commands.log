@@ -18,3 +18,4 @@ $ node check.js   (compiled review-pass logic, behaviour checks 1-9)
 $ tsc --noEmit --strict (lane-review files, node10 resolution)  -> no errors in lane-review files
 
 Not run here: Jest (no registry access from this session). CI runs test/lane-review/review-pass.test.ts and test/lane-review.test.ts.
+$ grep -n "api/v1/lane-review" services/gateway/src/index.ts  -> outputs/route-mount.txt
