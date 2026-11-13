@@ -2,10 +2,11 @@
 slug: ci-gate-invariants
 author: kiro
 executor: kiro
-next_actor: kiro
-state: drafted
+next_actor: claude
+state: parked
 author_seat: exafyltd
-updated: 2026-11-13T11:20Z
+updated: 2026-11-13T13:09Z
+parked_from: drafted
 ---
 # Handoff — ci-gate-invariants
 
@@ -33,3 +34,6 @@ Plan block: `plan.md`. Tasks: `tasks.md`. Lane: `lanes/bootstrap-pack-rules.md`.
 ## Log
 ### 2026-11-13T11:20Z · kiro-exafyltd-202611072144-1c88 · created → drafted
 Plan written after #5050, #5068 and #5070 were checked against `origin/main` (vitana-platform `4c4694b79`, vitana-v1 `17a32ed80`).
+
+### 2026-11-13T13:09Z · ci-plan-spar · drafted → parked
+Not converged after 2 sparring sessions (evidence_floor_not_met). Parked with the open findings in sparring/.
