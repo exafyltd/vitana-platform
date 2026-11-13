@@ -40,6 +40,8 @@ import {
 import { buildBedrockRequestBody, parseBedrockContent } from '../src/providers/bedrock';
 import { callViaRouter, _resetPolicyCacheForTests, type LLMRouterMessage } from '../src/services/llm-router';
 import { PolicySchema } from '../src/routes/llm';
+// plan sparring-eu-guard C2: tests set the region explicitly (there is no default region)
+process.env.AWS_REGION = process.env.AWS_REGION || 'eu-central-1';
 
 function bedrockReply(content: unknown[], stop_reason = 'end_turn') {
   return {

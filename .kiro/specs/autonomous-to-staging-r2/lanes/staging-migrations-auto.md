@@ -1,6 +1,6 @@
 ---
 lane: staging-migrations-auto
-state: in-review
+state: done
 next_actor: kiro
 branch: kiro/autonomous-to-staging-r2/staging-migrations-auto
 depends_on: [staging-db-provision]
@@ -5170,7 +5170,7 @@ paths:
   - docs/validation/VTID-05778/commands.log
   - docs/validation/VTID-05778/outputs
   - docs/validation/VTID-05778/staging-tests.json
-updated: 2026-11-13T08:57Z
+updated: 2026-11-13T09:16Z
 vtid: VTID-05784
 ---
 # Lane: staging-migrations-auto (repo vitana-platform)
@@ -5196,3 +5196,10 @@ reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 PR: https://github.com/exafyltd/vitana-platform/pull/5065
 Findings: non-blocking — the 27 tests run only in the selftest job on lane-branch pushes; nothing re-runs them on main after merge. Non-blocking — CI relies on the driver's land-guard evidence (18 green on this head).
 Next: the land step merges under §7b
+
+### 2026-11-13T09:16Z · kiro-exafy-202611110920-270b · in-review → verified
+merge: 56487532ffb53cb881028a89d27b401638a33559 (exafyltd/vitana-platform#5065)
+authority: §7b PM rule, applied by the plan driver (accept current on d3bce79d, every check green, up to date with main).
+
+### 2026-11-13T09:16Z · kiro-exafy-202611110920-270b · verified → done
+Code complete; nothing deploys and nothing is applied (STAGING-MIGRATE stays off until STAGING_DATA_PLANE=isolated, AWS_STAGING_DB_ROLE_ARN and STAGING_DB_COST_APPROVED=yes). Production unchanged.
