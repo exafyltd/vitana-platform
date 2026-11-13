@@ -82,6 +82,7 @@ specs:
   - vitana-platform:operator-chat-service-token
   - vitana-platform:memory-legacy-read-retire-r2
   - vitana-platform:privacy-ledger-auth
+  - vitana-platform:staging-verify-live-stamp
 docs:
   - vitana-platform:.kiro/specs/pm-agent/plan-sparring.md
   - vitana-platform:.kiro/specs/claude-sessions-handover/handoff.md
@@ -149,3 +150,4 @@ belong to none of the named programmes are listed here until the owner assigns t
 - `vitana-platform:kiro-fleet-register` — record the owner's Kiro account fleet in areas.yaml as seats, no email
 - `vitana-platform:bridge-drift-fix` — four independent fixes for the main breakage left by #5021 and #5027 (loop catalog, CLAUDE.md Part 1 extract budget, session-layer wording regex, migration SECURITY DEFINER comment)
 - `vitana-platform:architecture-mt-alignment` — verify the 41-module Vitanaland architecture map against the code and record Multi-Tenant alignment for the 18 workstreams (docs only)
+- `vitana-platform:staging-verify-live-stamp` — STAGING-VERIFY's manual `workflow_dispatch` resolves the commit staging currently serves when `commit_sha` is omitted, instead of trusting a caller-supplied sha with no cross-check
