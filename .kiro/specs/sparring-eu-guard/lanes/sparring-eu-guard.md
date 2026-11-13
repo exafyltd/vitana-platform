@@ -1,6 +1,6 @@
 ---
 lane: sparring-eu-guard
-state: ready
+state: done
 next_actor: kiro
 branch: claude/sparring-eu-guard/code
 depends_on: []
@@ -55,3 +55,12 @@ Earlier review on an earlier head (827c4b315f) is superseded: the branch was upd
 since (VTID-05764/#5027, then the full span through VTID-05785/#5057), each a clean merge — collaboration.md §3
 treats that as invalidating the prior review.
 Next: rebase-merge (not squash) per the owner's instruction this session.
+
+### 2026-11-13T10:34Z · pm-agent · in-review → verified
+Verified by the accept entry immediately above (M4 Bedrock chain, eu.anthropic.claude-opus-5-5), head 484585d7f2cc46f51810b5a24d4c276b3412ef8a.
+
+### 2026-11-13T10:35Z · pm-agent · verified → done
+merge: edbc99751653325de4f18fe0415b903a687fab3d (PR #4999, **rebase-merge** per the owner's explicit instruction
+this session, head 484585d7f2, 25/25 reported checks success/skipped, 0 commits behind `origin/main`). authority:
+the `review: accept` entry above. Deploys the gateway to staging on the next `AWS-STAGE-DEPLOY-GATEWAY.yml` run;
+STAGING-VERIFY watches it.
