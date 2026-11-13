@@ -23,6 +23,10 @@ export async function fetchServiceBotAccountFlag(sb: SupabaseClient, userId: str
   return sb.from('service_bot_accounts').select('user_id').eq('user_id', userId).maybeSingle();
 }
 
+export async function fetchNotificationTestActorFlag(sb: SupabaseClient, userId: string) {
+  return sb.from('notification_test_actors').select('user_id').eq('user_id', userId).maybeSingle();
+}
+
 export async function countTenantMembersExcluding(sb: SupabaseClient, tenantId: string, excludeUserId: string, botUserId: string) {
   return sb
     .from('user_tenants')

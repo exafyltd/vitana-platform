@@ -73,6 +73,22 @@ export async function sendWelcomeChatMessages(
       return { sent: 0, skipped: true, reason: 'service_bot_account' };
     }
 
+    // VTID-05038: the fire_welcome_chat_on_membership() trigger also skips
+    // registered test accounts (notification_test_actors). Same skip here.
+    // Fails closed: if the list cannot be read, no welcome is sent.
+    const { data: testActor, error: testActorErr } = await repo.fetchNotificationTestActorFlag(supabase, userId);
+
+    if (testActorErr) {
+      console.warn(`${tag} notification_test_actors lookup failed for ${userId}: ${testActorErr.message}`);
+      return { sent: 0, skipped: true, reason: 'notification_test_actor_check_failed' };
+    }
+
+    if (testActor) {
+      console.log(`${tag} ${userId} is a registered test account, skipping fan-out`);
+      await markWelcomeSent(userId, supabase);
+      return { sent: 0, skipped: true, reason: 'notification_test_actor' };
+    }
+
     // 2. Count community members in this tenant (exclude self + bot)
     const { count, error: countErr } = await repo.countTenantMembersExcluding(supabase, tenantId, userId, VITANA_BOT_USER_ID);
 
