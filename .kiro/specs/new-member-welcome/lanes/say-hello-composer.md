@@ -1,9 +1,9 @@
 ---
 lane: say-hello-composer
-state: ready
+state: parked
 next_actor: kiro
 vtid: VTID-05207
-seat: jtadic
+seat: exafyltd
 executor: kiro
 reviewer_seat: agent:vitana-lane-reviewer
 paths:
@@ -26,7 +26,8 @@ paths:
   - tests/e2e/staging/vtid-05207-*.staging.spec.ts
 area: messenger
 depends_on: [new-member-card-optin, grouped-welcome-notifications]
-updated: 2026-10-15T13:00Z
+updated: 2026-11-13T21:00Z
+parked_from: ready
 ---
 # "Say Hello 👋" composer + suggestion endpoint + greeting guard
 
@@ -45,3 +46,5 @@ Drafted. next_actor: claude (spar → Gate 1 → allocate VTID), then kiro execu
 ### 2026-10-15T13:00Z · session_01LKkSBuw1tGgnKzjhfcmAxj · ready → ready (handed to Kiro)
 Owner approved the plan at Gate 1; VTID VTID-05207 allocated. Lane handed to Kiro: `next_actor: kiro`, seat `exafyltd` (area `messenger`). Start by claiming the lane
 (`queue.mjs claim new-member-welcome/say-hello-composer --session <your id>`); respect `depends_on` — do not start before those lanes are `done`.
+### 2026-11-13T21:00Z · pm-agent · ready → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
