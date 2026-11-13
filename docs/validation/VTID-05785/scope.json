@@ -1,0 +1,15 @@
+{
+  "vtid": "VTID-05785",
+  "kind": "fix",
+  "paths": [
+    "services/gateway/specs/loop-catalog-v1.json",
+    "services/gateway/src/services/operator-bootstrap-pack.ts",
+    "services/gateway/test/vtid-04018-operator-bootstrap-pack.test.ts",
+    "services/gateway/test/vtid-04868-plan-sparring-session-layer.test.ts",
+    "supabase/migrations/20261112100000_bridge_sparring_convergence_is_approval.sql",
+    "docs/validation/VTID-05785/**"
+  ],
+  "sparring_record": ".kiro/specs/bridge-drift-fix/sparring/verdict.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

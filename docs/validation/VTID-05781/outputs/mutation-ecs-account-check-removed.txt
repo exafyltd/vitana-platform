@@ -1,0 +1,6 @@
+# mutation ecs-account-check-removed: scripts/aws/staging-cutover-ecs.sh
+# replaced: [ "$acct" = "$ACCOUNT" ] || die
+# with:     true || die
+not ok 12 - ecs: wrong AWS account is refused before any ECS call
+# pass 15
+# fail 1

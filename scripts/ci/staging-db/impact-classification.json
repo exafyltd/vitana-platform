@@ -1,0 +1,31 @@
+{
+  "$comment": "VTID-05781 (plan autonomous-to-staging-r2, lane staging-cutover; design.md §9): every workflow that names the staging gateway host, classified by what an isolated staging data plane does to it. Read by scripts/ci/staging-db/impact.mjs. blocks_flip=true keeps AWS-STAGE-CUTOVER.yml closed until resolved_when holds or (acceptable=true) the owner names the file in repository variable STAGING_CUTOVER_IMPACT_ACCEPTED. A new workflow that names the host and is not listed here is unclassified, which also keeps the flip closed.",
+  "classes": {
+    "governance-ledger-write": "writes the one VTID ledger / plan-sparring records through the gateway; isolated, it would write a second ledger",
+    "governance-signal-write": "writes records that production operators read today only because staging shares the production data plane (findings, self-heal reports, requests, health tiles); isolated, they land in the synthetic staging database",
+    "staging-scoped-write": "writes staging-only state on purpose; isolated, the write stays on staging (today it reaches the production database)",
+    "staging-read-probe": "reads or probes the staging gateway; isolated, it reads synthetic data",
+    "deploy-config": "only names the host as a configuration value or a deploy/verification target"
+  },
+  "workflows": {
+    "PLAN-SPAR.yml": { "class": "governance-ledger-write", "blocks_flip": true, "acceptable": false, "resolved_when": { "var": "PLAN_SPAR_GATEWAY_URL", "equals": "https://gateway.vitanaland.com" }, "evidence": "PLAN-SPAR.yml:92 GATEWAY_URL defaults to the staging gateway" },
+    "VTID-ALLOCATE.yml": { "class": "governance-ledger-write", "blocks_flip": true, "acceptable": false, "resolved_when": { "var": "PLAN_SPAR_GATEWAY_URL", "equals": "https://gateway.vitanaland.com" }, "evidence": "VTID-ALLOCATE.yml:36 POST /api/v1/vtid/allocate on the staging gateway by default" },
+    "DEV-AUTOPILOT.yml": { "class": "governance-signal-write", "blocks_flip": true, "acceptable": true, "evidence": "POST /api/v1/dev-autopilot/scan (twice daily); the production Dev Autopilot queue stops receiving the scan" },
+    "DEV-AUTOPILOT-IMPACT.yml": { "class": "governance-signal-write", "blocks_flip": true, "acceptable": true, "evidence": "POST /api/v1/dev-autopilot/impact-ingest on every PR" },
+    "E2E-ORB-MONITOR.yml": { "class": "governance-signal-write", "blocks_flip": true, "acceptable": true, "evidence": "POST /api/v1/self-healing/report (self-heal tasks); isolated, the allocator is off and no VTID is minted" },
+    "E2E-TEST-RUN.yml": { "class": "governance-signal-write", "blocks_flip": true, "acceptable": true, "evidence": "POST /api/v1/self-healing/report" },
+    "SCREEN-LOAD-TIMING.yml": { "class": "governance-signal-write", "blocks_flip": true, "acceptable": true, "evidence": "reports screen-load results that feed the Command Hub service-health grid" },
+    "REUSABLE-NOTIFY.yml": { "class": "governance-signal-write", "blocks_flip": true, "acceptable": true, "evidence": "POST /new-request-with-notification on secrets.GATEWAY_URL, staging by default" },
+    "AWS-STAGE-DEPLOY-KIRO-RUNNER.yml": { "class": "governance-signal-write", "blocks_flip": true, "acceptable": true, "evidence": "MCP_GATEWAY_URL: the staging Kiro runner's MCP writes go through the staging gateway" },
+    "SET-STAGING-TENANT-CONSENT.yml": { "class": "staging-scoped-write", "blocks_flip": false, "evidence": "POST /api/v1/admin/staging/tenant-consent/flip" },
+    "OPS-TOGGLE-FLOW-V3-STAGING.yml": { "class": "staging-scoped-write", "blocks_flip": false, "evidence": "POST /api/v1/governance/controls/<key> on staging (today it flips the production database row)" },
+    "EXERCISE-STAGING-SHADOW.yml": { "class": "staging-scoped-write", "blocks_flip": false, "evidence": "POST /api/v1/admin/staging/eval/exercise-shadow" },
+    "EXERCISE-STAGING-SHADOW-CORPUS.yml": { "class": "staging-scoped-write", "blocks_flip": false, "evidence": "drives the staging shadow exerciser with the golden corpus" },
+    "CRON-SHADOW-COMPARISON-REPORT.yml": { "class": "staging-read-probe", "blocks_flip": false, "evidence": "GET /api/v1/admin/staging/eval/shadow-comparison-report" },
+    "MORNING-SYSTEM-HEALTH-CHECK.yml": { "class": "staging-read-probe", "blocks_flip": false, "evidence": "GET build-info and health probes on staging; its database checks use repo secrets, not the staging gateway" },
+    "AWS-STAGE-DEPLOY-GATEWAY.yml": { "class": "deploy-config", "blocks_flip": false, "evidence": "gateway_url default, GATEWAY_URL / GATEWAY_PUBLIC_URL task-definition values" },
+    "AWS-PROD-DEPLOY-GATEWAY.yml": { "class": "deploy-config", "blocks_flip": false, "evidence": "staging_url for promote-staging; OPERATOR_BOOTSTRAP_BUILD_INFO_URLS value" },
+    "AWS-PROD-DEPLOY-AUTOPILOT-EXECUTOR.yml": { "class": "deploy-config", "blocks_flip": false, "evidence": "OPERATOR_BOOTSTRAP_BUILD_INFO_URLS value" },
+    "AWS-STAGE-CUTOVER.yml": { "class": "deploy-config", "blocks_flip": false, "evidence": "post-flip smoke target (read-only)" }
+  }
+}

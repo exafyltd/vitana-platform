@@ -6,6 +6,11 @@ BEGIN;
 -- NOT APPLIED. This migration writes the shared database (staging and production use the same
 -- Supabase project). Migrations stay human-approved (owner decision 2026-11-12): apply only
 -- after the owner approves this file.
+--
+-- definer-public: unchanged — PUBLIC, anon and authenticated stay revoked by
+-- 20261015180000_vtid_05214_plan_sparring_policy_approval.sql (same REVOKE/GRANT pair, not
+-- repeated here). This migration only replaces the function body (bridge-period
+-- convergence-is-approval logic); it touches no grant. (VTID-05785)
 CREATE OR REPLACE FUNCTION public._plan_sparring_gate_eval(p_vtid text, p_metadata jsonb, p_actor text)
 RETURNS jsonb
 LANGUAGE plpgsql

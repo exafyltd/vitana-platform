@@ -14,13 +14,13 @@
     },
     {
       "kind": "http",
-      "name": "PM reports claude_primary mode",
+      "name": "PM reports kiro_fallback mode",
       "target": "gateway",
       "method": "GET",
       "path": "/api/v1/project-manager/mode",
       "expect_status": 200,
-      "expect_json": { "ok": true, "enabled": false, "mode": "live", "executor_mode": "claude_primary" },
-      "reason": "read-only anonymous GET: staging runs the PM live in claude_primary mode at the verified commit (owner decision 2026-11-12)"
+      "expect_json": { "ok": true, "enabled": true, "mode": "live", "executor_mode": "kiro_fallback" },
+      "reason": "read-only anonymous GET: staging runs the PM live with enabled true in kiro_fallback mode (owner decision 2026-11-11, staging PM enabled)"
     },
     {
       "kind": "http",
