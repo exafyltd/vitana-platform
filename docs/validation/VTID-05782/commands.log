@@ -1,0 +1,28 @@
+# VTID-05782 — base origin/main 94f5183f77491bfeb3481eed3ee10a266e4e900f (outputs/base-sha.txt)
+# No AWS call, no aws CLI against the account, no credential, no migration applied, nothing provisioned (owner directive 2026-11-12).
+(origin/main + new tests and fixtures only) node --test scripts/ci/staging-db/*.test.mjs  -> 5 files fail, modules/files absent (outputs/red-on-base.txt)
+node --test scripts/ci/staging-db/*.test.mjs                        (PGlite installed) -> 80 pass, 0 fail, 0 skipped (outputs/green.txt)
+node --test scripts/ci/staging-db/*.test.mjs                        (no install, UNIT.yml) -> 76 pass, 0 fail, 4 skipped (PGlite cases) (outputs/green-no-install.txt)
+node --test $(find scripts -name '*.test.mjs' -o -name '*.test.cjs' | sort)  (UNIT.yml file set) -> 1520 tests, 1518 pass, 0 fail, 2 skipped
+(mutation: DenyProduction removed from role and boundary) node --test scripts/ci/staging-db/stack.test.mjs -> 1 fail (outputs/mutation-deny-production-removed.txt)
+(mutation: cost-approval check removed from provision --apply) node --test scripts/ci/staging-db/aws-scripts.test.mjs -> 1 fail (outputs/mutation-cost-check-removed.txt)
+(mutation: schema-hash comparison removed from load) node --test scripts/ci/staging-db/aws-scripts.test.mjs -> 1 fail (outputs/mutation-hash-check-removed.txt)
+cfn-lint 1.60.1 --regions eu-central-1 -- infra/staging-db/stack.yaml -> exit 0 (outputs/cfn-lint.txt)
+node scripts/ci/staging-db/build-schema.mjs --out <dir> -> PASS; 431 parts, 426 migrations applied, 308 skipped; schema hash d9118a134c63324216109d16dc41975ccc292add01d8ab16676215ade945183f over 14045 objects; bundle 4652220 bytes sha256 5a62ffad2e4fbc68ba002211b706bd474ae0e4d2922e96595ac29978c87886e0 (outputs/build-schema.txt, outputs/manifest-summary.json)
+node scripts/ci/staging-db/build-schema.mjs --verify <dir> -> PASS (4 reviewed production references, all comments/text or neutralized by seed 020)
+bash scripts/aws/staging-db-load.sh --cluster vitana-aurora-staging --bundle <dir> --dry-run -> 431 parts split into 6325 statements; no AWS call (outputs/load-dry-run.txt)
+node scripts/ci/staging-prod-ref-guard.mjs --report -> exit 0; 18 files, 35 production references, all in today's shared-plane staging files (AWS-STAGE-DEPLOY-GATEWAY.yml 16, AWS-STAGE-DEPLOY-POSTGREST-AURORA-PROXY.yml 6, setup-postgrest-aurora-proxy-staging.sh 7, rehearsal-staging-overlay.json 6)
+node scripts/ci/staging-prod-ref-guard.mjs --enforce --files <this lane's staging-db files and workflows> -> exit 0, 0 references
+# Review fix (review: changes on 64e8361a, rds!cluster-* secret scope). No AWS call; production secret names and cluster ARN from repo docs only
+#   (docs/AURORA-MIGRATION-STATUS-2026-09-10.md:336-338, 860-872 rds!cluster-eba8a4f2-3caa-4f11-88f0-c3102c3c176a-QR8ox2; docs/AURORA-CUTOVER-RUNBOOK-2026-09-20.md:7 rds!cluster-4dab93b8-…;
+#   arn:aws:rds:eu-central-1:472838866351:cluster:vitana-aurora-prod). Required RDS permissions from the Aurora User Guide, rds-secrets-manager.html
+#   "Permissions required for Secrets Manager integration": CreateSecret + TagResource for create; RotateSecret only for a manual rotate.
+node --test scripts/ci/staging-db/*.test.mjs                        (no install) -> 81 tests, 77 pass, 0 fail, 4 skipped (PGlite cases) (outputs/green-no-install.txt); PGlite files unchanged, their replay runs in STAGING-DB-SCHEMA.yml
+node --test $(find scripts -name '*.test.mjs' -o -name '*.test.cjs' | sort)  (UNIT.yml file set, no PGlite) -> 1521 tests, 1515 pass, 0 fail, 6 skipped
+(mutation: DenyProdManagedSecretByTag removed)      node --test scripts/ci/staging-db/stack.test.mjs -> 2 fail (outputs/mutation-managed-secret-by-tag.txt)
+(mutation: DenyProdManagedSecretByName removed)     node --test scripts/ci/staging-db/stack.test.mjs -> 2 fail (outputs/mutation-managed-secret-by-name.txt)
+(mutation: DenyProdManagedSecretRequestTag removed) node --test scripts/ci/staging-db/stack.test.mjs -> 2 fail (outputs/mutation-managed-secret-request-tag.txt)
+(mutation: DenyOtherClustersManagedSecrets removed) node --test scripts/ci/staging-db/stack.test.mjs -> 1 fail (outputs/mutation-managed-secret-other-clusters.txt)
+(mutation: RotateSecret added back)                 node --test scripts/ci/staging-db/stack.test.mjs -> 1 fail (outputs/mutation-managed-secret-rotate.txt)
+(mutation: aws:ViaAWSService condition removed)     node --test scripts/ci/staging-db/stack.test.mjs -> 1 fail (outputs/mutation-managed-secret-via-service.txt)
+cfn-lint 1.60.1 --regions eu-central-1 -- infra/staging-db/stack.yaml -> exit 0 (outputs/cfn-lint.txt)

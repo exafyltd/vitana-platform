@@ -10,8 +10,9 @@ paths:
   - .github/workflows/PR-GATE.yml
   - scripts/ci/pr-gate/gate.mjs
   - scripts/ci/pr-gate/__tests__/gate-class.test.mjs
-updated: 2026-11-11T16:49Z
+updated: 2026-11-12T21:26Z
 vtid: VTID-05738
+seat: exafyltd
 ---
 
 # Lane: frontend-simple-block (repo exafyltd/vitana-v1)
@@ -24,3 +25,5 @@ Lane created with the plan.
 
 ### 2026-11-11T16:49Z · ci-plan-spar · ready (VTID allocated)
 VTID-05738 allocated after policy approval (converged-auto-v1).
+### 2026-11-12T21:26Z · pm-agent · update
+reassign lane →exafyltd (stale_ready, Claude unavailable)

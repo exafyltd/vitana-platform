@@ -1,0 +1,5 @@
+# tests 1628
+# suites 10
+# pass 1622
+# fail 0
+# skipped 6

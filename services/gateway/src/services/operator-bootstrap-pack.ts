@@ -52,7 +52,11 @@ export const PACK_MAX_CHARS = 40_000;
 export const BOOTSTRAP_RULES_SECTION_TITLE = 'Governance rules (CLAUDE.md Part 1, abridged)';
 
 const LIMITS = {
-  rulesChars: 8_000,
+  // VTID-05785: the bridge-period governance additions (CLAUDE.md, #5021) pushed the
+  // "# PART 1: CORE RULES" heading from byte 6852 to byte 8158 — past the old 8_000 clip, so
+  // extractClaudeMdPart1() silently returned a prefix that never reached PART 1 at all. Raised
+  // with headroom for further preamble growth; still well inside the 40_000 overall pack budget.
+  rulesChars: 12_000,
   pathMapChars: 3_000,
   schemaIndexChars: 3_000,
   changelogRows: 20,
