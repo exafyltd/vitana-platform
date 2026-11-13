@@ -10,6 +10,8 @@ Author: Kiro, seat `exafyltd`. Repo: `exafyltd/vitana-platform` only. Spec: `han
 folder. The `vtid:` of each lane is written by CI after PLAN-SPAR converges, never by hand.
 
 <!-- plan:begin -->
+Sparring note (2026-11-13T12:00Z): session 1 escalated on round 1 with `evidence_floor_not_met` (0 premise checks), a partner-side failure; this line opens the re-plan session. No plan content changed.
+
 ## Goal
 Owner instruction, quoted verbatim: "Bundle the open lanes (#5050, #5068, #5070) into one plan PR, run it through the
 machine sparring, and merge it on convergence under the bridge rule."
