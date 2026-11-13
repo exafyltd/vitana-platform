@@ -301,3 +301,39 @@ No GitHub workflow was used. The GitHub token was not used for deploys and is no
 - `vtid-05005` flaky test: not changed.
 - Staging Supabase URL and keys: not changed.
 - `vitana-postgres-staging`: not touched.
+
+## Local migration classification (PGlite stand-in, not the rehearsal)
+
+Source: every top-level migration on main, applied in name order to a fresh PGlite with the harness shim and base schema. The held drop is excluded. Each failing file is rolled back and the run continues. Output: `tools/logs/pglite-classify.tsv` (outside the repo). Counts: OK 365, FAILED 367, EXCLUDED 1.
+
+| Class | Count | Rule |
+|---|---|---|
+| bug | 18 | syntax error in the file, index predicate with a non-immutable function, or a column/table created by a later migration (ordering) |
+| missing-dependency | 264 | the object is created by an earlier migration that failed or was skipped in this pass |
+| environment | 81 | no migration creates the object (the local base is incomplete), or an extension/schema is absent |
+| data-state | 4 | a guard in the migration refuses to run without tenant data |
+
+### Bug rows
+
+| File | Reason |
+|---|---|
+| 20251231000001_vtid_01088_matchmaking_engine.sql | column is_active is added later in 20261102070350_vtid_05493_mt_tenant_archive_switch.sql (ordering) |
+| 20251231000001_vtid_01098_memory_timeline_causality.sql | SQL syntax in the file itself |
+| 20260116000000_vtid_01179_autopilot_event_loop.sql | index predicate calls a non-immutable function |
+| 20260117000000_vtid_01183_worker_agent_connector.sql | SQL syntax in the file itself |
+| 20260205000000_fix_oasis_events_disk_io_indexes.sql | SQL syntax in the file itself |
+| 20260412400000_seed_maxina_settings.sql | column feature_flags is added later in 20260526060000_VTID_03107_redemption_codes.sql (ordering) |
+| 20260412500000_fix_maxina_settings_seed.sql | column feature_flags is added later in 20260526060000_VTID_03107_redemption_codes.sql (ordering) |
+| 20260420130000_BOOTSTRAP_ai_usage_log.sql | SQL syntax in the file itself |
+| 20260420170000_BOOTSTRAP_seed_ai_policies_fixed.sql | SQL syntax in the file itself |
+| 20260421220000_BOOTSTRAP_admin_kpi_surface.sql | SQL syntax in the file itself |
+| 20260421230000_BOOTSTRAP_admin_kpi_retention_fix.sql | SQL syntax in the file itself |
+| 20260421250000_BOOTSTRAP_admin_insights.sql | SQL syntax in the file itself |
+| 20260430120000_BOOTSTRAP_pause_dev_autopilot_auto_approve.sql | SQL syntax in the file itself |
+| 20260501000000_VTID_02639_autopilot_finding_completed_state.sql | SQL syntax in the file itself |
+| 20260501010000_VTID_02640_dev_autopilot_get_table_schema.sql | SQL syntax in the file itself |
+| 20260502120000_vtid_02690_seed_orb_agent_google_cascade.sql | agent_voice_configs is created later in 20260507100000_vtid_livekit_foundation_voice_tables.sql (ordering) |
+| 20260522010000_chat_group_members_recursion_fix.sql | chat_group_members is created later in 20260525000000_VTID_03089_chat_groups.sql (ordering) |
+| 20260524000000_VTID_03036_bootstrap_cache.sql | SQL syntax in the file itself |
+
+Caveat: the rehearsal log is not in this sandbox. The local base lacks production tables, so the missing-dependency and environment counts overstate what fails on the rehearsal. The bug rows are the ones to check first.
