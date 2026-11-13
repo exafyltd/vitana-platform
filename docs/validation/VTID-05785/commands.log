@@ -17,11 +17,9 @@ $ npx jest test/vtid-05041-definer-lockdown.test.ts   # mutation: definer-public
 
 $ npx jest test/vtid-04018-operator-bootstrap-pack.test.ts   # mutation: rulesChars reverted to 8_000 -> 2 failed, 14 passed
 $ npx jest test/vtid-04868-plan-sparring-session-layer.test.ts   # mutation: regex reverted to literal 'owner approval' -> 1 failed, 6 passed
-
-$ sed -i "s/sparring → machine approval/sparring → no approval/" CLAUDE.md   # sandbox-only, never committed
-$ npx jest test/vtid-04868-plan-sparring-session-layer.test.ts   # fixed regex (?:owner|machine|policy) vs corrupted text -> 1 failed, 6 passed (correctly rejects it)
-  # then, same corrupted CLAUDE.md, the superseded sparring-round-1 regex \w+ approval (not in the final diff) -> 0 failed, 7 passed (wrongly accepts "no approval" — why the lane review's tighter wording was adopted)
-$ sed -i "s/sparring → no approval/sparring → machine approval/" CLAUDE.md   # restored; git diff -- CLAUDE.md clean
+  (round 2: regex is now the literal 'machine approval', no alternation — lane review round 1 rejected both the
+  \w+ wildcard and a 3-word allowed set as loosened versus the base test's single literal; same mutation command
+  and result re-verified against the final literal-only regex)
   (outputs/mutations.txt)
 
 $ cd services/gateway && npx jest --silent --maxWorkers=3   # full suite, this worktree, on the final head: 2 failed

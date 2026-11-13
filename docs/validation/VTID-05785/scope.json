@@ -10,11 +10,6 @@
     "docs/validation/VTID-05785/**"
   ],
   "sparring_record": ".kiro/specs/bridge-drift-fix/sparring/verdict.md",
-  "weakens_tests": [
-    {
-      "file": "services/gateway/test/vtid-04868-plan-sparring-session-layer.test.ts",
-      "reason": "line 42's regex widens from the literal 'owner approval' to an explicit allowed set (?:owner|machine|policy) approval, because CLAUDE.md rule 51 was reworded by the bridge period (#5021) from 'owner approval' to 'machine approval'. Sparring round 1 (R1-F1) first widened this to an unrestricted \\w+ approval; the lane review (VTID-05785) found that too loose — it would also match a nonsensical 'no approval' (proved in outputs/mutations.txt, 'C3 counter-mutation': the \\w+ wording wrongly passes against corrupted text that the allowed-set wording correctly rejects) — so the final diff pins the word to the three wordings rule 51 has actually used: owner (pre-VTID-05214), machine (current), and policy (named in the same sentence for the CI-sparred path). A future wording tweak adds its word here, deliberately, never an arbitrary word."
-    }
-  ],
+  "weakens_tests": [],
   "red_green_exempt": []
 }

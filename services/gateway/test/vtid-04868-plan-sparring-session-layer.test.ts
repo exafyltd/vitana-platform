@@ -32,17 +32,17 @@ describe('VTID-04868 Plan Sparring Gate — session layer', () => {
     for (const n of [51, 52, 53, 54, 55]) expect(md).toMatch(new RegExp(`^${n}\\. \\*\\*`, 'm'));
     // VTID-05214 reworded rule 51 to include the CI-sparred policy-approval path
     // ("… owner approval (or, for a CI-sparred plan that converged, policy approval
-    // converged-auto-v1, VTID-05214) → VTID → code."). Pin the stable endpoints of the
-    // flow rather than the exact middle clause so a future wording tweak does not re-break it.
-    // Bridge period (owner instruction 2026-11-12, #5021) reworded the middle clause again, from
-    // "owner approval" to "machine approval on convergence" (sparring round 1, R1-F1,
-    // VTID-05785). Sparring round 1 first widened the middle word to an unrestricted `\w+`;
-    // the lane review (VTID-05785) found that too loose — it would also match a nonsensical
-    // "no approval" — so this pins the word to the three wordings rule 51 has actually used:
-    // "owner" (pre-VTID-05214), "machine" (current), and "policy" (named in the same sentence
-    // for the CI-sparred path). A future wording tweak adds its word here, deliberately, rather
-    // than being silently accepted by a wildcard.
-    expect(md).toMatch(/[Pp]lan → sparring → (?:owner|machine|policy) approval[\s\S]*?→ VTID → code\./);
+    // converged-auto-v1, VTID-05214) → VTID → code."). Bridge period (owner instruction
+    // 2026-11-12, #5021) reworded the middle clause again, from "owner approval" to "machine
+    // approval on convergence" (sparring round 1, R1-F1, VTID-05785). Sparring round 1 first
+    // widened the middle word to an unrestricted `\w+ approval`, then (still VTID-05785) to an
+    // explicit allowed set of three words; the lane review rejected both as a loosened
+    // assertion — the base test pinned exactly one literal and nothing broader should pass
+    // either, no matter how the set is bounded. Pin today's literal, "machine approval", same
+    // as the base test pinned "owner approval": a future rewording updates this literal again
+    // (that is the fix this VTID exists to make, and it is a one-line change when it recurs),
+    // never an alternation.
+    expect(md).toMatch(/[Pp]lan → sparring → machine approval[\s\S]*?→ VTID → code\./);
     expect(md).toContain('Claude Opus 4.6 on AWS Bedrock');
     // Owner decision 2026-10-19: Opus 4.6 → Sonnet 4.6 → DeepSeek, never Google.
     expect(md).toContain('**Fallback chain');

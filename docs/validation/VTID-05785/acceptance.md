@@ -19,23 +19,25 @@ updated to match. Mutation: reverting to `8_000` re-fails the Part-1 extraction 
 TEST: `npx jest test/vtid-04018-operator-bootstrap-pack.test.ts` (`outputs/red.txt`, `outputs/green.txt`,
 `outputs/mutations.txt` C2)
 
-AC-3 (C3, session-layer regex): sparring round 1 (R1-F1) first widened the literal `owner approval` to an
-unrestricted `\w+ approval`; the lane review found that too loose (it would also match a nonsensical "no
-approval") and the final diff instead pins an explicit allowed set, `(?:owner|machine|policy) approval` — the
-three wordings rule 51 has actually used. Declared in `scope.json` `weakens_tests` (it does accept more than the
-original literal string, deliberately, for the three known wordings — never an arbitrary word). Mutations:
-(1) reverting to the literal `owner approval` re-fails against the real CLAUDE.md text ("machine approval");
-(2) corrupting CLAUDE.md's wording to "no approval" (sandbox-only, restored byte-identical, `CLAUDE.md` is not in
-this lane's paths) re-fails the fixed regex, and — the credible negative control — would have wrongly *passed*
-under the superseded `\w+ approval` wording, which is why that wording was not kept.
+AC-3 (C3, session-layer regex): CLAUDE.md rule 51 was reworded from "owner approval" to "machine approval" by the
+bridge period (#5021); the base test pinned the literal "owner approval" and so broke. Sparring round 1 (R1-F1)
+widened this to an unrestricted `\w+ approval`, and a first lane-review round widened it again to an explicit
+allowed set of three words — the lane review rejected both as a loosened assertion (the base test pinned exactly
+one literal; nothing broader should pass). Final fix: pin today's literal, "machine approval", exactly as strict
+as the base test's "owner approval". `weakens_tests` is `[]`: swapping which single literal is required is not a
+weakening. Mutation: reverting to the old literal `owner approval` re-fails against the real CLAUDE.md text.
 TEST: `npx jest test/vtid-04868-plan-sparring-session-layer.test.ts` (`outputs/red.txt`, `outputs/green.txt`,
-`outputs/mutations.txt` C3 and "C3 counter-mutation")
+`outputs/mutations.txt` C3)
 
 AC-4 (C4, migration comment): `-- definer-public: <reason>` line added, naming the earlier migration that already
-holds the function's `REVOKE`/`GRANT`. No SQL statement changed. Mutation: removing the comment re-fails (1
-failed, 1 skipped, 6 passed, 8 total). An earlier attempt used a path one `..` short of `supabase/migrations` from
-a `services/gateway` CWD, so `cp`/`sed` both failed silently and the test ran unmutated (false "PASS"); superseded
-by the absolute-path run cited here, which commands.log and mutations.txt both now report consistently.
+holds the function's `REVOKE`/`GRANT`. No SQL statement changed; the signature in that REVOKE/GRANT,
+`public._plan_sparring_gate_eval(text, jsonb, text)` (20261015180000, lines 155-156), matches this migration's
+`CREATE OR REPLACE FUNCTION public._plan_sparring_gate_eval(p_vtid text, p_metadata jsonb, p_actor text)`
+parameter types exactly, so `CREATE OR REPLACE` targets the already-locked-down overload. Mutation: removing the
+comment re-fails (1 failed, 1 skipped, 6 passed, 8 total). An earlier attempt used a path one `..` short of
+`supabase/migrations` from a `services/gateway` CWD, so `cp`/`sed` both failed silently and the test ran unmutated
+(false "PASS"); superseded by the absolute-path run cited here, which commands.log and mutations.txt both now
+report consistently.
 TEST: `npx jest test/vtid-05041-definer-lockdown.test.ts` (`outputs/red.txt`, `outputs/green.txt`,
 `outputs/mutations.txt` C4)
 

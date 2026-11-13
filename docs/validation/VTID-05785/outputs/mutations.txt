@@ -13,20 +13,14 @@ C2 mutation (operator-bootstrap-pack.ts LIMITS.rulesChars reverted to 8_000):
 FAIL test/vtid-04018-operator-bootstrap-pack.test.ts
 Tests:       2 failed, 14 passed, 16 total
 
-C3 mutation (session-layer regex reverted to the literal 'owner approval'):
+C3 mutation (session-layer regex reverted to the literal 'owner approval', round 1's fix):
 FAIL test/vtid-04868-plan-sparring-session-layer.test.ts
 Tests:       1 failed, 6 passed, 7 total
   Proves the fix was needed: the pre-fix test does not accept CLAUDE.md's current "machine approval" wording.
-
-C3 counter-mutation (CLAUDE.md rule 51 wording corrupted to "sparring → no approval", a nonsensical governance
-claim; tests run against the REAL regex, not reverted):
-  - Fixed regex `(?:owner|machine|policy) approval`: FAIL, 1 failed, 6 passed, 7 total — correctly rejects wording
-    outside the known set. This is the lane-review's own example (M4 finding, VTID-05785 review round 1).
-  - Sparring round-1-accepted regex `\w+ approval` (superseded, not in the final diff): PASS, 0 failed, 7 passed,
-    7 total — wrongly accepts "no approval". This is why the lane review's objection to the unrestricted wildcard
-    was adopted over the sparring record: `\w+ approval` is not a credible pin, the explicit allowed set is.
-  (Both runs mutate CLAUDE.md only in the sandbox working tree, never committed, and are restored byte-identical
-  to origin/main — `git diff` is empty afterwards. CLAUDE.md is not in this lane's `paths`.)
+  (Round 1 of this lane's own review first widened this to an unrestricted `\w+ approval`, then to an explicit
+  three-word allowed set; round 2 of the same review rejected both as a loosened assertion versus the base
+  test's single literal. Final fix, re-verified with the same mutation above: pin today's literal, "machine
+  approval", exactly as strict as the base test's "owner approval" — no alternation.)
 
 C4 mutation (migration's `-- definer-public:` comment line removed, correct absolute path):
 FAIL test/vtid-05041-definer-lockdown.test.ts
