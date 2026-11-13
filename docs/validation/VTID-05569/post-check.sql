@@ -4,8 +4,6 @@
 -- left no function or trigger behind on the three tables beyond what existed).
 WITH tenant_ids AS (
   SELECT tenant_id AS id FROM public.tenants
-  UNION
-  SELECT id FROM public.tenants
 )
 SELECT
   (SELECT count(*) = 3 AND bool_and(is_nullable = 'NO')
