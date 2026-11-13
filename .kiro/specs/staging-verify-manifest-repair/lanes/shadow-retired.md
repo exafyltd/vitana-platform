@@ -1,12 +1,11 @@
 ---
 lane: shadow-retired
-state: in-review
+state: parked
 next_actor: kiro
-claimed_by: kiro-exafy-202611111326-7e9b
 branch: kiro/staging-verify-manifest-repair/shadow-retired
 depends_on: []
 executor: kiro
-seat: exafy
+seat: exafyltd
 area: platform
 reviewer_seat: agent:vitana-lane-reviewer
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
@@ -15,8 +14,9 @@ paths:
   - docs/validation/VTID-04784/staging-tests.json
   - docs/validation/VTID-05007/staging-tests.json
   - docs/validation/VTID-*/**
-updated: 2026-11-12T20:17Z
+updated: 2026-11-13T18:49Z
 vtid: VTID-05606
+parked_from: in-review
 ---
 # Lane: shadow-retired (repo vitana-platform)
 Retire only the deleted recall-shadow jest path from VTID-04784 and VTID-05007, with the VTID-05556 evidence, and point 04784 at the surviving recall test.
@@ -37,3 +37,5 @@ pr: https://github.com/exafyltd/vitana-platform/pull/4992
 PR https://github.com/exafyltd/vitana-platform/pull/4992. Preflight every check passed.
 ### 2026-11-12T20:17Z · pm-agent · update
 reassign review agent:vitana-lane-reviewer→exafyltd (stale_review, Claude unavailable)
+### 2026-11-13T18:49Z · pm-agent · in-review → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
