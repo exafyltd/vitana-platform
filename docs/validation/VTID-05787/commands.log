@@ -1,0 +1,20 @@
+# Commands run for VTID-05787 (real, from this session)
+
+$ gh api -X POST repos/exafyltd/vitana-platform/actions/workflows/VTID-ALLOCATE.yml/dispatches -f ref=main -f inputs[title]=... -f inputs[module]=gateway-backend
+  -> run 43397162744: completed, success; log line VTID_RESULT=VTID-05787
+
+$ node check.js   (compiled review-pass logic, behaviour checks 1-9)
+  ok 1 protected gate file refused without model call
+  ok 2 accept on primary model
+  ok 3 fallback to sonnet on throttle
+  ok 4 accept with blocking finding becomes changes
+  ok 5 all tiers fail -> model_unavailable
+  ok 6 malformed verdict falls through to next tier
+  ok 7 thrown error caught
+  ok 8 parseVerdict rejects unknown severity
+  ok 9 out-of-scope file refused without model call
+  ALL PASSED
+
+$ tsc --noEmit --strict (lane-review files, node10 resolution)  -> no errors in lane-review files
+
+Not run here: Jest (no registry access from this session). CI runs test/lane-review/review-pass.test.ts and test/lane-review.test.ts.
