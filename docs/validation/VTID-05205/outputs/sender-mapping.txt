@@ -1,0 +1,17 @@
+Sender mapping check (read-only), 2026-10-30. Source of defaults: services/gateway/src/services/welcome-team/config.ts:60-64
+(DEFAULT_SENDER_IDS). Approved spec: .kiro/specs/new-member-welcome/design.md:30-32, requirements.md:39-41.
+Database: Supabase project inmkhvwdcuyhnxkgfvsb, SELECT only (profiles).
+
+slug    configured id (config.ts)               profiles.handle  profiles.vitana_id  display_name
+mariia  67c971fc-48f3-49ce-aaa8-cddb6fa9e63a    mariia04         mariia11            Mariia Maksina
+jovana  c7d3260d-8311-4a0b-ab1c-53928a37caec    jovana4          jovana4             Jovana Tadic
+alex    0adc6ff6-acb0-4dca-99d0-295211a40e3e    dragan1          dragan1             Alex BLUE
+
+Owner confirmation 2026-10-30: the right Mariia is display name "Mariia Maksina", handle @mariia04. The configured id
+resolves to handle mariia04 (NOT to a different account). "mariia11" is the same row's vitana_id, not another account;
+the query "handle in (mariia04, mariia11)" returned exactly one row. No configuration change is needed.
+Replies: the DM is authored by the sender's own account (welcome-team-service.ts, header comment line 17), so a reply
+lands in that account's inbox; the push opens /inbox/u/<sender id> (line 292). Covered by test/vtid-05205-welcome-team.test.ts.
+Also checked: none of the three senders is in service_bot_accounts or notification_test_actors (0 rows each), so
+recipient/sender exclusion cannot block them.
+Migration state: welcome_team_claims table and claim_welcome_message / finish_welcome_message exist (1 table, 2 functions).
