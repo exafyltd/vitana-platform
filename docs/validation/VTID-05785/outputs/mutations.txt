@@ -1,24 +1,44 @@
-cp: cannot stat '../supabase/migrations/20261112100000_bridge_sparring_convergence_is_approval.sql': No such file or directory
-sed: can't read ../supabase/migrations/20261112100000_bridge_sparring_convergence_is_approval.sql: No such file or directory
-C4 mutation (definer-public comment removed):
-PASS test/vtid-05041-definer-lockdown.test.ts
-Tests:       1 skipped, 7 passed, 8 total
-cp: cannot stat '/tmp/m2.bak': No such file or directory
-C2 mutation (rulesChars reverted to 8_000):
+C1 mutation (AWS-KIRO-ACCESS removed from loop-catalog-v1.json, L5 sensors.workflows):
+FAIL test/loop-catalog.test.ts
+Tests:       2 failed, 23 passed, 25 total
+  - "workflows: no orphans, nothing owned twice, no dangling names": orphans: ["AWS-KIRO-ACCESS"] (was [])
+  - "the service reports the same clean coverage...": cov.ci_enforced.workflows.owned Expected 30, Received 29
+  Same failure shape as outputs/red.txt for this suite on origin/main. Re-fails correctly: the fix is necessary.
+  (First attempt at this mutation used a Python one-liner that indexed the catalog JSON incorrectly and raised
+  `KeyError: 'workflows'` before it could edit the file; the edit never happened, so the test that followed it ran
+  against the unmutated, already-fixed catalog and passed 25/25 — a false-positive "mutation" that proved nothing.
+  That attempt is superseded by this one, run via `sed` directly on the catalog file at its correct absolute path.)
+
+C2 mutation (operator-bootstrap-pack.ts LIMITS.rulesChars reverted to 8_000):
 FAIL test/vtid-04018-operator-bootstrap-pack.test.ts
 Tests:       2 failed, 14 passed, 16 total
-C3 mutation (regex reverted to literal 'owner approval'):
+
+C3 mutation (session-layer regex reverted to the literal 'owner approval'):
 FAIL test/vtid-04868-plan-sparring-session-layer.test.ts
 Tests:       1 failed, 6 passed, 7 total
-Traceback (most recent call last):
-  File "<string>", line 7, in <module>
-KeyError: 'workflows'
-(python mutation skipped: 1)
-C1 mutation (AWS-KIRO-ACCESS removed from catalog):
-PASS test/loop-catalog.test.ts
-Tests:       25 passed, 25 total
----C4 mutation (correct path)---
+  Proves the fix was needed: the pre-fix test does not accept CLAUDE.md's current "machine approval" wording.
+
+C3 counter-mutation (CLAUDE.md rule 51 wording corrupted to "sparring → no approval", a nonsensical governance
+claim; tests run against the REAL regex, not reverted):
+  - Fixed regex `(?:owner|machine|policy) approval`: FAIL, 1 failed, 6 passed, 7 total — correctly rejects wording
+    outside the known set. This is the lane-review's own example (M4 finding, VTID-05785 review round 1).
+  - Sparring round-1-accepted regex `\w+ approval` (superseded, not in the final diff): PASS, 0 failed, 7 passed,
+    7 total — wrongly accepts "no approval". This is why the lane review's objection to the unrestricted wildcard
+    was adopted over the sparring record: `\w+ approval` is not a credible pin, the explicit allowed set is.
+  (Both runs mutate CLAUDE.md only in the sandbox working tree, never committed, and are restored byte-identical
+  to origin/main — `git diff` is empty afterwards. CLAUDE.md is not in this lane's `paths`.)
+
+C4 mutation (migration's `-- definer-public:` comment line removed, correct absolute path):
 FAIL test/vtid-05041-definer-lockdown.test.ts
 Tests:       1 failed, 1 skipped, 6 passed, 8 total
----C1 coverage note---
-C1 is a single-line additive catalog fix; its red->green sensitivity is already shown by red.txt (fails, line absent) and green.txt (passes, line present) for the same file at the same commit range.
+  "a migration newer than S2 that creates a SECURITY DEFINER function revokes PUBLIC and anon, or says why not":
+  offenders: ["20261112100000_bridge_sparring_convergence_is_approval.sql"] (was [])
+  (First attempt at this mutation ran `cp`/`sed` against a relative path one `..` short of the migrations
+  directory from a `services/gateway` CWD; both commands failed with "No such file or directory", the file was
+  never touched, and the test that followed ran against the unmutated, already-fixed migration — reporting
+  "PASS, 1 skipped, 7 passed, 8 total", a false-positive result. This corrected run, using the migration's
+  absolute path, supersedes it and is the result commands.log and acceptance.md AC-4 cite.)
+
+All four corrected mutations re-fail their suite in exactly the way removing this lane's fix predicts, and every
+mutated file is restored byte-identical to its committed state (`git diff`/`git status --porcelain` clean) before
+the next command runs.

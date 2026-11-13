@@ -4,11 +4,27 @@ $ cd services/gateway && npx jest test/loop-catalog.test.ts test/vtid-04018-oper
   on origin/main (fixes stashed out): 4 suites failed, 6 failed, 1 skipped, 49 passed, 56 total (outputs/red.txt)
   on this branch: 4 passed, 0 failed, 1 skipped, 55 passed, 56 total (outputs/green.txt)
 
-$ npx jest test/vtid-05041-definer-lockdown.test.ts   # mutation: definer-public comment removed -> 1 failed, 7 passed
+$ sed -i '/^          "AWS-KIRO-ACCESS",$/d' services/gateway/specs/loop-catalog-v1.json
+$ npx jest test/loop-catalog.test.ts   # mutation: AWS-KIRO-ACCESS removed from catalog -> 2 failed, 23 passed
+  (restored: sed -i '/^          "ALERT-OASIS-LEDGER-INTEGRITY",$/a\          "AWS-KIRO-ACCESS",' services/gateway/specs/loop-catalog-v1.json; git diff clean)
+
+$ sed -i '/^-- definer-public:/d' supabase/migrations/20261112100000_bridge_sparring_convergence_is_approval.sql   # absolute path
+$ npx jest test/vtid-05041-definer-lockdown.test.ts   # mutation: definer-public comment removed -> 1 failed, 1 skipped, 6 passed, 8 total
+  (restored: re-inserted the comment line at its original position; git diff clean. Supersedes an earlier attempt
+  that used a path one `..` short of supabase/migrations from a services/gateway CWD — cp/sed both failed silently
+  on "No such file or directory", the file was never mutated, and the test that followed reported a false "PASS,
+  1 skipped, 7 passed, 8 total" against the unmutated file. See outputs/mutations.txt for both.)
+
 $ npx jest test/vtid-04018-operator-bootstrap-pack.test.ts   # mutation: rulesChars reverted to 8_000 -> 2 failed, 14 passed
 $ npx jest test/vtid-04868-plan-sparring-session-layer.test.ts   # mutation: regex reverted to literal 'owner approval' -> 1 failed, 6 passed
+
+$ sed -i "s/sparring → machine approval/sparring → no approval/" CLAUDE.md   # sandbox-only, never committed
+$ npx jest test/vtid-04868-plan-sparring-session-layer.test.ts   # fixed regex (?:owner|machine|policy) vs corrupted text -> 1 failed, 6 passed (correctly rejects it)
+  # then, same corrupted CLAUDE.md, the superseded sparring-round-1 regex \w+ approval (not in the final diff) -> 0 failed, 7 passed (wrongly accepts "no approval" — why the lane review's tighter wording was adopted)
+$ sed -i "s/sparring → no approval/sparring → machine approval/" CLAUDE.md   # restored; git diff -- CLAUDE.md clean
   (outputs/mutations.txt)
 
-$ cd services/gateway && npx jest --silent --maxWorkers=3   # full suite, sibling worktree: 2 failed (pre-existing,
-  environmental: storage-provider.test.ts region-env default; vtid-04226 openssl missing), 1780 passed, confirmed
-  identical with the fixes stashed out
+$ cd services/gateway && npx jest --silent --maxWorkers=3   # full suite, this worktree, on the final head: 2 failed
+  (pre-existing, environmental: storage-provider.test.ts region-env default; vtid-04226 openssl missing), 1780 of
+  1782 suites passed, 192.283s (outputs/full-suite.txt). Same two failures, identical file and assertion, as the
+  stashed-fixes-out baseline captured earlier from the sibling bridge-drift-fix/plan worktree.
