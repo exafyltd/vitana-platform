@@ -108,7 +108,7 @@ export const GATEWAY_WORKFLOW_PINS: Record<string, { staging: string | null; pro
   KIRO_MCP_ENABLED: { staging: "false | true", prod: "false | true" },
   KIRO_MCP_WRITE_ENABLED: { staging: "false | true", prod: "false | true" },
   KIRO_RUNNER_URL: { staging: "http://kiro-runner.vitana.internal:8080", prod: "http://kiro-runner-prod.vitana.internal:8080" },
-  LEDGER_WRITE_AUTH_MODE: { staging: "enforce", prod: null },
+  LEDGER_WRITE_AUTH_MODE: { staging: "enforce", prod: "dynamic" },
   MARKETPLACE_SYNC_SECRET: { staging: null, prod: "dynamic" },
   MEMORY_EMBEDDING_BACKFILL_LOOP_ENABLED: { staging: null, prod: "true" },
   MEMORY_EMBEDDING_BACKFILL_TENANT_IDS: { staging: null, prod: "2e7528b8-472a-4356-88da-0280d4639cce" },

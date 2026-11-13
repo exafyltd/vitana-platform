@@ -1,0 +1,34 @@
+# VTID-05700 Jest output. Red: workflow and generated pins from origin/main 6dc6e1ba0c (git stash), this branch's test file. Green: this branch.
+## red: CI=1 npx jest test/vtid-04727-ledger-write-auth.test.ts
+✓ off skips the check entirely (1 ms)
+✓ serviceAuthHeaders carries the token only when it is set
+✓ defaults to log, and only exact enforce/off select the others (11 ms)
+✓ rejects an anonymous request with 401 and does not call next (1 ms)
+✓ rejects a wrong bearer that is not a valid JWT with 401
+✓ rejects a valid non-admin JWT with 403 (1 ms)
+✓ accepts the service token and records the actor without JWT validation
+✓ accepts an exafy_admin JWT and records admin:<user_id>
+✓ never authorises an empty service token (unset env var)
+✓ fails closed when JWT verification throws (1 ms)
+✓ lets an anonymous request through but logs that it would be rejected (1 ms)
+✓ still records the verified actor for a good caller, without logging
+✓ write route is gated: 0
+✓ write route is gated: 1 (1 ms)
+✓ write route is gated: 2
+✓ write route is gated: 3
+✓ write route is gated: 4
+✓ write route is gated: 5
+✓ no write route on the tasks router is left ungated (1 ms)
+✓ read routes stay open (out of scope for this VTID)
+✓ delete records the verified actor before the caller-supplied header
+✓ the voice developer tools send the service token on every ledger write (1 ms)
+✓ the auto-close workflow passes the service token secret to the script
+✓ the backlog conversion script sends the service token when allocating
+✕ staging pins enforce; production takes the mode only from PROD_LEDGER_WRITE_AUTH_MODE, default log (VTID-05700) (2 ms)
+✕ the step reads the repository variable and defaults the shell value to log (12 ms)
+✕ with the variable unset, production gets LEDGER_WRITE_AUTH_MODE=log, never an empty value (4 ms)
+✕ with the variable enforce, an anonymous POST /api/v1/vtid/allocate answers 401 JSON and nothing is allocated (4 ms)
+Tests:       4 failed, 24 passed, 28 total
+## green: CI=1 npx jest test/vtid-04727-ledger-write-auth.test.ts test/vtid-04677-scheduled-notifications-auth.test.ts test/services/conversation/vtid-04525-conversation-flag-registry.test.ts <109 files naming AWS-PROD-DEPLOY-GATEWAY>
+Test Suites: 110 passed, 110 total
+Tests:       1414 passed, 1414 total
