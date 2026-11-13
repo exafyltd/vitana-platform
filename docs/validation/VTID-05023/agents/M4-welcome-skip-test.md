@@ -7,7 +7,7 @@ The welcome migration is unchanged. No new migration was needed: the handler alr
 
 - This run used only synthetic UUIDs of the form `11111111-1111-4111-8111-1111111111xx`. No other user ID was written.
 - The earlier scratch run (reported in the M3 review) used the account `a27552a3-0257-4305-8ed0-351a80fd3701`. That run was a write as that account, which rule 31 forbids. It is recorded here as a violation.
-- This run did not use `a27552a3`. The string does not appear in any file this step added or changed.
+- This run did not use `a27552a3`. The string appears only in this report, as the record of the earlier scratch run, and in the read-only query in section 5.
 - No production, AWS, or remote database was touched. Nothing was merged. VTID-05005 was not touched.
 
 ## Harness
@@ -114,9 +114,11 @@ Both need the rehearsal clone or the owner's database access, which this sandbox
 The owner can run this read-only query on the rehearsal clone:
 
 ```sql
-SELECT account_id FROM notification_test_actors WHERE account_id = 'a27552a3-0257-4305-8ed0-351a80fd3701';
+SELECT user_id FROM notification_test_actors WHERE user_id = 'a27552a3-0257-4305-8ed0-351a80fd3701';
 ```
 
-Note: the repo's skip uses `notification_test_actors.user_id`, but the query above uses `account_id`. The owner should confirm the real column name first. If the column is `user_id`, use `SELECT user_id FROM notification_test_actors WHERE user_id = 'a27552a3-0257-4305-8ed0-351a80fd3701';`.
+Column source: the repo has no production migration that creates `notification_test_actors`. The table is defined only in test fixtures (`supabase/tests/vtid_04878_fixture.sql`, `supabase/tests/vtid_04888_fixture.sql`, `supabase/tests/vtid_05150_fixture.sql`), each with `user_id uuid PRIMARY KEY`. The skip code and every migration that reads the table also use `user_id`. The name `account_id` does not appear for this table anywhere in the repo.
+
+The owner should confirm this column against the live `notification_test_actors` table on the rehearsal clone before running the query. The live table may differ from the fixtures.
 
 Rehearsal-clone run of the skip test: blocked for the same reason. The owner can run the same `run.mjs`-style checks against the clone once the migration is applied there.
