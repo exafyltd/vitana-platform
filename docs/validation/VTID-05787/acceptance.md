@@ -1,6 +1,6 @@
 # Acceptance: Bedrock lane reviewer — gateway review pass and route
 
-No VTID has been allocated for this work yet. Allocate one before merging to main, and move this file to docs/validation/<VTID>/.
+VTID-05787, allocated by the VTID-ALLOCATE workflow.
 
 ## Criteria
 1. A diff that touches a protected gate file is refused with `changes` and no model call is made.
