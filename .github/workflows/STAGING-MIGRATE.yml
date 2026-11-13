@@ -14,13 +14,22 @@ run-name: 'Staging migrations @ ${{ github.sha }} [VTID: VTID-05784]'
 # The only role assumed is vars.AWS_STAGING_DB_ROLE_ARN (OIDC; no static keys, no repository secret, no production
 # role). The only cluster is vitana-aurora-staging; scripts/aws/staging-db-*.sh refuse any other name before any AWS
 # call. Production targets stay in RUN-MIGRATION.yml (dispatch only, after PUBLISH); this workflow never reaches them.
-# Triggers: push to main (migrations), dispatch (catch-up from base_sha, quarantine acknowledgement), and pull requests
-# that change this lane's files (self-test only: no AWS, no credentials). No schedule.
+# Triggers: push to main (migrations; a push of only this lane's files finds no added migration and applies nothing),
+# dispatch from main (catch-up from base_sha, quarantine acknowledgement), and pushes of this plan's lane branches that
+# change these files (self-test only: no AWS, no credentials). No pull_request trigger (a PR path filter would have to be
+# registered in config/delivery services, outside this lane; STAGING-DB-SCHEMA.yml does the same). No schedule.
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - 'kiro/autonomous-to-staging-r2/**'
     paths:
       - 'supabase/migrations/**'
+      - '.github/workflows/STAGING-MIGRATE.yml'
+      - '.github/workflows/RUN-MIGRATION.yml'
+      - 'scripts/aws/staging-db-*.sh'
+      - 'scripts/aws/aurora-apply-migration.sh'
+      - 'docs/validation/VTID-05784/**'
   workflow_dispatch:
     inputs:
       base_sha:
@@ -31,13 +40,6 @@ on:
         description: 'Run id of the failed apply this dispatch acknowledges (lifts the quarantine)'
         type: string
         default: ''
-  pull_request:
-    paths:
-      - '.github/workflows/STAGING-MIGRATE.yml'
-      - '.github/workflows/RUN-MIGRATION.yml'
-      - 'scripts/aws/staging-db-*.sh'
-      - 'scripts/aws/aurora-apply-migration.sh'
-      - 'docs/validation/VTID-05784/**'
 
 permissions:
   contents: read
@@ -52,7 +54,7 @@ env:
 jobs:
   selftest:
     name: Self-test (no AWS)
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'push' && github.ref != 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -75,7 +77,7 @@ jobs:
 
   gate:
     name: Gate
-    if: github.event_name != 'pull_request'
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:

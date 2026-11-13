@@ -28,8 +28,9 @@ owner-set repository variables of the stage-2/3 lanes say otherwise; this lane a
   (pre-apply snapshot `vitana-aurora-staging-premig-<run>-<attempt>`, tagged), `compat` (read-only probe of every object
   the STAGING-VERIFY gateway smoke reads), `quarantine-check` (machine quarantine from the run history).
 - `.github/workflows/STAGING-MIGRATE.yml` (T2): push to `main` on `supabase/migrations/**`, dispatch (catch-up
-  `base_sha`, `acknowledge_quarantine_run`), and pull requests that change this lane's files (self-test only, no
-  credentials). Jobs: `gate` → `plan` (files, lint, schema bundle of the commit; no AWS) → `apply` (guard, gate again,
+  `base_sha`, `acknowledge_quarantine_run`), and pushes of this plan's lane branches that change these files (self-test
+  only, no credentials; no `pull_request` trigger, whose path filter would need a services-registry entry outside this
+  lane, as STAGING-DB-SCHEMA.yml does). Jobs: `gate` → `plan` (files, lint, schema bundle of the commit; no AWS) → `apply` (guard, gate again,
   OIDC `vars.AWS_STAGING_DB_ROLE_ARN`, snapshot, apply, drift check = `staging-db-load.sh --verify-only` against the
   bundle of the commit, compatibility probe, evidence artifact) → `quarantine` on failure. No schedule.
 - `.github/workflows/RUN-MIGRATION.yml` (T1): option `staging` and job `migrate-staging`, in `# >>> VTID-05784` blocks
@@ -50,8 +51,8 @@ TEST: docs/validation/VTID-05784/tests/staging-migrate.test.mjs ("rollback: a fa
 AC-3 Default off and fail closed: nothing is applied unless `STAGING_DATA_PLANE=isolated`, the staging database role, cost approval and main; unknown plane values, a wrong role ARN, a missing approval, another ref or `MIGRATION_FREEZE=true` refuse; a dispatch to target staging while the plane is shared is refused.
 TEST: docs/validation/VTID-05784/tests/staging-migrate.test.mjs ("gate: unset or shared plane = off (auto: notice, exit 0, enabled=false; dispatch: refused); no AWS call"; "gate: isolated is enabled only with the staging database role, cost approval and main; anything else refuses"; "mutations: removing a gate guard is caught"; "apply: MIGRATION_FREEZE=true refuses before any AWS call"; mutation (e) freeze)
 
-AC-4 STAGING-MIGRATE on merge (T2): migration files added on main, in timestamp order; lint before credentials; snapshot → apply (one transaction, never non-transactional) → drift check → compatibility probe, in that order, every step unconditional; quarantine on any apply failure (red run, restore plan recorded), later automatic applies refused until a dispatch acknowledges exactly the failed run; only `vars.AWS_STAGING_DB_ROLE_ARN`, only `vitana-aurora-staging`, no repository secret, no production role or cluster, no schedule, pull requests run only the self-test without credentials.
-TEST: docs/validation/VTID-05784/tests/staging-migrate.test.mjs ("files: only migration files ADDED on main, in timestamp order; modified and replay-skipped files are not applied"; "snapshot: a tagged snapshot of the staging cluster only, before anything is applied"; "compat: passes when every object the gateway smoke reads is there; fails (and keeps nothing) when one is missing"; "quarantine: a failed earlier apply blocks automatic applies until a dispatch acknowledges exactly that run"; "STAGING-MIGRATE.yml: default off, staging role and cluster only, snapshot -> apply -> drift -> compat, quarantine; no schedule"; "mutations: every STAGING-MIGRATE.yml guard has a failing mutation" — 16 mutations)
+AC-4 STAGING-MIGRATE on merge (T2): migration files added on main, in timestamp order; lint before credentials; snapshot → apply (one transaction, never non-transactional) → drift check → compatibility probe, in that order, every step unconditional; quarantine on any apply failure (red run, restore plan recorded), later automatic applies refused until a dispatch acknowledges exactly the failed run; only `vars.AWS_STAGING_DB_ROLE_ARN`, only `vitana-aurora-staging`, no repository secret, no production role or cluster, no schedule, no pull_request trigger; lane-branch pushes run only the self-test without credentials.
+TEST: docs/validation/VTID-05784/tests/staging-migrate.test.mjs ("files: only migration files ADDED on main, in timestamp order; modified and replay-skipped files are not applied"; "snapshot: a tagged snapshot of the staging cluster only, before anything is applied"; "compat: passes when every object the gateway smoke reads is there; fails (and keeps nothing) when one is missing"; "quarantine: a failed earlier apply blocks automatic applies until a dispatch acknowledges exactly that run"; "STAGING-MIGRATE.yml: default off, staging role and cluster only, snapshot -> apply -> drift -> compat, quarantine; no schedule"; "mutations: every STAGING-MIGRATE.yml guard has a failing mutation" — 18 mutations)
 
 AC-5 RUN-MIGRATION.yml's production path is unchanged: outside the `# >>> VTID-05784` blocks the file equals the pinned origin/main copy byte for byte; jobs `migrate` and `migrate-aurora` are byte-identical; the resolve step resolves every production input (target × MIGRATION_TARGET × MIGRATION_FREEZE, 50 combinations) exactly as the pinned step; `MIGRATION_TARGET` can never select staging; target staging runs a separate job with the gate before the credentials, the staging database role only and the staging script only.
 TEST: docs/validation/VTID-05784/tests/staging-migrate.test.mjs ("RUN-MIGRATION.yml: the production path is the pinned origin/main file byte for byte; staging is a separate job"; "RUN-MIGRATION.yml resolve: every production input resolves exactly as the pinned step; staging only when chosen"; "mutations: every RUN-MIGRATION.yml guard has a failing mutation" — 9 mutations; "aurora-apply-migration.sh (production script) is unchanged by this lane")
@@ -93,8 +94,9 @@ and nothing may be applied before the owner actions below; covered by the stub/P
    need write credentials); the red run and its `staging-migrate-quarantine` artifact are the record.
 7. **Evidence per run is a workflow artifact** (`evidence.json`), not a commit: the workflow has `contents: read`. The
    lane's closing record copies the first real run's evidence into this directory.
-8. **Tests live in this evidence directory and run in STAGING-MIGRATE.yml `selftest`:** the lane's paths do not include
-   `scripts/ci/**`, which UNIT.yml scans.
+8. **Tests live in this evidence directory and run in STAGING-MIGRATE.yml `selftest`** on pushes of this plan's lane
+   branches: the lane's paths include neither `scripts/ci/**` (UNIT.yml) nor `config/` (the services registry a
+   `pull_request` path filter must be listed in, `scripts/eng/services-parity.test.mjs`).
 
 ## Owner actions (none needed for this PR; each is the existing stage-2/3 action)
 Before anything is applied: `STAGING_DB_COST_APPROVED=yes`, the stack applied and `AWS_STAGING_DB_ROLE_ARN` set

@@ -10,3 +10,7 @@ node scripts/ci/staging-prod-ref-guard.mjs --report -> 31 files, 35 production r
 node scripts/ci/staging-prod-ref-guard.mjs --enforce --files <STAGING-MIGRATE.yml + the four staging-db scripts> -> exit 0, 0 references (outputs/guard-enforce.txt)
 diff <(git show origin/main:.github/workflows/RUN-MIGRATION.yml) .github/workflows/RUN-MIGRATION.yml -> additions only, all inside '# >>> VTID-05784' blocks except the replaced options line (outputs/run-migration.diff)
 node scripts/collab/land-guard.mjs evidence --repo . --vtid VTID-05784 -> evidence present
+# Fix forward 1: UNIT failed on scripts/eng/services-parity.test.mjs (a pull_request path filter must be in the services registry, outside this lane) -> self-test moved to lane-branch pushes (STAGING-DB-SCHEMA.yml pattern)
+node --test scripts/eng/services-parity.test.mjs -> 5 pass
+node --test docs/validation/VTID-05784/tests/*.test.mjs (PGlite) -> 27 pass, 0 skipped (outputs/green.txt)
+node --test <UNIT.yml file set> -> 1628 tests, 1621 pass, 6 skipped, 1 fail (staging-db aws-scripts 'load refuses without the cost approval', passes alone 22/22 and passed in CI on this PR: local flake)

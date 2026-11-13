@@ -1,7 +1,7 @@
 // VTID-05784 (plan autonomous-to-staging-r2 §3.5, lane staging-migrations-auto): migrations reach only the isolated
 // staging database, default off, and RUN-MIGRATION.yml's production path is unchanged.
 //   node --test docs/validation/VTID-05784/tests/*.test.mjs
-// Runs in STAGING-MIGRATE.yml job selftest (pull requests that change these files; PGlite installed, no skips allowed).
+// Runs in STAGING-MIGRATE.yml job selftest (lane-branch pushes that change these files; PGlite installed, no skips allowed).
 // No AWS call is ever made: the AWS CLI is a stub (../fixtures/bin/aws) whose RDS Data API is a LOCAL Postgres
 // (PGlite) with real transaction semantics, so the rollback of a failing migration is proven on Postgres. Each guard
 // has a mutation test: the guard is removed from a copy and the matching test must then fail.
@@ -383,7 +383,7 @@ test('quarantine: a failed earlier apply blocks automatic applies until a dispat
   r = quarantine(failed, ['--acknowledge', '40']);
   assert.equal(r.status, 0, r.out); assert.match(r.out, /acknowledged/);
   assert.equal(quarantine([{ id: 41, event: 'workflow_dispatch', apply: 'success' }, ...failed.slice(1)], []).status, 0, 'a later success clears it');
-  assert.equal(quarantine([{ id: 41, event: 'pull_request', apply: 'failure' }, { id: 30, event: 'push', apply: 'success' }], []).status, 0, 'pull-request self-tests never quarantine');
+  assert.equal(quarantine([{ id: 41, event: 'pull_request', apply: 'failure' }, { id: 30, event: 'push', apply: 'success' }], []).status, 0, 'self-test runs never quarantine');
   assert.equal(quarantine([], []).status, 0);
   assert.equal(quarantine(failed, [], { STUB_GH_FAIL: '1' }).status, 1, 'an unreadable history fails closed');
   const m = mutated('staging-db-migrate.sh', "      failure|cancelled|timed_out)", "      never-matches)");
@@ -405,8 +405,8 @@ export function checkStagingMigrate(y) {
   const p = [];
   const need = (cond, msg) => { if (!cond) p.push(msg); };
   need(!/^\s*schedule:/m.test(y), 'no schedule trigger');
-  need(/^on:\n  push:\n    branches: \[main\]\n    paths:\n      - 'supabase\/migrations\/\*\*'\n/m.test(y), 'push trigger: main, supabase/migrations/** only');
-  need(!/pull_request_target/.test(y), 'no pull_request_target');
+  need(/^on:\n  push:\n    branches:\n      - main\n      - 'kiro\/autonomous-to-staging-r2\/\*\*'\n    paths:\n      - 'supabase\/migrations\/\*\*'\n/m.test(y), 'push trigger: main + this plan\'s lane branches, migrations first');
+  need(!/^  pull_request/m.test(y), 'no pull_request or pull_request_target trigger');
   need(!/secrets\./.test(y), 'no repository secret');
   need(!y.includes(PROD_ROLE) && !y.includes(PROD_CLUSTER), 'no production role or cluster');
   need(!y.includes('preview-aws-gateway'), 'does not name the staging gateway host');
@@ -416,10 +416,10 @@ export function checkStagingMigrate(y) {
   need(roles.length === 1 && roles[0] === 'role-to-assume: ${{ vars.AWS_STAGING_DB_ROLE_ARN }}', 'the only role is vars.AWS_STAGING_DB_ROLE_ARN');
   need((y.match(/id-token: write/g) || []).length === 1, 'id-token only once');
   const self = jobText(y, 'selftest') || '';
-  need(/if: github\.event_name == 'pull_request'/.test(self) && !/id-token|configure-aws-credentials/.test(self), 'selftest: pull requests only, no credentials');
+  need(/if: github\.event_name == 'push' && github\.ref != 'refs\/heads\/main'/.test(self) && !/id-token|configure-aws-credentials/.test(self), 'selftest: lane-branch pushes only, no credentials');
   need(/node --test docs\/validation\/VTID-05784\/tests\/\*\.test\.mjs/.test(self) && /grep -q '# SKIP'/.test(self), 'selftest runs the tests and fails on a skip');
   const gateJ = jobText(y, 'gate') || '';
-  need(/if: github\.event_name != 'pull_request'/.test(gateJ), 'gate: never on pull requests');
+  need(/if: github\.event_name == 'workflow_dispatch' \|\| github\.ref == 'refs\/heads\/main'\n/.test(gateJ), 'gate: main pushes and dispatches only');
   need(/run: bash scripts\/aws\/staging-db-migrate-gate\.sh --mode auto/.test(gateJ), 'gate runs the gate script in auto mode');
   for (const v of ['STAGING_DATA_PLANE', 'AWS_STAGING_DB_ROLE_ARN', 'STAGING_DB_COST_APPROVED', 'MIGRATION_FREEZE']) {
     need(gateJ.includes(`${v}: \${{ vars.${v} }}`), `gate reads vars.${v}`);
@@ -459,7 +459,8 @@ test('mutations: every STAGING-MIGRATE.yml guard has a failing mutation', () => 
   const y = wf('STAGING-MIGRATE.yml');
   const muts = [
     ['on:\n  push:', 'on:\n  schedule:\n    - cron: "0 3 * * *"\n  push:'],
-    ["    branches: [main]\n    paths:\n      - 'supabase/migrations/**'", '    branches: [main]'],
+    ["      - 'kiro/autonomous-to-staging-r2/**'\n    paths:\n      - 'supabase/migrations/**'", "      - 'kiro/autonomous-to-staging-r2/**'"],
+    ['  workflow_dispatch:\n    inputs:', '  pull_request:\n  workflow_dispatch:\n    inputs:'],
     ['role-to-assume: ${{ vars.AWS_STAGING_DB_ROLE_ARN }}', `role-to-assume: \${{ secrets.${PROD_ROLE} }}`],
     ['  CLUSTER: vitana-aurora-staging', `  CLUSTER: ${PROD_CLUSTER}`],
     ["    if: needs.gate.outputs.enabled == 'true'", '    if: always()'],
@@ -470,7 +471,8 @@ test('mutations: every STAGING-MIGRATE.yml guard has a failing mutation', () => 
     ['        run: bash scripts/aws/staging-db-migrate.sh compat --cluster "$CLUSTER"', '        run: echo skipped'],
     ["    if: failure() && needs.plan.result == 'success'", '    if: false'],
     ['      - name: Re-check the gate in this job\n', '      - name: Re-check the gate in this job\n        if: false\n'],
-    ["    if: github.event_name != 'pull_request'", '    if: true'],
+    ["    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'", '    if: true'],
+    ["    if: github.event_name == 'push' && github.ref != 'refs/heads/main'", "    if: github.event_name == 'push'"],
     ['          bash scripts/aws/staging-db-apply-migration.sh --cluster "$CLUSTER" "${ARGS[@]}"\n', '          bash scripts/aws/staging-db-apply-migration.sh --cluster "$CLUSTER" "${ARGS[@]}" --allow-non-transactional\n'],
     ['      - name: Evidence\n        if: always()', '      - name: Evidence\n        if: success()'],
     ["          if grep -q '# SKIP' \"$RUNNER_TEMP/tests.log\"; then echo \"::error::a test was skipped\"; exit 1; fi\n", ''],
