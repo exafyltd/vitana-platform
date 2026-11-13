@@ -1,0 +1,38 @@
+# red on base: origin/main bb152742012c583fc4c146dd2129d0fd4a1d2dce + this lane's tests and fixtures only
+not ok 1 - select: unset / empty / shared + unmarked = the same bytes, no AWS call
+not ok 2 - select: isolated refuses without STAGING_CUTOVER_APPROVED=yes; nothing on stdout, no AWS call
+not ok 3 - select: an unknown plane value is refused (fail closed)
+not ok 4 - select: isolated with approval resolves only the staging-db secret ARNs (describe-secret, never get-secret-value)
+not ok 5 - select: a staging-db secret that cannot be described refuses; nothing on stdout
+not ok 6 - ecs: record writes both live PRIMARY revisions and network configurations, and changes nothing
+not ok 7 - ecs: flip rolls only the two live staging services to isolated revisions with the client SG added
+not ok 8 - ecs: rollback after a forced post-flip failure restores both recorded revisions and network configurations
+not ok 9 - ecs: a failed flip half-way (gateway rollout FAILED) is still rolled back to the record
+not ok 10 - ecs: verify fails when a service is not on the expected revision
+not ok 11 - ecs: flip refuses without approval, with a bad SG, or when a service moved since the record (no update-service)
+not ok 12 - ecs: wrong AWS account is refused before any ECS call
+not ok 13 - ecs: candidate-register registers -iso families only and changes no service
+not ok 14 - ecs: candidate start/stop touch only the -iso services; stop leaves desired count 0
+not ok 15 - ecs: candidate-start refuses a registered revision of a live family
+not ok 16 - ecs: name guard (guard subcommand) — production names refused, live and candidate scopes are disjoint
+not ok 17 - secrets: --plan makes no AWS call; a non-staging cluster and a missing cost approval are refused before any AWS call
+not ok 18 - secrets: fills both placeholders from the cluster endpoint with dedicated roles; never prints a password
+not ok 19 - secrets: idempotent (already set = nothing changed); untagged or foreign-endpoint clusters are refused
+not ok 2 - scripts/ci/staging-db/cutover-gate.test.mjs
+not ok 3 - scripts/ci/staging-db/cutover-taskdef.test.mjs
+not ok 22 - deploy workflows: exactly the marked blocks were added to the roll step; without them the step is the pinned one
+not ok 23 - deploy workflows: the switch reads the repository variables and calls the select script only off the shared path
+ok 24 - AWS-STAGE-DEPLOY-GATEWAY.yml: with STAGING_DATA_PLANE unset, empty or shared the registered task definition is byte-identical to the pinned step's
+not ok 25 - AWS-STAGE-DEPLOY-GATEWAY.yml: STAGING_DATA_PLANE=isolated without STAGING_CUTOVER_APPROVED=yes fails the step and registers nothing
+not ok 26 - AWS-STAGE-DEPLOY-GATEWAY.yml: STAGING_DATA_PLANE=isolated with approval registers the staging-db references; shared afterwards restores the shared plane
+not ok 27 - AWS-STAGE-DEPLOY-GATEWAY.yml: an unknown STAGING_DATA_PLANE value fails closed
+ok 28 - AWS-STAGE-DEPLOY-POSTGREST-AURORA-PROXY.yml: with STAGING_DATA_PLANE unset, empty or shared the registered task definition is byte-identical to the pinned step's
+not ok 29 - AWS-STAGE-DEPLOY-POSTGREST-AURORA-PROXY.yml: STAGING_DATA_PLANE=isolated without STAGING_CUTOVER_APPROVED=yes fails the step and registers nothing
+not ok 30 - AWS-STAGE-DEPLOY-POSTGREST-AURORA-PROXY.yml: STAGING_DATA_PLANE=isolated with approval registers the staging-db references; shared afterwards restores the shared plane
+not ok 31 - AWS-STAGE-DEPLOY-POSTGREST-AURORA-PROXY.yml: an unknown STAGING_DATA_PLANE value fails closed
+not ok 32 - gateway: isolated needs data_backend=keep
+not ok 33 - AWS-STAGE-CUTOVER-REHEARSAL.yml: dispatch only, owner gate, staging roles only, candidates only, always scaled to 0
+not ok 34 - AWS-STAGE-CUTOVER.yml: dispatch only, gate, record → flip → verify → smoke → automatic rollback, recover, manual rollback
+# tests 34
+# pass 2
+# fail 32
