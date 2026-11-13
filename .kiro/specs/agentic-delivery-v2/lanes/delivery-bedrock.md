@@ -1,6 +1,6 @@
 ---
 lane: delivery-bedrock
-state: executing
+state: in-review
 next_actor: kiro
 branch: kiro/agentic-delivery-v2/delivery-bedrock
 depends_on: []
@@ -14,7 +14,8 @@ paths:
   - services/gateway/src/providers/bedrock.ts
   - services/gateway/test/delivery/bedrock-role.test.ts
 claimed_by: kiro-exafy-202611131759-6b38
-updated: 2026-11-13T17:59Z
+pr: https://github.com/exafyltd/vitana-platform/pull/5081
+updated: 2026-11-13T18:30Z
 vtid: VTID-05702
 ---
 
@@ -74,3 +75,18 @@ Pre-existing, unrelated `queue.mjs validate` finding surfaced by this same run, 
 (`.github/workflows/VTID-ALLOCATE.yml`) without `executor: claude` or a `protected_gate: two-model` +
 `reviewer_seat` setup. Not this lane's file, not touched by this change, and not mine to fix without
 coordinating with that lane's own seat.
+
+### 2026-11-13T18:30Z · kiro-exafy-202611131759-6b38 · executing → in-review
+PR opened: https://github.com/exafyltd/vitana-platform/pull/5081 (branch
+`kiro/agentic-delivery-v2/delivery-bedrock`, head commit as pushed). Evidence staged/committed under
+`docs/validation/VTID-05702/` (scope.json, acceptance.md, commands.log, red-on-base.txt, staging-tests.json).
+Local `preflight.mjs` on this head: PASS Collab tests, PASS Lane scope, PASS PR-GATE scope/sparring/weakening/
+red-green, PASS Kiro steering; FAIL Collab handoff — but only for the pre-existing, unrelated
+`agentic-delivery/retire-vtid-allocate.md` finding (not this lane's file, not touched here; see the PR
+description). Next actor: the reviewer agent `agent:vitana-lane-reviewer (claude-sonnet-5.5)`.
+
+**The actual cross-account AWS provisioning (creating role `vitana-delivery-bedrock` in the `vitana-engineering`
+account) was not performed and remains blocked pending the owner's access to that account.** This session has
+no credentials into `vitana-engineering`; `scripts/aws/setup-delivery-bedrock.sh` was written to be correct and
+ready to run, but was not executed against any real AWS account (not even the read-only `discover` action).
+Phase 0 P3 of plan.md still reads "waits for the lane" until the owner runs it.
