@@ -33,6 +33,7 @@ AC-6: full `services/gateway` Jest run has exactly two failures, both environmen
 identical with the fixes stashed out, from the sibling `bridge-drift-fix/plan` worktree): `storage-provider.test.ts`
 (AWS region env default mismatch) and `vtid-04226-eventbridge-test-contract-schedules.test.ts` (`openssl` not
 installed in this sandbox). Neither file is in this lane's paths.
+TEST: `npx jest --silent --maxWorkers=3` (`outputs/full-suite.txt`)
 
 States / Surfaces / Locales / Accessibility: n/a, no UI. Contract: n/a — no API, route or schema change; the
 migration's grants are unchanged (not applied). Staging proof: not verified on staging; the change deploys nothing
