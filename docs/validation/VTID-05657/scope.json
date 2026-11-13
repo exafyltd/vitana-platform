@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-05657",
+  "kind": "feature",
+  "paths": [
+    "services/gateway/src/services/client-identity/**",
+    "services/gateway/test/client-identity*",
+    "docs/validation/VTID-05657/**"
+  ],
+  "sparring_record": ".kiro/specs/native-wave3-release-r2/sparring/verdict.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

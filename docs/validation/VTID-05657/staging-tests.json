@@ -1,0 +1,8 @@
+{
+  "vtid": "VTID-05657",
+  "service": "gateway",
+  "tests": [
+    { "kind": "existing", "ref": "npx jest test/client-identity", "cwd": "services/gateway",
+      "reason": "pure classifier covered by Jest; the staging probe is in lane client-identity-store" }
+  ]
+}
