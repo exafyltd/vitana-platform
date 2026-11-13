@@ -14,13 +14,13 @@
     },
     {
       "kind": "http",
-      "name": "PM reports claude_primary mode",
+      "name": "PM reports kiro_fallback mode",
       "target": "gateway",
       "method": "GET",
       "path": "/api/v1/project-manager/mode",
       "expect_status": 200,
-      "expect_json": { "ok": true, "enabled": false, "mode": "live", "executor_mode": "claude_primary" },
-      "reason": "read-only anonymous GET, same check as VTID-05277: the PM reports claude_primary at the verified commit (owner decision 2026-11-12)"
+      "expect_json": { "ok": true, "enabled": true, "mode": "live", "executor_mode": "kiro_fallback" },
+      "reason": "read-only anonymous GET, same check as VTID-05277: the PM reports enabled true and kiro_fallback (owner decision 2026-11-11, staging PM enabled)"
     },
     {
       "kind": "http",
