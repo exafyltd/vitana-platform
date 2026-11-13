@@ -1,13 +1,12 @@
 ---
 lane: console-probes-a
-state: in-review
+state: parked
 next_actor: kiro
-claimed_by: kiro-exafy-202611111326-7e9b
 branch: kiro/staging-verify-manifest-repair/console-probes-a
 pr: https://github.com/exafyltd/vitana-platform/pull/4975
 depends_on: []
 executor: kiro
-seat: exafy
+seat: exafyltd
 area: platform
 reviewer_seat: agent:vitana-lane-reviewer
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
@@ -18,8 +17,9 @@ paths:
   - docs/validation/VTID-04984/staging-tests.json
   - docs/validation/VTID-04999/staging-tests.json
   - docs/validation/VTID-*/**
-updated: 2026-11-12T20:17Z
+updated: 2026-11-13T13:33Z
 vtid: VTID-05600
+parked_from: in-review
 ---
 # Lane: console-probes-a (repo vitana-platform)
 Repoint the Operator Console probes of VTID-04887, 04975, 04984 and 04999 from `app.js` to `operator-console.js`, keeping every string.
@@ -45,3 +45,5 @@ Claimed by kiro-exafy-202611111326-7e9b. Evidence in docs/validation/VTID-05600/
 PR https://github.com/exafyltd/vitana-platform/pull/4975 (head 8bd76c077e). Preflight every check passed. Waiting for the reviewer agent (vitana-lane-reviewer). Next actor: reviewer agent.
 ### 2026-11-12T20:17Z · pm-agent · update
 reassign review agent:vitana-lane-reviewer→exafyltd (stale_review, Claude unavailable)
+### 2026-11-13T13:33Z · pm-agent · in-review → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
