@@ -1,0 +1,9 @@
+{
+  "vtid": "VTID-05658",
+  "service": "gateway",
+  "tests": [
+    { "kind": "existing", "ref": "npx jest test/client-adoption", "cwd": "services/gateway",
+      "reason": "middleware, daily-seen recorder and adoption counts are covered by Jest with in-memory doubles; no test writes to staging or production" }
+  ],
+  "read_only_probe": "GET https://preview-aws-gateway.vitanaland.com/health unauthenticated, once with X-Vitana-Client: native/ios/1.0.0 and once without; expect X-Vitana-Client-Class native and web. Unauthenticated, so nothing is written."
+}
