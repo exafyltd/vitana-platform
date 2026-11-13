@@ -130,3 +130,7 @@ EXCEPTION
     RETURN NEW;
 END;
 $fn$;
+
+-- VTID-05023 task 4: the trigger function is SECURITY DEFINER, so it must not be callable by PUBLIC, anon
+-- or authenticated. A trigger still fires for any writer: EXECUTE is checked only when the trigger is created.
+REVOKE ALL ON FUNCTION public.fire_welcome_chat_on_membership() FROM PUBLIC, anon, authenticated;
