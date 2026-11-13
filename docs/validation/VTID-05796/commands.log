@@ -1,0 +1,3 @@
+$ gh api -X POST repos/exafyltd/vitana-platform/actions/workflows/VTID-ALLOCATE.yml/dispatches -f ref=main -f inputs[title]=... -f inputs[module]=docs
+  -> run 43433860852: completed, VTID_RESULT=VTID-05796
+$ grep -n "VTID-ALLOCATE.yml/dispatches\|never asks for a token\|OASIS_IMPACT" docs/VTID-ALLOCATION.md  -> outputs/grep.txt
