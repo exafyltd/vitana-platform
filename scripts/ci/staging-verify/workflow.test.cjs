@@ -108,6 +108,9 @@ test('an omitted commit_sha gets a full-history checkout of target@main for the 
   const ca = block('- name: Checkout target main for live-served commit lookup (community-app)', '- name: Resolve commit under test');
   assert.match(ca, /if: env\.SERVICE == 'community-app' && github\.event_name == 'workflow_dispatch' && inputs\.commit_sha == ''/);
   assert.match(ca, /repository: exafyltd\/vitana-v1/);
+  // Sparring round 1 (R1-F1): the cross-repo checkout needs the read token — the same one the existing
+  // "Checkout commit under test (community-app)" step and STAGING-VERIFY-NIGHTLY.yml's lookup checkout already use.
+  assert.match(ca, /token: \$\{\{ secrets\.VITANA_V1_READ_TOKEN \|\| secrets\.GITHUB_TOKEN \}\}/);
   assert.match(ca, /\n {10}ref: main\n/);
 });
 

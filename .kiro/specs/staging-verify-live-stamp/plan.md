@@ -56,8 +56,12 @@ the fix and passes after.
    `if: env.SERVICE == '<service>' && github.event_name == 'workflow_dispatch' && inputs.commit_sha == ''`:
    "Checkout target main for live-served commit lookup (gateway)" and "… (community-app)" — a full-history
    (`fetch-depth: 0`) checkout of the service's repo at `main`, to path `target`, so the stamp the lookup returns can
-   be resolved to a full sha (`git rev-parse`) the same way `stamp`'s own CLI handler already does. Both steps are
-   no-ops (skipped) whenever an explicit `commit_sha` was given or the event isn't `workflow_dispatch` — a byte-for-byte
+   be resolved to a full sha (`git rev-parse`) the same way `stamp`'s own CLI handler already does. The
+   community-app variant checks out the cross-repo `exafyltd/vitana-v1` and so carries
+   `token: ${{ secrets.VITANA_V1_READ_TOKEN || secrets.GITHUB_TOKEN }}` — the same token the existing "Checkout
+   commit under test (community-app)" step (`STAGING-VERIFY.yml:171` before this change) and
+   `STAGING-VERIFY-NIGHTLY.yml:46` already use for the identical cross-repo checkout. Both new steps are no-ops
+   (skipped) whenever an explicit `commit_sha` was given or the event isn't `workflow_dispatch` — a byte-for-byte
    no-op for every trigger this workflow already handles.
 5. "Resolve commit under test (VTID-04715)" step: one new `elif` branch, after the existing `deployed-commit`
    artifact branch: `elif [ -z "$SHA" ] && [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]` — only reachable when
@@ -73,8 +77,9 @@ the fix and passes after.
 ## Tests and evidence
 `scripts/ci/staging-verify/workflow.test.cjs` (run by `UNIT.yml` on every PR — it globs every `scripts/**/*.test.{cjs,mjs}`):
 - Static: `commit_sha` is `required: false` with `default: ''`; the two new checkout steps exist, gated per service
-  and on `inputs.commit_sha == ''`; the real checkout-at-SHA steps never reference `commit_sha` (so an explicit value
-  is never second-guessed); step order puts the runner checkout and Node before the live-stamp lookup.
+  and on `inputs.commit_sha == ''`; the community-app one carries the `VITANA_V1_READ_TOKEN`/`GITHUB_TOKEN`
+  cross-repo token; the real checkout-at-SHA steps never reference `commit_sha` (so an explicit value is never
+  second-guessed); step order puts the runner checkout and Node before the live-stamp lookup.
 - Behavioral: extracts the exact `run:` text of "Resolve commit under test" from the YAML (not a reimplementation)
   and executes it with `bash --noprofile --norc -eo pipefail` (GitHub Actions' own invocation) with a fake `node`
   first on PATH standing in for `run.mjs stamp`. Cases: `workflow_dispatch` + empty `commit_sha` → the fake `node` is
