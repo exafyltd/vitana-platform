@@ -1,0 +1,255 @@
+name: STAGING-MIGRATE
+run-name: 'Staging migrations @ ${{ github.sha }} [VTID: VTID-05784]'
+
+# VTID-05784 (plan autonomous-to-staging-r2 §3.5, lane staging-migrations-auto; r1 plan §3.4).
+# Applies the migration files a merge to main ADDS to the ISOLATED staging database vitana-aurora-staging, in
+# timestamp order: lint (dry run, no AWS) -> quarantine check -> pre-apply snapshot -> apply (one Data API transaction,
+# all or nothing) -> drift check (cluster schema hash = schema bundle built from this commit) -> compatibility probe.
+# Any failure after the snapshot quarantines further automatic applies (job quarantine) until a dispatch acknowledges
+# the failed run.
+#
+# DEFAULT OFF, fail closed (scripts/aws/staging-db-migrate-gate.sh): nothing is applied unless the owner-set repository
+# variables say STAGING_DATA_PLANE=isolated, AWS_STAGING_DB_ROLE_ARN = the staging database role vitana-gha-staging-db
+# and STAGING_DB_COST_APPROVED=yes, and the run is on main. Unset or shared plane = a notice, nothing applied.
+# The only role assumed is vars.AWS_STAGING_DB_ROLE_ARN (OIDC; no static keys, no repository secret, no production
+# role). The only cluster is vitana-aurora-staging; scripts/aws/staging-db-*.sh refuse any other name before any AWS
+# call. Production targets stay in RUN-MIGRATION.yml (dispatch only, after PUBLISH); this workflow never reaches them.
+# Triggers: push to main (migrations), dispatch (catch-up from base_sha, quarantine acknowledgement), and pull requests
+# that change this lane's files (self-test only: no AWS, no credentials). No schedule.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/migrations/**'
+  workflow_dispatch:
+    inputs:
+      base_sha:
+        description: 'Apply the migration files added after this commit on main (full SHA); empty = the previous commit'
+        type: string
+        default: ''
+      acknowledge_quarantine_run:
+        description: 'Run id of the failed apply this dispatch acknowledges (lifts the quarantine)'
+        type: string
+        default: ''
+  pull_request:
+    paths:
+      - '.github/workflows/STAGING-MIGRATE.yml'
+      - '.github/workflows/RUN-MIGRATION.yml'
+      - 'scripts/aws/staging-db-*.sh'
+      - 'scripts/aws/aurora-apply-migration.sh'
+      - 'docs/validation/VTID-05784/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: staging-migrate
+  cancel-in-progress: false
+
+env:
+  CLUSTER: vitana-aurora-staging
+
+jobs:
+  selftest:
+    name: Self-test (no AWS)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+      - name: Install (PGlite, the local Postgres of the rollback test)
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Tests (stub AWS CLI over a local Postgres; nothing is skipped)
+        run: |
+          set -o pipefail
+          node --test docs/validation/VTID-05784/tests/*.test.mjs 2>&1 | tee "$RUNNER_TEMP/tests.log"
+          if grep -q '# SKIP' "$RUNNER_TEMP/tests.log"; then echo "::error::a test was skipped"; exit 1; fi
+      - name: Guard (--enforce) over the staging migration files
+        run: node scripts/ci/staging-prod-ref-guard.mjs --enforce --files .github/workflows/STAGING-MIGRATE.yml scripts/aws/staging-db-apply-migration.sh scripts/aws/staging-db-migrate.sh scripts/aws/staging-db-migrate-gate.sh scripts/aws/staging-db-common.sh
+
+  gate:
+    name: Gate
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      enabled: ${{ steps.gate.outputs.enabled }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Default off, fail closed (plane, staging role, cost approval, main, freeze)
+        id: gate
+        env:
+          STAGING_DATA_PLANE: ${{ vars.STAGING_DATA_PLANE }}
+          AWS_STAGING_DB_ROLE_ARN: ${{ vars.AWS_STAGING_DB_ROLE_ARN }}
+          STAGING_DB_COST_APPROVED: ${{ vars.STAGING_DB_COST_APPROVED }}
+          MIGRATION_FREEZE: ${{ vars.MIGRATION_FREEZE }}
+        run: bash scripts/aws/staging-db-migrate-gate.sh --mode auto
+      - name: Quarantine check
+        if: steps.gate.outputs.enabled == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ACK: ${{ inputs.acknowledge_quarantine_run }}
+        run: bash scripts/aws/staging-db-migrate.sh quarantine-check --gh-repo "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" --acknowledge "$ACK"
+
+  plan:
+    name: Plan (files, lint, schema bundle; no AWS)
+    needs: gate
+    if: needs.gate.outputs.enabled == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    outputs:
+      count: ${{ steps.files.outputs.count }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Migration files added on main, in timestamp order
+        id: files
+        env:
+          BEFORE: ${{ github.event.before }}
+          BASE_INPUT: ${{ inputs.base_sha }}
+        run: |
+          set -euo pipefail
+          BASE="${BASE_INPUT:-${BEFORE:-}}"
+          [ -n "$BASE" ] || BASE=$(git rev-parse HEAD^)
+          bash scripts/aws/staging-db-migrate.sh files --base "$BASE" --head "$GITHUB_SHA" > "$RUNNER_TEMP/files.txt"
+          echo "count=$(grep -c . "$RUNNER_TEMP/files.txt" || true)" >> "$GITHUB_OUTPUT"
+          echo "Files:"; cat "$RUNNER_TEMP/files.txt"
+      - name: Lint (dry run of the batch, no AWS call)
+        if: steps.files.outputs.count != '0'
+        run: |
+          set -euo pipefail
+          ARGS=(); while IFS= read -r f; do ARGS+=(--file "$f"); done < "$RUNNER_TEMP/files.txt"
+          bash scripts/aws/staging-db-apply-migration.sh --cluster "$CLUSTER" "${ARGS[@]}" --dry-run
+      - uses: pnpm/action-setup@v4
+        if: steps.files.outputs.count != '0'
+      - uses: actions/setup-node@v4
+        if: steps.files.outputs.count != '0'
+        with:
+          node-version: '22.x'
+      - name: Build the schema bundle of this commit (the drift reference)
+        if: steps.files.outputs.count != '0'
+        run: |
+          set -o pipefail
+          pnpm install --frozen-lockfile --ignore-scripts
+          node scripts/ci/staging-db/build-schema.mjs --out "$RUNNER_TEMP/staging-db-bundle" | tee "$RUNNER_TEMP/build.log"
+          grep -q '^PASS staging-db schema build$' "$RUNNER_TEMP/build.log"
+          cp "$RUNNER_TEMP/files.txt" "$RUNNER_TEMP/staging-db-bundle/files.txt"
+      - uses: actions/upload-artifact@v4
+        if: steps.files.outputs.count != '0'
+        with:
+          name: staging-migrate-plan-${{ github.run_id }}
+          path: ${{ runner.temp }}/staging-db-bundle/
+          retention-days: 7
+
+  apply:
+    name: Apply to the isolated staging database
+    needs: plan
+    if: needs.plan.outputs.count != '0' && needs.plan.outputs.count != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      id-token: write # OIDC for vars.AWS_STAGING_DB_ROLE_ARN only
+    env:
+      SNAPSHOT_ID: vitana-aurora-staging-premig-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+      - uses: actions/download-artifact@v4
+        with:
+          name: staging-migrate-plan-${{ github.run_id }}
+          path: ${{ runner.temp }}/staging-db-bundle
+      - name: Guard (--enforce) over this workflow and its scripts
+        run: node scripts/ci/staging-prod-ref-guard.mjs --enforce --files .github/workflows/STAGING-MIGRATE.yml scripts/aws/staging-db-apply-migration.sh scripts/aws/staging-db-migrate.sh scripts/aws/staging-db-migrate-gate.sh scripts/aws/staging-db-common.sh scripts/aws/staging-db-load.sh
+      - name: Re-check the gate in this job
+        env:
+          STAGING_DATA_PLANE: ${{ vars.STAGING_DATA_PLANE }}
+          AWS_STAGING_DB_ROLE_ARN: ${{ vars.AWS_STAGING_DB_ROLE_ARN }}
+          STAGING_DB_COST_APPROVED: ${{ vars.STAGING_DB_COST_APPROVED }}
+          MIGRATION_FREEZE: ${{ vars.MIGRATION_FREEZE }}
+        run: bash scripts/aws/staging-db-migrate-gate.sh --mode dispatch
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_STAGING_DB_ROLE_ARN }}
+          aws-region: eu-central-1
+      - name: Pre-apply snapshot
+        run: bash scripts/aws/staging-db-migrate.sh snapshot --cluster "$CLUSTER" --id "$SNAPSHOT_ID"
+      - name: Apply (one transaction, all or nothing)
+        id: apply
+        run: |
+          set -euo pipefail
+          ARGS=(); while IFS= read -r f; do ARGS+=(--file "$f"); done < "$RUNNER_TEMP/staging-db-bundle/files.txt"
+          bash scripts/aws/staging-db-apply-migration.sh --cluster "$CLUSTER" "${ARGS[@]}"
+      - name: Drift check (cluster schema hash = bundle of this commit)
+        run: bash scripts/aws/staging-db-load.sh --cluster "$CLUSTER" --bundle "$RUNNER_TEMP/staging-db-bundle" --verify-only
+      - name: Compatibility probe (objects the STAGING-VERIFY gateway smoke reads)
+        run: bash scripts/aws/staging-db-migrate.sh compat --cluster "$CLUSTER"
+      - name: Evidence
+        if: always()
+        env:
+          OUTCOME: ${{ job.status }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/evidence"
+          jq -n --arg run "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --arg sha "$GITHUB_SHA" \
+            --arg snap "$SNAPSHOT_ID" --arg outcome "$OUTCOME" --arg cluster "$CLUSTER" \
+            --arg hash "$(jq -r .schema_hash "$RUNNER_TEMP/staging-db-bundle/manifest.json" 2>/dev/null || echo '')" \
+            --rawfile files "$RUNNER_TEMP/staging-db-bundle/files.txt" \
+            '{schema: "vitana.staging-migrate-evidence/v1", run_url: $run, commit: $sha, cluster: $cluster, snapshot_id: $snap,
+              expected_schema_hash: $hash, files: ($files | split("\n") | map(select(length > 0))), outcome: $outcome}' \
+            > "$RUNNER_TEMP/evidence/evidence.json"
+          cat "$RUNNER_TEMP/evidence/evidence.json"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: staging-migrate-evidence-${{ github.run_id }}
+          path: ${{ runner.temp }}/evidence/
+          retention-days: 90
+
+  quarantine:
+    name: Quarantine (apply failed)
+    needs: [plan, apply]
+    if: failure() && needs.plan.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Record the quarantine and the restore plan (nothing is executed)
+        env:
+          SNAPSHOT_ID: vitana-aurora-staging-premig-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/q"
+          jq -n --arg run "$GITHUB_RUN_ID" --arg sha "$GITHUB_SHA" --arg snap "$SNAPSHOT_ID" --arg cluster "$CLUSTER" \
+            '{schema: "vitana.staging-migrate-quarantine/v1", run_id: $run, commit: $sha, cluster: $cluster, snapshot_id: $snap,
+              state: "quarantined",
+              lift: ("dispatch STAGING-MIGRATE.yml with acknowledge_quarantine_run=" + $run),
+              restore: "owner action: restore the cluster from snapshot_id (the staging database role cannot restore or delete a cluster, design.md §4)"}' \
+            > "$RUNNER_TEMP/q/quarantine.json"
+          cat "$RUNNER_TEMP/q/quarantine.json"
+          {
+            echo "## Staging migrations quarantined"
+            echo "Automatic applies to $CLUSTER are refused until a dispatch acknowledges run $GITHUB_RUN_ID."
+            echo "A failed apply was rolled back in its transaction; a failed drift or compatibility check leaves the batch applied: restore from snapshot \`$SNAPSHOT_ID\` (owner action) or fix forward with a new migration."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::error::staging migrations quarantined (run $GITHUB_RUN_ID)"
+          exit 1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: staging-migrate-quarantine
+          path: ${{ runner.temp }}/q/
+          retention-days: 90

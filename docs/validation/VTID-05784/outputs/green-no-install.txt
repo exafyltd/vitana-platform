@@ -1,0 +1,172 @@
+TAP version 13
+# Subtest: apply: without --cluster it fails (usage) before any AWS call
+ok 1 - apply: without --cluster it fails (usage) before any AWS call
+  ---
+  duration_ms: 8.21657
+  type: 'test'
+  ...
+# Subtest: apply: the production cluster is refused before any AWS call, also as a dry run (no override exists)
+ok 2 - apply: the production cluster is refused before any AWS call, also as a dry run (no override exists)
+  ---
+  duration_ms: 9.629404
+  type: 'test'
+  ...
+# Subtest: apply: any non-staging cluster name is refused before any AWS call
+ok 3 - apply: any non-staging cluster name is refused before any AWS call
+  ---
+  duration_ms: 36.356244
+  type: 'test'
+  ...
+# Subtest: apply --dry-run prints the plan for the staging cluster and makes no AWS call
+ok 4 - apply --dry-run prints the plan for the staging cluster and makes no AWS call
+  ---
+  duration_ms: 130.864243
+  type: 'test'
+  ...
+# Subtest: apply: credentials other than the staging database role are refused before any cluster or Data API call
+ok 5 - apply: credentials other than the staging database role are refused before any cluster or Data API call
+  ---
+  duration_ms: 498.732153
+  type: 'test'
+  ...
+# Subtest: apply: wrong account, untagged cluster, foreign cluster ARN or no managed secret are refused; no Data API call
+ok 6 - apply: wrong account, untagged cluster, foreign cluster ARN or no managed secret are refused; no Data API call
+  ---
+  duration_ms: 896.054378
+  type: 'test'
+  ...
+# Subtest: apply: MIGRATION_FREEZE=true refuses before any AWS call
+ok 7 - apply: MIGRATION_FREEZE=true refuses before any AWS call
+  ---
+  duration_ms: 6.870365
+  type: 'test'
+  ...
+# Subtest: apply: a non-transactional statement is refused in a batch; --allow-non-transactional takes one file only
+ok 8 - apply: a non-transactional statement is refused in a batch; --allow-non-transactional takes one file only
+  ---
+  duration_ms: 349.395386
+  type: 'test'
+  ...
+# Subtest: rollback: a failing fixture migration rolls the whole batch back on Postgres (nothing applied, no commit)
+ok 9 - rollback: a failing fixture migration rolls the whole batch back on Postgres (nothing applied, no commit) # SKIP @electric-sql/pglite not installed (runs in STAGING-MIGRATE.yml selftest)
+  ---
+  duration_ms: 0.31736
+  type: 'test'
+  ...
+# Subtest: rollback: a good batch is committed once, in order, then NOTIFY pgrst
+ok 10 - rollback: a good batch is committed once, in order, then NOTIFY pgrst # SKIP @electric-sql/pglite not installed (runs in STAGING-MIGRATE.yml selftest)
+  ---
+  duration_ms: 0.364094
+  type: 'test'
+  ...
+# Subtest: rollback: a resuming (auto-paused) cluster is retried, then applied
+ok 11 - rollback: a resuming (auto-paused) cluster is retried, then applied # SKIP @electric-sql/pglite not installed (runs in STAGING-MIGRATE.yml selftest)
+  ---
+  duration_ms: 0.10186
+  type: 'test'
+  ...
+# Subtest: read-only: --read-only always rolls back (the compatibility probe never keeps anything)
+ok 12 - read-only: --read-only always rolls back (the compatibility probe never keeps anything) # SKIP @electric-sql/pglite not installed (runs in STAGING-MIGRATE.yml selftest)
+  ---
+  duration_ms: 0.042648
+  type: 'test'
+  ...
+# Subtest: mutations: removing a guard of the apply script is caught
+ok 13 - mutations: removing a guard of the apply script is caught # SKIP @electric-sql/pglite not installed (runs in STAGING-MIGRATE.yml selftest)
+  ---
+  duration_ms: 0.047511
+  type: 'test'
+  ...
+# Subtest: gate: unset or shared plane = off (auto: notice, exit 0, enabled=false; dispatch: refused); no AWS call
+ok 14 - gate: unset or shared plane = off (auto: notice, exit 0, enabled=false; dispatch: refused); no AWS call
+  ---
+  duration_ms: 15.06427
+  type: 'test'
+  ...
+# Subtest: gate: isolated is enabled only with the staging database role, cost approval and main; anything else refuses
+ok 15 - gate: isolated is enabled only with the staging database role, cost approval and main; anything else refuses
+  ---
+  duration_ms: 60.40976
+  type: 'test'
+  ...
+# Subtest: mutations: removing a gate guard is caught
+ok 16 - mutations: removing a gate guard is caught
+  ---
+  duration_ms: 18.591787
+  type: 'test'
+  ...
+# Subtest: files: only migration files ADDED on main, in timestamp order; modified and replay-skipped files are not applied
+ok 17 - files: only migration files ADDED on main, in timestamp order; modified and replay-skipped files are not applied
+  ---
+  duration_ms: 67.946569
+  type: 'test'
+  ...
+# Subtest: snapshot: a tagged snapshot of the staging cluster only, before anything is applied
+ok 18 - snapshot: a tagged snapshot of the staging cluster only, before anything is applied
+  ---
+  duration_ms: 185.002621
+  type: 'test'
+  ...
+# Subtest: compat: passes when every object the gateway smoke reads is there; fails (and keeps nothing) when one is missing
+ok 19 - compat: passes when every object the gateway smoke reads is there; fails (and keeps nothing) when one is missing # SKIP @electric-sql/pglite not installed (runs in STAGING-MIGRATE.yml selftest)
+  ---
+  duration_ms: 0.073483
+  type: 'test'
+  ...
+# Subtest: quarantine: a failed earlier apply blocks automatic applies until a dispatch acknowledges exactly that run
+ok 20 - quarantine: a failed earlier apply blocks automatic applies until a dispatch acknowledges exactly that run
+  ---
+  duration_ms: 750.409349
+  type: 'test'
+  ...
+# Subtest: STAGING-MIGRATE.yml: default off, staging role and cluster only, snapshot -> apply -> drift -> compat, quarantine; no schedule
+ok 21 - STAGING-MIGRATE.yml: default off, staging role and cluster only, snapshot -> apply -> drift -> compat, quarantine; no schedule
+  ---
+  duration_ms: 1.779233
+  type: 'test'
+  ...
+# Subtest: mutations: every STAGING-MIGRATE.yml guard has a failing mutation
+ok 22 - mutations: every STAGING-MIGRATE.yml guard has a failing mutation
+  ---
+  duration_ms: 10.059432
+  type: 'test'
+  ...
+# Subtest: RUN-MIGRATION.yml: the production path is the pinned origin/main file byte for byte; staging is a separate job
+ok 23 - RUN-MIGRATION.yml: the production path is the pinned origin/main file byte for byte; staging is a separate job
+  ---
+  duration_ms: 0.846469
+  type: 'test'
+  ...
+# Subtest: RUN-MIGRATION.yml resolve: every production input resolves exactly as the pinned step; staging only when chosen
+ok 24 - RUN-MIGRATION.yml resolve: every production input resolves exactly as the pinned step; staging only when chosen
+  ---
+  duration_ms: 220.351325
+  type: 'test'
+  ...
+# Subtest: mutations: every RUN-MIGRATION.yml guard has a failing mutation
+ok 25 - mutations: every RUN-MIGRATION.yml guard has a failing mutation
+  ---
+  duration_ms: 5.889242
+  type: 'test'
+  ...
+# Subtest: guard: the new staging scripts name no production identifier (--enforce)
+ok 26 - guard: the new staging scripts name no production identifier (--enforce)
+  ---
+  duration_ms: 36.626576
+  type: 'test'
+  ...
+# Subtest: aurora-apply-migration.sh (production script) is unchanged by this lane
+ok 27 - aurora-apply-migration.sh (production script) is unchanged by this lane
+  ---
+  duration_ms: 3.774783
+  type: 'test'
+  ...
+1..27
+# tests 27
+# suites 0
+# pass 21
+# fail 0
+# cancelled 0
+# skipped 6
+# todo 0
+# duration_ms 3379.462229
