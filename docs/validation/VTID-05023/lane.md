@@ -395,3 +395,42 @@ Caveat: the rehearsal log is not in this sandbox. The local base lacks productio
 - Fix-forward for the three failing pipelines (!28, !32, !33).
 - Rehearsal-pass counts: not in this sandbox.
 - Pending-migration list check (task 3) and the staging switch for the runbook (task 4): inputs not yet received.
+
+## Round: isolated instruction, 2026-11-13
+
+### Verified before acting
+- Branch `claude/jolly-wozniak-gueg67`: exists, head `b3a5aca84b`. Commit `a6264fd84`: **not found** in project 2 (API 404). The branch `cutover/vtid-05023-rehearsal-parity` exists on the remote but has no commit reachable by the API, so the fix commit named in the instruction could not be checked here.
+
+### Task 1: real STAGING-VERIFY job
+- **Blocked.** The `staging-verify:gateway` job is defined in `infra/gitlab-engineering/ci/platform-delivery.gitlab-ci.yml`, but pipelines on `main` are built from the synced copy in `vitana/ci-config`. Pipeline 350 (merge commit `b48f95b2`) does not contain it. Adding the job needs the ops settings sync to publish the change to `ci-config`; this sandbox cannot run that sync.
+- Only the local runner result exists: 12/12 on `b48f95b2df52` (see the earlier steering section). It is not gate evidence, and nothing here claims a job pass.
+
+### Task 2: column defaults sync
+- **Not run.** It needs a `pg_dump` against production Supabase (`inmkhvwdcuyhnxkgfvsb`). That is a production read, and the rules forbid production access from this session. Owner command required:
+  `pg_dump --schema-only --schema=public` against the production project, read-only, output to the owner's machine. Then the extraction and the rehearsal apply, which also need the Data API this session does not have.
+
+### Task 3: rerun the eight fixed migrations on rehearsal
+- **Blocked.** No rehearsal database access from this session. Nothing run.
+
+### Task 4: red MRs !28, !32, !33
+- First error in each red job (all three, job 1511 / 1609 / 1630 on pipelines 316 / 328 / 330): `VTID-05041 SECURITY DEFINER lockdown (S2)`: a migration newer than S2 creates a SECURITY DEFINER function without a REVOKE from PUBLIC and anon. The offender is `20261113120000_vtid_05623_welcome_trigger_service_account_skip.sql` (MR !28). Trace saved as `tools/logs/red/*.log` outside the repo.
+- Fix: one REVOKE line in the unapplied MR !28 file, commit `191fd9d1d8` on `cutover/vtid-05623-welcome-trigger` (fast-forward; the first attempt was on the wrong base and was rejected, nothing overwritten).
+- Stacked branches merged with the fix: `cutover/vtid-05023-M4-welcome-skip-test` → `b13637c7e8`; `cutover/vtid-05023-baseline-allowlist` → `1b0f924f6e`.
+- Results: MR !28 pipeline 1830–1834 **success**; MR !32 pipeline 354 **success**; MR !33 pipeline 355 **success**. Nothing merged.
+
+### Task 5: pending-migration list
+- **Cannot be produced from this session**: the production applied-migration table is not readable from here. Owner read, production, read-only:
+  `SELECT version, name FROM supabase_migrations.schema_migrations ORDER BY version;`
+  (or the equivalent history table of the migration tool in use). Compare against `supabase/migrations/` on `main`.
+
+### Task 6: staging REST switch
+- **Not done.** Depends on Tasks 1 and 2, and on the held decisions. Staging still uses the production Supabase project, and the Aurora proxy's authenticator secret points at the production cluster (flagged HIGH in the proxy review). Changing `DATA_REST_URL` / `DATA_REST_BASE_MODE` on staging now would move staging traffic onto production Aurora. Not run.
+
+### Decisions taken (this round)
+1. Migrations stay held; no migration MR merges until the owner confirms the Supabase integration.
+2. No production command from this session. The three production reads above are owner commands.
+3. Migration `20261014000200_vtid_05149_signup_default_tenant` and `20261102030100_vtid_05465_bare_policy_rewrite`: held, not applied, guard untouched.
+4. Skip manifest MR !42 stays draft.
+
+### Gate 2
+- Not reached: no staging verification with migrations is in place, and task 1 has no job link.
