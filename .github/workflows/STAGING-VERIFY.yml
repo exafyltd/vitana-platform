@@ -8,7 +8,13 @@
 #                    sent by exafyltd/vitana-v1 AWS-STAGE-DEPLOY-FRONTEND.yml
 #                    (same cross-repo pattern as REGEN-SCREENS-CATALOG), so
 #                    the test-user and OASIS credentials live in one repo.
-#   manual         ← workflow_dispatch (re-verify a commit by hand)
+#   manual         ← workflow_dispatch (re-verify a commit by hand; omit
+#                    commit_sha to verify whatever staging currently serves —
+#                    resolved live, the same way STAGING-VERIFY-NIGHTLY.yml
+#                    picks the commit it dispatches with. An explicit
+#                    commit_sha is a deliberate request to verify THAT commit
+#                    — e.g. a VTID-04709 pinned-rollback re-verification —
+#                    and is never overridden.)
 #
 # What it does (scripts/ci/staging-verify/run.mjs):
 #   1. confirm staging serves the deployed commit (sampled — ECS rollouts
@@ -38,7 +44,8 @@ run-name: >-
     'gateway' }} @ ${{
     github.event_name == 'repository_dispatch' && github.event.client_payload.sha ||
     github.event_name == 'workflow_dispatch' && inputs.commit_sha ||
-    github.event.workflow_run.head_sha }} (VTID-04613)
+    github.event.workflow_run.head_sha ||
+    '(live)' }} (VTID-04613)
 
 on:
   workflow_run:
@@ -54,9 +61,10 @@ on:
         type: choice
         options: [gateway, community-app]
       commit_sha:
-        description: 'Full commit SHA staging is expected to serve'
-        required: true
+        description: 'Full commit SHA staging is expected to serve (optional — omit to verify the commit staging currently serves)'
+        required: false
         type: string
+        default: ''
       full:
         description: 'VTID-04949: also run every other change suite of the service (nightly full run)'
         required: false
@@ -106,6 +114,21 @@ jobs:
       sha: ${{ steps.inputs.outputs.sha }}
       service: ${{ env.SERVICE }}
     steps:
+      # The runner always comes from vitana-platform main — the version that
+      # passed review — never from the commit under test. Checked out first:
+      # the live-served-commit lookup below (commit_sha omitted) needs
+      # run.mjs before SHA is known, ahead of the usual checkout-at-SHA step.
+      - name: Checkout runner (vitana-platform main)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: runner
+          sparse-checkout: scripts/ci/staging-verify
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
       # VTID-04715: deploys since then upload `deployed-commit`; an older
       # deploy run has none, and its head_sha is what it deployed.
       - name: Fetch the commit the deploy recorded (VTID-04715)
@@ -117,6 +140,35 @@ jobs:
           run-id: ${{ github.event.workflow_run.id }}
           github-token: ${{ github.token }}
           path: ${{ runner.temp }}/deployed-commit
+
+      # commit_sha is optional (workflow_dispatch only): a caller who omits it
+      # gets whatever staging currently serves, resolved the same way
+      # STAGING-VERIFY-NIGHTLY.yml picks the commit it dispatches with
+      # (`run.mjs stamp`) — never a `main`-at-dispatch-time guess that may not
+      # be what staging actually serves. That lookup needs a full-history
+      # checkout to resolve the stamp against; "Checkout commit under test"
+      # below still does the real checkout, at the SHA this resolves to. An
+      # explicit commit_sha (e.g. a VTID-04709 pinned-rollback
+      # re-verification) skips this pair of steps entirely — `inputs.commit_sha
+      # == ''` is false — and today's behavior for it is unchanged byte for
+      # byte.
+      - name: Checkout target main for live-served commit lookup (gateway)
+        if: env.SERVICE == 'gateway' && github.event_name == 'workflow_dispatch' && inputs.commit_sha == ''
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: target
+          fetch-depth: 0
+
+      - name: Checkout target main for live-served commit lookup (community-app)
+        if: env.SERVICE == 'community-app' && github.event_name == 'workflow_dispatch' && inputs.commit_sha == ''
+        uses: actions/checkout@v4
+        with:
+          repository: exafyltd/vitana-v1
+          token: ${{ secrets.VITANA_V1_READ_TOKEN || secrets.GITHUB_TOKEN }}
+          ref: main
+          path: target
+          fetch-depth: 0
 
       - name: Resolve commit under test (VTID-04715)
         env:
@@ -133,6 +185,15 @@ jobs:
             else
               echo "::error::deployed-commit artifact holds '$DEPLOYED', not a full sha"; exit 1
             fi
+          elif [ -z "$SHA" ] && [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            # commit_sha was omitted: resolve the commit staging currently
+            # serves (mirrors STAGING-VERIFY-NIGHTLY.yml's use of `run.mjs stamp`).
+            SHA=$(node runner/scripts/ci/staging-verify/run.mjs stamp --service "$SERVICE" --repo-root target)
+            if ! echo "$SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+              echo "::error::commit_sha was omitted and the commit staging currently serves for $SERVICE could not be resolved"
+              exit 1
+            fi
+            echo "::notice::commit_sha omitted — staging currently serves $SHA for $SERVICE; verifying that commit"
           fi
           echo "SHA=$SHA" >> "$GITHUB_ENV"
 
@@ -145,15 +206,6 @@ jobs:
             echo "::error::commit sha '$SHA' is not a full 40-char sha"; exit 1
           fi
           echo "Verifying $SERVICE @ $SHA"
-
-      # The runner always comes from vitana-platform main — the version that
-      # passed review — never from the commit under test.
-      - name: Checkout runner (vitana-platform main)
-        uses: actions/checkout@v4
-        with:
-          ref: main
-          path: runner
-          sparse-checkout: scripts/ci/staging-verify
 
       - name: Checkout commit under test (gateway)
         if: env.SERVICE == 'gateway'
@@ -172,10 +224,6 @@ jobs:
           ref: ${{ env.SHA }}
           path: target
           fetch-depth: 0
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
 
       - name: Run STAGING-VERIFY
         id: verify
