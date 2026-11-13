@@ -1,0 +1,27 @@
+services/gateway/test/delivery/bedrock-role.test.ts run against origin/main (4c4694b7977bbbff1610f1558ac91baeaf7a472b),
+i.e. before services/gateway/src/providers/bedrock.ts was changed. Every test fails because the exports under test
+(signAwsRequestV4, getDeliveryBedrockCredentials, __resetDeliveryBedrockCredentialsCacheForTests, the
+useDeliveryRole field) do not exist yet on main.
+
+Command: cd services/gateway && npx jest test/delivery/bedrock-role.test.ts
+
+Result: Test Suites: 1 failed, 1 total / Tests: 15 failed, 15 total
+
+Representative failures (TypeScript import errors, since the module has none of the new exports yet):
+
+  FAIL test/delivery/bedrock-role.test.ts
+    ● Test suite failed to run / every test in the file
+      TS2305: Module '"../../src/providers/bedrock"' has no exported member 'signAwsRequestV4'.
+      TS2305: Module '"../../src/providers/bedrock"' has no exported member 'getDeliveryBedrockCredentials'.
+      TS2305: Module '"../../src/providers/bedrock"' has no exported member '__resetDeliveryBedrockCredentialsCacheForTests'.
+      TS2305: Module '"../../src/providers/bedrock"' has no exported member 'AssumedRoleCredentials'.
+
+  ● VTID-05702 getDeliveryBedrockCredentials › calls sts:AssumeRole with the delivery role ARN and parses the returned credentials
+    TypeError: (0 , bedrock_1.__resetDeliveryBedrockCredentialsCacheForTests) is not a function
+      at beforeEach (test/delivery/bedrock-role.test.ts:255)
+
+  (and 14 more, same root cause: TypeError: ... is not a function / TS2322 "useDeliveryRole does not exist in type
+  'BedrockInvokeRequest'" for every call site in this file that passes it)
+
+After implementing services/gateway/src/providers/bedrock.ts (this PR), the same command reports:
+  Test Suites: 1 passed, 1 total / Tests: 15 passed, 15 total
