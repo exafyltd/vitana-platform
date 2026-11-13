@@ -14,7 +14,8 @@ paths:
   - docs/validation/VTID-*/scope.json
   - docs/validation/VTID-*/staging-tests.json
   - docs/validation/VTID-*/plan-sparring.md
-updated: 2026-11-13T08:48Z
+updated: 2026-11-13T09:01Z
+vtid: VTID-05788
 ---
 # Bedrock translation reviewer (CLI and library)
 Plan: `.kiro/specs/native-catalog-bedrock-review/` — `plan.md` (decisions 2, 3, 4, 5, 6, 7) and the `tasks.md` section
@@ -33,3 +34,6 @@ the eight fields; no file under `src/i18n/` changes; no `ANTHROPIC_API_KEY` or G
 ## Log
 ### 2026-11-13T08:48Z · kiro-exafyltd-202611072144-1c88 · ready
 Lane created with the plan.
+
+### 2026-11-13T09:01Z · ci-plan-spar · ready (VTID allocated)
+VTID-05788 allocated after policy approval (converged-auto-v1).

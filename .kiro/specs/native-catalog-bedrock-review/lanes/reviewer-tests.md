@@ -14,7 +14,8 @@ paths:
   - docs/validation/VTID-*/scope.json
   - docs/validation/VTID-*/staging-tests.json
   - docs/validation/VTID-*/plan-sparring.md
-updated: 2026-11-13T08:48Z
+updated: 2026-11-13T09:01Z
+vtid: VTID-05789
 ---
 # Bedrock translation reviewer tests (fake runner)
 Plan: `.kiro/specs/native-catalog-bedrock-review/` — `plan.md` and the `tasks.md` section marked
@@ -33,3 +34,6 @@ scripts/i18n/__tests__/bedrock-review.test.mjs` passes in vitana-v1 CI with no c
 ## Log
 ### 2026-11-13T08:48Z · kiro-exafyltd-202611072144-1c88 · ready
 Lane created with the plan.
+
+### 2026-11-13T09:01Z · ci-plan-spar · ready (VTID allocated)
+VTID-05789 allocated after policy approval (converged-auto-v1).

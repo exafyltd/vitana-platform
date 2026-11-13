@@ -3,9 +3,11 @@ slug: native-catalog-bedrock-review
 author: kiro
 executor: kiro
 next_actor: kiro
-state: drafted
+state: approved
 author_seat: exafyltd
-updated: 2026-11-13T08:48Z
+updated: 2026-11-13T09:01Z
+sparring_record: .kiro/specs/native-catalog-bedrock-review/sparring/verdict.md
+vtids: [VTID-05788, VTID-05789]
 ---
 # Handoff — native-catalog-bedrock-review
 
@@ -31,3 +33,6 @@ the reviewer exists and passes it."
 ## Not in this plan
 - The live review run (a Bedrock model call on catalog values). It runs later under the owner stop rules.
 - Clearing any `_pending_review` flag. No flag is cleared here.
+
+### 2026-11-13T09:01Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 2 lane(s) got a VTID and are handed to Kiro.
