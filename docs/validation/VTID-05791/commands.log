@@ -1,0 +1,5 @@
+# VTID-05791 — commands run and results (PR #5068, rule 51 wording assertion)
+$ git merge --no-ff --no-commit origin/main   # merged cleanly (17 files staged from main); committed with the evidence in one merge commit
+$ cd services/gateway && npm ci   # exit 0
+$ for each of the 7 test names in test/vtid-04868-plan-sparring-session-layer.test.ts: grep -cF "it('<name>'"   # 7 of 7 found, 1 match each
+$ cd services/gateway && npx jest test/vtid-04868-plan-sparring-session-layer.test.ts   # exit 0: 7 passed, 7 total; full output in outputs/jest-vtid-04868.txt

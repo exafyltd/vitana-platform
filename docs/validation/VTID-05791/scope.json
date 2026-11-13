@@ -1,0 +1,11 @@
+{
+  "vtid": "VTID-05791",
+  "kind": "test",
+  "paths": [
+    "services/gateway/test/vtid-04868-plan-sparring-session-layer.test.ts",
+    "docs/validation/VTID-05791/**"
+  ],
+  "sparring_record": null,
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

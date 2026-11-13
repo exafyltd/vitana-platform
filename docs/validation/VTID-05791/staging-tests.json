@@ -1,0 +1,8 @@
+{
+  "vtid": "VTID-05791",
+  "service": "gateway",
+  "tests": [
+    { "kind": "existing", "ref": "npx jest test/vtid-04868-plan-sparring-session-layer.test.ts", "cwd": "services/gateway",
+      "reason": "test-only change; the Jest suite is the proof, run here: 7 passed, 7 total (outputs/jest-vtid-04868.txt)" }
+  ]
+}
