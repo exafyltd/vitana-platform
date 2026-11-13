@@ -1,6 +1,6 @@
 ---
 lane: fix
-state: ready
+state: done
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -31,6 +31,13 @@ Lane created with the plan.
 ### 2026-11-12T21:28Z · ci-plan-spar · ready (VTID allocated)
 VTID-05785 allocated after policy approval (converged-auto-v1).
 
+### 2026-11-12T22:10Z · kiro-exafyltd-202611122052-a6df · ready → executing
+Building C1-C4 in worktree `.wt/bdf-lane`, branch `kiro/bridge-drift-fix/fix`.
+
+### 2026-11-13T08:28Z · kiro-exafyltd-202611122052-a6df · executing → in-review
+PR: https://github.com/exafyltd/vitana-platform/pull/5057
+All 5 fixes committed with evidence (`docs/validation/VTID-05785/`); CI started on head eb254e66d8521cd0ea26bdba3bc0ead9b0dfaf16.
+
 ### 2026-11-13T09:49Z · agent-vitana-lane-reviewer-202611131036-6701 · review
 review: accept
 head: 89a98a06724f64511ad60ab86e363900e43790a4
@@ -53,3 +60,11 @@ allowed set still judged loosened versus the base test's single literal), fixed 
 literal `machine approval` with no alternation — accepted on that head. A further clean merge of `origin/main`
 (89a98a0672) brought in `.github/workflows/RUN-MIGRATION.yml`/`STAGING-MIGRATE.yml`, which collaboration.md §3
 treats as invalidating the prior accept; re-reviewed on 89a98a0672 (this entry) with zero blocking findings.
+
+### 2026-11-13T09:50Z · kiro-exafyltd-202611122052-a6df · in-review → verified
+Verified by the accept entry immediately above (M4 Bedrock chain, eu.anthropic.claude-opus-5-5), head 89a98a0672.
+
+### 2026-11-13T09:51Z · kiro-exafyltd-202611122052-a6df · verified → done
+merge: 575d70e9aeff7986177fea505dab70b9ba36abc6 (PR #5057, squash, head 89a98a0672, 28 of 28 checks green). authority: §7b PM merge rule —
+the `review: accept` entry above on this exact head. `land-guard.mjs merge` performed the merge directly.
+Deploys the gateway to staging on the next `AWS-STAGE-DEPLOY-GATEWAY.yml` run; STAGING-VERIFY watches it.
