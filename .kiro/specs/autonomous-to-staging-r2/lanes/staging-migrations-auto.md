@@ -1,6 +1,6 @@
 ---
 lane: staging-migrations-auto
-state: executing
+state: in-review
 next_actor: kiro
 branch: kiro/autonomous-to-staging-r2/staging-migrations-auto
 depends_on: [staging-db-provision]
@@ -5170,7 +5170,7 @@ paths:
   - docs/validation/VTID-05778/commands.log
   - docs/validation/VTID-05778/outputs
   - docs/validation/VTID-05778/staging-tests.json
-updated: 2026-11-13T08:41Z
+updated: 2026-11-13T08:57Z
 vtid: VTID-05784
 ---
 # Lane: staging-migrations-auto (repo vitana-platform)
@@ -5185,3 +5185,6 @@ VTID-05784 allocated after policy approval (converged-auto-v1).
 
 ### 2026-11-13T08:41Z · kiro-exafy-202611110920-270b · ready → executing
 Claimed; building on `kiro/autonomous-to-staging-r2/staging-migrations-auto` from origin/main `4e215b0198`. Code, tests and docs only (owner directive 2026-11-12): no AWS call, no dispatch, no migration applied anywhere.
+
+### 2026-11-13T08:57Z · kiro-exafy-202611110920-270b · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/5065 (head 286a3bf06c). staging-db-apply-migration.sh (staging cluster + staging DB role only, one transaction per batch), default-off fail-closed gate (STAGING_DATA_PLANE=isolated + vars.AWS_STAGING_DB_ROLE_ARN + cost approval + main), STAGING-MIGRATE.yml (lint → snapshot → apply → drift → compat, quarantine), RUN-MIGRATION target staging with the production path byte-for-byte unchanged; 27/27 tests (PGlite rollback), 36 mutations. No AWS call, nothing applied. Owner actions: docs/validation/VTID-05784/acceptance.md.
