@@ -1,6 +1,6 @@
 ---
 lane: protect-gate-workflow
-state: executing
+state: in-review
 next_actor: kiro
 branch: kiro/autonomous-to-staging-r2/protect-gate-workflow
 depends_on: []
@@ -23,7 +23,7 @@ paths:
   - .github/workflows/GATE-INVARIANTS.yml
   - scripts/ci/workflow-trigger-check.test.mjs
   - docs/validation/VTID-*/**
-updated: 2026-11-13T08:28Z
+updated: 2026-11-13T08:29Z
 vtid: VTID-05780
 ---
 # Lane: protect-gate-workflow (repo vitana-platform)
@@ -44,3 +44,6 @@ PR https://github.com/exafyltd/vitana-platform/pull/5046. T1–T4 done: four pro
 
 ### 2026-11-13T08:28Z · kiro-exafy-202611110920-270b · in-review → executing
 Fix forward (attempt 2 of 3): the merged staging-cutover impact guard (scripts/ci/staging-db/impact.mjs) fails on this PR because GATE-INVARIANTS.yml names the staging gateway host and is unclassified. The report job will follow PLAN_SPAR_GATEWAY_URL (the VTID-ledger gateway) instead.
+
+### 2026-11-13T08:29Z · kiro-exafy-202611110920-270b · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/5046. Fix forward 2: report job URL = GATE_AUDIT_GATEWAY_URL || PLAN_SPAR_GATEWAY_URL, fail closed when neither is set. scripts/collab + workflow-trigger-check + staging-db tests 469/474 pass, 0 fail, 5 skipped. Gateway Jest red only in the 4 suites that fail on main (fix in #5057). Next: two reviewer-agent accepts from different chain models on the exact head.
