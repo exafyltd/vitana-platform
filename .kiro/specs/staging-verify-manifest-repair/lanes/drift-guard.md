@@ -1,12 +1,11 @@
 ---
 lane: drift-guard
-state: in-review
+state: parked
 next_actor: kiro
-claimed_by: kiro-exafy-202611111326-7e9b
 branch: kiro/staging-verify-manifest-repair/drift-guard
 depends_on: [console-probes-a, console-probes-b, ref-05331, shadow-retired]
 executor: kiro
-seat: exafy
+seat: exafyltd
 area: platform
 reviewer_seat: agent:vitana-lane-reviewer
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
@@ -15,8 +14,9 @@ paths:
   - scripts/ci/staging-verify/manifest-drift.test.cjs
   - .github/workflows/STAGING-TESTS-REQUIRED.yml
   - docs/validation/VTID-*/**
-updated: 2026-11-12T20:17Z
+updated: 2026-11-13T19:47Z
 vtid: VTID-05602
+parked_from: in-review
 ---
 # Lane: drift-guard (repo vitana-platform)
 A CI test that reads every gateway/community-app manifest against the tree it describes, run in STAGING-TESTS-REQUIRED.
@@ -37,3 +37,5 @@ pr: https://github.com/exafyltd/vitana-platform/pull/4993
 PR https://github.com/exafyltd/vitana-platform/pull/4993. Preflight every check passed. CI is red by design until staging-manifest-remainder lands (four manifests).
 ### 2026-11-12T20:17Z · pm-agent · update
 reassign review agent:vitana-lane-reviewer→exafyltd (stale_review, Claude unavailable)
+### 2026-11-13T19:47Z · pm-agent · in-review → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
