@@ -1,6 +1,6 @@
 ---
 lane: sparring-eu-guard
-state: ready
+state: done
 next_actor: kiro
 branch: claude/sparring-eu-guard/code
 depends_on: []
@@ -64,3 +64,9 @@ environmental failures only, same as every other head this session) is recorded 
 record per collaboration.md §3.
 Next: rebase-merge (not squash) per the owner's instruction this session — `rebase_merge_allowed: true` on this
 repo.
+
+### 2026-11-13T10:34Z · kiro-exafyltd-202611122052-a6df · review → done
+merge: edbc99751653325de4f18fe0415b903a687fab3d (PR #4999, **rebase-merge** per the owner's explicit instruction
+this session, head 484585d7f2, 25/25 reported checks success/skipped, 0 commits behind `origin/main`). authority:
+the review entry immediately above (`Collab-Verdict: accept`, M4 Bedrock chain). Deploys the gateway to staging on
+the next `AWS-STAGE-DEPLOY-GATEWAY.yml` run; STAGING-VERIFY watches it.
