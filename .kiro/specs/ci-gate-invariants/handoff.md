@@ -37,3 +37,9 @@ Plan written after #5050, #5068 and #5070 were checked against `origin/main` (vi
 
 ### 2026-11-13T13:09Z · ci-plan-spar · drafted → parked
 Not converged after 2 sparring sessions (evidence_floor_not_met). Parked with the open findings in sparring/.
+
+### re-plan (owner: "Re-run PLAN-SPAR once more, with each premise cited as file:line. If it fails again, park it.") · kiro-exafyltd-202611072144-1c88
+Premises re-cited as file:line at vitana-platform `4c4694b7977bbbff1610f1558ac91baeaf7a472b` and vitana-v1 `447e46a82ea9e5dded5dc56b1876dfcde105e361`
+(`plan.md` "Measured state" and the `evidence.md` tables). Goal, lanes and VTIDs unchanged. Corrections: #5050 and #5068 are closed
+(not open); the PR #5070 head is `8d1faca3c`; `575d70e9ae` is not a merge commit. Premises with no citable source were removed (`plan.md` "Removed").
+Re-run of PLAN-SPAR on this plan commit; if the new session escalates with `evidence_floor_not_met`, stop and do not re-run.
