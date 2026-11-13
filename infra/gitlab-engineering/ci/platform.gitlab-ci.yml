@@ -5,6 +5,12 @@
 # merge-request pipelines (the mirrored project never gets a merge request, so for it only main and manual runs happen, as before),
 # one retry for a job that lost its machine (spot interruption) or got stuck, and jobs that a newer pipeline may cancel.
 # No deploy job, no secret, no variable that holds a credential, nothing that needs a licence.
+include:
+  - local: staging-gateway-deploy.gitlab-ci.yml
+  - local: migration-supabase.gitlab-ci.yml
+  - local: platform-deploy-draft.gitlab-ci.yml
+  - local: zh-gap-query.gitlab-ci.yml
+
 workflow:
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
@@ -21,7 +27,7 @@ default:
       - runner_system_failure
       - stuck_or_timeout_failure
 
-stages: [check]
+stages: [check, build, migrate, deploy]
 
 variables:
   NODE_ENV: test
