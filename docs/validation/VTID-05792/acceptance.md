@@ -1,24 +1,37 @@
-# VTID-05792 — operator bootstrap pack starts the rules at CLAUDE.md PART 1
+# VTID-05792 — operator bootstrap pack keeps the CLAUDE.md preamble ahead of the rules
 
 Change types: Backend
 
-Outcome: `extractClaudeMdPart1` in `services/gateway/src/services/operator-bootstrap-pack.ts` starts the governance
-rules slice at the `# PART 1` header instead of the top of CLAUDE.md, so the Autonomy Contract preamble is no longer in
-the operator bootstrap pack. The bound stays at `LIMITS.rulesChars` (12,000 characters).
+Outcome: `extractClaudeMdPart1` in `services/gateway/src/services/operator-bootstrap-pack.ts` keeps the whole
+CLAUDE.md preamble, including the Autonomy Contract, ahead of the `# PART 1: CORE RULES` header. The slice starts at
+file offset 0 and stops at `# PART 2`. The bound stays at `LIMITS.rulesChars` (12,000 characters). This branch
+restores the `main` version of the source file, so the source diff against `main` is empty.
 
-Owner decision: VTID-04018, approving the change in the PR body.
+Owner decision: VTID-04018, final: the bootstrap pack keeps the preamble. The earlier VTID-05792 slice that started at
+`# PART 1` and dropped the preamble is reverted.
 
-Note: the owner-approved change does not turn a failing test green on its own. The Jest run in
-`outputs/jest-vtid-04018.txt` is the evidence, and it was run on this branch's head with no test edited.
+Measured on origin/main 4c4694b797 (`CLAUDE.md`, JS string index, UTF-8 byte offset in brackets):
+- file start / preamble start: 0 [0]
+- `## ⚙ AUTONOMY CONTRACT` heading: 1269 [1277]
+- `## 🤝 CLAUDE CODE ↔ KIRO COLLABORATION` heading: 6443 [6474]
+- `# PART 1: CORE RULES` heading: 8104 [8158]
+- `# PART 2: TECHNICAL REFERENCE` heading: 41561 [41965]
+- `LIMITS.rulesChars`: 12000
 
-AC-1 — the rules slice starts at `# PART 1: CORE RULES (Always / Never / If–Then)` and does not start at the file start
-  TEST: services/gateway/test/vtid-04018-operator-bootstrap-pack.test.ts — "extracts CLAUDE.md Part 1 (the rules), bounded, and never the change log" (asserts the slice contains `# PART 1: CORE RULES`; it checks presence, not that the slice starts at that header)
+Arithmetic: the preamble before `# PART 1` is 8,104 characters. The bound leaves 3,896 characters after it, so the
+`# PART 1` heading (ends at 8,124) falls inside the 12,000-character slice. The clip cuts the rules text after the
+preamble and the first part of PART 1. The `NEVER` and `IF–THEN` sections of PART 1 are not in the slice. That
+truncation exists on `main` already and is not changed by this branch.
 
-AC-2 — the slice is bounded by `LIMITS.rulesChars` and stops at `# PART 2`
-  TEST: services/gateway/test/vtid-04018-operator-bootstrap-pack.test.ts — "extracts CLAUDE.md Part 1 (the rules), bounded, and never the change log" (asserts no `# PART 2` and length ≤ 12_000 + 20)
+AC-1 — the rules slice starts at file offset 0, so the Autonomy Contract preamble is in the slice
+  TEST: services/gateway/test/vtid-04018-operator-bootstrap-pack.test.ts — "a failing or hanging source renders as unavailable and does not block the others" (asserts the governance-rules section body contains `# PART 1`)
+  NOTE: no test asserts that the Autonomy Contract heading is present. The preamble is kept by the code (the slice starts at offset 0). Measured above, and checked on the `main` text: the slice contains `AUTONOMY CONTRACT`.
 
-AC-3 — when the `# PART 1` header is missing, the slice falls back to the file start, clipped to the bound
-  TEST: services/gateway/test/vtid-04018-operator-bootstrap-pack.test.ts — "extracts CLAUDE.md Part 1 (the rules), bounded, and never the change log" (`extractClaudeMdPart1('no marker here', 5)` returns `'no ma\n…[abridged]'`)
+AC-2 — `# PART 1: CORE RULES` is inside the bounded rules text, and the slice stops at `# PART 2`
+  TEST: services/gateway/test/vtid-04018-operator-bootstrap-pack.test.ts — "extracts CLAUDE.md Part 1 (the rules), bounded, and never the change log" (asserts the slice contains `# PART 1: CORE RULES`, does not contain `# PART 2` or `## CHANGE LOG`, and has length ≤ 12_000 + 20)
+
+AC-3 — the governance-rules section is published under its title and the pack wiring is unchanged
+  TEST: services/gateway/test/vtid-04018-operator-bootstrap-pack.test.ts — "builds every section from the injected sources" (asserts the section title `Governance rules (CLAUDE.md Part 1, abridged)` and that no section errors)
 
 Staging proof: Jest only. The suite pins the function and the pack wiring. It does not call staging.
-Command evidence: outputs/jest-vtid-04018.txt (16 passed, 16 total).
+Command evidence: outputs/jest-vtid-04018.txt (16 passed, 16 total, run on this branch's head with no test edited).

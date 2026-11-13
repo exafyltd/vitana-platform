@@ -110,14 +110,10 @@ function clip(text: string, max: number, note = '…[abridged]'): string {
   return text.length > max ? `${text.slice(0, max)}\n${note}` : text;
 }
 
-/** CLAUDE.md from the "# PART 1" header up to "# PART 2" (the rules), bounded.
- *  VTID-05792: starts at the rules header, so the preamble above it (the
- *  Autonomy Contract and collaboration notes) is no longer in the pack. Falls
- *  back to the file start when the header is missing. */
+/** CLAUDE.md up to "# PART 2" (the rules), bounded. */
 export function extractClaudeMdPart1(text: string, maxChars = LIMITS.rulesChars): string {
-  const from = Math.max(0, text.indexOf('# PART 1'));
   const cut = text.indexOf('# PART 2');
-  const part1 = cut > from ? text.slice(from, cut) : text.slice(from);
+  const part1 = cut > 0 ? text.slice(0, cut) : text;
   return clip(part1.trim(), maxChars);
 }
 
