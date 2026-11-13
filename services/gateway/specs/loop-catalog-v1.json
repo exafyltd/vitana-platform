@@ -378,6 +378,7 @@
         ],
         "workflows": [
           "ALERT-OASIS-LEDGER-INTEGRITY",
+          "AWS-KIRO-ACCESS",
           "GATE-INVARIANTS"
         ],
         "test_contracts": []
