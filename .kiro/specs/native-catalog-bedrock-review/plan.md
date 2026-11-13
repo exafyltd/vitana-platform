@@ -33,8 +33,10 @@ Premises, each read with `git show <sha>:<path>`:
 3. **The audit has no Bedrock path.** `vitana-v1:scripts/i18n-audit-llm.mjs:68` defaults `PROVIDER` to `deepseek`; the
    provider calls are `callGemini` (`:100`), `callAnthropic` (`:117`) and `callDeepSeek` (`:134`). Bedrock is absent.
 4. **The checklist script writes to Supabase.** `vitana-platform:scripts/journey/generate-checklist-translations.mjs:20`
-   calls Claude on Bedrock through the AWS CLI, but `:112` writes results to Supabase REST. It is not usable for
-   catalogs, which are files in `src/i18n/`. Its call pattern (`:150`, AWS CLI, no SDK) is the one this plan reuses.
+   calls Claude on Bedrock through the AWS CLI. Its docblock (`:149-152`) gives the reason for no SDK: it shells out
+   rather than adding `@aws-sdk/client-bedrock-runtime`. The invocation is `aws bedrock-runtime invoke-model` at `:172`.
+   `:112` is the Supabase REST fetch (`rest()`, `:111-112`), which writes results to Supabase. It is not usable for
+   catalogs, which are files in `src/i18n/`.
 5. **The Bedrock call pattern exists without a new dependency.** `vitana-v1:scripts/whats-new/draft-entry.mjs:27-28`
    sets `MODEL_ID` `eu.anthropic.claude-sonnet-4-6` and region `eu-central-1`; `:136` runs
    `aws bedrock-runtime converse` through `execFileSync`.
@@ -52,8 +54,13 @@ Premises, each read with `git show <sha>:<path>`:
 1. **Two lanes, not three.** The brief lists `flag-clear` as a third lane. The checker it describes is PR #1680's.
    A lane here would duplicate it, so this plan has no flag-clear lane. The flag removal is a later PR that depends on
    #1680 merging and on a live review run.
-2. **Bedrock through the AWS CLI, no SDK.** The reviewer calls `aws bedrock-runtime converse`, the way
-   `draft-entry.mjs:136` does. Adding an SDK would add a dependency. The vendor and SDK choice is therefore not open.
+2. **Bedrock through the AWS CLI, no SDK, with the Converse API.** The reviewer calls
+   `aws bedrock-runtime converse`, the way `draft-entry.mjs:136` does, and not `invoke-model` (premise 4, `:172`, and the
+   invoke-model example in `vitana-platform:.claude/rules/backend.md:100`). Reasons: the reviewer lives in vitana-v1,
+   which already uses Converse; Converse takes one message format for any Bedrock model, so the model override works
+   without a per-model body; the test stubs follow one wire format (`output.message.content`). Trade-off: a reader who
+   compares this with the §2b example sees two invocation styles in the repo. Adding an SDK would add a dependency, so
+   that choice is not open.
 3. **Model.** Default `eu.anthropic.claude-sonnet-4-6`, the same id as premise 5, overridable with
    `BEDROCK_REVIEW_MODEL_ID`. The translator is DeepSeek or Gemini (premise 2 and 3), so the reviewer is a different
    model family from the author. The record names the model that answered.

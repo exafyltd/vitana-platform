@@ -12,8 +12,9 @@ system. No credential, no production host.
 - [ ] R2 `checkIdentity` runs `aws sts get-caller-identity --query Account --output text` and checks the region. It throws
   unless the account is `472838866351` and the region is `eu-central-1`. `runReview` calls it before the first model
   call. A throw stops the run with exit 2 and no record.
-- [ ] R3 The model call uses `aws bedrock-runtime converse --region <region> --cli-input-json file://<tmp>`, with the
-  model id from `BEDROCK_REVIEW_MODEL_ID` or the default `eu.anthropic.claude-sonnet-4-6`. The prompt asks for one JSON
+- [ ] R3 The model call uses `aws bedrock-runtime converse --region <region> --cli-input-json file://<tmp>` (Converse
+  wire format: `modelId`, `system`, `messages`, `inferenceConfig`; reply text in `output.message.content`, not
+  `invoke-model`), with the model id from `BEDROCK_REVIEW_MODEL_ID` or the default `eu.anthropic.claude-sonnet-4-6`. The prompt asks for one JSON
   object `{"verdict":"pass"|"reject","reason":"..."}` and nothing else. No Google endpoint, no direct Anthropic endpoint,
   no SDK import, no new dependency.
 - [ ] R4 Parse the reply with a strict parser. An unparseable reply, a verdict other than `pass` or `reject`, or a
