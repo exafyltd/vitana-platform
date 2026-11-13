@@ -14,7 +14,7 @@ Branch: `cutover/vtid-05023-C-rest-switch` (from `origin/main` a02b8918).
 
 ## Design choices
 
-- The gateway builds REST URLs from `SUPABASE_URL` at about 1,000 call sites in 190 files. Editing each site was too broad. The one wrapper point covers all of them, including the `supabase-js` clients, which use global `fetch`.
+- The gateway builds REST URLs from `SUPABASE_URL` at about 1,000 call sites in 190 files. Editing each site was too broad. The wrapper covers every call that goes through the global `fetch`, including the `supabase-js` clients. It does not cover a module that imports `node-fetch`, because node-fetch never calls `globalThis.fetch`. See the correction below.
 - Unknown `DATA_REST_BASE_MODE` values throw at boot, so the process does not start. The deploy smoke check then rolls back. I chose this over falling back to Supabase, because a typo in the cutover switch should fail loudly, not quietly keep traffic on the old backend.
 - `aurora_proxy` without `DATA_REST_PROXY_URL` also throws at boot.
 
@@ -52,10 +52,42 @@ Tests:       18 passed, 18 total
 
 Type check: `npx tsc --noEmit -p tsconfig.json` exits 0.
 
+## Correction after review R2
+
+The claim that one wrapper point covers all REST calls was wrong. Seven gateway modules and `scripts/repair-vtid-0541.ts` imported `node-fetch` and built `${SUPABASE_URL}/rest/v1` URLs. Those calls bypassed the wrapper, so in `aurora_proxy` mode operator and autopilot read and wrote Supabase. Fixed by removing the `node-fetch` import from:
+
+- `services/gateway/src/services/operator-service.ts`
+- `services/gateway/src/services/gemini-operator.ts`
+- `services/gateway/src/services/validator-core-service.ts`
+- `services/gateway/src/services/worker-core-service.ts`
+- `services/gateway/src/services/ledger-task-dedup.ts`
+- `services/gateway/src/services/knowledge-hub.ts`
+- `services/gateway/src/services/operator-planner.ts`
+
+None of these files used a node-fetch-only API (`.buffer()`, body piping, `FormData`, `timeout` or `agent` options). They now use the global `fetch`. `node-fetch` stays in `package.json`, because `routes/gateway-events-api.ts` and `services/natural-language-service.ts` still import it. Those two files do not build `/rest/v1` URLs.
+
+`scripts/repair-vtid-0541.ts` also lost its `node-fetch` import. It stays on Supabase on purpose: it is a standalone CLI that never calls `installDataRestRouting()`, and its header says so.
+
+Still not covered: `dist/job-entry.js` never calls `installDataRestRouting()`, so its REST calls stay on Supabase in any mode. This is an open decision for the owner before `DATA_REST_BASE_MODE` is changed for the executor job.
+
+### Proxy host rule
+
+In `aurora_proxy` mode, `DATA_REST_PROXY_URL` is checked at boot. The URL must parse, use http or https, and have an internal host: a host ending in `.internal` (this includes `.vitana.internal`), or a private IPv4 literal (10.x, 172.16-31.x, 192.168.x, 127.x). Any other host fails closed with an error, and the process does not start. In `supabase` mode the setting is not checked.
+
+### Tests added
+
+- `test/vtid-05023-no-node-fetch-rest.test.ts`: fails if a file under `src` contains `SUPABASE_URL}/rest/v1` and imports `node-fetch`.
+- `test/vtid-05023-operator-rest-routing.test.ts`: in `aurora_proxy` mode, `ingestOperatorEvent` sends its REST call to the proxy, and the `/auth/v1` call stays on `SUPABASE_URL`.
+- `test/vtid-05023-data-rest-base.test.ts`: new cases for internal, public, unset and malformed proxy URLs.
+
+Seven existing suites mocked `node-fetch` for calls that now use the global fetch. Their mocks now point at `globalThis.fetch`, and their assertions are unchanged. `vtid-03835-operator-console-read-tools.test.ts` also mocks `oasis-event-service`, because the tool-call telemetry POST would otherwise count in its "never called" assertions.
+
+Full gateway suite (`npx jest --silent`): 29745 tests passed, 2 failed, 54 skipped. The 2 failures are the known sandbox-only ones: `test/providers/storage-provider.test.ts` (AWS_REGION) and `test/vtid-04226-eventbridge-test-contract-schedules.test.ts` (openssl not installed). `npx tsc --noEmit` exits 0.
+
 ## Not verified here
 
 - `/alive` and `/api/v1/admin/build-info` were not run against a live server. Neither the local suite nor the gateway tests import `src/index.ts`. Check both after the staging deploy.
-- The full gateway Jest suite was not run. Only the new suite covers the changed code.
+- The full gateway Jest suite is covered in the R2 fix below.
 
 ## Staging mode
 

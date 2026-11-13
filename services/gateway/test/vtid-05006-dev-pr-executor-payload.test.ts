@@ -10,11 +10,11 @@ jest.mock('../src/services/oasis-event-service', () => ({
   recommendationSyncEvents: {},
 }));
 
-import fetch from 'node-fetch';
 import { executeTool } from '../src/services/gemini-operator';
 import { CreatePrRequestSchema, SafeMergeRequestSchema } from '../src/types/cicd';
 
-const fetchMock = fetch as unknown as jest.Mock;
+// VTID-05023: gemini-operator uses the global fetch, not node-fetch.
+const fetchMock = globalThis.fetch as unknown as jest.Mock;
 
 function lastBody(): Record<string, unknown> {
   const call = fetchMock.mock.calls[fetchMock.mock.calls.length - 1];

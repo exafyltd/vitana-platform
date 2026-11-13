@@ -20,7 +20,6 @@
  *   - validator.internal_error: Unexpected internal error
  */
 
-import fetch from 'node-fetch';
 import { randomUUID } from 'crypto';
 import { PlanPayload } from './operator-service';
 import { getWorkerState, WorkerState, WorkerStepState } from './worker-core-service';

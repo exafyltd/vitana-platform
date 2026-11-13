@@ -10,7 +10,6 @@
  * - Integrates with Gemini as a function calling tool
  */
 
-import fetch from 'node-fetch';
 import { emitOasisEvent } from './oasis-event-service';
 import { callViaRouter } from './llm-router'; // VTID-03579: provider from llm_routing_policy, never hardcoded
 

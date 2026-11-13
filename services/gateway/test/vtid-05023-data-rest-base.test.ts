@@ -89,6 +89,52 @@ describe('VTID-05023 DATA_REST_BASE_MODE', () => {
     });
   });
 
+  describe('DATA_REST_PROXY_URL must be an internal host (fails closed)', () => {
+    const proxyEnv = (proxy: string) =>
+      ({ SUPABASE_URL: SUPABASE, DATA_REST_BASE_MODE: 'aurora_proxy', DATA_REST_PROXY_URL: proxy } as NodeJS.ProcessEnv);
+
+    it.each([
+      'http://postgrest-aurora-proxy.internal:3000',
+      'http://proxy.vitana.internal',
+      'https://rest.svc.internal/',
+      'http://10.0.0.5:3000',
+      'http://172.16.0.1:3000',
+      'http://172.31.255.255:3000',
+      'http://192.168.1.20:3000',
+      'http://127.0.0.1:3000',
+    ])('internal host is accepted: %s', (proxy) => {
+      expect(getDataRestBase(proxyEnv(proxy))).toBe(proxy.replace(/\/$/, ''));
+      expect(installDataRestRouting(proxyEnv(proxy))).toBe('aurora_proxy');
+    });
+
+    it.each([
+      'https://proxy.example.com',
+      'https://aurora-proxy.run.app',
+      'http://8.8.8.8:3000',
+      'http://172.32.0.1:3000',
+      'http://172.15.0.1:3000',
+      'http://192.169.0.1:3000',
+      'http://localhost:3000',
+      'http://internal.example.com',
+      'http://[::1]:3000',
+    ])('public host is rejected at boot: %s', (proxy) => {
+      expect(() => getDataRestBase(proxyEnv(proxy))).toThrow(/is not an internal host/);
+      expect(() => installDataRestRouting(proxyEnv(proxy))).toThrow(/is not an internal host/);
+    });
+
+    it('unset in supabase mode is accepted and not checked', () => {
+      expect(getDataRestBase(supabaseEnv)).toBe(SUPABASE);
+      expect(installDataRestRouting(supabaseEnv)).toBe('supabase');
+    });
+
+    it.each(['not a url', 'postgrest-aurora-proxy.internal:3000', 'http://', 'ftp://proxy.internal'])(
+      'malformed or non-http URL is rejected: %s',
+      (proxy) => {
+        expect(() => getDataRestBase(proxyEnv(proxy))).toThrow(/DATA_REST_PROXY_URL/);
+      }
+    );
+  });
+
   describe('AUTH stays on Supabase in both modes', () => {
     it.each([
       ['supabase', supabaseEnv],

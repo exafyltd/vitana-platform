@@ -34,7 +34,6 @@ jest.mock('../src/services/github-service', () => {
   return { __esModule: true, ...mod, getPullRequest: (...a: unknown[]) => gh.getPullRequest(...a), default: { ...actual.default, ...gh, repoGitHubToken: actual.repoGitHubToken } };
 });
 
-import fetch from 'node-fetch';
 import { validatePush, pushKiroBranch, pushToken } from '../src/services/kiro/kiro-push-branch';
 import { checkTargetVtid, summarizeWrite } from '../src/services/kiro/kiro-mcp-writes';
 import { kiroRepoReadiness } from '../src/services/kiro/kiro-repo-readiness';
@@ -129,7 +128,8 @@ describe('pushKiroBranch on vitana-v1', () => {
 });
 
 describe('the PR executors forward repo', () => {
-  const fetchMock = fetch as unknown as jest.Mock;
+  // VTID-05023: gemini-operator uses the global fetch, not node-fetch.
+  const fetchMock = globalThis.fetch as unknown as jest.Mock;
   beforeEach(() => {
     fetchMock.mockReset();
     fetchMock.mockResolvedValue({ ok: true, json: async () => ({ ok: true, pr_number: 9, pr_url: 'u' }) });

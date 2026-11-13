@@ -7,6 +7,12 @@
  */
 
 jest.mock('node-fetch');
+// VTID-05023: the tool-call OASIS event now goes through the global fetch, the same mock as the
+// dev_db_query call. Mock the event service so the assertions only see the database request.
+jest.mock('../src/services/oasis-event-service', () => ({
+  emitOasisEvent: jest.fn(async () => ({ ok: true })),
+  recommendationSyncEvents: {},
+}));
 jest.mock('../src/services/github-service', () => ({
   searchCode: jest.fn(),
   getFileContents: jest.fn(),
@@ -15,18 +21,14 @@ jest.mock('../src/services/aws-ecs-readonly', () => ({
   describeEcsServices: jest.fn(),
   ALLOWED_ECS_SERVICES: ['vitana-gateway-awsdr', 'vitana-gateway'], ALLOWED_ECS_TASK_FAMILIES: ['vitana-autopilot-executor'], TASKS_DEFAULT_LIMIT: 10, TASKS_MAX_LIMIT: 25, listEcsTasks: jest.fn(),
 }));
-// gemini-operator.ts's own fetch calls (executeDevDbQuery included) go
-// through its module-scoped `import fetch from 'node-fetch'` — NOT the
-// global fetch that other services (e.g. oasis-event-service's telemetry)
-// use. Mocking global.fetch alone would leave this file's own calls
-// hitting the unconfigured node-fetch auto-mock instead. See the sibling
-// vtid-03819-create-operator-task-dedup.test.ts for the same pattern.
-import fetch from 'node-fetch';
+// gemini-operator.ts's own fetch calls (executeDevDbQuery included) use the
+// global fetch (VTID-05023: they no longer import node-fetch), so this file
+// mocks globalThis.fetch.
 import { executeTool, setThreadIdentity } from '../src/services/gemini-operator';
 import { searchCode, getFileContents } from '../src/services/github-service';
 import { describeEcsServices } from '../src/services/aws-ecs-readonly';
 
-const mockedFetch = fetch as unknown as jest.Mock;
+const mockedFetch = globalThis.fetch as unknown as jest.Mock;
 const mockedSearchCode = searchCode as jest.Mock;
 const mockedGetFileContents = getFileContents as jest.Mock;
 const mockedDescribeEcsServices = describeEcsServices as jest.Mock;

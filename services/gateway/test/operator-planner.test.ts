@@ -19,7 +19,6 @@ jest.mock('../src/services/oasis-event-service', () => ({
   emitOasisEvent: jest.fn().mockResolvedValue({ ok: true }),
 }));
 
-import fetch from 'node-fetch';
 import { emitOasisEvent } from '../src/services/oasis-event-service';
 import {
   findPlannableOperatorTasks,
@@ -28,7 +27,8 @@ import {
   isOperatorPlannerEnabled,
 } from '../src/services/operator-planner';
 
-const mockedFetch = fetch as unknown as jest.Mock;
+// VTID-05023: operator-planner uses the global fetch, not node-fetch.
+const mockedFetch = globalThis.fetch as unknown as jest.Mock;
 const mockedEmitOasisEvent = emitOasisEvent as jest.Mock;
 
 function jsonRes(status: number, body: unknown) {

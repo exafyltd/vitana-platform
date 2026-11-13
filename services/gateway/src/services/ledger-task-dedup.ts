@@ -22,7 +22,6 @@
  * creation flow to work. Errors are logged, not silenced.
  */
 
-import fetch from 'node-fetch';
 import { generateEmbedding } from './embedding-service';
 
 const VTID = 'VTID-03819';

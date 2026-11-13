@@ -11,11 +11,11 @@
 jest.mock('node-fetch');
 jest.mock('../src/services/ledger-task-dedup');
 
-import fetch from 'node-fetch';
 import { createOperatorTask } from '../src/services/operator-service';
 import { checkForSimilarTask, stampTaskEmbedding } from '../src/services/ledger-task-dedup';
 
-const mockedFetch = fetch as unknown as jest.Mock;
+// VTID-05023: operator-service uses the global fetch, not node-fetch.
+const mockedFetch = globalThis.fetch as unknown as jest.Mock;
 const mockedCheckForSimilarTask = checkForSimilarTask as jest.Mock;
 const mockedStampTaskEmbedding = stampTaskEmbedding as jest.Mock;
 

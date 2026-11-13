@@ -12,7 +12,6 @@
 jest.mock('node-fetch');
 jest.mock('../src/services/embedding-service');
 
-import fetch from 'node-fetch';
 import { generateEmbedding } from '../src/services/embedding-service';
 import {
   checkForSimilarTask,
@@ -21,7 +20,8 @@ import {
   RELATED_THRESHOLD,
 } from '../src/services/ledger-task-dedup';
 
-const mockedFetch = fetch as unknown as jest.Mock;
+// VTID-05023: ledger-task-dedup uses the global fetch, not node-fetch.
+const mockedFetch = globalThis.fetch as unknown as jest.Mock;
 const mockedGenerateEmbedding = generateEmbedding as jest.Mock;
 
 function jsonRes(status: number, body: unknown) {

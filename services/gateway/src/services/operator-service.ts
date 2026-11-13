@@ -8,7 +8,6 @@
  * VTID-01004: Event classification to prevent telemetry from polluting OASIS
  */
 
-import fetch from 'node-fetch';
 import { randomUUID } from 'crypto';
 import { guessAreaFromText, buildTitle, validateTaskTitle, normalizeTaskTitle } from '../utils/task-title';
 import { checkForSimilarTask, stampTaskEmbedding } from './ledger-task-dedup';

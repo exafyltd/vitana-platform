@@ -9,9 +9,12 @@
  * 3. Provides idempotent execution (safe to run multiple times)
  *
  * Run: npx ts-node src/scripts/repair-vtid-0541.ts
+ *
+ * VTID-05023: this script stays on Supabase. It is a standalone CLI that never
+ * calls installDataRestRouting(), so its SUPABASE_URL/rest/v1 calls use the
+ * global fetch unwrapped and go to SUPABASE_URL in every DATA_REST_BASE_MODE.
  */
 
-import fetch from 'node-fetch';
 import { randomUUID } from 'crypto';
 
 // Environment config

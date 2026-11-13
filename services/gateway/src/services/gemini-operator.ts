@@ -23,7 +23,6 @@
  * - discover_oasis_tasks: OASIS-only pending task discovery (VTID-01159)
  */
 
-import fetch from 'node-fetch';
 import { randomUUID } from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 // VTID-03579: operator LLM calls go through the router (Bedrock primary,

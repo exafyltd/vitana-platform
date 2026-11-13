@@ -36,7 +36,6 @@
  * must not silently start mutating the ledger the moment it deploys.
  */
 
-import fetch from 'node-fetch';
 import { emitOasisEvent } from './oasis-event-service';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;

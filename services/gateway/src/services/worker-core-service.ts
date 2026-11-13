@@ -14,7 +14,6 @@
  *   - worker.invalid_transition: Invalid state transition attempted
  */
 
-import fetch from 'node-fetch';
 import { randomUUID } from 'crypto';
 import { PlanPayload, PlanStep } from './operator-service';
 

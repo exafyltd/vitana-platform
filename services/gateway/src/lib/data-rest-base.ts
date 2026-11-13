@@ -49,6 +49,37 @@ export function getSupabaseAuthBase(env: NodeJS.ProcessEnv = process.env): strin
   return url ? stripTrailingSlash(url) : undefined;
 }
 
+function isPrivateIPv4(host: string): boolean {
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
+  if (!m) return false;
+  const a = Number(m[1]);
+  const b = Number(m[2]);
+  return a === 10 || a === 127 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
+}
+
+/**
+ * The proxy receives the Supabase service role key on every REST call, so its
+ * host must be internal: a host ending in `.internal` (this includes
+ * `.vitana.internal`), or a private IPv4 literal (10/8, 172.16/12, 192.168/16, 127/8).
+ */
+function assertInternalProxyUrl(proxy: string): void {
+  let url: URL;
+  try {
+    url = new URL(proxy);
+  } catch {
+    throw new Error(`[DataRestBase] ${DATA_REST_PROXY_URL_ENV} is not a valid URL.`);
+  }
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    throw new Error(`[DataRestBase] ${DATA_REST_PROXY_URL_ENV} must use http or https.`);
+  }
+  const host = url.hostname.toLowerCase();
+  if (host.endsWith('.internal') || isPrivateIPv4(host)) return;
+  throw new Error(
+    `[DataRestBase] ${DATA_REST_PROXY_URL_ENV} host "${host}" is not an internal host. ` +
+      'Use a host ending in .internal or .vitana.internal, or a private IP (10.x, 172.16-31.x, 192.168.x, 127.x).'
+  );
+}
+
 /** The base that `/rest/v1` requests go to for the current mode. */
 export function getDataRestBase(env: NodeJS.ProcessEnv = process.env): string | undefined {
   if (getDataRestBaseMode(env) === 'supabase') return getSupabaseAuthBase(env);
@@ -58,6 +89,7 @@ export function getDataRestBase(env: NodeJS.ProcessEnv = process.env): string | 
       `[DataRestBase] ${DATA_REST_BASE_MODE_ENV}=aurora_proxy requires ${DATA_REST_PROXY_URL_ENV} to be set.`
     );
   }
+  assertInternalProxyUrl(proxy);
   return stripTrailingSlash(proxy);
 }
 

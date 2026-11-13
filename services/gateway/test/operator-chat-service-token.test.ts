@@ -20,7 +20,7 @@ jest.mock('../src/services/oasis-event-service', () => ({
 
 type Executor = (toolName: string, args: Record<string, unknown>, threadId: string) => Promise<{ ok: boolean }>;
 let executeTool: Executor;
-// gemini-operator sends its approvals calls through node-fetch, which the setup file mocks.
+// gemini-operator sends its approvals calls through the global fetch (VTID-05023), which the setup file mocks.
 let nodeFetch: jest.Mock;
 
 const ENV0 = { ...process.env };
@@ -30,7 +30,7 @@ beforeAll(() => {
   process.env.SUPABASE_SERVICE_ROLE = SUPABASE_KEY;
   // gemini-operator reads SUPABASE_SERVICE_ROLE once, when it loads, so it is loaded after the key is set.
   executeTool = require('../src/services/gemini-operator').executeTool;
-  nodeFetch = require('node-fetch');
+  nodeFetch = global.fetch as unknown as jest.Mock;
 });
 afterAll(() => {
   process.env = ENV0;
