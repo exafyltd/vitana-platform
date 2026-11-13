@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-05774",
+  "kind": "infra",
+  "paths": [
+    "scripts/aws/iam/delivery-bedrock-invoke-policy.json",
+    "scripts/aws/test/test_delivery_bedrock_policy.py",
+    "docs/validation/VTID-05774/**"
+  ],
+  "sparring_record": ".kiro/specs/agentic-delivery-scope/sparring/verdict.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

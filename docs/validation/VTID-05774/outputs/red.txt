@@ -1,0 +1,77 @@
+test_actions_are_invoke_only (test_delivery_bedrock_policy.DeliveryBedrockPolicy.test_actions_are_invoke_only) ... FAIL
+test_chain_profiles_are_in_frankfurt (test_delivery_bedrock_policy.DeliveryBedrockPolicy.test_chain_profiles_are_in_frankfurt) ... FAIL
+test_deepseek_only_in_stockholm (test_delivery_bedrock_policy.DeliveryBedrockPolicy.test_deepseek_only_in_stockholm) ... FAIL
+test_each_chain_model_is_allowed_in_all_six_regions (test_delivery_bedrock_policy.DeliveryBedrockPolicy.test_each_chain_model_is_allowed_in_all_six_regions) ... FAIL
+test_every_resource_is_in_an_eu_destination_region (test_delivery_bedrock_policy.DeliveryBedrockPolicy.test_every_resource_is_in_an_eu_destination_region) ... FAIL
+test_no_wildcard_and_no_duplicate (test_delivery_bedrock_policy.DeliveryBedrockPolicy.test_no_wildcard_and_no_duplicate) ... FAIL
+test_nothing_else_is_allowed (test_delivery_bedrock_policy.DeliveryBedrockPolicy.test_nothing_else_is_allowed) ... FAIL
+test_version_and_allow_only (test_delivery_bedrock_policy.DeliveryBedrockPolicy.test_version_and_allow_only) ... FAIL
+
+======================================================================
+FAIL: test_actions_are_invoke_only (test_delivery_bedrock_policy.DeliveryBedrockPolicy.test_actions_are_invoke_only)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/projects/sandbox/.wt/bedrock-invoke-policy/scripts/aws/test/test_delivery_bedrock_policy.py", line 30, in setUp
+    self.assertTrue(POLICY.exists(), f'{POLICY.relative_to(ROOT)} is missing')
+AssertionError: False is not true : scripts/aws/iam/delivery-bedrock-invoke-policy.json is missing
+
+======================================================================
+FAIL: test_chain_profiles_are_in_frankfurt (test_delivery_bedrock_policy.DeliveryBedrockPolicy.test_chain_profiles_are_in_frankfurt)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/projects/sandbox/.wt/bedrock-invoke-policy/scripts/aws/test/test_delivery_bedrock_policy.py", line 30, in setUp
+    self.assertTrue(POLICY.exists(), f'{POLICY.relative_to(ROOT)} is missing')
+AssertionError: False is not true : scripts/aws/iam/delivery-bedrock-invoke-policy.json is missing
+
+======================================================================
+FAIL: test_deepseek_only_in_stockholm (test_delivery_bedrock_policy.DeliveryBedrockPolicy.test_deepseek_only_in_stockholm)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/projects/sandbox/.wt/bedrock-invoke-policy/scripts/aws/test/test_delivery_bedrock_policy.py", line 30, in setUp
+    self.assertTrue(POLICY.exists(), f'{POLICY.relative_to(ROOT)} is missing')
+AssertionError: False is not true : scripts/aws/iam/delivery-bedrock-invoke-policy.json is missing
+
+======================================================================
+FAIL: test_each_chain_model_is_allowed_in_all_six_regions (test_delivery_bedrock_policy.DeliveryBedrockPolicy.test_each_chain_model_is_allowed_in_all_six_regions)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/projects/sandbox/.wt/bedrock-invoke-policy/scripts/aws/test/test_delivery_bedrock_policy.py", line 30, in setUp
+    self.assertTrue(POLICY.exists(), f'{POLICY.relative_to(ROOT)} is missing')
+AssertionError: False is not true : scripts/aws/iam/delivery-bedrock-invoke-policy.json is missing
+
+======================================================================
+FAIL: test_every_resource_is_in_an_eu_destination_region (test_delivery_bedrock_policy.DeliveryBedrockPolicy.test_every_resource_is_in_an_eu_destination_region)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/projects/sandbox/.wt/bedrock-invoke-policy/scripts/aws/test/test_delivery_bedrock_policy.py", line 30, in setUp
+    self.assertTrue(POLICY.exists(), f'{POLICY.relative_to(ROOT)} is missing')
+AssertionError: False is not true : scripts/aws/iam/delivery-bedrock-invoke-policy.json is missing
+
+======================================================================
+FAIL: test_no_wildcard_and_no_duplicate (test_delivery_bedrock_policy.DeliveryBedrockPolicy.test_no_wildcard_and_no_duplicate)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/projects/sandbox/.wt/bedrock-invoke-policy/scripts/aws/test/test_delivery_bedrock_policy.py", line 30, in setUp
+    self.assertTrue(POLICY.exists(), f'{POLICY.relative_to(ROOT)} is missing')
+AssertionError: False is not true : scripts/aws/iam/delivery-bedrock-invoke-policy.json is missing
+
+======================================================================
+FAIL: test_nothing_else_is_allowed (test_delivery_bedrock_policy.DeliveryBedrockPolicy.test_nothing_else_is_allowed)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/projects/sandbox/.wt/bedrock-invoke-policy/scripts/aws/test/test_delivery_bedrock_policy.py", line 30, in setUp
+    self.assertTrue(POLICY.exists(), f'{POLICY.relative_to(ROOT)} is missing')
+AssertionError: False is not true : scripts/aws/iam/delivery-bedrock-invoke-policy.json is missing
+
+======================================================================
+FAIL: test_version_and_allow_only (test_delivery_bedrock_policy.DeliveryBedrockPolicy.test_version_and_allow_only)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/projects/sandbox/.wt/bedrock-invoke-policy/scripts/aws/test/test_delivery_bedrock_policy.py", line 30, in setUp
+    self.assertTrue(POLICY.exists(), f'{POLICY.relative_to(ROOT)} is missing')
+AssertionError: False is not true : scripts/aws/iam/delivery-bedrock-invoke-policy.json is missing
+
+----------------------------------------------------------------------
+Ran 8 tests in 0.002s
+
+FAILED (failures=8)
