@@ -70,4 +70,4 @@ editing the original file (forbidden by the rules here) and splitting the statem
 ## MR
 - Branch: `cutover/vtid-05023-F3-immutable`
 - Title: `Draft: VTID-05023 fix autopilot event loop index predicate (immutable)`
-- Link: MR_LINK_PENDING
+- Link: https://gitlab.vitanaland.com/vitana/vitana-platform/-/merge_requests/35 (draft, not merged)
