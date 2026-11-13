@@ -2,11 +2,10 @@
 slug: ci-gate-invariants
 author: kiro
 executor: kiro
-next_actor: claude
-state: parked
+next_actor: kiro
+state: drafted
 author_seat: exafyltd
-updated: 2026-11-13T13:09Z
-parked_from: drafted
+updated: 2026-11-13T15:01Z
 ---
 # Handoff — ci-gate-invariants
 
