@@ -1,6 +1,6 @@
 ---
 lane: fix
-state: ready
+state: done
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -53,3 +53,13 @@ foreign files and 3 blocking findings because it diffed against a stale base ins
 the literal `machine approval` with no alternation.
 Next: merge under collaboration.md §7b (this accept + 27/27 green + 0 commits behind main + no protected-gate
 file in the lane's diff).
+
+### 2026-11-13T09:49Z · kiro-exafyltd-202611122052-a6df · in-review → done
+merge: 575d70e9aeff7986177fea505dab70b9ba36abc6 (PR #5057, squash, head 89a98a0672, 28 of 28 checks green incl.
+Collab handoff and Lane scope, 0 commits behind `origin/main`). authority: §7b PM merge rule — `Collab-Verdict:
+accept` from the review entry above (M4 Bedrock chain, eu.anthropic.claude-opus-5-5) on head 6541a21823, carried
+forward: the only commits after that head were two clean merges of `origin/main` (00166adeb5 covered by the
+earlier review round; 89a98a0672 forced a fresh review per collaboration.md §3 because it brought in
+`.github/workflows/RUN-MIGRATION.yml`/`STAGING-MIGRATE.yml` — re-reviewed and accepted with zero blocking findings,
+see the lane-review entry commit for the full verdict). `land-guard.mjs merge` performed the merge directly.
+Deploys the gateway to staging on the next `AWS-STAGE-DEPLOY-GATEWAY.yml` run; STAGING-VERIFY watches it.
