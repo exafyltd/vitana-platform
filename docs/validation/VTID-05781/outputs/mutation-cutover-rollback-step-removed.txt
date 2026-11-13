@@ -1,0 +1,9 @@
+# mutation cutover-rollback-step-removed: .github/workflows/AWS-STAGE-CUTOVER.yml
+# replaced:         if: failure() && steps.record.outcome == 'success'
+        run: bash scripts/aws/staging-cutover-ecs.sh rollback
+# with:             if: false
+        run: bash scripts/aws/staging-cutover-ecs.sh rollback
+not ok 13 - AWS-STAGE-CUTOVER.yml: dispatch only, gate, record → flip → verify → smoke → automatic rollback, recover, manual rollback
+not ok 31 - mutation fails: cutover: automatic rollback removed
+# pass 38
+# fail 2

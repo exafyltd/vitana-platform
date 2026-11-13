@@ -1,0 +1,1270 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "VTID-05782 isolated staging database plane (KMS key, subnet group, security groups, staging secrets, OIDC role vitana-gha-staging-db + boundary, budget alarm, optional candidate services). Applied once by the owner; never by CI. The Aurora cluster itself is created by scripts/aws/staging-db-provision.sh through AWS-STAGE-PROVISION-DB.yml after the cost approval.",
+  "Metadata": {
+    "Account": "product",
+    "Plan": "autonomous-to-staging-r2 (design.md section 2, 4, 6)",
+    "Lane": "staging-db-provision",
+    "Note": "JSON is valid YAML; the file is read as JSON by scripts/ci/staging-db/stack.test.mjs (no YAML parser in the no-install unit run)."
+  },
+  "Parameters": {
+    "MinAcu": {
+      "Type": "Number",
+      "Default": "0",
+      "AllowedValues": [
+        "0",
+        "0.5"
+      ],
+      "Description": "Serverless v2 minimum ACU. 0 = option A (auto-pause after 300 s, recommended); 0.5 = option B (never pauses)."
+    },
+    "MaxAcu": {
+      "Type": "Number",
+      "Default": "2",
+      "MinValue": 1,
+      "MaxValue": 2,
+      "Description": "Serverless v2 maximum ACU, the cost cap (2 ACU = about 204 USD a month at most)."
+    },
+    "SecondsUntilAutoPause": {
+      "Type": "Number",
+      "Default": "300",
+      "MinValue": 300,
+      "MaxValue": 86400,
+      "Description": "Auto-pause delay when MinAcu is 0."
+    },
+    "VpcId": {
+      "Type": "AWS::EC2::VPC::Id",
+      "Default": "vpc-05958f035e596fe64",
+      "Description": "The existing Vitana VPC."
+    },
+    "PrivateSubnetIds": {
+      "Type": "List<AWS::EC2::Subnet::Id>",
+      "Default": "subnet-0ff45a2051c5e5482,subnet-0c786864a28a5a821",
+      "Description": "The two existing private subnets."
+    },
+    "BudgetAlertEmail": {
+      "Type": "String",
+      "AllowedPattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
+      "Description": "Owner e-mail for the monthly budget alarm (no default: the owner names it at apply)."
+    },
+    "BudgetLimitUsd": {
+      "Type": "Number",
+      "Default": "60",
+      "MinValue": 1,
+      "MaxValue": 250,
+      "Description": "Monthly budget on tag vitana-env=staging (design.md section 2)."
+    },
+    "GitHubOidcProviderArn": {
+      "Type": "String",
+      "Default": "",
+      "Description": "The existing token.actions.githubusercontent.com provider; empty = arn:aws:iam::<account>:oidc-provider/token.actions.githubusercontent.com."
+    },
+    "EcsClusterName": {
+      "Type": "String",
+      "Default": "Vitana-ECS-Cluster",
+      "Description": "Cluster of the optional candidate services."
+    },
+    "CandidateGatewayTaskDefinitionArn": {
+      "Type": "String",
+      "Default": "",
+      "AllowedPattern": "^$|^arn:aws:ecs:eu-central-1:472838866351:task-definition/vitana-gateway-iso:[0-9]+$",
+      "Description": "Optional (lane staging-cutover): an isolated gateway revision of family vitana-gateway-iso. Empty = no candidate services."
+    },
+    "CandidatePostgrestTaskDefinitionArn": {
+      "Type": "String",
+      "Default": "",
+      "AllowedPattern": "^$|^arn:aws:ecs:eu-central-1:472838866351:task-definition/vitana-postgrest-aurora-staging-iso:[0-9]+$",
+      "Description": "Optional (lane staging-cutover): an isolated PostgREST revision of family vitana-postgrest-aurora-staging-iso."
+    },
+    "CandidateAppSecurityGroupId": {
+      "Type": "String",
+      "Default": "",
+      "Description": "Optional: the app-tier security group the candidate tasks also join (ALB to task traffic)."
+    },
+    "CandidateAlbListenerArn": {
+      "Type": "String",
+      "Default": "",
+      "Description": "Optional: the HTTPS listener that serves the staging gateway host; gets a host rule for CandidateHostName."
+    },
+    "CandidateHostName": {
+      "Type": "String",
+      "Default": "preview-iso-gateway.vitanaland.com",
+      "AllowedPattern": "^preview-iso-[a-z0-9.-]+$"
+    },
+    "CandidateListenerRulePriority": {
+      "Type": "Number",
+      "Default": "4900",
+      "MinValue": 1,
+      "MaxValue": 50000
+    }
+  },
+  "Conditions": {
+    "DefaultOidcProvider": {
+      "Fn::Equals": [
+        {
+          "Ref": "GitHubOidcProviderArn"
+        },
+        ""
+      ]
+    },
+    "CreateCandidates": {
+      "Fn::Not": [
+        {
+          "Fn::Or": [
+            {
+              "Fn::Equals": [
+                {
+                  "Ref": "CandidateGatewayTaskDefinitionArn"
+                },
+                ""
+              ]
+            },
+            {
+              "Fn::Equals": [
+                {
+                  "Ref": "CandidatePostgrestTaskDefinitionArn"
+                },
+                ""
+              ]
+            },
+            {
+              "Fn::Equals": [
+                {
+                  "Ref": "CandidateAppSecurityGroupId"
+                },
+                ""
+              ]
+            },
+            {
+              "Fn::Equals": [
+                {
+                  "Ref": "CandidateAlbListenerArn"
+                },
+                ""
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "Resources": {
+    "StagingDbKey": {
+      "Type": "AWS::KMS::Key",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "Description": "vitana-aurora-staging storage, master secret and staging-db secrets (staging only)",
+        "EnableKeyRotation": true,
+        "KeyPolicy": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "AccountRootAdministers",
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": {
+                  "Fn::Sub": "arn:aws:iam::${AWS::AccountId}:root"
+                }
+              },
+              "Action": "kms:*",
+              "Resource": "*"
+            }
+          ]
+        },
+        "Tags": [
+          {
+            "Key": "vitana-env",
+            "Value": "staging"
+          },
+          {
+            "Key": "vitana-vtid",
+            "Value": "VTID-05782"
+          }
+        ]
+      }
+    },
+    "StagingDbKeyAlias": {
+      "Type": "AWS::KMS::Alias",
+      "Properties": {
+        "AliasName": "alias/vitana-staging-db",
+        "TargetKeyId": {
+          "Ref": "StagingDbKey"
+        }
+      }
+    },
+    "DbSubnetGroup": {
+      "Type": "AWS::RDS::DBSubnetGroup",
+      "Properties": {
+        "DBSubnetGroupName": "vitana-aurora-staging",
+        "DBSubnetGroupDescription": "vitana-aurora-staging (staging only)",
+        "SubnetIds": {
+          "Ref": "PrivateSubnetIds"
+        },
+        "Tags": [
+          {
+            "Key": "vitana-env",
+            "Value": "staging"
+          },
+          {
+            "Key": "vitana-vtid",
+            "Value": "VTID-05782"
+          }
+        ]
+      }
+    },
+    "DbClientSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupName": "vitana-aurora-staging-client-sg",
+        "GroupDescription": "Member = may reach vitana-aurora-staging on 5432. Attached only to staging (and candidate) tasks, never to a production task.",
+        "VpcId": {
+          "Ref": "VpcId"
+        },
+        "Tags": [
+          {
+            "Key": "vitana-env",
+            "Value": "staging"
+          },
+          {
+            "Key": "vitana-vtid",
+            "Value": "VTID-05782"
+          }
+        ]
+      }
+    },
+    "DbSecurityGroup": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupName": "vitana-aurora-staging-sg",
+        "GroupDescription": "vitana-aurora-staging: 5432 only from vitana-aurora-staging-client-sg",
+        "VpcId": {
+          "Ref": "VpcId"
+        },
+        "SecurityGroupIngress": [
+          {
+            "IpProtocol": "tcp",
+            "FromPort": 5432,
+            "ToPort": 5432,
+            "SourceSecurityGroupId": {
+              "Ref": "DbClientSecurityGroup"
+            },
+            "Description": "staging tasks only"
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "vitana-env",
+            "Value": "staging"
+          },
+          {
+            "Key": "vitana-vtid",
+            "Value": "VTID-05782"
+          }
+        ]
+      }
+    },
+    "DatabaseUrlSecret": {
+      "Type": "AWS::SecretsManager::Secret",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "Name": "vitana/aurora/staging-db/database-url",
+        "Description": "Placeholder; set by the staging-cutover lane after the cluster exists.",
+        "KmsKeyId": {
+          "Ref": "StagingDbKey"
+        },
+        "SecretString": "unset",
+        "Tags": [
+          {
+            "Key": "vitana-env",
+            "Value": "staging"
+          },
+          {
+            "Key": "vitana-vtid",
+            "Value": "VTID-05782"
+          }
+        ]
+      }
+    },
+    "PostgrestAuthenticatorUriSecret": {
+      "Type": "AWS::SecretsManager::Secret",
+      "DeletionPolicy": "Retain",
+      "UpdateReplacePolicy": "Retain",
+      "Properties": {
+        "Name": "vitana/aurora/staging-db/postgrest-authenticator-uri",
+        "Description": "Placeholder; set by the staging-cutover lane after the cluster exists.",
+        "KmsKeyId": {
+          "Ref": "StagingDbKey"
+        },
+        "SecretString": "unset",
+        "Tags": [
+          {
+            "Key": "vitana-env",
+            "Value": "staging"
+          },
+          {
+            "Key": "vitana-vtid",
+            "Value": "VTID-05782"
+          }
+        ]
+      }
+    },
+    "StagingBoundary": {
+      "Type": "AWS::IAM::ManagedPolicy",
+      "Properties": {
+        "ManagedPolicyName": "vitana-staging-boundary",
+        "Description": "Permissions boundary of vitana-gha-staging-db (same statements; no IAM change possible).",
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "ClusterLifecycle",
+              "Effect": "Allow",
+              "Action": [
+                "rds:CreateDBCluster",
+                "rds:CreateDBInstance",
+                "rds:ModifyDBCluster",
+                "rds:ModifyDBInstance",
+                "rds:AddTagsToResource",
+                "rds:CreateDBClusterSnapshot",
+                "rds:EnableHttpEndpoint"
+              ],
+              "Resource": [
+                {
+                  "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster:vitana-aurora-staging"
+                },
+                {
+                  "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:db:vitana-aurora-staging-*"
+                },
+                {
+                  "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster-snapshot:vitana-aurora-staging-*"
+                },
+                {
+                  "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:subgrp:vitana-aurora-staging"
+                },
+                {
+                  "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster-pg:vitana-aurora-staging-*"
+                },
+                {
+                  "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:pg:vitana-aurora-staging-*"
+                }
+              ]
+            },
+            {
+              "Sid": "CreateNeedsStagingTag",
+              "Effect": "Deny",
+              "Action": [
+                "rds:CreateDBCluster",
+                "rds:CreateDBInstance"
+              ],
+              "Resource": "*",
+              "Condition": {
+                "StringNotEquals": {
+                  "aws:RequestTag/vitana-env": "staging"
+                }
+              }
+            },
+            {
+              "Sid": "ParamGroups",
+              "Effect": "Allow",
+              "Action": [
+                "rds:CreateDBClusterParameterGroup",
+                "rds:ModifyDBClusterParameterGroup",
+                "rds:CreateDBParameterGroup",
+                "rds:ModifyDBParameterGroup"
+              ],
+              "Resource": [
+                {
+                  "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster-pg:vitana-aurora-staging-*"
+                },
+                {
+                  "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:pg:vitana-aurora-staging-*"
+                }
+              ]
+            },
+            {
+              "Sid": "Read",
+              "Effect": "Allow",
+              "Action": [
+                "rds:Describe*",
+                "rds:ListTagsForResource",
+                "ec2:DescribeSubnets",
+                "ec2:DescribeSecurityGroups",
+                "ec2:DescribeVpcs"
+              ],
+              "Resource": "*"
+            },
+            {
+              "Sid": "ReadOwnStack",
+              "Effect": "Allow",
+              "Action": [
+                "cloudformation:DescribeStacks"
+              ],
+              "Resource": {
+                "Fn::Sub": "arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${AWS::StackName}/*"
+              }
+            },
+            {
+              "Sid": "DataApi",
+              "Effect": "Allow",
+              "Action": [
+                "rds-data:ExecuteStatement",
+                "rds-data:BatchExecuteStatement",
+                "rds-data:BeginTransaction",
+                "rds-data:CommitTransaction",
+                "rds-data:RollbackTransaction"
+              ],
+              "Resource": {
+                "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster:vitana-aurora-staging"
+              }
+            },
+            {
+              "Sid": "Secrets",
+              "Effect": "Allow",
+              "Action": [
+                "secretsmanager:GetSecretValue",
+                "secretsmanager:PutSecretValue",
+                "secretsmanager:DescribeSecret"
+              ],
+              "Resource": {
+                "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:vitana/aurora/staging-db/*"
+              }
+            },
+            {
+              "Sid": "ManagedMasterSecret",
+              "Effect": "Allow",
+              "Action": [
+                "secretsmanager:GetSecretValue",
+                "secretsmanager:DescribeSecret"
+              ],
+              "Resource": {
+                "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:rds!cluster-*"
+              },
+              "Condition": {
+                "StringEquals": {
+                  "aws:ResourceTag/aws:rds:primaryDBClusterArn": {
+                    "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster:vitana-aurora-staging"
+                  }
+                }
+              }
+            },
+            {
+              "Sid": "ManagedMasterSecretCreate",
+              "Effect": "Allow",
+              "Action": [
+                "secretsmanager:CreateSecret",
+                "secretsmanager:TagResource"
+              ],
+              "Resource": {
+                "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:rds!cluster-*"
+              },
+              "Condition": {
+                "Bool": {
+                  "aws:ViaAWSService": "true"
+                }
+              }
+            },
+            {
+              "Sid": "Kms",
+              "Effect": "Allow",
+              "Action": [
+                "kms:Decrypt",
+                "kms:Encrypt",
+                "kms:GenerateDataKey*",
+                "kms:DescribeKey",
+                "kms:CreateGrant"
+              ],
+              "Resource": {
+                "Fn::GetAtt": [
+                  "StagingDbKey",
+                  "Arn"
+                ]
+              },
+              "Condition": {
+                "StringEquals": {
+                  "kms:ViaService": [
+                    {
+                      "Fn::Sub": "rds.${AWS::Region}.amazonaws.com"
+                    },
+                    {
+                      "Fn::Sub": "secretsmanager.${AWS::Region}.amazonaws.com"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "Sid": "Slr",
+              "Effect": "Allow",
+              "Action": "iam:CreateServiceLinkedRole",
+              "Resource": {
+                "Fn::Sub": "arn:aws:iam::${AWS::AccountId}:role/aws-service-role/rds.amazonaws.com/*"
+              },
+              "Condition": {
+                "StringEquals": {
+                  "iam:AWSServiceName": "rds.amazonaws.com"
+                }
+              }
+            },
+            {
+              "Sid": "DenyProduction",
+              "Effect": "Deny",
+              "Action": [
+                "rds:*",
+                "rds-data:*"
+              ],
+              "Resource": [
+                {
+                  "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster:vitana-aurora-prod"
+                },
+                {
+                  "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:db:vitana-aurora-prod*"
+                },
+                {
+                  "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster-snapshot:rds:vitana-aurora-prod*"
+                },
+                {
+                  "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster-snapshot:vitana-aurora-prod*"
+                }
+              ]
+            },
+            {
+              "Sid": "DenyProdSecrets",
+              "Effect": "Deny",
+              "Action": "secretsmanager:*",
+              "Resource": [
+                {
+                  "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:vitana/aurora/prod/*"
+                },
+                {
+                  "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:vitana/supabase/prod/*"
+                },
+                {
+                  "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:vitana/gateway-awsdr/*"
+                }
+              ]
+            },
+            {
+              "Sid": "DenyProdManagedSecretByName",
+              "Effect": "Deny",
+              "Action": "secretsmanager:*",
+              "Resource": [
+                {
+                  "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:rds!cluster-4dab93b8-*"
+                },
+                {
+                  "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:rds!cluster-eba8a4f2-3caa-4f11-88f0-c3102c3c176a-*"
+                }
+              ]
+            },
+            {
+              "Sid": "DenyProdManagedSecretByTag",
+              "Effect": "Deny",
+              "Action": "secretsmanager:*",
+              "Resource": {
+                "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:*"
+              },
+              "Condition": {
+                "StringEquals": {
+                  "aws:ResourceTag/aws:rds:primaryDBClusterArn": {
+                    "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster:vitana-aurora-prod"
+                  }
+                }
+              }
+            },
+            {
+              "Sid": "DenyProdManagedSecretRequestTag",
+              "Effect": "Deny",
+              "Action": [
+                "secretsmanager:CreateSecret",
+                "secretsmanager:TagResource"
+              ],
+              "Resource": {
+                "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:*"
+              },
+              "Condition": {
+                "StringEquals": {
+                  "aws:RequestTag/aws:rds:primaryDBClusterArn": {
+                    "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster:vitana-aurora-prod"
+                  }
+                }
+              }
+            },
+            {
+              "Sid": "DenyOtherClustersManagedSecrets",
+              "Effect": "Deny",
+              "Action": "secretsmanager:*",
+              "Resource": {
+                "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:rds!cluster-*"
+              },
+              "Condition": {
+                "Null": {
+                  "aws:ResourceTag/aws:rds:primaryDBClusterArn": "false"
+                },
+                "StringNotEquals": {
+                  "aws:ResourceTag/aws:rds:primaryDBClusterArn": {
+                    "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster:vitana-aurora-staging"
+                  }
+                }
+              }
+            },
+            {
+              "Sid": "DenyDelete",
+              "Effect": "Deny",
+              "Action": [
+                "rds:DeleteDBCluster",
+                "rds:DeleteDBInstance",
+                "rds:DeleteDBClusterSnapshot"
+              ],
+              "Resource": "*"
+            },
+            {
+              "Sid": "DenyIam",
+              "Effect": "Deny",
+              "Action": "iam:*",
+              "NotResource": {
+                "Fn::Sub": "arn:aws:iam::${AWS::AccountId}:role/aws-service-role/rds.amazonaws.com/*"
+              }
+            }
+          ]
+        }
+      }
+    },
+    "StagingDbRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "RoleName": "vitana-gha-staging-db",
+        "Description": "GitHub OIDC role of AWS-STAGE-PROVISION-DB.yml (main only): create and load vitana-aurora-staging, nothing else.",
+        "MaxSessionDuration": 3600,
+        "PermissionsBoundary": {
+          "Ref": "StagingBoundary"
+        },
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Federated": {
+                  "Fn::If": [
+                    "DefaultOidcProvider",
+                    {
+                      "Fn::Sub": "arn:aws:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com"
+                    },
+                    {
+                      "Ref": "GitHubOidcProviderArn"
+                    }
+                  ]
+                }
+              },
+              "Action": "sts:AssumeRoleWithWebIdentity",
+              "Condition": {
+                "StringEquals": {
+                  "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+                  "token.actions.githubusercontent.com:sub": "repo:exafyltd/vitana-platform:ref:refs/heads/main"
+                }
+              }
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "vitana-staging-db",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Sid": "ClusterLifecycle",
+                  "Effect": "Allow",
+                  "Action": [
+                    "rds:CreateDBCluster",
+                    "rds:CreateDBInstance",
+                    "rds:ModifyDBCluster",
+                    "rds:ModifyDBInstance",
+                    "rds:AddTagsToResource",
+                    "rds:CreateDBClusterSnapshot",
+                    "rds:EnableHttpEndpoint"
+                  ],
+                  "Resource": [
+                    {
+                      "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster:vitana-aurora-staging"
+                    },
+                    {
+                      "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:db:vitana-aurora-staging-*"
+                    },
+                    {
+                      "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster-snapshot:vitana-aurora-staging-*"
+                    },
+                    {
+                      "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:subgrp:vitana-aurora-staging"
+                    },
+                    {
+                      "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster-pg:vitana-aurora-staging-*"
+                    },
+                    {
+                      "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:pg:vitana-aurora-staging-*"
+                    }
+                  ]
+                },
+                {
+                  "Sid": "CreateNeedsStagingTag",
+                  "Effect": "Deny",
+                  "Action": [
+                    "rds:CreateDBCluster",
+                    "rds:CreateDBInstance"
+                  ],
+                  "Resource": "*",
+                  "Condition": {
+                    "StringNotEquals": {
+                      "aws:RequestTag/vitana-env": "staging"
+                    }
+                  }
+                },
+                {
+                  "Sid": "ParamGroups",
+                  "Effect": "Allow",
+                  "Action": [
+                    "rds:CreateDBClusterParameterGroup",
+                    "rds:ModifyDBClusterParameterGroup",
+                    "rds:CreateDBParameterGroup",
+                    "rds:ModifyDBParameterGroup"
+                  ],
+                  "Resource": [
+                    {
+                      "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster-pg:vitana-aurora-staging-*"
+                    },
+                    {
+                      "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:pg:vitana-aurora-staging-*"
+                    }
+                  ]
+                },
+                {
+                  "Sid": "Read",
+                  "Effect": "Allow",
+                  "Action": [
+                    "rds:Describe*",
+                    "rds:ListTagsForResource",
+                    "ec2:DescribeSubnets",
+                    "ec2:DescribeSecurityGroups",
+                    "ec2:DescribeVpcs"
+                  ],
+                  "Resource": "*"
+                },
+                {
+                  "Sid": "ReadOwnStack",
+                  "Effect": "Allow",
+                  "Action": [
+                    "cloudformation:DescribeStacks"
+                  ],
+                  "Resource": {
+                    "Fn::Sub": "arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${AWS::StackName}/*"
+                  }
+                },
+                {
+                  "Sid": "DataApi",
+                  "Effect": "Allow",
+                  "Action": [
+                    "rds-data:ExecuteStatement",
+                    "rds-data:BatchExecuteStatement",
+                    "rds-data:BeginTransaction",
+                    "rds-data:CommitTransaction",
+                    "rds-data:RollbackTransaction"
+                  ],
+                  "Resource": {
+                    "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster:vitana-aurora-staging"
+                  }
+                },
+                {
+                  "Sid": "Secrets",
+                  "Effect": "Allow",
+                  "Action": [
+                    "secretsmanager:GetSecretValue",
+                    "secretsmanager:PutSecretValue",
+                    "secretsmanager:DescribeSecret"
+                  ],
+                  "Resource": {
+                    "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:vitana/aurora/staging-db/*"
+                  }
+                },
+                {
+                  "Sid": "ManagedMasterSecret",
+                  "Effect": "Allow",
+                  "Action": [
+                    "secretsmanager:GetSecretValue",
+                    "secretsmanager:DescribeSecret"
+                  ],
+                  "Resource": {
+                    "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:rds!cluster-*"
+                  },
+                  "Condition": {
+                    "StringEquals": {
+                      "aws:ResourceTag/aws:rds:primaryDBClusterArn": {
+                        "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster:vitana-aurora-staging"
+                      }
+                    }
+                  }
+                },
+                {
+                  "Sid": "ManagedMasterSecretCreate",
+                  "Effect": "Allow",
+                  "Action": [
+                    "secretsmanager:CreateSecret",
+                    "secretsmanager:TagResource"
+                  ],
+                  "Resource": {
+                    "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:rds!cluster-*"
+                  },
+                  "Condition": {
+                    "Bool": {
+                      "aws:ViaAWSService": "true"
+                    }
+                  }
+                },
+                {
+                  "Sid": "Kms",
+                  "Effect": "Allow",
+                  "Action": [
+                    "kms:Decrypt",
+                    "kms:Encrypt",
+                    "kms:GenerateDataKey*",
+                    "kms:DescribeKey",
+                    "kms:CreateGrant"
+                  ],
+                  "Resource": {
+                    "Fn::GetAtt": [
+                      "StagingDbKey",
+                      "Arn"
+                    ]
+                  },
+                  "Condition": {
+                    "StringEquals": {
+                      "kms:ViaService": [
+                        {
+                          "Fn::Sub": "rds.${AWS::Region}.amazonaws.com"
+                        },
+                        {
+                          "Fn::Sub": "secretsmanager.${AWS::Region}.amazonaws.com"
+                        }
+                      ]
+                    }
+                  }
+                },
+                {
+                  "Sid": "Slr",
+                  "Effect": "Allow",
+                  "Action": "iam:CreateServiceLinkedRole",
+                  "Resource": {
+                    "Fn::Sub": "arn:aws:iam::${AWS::AccountId}:role/aws-service-role/rds.amazonaws.com/*"
+                  },
+                  "Condition": {
+                    "StringEquals": {
+                      "iam:AWSServiceName": "rds.amazonaws.com"
+                    }
+                  }
+                },
+                {
+                  "Sid": "DenyProduction",
+                  "Effect": "Deny",
+                  "Action": [
+                    "rds:*",
+                    "rds-data:*"
+                  ],
+                  "Resource": [
+                    {
+                      "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster:vitana-aurora-prod"
+                    },
+                    {
+                      "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:db:vitana-aurora-prod*"
+                    },
+                    {
+                      "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster-snapshot:rds:vitana-aurora-prod*"
+                    },
+                    {
+                      "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster-snapshot:vitana-aurora-prod*"
+                    }
+                  ]
+                },
+                {
+                  "Sid": "DenyProdSecrets",
+                  "Effect": "Deny",
+                  "Action": "secretsmanager:*",
+                  "Resource": [
+                    {
+                      "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:vitana/aurora/prod/*"
+                    },
+                    {
+                      "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:vitana/supabase/prod/*"
+                    },
+                    {
+                      "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:vitana/gateway-awsdr/*"
+                    }
+                  ]
+                },
+                {
+                  "Sid": "DenyProdManagedSecretByName",
+                  "Effect": "Deny",
+                  "Action": "secretsmanager:*",
+                  "Resource": [
+                    {
+                      "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:rds!cluster-4dab93b8-*"
+                    },
+                    {
+                      "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:rds!cluster-eba8a4f2-3caa-4f11-88f0-c3102c3c176a-*"
+                    }
+                  ]
+                },
+                {
+                  "Sid": "DenyProdManagedSecretByTag",
+                  "Effect": "Deny",
+                  "Action": "secretsmanager:*",
+                  "Resource": {
+                    "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:*"
+                  },
+                  "Condition": {
+                    "StringEquals": {
+                      "aws:ResourceTag/aws:rds:primaryDBClusterArn": {
+                        "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster:vitana-aurora-prod"
+                      }
+                    }
+                  }
+                },
+                {
+                  "Sid": "DenyProdManagedSecretRequestTag",
+                  "Effect": "Deny",
+                  "Action": [
+                    "secretsmanager:CreateSecret",
+                    "secretsmanager:TagResource"
+                  ],
+                  "Resource": {
+                    "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:*"
+                  },
+                  "Condition": {
+                    "StringEquals": {
+                      "aws:RequestTag/aws:rds:primaryDBClusterArn": {
+                        "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster:vitana-aurora-prod"
+                      }
+                    }
+                  }
+                },
+                {
+                  "Sid": "DenyOtherClustersManagedSecrets",
+                  "Effect": "Deny",
+                  "Action": "secretsmanager:*",
+                  "Resource": {
+                    "Fn::Sub": "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:rds!cluster-*"
+                  },
+                  "Condition": {
+                    "Null": {
+                      "aws:ResourceTag/aws:rds:primaryDBClusterArn": "false"
+                    },
+                    "StringNotEquals": {
+                      "aws:ResourceTag/aws:rds:primaryDBClusterArn": {
+                        "Fn::Sub": "arn:aws:rds:${AWS::Region}:${AWS::AccountId}:cluster:vitana-aurora-staging"
+                      }
+                    }
+                  }
+                },
+                {
+                  "Sid": "DenyDelete",
+                  "Effect": "Deny",
+                  "Action": [
+                    "rds:DeleteDBCluster",
+                    "rds:DeleteDBInstance",
+                    "rds:DeleteDBClusterSnapshot"
+                  ],
+                  "Resource": "*"
+                },
+                {
+                  "Sid": "DenyIam",
+                  "Effect": "Deny",
+                  "Action": "iam:*",
+                  "NotResource": {
+                    "Fn::Sub": "arn:aws:iam::${AWS::AccountId}:role/aws-service-role/rds.amazonaws.com/*"
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "vitana-env",
+            "Value": "staging"
+          },
+          {
+            "Key": "vitana-vtid",
+            "Value": "VTID-05782"
+          }
+        ]
+      }
+    },
+    "StagingBudget": {
+      "Type": "AWS::Budgets::Budget",
+      "Properties": {
+        "Budget": {
+          "BudgetName": "vitana-staging-db-monthly",
+          "BudgetType": "COST",
+          "TimeUnit": "MONTHLY",
+          "BudgetLimit": {
+            "Amount": {
+              "Ref": "BudgetLimitUsd"
+            },
+            "Unit": "USD"
+          },
+          "CostFilters": {
+            "TagKeyValue": [
+              "user:vitana-env$staging"
+            ]
+          }
+        },
+        "NotificationsWithSubscribers": [
+          {
+            "Notification": {
+              "NotificationType": "ACTUAL",
+              "ComparisonOperator": "GREATER_THAN",
+              "Threshold": 80,
+              "ThresholdType": "PERCENTAGE"
+            },
+            "Subscribers": [
+              {
+                "SubscriptionType": "EMAIL",
+                "Address": {
+                  "Ref": "BudgetAlertEmail"
+                }
+              }
+            ]
+          },
+          {
+            "Notification": {
+              "NotificationType": "FORECASTED",
+              "ComparisonOperator": "GREATER_THAN",
+              "Threshold": 100,
+              "ThresholdType": "PERCENTAGE"
+            },
+            "Subscribers": [
+              {
+                "SubscriptionType": "EMAIL",
+                "Address": {
+                  "Ref": "BudgetAlertEmail"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    "CandidateGatewayTargetGroup": {
+      "Type": "AWS::ElasticLoadBalancingV2::TargetGroup",
+      "Condition": "CreateCandidates",
+      "Properties": {
+        "Name": "vitana-gateway-iso",
+        "Protocol": "HTTP",
+        "Port": 8080,
+        "TargetType": "ip",
+        "VpcId": {
+          "Ref": "VpcId"
+        },
+        "HealthCheckPath": "/alive",
+        "Tags": [
+          {
+            "Key": "vitana-env",
+            "Value": "staging"
+          },
+          {
+            "Key": "vitana-vtid",
+            "Value": "VTID-05782"
+          }
+        ]
+      }
+    },
+    "CandidateGatewayListenerRule": {
+      "Type": "AWS::ElasticLoadBalancingV2::ListenerRule",
+      "Condition": "CreateCandidates",
+      "Properties": {
+        "ListenerArn": {
+          "Ref": "CandidateAlbListenerArn"
+        },
+        "Priority": {
+          "Ref": "CandidateListenerRulePriority"
+        },
+        "Conditions": [
+          {
+            "Field": "host-header",
+            "HostHeaderConfig": {
+              "Values": [
+                {
+                  "Ref": "CandidateHostName"
+                }
+              ]
+            }
+          }
+        ],
+        "Actions": [
+          {
+            "Type": "forward",
+            "TargetGroupArn": {
+              "Ref": "CandidateGatewayTargetGroup"
+            }
+          }
+        ]
+      }
+    },
+    "CandidateGatewayService": {
+      "Type": "AWS::ECS::Service",
+      "Condition": "CreateCandidates",
+      "DependsOn": "CandidateGatewayListenerRule",
+      "Properties": {
+        "ServiceName": "vitana-gateway-iso",
+        "Cluster": {
+          "Ref": "EcsClusterName"
+        },
+        "DesiredCount": 0,
+        "LaunchType": "FARGATE",
+        "TaskDefinition": {
+          "Ref": "CandidateGatewayTaskDefinitionArn"
+        },
+        "NetworkConfiguration": {
+          "AwsvpcConfiguration": {
+            "AssignPublicIp": "DISABLED",
+            "Subnets": {
+              "Ref": "PrivateSubnetIds"
+            },
+            "SecurityGroups": [
+              {
+                "Ref": "CandidateAppSecurityGroupId"
+              },
+              {
+                "Ref": "DbClientSecurityGroup"
+              }
+            ]
+          }
+        },
+        "LoadBalancers": [
+          {
+            "ContainerName": "gateway",
+            "ContainerPort": 8080,
+            "TargetGroupArn": {
+              "Ref": "CandidateGatewayTargetGroup"
+            }
+          }
+        ],
+        "Tags": [
+          {
+            "Key": "vitana-env",
+            "Value": "staging"
+          },
+          {
+            "Key": "vitana-vtid",
+            "Value": "VTID-05782"
+          }
+        ]
+      }
+    },
+    "CandidatePostgrestService": {
+      "Type": "AWS::ECS::Service",
+      "Condition": "CreateCandidates",
+      "Properties": {
+        "ServiceName": "vitana-postgrest-aurora-staging-iso",
+        "Cluster": {
+          "Ref": "EcsClusterName"
+        },
+        "DesiredCount": 0,
+        "LaunchType": "FARGATE",
+        "TaskDefinition": {
+          "Ref": "CandidatePostgrestTaskDefinitionArn"
+        },
+        "NetworkConfiguration": {
+          "AwsvpcConfiguration": {
+            "AssignPublicIp": "DISABLED",
+            "Subnets": {
+              "Ref": "PrivateSubnetIds"
+            },
+            "SecurityGroups": [
+              {
+                "Ref": "CandidateAppSecurityGroupId"
+              },
+              {
+                "Ref": "DbClientSecurityGroup"
+              }
+            ]
+          }
+        },
+        "Tags": [
+          {
+            "Key": "vitana-env",
+            "Value": "staging"
+          },
+          {
+            "Key": "vitana-vtid",
+            "Value": "VTID-05782"
+          }
+        ]
+      }
+    }
+  },
+  "Outputs": {
+    "StagingDbRoleArn": {
+      "Description": "Set repository variable AWS_STAGING_DB_ROLE_ARN to this value.",
+      "Value": {
+        "Fn::GetAtt": [
+          "StagingDbRole",
+          "Arn"
+        ]
+      }
+    },
+    "KmsKeyArn": {
+      "Value": {
+        "Fn::GetAtt": [
+          "StagingDbKey",
+          "Arn"
+        ]
+      }
+    },
+    "DbSubnetGroupName": {
+      "Value": {
+        "Ref": "DbSubnetGroup"
+      }
+    },
+    "DbSecurityGroupId": {
+      "Value": {
+        "Fn::GetAtt": [
+          "DbSecurityGroup",
+          "GroupId"
+        ]
+      }
+    },
+    "DbClientSecurityGroupId": {
+      "Value": {
+        "Fn::GetAtt": [
+          "DbClientSecurityGroup",
+          "GroupId"
+        ]
+      }
+    },
+    "MinAcu": {
+      "Value": {
+        "Ref": "MinAcu"
+      }
+    },
+    "MaxAcu": {
+      "Value": {
+        "Ref": "MaxAcu"
+      }
+    },
+    "SecondsUntilAutoPause": {
+      "Value": {
+        "Ref": "SecondsUntilAutoPause"
+      }
+    },
+    "DatabaseUrlSecretArn": {
+      "Value": {
+        "Ref": "DatabaseUrlSecret"
+      }
+    },
+    "PostgrestAuthenticatorUriSecretArn": {
+      "Value": {
+        "Ref": "PostgrestAuthenticatorUriSecret"
+      }
+    }
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "$comment": "VTID-05782: reviewed production identifiers inside the staging schema bundle (text copied from supabase/migrations). Each entry names the bundle part, the guard finding id, the exact match, how often it occurs, and why it cannot reach production from the isolated staging database. build-schema.mjs fails on a finding without an entry AND on an entry without a finding (stale), so this list can only shrink with the migrations, never silently grow. A live check after the replay also fails the build if any function body, column default or view still names production.",
+  "entries": [
+    {
+      "part": "supabase/migrations/20260726120000_vtid_03413_bedrock_worker_routing.sql",
+      "id": "awsdr-service", "match": "vitana-gateway-awsdr", "count": 1,
+      "reason": "SQL comment (documentation only)."
+    },
+    {
+      "part": "supabase/migrations/20260731180000_VTID_03461_watcher_lessons_rules.sql",
+      "id": "alb", "match": "vitana-alb-prod", "count": 1,
+      "reason": "Text of a watcher lesson row (a sentence in a seeded table), not a connection target."
+    },
+    {
+      "part": "supabase/migrations/20260811210000_vtid_03599_llm_telemetry_summary.sql",
+      "id": "awsdr-service", "match": "vitana-gateway-awsdr", "count": 1,
+      "reason": "SQL comment (documentation only)."
+    },
+    {
+      "part": "supabase/migrations/20261012235118_vtid_05118_welcome_discount_trigger_secret.sql",
+      "id": "supabase-project-ref", "match": "inmkhvwdcuyhnxkgfvsb", "count": 1,
+      "reason": "Edge URL constant in public.notify_welcome_discount(). Neutralized: infra/staging-db/seed/020_neutralize_production_callouts.sql replaces the function with a no-op in the staging database (the live check proves no function body names production after the seed). Aurora staging also has no vault schema and no pg_net."
+    }
+  ]
+}

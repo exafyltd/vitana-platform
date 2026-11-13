@@ -1,390 +1,190 @@
-# Vitana Staging Environment
+# Vitana Staging Environment (AWS)
 
-> **Process note (VTID-04610):** what happens *after* a staging deploy — the automatic STAGING-VERIFY test run, the ready-for-production message and PUBLISH — is defined in [`DEPLOYMENT-PIPELINE.md`](DEPLOYMENT-PIPELINE.md). This file describes the staging stack itself.
+> **Process note (VTID-04610):** what happens *after* a staging deploy — the automatic STAGING-VERIFY test run, the
+> ready-for-production message and PUBLISH — is defined in [`DEPLOYMENT-PIPELINE.md`](DEPLOYMENT-PIPELINE.md). This
+> file describes the staging stack itself and its data plane.
 
-**Phase 0 staging build — handoff brief P0.9.**
+Rewritten for AWS by VTID-05782 (plan `autonomous-to-staging-r2`, lane `staging-db-provision`; decision record
+`.kiro/specs/autonomous-to-staging-r2/design.md`). The GCP-era staging (Cloud Run `gateway-staging`, the Supabase
+`Staging` branch, `STAGE-DEPLOY.yml`, the Cloudflare preview Worker) is decommissioned with GCP (CLAUDE.md banner);
+§9 keeps one line on it for old links.
 
-This file is the canonical reference for the Vitana staging stack. It exists
-so that the 48-day autonomous fine-tuning + brain-unification experiment can
-run without touching production. It also documents the publish + revert flows
-that promote staging changes into production.
-
----
-
-## 0. URLs (Lovable-style preview)
-
-|        | Live (prod)                       | Preview (staging)                       |
-|--------|-----------------------------------|-----------------------------------------|
-| Frontend (community app) | `https://vitanaland.com`            | `https://preview.vitanaland.com`        |
-| Backend gateway          | `https://gateway.vitanaland.com`    | `https://preview-gateway.vitanaland.com`|
-| Command Hub (operator)   | `gateway.vitanaland.com/command-hub`| `preview-gateway.vitanaland.com/command-hub` |
-| Supabase                 | `inmkhvwdcuyhnxkgfvsb.supabase.co`  | `rsdakjqpvcpgomltdmxu.supabase.co` (Persistent branch `Staging`) |
-
-How the preview URLs work: Cloudflare DNS has a proxied CNAME for each
-preview hostname pointing at the corresponding Cloud Run `*.run.app`
-service.  Because Cloud Run rejects requests whose Host header doesn't
-match either the `*.run.app` URL or a registered custom-domain mapping
-(which would need Google Search Console verification of every subdomain),
-a tiny Cloudflare Worker — [cloudflare/preview-router](../cloudflare/preview-router/)
-— sits in front and rewrites the Host header to the `*.run.app` value
-before fetching the origin.  Origin Rules with HostHeader override would
-solve this too but are a paid Cloudflare feature (`not entitled to use
-the HostHeader override`), so the Worker is the cheapest correct fix.
-
-To add a new preview hostname (e.g. another staging service):
-1. `cloudflare/preview-router/worker.js` — add the hostname to the
-   `ROUTES` map.
-2. `cloudflare/preview-router/wrangler.toml` — add the hostname to the
-   `routes` array.
-3. Cloudflare API → `POST /zones/{zone_id}/dns_records` adding a CNAME
-   for the hostname with `proxied: true`.
-4. Push to main; the existing `DEPLOY-CLOUDFLARE-WORKERS.yml` workflow
-   auto-deploys when files under `cloudflare/preview-router/` change.
+Everything runs in AWS account `472838866351`, region `eu-central-1` (CLAUDE.md ALWAYS 11). Staging and production
+share the ECS cluster `Vitana-ECS-Cluster`, the VPC and its private subnets; they differ by service, task definition,
+host name and — after the cutover of §3 — database.
 
 ---
 
-## 1. Architecture
+## 0. URLs
 
-```
-                  ┌─────────────────────────────────────────────────┐
-                  │                  GitHub `main`                   │
-                  └──────────────────────────┬──────────────────────┘
-                                             │
-              ┌──────────────────────────────┴──────────────────────────────┐
-              │                                                              │
-   STAGE-DEPLOY.yml (auto                                       AUTO-DEPLOY.yml
-   on every push to main)                                       (VTID-gated;
-              │                                                  governance + EXEC-DEPLOY)
-              ▼                                                       │
-   ┌──────────────────────┐                                           ▼
-   │  gateway-staging     │                                ┌──────────────────────┐
-   │  Cloud Run service   │                                │  gateway             │
-   │  • VITANA_ENV=staging│                                │  Cloud Run service   │
-   │  • staging Supabase  │                                │  • production env    │
-   │  • *.run.app URL     │                                │  • production Supabase│
-   └──────────┬───────────┘                                └──────────┬───────────┘
-              │                                                       ▲
-              │       PUBLISH button in production Command Hub        │
-              │       POST /api/v1/operator/publish                   │
-              └────────► Cloud Run Admin API + EXEC-DEPLOY.yml ───────┘
+|                          | Production                         | Staging                                    |
+|--------------------------|------------------------------------|--------------------------------------------|
+| Frontend (community app) | `https://vitanaland.com`           | `https://preview-aws.vitanaland.com`       |
+| Backend gateway          | `https://gateway.vitanaland.com`   | `https://preview-aws-gateway.vitanaland.com` |
+| Command Hub (operator)   | `gateway.vitanaland.com/command-hub` | `preview-aws-gateway.vitanaland.com/command-hub` |
+| Isolated rehearsal host (after stage 3, `staging-cutover`) | — | `https://preview-iso-gateway.vitanaland.com` (candidate services, desired count 0 outside a rehearsal) |
 
-   ┌──────────────────────────────────────────────────────────────────┐
-   │  Supabase                                                         │
-   │  • main branch       — production data store                      │
-   │  • staging branch    — Persistent branch (data-isolated), seeded  │
-   │                        via supabase/seed.sql                      │
-   │  Migrations:        flow main→staging on dashboard merge          │
-   └──────────────────────────────────────────────────────────────────┘
-```
+Service names, ALB rules and the full topology: `.claude/rules/infrastructure.md` §1b. Resolve live state with
+`aws ecs describe-services` / `aws elbv2 describe-target-groups`, never from this table (CLAUDE.md ALWAYS 12).
 
-Two stacks, same code on `main`, gated by `VITANA_ENV`:
+---
 
-- **gateway-staging** → staging Supabase branch, *.run.app URL, no DNS.
-- **gateway**         → production Supabase, `gateway.vitanaland.com`.
+## 1. Deploys
 
-Both deploy from the same `services/gateway/` source. The env-aware code path
-introduced in P0.3 (`src/env.ts`, `src/services/feature-flags.ts`) means a
-single commit can carry behavior gated to staging only.
+- A merge to `main` deploys to **staging only** (`AWS-STAGE-DEPLOY-GATEWAY.yml` → ECS service `vitana-gateway`;
+  `AWS-STAGE-DEPLOY-POSTGREST-AURORA-PROXY.yml` → `vitana-postgrest-aurora-proxy`; the community app from
+  `exafyltd/vitana-v1`). Each deploy workflow's `cutover_gate` job keeps it away from production.
+- STAGING-VERIFY then runs the service smoke suite plus the change's `docs/validation/<VTID>/staging-tests.json`
+  against the deployed commit (read-only, CLAUDE.md rules 46–48).
+- Production is reached only through PUBLISH (Command Hub) or an owner-commanded, pinned
+  `AWS-PROD-DEPLOY-*.yml` dispatch (CLAUDE.md rules 49–50a, IF–THEN 21–26). Nothing in this file deploys to
+  production.
 
-## 2. How to deploy code to staging
+---
 
-Push to `main`. That's it.
+## 2. The data plane today: shared with production
 
-`.github/workflows/STAGE-DEPLOY.yml` listens to pushes under
-`services/gateway/**` (and the workflow file itself) on `main`. Every push
-triggers a fresh `gateway-staging` revision via `gcloud run deploy --source=`,
-attaches the staging Supabase secrets, sets `VITANA_ENV=staging`, and runs a
-smoke test against `/api/v1/admin/health`. The smoke FAILS the workflow if
-the response does not include `"env":"staging"` — the strongest single
-contract that env-aware code wires through to runtime.
+Until the cutover of §3 runs, staging **reads and writes the production data plane** (design.md §1):
 
-After a successful deploy, STAGE-DEPLOY:
+| Component | Uses today | Where |
+|---|---|---|
+| Staging gateway `vitana-gateway` | production Supabase JWT secret, anon and service-role keys; production Aurora `database-url` and `postgrest-authenticator-uri` | `.github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml` (task-definition secrets step) |
+| Staging PostgREST proxy `vitana-postgrest-aurora-proxy` | the production Aurora PostgREST authenticator secret and writer host | `.github/workflows/AWS-STAGE-DEPLOY-POSTGREST-AURORA-PROXY.yml`, `scripts/aws/setup-postgrest-aurora-proxy-staging.sh` |
+| Staging sign-in | production Supabase GoTrue | `services/gateway/src/routes/dev-auth.ts` |
+| Governance writes routed through staging | PLAN-SPAR and VTID-ALLOCATE call the staging gateway by default, so they write the production ledger | `.github/workflows/PLAN-SPAR.yml`, `.github/workflows/VTID-ALLOCATE.yml` |
+| STAGING-VERIFY result records | production OASIS (governance record, stays) | `.github/workflows/STAGING-VERIFY.yml` |
 
-1. Writes a `software_versions` row (`environment='staging'`, `deploy_type='normal'`).
-2. Emits an `staging.deploy.completed` OASIS event (with `metadata.env='staging'`).
+Consequences (they hold until the flip):
+- **Every write on staging is a production write.** The test-account rules (CLAUDE.md IF–THEN 31, 31b, 32) apply on
+  staging exactly as on production. Staging tests are read-only.
+- `scripts/ci/staging-prod-ref-guard.mjs --report` lists every production identifier in the staging workflows and
+  scripts (35 today, all in the shared-plane files above). It is report-only until the flip; afterwards it moves to
+  `--enforce` in the staging deploy workflows (plan §3.4).
 
-Both feed the CLOCK history view in the Command Hub.
+---
 
-### Manual staging redeploy
+## 3. The isolated staging data plane (plan autonomous-to-staging-r2)
 
-```bash
-gh workflow run STAGE-DEPLOY.yml -f reason="manual smoke"
-```
+Three stages, each reversible, each waiting for an owner action before it costs money or changes a running service
+(owner directive 2026-11-12: *"approval to revise and validate the plan, not approval to incur infrastructure costs or
+execute the database provisioning and cutover"*).
 
-No VTID required for staging deploys. The VTID-allocator hard gate applies to
-production deploys via EXEC-DEPLOY.yml, not here.
+| Stage | Lane | In the repository | Waits for the owner |
+|---|---|---|---|
+| 1 AWS access | `kiro-aws-access` (VTID-05764) + `infra/staging-db/stack.yaml` | IAM as code, tests, cfn-lint | applying the stacks (§3.3 step 2) |
+| 2 Provision + seed | `staging-db-provision` (VTID-05782) | stack, provision and load scripts, schema bundle, guard, workflows | cost approval + stack (§3.3 steps 1–2) |
+| 3 Cutover | `staging-cutover` | `STAGING_DATA_PLANE` switch, rehearsal, flip with automatic rollback | `STAGING_CUTOVER_APPROVED`, governance endpoint (§3.3 steps 4–5) |
 
-## 3. How to publish staging → production
+### 3.1 What stage 2 adds (VTID-05782)
 
-1. Open the **production** Command Hub (`https://gateway.vitanaland.com/command-hub/`).
-   The `/api/v1/admin/health` endpoint returns `"env":"production"`, which the
-   Command Hub uses to decide which PUBLISH-modal variant to render.
-2. Click **PUBLISH** in the top bar.
-3. The modal shows a "Promote staging → production" card:
-   - Source: current `gateway-staging` active revision (short SHA + timestamp).
-   - Target: `gateway` production.
-   - Live metrics: bake-time, recent failure rate.
-4. Type the 7-char short SHA into the confirm field.
-5. Click **Publish to Production**.
+| Piece | What it does |
+|---|---|
+| `infra/staging-db/stack.yaml` | **Owner-applied** CloudFormation (never applied by CI): KMS key `alias/vitana-staging-db` (rotated, retained); DB subnet group `vitana-aurora-staging` on the two existing private subnets; security group `vitana-aurora-staging-sg` admitting 5432 **only** from `vitana-aurora-staging-client-sg`, a new group attached only to staging tasks (the shared app-tier group is also used by production tasks, so it is not admitted); placeholder secrets `vitana/aurora/staging-db/{database-url,postgrest-authenticator-uri}`; OIDC role `vitana-gha-staging-db` (trust: this repository, `main` only) with permissions boundary `vitana-staging-boundary` (design.md §4: staging cluster lifecycle and Data API only, explicit denies on every production cluster and secret, on all deletes and on IAM); a 60 USD monthly budget on tag `vitana-env=staging` (alerts at 80 % actual and 100 % forecast); optional candidate services `vitana-gateway-iso` / `vitana-postgrest-aurora-staging-iso` at desired count 0, created only when stage 3 passes `-iso` task definitions. The cluster itself is **not** in the stack. |
+| `scripts/aws/staging-db-provision.sh` | `--plan` (no AWS call) / `--apply`: creates `vitana-aurora-staging` — Aurora PostgreSQL 16.4 Serverless v2, one `db.serverless` writer, the stack's key, subnet group and security group, RDS-managed master password, Data API on, backup retention 1 day, deletion protection on, tags `vitana-env=staging`. Refuses any other cluster name (and any name containing `prod`) before any AWS call; refuses `--apply` without `STAGING_DB_COST_APPROVED=yes`; capacity from the stack outputs. |
+| `scripts/ci/staging-db/build-schema.mjs` | CI, no AWS: replays `supabase/migrations` on PGlite with the local stack (`scripts/mt/stack/stack.mjs`, `replay-skip.json`, the required-table gate), loads the synthetic fixtures and `infra/staging-db/seed/*.sql` (the documented test account `a27552a3-…3701` in a synthetic tenant; production call-outs neutralized), writes `bundle.sql` + `manifest.json` with a schema hash (`infra/staging-db/schema-hash.sql`). Fails on a missing required table, a missing smoke object (`vtid_ledger`, `oasis_events`, `allocate_global_vtid`), a function body/default/view that still names production, or an unreviewed production identifier in the bundle (`infra/staging-db/bundle-prod-ref-allow.json`). |
+| `scripts/aws/staging-db-load.sh` | Loads the bundle through the RDS Data API (statement splitter `scripts/aws/aurora_sql_split.py`; one transaction per part), only into an empty, `vitana-env=staging`-tagged cluster, then compares the cluster's schema hash with the bundle's; mismatch → exit 1. `--dry-run` (no AWS call) and `--verify-only` (no change). |
+| `scripts/ci/staging-prod-ref-guard.mjs` | Production-identifier guard (`--report` default, `--enforce`). |
+| `.github/workflows/STAGING-DB-SCHEMA.yml` | Push to `main` (and this plan's lane branches) when migrations or these files change, plus dispatch: tests with PGlite, guard report, bundle build + verify, artifact `staging-db-bundle-<sha>`. No AWS. |
+| `.github/workflows/AWS-STAGE-PROVISION-DB.yml` | Dispatch only, `mode: plan|apply|load`. `plan` makes no AWS call. `apply`/`load` refuse unless `vars.STAGING_DB_COST_APPROVED == 'yes'`, `vars.AWS_STAGING_DB_ROLE_ARN` is the stack role, and the run is on `main`; the guard runs in `--enforce` mode over the workflow's own inputs before the credentials step; the only role assumed is `vars.AWS_STAGING_DB_ROLE_ARN`. |
 
-Server flow (`POST /api/v1/operator/publish`):
+No production data is ever copied: no restore from a production snapshot, no `rehearsal-clone.sh`, no dump.
 
-1. `requireAdminAuth` — admin JWT + `exafy_admin` role.
-2. Describe `gateway-staging` → resolve active revision + commit SHA.
-3. Optional bake-time guard (opt-in, default OFF): if
-   `STAGING_PUBLISH_BAKE_SECONDS` is set >0, refuse when the staging revision is
-   younger than that many seconds. Default is `0` → no soak, publish is instant
-   the moment staging is live. Set it to e.g. `3600` to re-impose a 1h soak.
-4. Allocate a VTID via the canonical allocator (EXEC-DEPLOY needs the ledger row).
-5. Call `deployOrchestrator.executeDeploy({ service:'gateway', environment:'production' })`.
-6. Insert `software_versions` row with `source_revision`, `initiator_id`.
-7. Emit `production.publish.requested` + `production.publish.completed` events.
+What the bundle holds today: the migrations PGlite can replay (426 of 734 at the lane's base; the rest are listed in
+`supabase/tests/local-stack/replay-skip.json`; 184 of the 308 fail on a relation that does not exist
+on a fresh replay, the rest on missing columns/types, Supabase-only `auth` functions and extensions PGlite does not
+bundle), so the isolated database is a **subset** of the production schema. The read-only drift report of design.md
+§5.4 (the existing `vars.AWS_DRIFT_ROLE_ARN`) lists the gap after the first load; it is evidence, not a gate.
 
-### Fast publish — image promotion, not rebuild (~30s)
+### 3.2 Cost (design.md §2; AWS list prices eu-central-1, read 2026-11-12, USD before tax)
 
-Publish does **not** rebuild the container from source. The staging deploy
-already built and tested the exact image the `gateway-staging` revision is
-running, so publish **reuses that prebuilt image**:
+Unit prices: Serverless v2 0.14 per ACU-hour; storage 0.119 per GB-month; I/O 0.22 per million requests; Data API
+0.42 per million requests; KMS key 1 per month; Secrets Manager 0.40 per secret per month.
 
-- Step 4 also resolves the staging revision's container image and threads it to
-  EXEC-DEPLOY's `image` input (alongside `commit_sha`).
-- When `image` is set, EXEC-DEPLOY deploys with `gcloud run deploy --image …`
-  (no Cloud Build) and re-stamps `GIT_COMMIT_SHA`/`COMMIT_SHA` so
-  `/admin/build-info` reports the promoted commit. Result: a new prod revision
-  in **~30s** instead of a 3–8 min from-source rebuild — and the bits are
-  byte-identical to what staging verified (zero "tested X, shipped Y" drift).
-- If the image can't be resolved, `image` is empty and EXEC-DEPLOY falls back to
-  the legacy `--source` build of `commit_sha` (correct, just slower). Every
-  other caller (auto-deploy, escape-hatch) passes no image and is unaffected.
+| Option | Configuration | Compute per month | Estimated total per month |
+|---|---|---|---|
+| **A (recommended, stack default)** | Serverless v2 PG 16, min 0 ACU, auto-pause after 300 s, max 2 ACU | 45–240 ACU-h ≈ 6.30–33.60 | **≈ 10–45** |
+| B | min 0.5 ACU (never pauses), max 2 ACU | 51.10 | ≈ 56–62 |
+| Ceiling (A or B) | 2 ACU all month | 204.40 | ≈ 210 (hard cap: `MaxAcu` ≤ 2) |
+| C (not recommended) | RDS PostgreSQL db.t4g.micro | 13.87 | ≈ 19–22 (not Aurora, no Data API) |
+| D (not recommended) | Serverless v2 I/O-Optimized, min 0.5 | 69.35 | ≈ 73–76 |
 
-The publish-staging card surfaces the workflow URL inline so the operator can
-watch progress. The popover self-heals if it ever wedges on "Reading state…",
-and offers an in-popover "Re-read state" link as a fallback.
+One-time: stack and cluster creation are free; the first load ≈ 0.28 (about an hour at up to 2 ACU); each cutover
+rehearsal < 1 (estimate). **Initial total < 5.** Fixed items in every option: KMS 1.00, four secrets 1.60. Risk of A:
+the first request after a pause waits for the resume (typically about 15 s, measured in the rehearsal); fallback is B
+(re-apply the stack with `MinAcu=0.5`, then `ModifyDBCluster`).
 
-## 4. How to revert
+### 3.3 Owner runbook (the only manual steps)
 
-1. In the Command Hub top bar, click the **CLOCK** icon to open the version
-   dropdown.
-2. Find the revision you want to roll back to. Eligible rows show a small
-   red "Revert" button — eligibility means `status='success'`, has a
-   `cloud_run_revision`, age < 90 days, and not currently active.
-3. Click **Revert**. A confirm overlay opens — it states that **both repos**
-   will roll back.
-4. Type the 7-char commit short SHA. Click **Revert**.
+1. **Cost approval.** Choose A (default) or B, then set the repository variable on `exafyltd/vitana-platform`:
+   `STAGING_DB_COST_APPROVED=yes`. Without it `AWS-STAGE-PROVISION-DB.yml` refuses `apply` and `load`.
+2. **Apply the stack once**, with an administrator identity of account `472838866351` (no CI role can apply IAM):
+   ```bash
+   aws cloudformation deploy --region eu-central-1 --stack-name vitana-staging-db \
+     --template-file infra/staging-db/stack.yaml --capabilities CAPABILITY_NAMED_IAM \
+     --parameter-overrides MinAcu=0 MaxAcu=2 BudgetAlertEmail=<owner e-mail>
+   ```
+   (`MinAcu=0.5` for option B.) Then set the repository variable `AWS_STAGING_DB_ROLE_ARN` to the stack output
+   `StagingDbRoleArn` (`arn:aws:iam::472838866351:role/vitana-gha-staging-db`). The budget filters on the cost
+   allocation tag `vitana-env`; activate it once under Billing → Cost allocation tags if it is not active yet.
+3. **Provision and seed** (any session or the owner): dispatch `AWS-STAGE-PROVISION-DB.yml` on `main` with
+   `mode=plan` (review), then `mode=apply`, then `mode=load`. The load ends with "Schema hash matches the bundle".
+4. **Cutover approval** (stage 3, after a passing rehearsal): `STAGING_CUTOVER_APPROVED=yes`.
+5. **Governance endpoint** (before the flip): set `PLAN_SPAR_GATEWAY_URL` to the production gateway so PLAN-SPAR and
+   VTID-ALLOCATE keep writing the one ledger.
 
-### One-click revert reverts BOTH repos (backend + frontend)
+Undo for stages 1–2 (nothing serving uses the isolated plane before the flip): disable deletion protection and delete
+the cluster and its writer (owner action — the role cannot delete), then `aws cloudformation delete-stack
+--stack-name vitana-staging-db` (the KMS key and the two secrets are retained by design; schedule their deletion
+separately), and unset the two variables.
 
-The clock revert restores the whole product, not just the API. One click rolls
-back **both** the backend (`gateway`) and the frontend (`community-app`)
-together, so users never see a half-reverted state.
+### 3.4 Authentication during and after the cutover (design.md §3)
 
-Server flow (`POST /api/v1/operator/revert-both`):
+Unchanged issuer in both modes: staging keeps validating production Supabase GoTrue tokens and the test account signs
+in read-only as today. The isolated seed holds the test account's UUID, so `auth.uid()` and RLS resolve against
+synthetic rows; a real member signing in on staging sees an empty, synthetic Vitana. A staging-only issuer (Cognito,
+`infra/cognito-migration/README.md`) is a later plan.
 
-1. Validate the anchor `service` ∈ `{gateway, gateway-staging, community-app,
-   community-app-staging}` and resolve its paired sibling
-   (`gateway`↔`community-app`, `gateway-staging`↔`community-app-staging`).
-2. **Anchor** (the clicked clock row): list revisions, verify target exists +
-   not active + age < 90d, then Cloud Run Admin API `updateService(traffic)` →
-   100% to target.
-3. **Sibling**: resolve the revision the sibling was serving at the anchor
-   revision's deploy time (`target_created_at`), falling back to the sibling's
-   immediately-previous revision; then the same traffic shift.
-4. Insert a `software_versions` row (`deploy_type='rollback'`) and emit
-   `production.revert.completed` / `staging.revert.completed` for **each**
-   service.
-5. Anchor success drives the HTTP status; the sibling result is always reported
-   alongside. Partial failures are surfaced, never hidden.
+### 3.5 Rollback and impact (design.md §8, §9)
 
-The legacy single-service endpoint (`POST /api/v1/operator/revert`,
-`service` ∈ `{gateway, gateway-staging}`) is unchanged and still available.
+Stages 1–2 and the rehearsal change no serving service. The flip records the PRIMARY task-definition revisions of
+`vitana-gateway` and `vitana-postgrest-aurora-proxy`, deploys the isolated revisions, runs STAGING-VERIFY and on any
+failure returns both services to the recorded revisions in the same job. Manual rollback at any time:
+`STAGING_DATA_PLANE=shared` and dispatch both staging deploy workflows. Rows written to the isolated database stay
+there; it holds synthetic data only.
 
-Traffic shifts complete in ~30s — no rebuild. The revert button works on both
-prod and staging Command Hubs (it operates on whichever stack the caller is
-currently viewing, via the anchor `service`).
+---
 
-> **IAM prerequisite for the frontend half.** The gateway service account
-> already holds `roles/run.developer` on `gateway`/`gateway-staging`. For the
-> both-repos revert to shift `community-app`/`community-app-staging` traffic it
-> needs the same role on those services:
->
-> ```bash
-> gcloud run services add-iam-policy-binding community-app \
->   --region=us-central1 --project=lovable-vitana-vers1 \
->   --member="serviceAccount:<gateway-runtime-SA>" --role=roles/run.developer
-> gcloud run services add-iam-policy-binding community-app-staging \
->   --region=us-central1 --project=lovable-vitana-vers1 \
->   --member="serviceAccount:<gateway-runtime-SA>" --role=roles/run.developer
-> ```
->
-> Without it, the backend still reverts and the overlay reports the frontend
-> half as failed with the permission detail (grant the role, then re-click).
+## 4. Migration / publish decoupling
 
-## 5. Migration / publish decoupling
+Schema migrations are independent of a gateway deploy or PUBLISH: `RUN-MIGRATION.yml` applies a migration (owner
+approval of the file and the target database first, `.claude/rules/collaboration.md` §7d); PUBLISH moves the gateway
+image. Use additive migrations (expand/contract): the code on staging and production must work against the schema
+before and after the migration. After stage 2, `staging-migrations-auto` applies new migrations to
+`vitana-aurora-staging` only (its `target: staging` resolves to that cluster and `vars.AWS_STAGING_DB_ROLE_ARN`).
 
-Schema migrations on Supabase are INDEPENDENT of the gateway publish flow:
+## 5. Feature flags
 
-- **Migration** = `RUN-MIGRATION.yml` applies a single SQL file to a Supabase
-  project (main or staging branch). Triggered manually with the migration
-  filename as input.
-- **Publish** = `POST /api/v1/operator/publish` moves Cloud Run traffic on
-  `gateway`. Does not touch the database.
-
-**Two implications:**
-
-1. **Use additive-only migrations.** New columns with defaults. New tables.
-   No DROP, no rename, no NOT NULL on existing columns. The gateway code on
-   both staging and prod must work against the schema both BEFORE and AFTER
-   the migration lands (expand/contract pattern).
-2. **Decide migration-publish ordering deliberately.** For a new column the
-   code reads-without-requiring: migrate first, then publish. For a new
-   column the code WRITES to and assumes exists: publish first to expose
-   defensive reads, then migrate, then publish again to enable the write
-   path. The brief calls this out explicitly because the Supabase
-   "merge branch into main from the dashboard" flow LOOKS like a deploy
-   but is independent of the Cloud Run publish.
-
-**Never** click "Merge into main" on the Supabase `staging` branch from the
-dashboard without an explicit decision from the user. Doing so will copy any
-migrations applied to staging into production, regardless of whether the
-prod gateway revision is compatible.
-
-## 6. What's NOT in staging
-
-- **No Cloudflare DNS.** Staging workers ship to `*.workers.dev` URLs (`wrangler deploy --env staging`).
-- **No custom domain on gateway-staging.** *.run.app is the URL.
-- **No community-app-staging in this repo.** The `vitana-v1` frontend deploys
-  its own community-app to production; a parallel STAGE-DEPLOY-FRONTEND
-  workflow lives in that repo (out of vitana-platform scope). When the
-  parent session needs frontend staging, that workflow is the right home.
-- **No CI/CD lock contention.** STAGE-DEPLOY does not consume the EXEC-DEPLOY
-  concurrency lock, so a staging deploy NEVER blocks a prod publish in
-  flight (and vice-versa).
-
-## 7. Feature flags
-
-Convention introduced in P0.3 (`services/gateway/src/services/feature-flags.ts`):
-
-```typescript
-import { isFeatureLive } from '../services/feature-flags';
-
-if (isFeatureLive('FINETUNED_GREETING')) {
-  // …
-}
-```
-
-Env var: `FEATURE_<NAME>_ENV` with values `off | staging-only | staging+prod`.
-Unset = `off`. Same code on `main` ships to both stacks; behavior is gated
-per Cloud Run service via the env var. Graduation pattern:
-
-```
-off  →  staging-only  →  staging+prod
-```
-
-Rollback = flip the env var, no redeploy required (a Cloud Run env-var
-update is a new revision but reuses the same image).
+`services/gateway/src/services/feature-flags.ts`: `isFeatureLive('NAME')` reads `FEATURE_<NAME>_ENV` with values
+`off | staging-only | staging+prod` (unset = `off`). The same image ships to both environments; the task-definition
+environment decides. Graduation: `off → staging-only → staging+prod`; rollback = flip the variable and redeploy the
+task definition (same image).
 
 ## 8. Diagnostic endpoints
 
-Both auth-free (no admin JWT). Carry no secrets — only environment identity.
+Auth-free, no secrets, environment identity only:
+- `GET /api/v1/admin/health` → `{ ok, env: 'production'|'staging', … }`
+- `GET /api/v1/admin/build-info` → `{ ok, env, git_commit, … }` — the commit staging serves (PUBLISH reads it).
 
-- `GET /api/v1/admin/health` →
-  `{ ok, env: 'production'|'staging', supabase_host, cloud_run_service,
-     cloud_run_revision, booted_at }`
-- `GET /api/v1/admin/build-info` →
-  `{ ok, env, cloud_run_service, cloud_run_revision, git_commit, booted_at, marker }`
+## 9. Retired: GCP-era staging
 
-The `marker` field is set from `BUILD_INFO_MARKER` env var (STAGE-DEPLOY
-sets it to the short SHA). Useful as the trivial-change target for Smoke C
-(publish-cycle proof).
-
-## 9. Required GCP secrets
-
-Created in P0.1 / P0.2 BEFORE the first STAGE-DEPLOY run can succeed:
-
-```bash
-echo -n "<STAGING_SUPABASE_URL>"               | gcloud secrets create STAGING_SUPABASE_URL --data-file=-
-echo -n "<STAGING_SUPABASE_SERVICE_ROLE_KEY>"  | gcloud secrets create STAGING_SUPABASE_SERVICE_ROLE_KEY --data-file=-
-echo -n "<STAGING_SUPABASE_ANON_KEY>"          | gcloud secrets create STAGING_SUPABASE_ANON_KEY --data-file=-
-```
-
-Plus the one-time IAM grant for the gateway service account (publish/revert
-needs Cloud Run Admin API access):
-
-```bash
-gcloud projects add-iam-policy-binding lovable-vitana-vers1 \
-  --member="serviceAccount:vitana-vertex-ai-service@lovable-vitana-vers1.iam.gserviceaccount.com" \
-  --role="roles/run.developer"
-```
-
-(The gateway's `roles/run.viewer` permissions are implicit via `roles/run.developer`.)
-
-## 9b. Staging-branch migration gap (record of state on 2026-05-22)
-
-Supabase's branch auto-apply mechanism failed mid-replay when the `staging`
-branch was first provisioned (status: `MIGRATIONS_FAILED`). A direct three-pass
-Node + `pg` runner against the IPv4 shared pooler then applied the migrations
-manually:
-
-- **234 of 348** migration files applied cleanly.
-- **114** failed with real schema issues (Postgres 17 reserved-word changes
-  like `window`, ALTER statements that assumed columns added out-of-band on
-  prod, references to tables — `products`, `profiles`, `live_rooms`,
-  `calendar_events`, `catalog_sources`, `vitana_index_config` — that the
-  migrations directory never creates).
-- **280 tables** ended up on staging vs 320+ on prod.
-
-The critical tables for Phase 0's publish/revert flow + the 48-day fine-tune
-experiment **are all present** with the right schema: `software_versions` (with
-the new `cloud_run_revision`, `source_revision`, `initiator_id` columns),
-`oasis_events`, `vtid_ledger`, `app_users`, `memory_items`, `memory_facts`,
-`autopilot_recommendations`, `user_tenants`, `tenants`.
-
-A one-time schema patch was applied on top of the failed replay so the
-`on_auth_user_platform_provision` trigger fires correctly during seed runs:
-
-```sql
-ALTER TABLE public.tenants ADD COLUMN IF NOT EXISTS tenant_id uuid;
-UPDATE public.tenants SET tenant_id = id WHERE tenant_id IS NULL;
-ALTER TABLE public.app_users
-  ADD COLUMN IF NOT EXISTS tenant_id uuid,
-  ADD COLUMN IF NOT EXISTS status text,
-  ADD COLUMN IF NOT EXISTS profile jsonb,
-  ADD COLUMN IF NOT EXISTS live_room_id uuid,
-  ADD COLUMN IF NOT EXISTS vitana_id text,
-  ADD COLUMN IF NOT EXISTS country_code text,
-  ADD COLUMN IF NOT EXISTS locale text;
-INSERT INTO public.tenants (id, slug, name, tenant_id)
-VALUES ('11111111-1111-1111-1111-111111111111', 'maxina', 'Maxina',
-        '11111111-1111-1111-1111-111111111111')
-ON CONFLICT (id) DO UPDATE
-  SET tenant_id = COALESCE(public.tenants.tenant_id, EXCLUDED.tenant_id);
-```
-
-These columns exist on prod under names the replay couldn't reproduce; the
-patch is staging-only and lives here, not in the migrations directory,
-because it represents replay drift rather than a real schema change.
-
-If the parent session needs any of the missing tables (`products`, `profiles`,
-`live_rooms`, `calendar_events`, `catalog_sources`, `vitana_index_config`),
-the right fix is either:
-- inspect the failing migration files and write replay-safe versions, OR
-- `pg_dump --schema-only` from prod (once an IPv6-reachable host is available)
-  and `psql` the dump into staging.
-
-Do **not** re-dispatch STAGE-DEPLOY to recover — that workflow does not touch
-the database; only the manual replay path does.
+Cloud Run `gateway-staging`, the Supabase `Staging` branch and its migration gap record (old §9b), `STAGE-DEPLOY.yml`
+and the Cloudflare preview-router Worker belonged to the GCP stack, decommissioned 2026-08-16 (VTID-03599/VTID-03649).
+The last GCP-era version of this file is in git history (`git log -- docs/STAGING.md`).
 
 ## 10. Pointer index
 
-| Thing                              | Where                                                              |
-|------------------------------------|--------------------------------------------------------------------|
-| `VITANA_ENV` resolver              | [services/gateway/src/env.ts](../services/gateway/src/env.ts)      |
-| Feature-flag helper                | [services/gateway/src/services/feature-flags.ts](../services/gateway/src/services/feature-flags.ts) |
-| /admin/health route                | [services/gateway/src/routes/admin-health.ts](../services/gateway/src/routes/admin-health.ts) |
-| Cloud Run Admin client             | [services/gateway/src/services/cloud-run-admin.ts](../services/gateway/src/services/cloud-run-admin.ts) |
-| /operator/publish + /revert        | [services/gateway/src/routes/operator.ts](../services/gateway/src/routes/operator.ts) |
-| Software-versions migration        | [supabase/migrations/20260601000000_PHASE0_staging_software_versions.sql](../supabase/migrations/20260601000000_PHASE0_staging_software_versions.sql) |
-| Staging seed                       | [supabase/seed.sql](../supabase/seed.sql)                          |
-| STAGE-DEPLOY workflow              | [.github/workflows/STAGE-DEPLOY.yml](../.github/workflows/STAGE-DEPLOY.yml) |
-| Command Hub publish/revert UI      | [services/gateway/src/frontend/command-hub/command-hub-staging.js](../services/gateway/src/frontend/command-hub/command-hub-staging.js) |
-| Cloudflare worker staging variants | [cloudflare/vitanaland-og-proxy/wrangler.toml](../cloudflare/vitanaland-og-proxy/wrangler.toml), [cloudflare/email-intake-worker/wrangler.toml](../cloudflare/email-intake-worker/wrangler.toml) |
+- Pipeline after a staging deploy: `docs/DEPLOYMENT-PIPELINE.md`
+- AWS topology and deploy workflows: `.claude/rules/infrastructure.md`
+- Isolated staging decision record: `.kiro/specs/autonomous-to-staging-r2/design.md`
+- Kiro AWS access (stage 1): `docs/KIRO-AWS-ACCESS.md`
+- Staging database evidence: `docs/validation/VTID-05782/`

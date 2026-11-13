@@ -1,0 +1,8 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Resources": { "R": { "Type": "AWS::IAM::ManagedPolicy", "Properties": { "PolicyDocument": { "Version": "2012-10-17", "Statement": [
+    { "Sid": "Staging", "Effect": "Allow", "Action": "rds:DescribeDBClusters", "Resource": "arn:aws:rds:eu-central-1:472838866351:cluster:vitana-aurora-staging" },
+    { "Sid": "DenyProduction", "Effect": "Deny", "Action": ["rds:*", "rds-data:*"], "Resource": ["arn:aws:rds:eu-central-1:472838866351:cluster:vitana-aurora-prod"] },
+    { "Sid": "DenyProdSecrets", "Effect": "Deny", "Action": "secretsmanager:*", "Resource": ["arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/aurora/prod/*"] }
+  ] } } } }
+}

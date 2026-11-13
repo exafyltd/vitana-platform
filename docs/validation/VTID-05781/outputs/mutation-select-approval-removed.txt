@@ -1,0 +1,6 @@
+# mutation select-approval-removed: scripts/aws/staging-cutover-select.sh
+# replaced: if [ -z "$candidate" ] && [ "${STAGING_CUTOVER_APPROVED:-}" != yes ]; then
+# with:     if false; then
+not ok 2 - select: isolated refuses without STAGING_CUTOVER_APPROVED=yes; nothing on stdout, no AWS call
+# pass 15
+# fail 1
