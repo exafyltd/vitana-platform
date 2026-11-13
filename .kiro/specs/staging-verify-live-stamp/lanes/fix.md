@@ -13,7 +13,8 @@ paths:
   - .github/workflows/STAGING-VERIFY.yml
   - scripts/ci/staging-verify/workflow.test.cjs
   - docs/validation/VTID-*/**
-updated: 2026-11-13T17:37Z
+updated: 2026-11-13T17:55Z
+vtid: VTID-05798
 ---
 # STAGING-VERIFY resolves the live-served commit when commit_sha is omitted (vitana-platform)
 Plan: `.kiro/specs/staging-verify-live-stamp/` — `plan.md` and the `tasks.md` section `<!-- lane: fix -->`.
@@ -31,3 +32,6 @@ cases fail against `main` (pre-fix) and pass against this lane's branch; the ful
 suite (135 cases) is green; the edited YAML parses with `js-yaml`.
 Next: PLAN-SPAR spars the plan; once CI allocates this lane's VTID, record it here and open/update the PR
 (`kiro/staging-verify-live-stamp/fix`), then hand to the reviewer agent.
+
+### 2026-11-13T17:55Z · ci-plan-spar · ready (VTID allocated)
+VTID-05798 allocated after policy approval (converged-auto-v1).

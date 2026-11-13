@@ -4,8 +4,10 @@ author: kiro
 author_seat: exafyltd
 executor: kiro
 next_actor: kiro
-state: drafted
-updated: 2026-11-13T17:37Z
+state: approved
+updated: 2026-11-13T17:55Z
+sparring_record: .kiro/specs/staging-verify-live-stamp/sparring/verdict.md
+vtids: [VTID-05798]
 ---
 # Handoff — STAGING-VERIFY resolves the live-served commit when commit_sha is omitted
 Task given to this session: `STAGING-VERIFY.yml`'s `workflow_dispatch` requires `commit_sha` and uses it as-is, with
@@ -26,3 +28,6 @@ from the start; PLAN-SPAR sparring the plan text still gates the VTID. No VTID a
 merge performed.
 Next: push `plan(staging-verify-live-stamp)`; PLAN-SPAR spars it; this session (or whichever session is driving)
 answers each round in `sparring/responses-<n>.md`.
+
+### 2026-11-13T17:55Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.
