@@ -99,7 +99,7 @@ fails on `main`; no event is written by this PR, its tests or a green run. Asser
   (`outputs/gate-audit-before.txt`), each with its reason; they leave the window within 14 days.
   **Flagged for the owner:** #5013 (`53c087911b`) and #5021 (`a199f9ac9a`) merged on 2026-11-12, after the two-model rule
   (#5002), by the owner account `exafyltd` without two recorded accepts; they are bootstrapped as owner-authority merges.
-- `report` posts to `vars.GATE_AUDIT_GATEWAY_URL`, default the staging gateway `https://preview-aws-gateway.vitanaland.com`
+- `report` posts to `vars.GATE_AUDIT_GATEWAY_URL`, else `vars.PLAN_SPAR_GATEWAY_URL` (the gateway that holds the one VTID ledger; it must point at production before any isolated staging flip, VTID-05781). No hardcoded host, so the staging-cutover impact guard (`scripts/ci/staging-db/impact.mjs`) has nothing to classify; with neither variable set the job fails and the failed run is the report.
   (the same oasis_events store; no production gateway call from CI by default), with `vtid: VTID-05780`,
   `surface: cicd`. It fails loudly when the token is unset. It reports any `invariants` failure (a weakened invariant is
   a bypass too), with the run URL; the audit's details are in the step summary.

@@ -24,3 +24,9 @@ node scripts/collab/gate-audit.mjs --repo . --gh exafyltd/vitana-platform --sinc
 node scripts/collab/land-guard.mjs evidence --repo . --vtid VTID-05780 -> ok (before the code commit)
 ## After merge (closing record)
 GATE-INVARIANTS run on the merge commit: <appended by the closing record>
+
+# 2026-11-13T08:28:45Z fix forward 2: report job URL follows PLAN_SPAR_GATEWAY_URL (impact guard of #5059)
+# tests 474
+# pass 469
+# fail 0
+# skipped 5

@@ -60,12 +60,16 @@ jobs:
     steps:
       - name: Emit OASIS collab.gate.bypass_detected
         env:
-          GATEWAY_URL: ${{ vars.GATE_AUDIT_GATEWAY_URL || 'https://preview-aws-gateway.vitanaland.com' }}
+          GATEWAY_URL: ${{ vars.GATE_AUDIT_GATEWAY_URL || vars.PLAN_SPAR_GATEWAY_URL }}
           GATEWAY_SERVICE_TOKEN: ${{ secrets.GATEWAY_SERVICE_TOKEN }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           SHA: ${{ github.sha }}
           TRIGGER: ${{ github.event_name }}
         run: |
+          if [ -z "$GATEWAY_URL" ]; then
+            echo "::error::neither GATE_AUDIT_GATEWAY_URL nor PLAN_SPAR_GATEWAY_URL is set: the bypass is reported only by this failed run ($RUN_URL)"
+            exit 1
+          fi
           if [ -z "$GATEWAY_SERVICE_TOKEN" ]; then
             echo "::error::GATEWAY_SERVICE_TOKEN is not set: the bypass is reported only by this failed run ($RUN_URL)"
             exit 1
