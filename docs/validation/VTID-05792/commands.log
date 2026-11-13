@@ -1,0 +1,22 @@
+# cd services/gateway && npm ci   (on PR head 43ace0d895, before the merge)
+added 850 packages, and audited 851 packages in 10s
+EXIT=0
+
+# cd services/gateway && npx jest test/vtid-04018-operator-bootstrap-pack.test.ts   (on PR head 43ace0d895, before the merge; output not kept)
+Tests:       16 passed, 16 total
+EXIT=0
+
+# git merge --no-ff --no-commit origin/main   (origin/main 4c4694b797)
+Automatic merge went well; stopped before committing as requested
+
+# cd services/gateway && npx jest test/vtid-04018-operator-bootstrap-pack.test.ts > docs/validation/VTID-05792/outputs/jest-vtid-04018.txt   (on the merged tree)
+Tests:       16 passed, 16 total
+Test Suites: 1 passed, 1 total
+EXIT=0
+
+# git commit -m "VTID-05792: validator declarations and evidence"   -> 5f5d7ec3e3 (parents 43ace0d895 and 4c4694b797)
+# git push origin HEAD:refs/heads/kiro/vtid-05792-bootstrap-pack-rules   -> 43ace0d895..5f5d7ec3e3 (no force)
+# gh api -X PATCH repos/exafyltd/vitana-platform/pulls/5070 -F body=@<file>   (existing body kept, validator section appended)
+
+# validate-pr on 5f5d7ec3e3 (before this commit): "REJECTED: missing docs/validation/VTID-05792/commands.log" (exit 32)
+# -> this file is the fix; the gate reads it from the PR head.
