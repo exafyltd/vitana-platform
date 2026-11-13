@@ -1,0 +1,163 @@
+# AWS-STAGE-CUTOVER-REHEARSAL — VTID-05781 (plan autonomous-to-staging-r2, lane staging-cutover; design.md §5, §8).
+#
+# Demonstrates the isolated staging data plane WITHOUT touching the serving staging services. Dispatch only, from main.
+#   mode=secrets   fill the two placeholder secrets of the staging database stack (staging database role only)
+#   mode=register  register isolated -iso task-definition revisions from the live staging ones; no service changes
+#                  (the owner passes the two ARNs to the stack apply that creates the candidate services)
+#   mode=run       register, start the -iso candidates (desired 1), run the STAGING-VERIFY gateway smoke against the
+#                  candidate host, then ALWAYS scale both candidates back to 0. A successful run is what
+#                  AWS-STAGE-CUTOVER.yml requires on the same commit (run-name "Staging cutover rehearsal run @ <sha>").
+# Every mode refuses unless STAGING_DB_COST_APPROVED=yes (owner, design.md §6.1). ECS jobs use only the staging deploy
+# role vars.AWS_STAGING_ROLE_ARN (OIDC, no static keys); the secrets job only vars.AWS_STAGING_DB_ROLE_ARN. The ECS
+# script allows writes to vitana-gateway-iso and vitana-postgrest-aurora-staging-iso only in these jobs.
+name: AWS-STAGE-CUTOVER-REHEARSAL
+run-name: 'Staging cutover rehearsal ${{ inputs.mode }} @ ${{ github.sha }} [VTID: VTID-05781]'
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'secrets = fill the staging-db secrets; register = register -iso revisions only; run = full rehearsal on the -iso candidates'
+        type: choice
+        options: [secrets, register, run]
+        default: register
+        required: true
+      rotate:
+        description: 'secrets mode only: set new role passwords even when already set (refused while STAGING_DATA_PLANE=isolated)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aws-stage-cutover
+  cancel-in-progress: false
+
+env:
+  CANDIDATE_URL: https://preview-iso-gateway.vitanaland.com
+
+jobs:
+  gate:
+    name: Owner gate (cost approval, roles, main)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Refuse unless approved and configured
+        env:
+          MODE: ${{ inputs.mode }}
+          ROTATE: ${{ inputs.rotate }}
+          REF: ${{ github.ref }}
+          COST_APPROVED: ${{ vars.STAGING_DB_COST_APPROVED }}
+          DB_ROLE_ARN: ${{ vars.AWS_STAGING_DB_ROLE_ARN }}
+          STAGING_ROLE_ARN: ${{ vars.AWS_STAGING_ROLE_ARN }}
+          PLANE: ${{ vars.STAGING_DATA_PLANE }}
+        run: |
+          fail=0
+          [ "$REF" = refs/heads/main ] || { echo "::error::Refused: run from main only, not $REF."; fail=1; }
+          [ "$COST_APPROVED" = yes ] || { echo "::error::Refused: STAGING_DB_COST_APPROVED is not 'yes' (design.md §6.1). Nothing was changed."; fail=1; }
+          if [ "$MODE" = secrets ]; then
+            printf '%s' "$DB_ROLE_ARN" | grep -Eq '^arn:aws:iam::472838866351:role/vitana-gha-staging-db$' || { echo "::error::Refused: AWS_STAGING_DB_ROLE_ARN is not the staging database role."; fail=1; }
+            if [ "$ROTATE" = true ] && [ "$PLANE" = isolated ]; then echo "::error::Refused: rotate while STAGING_DATA_PLANE=isolated would break the running staging tasks."; fail=1; fi
+          else
+            printf '%s' "$STAGING_ROLE_ARN" | grep -Eq '^arn:aws:iam::472838866351:role/[A-Za-z0-9+=,.@_-]+$' || { echo "::error::Refused: AWS_STAGING_ROLE_ARN (the staging deploy role) is not set; this workflow never uses static keys."; fail=1; }
+          fi
+          exit "$fail"
+
+  secrets:
+    name: Fill the staging database secrets
+    needs: gate
+    if: inputs.mode == 'secrets'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Guard (--enforce) over the cutover scripts
+        run: node scripts/ci/staging-prod-ref-guard.mjs --enforce --files scripts/aws/staging-cutover-secrets.sh scripts/aws/staging-db-common.sh
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_STAGING_DB_ROLE_ARN }}
+          aws-region: eu-central-1
+      - name: Fill
+        env:
+          STAGING_DB_COST_APPROVED: ${{ vars.STAGING_DB_COST_APPROVED }}
+          ROTATE: ${{ inputs.rotate }}
+        run: |
+          set -e
+          extra=""; [ "$ROTATE" = true ] && extra=--rotate
+          bash scripts/aws/staging-cutover-secrets.sh --cluster vitana-aurora-staging $extra
+
+  register:
+    name: Register -iso candidate revisions (no service change)
+    needs: gate
+    if: inputs.mode == 'register' || inputs.mode == 'run'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Guard (--enforce) over the cutover scripts
+        run: node scripts/ci/staging-prod-ref-guard.mjs --enforce --files scripts/aws/staging-cutover-taskdef.mjs scripts/aws/staging-cutover-select.sh scripts/aws/staging-cutover-ecs.sh scripts/aws/staging-cutover-smoke.mjs
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_STAGING_ROLE_ARN }}
+          aws-region: eu-central-1
+      - name: Register
+        run: bash scripts/aws/staging-cutover-ecs.sh candidate-register --candidate-url "$CANDIDATE_URL" --out "$RUNNER_TEMP/registered.json"
+      - name: Summary
+        run: |
+          { echo "### Candidate revisions (no service changed)"; jq -r '.services[] | "- \(.service): `\(.taskDefinition)`"' "$RUNNER_TEMP/registered.json"; } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rehearsal-registered
+          path: ${{ runner.temp }}/registered.json
+
+  run:
+    name: Rehearse on the -iso candidates
+    needs: register
+    if: inputs.mode == 'run'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: rehearsal-registered
+          path: ${{ runner.temp }}/reg
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_STAGING_ROLE_ARN }}
+          aws-region: eu-central-1
+      - name: Start candidates
+        id: start
+        run: bash scripts/aws/staging-cutover-ecs.sh candidate-start --registered "$RUNNER_TEMP/reg/registered.json"
+      - name: STAGING-VERIFY gateway smoke on the candidate host
+        id: smoke
+        run: node scripts/aws/staging-cutover-smoke.mjs --base "$CANDIDATE_URL" --out "$RUNNER_TEMP/reg/smoke.json"
+      - name: Scale candidates to 0 (always)
+        if: always()
+        run: bash scripts/aws/staging-cutover-ecs.sh candidate-stop
+      - name: Evidence
+        if: always()
+        run: |
+          {
+            echo "### Rehearsal on the -iso candidates"
+            echo "- Commit: \`$GITHUB_SHA\`; start: ${{ steps.start.outcome }}; smoke: ${{ steps.smoke.outcome }}"
+            [ -f "$RUNNER_TEMP/reg/smoke.json" ] && jq -r '"- Smoke: \(.passed)/\(.total) passed on \(.base)"' "$RUNNER_TEMP/reg/smoke.json"
+            jq -r '.services[] | "- \(.service): `\(.taskDefinition)`"' "$RUNNER_TEMP/reg/registered.json"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rehearsal-evidence
+          path: ${{ runner.temp }}/reg

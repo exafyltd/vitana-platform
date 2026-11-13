@@ -1,0 +1,6 @@
+# mutation impact-unclassified-not-blocking: scripts/ci/staging-db/impact.mjs
+# replaced: blocking: true, reason: 'unclassified'
+# with:     blocking: false, reason: 'unclassified'
+not ok 23 - impact: a new, unclassified workflow that names the staging gateway blocks the flip (temp repo)
+# pass 26
+# fail 1

@@ -1,0 +1,8 @@
+# mutation deploy-gateway-shared-path-changed: .github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml
+# replaced:           NEW_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_DEF" \
+# with:               NEW_DEF=$(printf "%s" "$NEW_DEF" | jq -c .)
+          NEW_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_DEF" \
+not ok 1 - deploy workflows: exactly the marked blocks were added to the roll step; without them the step is the pinned one
+not ok 3 - AWS-STAGE-DEPLOY-GATEWAY.yml: with STAGING_DATA_PLANE unset, empty or shared the registered task definition is byte-identical to the pinned step's
+# pass 38
+# fail 2
