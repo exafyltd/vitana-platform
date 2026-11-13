@@ -206,6 +206,15 @@ def split_sql(text: str) -> SplitResult:
             i = j
             continue
         if c == "\\":
+            # VTID-05023: psql's \set / \echo at the start of a line change only
+            # client settings (ON_ERROR_STOP etc.), never the SQL the server runs.
+            # Blank them; every other meta-command (\\i, \\copy, ...) stays a hard error.
+            line_start = i == 0 or text[i - 1] == "\n" or text[:i].rstrip(" \t").endswith("\n") or text[max(0, i - 1):i].strip() == ""
+            m = re.match(r"\\(set|echo)(\s|$)", text[i:i + 200])
+            if m and line_start:
+                eol = text.find("\n", i)
+                i = n if eol == -1 else eol
+                continue
             raise SplitError(line, "psql meta-command (backslash) is not SQL and cannot run over the "
                              "RDS Data API: " + text[i:text.find("\n", i) if "\n" in text[i:] else n].strip()[:80])
         mark_start()

@@ -98,7 +98,7 @@ BEGIN
        SET tenant_id = c.tenant_id
       FROM cand c
      WHERE c.user_id = p.user_id AND c.n = 1 AND p.tenant_id IS NULL
-       AND EXISTS (SELECT 1 FROM public.tenants t WHERE t.id = c.tenant_id)
+       AND EXISTS (SELECT 1 FROM public.tenants t WHERE t.tenant_id = c.tenant_id)
     RETURNING p.user_id, p.tenant_id
   ),
   logged AS (

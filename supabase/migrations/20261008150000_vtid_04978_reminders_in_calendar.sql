@@ -33,7 +33,7 @@ END $$;
 ALTER TABLE public.calendar_events ADD CONSTRAINT valid_source_type
   CHECK (source_type IN (
     'manual', 'invite', 'imported', 'autopilot', 'community_rsvp', 'assistant',
-    'journey', 'vtid', 'ci_cd', 'nudge_engine',
+    'journey', 'vtid', 'ci_cd', 'nudge_engine', 'subscription',
     'health_plan', 'lab_order', 'appointment', 'live_room', 'goal_plan', 'guided_journey',
     'reminder'
   ));

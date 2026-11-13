@@ -85,7 +85,7 @@ BEGIN
     PERFORM cron.schedule(
       'tenant-kpi-daily-retention',
       '17 3 * * *',
-      $$DELETE FROM public.tenant_kpi_daily WHERE snapshot_date < (NOW() - INTERVAL '90 days')::date;$$
+      $job$DELETE FROM public.tenant_kpi_daily WHERE snapshot_date < (NOW() - INTERVAL '90 days')::date;$job$
     );
   END IF;
 EXCEPTION WHEN OTHERS THEN

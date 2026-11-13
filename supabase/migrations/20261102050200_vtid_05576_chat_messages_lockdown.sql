@@ -42,6 +42,9 @@ CREATE POLICY chat_messages_recipient_mark_read ON public.chat_messages FOR UPDA
 
 DROP POLICY IF EXISTS users_send_messages ON public.chat_messages;
 DROP POLICY IF EXISTS users_send_group_messages ON public.chat_messages;
+-- VTID-05023 (Aurora rehearsal): the live copy also carries an authenticated INSERT policy under this
+-- name, which the REVOKE below already makes unusable. Drop it so the INSERT guard below can pass.
+DROP POLICY IF EXISTS "Users can insert own chat_messages" ON public.chat_messages;
 
 REVOKE INSERT, UPDATE ON TABLE public.chat_messages FROM PUBLIC, anon, authenticated;
 GRANT UPDATE (read_at, delivered_at) ON TABLE public.chat_messages TO authenticated;

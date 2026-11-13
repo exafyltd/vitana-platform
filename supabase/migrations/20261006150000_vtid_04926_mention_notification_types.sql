@@ -12,8 +12,8 @@
 -- type off keeps it off (ON CONFLICT DO NOTHING), except a row the guard
 -- auto-registered as off before this migration ran, which is switched on.
 
-INSERT INTO public.notification_type_controls (tenant_id, type, source_key, enabled, reason)
-SELECT t.tenant_id, x.type, '', true, 'VTID-04926: @mention notifications (owner-approved plan)'
+INSERT INTO public.notification_type_controls (tenant_id, type, source_key, enabled, auto_registered, reason, created_at, updated_at)
+SELECT t.tenant_id, x.type, '', true, false, 'VTID-04926: @mention notifications (owner-approved plan)', now(), now()
   FROM public.tenants t
  CROSS JOIN (VALUES ('chat_mention'), ('comment_mention')) AS x(type)
 ON CONFLICT (tenant_id, type, source_key) DO NOTHING;

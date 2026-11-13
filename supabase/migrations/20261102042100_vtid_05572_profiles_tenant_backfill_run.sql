@@ -43,7 +43,7 @@ BEGIN
      AND NOT EXISTS (SELECT 1 FROM public.service_bot_accounts s WHERE s.user_id = p.user_id)
      AND (SELECT count(*) FROM public.user_tenants ut WHERE ut.user_id = p.user_id) = 1
      AND EXISTS (SELECT 1 FROM public.tenants t
-                  WHERE t.id = (SELECT ut.tenant_id FROM public.user_tenants ut WHERE ut.user_id = p.user_id));
+                  WHERE t.tenant_id = (SELECT ut.tenant_id FROM public.user_tenants ut WHERE ut.user_id = p.user_id));
   IF v_missed > 0 THEN
     RAISE EXCEPTION 'VTID-05572: % single-membership profiles are still NULL', v_missed;
   END IF;

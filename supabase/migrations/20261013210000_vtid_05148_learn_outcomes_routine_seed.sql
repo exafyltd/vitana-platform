@@ -7,14 +7,17 @@
 
 BEGIN;
 
-INSERT INTO public.routines (name, display_name, description, cron_schedule, enabled)
+INSERT INTO public.routines (name, display_name, description, cron_schedule, enabled, consecutive_failures, created_at, updated_at)
 VALUES
   (
     'learn-outcomes',
     'Learn from Outcomes (L3)',
     'Daily (12:00 UTC): records which tests each fix PR shipped (self_healing_log.diagnosis.tests_added) and files one write_test finding for a fix without one; measures repeat-failure rate per class, pattern reuse and escaped bugs that became tests; on Mondays proposes (never applies) graduations from dev_autopilot_outcomes and withdraws regressed ones. Spec: routines/learn-outcomes.md.',
     '0 12 * * *',
-    true
+    true,
+    0,
+    now(),
+    now()
   )
 ON CONFLICT (name) DO NOTHING;
 

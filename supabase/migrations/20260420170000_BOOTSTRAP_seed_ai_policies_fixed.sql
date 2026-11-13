@@ -15,7 +15,9 @@ INSERT INTO public.ai_provider_policies (
   provider,
   allowed,
   allowed_models,
-  cost_cap_usd_month
+  allowed_memory_categories,
+  cost_cap_usd_month,
+  updated_at
 )
 SELECT
   t.tenant_id,
@@ -27,7 +29,9 @@ SELECT
     'gpt-4-turbo',
     'o1-mini'
   ],
-  50
+  '{}',
+  50,
+  now()
 FROM public.tenants t
 ON CONFLICT (tenant_id, provider) DO NOTHING;
 
@@ -36,7 +40,9 @@ INSERT INTO public.ai_provider_policies (
   provider,
   allowed,
   allowed_models,
-  cost_cap_usd_month
+  allowed_memory_categories,
+  cost_cap_usd_month,
+  updated_at
 )
 SELECT
   t.tenant_id,
@@ -49,7 +55,9 @@ SELECT
     'claude-3-5-sonnet-20241022',
     'claude-3-5-haiku-20241022'
   ],
-  50
+  '{}',
+  50,
+  now()
 FROM public.tenants t
 ON CONFLICT (tenant_id, provider) DO NOTHING;
 

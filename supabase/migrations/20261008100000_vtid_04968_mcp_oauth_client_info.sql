@@ -7,13 +7,22 @@
 -- redirect_uris, deleted_at): re-verify after a Supabase Auth upgrade. If the
 -- columns change the function errors and the gateway refuses the client (fail
 -- closed). Read-only; callable by the gateway's service role only.
+-- VTID-05023 (Aurora rehearsal): this function reads auth.oauth_clients, which lives in the Supabase-owned
+-- auth schema. Auth stays on Supabase (option B), so the object is created only where that table exists.
+DO $m$
+BEGIN
+  IF to_regclass('auth.oauth_clients') IS NULL THEN
+    RAISE NOTICE 'VTID-05023: auth.oauth_clients absent; skipping mcp_oauth_client_info';
+    RETURN;
+  END IF;
+  EXECUTE $e$
 CREATE OR REPLACE FUNCTION public.mcp_oauth_client_info(p_client_id UUID)
 RETURNS JSONB
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
 SET search_path = auth, public
-AS $$
+AS $f$
     SELECT jsonb_build_object(
         'client_name', c.client_name,
         'client_uri', c.client_uri,
@@ -21,7 +30,10 @@ AS $$
     )
     FROM auth.oauth_clients c
     WHERE c.id = p_client_id AND c.deleted_at IS NULL;
-$$;
+$f$;
 
 REVOKE ALL ON FUNCTION public.mcp_oauth_client_info(UUID) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.mcp_oauth_client_info(UUID) TO service_role;
+  $e$;
+END
+$m$;

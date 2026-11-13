@@ -153,7 +153,16 @@ END;
 $$;
 
 REVOKE ALL ON FUNCTION public._plan_sparring_gate_eval(text, jsonb, text) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public._plan_sparring_gate_eval(text, jsonb, text) TO service_role, vitana_governance_owner;
+-- VTID-05023 (Aurora rehearsal): vitana_governance_owner is a Supabase-era role that does not exist on
+-- Aurora; grant to it only when present. service_role is granted unconditionally as before.
+GRANT EXECUTE ON FUNCTION public._plan_sparring_gate_eval(text, jsonb, text) TO service_role;
+DO $g$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'vitana_governance_owner') THEN
+    EXECUTE 'GRANT EXECUTE ON FUNCTION public._plan_sparring_gate_eval(text, jsonb, text) TO vitana_governance_owner';
+  END IF;
+END
+$g$;
 
 -- 3. Round appends freeze on either approval -------------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.plan_sparring_append_round(p_session uuid, p_round jsonb, p_expected_round int)

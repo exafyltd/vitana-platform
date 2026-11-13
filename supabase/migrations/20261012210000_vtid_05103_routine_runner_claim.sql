@@ -27,12 +27,16 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_routine_runs_gateway_runner_day
   ON public.routine_runs (routine_name, ((started_at AT TIME ZONE 'UTC')::date))
   WHERE trigger = 'gateway-runner';
 
-INSERT INTO public.routines (name, display_name, description, cron_schedule)
+INSERT INTO public.routines (name, display_name, description, cron_schedule, enabled, consecutive_failures, created_at, updated_at)
 VALUES (
   'mobile-screen-latency-rollup',
   'Mobile Screen Latency Rollup',
   'Daily p75 of the RUM screen.latency.measured beacons for the 9 tracked mobile screens, per device; a screen over its poor cut is a breach. Spec: routines/mobile-screen-latency-rollup.md.',
-  '15 6 * * *'
+  '15 6 * * *',
+  true,
+  0,
+  now(),
+  now()
 )
 ON CONFLICT (name) DO NOTHING;
 

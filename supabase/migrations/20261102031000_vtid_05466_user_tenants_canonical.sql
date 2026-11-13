@@ -120,10 +120,11 @@ BEGIN
        AND NOT EXISTS (SELECT 1 FROM public.user_tenants ut
                         WHERE ut.tenant_id = m.tenant_id AND ut.user_id = m.user_id)
   ), ins AS (
-    INSERT INTO public.user_tenants (tenant_id, user_id, active_role, is_primary)
-    SELECT c.tenant_id, c.user_id, 'community',
+    INSERT INTO public.user_tenants (id, tenant_id, user_id, active_role, is_primary, created_at, updated_at)
+    SELECT gen_random_uuid(), c.tenant_id, c.user_id, 'community',
            (c.rn = 1 AND NOT EXISTS (SELECT 1 FROM public.user_tenants p
-                                      WHERE p.user_id = c.user_id AND p.is_primary))
+                                      WHERE p.user_id = c.user_id AND p.is_primary)),
+           now(), now()
       FROM cand c
     ON CONFLICT (tenant_id, user_id) DO NOTHING
     RETURNING id, tenant_id, user_id, is_primary

@@ -9,14 +9,17 @@
 
 BEGIN;
 
-INSERT INTO public.routines (name, display_name, description, cron_schedule, enabled)
+INSERT INTO public.routines (name, display_name, description, cron_schedule, enabled, consecutive_failures, created_at, updated_at)
 VALUES
   (
     'supplier-catalog-check',
     'Supplier Catalog Check (L9)',
     'Daily (13:00 UTC): deterministic checks of at most 20 supplier rows of the supplements category per run (normalize, required fields and money, duplicates within the supplier, image probe, claim pre-screen); one result per row in products.attributes.catalog_check; three identical failures return the row to the supplier via the checklist (catalogue_fixes) and MCP next_action. Never publishes, never writes is_active, no LLM. Spec: routines/supplier-catalog-check.md.',
     '0 13 * * *',
-    true
+    true,
+    0,
+    now(),
+    now()
   )
 ON CONFLICT (name) DO NOTHING;
 
