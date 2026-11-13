@@ -337,3 +337,61 @@ Source: every top-level migration on main, applied in name order to a fresh PGli
 | 20260524000000_VTID_03036_bootstrap_cache.sql | SQL syntax in the file itself |
 
 Caveat: the rehearsal log is not in this sandbox. The local base lacks production tables, so the missing-dependency and environment counts overstate what fails on the rehearsal. The bug rows are the ones to check first.
+
+## Steering run: non-migration merges, staging verification, held items
+
+### Merged
+- **MR !34** (psql session-setting strip in `aurora_sql_split.py`, with tests). Draft prefix removed, title `VTID-05023 apply path blanks psql session settings (\set, \echo)`. Pipeline 350 on the merge commit: typecheck and all four gateway-jest shards `success`. Merge commit `b48f95b2df52e36b3f7256ee76e560cb5d032db2`.
+
+### Staging deploy of the merge commit
+- Build job 1820 (manual, played): `success`.
+- Deploy job 1821, https://gitlab.vitanaland.com/vitana/vitana-platform/-/jobs/1821: `success`.
+  - `Rollback target: …vitana-gateway:1015  new image: …gateway:b48f95b2df52`
+  - `New task definition: …vitana-gateway:1016`
+  - `Smoke OK: staging serves b48f95b2df52e36b3f7256ee76e560cb5d032db2`
+
+### STAGING-VERIFY on the merge commit
+- The `staging-verify:gateway` job is defined in the CI template but is not in pipeline 350. The pipeline was built from a config that does not include it. So no GitLab run link exists for this commit.
+- Ran the repo runner instead, read-only: `node scripts/ci/staging-verify/run.mjs verify --service gateway --sha b48f95b2df52e36b3f7256ee76e560cb5d032db2 --repo-root . --out <out dir>`. Run from the full clone (a copy without git history fails the production-baseline check, a setup error, not a staging result).
+- Result: **Staging verified. Tests 12/12 passed.** Smoke: alive, admin health reports staging, build-info, ORB, Nova Sonic, autopilot, VTID ledger, scheduler, operator, OASIS tasks, community members requires auth, publish route rejected-write probe. Output in `tools/logs/sv-out2/` (outside the repo: `results.json`, `message.md`).
+- Production baseline `c7e17d64d9ec`, range 1 commit, none touching the gateway.
+
+### MR state (all draft unless stated; nothing merged except !34)
+
+| MR | Content | State | Pipeline |
+|---|---|---|---|
+| !34 | psql session-setting strip (non-migration) | **merged** `b48f95b2df` | success |
+| !41 | F1 record (docs) | draft, not merged | success |
+| !35 | F3 autopilot index immutable (migration, held) | draft, not merged | success |
+| !36 | fix memory_timeline `window` identifier (migration, held) | draft | success |
+| !37 | fix worker_agent_connector policy syntax (migration, held) | draft | success |
+| !38 | fix oasis_events_disk_io_indexes dollar quote (migration, held) | draft | success |
+| !39 | fix ai_usage_log dollar quote (migration, held) | draft | success |
+| !40 | fix bootstrap_cache comment (migration, held) | draft | success |
+| !28 | welcome-chat trigger (migration, held) | draft | **failed**, fix forward needed, not done |
+| !32 | welcome skip test (test, stacked on !28) | draft | **failed**, fix forward needed, not done |
+| !33 | allowlist baseline (migration, held, RLS owner question) | draft | **failed**, fix forward needed, not done |
+| !42 | skip manifest (docs, not applied by any tool) | draft, not merged | — |
+
+### Gate
+- Migrations do not merge until the owner confirms the Supabase integration check. Repo search of workflows and CI includes: no job applies migrations on a push to `main`. `RUN-MIGRATION.yml` is dispatch-only. The three push-triggered SQL workflows say they never run against Supabase. External Supabase integration: not visible from the repo; owner to confirm.
+
+### Held items (keep in list)
+- `vtid_specs` rename
+- nav dedupe
+- column additions (the 01088 second graph model, see decision below)
+- `encrypted_password` drop
+- `tenants(id)` key
+- 01088 matchmaking: **owner decision, option c**. Leave failing on a fresh database. Owner check on production: whether `relationship_edges` has `source_user_id`, `target_user_id`, `edge_type`, and whether the matchmaking functions exist.
+
+### Owner decisions
+1. Skip-manifest mechanism (MR !42): apply tool reads the manifest, or a manual skip with a logged list.
+2. Supabase integration check: confirm no external integration applies migrations to production on merge.
+3. 01088 matchmaking: option c, owner production check.
+4. RLS on `notification_test_actors` and `service_bot_accounts` (MR !33), before any merge.
+5. Whether a draft's `Draft:` prefix is removed to merge it (applies to !35 to !40 once the gate is cleared).
+
+### Not done in this run
+- Fix-forward for the three failing pipelines (!28, !32, !33).
+- Rehearsal-pass counts: not in this sandbox.
+- Pending-migration list check (task 3) and the staging switch for the runbook (task 4): inputs not yet received.
