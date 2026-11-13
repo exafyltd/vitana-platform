@@ -1,7 +1,9 @@
 ---
 lane: pm-mode-probes
-state: ready
+state: executing
 next_actor: kiro
+claimed_by: kiro-exafy-202611111326-7e9b
+branch: kiro/pm-mode-probes/kiro-fallback
 depends_on: []
 executor: kiro
 seat: exafy
@@ -28,3 +30,6 @@ Lane created with the plan.
 
 ### 2026-11-07T14:43Z · ci-plan-spar · ready (VTID allocated)
 VTID-05604 allocated after policy approval (converged-auto-v1).
+
+### 2026-11-13T09:00Z · kiro-exafy-202611111326-7e9b · ready → executing
+Claimed. Owner decision 2026-11-11: the two mode probes expect enabled true and executor_mode kiro_fallback, the state staging is in. This replaces the plan design (expect_json_in, mode-agnostic) with the fixed owner-set value. Baseline: both probes pin claude_primary (PR 5012) and fail against staging.
