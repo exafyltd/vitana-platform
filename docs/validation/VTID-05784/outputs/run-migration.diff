@@ -1,0 +1,62 @@
+15c15,17
+<         options: [default, supabase, aurora]
+---
+>         # >>> VTID-05784: staging = the isolated staging database only (explicit choice; never the default)
+>         options: [default, supabase, aurora, staging]
+>         # <<< VTID-05784
+60a63,65
+>             # >>> VTID-05784: target staging only when chosen explicitly; MIGRATION_TARGET can never select it
+>             staging) echo "Migration target: staging (isolated staging database)"; echo "target=staging" >> "$GITHUB_OUTPUT"; exit 0 ;;
+>             # <<< VTID-05784
+169a175,225
+> 
+>   # >>> VTID-05784 (plan autonomous-to-staging-r2 §3.5, lane staging-migrations-auto): target staging applies the file
+>   # to the ISOLATED staging database vitana-aurora-staging only, through scripts/aws/staging-db-apply-migration.sh
+>   # (cluster required, staging names only, the staging database role checked) with the staging database role
+>   # vars.AWS_STAGING_DB_ROLE_ARN. Refused unless STAGING_DATA_PLANE=isolated, that role, STAGING_DB_COST_APPROVED=yes
+>   # and main (scripts/aws/staging-db-migrate-gate.sh --mode dispatch). The jobs above are unchanged.
+>   migrate-staging:
+>     needs: resolve
+>     if: needs.resolve.outputs.target == 'staging'
+>     runs-on: ubuntu-latest
+>     timeout-minutes: 60
+>     permissions:
+>       contents: read
+>       id-token: write # OIDC for vars.AWS_STAGING_DB_ROLE_ARN only
+>     concurrency:
+>       group: staging-migrate
+>       cancel-in-progress: false
+>     env:
+>       CLUSTER: vitana-aurora-staging
+>       MIGRATION_FILE: ${{ inputs.migration_file }}
+>       ALLOW_NON_TX: ${{ inputs.allow_non_transactional }}
+>       MIGRATION_FREEZE: ${{ vars.MIGRATION_FREEZE }}
+>     steps:
+>       - uses: actions/checkout@v4
+>       - uses: actions/setup-node@v4
+>         with:
+>           node-version: '22.x'
+>       - name: Gate (isolated plane, staging database role, cost approval, main)
+>         env:
+>           STAGING_DATA_PLANE: ${{ vars.STAGING_DATA_PLANE }}
+>           AWS_STAGING_DB_ROLE_ARN: ${{ vars.AWS_STAGING_DB_ROLE_ARN }}
+>           STAGING_DB_COST_APPROVED: ${{ vars.STAGING_DB_COST_APPROVED }}
+>         run: bash scripts/aws/staging-db-migrate-gate.sh --mode dispatch
+>       - name: Plan (dry run, no AWS call)
+>         run: |
+>           set -euo pipefail
+>           FLAGS=()
+>           [ "$ALLOW_NON_TX" = "true" ] && FLAGS+=(--allow-non-transactional)
+>           bash scripts/aws/staging-db-apply-migration.sh --cluster "$CLUSTER" --file "$MIGRATION_FILE" --dry-run "${FLAGS[@]}"
+>       - name: Configure AWS credentials (staging database role, OIDC)
+>         uses: aws-actions/configure-aws-credentials@v4
+>         with:
+>           role-to-assume: ${{ vars.AWS_STAGING_DB_ROLE_ARN }}
+>           aws-region: eu-central-1
+>       - name: Apply migration to the isolated staging database (RDS Data API)
+>         run: |
+>           set -euo pipefail
+>           FLAGS=()
+>           [ "$ALLOW_NON_TX" = "true" ] && FLAGS+=(--allow-non-transactional)
+>           bash scripts/aws/staging-db-apply-migration.sh --cluster "$CLUSTER" --file "$MIGRATION_FILE" "${FLAGS[@]}"
+>   # <<< VTID-05784

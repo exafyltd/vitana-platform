@@ -1,0 +1,6 @@
+# mutation ecs-allowlist-removed: scripts/aws/staging-cutover-ecs.sh
+# replaced:   case " $2 " in *" $1 "*) ;; *) die
+# with:       case " $2 " in *) ;; __x) die
+not ok 16 - ecs: name guard (guard subcommand) — production names refused, live and candidate scopes are disjoint
+# pass 15
+# fail 1
