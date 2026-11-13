@@ -1,0 +1,49 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/wt-vtid-05792/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.warn
+    [VTID-04018] bootstrap pack failed open: deps.readRepoFile is not a function
+
+      441 |     return assembleBootstrapPack([...entry.sections, flags, catalog], entry.builtAtIso);
+      442 |   } catch (err) {
+    > 443 |     console.warn(`[VTID-04018] bootstrap pack failed open: ${err instanceof Error ? err.message : String(err)}`);
+          |             ^
+      444 |     return '';
+      445 |   }
+      446 | }
+
+      at getOperatorBootstrapPack (src/services/operator-bootstrap-pack.ts:443:13)
+      at Object.<anonymous> (test/vtid-04018-operator-bootstrap-pack.test.ts:172:18)
+
+PASS test/vtid-04018-operator-bootstrap-pack.test.ts
+  VTID-04018 pure renderers
+    ✓ extracts CLAUDE.md Part 1 (the rules), bounded, and never the change log (11 ms)
+    ✓ compresses the newest change-log rows to one line each with date + VTID (3 ms)
+    ✓ indexes DATABASE_SCHEMA.md table headings and the service path map (2 ms)
+    ✓ renders the tool catalog from declarations (first sentence only), PRs, events and build-info (1 ms)
+    ✓ parses build-info targets and the flag (1 ms)
+    ✓ assembles sections with a header, renders failures inline, and clips at the size budget (2 ms)
+    ✓ withTimeout rejects late promises (39 ms)
+  VTID-04018 sections, fail-open and cache
+    ✓ builds every section from the injected sources (3 ms)
+    ✓ a failing or hanging source renders as unavailable and does not block the others (1503 ms)
+    ✓ a missing build-info target is one unavailable line, not a failed section (2 ms)
+    ✓ is empty when disabled and never calls a source (1 ms)
+    ✓ caches the fetched sections for 5 minutes, coalesces concurrent builds, and renders the catalog per call (25 ms)
+    ✓ never throws — a broken deps set fails open to an empty pack (17 ms)
+  VTID-04018 wiring
+    ✓ the main operator turn appends the pack after the VTID-03930 orientation block and passes the same tool defs it renders (1 ms)
+    ✓ the tool-result turn carries the same pack (§4.1) (1 ms)
+    ✓ staging pins the flag and the two build-info targets; prod declares the same (VTID-04230) (1 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       16 passed, 16 total
+Snapshots:   0 total
+Time:        4.796 s
+Ran all test suites matching /test\/vtid-04018-operator-bootstrap-pack.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
