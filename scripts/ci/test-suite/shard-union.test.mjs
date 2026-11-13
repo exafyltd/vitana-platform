@@ -60,7 +60,8 @@ test('TEST-SUITE.yml: gateway runs as 4 shards, the union job checks them, the s
   assert.match(gateway, /name: Gateway \(Jest, shard \$\{\{ matrix\.shard \}\}\/4\)/);
   assert.match(gateway, /fail-fast: false/);
   assert.match(gateway, /shard: \[1, 2, 3, 4\]/);
-  assert.match(gateway, /npx jest --silent --maxWorkers=100% --shard=\$\{\{ matrix\.shard \}\}\/4 --json --outputFile=/);
+  assert.match(gateway, /npx jest --silent --maxWorkers=100% --json --outputFile=.*--runTestsByPath "\$\{FILES\[@\]\}"/);
+  assert.match(gateway, /shard-plan\.mjs --list "list-\$\{\{ matrix\.shard \}\}\.txt" --shards 4 --shard \$\{\{ matrix\.shard \}\}/);
   assert.match(gateway, /npx jest --listTests > /);
   assert.match(gateway, /- name: Run Jest suite/);
   assert.doesNotMatch(gateway, /testPathIgnorePatterns|--testPathIgnore|\.skip/, 'nothing new is skipped');
