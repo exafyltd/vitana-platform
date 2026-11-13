@@ -40,3 +40,27 @@ Findings: none blocking; all non-blocking:
 - [non-blocking] `docs/validation/VTID-05762/commands.log:5`: Bookkeeping drift. commands.log validates branch claude/sparring-eu-guard/sparring-eu-guard while the lane file says branch claude/sparring-eu-guard/code. The report-only PR-GATE sparring check fails because the sparring record lives at .kiro/specs/sparring-eu-guard/sparring/verdict.md, not docs/validation/VTID-05762/plan-sparring.md.
 Earlier runs on the same head: tier 3 (Opus 4.6) said changes on partner.ts, reached only because the request carried a parameter the 5.5 models refuse; tier 1 then ran out of output tokens before its JSON. The run of record judged both points non-blocking.
 Next: the PR head is now 177d12c071 (main merged in, governance files came with it), so M4 runs again on the head that merges. Main is red on Gateway Jest (loop-catalog, vtid-04018, vtid-05041; commits a199f9ac9a and c8ecb6eb3f), so nothing lands until main is green (owner spec v5 M7).
+
+### 2026-11-13T10:30Z · kiro-exafyltd-202611122052-a6df · review (supersedes the 827c4b315f entry above)
+The branch was updated with `origin/main` twice since that accept (first merging in VTID-05764/#5027's Kiro AWS
+roles work, then the full span through VTID-05785/#5057 this same session just landed), each a clean merge with
+no conflicts — collaboration.md §3 treats that as invalidating the prior review, so this is a fresh one, not a
+carry-forward.
+
+review: accept
+head: 484585d7f2cc46f51810b5a24d4c276b3412ef8a
+reviewer: exafyltd (exceptions seat, this lane's reviewer_seat) via the M4 Bedrock chain, model of record eu.anthropic.claude-opus-5-5 (tier 1, eu-central-1)
+PR: https://github.com/exafyltd/vitana-platform/pull/4999
+CI on this head: 25 of 25 reported checks success or skipped (non-blocking); confirmed directly via
+`gh api repos/exafyltd/vitana-platform/commits/484585d7f2.../check-runs` immediately before this review ran.
+Findings: none blocking; all non-blocking:
+- [non-blocking] `services/gateway/src/services/plan-sparring/partner.ts:142`: plan C1 says partner.ts and llm-defaults.ts change together; only llm-defaults.ts changed. Behaviour is correct (the tier is gated through isPlanSparringDeepseekFallbackEnabled(), read at call time), but any stale kill-switch comment in partner.ts describing the old default should be fixed in a follow-up — partner.ts is a protected gate file, so that needs the two-model path.
+- [non-blocking] `services/gateway/test/plan-sparring/sparring-eu-guard.test.ts:13`: C3(a)/(b) test the flag helper, not the `tiers` list partner.ts builds from it. An integration assertion on the tiers list would pin it end to end; a follow-up.
+- [non-blocking] `.kiro/specs/sparring-eu-guard/plan.md`: §3 bullet 3 (a real staging sparring round with no DeepSeek entry in model_log) is still open and can only be done after the staging deploy; record it read-only before Gate 2.
+- [non-blocking] `services/gateway/src/services/dev-memory-embedding.ts:65`: the region check now runs before the empty-text check, so empty text with no region set returns `not_configured` instead of `empty_text`. Minor ordering change, no safety impact.
+- [non-blocking] `services/gateway/test/providers/bedrock-region.test.ts:33`: the test fixture's role ARN contains what looks like a real AWS account id; use a placeholder (e.g. `000000000000`) in a follow-up.
+This review's own local re-run (6 lane suites: 107/107 passed; full `services/gateway` suite: 2 pre-existing
+environmental failures only, same as every other head this session) is recorded for context; CI is the check of
+record per collaboration.md §3.
+Next: rebase-merge (not squash) per the owner's instruction this session — `rebase_merge_allowed: true` on this
+repo.
