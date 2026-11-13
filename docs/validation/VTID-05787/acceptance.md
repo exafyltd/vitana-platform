@@ -13,3 +13,6 @@ VTID-05787, allocated by the VTID-ALLOCATE workflow.
 ## Evidence
 - Behaviour checks for criteria 1–5 were run locally by compiling the modules and executing the same cases with Node: all passed.
 - Jest cases: services/gateway/test/lane-review/review-pass.test.ts and services/gateway/test/lane-review.test.ts. Not run in this session (no registry access); CI runs them.
+
+## Allocation record
+- VTID-05787 was allocated through the VTID-ALLOCATE workflow (run 43397162744, VTID_RESULT=VTID-05787), dispatched over the REST API from the Claude Code session.
