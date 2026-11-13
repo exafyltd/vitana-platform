@@ -807,6 +807,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/vtid', vtidRouter, { owner: 'vtid' });
   // VTID-04868: Plan Sparring Gate (gateway tier) — partner rounds + verified approval.
   mountRouterSync(app, '/api/v1/plans/spar', plansSparRouter, { owner: 'plans-spar' });
+  // Bedrock lane reviewer (plan-r3): machine review of lane PRs, read-only.
+  const { laneReviewRouter } = require('./routes/lane-review');
+  mountRouterSync(app, '/api/v1/lane-review', laneReviewRouter, { owner: 'lane-review' });
   // VTID-05216: Project Manager — read-only status (mode + current decision list).
   mountRouterSync(app, '/api/v1/project-manager', projectManagerRouter, { owner: 'project-manager' });
   // VTID-03177 (PROFILE): RUM beacon — POST /api/v1/rum/beacon
