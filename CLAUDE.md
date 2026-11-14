@@ -152,9 +152,10 @@ the retired-number index at the end of Part 1 says where its substance lives now
 30. **Always log memory debug snapshots in dev.**
 
 ### Frontend & UX
-31. **The sidebar is fixed:** exactly 10 items in their fixed order, Start Stream in the sidebar utility zone. Start
-    Stream is private AI + screen share — never Go Live / Live Rooms. Changing the sidebar (structure, order,
-    navigation, moving Start Stream out) is forbidden.
+31. **The sidebar's items are fixed:** the community sidebar shows the 14 items of `communityNavigation`
+    (`vitana-v1/src/config/role-navigation.ts`), each with its fixed route. They sit in four quiet groups in
+    `COMMUNITY_NAV_GROUPS` (Start, Connect, Grow, Account; VTID-05719). Adding, removing or re-routing an item is
+    forbidden without a new owner-approved plan. Go Live / Live Rooms are never sidebar items.
 35. **Always treat ORB as voice-first, multimodal.**
 36. **Always comply with CSP (no inline scripts/styles).**
 37. **Always bundle JS locally.**
