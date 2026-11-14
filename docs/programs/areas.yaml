@@ -14,7 +14,7 @@ exceptions_seat: exafyltd
 seats:
   jtadic:   { account: j.tadic@exafy.io,        surface: kiro-web, automation: .kiro/automations/jtadic.md }
   exafyltd: { account: exafyltd@gmail.com,      surface: kiro-web, automation: .kiro/automations/exafyltd.md }
-  hotmail:  { account: dstevanovic@hotmail.com, surface: kiro-ide }   # also the key on the server-side Kiro runner
+  hotmail:  { account: dstevanovic@hotmail.com, surface: kiro-web, automation: .kiro/automations/hotmail.md }   # also the key on the server-side Kiro runner
   exafy:    { account: d.stevanovic@exafy.io,   surface: kiro-web, automation: .kiro/automations/exafy.md }
 
 areas:
