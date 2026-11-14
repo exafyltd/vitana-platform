@@ -916,7 +916,9 @@ const planLane = (laneFm, o = {}) => ({
 const SECTION_43 = ['CLAUDE.md', 'scripts/collab/plan-spar.mjs', 'scripts/collab/queue.mjs', 'scripts/collab/protected-gate-files.json',
   'services/gateway/src/services/plan-sparring/**', 'services/gateway/src/services/project-manager/governance.ts',
   '.github/workflows/PLAN-SPAR.yml', '.github/workflows/PR-GATE.yml', '.github/workflows/AWS-PROD-*.yml',
-  '.kiro/agents/vitana-lane-reviewer.md', 'supabase/migrations/*vtid_ledger*.sql', 'supabase/migrations/*plan_sparring*.sql'];
+  '.kiro/agents/vitana-lane-reviewer.md', 'supabase/migrations/*vtid_ledger*.sql', 'supabase/migrations/*plan_sparring*.sql',
+  // VTID-05765 (plan autonomous-to-staging): contract change on purpose — VTID allocation and the gate-invariant check join the list.
+  '.github/workflows/VTID-ALLOCATE.yml', 'scripts/collab/gate-invariants.test.mjs'];
 
 test('VTID-05276 T1-T3: validateLane — kiro lane with the agent reviewer may declare governance paths, never a protected gate file; the agent needs executor kiro', () => {
   const v = (o) => validateLane(parseFrontMatter(laneMd('a', o)), 'cards', 'a', new Set(['a']));
@@ -2018,4 +2020,45 @@ test('VTID-05365 batching: commitFileReader equals git show in memory and throug
     const none = spawnsOf(() => Q.commitFileReader(f.work, []));
     assert.equal(none.spawns, 0);
   } finally { f.done(); }
+});
+
+// Bedrock lane reviewer (plan-r3): the CI review session is the fixed literal ci-lane-review, and the Bedrock reviewer
+// identity is a reviewer agent. Suffixed variants are refused, so a CI run id can never enter the session trailer.
+test('ci-lane-review is a valid CI session literal; suffixed variants are not', () => {
+  assert.ok(isSessionId('ci-lane-review'));
+  for (const bad of ['ci-lane-review-12345678901', 'ci-lane-review-', 'ci-lane']) assert.ok(!isSessionId(bad), bad);
+});
+
+test('agent:bedrock-lane-reviewer is accepted as a reviewer agent', () => {
+  assert.ok(Q.REVIEWER_AGENTS.includes('agent:bedrock-lane-reviewer'));
+  assert.ok(Q.REVIEWER_AGENTS.includes('agent:vitana-lane-reviewer'));
+});
+
+// VTID-05765 (plan autonomous-to-staging): a trusted `protected_gate: two-model` Kiro lane may declare and change a
+// protected gate file; the merge then needs two accepts from different chain models (land-guard.mjs).
+test('VTID-05765: validateLane accepts a protected path only for a two-model kiro lane with the agent reviewer', () => {
+  const v = (o) => validateLane(parseFrontMatter(laneMd('a', o)), 'cards', 'a', new Set(['a']));
+  const agent = { executor: 'kiro', reviewer_seat: 'agent:vitana-lane-reviewer', paths: ['scripts/collab/queue.mjs'] };
+  assert.ok(v({ ...agent }).some((e) => e.includes('protected gate file')));
+  assert.deepEqual(v({ ...agent, protected_gate: 'two-model' }).filter((e) => e.includes('protected gate file')), []);
+  assert.ok(v({ ...agent, reviewer_seat: undefined, protected_gate: 'two-model' }).some((e) => e.includes('protected gate file')));
+  assert.ok(v({ ...agent, protected_gate: 'yes' }).some((e) => e.includes('protected gate file')));
+});
+
+test('VTID-05765: scope-check lets a trusted two-model lane change a protected gate file, never a head-granted one', () => {
+  const f = fixture();
+  try {
+    const base = scopeFixture(f, { executor: 'kiro', reviewer_seat: 'agent:vitana-lane-reviewer', protected_gate: 'two-model', paths: ['CLAUDE.md'] });
+    write(f.work, 'CLAUDE.md', 'x');
+    const head = commit(f.work, 'w', { 'Collab-Session': S1, 'Collab-Lane': 'cards/card-01' });
+    assert.deepEqual(scopeCheck(f.work, { base, head }).errors.filter((x) => x.includes('protected gate file')), []);
+  } finally { f.done(); }
+  const g = fixture();
+  try {
+    const base = scopeFixture(g, { executor: 'kiro', reviewer_seat: 'agent:vitana-lane-reviewer', paths: ['CLAUDE.md'] });
+    write(g.work, '.kiro/specs/cards/lanes/card-01.md', `${laneMd('card-01', { next_actor: 'kiro', vtid: 'VTID-00002', state: 'executing', executor: 'kiro', reviewer_seat: 'agent:vitana-lane-reviewer', protected_gate: 'two-model', paths: ['CLAUDE.md'] })}`);
+    write(g.work, 'CLAUDE.md', 'x');
+    const head = commit(g.work, 'w', { 'Collab-Session': S1, 'Collab-Lane': 'cards/card-01' });
+    assert.ok(scopeCheck(g.work, { base, head }).errors.some((x) => x.includes('protected gate file')));
+  } finally { g.done(); }
 });

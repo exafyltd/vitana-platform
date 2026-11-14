@@ -1,0 +1,52 @@
+# VTID-05729 — commands run for lane semantic-memory-auth (plan gateway-critical-route-auth)
+# Worktree /projects/sandbox/wt-crit-semantic-memory-auth, branch kiro/gateway-critical-route-auth/semantic-memory-auth,
+# base origin/main 6dc6e1ba0c. No commit, push or git-state change; no network call to a live system.
+
+# Read the plan and the middleware
+git -C /projects/sandbox/vitana-platform show origin/kiro/gateway-critical-route-auth/plan:.kiro/specs/gateway-critical-route-auth/plan.md
+git -C /projects/sandbox/vitana-platform show origin/kiro/gateway-critical-route-auth/plan:.kiro/specs/gateway-critical-route-auth/tasks.md
+# services/gateway/src/middleware/auth-supabase-jwt.ts:748-829 requireAuthWithTenant -> resolved tenant lands in
+#   req.identity.tenant_id (token tenant after membership check, or `req.identity.tenant_id = primary.tenantId`);
+#   req.tenant (TenantContext) is also attached. :831-884 requireAdminAuth -> 401 no/invalid token, 403 non exafy_admin.
+
+# Pass 2 (this pass): GET /admin/embeddings/status gets requireAdminAuth; test/routes/semantic-memory.test.ts updated
+#   to the authenticated contract (auth middleware mocked like the new test; token on every request but /semantic/health;
+#   anonymous no-lens cases -> 401; non-UUID lens -> 403 LENS_MISMATCH; forwarding cases send a lens without ids).
+#   Earlier pass's results (27-test new suite, tsc without --preserveSymlinks) are superseded by the lines below.
+
+# Red on the base: swap the origin/main route file in, run the new test and the updated route suite, restore
+cd services/gateway
+cp src/routes/semantic-memory.ts /projects/sandbox/.agents/crit/semantic-memory.lane.ts
+git show origin/main:services/gateway/src/routes/semantic-memory.ts > src/routes/semantic-memory.ts
+npx jest test/semantic-memory-auth.test.ts            # -> outputs/jest-red-on-base.txt: 24 failed, 6 passed, 30 total
+npx jest test/routes/semantic-memory.test.ts          # -> outputs/jest-existing-routes-on-base.txt: 7 failed, 19 passed, 26 total
+cp /projects/sandbox/.agents/crit/semantic-memory.lane.ts src/routes/semantic-memory.ts
+
+# Green
+npx jest test/semantic-memory-auth.test.ts            # -> outputs/jest-green.txt: 30 passed, 30 total
+
+# Existing tests touching semantic-memory / memory routes
+grep -rln "semantic-memory\|routes/memory'" test/
+#   test/routes/semantic-memory.test.ts, test/services/supabase-semantic-memory.test.ts,
+#   test/memory.test.ts, test/memory-confidence.test.ts (+ the new test)
+npx jest test/routes/semantic-memory.test.ts test/services/supabase-semantic-memory.test.ts test/memory.test.ts test/memory-confidence.test.ts
+#   -> outputs/jest-existing.txt: 4 suites passed, 209 passed, 209 total
+
+# Typecheck (node_modules is a symlink to /projects/sandbox/wt-gwra-route-auth/services/gateway/node_modules;
+# without --preserveSymlinks, declaration:true gives 59 x TS2742 outside this lane, identical on the base)
+npx tsc --noEmit --preserveSymlinks                   # -> outputs/tsc-gateway.txt: exit 0
+
+# Caller census
+P='memory/semantic|memory/admin/embeddings|semantic/(search|write|context)|admin/embeddings/(generate|reembed)'
+git grep -n -E "$P" -- . ':!docs/validation' ':!services/gateway/test'          # vitana-platform @ 6dc6e1ba0c
+#   scripts/ci/collect-status.py:50                               '/api/v1/memory/semantic/health'   (GET, unchanged)
+#   services/gateway/src/constants/service-health-registry.ts:91  '/api/v1/memory/semantic/health'   (GET, unchanged)
+#   services/gateway/src/frontend/command-hub/app.js:25692        '/api/v1/memory/semantic/health'   (GET, unchanged)
+#   services/gateway/src/types/self-healing.ts:226                '/api/v1/memory/semantic/health'   (route->file map)
+#   scripts/mt/inventory/data/routes.json:9134-9176               route inventory entries (data, not a caller)
+#   services/gateway/src/routes/semantic-memory.ts                the routes themselves
+#   (docs/validation/** matches are test-output transcripts only; services/gateway/test/** are the route tests)
+git -C /projects/sandbox/vitana-v1 grep -n -E "$P" origin/main -- .             # vitana-v1 @ origin/main e31bf462
+#   -> no matches
+# Result: no caller of POST /semantic/search|write|context or /admin/embeddings/generate|reembed in either repository.
+# Callers outside these repositories (worker-runner, external scripts) are unknown; production logs not read.

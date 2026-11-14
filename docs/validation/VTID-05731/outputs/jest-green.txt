@@ -1,0 +1,70 @@
+PASS test/worker-orchestrator-auth.test.ts
+    ✓ covers exactly 12 write routes
+    ✓ GET /api/v1/worker/orchestrator/health stays open (no token → not 401)
+    ✓ GET /api/v1/worker/skills stays open (no token → not 401)
+      ✓ no token → 401 and the handler never runs
+      ✓ wrong token → 401 and the handler never runs
+      ✓ service token → handler runs (not 401/403)
+      ✓ no token → 401 and the handler never runs
+      ✓ wrong token → 401 and the handler never runs
+      ✓ service token → handler runs (not 401/403)
+      ✓ no token → 401 and the handler never runs
+      ✓ wrong token → 401 and the handler never runs
+      ✓ service token → handler runs (not 401/403)
+      ✓ no token → 401 and the handler never runs
+      ✓ wrong token → 401 and the handler never runs
+      ✓ service token → handler runs (not 401/403)
+      ✓ no token → 401 and the handler never runs
+      ✓ wrong token → 401 and the handler never runs
+      ✓ service token → handler runs (not 401/403)
+      ✓ no token → 401 and the handler never runs
+      ✓ wrong token → 401 and the handler never runs
+      ✓ service token → handler runs (not 401/403)
+      ✓ no token → 401 and the handler never runs
+      ✓ wrong token → 401 and the handler never runs
+      ✓ service token → handler runs (not 401/403)
+      ✓ no token → 401 and the handler never runs
+      ✓ wrong token → 401 and the handler never runs
+      ✓ service token → handler runs (not 401/403)
+      ✓ no token → 401 and the handler never runs
+      ✓ wrong token → 401 and the handler never runs
+      ✓ service token → handler runs (not 401/403)
+      ✓ no token → 401 and the handler never runs
+      ✓ wrong token → 401 and the handler never runs
+      ✓ service token → handler runs (not 401/403)
+      ✓ no token → 401 and the handler never runs
+      ✓ wrong token → 401 and the handler never runs
+      ✓ service token → handler runs (not 401/403)
+      ✓ no token → 401 and the handler never runs
+      ✓ wrong token → 401 and the handler never runs
+      ✓ service token → handler runs (not 401/403)
+    ✓ sends Authorization: Bearer <GATEWAY_SERVICE_TOKEN>
+    ✓ sends no Authorization when GATEWAY_SERVICE_TOKEN is unset (route answers 401, loudly)
+    ✓ /api/v1/worker/orchestrator/route carries Authorization: Bearer <GATEWAY_SERVICE_TOKEN> to the gateway base URL
+    ✓ /api/v1/worker/subagent/complete carries Authorization: Bearer <GATEWAY_SERVICE_TOKEN> to the gateway base URL
+    ✓ /api/v1/worker/orchestrator/tasks/VTID-00000/release carries Authorization: Bearer <GATEWAY_SERVICE_TOKEN> to the gateway base URL
+    ✓ /api/v1/worker/orchestrator/cleanup carries Authorization: Bearer <GATEWAY_SERVICE_TOKEN> to the gateway base URL
+    ✓ a caller-supplied Authorization wins over the service bearer
+    ✓ /api/v1/self-healing/report (not a worker route) gets no service bearer
+    ✓ /api/v1/governance/proposals (not a worker route) gets no service bearer
+    ✓ /api/v1/approvals/feed (not a worker route) gets no service bearer
+    ✓ /api/v1/worker/../self-healing/report (dot segment out of /api/v1/worker/) gets no service bearer
+    ✓ /api/v1/worker/%2e%2e/self-healing/report (dot segment out of /api/v1/worker/) gets no service bearer
+    ✓ no Authorization on worker routes when GATEWAY_SERVICE_TOKEN is unset
+    ✓ sends Authorization: Bearer <GATEWAY_SERVICE_TOKEN>
+    ✓ sends no Authorization when GATEWAY_SERVICE_TOKEN is unset (route answers 401, loudly)
+    ✓ logs one error per process when GATEWAY_SERVICE_TOKEN is unset (sparring R1-F2)
+    ✓ logs no such error when the token is set
+PASS test/worker-orchestrator-await-autopilot.test.ts
+    ✓ 400 when vtid is missing
+    ✓ 400 when autopilot_execution_id is missing
+    ✓ 401 when worker_id is missing
+    ✓ 401 when worker is NOT in worker_registry
+    ✓ 403 when worker does not hold the claim
+    ✓ 403 when claim has expired (claim_expires_at in the past)
+    ✓ returns completed with files_changed from PR diff when status=completed
+    ✓ returns pr_ready with files when status=ci (PR opened, CI in flight)
+    ✓ returns failed when status=failed
+    ✓ returns deferred (NOT failed) when timeout elapses while status=running
+    ✓ returns failed (NOT deferred) when execution row is missing entirely
+Tests:       67 passed, 67 total

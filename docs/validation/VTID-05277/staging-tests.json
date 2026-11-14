@@ -1,7 +1,7 @@
 {
   "vtid": "VTID-05277",
   "service": "gateway",
-  "note": "Read-only. Plan kiro-autonomy-fallback §5 F: staging runs with the repo variable CLAUDE_AVAILABLE=false and the live PM reports kiro_fallback on the deployed commit. Behaviour is proven by Jest; staging proves the deployed build reports the mode and keeps /status guarded. Nothing here targets production.",
+  "note": "Read-only. Plan kiro-autonomy-fallback §5 F. Owner decision 2026-11-12: the expected PM mode is claude_primary (not kiro_fallback). The live PM reports enabled=false and executor_mode=claude_primary, so the expectation below matches that. Behaviour is proven by Jest; staging proves the deployed build reports the mode and keeps /status guarded. Nothing here targets production.",
   "tests": [
     {
       "kind": "http",
@@ -14,13 +14,13 @@
     },
     {
       "kind": "http",
-      "name": "PM reports Kiro-fallback mode",
+      "name": "PM reports claude_primary mode",
       "target": "gateway",
       "method": "GET",
       "path": "/api/v1/project-manager/mode",
       "expect_status": 200,
-      "expect_json": { "ok": true, "enabled": true, "mode": "live", "executor_mode": "kiro_fallback" },
-      "reason": "read-only anonymous GET: staging runs the PM live in Kiro-fallback mode at the verified commit"
+      "expect_json": { "ok": true, "enabled": false, "mode": "live", "executor_mode": "claude_primary" },
+      "reason": "read-only anonymous GET: staging runs the PM live in claude_primary mode at the verified commit (owner decision 2026-11-12)"
     },
     {
       "kind": "http",
