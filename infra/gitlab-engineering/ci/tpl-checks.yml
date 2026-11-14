@@ -52,7 +52,7 @@
 # Lane scope: scopeCheck of queue.mjs unchanged, lane files from platform main (lane merge-queue's wrapper).
 .lane-scope:
   script:
-    - node "$CENTRAL_DIR/scripts/eng/gitlab-gates.mjs" lane-scope --repository "$DELIVERY_REPOSITORY" --repo-root "$CI_PROJECT_DIR" --platform-dir "$CENTRAL_DIR" --base "$GATE_BASE" --head "$GATE_HEAD" --branch "$GATE_BRANCH"
+    - node "$CENTRAL_DIR/scripts/eng/gitlab-gates.mjs" lane-scope --repo "$CI_PROJECT_DIR" --base "$GATE_BASE" --head "$GATE_HEAD" --branch "$GATE_BRANCH"
 
 # No suite, no merge: run.mjs check-pr from platform main, as STAGING-TESTS-REQUIRED does.
 .change-suite:
@@ -75,7 +75,7 @@
 # Collab handoff: validateRange of queue.mjs unchanged (lane merge-queue's wrapper).
 .collab-handoff:
   script:
-    - node "$CENTRAL_DIR/scripts/eng/gitlab-gates.mjs" collab-handoff --repository "$DELIVERY_REPOSITORY" --repo-root "$CI_PROJECT_DIR" --platform-dir "$CENTRAL_DIR" --base "$GATE_BASE" --head "$GATE_HEAD" --branch "$GATE_BRANCH"
+    - node "$CENTRAL_DIR/scripts/eng/gitlab-gates.mjs" collab-handoff --repo "$CI_PROJECT_DIR" --base "$GATE_BASE" --head "$GATE_HEAD" --branch "$GATE_BRANCH"
 
 # A service check. The concrete job adds its install and check lines, its cache and its rules:changes. A check that
 # passed leaves a marker the gate reads (.delivery-ran/<job id>.json with the check name).
