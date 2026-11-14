@@ -4,7 +4,7 @@ state: ready
 next_actor: kiro
 depends_on: [tenant-admin-api]
 executor: kiro
-seat: jtadic
+seat: exafyltd
 reviewer_seat: agent:vitana-lane-reviewer
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 paths:
@@ -15,7 +15,7 @@ paths:
   - services/gateway/src/frontend/command-hub/app.js
   - services/gateway/test/mt-tenant-admin-command-hub-*.test.ts
   - scripts/ci/command-hub-ownership-guard.js
-updated: 2026-11-02T16:20Z
+updated: 2026-11-12T20:17Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05489
 ---
@@ -56,3 +56,5 @@ Re-plan of `mt-tenant-admin/command-hub-tenant-module`. Versions day-shifted to 
 
 ### 2026-11-02T16:20Z · ci-plan-spar · ready (VTID allocated)
 VTID-05489 allocated after policy approval (converged-auto-v1).
+### 2026-11-12T20:17Z · pm-agent · update
+reassign lane jtadic→exafyltd (stale_ready, Claude unavailable)

@@ -22,6 +22,7 @@ jest.mock('../src/lib/supabase', () => ({
         select: () => b,
         is: () => b,
         in: () => b,
+        or: () => b,
         not: () => b,
         gte: () => b,
         order: () => b,
