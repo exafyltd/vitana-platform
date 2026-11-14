@@ -27,7 +27,7 @@
 # and erp-bridge staging workflows use):
 #   AWS_STAGING_ACCESS_KEY_ID / AWS_STAGING_SECRET_ACCESS_KEY
 # Required Secrets Manager entries (eu-central-1), both pre-existing:
-#   vitana/aurora/prod/postgrest-authenticator-uri  -> PGRST_DB_URI
+#   vitana/aurora/rehearsal/postgrest-authenticator-uri  -> PGRST_DB_URI
 #   vitana/gateway/staging/supabase-jwt-secret      -> PGRST_JWT_SECRET
 
 name: AWS Stage Deploy PostgREST-Aurora Proxy (ECS)
@@ -113,7 +113,7 @@ jobs:
                --query 'services[0].status' --output text 2>/dev/null | grep -q ACTIVE; then
             echo "::error::ECS service '${{ env.ECS_SERVICE }}' not ACTIVE in '${{ env.ECS_CLUSTER }}' — provision it first."; exit 1
           fi
-          for NAME in vitana/aurora/prod/postgrest-authenticator-uri vitana/gateway/staging/supabase-jwt-secret; do
+          for NAME in vitana/aurora/rehearsal/postgrest-authenticator-uri vitana/gateway/staging/supabase-jwt-secret; do
             ARN=$(aws secretsmanager describe-secret --secret-id "$NAME" --query ARN --output text 2>/dev/null || true)
             if [ -z "$ARN" ] || [ "$ARN" = "None" ]; then
               echo "::error::Secret '$NAME' missing in Secrets Manager. Refusing to register a task definition that cannot start."; exit 1
@@ -136,7 +136,7 @@ jobs:
         run: |
           set -e
           IMAGE="${{ steps.build.outputs.image }}"
-          SEC_DB_URI=$(aws secretsmanager describe-secret --secret-id vitana/aurora/prod/postgrest-authenticator-uri --query ARN --output text)
+          SEC_DB_URI=$(aws secretsmanager describe-secret --secret-id vitana/aurora/rehearsal/postgrest-authenticator-uri --query ARN --output text)
           SEC_JWT=$(aws secretsmanager describe-secret --secret-id vitana/gateway/staging/supabase-jwt-secret --query ARN --output text)
           TD_ARN=$(aws ecs describe-services --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}" \
             --query 'services[0].taskDefinition' --output text)
