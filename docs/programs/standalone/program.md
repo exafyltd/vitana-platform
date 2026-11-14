@@ -68,6 +68,7 @@ specs:
   - vitana-platform:welcome-finish-r2
   - vitana-platform:i18n-propagate-stale-write
   - vitana-platform:sparring-floor-retry
+  - vitana-platform:mt-queue-superseded-close
   - vitana-platform:ci-dockerhub-mirror
   - vitana-platform:review-survives-main-merge
   - vitana-platform:operator-chat-service-token
