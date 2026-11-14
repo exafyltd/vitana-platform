@@ -1,0 +1,4 @@
+# VTID-05734 — commands (counts and results only)
+2026-11-11T16:59Z  bash scripts/aws/test/rehearsal-clone.sh   # test changed, script of origin/main: 74 passed, 2 failed (outputs/red.txt)
+2026-11-11T16:59Z  bash -n scripts/aws/rehearsal-clone.sh     # syntax ok
+2026-11-11T16:59Z  bash scripts/aws/test/rehearsal-clone.sh   # this branch: 76 passed, 0 failed (outputs/green.txt)

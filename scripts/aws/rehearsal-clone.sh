@@ -137,9 +137,24 @@ fi
 ACT_ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
 [ "$ACT_ACCOUNT" = "$ACCOUNT" ] || refuse "caller is in account $ACT_ACCOUNT, expected $ACCOUNT"
 
-describe_cluster() {  # prints JSON of one cluster, or nothing when it does not exist
-  aws rds describe-db-clusters --region "$REGION" --db-cluster-identifier "$1" --output json 2>/dev/null \
-    | jq -c '.DBClusters[0] // empty' || true
+describe_cluster() {  # prints JSON of one cluster, or nothing when it does not exist; dies on any other error
+  # VTID-05734: an access or API error used to read as "not found" (stderr was discarded), so the pre-check could not
+  # say whether the cluster is absent or the role may not read it. Only DBClusterNotFoundFault means absent now.
+  local out err rc why
+  err=$(mktemp)
+  set +e
+  out=$(aws rds describe-db-clusters --region "$REGION" --db-cluster-identifier "$1" --output json 2>"$err")
+  rc=$?
+  set -e
+  if [ "$rc" -ne 0 ]; then
+    if grep -q 'DBClusterNotFoundFault' "$err"; then rm -f "$err"; return 0; fi
+    if grep -qiE 'AccessDenied|not authorized' "$err"; then rm -f "$err"; die "cluster $1: access denied (the role may not describe it)"; fi
+    why=$(grep -oE '\(([A-Za-z]+)\)' "$err" | head -1 || true)
+    rm -f "$err"
+    die "cluster $1: describe failed ${why:-(unknown error)}"
+  fi
+  rm -f "$err"
+  jq -c '.DBClusters[0] // empty' <<<"$out"
 }
 pg_exists() {
   aws rds describe-db-cluster-parameter-groups --region "$REGION" --db-cluster-parameter-group-name "$1" >/dev/null 2>&1
