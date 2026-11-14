@@ -95,7 +95,15 @@ export const PROTECTED_GATE_BUILTIN = ['CLAUDE.md', 'scripts/collab/plan-spar.mj
   'scripts/collab/protected-gate-files.json', 'services/gateway/src/services/plan-sparring/**',
   'services/gateway/src/services/project-manager/governance.ts', '.github/workflows/PLAN-SPAR.yml',
   '.github/workflows/PR-GATE.yml', '.github/workflows/AWS-PROD-*.yml', '.kiro/agents/vitana-lane-reviewer.md',
-  'supabase/migrations/*vtid_ledger*.sql', 'supabase/migrations/*plan_sparring*.sql'];
+  'supabase/migrations/*vtid_ledger*.sql', 'supabase/migrations/*plan_sparring*.sql',
+  // VTID-05765 (plan autonomous-to-staging): VTID allocation and the gate-invariant check and its workflow.
+  '.github/workflows/VTID-ALLOCATE.yml', 'scripts/collab/gate-invariants.test.mjs'];
+/** VTID-05765: the lane marker that lets an executor: kiro lane change a protected gate file, under the two-model rule
+ * (two reviewer-agent accepts from different chain models on the current head, land-guard.mjs mergeDecision). Read only
+ * from a trusted revision of the lane file (merge-base or a qualifying plan( PR), never the PR head. */
+export const PROTECTED_GATE_TWO_MODEL = 'two-model';
+export const isTwoModelLane = (fm) => !!fm && fm.executor === 'kiro' && fm.protected_gate === PROTECTED_GATE_TWO_MODEL
+  && isReviewerAgent(fm.reviewer_seat);
 function loadProtectedGatePaths() {
   let text;
   try { text = readFileSync(new URL('./protected-gate-files.json', import.meta.url), 'utf8'); } catch (e) {
@@ -237,7 +245,9 @@ export function validateLane(fm, slug, lane, laneIds) {
   if (fm.executor && fm.state && fm.state !== 'ready' && fm.state !== 'parked' && paths.length === 0) e.push(`paths required in state ${fm.state} for a lane that declares an executor`);
   if (fm.executor === 'kiro') {
     for (const g of paths) {
-      if (globTouchesProtected(g)) e.push(`paths "${g}" reaches a protected gate file (a governance path an agent review cannot unlock, scripts/collab/protected-gate-files.json); such a lane needs executor: claude`);
+      if (globTouchesProtected(g)) {
+        if (!isTwoModelLane(fm)) e.push(`paths "${g}" reaches a protected gate file (scripts/collab/protected-gate-files.json); such a lane needs executor: claude, or protected_gate: ${PROTECTED_GATE_TWO_MODEL} with reviewer_seat: ${REVIEWER_AGENTS[0]} (two reviewer-agent accepts from different chain models)`);
+      }
       else if (globTouchesGovernance(g) && !isReviewerAgent(fm.reviewer_seat)) e.push(`paths "${g}" reaches a governance path; such a lane needs executor: claude, or reviewer_seat: ${REVIEWER_AGENTS[0]}`);
     }
   }
@@ -314,6 +324,17 @@ function entryEdge(kind, entry) {
 }
 
 /**
+ * Owner exception (plan collab-lane-close-exception, owner decision 2026-11-11): these two closed specs may pass
+ * `in-review → verified` without a reviewer-agent accept, when the head front matter carries the four flat fields
+ * below. The allowlist is in code, never configuration; the merge-sha check on `verified → done` still applies.
+ */
+export const CLOSED_BY_OWNER_EXCEPTION = ['profile-posts-full-width', 'staging-verify-runner-fix'];
+export function ownerExceptionCovers(slug, fm) {
+  return CLOSED_BY_OWNER_EXCEPTION.includes(slug) && fm?.reviewer_exception === 'true'
+    && !!fm.reviewer_exception_approval && !!fm.reviewer_exception_pr && !!fm.reviewer_exception_merge_sha;
+}
+
+/**
  * Validates a change of `state` that spans several edges in one PR (plan pipeline-lane-state-efficiency §3.1).
  * Every edge must be its own newly appended log entry, connect base → head, be legal on its own (done terminal,
  * parked returns only to the parked_from tracked through the chain), be in time order, and carry its evidence:
@@ -325,7 +346,7 @@ function entryEdge(kind, entry) {
  * the `in-review → verified` entry. A plan chain ending `done` needs every lane at the head `done` (`laneStates`).
  * Returns the list of errors ([] = valid). Fails closed: an unknown header carries no edge.
  */
-export function transitionChain(kind, beforeText, afterText, { reviewCommits = [], laneStates = null } = {}) {
+export function transitionChain(kind, beforeText, afterText, { reviewCommits = [], laneStates = null, slug = null } = {}) {
   const before = parseFrontMatter(beforeText);
   const after = parseFrontMatter(afterText);
   if (!before || !after) return ['chain needs the file at both the merge-base and the head'];
@@ -370,7 +391,7 @@ export function transitionChain(kind, beforeText, afterText, { reviewCommits = [
   for (const x of edges) {
     const edge = `${x.a} → ${x.b}`;
     if (kind === 'lane' && x.a === 'executing' && x.b === 'in-review' && !PR_URL_RE.test(x.e.body)) errors.push(`${edge} has no PR URL (or owner/repo#N) in its entry`);
-    if (kind === 'lane' && x.a === 'in-review' && (x.b === 'verified' || x.b === 'executing')) {
+    if (kind === 'lane' && x.a === 'in-review' && (x.b === 'verified' || x.b === 'executing') && !(x.b === 'verified' && ownerExceptionCovers(slug, after))) {
       const verdict = x.b === 'verified' ? 'accept' : 'changes';
       const r = review(x.i, verdict);
       if (!r) errors.push(`${edge} has no ${verdict} review entry (review: ${verdict}, head: <sha>) as the latest review since the last changes round`);
@@ -821,7 +842,7 @@ export function validateRange(repo, { base, head, branch = '', allowInitial = []
         ? specFilesAt(repo, head).filter((f) => classifyPath(f)?.slug === c.slug && classifyPath(f).kind === 'lane')
           .map((f) => parseFrontMatter(showFile(repo, head, f))?.state)
         : null;
-      for (const x of transitionChain(c.kind, beforeText, afterText, { reviewCommits, laneStates })) errors.push(`${p}: ${x}`);
+      for (const x of transitionChain(c.kind, beforeText, afterText, { reviewCommits, laneStates, slug: c.slug })) errors.push(`${p}: ${x}`);
       continue;
     }
     for (const x of single) errors.push(`${p}: ${x}`);
@@ -1000,7 +1021,7 @@ export function scopeCheck(repo, { base, head, branch = '', fetchLane = null, fe
     const PERM = ['executor', 'seat', 'reviewer_seat', 'paths'];
     // VTID-05408 (kiro-lane-admin §2): `lane_admin` is NOT a permission field but is pinned to the trusted revision
     // alongside PERM, so a lane PR can never self-grant it (T-D) and a head-written value cannot leak downstream.
-    const TRUSTED_PINNED = [...PERM, 'lane_admin'];
+    const TRUSTED_PINNED = [...PERM, 'lane_admin', 'protected_gate'];
     const changed = PERM.filter((k) => JSON.stringify(asList(trustedFm[k])) !== JSON.stringify(asList(fm[k])));
     const sessions = new Set(commits.filter((k) => k.files.includes(lanePath) && k.session !== PM_AGENT).map((k) => k.session));
     const claudeOnly = sessions.size > 0 && [...sessions].every((x) => /^session_/.test(x));
@@ -1031,7 +1052,11 @@ export function scopeCheck(repo, { base, head, branch = '', fetchLane = null, fe
       if (!matchesAny(f, paths)) errors.push(`${f} is outside lane ${key} (paths: ${paths.join(', ')})`);
       else if (fm.executor === 'claude') continue;
       // VTID-05276 (plan §4.3): a protected gate file never passes for a non-claude lane, whatever its reviewer.
-      else if (matchesAny(f, PROTECTED_GATE_PATHS)) errors.push(`${f} is a protected gate file (governance path, scripts/collab/protected-gate-files.json); lane ${key} has executor ${fm.executor || 'unset'} — a reviewer-agent accept alone never unlocks it (the owner's instruction naming the plan is the authority; Claude Code is retired)`);
+      else if (matchesAny(f, PROTECTED_GATE_PATHS)) {
+        // VTID-05765: a trusted two-model lane may change it; the merge then needs two accepts from different models.
+        if (isTwoModelLane(fm) && trustedFrom) continue;
+        errors.push(`${f} is a protected gate file (governance path, scripts/collab/protected-gate-files.json); lane ${key} has executor ${fm.executor || 'unset'} — it needs protected_gate: ${PROTECTED_GATE_TWO_MODEL} (executor kiro, reviewer_seat ${REVIEWER_AGENTS[0]}) from a trusted source, or executor: claude`);
+      }
       else if (!matchesAny(f, GOVERNANCE_PATHS)) continue;
       else if (fm.executor === 'kiro' && isReviewerAgent(fm.reviewer_seat) && trustedFrom) continue;
       else errors.push(`${f} is a governance path; lane ${key} has executor ${fm.executor || 'unset'} (needs executor kiro with reviewer_seat ${REVIEWER_AGENTS[0]} from main or an approved plan( PR — or a legacy executor claude lane)`);

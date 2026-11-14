@@ -1,0 +1,6 @@
+# origin/main bf1cb134e6 code + PR-head queue.test.mjs
+not ok 53 - VTID-05276 T16: protected-gate-files.json parses, equals plan §4.3 and the loaded list; every entry is governance or gate code
+not ok 87 - VTID-05765: validateLane accepts a protected path only for a two-model kiro lane with the agent reviewer
+not ok 88 - VTID-05765: scope-check lets a trusted two-model lane change a protected gate file, never a head-granted one
+# pass 85
+# fail 3

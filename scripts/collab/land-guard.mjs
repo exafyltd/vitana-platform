@@ -26,12 +26,16 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { globToRegex, PROTECTED_GATE_PATHS, GOVERNANCE_PATHS } from './queue.mjs';
+import { globToRegex, PROTECTED_GATE_PATHS, GOVERNANCE_PATHS, REVIEWER_AGENTS } from './queue.mjs';
 
 export const EVIDENCE_FILES = ['acceptance.md', 'commands.log', 'scope.json'];
 export const OK_CONCLUSIONS = new Set(['success', 'skipped', 'neutral']);
 export const RELEASABLE = new Set(['done', 'parked']);
 const HERE = path.dirname(fileURLToPath(import.meta.url));
+/** VTID-05765: the reviewer agent's model chain (= governance.ts REVIEWER_AGENT_MODELS, parity-tested). */
+export const REVIEWER_MODELS = Object.freeze(['claude-sonnet-5.5', 'claude-opus-5.5', 'claude-sonnet-4.5']);
+/** VTID-05765: a protected gate file merges only with this many accepts from distinct chain models. */
+export const PROTECTED_ACCEPTS_REQUIRED = 2;
 
 // ── pure decisions ───────────────────────────────────────────────────────────
 /** Missing evidence files for a VTID, given the repo's tracked ∪ staged paths. */
@@ -105,8 +109,33 @@ export function protectedTouched(files, globs) {
 }
 
 /** Merge decision from the gates. */
-export function mergeDecision({ review, checks, behindBy, protectedFiles = [] }) {
-  if (protectedFiles.length) return { ok: false, code: 1, reason: `protected gate file(s) changed (${protectedFiles.join(', ')}): §7b needs a Claude review or an owner instruction; not merged by the guard` };
+/**
+ * VTID-05765 (plan autonomous-to-staging): review entries in commit messages → the distinct chain models that
+ * accepted. `entries` = [{ verdict, reviewer, current }] where `current` says the entry counts for the PR's current
+ * head (reviewCurrent). Only `agent:vitana-lane-reviewer (<model>)` with <model> in REVIEWER_MODELS counts.
+ */
+export function protectedAcceptModels(entries) {
+  const models = new Set();
+  for (const e of entries || []) {
+    if (!e || e.verdict !== 'accept' || !e.current) continue;
+    const m = new RegExp(`^${REVIEWER_AGENTS[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\(([^)]+)\\)$`).exec(String(e.reviewer || '').trim());
+    if (m && REVIEWER_MODELS.includes(m[1])) models.add(m[1]);
+  }
+  return [...models];
+}
+/** Review-entry trailers of one commit message, or null when it is not a review entry. */
+export function parseReviewEntry(message) {
+  const get = (k) => (new RegExp(`^${k}:\\s*(.+)$`, 'm').exec(message || '') || [])[1]?.trim();
+  const review = get('Collab-Review');
+  if (!review) return null;
+  return { review, verdict: get('Collab-Verdict'), reviewer: get('Collab-Reviewer'), reviewedHead: get('Collab-Reviewed-Head') };
+}
+
+export function mergeDecision({ review, checks, behindBy, protectedFiles = [], protectedModels = [] }) {
+  if (protectedFiles.length) {
+    const distinct = new Set(protectedModels);
+    if (distinct.size < PROTECTED_ACCEPTS_REQUIRED) return { ok: false, code: 1, reason: `protected gate file(s) changed (${protectedFiles.join(', ')}): needs ${PROTECTED_ACCEPTS_REQUIRED} reviewer-agent accepts from different chain models on the current head (have ${distinct.size}${distinct.size ? `: ${[...distinct].join(', ')}` : ''}); not merged by the guard` };
+  }
   if (!review.ok) return { ok: false, code: 1, reason: `review: ${review.reason}` };
   if (checks.state === 'fail') return { ok: false, code: 1, reason: `checks: ${checks.detail}` };
   if (checks.state === 'pending') return { ok: false, code: 2, reason: `checks: ${checks.detail}` };
@@ -281,7 +310,29 @@ export async function main(argv) {
         files.push(...f.map((x) => x.filename));
         if (f.length < 100) break;
       }
-      const d = mergeDecision({ review, checks, behindBy: cmp.behind_by, protectedFiles: protectedTouched(files, PROTECTED_GATE_PATHS) });
+      const protectedFiles = protectedTouched(files, PROTECTED_GATE_PATHS);
+      let protectedModels = [];
+      if (protectedFiles.length && review.ok) {
+        const commits = [];
+        for (let page = 1; page < 4; page++) {
+          const c = ghJson(`repos/${o.gh}/pulls/${o.pr}/commits?per_page=100&page=${page}`) || [];
+          commits.push(...c);
+          if (c.length < 100) break;
+        }
+        const entries = [];
+        const memo = new Map();
+        for (const c of commits) {
+          const e = parseReviewEntry(c.commit?.message);
+          if (!e || e.review !== key || !/^[0-9a-f]{40}$/.test(e.reviewedHead || '')) continue;
+          if (!memo.has(e.reviewedHead)) {
+            const w = reviewWalk(o, e.reviewedHead, head, key);
+            memo.set(e.reviewedHead, reviewCurrent(e.reviewedHead, head, w.after, key, w.prDiffSame).ok);
+          }
+          entries.push({ ...e, current: memo.get(e.reviewedHead) });
+        }
+        protectedModels = protectedAcceptModels(entries);
+      }
+      const d = mergeDecision({ review, checks, behindBy: cmp.behind_by, protectedFiles, protectedModels });
       if (!d.ok) return say(d.code, d.reason);
       const res = JSON.parse(run('gh', ['api', '-X', 'PUT', `repos/${o.gh}/pulls/${o.pr}/merge`, '-f', 'merge_method=squash', '-f', `sha=${head}`, '-f', `commit_title=${o.title}`]));
       return say(0, `merged ${res.sha} (${d.reason})`);

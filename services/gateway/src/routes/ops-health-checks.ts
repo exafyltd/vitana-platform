@@ -349,6 +349,8 @@ router.get('/push-dispatch', (_req: Request, res: Response) => { // public-route
           .from('user_notifications')
           .select('created_at')
           .is('push_sent_at', null)
+          // VTID-05718: held chat bursts are not a dispatch backlog. NULL-safe (see scheduled-notifications-repository).
+          .or('push_outcome.is.null,push_outcome.not.in.(pending_burst,sending)')
           .in('channel', ['push', 'push_and_inapp'])
           .gte('created_at', since)
           .order('created_at', { ascending: true })

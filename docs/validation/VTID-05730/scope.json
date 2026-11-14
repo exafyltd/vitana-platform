@@ -1,0 +1,14 @@
+{
+  "vtid": "VTID-05730",
+  "kind": "fix",
+  "paths": [
+    "services/gateway/src/routes/payments-stripe-webhook.ts",
+    "services/gateway/src/index.ts",
+    "services/gateway/test/payments-stripe-dance-signature.test.ts",
+    "services/gateway/test/routes/payments-stripe-webhook.test.ts",
+    "docs/validation/VTID-05730/**"
+  ],
+  "weakens_tests": [],
+  "red_green_exempt": [],
+  "sparring_record": ".kiro/specs/gateway-critical-route-auth/sparring/verdict.md"
+}
