@@ -19,7 +19,7 @@ Scope: vitana-platform (docs/delivery/, generator, CI wiring, CLAUDE.md, AGENTS.
 ## Protected-file authority (defined mechanically)
 A change to a protected gate file (protected-gate-files.json) is accepted only when all three hold:
 1. The lane's plan front-matter (`.kiro/specs/<slug>/handoff.md`) has `sparring_verdict: converged`, a `plan_hash`, and a `protected_files:` list that names the changed file.
-2. The plan hash equals the SHA-256 of the plan body between the `<!-- plan:begin -->` and `<!-- plan:end -->` markers at the merge head.
+2. The plan hash equals the SHA-256 of the plan body between the plan-begin and plan-end markers at the merge head.
 3. The reviewer accept trailer on the current head (`Collab-Review: accept`, `Collab-Reviewer-Seat`) names a seat different from the author's `Collab-Seat` trailer.
 
 Data path: the merge command in land-guard.mjs (the `merge` command, lines 268-287) computes a `protectedApproval` object from the lane's trusted front-matter and the head's trailers, and passes it into `mergeDecision`. `queue.mjs` scopeCheck (line 1034) and `governance.ts` (lines 197-198) receive the same object from their callers. The object has: `{ converged: boolean, plannedFiles: string[], reviewerSeat: string, authorSeat: string }`. The predicate is one pure function, `protectedApprovalOk(approval, changedFiles)`, implemented once in scripts/collab/protected-approval.mjs and imported by queue.mjs and land-guard.mjs; governance.ts re-implements the same predicate in TypeScript with a shared fixture test so the two cannot drift.
