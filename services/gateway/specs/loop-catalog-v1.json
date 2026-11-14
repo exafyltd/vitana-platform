@@ -377,7 +377,8 @@
           "llm-spend-budget"
         ],
         "workflows": [
-          "ALERT-OASIS-LEDGER-INTEGRITY"
+          "ALERT-OASIS-LEDGER-INTEGRITY",
+          "GATE-INVARIANTS"
         ],
         "test_contracts": []
       },
