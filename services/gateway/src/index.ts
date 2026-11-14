@@ -475,6 +475,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const communityNewMembersRouter = require('./routes/community-new-members').default;
   // VTID-02754: find-one-community-member voice search endpoint
   const communityFindMemberRouter = require('./routes/community-find-member').default;
+  // VTID-05207: "Say Hello 👋" greeting-suggestion endpoint (new-member welcome).
+  const newMemberGreetingRouter = require('./routes/new-member-greeting').default;
   // E2: profile partner_preferences + service_offerings PATCH endpoints
   const profilePrefsRouter = require('./routes/profile-prefs').default;
   // VTID-DANCE-D7: open-asks public feed (cold-start primer; flag-gated with intent engine)
@@ -612,6 +614,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
   // VTID-01230: Raw body parser for Stripe Connect webhooks (MUST come BEFORE express.json())
   app.use('/api/v1/stripe/webhook', express.raw({ type: 'application/json' }));
+  // VTID-05730 (gateway-critical-route-auth): raw body so routes/payments-stripe-webhook.ts can verify the Stripe signature
+  app.use('/webhooks/stripe-dance', express.raw({ type: 'application/json' }));
   // VTID-03107: Raw body parser for customer-side Stripe billing webhook (separate signing secret)
   app.use('/api/v1/billing/webhooks/stripe', express.raw({ type: 'application/json' }));
   // VTID-03413: AWS SNS posts Content-Type: text/plain (even though the body is JSON) —
@@ -1416,6 +1420,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1', communityMembersRouter, { owner: 'community-members' });
   mountRouterSync(app, '/api/v1', communityNewMembersRouter, { owner: 'community-new-members' });
   mountRouterSync(app, '/api/v1', communityFindMemberRouter, { owner: 'community-find-member' });
+  // VTID-05207: greeting-suggestion route self-includes 'community/new-member/...'.
+  mountRouterSync(app, '/api/v1', newMemberGreetingRouter, { owner: 'new-member-greeting' });
   mountRouterSync(app, '/api/v1', profilePrefsRouter, { owner: 'profile-prefs' });
   if (intentOpenAsksRouter) mountRouterSync(app, '/api/v1', intentOpenAsksRouter, { owner: 'intent-open-asks' });
   if (intentScanRouter) mountRouterSync(app, '/api/v1', intentScanRouter, { owner: 'intent-scan' });
@@ -2019,6 +2025,20 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         }
       } catch (error) {
         console.warn('⚠️ VTNA reward sweep loop initialization failed (non-fatal):', error);
+      }
+
+      // VTID-05718: chat burst sweep — sends one push per held chat burst (every 5 s). ECS only: it reads and
+      // writes the same user_notifications rows the other gateway tasks use, which is safe across tasks.
+      try {
+        const { startChatBurstSweep } = require('./services/chat-burst-sweep');
+        const { getSupabase } = require('./lib/supabase');
+        if (startChatBurstSweep(getSupabase)) {
+          console.log('💬 Chat burst sweep started (VTID-05718)');
+        } else {
+          console.log('⏸️ Chat burst sweep not started (coalescing or hold disabled)');
+        }
+      } catch (error) {
+        console.warn('⚠️ Chat burst sweep initialization failed (non-fatal):', error);
       }
 
       // VTID-04982: Rewards shop — releases unpaid shipping holds every 5 minutes

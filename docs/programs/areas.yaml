@@ -12,10 +12,20 @@
 exceptions_seat: exafyltd
 
 seats:
-  jtadic:   { account: j.tadic@exafy.io,        surface: kiro-web, automation: .kiro/automations/jtadic.md }
-  exafyltd: { account: exafyltd@gmail.com,      surface: kiro-web, automation: .kiro/automations/exafyltd.md }
-  hotmail:  { account: dstevanovic@hotmail.com, surface: kiro-ide }   # also the key on the server-side Kiro runner
-  exafy:    { account: d.stevanovic@exafy.io,   surface: kiro-web, automation: .kiro/automations/exafy.md }
+  # VTID-05715 (plan kiro-fleet-register): `kiro: <n>` is the account slot (Kiro 1-12) of the owner roster; the accounts'
+  # names and logins are recorded outside this repository (strategy repository, ACCT-K01..K12). Definitions:
+  #   account   = a Kiro login; seat = its configured identity here; operator = who drives a session on it;
+  #   session   = one run, id kiro-<seat>-YYYYMMDDHHMM-xxxx. A seat with `surface: pending` has no session yet.
+  # Slots 9-11 are reserved: no account named, no seat.
+  jtadic:   { surface: kiro-web, automation: .kiro/automations/jtadic.md, kiro: 12 }
+  exafyltd: { surface: kiro-web, automation: .kiro/automations/exafyltd.md, kiro: 3 }
+  hotmail:  { surface: kiro-ide, kiro: 1 }   # also the key on the server-side Kiro runner
+  exafy:    { surface: kiro-web, automation: .kiro/automations/exafy.md, kiro: 2 }
+  vitanaland: { surface: pending, kiro: 4 }
+  office:   { surface: pending, kiro: 5 }
+  support:  { surface: pending, kiro: 6 }
+  admin:    { surface: pending, kiro: 7 }
+  tasks:    { surface: pending, kiro: 8 }
 
 areas:
   backoffice:
