@@ -118,16 +118,24 @@ describe('decideChatPushes', () => {
     delete process.env.CHAT_PUSH_COALESCING_ENABLED;
   });
 
-  test('first message (nothing unread) pushes', async () => {
+  test('first message (nothing unread) is allowed to push and no burst is pending', async () => {
     const { sb } = fakeSupabase([]);
     const d = await decideChatPushes(sb, ['u1'], KEY, NOW);
-    expect(d.get('u1')).toEqual({ push: true, unreadCount: 1 });
+    expect(d.get('u1')).toEqual({ push: true, unreadCount: 1, pendingBurst: false });
   });
 
   test('a push sent 1 min ago and still unread holds the next one back', async () => {
     const { sb } = fakeSupabase([pushedRow('u1', 60_000)]);
     const d = await decideChatPushes(sb, ['u1'], KEY, NOW);
-    expect(d.get('u1')).toEqual({ push: false, unreadCount: 2 });
+    expect(d.get('u1')).toEqual({ push: false, unreadCount: 2, pendingBurst: false });
+  });
+
+  test('a held burst still waiting for its push is reported as pending', async () => {
+    const { sb } = fakeSupabase([
+      { user_id: 'u1', created_at: ago(5_000), push_sent_at: null, push_outcome: 'pending_burst', data: { conversation_key: KEY } },
+    ]);
+    const d = await decideChatPushes(sb, ['u1'], KEY, NOW);
+    expect(d.get('u1')).toEqual({ push: true, unreadCount: 2, pendingBurst: true });
   });
 
   test('held-back rows do not count as pushed — the window is anchored on the real push', async () => {
@@ -136,7 +144,7 @@ describe('decideChatPushes', () => {
       pushedRow('u1', CHAT_PUSH_COALESCE_WINDOW_MS + 60_000),
     ]);
     const d = await decideChatPushes(sb, ['u1'], KEY, NOW);
-    expect(d.get('u1')).toEqual({ push: true, unreadCount: 3 });
+    expect(d.get('u1')).toEqual({ push: true, unreadCount: 3, pendingBurst: false });
   });
 
   test('a row whose push was suppressed (DND) does not hold the next one back', async () => {
@@ -159,13 +167,13 @@ describe('decideChatPushes', () => {
       ]),
     );
     expect(d.get('u1')!.push).toBe(false);
-    expect(d.get('u2')).toEqual({ push: true, unreadCount: 1 });
+    expect(d.get('u2')).toEqual({ push: true, unreadCount: 1, pendingBurst: false });
   });
 
   test('a read error fails open', async () => {
     const { sb } = fakeSupabase(new Error('boom'));
     const d = await decideChatPushes(sb, ['u1'], KEY, NOW);
-    expect(d.get('u1')).toEqual({ push: true, unreadCount: 1 });
+    expect(d.get('u1')).toEqual({ push: true, unreadCount: 1, pendingBurst: false });
   });
 
   test('CHAT_PUSH_COALESCING_ENABLED=false pushes every message without reading', async () => {
@@ -173,14 +181,14 @@ describe('decideChatPushes', () => {
     const { sb, from } = fakeSupabase([pushedRow('u1', 10_000)]);
     const d = await decideChatPushes(sb, ['u1'], KEY, NOW);
     expect(from).not.toHaveBeenCalled();
-    expect(d.get('u1')).toEqual({ push: true, unreadCount: 1 });
+    expect(d.get('u1')).toEqual({ push: true, unreadCount: 1, pendingBurst: false });
   });
 });
 
 describe('coalesceChatPushes', () => {
   const payload = { title: 'Dragan Alexander', body: 'This should replace Google Chat', data: { url: '/inbox/u/sender-1' } };
 
-  test('every payload carries the conversation key and tag', async () => {
+  test('every payload carries the conversation key and tag; a new message is held for its burst', async () => {
     const { sb } = fakeSupabase([]);
     const [p] = await coalesceChatPushes(sb, KEY, [{ userId: 'u1', kind: 'message', payload }], NOW);
     expect(p.payload.tag).toBe('chat:dm:sender-1');
@@ -188,7 +196,27 @@ describe('coalesceChatPushes', () => {
       expect.objectContaining({ conversation_key: KEY, tag: 'chat:dm:sender-1', url: '/inbox/u/sender-1' }),
     );
     expect(p.payload.body).toBe(payload.body);
-    expect(p.opts).toBeUndefined();
+    expect(p.opts).toEqual({ holdForBurst: { dueAt: new Date(NOW + 20_000).toISOString() } });
+  });
+
+  test('a message joining a burst already held for this conversation is coalesced', async () => {
+    const { sb } = fakeSupabase([
+      { user_id: 'u1', created_at: ago(5_000), push_sent_at: null, push_outcome: 'pending_burst', data: { conversation_key: KEY } },
+    ]);
+    const [p] = await coalesceChatPushes(sb, KEY, [{ userId: 'u1', kind: 'message', payload }], NOW);
+    expect(p.opts).toEqual({ suppressPush: 'coalesced' });
+  });
+
+  test('with the hold at 0 a new message pushes at once (pre-VTID-05718)', async () => {
+    process.env.CHAT_PUSH_BURST_HOLD_MS = '0';
+    try {
+      const { sb } = fakeSupabase([]);
+      const [p] = await coalesceChatPushes(sb, KEY, [{ userId: 'u1', kind: 'message', payload }], NOW);
+      expect(p.opts).toBeUndefined();
+      expect(p.payload.body).toBe(payload.body);
+    } finally {
+      delete process.env.CHAT_PUSH_BURST_HOLD_MS;
+    }
   });
 
   test('a burst inside the window is held back', async () => {
@@ -197,7 +225,7 @@ describe('coalesceChatPushes', () => {
     expect(p.opts).toEqual({ suppressPush: 'coalesced' });
   });
 
-  test('after the window the push summarises the unread messages, in the member\'s language', async () => {
+  test('after the window a new message is held; the summary is built when the burst is sent', async () => {
     const old = CHAT_PUSH_COALESCE_WINDOW_MS + 60_000;
     const { sb } = fakeSupabase([
       pushedRow('u-de', old),
@@ -214,9 +242,8 @@ describe('coalesceChatPushes', () => {
       NOW,
     );
     const byUser = new Map(out.map((p) => [p.userId, p]));
-    expect(byUser.get('u-de')!.opts).toBeUndefined();
-    expect(byUser.get('u-de')!.payload.body).toBe('3 neue Nachrichten · This should replace Google Chat');
-    expect(byUser.get('u-en')!.payload.body).toBe('2 new messages · This should replace Google Chat');
+    expect(byUser.get('u-de')!.opts).toEqual({ holdForBurst: { dueAt: new Date(NOW + 20_000).toISOString() } });
+    expect(byUser.get('u-en')!.opts).toEqual({ holdForBurst: { dueAt: new Date(NOW + 20_000).toISOString() } });
     expect(byUser.get('u-de')!.payload.title).toBe('Dragan Alexander');
   });
 
@@ -226,6 +253,39 @@ describe('coalesceChatPushes', () => {
     expect(p.opts).toBeUndefined();
     expect(p.payload.body).toBe(payload.body);
     expect(p.payload.tag).toBe('chat:dm:sender-1');
+  });
+});
+
+describe('notifyUser with holdForBurst (VTID-05718)', () => {
+  beforeAll(() => {
+    (global as any).fetch = jest.fn();
+    process.env.APPILIX_APP_KEY = 'app';
+    process.env.APPILIX_API_KEY = 'api';
+  });
+  beforeEach(() => {
+    jest.clearAllMocks();
+    repo.fetchLiveDeviceTokensForUser.mockResolvedValue({ data: [{ fcm_token: 'tok-1', device_label: 'Chrome' }], error: null });
+    repo.insertUserNotification.mockResolvedValue({ data: { id: 'notif-hold' }, error: null });
+    fcmSend.mockResolvedValue('msg-id');
+  });
+
+  const chatPayload = {
+    title: 'Dragan Alexander',
+    body: 'hi',
+    tag: 'chat:dm:sender-1',
+    data: { url: '/inbox/u/sender-1', conversation_key: 'dm:sender-1', tag: 'chat:dm:sender-1' },
+  };
+
+  test('writes the row held: pending_burst with burst_due_at, no push now, no push_sent_at', async () => {
+    const dueAt = new Date(NOW + 20_000).toISOString();
+    const r = await notifyUser('u1', 't1', 'new_chat_message', chatPayload, {} as any, { holdForBurst: { dueAt } });
+    expect(r).toEqual(expect.objectContaining({ pushed: 0, inapp: true }));
+    expect(fcmSend).not.toHaveBeenCalled();
+    const row = repo.insertUserNotification.mock.calls[0][1];
+    expect(row.push_outcome).toBe('pending_burst');
+    expect(row.push_sent_at).toBeUndefined();
+    expect(row.data).toEqual(expect.objectContaining({ burst_due_at: dueAt, conversation_key: 'dm:sender-1' }));
+    expect(repo.setNotificationPushOutcome).not.toHaveBeenCalled();
   });
 });
 

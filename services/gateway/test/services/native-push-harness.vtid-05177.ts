@@ -81,6 +81,9 @@ class FakeQuery {
   neq(c: string, v: any) { this.rec('neq', [c, v]); this.filters.push((r) => r[c] !== v); return this; }
   is(c: string, v: any) { this.rec('is', [c, v]); this.filters.push((r) => (r[c] ?? null) === v); return this; }
   in(c: string, vs: any[]) { this.rec('in', [c, vs]); this.filters.push((r) => vs.includes(r[c])); return this; }
+  // VTID-05718: the NULL-safe push_outcome filter of the dispatch query. Fixtures carry no held or claimed rows,
+  // so it is accepted and not recorded (the recorded golden calls stay the same).
+  or(_expr: string) { return this; }
   like(c: string, p: string) { this.rec('like', [c, p]); const re = likeToRegex(p); this.filters.push((r) => re.test(String(r[c] ?? ''))); return this; }
   lt(c: string, v: any) { this.rec('lt', [c, v]); this.filters.push((r) => r[c] < v); return this; }
   gte(c: string, v: any) { this.rec('gte', [c, v]); this.filters.push((r) => r[c] >= v); return this; }

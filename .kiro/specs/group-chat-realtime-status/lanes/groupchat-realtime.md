@@ -1,6 +1,6 @@
 ---
 lane: groupchat-realtime
-state: in-review
+state: parked
 next_actor: kiro
 executor: kiro
 seat: exafyltd
@@ -14,8 +14,9 @@ paths:
 depends_on: []
 branch: kiro/groupchat-realtime-status
 pr: https://github.com/exafyltd/vitana-v1/pull/1592
-updated: 2026-11-06T13:10Z
+updated: 2026-11-12T20:15Z
 vtid: VTID-05534
+parked_from: in-review
 ---
 # group-chat-realtime-status / groupchat-realtime
 
@@ -41,3 +42,5 @@ Merged PR #1592 as 290c179cdc (squash, pinned to head 2c8e7eae8). Checks on that
 Deploy: AWS Stage Deploy Community App (ECS) succeeded, run https://github.com/exafyltd/vitana-v1/actions/runs/42220220500. The production workflow (run https://github.com/exafyltd/vitana-v1/actions/runs/42220220727) ran only its cutover_gate job. Its aws_prod job was skipped, so nothing was published to production.
 STAGING-VERIFY (`node scripts/ci/staging-verify/run.mjs verify`) failed, 4/7 passed. Two smoke browser tests failed because the runner could not run `playwright install chromium --with-deps` in the sandbox (no apt-get). The deploy gate reported production 5c75715e16ce and 290c179cdc2b as diverged histories with 0 commits to ship. Git shows production is an ancestor of main, 25 commits behind 290c179cdc. The gate and git disagree, and the owner needs to resolve that before any production approval.
 The lane stays in-review until STAGING-VERIFY passes. It is not verified or done.
+### 2026-11-12T20:15Z · pm-agent · in-review → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd

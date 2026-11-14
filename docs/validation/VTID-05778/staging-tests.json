@@ -1,0 +1,7 @@
+{
+  "vtid": "VTID-05778",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "gateway is alive (read-only, no write)", "path": "/alive", "expect_status": 200 }
+  ]
+}

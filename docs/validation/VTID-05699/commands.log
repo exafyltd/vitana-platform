@@ -1,0 +1,13 @@
+# VTID-05699 privacy-ledger-auth/areas-emails — commands.log (worktree /projects/sandbox/.wt/areas-emails, base origin/main 6dc6e1ba0c). Node v22.23.4 (sandbox).
+# No line of this log quotes a matched address; results name line numbers and counts only.
+$ node scripts/collab/queue.mjs session-id --agent kiro --seat exafyltd   -> kiro-exafyltd-202611111044-8f1d
+$ node scripts/collab/queue.mjs claim privacy-ledger-auth/areas-emails --session kiro-exafyltd-202611111044-8f1d   -> ok (claim ref baeee598a1)
+$ git worktree add -b kiro/privacy-ledger-auth/areas-emails /projects/sandbox/.wt/areas-emails origin/main   -> 6dc6e1ba0c
+$ (T1, seat file unchanged) node --test scripts/collab/areas-no-email.test.mjs   -> exit 1: 2 tests, 1 pass, 1 fail; "docs/programs/areas.yaml contains no email address" names lines 15, 16, 17, 18 (RED on base)
+$ (T2) remove "account: <value>," from the four seat lines 15-18 of docs/programs/areas.yaml   -> git diff --numstat: 4 4; address-shaped strings in the added lines: 0
+$ node --test scripts/collab/areas-no-email.test.mjs   -> exit 0: 2 of 2 pass (GREEN)
+$ node --test scripts/collab/*.test.mjs   -> exit 0: 259 tests, 258 pass, 0 fail, 1 skipped
+$ node --test scripts/eng/gitlab-gates.test.mjs   -> exit 0: 8 of 8 pass
+$ grep -nE "\baccount\b" in the seat-file readers (queue.mjs, gitlab-gates.mjs, project-manager governance.ts, observe-live.ts, types.ts)   -> no reader uses the key
+$ node scripts/collab/queue.mjs validate --base origin/main --head HEAD   -> exit 1: the lane file is not on main yet (plan PR #4958 is green but unmerged: main needs one approving review)
+$ node scripts/collab/preflight.mjs --repo . --base origin/main --head HEAD --branch kiro/privacy-ledger-auth/areas-emails   -> PASS Collab tests, PR-GATE scope, PR-GATE sparring (after adding the plan hash), PR-GATE weakening, Kiro steering; PR-GATE red-green passes with scope kind "docs" (the change is the seat file plus a node:test guard, no Vitest fix); FAIL Collab handoff and Lane scope only because the lane file is on the open plan( PR #4958 and not on main: in this sandbox `gh pr list` (GraphQL) fails, so the open-plan-PR lookup fails closed. CI's Lane scope did not find it either (#4961, job 130502826039: "not found in this repo, an open plan( PR or vitana-platform"); both checks need #4958 on main.
