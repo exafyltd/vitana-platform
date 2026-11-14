@@ -1,0 +1,9 @@
+# VTID-05797 commands.log — commands run, in order
+# Each entry: command, exit code. Full output in outputs/.
+
+$ node --check scripts/ci/staging-verify/run.mjs
+exit=0
+$ node --test scripts/ci/staging-verify/workflow.test.cjs
+exit=0
+$ node --test scripts/ci/staging-verify/*.test.cjs scripts/ci/staging-verify/*.test.mjs
+exit=0

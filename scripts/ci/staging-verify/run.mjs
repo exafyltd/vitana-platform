@@ -290,6 +290,28 @@ function ensureDeps(cwdAbs) {
   installed.add(cwdAbs);
 }
 
+// VTID-05797: the staging group-admin pair (VTID-05622/05670 group-chat check). Captured once at the start of the
+// verify path and deleted from process.env, so git, gh, npm ci and playwright install never inherit it; only the
+// explicit Playwright env (runPlaywright) carries it. Both-or-neither: a lone secret is dropped with a warning.
+const GROUP_ACCOUNT_VARS = ['STAGING_GROUP_TEST_EMAIL', 'STAGING_GROUP_TEST_PASSWORD'];
+let groupAccount = null;
+
+function captureGroupAccount() {
+  const email = process.env.STAGING_GROUP_TEST_EMAIL || '';
+  const password = process.env.STAGING_GROUP_TEST_PASSWORD || '';
+  for (const n of GROUP_ACCOUNT_VARS) delete process.env[n];
+  if (email && password) groupAccount = { STAGING_GROUP_TEST_EMAIL: email, STAGING_GROUP_TEST_PASSWORD: password };
+  else if (email || password) {
+    const missing = email ? 'STAGING_GROUP_TEST_PASSWORD' : 'STAGING_GROUP_TEST_EMAIL';
+    log(`::warning::${missing} is not set — the group pair is ignored; the group-chat check falls back to TEST_USER and fails honestly`);
+    groupAccount = null;
+  }
+}
+
+function groupAccountEnv() {
+  return groupAccount ?? {};
+}
+
 function passthrough(names) {
   return Object.fromEntries(names.filter((n) => process.env[n]).map((n) => [n, process.env[n]]));
 }
@@ -344,6 +366,7 @@ export default defineConfig({
       STAGING_FRONTEND_URL: lib.STAGING_TARGETS.frontend,
       TEST_USER_EMAIL: process.env.TEST_USER_EMAIL || '',
       TEST_USER_PASSWORD: process.env.TEST_USER_PASSWORD || '',
+      ...groupAccountEnv(),
     },
   });
   const output = `${r.stdout || ''}${r.stderr || ''}`;
@@ -404,6 +427,7 @@ async function verify(args) {
   if (!lib.SERVICES[service]) throw new Error(`unknown service ${service}`);
   if (!/^[0-9a-f]{40}$/.test(sha || '')) throw new Error('--sha must be a full commit sha');
   Object.values(lib.STAGING_TARGETS).forEach(lib.assertStagingTarget);
+  captureGroupAccount();
 
   const chain = Number.parseInt(args.chain || '0', 10) || 0;
   log(`service=${service} sha=${sha} chain=${chain}`);
