@@ -5,6 +5,7 @@ status: active
 priority: 3
 repos: [vitana-platform, vitana-v1]
 specs:
+  - vitana-platform:strategy-execution-wave1
   - vitana-platform:pm-agent
   - vitana-platform:sparring-token-efficiency-r2
   - vitana-platform:claude-sessions-handover
@@ -131,3 +132,4 @@ belong to none of the named programmes are listed here until the owner assigns t
 - `vitana-platform:review-survives-main-merge` — a reviewer-agent accept stays current across a clean, conflict-free merge of `main` into the PR (`land-guard.mjs`, collaboration §3)
 - `vitana-platform:staging-verify-manifest-repair` — repair the 14 stale change suites failing the nightly full gateway STAGING-VERIFY (console probes, PM mode, collab ref, recall shadow, locale-coverage investigation) and a manifest drift guard
 - `vitana-platform:mt-local-stack-replay-skips-r1` — list the two VTID-05579 migrations PGlite cannot replay so the MT local stack gate is green on main
+- `vitana-platform:strategy-execution-wave1` — first execution wave of the approved Vitanaland strategy (Command Hub discovery, OASIS/VTID traceability design, autonomy risk register, delivery capacity, read-only security evidence pack, Healthy Million readiness, destination identity, Mental Health pillar label)
