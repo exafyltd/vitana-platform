@@ -1,0 +1,11 @@
+# VTID-05606 commands.log (shadow-retired)
+## baseline on origin/main
+baseline on origin/main: test file for the retired suite
+ls: cannot access 'services/gateway/test/services/memory/vtid-04784-recall-shadow.test.ts': No such file or directory
+deleted by VTID-05556 (#4701)
+## validateManifest
+04784 valid
+05007 valid
+## VTID-05007 ref change: one deleted path removed, others kept
+-      "ref": "npx jest test/vtid-04452-staging-orb-recall-pinned.test.ts test/services/conversation/vtid-04525-conversation-flag-registry.test.ts test/services
++      "ref": "npx jest test/vtid-04452-staging-orb-recall-pinned.test.ts test/services/conversation/vtid-04525-conversation-flag-registry.test.ts test/services

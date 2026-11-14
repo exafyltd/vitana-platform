@@ -1,0 +1,658 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.warn
+    [NewMemberGreetingGuard] refused (blocked) sender=sender-1
+
+      227 |   const refuse = (reason: string): GreetingCheckResult => {
+      228 |     // The reason stays on the server; the caller only ever sees the generic code.
+    > 229 |     console.warn(`${LOG_PREFIX} refused (${reason}) sender=${input.senderId}`);
+          |             ^
+      230 |     return { ok: false, code: GREETING_REFUSED_CODE };
+      231 |   };
+      232 |   try {
+
+      at refuse (src/services/new-member-greeting-guard.ts:229:13)
+      at checkGreetingSend (src/services/new-member-greeting-guard.ts:245:71)
+      at Object.<anonymous> (test/vtid-05207-greeting-guard.test.ts:162:15)
+
+  console.warn
+    [NewMemberGreetingGuard] refused (muted) sender=sender-1
+
+      227 |   const refuse = (reason: string): GreetingCheckResult => {
+      228 |     // The reason stays on the server; the caller only ever sees the generic code.
+    > 229 |     console.warn(`${LOG_PREFIX} refused (${reason}) sender=${input.senderId}`);
+          |             ^
+      230 |     return { ok: false, code: GREETING_REFUSED_CODE };
+      231 |   };
+      232 |   try {
+
+      at refuse (src/services/new-member-greeting-guard.ts:229:13)
+      at checkGreetingSend (src/services/new-member-greeting-guard.ts:246:69)
+      at Object.<anonymous> (test/vtid-05207-greeting-guard.test.ts:167:15)
+
+  console.warn
+    [NewMemberGreetingGuard] refused (not_greetable_newcomer) sender=sender-1
+
+      227 |   const refuse = (reason: string): GreetingCheckResult => {
+      228 |     // The reason stays on the server; the caller only ever sees the generic code.
+    > 229 |     console.warn(`${LOG_PREFIX} refused (${reason}) sender=${input.senderId}`);
+          |             ^
+      230 |     return { ok: false, code: GREETING_REFUSED_CODE };
+      231 |   };
+      232 |   try {
+
+      at refuse (src/services/new-member-greeting-guard.ts:229:13)
+      at checkGreetingSend (src/services/new-member-greeting-guard.ts:250:60)
+      at Object.<anonymous> (test/vtid-05207-greeting-guard.test.ts:172:15)
+
+  console.warn
+    [NewMemberGreetingGuard] refused (not_greetable_newcomer) sender=sender-1
+
+      227 |   const refuse = (reason: string): GreetingCheckResult => {
+      228 |     // The reason stays on the server; the caller only ever sees the generic code.
+    > 229 |     console.warn(`${LOG_PREFIX} refused (${reason}) sender=${input.senderId}`);
+          |             ^
+      230 |     return { ok: false, code: GREETING_REFUSED_CODE };
+      231 |   };
+      232 |   try {
+
+      at refuse (src/services/new-member-greeting-guard.ts:229:13)
+      at checkGreetingSend (src/services/new-member-greeting-guard.ts:250:60)
+      at Object.<anonymous> (test/vtid-05207-greeting-guard.test.ts:178:15)
+
+  console.warn
+    [NewMemberGreetingGuard] refused (test_account) sender=sender-1
+
+      227 |   const refuse = (reason: string): GreetingCheckResult => {
+      228 |     // The reason stays on the server; the caller only ever sees the generic code.
+    > 229 |     console.warn(`${LOG_PREFIX} refused (${reason}) sender=${input.senderId}`);
+          |             ^
+      230 |     return { ok: false, code: GREETING_REFUSED_CODE };
+      231 |   };
+      232 |   try {
+
+      at refuse (src/services/new-member-greeting-guard.ts:229:13)
+      at checkGreetingSend (src/services/new-member-greeting-guard.ts:242:76)
+      at Object.<anonymous> (test/vtid-05207-greeting-guard.test.ts:183:15)
+
+  console.warn
+    [NewMemberGreetingGuard] refused (test_account) sender=sender-1
+
+      227 |   const refuse = (reason: string): GreetingCheckResult => {
+      228 |     // The reason stays on the server; the caller only ever sees the generic code.
+    > 229 |     console.warn(`${LOG_PREFIX} refused (${reason}) sender=${input.senderId}`);
+          |             ^
+      230 |     return { ok: false, code: GREETING_REFUSED_CODE };
+      231 |   };
+      232 |   try {
+
+      at refuse (src/services/new-member-greeting-guard.ts:229:13)
+      at checkGreetingSend (src/services/new-member-greeting-guard.ts:242:76)
+      at Object.<anonymous> (test/vtid-05207-greeting-guard.test.ts:188:15)
+
+  console.warn
+    [NewMemberGreetingGuard] refused (already_greeted) sender=sender-1
+
+      227 |   const refuse = (reason: string): GreetingCheckResult => {
+      228 |     // The reason stays on the server; the caller only ever sees the generic code.
+    > 229 |     console.warn(`${LOG_PREFIX} refused (${reason}) sender=${input.senderId}`);
+          |             ^
+      230 |     return { ok: false, code: GREETING_REFUSED_CODE };
+      231 |   };
+      232 |   try {
+
+      at refuse (src/services/new-member-greeting-guard.ts:229:13)
+      at checkGreetingSend (src/services/new-member-greeting-guard.ts:258:34)
+      at Object.<anonymous> (test/vtid-05207-greeting-guard.test.ts:193:15)
+
+  console.warn
+    [NewMemberGreetingGuard] refused (hourly_cap) sender=sender-1
+
+      227 |   const refuse = (reason: string): GreetingCheckResult => {
+      228 |     // The reason stays on the server; the caller only ever sees the generic code.
+    > 229 |     console.warn(`${LOG_PREFIX} refused (${reason}) sender=${input.senderId}`);
+          |             ^
+      230 |     return { ok: false, code: GREETING_REFUSED_CODE };
+      231 |   };
+      232 |   try {
+
+      at refuse (src/services/new-member-greeting-guard.ts:229:13)
+      at checkGreetingSend (src/services/new-member-greeting-guard.ts:258:34)
+      at Object.<anonymous> (test/vtid-05207-greeting-guard.test.ts:211:15)
+
+  console.warn
+    [NewMemberGreetingGuard] refused (allowlist_lookup_failed) sender=sender-1
+
+      227 |   const refuse = (reason: string): GreetingCheckResult => {
+      228 |     // The reason stays on the server; the caller only ever sees the generic code.
+    > 229 |     console.warn(`${LOG_PREFIX} refused (${reason}) sender=${input.senderId}`);
+          |             ^
+      230 |     return { ok: false, code: GREETING_REFUSED_CODE };
+      231 |   };
+      232 |   try {
+
+      at refuse (src/services/new-member-greeting-guard.ts:229:13)
+      at checkGreetingSend (src/services/new-member-greeting-guard.ts:241:30)
+      at Object.<anonymous> (test/vtid-05207-greeting-guard.test.ts:217:15)
+
+  console.warn
+    [NewMemberGreetingGuard] refused (lookup_error:user_blocked_authors: user_blocked_authors boom) sender=sender-1
+
+      227 |   const refuse = (reason: string): GreetingCheckResult => {
+      228 |     // The reason stays on the server; the caller only ever sees the generic code.
+    > 229 |     console.warn(`${LOG_PREFIX} refused (${reason}) sender=${input.senderId}`);
+          |             ^
+      230 |     return { ok: false, code: GREETING_REFUSED_CODE };
+      231 |   };
+      232 |   try {
+
+      at refuse (src/services/new-member-greeting-guard.ts:229:13)
+      at checkGreetingSend (src/services/new-member-greeting-guard.ts:262:12)
+      at Object.<anonymous> (test/vtid-05207-greeting-guard.test.ts:222:15)
+
+  console.warn
+    [NewMemberGreetingGuard] refused (bad_receiver) sender=sender-1
+
+      227 |   const refuse = (reason: string): GreetingCheckResult => {
+      228 |     // The reason stays on the server; the caller only ever sees the generic code.
+    > 229 |     console.warn(`${LOG_PREFIX} refused (${reason}) sender=${input.senderId}`);
+          |             ^
+      230 |     return { ok: false, code: GREETING_REFUSED_CODE };
+      231 |   };
+      232 |   try {
+
+      at refuse (src/services/new-member-greeting-guard.ts:229:13)
+      at checkGreetingSend (src/services/new-member-greeting-guard.ts:237:68)
+      at Object.<anonymous> (test/vtid-05207-greeting-guard.test.ts:227:38)
+
+PASS test/vtid-05207-greeting-guard.test.ts
+  pure helpers
+    ✓ receiverIsGreetableNewcomer: opted-in and inside the 7-day window (28 ms)
+    ✓ receiverIsGreetableNewcomer: not opted in → false
+    ✓ receiverIsGreetableNewcomer: joined more than 7 days ago → false
+    ✓ receiverIsGreetableNewcomer: missing row → false
+    ✓ evaluateGreetingHistory: an earlier greeting to the pair → already_greeted (2 ms)
+    ✓ evaluateGreetingHistory: an ordinary (untagged) earlier DM to the pair does NOT block
+    ✓ evaluateGreetingHistory: at the hourly cap → hourly_cap (1 ms)
+    ✓ evaluateGreetingHistory: only greeting rows count toward the cap (1 ms)
+    ✓ greetingMaxPerSenderHour: env override, else default (2 ms)
+  checkGreetingSend — golden scenarios
+    ✓ allows a clean greeting to an opted-in newcomer (2 ms)
+    ✓ refuses when the receiver blocked the sender (34 ms)
+    ✓ refuses when the receiver muted the sender (2 ms)
+    ✓ refuses a non-opted-in receiver (2 ms)
+    ✓ refuses a receiver who joined more than 7 days ago (6 ms)
+    ✓ refuses when the SENDER is a test/service account (2 ms)
+    ✓ refuses when the RECEIVER is a test/service account (1 ms)
+    ✓ refuses a second greeting from the same sender to the same receiver (1 ms)
+    ✓ refuses when the sender is over the per-sender hourly cap (2 ms)
+    ✓ refuses (fail-closed) when the exclusion lookup errors (7 ms)
+    ✓ refuses (fail-closed) when a block/mute lookup errors (1 ms)
+    ✓ refuses greeting yourself (2 ms)
+    ✓ reads the bounded DM history newest-first (deterministic) (1 ms)
+
+  console.warn
+    [NewMemberGreeting] suggestion refused (not_greetable_newcomer) viewer=viewer-1
+
+      102 |     // the server log. A failed lookup refuses (fail closed).
+      103 |     const refuse = (reason: string) => {
+    > 104 |       console.warn(`[NewMemberGreeting] suggestion refused (${reason}) viewer=${identity.user_id}`);
+          |               ^
+      105 |       return res.status(GREETING_REFUSED_STATUS).json(greetingRefusedBody());
+      106 |     };
+      107 |     try {
+
+      at refuse (src/routes/new-member-greeting.ts:104:15)
+      at src/routes/new-member-greeting.ts:112:69
+
+  console.warn
+    [NewMemberGreeting] suggestion refused (not_greetable_newcomer) viewer=viewer-1
+
+      102 |     // the server log. A failed lookup refuses (fail closed).
+      103 |     const refuse = (reason: string) => {
+    > 104 |       console.warn(`[NewMemberGreeting] suggestion refused (${reason}) viewer=${identity.user_id}`);
+          |               ^
+      105 |       return res.status(GREETING_REFUSED_STATUS).json(greetingRefusedBody());
+      106 |     };
+      107 |     try {
+
+      at refuse (src/routes/new-member-greeting.ts:104:15)
+      at src/routes/new-member-greeting.ts:112:69
+
+  console.warn
+    [NewMemberGreeting] suggestion refused (not_greetable_newcomer) viewer=viewer-1
+
+      102 |     // the server log. A failed lookup refuses (fail closed).
+      103 |     const refuse = (reason: string) => {
+    > 104 |       console.warn(`[NewMemberGreeting] suggestion refused (${reason}) viewer=${identity.user_id}`);
+          |               ^
+      105 |       return res.status(GREETING_REFUSED_STATUS).json(greetingRefusedBody());
+      106 |     };
+      107 |     try {
+
+      at refuse (src/routes/new-member-greeting.ts:104:15)
+      at src/routes/new-member-greeting.ts:112:69
+
+  console.warn
+    [NewMemberGreeting] suggestion refused (test_account) viewer=viewer-1
+
+      102 |     // the server log. A failed lookup refuses (fail closed).
+      103 |     const refuse = (reason: string) => {
+    > 104 |       console.warn(`[NewMemberGreeting] suggestion refused (${reason}) viewer=${identity.user_id}`);
+          |               ^
+      105 |       return res.status(GREETING_REFUSED_STATUS).json(greetingRefusedBody());
+      106 |     };
+      107 |     try {
+
+      at refuse (src/routes/new-member-greeting.ts:104:15)
+      at src/routes/new-member-greeting.ts:110:82
+
+  console.warn
+    [NewMemberGreeting] suggestion refused (test_account) viewer=viewer-1
+
+      102 |     // the server log. A failed lookup refuses (fail closed).
+      103 |     const refuse = (reason: string) => {
+    > 104 |       console.warn(`[NewMemberGreeting] suggestion refused (${reason}) viewer=${identity.user_id}`);
+          |               ^
+      105 |       return res.status(GREETING_REFUSED_STATUS).json(greetingRefusedBody());
+      106 |     };
+      107 |     try {
+
+      at refuse (src/routes/new-member-greeting.ts:104:15)
+      at src/routes/new-member-greeting.ts:110:82
+
+  console.warn
+    [NewMemberGreeting] suggestion refused (allowlist_lookup_failed) viewer=viewer-1
+
+      102 |     // the server log. A failed lookup refuses (fail closed).
+      103 |     const refuse = (reason: string) => {
+    > 104 |       console.warn(`[NewMemberGreeting] suggestion refused (${reason}) viewer=${identity.user_id}`);
+          |               ^
+      105 |       return res.status(GREETING_REFUSED_STATUS).json(greetingRefusedBody());
+      106 |     };
+      107 |     try {
+
+      at refuse (src/routes/new-member-greeting.ts:104:15)
+      at src/routes/new-member-greeting.ts:109:32
+
+  console.warn
+    [NewMemberGreeting] suggestion refused (lookup_error:boom) viewer=viewer-1
+
+      102 |     // the server log. A failed lookup refuses (fail closed).
+      103 |     const refuse = (reason: string) => {
+    > 104 |       console.warn(`[NewMemberGreeting] suggestion refused (${reason}) viewer=${identity.user_id}`);
+          |               ^
+      105 |       return res.status(GREETING_REFUSED_STATUS).json(greetingRefusedBody());
+      106 |     };
+      107 |     try {
+
+      at refuse (src/routes/new-member-greeting.ts:104:15)
+      at src/routes/new-member-greeting.ts:114:14
+
+  console.warn
+    [NewMemberGreeting] suggestion failed (router_failed) viewer=viewer-1
+
+      126 |     const result = await composeGreetingSuggestion({ firstName, senderLocale, avoid });
+      127 |     if (!result.ok) {
+    > 128 |       console.warn(`[NewMemberGreeting] suggestion failed (${result.error}) viewer=${identity.user_id}`);
+          |               ^
+      129 |       return res.status(503).json({ ok: false, error: 'suggestion_unavailable' });
+      130 |     }
+      131 |     return res.json({ ok: true, suggestion: result.suggestion, language: result.language });
+
+      at src/routes/new-member-greeting.ts:128:15
+
+PASS test/vtid-05207-greeting-suggestion-route.test.ts
+  POST /api/v1/community/new-member/:userId/greeting-suggestion
+    ✓ returns { suggestion, language } composed in the sender locale, honouring the avoid list (7 ms)
+    ✓ rejects an invalid user id without calling the composer (6 ms)
+    ✓ rejects greeting yourself (10 ms)
+    ✓ answers 503 when composition fails, and never sends a DM (5 ms)
+    privacy: only a greetable newcomer may be suggested for
+      ✓ refuses a target who has not opted in (42 ms)
+      ✓ refuses a target who joined more than 7 days ago (7 ms)
+      ✓ refuses a missing profile (7 ms)
+      ✓ refuses a test/service account target (8 ms)
+      ✓ refuses when the viewer is a test/service account (7 ms)
+      ✓ refuses when the exclusion lookup fails (5 ms)
+      ✓ refuses when the profile lookup throws (4 ms)
+      ✓ still suggests for a greetable newcomer (3 ms)
+
+PASS test/vtid-05207-greeting-suggestion.test.ts
+  validateGreetingSuggestion
+    ✓ accepts a short warm greeting (7 ms)
+    ✓ rejects empty (1 ms)
+    ✓ rejects over-length (1 ms)
+    ✓ rejects a link (1 ms)
+    ✓ rejects markdown (1 ms)
+    ✓ rejects an @mention or #hashtag
+    ✓ rejects a greeting on the avoid list (case/punct-insensitive)
+    ✓ rejects wrong script for the locale
+    ✓ accepts correct script (1 ms)
+  buildGreetingSuggestionPrompt
+    ✓ names the newcomer and lists the avoid set (1 ms)
+    ✓ handles an unknown name
+  composeGreetingSuggestion
+    ✓ returns { suggestion, language } in the sender locale (1 ms)
+    ✓ passes the SENDER locale into the system prompt (du-form for de)
+    ✓ defaults language to en for an unsupported sender locale
+    ✓ fails when a non-Bedrock provider answers (defence in depth) (1 ms)
+    ✓ fails when the suggestion is unusable (contains a link)
+    ✓ rejects a suggestion that repeats one on the avoid list
+  allowViewerHit (per-viewer rate limit)
+    ✓ allows up to the cap then refuses within the window (1 ms)
+    ✓ refills after the window (1 ms)
+
+PASS test/vtid-05104-calendar-invite-guard.test.ts
+  limits and pure helpers
+    ✓ defaults 30 / 5 / 20 and is overridable by env; bad values fall back (6 ms)
+    ✓ evaluateInviteQuota windows: 24h and 7d (3 ms)
+    ✓ groupAllowsInvite and involvesExcludedAccount (1 ms)
+  checkInviteSend — direct invites
+    ✓ allows a related, in-tenant, unlimited invite (2 ms)
+    ✓ refuses a test/service account as sender and as receiver (both allowlists) (2 ms)
+    ✓ refuses a receiver in another tenant, an unknown receiver, a missing tenant, yourself and the Vitana bot (4 ms)
+    ✓ refuses with no relationship (1 ms)
+    ✓ relationship via dm is enough (1 ms)
+    ✓ relationship via dm_reverse is enough
+    ✓ relationship via group is enough (1 ms)
+    ✓ relationship via follow is enough (1 ms)
+    ✓ relationship via follow_reverse is enough
+    ✓ a prior invite alone is not a relationship
+    ✓ a group the sender is in without the receiver is not a relationship
+    ✓ the 31st invite in a day is refused, the 30th is allowed (1 ms)
+    ✓ the 6th invite to one person in a week is refused, the 5th is allowed (1 ms)
+    ✓ refusals are the same for every rule: one code, one shape, no reason in the result (1 ms)
+  checkInviteSend — group invites
+    ✓ allows a member of a group of 20, refuses 21, refuses a non-member (1 ms)
+    ✓ the group cap is env-adjustable and a group invite counts against the daily quota (1 ms)
+    ✓ refuses both a receiver and a group, or neither (2 ms)
+  checkInviteSend — fails closed
+    ✓ a service_bot_accounts lookup error refuses with the generic code (1 ms)
+    ✓ a notification_test_actors lookup error refuses with the generic code
+    ✓ a app_users lookup error refuses with the generic code (2 ms)
+    ✓ a user_follows lookup error refuses with the generic code (1 ms)
+    ✓ a chat_group_members lookup error refuses with the generic code
+    ✓ a chat_messages lookup error refuses (relationship (a) and quota) (1 ms)
+    ✓ a thrown error refuses (1 ms)
+    ✓ the quota read carries tenant_id, sender_id and a bounded created_at window (1 ms)
+  POST /chat/send with calendar_invite
+    ✓ allowed: inserts the server-built card and pushes a generic body (no title, time or place) (33 ms)
+    ✓ refused (a test account receiver): generic 403, nothing inserted, no push (5 ms)
+    ✓ refused (another tenant): generic 403, nothing inserted, no push (4 ms)
+    ✓ refused (no relationship): generic 403, nothing inserted, no push (4 ms)
+    ✓ refused over the daily limit with the very same body (4 ms)
+    ✓ non-invite messages do not go through the guard (4 ms)
+  POST /chat/groups/:id/send with calendar_invite
+    ✓ allowed in a group of 20: inserts the card, each member gets the generic push in their locale (12 ms)
+    ✓ refused in a group of 21: generic 403, nothing inserted, no push (4 ms)
+    ✓ refused for a test-account sender and over the daily limit (9 ms)
+    ✓ a non-member still gets not_a_member; text messages are unaffected and keep their push (4 ms)
+  voice tool send_calendar_invite_in_chat
+    ✓ stores a v2 card that the respond/GET path accepts, and pushes a generic body (20 ms)
+    ✓ the message text carries the card title, and the place only when shown (1 ms)
+    ✓ a confirmed send must carry the previewed card: no token, a dropped title or an added place sends nothing (2 ms)
+    ✓ a health appointment is sent only with sensitive_ack, never on a bare confirmation (2 ms)
+    ✓ refuses a past entry and inserts nothing (1 ms)
+    ✓ refuses a recurring entry and inserts nothing (1 ms)
+    ✓ refuses a cancelled entry and inserts nothing
+    ✓ refuses a recipient the guard refuses (no relationship / test account) with a generic message (2 ms)
+    ✓ the voice quota stays per user: the 6th send is rate limited, whatever the recipient (3 ms)
+    ✓ asks for confirmation without sending, and the unconfirmed stage inserts nothing
+  generic invite push text
+    ✓ exists in DE, EN, ES and SR with the name placeholder and no event detail (1 ms)
+
+PASS test/vtid-05207-greeting-guard-send-route.test.ts
+  POST /send — greeting guard wiring
+    ✓ refuses a tagged greeting DM with one generic 403 when the guard refuses — no insert, no notification (44 ms)
+    ✓ lets an allowed greeting flow on to the Lane-D push grouping (5 ms)
+    ✓ REGRESSION: an untagged ordinary DM never touches the guard and is unchanged (3 ms)
+    ✓ REGRESSION: a DM with a different source value is an ordinary DM (guard untouched) (3 ms)
+
+  console.warn
+    [Chat] Greeting DM notification skipped (excluded account or exclusion lookup failed)
+
+      388 |         } else {
+      389 |           skipNotify = true;
+    > 390 |           console.warn('[Chat] Greeting DM notification skipped (excluded account or exclusion lookup failed)');
+          |                   ^
+      391 |         }
+      392 |       // VTID-05137: plain chat messages are coalesced per conversation (one
+      393 |       // push per burst). Calendar invites and listing-interest pushes are
+
+      at src/routes/chat.ts:390:19
+
+PASS test/vtid-05208-greeting-send-route.test.ts
+  POST /send — new-member greeting DMs
+    ✓ a tagged text DM goes through the greeting grouping, not the conversation coalescer (50 ms)
+    ✓ an untagged DM is unchanged: per-conversation coalescing keyed dm:<sender> (5 ms)
+    ✓ a DM with another source value is an ordinary DM (4 ms)
+    ✓ a tagged DM whose prepare step returns null is sent (201) but writes no notification (17 ms)
+
+  console.log
+    [VTID-ORBC] Vertex config at startup: PROJECT_ID=lovable-vitana-vers1, LOCATION=us-central1
+
+      at Object.<anonymous> (src/routes/orb-live.ts:2200:9)
+
+  console.log
+    [VTID-01155] Google Cloud TTS client initialized
+
+      at Object.<anonymous> (src/routes/orb-live.ts:2207:11)
+
+  console.log
+    [VTID-01219] Google Auth client initialized for Live API
+
+      at Object.<anonymous> (src/routes/orb-live.ts:2231:11)
+
+  console.log
+    [VTID-01219] ORB Voice startup validation passed — Live API ready
+
+      at src/routes/orb-live.ts:2256:13
+
+  console.log
+    [VTID-INSTANT-FEEDBACK] Chime PCM generated: 9600 samples, 19200 bytes, 25600 b64 chars
+
+      at generateChimePcm (src/routes/orb-live.ts:2459:11)
+
+PASS test/vtid-04560-role-separation-regression.test.ts (8.947 s)
+  resolveAssistantProfile — the screen decides, the token verifies
+    ✓ work surface command-hub serves role /command-hub/autopilot/live/ from the first byte (4 ms)
+    ✓ work surface admin serves role /admin/dashboard from the first byte (1 ms)
+    ✓ work surface backoffice serves role /backoffice/dashboard from the first byte
+    ✓ work surface commerce serves role /commerce/org from the first byte
+    ✓ the device never changes the surface: a phone on the Command Hub is still the Command Hub
+    ✓ community screens serve the declared member role; a work role there is narrowed to community (1 ms)
+    ✓ a declared surface wins over the route (the host knows what it renders)
+    ✓ an unknown declared surface falls back to the route, never to a crash or undefined
+    ✓ Command Hub without an exafy_admin claim is unverified — still the developer persona, never community (1 ms)
+    ✓ anonymous sessions stay on the member surface with no role
+    ✓ clampRoleToProfile: stored roles never leak across surfaces
+    ✓ session helpers read the profile; sessions without one keep the legacy derivation
+  greeting ladder — a work surface never reaches a member rung
+    ✓ developer on the Command Hub opens with work_surface_open — normal ladder (context resolved) (1 ms)
+    ✓ developer on the Command Hub opens with work_surface_open — safe-fast ladder (context NOT resolved — the 300 ms gate case)
+    ✓ admin surface opens with its own role opener (1 ms)
+    ✓ backoffice surface opens with its own role opener (1 ms)
+    ✓ commerce surface opens with its own role opener
+    ✓ no facts loaded → the opener offers to check, it does not invent
+    ✓ VTID-04586: a work surface skips the member payload gathers — normal ladder (context resolved)
+    ✓ VTID-04586: a work surface skips the member payload gathers — safe-fast ladder (context NOT resolved — the 300 ms gate case) (1 ms)
+    ✓ VTID-04586: the member surface still gathers — normal ladder (context resolved)
+    ✓ VTID-04586: the member surface still gathers — safe-fast ladder (context NOT resolved — the 300 ms gate case)
+    ✓ VTID-04586: the opener speaks from the loaded facts and calls no tool first
+    ✓ VTID-04586: the developer conduct rule no longer demands a tool call for facts the snapshot covers (1 ms)
+    ✓ a genuine transport reconnect stays silent on a work surface too
+    ✓ the member surface is untouched: no surface field, or vitanaland, never takes the work rung (1 ms)
+    ✓ workSurfaceGreetingFields feeds the rung from the session; member sessions add nothing
+  system instruction — each surface carries only its own Vitana
+    ✓ Command Hub: developer supervisor conduct, the work context, and no member content even when it is concatenated in (16 ms)
+    ✓ Command Hub with no work context carries no bootstrap at all (never the member brain) (1 ms)
+    ✓ admin: work conduct block, no member content (2 ms)
+    ✓ backoffice: work conduct block, no member content (1 ms)
+    ✓ commerce: work conduct block, no member content (1 ms)
+    ✓ member surface keeps the member Vitana exactly as before (1 ms)
+    ✓ every surface keeps the stop-and-farewell rule (2 ms)
+    ✓ extractWorkSurfaceContext keeps only the marked section
+  text path — engineering context only for the console and developer/admin callers
+    ✓ the Operator Console itself (no custom instruction) keeps it
+    ✓ developer caller with a custom instruction keeps it
+    ✓ admin caller with a custom instruction keeps it
+    ✓ infra caller with a custom instruction keeps it
+    ✓ exafy_admin caller with a custom instruction keeps it
+    ✓ member caller community never receives it
+    ✓ member caller patient never receives it
+    ✓ member caller professional never receives it
+    ✓ member caller staff never receives it
+    ✓ member caller undefined never receives it
+  source contracts — the wiring cannot silently disappear
+    ✓ the controller resolves the profile from the declared surface/view_role and stores it on the session
+    ✓ work surfaces skip the member brain and the member wake-brief (1 ms)
+    ✓ the old route override and phone-means-community rule are gone
+    ✓ the setup envelope reads role, surface and tools from the profile (1 ms)
+    ✓ every greeting context carries the work-surface fields (1 ms)
+    ✓ the Nova prewarm resolves the same profile and member role as the session start
+    ✓ the widget declares surface + view_role and restarts on a role switch (1 ms)
+    ✓ the Command Hub declares the developer surface (1 ms)
+  VTID-04561 role registry — one declarative answer per role
+    ✓ every Vitana role has an entry
+    ✓ member-plane roles are served on the member surface by the member ladder; work roles on their surface (1 ms)
+    ✓ privileged voice tools follow the registry, never a member role
+    ✓ the profile persona comes from the registry
+    ✓ the tool catalog has no hard-coded privileged-role list left (1 ms)
+  VTID-04561 one role truth — both switchers write both tables
+    ✓ set_role_preference (community app) also writes user_active_roles (3 ms)
+    ✓ me_set_active_role (Command Hub) also writes role_preferences
+    ✓ the Command Hub switches into the community app of its own environment (8 ms)
+  VTID-04562 domain atlas — a map that cannot silently fall behind the code
+    ✓ every gateway route file is claimed by at least one domain (drift guard) (6 ms)
+    ✓ keys are unique and every domain names code, tables and docs or flags (1 ms)
+    ✓ the developer's words find the right domain (1 ms)
+    ✓ the prompt index is one line per domain and names the lookup tool
+  VTID-04562 live system snapshot — facts with a timestamp, never a throw
+    ✓ critical facts lead the highlights (kill switch, provider outage, error spike) (1 ms)
+    ✓ a clean system says so instead of inventing a problem
+    ✓ a failed source renders as unavailable, the rest still renders (1 ms)
+    ✓ snapshots are cached and concurrent builds coalesce into one
+  VTID-04562 developer knowledge loader — fails open, never member memory
+    ✓ snapshot, atlas and engineering memory all reach the session (1 ms)
+    ✓ failing sources degrade to null, the atlas stays
+    ✓ the Command Hub loader is registered and the member surface gets nothing (2 ms)
+    ✓ the developer loader reads dev_agent_memory, never the member memory tables (1 ms)
+  VTID-04562 developer knowledge tools
+    ✓ both tools are declared for developers and registered with a handler (3 ms)
+    ✓ a community caller is refused (1 ms)
+    ✓ dev_domain_atlas answers a topic with code, tables and docs
+    ✓ the developer conduct block names both tools
+  VTID-04562 text path — the tool-result turn is gated like the main turn
+    ✓ sendToolResultsToVertex only loads the pack for engineering callers (1 ms)
+  VTID-04563 deep dive — read-only tools with guard rails
+    ✓ the probe only GETs /alive and /api/v1/* on the two known hosts (1 ms)
+    ✓ file windows are numbered and bounded
+    ✓ a screen resolves by id, route or title to its App.tsx mount (1 ms)
+    ✓ the executor routes every tool and never throws (4 ms)
+  VTID-04563 deep dive — only developers, on the planner stage, with telemetry
+    ✓ member and admin-surface callers are refused before any model call
+    ✓ a developer question runs bounded on the planner stage and reports findings with telemetry (12 ms)
+    ✓ a loop failure is reported as failed, never as findings (1 ms)
+    ✓ the target is registered for the Command Hub only, read tier
+    ✓ the Command Hub catalog declares dev_deep_dive; the member and admin catalogs never do (1 ms)
+    ✓ a delegation caller carries the served role from the profile
+    ✓ orb-live dispatches dev_deep_dive to the async runner (3 ms)
+  VTID-04564 the Operator Console shares the developer knowledge and deep dive
+    ✓ the console declares the same three developer tools the voice assistant has (1 ms)
+    ✓ engineering callers get the atlas in the prompt; the snapshot stays one tool call away
+    ✓ the console deep dive requires the verified caller on the thread
+  VTID-04565 developer-assistant evaluation set
+    ✓ 60+ questions, every domain covered, every expected tool declared (3 ms)
+    ✓ the atlas routes at least 90% of the questions to the right domain (1 ms)
+    ✓ the live eval script refuses any host but staging and uses the machine credential
+  VTID-04565 telemetry — which Vitana served, and how deep dives went
+    ✓ profiles are counted per surface and resolution (1 ms)
+    ✓ the snapshot reports them and reads them in its one events query
+  VTID-04654 admin opener — facts are the insights, and the briefing is not fetched twice
+    ✓ each numbered insight becomes one fact with its detail; the instruction text is never a fact (2 ms)
+    ✓ a block without numbered items still yields plain lines, minus headings
+    ✓ the admin opener carries the insights as its facts (1 ms)
+    ✓ the admin instruction says the briefing is already loaded, so the no-tool opener has no conflict (1 ms)
+  VTID-04655 me_set_active_role writes role_preferences for a real Supabase token
+    ✓ the preference tenant falls back to the token claim, then the primary membership, members only
+    ✓ the backfill only repairs single-membership users (user_active_roles carries no tenant)
+    ✓ authorization is unchanged: still current_tenant_id() + check_role_permitted, exafy-admin otherwise
+  VTID-04656 the live eval sends thread ids the chat route accepts
+    ✓ the eval script sends a UUID, which is what the route validates (2 ms)
+
+  console.warn
+    [VTID-01219] ORB Voice access-token prewarm failed (will fetch lazily): Could not load the default credentials. Browse to https://cloud.google.com/docs/authentication/getting-started for more information.
+
+      2350 |     .then(() => console.log(`[VTID-01219] ORB Voice access token prewarmed (auth=${isGoogleAwsSupplierEnabled() ? 'aws_supplier' : 'adc'})`))
+      2351 |     .catch((err: any) =>
+    > 2352 |       console.warn('[VTID-01219] ORB Voice access-token prewarm failed (will fetch lazily):', err?.message));
+           |               ^
+      2353 | }
+      2354 |
+      2355 | // BOOTSTRAP-NOVA-SONIC-VOICE: same latency treatment for Nova — when Nova is
+
+      at src/routes/orb-live.ts:2352:15
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 7 passed, 7 total
+Tests:       215 passed, 215 total
+Snapshots:   0 total
+Time:        9.981 s
+Ran all test suites matching /test\/vtid-05207|test\/vtid-05208-greeting-send-route.test.ts|test\/vtid-05104|test\/vtid-04560-role-separation-regression.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
+exit=0

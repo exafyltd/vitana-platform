@@ -21,6 +21,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { OrbToolArgs, OrbToolIdentity, OrbToolResult } from '../orb-tools-shared';
 import * as repo from './developer-tools-repository';
 import { NO_ADMIN_SESSION } from './admin-users-rbac-tools';
+import { gatewayServiceAuthHeader } from '../../middleware/require-service-or-admin';
 
 type Handler = (
   args: OrbToolArgs,
@@ -102,6 +103,26 @@ export function gatewayBaseUrl(): string {
 }
 
 /**
+ * The worker orchestrator write routes (routes/worker-orchestrator.ts) are
+ * requireServiceOrAdmin, so a self-call to /api/v1/worker/* carries the
+ * gateway service token. Only those paths: every other self-call keeps the
+ * headers its caller chose, so no other route gains service authority. The
+ * request goes to gatewayBaseUrl() (GATEWAY_URL or localhost), never to a
+ * third-party host. A caller-supplied Authorization still wins.
+ */
+function workerOrchestratorServiceHeader(path: string): Record<string, string> {
+  // Match on the normalised pathname so a dot segment ("/api/v1/worker/../x",
+  // "%2e%2e") cannot carry the token to another route.
+  let pathname: string;
+  try {
+    pathname = new URL(path, 'http://gateway.invalid').pathname;
+  } catch {
+    return {};
+  }
+  return pathname.startsWith('/api/v1/worker/') ? gatewayServiceAuthHeader() : {};
+}
+
+/**
  * Generic gateway self-call, shared by every Wave 2 developer-tool domain
  * module (VTID/OASIS lifecycle, governance, CI/CD, deployment, observability)
  * so each one doesn't re-implement the same fetch-and-parse boilerplate.
@@ -113,7 +134,11 @@ export async function gatewayApiCall(
 ): Promise<{ ok: boolean; status: number; body: Record<string, unknown> }> {
   const res = await fetch(`${gatewayBaseUrl()}${path}`, {
     method: init?.method || 'GET',
-    headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
+    headers: {
+      'Content-Type': 'application/json',
+      ...workerOrchestratorServiceHeader(path),
+      ...(init?.headers ?? {}),
+    },
     body: init?.body !== undefined ? JSON.stringify(init.body) : undefined,
   });
   let body: Record<string, unknown> = {};
