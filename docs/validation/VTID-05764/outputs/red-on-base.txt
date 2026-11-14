@@ -1,0 +1,7 @@
+# origin/main f0f88de2b5 + the new tests only (templates absent)
+#     throw new ERR_MODULE_NOT_FOUND(
+# Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/projects/sandbox/.agents/kaa-base/infra/kiro-access/drift.mjs' imported from /projects/sandbox/.agents/kaa-base/infra/kiro-access/drift.test.mjs
+#   code: 'ERR_MODULE_NOT_FOUND',
+not ok 1 - infra/kiro-access/drift.test.mjs
+#     throw new ERR_MODULE_NOT_FOUND(
+# Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/projects/sandbox/.agents/kaa-base/infra/kiro-access/lib.mjs' imported from /projects/sandbox/.agents/kaa-base/infra/kiro-access/policy.test.mjs

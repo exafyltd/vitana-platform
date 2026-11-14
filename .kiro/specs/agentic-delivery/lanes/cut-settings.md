@@ -4,7 +4,7 @@ state: ready
 next_actor: kiro
 depends_on: [cutover]
 executor: kiro
-seat: exafy
+seat: exafyltd
 reviewer_seat: agent:vitana-lane-reviewer
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 repos: [exafyltd/vitana-platform]
@@ -13,7 +13,7 @@ paths:
   - infra/gitlab-engineering/settings/gitlab-settings.json
   - scripts/eng/gitlab-settings-delivery.test.mjs
   - docs/validation/**
-updated: 2026-11-05T21:34Z
+updated: 2026-11-12T20:15Z
 vtid: VTID-05562
 ---
 # Lane `cut-settings`: the GitLab settings the cut needs that no lane builds yet
@@ -35,3 +35,5 @@ the driver may prepare it on a scratch base of the settings and cutover trees, a
 
 ### 2026-11-05T21:34Z · ci-plan-spar · ready (VTID allocated)
 VTID-05562 allocated after policy approval (converged-auto-v1).
+### 2026-11-12T20:15Z · pm-agent · update
+reassign lane exafy→exafyltd (stale_ready, Claude unavailable)

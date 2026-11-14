@@ -1,0 +1,269 @@
+$ npm run test:gate  (node --test scripts/ci/pr-gate/__tests__/*.test.mjs)
+TAP version 13
+# Subtest: countDesign counts only design/* errors, per file
+ok 1 - countDesign counts only design/* errors, per file
+  ---
+  duration_ms: 2.297027
+  type: 'test'
+  ...
+# Subtest: a PR that raises a count fails even when it also raises its own baseline file
+ok 2 - a PR that raises a count fails even when it also raises its own baseline file
+  ---
+  duration_ms: 0.649299
+  type: 'test'
+  ...
+# Subtest: a new file with any design violation fails (its baseline is 0)
+ok 3 - a new file with any design violation fails (its baseline is 0)
+  ---
+  duration_ms: 0.156156
+  type: 'test'
+  ...
+# Subtest: lowering counts passes and is reported as improved
+ok 4 - lowering counts passes and is reported as improved
+  ---
+  duration_ms: 0.121095
+  type: 'test'
+  ...
+# Subtest: only a PR that changes eslint-rules/design/** is measured against its own head baseline
+ok 5 - only a PR that changes eslint-rules/design/** is measured against its own head baseline
+  ---
+  duration_ms: 0.278105
+  type: 'test'
+  ...
+# Subtest: missing or unreadable baselines read as empty
+ok 6 - missing or unreadable baselines read as empty
+  ---
+  duration_ms: 0.114367
+  type: 'test'
+  ...
+# Subtest: a rule-change PR must commit a baseline equal to the current counts (no inflated slack)
+ok 7 - a rule-change PR must commit a baseline equal to the current counts (no inflated slack)
+  ---
+  duration_ms: 0.289716
+  type: 'test'
+  ...
+# Subtest: a native screen change in apps/mobile/src qualifies (VTID-05767)
+ok 8 - a native screen change in apps/mobile/src qualifies (VTID-05767)
+  ---
+  duration_ms: 4.043954
+  type: 'test'
+  ...
+# Subtest: a web change and its native twin qualify together (VTID-05767)
+ok 9 - a web change and its native twin qualify together (VTID-05767)
+  ---
+  duration_ms: 1.930842
+  type: 'test'
+  ...
+# Subtest: native navigation, linking, shell, auth, config and ports need sparring (VTID-05767)
+ok 10 - native navigation, linking, shell, auth, config and ports need sparring (VTID-05767)
+  ---
+  duration_ms: 0.96139
+  type: 'test'
+  ...
+# Subtest: parity ledger, app.json, eas.json, app config and generated files need sparring (VTID-05767)
+ok 11 - parity ledger, app.json, eas.json, app config and generated files need sparring (VTID-05767)
+  ---
+  duration_ms: 0.709764
+  type: 'test'
+  ...
+# Subtest: everything else under apps/mobile stays outside the class (VTID-05767)
+ok 12 - everything else under apps/mobile stays outside the class (VTID-05767)
+  ---
+  duration_ms: 0.58689
+  type: 'test'
+  ...
+# Subtest: the deny list names the native surfaces explicitly (VTID-05767)
+ok 13 - the deny list names the native surfaces explicitly (VTID-05767)
+  ---
+  duration_ms: 0.143058
+  type: 'test'
+  ...
+# Subtest: existing web surfaces are unchanged (VTID-05767)
+ok 14 - existing web surfaces are unchanged (VTID-05767)
+  ---
+  duration_ms: 1.686186
+  type: 'test'
+  ...
+# Subtest: NATIVE-CI and its parity checks still run on every apps/mobile change (VTID-05767)
+ok 15 - NATIVE-CI and its parity checks still run on every apps/mobile change (VTID-05767)
+  ---
+  duration_ms: 0.462277
+  type: 'test'
+  ...
+# Subtest: a plain front-end diff qualifies (no sparring)
+ok 16 - a plain front-end diff qualifies (no sparring)
+  ---
+  duration_ms: 4.341517
+  type: 'test'
+  ...
+# Subtest: back-end, schema, CI and config changes do not qualify
+ok 17 - back-end, schema, CI and config changes do not qualify
+  ---
+  duration_ms: 0.742305
+  type: 'test'
+  ...
+# Subtest: deny-listed front-end files (routes, navigation, auth, integrations) need sparring
+ok 18 - deny-listed front-end files (routes, navigation, auth, integrations) need sparring
+  ---
+  duration_ms: 1.537075
+  type: 'test'
+  ...
+# Subtest: bot-only files are exempt; the size limit is enforced
+ok 19 - bot-only files are exempt; the size limit is enforced
+  ---
+  duration_ms: 6.080903
+  type: 'test'
+  ...
+# Subtest: scope.json accepts change_class frontend-simple and nothing else
+ok 20 - scope.json accepts change_class frontend-simple and nothing else
+  ---
+  duration_ms: 0.448215
+  type: 'test'
+  ...
+# Subtest: a staging spec next to the change qualifies (VTID-05623)
+ok 21 - a staging spec next to the change qualifies (VTID-05623)
+  ---
+  duration_ms: 0.501956
+  type: 'test'
+  ...
+# Subtest: other tests/ paths and staging fixtures do not qualify (VTID-05623)
+ok 22 - other tests/ paths and staging fixtures do not qualify (VTID-05623)
+  ---
+  duration_ms: 0.35469
+  type: 'test'
+  ...
+# Subtest: vtidsFromTitle finds every VTID once
+ok 23 - vtidsFromTitle finds every VTID once
+  ---
+  duration_ms: 1.514687
+  type: 'test'
+  ...
+# Subtest: globToRegExp: ** spans dirs, * stays in a segment
+ok 24 - globToRegExp: ** spans dirs, * stays in a segment
+  ---
+  duration_ms: 0.633097
+  type: 'test'
+  ...
+# Subtest: scope: outside file fails, bot-only and always-allowed files pass, no VTID skips
+ok 25 - scope: outside file fails, bot-only and always-allowed files pass, no VTID skips
+  ---
+  duration_ms: 1.128121
+  type: 'test'
+  ...
+# Subtest: validateScope rejects bad shapes
+ok 26 - validateScope rejects bad shapes
+  ---
+  duration_ms: 0.378157
+  type: 'test'
+  ...
+# Subtest: ratchet: worse fails, new erroring file fails, improvements pass
+ok 27 - ratchet: worse fails, new erroring file fails, improvements pass
+  ---
+  duration_ms: 0.420309
+  type: 'test'
+  ...
+# Subtest: countTsc parses compiler output per file
+ok 28 - countTsc parses compiler output per file
+  ---
+  duration_ms: 0.327555
+  type: 'test'
+  ...
+# Subtest: countEslint strips the root and keeps only files with errors
+ok 29 - countEslint strips the root and keeps only files with errors
+  ---
+  duration_ms: 0.346784
+  type: 'test'
+  ...
+# Subtest: weakening: deletion, skip, fewer cases, fewer assertions; declared ones do not block
+ok 30 - weakening: deletion, skip, fewer cases, fewer assertions; declared ones do not block
+  ---
+  duration_ms: 1.076709
+  type: 'test'
+  ...
+# Subtest: testStats does not count method calls like foo.it( or .test( on regexes
+ok 31 - testStats does not count method calls like foo.it( or .test( on regexes
+  ---
+  duration_ms: 0.480589
+  type: 'test'
+  ...
+# Subtest: sparring record needs verdict, owner approval and plan hash
+ok 32 - sparring record needs verdict, owner approval and plan hash
+  ---
+  duration_ms: 1.670084
+  type: 'test'
+  ...
+# Subtest: sparring record: CONVERGED + policy approval + plan hash passes
+ok 33 - sparring record: CONVERGED + policy approval + plan hash passes
+  ---
+  duration_ms: 0.17514
+  type: 'test'
+  ...
+# Subtest: sparring record: policy approval on an ESCALATED-only verdict is no approval
+ok 34 - sparring record: policy approval on an ESCALATED-only verdict is no approval
+  ---
+  duration_ms: 0.121386
+  type: 'test'
+  ...
+# Subtest: sparring record: an unknown policy name does not block a CONVERGED record (machine approval, bridge 2026-11-12)
+ok 35 - sparring record: an unknown policy name does not block a CONVERGED record (machine approval, bridge 2026-11-12)
+  ---
+  duration_ms: 0.054803
+  type: 'test'
+  ...
+# Subtest: sparring record: CONVERGED + policy approval without plan hash gives exactly no plan hash
+ok 36 - sparring record: CONVERGED + policy approval without plan hash gives exactly no plan hash
+  ---
+  duration_ms: 0.049521
+  type: 'test'
+  ...
+# Subtest: sparring record: a CONVERGED verdict with a plan hash passes without an owner line
+ok 37 - sparring record: a CONVERGED verdict with a plan hash passes without an owner line
+  ---
+  duration_ms: 0.053685
+  type: 'test'
+  ...
+# Subtest: sparring record: no verdict and no approval is still refused, and names the approval forms
+ok 38 - sparring record: no verdict and no approval is still refused, and names the approval forms
+  ---
+  duration_ms: 0.248794
+  type: 'test'
+  ...
+# Subtest: migration lint: wrapper, idempotency, non-transactional declaration
+ok 39 - migration lint: wrapper, idempotency, non-transactional declaration
+  ---
+  duration_ms: 1.700574
+  type: 'test'
+  ...
+# Subtest: regex edge cases: extra whitespace cannot sneak past the idempotency check
+ok 40 - regex edge cases: extra whitespace cannot sneak past the idempotency check
+  ---
+  duration_ms: 0.213653
+  type: 'test'
+  ...
+# Subtest: a skipped test counts once as a skip, not also as a dropped case
+ok 41 - a skipped test counts once as a skip, not also as a dropped case
+  ---
+  duration_ms: 0.139975
+  type: 'test'
+  ...
+# Subtest: dry run: own BEGIN/COMMIT replaced by an always-rollback wrapper
+ok 42 - dry run: own BEGIN/COMMIT replaced by an always-rollback wrapper
+  ---
+  duration_ms: 0.160832
+  type: 'test'
+  ...
+# Subtest: dry run classification: missing objects are unverifiable, real errors fail
+ok 43 - dry run classification: missing objects are unverifiable, real errors fail
+  ---
+  duration_ms: 0.222475
+  type: 'test'
+  ...
+1..43
+# tests 43
+# suites 0
+# pass 43
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 86.192778

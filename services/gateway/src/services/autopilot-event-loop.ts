@@ -15,6 +15,16 @@
  */
 
 import { gatewayServiceAuthHeader } from '../middleware/require-service-or-admin';
+
+// VTID-05731: the orchestrator routes need the service token; say so once per process when it is missing,
+// instead of a silent 401 on every dispatch.
+let warnedNoServiceToken = false;
+function warnIfNoServiceToken(): void {
+  if (warnedNoServiceToken || process.env.GATEWAY_SERVICE_TOKEN) return;
+  warnedNoServiceToken = true;
+  console.error('[worker-orchestrator-auth] GATEWAY_SERVICE_TOKEN unset: orchestrator dispatch will get 401');
+}
+
 import { emitOasisEvent } from './oasis-event-service';
 import { isAutopilotExecutionArmed } from './system-controls-service';
 import {
@@ -527,9 +537,11 @@ async function triggerDispatch(vtid: string, event: OasisEvent): Promise<ActionR
     try {
       console.log(`${LOG_PREFIX} Dispatching ${vtid} to worker orchestrator (attempt ${attempt}/${MAX_RETRIES})`);
 
+      warnIfNoServiceToken();
       const routeResponse = await fetch(`${gatewayUrl}/api/v1/worker/orchestrator/route`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        // The orchestrator write routes are requireServiceOrAdmin.
+        headers: { 'Content-Type': 'application/json', ...gatewayServiceAuthHeader() },
         body: JSON.stringify({
           vtid,
           title,

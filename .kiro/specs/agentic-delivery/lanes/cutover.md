@@ -4,7 +4,7 @@ state: ready
 next_actor: kiro
 depends_on: [pipelines, deploy-path, verify-on-gitlab, merge-queue, github-bridge, gateway-delivery]
 executor: kiro
-seat: exafy
+seat: exafyltd
 reviewer_seat: agent:vitana-lane-reviewer
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 repos: [exafyltd/vitana-platform]
@@ -25,7 +25,7 @@ paths:
   - .kiro/pipeline/driver.md
   - .kiro/pipeline/lane-land.md
   - docs/validation/**
-updated: 2026-11-05T02:59Z
+updated: 2026-11-12T20:15Z
 vtid: VTID-05545
 ---
 # Lane: cutover (repo vitana-platform)
@@ -40,4 +40,6 @@ VTID-05545 allocated after policy approval (converged-auto-v1).
 ### 2026-11-05T02:53Z · pm-agent · update
 reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
 ### 2026-11-05T02:59Z · pm-agent · update
+reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
+### 2026-11-12T20:15Z · pm-agent · update
 reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
