@@ -1,0 +1,13 @@
+{
+  "vtid": "VTID-05601",
+  "kind": "fix",
+  "paths": ["docs/validation/VTID-05003/staging-tests.json", "docs/validation/VTID-05004/staging-tests.json", "docs/validation/VTID-05064/staging-tests.json", "docs/validation/VTID-05069/staging-tests.json", "docs/validation/VTID-05071/staging-tests.json", "docs/validation/VTID-05601/**"],
+  "sparring_record": ".kiro/specs/staging-verify-manifest-repair/sparring/verdict.md",
+  "red_green_exempt": [
+    {"file": "docs/validation/VTID-05003/staging-tests.json", "reason": "manifest-only lane: the red proof is the string check in commands.log (10 strings red on origin/main, all green after)"},
+    {"file": "docs/validation/VTID-05004/staging-tests.json", "reason": "manifest-only lane: the red proof is the string check in commands.log (10 strings red on origin/main, all green after)"},
+    {"file": "docs/validation/VTID-05064/staging-tests.json", "reason": "manifest-only lane: the red proof is the string check in commands.log (10 strings red on origin/main, all green after)"},
+    {"file": "docs/validation/VTID-05069/staging-tests.json", "reason": "manifest-only lane: the red proof is the string check in commands.log (10 strings red on origin/main, all green after)"},
+    {"file": "docs/validation/VTID-05071/staging-tests.json", "reason": "manifest-only lane: the red proof is the string check in commands.log (10 strings red on origin/main, all green after)"}
+  ]
+}

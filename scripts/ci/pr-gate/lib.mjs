@@ -154,10 +154,14 @@ export function evaluateSparringRecord(text) {
   const t = String(text || '');
   const problems = [];
   if (!/\b(CONVERGED|ESCALATED)\b/.test(t)) problems.push('no verdict (CONVERGED / ESCALATED)');
-  // Approval: an owner-approval line, or policy `converged-auto-v1` (VTID-05214), which counts only with a CONVERGED verdict.
+  // Approval (bridge period, owner instruction 2026-11-12): a CONVERGED verdict is the machine approval. An owner-approval
+  // line and policy `converged-auto-v1` (VTID-05214) still count. ESCALATED without an approval line does not pass.
   const ownerApproved = /owner approval/i.test(t);
-  const policyApproved = /approved by policy `converged-auto-v1`/i.test(t) && /\bCONVERGED\b/.test(t);
-  if (!ownerApproved && !policyApproved) problems.push('no approval: need an owner-approval line, or "approved by policy `converged-auto-v1`" with a CONVERGED verdict');
+  const policyApproved = /approved by policy `converged-auto-v1`/i.test(t) && /\bCONVERGED\b/.test(t) && !/\bNOT\s+CONVERGED\b/i.test(t);
+  // A negated verdict ("NOT CONVERGED") is not convergence; ESCALATED is never approved by the machine.
+  const converged = /\bCONVERGED\b/.test(t) && !/\bNOT\s+CONVERGED\b/i.test(t);
+  const machineApproved = converged && !/\bESCALATED\b/.test(t);
+  if (!ownerApproved && !policyApproved && !machineApproved) problems.push('no approval: need a CONVERGED verdict (machine approval), an owner-approval line, or "approved by policy `converged-auto-v1`"');
   if (!/plan hash/i.test(t)) problems.push('no plan hash');
   return problems;
 }
