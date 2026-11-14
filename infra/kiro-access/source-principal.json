@@ -1,0 +1,26 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "VTID-05764 (plan autonomous-to-staging, lane kiro-aws-access): the source principal of the Kiro environment, IAM user kiro-agent-source in 841276716213. It can only assume kiro-staging-operator (472838866351) and kiro-engineering-admin (841276716213) with a kiro-session tag. No console login. The template creates no access key: the owner creates one key after the stack is applied and puts it, with the ExternalId, into the Kiro environment's secret store (docs/KIRO-AWS-ACCESS.md, credential handoff).",
+  "Metadata": { "Account": "engineering" },
+  "Resources": {
+    "KiroAgentSource": {
+      "Type": "AWS::IAM::User",
+      "Properties": {
+        "UserName": "kiro-agent-source",
+        "Tags": [{ "Key": "vtid", "Value": "VTID-05764" }, { "Key": "purpose", "Value": "kiro-environment-source-principal" }],
+        "Policies": [{
+          "PolicyName": "assume-kiro-roles-only",
+          "PolicyDocument": {
+            "Version": "2012-10-17",
+            "Statement": [
+              { "Sid": "AssumeKiroRoles", "Effect": "Allow", "Action": ["sts:AssumeRole", "sts:TagSession"],
+                "Resource": ["arn:aws:iam::472838866351:role/kiro-staging-operator", { "Fn::Sub": "arn:aws:iam::${AWS::AccountId}:role/kiro-engineering-admin" }],
+                "Condition": { "StringLike": { "aws:RequestTag/kiro-session": "kiro-*" } } },
+              { "Sid": "Identity", "Effect": "Allow", "Action": ["sts:GetCallerIdentity"], "Resource": "*" }
+            ]
+          }
+        }]
+      }
+    }
+  }
+}

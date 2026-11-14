@@ -276,3 +276,26 @@ describe('T25 parity with scripts/collab/protected-gate-files.json', () => {
     expect([...PROTECTED_GATE_GLOBS].sort()).toEqual([...json.globs].sort());
   });
 });
+
+// VTID-05765 (plan autonomous-to-staging): protected gate files merge on two agent accepts from different chain models.
+describe('VTID-05765 protected gate files merge on two agent accepts from different chain models', () => {
+  const file = 'scripts/collab/queue.mjs';
+  const opus = `${REVIEWER_AGENT} (claude-opus-5.5)`;
+  it('one accept, or two of the same model, is refused', () => {
+    const l = lane({ pr: pr({ files: [file] }) });
+    expect(governanceMergeAllowed(l, l.pr, agentAccept(), [agentAccept()])).toEqual({ ok: false, reason: 'protected_gate_file' });
+    expect(governanceMergeAllowed(l, l.pr, agentAccept(), [agentAccept(), agentAccept()])).toEqual({ ok: false, reason: 'protected_gate_file' });
+  });
+  it('two models on the current head are allowed', () => {
+    const l = lane({ pr: pr({ files: [file] }) });
+    expect(governanceMergeAllowed(l, l.pr, agentAccept(), [agentAccept(), agentAccept({ reviewer: opus })])).toEqual({ ok: true });
+  });
+  it('an accept on an older head does not count', () => {
+    const l = lane({ pr: pr({ files: [file] }) });
+    expect(governanceMergeAllowed(l, l.pr, agentAccept(), [agentAccept(), agentAccept({ reviewer: opus, head_sha: OLD })])).toEqual({ ok: false, reason: 'protected_gate_file' });
+  });
+  it('a model outside the chain does not count', () => {
+    const l = lane({ pr: pr({ files: [file] }) });
+    expect(governanceMergeAllowed(l, l.pr, agentAccept(), [agentAccept(), agentAccept({ reviewer: `${REVIEWER_AGENT} (gpt-5)` })])).toEqual({ ok: false, reason: 'protected_gate_file' });
+  });
+});

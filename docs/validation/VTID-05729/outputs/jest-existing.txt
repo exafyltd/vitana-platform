@@ -1,0 +1,2016 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/wt-crit-semantic-memory-auth/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.error
+    [VTID-01184] Batch embedding failed: rate limited
+
+      514 |
+      515 |       if (!embeddingResult.ok || !embeddingResult.embeddings) {
+    > 516 |         console.error(`[${VTID}] Batch embedding failed:`, embeddingResult.error);
+          |                 ^
+      517 |         errors += batch.length;
+      518 |         continue;
+      519 |       }
+
+      at src/routes/semantic-memory.ts:516:17
+
+PASS test/routes/semantic-memory.test.ts
+  POST /semantic/search
+    ✓ rejects an anonymous request (no token, no lens) before calling any service (401, no downstream call) (30 ms)
+    ✓ rejects a lens with a non-UUID tenant_id/user_id (not the caller's ids) before calling any service (11 ms)
+    ✓ generates a query embedding when none is supplied, then forwards the caller's identity lens to semanticSearch (4 ms)
+    ✓ never mixes tenants: two callers with their own lenses hit the service with their own tenant_id/user_id, not the other request's (6 ms)
+    ✓ skips embedding generation when query_embedding is already supplied (4 ms)
+    ✓ returns 500 EMBEDDING_GENERATION_FAILED when embedding generation fails, without calling semanticSearch (3 ms)
+    ✓ propagates a service-layer failure as 500 (2 ms)
+  POST /semantic/write
+    ✓ rejects an anonymous write (no token, no lens) before calling writeMemoryItem (401) (3 ms)
+    ✓ rejects an invalid source enum value (4 ms)
+    ✓ forwards the caller's identity lens to writeMemoryItem on a valid write, and 201s (2 ms)
+    ✓ does not fail the write when embedding generation fails (embedding stays undefined) (2 ms)
+    ✓ skips embedding generation entirely for very short content (<=10 chars) (2 ms)
+    ✓ propagates a write failure as 500 (2 ms)
+  POST /semantic/context
+    ✓ rejects an anonymous request (no token, no lens) before calling any service (401) (2 ms)
+    ✓ builds context using the generated embedding and the caller's identity lens (2 ms)
+    ✓ returns 500 when embedding generation fails, without calling buildSemanticContext (2 ms)
+  GET /semantic/health
+    ✓ reports embedding service availability (2 ms)
+  POST /admin/embeddings/generate
+    ✓ reports zero processed when no items need embeddings (3 ms)
+    ✓ processes items in batches and emits an OASIS event on success (2 ms)
+    ✓ counts a failed batch as errors and still returns 200 with status=warning (9 ms)
+    ✓ rejects an out-of-range limit (2 ms)
+  POST /admin/embeddings/reembed
+    ✓ forwards tenant_id/user_id scoping filters to markForReembed (2 ms)
+    ✓ rejects a malformed tenant_id (2 ms)
+    ✓ propagates a service failure as 500 (2 ms)
+  GET /admin/embeddings/status
+    ✓ reports items_needing_embeddings=true when the sample query returns items (2 ms)
+    ✓ reports migration_available=false when the underlying query fails (2 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.error
+    [VTID-01105] Missing SUPABASE_URL or SUPABASE_ANON_KEY
+
+      784 |
+      785 |   if (!supabaseUrl || !supabaseAnonKey) {
+    > 786 |     console.error('[VTID-01105] Missing SUPABASE_URL or SUPABASE_ANON_KEY');
+          |             ^
+      787 |     return { ok: false, error: 'Gateway misconfigured' };
+      788 |   }
+      789 |
+
+      at writeMemoryItem (src/routes/memory.ts:786:13)
+      at Object.<anonymous> (test/memory.test.ts:200:41)
+
+  console.error
+    [VTID-01105] Missing SUPABASE_URL or SUPABASE_ANON_KEY
+
+      784 |
+      785 |   if (!supabaseUrl || !supabaseAnonKey) {
+    > 786 |     console.error('[VTID-01105] Missing SUPABASE_URL or SUPABASE_ANON_KEY');
+          |             ^
+      787 |     return { ok: false, error: 'Gateway misconfigured' };
+      788 |   }
+      789 |
+
+      at writeMemoryItem (src/routes/memory.ts:786:13)
+      at Object.<anonymous> (test/memory.test.ts:210:41)
+
+  console.warn
+    [VTID-01105] memory_write_item RPC not found (VTID-01104 not deployed yet)
+
+      811 |       // Check if RPC doesn't exist (dependency not ready)
+      812 |       if (error.message.includes('function') && error.message.includes('does not exist')) {
+    > 813 |         console.warn('[VTID-01105] memory_write_item RPC not found (VTID-01104 not deployed yet)');
+          |                 ^
+      814 |         return { ok: false, error: 'Memory RPC not available (VTID-01104 dependency)' };
+      815 |       }
+      816 |       console.error('[VTID-01105] memory_write_item RPC error:', error.message);
+
+      at writeMemoryItem (src/routes/memory.ts:813:17)
+      at Object.<anonymous> (test/memory.test.ts:221:20)
+
+  console.error
+    [VTID-01105] memory_write_item RPC error: some rpc error
+
+      814 |         return { ok: false, error: 'Memory RPC not available (VTID-01104 dependency)' };
+      815 |       }
+    > 816 |       console.error('[VTID-01105] memory_write_item RPC error:', error.message);
+          |               ^
+      817 |       return { ok: false, error: error.message };
+      818 |     }
+      819 |
+
+      at writeMemoryItem (src/routes/memory.ts:816:15)
+      at Object.<anonymous> (test/memory.test.ts:231:20)
+
+  console.log
+    [VTID-01105] Memory item written: mem-123 (conversation)
+
+      at writeMemoryItem (src/routes/memory.ts:822:13)
+
+  console.log
+    [VTID-01105] Memory item written: mem-456 (health)
+
+      at writeMemoryItem (src/routes/memory.ts:822:13)
+
+  console.log
+    [VTID-01105] Memory item written: mem-789 (health)
+
+      at writeMemoryItem (src/routes/memory.ts:822:13)
+
+  console.log
+    [VTID-01105] POST /memory/write
+
+      at src/routes/memory.ts:846:11
+
+  console.log
+    [VTID-01105] POST /memory/write
+
+      at src/routes/memory.ts:846:11
+
+  console.warn
+    [VTID-01105] Validation failed: [
+      {
+        received: 'bad_source',
+        code: 'invalid_enum_value',
+        options: [ 'orb_text', 'orb_voice', 'diary', 'upload', 'system' ],
+        path: [ 'source' ],
+        message: "Invalid enum value. Expected 'orb_text' | 'orb_voice' | 'diary' | 'upload' | 'system', received 'bad_source'"
+      }
+    ]
+
+      857 |   const validation = MemoryWriteRequestSchema.safeParse(req.body);
+      858 |   if (!validation.success) {
+    > 859 |     console.warn('[VTID-01105] Validation failed:', validation.error.errors);
+          |             ^
+      860 |     return res.status(400).json({
+      861 |       ok: false,
+      862 |       error: 'Validation failed',
+
+      at src/routes/memory.ts:859:13
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/route.js:149:13)
+      at Route.dispatch (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/route.js:119:3)
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:284:15
+      at Function.process_params (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:175:3)
+      at router (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:328:13)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (../../../wt-gwra-route-auth/services/gateway/node_modules/raw-body/index.js:238:16)
+      at done (../../../wt-gwra-route-auth/services/gateway/node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (../../../wt-gwra-route-auth/services/gateway/node_modules/raw-body/index.js:287:7)
+
+  console.log
+    [VTID-01105] POST /memory/write
+
+      at src/routes/memory.ts:846:11
+
+  console.warn
+    [VTID-01105] Validation failed: [
+      {
+        code: 'invalid_type',
+        expected: 'string',
+        received: 'undefined',
+        path: [ 'content' ],
+        message: 'Required'
+      }
+    ]
+
+      857 |   const validation = MemoryWriteRequestSchema.safeParse(req.body);
+      858 |   if (!validation.success) {
+    > 859 |     console.warn('[VTID-01105] Validation failed:', validation.error.errors);
+          |             ^
+      860 |     return res.status(400).json({
+      861 |       ok: false,
+      862 |       error: 'Validation failed',
+
+      at src/routes/memory.ts:859:13
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/route.js:149:13)
+      at Route.dispatch (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/route.js:119:3)
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:284:15
+      at Function.process_params (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:175:3)
+      at router (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:328:13)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (../../../wt-gwra-route-auth/services/gateway/node_modules/raw-body/index.js:238:16)
+      at done (../../../wt-gwra-route-auth/services/gateway/node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (../../../wt-gwra-route-auth/services/gateway/node_modules/raw-body/index.js:287:7)
+
+  console.log
+    [VTID-01105] POST /memory/write
+
+      at src/routes/memory.ts:846:11
+
+  console.warn
+    [VTID-01105] memory_write_item RPC not found (VTID-01104 not deployed yet)
+
+      811 |       // Check if RPC doesn't exist (dependency not ready)
+      812 |       if (error.message.includes('function') && error.message.includes('does not exist')) {
+    > 813 |         console.warn('[VTID-01105] memory_write_item RPC not found (VTID-01104 not deployed yet)');
+          |                 ^
+      814 |         return { ok: false, error: 'Memory RPC not available (VTID-01104 dependency)' };
+      815 |       }
+      816 |       console.error('[VTID-01105] memory_write_item RPC error:', error.message);
+
+      at writeMemoryItem (src/routes/memory.ts:813:17)
+      at src/routes/memory.ts:870:18
+
+  console.log
+    [VTID-01105] POST /memory/write
+
+      at src/routes/memory.ts:846:11
+
+  console.log
+    [VTID-01105] Memory item written: new-mem-id (health)
+
+      at writeMemoryItem (src/routes/memory.ts:822:13)
+
+  console.log
+    [VTID-01105] GET /memory/context
+
+      at src/routes/memory.ts:944:11
+
+  console.log
+    [VTID-01105] GET /memory/context
+
+      at src/routes/memory.ts:944:11
+
+  console.log
+    [VTID-01105] GET /memory/context
+
+      at src/routes/memory.ts:944:11
+
+  console.log
+    [VTID-01105] GET /memory/context
+
+      at src/routes/memory.ts:944:11
+
+  console.warn
+    [VTID-01105] memory_get_context RPC not found (VTID-01104 not deployed yet)
+
+      1002 |       // Check if RPC doesn't exist
+      1003 |       if (error.message.includes('function') && error.message.includes('does not exist')) {
+    > 1004 |         console.warn('[VTID-01105] memory_get_context RPC not found (VTID-01104 not deployed yet)');
+           |                 ^
+      1005 |         return res.status(503).json({
+      1006 |           ok: false,
+      1007 |           error: 'Memory RPC not available (VTID-01104 dependency)'
+
+      at src/routes/memory.ts:1004:17
+
+  console.log
+    [VTID-01105] GET /memory/context
+
+      at src/routes/memory.ts:944:11
+
+  console.log
+    [VTID-01105] Memory context fetched: 1 items
+
+      at src/routes/memory.ts:1030:13
+
+  console.log
+    [VTID-01085] POST /memory/retrieve
+
+      at src/routes/memory.ts:1070:11
+
+  console.log
+    [VTID-01085] POST /memory/retrieve
+
+      at src/routes/memory.ts:1070:11
+
+  console.warn
+    [VTID-01085] Validation failed: [
+      {
+        received: 'bad_mode',
+        code: 'invalid_enum_value',
+        options: [ 'summary', 'detail' ],
+        path: [ 'mode' ],
+        message: "Invalid enum value. Expected 'summary' | 'detail', received 'bad_mode'"
+      }
+    ]
+
+      1081 |   const validation = MemoryRetrieveRequestSchema.safeParse(req.body);
+      1082 |   if (!validation.success) {
+    > 1083 |     console.warn('[VTID-01085] Validation failed:', validation.error.errors);
+           |             ^
+      1084 |     return res.status(400).json({
+      1085 |       ok: false,
+      1086 |       error: 'Validation failed',
+
+      at src/routes/memory.ts:1083:13
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/route.js:149:13)
+      at Route.dispatch (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/route.js:119:3)
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:284:15
+      at Function.process_params (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:175:3)
+      at router (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:328:13)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (../../../wt-gwra-route-auth/services/gateway/node_modules/raw-body/index.js:238:16)
+      at done (../../../wt-gwra-route-auth/services/gateway/node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (../../../wt-gwra-route-auth/services/gateway/node_modules/raw-body/index.js:287:7)
+
+  console.log
+    [VTID-01085] POST /memory/retrieve
+
+      at src/routes/memory.ts:1070:11
+
+  console.warn
+    [VTID-01085] Validation failed: [
+      {
+        received: 'bad_intent',
+        code: 'invalid_enum_value',
+        options: [
+          'health',
+          'longevity',
+          'community',
+          'lifestyle',
+          'planner',
+          'general'
+        ],
+        path: [ 'intent' ],
+        message: "Invalid enum value. Expected 'health' | 'longevity' | 'community' | 'lifestyle' | 'planner' | 'general', received 'bad_intent'"
+      }
+    ]
+
+      1081 |   const validation = MemoryRetrieveRequestSchema.safeParse(req.body);
+      1082 |   if (!validation.success) {
+    > 1083 |     console.warn('[VTID-01085] Validation failed:', validation.error.errors);
+           |             ^
+      1084 |     return res.status(400).json({
+      1085 |       ok: false,
+      1086 |       error: 'Validation failed',
+
+      at src/routes/memory.ts:1083:13
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/route.js:149:13)
+      at Route.dispatch (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/route.js:119:3)
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:284:15
+      at Function.process_params (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:175:3)
+      at router (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:328:13)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (../../../wt-gwra-route-auth/services/gateway/node_modules/raw-body/index.js:238:16)
+      at done (../../../wt-gwra-route-auth/services/gateway/node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (../../../wt-gwra-route-auth/services/gateway/node_modules/raw-body/index.js:287:7)
+
+  console.log
+    [VTID-01085] POST /memory/retrieve
+
+      at src/routes/memory.ts:1070:11
+
+  console.log
+    [VTID-01085] POST /memory/retrieve
+
+      at src/routes/memory.ts:1070:11
+
+  console.log
+    [VTID-01085] Memory retrieve completed: 4 items, audit_id=audit-002
+
+      at src/routes/memory.ts:1205:13
+
+  console.log
+    [VTID-01086] GET /memory/garden/progress
+
+      at src/routes/memory.ts:1230:11
+
+  console.log
+    [VTID-01086] GET /memory/garden/progress
+
+      at src/routes/memory.ts:1230:11
+
+  console.warn
+    [VTID-01086] memory_get_garden_progress RPC not found (migration not deployed yet)
+
+      1257 |       // Check if RPC doesn't exist (migration not deployed yet)
+      1258 |       if (error.message.includes('function') && error.message.includes('does not exist')) {
+    > 1259 |         console.warn('[VTID-01086] memory_get_garden_progress RPC not found (migration not deployed yet)');
+           |                 ^
+      1260 |         // Return placeholder data for development
+      1261 |         return res.status(200).json({
+      1262 |           ok: true,
+
+      at src/routes/memory.ts:1259:17
+
+  console.log
+    [VTID-01086] GET /memory/garden/progress
+
+      at src/routes/memory.ts:1230:11
+
+  console.log
+    [VTID-01086] Memory Garden progress fetched: 5 memories
+
+      at src/routes/memory.ts:1309:13
+
+  console.log
+    [VTID-01082] POST /memory/diary
+
+      at src/routes/memory.ts:1628:11
+
+  console.log
+    [VTID-01082] POST /memory/diary
+
+      at src/routes/memory.ts:1628:11
+
+  console.warn
+    [VTID-01082] Diary validation failed: [
+      {
+        validation: 'regex',
+        code: 'invalid_string',
+        message: 'entry_date must be YYYY-MM-DD format',
+        path: [ 'entry_date' ]
+      }
+    ]
+
+      1639 |   const validation = DiaryEntryWriteSchema.safeParse(req.body);
+      1640 |   if (!validation.success) {
+    > 1641 |     console.warn('[VTID-01082] Diary validation failed:', validation.error.errors);
+           |             ^
+      1642 |     return res.status(400).json({
+      1643 |       ok: false,
+      1644 |       error: 'Validation failed',
+
+      at src/routes/memory.ts:1641:13
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/route.js:149:13)
+      at Route.dispatch (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/route.js:119:3)
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:284:15
+      at Function.process_params (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:175:3)
+      at router (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:328:13)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (../../../wt-gwra-route-auth/services/gateway/node_modules/raw-body/index.js:238:16)
+      at done (../../../wt-gwra-route-auth/services/gateway/node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (../../../wt-gwra-route-auth/services/gateway/node_modules/raw-body/index.js:287:7)
+
+  console.log
+    [VTID-01082] POST /memory/diary
+
+      at src/routes/memory.ts:1628:11
+
+  console.warn
+    [VTID-01082] Diary validation failed: [
+      {
+        received: 'invalid',
+        code: 'invalid_enum_value',
+        options: [ 'free', 'guided', 'health', 'reflection' ],
+        path: [ 'entry_type' ],
+        message: "Invalid enum value. Expected 'free' | 'guided' | 'health' | 'reflection', received 'invalid'"
+      }
+    ]
+
+      1639 |   const validation = DiaryEntryWriteSchema.safeParse(req.body);
+      1640 |   if (!validation.success) {
+    > 1641 |     console.warn('[VTID-01082] Diary validation failed:', validation.error.errors);
+           |             ^
+      1642 |     return res.status(400).json({
+      1643 |       ok: false,
+      1644 |       error: 'Validation failed',
+
+      at src/routes/memory.ts:1641:13
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/route.js:149:13)
+      at Route.dispatch (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/route.js:119:3)
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:284:15
+      at Function.process_params (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:175:3)
+      at router (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:328:13)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (../../../wt-gwra-route-auth/services/gateway/node_modules/raw-body/index.js:238:16)
+      at done (../../../wt-gwra-route-auth/services/gateway/node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (../../../wt-gwra-route-auth/services/gateway/node_modules/raw-body/index.js:287:7)
+
+  console.log
+    [VTID-01082] POST /memory/diary
+
+      at src/routes/memory.ts:1628:11
+
+  console.warn
+    [VTID-01082] Diary validation failed: [
+      {
+        code: 'too_small',
+        minimum: 1,
+        type: 'string',
+        inclusive: true,
+        exact: false,
+        message: 'raw_text is required',
+        path: [ 'raw_text' ]
+      }
+    ]
+
+      1639 |   const validation = DiaryEntryWriteSchema.safeParse(req.body);
+      1640 |   if (!validation.success) {
+    > 1641 |     console.warn('[VTID-01082] Diary validation failed:', validation.error.errors);
+           |             ^
+      1642 |     return res.status(400).json({
+      1643 |       ok: false,
+      1644 |       error: 'Validation failed',
+
+      at src/routes/memory.ts:1641:13
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/route.js:149:13)
+      at Route.dispatch (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/route.js:119:3)
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:284:15
+      at Function.process_params (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:175:3)
+      at router (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:328:13)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (../../../wt-gwra-route-auth/services/gateway/node_modules/raw-body/index.js:238:16)
+      at done (../../../wt-gwra-route-auth/services/gateway/node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (../../../wt-gwra-route-auth/services/gateway/node_modules/raw-body/index.js:287:7)
+
+  console.log
+    [VTID-01082] POST /memory/diary
+
+      at src/routes/memory.ts:1628:11
+
+  console.warn
+    [VTID-01977] feature write failed (journal_entry): SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      315 |       });
+      316 |       if (error) {
+    > 317 |         console.warn(`[VTID-01977] feature write failed (${w.feature_key}): ${error.message}`);
+          |                 ^
+      318 |         failed += 1;
+      319 |       } else {
+      320 |         written += 1;
+
+      at persistDiaryHealthFeatures (src/services/diary-health-extractor.ts:317:17)
+      at src/routes/memory.ts:1712:29
+
+  console.log
+    [VTID-01082] Diary entry created: diary-uuid (free for 2026-04-23)
+
+      at src/routes/memory.ts:1754:13
+
+  console.log
+    [VTID-01082] GET /memory/diary
+
+      at src/routes/memory.ts:1844:11
+
+  console.log
+    [VTID-01082] GET /memory/diary
+
+      at src/routes/memory.ts:1844:11
+
+  console.log
+    [VTID-01082] Diary entries fetched: 1 entries
+
+      at src/routes/memory.ts:1912:13
+
+  console.log
+    [VTID-01082] POST /memory/garden/extract
+
+      at src/routes/memory.ts:1939:11
+
+  console.log
+    [VTID-01082] POST /memory/garden/extract
+
+      at src/routes/memory.ts:1939:11
+
+  console.warn
+    [VTID-01082] Garden extract validation failed: [
+      {
+        validation: 'uuid',
+        code: 'invalid_string',
+        message: 'diary_entry_id must be a valid UUID',
+        path: [ 'diary_entry_id' ]
+      }
+    ]
+
+      1950 |   const validation = GardenExtractSchema.safeParse(req.body);
+      1951 |   if (!validation.success) {
+    > 1952 |     console.warn('[VTID-01082] Garden extract validation failed:', validation.error.errors);
+           |             ^
+      1953 |     return res.status(400).json({
+      1954 |       ok: false,
+      1955 |       error: 'Validation failed',
+
+      at src/routes/memory.ts:1952:13
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/route.js:149:13)
+      at Route.dispatch (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/route.js:119:3)
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:284:15
+      at Function.process_params (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:175:3)
+      at router (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:328:13)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (../../../wt-gwra-route-auth/services/gateway/node_modules/raw-body/index.js:238:16)
+      at done (../../../wt-gwra-route-auth/services/gateway/node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (../../../wt-gwra-route-auth/services/gateway/node_modules/raw-body/index.js:287:7)
+
+  console.log
+    [VTID-01082] POST /memory/garden/extract
+
+      at src/routes/memory.ts:1939:11
+
+  console.log
+    [VTID-01082] Garden extraction complete: 2 created, 1 updated
+
+      at src/routes/memory.ts:2043:13
+
+  console.log
+    [VTID-01082] GET /memory/garden/summary
+
+      at src/routes/memory.ts:2068:11
+
+  console.log
+    [VTID-01082] GET /memory/garden/summary
+
+      at src/routes/memory.ts:2068:11
+
+  console.log
+    [VTID-01082] Garden summary fetched: confidence=72
+
+      at src/routes/memory.ts:2135:13
+
+  console.log
+    [VTID-01100] POST /memory/quality/compute
+
+      at src/routes/memory.ts:2168:11
+
+  console.log
+    [VTID-01100] POST /memory/quality/compute
+
+      at src/routes/memory.ts:2168:11
+
+  console.log
+    [VTID-01100] Quality computed: 65/100 (Medium)
+
+      at src/routes/memory.ts:2257:13
+
+  console.log
+    [VTID-01100] GET /memory/quality
+
+      at src/routes/memory.ts:2275:11
+
+  console.log
+    [VTID-01100] GET /memory/quality
+
+      at src/routes/memory.ts:2275:11
+
+  console.log
+    [VTID-01100] Quality read: 55/100
+
+      at src/routes/memory.ts:2350:13
+
+  console.log
+    [VTID-01116] POST /memory/confidence/adjust
+
+      at src/routes/memory.ts:2379:11
+
+  console.log
+    [VTID-01116] POST /memory/confidence/adjust
+
+      at src/routes/memory.ts:2379:11
+
+  console.warn
+    [VTID-01116] Validation failed: [
+      {
+        received: 'INVALID_CODE',
+        code: 'invalid_enum_value',
+        options: [
+          'USER_CONFIRMED',
+          'REPETITION_CONSISTENT',
+          'CROSS_REFERENCE_MATCH',
+          'PROFESSIONAL_VERIFIED',
+          'LAB_CONFIRMED',
+          'USER_CORRECTED',
+          'CONTRADICTING_EVIDENCE',
+          'TIME_DECAY',
+          'SOURCE_INVALIDATED',
+          'PARTIAL_RETRACTION',
+          'INITIAL_CAPTURE',
+          'RECALCULATED',
+          'SENSITIVITY_CAP'
+        ],
+        path: [ 'reason_code' ],
+        message: "Invalid enum value. Expected 'USER_CONFIRMED' | 'REPETITION_CONSISTENT' | 'CROSS_REFERENCE_MATCH' | 'PROFESSIONAL_VERIFIED' | 'LAB_CONFIRMED' | 'USER_CORRECTED' | 'CONTRADICTING_EVIDENCE' | 'TIME_DECAY' | 'SOURCE_INVALIDATED' | 'PARTIAL_RETRACTION' | 'INITIAL_CAPTURE' | 'RECALCULATED' | 'SENSITIVITY_CAP', received 'INVALID_CODE'"
+      }
+    ]
+
+      2390 |   const validation = ConfidenceAdjustRequestSchema.safeParse(req.body);
+      2391 |   if (!validation.success) {
+    > 2392 |     console.warn('[VTID-01116] Validation failed:', validation.error.errors);
+           |             ^
+      2393 |     return res.status(400).json({
+      2394 |       ok: false,
+      2395 |       error: 'Validation failed',
+
+      at src/routes/memory.ts:2392:13
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/route.js:149:13)
+      at Route.dispatch (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/route.js:119:3)
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:284:15
+      at Function.process_params (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:175:3)
+      at router (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:328:13)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (../../../wt-gwra-route-auth/services/gateway/node_modules/raw-body/index.js:238:16)
+      at done (../../../wt-gwra-route-auth/services/gateway/node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (../../../wt-gwra-route-auth/services/gateway/node_modules/raw-body/index.js:287:7)
+
+  console.log
+    [VTID-01116] POST /memory/confidence/adjust
+
+      at src/routes/memory.ts:2379:11
+
+  console.warn
+    [VTID-01116] Validation failed: [
+      {
+        validation: 'uuid',
+        code: 'invalid_string',
+        message: 'memory_item_id must be a valid UUID',
+        path: [ 'memory_item_id' ]
+      }
+    ]
+
+      2390 |   const validation = ConfidenceAdjustRequestSchema.safeParse(req.body);
+      2391 |   if (!validation.success) {
+    > 2392 |     console.warn('[VTID-01116] Validation failed:', validation.error.errors);
+           |             ^
+      2393 |     return res.status(400).json({
+      2394 |       ok: false,
+      2395 |       error: 'Validation failed',
+
+      at src/routes/memory.ts:2392:13
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/route.js:149:13)
+      at Route.dispatch (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/route.js:119:3)
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:284:15
+      at Function.process_params (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:175:3)
+      at router (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:328:13)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (../../../wt-gwra-route-auth/services/gateway/node_modules/raw-body/index.js:238:16)
+      at done (../../../wt-gwra-route-auth/services/gateway/node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (../../../wt-gwra-route-auth/services/gateway/node_modules/raw-body/index.js:287:7)
+
+  console.log
+    [VTID-01116] POST /memory/confidence/adjust
+
+      at src/routes/memory.ts:2379:11
+
+  console.log
+    [VTID-01116] Confidence adjusted: a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11 50 -> 65
+
+      at src/routes/memory.ts:2473:13
+
+  console.log
+    [VTID-01116] POST /memory/confidence/confirm
+
+      at src/routes/memory.ts:2492:11
+
+  console.log
+    [VTID-01116] POST /memory/confidence/confirm
+
+      at src/routes/memory.ts:2492:11
+
+  console.log
+    [VTID-01116] Memory confirmed: a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11 40 -> 55
+
+      at src/routes/memory.ts:2581:13
+
+  console.log
+    [VTID-01116] POST /memory/confidence/correct
+
+      at src/routes/memory.ts:2600:11
+
+  console.log
+    [VTID-01116] POST /memory/confidence/correct
+
+      at src/routes/memory.ts:2600:11
+
+  console.log
+    [VTID-01116] Memory corrected: a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11 70 -> 50
+
+      at src/routes/memory.ts:2692:13
+
+  console.log
+    [VTID-01116] GET /memory/confidence/history/:id
+
+      at src/routes/memory.ts:2710:11
+
+  console.log
+    [VTID-01116] GET /memory/confidence/history/:id
+
+      at src/routes/memory.ts:2710:11
+
+  console.log
+    [VTID-01116] GET /memory/confidence/history/:id
+
+      at src/routes/memory.ts:2710:11
+
+  console.log
+    [VTID-01116] Confidence history fetched: a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11 (0 entries)
+
+      at src/routes/memory.ts:2795:13
+
+  console.log
+    [VTID-01116] GET /memory/context/trusted
+
+      at src/routes/memory.ts:2815:11
+
+  console.log
+    [VTID-01116] GET /memory/context/trusted
+
+      at src/routes/memory.ts:2815:11
+
+  console.log
+    [VTID-01116] Trusted context fetched: 0 items (min_confidence: 30)
+
+      at src/routes/memory.ts:2907:13
+
+  console.log
+    [VTID-01116] POST /memory/confidence/decay
+
+      at src/routes/memory.ts:2926:11
+
+  console.log
+    [VTID-01116] POST /memory/confidence/decay
+
+      at src/routes/memory.ts:2926:11
+
+  console.log
+    [VTID-01116] Time decay applied: 3 memories affected
+
+      at src/routes/memory.ts:3010:13
+
+  console.log
+    [VTID-01116] GET /memory/source-trust
+
+      at src/routes/memory.ts:3029:11
+
+  console.log
+    [VTID-01116] GET /memory/source-trust
+
+      at src/routes/memory.ts:3029:11
+
+  console.warn
+    [VTID-01116] memory_source_trust table not found (VTID-01116 not deployed yet)
+
+      3056 |       // Check if table doesn't exist
+      3057 |       if (error.message.includes('relation') && error.message.includes('does not exist')) {
+    > 3058 |         console.warn('[VTID-01116] memory_source_trust table not found (VTID-01116 not deployed yet)');
+           |                 ^
+      3059 |         // Return hardcoded fallback
+      3060 |         return res.status(200).json({
+      3061 |           ok: true,
+
+      at src/routes/memory.ts:3058:17
+
+  console.log
+    [VTID-01116] GET /memory/source-trust
+
+      at src/routes/memory.ts:3029:11
+
+  console.log
+    [VTID-01116] Source trust weights fetched: 1 entries
+
+      at src/routes/memory.ts:3083:13
+
+  console.log
+    [VTID-01116] GET /memory/confidence/reasons
+
+      at src/routes/memory.ts:3105:11
+
+  console.log
+    [VTID-01116] GET /memory/confidence/reasons
+
+      at src/routes/memory.ts:3105:11
+
+  console.warn
+    [VTID-01116] memory_confidence_reasons table not found (VTID-01116 not deployed yet)
+
+      3132 |       // Check if table doesn't exist
+      3133 |       if (error.message.includes('relation') && error.message.includes('does not exist')) {
+    > 3134 |         console.warn('[VTID-01116] memory_confidence_reasons table not found (VTID-01116 not deployed yet)');
+           |                 ^
+      3135 |         // Return hardcoded fallback
+      3136 |         return res.status(200).json({
+      3137 |           ok: true,
+
+      at src/routes/memory.ts:3134:17
+
+  console.log
+    [VTID-01116] GET /memory/confidence/reasons
+
+      at src/routes/memory.ts:3105:11
+
+  console.log
+    [VTID-01116] Confidence reasons fetched: 1 entries
+
+      at src/routes/memory.ts:3156:13
+
+PASS test/memory.test.ts
+  classifyCategory — unit
+    ✓ returns personal for English name pattern (1 ms)
+    ✓ returns personal for German name pattern
+    ✓ returns personal for mein name pattern
+    ✓ returns personal for birthday keyword
+    ✓ returns personal for German geburtstag
+    ✓ returns personal for residence (1 ms)
+    ✓ personal wins over health when both present
+    ✓ returns health for blood keyword
+    ✓ returns health for sleep keyword
+    ✓ returns health for glucose keyword
+    ✓ returns health for workout keyword
+    ✓ returns relationships for wife keyword
+    ✓ returns relationships for fiancee keyword
+    ✓ returns relationships for German verlobt
+    ✓ returns events_meetups for meetup keyword before community
+    ✓ returns events_meetups for conference keyword
+    ✓ returns community when no events keyword matches
+    ✓ returns community for team keyword (1 ms)
+    ✓ returns products_services for buy keyword
+    ✓ returns products_services for subscription keyword
+    ✓ returns tasks for vtid keyword
+    ✓ returns tasks for deploy keyword
+    ✓ returns goals for goal keyword
+    ✓ returns goals for habit keyword
+    ✓ returns preferences for prefer keyword
+    ✓ returns preferences for favorite keyword
+    ✓ returns conversation for unmatched content
+    ✓ returns conversation for empty-ish content
+  writeMemoryItem — unit
+    ✓ returns error when SUPABASE_ANON_KEY is missing (24 ms)
+    ✓ returns error when SUPABASE_URL is missing (2 ms)
+    ✓ returns error when RPC does not exist (503-class) (2 ms)
+    ✓ returns error on generic RPC error (2 ms)
+    ✓ returns ok + id on success (1 ms)
+    ✓ uses provided category_key when given (1 ms)
+    ✓ auto-classifies content when no category_key given (1 ms)
+  Memory Router — route integration
+    GET /health
+      ✓ returns 200 without auth (4 ms)
+    POST /write
+      ✓ 401 when no Authorization header (6 ms)
+      ✓ 400 when source is invalid (6 ms)
+      ✓ 400 when content is missing (6 ms)
+      ✓ 503 when RPC does not exist (4 ms)
+      ✓ 200 on success (4 ms)
+    GET /context
+      ✓ 401 when no auth (7 ms)
+      ✓ 400 when limit is out of range (4 ms)
+      ✓ 400 when categories contains invalid key (3 ms)
+      ✓ 503 when RPC does not exist (5 ms)
+      ✓ 200 with items array on success (4 ms)
+    POST /retrieve
+      ✓ 401 when no auth (4 ms)
+      ✓ 400 when mode is invalid (5 ms)
+      ✓ 400 when intent is invalid (5 ms)
+      ✓ 403 when RPC returns redacted=true with zero sources (3 ms)
+      ✓ 200 on success (3 ms)
+    GET /garden/progress
+      ✓ 401 when no auth (3 ms)
+      ✓ 200 with _placeholder when RPC does not exist (5 ms)
+      ✓ 200 with garden data on success (4 ms)
+    POST /diary
+      ✓ 401 when no auth (7 ms)
+      ✓ 400 when entry_date format is wrong (5 ms)
+      ✓ 400 when entry_type is invalid (5 ms)
+      ✓ 400 when raw_text is empty (5 ms)
+      ✓ 200 on success (19 ms)
+    GET /diary
+      ✓ 401 when no auth (4 ms)
+      ✓ 200 with entries on success (4 ms)
+    POST /garden/extract
+      ✓ 401 when no auth (3 ms)
+      ✓ 400 when diary_entry_id is not a UUID (5 ms)
+      ✓ 200 on success (3 ms)
+    GET /garden/summary
+      ✓ 401 when no auth (3 ms)
+      ✓ 200 on success (6 ms)
+    POST /quality/compute
+      ✓ 401 when no auth (2 ms)
+      ✓ 200 on success (4 ms)
+    GET /quality
+      ✓ 401 when no auth (3 ms)
+      ✓ 200 on success (3 ms)
+    POST /confidence/adjust
+      ✓ 401 when no auth (3 ms)
+      ✓ 400 when reason_code is invalid (5 ms)
+      ✓ 400 when memory_item_id is not a UUID (5 ms)
+      ✓ 200 on success (3 ms)
+    POST /confidence/confirm
+      ✓ 401 when no auth (4 ms)
+      ✓ 200 on success (3 ms)
+    POST /confidence/correct
+      ✓ 401 when no auth (4 ms)
+      ✓ 200 on success (3 ms)
+    GET /confidence/history/:id
+      ✓ 401 when no auth (3 ms)
+      ✓ 400 when id is not a valid UUID (5 ms)
+      ✓ 200 on success (3 ms)
+    GET /context/trusted
+      ✓ 401 when no auth (3 ms)
+      ✓ 200 on success (4 ms)
+    POST /confidence/decay
+      ✓ 401 when no auth (3 ms)
+      ✓ 200 on success (3 ms)
+    GET /source-trust
+      ✓ 401 when no auth (4 ms)
+      ✓ 200 with _fallback when table does not exist (4 ms)
+      ✓ 200 with real data when table exists (4 ms)
+    GET /confidence/reasons
+      ✓ 401 when no auth (3 ms)
+      ✓ 200 with _fallback when table does not exist (5 ms)
+      ✓ 200 with real data when table exists (3 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    [VTID-01116] POST /memory/confidence/adjust
+
+      at src/routes/memory.ts:2379:11
+
+  console.log
+    [VTID-01116] POST /memory/confidence/adjust
+
+      at src/routes/memory.ts:2379:11
+
+  console.warn
+    [VTID-01116] Validation failed: [
+      {
+        validation: 'uuid',
+        code: 'invalid_string',
+        message: 'memory_item_id must be a valid UUID',
+        path: [ 'memory_item_id' ]
+      }
+    ]
+
+      2390 |   const validation = ConfidenceAdjustRequestSchema.safeParse(req.body);
+      2391 |   if (!validation.success) {
+    > 2392 |     console.warn('[VTID-01116] Validation failed:', validation.error.errors);
+           |             ^
+      2393 |     return res.status(400).json({
+      2394 |       ok: false,
+      2395 |       error: 'Validation failed',
+
+      at src/routes/memory.ts:2392:13
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/route.js:149:13)
+      at Route.dispatch (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/route.js:119:3)
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:284:15
+      at Function.process_params (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:175:3)
+      at router (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:328:13)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (../../../wt-gwra-route-auth/services/gateway/node_modules/raw-body/index.js:238:16)
+      at done (../../../wt-gwra-route-auth/services/gateway/node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (../../../wt-gwra-route-auth/services/gateway/node_modules/raw-body/index.js:287:7)
+
+  console.log
+    [VTID-01116] POST /memory/confidence/adjust
+
+      at src/routes/memory.ts:2379:11
+
+  console.warn
+    [VTID-01116] Validation failed: [
+      {
+        received: 'INVALID_REASON',
+        code: 'invalid_enum_value',
+        options: [
+          'USER_CONFIRMED',
+          'REPETITION_CONSISTENT',
+          'CROSS_REFERENCE_MATCH',
+          'PROFESSIONAL_VERIFIED',
+          'LAB_CONFIRMED',
+          'USER_CORRECTED',
+          'CONTRADICTING_EVIDENCE',
+          'TIME_DECAY',
+          'SOURCE_INVALIDATED',
+          'PARTIAL_RETRACTION',
+          'INITIAL_CAPTURE',
+          'RECALCULATED',
+          'SENSITIVITY_CAP'
+        ],
+        path: [ 'reason_code' ],
+        message: "Invalid enum value. Expected 'USER_CONFIRMED' | 'REPETITION_CONSISTENT' | 'CROSS_REFERENCE_MATCH' | 'PROFESSIONAL_VERIFIED' | 'LAB_CONFIRMED' | 'USER_CORRECTED' | 'CONTRADICTING_EVIDENCE' | 'TIME_DECAY' | 'SOURCE_INVALIDATED' | 'PARTIAL_RETRACTION' | 'INITIAL_CAPTURE' | 'RECALCULATED' | 'SENSITIVITY_CAP', received 'INVALID_REASON'"
+      }
+    ]
+
+      2390 |   const validation = ConfidenceAdjustRequestSchema.safeParse(req.body);
+      2391 |   if (!validation.success) {
+    > 2392 |     console.warn('[VTID-01116] Validation failed:', validation.error.errors);
+           |             ^
+      2393 |     return res.status(400).json({
+      2394 |       ok: false,
+      2395 |       error: 'Validation failed',
+
+      at src/routes/memory.ts:2392:13
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/route.js:149:13)
+      at Route.dispatch (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/route.js:119:3)
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:284:15
+      at Function.process_params (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:175:3)
+      at router (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:328:13)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (../../../wt-gwra-route-auth/services/gateway/node_modules/raw-body/index.js:238:16)
+      at done (../../../wt-gwra-route-auth/services/gateway/node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (../../../wt-gwra-route-auth/services/gateway/node_modules/raw-body/index.js:287:7)
+
+  console.log
+    [VTID-01116] POST /memory/confidence/adjust
+
+      at src/routes/memory.ts:2379:11
+
+  console.log
+    [VTID-01116] Confidence adjusted: 123e4567-e89b-12d3-a456-426614174000 50 -> 60
+
+      at src/routes/memory.ts:2473:13
+
+  console.log
+    [VTID-01116] POST /memory/confidence/adjust
+
+      at src/routes/memory.ts:2379:11
+
+  console.log
+    [VTID-01116] Confidence adjusted: 123e4567-e89b-12d3-a456-426614174000 50 -> 60
+
+      at src/routes/memory.ts:2473:13
+
+  console.log
+    [VTID-01116] POST /memory/confidence/adjust
+
+      at src/routes/memory.ts:2379:11
+
+  console.log
+    [VTID-01116] Confidence adjusted: 123e4567-e89b-12d3-a456-426614174000 50 -> 60
+
+      at src/routes/memory.ts:2473:13
+
+  console.log
+    [VTID-01116] POST /memory/confidence/adjust
+
+      at src/routes/memory.ts:2379:11
+
+  console.error
+    [VTID-01116] memory_adjust_confidence RPC error: RPC failed
+
+      2429 |         });
+      2430 |       }
+    > 2431 |       console.error('[VTID-01116] memory_adjust_confidence RPC error:', error.message);
+           |               ^
+      2432 |       return res.status(502).json({
+      2433 |         ok: false,
+      2434 |         error: error.message
+
+      at src/routes/memory.ts:2431:15
+
+  console.log
+    [VTID-01116] POST /memory/confidence/confirm
+
+      at src/routes/memory.ts:2492:11
+
+  console.log
+    [VTID-01116] POST /memory/confidence/confirm
+
+      at src/routes/memory.ts:2492:11
+
+  console.log
+    [VTID-01116] Memory confirmed: 123e4567-e89b-12d3-a456-426614174000 50 -> 60
+
+      at src/routes/memory.ts:2581:13
+
+  console.log
+    [VTID-01116] POST /memory/confidence/confirm
+
+      at src/routes/memory.ts:2492:11
+
+  console.log
+    [VTID-01116] Memory confirmed: 123e4567-e89b-12d3-a456-426614174000 50 -> 60
+
+      at src/routes/memory.ts:2581:13
+
+  console.log
+    [VTID-01116] POST /memory/confidence/confirm
+
+      at src/routes/memory.ts:2492:11
+
+  console.log
+    [VTID-01116] Memory confirmed: 123e4567-e89b-12d3-a456-426614174000 50 -> 60
+
+      at src/routes/memory.ts:2581:13
+
+  console.log
+    [VTID-01116] POST /memory/confidence/correct
+
+      at src/routes/memory.ts:2600:11
+
+  console.log
+    [VTID-01116] POST /memory/confidence/correct
+
+      at src/routes/memory.ts:2600:11
+
+  console.log
+    [VTID-01116] Memory corrected: 123e4567-e89b-12d3-a456-426614174000 70 -> 55
+
+      at src/routes/memory.ts:2692:13
+
+  console.log
+    [VTID-01116] POST /memory/confidence/correct
+
+      at src/routes/memory.ts:2600:11
+
+  console.log
+    [VTID-01116] Memory corrected: 123e4567-e89b-12d3-a456-426614174000 50 -> 60
+
+      at src/routes/memory.ts:2692:13
+
+  console.log
+    [VTID-01116] POST /memory/confidence/correct
+
+      at src/routes/memory.ts:2600:11
+
+  console.log
+    [VTID-01116] Memory corrected: 123e4567-e89b-12d3-a456-426614174000 50 -> 60
+
+      at src/routes/memory.ts:2692:13
+
+  console.log
+    [VTID-01116] GET /memory/confidence/history/:id
+
+      at src/routes/memory.ts:2710:11
+
+  console.log
+    [VTID-01116] GET /memory/confidence/history/:id
+
+      at src/routes/memory.ts:2710:11
+
+  console.log
+    [VTID-01116] GET /memory/confidence/history/:id
+
+      at src/routes/memory.ts:2710:11
+
+  console.log
+    [VTID-01116] Confidence history fetched: 123e4567-e89b-12d3-a456-426614174000 (1 entries)
+
+      at src/routes/memory.ts:2795:13
+
+  console.log
+    [VTID-01116] GET /memory/confidence/history/:id
+
+      at src/routes/memory.ts:2710:11
+
+  console.log
+    [VTID-01116] Confidence history fetched: 123e4567-e89b-12d3-a456-426614174000 (1 entries)
+
+      at src/routes/memory.ts:2795:13
+
+  console.log
+    [VTID-01116] GET /memory/confidence/history/:id
+
+      at src/routes/memory.ts:2710:11
+
+  console.log
+    [VTID-01116] Confidence history fetched: 123e4567-e89b-12d3-a456-426614174000 (1 entries)
+
+      at src/routes/memory.ts:2795:13
+
+  console.log
+    [VTID-01116] GET /memory/context/trusted
+
+      at src/routes/memory.ts:2815:11
+
+  console.log
+    [VTID-01116] GET /memory/context/trusted
+
+      at src/routes/memory.ts:2815:11
+
+  console.log
+    [VTID-01116] Trusted context fetched: 1 items (min_confidence: 30)
+
+      at src/routes/memory.ts:2907:13
+
+  console.log
+    [VTID-01116] GET /memory/context/trusted
+
+      at src/routes/memory.ts:2815:11
+
+  console.log
+    [VTID-01116] Trusted context fetched: 1 items (min_confidence: 50)
+
+      at src/routes/memory.ts:2907:13
+
+  console.log
+    [VTID-01116] GET /memory/context/trusted
+
+      at src/routes/memory.ts:2815:11
+
+  console.log
+    [VTID-01116] Trusted context fetched: 1 items (min_confidence: 30)
+
+      at src/routes/memory.ts:2907:13
+
+  console.log
+    [VTID-01116] GET /memory/context/trusted
+
+      at src/routes/memory.ts:2815:11
+
+  console.log
+    [VTID-01116] GET /memory/context/trusted
+
+      at src/routes/memory.ts:2815:11
+
+  console.log
+    [VTID-01116] Trusted context fetched: 1 items (min_confidence: 30)
+
+      at src/routes/memory.ts:2907:13
+
+  console.log
+    [VTID-01116] POST /memory/confidence/decay
+
+      at src/routes/memory.ts:2926:11
+
+  console.log
+    [VTID-01116] POST /memory/confidence/decay
+
+      at src/routes/memory.ts:2926:11
+
+  console.log
+    [VTID-01116] Time decay applied: 5 memories affected
+
+      at src/routes/memory.ts:3010:13
+
+  console.log
+    [VTID-01116] POST /memory/confidence/decay
+
+      at src/routes/memory.ts:2926:11
+
+  console.log
+    [VTID-01116] Time decay applied: 5 memories affected
+
+      at src/routes/memory.ts:3010:13
+
+  console.log
+    [VTID-01116] POST /memory/confidence/decay
+
+      at src/routes/memory.ts:2926:11
+
+  console.log
+    [VTID-01116] Time decay applied: 5 memories affected
+
+      at src/routes/memory.ts:3010:13
+
+  console.log
+    [VTID-01116] POST /memory/confidence/decay
+
+      at src/routes/memory.ts:2926:11
+
+  console.warn
+    [VTID-01116] Validation failed: [
+      {
+        code: 'too_big',
+        maximum: 365,
+        type: 'number',
+        inclusive: true,
+        exact: false,
+        message: 'Number must be less than or equal to 365',
+        path: [ 'decay_threshold_days' ]
+      }
+    ]
+
+      2937 |   const validation = TimeDecayRequestSchema.safeParse(req.body);
+      2938 |   if (!validation.success) {
+    > 2939 |     console.warn('[VTID-01116] Validation failed:', validation.error.errors);
+           |             ^
+      2940 |     return res.status(400).json({
+      2941 |       ok: false,
+      2942 |       error: 'Validation failed',
+
+      at src/routes/memory.ts:2939:13
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/route.js:149:13)
+      at Route.dispatch (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/route.js:119:3)
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:284:15
+      at Function.process_params (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:175:3)
+      at router (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:328:13)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../wt-gwra-route-auth/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at ../../../wt-gwra-route-auth/services/gateway/node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (../../../wt-gwra-route-auth/services/gateway/node_modules/raw-body/index.js:238:16)
+      at done (../../../wt-gwra-route-auth/services/gateway/node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (../../../wt-gwra-route-auth/services/gateway/node_modules/raw-body/index.js:287:7)
+
+  console.log
+    [VTID-01116] GET /memory/source-trust
+
+      at src/routes/memory.ts:3029:11
+
+  console.log
+    [VTID-01116] GET /memory/source-trust
+
+      at src/routes/memory.ts:3029:11
+
+  console.log
+    [VTID-01116] Source trust weights fetched: 2 entries
+
+      at src/routes/memory.ts:3083:13
+
+  console.log
+    [VTID-01116] GET /memory/source-trust
+
+      at src/routes/memory.ts:3029:11
+
+  console.warn
+    [VTID-01116] memory_source_trust table not found (VTID-01116 not deployed yet)
+
+      3056 |       // Check if table doesn't exist
+      3057 |       if (error.message.includes('relation') && error.message.includes('does not exist')) {
+    > 3058 |         console.warn('[VTID-01116] memory_source_trust table not found (VTID-01116 not deployed yet)');
+           |                 ^
+      3059 |         // Return hardcoded fallback
+      3060 |         return res.status(200).json({
+      3061 |           ok: true,
+
+      at src/routes/memory.ts:3058:17
+
+  console.log
+    [VTID-01116] GET /memory/confidence/reasons
+
+      at src/routes/memory.ts:3105:11
+
+  console.log
+    [VTID-01116] GET /memory/confidence/reasons
+
+      at src/routes/memory.ts:3105:11
+
+  console.log
+    [VTID-01116] Confidence reasons fetched: 2 entries
+
+      at src/routes/memory.ts:3156:13
+
+  console.log
+    [VTID-01116] GET /memory/confidence/reasons
+
+      at src/routes/memory.ts:3105:11
+
+  console.warn
+    [VTID-01116] memory_confidence_reasons table not found (VTID-01116 not deployed yet)
+
+      3132 |       // Check if table doesn't exist
+      3133 |       if (error.message.includes('relation') && error.message.includes('does not exist')) {
+    > 3134 |         console.warn('[VTID-01116] memory_confidence_reasons table not found (VTID-01116 not deployed yet)');
+           |                 ^
+      3135 |         // Return hardcoded fallback
+      3136 |         return res.status(200).json({
+      3137 |           ok: true,
+
+      at src/routes/memory.ts:3134:17
+
+  console.log
+    [VTID-01116] POST /memory/confidence/adjust
+
+      at src/routes/memory.ts:2379:11
+
+  console.log
+    [VTID-01116] Confidence adjusted: 123e4567-e89b-12d3-a456-426614174000 50 -> 60
+
+      at src/routes/memory.ts:2473:13
+
+  console.log
+    [VTID-01116] POST /memory/confidence/adjust
+
+      at src/routes/memory.ts:2379:11
+
+  console.log
+    [VTID-01116] Confidence adjusted: 123e4567-e89b-12d3-a456-426614174000 50 -> 60
+
+      at src/routes/memory.ts:2473:13
+
+  console.log
+    [VTID-01116] GET /memory/context/trusted
+
+      at src/routes/memory.ts:2815:11
+
+  console.log
+    [VTID-01116] Trusted context fetched: 1 items (min_confidence: 30)
+
+      at src/routes/memory.ts:2907:13
+
+  console.log
+    [VTID-01116] GET /memory/context/trusted
+
+      at src/routes/memory.ts:2815:11
+
+  console.log
+    [VTID-01116] Trusted context fetched: 1 items (min_confidence: 30)
+
+      at src/routes/memory.ts:2907:13
+
+  console.log
+    [VTID-01116] GET /memory/context/trusted
+
+      at src/routes/memory.ts:2815:11
+
+  console.log
+    [VTID-01116] Trusted context fetched: 1 items (min_confidence: 30)
+
+      at src/routes/memory.ts:2907:13
+
+PASS test/memory-confidence.test.ts
+  VTID-01116: Memory Confidence & Source Trust Engine
+    GET /health
+      ✓ should include VTID-01116 in vtids list (4 ms)
+      ✓ should include confidence capabilities (2 ms)
+      ✓ should include source classifications (2 ms)
+      ✓ should include verification levels (2 ms)
+      ✓ should include sensitivity flags (2 ms)
+      ✓ should include confidence reason codes (2 ms)
+      ✓ should include VTID-01116 dependency (1 ms)
+    POST /confidence/adjust
+      ✓ should reject requests without authentication (4 ms)
+      ✓ should reject invalid memory_item_id format (5 ms)
+      ✓ should reject invalid reason_code (9 ms)
+      ✓ should successfully adjust confidence with valid request (4 ms)
+      ✓ should call memory_adjust_confidence RPC (4 ms)
+      ✓ should emit memory.confidence.adjusted OASIS event (3 ms)
+      ✓ should handle RPC errors gracefully (4 ms)
+    POST /confidence/confirm
+      ✓ should reject requests without authentication (2 ms)
+      ✓ should successfully confirm a memory item (3 ms)
+      ✓ should call memory_confirm_item RPC (4 ms)
+      ✓ should emit memory.confidence.confirmed OASIS event (3 ms)
+    POST /confidence/correct
+      ✓ should reject requests without authentication (3 ms)
+      ✓ should successfully correct a memory item (3 ms)
+      ✓ should call memory_correct_item RPC (3 ms)
+      ✓ should emit memory.confidence.corrected OASIS event with warning status (3 ms)
+    GET /confidence/history/:id
+      ✓ should reject requests without authentication (3 ms)
+      ✓ should reject invalid UUID format (4 ms)
+      ✓ should return confidence history for valid memory item (3 ms)
+      ✓ should call memory_get_confidence_history RPC (3 ms)
+      ✓ should emit memory.confidence.history.read OASIS event (8 ms)
+    GET /context/trusted
+      ✓ should reject requests without authentication (4 ms)
+      ✓ should return trusted context with default parameters (3 ms)
+      ✓ should call memory_get_context_with_confidence RPC (4 ms)
+      ✓ should filter by categories (3 ms)
+      ✓ should reject invalid category (3 ms)
+      ✓ should support include_low_confidence flag (3 ms)
+    POST /confidence/decay
+      ✓ should reject requests without authentication (2 ms)
+      ✓ should apply time decay with default threshold (3 ms)
+      ✓ should call memory_apply_time_decay RPC (3 ms)
+      ✓ should emit memory.confidence.decayed OASIS event (3 ms)
+      ✓ should reject threshold out of range (5 ms)
+    GET /source-trust
+      ✓ should reject requests without authentication (3 ms)
+      ✓ should return source trust weights (6 ms)
+      ✓ should return fallback data if table does not exist (4 ms)
+    GET /confidence/reasons
+      ✓ should reject requests without authentication (3 ms)
+      ✓ should return confidence reason codes (3 ms)
+      ✓ should return fallback data if table does not exist (5 ms)
+    Determinism: Same inputs produce same outputs
+      ✓ should return consistent confidence adjustments for same reason code (5 ms)
+      ✓ should always use deterministic reason codes from predefined list (2 ms)
+    Hard Constraints: No memory without confidence_score
+      ✓ should include confidence_score in trusted context items (4 ms)
+      ✓ should include relevance_score that combines importance and confidence (4 ms)
+    Safety: Sensitivity flags affect max confidence
+      ✓ should include sensitivity_flag in health check capabilities (2 ms)
+      ✓ should include sensitivity_flag in trusted context items (3 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.warn
+    [VTID-01184] Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY
+
+      58 |
+      59 |   if (!supabaseUrl || !supabaseServiceKey) {
+    > 60 |     console.warn(`[${VTID}] Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY`);
+         |             ^
+      61 |     return null;
+      62 |   }
+      63 |
+
+      at createServiceClient (src/services/supabase-semantic-memory.ts:60:13)
+      at Object.semanticSearch (src/services/supabase-semantic-memory.ts:119:20)
+      at Object.<anonymous> (test/services/supabase-semantic-memory.test.ts:99:30)
+
+  console.warn
+    [VTID-01184] memory_semantic_search RPC not found (migration pending)
+
+      151 |       // Check for function not found (migration not applied)
+      152 |       if (error.message.includes('does not exist')) {
+    > 153 |         console.warn(`[${VTID}] memory_semantic_search RPC not found (migration pending)`);
+          |                 ^
+      154 |         return {
+      155 |           ok: false,
+      156 |           results: [],
+
+      at Object.semanticSearch (src/services/supabase-semantic-memory.ts:153:17)
+      at Object.<anonymous> (test/services/supabase-semantic-memory.test.ts:111:20)
+
+  console.error
+    [VTID-01184] Semantic search error: connection reset
+
+      220 |
+      221 |   } catch (err: any) {
+    > 222 |     console.error(`[${VTID}] Semantic search error:`, err.message);
+          |             ^
+      223 |
+      224 |     await emitOasisEvent({
+      225 |       vtid: VTID,
+
+      at Object.semanticSearch (src/services/supabase-semantic-memory.ts:222:13)
+      at Object.<anonymous> (test/services/supabase-semantic-memory.test.ts:124:20)
+
+  console.log
+    [VTID-01184] Semantic search: 1 results in 0ms
+
+      at Object.semanticSearch (src/services/supabase-semantic-memory.ts:189:13)
+
+  console.log
+    [VTID-01184] Semantic search: 0 results in 0ms
+
+      at Object.semanticSearch (src/services/supabase-semantic-memory.ts:189:13)
+
+  console.log
+    [VTID-01184] Semantic search: 0 results in 0ms
+
+      at Object.semanticSearch (src/services/supabase-semantic-memory.ts:189:13)
+
+  console.log
+    [VTID-01184] Semantic search: 0 results in 0ms
+
+      at Object.semanticSearch (src/services/supabase-semantic-memory.ts:189:13)
+
+  console.warn
+    [VTID-01184] Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY
+
+      58 |
+      59 |   if (!supabaseUrl || !supabaseServiceKey) {
+    > 60 |     console.warn(`[${VTID}] Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY`);
+         |             ^
+      61 |     return null;
+      62 |   }
+      63 |
+
+      at createServiceClient (src/services/supabase-semantic-memory.ts:60:13)
+      at Object.writeMemoryItem (src/services/supabase-semantic-memory.ts:275:20)
+      at Object.<anonymous> (test/services/supabase-semantic-memory.test.ts:241:30)
+
+  console.log
+    [VTID-01184] Memory written: mem-1 (conversation, embedding=true)
+
+      at Object.writeMemoryItem (src/services/supabase-semantic-memory.ts:323:15)
+
+  console.log
+    [VTID-01184] Memory written: mem-1 (undefined, embedding=undefined)
+
+      at Object.writeMemoryItem (src/services/supabase-semantic-memory.ts:323:15)
+
+  console.warn
+    [VTID-01184] memory_write_item_v2 not found, falling back to v1
+
+      312 |       // Fallback to original RPC if v2 not available
+      313 |       if (error.message.includes('does not exist')) {
+    > 314 |         console.warn(`[${VTID}] memory_write_item_v2 not found, falling back to v1`);
+          |                 ^
+      315 |         return await writeMemoryItemV1(payload, supabase);
+      316 |       }
+      317 |       throw error;
+
+      at Object.writeMemoryItem (src/services/supabase-semantic-memory.ts:314:17)
+      at Object.<anonymous> (test/services/supabase-semantic-memory.test.ts:313:20)
+
+  console.error
+    [VTID-01184] Memory write error: permission denied
+
+      343 |
+      344 |   } catch (err: any) {
+    > 345 |     console.error(`[${VTID}] Memory write error:`, err.message);
+          |             ^
+      346 |     return {
+      347 |       ok: false,
+      348 |       error: err.message
+
+      at Object.writeMemoryItem (src/services/supabase-semantic-memory.ts:345:13)
+      at Object.<anonymous> (test/services/supabase-semantic-memory.test.ts:326:20)
+
+  console.warn
+    [VTID-01184] Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY
+
+      58 |
+      59 |   if (!supabaseUrl || !supabaseServiceKey) {
+    > 60 |     console.warn(`[${VTID}] Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY`);
+         |             ^
+      61 |     return null;
+      62 |   }
+      63 |
+
+      at createServiceClient (src/services/supabase-semantic-memory.ts:60:13)
+      at Object.getItemsNeedingEmbeddings (src/services/supabase-semantic-memory.ts:410:20)
+      at Object.<anonymous> (test/services/supabase-semantic-memory.test.ts:340:30)
+
+  console.log
+    [VTID-01184] Found 0 items needing embeddings
+
+      at Object.getItemsNeedingEmbeddings (src/services/supabase-semantic-memory.ts:439:13)
+
+  console.log
+    [VTID-01184] Found 1 items needing embeddings
+
+      at Object.getItemsNeedingEmbeddings (src/services/supabase-semantic-memory.ts:439:13)
+
+  console.warn
+    [VTID-01184] Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY
+
+      58 |
+      59 |   if (!supabaseUrl || !supabaseServiceKey) {
+    > 60 |     console.warn(`[${VTID}] Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY`);
+         |             ^
+      61 |     return null;
+      62 |   }
+      63 |
+
+      at createServiceClient (src/services/supabase-semantic-memory.ts:60:13)
+      at Object.updateEmbeddings (src/services/supabase-semantic-memory.ts:460:20)
+      at Object.<anonymous> (test/services/supabase-semantic-memory.test.ts:387:30)
+
+  console.log
+    [VTID-01184] Updated embeddings: 1/1
+
+      at Object.updateEmbeddings (src/services/supabase-semantic-memory.ts:484:13)
+
+  console.log
+    [VTID-01184] Updated embeddings: 2/2
+
+      at Object.updateEmbeddings (src/services/supabase-semantic-memory.ts:484:13)
+
+  console.warn
+    [VTID-01184] Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY
+
+      58 |
+      59 |   if (!supabaseUrl || !supabaseServiceKey) {
+    > 60 |     console.warn(`[${VTID}] Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY`);
+         |             ^
+      61 |     return null;
+      62 |   }
+      63 |
+
+      at createServiceClient (src/services/supabase-semantic-memory.ts:60:13)
+      at Object.markForReembed (src/services/supabase-semantic-memory.ts:517:20)
+      at Object.<anonymous> (test/services/supabase-semantic-memory.test.ts:432:30)
+
+  console.log
+    [VTID-01184] Marked 3 items for re-embedding
+
+      at Object.markForReembed (src/services/supabase-semantic-memory.ts:540:13)
+
+  console.log
+    [VTID-01184] Marked 5 items for re-embedding
+
+      at Object.markForReembed (src/services/supabase-semantic-memory.ts:540:13)
+
+  console.error
+    [VTID-01184] Semantic search error: boom
+
+      220 |
+      221 |   } catch (err: any) {
+    > 222 |     console.error(`[${VTID}] Semantic search error:`, err.message);
+          |             ^
+      223 |
+      224 |     await emitOasisEvent({
+      225 |       vtid: VTID,
+
+      at semanticSearch (src/services/supabase-semantic-memory.ts:222:13)
+      at Object.buildSemanticContext (src/services/supabase-semantic-memory.ts:588:24)
+      at Object.<anonymous> (test/services/supabase-semantic-memory.test.ts:470:20)
+
+  console.log
+    [VTID-01184] Semantic search: 0 results in 0ms
+
+      at semanticSearch (src/services/supabase-semantic-memory.ts:189:13)
+
+  console.log
+    [VTID-01184] Semantic search: 2 results in 0ms
+
+      at semanticSearch (src/services/supabase-semantic-memory.ts:189:13)
+
+  console.log
+    [VTID-01184] Semantic search: 2 results in 0ms
+
+      at semanticSearch (src/services/supabase-semantic-memory.ts:189:13)
+
+  console.log
+    [VTID-01184] Semantic search: 1 results in 0ms
+
+      at semanticSearch (src/services/supabase-semantic-memory.ts:189:13)
+
+  console.log
+    [VTID-01184] Semantic search: 1 results in 0ms
+
+      at semanticSearch (src/services/supabase-semantic-memory.ts:189:13)
+
+  console.log
+    [VTID-01184] Semantic search: 1 results in 0ms
+
+      at semanticSearch (src/services/supabase-semantic-memory.ts:189:13)
+
+  console.log
+    [VTID-01184] Semantic search: 0 results in 0ms
+
+      at semanticSearch (src/services/supabase-semantic-memory.ts:189:13)
+
+  console.warn
+    [VTID-01184] Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY
+
+      58 |
+      59 |   if (!supabaseUrl || !supabaseServiceKey) {
+    > 60 |     console.warn(`[${VTID}] Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY`);
+         |             ^
+      61 |     return null;
+      62 |   }
+      63 |
+
+      at Object.createServiceClient (src/services/supabase-semantic-memory.ts:60:13)
+      at Object.<anonymous> (test/services/supabase-semantic-memory.test.ts:589:16)
+
+  console.warn
+    [VTID-01184] Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY
+
+      58 |
+      59 |   if (!supabaseUrl || !supabaseServiceKey) {
+    > 60 |     console.warn(`[${VTID}] Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY`);
+         |             ^
+      61 |     return null;
+      62 |   }
+      63 |
+
+      at Object.createServiceClient (src/services/supabase-semantic-memory.ts:60:13)
+      at Object.<anonymous> (test/services/supabase-semantic-memory.test.ts:596:16)
+
+PASS test/services/supabase-semantic-memory.test.ts
+  semanticSearch()
+    ✓ rejects an invalid Context Lens without touching Supabase (2 ms)
+    ✓ rejects a missing query_embedding
+    ✓ rejects a query_embedding of the wrong dimensionality (3 ms)
+    ✓ returns "Supabase not configured" when env vars are missing (6 ms)
+    ✓ surfaces a migration-pending error when the RPC does not exist (1 ms)
+    ✓ returns ok:false and emits memory.semantic_search.failed on a generic RPC error (2 ms)
+    ✓ maps RPC rows to SemanticSearchResult[] and emits memory.semantic_search.completed (1 ms)
+    ✓ formats the embedding as a Postgres vector literal and applies request/lens defaults (1 ms)
+    ✓ forwards tenant A / user A identity to the RPC for a tenant-A lens
+    ✓ forwards tenant B / user B identity to the RPC for a tenant-B lens — never tenant A's
+  writeMemoryItem()
+    ✓ rejects an invalid Context Lens (1 ms)
+    ✓ returns "Supabase not configured" when env vars are missing (1 ms)
+    ✓ writes via memory_write_item_v2, includes the formatted embedding, and emits memory.write.completed on ok (1 ms)
+    ✓ omits the embedding field when the array has the wrong dimensionality (1 ms)
+    ✓ does not emit memory.write.completed when the RPC reports ok:false
+    ✓ falls back to memory_write_item (v1) when v2 does not exist (2 ms)
+    ✓ propagates a generic RPC error (not "does not exist") as ok:false (1 ms)
+  getItemsNeedingEmbeddings()
+    ✓ returns "Supabase not configured" when env vars are missing (1 ms)
+    ✓ applies defaults (limit=100, all filters null) when called with no args (1 ms)
+    ✓ maps returned rows to ItemNeedingEmbedding[] (1 ms)
+    ✓ reports a migration-required error when the RPC does not exist
+  updateEmbeddings()
+    ✓ returns "Supabase not configured" and preserves requested_count when env vars are missing (1 ms)
+    ✓ formats each embedding into a Postgres vector literal before calling the RPC (1 ms)
+    ✓ emits memory.embeddings.updated and returns the RPC result on success (1 ms)
+    ✓ reports a migration-required error when the RPC does not exist
+  markForReembed()
+    ✓ returns "Supabase not configured" and preserves the requested filters (1 ms)
+    ✓ passes filters through as p_* RPC params, defaulting absent ones to null
+    ✓ emits memory.reembed.triggered on success (1 ms)
+    ✓ reports a migration-required error when the RPC does not exist
+  buildSemanticContext()
+    ✓ propagates a failed semanticSearch as ok:false with empty context (1 ms)
+    ✓ returns an empty context string when there are no results (1 ms)
+    ✓ groups results by category and orders categories by priority (health before conversation) (4 ms)
+    ✓ marks high-similarity results with "*" and low-similarity results with "-" (1 ms)
+    ✓ truncates content longer than 300 characters with an ellipsis (1 ms)
+    ✓ formats a very recent occurred_at as "just now" (1 ms)
+    ✓ formats a several-days-old occurred_at as "Nd ago" (1 ms)
+    ✓ forwards the caller-provided topK as the search top_k
+  createServiceClient()
+    ✓ returns null when SUPABASE_URL is missing (2 ms)
+    ✓ returns null when both service-role env vars are missing (1 ms)
+    ✓ accepts SUPABASE_SERVICE_ROLE as a fallback for SUPABASE_SERVICE_ROLE_KEY
+    ✓ constructs a client with autoRefreshToken/persistSession disabled when configured
+  exported constants
+    ✓ match the documented pgvector / embedding-model contract (1 ms)
+
+Test Suites: 4 passed, 4 total
+Tests:       209 passed, 209 total
+Snapshots:   0 total
+Time:        2.206 s
+Ran all test suites matching /test\/routes\/semantic-memory.test.ts|test\/services\/supabase-semantic-memory.test.ts|test\/memory.test.ts|test\/memory-confidence.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
+exit 0

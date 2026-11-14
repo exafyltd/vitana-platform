@@ -4,7 +4,7 @@ state: ready
 next_actor: kiro
 depends_on: [health-tenant-accessor]
 executor: kiro
-seat: jtadic
+seat: exafyltd
 reviewer_seat: agent:vitana-lane-reviewer
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 paths:
@@ -16,7 +16,7 @@ paths:
   - services/gateway/test/services/orb-tools/health-depth-tools.test.ts
   - services/gateway/test/mt-native-health/health-writers-voice-orb.test.ts
   - services/gateway/test/mt-native-health/health-reader-inventory.test.ts
-updated: 2026-11-07T14:17Z
+updated: 2026-11-12T20:16Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05597
 ---
@@ -46,3 +46,5 @@ small; both land dark and the flag flips after both.
 
 ### 2026-11-07T14:17Z · ci-plan-spar · ready (VTID allocated)
 VTID-05597 allocated after policy approval (converged-auto-v1).
+### 2026-11-12T20:16Z · pm-agent · update
+reassign lane jtadic→exafyltd (stale_ready, Claude unavailable)
