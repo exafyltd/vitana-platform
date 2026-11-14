@@ -7,9 +7,18 @@
  * previously unchecked, so a real DB failure was indistinguishable from
  * "unknown payment_intent" and logged at status:'info' — meaning the
  * service_payments row silently never advances and nobody is alerted.
+ *
+ * VTID-05730 (plan gateway-critical-route-auth, lane stripe-dance-signature):
+ * the route now verifies the Stripe signature on the raw body, so every event
+ * here is signed with Stripe.webhooks.generateTestHeaderString against
+ * STRIPE_WEBHOOK_SECRET, and the app mounts express.raw() for the path before
+ * express.json(), as index.ts does. The three behaviours are unchanged.
  */
 import express from 'express';
 import request from 'supertest';
+import Stripe from 'stripe';
+
+const TEST_WEBHOOK_SECRET = 'whsec_test_payments_stripe_webhook';
 
 const mockMaybeSingle = jest.fn();
 const mockEq = jest.fn(() => ({ maybeSingle: mockMaybeSingle }));
@@ -33,12 +42,36 @@ const webhookRouter = require('../../src/routes/payments-stripe-webhook').defaul
 
 function makeApp() {
   const app = express();
+  // mirrors index.ts: raw body for the signed route, before express.json()
+  app.use('/webhooks/stripe-dance', express.raw({ type: 'application/json' }));
   app.use(express.json());
   app.use('/', webhookRouter);
   return app;
 }
 
+/** POST a Stripe-signed event to /webhooks/stripe-dance. */
+function postSigned(event: Record<string, unknown>) {
+  const payload = JSON.stringify(event);
+  const header = Stripe.webhooks.generateTestHeaderString({ payload, secret: TEST_WEBHOOK_SECRET });
+  return request(makeApp())
+    .post('/webhooks/stripe-dance')
+    .set('Content-Type', 'application/json')
+    .set('stripe-signature', header)
+    .send(payload);
+}
+
 describe('payments-stripe-webhook', () => {
+  const savedSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
+  beforeAll(() => {
+    process.env.STRIPE_WEBHOOK_SECRET = TEST_WEBHOOK_SECRET;
+  });
+
+  afterAll(() => {
+    if (savedSecret === undefined) delete process.env.STRIPE_WEBHOOK_SECRET;
+    else process.env.STRIPE_WEBHOOK_SECRET = savedSecret;
+  });
+
   beforeEach(() => {
     jest.clearAllMocks();
     mockMaybeSingle.mockResolvedValue({ data: null, error: null });
@@ -48,9 +81,7 @@ describe('payments-stripe-webhook', () => {
   it('returns 500 (not "unknown payment_intent") when the service_payments lookup errors', async () => {
     mockMaybeSingle.mockResolvedValueOnce({ data: null, error: { message: 'db down' } });
 
-    const res = await request(makeApp())
-      .post('/webhooks/stripe-dance')
-      .send({ id: 'evt_1', type: 'payment_intent.succeeded', data: { object: { id: 'pi_1' } }, created: 0 });
+    const res = await postSigned({ id: 'evt_1', type: 'payment_intent.succeeded', data: { object: { id: 'pi_1' } }, created: 0 });
 
     expect(res.status).toBe(500);
     expect(res.body).toMatchObject({ ok: false, error: 'LOOKUP_FAILED' });
@@ -63,9 +94,7 @@ describe('payments-stripe-webhook', () => {
   it('acks unknown-but-not-erroring payment_intent as info, unchanged', async () => {
     mockMaybeSingle.mockResolvedValueOnce({ data: null, error: null });
 
-    const res = await request(makeApp())
-      .post('/webhooks/stripe-dance')
-      .send({ id: 'evt_2', type: 'payment_intent.succeeded', data: { object: { id: 'pi_2' } }, created: 0 });
+    const res = await postSigned({ id: 'evt_2', type: 'payment_intent.succeeded', data: { object: { id: 'pi_2' } }, created: 0 });
 
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ ok: true, unknown_pi: true });
@@ -75,9 +104,7 @@ describe('payments-stripe-webhook', () => {
   it('advances state on a found payment, unchanged', async () => {
     mockMaybeSingle.mockResolvedValueOnce({ data: { payment_id: 'pay_1', state: 'pending' }, error: null });
 
-    const res = await request(makeApp())
-      .post('/webhooks/stripe-dance')
-      .send({ id: 'evt_3', type: 'payment_intent.succeeded', data: { object: { id: 'pi_3' } }, created: 0 });
+    const res = await postSigned({ id: 'evt_3', type: 'payment_intent.succeeded', data: { object: { id: 'pi_3' } }, created: 0 });
 
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ ok: true });
