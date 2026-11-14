@@ -14,6 +14,7 @@ specs:
   - vitana-platform:collab-queue-perf
   - vitana-v1:chat-ux
   - vitana-v1:vitana-chat-markdown
+  - vitana-platform:popup-close-button
   - vitana-platform:collab-multi-builder-handoff
   - vitana-platform:collab-kiro-governance
   - vitana-platform:kiro-primary-executor
@@ -93,6 +94,7 @@ belong to none of the named programmes are listed here until the owner assigns t
 - `vitana-platform:collab-queue-perf` — collab queue reads git in a constant number of processes
 - `vitana-v1:chat-ux` — chat UX
 - `vitana-v1:vitana-chat-markdown` — Vitana chat replies render Markdown
+- `vitana-platform:popup-close-button` — Edit Video Details (Media Hub Shorts) popup shows its close (X) button (vitana-v1)
 - `vitana-platform:messenger-ux-v2` — Messenger: reliable sending, scroll, replies, media, search, sharing, push suppression
 - `vitana-platform:kiro-autonomy-fallback` — Claude Code optional; Kiro runs the pipeline end to end
 - `vitana-platform:kaf-fallback-env` — fix-forward: the staging PM sees Kiro-fallback mode (VTID-05277)
