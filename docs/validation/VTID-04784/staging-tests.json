@@ -2,8 +2,9 @@
   "vtid": "VTID-04784",
   "service": "gateway",
   "tests": [
-    { "kind": "http", "name": "gateway alive after the change", "path": "/alive" },
-    { "kind": "existing", "ref": "npx jest test/services/memory/vtid-04784-recall-shadow.test.ts", "cwd": "services/gateway",
-      "reason": "the shadow runs inside a voice session's memory read; the evidence is the recall-shadow log lines on real sessions, summarised by scripts/memory/recall-shadow-report.sh (read-only)" }
+    { "kind": "http", "name": "gateway alive after the change", "path": "/alive" }
+  ],
+  "retired_suites": [
+    { "ref": "npx jest test/services/memory/vtid-04784-recall-shadow.test.ts", "cwd": "services/gateway", "retired_by": "VTID-05556 (#4701, commit 05364284)", "reason": "VTID-05556 deleted the test file and services/gateway/src/services/memory/recall-shadow.ts from main. Owner decision 2026-11-11: retire this suite, keep the alive check." }
   ]
 }

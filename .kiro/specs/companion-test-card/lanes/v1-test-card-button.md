@@ -1,6 +1,6 @@
 ---
 lane: v1-test-card-button
-state: in-review
+state: parked
 next_actor: kiro
 branch: kiro/companion-test-card/v1-test-card-button
 depends_on: [gateway-test-card]
@@ -17,10 +17,10 @@ paths:
   - src/hooks/useCompanionTestCard.test.ts
   - src/i18n/*/screens.json
   - docs/validation/VTID-*/**
-updated: 2026-11-06T19:05Z
+updated: 2026-11-12T20:15Z
 vtid: VTID-05589
-claimed_by: kiro-exafyltd-202611061910-1ec8
 pr: https://github.com/exafyltd/vitana-v1/pull/1614
+parked_from: in-review
 ---
 
 # Lane: v1-test-card-button (repo exafyltd/vitana-v1)
@@ -55,3 +55,5 @@ Findings: non-blocking — PR-GATE and preview-e2e have report-only "would fail"
 Findings: non-blocking — no native-app parity entry; the plan limits the button to the web component (desktop and mobile web settings) and the NATIVE-CI parity ledger job passed.
 Findings: checked, all pass — AC T1-T5; lane paths; CI on head; red on base 4d9361db38 → 21/21 green; no test weakening; no live writes; no hardcoded spoken strings; protected gate files not touched; admin-only render; body only moment_key (matches the gateway's strict schema); error mapping; 11 locales, German du-form; staging-tests.json read-only.
 Next: the land step merges under §7b
+### 2026-11-12T20:15Z · pm-agent · in-review → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
