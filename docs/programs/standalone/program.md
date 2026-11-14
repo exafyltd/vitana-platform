@@ -71,12 +71,14 @@ specs:
   - vitana-platform:ci-dockerhub-mirror
   - vitana-platform:review-survives-main-merge
   - vitana-platform:operator-chat-service-token
+  - vitana-platform:chat-realtime-all-surfaces
   - vitana-platform:memory-legacy-read-retire-r2
 docs:
   - vitana-platform:.kiro/specs/pm-agent/plan-sparring.md
   - vitana-platform:.kiro/specs/claude-sessions-handover/handoff.md
   - vitana-v1:.kiro/specs/chat-ux/plan-sparring.md
   - vitana-v1:docs/validation/VTID-05193/plan-sparring.md
+  - vitana-platform:.kiro/specs/chat-realtime-all-surfaces/handoff.md
 exit_criteria:
   - Every spec listed here is done or has moved to a named programme
 next_review: 2026-10-22
