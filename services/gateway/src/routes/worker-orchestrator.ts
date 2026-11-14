@@ -32,6 +32,9 @@ import {
 } from '../services/worker-orchestrator-service';
 import { runPreflightChain, listSkills, getPreflightChains } from '../services/skills/preflight-runner';
 import { fetchServiceTierAgents } from './agents-registry';
+// VTID-05731 (gateway-critical-route-auth): every write route below takes the
+// gateway service token or an exafy_admin JWT. GET routes stay open.
+import { requireServiceOrAdmin } from '../middleware/require-service-or-admin';
 
 // ---------------------------------------------------------------------------
 // Self-healing log sync: when a self-healing VTID completes or fails in the
@@ -220,7 +223,7 @@ const OrchestratorCompleteSchema = z.object({
  * VTID-01187: Requires autopilot_execution_enabled to be ARMED.
  * Does NOT execute the work - just determines routing and emits events.
  */
-workerOrchestratorRouter.post('/api/v1/worker/orchestrator/route', async (req: Request, res: Response) => {
+workerOrchestratorRouter.post('/api/v1/worker/orchestrator/route', requireServiceOrAdmin, async (req: Request, res: Response) => {
   try {
     // VTID-01187: Check governance control before any side-effect action
     const executionArmed = await isAutopilotExecutionArmed();
@@ -314,7 +317,7 @@ workerOrchestratorRouter.post('/api/v1/worker/orchestrator/route', async (req: R
 /**
  * VTID-01207: Added 'infra' and 'ai' to domain enum
  */
-workerOrchestratorRouter.post('/api/v1/worker/subagent/start', async (req: Request, res: Response) => {
+workerOrchestratorRouter.post('/api/v1/worker/subagent/start', requireServiceOrAdmin, async (req: Request, res: Response) => {
   try {
     const schema = z.object({
       vtid: z.string().regex(/^VTID-\d{4,}$/, 'Invalid VTID format'),
@@ -359,7 +362,7 @@ workerOrchestratorRouter.post('/api/v1/worker/subagent/start', async (req: Reque
  * Emit subagent completion event (success or failure)
  * VTID-01175: Now runs verification before marking success
  */
-workerOrchestratorRouter.post('/api/v1/worker/subagent/complete', async (req: Request, res: Response) => {
+workerOrchestratorRouter.post('/api/v1/worker/subagent/complete', requireServiceOrAdmin, async (req: Request, res: Response) => {
   try {
     const validation = SubagentEventSchema.safeParse(req.body);
     if (!validation.success) {
@@ -516,7 +519,7 @@ workerOrchestratorRouter.post('/api/v1/worker/subagent/complete', async (req: Re
  * Mark orchestrator as complete (success or failure)
  * VTID-01175: Now runs verification before marking success
  */
-workerOrchestratorRouter.post('/api/v1/worker/orchestrator/complete', async (req: Request, res: Response) => {
+workerOrchestratorRouter.post('/api/v1/worker/orchestrator/complete', requireServiceOrAdmin, async (req: Request, res: Response) => {
   try {
     const validation = OrchestratorCompleteSchema.safeParse(req.body);
     if (!validation.success) {
@@ -888,7 +891,7 @@ async function callRpc<T>(
  *
  * Register a worker agent with the orchestrator
  */
-workerOrchestratorRouter.post('/api/v1/worker/orchestrator/register', async (req: Request, res: Response) => {
+workerOrchestratorRouter.post('/api/v1/worker/orchestrator/register', requireServiceOrAdmin, async (req: Request, res: Response) => {
   try {
     const { worker_id, capabilities, max_concurrent, version, metadata } = req.body;
 
@@ -986,7 +989,7 @@ workerOrchestratorRouter.post('/api/v1/worker/orchestrator/register', async (req
  *
  * Unregister a worker agent
  */
-workerOrchestratorRouter.delete('/api/v1/worker/orchestrator/register/:worker_id', async (req: Request, res: Response) => {
+workerOrchestratorRouter.delete('/api/v1/worker/orchestrator/register/:worker_id', requireServiceOrAdmin, async (req: Request, res: Response) => {
   try {
     const { worker_id } = req.params;
 
@@ -1227,7 +1230,7 @@ workerOrchestratorRouter.get('/api/v1/worker/orchestrator/tasks/pending', async 
  * Claim a task atomically
  * VTID-01187: Requires autopilot_execution_enabled to be ARMED.
  */
-workerOrchestratorRouter.post('/api/v1/worker/orchestrator/tasks/:vtid/claim', async (req: Request, res: Response) => {
+workerOrchestratorRouter.post('/api/v1/worker/orchestrator/tasks/:vtid/claim', requireServiceOrAdmin, async (req: Request, res: Response) => {
   try {
     // VTID-01187: Check governance control before claiming (prevents bypass of event loop)
     const executionArmed = await isAutopilotExecutionArmed();
@@ -1329,7 +1332,7 @@ workerOrchestratorRouter.post('/api/v1/worker/orchestrator/tasks/:vtid/claim', a
  *
  * Release a task claim
  */
-workerOrchestratorRouter.post('/api/v1/worker/orchestrator/tasks/:vtid/release', async (req: Request, res: Response) => {
+workerOrchestratorRouter.post('/api/v1/worker/orchestrator/tasks/:vtid/release', requireServiceOrAdmin, async (req: Request, res: Response) => {
   try {
     const { vtid } = req.params;
     const { worker_id, reason } = req.body;
@@ -1376,7 +1379,7 @@ workerOrchestratorRouter.post('/api/v1/worker/orchestrator/tasks/:vtid/release',
  *
  * Report progress on a task (emits OASIS event for event loop)
  */
-workerOrchestratorRouter.post('/api/v1/worker/orchestrator/tasks/:vtid/progress', async (req: Request, res: Response) => {
+workerOrchestratorRouter.post('/api/v1/worker/orchestrator/tasks/:vtid/progress', requireServiceOrAdmin, async (req: Request, res: Response) => {
   try {
     const { vtid } = req.params;
     const { worker_id, event, message, metadata } = req.body;
@@ -1444,7 +1447,7 @@ workerOrchestratorRouter.post('/api/v1/worker/orchestrator/tasks/:vtid/progress'
  *
  * Worker heartbeat - keeps registration and claim alive
  */
-workerOrchestratorRouter.post('/api/v1/worker/orchestrator/heartbeat', async (req: Request, res: Response) => {
+workerOrchestratorRouter.post('/api/v1/worker/orchestrator/heartbeat', requireServiceOrAdmin, async (req: Request, res: Response) => {
   try {
     const { worker_id, active_vtid } = req.body;
 
@@ -1588,6 +1591,7 @@ async function isWorkerClaimingVtid(vtid: string, workerId: string): Promise<boo
  */
 workerOrchestratorRouter.post(
   '/api/v1/worker/orchestrator/await-autopilot-execution',
+  requireServiceOrAdmin,
   async (req: Request, res: Response) => {
     try {
       const { vtid, autopilot_execution_id, worker_id, timeout_ms } = req.body || {};
@@ -1712,7 +1716,7 @@ workerOrchestratorRouter.post(
  *
  * Expire stale claims (admin endpoint)
  */
-workerOrchestratorRouter.post('/api/v1/worker/orchestrator/cleanup', async (_req: Request, res: Response) => {
+workerOrchestratorRouter.post('/api/v1/worker/orchestrator/cleanup', requireServiceOrAdmin, async (_req: Request, res: Response) => {
   try {
     const result = await callRpc<number>('expire_stale_vtid_claims', {});
 
