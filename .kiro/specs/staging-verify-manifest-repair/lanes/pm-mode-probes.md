@@ -15,7 +15,7 @@ paths:
   - docs/validation/VTID-05277/staging-tests.json
   - docs/validation/VTID-05281/staging-tests.json
   - docs/validation/VTID-*/**
-updated: 2026-11-07T14:43Z
+updated: 2026-11-13T08:31Z
 vtid: VTID-05604
 ---
 # Lane: pm-mode-probes (repo vitana-platform)
@@ -28,3 +28,5 @@ Lane created with the plan.
 
 ### 2026-11-07T14:43Z · ci-plan-spar · ready (VTID allocated)
 VTID-05604 allocated after policy approval (converged-auto-v1).
+### 2026-11-13T08:31Z · pm-agent · update
+reassign review agent:vitana-lane-reviewer→exafyltd (stale_review, Claude unavailable)
