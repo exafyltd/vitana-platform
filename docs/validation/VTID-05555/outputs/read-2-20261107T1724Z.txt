@@ -1,0 +1,17 @@
+# Owner's CloudShell output of `bash ~/glv.sh read` (glv.sh 4b66c186…), pasted 2026-11-07. Progress dots removed; otherwise unedited.
+== glv.sh read 2026-11-07T17:24:17Z
+backups/: 2026-11-04 (first configure), 2026-11-05, 2026-11-06, 2026-11-07 at 02:15 UTC (811.0 MiB last); config/: one archive each (same as read 1)
+(ssm status: Success, command 6be5f93f-9ef0-4c58-9d62-fbe4e01c9c12)
+PROJECT vitana/vitana-platform ci_config_path="platform.gitlab-ci.yml@vitana/ci-config:main"
+PIPELINE 137 sha=163fd41680cc28b6e1106aa20e34d9d85214570e status=pending source=push created=2026-11-07T17:21:17Z  (typecheck, gateway-jest 1-4/4: pending, no runner)
+PIPELINE 135 sha=9a95a1f0f8dd4f4c978b5b732a261276286063f8 status=canceled created=2026-11-07T17:06:07Z  (all jobs canceled, no runner)
+PIPELINE 134 sha=5f57d8704e8259376c9e63b78c02983e5b7662b8 status=canceled created=2026-11-07T17:01:06Z  (all jobs canceled, no runner)
+PROJECT vitana/vitana-v1 ci_config_path="v1.gitlab-ci.yml@vitana/ci-config:main"
+PIPELINE 136 sha=f837a9927d53b251b5b5c73bc423d84f69998836 status=pending created=2026-11-07T17:11:08Z  (unit-tests, build, lint: pending, no runner)
+PIPELINE 128 sha=3beedb329c857cfa7627756a0f6ca1d0b44fc375 status=canceled created=2026-11-07T15:58:20Z  (first attempt failed with no runner, retry canceled)
+PIPELINE 125 sha=ce698663184e82bbd75a640bbe8d391ec2e29098 status=canceled created=2026-11-07T15:32:38Z
+CI-CONFIG main=c44ec2f9b8aa0b61ea55cbc8f0d247c67d004a3a at 2026-11-07T10:53:24Z
+CI-CONFIG platform.gitlab-ci.yml sha256=598d3ea1d3db9b9bcb8f645863bbe9b313cc3d72e6b9b293a83742bb0bb6ee0c
+CI-CONFIG v1.gitlab-ci.yml sha256=504907d2a6afcf2aab252fc8a5dcadf0049717de4d25494f72da918d17ed508e
+RUNNER id=1 vitana-eng-1 tags=vitana-legacy active=true contacted=2026-11-07T17:02:25Z online=true
+RUNNER id=2 vitana-eng-fleet tags=vitana-eng active=true contacted= online=
