@@ -1,0 +1,4 @@
+# VTID-05715 — base origin/main f0f88de2b5
+node --test docs/validation/VTID-05715/areas-seats.test.mjs (origin/main areas.yaml) -> 3 fail (outputs/red-on-base.txt)
+node --test docs/validation/VTID-05715/areas-seats.test.mjs                          -> 4 pass (outputs/green.txt)
+node --test scripts/collab/automations.test.mjs scripts/collab/queue.test.mjs scripts/collab/areas-no-email.test.mjs -> 101 pass, 0 fail

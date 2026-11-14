@@ -3,7 +3,7 @@ lane: tenant-db-and-slug-cleanup
 state: ready
 next_actor: kiro
 executor: kiro
-seat: jtadic
+seat: exafyltd
 reviewer_seat: agent:vitana-lane-reviewer
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 depends_on:
@@ -29,7 +29,7 @@ paths:
   - services/gateway/test/mt-identity-primary-tenant-readers.test.ts
   - services/gateway/test/mt-identity-tenant-slug-lookup.test.ts
   - services/gateway/test/mt-identity-presence-tenant.test.ts
-updated: 2026-11-02T13:05Z
+updated: 2026-11-12T20:16Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05468
 ---
@@ -70,3 +70,5 @@ tests). All cited sites were re-verified on `62990ce285`.
 
 ### 2026-11-02T13:05Z · ci-plan-spar · ready (VTID allocated)
 VTID-05468 allocated after policy approval (converged-auto-v1).
+### 2026-11-12T20:16Z · pm-agent · update
+reassign lane jtadic→exafyltd (stale_ready, Claude unavailable)
