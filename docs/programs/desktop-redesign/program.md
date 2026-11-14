@@ -8,6 +8,7 @@ specs:
   - vitana-v1:desktop-spotlight
   - vitana-platform:desktop-spotlight-finish
   - vitana-platform:spotlight-card-proportion
+  - vitana-platform:sidebar-chrome-colour-tokens
 docs:
   - vitana-v1:docs/plans/desktop-spotlight/plan.md
   - vitana-v1:docs/plans/desktop-spotlight/plan-sparring.md
@@ -25,3 +26,4 @@ Programme registry entry (VTID-05215). Links only; the plan is the source of tru
 - Design contract: `vitana-v1:docs/design-system/SPOTLIGHT_RULES.md`
 - Spec: `vitana-v1:.kiro/specs/desktop-spotlight/`
 - Spec: `vitana-platform:spotlight-card-proportion` — one Spotlight card at ~40% beside a 3x2 grid (SR-26)
+- Spec: `vitana-platform:sidebar-chrome-colour-tokens` — two palette-to-token swaps in sidebar/app-bar chrome
