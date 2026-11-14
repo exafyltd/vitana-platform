@@ -156,5 +156,7 @@ i18n-review:
         git config user.email "claude-agent-i18n-review@vitanaland.invalid"
         git add src/i18n/en/screens.json
         git commit -q -m "i18n: Bedrock reviewer accepted the Health Sync OS permission keys (VTID-05735)"
+        git fetch -q origin "$CI_COMMIT_REF_NAME"
+        git rebase -q "origin/$CI_COMMIT_REF_NAME"
         git push "https://oauth2:${I18N_REVIEW_PUSH_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" "HEAD:${CI_COMMIT_REF_NAME}"
       fi
