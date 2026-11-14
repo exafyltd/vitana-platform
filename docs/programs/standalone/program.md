@@ -52,6 +52,7 @@ specs:
   - vitana-platform:plan-spar-stuck-session
   - vitana-platform:session-title-stable
   - vitana-platform:live-room-edit-cohost
+  - vitana-platform:live-room-recurrence
   - vitana-platform:pipeline-lane-state-efficiency
   - vitana-platform:operating-workflow
   - vitana-platform:pm-ci-load
