@@ -1,0 +1,14 @@
+{
+  "vtid": "VTID-05690",
+  "kind": "docs",
+  "paths": [
+    "docs/programs/strategy-execution/healthy-million-readiness.md",
+    "docs/validation/VTID-05690/**",
+    ".kiro/specs/strategy-execution-wave1/lanes/hm-readiness.md"
+  ],
+  "sparring_record": ".kiro/specs/strategy-execution-wave1/sparring/verdict.md",
+  "weakens_tests": [],
+  "red_green_exempt": [
+    { "file": "docs/programs/strategy-execution/healthy-million-readiness.md", "reason": "docs-only lane: no behaviour, no test" }
+  ]
+}
