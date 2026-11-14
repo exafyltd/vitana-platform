@@ -33,6 +33,7 @@ specs:
   - vitana-platform:group-chat-realtime-status
   - vitana-platform:ci-superseded-pr-runs
   - vitana-platform:wallet-fx-rate-url
+  - vitana-platform:collab-bom-tolerance
   - vitana-platform:profile-posts-full-width
   - vitana-platform:staging-verify-runner-fix
   - vitana-platform:guard-required-only-preflight
