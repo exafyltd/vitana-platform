@@ -1,0 +1,1 @@
+VTID-05331 validateManifest on origin/main: INVALID ["tests[0]: ref must be \"npm run <script>\", \"npx jest <paths>\" or \"npx vitest run <paths>\""]

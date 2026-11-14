@@ -1,0 +1,5 @@
+ok 1 - GATE-INVARIANTS.yml exists
+ok 2 - GATE-INVARIANTS.yml runs the invariants on every push to main and daily, read-only
+ok 3 - mutations: each weakened trigger or step is caught
+# pass 3
+# fail 0

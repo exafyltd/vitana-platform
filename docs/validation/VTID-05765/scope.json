@@ -1,0 +1,16 @@
+{
+  "vtid": "VTID-05765",
+  "kind": "feature",
+  "paths": [
+    "scripts/collab/queue.mjs",
+    "scripts/collab/land-guard.mjs",
+    "scripts/collab/protected-gate-files.json",
+    "scripts/collab/*.test.mjs",
+    "services/gateway/src/services/project-manager/governance.ts",
+    "services/gateway/test/**",
+    "docs/validation/VTID-05765/**"
+  ],
+  "weakens_tests": [],
+  "red_green_exempt": [],
+  "sparring_record": ".kiro/specs/autonomous-to-staging/sparring/verdict.md"
+}
