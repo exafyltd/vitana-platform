@@ -57,7 +57,7 @@ and `scripts/aws/iam/gitlab-oidc-*.json` (the OIDC provider and the six roles).
 
 ## A2. Runner classes (owner, the M2 entry point)
 
-`terraform/fleet-classes.tf` adds two Auto Scaling groups next to M2's untrusted fleet (`terraform/fleet.tf`), and the
+`terraform/fleet-classes.tf` adds three Auto Scaling groups next to M2's untrusted fleet (`terraform/fleet.tf`), and the
 M2 fleet manager scales all three, one runner block each (`host/fleet-manager-install.sh`):
 
 | Class | Group | Tag | Max | Machines |
@@ -111,11 +111,14 @@ container keeps both. Each class keeps its own cache path, so no class reads ano
    (the installer) again once the token exists. After changing `fleet_main_max_instances` or
    `fleet_deploy_max_instances`, write the new value into `/etc/vitana/env.classes` the same way.
 4. The class runners in GitLab: `vitana-eng-fleet-main` (tag `vitana-eng-main`, a protected runner: protected refs
-   only) and `vitana-eng-fleet-deploy` (tag `vitana-eng-deploy`), their tokens stored in
-   `vitana/engineering/gitlab/vitana-eng-fleet-main-runner-token` and
-   `vitana/engineering/gitlab/vitana-eng-fleet-deploy-runner-token` (created empty by `fleet-classes.tf`). The settings
-   sync creates them once its runner list has the two classes; today it manages the legacy and the fleet runner only
-   (open item of this lane, `docs/validation/VTID-05546/acceptance.md`).
+   only), `vitana-eng-fleet-deploy` (tag `vitana-eng-deploy`) and `vitana-eng-fleet-build` (tag `vitana-eng-build`, a
+   protected runner: protected refs only; the one class whose `.build-image` service runs without seccomp and AppArmor).
+   Their tokens are stored in `vitana/engineering/gitlab/vitana-eng-fleet-main-runner-token`,
+   `vitana/engineering/gitlab/vitana-eng-fleet-deploy-runner-token` and
+   `vitana/engineering/gitlab/vitana-eng-fleet-build-runner-token` (created empty by `fleet-classes.tf`). The settings
+   sync creates them once its runner list has the three classes; until then it manages the legacy and the fleet runner
+   only (open item of this lane, `docs/validation/VTID-05546/acceptance.md`). Check the result in GitLab: the project
+   runners of `vitana/vitana-platform` must show tags `vitana-eng-main`, `vitana-eng-deploy` and `vitana-eng-build`.
 
 The settings sync must also allow job artifacts of at least 2 GB (the OCI archives).
 
