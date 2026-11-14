@@ -117,3 +117,44 @@
     when: on_success
     expire_in: 1 day
     paths: [dist/]
+
+# VTID-05735 — Bedrock translation reviewer (ALWAYS 10a: Claude via Bedrock). Runs on merge requests that touch
+# src/i18n. The audit (provider bedrock) judges the English keys against the German source; accept removes the
+# _pending_review marker only when the reviewer returns OK for every key, and the job pushes that change back to
+# the merge request branch. Any other verdict fails the job and leaves the marker in place.
+i18n-review:
+  stage: governance
+  image: public.ecr.aws/docker/library/node:20-bookworm
+  tags: [vitana-eng]
+  interruptible: true
+  timeout: 20m
+  id_tokens:
+    I18N_ID_TOKEN:
+      aud: aws:i18n-review
+  variables:
+    GIT_DEPTH: "0"
+    AWS_ROLE_ARN: arn:aws:iam::472838866351:role/gl-i18n-review
+    AWS_REGION: eu-central-1
+    AWS_DEFAULT_REGION: eu-central-1
+    AWS_WEB_IDENTITY_TOKEN_FILE: /tmp/i18n-aws/id-token
+    AWS_ROLE_SESSION_NAME: gitlab-$CI_JOB_ID
+    BEDROCK_I18N_MODEL_ID: eu.anthropic.claude-sonnet-4-6
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      changes:
+        paths:
+          - "src/i18n/**/*"
+          - "scripts/i18n-*.mjs"
+  script:
+    - apt-get -qq update >/dev/null && apt-get -qq install -y --no-install-recommends awscli git >/dev/null
+    - mkdir -p /tmp/i18n-aws && printf "%s" "$I18N_ID_TOKEN" > /tmp/i18n-aws/id-token && chmod 600 /tmp/i18n-aws/id-token
+    - node scripts/i18n-audit-llm.mjs --locale=en --provider=bedrock --shard=screens
+    - node scripts/i18n-review-accept.mjs --locale=en
+    - |
+      if ! git diff --quiet -- src/i18n/en/screens.json; then
+        git config user.name "claude-agent-i18n-review"
+        git config user.email "claude-agent-i18n-review@vitanaland.invalid"
+        git add src/i18n/en/screens.json
+        git commit -q -m "i18n: Bedrock reviewer accepted the Health Sync OS permission keys (VTID-05735)"
+        git push "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" "HEAD:${CI_COMMIT_REF_NAME}"
+      fi
