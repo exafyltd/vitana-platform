@@ -1,0 +1,72 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/wt-crit-stripe-dance-signature/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+FAIL test/routes/payments-stripe-webhook.test.ts
+  payments-stripe-webhook
+    ✕ returns 500 (not "unknown payment_intent") when the service_payments lookup errors (26 ms)
+    ✕ acks unknown-but-not-erroring payment_intent as info, unchanged (8 ms)
+    ✕ advances state on a found payment, unchanged (3 ms)
+
+  ● payments-stripe-webhook › returns 500 (not "unknown payment_intent") when the service_payments lookup errors
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 500
+    Received: 400
+
+      84 |     const res = await postSigned({ id: 'evt_1', type: 'payment_intent.succeeded', data: { object: { id: 'pi_1' } }, created: 0 });
+      85 |
+    > 86 |     expect(res.status).toBe(500);
+         |                        ^
+      87 |     expect(res.body).toMatchObject({ ok: false, error: 'LOOKUP_FAILED' });
+      88 |     expect(mockUpdate).not.toHaveBeenCalled();
+      89 |     expect(mockEmitOasisEvent).toHaveBeenCalledWith(
+
+      at Object.<anonymous> (test/routes/payments-stripe-webhook.test.ts:86:24)
+
+  ● payments-stripe-webhook › acks unknown-but-not-erroring payment_intent as info, unchanged
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 400
+
+       97 |     const res = await postSigned({ id: 'evt_2', type: 'payment_intent.succeeded', data: { object: { id: 'pi_2' } }, created: 0 });
+       98 |
+    >  99 |     expect(res.status).toBe(200);
+          |                        ^
+      100 |     expect(res.body).toMatchObject({ ok: true, unknown_pi: true });
+      101 |     expect(mockEmitOasisEvent).toHaveBeenCalledWith(expect.objectContaining({ status: 'info' }));
+      102 |   });
+
+      at Object.<anonymous> (test/routes/payments-stripe-webhook.test.ts:99:24)
+
+  ● payments-stripe-webhook › advances state on a found payment, unchanged
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 200
+    Received: 400
+
+      107 |     const res = await postSigned({ id: 'evt_3', type: 'payment_intent.succeeded', data: { object: { id: 'pi_3' } }, created: 0 });
+      108 |
+    > 109 |     expect(res.status).toBe(200);
+          |                        ^
+      110 |     expect(res.body).toMatchObject({ ok: true });
+      111 |     expect(mockUpdate).toHaveBeenCalledWith({ state: 'authorized', updated_at: expect.any(String) });
+      112 |   });
+
+      at Object.<anonymous> (test/routes/payments-stripe-webhook.test.ts:109:24)
+
+Test Suites: 1 failed, 1 total
+Tests:       3 failed, 3 total
+Snapshots:   0 total
+Time:        0.621 s
+Ran all test suites matching /test\/routes\/payments-stripe-webhook.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
+exit 1
