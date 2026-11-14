@@ -1,0 +1,6 @@
+# origin/main f0f88de2b5, areas.yaml unchanged
+not ok 1 - loadSeats returns the nine seats, none renamed or removed
+not ok 2 - every seat line is one-line { … }, carries kiro: <slot>, and no account
+not ok 3 - the five new seats are pending and have no automation
+# pass 0
+# fail 3
