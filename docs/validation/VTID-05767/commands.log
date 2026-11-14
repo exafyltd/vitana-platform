@@ -1,0 +1,16 @@
+# VTID-05767 (autonomous-to-staging/pipeline-b-v1) — commands, repo exafyltd/vitana-v1, worktree from origin/main 96d43e09f457f543b443c66e333f4837fb82eebb
+# session kiro-exafy-202611110920-270b
+$ node scripts/collab/queue.mjs claim autonomous-to-staging/pipeline-b-v1 --session kiro-exafy-202611110920-270b --repo vitana-platform   # ok
+# tests written first, lib.mjs untouched:
+$ node --test scripts/ci/pr-gate/__tests__/frontend-simple-mobile.test.mjs scripts/ci/pr-gate/__tests__/frontend-simple.test.mjs
+#   → tests 15, pass 12, fail 3 (outputs/red-on-base.txt)
+# full suite on base code with the new test file present:
+$ node --test scripts/ci/pr-gate/__tests__/*.test.mjs
+#   → tests 43, pass 40, fail 3
+# implement FRONTEND_SIMPLE_ALLOW / FRONTEND_SIMPLE_DENY in scripts/ci/pr-gate/lib.mjs
+$ node --test scripts/ci/pr-gate/__tests__/frontend-simple-mobile.test.mjs scripts/ci/pr-gate/__tests__/frontend-simple.test.mjs
+#   → tests 15, pass 15, fail 0 (outputs/green.txt)
+$ npm run test:gate   # = node --test scripts/ci/pr-gate/__tests__/*.test.mjs (also the PR-GATE "unit tests" step)
+#   → tests 43, pass 43, fail 0 (outputs/test-gate.txt)
+$ node scripts/collab/land-guard.mjs evidence --repo . --vtid VTID-05767
+$ GITHUB_REPOSITORY=exafyltd/vitana-v1 node scripts/collab/preflight.mjs --repo . --base origin/main --head HEAD --branch kiro/autonomous-to-staging/pipeline-b-v1 --title "VTID-05767 (autonomous-to-staging/pipeline-b-v1): frontend-simple covers apps/mobile/src"

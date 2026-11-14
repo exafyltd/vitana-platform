@@ -37,6 +37,18 @@ export const CHAT_PUSH_COALESCE_WINDOW_MS = 5 * 60 * 1000;
 /** How far back unread rows count toward the "N new messages" summary. */
 export const CHAT_PUSH_UNREAD_LOOKBACK_MS = 24 * 60 * 60 * 1000;
 export const CHAT_PUSH_MAX_COUNT = 99;
+/** VTID-05718 (owner Option A, 2026-11-11): push_outcome of a held burst row. */
+export const CHAT_BURST_PENDING = 'pending_burst';
+
+/**
+ * VTID-05718: how long a chat message is held before the one push of its burst
+ * goes out. 0 = push at once (the pre-VTID-05718 behaviour). Owner-chosen default 20 s.
+ */
+export function chatPushBurstHoldMs(): number {
+  const raw = Number(process.env.CHAT_PUSH_BURST_HOLD_MS ?? 20_000);
+  if (!Number.isFinite(raw) || raw < 0) return 20_000;
+  return Math.min(raw, 120_000);
+}
 const CHAT_NOTIFICATION_TYPES = ['new_chat_message', 'chat_mention'];
 const ROW_LIMIT = 2000;
 
@@ -57,6 +69,8 @@ export interface ChatPushDecision {
   push: boolean;
   /** Unread messages in this conversation, including the new one. */
   unreadCount: number;
+  /** VTID-05718: a held burst for this recipient and conversation is still waiting to be sent. */
+  pendingBurst: boolean;
 }
 
 // Exported (VTID-05208) so new-member-greeting-push.ts reuses the same rows/rule.
@@ -87,7 +101,7 @@ export async function decideChatPushes(
   now: number = Date.now(),
 ): Promise<Map<string, ChatPushDecision>> {
   const decisions = new Map<string, ChatPushDecision>();
-  for (const id of recipientIds) decisions.set(id, { push: true, unreadCount: 1 });
+  for (const id of recipientIds) decisions.set(id, { push: true, unreadCount: 1, pendingBurst: false });
   if (recipientIds.length === 0 || !isChatPushCoalescingEnabled()) return decisions;
 
   let rows: ChatNotificationRow[];
@@ -116,6 +130,7 @@ export async function decideChatPushes(
     decisions.set(id, {
       push: !pushedRecently,
       unreadCount: Math.min(mine.length + 1, CHAT_PUSH_MAX_COUNT),
+      pendingBurst: mine.some((r) => r.push_outcome === CHAT_BURST_PENDING),
     });
   }
   return decisions;
@@ -163,16 +178,22 @@ export async function coalesceChatPushes(
     ? await bulkGetUserLocales(supabase, summaryIds).catch(() => new Map<string, string>())
     : new Map<string, string>();
 
+  const holdMs = chatPushBurstHoldMs();
   return items.map((item) => {
-    const decision = decisions.get(item.userId) ?? { push: true, unreadCount: 1 };
+    const decision = decisions.get(item.userId) ?? { push: true, unreadCount: 1, pendingBurst: false };
     const payload: NotificationPayload = {
       ...item.payload,
       tag,
       data: { ...(item.payload.data || {}), conversation_key: conversationKey, tag },
     };
     if (item.kind === 'mention') return { userId: item.userId, payload };
-    if (!decision.push) {
+    if (!decision.push || decision.pendingBurst) {
+      // Pushed recently (VTID-05137), or joins the burst already held for this conversation.
       return { userId: item.userId, payload, opts: { suppressPush: 'coalesced' } };
+    }
+    if (holdMs > 0 && isChatPushCoalescingEnabled()) {
+      // VTID-05718: hold this message; the burst sweep sends ONE push with the latest text and the count.
+      return { userId: item.userId, payload, opts: { holdForBurst: { dueAt: new Date(now + holdMs).toISOString() } } };
     }
     if (decision.unreadCount > 1) {
       payload.body = tt('notif.chat_burst.body', locales.get(item.userId), {
