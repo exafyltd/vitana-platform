@@ -3,15 +3,21 @@
  *
  * Receives Stripe webhook events (payment_intent.succeeded, charge.refunded,
  * transfer.paid, etc.) and updates the corresponding service_payments row's
- * state. Live signature verification is enabled when STRIPE_WEBHOOK_SECRET
- * is set; otherwise the route accepts unsigned payloads in dev mode.
+ * state.
  *
- * The actual Stripe SDK isn't called from this scaffold — that comes when
- * the full payment flow is wired in a follow-up. This route is the receiver
- * end of the loop so the state machine can advance once events arrive.
+ * VTID-05730 (plan gateway-critical-route-auth, lane stripe-dance-signature):
+ * every event must carry a valid Stripe signature. index.ts mounts
+ * express.raw() for /webhooks/stripe-dance (before express.json()), and the
+ * handler verifies the exact bytes with Stripe.webhooks.constructEvent and
+ * STRIPE_WEBHOOK_SECRET, as routes/stripe-connect-webhook.ts does.
+ * Secret unset → 500 WEBHOOK_NOT_CONFIGURED; header missing → 400
+ * MISSING_SIGNATURE; verification failure → 400 BAD_SIGNATURE. Nothing is
+ * read or written before verification succeeds, and the state logic uses
+ * the verified event only. Unsigned payloads are no longer accepted.
  */
 
 import { Router, Request, Response } from 'express';
+import Stripe from 'stripe';
 import { getSupabase } from '../lib/supabase';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import * as repo from './payments-stripe-webhook-repository';
@@ -40,14 +46,34 @@ const STATE_BY_EVENT: Record<string, string> = {
 };
 
 router.post('/webhooks/stripe-dance', async (req: Request, res: Response) => {
-  // Soft signature check: log when missing, don't block in MVP.
-  const sig = req.headers['stripe-signature'];
   const expectedSecret = process.env.STRIPE_WEBHOOK_SECRET;
-  if (expectedSecret && !sig) {
+  if (!expectedSecret) {
+    console.error('[stripe-dance webhook] STRIPE_WEBHOOK_SECRET not configured');
+    return res.status(500).json({ ok: false, error: 'WEBHOOK_NOT_CONFIGURED' });
+  }
+
+  const sig = req.headers['stripe-signature'];
+  if (!sig) {
     return res.status(400).json({ ok: false, error: 'MISSING_SIGNATURE' });
   }
 
-  const event: StripeEvent = req.body;
+  // The signature covers the exact bytes Stripe sent; a parsed/re-serialized
+  // body cannot be verified, so anything but the raw body is refused.
+  const rawBody: unknown = req.body;
+  if (!Buffer.isBuffer(rawBody) && typeof rawBody !== 'string') {
+    return res.status(400).json({ ok: false, error: 'BAD_SIGNATURE' });
+  }
+
+  let event: StripeEvent;
+  try {
+    // Static helper: signature verification needs only the signing secret,
+    // not STRIPE_SECRET_KEY (stripe@20 exposes Stripe.webhooks statically).
+    event = Stripe.webhooks.constructEvent(rawBody, sig, expectedSecret) as unknown as StripeEvent;
+  } catch (err: any) {
+    console.error('[stripe-dance webhook] Signature verification failed:', err?.message);
+    return res.status(400).json({ ok: false, error: 'BAD_SIGNATURE' });
+  }
+
   if (!event || typeof event.type !== 'string') {
     return res.status(400).json({ ok: false, error: 'BAD_PAYLOAD' });
   }

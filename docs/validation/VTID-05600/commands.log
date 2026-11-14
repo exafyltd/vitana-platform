@@ -1,0 +1,18 @@
+# console-probes-a commands.log
+## T1 baseline on origin/main b9839e1f4f
+RED VTID-04887 tests[6] /command-hub/app.js?v=20261121-vtid-05082-vtid-05547 -> app.js missing: "fetch('/api/v1/ops/pipeline-summary', {"
+RED VTID-04975 tests[4] /command-hub/app.js?v=20261121-vtid-05082-vtid-05547 -> app.js missing: "function renderOperatorEngineSwitch"
+RED VTID-04975 tests[4] /command-hub/app.js?v=20261121-vtid-05082-vtid-05547 -> app.js missing: "function renderKiroThreadPanel"
+RED VTID-04984 tests[2] /command-hub/app.js?v=20261121-vtid-05082-vtid-05547 -> app.js missing: "function renderKiroModelSelect"
+RED VTID-04984 tests[2] /command-hub/app.js?v=20261121-vtid-05082-vtid-05547 -> app.js missing: "function selectKiroModel"
+RED VTID-04999 tests[3] /command-hub/app.js?v=20261121-vtid-05082-vtid-05547 -> app.js missing: "function renderKiroKeyControls"
+RED VTID-04999 tests[3] /command-hub/app.js?v=20261121-vtid-05082-vtid-05547 -> app.js missing: "function linkKiroKey"
+RED VTID-04999 tests[3] /command-hub/app.js?v=20261121-vtid-05082-vtid-05547 -> app.js missing: "function revokeKiroKey"
+checked 26 strings: 8 missing
+## after edits
+checked 30 strings: all present
+## validateManifest
+04887 valid
+04975 valid
+04984 valid
+04999 valid

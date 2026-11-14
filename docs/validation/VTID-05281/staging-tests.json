@@ -1,7 +1,7 @@
 {
   "vtid": "VTID-05281",
   "service": "gateway",
-  "note": "Read-only. Plan kaf-fallback-env §5 B (fix-forward of VTID-05277): an unreadable CLAUDE_AVAILABLE repo variable falls back to the staging task-definition env, so the live staging PM reports kiro_fallback. Behaviour is proven by Jest; staging proves the deployed build reports the mode and keeps /status guarded. Nothing here targets production.",
+  "note": "Read-only. Plan kaf-fallback-env §5 B (fix-forward of VTID-05277). Owner decision 2026-11-12: the expected PM mode is claude_primary (not kiro_fallback). The live PM reports enabled=false and executor_mode=claude_primary, so the expectation below matches that. Behaviour is proven by Jest; staging proves the deployed build reports the mode and keeps /status guarded. Nothing here targets production.",
   "tests": [
     {
       "kind": "http",
@@ -14,13 +14,13 @@
     },
     {
       "kind": "http",
-      "name": "PM reports Kiro-fallback mode",
+      "name": "PM reports claude_primary mode",
       "target": "gateway",
       "method": "GET",
       "path": "/api/v1/project-manager/mode",
       "expect_status": 200,
-      "expect_json": { "ok": true, "enabled": true, "mode": "live", "executor_mode": "kiro_fallback" },
-      "reason": "read-only anonymous GET, same check as VTID-05277: with the repo variable unreadable the PM reads CLAUDE_AVAILABLE=false from the staging env"
+      "expect_json": { "ok": true, "enabled": false, "mode": "live", "executor_mode": "claude_primary" },
+      "reason": "read-only anonymous GET, same check as VTID-05277: the PM reports claude_primary at the verified commit (owner decision 2026-11-12)"
     },
     {
       "kind": "http",
