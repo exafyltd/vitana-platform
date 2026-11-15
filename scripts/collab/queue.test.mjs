@@ -2019,3 +2019,41 @@ test('VTID-05365 batching: commitFileReader equals git show in memory and throug
     assert.equal(none.spawns, 0);
   } finally { f.done(); }
 });
+
+// ------------------------------------------------------------ VTID-05802 (lane-executor-transfer)
+// An executor transfer is a deliberate change of `executor` by the builder that holds the claim, recorded in the lane log as
+// `transfer: <from>→<to>, by <session>, reason <text>, at <time>`. Lane scope allows exactly that change (plan tests g, h, i).
+const transferLog = (from, to, by) => `\n### 2026-11-15T07:00Z · ${by} · transfer\ntransfer: ${from}→${to}, by ${by}, reason test, at 2026-11-15T07:00Z\n`;
+const transferredLane = (log) => laneMd('card-01', { ...LANE, executor: 'claude', next_actor: 'claude', state: 'executing', vtid: 'VTID-00002', claimed_by: JT }) + log;
+const PERM_ERR = 'changed in a lane PR';
+
+test('transfer g: a kiro lane transferred to claude by its claim holder passes Lane scope', () => {
+  const f = fixture();
+  try {
+    const base = scopeFixture(f, LANE);
+    write(f.work, '.kiro/specs/cards/lanes/card-01.md', transferredLane(transferLog('kiro', 'claude', JT)));
+    const head = commit(f.work, 'transfer', { 'Collab-Session': JT, 'Collab-Lane': 'cards/card-01' });
+    const errs = scopeErrors(f, base, head);
+    assert.equal(errs.some((e) => e.includes(PERM_ERR)), false, errs.join('\n'));
+  } finally { f.done(); }
+});
+
+test('transfer h: a changed executor without a transfer entry is refused by Lane scope', () => {
+  const f = fixture();
+  try {
+    const base = scopeFixture(f, LANE);
+    write(f.work, '.kiro/specs/cards/lanes/card-01.md', transferredLane(''));
+    const head = commit(f.work, 'transfer', { 'Collab-Session': JT, 'Collab-Lane': 'cards/card-01' });
+    hasErr(scopeErrors(f, base, head), PERM_ERR);
+  } finally { f.done(); }
+});
+
+test('transfer i: a transfer entry naming a session that did not commit to the lane is refused by Lane scope', () => {
+  const f = fixture();
+  try {
+    const base = scopeFixture(f, LANE);
+    write(f.work, '.kiro/specs/cards/lanes/card-01.md', transferredLane(transferLog('kiro', 'claude', EX)));
+    const head = commit(f.work, 'transfer', { 'Collab-Session': JT, 'Collab-Lane': 'cards/card-01' });
+    hasErr(scopeErrors(f, base, head), PERM_ERR);
+  } finally { f.done(); }
+});
