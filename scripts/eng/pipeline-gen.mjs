@@ -171,7 +171,7 @@ export function buildPipeline(config, repoKey) {
     doc['preview-stop'] = { extends: '.preview-stop', stage: 'preview', tags: [config.runner_tags.deploy], interruptible: false, needs: [{ job: 'preview-upload', optional: true }], variables: { PREVIEW_SERVICE: svc, PREVIEW_PREFIX: 'mr-$CI_MERGE_REQUEST_IID/' }, environment: { name: 'review/mr-$CI_MERGE_REQUEST_IID', action: 'stop' }, rules: [NEVER_IN_SHADOW, { if: IF.mr, changes, when: 'manual', allow_failure: true }] };
     // Shadow proof (plan §8.1 step 3): the non-production preview path gl-main/ on every main commit.
     doc['preview-build:main'] = { extends: ['.full-suite', '.preview-build'], stage: 'build', needs: [], variables: { PREVIEW_SERVICE: svc, PREVIEW_BASE: '/gl-main/' }, rules: [{ if: `${IF.notLive} && ${IF.main}`, changes: { paths: servicePatterns(r, s) } }] };
-    doc['preview-upload:main'] = { extends: '.preview-upload', stage: 'deploy', tags: [config.runner_tags.deploy], interruptible: false, needs: [{ job: 'preview-build:main', artifacts: true }], variables: { PREVIEW_SERVICE: svc, PREVIEW_PREFIX: 'gl-main/' }, rules: [{ if: `${IF.notLive} && ${IF.main}`, changes: { paths: servicePatterns(r, s) } }] };
+    doc['preview-upload:main'] = { extends: '.preview-upload', stage: 'deploy', tags: [config.runner_tags.deploy], interruptible: false, needs: [{ job: 'preview-build:main', artifacts: true }], variables: { PREVIEW_SERVICE: svc, PREVIEW_PREFIX: 'gl-main/' }, rules: [NEVER_IN_SHADOW, { if: IF.main, changes: { paths: servicePatterns(r, s) } }] };
     // E2E-PREVIEW-ORB (dispatch only on GitHub): by hand on main, main class (it signs in as the test user), live mode only.
     doc['e2e-preview-orb'] = { extends: '.e2e-preview-orb', stage: 'verify', tags: [config.runner_tags.main], interruptible: false, allow_failure: true, needs: [], rules: [NEVER_IN_SHADOW, { if: IF.main, when: 'manual' }] };
   }
@@ -191,18 +191,18 @@ export function buildPipeline(config, repoKey) {
       DEPLOY_RUNS_FILE: '$CI_PROJECT_DIR/deploy-runs.json',
     };
     doc[`build-image:${svc}`] = { extends: '.build-image', stage: 'build', needs: [], tags: ['vitana-eng-build'], interruptible: false, variables: { ...deployVars }, rules: [on] };
-    doc[`push-image:${svc}`] = { extends: '.push-image', stage: 'push', tags: [config.runner_tags.deploy], interruptible: false, needs: [{ job: `build-image:${svc}`, artifacts: true }], variables: { ...deployVars }, rules: [on] };
+    doc[`push-image:${svc}`] = { extends: '.push-image', stage: 'push', tags: [config.runner_tags.deploy], interruptible: false, needs: [{ job: `build-image:${svc}`, artifacts: true }], variables: { ...deployVars }, rules: [NEVER_IN_SHADOW, on] };
     const overrides = Object.keys(s.env_overrides || {}).length ? JSON.stringify(s.env_overrides) : null;
     doc[`deploy-staging:${svc}`] = {
       extends: '.deploy-staging', stage: 'deploy', tags: [config.runner_tags.deploy], interruptible: false, resource_group: `staging-deploy-${svc}`,
       needs: [{ job: `push-image:${svc}`, artifacts: true }], variables: { ...deployVars },
-      rules: overrides ? [{ if: `$DELIVERY_MODE == "live" && ${IF.main}`, changes: on.changes, variables: { DEPLOY_ENV_OVERRIDES: overrides } }, on] : [on],
+      rules: overrides ? [NEVER_IN_SHADOW, { if: `$DELIVERY_MODE == "live" && ${IF.main}`, changes: on.changes, variables: { DEPLOY_ENV_OVERRIDES: overrides } }, on] : [NEVER_IN_SHADOW, on],
     };
-    doc[`rollback-staging:${svc}`] = { extends: '.rollback-staging', stage: 'deploy', tags: [config.runner_tags.deploy], interruptible: false, needs: [{ job: `deploy-staging:${svc}`, artifacts: true }], variables: { ...deployVars }, rules: [{ ...on, when: 'on_failure' }] };
+    doc[`rollback-staging:${svc}`] = { extends: '.rollback-staging', stage: 'deploy', tags: [config.runner_tags.deploy], interruptible: false, needs: [{ job: `deploy-staging:${svc}`, artifacts: true }], variables: { ...deployVars }, rules: [NEVER_IN_SHADOW, { ...on, when: 'on_failure' }] };
     if (s.staging_verify) {
-      doc[`staging-verify:${svc}`] = { extends: '.staging-verify', stage: 'verify', tags: [config.runner_tags.main], interruptible: false, needs: [{ job: `deploy-staging:${svc}`, artifacts: true }], variables: { VERIFY_SERVICE: s.staging_verify }, rules: [on] };
+      doc[`staging-verify:${svc}`] = { extends: '.staging-verify', stage: 'verify', tags: [config.runner_tags.main], interruptible: false, needs: [{ job: `deploy-staging:${svc}`, artifacts: true }], variables: { VERIFY_SERVICE: s.staging_verify }, rules: [NEVER_IN_SHADOW, on] };
       doc[`record:${svc}`] = { extends: '.record', stage: 'record', tags: [config.runner_tags.deploy], interruptible: false, needs: [{ job: `staging-verify:${svc}`, artifacts: true }], variables: { VERIFY_SERVICE: s.staging_verify }, rules: [NEVER_IN_SHADOW, { ...on, when: 'always' }] };
-      doc[`staging-verify-nightly:${svc}`] = { extends: '.staging-verify-nightly', stage: 'verify', tags: [config.runner_tags.main], interruptible: false, needs: [], variables: { VERIFY_SERVICE: s.staging_verify }, rules: [{ if: IF.nightly }] };
+      doc[`staging-verify-nightly:${svc}`] = { extends: '.staging-verify-nightly', stage: 'verify', tags: [config.runner_tags.main], interruptible: false, needs: [], variables: { VERIFY_SERVICE: s.staging_verify }, rules: [NEVER_IN_SHADOW, { if: IF.nightly }] };
       doc[`record-nightly:${svc}`] = { extends: '.record', stage: 'record', tags: [config.runner_tags.deploy], interruptible: false, needs: [{ job: `staging-verify-nightly:${svc}`, artifacts: true }], variables: { VERIFY_SERVICE: s.staging_verify }, rules: [NEVER_IN_SHADOW, { if: IF.nightly, when: 'always' }] };
     }
   }

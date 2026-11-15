@@ -52,12 +52,14 @@ test('only the prefixes mr-<iid>/ and gl-main/ exist', () => {
     assert.equal(f.calls.length, 0, `no call for '${prefix}'`);
   }
   const f = fake();
-  upload({ service: 'community-app', prefix: 'gl-main/', dist: dist(), mode: 'shadow', distributionId: DIST_ID }, { run: f.run, log: quiet });
+  upload({ service: 'community-app', prefix: 'gl-main/', dist: dist(), mode: 'live', distributionId: DIST_ID }, { run: f.run, log: quiet });
   for (const t of s3Targets(f.calls)) assert.ok(t.startsWith('s3://vitana-pr-previews/gl-main/'), t);
 });
 
-test('shadow mode writes only the gl-main/ preview', () => {
+test('shadow mode writes nothing to S3 (owner rule 2026-11-15)', () => {
   const f = fake();
+  assert.throws(() => upload({ service: 'community-app', prefix: 'gl-main/', dist: dist(), mode: 'shadow', distributionId: DIST_ID }, { run: f.run, log: quiet }), (e) => e.exitCode === 2);
+  assert.throws(() => stop({ service: 'community-app', prefix: 'mr-42/', mode: 'shadow', distributionId: DIST_ID }, { run: f.run, log: quiet }), (e) => e.exitCode === 2);
   assert.throws(() => upload({ service: 'community-app', prefix: 'mr-42/', dist: dist(), mode: 'shadow', distributionId: DIST_ID }, { run: f.run, log: quiet }), (e) => e.exitCode === 2);
   assert.throws(() => upload({ service: 'community-app', prefix: 'mr-42/', dist: dist(), distributionId: DIST_ID }, { run: f.run, log: quiet }), (e) => e.exitCode === 2, 'unset mode is shadow');
   assert.equal(f.calls.length, 0);

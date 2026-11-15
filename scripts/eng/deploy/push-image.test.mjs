@@ -54,14 +54,14 @@ test('it pushes the archive, outputs the digest and the image by digest', () => 
   assert.deepEqual(f.inputs, [['skopeo', 'login', PASSWORD]], 'the password goes to skopeo on stdin');
 });
 
-test('shadow mode pushes only a shadow-<sha12> tag', () => {
+test('shadow mode pushes nothing to ECR: refused before any AWS or skopeo call (owner rule 2026-11-15)', () => {
   const { dir, file } = archive();
-  const f = fake();
-  const out = pushImage({ service: 'community-app', repository: 'vitana/community-app', archive: file, sha: SHA, mode: 'shadow', workDir: dir }, { run: f.run, log: quiet });
-  assert.equal(out.tag, `shadow-${SHA.slice(0, 12)}`);
-  assert.equal(imageTag(SHA, undefined), `shadow-${SHA.slice(0, 12)}`, 'anything but live is shadow');
-  const copy = f.calls.find((c) => c[0] === 'skopeo' && c[1] === 'copy');
-  assert.equal(copy[copy.length - 1], `docker://${REG}/vitana/community-app:shadow-${SHA.slice(0, 12)}`);
+  for (const mode of ['shadow', undefined, 'liev', '']) {
+    const f = fake();
+    assert.throws(() => pushImage({ service: 'community-app', repository: 'vitana/community-app', archive: file, sha: SHA, mode, workDir: dir }, { run: f.run, log: quiet }), (e) => e.exitCode === 2, String(mode));
+    assert.equal(f.calls.length, 0, `no call for mode ${String(mode)}`);
+  }
+  assert.equal(imageTag(SHA, undefined), `shadow-${SHA.slice(0, 12)}`, 'the tag helper still maps non-live to shadow');
 });
 
 test('it refuses a target outside the service ECR repository', () => {

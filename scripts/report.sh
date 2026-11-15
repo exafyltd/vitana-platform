@@ -7,6 +7,13 @@ GATEWAY_TOKEN="${GATEWAY_TOKEN:-}"
 TENANT="${TENANT:-system}"
 USE_PERSIST="${USE_PERSIST:-1}"
 
+# GitLab shadow mode (DELIVERY_MODE is not exactly "live") sends nothing external: no legacy notification, no event ingest.
+# Outside GitLab CI (GitHub workflow, local runs) behaviour is unchanged.
+if [ -n "${GITLAB_CI:-}" ] && [ "${DELIVERY_MODE:-}" != "live" ]; then
+  echo "shadow: report '${1:-unknown}' not sent (DELIVERY_MODE=${DELIVERY_MODE:-unset}); nothing external written"
+  exit 0
+fi
+
 # Parse arguments
 EVENT_TYPE="${1:-unknown}"
 SERVICE_NAME="${2:-unknown}"

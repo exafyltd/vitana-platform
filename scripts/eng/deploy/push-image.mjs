@@ -35,6 +35,8 @@ export function pushImage(o, deps = {}) {
   if (!isFullSha(o.sha)) throw new DeployError(`--sha must be a full commit SHA, got '${o.sha}'`, 2);
   if (!o.archive || !existsSync(o.archive)) throw new DeployError(`image archive not found: ${o.archive}`, 2);
   const mode = o.mode === 'live' ? 'live' : 'shadow';
+  // Shadow mode publishes nothing: no ECR login, no push (owner rule 2026-11-15). Only an explicit live run pushes.
+  if (mode !== 'live') throw new DeployError(`push-image writes to ECR only in live mode (DELIVERY_MODE=${o.mode || 'unset'}): refused, nothing pushed`, 2);
   const tag = imageTag(o.sha, mode);
   const ref = `${REGISTRY}/${t.ecrRepository}:${tag}`;
 

@@ -1444,7 +1444,9 @@ preview-stop:
     PREVIEW_SERVICE: "community-app"
     PREVIEW_PREFIX: "gl-main/"
   rules:
-    - if: "$DELIVERY_MODE != \"live\" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == \"push\""
+    - if: "$DELIVERY_MODE != \"live\""
+      when: "never"
+    - if: "$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == \"push\""
       changes:
         paths:
           - "src/**/*"
@@ -1998,6 +2000,8 @@ e2e-preview-orb:
     DEPLOY_ECS_SERVICE: "vitana-community-app-staging"
     DEPLOY_RUNS_FILE: "$CI_PROJECT_DIR/deploy-runs.json"
   rules:
+    - if: "$DELIVERY_MODE != \"live\""
+      when: "never"
     - if: "$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == \"push\""
       changes:
         paths:
@@ -2041,6 +2045,8 @@ e2e-preview-orb:
     DEPLOY_ECS_SERVICE: "vitana-community-app-staging"
     DEPLOY_RUNS_FILE: "$CI_PROJECT_DIR/deploy-runs.json"
   rules:
+    - if: "$DELIVERY_MODE != \"live\""
+      when: "never"
     - if: "$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == \"push\""
       changes:
         paths:
@@ -2083,6 +2089,8 @@ e2e-preview-orb:
     DEPLOY_ECS_SERVICE: "vitana-community-app-staging"
     DEPLOY_RUNS_FILE: "$CI_PROJECT_DIR/deploy-runs.json"
   rules:
+    - if: "$DELIVERY_MODE != \"live\""
+      when: "never"
     - if: "$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == \"push\""
       changes:
         paths:
@@ -2120,6 +2128,8 @@ e2e-preview-orb:
   variables:
     VERIFY_SERVICE: "community-app"
   rules:
+    - if: "$DELIVERY_MODE != \"live\""
+      when: "never"
     - if: "$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == \"push\""
       changes:
         paths:
@@ -2193,6 +2203,8 @@ e2e-preview-orb:
   variables:
     VERIFY_SERVICE: "community-app"
   rules:
+    - if: "$DELIVERY_MODE != \"live\""
+      when: "never"
     - if: "$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == \"schedule\" && $DELIVERY_SCHEDULE == \"nightly\""
 
 "record-nightly:community-app":

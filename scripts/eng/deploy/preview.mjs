@@ -47,6 +47,8 @@ export function upload(o, deps = {}) {
   const run = deps.run || defaultRunner;
   const log = deps.log || ((m) => console.log(m));
   const mode = o.mode === 'live' ? 'live' : 'shadow';
+  // Shadow mode publishes nothing: previews are written to S3 only in live mode (owner rule 2026-11-15).
+  if (mode !== 'live') throw new DeployError(`preview writes to S3 only in live mode (DELIVERY_MODE=${o.mode || 'unset'}): refused, nothing written`, 2);
   const dist = common(o);
   const prefix = checkPrefix(o.prefix, { mode, action: 'upload' });
   if (!o.dist || !existsSync(join(o.dist, 'index.html'))) throw new DeployError(`no built preview at ${o.dist}/index.html`, 2);
@@ -64,6 +66,8 @@ export function stop(o, deps = {}) {
   const run = deps.run || defaultRunner;
   const log = deps.log || ((m) => console.log(m));
   const mode = o.mode === 'live' ? 'live' : 'shadow';
+  // Shadow mode publishes nothing: previews are written to S3 only in live mode (owner rule 2026-11-15).
+  if (mode !== 'live') throw new DeployError(`preview writes to S3 only in live mode (DELIVERY_MODE=${o.mode || 'unset'}): refused, nothing written`, 2);
   const dist = common(o);
   const prefix = checkPrefix(o.prefix, { mode, action: 'stop' });
   assertIdentity(run, PREVIEW_ROLE);
