@@ -1,0 +1,760 @@
+TAP version 13
+# Subtest: request: the token goes in the PRIVATE-TOKEN header only; the URL is under /api/v4 and has no credential
+ok 1 - request: the token goes in the PRIVATE-TOKEN header only; the URL is under /api/v4 and has no credential
+  ---
+  duration_ms: 21.084999
+  type: 'test'
+  ...
+# Subtest: a base URL with a trailing slash or with /api/v4 already in it gives the same requests
+ok 2 - a base URL with a trailing slash or with /api/v4 already in it gives the same requests
+  ---
+  duration_ms: 1.919467
+  type: 'test'
+  ...
+# Subtest: a base URL on a sub path keeps the sub path
+ok 3 - a base URL on a sub path keeps the sub path
+  ---
+  duration_ms: 0.832305
+  type: 'test'
+  ...
+# Subtest: query: arrays become key[]=v, null and undefined are skipped, numbers, booleans and dates are written as text
+ok 4 - query: arrays become key[]=v, null and undefined are skipped, numbers, booleans and dates are written as text
+  ---
+  duration_ms: 1.14438
+  type: 'test'
+  ...
+# Subtest: a query value that is an object is refused instead of being sent as [object Object]
+ok 5 - a query value that is an object is refused instead of being sent as [object Object]
+  ---
+  duration_ms: 0.372528
+  type: 'test'
+  ...
+# Subtest: a JSON body is serialised with its content type; POST, PUT and DELETE shortcuts use the right method
+ok 6 - a JSON body is serialised with its content type; POST, PUT and DELETE shortcuts use the right method
+  ---
+  duration_ms: 2.598118
+  type: 'test'
+  ...
+# Subtest: a GET with a body is refused: the caller made a mistake
+ok 7 - a GET with a body is refused: the caller made a mistake
+  ---
+  duration_ms: 0.256263
+  type: 'test'
+  ...
+# Subtest: a caller cannot replace the token header or add another credential; other headers pass through
+ok 8 - a caller cannot replace the token header or add another credential; other headers pass through
+  ---
+  duration_ms: 0.582409
+  type: 'test'
+  ...
+# Subtest: projectId encodes a path with slashes for use in a URL
+ok 9 - projectId encodes a path with slashes for use in a URL
+  ---
+  duration_ms: 0.585851
+  type: 'test'
+  ...
+# Subtest: empty bodies: 204 and an empty 200 give null; a non-JSON success body is an error, not a crash
+ok 10 - empty bodies: 204 and an empty 200 give null; a non-JSON success body is an error, not a crash
+  ---
+  duration_ms: 2.726365
+  type: 'test'
+  ...
+# Subtest: expect: "text" returns the text as it is, also when it is not JSON
+ok 11 - expect: "text" returns the text as it is, also when it is not JSON
+  ---
+  duration_ms: 0.542284
+  type: 'test'
+  ...
+# Subtest: raw returns status, headers and data, and does not throw for a status listed in okStatuses
+ok 12 - raw returns status, headers and data, and does not throw for a status listed in okStatuses
+  ---
+  duration_ms: 1.068018
+  type: 'test'
+  ...
+# Subtest: a redirect is never followed: fetch is told not to, and a 3xx answer is an error that does not repeat the Location
+ok 13 - a redirect is never followed: fetch is told not to, and a 3xx answer is an error that does not repeat the Location
+  ---
+  duration_ms: 0.621338
+  type: 'test'
+  ...
+# Subtest: paginate: three pages in order, per_page 100, one request per page and none after the last
+ok 14 - paginate: three pages in order, per_page 100, one request per page and none after the last
+  ---
+  duration_ms: 1.350467
+  type: 'test'
+  ...
+# Subtest: paginate: perPage and other query parameters are kept on every page; an empty first page gives []
+ok 15 - paginate: perPage and other query parameters are kept on every page; an empty first page gives []
+  ---
+  duration_ms: 0.929332
+  type: 'test'
+  ...
+# Subtest: paginate: a page that is not an array is an error naming the path
+ok 16 - paginate: a page that is not an array is an error naming the path
+  ---
+  duration_ms: 0.472763
+  type: 'test'
+  ...
+# Subtest: paginate: a server that never stops is cut off at maxPages
+ok 17 - paginate: a server that never stops is cut off at maxPages
+  ---
+  duration_ms: 0.977891
+  type: 'test'
+  ...
+# Subtest: paginate: follows a keyset Link header on the same origin when there is no X-Next-Page
+ok 18 - paginate: follows a keyset Link header on the same origin when there is no X-Next-Page
+  ---
+  duration_ms: 0.905776
+  type: 'test'
+  ...
+# Subtest: paginate: a Link to another origin is refused and the token is never sent there
+ok 19 - paginate: a Link to another origin is refused and the token is never sent there
+  ---
+  duration_ms: 0.692335
+  type: 'test'
+  ...
+# Subtest: paginate: a Link on the same origin but outside the API path is refused too
+ok 20 - paginate: a Link on the same origin but outside the API path is refused too
+  ---
+  duration_ms: 0.494294
+  type: 'test'
+  ...
+# Subtest: paginate: a relative Link is read against the base URL and stays inside the API path
+ok 21 - paginate: a relative Link is read against the base URL and stays inside the API path
+  ---
+  duration_ms: 0.694847
+  type: 'test'
+  ...
+# Subtest: paginate: X-Next-Page wins over a Link header
+ok 22 - paginate: X-Next-Page wins over a Link header
+  ---
+  duration_ms: 0.623913
+  type: 'test'
+  ...
+# Subtest: 429 with Retry-After in seconds: waits that long once, then succeeds
+ok 23 - 429 with Retry-After in seconds: waits that long once, then succeeds
+  ---
+  duration_ms: 0.684454
+  type: 'test'
+  ...
+# Subtest: Retry-After as an HTTP date is read against the injected clock; a date in the past means retry now
+ok 24 - Retry-After as an HTTP date is read against the injected clock; a date in the past means retry now
+  ---
+  duration_ms: 0.955859
+  type: 'test'
+  ...
+# Subtest: a Retry-After longer than maxDelayMs is not retried early: the error says how long to wait
+ok 25 - a Retry-After longer than maxDelayMs is not retried early: the error says how long to wait
+  ---
+  duration_ms: 1.96572
+  type: 'test'
+  ...
+# Subtest: Retry-After is honoured on 503 as well as 429, and ignored on other 5xx
+ok 26 - Retry-After is honoured on 503 as well as 429, and ignored on other 5xx
+  ---
+  duration_ms: 0.673289
+  type: 'test'
+  ...
+# Subtest: a malformed Retry-After is not a delay of zero: the client backs off instead
+ok 27 - a malformed Retry-After is not a delay of zero: the client backs off instead
+  ---
+  duration_ms: 1.940494
+  type: 'test'
+  ...
+# Subtest: back-off without Retry-After doubles from baseDelayMs, is capped by maxDelayMs, and jitter halves it at most
+ok 28 - back-off without Retry-After doubles from baseDelayMs, is capped by maxDelayMs, and jitter halves it at most
+  ---
+  duration_ms: 6.218564
+  type: 'test'
+  ...
+# Subtest: retries are capped: a server that keeps failing gives an error after retries + 1 attempts with the last status
+ok 29 - retries are capped: a server that keeps failing gives an error after retries + 1 attempts with the last status
+  ---
+  duration_ms: 0.835222
+  type: 'test'
+  ...
+# Subtest: other 4xx are not retried: one call, the status in the error
+ok 30 - other 4xx are not retried: one call, the status in the error
+  ---
+  duration_ms: 1.448195
+  type: 'test'
+  ...
+# Subtest: a write is not repeated by accident: POST and PATCH are retried on 429 only, not on 5xx or network errors
+ok 31 - a write is not repeated by accident: POST and PATCH are retried on 429 only, not on 5xx or network errors
+  ---
+  duration_ms: 1.596473
+  type: 'test'
+  ...
+# Subtest: PUT and DELETE are idempotent and are retried on 5xx; GET and HEAD too
+ok 32 - PUT and DELETE are idempotent and are retried on 5xx; GET and HEAD too
+  ---
+  duration_ms: 0.40997
+  type: 'test'
+  ...
+# Subtest: retryUnsafe: true lets a caller opt a POST into 5xx retries
+ok 33 - retryUnsafe: true lets a caller opt a POST into 5xx retries
+  ---
+  duration_ms: 0.422461
+  type: 'test'
+  ...
+# Subtest: a network error on a GET is retried and then succeeds; after the cap it is an error with code network and the system code
+ok 34 - a network error on a GET is retried and then succeeds; after the cap it is an error with code network and the system code
+  ---
+  duration_ms: 0.68077
+  type: 'test'
+  ...
+# Subtest: an error thrown by fetch that is not a network error is a bug of the caller: rethrown unchanged, not retried
+ok 35 - an error thrown by fetch that is not a network error is a bug of the caller: rethrown unchanged, not retried
+  ---
+  duration_ms: 1.4176
+  type: 'test'
+  ...
+# Subtest: a timeout becomes an error with code timeout, not a hang; a GET is retried after a timeout, a POST is not
+ok 36 - a timeout becomes an error with code timeout, not a hang; a GET is retried after a timeout, a POST is not
+  ---
+  duration_ms: 61.37424
+  type: 'test'
+  ...
+# Subtest: a per-call timeoutMs overrides the client default; the abort signal reaches fetch
+ok 37 - a per-call timeoutMs overrides the client default; the abort signal reaches fetch
+  ---
+  duration_ms: 19.788747
+  type: 'test'
+  ...
+# Subtest: the error carries status, method and path without the query string, and the GitLab message
+ok 38 - the error carries status, method and path without the query string, and the GitLab message
+  ---
+  duration_ms: 0.537126
+  type: 'test'
+  ...
+# Subtest: the token appears nowhere: not in messages, stacks, JSON, excerpts or log lines, also when the server echoes it
+ok 39 - the token appears nowhere: not in messages, stacks, JSON, excerpts or log lines, also when the server echoes it
+  ---
+  duration_ms: 1.325977
+  type: 'test'
+  ...
+# Subtest: a token without a GitLab shape (the 20-character bootstrap token) is redacted too, in errors and in excerpts
+ok 40 - a token without a GitLab shape (the 20-character bootstrap token) is redacted too, in errors and in excerpts
+  ---
+  duration_ms: 0.433287
+  type: 'test'
+  ...
+# Subtest: redact removes the configured token and any GitLab token shape, and keeps the rest
+ok 41 - redact removes the configured token and any GitLab token shape, and keeps the rest
+  ---
+  duration_ms: 0.236844
+  type: 'test'
+  ...
+# Subtest: a long body is cut to a short excerpt
+ok 42 - a long body is cut to a short excerpt
+  ---
+  duration_ms: 0.578709
+  type: 'test'
+  ...
+# Subtest: log receives retry events with method, path without the query, status, attempt and delay, and nothing else
+ok 43 - log receives retry events with method, path without the query, status, attempt and delay, and nothing else
+  ---
+  duration_ms: 0.43978
+  type: 'test'
+  ...
+# Subtest: log events for network errors and timeouts carry exactly method, path, status 0, code, attempt and delay
+ok 44 - log events for network errors and timeouts carry exactly method, path, status 0, code, attempt and delay
+  ---
+  duration_ms: 21.081814
+  type: 'test'
+  ...
+# Subtest: request has no okStatuses option and says so; raw accepts the statuses it is given, and checks them before sending
+ok 45 - request has no okStatuses option and says so; raw accepts the statuses it is given, and checks them before sending
+  ---
+  duration_ms: 0.781467
+  type: 'test'
+  ...
+# Subtest: encoded dot segments cannot climb out of /api/v4; ordinary dots and encoded slashes are fine
+ok 46 - encoded dot segments cannot climb out of /api/v4; ordinary dots and encoded slashes are fine
+  ---
+  duration_ms: 0.999703
+  type: 'test'
+  ...
+# Subtest: options are checked before anything is sent: okStatuses, expect, retries, maxBodyBytes and timeoutMs per call
+ok 47 - options are checked before anything is sent: okStatuses, expect, retries, maxBodyBytes and timeoutMs per call
+  ---
+  duration_ms: 0.379929
+  type: 'test'
+  ...
+# Subtest: credentials cannot be put in the query string, and more routing headers are dropped
+ok 48 - credentials cannot be put in the query string, and more routing headers are dropped
+  ---
+  duration_ms: 0.448507
+  type: 'test'
+  ...
+# Subtest: per-call retries: 0 stops a PUT that is an action (merge) from being repeated; a larger value allows more attempts
+ok 49 - per-call retries: 0 stops a PUT that is an action (merge) from being repeated; a larger value allows more attempts
+  ---
+  duration_ms: 0.461335
+  type: 'test'
+  ...
+# Subtest: a retried PUT sends the same body and headers again, after a 5xx and after a network error
+ok 50 - a retried PUT sends the same body and headers again, after a 5xx and after a network error
+  ---
+  duration_ms: 0.538523
+  type: 'test'
+  ...
+# Subtest: 501 Not Implemented is not retried; other 5xx are
+ok 51 - 501 Not Implemented is not retried; other 5xx are
+  ---
+  duration_ms: 0.793678
+  type: 'test'
+  ...
+# Subtest: retryUnsafe: true also covers network errors and timeouts of a POST
+ok 52 - retryUnsafe: true also covers network errors and timeouts of a POST
+  ---
+  duration_ms: 21.358874
+  type: 'test'
+  ...
+# Subtest: the shortcuts use their own method
+ok 53 - the shortcuts use their own method
+  ---
+  duration_ms: 0.586129
+  type: 'test'
+  ...
+# Subtest: every common network failure code is a network error; a code that is not one is rethrown unchanged
+ok 54 - every common network failure code is a network error; a code that is not one is rethrown unchanged
+  ---
+  duration_ms: 1.077678
+  type: 'test'
+  ...
+# Subtest: the token is trimmed before use
+ok 55 - the token is trimmed before use
+  ---
+  duration_ms: 0.310662
+  type: 'test'
+  ...
+# Subtest: 3xx answers are redirect errors across the whole band, and none is retried
+ok 56 - 3xx answers are redirect errors across the whole band, and none is retried
+  ---
+  duration_ms: 0.663653
+  type: 'test'
+  ...
+# Subtest: the excerpt collapses whitespace and the message detail comes from message, error or error_description
+ok 57 - the excerpt collapses whitespace and the message detail comes from message, error or error_description
+  ---
+  duration_ms: 0.378865
+  type: 'test'
+  ...
+# Subtest: the deadline timer is cleared after a success, after an HTTP error and after a network error
+ok 58 - the deadline timer is cleared after a success, after an HTTP error and after a network error
+  ---
+  duration_ms: 0.36703
+  type: 'test'
+  ...
+# Subtest: a body that stalls after the headers ends as a timeout, not a hang
+ok 59 - a body that stalls after the headers ends as a timeout, not a hang
+  ---
+  duration_ms: 29.941039
+  type: 'test'
+  ...
+# Subtest: a timeout is enforced even when the injected fetch ignores the abort signal
+ok 60 - a timeout is enforced even when the injected fetch ignores the abort signal
+  ---
+  duration_ms: 60.29939
+  type: 'test'
+  ...
+# Subtest: a connection cut while the body is read: the error says the request may have been processed and a POST is not repeated
+ok 61 - a connection cut while the body is read: the error says the request may have been processed and a POST is not repeated
+  ---
+  duration_ms: 1.077919
+  type: 'test'
+  ...
+# Subtest: a success body larger than maxBodyBytes is refused as soon as the limit is passed, without waiting for the rest
+ok 62 - a success body larger than maxBodyBytes is refused as soon as the limit is passed, without waiting for the rest
+  ---
+  duration_ms: 0.811193
+  type: 'test'
+  ...
+# Subtest: an error body is read only up to 64 KiB: a huge or endless error page gives the error at once
+ok 63 - an error body is read only up to 64 KiB: a huge or endless error page gives the error at once
+  ---
+  duration_ms: 0.497366
+  type: 'test'
+  ...
+# Subtest: paginate: a single page of 150 000 items is returned whole (no argument-spread limit)
+ok 64 - paginate: a single page of 150 000 items is returned whole (no argument-spread limit)
+  ---
+  duration_ms: 22.386154
+  type: 'test'
+  ...
+# Subtest: paginate: an X-Next-Page that is not a number or does not move forward stops with bad_pagination after one repeat, not 1000 requests
+ok 65 - paginate: an X-Next-Page that is not a number or does not move forward stops with bad_pagination after one repeat, not 1000 requests
+  ---
+  duration_ms: 1.055327
+  type: 'test'
+  ...
+# Subtest: paginate: rel="next" is found wherever it stands among the Link parameters and entries
+ok 66 - paginate: rel="next" is found wherever it stands among the Link parameters and entries
+  ---
+  duration_ms: 1.071837
+  type: 'test'
+  ...
+# Subtest: paginate: a Link with credentials, or with a path that only starts like the API path, is refused
+ok 67 - paginate: a Link with credentials, or with a path that only starts like the API path, is refused
+  ---
+  duration_ms: 0.681401
+  type: 'test'
+  ...
+# Subtest: paginate passes caller headers, the timeout and the retry count to every page, not only the first
+ok 68 - paginate passes caller headers, the timeout and the retry count to every page, not only the first
+  ---
+  duration_ms: 21.757965
+  type: 'test'
+  ...
+# Subtest: paginate refuses bad options before sending anything
+ok 69 - paginate refuses bad options before sending anything
+  ---
+  duration_ms: 0.472437
+  type: 'test'
+  ...
+# Subtest: a path must be a string: an array or an object that prints as a path is refused, not coerced
+ok 70 - a path must be a string: an array or an object that prints as a path is refused, not coerced
+  ---
+  duration_ms: 0.208918
+  type: 'test'
+  ...
+# Subtest: maxBodyBytes: a body of exactly the limit is accepted and one byte more is refused
+ok 71 - maxBodyBytes: a body of exactly the limit is accepted and one byte more is refused
+  ---
+  duration_ms: 0.326047
+  type: 'test'
+  ...
+# Subtest: a TypeError "fetch failed" is a network error whatever its cause: no cause, or a code not in the list
+ok 72 - a TypeError "fetch failed" is a network error whatever its cause: no cause, or a code not in the list
+  ---
+  duration_ms: 0.426101
+  type: 'test'
+  ...
+# Subtest: a HEAD request with a body is refused like a GET
+ok 73 - a HEAD request with a body is refused like a GET
+  ---
+  duration_ms: 0.086617
+  type: 'test'
+  ...
+# Subtest: projectId: whole numbers and non-empty paths only
+ok 74 - projectId: whole numbers and non-empty paths only
+  ---
+  duration_ms: 0.218458
+  type: 'test'
+  ...
+# Subtest: paginate: rel is matched as a whole word in a space-separated list; a lookalike is not a next link
+ok 75 - paginate: rel is matched as a whole word in a space-separated list; a lookalike is not a next link
+  ---
+  duration_ms: 0.971858
+  type: 'test'
+  ...
+# Subtest: paginate passes the per-call body limit to every page
+ok 76 - paginate passes the per-call body limit to every page
+  ---
+  duration_ms: 0.439267
+  type: 'test'
+  ...
+# Subtest: configuration is checked when the client is created
+ok 77 - configuration is checked when the client is created
+  ---
+  duration_ms: 0.736791
+  type: 'test'
+  ...
+# Subtest: plain http is allowed only for the machine itself (the settings sync runs on the GitLab host)
+ok 78 - plain http is allowed only for the machine itself (the settings sync runs on the GitLab host)
+  ---
+  duration_ms: 0.288956
+  type: 'test'
+  ...
+# Subtest: a path must start with one slash and must not be a URL: the token cannot be pointed at another host
+ok 79 - a path must start with one slash and must not be a URL: the token cannot be pointed at another host
+  ---
+  duration_ms: 0.423543
+  type: 'test'
+  ...
+# Subtest: the method must be one of the HTTP methods the client knows
+ok 80 - the method must be one of the HTTP methods the client knows
+  ---
+  duration_ms: 0.108813
+  type: 'test'
+  ...
+# Subtest: clients do not share state: two clients with different tokens send their own
+ok 81 - clients do not share state: two clients with different tokens send their own
+  ---
+  duration_ms: 0.382435
+  type: 'test'
+  ...
+# Subtest: the client object does not expose the token
+ok 82 - the client object does not expose the token
+  ---
+  duration_ms: 0.100924
+  type: 'test'
+  ...
+# Subtest: path: a path containing the configured token is refused before any call, and no error carries the path
+ok 83 - path: a path containing the configured token is refused before any call, and no error carries the path
+  ---
+  duration_ms: 0.251334
+  type: 'test'
+  ...
+# Subtest: path: a token shape in the path is refused even when it is not the configured token
+ok 84 - path: a token shape in the path is refused even when it is not the configured token
+  ---
+  duration_ms: 0.124308
+  type: 'test'
+  ...
+# Subtest: path: an uppercase token prefix in the path is refused too (case-insensitive check)
+ok 85 - path: an uppercase token prefix in the path is refused too (case-insensitive check)
+  ---
+  duration_ms: 0.061846
+  type: 'test'
+  ...
+# Subtest: path: paginate() refuses a token-bearing path before its own argument checks, with no path in the error
+ok 86 - path: paginate() refuses a token-bearing path before its own argument checks, with no path in the error
+  ---
+  duration_ms: 0.087148
+  type: 'test'
+  ...
+# Subtest: path: a normal path still passes (no false refusal)
+ok 87 - path: a normal path still passes (no false refusal)
+  ---
+  duration_ms: 0.265133
+  type: 'test'
+  ...
+# Subtest: path: request() with okStatuses refuses a token-bearing path with bad_path and no part of the path in the error
+ok 88 - path: request() with okStatuses refuses a token-bearing path with bad_path and no part of the path in the error
+  ---
+  duration_ms: 0.226931
+  type: 'test'
+  ...
+# Subtest: merge request by source branch: the one open MR from that branch, not by number
+ok 89 - merge request by source branch: the one open MR from that branch, not by number
+  ---
+  duration_ms: 17.227534
+  type: 'test'
+  ...
+# Subtest: merge request by source branch: none found gives null; two gives an error
+ok 90 - merge request by source branch: none found gives null; two gives an error
+  ---
+  duration_ms: 1.434446
+  type: 'test'
+  ...
+# Subtest: jobs: a pipeline lists every job, across pages
+ok 91 - jobs: a pipeline lists every job, across pages
+  ---
+  duration_ms: 1.835532
+  type: 'test'
+  ...
+# Subtest: jobs: failedJobs asks GitLab for the failed scope only
+ok 92 - jobs: failedJobs asks GitLab for the failed scope only
+  ---
+  duration_ms: 0.814626
+  type: 'test'
+  ...
+# Subtest: job log: returns the trace text of the exact job
+ok 93 - job log: returns the trace text of the exact job
+  ---
+  duration_ms: 0.583189
+  type: 'test'
+  ...
+# Subtest: job log: an oversize trace is refused, not truncated
+ok 94 - job log: an oversize trace is refused, not truncated
+  ---
+  duration_ms: 0.471411
+  type: 'test'
+  ...
+# Subtest: ids: a bad job or pipeline id is refused before any call
+ok 95 - ids: a bad job or pipeline id is refused before any call
+  ---
+  duration_ms: 0.614405
+  type: 'test'
+  ...
+# Subtest: errors: a failed log read names the status, never the token
+ok 96 - errors: a failed log read names the status, never the token
+  ---
+  duration_ms: 1.397049
+  type: 'test'
+  ...
+# Subtest: pipeline: status comes from GitLab as the pipeline object
+ok 97 - pipeline: status comes from GitLab as the pipeline object
+  ---
+  duration_ms: 0.738699
+  type: 'test'
+  ...
+# Subtest: project: a path is looked up once per client and its id is reused
+ok 98 - project: a path is looked up once per client and its id is reused
+  ---
+  duration_ms: 0.876615
+  type: 'test'
+  ...
+# Subtest: project: a lookup that answers a different project is refused
+ok 99 - project: a lookup that answers a different project is refused
+  ---
+  duration_ms: 0.636881
+  type: 'test'
+  ...
+# Subtest: merge request by iid: one that belongs to another project is refused, not acted on
+ok 100 - merge request by iid: one that belongs to another project is refused, not acted on
+  ---
+  duration_ms: 0.601979
+  type: 'test'
+  ...
+# Subtest: mergeStatus: mergeable only when open, not a draft, mergeable and its head pipeline succeeded
+ok 101 - mergeStatus: mergeable only when open, not a draft, mergeable and its head pipeline succeeded
+  ---
+  duration_ms: 0.201417
+  type: 'test'
+  ...
+# Subtest: create merge request: creates one when none is open
+ok 102 - create merge request: creates one when none is open
+  ---
+  duration_ms: 1.059995
+  type: 'test'
+  ...
+# Subtest: create merge request: an open one already there is returned and nothing is posted
+ok 103 - create merge request: an open one already there is returned and nothing is posted
+  ---
+  duration_ms: 1.548328
+  type: 'test'
+  ...
+# Subtest: create merge request: a 409 on create returns the one GitLab already has, never a second
+ok 104 - create merge request: a 409 on create returns the one GitLab already has, never a second
+  ---
+  duration_ms: 1.141359
+  type: 'test'
+  ...
+# Subtest: create merge request: a 500 on create is not repeated (one POST), and the error is transient
+ok 105 - create merge request: a 500 on create is not repeated (one POST), and the error is transient
+  ---
+  duration_ms: 0.809093
+  type: 'test'
+  ...
+# Subtest: create merge request: same source and target, or an empty title, is refused before any call
+ok 106 - create merge request: same source and target, or an empty title, is refused before any call
+  ---
+  duration_ms: 0.251208
+  type: 'test'
+  ...
+# Subtest: update merge request: refused, with no write, when the iid has another source branch
+ok 107 - update merge request: refused, with no write, when the iid has another source branch
+  ---
+  duration_ms: 0.554959
+  type: 'test'
+  ...
+# Subtest: update merge request: without expect it is refused before any call
+ok 108 - update merge request: without expect it is refused before any call
+  ---
+  duration_ms: 0.141382
+  type: 'test'
+  ...
+# Subtest: update merge request: marking a draft adds the Draft prefix once, and removing it strips it
+ok 109 - update merge request: marking a draft adds the Draft prefix once, and removing it strips it
+  ---
+  duration_ms: 0.703431
+  type: 'test'
+  ...
+# Subtest: safe merge: merges once, pinned to the reviewed head, with retries off
+ok 110 - safe merge: merges once, pinned to the reviewed head, with retries off
+  ---
+  duration_ms: 0.863974
+  type: 'test'
+  ...
+# Subtest: safe merge: every precondition stops the merge before it is sent
+ok 111 - safe merge: every precondition stops the merge before it is sent
+  ---
+  duration_ms: 2.035351
+  type: 'test'
+  ...
+# Subtest: safe merge: a 500 on the merge is not repeated; a merge GitLab did complete is reported as merged
+ok 112 - safe merge: a 500 on the merge is not repeated; a merge GitLab did complete is reported as merged
+  ---
+  duration_ms: 2.680713
+  type: 'test'
+  ...
+# Subtest: safe merge: a failed merge that is still open is an error, and it is sent once
+ok 113 - safe merge: a failed merge that is still open is an error, and it is sent once
+  ---
+  duration_ms: 1.928627
+  type: 'test'
+  ...
+# Subtest: safe merge: a bad head SHA is refused before any call
+ok 114 - safe merge: a bad head SHA is refused before any call
+  ---
+  duration_ms: 0.183443
+  type: 'test'
+  ...
+# Subtest: pipeline trigger: sent once even on a 500, and refused for a credential-looking variable
+ok 115 - pipeline trigger: sent once even on a 500, and refused for a credential-looking variable
+  ---
+  duration_ms: 1.296866
+  type: 'test'
+  ...
+# Subtest: job retry: a running job is refused with no write; a failed job is retried once
+ok 116 - job retry: a running job is refused with no write; a failed job is retried once
+  ---
+  duration_ms: 0.973144
+  type: 'test'
+  ...
+# Subtest: pipeline retry: only a failed or canceled pipeline; a 500 is not repeated
+ok 117 - pipeline retry: only a failed or canceled pipeline; a 500 is not repeated
+  ---
+  duration_ms: 0.8181
+  type: 'test'
+  ...
+# Subtest: webhook: the configured secret in X-Gitlab-Token is accepted, and the result holds no secret
+ok 118 - webhook: the configured secret in X-Gitlab-Token is accepted, and the result holds no secret
+  ---
+  duration_ms: 0.535216
+  type: 'test'
+  ...
+# Subtest: webhook: a Headers object is read too
+ok 119 - webhook: a Headers object is read too
+  ---
+  duration_ms: 0.194302
+  type: 'test'
+  ...
+# Subtest: webhook: missing, wrong (same length and different length), malformed and mismatched deliveries are rejected
+ok 120 - webhook: missing, wrong (same length and different length), malformed and mismatched deliveries are rejected
+  ---
+  duration_ms: 9.140516
+  type: 'test'
+  ...
+# Subtest: webhook: no secret configured is a configuration error, never an accepted delivery
+ok 121 - webhook: no secret configured is a configuration error, never an accepted delivery
+  ---
+  duration_ms: 0.368473
+  type: 'test'
+  ...
+# Subtest: webhook: a delivery seen before is a duplicate; one without a uuid never is
+ok 122 - webhook: a delivery seen before is a duplicate; one without a uuid never is
+  ---
+  duration_ms: 0.123244
+  type: 'test'
+  ...
+# Subtest: classifyError: each kind is distinguishable
+ok 123 - classifyError: each kind is distinguishable
+  ---
+  duration_ms: 0.213568
+  type: 'test'
+  ...
+# Subtest: clientFromEnv: the URL is required, the token comes from the environment or a 0600 file, and no error shows a token
+ok 124 - clientFromEnv: the URL is required, the token comes from the environment or a 0600 file, and no error shows a token
+  ---
+  duration_ms: 1.298609
+  type: 'test'
+  ...
+# Subtest: leak check: a failed write, with the token in the client, puts no token in the error
+ok 125 - leak check: a failed write, with the token in the client, puts no token in the error
+  ---
+  duration_ms: 2.401775
+  type: 'test'
+  ...
+1..125
+# tests 125
+# suites 0
+# pass 125
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 403.024914

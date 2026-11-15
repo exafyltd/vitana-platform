@@ -1,0 +1,26 @@
+{
+  "resolveProject(vitana/vitana-platform)": {
+    "error": "permission",
+    "status": 401,
+    "code": "http"
+  },
+  "open merge requests (first page)": {
+    "error": "permission",
+    "status": 401,
+    "code": "http"
+  },
+  "getMergeRequest + mergeStatus (first open MR)": {
+    "error": "permission",
+    "status": 401,
+    "code": "http"
+  },
+  "nonexistent merge request is not_found": {
+    "kind": "permission",
+    "status": 401
+  },
+  "failed jobs of a failed pipeline (first page)": {
+    "error": "permission",
+    "status": 401,
+    "code": "http"
+  }
+}

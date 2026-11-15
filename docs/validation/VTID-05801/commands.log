@@ -2,3 +2,11 @@
 node --test scripts/eng/gitlab-api.test.mjs   -> 88 tests, 88 pass, 0 fail (outputs/test-run.txt)
 Mutation harness, line 173 mutant (escaped perl replacement) applied to a copy of gitlab-api.mjs:
   perl -0pi -e <expr>  -> URL line changed; node --test gitlab-api.test.mjs -> 3 fail (the mutant is caught)
+# VTID-05801 operations batch (this change)
+node --test scripts/eng/gitlab-ops.test.mjs                                   -> 37 pass, 0 fail
+node --test scripts/eng/gitlab-ops.test.mjs scripts/eng/gitlab-api.test.mjs   -> 125 pass, 0 fail (outputs/test-run-ops-and-client.txt)
+node --test scripts/eng/*.test.mjs scripts/eng/testing/*.test.mjs scripts/collab/*.test.mjs
+     before change: 1046 tests, 5 fail (outputs/test-run-eng-collab-BASELINE-before-change.txt)
+     after change:  1074 tests, 5 fail (outputs/test-run-eng-collab-full.txt); same five in both
+outputs/mutate-ops.sh <repo root>   -> 4 mutants caught, unmodified and restored pass (outputs/mutants.txt)
+outputs/live-readonly.mjs (GITLAB_URL=https://gitlab.vitanaland.com, saved credential) -> 401 on every read (outputs/live-readonly.txt)

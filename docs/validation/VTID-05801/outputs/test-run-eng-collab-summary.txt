@@ -1,0 +1,9 @@
+not ok 50 - case 6: the real checkout(s) generate a clean set
+not ok 59 - CLI: evidence passes on this repository for a VTID whose evidence is committed (no buffer overflow on a large tree)
+not ok 129 - each spec of plan item 5 belongs to its programme
+not ok 130 - each added slug matches the spec slug pattern and is listed exactly once
+not ok 131 - each programme lists the repo of every spec it holds (R2-F1)
+# tests 1074
+# pass 1068
+# fail 5
+# skipped 1

@@ -1,0 +1,6 @@
+unmodified: fail=0 (expect 0)
+head-SHA check removed: fail=1 (expect >0, caught=yes)
+merge action retried (retries:0 removed): fail=1 (expect >0, caught=yes)
+webhook token check removed: fail=1 (expect >0, caught=yes)
+create: 409 recovery removed: fail=1 (expect >0, caught=yes)
+restored: fail=0 (expect 0)
