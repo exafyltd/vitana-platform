@@ -1,7 +1,6 @@
 ---
 lane: platform-superseded-concurrency
-state: executing
-claimed_by: kiro-exafyltd-202611051700-c1a1
+state: parked
 next_actor: kiro
 branch: kiro/ci-superseded-pr-runs/platform-superseded-concurrency
 depends_on: []
@@ -50,8 +49,9 @@ paths:
   - .github/workflows/VCAOP-GUARDRAILS-CI.yml
   - .github/workflows/VOICE-PIPELINE-PARITY-SCANNER.yml
   - .github/workflows/VOICE-TOOLS-MANIFEST-RECONCILE.yml
-updated: 2026-11-02T16:31Z
+updated: 2026-11-13T21:48Z
 vtid: VTID-05513
+parked_from: executing
 ---
 
 # Lane: platform-superseded-concurrency (repo exafyltd/vitana-platform)
@@ -94,3 +94,5 @@ reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 PR: https://github.com/exafyltd/vitana-platform/pull/4672
 Findings: none blocking. The range 5c4a8249e7..e34c102e53 is the merge of current main (AWS-STAGE-DEPLOY-GATEWAY.yml came from main, a clean merge). No lane workflow changed in it; the lane's concurrency blocks are unchanged.
 Next: the land step merges under §7b once every required check is green on this head and the PR is 0 behind main.
+### 2026-11-13T21:48Z · pm-agent · executing → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
