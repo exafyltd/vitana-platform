@@ -133,6 +133,15 @@ comments cannot address one account — each account **pulls** its own work inst
 - **Lane fields (VTID-05213):** `executor: kiro|claude` (who builds it), `reviewer_seat` (legacy, optional) and
   `paths` (globs of the only files the lane may change; required once it is `executing`). The PR-GATE check
   **Lane scope** fails a lane PR that changes anything else.
+- **Executor transfer (VTID-05802, plan lane-executor-transfer):** a builder may move a lane's `executor` between `kiro`
+  and `claude`, deliberately, in the lane's own log. This is not the routing override in §7 (which leaves `executor`
+  unchanged) and not the lane administration in §3a (which changes another lane). Sequence, all in one commit on the lane
+  branch, made while the builder still holds `claimed_by`: set `executor` and `next_actor` to the new executor, and add
+  the log line `transfer: <from>→<to>, by <session>, reason <text>, at <time>`. Push, then release the claim. The target
+  executor claims the lane under §5. Lane scope accepts an `executor` change only with such an entry, committed by a
+  session of the range. The seat check accepts a Claude session on a kiro lane only after a transfer to claude. `seat`,
+  `paths` and `reviewer_seat` never change in a transfer, and the reviewer-agent rule is unchanged: a builder never
+  accepts its own lane.
 - **Governance paths** (`.github/**`, `.claude/**`, `.kiro/steering/**`, `.kiro/automations/**`, `scripts/collab/**`,
   `CLAUDE.md`, `docs/programs/areas.yaml`): a Kiro lane may change one when the reviewer agent accepts on the current
   head and every check is green — **except the protected gate files**, which never merge on a reviewer-agent accept
