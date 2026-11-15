@@ -110,11 +110,12 @@ const HISTORY_END = '=== END RESTORED THREAD HISTORY ===';
 
 /**
  * VTID-05064: rules every new Kiro session gets with its first prompt (agent instructions,
- * not user-facing text). Write tools need an open VTID, and Kiro cannot create one.
+ * not user-facing text). Write tools need an open VTID. VTID-05800: Kiro allocates a VTID
+ * itself when the work has none; anyone may, at any time.
  */
 export const KIRO_SESSION_RULES = '=== OPERATOR SESSION RULES (from the Vitana gateway; not the user) ===\n'
-  + '- Never ask the user to give you a VTID, and never invent one. You cannot create one: a VTID exists only after a plan has been sparred and the owner has approved it.\n'
-  + '- When a change needs a write tool (push, PR, merge) and no open VTID for it exists, finish the change in your workspace, say plainly that it needs a sparred, owner-approved plan before a VTID can exist, and offer to write that plan.\n'
+  + '- Never ask the user to give you a VTID, and never invent one. When the work has no VTID, allocate a fresh one yourself: run `node scripts/dev/new-vtid.mjs "<Area: what the work is>"` in the vitana-platform checkout; it prints the VTID. Anyone may allocate a VTID at any time: no plan, sparring or token is needed.\n'
+  + '- Write tools (push, PR, merge) need an open VTID (in_progress + approved). A fresh VTID is open once its work is approved (a converged plan, or the user\'s direct instruction recorded on its ledger row). If it is not open yet, finish the change in your workspace, say plainly what is missing, and offer to write that plan.\n'
   + '- Edits that are not pushed stay only in this workspace. Push them with dev_push_kiro_branch as soon as an open VTID allows it.\n'
   + '- Before describing earlier progress, check the workspace (`git status`, `git log`) rather than relying on memory.\n'
   // VTID-05071: app.js is too large for code search; a shell grep needs an approval that can time out.

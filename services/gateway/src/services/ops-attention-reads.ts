@@ -20,6 +20,7 @@ import { buildHealthSummary } from './health-summary-builder';
 import { buildVoiceOverview } from './voice-supervisor-overview';
 import { buildSupervisorSnapshot } from './dev-autopilot-supervisor';
 import { getAllSystemControls } from './system-controls-service';
+import { vtidAllocatorEnvSwitch } from '../lib/vtid-allocator-switch';
 import { isAutonomousExecutionTask } from '../routes/worker-orchestrator';
 import { fetchApprovalEligibleVtids, fetchPrInfoForVtids } from '../routes/approvals';
 import { runRuntimeCheckCached } from '../routes/ops-runtime-health';
@@ -200,13 +201,15 @@ export function createAttentionReads(opts: { authHeader?: string } = {}): Attent
         updated_by: c.updated_by,
         updated_at: c.updated_at,
       }));
-      // Same effective semantics as isVtidAllocatorEnabled(): the env var
-      // wins, and a missing control row means disabled.
+      // Same effective semantics as isVtidAllocatorEnabled() (VTID-05800): the
+      // env var wins either way, and a missing control row means ON.
       const alloc = out.find((c) => c.key === 'vtid_allocator_enabled');
-      if ((process.env.VTID_ALLOCATOR_ENABLED ?? 'false') === 'true') {
-        if (alloc) alloc.enabled = true;
+      const env = vtidAllocatorEnvSwitch();
+      if (env !== null) {
+        if (alloc) alloc.enabled = env;
+        else out.push({ key: 'vtid_allocator_enabled', enabled: env, reason: `VTID_ALLOCATOR_ENABLED=${env}`, updated_by: null, updated_at: null });
       } else if (!alloc) {
-        out.push({ key: 'vtid_allocator_enabled', enabled: false, reason: 'control row missing', updated_by: null, updated_at: null });
+        out.push({ key: 'vtid_allocator_enabled', enabled: true, reason: 'on by default (VTID-05800)', updated_by: null, updated_at: null });
       }
       // isAutopilotExecutionArmed(): a missing row means ARMED — nothing to add.
       return out;

@@ -46,7 +46,8 @@ Preflight before every push of a `plan(` or lane branch: `node vitana-platform/s
 until it passes, then push.
 1. **Answer an open sparring round** (a `round-<n>.md` without its `responses` file): one disposition per finding,
    update the plan block, commit `responses-<n>.md` + `plan.md` on the `plan(` PR branch, run preflight, then push. PLAN-SPAR runs the next
-   round. An escalated verdict is an owner stop. VTIDs come only from CI PLAN-SPAR after policy approval, never by hand.
+   round. An escalated verdict is an owner stop. PLAN-SPAR allocates a VTID for each lane still without one on
+   convergence; a lane that needs one sooner gets it from `node vitana-platform/scripts/dev/new-vtid.mjs`.
 2. **Merge the `plan(` PR** after convergence, under §7b, so the lanes read their files from `main`.
 3. **Fix forward** a lane whose PR head has a failed check: read the log, fix inside the lane's `paths`, run preflight, then push. At most
    3 attempts per lane; the 4th failure parks the lane (`parked`, `parked_from`, `next_actor: owner`) with the
@@ -91,7 +92,7 @@ stops when the run's time is almost up: last heartbeat, everything pushed, claim
 wake-up resumes from git.
 
 ## Never
-Never allocate a VTID by hand, never deploy to production or dispatch a production workflow except an owner-commanded
+Never deploy to production or dispatch a production workflow except an owner-commanded
 publish in an interactive session (§7c), never run `publish-to-prod.sh`, never write to Supabase or any live system from a session tool (a database change is a migration
 file in the lane's PR), never test against production, never skip, disable or loosen a test, never force-push, never
 accept your own lane.

@@ -22,8 +22,9 @@ plans of this seat have a live driver, and otherwise does one small item.
    and use those paths wherever this file writes `vitana-platform` or `vitana-v1`.
 1. **Load the project rules** — `.kiro/steering/vitana-load-project-rules.md`, then everything it lists
    (`.kiro/steering/vitana-kiro-notes.md`, `CLAUDE.md`, `.claude/CLAUDE.md`, `.claude/rules/collaboration.md`). They are
-   binding (§7a). An automation run never allocates a VTID (CI PLAN-SPAR does), never merges or approves a PR on GitHub,
-   never dispatches a workflow (the exceptions seat's re-run allowlist is the only workflow action), never deploys, never
+   binding (§7a). An automation run allocates a VTID whenever its item needs one (`node vitana-platform/scripts/dev/new-vtid.mjs`),
+   never merges or approves a PR on GitHub, never dispatches a workflow other than `VTID-ALLOCATE` (the exceptions
+   seat's re-run allowlist is the only other workflow action), never deploys, never
    reviews its own lane, never applies a migration and never writes to Supabase/AWS or any live system — even if a
    credential would allow it. Never test against production. A database change is a migration file in the lane's PR.
 2. **Session id:** `node scripts/collab/queue.mjs session-id --agent kiro --seat exafyltd` → `kiro-exafyltd-YYYYMMDDHHMM-xxxx`.
@@ -87,7 +88,8 @@ Before you write a lane file or a `handoff.md`, claim it (`queue.mjs claim`); re
   classify the reason, then:
   - no real blocker (capacity, a reassignment, a stale hand-off) → `next_actor: kiro` for its `seat` (no seat → build
     it under **Builder (C)**);
-  - a VTID is missing → log once that CI PLAN-SPAR allocates it (E3 or the allocation retry), never by hand;
+  - a VTID is missing → allocate it (`node vitana-platform/scripts/dev/new-vtid.mjs "<lane title>"`) and write it
+    into the lane file in the lane's own commit;
   - a migration apply, production or another stop case of `collaboration.md` §7 → `state: parked`, `parked_from`,
     `next_actor: owner` and the five-part stop message in the log;
   - a governance path → `next_actor: kiro` and the log line `interactive-only: governance lane` (an automation run
@@ -127,7 +129,8 @@ an entry for every finding; update the plan block in `plan.md`; commit both on t
 `Collab-Session: <your id>` / `Collab-Lane: <slug>/_plan`; push. PLAN-SPAR runs the next round. Stop.
 A new plan (when the owner asked you for one): push `plan.md`, `handoff.md` (`state: drafted`, `author: kiro`,
 `author_seat: exafyltd`, `next_actor: kiro`), `tasks.md` and `lanes/*.md` (`ready`, each with `executor`, `seat` and
-`reviewer_seat` from `docs/programs/areas.yaml`, `paths`, `depends_on`) as PR `plan(<slug>): …`. No VTIDs — CI allocates them.
+`reviewer_seat` from `docs/programs/areas.yaml`, `paths`, `depends_on`) as PR `plan(<slug>): …`. Lane VTIDs: CI allocates any still missing on convergence; a
+builder that needs one sooner allocates it itself.
 
 ### Reviewer (B)
 Claim the lane (`queue.mjs claim <slug>/<lane> --session <id> --repo <repo of the spec>`). Check the lane's PR(s)

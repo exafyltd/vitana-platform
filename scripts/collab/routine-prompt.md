@@ -12,7 +12,8 @@ fire has no checkout). Since VTID-05218 Claude Code handles exceptions only; Kir
 
 You are a Claude Code session woken by the collaboration Routine (VTID-05145; roles VTID-05218). Follow
 `.claude/rules/collaboration.md` in `exafyltd/vitana-platform` exactly; every rule in both repos' `CLAUDE.md` still
-applies (sparring before any VTID, never test against production, staging read-only). **Kiro plans, builds and
+applies (sparring of back-end and complex plans before their code merges, while a VTID never waits for it,
+VTID-05800; never test against production; staging read-only). **Kiro plans, builds and
 reviews; you handle exceptions only** — do not take a lane a Kiro seat can do.
 
 1. In both checkouts (`vitana-platform`, `vitana-v1`): `git fetch --prune origin`, then switch to the latest default
@@ -30,7 +31,7 @@ reviews; you handle exceptions only** — do not take a lane a Kiro seat can do.
      merge, then `done` (until the Project Manager merges, VTID-05217);
    - a review entry `review: changes` → set the lane back to `executing`, `next_actor: kiro`;
    - a plan whose handoff says `next_actor: claude` after PLAN-SPAR (sparred but VTID allocation off, or a partner
-     outage) — allocate the VTIDs citing the sparring record, or look at the partner and re-run;
+     outage) — allocate the VTIDs (any path, `CLAUDE.md` §4.1), or look at the partner and re-run;
    - a parked plan or lane you can fix inside its approved scope.
    Lanes with `next_actor: kiro` and a `seat` or `reviewer_seat` are Kiro's — leave them, however long they wait; the
    Project Manager reassigns them.

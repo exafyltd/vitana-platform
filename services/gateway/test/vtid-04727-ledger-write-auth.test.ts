@@ -178,10 +178,16 @@ describe('VTID-04727 wiring', () => {
     [tasks, "oasisTasksRouter.patch('/api/v1/oasis/tasks/:id', requireLedgerWriteAuth,"],
     [tasks, "oasisTasksRouter.delete('/api/v1/oasis/tasks/:id', requireLedgerWriteAuth,"],
     [tasks, "oasisTasksRouter.post('/api/v1/oasis/tasks/:vtid/complete', requireLedgerWriteAuth,"],
-    [vtid, 'router.post("/allocate", requireLedgerWriteAuth,'],
     [vtid, 'router.post("/create", requireLedgerWriteAuth,'],
   ])('write route is gated: %#', (src, line) => {
     expect(src).toContain(line);
+  });
+
+  // VTID-05800 (owner decision 2026-11-15, contract changed on purpose): allocating a VTID is open to every caller,
+  // so /allocate no longer sits behind the ledger write gate. Creating, editing, closing and deleting tasks still do.
+  it('/allocate is open to everyone (VTID-05800), not behind requireLedgerWriteAuth', () => {
+    expect(vtid).toContain('router.post("/allocate", allowVtidAllocation,');
+    expect(vtid).not.toContain('router.post("/allocate", requireLedgerWriteAuth,');
   });
 
   it('no write route on the tasks router is left ungated', () => {

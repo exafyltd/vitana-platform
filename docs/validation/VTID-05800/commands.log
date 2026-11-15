@@ -1,0 +1,49 @@
+# VTID-05800 commands run in the Kiro Web sandbox (session kiro-exafy-202611132341-8c70), 2026-11-15.
+# Base: origin/main 817e1d3e3d (vitana-platform), 78455457 (vitana-v1). No SQL and no write against any live system.
+# The only live calls: two read-only GETs of /api/v1/vtid/allocator/status (staging and production), both
+#   {"ok":true,"enabled":true,"env_var_enabled":true,"db_control":{"enabled":true,...}} before this change.
+
+## VTID
+gh api -X POST repos/exafyltd/vitana-platform/actions/workflows/VTID-ALLOCATE.yml/dispatches   -> run 43689172564, VTID_RESULT=VTID-05800
+
+## RED on origin/main (behaviour), GREEN on the change
+temporary jest file (not committed): anonymous POST /api/v1/vtid/allocate and /allocate-internal, LEDGER_WRITE_AUTH_MODE=enforce
+  on a clean origin/main worktree                       -> 2 failed: /allocate 401 (expected 201), /allocate-internal 500 (expected 201)
+  on the change                                         -> 2 passed
+npx jest test/vtid-05800-free-vtid-allocation.test.ts on origin/main -> fails: Cannot find module '../src/middleware/vtid-allocation-access'
+node docs/validation/VTID-05800/pglite/run.mjs --base   -> outputs/pglite-main.txt (RED: with the gate mode flipped to enforce, main refuses an allocation without a sparring record)
+node docs/validation/VTID-05800/pglite/run.mjs          -> outputs/pglite-migration.txt (11/11 ok: migration twice, trigger and index gone, mode off, enforce flip no longer refuses, same sparring id twice, existing rows untouched, rollback, re-apply)
+
+## Gateway (services/gateway)
+npx jest test/vtid-05800-free-vtid-allocation.test.ts   -> 18 passed
+npx jest test/vtid-05800-free-vtid-allocation.test.ts test/vtid-04727-ledger-write-auth.test.ts test/routes/vtid-04868-allocate-plan-hash.test.ts test/vtid-04868-plan-sparring-service.test.ts test/vtid-04876-ops-attention-reads.test.ts test/vtid-04868-plan-sparring-session-layer.test.ts -> 6 suites, 127 passed (before the last two cases of the 05800 file were added)
+npx jest test/vtid-05018-kiro-thread-memory.test.ts test/vtid-05071-kiro-keeps-thread.test.ts test/vtid-05006-kiro-write-tools.test.ts test/vtid-05014-kiro-v1-writes.test.ts -> 53 passed
+npx jest (full suite, --maxWorkers=6)                    -> 1773 suites passed, 3 failed, 3 skipped; 29722 tests passed, 3 failed
+  the 3 failing suites fail the same way on a clean origin/main worktree (environment of this sandbox, not this change):
+  test/providers/storage-provider.test.ts, test/eng-platform-oidc-roles.test.ts, test/vtid-04226-eventbridge-test-contract-schedules.test.ts
+  (the full run regenerates services/gateway/specs/command-hub-symbol-index.json; that file was restored, it is not part of this change)
+npx tsc --noEmit -p .                                    -> only TS2742 "inferred type cannot be named" errors, caused by this
+  worktree's node_modules symlink pointing outside the worktree; no other error, none in a file of this change
+
+## Scripts (node --test, the UNIT workflow's file list)
+node --test $(find scripts -name '*.test.cjs' -o -name '*.test.mjs')  -> 1423 tests, 1410 pass, 11 fail, 2 skipped
+  the same 11 fail on a clean origin/main worktree: scripts/eng/fleet-classes-structure (5), scripts/eng/free-tier-guard (4),
+  scripts/eng/gitlab-settings (1), scripts/collab/kiro-web-steering case 6 (vitana-v1 main has no CLAUDE.md since v1 #1691/#1692)
+node --test scripts/dev/new-vtid.test.mjs               -> 7 pass
+node --test scripts/ci/pr-gate/__tests__/*.test.mjs     -> 16 pass
+node --test scripts/ci/kiro-steering/guard.test.cjs     -> 67 pass
+
+## Evidence checks
+validateManifest(docs/validation/VTID-05800/staging-tests.json, gateway) -> ok
+PR-GATE weakening (evaluateWeakening over the changed tests) -> 2 findings, both declared in scope.json weakens_tests:
+  vtid-04868-plan-sparring-service.test.ts (57 -> 54 cases), vtid-04868-plan-sparring-session-layer.test.ts (7 -> 4 cases)
+git grep (both repos) for "VTIDs come only", "hand-allocat", "allocate a VTID by hand", "never allocate(s) a VTID",
+  "No VTID before convergence", "allocated only after its plan is sparred", "BEFORE any VTID is allocated",
+  "sparring before any VTID", "You cannot create one", "exists only after a sparred" -> none left outside history
+  (changelogs, specs, validation records, second-brain, the 2026-10 sparring migrations) and the tests that pin their absence
+
+## vitana-v1 (/projects/sandbox/.wt-vtid-v1)
+node --test scripts/ci/pr-gate/__tests__/*.test.mjs     -> 43 pass
+node --test scripts/ci/kiro-steering/guard.test.cjs     -> 32 pass, 1 fail ("this repository passes"): the guard reports
+  the missing CLAUDE.md / .claude/CLAUDE.md and the execution-continuity twin, the same 3 lines on clean v1 main 78455457
+JSON.parse(.claude/settings.json)                       -> ok (both repos)

@@ -43,12 +43,13 @@ CREATE TABLE vtid_ledger (
 - `GET /api/v1/vtid/list` - List VTIDs with filters
 - `GET /api/v1/tasks` - Get tasks for Task Board UI
 
-**Insert gate (VTID-04868):** every new row passes the BEFORE INSERT trigger
-`trg_plan_sparring_check` (Plan Sparring Gate, log mode — see
-`plan_sparring_sessions` below). `metadata.sparring_id` is unique across rows
-(partial index `vtid_ledger_sparring_id_unique`); after the hardening
-migration `20261004120000` a sparring id binds only together with
-`metadata.plan_hash` equal to the record's approved `final_plan_hash`.
+**No insert gate (VTID-05800, owner decision 2026-11-15):** any caller may allocate
+a VTID. Migration `20261115090000_vtid_05800_plan_sparring_gate_off.sql` dropped the
+BEFORE INSERT trigger `trg_plan_sparring_check` and the partial unique index
+`vtid_ledger_sparring_id_unique`, and set `plan_sparring_config.mode` to `off`
+(rollback `docs/validation/VTID-05800/rollback-20261115090000.sql`).
+`metadata.sparring_id` / `metadata.plan_hash` stay optional metadata that
+`allocate_global_vtid` records when a caller passes them (VTID-04868 history).
 
 **Status Values:**
 - `scheduled` - Planned work
@@ -1251,6 +1252,9 @@ CREATE TABLE public.pm_lease (                 -- one row; a PM tick acts only w
 ```
 
 ### plan_sparring_sessions / plan_sparring_config / plan_sparring_shadow_log — Plan Sparring Gate, LOG MODE (VTID-04868) — committed, NOT yet applied
+
+> **VTID-05800 (2026-11-15):** the gate is off. `plan_sparring_config.mode` is `off` and the `vtid_ledger` trigger and
+> unique index are dropped (`20261115090000`); a VTID never needs a sparring record. The tables stay for plan review.
 
 Every new plan is sparred by an independent partner before its VTID is
 allocated (owner decisions 2026-10-03/04). P1 ships the gate in **log mode**:

@@ -165,14 +165,25 @@ describe('bounded supabase reads', () => {
     expect(await createAttentionReads().selfHealPendingApproval()).toEqual([{ id: '1', vtid: 'VTID-5', title: '/e', waiting_since: 'C' }]);
   });
 
-  it('system controls: an empty list is unreadable; a missing allocator row is disabled unless the env var is set', async () => {
-    await expect(createAttentionReads().systemControls()).rejects.toThrow(/unreadable/);
-    (getAllSystemControls as jest.Mock).mockResolvedValue([{ key: 'autopilot_execution_enabled', enabled: true, reason: '', updated_by: null, updated_at: 'U' }]);
-    const rows = await createAttentionReads().systemControls();
-    expect(rows.find((r) => r.key === 'vtid_allocator_enabled')).toMatchObject({ enabled: false });
-    process.env.VTID_ALLOCATOR_ENABLED = 'true';
-    (getAllSystemControls as jest.Mock).mockResolvedValue([{ key: 'vtid_allocator_enabled', enabled: false, reason: '', updated_by: null, updated_at: 'U' }]);
-    expect((await createAttentionReads().systemControls()).find((r) => r.key === 'vtid_allocator_enabled')!.enabled).toBe(true);
+  // VTID-05800 (owner decision 2026-11-15, contract changed on purpose): allocation is on by default, so a missing
+  // allocator row reads as enabled; the env var still wins either way.
+  it('system controls: an empty list is unreadable; a missing allocator row is ON unless VTID_ALLOCATOR_ENABLED=false', async () => {
+    const saved = process.env.VTID_ALLOCATOR_ENABLED;
+    try {
+      await expect(createAttentionReads().systemControls()).rejects.toThrow(/unreadable/);
+      delete process.env.VTID_ALLOCATOR_ENABLED;
+      (getAllSystemControls as jest.Mock).mockResolvedValue([{ key: 'autopilot_execution_enabled', enabled: true, reason: '', updated_by: null, updated_at: 'U' }]);
+      const rows = await createAttentionReads().systemControls();
+      expect(rows.find((r) => r.key === 'vtid_allocator_enabled')).toMatchObject({ enabled: true });
+      process.env.VTID_ALLOCATOR_ENABLED = 'false';
+      expect((await createAttentionReads().systemControls()).find((r) => r.key === 'vtid_allocator_enabled')).toMatchObject({ enabled: false });
+      process.env.VTID_ALLOCATOR_ENABLED = 'true';
+      (getAllSystemControls as jest.Mock).mockResolvedValue([{ key: 'vtid_allocator_enabled', enabled: false, reason: '', updated_by: null, updated_at: 'U' }]);
+      expect((await createAttentionReads().systemControls()).find((r) => r.key === 'vtid_allocator_enabled')!.enabled).toBe(true);
+    } finally {
+      if (saved === undefined) delete process.env.VTID_ALLOCATOR_ENABLED;
+      else process.env.VTID_ALLOCATOR_ENABLED = saved;
+    }
   });
 
   it('kill switch: row → engaged flag; no row → null', async () => {

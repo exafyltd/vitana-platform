@@ -55,7 +55,7 @@ covering its protected gate files, the prompt names it (checklist item 9).
 ## What the agent checks (its checklist, in its definition)
 Acceptance criteria of the lane in `tasks.md` + lane file; files within `paths`; CI on the current head (failed
 required check = blocking, running = non-blocking note); every new behaviour has a test red on base; no test
-weakening; no production or live writes, no hand VTID, no PUBLISH / `publish-to-prod.sh` / `AWS-PROD-*`; no
+weakening; no production or live writes (allocating a VTID is allowed), no PUBLISH / `publish-to-prod.sh` / `AWS-PROD-*`; no
 hardcoded spoken strings; i18n / design / RTL if UI is touched; protected gate files
 (`scripts/collab/protected-gate-files.json`) are blocking for agent-only acceptance. It does not re-run suites.
 

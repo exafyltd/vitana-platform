@@ -104,8 +104,8 @@ session from the lane's executing log.
    with the red output recorded in the lane's evidence. Missing or not credible: blocking.
 5. **No test weakening.** No deleted, skipped, `.only`, loosened or excluded test, no weakened assertion, no Jest
    config or workflow change that runs fewer tests. Any: blocking.
-6. **No production or live writes.** No write to Supabase or any live system from session tools, no hand VTID
-   allocation, no PUBLISH, `publish-to-prod.sh` or `AWS-PROD-*` dispatch; staging tests are read-only (GET or a
+6. **No production or live writes.** No write to Supabase or any live system from session tools (allocating a
+   VTID is allowed, `CLAUDE.md` ALWAYS 2b), no PUBLISH, `publish-to-prod.sh` or `AWS-PROD-*` dispatch; staging tests are read-only (GET or a
    rejected probe) and never aim at production. Any: blocking.
 7. **No hardcoded spoken strings.** Nothing Vitana says is a finished sentence in code (CLAUDE.md rules 41-42).
 8. **UI.** If UI is touched: every visible string from the i18n catalogs (German first, du-form), locale-format

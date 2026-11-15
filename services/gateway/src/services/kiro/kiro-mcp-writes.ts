@@ -11,10 +11,11 @@
  * kiro-push-branch.ts) within what is left of the call's 110 s budget.
  *
  * Deliberately NOT here: dev_deploy_service (its route is the decommissioned GCP
- * path, and production moves only through the owner's Gate 2), and the tools
- * that mint a VTID — autopilot_create_task, autopilot_run_task,
- * autopilot_activate_recommendation — because a VTID comes only after a sparred,
- * owner-approved plan (CLAUDE.md rules 51-55).
+ * path, and production moves only through the owner's Gate 2), and
+ * autopilot_create_task, autopilot_run_task and autopilot_activate_recommendation,
+ * because each also registers a task for planning or starts an execution.
+ * VTID-05800: a plain fresh VTID needs none of them — anyone allocates one with
+ * scripts/dev/new-vtid.mjs or POST /api/v1/vtid/allocate, at any time.
  */
 import { getSupabase } from '../../lib/supabase';
 import { getPullRequest } from '../github-service';
@@ -43,7 +44,8 @@ export function isKiroMcpWriteTool(name: string): boolean {
 }
 
 // VTID-05064: say what to do without one — Kiro asked the owner for VTIDs before.
-const VTID_PARAM = { type: 'string', description: 'An existing open VTID (in_progress + approved) this action belongs to. Never ask the user to supply one and never invent one: a VTID exists only after a sparred, owner-approved plan. If none exists, keep the change in your workspace, say it needs that plan, and offer to write it.' };
+// VTID-05800: allocating one is open to anyone, at any time.
+const VTID_PARAM = { type: 'string', description: 'An existing open VTID (in_progress + approved) this action belongs to. Never ask the user to supply one and never invent one. If the work has no VTID yet, allocate one first: `node scripts/dev/new-vtid.mjs "<title>"` in the vitana-platform checkout (anyone may; no plan, sparring or token is needed). The write itself needs that VTID in_progress + approved.' };
 
 function lower(v: unknown): unknown {
   if (Array.isArray(v)) return v.map(lower);

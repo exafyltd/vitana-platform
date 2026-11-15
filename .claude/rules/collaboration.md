@@ -160,7 +160,7 @@ comments cannot address one account — each account **pulls** its own work inst
 pushes `refs/heads/collab-claim/<slug>/<lane-id>` without force. Git refuses it when another session holds the
 lane → the script names the holder → **pick another lane, never work it in parallel**. Plan-level steps
 (`approved→executing`, `executing→…→done`, Gate 2) need the `_plan` claim — except what PLAN-SPAR does inside a plan
-PR (§7). VTIDs are allocated only by CI PLAN-SPAR, never in a `_plan` step.
+PR (§7). Any session may allocate a VTID at any time, with or without a claim (CLAUDE.md ALWAYS 2b, VTID-05800).
 - A session without a claim never edits `handoff.md` or a lane file.
 - An owner instruction about a lane another session holds → tell the owner which session holds it and leave it.
 - A claim older than 24 h with no new commit on the lane's branch may be broken:
@@ -176,7 +176,8 @@ Owner decisions 2026-10-14 (Project Manager plan v2, VTID-05218) and 2026-10-20 
 approvals, you run it end to end"). Kiro accounts carry the work because each has its own credits.
 
 **The pipeline:** `plan(<slug>)` PR → CI PLAN-SPAR (partner chain unchanged: Bedrock Opus 4.6 → Sonnet 4.6 → DeepSeek)
-→ policy approval (`converged-auto-v1`) → **CI allocates a fresh VTID per lane** (never Kiro by hand) → Kiro builds
+→ policy approval (`converged-auto-v1`) → **every lane has a VTID** (CI allocates one for each lane still without; any
+session may allocate one itself at any time, VTID-05800) → Kiro builds
 the lanes in parallel (§8a) → the reviewer agent `vitana-lane-reviewer` (Kiro custom agent, model chain
 `claude-sonnet-5.5` → `claude-opus-5.5` → `claude-sonnet-4.5`, read-only) returns `accept` or `changes` → `verified` → merge to `main` under §7b → staging auto-deploy →
 STAGING-VERIFY → Gate 2 *"Staging verified — ready for deployment to production?"*. Production only by the owner's
@@ -188,7 +189,8 @@ PUBLISH. **No per-PR owner approvals**: no question about git, push, PR, merge, 
   `executor`, `seat`, `paths`, `depends_on`).
 - **Sparring — CI.** `PLAN-SPAR.yml` spars every `plan(` PR through the gateway (Kiro holds no credential); the planner
   answers each round in `sparring/responses-<n>.md` and pushes. A converged plan is **approved by policy**
-  (`converged-auto-v1`) — that replaces the owner's Gate 1 for it — and its lanes get their VTIDs from CI. Not
+  (`converged-auto-v1`) — that replaces the owner's Gate 1 for it — and CI allocates a VTID for each of its lanes
+  that has none yet. Not
   converged after the re-plan session → `parked`, on the board, no message. Claude Code may still spar its own plans
   with its local partner; the owner then answers Gate 1 as before.
 - **Building — the lane's seat** (Kiro). `executor: claude` lanes go to Claude Code when it is available, else to the
@@ -226,14 +228,14 @@ PUBLISH. **No per-PR owner approvals**: no question about git, push, PR, merge, 
   unavailable, every job that goes to Claude today goes to the **exceptions seat `exafyltd`**: end-of-rotation
   reassigns, parks, stale claims, `executor: claude` items, re-plan of parked plans, STAGING-VERIFY fix-forward (max
   3, then park). Only protected gate files (§3a) still wait for owner/Claude review.
-- Every existing rule is unchanged: sparring before a VTID, the `vtid_ledger` gate, never test against production,
-  staging tests read-only, production only by PUBLISH.
+- Every existing rule is unchanged: sparring of back-end and complex plans before their code merges (a VTID never
+  waits for sparring, VTID-05800), never test against production, staging tests read-only, production only by PUBLISH.
 
 ## 7a. What the executor and the reviewer never do
 Applies to Kiro (as builder, reviewer, planner or plan driver), and to Claude Code whenever it executes a lane. They
 never:
-- allocate a VTID by hand (CI PLAN-SPAR does), take a `_plan` claim of a plan they did not author (except taking over
-  a driver whose heartbeat is stale, §8), or edit another lane's file;
+- take a `_plan` claim of a plan they did not author (except taking over a driver whose heartbeat is stale, §8), or
+  edit another lane's file;
 - approve or accept their own lane — acceptance is the reviewer agent's, never the builder's;
 - deploy to production (PUBLISH, `scripts/deploy/publish-to-prod.sh`, any `AWS-PROD-DEPLOY-*`) except the
   owner-commanded publish (§7c), or dispatch a workflow outside §7d (staging, verification and re-runs; owner-approved
@@ -242,7 +244,8 @@ never:
 - write to a live system from session tools, even though their credentials allow it: no Supabase writes
   (`execute_sql` with INSERT/UPDATE/DELETE/DDL, `apply_migration`, `deploy_edge_function`, branch/project/secret
   tools) and no mutating AWS call (ECS, ELB, ECR, IAM or Secrets Manager writes). A merge under §7b is not a
-  session-tool write; staging deploys only through its workflow.
+  session-tool write; staging deploys only through its workflow. Allocating a VTID and setting its title (CLAUDE.md
+  §4.1, any path) is not a live write in this sense: every session may do it (VTID-05800).
 
 Reading for diagnosis is fine. A database change is a migration file in the lane's PR. Blocked → fix forward; after 3
 attempts park with the five-part stop message (§7); `next_actor: claude` only when Claude is available.

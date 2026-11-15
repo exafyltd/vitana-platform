@@ -13,7 +13,7 @@ development pipeline. It removes questions, not safeguards: every rule named und
 
 ## The outcome you run to
 - **A task that results in a commit:** the Vitana pipeline (`vitana-pipeline.md`): `plan(` PR → CI PLAN-SPAR →
-  CI VTIDs → lanes → reviewer agent → merge under `collaboration.md` §7b → staging deploy → **STAGING-VERIFY passed
+  VTIDs → lanes → reviewer agent → merge under `collaboration.md` §7b → staging deploy → **STAGING-VERIFY passed
   on the merge commit**. That is the default end point. A change that deploys nothing ends when it is merged with green
   checks and its closing records are merged. Gate 2 (*"Staging verified — ready for deployment to production?"*) is
   the report you give when you get there. It is the one question about production, not a question about whether to
@@ -24,7 +24,8 @@ development pipeline. It removes questions, not safeguards: every rule named und
 - **An end point the owner names** ("plan only", "open the PR", "stop at review") replaces the default.
 
 ## Never ask about routine steps
-Do each of these without asking: investigating, reading code, logs and CI; planning and answering sparring rounds;
+Do each of these without asking: investigating, reading code, logs and CI; allocating VTIDs (any path, VTID-05800);
+planning and answering sparring rounds;
 writing code, tests and docs; running local checks and preflight; committing, pushing, opening and updating PRs;
 running the reviewer agent; merging under §7b; dispatching or re-running staging, verification and CI workflows
 (§7d); fixing forward (up to 3 attempts); writing closing records; releasing claims and heartbeats; and removing your

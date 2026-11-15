@@ -1,6 +1,6 @@
 ---
 name: plan-sparring
-description: Ping-pong review of back-end and complex plans by an independent sparring partner BEFORE a VTID is allocated (Plan Sparring Gate, VTID-04868, amended 2026-11-07). Use for any back-end, schema, API, route, infra or CI plan. Simple front-end changes (class frontend-simple) need a VTID but no sparring; do not use this skill for them.
+description: Ping-pong review of back-end and complex plans by an independent sparring partner before its code is written (Plan Sparring Gate, VTID-04868, amended 2026-11-07; since VTID-05800 the VTID never waits for it). Use for any back-end, schema, API, route, infra or CI plan. Simple front-end changes (class frontend-simple) need a VTID but no sparring; do not use this skill for them.
 ---
 
 # Plan Sparring Gate
@@ -13,9 +13,10 @@ a VTID from the ledger and **no sparring**: declare `"change_class": "frontend-s
 straight to implementation. The PR gate checks the diff and sends a non-qualifying claim back here.
 
 Owner directive (2026-10-03, standing): *every new plan gets a ping-pong sparring partner, as a
-standard process, before a new VTID is generated.* No VTID is allocated for the sparring itself.
+standard process, before a new VTID is generated.* Amended 2026-11-15 (VTID-05800): the VTID is free —
+anyone allocates it at any time, before or after sparring (`CLAUDE.md` ALWAYS 2b, §4.1).
 
-Order, always: **plan → sparring → owner approval → VTID → code.**
+Order: **plan → sparring → owner approval → code.** The VTID can come at any point (VTID-05800).
 
 ## 1. Write the plan
 Save it as a markdown file in your scratchpad. Put the plan body between the markers
@@ -62,13 +63,10 @@ converges the gateway records the policy approval and CI allocates the lanes' VT
 after the re-plan session → the plan is parked (Command Hub board). Use this path for plans Kiro authors; a plan you
 spar here with the local partner still goes to the owner as Gate 1.
 
-## 5. Then allocate
-A PreToolUse hook denies any allocation call (allocate_global_vtid, /vtid/allocate, a direct
-vtid_ledger insert) that references no sparring record; re-issue it with the reference.
-Allocate the VTID (`allocate_global_vtid(..., p_sparring_id, p_plan_hash)` — or `sparring_id` +
-`plan_hash` on `/vtid/allocate` — once the gateway tier is live; `p_plan_hash` must be the
-record's approved `final_plan_hash` or the gate does not bind it;
-until then record the sparring session in the ledger row's metadata). In the PR, commit the
+## 5. The VTID
+Allocate the VTID whenever you need it, by any path (`node scripts/dev/new-vtid.mjs`, `CLAUDE.md` §4.1) —
+before, during or after sparring (VTID-05800). Passing `p_sparring_id` + `p_plan_hash` (or `sparring_id` +
+`plan_hash` on `/vtid/allocate`) is optional and only records the link to the record. In the PR, commit the
 record as `docs/validation/<VTID>/plan-sparring.md`: the final plan, the plan hash, every round,
 and the verdict.
 
