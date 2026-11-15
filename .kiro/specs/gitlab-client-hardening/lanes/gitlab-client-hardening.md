@@ -11,6 +11,8 @@ paths:
   - docs/validation/VTID-05537/outputs/mutate-gitlab-client.sh
   - docs/validation/VTID-05537/acceptance.md
   - docs/validation/VTID-05537/commands.log
+  - docs/programs/engineering-platform/program.md
+  - docs/validation/gitlab-client-hardening/**
 updated: 2026-11-15T07:40Z
 ---
 # Lane: gitlab-client-hardening
