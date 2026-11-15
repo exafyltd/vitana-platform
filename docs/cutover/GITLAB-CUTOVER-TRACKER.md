@@ -223,3 +223,8 @@ Count by status across the 106 lines (each line counted once, by its primary sta
 - `.env` tracked on GitLab `main` in vitana-v1: still not reviewed; contents not read.
 
 **Directive status (2026-11-15):** inventory of GitHub controls, workflows and integrations is NOT STARTED beyond the workflow count (47 in v1, 116 in platform). Retirement actions (branch protection changes, webhook/token removal, read-only/archive of GitHub) are NOT STARTED and are held for owner approval, since they are irreversible or affect access.
+
+**PR #5099 `unit` at head `d764d726` (2026-11-15 11:20Z): 9 failing tests, none caused by this branch.**
+- 4 are the central-CI guard cases in `scripts/eng/free-tier-guard.test.mjs` (open owner decision above).
+- 5 are in `scripts/eng/fleet-classes-structure.test.mjs` (cases 8, 9, 10, 14, 20: `vitana-eng` and `vitana-eng-deploy` job tags, seccomp/AppArmor for the BuildKit service, `.build-image` rootless setup). They reproduce locally on the same code. That file and its inputs are not changed on this branch. The lanes `build-class-retag-2` and `deploy-path` in `.kiro/specs/agentic-delivery` track this as known work.
+- Branch changes: only `docs/cutover/**` and `scripts/eng/gitlab-settings.test.mjs`.
