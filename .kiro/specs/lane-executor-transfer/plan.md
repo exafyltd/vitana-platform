@@ -20,9 +20,10 @@ built by its seat, and §7 routes `executor: claude` lanes to Claude Code when i
 seat `exafyltd` (§7, routing override). The routing override does not change the `executor` field. Nothing lets a lane
 move between executors deliberately, in either direction, while it is in progress.
 
-The lane-administration path already exists in vitana-platform: lane `reseat` (agentic-delivery, `lane_admin: true`,
-PR #4703, done) changed the `seat` field of eight lanes through a reviewed PR. That is the precedent for an admin change
-to permission fields.
+Lane administration (`lane_admin`, kiro-lane-admin) is a separate mechanism: a trusted admin lane changes the permission
+fields of a TARGET lane through a reviewed PR; a lane never administers its own file (round 1, R1-F3; queue.mjs scopeCheck
+comment). The executor transfer is a new, self-transfer carve-out. It does not extend `lane_admin`, and the reseat lane
+(PR #4703) is cited only as the existing admin precedent, not as a model for the transfer.
 
 ## Change
 1. **Two mechanisms, kept apart.**
@@ -35,19 +36,31 @@ to permission fields.
    branch that (i) sets `executor` to the new value, (ii) sets `next_actor` to the same value (or `owner`), (iii) adds
    the log entry `transfer: <from>→<to>, by <session id>, reason <text>, at <ISO time>`. The commit is pushed, then the
    builder releases `claimed_by`. The target executor claims the lane under §3a. A session without the claim never
-   edits the lane file (§3, collaboration.md:157), so the step order above is the only valid one.
+   edits the lane file (collaboration.md §5, "Claim before you touch anything", line 164), so the step order above is the only valid one.
 3. **Seat.** `seat` is kept for attribution and is not changed by a transfer. A transfer to `claude` does not need a Kiro
    seat; a transfer back to `kiro` keeps the original seat.
 4. **Branch name stays** as created (`<kiro|claude>/<slug>/<lane-id>`). The trailers `Collab-Session` and `Collab-Lane`
    identify the session and the lane, so no rename is needed.
 5. **Reviewer rule unchanged.** A builder never accepts a lane it built or transferred. The reviewer agent accepts on the
    current head.
-6. **queue.mjs.** `validate` accepts a claim by a session of the new executor only when the latest `transfer:` entry
-   names that executor and its `next_actor` matches. Without that entry the current refusal stays.
+6. **queue.mjs, both enforcement points (round 1, R1-F1, R1-F2).**
+   a. *Collab handoff (`validate`):* accepts a claim by a session of the new executor only when the latest `transfer:` entry
+      names that executor and its `next_actor` matches. Without that entry the current refusal stays.
+   b. *Lane scope (`scopeCheck`):* a change to `executor` and `next_actor` in the lane file is allowed only when the same
+      commit range holds a `transfer:` entry committed by the claim holder. The carve-out covers those two fields only;
+      `paths`, `seat`, `reviewer_seat` and every other permission field stay refused.
+   c. *Multi-builder seat check (`validateRange`):* after a transfer entry, a builder session of the new executor is accepted
+      on the same PR. Sessions before the transfer keep the lane's seat rule, so a Claude session cannot appear on a kiro lane
+      without the transfer.
 7. **Tests first.** `scripts/collab/queue.test.mjs`: (a) a `kiro` lane with a `claude` transfer accepts a Claude claim;
    (b) without the transfer entry the claim is refused; (c) a transfer by a session that does not hold the claim is refused;
    (d) a transfer back to `kiro` works the same way; (e) the reviewer check still refuses a builder accepting its own lane;
-   (f) the routing override (§7) still validates with `executor` unchanged.
+   (f) the routing override (§7) still validates with `executor` unchanged;
+   (g) `scopeCheck`: a lane with a `transfer:` entry and a changed `executor` passes Lane scope;
+   (h) `scopeCheck`: a changed `executor` without a transfer entry is rejected by Lane scope;
+   (i) `scopeCheck`: a transfer entry not committed by the claim holder is rejected by Lane scope;
+   (j) `validateRange`: a PR with pre-transfer kiro sessions and post-transfer Claude sessions passes the seat check, and the same
+   PR without the transfer entry fails it.
    Recorded red on `origin/main` before the change.
 8. **Rollback.** Revert the commit. Lanes that were transferred keep `executor` as transferred and their `transfer:` entries.
    The reverted `queue.mjs` must accept any `executor` value without a transfer check; verify this against the code before
