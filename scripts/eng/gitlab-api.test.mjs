@@ -1004,3 +1004,59 @@ test('the client object does not expose the token', () => {
   assert.equal(String(Object.values(client).filter((v) => typeof v === 'string')).includes(TOKEN), false);
   assert.equal(client.baseUrl, 'https://gitlab.test/api/v4');
 });
+
+// ------------------------------------------------- token-bearing paths (VTID-05537 follow-up, plan 28-31)
+// A path that contains the configured token, or any token shape, is refused before anything is sent, and no error
+// carries any part of the path. The check runs twice in a row on purpose: the token patterns are global regexes in
+// the module, and a stateful `.test()` would pass on the second call.
+test('path: a path containing the configured token is refused before any call, and no error carries the path', async () => {
+  const { fetch, client } = setup();
+  const bad = `/projects/1/${TOKEN}/merge_requests`;
+  for (let i = 0; i < 2; i++) {
+    const e = await failure(client.get(bad));
+    assert.equal(e.code, 'bad_path');
+    assert.equal(e.message.includes(TOKEN), false);
+    assert.equal(surfaces(e).includes(TOKEN), false);
+    assert.equal(surfaces(e).includes('merge_requests'), false);
+  }
+  assert.equal(fetch.calls.length, 0, 'no request may be sent for a token-bearing path');
+});
+
+test('path: a token shape in the path is refused even when it is not the configured token', async () => {
+  const { fetch, client } = setup();
+  for (let i = 0; i < 2; i++) {
+    const e = await failure(client.get('/projects/1/glpat-ZZZZZZZZZZZZZZZZ/x'));
+    assert.equal(e.code, 'bad_path');
+    assert.equal(surfaces(e).includes('glpat-ZZZZ'), false);
+  }
+  assert.equal(fetch.calls.length, 0);
+});
+
+test('path: an uppercase token prefix in the path is refused too (case-insensitive check)', async () => {
+  const { fetch, client } = setup();
+  const e = await failure(client.get('/projects/1/GLPAT-ZZZZZZZZZZZZZZZZ'));
+  assert.equal(e.code, 'bad_path');
+  assert.equal(fetch.calls.length, 0);
+});
+
+test('path: paginate() refuses a token-bearing path before its own argument checks, with no path in the error', async () => {
+  const { fetch, client } = setup();
+  const e = await failure(client.paginate(`/projects/1/${TOKEN}/jobs`, { perPage: 0 }));
+  assert.equal(e.code, 'bad_path');
+  assert.equal(surfaces(e).includes(TOKEN), false);
+  assert.equal(fetch.calls.length, 0);
+});
+
+test('path: a normal path still passes (no false refusal)', async () => {
+  const { fetch, client } = setup();
+  fetch.route('GET', '/api/v4/projects/1/merge_requests', { status: 200, json: [] });
+  assert.deepEqual(await client.get('/projects/1/merge_requests'), []);
+});
+
+test('path: request() with okStatuses refuses a token-bearing path with bad_path and no part of the path in the error', async () => {
+  const { fetch, client } = setup();
+  const e = await failure(client.request('GET', `/projects/1/${TOKEN}/x`, { okStatuses: [404] }));
+  assert.equal(e.code, 'bad_path');
+  assert.equal(surfaces(e).includes(TOKEN), false);
+  assert.equal(fetch.calls.length, 0);
+});
