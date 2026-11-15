@@ -33,10 +33,12 @@ evidence: code excerpts in `gitlab-api-evidence.md` in this scratchpad (read fro
    `the path contains a credential; send credentials in the client's token option, never in a path`. The message and the
    `path` field carry no part of the path. `paginate()` runs the same check before its first `checkNumber` / `badRequest`,
    because those messages include the path too.
+   `request()` runs the same check at its top, before its `okStatuses` argument check, because `request()` builds its error with
+   the raw path before it reaches `prepare()` (round 1, R1-F1).
 2. **Test first.** In `gitlab-api.test.mjs`: (a) a path containing the token → rejects with `code: 'bad_path'`, and the
    same call is made twice in a row, both rejected (this exposes any stateful `.test()`); the message,
    `JSON.stringify(err)`, and `err.path` contain no token; the injected fetch is never called. (b) the same through
-   `paginate()`. (c) a path that merely contains `glpat-` followed by 10 characters is refused. (d) a normal path such as
+   `paginate()`. (c) a path that merely contains `glpat-` followed by 10 characters is refused. (e) `request('GET', <token-bearing path>, { okStatuses: [404] })` rejects with `code: 'bad_path'`, and the error holds no part of the path. (d) a normal path such as
    `/projects/1/merge_requests` still passes. Record (a)–(c) red on `origin/main` in `commands.log` before the code.
 3. **Mutation harness.** Rewrite the perl replacement of "error path keeps the query" so its `${...}` is escaped and it
    changes the URL line only. Re-run the harness. Add one mutant for item 1: removing the path check makes (a) red.
