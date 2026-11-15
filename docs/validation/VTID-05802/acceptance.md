@@ -2,9 +2,10 @@
 
 Plan: .kiro/specs/lane-executor-transfer/plan.md (converged, hash a652316b).
 
-- TEST g: a kiro lane whose builder commits `executor: claude` plus a `transfer: kiro→claude, by <claim holder>` entry passes Lane scope. Passing (outputs/queue-test-run.txt).
-- TEST h: a changed `executor` without a transfer entry is refused by Lane scope. Passing (regression guard).
-- TEST i: a transfer entry naming a session that did not commit to the lane is refused. Passing (regression guard).
-- Seat carve-out in validateRange: a Claude session builds only after a transfer to claude recorded by a session of the range. Covered by the code path; the dedicated validateRange test (plan test j) is NOT yet written.
-- NOT in this change: the rule text in collaboration.md and the Kiro steering pointer (lane paths list them); the Collab handoff claim check beyond the seat carve-out.
-- Full collab suite: 258 of 260 pass. The one failure, "case 6: the real checkout(s) generate a clean set", is red on the base commit too.
+AC-1 Lane scope allows a change to `executor` only when the lane log holds a transfer entry from the trusted executor to the new one, committed by a session of the range.
+TEST: scripts/collab/queue.test.mjs "transfer g" (passes), "transfer h" (refused without the entry), "transfer i" (refused for a session outside the range). Output: outputs/queue-test-run.txt.
+
+AC-2 The full collab suite does not regress.
+TEST: node --test scripts/collab/ run recorded in commands.log: 258 of 260 pass; the one failure, "case 6", is red on the base commit too.
+
+Open, not in this change: plan test j (the validateRange seat case), the rule text in collaboration.md, and the Kiro steering pointer.
