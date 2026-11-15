@@ -26,3 +26,4 @@ Programme registry entry. Links only; the plan is the source of truth.
 - Spec: `vitana-platform:.kiro/specs/eng-gitlab-m1/` (self-hosted GitLab, milestone 1: the running system under review, tests, restore check)
 - Spec: `vitana-platform:.kiro/specs/eng-gitlab-m2/` (GitLab on the Free tier, ready for many agents: runner fleet, agent logins, merge bot, gateway route, alarms, rehearsal)
 - Spec: `vitana-platform:.kiro/specs/agentic-delivery/` (milestone 3: hard cutover of delivery for both repositories to GitLab)
+- Spec: `vitana-platform:.kiro/specs/gitlab-client-hardening/` (follow-up to eng-gitlab-m2 gitlab-client: refuse token-bearing paths in the GitLab API client)
