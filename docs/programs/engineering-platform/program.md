@@ -10,6 +10,7 @@ specs:
   - vitana-platform:eng-gitlab-m2
   - vitana-platform:agentic-delivery
   - vitana-platform:claude-migration-lanes
+  - vitana-platform:gitlab-client-hardening
 docs:
   - vitana-platform:docs/ENGINEERING-PLATFORM-PLAN.md
 exit_criteria:
