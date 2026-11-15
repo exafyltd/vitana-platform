@@ -209,3 +209,17 @@ Count by status across the 106 lines (each line counted once, by its primary sta
 ## Run log
 
 - **2026-11-15 ~10:55 UTC** — First evidence run. Branch comparison, head SHAs, pipeline status, workflow inventory, open PR counts, CODEOWNERS/LFS/submodule checks. Files: this tracker and `docs/cutover/evidence/2026-11-15/`.
+
+## Run log (continued, 2026-11-15 ~11:10 UTC): GitHub retirement directive
+
+**Blocker resolved: `v1.gitlab-ci.yml` vs `v1-delivery.gitlab-ci.yml`.**
+- Canonical name is `v1-delivery.gitlab-ci.yml`. Commit `350b5783` (VTID-05719) switched vitana-v1's CI file to the delivery pipeline. `infra/gitlab-engineering/settings/gitlab-settings.json` (`projects.vitana-v1.ci_file`) and `config/delivery/services.json` both name it, and `pipeline-gen` writes it.
+- The schema test in `scripts/eng/gitlab-settings.test.mjs` still asserted the old name and failed on main. Fixed in `cffb4c80`: the test now matches the config the sync reads. `gitlab-settings.test.mjs` passes 56/56 locally. No runtime change.
+
+**Still open (not a cosmetic fix, needs an owner decision):**
+- `scripts/eng/free-tier-guard.test.mjs` has four central-CI failures (cases 6, 7, 10 and 12). They fail the same way on main. Case 6 still expects `v1.gitlab-ci.yml`. Cases 7 and 10 check the milestone-1 central file, and case 7 says "no deploy", but `v1-delivery` has a `deploy` stage (`check`, `build`, `deploy`). Changing these assertions would hide a real difference between the promised structure and what the sync ships, so they are left for the owner. Options: keep `v1-delivery` and rewrite the milestone-3.3 promise, or revert the config to `v1.gitlab-ci.yml`.
+- GitLab vitana-v1 pipeline 402 (MR !1 head `4dc5cbb5`) failed. Job IDs are not exposed by the pipeline read, so job logs are not yet read.
+- The vitana-platform `unit` failure on PR #5099 was the same settings-test mismatch. It is now fixed on this branch.
+- `.env` tracked on GitLab `main` in vitana-v1: still not reviewed; contents not read.
+
+**Directive status (2026-11-15):** inventory of GitHub controls, workflows and integrations is NOT STARTED beyond the workflow count (47 in v1, 116 in platform). Retirement actions (branch protection changes, webhook/token removal, read-only/archive of GitHub) are NOT STARTED and are held for owner approval, since they are irreversible or affect access.
