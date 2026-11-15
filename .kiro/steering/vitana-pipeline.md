@@ -1,7 +1,7 @@
 # Vitana pipeline — the default for every session (VTID-05278)
 
 Every owner task that results in a commit runs the Vitana pipeline end to end: `plan(<slug>)` PR → CI PLAN-SPAR →
-CI-allocated VTIDs → parallel lanes → reviewer agent `vitana-lane-reviewer` (`claude-sonnet-5.5` → `claude-opus-5.5` → `claude-sonnet-4.5`) → serialized merge
+VTIDs (anyone allocates; CI fills any lane still without) → parallel lanes → reviewer agent `vitana-lane-reviewer` (`claude-sonnet-5.5` → `claude-opus-5.5` → `claude-sonnet-4.5`) → serialized merge
 to `main` under the PM merge rule → staging auto-deploy → STAGING-VERIFY → Gate 2 *"Staging verified — ready for
 deployment to production?"*. Rules: `.claude/rules/collaboration.md` §7–§8b. STAGING-VERIFY is the default end point
 unless the owner names another one. Work that results in no commit (an investigation, a question, a review, an ops
@@ -15,7 +15,10 @@ check) also runs to its finished answer without approval questions: `vitana-owne
   the target database, `collaboration.md` §7d), a change to a protected gate file (§3a), an escalated sparring
   verdict, and the stop cases of §7 (security or data-loss risk, a failure surviving 3 fix-forward attempts, anything
   touching production).
-- VTIDs come only from CI PLAN-SPAR; never hand-allocate.
+- Allocate a VTID yourself whenever work needs one, at any time, with no sparring, CI run, token or approval
+  (CLAUDE.md ALWAYS 2b and §4.1, VTID-05800): `node vitana-platform/scripts/dev/new-vtid.mjs "<title>"`, or
+  `curl -sS -X POST https://preview-aws-gateway.vitanaland.com/api/v1/vtid/allocate -H 'Content-Type: application/json' -d '{"title":"<title>"}'`,
+  or Actions → VTID-ALLOCATE → Run workflow. PLAN-SPAR also allocates one for each lane still without.
 - Production after Gate 2: the owner's PUBLISH in the Command Hub, **or Kiro publishes when the owner explicitly
   commands it in this conversation** — either a full publish (the same promotion as the Command Hub button, pinned to
   the commit that passed STAGING-VERIFY) or a session-scoped publish of only the changes one session made (this

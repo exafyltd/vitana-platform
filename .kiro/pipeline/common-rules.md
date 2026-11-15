@@ -30,12 +30,13 @@
 5. **Autonomy.** The owner is asked exactly one question per plan: Gate 2. The only other stops are an escalated
    sparring verdict and the §7 stop cases (security or data-loss risk, the same failure surviving 3 fix attempts →
    park with the five-part stop message, anything that would reach production). Git, push, PR, merge, re-runs,
-   sparring rounds and VTIDs never need the owner. Blocked → work around inside these rules, log, continue. In a
+   sparring rounds and VTIDs never need the owner; a missing VTID you allocate yourself
+   (`node <vitana-platform>/scripts/dev/new-vtid.mjs "<title>"`, `CLAUDE.md` §4.1, VTID-05800). Blocked → work around inside these rules, log, continue. In a
    workflow step, never `send_message` severity `warning` or `error` for a normal outcome; signal `success` when the
    step's work is done, whatever the verdict. If the only way to satisfy a review finding changes behaviour beyond the
    converged plan, do not make it: log finding, needed change, user-visible effect and a behaviour-preserving
    alternative in `blockers.md` as deferred, and continue.
-6. **Never:** allocate a VTID by hand (only CI PLAN-SPAR allocates); deploy to production; run or dispatch PUBLISH,
+6. **Never:** deploy to production; run or dispatch PUBLISH,
    `scripts/deploy/publish-to-prod.sh` or any `AWS-PROD-DEPLOY-*` — the only exception is a publish the owner
    explicitly commands in an interactive conversation (`collaboration.md` §7c: full, or one session's changes only;
    never in a workflow step or automation run, never `publish-to-prod.sh`); write to Supabase or any live system from session

@@ -831,98 +831,34 @@ describe('reconciler (hourly, read-only, off by default)', () => {
     expect(emit).not.toHaveBeenCalled();
   });
 
-  it('detects a disabled trigger, ledger rows without sparring_id, break-glass rows and config change', async () => {
+  // VTID-05800 (owner decision 2026-11-15, contract changed on purpose): anyone may allocate a VTID at any time, so
+  // a vtid_ledger trigger that is gone or disabled and ledger rows without a sparring id are no longer problems.
+  it('reports a config change, and never reads the trigger or flags VTIDs without a sparring id (VTID-05800)', async () => {
     const state = newReconcilerState();
     const emit = jest.fn(async () => ({}));
     await runPlanSparringReconcile({ sb: {} as never, emit, now: () => T0 }, state); // baseline
 
-    store.trigger = { present: true, tgenabled: 'D' };
+    store.trigger = { present: false, tgenabled: null };
     store.ledger = [
       { vtid: 'VTID-10001', created_at: '2026-10-04T10:30:00.000Z', metadata: {} },
       { vtid: 'VTID-10002', created_at: '2026-10-04T10:31:00.000Z', metadata: { sparring_exempt_reason: 'P1 incident' } },
-      { vtid: 'VTID-10003', created_at: '2026-10-04T10:32:00.000Z', metadata: { sparring_id: ADMIN } },
-      { vtid: 'VTID-09000', created_at: '2026-10-04T09:00:00.000Z', metadata: {} },
     ];
     store.config = { id: 1, mode: 'off' };
     const d = await runPlanSparringReconcile({ sb: {} as never, emit, now: () => T0 + 3_600_000 }, state);
 
-    expect(d.map((x) => x.check).sort()).toEqual(['break_glass', 'config_changed', 'ledger_rows_without_sparring', 'trigger_disabled']);
-    expect(d.find((x) => x.check === 'ledger_rows_without_sparring')!.detail).toEqual(expect.objectContaining({ count: 1, vtids: ['VTID-10001'] }));
-    const types = (emit.mock.calls as any[]).map((c) => c[0].type).sort();
-    expect(types).toEqual(['vtid.plan_sparring.break_glass', 'vtid.plan_sparring.tamper_detected', 'vtid.plan_sparring.tamper_detected', 'vtid.plan_sparring.tamper_detected']);
-    // Read-only: only read functions of the repository were touched.
-    expect(new Set(store.calls)).toEqual(new Set(['fetchTriggerStatus', 'fetchLedgerRowsWithoutSparring', 'fetchConfig', 'fetchPolicyApprovedNonConverged']));
-  });
-
-  it('pages the ledger to exhaustion: 450 rows across 3 pages are all reported, none skipped, none re-reported', async () => {
-    const state = newReconcilerState();
-    const emit = jest.fn(async () => ({}));
-    await runPlanSparringReconcile({ sb: {} as never, emit, now: () => T0 }, state); // baseline
-    // 450 rows in the hour, many sharing a created_at (keyset tie-break on id).
-    store.ledger = Array.from({ length: 450 }, (_, i) => ({
-      id: `row-${String(i).padStart(4, '0')}`,
-      vtid: `VTID-${String(20000 + i)}`,
-      created_at: new Date(T0 + 1000 + Math.floor(i / 3) * 1000).toISOString(),
-      metadata: {},
-    }));
-    store.ledgerPages = 0;
-    const d = await runPlanSparringReconcile({ sb: {} as never, emit, now: () => T0 + 3_600_000 }, state);
-    const det = d.find((x) => x.check === 'ledger_rows_without_sparring')!;
-    expect(det.detail.count).toBe(450);
-    expect((det.detail.vtids as string[])).toHaveLength(50);
-    expect(det.detail.truncated).toBeUndefined();
-    expect(store.ledgerPages).toBe(3); // 200 + 200 + 50
+    expect(d.map((x) => x.check)).toEqual(['config_changed']);
+    expect((emit.mock.calls as any[]).map((c) => c[0].type)).toEqual(['vtid.plan_sparring.tamper_detected']);
+    // Read-only, and the gate's own data is not read any more.
+    expect(new Set(store.calls)).toEqual(new Set(['fetchConfig', 'fetchPolicyApprovedNonConverged']));
     expect(state.lastRunAt).toBe(T0 + 3_600_000);
-
-    // A row that lands after this run is reported next run — and only it.
-    store.ledger.push({ id: 'row-late', vtid: 'VTID-29999', created_at: new Date(T0 + 3_600_500).toISOString(), metadata: {} });
-    const d2 = await runPlanSparringReconcile({ sb: {} as never, emit, now: () => T0 + 7_200_000 }, state);
-    expect(d2.find((x) => x.check === 'ledger_rows_without_sparring')!.detail).toEqual(expect.objectContaining({ count: 1, vtids: ['VTID-29999'] }));
   });
 
-  it('a failed ledger read does not advance the cursor: the window is re-read next run', async () => {
-    const state = newReconcilerState();
-    const emit = jest.fn(async () => ({}));
-    await runPlanSparringReconcile({ sb: {} as never, emit, now: () => T0 }, state);
-    store.ledger = [{ id: 'r1', vtid: 'VTID-30001', created_at: new Date(T0 + 60_000).toISOString(), metadata: {} }];
-    store.ledgerError = { message: 'statement timeout' };
-    const d = await runPlanSparringReconcile({ sb: {} as never, emit, now: () => T0 + 3_600_000 }, state);
-    expect(d.map((x) => x.check)).toContain('ledger_read_failed');
-    expect(state.lastRunAt).toBe(T0);
-    store.ledgerError = null;
-    const d2 = await runPlanSparringReconcile({ sb: {} as never, emit, now: () => T0 + 7_200_000 }, state);
-    expect(d2.find((x) => x.check === 'ledger_rows_without_sparring')!.detail).toEqual(expect.objectContaining({ count: 1, vtids: ['VTID-30001'] }));
-  });
-
-  it('hitting the page cap advances only to the last row read (never skips the rest)', async () => {
-    const recon = await import('../src/services/plan-sparring/reconciler');
-    const state = newReconcilerState();
-    const emit = jest.fn(async () => ({}));
-    await runPlanSparringReconcile({ sb: {} as never, emit, now: () => T0 }, state);
-    const total = recon.MAX_LEDGER_PAGES * 200 + 5;
-    store.ledger = Array.from({ length: total }, (_, i) => ({
-      id: `cap-${String(i).padStart(6, '0')}`,
-      vtid: `VTID-${String(100000 + i)}`,
-      created_at: new Date(T0 + 1 + i * 100).toISOString(),
-      metadata: {},
-    }));
-    const d = await runPlanSparringReconcile({ sb: {} as never, emit, now: () => T0 + 3_600_000 }, state);
-    const det = d.find((x) => x.check === 'ledger_rows_without_sparring')!;
-    expect(det.detail.count).toBe(recon.MAX_LEDGER_PAGES * 200);
-    expect(det.detail.truncated).toBe(true);
-    const lastRead = store.ledger[recon.MAX_LEDGER_PAGES * 200 - 1];
-    expect(state.lastRunAt).toBe(Date.parse(lastRead.created_at));
-    // Next run picks up from there: the last row read again (duplicate, not skip) + the 5 left.
-    const d2 = await runPlanSparringReconcile({ sb: {} as never, emit, now: () => T0 + 7_200_000 }, state);
-    expect(d2.find((x) => x.check === 'ledger_rows_without_sparring')!.detail.count).toBe(6);
-  });
-
-  it('an unreadable trigger status or missing config is reported, never assumed fine', async () => {
+  it('a missing config is reported, never assumed fine; an unreadable trigger status no longer matters', async () => {
     store.triggerError = { message: 'function plan_sparring_trigger_status() does not exist' };
     store.config = null;
     const emit = jest.fn(async () => ({}));
     const d = await runPlanSparringReconcile({ sb: {} as never, emit, now: () => T0 }, newReconcilerState());
-    expect(d.map((x) => x.check).sort()).toEqual(['config_missing', 'trigger_status_unreadable']);
+    expect(d.map((x) => x.check)).toEqual(['config_missing']);
   });
 });
 

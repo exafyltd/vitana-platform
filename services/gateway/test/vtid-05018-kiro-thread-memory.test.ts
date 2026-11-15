@@ -177,6 +177,14 @@ describe('VTID-05064: history keeps conclusions, marks cut-off replies, and Kiro
     expect(KIRO_SESSION_RULES).toMatch(/offer to write that plan/);
   });
 
+  // VTID-05800: contract changed on purpose — Kiro allocates a VTID itself; nothing says it cannot.
+  it('the rules tell Kiro to allocate a missing VTID itself, never that it cannot', () => {
+    expect(KIRO_SESSION_RULES).toContain('node scripts/dev/new-vtid.mjs');
+    expect(KIRO_SESSION_RULES).toMatch(/Anyone may allocate a VTID at any time/);
+    expect(KIRO_SESSION_RULES).not.toMatch(/You cannot create one/);
+    expect(KIRO_SESSION_RULES).not.toMatch(/exists only after/);
+  });
+
   it('stop reasons map to statuses', () => {
     expect(statusForStopReason('end_turn')).toBe('ok');
     expect(statusForStopReason('refusal')).toBe('refused');

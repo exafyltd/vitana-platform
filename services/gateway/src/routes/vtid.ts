@@ -1,7 +1,8 @@
 import { Router, Request, Response } from "express";
 import { z } from "zod";
-import { timingSafeEqual } from "crypto";
 import { requireLedgerWriteAuth } from "../middleware/ledger-write-auth";
+// VTID-05800: allocation is open to every caller (owner decision 2026-11-15).
+import { allowVtidAllocation, getVtidAllocActor, isReservedSource, mayUseReservedSource } from "../middleware/vtid-allocation-access";
 import { buildStageTimeline, defaultStageTimeline, type TimelineEvent, type StageTimelineEntry } from '../lib/stage-mapping';
 // VTID-01181: Import system controls service for DB-backed allocator toggle
 import { isVtidAllocatorEnabled, getSystemControl } from '../services/system-controls-service';
@@ -43,6 +44,22 @@ type TargetRole = typeof TARGET_ROLES_ENUM[number];
 // VTID-01181: DB control state checked SECOND (allows arming without redeploy)
 const VTID_ALLOCATOR_ENABLED_ENV = process.env.VTID_ALLOCATOR_ENABLED === 'true';
 const VTID_ALLOCATOR_START = parseInt(process.env.VTID_ALLOCATOR_START || '1000', 10);
+
+// VTID-05800: the ways to allocate a VTID, all open to every person, machine and process.
+export const VTID_ALLOCATION_PATHS = [
+  'POST /api/v1/vtid/allocate (no token needed)',
+  'node scripts/dev/new-vtid.mjs "<title>"',
+  'GitHub Actions VTID-ALLOCATE (Run workflow, every input optional)',
+  'Command Hub task Create button',
+  'ORB / Operator tool dev_allocate_vtid',
+  "SQL: select * from allocate_global_vtid('<source>', 'DEV', '<module>')",
+] as const;
+
+const ALLOCATOR_OFF_MESSAGE =
+  'VTID allocation is switched off on purpose (VTID_ALLOCATOR_ENABLED=false, or Governance > Controls set it to disabled). Switch it back on there.';
+
+const RESERVED_SOURCE_MESSAGE =
+  "source 'self-healing' marks a task for autonomous execution; only the gateway service token or an exafy_admin may use it. Any other source works.";
 
 // Allocator response type
 interface AllocatorResponse {
@@ -135,26 +152,29 @@ function deriveAllocationTitle(
  * Atomically allocates the next sequential VTID and creates a shell entry
  * in the ledger. This ensures allocated == registered (no split-brain).
  *
- * Returns 409 if allocator is disabled.
+ * VTID-05800 (owner decision 2026-11-15): open to every person, machine and
+ * process. No sparring record, CI run, admin role or token is needed;
+ * allowVtidAllocation only records who called and limits anonymous bursts.
  *
- * VTID-01181: Allocator enabled if:
- * - VTID_ALLOCATOR_ENABLED env var is 'true' (backward compatible), OR
- * - DB control 'vtid_allocator_enabled' is enabled AND not expired
+ * Returns 409 only when allocation was switched off on purpose
+ * (isVtidAllocatorEnabled: on by default since VTID-05800).
  */
-router.post("/allocate", requireLedgerWriteAuth, async (req: Request, res: Response) => {
-  // impact-allow-no-oasis: pre-existing handler — VTID-04727 only added its auth
-  // middleware. That it emits no OASIS event is an older gap, tracked separately.
+// public-route — VTID-05800: anyone may allocate a VTID; allowVtidAllocation identifies the caller and rate-limits anonymous ones
+router.post("/allocate", allowVtidAllocation, async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: allocating creates a shell ledger row (status
+  // 'allocated'); it is not a lifecycle transition, so no OASIS event.
   // VTID-01181: Check DB-backed control state (with caching and expiry)
   const allocatorEnabled = await isVtidAllocatorEnabled();
-  console.log(`[VTID-0542] Allocate request received, env=${VTID_ALLOCATOR_ENABLED_ENV}, dbEnabled=${allocatorEnabled}`);
+  const actor = getVtidAllocActor(req);
+  console.log(`[VTID-0542] Allocate request received, actor=${actor}, env=${VTID_ALLOCATOR_ENABLED_ENV}, enabled=${allocatorEnabled}`);
 
-  // D2: Check feature flag - return 409 if disabled (both env and DB control)
+  // D2: allocation was switched off on purpose — the one reason to refuse.
   if (!allocatorEnabled) {
-    console.log(`[VTID-0542] Allocator disabled (env=${VTID_ALLOCATOR_ENABLED_ENV}, db=false), returning 409`);
+    console.log(`[VTID-0542] Allocator switched off, returning 409`);
     return res.status(409).json({
       ok: false,
       error: 'allocator_disabled',
-      message: 'VTID allocator is not active. Enable via Governance > Controls or set VTID_ALLOCATOR_ENABLED=true.',
+      message: ALLOCATOR_OFF_MESSAGE,
       vtid: 'VTID-0542'
     } as AllocatorResponse);
   }
@@ -166,6 +186,9 @@ router.post("/allocate", requireLedgerWriteAuth, async (req: Request, res: Respo
     const source = req.body?.source || 'api';
     const layer = req.body?.layer || 'DEV';
     const module = req.body?.module || 'TASK';
+    if (isReservedSource(source) && !mayUseReservedSource(actor)) {
+      return res.status(403).json({ ok: false, error: 'reserved_source', message: RESERVED_SOURCE_MESSAGE } as AllocatorResponse);
+    }
     // VTID-03230: accept optional title; if absent, we'll derive one from
     // `source` after allocation so the ledger row never lands with the
     // literal "Allocated - Pending Title" default and flood the Tasks board.
@@ -219,7 +242,7 @@ router.post("/allocate", requireLedgerWriteAuth, async (req: Request, res: Respo
     }
 
     const allocated = result[0];
-    console.log(`[VTID-0542] Successfully allocated: ${allocated.vtid} (num=${allocated.num})`);
+    console.log(`[VTID-0542] Successfully allocated: ${allocated.vtid} (num=${allocated.num}, actor=${actor}, source=${source})`);
 
     // VTID-03230 / VTID-03818: backfill a meaningful title onto the
     // freshly-allocated row. The RPC defaults title to "Allocated - Pending
@@ -251,9 +274,9 @@ router.post("/allocate", requireLedgerWriteAuth, async (req: Request, res: Respo
       console.warn(`[VTID-03818] Title backfill exception for ${allocated.vtid}:`, titleErr);
     }
 
-    // VTID-04868: shadow-mode OASIS signal — fire-and-forget, never fails
-    // or delays the allocation.
-    void emitAllocationSparringEvent({ vtid: allocated.vtid, sparringId, source }, emitOasisEvent);
+    // VTID-04868: record a cited sparring record (fire-and-forget). VTID-05800:
+    // a VTID without one is normal, so nothing is emitted for it.
+    if (sparringId) void emitAllocationSparringEvent({ vtid: allocated.vtid, sparringId, source }, emitOasisEvent);
 
     return res.status(201).json({
       ok: true,
@@ -273,61 +296,31 @@ router.post("/allocate", requireLedgerWriteAuth, async (req: Request, res: Respo
 });
 
 /**
- * Scoped machine-to-machine VTID allocation (shared secret, no user JWT).
+ * Machine-to-machine VTID allocation.
  *
  * POST /allocate-internal → /api/v1/vtid/allocate-internal
  *
- * Lets a trusted automation (e.g. a Claude Code remote session) mint a VTID
- * without holding the Supabase service-role key: the gateway keeps the DB
- * credential internally and this route only requires a narrow shared secret.
- * Modeled on internal-marketplace-sync.ts (X-Scheduler-Secret precedent).
- *
- * Auth: X-VTID-Alloc-Secret header, timing-safe compared to VTID_ALLOC_SECRET.
- *   - secret not configured on gateway → 500 (fail closed)
- *   - missing/invalid secret          → 401
- * Governance: respects the allocator kill-switch (409 when disarmed), so this
- * never bypasses Governance > Controls.
+ * Kept for the automations that already call it (e.g. a Claude Code remote
+ * session). VTID-05800: like /allocate it is open to every caller. The
+ * X-VTID-Alloc-Secret header (VTID_ALLOC_SECRET) is optional; when it
+ * matches, the caller is recorded as service:alloc-secret and is never rate
+ * limited. Respects the allocator off switch (409) like /allocate.
  */
-router.post("/allocate-internal", async (req: Request, res: Response) => { // public-route — no user JWT; authed by the X-VTID-Alloc-Secret shared secret below
+// public-route — VTID-05800: anyone may allocate a VTID; the X-VTID-Alloc-Secret header is optional and only identifies the caller
+router.post("/allocate-internal", allowVtidAllocation, async (req: Request, res: Response) => {
   // impact-allow-no-oasis: allocation mirrors the user-facing /allocate route,
   // which also emits no OASIS event. The shell ledger entry created here is not
   // a lifecycle transition; vtid.lifecycle.* events fire when the task actually
   // starts/completes, not on allocation.
-  const configured = process.env.VTID_ALLOC_SECRET;
-  if (!configured) {
-    return res.status(500).json({
-      ok: false,
-      error: 'secret_not_configured',
-      message: 'VTID_ALLOC_SECRET is not configured on the gateway.',
-    } as AllocatorResponse);
-  }
+  const actor = getVtidAllocActor(req);
 
-  const header = req.headers['x-vtid-alloc-secret'];
-  const provided = Array.isArray(header) ? header[0] : header;
-  // NB: kept as plain statements (no nested arrow IIFE) so the impact-scan
-  // rule's handler-body extraction sees the // impact-allow-no-oasis marker
-  // above — it inspects the body of the LAST arrow before the closing paren.
-  let matches = false;
-  if (provided) {
-    const a = Buffer.from(configured);
-    const b = Buffer.from(provided);
-    matches = a.length === b.length && timingSafeEqual(a, b);
-  }
-  if (!matches) {
-    return res.status(401).json({
-      ok: false,
-      error: 'invalid_secret',
-      message: 'Invalid or missing X-VTID-Alloc-Secret header.',
-    } as AllocatorResponse);
-  }
-
-  // Respect the governance kill-switch — same gate as the user-facing route.
+  // Respect the off switch — same gate as the user-facing route.
   const allocatorEnabled = await isVtidAllocatorEnabled();
   if (!allocatorEnabled) {
     return res.status(409).json({
       ok: false,
       error: 'allocator_disabled',
-      message: 'VTID allocator is not active. Enable via Governance > Controls or set VTID_ALLOCATOR_ENABLED=true.',
+      message: ALLOCATOR_OFF_MESSAGE,
       vtid: 'VTID-0542',
     } as AllocatorResponse);
   }
@@ -337,6 +330,9 @@ router.post("/allocate-internal", async (req: Request, res: Response) => { // pu
     const source = req.body?.source || 'automation';
     const layer = req.body?.layer || 'DEV';
     const module = req.body?.module || 'TASK';
+    if (isReservedSource(source) && !mayUseReservedSource(actor)) {
+      return res.status(403).json({ ok: false, error: 'reserved_source', message: RESERVED_SOURCE_MESSAGE } as AllocatorResponse);
+    }
     // VTID-04868: optional sparring record id + approved plan hash —
     // forwarded only when present (same contract as /allocate).
     const binding = parseSparringBinding(req.body);
@@ -380,7 +376,7 @@ router.post("/allocate-internal", async (req: Request, res: Response) => { // pu
     }
 
     const allocated = result[0];
-    console.log(`[VTID-0542] Scoped allocation: ${allocated.vtid} (num=${allocated.num}, source=${source})`);
+    console.log(`[VTID-0542] Scoped allocation: ${allocated.vtid} (num=${allocated.num}, actor=${actor}, source=${source})`);
 
     // VTID-03818: /allocate-internal had NO title-backfill logic at all —
     // every row it created could sit on "Allocated - Pending Title"
@@ -410,8 +406,8 @@ router.post("/allocate-internal", async (req: Request, res: Response) => { // pu
       console.warn(`[VTID-03818] Title backfill exception for ${allocated.vtid}:`, titleErr);
     }
 
-    // VTID-04868: shadow-mode OASIS signal (fire-and-forget).
-    void emitAllocationSparringEvent({ vtid: allocated.vtid, sparringId, source }, emitOasisEvent);
+    // VTID-04868: record a cited sparring record (fire-and-forget); VTID-05800: none is needed.
+    if (sparringId) void emitAllocationSparringEvent({ vtid: allocated.vtid, sparringId, source }, emitOasisEvent);
 
     return res.status(201).json({
       ok: true,
@@ -442,6 +438,10 @@ router.get("/allocator/status", async (_req: Request, res: Response) => {
   return res.status(200).json({
     ok: true,
     enabled: effectiveEnabled,
+    // VTID-05800: anyone may allocate — no sparring record, CI run, admin role or token.
+    allocation_access: 'open',
+    sparring_required: false,
+    allocation_paths: VTID_ALLOCATION_PATHS,
     env_var_enabled: VTID_ALLOCATOR_ENABLED_ENV,
     db_control: dbControl ? {
       enabled: dbControl.enabled,
@@ -454,8 +454,8 @@ router.get("/allocator/status", async (_req: Request, res: Response) => {
     format: 'VTID-XXXXX',
     vtid: 'VTID-0542',
     message: effectiveEnabled
-      ? 'Allocator is active. All task creation paths should use POST /api/v1/vtid/allocate.'
-      : 'Allocator is disabled. Enable via Governance > Controls or set VTID_ALLOCATOR_ENABLED=true.'
+      ? 'Allocator is active. Anyone may allocate a VTID: POST /api/v1/vtid/allocate, no token needed.'
+      : ALLOCATOR_OFF_MESSAGE
   });
 });
 

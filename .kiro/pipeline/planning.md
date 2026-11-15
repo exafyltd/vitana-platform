@@ -60,8 +60,8 @@ calls the sparring partner itself.
    files; rejected → reason with `file:line`; deferred → where tracked) in `sparring/responses-<n>.md`, commit, run
    preflight (§3) and fix every error, then push. Never edit `round-*.md`, `state.json` or `verdict.md`.
 3. Converged → policy approval `converged-auto-v1`; CI writes the lane VTIDs into the lane files and `handoff.md`
-   (`state: approved`). Lanes still without a VTID → wait for the next PLAN-SPAR run (it retries allocation); never
-   allocate by hand.
+   (`state: approved`). Lanes still without a VTID → the lane's builder allocates one when it starts (`lane-code.md`), or the next
+   PLAN-SPAR run fills it in.
 4. Escalated (not converged after the re-plan session) → the one allowed owner stop: one message with the findings
    still disputed and a recommended answer.
 5. A PLAN-SPAR run that failed for infrastructure (runner lost, partner `model_unavailable` on every tier) → `gh run

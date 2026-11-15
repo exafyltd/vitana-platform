@@ -40,7 +40,7 @@ local partner still goes to the owner as Gate 1.
 **The owner's "yes" at Gate 1 (or the policy approval) is the standing instruction for everything up to Gate 2 for
 that plan's VTIDs.** It is recorded as the approval line in `docs/validation/<VTID>/plan-sparring.md` (with the plan
 hash) and in the ledger row's metadata. That record is an audit trail; the protection is the mechanical checks (CI
-gates, STAGING-VERIFY). After "yes", without asking: allocate the VTID(s) (citing the sparring record), set the
+gates, STAGING-VERIFY). After "yes", without asking: allocate any VTID the work still lacks, set the
 ledger row in_progress/approved, implement, run the local checks, push, open the PR, mark it ready once checks are
 green, merge (or enable auto-merge), watch the staging deploy and STAGING-VERIFY, and fix forward on any failure.
 
@@ -76,7 +76,8 @@ lane; push and update the lane file before ending. Full rules: `.claude/rules/co
 **Roles — `.claude/rules/collaboration.md` §7–§7b is the source of truth** (owner decisions 2026-10-14, VTID-05218,
 and 2026-10-20): Kiro plans, builds and reviews — a lane is accepted by the reviewer agent `vitana-lane-reviewer`,
 never by its builder; CI spars every `plan(` PR (`PLAN-SPAR.yml`), a converged plan is approved by policy and CI
-allocates its VTIDs; the Project Manager merges under the PM merge rule §7b (staging-only deploy paths; the plan
+allocates a VTID for each lane still without one (any session may allocate one itself at any time, ALWAYS 2b); the
+Project Manager merges under the PM merge rule §7b (staging-only deploy paths; the plan
 driver applies the same rule while the PM is not live) and sends Gate 2; Claude Code is optional and handles
 exceptions (`executor: claude` lanes, parked plans, partner outages; the exceptions seat takes them while Claude is
 unavailable). A protected gate file (§3a, e.g. `CLAUDE.md`) never merges on a reviewer-agent accept alone: it needs
@@ -98,14 +99,16 @@ the retired-number index at the end of Part 1 says where its substance lives now
 ### Source of Truth & Governance
 1. **Always treat OASIS as the single source of truth** for task state, lifecycle, and governance.
 2. **Always verify VTID existence** before execution, deployment, or automation.
-2b. **Every task that results in a commit gets its own VTID.** Back-end and complex work: allocated only after its plan
-    is sparred and approved (rules 51–55): owner Gate 1 for a locally sparred plan, or CI policy `converged-auto-v1`.
-    A simple front-end change (rule 51a) is allocated straight from the ledger, with no sparring. A Kiro plan's VTIDs are
-    allocated by CI PLAN-SPAR on convergence, never by hand. A bug report, a feature ask, a "fix this", a doc change —
-    all count. **Never ask the user whether a VTID is needed, never ask them to supply one**, and once the plan is
-    approved, allocate without waiting for confirmation. When the user directly instructed the work, that instruction
-    plus the approved plan is the approval: set `spec_status='approved'` and `status='in_progress'` on the row (see
-    IF–THEN 5). Distinct fixes in one conversation get distinct VTIDs. Procedure: §4.1. (VTID-03448, VTID-04868)
+2b. **Every task that results in a commit gets its own VTID, and anyone allocates it, at any time, by any path**
+    (owner decision 2026-11-15, VTID-05800: *"allocating a vtid should be the easiest thing in the world"*). Any
+    person, machine or process may allocate a fresh VTID — before a plan exists, during sparring or after it, for every
+    change class — with no sparring record, no CI run, no admin role and no token. The paths are in §4.1; the quickest
+    is `node scripts/dev/new-vtid.mjs "<title>"`. Allocating a VTID and setting its title is a write every path makes to
+    the one shared ledger; it is never a forbidden live or production write. A bug report, a feature ask, a "fix
+    this", a doc change — all count. **Never ask the user whether a VTID is needed, never ask them to supply one:
+    allocate it yourself.** When the user directly instructed the work, that instruction plus the approved plan is the
+    approval: set `spec_status='approved'` and `status='in_progress'` on the row (see IF–THEN 5). Distinct fixes in
+    one conversation get distinct VTIDs. Procedure: §4.1. (VTID-03448, VTID-04868, VTID-05800)
 4. **Always respect existing governance rules** over new ideas or optimizations.
 5. **Always require `spec_status=approved`** before execution.
 6. **Always terminalize tasks** (`is_terminal=true`) when finished.
@@ -323,15 +326,16 @@ Owner decision 2026-09-26. Full process: `docs/DEPLOYMENT-PIPELINE.md`. Applies 
     - a `reason` naming the VTID(s), the scope, the session id and the STAGING-VERIFY run;
     - afterwards, only the read-only production deploy check.
 
-### Plan Sparring Gate (STANDING RULE — VTID-04868, amended 2026-11-07)
+### Plan Sparring Gate (STANDING RULE — VTID-04868, amended 2026-11-07 and 2026-11-15)
 Owner decision 2026-10-03 (*"every new plan gets a ping-pong sparring partner before a new VTID is generated"*) is
 amended by the owner decision of 2026-11-07: **sparring is for back-end and complex work; a simple front-end change
-needs a VTID but no sparring.** Two tracks, one rule: every change gets a VTID from the ledger. Procedure: skill
-`.claude/skills/plan-sparring/`.
+needs a VTID but no sparring.** The owner decision of 2026-11-15 (VTID-05800) separates the VTID from sparring
+entirely: **a VTID is allocated whenever anyone needs one (ALWAYS 2b); sparring reviews a back-end or complex plan
+before its code merges, never before its VTID.** Procedure: skill `.claude/skills/plan-sparring/`.
 
 51. **Back-end and complex work: plan → sparring → owner approval (or, for a CI-sparred plan that converged, policy
-    approval `converged-auto-v1`, VTID-05214) → VTID → code.** No VTID is allocated for such a plan before it is sparred,
-    and no VTID is ever allocated for the sparring itself. "Back-end and complex" means every change under
+    approval `converged-auto-v1`, VTID-05214) → code.** Its VTID can be allocated at any point, before the plan as
+    well (ALWAYS 2b, VTID-05800). "Back-end and complex" means every change under
     `services/**`, `supabase/**` (migrations, edge functions, RLS, SQL), `.github/**`, `scripts/**`, governance, LLM
     routing or auth, and any change that adds or alters an API, a route, a schema, a deploy path, or more than a
     simple front-end change.
@@ -352,22 +356,15 @@ needs a VTID but no sparring.** Two tracks, one rule: every change gets a VTID f
     (`PLAN_SPARRING_LAST_RESORT_MODEL`; kill switch `PLAN_SPARRING_DEEPSEEK_FALLBACK_ENABLED=false`). The chain lives in
     the partner pass (`plan-sparring/partner.ts`), is sticky per round, logged loudly and recorded per entry in
     `model_log.fallback_tier`. Only when all three fail does the session escalate `model_unavailable`. Never Google.
-54. **The gate is the database**, not this text: a `vtid_ledger` trigger checks every new VTID for a
-    converged-or-escalated, owner-approved sparring record (or a converged, policy-approved one) with a matching plan
-    hash. It runs in log mode first, then enforce. While sessions can run `execute_sql` as `postgres`, a disabled
-    trigger or changed mode is **detected (hourly reconciler → P1), not prevented** — an accepted residual (owner
-    decision 2026-10-04) until the Aurora cutover gives full role control.
-55. **Break-glass** (P1 incident with gateway or Bedrock down): only the owner allocates through the exemption role,
-    logged as `vtid.plan_sparring.break_glass`; a full sparring follows within 24h.
 
 ---
 
 ## 🔁 IF–THEN RULES
 
 ### VTID & Execution
-1. **IF** a task has no VTID → **THEN** get one per ALWAYS 2b / §4.1 once its plan is sparred and approved (a Kiro
-   plan's come from CI PLAN-SPAR) and continue. **STOP only when allocation fails** (allocator disabled, DB error) —
-   never for the mere absence of one, and never as a prompt to ask the user for one.
+1. **IF** a task has no VTID → **THEN** allocate one yourself now (ALWAYS 2b / §4.1) and continue. **STOP only when
+   allocation fails** (allocation switched off, DB error) — never for the mere absence of one, and never as a prompt
+   to ask the user for one.
 2. **IF** `spec_status ≠ approved` → **THEN DO NOT EXECUTE**, unless the user has directly instructed the work in this
    conversation and its plan is approved — then set `spec_status='approved'` yourself when the VTID is allocated
    (ALWAYS 2b) and proceed.
@@ -503,6 +500,7 @@ Numbers retired by the 2026-10-20 cleanup (VTID-05280). An old reference to one 
 | IF–THEN 21–25 (frontend: sidebar, external JS, canon, accessibility, screen inventory) | ALWAYS 31; ALWAYS 36–37 + NEVER 24–25; IF–THEN 9; ALWAYS 40; NEVER 27 — IF–THEN 21–25 now mean CI/CD only |
 | IF–THEN 26–30 (visual verification steps) | the "Targeted Visual Verification" paragraph — IF–THEN 26 now means CI/CD 26, 27–31 the AI rules (`AI-27`–`AI-31`) |
 | IF–THEN 26 (AI: route Claude at Bedrock) | ALWAYS 10a |
+| Rules 54, 55 (the `vtid_ledger` sparring trigger, break-glass allocation) | retired by VTID-05800 (2026-11-15): the trigger is dropped (migration `20261115090000`), anyone allocates a VTID at any time — ALWAYS 2b, §4.1 |
 
 ---
 
@@ -523,32 +521,37 @@ whatever files a session opens.
 ---
 
 ## 4. VTID SYSTEM
-### 4.1 Allocation (STANDING RULE — VTID-03448, VTID-04868)
+### 4.1 Allocation (STANDING RULE — VTID-03448, VTID-04868, VTID-05800)
 **Settled: never ask the user "should this have a VTID" or "do you have a VTID for this".** Every task that results
-in a commit gets one. **Back-end and complex work is allocated only after its plan is sparred and approved** (Part 1 rules 51–55); a simple
-front-end change (rule 51a) is allocated directly from the ledger. Owner
-Gate 1 for a plan sparred with a local partner (skill `plan-sparring`), or CI policy `converged-auto-v1` for a
-`plan(` PR. A Kiro plan's lane VTIDs are allocated by CI PLAN-SPAR on convergence — Kiro never allocates by hand
-(`.claude/rules/collaboration.md` §7a). A session that allocates itself passes the sparring id (`p_sparring_id`) once
-the gateway tier is live.
+in a commit gets one, and **anyone allocates it, at any time, by any path** (owner decision 2026-11-15, VTID-05800):
+any person, machine or process; before, during or after planning and sparring; for every change class. No sparring
+record, CI run, admin role or token is needed. PLAN-SPAR still allocates a VTID for each lane of a converged plan that
+has none yet; a lane that already has one keeps it.
 
-Procedure, in order of preference:
+Procedure:
 
-1. **Gateway API**: `POST /api/v1/vtid/allocate` with `{ source, layer, module }` (see §11 for URL resolution).
-   Returns `{ vtid, num, id }`. **Since VTID-04727 it needs `Authorization: Bearer <GATEWAY_SERVICE_TOKEN>` or an
-   `exafy_admin` JWT** (enforced on staging; production logs unauthenticated calls until it is flipped to enforce). A
-   session without either uses path 2.
-2. **Direct Supabase RPC** (when the gateway isn't reachable from the session): call
-   `allocate_global_vtid(p_source, p_layer, p_module)` via the Supabase MCP/CLI against the `VITANA` project. Returns
-   the same shape.
-3. Either path atomically mints the next `VTID-XXXXX` and creates the ledger shell row in one transaction —
+1. **Use whichever path is at hand** — all are equal:
+   - **CLI:** `node scripts/dev/new-vtid.mjs ["<Area: what the work is>"] [--module <m>]` prints the VTID. It tries the
+     staging gateway, then production, then the `VTID-ALLOCATE` workflow through `gh`.
+   - **Gateway API:** `POST /api/v1/vtid/allocate` with `{ title?, source?, layer?, module? }` on either gateway (§11).
+     Returns `{ vtid, num, id }`. No auth is needed; `Authorization: Bearer <GATEWAY_SERVICE_TOKEN>` or any signed-in
+     user's JWT only records who allocated.
+   - **One click:** GitHub Actions → `VTID-ALLOCATE` → Run workflow, in either repo (every input optional; the run
+     prints `VTID_RESULT=VTID-NNNNN`), or the Command Hub task Create button.
+   - **Voice / Operator:** the tool `dev_allocate_vtid`.
+   - **SQL** (any session with database access): `select * from allocate_global_vtid('<source>', 'DEV', '<module>');`.
+2. Two limits that never stop normal use: an anonymous caller (no token, no sign-in) may allocate 30 a minute and 300
+   an hour per client (`VTID_ALLOC_ANON_PER_MINUTE`, `VTID_ALLOC_ANON_PER_HOUR`; 0 = no limit), and only the service
+   token or an exafy_admin may use `source: self-healing`, because that source makes a task eligible for autonomous
+   execution (§4, eligibility criterion 5).
+3. Every path atomically mints the next `VTID-XXXXX` and creates the ledger shell row in one transaction —
    allocated and registered can never split.
 4. Immediately follow up with an `UPDATE vtid_ledger` (or the equivalent gateway PATCH) to set a real
    `title`/`summary`/`description` (never leave the "Allocated - Pending Title" placeholder), and set
    `status='in_progress'` + `spec_status='approved'` when the user has directly instructed the work.
-5. **If the allocator itself is disabled** (`VTID_ALLOCATOR_ENABLED` false and no DB override) — that's the one real
-   stop condition. Tell the user allocation is blocked and why; do not fabricate a VTID number and do not silently
-   proceed without one.
+5. **If allocation was switched off on purpose** (`VTID_ALLOCATOR_ENABLED=false` on the gateway, or the Governance
+   control `vtid_allocator_enabled` disabled; allocation is on by default) — that's the one real stop condition. Tell
+   the user allocation is blocked and why; do not fabricate a VTID number and do not silently proceed without one.
 6. One VTID per distinct piece of work. Two unrelated fixes requested in the same message get two VTIDs.
 7. **Picking up an existing VTID** (from Claude Code, Kiro IDE or the Operator): `scripts/dev/resume-vtid.sh <VTID>`
    or the Operator tool `dev_resume_vtid` show its ledger row, PRs, evidence, notes and deploy state — continue that
@@ -611,7 +614,7 @@ There are **two** ways work gets done here and they share `vtid_ledger`:
 ### Hard Governance Rules
 1. **EXECUTION_DISARMED** - Global kill switch for autonomous execution
 2. **AUTOPILOT_LOOP_ENABLED** - Controls autopilot polling
-3. **VTID_ALLOCATOR_ENABLED** - Controls VTID allocation
+3. **VTID_ALLOCATOR_ENABLED** - Off switch for VTID allocation, which is on by default (VTID-05800)
 4. One VTID at a time per worker (no parallel execution)
 5. Memory-first (workers don't write to DB directly)
 6. Idempotent completion (safe to call complete multiple times)

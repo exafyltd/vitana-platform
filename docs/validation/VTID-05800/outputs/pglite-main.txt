@@ -1,0 +1,4 @@
+ok 1 - main: the sparring trigger is on vtid_ledger
+not ok 2 - main, gate mode enforce: an allocation without a sparring record succeeds (plan_sparring_gate: VTID-04903 has no approved Plan Sparring record (outcome missing, reason no sparring_id))
+ok 3 - main, log mode: two allocations may cite the same sparring id (VTID-04904 / VTID-04905)
+# 2/3 ok

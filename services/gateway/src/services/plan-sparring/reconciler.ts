@@ -1,29 +1,18 @@
 /**
- * VTID-04868 — Plan Sparring Gate: hourly tamper reconciler (N2, owner
- * decision 1: tampering is DETECTED, not prevented, while execute_sql runs as
- * postgres on Supabase).
+ * VTID-04868 — Plan Sparring: hourly integrity reconciler (N2, owner decision 1:
+ * tampering is DETECTED, not prevented, while execute_sql runs as postgres).
  *
  * Read-only. Off unless PLAN_SPARRING_RECONCILER_ENABLED=true. Each run checks:
- *   1. the vtid_ledger BEFORE INSERT trigger exists and is enabled
- *      (pg_trigger.tgenabled = 'O'), via the read-only RPC
- *      plan_sparring_trigger_status() — an unreadable status is itself
- *      reported, never assumed fine;
- *   2. ledger rows created in [last run, this run) with no
- *      metadata.sparring_id (rows carrying metadata.sparring_exempt_reason
- *      are reported as break-glass instead). The window is read page by page
- *      (keyset on created_at, id) to exhaustion, so a burst of more than one
- *      page of rows is never skipped; if the page cap is hit, the cursor only
- *      advances to the last row actually read, and a failed read leaves the
- *      cursor where it was so the next run re-reads the window;
- *   3. plan_sparring_config changed (or vanished) since the last run;
- *   4. (VTID-05214) a session carries a policy approval although it is not converged — impossible while the table's
+ *   1. plan_sparring_config changed (or vanished) since the last run;
+ *   2. (VTID-05214) a session carries a policy approval although it is not converged — impossible while the table's
  *      CHECK stands, so a hit means the constraint was tampered with.
- * Every detection emits OASIS vtid.plan_sparring.tamper_detected (break-glass
- * rows emit vtid.plan_sparring.break_glass). Nothing is written to the
+ * VTID-05800 (owner decision 2026-11-15: anyone may allocate a VTID at any time) removed the two checks that enforced
+ * "no VTID without sparring": the vtid_ledger trigger (dropped by migration 20261115090000) and ledger rows without a
+ * sparring id (normal now). Every detection emits OASIS vtid.plan_sparring.tamper_detected. Nothing is written to the
  * sparring tables or the ledger.
  *
  * State (last run time, last config snapshot) is in memory: after a restart
- * the first run re-baselines the config and looks back one interval.
+ * the first run re-baselines the config.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -32,9 +21,6 @@ import * as repo from './plan-sparring-repository';
 import { PLAN_SPARRING_VTID } from './plan-sparring-service';
 
 export const RECONCILER_INTERVAL_MS = 60 * 60 * 1000;
-const MAX_LISTED_VTIDS = 50;
-/** Safety bound per run: 100 pages × 200 rows. The rest is read next run. */
-export const MAX_LEDGER_PAGES = 100;
 
 export interface ReconcilerState {
   lastRunAt: number | null;
@@ -48,7 +34,7 @@ export interface ReconcilerDeps {
 }
 
 export interface Detection {
-  check: 'trigger_disabled' | 'trigger_missing' | 'trigger_status_unreadable' | 'ledger_rows_without_sparring' | 'ledger_read_failed' | 'config_changed' | 'config_missing' | 'config_read_failed' | 'break_glass' | 'policy_approval_on_non_converged' | 'policy_approval_read_failed';
+  check: 'config_changed' | 'config_missing' | 'config_read_failed' | 'policy_approval_on_non_converged' | 'policy_approval_read_failed';
   detail: Record<string, unknown>;
 }
 
@@ -60,79 +46,11 @@ export function newReconcilerState(): ReconcilerState {
   return { lastRunAt: null, lastConfigSnapshot: null };
 }
 
-/**
- * Read every ledger row without a sparring id created in [sinceIso, untilIso),
- * page by page. Returns the rows plus where the next run must start:
- * `untilIso` when the window was read to exhaustion, the last row's
- * created_at when the page cap stopped it early (that row is re-read next
- * run — duplicates are possible, skips are not).
- */
-async function readLedgerWindow(
-  sb: SupabaseClient,
-  sinceIso: string,
-  untilIso: string,
-): Promise<{ rows: repo.LedgerRowWithoutSparring[]; nextSinceIso: string; truncated: boolean } | { error: string }> {
-  const rows: repo.LedgerRowWithoutSparring[] = [];
-  let after: repo.LedgerCursor | null = null;
-  for (let page = 0; page < MAX_LEDGER_PAGES; page++) {
-    const r = await repo.fetchLedgerRowsWithoutSparring(sb, sinceIso, { untilIso, after, limit: repo.LEDGER_PAGE_SIZE });
-    if (r.error) return { error: r.error.message };
-    const batch = r.data ?? [];
-    rows.push(...batch);
-    if (batch.length < repo.LEDGER_PAGE_SIZE) return { rows, nextSinceIso: untilIso, truncated: false };
-    const last = batch[batch.length - 1];
-    after = { created_at: last.created_at, id: last.id };
-  }
-  return { rows, nextSinceIso: after ? after.created_at : untilIso, truncated: true };
-}
-
 export async function runPlanSparringReconcile(deps: ReconcilerDeps, state: ReconcilerState): Promise<Detection[]> {
   const now = (deps.now ?? Date.now)();
-  const since = new Date(state.lastRunAt ?? now - RECONCILER_INTERVAL_MS).toISOString();
-  const until = new Date(now).toISOString();
-  // Where the next run starts. Stays at `since` unless the ledger window was
-  // read successfully (a failed read is retried next run, window included).
-  let nextLastRunAt: number = Date.parse(since);
   const detections: Detection[] = [];
 
-  // 1. Trigger enabled?
-  const trig = await repo.fetchTriggerStatus(deps.sb);
-  if (trig.error) {
-    detections.push({ check: 'trigger_status_unreadable', detail: { error: trig.error.message } });
-  } else {
-    const row = Array.isArray(trig.data) ? trig.data[0] : trig.data;
-    if (!row || row.present !== true) detections.push({ check: 'trigger_missing', detail: {} });
-    else if (row.tgenabled !== 'O') detections.push({ check: 'trigger_disabled', detail: { tgenabled: row.tgenabled } });
-  }
-
-  // 2. Ledger rows without a sparring id in [since, now), every page.
-  const window = await readLedgerWindow(deps.sb, since, until);
-  if ('error' in window) {
-    // Cursor stays put: the next run re-reads this window.
-    detections.push({ check: 'ledger_read_failed', detail: { error: window.error } });
-  } else {
-    nextLastRunAt = Date.parse(window.nextSinceIso);
-    const all = window.rows;
-    const exempt = all.filter((r) => typeof r.metadata?.sparring_exempt_reason === 'string');
-    const bare = all.filter((r) => typeof r.metadata?.sparring_exempt_reason !== 'string');
-    for (const r of exempt) {
-      detections.push({ check: 'break_glass', detail: { vtid: r.vtid, reason: r.metadata?.sparring_exempt_reason, created_at: r.created_at } });
-    }
-    if (bare.length > 0) {
-      detections.push({
-        check: 'ledger_rows_without_sparring',
-        detail: {
-          since,
-          until: window.nextSinceIso,
-          count: bare.length,
-          vtids: bare.slice(0, MAX_LISTED_VTIDS).map((r) => r.vtid),
-          ...(window.truncated ? { truncated: true } : {}),
-        },
-      });
-    }
-  }
-
-  // 3. Config changed?
+  // 1. Config changed?
   const cfg = await repo.fetchConfig(deps.sb);
   if (cfg.error) {
     detections.push({ check: 'config_read_failed', detail: { error: cfg.error.message } });
@@ -147,29 +65,23 @@ export async function runPlanSparringReconcile(deps: ReconcilerDeps, state: Reco
     state.lastConfigSnapshot = snapshot;
   }
 
-  // 4. Policy approval on a session that is not converged (VTID-05214).
+  // 2. Policy approval on a session that is not converged (VTID-05214).
   const pol = await repo.fetchPolicyApprovedNonConverged(deps.sb);
   if (pol.error) detections.push({ check: 'policy_approval_read_failed', detail: { error: pol.error.message } });
   else if ((pol.data ?? []).length > 0) {
     detections.push({ check: 'policy_approval_on_non_converged', detail: { sessions: (pol.data ?? []).map((s) => ({ id: s.id, verdict: s.verdict })) } });
   }
 
-  // Advance only as far as the ledger was actually read (now, unless the
-  // read failed or hit the page cap).
-  state.lastRunAt = nextLastRunAt;
+  state.lastRunAt = now;
 
   for (const d of detections) {
-    const breakGlass = d.check === 'break_glass';
-    const vtid = breakGlass && typeof d.detail.vtid === 'string' ? d.detail.vtid : PLAN_SPARRING_VTID;
     try {
       await deps.emit({
-        vtid,
-        type: breakGlass ? 'vtid.plan_sparring.break_glass' : 'vtid.plan_sparring.tamper_detected',
+        vtid: PLAN_SPARRING_VTID,
+        type: 'vtid.plan_sparring.tamper_detected',
         source: 'plan-sparring-reconciler',
-        status: breakGlass ? 'warning' : 'error',
-        message: breakGlass
-          ? `${vtid} inserted with sparring_exempt_reason (break-glass) — post-hoc sparring due within 24h`
-          : `Plan Sparring Gate tamper check failed: ${d.check}`,
+        status: 'error',
+        message: `Plan Sparring integrity check failed: ${d.check}`,
         payload: { check: d.check, ...d.detail },
         actor_role: 'system',
         surface: 'system',

@@ -1,0 +1,31 @@
+{
+  "vtid": "VTID-05800",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/api/v1/vtid/allocator/status",
+      "expect_status": 200,
+      "expect_json": {
+        "ok": true,
+        "enabled": true,
+        "allocation_access": "open",
+        "sparring_required": false
+      }
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-05800-free-vtid-allocation.test.ts test/vtid-04727-ledger-write-auth.test.ts",
+      "cwd": "services/gateway",
+      "reason": "Allocation itself is a write to the shared ledger, so staging never calls POST /allocate (rule 48). These suites prove it on the real router with a mocked database: anonymous, wrong-token and signed-in callers allocate in LEDGER_WRITE_AUTH_MODE=enforce, /allocate-internal needs no secret, the self-healing source stays reserved, anonymous callers are limited per client, the off switch is the only refusal, and every other ledger write route still needs the service token or an admin."
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04868-plan-sparring-service.test.ts test/vtid-04868-plan-sparring-session-layer.test.ts test/vtid-04876-ops-attention-reads.test.ts test/vtid-05018-kiro-thread-memory.test.ts",
+      "cwd": "services/gateway",
+      "reason": "Sparring itself still works (rounds, verdicts, approvals, policy approval), the reconciler no longer reports VTIDs without a sparring record, the allocator control reads as on by default, and the Kiro session rules tell Kiro to allocate a missing VTID itself."
+    }
+  ]
+}

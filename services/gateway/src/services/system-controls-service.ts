@@ -17,6 +17,7 @@
 
 import { randomUUID } from 'crypto';
 import { emitOasisEvent } from './oasis-event-service';
+import { vtidAllocatorEnvSwitch } from '../lib/vtid-allocator-switch';
 
 // =============================================================================
 // Environment Configuration
@@ -410,23 +411,25 @@ export async function getControlAuditHistory(
 }
 
 /**
- * Check if VTID allocator is enabled.
- * Consults DB control with caching and expiry checking.
- * Returns true if enabled (either via env var OR DB control).
+ * Is VTID allocation on?
+ *
+ * VTID-05800 (owner decision 2026-11-15, "allocating a vtid should be the
+ * easiest thing in the world"): ON by default. Only a deliberate off switch
+ * stops it:
+ *   - VTID_ALLOCATOR_ENABLED=false on the gateway task, or
+ *   - the Governance control `vtid_allocator_enabled` set to disabled.
+ * An unset env var, a missing control row and an arming that merely expired
+ * all mean ON. VTID_ALLOCATOR_ENABLED=true still forces it on.
  */
 export async function isVtidAllocatorEnabled(): Promise<boolean> {
-  // Check env var first (backward compatibility)
-  if (process.env.VTID_ALLOCATOR_ENABLED === 'true') {
-    return true;
-  }
+  const env = vtidAllocatorEnvSwitch();
+  if (env !== null) return env;
 
-  // Check DB control
   const control = await getSystemControl('vtid_allocator_enabled');
-  if (!control) {
-    return false; // Control doesn't exist = disabled
-  }
-
-  return control.enabled;
+  if (!control) return true;
+  if (control.enabled) return true;
+  // getSystemControl reports an arming whose expires_at passed as disabled; that is not an off switch.
+  return !!control.expires_at && new Date(control.expires_at) <= new Date();
 }
 
 /**

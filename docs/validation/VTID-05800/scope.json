@@ -1,0 +1,59 @@
+{
+  "vtid": "VTID-05800",
+  "kind": "feature",
+  "paths": [
+    "CLAUDE.md",
+    "AGENTS.md",
+    "DATABASE_SCHEMA.md",
+    ".claude/agents/plan-sparring-partner.md",
+    ".claude/hooks/pretooluse-plan-sparring-reminder.sh",
+    ".claude/rules/collaboration.md",
+    ".claude/settings.json",
+    ".claude/skills/plan-sparring/SKILL.md",
+    ".github/workflows/VTID-ALLOCATE.yml",
+    ".kiro/agents/vitana-lane-reviewer.md",
+    ".kiro/automations/exafy.md",
+    ".kiro/automations/exafyltd.md",
+    ".kiro/automations/jtadic.md",
+    ".kiro/pipeline/README.md",
+    ".kiro/pipeline/common-rules.md",
+    ".kiro/pipeline/driver.md",
+    ".kiro/pipeline/lane-code.md",
+    ".kiro/pipeline/lane-review.md",
+    ".kiro/pipeline/planning.md",
+    ".kiro/steering/vitana-kiro-notes.md",
+    ".kiro/steering/vitana-owner-autonomy.md",
+    ".kiro/steering/vitana-pipeline.md",
+    ".kiro/workflows/vitana-pipeline.workflow.json",
+    "scripts/collab/routine-prompt.md",
+    "scripts/dev/new-vtid.mjs",
+    "scripts/dev/new-vtid.test.mjs",
+    "services/gateway/src/lib/vtid-allocator-switch.ts",
+    "services/gateway/src/middleware/vtid-allocation-access.ts",
+    "services/gateway/src/routes/vtid.ts",
+    "services/gateway/src/services/kiro/kiro-mcp-writes.ts",
+    "services/gateway/src/services/kiro/kiro-turn.ts",
+    "services/gateway/src/services/ops-attention-reads.ts",
+    "services/gateway/src/services/plan-sparring/reconciler.ts",
+    "services/gateway/src/services/system-controls-service.ts",
+    "services/gateway/test/vtid-04727-ledger-write-auth.test.ts",
+    "services/gateway/test/vtid-04868-plan-sparring-service.test.ts",
+    "services/gateway/test/vtid-04868-plan-sparring-session-layer.test.ts",
+    "services/gateway/test/vtid-04876-ops-attention-reads.test.ts",
+    "services/gateway/test/vtid-05018-kiro-thread-memory.test.ts",
+    "services/gateway/test/vtid-05800-free-vtid-allocation.test.ts",
+    "supabase/migrations/20261115090000_vtid_05800_plan_sparring_gate_off.sql",
+    "docs/validation/VTID-05800/**"
+  ],
+  "weakens_tests": [
+    {
+      "file": "services/gateway/test/vtid-04868-plan-sparring-service.test.ts",
+      "reason": "Contract changed on purpose (owner order 2026-11-15): a VTID without a sparring record is normal, so the reconciler no longer reads the vtid_ledger trigger, flags ledger rows without a sparring_id or break-glass rows, and no longer pages the ledger at all. The five cases that pinned those checks and that paging are replaced by two cases: the config change and a missing config are still reported, and nothing is flagged for a VTID without a sparring id. The policy-approval cases are unchanged."
+    },
+    {
+      "file": "services/gateway/test/vtid-04868-plan-sparring-session-layer.test.ts",
+      "reason": "Contract changed on purpose (owner order 2026-11-15): the PreToolUse hook that denied an allocation without a sparring record and its settings.json entry are deleted. Its four cases (deny, deny /vtid/allocate and ledger inserts, allow with a record, settings registration) are replaced by one case that pins that the hook file and its registration are gone. The CLAUDE.md case now pins rules 51-53 with sparring before code and allocation at any time."
+    }
+  ],
+  "red_green_exempt": []
+}

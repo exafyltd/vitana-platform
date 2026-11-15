@@ -1,0 +1,12 @@
+ok 1 - the migration applies twice (idempotent)
+ok 2 - the trigger trg_plan_sparring_check is gone
+ok 3 - the index vtid_ledger_sparring_id_unique is gone
+ok 4 - the gate mode is 'off'
+ok 5 - an allocation without a sparring record succeeds (VTID-04903)
+ok 6 - mode flipped back to enforce: an allocation without a sparring record still succeeds (VTID-04904)
+ok 7 - two allocations may cite the same sparring id (VTID-04905 / VTID-04906)
+ok 8 - existing ledger rows are untouched
+ok 9 - rollback: trigger, index and log mode are back
+ok 10 - rollback: log mode never refuses an allocation (VTID-04903)
+ok 11 - the migration re-applies after the rollback
+# 11/11 ok

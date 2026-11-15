@@ -40,7 +40,9 @@ on the merge commit, or until a stop applies.
 - Gate 2 (*"Staging verified — ready for deployment to production?"*) is the report at the end. It is the only question about production.
 
 ## Do without asking
-Investigating, reading code, logs and CI; writing code, tests and docs; running local checks; committing, pushing, opening
+Investigating, reading code, logs and CI; allocating VTIDs (any path, any time, no sparring or token needed:
+`node vitana-platform/scripts/dev/new-vtid.mjs "<title>"`, `CLAUDE.md` §4.1); writing code, tests and docs; running
+local checks; committing, pushing, opening
 and updating PRs; running the reviewer agent; merging under `collaboration.md` §7b; dispatching or re-running staging,
 verification and CI workflows; fixing forward up to 3 attempts per lane; writing closing records and removing your own
 branches and worktrees. Do not end a reply with an offer or question about a routine next step.
@@ -52,6 +54,6 @@ and `collaboration.md` §7 name. Finish all other work first.
 
 ## Never
 - Test against, write to, or deploy to production (`inmkhvwdcuyhnxkgfvsb`, `gateway.vitanaland.com`, any production Cloud Run or AWS service).
-- Allocate a VTID by hand. VTIDs come only from CI PLAN-SPAR.
 - Merge your own lane or accept your own review. Acceptance comes from the reviewer agent `vitana-lane-reviewer`.
-- Skip, disable or loosen a test, force-push, or write to a live system from a session tool.
+- Skip, disable or loosen a test, force-push, or write to a live system from a session tool. The one exception to this
+  and to the production rule above: allocating a VTID and setting its title, by any path (`CLAUDE.md` ALWAYS 2b).

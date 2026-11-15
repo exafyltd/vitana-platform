@@ -16,7 +16,8 @@ files are read-only. Only the land step sets `done`.
 ## Decide by status
 - No lane in the slot, missing state, `done` true, or `in_review` / `accepted` / `landed` / `parked` / `skipped` →
   change nothing; final message `lane <LANE>: nothing to do (<status>)`.
-- `pending`: no VTID → `parked` (never hand-allocate; the next PLAN-SPAR run retries allocation). A `depends_on` lane
+- `pending`: no VTID → allocate one (`node <vitana-platform>/scripts/dev/new-vtid.mjs "<lane title>"`), write it into the lane file's `vtid:` in the lane's
+  first commit, and go on (VTID-05800). A `depends_on` lane
   parked → `parked`. A `depends_on` lane not landed → poll its state every 3 min up to 150 min; still not landed →
   end `waiting`. All landed → **implement**.
 - `changes_requested`: `review_rounds` already 3 → `parked` (findings to `blockers.md`). Else fetch BRANCH (the land
