@@ -10,10 +10,29 @@ VTID-05800 itself was allocated with the existing `VTID-ALLOCATE` workflow (run 
 on that order. There is no sparring record for this change: it removes the rule that required one before a VTID.
 
 VALIDATION_PROFILE: gateway_backend (gateway route and middleware, a migration file, a CLI, two workflows, rule texts).
-ROUTE_MOUNT: `/api/v1/vtid` (unchanged). Nothing is applied from the PR: the migration is applied later through
-`RUN-MIGRATION.yml` after the owner approves the file and the target database (collaboration.md section 7d). Kiro ran
-no SQL and made no write against any live system for this change; the only live calls were two read-only GETs of
-`/api/v1/vtid/allocator/status` (staging and production) to record the current state.
+Nothing is applied from the PR: the migration is applied later through `RUN-MIGRATION.yml` after the owner approves the
+file and the target database (collaboration.md section 7d). Kiro ran no SQL and made no write against any live system
+for this change; the only live calls were two read-only GETs of `/api/v1/vtid/allocator/status` (staging and
+production) to record the current state.
+
+ROUTE_MOUNT: `/api/v1/vtid` (`services/gateway/src/index.ts:803`, `mountRouterSync(app, '/api/v1/vtid', vtidRouter)`),
+unchanged. No route is added: the existing `POST /allocate` and `POST /allocate-internal` change their middleware to
+`allowVtidAllocation`, and `GET /allocator/status` gains three fields.
+FINAL_URL: `POST https://preview-aws-gateway.vitanaland.com/api/v1/vtid/allocate` (staging),
+`POST https://gateway.vitanaland.com/api/v1/vtid/allocate` (production); status at `GET …/api/v1/vtid/allocator/status`.
+CURL_PROOF: read-only, before the deploy (2026-11-15):
+`curl -s https://preview-aws-gateway.vitanaland.com/api/v1/vtid/allocator/status` →
+`{"ok":true,"enabled":true,"env_var_enabled":true,"db_control":{"enabled":true,"expires_at":null,...},"message":"Allocator is active. All task creation paths should use POST /api/v1/vtid/allocate."}`
+(production returns the same). After the staging deploy, STAGING-VERIFY runs the same GET and expects
+`allocation_access: "open"` and `sparring_required: false` (`staging-tests.json`). No POST is sent to staging or
+production for proof: each one allocates a real VTID in the shared ledger; the POST behaviour is proven by the jest
+suites listed below.
+
+OASIS_PROOF: the only OASIS change is that `POST /allocate` and `/allocate-internal` no longer emit
+`vtid.plan_sparring.missing` for an allocation without a sparring id; a cited sparring id still emits
+`vtid.plan_sparring.attached`. Pinned by `vtid-05800-free-vtid-allocation.test.ts` ("allocates for an anonymous caller
+… needs no sparring record": `emitOasisEvent` not called) and `vtid-04868-plan-sparring-service.test.ts` ("OASIS at
+allocation": attached with a sparring id). The event type stays in the union for old rows.
 
 ## What blocked a free allocation, and what this change does
 
