@@ -1,7 +1,7 @@
 ---
 lane: gitlab-client-hardening
 state: ready
-next_actor: claude
+next_actor: kiro
 depends_on: []
 executor: claude
 repos: [exafyltd/vitana-platform]
@@ -13,7 +13,11 @@ paths:
   - docs/validation/VTID-05537/commands.log
   - docs/programs/engineering-platform/program.md
   - docs/validation/gitlab-client-hardening/**
-updated: 2026-11-15T07:40Z
+updated: 2026-11-15T07:37Z
+vtid: VTID-05801
 ---
 # Lane: gitlab-client-hardening
 Tasks as in plan.md, items 1 to 4. VTID from CI PLAN-SPAR; never by hand.
+
+### 2026-11-15T07:37Z · ci-plan-spar · ready (VTID allocated)
+VTID-05801 allocated after policy approval (converged-auto-v1).
