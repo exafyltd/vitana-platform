@@ -134,7 +134,13 @@ function parseYaml(text) {
       const { raw, no } = lines[i];
       const item = raw.slice(indent + 2);
       const m = KEY.exec(item);
-      if (m && !/^['"[]/.test(item)) {
+      if (/^[|>][-+]?$/.test(item.trim())) {
+        // A literal or folded block scalar as a list item: its body is every following line indented deeper than the dash.
+        i += 1;
+        const body = [];
+        while (i < lines.length && indentOf(lines[i]) > indent) { body.push(lines[i].raw.slice(indentOf(lines[i]))); i += 1; }
+        out.push(body.join(item.trim()[0] === '|' ? '\n' : ' ') + '\n');
+      } else if (m && !/^['"[]/.test(item)) {
         lines[i] = { raw: `${' '.repeat(indent + 2)}${item}`, no };
         out.push(map(indent + 2));
       } else {

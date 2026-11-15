@@ -31,7 +31,7 @@ gateway-staging-build:
       # Stage the codeintel sources inside the build context, as AWS-STAGE-DEPLOY-GATEWAY.yml does.
       rm -rf services/gateway/codeintel-src && mkdir -p services/gateway/codeintel-src/platform services/gateway/codeintel-src/vitana-v1
       tar --exclude=node_modules --exclude=services/gateway/codeintel-src -cf - . | tar -xf - -C services/gateway/codeintel-src/platform
-      git clone --depth 1 https://github.com/exafyltd/vitana-v1 services/gateway/codeintel-src/vitana-v1
+      git clone --depth 1 "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/vitana/vitana-v1.git" services/gateway/codeintel-src/vitana-v1
       rm -rf services/gateway/codeintel-src/vitana-v1/.git
       printf '%s' "$GITLAB_OIDC_TOKEN" > "$AWS_WEB_IDENTITY_TOKEN_FILE"
       ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
