@@ -8,6 +8,7 @@ repos: [exafyltd/vitana-platform]
 paths:
   - .claude/rules/collaboration.md
   - docs/validation/VTID-05802/**
+  - docs/programs/engineering-platform/program.md
 updated: 2026-11-15T10:00Z
 vtid: VTID-05802
 ---
