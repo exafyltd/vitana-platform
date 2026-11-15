@@ -1,7 +1,7 @@
 ---
 lane: gitlab-client-hardening
 state: ready
-next_actor: kiro
+next_actor: claude
 depends_on: []
 executor: claude
 repos: [exafyltd/vitana-platform]
