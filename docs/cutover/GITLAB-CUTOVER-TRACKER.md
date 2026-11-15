@@ -228,3 +228,25 @@ Count by status across the 106 lines (each line counted once, by its primary sta
 - 4 are the central-CI guard cases in `scripts/eng/free-tier-guard.test.mjs` (open owner decision above).
 - 5 are in `scripts/eng/fleet-classes-structure.test.mjs` (cases 8, 9, 10, 14, 20: `vitana-eng` and `vitana-eng-deploy` job tags, seccomp/AppArmor for the BuildKit service, `.build-image` rootless setup). They reproduce locally on the same code. That file and its inputs are not changed on this branch. The lanes `build-class-retag-2` and `deploy-path` in `.kiro/specs/agentic-delivery` track this as known work.
 - Branch changes: only `docs/cutover/**` and `scripts/eng/gitlab-settings.test.mjs`.
+
+## Batch: canonical CI, guards, committed `.env` (2026-11-15 ~11:40 UTC)
+
+**Canonical vitana-v1 CI file: `v1-delivery.gitlab-ci.yml`.** Set by VTID-05719 (`350b5783`), named in `settings/gitlab-settings.json` and `config/delivery/services.json`, and written by `pipeline-gen`. Stale assertions updated to match: `gitlab-settings.test.mjs`, `free-tier-guard.test.mjs` (cases 6, 10), and a new case that parses the file the sync ships.
+The stub `ci/v1.gitlab-ci.yml` is no longer the project's file. It stays in the folder because the M1 host script and two fixtures still reference it.
+
+**Guard decisions, from the contract, not from convenience:**
+- The milestone-1 "no deploy" rule was superseded by the delivery plan (§3.2, §8). Writes are gated by `DELIVERY_MODE`: shadow renders and reads only, live writes. The stage check was relaxed to allow exactly `build` and `deploy` from the reviewed staging include (`d42b7c45`). That include's deploy job must stay `when: manual`.
+- Include rule: templates may come only from the central project (local same-folder files, or `vitana/ci-config`). Remote URLs and other projects are still refused.
+- Credential and Premium-only keyword rules still apply to every central file.
+
+**Security defect fixed (fail closed):** `i18n-review` in `tpl-checks.yml` (VTID-05735) ran merge-request code on the untrusted class with an ID token, an AWS role and a push token. Plan §3.2 forbids all three there, and `fleet-classes` test 8 enforces it. The job is now `rules: when never`, with the script kept for a trusted re-enable. **Feature impact:** Bedrock i18n review is off until it runs as a trusted job. Owner should know.
+
+**GitHub runtime dependency removed:** `staging-gateway-deploy` cloned `github.com/exafyltd/vitana-v1` during its build. It now clones `gitlab.vitanaland.com/vitana/vitana-v1` with `CI_JOB_TOKEN`. **Not yet proven:** the job token must be allowed to read vitana-v1. It is verified only when that manual job runs.
+
+**Fleet-classes:** all 5 failures came from one cause. The test's YAML reader rejected `- |` block scalars. Reader fixed (block scalars supported). After that, the one real failure was item 3 above, now fixed. 21/21 pass.
+
+**`.env` in vitana-v1 (priority: security):** committed in `50ced4c` (VTID-05584), the only commit touching it. Contents: 18 keys. Public values only: a Supabase **anon** JWT (role `anon`, project `inmkhvwdcuyhnxkgfvsb`, expiry 2035) and public `VITE_*` URLs and flags. Repo-wide scan (tracked tree and full history, patterns only): no `service_role`, AWS, GitHub, Stripe, Slack, or private-key material. Firebase web keys and PEM header strings in code are public or parser code. **Rotation: not required.** The file stays because Vite reads it as build defaults; `.env.production` overrides it in CI. Residual action: add secret detection to the GitLab pipeline so this class of leak is caught earlier.
+
+**Still open:**
+- GitLab pipeline job failures: pipeline list gives no job IDs. Need a job-listing route before reading job logs.
+- GitHub retirement items (webhooks, tokens, Apps, schedules, branch rules, archive): not started. Irreversible steps need owner approval.
