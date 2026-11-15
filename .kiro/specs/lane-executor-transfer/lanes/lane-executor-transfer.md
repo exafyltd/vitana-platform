@@ -10,6 +10,8 @@ paths:
   - scripts/collab/queue.test.mjs
   - .claude/rules/collaboration.md
   - .kiro/steering/vitana-collaboration.md
+  - docs/programs/engineering-platform/program.md
+  - docs/validation/lane-executor-transfer/**
 updated: 2026-11-15T07:40Z
 ---
 # Lane: lane-executor-transfer
