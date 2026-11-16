@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { generateKeyPairSync, sign as cryptoSign } from 'node:crypto';
-import { signAttestation, verifyAttestation, findingsDigest, type AttestationSigner } from './attestation.ts';
+import { signAttestation, verifyAttestation, findingsDigest, type AttestationSigner } from './attestation';
 
 // Test-only key. Production signs with an AWS KMS ECC_NIST_P256 key.
 const { publicKey, privateKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });

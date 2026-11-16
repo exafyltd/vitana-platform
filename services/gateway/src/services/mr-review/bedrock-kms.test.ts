@@ -3,9 +3,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { generateKeyPairSync, sign as cryptoSign } from 'node:crypto';
-import { reviewMrWithBedrock, partnerToVerdict, parseEvidenceRef, buildMrReviewPrompt } from './bedrock-reviewer.ts';
-import { KmsEcdsaSigner } from './kms-signer.ts';
-import type { ReviewContext } from './review-context.ts';
+import { reviewMrWithBedrock, partnerToVerdict, parseEvidenceRef, buildMrReviewPrompt } from './bedrock-reviewer';
+import { KmsEcdsaSigner } from './kms-signer';
+import type { ReviewContext } from './review-context';
 
 const HEAD = '1'.repeat(40);
 const ctx: ReviewContext = { mr_iid: 5, head_sha: HEAD, files: [{ old_path: 'a.ts', new_path: 'a.ts', diff: '+x\n' }], diff_bytes: 3 };

@@ -6,9 +6,9 @@
  * Every verdict is signed, ACCEPT and CHANGES_REQUESTED alike; the merge gate
  * only ever acts on a verified ACCEPT.
  */
-import { buildReviewContext, type GitLabMrReader } from './review-context.ts';
-import { reviewMrWithBedrock, type RunPass } from './bedrock-reviewer.ts';
-import { signAttestation, type AttestationSigner, type SignedAttestation } from './attestation.ts';
+import { buildReviewContext, type GitLabMrReader } from './review-context';
+import { reviewMrWithBedrock, type RunPass } from './bedrock-reviewer';
+import { signAttestation, type AttestationSigner, type SignedAttestation } from './attestation';
 
 export interface ReviewRequestBody {
   mr_iid: number;

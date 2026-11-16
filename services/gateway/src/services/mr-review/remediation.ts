@@ -12,10 +12,13 @@ export type CycleReview =
 
 export type RemediationResult = { ok: true; newHead: string } | { ok: false; error: string };
 
+export const MAX_REMEDIATION_ROUNDS = 3;
+
 export interface CycleRound {
   round: number;
   head: string;
   outcome: CycleReview['kind'];
+  correlation_id: string;
 }
 
 export type CycleOutcome =
@@ -25,19 +28,22 @@ export type CycleOutcome =
 export async function runReviewCycle(input: {
   startHead: string;
   maxRounds: number;
-  review(head: string): Promise<CycleReview>;
-  remediate(head: string, findings: unknown[]): Promise<RemediationResult>;
+  correlationId: string;
+  review(head: string, correlationId: string): Promise<CycleReview>;
+  remediate(head: string, findings: unknown[], correlationId: string): Promise<RemediationResult>;
 }): Promise<CycleOutcome> {
   const rounds: CycleRound[] = [];
+  const limit = Math.min(input.maxRounds, MAX_REMEDIATION_ROUNDS);
   let head = input.startHead;
-  for (let round = 1; round <= input.maxRounds; round++) {
-    const r = await input.review(head);
-    rounds.push({ round, head, outcome: r.kind });
+  for (let round = 1; round <= limit; round++) {
+    const correlation_id = `${input.correlationId}/r${round}`;
+    const r = await input.review(head, correlation_id);
+    rounds.push({ round, head, outcome: r.kind, correlation_id });
     if (r.kind === 'accept') return { status: 'accepted', head, rounds, attestation: r.attestation };
     if (r.kind === 'failed') return { status: 'escalated', reason: 'review_failed', head, rounds, detail: r.reasons };
-    const fixed = await input.remediate(head, r.findings);
+    const fixed = await input.remediate(head, r.findings, correlation_id);
     if (!fixed.ok) return { status: 'escalated', reason: 'remediation_failed', head, rounds, detail: [fixed.error] };
     head = fixed.newHead;
   }
-  return { status: 'escalated', reason: 'max_rounds', head, rounds, detail: [`no ACCEPT within ${input.maxRounds} rounds`] };
+  return { status: 'escalated', reason: 'max_rounds', head, rounds, detail: [`no ACCEPT within ${limit} rounds`] };
 }

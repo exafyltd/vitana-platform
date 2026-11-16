@@ -4,7 +4,7 @@
  * before it reports anything. A response that cannot be verified is a failure.
  * The job never produces an accept of its own.
  */
-import { verifyAttestation, type SignedAttestation } from './attestation.ts';
+import { verifyAttestation, type SignedAttestation } from './attestation';
 
 export interface JobInput {
   mr_iid: number;

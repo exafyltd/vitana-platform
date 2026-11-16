@@ -5,8 +5,8 @@
  * tests pass a stub. The partner's findings are then mapped to the strict
  * verdict contract, and anything that does not map is refused.
  */
-import { validateVerdict, type ReviewVerdict, type ReviewFinding } from './verdict.ts';
-import type { ReviewContext } from './review-context.ts';
+import { validateVerdict, type ReviewVerdict, type ReviewFinding } from './verdict';
+import type { ReviewContext } from './review-context';
 
 export interface PartnerFindingLike {
   id: string;

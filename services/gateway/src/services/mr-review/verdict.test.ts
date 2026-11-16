@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { validateVerdict } from './verdict.ts';
+import { validateVerdict } from './verdict';
 
 const HEAD = 'a'.repeat(40);
 const good = (over: Record<string, unknown> = {}) => ({

@@ -46,6 +46,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createClient, projectId, redact } from './gitlab-api.mjs';
 import { laneKeyOf, localAfter, reviewCurrent, checksVerdict, protectedTouched, mergeDecision } from '../collab/land-guard.mjs';
+import { judgeAttestedReview, attestationFromNotes } from './attested-review.mjs';
 import { commitsInRange, PROTECTED_GATE_PATHS, GOVERNANCE_PATHS } from '../collab/queue.mjs';
 import { crossRepoReview } from './review-source.mjs';
 import { loadAssistRules, matchingRules, assistActions, assistRuns, triggerAssist } from './assist-trigger.mjs';
@@ -290,6 +291,34 @@ async function ensureNote(ctx, pid, mr, code, head) {
 // ── one merge request ────────────────────────────────────────────────────────
 
 /** Read every fact about one open merge request and decide. Writes nothing to GitLab. */
+/**
+ * Bedrock review for the exact merge head. The accept is the newest signed attestation note on the MR
+ * (written by the review job with the reviewer's pinned key). It is verified here against the pinned
+ * public key, the MR, the project and the current head. Anything else fails closed: no key, no note,
+ * a changed head, an expired or forged attestation, or CHANGES_REQUESTED all give ok: false.
+ */
+export async function bedrockReviewFor(ctx, pid, project, mr, head) {
+  const key = ctx.attestationKey;
+  if (!key || !key.publicKeyPem || !key.keyId || !key.reviewer) {
+    return { ok: false, code: 'no_review', reason: 'the Bedrock reviewer key is not configured; nothing merges without it' };
+  }
+  const notes = await ctx.client.paginate(`/projects/${pid}/merge_requests/${mr.iid}/notes`, { maxPages: 5 });
+  const att = attestationFromNotes(notes);
+  const v = judgeAttestedReview({
+    attestation: att,
+    project: key.project || project.path_with_namespace,
+    mr_iid: mr.iid,
+    head_sha: head,
+    publicKeyPem: key.publicKeyPem,
+    keyId: key.keyId,
+    reviewer: key.reviewer,
+    findings: att?.findings ?? [],
+    now: ctx.now ? ctx.now() : new Date(),
+    maxAgeMs: key.maxAgeMs ?? 2 * 60 * 60 * 1000,
+  });
+  return { ok: v.ok, code: v.code, reason: v.reason };
+}
+
 export async function evaluate(ctx, project, repo, mr) {
   const pid = projectId(project.path);
   const verdict = (action, reasonCode, reason, extra = {}) => ({ iid: mr.iid, title: mr.title, head: mr.sha, action, reasonCode, reason, ...extra });
@@ -306,17 +335,23 @@ export async function evaluate(ctx, project, repo, mr) {
   const behindBy = Number(gitRun(ctx, repo, ['rev-list', '--count', `${head}..origin/main`]));
   const commits = commitsInRange(repo, 'origin/main', head);
 
-  // Review
-  const newest = commits.find((c) => c.review === laneKey && (c.verdict === 'accept' || c.verdict === 'changes'));
-  const pushed = newest && newest.verdict === 'accept' && REVIEWER_RE.test(newest.reviewer || '') && SHA.test(newest.reviewedHead || '')
-    ? await pushedByReviewer(ctx, pid, repo, newest.sha)
-    : false;
-  const judged = judgeReviewCommit(commits, laneKey, { pushed, reviewerUser: ctx.reviewerUser });
-  let review = { ok: judged.ok, reason: judged.reason, code: judged.code };
-  if (judged.ok) {
-    const walk = localAfter(repo, judged.commit.reviewedHead, head, laneKey);
-    const current = reviewCurrent(judged.commit.reviewedHead, head, walk.after, laneKey, walk.prDiffSame);
-    review = { ...current, code: current.ok ? 'review_found' : 'review_stale' };
+  // Review. Bedrock acceptance is the review when ctx.reviewSource is 'bedrock' (production). Otherwise the
+  // trailer-based review stands (tests and the GitHub-era path). Both feed the same decide() below.
+  let review;
+  if (ctx.reviewSource === 'bedrock') {
+    review = await bedrockReviewFor(ctx, pid, project, mr, head);
+  } else {
+    const newest = commits.find((c) => c.review === laneKey && (c.verdict === 'accept' || c.verdict === 'changes'));
+    const pushed = newest && newest.verdict === 'accept' && REVIEWER_RE.test(newest.reviewer || '') && SHA.test(newest.reviewedHead || '')
+      ? await pushedByReviewer(ctx, pid, repo, newest.sha)
+      : false;
+    const judged = judgeReviewCommit(commits, laneKey, { pushed, reviewerUser: ctx.reviewerUser });
+    review = { ok: judged.ok, reason: judged.reason, code: judged.code };
+    if (judged.ok) {
+      const walk = localAfter(repo, judged.commit.reviewedHead, head, laneKey);
+      const current = reviewCurrent(judged.commit.reviewedHead, head, walk.after, laneKey, walk.prDiffSame);
+      review = { ...current, code: current.ok ? 'review_found' : 'review_stale' };
+    }
   }
 
   // Checks (only worth reading when the review stands; a pipeline is read for exactly the head)

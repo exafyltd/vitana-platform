@@ -6,7 +6,7 @@
  * KMSClient's send() bound to the approved reviewer role. Tests pass a mock.
  */
 import { createPublicKey } from 'node:crypto';
-import type { AttestationSigner } from './attestation.ts';
+import type { AttestationSigner } from './attestation';
 
 export interface KmsCommandLike {
   name: 'SignCommand' | 'GetPublicKeyCommand';

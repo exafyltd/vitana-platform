@@ -3,13 +3,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { generateKeyPairSync, sign as cryptoSign } from 'node:crypto';
-import { handleReviewRequest, type ReviewEndpointDeps } from './endpoint.ts';
-import { runReviewJob } from './review-job.ts';
-import { judgeAttestedReview } from './merge-gate.ts';
-import { runReviewCycle } from './remediation.ts';
-import { KmsEcdsaSigner } from './kms-signer.ts';
-import type { GitLabMrReader } from './review-context.ts';
-import type { RunPass } from './bedrock-reviewer.ts';
+import { handleReviewRequest, type ReviewEndpointDeps } from './endpoint';
+import { runReviewJob } from './review-job';
+import { judgeAttestedReview } from './merge-gate';
+import { runReviewCycle } from './remediation';
+import { KmsEcdsaSigner } from './kms-signer';
+import type { GitLabMrReader } from './review-context';
+import type { RunPass } from './bedrock-reviewer';
 
 const { publicKey, privateKey } = generateKeyPairSync('ec', { namedCurve: 'prime256v1' });
 const publicKeyPem = publicKey.export({ type: 'spki', format: 'pem' }).toString();
@@ -126,6 +126,7 @@ test('remediation loop: CHANGES_REQUESTED → remediate → re-review → ACCEPT
   const out = await runReviewCycle({
     startHead: HEAD,
     maxRounds: 3,
+    correlationId: 'pipe-1-job-2',
     review: async (head) => {
       reviewsSeen.push(head);
       return head === HEAD
@@ -136,11 +137,12 @@ test('remediation loop: CHANGES_REQUESTED → remediate → re-review → ACCEPT
   });
   assert.equal(out.status, 'accepted');
   assert.deepEqual(reviewsSeen, [HEAD, NEW]);
+  assert.deepEqual(out.rounds.map((r) => r.correlation_id), ['pipe-1-job-2/r1', 'pipe-1-job-2/r2']);
 });
 
 test('remediation loop escalates after the round limit and never accepts silently', async () => {
   const out = await runReviewCycle({
-    startHead: HEAD, maxRounds: 2,
+    startHead: HEAD, maxRounds: 2, correlationId: 'c',
     review: async (head) => ({ kind: 'changes', head, findings: [{}], attestation: {} }),
     remediate: async () => ({ ok: true, newHead: HEAD }),
   });
@@ -149,9 +151,9 @@ test('remediation loop escalates after the round limit and never accepts silentl
 });
 
 test('a failed remediation escalates; a failed review is not an accept', async () => {
-  const a = await runReviewCycle({ startHead: HEAD, maxRounds: 3, review: async (h) => ({ kind: 'changes', head: h, findings: [{}], attestation: {} }), remediate: async () => ({ ok: false, error: 'agent crashed' }) });
+  const a = await runReviewCycle({ startHead: HEAD, maxRounds: 3, correlationId: 'c', review: async (h) => ({ kind: 'changes', head: h, findings: [{}], attestation: {} }), remediate: async () => ({ ok: false, error: 'agent crashed' }) });
   assert.equal(a.status, 'escalated');
-  const b = await runReviewCycle({ startHead: HEAD, maxRounds: 3, review: async () => ({ kind: 'failed', reasons: ['gateway 502'] }), remediate: async () => ({ ok: true, newHead: HEAD }) });
+  const b = await runReviewCycle({ startHead: HEAD, maxRounds: 3, correlationId: 'c', review: async () => ({ kind: 'failed', reasons: ['gateway 502'] }), remediate: async () => ({ ok: true, newHead: HEAD }) });
   assert.equal(b.status, 'escalated');
   if (b.status === 'escalated') assert.equal(b.reason, 'review_failed');
 });

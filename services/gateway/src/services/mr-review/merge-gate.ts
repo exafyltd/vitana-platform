@@ -4,7 +4,7 @@
  * can use it without changes. Only a fresh ACCEPT signed for the exact head
  * passes. The result is always code-coded, so a refusal names its reason.
  */
-import { verifyAttestation, type SignedAttestation } from './attestation.ts';
+import { verifyAttestation, type SignedAttestation } from './attestation';
 
 export interface AttestedReviewInput {
   attestation: SignedAttestation;

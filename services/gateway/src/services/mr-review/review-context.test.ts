@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildReviewContext, type GitLabMrReader } from './review-context.ts';
+import { buildReviewContext, type GitLabMrReader } from './review-context';
 
 const HEAD = 'c'.repeat(40);
 const OTHER = 'd'.repeat(40);
