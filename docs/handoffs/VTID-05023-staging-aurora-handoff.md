@@ -75,3 +75,19 @@ Owner instruction: take ownership of VTID-05023 through staging verification. St
 Correction to section 2: the F13 "split-brain" framing assumed separate projects. If the shared-project suspicion is confirmed, frontend and gateway write to the same production database. That is more serious than F13 says, and it is an owner decision, not a plan detail.
 
 Owner checks: O1 (effective database host) and O2 (staging project reference, JWKS algorithm, JWT-secret digests). Each prints only a host, a reference, a digest or a verdict.
+
+## 9. Owner check results (2026-11-16, CloudShell)
+
+| Check | Result | Status |
+|---|---|---|
+| O1: effective database host of the Aurora authenticator URI | rehearsal cluster | VERIFIED (plan v4 Branch A) |
+| O2: staging Supabase project reference | the production project | VERIFIED: staging points at production |
+| O2: staging gateway JWT secret equals production JWT secret | SAME | VERIFIED (digest) |
+| O2: JWKS keys published by the project | none | INFERRED: shared symmetric secret (HS256). Not checked against a real token header |
+| P0 | digest passes; algorithm inferred | PASS WITH CAVEAT: the proxy's secret matches production. Live token check still needed |
+| Staging writes to production: which writes, how many | not measured | UNESTABLISHED: needs one read-only audit query on production (owner decision 2) |
+| Staging gateway write control | none exists on main | OPEN: decision 1 (scale staging to zero, reversible) |
+
+Earlier O2 run had a script bug (the `.supabase.co` suffix was not stripped). The corrected command gives the results above. Do not use the earlier `shared_with_prod: NO` or `jwks_algs: UNREACHABLE` output.
+
+Still on hold: staging cutover, sign-in, D3 (blocked while the staging project is production). Open decisions: 1 scale staging gateway to zero; 2 one read-only production audit query; 3 review of production jobs; 4 separate staging Supabase project; 5 D3 stays blocked; 6 lane reassignment.
