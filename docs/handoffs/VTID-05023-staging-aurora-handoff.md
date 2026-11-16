@@ -58,3 +58,20 @@ Serve the staging gateway's `/rest/v1` traffic from the Aurora rehearsal copy th
 ## 7. Known gaps
 - The sparring round records (rounds 1–3) exist only in the Claude Code session's task output, not in git. Ask for them or re-run sparring.
 - P0 is unverified. Nothing in this handoff has checked the JWT secret.
+
+## 8. Status update: suspected shared project vs verified writes (2026-11-16)
+
+Owner instruction: take ownership of VTID-05023 through staging verification. Staging cutover and sign-in tests stay ON HOLD until the checks below pass. Production cutover is outside this session.
+
+| Claim | Status | Evidence / what settles it |
+|---|---|---|
+| Staging and production use one Supabase project | SUSPECTED | `CLAUDE.md` rule 31 and vitana-v1 `CLAUDE.md` say one project serves every frontend. `docs/STAGING.md` (2026-05-22 snapshot) says staging is a separate project. Settled by O2 (project reference). |
+| The staging gateway writes to production today | UNVERIFIED | Would follow from the shared project plus keep mode. Needs O2 and a write-path trace (gateway, preview browser, background jobs). Not established. |
+| The proxy's effective database target | PENDING O1 | The authenticator-URI secret exists (metadata checked, value not read). Its host is the open question. `PGRST_DB_HOST`/`NAME`/`PORT` are probably inert in PostgREST v12 (`db-uri` is the setting); not verified here. |
+| Writes through the proxy | NOT ESTABLISHED | Sampled log streams showed GET traffic only. That is not evidence of no writes. Needs a read-only database check of insert/update/delete counters over a window, plus the pg_cron job state on the rehearsal database. |
+| P0: staging JWT secret equals the signing secret of the project the staging URL points to | PENDING O2 | The check must compare against the signing secret of the project the staging URL names, and record the token algorithm. |
+| D3: test identity for sign-in and refresh | BLOCKED | If staging is production, sign-in targets production, which rule 48 forbids. Not usable until O2 shows isolation. |
+
+Correction to section 2: the F13 "split-brain" framing assumed separate projects. If the shared-project suspicion is confirmed, frontend and gateway write to the same production database. That is more serious than F13 says, and it is an owner decision, not a plan detail.
+
+Owner checks: O1 (effective database host) and O2 (staging project reference, JWKS algorithm, JWT-secret digests). Each prints only a host, a reference, a digest or a verdict.
