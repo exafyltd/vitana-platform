@@ -1200,6 +1200,23 @@ android-module:
           - ".github/workflows/NATIVE-CI.yml"
         compare_to: "refs/heads/main"
 
+bedrock-review:
+  extends: ".check"
+  stage: "checks"
+  variables:
+    DELIVERY_CHECK: "bedrock-review"
+    MR_REVIEW_LEVEL: "bedrock"
+  script:
+    - "node scripts/ci/mr-review/review-job.mjs"
+  artifacts:
+    when: "always"
+    expire_in: "1 day"
+    paths:
+      - "mr-review-out/"
+      - ".delivery-ran/"
+  rules:
+    - if: "$CI_PIPELINE_SOURCE == \"merge_request_event\""
+
 gate:
   extends:
     - ".gate"
@@ -1267,6 +1284,9 @@ gate:
       optional: true
       artifacts: true
     - job: "android-module"
+      optional: true
+      artifacts: true
+    - job: "bedrock-review"
       optional: true
       artifacts: true
   rules:

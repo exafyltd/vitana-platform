@@ -29,6 +29,9 @@ function docsFor(repo) {
 const jobsIn = (repo, ctx) => { const d = docsFor(repo); return gen.evaluatePipeline(d.all, ctx); };
 const checkNames = (repo) => Object.keys(config().repositories[repo].checks);
 
+// Checks flagged every_merge_request run on each merge request head and are not path-selected.
+const everyMr = (repo, name) => Boolean(config().repositories[repo].checks[name].every_merge_request);
+
 test('renders both project files from the service list, byte for byte', () => {
   const rendered = gen.renderAll(config());
   assert.deepEqual(Object.keys(rendered).sort(), ['infra/gitlab-engineering/ci/platform-delivery.gitlab-ci.yml', 'infra/gitlab-engineering/ci/v1-delivery.gitlab-ci.yml']);
@@ -72,7 +75,7 @@ test('each T1 check job has rules: changes: from its service paths plus the shar
   for (const repo of REPOS) {
     const { cfg, generated } = docsFor(repo);
     const r = cfg.repositories[repo];
-    for (const check of checkNames(repo)) {
+    for (const check of checkNames(repo).filter((n) => !everyMr(repo, n))) {
       const job = generated[check];
       assert.ok(job, `${repo}: T1 job ${check} missing`);
       const expected = new Set([...r.shared_paths, ...r.other_paths]);
@@ -95,12 +98,12 @@ test('a shared path, or an area no single service owns, selects every check', ()
 
 test('a change to one service selects only that service checks; a documentation-only change selects none', () => {
   const sql = gen.selectChecks(config(), 'vitana-v1', ['supabase/migrations/20990101000000_x.sql']);
-  assert.deepEqual(sql.selected.sort(), ['migration-lint', 'sql-tests']);
+  assert.deepEqual(sql.selected.filter((n) => !everyMr('vitana-v1', n)).sort(), ['migration-lint', 'sql-tests']);
   const docs = gen.selectChecks(config(), 'vitana-platform', ['docs/a.md', '.kiro/specs/x/lanes/y.md', 'CLAUDE.md']);
   assert.deepEqual(docs, { selected: [], unknown: [] });
   const jobs = Object.keys(jobsIn('vitana-platform', MR(['docs/a.md'])));
   assert.deepEqual(jobs.sort(), ['change-suite', 'collab-handoff', 'gate', 'lane-scope', 'pr-gate-report']);
-  const gw = gen.selectChecks(config(), 'vitana-platform', ['services/gateway/src/routes/x.ts']).selected;
+  const gw = gen.selectChecks(config(), 'vitana-platform', ['services/gateway/src/routes/x.ts']).selected.filter((n) => !everyMr('vitana-platform', n));
   assert.ok(gw.includes('gateway-jest') && gw.includes('gateway-typecheck'));
   assert.ok(!gw.includes('aurora-privilege-parity') && !gw.includes('sql-activity-tiers') && !gw.includes('phase-2b-doc-gate'), gw.join(','));
 });
@@ -111,7 +114,7 @@ test('an unknown path makes gate fail and name it, so the merge request cannot l
   const v = gen.gateVerdict(config(), 'vitana-v1', ['newtopdir/x.txt'], []);
   assert.equal(v.ok, false);
   assert.match(v.message, /newtopdir\/x\.txt/);
-  const ok = gen.gateVerdict(config(), 'vitana-v1', ['supabase/migrations/a.sql'], ['migration-lint', 'sql-tests']);
+  const ok = gen.gateVerdict(config(), 'vitana-v1', ['supabase/migrations/a.sql'], ['migration-lint', 'sql-tests', 'bedrock-review']);
   assert.equal(ok.ok, true, ok.message);
   const missing = gen.gateVerdict(config(), 'vitana-v1', ['supabase/migrations/a.sql'], ['sql-tests']);
   assert.equal(missing.ok, false);
@@ -209,7 +212,7 @@ test('main pipelines run every check once, are not interruptible, and use the ma
     for (const ctx of [MAIN({ DELIVERY_MODE: 'live' }), MAIN(), NIGHTLY({ DELIVERY_MODE: 'live' })]) {
       const jobs = jobsIn(repo, ctx);
       const full = Object.keys(jobs).filter((n) => n.startsWith('full-suite:')).map((n) => n.slice('full-suite:'.length));
-      assert.deepEqual(full.sort(), checkNames(repo).sort(), `${repo}: full suite`);
+      assert.deepEqual(full.sort(), checkNames(repo).filter((n) => !everyMr(repo, n)).sort(), `${repo}: full suite`);
       for (const [name, job] of Object.entries(jobs)) {
         assert.equal(job.interruptible, false, `${repo}: ${name} is interruptible on main`);
         if (MAIN_CLASS.test(name)) assert.deepEqual(job.tags, ['vitana-eng-main'], `${repo}: ${name}`);

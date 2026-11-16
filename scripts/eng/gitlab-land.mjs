@@ -292,6 +292,36 @@ async function ensureNote(ctx, pid, mr, code, head) {
 
 /** Read every fact about one open merge request and decide. Writes nothing to GitLab. */
 /**
+ * THE review policy. Every path that can authorize a merge calls this: evaluate() (landing), the queue
+ * (sameRepoReview) and cross-repo lanes (crossRepoReview). ctx.reviewSource:
+ *   'bedrock'  (production default): only a valid signed Bedrock ACCEPT for the exact head is a review.
+ *   'trailers' (explicit legacy, documented): the GitHub-era trailer review, unchanged.
+ *   anything else (including unset): fail closed. Nothing is authorized without a policy.
+ */
+export async function reviewFor(ctx, pid, project, repo, mr, head, laneKey, commits) {
+  if (ctx.reviewSource === 'bedrock') return bedrockReviewFor(ctx, pid, project, mr, head);
+  if (ctx.reviewSource !== 'trailers') {
+    return { ok: false, code: 'no_review', reason: 'no review policy is set for this project; nothing merges without one' };
+  }
+  return trailerReviewFor(ctx, pid, repo, head, laneKey, commits);
+}
+
+/** Legacy trailer review (explicit 'trailers' policy only): the newest accept commit, pushed by the reviewer account. */
+export async function trailerReviewFor(ctx, pid, repo, head, laneKey, commits) {
+  const newest = commits.find((c) => c.review === laneKey && (c.verdict === 'accept' || c.verdict === 'changes'));
+  const pushed = newest && newest.verdict === 'accept' && REVIEWER_RE.test(newest.reviewer || '') && SHA.test(newest.reviewedHead || '')
+    ? await pushedByReviewer(ctx, pid, repo, newest.sha)
+    : false;
+  const judged = judgeReviewCommit(commits, laneKey, { pushed, reviewerUser: ctx.reviewerUser });
+  if (!judged.ok) return { ok: false, code: judged.code, reason: judged.reason };
+  const walk = localAfter(repo, judged.commit.reviewedHead, head, laneKey);
+  const current = reviewCurrent(judged.commit.reviewedHead, head, walk.after, laneKey, walk.prDiffSame);
+  if (!current.ok) return { ok: false, code: 'review_stale', reason: current.reason };
+  const at = gitRun(ctx, repo, ['log', '-1', '--format=%cI', judged.commit.sha]);
+  return { ok: true, code: 'review_found', reason: current.reason, entry: { sha: judged.commit.sha, reviewedHead: judged.commit.reviewedHead, reviewer: judged.commit.reviewer, at: new Date(at).toISOString() } };
+}
+
+/**
  * Bedrock review for the exact merge head. The accept is the newest signed attestation note on the MR
  * (written by the review job with the reviewer's pinned key). It is verified here against the pinned
  * public key, the MR, the project and the current head. Anything else fails closed: no key, no note,
@@ -316,7 +346,13 @@ export async function bedrockReviewFor(ctx, pid, project, mr, head) {
     now: ctx.now ? ctx.now() : new Date(),
     maxAgeMs: key.maxAgeMs ?? 2 * 60 * 60 * 1000,
   });
-  return { ok: v.ok, code: v.code, reason: v.reason };
+  if (!v.ok) return { ok: false, code: v.code, reason: v.reason };
+  return {
+    ok: true,
+    code: v.code,
+    reason: v.reason,
+    entry: { sha: `bedrock:${att.payload.findings_sha256.slice(0, 12)}`, reviewedHead: head, reviewer: key.reviewer, at: att.payload.issued_at },
+  };
 }
 
 export async function evaluate(ctx, project, repo, mr) {
@@ -335,24 +371,8 @@ export async function evaluate(ctx, project, repo, mr) {
   const behindBy = Number(gitRun(ctx, repo, ['rev-list', '--count', `${head}..origin/main`]));
   const commits = commitsInRange(repo, 'origin/main', head);
 
-  // Review. Bedrock acceptance is the review when ctx.reviewSource is 'bedrock' (production). Otherwise the
-  // trailer-based review stands (tests and the GitHub-era path). Both feed the same decide() below.
-  let review;
-  if (ctx.reviewSource === 'bedrock') {
-    review = await bedrockReviewFor(ctx, pid, project, mr, head);
-  } else {
-    const newest = commits.find((c) => c.review === laneKey && (c.verdict === 'accept' || c.verdict === 'changes'));
-    const pushed = newest && newest.verdict === 'accept' && REVIEWER_RE.test(newest.reviewer || '') && SHA.test(newest.reviewedHead || '')
-      ? await pushedByReviewer(ctx, pid, repo, newest.sha)
-      : false;
-    const judged = judgeReviewCommit(commits, laneKey, { pushed, reviewerUser: ctx.reviewerUser });
-    review = { ok: judged.ok, reason: judged.reason, code: judged.code };
-    if (judged.ok) {
-      const walk = localAfter(repo, judged.commit.reviewedHead, head, laneKey);
-      const current = reviewCurrent(judged.commit.reviewedHead, head, walk.after, laneKey, walk.prDiffSame);
-      review = { ...current, code: current.ok ? 'review_found' : 'review_stale' };
-    }
-  }
+  // Review: one policy for every landing path (see reviewFor). Trailers are only a review under the explicit legacy policy.
+  const review = await reviewFor(ctx, pid, project, repo, mr, head, laneKey, commits);
 
   // Checks (only worth reading when the review stands; a pipeline is read for exactly the head)
   let checks = { state: 'pending', detail: 'not read' };
@@ -757,19 +777,9 @@ async function pipelineChecks(ctx, pid, project, sha, { ref } = {}) {
 }
 
 /** Same-repo review: M2's push-identity check (judgeReviewCommit, pushedByReviewer), then reviewCurrent. */
-async function sameRepoReview(ctx, pid, repo, head, laneKey) {
+async function sameRepoReview(ctx, pid, project, repo, mr, head, laneKey) {
   const commits = commitsInRange(repo, 'origin/main', head);
-  const newest = commits.find((c) => c.review === laneKey && (c.verdict === 'accept' || c.verdict === 'changes'));
-  const pushed = newest && newest.verdict === 'accept' && REVIEWER_RE.test(newest.reviewer || '') && SHA.test(newest.reviewedHead || '')
-    ? await pushedByReviewer(ctx, pid, repo, newest.sha)
-    : false;
-  const judged = judgeReviewCommit(commits, laneKey, { pushed, reviewerUser: ctx.reviewerUser });
-  if (!judged.ok) return { ok: false, code: judged.code, reason: judged.reason };
-  const walk = localAfter(repo, judged.commit.reviewedHead, head, laneKey);
-  const current = reviewCurrent(judged.commit.reviewedHead, head, walk.after, laneKey, walk.prDiffSame);
-  if (!current.ok) return { ok: false, code: 'review_stale', reason: current.reason };
-  const at = gitRun(ctx, repo, ['log', '-1', '--format=%cI', judged.commit.sha]);
-  return { ok: true, code: 'review_found', reason: current.reason, entry: { sha: judged.commit.sha, reviewedHead: judged.commit.reviewedHead, reviewer: judged.commit.reviewer, at: new Date(at).toISOString() } };
+  return reviewFor(ctx, pid, project, repo, mr, head, laneKey, commits);
 }
 
 /** Does a hot-file merge request wait? Yes while the previous landing of the same hot key has no STAGING-VERIFY result. */
@@ -833,8 +843,10 @@ async function queueItem(ctx, project, repo, mr, env) {
   }
 
   const review = env.platformRepo
-    ? crossRepoReview({ platformRepo: env.platformRepo, repo, head, laneKey })
-    : await sameRepoReview(ctx, env.pid, repo, head, laneKey);
+    ? (ctx.reviewSource === 'bedrock'
+      ? { ok: false, code: 'no_review', reason: 'cross-repo lane review is not Bedrock-governed yet; the lane cannot land under the bedrock policy' }
+      : crossRepoReview({ platformRepo: env.platformRepo, repo, head, laneKey }))
+    : await sameRepoReview(ctx, env.pid, project, repo, mr, head, laneKey);
 
   const matched = matchingRules(files, env.rules);
   if (matched.length) {
@@ -1146,6 +1158,8 @@ export function makeContext(o, { env = process.env, fetch: fetchImpl, now = Date
     gitEnv: { ...env, ...askpass(workdir, tokenFile), GIT_CONFIG_NOSYSTEM: '1' },
     gitTimeoutMs: 120_000,
     reviewerUser: o.reviewerUser || DEFAULTS.reviewerUser,
+    reviewSource: o.reviewSource || 'bedrock',
+    attestationKey: o.attestationKey || null,
     botUser: o.botUser || DEFAULTS.botUser,
     botEmail: o.botEmail || DEFAULTS.botEmail,
     pipelineWaitMs: (o.pipelineWaitMinutes ?? DEFAULTS.pipelineWaitMinutes) * 60_000,

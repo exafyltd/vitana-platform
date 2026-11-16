@@ -12,6 +12,7 @@ const ctx: ReviewContext = { mr_iid: 5, head_sha: HEAD, files: [{ old_path: 'a.t
 
 test('partner findings map to a verdict: blocker → CHANGES_REQUESTED', async () => {
   const r = await reviewMrWithBedrock({
+    project: 'vitana/vitana-v1',
     context: ctx,
     runPass: async () => ({ ok: true, review: { summary: 's', findings: [{ id: 'R1-F1', severity: 'blocker', claim: 'bad', evidence: 'a.ts:3', suggestion: 'fix' }] } }),
   });
@@ -20,20 +21,20 @@ test('partner findings map to a verdict: blocker → CHANGES_REQUESTED', async (
 });
 
 test('no findings maps to ACCEPT; minor-only maps to ACCEPT', async () => {
-  const none = await reviewMrWithBedrock({ context: ctx, runPass: async () => ({ ok: true, review: { summary: 's', findings: [] } }) });
+  const none = await reviewMrWithBedrock({ project: 'vitana/vitana-v1', context: ctx, runPass: async () => ({ ok: true, review: { summary: 's', findings: [] } }) });
   assert.equal(none.ok && none.verdict.decision, 'ACCEPT');
-  const minor = await reviewMrWithBedrock({ context: ctx, runPass: async () => ({ ok: true, review: { summary: 's', findings: [{ id: 'm', severity: 'minor', claim: 'nit', evidence: { path: 'a.ts', line: 1 }, suggestion: '' }] } }) });
+  const minor = await reviewMrWithBedrock({ project: 'vitana/vitana-v1', context: ctx, runPass: async () => ({ ok: true, review: { summary: 's', findings: [{ id: 'm', severity: 'minor', claim: 'nit', evidence: { path: 'a.ts', line: 1 }, suggestion: '' }] } }) });
   assert.equal(minor.ok && minor.verdict.decision, 'ACCEPT');
 });
 
 test('a finding with no file and line in its evidence is refused, not guessed', async () => {
-  const r = await reviewMrWithBedrock({ context: ctx, runPass: async () => ({ ok: true, review: { summary: 's', findings: [{ id: 'x', severity: 'blocker', claim: 'c', evidence: 'looks wrong', suggestion: '' }] } }) });
+  const r = await reviewMrWithBedrock({ project: 'vitana/vitana-v1', context: ctx, runPass: async () => ({ ok: true, review: { summary: 's', findings: [{ id: 'x', severity: 'blocker', claim: 'c', evidence: 'looks wrong', suggestion: '' }] } }) });
   assert.equal(r.ok, false);
   if (!r.ok) assert.equal(r.reason, 'invalid_verdict');
 });
 
 test('a failed partner pass is reported as pass_failed', async () => {
-  const r = await reviewMrWithBedrock({ context: ctx, runPass: async () => ({ ok: false, reason: 'model_unavailable', error: 'all tiers failed' }) });
+  const r = await reviewMrWithBedrock({ project: 'vitana/vitana-v1', context: ctx, runPass: async () => ({ ok: false, reason: 'model_unavailable', error: 'all tiers failed' }) });
   assert.equal(r.ok, false);
   if (!r.ok) assert.equal(r.reason, 'pass_failed');
 });

@@ -137,6 +137,7 @@ function context(w, f, extra = {}, deps = {}) {
   if (!fs.existsSync(tokenFile)) fs.writeFileSync(tokenFile, `${TOKEN}\n`, { mode: 0o600 });
   const lines = [];
   const ctx = land.makeContext({
+    reviewSource: 'trailers', // legacy trailer policy, tested explicitly; the production default is 'bedrock'
     workdir: path.join(w.root, 'land'), 'token-file': tokenFile, url: 'https://gitlab.test',
     projectsOverride: [{ name: 'rehearsal', path: 'vitana/rehearsal', landing: true, required_jobs: ['unit', 'build'] }],
     remoteUrl: () => w.remote, ...extra,
@@ -987,7 +988,7 @@ function cli(sc, argv, extraOverrides = {}) {
   fs.writeFileSync(tokenFile, `${TOKEN}\n`, { mode: 0o600 });
   const args = [...argv, '--url', 'https://gitlab.test', '--token-file', tokenFile, '--workdir', path.join(sc.w.root, 'land')];
   const overrides = { projectsOverride: [{ name: 'rehearsal', path: 'vitana/rehearsal', landing: true, required_jobs: ['unit', 'build'] }], remoteUrl: () => sc.w.remote, ...extraOverrides };
-  const promise = land.main(args, { fetch: f, now: () => NOW, stdout: (t) => out.push(t), overrides });
+  const promise = land.main(args, { fetch: f, now: () => NOW, stdout: (t) => out.push(t), overrides: { reviewSource: 'trailers', ...overrides } });
   return promise.then((code) => ({ code, out: out.join(''), f }));
 }
 
@@ -1026,7 +1027,7 @@ test('CLI exit codes: 1 for a failed tick, an unknown project, an unknown comman
   assert.match(missing.out, /needs a value/);
   const sc = scenario();
   const out = [];
-  const code = await land.main(['run', '--token-file', path.join(sc.w.root, 'no-such-token'), '--url', 'https://gitlab.test', '--workdir', path.join(sc.w.root, 'land')], { stdout: (t) => out.push(t), overrides: { projectsOverride: [] } });
+  const code = await land.main(['run', '--token-file', path.join(sc.w.root, 'no-such-token'), '--url', 'https://gitlab.test', '--workdir', path.join(sc.w.root, 'land')], { stdout: (t) => out.push(t), overrides: { projectsOverride: [], reviewSource: 'trailers' } });
   assert.equal(code, 1);
   assert.match(out.join(''), /ENOENT|no such file/i);
 });

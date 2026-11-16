@@ -598,6 +598,19 @@
             "fixture": "NATIVE-CI.yml#vitana-voice Android module — JVM + Robolectric unit tests",
             "github_shards": 1
           }
+        },
+        "bedrock-review": {
+          "kind": "review",
+          "every_merge_request": true,
+          "variables": {
+            "MR_REVIEW_LEVEL": "bedrock"
+          },
+          "script": [
+            "node scripts/ci/mr-review/review-job.mjs"
+          ],
+          "artifacts": [
+            "mr-review-out/"
+          ]
         }
       },
       "assist_rules": {

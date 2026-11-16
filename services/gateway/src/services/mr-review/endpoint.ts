@@ -41,7 +41,7 @@ export async function handleReviewRequest(deps: ReviewEndpointDeps, input: { aut
   const ctx = await buildReviewContext({ reader, mr_iid: b.mr_iid as number, expectedHeadSha: b.expected_head_sha });
   if (!ctx.ok) return { status: 409, body: { error: 'review context refused', reason: ctx.reason } };
 
-  const review = await reviewMrWithBedrock({ context: ctx.context, runPass: deps.runPass });
+  const review = await reviewMrWithBedrock({ context: ctx.context, runPass: deps.runPass, project: deps.project });
   if (!review.ok) return { status: 502, body: { error: review.reason, errors: review.errors } };
 
   // Re-check the head after the model call: the head may have moved while it ran.

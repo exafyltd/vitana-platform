@@ -13,15 +13,15 @@ export interface RemediationRequest {
 export interface ImplementationAgent {
   dispatch(req: RemediationRequest, signal: AbortSignal): Promise<{ ok: true; new_head_sha: string } | { ok: false; error: string }>;
 }
-export type RemediateFn = (head: string, findings: unknown[], meta: { correlationId: string; mr_iid: number }) => Promise<{ ok: true; newHead: string } | { ok: false; error: string }>;
+export type RemediateFn = (head: string, findings: unknown[], correlationId: string) => Promise<{ ok: true; newHead: string } | { ok: false; error: string }>;
 
-export function failClosedRemediation(agent: ImplementationAgent, timeoutMs: number): RemediateFn {
-  return async (head, findings, meta) => {
+export function failClosedRemediation(agent: ImplementationAgent, timeoutMs: number, mrIid: number): RemediateFn {
+  return async (head, findings, correlationId) => {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const r = await Promise.race([
-        agent.dispatch({ correlationId: meta.correlationId, mr_iid: meta.mr_iid, head_sha: head, findings }, controller.signal),
+        agent.dispatch({ correlationId, mr_iid: mrIid, head_sha: head, findings }, controller.signal),
         new Promise<never>((_, reject) => controller.signal.addEventListener('abort', () => reject(new Error('timeout')))),
       ]);
       if (!r.ok) return { ok: false, error: `implementation agent: ${r.error}` };

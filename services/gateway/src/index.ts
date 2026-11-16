@@ -978,6 +978,10 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1', orbLivekitRouter, { owner: 'orb-livekit' });
   mountRouterSync(app, '/api/v1', oasisEmitRouter, { owner: 'oasis-emit' });
 
+  // VTID-MR-REVIEW: Bedrock reviewer for GitLab merge requests (fails closed with 503 until configured).
+  const mrReviewRouter = require('./routes/mr-review-router').default;
+  mountRouterSync(app, '/api/v1', mrReviewRouter, { owner: 'mr-review' });
+
   // VTID-LIVEKIT-TOOLS: Vitana Index endpoints used by the LiveKit tool catalogue
   // (get_vitana_index, get_index_improvement_suggestions). Lifted from the
   // inline case bodies in orb-live.ts so both pipelines share the helper layer.

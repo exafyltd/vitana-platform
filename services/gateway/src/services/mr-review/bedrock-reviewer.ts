@@ -19,7 +19,7 @@ export interface PartnerReviewLike {
   summary: string;
   findings: PartnerFindingLike[];
 }
-export type RunPass = (input: { round: number; prompt: string; deadlineMs: number }) => Promise<
+export type RunPass = (input: { round: number; prompt: string; deadlineMs: number; project: string; headSha: string }) => Promise<
   | { ok: true; review: PartnerReviewLike }
   | { ok: false; reason: string; error: string }
 >;
@@ -87,8 +87,8 @@ export type BedrockReviewResult =
   | { ok: true; verdict: ReviewVerdict; summary: string }
   | { ok: false; reason: 'pass_failed' | 'invalid_verdict'; errors: string[] };
 
-export async function reviewMrWithBedrock(input: { context: ReviewContext; runPass: RunPass; deadlineMs?: number }): Promise<BedrockReviewResult> {
-  const pass = await input.runPass({ round: 1, prompt: buildMrReviewPrompt(input.context), deadlineMs: input.deadlineMs ?? REVIEW_DEADLINE_MS });
+export async function reviewMrWithBedrock(input: { context: ReviewContext; runPass: RunPass; deadlineMs?: number; project: string }): Promise<BedrockReviewResult> {
+  const pass = await input.runPass({ round: 1, prompt: buildMrReviewPrompt(input.context), deadlineMs: input.deadlineMs ?? REVIEW_DEADLINE_MS, project: input.project, headSha: input.context.head_sha });
   if (!pass.ok) return { ok: false, reason: 'pass_failed', errors: [pass.error] };
   const mapped = partnerToVerdict(pass.review, input.context.head_sha);
   if (!mapped.ok) return { ok: false, reason: 'invalid_verdict', errors: mapped.errors };

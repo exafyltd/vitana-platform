@@ -117,8 +117,9 @@ function checkJob(config, r, name, c, mode) {
   // The apt line, then the install lines; a `cd` in them (services/gateway, apps/mobile) stays in force for the check's lines.
   job.script = [...(c.apt?.length ? [aptLine(c.apt)] : []), ...(c.install ? r.install[c.install].script : []), ...c.script];
   if (c.artifacts) job.artifacts = { when: 'always', expire_in: '1 day', paths: [...c.artifacts, '.delivery-ran/'] };
+  // every_merge_request: the check runs on each merge request pipeline, so every new head is judged again (no path filter).
   job.rules = mode === 't1'
-    ? [{ if: IF.t1, changes: { paths: checkPatterns(r, name), compare_to: 'refs/heads/main' } }]
+    ? (c.every_merge_request ? [{ if: IF.mr }] : [{ if: IF.t1, changes: { paths: checkPatterns(r, name), compare_to: 'refs/heads/main' } }])
     : [{ if: IF.mainOrNightly }];
   return job;
 }
@@ -176,7 +177,8 @@ export function buildPipeline(config, repoKey) {
     doc['e2e-preview-orb'] = { extends: '.e2e-preview-orb', stage: 'verify', tags: [config.runner_tags.main], interruptible: false, allow_failure: true, needs: [], rules: [NEVER_IN_SHADOW, { if: IF.main, when: 'manual' }] };
   }
   // T2: every check once per landing (and on the nightly run, T3), on the main class, never interrupted.
-  for (const name of checks) doc[`full-suite:${name}`] = checkJob(config, r, name, r.checks[name], 'main');
+  // every_merge_request checks judge a merge request head only: they have no main-branch run.
+  for (const name of checks) if (!r.checks[name].every_merge_request) doc[`full-suite:${name}`] = checkJob(config, r, name, r.checks[name], 'main');
   // T2: image, push, staging deploy and rollback, STAGING-VERIFY, record, per changed deployable service.
   for (const [svc, s] of Object.entries(r.services)) {
     if (!s.image || !s.staging) continue;
@@ -387,6 +389,7 @@ export function selectChecks(config, repoKey, files) {
   const doc = buildPipeline(config, repoKey);
   const selected = [];
   for (const name of Object.keys(r.checks)) {
+    if (r.checks[name].every_merge_request) { selected.push(name); continue; }
     const rule = doc[name].rules[0];
     if (files.some((f) => rule.changes.paths.some((p) => matchGlob(p, f)))) selected.push(name);
   }

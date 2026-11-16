@@ -6,34 +6,34 @@ import { runReviewCycle, MAX_REMEDIATION_ROUNDS } from './remediation';
 
 const HEAD = '1'.repeat(40);
 const NEW = '2'.repeat(40);
-const meta = { correlationId: 'c/r1', mr_iid: 5 };
+const CID = 'c/r1';
 const agentReturning = (r: unknown): ImplementationAgent => ({ dispatch: async () => r as never });
 
 test('a fixed head from the agent is accepted and passed on', async () => {
-  const remediate = failClosedRemediation(agentReturning({ ok: true, new_head_sha: NEW }), 1000);
-  assert.deepEqual(await remediate(HEAD, [{}], meta), { ok: true, newHead: NEW });
+  const remediate = failClosedRemediation(agentReturning({ ok: true, new_head_sha: NEW }), 1000, 5);
+  assert.deepEqual(await remediate(HEAD, [{}], CID), { ok: true, newHead: NEW });
 });
 
 test('the agent throwing is a failed remediation, not an exception', async () => {
-  const remediate = failClosedRemediation({ dispatch: async () => { throw new Error('connection reset'); } }, 1000);
-  const r = await remediate(HEAD, [{}], meta);
+  const remediate = failClosedRemediation({ dispatch: async () => { throw new Error('connection reset'); } }, 1000, 5);
+  const r = await remediate(HEAD, [{}], CID);
   assert.equal(r.ok, false);
 });
 
 test('the agent that never answers times out and fails closed', async () => {
-  const remediate = failClosedRemediation({ dispatch: () => new Promise(() => {}) }, 20);
-  const r = await remediate(HEAD, [{}], meta);
+  const remediate = failClosedRemediation({ dispatch: () => new Promise(() => {}) }, 20, 5);
+  const r = await remediate(HEAD, [{}], CID);
   assert.equal(r.ok, false);
   if (!r.ok) assert.match(r.error, /unavailable/);
 });
 
 test('an agent returning the same head, or no valid head, is a failed remediation', async () => {
-  assert.equal((await failClosedRemediation(agentReturning({ ok: true, new_head_sha: HEAD }), 1000)(HEAD, [], meta)).ok, false);
-  assert.equal((await failClosedRemediation(agentReturning({ ok: true, new_head_sha: 'nope' }), 1000)(HEAD, [], meta)).ok, false);
+  assert.equal((await failClosedRemediation(agentReturning({ ok: true, new_head_sha: HEAD }), 1000, 5)(HEAD, [], CID)).ok, false);
+  assert.equal((await failClosedRemediation(agentReturning({ ok: true, new_head_sha: 'nope' }), 1000, 5)(HEAD, [], CID)).ok, false);
 });
 
 test('an agent-reported failure is passed through with its message', async () => {
-  const r = await failClosedRemediation(agentReturning({ ok: false, error: 'tests still red' }), 1000)(HEAD, [], meta);
+  const r = await failClosedRemediation(agentReturning({ ok: false, error: 'tests still red' }), 1000, 5)(HEAD, [], CID);
   assert.equal(r.ok, false);
   if (!r.ok) assert.match(r.error, /tests still red/);
 });
@@ -54,7 +54,7 @@ test('a failing remediation inside the cycle escalates and names the failure', a
   const out = await runReviewCycle({
     startHead: HEAD, maxRounds: 3, correlationId: 'c',
     review: async (head) => ({ kind: 'changes', head, findings: [{}], attestation: {} }),
-    remediate: failClosedRemediation({ dispatch: async () => ({ ok: false, error: 'agent down' }) }, 1000),
+    remediate: failClosedRemediation({ dispatch: async () => ({ ok: false, error: 'agent down' }) }, 1000, 5),
   });
   assert.equal(out.status, 'escalated');
   if (out.status === 'escalated') { assert.equal(out.reason, 'remediation_failed'); assert.match(out.detail.join(' '), /agent down/); }

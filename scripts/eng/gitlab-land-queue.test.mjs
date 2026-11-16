@@ -219,6 +219,7 @@ function context(W, f, { projects, extra = {}, env } = {}) {
   if (!fs.existsSync(tokenFile)) fs.writeFileSync(tokenFile, `${TOKEN}\n`, { mode: 0o600 });
   const lines = [];
   const ctx = land.makeContext({
+    reviewSource: 'trailers', // legacy trailer policy under test; the production default is 'bedrock'
     workdir: path.join(W.root, 'land'), 'token-file': tokenFile, url: 'https://gitlab.test',
     projectsOverride: projects ?? [
       { name: 'vitana-platform', path: 'vitana/vitana-platform', landing: true, required_jobs: REQUIRED, queue: { positions: 8 } },
@@ -386,7 +387,7 @@ test('queue mode is on for the two projects of the cut by name (the settings sch
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'land-q-names-')); tmpDirs.push(dir);
   const tokenFile = path.join(dir, 'token');
   fs.writeFileSync(tokenFile, `${TOKEN}\n`, { mode: 0o600 });
-  const mk = (o = {}) => land.makeContext({ 'token-file': tokenFile, workdir: path.join(dir, 'land'), projectsOverride: [], ...o }, { fetch: fakeFetch(), write: () => {} });
+  const mk = (o = {}) => land.makeContext({ reviewSource: 'trailers', 'token-file': tokenFile, workdir: path.join(dir, 'land'), projectsOverride: [], ...o }, { fetch: fakeFetch(), write: () => {} });
   assert.deepEqual(mk().queueProjects, ['vitana-platform', 'vitana-v1']);
   assert.deepEqual(mk({ 'queue-projects': 'vitana-v1' }).queueProjects, ['vitana-v1']);
   assert.deepEqual(mk({ 'queue-projects': '' }).queueProjects, []);
@@ -829,7 +830,7 @@ test('run and status read the projects through loadEffectiveProjects of gitlab-s
     const out = [];
     const code = await land.main(['status', '--settings', settingsFile, '--url', 'https://gitlab.test', '--token-file', tokenFile, '--workdir', path.join(W.root, 'land'), ...extra], {
       fetch: f, now: () => NOW, stdout: (t) => out.push(t), settingsLib,
-      overrides: { remoteUrl: (p) => W.p[p.name].remote, services: path.join(W.root, 'none.json') },
+      overrides: { reviewSource: 'trailers', remoteUrl: (p) => W.p[p.name].remote, services: path.join(W.root, 'none.json') },
     });
     return { code, out: out.join(''), f };
   };
@@ -865,7 +866,7 @@ test('status in queue mode prints each merge request\'s queue state and writes n
   fs.writeFileSync(tokenFile, `${TOKEN}\n`, { mode: 0o600 });
   const code = await land.main(['status', '--url', 'https://gitlab.test', '--token-file', tokenFile, '--workdir', path.join(W.root, 'land')], {
     fetch: f, now: () => NOW, stdout: (t) => out.push(t),
-    overrides: { projectsOverride: [{ name: 'vitana-platform', path: 'vitana/vitana-platform', landing: true, required_jobs: REQUIRED, queue: { positions: 8 } }], remoteUrl: (p) => W.p[p.name].remote, services: path.join(W.root, 'none.json') },
+    overrides: { reviewSource: 'trailers', projectsOverride: [{ name: 'vitana-platform', path: 'vitana/vitana-platform', landing: true, required_jobs: REQUIRED, queue: { positions: 8 } }], remoteUrl: (p) => W.p[p.name].remote, services: path.join(W.root, 'none.json') },
   });
   assert.equal(code, 0, out.join(''));
   f.assertNoWrites();

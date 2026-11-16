@@ -851,7 +851,7 @@ test('bot: the real evaluate() of the merge bot, run on branches made from the c
       if (/\/merge_requests\/\d+\/notes$/.test(p)) return json([]);
       return new Response('{"message":"404 Not Found"}', { status: 404, headers: { 'content-type': 'application/json' } });
     };
-    const ctx = land.makeContext({ projectsOverride: [project], workdir, 'token-file': tokenFile, remoteUrl: () => w.remote }, { fetch, write: () => {}, now: () => NOW0 + 300_000 });
+    const ctx = land.makeContext({ reviewSource: 'trailers', projectsOverride: [project], workdir, 'token-file': tokenFile, remoteUrl: () => w.remote }, { fetch, write: () => {}, now: () => NOW0 + 300_000 });
     if (!fs.existsSync(botRepo)) { fs.mkdirSync(workdir, { recursive: true }); execFileSync('git', ['init', '--bare', '-q', botRepo], { env: GIT_ENV }); g(botRepo, 'remote', 'add', 'origin', w.remote); }
     g(botRepo, 'fetch', '-q', 'origin', '+refs/heads/main:refs/remotes/origin/main');
     const mr = { iid, title: it.title, sha: head, source_branch: it.branch, created_at: '2026-11-05T14:00:00Z', updated_at: '2026-11-05T14:00:00Z', description: '', draft: false };

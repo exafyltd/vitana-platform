@@ -22,10 +22,10 @@ export function callerAuthorizer(expected: string | undefined): (authorization: 
   };
 }
 
-export function createMrReviewRouter(makeRouter: () => RouterLike, getDeps: () => ReviewEndpointDeps | null): RouterLike {
+export function createMrReviewRouter(makeRouter: () => RouterLike, getDeps: () => ReviewEndpointDeps | null | Promise<ReviewEndpointDeps | null>): RouterLike {
   const router = makeRouter();
   router.post('/mr-review', async (req: any, res: any) => {
-    const deps = getDeps();
+    const deps = await getDeps();
     if (!deps) {
       res.status(503).json({ error: 'mr-review is not configured' });
       return;
