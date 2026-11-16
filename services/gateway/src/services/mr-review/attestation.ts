@@ -78,6 +78,8 @@ export interface VerifyExpectation {
   maxAgeMs: number;
   reviewer: string;
   findings: unknown;
+  /** Default ACCEPT (the merge gate). The review job asks for CHANGES_REQUESTED to read its findings. */
+  expectDecision?: 'ACCEPT' | 'CHANGES_REQUESTED';
 }
 
 export type AttestationCheck = { ok: true } | { ok: false; reasons: string[] };
@@ -93,7 +95,8 @@ export function verifyAttestation(att: SignedAttestation, exp: VerifyExpectation
   if (p.head_sha !== exp.head_sha) reasons.push(`attested head ${p.head_sha} is not the merge head ${exp.head_sha}`);
   if (p.key_id !== exp.keyId) reasons.push('attested key id does not match the trusted reviewer key');
   if (p.reviewer !== exp.reviewer) reasons.push(`reviewer ${p.reviewer} is not the trusted reviewer`);
-  if (p.decision !== 'ACCEPT') reasons.push(`decision is ${p.decision}, not ACCEPT`);
+  const want = exp.expectDecision ?? 'ACCEPT';
+  if (p.decision !== want) reasons.push(`decision is ${p.decision}, not ${want}`);
   if (p.findings_sha256 !== findingsDigest(exp.findings)) reasons.push('findings digest does not match the attested findings');
   const issued = Date.parse(p.issued_at);
   if (!Number.isFinite(issued)) reasons.push('issued_at is not a timestamp');
