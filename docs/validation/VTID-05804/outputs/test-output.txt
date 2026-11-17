@@ -37,6 +37,6 @@ test_supabase_drops_a_public_url_that_was_set (__main__.Supabase.test_supabase_d
 test_supabase_on_supabase_is_a_no_op (__main__.Supabase.test_supabase_on_supabase_is_a_no_op) ... ok
 
 ----------------------------------------------------------------------
-Ran 37 tests in 1.636s
+Ran 37 tests in 1.551s
 
 OK

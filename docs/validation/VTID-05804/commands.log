@@ -1,0 +1,7 @@
+# Commands run for VTID-05804 (staging-only SUPABASE_PUBLIC_URL correction)
+$ git apply --check containment-r17-datasource.patch          # on platform HEAD 67897e6c: applies cleanly
+$ git apply containment-r17-datasource.patch                  # applied, then committed as 425e5ee2
+$ python3 scripts/aws/test/test_taskdef_data_backend.py -v > docs/validation/VTID-05804/outputs/test-output.txt
+  exit=0  -> "Ran 37 tests ... OK"  (full output in outputs/test-output.txt)
+$ sha256sum containment-r17-datasource.patch                  # 6c3eabccf79e8d535e40a2c81f1b088198b1b87c194ace0c70d7e0b1a31fcd74
+# Not run: any staging or production command; no AWS call; no deploy.
