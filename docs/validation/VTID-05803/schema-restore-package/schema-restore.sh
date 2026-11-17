@@ -29,7 +29,9 @@ run auth-helpers-production-definitions.sql
 run aurora-cutover-auth-bridge.sql
 run aurora-cutover-schema-sync.sql
 run aurora-cutover-vector-preload.sql
+run aurora-auth-compat-stub.sql
 run aurora-cutover-recreate-foreign-keys.sql
+run aurora-cutover-recreate-auth-foreign-keys.sql
 run aurora-cutover-restore-grants.sql
 run aurora-restore-rls-parity.sql
 run outbox-table-and-helpers.sql

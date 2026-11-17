@@ -1,8 +1,11 @@
+a8df20ab10981be90bf1c25deb6565bdd209d731a2bb6ebe8f9e226293aaaab3  ./README.md
 d59fc675ec35ed1e64b4e172cdb28bd438e2355f4f628a10aaff0c989490b95e  ./parity-compare.py
-dd1c7315dc7fae7c2242d026b2a61678087eed3c2fdfddf335f702ddceeab3e8  ./schema-restore.sh
+0bcc2eab128422cd26f28f9d5d160c241d9116487a4036454b30be5c6c194241  ./schema-restore.sh
+09fffe0b5b3329b4635a1fe7a59a04cac420624e754604bd5460343037886cfb  ./source-auth-fk-inventory.tsv
 489e81ad43f6cd2387183132602db8e9ec72fd37df34b4c504ed8b8bde0f3678  ./source-baseline-2026-11-17.txt
 6404df9fd68b64e661be2cf7b743b16ecee46d7d9f5027e53e07450766954a33  ./sql/aurora-auth-compat-stub.sql
 785899f2c57f205a2d6b726e2e7ee06f3fec12ee68bf9aeef61ffb2aacab67f2  ./sql/aurora-cutover-auth-bridge.sql
+fd6bb097e7c25f7a572ce7dcc34328e3c4425f421efbb513c4f4082e4b62475d  ./sql/aurora-cutover-recreate-auth-foreign-keys.sql
 4b42b25bb12ba2b2106e138acf14ae3b556991fac7f3908cac1982c3c0e62f05  ./sql/aurora-cutover-recreate-foreign-keys.sql
 9c9250c508d33c6c7806892efcaeada1707fbdaa5ccb9cfeef2c62761b2108ae  ./sql/aurora-cutover-restore-grants.sql
 36ec0a52ffc694e8915fdc3a6a836e9d39d32b79a4eb3a045eb348ccd644c251  ./sql/aurora-cutover-schema-sync-views.sql
