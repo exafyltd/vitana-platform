@@ -152,8 +152,10 @@ jobs:
           NEW_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_DEF" \
             --query 'taskDefinition.taskDefinitionArn' --output text)
           echo "Registered $NEW_ARN"
+          # A roll must also start the service: without --desired-count the service stays at 0 and the
+          # stable-waiter returns at once with nothing running (the defect that kept this proxy stopped).
           aws ecs update-service --cluster "${{ env.ECS_CLUSTER }}" --service "${{ env.ECS_SERVICE }}" \
-            --task-definition "$NEW_ARN" >/dev/null
+            --task-definition "$NEW_ARN" --desired-count 1 >/dev/null
           aws ecs wait services-stable --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}"
           echo "Service stable on $NEW_ARN"
 
@@ -165,5 +167,9 @@ jobs:
           IMG=$(aws ecs describe-task-definition --task-definition "$RUNNING" --query "taskDefinition.containerDefinitions[?name=='${{ env.PROXY_CONTAINER }}'].image | [0]" --output text)
           echo "PRIMARY deployment proxy image: $IMG"
           [ "$IMG" = "${{ steps.build.outputs.image }}" ] || { echo "::error::PRIMARY deployment is not the image just built"; exit 1; }
+          RUNNING_COUNT=$(aws ecs describe-services --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}" \
+            --query 'services[0].runningCount' --output text)
+          echo "running tasks: $RUNNING_COUNT"
+          [ "${RUNNING_COUNT:-0}" -ge 1 ] || { echo "::error::no task is running: the service was rolled but not started"; exit 1; }
           echo "- Reason: ${{ env.DEPLOY_REASON }}"
           echo "- No gateway SUPABASE_URL was touched by this workflow — that repoint is a separate, deliberate, later step."
