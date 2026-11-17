@@ -1,0 +1,8 @@
+attrs|f|f|f|t
+non_select_table_privileges=0 schemas_with_create=0
+dump complete
+auth export written: 261 rows, scope=without-hashes (no row content printed)
+toc_entries=1546
+export directory: /tmp/claude-0/-home-user/d0f42030-d9d0-5c2d-bddb-4a851acb8ddb/scratchpad/rehearsal-run/home/vitana-migration-20261117T211332Z
+144 /tmp/claude-0/-home-user/d0f42030-d9d0-5c2d-bddb-4a851acb8ddb/scratchpad/rehearsal-run/home/vitana-migration-20261117T211332Z/SHA256SUMS
+role_removed=true

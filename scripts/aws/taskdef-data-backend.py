@@ -160,7 +160,21 @@ def classify(td: dict, service: str) -> str:
     return "unknown"
 
 
-def apply_backend(td: dict, backend: str, service: str, aurora_url_arn: str | None = None) -> dict:
+def public_url_for(cfg: dict, public_url: str | None) -> str:
+    """SUPABASE_PUBLIC_URL for the aurora switch. Production keeps its constant; staging must be given its own
+    project URL and must never be the production project (round 17: the staging repoint must not hand
+    production URLs to staging clients)."""
+    if cfg["env"] != "staging":
+        return PUBLIC_SUPABASE_URL
+    if not public_url:
+        raise Refused("aurora on staging needs --public-url = the staging Supabase project URL (https)")
+    if not public_url.startswith("https://") or public_url.rstrip("/") == PUBLIC_SUPABASE_URL:
+        raise Refused("--public-url must be an https URL of the staging Supabase project, not the production project")
+    return public_url.rstrip("/")
+
+
+def apply_backend(td: dict, backend: str, service: str, aurora_url_arn: str | None = None,
+                  public_url: str | None = None) -> dict:
     """Pure function: return a NEW task definition switched to `backend`."""
     if backend not in BACKENDS:
         raise Refused(f"unknown backend '{backend}' (keep|supabase|aurora)")
@@ -203,10 +217,10 @@ def apply_backend(td: dict, backend: str, service: str, aurora_url_arn: str | No
             if idx:
                 for i in idx[1:]:
                     env[i] = None
-                env[idx[0]] = {"name": "SUPABASE_PUBLIC_URL", "value": PUBLIC_SUPABASE_URL}
+                env[idx[0]] = {"name": "SUPABASE_PUBLIC_URL", "value": public_url_for(cfg, public_url)}
                 c["environment"] = [e for e in env if e is not None]
             else:
-                env.append({"name": "SUPABASE_PUBLIC_URL", "value": PUBLIC_SUPABASE_URL})
+                env.append({"name": "SUPABASE_PUBLIC_URL", "value": public_url_for(cfg, public_url)})
         else:
             c["environment"] = [e for e in env if e.get("name") != "SUPABASE_PUBLIC_URL"]
     return out
@@ -269,6 +283,8 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--arn", action="append", default=[], metavar="SUPABASE_URL=ARN",
                     help="explicit url-aurora-proxy ARN (tests / dry runs)")
     ap.add_argument("--summary", help="append a markdown summary to this file (e.g. $GITHUB_STEP_SUMMARY)")
+    ap.add_argument("--public-url", default=None,
+                    help="staging only: the staging Supabase project URL (https). Required for aurora on staging.")
     args = ap.parse_args(argv)
 
     raw = sys.stdin.buffer.read()
@@ -305,7 +321,7 @@ def main(argv: list[str]) -> int:
             if not args.resolve:
                 raise Refused("aurora needs --resolve or --arn SUPABASE_URL=<url-aurora-proxy ARN>")
             aurora_arn = resolve_aurora_url_arn(args.service)
-        out_td = apply_backend(td, backend, args.service, aurora_arn)
+        out_td = apply_backend(td, backend, args.service, aurora_arn, args.public_url)
         after = classify(out_td, args.service)
     except Refused as e:
         print(f"::error::data_backend: {e}", file=sys.stderr)

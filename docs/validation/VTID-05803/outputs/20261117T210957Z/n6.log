@@ -1,0 +1,4 @@
+checksums: OK
+auth phase pre done
+COPY 261
+REFUSED: without-hashes scope but 260 hashes restored

@@ -1,0 +1,11 @@
+checksums: OK
+auth phase pre done
+COPY 261
+auth phase data done
+auth phase post done
+ordered restore: complete
+outbox: applied
+production_host_exclusion: clean
+outbox_rows_queued=0
+required aggregate metrics present on both sides: 23
+REFUSED: fn_def:notify_test_user_confirmation() did not change: the staging outbox replacement is not applied

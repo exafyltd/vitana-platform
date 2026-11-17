@@ -1,0 +1,13 @@
+checksums: OK
+auth phase pre done
+COPY 261
+auth phase data done
+auth phase post done
+ordered restore: complete
+outbox: applied
+production_host_exclusion: clean
+outbox_rows_queued=0
+required aggregate metrics present on both sides: 23
+preservation: 23 aggregate metrics identical; every function identical except the 2 staging outbox replacements (diff lines: 4)
+cron_extension_installed=0 (expected 0)
+restore-core: PASS

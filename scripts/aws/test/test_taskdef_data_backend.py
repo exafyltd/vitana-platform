@@ -27,6 +27,15 @@ _spec.loader.exec_module(tdb)
 
 SM = "arn:aws:secretsmanager:eu-central-1:472838866351:secret:"
 PROD_PROXY_ARN = SM + "vitana/supabase/prod/url-aurora-proxy-AbC123"
+
+# Round 17: the staging repoint needs its own https project URL (never the production project).
+STAGING_PUBLIC_URL = "https://staging-project.example.supabase.co"
+
+
+def _pub(service):
+    return STAGING_PUBLIC_URL if service == "gateway-staging" else None
+
+
 STAGING_PROXY_ARN = SM + "vitana/supabase/staging/url-aurora-proxy-XyZ789"
 
 # fixture file -> (service key, proxy ARN for that environment)
@@ -130,7 +139,7 @@ class Aurora(unittest.TestCase):
         for name, (service, proxy) in CASES.items():
             _, td = load(name)
             cfg = tdb.SERVICES[service]
-            out = tdb.apply_backend(td, "aurora", service, proxy)
+            out = tdb.apply_backend(td, "aurora", service, proxy, _pub(service))
             s_in, s_out = secrets_of(td), secrets_of(out)
             e_in, e_out = env_of(td), env_of(out)
             c = cfg["container"]
@@ -145,7 +154,7 @@ class Aurora(unittest.TestCase):
             changed_env = {k for k in set(e_in) | set(e_out) if e_in.get(k) != e_out.get(k)}
             if cfg["public_url"]:
                 self.assertEqual(changed_env, {(c, "SUPABASE_PUBLIC_URL")}, name)
-                self.assertEqual(e_out[(c, "SUPABASE_PUBLIC_URL")], "https://inmkhvwdcuyhnxkgfvsb.supabase.co")
+                self.assertEqual(e_out[(c, "SUPABASE_PUBLIC_URL")], _pub(service) or "https://inmkhvwdcuyhnxkgfvsb.supabase.co")
             else:
                 self.assertEqual(changed_env, set(), name)
             # Everything outside the switched entries is identical, in order.
@@ -211,14 +220,14 @@ class Supabase(unittest.TestCase):
     def test_round_trip_is_exact(self):
         for name, (service, proxy) in CASES.items():
             raw, td = load(name)
-            aur = tdb.apply_backend(td, "aurora", service, proxy)
+            aur = tdb.apply_backend(td, "aurora", service, proxy, _pub(service))
             back = tdb.apply_backend(aur, "supabase", service)
             self.assertEqual(json.dumps(back), json.dumps(td), f"{name}: aurora -> supabase is not the original")
 
     def test_round_trip_via_cli(self):
         for name, (service, proxy) in CASES.items():
             raw, td = load(name)
-            a = run_cli(["--backend", "aurora", "--service", service, "--arn", f"SUPABASE_URL={proxy}"], raw)
+            a = run_cli(["--backend", "aurora", "--service", service, "--arn", f"SUPABASE_URL={proxy}"] + (["--public-url", STAGING_PUBLIC_URL] if service == "gateway-staging" else []), raw)
             self.assertEqual(a.returncode, 0, a.stderr.decode())
             b = run_cli(["--backend", "supabase", "--service", service], a.stdout)
             self.assertEqual(b.returncode, 0, b.stderr.decode())
@@ -344,5 +353,42 @@ class Resolve(unittest.TestCase):
         self.assertEqual(p.returncode, 2)
 
 
+
+class StagingPublicUrl(unittest.TestCase):
+    """Round 17: staging must never be repointed with the production public URL."""
+
+    def _td(self):
+        return copy.deepcopy(load("gateway-staging.json")[1])
+
+    def test_staging_aurora_refused_without_public_url(self):
+        with self.assertRaises(tdb.Refused):
+            tdb.apply_backend(self._td(), "aurora", "gateway-staging", STAGING_PROXY_ARN)
+
+    def test_staging_aurora_refused_with_production_public_url(self):
+        with self.assertRaises(tdb.Refused):
+            tdb.apply_backend(self._td(), "aurora", "gateway-staging", STAGING_PROXY_ARN,
+                              tdb.PUBLIC_SUPABASE_URL)
+
+    def test_staging_aurora_refused_with_non_https_public_url(self):
+        with self.assertRaises(tdb.Refused):
+            tdb.apply_backend(self._td(), "aurora", "gateway-staging", STAGING_PROXY_ARN, "http://x.supabase.co")
+
+    def test_staging_aurora_sets_the_given_public_url(self):
+        out = tdb.apply_backend(self._td(), "aurora", "gateway-staging", STAGING_PROXY_ARN, STAGING_PUBLIC_URL)
+        env = {e["name"]: e["value"] for e in out["containerDefinitions"][0]["environment"] if "value" in e}
+        self.assertEqual(env["SUPABASE_PUBLIC_URL"], STAGING_PUBLIC_URL)
+
+    def test_production_gateway_keeps_its_public_url(self):
+        out = tdb.apply_backend(copy.deepcopy(load("gateway.json")[1]), "aurora", "gateway", PROD_PROXY_ARN)
+        env = {e["name"]: e["value"] for e in out["containerDefinitions"][0]["environment"] if "value" in e}
+        self.assertEqual(env["SUPABASE_PUBLIC_URL"], tdb.PUBLIC_SUPABASE_URL)
+
+    def test_cli_staging_aurora_refused_without_public_url(self):
+        p = run_cli(["--backend", "aurora", "--service", "gateway-staging", "--arn", f"SUPABASE_URL={STAGING_PROXY_ARN}"],
+                    json.dumps(load("gateway-staging.json")[1]).encode())
+        self.assertNotEqual(p.returncode, 0)
+
+
 if __name__ == "__main__":
     unittest.main()
+
