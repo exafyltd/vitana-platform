@@ -1,4 +1,5 @@
 import './lib/gcp-adc-bootstrap'; // must run before any GoogleAuth()/Vertex client is constructed
+import { resolveRuntimeProfile, backgroundWorkersAllowed } from './runtime/runtime-profile';
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
@@ -1746,6 +1747,14 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
       console.log('Gateway: debug /debug/governance-ping route registered');
       console.log('Gateway: governance routes mounted at /api/v1/governance');
       console.log('Gateway: operator routes mounted at /api/v1/operator (VTID-0510)');
+
+      // Runtime profile (preview-sparring): the HTTP API above stays up; every background worker,
+      // timer, scheduler and reconciler below is skipped. This is the single enforcement point.
+      const runtimeProfile = resolveRuntimeProfile();
+      if (!backgroundWorkersAllowed(runtimeProfile)) {
+        console.log(`🧪 Runtime profile "${runtimeProfile}": HTTP API only, background workers not started`);
+        return;
+      }
 
       // VTID-01222: Initialize ORB WebSocket server for Live API
       try {
