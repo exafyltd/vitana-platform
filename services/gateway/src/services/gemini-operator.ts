@@ -5461,8 +5461,7 @@ async function executeDevGenerateSpec(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        apikey: SUPABASE_SERVICE_ROLE,
-        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+        ...gatewayServiceAuthHeader(),
       },
       body: JSON.stringify({ seed_notes: seedNotes, source: 'developer_assistant' }),
     });
@@ -5547,8 +5546,7 @@ async function executeDevValidateSpec(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        apikey: SUPABASE_SERVICE_ROLE,
-        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+        ...gatewayServiceAuthHeader(),
       },
     });
 
@@ -5576,8 +5574,7 @@ async function executeDevQualityCheck(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        apikey: SUPABASE_SERVICE_ROLE,
-        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+        ...gatewayServiceAuthHeader(),
       },
     });
 

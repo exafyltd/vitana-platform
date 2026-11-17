@@ -11,6 +11,7 @@
  */
 
 import { Router, Request, Response } from 'express';
+import { requireServiceOrAdmin, getControlPlaneActor } from '../middleware/require-service-or-admin';
 import {
   getAllPersonalityConfigs,
   getPersonalityConfig,
@@ -66,7 +67,7 @@ router.get('/:surface_key', async (req: Request, res: Response) => {
  *
  * Body: { config: Record<string, unknown>, reason: string }
  */
-router.put('/:surface_key', async (req: Request, res: Response) => {
+router.put('/:surface_key', requireServiceOrAdmin, async (req: Request, res: Response) => {
   const surfaceKey = req.params.surface_key as PersonalitySurfaceKey;
 
   if (!VALID_SURFACE_KEYS.includes(surfaceKey)) {
@@ -117,7 +118,7 @@ router.put('/:surface_key', async (req: Request, res: Response) => {
  *
  * Body: { reason: string }
  */
-router.post('/:surface_key/reset', async (req: Request, res: Response) => {
+router.post('/:surface_key/reset', requireServiceOrAdmin, async (req: Request, res: Response) => {
   const surfaceKey = req.params.surface_key as PersonalitySurfaceKey;
 
   if (!VALID_SURFACE_KEYS.includes(surfaceKey)) {

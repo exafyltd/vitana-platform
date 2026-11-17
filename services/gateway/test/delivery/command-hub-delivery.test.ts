@@ -236,7 +236,7 @@ describe('VTID-05547 CSP and the page — no inline script or style, a bumped ca
   it('app.js and styles.css were bumped together, to a new value that keeps the old marker as its prefix', () => {
     const appV = /\/command-hub\/app\.js\?v=([^"]+)"/.exec(INDEX)?.[1];
     const cssV = /\/command-hub\/styles\.css\?v=([^"]+)"/.exec(INDEX)?.[1];
-    expect(appV).toBe('20261121-vtid-05082-vtid-05547');
+    expect(appV).toBe('20261121-vtid-05082-vtid-05547-gov');
     expect(cssV).toBe(appV);
     expect(appV!.startsWith('20261121-vtid-05082')).toBe(true);
     expect(appV).not.toBe('20261121-vtid-05082'); // the URL changed: browsers and the CDN fetch the new app.js
