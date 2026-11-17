@@ -4,7 +4,7 @@
 # 3. CloudWatch get_log_events /ecs/vitana-postgrest-aurora-staging (proxy, postgrest) -> connected PostgreSQL 17.9, 0 relations
 # 4. Secrets Manager list_secrets (names only) -> staging/prod/rehearsal aurora secret names
 # 5. Secrets Manager get_secret_value vitana/gateway/staging/postgrest-authenticator-uri -> AccessDenied (permissions boundary); no value read
-#    (rehearsal and staging master-password reads were also denied; no secret value was read in this session)
+#    (no secret value was read in this session; master-password was checked by metadata only, describe_secret)
 # 6. ECS run_task vitana-aurora-staging-probe (read-only SELECT) -> outputs/staging-database-url-probe.out
 #    (vitana/aurora/staging/database-url -> vitana-postgres-staging, unreachable: connection timed out)
 # 7. RDS describe_db_instances -> vitana-postgres-staging status inaccessible-encryption-credentials
