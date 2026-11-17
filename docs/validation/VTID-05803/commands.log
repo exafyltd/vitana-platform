@@ -1,10 +1,10 @@
 # VTID-05803 — commands run from this session (summary, in order). Secrets were never printed.
-# 1. ECS: describe-services vitana-postgrest-aurora-proxy -> PRIMARY deployment vitana-postgres-aurora-staging:19, 1 running task, proxy HEALTHY
+# 1. ECS: describe-services vitana-postgrest-aurora-proxy -> PRIMARY deployment vitana-postgrest-aurora-staging:19, 1 running task, proxy HEALTHY
 # 2. ECS: describe-tasks + wait services-stable on vitana-postgrest-aurora-proxy -> steady state reached
 # 3. CloudWatch get_log_events /ecs/vitana-postgrest-aurora-staging (proxy, postgrest) -> connected PostgreSQL 17.9, 0 relations
 # 4. Secrets Manager list_secrets (names only) -> staging/prod/rehearsal aurora secret names
-# 5. Secrets Manager get_secret_value vitana/gateway/staging/postgrest-authenticator-uri -> host check only (value not printed)
-#    (denied for vitana/aurora/rehearsal and staging read paths by permissions boundary; see outputs)
+# 5. Secrets Manager get_secret_value vitana/gateway/staging/postgrest-authenticator-uri -> AccessDenied (permissions boundary); no value read
+#    (rehearsal and staging master-password reads were also denied; no secret value was read in this session)
 # 6. ECS run_task vitana-aurora-staging-probe (read-only SELECT) -> outputs/staging-database-url-probe.out
 #    (vitana/aurora/staging/database-url -> vitana-postgres-staging, unreachable: connection timed out)
 # 7. RDS describe_db_instances -> vitana-postgres-staging status inaccessible-encryption-credentials
