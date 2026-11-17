@@ -53,7 +53,7 @@
  *    other person to open the app — they do not connect a call.
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { normalizeReactionEmoji, REACTION_CAP_ERROR } from './reactionEmoji';
+import { normalizeReactionEmoji, REACTION_CAP_ERROR } from './reaction-emoji';
 import type { OrbToolArgs, OrbToolIdentity, OrbToolResult } from '../orb-tools-shared';
 import { notifyUserAsync } from '../notification-service';
 import { coalesceChatPushes, chatConversationKey } from '../chat-push-coalescer';

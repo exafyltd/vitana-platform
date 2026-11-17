@@ -7,7 +7,7 @@
 import { createHash } from 'crypto';
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { normalizeReactionEmoji, REACTION_EMOJIS, QUICK_REACTIONS, MAX_DISTINCT_REACTIONS_PER_USER } from '../../src/services/orb-tools/reactionEmoji';
+import { normalizeReactionEmoji, REACTION_EMOJIS, QUICK_REACTIONS, MAX_DISTINCT_REACTIONS_PER_USER } from '../../src/services/orb-tools/reaction-emoji';
 import { tool_react_to_message } from '../../src/services/orb-tools/messaging-depth-tools';
 import * as repo from '../../src/services/orb-tools/messaging-depth-tools-repository';
 
