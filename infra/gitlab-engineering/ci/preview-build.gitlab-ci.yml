@@ -1,0 +1,106 @@
+# Isolated preview build for one exact PR head (gateway only). Owner objective: an immutable image of the reviewed PR
+# commit, with no deploy, no ECS change, no production routing and no shared tag written.
+#
+# Trigger: a web pipeline on the PR branch, with PREVIEW_SOURCE_SHA (full 40-hex PR head) and PREVIEW_SOURCE_REF
+# (the branch name). Both must match, or the job refuses. No other pipeline source runs these jobs.
+#
+# Two jobs, two trust levels:
+#   build-image:gateway-preview  build class (tag vitana-eng-build). No AWS, no ID token, no push. Builds the PR's own
+#                            Dockerfile from the checked-out branch, after proving HEAD == PREVIEW_SOURCE_SHA. The
+#                            output is one OCI archive. Unmerged code runs here, and only here.
+#   gateway-preview-publish      deploy class (tag vitana-eng-deploy). Runs only the trusted scripts of platform main
+#                            (cloned below), never the branch. It re-checks the source SHA, refuses an existing tag
+#                            (no-clobber), pushes ONLY shadow-<sha12> and records the digest. It copies with skopeo (no daemon). Its AWS role comes
+#                            from PREVIEW_PUBLISH_ROLE_ARN. That role does not exist yet, so the job fails closed.
+#
+# Never written: staging-latest, latest, production tags. Never run: any ECS, task-definition or deploy command.
+# The existing gateway-staging-build job and every other job in this project are unchanged.
+
+.preview-rules:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "web" && $PREVIEW_SOURCE_SHA != null && $PREVIEW_SOURCE_SHA != "" && $PREVIEW_SOURCE_REF == $CI_COMMIT_REF_NAME && $CI_COMMIT_REF_NAME != $CI_DEFAULT_BRANCH'
+
+build-image:gateway-preview:
+  extends: .preview-rules
+  stage: build
+  tags: [vitana-eng-build]
+  image: docker:27
+  services:
+    - name: docker:27-dind
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+    GIT_DEPTH: "0"
+  timeout: 40m
+  interruptible: false
+  script:
+    - |
+      set -eu
+      apk add --no-cache git nodejs >/dev/null
+      test -n "$PREVIEW_SOURCE_SHA"
+      HEAD_SHA="$(git rev-parse HEAD)"
+      # Exact-source check, from the PR's own module (build class; it has no publishing rights).
+      node scripts/eng/deploy/preview-build.mjs check-source --expected "$PREVIEW_SOURCE_SHA" --head "$HEAD_SHA"
+      SHORT="$(echo "$HEAD_SHA" | cut -c1-12)"
+      printf '%s\nBuild: %s\n' "$HEAD_SHA" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > services/gateway/BUILD_INFO
+      docker build -t "gateway-preview:$SHORT" services/gateway
+      docker save "gateway-preview:$SHORT" -o image.tar
+      printf '%s' "$HEAD_SHA" > source.txt
+      sha256sum image.tar > image.tar.sha256
+  artifacts:
+    when: on_success
+    expire_in: 3 days
+    paths: [image.tar, image.tar.sha256, source.txt]
+
+gateway-preview-publish:
+  extends: .preview-rules
+  stage: deploy
+  needs: [build-image:gateway-preview]
+  tags: [vitana-eng-deploy]
+  image: docker:27
+  variables:
+    GIT_STRATEGY: none
+    CENTRAL_DIR: /tmp/vitana-central
+    AWS_REGION: eu-central-1
+    AWS_ROLE_ARN: $PREVIEW_PUBLISH_ROLE_ARN
+    AWS_WEB_IDENTITY_TOKEN_FILE: /tmp/oidc-token
+  id_tokens:
+    GITLAB_OIDC_TOKEN:
+      aud: https://sts.amazonaws.com
+  timeout: 20m
+  interruptible: false
+  script:
+    - |
+      set -eu
+      test -n "$PREVIEW_PUBLISH_ROLE_ARN" || { echo "::error::PREVIEW_PUBLISH_ROLE_ARN is not set: the preview publish role does not exist yet"; exit 1; }
+      apk add --no-cache aws-cli git nodejs skopeo >/dev/null
+      # Trusted scripts only: the publish job never runs branch code.
+      rm -rf "$CENTRAL_DIR"
+      git clone --quiet --depth 1 --branch main "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/vitana/vitana-platform.git" "$CENTRAL_DIR"
+      MOD="$CENTRAL_DIR/scripts/eng/deploy/preview-build.mjs"
+      # The archive must be the one built for the requested source.
+      SRC="$(cat source.txt)"
+      test "$SRC" = "$PREVIEW_SOURCE_SHA"
+      sha256sum -c image.tar.sha256
+      TAG="$(node "$MOD" tag --sha "$SRC")"
+      # Registry-side no-clobber: refuse if the tag exists. Any other describe failure also refuses.
+      printf '%s' "$GITLAB_OIDC_TOKEN" > "$AWS_WEB_IDENTITY_TOKEN_FILE"
+      set +e
+      DESC_OUT="$(aws ecr describe-images --repository-name vitana/gateway --image-ids imageTag="$TAG" 2>&1)"
+      DESC_CODE=$?
+      set -e
+      node "$MOD" check-tag --sha "$SRC" --describe-exit "$DESC_CODE" --describe-stderr "$DESC_OUT"
+      ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
+      REGISTRY="$ACCOUNT.dkr.ecr.eu-central-1.amazonaws.com"
+      aws ecr get-login-password | skopeo login --username AWS --password-stdin "$REGISTRY"
+      # Daemonless copy of the archive, by digest, to the one shadow tag. No Docker daemon on the deploy class.
+      skopeo copy --retry-times 2 --digestfile digest.txt "docker-archive:image.tar" "docker://$REGISTRY/vitana/gateway:$TAG"
+      DIGEST="$(aws ecr describe-images --repository-name vitana/gateway --image-ids imageTag="$TAG" --query 'imageDetails[0].imageDigest' --output text)"
+      case "$DIGEST" in sha256:????????????????????????????????????????????????????????????????) ;; *) echo "::error::no digest recorded for $TAG"; exit 1 ;; esac
+      printf '{"source_sha":"%s","tag":"%s","repository":"vitana/gateway","digest":"%s","image":"%s/vitana/gateway@%s"}\n' \
+        "$SRC" "$TAG" "$DIGEST" "$REGISTRY" "$DIGEST" > preview-publish.json
+      cat preview-publish.json
+  artifacts:
+    when: on_success
+    expire_in: 30 days
+    paths: [preview-publish.json]
