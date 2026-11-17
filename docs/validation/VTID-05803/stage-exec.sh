@@ -70,7 +70,7 @@ step 3 "staging connect (read-only)"
 stg -At -c "SET default_transaction_read_only=on; SELECT current_database(), current_user, inet_server_addr(), split_part(version(),' ',2), (SELECT count(*) FROM information_schema.tables WHERE table_schema='public'), (SELECT rolsuper OR pg_has_role(current_user,'rds_superuser','member') FROM pg_roles WHERE rolname=current_user), has_database_privilege(current_database(),'CREATE')" \
   > "$OUT/stg-conn.txt" 2>"$OUT/stg-conn.err"; rc=$?
 [ "$rc" = 0 ] || die 3 "$rc" "$(head -c 300 "$OUT/stg-conn.err")"
-IFS='|' read -r S_DB S_USER S_IP S_VER S_TABLES S_SUPER S_CREATE < "$OUT/stg-conn.txt"
+IFS='|' read -r S_DB S_USER S_IP S_VER S_TABLES S_SUPER S_CREATE < <(tail -n 1 "$OUT/stg-conn.txt")  # last line: skip the SET echo
 ok 3 "db=$S_DB user=$S_USER ip=$S_IP pg=$S_VER public_tables=$S_TABLES rds_superuser=$S_SUPER db_create=$S_CREATE"
 
 # ---------- 4: source connection (read-only) ----------
@@ -79,15 +79,15 @@ step 4 "source connect (read-only)"
 src -At -c "SET default_transaction_read_only=on; SELECT current_database(), split_part(version(),' ',2), (SELECT count(*) FROM information_schema.tables WHERE table_schema='public' AND table_type='BASE TABLE')" \
   > "$OUT/src-conn.txt" 2>"$OUT/src-conn.err"; rc=$?
 [ "$rc" = 0 ] || die 4 "$rc" "$(head -c 300 "$OUT/src-conn.err" | sed -E 's#postgres(ql)?://[^ ]*#<url>#g')"
-IFS='|' read -r R_DB R_VER R_TABLES < "$OUT/src-conn.txt"
+IFS='|' read -r R_DB R_VER R_TABLES < <(tail -n 1 "$OUT/src-conn.txt")  # last line: skip the SET echo
 DUMP_MAJOR=$(pg_dump --version 2>/dev/null | grep -oE '[0-9]+' | head -1)
 ok 4 "db=$R_DB pg=$R_VER public_base_tables=$R_TABLES pg_dump_major=${DUMP_MAJOR:-none}"
 
 # ---------- 5: baseline inventories ----------
 step 5 "inventories"
 F5=$FAILS
-src -A -t -F '|' -f "$INV" 2>"$OUT/src-inv.err" | LC_ALL=C sort > "$OUT/source.inv" || fail 5 $? "source inventory: $(head -c 200 "$OUT/src-inv.err")"
-stg -A -t -F '|' -f "$INV" 2>"$OUT/stg-inv.err" | LC_ALL=C sort > "$OUT/staging-before.inv" || fail 5 $? "staging inventory: $(head -c 200 "$OUT/stg-inv.err")"
+src -A -t -F '|' -f "$INV" 2>"$OUT/src-inv.err" | grep -v -x SET | LC_ALL=C sort > "$OUT/source.inv" || fail 5 $? "source inventory: $(head -c 200 "$OUT/src-inv.err")"
+stg -A -t -F '|' -f "$INV" 2>"$OUT/stg-inv.err" | grep -v -x SET | LC_ALL=C sort > "$OUT/staging-before.inv" || fail 5 $? "staging inventory: $(head -c 200 "$OUT/stg-inv.err")"
 summ() { cut -d'|' -f1 "$1" | sort | uniq -c | awk '{printf "%s=%s ", $2, $1}'; }
 echo "  source:  $(summ "$OUT/source.inv")"
 echo "  staging: $(summ "$OUT/staging-before.inv")"
@@ -108,10 +108,13 @@ ok 6
 
 # ---------- 7: build the restore (all from the source catalog, schema only) ----------
 step 7 "build restore"
-src -A -t -F '|' -f "$D/source-exclusions.sql" > "$OUT/exclusions.txt" 2>"$OUT/excl.err" || die 7 $? "exclusions: $(head -c 200 "$OUT/excl.err")"
-src -A -t -f "$D/source-grants.sql" > "$OUT/grants.sql" 2>"$OUT/grants.err" || die 7 $? "grants: $(head -c 200 "$OUT/grants.err")"
+src -A -t -F '|' -f "$D/source-exclusions.sql" > "$OUT/exclusions.raw" 2>"$OUT/excl.err" || die 7 $? "exclusions: $(head -c 200 "$OUT/excl.err")"
+grep -v -x SET "$OUT/exclusions.raw" > "$OUT/exclusions.txt" || true
+src -A -t -f "$D/source-grants.sql" > "$OUT/grants.raw" 2>"$OUT/grants.err" || die 7 $? "grants: $(head -c 200 "$OUT/grants.err")"
+grep -v -x SET "$OUT/grants.raw" > "$OUT/grants.sql" || true
 # extensions the source uses that Aurora offers; never pg_cron, pg_net or Supabase-internal ones
-src -A -t -F '|' -c "SET default_transaction_read_only=on; SELECT e.extname, n.nspname FROM pg_extension e JOIN pg_namespace n ON n.oid=e.extnamespace WHERE e.extname <> 'plpgsql' ORDER BY 1" > "$OUT/src-ext.txt" || die 7 $? "extension list"
+src -A -t -F '|' -c "SET default_transaction_read_only=on; SELECT e.extname, n.nspname FROM pg_extension e JOIN pg_namespace n ON n.oid=e.extnamespace WHERE e.extname <> 'plpgsql' ORDER BY 1" > "$OUT/src-ext.raw" || die 7 $? "extension list"
+grep -v -x SET "$OUT/src-ext.raw" > "$OUT/src-ext.txt" || true
 stg -A -t -c "SELECT name FROM pg_available_extensions" > "$OUT/stg-avail.txt" || die 7 $? "available extensions"
 : > "$OUT/extensions.sql"
 while IFS='|' read -r ext sch; do
@@ -153,18 +156,40 @@ tail -n 5 "$OUT/apply.log"
 [ "$rc" = 0 ] || die 8 "$rc" "rolled back; staging unchanged"
 ok 8
 
-# ---------- 9: parity ----------
+# ---------- 9: parity (definitions, object by object; no hardcoded counts) ----------
 step 9 "parity"
-stg -A -t -F '|' -f "$INV" | LC_ALL=C sort > "$OUT/staging-after.inv" || fail 9 $? "staging inventory"
-echo "  source:  $(summ "$OUT/source.inv")"
-echo "  staging: $(summ "$OUT/staging-after.inv")"
-LC_ALL=C comm -23 "$OUT/source.inv" "$OUT/staging-after.inv" > "$OUT/only-source.inv"
-LC_ALL=C comm -13 "$OUT/source.inv" "$OUT/staging-after.inv" > "$OUT/only-staging.inv"
-echo "  only_source by kind:  $(summ "$OUT/only-source.inv")"
-echo "  only_staging by kind: $(summ "$OUT/only-staging.inv")"
-echo "  --- only_source (first 80, object names only) ---"; cut -d'|' -f1,2 "$OUT/only-source.inv" | head -80
-echo "  --- only_staging (first 40) ---"; cut -d'|' -f1,2 "$OUT/only-staging.inv" | head -40
-stg -At -c "SELECT 'rows_total=' || coalesce(sum(n_live_tup),0) FROM pg_stat_user_tables WHERE schemaname='public'"
+stg -A -t -F '|' -f "$INV" | grep -v -x SET | LC_ALL=C sort > "$OUT/staging-after.inv" || fail 9 $? "staging inventory"
+# Expected = source inventory minus the objects source-exclusions.sql deliberately leaves out.
+awk -F'|' 'FNR==NR { if ($1=="fk") ex["constraint|" $2 "." $3]=1; else if ($1=="trigger") ex["trigger|" $2 "." $3]=1;
+                          else if ($1=="view") vw[$2]=1; next }
+  { k=$1"|"$2; if (k in ex) next; b=$2; sub(/[.>(].*$/, "", b); if (b in vw) next; print }' \
+  "$OUT/exclusions.txt" "$OUT/source.inv" | LC_ALL=C sort > "$OUT/source-expected.inv"
+# Join on kind|identity: MISSING = on source only; CHANGED = both sides, different definition; EXTRA = staging only.
+awk -F'|' 'FNR==NR { src[$1"|"$2]=$0; next } { stg[$1"|"$2]=$0 }
+  END {
+    for (k in src) if (!(k in stg)) print "MISSING\t" src[k];
+    for (k in src) if ((k in stg) && src[k] != stg[k]) print "CHANGED\t" src[k] "\t=> " stg[k];
+    for (k in stg) if (!(k in src)) print "EXTRA\t" stg[k] }' \
+  "$OUT/source-expected.inv" "$OUT/staging-after.inv" | LC_ALL=C sort > "$OUT/parity.report"
+N_MISS=$(grep -c '^MISSING' "$OUT/parity.report"); N_CHG=$(grep -c '^CHANGED' "$OUT/parity.report")
+N_EXP=0; N_UNEXP=0
+while IFS= read -r line; do
+  case "$line" in
+    EXTRA*)
+      id=$(printf '%s' "$line" | cut -f2 | cut -d'|' -f2); b=$(printf '%s' "$id" | sed -E 's/_pkey$//; s/[.>(].*$//')
+      if grep -q -F -- "$b" "$SHIM" "$A/aurora-cutover-auth-bridge.sql" "$A/aurora-cutover-outbox.sql"; then N_EXP=$((N_EXP+1))
+      else N_UNEXP=$((N_UNEXP+1)); echo "  UNEXPLAINED $line"; fi ;;
+  esac
+done < "$OUT/parity.report"
+echo "  source expected objects: $(wc -l < "$OUT/source-expected.inv")   staging objects: $(wc -l < "$OUT/staging-after.inv")"
+echo "  missing_on_staging=$N_MISS  changed_definition=$N_CHG  extra_from_package=$N_EXP  extra_unexplained=$N_UNEXP"
+echo "  auth.users foreign keys: source=$(grep -c '^constraint|.*REFERENCES auth\.users(' "$OUT/source.inv")  staging=$(grep -c '^constraint|.*REFERENCES auth\.users(' "$OUT/staging-after.inv")"
+grep '^MISSING' "$OUT/parity.report" | head -20 | sed 's/^/  /'
+grep '^CHANGED' "$OUT/parity.report" | head -20 | sed 's/^/  /'
+stg -At -c "SELECT 'auth_users_rows=' || (SELECT count(*) FROM auth.users)" | sed 's/^/  /'
+stg -At -c "SELECT 'public_rows_total=' || coalesce(sum(n_live_tup),0) FROM pg_stat_user_tables WHERE schemaname='public'" | sed 's/^/  /'
+[ "$N_MISS" = 0 ] && [ "$N_CHG" = 0 ] && [ "$N_UNEXP" = 0 ] || fail 9 1 "parity: missing=$N_MISS changed=$N_CHG unexplained=$N_UNEXP"
+[ "$FAILS" = 0 ] || die 9 1 "parity failed"
 ok 9
 echo "RESULT: restore finished, failures=$FAILS"
 exit $(( FAILS > 0 ? 30 : 0 ))

@@ -28,6 +28,10 @@
 
 CREATE SCHEMA IF NOT EXISTS auth;
 
+-- Empty stub so public foreign keys to auth.users can be recreated with identical definitions.
+-- Holds no user records; GoTrue's real table stays on Supabase.
+CREATE TABLE IF NOT EXISTS auth.users (id uuid PRIMARY KEY);
+
 -- select coalesce(
 --   nullif(current_setting('request.jwt.claim.sub', true), ''),
 --   (nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'sub')
