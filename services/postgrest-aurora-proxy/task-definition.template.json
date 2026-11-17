@@ -13,7 +13,7 @@
       "essential": true,
       "portMappings": [{ "containerPort": 8080, "protocol": "tcp" }],
       "environment": [
-        { "name": "SUPABASE_AUTH_HOST", "value": "inmkhvwdcuyhnxkgfvsb.supabase.co" }
+        { "name": "SUPABASE_AUTH_HOST", "value": "127.0.0.1" }
       ],
       "healthCheck": {
         "command": ["CMD-SHELL", "wget -q -O- http://localhost:8080/alive || exit 1"],
@@ -42,11 +42,11 @@
         { "name": "PGRST_DB_USE_LEGACY_GUCS", "value": "false" },
         { "name": "PGRST_SERVER_PORT", "value": "3000" },
         { "name": "PGRST_DB_PORT", "value": "5432" },
-        { "name": "PGRST_DB_HOST", "value": "vitana-aurora-prod.cluster-cfk228aiedf3.eu-central-1.rds.amazonaws.com" },
+        { "name": "PGRST_DB_HOST", "value": "vitana-aurora-staging.cluster-cfk228aiedf3.eu-central-1.rds.amazonaws.com" },
         { "name": "PGRST_DB_NAME", "value": "vitana" }
       ],
       "secrets": [
-        { "name": "PGRST_DB_URI", "valueFrom": "REPLACE_WITH_AUTHENTICATOR_DB_URI_SECRET_ARN" },
+        { "name": "PGRST_DB_URI", "valueFrom": "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/gateway/staging/postgrest-authenticator-uri" },
         { "name": "PGRST_JWT_SECRET", "valueFrom": "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/gateway/staging/supabase-jwt-secret" }
       ],
       "logConfiguration": {

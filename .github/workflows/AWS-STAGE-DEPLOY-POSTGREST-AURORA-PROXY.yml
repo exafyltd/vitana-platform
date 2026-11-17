@@ -27,7 +27,7 @@
 # and erp-bridge staging workflows use):
 #   AWS_STAGING_ACCESS_KEY_ID / AWS_STAGING_SECRET_ACCESS_KEY
 # Required Secrets Manager entries (eu-central-1), both pre-existing:
-#   vitana/aurora/rehearsal/postgrest-authenticator-uri  -> PGRST_DB_URI
+#   vitana/gateway/staging/postgrest-authenticator-uri  -> PGRST_DB_URI
 #   vitana/gateway/staging/supabase-jwt-secret      -> PGRST_JWT_SECRET
 
 name: AWS Stage Deploy PostgREST-Aurora Proxy (ECS)
@@ -113,7 +113,7 @@ jobs:
                --query 'services[0].status' --output text 2>/dev/null | grep -q ACTIVE; then
             echo "::error::ECS service '${{ env.ECS_SERVICE }}' not ACTIVE in '${{ env.ECS_CLUSTER }}' — provision it first."; exit 1
           fi
-          for NAME in vitana/aurora/rehearsal/postgrest-authenticator-uri vitana/gateway/staging/supabase-jwt-secret; do
+          for NAME in vitana/gateway/staging/postgrest-authenticator-uri vitana/gateway/staging/supabase-jwt-secret; do
             ARN=$(aws secretsmanager describe-secret --secret-id "$NAME" --query ARN --output text 2>/dev/null || true)
             if [ -z "$ARN" ] || [ "$ARN" = "None" ]; then
               echo "::error::Secret '$NAME' missing in Secrets Manager. Refusing to register a task definition that cannot start."; exit 1
@@ -136,7 +136,7 @@ jobs:
         run: |
           set -e
           IMAGE="${{ steps.build.outputs.image }}"
-          SEC_DB_URI=$(aws secretsmanager describe-secret --secret-id vitana/aurora/rehearsal/postgrest-authenticator-uri --query ARN --output text)
+          SEC_DB_URI=$(aws secretsmanager describe-secret --secret-id vitana/gateway/staging/postgrest-authenticator-uri --query ARN --output text)
           SEC_JWT=$(aws secretsmanager describe-secret --secret-id vitana/gateway/staging/supabase-jwt-secret --query ARN --output text)
           TD_ARN=$(aws ecs describe-services --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}" \
             --query 'services[0].taskDefinition' --output text)
@@ -149,6 +149,15 @@ jobs:
                       + [ {name:"PGRST_DB_URI", valueFrom:$SEC_DB}, {name:"PGRST_JWT_SECRET", valueFrom:$SEC_JWT} ] )
                 | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
                       .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)')
+          # VTID-05803: staging must never be wired to production or rehearsal. The base revision is the running one, which
+          # may carry an old production value, so the staging values are pinned here and the result is refused if any
+          # production or rehearsal reference survives.
+          NEW_DEF=$(printf '%s' "$NEW_DEF" | jq --arg DBHOST "vitana-aurora-staging.cluster-cfk228aiedf3.eu-central-1.rds.amazonaws.com" '
+                (.containerDefinitions[] | select(.name != "proxy") | .environment) |= (map(select(.name != "PGRST_DB_HOST")) + [{name:"PGRST_DB_HOST", value:$DBHOST}])
+                | (.containerDefinitions[] | select(.name == "proxy") | .environment) |= (map(select(.name != "SUPABASE_AUTH_HOST")) + [{name:"SUPABASE_AUTH_HOST", value:"127.0.0.1"}])')
+          if printf '%s' "$NEW_DEF" | grep -q -E 'aurora-prod|inmkhvwdcuyhnxkgfvsb|rehearsal'; then
+            echo "::error::rendered task definition still references production or rehearsal; refusing to register"; exit 1
+          fi
           NEW_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_DEF" \
             --query 'taskDefinition.taskDefinitionArn' --output text)
           echo "Registered $NEW_ARN"

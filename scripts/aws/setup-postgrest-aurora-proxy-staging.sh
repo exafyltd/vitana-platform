@@ -104,8 +104,8 @@ EXEC_ROLE="arn:aws:iam::${ACCOUNT_ID}:role/vitana-ecs-task-execution-role"
 TASK_ROLE="arn:aws:iam::${ACCOUNT_ID}:role/vitana-ecs-task-role"
 PLACEHOLDER_PROXY_IMAGE="public.ecr.aws/docker/library/nginx:1.27-alpine"
 POSTGREST_IMAGE="postgrest/postgrest:v12.2.3"
-AURORA_HOST="vitana-aurora-prod.cluster-cfk228aiedf3.eu-central-1.rds.amazonaws.com"
-SUPABASE_AUTH_HOST="inmkhvwdcuyhnxkgfvsb.supabase.co"
+AURORA_HOST="vitana-aurora-staging.cluster-cfk228aiedf3.eu-central-1.rds.amazonaws.com"   # staging writer endpoint (never the production cluster)
+SUPABASE_AUTH_HOST="127.0.0.1"   # fail-closed: staging never routes auth to the production Supabase project
 CPU="512"; MEMORY="1024"
 PROXY_PORT="8080"
 
