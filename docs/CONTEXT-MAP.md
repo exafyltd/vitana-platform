@@ -31,8 +31,8 @@ code-intelligence install has finished (436 s measured). Measured 2026-10-27
 ## Not a source of truth (history only)
 - `second-brain/`: a frozen copy of 2026-04..10 docs (`raw/`) and a wiki last edited 2026-10-03; it predates the
   AWS cutover rules. Cite the original file instead.
-- The `REPOWISE:START` block in `.claude/CLAUDE.md` (both repos): a generated snapshot. `check` prints how many
-  commits behind HEAD it is; its file counts and hotspots are not current.
+- The generated RepoWise index that used to sit beside the rules (removed 2026-11-17 in governance step 1, PR #5108): a
+  generated snapshot. `check` prints how many commits behind HEAD it is; its file counts and hotspots are not current.
 - Plan, handoff and lane files under `.kiro/specs/**` and dated reports in `docs/` record what was true then. Rule text
   on `origin/main` wins.
 
