@@ -519,7 +519,7 @@ jobs:
       # no inputs -> keep, so a dispatched aurora/supabase switch is carried
       # forward by every later push (the live task def is the base).
       - name: Register task-definition revision + roll the service (1/2 — build the task definition)
-        if: ${{ inputs.deploy_profile != 'preview-api' }}
+        if: inputs.deploy_profile != 'preview-api'
         id: taskdef
         env:
           # BOOTSTRAP-NOVA-SONIC-VOICE: Nova canary configuration prefers
@@ -1392,8 +1392,8 @@ jobs:
       # at the VTID-03788 20,000-char limit) so the data_backend switch fits.
       # keep (every push) passes the task definition through byte for byte.
       - name: Register task-definition revision + roll the service
-        if: ${{ inputs.deploy_profile != 'preview-api' }}
         id: roll
+        if: inputs.deploy_profile != 'preview-api'
         env:
           DATA_BACKEND: ${{ inputs.data_backend || 'keep' }}
           DATA_BACKEND_AURORA_URL_SECRET_ARN: ${{ vars.SUPABASE_URL_AURORA_PROXY_STAGING_ARN }}
@@ -1452,14 +1452,8 @@ jobs:
                 | .environment = ([(.environment // [])[] | select(.name != "GIT_COMMIT_SHA" and .name != "COMMIT_SHA" and .name != "GATEWAY_API_ONLY")]
                     + [{name:"GIT_COMMIT_SHA",value:$sha},{name:"COMMIT_SHA",value:$sha},{name:"GATEWAY_API_ONLY",value:"true"}])
               else . end)' "$RUNNER_TEMP/preview-current.json" > "$RUNNER_TEMP/preview-new.json"
-          # Refuse: any background-worker flag true, any production-only secret or env, GATEWAY_API_ONLY not true.
-          WORKER_FLAGS="REMINDERS_INPROCESS_DISPATCH_ENABLED REMINDERS_STAGING_DISPATCH_OVERRIDE AUTOPILOT_HEARTBEAT_ENABLED AUTOPILOT_LOOP_ENABLED CALENDAR_GOOGLE_SYNC_ENABLED CALENDAR_MAINTENANCE_ENABLED CALENDAR_DEFAULT_REMINDERS_ENABLED FEEDBACK_AUTO_DISPATCH_ENABLED DEV_AUTOPILOT_WATCHER_LIVE DEV_AUTOPILOT_USE_JOB DEV_AUTOPILOT_EXECUTOR_ENABLED DEV_AUTOPILOT_WATCHERS_ENABLED OPERATOR_PLANNER_ENABLED VTID_ALLOCATOR_ENABLED OPERATOR_VTID_SELF_ALLOCATE_ENABLED PM_AGENT_ENABLED REWARD_SWEEP_ENABLED AUTOPILOT_ACTION_REWARD_ENABLED SELF_HEALING_RECONCILER_ENABLED RECOMMENDATION_SCHEDULER_ENABLED CONNECTED_APPS_SYNC_ENABLED"
-          for f in $WORKER_FLAGS; do
-            v=$(jq -r --arg n "$f" '[.containerDefinitions[].environment[]? | select(.name == $n) | .value] | last // "false"' "$RUNNER_TEMP/preview-new.json")
-            if [ "$v" = "true" ]; then echo "::error::refusing preview roll: worker flag $f=true"; exit 1; fi
-          done
-          BAD=$(jq -r '[.containerDefinitions[] | ((.environment // [])[], (.secrets // [])[]) | .name | select(test("^(GITHUB_SAFE_MERGE_TOKEN|GITHUB_TOKEN|ERP_BRIDGE_TOKEN|KIRO_RUNNER_TOKEN|DAILY_API_KEY|TYPESAFE_API_KEY|FISH_API_KEY|OPENAI_API_KEY|GEMINI_API_KEY|GOOGLE_GEMINI_API_KEY|OPERATOR_MACHINE_AUTH_TOKEN|DEV_MEMORY_PACK_TOKEN|DEV_AUTOPILOT_SCAN_TOKEN|GCP_SERVICE_ACCOUNT_JSON)$|^AURORA_")) ] | unique | join(" ")' "$RUNNER_TEMP/preview-new.json")
-          if [ -n "$BAD" ]; then echo "::error::refusing preview roll: production-only names bound: $BAD"; exit 1; fi
+          # Refuse worker flags, production-only names and a missing GATEWAY_API_ONLY (script kept outside this file).
+          bash scripts/aws/preview-api-refuse-workers.sh "$RUNNER_TEMP/preview-new.json"
           GA=$(jq -r '[.containerDefinitions[].environment[]? | select(.name == "GATEWAY_API_ONLY") | .value] | last // ""' "$RUNNER_TEMP/preview-new.json")
           test "$GA" = "true" || { echo "::error::refusing preview roll: GATEWAY_API_ONLY is not true"; exit 1; }
           NEW_ARN=$(aws ecs register-task-definition --cli-input-json "file://$RUNNER_TEMP/preview-new.json" --query 'taskDefinition.taskDefinitionArn' --output text)
@@ -1509,7 +1503,7 @@ jobs:
           fi
           exit 0
       - name: Smoke — env=staging + deployed commit live
-        if: ${{ inputs.deploy_profile != 'preview-api' }}
+        if: inputs.deploy_profile != 'preview-api'
         run: |
           set -e
           URL="${{ env.GATEWAY_URL }}"
@@ -1530,7 +1524,7 @@ jobs:
           exit 1
 
       - name: Smoke — Nova Sonic health surface present
-        if: ${{ inputs.deploy_profile != 'preview-api' }}
+        if: inputs.deploy_profile != 'preview-api'
         run: |
           set -e
           URL="${{ env.GATEWAY_URL }}"
@@ -1550,7 +1544,7 @@ jobs:
       # carries it (as env or secret NAME — values are never read or printed)
       # as a warning annotation when it is missing.
       - name: Report DAILY_API_KEY presence (live task definition, read-only)
-        if: ${{ inputs.deploy_profile != 'preview-api' }}
+        if: inputs.deploy_profile != 'preview-api'
         continue-on-error: true
         run: |
           set +e
@@ -1567,7 +1561,7 @@ jobs:
           exit 0
 
       - name: Emit OASIS event + software_versions row (best-effort)
-        if: ${{ (always()) && inputs.deploy_profile != 'preview-api' }}
+        if: always() && inputs.deploy_profile != 'preview-api'
         env:
           # VTID-05023 part 9: REST base; repo variable DATA_REST_URL (unset = Supabase as before)
           # is https://data.vitanaland.com (Aurora) after the flip.
@@ -1620,13 +1614,13 @@ jobs:
       # head_sha, which is main HEAD even when a commit_sha pin deployed an
       # older commit. Hand it the commit actually deployed.
       - name: Record deployed commit for STAGING-VERIFY (VTID-04715)
-        if: ${{ (success()) && inputs.deploy_profile != 'preview-api' }}
+        if: success() && inputs.deploy_profile != 'preview-api'
         run: |
           mkdir -p "$RUNNER_TEMP/deployed-commit"
           echo "${{ steps.commit.outputs.sha }}" > "$RUNNER_TEMP/deployed-commit/sha"
 
       - name: Upload deployed commit (VTID-04715)
-        if: ${{ (success()) && inputs.deploy_profile != 'preview-api' }}
+        if: success() && inputs.deploy_profile != 'preview-api'
         uses: actions/upload-artifact@v4
         with:
           name: deployed-commit
