@@ -42,6 +42,7 @@
  */
 
 import { specialistAckWindowMs, SPECIALIST_VOICE_ACK_DEFAULT_MS } from '../orb/live/tools/delegation-tools';
+import { scheduleBackground } from '../runtime/runtime-profile';
 import { pickEffectiveRole } from '../services/orchestrator/active-role';
 import { fetchPermittedRoles } from '../lib/permitted-roles';
 import express, { Router, Request, Response, NextFunction } from 'express';
@@ -1575,7 +1576,7 @@ export function sweepIdleLiveSessions(now: number = Date.now()): number {
   if (purged > 0) console.log(`[VTID-03510] Reaped ${purged} idle/expired live sessions (remaining: ${liveSessions.size})`);
   return purged;
 }
-setInterval(() => { sweepIdleLiveSessions(); }, 60 * 1000);
+scheduleBackground(() => { sweepIdleLiveSessions(); }, 60 * 1000);
 
 // =============================================================================
 // VTID-SESSION-LIMIT: Enforce single active ORB session per user
@@ -12318,7 +12319,7 @@ function cleanupExpiredTranscripts(): void {
 }
 
 // Cleanup expired transcripts every 10 minutes
-setInterval(cleanupExpiredTranscripts, 10 * 60 * 1000);
+scheduleBackground(cleanupExpiredTranscripts, 10 * 60 * 1000);
 
 /**
  * VTID-0135: Cleanup expired conversations
@@ -12334,7 +12335,7 @@ function cleanupExpiredConversations(): void {
 }
 
 // Cleanup expired conversations every 5 minutes
-setInterval(cleanupExpiredConversations, 5 * 60 * 1000);
+scheduleBackground(cleanupExpiredConversations, 5 * 60 * 1000);
 
 // =============================================================================
 // VTID-0135: OASIS Event Emission for ORB
@@ -13310,7 +13311,7 @@ configureLiveSessionController({
 // A8.2: cleanupExpiredSessions body lifted to
 // orb/live/session/live-session-controller.ts. The setInterval schedule
 // stays here — orb-live.ts owns the cleanup timer lifecycle.
-setInterval(cleanupExpiredSessions, 5 * 60 * 1000);
+scheduleBackground(cleanupExpiredSessions, 5 * 60 * 1000);
 
 /**
  * Call Gemini API with audio transcription request

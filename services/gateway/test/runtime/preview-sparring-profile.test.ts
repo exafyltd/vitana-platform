@@ -80,3 +80,63 @@ describe('startup path: no worker starts before the profile guard', () => {
     expect(before.match(WORKER_START)).not.toBeNull();
   });
 });
+
+describe('module-level timers go through the profile', () => {
+  const SRC = path.join(__dirname, '..', '..', 'src');
+  const walk = (dir: string): string[] =>
+    fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+      const p = path.join(dir, e.name);
+      return e.isDirectory() ? walk(p) : e.name.endsWith('.ts') ? [p] : [];
+    });
+
+  it('no column-0 setInterval exists outside the profile module (import-time timers would bypass the profile)', () => {
+    const offenders = walk(SRC)
+      .filter((f) => !f.endsWith(path.join('runtime', 'runtime-profile.ts')))
+      .filter((f) => /^(setInterval\(|const\s+\w+\s*=\s*setInterval\()/m.test(fs.readFileSync(f, 'utf8')))
+      .map((f) => path.relative(SRC, f));
+    expect(offenders).toEqual([]);
+  });
+
+  it('scheduleBackground starts nothing in preview and a real timer in full', () => {
+    jest.useFakeTimers();
+    const spy = jest.spyOn(global, 'setInterval');
+    try {
+      const { scheduleBackground } = require('../../src/runtime/runtime-profile');
+      const fn = jest.fn();
+      expect(scheduleBackground(fn, 1000, { GATEWAY_RUNTIME_PROFILE: 'preview-sparring' })).toBeNull();
+      expect(spy).not.toHaveBeenCalled();
+      expect(scheduleBackground(fn, 1000, {})).not.toBeNull();
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(() => scheduleBackground(fn, 1000, { GATEWAY_RUNTIME_PROFILE: 'preivew' })).toThrow(/not a known profile/);
+    } finally {
+      spy.mockRestore();
+      jest.useRealTimers();
+    }
+  });
+});
+
+describe('staging deploy workflow: preview cannot reach vitana-gateway', () => {
+  const WF = fs.readFileSync(
+    path.join(__dirname, '..', '..', '..', '..', '.github', 'workflows', 'AWS-STAGE-DEPLOY-GATEWAY.yml'),
+    'utf8',
+  );
+  it('has an explicit runtime_profile input defaulting to full', () => {
+    expect(WF).toMatch(/runtime_profile:\n\s+description:[^\n]*\n\s+required: false\n\s+default: 'full'/);
+    expect(WF).toMatch(/options: \[full, preview-sparring\]/);
+  });
+  it('refuses preview-sparring on any service other than vitana-gateway-preview, and the reverse', () => {
+    expect(WF).toContain('preview-sparring may only deploy to vitana-gateway-preview');
+    expect(WF).toContain('vitana-gateway-preview only accepts runtime_profile=preview-sparring');
+    expect(WF).toContain('preview-sparring must never touch the production-attached vitana-gateway');
+  });
+  it('the guard runs before the image build and the task-definition registration', () => {
+    const guardAt = WF.indexOf('Preview guard');
+    expect(guardAt).toBeGreaterThan(-1);
+    expect(guardAt).toBeLessThan(WF.indexOf('name: Build and push image'));
+    expect(guardAt).toBeLessThan(WF.indexOf('name: Register task-definition revision + roll the service (1/2'));
+  });
+  it('the profile is stamped on every deploy and cleared from the previous revision first', () => {
+    expect(WF).toContain('{name:"GATEWAY_RUNTIME_PROFILE", value:$PROFILE}');
+    expect(WF).toContain('"CLAUDE_AVAILABLE","GATEWAY_RUNTIME_PROFILE") | not)');
+  });
+});

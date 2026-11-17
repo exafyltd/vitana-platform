@@ -24,6 +24,7 @@
  */
 
 import { randomUUID } from 'crypto';
+import { scheduleBackground } from '../runtime/runtime-profile';
 import { emitOasisEvent } from './oasis-event-service';
 import {
   AvailabilityLevel,
@@ -1225,7 +1226,7 @@ function cleanupCaches(): void {
 }
 
 // Run cleanup every 5 minutes
-setInterval(cleanupCaches, 5 * 60 * 1000);
+scheduleBackground(cleanupCaches, 5 * 60 * 1000);
 
 // =============================================================================
 // Exports

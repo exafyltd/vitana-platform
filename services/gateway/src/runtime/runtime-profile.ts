@@ -25,3 +25,17 @@ export function resolveRuntimeProfile(env: NodeJS.ProcessEnv = process.env): Run
 export function backgroundWorkersAllowed(profile: RuntimeProfile): boolean {
   return profile === 'full';
 }
+
+/**
+ * Module-level timers (started at import time) must go through this helper, not a bare
+ * `setInterval`. In the preview-sparring profile it starts nothing and returns null. This is the
+ * one place a process-wide timer can be created, so a new one cannot bypass the profile.
+ */
+export function scheduleBackground(
+  fn: () => void,
+  ms: number,
+  env: NodeJS.ProcessEnv = process.env,
+): ReturnType<typeof setInterval> | null {
+  if (!backgroundWorkersAllowed(resolveRuntimeProfile(env))) return null;
+  return setInterval(fn, ms);
+}

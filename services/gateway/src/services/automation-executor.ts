@@ -13,6 +13,7 @@
  */
 
 import { randomUUID } from 'crypto';
+import { scheduleBackground } from '../runtime/runtime-profile';
 import { AutomationDefinition, AutomationContext, RunStatus, TriggerType, RoleTarget } from '../types/automations';
 import { getAutomation, getHeartbeatAutomations, getEventAutomations, automationTargetsRole } from './automation-registry';
 import { notifyUserAsync } from './notification-service';
@@ -73,7 +74,7 @@ async function checkNotificationThrottle(
 }
 
 // Periodically clean up stale entries (users from previous days)
-setInterval(() => {
+scheduleBackground(() => {
   const today = getTodayKey();
   for (const [userId, entry] of dailyNotifCounts) {
     if (entry.date !== today) dailyNotifCounts.delete(userId);

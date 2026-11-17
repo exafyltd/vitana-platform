@@ -80,6 +80,12 @@ on:
         description: 'Override Nova canary tenant UUID allowlist (comma-separated; empty = use repo var)'
         required: false
         default: ''
+      runtime_profile:
+        description: 'Runtime profile for this deploy: full (production-equivalent, default) or preview-sparring (HTTP API only; requires ecs_service=vitana-gateway-preview)'
+        required: false
+        default: 'full'
+        type: choice
+        options: [full, preview-sparring]
       aws_region:
         description: 'AWS region'
         required: false
@@ -117,6 +123,7 @@ jobs:
       ECR_REPOSITORY: ${{ inputs.ecr_repository || 'vitana/gateway' }}
       ECS_CLUSTER: ${{ inputs.ecs_cluster || 'Vitana-ECS-Cluster' }}
       ECS_SERVICE: ${{ inputs.ecs_service || 'vitana-gateway' }}
+      RUNTIME_PROFILE: ${{ inputs.runtime_profile || 'full' }}
       DEPLOY_REASON: ${{ inputs.reason || format('auto-deploy on push to main ({0})', github.event.head_commit.message && 'push' || 'dispatch') }}
     steps:
       - uses: actions/checkout@v4
@@ -128,6 +135,24 @@ jobs:
           # VTID-04709: a pinned commit_sha when dispatched with one, else the
           # triggering commit exactly as before.
           ref: ${{ inputs.commit_sha || github.sha }}
+
+      - name: Preview guard — profile and service must match (never preview into vitana-gateway)
+        env:
+          PROFILE: ${{ env.RUNTIME_PROFILE }}
+          SVC: ${{ env.ECS_SERVICE }}
+        run: |
+          set -e
+          case "$PROFILE" in full|preview-sparring) ;; *) echo "::error::unknown runtime_profile '$PROFILE'"; exit 1;; esac
+          if [ "$PROFILE" = "preview-sparring" ] && [ "$SVC" != "vitana-gateway-preview" ]; then
+            echo "::error::preview-sparring may only deploy to vitana-gateway-preview (got '$SVC')"; exit 1
+          fi
+          if [ "$SVC" = "vitana-gateway-preview" ] && [ "$PROFILE" != "preview-sparring" ]; then
+            echo "::error::vitana-gateway-preview only accepts runtime_profile=preview-sparring (got '$PROFILE')"; exit 1
+          fi
+          if [ "$SVC" = "vitana-gateway" ] && [ "$PROFILE" = "preview-sparring" ]; then
+            echo "::error::preview-sparring must never touch the production-attached vitana-gateway"; exit 1
+          fi
+          echo "Guard ok: profile=$PROFILE service=$SVC"
 
       - name: Pinned commit must already be on main (VTID-04709)
         if: ${{ inputs.commit_sha != '' }}
@@ -1182,6 +1207,7 @@ jobs:
                  --arg GCP_CRED_CONFIG "$GCP_CRED_CONFIG" \
                  --slurpfile CA "$RUNNER_TEMP/connected-apps.json" \
                  --arg CLAUDE_AVAILABLE "$CLAUDE_AVAILABLE_VALUE" \
+                 --arg PROFILE "$RUNTIME_PROFILE" \
                  --arg TASK_ROLE "$TASK_ROLE_ARN" '
                 .containerDefinitions[0].image = $IMG
                 | .containerDefinitions[0].environment |=
@@ -1221,8 +1247,9 @@ jobs:
                                               "CODEINTEL_PLATFORM_REPO_DIR","CODEINTEL_V1_REPO_DIR",
                                               "NAV_CONTINUATION_BIND","VITANA_ENV","GATEWAY_URL",
                                               "AUTOMATIONS_DELIVERY_MODE","AUTOPILOT_HEARTBEAT_ENABLED","DEFAULT_TENANT_ID",
-                                              "PM_AGENT_ENABLED","PM_MODE","CLAUDE_AVAILABLE") | not) ]
-                      + [ {name:"GIT_COMMIT_SHA", value:$SHA},
+                                              "PM_AGENT_ENABLED","PM_MODE","CLAUDE_AVAILABLE","GATEWAY_RUNTIME_PROFILE") | not) ]
+                      + [ {name:"GATEWAY_RUNTIME_PROFILE", value:$PROFILE},
+                          {name:"GIT_COMMIT_SHA", value:$SHA},
                           {name:"COMMIT_SHA", value:$SHA},
                           {name:"BUILD_INFO_MARKER", value:$SHORT},
                           {name:"NOVA_SONIC_ENABLED", value:$NOVA_ENABLED},

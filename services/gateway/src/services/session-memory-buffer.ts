@@ -21,6 +21,7 @@
  * - orb-live.ts: calls addTurn() on transcriptTurns push
  * - context-pack-builder.ts: calls getSessionContext() to inject buffer
  */
+import { scheduleBackground } from '../runtime/runtime-profile';
 
 // =============================================================================
 // Configuration
@@ -80,7 +81,7 @@ export interface SessionContext {
 const sessions = new Map<string, SessionBuffer>();
 
 // Periodic cleanup of expired sessions
-const cleanupInterval = setInterval(() => {
+const cleanupInterval = scheduleBackground(() => {
   const now = Date.now();
   let cleaned = 0;
   for (const [id, session] of sessions) {
@@ -95,7 +96,7 @@ const cleanupInterval = setInterval(() => {
 }, SESSION_BUFFER_CONFIG.CLEANUP_INTERVAL_MS);
 
 // Prevent cleanup interval from keeping Node alive
-if (cleanupInterval.unref) {
+if (cleanupInterval?.unref) {
   cleanupInterval.unref();
 }
 
