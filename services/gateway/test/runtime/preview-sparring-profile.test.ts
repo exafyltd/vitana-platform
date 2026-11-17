@@ -136,7 +136,7 @@ describe('staging deploy workflow: preview cannot reach vitana-gateway', () => {
     expect(guardAt).toBeLessThan(WF.indexOf('name: Register task-definition revision + roll the service (1/2'));
   });
   it('the profile is stamped on every deploy and cleared from the previous revision first', () => {
-    expect(WF).toContain('{name:"GATEWAY_RUNTIME_PROFILE", value:$PROFILE}');
+    expect(WF).toContain('{name:"GATEWAY_RUNTIME_PROFILE", value:$ENV.RUNTIME_PROFILE}');
     expect(WF).toContain('"CLAUDE_AVAILABLE","GATEWAY_RUNTIME_PROFILE") | not)');
   });
 });
