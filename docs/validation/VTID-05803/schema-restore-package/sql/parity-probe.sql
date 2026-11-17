@@ -15,6 +15,7 @@ UNION ALL SELECT 'policies', count(*) FROM pg_policies WHERE schemaname='public'
 UNION ALL SELECT 'rls_enabled_tables', count(*) FROM pg_class WHERE relnamespace IN (SELECT oid FROM ns) AND relkind IN ('r','p') AND relrowsecurity
 UNION ALL SELECT 'fk_constraints', count(*) FROM pg_constraint WHERE connamespace IN (SELECT oid FROM ns) AND contype='f'
 UNION ALL SELECT 'fk_to_auth', count(*) FROM pg_constraint WHERE contype='f' AND confrelid=to_regclass('auth.users')
+UNION ALL SELECT 'fk_public_to_auth', count(*) FROM pg_constraint WHERE connamespace IN (SELECT oid FROM ns) AND contype='f' AND confrelid=to_regclass('auth.users')
 UNION ALL SELECT 'enums', count(*) FROM pg_type WHERE typnamespace IN (SELECT oid FROM ns) AND typtype='e'
 UNION ALL SELECT 'acl_entries', count(*) FROM pg_class c, aclexplode(c.relacl) a WHERE c.relnamespace IN (SELECT oid FROM ns) AND c.relkind IN ('r','p','v','m','S')
 UNION ALL SELECT 'public_rows_estimate', coalesce(sum(n_live_tup),0) FROM pg_stat_user_tables WHERE schemaname='public'
