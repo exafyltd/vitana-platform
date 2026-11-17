@@ -31,7 +31,7 @@ Status (ledger, read 2026-11-17): `in_progress`. Ledger write not performed from
 ## Preview gateway
 
 `vitana-gateway-preview` (desired 0, task definition 1) is stopped. Its task definition wires `SUPABASE_URL` to
-`http://postgres-aurora.vitana.internal:8080` (the proxy) and has no Supabase service role. This session's identity is
+`http://postgrest-aurora.vitana.internal:8080` (the proxy) and has no Supabase service role. This session's identity is
 denied `ecs:UpdateService`, so the service was not started. No gateway completion is claimed.
 
 ## Migration
