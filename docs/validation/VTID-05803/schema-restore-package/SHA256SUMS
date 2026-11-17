@@ -1,0 +1,16 @@
+76dafabd3c0054159ecf58d645d700fe1c74afa032129e07936946298767d314  ./parity-compare.py
+dd1c7315dc7fae7c2242d026b2a61678087eed3c2fdfddf335f702ddceeab3e8  ./schema-restore.sh
+05db7ed6dc944952f0aa3dd61ebb40a57e2e44fa89dcf3c9bef3d5877f2745f1  ./source-baseline-2026-11-17.txt
+6404df9fd68b64e661be2cf7b743b16ecee46d7d9f5027e53e07450766954a33  ./sql/aurora-auth-compat-stub.sql
+785899f2c57f205a2d6b726e2e7ee06f3fec12ee68bf9aeef61ffb2aacab67f2  ./sql/aurora-cutover-auth-bridge.sql
+4b42b25bb12ba2b2106e138acf14ae3b556991fac7f3908cac1982c3c0e62f05  ./sql/aurora-cutover-recreate-foreign-keys.sql
+9c9250c508d33c6c7806892efcaeada1707fbdaa5ccb9cfeef2c62761b2108ae  ./sql/aurora-cutover-restore-grants.sql
+36ec0a52ffc694e8915fdc3a6a836e9d39d32b79a4eb3a045eb348ccd644c251  ./sql/aurora-cutover-schema-sync-views.sql
+d0a95b7f28a8846dde65c08b4f621f469160ba3794d6804ff6e5ab144b98cba6  ./sql/aurora-cutover-schema-sync.sql
+2e2e5be85a726611140d8ddf47ec291d7cc837de8fdc7ac85281df4a5c05caba  ./sql/aurora-cutover-vector-preload.sql
+74d49b0f340accb608730a7fa1d52687a8839aa93cb0fac631558d96bb16950f  ./sql/aurora-restore-rls-parity.sql
+d600eefcc0cc8abad64b87627a3bccd96d294c01269dd3337420758ef2f7c3b5  ./sql/auth-helpers-production-definitions.sql
+6b5e298b16106a65e8a90ce335c4680fb89ce146e9952c49caa3b16780f54dae  ./sql/host-exclusion-check.sql
+d5f406ed178ab3974f89110620cecdd7c38d8e4c267e5eb318b2e81c6bbc964b  ./sql/outbox-replacement-staging-invalid-host.sql
+168656c65628b5eed2be666562ac1d7b07933c8d31f7b0c47171b2198ddfc784  ./sql/outbox-table-and-helpers.sql
+d486dcf5a3afd0f39850a17e096c34d746d6b97ae6e9a83aba25bda1b098df90  ./sql/parity-probe.sql
