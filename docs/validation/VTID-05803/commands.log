@@ -1,0 +1,11 @@
+# VTID-05803 — commands run for this evidence pack (synthetic rehearsal; no production access)
+# 1. source catalogue (read-only, production): sequence inventory, auth.users definition, FK/trigger/policy scans
+# 2. local rehearsal cluster (PostgreSQL 16, TLS on), synthetic data only:
+$ bash migration/run-synthetic-rehearsal.sh          # run 20261117T210957Z (32 pass, 2 fail: first version, fixed afterwards)
+$ bash migration/run-synthetic-rehearsal.sh          # run 20261117T211256Z (41 pass, 2 fail: preservation sanity grep, anon test)
+$ bash migration/run-synthetic-rehearsal.sh          # run 20261117T211318Z (43 pass, 0 fail)
+$ bash migration/run-synthetic-rehearsal.sh          # run 20261117T211331Z (43 pass, 0 fail)  <- clean state, reproducible
+# 3. AWS read-only checks (account 472838866351, eu-central-1): vitana-gateway:1023 env, service desired counts, cluster status
+# 4. not run: 02 against production (blocked: native authentication), 03 against vitana-aurora-staging (blocked on 02 output)
+# 5. committed tooling re-run from its repository location (migration/), evidence written to outputs/:
+$ EVID_BASE=docs/validation/VTID-05803/outputs bash docs/validation/VTID-05803/migration/run-synthetic-rehearsal.sh   # run 20261117T211432Z: 43 pass, 0 fail

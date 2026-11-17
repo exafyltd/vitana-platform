@@ -1,0 +1,10 @@
+checksums: OK
+auth phase pre done
+COPY 261
+auth phase data done
+auth phase post done
+ordered restore: complete
+outbox: applied
+production_host_exclusion: clean
+outbox_rows_queued=0
+REFUSED: preservation metrics differ from source (see counts.diff)

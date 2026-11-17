@@ -1,0 +1,10 @@
+{
+  "vtid": "VTID-05803",
+  "title": "Supabase production to Aurora staging: native export, restore, auth.users (without hashes), staging-only outbox",
+  "change_class": "back-end",
+  "environment": "staging only. Production is not changed and no production write was made.",
+  "files_in_scope": ["migration/"],
+  "evidence": ["outputs/", "acceptance.md", "commands.log", "patch.sha256"],
+  "not_in_scope": ["any workflow file", "any production resource", "any deployment", "the production Supabase database", "IAM boundary"],
+  "status": "tooling and synthetic rehearsal complete; Aurora staging load not yet executed (blocked on native export authentication)"
+}

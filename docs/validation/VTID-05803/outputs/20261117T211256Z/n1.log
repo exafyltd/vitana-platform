@@ -1,0 +1,5 @@
+attrs|f|f|f|t
+non_select_table_privileges=0 schemas_with_create=0
+dump complete
+refused: AUTH_SCOPE must be exactly without-hashes (approved scope)
+role_removed=true
