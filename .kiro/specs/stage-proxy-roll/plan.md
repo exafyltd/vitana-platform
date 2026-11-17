@@ -1,3 +1,4 @@
+<!-- plan:begin -->
 # Plan: stage-proxy-roll
 
 ## Problem
@@ -26,3 +27,4 @@ has been stopped.
 ## Sparring request
 Spar the desired-count change and the trust boundary. The sparring gateway requirement is noted: the guarded
 gateway (PR #5110) needs a governed merge before it can serve sparring.
+<!-- plan:end -->
