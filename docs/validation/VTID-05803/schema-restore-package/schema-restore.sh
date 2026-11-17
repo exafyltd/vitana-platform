@@ -26,10 +26,12 @@ echo "extensions ok"
 run() { echo "== $1"; psql -X -q -v ON_ERROR_STOP=1 -f "$SQL/$1" >/dev/null; echo "   ok $1"; }
 # Ordered restore (schema objects only)
 run auth-helpers-production-definitions.sql
+run aurora-auth-users-stub.sql
 run aurora-cutover-auth-bridge.sql
 run aurora-cutover-schema-sync.sql
 run aurora-cutover-vector-preload.sql
 run aurora-cutover-recreate-foreign-keys.sql
+run aurora-auth-fk-restore.sql
 run aurora-cutover-restore-grants.sql
 run aurora-restore-rls-parity.sql
 run outbox-table-and-helpers.sql
@@ -40,8 +42,8 @@ psql -X -q -At -f "$SQL/host-exclusion-check.sql" > "$HERE/host-exclusion.out"
 awk -F'|' 'NF==2 && $2 ~ /^[0-9]+$/ {s+=$2} END {exit s!=0}' "$HERE/host-exclusion.out" || { echo "REFUSED: production reference after restore"; exit 1; }
 echo "production host exclusion: clean"
 # Parity against the source baseline (counts only). Every metric must equal the baseline, except the listed
-# differences: the auth-scope consequence of the schema-only source (auth.users and its foreign keys are not restored),
-# and the row estimate, which must be 0 on staging (no member data is copied).
+# differences: the 10 auth-internal keys (GoTrue tables, not restored) and the row estimate, which must be 0 on staging
+# (no member data is copied).
 psql -X -q -At -f "$SQL/parity-probe.sql" > "$HERE/target-counts.out"
 python3 "$HERE/parity-compare.py" "$HERE/source-baseline-2026-11-17.txt" "$HERE/target-counts.out" || { echo "PARITY: unexplained mismatch"; exit 1; }
 echo "schema-only restore finished; parity probes in target-counts.out"
