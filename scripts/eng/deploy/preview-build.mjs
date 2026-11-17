@@ -8,6 +8,9 @@
 //   - nothing here names a deploy, an ECS service, a task definition or staging-latest.
 //
 //   preview-build.mjs tag --sha <sha>
+//   preview-build.mjs verify-manifest --manifest <file> --expected <sha> --archive-sha256 <hex> --pipeline-id <id>
+//   preview-build.mjs check-account --account <id>
+//   preview-build.mjs verify-digest --pushed <digest> --now <digest>
 //   preview-build.mjs check-source --expected <sha> --head <sha>
 //   preview-build.mjs check-tag --sha <sha> --describe-exit <n> --describe-stderr <text>
 //
@@ -65,11 +68,62 @@ export function publishTarget(tag) {
   return `${REGISTRY}/${PREVIEW_REPOSITORY}:${tag}`;
 }
 
+// ---- artifact binding, account pin and digest checks (publish side, trusted code) -------------------------------
+
+export const PREVIEW_ACCOUNT = '472838866351';
+const SHA256_HEX = /^[0-9a-f]{64}$/;
+const ECR_DIGEST = /^sha256:[0-9a-f]{64}$/;
+
+// The manifest is written by the build job. The build job runs unmerged code, so the manifest is a binding for
+// the publisher's checks, not a trust anchor: the publisher trusts only that the artifact came from this pipeline
+// and this exact source, and that its bytes are the bytes it hashed.
+export function verifyManifest({ manifest, expectedSource, archiveSha256, pipelineId }) {
+  requireFullSha(expectedSource, 'PREVIEW_SOURCE_SHA');
+  if (!SHA256_HEX.test(String(archiveSha256 || ''))) throw new DeployError('archive sha256 must be 64 lowercase hex', 2);
+  if (!manifest || typeof manifest !== 'object') throw new DeployError('preview manifest is missing or not an object', 2);
+  if (manifest.source_sha !== expectedSource) {
+    throw new DeployError(`manifest source ${manifest.source_sha} is not the requested source ${expectedSource}: refusing to publish`, 2);
+  }
+  if (manifest.archive_sha256 !== archiveSha256) {
+    throw new DeployError('archive sha256 does not match the manifest: the artifact was altered between build and publish', 2);
+  }
+  if (String(manifest.pipeline_id) !== String(pipelineId)) {
+    throw new DeployError(`manifest pipeline ${manifest.pipeline_id} is not this pipeline ${pipelineId}: refusing foreign artifact`, 2);
+  }
+  return { source: expectedSource, archive_sha256: archiveSha256 };
+}
+
+export function checkAccount(account) {
+  if (account !== PREVIEW_ACCOUNT) {
+    throw new DeployError(`caller account ${account} is not ${PREVIEW_ACCOUNT}: refusing to publish`, 2);
+  }
+  return account;
+}
+
+// After the push, the tag must point at the digest the push reported. A different digest means someone else wrote
+// the tag in the window between the no-clobber check and the push, so the publish is a failure, not a success.
+export function verifyPublishedDigest({ pushed, now }) {
+  if (!ECR_DIGEST.test(String(pushed || ''))) throw new DeployError('pushed digest is not a sha256 digest', 2);
+  if (pushed !== now) throw new DeployError(`tag digest is now ${now}, not the pushed ${pushed}: the tag was overwritten during publish`, 1);
+  return { digest: pushed };
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const [cmd, ...rest] = process.argv.slice(2);
   const a = parseArgs(rest);
   try {
-    if (cmd === 'tag') {
+    if (cmd === 'verify-manifest') {
+      const { readFileSync } = await import('node:fs');
+      const manifest = JSON.parse(readFileSync(a.manifest, 'utf8'));
+      verifyManifest({ manifest, expectedSource: a.expected, archiveSha256: a['archive-sha256'], pipelineId: a['pipeline-id'] });
+      console.log(`manifest ok: ${a.expected}`);
+    } else if (cmd === 'check-account') {
+      checkAccount(a.account);
+      console.log(`account ok: ${a.account}`);
+    } else if (cmd === 'verify-digest') {
+      verifyPublishedDigest({ pushed: a.pushed, now: a.now });
+      console.log(`digest ok: ${a.now}`);
+    } else if (cmd === 'tag') {
       console.log(previewTag(a.sha));
     } else if (cmd === 'check-source') {
       checkSource({ expected: a.expected, head: a.head });
