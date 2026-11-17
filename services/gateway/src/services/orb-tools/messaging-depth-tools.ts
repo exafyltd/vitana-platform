@@ -20,7 +20,8 @@
  *
  *  - message_reactions (vitana-v1 migration 20250918121049 — polymorphic on
  *    chat_messages.id / global_messages.id / messages.id; message_id UUID,
- *    user_id UUID, emoji TEXT CHECK IN ('👍','❤️','😂','😮','🙏','🎉'),
+ *    user_id UUID, emoji TEXT REFERENCES message_reaction_emojis (the supported set,
+ *    reaction-emojis.json; FK since 20261117120000, at most 6 distinct emojis per user),
  *    PRIMARY KEY (message_id, user_id, emoji)). notify_on_reaction() already
  *    fires a push on insert (supabase/migrations/
  *    20260710120000_fix_reaction_notification_deeplink.sql), so this file
@@ -52,6 +53,7 @@
  *    other person to open the app — they do not connect a call.
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { normalizeReactionEmoji, REACTION_CAP_ERROR } from './reactionEmoji';
 import type { OrbToolArgs, OrbToolIdentity, OrbToolResult } from '../orb-tools-shared';
 import { notifyUserAsync } from '../notification-service';
 import { coalesceChatPushes, chatConversationKey } from '../chat-push-coalescer';
@@ -69,7 +71,6 @@ type Handler = (args: OrbToolArgs, id: OrbToolIdentity, sb: SupabaseClient) => P
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-const ALLOWED_REACTION_EMOJIS = new Set(['👍', '❤️', '😂', '😮', '🙏', '🎉']);
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -444,11 +445,12 @@ export const tool_react_to_message: Handler = async (args, id, sb) => {
     if (!UUID_RE.test(messageId)) {
       return { ok: false, error: 'react_to_message needs a message_id (UUID) from a previous tool result.' };
     }
-    const emoji = argString(args, 'emoji', 'reaction');
-    if (!emoji || !ALLOWED_REACTION_EMOJIS.has(emoji)) {
+    const rawEmoji = argString(args, 'emoji', 'reaction');
+    const emoji = rawEmoji ? normalizeReactionEmoji(rawEmoji) : null;
+    if (!emoji) {
       return {
         ok: false,
-        error: `Reactions must be one of 👍 ❤️ 😂 😮 🙏 🎉 — "${emoji || 'none given'}" isn't supported.`,
+        error: `Reactions must be an emoji from the supported set (for example 👍 ❤️ 😂 😮 🙏 🎉) — "${rawEmoji || 'none given'}" isn't supported.`,
       };
     }
 
@@ -478,6 +480,12 @@ export const tool_react_to_message: Handler = async (args, id, sb) => {
 
     const { error: insErr } = await repo.insertMessageReaction(sb, messageId, id.user_id, emoji);
     if (insErr) {
+      if (String((insErr as { message?: string }).message ?? '').includes(REACTION_CAP_ERROR)) {
+        return {
+          ok: false,
+          error: `You've already reacted with six different emojis to that message. Remove one of them first to add ${emoji}.`,
+        };
+      }
       if ((insErr as { code?: string }).code === '23505') {
         return {
           ok: true,
@@ -1099,7 +1107,7 @@ export const MESSAGING_DEPTH_TOOL_DECLARATIONS: Array<Record<string, unknown>> =
   {
     name: 'react_to_message',
     description: [
-      'Add (or remove) an emoji reaction on a chat message — one of 👍 ❤️ 😂 😮 🙏 🎉 only.',
+      'Add (or remove) an emoji reaction on a chat message. Any emoji from the supported reaction set works (the quick ones are 👍 ❤️ 😂 😮 🙏 🎉). A member can have at most six different emojis on one message.',
       'Requires message_id from a previous tool result (e.g. from list_conversations or a',
       'group message read-back).',
       'CALL WHEN the user says: "react with a heart to that", "give that a thumbs up",',
@@ -1110,7 +1118,7 @@ export const MESSAGING_DEPTH_TOOL_DECLARATIONS: Array<Record<string, unknown>> =
       type: 'object',
       properties: {
         message_id: { type: 'string', description: 'UUID of the message to react to.' },
-        emoji: { type: 'string', description: 'One of: 👍 ❤️ 😂 😮 🙏 🎉' },
+        emoji: { type: 'string', description: 'A supported reaction emoji, e.g. 👍 ❤️ 😂 😮 🙏 🎉 or any other emoji from the picker set.' },
         remove: { type: 'boolean', description: 'Pass true to remove a reaction the user previously added.' },
       },
       required: ['message_id', 'emoji'],
