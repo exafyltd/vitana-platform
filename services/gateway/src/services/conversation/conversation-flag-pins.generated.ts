@@ -53,6 +53,7 @@ export const GATEWAY_WORKFLOW_PINS: Record<string, { staging: string | null; pro
   FEATURE_ORB_SAFE_FAST_GREETING_ENV: { staging: "staging-only", prod: "staging+prod" },
   FEATURE_ORB_WS_TRANSPORT_ENV: { staging: "staging-only", prod: "off" },
   FEEDBACK_AUTO_DISPATCH_ENABLED: { staging: "true", prod: null },
+  GATEWAY_API_ONLY: { staging: "true", prod: null },
   GATEWAY_PUBLIC_URL: { staging: "https://preview-aws-gateway.vitanaland.com", prod: null },
   GATEWAY_URL: { staging: "https://preview-aws-gateway.vitanaland.com", prod: null },
   GCP_SERVICE_ACCOUNT_JSON: { staging: "dynamic", prod: "dynamic" },
