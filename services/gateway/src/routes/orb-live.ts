@@ -42,7 +42,9 @@
  */
 
 import { specialistAckWindowMs, SPECIALIST_VOICE_ACK_DEFAULT_MS } from '../orb/live/tools/delegation-tools';
-import { scheduleBackground } from '../runtime/runtime-profile';
+import { scheduleBackground, backgroundWorkersAllowed, resolveRuntimeProfile } from '../runtime/runtime-profile';
+// Import-time voice warm-ups below are background work: they must not run in the preview-sparring profile.
+const voiceWarmupsAllowed = (): boolean => backgroundWorkersAllowed(resolveRuntimeProfile(process.env));
 import { pickEffectiveRole } from '../services/orchestrator/active-role';
 import { fetchPermittedRoles } from '../lib/permitted-roles';
 import express, { Router, Request, Response, NextFunction } from 'express';
@@ -2241,7 +2243,7 @@ try {
 
 // VTID-01219: Startup validation — emit OASIS alert if critical voice config is missing.
 // Does NOT throw (gateway serves many routes), but makes the failure visible.
-(async () => {
+if (voiceWarmupsAllowed()) void (async () => {
   const issues: string[] = [];
   if (!VERTEX_PROJECT_ID) issues.push('VERTEX_PROJECT_ID empty');
   if (!VERTEX_LOCATION) issues.push('VERTEX_LOCATION empty');
@@ -2351,7 +2353,7 @@ async function getAccessToken(): Promise<string> {
 // path. Placed after getAccessToken (and its cache bindings) so it runs free of
 // the temporal dead zone. Best-effort — failures fall back to a lazy fetch on
 // first use.
-if (googleAuth && VERTEX_PROJECT_ID) {
+if (googleAuth && VERTEX_PROJECT_ID && voiceWarmupsAllowed()) {
   void getAccessToken()
     .then(() => console.log(`[VTID-01219] ORB Voice access token prewarmed (auth=${isGoogleAwsSupplierEnabled() ? 'aws_supplier' : 'adc'})`))
     .catch((err: any) =>
@@ -2365,7 +2367,7 @@ if (googleAuth && VERTEX_PROJECT_ID) {
 // No-op wherever NOVA_SONIC_ENABLED is unset (all of GCP).
 {
   const novaBootCfg = getNovaSonicConfig(process.env);
-  if (novaBootCfg.ready) {
+  if (novaBootCfg.ready && voiceWarmupsAllowed()) {
     void prewarmNovaSonicBedrock(novaBootCfg).then((ok) =>
       console.log(`[BOOTSTRAP-NOVA-SONIC-VOICE] Bedrock prewarm ${ok ? 'complete' : 'failed (lazy fallback on first connect)'}`));
     // Keep the pooled HTTP/2 session + credentials hot between real
