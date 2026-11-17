@@ -1,0 +1,11 @@
+{
+  "vtid": "VTID-05804",
+  "title": "Staging-only SUPABASE_PUBLIC_URL correction for the aurora data-backend switch",
+  "change_class": "back-end",
+  "environment": "staging only (production path unchanged)",
+  "base": "platform HEAD 67897e6c",
+  "files_in_scope": ["scripts/aws/taskdef-data-backend.py", "scripts/aws/test/test_taskdef_data_backend.py"],
+  "patch": "containment-r17-datasource.patch",
+  "owner_gate1": "approved (owner decision 2); sparring round unavailable, exception recorded",
+  "not_in_scope": ["any workflow file", "any production resource", "any deployment", "the seven staging flags (deploy-time, separate)"]
+}
