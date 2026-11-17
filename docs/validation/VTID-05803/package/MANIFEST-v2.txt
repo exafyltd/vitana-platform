@@ -1,0 +1,12 @@
+# VTID-05803 exec package v2 manifest
+archive: vtid-05803-exec-v2.tar.gz
+archive_sha256: dada5ea960341debebe8f0ed5e4a46fe5fa0711a7d2c033fd415bd2f41fb95b9
+b64_sha256: 9cffc475d43c984842fb3b9bdca62d989ac0883e7601e92c031c656fb7bd56c5
+files:
+  785899f2c57f205a2d6b726e2e7ee06f3fec12ee68bf9aeef61ffb2aacab67f2  scripts/aws/aurora-cutover-auth-bridge.sql
+  f6f02a64adbc7dcaeb51f04bc9153dc329ec79143f5c6d2857865d50845764cd  scripts/aws/aurora-cutover-outbox.sql
+  39ac2cb45941344867a342f923ee4e95934608e23f3baa507d9e68111ffbb274  scripts/aurora/migrations/0001_auth_shim.sql
+  eef676f69bdb801d6d785f5d84c2a5fa725cce6679ecb8ea1daac86c48cc669a  docs/validation/VTID-05803/stage-exec.sh
+  31ae2e93ef58a91a1694e1505ce18368de341fed9e4c02bed18fb41a2d092f81  docs/validation/VTID-05803/inventory.sql
+  988234f23b1c399ff672666ead2c1c6ef2cdb5484de691957b7e791b8760d118  docs/validation/VTID-05803/source-exclusions.sql
+  79c660ba7bb7761a2a77a242f779c49c9757ecf1feac2615f92c59f34152d102  docs/validation/VTID-05803/source-grants.sql

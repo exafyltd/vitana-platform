@@ -44,3 +44,19 @@ Not executed. No schema, data, functions, triggers, sequences, grants, RLS or ou
 A DDL-capable staging connection must be provisioned through the authorised Secrets Manager path. The intended secret is
 `vitana/aurora/staging/database-url`, which must resolve to `vitana-aurora-staging-writer` with a privileged role. Its
 current target is `vitana-postgres-staging` (stale). Until it is repointed, the restore cannot start.
+
+## Update 2026-11-17 (Kiro 4 session, no AWS credentials in this sandbox)
+
+- **Package integrity:** v1 archive and its Base64 copy both hash to `1833f0d3…ee7c`, matching MANIFEST.txt.
+- **Package defect (blocking, found by execution):** `schema-restore.sh` cannot succeed on the empty staging database.
+  Its eight files are delta scripts for a DMS-loaded target. On an empty Postgres the first file fails with
+  `relation "public.app_users" does not exist`. 640 of the 651 public tables the files reference are created by none of
+  them. Gate 2 (public must be empty) makes this certain on staging.
+- **Fix:** `stage-exec.sh` and package v2 (`package/RUNBOOK-v2.txt`, `package/MANIFEST-v2.txt`). The base schema
+  comes from a live schema-only `pg_dump` of Supabase public. Objects that cannot exist on Aurora are filtered from the
+  TOC using `source-exclusions.sql`. Grants come live from `source-grants.sql`, then the auth bridge and outbox are
+  applied. All of it runs in one transaction. Parity uses `inventory.sql` on both sides.
+- **Earlier exit code 2:** not established from logs (no AWS access). Candidates and how v2 tells them apart are in
+  RUNBOOK-v2.txt. v2 prints `STEP n ok|FAIL rc=` markers.
+- **Not run against AWS:** probe, restore, parity, and gateway. These need a session with AWS access to run RUNBOOK-v2
+  steps 0, 3 and 4.

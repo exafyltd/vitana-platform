@@ -1,0 +1,66 @@
+VTID-05803 execution runbook v2 (no credentials in this file). Replaces RUNBOOK.txt steps 1-5.
+
+Why v2
+- schema-restore.sh cannot succeed on the empty staging database. Its eight SQL files are delta scripts for a target
+  that a DMS full load already populated. The first file (aurora-cutover-auth-bridge.sql) needs public.app_users,
+  and gate 2 requires public to be empty. Reproduced on an empty local Postgres:
+    FAIL aurora-cutover-auth-bridge.sql: relation "public.app_users" does not exist
+  640 of the 651 public tables the package references are created by none of its files.
+- v2 builds the base schema from a schema-only pg_dump of Supabase public, removes the objects that cannot exist on
+  Aurora (public->auth FKs, webhook triggers into supabase_functions, views over auth/storage), applies the live API
+  grants, then the auth bridge and the outbox. One transaction: an error rolls back everything.
+- aurora-cutover-vector-preload.sql is NOT applied: it converts vector columns to text for a DMS load.
+  The FK, RLS-parity, grants and views files are superseded by the dump (taken live, not from the 2026-09/10 snapshots).
+
+Most likely cause of the earlier exit code 2 (confirm in CloudWatch; v2 prints STEP markers so one read is enough)
+- RUNBOOK v1 step 1 uses bash-only syntax (<<<). Under /bin/sh (dash, busybox) that is a syntax error, exit 2.
+- psql also exits 2 when it cannot connect (vitana/aurora/staging/database-url points at vitana-postgres-staging).
+- tar exits 2 on "not in gzip format" (Base64 object extracted without decoding).
+
+0. Upload the v2 package (the S3 object from v1 does not contain the v2 files):
+     aws s3 cp docs/validation/VTID-05803/package/vtid-05803-exec-v2.tar.gz.b64 \
+       s3://vitana-code-index/vtid-05803/staging/vtid-05803-exec-v2.tar.gz.b64
+     The task role of vitana-staging-role-provision:3 needs s3:GetObject on that key.
+
+1. Container requirements (check with the first run; STEP 0 lists every tool):
+     bash, psql, awk, sort, comm, base64, sha256sum, tar, gzip, and aws CLI or python3+boto3.
+     MODE=restore also needs pg_dump and pg_restore with major version >= the Supabase server (STEP 4 prints both).
+
+2. Env and secrets the task definition must inject (ECS overrides can add environment, not secrets):
+     PGHOST      vitana-aurora-staging.cluster-cfk228aiedf3.eu-central-1.rds.amazonaws.com   (plain env, override ok)
+     PGUSER, PGPASSWORD   DDL-capable staging role (rds_superuser). The authenticator role is not enough.
+     SOURCE_DATABASE_URL  Supabase direct or session pooler, port 5432. The transaction pooler (6543) breaks pg_dump.
+
+3. Probe run (read-only on both sides). Command override for the task's container:
+     ["bash","-c","set -euo pipefail; W=/tmp/v5803; mkdir -p $W/r; cd $W; if command -v aws >/dev/null; then aws s3 cp --only-show-errors \"$PKG_S3_URI\" p.b64; else python3 -c 'import sys,boto3;b,k=sys.argv[1][5:].split(\"/\",1);boto3.client(\"s3\").download_file(b,k,\"p.b64\")' \"$PKG_S3_URI\"; fi; base64 -d p.b64 > p.tgz; echo \"$PKG_SHA256  p.tgz\" | sha256sum -c -; tar -xzf p.tgz -C r; exec bash r/docs/validation/VTID-05803/stage-exec.sh"]
+   Environment overrides:
+     MODE=probe
+     PKG_S3_URI=s3://vitana-code-index/vtid-05803/staging/vtid-05803-exec-v2.tar.gz.b64
+     PKG_SHA256=dada5ea960341debebe8f0ed5e4a46fe5fa0711a7d2c033fd415bd2f41fb95b9
+     PGHOST=vitana-aurora-staging.cluster-cfk228aiedf3.eu-central-1.rds.amazonaws.com
+   Expected: STEP 0-5 ok, then "RESULT: probe finished, failures=0". STEP 5 prints object counts by kind per side.
+
+4. Restore run: same override with MODE=restore. Gates (STEP 6): staging public empty, PGUSER is rds_superuser,
+   pg_dump major >= source major. STEP 8 applies in one transaction. STEP 9 prints the parity diff by kind and the
+   first object names on each side, and rows_total (expected 0: no data is copied).
+
+5. Expected, accepted differences in STEP 9 (not defects):
+     fk       public->auth FKs (Supabase has 127; replaced by the auth bridge)
+     trigger  webhook triggers into supabase_functions (outbound integrations stay off on staging)
+     view     views over auth.* or storage.* (Auth and Storage stay on Supabase under option B)
+     extension  pg_cron, pg_net, pgsodium, supabase_vault, pg_graphql, pgjwt and any extension Aurora lacks
+     storage_relation  storage.* tables (Storage stays on Supabase)
+     only_staging: auth_user_fk_map, auth_bridge_deleted_users, outbound_http_requests and their functions
+   Anything else in only_source is a real gap.
+
+6. Gateway: keep vitana-gateway-preview at desired 0 until STEP 9 shows no unexpected gaps.
+
+Local verification done before handover (no AWS access from the authoring session)
+- v1 archive and S3-style Base64 copy: both sha256 1833f0d3...ee7c (matches MANIFEST.txt).
+- inventory.sql, source-exclusions.sql, source-grants.sql run on PGlite (Postgres 17/18) fixtures: exclusions found
+  the public->auth FK, the supabase_functions webhook trigger, and a view over auth.users plus the view built on it;
+  replaying the generated grants gave grant parity 8/8 with 0 differences.
+- stage-exec.sh with stub psql: target guard refuses a prod host; missing tools stop at STEP 0 with rc 127;
+  probe path reaches RESULT with failures=0; no secret value appears in any output file.
+- Not verified locally: pg_dump/pg_restore TOC filtering against a real Supabase dump, and the single-transaction
+  apply on Aurora. The first real run (step 4) is the test.
