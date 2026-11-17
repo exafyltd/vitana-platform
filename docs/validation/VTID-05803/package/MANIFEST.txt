@@ -1,0 +1,16 @@
+# VTID-05803 execution package manifest
+source_commit: f76178debdad8add93567599bbcd20ff6d997d44
+archive: vtid-05803-schema-restore.tar.gz
+archive_sha256: 1833f0d319cbd328e44f00c21cb8a31d573bc6d20b6c17274ec9c3383d33ee7c
+file_commits (last commit touching each file):
+  4c46ce7f  785899f2c57f205a2d6b726e2e7ee06f3fec12ee68bf9aeef61ffb2aacab67f2  scripts/aws/aurora-cutover-auth-bridge.sql
+  4c46ce7f  d0a95b7f28a8846dde65c08b4f621f469160ba3794d6804ff6e5ab144b98cba6  scripts/aws/aurora-cutover-schema-sync.sql
+  4c46ce7f  2e2e5be85a726611140d8ddf47ec291d7cc837de8fdc7ac85281df4a5c05caba  scripts/aws/aurora-cutover-vector-preload.sql
+  4c46ce7f  4b42b25bb12ba2b2106e138acf14ae3b556991fac7f3908cac1982c3c0e62f05  scripts/aws/aurora-cutover-recreate-foreign-keys.sql
+  4c46ce7f  9c9250c508d33c6c7806892efcaeada1707fbdaa5ccb9cfeef2c62761b2108ae  scripts/aws/aurora-cutover-restore-grants.sql
+  4c46ce7f  74d49b0f340accb608730a7fa1d52687a8839aa93cb0fac631558d96bb16950f  scripts/aws/aurora-restore-rls-parity.sql
+  4c46ce7f  f6f02a64adbc7dcaeb51f04bc9153dc329ec79143f5c6d2857865d50845764cd  scripts/aws/aurora-cutover-outbox.sql
+  4c46ce7f  36ec0a52ffc694e8915fdc3a6a836e9d39d32b79a4eb3a045eb348ccd644c251  scripts/aws/aurora-cutover-schema-sync-views.sql
+  24f73153  63c488fa7c8f023514cd09c64323e13469c400a1595f73a393331b99aa5edaed  docs/validation/VTID-05803/schema-restore.sh
+  f76178de  fe93624401221581ec8e0de14bda114098dd2ac6accede54add164cadcbfedec  docs/validation/VTID-05803/probe-staging.sql
+  f76178de  0fd7206dc596fc654615c0f14429b969916512e425eaf185ce67d72dc35a3797  docs/validation/VTID-05803/probe-source.sql
