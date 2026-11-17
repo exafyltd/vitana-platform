@@ -1,0 +1,27 @@
+{
+  "_status": "PROPOSED, NOT APPLIED.",
+  "rules": [
+    {
+      "rulePriority": 1,
+      "description": "Keep only the latest 20 shadow-* preview images",
+      "selection": {
+        "tagStatus": "tagged",
+        "tagPrefixList": ["shadow-"],
+        "countType": "imageCountMoreThan",
+        "countNumber": 20
+      },
+      "action": { "type": "expire" }
+    },
+    {
+      "rulePriority": 2,
+      "description": "Expire untagged images 7 days after push",
+      "selection": {
+        "tagStatus": "untagged",
+        "countType": "sinceImagePushed",
+        "countUnit": "days",
+        "countNumber": 7
+      },
+      "action": { "type": "expire" }
+    }
+  ]
+}

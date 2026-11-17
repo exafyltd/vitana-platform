@@ -12,8 +12,9 @@
 #   gateway-preview-publish      deploy class (tag vitana-eng-deploy). GIT_STRATEGY none: the PR is never checked out.
 #                                Trusted code is cloned from platform main only. It verifies the manifest and the archive
 #                                hash, pins the account, refuses an existing shadow tag, pushes ONLY shadow-<sha12> to
-#                                vitana/gateway by digest, and verifies the tag's digest after the push. Its AWS identity
-#                                is PREVIEW_PUBLISH_ROLE_ARN with audience aws:platform:preview. That role does not exist
+#                                vitana/gateway-preview by digest, and verifies the tag's digest after the push. Its AWS identity
+#                                is PREVIEW_PUBLISH_ROLE_ARN with audience https://sts.amazonaws.com (the audience the provider already
+#                                accepts; no provider change). That role does not exist
 #                                yet, so the job fails closed.
 #
 # Race control: resource_group (static, preview-publish-gateway) serialises every preview publish. Within that, the no-clobber check runs
@@ -77,7 +78,7 @@ gateway-preview-publish:
     AWS_WEB_IDENTITY_TOKEN_FILE: /tmp/oidc-token
   id_tokens:
     GITLAB_OIDC_TOKEN:
-      aud: aws:platform:preview
+      aud: https://sts.amazonaws.com
   timeout: 20m
   interruptible: false
   script:
@@ -102,18 +103,18 @@ gateway-preview-publish:
       REGISTRY="$ACCOUNT.dkr.ecr.eu-central-1.amazonaws.com"
       # No-clobber, before the push. The describe must confirm the tag is absent; any other failure refuses.
       set +e
-      DESC_OUT="$(aws ecr describe-images --repository-name vitana/gateway --image-ids imageTag="$TAG" 2>&1)"
+      DESC_OUT="$(aws ecr describe-images --repository-name vitana/gateway-preview --image-ids imageTag="$TAG" 2>&1)"
       DESC_CODE=$?
       set -e
       node "$MOD" check-tag --sha "$PREVIEW_SOURCE_SHA" --describe-exit "$DESC_CODE" --describe-stderr "$DESC_OUT"
       aws ecr get-login-password | skopeo login --username AWS --password-stdin "$REGISTRY"
       # Daemonless copy of the verified archive, to the one shadow tag, by digest.
-      skopeo copy --retry-times 2 --digestfile digest.txt "docker-archive:image.tar" "docker://$REGISTRY/vitana/gateway:$TAG"
+      skopeo copy --retry-times 2 --digestfile digest.txt "docker-archive:image.tar" "docker://$REGISTRY/vitana/gateway-preview:$TAG"
       PUSHED="$(cat digest.txt)"
       # Race check after the push: the tag must still point at the digest we pushed.
-      NOW="$(aws ecr describe-images --repository-name vitana/gateway --image-ids imageTag="$TAG" --query 'imageDetails[0].imageDigest' --output text)"
+      NOW="$(aws ecr describe-images --repository-name vitana/gateway-preview --image-ids imageTag="$TAG" --query 'imageDetails[0].imageDigest' --output text)"
       node "$MOD" verify-digest --pushed "$PUSHED" --now "$NOW"
-      printf '{"source_sha":"%s","tag":"%s","repository":"vitana/gateway","digest":"%s","archive_sha256":"%s","image":"%s/vitana/gateway@%s"}\n' \
+      printf '{"source_sha":"%s","tag":"%s","repository":"vitana/gateway-preview","digest":"%s","archive_sha256":"%s","image":"%s/vitana/gateway-preview@%s"}\n' \
         "$PREVIEW_SOURCE_SHA" "$TAG" "$PUSHED" "$ARCHIVE_SHA" "$REGISTRY" "$PUSHED" > preview-publish.json
       cat preview-publish.json
   artifacts:

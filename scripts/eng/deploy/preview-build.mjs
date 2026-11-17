@@ -18,7 +18,7 @@
 import { pathToFileURL } from 'node:url';
 import { parseArgs, DeployError, REGISTRY } from './lib.mjs';
 
-export const PREVIEW_REPOSITORY = 'vitana/gateway';
+export const PREVIEW_REPOSITORY = 'vitana/gateway-preview';
 export const PREVIEW_TAG_PREFIX = 'shadow-';
 export const FORBIDDEN_TAGS = Object.freeze(['staging-latest', 'latest', 'production']);
 

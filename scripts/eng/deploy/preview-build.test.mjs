@@ -64,8 +64,8 @@ test('tag: every generated tag stays in the shadow family, which deploys never r
 });
 
 test('tag: the publish target is only vitana/gateway with a shadow tag', () => {
-  assert.equal(PREVIEW_REPOSITORY, 'vitana/gateway');
-  assert.equal(publishTarget(previewTag(HEAD)), `472838866351.dkr.ecr.eu-central-1.amazonaws.com/vitana/gateway:shadow-${HEAD.slice(0, 12)}`);
+  assert.equal(PREVIEW_REPOSITORY, 'vitana/gateway-preview');
+  assert.equal(publishTarget(previewTag(HEAD)), `472838866351.dkr.ecr.eu-central-1.amazonaws.com/vitana/gateway-preview:shadow-${HEAD.slice(0, 12)}`);
   refused(() => publishTarget('staging-latest'), /outside shadow-/);
   refused(() => publishTarget(HEAD.slice(0, 12)), /outside shadow-/);
 });
@@ -207,20 +207,20 @@ test('trust: the build job has no AWS identity and no registry credential', () =
   assert.doesNotMatch(b, /id_tokens|AWS_ROLE_ARN|ecr get-login|skopeo|docker push|sts get-caller/);
 });
 
-test('isolation: publication is hard-wired to vitana/gateway and the shadow- family', () => {
+test('isolation: publication is hard-wired to vitana/gateway-preview and the shadow- family', () => {
   const p = jobBlock('gateway-preview-publish');
   const repos = [...p.matchAll(/--repository-name (\S+)/g)].map((m) => m[1]);
   assert.ok(repos.length >= 2, 'both describe calls must name the repository');
-  for (const r of repos) assert.equal(r, 'vitana/gateway', `every describe must target vitana/gateway, got ${r}`);
-  assert.match(p, /docker:\/\/\$REGISTRY\/vitana\/gateway:\$TAG/);
+  for (const r of repos) assert.equal(r, 'vitana/gateway-preview', `every describe must target vitana/gateway-preview, got ${r}`);
+  assert.match(p, /docker:\/\/\$REGISTRY\/vitana\/gateway-preview:\$TAG/);
   assert.match(p, /TAG="\$\(node "\$MOD" tag --sha "\$PREVIEW_SOURCE_SHA"\)"/);
   assert.doesNotMatch(p, /REPO[A-Z_]*=|ECR_REPOSITORY|\$\{?[A-Z_]*REPOSITORY/);
 });
 
 test('isolation: the publish role audience is the preview audience, not the main-trusted one', () => {
   const p = jobBlock('gateway-preview-publish');
-  assert.match(p, /aud: aws:platform:preview/);
-  assert.doesNotMatch(p, /aws:platform:staging|sts\.amazonaws\.com/);
+  assert.match(p, /aud: https:\/\/sts\.amazonaws\.com/);
+  assert.doesNotMatch(p, /aws:platform:staging|aws:platform:preview/);
 });
 
 test('race: every preview publish is serialised by a static resource_group', () => {
