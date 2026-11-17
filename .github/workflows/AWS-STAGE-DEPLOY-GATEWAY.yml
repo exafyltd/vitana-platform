@@ -93,9 +93,17 @@ on:
         required: false
         default: 'Vitana-ECS-Cluster'
       ecs_service:
-        description: 'ECS service name'
+        description: 'ECS service name (explicit). staging profile: vitana-gateway (default). preview-api profile: vitana-gateway-preview only.'
         required: false
         default: 'vitana-gateway'
+      deploy_profile:
+        description: 'staging (default, full-worker build on the target service) | preview-api (API-only build, GATEWAY_API_ONLY=true, vitana-gateway-preview only)'
+        required: false
+        type: choice
+        options:
+          - staging
+          - preview-api
+        default: 'staging'
 
 permissions:
   contents: read
@@ -119,6 +127,27 @@ jobs:
       ECS_SERVICE: ${{ inputs.ecs_service || 'vitana-gateway' }}
       DEPLOY_REASON: ${{ inputs.reason || format('auto-deploy on push to main ({0})', github.event.head_commit.message && 'push' || 'dispatch') }}
     steps:
+      # Deploy-target guard: a preview-only image never reaches vitana-gateway,
+      # and the full-worker staging build never reaches vitana-gateway-preview.
+      - name: Resolve deploy target (deploy_profile guard)
+        env:
+          PROFILE: ${{ inputs.deploy_profile || 'staging' }}
+          TARGET: ${{ inputs.ecs_service || 'vitana-gateway' }}
+        run: |
+          set -euo pipefail
+          case "$PROFILE" in
+            staging)
+              if [ "$TARGET" = "vitana-gateway-preview" ]; then
+                echo "::error::deploy_profile=staging must not target vitana-gateway-preview"; exit 1
+              fi ;;
+            preview-api)
+              if [ "$TARGET" != "vitana-gateway-preview" ]; then
+                echo "::error::deploy_profile=preview-api may only target vitana-gateway-preview (got '$TARGET'); refusing to put a preview-only image on vitana-gateway"; exit 1
+              fi ;;
+            *) echo "::error::unknown deploy_profile '$PROFILE'"; exit 1 ;;
+          esac
+          echo "deploy_profile=$PROFILE -> ECS service $TARGET"
+
       - uses: actions/checkout@v4
         with:
           # VTID-04118 — full history, not the default shallow clone, so the
@@ -235,9 +264,15 @@ jobs:
         run: |
           set -e
           IMAGE="$REGISTRY/${{ env.ECR_REPOSITORY }}:${{ steps.commit.outputs.short }}"
-          docker build -t "$IMAGE" -t "$REGISTRY/${{ env.ECR_REPOSITORY }}:staging-latest" services/gateway
-          docker push "$IMAGE"
-          docker push "$REGISTRY/${{ env.ECR_REPOSITORY }}:staging-latest"
+          if [ "${{ inputs.deploy_profile || 'staging' }}" = "preview-api" ]; then
+            # Preview builds never move the staging-latest tag.
+            docker build -t "$IMAGE" services/gateway
+            docker push "$IMAGE"
+          else
+            docker build -t "$IMAGE" -t "$REGISTRY/${{ env.ECR_REPOSITORY }}:staging-latest" services/gateway
+            docker push "$IMAGE"
+            docker push "$REGISTRY/${{ env.ECR_REPOSITORY }}:staging-latest"
+          fi
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
           echo "Pushed $IMAGE"
 
@@ -484,6 +519,7 @@ jobs:
       # no inputs -> keep, so a dispatched aurora/supabase switch is carried
       # forward by every later push (the live task def is the base).
       - name: Register task-definition revision + roll the service (1/2 — build the task definition)
+        if: ${{ inputs.deploy_profile != 'preview-api' }}
         id: taskdef
         env:
           # BOOTSTRAP-NOVA-SONIC-VOICE: Nova canary configuration prefers
@@ -1356,6 +1392,7 @@ jobs:
       # at the VTID-03788 20,000-char limit) so the data_backend switch fits.
       # keep (every push) passes the task definition through byte for byte.
       - name: Register task-definition revision + roll the service
+        if: ${{ inputs.deploy_profile != 'preview-api' }}
         id: roll
         env:
           DATA_BACKEND: ${{ inputs.data_backend || 'keep' }}
@@ -1390,6 +1427,64 @@ jobs:
       # staging kept serving the old build. Print the rollout state, the latest
       # service events and the stop reason of the most recent stopped tasks so
       # the failure names its own cause in the job log. Read-only, best-effort.
+      # deploy_profile=preview-api: API-only replica on vitana-gateway-preview.
+      # It never runs the production env re-pin above. It copies the live
+      # preview task definition, changes only the image, the commit stamp and
+      # GATEWAY_API_ONLY, refuses any background-worker flag set to true or
+      # any production-only secret, then rolls the service and verifies it.
+      - name: Preview API roll (vitana-gateway-preview only)
+        if: ${{ inputs.deploy_profile == 'preview-api' }}
+        env:
+          IMAGE: ${{ steps.build.outputs.image }}
+          SHA: ${{ steps.commit.outputs.sha }}
+          CL: ${{ env.ECS_CLUSTER }}
+          SVC: ${{ env.ECS_SERVICE }}
+          URL: ${{ env.GATEWAY_URL }}
+        run: |
+          set -euo pipefail
+          test "$SVC" = "vitana-gateway-preview" || { echo "::error::preview roll refuses service '$SVC'"; exit 1; }
+          TD_ARN=$(aws ecs describe-services --cluster "$CL" --services "$SVC" --query 'services[0].taskDefinition' --output text)
+          aws ecs describe-task-definition --task-definition "$TD_ARN" --query taskDefinition > "$RUNNER_TEMP/preview-current.json"
+          jq --arg img "$IMAGE" --arg sha "$SHA" '
+            del(.taskDefinitionArn,.revision,.status,.requiresAttributes,.compatibilities,.registeredAt,.registeredBy,.deregisteredAt)
+            | .containerDefinitions |= map(if .name == "gateway" then
+                .image = $img
+                | .environment = ([(.environment // [])[] | select(.name != "GIT_COMMIT_SHA" and .name != "COMMIT_SHA" and .name != "GATEWAY_API_ONLY")]
+                    + [{name:"GIT_COMMIT_SHA",value:$sha},{name:"COMMIT_SHA",value:$sha},{name:"GATEWAY_API_ONLY",value:"true"}])
+              else . end)' "$RUNNER_TEMP/preview-current.json" > "$RUNNER_TEMP/preview-new.json"
+          # Refuse: any background-worker flag true, any production-only secret or env, GATEWAY_API_ONLY not true.
+          WORKER_FLAGS="REMINDERS_INPROCESS_DISPATCH_ENABLED REMINDERS_STAGING_DISPATCH_OVERRIDE AUTOPILOT_HEARTBEAT_ENABLED AUTOPILOT_LOOP_ENABLED CALENDAR_GOOGLE_SYNC_ENABLED CALENDAR_MAINTENANCE_ENABLED CALENDAR_DEFAULT_REMINDERS_ENABLED FEEDBACK_AUTO_DISPATCH_ENABLED DEV_AUTOPILOT_WATCHER_LIVE DEV_AUTOPILOT_USE_JOB DEV_AUTOPILOT_EXECUTOR_ENABLED DEV_AUTOPILOT_WATCHERS_ENABLED OPERATOR_PLANNER_ENABLED VTID_ALLOCATOR_ENABLED OPERATOR_VTID_SELF_ALLOCATE_ENABLED PM_AGENT_ENABLED REWARD_SWEEP_ENABLED AUTOPILOT_ACTION_REWARD_ENABLED SELF_HEALING_RECONCILER_ENABLED RECOMMENDATION_SCHEDULER_ENABLED CONNECTED_APPS_SYNC_ENABLED"
+          for f in $WORKER_FLAGS; do
+            v=$(jq -r --arg n "$f" '[.containerDefinitions[].environment[]? | select(.name == $n) | .value] | last // "false"' "$RUNNER_TEMP/preview-new.json")
+            if [ "$v" = "true" ]; then echo "::error::refusing preview roll: worker flag $f=true"; exit 1; fi
+          done
+          BAD=$(jq -r '[.containerDefinitions[] | ((.environment // [])[], (.secrets // [])[]) | .name | select(test("^(GITHUB_SAFE_MERGE_TOKEN|GITHUB_TOKEN|ERP_BRIDGE_TOKEN|KIRO_RUNNER_TOKEN|DAILY_API_KEY|TYPESAFE_API_KEY|FISH_API_KEY|OPENAI_API_KEY|GEMINI_API_KEY|GOOGLE_GEMINI_API_KEY|OPERATOR_MACHINE_AUTH_TOKEN|DEV_MEMORY_PACK_TOKEN|DEV_AUTOPILOT_SCAN_TOKEN|GCP_SERVICE_ACCOUNT_JSON)$|^AURORA_")) ] | unique | join(" ")' "$RUNNER_TEMP/preview-new.json")
+          if [ -n "$BAD" ]; then echo "::error::refusing preview roll: production-only names bound: $BAD"; exit 1; fi
+          GA=$(jq -r '[.containerDefinitions[].environment[]? | select(.name == "GATEWAY_API_ONLY") | .value] | last // ""' "$RUNNER_TEMP/preview-new.json")
+          test "$GA" = "true" || { echo "::error::refusing preview roll: GATEWAY_API_ONLY is not true"; exit 1; }
+          NEW_ARN=$(aws ecs register-task-definition --cli-input-json "file://$RUNNER_TEMP/preview-new.json" --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "Registered preview task definition $NEW_ARN"
+          aws ecs update-service --cluster "$CL" --service "$SVC" --task-definition "$NEW_ARN" --desired-count 1 >/dev/null
+          aws ecs wait services-stable --cluster "$CL" --services "$SVC"
+          echo "Preview service stable on $NEW_ARN"
+          # /alive and build-info must answer, build-info must name the deployed commit.
+          code=000
+          for i in $(seq 1 30); do
+            code=$(curl -s -o "$RUNNER_TEMP/alive.json" -w '%{http_code}' "$URL/alive" || true)
+            [ "$code" = "200" ] && break; sleep 10
+          done
+          test "$code" = "200" || { echo "::error::/alive returned $code"; exit 1; }
+          grep -q '"status":"ok"' "$RUNNER_TEMP/alive.json"
+          curl -fsS "$URL/api/v1/admin/build-info" -o "$RUNNER_TEMP/build-info.json"
+          grep -q "$SHA" "$RUNNER_TEMP/build-info.json" || { echo "::error::build-info does not name $SHA"; exit 1; }
+          # The guard must have logged on this boot.
+          T0=$(( ($(date +%s) - 1800) * 1000 ))
+          HITS=$(aws logs filter-log-events --log-group-name /vitana/gateway --start-time "$T0" --filter-pattern '"GATEWAY_API_ONLY=true: HTTP API only"' --query 'length(events)' --output text)
+          test "${HITS:-0}" -ge 1 || { echo "::error::API-only guard line not found in /vitana/gateway logs"; exit 1; }
+          echo "Preview API-only guard observed in logs ($HITS event(s)); /alive 200; build-info names $SHA"
+          echo "### Preview API roll" >> "$GITHUB_STEP_SUMMARY"
+          echo "- service: $SVC  task definition: $NEW_ARN  commit: $SHA" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Diagnose failed rollout (service events + stopped tasks)
         if: failure() && steps.roll.outcome == 'failure'
         run: |
@@ -1414,6 +1509,7 @@ jobs:
           fi
           exit 0
       - name: Smoke — env=staging + deployed commit live
+        if: ${{ inputs.deploy_profile != 'preview-api' }}
         run: |
           set -e
           URL="${{ env.GATEWAY_URL }}"
@@ -1434,6 +1530,7 @@ jobs:
           exit 1
 
       - name: Smoke — Nova Sonic health surface present
+        if: ${{ inputs.deploy_profile != 'preview-api' }}
         run: |
           set -e
           URL="${{ env.GATEWAY_URL }}"
@@ -1453,6 +1550,7 @@ jobs:
       # carries it (as env or secret NAME — values are never read or printed)
       # as a warning annotation when it is missing.
       - name: Report DAILY_API_KEY presence (live task definition, read-only)
+        if: ${{ inputs.deploy_profile != 'preview-api' }}
         continue-on-error: true
         run: |
           set +e
@@ -1469,7 +1567,7 @@ jobs:
           exit 0
 
       - name: Emit OASIS event + software_versions row (best-effort)
-        if: always()
+        if: ${{ (always()) && inputs.deploy_profile != 'preview-api' }}
         env:
           # VTID-05023 part 9: REST base; repo variable DATA_REST_URL (unset = Supabase as before)
           # is https://data.vitanaland.com (Aurora) after the flip.
@@ -1522,13 +1620,13 @@ jobs:
       # head_sha, which is main HEAD even when a commit_sha pin deployed an
       # older commit. Hand it the commit actually deployed.
       - name: Record deployed commit for STAGING-VERIFY (VTID-04715)
-        if: success()
+        if: ${{ (success()) && inputs.deploy_profile != 'preview-api' }}
         run: |
           mkdir -p "$RUNNER_TEMP/deployed-commit"
           echo "${{ steps.commit.outputs.sha }}" > "$RUNNER_TEMP/deployed-commit/sha"
 
       - name: Upload deployed commit (VTID-04715)
-        if: success()
+        if: ${{ (success()) && inputs.deploy_profile != 'preview-api' }}
         uses: actions/upload-artifact@v4
         with:
           name: deployed-commit
