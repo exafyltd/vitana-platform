@@ -50,7 +50,7 @@
       "target": "gateway",
       "name": "The Command Hub app.js carries the Delivery module and loads delivery.js from the same origin",
       "method": "GET",
-      "path": "/command-hub/app.js?v=20261121-vtid-05082-vtid-05547",
+      "path": "/command-hub/app.js?v=20261121-vtid-05082-vtid-05547-gov",
       "expect_status": 200,
       "expect_body_contains": ["\"section\": \"delivery\"", "script.src = '/command-hub/delivery.js", "var deliveryModule = {"],
       "reason": "read-only GET: the bumped app.js has the Delivery sidebar section and the loader"
@@ -62,7 +62,7 @@
       "method": "GET",
       "path": "/command-hub/",
       "expect_status": 200,
-      "expect_body_contains": ["app.js?v=20261121-vtid-05082-vtid-05547", "styles.css?v=20261121-vtid-05082-vtid-05547"],
+      "expect_body_contains": ["app.js?v=20261121-vtid-05082-vtid-05547-gov", "styles.css?v=20261121-vtid-05082-vtid-05547-gov"],
       "reason": "read-only GET: index.html names the new cache-buster, so browsers and the CDN fetch the new app.js (IF-THEN 25)"
     },
     {
