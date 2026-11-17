@@ -19,6 +19,11 @@
 import { Router, Request, Response } from 'express';
 import { requireServiceOrAdmin } from '../middleware/require-service-or-admin';
 import { requireAdminAuth, type AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
+import { importVerdict } from '../services/plan-sparring/verdict-import';
+
+function defaultImportAudit(event: Record<string, unknown>): void {
+  console.log(JSON.stringify({ ts: new Date().toISOString(), ...event }));
+}
 import {
   SparringError,
   approveSparringSession,
@@ -48,6 +53,18 @@ export function createPlansSparRouter(getDeps: DepsFactory = defaultDeps): Route
     try {
       const { session, deduplicated } = await createSparringSession(req.body, getDeps());
       return res.status(deduplicated ? 200 : 201).json({ ok: true, deduplicated, session });
+    } catch (err) {
+      return sendError(res, err);
+    }
+  });
+
+  // Machine-only import of an already-completed verdict (see services/plan-sparring/verdict-import.ts).
+  // Guarded like every sparring write: service token or exafy_admin session. Never restarts sparring.
+  router.post('/import', requireServiceOrAdmin, async (req: Request, res: Response) => {
+    try {
+      const deps = getDeps();
+      const r = await importVerdict(req.body, { sb: deps.sb, audit: defaultImportAudit });
+      return res.status(r.deduplicated ? 200 : 201).json({ ok: true, deduplicated: r.deduplicated, resumed: r.resumed, session: r.session });
     } catch (err) {
       return sendError(res, err);
     }
