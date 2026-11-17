@@ -36,6 +36,7 @@
  * must not silently start mutating the ledger the moment it deploys.
  */
 
+import { gatewayServiceAuthHeader } from '../middleware/require-service-or-admin';
 import fetch from 'node-fetch';
 import { emitOasisEvent } from './oasis-event-service';
 
@@ -114,8 +115,7 @@ export async function generateSpecForTask(task: PlannableTask): Promise<{ ok: bo
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        apikey: SUPABASE_SERVICE_ROLE || '',
-        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE || ''}`,
+        ...gatewayServiceAuthHeader(),
       },
       body: JSON.stringify({
         seed_notes: task.summary || task.title,

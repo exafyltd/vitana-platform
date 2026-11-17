@@ -17973,7 +17973,7 @@ function savePersonalityConfig(surfaceKey) {
 
     fetch('/api/v1/ai-personality/' + surfaceKey, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({ config: config, reason: 'Updated via Command Hub AI Personality panel' })
     })
         .then(function (res) {
@@ -18008,7 +18008,7 @@ function resetPersonalityConfig(surfaceKey) {
 
     fetch('/api/v1/ai-personality/' + surfaceKey + '/reset', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
+        headers: buildContextHeaders({ 'Content-Type': 'application/json' })
     })
         .then(function (res) {
             if (!res.ok) throw new Error('Failed to reset: ' + res.status);
@@ -28670,7 +28670,7 @@ function saveLlmRoutingPolicy() {
   fetch('/api/v1/llm/routing-policy?environment=DEV', {
     method: 'POST',
     credentials: 'include',
-    headers: { 'Content-Type': 'application/json', 'x-actor-id': 'command-hub-ui', 'x-actor-role': 'developer' },
+    headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify({ policy: state.llmRouting.pending, reason: 'Updated via Command Hub LLM Providers UI' }),
   })
     .then(function (r) { return r.json().then(function (j) { return { status: r.status, body: j }; }); })

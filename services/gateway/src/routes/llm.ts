@@ -22,6 +22,7 @@ import { queryLLMTelemetry, getLLMTelemetrySummary } from '../services/llm-telem
 import { verifyProvider } from '../services/llm-router';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { requireAdminAuth } from '../middleware/auth-supabase-jwt';
+import { requireServiceOrAdmin, getControlPlaneActor } from '../middleware/require-service-or-admin';
 import * as repo from './llm-repository';
 import {
   LLM_SAFE_DEFAULTS,
@@ -162,7 +163,7 @@ router.get('/routing-policy', async (req: Request, res: Response) => {
 // POST /api/v1/llm/routing-policy
 // Update routing policy (governed + audited)
 // =============================================================================
-router.post('/routing-policy', async (req: Request, res: Response) => {
+router.post('/routing-policy', requireServiceOrAdmin, async (req: Request, res: Response) => {
   try {
     // Validate request body
     const validation = UpdatePolicySchema.safeParse(req.body);
@@ -179,11 +180,11 @@ router.post('/routing-policy', async (req: Request, res: Response) => {
 
     // Get actor from request (in production, from auth token)
     // For now, use a header or default to 'operator'
-    const actorId = req.headers['x-actor-id'] as string || 'operator';
-    const actorRole = req.headers['x-actor-role'] as string || 'developer';
+    const actorId = getControlPlaneActor(req);
+    const actorRole = actorId.startsWith('admin:') ? 'admin' : 'service';
 
     // Validate actor role
-    const allowedRoles = ['developer', 'infra', 'admin'];
+    const allowedRoles = ['developer', 'infra', 'admin', 'service'];
     if (!allowedRoles.includes(actorRole)) {
       return res.status(403).json({
         ok: false,
@@ -233,18 +234,18 @@ router.post('/routing-policy', async (req: Request, res: Response) => {
 // POST /api/v1/llm/routing-policy/reset
 // Reset to recommended defaults
 // =============================================================================
-router.post('/routing-policy/reset', async (req: Request, res: Response) => {
+router.post('/routing-policy/reset', requireServiceOrAdmin, async (req: Request, res: Response) => {
   try {
     const validation = ResetPolicySchema.safeParse(req.body);
     const reason = validation.success ? validation.data.reason : undefined;
     const environment = (req.query.environment as string) || 'DEV';
 
     // Get actor from request
-    const actorId = req.headers['x-actor-id'] as string || 'operator';
-    const actorRole = req.headers['x-actor-role'] as string || 'developer';
+    const actorId = getControlPlaneActor(req);
+    const actorRole = actorId.startsWith('admin:') ? 'admin' : 'service';
 
     // Validate actor role
-    const allowedRoles = ['developer', 'infra', 'admin'];
+    const allowedRoles = ['developer', 'infra', 'admin', 'service'];
     if (!allowedRoles.includes(actorRole)) {
       return res.status(403).json({
         ok: false,

@@ -15,6 +15,7 @@
  */
 
 import { Router, Request, Response } from 'express';
+import { requireServiceOrAdmin, getControlPlaneActor } from '../middleware/require-service-or-admin';
 
 export const triageAgentRouter = Router();
 
@@ -165,7 +166,7 @@ async function getTriagePrimaryProvider(): Promise<string> {
   }
 }
 
-triageAgentRouter.post('/investigate', async (req: Request, res: Response) => {
+triageAgentRouter.post('/investigate', requireServiceOrAdmin, async (req: Request, res: Response) => {
   try {
     const body = req.body as InvestigateRequest;
 

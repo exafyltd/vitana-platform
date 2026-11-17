@@ -534,7 +534,7 @@ export const SPEC_GEN_SYSTEM_PROMPT = `You are a senior software architect gener
 // POST /:vtid/generate - Generate Spec
 // ===========================================================================
 
-router.post('/:vtid/generate', async (req: Request, res: Response) => {
+router.post('/:vtid/generate', requireServiceOrAdmin, async (req: Request, res: Response) => {
   const { vtid } = req.params;
   const { seed_notes = '', source = 'commandhub' } = req.body || {};
 
@@ -742,7 +742,7 @@ router.post('/:vtid/generate', async (req: Request, res: Response) => {
 // PATCH /:vtid - Save (update) spec markdown content
 // ===========================================================================
 
-router.patch('/:vtid', async (req: Request, res: Response) => {
+router.patch('/:vtid', requireServiceOrAdmin, async (req: Request, res: Response) => {
   const { vtid } = req.params;
   const { spec_markdown } = req.body || {};
 
@@ -851,7 +851,7 @@ router.patch('/:vtid', async (req: Request, res: Response) => {
 // POST /:vtid/validate - Validate Spec
 // ===========================================================================
 
-router.post('/:vtid/validate', async (req: Request, res: Response) => {
+router.post('/:vtid/validate', requireServiceOrAdmin, async (req: Request, res: Response) => {
   const { vtid } = req.params;
 
   console.log(`[VTID-01188] Validate spec requested for ${vtid}`);
@@ -1021,7 +1021,7 @@ router.post('/:vtid/validate', async (req: Request, res: Response) => {
 // POST /:vtid/quality-check - Spec Quality Agent Gate
 // ===========================================================================
 
-router.post('/:vtid/quality-check', async (req: Request, res: Response) => {
+router.post('/:vtid/quality-check', requireServiceOrAdmin, async (req: Request, res: Response) => {
   const { vtid } = req.params;
 
   console.log(`[spec-quality] Quality check requested for ${vtid}`);

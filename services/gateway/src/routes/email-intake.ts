@@ -14,6 +14,7 @@
  * 7. Emit OASIS event
  */
 
+import { gatewayServiceAuthHeader } from '../middleware/require-service-or-admin';
 import { Router, Request, Response } from 'express';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { allocateVtid } from '../services/operator-service';
@@ -114,7 +115,7 @@ async function autoGenerateSpec(vtid: string, seedNotes: string): Promise<void> 
   try {
     const genResp = await fetch(`${gatewayUrl}/api/v1/specs/${vtid}/generate`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...gatewayServiceAuthHeader() },
       body: JSON.stringify({ seed_notes: seedNotes, source: 'email-intake-auto' })
     });
 
@@ -125,7 +126,7 @@ async function autoGenerateSpec(vtid: string, seedNotes: string): Promise<void> 
 
     const valResp = await fetch(`${gatewayUrl}/api/v1/specs/${vtid}/validate`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' }
+      headers: { 'Content-Type': 'application/json', ...gatewayServiceAuthHeader() }
     });
 
     if (!valResp.ok) {

@@ -14,6 +14,7 @@
  * - Event-driven: emit OASIS events at each step
  */
 
+import { gatewayServiceAuthHeader } from '../middleware/require-service-or-admin';
 import { randomUUID } from 'crypto';
 import { emitOasisEvent } from './oasis-event-service';
 import { allocateVtid } from './operator-service';
@@ -739,7 +740,7 @@ async function autoGenerateAndValidateSpec(vtid: string, seedNotes: string): Pro
     // Step 1: Generate spec from intake seed notes
     const genResp = await fetch(`${gatewayUrl}/api/v1/specs/${vtid}/generate`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...gatewayServiceAuthHeader() },
       body: JSON.stringify({
         seed_notes: seedNotes,
         source: 'task-intake-auto'
@@ -763,7 +764,7 @@ async function autoGenerateAndValidateSpec(vtid: string, seedNotes: string): Pro
     // Step 2: Validate spec
     const valResp = await fetch(`${gatewayUrl}/api/v1/specs/${vtid}/validate`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' }
+      headers: { 'Content-Type': 'application/json', ...gatewayServiceAuthHeader() }
     });
 
     if (!valResp.ok) {

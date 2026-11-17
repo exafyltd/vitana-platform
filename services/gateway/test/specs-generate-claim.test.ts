@@ -19,6 +19,9 @@
 process.env.NODE_ENV = 'test';
 process.env.SUPABASE_URL = 'http://supabase.test';
 process.env.SUPABASE_SERVICE_ROLE = 'test-service-role';
+// The generate route is behind requireServiceOrAdmin (governance write-route auth): callers present the gateway service token.
+process.env.GATEWAY_SERVICE_TOKEN = 'test-gateway-token';
+const SVC_AUTH = 'Bearer test-gateway-token';
 
 import express from 'express';
 import request from 'supertest';
@@ -88,7 +91,7 @@ describe('VTID-03913: POST /specs/:vtid/generate — atomic claim', () => {
     });
 
     const app = buildApp();
-    const res = await request(app).post('/api/v1/specs/VTID-99001/generate').send({});
+    const res = await request(app).post('/api/v1/specs/VTID-99001/generate').set('Authorization', SVC_AUTH).send({});
 
     expect(res.status).toBe(201);
     expect(patchUrls.length).toBeGreaterThanOrEqual(1);
@@ -120,7 +123,7 @@ describe('VTID-03913: POST /specs/:vtid/generate — atomic claim', () => {
     });
 
     const app = buildApp();
-    const res = await request(app).post('/api/v1/specs/VTID-99002/generate').send({});
+    const res = await request(app).post('/api/v1/specs/VTID-99002/generate').set('Authorization', SVC_AUTH).send({});
 
     expect(res.status).toBe(409);
     expect(res.body).toMatchObject({ ok: false, error: 'already_generating', vtid: 'VTID-99002' });
@@ -142,7 +145,7 @@ describe('VTID-03913: POST /specs/:vtid/generate — atomic claim', () => {
     });
 
     const app = buildApp();
-    await request(app).post('/api/v1/specs/VTID-99003/generate').send({});
+    await request(app).post('/api/v1/specs/VTID-99003/generate').set('Authorization', SVC_AUTH).send({});
 
     // Exactly the one (failed) claim attempt — no follow-up write resetting
     // spec_status/spec_last_error the way the old insert-failure path did.
