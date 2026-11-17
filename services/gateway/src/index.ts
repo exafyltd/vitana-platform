@@ -1,5 +1,6 @@
 import './lib/gcp-adc-bootstrap'; // must run before any GoogleAuth()/Vertex client is constructed
 import express from 'express';
+import { isGatewayApiOnlyMode } from './startup/api-only-mode';
 import path from 'path';
 import fs from 'fs';
 import cors from 'cors';
@@ -1746,6 +1747,16 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
       console.log('Gateway: debug /debug/governance-ping route registered');
       console.log('Gateway: governance routes mounted at /api/v1/governance');
       console.log('Gateway: operator routes mounted at /api/v1/operator (VTID-0510)');
+
+      // GATEWAY_API_ONLY=true (isolated preview API replica): the HTTP listener
+      // and all API routes stay up; the entire background startup below is
+      // skipped. Everything after this return is a background process, a
+      // voice socket, a shutdown drain or a cache warmer. See
+      // src/startup/api-only-mode.ts.
+      if (isGatewayApiOnlyMode(process.env)) {
+        console.log('🧭 GATEWAY_API_ONLY=true: HTTP API only. Background workers, schedulers, voice WebSocket, sync and shutdown drains NOT started.');
+        return;
+      }
 
       // VTID-01222: Initialize ORB WebSocket server for Live API
       try {
