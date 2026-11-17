@@ -8,7 +8,7 @@ At the start of EVERY session, before anything else:
 1. Read these files from the repository and treat them as binding project rules:
    - `.kiro/steering/vitana-kiro-notes.md`
    - `.kiro/steering/vitana-pipeline.md`
-   - `CLAUDE.md` (and `.claude/CLAUDE.md`)
+   - `CLAUDE.md`
    - `.claude/rules/collaboration.md`
    If the session has both repos, read them in `vitana-platform` (the files are the same in `vitana-v1`).
    **Only rule text on `origin/main` is binding.** When the checkout is not an up-to-date `main`, read these files with
