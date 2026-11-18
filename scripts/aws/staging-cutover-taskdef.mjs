@@ -189,6 +189,12 @@ export function toIsolated(input, { service, arns = {}, candidateUrl = null } = 
     if (!ARN_PATTERNS[key].test(arn)) refuse(`--arn ${key} '${arn}' is not a staging secret ARN (${ARN_PATTERNS[key]})`);
     if (key === 'supabase_url' && candidateUrl && !/url-aurora-proxy-iso-/.test(arn)) refuse('a candidate must use the -iso proxy URL secret');
     if (key === 'supabase_url' && !candidateUrl && /url-aurora-proxy-iso-/.test(arn)) refuse('the -iso proxy URL secret is for the candidate only');
+    // VTID-05023 strips every AURORA_* entry before this runs, so on main the gateway's AURORA_* holders are gone. The data
+    // plane container is the one that carries SUPABASE_URL; the restore removes these added entries again (before = null).
+    if (!holders.length && name.startsWith('AURORA_')) {
+      const dataPlane = containers.filter((c) => (c.secrets || []).some((e) => e.name === 'SUPABASE_URL'));
+      if (dataPlane.length === 1) holders.push(dataPlane[0]);
+    }
     if (!holders.length) refuse(`no container carries ${name}; refusing to guess where the data plane is wired`);
     for (const c of holders) set(c, 'secrets', name, { name, valueFrom: arn });
   }

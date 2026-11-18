@@ -1382,6 +1382,12 @@ jobs:
           # VTID-05023 gate: refuse to register a revision that still binds an Aurora name in ANY container, env or secrets.
           AURORA_LEAK_JQ='[ .containerDefinitions[] | ((.environment // [])[], (.secrets // [])[]) | .name | select(startswith("AURORA_")) ] | unique | join(" ")'
           LEAK=$(printf '%s' "$NEW_DEF" | jq -r "$AURORA_LEAK_JQ")
+          # >>> VTID-05781 STAGING_DATA_PLANE (isolated only: AURORA_* secrets that point at the staging database pass the gate)
+          if [ "${STAGING_DATA_PLANE:-shared}" = isolated ]; then
+            LEAK=$(printf '%s' "$NEW_DEF" | jq -r '[ .containerDefinitions[] | ((.environment // [])[] | select(.name | startswith("AURORA_")) | .name),
+              ((.secrets // [])[] | select((.name | startswith("AURORA_")) and ((.valueFrom // "") | test("^arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/aurora/staging-db/") | not)) | .name) ] | unique | join(" ")')
+          fi
+          # <<< VTID-05781
           if [ -n "$LEAK" ]; then
             echo "::error::refusing to register: Aurora names still bound on the task definition: $LEAK"; exit 1
           fi

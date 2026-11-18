@@ -2050,6 +2050,20 @@ test('transfer h: a changed executor without a transfer entry is refused by Lane
   } finally { f.done(); }
 });
 
+test('transfer j: a claude->kiro transfer cannot carry a head-written protected_gate past Lane scope', () => {
+  const f = fixture();
+  try {
+    const trusted = { ...LANE, executor: 'claude', next_actor: 'claude', reviewer_seat: 'agent:vitana-lane-reviewer', paths: ['CLAUDE.md'] };
+    const base = scopeFixture(f, trusted);
+    const head = laneMd('card-01', { ...trusted, executor: 'kiro', next_actor: 'kiro', state: 'executing', vtid: 'VTID-00002', claimed_by: JT, protected_gate: 'two-model' })
+      + transferLog('claude', 'kiro', JT);
+    write(f.work, '.kiro/specs/cards/lanes/card-01.md', head);
+    write(f.work, 'CLAUDE.md', 'x');
+    const h = commit(f.work, 'transfer', { 'Collab-Session': JT, 'Collab-Lane': 'cards/card-01' });
+    hasErr(scopeErrors(f, base, h), 'protected gate file');
+  } finally { f.done(); }
+});
+
 test('transfer i: a transfer entry naming a session that did not commit to the lane is refused by Lane scope', () => {
   const f = fixture();
   try {

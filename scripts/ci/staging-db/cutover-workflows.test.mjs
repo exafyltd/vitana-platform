@@ -60,7 +60,8 @@ test('deploy workflows: exactly the marked blocks were added to the roll step; w
     const pin = stepText(pinned(f), ROLL);
     assert.ok(cur && pin, `${f}: step "${ROLL}" found`);
     assert.equal(stripMarkers(cur), pin, `${f}: the roll step differs from the pinned step outside the VTID-05781 blocks`);
-    assert.equal((wf(f).match(/# >>> VTID-05781/g) || []).length, 2, `${f}: two marked blocks`);
+    // the gateway has a third block: the isolated-plane exception to the VTID-05023 Aurora gate (staging-db ARNs only)
+    assert.equal((wf(f).match(/# >>> VTID-05781/g) || []).length, f === GW ? 3 : 2, `${f}: marked block count`);
     assert.equal(stripMarkers(wf(f)).includes('STAGING_DATA_PLANE'), false, `${f}: STAGING_DATA_PLANE only inside the marked blocks`);
     assert.equal(stripMarkers(wf(f)).includes('staging-cutover'), false, `${f}: the cutover scripts only inside the marked blocks`);
   }
@@ -80,7 +81,15 @@ test('deploy workflows: the switch reads the repository variables and calls the 
   assert.ok(g.indexOf('taskdef-data-backend.py') < g.indexOf('staging-cutover-select.sh'));
 });
 
-const TDGW = fs.readFileSync(path.join(FX, 'taskdef-gateway.json'), 'utf8');
+// The roll step receives the task definition AFTER the render step, which (VTID-05023) strips the production Aurora
+// names from every container. Feed it that shape; the shared fixture itself stays the live, pre-render definition.
+const VTID05023_STRIPPED = ['AURORA_DATABASE_URL', 'AURORA_RLS_DATABASE_URL', 'AURORA_CA_BUNDLE_PATH'];
+const TDGW = JSON.stringify((() => {
+  const td = JSON.parse(fs.readFileSync(path.join(FX, 'taskdef-gateway.json'), 'utf8'));
+  for (const c of td.containerDefinitions) for (const k of ['environment', 'secrets'])
+    if (Array.isArray(c[k])) c[k] = c[k].filter((e) => !VTID05023_STRIPPED.includes(e.name));
+  return td;
+})(), null, 2);
 const TDPG = fs.readFileSync(path.join(FX, 'taskdef-postgrest.json'), 'utf8');
 const arnOf = (fam, rev) => `arn:aws:ecs:eu-central-1:472838866351:task-definition/${fam}:${rev}`;
 

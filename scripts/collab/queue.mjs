@@ -1041,6 +1041,9 @@ export function scopeCheck(repo, { base, head, branch = '', fetchLane = null, fe
       errors.push(`lane ${key}: ${changed.join(', ')} changed in a lane PR — lane permissions come from the base revision (reassign a target lane through an executor: kiro, reviewer_seat: ${REVIEWER_AGENTS[0]} lane with lane_admin: true from a trusted source whose paths cover it, or change an executor: claude Claude Code lane)`);
     }
     if (!permAllowed) fm = { ...fm, ...Object.fromEntries(TRUSTED_PINNED.map((k) => [k, trustedFm[k]])) };
+    // A PERM carve-out (claude-only, lane-admin target, VTID-05802 transfer) never lets the head grant itself lane_admin or
+    // protected_gate: those two always come from the trusted revision (restore of VTID-05802 + VTID-05765 on one main).
+    else fm = { ...fm, lane_admin: trustedFm.lane_admin, protected_gate: trustedFm.protected_gate };
   }
   const paths = asList(fm.paths);
   const changed = git(repo, ['diff', '--name-only', `${base}...${head}`]).split('\n').filter(Boolean);
