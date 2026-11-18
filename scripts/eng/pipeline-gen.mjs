@@ -98,6 +98,11 @@ const checkPatterns = (r, check) => {
   for (const s of Object.values(r.services)) if (s.checks.includes(check)) for (const p of s.paths) if (!out.includes(p)) out.push(p);
   return out;
 };
+// The check that needs `check` with its artifacts and runs for every path `check` runs for, or undefined.
+export const relayOf = (r, check) => Object.keys(r.checks).find((o) => o !== check && (r.checks[o].needs || []).includes(check)
+  && checkPatterns(r, check).every((p) => checkPatterns(r, o).includes(p)));
+// GitLab's count of a needs list: a parallel job counts once per instance.
+export const needsCount = (doc, needs) => (needs || []).reduce((n, x) => n + (doc[x.job ?? x]?.parallel || 1), 0);
 const servicePatterns = (r, s) => [...new Set([...s.paths, ...r.shared_paths])];
 
 function checkJob(config, r, name, c, mode) {
@@ -161,7 +166,11 @@ export function buildPipeline(config, repoKey) {
   doc['collab-handoff'] = { extends: ['.governance', '.collab-handoff'], stage: 'governance', ...(r.collab_handoff === 'report-only' ? { allow_failure: true } : {}), rules: [t1] };
   // T1 service checks, selected by path.
   for (const name of checks) doc[name] = checkJob(config, r, name, r.checks[name], 't1');
-  doc.gate = { extends: ['.gate', '.central-tools'], stage: 'gate', needs: checks.map((c) => ({ job: c, optional: true, artifacts: true })), rules: [t1] };
+  // GitLab counts a parallel job once per instance against its limit of 50 needs (gateway-jest is 4). A parallel check
+  // that another check needs with artifacts, on the same or wider paths, reaches the gate through that check: its
+  // artifacts carry the instances' .delivery-ran markers (gateway-shard-union needs every gateway-jest shard).
+  const relayed = new Set(checks.filter((c) => (r.checks[c].parallel || 1) > 1 && relayOf(r, c)));
+  doc.gate = { extends: ['.gate', '.central-tools'], stage: 'gate', needs: checks.filter((c) => !relayed.has(c)).map((c) => ({ job: c, optional: true, artifacts: true })), rules: [t1] };
   // T4: merge-request preview (vitana-v1, live mode only; projects have no merge requests before the cut).
   for (const [svc, s] of Object.entries(r.services)) {
     if (s.preview !== 'spa') continue;
