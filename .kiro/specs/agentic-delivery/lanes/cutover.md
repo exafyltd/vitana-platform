@@ -1,6 +1,6 @@
 ---
 lane: cutover
-state: executing
+state: in-review
 next_actor: kiro
 depends_on: [pipelines, deploy-path, verify-on-gitlab, merge-queue, github-bridge, gateway-delivery]
 executor: kiro
@@ -100,3 +100,7 @@ Next: the lane's seat fixes the blocking finding (record the cutover-r2 red-on-b
 Fixing the blocking finding of the review above. The cutover-r2 red, green and UNIT outputs go into docs/validation/VTID-05545/outputs/
 (cutover-r2-red-on-base.txt, cutover-r2-green.txt, cutover-r2-unit-all.txt). acceptance.md gets a cutover-r2 section, and the stale
 159/160 totals are marked superseded.
+
+### 2026-11-18T17:45Z · kiro-exafy-202611181602-02f5 · executing → in-review
+MR https://gitlab.vitanaland.com/vitana/vitana-platform/-/merge_requests/60 (vitana/vitana-platform#60), with the evidence fix above.
+deploy-path is done (MR !61, merge 1a38fc0619). Next: the reviewer agent on the new head.
