@@ -5,12 +5,16 @@
 #
 #   plan     (default) read-only: build the new task definition from the LIVE one + the overlay,
 #            print the env/secret diff (names only), run every refusal check. Writes nothing.
-#   apply    register the task definition, move the preview host rule below priority 10,
+#   apply    register the task definition, add ONE listener rule at priority 8 (before the /api/* path rule
+#            at 10): host == preview-aws-gateway.vitanaland.com AND path in the sparring paths only,
 #            roll the service to desired 1, wait for steady state and a healthy target.
-#   verify   read-only checks: target health, /alive, build-info, authenticated sparring read,
-#            allocator status (expects disabled).
-#   rollback put the service back on the recorded task definition and desired count, and the
-#            rule back on its recorded priority (state file from apply).
+#            Existing rule 31 (host-only, priority 31) is left as it is. Every other /api path of the
+#            hostname keeps going to the staging gateway target group, so the staging app, STAGING-VERIFY,
+#            the deploy smoke, the crons and PUBLISH's staging build-info read never reach the isolated preview.
+#   verify   read-only checks: target health, rule, /alive, deployed commit (ECS), staging token accepted
+#            (JSON 404 on an unknown session = gateway -> PostgREST -> Aurora read), production key rejected,
+#            no token rejected, allocator status disabled.
+#   rollback service back on the recorded task definition and desired count; the added rule deleted.
 #
 # Usage: preview-gateway.sh <plan|apply|verify|rollback> --commit <40-char sha on origin/main>
 #        [--repo <vitana-platform checkout>] [--state ./preview-gateway-state.json]
@@ -26,6 +30,7 @@ TG_NAME=vitana-tg-gateway-preview
 ALB_NAME=vitana-alb-prod
 HOST=preview-aws-gateway.vitanaland.com
 NEW_PRIORITY=8             # must be < 10: path rules (/api/*, /ws/*) sit at 10 (infrastructure.md §1b)
+SPAR_PATHS='["/api/v1/plans/spar","/api/v1/plans/spar/*","/api/v1/vtid/allocator/status"]' 
 PROXY_SERVICE=vitana-postgrest-aurora-proxy
 PROXY_FAMILY=vitana-postgrest-aurora-staging
 ECR_REPO=vitana/gateway
@@ -55,12 +60,14 @@ listener_arn() {
   local alb; alb=$(aws elbv2 describe-load-balancers --names "$ALB_NAME" --query 'LoadBalancers[0].LoadBalancerArn' --output text)
   aws elbv2 describe-listeners --load-balancer-arn "$alb" --query 'Listeners[?Port==`443`].ListenerArn | [0]' --output text
 }
-host_rule() {  # prints "<ruleArn> <priority>" of the rule whose ONLY condition is host-header == $HOST
+spar_rule() {  # prints "<ruleArn> <priority>" of the rule host == $HOST AND path == $SPAR_PATHS, or NONE
   aws elbv2 describe-rules --listener-arn "$(listener_arn)" --output json \
-    | jq -r --arg h "$HOST" '[.Rules[] | select(.Conditions|length==1)
-        | select(.Conditions[0].Field=="host-header" and (.Conditions[0].HostHeaderConfig.Values==[$h]))]
+    | jq -r --arg h "$HOST" --argjson p "$SPAR_PATHS" '[.Rules[] | select(.Conditions|length==2)
+        | select(any(.Conditions[]; .Field=="host-header" and .HostHeaderConfig.Values==[$h]))
+        | select(any(.Conditions[]; .Field=="path-pattern" and (.PathPatternConfig.Values|sort)==($p|sort)))]
         | if length==1 then "\(.[0].RuleArn) \(.[0].Priority)" else "NONE" end'
 }
+priority_taken() { [ -n "$(aws elbv2 describe-rules --listener-arn "$(listener_arn)" --query "Rules[?Priority=='$1'].RuleArn" --output text)" ]; }
 tg_arn() { aws elbv2 describe-target-groups --names "$TG_NAME" --query 'TargetGroups[0].TargetGroupArn' --output text; }
 
 build_taskdef() {  # stdout: register-task-definition JSON
@@ -141,25 +148,25 @@ case "$CMD" in
                                   | sed -E 's/^([<>] [A-Z0-9_]+)=.*/\1/' | grep -E '^[<>]' || true
     say "secrets (name <- secret name):"; jq -r '.containerDefinitions[0].secrets[] | "  \(.name) <- \(.valueFrom | sub(".*:secret:";"") )"' <<<"$NEW"
     say "roles: $(jq -r '.taskRoleArn + "  /  " + .executionRoleArn' <<<"$NEW")"
-    read -r RULE PRIO <<<"$(host_rule)"; [ "$RULE" != NONE ] || die "no single host-header rule for $HOST"
-    say "host rule $HOST: priority $PRIO -> $NEW_PRIORITY (taken: $(aws elbv2 describe-rules --listener-arn "$(listener_arn)" --query "Rules[?Priority=='$NEW_PRIORITY'].RuleArn" --output text | wc -w))"
+    read -r RULE PRIO <<<"$(spar_rule)"
+    if [ "$RULE" = NONE ]; then
+      priority_taken "$NEW_PRIORITY" && die "priority $NEW_PRIORITY is taken"
+      say "will add rule priority $NEW_PRIORITY: host $HOST AND path in $SPAR_PATHS -> $TG_NAME (rule 31 unchanged)"
+    else say "sparring rule already present at priority $PRIO"; fi
     say "plan OK — nothing written";;
 
   apply)
     [ ! -e "$STATE" ] || die "$STATE exists: an apply was already recorded (rollback first, or move it)"
     proxy_check
     NEW=$(build_taskdef | check_taskdef)
-    read -r RULE PRIO <<<"$(host_rule)"; [ "$RULE" != NONE ] || die "no single host-header rule for $HOST"
-    [ -z "$(aws elbv2 describe-rules --listener-arn "$(listener_arn)" --query "Rules[?Priority=='$NEW_PRIORITY'].RuleArn" --output text)" ] \
-      || [ "$PRIO" = "$NEW_PRIORITY" ] || die "priority $NEW_PRIORITY is taken"
+    read -r RULE PRIO <<<"$(spar_rule)"; [ "$RULE" = NONE ] || die "a sparring rule already exists ($RULE)"
+    priority_taken "$NEW_PRIORITY" && die "priority $NEW_PRIORITY is taken"
     read -r PREV_TD PREV_DESIRED <<<"$(aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" --query 'services[0].[taskDefinition,desiredCount]' --output text)"
-    jq -n --arg td "$PREV_TD" --arg d "$PREV_DESIRED" --arg r "$RULE" --arg p "$PRIO" --arg c "$COMMIT" --arg at "$(date -u +%FT%TZ)" \
-      '{prev_task_definition:$td, prev_desired:($d|tonumber), rule_arn:$r, prev_priority:($p|tonumber), commit:$c, started_at:$at}' > "$STATE"
+    jq -n --arg td "$PREV_TD" --arg d "$PREV_DESIRED" --arg c "$COMMIT" --arg at "$(date -u +%FT%TZ)" \
+      '{prev_task_definition:$td, prev_desired:($d|tonumber), commit:$c, started_at:$at}' > "$STATE"
     NEW_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW" --query taskDefinition.taskDefinitionArn --output text)
     jq --arg a "$NEW_ARN" '. + {new_task_definition:$a}' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
     say "registered $NEW_ARN"
-    [ "$PRIO" = "$NEW_PRIORITY" ] || aws elbv2 set-rule-priorities --rule-priorities "RuleArn=$RULE,Priority=$NEW_PRIORITY" >/dev/null
-    say "host rule now at priority $NEW_PRIORITY"
     aws ecs update-service --cluster "$CLUSTER" --service "$SERVICE" --task-definition "$NEW_ARN" --desired-count 1 >/dev/null
     say "waiting for steady state…"
     aws ecs wait services-stable --cluster "$CLUSTER" --services "$SERVICE"
@@ -168,32 +175,50 @@ case "$CMD" in
       [ "$H" = healthy ] && break; sleep 15
     done
     [ "$H" = healthy ] || die "target not healthy ($H) — run: $0 rollback --state $STATE"
+    # the route is added only once the target is healthy, so sparring never sees a half-started preview
+    RULE=$(aws elbv2 create-rule --listener-arn "$(listener_arn)" --priority "$NEW_PRIORITY" \
+      --conditions "$(jq -nc --arg h "$HOST" --argjson p "$SPAR_PATHS" '[{Field:"host-header",HostHeaderConfig:{Values:[$h]}},{Field:"path-pattern",PathPatternConfig:{Values:$p}}]')" \
+      --actions "Type=forward,TargetGroupArn=$(tg_arn)" --tags Key=Environment,Value=staging Key=Purpose,Value=preview-sparring \
+      --query 'Rules[0].RuleArn' --output text)
+    jq --arg r "$RULE" '. + {added_rule_arn:$r}' "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
+    say "rule $RULE added at priority $NEW_PRIORITY"
     say "apply OK — target healthy; next: $0 verify --commit $COMMIT";;
 
   verify)
-    say "target health: $(aws elbv2 describe-target-health --target-group-arn "$(tg_arn)" --query 'TargetHealthDescriptions[].[Target.Id,TargetHealth.State]' --output text | tr '\n' ' ')"
-    read -r RULE PRIO <<<"$(host_rule)"; say "host rule priority: $PRIO (must be < 10)"; [ "$PRIO" -lt 10 ] || die "rule still behind the /api/* path rule"
+    TGH=$(aws elbv2 describe-target-health --target-group-arn "$(tg_arn)" --query 'TargetHealthDescriptions[].TargetHealth.State' --output text)
+    say "target health: $TGH"; [ "$TGH" = healthy ] || die "target not healthy"
+    read -r RULE PRIO <<<"$(spar_rule)"; [ "$RULE" != NONE ] && [ "$PRIO" -lt 10 ] || die "sparring rule missing or not before priority 10"
+    say "sparring rule at priority $PRIO"
+    TD=$(aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" --query 'services[0].taskDefinition' --output text)
+    LIVE_SHA=$(aws ecs describe-task-definition --task-definition "$TD" --query "taskDefinition.containerDefinitions[0].environment[?name=='GIT_COMMIT_SHA'].value | [0]" --output text)
+    say "deployed commit (ECS): $LIVE_SHA"; [ -z "$COMMIT" ] || [ "$LIVE_SHA" = "$COMMIT" ] || die "running $LIVE_SHA, expected $COMMIT"
     curl -fsS -m 20 -o /dev/null -w "alive: %{http_code} %{content_type}\n" "https://$HOST/alive"
-    curl -fsS -m 20 "https://$HOST/api/v1/admin/build-info" | jq -c '{commit: (.commit // .git_commit // .sha), env: (.env // .environment)}'
-    TOKEN=$(aws secretsmanager get-secret-value --secret-id vitana/gateway/staging/preview-sparring-token --query SecretString --output text)
-    # authenticated read through gateway -> PostgREST rev N -> Aurora staging: an unknown session id must be a JSON 404,
-    # not 401 (auth) and not 5xx (database).
-    CODE=$(curl -sS -m 30 -o /tmp/pg-verify.json -w '%{http_code} %{content_type}' -H "Authorization: Bearer $TOKEN" \
-      "https://$HOST/api/v1/plans/spar/00000000-0000-0000-0000-000000000000")
-    unset TOKEN
-    echo "authenticated sparring read: $CODE $(head -c 200 /tmp/pg-verify.json)"
-    case "$CODE" in 404\ application/json*) ;; *) die "expected a JSON 404";; esac
-    curl -fsS -m 20 "https://$HOST/api/v1/vtid/allocator/status" | jq -c '.'
+    probe() { # probe <label> <expected http code> [token secret id]; prints code and JSON error only
+      local tok="" code
+      [ -n "${3:-}" ] && tok=$(aws secretsmanager get-secret-value --secret-id "$3" --query SecretString --output text)
+      code=$(curl -sS -m 30 -o /tmp/pg-verify.json -w '%{http_code} %{content_type}' ${tok:+-H "Authorization: Bearer $tok"} \
+        "https://$HOST/api/v1/plans/spar/00000000-0000-0000-0000-000000000000")
+      tok=""
+      echo "$1: $code $(jq -c '{ok,error}' /tmp/pg-verify.json 2>/dev/null)"
+      case "$code" in "$2 application/json"*) ;; *) die "$1: expected $2 JSON";; esac
+    }
+    probe "staging preview token (gateway -> PostgREST -> Aurora staging read)" 404 vitana/gateway/staging/preview-sparring-token
+    probe "production service-role key is rejected" 401 vitana/supabase/prod/service-role-key
+    probe "no token is rejected" 401
+    curl -fsS -m 20 "https://$HOST/api/v1/vtid/allocator/status" | jq -c '.' | tee /tmp/pg-alloc.json
+    # routes/vtid.ts:437: {ok, enabled, env_var_enabled, db_control}
+    jq -e '.ok == true and .enabled == false and .env_var_enabled == false and .db_control == null' /tmp/pg-alloc.json >/dev/null \
+      || die "allocator status does not report disabled"
     say "verify done (sparring end-to-end is proven by a PLAN-SPAR run, not here)";;
 
   rollback)
     [ -f "$STATE" ] || die "no state file $STATE"
     PREV_TD=$(jq -r .prev_task_definition "$STATE"); PREV_DESIRED=$(jq -r .prev_desired "$STATE")
-    RULE=$(jq -r .rule_arn "$STATE"); PREV_PRIO=$(jq -r .prev_priority "$STATE")
+    RULE=$(jq -r '.added_rule_arn // empty' "$STATE")
+    [ -z "$RULE" ] || { aws elbv2 delete-rule --rule-arn "$RULE"; say "deleted rule $RULE"; }
     aws ecs update-service --cluster "$CLUSTER" --service "$SERVICE" --task-definition "$PREV_TD" --desired-count "$PREV_DESIRED" >/dev/null
     aws ecs wait services-stable --cluster "$CLUSTER" --services "$SERVICE"
-    aws elbv2 set-rule-priorities --rule-priorities "RuleArn=$RULE,Priority=$PREV_PRIO" >/dev/null
-    say "rolled back: $SERVICE on $PREV_TD at desired $PREV_DESIRED; host rule at priority $PREV_PRIO"
+    say "rolled back: $SERVICE on $PREV_TD at desired $PREV_DESIRED; sparring rule removed (rule 31 was never changed)"
     say "the registered revision $(jq -r '.new_task_definition // "n/a"' "$STATE") stays registered (inactive); deregister it if wanted"
     mv "$STATE" "$STATE.rolled-back.$(date -u +%Y%m%dT%H%M%SZ)";;
 

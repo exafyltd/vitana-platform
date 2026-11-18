@@ -1,0 +1,10 @@
+# restore-sparring.manifest — the exact SQL of the sparring-only schema restore, in apply order.
+# <sha256>  <path relative to the vitana-platform checkout>
+# Used by restore-sparring-schema.sh (live) and rehearse-restore.sh (disposable database); both refuse on any mismatch.
+4c89a483aadda189f8c1901efbf7dba20579b3c2ae142aa01033308e80ac75f2  .kiro/specs/preview-gateway-recovery/artifacts/00-sparring-roles.sql
+9afe19d8a6fab3385adcb89ddfdce59c052c5c264b8f4447e2ddd2991316598d  supabase/migrations/20251217000000_vtid_ledger_and_allocator.sql
+e137895841d951c4054159bd6d723c219494e10376035e44472f95f5e3a824fe  supabase/migrations/20260628120000_fix_allocate_global_vtid_seq_drift.sql
+80bc587894c2efdfea3fbc44a9c7488afa46dbbea8e96e9ef952516ed48c26ff  supabase/migrations/20261004110000_vtid_04868_plan_sparring_gate.sql
+2eaec16934081fdf754eb831d95fdb806bd9c067cc03282077a005ba91cb3796  supabase/migrations/20261004120000_vtid_04868_plan_sparring_hardening.sql
+a58bd37974235c7a3117c7f8bad7efbefdcfb0110c11e3b7d9863300805122f5  supabase/migrations/20261015180000_vtid_05214_plan_sparring_policy_approval.sql
+4062f101e2602cd69836657661c64359dfc5da5ceb3c9a8143580481f58db523  .kiro/specs/preview-gateway-recovery/artifacts/restore-sparring-grants.sql

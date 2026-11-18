@@ -1,0 +1,70 @@
+# Rehearsal output (final run). Earlier run 1 with PR #5104's unmodified roles file, same Aurora-like master:
+#   psql:00-supabase-roles-and-auth.sql:10: ERROR:  permission denied to create role
+#   DETAIL:  Only roles with the BYPASSRLS attribute may create roles with the BYPASSRLS attribute.
+== rehearsal 2026-11-18T10:03:12Z on postgres (PostgreSQL) 17.11
+== manifest
+  4c89a483aadda189f8c1901efbf7dba20579b3c2ae142aa01033308e80ac75f2  .kiro/specs/preview-gateway-recovery/artifacts/00-sparring-roles.sql
+  9afe19d8a6fab3385adcb89ddfdce59c052c5c264b8f4447e2ddd2991316598d  supabase/migrations/20251217000000_vtid_ledger_and_allocator.sql
+  e137895841d951c4054159bd6d723c219494e10376035e44472f95f5e3a824fe  supabase/migrations/20260628120000_fix_allocate_global_vtid_seq_drift.sql
+  80bc587894c2efdfea3fbc44a9c7488afa46dbbea8e96e9ef952516ed48c26ff  supabase/migrations/20261004110000_vtid_04868_plan_sparring_gate.sql
+  2eaec16934081fdf754eb831d95fdb806bd9c067cc03282077a005ba91cb3796  supabase/migrations/20261004120000_vtid_04868_plan_sparring_hardening.sql
+  a58bd37974235c7a3117c7f8bad7efbefdcfb0110c11e3b7d9863300805122f5  supabase/migrations/20261015180000_vtid_05214_plan_sparring_policy_approval.sql
+  4062f101e2602cd69836657661c64359dfc5da5ceb3c9a8143580481f58db523  .kiro/specs/preview-gateway-recovery/artifacts/restore-sparring-grants.sql
+
+== A. empty database, roles absent (expected Aurora staging state), master without BYPASSRLS
+PASS  precheck passed and all 7 files applied
+PASS  public tables = plan_sparring_config,plan_sparring_sessions,plan_sparring_shadow_log,pm_digests,pm_lease,vtid_ledger
+PASS  roles created (name:login:bypassrls) = anon:false:false,authenticated:false:false,service_role:false:false,vitana_governance_owner:false:false
+PASS  no auth/storage/extensions schema created = 0
+PASS  authenticator member of = anon,authenticated,service_role
+PASS  gate trigger on vtid_ledger = 1
+PASS  plan_sparring_config mode = log
+PASS  system_controls absent (allocator reads no row -> disabled) = t
+PASS  global_vtid_seq untouched (migration default) = 1000
+
+== A2. gateway path through PostgREST's role switch (authenticator -> service_role)
+PASS  service_role inserts a sparring session (ccb4e6eb-0eb8-4958-8ca0-f2bdbfcaae62)
+PASS  service_role reads it = 1
+PASS  plan_sparring_append_round round 1 = true
+PASS  converge + policy approval (UPDATE as service_role) = UPDATE 1
+PASS  vtid_ledger rows (nothing allocated) = 0
+PASS  anon cannot read vtid_ledger = ERROR:  permission denied for table vtid_ledger
+PASS  anon cannot read sparring sessions = ERROR:  permission denied for table plan_sparring_sessions
+PASS  authenticated cannot read sparring sessions = ERROR:  permission denied for table plan_sparring_sessions
+PASS  anon cannot call the allocator = ERROR:  permission denied for function allocate_global_vtid
+PASS  authenticator itself (no role switch) reads nothing = ERROR:  permission denied for table plan_sparring_sessions
+
+== A3. rollback
+PASS  rollback ran
+PASS  public tables after rollback = 0
+PASS  restore roles after rollback = 0
+PASS  authenticator kept = 1
+PASS  re-apply after rollback = ok
+
+== D. a non-empty database is refused before anything runs
+PASS  precheck refusal = refused: public schema is not empty; this restore only runs on the empty staging database
+
+== B. request roles created earlier by someone else (master has no ADMIN OPTION on them)
+PASS  precheck refusal = refused: role anon already exists and vitana_staging_admin cannot grant it to authenticator (no ADMIN OPTION)
+PASS  nothing created in vitana = 0
+
+== C. a failure in the last file, then the rollback file, returns to the empty state
+PASS  broken restore stopped at the injected error (division by zero)
+  partial state after the failure: 6 tables (migrations commit file by file)
+PASS  rollback ran after the failure
+PASS  public tables after rollback = 0
+PASS  restore roles after rollback = 0
+PASS  authenticator memberships after rollback = 0
+PASS  apply after rollback = ok
+
+== E. PostgREST PostgREST 12.2.3 on the restored database (the proxy's container; JWT behaviour of revision 21)
+  Schema cache loaded 6 Relations, 0 Relationships, 6 Functions, 0 Domain Representations, 4 Media Type Handlers, 1197 Timezones
+PASS  staging service_role key: read sessions = 200
+PASS  staging service_role key: insert a session = 201
+PASS  staging service_role key: rpc plan_sparring_append_round = 200 true
+PASS  a key signed with any other secret (production stand-in) is rejected = 401
+PASS  no key (anon) cannot read sessions = 401
+PASS  authenticated-role key cannot read sessions = 403
+PASS  system_controls is not exposed (allocator reads no row -> disabled) = 404
+
+RESULT: 40 passed, 0 failed
