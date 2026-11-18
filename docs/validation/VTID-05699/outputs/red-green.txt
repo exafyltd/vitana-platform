@@ -1,0 +1,14 @@
+# VTID-05699 red (seat file from origin/main 6dc6e1ba0c) and green (this branch). Line numbers only.
+## red
+ok 1 - addressLines finds an address and reports only its line number
+not ok 2 - docs/programs/areas.yaml contains no email address
+docs/programs/areas.yaml has an email address on line(s) 15, 16, 17, 18; keep seat names only
+# tests 2
+# pass 1
+# fail 1
+## green
+ok 1 - addressLines finds an address and reports only its line number
+ok 2 - docs/programs/areas.yaml contains no email address
+# tests 2
+# pass 2
+# fail 0

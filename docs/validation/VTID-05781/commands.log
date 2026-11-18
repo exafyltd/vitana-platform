@@ -1,0 +1,25 @@
+# VTID-05781 — base origin/main bb152742012c583fc4c146dd2129d0fd4a1d2dce (outputs/base-sha.txt); session kiro-exafy-202611110920-270b
+# No AWS call, no aws CLI against the account, no credential, no deploy, no workflow dispatch, no secret read or written (owner directive 2026-11-12).
+# Every "aws" below is the test stub scripts/ci/staging-db/fixtures/cutover/bin/aws (state in a temp directory).
+git show origin/main:.github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml > scripts/ci/staging-db/fixtures/cutover/AWS-STAGE-DEPLOY-GATEWAY.pinned.yml
+git show origin/main:.github/workflows/AWS-STAGE-DEPLOY-POSTGREST-AURORA-PROXY.yml > scripts/ci/staging-db/fixtures/cutover/AWS-STAGE-DEPLOY-POSTGREST-AURORA-PROXY.pinned.yml
+(origin/main worktree + this lane's tests and fixtures only) node --test scripts/ci/staging-db/cutover-*.test.mjs -> 34 tests, 2 pass, 32 fail (outputs/red-on-base.txt; the 2 are the byte-identity tests, pinned vs pinned)
+node --test scripts/ci/staging-db/cutover-*.test.mjs -> 107 tests, 107 pass, 0 fail (outputs/green.txt)
+node --test scripts/ci/staging-db/*.test.mjs (no install) -> 188 tests, 184 pass, 0 fail, 4 skipped (stage-2 PGlite cases)
+node --test $(find scripts -name '*.test.mjs' -o -name '*.test.cjs' | sort)  (UNIT.yml file set) -> 1628 tests, 1622 pass, 0 fail, 6 skipped (outputs/unit-all-scripts.txt)
+(services/gateway) npx jest test/eng-platform-stage-oidc-workflows.test.ts test/eng-platform-oidc-roles.test.ts test/loop-catalog.test.ts test/scripts/workflow-dispatch-input-limit.test.ts test/routine-runner/status-route-and-workflows.test.ts -> 87 tests, 85 pass, 2 fail (loop-catalog "workflows: no orphans" + "the service reports the same clean coverage": orphan AWS-KIRO-ACCESS; the same 2 fail on origin/main bb15274201, not caused by this lane)
+node <js-yaml load> .github/workflows/AWS-STAGE-*.yml -> 7/7 parse
+node scripts/ci/staging-prod-ref-guard.mjs --report -> exit 0; 28 files, 35 production references (unchanged; outputs/guard-report.txt)
+node scripts/ci/staging-prod-ref-guard.mjs --enforce --files <the 6 cutover scripts, 2 new workflows, impact.mjs, impact-classification.json> -> exit 0, 0 references (outputs/guard-enforce-cutover.txt)
+node scripts/ci/staging-db/impact.mjs [--json] -> 19 workflows name the staging host, 0 unclassified, 0 stale; 9 block the flip today; suites 446: 364 plane-neutral, 36 schema-dependent, 46 needs-review; 8 in-flight needs-review; flip BLOCKED (outputs/impact.txt, outputs/impact.json)
+bash scripts/aws/staging-cutover-secrets.sh --plan --cluster vitana-aurora-staging -> plan only, no AWS call (outputs/secrets-plan.txt)
+node -e 'validateManifest(docs/validation/VTID-05781/staging-tests.json)' (scripts/ci/staging-verify/lib.cjs) -> ok
+# Mutations (each: one guard removed in place, the named test file run, the file restored). Every one fails >= 1 test (outputs/mutation-<name>.txt):
+#   taskdef-production-check-removed, taskdef-family-guard-removed, taskdef-restore-removed, select-approval-removed,
+#   ecs-prod-name-guard-removed, ecs-allowlist-removed, ecs-rollback-network-dropped, ecs-moved-check-removed, ecs-account-check-removed,
+#   gate-ledger-endpoint-removed, gate-rehearsal-sha-removed, gate-approval-removed, gate-busy-removed,
+#   impact-unclassified-not-blocking, impact-ledger-acceptable, smoke-production-host-allowed, smoke-evaluate-ignored,
+#   secrets-cost-check-removed, secrets-idempotence-removed, secrets-tag-check-removed, secrets-endpoint-check-removed,
+#   deploy-gateway-shared-path-changed, deploy-proxy-always-switch, cutover-rollback-step-removed
+# Plus 26 in-file workflow mutations in cutover-workflows.test.mjs ("mutation fails: …"), each reported by the static check.
+# Found by the tests on the way: staging-cutover-smoke.mjs first read evaluateHttp's result as an array (it is { ok, problems }) and passed every check; fixed.

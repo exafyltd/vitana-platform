@@ -12,11 +12,11 @@
  *     satisfies any lane;
  *   - a legacy seat `approve` keeps today's rule (reviewer_seat match, exact
  *     head; a governance lane additionally needs `reviewer_seat: claude`);
- *   - a PR that changes a protected gate file is ALWAYS refused in code
- *     (`protected_gate_file`): no review ever unlocks it programmatically; the
- *     owner's instruction naming the plan is the out-of-band authority, recorded
- *     in the lane log (VTID-05408 §5). Defense-in-depth with queue.mjs
- *     scope-check, which refuses the same files independently.
+ *   - a PR that changes a protected gate file merges only with TWO agent
+ *     accepts from two different chain models on the current head (VTID-05765,
+ *     plan autonomous-to-staging); otherwise it is refused (`protected_gate_file`).
+ *     Defense-in-depth with queue.mjs scope-check and land-guard.mjs
+ *     mergeDecision, which apply the same rule independently.
  *
  * `PROTECTED_GATE_GLOBS` is a compiled-in constant literal (= plan §4.3). The
  * runtime never reads scripts/collab/protected-gate-files.json, so a missing or
@@ -58,7 +58,22 @@ export const PROTECTED_GATE_GLOBS: readonly string[] = Object.freeze([
   '.kiro/agents/vitana-lane-reviewer.md',
   'supabase/migrations/*vtid_ledger*.sql',
   'supabase/migrations/*plan_sparring*.sql',
+  '.github/workflows/VTID-ALLOCATE.yml',
+  'scripts/collab/gate-invariants.test.mjs',
 ]);
+
+/** VTID-05765: distinct chain models whose agent accept is on the PR's current head. */
+export const PROTECTED_ACCEPTS_REQUIRED = 2;
+export function protectedAcceptModels(reviews: readonly ReviewEntry[], pr: ObservedPr | null): string[] {
+  if (!pr) return [];
+  const models = new Set<string>();
+  for (const r of reviews) {
+    if (!isAgentReview(r) || !reviewOnCurrentHead(r, pr)) continue;
+    const m = /\(([^)]+)\)\s*$/.exec(String(r.reviewer ?? '').trim());
+    if (m && REVIEWER_AGENT_MODELS.includes(m[1])) models.add(m[1]);
+  }
+  return [...models];
+}
 
 /**
  * Governance paths (plan §1 of pm-agent). A lane whose `paths` reach one of these
@@ -186,6 +201,7 @@ export function governanceMergeAllowed(
   lane: ObservedLane,
   pr: ObservedPr | null,
   review: ReviewEntry | null,
+  reviews: readonly ReviewEntry[] = lane.reviews ?? (review ? [review] : []),
 ): GovernanceVerdict {
   const files = pr?.files ?? lane.paths;
   // VTID-05408 (kiro-lane-admin §5): the PM ALWAYS refuses a protected gate file in code — no review (legacy-claude or
@@ -194,8 +210,10 @@ export function governanceMergeAllowed(
   // (collaboration.md §7b), never a code-level unlock the PM can forge. Both independent layers (queue.mjs scope-check
   // AND this guard) keep refusing protected gate files, so a `--admin` override of Lane scope is still caught here —
   // defense-in-depth preserved, nothing less protected than before (R1-F3).
+  // VTID-05765: a protected gate file merges only on two agent accepts from different chain models on the current head.
   if (touchesProtectedGate(files)) {
-    return { ok: false, reason: 'protected_gate_file' };
+    if (protectedAcceptModels(reviews, pr).length < PROTECTED_ACCEPTS_REQUIRED) return { ok: false, reason: 'protected_gate_file' };
+    return { ok: true };
   }
   if (!laneTouchesGovernance(lane)) return { ok: true };
   if (review == null) {

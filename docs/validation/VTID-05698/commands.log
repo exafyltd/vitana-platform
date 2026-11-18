@@ -1,0 +1,356 @@
+# VTID-05698 — commands.log (lane write-route-inventory, plan gateway-write-route-auth)
+# Worktree: /projects/sandbox/wt-gwra-inventory, branch kiro/gateway-write-route-auth/write-route-inventory
+# Read-only investigation: no request to any live system, no code change, no git write.
+# Date (UTC): 2026-11-11
+
+## Pins (both SHAs recorded, plan "Pin" rule)
+$ git -C . rev-parse HEAD origin/main
+6dc6e1ba0c18252ec2f3fbf5651d245e200f9835
+6dc6e1ba0c18252ec2f3fbf5651d245e200f9835
+# lane started on the pin; no re-verification on a newer origin/main was needed
+$ git -C ../vitana-v1 rev-parse HEAD
+e31bf4627ff3c705c20f8e6b718ce4dd03353b7f
+
+## Plan and tasks read
+$ git -C ../vitana-platform show origin/kiro/gateway-write-route-auth/plan:.kiro/specs/gateway-write-route-auth/plan.md
+$ git -C ../vitana-platform show origin/kiro/gateway-write-route-auth/plan:.kiro/specs/gateway-write-route-auth/tasks.md
+$ git -C ../vitana-platform show origin/kiro/gateway-write-route-auth/plan:.kiro/specs/gateway-write-route-auth/lanes/write-route-inventory.md
+# The plan's heuristic command (123 hits in 45 files) is not stored on the plan branch:
+$ git -C ../vitana-platform ls-tree -r --name-only origin/kiro/gateway-write-route-auth/plan .kiro/specs/gateway-write-route-auth/
+.kiro/specs/gateway-write-route-auth/handoff.md
+.kiro/specs/gateway-write-route-auth/lanes/route-auth.md
+.kiro/specs/gateway-write-route-auth/lanes/write-route-inventory.md
+.kiro/specs/gateway-write-route-auth/plan.md
+.kiro/specs/gateway-write-route-auth/sparring/responses-1.md
+.kiro/specs/gateway-write-route-auth/sparring/round-1.md
+.kiro/specs/gateway-write-route-auth/sparring/round-2.md
+.kiro/specs/gateway-write-route-auth/sparring/state.json
+.kiro/specs/gateway-write-route-auth/sparring/verdict.md
+.kiro/specs/gateway-write-route-auth/tasks.md
+
+## Autonomy risk register (VTID-05686) read for the worker cross-reference (§7)
+$ git -C ../vitana-platform show origin/kiro/strategy-execution-wave1/autonomy-risks:docs/programs/strategy-execution/autonomy-risk-register.md | grep -n -iE "claim|fail-open|worker-orchestrator"
+17:- The claim fail-open starts at the ledger read on line 1260 (`services/gateway/src/routes/worker-orchestrator.ts:1260-1264`).
+58:| **AR-07 (f)** Worker claim fails open [SB-CON-08, row 12] | **Critical** ...
+63:| **AR-12 (j)** Worker-runner has no source or deploy workflow; no Dispatcher service ...
+
+## Route census
+# Line grep (over-counts: matches Supabase .delete() and Map.delete() too)
+$ grep -rEn "\.(post|put|patch|delete)\(" services/gateway/src/routes --include=*.ts | grep -vE "\.test\.ts|__tests__" | wc -l
+873
+# AST pass (scratch tool outside the repo, typescript compiler API, createSourceFile only):
+#   every <ident>.post|put|patch|delete|all(<path>, ...mw, handler) call, every router.use, Router() variables,
+#   exports; index.ts require/import bindings, mountRouterSync(app, path, router), app.use, inline app.<verb>.
+#   Result: 829 route calls in 226 route files (tests excluded), 1 inline route (index.ts:1157), 304 mounts,
+#   0 unresolved mounts. Every line-grep hit that is not an AST route call is a .delete()/Map.delete() call
+#   (checked by diffing the two lists). Sub-router mounts followed by hand: routes/chat.ts:95,97;
+#   routes/partner-onboarding-connections.ts:238; registerConnectionRoutes (routes/vcaop-portal-my.ts:246,504;
+#   routes/partner-onboarding-connections.ts:223). Unmounted: routes/live.ts:2593 (communityMeetupRouter,
+#   imported at index.ts:289, never mounted).
+#   Endpoints (method x full path): 856, minus 1 unmounted = 855; table rows (one per definition, multi-mount
+#   collapsed): 837.
+$ grep -n "communityMeetupRouter" services/gateway/src/index.ts
+289:  const { communityMeetupRouter } = require('./routes/live');
+
+## Global middleware and mounts
+$ sed -n 598,640p services/gateway/src/index.ts       # CORS, sse, compression, body parsers, express.json, delegatedTokenGuard
+$ sed -n 248,312p services/gateway/src/governance/route-guard.ts   # mountRouterSync: registerRoute + app.use(mountPath, router)
+$ sed -n 94,108p services/gateway/src/services/delegation-guard.ts # classifyBearer: tokens of other issuers -> 'skip'
+$ grep -nE "mountRouterSync|app\.use\(|app\.(get|post|put|patch|delete|all)\(" services/gateway/src/index.ts | wc -l
+331
+
+## Gate middleware read
+$ sed -n 30,160p services/gateway/src/middleware/require-service-or-admin.ts
+$ sed -n 394,560p services/gateway/src/middleware/auth-supabase-jwt.ts ; sed -n 699,870p services/gateway/src/middleware/auth-supabase-jwt.ts
+$ sed -n 30,120p services/gateway/src/middleware/ledger-write-auth.ts
+$ sed -n 36,120p services/gateway/src/middleware/scheduled-notifications-auth.ts
+$ cat services/gateway/src/middleware/require-own-session.ts services/gateway/src/middleware/require-vtid.ts
+$ sed -n 55,200p services/gateway/src/middleware/require-tenant-admin.ts ; sed -n 95,140p services/gateway/src/middleware/paywall.ts
+# Local gates: each body printed and read (list in inventory §2 item 4)
+
+## Mode-dependent gates: repo-recorded configuration
+$ grep -rnE "LEDGER_WRITE_AUTH_MODE|SCHEDULED_NOTIFICATIONS_AUTH_MODE" .claude/rules/infrastructure.md .github/workflows/AWS-*-DEPLOY-GATEWAY.yml
+.claude/rules/infrastructure.md:263:LEDGER_WRITE_AUTH_MODE=log
+.claude/rules/infrastructure.md:268:SCHEDULED_NOTIFICATIONS_AUTH_MODE=log
+.github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml:946:        # SCHEDULED_NOTIFICATIONS_AUTH_MODE is deliberately NOT set here: prod
+.github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml:976:# VTID-04727 -- LEDGER_WRITE_AUTH_MODE=enforce, STAGING ONLY: the VTID
+.github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml:1286:                          {name:"LEDGER_WRITE_AUTH_MODE", value:"enforce"},
+$ grep -nE "ENVIRONMENT|allow-unauth" scripts/deploy/deploy-service.sh | head -4
+86:ENVIRONMENT="${ENVIRONMENT:-dev-sandbox}"
+152:    --allow-unauthenticated \
+154:    --set-env-vars "ENVIRONMENT=${ENVIRONMENT},AUTOPILOT_LOOP_ENABLED=true,...
+$ grep -nE "VITANA_ENV|\bENVIRONMENT\b" .github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml
+(no output: production ENVIRONMENT / VITANA_ENV not in the repo -> Unknown)
+$ grep -rn "SERVICE_AUTH_TOKEN" .github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml .claude/rules/infrastructure.md
+(no output)
+$ ls .github/workflows | grep -i "^EXEC-DEPLOY"
+(no output: EXEC-DEPLOY.yml absent at the pin)
+
+## Unverified JWT decodes in route files
+$ grep -rnE "decodeJwt|jwt\.decode|split\('\.'\)\[1\]" services/gateway/src/routes --include=*.ts | grep -v test | wc -l
+47
+# each hit read: decode used for a service-role write = "needs a gate" (13 routes);
+# decode after a Supabase user-JWT call accepted the token = "gated in handler".
+
+## Declared public routes
+$ grep -rn "public-route" services/gateway/src/routes --include=*.ts | grep -v test | wc -l
+41
+
+## Handler categoriser (scratch tool) — rows without a middleware gate, by signal
+# signals: verify (verifyAndExtractIdentity|verifyExafyAdmin|auth.getUser|verifyAuth|getUserContext|requireAuth(req|...),
+#   token-required (if (!token) ... 401), token-forward (createUserSupabaseClient(token)|callRpc(token..)|Bearer ${token}),
+#   UNVERIFIED-DECODE, dev-bypass? (isDevSandbox), identity-required, secret/signature, FALLBACK-ACTOR.
+# Category counts (rows can be re-decided manually; 146 rows carry a manual decision):
+103 NONE
+59 token-required+token-forward
+52 dev-bypass?
+26 verify+token-required+token-forward
+17 verify+token-required
+13 token-required+UNVERIFIED-DECODE
+10 secret/signature
+10 verify
+8 token-required+token-forward+UNVERIFIED-DECODE
+8 UNVERIFIED-DECODE+identity-required
+7 identity-required
+5 verify+dev-bypass?
+5 token-forward
+5 token-forward+identity-required
+4 FALLBACK-ACTOR
+4 token-required+token-forward+UNVERIFIED-DECODE+identity-required
+3 verify+token-forward
+3 token-forward+secret/signature
+3 token-forward+dev-bypass?
+2 UNVERIFIED-DECODE
+2 token-required+token-forward+secret/signature
+1 token-forward+dev-bypass?+secret/signature
+1 dev-bypass?+secret/signature
+1 dev-bypass?+FALLBACK-ACTOR
+1 token-required
+# Every NONE, UNVERIFIED-DECODE, presence-only, FALLBACK-ACTOR and secret row was read by hand.
+
+## Verdict counts (table rows)
+gated 469 | gated in handler 214 | public by design 44 | unauthenticated and needs a gate 104
+(critical 7, high 47, medium 21, low 29) | in progress (VTID-05697) 6 | Unknown 0 | total 837
+
+## Caller census for the six VTID-05697 routes (repo and vitana-v1)
+$ for p in /api/v1/specs/ /agents/triage/investigate /api/v1/ai-personality/ /api/v1/llm/routing-policy; do grep -n -F "$p" services/gateway/src/frontend/command-hub/app.js | cut -d: -f1; git -C ../vitana-v1 grep -n -F "$p" e31bf4627f -- src apps supabase | wc -l; done
+/api/v1/specs/            app.js: 9432 9765 9775 9815 9855 9902 9938 10054 42343 42348   vitana-v1: 0
+/agents/triage/investigate app.js: 18512                                                  vitana-v1: 0
+/api/v1/ai-personality/   app.js: 17974 18009                                             vitana-v1: 0
+/api/v1/llm/routing-policy app.js: 4514 4516 4517 16273 28587 28588 28613 28670 29063 30078 30433   vitana-v1: 0
+$ grep -c "x-actor-" services/gateway/src/frontend/command-hub/app.js
+1
+$ grep -n "callGateway('/routing-policy" services/openclaw-bridge/src/skills/vitana-llm-routing.ts
+94:    const data = await callGateway('/routing-policy', 'POST', {
+121:    const data = await callGateway('/routing-policy/reset', 'POST', {
+
+## Caller census for every table row (scratch tool)
+# corpus 1: rg -n over the repo, code files only, excluding services/gateway/src/routes, index.ts, tests, docs, SQL, JSON:
+$ rg -n --no-heading -g '!node_modules' -g '!*.md' -g '!**/test/**' -g '!**/*.test.*' -g '!**/__tests__/**' -g '!services/gateway/src/routes/**' -g '!docs/**' -e "/api/v1/|/mcp|/events/ingest|/r/|/command-hub/api" . | wc -l
+4655
+# corpus 2: vitana-v1
+$ git -C ../vitana-v1 grep -n -e "/api/v1/" -e "/mcp" e31bf4627f -- src apps supabase | wc -l
+891
+# match: static path prefix up to the first ":param" + every static tail segment on the same line.
+# second pass for the 104 "needs a gate" rows: same match with /api/v1 stripped, via
+#   git grep -n -F <prefix> HEAD (platform) and git grep -n -F <prefix> e31bf4627f -- src apps supabase (vitana-v1)
+# example result: /user/limitations -> vitana-v1 apps/mobile/src/screens/settings/data/hooks.ts:525,563 and requests.ts:83
+
+## Heuristic (reproducible). Run from the repository root.
+# The plan's own command is not recorded; these variants were tried (file-level skip when any router.use names an
+# auth-like middleware; route skipped when its first line names an auth-like inline middleware; route skipped when
+# its body until the next route matches the identity regex):
+#   'req\.identity|authorization|getUserId'                 -> hits=315 files=94
+#   'identity|authorization|token'                          -> hits=110 files=43
+#   'identity|authorization|token\b'                        -> hits=110 files=43
+#   'identity|authorization|bearer'                         -> hits=132 files=50
+#   'identity|authorization|getBearerToken'                 -> hits=137 files=52
+#   'req\.identity|authorization|token'                     -> hits=136 files=53
+#   'identity|authorization|getBearerToken|verify'          -> hits=123 files=48   <- reference variant
+# The reference variant matches the plan's hit count (123) but not its file count (45); the difference cannot be
+# explained without the original command. Every hit is resolved below against the table.
+$ cat > /tmp/vtid-05698-heuristic.js <<'EOF'
+// VTID-05698 reproducible heuristic: node /tmp/vtid-05698-heuristic.js <routesDir> <identityRegex> [list]
+const fs = require('fs'), path = require('path');
+const dir = process.argv[2];
+const AUTH_USE = /router\.use\([^)]*(require\w*|optionalAuth|auth\w*|verify\w*)/i;
+const INLINE = /(require[A-Z]\w*|auth\w*|verify\w*|guard\w*|Token\w*)/;
+const ID = new RegExp(process.argv[3] || 'req\\.identity|authorization|getUserId|x-gateway-internal|GATEWAY_SERVICE_TOKEN|verify[A-Z]\\w*|getCallerId|getUserContext', 'i');
+let hits = 0; const files = new Set(); const list = [];
+for (const f of fs.readdirSync(dir).filter(f => f.endsWith('.ts') && !/\.test\.ts$/.test(f)).sort()) {
+  const src = fs.readFileSync(path.join(dir, f), 'utf8');
+  if (AUTH_USE.test(src)) continue;
+  const lines = src.split('\n');
+  const starts = [];
+  lines.forEach((l, i) => { if (/^\s*\w+\.(get|post|put|patch|delete|use)\(/.test(l)) starts.push(i); });
+  starts.forEach((s, k) => {
+    const m = lines[s].match(/^\s*\w+\.(post|put|patch|delete)\(/);
+    if (!m) return;
+    const end = k + 1 < starts.length ? starts[k + 1] : lines.length;
+    const head = lines[s];
+    const before = head.split(/async\s*\(|\(\s*req|function/)[0];
+    if (INLINE.test(before.replace(/^\s*\w+\.(post|put|patch|delete)\(\s*['"`][^'"`]*['"`]/, ''))) return;
+    const body = lines.slice(s, end).join('\n');
+    if (ID.test(body)) return;
+    hits++; files.add(f); list.push(`${f}:${s + 1}`);
+  });
+}
+if (process.argv[4] === 'list') console.log(list.join('\n'));
+console.log(`hits=${hits} files=${files.size}`);
+EOF
+$ node /tmp/vtid-05698-heuristic.js services/gateway/src/routes 'identity|authorization|getBearerToken|verify'
+hits=123 files=48
+$ node /tmp/vtid-05698-heuristic.js services/gateway/src/routes 'identity|authorization|getBearerToken|verify' list
+# Resolution of every hit against the inventory table (file:line in services/gateway/src/routes, verdict code
+# G gated, H gated in handler, P public by design, N needs a gate, I in progress). 120 hits are route definitions:
+# G 9, H 43, P 17, N 49, I 2. The other 3 hits are not routes (Map.delete calls):
+#   operator.ts:1826 ACTIVE_REV_CACHE.delete(service); orb-live.ts:12314 orbTranscripts.delete(sessionId); orb-live.ts:13804 sessions.delete(body.sessionId)
+  admin-signups.ts:145 P
+  admin-signups.ts:179 N
+  admin-staging.ts:68 G
+  agents-registry.ts:281 N
+  architecture-investigator.ts:43 N
+  assistant.ts:139 N
+  assistant.ts:194 N
+  assistant.ts:254 N
+  assistant.ts:372 N
+  autopilot-prompts.ts:247 H
+  autopilot-prompts.ts:349 H
+  autopilot-prompts.ts:416 H
+  backoffice-commands.ts:78 H
+  backoffice-commands.ts:172 H
+  backoffice-commands.ts:173 H
+  backoffice-commands.ts:200 H
+  billing.ts:1205 G
+  boundary-consent.ts:129 H
+  boundary-consent.ts:194 H
+  boundary-consent.ts:232 H
+  boundary-consent.ts:311 H
+  boundary-consent.ts:349 H
+  commerce-mcp.ts:418 H
+  commerce-mcp.ts:424 H
+  community-mcp.ts:200 H
+  community-mcp.ts:204 H
+  connector-webhooks.ts:26 P
+  consent-actions.ts:45 N
+  consent-actions.ts:52 N
+  consent-actions.ts:69 N
+  dev-auth.ts:315 H
+  dev-auth.ts:459 H
+  diag.ts:30 P
+  domain-routing.ts:132 N
+  domain-routing.ts:197 N
+  domain-routing.ts:343 N
+  email-intake.ts:150 H
+  health.ts:261 P
+  internal-marketplace-sync.ts:52 H
+  llm.ts:165 I
+  llm.ts:236 I
+  longevity-news.ts:146 N
+  matchmaking.ts:763 N
+  media-hub.ts:300 G
+  oasis-emit.ts:205 G
+  operator.ts:809 N
+  operator.ts:847 N
+  operator.ts:1291 N
+  operator.ts:1343 N
+  operator.ts:1414 N
+  operator.ts:1513 N
+  operator.ts:1774 N
+  orb-live.ts:13544 P
+  orb-live.ts:13593 P
+  orb-live.ts:13748 P
+  orb-live.ts:13777 P
+  orb-live.ts:16021 P
+  orb-live.ts:16035 P
+  orb-live.ts:16912 P
+  orb-live.ts:17160 P
+  orb-livekit.ts:2214 N
+  payments-stripe-webhook.ts:42 N
+  product-analytics.ts:96 P
+  routines.ts:276 G
+  routines.ts:355 G
+  rum-beacon.ts:123 P
+  scheduler.ts:63 N
+  semantic-memory.ts:169 N
+  semantic-memory.ts:251 N
+  semantic-memory.ts:334 N
+  semantic-memory.ts:427 N
+  semantic-memory.ts:541 N
+  shop-feed.ts:385 H
+  shop-feed.ts:413 H
+  shop-feed.ts:480 H
+  shop-feed.ts:507 H
+  shopping-agent.ts:92 H
+  shopping-agent.ts:219 H
+  situational-awareness.ts:181 N
+  situational-awareness.ts:253 N
+  situational-awareness.ts:311 N
+  situational-awareness.ts:364 N
+  situational-awareness.ts:556 N
+  specialists-connections.ts:60 G
+  specialists-connections.ts:80 G
+  specialists-connections.ts:96 G
+  stripe-connect-webhook.ts:95 P
+  tenant-specialists.ts:136 H
+  tenant-specialists.ts:179 H
+  tenant-specialists.ts:214 H
+  tenant-specialists.ts:267 H
+  tenant-specialists.ts:287 H
+  tenant-specialists.ts:335 H
+  tenant-specialists.ts:509 H
+  tenant-specialists.ts:566 H
+  tenant-specialists.ts:872 H
+  tenant-specialists.ts:1058 H
+  universal-cart.ts:333 H
+  universal-cart.ts:542 H
+  universal-cart.ts:758 H
+  universal-cart.ts:833 H
+  universal-cart.ts:891 H
+  universal-cart.ts:1005 H
+  user-limitations.ts:89 N
+  vcaop-postback.ts:123 H
+  visual-interactive.ts:117 N
+  voice-wake-timeline.ts:129 P
+  wallet-stripe-webhook.ts:45 P
+  wearables-waitlist.ts:55 N
+  wearables-waitlist.ts:89 N
+  wearables.ts:123 N
+  wearables.ts:278 N
+  worker-orchestrator.ts:223 N
+  worker-orchestrator.ts:317 N
+  worker-orchestrator.ts:891 N
+  worker-orchestrator.ts:989 N
+  worker-orchestrator.ts:1230 N
+  worker-orchestrator.ts:1332 N
+  worker-orchestrator.ts:1447 N
+  worker-orchestrator.ts:1715 N
+
+## Citation check
+$ node docs/validation/VTID-05698/check-citations.mjs
+doc: /projects/sandbox/wt-gwra-inventory/docs/programs/security/gateway-write-route-inventory.md
+vitana-v1 root: /projects/sandbox/vitana-v1
+citations: 3986 occurrences, 2366 distinct, 512 files
+ok: 2366, failed: 0
+exit=0
+# negative test (temporary file outside the repo): a missing file and an out-of-range line both fail, exit 1
+$ node docs/validation/VTID-05698/check-citations.mjs /tmp/neg.md
+citations: 4 occurrences, 4 distinct, 3 files
+ok: 2, failed: 2
+FAIL routes/events.ts:99999 — file has 2140 lines
+FAIL nope/file.ts:3 — file not found
+exit=1
+
+## Repository state after the lane (no git write performed)
+$ git status --short
+?? docs/programs/security/
+?? docs/validation/VTID-05698/
+
+## Table recount (counts in §1 match the table; every row has a definition file:line; every needs-gate row names a gate)
+$ node -e '
+const s=require("fs").readFileSync("docs/programs/security/gateway-write-route-inventory.md","utf8");
+const t=s.split("## 10. Full table")[1].split("\n").filter(l=>/^\| \d+ \|/.test(l));
+const c={};let badDef=0,noGate=0;
+for(const l of t){const cells=l.split(/(?<!\\)\|/).map(x=>x.trim());const v=cells[10];const k=["unauthenticated and needs a gate","in progress (VTID-05697)","gated in handler","public by design","gated","Unknown"].find(p=>v.startsWith(p));c[k]=(c[k]||0)+1; if(!/^(routes\/|index\.ts)[^ ]*:\d+$/.test(cells[4]))badDef++; if(k==="unauthenticated and needs a gate"&&!/; use \S/.test(v))noGate++;}
+console.log("rows",t.length,JSON.stringify(c),"rows without file:line",badDef,"needs-gate rows without a named gate",noGate);'
+rows 837 {"gated":469,"public by design":44,"unauthenticated and needs a gate":104,"gated in handler":214,"in progress (VTID-05697)":6} rows without file:line 0 needs-gate rows without a named gate 0

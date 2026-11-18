@@ -24,6 +24,7 @@ jest.mock('../src/lib/supabase', () => ({
         select: (c: string) => ((pushQuery.select = c), b),
         is: (c: string, v: unknown) => ((pushQuery.is = [c, v]), b),
         in: (c: string, v: unknown) => ((pushQuery.in = [c, v]), b),
+        or: (expr: string) => ((pushQuery.or = expr), b),
         gte: (c: string, v: string) => ((pushQuery.gte = [c, v]), b),
         order: () => b,
         limit: () => Promise.resolve({ data: pushRows, error: null }),

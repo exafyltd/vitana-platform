@@ -1,0 +1,21 @@
+ok    AWS-PROD-DEPLOY-AUTOPILOT-EXECUTOR.yml [deploy-config] does not block
+ok    AWS-PROD-DEPLOY-GATEWAY.yml [deploy-config] does not block
+ok    AWS-STAGE-CUTOVER.yml [deploy-config] does not block
+ok    AWS-STAGE-DEPLOY-GATEWAY.yml [deploy-config] does not block
+BLOCK AWS-STAGE-DEPLOY-KIRO-RUNNER.yml [governance-signal-write] blocks until the owner lists it in STAGING_CUTOVER_IMPACT_ACCEPTED
+ok    CRON-SHADOW-COMPARISON-REPORT.yml [staging-read-probe] does not block
+BLOCK DEV-AUTOPILOT-IMPACT.yml [governance-signal-write] blocks until the owner lists it in STAGING_CUTOVER_IMPACT_ACCEPTED
+BLOCK DEV-AUTOPILOT.yml [governance-signal-write] blocks until the owner lists it in STAGING_CUTOVER_IMPACT_ACCEPTED
+BLOCK E2E-ORB-MONITOR.yml [governance-signal-write] blocks until the owner lists it in STAGING_CUTOVER_IMPACT_ACCEPTED
+BLOCK E2E-TEST-RUN.yml [governance-signal-write] blocks until the owner lists it in STAGING_CUTOVER_IMPACT_ACCEPTED
+ok    EXERCISE-STAGING-SHADOW-CORPUS.yml [staging-scoped-write] does not block
+ok    EXERCISE-STAGING-SHADOW.yml [staging-scoped-write] does not block
+ok    MORNING-SYSTEM-HEALTH-CHECK.yml [staging-read-probe] does not block
+ok    OPS-TOGGLE-FLOW-V3-STAGING.yml [staging-scoped-write] does not block
+BLOCK PLAN-SPAR.yml [governance-ledger-write] blocks until PLAN_SPAR_GATEWAY_URL=https://gateway.vitanaland.com
+BLOCK REUSABLE-NOTIFY.yml [governance-signal-write] blocks until the owner lists it in STAGING_CUTOVER_IMPACT_ACCEPTED
+BLOCK SCREEN-LOAD-TIMING.yml [governance-signal-write] blocks until the owner lists it in STAGING_CUTOVER_IMPACT_ACCEPTED
+ok    SET-STAGING-TENANT-CONSENT.yml [staging-scoped-write] does not block
+BLOCK VTID-ALLOCATE.yml [governance-ledger-write] blocks until PLAN_SPAR_GATEWAY_URL=https://gateway.vitanaland.com
+suites: 447 (plane-neutral 364, schema-dependent 37, needs-review 46); active lanes 70, active needs-review 8
+flip BLOCKED (17)

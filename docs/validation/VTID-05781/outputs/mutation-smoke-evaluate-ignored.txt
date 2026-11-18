@@ -1,0 +1,6 @@
+# mutation smoke-evaluate-ignored: scripts/aws/staging-cutover-smoke.mjs
+# replaced:     return { problems: ev.problems, status: res.status };
+# with:         return { problems: [], status: res.status };
+not ok 26 - smoke: a failing check is retried, then fails the run (cold start vs. real failure)
+# pass 26
+# fail 1

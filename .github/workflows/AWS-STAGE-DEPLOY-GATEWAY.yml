@@ -1360,6 +1360,10 @@ jobs:
         env:
           DATA_BACKEND: ${{ inputs.data_backend || 'keep' }}
           DATA_BACKEND_AURORA_URL_SECRET_ARN: ${{ vars.SUPABASE_URL_AURORA_PROXY_STAGING_ARN }}
+          # >>> VTID-05781 STAGING_DATA_PLANE (unset/shared = this step exactly as before)
+          STAGING_DATA_PLANE: ${{ vars.STAGING_DATA_PLANE }}
+          STAGING_CUTOVER_APPROVED: ${{ vars.STAGING_CUTOVER_APPROVED }}
+          # <<< VTID-05781
         run: |
           set -e
           NEW_DEF="$(cat "$RUNNER_TEMP/new-task-def.json")"
@@ -1369,9 +1373,20 @@ jobs:
           elif [ "$DATA_BACKEND" != keep ]; then
             echo "::error::data_backend=$DATA_BACKEND needs $DB_SCRIPT, which this commit predates"; exit 1
           fi
+          # >>> VTID-05781 STAGING_DATA_PLANE (unset/shared and an unmarked task definition = nothing runs here)
+          if [ "${STAGING_DATA_PLANE:-shared}" != shared ] || printf '%s' "$NEW_DEF" | grep -q '"STAGING_DATA_PLANE"'; then
+            [ "${STAGING_DATA_PLANE:-shared}" = shared ] || [ "$DATA_BACKEND" = keep ] || { echo "::error::STAGING_DATA_PLANE=isolated needs data_backend=keep"; exit 1; }
+            NEW_DEF=$(printf '%s' "$NEW_DEF" | bash scripts/aws/staging-cutover-select.sh --service gateway)
+          fi
+          # <<< VTID-05781
           # VTID-05023 gate: refuse to register a revision that still binds an Aurora name in ANY container, env or secrets.
           AURORA_LEAK_JQ='[ .containerDefinitions[] | ((.environment // [])[], (.secrets // [])[]) | .name | select(startswith("AURORA_")) ] | unique | join(" ")'
           LEAK=$(printf '%s' "$NEW_DEF" | jq -r "$AURORA_LEAK_JQ")
+          # >>> VTID-05781 STAGING_DATA_PLANE (isolated only: AURORA_* secrets on staging-db ARNs pass the gate; isolatedAuroraLeaks)
+          if [ "${STAGING_DATA_PLANE:-shared}" = isolated ]; then
+            LEAK=$(printf '%s' "$NEW_DEF" | node --input-type=module -e "import fs from 'node:fs'; import { isolatedAuroraLeaks } from './scripts/aws/staging-cutover-taskdef.mjs'; process.stdout.write(isolatedAuroraLeaks(JSON.parse(fs.readFileSync(0, 'utf8'))).join(' '))")
+          fi
+          # <<< VTID-05781
           if [ -n "$LEAK" ]; then
             echo "::error::refusing to register: Aurora names still bound on the task definition: $LEAK"; exit 1
           fi

@@ -1,0 +1,116 @@
+TAP version 13
+# Subtest: the stack is a product-account CloudFormation template with the resources of design.md §4
+ok 1 - the stack is a product-account CloudFormation template with the resources of design.md §4
+  ---
+  duration_ms: 1.421683
+  type: 'test'
+  ...
+# Subtest: capacity defaults are option A (min 0 ACU, auto-pause 300 s, max 2 ACU) and max 2 ACU is a hard cap
+ok 2 - capacity defaults are option A (min 0 ACU, auto-pause 300 s, max 2 ACU) and max 2 ACU is a hard cap
+  ---
+  duration_ms: 0.18447
+  type: 'test'
+  ...
+# Subtest: role and boundary carry the same statements; the role has the boundary attached
+ok 3 - role and boundary carry the same statements; the role has the boundary attached
+  ---
+  duration_ms: 0.330297
+  type: 'test'
+  ...
+# Subtest: trust: GitHub OIDC only, this repository, main only, audience sts
+ok 4 - trust: GitHub OIDC only, this repository, main only, audience sts
+  ---
+  duration_ms: 0.117986
+  type: 'test'
+  ...
+# Subtest: staging: create, modify, Data API and staging secrets are allowed; create needs the staging tag
+ok 5 - staging: create, modify, Data API and staging secrets are allowed; create needs the staging tag
+  ---
+  duration_ms: 3.239972
+  type: 'test'
+  ...
+# Subtest: any cluster other than vitana-aurora-staging cannot be created or changed
+ok 6 - any cluster other than vitana-aurora-staging cannot be created or changed
+  ---
+  duration_ms: 0.594409
+  type: 'test'
+  ...
+# Subtest: every production resource is denied explicitly, in the role and in the boundary
+not ok 7 - every production resource is denied explicitly, in the role and in the boundary
+  ---
+  duration_ms: 0.565037
+  type: 'test'
+  location: '<repo>/scripts/ci/staging-db/stack.test.mjs:94:1'
+  failureType: 'testCodeFailure'
+  error: 'rds:ModifyDBCluster arn:aws:rds:eu-central-1:472838866351:cluster:vitana-aurora-prod must be an explicit Deny'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: false
+  operator: '=='
+  stack: |-
+    TestContext.<anonymous> (file://<repo>/scripts/ci/staging-db/stack.test.mjs:107:39)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: deletes are denied everywhere, staging included (deletion stays an owner action)
+ok 8 - deletes are denied everywhere, staging included (deletion stays an owner action)
+  ---
+  duration_ms: 0.138767
+  type: 'test'
+  ...
+# Subtest: no IAM change is possible, except the RDS service-linked role
+ok 9 - no IAM change is possible, except the RDS service-linked role
+  ---
+  duration_ms: 0.683268
+  type: 'test'
+  ...
+# Subtest: no write to ECS, EC2 or any other service: the role only creates and loads the staging cluster
+ok 10 - no write to ECS, EC2 or any other service: the role only creates and loads the staging cluster
+  ---
+  duration_ms: 0.724901
+  type: 'test'
+  ...
+# Subtest: KMS: own key, rotated, retained; role use only through RDS and Secrets Manager
+ok 11 - KMS: own key, rotated, retained; role use only through RDS and Secrets Manager
+  ---
+  duration_ms: 0.207642
+  type: 'test'
+  ...
+# Subtest: network isolation: the database SG admits 5432 only from the staging-only client SG
+ok 12 - network isolation: the database SG admits 5432 only from the staging-only client SG
+  ---
+  duration_ms: 0.10955
+  type: 'test'
+  ...
+# Subtest: budget alarm: 60 USD a month on tag vitana-env=staging, actual and forecast, to the owner e-mail
+ok 13 - budget alarm: 60 USD a month on tag vitana-env=staging, actual and forecast, to the owner e-mail
+  ---
+  duration_ms: 0.09122
+  type: 'test'
+  ...
+# Subtest: candidate services are optional, at desired count 0, and can only run the -iso task-definition families
+ok 14 - candidate services are optional, at desired count 0, and can only run the -iso task-definition families
+  ---
+  duration_ms: 0.316579
+  type: 'test'
+  ...
+# Subtest: no credential or secret value in the template
+ok 15 - no credential or secret value in the template
+  ---
+  duration_ms: 0.326447
+  type: 'test'
+  ...
+1..15
+# tests 15
+# suites 0
+# pass 14
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 67.378843

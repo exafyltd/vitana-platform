@@ -1,0 +1,89 @@
+#!/usr/bin/env node
+// VTID-05781 test stub for the AWS CLI (scripts/ci/staging-db/cutover-*.test.mjs). Never calls AWS.
+// State lives in $STUB_STATE (a directory): services/<name>.json (one describe-services "services[0]" object each),
+// td/<family>:<rev>.json (task definitions), log (one line per call). Env: STUB_ACCOUNT (default 472838866351),
+// STUB_MISSING_SECRETS (comma list of secret names that cannot be described), STUB_ROLL_FAIL (service whose update
+// leaves rolloutState FAILED), STUB_FAIL_UPDATE (service whose update-service exits 254).
+const fs = require('fs');
+const path = require('path');
+const dir = process.env.STUB_STATE;
+if (!dir) { console.error('STUB_STATE unset'); process.exit(99); }
+const argv = process.argv.slice(2).filter((a, i, all) => !(a === '--region' || all[i - 1] === '--region'));
+fs.appendFileSync(path.join(dir, 'log'), `aws ${argv.join(' ')}\n`);
+const arg = (k) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : undefined; };
+const sub = `${argv[0]} ${argv[1]}`;
+const svcFile = (s) => path.join(dir, 'services', `${s}.json`);
+const tdDir = path.join(dir, 'td');
+fs.mkdirSync(tdDir, { recursive: true });
+const ARN = (fam, rev) => `arn:aws:ecs:eu-central-1:472838866351:task-definition/${fam}:${rev}`;
+const out = (x) => process.stdout.write(typeof x === 'string' ? `${x}\n` : `${JSON.stringify(x)}\n`);
+
+switch (sub) {
+  case 'sts get-caller-identity': out(process.env.STUB_ACCOUNT || '472838866351'); break;
+  case 'secretsmanager describe-secret': {
+    const id = arg('--secret-id');
+    if ((process.env.STUB_MISSING_SECRETS || '').split(',').includes(id)) { console.error('ResourceNotFoundException'); process.exit(254); }
+    out(`arn:aws:secretsmanager:eu-central-1:472838866351:secret:${id}-AbCdEf`);
+    break;
+  }
+  case 'ecs describe-services': {
+    const s = arg('--services');
+    const f = svcFile(s);
+    const svc = fs.existsSync(f) ? JSON.parse(fs.readFileSync(f, 'utf8')) : { serviceName: s, status: 'MISSING', deployments: [] };
+    if (arg('--query') === 'services[0].taskDefinition') out((svc.deployments.find((d) => d.status === 'PRIMARY') || {}).taskDefinition || 'None');
+    else if (arg('--query') === 'services[0].status') out(svc.status);
+    else out({ services: [svc] });
+    break;
+  }
+  case 'ecs describe-task-definition': {
+    const a = arg('--task-definition');
+    const f = path.join(tdDir, `${a.split('/').pop()}.json`);
+    if (!fs.existsSync(f)) { console.error(`no such task definition ${a}`); process.exit(254); }
+    out(JSON.parse(fs.readFileSync(f, 'utf8')));
+    break;
+  }
+  case 'ecs register-task-definition': {
+    const td = JSON.parse(arg('--cli-input-json'));
+    const fam = td.family;
+    const rev = fs.readdirSync(tdDir).filter((x) => x.startsWith(`${fam}:`)).length + 1;
+    const arn = ARN(fam, rev);
+    fs.writeFileSync(path.join(tdDir, `${fam}:${rev}.json`), JSON.stringify({ ...td, taskDefinitionArn: arn, revision: rev }));
+    fs.writeFileSync(path.join(dir, `registered-${fam}.json`), arg('--cli-input-json'));
+    out(arn);
+    break;
+  }
+  case 'ecs update-service': {
+    const s = arg('--service');
+    if (process.env.STUB_FAIL_UPDATE === s) { console.error('ServiceNotFoundException'); process.exit(254); }
+    const f = svcFile(s);
+    if (!fs.existsSync(f)) { console.error('ServiceNotFoundException'); process.exit(254); }
+    const cur = JSON.parse(fs.readFileSync(f, 'utf8'));
+    const td = arg('--task-definition') || cur.deployments.find((d) => d.status === 'PRIMARY').taskDefinition;
+    if (arg('--network-configuration')) cur.networkConfiguration = JSON.parse(arg('--network-configuration'));
+    if (arg('--desired-count') !== undefined) cur.desiredCount = Number(arg('--desired-count'));
+    cur.runningCount = cur.desiredCount;
+    cur.deployments = [{ status: 'PRIMARY', taskDefinition: td, rolloutState: process.env.STUB_ROLL_FAIL === s ? 'FAILED' : 'COMPLETED' }];
+    fs.writeFileSync(f, JSON.stringify(cur));
+    out({});
+    break;
+  }
+  case 'rds describe-db-clusters': {
+    const f = path.join(dir, 'cluster.json');
+    if (!fs.existsSync(f)) { console.error('DBClusterNotFoundFault'); process.exit(254); }
+    out({ DBClusters: [JSON.parse(fs.readFileSync(f, 'utf8'))] });
+    break;
+  }
+  case 'secretsmanager get-secret-value': {
+    const f = path.join(dir, 'secrets', encodeURIComponent(arg('--secret-id')));
+    out(fs.existsSync(f) ? fs.readFileSync(f, 'utf8') : 'unset');
+    break;
+  }
+  case 'secretsmanager put-secret-value': {
+    fs.mkdirSync(path.join(dir, 'secrets'), { recursive: true });
+    const v = arg('--secret-string');
+    fs.writeFileSync(path.join(dir, 'secrets', encodeURIComponent(arg('--secret-id'))), v.startsWith('file://') ? fs.readFileSync(v.slice(7), 'utf8') : v);
+    out({});
+    break;
+  }
+  default: out({});
+}

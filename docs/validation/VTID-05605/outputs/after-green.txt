@@ -1,0 +1,1 @@
+VTID-05331 validateManifest after edit: valid

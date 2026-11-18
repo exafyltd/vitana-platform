@@ -1,0 +1,6 @@
+# VTID-05778 commands.log
+
+Red on main: `services/gateway` Jest, test/loop-catalog.test.ts fails on origin/main at ef17f7ed70 with
+`Expected: 29, Received: 28` (CI, Gateway (Jest, shard 4/4)).
+Fix: one line in services/gateway/specs/loop-catalog-v1.json (GATE-INVARIANTS in L5).
+Local run: not possible from the build session (npm registry unreachable). CI is the record; see the PR checks.

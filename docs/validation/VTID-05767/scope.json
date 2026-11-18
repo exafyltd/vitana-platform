@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-05767",
+  "kind": "feature",
+  "paths": [
+    "scripts/ci/pr-gate/lib.mjs",
+    "scripts/ci/pr-gate/__tests__/**",
+    "docs/validation/VTID-05767/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05767/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}
