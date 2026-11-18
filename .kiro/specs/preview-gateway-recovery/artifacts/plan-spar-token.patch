@@ -1,0 +1,24 @@
+Proposed change to a PROTECTED gate file (.github/workflows/PLAN-SPAR.yml, scripts/collab/protected-gate-files.json).
+Not applied by this plan PR. It lands as its own lane, which needs the owner's instruction naming plan
+`preview-gateway-recovery` plus a vitana-lane-reviewer accept on the PR's current head (collaboration.md §3a, §7b).
+
+Why: the repo secret GATEWAY_SERVICE_TOKEN equals the production Supabase service-role key (staging and production
+gateways bind GATEWAY_SERVICE_TOKEN from vitana/supabase/prod/service-role-key, AWS-STAGE-DEPLOY-GATEWAY.yml:1121,
+and 18 other workflows send it). Binding it on the isolated preview would put a production credential there.
+With this change PLAN-SPAR sends the staging-only preview token when it exists, and while it does, VTID
+allocation from PLAN-SPAR is forced off (official VTIDs stay in the one canonical ledger; plan.md §3).
+
+--- a/.github/workflows/PLAN-SPAR.yml
++++ b/.github/workflows/PLAN-SPAR.yml
+@@ -91,6 +91,10 @@
+         env:
+           GATEWAY_URL: ${{ vars.PLAN_SPAR_GATEWAY_URL || 'https://preview-aws-gateway.vitanaland.com' }}
+-          GATEWAY_SERVICE_TOKEN: ${{ secrets.GATEWAY_SERVICE_TOKEN }}
+-          PLAN_SPAR_ALLOCATE: ${{ vars.PLAN_SPAR_ALLOCATE }}
++          # preview-gateway-recovery: the isolated preview accepts only its staging token (PLAN_SPAR_GATEWAY_TOKEN).
++          GATEWAY_SERVICE_TOKEN: ${{ secrets.PLAN_SPAR_GATEWAY_TOKEN || secrets.GATEWAY_SERVICE_TOKEN }}
++          # Isolated staging never allocates: allocation is off whenever the preview token is in use.
++          PLAN_SPAR_ALLOCATE: ${{ secrets.PLAN_SPAR_GATEWAY_TOKEN == '' && vars.PLAN_SPAR_ALLOCATE || 'false' }}
+           BASE_SHA: ${{ github.event.pull_request.base.sha }}
+
+Rollback: revert the commit, or delete the repo secret PLAN_SPAR_GATEWAY_TOKEN (both lines then fall back to today's values).

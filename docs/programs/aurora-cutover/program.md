@@ -4,7 +4,8 @@ title: Supabase to Aurora cutover
 status: active
 priority: 3
 repos: [vitana-platform, vitana-v1]
-specs: []
+specs:
+  - vitana-platform:preview-gateway-recovery
 docs:
   - vitana-platform:docs/SUPABASE-TO-AURORA-MIGRATION-PLAN.md
   - vitana-platform:docs/AURORA-MIGRATION-SCOPE.md
@@ -21,4 +22,4 @@ Programme registry entry (VTID-05215). Links only; the plan and runbook are the 
 - Plan: `vitana-platform:docs/SUPABASE-TO-AURORA-MIGRATION-PLAN.md`
 - Runbook: `vitana-platform:docs/AURORA-CUTOVER-RUNBOOK-2026-09-20.md`
 - Latest handoff: `vitana-platform:docs/AURORA-CUTOVER-HANDOFF-2026-09-28.md`
-- No `.kiro/specs/` spec yet.
+- `vitana-platform:preview-gateway-recovery` — staging-only recovery of the isolated preview gateway (vitana-gateway-preview) on Aurora staging for plan sparring; allocation stays off

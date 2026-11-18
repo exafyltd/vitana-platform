@@ -1,0 +1,42 @@
+{
+  "comment": "Two dedicated roles so the preview carries no production capability. Today vitana-gateway-preview:1 uses vitana-ecs-task-role (the PRODUCTION gateway's task role, vitana-gateway-awsdr:207) and vitana-ecs-task-execution-role (GetSecretValue on every vitana/* and rds!* secret). Created once by an IAM admin; see plan.md §5 step 1.",
+  "vitana-gateway-preview-task-role": {
+    "trust": {
+      "Version": "2012-10-17",
+      "Statement": [{ "Effect": "Allow", "Principal": { "Service": "ecs-tasks.amazonaws.com" }, "Action": "sts:AssumeRole",
+        "Condition": { "StringEquals": { "aws:SourceAccount": "472838866351" } } }]
+    },
+    "attach_managed": ["arn:aws:iam::472838866351:policy/BedrockInvokeAnthropicEU"],
+    "inline": null,
+    "tags": { "Environment": "staging", "Purpose": "preview-sparring" }
+  },
+  "vitana-gateway-preview-execution-role": {
+    "trust": {
+      "Version": "2012-10-17",
+      "Statement": [{ "Effect": "Allow", "Principal": { "Service": "ecs-tasks.amazonaws.com" }, "Action": "sts:AssumeRole",
+        "Condition": { "StringEquals": { "aws:SourceAccount": "472838866351" } } }]
+    },
+    "attach_managed": ["arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"],
+    "inline": {
+      "name": "preview-gateway-secrets",
+      "document": {
+        "Version": "2012-10-17",
+        "Statement": [
+          { "Sid": "PreviewSecretsOnly", "Effect": "Allow", "Action": "secretsmanager:GetSecretValue",
+            "Resource": [
+              "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/gateway/staging/postgrest-service-role-key-*",
+              "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/gateway/staging/postgrest-jwt-secret-*",
+              "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/gateway/staging/preview-sparring-token-*",
+              "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/gateway/staging/internal-token-*",
+              "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/gateway/staging/deepseek-api-key-*",
+              "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/gateway/PLAN_SPARRING_GITHUB_TOKEN-*"
+            ] },
+          { "Sid": "DecryptViaSecretsManagerOnly", "Effect": "Allow", "Action": "kms:Decrypt",
+            "Resource": "arn:aws:kms:eu-central-1:472838866351:key/6b83d51e-2c86-407c-ae18-72f187d50e97",
+            "Condition": { "StringEquals": { "kms:ViaService": "secretsmanager.eu-central-1.amazonaws.com" } } }
+        ]
+      }
+    },
+    "tags": { "Environment": "staging", "Purpose": "preview-sparring" }
+  }
+}
