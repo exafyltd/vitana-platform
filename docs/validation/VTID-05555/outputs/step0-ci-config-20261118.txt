@@ -1,0 +1,8 @@
+# Step 0: the central CI files running on GitLab, read 2026-11-18 ~17:20Z (glab api GET, read only)
+vitana/vitana-platform ci_config_path: platform.gitlab-ci.yml@vitana/ci-config:main
+vitana/vitana-v1 ci_config_path: v1-delivery.gitlab-ci.yml@vitana/ci-config:main
+vitana/ci-config main fe15fa71fdadca6dcb77e931b47c9cfe7ae33ac8 2026-11-18T13:00:39.000+00:00 | vitana-eng: sync platform.gitlab-ci.yml from infra/gitlab-engineering/ci (gitlab-settings)
+platform.gitlab-ci.yml ci-config:main sha256 d4ac647ae54f6f177d66af5b6a2c79bf289db7187602034caaf566d2faf904f3 | git main d8b8a8c5e0 infra/gitlab-engineering/ci/platform.gitlab-ci.yml sha256 d4ac647ae54f6f177d66af5b6a2c79bf289db7187602034caaf566d2faf904f3 | identical
+v1-delivery.gitlab-ci.yml ci-config:main sha256 bc10acf50854975c7cf15bf8008e01316bc1bfcf87ee73910efc305ea0658ead | git main d8b8a8c5e0 infra/gitlab-engineering/ci/v1-delivery.gitlab-ci.yml sha256 bc10acf50854975c7cf15bf8008e01316bc1bfcf87ee73910efc305ea0658ead | identical
+staging-gateway-deploy.gitlab-ci.yml ci-config:main sha256 2246044ab6447d5d72aee079bf1f0148dc176ea83669193c880461cd9cbadbe5 | git main d8b8a8c5e0 infra/gitlab-engineering/ci/staging-gateway-deploy.gitlab-ci.yml sha256 2246044ab6447d5d72aee079bf1f0148dc176ea83669193c880461cd9cbadbe5 | identical
+Note: plan §6 step 0 asked the owner to paste the corrected host copy by hand. Milestone 2 lane settings replaced that: the sync (scripts/eng/gitlab-settings.mjs) commits these files from git to vitana/ci-config, so the running file is the git file.

@@ -1,0 +1,14 @@
+{
+  "vtid": "VTID-05555",
+  "kind": "infra",
+  "paths": [
+    "docs/validation/VTID-05555/**",
+    "infra/gitlab-engineering/host/ci-platform.yml",
+    "infra/gitlab-engineering/host/ci-v1.yml",
+    "infra/gitlab-engineering/RUNBOOK.md",
+    ".kiro/specs/eng-gitlab-m1/lanes/gitlab-verify.md"
+  ],
+  "sparring_record": "docs/validation/VTID-05544/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}
