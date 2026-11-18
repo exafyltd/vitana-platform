@@ -36,6 +36,7 @@ specs:
   - vitana-platform:native-wave2-wallet-r2
   - vitana-platform:native-wave3-release
   - vitana-platform:native-wave3-release-r2
+  - vitana-platform:v1-expo-deps
 docs:
   - vitana-v1:docs/programs/native-app/NATIVE-APP-PLAN.md
   - vitana-v1:docs/programs/native-app/EXTRACTION-ANALYSIS.md
