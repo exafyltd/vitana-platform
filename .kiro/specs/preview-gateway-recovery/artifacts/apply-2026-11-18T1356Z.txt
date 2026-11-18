@@ -1,0 +1,15 @@
+# Live restore APPLIED on vitana-aurora-staging / vitana, 2026-11-18T13:56:32Z, by IAM user
+# arn:aws:iam::472838866351:user/j.tadic@vitanaland.com, pinned commit 9fa0d390 (archive sha256 1b1214da…80ad8,
+# 12/12 files OK), psql 16.15. Read-only precheck re-run immediately before: ok, pre-state vitana_governance_owner||.
+# apply exit=0. State file and full log stored in s3://vitana-recovery-transfer-472838866351/.
+state file: {"created_roles":"vitana_governance_owner","revoke_memberships":"","revoke_usage":"",
+             "recorded_before_apply_at":"2026-11-18T13:56:32Z","applied_by":"arn:aws:iam::472838866351:user/j.tadic@vitanaland.com"}
+post-checks:
+tables|plan_sparring_config,plan_sparring_sessions,plan_sparring_shadow_log,pm_digests,pm_lease,vtid_ledger
+gate_trigger|1
+plan_sparring_config_mode|log
+system_controls_absent|t
+authenticator_member_of|anon,authenticated,service_role
+vtid_ledger_rows|0
+# PostgREST (vitana-postgrest-aurora-staging:20) reloaded on NOTIFY, CloudWatch /ecs/vitana-postgrest-aurora-staging:
+# 18/Nov/2026:13:56:33 +0000: Schema cache loaded 6 Relations, 0 Relationships, 6 Functions, ... (same as rehearsal E)
