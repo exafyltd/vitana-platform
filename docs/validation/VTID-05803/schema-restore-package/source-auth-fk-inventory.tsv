@@ -1,147 +1,147 @@
-conname	src_table	src_cols	ref_table	ref_cols	confupdtype	confdeltype	condeferrable	condeferred	def
-access_audit_log_actor_user_id_fkey	public.access_audit_log	{actor_user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (actor_user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-account_deletion_requests_user_id_fkey	public.account_deletion_requests	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-admin_proactive_settings_updated_by_fkey	public.admin_proactive_settings	{updated_by}	auth.users	{id}	a	n	f	f	FOREIGN KEY (updated_by) REFERENCES auth.users(id) ON DELETE SET NULL
-ai_connection_grants_user_id_fkey	public.ai_connection_grants	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-ai_conversations_user_id_fkey	public.ai_conversations	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-ai_memory_user_id_fkey	public.ai_memory	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-analytics_celebrate_events_user_id_fkey	public.analytics_celebrate_events	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-api_integrations_created_by_fkey	public.api_integrations	{created_by}	auth.users	{id}	a	a	f	f	FOREIGN KEY (created_by) REFERENCES auth.users(id)
-api_test_logs_triggered_by_fkey	public.api_test_logs	{triggered_by}	auth.users	{id}	a	a	f	f	FOREIGN KEY (triggered_by) REFERENCES auth.users(id)
-app_users_user_id_fkey	public.app_users	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-apple_account_credentials_user_id_fkey	public.apple_account_credentials	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-automation_rules_created_by_fkey	public.automation_rules	{created_by}	auth.users	{id}	a	n	f	f	FOREIGN KEY (created_by) REFERENCES auth.users(id) ON DELETE SET NULL
-automation_rules_user_id_fkey	public.automation_rules	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-autopilot_actions_user_id_fkey	public.autopilot_actions	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-autopilot_recommendations_user_id_fkey	public.autopilot_recommendations	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-bookmarked_items_user_id_fkey	public.bookmarked_items	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-business_packages_creator_id_fkey	public.business_packages	{creator_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (creator_id) REFERENCES auth.users(id) ON DELETE CASCADE
-calendar_external_busy_user_id_fkey	public.calendar_external_busy	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-calendar_feed_tokens_user_id_fkey	public.calendar_feed_tokens	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-calendar_google_links_user_id_fkey	public.calendar_google_links	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-calendar_google_sync_user_id_fkey	public.calendar_google_sync	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-calendar_push_links_user_id_fkey	public.calendar_push_links	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-calendar_push_targets_user_id_fkey	public.calendar_push_targets	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-campaigns_user_id_fkey	public.campaigns	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-cj_orders_user_id_fkey	public.cj_orders	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-community_live_streams_created_by_fkey	public.community_live_streams	{created_by}	auth.users	{id}	a	c	f	f	FOREIGN KEY (created_by) REFERENCES auth.users(id) ON DELETE CASCADE
-community_search_history_viewer_user_id_fkey	public.community_search_history	{viewer_user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (viewer_user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-companion_messages_ledger_user_id_fkey	public.companion_messages_ledger	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-companion_preferences_user_id_fkey	public.companion_preferences	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-connected_app_settings_user_id_fkey	public.connected_app_settings	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-connection_requests_from_user_id_fkey	public.connection_requests	{from_user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (from_user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-connection_requests_to_user_id_fkey	public.connection_requests	{to_user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (to_user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-consents_user_id_fkey	public.consents	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-contacts_contact_user_id_fkey	public.contacts	{contact_user_id}	auth.users	{id}	a	n	f	f	FOREIGN KEY (contact_user_id) REFERENCES auth.users(id) ON DELETE SET NULL
-contacts_user_id_fkey	public.contacts	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-content_reports_reporter_user_id_fkey	public.content_reports	{reporter_user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (reporter_user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-content_reports_reviewed_by_fkey	public.content_reports	{reviewed_by}	auth.users	{id}	a	n	f	f	FOREIGN KEY (reviewed_by) REFERENCES auth.users(id) ON DELETE SET NULL
-contradiction_flags_user_id_fkey	public.contradiction_flags	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-curated_memories_user_id_fkey	public.curated_memories	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-daily_matches_matched_user_id_fkey	public.daily_matches	{matched_user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (matched_user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-daily_matches_user_id_fkey	public.daily_matches	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-daily_recompute_runs_user_id_fkey	public.daily_recompute_runs	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-distribution_channels_user_id_fkey	public.distribution_channels	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-distribution_posts_user_id_fkey	public.distribution_posts	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-event_attendees_invited_by_fkey	public.event_attendees	{invited_by}	auth.users	{id}	a	n	f	f	FOREIGN KEY (invited_by) REFERENCES auth.users(id) ON DELETE SET NULL
-event_co_creators_added_by_fkey	public.event_co_creators	{added_by}	auth.users	{id}	a	n	f	f	FOREIGN KEY (added_by) REFERENCES auth.users(id) ON DELETE SET NULL
-event_co_creators_user_id_fkey	public.event_co_creators	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-event_game_participants_user_id_fkey	public.event_game_participants	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-event_game_points_user_id_fkey	public.event_game_points	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-event_recommendations_user_id_fkey	public.event_recommendations	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-event_ticket_purchases_buyer_id_fkey	public.event_ticket_purchases	{buyer_id}	auth.users	{id}	a	n	f	f	FOREIGN KEY (buyer_id) REFERENCES auth.users(id) ON DELETE SET NULL
-event_ticket_purchases_checked_in_by_fkey	public.event_ticket_purchases	{checked_in_by}	auth.users	{id}	a	n	f	f	FOREIGN KEY (checked_in_by) REFERENCES auth.users(id) ON DELETE SET NULL
-event_ticket_scans_scanned_by_fkey	public.event_ticket_scans	{scanned_by}	auth.users	{id}	a	n	f	f	FOREIGN KEY (scanned_by) REFERENCES auth.users(id) ON DELETE SET NULL
-feedback_tickets_rolled_back_by_fkey	public.feedback_tickets	{rolled_back_by}	auth.users	{id}	a	a	f	f	FOREIGN KEY (rolled_back_by) REFERENCES auth.users(id)
-fk_thread_participants_user_id	public.thread_participants	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-global_community_events_moderated_by_fkey	public.global_community_events	{moderated_by}	auth.users	{id}	a	n	f	f	FOREIGN KEY (moderated_by) REFERENCES auth.users(id) ON DELETE SET NULL
-global_community_group_members_user_id_fkey	public.global_community_group_members	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-global_community_groups_moderated_by_fkey	public.global_community_groups	{moderated_by}	auth.users	{id}	a	n	f	f	FOREIGN KEY (moderated_by) REFERENCES auth.users(id) ON DELETE SET NULL
-group_recommendations_user_id_fkey	public.group_recommendations	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-handle_aliases_user_id_fkey	public.handle_aliases	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-identities_user_id_fkey	auth.identities	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-intent_disputes_raised_by_fkey	public.intent_disputes	{raised_by}	auth.users	{id}	a	c	f	f	FOREIGN KEY (raised_by) REFERENCES auth.users(id) ON DELETE CASCADE
-intent_supply_seeded_candidate_user_id_fkey	public.intent_supply_seeded	{candidate_user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (candidate_user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-journey_session_updates_user_id_fkey	public.journey_session_updates	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-lab_test_orders_user_id_fkey	public.lab_test_orders	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-lab_test_results_user_id_fkey	public.lab_test_results	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-life_compass_user_id_fkey	public.life_compass	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-live_stream_subscribers_user_id_fkey	public.live_stream_subscribers	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-mcp_tool_executions_executed_by_fkey	public.mcp_tool_executions	{executed_by}	auth.users	{id}	a	n	f	f	FOREIGN KEY (executed_by) REFERENCES auth.users(id) ON DELETE SET NULL
-media_content_user_id_fkey	public.media_content	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-memory_embeddings_user_id_fkey	public.memory_embeddings	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-memory_events_user_id_fkey	public.memory_events	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-messages_recipient_id_fkey	public.messages	{recipient_id}	auth.users	{id}	a	n	f	f	FOREIGN KEY (recipient_id) REFERENCES auth.users(id) ON DELETE SET NULL
-messages_sender_id_fkey	public.messages	{sender_id}	auth.users	{id}	a	n	f	f	FOREIGN KEY (sender_id) REFERENCES auth.users(id) ON DELETE SET NULL
-mfa_factors_user_id_fkey	auth.mfa_factors	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-mfa_recovery_code_sets_user_id_fkey	auth.mfa_recovery_code_sets	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-notifications_user_id_fkey	public.notifications	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-oauth_authorizations_user_id_fkey	auth.oauth_authorizations	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-oauth_consents_user_id_fkey	auth.oauth_consents	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-onboarding_coach_decisions_user_id_fkey	public.onboarding_coach_decisions	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-onboarding_coach_state_user_id_fkey	public.onboarding_coach_state	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-onboarding_touch_ledger_user_id_fkey	public.onboarding_touch_ledger	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-one_time_tokens_user_id_fkey	auth.one_time_tokens	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-package_purchases_buyer_id_fkey	public.package_purchases	{buyer_id}	auth.users	{id}	a	n	f	f	FOREIGN KEY (buyer_id) REFERENCES auth.users(id) ON DELETE SET NULL
-plan_adherence_logs_user_id_fkey	public.plan_adherence_logs	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-podcast_show_subscriptions_user_id_fkey	public.podcast_show_subscriptions	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-post_analytics_user_id_fkey	public.post_analytics	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-proactive_context_cache_user_id_fkey	public.proactive_context_cache	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-proactive_engagement_user_id_fkey	public.proactive_engagement	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-profile_posts_user_id_fkey	public.profile_posts	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-profiles_user_id_fkey	public.profiles	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-provider_appointments_user_id_fkey	public.provider_appointments	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-provider_notes_user_id_fkey	public.provider_notes	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-reseller_profiles_user_id_fkey	public.reseller_profiles	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-retrieval_traces_actor_user_id_fkey	public.retrieval_traces	{actor_user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (actor_user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-role_sessions_user_id_fkey	public.role_sessions	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-scheduled_posts_user_id_fkey	public.scheduled_posts	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-scim_users_user_id_fkey	auth.scim_users	{user_id}	auth.users	{id}	a	n	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE SET NULL
-sessions_user_id_fkey	auth.sessions	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-templates_user_id_fkey	public.templates	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-timeline_learning_prefs_user_id_fkey	public.timeline_learning_prefs	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-user_active_days_user_id_fkey	public.user_active_days	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-user_active_role_user_id_fkey	public.user_active_role	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-user_active_roles_user_id_fkey	public.user_active_roles	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-user_activity_log_user_id_fkey	public.user_activity_log	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-user_api_keys_user_id_fkey	public.user_api_keys	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-user_context_cache_user_id_fkey	public.user_context_cache	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-user_discount_codes_user_id_fkey	public.user_discount_codes	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-user_enrichment_cards_user_id_fkey	public.user_enrichment_cards	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-user_feature_introductions_user_id_fkey	public.user_feature_introductions	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-user_feedback_reports_user_id_fkey	public.user_feedback_reports	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-user_follows_follower_id_fkey	public.user_follows	{follower_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (follower_id) REFERENCES auth.users(id) ON DELETE CASCADE
-user_follows_following_id_fkey	public.user_follows	{following_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (following_id) REFERENCES auth.users(id) ON DELETE CASCADE
-user_guided_journey_state_user_id_fkey	public.user_guided_journey_state	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-user_health_plans_user_id_fkey	public.user_health_plans	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-user_integrations_user_id_fkey	public.user_integrations	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-user_intent_cover_library_user_id_fkey	public.user_intent_cover_library	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-user_intents_requester_user_id_fkey	public.user_intents	{requester_user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (requester_user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-user_interests_user_id_fkey	public.user_interests	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-user_journey_foundation_user_id_fkey	public.user_journey_foundation	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-user_journey_overrides_user_id_fkey	public.user_journey_overrides	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-user_journey_user_id_fkey	public.user_journey	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-user_memory_metadata_user_id_fkey	public.user_memory_metadata	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-user_nudge_state_user_id_fkey	public.user_nudge_state	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-user_permitted_roles_granted_by_fkey	public.user_permitted_roles	{granted_by}	auth.users	{id}	a	n	f	f	FOREIGN KEY (granted_by) REFERENCES auth.users(id) ON DELETE SET NULL
-user_permitted_roles_user_id_fkey	public.user_permitted_roles	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-user_preferences_user_id_fkey	public.user_preferences	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-user_proactive_pause_user_id_fkey	public.user_proactive_pause	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-user_proactive_touches_user_id_fkey	public.user_proactive_touches	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-user_profiler_version_user_id_fkey	public.user_profiler_version	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-user_reputation_user_id_fkey	public.user_reputation	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-user_roles_granted_by_fkey	public.user_roles	{granted_by}	auth.users	{id}	a	a	f	f	FOREIGN KEY (granted_by) REFERENCES auth.users(id)
-user_roles_user_id_fkey	public.user_roles	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-user_routines_user_id_fkey	public.user_routines	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-user_session_summaries_user_id_fkey	public.user_session_summaries	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-user_wellness_interests_user_id_fkey	public.user_wellness_interests	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-vitana_index_baseline_survey_user_id_fkey	public.vitana_index_baseline_survey	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-vitana_index_config_created_by_fkey	public.vitana_index_config	{created_by}	auth.users	{id}	a	n	f	f	FOREIGN KEY (created_by) REFERENCES auth.users(id) ON DELETE SET NULL
-vitana_pillar_agent_outputs_user_id_fkey	public.vitana_pillar_agent_outputs	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-vouchers_redeemed_by_user_id_fkey	public.vouchers	{redeemed_by_user_id}	auth.users	{id}	a	n	f	f	FOREIGN KEY (redeemed_by_user_id) REFERENCES auth.users(id) ON DELETE SET NULL
-wallet_accounts_user_id_fkey	public.wallet_accounts	{user_id}	auth.users	{id}	a	r	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE RESTRICT
-wallet_credits_user_id_fkey	public.wallet_credits	{user_id}	auth.users	{id}	a	r	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE RESTRICT
-wallet_deposits_user_id_fkey	public.wallet_deposits	{user_id}	auth.users	{id}	a	a	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id)
-webauthn_challenges_user_id_fkey	auth.webauthn_challenges	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-webauthn_credentials_user_id_fkey	auth.webauthn_credentials	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
-welcome_team_claims_user_id_fkey	public.welcome_team_claims	{user_id}	auth.users	{id}	a	c	f	f	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+conname	src_schema	src_table	src_cols	src_types	ref_schema	ref_table	ref_cols	ref_types	confupdtype	confdeltype	confmatchtype	convalidated	condeferrable	condeferred	def
+access_audit_log_actor_user_id_fkey	public	access_audit_log	{actor_user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (actor_user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+account_deletion_requests_user_id_fkey	public	account_deletion_requests	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+admin_proactive_settings_updated_by_fkey	public	admin_proactive_settings	{updated_by}	uuid	auth	users	{id}	uuid	a	n	s	True	False	False	FOREIGN KEY (updated_by) REFERENCES auth.users(id) ON DELETE SET NULL
+ai_connection_grants_user_id_fkey	public	ai_connection_grants	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+ai_conversations_user_id_fkey	public	ai_conversations	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+ai_memory_user_id_fkey	public	ai_memory	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+analytics_celebrate_events_user_id_fkey	public	analytics_celebrate_events	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+api_integrations_created_by_fkey	public	api_integrations	{created_by}	uuid	auth	users	{id}	uuid	a	a	s	True	False	False	FOREIGN KEY (created_by) REFERENCES auth.users(id)
+api_test_logs_triggered_by_fkey	public	api_test_logs	{triggered_by}	uuid	auth	users	{id}	uuid	a	a	s	True	False	False	FOREIGN KEY (triggered_by) REFERENCES auth.users(id)
+app_users_user_id_fkey	public	app_users	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+apple_account_credentials_user_id_fkey	public	apple_account_credentials	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+automation_rules_created_by_fkey	public	automation_rules	{created_by}	uuid	auth	users	{id}	uuid	a	n	s	True	False	False	FOREIGN KEY (created_by) REFERENCES auth.users(id) ON DELETE SET NULL
+automation_rules_user_id_fkey	public	automation_rules	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+autopilot_actions_user_id_fkey	public	autopilot_actions	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+autopilot_recommendations_user_id_fkey	public	autopilot_recommendations	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+bookmarked_items_user_id_fkey	public	bookmarked_items	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+business_packages_creator_id_fkey	public	business_packages	{creator_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (creator_id) REFERENCES auth.users(id) ON DELETE CASCADE
+calendar_external_busy_user_id_fkey	public	calendar_external_busy	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+calendar_feed_tokens_user_id_fkey	public	calendar_feed_tokens	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+calendar_google_links_user_id_fkey	public	calendar_google_links	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+calendar_google_sync_user_id_fkey	public	calendar_google_sync	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+calendar_push_links_user_id_fkey	public	calendar_push_links	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+calendar_push_targets_user_id_fkey	public	calendar_push_targets	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+campaigns_user_id_fkey	public	campaigns	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+cj_orders_user_id_fkey	public	cj_orders	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+community_live_streams_created_by_fkey	public	community_live_streams	{created_by}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (created_by) REFERENCES auth.users(id) ON DELETE CASCADE
+community_search_history_viewer_user_id_fkey	public	community_search_history	{viewer_user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (viewer_user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+companion_messages_ledger_user_id_fkey	public	companion_messages_ledger	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+companion_preferences_user_id_fkey	public	companion_preferences	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+connected_app_settings_user_id_fkey	public	connected_app_settings	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+connection_requests_from_user_id_fkey	public	connection_requests	{from_user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (from_user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+connection_requests_to_user_id_fkey	public	connection_requests	{to_user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (to_user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+consents_user_id_fkey	public	consents	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+contacts_contact_user_id_fkey	public	contacts	{contact_user_id}	uuid	auth	users	{id}	uuid	a	n	s	True	False	False	FOREIGN KEY (contact_user_id) REFERENCES auth.users(id) ON DELETE SET NULL
+contacts_user_id_fkey	public	contacts	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+content_reports_reporter_user_id_fkey	public	content_reports	{reporter_user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (reporter_user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+content_reports_reviewed_by_fkey	public	content_reports	{reviewed_by}	uuid	auth	users	{id}	uuid	a	n	s	True	False	False	FOREIGN KEY (reviewed_by) REFERENCES auth.users(id) ON DELETE SET NULL
+contradiction_flags_user_id_fkey	public	contradiction_flags	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+curated_memories_user_id_fkey	public	curated_memories	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+daily_matches_matched_user_id_fkey	public	daily_matches	{matched_user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (matched_user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+daily_matches_user_id_fkey	public	daily_matches	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+daily_recompute_runs_user_id_fkey	public	daily_recompute_runs	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+distribution_channels_user_id_fkey	public	distribution_channels	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+distribution_posts_user_id_fkey	public	distribution_posts	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+event_attendees_invited_by_fkey	public	event_attendees	{invited_by}	uuid	auth	users	{id}	uuid	a	n	s	True	False	False	FOREIGN KEY (invited_by) REFERENCES auth.users(id) ON DELETE SET NULL
+event_co_creators_added_by_fkey	public	event_co_creators	{added_by}	uuid	auth	users	{id}	uuid	a	n	s	True	False	False	FOREIGN KEY (added_by) REFERENCES auth.users(id) ON DELETE SET NULL
+event_co_creators_user_id_fkey	public	event_co_creators	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+event_game_participants_user_id_fkey	public	event_game_participants	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+event_game_points_user_id_fkey	public	event_game_points	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+event_recommendations_user_id_fkey	public	event_recommendations	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+event_ticket_purchases_buyer_id_fkey	public	event_ticket_purchases	{buyer_id}	uuid	auth	users	{id}	uuid	a	n	s	True	False	False	FOREIGN KEY (buyer_id) REFERENCES auth.users(id) ON DELETE SET NULL
+event_ticket_purchases_checked_in_by_fkey	public	event_ticket_purchases	{checked_in_by}	uuid	auth	users	{id}	uuid	a	n	s	True	False	False	FOREIGN KEY (checked_in_by) REFERENCES auth.users(id) ON DELETE SET NULL
+event_ticket_scans_scanned_by_fkey	public	event_ticket_scans	{scanned_by}	uuid	auth	users	{id}	uuid	a	n	s	True	False	False	FOREIGN KEY (scanned_by) REFERENCES auth.users(id) ON DELETE SET NULL
+feedback_tickets_rolled_back_by_fkey	public	feedback_tickets	{rolled_back_by}	uuid	auth	users	{id}	uuid	a	a	s	True	False	False	FOREIGN KEY (rolled_back_by) REFERENCES auth.users(id)
+global_community_events_moderated_by_fkey	public	global_community_events	{moderated_by}	uuid	auth	users	{id}	uuid	a	n	s	True	False	False	FOREIGN KEY (moderated_by) REFERENCES auth.users(id) ON DELETE SET NULL
+global_community_group_members_user_id_fkey	public	global_community_group_members	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+global_community_groups_moderated_by_fkey	public	global_community_groups	{moderated_by}	uuid	auth	users	{id}	uuid	a	n	s	True	False	False	FOREIGN KEY (moderated_by) REFERENCES auth.users(id) ON DELETE SET NULL
+group_recommendations_user_id_fkey	public	group_recommendations	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+handle_aliases_user_id_fkey	public	handle_aliases	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+identities_user_id_fkey	auth	identities	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+intent_disputes_raised_by_fkey	public	intent_disputes	{raised_by}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (raised_by) REFERENCES auth.users(id) ON DELETE CASCADE
+intent_supply_seeded_candidate_user_id_fkey	public	intent_supply_seeded	{candidate_user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (candidate_user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+journey_session_updates_user_id_fkey	public	journey_session_updates	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+lab_test_orders_user_id_fkey	public	lab_test_orders	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+lab_test_results_user_id_fkey	public	lab_test_results	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+life_compass_user_id_fkey	public	life_compass	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+live_stream_subscribers_user_id_fkey	public	live_stream_subscribers	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+mcp_tool_executions_executed_by_fkey	public	mcp_tool_executions	{executed_by}	uuid	auth	users	{id}	uuid	a	n	s	True	False	False	FOREIGN KEY (executed_by) REFERENCES auth.users(id) ON DELETE SET NULL
+media_content_user_id_fkey	public	media_content	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+memory_embeddings_user_id_fkey	public	memory_embeddings	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+memory_events_user_id_fkey	public	memory_events	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+messages_recipient_id_fkey	public	messages	{recipient_id}	uuid	auth	users	{id}	uuid	a	n	s	True	False	False	FOREIGN KEY (recipient_id) REFERENCES auth.users(id) ON DELETE SET NULL
+messages_sender_id_fkey	public	messages	{sender_id}	uuid	auth	users	{id}	uuid	a	n	s	True	False	False	FOREIGN KEY (sender_id) REFERENCES auth.users(id) ON DELETE SET NULL
+mfa_factors_user_id_fkey	auth	mfa_factors	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+mfa_recovery_code_sets_user_id_fkey	auth	mfa_recovery_code_sets	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+notifications_user_id_fkey	public	notifications	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+oauth_authorizations_user_id_fkey	auth	oauth_authorizations	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+oauth_consents_user_id_fkey	auth	oauth_consents	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+onboarding_coach_decisions_user_id_fkey	public	onboarding_coach_decisions	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+onboarding_coach_state_user_id_fkey	public	onboarding_coach_state	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+onboarding_touch_ledger_user_id_fkey	public	onboarding_touch_ledger	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+one_time_tokens_user_id_fkey	auth	one_time_tokens	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+package_purchases_buyer_id_fkey	public	package_purchases	{buyer_id}	uuid	auth	users	{id}	uuid	a	n	s	True	False	False	FOREIGN KEY (buyer_id) REFERENCES auth.users(id) ON DELETE SET NULL
+plan_adherence_logs_user_id_fkey	public	plan_adherence_logs	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+podcast_show_subscriptions_user_id_fkey	public	podcast_show_subscriptions	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+post_analytics_user_id_fkey	public	post_analytics	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+proactive_context_cache_user_id_fkey	public	proactive_context_cache	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+proactive_engagement_user_id_fkey	public	proactive_engagement	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+profile_posts_user_id_fkey	public	profile_posts	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+profiles_user_id_fkey	public	profiles	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+provider_appointments_user_id_fkey	public	provider_appointments	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+provider_notes_user_id_fkey	public	provider_notes	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+reseller_profiles_user_id_fkey	public	reseller_profiles	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+retrieval_traces_actor_user_id_fkey	public	retrieval_traces	{actor_user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (actor_user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+role_sessions_user_id_fkey	public	role_sessions	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+scheduled_posts_user_id_fkey	public	scheduled_posts	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+scim_users_user_id_fkey	auth	scim_users	{user_id}	uuid	auth	users	{id}	uuid	a	n	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE SET NULL
+sessions_user_id_fkey	auth	sessions	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+templates_user_id_fkey	public	templates	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+fk_thread_participants_user_id	public	thread_participants	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+timeline_learning_prefs_user_id_fkey	public	timeline_learning_prefs	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+user_active_days_user_id_fkey	public	user_active_days	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+user_active_role_user_id_fkey	public	user_active_role	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+user_active_roles_user_id_fkey	public	user_active_roles	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+user_activity_log_user_id_fkey	public	user_activity_log	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+user_api_keys_user_id_fkey	public	user_api_keys	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+user_context_cache_user_id_fkey	public	user_context_cache	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+user_discount_codes_user_id_fkey	public	user_discount_codes	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+user_enrichment_cards_user_id_fkey	public	user_enrichment_cards	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+user_feature_introductions_user_id_fkey	public	user_feature_introductions	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+user_feedback_reports_user_id_fkey	public	user_feedback_reports	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+user_follows_follower_id_fkey	public	user_follows	{follower_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (follower_id) REFERENCES auth.users(id) ON DELETE CASCADE
+user_follows_following_id_fkey	public	user_follows	{following_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (following_id) REFERENCES auth.users(id) ON DELETE CASCADE
+user_guided_journey_state_user_id_fkey	public	user_guided_journey_state	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+user_health_plans_user_id_fkey	public	user_health_plans	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+user_integrations_user_id_fkey	public	user_integrations	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+user_intent_cover_library_user_id_fkey	public	user_intent_cover_library	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+user_intents_requester_user_id_fkey	public	user_intents	{requester_user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (requester_user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+user_interests_user_id_fkey	public	user_interests	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+user_journey_user_id_fkey	public	user_journey	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+user_journey_foundation_user_id_fkey	public	user_journey_foundation	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+user_journey_overrides_user_id_fkey	public	user_journey_overrides	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+user_memory_metadata_user_id_fkey	public	user_memory_metadata	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+user_nudge_state_user_id_fkey	public	user_nudge_state	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+user_permitted_roles_granted_by_fkey	public	user_permitted_roles	{granted_by}	uuid	auth	users	{id}	uuid	a	n	s	True	False	False	FOREIGN KEY (granted_by) REFERENCES auth.users(id) ON DELETE SET NULL
+user_permitted_roles_user_id_fkey	public	user_permitted_roles	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+user_preferences_user_id_fkey	public	user_preferences	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+user_proactive_pause_user_id_fkey	public	user_proactive_pause	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+user_proactive_touches_user_id_fkey	public	user_proactive_touches	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+user_profiler_version_user_id_fkey	public	user_profiler_version	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+user_reputation_user_id_fkey	public	user_reputation	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+user_roles_granted_by_fkey	public	user_roles	{granted_by}	uuid	auth	users	{id}	uuid	a	a	s	True	False	False	FOREIGN KEY (granted_by) REFERENCES auth.users(id)
+user_roles_user_id_fkey	public	user_roles	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+user_routines_user_id_fkey	public	user_routines	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+user_session_summaries_user_id_fkey	public	user_session_summaries	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+user_wellness_interests_user_id_fkey	public	user_wellness_interests	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+vitana_index_baseline_survey_user_id_fkey	public	vitana_index_baseline_survey	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+vitana_index_config_created_by_fkey	public	vitana_index_config	{created_by}	uuid	auth	users	{id}	uuid	a	n	s	True	False	False	FOREIGN KEY (created_by) REFERENCES auth.users(id) ON DELETE SET NULL
+vitana_pillar_agent_outputs_user_id_fkey	public	vitana_pillar_agent_outputs	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+vouchers_redeemed_by_user_id_fkey	public	vouchers	{redeemed_by_user_id}	uuid	auth	users	{id}	uuid	a	n	s	True	False	False	FOREIGN KEY (redeemed_by_user_id) REFERENCES auth.users(id) ON DELETE SET NULL
+wallet_accounts_user_id_fkey	public	wallet_accounts	{user_id}	uuid	auth	users	{id}	uuid	a	r	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE RESTRICT
+wallet_credits_user_id_fkey	public	wallet_credits	{user_id}	uuid	auth	users	{id}	uuid	a	r	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE RESTRICT
+wallet_deposits_user_id_fkey	public	wallet_deposits	{user_id}	uuid	auth	users	{id}	uuid	a	a	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id)
+webauthn_challenges_user_id_fkey	auth	webauthn_challenges	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+webauthn_credentials_user_id_fkey	auth	webauthn_credentials	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
+welcome_team_claims_user_id_fkey	public	welcome_team_claims	{user_id}	uuid	auth	users	{id}	uuid	a	c	s	True	False	False	FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE
