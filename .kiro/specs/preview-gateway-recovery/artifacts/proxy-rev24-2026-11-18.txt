@@ -1,0 +1,8 @@
+# Staging PostgREST proxy moved to revision 24 (2026-11-18), by IAM user j.tadic (not root).
+# proxy-jwt-staging.sh plan: one line changed (PGRST_JWT_SECRET supabase-jwt-secret -> postgrest-jwt-secret).
+# apply: an interrupted first run registered revisions 21-23 (never serving); the second run registered and served 24.
+# Service vitana-postgrest-aurora-proxy: taskDefinition ...:24, runningCount 1, rolloutState COMPLETED.
+# Live binding of revision 24 (postgrest container, PGRST_JWT_SECRET):
+#   arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/gateway/staging/postgrest-jwt-secret-WiEKX3
+# verify (run from the VPC environment): staging service-role key -> HTTP 200 (want 200);
+#   production service-role key -> HTTP 401 (want 401). No key value was printed.
