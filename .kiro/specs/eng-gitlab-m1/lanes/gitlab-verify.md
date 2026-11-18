@@ -1,6 +1,6 @@
 ---
 lane: gitlab-verify
-state: executing
+state: in-review
 next_actor: kiro
 depends_on: [gitlab-infra]
 executor: kiro
@@ -87,3 +87,6 @@ Next: the lane's seat fixes the blocking finding
 
 ### 2026-11-18T17:50Z · kiro-exafy-202611181602-02f5 · in-review → executing
 Fixing the review above. acceptance.md: the top status now gives the real state, AC-1 is PASS and cites outputs/a01-https-20261118.txt, the lint `allow_failure` is stated, and the follow-up lane `v1-expo-deps` is named. Structure test re-run on the reviewed head: 26/26 (outputs/structure-test-12b94e9e93-20261118.txt).
+
+### 2026-11-18T17:52Z · kiro-exafy-202611181602-02f5 · executing → in-review
+MR https://gitlab.vitanaland.com/vitana/vitana-platform/-/merge_requests/62 (vitana/vitana-platform#62). Next: the reviewer agent on the new head.
