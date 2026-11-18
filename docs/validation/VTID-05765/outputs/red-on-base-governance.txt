@@ -1,0 +1,5 @@
+# origin/main bf1cb134e6 code + PR-head governance.test.ts
+    ✓ VTID-05408: a legacy claude review no longer unlocks a protected file (the unlock is retired, not transferred)
+    ✓ VTID-05408: a protected file is refused with NO review supplied too (defense-in-depth, always refuse)
+    ✕ two models on the current head are allowed (4 ms)
+Tests:       1 failed, 46 passed, 47 total

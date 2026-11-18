@@ -1,0 +1,22 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "GitLabGlVerify",
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws:iam::472838866351:oidc-provider/gitlab.vitanaland.com"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "gitlab.vitanaland.com:aud": "aws:verify",
+          "gitlab.vitanaland.com:sub": [
+            "project_path:vitana/vitana-v1:ref_type:branch:ref:main",
+            "project_path:vitana/vitana-platform:ref_type:branch:ref:main"
+          ]
+        }
+      }
+    }
+  ]
+}

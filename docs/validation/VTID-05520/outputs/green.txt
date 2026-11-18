@@ -1,0 +1,461 @@
+
+> test:mt-stack
+> node --test supabase/tests/local-stack/*.test.mjs
+
+TAP version 13
+# Subtest: fixtures
+    # Subtest: tenants T_A and T_B exist with synthetic slugs
+    ok 1 - tenants T_A and T_B exist with synthetic slugs
+      ---
+      duration_ms: 2.639834
+      type: 'test'
+      ...
+    # Subtest: the five users are in the stub auth.users
+    ok 2 - the five users are in the stub auth.users
+      ---
+      duration_ms: 1.111959
+      type: 'test'
+      ...
+    # Subtest: memberships: a_* in T_A, b_* in T_B, ab_dual in both; admins carry the admin role
+    ok 3 - memberships: a_* in T_A, b_* in T_B, ab_dual in both; admins carry the admin role
+      ---
+      duration_ms: 1.175909
+      type: 'test'
+      ...
+    # Subtest: CANARY_A_<uuid> markers sit in representative T_A rows (at least three tables, one a health table) and never in T_B
+    ok 4 - CANARY_A_<uuid> markers sit in representative T_A rows (at least three tables, one a health table) and never in T_B
+      ---
+      duration_ms: 5.289088
+      type: 'test'
+      ...
+    # Subtest: T_B has its own rows in the same tables, marked CANARY_B_
+    ok 5 - T_B has its own rows in the same tables, marked CANARY_B_
+      ---
+      duration_ms: 0.768905
+      type: 'test'
+      ...
+    # Subtest: loading the fixtures again changes nothing
+    ok 6 - loading the fixtures again changes nothing
+      ---
+      duration_ms: 4.345635
+      type: 'test'
+      ...
+    1..6
+ok 1 - fixtures
+  ---
+  duration_ms: 7451.662797
+  type: 'suite'
+  ...
+# Subtest: the lists
+    # Subtest: required-tables.txt: the 18 tenant tables of docs/MULTI-TENANT-PLAN.md section 2, the 5 health tables and user_tenants (24)
+    ok 1 - required-tables.txt: the 18 tenant tables of docs/MULTI-TENANT-PLAN.md section 2, the 5 health tables and user_tenants (24)
+      ---
+      duration_ms: 4.627609
+      type: 'test'
+      ...
+    # Subtest: not-replayable.txt: every entry is a required table with a reason and at least one lane; no duplicates
+    ok 2 - not-replayable.txt: every entry is a required table with a reason and at least one lane; no duplicates
+      ---
+      duration_ms: 0.297718
+      type: 'test'
+      ...
+    # Subtest: replay-skip.json: sorted, unique, each skip has file, reason and error, and the file exists
+    ok 3 - replay-skip.json: sorted, unique, each skip has file, reason and error, and the file exists
+      ---
+      duration_ms: 3.980021
+      type: 'test'
+      ...
+    1..3
+ok 2 - the lists
+  ---
+  duration_ms: 9.977923
+  type: 'suite'
+  ...
+# Subtest: replay of supabase/migrations on PGlite
+    # Subtest: every migration either applies or is a listed skip: no unlisted failure, no stale skip
+    ok 1 - every migration either applies or is a listed skip: no unlisted failure, no stale skip
+      ---
+      duration_ms: 1.523799
+      type: 'test'
+      ...
+    # Subtest: each listed skip still fails with the error line recorded for it
+    ok 2 - each listed skip still fails with the error line recorded for it
+      ---
+      duration_ms: 0.844211
+      type: 'test'
+      ...
+    # Subtest: required tables: present + SKIP (listed) = all, no failure
+    ok 3 - required tables: present + SKIP (listed) = all, no failure
+      ---
+      duration_ms: 18.650006
+      type: 'test'
+      ...
+    1..3
+ok 3 - replay of supabase/migrations on PGlite
+  ---
+  duration_ms: 8262.149234
+  type: 'suite'
+  ...
+# Subtest: createStack
+    # Subtest: without attemptSkipped it reaches the same required-table result and reports the numbers
+    ok 1 - without attemptSkipped it reaches the same required-table result and reports the numbers
+      ---
+      duration_ms: 5588.685453
+      type: 'test'
+      ...
+    # Subtest: a stale not-replayable listing makes createStack throw and name the table
+    ok 2 - a stale not-replayable listing makes createStack throw and name the table
+      ---
+      duration_ms: 5593.750301
+      type: 'test'
+      ...
+    # Subtest: an unlisted missing required table makes createStack throw and name the table
+    ok 3 - an unlisted missing required table makes createStack throw and name the table
+      ---
+      duration_ms: 4394.483369
+      type: 'test'
+      ...
+    1..3
+ok 4 - createStack
+  ---
+  duration_ms: 15577.950799
+  type: 'suite'
+  ...
+# Subtest: docs, workflow and dependency
+    # Subtest: LOCAL-STACK.md reports every listed table as unverified with its reason, states pgTAP is not used and what is not covered
+    ok 1 - LOCAL-STACK.md reports every listed table as unverified with its reason, states pgTAP is not used and what is not covered
+      ---
+      duration_ms: 0.583856
+      type: 'test'
+      ...
+    # Subtest: LOCAL-STACK.md unverified-tables section lists exactly the tables of not-replayable.txt
+    ok 2 - LOCAL-STACK.md unverified-tables section lists exactly the tables of not-replayable.txt
+      ---
+      duration_ms: 0.501206
+      type: 'test'
+      ...
+    # Subtest: LOCAL-STACK.md loader references point at the line that defines the named function
+    ok 3 - LOCAL-STACK.md loader references point at the line that defines the named function
+      ---
+      duration_ms: 0.575374
+      type: 'test'
+      ...
+    # Subtest: MT-LOCAL-STACK.yml runs the suite on PGlite with no Docker, no service container and no secret
+    ok 4 - MT-LOCAL-STACK.yml runs the suite on PGlite with no Docker, no service container and no secret
+      ---
+      duration_ms: 0.401041
+      type: 'test'
+      ...
+    # Subtest: package.json pins @electric-sql/pglite exactly and the lockfile carries that version
+    ok 5 - package.json pins @electric-sql/pglite exactly and the lockfile carries that version
+      ---
+      duration_ms: 0.247106
+      type: 'test'
+      ...
+    1..5
+ok 5 - docs, workflow and dependency
+  ---
+  duration_ms: 2.868004
+  type: 'suite'
+  ...
+# Subtest: isolationReasons (scanner)
+    # Subtest: a policy on a present table is a reason; on another table it is not
+    ok 1 - a policy on a present table is a reason; on another table it is not
+      ---
+      duration_ms: 2.843614
+      type: 'test'
+      ...
+    # Subtest: a tenant helper function is a reason, a function reading user_tenants is a reason, an unrelated one is not
+    ok 2 - a tenant helper function is a reason, a function reading user_tenants is a reason, an unrelated one is not
+      ---
+      duration_ms: 0.477611
+      type: 'test'
+      ...
+    # Subtest: comments are ignored
+    ok 3 - comments are ignored
+      ---
+      duration_ms: 0.303431
+      type: 'test'
+      ...
+    1..3
+ok 6 - isolationReasons (scanner)
+  ---
+  duration_ms: 4.755872
+  type: 'suite'
+  ...
+# Subtest: LOCAL-STACK.md isolation gap
+    # Subtest: the section lists exactly the skipped migrations the scanner finds
+    ok 1 - the section lists exactly the skipped migrations the scanner finds
+      ---
+      duration_ms: 31.309517
+      type: 'test'
+      ...
+    # Subtest: the four migrations the reviewer named are found and listed
+    ok 2 - the four migrations the reviewer named are found and listed
+      ---
+      duration_ms: 33.398804
+      type: 'test'
+      ...
+    # Subtest: each row carries the reasons, and the doc marks claims on the present tables unverified
+    ok 3 - each row carries the reasons, and the doc marks claims on the present tables unverified
+      ---
+      duration_ms: 37.026505
+      type: 'test'
+      ...
+    # Subtest: every present required table is named in the section
+    ok 4 - every present required table is named in the section
+      ---
+      duration_ms: 0.525169
+      type: 'test'
+      ...
+    1..4
+ok 7 - LOCAL-STACK.md isolation gap
+  ---
+  duration_ms: 102.83712
+  type: 'suite'
+  ...
+# Subtest: stub auth schema (Amendment 2, decision 4)
+    # Subtest: holds auth.users, auth.uid(), auth.jwt() and nothing else in schema auth
+    ok 1 - holds auth.users, auth.uid(), auth.jwt() and nothing else in schema auth
+      ---
+      duration_ms: 5.092796
+      type: 'test'
+      ...
+    # Subtest: has the three roles anon, authenticated, service_role
+    ok 2 - has the three roles anon, authenticated, service_role
+      ---
+      duration_ms: 1.650193
+      type: 'test'
+      ...
+    # Subtest: auth.uid() and auth.jwt() read the request claims
+    ok 3 - auth.uid() and auth.jwt() read the request claims
+      ---
+      duration_ms: 5.058234
+      type: 'test'
+      ...
+    1..3
+ok 8 - stub auth schema (Amendment 2, decision 4)
+  ---
+  duration_ms: 2854.372
+  type: 'suite'
+  ...
+# Subtest: one in-process database per call
+    # Subtest: two openDb() calls do not share state
+    ok 1 - two openDb() calls do not share state
+      ---
+      duration_ms: 3081.851189
+      type: 'test'
+      ...
+    1..1
+ok 9 - one in-process database per call
+  ---
+  duration_ms: 3082.437221
+  type: 'suite'
+  ...
+# Subtest: replay
+    # Subtest: lists only top-level .sql files, sorted by name
+    ok 1 - lists only top-level .sql files, sorted by name
+      ---
+      duration_ms: 2.143196
+      type: 'test'
+      ...
+    # Subtest: applies in timestamp order
+    ok 2 - applies in timestamp order
+      ---
+      duration_ms: 1385.61837
+      type: 'test'
+      ...
+    # Subtest: a failing file that is not listed is reported with its name and its error line
+    ok 3 - a failing file that is not listed is reported with its name and its error line
+      ---
+      duration_ms: 1471.033764
+      type: 'test'
+      ...
+    # Subtest: a failed file with BEGIN/COMMIT leaves the session usable and rolls back
+    ok 4 - a failed file with BEGIN/COMMIT leaves the session usable and rolls back
+      ---
+      duration_ms: 1650.674399
+      type: 'test'
+      ...
+    # Subtest: a listed skip is not executed and keeps its reason and error line
+    ok 5 - a listed skip is not executed and keeps its reason and error line
+      ---
+      duration_ms: 1495.411281
+      type: 'test'
+      ...
+    # Subtest: attemptSkipped: a listed file that still fails stays a skip; one that now succeeds is a stale skip
+    ok 6 - attemptSkipped: a listed file that still fails stays a skip; one that now succeeds is a stale skip
+      ---
+      duration_ms: 1465.514377
+      type: 'test'
+      ...
+    # Subtest: a skip entry naming a file that does not exist is reported as a stale skip
+    ok 7 - a skip entry naming a file that does not exist is reported as a stale skip
+      ---
+      duration_ms: 1535.464181
+      type: 'test'
+      ...
+    1..7
+ok 10 - replay
+  ---
+  duration_ms: 9009.008261
+  type: 'suite'
+  ...
+# Subtest: list parsers
+    # Subtest: parseTableList ignores comments and blanks
+    ok 1 - parseTableList ignores comments and blanks
+      ---
+      duration_ms: 0.261241
+      type: 'test'
+      ...
+    # Subtest: parseNotReplayable reads table | reason | lanes
+    ok 2 - parseNotReplayable reads table | reason | lanes
+      ---
+      duration_ms: 0.151325
+      type: 'test'
+      ...
+    # Subtest: parseNotReplayable rejects a line without a reason or lanes
+    ok 3 - parseNotReplayable rejects a line without a reason or lanes
+      ---
+      duration_ms: 0.300227
+      type: 'test'
+      ...
+    1..3
+ok 11 - list parsers
+  ---
+  duration_ms: 1.220899
+  type: 'suite'
+  ...
+# Subtest: required-table gate (Amendment 3)
+    # Subtest: present tables pass; a listed missing table is SKIP with its reason and lanes
+    ok 1 - present tables pass; a listed missing table is SKIP with its reason and lanes
+      ---
+      duration_ms: 3.553939
+      type: 'test'
+      ...
+    # Subtest: an unlisted missing required table fails and names the table
+    ok 2 - an unlisted missing required table fails and names the table
+      ---
+      duration_ms: 1.356791
+      type: 'test'
+      ...
+    # Subtest: a listed table that exists is a stale listing and fails
+    ok 3 - a listed table that exists is a stale listing and fails
+      ---
+      duration_ms: 0.851254
+      type: 'test'
+      ...
+    # Subtest: a listing for a table that is not required fails (the list would never be read)
+    ok 4 - a listing for a table that is not required fails (the list would never be read)
+      ---
+      duration_ms: 0.718111
+      type: 'test'
+      ...
+    1..4
+ok 12 - required-table gate (Amendment 3)
+  ---
+  duration_ms: 1483.007772
+  type: 'suite'
+  ...
+# Subtest: fixtures
+    # Subtest: loadFixtures runs *.sql in name order and is safe to run twice
+    ok 1 - loadFixtures runs *.sql in name order and is safe to run twice
+      ---
+      duration_ms: 1338.348113
+      type: 'test'
+      ...
+    1..1
+ok 13 - fixtures
+  ---
+  duration_ms: 1338.690506
+  type: 'suite'
+  ...
+# Subtest: shim
+    # Subtest: smoke.tap.sql passes: plan, ok, is, isnt, matches, lives_ok, throws_ok, is_empty, results_eq, set_eq, finish
+    ok 1 - smoke.tap.sql passes: plan, ok, is, isnt, matches, lives_ok, throws_ok, is_empty, results_eq, set_eq, finish
+      ---
+      duration_ms: 6.856098
+      type: 'test'
+      ...
+    # Subtest: role switching works: authenticated sees the claims, and the shim stays callable
+    ok 2 - role switching works: authenticated sees the claims, and the shim stays callable
+      ---
+      duration_ms: 2.935591
+      type: 'test'
+      ...
+    # Subtest: negative/failing-assertion.tap.sql fails (the shim does not pass what it should fail)
+    ok 3 - negative/failing-assertion.tap.sql fails (the shim does not pass what it should fail)
+      ---
+      duration_ms: 1.406018
+      type: 'test'
+      ...
+    # Subtest: negative/plan-mismatch.tap.sql fails (the shim does not pass what it should fail)
+    ok 4 - negative/plan-mismatch.tap.sql fails (the shim does not pass what it should fail)
+      ---
+      duration_ms: 1.012928
+      type: 'test'
+      ...
+    # Subtest: negative/plan-mismatch-no-finish.tap.sql fails (the shim does not pass what it should fail)
+    ok 5 - negative/plan-mismatch-no-finish.tap.sql fails (the shim does not pass what it should fail)
+      ---
+      duration_ms: 1.115357
+      type: 'test'
+      ...
+    # Subtest: negative/no-plan.tap.sql fails (the shim does not pass what it should fail)
+    ok 6 - negative/no-plan.tap.sql fails (the shim does not pass what it should fail)
+      ---
+      duration_ms: 1.369613
+      type: 'test'
+      ...
+    # Subtest: negative/sql-error.tap.sql fails (the shim does not pass what it should fail)
+    ok 7 - negative/sql-error.tap.sql fails (the shim does not pass what it should fail)
+      ---
+      duration_ms: 2.044592
+      type: 'test'
+      ...
+    # Subtest: negative/listed-table.tap.sql fails (the shim does not pass what it should fail)
+    ok 8 - negative/listed-table.tap.sql fails (the shim does not pass what it should fail)
+      ---
+      duration_ms: 1.982902
+      type: 'test'
+      ...
+    # Subtest: require_table on a listed table is "not ok", names the reason, and on a present table is "ok"
+    ok 9 - require_table on a listed table is "not ok", names the reason, and on a present table is "ok"
+      ---
+      duration_ms: 4.46442
+      type: 'test'
+      ...
+    1..9
+ok 14 - shim
+  ---
+  duration_ms: 7962.27063
+  type: 'suite'
+  ...
+# Subtest: run-tap.mjs CLI
+    # Subtest: exits 0 and prints PASS on a green file
+    ok 1 - exits 0 and prints PASS on a green file
+      ---
+      duration_ms: 6149.457435
+      type: 'test'
+      ...
+    # Subtest: exits 1 and prints FAIL on a red file, never PASS
+    ok 2 - exits 1 and prints FAIL on a red file, never PASS
+      ---
+      duration_ms: 5948.383269
+      type: 'test'
+      ...
+    1..2
+ok 15 - run-tap.mjs CLI
+  ---
+  duration_ms: 12098.047116
+  type: 'suite'
+  ...
+1..15
+# tests 57
+# suites 15
+# pass 57
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 23979.977191

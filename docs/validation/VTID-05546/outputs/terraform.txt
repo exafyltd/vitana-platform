@@ -1,0 +1,33 @@
+# terraform Terraform v1.17.1 (releases.hashicorp.com, terraform_1.17.1_linux_amd64.zip: sha256sum -c against terraform_1.17.1_SHA256SUMS = OK), 2026-11-05T17:10:12Z
+# scratch dir outside the repo: M1 terraform/main.tf (origin/main, #4692) + host/ files it embeds + fleet-classes.tf; M2 fleet.tf is not on main (waits for M2 fleet)
+$ terraform fmt -check -diff fleet-classes.tf
+exit=0
+$ terraform fmt -check -diff main.tf
+exit=0
+$ terraform init -backend=false -input=false
+- Installed hashicorp/aws v5.100.0 (signed by HashiCorp)
+Terraform has been successfully initialized!
+$ terraform validate
+Success! The configuration is valid.
+
+exit=0
+
+# round 2, 2026-11-05T22:40:08Z: Terraform v1.17.1 (the checksum-verified binary of round 1)
+# scratch dir outside the repo: a copy of infra/gitlab-engineering at df45b674ec + the round-2 change: terraform/main.tf (M1, #4692), monitoring.tf (M2 monitoring, #4710), {fleet.tf,fleet-ami.tf} (M2 fleet, #4716), fleet-classes.tf (this lane), and the host/ files they embed
+$ terraform fmt -check -diff fleet-classes.tf
+exit=0
+$ terraform fmt -check -diff fleet.tf
+exit=0
+$ terraform fmt -check -diff fleet-ami.tf
+exit=0
+$ terraform fmt -check -diff main.tf
+exit=0
+$ terraform fmt -check -diff monitoring.tf
+exit=0
+$ terraform init -backend=false -input=false
+- Installed hashicorp/aws v5.100.0 (signed by HashiCorp)
+Terraform has been successfully initialized!
+$ terraform validate
+Success! The configuration is valid.
+
+exit=0

@@ -1,0 +1,2 @@
+VTID-05277 "PM reports kiro_fallback mode": green
+VTID-05281 "PM reports kiro_fallback mode": green

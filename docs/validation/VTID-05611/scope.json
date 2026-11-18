@@ -1,0 +1,11 @@
+{
+  "vtid": "VTID-05611",
+  "kind": "docs",
+  "paths": [
+    "DATABASE_SCHEMA.md",
+    "docs/validation/VTID-05611/**"
+  ],
+  "sparring_record": ".kiro/specs/mt-schema-queue-followup-r2/sparring/verdict.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

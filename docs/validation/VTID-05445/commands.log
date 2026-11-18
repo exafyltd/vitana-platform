@@ -1,0 +1,10 @@
+# VTID-05445 (mt-guardrails-r2/generated-inventories), session kiro-hotmail-202611061752-cc1f, base origin/main e9168deed9
+$ ln -s .tools/pglite/node_modules /projects/sandbox/node_modules   # sandbox only, resolves @electric-sql/pglite for the worktree; nothing tracked
+$ node --test scripts/mt/inventory/inventory.test.mjs scripts/mt/lint/lint.test.mjs   # tests written first, generators absent -> outputs/red-on-base.txt (2 of 2 files fail: ERR_MODULE_NOT_FOUND)
+$ node scripts/mt/inventory/generate.mjs   # 471 tables (458 verified, 13 unverified), 395 functions, 1562 routes, 2 edge functions, 4 realtime tables, 2 buckets -> scripts/mt/inventory/data/*.json
+$ node scripts/mt/inventory/generate.mjs --check   # outputs/drift-check.txt: PASS
+$ node scripts/mt/lint/run.mjs   # outputs/lint-report.txt: report only, exit 0; --strict exits 1 on the real schema (findings outside the allowlist)
+$ node --test scripts/mt/inventory/extract.test.mjs scripts/mt/lint/lint.test.mjs scripts/mt/inventory/inventory.pglite-tests.mjs scripts/mt/lint/lint.pglite-tests.mjs   # outputs/green.txt: 31 tests
+# review of the first PR head a07a93213b: required check `unit` failed (ERR_MODULE_NOT_FOUND @electric-sql/pglite) because UNIT.yml runs scripts/**/*.test.mjs with no install
+$ git mv inventory.test.mjs inventory.pglite-tests.mjs; git mv lint.test.mjs lint.pglite-tests.mjs; new database-free extract.test.mjs and lint.test.mjs; render.mjs split out of generate.mjs
+$ find scripts/mt ... -name '*.test.mjs' | xargs node --test   # without @electric-sql/pglite installed: 26 pass (outputs/green-unit.txt)

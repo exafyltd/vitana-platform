@@ -1,6 +1,7 @@
 ---
 lane: local-test-stack
-state: ready
+state: parked
+parked_from: ready
 next_actor: kiro
 executor: kiro
 seat: hotmail
@@ -12,7 +13,7 @@ paths:
   - supabase/tests/local-stack/**
   - scripts/mt/stack/**
   - docs/multitenancy/LOCAL-STACK.md
-updated: 2026-11-01T17:06Z
+updated: 2026-11-08T12:07Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05447
 ---
@@ -42,3 +43,6 @@ Lane created with the re-plan `mt-guardrails-r2` (carried from `mt-guardrails`).
 
 ### 2026-11-01T17:06Z · ci-plan-spar · ready (VTID allocated)
 VTID-05447 allocated after policy approval (converged-auto-v1).
+
+### 2026-11-08T12:07Z · kiro-hotmail-202611061752-cc1f · ready → parked (superseded)
+superseded by local-test-stack-pglite (VTID-05520) per plan.md Amendment 2, decision 1. No further work in this lane.

@@ -1,0 +1,7 @@
+# mutation gate-ledger-endpoint-removed: scripts/aws/staging-cutover-gate.mjs
+# replaced: if (env.PLAN_SPAR_GATEWAY_URL !== PRODUCTION_GATEWAY)
+# with:     if (false)
+not ok 4 - gate refuses: PLAN_SPAR_GATEWAY_URL unset (PLAN-SPAR/VTID-ALLOCATE default to staging)
+not ok 5 - gate refuses: PLAN_SPAR_GATEWAY_URL = the staging gateway
+# pass 25
+# fail 2

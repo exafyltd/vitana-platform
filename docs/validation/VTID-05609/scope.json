@@ -1,0 +1,11 @@
+{
+  "vtid": "VTID-05609",
+  "kind": "feature",
+  "paths": [
+    "docs/multitenancy/MIGRATION-QUEUE.md",
+    "docs/validation/VTID-05609/**"
+  ],
+  "sparring_record": ".kiro/specs/mt-schema-queue-followup-r2/sparring/verdict.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

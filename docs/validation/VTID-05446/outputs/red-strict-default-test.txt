@@ -1,0 +1,2 @@
+self-test-default FAILED: default run with 14 unverified claim(s) exited 0, expected 1
+exit 1

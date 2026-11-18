@@ -1,0 +1,4 @@
+# Commands run for VTID-05801 (local, 2026-11-15)
+node --test scripts/eng/gitlab-api.test.mjs   -> 88 tests, 88 pass, 0 fail (outputs/test-run.txt)
+Mutation harness, line 173 mutant (escaped perl replacement) applied to a copy of gitlab-api.mjs:
+  perl -0pi -e <expr>  -> URL line changed; node --test gitlab-api.test.mjs -> 3 fail (the mutant is caught)

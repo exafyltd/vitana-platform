@@ -1,0 +1,12 @@
+PASS  row numbers are unique
+PASS  row numbers increase monotonically down the table
+PASS  every migration file named in a row exists under supabase/migrations/
+FAIL  every VTID-05582/05573/05575/05569 migration on main has a queue row  [20261102051000_vtid_05582_network_visible_profile.sql,20261102051100_vtid_05582_connection_rpcs.sql,20261102052000_vtid_05573_legacy_messages_snapshot_freeze.sql,20261102052100_vtid_05573_legacy_messages_functions.sql,20261102052200_vtid_05573_legacy_messages_migrate_run.sql,20261102052300_vtid_05573_legacy_messages_drop.sql,20261102053000_vtid_05575_daily_matches_scope.sql,20261102053100_vtid_05575_daily_matches_guard.sql,20261102053200_vtid_05575_intent_matchers_scope.sql]
+FAIL  queue order is 05582, 05573, 05575, 05569  [-1,-1,-1,48]
+FAIL  VTID-05569 rows are 57,58  [51,52]
+FAIL  no stale reference to the old rows 51-52 / 48-50  [/Rows 51-52 \(VTID-05569/ | /Rows 48-50 are reserved/ | /row 52, a no-op: row 51/ | /rollback of row 51/ | /VTID-05582, rows for `20261102051000`/]
+FAIL  row 54 (053000) is expand only and declares no dependency on row 45
+FAIL  rows 55-56 depend on #48 and not on #45  [ || ]
+FAIL  row 50 carries the 05573 apply preconditions
+
+3 pass, 7 fail (52 rows parsed)

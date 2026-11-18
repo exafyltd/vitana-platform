@@ -1,0 +1,18 @@
+{
+  "vtid": "VTID-05762",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "existing",
+      "ref": "npx jest test/plan-sparring/sparring-eu-guard.test.ts test/providers/bedrock-region.test.ts",
+      "cwd": "services/gateway",
+      "reason": "VTID-05762 change suite: C1 (the DeepSeek direct-API last-resort tier is off unless the flag is exactly 'true') and C2 (no default Bedrock region in providers/bedrock.ts and services/dev-memory-embedding.ts; with neither region variable set both return not_configured and send no request). Red on main, green on this branch."
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04868-plan-sparring-service.test.ts test/vtid-04868-plan-sparring-stage.test.ts test/services/dev-memory-embedding.test.ts test/providers/bedrock-vision-tools.test.ts",
+      "cwd": "services/gateway",
+      "reason": "VTID-05762 regression check: the sparring chain with the DeepSeek tier enabled for its own cases, and the affected Bedrock callers with the region set explicitly. Assertions are unchanged."
+    }
+  ]
+}

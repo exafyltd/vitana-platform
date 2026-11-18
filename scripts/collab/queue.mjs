@@ -61,7 +61,7 @@ const SLUG_RE = /^[a-z0-9][a-z0-9-]*$/;
 // VTID-05213: two automation literals — `pm-agent` (the Project Manager's lane-file commits) and `ci-plan-spar`
 // (PLAN-SPAR.yml's sparring-round commits).
 // VTID-05276: a reviewer agent's own id, agent-<name>-YYYYMMDDHHMM-xxxx (`session-id --agent agent:<name>`).
-const SESSION_RE = /^(session_[A-Za-z0-9]+|kiro-(?:[a-z]{1,12}-)?\d{12}-[0-9a-f]{4}|agent-[a-z][a-z0-9-]{0,40}-\d{12}-[0-9a-f]{4}|pm-agent|ci-plan-spar)$/;
+const SESSION_RE = /^(session_[A-Za-z0-9]+|kiro-(?:[a-z]{1,12}-)?\d{12}-[0-9a-f]{4}|agent-[a-z][a-z0-9-]{0,40}-\d{12}-[0-9a-f]{4}|pm-agent|ci-plan-spar|ci-lane-review)$/;
 export const SEAT_RE = /^[a-z]{1,12}$/;
 export const isSessionId = (s) => SESSION_RE.test(s || '');
 const CI_PLAN_SPAR = 'ci-plan-spar';
@@ -69,10 +69,15 @@ const PM_AGENT = 'pm-agent';
 /** The seat named in a seat-scoped Kiro session id, else ''. */
 export const seatOf = (s) => (/^kiro-([a-z]{1,12})-\d{12}-[0-9a-f]{4}$/.exec(s || '') || [])[1] || '';
 
+// VTID-05802 (plan lane-executor-transfer): a deliberate executor transfer is recorded in the lane log as
+// `transfer: <from>→<to>, by <session>, reason <text>, at <time>`. Only the claim holder may commit it (Lane scope checks that).
+export const transferEntries = (text) => [...String(text || '').matchAll(/transfer: (kiro|claude)→(kiro|claude), by (\S+?),/g)]
+  .map((m) => ({ from: m[1], to: m[2], by: m[3] }));
+
 // VTID-05276 (plan kiro-autonomy-fallback §4.1): reviewer agents — a `reviewer_seat` value that is not a Kiro seat. A
 // lane with `executor: kiro` and `reviewer_seat: agent:vitana-lane-reviewer` may change governance paths (never a
 // protected gate file); its review entries come from the agent's own session id.
-export const REVIEWER_AGENTS = ['agent:vitana-lane-reviewer'];
+export const REVIEWER_AGENTS = ['agent:vitana-lane-reviewer', 'agent:bedrock-lane-reviewer'];
 export const isReviewerAgent = (v) => REVIEWER_AGENTS.includes(v);
 /** The reviewer agent named in an agent session id (`agent:<name>`), else ''. */
 export const agentOf = (s) => {
@@ -95,7 +100,15 @@ export const PROTECTED_GATE_BUILTIN = ['CLAUDE.md', 'scripts/collab/plan-spar.mj
   'scripts/collab/protected-gate-files.json', 'services/gateway/src/services/plan-sparring/**',
   'services/gateway/src/services/project-manager/governance.ts', '.github/workflows/PLAN-SPAR.yml',
   '.github/workflows/PR-GATE.yml', '.github/workflows/AWS-PROD-*.yml', '.kiro/agents/vitana-lane-reviewer.md',
-  'supabase/migrations/*vtid_ledger*.sql', 'supabase/migrations/*plan_sparring*.sql'];
+  'supabase/migrations/*vtid_ledger*.sql', 'supabase/migrations/*plan_sparring*.sql',
+  // VTID-05765 (plan autonomous-to-staging): VTID allocation and the gate-invariant check and its workflow.
+  '.github/workflows/VTID-ALLOCATE.yml', 'scripts/collab/gate-invariants.test.mjs'];
+/** VTID-05765: the lane marker that lets an executor: kiro lane change a protected gate file, under the two-model rule
+ * (two reviewer-agent accepts from different chain models on the current head, land-guard.mjs mergeDecision). Read only
+ * from a trusted revision of the lane file (merge-base or a qualifying plan( PR), never the PR head. */
+export const PROTECTED_GATE_TWO_MODEL = 'two-model';
+export const isTwoModelLane = (fm) => !!fm && fm.executor === 'kiro' && fm.protected_gate === PROTECTED_GATE_TWO_MODEL
+  && isReviewerAgent(fm.reviewer_seat);
 function loadProtectedGatePaths() {
   let text;
   try { text = readFileSync(new URL('./protected-gate-files.json', import.meta.url), 'utf8'); } catch (e) {
@@ -237,7 +250,9 @@ export function validateLane(fm, slug, lane, laneIds) {
   if (fm.executor && fm.state && fm.state !== 'ready' && fm.state !== 'parked' && paths.length === 0) e.push(`paths required in state ${fm.state} for a lane that declares an executor`);
   if (fm.executor === 'kiro') {
     for (const g of paths) {
-      if (globTouchesProtected(g)) e.push(`paths "${g}" reaches a protected gate file (a governance path an agent review cannot unlock, scripts/collab/protected-gate-files.json); such a lane needs executor: claude`);
+      if (globTouchesProtected(g)) {
+        if (!isTwoModelLane(fm)) e.push(`paths "${g}" reaches a protected gate file (scripts/collab/protected-gate-files.json); such a lane needs executor: claude, or protected_gate: ${PROTECTED_GATE_TWO_MODEL} with reviewer_seat: ${REVIEWER_AGENTS[0]} (two reviewer-agent accepts from different chain models)`);
+      }
       else if (globTouchesGovernance(g) && !isReviewerAgent(fm.reviewer_seat)) e.push(`paths "${g}" reaches a governance path; such a lane needs executor: claude, or reviewer_seat: ${REVIEWER_AGENTS[0]}`);
     }
   }
@@ -900,11 +915,14 @@ export function validateRange(repo, { base, head, branch = '', allowInitial = []
     if (!seat) { errors.push(onePerLane(lane, sessions)); continue; } // a lane without a seat keeps the old rule
     const reviewerSeat = isReviewerAgent(baseFm.reviewer_seat) ? '' : (baseFm.reviewer_seat || '');
     const reviewedBy = new Set(commits.filter((k) => (k.review || '').split(',').map((x) => x.trim()).includes(lane)).map((k) => k.session));
+    // VTID-05802: a Claude Code session may build the lane only after a transfer to claude, recorded by a session of this range.
+    const transfersInRange = transferEntries(headText);
+    const claudeAfterTransfer = (s) => /^session_/.test(s) && transfersInRange.some((t) => t.to === 'claude' && sessions.has(t.by));
     for (const m of (headText || '').matchAll(/^### [^\n]*? · (\S+) · review\b/gm)) reviewedBy.add(m[1]);
     for (const s of sessions) {
       // (b) never a reviewer as builder; (a) every builder is a session of the lane's seat.
       if (agentOf(s) || (reviewerSeat && seatOf(s) === reviewerSeat) || reviewedBy.has(s)) errors.push(`lane ${lane}: ${s} reviews this lane and cannot also build it`);
-      else if (seatOf(s) !== seat) errors.push(`lane ${lane}: builder session ${s} is not a session of the lane's seat ${seat}`);
+      else if (seatOf(s) !== seat && !claudeAfterTransfer(s)) errors.push(`lane ${lane}: builder session ${s} is not a session of the lane's seat ${seat}`);
     }
     // (c) no overlap: in topological order each session's builder commits form one contiguous run.
     if (!order) order = new Map(git(repo, ['rev-list', '--topo-order', '--reverse', '--no-merges', `${base}..${head}`]).split('\n').filter(Boolean).map((sha, i) => [sha, i]));
@@ -1000,7 +1018,7 @@ export function scopeCheck(repo, { base, head, branch = '', fetchLane = null, fe
     const PERM = ['executor', 'seat', 'reviewer_seat', 'paths'];
     // VTID-05408 (kiro-lane-admin §2): `lane_admin` is NOT a permission field but is pinned to the trusted revision
     // alongside PERM, so a lane PR can never self-grant it (T-D) and a head-written value cannot leak downstream.
-    const TRUSTED_PINNED = [...PERM, 'lane_admin'];
+    const TRUSTED_PINNED = [...PERM, 'lane_admin', 'protected_gate'];
     const changed = PERM.filter((k) => JSON.stringify(asList(trustedFm[k])) !== JSON.stringify(asList(fm[k])));
     const sessions = new Set(commits.filter((k) => k.files.includes(lanePath) && k.session !== PM_AGENT).map((k) => k.session));
     const claudeOnly = sessions.size > 0 && [...sessions].every((x) => /^session_/.test(x));
@@ -1014,11 +1032,18 @@ export function scopeCheck(repo, { base, head, branch = '', fetchLane = null, fe
     const selfTrustedLaneAdmin = trustedFm.executor === 'kiro' && isReviewerAgent(trustedFm.reviewer_seat)
       && toBool(trustedFm.lane_admin) && !!trustedFrom;
     const targetOfAdmin = selfTrustedLaneAdmin && laneAdminCovers(repo, base, head, key, lanePath, fetchPlanLane, fetchLane);
-    const permAllowed = (trustedFm.executor === 'claude' && claudeOnly) || targetOfAdmin;
+    // VTID-05802: the builder's own executor transfer. Only `executor` changes, and the lane log holds a transfer entry from the
+    // trusted executor to the new one, recorded by a session that committed to this lane in the range (the claim holder).
+    const transferred = changed.length === 1 && changed[0] === 'executor' && transferEntries(text).some((t) =>
+      t.from === trustedFm.executor && t.to === fm.executor && sessions.has(t.by));
+    const permAllowed = (trustedFm.executor === 'claude' && claudeOnly) || targetOfAdmin || transferred;
     if (changed.length && !permAllowed) {
       errors.push(`lane ${key}: ${changed.join(', ')} changed in a lane PR — lane permissions come from the base revision (reassign a target lane through an executor: kiro, reviewer_seat: ${REVIEWER_AGENTS[0]} lane with lane_admin: true from a trusted source whose paths cover it, or change an executor: claude Claude Code lane)`);
     }
     if (!permAllowed) fm = { ...fm, ...Object.fromEntries(TRUSTED_PINNED.map((k) => [k, trustedFm[k]])) };
+    // A PERM carve-out (claude-only, lane-admin target, VTID-05802 transfer) never lets the head grant itself lane_admin or
+    // protected_gate: those two always come from the trusted revision (restore of VTID-05802 + VTID-05765 on one main).
+    else fm = { ...fm, lane_admin: trustedFm.lane_admin, protected_gate: trustedFm.protected_gate };
   }
   const paths = asList(fm.paths);
   const changed = git(repo, ['diff', '--name-only', `${base}...${head}`]).split('\n').filter(Boolean);
@@ -1031,7 +1056,11 @@ export function scopeCheck(repo, { base, head, branch = '', fetchLane = null, fe
       if (!matchesAny(f, paths)) errors.push(`${f} is outside lane ${key} (paths: ${paths.join(', ')})`);
       else if (fm.executor === 'claude') continue;
       // VTID-05276 (plan §4.3): a protected gate file never passes for a non-claude lane, whatever its reviewer.
-      else if (matchesAny(f, PROTECTED_GATE_PATHS)) errors.push(`${f} is a protected gate file (governance path, scripts/collab/protected-gate-files.json); lane ${key} has executor ${fm.executor || 'unset'} — a reviewer-agent accept alone never unlocks it (the owner's instruction naming the plan is the authority; Claude Code is retired)`);
+      else if (matchesAny(f, PROTECTED_GATE_PATHS)) {
+        // VTID-05765: a trusted two-model lane may change it; the merge then needs two accepts from different models.
+        if (isTwoModelLane(fm) && trustedFrom) continue;
+        errors.push(`${f} is a protected gate file (governance path, scripts/collab/protected-gate-files.json); lane ${key} has executor ${fm.executor || 'unset'} — it needs protected_gate: ${PROTECTED_GATE_TWO_MODEL} (executor kiro, reviewer_seat ${REVIEWER_AGENTS[0]}) from a trusted source, or executor: claude`);
+      }
       else if (!matchesAny(f, GOVERNANCE_PATHS)) continue;
       else if (fm.executor === 'kiro' && isReviewerAgent(fm.reviewer_seat) && trustedFrom) continue;
       else errors.push(`${f} is a governance path; lane ${key} has executor ${fm.executor || 'unset'} (needs executor kiro with reviewer_seat ${REVIEWER_AGENTS[0]} from main or an approved plan( PR — or a legacy executor claude lane)`);

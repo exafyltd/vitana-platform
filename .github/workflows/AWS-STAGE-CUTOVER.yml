@@ -1,0 +1,210 @@
+# AWS-STAGE-CUTOVER — VTID-05781 (plan autonomous-to-staging-r2, lane staging-cutover; design.md §6.3-§6.4, §8, §9).
+#
+# The reversible flip of the serving STAGING gateway (vitana-gateway) and PostgREST proxy (vitana-postgrest-aurora-proxy)
+# from the shared data plane to the isolated staging database. Dispatch only, from main. Never runs on a push.
+#   action=flip      refuses (scripts/aws/staging-cutover-gate.mjs) unless STAGING_CUTOVER_APPROVED=yes, a rehearsal in
+#                    mode run passed on the same commit, PLAN_SPAR_GATEWAY_URL is the production gateway, STAGING_DATA_PLANE
+#                    is still shared, no staging deploy or STAGING-VERIFY is running, and the impact check is clear. Then it
+#                    records both services' PRIMARY task-definition revisions and network configuration (artifact
+#                    cutover-record), rolls both to isolated revisions with the database client SG, verifies and runs the
+#                    STAGING-VERIFY gateway smoke. ANY failure after the record rolls both back to the recorded revisions in
+#                    the same job and re-checks; if that recovery fails, job `recover` re-dispatches both staging deploys
+#                    on the (still shared) plane, which restores today's task definitions.
+#   action=rollback  manual rollback to the record of an earlier flip run (input record_run_id).
+# Authentication is unchanged in both planes (production Supabase GoTrue issuer, design.md §3). Only the staging deploy
+# role vars.AWS_STAGING_ROLE_ARN (OIDC; no static keys) is used; scripts/aws/staging-cutover-ecs.sh refuses any
+# service other than the two live staging services here and any production-looking name.
+name: AWS-STAGE-CUTOVER
+run-name: 'Staging data-plane ${{ inputs.action }} @ ${{ inputs.commit_sha }} [VTID: VTID-05781]'
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'flip = shared -> isolated with automatic rollback; rollback = back to the record of record_run_id'
+        type: choice
+        options: [flip, rollback]
+        default: flip
+        required: true
+      commit_sha:
+        description: 'flip: the full commit SHA on main whose rehearsal (mode run) passed'
+        type: string
+        default: ''
+      record_run_id:
+        description: 'rollback: the run id of the flip whose cutover-record artifact to restore'
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aws-stage-cutover
+  cancel-in-progress: false
+
+env:
+  STAGING_URL: https://preview-aws-gateway.vitanaland.com
+
+jobs:
+  gate:
+    name: Cutover gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Inputs, main, role
+        env:
+          ACTION: ${{ inputs.action }}
+          SHA: ${{ inputs.commit_sha }}
+          RUN_ID: ${{ inputs.record_run_id }}
+          REF: ${{ github.ref }}
+          STAGING_ROLE_ARN: ${{ vars.AWS_STAGING_ROLE_ARN }}
+        run: |
+          fail=0
+          [ "$REF" = refs/heads/main ] || { echo "::error::Refused: run from main only, not $REF."; fail=1; }
+          printf '%s' "$STAGING_ROLE_ARN" | grep -Eq '^arn:aws:iam::472838866351:role/[A-Za-z0-9+=,.@_-]+$' || { echo "::error::Refused: AWS_STAGING_ROLE_ARN (staging deploy role) is not set; no static keys here."; fail=1; }
+          if [ "$ACTION" = flip ]; then
+            printf '%s' "$SHA" | grep -Eq '^[0-9a-f]{40}$' || { echo "::error::Refused: commit_sha must be a full 40-character SHA."; fail=1; }
+            [ "$fail" = 1 ] || git merge-base --is-ancestor "$SHA" origin/main || { echo "::error::Refused: $SHA is not on main."; fail=1; }
+          else
+            printf '%s' "$RUN_ID" | grep -Eq '^[0-9]+$' || { echo "::error::Refused: record_run_id must be a run id."; fail=1; }
+          fi
+          exit "$fail"
+      - name: Flip preconditions (rehearsal, approval, ledger endpoint, impact, nothing deploying)
+        if: inputs.action == 'flip'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ inputs.commit_sha }}
+          STAGING_CUTOVER_APPROVED: ${{ vars.STAGING_CUTOVER_APPROVED }}
+          PLAN_SPAR_GATEWAY_URL: ${{ vars.PLAN_SPAR_GATEWAY_URL }}
+          STAGING_DATA_PLANE: ${{ vars.STAGING_DATA_PLANE }}
+          STAGING_DB_CLIENT_SG_ID: ${{ vars.STAGING_DB_CLIENT_SG_ID }}
+          STAGING_CUTOVER_IMPACT_ACCEPTED: ${{ vars.STAGING_CUTOVER_IMPACT_ACCEPTED }}
+        run: |
+          set -e
+          R="$RUNNER_TEMP"
+          gh api "repos/$GITHUB_REPOSITORY/actions/workflows/AWS-STAGE-CUTOVER-REHEARSAL.yml/runs?head_sha=$SHA&per_page=50" > "$R/runs.json"
+          : > "$R/busy.txt"
+          for wf in AWS-STAGE-DEPLOY-GATEWAY.yml AWS-STAGE-DEPLOY-POSTGREST-AURORA-PROXY.yml STAGING-VERIFY.yml; do
+            for st in in_progress queued; do
+              gh api "repos/$GITHUB_REPOSITORY/actions/workflows/$wf/runs?status=$st&per_page=20" --jq '.workflow_runs[].html_url' >> "$R/busy.txt"
+            done
+          done
+          node scripts/ci/staging-db/impact.mjs --json > "$R/impact.json"
+          node scripts/ci/staging-db/impact.mjs
+          node scripts/aws/staging-cutover-gate.mjs --sha "$SHA" --runs "$R/runs.json" --impact "$R/impact.json" --busy "$R/busy.txt"
+
+  flip:
+    name: Flip with automatic rollback
+    needs: gate
+    if: inputs.action == 'flip'
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      recorded: ${{ steps.record.outcome }}
+      recovered: ${{ steps.recheck.outcome }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.commit_sha }}
+      - name: Guard (--enforce) over the cutover scripts
+        run: node scripts/ci/staging-prod-ref-guard.mjs --enforce --files scripts/aws/staging-cutover-taskdef.mjs scripts/aws/staging-cutover-select.sh scripts/aws/staging-cutover-ecs.sh scripts/aws/staging-cutover-smoke.mjs
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_STAGING_ROLE_ARN }}
+          aws-region: eu-central-1
+      - name: Record the current revisions (before any change)
+        id: record
+        run: bash scripts/aws/staging-cutover-ecs.sh record --out "$RUNNER_TEMP/cutover-record.json"
+      - uses: actions/upload-artifact@v4
+        if: always() && steps.record.outcome == 'success'
+        with:
+          name: cutover-record
+          path: ${{ runner.temp }}/cutover-record.json
+      - name: Flip both staging services to the isolated plane
+        id: flip
+        env:
+          STAGING_CUTOVER_APPROVED: ${{ vars.STAGING_CUTOVER_APPROVED }}
+          CLIENT_SG: ${{ vars.STAGING_DB_CLIENT_SG_ID }}
+        run: bash scripts/aws/staging-cutover-ecs.sh flip --record "$RUNNER_TEMP/cutover-record.json" --client-sg "$CLIENT_SG" --out "$RUNNER_TEMP/cutover-flipped.json"
+      - name: Verify the flipped revisions
+        run: bash scripts/aws/staging-cutover-ecs.sh verify --record "$RUNNER_TEMP/cutover-record.json" --flipped "$RUNNER_TEMP/cutover-flipped.json"
+      - name: STAGING-VERIFY gateway smoke on staging
+        run: node scripts/aws/staging-cutover-smoke.mjs --base "$STAGING_URL" --out "$RUNNER_TEMP/smoke-flipped.json"
+      - name: Automatic rollback to the recorded revisions
+        id: rollback
+        if: failure() && steps.record.outcome == 'success'
+        run: bash scripts/aws/staging-cutover-ecs.sh rollback --record "$RUNNER_TEMP/cutover-record.json"
+      - name: Recovery check (STAGING-VERIFY gateway smoke after rollback)
+        id: recheck
+        if: failure() && steps.rollback.outcome == 'success'
+        run: node scripts/aws/staging-cutover-smoke.mjs --base "$STAGING_URL" --out "$RUNNER_TEMP/smoke-rolled-back.json"
+      - name: Evidence
+        if: always()
+        run: |
+          {
+            echo "### Staging data-plane flip @ \`${{ inputs.commit_sha }}\`"
+            echo "- record: ${{ steps.record.outcome }}; flip: ${{ steps.flip.outcome }}; rollback: ${{ steps.rollback.outcome }}; recovery check: ${{ steps.recheck.outcome }}"
+            for f in cutover-record cutover-flipped; do [ -f "$RUNNER_TEMP/$f.json" ] && jq -r --arg f "$f" '.services[] | "- \($f) \(.service): `\(.taskDefinition)`"' "$RUNNER_TEMP/$f.json"; done
+            for f in smoke-flipped smoke-rolled-back; do [ -f "$RUNNER_TEMP/$f.json" ] && jq -r --arg f "$f" '"- \($f): \(.passed)/\(.total)"' "$RUNNER_TEMP/$f.json"; done
+            if [ "${{ steps.flip.outcome }}" = success ] && [ "${{ job.status }}" = success ]; then
+              echo "- Next (owner): set repository variable STAGING_DATA_PLANE=isolated, or the next staging deploy restores the shared plane."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY" || true
+
+  recover:
+    name: Re-deploy the shared plane (rollback did not recover)
+    needs: flip
+    if: failure() && needs.flip.outputs.recorded == 'success' && needs.flip.outputs.recovered != 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Dispatch both staging deploys (STAGING_DATA_PLANE is still shared)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          gh workflow run AWS-STAGE-DEPLOY-POSTGREST-AURORA-PROXY.yml --repo "$GITHUB_REPOSITORY" --ref main -f reason="VTID-05781 cutover recovery (run $GITHUB_RUN_ID)"
+          gh workflow run AWS-STAGE-DEPLOY-GATEWAY.yml --repo "$GITHUB_REPOSITORY" --ref main -f reason="VTID-05781 cutover recovery (run $GITHUB_RUN_ID)"
+          echo "::error::Automatic rollback did not recover staging; both staging deploys were re-dispatched on the shared plane. Owner: check STAGING-VERIFY of those deploys (design.md §8)."
+          exit 1
+
+  rollback:
+    name: Manual rollback to a recorded flip
+    needs: gate
+    if: inputs.action == 'rollback'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: cutover-record
+          run-id: ${{ inputs.record_run_id }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/rec
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_STAGING_ROLE_ARN }}
+          aws-region: eu-central-1
+      - name: Roll back to the recorded revisions
+        run: bash scripts/aws/staging-cutover-ecs.sh rollback --record "$RUNNER_TEMP/rec/cutover-record.json"
+      - name: Recovery check (STAGING-VERIFY gateway smoke)
+        run: node scripts/aws/staging-cutover-smoke.mjs --base "$STAGING_URL"
+      - name: Next
+        run: echo "- Owner - set repository variable STAGING_DATA_PLANE=shared (or delete it) so later deploys stay on the shared plane." >> "$GITHUB_STEP_SUMMARY"

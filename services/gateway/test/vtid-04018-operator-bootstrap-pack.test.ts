@@ -42,7 +42,7 @@ describe('VTID-04018 pure renderers', () => {
     expect(rules).toContain('# PART 1: CORE RULES');
     expect(rules).not.toContain('# PART 2');
     expect(rules).not.toContain('## CHANGE LOG');
-    expect(rules.length).toBeLessThanOrEqual(8_000 + 20);
+    expect(rules.length).toBeLessThanOrEqual(12_000 + 20); // pins LIMITS.rulesChars (VTID-05785)
     expect(extractClaudeMdPart1('no marker here', 5)).toBe('no ma\n…[abridged]');
   });
 

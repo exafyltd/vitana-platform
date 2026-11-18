@@ -5,15 +5,9 @@
   "tests": [
     {
       "kind": "existing",
-      "ref": "node --test scripts/ci/check-migration-drift.test.cjs",
-      "cwd": ".",
-      "reason": "The drift baseline now lists tenant_domains; the drift check test pins the baseline format and count."
-    },
-    {
-      "kind": "existing",
       "ref": "npx jest test/mt-identity-bare-policy-lint.test.ts",
       "cwd": "services/gateway",
-      "reason": "The repository-wide bare-policy lint reads every migration, including the two new files: tenant_domains adds no policy."
+      "reason": "The repository-wide bare-policy lint reads every migration, including the two new files: tenant_domains adds no policy. The migration drift-baseline check is not run by this manifest, because a node --test script cannot be expressed as an allowed suite ref."
     }
   ]
 }

@@ -1,0 +1,58 @@
+name: MT-LOCAL-STACK
+run-name: 'MT local stack on PGlite [VTID: VTID-05520] (${{ github.ref_name }})'
+
+# VTID-05520 (mt-guardrails-r2/local-test-stack-pglite) — plan.md Amendments 2 and 3.
+# The D11 local stack runs in-process on PGlite: it replays supabase/migrations in timestamp order with the skips of
+# supabase/tests/local-stack/replay-skip.json, checks the required tables (a listed missing table is SKIP, anything else
+# fails and names the file or table), seeds the synthetic fixtures and runs the node tests and the pgTAP-compatible
+# shim. Real pgTAP is not used. No Docker, no service container, no network beyond the package install, no secret, no
+# production dump. ci-wiring decides about wider triggers.
+#
+# The trigger is `push` with no path filter, on `main` and on `kiro/mt-guardrails-r2/**` branches, plus
+# `workflow_dispatch`. A path filter skipped the run on an update-branch merge commit (no filtered path touched), which
+# left the lane head without the check. It is not a path-filtered `pull_request`: config/delivery/services.json (agentic-delivery, VTID-05550) must list every
+# path-filtered pull_request workflow as a service, and that file is outside this lane's paths. Registering this
+# workflow there, and with it making it a pull-request check, is for ci-wiring / agentic-delivery.
+
+on:
+  push:
+    branches:
+      - main
+      - 'kiro/mt-guardrails-r2/**'
+  workflow_dispatch:
+
+# A newer push to the same branch cancels the older run; main is never cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  local-stack:
+    name: MT local stack (PGlite)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      # pnpm version comes from the root package.json packageManager field.
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+      - name: Install
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Build the stack and print the numbers
+        run: |
+          set -o pipefail
+          node scripts/mt/stack/check-stack.mjs 2>&1 | tee /tmp/mt-stack-report.log
+          grep -q '^PASS local-stack gate$' /tmp/mt-stack-report.log
+      - name: Run the suites
+        run: |
+          set -o pipefail
+          npm run test:mt-stack 2>&1 | tee /tmp/mt-stack-tests.log
+      - name: Assert the suites ran
+        run: |
+          grep -Eq '^# fail 0$' /tmp/mt-stack-tests.log
+          grep -Eq '^# tests [1-9][0-9]*$' /tmp/mt-stack-tests.log

@@ -1,0 +1,7 @@
+# mutation gate-approval-removed: scripts/aws/staging-cutover-gate.mjs
+# replaced: if (env.STAGING_CUTOVER_APPROVED !== 'yes')
+# with:     if (false)
+not ok 2 - gate refuses: STAGING_CUTOVER_APPROVED unset
+not ok 3 - gate refuses: STAGING_CUTOVER_APPROVED=true (only "yes" counts)
+# pass 25
+# fail 2

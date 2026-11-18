@@ -1,0 +1,6 @@
+# VTID-05611 commands run in the sandbox (read-only; no live system)
+git worktree add -b kiro/mt-schema-queue-followup-r2/schema-entries ../wt-schema-entries origin/main   # base 6dce15765b
+node scripts/collab/queue.mjs claim mt-schema-queue-followup-r2/schema-entries --session kiro-hotmail-202611061752-cc1f --repo /projects/sandbox/vitana-platform
+python3 edit: move the 05569 section after the 04674 entry's closing '---'; insert the 05573 and 05575 sections
+docs/validation/VTID-05611/outputs/check.sh   -> outputs/check-output.txt (36 OK, 0 MISS, every removed line listed)
+grep -n "NOT applied" DATABASE_SCHEMA.md      -> both new headings match

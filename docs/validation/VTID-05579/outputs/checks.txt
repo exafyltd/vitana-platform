@@ -1,0 +1,72 @@
+## fixture
+## real 20261102050000 (VTID-05576)
+## real 20261102051000 (VTID-05582)
+## fixture data
+## live-before
+{"check_name":"scope_columns_absent","ok":true}
+{"check_name":"functions_absent","ok":true}
+{"check_name":"prereq_is_network_excluded_account","ok":true}
+{"check_name":"prereq_network_visible_column","ok":true}
+{"check_name":"prereq_connection_requests","ok":true}
+{"check_name":"legacy_network_groups_to_backfill","n":1}
+{"check_name":"legacy_network_groups_that_are_system","ok":true}
+{"check_name":"legacy_network_groups_with_bot_member","ok":true}
+{"check_name":"legacy_network_members_that_are_excluded","n":0}
+{"check_name":"groups_and_members","groups":5,"members":30}
+{"check_name":"group_policies","tablename":"chat_group_members","policyname":"chat_group_members_read","cmd":"SELECT","qual":"is_chat_group_member(group_id, auth.uid())"}
+{"check_name":"group_policies","tablename":"chat_groups","policyname":"chat_groups_member_read","cmd":"SELECT","qual":"is_chat_group_member(id, auth.uid())"}
+{"check_name":"allow_all_policies_already_gone","ok":true}
+{"check_name":"table_grants","relname":"chat_group_members","relacl":["postgres=arwdDxtm/postgres","anon=arwdDxtm/postgres","authenticated=arwdDxtm/postgres","service_role=arwdDxtm/postgres"]}
+{"check_name":"table_grants","relname":"chat_groups","relacl":["postgres=arwdDxtm/postgres","anon=arwdDxtm/postgres","authenticated=arwdDxtm/postgres","service_role=arwdDxtm/postgres"]}
+## apply 20261102054000_vtid_05579_chat_groups_scope.sql
+## apply 20261102054100_vtid_05579_network_group_rpcs.sql
+## apply 20261102054200_vtid_05579_chat_groups_rls.sql
+## post-apply-checks
+{"check_name":"scope_columns","ok":true}
+{"check_name":"constraints","ok":true}
+{"check_name":"every_group_has_a_scope","ok":true}
+{"check_name":"legacy_groups_backfilled","ok":true}
+{"check_name":"members_follow_their_group","ok":true}
+{"check_name":"network_groups_are_not_system_and_have_no_bot","ok":true}
+{"check_name":"no_rule_43_45_member_in_a_network_group","ok":true}
+{"check_name":"no_function_created_group_over_20","ok":true}
+{"check_name":"triggers","ok":true}
+{"check_name":"functions_definer_pinned","ok":true}
+{"check_name":"execute_grants","ok":true}
+{"check_name":"read_policies_participant_only","ok":true}
+{"check_name":"no_allow_all_or_write_policy","ok":true}
+{"check_name":"no_allow_all_on_chat_messages","ok":true}
+{"check_name":"no_bare_current_tenant_id_policy","ok":true}
+## created network group 43694527-2689-4620-acc2-27b488b15030 through create_network_group_as
+## rollback 054000 first (functions present) is refused: VTID-05579 rollback refused: roll back 054100 (the functions) first
+## rollback 054200
+## rollback 054100
+## rollback 054000 while a function-created network group exists is refused: VTID-05579 rollback refused: network groups created by create_network_group() exist; move or archive them first
+## rollback 054000
+## rollback-check
+{"check_name":"scope_columns_gone","ok":true}
+{"check_name":"constraints_gone","ok":true}
+{"check_name":"triggers_gone","ok":true}
+{"check_name":"functions_gone","ok":true}
+{"check_name":"read_policies_back_to_per_row_form","ok":true}
+{"check_name":"catch_all_policies_still_gone","ok":true}
+{"check_name":"no_group_or_member_lost","ok":true}
+## re-apply 20261102054000_vtid_05579_chat_groups_scope.sql
+## re-apply 20261102054100_vtid_05579_network_group_rpcs.sql
+## re-apply 20261102054200_vtid_05579_chat_groups_rls.sql
+## post-apply-checks (after re-apply)
+{"check_name":"scope_columns","ok":true}
+{"check_name":"constraints","ok":true}
+{"check_name":"every_group_has_a_scope","ok":true}
+{"check_name":"legacy_groups_backfilled","ok":true}
+{"check_name":"members_follow_their_group","ok":true}
+{"check_name":"network_groups_are_not_system_and_have_no_bot","ok":true}
+{"check_name":"no_rule_43_45_member_in_a_network_group","ok":true}
+{"check_name":"no_function_created_group_over_20","ok":true}
+{"check_name":"triggers","ok":true}
+{"check_name":"functions_definer_pinned","ok":true}
+{"check_name":"execute_grants","ok":true}
+{"check_name":"read_policies_participant_only","ok":true}
+{"check_name":"no_allow_all_or_write_policy","ok":true}
+{"check_name":"no_allow_all_on_chat_messages","ok":true}
+{"check_name":"no_bare_current_tenant_id_policy","ok":true}

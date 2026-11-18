@@ -1,0 +1,702 @@
+TAP version 13
+# Subtest: apply: without --cluster it fails (usage) before any AWS call
+not ok 1 - apply: without --cluster it fails (usage) before any AWS call
+  ---
+  duration_ms: 4.778564
+  type: 'test'
+  location: '<base>/docs/validation/VTID-05784/tests/staging-migrate.test.mjs:88:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    bash: <base>/scripts/aws/staging-db-apply-migration.sh: No such file or directory
+    
+    
+    127 !== 2
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 2
+  actual: 127
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file://<base>/docs/validation/VTID-05784/tests/staging-migrate.test.mjs:90:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.start (node:internal/test_runner/test:944:17)
+    startSubtestAfterBootstrap (node:internal/test_runner/harness:296:17)
+  ...
+# Subtest: apply: the production cluster is refused before any AWS call, also as a dry run (no override exists)
+not ok 2 - apply: the production cluster is refused before any AWS call, also as a dry run (no override exists)
+  ---
+  duration_ms: 2.563635
+  type: 'test'
+  location: '<base>/docs/validation/VTID-05784/tests/staging-migrate.test.mjs:95:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    bash: <base>/scripts/aws/staging-db-apply-migration.sh: No such file or directory
+    
+    
+    127 !== 1
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 1
+  actual: 127
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file://<base>/docs/validation/VTID-05784/tests/staging-migrate.test.mjs:98:12)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+# Subtest: apply: any non-staging cluster name is refused before any AWS call
+not ok 3 - apply: any non-staging cluster name is refused before any AWS call
+  ---
+  duration_ms: 2.414383
+  type: 'test'
+  location: '<base>/docs/validation/VTID-05784/tests/staging-migrate.test.mjs:104:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    vitana-aurora: bash: <base>/scripts/aws/staging-db-apply-migration.sh: No such file or directory
+    
+    
+    127 !== 1
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 1
+  actual: 127
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file://<base>/docs/validation/VTID-05784/tests/staging-migrate.test.mjs:107:12)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: apply --dry-run prints the plan for the staging cluster and makes no AWS call
+not ok 4 - apply --dry-run prints the plan for the staging cluster and makes no AWS call
+  ---
+  duration_ms: 2.857849
+  type: 'test'
+  location: '<base>/docs/validation/VTID-05784/tests/staging-migrate.test.mjs:112:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    bash: <base>/scripts/aws/staging-db-apply-migration.sh: No such file or directory
+    
+    
+    127 !== 0
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 127
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file://<base>/docs/validation/VTID-05784/tests/staging-migrate.test.mjs:114:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: apply: credentials other than the staging database role are refused before any cluster or Data API call
+not ok 5 - apply: credentials other than the staging database role are refused before any cluster or Data API call
+  ---
+  duration_ms: 3.670307
+  type: 'test'
+  location: '<base>/docs/validation/VTID-05784/tests/staging-migrate.test.mjs:121:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    bash: <base>/scripts/aws/staging-db-apply-migration.sh: No such file or directory
+    
+    
+    127 !== 1
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 1
+  actual: 127
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file://<base>/docs/validation/VTID-05784/tests/staging-migrate.test.mjs:125:12)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: apply: wrong account, untagged cluster, foreign cluster ARN or no managed secret are refused; no Data API call
+not ok 6 - apply: wrong account, untagged cluster, foreign cluster ARN or no managed secret are refused; no Data API call
+  ---
+  duration_ms: 2.769511
+  type: 'test'
+  location: '<base>/docs/validation/VTID-05784/tests/staging-migrate.test.mjs:131:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    bash: <base>/scripts/aws/staging-db-apply-migration.sh: No such file or directory
+    
+    
+    127 !== 1
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 1
+  actual: 127
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file://<base>/docs/validation/VTID-05784/tests/staging-migrate.test.mjs:141:12)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: apply: MIGRATION_FREEZE=true refuses before any AWS call
+not ok 7 - apply: MIGRATION_FREEZE=true refuses before any AWS call
+  ---
+  duration_ms: 2.473739
+  type: 'test'
+  location: '<base>/docs/validation/VTID-05784/tests/staging-migrate.test.mjs:147:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    
+    127 !== 1
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 1
+  actual: 127
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file://<base>/docs/validation/VTID-05784/tests/staging-migrate.test.mjs:149:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: apply: a non-transactional statement is refused in a batch; --allow-non-transactional takes one file only
+not ok 8 - apply: a non-transactional statement is refused in a batch; --allow-non-transactional takes one file only
+  ---
+  duration_ms: 2.411684
+  type: 'test'
+  location: '<base>/docs/validation/VTID-05784/tests/staging-migrate.test.mjs:154:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    bash: <base>/scripts/aws/staging-db-apply-migration.sh: No such file or directory
+    
+    
+    127 !== 1
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 1
+  actual: 127
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file://<base>/docs/validation/VTID-05784/tests/staging-migrate.test.mjs:157:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: rollback: a failing fixture migration rolls the whole batch back on Postgres (nothing applied, no commit)
+not ok 9 - rollback: a failing fixture migration rolls the whole batch back on Postgres (nothing applied, no commit)
+  ---
+  duration_ms: 2.841158
+  type: 'test'
+  location: '<base>/docs/validation/VTID-05784/tests/staging-migrate.test.mjs:169:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    bash: <base>/scripts/aws/staging-db-apply-migration.sh: No such file or directory
+    
+    
+    127 !== 1
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 1
+  actual: 127
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file://<base>/docs/validation/VTID-05784/tests/staging-migrate.test.mjs:172:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: rollback: a good batch is committed once, in order, then NOTIFY pgrst
+not ok 10 - rollback: a good batch is committed once, in order, then NOTIFY pgrst
+  ---
+  duration_ms: 2.742596
+  type: 'test'
+  location: '<base>/docs/validation/VTID-05784/tests/staging-migrate.test.mjs:181:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    bash: <base>/scripts/aws/staging-db-apply-migration.sh: No such file or directory
+    
+    
+    127 !== 0
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 127
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file://<base>/docs/validation/VTID-05784/tests/staging-migrate.test.mjs:184:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: rollback: a resuming (auto-paused) cluster is retried, then applied
+not ok 11 - rollback: a resuming (auto-paused) cluster is retried, then applied
+  ---
+  duration_ms: 2.502475
+  type: 'test'
+  location: '<base>/docs/validation/VTID-05784/tests/staging-migrate.test.mjs:191:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    bash: <base>/scripts/aws/staging-db-apply-migration.sh: No such file or directory
+    
+    
+    127 !== 0
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 127
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file://<base>/docs/validation/VTID-05784/tests/staging-migrate.test.mjs:193:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: read-only: --read-only always rolls back (the compatibility probe never keeps anything)
+not ok 12 - read-only: --read-only always rolls back (the compatibility probe never keeps anything)
+  ---
+  duration_ms: 2.355475
+  type: 'test'
+  location: '<base>/docs/validation/VTID-05784/tests/staging-migrate.test.mjs:198:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    bash: <base>/scripts/aws/staging-db-apply-migration.sh: No such file or directory
+    
+    
+    127 !== 0
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 127
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file://<base>/docs/validation/VTID-05784/tests/staging-migrate.test.mjs:200:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: mutations: removing a guard of the apply script is caught
+not ok 13 - mutations: removing a guard of the apply script is caught
+  ---
+  duration_ms: 0.512561
+  type: 'test'
+  location: '<base>/docs/validation/VTID-05784/tests/staging-migrate.test.mjs:208:1'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, copyfile '<base>/scripts/aws/staging-db-apply-migration.sh' -> '<tmp>/mut-CwVSr6/scripts/aws/staging-db-apply-migration.sh'"
+  code: 'ENOENT'
+  stack: |-
+    Object.copyFileSync (node:fs:3100:11)
+    mutated (file://<base>/docs/validation/VTID-05784/tests/staging-migrate.test.mjs:73:54)
+    TestContext.<anonymous> (file://<base>/docs/validation/VTID-05784/tests/staging-migrate.test.mjs:210:11)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: gate: unset or shared plane = off (auto: notice, exit 0, enabled=false; dispatch: refused); no AWS call
+not ok 14 - gate: unset or shared plane = off (auto: notice, exit 0, enabled=false; dispatch: refused); no AWS call
+  ---
+  duration_ms: 2.614213
+  type: 'test'
+  location: '<base>/docs/validation/VTID-05784/tests/staging-migrate.test.mjs:244:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    bash: <base>/scripts/aws/staging-db-migrate-gate.sh: No such file or directory
+    
+    
+    127 !== 0
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 127
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file://<base>/docs/validation/VTID-05784/tests/staging-migrate.test.mjs:249:12)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: gate: isolated is enabled only with the staging database role, cost approval and main; anything else refuses
+not ok 15 - gate: isolated is enabled only with the staging database role, cost approval and main; anything else refuses
+  ---
+  duration_ms: 2.546592
+  type: 'test'
+  location: '<base>/docs/validation/VTID-05784/tests/staging-migrate.test.mjs:256:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    bash: <base>/scripts/aws/staging-db-migrate-gate.sh: No such file or directory
+    
+    
+    127 !== 0
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 127
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file://<base>/docs/validation/VTID-05784/tests/staging-migrate.test.mjs:258:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: mutations: removing a gate guard is caught
+not ok 16 - mutations: removing a gate guard is caught
+  ---
+  duration_ms: 0.356989
+  type: 'test'
+  location: '<base>/docs/validation/VTID-05784/tests/staging-migrate.test.mjs:281:1'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, copyfile '<base>/scripts/aws/staging-db-apply-migration.sh' -> '<tmp>/mut-FFLtGH/scripts/aws/staging-db-apply-migration.sh'"
+  code: 'ENOENT'
+  stack: |-
+    Object.copyFileSync (node:fs:3100:11)
+    mutated (file://<base>/docs/validation/VTID-05784/tests/staging-migrate.test.mjs:73:54)
+    TestContext.<anonymous> (file://<base>/docs/validation/VTID-05784/tests/staging-migrate.test.mjs:289:47)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: files: only migration files ADDED on main, in timestamp order; modified and replay-skipped files are not applied
+not ok 17 - files: only migration files ADDED on main, in timestamp order; modified and replay-skipped files are not applied
+  ---
+  duration_ms: 28.227101
+  type: 'test'
+  location: '<base>/docs/validation/VTID-05784/tests/staging-migrate.test.mjs:318:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    bash: <base>/scripts/aws/staging-db-migrate.sh: No such file or directory
+    
+    
+    127 !== 0
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 127
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file://<base>/docs/validation/VTID-05784/tests/staging-migrate.test.mjs:321:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: snapshot: a tagged snapshot of the staging cluster only, before anything is applied
+not ok 18 - snapshot: a tagged snapshot of the staging cluster only, before anything is applied
+  ---
+  duration_ms: 2.474799
+  type: 'test'
+  location: '<base>/docs/validation/VTID-05784/tests/staging-migrate.test.mjs:333:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    bash: <base>/scripts/aws/staging-db-migrate.sh: No such file or directory
+    
+    
+    127 !== 0
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 127
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file://<base>/docs/validation/VTID-05784/tests/staging-migrate.test.mjs:336:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: compat: passes when every object the gateway smoke reads is there; fails (and keeps nothing) when one is missing
+not ok 19 - compat: passes when every object the gateway smoke reads is there; fails (and keeps nothing) when one is missing
+  ---
+  duration_ms: 2.301129
+  type: 'test'
+  location: '<base>/docs/validation/VTID-05784/tests/staging-migrate.test.mjs:351:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    empty database: compat fails
+    
+    127 !== 1
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 1
+  actual: 127
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file://<base>/docs/validation/VTID-05784/tests/staging-migrate.test.mjs:357:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: quarantine: a failed earlier apply blocks automatic applies until a dispatch acknowledges exactly that run
+not ok 20 - quarantine: a failed earlier apply blocks automatic applies until a dispatch acknowledges exactly that run
+  ---
+  duration_ms: 2.447505
+  type: 'test'
+  location: '<base>/docs/validation/VTID-05784/tests/staging-migrate.test.mjs:377:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    bash: <base>/scripts/aws/staging-db-migrate.sh: No such file or directory
+    
+    
+    127 !== 1
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 1
+  actual: 127
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file://<base>/docs/validation/VTID-05784/tests/staging-migrate.test.mjs:380:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: STAGING-MIGRATE.yml: default off, staging role and cluster only, snapshot -> apply -> drift -> compat, quarantine; no schedule
+not ok 21 - STAGING-MIGRATE.yml: default off, staging role and cluster only, snapshot -> apply -> drift -> compat, quarantine; no schedule
+  ---
+  duration_ms: 0.146696
+  type: 'test'
+  location: '<base>/docs/validation/VTID-05784/tests/staging-migrate.test.mjs:454:1'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<base>/.github/workflows/STAGING-MIGRATE.yml'"
+  code: 'ENOENT'
+  stack: |-
+    Object.readFileSync (node:fs:440:20)
+    wf (file://<base>/docs/validation/VTID-05784/tests/staging-migrate.test.mjs:24:22)
+    TestContext.<anonymous> (file://<base>/docs/validation/VTID-05784/tests/staging-migrate.test.mjs:455:40)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: mutations: every STAGING-MIGRATE.yml guard has a failing mutation
+not ok 22 - mutations: every STAGING-MIGRATE.yml guard has a failing mutation
+  ---
+  duration_ms: 0.147777
+  type: 'test'
+  location: '<base>/docs/validation/VTID-05784/tests/staging-migrate.test.mjs:458:1'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '<base>/.github/workflows/STAGING-MIGRATE.yml'"
+  code: 'ENOENT'
+  stack: |-
+    Object.readFileSync (node:fs:440:20)
+    wf (file://<base>/docs/validation/VTID-05784/tests/staging-migrate.test.mjs:24:22)
+    TestContext.<anonymous> (file://<base>/docs/validation/VTID-05784/tests/staging-migrate.test.mjs:459:13)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: RUN-MIGRATION.yml: the production path is the pinned origin/main file byte for byte; staging is a separate job
+not ok 23 - RUN-MIGRATION.yml: the production path is the pinned origin/main file byte for byte; staging is a separate job
+  ---
+  duration_ms: 2.126681
+  type: 'test'
+  location: '<base>/docs/validation/VTID-05784/tests/staging-migrate.test.mjs:525:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly deep-equal:
+    + actual - expected
+    
+    + [
+    +   'target option staging',
+    +   'migrate-staging only for target staging',
+    +   'migrate-staging assumes only the staging database role',
+    +   'cluster vitana-aurora-staging',
+    +   'the gate runs before the credentials',
+    +   'gate reads vars.STAGING_DATA_PLANE',
+    +   'gate reads vars.AWS_STAGING_DB_ROLE_ARN',
+    +   'gate reads vars.STAGING_DB_COST_APPROVED',
+    +   'applies through the staging script with the cluster'
+    + ]
+    - []
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual:
+    0: 'target option staging'
+    1: 'migrate-staging only for target staging'
+    2: 'migrate-staging assumes only the staging database role'
+    3: 'cluster vitana-aurora-staging'
+    4: 'the gate runs before the credentials'
+    5: 'gate reads vars.STAGING_DATA_PLANE'
+    6: 'gate reads vars.AWS_STAGING_DB_ROLE_ARN'
+    7: 'gate reads vars.STAGING_DB_COST_APPROVED'
+    8: 'applies through the staging script with the cluster'
+  operator: 'deepStrictEqual'
+  stack: |-
+    TestContext.<anonymous> (file://<base>/docs/validation/VTID-05784/tests/staging-migrate.test.mjs:526:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: RUN-MIGRATION.yml resolve: every production input resolves exactly as the pinned step; staging only when chosen
+not ok 24 - RUN-MIGRATION.yml resolve: every production input resolves exactly as the pinned step; staging only when chosen
+  ---
+  duration_ms: 210.692912
+  type: 'test'
+  location: '<base>/docs/validation/VTID-05784/tests/staging-migrate.test.mjs:542:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly deep-equal:
+    
+    null !== 'staging'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 'staging'
+  actual: ~
+  operator: 'deepStrictEqual'
+  stack: |-
+    TestContext.<anonymous> (file://<base>/docs/validation/VTID-05784/tests/staging-migrate.test.mjs:556:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: mutations: every RUN-MIGRATION.yml guard has a failing mutation
+not ok 25 - mutations: every RUN-MIGRATION.yml guard has a failing mutation
+  ---
+  duration_ms: 1.438156
+  type: 'test'
+  location: '<base>/docs/validation/VTID-05784/tests/staging-migrate.test.mjs:560:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    anchor:           role-to-assume: ${{ vars.AWS_STAGING_DB_ROLE_ARN }}
+            
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: false
+  operator: '=='
+  stack: |-
+    TestContext.<anonymous> (file://<base>/docs/validation/VTID-05784/tests/staging-migrate.test.mjs:573:12)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: guard: the new staging scripts name no production identifier (--enforce)
+not ok 26 - guard: the new staging scripts name no production identifier (--enforce)
+  ---
+  duration_ms: 31.739704
+  type: 'test'
+  location: '<base>/docs/validation/VTID-05784/tests/staging-migrate.test.mjs:582:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    usage error: no such file or directory: <base>/scripts/aws/staging-db-apply-migration.sh
+    
+    
+    2 !== 0
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 0
+  actual: 2
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file://<base>/docs/validation/VTID-05784/tests/staging-migrate.test.mjs:585:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: aurora-apply-migration.sh (production script) is unchanged by this lane
+ok 27 - aurora-apply-migration.sh (production script) is unchanged by this lane
+  ---
+  duration_ms: 2.531823
+  type: 'test'
+  ...
+1..27
+# tests 27
+# suites 0
+# pass 1
+# fail 26
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 394.744788

@@ -1,0 +1,5 @@
+# commands.log (VTID-05671)
+node --test scripts/eng/pipeline-gen.test.mjs  -> outputs/build-class-retag-2-red.txt (after the new test, before the change)
+node scripts/eng/pipeline-gen.mjs; node scripts/eng/pipeline-gen.mjs --check  -> exit 0
+node --test scripts/eng/pipeline-gen.test.mjs  -> outputs/build-class-retag-2-green.txt (29 of 29)
+deploy-path test 14 on a composite tree (git archive d82a0d04f4 + regenerated CI files) -> docs/validation/VTID-05546/outputs/build-class-retag-2-test14.txt

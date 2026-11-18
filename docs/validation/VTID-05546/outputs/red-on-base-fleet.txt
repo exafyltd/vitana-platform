@@ -1,0 +1,60 @@
+# VTID-05546 round 2 — red on base: scripts/eng/fleet-classes-structure.test.mjs (round-2 version) against the branch after merging origin/main
+# base: df45b674ec67397d621e13bce252328de98d812e (merge of origin/main f5dd5eb94b, which has M2 fleet #4716 as f5dd5eb94b); none of the round-2 implementation applied
+# 2026-11-05T22:38:53Z, node v22.23.4
+$ node --test scripts/eng/fleet-classes-structure.test.mjs
+ok 1 - two new groups, main and deploy: min 0, desired left to the runner, scale-in protection, maxima of plan §5
+ok 2 - IMDSv2 required with hop limit 1, no public IP, encrypted gp3 with the engineering key
+not ok 3 - no instance policy: the class machines get no instance profile, and the only IAM resource here is the fleet manager policy for the two classes
+not ok 4 - egress tcp 80, tcp 443 and DNS only; ingress only tcp 22 from the fleet manager
+not ok 5 - the fleet manager may scale only the two class groups, open SSH only to their machines as ubuntu, and read only their two runner tokens
+not ok 6 - the classes run on the M2 job image and launch through the Auto Scaling role that holds the key grant
+ok 7 - a quota that is too low makes the Terraform check print the request
+ok 8 - a job tagged vitana-eng declares no id_tokens and names no secret
+ok 9 - a job tagged vitana-eng-deploy runs no repository script
+ok 10 - tpl-deploy defines the six jobs of plan §9: build on the main class, the rest on the deploy class
+ok 11 - build-image.sh refuses without --oci-worker-no-process-sandbox
+not ok 12 - the manager renders three runner blocks: vitana-eng on the untrusted group with the warm pool of 4, vitana-eng-main and vitana-eng-deploy on their own groups, at the maxima of plan §5
+not ok 13 - every block: one job per single-use machine, privileged = false, no Docker socket and no extra power
+not ok 14 - seccomp and AppArmor unconfined only for the main class's build service: no job container of any class loses either profile
+not ok 15 - each block has its own token, once, and each class its own cache path: no class reads another class's cache
+not ok 16 - a class renders only with its token; a wrong class input refuses the whole config, names the input and never echoes a token
+not ok 17 - installer with the class env file of step A2: reads each class token once after the untrusted one, renders the classes that have one, leaves the others off, prints no token
+not ok 18 - installer: a class token secret outside vitana/engineering/gitlab/ is never read, and a value that is not a runner token is never written
+not ok 19 - step A2 gives the manager the groups, sizes and token secrets of fleet-classes.tf, and the untrusted sizes of plan §3.2
+not ok 20 - .build-image starts rootless BuildKit as its service with --oci-worker-no-process-sandbox; the job container is only its client
+not ok 21 - build-image.sh builds through the BuildKit service when BUILDKIT_HOST is set, and with the daemonless helper otherwise
+# tests 21
+# pass 7
+# fail 14
+# cancelled 0
+# skipped 0
+
+# first failure line of each failing test (TAP error / message):
+not ok 3 - no instance policy: the class machines get no instance profile, and the only IAM resource here is the fleet manager policy for the two classes
+    Expected values to be strictly deep-equal:
+not ok 4 - egress tcp 80, tcp 443 and DNS only; ingress only tcp 22 from the fleet manager
+    Expected values to be strictly deep-equal:
+not ok 5 - the fleet manager may scale only the two class groups, open SSH only to their machines as ubuntu, and read only their two runner tokens
+    error: 'data "aws_iam_policy_document" "fleet_manager_classes" not found in fleet-classes.tf'
+not ok 6 - the classes run on the M2 job image and launch through the Auto Scaling role that holds the key grant
+    error: 'the job image M2 builds (fleet-ami.tf)'
+not ok 12 - the manager renders three runner blocks: vitana-eng on the untrusted group with the warm pool of 4, vitana-eng-main and vitana-eng-deploy on their own groups, at the maxima of plan §5
+    Expected values to be strictly deep-equal:
+not ok 13 - every block: one job per single-use machine, privileged = false, no Docker socket and no extra power
+    Expected values to be strictly equal:
+not ok 14 - seccomp and AppArmor unconfined only for the main class's build service: no job container of any class loses either profile
+    error: "Cannot read properties of undefined (reading 'docker')"
+not ok 15 - each block has its own token, once, and each class its own cache path: no class reads another class's cache
+    each token appears once
+not ok 16 - a class renders only with its token; a wrong class input refuses the whole config, names the input and never echoes a token
+    Expected values to be strictly deep-equal:
+not ok 17 - installer with the class env file of step A2: reads each class token once after the untrusted one, renders the classes that have one, leaves the others off, prints no token
+    the untrusted token first, then each class once
+not ok 18 - installer: a class token secret outside vitana/engineering/gitlab/ is never read, and a value that is not a runner token is never written
+    the odd secret name is not read
+not ok 19 - step A2 gives the manager the groups, sizes and token secrets of fleet-classes.tf, and the untrusted sizes of plan §3.2
+    the class env file the installer reads
+not ok 20 - .build-image starts rootless BuildKit as its service with --oci-worker-no-process-sandbox; the job container is only its client
+    error: "Cannot read properties of undefined (reading 'length')"
+not ok 21 - build-image.sh builds through the BuildKit service when BUILDKIT_HOST is set, and with the daemonless helper otherwise
+    error: 'waits until the service answers'
