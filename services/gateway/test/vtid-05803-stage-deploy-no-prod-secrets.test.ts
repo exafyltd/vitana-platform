@@ -27,7 +27,9 @@ describe('VTID-05803 staging gateway deploy: no production credentials', () => {
   it('refuses production credentials before the task definition is written', () => {
     const gate = stage.indexOf('PROD_LEAK=$(');
     expect(gate).toBeGreaterThan(0);
-    expect(gate).toBeLessThan(stage.indexOf('> "$RUNNER_TEMP/new-task-def.json"'));
+    expect(gate).toBeGreaterThan(stage.indexOf('> "$RUNNER_TEMP/new-task-def.json"'));
+    expect(gate).toBeGreaterThan(stage.indexOf('      - name: Refuse production credentials on the staging task definition (VTID-05803)'));
+    expect(gate).toBeLessThan(stage.indexOf('      - name: Register task-definition revision + roll the service\n'));
     expect(stage).toMatch(/refusing to register: production credentials on a staging task definition/);
     const m = stage.slice(gate).match(/select\(\.v \| test\("([^"]+)"\)\)/);
     expect(m).not.toBeNull();

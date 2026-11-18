@@ -1351,17 +1351,21 @@ jobs:
                     | if .secrets then .secrets |= [ .[] | select(.name | IN("AURORA_DATABASE_URL","AURORA_RLS_DATABASE_URL","AURORA_CA_BUNDLE_PATH") | not) ] else . end )
                 | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
                       .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)')
+          printf '%s' "$NEW_DEF" > "$RUNNER_TEMP/new-task-def.json"
+      # VTID-05803: own step (the render step is at the VTID-03788 20,000-char limit).
+      - name: Refuse production credentials on the staging task definition (VTID-05803)
+        run: |
+          set -e
           # Staging never carries production credentials (owner instruction 2026-11-18): refuse to register a revision whose
           # secrets or environment name a production Supabase/Aurora secret, the production cluster or its master secret.
           # Supabase Auth keeps working through the staging-named secrets above, whose values the operator sets.
-          PROD_LEAK=$(printf '%s' "$NEW_DEF" | jq -r '[ .containerDefinitions[] | ((.secrets // [])[] | {n:.name, v:(.valueFrom // "")}),
+          PROD_LEAK=$(cat "$RUNNER_TEMP/new-task-def.json" | jq -r '[ .containerDefinitions[] | ((.secrets // [])[] | {n:.name, v:(.valueFrom // "")}),
               ((.environment // [])[] | {n:.name, v:(.value // "")})
             | select(.v | test("secret:vitana/(supabase|aurora)/prod/|vitana-aurora-prod|secret:rds!cluster-4dab93b8")) | .n ] | unique | join(" ")')
           if [ -n "$PROD_LEAK" ]; then
             echo "::error::refusing to register: production credentials on a staging task definition: $PROD_LEAK"; exit 1
           fi
           echo "Production-credential gate: none bound"
-          printf '%s' "$NEW_DEF" > "$RUNNER_TEMP/new-task-def.json"
       # VTID-05023 part 9: register + roll split out of the step above (which is
       # at the VTID-03788 20,000-char limit) so the data_backend switch fits.
       # keep (every push) passes the task definition through byte for byte.

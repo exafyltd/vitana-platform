@@ -20,7 +20,8 @@ const stepText = (y, name) => {
   while (j < L.length && !/^ {6}- name: /.test(L[j]) && !/^ {2}[a-z_-]+:\s*$/.test(L[j])) j++;
   return L.slice(i, j).join('\n');
 };
-const RENDER = 'Register task-definition revision + roll the service (1/2 — build the task definition)';
+const GATE = 'Refuse production credentials on the staging task definition (VTID-05803)';
+const ROLL = 'Register task-definition revision + roll the service';
 const code = (y) => y.split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
 const SM = 'arn:aws:secretsmanager:eu-central-1:472838866351:secret:';
 
@@ -36,11 +37,14 @@ test('staging gateway deploy resolves no production Supabase or Aurora secret', 
 });
 
 test('the render step refuses a task definition carrying production credentials', () => {
-  const step = stepText(wf('AWS-STAGE-DEPLOY-GATEWAY.yml'), RENDER);
-  assert.ok(step, 'render step found');
-  const m = step.match(/PROD_LEAK=\$\(printf '%s' "\$NEW_DEF" \| jq -r '([\s\S]*?)'\)\n/);
+  const y = wf('AWS-STAGE-DEPLOY-GATEWAY.yml');
+  const step = stepText(y, GATE);
+  assert.ok(step, 'gate step found');
+  const m = step.match(/PROD_LEAK=\$\(cat "\$RUNNER_TEMP\/new-task-def\.json" \| jq -r '([\s\S]*?)'\)\n/);
   assert.ok(m, 'production-credential gate found');
-  assert.ok(step.indexOf('PROD_LEAK=') < step.indexOf('new-task-def.json'), 'gate runs before the definition is written');
+  const at = (n) => y.indexOf(`      - name: ${n}\n`);
+  assert.ok(y.indexOf('> "$RUNNER_TEMP/new-task-def.json"') < at(GATE) && at(GATE) < at(ROLL), 'gate runs after the render and before register + roll');
+  assert.match(step, /run: \|\n {10}set -e\n/);
   const leak = (c) => {
     const r = spawnSync('jq', ['-r', m[1]], { input: JSON.stringify({ containerDefinitions: [{ name: 'g', ...c }] }), encoding: 'utf8' });
     assert.equal(r.status, 0, r.stderr);
