@@ -140,3 +140,34 @@ test('CLI: exit 2 and nothing on stdout when refused; exit 0 and the same bytes 
   assert.equal(ok.status, 0);
   assert.equal(ok.stdout, gwText);
 });
+
+// Restore of VTID-05781 onto post-VTID-05023 main: the render step strips every AURORA_* entry before the switch runs.
+const STRIPPED_NAMES = ['AURORA_DATABASE_URL', 'AURORA_RLS_DATABASE_URL', 'AURORA_CA_BUNDLE_PATH'];
+const stripped = () => {
+  const td = gw();
+  for (const c of td.containerDefinitions) for (const k of ['environment', 'secrets'])
+    if (Array.isArray(c[k])) c[k] = c[k].filter((e) => !STRIPPED_NAMES.includes(e.name));
+  return td;
+};
+const holderOf = (td, name) => td.containerDefinitions.filter((c) => (c.secrets || []).some((e) => e.name === name)).map((c) => c.name);
+
+test('isolated gateway after the VTID-05023 strip: staging-db references go on the SUPABASE_URL container, and shared restores the stripped input', () => {
+  const input = stripped();
+  const iso = toIsolated(input, { service: 'gateway', arns: ARNS });
+  const sup = holderOf(input, 'SUPABASE_URL');
+  assert.equal(sup.length, 1);
+  assert.deepEqual(holderOf(iso, 'AURORA_DATABASE_URL'), sup);
+  assert.deepEqual(holderOf(iso, 'AURORA_RLS_DATABASE_URL'), sup);
+  const c = iso.containerDefinitions.find((x) => x.name === sup[0]);
+  assert.equal(c.secrets.find((e) => e.name === 'AURORA_DATABASE_URL').valueFrom, ARNS.database_url);
+  assert.equal(JSON.stringify(restoreShared(iso)), JSON.stringify(input));
+});
+
+test('isolated gateway after the VTID-05023 strip: two containers carrying SUPABASE_URL is refused, not guessed', () => {
+  const input = stripped();
+  const second = JSON.parse(JSON.stringify(input.containerDefinitions[0]));
+  second.name = 'second';
+  second.secrets = [{ name: 'SUPABASE_URL', valueFrom: (input.containerDefinitions[0].secrets || []).find((e) => e.name === 'SUPABASE_URL').valueFrom }];
+  input.containerDefinitions.push(second);
+  assert.throws(() => toIsolated(input, { service: 'gateway', arns: ARNS }), Refused);
+});

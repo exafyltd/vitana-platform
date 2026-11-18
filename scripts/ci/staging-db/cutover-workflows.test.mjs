@@ -320,3 +320,26 @@ test('mutation fails: a deploy-workflow edit outside the marked blocks, or a swi
   const back = runRoll(noRestore, PX, {}, iso.registered);
   assert.match(back.registered, /STAGING_DATA_PLANE/, 'the mutant leaves the isolated marker in place');
 });
+
+// The isolated-plane exception to the VTID-05023 Aurora gate, run on the exact jq expression in the gateway roll step.
+test('AWS-STAGE-DEPLOY-GATEWAY.yml: the isolated gate exception passes only AURORA_* secrets on staging-db ARNs', () => {
+  const step = stepText(wf(GW), ROLL);
+  const m = step.match(/STAGING_DATA_PLANE:-shared\}" = isolated \]; then\n\s*LEAK=\$\(printf '%s' "\$NEW_DEF" \| jq -r '([\s\S]*?)'\)\n/);
+  assert.ok(m, 'gate exception jq found');
+  const jq = m[1];
+  const run = (c) => {
+    const r = spawnSync('jq', ['-r', jq], { input: JSON.stringify({ containerDefinitions: [c] }), encoding: 'utf8' });
+    assert.equal(r.status, 0, r.stderr);
+    return r.stdout.trim();
+  };
+  const SMA = 'arn:aws:secretsmanager:eu-central-1:472838866351:secret:';
+  assert.equal(run({ name: 'g', secrets: [{ name: 'AURORA_DATABASE_URL', valueFrom: `${SMA}vitana/aurora/staging-db/database-url-AbCdEf` }] }), '');
+  assert.equal(run({ name: 'g', secrets: [{ name: 'AURORA_DATABASE_URL', valueFrom: `${SMA}vitana/aurora/prod/database-url-AbCdEf` }] }), 'AURORA_DATABASE_URL');
+  assert.equal(run({ name: 'g', secrets: [{ name: 'AURORA_DATABASE_URL', valueFrom: `${SMA}vitana/aurora/rehearsal/database-url-AbCdEf` }] }), 'AURORA_DATABASE_URL');
+  assert.equal(run({ name: 'g', secrets: [{ name: 'AURORA_DATABASE_URL', valueFrom: `${SMA}vitana/aurora/staging-db-x/database-url-AbCdEf` }] }), 'AURORA_DATABASE_URL');
+  assert.equal(run({ name: 'g', secrets: [{ name: 'AURORA_DATABASE_URL', valueFrom: `arn:aws:secretsmanager:us-east-1:472838866351:secret:vitana/aurora/staging-db/x` }] }), 'AURORA_DATABASE_URL');
+  assert.equal(run({ name: 'g', secrets: [{ name: 'AURORA_DATABASE_URL' }] }), 'AURORA_DATABASE_URL');
+  assert.equal(run({ name: 'g', environment: [{ name: 'AURORA_CA_BUNDLE_PATH', value: '/x' }] }), 'AURORA_CA_BUNDLE_PATH');
+  // the exception is inside a marked block: without the blocks the step is the pinned one (the gate refuses every AURORA_* name)
+  assert.equal(stripMarkers(step).includes('staging-db/'), false);
+});
