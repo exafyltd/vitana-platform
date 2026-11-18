@@ -1,0 +1,6 @@
+# loaded /projects/sandbox/wt-legacy-msgs/docs/validation/VTID-05573/pgtap/vtid_05573_fixture.sql
+# loaded /projects/sandbox/wt-legacy-msgs/supabase/migrations/20261102050000_vtid_05576_chat_messages_scope.sql
+# loaded /projects/sandbox/wt-legacy-msgs/supabase/migrations/20261102051000_vtid_05582_network_visible_profile.sql
+# loaded /projects/sandbox/wt-legacy-msgs/supabase/migrations/20261102052000_vtid_05573_legacy_messages_snapshot_freeze.sql
+# loaded /projects/sandbox/wt-legacy-msgs/supabase/migrations/20261102052100_vtid_05573_legacy_messages_functions.sql
+# SQL ERROR: relation "messages" already exists

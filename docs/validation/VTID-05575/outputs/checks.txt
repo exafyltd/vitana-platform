@@ -1,0 +1,54 @@
+## fixture
+## dependency 20261102051000
+## matchers loaded (4)
+## live-before
+{"check_name":"columns_absent","ok":true}
+{"check_name":"functions_absent","ok":true}
+{"check_name":"dependency_network_visible_present","ok":true}
+{"check_name":"daily_matches_rows","n":5}
+{"check_name":"daily_matches_rows_mentioning_health_words","n":4}
+{"check_name":"matchers_with_public_pool","proname":"compute_intent_matches","has_public_pool":true}
+{"check_name":"matchers_with_public_pool","proname":"compute_intent_matches_v2","has_public_pool":true}
+{"check_name":"matchers_with_public_pool","proname":"search_intent_catalog","has_public_pool":true}
+{"check_name":"matchers_with_public_pool","proname":"search_intent_catalog_v2","has_public_pool":true}
+## apply 20261102053000_vtid_05575_daily_matches_scope.sql
+## apply 20261102053100_vtid_05575_daily_matches_guard.sql
+## apply 20261102053200_vtid_05575_intent_matchers_scope.sql
+## post-apply-checks
+{"check_name":"columns_present","ok":true}
+{"check_name":"every_row_has_a_valid_scope","ok":true}
+{"check_name":"no_unique_key_added","ok":true}
+{"check_name":"no_health_reason_left","ok":true}
+{"check_name":"community_rows_have_a_shared_real_tenant_or_none","ok":true}
+{"check_name":"trigger_present","ok":true}
+{"check_name":"helpers_definer_pinned","ok":true}
+{"check_name":"helpers_service_role_only","ok":true}
+{"check_name":"matchers_scoped","ok":true}
+{"check_name":"search_default_is_community","ok":true}
+{"check_name":"info_network_rows_pointing_at_non_visible_members","n":2}
+## rollback 053100 while the matchers are scoped is refused: VTID-05575 rollback: run rollback-053200-intent-matchers-scope.sql first (intent_pool_allows still exists)
+## rollback 053000 while the guard exists is refused: VTID-05575 rollback: run rollback-053100-daily-matches-guard.sql first (the guard trigger still exists)
+## rollback 053200
+## rollback 053100
+## rollback 053000
+## rollback-check
+{"check_name":"columns_gone","ok":true}
+{"check_name":"functions_gone","ok":true}
+{"check_name":"trigger_gone","ok":true}
+{"check_name":"matchers_back_to_public_pool","ok":true}
+{"check_name":"search_default_is_public_again","ok":true}
+## re-apply 20261102053000_vtid_05575_daily_matches_scope.sql
+## re-apply 20261102053100_vtid_05575_daily_matches_guard.sql
+## re-apply 20261102053200_vtid_05575_intent_matchers_scope.sql
+## post-apply-checks (after re-apply)
+{"check_name":"columns_present","ok":true}
+{"check_name":"every_row_has_a_valid_scope","ok":true}
+{"check_name":"no_unique_key_added","ok":true}
+{"check_name":"no_health_reason_left","ok":true}
+{"check_name":"community_rows_have_a_shared_real_tenant_or_none","ok":true}
+{"check_name":"trigger_present","ok":true}
+{"check_name":"helpers_definer_pinned","ok":true}
+{"check_name":"helpers_service_role_only","ok":true}
+{"check_name":"matchers_scoped","ok":true}
+{"check_name":"search_default_is_community","ok":true}
+{"check_name":"info_network_rows_pointing_at_non_visible_members","n":2}

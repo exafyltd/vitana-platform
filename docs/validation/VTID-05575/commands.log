@@ -1,0 +1,10 @@
+# VTID-05575 commands run in the sandbox (PGlite only; no live system, no docker/psql/supabase CLI available)
+pglite-harness/lane.sh --no-migrations                 -> outputs/red-origin-main.txt (RED: column "scope" does not exist)
+pglite-harness/lane.sh --only=1                        -> outputs/red-scope-only.txt (RED: strip_health_match_reasons missing)
+pglite-harness/lane.sh                                 -> outputs/green-run1.txt (59 ok)
+pglite-harness/lane.sh --twice                         -> outputs/green-run2-twice.txt (59 ok, idempotent)
+five mutations of the migrations                       -> outputs/mutations.txt (each red; restored 59 ok)
+pglite-harness/checks.sh                               -> outputs/checks.txt (read-only checks, refused rollbacks, rollback, re-apply)
+node scripts/ci/bare-policy-lint.mjs                   -> 0 bare current_tenant_id() policies
+jest (ts-jest) services/gateway/test/mt-identity-bare-policy-lint.test.ts -> outputs/jest-bare-policy-lint.txt (8 pass)
+validateManifest(staging-tests.json)                   -> outputs/validate-manifest.txt (ok)

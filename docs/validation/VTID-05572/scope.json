@@ -1,0 +1,14 @@
+{
+  "vtid": "VTID-05572",
+  "kind": "feature",
+  "paths": [
+    "supabase/migrations/20261102042000_vtid_05572_profiles_tenant_backfill_fn.sql",
+    "supabase/migrations/20261102042100_vtid_05572_profiles_tenant_backfill_run.sql",
+    "supabase/tests/vtid_mt_data_cleanup_profiles_tenant_backfill.test.sql",
+    "docs/multitenancy/MIGRATION-QUEUE.md",
+    "docs/validation/VTID-05572/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05572/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

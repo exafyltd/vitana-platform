@@ -1,0 +1,100 @@
+{
+  "family": "vitana-gateway",
+  "taskRoleArn": "arn:aws:iam::472838866351:role/vitana-ecs-task-role",
+  "executionRoleArn": "arn:aws:iam::472838866351:role/vitana-ecs-task-execution-role",
+  "networkMode": "awsvpc",
+  "cpu": "2048",
+  "memory": "4096",
+  "requiresCompatibilities": [
+    "FARGATE"
+  ],
+  "containerDefinitions": [
+    {
+      "name": "gateway",
+      "image": "472838866351.dkr.ecr.eu-central-1.amazonaws.com/vitana/gateway:staging-abc",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 8080,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        {
+          "name": "VITANA_ENV",
+          "value": "staging"
+        },
+        {
+          "name": "GATEWAY_URL",
+          "value": "https://preview-aws-gateway.vitanaland.com"
+        },
+        {
+          "name": "SUPABASE_PUBLIC_URL",
+          "value": "https://inmkhvwdcuyhnxkgfvsb.supabase.co"
+        },
+        {
+          "name": "OPERATOR_SQL_READONLY_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "AUTOPILOT_HEARTBEAT_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "DEV_AUTOPILOT_WATCHER_LIVE",
+          "value": "true"
+        },
+        {
+          "name": "PM_AGENT_ENABLED",
+          "value": "false"
+        },
+        {
+          "name": "OPERATOR_BOOTSTRAP_BUILD_INFO_URLS",
+          "value": "staging=https://preview-aws-gateway.vitanaland.com/api/v1/admin/build-info,prod=https://gateway.vitanaland.com/api/v1/admin/build-info"
+        }
+      ],
+      "secrets": [
+        {
+          "name": "SUPABASE_URL",
+          "valueFrom": "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/supabase/staging/url-aurora-proxy-Ab12Cd"
+        },
+        {
+          "name": "SUPABASE_SERVICE_ROLE",
+          "valueFrom": "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/supabase/prod/service-role-key-Zz11Yy"
+        },
+        {
+          "name": "SUPABASE_JWT_SECRET",
+          "valueFrom": "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/supabase/prod/jwt-secret-Qq22Ww"
+        },
+        {
+          "name": "SUPABASE_ANON_KEY",
+          "valueFrom": "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/supabase/prod/anon-key-Ee33Rr"
+        },
+        {
+          "name": "GOOGLE_GEMINI_API_KEY",
+          "valueFrom": "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/gateway/staging/google-gemini-api-key-Tt44Yy"
+        },
+        {
+          "name": "AURORA_DATABASE_URL",
+          "valueFrom": "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/aurora/prod/database-url-URDvEh"
+        },
+        {
+          "name": "AURORA_RLS_DATABASE_URL",
+          "valueFrom": "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/aurora/prod/postgrest-authenticator-uri-Uu55Ii"
+        },
+        {
+          "name": "GITHUB_SAFE_MERGE_TOKEN",
+          "valueFrom": "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/github/pat-Oo66Pp"
+        },
+        {
+          "name": "GATEWAY_SERVICE_TOKEN",
+          "valueFrom": "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/supabase/prod/service-role-key-Zz11Yy"
+        },
+        {
+          "name": "OPERATOR_SQL_READONLY_DATABASE_URL",
+          "valueFrom": "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/gateway/staging/operator-sql-readonly-url-Aa77Ss"
+        }
+      ]
+    }
+  ]
+}

@@ -289,3 +289,32 @@ test('CLI (j): review --repo walks the local checkout and checks the origin URL'
   c.commit('resolve');
   assert.equal(cli(c, 'o/r'), 1, 'conflict resolved by hand');
 });
+
+// VTID-05765 (plan autonomous-to-staging): protected gate files merge on two accepts from different chain models.
+test('merge: a protected gate file needs two accepts from different chain models on the current head', async () => {
+  const { protectedAcceptModels, parseReviewEntry } = await import('./land-guard.mjs');
+  const ok = { ok: true, reason: 'x' };
+  const pass = { state: 'pass', detail: 'x' };
+  const base = { review: ok, checks: pass, behindBy: 0, protectedFiles: ['scripts/collab/queue.mjs'] };
+  assert.equal(mergeDecision({ ...base }).code, 1);
+  assert.equal(mergeDecision({ ...base, protectedModels: ['claude-sonnet-5.5'] }).code, 1);
+  assert.equal(mergeDecision({ ...base, protectedModels: ['claude-sonnet-5.5', 'claude-sonnet-5.5'] }).code, 1);
+  assert.equal(mergeDecision({ ...base, protectedModels: ['claude-sonnet-5.5', 'claude-opus-5.5'] }).ok, true);
+  assert.equal(mergeDecision({ ...base, checks: { state: 'fail', detail: 'x' }, protectedModels: ['claude-sonnet-5.5', 'claude-opus-5.5'] }).code, 1);
+  const e = (m, current = true, verdict = 'accept') => ({ verdict, reviewer: `agent:vitana-lane-reviewer (${m})`, current });
+  assert.deepEqual(protectedAcceptModels([e('claude-sonnet-5.5'), e('claude-opus-5.5')]).sort(), ['claude-opus-5.5', 'claude-sonnet-5.5']);
+  assert.deepEqual(protectedAcceptModels([e('claude-sonnet-5.5'), e('claude-opus-5.5', false)]), ['claude-sonnet-5.5']);
+  assert.deepEqual(protectedAcceptModels([e('claude-sonnet-5.5'), e('claude-opus-5.5', true, 'changes')]), ['claude-sonnet-5.5']);
+  assert.deepEqual(protectedAcceptModels([e('gpt-5')]), []);
+  assert.deepEqual(protectedAcceptModels([{ verdict: 'accept', reviewer: 'agent:someone-else (claude-opus-5.5)', current: true }]), []);
+  const msg = `t\n\nCollab-Session: s\nCollab-Review: a/b\nCollab-Verdict: accept\nCollab-Reviewer: agent:vitana-lane-reviewer (claude-opus-5.5)\nCollab-Reviewed-Head: ${'c'.repeat(40)}\n`;
+  assert.deepEqual(parseReviewEntry(msg), { review: 'a/b', verdict: 'accept', reviewer: 'agent:vitana-lane-reviewer (claude-opus-5.5)', reviewedHead: 'c'.repeat(40) });
+  assert.equal(parseReviewEntry('plain commit'), null);
+});
+
+test('merge: land-guard REVIEWER_MODELS mirrors governance.ts REVIEWER_AGENT_MODELS', async () => {
+  const { REVIEWER_MODELS } = await import('./land-guard.mjs');
+  const src = (await import('node:fs')).readFileSync(new URL('../../services/gateway/src/services/project-manager/governance.ts', import.meta.url), 'utf8');
+  const block = /REVIEWER_AGENT_MODELS: readonly string\[\] = Object\.freeze\(\[([\s\S]*?)\]\)/.exec(src)[1];
+  assert.deepEqual([...block.matchAll(/'([^']+)'/g)].map((m) => m[1]), [...REVIEWER_MODELS]);
+});

@@ -1,0 +1,10 @@
+## base_schema_id.sql (loaded)
+## 20261102140000_vtid_05507_mt_tenant_domains.sql (loaded)
+## 20261102140000_vtid_05507_mt_tenant_domains.sql (loaded)
+## id-check.sql
+fk
+FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
+
+rows
+1
+

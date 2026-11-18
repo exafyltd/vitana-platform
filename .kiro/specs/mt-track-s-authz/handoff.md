@@ -41,3 +41,16 @@ updated: 2026-11-03T16:40Z
 sparring_record: .kiro/specs/mt-track-s-authz/sparring/verdict.md
 vtids: [VTID-05452, VTID-05453, VTID-05528, VTID-05529]
 Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.
+
+### 2026-11-06T18:00Z · kiro-hotmail-202611061752-cc1f · takeover
+Driver taken over from `kiro-hotmail-202611011452-6d16`. Its heartbeat was 7.8 h old (`collab-driver/mt-track-s-authz`
+at 2026-11-06T10:06Z); the new heartbeat is at 3cd5164285. This entry replaces the handover text that assumed the state of
+2026-11-03. Checked against origin/main `fb4e7ba88c` on 2026-11-06:
+- VTID-05528 (`approvals-auth-v2`): the code is on main through #4715 (merge `ec7f45ccb7`, 2026-11-05T19:40Z). The lane
+  file has the reviewer accept on `d4d82e99c8` but no `verified → done` closing record yet. That record is still open.
+- VTID-05529 (`work-surface-permission-v2`): done. Merged as `29b639da4b` (#4673). Closing record #4734 merged.
+- VTID-05452 (`approvals-auth`, v1) and VTID-05453 (`work-surface-permission`, v1) are superseded by the v2 lanes. PR #4606
+  was closed unmerged on 2026-11-05. The planned path amendment for v1 is not needed.
+- STAGING-VERIFY: no run for `ec7f45ccb7` appears in the recent workflow runs. Staging evidence is still missing.
+- The Cloudflare and ALB block on `POST /api/v1/approvals/*` is unchanged. Only the owner removes it.
+Next: close VTID-05528 once staging is verified; then send Gate 2 for the Track S slice to the owner.

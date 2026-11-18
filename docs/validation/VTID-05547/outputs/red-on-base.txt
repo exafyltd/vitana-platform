@@ -1,0 +1,30 @@
+RED ON BASE — VTID-05547 (agentic-delivery/gateway-delivery)
+Base = the lane HEAD before this commit (4c3d2341f2b, the stacked base): git archive of services/gateway, the lane test files copied in, the new source files replaced by no-behaviour stubs, delivery.js empty, node_modules linked.
+Command: cd <base>/services/gateway && npx jest test/delivery --silent --json
+
+gitlab-delivery-mapping.test.ts            failed  60   passed   1
+gitlab-delivery-oasis-write.test.ts        failed   6   passed   0
+delivery-host-guard.test.ts                failed  11   passed   7
+delivery-route.test.ts                     failed  28   passed   0
+gitlab-delivery-webhook.test.ts            failed  15   passed   6
+command-hub-delivery.test.ts               failed  29   passed   2
+
+TOTAL: 165 tests, 149 failed, 16 passed, 0 suites that did not run
+
+Tests that PASS on base (each one is a deliberate no-change guard: behaviour that must stay as it is):
+  - [gitlab-delivery-mapping] VTID-05547 no delivery event can move a VTID no rule of autopilot-event-mapper.ts lists a scm.gitlab.*, scm.migration.* or delivery.* topic, or staging.deploy.rolled_back
+  - [delivery-host-guard] VTID-05547 the guard — merge and update-branch with the flag set the other repository is not affected by this repository's flag
+  - [delivery-host-guard] VTID-05547 the guard — flag unset: exactly as before mergePullRequest calls GitHub with the same URL, method, body and token, and returns its answer
+  - [delivery-host-guard] VTID-05547 the guard — flag unset: exactly as before updatePullRequestBranch calls GitHub with the same URL, method and body
+  - [delivery-host-guard] VTID-05547 the guard — flag unset: exactly as before a flag set to github, empty or something else changes nothing
+  - [delivery-host-guard] VTID-05547 the guard — flag unset: exactly as before a GitHub error still reaches the caller unchanged (the guard does not catch it)
+  - [delivery-host-guard] VTID-05547 safeMerge and the Project Manager report the refusal as blocked, not as an error loop safeMerge with the flag unset merges and records the merge as before
+  - [delivery-host-guard] VTID-05547 safeMerge and the Project Manager report the refusal as blocked, not as an error loop the Project Manager with the flag unset still merges and sets the lane done
+  - [gitlab-delivery-webhook] VTID-05547 the stage — the signature check is the M2 route's, unchanged the unsigned staging probe → 401 signature_missing JSON, with the key set and with no key configured
+  - [gitlab-delivery-webhook] VTID-05547 the stage — the signature check is the M2 route's, unchanged a signed delivery with no key configured → 500 not_configured, nothing recorded
+  - [gitlab-delivery-webhook] VTID-05547 the stage — the signature check is the M2 route's, unchanged a signature made with another key, an altered body, a stale timestamp and svix-* headers only are refused 401
+  - [gitlab-delivery-webhook] VTID-05547 the stage — every reply is JSON malformed JSON with a valid signature → 400 invalid_json
+  - [gitlab-delivery-webhook] VTID-05547 the stage — every reply is JSON a body over the limit → 413 payload_too_large, as JSON
+  - [gitlab-delivery-webhook] VTID-05547 the stage — every reply is JSON any method but POST falls through to Express (no GET handler, no HTML error page from the stage)
+  - [command-hub-delivery] VTID-05547 navigation — the Delivery module is registered the dev frontend spec validator accepts the module (the same check the CI runs)
+  - [command-hub-delivery] VTID-05547 CSP and the page — no inline script or style, a bumped cache-buster index.html keeps its script list and has no inline script or style; delivery.js is not a tag of it and not in modules.json

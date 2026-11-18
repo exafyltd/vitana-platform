@@ -1,0 +1,13 @@
+{
+  "vtid": "VTID-05488",
+  "service": "gateway",
+  "not_verified_on_staging": "This lane adds migration files, a pgTAP test, read-only check SQL and one static gateway test. Nothing is applied from the PR: each file is applied later through RUN-MIGRATION.yml, one file per dispatch, after the owner approves the files and the target database (collaboration.md section 7d), and staging shares the production database, so the staging deploy runs no code that reads anything new. The staging check is read-only: docs/validation/VTID-05488/live-before.sql before, post-apply-checks.sql after, rollback-check.sql after a rollback, run by Kiro through RUN-MIGRATION's read-only check. No suite points at vitanaland.com.",
+  "tests": [
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-05488-supplier-tenant-relationships.test.ts",
+      "cwd": "services/gateway",
+      "reason": "Static assertions over the four migration files, the rollbacks, the read-only checks, the queue rows and the drift baseline."
+    }
+  ]
+}

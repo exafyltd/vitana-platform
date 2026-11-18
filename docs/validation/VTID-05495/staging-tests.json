@@ -1,0 +1,13 @@
+{
+  "vtid": "VTID-05495",
+  "service": "gateway",
+  "not_verified_on_staging": "This lane adds one migration file, a pgTAP test, read-only check SQL and a static node test (node --test docs/validation/VTID-05495/static-checks.test.cjs, run in CI and locally; outputs under docs/validation/VTID-05495/outputs/). Nothing is applied from the PR: the migration is applied later through RUN-MIGRATION.yml, after the owner approves the file and the target database (collaboration.md section 7d). Staging shares the production database and no deployed code reads the new table (there is no reader in this spec), so the staging deploy runs no code that touches anything new. The staging check is read-only: docs/validation/VTID-05495/pre-check.sql before and post-check.sql after the apply. No suite points at vitanaland.com.",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "existing moderation reports route is still mounted and requires auth",
+      "path": "/api/v1/admin/moderation/reports",
+      "expect_status": 401
+    }
+  ]
+}

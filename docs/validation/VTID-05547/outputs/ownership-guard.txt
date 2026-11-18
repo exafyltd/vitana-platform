@@ -1,0 +1,24 @@
+# GITHUB_BASE_REF=main GITHUB_HEAD_REF=kiro/agentic-delivery/gateway-delivery GITHUB_REF_NAME=kiro/agentic-delivery/gateway-delivery PR_TITLE="VTID-05547 (agentic-delivery/gateway-delivery): GitLab delivery stage, Delivery screen and cut guards" node scripts/ci/command-hub-ownership-guard.js   (the COMMAND-HUB-GUARDRAILS.yml step; repo root; base origin/main 7fd4106862d)
+======================================
+VTID-0302: Command Hub Ownership Guard
+======================================
+
+Branch: kiro/agentic-delivery/gateway-delivery
+PR Title: VTID-05547 (agentic-delivery/gateway-delivery): GitLab delivery stage, Delivery screen and cut guards
+Changed files: 90
+
+Command Hub frontend files modified:
+  - services/gateway/src/frontend/command-hub/app.js
+  - services/gateway/src/frontend/command-hub/delivery.js
+  - services/gateway/src/frontend/command-hub/index.html
+  - services/gateway/src/frontend/command-hub/navigation-config.js
+
+Authorized marker found in branch/PR title (allowlisted-marker).
+Guard check PASSED.
+exit=0
+
+# Control: the same run with the guard as it is on origin/main (without VTID-05547) exits 1:
+If this is a backend-only VTID, revert changes to:
+Guard check FAILED.
+exit=1
+# Run before the amend (Changed files: 90). After the amend the same command reports "Changed files: 94" (the amend adds evidence files, command-hub-screens.json and the guard itself, none under frontend/command-hub/) and "Guard check PASSED."

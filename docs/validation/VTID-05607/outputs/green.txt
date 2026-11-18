@@ -1,0 +1,346 @@
+TAP version 13
+# Subtest: config: the shipped file is schema version 1 with the accounts, roles, projects and profiles of plan 3.3
+ok 1 - config: the shipped file is schema version 1 with the accounts, roles, projects and profiles of plan 3.3
+  ---
+  duration_ms: 3.956563
+  type: 'test'
+  ...
+# Subtest: config: the shipped file satisfies what the merge bot reads (group, projects.<name>.landing and required_jobs)
+ok 2 - config: the shipped file satisfies what the merge bot reads (group, projects.<name>.landing and required_jobs)
+  ---
+  duration_ms: 0.451575
+  type: 'test'
+  ...
+# Subtest: config: every invalid input is refused with an error that names the key
+ok 3 - config: every invalid input is refused with an error that names the key
+  ---
+  duration_ms: 6.823094
+  type: 'test'
+  ...
+# Subtest: config: a project with a webhook, and defaults for what the file leaves out, are accepted
+ok 4 - config: a project with a webhook, and defaults for what the file leaves out, are accepted
+  ---
+  duration_ms: 0.505059
+  type: 'test'
+  ...
+# Subtest: config: the README documents every key the validator accepts, the profiles, the exit codes and the single-source-of-truth rule
+ok 5 - config: the README documents every key the validator accepts, the profiles, the exit codes and the single-source-of-truth rule
+  ---
+  duration_ms: 0.463982
+  type: 'test'
+  ...
+# Subtest: cli: defaults are relative to the script (the settings file and the CI folder of the repository)
+ok 6 - cli: defaults are relative to the script (the settings file and the CI folder of the repository)
+  ---
+  duration_ms: 0.282111
+  type: 'test'
+  ...
+# Subtest: free tier: the script, the settings file and the README name none of the Premium-only APIs or settings (plan §2)
+ok 7 - free tier: the script, the settings file and the README name none of the Premium-only APIs or settings (plan §2)
+  ---
+  duration_ms: 1.175065
+  type: 'test'
+  ...
+# Subtest: apply: a first apply on the M1 GitLab creates everything of plan 3.3, and the second apply makes zero writes
+ok 8 - apply: a first apply on the M1 GitLab creates everything of plan 3.3, and the second apply makes zero writes
+  ---
+  duration_ms: 111.544578
+  type: 'test'
+  ...
+# Subtest: apply: reads come first, the legacy runner is retagged before any token exists, protections and memberships exist before the first token
+ok 9 - apply: reads come first, the legacy runner is retagged before any token exists, protections and memberships exist before the first token
+  ---
+  duration_ms: 21.849637
+  type: 'test'
+  ...
+# Subtest: profiles: native sets push No one, merge Maintainers, force push off and the merge settings of plan 3.3; mirror keeps M1
+ok 10 - profiles: native sets push No one, merge Maintainers, force push off and the merge settings of plan 3.3; mirror keeps M1
+  ---
+  duration_ms: 16.761027
+  type: 'test'
+  ...
+# Subtest: drift: a setting changed by hand is reported by check (exit 3, nothing written) and corrected by apply
+ok 11 - drift: a setting changed by hand is reported by check (exit 3, nothing written) and corrected by apply
+  ---
+  duration_ms: 1237.024857
+  type: 'test'
+  ...
+# Subtest: membership: unmanaged members are never touched; an unexpected Maintainer of a native project is reported and not removed
+ok 12 - membership: unmanaged members are never touched; an unexpected Maintainer of a native project is reported and not removed
+  ---
+  duration_ms: 45.355643
+  type: 'test'
+  ...
+# Subtest: membership: an owner named in the file who is not yet a member becomes a Maintainer of existing projects
+ok 13 - membership: an owner named in the file who is not yet a member becomes a Maintainer of existing projects
+  ---
+  duration_ms: 18.007952
+  type: 'test'
+  ...
+# Subtest: tokens: created once with 90 days and the configured scopes; secret values are written from a private file, never as an argument
+ok 14 - tokens: created once with 90 days and the configured scopes; secret values are written from a private file, never as an argument
+  ---
+  duration_ms: 18.538365
+  type: 'test'
+  ...
+# Subtest: tokens: rotated only when fewer than 30 days are left (30 stays, 29 is rotated), the old token is revoked and the bot file follows
+ok 15 - tokens: rotated only when fewer than 30 days are left (30 stays, 29 is rotated), the old token is revoked and the bot file follows
+  ---
+  duration_ms: 34.017992
+  type: 'test'
+  ...
+# Subtest: tokens: a lost or wrong secret is recovered by rotating the active token, never by creating a second one
+ok 16 - tokens: a lost or wrong secret is recovered by rotating the active token, never by creating a second one
+  ---
+  duration_ms: 58.950356
+  type: 'test'
+  ...
+# Subtest: tokens: a secret that cannot be read (access denied) is an error, not "lost": the run writes nothing
+ok 17 - tokens: a secret that cannot be read (access denied) is an error, not "lost": the run writes nothing
+  ---
+  duration_ms: 12.177038
+  type: 'test'
+  ...
+# Subtest: tokens: scopes changed in the file replace the token, the new one stored before the old one is revoked
+ok 18 - tokens: scopes changed in the file replace the token, the new one stored before the old one is revoked
+  ---
+  duration_ms: 16.463507
+  type: 'test'
+  ...
+# Subtest: tokens: a duplicate managed token and a token with no or a too-long expiry on a managed account are revoked
+ok 19 - tokens: a duplicate managed token and a token with no or a too-long expiry on a managed account are revoked
+  ---
+  duration_ms: 20.009051
+  type: 'test'
+  ...
+# Subtest: tokens: a token created but not stored (Secrets Manager refused) is recovered by the next run through rotation
+ok 20 - tokens: a token created but not stored (Secrets Manager refused) is recovered by the next run through rotation
+  ---
+  duration_ms: 21.978878
+  type: 'test'
+  ...
+# Subtest: tokens: no secret appears in any output or argument list, also when GitLab echoes tokens back in an error body
+ok 21 - tokens: no secret appears in any output or argument list, also when GitLab echoes tokens back in an error body
+  ---
+  duration_ms: 17.498439
+  type: 'test'
+  ...
+# Subtest: admin token: not rotated with 10 days left, rotated with 9; the file is rewritten atomically (0600) and the rest of the run uses the new token
+ok 22 - admin token: not rotated with 10 days left, rotated with 9; the file is rewritten atomically (0600) and the rest of the run uses the new token
+  ---
+  duration_ms: 21.483517
+  type: 'test'
+  ...
+# Subtest: admin token: if the file cannot be written the token is not rotated, the rest of the run goes on and the run fails loudly
+ok 23 - admin token: if the file cannot be written the token is not rotated, the rest of the run goes on and the run fails loudly
+  ---
+  duration_ms: 18.235608
+  type: 'test'
+  ...
+# Subtest: admin token: the rotation is not retried, and a refused rotation leaves the token file as it was
+ok 24 - admin token: the rotation is not retried, and a refused rotation leaves the token file as it was
+  ---
+  duration_ms: 8.742879
+  type: 'test'
+  ...
+# Subtest: admin token: a token GitLab does not accept stops the run before any write
+ok 25 - admin token: a token GitLab does not accept stops the run before any write
+  ---
+  duration_ms: 1.140565
+  type: 'test'
+  ...
+# Subtest: fleet runner: created once with the plan values, its token goes to the secret; a missing, empty or placeholder secret resets the token
+ok 26 - fleet runner: created once with the plan values, its token goes to the secret; a missing, empty or placeholder secret resets the token
+  ---
+  duration_ms: 37.925001
+  type: 'test'
+  ...
+# Subtest: fleet runner: a token whose storing failed is regained by the next run (the runner exists, the secret is empty)
+ok 27 - fleet runner: a token whose storing failed is regained by the next run (the runner exists, the secret is empty)
+  ---
+  duration_ms: 21.670753
+  type: 'test'
+  ...
+# Subtest: legacy runner: retagged and kept unpaused until the file says paused; a missing runner is reported and does not stop the run
+ok 28 - legacy runner: retagged and kept unpaused until the file says paused; a missing runner is reported and does not stop the run
+  ---
+  duration_ms: 16.153956
+  type: 'test'
+  ...
+# Subtest: webhook: created with the signing token read from Secrets Manager, only the configured events, nothing re-sent when unchanged
+ok 29 - webhook: created with the signing token read from Secrets Manager, only the configured events, nothing re-sent when unchanged
+  ---
+  duration_ms: 16.482503
+  type: 'test'
+  ...
+# Subtest: webhook: a rotated signing token, a changed URL or event, a missing signing token and a removed hook are all corrected
+ok 30 - webhook: a rotated signing token, a changed URL or event, a missing signing token and a removed hook are all corrected
+  ---
+  duration_ms: 102.789242
+  type: 'test'
+  ...
+# Subtest: webhook: an empty, malformed or unreadable signing token is reported and no hook is written
+ok 31 - webhook: an empty, malformed or unreadable signing token is reported and no hook is written
+  ---
+  duration_ms: 24.895328
+  type: 'test'
+  ...
+# Subtest: central CI: only files that differ are written, in one commit, create vs update per file; nothing is deleted; other names are ignored
+ok 32 - central CI: only files that differ are written, in one commit, create vs update per file; nothing is deleted; other names are ignored
+  ---
+  duration_ms: 24.788827
+  type: 'test'
+  ...
+# Subtest: central CI: a project whose CI file exists nowhere is not pointed at it, and the run reports it
+ok 33 - central CI: a project whose CI file exists nowhere is not pointed at it, and the run reports it
+  ---
+  duration_ms: 11.748943
+  type: 'test'
+  ...
+# Subtest: licence guard: a licence stops check and apply loudly before any write; none, an empty body or an empty list pass
+ok 34 - licence guard: a licence stops check and apply loudly before any write; none, an empty body or an empty list pass
+  ---
+  duration_ms: 13.21942
+  type: 'test'
+  ...
+# Subtest: licence guard: a licence that appears later stops the next run even though there is drift to correct
+ok 35 - licence guard: a licence that appears later stops the next run even though there is drift to correct
+  ---
+  duration_ms: 12.680093
+  type: 'test'
+  ...
+# Subtest: licence guard: a licence read that fails (403) cannot prove there is none: stop without writing
+ok 36 - licence guard: a licence read that fails (403) cannot prove there is none: stop without writing
+  ---
+  duration_ms: 0.641774
+  type: 'test'
+  ...
+# Subtest: unreachable GitLab: the run writes nothing and exits 1, the next run converges
+ok 37 - unreachable GitLab: the run writes nothing and exits 1, the next run converges
+  ---
+  duration_ms: 22.819811
+  type: 'test'
+  ...
+# Subtest: unreachable GitLab: a read that fails half-way through the observation still writes nothing
+ok 38 - unreachable GitLab: a read that fails half-way through the observation still writes nothing
+  ---
+  duration_ms: 49.807228
+  type: 'test'
+  ...
+# Subtest: failures: GitLab going away in the middle of the writes stops the run at the first network error; the next run finishes the job
+ok 39 - failures: GitLab going away in the middle of the writes stops the run at the first network error; the next run finishes the job
+  ---
+  duration_ms: 25.48109
+  type: 'test'
+  ...
+# Subtest: every write passes retries: 0 — a 503 on a write is attempted once and left to the next run
+ok 40 - every write passes retries: 0 — a 503 on a write is attempted once and left to the next run
+  ---
+  duration_ms: 229.725349
+  type: 'test'
+  ...
+# Subtest: failures: a failed legacy retag keeps every token from being created; a failed account keeps only its own dependants back
+ok 41 - failures: a failed legacy retag keeps every token from being created; a failed account keeps only its own dependants back
+  ---
+  duration_ms: 12.70004
+  type: 'test'
+  ...
+# Subtest: failures: three server errors in a row end the run, a single one does not
+ok 42 - failures: three server errors in a row end the run, a single one does not
+  ---
+  duration_ms: 23.375851
+  type: 'test'
+  ...
+# Subtest: protection: when the re-creation after a removal fails, it is tried once more at once and then reported as unprotected
+ok 43 - protection: when the re-creation after a removal fails, it is tried once more at once and then reported as unprotected
+  ---
+  duration_ms: 18.141841
+  type: 'test'
+  ...
+# Subtest: failures: a failed protection keeps every token back; a failed membership keeps back the token of that account only
+ok 44 - failures: a failed protection keeps every token back; a failed membership keeps back the token of that account only
+  ---
+  duration_ms: 12.679312
+  type: 'test'
+  ...
+# Subtest: rotation: a token that turned inactive between the read and the rotation is not rotated (reuse of a revoked token would revoke its whole family)
+ok 45 - rotation: a token that turned inactive between the read and the rotation is not rotated (reuse of a revoked token would revoke its whole family)
+  ---
+  duration_ms: 19.430221
+  type: 'test'
+  ...
+# Subtest: service accounts: near the 100-account cap the sync reports it; at the cap creation fails loudly and only that account is held back
+ok 46 - service accounts: near the 100-account cap the sync reports it; at the cap creation fails loudly and only that account is held back
+  ---
+  duration_ms: 23.445366
+  type: 'test'
+  ...
+# Subtest: service accounts: a username already taken by a person is an error for that account only; it gets no token and no membership
+ok 47 - service accounts: a username already taken by a person is an error for that account only; it gets no token and no membership
+  ---
+  duration_ms: 7.549357
+  type: 'test'
+  ...
+# Subtest: cli: apply is the default; check and --check never write and exit 3 on drift, 0 when clean; --dry-run writes nothing
+ok 48 - cli: apply is the default; check and --check never write and exit 3 on drift, 0 when clean; --dry-run writes nothing
+  ---
+  duration_ms: 26.706062
+  type: 'test'
+  ...
+# Subtest: cli: usage mistakes exit 2 and write nothing; help exits 0
+ok 49 - cli: usage mistakes exit 2 and write nothing; help exits 0
+  ---
+  duration_ms: 0.836166
+  type: 'test'
+  ...
+# Subtest: cli: a missing admin token file, an unreadable or invalid settings file are errors (exit 1) that say what to do
+ok 50 - cli: a missing admin token file, an unreadable or invalid settings file are errors (exit 1) that say what to do
+  ---
+  duration_ms: 0.938728
+  type: 'test'
+  ...
+# Subtest: cli: a settings file naming another DOMAIN than the host is reported as a warning
+ok 51 - cli: a settings file naming another DOMAIN than the host is reported as a warning
+  ---
+  duration_ms: 2.802001
+  type: 'test'
+  ...
+# Subtest: real file writer: atomic, mode 0600 whatever the umask, replaces a looser file, leaves no temp file, lists only .yml files
+ok 52 - real file writer: atomic, mode 0600 whatever the umask, replaces a looser file, leaves no temp file, lists only .yml files
+  ---
+  duration_ms: 30.222865
+  type: 'test'
+  ...
+# Subtest: real aws runner: the generic runner passes input on stdin, never in the argument list; a failing call carries the AWS error text
+ok 53 - real aws runner: the generic runner passes input on stdin, never in the argument list; a failing call carries the AWS error text
+  ---
+  duration_ms: 13.729617
+  type: 'test'
+  ...
+# Subtest: redaction: every secret registered during a run, GitLab token shapes and bearer tokens are removed from text
+ok 54 - redaction: every secret registered during a run, GitLab token shapes and bearer tokens are removed from text
+  ---
+  duration_ms: 0.221782
+  type: 'test'
+  ...
+# Subtest: free tier: every call of a full apply, a drift repair and a webhook run is on the documented endpoint list, with the documented method
+ok 55 - free tier: every call of a full apply, a drift repair and a webhook run is on the documented endpoint list, with the documented method
+  ---
+  duration_ms: 15.538366
+  type: 'test'
+  ...
+# Subtest: tokens: a value file is removed even when Secrets Manager refuses the write
+ok 56 - tokens: a value file is removed even when Secrets Manager refuses the write
+  ---
+  duration_ms: 15.374274
+  type: 'test'
+  ...
+1..56
+# tests 56
+# suites 0
+# pass 56
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 2651.489064

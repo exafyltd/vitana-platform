@@ -1,0 +1,2 @@
+# loaded /projects/sandbox/wt-profiles-backfill/docs/validation/VTID-05572/pglite-harness/base_schema.sql
+# SQL ERROR: relation "legacy_archive.mt_profiles_tenant_unresolved" does not exist

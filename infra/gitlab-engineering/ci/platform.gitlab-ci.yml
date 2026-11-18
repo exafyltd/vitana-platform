@@ -5,6 +5,9 @@
 # merge-request pipelines (the mirrored project never gets a merge request, so for it only main and manual runs happen, as before),
 # one retry for a job that lost its machine (spot interruption) or got stuck, and jobs that a newer pipeline may cancel.
 # No deploy job, no secret, no variable that holds a credential, nothing that needs a licence.
+include:
+  - local: staging-gateway-deploy.gitlab-ci.yml
+
 workflow:
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
@@ -21,7 +24,7 @@ default:
       - runner_system_failure
       - stuck_or_timeout_failure
 
-stages: [check]
+stages: [check, build, deploy]
 
 variables:
   NODE_ENV: test
@@ -34,6 +37,8 @@ variables:
       files: [pnpm-lock.yaml]
     paths: [.pnpm-store]
   before_script:
+    # node:20-bookworm has no jq; GitHub's ubuntu-latest has it and gateway tests shell out to it.
+    - apt-get update -qq && apt-get install -y -qq jq
     - npm install -g pnpm@9.0.0
     - pnpm config set store-dir "$CI_PROJECT_DIR/.pnpm-store"
     - cd services/gateway

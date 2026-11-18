@@ -1,0 +1,114 @@
+TAP version 13
+# Subtest: migration creates the table with the plan columns, PK, locale CHECK and a live-key FK
+not ok 1 - migration creates the table with the plan columns, PK, locale CHECK and a live-key FK
+  ---
+  duration_ms: 0.902806
+  type: 'test'
+  location: '/projects/sandbox/wt-content-overrides/docs/validation/VTID-05495/static-checks.test.cjs:9:1'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '/tmp/om/supabase/migrations/20261101100000_mt_packs_tenant_content_overrides.sql'"
+  code: 'ENOENT'
+  stack: |-
+    Object.readFileSync (node:fs:440:20)
+    read (/projects/sandbox/wt-content-overrides/docs/validation/VTID-05495/static-checks.test.cjs:5:24)
+    TestContext.<anonymous> (/projects/sandbox/wt-content-overrides/docs/validation/VTID-05495/static-checks.test.cjs:10:19)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.start (node:internal/test_runner/test:944:17)
+    startSubtestAfterBootstrap (node:internal/test_runner/harness:296:17)
+  ...
+# Subtest: service-role-only: RLS on, client privileges revoked, service_role policy, no bare current_tenant_id()
+not ok 2 - service-role-only: RLS on, client privileges revoked, service_role policy, no bare current_tenant_id()
+  ---
+  duration_ms: 0.210826
+  type: 'test'
+  location: '/projects/sandbox/wt-content-overrides/docs/validation/VTID-05495/static-checks.test.cjs:19:1'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '/tmp/om/supabase/migrations/20261101100000_mt_packs_tenant_content_overrides.sql'"
+  code: 'ENOENT'
+  stack: |-
+    Object.readFileSync (node:fs:440:20)
+    read (/projects/sandbox/wt-content-overrides/docs/validation/VTID-05495/static-checks.test.cjs:5:24)
+    TestContext.<anonymous> (/projects/sandbox/wt-content-overrides/docs/validation/VTID-05495/static-checks.test.cjs:20:19)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+# Subtest: rollback drops exactly the new table; pre/post checks are read-only
+not ok 3 - rollback drops exactly the new table; pre/post checks are read-only
+  ---
+  duration_ms: 0.163223
+  type: 'test'
+  location: '/projects/sandbox/wt-content-overrides/docs/validation/VTID-05495/static-checks.test.cjs:28:1'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '/tmp/om/docs/validation/VTID-05495/rollback.sql'"
+  code: 'ENOENT'
+  stack: |-
+    Object.readFileSync (node:fs:440:20)
+    read (/projects/sandbox/wt-content-overrides/docs/validation/VTID-05495/static-checks.test.cjs:5:24)
+    TestContext.<anonymous> (/projects/sandbox/wt-content-overrides/docs/validation/VTID-05495/static-checks.test.cjs:29:20)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: MIGRATION-QUEUE row sits directly before the mt-launch rows with rollback and checks
+not ok 4 - MIGRATION-QUEUE row sits directly before the mt-launch rows with rollback and checks
+  ---
+  duration_ms: 0.17257
+  type: 'test'
+  location: '/projects/sandbox/wt-content-overrides/docs/validation/VTID-05495/static-checks.test.cjs:33:1'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '/tmp/om/docs/multitenancy/MIGRATION-QUEUE.md'"
+  code: 'ENOENT'
+  stack: |-
+    Object.readFileSync (node:fs:440:20)
+    read (/projects/sandbox/wt-content-overrides/docs/validation/VTID-05495/static-checks.test.cjs:5:24)
+    TestContext.<anonymous> (/projects/sandbox/wt-content-overrides/docs/validation/VTID-05495/static-checks.test.cjs:34:16)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: drift baseline lists the not-yet-live table and its count matches
+not ok 5 - drift baseline lists the not-yet-live table and its count matches
+  ---
+  duration_ms: 0.195353
+  type: 'test'
+  location: '/projects/sandbox/wt-content-overrides/docs/validation/VTID-05495/static-checks.test.cjs:40:1'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '/tmp/om/scripts/ci/migration-drift-baseline.json'"
+  code: 'ENOENT'
+  stack: |-
+    Object.readFileSync (node:fs:440:20)
+    read (/projects/sandbox/wt-content-overrides/docs/validation/VTID-05495/static-checks.test.cjs:5:24)
+    TestContext.<anonymous> (/projects/sandbox/wt-content-overrides/docs/validation/VTID-05495/static-checks.test.cjs:41:24)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: the migration version sorts before mt-launch 20261101110000
+ok 6 - the migration version sorts before mt-launch 20261101110000
+  ---
+  duration_ms: 0.226201
+  type: 'test'
+  ...
+1..6
+# tests 6
+# suites 0
+# pass 1
+# fail 5
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 58.490688

@@ -1,0 +1,8 @@
+# VTID-05491 commands run in the sandbox (PGlite only; no live system, no docker/psql/supabase CLI available)
+pglite-harness/lane.sh pgtap/vtid_05491_tenant_moderation.test.sql                          -> outputs/pgtap-green.txt (73 ok)
+pglite-harness/lane.sh --twice ...                                                          -> outputs/pgtap-green-applied-twice.txt (73 ok)
+pglite-harness/lane.sh --no-migrations ...                                                  -> outputs/pgtap-red-no-migrations.txt (red)
+pglite-harness/lane.sh --upto 2 ...                                                         -> outputs/pgtap-red-without-scope-migration.txt (red)
+pglite-harness/checks.sh                                                                    -> outputs/read-only-checks-and-rollback-pglite.txt
+jest (ts-jest, static/vtid-05491-tenant-moderation.test.ts)                                 -> outputs/jest-vtid-05491-green.txt (20 pass)
+jest on a clean origin/main worktree                                                        -> outputs/jest-vtid-05491-red-on-origin-main.txt (20 fail)

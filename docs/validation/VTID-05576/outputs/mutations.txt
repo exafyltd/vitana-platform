@@ -1,0 +1,14 @@
+## mutation in 20261102050100_vtid_05576_send_message_rpcs.sql: 'IF v_pref = 'nobody' THEN' -> 'IF false THEN'
+not ok 48 - 48 a network send to a "nobody" recipient fails
+# Looks like you failed 1 test(s) of 62
+## mutation in 20261102050000_vtid_05576_chat_messages_scope.sql: 'AND coalesce(current_setting('vitana.chat_send_rpc', true), '') <> 'on'' -> 'AND false'
+not ok 8 - 8 a direct service-role INSERT of scope = network fails
+not ok 11 - 11 a direct service-role UPDATE of scope to network fails
+# Looks like you failed 2 test(s) of 62
+## mutation in 20261102050200_vtid_05576_chat_messages_lockdown.sql: 'REVOKE INSERT, UPDATE ON TABLE public.chat_messages FROM PUBLIC, anon, authenticated;' -> '-- mutated'
+not ok 17 - 17 a recipient cannot rewrite the content of a message
+# Looks like you failed 1 test(s) of 62
+## mutation in 20261102050100_vtid_05576_send_message_rpcs.sql: rate-limit ceiling '>= 20' -> '>= 2000'
+not ok 61 - 61 the 21st new network contact in 24 hours is rate limited
+# Looks like you failed 1 test(s) of 62
+## restored: 62 ok of 62

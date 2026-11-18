@@ -1,0 +1,44 @@
+# loaded /projects/sandbox/wt-nh-a/docs/validation/VTID-05595/pglite-harness/base_schema_id.sql
+# loaded /projects/sandbox/wt-nh-a/supabase/migrations/20261102130000_vtid_05595_health_home_tenant_column.sql
+# loaded /projects/sandbox/wt-nh-a/supabase/migrations/20261102130100_vtid_05595_health_home_tenant_resolver_backfill.sql
+1..40
+ok 1 - resolver exists
+ok 2 - backfill function exists
+ok 3 - app_users.health_home_tenant_id is a nullable uuid
+ok 4 - the column is indexed
+ok 5 - resolver is STABLE SECURITY DEFINER
+ok 6 - resolver pins its search_path
+ok 7 - resolver never reads app_metadata, a JWT claim, a setting or the session tenant
+ok 8 - ab_dual member resolves to the primary tenant
+ok 9 - ab_dual member resolves the same with the other tenant in the session claims
+ok 10 - single-primary member resolves to that tenant
+ok 11 - two primary rows resolve to NULL
+ok 12 - a member with no primary row resolves to NULL
+ok 13 - a user with no membership resolves to NULL
+ok 14 - a frozen column wins over the primary row
+ok 15 - authenticated cannot execute the resolver
+ok 16 - anon cannot execute the resolver
+ok 17 - authenticated cannot execute the backfill
+ok 18 - before the backfill the column of an unambiguous member is NULL
+ok 19 - the backfill (batch size 1, so it loops) freezes at least the two unambiguous members
+ok 20 - ab_dual and single-primary members are frozen to their primary tenant
+ok 21 - two primary rows stay NULL
+ok 22 - no primary row stays NULL
+ok 23 - no membership stays NULL
+ok 24 - an already-frozen column is not overwritten
+ok 25 - the snapshot holds the frozen value of a backfilled member
+ok 26 - the snapshot holds the previous (NULL) value and a 30-day retention
+ok 27 - no snapshot row for members the backfill did not touch
+ok 28 - a member cannot read the snapshot
+ok 29 - a second backfill run freezes nothing
+ok 30 - a second run changes no value
+ok 31 - a frozen member keeps the home tenant after its primary membership moves
+ok 32 - a repaired member resolves to its single primary tenant
+ok 33 - the next backfill freezes only the repaired member
+ok 34 - the repaired member is frozen
+ok 35 - the column references a real tenant
+ok 36 - a member cannot change its own home tenant
+ok 37 - the member's home tenant is unchanged after the attempt
+ok 38 - a batch size below 1 is refused
+ok 39 - a NULL batch size is refused
+ok 40 - the resolver of an unknown user is NULL

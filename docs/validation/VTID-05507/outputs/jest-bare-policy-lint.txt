@@ -1,0 +1,12 @@
+    ✓ the rollback recreates each policy exactly as the migration that created it, and the rewrite only swaps the helper (588 ms)
+  VTID-05465 live-body guard
+    ✓ reads the live current_tenant_id() body in DO $pre$ and raises before any policy is touched unless the three 20260218 markers match (1 ms)
+  VTID-05465 lint parser
+    ✓ counts only bare policies left after drops, re-definitions and DO blocks (36 ms)
+    ✓ applies a paired _rollback.sql only when asked (42 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       8 passed, 8 total
+Snapshots:   0 total
+Time:        2.188 s
+Ran all test suites.

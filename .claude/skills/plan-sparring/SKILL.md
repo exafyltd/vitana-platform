@@ -1,14 +1,21 @@
 ---
 name: plan-sparring
-description: Mandatory ping-pong review of every new plan by an independent sparring partner BEFORE a VTID is allocated (Plan Sparring Gate, VTID-04868, owner decision 2026-10-03). Use whenever you have drafted a plan for any work that will get a VTID — features, fixes, refactors, infra, docs — and before calling allocate_global_vtid or /vtid/allocate.
+description: Ping-pong review of back-end and complex plans by an independent sparring partner BEFORE a VTID is allocated (Plan Sparring Gate, VTID-04868, amended 2026-11-07). Use for any back-end, schema, API, route, infra or CI plan. Simple front-end changes (class frontend-simple) need a VTID but no sparring; do not use this skill for them.
 ---
 
 # Plan Sparring Gate
 
+**When this skill applies (owner decision 2026-11-07).** Sparring is for back-end and complex work: `services/**`,
+`supabase/**` (migrations, RLS, edge functions), `.github/**`, `scripts/**`, governance, LLM routing, auth, and any change
+that adds or alters an API, a route, a schema or a deploy path. A **simple front-end change** (class `frontend-simple`,
+vitana-v1: diff inside `src/**` or `public/**`, no deny-listed file, at most 15 files; see CLAUDE.md rule 51a) needs
+a VTID from the ledger and **no sparring**: declare `"change_class": "frontend-simple"` in its `scope.json` and go
+straight to implementation. The PR gate checks the diff and sends a non-qualifying claim back here.
+
 Owner directive (2026-10-03, standing): *every new plan gets a ping-pong sparring partner, as a
 standard process, before a new VTID is generated.* No VTID is allocated for the sparring itself.
 
-Order, always: **plan → sparring → owner approval → VTID → code.**
+Order, always: **plan → sparring → machine approval on convergence → VTID → code.** (Bridge period, 2026-11-12.)
 
 ## 1. Write the plan
 Save it as a markdown file in your scratchpad. Put the plan body between the markers
@@ -41,19 +48,13 @@ least two passes: findings, then the partner's response to your answers.
 
 Owner decisions are not re-argued with the partner; only how the plan implements them.
 
-## 4. Gate 1 — owner approval (one message)
-Send the owner ONE message (Autonomy Contract, VTID-04947): the final plan, every round's findings
-with your responses, the verdict, the files in scope and the test plan, ending with the single
-question "Do you approve this plan?". Ask nothing else in it. A light-class plan still needs the
-yes. A "yes" in chat is the standing instruction for everything up to Gate 2. Record it as the
-approval line in `plan-sparring.md`. In the gateway tier the binding approval is the exafy_admin
-click (`POST /api/v1/plans/spar/:id/approve`).
+## 4. Machine approval on convergence (bridge period, 2026-11-12)
+No message to the owner. A CONVERGED verdict with a plan hash is the approval. Record the final plan, the plan hash, every round, and the verdict in `plan-sparring.md` as the approval line. The gateway tier records the same convergence as its approval (`POST /api/v1/plans/spar/:id/approve`).
 
 **CI-sparred plans (VTID-05214/05218):** a plan pushed as PR `plan(<slug>): …` with `.kiro/specs/<slug>/plan.md` is
 sparred by `PLAN-SPAR.yml` through the gateway (session created with `approval_policy: converged-auto-v1`). When it
 converges the gateway records the policy approval and CI allocates the lanes' VTIDs — no Gate 1 message. Not converged
-after the re-plan session → the plan is parked (Command Hub board). Use this path for plans Kiro authors; a plan you
-spar here with the local partner still goes to the owner as Gate 1.
+after the re-plan session → the plan is parked (Command Hub board). Use this path for plans Kiro authors; a plan spared with the local partner is approved by the machine on convergence (bridge period 2026-11-12).
 
 ## 5. Then allocate
 A PreToolUse hook denies any allocation call (allocate_global_vtid, /vtid/allocate, a direct

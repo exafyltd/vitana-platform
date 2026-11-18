@@ -1,0 +1,9 @@
+{
+  "vtid": "VTID-05446",
+  "service": "none",
+  "not_verified_on_staging": true,
+  "tests": [
+    { "kind": "existing", "ref": "bash scripts/ci/sql-tests/run-mt-isolation-test.sh",
+      "reason": "the lane deploys nothing; the suite runs on the PGlite stack in-process, and MT-LOCAL-STACK runs the stack gate on every lane push" }
+  ]
+}

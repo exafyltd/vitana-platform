@@ -1,0 +1,30 @@
+1..29
+ok 1 - fixture loaded (16 rows)
+ok 2 - before: group A has 3 current facts
+ok 3 - mt_memfacts_merge() is service_role only
+ok 4 - mt_memfacts_restore() is service_role only
+ok 5 - restore with no snapshot yet does not fail
+ok 6 - restore with no snapshot changes nothing
+ok 7 - merge reports at least this fixture's 5 groups and 6 superseded rows
+ok 8 - group A collapses to one current fact
+ok 9 - group A: the newest extracted_at (A2) stays current
+ok 10 - group A: A1 is superseded by the winner
+ok 11 - group A: A3 is superseded by the winner
+ok 12 - group A: losers carry superseded_at
+ok 13 - group A: no row was deleted
+ok 14 - group A: a loser keeps its value
+ok 15 - group B: equal extracted_at, the larger id wins
+ok 16 - a lone fact stays current
+ok 17 - self and disclosed facts of the same key are not merged
+ok 18 - another user's group merges on its own (E2 wins)
+ok 19 - another tenant's group merges on its own (F1 wins)
+ok 20 - an already-superseded row and its current successor are untouched
+ok 21 - group H: current duplicates merge, newest (H3) wins
+ok 22 - group H: the row superseded before the merge keeps its original superseded_by and superseded_at
+ok 23 - after: no (tenant,user,fact_key,entity) group has more than one current fact
+ok 24 - a second merge changes none of the fixture rows
+ok 25 - a second merge supersedes nothing
+ok 26 - restore returns every fixture row to its pre-merge state
+ok 27 - restore reinstates the group A duplicates
+ok 28 - merge after a restore runs
+ok 29 - merge after a restore collapses group A again

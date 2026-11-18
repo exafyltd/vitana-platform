@@ -1,0 +1,6 @@
+# mutation gate-busy-removed: scripts/aws/staging-cutover-gate.mjs
+# replaced:   else for (const u of busy)
+# with:       else for (const u of [])
+not ok 16 - gate refuses: a staging deploy running
+# pass 26
+# fail 1

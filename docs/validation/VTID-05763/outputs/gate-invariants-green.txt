@@ -1,0 +1,11 @@
+# Subtest: merge-base copy of gate-invariants.mjs holds on this checkout (bootstrap when absent)
+ok 1 - merge-base copy of gate-invariants.mjs holds on this checkout (bootstrap when absent)
+# staging-prod-ref-guard: not yet present, invariant deferred
+ok 2 - working-tree invariants hold on this checkout
+ok 3 - mutation: dropping a glob from the protected list fails
+ok 4 - mutation: one accept unlocking a protected gate file fails
+ok 5 - mutation: governance.ts losing a protected glob fails
+# Subtest: prod-reference guard and GATE-INVARIANTS.yml are deferred until present, then enforced
+ok 6 - prod-reference guard and GATE-INVARIANTS.yml are deferred until present, then enforced
+# pass 6
+# fail 0

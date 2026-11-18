@@ -1,0 +1,6 @@
+# mutation impact-ledger-acceptable: scripts/ci/staging-db/impact-classification.json
+# replaced: "blocks_flip": true, "acceptable": false, "resolved_when": { "var": "PLAN_SPAR_GATEWAY_URL"
+# with:     "blocks_flip": true, "acceptable": true, "resolved_when": { "var": "PLAN_SPAR_GATEWAY_URL"
+not ok 21 - impact: PLAN-SPAR and VTID-ALLOCATE block until PLAN_SPAR_GATEWAY_URL is the production gateway; owner acceptance cannot unblock them
+# pass 26
+# fail 1

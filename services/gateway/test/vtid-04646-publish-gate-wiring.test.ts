@@ -1,10 +1,10 @@
 /**
  * VTID-04646 — where the PUBLISH gate sits, pinned against the source.
  *
- * The gate must run on the commit AWS staging actually serves, before the
- * bake check, the VTID allocation and the workflow dispatch, so a refused
- * publish leaves nothing behind. Both Command Hub publish buttons must go
- * through the override prompt.
+ * The gate evaluates the commit AWS staging actually serves, before the bake
+ * check, the VTID allocation and the workflow dispatch. It no longer refuses:
+ * owner decision 2026-11-08 removed the STAGING-VERIFY block from PUBLISH. A
+ * publish without a passing run is recorded as production.publish.gate_skipped.
  */
 import * as fs from 'fs';
 import * as path from 'path';
@@ -37,27 +37,23 @@ describe('VTID-04646 publish gate wiring', () => {
     expect(alloc).toBeGreaterThan(gate);
   });
 
-  it('refuses with 409 staging_not_verified and records the refusal', () => {
+  it('does not refuse the publish on STAGING-VERIFY (owner decision 2026-11-08)', () => {
     const body = awsFlowBody();
-    expect(body).toMatch(/if \(!gate\.allowed\)/);
-    expect(body).toMatch(/production\.publish\.blocked/);
-    expect(body).toMatch(/status\(409\)[\s\S]{0,80}error: 'staging_not_verified'/);
-    expect(body).toMatch(/override_allowed: true/);
+    expect(body).not.toMatch(/status\(409\)[\s\S]{0,80}error: 'staging_not_verified'/);
+    expect(body).toMatch(/const gate = \{ \.\.\.verified, allowed: true \}/);
   });
 
-  it('records an override on the publish event and as its own event', () => {
+  it('records a publish without a passing STAGING-VERIFY as its own evidence event', () => {
     const body = awsFlowBody();
-    expect(body).toMatch(/staging_verify_gate: gate\.status/);
-    expect(body).toMatch(/override_reason: gate\.override_reason/);
-    expect(body).toMatch(/production\.publish\.verification_overridden/);
+    expect(body).toMatch(/if \(!verified\.allowed\)/);
+    expect(body).toMatch(/production\.publish\.gate_skipped/);
   });
 
-  it('declares the two new CICD event types', () => {
-    expect(cicdTypes).toContain("'production.publish.blocked'");
-    expect(cicdTypes).toContain("'production.publish.verification_overridden'");
+  it('declares the CICD event type the publish flow emits', () => {
+    expect(cicdTypes).toContain("'production.publish.gate_skipped'");
   });
 
-  it('routes both Command Hub publish buttons through the override prompt', () => {
+  it('keeps the retired Command Hub override prompt in place (unreachable, not removed)', () => {
     expect(stagingJs).toMatch(/function postPublish\(payload, headers\)/);
     expect(stagingJs).toMatch(/error !== 'staging_not_verified'/);
     expect(stagingJs).toMatch(/override_reason: reason\.trim\(\)/);

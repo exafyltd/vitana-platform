@@ -1,0 +1,188 @@
+## base_schema.sql (loaded)
+## 20260218000000_fix_maxina_signup_tenant_association.sql (loaded)
+## vtid_05488_fixture.sql (loaded)
+## live-before.sql
+supplier_tenant_relationships | discover_tenant_gate_enabled | partner_tenant_snapshot | products_distribution_col | partner_tenant_uuid_col
+NULL | NULL | NULL | 0 | 0
+
+column_name
+tenant_id
+
+slug | is_default
+05488000-0000-4000-8000-0000000000a1 | false
+maxina | true
+t05488a | false
+t05488b | false
+
+merchants | products | user_tenants | tenant_settings | current_tenant_id | partner_tenant | partner_organizations
+merchants | products | user_tenants | tenant_settings | current_tenant_id() | partner_tenant | partner_organizations
+
+merchants_total | merchants_active | products_total | products_active
+2 | 1 | 2 | 1
+
+tablename | policyname | cmd | roles | qual
+merchants | merchants_select | SELECT | ["authenticated"] | (is_active = true)
+merchants | merchants_service | ALL | ["service_role"] | true
+products | products_select | SELECT | ["authenticated"] | (is_active = true)
+products | products_service | ALL | ["service_role"] | true
+
+tenants_with_gate_on
+0
+
+data_type
+text
+
+tenant_id | count
+unknown-partner-key | 1
+ MAXINA  | 1
+05488000-0000-4000-8000-0000000000a0 | 1
+05488000-0000-4000-8000-0000000000a1 | 1
+05488000-0000-4000-8000-0000000000ff | 1
+t05488a | 1
+
+partner_key | slug | mapped_tenant_uuid | partner_rows
+05488000-0000-4000-8000-0000000000a1 | 05488000-0000-4000-8000-0000000000a1 | d08da40e-426c-4eed-99b8-22c0a4470f4d | 1
+t05488a | t05488a | 05488000-0000-4000-8000-0000000000a1 | 1
+
+## 20261102120000_vtid_05488_supplier_tenant_relationships.sql (loaded)
+## 20261102120100_vtid_05488_products_distribution.sql (loaded)
+## 20261102120200_vtid_05488_partner_tenant_backfill.sql (loaded)
+## 20261102120300_vtid_05488_products_merchants_tenant_rls.sql (loaded)
+## post-apply-checks.sql
+rls_on
+true
+
+policyname | cmd | roles
+supplier_tenant_relationships_member_select | SELECT | ["authenticated"]
+supplier_tenant_relationships_service | ALL | ["service_role"]
+
+auth_select | auth_insert | anon_select | service_insert
+true | false | false | true
+
+tenants_seeded | rows | active_rows | merchants_total | only_maxina
+1 | 2 | 2 | 2 | true
+
+is_nullable | column_default
+NO | 'community'::text
+
+non_community | products_total
+0 | 2
+
+convalidated
+false
+
+snapshot
+bak_vtid_05488_partner_tenant
+
+data_type
+text
+
+total | mapped | unresolved
+6 | 3 | 3
+
+id | free_text | tenant_uuid | slug
+pt1 | 05488000-0000-4000-8000-0000000000a0 | 05488000-0000-4000-8000-0000000000a0 | maxina
+pt2 |  MAXINA  | 05488000-0000-4000-8000-0000000000a0 | maxina
+pt3 | unknown-partner-key | NULL | NULL
+pt4 | 05488000-0000-4000-8000-0000000000ff | NULL | NULL
+pt5 | t05488a | 05488000-0000-4000-8000-0000000000a1 | t05488a
+pt6 | 05488000-0000-4000-8000-0000000000a1 | NULL | NULL
+
+prosecdef | provolatile | proconfig
+true | s | ["search_path=public, pg_catalog"]
+
+auth_exec | anon_exec
+true | false
+
+tablename | policyname | gate_guarded | uses_forbidden_helper
+merchants | merchants_select | true | false
+products | products_select | true | false
+
+tenants_with_gate_on
+0
+
+merchants_active | products_active
+1 | 1
+
+merchants_total | seeded_active_rows | merchants_without_maxina_row
+2 | 2 | 0
+
+## rollback-120300-products-merchants-tenant-rls.sql (loaded)
+## rollback-120200-partner-tenant-backfill.sql (loaded)
+## rollback-120100-products-distribution.sql (loaded)
+## rollback-120000-supplier-tenant-relationships.sql (loaded)
+## rollback-check.sql
+supplier_tenant_relationships | helper | distribution_col | tenant_uuid_col
+NULL | NULL | 0 | 0
+
+tablename | policyname | qual
+merchants | merchants_select | (is_active = true)
+products | products_select | (is_active = true)
+
+## rollback-120300-products-merchants-tenant-rls.sql (loaded)
+## rollback-120200-partner-tenant-backfill.sql (loaded)
+## rollback-120100-products-distribution.sql (loaded)
+## rollback-120000-supplier-tenant-relationships.sql (loaded)
+## 20261102120000_vtid_05488_supplier_tenant_relationships.sql (loaded)
+## 20261102120100_vtid_05488_products_distribution.sql (loaded)
+## 20261102120200_vtid_05488_partner_tenant_backfill.sql (loaded)
+## 20261102120300_vtid_05488_products_merchants_tenant_rls.sql (loaded)
+## post-apply-checks.sql
+rls_on
+true
+
+policyname | cmd | roles
+supplier_tenant_relationships_member_select | SELECT | ["authenticated"]
+supplier_tenant_relationships_service | ALL | ["service_role"]
+
+auth_select | auth_insert | anon_select | service_insert
+true | false | false | true
+
+tenants_seeded | rows | active_rows | merchants_total | only_maxina
+1 | 2 | 2 | 2 | true
+
+is_nullable | column_default
+NO | 'community'::text
+
+non_community | products_total
+0 | 2
+
+convalidated
+false
+
+snapshot
+bak_vtid_05488_partner_tenant
+
+data_type
+text
+
+total | mapped | unresolved
+6 | 3 | 3
+
+id | free_text | tenant_uuid | slug
+pt1 | 05488000-0000-4000-8000-0000000000a0 | 05488000-0000-4000-8000-0000000000a0 | maxina
+pt2 |  MAXINA  | 05488000-0000-4000-8000-0000000000a0 | maxina
+pt3 | unknown-partner-key | NULL | NULL
+pt4 | 05488000-0000-4000-8000-0000000000ff | NULL | NULL
+pt5 | t05488a | 05488000-0000-4000-8000-0000000000a1 | t05488a
+pt6 | 05488000-0000-4000-8000-0000000000a1 | NULL | NULL
+
+prosecdef | provolatile | proconfig
+true | s | ["search_path=public, pg_catalog"]
+
+auth_exec | anon_exec
+true | false
+
+tablename | policyname | gate_guarded | uses_forbidden_helper
+merchants | merchants_select | true | false
+products | products_select | true | false
+
+tenants_with_gate_on
+0
+
+merchants_active | products_active
+1 | 1
+
+merchants_total | seeded_active_rows | merchants_without_maxina_row
+2 | 2 | 0
+

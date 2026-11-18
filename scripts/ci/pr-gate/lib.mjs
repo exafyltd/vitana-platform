@@ -154,7 +154,12 @@ export function evaluateSparringRecord(text) {
   const t = String(text || '');
   const problems = [];
   if (!/\b(CONVERGED|ESCALATED)\b/.test(t)) problems.push('no verdict (CONVERGED / ESCALATED)');
-  if (!/owner approval/i.test(t)) problems.push('no owner-approval line');
+  // Approval (bridge period, owner instruction 2026-11-12): a CONVERGED verdict is the machine approval. An owner-approval
+  // line and policy `converged-auto-v1` (VTID-05214) still count. ESCALATED without an approval line does not pass.
+  const ownerApproved = /owner approval/i.test(t);
+  const policyApproved = /approved by policy `converged-auto-v1`/i.test(t) && /\bCONVERGED\b/.test(t);
+  const machineApproved = /\bCONVERGED\b/.test(t) && !/\bESCALATED\b/.test(t);
+  if (!ownerApproved && !policyApproved && !machineApproved) problems.push('no approval: need a CONVERGED verdict (machine approval), an owner-approval line, or "approved by policy `converged-auto-v1`"');
   if (!/plan hash/i.test(t)) problems.push('no plan hash');
   return problems;
 }

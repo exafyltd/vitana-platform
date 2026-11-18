@@ -1,0 +1,6 @@
+# mutation taskdef-restore-removed: scripts/aws/staging-cutover-taskdef.mjs
+# replaced:   if (!findMarker(td)) return text;
+# with:       return text;
+not ok 5 - round trip: shared(isolated(x)) is x exactly (same JSON text), for both services
+# pass 20
+# fail 1

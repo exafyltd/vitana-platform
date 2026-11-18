@@ -1,0 +1,56 @@
+# loaded /projects/sandbox/wt-network-visibility/docs/validation/VTID-05582/pgtap/vtid_05582_fixture.sql
+# loaded /projects/sandbox/wt-network-visibility/supabase/migrations/20261102051000_vtid_05582_network_visible_profile.sql
+# loaded /projects/sandbox/wt-network-visibility/supabase/migrations/20261102051100_vtid_05582_connection_rpcs.sql
+1..52
+ok 1 - 1 network_visible boolean NOT NULL DEFAULT false
+ok 2 - 2 network_visible_decided_at exists and is nullable
+ok 3 - 3 messaging_preference NOT NULL DEFAULT connections
+ok 4 - 4 every pre-existing profile backfilled to network_visible = false
+ok 5 - 5 every pre-existing profile has messaging_preference = connections
+ok 6 - 6 messaging_preference outside everyone/connections/nobody is rejected
+ok 7 - 7 messaging_preference accepts everyone
+ok 8 - 8 a service_bot_accounts member cannot be set network_visible = true
+ok 9 - 9 a notification_test_actors member cannot be set network_visible = true
+ok 10 - 10 a platform_only_accounts member cannot be set network_visible = true
+ok 11 - 11 an INSERT for a listed account lands network_visible = false
+ok 12 - 12 a real member can opt in on their own row
+ok 13 - 13 opting in stamps network_visible_decided_at
+ok 14 - 14 a client cannot back-date network_visible_decided_at
+ok 15 - 15 a member cannot change another member's network_visible
+ok 16 - 16 second real member opts in (U3)
+ok 17 - 17 clients cannot enumerate excluded accounts
+ok 18 - 18 authenticated has no INSERT or UPDATE privilege
+ok 19 - 19 anon has no INSERT or UPDATE privilege
+ok 20 - 20 no column-level INSERT or UPDATE privilege remains
+ok 21 - 21 a self-inserted accepted connection fails
+ok 22 - 22 a plain client INSERT of a pending request fails too
+ok 23 - 23 authenticated can still SELECT (RLS limits it to own rows)
+ok 24 - 24 service_role keeps its privileges
+ok 25 - 25 both RPCs are SECURITY DEFINER
+ok 26 - 26 both RPCs pin search_path
+ok 27 - 27 EXECUTE: authenticated yes, anon no
+ok 28 - 28 no auth.uid() is refused
+ok 29 - 29 a request to yourself is refused
+ok 30 - 30 an unknown scope is refused
+ok 31 - 31 community needs a shared tenant: U1 and U3 share only the platform tenant
+ok 32 - 32 community request U1 -> U2 (shared tenant TA) returns the request id
+ok 33 - 33 the sender is bound to auth.uid()
+ok 34 - 34 a community message is capped at 500 characters
+ok 35 - 35 the new request is pending / normal
+ok 36 - 36 a repeated request returns the same id (idempotent)
+ok 37 - 37 and no second row is written
+ok 38 - 38 U2 -> U4 (shared TA) works and is findable
+ok 39 - 39 a listed service account cannot send a network request
+ok 40 - 40 a network request from a member who is not network_visible fails
+ok 41 - 41 a network request to a non-network_visible recipient fails
+ok 42 - 42 a network request to a "nobody" recipient fails
+ok 43 - 43 a network request to someone who blocked the sender fails
+ok 44 - 44 once the block has expired, the network request goes through (U1 -> U3, connections preference)
+ok 45 - 45 the free-text message is dropped for a network request
+ok 46 - 46 the 21st request inside 24 hours is rate limited
+ok 47 - 47 the sender cannot accept their own request
+ok 48 - 48 a third member cannot accept it
+ok 49 - 49 the recipient accepts
+ok 50 - 50 accepting stamps responded_at
+ok 51 - 51 a request that is no longer pending cannot be changed again
+ok 52 - 52 the recipient can decline

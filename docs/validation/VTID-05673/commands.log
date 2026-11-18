@@ -1,0 +1,5 @@
+# VTID-05673 (mt-local-stack-replay-skips-r1/replay-skips), session kiro-hotmail-202611061752-cc1f, base origin/main 690214d259
+$ node scripts/mt/stack/check-stack.mjs   # red on base -> outputs/red-on-base.txt (names 20261102054000_vtid_05579_chat_groups_scope.sql)
+$ node scripts/mt/stack/discover-skips.mjs --write   # 733 migrations, 425 apply, 308 skipped; diff = the two VTID-05579 entries (054000, 054200) only
+$ node scripts/mt/stack/check-stack.mjs   # outputs/green.txt: PASS local-stack gate
+$ npm run test:mt-stack   # 57 tests, 57 pass, 0 fail (outputs/green.txt)

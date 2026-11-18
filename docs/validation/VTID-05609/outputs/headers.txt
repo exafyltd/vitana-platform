@@ -1,0 +1,6 @@
+# header lines the Depends column was derived from (R2-F1)
+supabase/migrations/20261102053100_vtid_05575_daily_matches_guard.sql:20:-- Depends on VTID-05582 (20261102051000: network_visible, is_network_excluded_account). The functions are plpgsql, so this file
+supabase/migrations/20261102053200_vtid_05575_intent_matchers_scope.sql:24:-- Depends on 20261102053100 (is_network_candidate) and VTID-05582. Rollback: docs/validation/VTID-05575/rollback-053200-intent-matchers-scope.sql
+supabase/migrations/20261102052000_vtid_05573_legacy_messages_snapshot_freeze.sql:5:-- and their participant tables thread_participants / global_thread_participants, which the migration needs to rebuild group
+supabase/migrations/20261102052000_vtid_05573_legacy_messages_snapshot_freeze.sql:28:-- target database (collaboration.md 7d). Needs 20261102050000 (VTID-05576) and 20261102051000 (VTID-05582) applied first.
+supabase/migrations/20261102052100_vtid_05573_legacy_messages_functions.sql:31:-- Needs: chat_messages.scope (20261102050000) and is_network_excluded_account (20261102051000).

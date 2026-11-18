@@ -1,0 +1,22 @@
+# Red of the adaptation to merge-bot's final gitlab-land.mjs: the four tests added on the rebuilt branch, run against the lane's code as
+# cherry-picked onto origin/main 0f45367bb69a8661eca6d5170ebb33909d03d001 (commit 19abaf4c0b43da465b5cbbab06ee848e1ffd8c94, before the adaptation), in /projects/sandbox/.scratch/tools/6eb1/pre (git archive of that commit's scripts/ plus
+# the new gitlab-land-queue.test.mjs; outside the repo), 2026-11-05T22:47:11Z.
+# command: node --test --test-name-pattern='^(queue mode is on for the two projects|a merge request whose merge of main conflicts|a position whose merge GitLab keeps refusing|every git command of a queue tick)' scripts/eng/gitlab-land-queue.test.mjs
+# result: tests 4, pass 1, fail 3. The pass is the conflict case: the queue already skipped a merge request whose merge of main conflicts and went on
+# with the younger ones (M2's blocking fix); it is a regression test of that rule. The three red ones: the queue switch by name (DEFAULTS.queueProjects
+# missing), the 60-minute bound of a refused merge (no drop), and the credential flag (git merge-tree ran without -c credential.helper=).
+
+not ok 1 - queue mode is on for the two projects of the cut by name (the settings schema has no queue key), off for any other project; an explicit setting wins
+  error: 'land.DEFAULTS.queueProjects is not iterable'
+ok 2 - a merge request whose merge of main conflicts is skipped with one comment, and the younger ones go on in the same tick (M2's conflict rule, in queue mode)
+not ok 3 - a position whose merge GitLab keeps refusing holds the train for at most 60 minutes from its pipeline's creation; then it is dropped and the positions behind it are rebuilt without it
+not ok 4 - every git command of a queue tick starts with -c credential.helper=, as M2's bot does, so no configured helper can store the token
+    git -C /tmp/land-queue-VG1CL1/land/vitana-platform.git merge-tree --write-tree --no- starts with the flag
+# tests 4
+# suites 0
+# pass 1
+# fail 3
+# cancelled 0
+# skipped 0
+# todo 0
+exit 1

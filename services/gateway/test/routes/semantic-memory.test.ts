@@ -1,19 +1,67 @@
 /**
  * Tests for src/routes/semantic-memory.ts (VTID-01184).
  *
- * Mounted at /api/v1/memory in src/index.ts, with NO auth middleware in
- * front of it (verified by reading the router + its mount call — unlike
- * most admin routes in this codebase it does not use requireAuth /
- * requireExafyAdmin). Tenant/user scoping for this surface is therefore
- * enforced entirely by the required `lens.tenant_id` / `lens.user_id`
- * fields on every request body (validated by zod as UUIDs) and by
- * whatever the downstream service does with them — which is exactly what
- * we assert here: the exact lens is forwarded to the service layer
- * untouched, and a request that omits/malforms it is rejected by zod
- * BEFORE any service call is made.
+ * Mounted at /api/v1/memory in src/index.ts. Since plan
+ * gateway-critical-route-auth (lane semantic-memory-auth, VTID-05729):
+ * - POST /semantic/search, /semantic/write, /semantic/context run behind
+ *   requireAuthWithTenant. The lens tenant_id / user_id are the caller's
+ *   (req.identity), never the body's; a body lens naming another tenant or
+ *   user is rejected 403 LENS_MISMATCH before any service call.
+ * - POST /admin/embeddings/generate, /reembed and GET /admin/embeddings/status
+ *   run behind requireAdminAuth.
+ * - GET /semantic/health stays open.
+ *
+ * The auth middleware is mocked the same way as test/semantic-memory-auth.test.ts:
+ * a Bearer token selects a fixed identity, anything else is 401. What we
+ * assert here: the caller's identity lens is forwarded to the service layer,
+ * requests from different callers never mix tenants, and a request that is
+ * anonymous, malformed or names someone else's lens is rejected BEFORE any
+ * service call is made.
  */
 import request from 'supertest';
 import express from 'express';
+
+// --- auth middleware mock: 'user-a' → A in tenant A; 'user-b' → B in tenant B;
+// 'admin' → exafy_admin; anything else → 401 (same shape as semantic-memory-auth.test.ts)
+jest.mock('../../src/middleware/auth-supabase-jwt', () => {
+  const identities: Record<string, any> = {
+    'user-a': {
+      user_id: '22222222-2222-2222-2222-222222222222',
+      tenant_id: '11111111-1111-1111-1111-111111111111',
+      exafy_admin: false,
+    },
+    'user-b': {
+      user_id: '44444444-4444-4444-4444-444444444444',
+      tenant_id: '33333333-3333-3333-3333-333333333333',
+      exafy_admin: false,
+    },
+    admin: {
+      user_id: '55555555-5555-5555-5555-555555555555',
+      tenant_id: '11111111-1111-1111-1111-111111111111',
+      exafy_admin: true,
+    },
+  };
+  const identify = (req: any) => {
+    const h = req.headers.authorization || '';
+    const token = h.startsWith('Bearer ') ? h.slice(7) : '';
+    return identities[token] ? { ...identities[token] } : null;
+  };
+  return {
+    requireAuthWithTenant: (req: any, res: any, next: () => void) => {
+      const identity = identify(req);
+      if (!identity) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+      req.identity = identity;
+      next();
+    },
+    requireAdminAuth: (req: any, res: any, next: () => void) => {
+      const identity = identify(req);
+      if (!identity) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+      req.identity = identity;
+      if (!identity.exafy_admin) return res.status(403).json({ ok: false, error: 'FORBIDDEN' });
+      next();
+    },
+  };
+});
 
 const mockSemanticSearch = jest.fn();
 const mockWriteMemoryItem = jest.fn();
@@ -68,6 +116,11 @@ const lensFor = (tenant_id: string, user_id: string) => ({
 
 const EMBEDDING = Array.from({ length: 1024 }, () => 0.01);
 
+const AUTH = 'Authorization';
+const USER_A_TOKEN = 'Bearer user-a';
+const USER_B_TOKEN = 'Bearer user-b';
+const ADMIN_TOKEN = 'Bearer admin';
+
 beforeEach(() => {
   jest.clearAllMocks();
   delete process.env.ENVIRONMENT;
@@ -79,30 +132,33 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe('POST /semantic/search', () => {
-  it('rejects a request with no lens at all before calling any service (400, no downstream call)', async () => {
+  it('rejects an anonymous request (no token, no lens) before calling any service (401, no downstream call)', async () => {
     const res = await request(app).post('/semantic/search').send({ query: 'hello' });
-    expect(res.status).toBe(400);
-    expect(res.body.error).toBe('VALIDATION_ERROR');
+    expect(res.status).toBe(401);
     expect(mockGenerateEmbedding).not.toHaveBeenCalled();
     expect(mockSemanticSearch).not.toHaveBeenCalled();
   });
 
-  it('rejects a lens with a non-UUID tenant_id/user_id before calling any service', async () => {
+  it('rejects a lens with a non-UUID tenant_id/user_id (not the the caller ids) before calling any service', async () => {
     const res = await request(app)
       .post('/semantic/search')
+      .set(AUTH, USER_A_TOKEN)
       .send({ query: 'hello', lens: { tenant_id: 'not-a-uuid', user_id: 'also-not-a-uuid', workspace_scope: 'product' } });
-    expect(res.status).toBe(400);
-    expect(res.body.error).toBe('VALIDATION_ERROR');
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe('LENS_MISMATCH');
+    expect(mockGenerateEmbedding).not.toHaveBeenCalled();
     expect(mockSemanticSearch).not.toHaveBeenCalled();
   });
 
-  it('generates a query embedding when none is supplied, then forwards the EXACT lens through to semanticSearch', async () => {
+  it('generates a query embedding when none is supplied, then forwards the the caller identity lens to semanticSearch', async () => {
     mockGenerateEmbedding.mockResolvedValue({ ok: true, embedding: EMBEDDING, model: 'amazon.titan-embed-text-v2:0' });
     mockSemanticSearch.mockResolvedValue({ ok: true, results: [], query: 'hello', total_found: 0 });
 
     const res = await request(app)
       .post('/semantic/search')
-      .send({ query: 'hello', lens: lensFor(TENANT_A, USER_A) });
+      .set(AUTH, USER_A_TOKEN)
+      // body lens without ids: tenant_id/user_id must come from the token identity
+      .send({ query: 'hello', lens: { workspace_scope: 'product' } });
 
     expect(res.status).toBe(200);
     expect(mockGenerateEmbedding).toHaveBeenCalledWith('hello');
@@ -113,22 +169,25 @@ describe('POST /semantic/search', () => {
     expect(call.query_embedding).toEqual(EMBEDDING);
   });
 
-  it('never mixes tenants: two requests with different lenses hit the service with their own tenant_id/user_id, not the other request\'s', async () => {
+  it('never mixes tenants: two callers with their own lenses hit the service with their own tenant_id/user_id, not the other request\'s', async () => {
     mockGenerateEmbedding.mockResolvedValue({ ok: true, embedding: EMBEDDING, model: 'm' });
     mockSemanticSearch.mockResolvedValue({ ok: true, results: [], query: 'q', total_found: 0 });
 
-    await request(app).post('/semantic/search').send({ query: 'q', lens: lensFor(TENANT_A, USER_A) });
-    await request(app).post('/semantic/search').send({ query: 'q', lens: lensFor(TENANT_B, USER_B) });
+    await request(app).post('/semantic/search').set(AUTH, USER_A_TOKEN).send({ query: 'q', lens: lensFor(TENANT_A, USER_A) });
+    await request(app).post('/semantic/search').set(AUTH, USER_B_TOKEN).send({ query: 'q', lens: lensFor(TENANT_B, USER_B) });
 
     expect(mockSemanticSearch).toHaveBeenCalledTimes(2);
     expect(mockSemanticSearch.mock.calls[0][0].lens.tenant_id).toBe(TENANT_A);
+    expect(mockSemanticSearch.mock.calls[0][0].lens.user_id).toBe(USER_A);
     expect(mockSemanticSearch.mock.calls[1][0].lens.tenant_id).toBe(TENANT_B);
+    expect(mockSemanticSearch.mock.calls[1][0].lens.user_id).toBe(USER_B);
   });
 
   it('skips embedding generation when query_embedding is already supplied', async () => {
     mockSemanticSearch.mockResolvedValue({ ok: true, results: [], query: 'hello', total_found: 0 });
     await request(app)
       .post('/semantic/search')
+      .set(AUTH, USER_A_TOKEN)
       .send({ query: 'hello', query_embedding: EMBEDDING, lens: lensFor(TENANT_A, USER_A) });
     expect(mockGenerateEmbedding).not.toHaveBeenCalled();
   });
@@ -137,6 +196,7 @@ describe('POST /semantic/search', () => {
     mockGenerateEmbedding.mockResolvedValue({ ok: false, error: 'provider down' });
     const res = await request(app)
       .post('/semantic/search')
+      .set(AUTH, USER_A_TOKEN)
       .send({ query: 'hello', lens: lensFor(TENANT_A, USER_A) });
     expect(res.status).toBe(500);
     expect(res.body.error).toBe('EMBEDDING_GENERATION_FAILED');
@@ -148,6 +208,7 @@ describe('POST /semantic/search', () => {
     mockSemanticSearch.mockResolvedValue({ ok: false, error: 'DB_ERROR' });
     const res = await request(app)
       .post('/semantic/search')
+      .set(AUTH, USER_A_TOKEN)
       .send({ query: 'hello', lens: lensFor(TENANT_A, USER_A) });
     expect(res.status).toBe(500);
     expect(res.body.error).toBe('DB_ERROR');
@@ -159,29 +220,32 @@ describe('POST /semantic/search', () => {
 // ---------------------------------------------------------------------------
 
 describe('POST /semantic/write', () => {
-  it('rejects a write with no lens before calling writeMemoryItem', async () => {
+  it('rejects an anonymous write (no token, no lens) before calling writeMemoryItem (401)', async () => {
     const res = await request(app)
       .post('/semantic/write')
       .send({ content: 'hello world this is content', source: 'orb_text' });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(401);
     expect(mockWriteMemoryItem).not.toHaveBeenCalled();
   });
 
   it('rejects an invalid source enum value', async () => {
     const res = await request(app)
       .post('/semantic/write')
+      .set(AUTH, USER_A_TOKEN)
       .send({ content: 'hello world this is content', source: 'not_a_valid_source', lens: lensFor(TENANT_A, USER_A) });
     expect(res.status).toBe(400);
     expect(mockWriteMemoryItem).not.toHaveBeenCalled();
   });
 
-  it('forwards the exact lens to writeMemoryItem on a valid write, and 201s', async () => {
+  it('forwards the the caller identity lens to writeMemoryItem on a valid write, and 201s', async () => {
     mockGenerateEmbedding.mockResolvedValue({ ok: true, embedding: EMBEDDING, model: 'amazon.titan-embed-text-v2:0' });
     mockWriteMemoryItem.mockResolvedValue({ ok: true, id: 'mem-1' });
 
     const res = await request(app)
       .post('/semantic/write')
-      .send({ content: 'the user really likes hiking', source: 'orb_text', lens: lensFor(TENANT_A, USER_A) });
+      .set(AUTH, USER_A_TOKEN)
+      // body lens without ids: tenant_id/user_id must come from the token identity
+      .send({ content: 'the user really likes hiking', source: 'orb_text', lens: { workspace_scope: 'product' } });
 
     expect(res.status).toBe(201);
     expect(mockWriteMemoryItem).toHaveBeenCalledTimes(1);
@@ -197,6 +261,7 @@ describe('POST /semantic/write', () => {
 
     const res = await request(app)
       .post('/semantic/write')
+      .set(AUTH, USER_A_TOKEN)
       .send({ content: 'the user really likes hiking', source: 'orb_text', lens: lensFor(TENANT_A, USER_A) });
 
     expect(res.status).toBe(201);
@@ -208,6 +273,7 @@ describe('POST /semantic/write', () => {
     mockWriteMemoryItem.mockResolvedValue({ ok: true, id: 'mem-3' });
     await request(app)
       .post('/semantic/write')
+      .set(AUTH, USER_A_TOKEN)
       .send({ content: 'short', source: 'orb_text', lens: lensFor(TENANT_A, USER_A) });
     expect(mockGenerateEmbedding).not.toHaveBeenCalled();
   });
@@ -216,6 +282,7 @@ describe('POST /semantic/write', () => {
     mockWriteMemoryItem.mockResolvedValue({ ok: false, error: 'DB_ERROR' });
     const res = await request(app)
       .post('/semantic/write')
+      .set(AUTH, USER_A_TOKEN)
       .send({ content: 'the user really likes hiking', source: 'orb_text', lens: lensFor(TENANT_A, USER_A) });
     expect(res.status).toBe(500);
   });
@@ -226,19 +293,21 @@ describe('POST /semantic/write', () => {
 // ---------------------------------------------------------------------------
 
 describe('POST /semantic/context', () => {
-  it('rejects a request with no lens before calling any service', async () => {
+  it('rejects an anonymous request (no token, no lens) before calling any service (401)', async () => {
     const res = await request(app).post('/semantic/context').send({ query: 'sleep tips' });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(401);
     expect(mockBuildSemanticContext).not.toHaveBeenCalled();
   });
 
-  it('builds context using the generated embedding and the exact lens', async () => {
+  it('builds context using the generated embedding and the the caller identity lens', async () => {
     mockGenerateEmbedding.mockResolvedValue({ ok: true, embedding: EMBEDDING, model: 'm' });
     mockBuildSemanticContext.mockResolvedValue({ ok: true, context: 'CTX', results: [{ id: '1' }] });
 
     const res = await request(app)
       .post('/semantic/context')
-      .send({ query: 'sleep tips', lens: lensFor(TENANT_A, USER_A) });
+      .set(AUTH, USER_A_TOKEN)
+      // body lens without ids: tenant_id/user_id must come from the token identity
+      .send({ query: 'sleep tips', lens: { workspace_scope: 'product' } });
 
     expect(res.status).toBe(200);
     expect(res.body.context).toBe('CTX');
@@ -250,6 +319,7 @@ describe('POST /semantic/context', () => {
     mockGenerateEmbedding.mockResolvedValue({ ok: false, error: 'down' });
     const res = await request(app)
       .post('/semantic/context')
+      .set(AUTH, USER_A_TOKEN)
       .send({ query: 'sleep tips', lens: lensFor(TENANT_A, USER_A) });
     expect(res.status).toBe(500);
     expect(mockBuildSemanticContext).not.toHaveBeenCalled();
@@ -278,7 +348,7 @@ describe('GET /semantic/health', () => {
 describe('POST /admin/embeddings/generate', () => {
   it('reports zero processed when no items need embeddings', async () => {
     mockGetItemsNeedingEmbeddings.mockResolvedValue({ ok: true, items: [] });
-    const res = await request(app).post('/admin/embeddings/generate').send({});
+    const res = await request(app).post('/admin/embeddings/generate').set(AUTH, ADMIN_TOKEN).send({});
     expect(res.status).toBe(200);
     expect(res.body.processed).toBe(0);
     expect(mockGenerateBatchEmbeddings).not.toHaveBeenCalled();
@@ -290,7 +360,7 @@ describe('POST /admin/embeddings/generate', () => {
     mockGenerateBatchEmbeddings.mockResolvedValue({ ok: true, embeddings: items.map(() => EMBEDDING), model: 'amazon.titan-embed-text-v2:0' });
     mockUpdateEmbeddings.mockResolvedValue({ ok: true, updated_count: 3 });
 
-    const res = await request(app).post('/admin/embeddings/generate').send({ limit: 100 });
+    const res = await request(app).post('/admin/embeddings/generate').set(AUTH, ADMIN_TOKEN).send({ limit: 100 });
 
     expect(res.status).toBe(200);
     expect(res.body.processed).toBe(3);
@@ -303,7 +373,7 @@ describe('POST /admin/embeddings/generate', () => {
     mockGetItemsNeedingEmbeddings.mockResolvedValue({ ok: true, items: [{ id: 'i1', content: 'x' }] });
     mockGenerateBatchEmbeddings.mockResolvedValue({ ok: false, error: 'rate limited' });
 
-    const res = await request(app).post('/admin/embeddings/generate').send({});
+    const res = await request(app).post('/admin/embeddings/generate').set(AUTH, ADMIN_TOKEN).send({});
 
     expect(res.status).toBe(200);
     expect(res.body.errors).toBe(1);
@@ -312,7 +382,7 @@ describe('POST /admin/embeddings/generate', () => {
   });
 
   it('rejects an out-of-range limit', async () => {
-    const res = await request(app).post('/admin/embeddings/generate').send({ limit: 99999 });
+    const res = await request(app).post('/admin/embeddings/generate').set(AUTH, ADMIN_TOKEN).send({ limit: 99999 });
     expect(res.status).toBe(400);
     expect(mockGetItemsNeedingEmbeddings).not.toHaveBeenCalled();
   });
@@ -327,6 +397,7 @@ describe('POST /admin/embeddings/reembed', () => {
     mockMarkForReembed.mockResolvedValue({ ok: true, marked_count: 5 });
     const res = await request(app)
       .post('/admin/embeddings/reembed')
+      .set(AUTH, ADMIN_TOKEN)
       .send({ tenant_id: TENANT_A, user_id: USER_A });
     expect(res.status).toBe(200);
     expect(mockMarkForReembed).toHaveBeenCalledWith(
@@ -335,14 +406,14 @@ describe('POST /admin/embeddings/reembed', () => {
   });
 
   it('rejects a malformed tenant_id', async () => {
-    const res = await request(app).post('/admin/embeddings/reembed').send({ tenant_id: 'not-a-uuid' });
+    const res = await request(app).post('/admin/embeddings/reembed').set(AUTH, ADMIN_TOKEN).send({ tenant_id: 'not-a-uuid' });
     expect(res.status).toBe(400);
     expect(mockMarkForReembed).not.toHaveBeenCalled();
   });
 
   it('propagates a service failure as 500', async () => {
     mockMarkForReembed.mockResolvedValue({ ok: false, error: 'boom' });
-    const res = await request(app).post('/admin/embeddings/reembed').send({});
+    const res = await request(app).post('/admin/embeddings/reembed').set(AUTH, ADMIN_TOKEN).send({});
     expect(res.status).toBe(500);
   });
 });
@@ -355,7 +426,7 @@ describe('GET /admin/embeddings/status', () => {
   it('reports items_needing_embeddings=true when the sample query returns items', async () => {
     mockGetItemsNeedingEmbeddings.mockResolvedValue({ ok: true, items: [{ id: 'x', content: 'y' }] });
     mockIsEmbeddingServiceAvailable.mockReturnValue({ available: true, providers: ['openai'] });
-    const res = await request(app).get('/admin/embeddings/status');
+    const res = await request(app).get('/admin/embeddings/status').set(AUTH, ADMIN_TOKEN);
     expect(res.status).toBe(200);
     expect(res.body.items_needing_embeddings).toBe(true);
     expect(res.body.migration_available).toBe(true);
@@ -364,7 +435,7 @@ describe('GET /admin/embeddings/status', () => {
   it('reports migration_available=false when the underlying query fails', async () => {
     mockGetItemsNeedingEmbeddings.mockResolvedValue({ ok: false, error: 'no column' });
     mockIsEmbeddingServiceAvailable.mockReturnValue({ available: false, providers: [] });
-    const res = await request(app).get('/admin/embeddings/status');
+    const res = await request(app).get('/admin/embeddings/status').set(AUTH, ADMIN_TOKEN);
     expect(res.status).toBe(200);
     expect(res.body.migration_available).toBe(false);
     expect(res.body.items_needing_embeddings).toBe('unknown');

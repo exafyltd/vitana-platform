@@ -1,0 +1,19 @@
+# loaded /projects/sandbox/wt-kb-overlay/docs/validation/VTID-05498/pglite-harness/base_schema.sql
+# loaded /projects/sandbox/wt-kb-overlay/supabase/migrations/20261102080000_mt_packs_knowledge_docs_tenant_id.sql
+# loaded /projects/sandbox/wt-kb-overlay/supabase/migrations/20261102080000_mt_packs_knowledge_docs_tenant_id.sql
+1..15
+ok 1 - knowledge_docs.tenant_id exists
+ok 2 - tenant_id is uuid
+ok 3 - tenant_id is nullable (NULL = platform baseline)
+ok 4 - tenant_id has no default
+ok 5 - one foreign key from knowledge_docs to tenants
+ok 6 - the foreign key targets tenants(tenant_id), the live key
+ok 7 - every existing column is unchanged and in place
+ok 8 - every pre-existing row stays NULL (no backfill)
+ok 9 - no row carries a tenant before any overlay write
+ok 10 - a baseline insert that omits tenant_id resolves as NULL (old writers keep working)
+ok 11 - an overlay row for tenant A is stored
+ok 12 - tenant B sees no overlay row of tenant A
+ok 13 - baseline plus tenant B overlay resolves to this test's baseline row only (tenant A overlay excluded)
+ok 14 - an unknown tenant violates the foreign key
+ok 15 - path stays unique across baseline and overlay (an overlay needs its own path)

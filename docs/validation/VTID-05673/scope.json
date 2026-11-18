@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-05673",
+  "kind": "infra",
+  "paths": [
+    "supabase/tests/local-stack/**",
+    "docs/multitenancy/LOCAL-STACK.md",
+    "docs/validation/VTID-05673/**"
+  ],
+  "sparring_record": ".kiro/specs/mt-local-stack-replay-skips-r1/sparring/verdict.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

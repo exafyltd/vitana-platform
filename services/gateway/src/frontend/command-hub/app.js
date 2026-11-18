@@ -3359,6 +3359,18 @@ const NAVIGATION_CONFIG = [
         ]
     },
     {
+        // VTID-05547 (plan agentic-delivery §3.12): Delivery — merge queue, pipelines and releases, read from the
+        // VTID ledger and OASIS through GET /api/v1/delivery/summary. Rendered by delivery.js (loaded on demand).
+        "section": "delivery",
+        "basePath": "/command-hub/delivery/",
+        "tabs": [
+            { "key": "merge-queue", "path": "/command-hub/delivery/merge-queue/" },
+            // The key avoids the screen id DEV-PIPELINES of Agents → Pipelines (regen-screens-catalog.mjs needs unique ids).
+            { "key": "pipeline-runs", "label": "Pipelines", "path": "/command-hub/delivery/pipeline-runs/" },
+            { "key": "releases", "path": "/command-hub/delivery/releases/" }
+        ]
+    },
+    {
         "section": "governance",
         "basePath": "/command-hub/governance/",
         "tabs": [
@@ -3547,6 +3559,7 @@ const SECTION_LABELS = {
     'autonomy': 'Autonomy',
     'operator': 'Operator',
     'command-hub': 'Operations',
+    'delivery': 'Delivery',
     'governance': 'Governance',
     'agents': 'Agents',
     'autopilot': 'Autopilot',
@@ -7987,11 +8000,61 @@ function renderConversationSimulatorView() {
     return ui.panel;
 }
 
+/**
+ * VTID-05547 (plan agentic-delivery §3.12): the Delivery module lives in delivery.js, which is loaded on demand
+ * from the same origin the first time a Delivery tab opens (index.html and modules.json keep their script list).
+ *
+ * It is one object with methods, not top-level function declarations: VTID-05073 pins the set of top-level
+ * function names of the bundle (test/command-hub/vtid-05073-operator-console-extraction.test.ts, (b)), and this
+ * glue is not part of that move. The object is assigned while the script runs; the first render comes later,
+ * from the DOMContentLoaded handler at the end of this file.
+ */
+var deliveryModule = {
+    loading: null,
+    /** Resolves with window.DeliveryScreen, adding the script element the first time. */
+    load: function () {
+        if (window.DeliveryScreen) return Promise.resolve(window.DeliveryScreen);
+        if (deliveryModule.loading) return deliveryModule.loading;
+        deliveryModule.loading = new Promise(function (resolve, reject) {
+            var script = document.createElement('script');
+            script.src = '/command-hub/delivery.js?v=20261105-vtid-05547';
+            script.onload = function () { resolve(window.DeliveryScreen); };
+            script.onerror = function () {
+                deliveryModule.loading = null;
+                reject(new Error('failed to load /command-hub/delivery.js'));
+            };
+            document.head.appendChild(script);
+        });
+        return deliveryModule.loading;
+    },
+    /** The element of one Delivery tab: a loading note, replaced by the screen (or by an alert when the script did not load). */
+    view: function (tab) {
+        var box = document.createElement('div');
+        box.className = 'content-container';
+        var status = document.createElement('p');
+        status.className = 'placeholder-content';
+        status.setAttribute('role', 'status');
+        status.textContent = 'Loading Delivery…';
+        box.appendChild(status);
+        deliveryModule.load().then(function (screen) {
+            box.textContent = '';
+            box.appendChild(screen.render({ tab: tab, headers: buildContextHeaders }));
+        }).catch(function () {
+            status.setAttribute('role', 'alert');
+            status.textContent = 'The Delivery module did not load. Reload the page.';
+        });
+        return box;
+    }
+};
+
 function renderModuleContent(moduleKey, tab) {
     const container = document.createElement('div');
     container.className = 'content-container';
 
-    if (moduleKey === 'command-hub' && tab === 'tasks') {
+    if (moduleKey === 'delivery') {
+        // VTID-05547: Delivery — delivery.js (loaded on demand) draws the merge queue, pipelines and releases tabs
+        container.appendChild(deliveryModule.view(tab));
+    } else if (moduleKey === 'command-hub' && tab === 'tasks') {
         container.appendChild(renderTasksView());
     } else if (moduleKey === 'command-hub' && tab === 'events') {
         // VTID-0600: Command Hub Events (curated operational view)

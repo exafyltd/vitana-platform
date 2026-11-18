@@ -1,6 +1,6 @@
 ---
 lane: fleet
-state: in-review
+state: done
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -16,8 +16,8 @@ paths:
   - infra/gitlab-engineering/RUNBOOK-m2-fleet.md
   - scripts/eng/fleet-structure.test.mjs
   - docs/validation/**
-updated: 2026-11-05T19:38Z
-claimed_by: kiro-exafy-202611021438-cff7
+updated: 2026-11-06T22:44Z
+claimed_by: kiro-exafy-202611062222-c262
 branch: kiro/eng-gitlab-m2/fleet
 pr: https://github.com/exafyltd/vitana-platform/pull/4716
 vtid: VTID-05536
@@ -51,3 +51,16 @@ Findings:
 - non-blocking (d), infra/gitlab-engineering/host/fleet-manager-install.sh:45: one [[runners]] block from single-valued inputs that only fleet.tf:53 writes; no class input; concurrent must become the class sum; tags are set in GitLab, not in config.toml; scripts/eng/fleet-structure.test.mjs:670 and :655 pin one block and the env coupling and are outside deploy-path's paths.
 - non-blocking, .kiro/specs/eng-gitlab-m2/lanes/fleet.md: 3 commits behind main (#4697, #4718, #4689), none touching this lane; update and re-check before merging (§7b).
 Next: the land step merges under §7b
+
+### 2026-11-06T22:44Z · kiro-exafy-202611062222-c262 · in-review → verified
+Closing record written by the plan driver kiro-exafy-202611062222-c262, which took over this lane's stale claim (holder silent > 24 h).
+Review: the reviewer-agent accept by agent-vitana-lane-reviewer-202611052153-d9ce on head f08b114f87710e2a6d4a4b8c0b8c6322df7150d1 is in this log.
+PR https://github.com/exafyltd/vitana-platform/pull/4716 merged at 2026-11-05T22:36:40Z by DraganOffice (the gh identity of the plan driver's review desk) with head fe52ebdb0568e43a650209026cb04c8704729e45.
+`land-guard.mjs review --gh exafyltd/vitana-platform --repo . --pr 4716 --reviewed-head f08b114f87710e2a6d4a4b8c0b8c6322df7150d1` (run 2026-11-06T22:44Z): ok, only lane-file entries and clean merges of main after the reviewed head, so the accept counted for the merged head.
+Checks on the merged head (REST check-runs read, 2026-11-06T22:44Z): 11 of 11 completed/success; none red or missing.
+
+### 2026-11-06T22:44Z · kiro-exafy-202611062222-c262 · verified → done
+merge: f5dd5eb94b8d36466c13c50a25564b4b971c0653
+authority: §7b PM rule (plan driver review desk; accept current on the merged head, checks green).
+Gap: the lane said in-review, not verified, when it merged, and no merge line was written at the time; this entry records both.
+Next: none; the lane is done.

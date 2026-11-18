@@ -1,0 +1,50 @@
+# VTID-05540: the FINAL test file run on the code of commit b36ee79380d, the lane before the review fixes (scratch tree: the old scripts/eng/rehearse.mjs, the old seed scripts ci-test.mjs and negctl.mjs and the old README, with the final test files).
+# Every case that fails does so by its own assertion; the cases that pass are the unchanged contract (they were green before and stay green), among them the check of the merge bot's own evaluate() on the rehearsal's commits (a finding asked for as a test, not new behaviour).
+# $ node --test scripts/eng/rehearse.test.mjs
+# tests 146
+# pass 111
+# fail 35
+# skipped 0
+# failing cases:
+FAIL  seed: unit passes with no npm install (no node_modules, no dependency) and prints exactly three NEGCTL lines, one per control
+FAIL  seed: a variable starting with AWS_ in the job makes aws-env print FAIL (names only, never the value); a missing address makes gitlab-host FAIL
+FAIL  seed: a NEGCTL-INFO baseline line says whether the job reached GitLab (information only): it comes after the three controls and never changes a control line or the exit code
+FAIL  negctl imds: PASS when no token is issued and no data is read — nothing answers (error or timeout), or the service answers 401, 403, 404 or 500; the statuses seen are in the detail
+FAIL  negctl imds: FAIL when a metadata token is issued to a job — the token request answers 2xx — whatever the plain read does
+FAIL  negctl imds: FAIL when a plain read without a token returns 2xx — the service gives data to an unauthenticated request — whatever the token request does; both together name both
+FAIL  negctl imds: asks for a token with PUT (IMDSv2, with a TTL header) and reads with a GET that carries no token header; the control still prints exactly one line, with no detail on it
+FAIL  negctl imds: on a real local server — the token request never answered and the read answered 401 (tokens required, hop limit 1) is a PASS; a token issued is a FAIL and its body is never printed
+FAIL  negctl baseline: tells whether the job can reach GitLab (the host and port of CI_SERVER_URL), as information only — reachable, not reachable, or not checked; never the URL itself
+FAIL  parseNegctlFailures: for each control that printed FAIL, the detail line the job printed just before it (`negctl: <name>: <detail>`), or an empty detail when the job printed none
+FAIL  parseBaseline: reads the NEGCTL-INFO baseline lines (reachable, not reachable, not checked) and nothing that only looks like one
+FAIL  A2 FAIL: the line of a failing control shows the first detail the job printed for it (from the first trace that failed it), cut to one line; a failing control with no detail line has none to show
+FAIL  A2 baseline: the job traces say whether GitLab could be reached from the job; that is information only (a skipped check, never a verdict), and where it was not reached the report says the network controls prove nothing
+FAIL  safety: no write is ever aimed at the branch main — a commit to it (also as refs/heads/main, or with no branch named), and a delete of it (also percent-encoded) are refused, whatever the path shape allows
+FAIL  whole run: nothing but the rehearsal project is written — four kinds of write, all under /projects/vitana%2Frehearsal, never main; AWS is only read
+FAIL  whole run, wave 2: the reviewer pushes the accepts as soon as the first job of the first wave has started (not when the last one has), all together, and after all 17 merge requests were opened
+FAIL  whole run, wave 2: only a job of a merge request of this run releases the second wave — a job on a pipeline of main (the one a landing starts) does not; when no such job starts, the reviewer waits 8 minutes, says so, and pushes anyway
+FAIL  dry run: reads and checks everything, writes nothing (no non-GET call), reads only the seven token secrets and the two preflight reads of the fleet group from AWS, and prints the plan: the seed and 17 merge requests with their seats
+FAIL  preflight, whole run: the built seed must pass its own tests on this machine or the run is refused (exit 2, nothing written) — otherwise the job unit fails and the seed merge request never lands
+FAIL  preflight, whole run: a copy of the collab tooling that drifted from the seed (a new local import in land-guard.mjs) is refused before the first write — with the real self-test, in a temporary directory
+FAIL  seed self-test (real): runs the tests of the built seed in a temporary directory with a clean environment and removes the directory; passes on the real seed, fails on a broken one or on one with no tests
+FAIL  seed self-test (real): the child gets no secret of this machine — only a PATH and a temporary directory, not the environment of the run
+FAIL  failure: the landing budget ends while the bot is still landing lanes — the note says the bot was working and the budget was too short; a bot that landed nothing is not described so
+FAIL  failure: the fleet does not scale (no machine can be launched) — the report names the jobs still waiting and the launch failures AWS gave; nothing lands; exit 1
+FAIL  preflight, whole run: the role of the GitLab machine may not read the fleet group (either operation denied, or both) — refused with exit 2 before anything is written, naming both actions and the one that was denied
+FAIL  fleetReadProblems: reads each operation once for the named group (one activity), tells a denial from another failure by the message or by stderr, strips the runner prefix, and removes secrets from what it returns
+FAIL  preflight, whole run: a dry run refuses in the same way (it is how the owner finds out before the run), and a role that may read the group passes it with the two reads as the only extra AWS calls
+FAIL  preflight, whole run: a read of the fleet group that fails for another reason than a denial (a throttled call) does not refuse — it is noted, and the run goes on and passes
+FAIL  failure: the first reads of the fleet group during the run fail (a transient AWS error) — sampling goes on with the next polls instead of stopping, A1 is decided from the samples that were read, and the failed reads are noted
+FAIL  failure: the fleet group stays unreadable during the run for another reason than a denial — A1 is NOT PROVEN with the error and the two IAM actions, the rest of the run goes on and is decided, the wait at the end gives up after three 
+FAIL  failure: a negative control prints FAIL in a job — A2 FAIL and exit 1, but the rest of the rehearsal still runs and passes (the control never blocks the job)
+FAIL  A2 baseline, whole run: the report says whether GitLab was reached from the jobs — as a skipped line, so it can never fail the run — and flags the traces where it was not
+FAIL  last resort: an error that nothing caught is one redacted line on stderr (every token shape removed, cut to one line) and exit 1; inside a run the secrets it read are removed as well, and run() ends with exit 1 instead of throwing
+FAIL  README: says that terraform/settings.tf grants the two autoscaling actions and that the rehearsal refuses to start without them, carries no Terraform snippet or follow-up wording, and describes the imds control as no token and no data
+FAIL  the default aws runner and settings check are wired to the real modules (nothing is called here): defaultDeps has the injection points the run needs
+
+# $ node --test infra/gitlab-engineering/rehearsal/seed/test/negctl.test.mjs      (the seed's own test, which is part of its npm test)
+# tests 1
+# pass 0
+# fail 1
+# SyntaxError: The requested module '../scripts/negctl.mjs' does not provide an export named 'checkBaseline'
+FAIL  infra/gitlab-engineering/rehearsal/seed/test/negctl.test.mjs

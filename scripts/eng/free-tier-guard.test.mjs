@@ -286,6 +286,14 @@ function parseYaml(text) {
     while (pos < lines.length && lines[pos].indent === indent && isItem(lines[pos].text)) {
       const { text, no } = lines[pos];
       const rest = text === '-' ? '' : text.slice(2).trim();
+      if (/^[|>][-+]?$/.test(rest)) {
+        // A block scalar as a list item (for example a shell script): its body is every following line indented deeper.
+        pos++;
+        const body = [];
+        while (pos < lines.length && lines[pos].indent > indent) { body.push(lines[pos].text); pos++; }
+        arr.push(body.join(rest[0] === '|' ? '\n' : ' ') + '\n');
+        continue;
+      }
       if (rest !== '' && splitKey(rest, no) && !/^["'[]/.test(rest)) {
         lines[pos] = { indent: indent + 2, text: rest, no }; // "- key: value" starts a mapping two columns in
         arr.push(map(indent + 2));
@@ -332,7 +340,13 @@ function lintCi(doc, { requiredJobs = [] } = {}) {
   const top = Object.keys(doc);
   const jobNames = top.filter((k) => !RESERVED.has(k));
   const real = jobNames.filter((k) => !k.startsWith('.'));
-  if ('include' in doc) bad.push('include: a central file must be self-contained (no other file, no remote code)');
+  // Templates come from one place only: the central CI project vitana/ci-config (plan §3.3). A local file or a second project is
+  // not allowed; remote URLs, templates and any other project are not allowed.
+  for (const inc of [].concat(doc.include ?? [])) {
+    const ok = isObj(inc) && !('remote' in inc) && !('template' in inc) && ((typeof inc.local === 'string' && !inc.local.includes('/')) || (inc.project === 'vitana/ci-config' && !('local' in inc)));
+    if (!ok) bad.push(`include: only vitana/ci-config may supply templates, not ${JSON.stringify(inc)}`);
+  }
+  if (typeof doc.include === 'string') bad.push('include: a bare path is a local file; a central file takes templates only from vitana/ci-config');
   const stages = doc.stages ?? [];
   if (!Array.isArray(stages) || stages.length === 0) bad.push('stages is missing');
   // workflow
@@ -401,15 +415,33 @@ test('central CI: the three project files exist, named as gitlab-settings.json s
   const present = readdirSync(dir).filter((f) => f.endsWith('.yml'));
   // The delivery lanes of plan agentic-delivery add their templates to this folder and the sync copies every *.yml, so the folder is not closed:
   // the three project files must exist, and any other file only needs a name the sync accepts.
-  for (const f of ['platform.gitlab-ci.yml', 'rehearsal.gitlab-ci.yml', 'v1.gitlab-ci.yml']) assert.ok(present.includes(f), `${f} is in the folder: the sync writes every *.yml directly in it to vitana/ci-config under the same name`);
+  // vitana-v1 runs the generated delivery pipeline (VTID-05719, gitlab-settings.json); its drift is covered by pipeline-gen.test.mjs.
+  for (const f of ['platform.gitlab-ci.yml', 'rehearsal.gitlab-ci.yml', 'v1-delivery.gitlab-ci.yml']) assert.ok(present.includes(f), `${f} is in the folder: the sync writes every *.yml directly in it to vitana/ci-config under the same name`);
   assert.deepEqual(Object.fromEntries(Object.entries(CONFIG.projects).map(([k, p]) => [k, p.ci_file])),
-    { 'vitana-platform': 'platform.gitlab-ci.yml', 'vitana-v1': 'v1.gitlab-ci.yml', rehearsal: 'rehearsal.gitlab-ci.yml' }, 'part A points each project at its own file');
+    { 'vitana-platform': 'platform.gitlab-ci.yml', 'vitana-v1': 'v1-delivery.gitlab-ci.yml', rehearsal: 'rehearsal.gitlab-ci.yml' }, 'part A points each project at its own file');
   for (const f of present) assert.match(f, /^[A-Za-z0-9][A-Za-z0-9._-]{0,100}\.yml$/, `${f}: a name the sync accepts`);
 });
 
 test('central CI: every file parses, and its structure is what plan section 3.3 promises (workflow, retry, tag, interruptible, no deploy, no secret, nothing Premium)', ({ CI, CONFIG }) => {
   const required = { platform: CONFIG.projects['vitana-platform'].required_jobs, v1: CONFIG.projects['vitana-v1'].required_jobs, rehearsal: CONFIG.projects.rehearsal.required_jobs };
   for (const [name, text] of Object.entries(CI)) assert.deepEqual(lintCi(parseYaml(text), { requiredJobs: required[name] }), [], name);
+});
+
+test('central CI: the vitana-v1 delivery file the sync ships (v1-delivery.gitlab-ci.yml) parses, holds no credential, and uses no Premium-only keyword', ({ CONFIG }) => {
+  // The milestone-1 structure rules do not apply to it (its deploy stage is governed by the delivery plan and pipeline-gen.test.mjs).
+  // What must hold for every central file: it parses with this reader, it names no credential value, and it uses no
+  // Premium-only keyword (needs of another project, trigger of another project, dast or pages).
+  const name = CONFIG.projects['vitana-v1'].ci_file;
+  const text = read(path.join('ci', name));
+  const doc = parseYaml(text);
+  assert.equal(typeof doc.workflow, 'object', `${name}: has a workflow`);
+  assert.doesNotMatch(text, /glpat-|glrt-|AKIA[0-9A-Z]{8}|-----BEGIN [A-Z ]*PRIVATE KEY/, `${name}: no credential value`);
+  for (const [k, v] of Object.entries(doc)) {
+    if (!isObj(v)) continue;
+    const pieces = [v.trigger, v.dast_configuration, v.pages].filter((x) => x !== undefined);
+    assert.equal(pieces.length, 0, `${name}: ${k} uses a Premium-only keyword (trigger project, dast, pages)`);
+    for (const n of [].concat(v.needs ?? [])) assert.ok(!(isObj(n) && ('project' in n || 'pipeline' in n)), `${name}: ${k} needs another project or pipeline (Premium-only)`);
+  }
 });
 
 test('central CI: merge-request pipelines come first in workflow.rules, and the main-only rules of milestone 1 stay for the mirrored projects', ({ CI }) => {
@@ -434,13 +466,33 @@ test('central CI: the platform and vitana-v1 jobs are those of milestone 1, unch
   for (const key of ['platform', 'v1']) {
     const ours = parseYaml(CI[key]);
     const m1 = parseYaml(M1_CI[key]);
-    assert.deepEqual(ours.stages, m1.stages, `${key}: stages`);
+    // milestone 1 had only `check`. Commit d42b7c45 added the manual, staging-only, main-only gateway build and deploy, which
+    // come from the included staging-gateway-deploy.gitlab-ci.yml. Those two stages are the only addition allowed, and that
+    // include's deploy job must stay manual.
+    if (key === 'platform') {
+      assert.deepEqual(ours.stages.slice(0, m1.stages.length), m1.stages, `${key}: milestone 1 stages come first`);
+      assert.deepEqual(ours.stages.slice(m1.stages.length), ['build', 'deploy'], `${key}: the only extra stages are the reviewed staging gateway ones`);
+      const staging = parseYaml(readFileSync(path.join(ROOT, 'ci', 'staging-gateway-deploy.gitlab-ci.yml'), 'utf8'));
+      const deployJobs = Object.entries(staging).filter(([k, v]) => !RESERVED.has(k) && isObj(v) && v.stage === 'deploy');
+      for (const [name, job] of deployJobs) {
+        assert.ok(Array.isArray(job.rules) && job.rules.every((r) => r.when === 'manual' || r.when === undefined), `${name}: the staging deploy is manual`);
+      }
+    } else {
+      assert.deepEqual(ours.stages, m1.stages, `${key}: stages`);
+    }
     assert.deepEqual(ours.variables, m1.variables, `${key}: variables`);
     const { retry: _retry, ...defaultWithoutRetry } = ours.default;
     assert.deepEqual(defaultWithoutRetry, m1.default, `${key}: default, except the added retry`);
     const jobs = (d) => Object.keys(d).filter((k) => !RESERVED.has(k));
     assert.deepEqual(jobs(ours).sort(), jobs(m1).sort(), `${key}: the same job names`);
-    for (const j of jobs(m1)) assert.deepEqual(ours[j], m1[j], `${key}: job ${j} is word for word the milestone 1 job`);
+    // runner-pin-jq: the one allowed difference is the jq install first in .gateway's before_script (node:20-bookworm has no jq).
+    const JQ = 'apt-get update -qq && apt-get install -y -qq jq';
+    for (const j of jobs(m1)) {
+      if (key === 'platform' && j === '.gateway') {
+        assert.equal(ours[j].before_script[0], JQ, 'platform: .gateway installs jq first');
+        assert.deepEqual({ ...ours[j], before_script: ours[j].before_script.slice(1) }, m1[j], 'platform: .gateway is otherwise word for word the milestone 1 job');
+      } else assert.deepEqual(ours[j], m1[j], `${key}: job ${j} is word for word the milestone 1 job`);
+    }
   }
   const p = parseYaml(CI.platform);
   assert.deepEqual(p.typecheck.script, ['npm ci --no-audit --no-fund', 'pnpm run typecheck']);
@@ -1519,3 +1571,17 @@ test('the pieces agree: ops-install.sh installs what the units run (git helper p
   assert.equal(OPS.includes('gitlab-configure.sh') && /sed -i|>> *"?\$?\{?[A-Za-z_]*\}?\/?gitlab-configure/.test(OPS), false);
 });
 
+
+// eng-gitlab-m2/runner-pin-jq: node:20-bookworm has no jq, GitHub's ubuntu-latest has it; on GitLab 28 gateway tests failed with
+// "jq: not found" (pipelines 154, 155). The .gateway jobs install jq before their script, so they run what GitHub runs.
+nodeTest('the platform .gateway jobs install jq before their script', () => {
+  const ci = read('ci/platform.gitlab-ci.yml');
+  const block = ci.slice(ci.indexOf('\n.gateway:'), ci.indexOf('\n', ci.indexOf('before_script:', ci.indexOf('\n.gateway:'))) + 400);
+  const bs = block.slice(block.indexOf('before_script:')).split('\n').slice(1).filter((l) => /^\s+- /.test(l)).map((l) => l.trim());
+  assert.ok(bs.some((l) => /apt-get install -y -qq jq\b/.test(l)), `.gateway before_script installs jq: ${JSON.stringify(bs)}`);
+  for (const job of ['typecheck', 'gateway-jest']) {
+    const j = ci.slice(ci.indexOf(`\n${job}:`), ci.indexOf('\n\n', ci.indexOf(`\n${job}:`) + 2));
+    assert.match(j, /extends: \.gateway/, `${job} extends .gateway`);
+    assert.equal(/before_script:/.test(j), false, `${job} keeps the .gateway before_script`);
+  }
+});

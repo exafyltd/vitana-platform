@@ -1,0 +1,174 @@
+# base 96d43e09f457f543b443c66e333f4837fb82eebb (origin/main), lib.mjs unchanged, new/edited tests applied
+$ node --test scripts/ci/pr-gate/__tests__/frontend-simple-mobile.test.mjs scripts/ci/pr-gate/__tests__/frontend-simple.test.mjs
+TAP version 13
+# Subtest: a native screen change in apps/mobile/src qualifies (VTID-05767)
+not ok 1 - a native screen change in apps/mobile/src qualifies (VTID-05767)
+  ---
+  duration_ms: 2.583841
+  type: 'test'
+  location: '/projects/sandbox/wt-pbv1/scripts/ci/pr-gate/__tests__/frontend-simple-mobile.test.mjs:16:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly deep-equal:
+    + actual - expected
+    
+    + [
+    +   '`apps/mobile/src/screens/x.tsx` is not a plain front-end file',
+    +   '`apps/mobile/src/screens/diary/DiaryScreen.tsx` is not a plain front-end file',
+    +   '`apps/mobile/src/ui/foundation/Card.tsx` is not a plain front-end file',
+    +   '`apps/mobile/src/theme/colors.ts` is not a plain front-end file',
+    +   '`apps/mobile/src/orb/ui/OrbButton.tsx` is not a plain front-end file'
+    + ]
+    - []
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual:
+    0: '`apps/mobile/src/screens/x.tsx` is not a plain front-end file'
+    1: '`apps/mobile/src/screens/diary/DiaryScreen.tsx` is not a plain front-end file'
+    2: '`apps/mobile/src/ui/foundation/Card.tsx` is not a plain front-end file'
+    3: '`apps/mobile/src/theme/colors.ts` is not a plain front-end file'
+    4: '`apps/mobile/src/orb/ui/OrbButton.tsx` is not a plain front-end file'
+  operator: 'deepStrictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///projects/sandbox/wt-pbv1/scripts/ci/pr-gate/__tests__/frontend-simple-mobile.test.mjs:25:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.start (node:internal/test_runner/test:944:17)
+    startSubtestAfterBootstrap (node:internal/test_runner/harness:296:17)
+  ...
+# Subtest: a web change and its native twin qualify together (VTID-05767)
+not ok 2 - a web change and its native twin qualify together (VTID-05767)
+  ---
+  duration_ms: 0.535924
+  type: 'test'
+  location: '/projects/sandbox/wt-pbv1/scripts/ci/pr-gate/__tests__/frontend-simple-mobile.test.mjs:28:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly deep-equal:
+    + actual - expected
+    
+    + [
+    +   '`apps/mobile/src/screens/diary/DiaryCard.tsx` is not a plain front-end file'
+    + ]
+    - []
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual:
+    0: '`apps/mobile/src/screens/diary/DiaryCard.tsx` is not a plain front-end file'
+  operator: 'deepStrictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///projects/sandbox/wt-pbv1/scripts/ci/pr-gate/__tests__/frontend-simple-mobile.test.mjs:29:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+# Subtest: native navigation, linking, shell, auth, config and ports need sparring (VTID-05767)
+ok 3 - native navigation, linking, shell, auth, config and ports need sparring (VTID-05767)
+  ---
+  duration_ms: 0.457924
+  type: 'test'
+  ...
+# Subtest: parity ledger, app.json, eas.json, app config and generated files need sparring (VTID-05767)
+ok 4 - parity ledger, app.json, eas.json, app config and generated files need sparring (VTID-05767)
+  ---
+  duration_ms: 0.253463
+  type: 'test'
+  ...
+# Subtest: everything else under apps/mobile stays outside the class (VTID-05767)
+ok 5 - everything else under apps/mobile stays outside the class (VTID-05767)
+  ---
+  duration_ms: 0.299895
+  type: 'test'
+  ...
+# Subtest: the deny list names the native surfaces explicitly (VTID-05767)
+not ok 6 - the deny list names the native surfaces explicitly (VTID-05767)
+  ---
+  duration_ms: 0.157262
+  type: 'test'
+  location: '/projects/sandbox/wt-pbv1/scripts/ci/pr-gate/__tests__/frontend-simple-mobile.test.mjs:77:1'
+  failureType: 'testCodeFailure'
+  error: 'apps/mobile/src/navigation/** must be in FRONTEND_SIMPLE_DENY'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: false
+  operator: '=='
+  stack: |-
+    TestContext.<anonymous> (file:///projects/sandbox/wt-pbv1/scripts/ci/pr-gate/__tests__/frontend-simple-mobile.test.mjs:79:12)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: existing web surfaces are unchanged (VTID-05767)
+ok 7 - existing web surfaces are unchanged (VTID-05767)
+  ---
+  duration_ms: 1.39616
+  type: 'test'
+  ...
+# Subtest: NATIVE-CI and its parity checks still run on every apps/mobile change (VTID-05767)
+ok 8 - NATIVE-CI and its parity checks still run on every apps/mobile change (VTID-05767)
+  ---
+  duration_ms: 0.305837
+  type: 'test'
+  ...
+# Subtest: a plain front-end diff qualifies (no sparring)
+ok 9 - a plain front-end diff qualifies (no sparring)
+  ---
+  duration_ms: 2.600438
+  type: 'test'
+  ...
+# Subtest: back-end, schema, CI and config changes do not qualify
+ok 10 - back-end, schema, CI and config changes do not qualify
+  ---
+  duration_ms: 0.409594
+  type: 'test'
+  ...
+# Subtest: deny-listed front-end files (routes, navigation, auth, integrations) need sparring
+ok 11 - deny-listed front-end files (routes, navigation, auth, integrations) need sparring
+  ---
+  duration_ms: 0.358149
+  type: 'test'
+  ...
+# Subtest: bot-only files are exempt; the size limit is enforced
+ok 12 - bot-only files are exempt; the size limit is enforced
+  ---
+  duration_ms: 2.329644
+  type: 'test'
+  ...
+# Subtest: scope.json accepts change_class frontend-simple and nothing else
+ok 13 - scope.json accepts change_class frontend-simple and nothing else
+  ---
+  duration_ms: 0.374998
+  type: 'test'
+  ...
+# Subtest: a staging spec next to the change qualifies (VTID-05623)
+ok 14 - a staging spec next to the change qualifies (VTID-05623)
+  ---
+  duration_ms: 0.1981
+  type: 'test'
+  ...
+# Subtest: other tests/ paths and staging fixtures do not qualify (VTID-05623)
+ok 15 - other tests/ paths and staging fixtures do not qualify (VTID-05623)
+  ---
+  duration_ms: 0.204658
+  type: 'test'
+  ...
+1..15
+# tests 15
+# suites 0
+# pass 12
+# fail 3
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 64.90704

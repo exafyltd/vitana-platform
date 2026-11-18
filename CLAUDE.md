@@ -16,28 +16,33 @@ This file contains critical information for AI assistants working on the Vitana 
 
 ---
 
-## ⚙️ AUTONOMY CONTRACT — TWO OWNER GATES (STANDING RULE — VTID-04947)
+## ⚙️ AUTONOMY CONTRACT — MACHINE UNTIL STAGING VERIFIED (BRIDGE PERIOD, 2026-11-12)
 Owner decision 2026-10-07: *"Run the processes end to end — only ask after the plan comes back from sparring, and
 after it is verified on staging, to confirm publish to production."* Applies to both repos and every Claude Code
 session. The absolute rule against testing on production and every production-safety rule still stand; this contract
 removes the questions in between, not the safety.
 
-**The owner is asked exactly two questions per change:**
+**Bridge period (owner instruction 2026-11-12, until the agentic-delivery pipeline on GitLab is live):** every step before STAGING-VERIFY passes is machine to machine: sparring, approval, build, review, merge, staging deploy and verification. No human is asked before Gate 2. Production is never written by the machine, and the production rules below stand. Migrations stay human-approved, because staging and production share one database, so a staging migration writes production.
 
-1. **Gate 1 — the sparred plan.** One message: final plan, every sparring round's findings with the planner's
-   answers, the verdict, the files in scope, and the test plan. Nothing else is asked with it.
-2. **Gate 2 — "Staging verified — ready for deployment to production?"** Built only from machine evidence:
+**Bridge scope — what is text-only and what code still enforces (2026-11-12):**
+- Still enforced by code until its own change lands: the `vtid_ledger` gate (`_plan_sparring_gate_eval` requires `human_approved_by` or a policy approval; migration `20261004120000`); the PR-gate sparring check (`scripts/ci/pr-gate/lib.mjs`, `evaluateSparringRecord`, which accepts an owner-approval line or the policy line); and the PreToolUse deny message in `.claude/hooks/pretooluse-plan-sparring-reminder.sh`. Until these change, a session that follows this text is refused by them.
+- Not enforced by code: a machine refusal of production writes. Do not claim it is enforced.
+- Protected files (CLAUDE.md, the gate migrations, PLAN-SPAR.yml, `.claude/**`) merge on a reviewer-agent accept on the current head (owner decision 2026-11-12). The collaboration rule §3a is changed by its own change.
+
+**The owner is asked exactly one question per change:**
+
+1. **Gate 2 — "Staging verified — ready for deployment to production?"** Built only from machine evidence:
    STAGING-VERIFY run link, test counts, the verified commit, every commit between production and it, migrations in
    the release, and a "Decisions taken" list. A change that deploys nothing has no Gate 2; it is done when merged
    with green checks.
 
-**Policy approval replaces Gate 1 for CI-sparred plans (owner decision 2026-10-14, VTID-05214/05218).** A plan
+**Policy approval is the machine approval for CI-sparred plans (owner decision 2026-10-14, VTID-05214/05218).** A plan
 sparred by `PLAN-SPAR.yml` whose session converged is approved by the policy `converged-auto-v1` (recorded on the
 sparring record and accepted by the `vtid_ledger` gate); it is not sent to the owner. A plan that does not converge
 after its re-plan session is parked on the Command Hub board, with no message. A plan Claude Code spars with its own
-local partner still goes to the owner as Gate 1.
+local partner is approved by the machine on convergence (bridge period; enforcement pending, see Bridge scope).
 
-**The owner's "yes" at Gate 1 (or the policy approval) is the standing instruction for everything up to Gate 2 for
+**Convergence or the policy approval is the standing instruction for everything up to Gate 2 for
 that plan's VTIDs.** It is recorded as the approval line in `docs/validation/<VTID>/plan-sparring.md` (with the plan
 hash) and in the ledger row's metadata. That record is an audit trail; the protection is the mechanical checks (CI
 gates, STAGING-VERIFY). After "yes", without asking: allocate the VTID(s) (citing the sparring record), set the
@@ -53,10 +58,9 @@ test design, or which of two reasonable implementations to use inside the approv
 - *Unsure of intent inside the approved plan* → choose the most conservative option (smaller change, existing
   pattern, nothing deleted) and list it under "Decisions taken" in Gate 2.
 
-**Stop and ask mid-flight only for:** (a) work outside the approved plan that one more sparring round with the same
-partner does not converge on, (b) a production write not covered by the two gates, (c) a security or data-loss risk,
-(d) the same failure surviving 3 fix-forward attempts. Each such stop is one message with the evidence and a
-recommended answer.
+**Automatic halts (no question to the owner before Gate 2):** (a) work outside the approved plan that one more sparring round with the same
+partner does not converge on, (b) a production write not covered by the two gates (the machine refuses it; it is never performed), (c) a security or data-loss risk,
+(d) the same failure surviving 3 fix-forward attempts. Each halt is parked with its evidence and the recommended answer goes into Gate 2.
 
 **After merge the session keeps going.** In a cloud session it arms a `send_later` self check-in about 8 minutes
 after merge and re-arms it every 5 minutes, up to 2 hours, until STAGING-VERIFY has a result for the merge commit.
@@ -98,8 +102,9 @@ the retired-number index at the end of Part 1 says where its substance lives now
 ### Source of Truth & Governance
 1. **Always treat OASIS as the single source of truth** for task state, lifecycle, and governance.
 2. **Always verify VTID existence** before execution, deployment, or automation.
-2b. **Every task that results in a commit gets its own VTID — allocated only after its plan is sparred and approved**
-    (rules 51–55): owner Gate 1 for a locally sparred plan, or CI policy `converged-auto-v1`. A Kiro plan's VTIDs are
+2b. **Every task that results in a commit gets its own VTID.** Back-end and complex work: allocated only after its plan
+    is sparred and approved (rules 51–55): machine approval on convergence (local partner or CI policy `converged-auto-v1`).
+    A simple front-end change (rule 51a) is allocated straight from the ledger, with no sparring. A Kiro plan's VTIDs are
     allocated by CI PLAN-SPAR on convergence, never by hand. A bug report, a feature ask, a "fix this", a doc change —
     all count. **Never ask the user whether a VTID is needed, never ask them to supply one**, and once the plan is
     approved, allocate without waiting for confirmation. When the user directly instructed the work, that instruction
@@ -322,21 +327,29 @@ Owner decision 2026-09-26. Full process: `docs/DEPLOYMENT-PIPELINE.md`. Applies 
     - a `reason` naming the VTID(s), the scope, the session id and the STAGING-VERIFY run;
     - afterwards, only the read-only production deploy check.
 
-### Plan Sparring Gate (STANDING RULE — VTID-04868)
-Owner decision 2026-10-03: *"Every new plan must have a ping pong sparring agent to support improvement of the plan …
-before a new VTID is generated, and it must be a standard process no matter how many new plans we create."* Applies to
-both repos and to every plan producer — Claude Code sessions, Operator Chat/Console, task intake, Dev Autopilot,
-self-healing, voice, email intake, routines. Procedure: skill `.claude/skills/plan-sparring/`. There is no
-trivial-change exemption.
+### Plan Sparring Gate (STANDING RULE — VTID-04868, amended 2026-11-07)
+Owner decision 2026-10-03 (*"every new plan gets a ping-pong sparring partner before a new VTID is generated"*) is
+amended by the owner decision of 2026-11-07: **sparring is for back-end and complex work; a simple front-end change
+needs a VTID but no sparring.** Two tracks, one rule: every change gets a VTID from the ledger. Procedure: skill
+`.claude/skills/plan-sparring/`.
 
-51. **Plan → sparring → owner approval (or, for a CI-sparred plan that converged, policy approval
-    `converged-auto-v1`, VTID-05214) → VTID → code.** No VTID is allocated for a plan that has not been sparred, and no
-    VTID is ever allocated for the sparring itself.
+51. **Back-end and complex work: plan → sparring → machine approval on convergence (local partner or CI policy
+    approval `converged-auto-v1`, VTID-05214) → VTID → code.** No VTID is allocated for such a plan before it is sparred,
+    and no VTID is ever allocated for the sparring itself. "Back-end and complex" means every change under
+    `services/**`, `supabase/**` (migrations, edge functions, RLS, SQL), `.github/**`, `scripts/**`, governance, LLM
+    routing or auth, and any change that adds or alters an API, a route, a schema, a deploy path, or more than a
+    simple front-end change.
+51a. **Simple front-end change: VTID → code, no sparring.** Class `frontend-simple` (vitana-v1): the diff is inside
+    `src/**` or `public/**`, touches no deny-listed file (`src/App.tsx`, `src/navigation/**`, `src/design/**`,
+    `src/integrations/**`, `src/routes/guards/**`, auth contexts, `src/generated/**`), and changes at most 15 files.
+    Declared in `docs/validation/<VTID>/scope.json` (`"change_class": "frontend-simple"`). The PR gate verifies the diff
+    and fails a claim the diff does not support, which then needs sparring. Execution allocates a fresh VTID from the
+    ledger and runs through implementation, PR, merge and STAGING-VERIFY without waiting for sparring.
 52. **The partner is independent and adversarial.** It sees the plan and the code, never the planner's reasoning; it
     verifies the plan's premises against the code (`file:line`) and its findings are kept verbatim. Every finding gets
     an answer — accepted (plan changed), rejected (reason) or deferred (where tracked) — and goes back to the same
     partner. At least two passes for every change class; cap 3 rounds (standard). A rejection the partner still
-    disputes is unresolved and goes to the owner.
+    disputes is unresolved and is parked with the evidence record (no question to the owner before Gate 2).
 53. **Partner model: Claude Opus 4.6 on AWS Bedrock** (owner decision 2026-10-04), one config value
     (`PLAN_SPARRING_MODEL`). **Fallback chain (owner decision 2026-10-19 — sparring must never stop on burned
     quota):** Opus 4.6 → Bedrock Sonnet 4.6 (`PLAN_SPARRING_FALLBACK_MODEL`) → DeepSeek `deepseek-v4-pro`
@@ -344,7 +357,7 @@ trivial-change exemption.
     the partner pass (`plan-sparring/partner.ts`), is sticky per round, logged loudly and recorded per entry in
     `model_log.fallback_tier`. Only when all three fail does the session escalate `model_unavailable`. Never Google.
 54. **The gate is the database**, not this text: a `vtid_ledger` trigger checks every new VTID for a
-    converged-or-escalated, owner-approved sparring record (or a converged, policy-approved one) with a matching plan
+    converged-or-escalated sparring record with machine approval (policy `converged-auto-v1`, or the machine approval on convergence once the bridge enforcement change lands) with a matching plan
     hash. It runs in log mode first, then enforce. While sessions can run `execute_sql` as `postgres`, a disabled
     trigger or changed mode is **detected (hourly reconciler → P1), not prevented** — an accepted residual (owner
     decision 2026-10-04) until the Aurora cutover gives full role control.
@@ -364,7 +377,7 @@ trivial-change exemption.
    (ALWAYS 2b) and proceed.
 3. **IF** `is_terminal=true` → **THEN DO NOT MODIFY TASK.**
 4. **IF** task is `scheduled` → **THEN treat as standby only.**
-5. **IF** task is moved to `in_progress` manually → **THEN treat as explicit consent.**
+5. **IF** task is moved to `in_progress` manually → **THEN** it is an operator action only; consent comes from the approved sparring record, not from the status change.
 
 ### Governance
 6. **IF** governance fails → **THEN execution is forbidden.**
@@ -372,8 +385,8 @@ trivial-change exemption.
 8. **IF** execution is disarmed → **THEN monitor only.**
 9. **IF** rules conflict → **THEN prefer stricter rule.**
 10. **IF** uncertain → **THEN** follow the Autonomy Contract (VTID-04947): verify a fact read-only in code/logs/data
-    first; for intent inside an approved plan, take the most conservative option and list it in Gate 2. Stop and ask
-    only for the four cases the contract names.
+    first; for intent inside an approved plan, take the most conservative option and list it in Gate 2. Halt and park with
+    evidence only for the automatic halts in the Autonomy Contract.
 
 ### Infrastructure
 11. **IF** AWS account/region ≠ `472838866351`/`eu-central-1` → **THEN STOP.**
@@ -516,8 +529,8 @@ whatever files a session opens.
 ## 4. VTID SYSTEM
 ### 4.1 Allocation (STANDING RULE — VTID-03448, VTID-04868)
 **Settled: never ask the user "should this have a VTID" or "do you have a VTID for this".** Every task that results
-in a commit gets one. **It is allocated only after its plan is sparred and approved** (Part 1 rules 51–55): owner
-Gate 1 for a plan sparred with a local partner (skill `plan-sparring`), or CI policy `converged-auto-v1` for a
+in a commit gets one. **Back-end and complex work is allocated only after its plan is sparred and approved** (Part 1 rules 51–55); a simple
+front-end change (rule 51a) is allocated directly from the ledger. Machine approval on convergence for a plan sparred with a local partner (skill `plan-sparring`), or CI policy `converged-auto-v1` for a
 `plan(` PR. A Kiro plan's lane VTIDs are allocated by CI PLAN-SPAR on convergence — Kiro never allocates by hand
 (`.claude/rules/collaboration.md` §7a). A session that allocates itself passes the sparring id (`p_sparring_id`) once
 the gateway tier is live.

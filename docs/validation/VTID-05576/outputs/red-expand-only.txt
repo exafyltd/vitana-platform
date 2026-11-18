@@ -1,0 +1,77 @@
+# loaded /projects/sandbox/wt-net-2/docs/validation/VTID-05576/pgtap/vtid_05576_fixture.sql
+# loaded /projects/sandbox/wt-net-2/supabase/migrations/20261102050000_vtid_05576_chat_messages_scope.sql
+# loaded /projects/sandbox/wt-net-2/supabase/migrations/20261102050100_vtid_05576_send_message_rpcs.sql
+1..62
+not ok 1 - 1 chat_messages.scope text NOT NULL with the migration default dropped
+ok 2 - 2 a CHECK limits scope to community and network
+ok 3 - 3 a pre-existing DM was backfilled to community
+ok 4 - 4 a pre-existing group message was backfilled to community
+ok 5 - 5 the scope guard trigger exists on chat_messages
+not ok 6 - 6 a bare authenticated client INSERT fails (no INSERT privilege)
+#   have: 4d4dbe98-c04c-4e79-a06c-fa6b4caab15b
+#   want: error:42501
+ok 7 - 7 an anon INSERT fails
+ok 8 - 8 a direct service-role INSERT of scope = network fails
+not ok 9 - 9 a direct service-role INSERT without a scope fails (no default)
+#   have: f388b8a6-b37e-424b-a15b-ae8b2074f0d8
+#   want: error:23502
+ok 10 - 10 a system writer can still INSERT scope = community explicitly
+ok 11 - 11 a direct service-role UPDATE of scope to network fails
+ok 12 - 12 the catch-all service_role_manage_chat policy is gone
+ok 13 - 13 no allow-all or ALL-command policy exists on chat_messages
+not ok 14 - 14 no INSERT policy remains on chat_messages (writes only through the RPCs and the guarded system writers)
+#   have: 2
+#   want: 0
+not ok 15 - 15 one narrow recipient UPDATE policy exists
+#   have: 0
+#   want: 1
+ok 16 - 16 the SELECT policies are the participant policy and the group-member policy
+not ok 17 - 17 a recipient cannot rewrite the content of a message
+#   have: 05576000-0000-4000-8000-0000000000c1
+#   want: error:42501
+ok 18 - 18 a recipient cannot change the scope of a message
+ok 19 - 19 the recipient can mark a message read
+ok 20 - 20 the sender cannot mark the recipient's message read (row policy)
+ok 21 - 21 a participant still reads their message
+ok 22 - 22 a non-participant reads nothing
+ok 23 - 23 a group member still reads the group message
+ok 24 - 24 all three functions are SECURITY DEFINER with a pinned search_path
+ok 25 - 25 send_message, send_message_as and the shared core each exist once
+ok 26 - 26 send_message takes no sender argument (the sender is auth.uid())
+ok 27 - 27 send_message: EXECUTE for authenticated, not anon
+ok 28 - 28 send_message_as: EXECUTE for service_role only
+ok 29 - 29 the shared core is not executable by any client role
+ok 30 - 30 anon cannot call send_message
+ok 31 - 31 send_message without an authenticated user fails (28000)
+ok 32 - 32 an unknown scope fails
+ok 33 - 33 an empty body fails
+ok 34 - 34 a send to yourself fails
+ok 35 - 35 neither a peer nor a group fails
+ok 36 - 36 both a peer and a group fails
+ok 37 - 37 send_message_as with no sender fails (28000)
+ok 38 - 38 a community send between members of a shared tenant succeeds
+ok 39 - 39 the row carries sender = auth.uid(), scope = community and the shared tenant
+ok 40 - 40 a community send with no shared tenant fails (the platform tenant does not count)
+ok 41 - 41 a community send to an unknown member fails
+ok 42 - 42 the tenant is derived from the shared tenant (member 4 and 3 share only TB)
+ok 43 - 43 a repeated client_message_id returns the stored row, no second row
+ok 44 - 44 a group member can send to the group; the tenant is the group's
+ok 45 - 45 a non-member cannot send to the group
+ok 46 - 46 a network group send is not supported yet
+ok 47 - 47 a network send to a recipient who is not network_visible fails
+ok 48 - 48 a network send to a "nobody" recipient fails
+ok 49 - 49 a network send by a sender who is not network_visible fails
+ok 50 - 50 send_message_as applies the same network check
+ok 51 - 51 a "connections" recipient without an accepted connection fails
+ok 52 - 52 a pending connection is not enough
+ok 53 - 53 an accepted connection (either direction) allows it; scope = network, tenant = the sender's primary tenant
+ok 54 - 54 an "everyone" recipient in another tenant is reachable; the context tenant is the sender's
+ok 55 - 55 a block by the recipient stops a network send
+ok 56 - 56 a block by the sender stops a network send
+ok 57 - 57 an expired block no longer stops it
+ok 58 - 58 a service bot is never a network recipient (rule 45), even if its profile row were visible
+ok 59 - 59 send_message_as community also needs a shared tenant
+ok 60 - 60 send_message_as trusts p_sender: the row is the named member's
+ok 61 - 61 the 21st new network contact in 24 hours is rate limited
+ok 62 - 62 an existing contact is not a new contact and is not limited
+# Looks like you failed 6 test(s) of 62

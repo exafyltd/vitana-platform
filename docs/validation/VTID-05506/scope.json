@@ -1,0 +1,14 @@
+{
+  "vtid": "VTID-05506",
+  "kind": "feature",
+  "paths": [
+    "supabase/migrations/20261102141000_vtid_05506_mt_provision_erp_request.sql",
+    "supabase/migrations/20261102141100_vtid_05506_mt_isolation_health_by_tenant.sql",
+    "docs/multitenancy/MIGRATION-QUEUE.md",
+    "scripts/ci/migration-drift-baseline.json",
+    "docs/validation/VTID-05506/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05506/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

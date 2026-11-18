@@ -1,0 +1,4 @@
+# loaded /projects/sandbox/wt-legacy-msgs/docs/validation/VTID-05573/pgtap/vtid_05573_fixture.sql
+# loaded /projects/sandbox/wt-legacy-msgs/supabase/migrations/20261102050000_vtid_05576_chat_messages_scope.sql
+# loaded /projects/sandbox/wt-legacy-msgs/supabase/migrations/20261102051000_vtid_05582_network_visible_profile.sql
+# SQL ERROR: relation "public.bak_messages" does not exist

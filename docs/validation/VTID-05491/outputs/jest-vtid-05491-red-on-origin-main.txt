@@ -1,0 +1,360 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true", see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+FAIL ../../../../tmp/wt-red-05491/docs/validation/VTID-05491/static/vtid-05491-tenant-moderation.test.ts
+  VTID-05491: migration files
+    ✕ exist, are the only VTID-05491 migrations, and sort around the reserved C3 slot 20261102070160 (5 ms)
+    ✕ p2: lock_timeout, retry on lock_not_available, one transaction (1 ms)
+    ✕ p3: lock_timeout, retry on lock_not_available, one transaction
+    ✕ scope: lock_timeout, retry on lock_not_available, one transaction
+    ✕ none of them destroys data: no DROP TABLE, DROP COLUMN, TRUNCATE or DELETE
+    ✕ none of them uses a bare current_tenant_id() or the non-existent is_member()/tenant_id_for_policies()
+    ✕ every SECURITY DEFINER function pins its search_path (1 ms)
+    ✕ P2 snapshots before it moves data, and only backfills rows still NULL (1 ms)
+    ✕ P2 never grants the internal helper to anon/authenticated (1 ms)
+    ✕ P3 RPCs are not executable by anon and check the caller before reading (1 ms)
+    ✕ scope migration keeps the policy names and has a legacy branch (flag off = today) (1 ms)
+  VTID-05491: rollbacks and read-only checks
+    ✕ rollback-070100-p2-moderation.sql exists, is transactional and lock-timed (1 ms)
+    ✕ rollback-070150-p3-moderation.sql exists, is transactional and lock-timed
+    ✕ rollback-070600-moderator-tenant-scope.sql exists, is transactional and lock-timed
+    ✕ the P2 and P3 rollbacks refuse while a later file is still applied; no rollback drops a snapshot
+    ✕ the scope rollback restores the three original policies
+    ✕ live-before.sql is SELECT-only
+    ✕ post-apply-checks.sql is SELECT-only
+    ✕ rollback-check.sql is SELECT-only
+  VTID-05491: queue rows
+    ✕ MIGRATION-QUEUE lists the three files in order P2 -> P3 -> scope, queued pending owner approval (1 ms)
+
+  ● VTID-05491: migration files › exist, are the only VTID-05491 migrations, and sort around the reserved C3 slot 20261102070160
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 5
+    + Received  + 1
+
+    - Array [
+    -   "20261102070100_vtid_05491_mt_tenant_admin_p2_moderation.sql",
+    -   "20261102070150_vtid_05491_mt_tenant_admin_p3_moderation.sql",
+    -   "20261102070600_vtid_05491_mt_moderator_tenant_scope.sql",
+    - ]
+    + Array []
+
+      28 |   it('exist, are the only VTID-05491 migrations, and sort around the reserved C3 slot 20261102070160', () => {
+      29 |     const files = readdirSync(MIG_DIR).filter((f) => f.includes('vtid_05491')).sort();
+    > 30 |     expect(files).toEqual(Object.values(MIGRATIONS).sort());
+         |                   ^
+      31 |     expect(Number(MIGRATIONS.p3.slice(0, 14))).toBeLessThan(20261102070160);
+      32 |     expect(Number(MIGRATIONS.scope.slice(0, 14))).toBeGreaterThan(20261102070160);
+      33 |     expect(readdirSync(MIG_DIR).some((f) => f.startsWith('20261102070160'))).toBe(false);
+
+      at Object.<anonymous> (vtid-05491-tenant-moderation.test.ts:30:19)
+
+  ● VTID-05491: migration files › p2: lock_timeout, retry on lock_not_available, one transaction
+
+    ENOENT: no such file or directory, open '/tmp/wt-red-05491/supabase/migrations/20261102070100_vtid_05491_mt_tenant_admin_p2_moderation.sql'
+
+      20 | const CHECKS = ['live-before.sql', 'post-apply-checks.sql', 'rollback-check.sql'];
+      21 |
+    > 22 | const read = (p: string): string => readFileSync(p, 'utf8');
+         |                                                 ^
+      23 | const mig = (k: keyof typeof MIGRATIONS): string => read(join(MIG_DIR, MIGRATIONS[k]));
+      24 | const code = (sql: string): string => sql.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, ' ');
+      25 | const keys = Object.keys(MIGRATIONS) as (keyof typeof MIGRATIONS)[];
+
+      at read (vtid-05491-tenant-moderation.test.ts:22:49)
+      at mig (vtid-05491-tenant-moderation.test.ts:23:53)
+      at vtid-05491-tenant-moderation.test.ts:37:22
+
+  ● VTID-05491: migration files › p3: lock_timeout, retry on lock_not_available, one transaction
+
+    ENOENT: no such file or directory, open '/tmp/wt-red-05491/supabase/migrations/20261102070150_vtid_05491_mt_tenant_admin_p3_moderation.sql'
+
+      20 | const CHECKS = ['live-before.sql', 'post-apply-checks.sql', 'rollback-check.sql'];
+      21 |
+    > 22 | const read = (p: string): string => readFileSync(p, 'utf8');
+         |                                                 ^
+      23 | const mig = (k: keyof typeof MIGRATIONS): string => read(join(MIG_DIR, MIGRATIONS[k]));
+      24 | const code = (sql: string): string => sql.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, ' ');
+      25 | const keys = Object.keys(MIGRATIONS) as (keyof typeof MIGRATIONS)[];
+
+      at read (vtid-05491-tenant-moderation.test.ts:22:49)
+      at mig (vtid-05491-tenant-moderation.test.ts:23:53)
+      at vtid-05491-tenant-moderation.test.ts:37:22
+
+  ● VTID-05491: migration files › scope: lock_timeout, retry on lock_not_available, one transaction
+
+    ENOENT: no such file or directory, open '/tmp/wt-red-05491/supabase/migrations/20261102070600_vtid_05491_mt_moderator_tenant_scope.sql'
+
+      20 | const CHECKS = ['live-before.sql', 'post-apply-checks.sql', 'rollback-check.sql'];
+      21 |
+    > 22 | const read = (p: string): string => readFileSync(p, 'utf8');
+         |                                                 ^
+      23 | const mig = (k: keyof typeof MIGRATIONS): string => read(join(MIG_DIR, MIGRATIONS[k]));
+      24 | const code = (sql: string): string => sql.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, ' ');
+      25 | const keys = Object.keys(MIGRATIONS) as (keyof typeof MIGRATIONS)[];
+
+      at read (vtid-05491-tenant-moderation.test.ts:22:49)
+      at mig (vtid-05491-tenant-moderation.test.ts:23:53)
+      at vtid-05491-tenant-moderation.test.ts:37:22
+
+  ● VTID-05491: migration files › none of them destroys data: no DROP TABLE, DROP COLUMN, TRUNCATE or DELETE
+
+    ENOENT: no such file or directory, open '/tmp/wt-red-05491/supabase/migrations/20261102070100_vtid_05491_mt_tenant_admin_p2_moderation.sql'
+
+      20 | const CHECKS = ['live-before.sql', 'post-apply-checks.sql', 'rollback-check.sql'];
+      21 |
+    > 22 | const read = (p: string): string => readFileSync(p, 'utf8');
+         |                                                 ^
+      23 | const mig = (k: keyof typeof MIGRATIONS): string => read(join(MIG_DIR, MIGRATIONS[k]));
+      24 | const code = (sql: string): string => sql.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, ' ');
+      25 | const keys = Object.keys(MIGRATIONS) as (keyof typeof MIGRATIONS)[];
+
+      at read (vtid-05491-tenant-moderation.test.ts:22:49)
+      at mig (vtid-05491-tenant-moderation.test.ts:23:53)
+      at Object.<anonymous> (vtid-05491-tenant-moderation.test.ts:46:39)
+
+  ● VTID-05491: migration files › none of them uses a bare current_tenant_id() or the non-existent is_member()/tenant_id_for_policies()
+
+    ENOENT: no such file or directory, open '/tmp/wt-red-05491/supabase/migrations/20261102070100_vtid_05491_mt_tenant_admin_p2_moderation.sql'
+
+      20 | const CHECKS = ['live-before.sql', 'post-apply-checks.sql', 'rollback-check.sql'];
+      21 |
+    > 22 | const read = (p: string): string => readFileSync(p, 'utf8');
+         |                                                 ^
+      23 | const mig = (k: keyof typeof MIGRATIONS): string => read(join(MIG_DIR, MIGRATIONS[k]));
+      24 | const code = (sql: string): string => sql.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, ' ');
+      25 | const keys = Object.keys(MIGRATIONS) as (keyof typeof MIGRATIONS)[];
+
+      at read (vtid-05491-tenant-moderation.test.ts:22:49)
+      at mig (vtid-05491-tenant-moderation.test.ts:23:53)
+      at Object.<anonymous> (vtid-05491-tenant-moderation.test.ts:50:39)
+
+  ● VTID-05491: migration files › every SECURITY DEFINER function pins its search_path
+
+    ENOENT: no such file or directory, open '/tmp/wt-red-05491/supabase/migrations/20261102070100_vtid_05491_mt_tenant_admin_p2_moderation.sql'
+
+      20 | const CHECKS = ['live-before.sql', 'post-apply-checks.sql', 'rollback-check.sql'];
+      21 |
+    > 22 | const read = (p: string): string => readFileSync(p, 'utf8');
+         |                                                 ^
+      23 | const mig = (k: keyof typeof MIGRATIONS): string => read(join(MIG_DIR, MIGRATIONS[k]));
+      24 | const code = (sql: string): string => sql.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, ' ');
+      25 | const keys = Object.keys(MIGRATIONS) as (keyof typeof MIGRATIONS)[];
+
+      at read (vtid-05491-tenant-moderation.test.ts:22:49)
+      at mig (vtid-05491-tenant-moderation.test.ts:23:53)
+      at Object.<anonymous> (vtid-05491-tenant-moderation.test.ts:55:24)
+
+  ● VTID-05491: migration files › P2 snapshots before it moves data, and only backfills rows still NULL
+
+    ENOENT: no such file or directory, open '/tmp/wt-red-05491/supabase/migrations/20261102070100_vtid_05491_mt_tenant_admin_p2_moderation.sql'
+
+      20 | const CHECKS = ['live-before.sql', 'post-apply-checks.sql', 'rollback-check.sql'];
+      21 |
+    > 22 | const read = (p: string): string => readFileSync(p, 'utf8');
+         |                                                 ^
+      23 | const mig = (k: keyof typeof MIGRATIONS): string => read(join(MIG_DIR, MIGRATIONS[k]));
+      24 | const code = (sql: string): string => sql.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, ' ');
+      25 | const keys = Object.keys(MIGRATIONS) as (keyof typeof MIGRATIONS)[];
+
+      at read (vtid-05491-tenant-moderation.test.ts:22:49)
+      at mig (vtid-05491-tenant-moderation.test.ts:23:53)
+      at Object.<anonymous> (vtid-05491-tenant-moderation.test.ts:63:22)
+
+  ● VTID-05491: migration files › P2 never grants the internal helper to anon/authenticated
+
+    ENOENT: no such file or directory, open '/tmp/wt-red-05491/supabase/migrations/20261102070100_vtid_05491_mt_tenant_admin_p2_moderation.sql'
+
+      20 | const CHECKS = ['live-before.sql', 'post-apply-checks.sql', 'rollback-check.sql'];
+      21 |
+    > 22 | const read = (p: string): string => readFileSync(p, 'utf8');
+         |                                                 ^
+      23 | const mig = (k: keyof typeof MIGRATIONS): string => read(join(MIG_DIR, MIGRATIONS[k]));
+      24 | const code = (sql: string): string => sql.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, ' ');
+      25 | const keys = Object.keys(MIGRATIONS) as (keyof typeof MIGRATIONS)[];
+
+      at read (vtid-05491-tenant-moderation.test.ts:22:49)
+      at mig (vtid-05491-tenant-moderation.test.ts:23:53)
+      at Object.<anonymous> (vtid-05491-tenant-moderation.test.ts:71:17)
+
+  ● VTID-05491: migration files › P3 RPCs are not executable by anon and check the caller before reading
+
+    ENOENT: no such file or directory, open '/tmp/wt-red-05491/supabase/migrations/20261102070150_vtid_05491_mt_tenant_admin_p3_moderation.sql'
+
+      20 | const CHECKS = ['live-before.sql', 'post-apply-checks.sql', 'rollback-check.sql'];
+      21 |
+    > 22 | const read = (p: string): string => readFileSync(p, 'utf8');
+         |                                                 ^
+      23 | const mig = (k: keyof typeof MIGRATIONS): string => read(join(MIG_DIR, MIGRATIONS[k]));
+      24 | const code = (sql: string): string => sql.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, ' ');
+      25 | const keys = Object.keys(MIGRATIONS) as (keyof typeof MIGRATIONS)[];
+
+      at read (vtid-05491-tenant-moderation.test.ts:22:49)
+      at mig (vtid-05491-tenant-moderation.test.ts:23:53)
+      at Object.<anonymous> (vtid-05491-tenant-moderation.test.ts:75:22)
+
+  ● VTID-05491: migration files › scope migration keeps the policy names and has a legacy branch (flag off = today)
+
+    ENOENT: no such file or directory, open '/tmp/wt-red-05491/supabase/migrations/20261102070600_vtid_05491_mt_moderator_tenant_scope.sql'
+
+      20 | const CHECKS = ['live-before.sql', 'post-apply-checks.sql', 'rollback-check.sql'];
+      21 |
+    > 22 | const read = (p: string): string => readFileSync(p, 'utf8');
+         |                                                 ^
+      23 | const mig = (k: keyof typeof MIGRATIONS): string => read(join(MIG_DIR, MIGRATIONS[k]));
+      24 | const code = (sql: string): string => sql.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, ' ');
+      25 | const keys = Object.keys(MIGRATIONS) as (keyof typeof MIGRATIONS)[];
+
+      at read (vtid-05491-tenant-moderation.test.ts:22:49)
+      at mig (vtid-05491-tenant-moderation.test.ts:23:53)
+      at Object.<anonymous> (vtid-05491-tenant-moderation.test.ts:83:22)
+
+  ● VTID-05491: rollbacks and read-only checks › rollback-070100-p2-moderation.sql exists, is transactional and lock-timed
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+       95 | describe('VTID-05491: rollbacks and read-only checks', () => {
+       96 |   it.each(ROLLBACKS)('%s exists, is transactional and lock-timed', (f) => {
+    >  97 |     expect(existsSync(join(VAL_DIR, f))).toBe(true);
+          |                                          ^
+       98 |     const sql = code(read(join(VAL_DIR, f)));
+       99 |     expect(sql).toMatch(/SET LOCAL lock_timeout = '3s'/);
+      100 |     expect(sql.match(/^\s*BEGIN;/gm)).toHaveLength(1);
+
+      at vtid-05491-tenant-moderation.test.ts:97:42
+
+  ● VTID-05491: rollbacks and read-only checks › rollback-070150-p3-moderation.sql exists, is transactional and lock-timed
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+       95 | describe('VTID-05491: rollbacks and read-only checks', () => {
+       96 |   it.each(ROLLBACKS)('%s exists, is transactional and lock-timed', (f) => {
+    >  97 |     expect(existsSync(join(VAL_DIR, f))).toBe(true);
+          |                                          ^
+       98 |     const sql = code(read(join(VAL_DIR, f)));
+       99 |     expect(sql).toMatch(/SET LOCAL lock_timeout = '3s'/);
+      100 |     expect(sql.match(/^\s*BEGIN;/gm)).toHaveLength(1);
+
+      at vtid-05491-tenant-moderation.test.ts:97:42
+
+  ● VTID-05491: rollbacks and read-only checks › rollback-070600-moderator-tenant-scope.sql exists, is transactional and lock-timed
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+       95 | describe('VTID-05491: rollbacks and read-only checks', () => {
+       96 |   it.each(ROLLBACKS)('%s exists, is transactional and lock-timed', (f) => {
+    >  97 |     expect(existsSync(join(VAL_DIR, f))).toBe(true);
+          |                                          ^
+       98 |     const sql = code(read(join(VAL_DIR, f)));
+       99 |     expect(sql).toMatch(/SET LOCAL lock_timeout = '3s'/);
+      100 |     expect(sql.match(/^\s*BEGIN;/gm)).toHaveLength(1);
+
+      at vtid-05491-tenant-moderation.test.ts:97:42
+
+  ● VTID-05491: rollbacks and read-only checks › the P2 and P3 rollbacks refuse while a later file is still applied; no rollback drops a snapshot
+
+    ENOENT: no such file or directory, open '/tmp/wt-red-05491/docs/validation/VTID-05491/rollback-070100-p2-moderation.sql'
+
+      20 | const CHECKS = ['live-before.sql', 'post-apply-checks.sql', 'rollback-check.sql'];
+      21 |
+    > 22 | const read = (p: string): string => readFileSync(p, 'utf8');
+         |                                                 ^
+      23 | const mig = (k: keyof typeof MIGRATIONS): string => read(join(MIG_DIR, MIGRATIONS[k]));
+      24 | const code = (sql: string): string => sql.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, ' ');
+      25 | const keys = Object.keys(MIGRATIONS) as (keyof typeof MIGRATIONS)[];
+
+      at read (vtid-05491-tenant-moderation.test.ts:22:49)
+      at Object.<anonymous> (vtid-05491-tenant-moderation.test.ts:105:17)
+
+  ● VTID-05491: rollbacks and read-only checks › the scope rollback restores the three original policies
+
+    ENOENT: no such file or directory, open '/tmp/wt-red-05491/docs/validation/VTID-05491/rollback-070600-moderator-tenant-scope.sql'
+
+      20 | const CHECKS = ['live-before.sql', 'post-apply-checks.sql', 'rollback-check.sql'];
+      21 |
+    > 22 | const read = (p: string): string => readFileSync(p, 'utf8');
+         |                                                 ^
+      23 | const mig = (k: keyof typeof MIGRATIONS): string => read(join(MIG_DIR, MIGRATIONS[k]));
+      24 | const code = (sql: string): string => sql.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, ' ');
+      25 | const keys = Object.keys(MIGRATIONS) as (keyof typeof MIGRATIONS)[];
+
+      at read (vtid-05491-tenant-moderation.test.ts:22:49)
+      at Object.<anonymous> (vtid-05491-tenant-moderation.test.ts:111:22)
+
+  ● VTID-05491: rollbacks and read-only checks › live-before.sql is SELECT-only
+
+    ENOENT: no such file or directory, open '/tmp/wt-red-05491/docs/validation/VTID-05491/live-before.sql'
+
+      20 | const CHECKS = ['live-before.sql', 'post-apply-checks.sql', 'rollback-check.sql'];
+      21 |
+    > 22 | const read = (p: string): string => readFileSync(p, 'utf8');
+         |                                                 ^
+      23 | const mig = (k: keyof typeof MIGRATIONS): string => read(join(MIG_DIR, MIGRATIONS[k]));
+      24 | const code = (sql: string): string => sql.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, ' ');
+      25 | const keys = Object.keys(MIGRATIONS) as (keyof typeof MIGRATIONS)[];
+
+      at read (vtid-05491-tenant-moderation.test.ts:22:49)
+      at vtid-05491-tenant-moderation.test.ts:117:22
+
+  ● VTID-05491: rollbacks and read-only checks › post-apply-checks.sql is SELECT-only
+
+    ENOENT: no such file or directory, open '/tmp/wt-red-05491/docs/validation/VTID-05491/post-apply-checks.sql'
+
+      20 | const CHECKS = ['live-before.sql', 'post-apply-checks.sql', 'rollback-check.sql'];
+      21 |
+    > 22 | const read = (p: string): string => readFileSync(p, 'utf8');
+         |                                                 ^
+      23 | const mig = (k: keyof typeof MIGRATIONS): string => read(join(MIG_DIR, MIGRATIONS[k]));
+      24 | const code = (sql: string): string => sql.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, ' ');
+      25 | const keys = Object.keys(MIGRATIONS) as (keyof typeof MIGRATIONS)[];
+
+      at read (vtid-05491-tenant-moderation.test.ts:22:49)
+      at vtid-05491-tenant-moderation.test.ts:117:22
+
+  ● VTID-05491: rollbacks and read-only checks › rollback-check.sql is SELECT-only
+
+    ENOENT: no such file or directory, open '/tmp/wt-red-05491/docs/validation/VTID-05491/rollback-check.sql'
+
+      20 | const CHECKS = ['live-before.sql', 'post-apply-checks.sql', 'rollback-check.sql'];
+      21 |
+    > 22 | const read = (p: string): string => readFileSync(p, 'utf8');
+         |                                                 ^
+      23 | const mig = (k: keyof typeof MIGRATIONS): string => read(join(MIG_DIR, MIGRATIONS[k]));
+      24 | const code = (sql: string): string => sql.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/--[^\n]*/g, ' ');
+      25 | const keys = Object.keys(MIGRATIONS) as (keyof typeof MIGRATIONS)[];
+
+      at read (vtid-05491-tenant-moderation.test.ts:22:49)
+      at vtid-05491-tenant-moderation.test.ts:117:22
+
+  ● VTID-05491: queue rows › MIGRATION-QUEUE lists the three files in order P2 -> P3 -> scope, queued pending owner approval
+
+    expect(received).toBeGreaterThan(expected)
+
+    Expected: > -1
+    Received:   -1
+
+      124 |     const q = read(join(ROOT, 'docs/multitenancy/MIGRATION-QUEUE.md'));
+      125 |     const at = keys.map((k) => q.indexOf(MIGRATIONS[k]));
+    > 126 |     for (const i of at) expect(i).toBeGreaterThan(-1);
+          |                                   ^
+      127 |     expect(at[0]).toBeLessThan(at[1]);
+      128 |     expect(at[1]).toBeLessThan(at[2]);
+      129 |     for (const k of keys) {
+
+      at Object.<anonymous> (vtid-05491-tenant-moderation.test.ts:126:35)
+
+Test Suites: 1 failed, 1 total
+Tests:       20 failed, 20 total
+Snapshots:   0 total
+Time:        0.524 s
+Ran all test suites.

@@ -1,0 +1,11 @@
+# loaded supabase/tests/vtid_05150_fixture.sql
+# loaded supabase/migrations/20261014000100_vtid_05149_tenants_default_platform_flags.sql
+# loaded supabase/tests/vtid_05150_fixture_after_a.sql
+# loaded supabase/migrations/20261014000400_vtid_05150_tenant_brand_pack.sql
+# loaded supabase/migrations/20261014000400_vtid_05150_tenant_brand_pack.sql
+# loaded supabase/migrations/20261014000500_vtid_05150_provision_tenant.sql
+# loaded supabase/migrations/20261014000500_vtid_05150_provision_tenant.sql
+# loaded supabase/migrations/20261102141000_vtid_05506_mt_provision_erp_request.sql
+# loaded supabase/migrations/20261102141000_vtid_05506_mt_provision_erp_request.sql
+RESULT: FAILED: jev flag (Alkalma pattern, budget param)
+exit 1

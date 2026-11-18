@@ -1,0 +1,13 @@
+{
+  "vtid": "VTID-05540",
+  "kind": "infra",
+  "paths": [
+    "scripts/eng/rehearse.mjs",
+    "scripts/eng/rehearse.test.mjs",
+    "infra/gitlab-engineering/rehearsal/**",
+    "docs/validation/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05540/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

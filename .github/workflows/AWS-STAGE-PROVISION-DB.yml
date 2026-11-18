@@ -1,0 +1,150 @@
+name: AWS-STAGE-PROVISION-DB
+run-name: 'Staging database ${{ inputs.mode }} [VTID: VTID-05782] (${{ github.ref_name }})'
+
+# VTID-05782 (plan autonomous-to-staging-r2 §3.3, lane staging-db-provision; design.md §2, §4, §6).
+# Creates (mode=apply) and seeds (mode=load) the isolated staging database vitana-aurora-staging. mode=plan prints the
+# calls and makes no AWS call. Dispatch only: no push, no pull_request, no schedule.
+#
+# Fail closed: apply and load refuse unless BOTH owner-set repository variables exist —
+#   STAGING_DB_COST_APPROVED = yes                       (the owner's cost approval, design.md §6.1)
+#   AWS_STAGING_DB_ROLE_ARN  = the stack output StagingDbRoleArn (role vitana-gha-staging-db, design.md §6.2)
+# and the run is on main (the role's trust allows main only). The only role this workflow assumes is
+# vars.AWS_STAGING_DB_ROLE_ARN; never the production deploy role, never the shared staging deploy role. Before any AWS
+# step it runs scripts/ci/staging-prod-ref-guard.mjs in --enforce mode over its own inputs.
+# The stack itself (infra/staging-db/stack.yaml) is applied by the owner, never by this workflow.
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'plan = print the calls, no AWS call; apply = create the cluster; load = build and load the schema bundle'
+        type: choice
+        options: [plan, apply, load]
+        default: plan
+        required: true
+      cluster:
+        description: 'Staging cluster (vitana-aurora-staging only)'
+        type: string
+        default: vitana-aurora-staging
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aws-stage-provision-db
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    name: Provision plan (no AWS call)
+    if: inputs.mode == 'plan'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+      - name: Guard (--enforce) over this workflow's inputs
+        run: node scripts/ci/staging-prod-ref-guard.mjs --enforce --files .github/workflows/AWS-STAGE-PROVISION-DB.yml infra/staging-db scripts/aws/staging-db-common.sh scripts/aws/staging-db-provision.sh scripts/aws/staging-db-load.sh
+      - name: Plan
+        env:
+          CLUSTER: ${{ inputs.cluster }}
+        run: bash scripts/aws/staging-db-provision.sh --plan --cluster "$CLUSTER"
+
+  gate:
+    name: Owner gate (cost approval, staging role, main)
+    if: inputs.mode == 'apply' || inputs.mode == 'load'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Refuse unless the owner approved the cost and set the staging database role
+        env:
+          COST_APPROVED: ${{ vars.STAGING_DB_COST_APPROVED }}
+          ROLE_ARN: ${{ vars.AWS_STAGING_DB_ROLE_ARN }}
+          REF: ${{ github.ref }}
+        run: |
+          fail=0
+          if [ "$COST_APPROVED" != "yes" ]; then
+            echo "::error::Refused: repository variable STAGING_DB_COST_APPROVED is not 'yes' (owner cost approval, design.md §6.1). Nothing was provisioned."
+            fail=1
+          fi
+          if [ -z "$ROLE_ARN" ]; then
+            echo "::error::Refused: repository variable AWS_STAGING_DB_ROLE_ARN is not set (stack output StagingDbRoleArn, design.md §6.2). Nothing was provisioned."
+            fail=1
+          elif ! printf '%s' "$ROLE_ARN" | grep -Eq '^arn:aws:iam::472838866351:role/vitana-gha-staging-db$'; then
+            echo "::error::Refused: AWS_STAGING_DB_ROLE_ARN is not arn:aws:iam::472838866351:role/vitana-gha-staging-db."
+            fail=1
+          fi
+          if [ "$REF" != "refs/heads/main" ]; then
+            echo "::error::Refused: run from main only (the role trusts refs/heads/main), not $REF."
+            fail=1
+          fi
+          exit "$fail"
+
+  apply:
+    name: Create vitana-aurora-staging
+    needs: gate
+    if: inputs.mode == 'apply'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+      - name: Guard (--enforce) over this workflow's inputs
+        run: node scripts/ci/staging-prod-ref-guard.mjs --enforce --files .github/workflows/AWS-STAGE-PROVISION-DB.yml infra/staging-db scripts/aws/staging-db-common.sh scripts/aws/staging-db-provision.sh scripts/aws/staging-db-load.sh
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_STAGING_DB_ROLE_ARN }}
+          aws-region: eu-central-1
+      - name: Provision
+        env:
+          CLUSTER: ${{ inputs.cluster }}
+          STAGING_DB_COST_APPROVED: ${{ vars.STAGING_DB_COST_APPROVED }}
+        run: bash scripts/aws/staging-db-provision.sh --apply --cluster "$CLUSTER"
+
+  load:
+    name: Build and load the schema bundle
+    needs: gate
+    if: inputs.mode == 'load'
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+      - name: Install (PGlite for the schema build)
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Guard (--enforce) over this workflow's inputs
+        run: node scripts/ci/staging-prod-ref-guard.mjs --enforce --files .github/workflows/AWS-STAGE-PROVISION-DB.yml infra/staging-db scripts/aws/staging-db-common.sh scripts/aws/staging-db-provision.sh scripts/aws/staging-db-load.sh scripts/ci/staging-db/build-schema.mjs
+      - name: Build the bundle from this commit (no AWS call)
+        env:
+          CLUSTER: ${{ inputs.cluster }}
+        run: |
+          set -o pipefail
+          node scripts/ci/staging-db/build-schema.mjs --out "$RUNNER_TEMP/staging-db-bundle" | tee "$RUNNER_TEMP/build.log"
+          grep -q '^PASS staging-db schema build$' "$RUNNER_TEMP/build.log"
+          bash scripts/aws/staging-db-load.sh --cluster "$CLUSTER" --bundle "$RUNNER_TEMP/staging-db-bundle" --dry-run
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_STAGING_DB_ROLE_ARN }}
+          aws-region: eu-central-1
+      - name: Load and compare the schema hash
+        env:
+          CLUSTER: ${{ inputs.cluster }}
+          STAGING_DB_COST_APPROVED: ${{ vars.STAGING_DB_COST_APPROVED }}
+        run: bash scripts/aws/staging-db-load.sh --cluster "$CLUSTER" --bundle "$RUNNER_TEMP/staging-db-bundle"

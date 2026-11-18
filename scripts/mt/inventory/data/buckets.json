@@ -1,0 +1,90 @@
+{
+  "caveat": "The storage schema does not replay on PGlite: buckets and storage policies come from migration text only (source: migrations).",
+  "generated_by": "scripts/mt/inventory/generate.mjs",
+  "inventory": "buckets",
+  "rows": [
+    {
+      "file": "20260727170000_bootstrap_community_marketplace_storage.sql",
+      "id": "community-marketplace-listings",
+      "public": true,
+      "source": "migrations"
+    },
+    {
+      "file": "20261010160000_vtid_05035_reward_shop_images_bucket.sql",
+      "id": "reward-shop-images",
+      "public": true,
+      "source": "migrations"
+    }
+  ],
+  "schema_version": 1,
+  "source": "INSERT INTO storage.buckets and CREATE/DROP POLICY ON storage.objects in migration text",
+  "storage_policies": [
+    {
+      "cmd": "SELECT",
+      "expression": "FOR SELECT USING ( bucket_id = 'chat-attachments' AND ( auth.uid()::text = (storage.foldername(name))[1] OR ( auth.uid()::text = (storage.foldername(name))[2] AND EXISTS ( SELECT 1 FROM public.chat_messages cm WHERE cm.receiver_id = auth.uid() AND cm.sender_id::text = (storage.foldername(name))[1] ) ) OR ( (storage.foldername(name))[2] ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$' AND public.is_chat_group_member( ((storage.foldername(name))[2])::uuid, auth.uid() ) ) OR EXISTS ( SELECT 1 FROM public.thread_participants tp WHERE tp.user_id = auth.uid() AND tp.thread_id::text = (storage.foldername(name))[2] AND tp.is_active = true ) OR EXISTS ( SELECT 1 FROM public.global_thread_participants gtp WHERE gtp.user_id = auth.uid() AND gtp.thread_id::text = (storage.foldername(name))[2] AND gtp.is_active = true ) ) )",
+      "file": "20260522010000_chat_group_members_recursion_fix.sql",
+      "name": "Users can view chat attachments",
+      "source": "migrations"
+    },
+    {
+      "cmd": "SELECT",
+      "expression": "FOR SELECT USING (bucket_id = 'community-marketplace-listings')",
+      "file": "20260727170000_bootstrap_community_marketplace_storage.sql",
+      "name": "community-marketplace-listings public read",
+      "source": "migrations"
+    },
+    {
+      "cmd": "DELETE",
+      "expression": "FOR DELETE USING (bucket_id = 'community-marketplace-listings' AND auth.uid()::text = (storage.foldername(name))[1])",
+      "file": "20260727170000_bootstrap_community_marketplace_storage.sql",
+      "name": "community-marketplace-listings self delete",
+      "source": "migrations"
+    },
+    {
+      "cmd": "INSERT",
+      "expression": "FOR INSERT WITH CHECK (bucket_id = 'community-marketplace-listings' AND auth.uid()::text = (storage.foldername(name))[1])",
+      "file": "20260727170000_bootstrap_community_marketplace_storage.sql",
+      "name": "community-marketplace-listings self insert",
+      "source": "migrations"
+    },
+    {
+      "cmd": "UPDATE",
+      "expression": "FOR UPDATE USING (bucket_id = 'community-marketplace-listings' AND auth.uid()::text = (storage.foldername(name))[1]) WITH CHECK (bucket_id = 'community-marketplace-listings' AND auth.uid()::text = (storage.foldername(name))[1])",
+      "file": "20260727170000_bootstrap_community_marketplace_storage.sql",
+      "name": "community-marketplace-listings self update",
+      "source": "migrations"
+    },
+    {
+      "cmd": "SELECT",
+      "expression": "FOR SELECT USING (bucket_id = 'intent-covers')",
+      "file": "20260514000000_VTID_02806d_intent_covers_storage_policies.sql",
+      "name": "intent-covers public read",
+      "source": "migrations"
+    },
+    {
+      "cmd": "DELETE",
+      "expression": "FOR DELETE USING ( bucket_id = 'intent-covers' AND (storage.foldername(name))[1] IN ('user-universal', 'user-library', 'staging') AND auth.uid()::text = (storage.foldername(name))[2] )",
+      "file": "20260515000000_VTID_02806h_intent_covers_staging_path.sql",
+      "name": "intent-covers self delete",
+      "source": "migrations"
+    },
+    {
+      "cmd": "INSERT",
+      "expression": "FOR INSERT WITH CHECK ( bucket_id = 'intent-covers' AND (storage.foldername(name))[1] IN ('user-universal', 'user-library', 'staging') AND auth.uid()::text = (storage.foldername(name))[2] )",
+      "file": "20260515000000_VTID_02806h_intent_covers_staging_path.sql",
+      "name": "intent-covers self insert",
+      "source": "migrations"
+    },
+    {
+      "cmd": "UPDATE",
+      "expression": "FOR UPDATE USING ( bucket_id = 'intent-covers' AND (storage.foldername(name))[1] IN ('user-universal', 'user-library', 'staging') AND auth.uid()::text = (storage.foldername(name))[2] ) WITH CHECK ( bucket_id = 'intent-covers' AND (storage.foldername(name))[1] IN ('user-universal', 'user-library', 'staging') AND auth.uid()::text = (storage.foldername(name))[2] )",
+      "file": "20260515000000_VTID_02806h_intent_covers_staging_path.sql",
+      "name": "intent-covers self update",
+      "source": "migrations"
+    }
+  ],
+  "summary": {
+    "buckets": 2,
+    "storage_policies": 9
+  }
+}

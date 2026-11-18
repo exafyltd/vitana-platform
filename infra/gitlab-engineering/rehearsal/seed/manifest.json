@@ -1,0 +1,9 @@
+{
+  "schema": "vitana.rehearsal-seed/v1",
+  "version": 1,
+  "description": "What scripts/eng/rehearse.mjs puts on main of the scratch project vitana/rehearsal. Every file of this folder except manifest.json is copied to the same path, except the folder spec/, which goes to .kiro/specs/rehearsal/. The collab tooling is copied from main of the platform checkout the script runs from, to tools/collab/ (never to scripts/collab/: those paths are protected gate files and the merge bot would refuse the seed). rehearsal.config.json is generated.",
+  "map": { "spec/": ".kiro/specs/rehearsal/" },
+  "collab": { "from": "scripts/collab", "to": "tools/collab", "files": ["queue.mjs", "land-guard.mjs", "protected-gate-files.json"] },
+  "createOnly": [".kiro/specs/rehearsal/"],
+  "generated": ["rehearsal.config.json"]
+}

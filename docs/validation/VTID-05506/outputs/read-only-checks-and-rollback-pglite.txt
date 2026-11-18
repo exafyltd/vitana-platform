@@ -1,0 +1,100 @@
+## vtid_05150_fixture.sql (loaded)
+## 20261014000100_vtid_05149_tenants_default_platform_flags.sql (loaded)
+## vtid_05150_fixture_after_a.sql (loaded)
+## 20261014000300_vtid_05149_ci_tenant_isolation_health.sql (loaded)
+## 20261014000400_vtid_05150_tenant_brand_pack.sql (loaded)
+## 20261014000500_vtid_05150_provision_tenant.sql (loaded)
+## live-before.sql
+by_tenant
+NULL
+
+provision_tenant | merge_fn | ci_health
+provision_tenant(text,text,text,uuid,text,text,numeric,text,text[],text,text) | tenant_settings_merge_feature_flags(uuid,jsonb,boolean,uuid) | ci_tenant_isolation_health()
+
+proname | body_md5 | mentions_bootstrap_requested | mentions_erp
+ci_tenant_isolation_health | 526821628ec2954f2e5445ce3389b1c1 | false | false
+provision_tenant | aca69fc83dc9dc5002aa4003d0ed9d6c | false | false
+tenant_settings_merge_feature_flags | b0537f1eaaf1f46ebde88d8b9a2d9d1e | false | false
+
+tenants_with_erp_key
+0
+
+health
+{"generated_at":"2026-11-07T18:31:30.769+00:00","tables_scanned":11,"text_tenant_id_tables":0,"foreign_tenant_rows":0,"foreign_tenant_tables":[],"null_tenant_rows":0,"null_tenant_tables":[],"users_zero_primary":0,"users_multi_primary":0,"auth_users_without_membership":4,"memberships_not_in_user_tenants":0,"user_tenants_not_in_memberships":0,"default_tenant_count":1,"platform_tenant_count":0,"scan_errors":[]}
+
+## 20261102141000_vtid_05506_mt_provision_erp_request.sql (loaded)
+## 20261102141100_vtid_05506_mt_isolation_health_by_tenant.sql (loaded)
+## post-apply-checks.sql
+proname | body_md5 | mentions_bootstrap_requested | mentions_erp
+provision_tenant | a2279a71bdd08cc3720c1374e73f67cb | true | true
+tenant_settings_merge_feature_flags | 2956d907c1e09456611aab6414750509 | false | true
+
+proname | secdef | config | anon_exec | auth_exec | service_exec
+provision_tenant | true | ["search_path=public"] | false | false | true
+tenant_settings_merge_feature_flags | false | ["search_path=public, pg_catalog"] | false | false | true
+
+tenants_with_erp_key
+0
+
+by_tenant | secdef | volatility | config | anon_exec | auth_exec | service_exec
+ci_tenant_isolation_health_by_tenant() | true | s | ["search_path=public, pg_catalog"] | false | false | true
+
+ci_health_body_md5
+526821628ec2954f2e5445ce3389b1c1
+
+disagreeing_column
+
+scan_errors
+0
+
+listed | registered
+3 | 3
+
+slug | tenant_id | is_registered | foreign_rows | null_rows | m_not_ut | ut_not_m
+
+## rollback-141100-isolation-health-by-tenant.sql (loaded)
+## rollback-141000-provision-erp-request.sql (loaded)
+## rollback-check.sql
+by_tenant
+NULL
+
+proname | body_md5 | mentions_bootstrap_requested | mentions_erp | anon_exec | auth_exec | service_exec
+ci_tenant_isolation_health | 526821628ec2954f2e5445ce3389b1c1 | false | false | false | false | true
+provision_tenant | aca69fc83dc9dc5002aa4003d0ed9d6c | false | false | false | false | true
+tenant_settings_merge_feature_flags | b0537f1eaaf1f46ebde88d8b9a2d9d1e | false | false | false | false | true
+
+tenants_with_erp_key
+0
+
+## rollback-141100-isolation-health-by-tenant.sql (loaded)
+## rollback-141000-provision-erp-request.sql (loaded)
+## 20261102141000_vtid_05506_mt_provision_erp_request.sql (loaded)
+## 20261102141100_vtid_05506_mt_isolation_health_by_tenant.sql (loaded)
+## post-apply-checks.sql
+proname | body_md5 | mentions_bootstrap_requested | mentions_erp
+provision_tenant | a2279a71bdd08cc3720c1374e73f67cb | true | true
+tenant_settings_merge_feature_flags | 2956d907c1e09456611aab6414750509 | false | true
+
+proname | secdef | config | anon_exec | auth_exec | service_exec
+provision_tenant | true | ["search_path=public"] | false | false | true
+tenant_settings_merge_feature_flags | false | ["search_path=public, pg_catalog"] | false | false | true
+
+tenants_with_erp_key
+0
+
+by_tenant | secdef | volatility | config | anon_exec | auth_exec | service_exec
+ci_tenant_isolation_health_by_tenant() | true | s | ["search_path=public, pg_catalog"] | false | false | true
+
+ci_health_body_md5
+526821628ec2954f2e5445ce3389b1c1
+
+disagreeing_column
+
+scan_errors
+0
+
+listed | registered
+3 | 3
+
+slug | tenant_id | is_registered | foreign_rows | null_rows | m_not_ut | ut_not_m
+

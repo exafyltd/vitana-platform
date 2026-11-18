@@ -455,3 +455,21 @@ six and eng-gitlab-m2 `settings`. Every new test is recorded red on `origin/main
   pipelines and verify-on-gitlab; the GitLab REST endpoints used, with file:line on both sides.
 - Staging proof: not verified on staging: runs on the GitLab host in the engineering account. Proven by its tests and the
   dry run; live from the cut.
+
+<!-- lane: build-class-retag -->
+## Lane `build-class-retag` (vitana-platform; late lane)
+- [ ] B1 Claim `agentic-delivery/build-class-retag`; branch `kiro/agentic-delivery/build-class-retag` from `origin/main` (after the VTID is on main).
+- [ ] B2 Red first: a test in `pipeline-gen.test.mjs` shows the five `build-image:*` jobs tag `vitana-eng-main`; record it in `docs/validation/VTID-05546/outputs/`.
+- [ ] B3 Set the build-job tag to `vitana-eng-build` in `pipeline-gen.mjs` (the line that sets `tags` for `build-image:${svc}`).
+- [ ] B4 Regenerate `platform-delivery.gitlab-ci.yml` and `v1-delivery.gitlab-ci.yml` with `node scripts/eng/pipeline-gen.mjs`; `--check` exits 0.
+- [ ] B5 Green: deploy-path's `fleet-classes-structure.test.mjs` test 14 passes against the regenerated files.
+- [ ] B6 Validate and scope-check exit 0; PR; reviewer agent; merge under §7b after the merge gate above.
+
+<!-- lane: build-class-retag-2 -->
+## Lane `build-class-retag-2` (vitana-platform; late lane, replaces build-class-retag)
+- [ ] R1 Claim `agentic-delivery/build-class-retag-2` after its VTID is on main; branch `kiro/agentic-delivery/build-class-retag-2` from `origin/main`.
+- [ ] R2 Red first: test 14 of `fleet-classes-structure.test.mjs` and a generator test show the five `build-image:*` jobs on `vitana-eng-main`; save under `docs/validation/VTID-<new>/` and `docs/validation/VTID-05546/`.
+- [ ] R3 Set the build-job tag to `vitana-eng-build` in `pipeline-gen.mjs`; update the main-class classification in its test.
+- [ ] R4 Regenerate both CI files with `node scripts/eng/pipeline-gen.mjs`; `--check` exits 0; the diff is the five tags.
+- [ ] R5 Green: the generator tests pass; deploy-path test 14 passes against the regenerated files (naming check is deploy-path's, step 5).
+- [ ] R6 Validate and scope-check exit 0; PR; reviewer agent; merge under §7b after the merge gate.

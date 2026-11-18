@@ -1,0 +1,47 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/wt-supplier-rel/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+PASS ../../wt-supplier-rel/services/gateway/test/vtid-05488-supplier-tenant-relationships.test.ts
+  VTID-05488: migration files
+    ✓ exist, in the lane range 20261102120000-125959, and are the only VTID-05488 migrations (7 ms)
+    ✓ relationships: lock_timeout, retry on lock_not_available, own transaction (1 ms)
+    ✓ distribution: lock_timeout, retry on lock_not_available, own transaction (1 ms)
+    ✓ partnerTenant: lock_timeout, retry on lock_not_available, own transaction
+    ✓ rls: lock_timeout, retry on lock_not_available, own transaction (1 ms)
+    ✓ none of them references is_member() or tenant_id_for_policies(), code or comment
+    ✓ none of them adds a product_orders column (D26 reuses product_orders.tenant_id)
+    ✓ none of them destroys data: no DROP TABLE, DROP COLUMN, TRUNCATE or DELETE (1 ms)
+  VTID-05488 D1: supplier_tenant_relationships
+    ✓ has the designed columns and the status vocabulary (1 ms)
+    ✓ RLS: members read through an inline user_tenants EXISTS on auth.uid(); service_role ALL; no client writes (1 ms)
+    ✓ seeds existing merchants active for the 'maxina' tenant only
+  VTID-05488 D2: products.distribution
+    ✓ adds distribution text NOT NULL DEFAULT 'community' (default stays) with a community|network CHECK
+    ✓ does not scan products under the ADD COLUMN exclusive lock: CHECK stays NOT VALID, no VALIDATE
+  VTID-05488 D3: partner_tenant backfill
+    ✓ snapshots first, never overwrites the snapshot, and is expand-only (tenant_id text untouched)
+    ✓ maps only unambiguous rows and leaves the rest NULL
+  VTID-05488 D4: helper and tenant-scoped RLS
+    ✓ discover_tenant_gate_enabled() is STABLE SECURITY DEFINER with a pinned search_path and no PUBLIC/anon execute (1 ms)
+    ✓ covers both branches: NULL tenant = any gate on; non-NULL tenant = its own flag, false without a row
+    ✓ replaces products_select and merchants_select with gate-guarded policies built on existing helpers only
+    ✓ refuses to run before 120000 and 120100
+  VTID-05488 D5: rollbacks, read-only checks, evidence
+    ✓ rollback-120000-supplier-tenant-relationships.sql exists, is transactional and bounded by lock_timeout
+    ✓ rollback-120100-products-distribution.sql exists, is transactional and bounded by lock_timeout (1 ms)
+    ✓ rollback-120200-partner-tenant-backfill.sql exists, is transactional and bounded by lock_timeout
+    ✓ rollback-120300-products-merchants-tenant-rls.sql exists, is transactional and bounded by lock_timeout
+    ✓ the policy rollback restores the is_active-only policies and drops the helper
+    ✓ live-before.sql is read-only (1 ms)
+    ✓ post-apply-checks.sql is read-only
+    ✓ rollback-check.sql is read-only
+    ✓ ships the validation set and the pgTAP file (1 ms)
+  VTID-05488: queue rows and drift baseline
+    ✓ MIGRATION-QUEUE.md has one queued-pending-approval row per migration, in order, with its rollback (1 ms)
+    ✓ the not-yet-live tables are in the drift baseline and the count matches (1 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       30 passed, 30 total
+Snapshots:   0 total
+Time:        0.428 s
+Ran all test suites.
