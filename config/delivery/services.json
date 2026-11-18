@@ -1717,17 +1717,21 @@
           "kind": "check",
           "install": "gateway-npm",
           "variables": {
-            "NODE_OPTIONS": "--max-old-space-size=6144"
+            "NODE_OPTIONS": "--max-old-space-size=6144",
+            "DATABASE_URL": "postgresql://ci:ci@localhost:5432/ci?schema=public"
           },
           "script": [
-            "npx --yes pnpm@9.0.0 exec prisma generate || npx prisma generate",
-            "npx prisma validate",
+            "(cd \"$CI_PROJECT_DIR\" && npx --yes prisma@6.18.0 generate --schema prisma/schema.prisma)",
+            "(cd \"$CI_PROJECT_DIR\" && npx --yes prisma@6.18.0 validate --schema prisma/schema.prisma)",
             "npm run validate:dev-frontend-spec",
             "npm run typecheck"
           ]
         },
         "gateway-jest": {
           "kind": "test",
+          "apt": [
+            "jq"
+          ],
           "parallel": 4,
           "install": "gateway-pnpm",
           "variables": {
@@ -1761,7 +1765,10 @@
           "install": "gateway-npm",
           "script": [
             "npm run build"
-          ]
+          ],
+          "variables": {
+            "NODE_OPTIONS": "--max-old-space-size=6144"
+          }
         },
         "oasis-persistence": {
           "kind": "check",
@@ -1888,6 +1895,9 @@
         },
         "unit-scripts": {
           "kind": "test",
+          "apt": [
+            "jq"
+          ],
           "script": [
             "FILES=$(find scripts -path \"*/node_modules\" -prune -o \\( -name \"*.test.cjs\" -o -name \"*.test.mjs\" \\) -print | sort)",
             "node --test $FILES"
@@ -1912,7 +1922,8 @@
         "validator-check": {
           "kind": "check",
           "variables": {
-            "GIT_DEPTH": "0"
+            "GIT_DEPTH": "0",
+            "NODE_OPTIONS": "--max-old-space-size=6144"
           },
           "install_cache": {
             "lockfiles": [
@@ -1950,7 +1961,10 @@
             "node \"$CI_PROJECT_DIR/scripts/ci/command-hub-ownership-guard.js\"",
             "npm run build",
             "node \"$CI_PROJECT_DIR/scripts/ci/command-hub-golden-fingerprint.js\""
-          ]
+          ],
+          "variables": {
+            "NODE_OPTIONS": "--max-old-space-size=6144"
+          }
         },
         "frontend-canonical-source": {
           "kind": "check",
@@ -1959,7 +1973,10 @@
             "npm run build",
             "cd \"$CI_PROJECT_DIR\"",
             "node services/validators/frontend-canonical-source.js"
-          ]
+          ],
+          "variables": {
+            "NODE_OPTIONS": "--max-old-space-size=6144"
+          }
         },
         "dev-autopilot-impact": {
           "kind": "check",
@@ -2073,6 +2090,9 @@
         },
         "gateway-calendar-regression": {
           "kind": "test",
+          "apt": [
+            "jq"
+          ],
           "install": "gateway-pnpm",
           "script": [
             "npm run test:calendar -- --silent",
@@ -2314,6 +2334,9 @@
         },
         "sql-record-migration-row": {
           "kind": "test",
+          "apt": [
+            "jq"
+          ],
           "postgres": true,
           "image": "postgres",
           "script": [
@@ -2374,6 +2397,9 @@
         },
         "sql-tenant-foundation": {
           "kind": "test",
+          "apt": [
+            "jq"
+          ],
           "postgres": true,
           "image": "postgres",
           "script": [

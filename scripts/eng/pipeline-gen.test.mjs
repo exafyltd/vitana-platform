@@ -124,12 +124,23 @@ test('gate needs every check with optional: true and runs only when they passed'
     const gate = generated.gate;
     const needs = Object.fromEntries(gate.needs.map((n) => [n.job, n]));
     for (const check of checkNames(repo)) {
-      assert.ok(needs[check], `${repo}: gate does not need ${check}`);
+      if (!needs[check]) {
+        // a parallel check may reach the gate only through a check that needs it with artifacts on the same paths
+        const relay = generated[check].parallel > 1 ? Object.keys(needs).find((o) => (generated[o].needs || []).some((n) => n.job === check && n.artifacts === true)) : undefined;
+        assert.ok(relay, `${repo}: gate does not need ${check}, and no needed check relays it`);
+        assert.deepEqual([...generated[check].rules[0].changes.paths].filter((p) => !generated[relay].rules[0].changes.paths.includes(p)), [], `${repo}: ${relay} does not run for every path ${check} runs for`);
+        continue;
+      }
       assert.equal(needs[check].optional, true, `${repo}: gate need ${check} is not optional`);
       assert.equal(needs[check].artifacts, true);
     }
     assert.notEqual(gate.when, 'always');
-    assert.ok(gate.needs.length <= 50, `${repo}: gate needs ${gate.needs.length} jobs; GitLab's ci_max_needs default is 50`);
+    // GitLab counts a parallel job once per instance (pipeline 482: "gate: one job can only need 50 others, but you have listed 51")
+    const counted = gate.needs.reduce((n, x) => n + (generated[x.job].parallel || 1), 0);
+    assert.ok(counted <= 50, `${repo}: gate needs ${counted} jobs as GitLab counts them; GitLab's ci_max_needs default is 50`);
+    for (const [name, job] of Object.entries(generated)) {
+      if (job && Array.isArray(job.needs)) assert.ok(job.needs.reduce((n, x) => n + ((generated[x.job ?? x] || {}).parallel || 1), 0) <= 50, `${repo}: ${name} needs more than 50 jobs as GitLab counts them`);
+    }
     for (const check of checkNames(repo)) assert.notEqual(generated[check].allow_failure, true, `${repo}: ${check} may not fail silently`);
   }
 });
