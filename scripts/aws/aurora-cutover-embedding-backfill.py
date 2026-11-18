@@ -19,10 +19,14 @@ the IVFFlat indexes, which were built on empty columns by the post-load.
 
 Re-runnable: it only ever sets an embedding to Supabase's current value.
 Run AFTER aurora-cutover-after-load.sh:  python3 aurora-cutover-embedding-backfill.py
+Staging: after scripts/aws/staging-db-vector-postload.sh apply, run
+  python3 aurora-cutover-embedding-backfill.py --cluster vitana-aurora-staging
+(the default cluster stays the production one; only the two names below are accepted).
 Needs: secretsmanager:GetSecretValue on vitana/supabase/prod/url,
 vitana/supabase/prod/service-role-key and the cluster's master secret;
 rds-data:*. Standard library + boto3 only. Prints no credentials.
 """
+import argparse
 import json
 import time
 import urllib.error
@@ -33,6 +37,7 @@ import boto3
 
 REGION = "eu-central-1"
 CLUSTER = "vitana-aurora-prod"
+CLUSTERS = ("vitana-aurora-prod", "vitana-aurora-staging")
 CLUSTER_ARN = f"arn:aws:rds:{REGION}:472838866351:cluster:{CLUSTER}"
 DB = "vitana"
 PAGE = 200
@@ -174,6 +179,12 @@ def copy_column(src, aurora, table, col, pk, pktype):
 
 
 def main():
+    global CLUSTER, CLUSTER_ARN
+    ap = argparse.ArgumentParser(description="Backfill pgvector embeddings from Supabase into Aurora")
+    ap.add_argument("--cluster", choices=CLUSTERS, default=CLUSTER)
+    CLUSTER = ap.parse_args().cluster
+    CLUSTER_ARN = f"arn:aws:rds:{REGION}:472838866351:cluster:{CLUSTER}"
+    print(f"== target cluster {CLUSTER}")
     secrets = boto3.client("secretsmanager", REGION)
     rds = boto3.client("rds", REGION)
     secret_arn = rds.describe_db_clusters(DBClusterIdentifier=CLUSTER)["DBClusters"][0]["MasterUserSecret"]["SecretArn"]
