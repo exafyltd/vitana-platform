@@ -1,0 +1,45 @@
+# New tests on kiro/agentic-delivery/deploy-path (working tree with the implementation), 2026-11-05T17:16:38Z, node v22.23.4
+# command: node --test scripts/eng/deploy/deploy-ecs.test.mjs scripts/eng/deploy/push-image.test.mjs scripts/eng/deploy/preview.test.mjs scripts/eng/gitlab-oidc-structure.test.mjs scripts/eng/fleet-classes-structure.test.mjs
+ok 1 - live mode changes only the image digest, the commit variables and the env overrides
+ok 2 - shadow mode renders the definition and makes no ECS write
+ok 3 - a service outside the plan §3.10 allowlist is refused before any AWS call
+ok 4 - an image outside the service ECR repository is refused before any AWS call
+ok 5 - a deploy that finds a newer descendant served ends superseded and writes nothing
+ok 6 - a served commit that is not a descendant does not supersede
+ok 7 - a stabilise failure re-points to the captured revision and ends red
+ok 8 - a wrong build stamp re-points to the captured revision and ends red
+ok 9 - a missing role fails the job and names the role
+ok 10 - the rollback job re-points when the deploy job stopped after the update
+ok 11 - the rollback job changes nothing when the deploy job changed nothing or already rolled back
+ok 12 - it writes the deploy-runs file of the contract lane verify-on-gitlab reads
+ok 13 - an env override cannot replace a secret or a commit variable
+ok 14 - the CLI refuses a service outside the allowlist (exit 2) and its rollback without a state does nothing
+ok 15 - a merge request preview is uploaded to mr-<iid>/ only and that path is invalidated
+ok 16 - only the prefixes mr-<iid>/ and gl-main/ exist
+ok 17 - shadow mode writes only the gl-main/ preview
+ok 18 - teardown removes only its own prefix
+ok 19 - only the community app has a preview, and the distribution id is required
+ok 20 - it pushes the archive, outputs the digest and the image by digest
+ok 21 - shadow mode pushes only a shadow-<sha12> tag
+ok 22 - it refuses a target outside the service ECR repository
+ok 23 - a push without a digest fails the job
+ok 24 - two new groups, main and deploy: min 0, desired left to the runner, scale-in protection, maxima of plan §5
+ok 25 - IMDSv2 required with hop limit 1, no public IP, encrypted gp3 with the engineering key
+ok 26 - no instance policy: no instance profile and no IAM resource for the classes
+ok 27 - egress tcp 80, tcp 443 and DNS only, and no ingress
+ok 28 - a quota that is too low makes the Terraform check print the request
+ok 29 - a job tagged vitana-eng declares no id_tokens and names no secret
+ok 30 - a job tagged vitana-eng-deploy runs no repository script
+ok 31 - tpl-deploy defines the six jobs of plan §9: build on the main class, the rest on the deploy class
+ok 32 - build-image.sh refuses without --oci-worker-no-process-sandbox
+ok 33 - the OIDC provider is gitlab.vitanaland.com with exactly the six audiences
+ok 34 - each trust policy: StringEquals on aud, sub pinned to the plan §7 project paths and refs, no * principal
+ok 35 - each permission policy names only the resources of plan §7
+ok 36 - there is no production role
+ok 37 - the setup script is a dry run by default and prints every call it would make
+ok 38 - the setup script skips the preview role without a distribution id
+ok 39 - the setup script stops outside account 472838866351 or region eu-central-1
+# tests 39
+# suites 0
+# pass 39
+# fail 0

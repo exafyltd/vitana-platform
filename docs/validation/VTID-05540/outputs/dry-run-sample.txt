@@ -1,0 +1,24 @@
+# VTID-05540 sample dry run (SIMULATION, see report-sample-simulated.txt)
+# $ node scripts/eng/rehearse.mjs --project rehearsal --agents 12 --dry-run
+# AWS calls of the dry run: 9 (the seven token secrets and the two preflight reads of the fleet group)
+
+rehearse: dry run for vitana/rehearsal, run r202611051400; every check passed; nothing will be written
+seed: a merge request of lane rehearsal/seed would create 26 and update 0 file(s)
+  control ctl-no-review        agent-kiro-exafy     rehearsal/r202611051400/ctl-no-review  (the bot must answer no_review)
+  control ctl-stale-review     agent-kiro-exafyltd  rehearsal/r202611051400/ctl-stale-review  (the bot must answer review_stale)
+  control ctl-builder-accept   agent-kiro-jtadic    rehearsal/r202611051400/ctl-builder-accept  (the bot must answer review_forged)
+  control ctl-red-job          agent-kiro-hotmail   rehearsal/r202611051400/ctl-red-job  (the bot must answer checks_failed)
+  control ctl-protected-file   agent-kiro-exafy     rehearsal/r202611051400/ctl-protected-file  (the bot must answer protected_gate_file)
+  lane    lane-01              agent-kiro-exafy     rehearsal/r202611051400/lane-01
+  lane    lane-02              agent-kiro-exafyltd  rehearsal/r202611051400/lane-02
+  lane    lane-03              agent-kiro-jtadic    rehearsal/r202611051400/lane-03
+  lane    lane-04              agent-kiro-hotmail   rehearsal/r202611051400/lane-04
+  lane    lane-05              agent-kiro-exafy     rehearsal/r202611051400/lane-05
+  lane    lane-06              agent-kiro-exafyltd  rehearsal/r202611051400/lane-06
+  lane    lane-07              agent-kiro-jtadic    rehearsal/r202611051400/lane-07
+  lane    lane-08              agent-kiro-hotmail   rehearsal/r202611051400/lane-08
+  lane    lane-09              agent-kiro-exafy     rehearsal/r202611051400/lane-09
+  lane    lane-10              agent-kiro-exafyltd  rehearsal/r202611051400/lane-10
+  lane    lane-11              agent-kiro-jtadic    rehearsal/r202611051400/lane-11
+  lane    lane-12              agent-kiro-hotmail   rehearsal/r202611051400/lane-12
+then agent-reviewer pushes the review commits, bot-land lands the lanes, and the report decides A1, A2, A3, A4 and A8

@@ -163,6 +163,8 @@ export type CicdEventType =
   // state transition, unlike the shadow tick), and a member's own settings change.
   | 'companion.message.sent'
   | 'companion.message.failed'
+  // VTID-05588: an exafy admin sent one companion card to themselves (no ledger, no push).
+  | 'companion.test_card.sent'
   // VTID-05205: team welcome DMs (Mariia, Jovana, Alex Blue) — one per real
   // send or failed send, plus one per tick that decided something.
   | 'welcome_team.tick.completed'
@@ -1058,6 +1060,7 @@ export type CicdEventType =
   | 'production.publish.failed'
   | 'production.publish.blocked'
   | 'production.publish.verification_overridden'
+  | 'production.publish.gate_skipped'
   | 'production.revert.completed'
   // Voice-first canary publish (added post-Phase 0). Sequence on a canary run:
   //   .requested   — operator clicked "Publish canary"; EXEC-DEPLOY dispatched
@@ -1221,7 +1224,25 @@ export type CicdEventType =
   | 'scm.gitlab.merge_request.merged'
   | 'scm.gitlab.merge_request.closed'
   | 'scm.gitlab.pipeline.succeeded'
-  | 'scm.gitlab.pipeline.failed';
+  | 'scm.gitlab.pipeline.failed'
+  // VTID-05547 (plan agentic-delivery §3.11): the delivery record of the GitLab cut. Written by the GitLab
+  // delivery stage (services/gitlab-events/delivery-stage.ts) and, for delivery.merge.refused, by the
+  // GitHub merge guard (services/delivery-host.ts). Each carries metadata.dedupe_key, plane 'delivery',
+  // host 'gitlab' and mode 'shadow' | 'live'. No rule of autopilot-event-mapper.ts lists them, and none of
+  // the *.failed or *.error topics is ever written with status 'error', so no delivery event moves a
+  // VTID's state. Topics that come after the cut (delivery.lane.state_changed, delivery.gate2.sent,
+  // delivery.heal.*, delivery.improve.*) are added with their writers.
+  | 'scm.gitlab.merge_request.updated'
+  | 'scm.gitlab.push'
+  | 'scm.gitlab.pipeline.started'
+  | 'scm.gitlab.pipeline.canceled'
+  | 'scm.migration.pr_moved'
+  | 'scm.migration.cutover'
+  | 'delivery.review.recorded'
+  | 'delivery.lane.updated'
+  | 'delivery.landed'
+  | 'delivery.merge.refused'
+  | 'staging.deploy.rolled_back';
 
 export interface CicdOasisEvent {
   vtid: string;

@@ -1,0 +1,38 @@
+## fixture
+## dep 050000
+## dep 051000
+## live-before
+{"check_name":"legacy_row_counts","messages":7,"message_threads":3,"global_message_threads":6,"global_messages":7,"thread_participants":7,"global_thread_participants":12}
+{"check_name":"chat_rows_before","chat_messages":2,"chat_groups":1,"chat_group_members":1}
+{"check_name":"bak_absent","ok":true}
+{"check_name":"migrate_functions_absent","ok":true}
+{"check_name":"dependencies_present","chat_messages_scope":true,"exclusion_helper":true}
+{"check_name":"fks_onto_legacy","from_table":"thread_participants","conname":"thread_participants_thread_id_fkey","onto":"message_threads"}
+{"check_name":"fks_onto_legacy","from_table":"messages","conname":"messages_parent_message_id_fkey","onto":"messages"}
+{"check_name":"fks_onto_legacy","from_table":"global_thread_participants","conname":"fk_global_thread_participants_thread","onto":"global_message_threads"}
+{"check_name":"target_triggers","event_object_table":"chat_messages","trigger_name":"trg_chat_messages_scope_guard","action_timing":"BEFORE","event_manipulation":"INSERT"}
+{"check_name":"target_triggers","event_object_table":"chat_messages","trigger_name":"trg_chat_messages_scope_guard","action_timing":"BEFORE","event_manipulation":"UPDATE"}
+{"check_name":"legacy_rows_with_listed_accounts","messages":1,"global_messages":1}
+## apply 052000 (snapshot + freeze)
+## freeze: the four legacy tables take no write from any API role; reads still work
+{"check_name":"frozen","ok":true}
+{"check_name":"participants_frozen","ok":false}
+{"check_name":"public_grant_revoked","ok":true}
+{"check_name":"snapshot_complete","ok":true}
+## apply 052100 (functions)
+## apply 052200 (migrate)
+## migrate run twice adds nothing
+{"check_name":"idempotent","before_rerun":14}
+{"x":true}
+{"check_name":"idempotent_after","ok":true}
+## drop 052300 with an unplaceable legacy row is refused: VTID-05573: legacy rows could not be placed, refusing to drop: {"landed": {"groups": 4, "messages": 6, "global_messages": 6}, "threads": {"dm": 3, "empty": 1, "un
+## legacy tables still there after the refused drop
+{"check_name":"still_there","ok":true}
+## drop 052300 when a migrated id is occupied by a foreign row is refused: VTID-05573: migrated rows are missing from the target, refusing to drop: {"landed": {"groups": 4, "messages": 5, "global_messages": 6}, "threads"
+## drop 052300 with a group that has no active non-excluded member and no excluded account involved: NOT REFUSED
+## drop 052300 with a snapshot table missing while the live legacy tables exist: NOT REFUSED
+file:///projects/sandbox/.tools/pglite/node_modules/@electric-sql/pglite/dist/chunk-7WWLJV32.js:1
+                                                                                                                                                                                                                            
+error: relation "public.global_message_threads" does not exist
+}
+Node.js v22.23.4

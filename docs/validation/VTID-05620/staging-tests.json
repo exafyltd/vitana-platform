@@ -1,0 +1,10 @@
+{
+  "vtid": "VTID-05620",
+  "service": "gateway",
+  "tests": [
+    { "kind": "existing", "ref": "npx jest test/vtid-04646-publish-gate-wiring.test.ts test/services/testing/publish-gate.test.ts", "cwd": "services/gateway",
+      "reason": "PUBLISH no longer refuses on STAGING-VERIFY; the publish path still evaluates the gate and records gate_skipped evidence" },
+    { "kind": "http", "name": "gateway health endpoint is served", "method": "GET", "path": "/alive", "expect_status": 200,
+      "reason": "the gateway build containing the ungated publish route is served" }
+  ]
+}

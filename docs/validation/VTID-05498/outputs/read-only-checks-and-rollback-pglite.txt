@@ -1,0 +1,8 @@
+pre-check (before)     {"knowledge_docs_exists":true,"tenants_key_present":true,"column_exists":false}
+migration              "ok"
+post-check (applied)   {"column_present_nullable":true,"fk_to_tenants":true,"all_rows_null":true}
+rollback               "ok"
+pre-check (rolled)    {"knowledge_docs_exists":true,"tenants_key_present":true,"column_exists":false}
+migration (re-apply)   "ok"
+post-check (re-apply)  {"column_present_nullable":true,"fk_to_tenants":true,"all_rows_null":true}
+ALL OK

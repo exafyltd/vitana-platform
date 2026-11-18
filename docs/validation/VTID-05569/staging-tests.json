@@ -1,0 +1,14 @@
+{
+  "vtid": "VTID-05569",
+  "service": "gateway",
+  "not_verified_on_staging": true,
+  "not_verified_on_staging_reason": "This lane adds one assertion-only migration (no DDL, no data change), a no-op rollback file, a pgTAP test, read-only check SQL and documentation. Nothing is applied from the PR: the files are applied later through RUN-MIGRATION.yml, one file per dispatch, after the owner approves the files and the target database (collaboration.md section 7d), and staging shares the production database, so the staging deploy runs no code that reads or depends on anything new. Staging writes to the production Supabase project (rules 31/31b/48), so the orphan and nullable fixtures are never created there: they are proven by the pgTAP file on a local stack. The post-apply check is read-only: docs/validation/VTID-05569/pre-check.sql before, post-check.sql after, rollback-check.sql after a rollback, run through RUN-MIGRATION's read-only check. No suite points at vitanaland.com.",
+  "tests": [
+    {
+      "kind": "existing",
+      "ref": "npx jest test/mt-identity-bare-policy-lint.test.ts",
+      "cwd": "services/gateway",
+      "reason": "The repository-wide bare-policy lint reads every migration, including the two new files: they add no RLS policy."
+    }
+  ]
+}

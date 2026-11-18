@@ -1006,6 +1006,66 @@
    }
   },
   {
+   "id": "DEVHUB.DELIVERY.MERGE_QUEUE",
+   "route": "/command-hub/delivery/merge-queue/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Merge Queue",
+     "shows": "The GitLab merge queue of each project: position, state and waiting time of every merge request.",
+     "phrasings": [
+      "open Merge Queue",
+      "show me the Merge Queue",
+      "go to the Merge Queue tab in Delivery",
+      "what is waiting to land"
+     ],
+     "hint": "When asking about the merge queue, what is waiting to land, or the state of a merge request in the queue."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.DELIVERY.PIPELINE_RUNS",
+   "route": "/command-hub/delivery/pipeline-runs/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Delivery Pipelines",
+     "shows": "The latest GitLab pipeline of each merge request and the state of main for each project.",
+     "phrasings": [
+      "open Delivery Pipelines",
+      "show me Delivery Pipelines",
+      "go to the Pipelines tab in Delivery",
+      "is main green"
+     ],
+     "hint": "When asking about delivery pipelines, whether main is green or red, or why a merge request pipeline failed."
+    }
+   }
+  },
+  {
+   "id": "DEVHUB.DELIVERY.RELEASES",
+   "route": "/command-hub/delivery/releases/",
+   "category": "developer",
+   "access": "member",
+   "surface": "command-hub",
+   "i18n": {
+    "en": {
+     "title": "Releases",
+     "shows": "The staging deploys and the latest STAGING-VERIFY result of each service, with links to the runs.",
+     "phrasings": [
+      "open Releases",
+      "show me Releases",
+      "go to the Releases tab in Delivery",
+      "what is deployed on staging"
+     ],
+     "hint": "When asking about releases, what is deployed on staging, or whether STAGING-VERIFY passed."
+    }
+   }
+  },
+  {
    "id": "DEVHUB.GOVERNANCE.RULES",
    "route": "/command-hub/governance/rules/",
    "category": "developer",

@@ -1,0 +1,15 @@
+{
+  "vtid": "VTID-05569",
+  "kind": "feature",
+  "paths": [
+    "supabase/migrations/20261102043000_vtid_05569_hot_tables_tenant_not_null_assert.sql",
+    "supabase/migrations/20261102043100_vtid_05569_hot_tables_tenant_not_null_assert_rollback.sql",
+    "supabase/tests/vtid_mt_data_cleanup_notnull_assert.test.sql",
+    "docs/multitenancy/MIGRATION-QUEUE.md",
+    "DATABASE_SCHEMA.md",
+    "docs/validation/VTID-05569/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05569/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

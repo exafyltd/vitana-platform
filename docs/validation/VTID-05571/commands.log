@@ -1,0 +1,11 @@
+# VTID-05571 commands run in the sandbox (PGlite only; no live system, no docker/psql/supabase CLI available)
+cd /projects/sandbox/.tools/pgtap-shim   # copy of the harness is in docs/validation/VTID-05571/pglite-harness/
+./t.sh supabase/tests/vtid_mt_data_cleanup_orphan_quarantine.test.sql     -> outputs/pgtap-orphan-quarantine.txt (47 ok, 0 not ok)
+./t.sh supabase/tests/vtid_mt_data_cleanup_orphan_writer_repoint.test.sql -> outputs/pgtap-writer-repoint.txt (47 ok, 0 not ok)
+./checks.sh  (migrations + pre/post/repollution/rollback checks)         -> outputs/read-only-checks-pglite.txt
+node --test scripts/ci/check-migration-drift.test.cjs                     -> 8 pass
+# fix-forward 1 (reviewer finding: group message, receiver_id NULL)
+./t.sh supabase/tests/vtid_mt_data_cleanup_orphan_quarantine.test.sql  (migration unchanged, new fixture C6) -> outputs/pgtap-orphan-quarantine-group-message-RED-on-16d19fe8c3.txt (46 ok, 4 not ok)
+./t.sh supabase/tests/vtid_mt_data_cleanup_orphan_quarantine.test.sql  (after the NULL-peer fix)            -> outputs/pgtap-orphan-quarantine.txt (50 ok, 0 not ok)
+EXTRA_MIG=supabase/migrations/20261102040400_vtid_05571_writer_repoint.sql ./t.sh supabase/tests/vtid_mt_data_cleanup_orphan_writer_repoint.test.sql -> outputs/pgtap-writer-repoint.txt (47 ok, unchanged)
+./checks.sh -> read-only checks unchanged (rollback-check all 0)

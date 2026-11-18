@@ -1,0 +1,8 @@
+# VTID-05540 whole script set as UNIT.yml runs it, Node v22.23.4: FILES=$(find scripts -path '*/node_modules' -prune -o \( -name '*.test.cjs' -o -name '*.test.mjs' \) -print | sort); node --test $FILES   (39 files)
+# tests 995
+# suites 0
+# pass 993
+# fail 0
+# cancelled 0
+# skipped 2
+# todo 0

@@ -28,6 +28,7 @@ specs:
   - vitana-platform:pm-reassign-idempotent-r2
   - vitana-platform:pm-reassign-idempotent-r3
   - vitana-platform:matches-scroll-end
+  - vitana-platform:staging-verify-manifest-repair
   - vitana-platform:spotlight-commit-coverage
   - vitana-platform:group-chat-realtime-status
   - vitana-platform:ci-superseded-pr-runs
@@ -39,11 +40,13 @@ specs:
   - vitana-platform:i18n-audit-nightly-off
   - vitana-platform:fix-deeplink-scroll-test
   - vitana-platform:pipeline-speed
+  - vitana-platform:pr-gate-policy-sparring-record
   - vitana-platform:kiro-web-steering
   - vitana-platform:owner-autonomy
   - vitana-platform:e2e-autonomy
   - vitana-platform:step-order-gate
   - vitana-platform:sv-05308-coverage
+  - vitana-platform:mt-local-stack-replay-skips-r1
   - vitana-platform:kiro-web-parity
   - vitana-platform:kiro-web-reliability
   - vitana-platform:plan-spar-stuck-session
@@ -126,3 +129,5 @@ belong to none of the named programmes are listed here until the owner assigns t
 - `vitana-platform:reviewer-session-id-permission` — the reviewer agent generates its own reviewer session id via the existing queue.mjs command (narrowest shell permission; protected gate file, owner-authorized)
 - `vitana-platform:ci-dockerhub-mirror` — vitana-v1 PR CI pulls its Postgres service image from Docker Hub, not the capped ECR Public mirror
 - `vitana-platform:review-survives-main-merge` — a reviewer-agent accept stays current across a clean, conflict-free merge of `main` into the PR (`land-guard.mjs`, collaboration §3)
+- `vitana-platform:staging-verify-manifest-repair` — repair the 14 stale change suites failing the nightly full gateway STAGING-VERIFY (console probes, PM mode, collab ref, recall shadow, locale-coverage investigation) and a manifest drift guard
+- `vitana-platform:mt-local-stack-replay-skips-r1` — list the two VTID-05579 migrations PGlite cannot replay so the MT local stack gate is green on main

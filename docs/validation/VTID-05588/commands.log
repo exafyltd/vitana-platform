@@ -1,0 +1,21 @@
+VTID-05588 local checks (services/gateway), 2026-11-06, session kiro-exafy-202611061658-9ca9
+
+$ npx jest test/companion-test-card.test.ts
+Tests:       13 passed, 13 total
+
+$ npx jest test/vtid-05099-companion-messages.test.ts test/vtid-05100-companion-delivery.test.ts test/vtid-05368-messenger-companion-verification.test.ts test/companion-test-card.test.ts
+Test Suites: 4 passed, 4 total
+Tests:       77 passed, 77 total
+
+$ npm run test:roles
+Tests:       105 passed, 105 total
+
+$ npm run typecheck   -> exit 0
+$ npm run build       -> exit 0
+
+$ npx jest --silent --maxWorkers=4   (full suite)
+Test Suites: 2 failed, 3 skipped, 1761 passed, 1763 of 1766 total
+Tests:       2 failed, 54 skipped, 6 todo, 29390 passed, 29452 total
+The 2 failures fail identically on base with this lane's changes stashed (sandbox environment, unrelated):
+  test/providers/storage-provider.test.ts (VTID-03765 s3PublicUrl)
+  test/vtid-04226-eventbridge-test-contract-schedules.test.ts (token provisioning script dry-run)

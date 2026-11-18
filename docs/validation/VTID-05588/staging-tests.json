@@ -1,0 +1,34 @@
+{
+  "vtid": "VTID-05588",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "gateway alive after the change",
+      "path": "/alive",
+      "expect_status": 200
+    },
+    {
+      "kind": "http",
+      "name": "companion test-card route is mounted and refuses a call without a sign-in (rejected probe, writes nothing)",
+      "method": "POST",
+      "path": "/api/v1/companion/test-card",
+      "rejected_probe": true,
+      "expect_status": 401,
+      "expect_json": { "ok": false, "error": "UNAUTHENTICATED" }
+    },
+    {
+      "kind": "http",
+      "name": "companion messages stay disabled on staging, so the test card answers 409 there (read-only GET, no member data)",
+      "path": "/api/v1/companion/status",
+      "expect_status": 200,
+      "expect_json": { "ok": true, "mode": "disabled-on-staging", "env": "staging" }
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/companion-test-card.test.ts test/vtid-05099-companion-messages.test.ts test/vtid-05100-companion-delivery.test.ts test/vtid-05368-messenger-companion-verification.test.ts",
+      "cwd": "services/gateway",
+      "reason": "VTID-05588 change suite: 401/403/400 strict body/409 staging/409 sending off/422 no Index/502 compose failure/503 no client, one Vitana-bot DM to the caller with the tick card metadata plus test:true, no ledger/pacer/push side effect, one companion.test_card.sent event, 429 inside 60 s; plus the existing companion suites. A real send is not made on staging: staging shares the production database (CLAUDE.md rule 48) and the route answers 409 there by design."
+    }
+  ]
+}

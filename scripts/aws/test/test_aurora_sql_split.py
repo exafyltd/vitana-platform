@@ -144,11 +144,16 @@ class TestClassification(unittest.TestCase):
         self.assertEqual(flags, [False] * len(nontx) + [True] * len(tx))
         self.assertEqual(len(r.non_transactional), len(nontx))
 
-    def test_meta_command_hard_error_names_line(self):
+    def test_session_settings_are_blanked_and_sql_kept(self):
+        # VTID-05023: \set and \echo are psql session settings; the SQL around them is unchanged.
+        r = split_sql("\\set ON_ERROR_STOP on\nSELECT 1;\n\\echo hi\nSELECT 2;")
+        self.assertEqual([s.sql.strip() for s in r.statements], ["SELECT 1", "SELECT 2"])
+
+    def test_other_meta_commands_still_hard_error_names_line(self):
         with self.assertRaises(SplitError) as cm:
-            split_sql("SELECT 1;\n\\set ON_ERROR_STOP on\nSELECT 2;")
+            split_sql("SELECT 1;\n\\i other.sql\nSELECT 2;")
         self.assertEqual(cm.exception.line, 2)
-        self.assertIn("\\set ON_ERROR_STOP on", cm.exception.message)
+        self.assertIn("\\i other.sql", cm.exception.message)
         # backslashes inside strings, dollar quotes and comments are fine
         self.assertEqual(len(split_sql("SELECT '\\n'; SELECT $$\\x$$; -- \\q\n/* \\i x */ SELECT 3").statements), 3)
 
@@ -175,7 +180,9 @@ _COMMENT_RE = re.compile(r"--[^\n]*")
 
 
 def _only_noise(gap: str) -> bool:
-    s = _COMMENT_RE.sub("", gap)
+    # VTID-05023: \set and \echo lines are blanked by the splitter (session settings), so they are noise.
+    s = re.sub(r"^[ \t]*\\(?:set|echo)\b[^\n]*", "", gap, flags=re.M)
+    s = _COMMENT_RE.sub("", s)
     prev = None
     while prev != s:
         prev = s
@@ -210,8 +217,9 @@ class TestMigrationSweep(unittest.TestCase):
             self.assertTrue(_only_noise(text[cursor:]), f"{path}: trailing text lost")
             total += len(r.statements)
         self.assertGreater(total, 1000)
-        # only the 7 BOOTSTRAP files carrying `\set ON_ERROR_STOP on` today
-        self.assertLessEqual(len(meta_files), 7, meta_files)
+        # VTID-05023: the 7 BOOTSTRAP files carry only `\set ON_ERROR_STOP on`, which is now blanked.
+        # No migration may fail on a meta-command any more.
+        self.assertEqual(meta_files, [], meta_files)
 
 
 # ---------------------------------------------------------------- Postgres ---

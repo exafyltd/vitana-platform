@@ -1,0 +1,9 @@
+# The 30 other staging suites updated for the cache-buster bump (VTID-04696 / IF-THEN 25), checked against HEAD
+# Method: put the old version back in each changed file; the result must equal the committed file byte for byte.
+files changed: 30
+version tokens replaced (app.js and styles.css only): 68
+files identical to HEAD once the old version is put back: 30 of 30
+files that differ in anything else: none
+old version: app.js?v=20261121-vtid-05082  styles.css?v=20261121-vtid-05082
+new version: app.js?v=20261121-vtid-05082-vtid-05547  styles.css?v=20261121-vtid-05082-vtid-05547  (what index.html loads)
+no expect_status, expect_json, expect_body_contains, path or reason was touched: no probe is weakened.

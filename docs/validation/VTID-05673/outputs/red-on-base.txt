@@ -1,0 +1,2 @@
+FAIL local-stack gate: migration 20261102054000_vtid_05579_chat_groups_scope.sql failed and is not listed in replay-skip.json: relation "public.chat_groups" does not exist (+1 more)
+exit=1

@@ -1,0 +1,3 @@
+# loaded /projects/sandbox/wt-tenant-lifecycle/docs/validation/VTID-05493/pglite-harness/base_schema.sql
+# loaded /projects/sandbox/wt-tenant-lifecycle/docs/validation/VTID-05493/pgtap/vtid_05493_fixture.sql
+# SQL ERROR: relation "public.bak_vtid_05493_tenant_lifecycle" does not exist

@@ -1,0 +1,48 @@
+1..47
+ok 1 - availability_clear_override: a caller with one primary row succeeds
+ok 2 - availability_compute: a caller with one primary row succeeds
+ok 3 - availability_get_override: a caller with one primary row succeeds
+ok 4 - availability_get_recent: a caller with one primary row succeeds
+ok 5 - availability_set_override: a caller with one primary row succeeds
+ok 6 - d41_set_consent: a caller with one primary row succeeds
+ok 7 - d41_set_personal_boundary: a caller with one primary row succeeds
+ok 8 - d43_create_adaptation_plan: a caller with one primary row succeeds
+ok 9 - d43_create_snapshot: a caller with one primary row succeeds
+ok 10 - d43_record_data_point: a caller with one primary row succeeds
+ok 11 - d44_add_signal_evidence: a caller with one primary row succeeds
+ok 12 - d44_create_signal: a caller with one primary row succeeds
+ok 13 - d44_record_intervention: a caller with one primary row succeeds
+ok 14 - d44_update_signal_status: a caller with one primary row succeeds
+ok 15 - d45_acknowledge_window: a caller with one primary row succeeds
+ok 16 - d45_record_forecast_history: a caller with one primary row succeeds
+ok 17 - d45_store_window: a caller with one primary row succeeds
+ok 18 - d50_store_reinforcement: a caller with one primary row succeeds
+ok 19 - d50_update_eligibility_cache: a caller with one primary row succeeds
+ok 20 - W1 wrote a row in all 15 writer tables, each under its primary tenant
+ok 21 - W1 wrote nothing under any other tenant
+ok 22 - a caller with no primary row fails closed in all 19 functions (TENANT_UNRESOLVED / raise / NULL)
+ok 23 - a caller with two primary rows fails closed in all 19 functions
+ok 24 - the only exception a fail-closed call raises is TENANT_UNRESOLVED
+ok 25 - the 0-primary and 2-primary callers wrote no row under any tenant
+ok 26 - no writer wrote a row with tenant ...0001 for any of the three callers
+ok 27 - availability_clear_override: NULL auth.uid() returns UNAUTHENTICATED
+ok 28 - availability_compute: NULL auth.uid() returns UNAUTHENTICATED
+ok 29 - availability_get_override: NULL auth.uid() returns UNAUTHENTICATED
+ok 30 - availability_get_recent: NULL auth.uid() returns UNAUTHENTICATED
+ok 31 - availability_set_override: NULL auth.uid() returns UNAUTHENTICATED
+ok 32 - no ...0099 availability row was written
+ok 33 - all 19 repointed functions exist
+ok 34 - no repointed body contains the ...0001 or ...0099 literal (pg_get_functiondef)
+ok 35 - every repointed function is still SECURITY DEFINER
+ok 36 - search_path is unchanged (public)
+ok 37 - authenticated still holds EXECUTE on every repointed function (grants unchanged)
+ok 38 - the gate function is service_role only (the writers keep exactly their original ACL; the migration RAISEs otherwise)
+ok 39 - d45_acknowledge_window returns {ok:false,error:TENANT_UNRESOLVED} (no raise) for the 0-primary and 2-primary callers
+ok 40 - a fail-closed d45_acknowledge_window leaves the window unacknowledged (the tenant resolves before the UPDATE)
+ok 41 - gate passes while primary rows exist
+ok 42 - gate RAISEs on a fixture with the column but zero primary rows
+ok 43 - gate RAISEs on an empty user_tenants while auth.users has accounts (backfill not run)
+ok 44 - gate RAISEs when only 1 of 3 auth.users accounts has a primary row (partial backfill)
+ok 45 - gate RAISEs when only 2 of 3 auth.users accounts have a primary row (below the 95 percent minimum)
+ok 46 - gate passes when every auth.users account has a primary row
+ok 47 - gate passes on a fresh stack (user_tenants and auth.users both empty)

@@ -1098,6 +1098,129 @@ Every automation send carries `data.automation_id`.
 
 ---
 
+### user_notifications / chat_messages — `tenant_id` pinned NOT NULL (VTID-05569)
+
+```
+user_notifications (
+  id UUID PK, user_id UUID NOT NULL,
+  tenant_id UUID NOT NULL,           -- NOT NULL since 20260225000000_notification_system.sql; asserted by VTID-05569
+  type TEXT NOT NULL, title TEXT NOT NULL, body TEXT, data JSONB, read_at TIMESTAMPTZ, created_at TIMESTAMPTZ
+  -- later additive columns (push_outcome, email_fallback_sent_at, ...) are recorded in their own entries
+);
+```
+
+`chat_messages.tenant_id` is `UUID NOT NULL` too (`20260225200000_chat_messages.sql`), as is `product_analytics_events.tenant_id`
+(entry below). Migration `20261102043000_vtid_05569_hot_tables_tenant_not_null_assert.sql` changes no schema and no row: it is a
+DO block that RAISEs if `tenant_id` on any of the three tables is nullable per `information_schema`, or if any row holds a
+tenant that is not in `tenants`. Rollback `20261102043100_..._rollback.sql` is a no-op. Not applied by the PR (RUN-MIGRATION
+after owner approval, collaboration.md section 7d).
+
+---
+
+### Legacy messenger tables retired; `bak_*` snapshots (VTID-05573) — committed, NOT applied
+
+Four migrations, applied later one file per `RUN-MIGRATION.yml` dispatch, after the owner approves the files and the target
+database (collaboration.md section 7d). Order: `052000` → `052100` → `052200` → `052300`. They need `20261102050000`
+(VTID-05576, `chat_messages.scope`) and `20261102051000` (VTID-05582, `is_network_excluded_account`) applied first.
+Rollbacks: `docs/validation/VTID-05573/rollback-052300-drop-legacy.sql` → `052200` → `052100` → `052000`.
+
+**1. `20261102052000_vtid_05573_legacy_messages_snapshot_freeze.sql`** — for each of six tables that exists, in one transaction
+(`LOCK TABLE ... SHARE ROW EXCLUSIVE`, line 52):
+
+```sql
+-- bak_<t> for t in: messages, message_threads, global_message_threads, global_messages,
+--                   thread_participants, global_thread_participants
+CREATE TABLE public.bak_<t> (LIKE public.<t> INCLUDING DEFAULTS);   -- dynamic SQL, line 54: same columns, no constraints/indexes
+INSERT INTO public.bak_<t> SELECT * FROM public.<t>;                -- whole copy
+ALTER TABLE public.bak_<t> ENABLE ROW LEVEL SECURITY;               -- no policy
+REVOKE ALL ON public.bak_<t> FROM PUBLIC, anon, authenticated;
+GRANT SELECT ON public.bak_<t> TO service_role;
+COMMENT ON TABLE public.bak_<t> IS 'VTID-05573: whole copy of public.<t> taken <date> ...; retain until <date + 30 days>, then drop. ... pre-freeze-acl=<relacl>';
+```
+
+- **Dynamic on purpose** (file header, lines 24-26): a `bak_*` table exists only where its source table exists, and the migration
+  drift check reads literal `CREATE TABLE`, so the six names are not in the drift baseline.
+- **Retention: 30 days**, then dropped by a later owner-approved step. The comment keeps the table's grants (`pre-freeze-acl=`) so
+  `rollback-052000` restores them exactly.
+- **Never overwritten:** an existing `bak_*` is kept. A re-run RAISEs (`P0001`, nothing changes) when a live row is absent from, or
+  differs from, its snapshot (stale snapshot); drop the stale `bak_*` deliberately and apply again.
+- **Freeze (line 74):** `REVOKE INSERT, UPDATE, DELETE, TRUNCATE ... FROM PUBLIC, anon, authenticated, service_role` on all six
+  live tables (the owner role keeps them for the rollback).
+- **Participant tables stay frozen:** `thread_participants` and `global_thread_participants` are snapshotted and frozen
+  (read-only) but **not dropped**; they are outside the four tables this lane retires.
+
+**2. `20261102052100_vtid_05573_legacy_messages_functions.sql`** — four functions, `service_role` only, `SECURITY DEFINER`,
+`search_path = public, pg_temp`; nothing calls them until file 3:
+- `mt_legacy_common_tenant(uuid[]) → uuid`: the one non-platform tenant all the given people belong to (shared primary first, else lowest id); `NULL` if none.
+- `mt_legacy_context_tenant(uuid) → uuid`: a person's primary non-platform tenant, else `NULL`.
+- `mt_legacy_messages_migrate() → jsonb`: reads **only** the `bak_*` snapshots, classifies every message and thread (D15), inserts the placeable ones into `chat_messages`, `chat_groups` and `chat_group_members` under their legacy ids (`ON CONFLICT DO NOTHING`), and returns the reconcile figures. Service bots, notification test actors and platform-only accounts (rules 43-45) are never migrated; their rows stay in `bak_*` only.
+- `mt_legacy_messages_assert_ready() → jsonb`: the drop guard. RAISEs (`P0001`) on a missing snapshot while a live legacy table exists, a stale snapshot, any unplaced row, or a migrated row missing from the target.
+
+Migrated rows carry `metadata.legacy_source` / `legacy_id` (and `legacy_content_data`, `legacy_parent_message_id` when present).
+A cross-tenant legacy group becomes a `chat_groups` row of the creator's context tenant with `metadata.legacy_scope = 'network'`
+(`chat_groups` has no scope column yet). No schema change on `chat_messages` / `chat_groups` / `chat_group_members`.
+
+**3. `20261102052200_vtid_05573_legacy_messages_migrate_run.sql`** — runs `mt_legacy_messages_migrate()` once. A data move only; safe to re-run.
+
+**4. `20261102052300_vtid_05573_legacy_messages_drop.sql`** — **dropped legacy tables** (lines 38-41), after
+`mt_legacy_messages_assert_ready()` passes:
+
+| Dropped | Rows (docs/MULTI-TENANT-PLAN.md section 4.11) |
+|---|---|
+| `public.messages` | 12 |
+| `public.message_threads` | 5 |
+| `public.global_message_threads` | 60 |
+| `public.global_messages` | 379 |
+
+Foreign keys that other tables hold onto these four (the participant tables' `thread_id` keys) are dropped first, by catalog
+lookup; the tables are dropped **without CASCADE**, so any other dependent object makes the drop fail and roll back. The
+`bak_*` snapshots are the rollback source for the 30-day retention.
+
+**Apply precondition:** every reader and writer of the six tables is retired first (the freeze makes their writes fail from file 1).
+
+**Unapplied:** until the files are applied, none of the above exists and the four legacy tables are unchanged.
+
+---
+
+### daily_matches — `scope` and `tenant_id`; write guard; intent matcher pool (VTID-05575) — committed, NOT applied
+
+Three migrations, applied later one file per `RUN-MIGRATION.yml` dispatch after owner approval (collaboration.md section 7d).
+Order: `053000` → `053100` → `053200`; rollbacks in the reverse order, `docs/validation/VTID-05575/rollback-053200-intent-matchers-scope.sql`,
+`rollback-053100-daily-matches-guard.sql`, `rollback-053000-daily-matches-scope.sql`. Depends on VTID-05582 (`20261102051000`:
+`network_visible`, `is_network_excluded_account`). Dark: nothing reads the new columns before the guard and the scoped recompute.
+
+**1. `20261102053000_vtid_05575_daily_matches_scope.sql`** (skipped with a NOTICE if `public.daily_matches` is absent):
+
+```sql
+ALTER TABLE public.daily_matches
+  ADD COLUMN IF NOT EXISTS scope     text NOT NULL DEFAULT 'community',  -- line 34
+  ADD COLUMN IF NOT EXISTS tenant_id uuid;                               -- line 35: the community the match belongs to; NULL for network rows
+ALTER TABLE public.daily_matches ADD CONSTRAINT daily_matches_scope_check
+  CHECK (scope IN ('community', 'network'));                              -- line 40
+CREATE INDEX IF NOT EXISTS idx_daily_matches_scope_tenant
+  ON public.daily_matches (scope, tenant_id);                             -- line 43
+```
+
+Backfill (D15), only rows still unclassified (`tenant_id IS NULL AND scope = 'community'`): a pair that shares a non-platform tenant
+becomes a community row of that tenant (the viewer's primary tenant if shared, else the lowest shared tenant id); a pair that shares
+none becomes `scope = 'network'`. The platform tenant never counts. No unique key is added. The `DEFAULT 'community'` stays, so
+today's writer (which sends neither column) keeps working. Safe to re-run.
+
+**2. `20261102053100_vtid_05575_daily_matches_guard.sql`** — three functions (`service_role` only; `REVOKE` from `PUBLIC`, `anon`,
+`authenticated`) and one trigger:
+- `is_network_candidate(uuid) → boolean` (`STABLE SECURITY DEFINER`, line 30): true when the member opted in (`global_community_profiles.network_visible`) and `is_network_excluded_account()` is false.
+- `strip_health_match_reasons(jsonb) → jsonb` (`IMMUTABLE`, line 48): D25. Removes `match_reasons` entries whose `code` matches `index|pillar|health` (legacy string entries by the same words); an empty result becomes `[{"code":"active_member"}]`.
+- `daily_matches_scope_guard() → trigger` (`SECURITY DEFINER`, line 74): for a `authenticated` / `anon` UPDATE it pins user, matched user, score, reasons, scope and tenant to their stored values (a member can only mark action / `viewed_at`); it applies `strip_health_match_reasons`; on INSERT or a change of scope, tenant or matched user, a `network` row needs `is_network_candidate(matched_user_id)` (else `network_candidate_not_visible`, SQLSTATE `42501`) and a community row with a `tenant_id` needs a non-platform tenant both members belong to (else `no_shared_tenant`, `42501`). A community row with no `tenant_id` is still accepted.
+- Trigger `trg_daily_matches_scope_guard` `BEFORE INSERT OR UPDATE ON public.daily_matches FOR EACH ROW` (line 134). Existing rows' reasons are cleaned first, before the trigger exists; the removed entries are derived values and are not archived.
+
+**3. `20261102053200_vtid_05575_intent_matchers_scope.sql`**:
+- New `intent_pool_allows(p_cand_tenant uuid, p_src_tenant uuid, p_cand_user uuid, p_scope text) → boolean` (`STABLE SECURITY DEFINER`, `service_role` only, line 34): true for the caller's own tenant; for scope `network` / `public` true when `is_network_candidate(p_cand_user)`; otherwise false.
+- Replaces, in place and by text substitution of the live definition, `search_intent_catalog`, `search_intent_catalog_v2`, `compute_intent_matches` and `compute_intent_matches_v2`: the pool predicate goes through `intent_pool_allows`, and the two search functions' `p_visibility` default changes from `'public'` to `'community'`. Signatures and scoring are unchanged. A missing function is skipped; a present one without the expected predicate makes the file RAISE and change nothing; a re-run is a no-op.
+
+**Unapplied:** until the files are applied, `daily_matches` has no `scope` / `tenant_id`, none of the functions or the trigger exist, and the matchers still default to `'public'`.
+
+---
+
 ### Policy approval + Project Manager tables (VTID-05214)
 
 Migration `20261015180000_vtid_05214_plan_sparring_policy_approval.sql` (rollback
@@ -2541,7 +2664,7 @@ an audit/system log; this absorbs high-volume clickstream. Ingested via
 product_analytics_events (
   id UUID PK, event_id TEXT UNIQUE,  -- client-generated, idempotency key
   event_name TEXT, event_type TEXT,  -- journey|assistant|feature|interest|friction|performance|content
-  tenant_id UUID, user_id_hash TEXT, -- SHA-256 of user id; never the raw id
+  tenant_id UUID NOT NULL, user_id_hash TEXT, -- NOT NULL since the bootstrap DDL (asserted by VTID-05569); SHA-256 of user id; never the raw id
   session_id TEXT, journey_id TEXT, conversation_id TEXT,
   screen_route TEXT, screen_id TEXT, feature_key TEXT,
   source TEXT,                       -- web|ios|android|gateway|assistant|orb

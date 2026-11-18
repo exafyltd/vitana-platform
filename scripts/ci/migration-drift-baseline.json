@@ -2,7 +2,7 @@
   "_comment": "VTID-03486. Tables declared by supabase/migrations/**.sql that do NOT exist in production. This is pre-existing drift recorded so the CI check can fail only on NEW drift. It is a backlog to shrink, not an amnesty — every entry is a migration whose SQL never reached the database.",
   "_comment_aurora_only": "VTID-05158. aurora_only_tables: tables that must exist ONLY on Aurora (0T; production after the cutover). Never reported missing from Supabase; the check FAILS if one appears there. Each entry names its VTID and reason.",
   "generated_at": "2026-08-04",
-  "count": 110,
+  "count": 120,
   "known_missing_tables": [
     "activity_catalog",
     "analytics_celebrate_events",
@@ -15,6 +15,12 @@
     "availability_overrides",
     "awareness_config",
     "awareness_config_audit",
+    "bak_mt_data_cleanup_chat_messages",
+    "bak_mt_data_cleanup_memory_facts",
+    "bak_mt_data_cleanup_memory_items",
+    "bak_mt_data_cleanup_user_notifications",
+    "bak_vtid_05488_partner_tenant",
+    "bak_vtid_05493_tenant_lifecycle",
     "behavior_constraints",
     "capacity_overrides",
     "capacity_rules",
@@ -59,6 +65,7 @@
     "monetization_audit",
     "monetization_cooldowns",
     "monetization_signals",
+    "mt_orphan_quarantine",
     "orb_wake_timelines",
     "overload_baselines",
     "overload_detections",
@@ -80,6 +87,7 @@
     "social_comfort_profiles",
     "social_context_audit",
     "social_proximity_cache",
+    "supplier_tenant_relationships",
     "taste_alignment_audit",
     "taste_alignment_bundles",
     "taste_reactions",
@@ -87,7 +95,9 @@
     "teacher_capability_refresh_schedule",
     "tenant_assistant_speeches",
     "tenant_claim_mismatch_log",
+    "tenant_content_overrides",
     "tenant_content_pipeline",
+    "tenant_domains",
     "tenant_pack_intake",
     "timeline_learning_prefs",
     "topic_registry",
@@ -162,5 +172,11 @@
       "reason": "Health Hub connection model (Phase 1 B1): Aurora only — 0T, production after the cutover. Never Supabase (migration placement guard)."
     }
   ],
-  "_comment_vtid_05479": "membership_drift_reports (VTID-05466, 20261102031200) and tenant_claim_mismatch_log (VTID-05464, 20261102032100) are declared by identity migrations that are queued in docs/multitenancy/MIGRATION-QUEUE.md and not applied. Remove each entry when its migration is applied and post-checked."
+  "_comment_vtid_05479": "membership_drift_reports (VTID-05466, 20261102031200) and tenant_claim_mismatch_log (VTID-05464, 20261102032100) are declared by identity migrations that are queued in docs/multitenancy/MIGRATION-QUEUE.md and not applied. Remove each entry when its migration is applied and post-checked.",
+  "_comment_vtid_05571": "mt_orphan_quarantine and bak_mt_data_cleanup_{memory_facts,memory_items,chat_messages,user_notifications} (VTID-05571, 20261102040100) are declared by a migration that is queued in docs/multitenancy/MIGRATION-QUEUE.md (rows 21-25) and not applied. Remove each entry when its migration is applied and post-checked.",
+  "_comment_vtid_05488": "supplier_tenant_relationships and bak_vtid_05488_partner_tenant (VTID-05488, 20261102120000 and 20261102120200) are declared by migrations that are queued in docs/multitenancy/MIGRATION-QUEUE.md (rows 26-29) and not applied. Remove each entry when its migration is applied and post-checked.",
+  "_comment_vtid_05507": "tenant_domains (VTID-05507, 20261102140000) is declared by a migration that is queued in docs/multitenancy/MIGRATION-QUEUE.md (rows 30-31) and not applied. Remove the entry when the migration is applied and post-checked.",
+  "_comment_vtid_05498": "knowledge_docs.tenant_id (VTID-05498, 20261102080000) is a column added by a migration queued in docs/multitenancy/MIGRATION-QUEUE.md (row 40) and not applied. The drift check reads CREATE TABLE only, so no known_missing_tables entry is needed and the count is unchanged. Remove this comment when the migration is applied and post-checked.",
+  "_comment_vtid_05576": "chat_messages.scope, send_message(), send_message_as() and the chat_messages lockdown (VTID-05576, 20261102050000/050100/050200) are a column, three functions and policy/grant changes added by migrations queued in docs/multitenancy/MIGRATION-QUEUE.md (rows 45-47) and not applied. The drift check reads CREATE TABLE only, so no known_missing_tables entry is needed and the count is unchanged. Remove this comment when row 47 is applied and post-checked.",
+  "_comment_vtid_05495": "tenant_content_overrides (VTID-05495, 20261101100000) is declared by a migration queued in docs/multitenancy/MIGRATION-QUEUE.md (row 8a) and not applied. Remove the entry when the migration is applied and post-checked."
 }

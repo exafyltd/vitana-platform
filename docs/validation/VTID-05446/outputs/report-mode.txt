@@ -1,0 +1,66 @@
+# stack: required 24, present 11, skipped (unverified) 13
+1..44
+# NON-PRODUCTION tenant resolution: claims carry tenant_id, replayed current_tenant_id() body; skipped migrations redefine tenant resolution and policies on present tables (docs/multitenancy/LOCAL-STACK.md)
+# mode: report (unverified tables are listed, never counted as passed)
+ok 1 - suite subjects = required-tables.txt (18 tenant tables + health tables from health-tables.json + user_tenants)
+# UNVERIFIED access_audit_log: not replayable on PGlite (no migration in either repository creates this table); no isolation claim is made
+# UNVERIFIED community_listings: not replayable on PGlite (created by 20260727090000_bootstrap_community_marketplace.sql, which fails on a fresh replay: column "tenant_id" referenced in foreign key constraint does not exist); no isolation claim is made
+# UNVERIFIED consents: not replayable on PGlite (no migration in either repository creates this table); no isolation claim is made
+# UNVERIFIED data_sharing_consents: not replayable on PGlite (created by 20260914090000_vtid_03885_partner_health_test_integration.sql, which needs public.product_orders from the pgvector-dependent marketplace foundation); no isolation claim is made
+# UNVERIFIED event_attendance: not replayable on PGlite (created by 20251231000001_vtid_01090_live_rooms_events_graph.sql, which fails on a fresh replay: column "source_type" does not exist); no isolation claim is made
+# UNVERIFIED live_highlights: not replayable on PGlite (created by 20251231000001_vtid_01090_live_rooms_events_graph.sql, which fails on a fresh replay: column "source_type" does not exist); no isolation claim is made
+# UNVERIFIED live_room_attendance: not replayable on PGlite (created by 20251231000001_vtid_01090_live_rooms_events_graph.sql, which fails on a fresh replay: column "source_type" does not exist); no isolation claim is made
+# UNVERIFIED live_rooms: not replayable on PGlite (created by 20251231000001_vtid_01090_live_rooms_events_graph.sql, which fails on a fresh replay: column "source_type" does not exist); no isolation claim is made
+# UNVERIFIED partner_health_test_orders: not replayable on PGlite (created by 20260914090000_vtid_03885_partner_health_test_integration.sql, which needs public.product_orders from the pgvector-dependent marketplace foundation); no isolation claim is made
+# UNVERIFIED retrieval_traces: not replayable on PGlite (no migration in either repository creates this table); no isolation claim is made
+# UNVERIFIED role_sessions: not replayable on PGlite (no migration in either repository creates this table); no isolation claim is made
+# UNVERIFIED tenant_catalog_overrides: not replayable on PGlite (created by 20260416120000_vtid_02000_marketplace_foundation.sql, which needs the vector extension); no isolation claim is made
+# UNVERIFIED user_roles: not replayable on PGlite (no migration in either repository creates this table); no isolation claim is made
+ok 2 - biomarker_results: T_A / CANARY_A rows exist (a zero below is not an empty table)
+ok 3 - community_groups: T_A / CANARY_A rows exist (a zero below is not an empty table)
+ok 4 - community_meetups: T_A / CANARY_A rows exist (a zero below is not an empty table)
+ok 5 - d42_domain_weights: T_A / CANARY_A rows exist (a zero below is not an empty table)
+ok 6 - health_features_daily: T_A / CANARY_A rows exist (a zero below is not an empty table)
+ok 7 - products_catalog: T_A / CANARY_A rows exist (a zero below is not an empty table)
+ok 8 - relationship_edges: T_A / CANARY_A rows exist (a zero below is not an empty table)
+ok 9 - services_catalog: T_A / CANARY_A rows exist (a zero below is not an empty table)
+ok 10 - user_tenants: T_A / CANARY_A rows exist (a zero below is not an empty table)
+ok 11 - wearable_samples: T_A / CANARY_A rows exist (a zero below is not an empty table)
+ok 12 - biomarker_results (health): b_member sees 0 T_A / CANARY_A rows
+ok 13 - community_groups: b_member sees 0 T_A / CANARY_A rows
+ok 14 - community_meetups: b_member sees 0 T_A / CANARY_A rows
+ok 15 - d42_domain_weights: b_member sees 0 T_A / CANARY_A rows
+ok 16 - health_features_daily (health): b_member sees 0 T_A / CANARY_A rows
+ok 17 - products_catalog: b_member sees 0 T_A / CANARY_A rows
+ok 18 - relationship_edges: b_member sees 0 T_A / CANARY_A rows
+ok 19 - services_catalog: b_member sees 0 T_A / CANARY_A rows
+ok 20 - tenants: b_member sees 0 T_A / CANARY_A rows of content (tenant rows are listable by policy USING (true))
+ok 21 - user_tenants: b_member sees 0 T_A / CANARY_A rows
+ok 22 - wearable_samples (health): b_member sees 0 T_A / CANARY_A rows
+ok 23 - biomarker_results: b_member insert with a T_A tenant_id is rejected by RLS
+ok 24 - community_groups: b_member insert with a T_A tenant_id is rejected by RLS
+ok 25 - community_meetups: b_member insert with a T_A tenant_id is rejected by RLS
+ok 26 - d42_domain_weights: b_member insert with a T_A tenant_id is rejected by RLS
+ok 27 - health_features_daily: b_member insert with a T_A tenant_id is rejected by RLS
+ok 28 - products_catalog: b_member insert with a T_A tenant_id is rejected by RLS
+ok 29 - relationship_edges: b_member insert with a T_A tenant_id is rejected by RLS
+ok 30 - services_catalog: b_member insert with a T_A tenant_id is rejected by RLS
+ok 31 - tenants: b_member insert with a T_A tenant_id is rejected by RLS
+ok 32 - user_tenants: b_member insert with a T_A tenant_id is rejected by RLS
+ok 33 - wearable_samples: b_member insert with a T_A tenant_id is rejected by RLS
+ok 34 - biomarker_results: control, the same insert with a T_B tenant_id is accepted
+ok 35 - community_groups: control, the same insert with a T_B tenant_id is accepted
+ok 36 - community_meetups: control, the same insert with a T_B tenant_id is accepted
+ok 37 - health_features_daily: control, the same insert with a T_B tenant_id is accepted
+ok 38 - products_catalog: control, the same insert with a T_B tenant_id is accepted
+ok 39 - relationship_edges: control, the same insert with a T_B tenant_id is accepted
+ok 40 - services_catalog: control, the same insert with a T_B tenant_id is accepted
+ok 41 - wearable_samples: control, the same insert with a T_B tenant_id is accepted
+ok 42 - ab_dual writes a health row in the T_A context
+ok 43 - ab_dual reads the series it wrote, in the T_A context
+ok 44 - ab_dual sees no other member's health rows (health data is member-private)
+# UNVERIFIED ab_dual single health series across contexts: the replayed policy scopes rows by tenant_id = current_tenant_id(); production policy is in a skipped migration; no claim is made
+PASS local-stack mt-isolation.tap.sql (44 run, 0 failed, planned 44)
+mt-isolation: 14 claim(s) UNVERIFIED (not passed); strict=0. Passed claims are on non-production tenant resolution (docs/multitenancy/LOCAL-STACK.md).
+REPORT mt-isolation: 14 unverified (report mode is not a pass)
+exit 0

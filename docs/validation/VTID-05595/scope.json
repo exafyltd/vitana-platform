@@ -1,0 +1,14 @@
+{
+  "vtid": "VTID-05595",
+  "kind": "feature",
+  "paths": [
+    "supabase/migrations/20261102130000_vtid_05595_health_home_tenant_column.sql",
+    "supabase/migrations/20261102130100_vtid_05595_health_home_tenant_resolver_backfill.sql",
+    "services/gateway/test/mt-native-health/health-home-tenant.pgtap.sql",
+    "docs/multitenancy/MIGRATION-QUEUE.md",
+    "docs/validation/VTID-05595/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05595/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

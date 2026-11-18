@@ -1,0 +1,389 @@
+nullable-tenant-id: 20 finding(s)
+missing-tenant-policy: 232 finding(s)
+definer-without-guard: 97 finding(s)
+realtime-without-tenant-rls: 1 finding(s)
+storage-policy: 2 finding(s)
+bare policies (reported, not asserted 0): 21 (allowlisted 0, 13 unverified table(s) not counted)
+allowlisted: 0; stale allowlist entries: 0
+UNVERIFIED (not passing): 29
+  UNVERIFIED missing-tenant-policy access_audit_log: no migration in either repository creates this table
+  UNVERIFIED missing-tenant-policy community_listings: created by 20260727090000_bootstrap_community_marketplace.sql, which fails on a fresh replay: column "tenant_id" referenced in foreign key constraint does not exist
+  UNVERIFIED missing-tenant-policy consents: no migration in either repository creates this table
+  UNVERIFIED missing-tenant-policy data_sharing_consents: created by 20260914090000_vtid_03885_partner_health_test_integration.sql, which needs public.product_orders from the pgvector-dependent marketplace foundation
+  UNVERIFIED missing-tenant-policy event_attendance: created by 20251231000001_vtid_01090_live_rooms_events_graph.sql, which fails on a fresh replay: column "source_type" does not exist
+  UNVERIFIED missing-tenant-policy live_highlights: created by 20251231000001_vtid_01090_live_rooms_events_graph.sql, which fails on a fresh replay: column "source_type" does not exist
+  UNVERIFIED missing-tenant-policy live_room_attendance: created by 20251231000001_vtid_01090_live_rooms_events_graph.sql, which fails on a fresh replay: column "source_type" does not exist
+  UNVERIFIED missing-tenant-policy live_rooms: created by 20251231000001_vtid_01090_live_rooms_events_graph.sql, which fails on a fresh replay: column "source_type" does not exist
+  UNVERIFIED missing-tenant-policy partner_health_test_orders: created by 20260914090000_vtid_03885_partner_health_test_integration.sql, which needs public.product_orders from the pgvector-dependent marketplace foundation
+  UNVERIFIED missing-tenant-policy retrieval_traces: no migration in either repository creates this table
+  UNVERIFIED missing-tenant-policy role_sessions: no migration in either repository creates this table
+  UNVERIFIED missing-tenant-policy tenant_catalog_overrides: created by 20260416120000_vtid_02000_marketplace_foundation.sql, which needs the vector extension
+  UNVERIFIED missing-tenant-policy user_roles: no migration in either repository creates this table
+  UNVERIFIED nullable-tenant-id access_audit_log: no migration in either repository creates this table
+  UNVERIFIED nullable-tenant-id community_listings: created by 20260727090000_bootstrap_community_marketplace.sql, which fails on a fresh replay: column "tenant_id" referenced in foreign key constraint does not exist
+  UNVERIFIED nullable-tenant-id consents: no migration in either repository creates this table
+  UNVERIFIED nullable-tenant-id data_sharing_consents: created by 20260914090000_vtid_03885_partner_health_test_integration.sql, which needs public.product_orders from the pgvector-dependent marketplace foundation
+  UNVERIFIED nullable-tenant-id event_attendance: created by 20251231000001_vtid_01090_live_rooms_events_graph.sql, which fails on a fresh replay: column "source_type" does not exist
+  UNVERIFIED nullable-tenant-id live_highlights: created by 20251231000001_vtid_01090_live_rooms_events_graph.sql, which fails on a fresh replay: column "source_type" does not exist
+  UNVERIFIED nullable-tenant-id live_room_attendance: created by 20251231000001_vtid_01090_live_rooms_events_graph.sql, which fails on a fresh replay: column "source_type" does not exist
+  UNVERIFIED nullable-tenant-id live_rooms: created by 20251231000001_vtid_01090_live_rooms_events_graph.sql, which fails on a fresh replay: column "source_type" does not exist
+  UNVERIFIED nullable-tenant-id partner_health_test_orders: created by 20260914090000_vtid_03885_partner_health_test_integration.sql, which needs public.product_orders from the pgvector-dependent marketplace foundation
+  UNVERIFIED nullable-tenant-id retrieval_traces: no migration in either repository creates this table
+  UNVERIFIED nullable-tenant-id role_sessions: no migration in either repository creates this table
+  UNVERIFIED nullable-tenant-id tenant_catalog_overrides: created by 20260416120000_vtid_02000_marketplace_foundation.sql, which needs the vector extension
+  UNVERIFIED nullable-tenant-id user_roles: no migration in either repository creates this table
+  UNVERIFIED realtime-without-tenant-rls chat_group_members: the table is not in the replayed schema (a migration that creates it is a skip)
+  UNVERIFIED realtime-without-tenant-rls chat_groups: the table is not in the replayed schema (a migration that creates it is a skip)
+  UNVERIFIED realtime-without-tenant-rls chat_messages: the table is not in the replayed schema (a migration that creates it is a skip)
+  FINDING definer-without-guard accept_recommendation(p_recommendation_id uuid, p_user_id uuid, p_action_taken jsonb): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard activate_autopilot_recommendation(p_recommendation_id uuid, p_user_id uuid): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard advance_capability_awareness(p_tenant_id uuid, p_user_id uuid, p_capability_key text, p_event_name text, p_idempotency_key text, p_decision_id text, p_source_surface text, p_occurred_at timestamp with time zone, p_metadata jsonb): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard alignment_cleanup_expired(): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard auto_triage_pending_feedback_tickets(): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard capacity_filter_actions(p_actions jsonb, p_respect_capacity boolean): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard catalog_add_product(p_payload jsonb): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard catalog_add_service(p_payload jsonb): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard check_memory_access_grant(p_target_user_id uuid, p_requester_user_id uuid, p_access_type text): SECURITY DEFINER, executable by anon, authenticated, public, no caller check in the body
+  FINDING definer-without-guard classify_pending_feedback_tickets(): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard cleanup_expired_autopilot_recommendations(): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard community_create_group(p_payload jsonb): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard community_create_meetup(p_payload jsonb): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard complete_autopilot_recommendation(p_recommendation_id uuid, p_user_id uuid): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard complete_autopilot_recommendation_run(p_run_id text, p_status text, p_recommendations_generated integer, p_duplicates_skipped integer, p_errors jsonb, p_analysis_summary jsonb): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard compute_trend_delta(p_user_id uuid, p_pillar text, p_reference_date date): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard context_assembly_log(p_bundle_id text, p_bundle_hash text, p_tenant_id uuid, p_user_id uuid, p_active_role text, p_intent text, p_memory_ids text[], p_diary_ids text[], p_garden_node_ids text[], p_domain_weights jsonb, p_items_considered integer, p_items_included integer, p_assembly_duration_ms integer, p_constraints jsonb, p_assembled_at timestamp with time zone): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard count_events_by_stage(since_time timestamp with time zone): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard create_autopilot_recommendation_run(p_sources text[], p_trigger_type text, p_triggered_by text): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard create_vtid_atomic(p_family text, p_module text, p_title text, p_status text, p_tenant text, p_is_test boolean, p_summary text, p_metadata jsonb): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard create_vtid_spec(p_vtid text, p_tenant_id text, p_spec_content jsonb, p_primary_domain text, p_system_surface text[], p_created_by text, p_metadata jsonb): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard credit_wallet(p_tenant_id uuid, p_user_id uuid, p_amount integer, p_type text, p_source text, p_source_event_id text, p_description text): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard d42_get_domain_weights(): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard dismiss_recommendation(p_recommendation_id uuid, p_user_id uuid, p_feedback_note text): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard enforce_vtid_spec_immutability(): SECURITY DEFINER, executable by anon, authenticated, public, no caller check in the body
+  FINDING definer-without-guard fire_welcome_chat_on_membership(): SECURITY DEFINER, executable by anon, authenticated, public, no caller check in the body
+  FINDING definer-without-guard fn_get_feature_usage(p_tenant_id uuid, p_user_id uuid, p_feature_key text, p_window_seconds integer): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard fn_get_feature_usage_in_window(p_tenant_id uuid, p_user_id uuid, p_feature_key text, p_window_seconds integer): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard fn_increment_feature_usage(p_tenant_id uuid, p_user_id uuid, p_feature_key text, p_amount integer, p_window_seconds integer): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard fn_redeem_code(p_tenant_id uuid, p_user_id uuid, p_code text): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard get_active_llm_policy(p_environment text): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard get_active_thread_messages(p_thread_id uuid, p_limit integer): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard get_autopilot_analyzer_sources(): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard get_autopilot_recommendation_history(p_limit integer, p_offset integer, p_trigger_type text): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard get_autopilot_recommendations(p_status text[], p_limit integer, p_offset integer, p_user_id uuid): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard get_autopilot_recommendations_count(p_user_id uuid): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard get_current_facts(p_tenant_id uuid, p_user_id uuid, p_entity text, p_fact_keys text[]): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard get_next_spec_version(p_vtid text): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard get_or_create_vtid_policy_snapshot(p_vtid text, p_environment text): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard get_public_vitana_index(p_user_id uuid): SECURITY DEFINER, executable by anon, authenticated, public, no caller check in the body
+  FINDING definer-without-guard get_recommendation_inbox(p_user_id uuid, p_status text[], p_limit integer, p_offset integer): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard get_recommendation_inbox_count(p_user_id uuid): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard get_thread_summary(p_thread_id uuid, p_summary_type text): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard get_user_limitations_impact(p_user_id uuid): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard get_user_profile(p_user_id uuid): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard get_user_stripe_account(p_user_id uuid): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard get_vtid_spec(p_vtid text, p_verify_checksum boolean): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard increment_thread_turn(p_tenant_id uuid, p_user_id uuid, p_thread_id uuid): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard insert_autopilot_recommendation(p_title text, p_summary text, p_domain text, p_risk_level text, p_impact_score integer, p_effort_score integer, p_source_type text, p_source_ref text, p_fingerprint text, p_run_id text, p_suggested_files text[], p_suggested_endpoints text[], p_suggested_tests text[], p_expires_days integer): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard mark_recommendation_read(p_recommendation_id uuid, p_user_id uuid): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard memory_audit_log_insert(p_tenant_id text, p_user_id uuid, p_op text, p_tier text, p_actor_id text, p_policy_version text, p_source_engine text, p_confidence real, p_source_event_id text, p_health_scope boolean, p_identity_scope boolean, p_details jsonb): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard memory_confirm_item(p_memory_item_id uuid, p_confirmation_notes text): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard memory_correct_item(p_memory_item_id uuid, p_correction_notes text, p_new_content text): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard notify_on_global_message(): SECURITY DEFINER, executable by anon, authenticated, public, no caller check in the body
+  FINDING definer-without-guard notify_on_group_invitation(): SECURITY DEFINER, executable by anon, authenticated, public, no caller check in the body
+  FINDING definer-without-guard notify_on_lab_report_processed(): SECURITY DEFINER, executable by anon, authenticated, public, no caller check in the body
+  FINDING definer-without-guard notify_on_memory_garden_grew(): SECURITY DEFINER, executable by anon, authenticated, public, no caller check in the body
+  FINDING definer-without-guard notify_on_opportunity_surfaced(): SECURITY DEFINER, executable by anon, authenticated, public, no caller check in the body
+  FINDING definer-without-guard notify_on_predictive_signal(): SECURITY DEFINER, executable by anon, authenticated, public, no caller check in the body
+  FINDING definer-without-guard notify_on_reaction(): SECURITY DEFINER, executable by anon, authenticated, public, no caller check in the body
+  FINDING definer-without-guard notify_on_risk_mitigation(): SECURITY DEFINER, executable by anon, authenticated, public, no caller check in the body
+  FINDING definer-without-guard notify_on_tenant_message(): SECURITY DEFINER, executable by anon, authenticated, public, no caller check in the body
+  FINDING definer-without-guard pick_specialist_for_text(p_text text): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard pick_specialist_for_text_tenant(p_text text, p_tenant_id uuid): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard provision_platform_user(): SECURITY DEFINER, executable by anon, authenticated, public, no caller check in the body
+  FINDING definer-without-guard provision_wallet_accounts(): SECURITY DEFINER, executable by anon, authenticated, public, no caller check in the body
+  FINDING definer-without-guard recall_at_time_range(p_user_id uuid, p_since timestamp with time zone, p_until timestamp with time zone, p_topic_hint text): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard reconcile_vitana_id_mirror(): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard reject_autopilot_recommendation(p_recommendation_id uuid, p_reason text): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard relationship_ensure_node(p_node_type text, p_title text, p_ref_id uuid, p_domain text, p_metadata jsonb): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard reminders_claim_due(p_lookahead_seconds integer, p_limit integer): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard resolve_recipient_candidates(p_actor uuid, p_token text, p_limit integer, p_global boolean): SECURITY DEFINER, executable by anon, authenticated, public, no caller check in the body
+  FINDING definer-without-guard resolve_thread_id(p_tenant_id uuid, p_user_id uuid, p_active_role text, p_provided_thread_id uuid, p_session_timeout_hours integer): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard scheduler_community_recompute_recommendations(p_user_id uuid, p_date date): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard scheduler_get_users_batch(p_tenant_id uuid, p_date date, p_limit integer, p_cursor uuid): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard scheduler_longevity_compute_daily(p_user_id uuid, p_date date): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard scheduler_match_recompute_daily(p_user_id uuid, p_date date): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard scheduler_topics_recompute_user_profile(p_user_id uuid, p_date date): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard search_knowledge_docs(search_query text, max_results integer): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard seed_community_onboarding_autopilot(p_user_id uuid): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard seed_onboarding_autopilot_on_membership(): SECURITY DEFINER, executable by anon, authenticated, public, no caller check in the body
+  FINDING definer-without-guard snooze_autopilot_recommendation(p_recommendation_id uuid, p_hours integer): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard snooze_recommendation(p_recommendation_id uuid, p_user_id uuid, p_snooze_hours integer): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard social_cleanup_expired_cache(): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard submit_recommendation_feedback(p_recommendation_id uuid, p_user_id uuid, p_rating integer, p_note text): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard topics_create_registry_entry(p_payload jsonb): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard topics_get_registry(p_category text): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard topics_validate_keys(p_topic_keys text[]): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard update_autopilot_analyzer_source(p_source_type text, p_status text, p_items_scanned integer, p_items_found integer, p_recommendations_generated integer, p_last_scan_run_id text, p_last_scan_duration_ms integer, p_last_error text): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard update_user_stripe_status(p_stripe_account_id text, p_charges_enabled boolean, p_payouts_enabled boolean): SECURITY DEFINER, executable by anon, authenticated, public, no caller check in the body
+  FINDING definer-without-guard update_wallet_balance(): SECURITY DEFINER, executable by anon, authenticated, public, no caller check in the body
+  FINDING definer-without-guard upsert_knowledge_doc(p_title text, p_path text, p_content text, p_source_type text, p_tags text[]): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard user_sessions_today_window(p_user_id uuid, p_user_tz text): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard verify_vtid_spec_checksum(p_vtid text): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard vitana_pillar_streak_days(p_user_id uuid, p_pillar_key text): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING definer-without-guard vtid_spec_exists(p_vtid text): SECURITY DEFINER, executable by anon, authenticated, public, no caller check in the body
+  FINDING definer-without-guard write_fact(p_tenant_id uuid, p_user_id uuid, p_fact_key text, p_fact_value text, p_entity text, p_fact_value_type text, p_provenance_source text, p_provenance_utterance_id uuid, p_provenance_confidence numeric, p_thread_id uuid): SECURITY DEFINER, executable by authenticated, no caller check in the body
+  FINDING missing-tenant-policy action_ledger: no policy mentions the tenant
+  FINDING missing-tenant-policy analytics_celebrate_events: no policy mentions the tenant
+  FINDING missing-tenant-policy anticipatory_guidance: no policy mentions the tenant
+  FINDING missing-tenant-policy automation_runs: no policy mentions the tenant
+  FINDING missing-tenant-policy autopilot_prompt_prefs: no policy mentions the tenant
+  FINDING missing-tenant-policy autopilot_prompts: no policy mentions the tenant
+  FINDING missing-tenant-policy bak_mt_data_cleanup_memory_facts_merge: row level security is on with no policy
+  FINDING missing-tenant-policy chat_viewing_presence: row level security is on with no policy
+  FINDING missing-tenant-policy community_group_invitations: no policy mentions the tenant
+  FINDING missing-tenant-policy community_search_history: no policy mentions the tenant
+  FINDING missing-tenant-policy companion_messages_ledger: row level security is on with no policy
+  FINDING missing-tenant-policy companion_preferences: no policy mentions the tenant
+  FINDING missing-tenant-policy consolidator_runs: row level security is off
+  FINDING missing-tenant-policy context_window_configs: no policy mentions the tenant
+  FINDING missing-tenant-policy context_window_logs: no policy mentions the tenant
+  FINDING missing-tenant-policy contextual_opportunities: no policy mentions the tenant
+  FINDING missing-tenant-policy conversation_messages: no policy mentions the tenant
+  FINDING missing-tenant-policy daily_recompute_runs: no policy mentions the tenant
+  FINDING missing-tenant-policy did_you_know_state: no policy mentions the tenant
+  FINDING missing-tenant-policy drift_adaptation_plans: no policy mentions the tenant
+  FINDING missing-tenant-policy erp_approvals: no policy mentions the tenant
+  FINDING missing-tenant-policy erp_audit_log: no policy mentions the tenant
+  FINDING missing-tenant-policy erp_capability_grants: no policy mentions the tenant
+  FINDING missing-tenant-policy erp_commands: no policy mentions the tenant
+  FINDING missing-tenant-policy erp_policy_settings: no policy mentions the tenant
+  FINDING missing-tenant-policy feature_usage: no policy mentions the tenant
+  FINDING missing-tenant-policy goal_plans: no policy mentions the tenant
+  FINDING missing-tenant-policy governance_categories: no policy mentions the tenant
+  FINDING missing-tenant-policy governance_enforcements: no policy mentions the tenant
+  FINDING missing-tenant-policy governance_evaluations: no policy mentions the tenant
+  FINDING missing-tenant-policy governance_proposals: no policy mentions the tenant
+  FINDING missing-tenant-policy governance_rules: no policy mentions the tenant
+  FINDING missing-tenant-policy governance_violations: no policy mentions the tenant
+  FINDING missing-tenant-policy health_ingest_batches: row level security is on with no policy
+  FINDING missing-tenant-policy health_ingest_batches_p202610: row level security is on with no policy
+  FINDING missing-tenant-policy health_ingest_batches_p202611: row level security is on with no policy
+  FINDING missing-tenant-policy health_ingest_batches_p202612: row level security is on with no policy
+  FINDING missing-tenant-policy health_ingest_batches_p202701: row level security is on with no policy
+  FINDING missing-tenant-policy health_ingest_batches_p202702: row level security is on with no policy
+  FINDING missing-tenant-policy health_ingest_quarantine: row level security is on with no policy
+  FINDING missing-tenant-policy health_ingest_quarantine_p202610: row level security is on with no policy
+  FINDING missing-tenant-policy health_ingest_quarantine_p202611: row level security is on with no policy
+  FINDING missing-tenant-policy health_ingest_quarantine_p202612: row level security is on with no policy
+  FINDING missing-tenant-policy health_ingest_quarantine_p202701: row level security is on with no policy
+  FINDING missing-tenant-policy health_ingest_quarantine_p202702: row level security is on with no policy
+  FINDING missing-tenant-policy health_observations: no policy mentions the tenant
+  FINDING missing-tenant-policy health_observations_p202507: row level security is on with no policy
+  FINDING missing-tenant-policy health_observations_p202508: row level security is on with no policy
+  FINDING missing-tenant-policy health_observations_p202509: row level security is on with no policy
+  FINDING missing-tenant-policy health_observations_p202510: row level security is on with no policy
+  FINDING missing-tenant-policy health_observations_p202511: row level security is on with no policy
+  FINDING missing-tenant-policy health_observations_p202512: row level security is on with no policy
+  FINDING missing-tenant-policy health_observations_p202601: row level security is on with no policy
+  FINDING missing-tenant-policy health_observations_p202602: row level security is on with no policy
+  FINDING missing-tenant-policy health_observations_p202603: row level security is on with no policy
+  FINDING missing-tenant-policy health_observations_p202604: row level security is on with no policy
+  FINDING missing-tenant-policy health_observations_p202605: row level security is on with no policy
+  FINDING missing-tenant-policy health_observations_p202606: row level security is on with no policy
+  FINDING missing-tenant-policy health_observations_p202607: row level security is on with no policy
+  FINDING missing-tenant-policy health_observations_p202608: row level security is on with no policy
+  FINDING missing-tenant-policy health_observations_p202609: row level security is on with no policy
+  FINDING missing-tenant-policy health_observations_p202610: row level security is on with no policy
+  FINDING missing-tenant-policy health_observations_p202611: row level security is on with no policy
+  FINDING missing-tenant-policy health_observations_p202612: row level security is on with no policy
+  FINDING missing-tenant-policy health_observations_p202701: row level security is on with no policy
+  FINDING missing-tenant-policy health_observations_p202702: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_1d: no policy mentions the tenant
+  FINDING missing-tenant-policy health_series_1d_p202507: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_1d_p202508: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_1d_p202509: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_1d_p202510: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_1d_p202511: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_1d_p202512: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_1d_p202601: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_1d_p202602: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_1d_p202603: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_1d_p202604: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_1d_p202605: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_1d_p202606: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_1d_p202607: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_1d_p202608: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_1d_p202609: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_1d_p202610: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_1d_p202611: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_1d_p202612: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_1d_p202701: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_1d_p202702: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_1h: no policy mentions the tenant
+  FINDING missing-tenant-policy health_series_1h_p202507: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_1h_p202508: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_1h_p202509: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_1h_p202510: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_1h_p202511: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_1h_p202512: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_1h_p202601: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_1h_p202602: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_1h_p202603: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_1h_p202604: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_1h_p202605: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_1h_p202606: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_1h_p202607: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_1h_p202608: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_1h_p202609: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_1h_p202610: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_1h_p202611: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_1h_p202612: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_1h_p202701: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_1h_p202702: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m: no policy mentions the tenant
+  FINDING missing-tenant-policy health_series_5m_p20261009: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261010: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261011: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261012: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261013: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261014: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261015: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261016: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261017: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261018: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261019: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261020: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261021: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261022: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261023: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261024: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261025: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261026: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261027: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261028: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261029: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261030: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261031: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261101: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261102: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261103: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261104: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261105: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261106: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261107: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261108: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261109: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261110: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261111: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261112: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261113: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261114: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261115: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261116: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261117: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261118: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261119: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261120: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261121: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261122: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261123: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261124: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261125: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261126: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261127: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261128: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261129: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261130: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261201: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261202: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261203: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261204: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261205: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261206: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261207: row level security is on with no policy
+  FINDING missing-tenant-policy health_series_5m_p20261208: row level security is on with no policy
+  FINDING missing-tenant-policy health_sources: no policy mentions the tenant
+  FINDING missing-tenant-policy index_delta_observations: no policy mentions the tenant
+  FINDING missing-tenant-policy jev_member_daily_counters: row level security is on with no policy
+  FINDING missing-tenant-policy jev_shadow_decisions: row level security is on with no policy
+  FINDING missing-tenant-policy jev_spend_counters: row level security is on with no policy
+  FINDING missing-tenant-policy marketplace_sources_config: no policy mentions the tenant
+  FINDING missing-tenant-policy memory_audit_log: no policy mentions the tenant
+  FINDING missing-tenant-policy memory_audit_log_y2026m04: row level security is off
+  FINDING missing-tenant-policy memory_audit_log_y2026m05: row level security is off
+  FINDING missing-tenant-policy memory_audit_log_y2026m06: row level security is off
+  FINDING missing-tenant-policy memory_audit_log_y2026m07: row level security is off
+  FINDING missing-tenant-policy memory_audit_log_y2026m08: row level security is off
+  FINDING missing-tenant-policy memory_audit_log_y2026m09: row level security is off
+  FINDING missing-tenant-policy memory_audit_log_y2026m10: row level security is off
+  FINDING missing-tenant-policy memory_audit_log_y2026m11: row level security is off
+  FINDING missing-tenant-policy memory_audit_log_y2026m12: row level security is off
+  FINDING missing-tenant-policy memory_audit_log_y2027m01: row level security is off
+  FINDING missing-tenant-policy memory_audit_log_y2027m02: row level security is off
+  FINDING missing-tenant-policy memory_audit_log_y2027m03: row level security is off
+  FINDING missing-tenant-policy memory_audit_log_y2027m04: row level security is off
+  FINDING missing-tenant-policy memory_fact_forgotten: row level security is on with no policy
+  FINDING missing-tenant-policy memory_transcript_turns: no policy mentions the tenant
+  FINDING missing-tenant-policy notification_categories: no policy mentions the tenant
+  FINDING missing-tenant-policy onboarding_coach_decisions: row level security is on with no policy
+  FINDING missing-tenant-policy onboarding_coach_state: no policy mentions the tenant
+  FINDING missing-tenant-policy onboarding_touch_ledger: row level security is on with no policy
+  FINDING missing-tenant-policy operator_threads: no policy mentions the tenant
+  FINDING missing-tenant-policy paywall_events: no policy mentions the tenant
+  FINDING missing-tenant-policy pending_connector_actions: no policy mentions the tenant
+  FINDING missing-tenant-policy redemption_redemptions: no policy mentions the tenant
+  FINDING missing-tenant-policy referrals: no policy mentions the tenant
+  FINDING missing-tenant-policy reminders: no policy mentions the tenant
+  FINDING missing-tenant-policy reward_orders: no policy mentions the tenant
+  FINDING missing-tenant-policy safety_flags: no policy mentions the tenant
+  FINDING missing-tenant-policy sharing_links: no policy mentions the tenant
+  FINDING missing-tenant-policy teacher_capability_refresh_schedule: no policy mentions the tenant
+  FINDING missing-tenant-policy tenant_health_index_daily: no policy mentions the tenant
+  FINDING missing-tenant-policy tenant_kb_baseline_optouts: no policy mentions the tenant
+  FINDING missing-tenant-policy user_action_permissions: no policy mentions the tenant
+  FINDING missing-tenant-policy user_category_preferences: no policy mentions the tenant
+  FINDING missing-tenant-policy user_connections: no policy mentions the tenant
+  FINDING missing-tenant-policy user_device_tokens: no policy mentions the tenant
+  FINDING missing-tenant-policy user_journey: no policy mentions the tenant
+  FINDING missing-tenant-policy user_notification_preferences: no policy mentions the tenant
+  FINDING missing-tenant-policy user_notifications: no policy mentions the tenant
+  FINDING missing-tenant-policy user_subscriptions: no policy mentions the tenant
+  FINDING missing-tenant-policy user_tenants: no policy mentions the tenant
+  FINDING missing-tenant-policy vaea_config: no policy mentions the tenant
+  FINDING missing-tenant-policy vaea_detected_questions: no policy mentions the tenant
+  FINDING missing-tenant-policy vaea_listener_channels: no policy mentions the tenant
+  FINDING missing-tenant-policy vaea_referral_catalog: no policy mentions the tenant
+  FINDING missing-tenant-policy vaea_reply_drafts: no policy mentions the tenant
+  FINDING missing-tenant-policy vitana_index_movements: no policy mentions the tenant
+  FINDING missing-tenant-policy vitana_index_scores: no policy mentions the tenant
+  FINDING missing-tenant-policy vitana_index_trajectory_snapshots: no policy mentions the tenant
+  FINDING missing-tenant-policy voice_clock_items: no policy mentions the tenant
+  FINDING missing-tenant-policy voice_session_facts: row level security is on with no policy
+  FINDING missing-tenant-policy wallet_balances: no policy mentions the tenant
+  FINDING missing-tenant-policy wallet_transactions: no policy mentions the tenant
+  FINDING missing-tenant-policy wearable_daily_metrics: no policy mentions the tenant
+  FINDING missing-tenant-policy wearable_workouts: no policy mentions the tenant
+  FINDING missing-tenant-policy welcome_team_claims: row level security is on with no policy
+  FINDING nullable-tenant-id analytics_celebrate_events: tenant_id is nullable
+  FINDING nullable-tenant-id companion_preferences: tenant_id is nullable
+  FINDING nullable-tenant-id consolidator_runs: tenant_id is nullable
+  FINDING nullable-tenant-id context_window_configs: tenant_id is nullable
+  FINDING nullable-tenant-id decision_compatibility_score: tenant_id is nullable
+  FINDING nullable-tenant-id decision_conflict_pair: tenant_id is nullable
+  FINDING nullable-tenant-id decision_policy: tenant_id is nullable
+  FINDING nullable-tenant-id goal_plans: tenant_id is nullable
+  FINDING nullable-tenant-id jev_shadow_decisions: tenant_id is nullable
+  FINDING nullable-tenant-id kb_documents: tenant_id is nullable
+  FINDING nullable-tenant-id marketplace_sources_config: tenant_id is nullable
+  FINDING nullable-tenant-id notification_categories: tenant_id is nullable
+  FINDING nullable-tenant-id operator_threads: tenant_id is nullable
+  FINDING nullable-tenant-id orb_wake_timelines: tenant_id is nullable
+  FINDING nullable-tenant-id policy_render_block: tenant_id is nullable
+  FINDING nullable-tenant-id user_journey: tenant_id is nullable
+  FINDING nullable-tenant-id user_notification_preferences: tenant_id is nullable
+  FINDING nullable-tenant-id vitana_index_movements: tenant_id is nullable
+  FINDING nullable-tenant-id voice_clock_items: tenant_id is nullable
+  FINDING nullable-tenant-id voice_session_facts: tenant_id is nullable
+  FINDING realtime-without-tenant-rls conversation_messages: in the realtime publication without a tenant row level security policy
+  FINDING storage-policy community-marketplace-listings public read: storage.objects SELECT policy with no user or tenant scoping
+  FINDING storage-policy intent-covers public read: storage.objects SELECT policy with no user or tenant scoping

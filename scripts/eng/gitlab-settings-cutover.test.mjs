@@ -327,9 +327,10 @@ function newAws() {
     const err = (code) => Object.assign(new Error(`An error occurred (${code})`), { stderr: `An error occurred (${code})` });
     if (op === 'get-secret-value') { if (!secrets.has(id) || secrets.get(id) === null) throw err('ResourceNotFoundException'); return { stdout: `${secrets.get(id)}\n` }; }
     if (op === 'put-secret-value' || op === 'create-secret') {
-      assert.equal(opt('--secret-string'), 'file:///dev/stdin', 'a secret value is never a command-line argument');
+      const ss = opt('--secret-string');
+      assert.match(ss, /^file:\/\/\//, 'a secret value is never a command-line argument');
       if (op === 'put-secret-value' && !secrets.has(id)) throw err('ResourceNotFoundException');
-      secrets.set(id, opts.input);
+      secrets.set(id, ss === 'file:///dev/stdin' ? opts.input : fs.readFileSync(ss.slice('file://'.length), 'utf8'));
       return { stdout: '{}' };
     }
     throw new Error(`unexpected aws call ${op}`);
@@ -460,7 +461,7 @@ test('config: every invalid cutover input is refused with an error that names th
 test('the milestone-2 view is untouched: the shipped base keys, the exported key tables and the script text keep what gitlab-settings.test.mjs pins', () => {
   const c = settings.validateConfig(shipped());
   assert.deepEqual(MIRRORED.map((n) => [c.projects[n].profile, c.projects[n].landing, c.projects[n].rehearsal, c.projects[n].webhook, c.projects[n].required_jobs]), [['mirror', false, false, null, []], ['mirror', false, false, null, []]]);
-  assert.deepEqual(MIRRORED.map((n) => c.projects[n].ci_file), ['platform.gitlab-ci.yml', 'v1.gitlab-ci.yml']);
+  assert.deepEqual(MIRRORED.map((n) => c.projects[n].ci_file), ['platform.gitlab-ci.yml', 'v1-delivery.gitlab-ci.yml']);
   assert.equal(settings.SCHEMA_KEYS.project.includes('cutover'), false, 'the milestone-2 key table (documented by its README) is not extended; CUTOVER_KEYS is');
   assert.deepEqual(Object.keys(settings.WEBHOOK_EVENTS), ['merge_request', 'pipeline']);
   assert.deepEqual(Object.keys(settings.CUTOVER_WEBHOOK_EVENTS), ['merge_request', 'pipeline', 'push', 'tag_push']);

@@ -1,0 +1,15 @@
+# Red of the same-tick drop fix: the new test "a merge request dropped in the tick in which the bot merged main into it stays out for the head
+# the bot made, with one comment", run in the worktree against the lane's code as pushed in PR #4721 at 43ef9402f575c9e7cd2de1cfc4c15977e742d851 (before the fix), 2026-11-05T22:47:11Z.
+# command: node --test --test-name-pattern='^a merge request dropped in the tick' scripts/eng/gitlab-land-queue.test.mjs
+# result: tests 1, pass 0, fail 1: the drop and its comment were keyed on the head read at the start of the tick, not on the head the bot had just pushed.
+
+not ok 1 - a merge request dropped in the tick in which the bot merged main into it stays out for the head the bot made, with one comment
+  error: 'the comment is for the head the merge request has now'
+# tests 1
+# suites 0
+# pass 0
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+exit 1

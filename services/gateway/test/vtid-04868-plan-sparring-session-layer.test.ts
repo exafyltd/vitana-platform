@@ -27,13 +27,14 @@ function runHook(toolInput: Record<string, string>): { out: string; code: number
 describe('VTID-04868 Plan Sparring Gate — session layer', () => {
   it('CLAUDE.md carries rules 51-55 and puts allocation after sparring', () => {
     const md = read('CLAUDE.md');
-    expect(md).toContain('### Plan Sparring Gate (STANDING RULE — VTID-04868)');
+    // Owner decision 2026-11-07 amended this rule's heading ("…, amended 2026-11-07").
+    expect(md).toContain('### Plan Sparring Gate (STANDING RULE — VTID-04868, amended 2026-11-07)');
     for (const n of [51, 52, 53, 54, 55]) expect(md).toMatch(new RegExp(`^${n}\\. \\*\\*`, 'm'));
     // VTID-05214 reworded rule 51 to include the CI-sparred policy-approval path
     // ("… owner approval (or, for a CI-sparred plan that converged, policy approval
     // converged-auto-v1, VTID-05214) → VTID → code."). Pin the stable endpoints of the
     // flow rather than the exact middle clause so a future wording tweak does not re-break it.
-    expect(md).toMatch(/Plan → sparring → owner approval[\s\S]*?→ VTID → code\./);
+    expect(md).toMatch(/[Pp]lan → sparring → owner approval[\s\S]*?→ VTID → code\./);
     expect(md).toContain('Claude Opus 4.6 on AWS Bedrock');
     // Owner decision 2026-10-19: Opus 4.6 → Sonnet 4.6 → DeepSeek, never Google.
     expect(md).toContain('**Fallback chain');

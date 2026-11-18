@@ -1,0 +1,24 @@
+# Red of the projects loader: the new test "run and status read the projects through loadEffectiveProjects of gitlab-settings.mjs …", run against
+# the merge of origin/main (0e5a74a72a8fe26785df3133f4133b3e99b97efd, settings #4711 included) into the lane, commit a6e7c57c040ac83e4eedd4bbc720316cf88d48d1, before the loader (git archive of that commit's
+# scripts/ plus the new test file, in /projects/sandbox/.scratch/tools/6eb1/pre2, outside the repo), 2026-11-05T22:47:11Z.
+# command: node --test --test-name-pattern='^run and status read the projects through loadEffectiveProjects' scripts/eng/gitlab-land-queue.test.mjs
+# result: tests 1, pass 0, fail 1 (the source names no gitlabSettings import). The same test without its two source assertions also fails there:
+# tests 1, pass 0, fail 1, because main() never calls the loader (calls = [], expected one call with the settings file and the options).
+
+not ok 1 - run and status read the projects through loadEffectiveProjects of gitlab-settings.mjs (the cut configuration) when it exports it, else the settings file as M2 does; a loader error lands nothing
+    The input did not match the regular expression /import \* as gitlabSettings from '\.\/gitlab-settings\.mjs';/. Input:
+# tests 1
+# suites 0
+# pass 0
+# fail 1
+# cancelled 0
+# skipped 0
+# todo 0
+exit 1
+
+# the variant without the source assertions (scratch copy of the test only):
+not ok 1 - run and status read the projects through loadEffectiveProjects of gitlab-settings.mjs (the cut configuration) when it exports it, else the settings file as M2 does; a loader error lands nothing
+# tests 1
+# pass 0
+# fail 1
+exit 1

@@ -1,0 +1,80 @@
+# loaded /projects/sandbox/wt-tenant-moderation/docs/validation/VTID-05491/pglite-harness/base_schema.sql
+# loaded /projects/sandbox/wt-tenant-moderation/docs/validation/VTID-05491/pgtap/vtid_05491_fixture.sql
+# loaded /projects/sandbox/wt-tenant-moderation/supabase/migrations/20261102070100_vtid_05491_mt_tenant_admin_p2_moderation.sql
+# loaded /projects/sandbox/wt-tenant-moderation/supabase/migrations/20261102070150_vtid_05491_mt_tenant_admin_p3_moderation.sql
+# loaded /projects/sandbox/wt-tenant-moderation/supabase/migrations/20261102070600_vtid_05491_mt_moderator_tenant_scope.sql
+1..73
+ok 1 - P2: is_tenant_moderator() exists
+ok 2 - P2: content_reports and moderation_actions both gain tenant_id
+ok 3 - P2 backfill: a reporter with exactly one membership gets that tenant
+ok 4 - P2 backfill: a reporter with several memberships gets the primary one
+ok 5 - P2 backfill: several memberships and no primary stays NULL (never oldest-tenant)
+ok 6 - P2 backfill: a reporter without a membership stays NULL
+ok 7 - P2 backfill: a profile_post action takes the post tenant
+ok 8 - P2 backfill: a user action takes the target user's sole tenant
+ok 9 - P2 backfill: an ambiguous target user stays NULL
+ok 10 - P2: the pre-change content_reports rows are snapshotted
+ok 11 - P2: the pre-change moderation_actions rows are snapshotted
+ok 12 - P2: a staff member of T_A moderates T_A
+ok 13 - P2: a staff member of T_A does not moderate T_B
+ok 14 - P2: an admin of T_B does not moderate T_A
+ok 15 - P2: the exafy_admin claim moderates every tenant
+ok 16 - P2: a NULL tenant is nobody's but exafy's
+ok 17 - P2: a plain member moderates nothing
+ok 18 - P2: the internal home-tenant helper is not executable by anon
+ok 19 - P2: the internal home-tenant helper is not executable by authenticated
+ok 20 - P2 trigger: (setup) uR1 inserts a report
+ok 21 - P2 trigger: a report by a T_A member is stamped T_A
+ok 22 - P2 trigger: (setup) uR2 inserts a report
+ok 23 - P2 trigger: a report by a T_B member is stamped T_B
+ok 24 - P2 trigger: a reporter cannot stamp a tenant they are not a member of
+ok 25 - P2 trigger: (setup) uR3 names T_B
+ok 26 - P2 trigger: a member of two tenants may name either
+ok 27 - P2 trigger: (setup) uR4 inserts without a tenant
+ok 28 - P2 trigger: an ambiguous reporter is stored with a NULL tenant (fail closed)
+ok 29 - P3: moderation_list_reports() exists
+ok 30 - P3: moderation_resolve_report() exists
+ok 31 - P3: listing T_A as its moderator returns exactly the T_A reports
+ok 32 - P3: the T_A listing contains no other tenant's report
+ok 33 - P3: a T_B moderator cannot list T_A
+ok 34 - P3: the all-tenants listing is exafy_admin only
+ok 35 - P3: exafy_admin lists every tenant (and NULL-tenant rows)
+ok 36 - P3: the status filter applies
+ok 37 - P3: the limit applies
+ok 38 - P3: an oversized limit is clamped, not an error
+ok 39 - P3: a T_A moderator resolves a T_A report
+ok 40 - P3: reviewed_by is the caller
+ok 41 - P3: reviewed_at is stamped
+ok 42 - P3: one tenant-stamped audit row is written
+ok 43 - P3: resolving with the same values again succeeds
+ok 44 - P3: ... and is idempotent: no second audit row
+ok 45 - P3: a T_B moderator cannot resolve a T_A report
+ok 46 - P3: an unknown status is refused
+ok 47 - P3: an unknown report id is refused
+ok 48 - P3: a tenant moderator cannot resolve a NULL-tenant report
+ok 49 - P3: exafy_admin resolves a NULL-tenant report
+ok 50 - P3: anon cannot execute the resolve RPC
+ok 51 - P3 guard: a tenant-bearing report keeps its tenant on UPDATE (assign-once)
+ok 52 - P3 guard: a NULL tenant can be assigned once
+ok 53 - P3 guard: ... and cannot be cleared again
+ok 54 - M3: moderator_tenant_scope_enabled() exists
+ok 55 - M3 flag off: a T_B moderator still reads every report (today's behaviour)
+ok 56 - M3 flag off: a T_A moderator still reads every audit row (today's behaviour)
+ok 57 - M3 flag off: a plain member reads no report
+ok 58 - M3 flag on: a moderator of T_B sees 0 T_A reports
+ok 59 - M3 flag on: ... and sees all of T_B
+ok 60 - M3 flag on: a moderator of T_A sees 0 T_B reports
+ok 61 - M3 flag on: a tenant moderator sees no NULL-tenant report (fail closed)
+ok 62 - M3 flag on: exafy_admin still reads every report
+ok 63 - M3 flag on: a plain member reads no report
+ok 64 - M3 flag on: a T_B moderator updates 0 T_A reports
+ok 65 - M3 flag on: a T_A moderator updates its own tenant's reports
+ok 66 - M3 flag on: a moderator of T_B sees 0 T_A audit rows
+ok 67 - M3 flag on: ... and no NULL-tenant audit row
+ok 68 - M3 flag on: a T_A moderator sees its tenant's audit rows
+ok 69 - M3 flag on: exafy_admin still reads every audit row
+ok 70 - M3: a tenant whose flag is off is still readable by any moderator (per-tenant rollout)
+ok 71 - M3: moderator_tenant_scope_enabled() is SECURITY DEFINER
+ok 72 - M3: no moderation policy uses a bare current_tenant_id()
+ok 73 - M3: the three content_reports policies keep their names
+exit 0

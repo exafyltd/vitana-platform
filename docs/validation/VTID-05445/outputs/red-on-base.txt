@@ -1,0 +1,8 @@
+$ node --test scripts/mt/inventory/inventory.test.mjs
+#     throw new ERR_MODULE_NOT_FOUND(
+# Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/projects/sandbox/wt-gi/scripts/mt/inventory/generate.mjs' imported from /projects/sandbox/wt-gi/scripts/mt/inventory/inventory.test.mjs
+#   code: 'ERR_MODULE_NOT_FOUND',
+$ node --test scripts/mt/lint/lint.test.mjs
+#     throw new ERR_MODULE_NOT_FOUND(
+# Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/projects/sandbox/wt-gi/scripts/mt/lint/lints.mjs' imported from /projects/sandbox/wt-gi/scripts/mt/lint/lint.test.mjs
+#   code: 'ERR_MODULE_NOT_FOUND',

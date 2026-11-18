@@ -1,0 +1,11 @@
+# VTID-05498 commands run in the sandbox (PGlite only; no live system, no docker/psql/supabase CLI available)
+pglite-harness/lane.sh --no-migrations                         -> outputs/pgtap-red-no-migration.txt (red: column "tenant_id" does not exist)
+pglite-harness/lane.sh                                         -> outputs/pgtap-green.txt (15 ok; fixture row removed from base_schema.sql)
+pglite-harness/lane.sh --twice                                 -> outputs/pgtap-green-applied-twice.txt (15 ok)
+pglite-harness/lane.sh --seed-extra                            -> outputs/pgtap-green-seeded-baseline.txt (15 ok with 5 unrelated baseline rows)
+pglite-harness/lane.sh --seed-extra --no-migrations            -> outputs/pgtap-red-seeded-no-migration.txt (red)
+node pglite-harness/checks.mjs                                 -> outputs/read-only-checks-and-rollback-pglite.txt (ALL OK)
+node --test docs/validation/VTID-05498/static-checks.test.cjs  -> outputs/static-green.txt (6 pass)
+ROOT=<git archive origin/main> node --test .../static-checks.test.cjs -> outputs/static-red-on-origin-main.txt (1 pass, 5 fail)
+node --test scripts/ci/check-migration-drift.test.cjs          -> 8 pass
+node validateManifest(staging-tests.json)                      -> outputs/manifest-validate.txt ({"ok":true})

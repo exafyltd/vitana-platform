@@ -1,0 +1,9 @@
+# VTID-05569 commands run in the sandbox (PGlite only; no live system, no docker/psql/supabase CLI available)
+H=/projects/sandbox/.tools/pgtap-shim   # copy of the harness is in docs/validation/VTID-05569/pglite-harness/
+$H/h05569.sh supabase/tests/vtid_mt_data_cleanup_notnull_assert.test.sql supabase/migrations/20261102043000_vtid_05569_hot_tables_tenant_not_null_assert.sql -> outputs/pgtap-green.txt (11 ok, 0 not ok)
+# red on origin/main (assertion absent: DO block replaced by a no-op)                                                           -> outputs/pgtap-RED-on-origin-main-assertion-absent.txt (5 ok, 6 not ok)
+# mutation 1: nullable check removed from the migration body                                                                     -> outputs/pgtap-RED-mutation-nullable-check-removed.txt (8 ok, 3 not ok)
+# mutation 2: orphan check removed from the migration body                                                                       -> outputs/pgtap-RED-mutation-orphan-check-removed.txt (8 ok, 3 not ok)
+docs/validation/VTID-05569/pglite-harness/checks.sh   -> outputs/read-only-checks-pglite.txt (pre, post, rollback checks)
+node runchk.mjs ... orphan fixture + pre-check + migration -> outputs/refuses-on-orphan-pglite.txt (RAISE as intended)
+# body identity: the DO block appears 8 times in the test and each copy equals the migration's block byte for byte -> IDENTICAL

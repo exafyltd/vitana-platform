@@ -12,6 +12,7 @@
     "autonomy",
     "operator",
     "command-hub",
+    "delivery",
     "governance",
     "agents",
     "autopilot",
@@ -99,6 +100,11 @@
       "events",
       "vtids",
       "approvals"
+    ],
+    "delivery": [
+      "merge-queue",
+      "pipeline-runs",
+      "releases"
     ],
     "governance": [
       "rules",
@@ -213,12 +219,12 @@
     ]
   },
   "screen_inventory": {
-    "total_screens": 132,
-    "total_entries": 314,
-    "last_synced": "2026-10-12",
+    "total_screens": 135,
+    "total_entries": 317,
+    "last_synced": "2026-11-05",
     "source": "auto-regen via services/gateway/scripts/regen-screens-catalog.mjs",
     "role_counts": {
-      "DEVELOPER": 132,
+      "DEVELOPER": 135,
       "COMMUNITY": 89,
       "PATIENT": 9,
       "PROFESSIONAL": 9,
@@ -581,6 +587,27 @@
         "module": "Operations",
         "tab": "Approvals",
         "url_path": "/command-hub/approvals/",
+        "role": "DEVELOPER"
+      },
+      {
+        "screen_id": "DEV-MERGE_QUEUE",
+        "module": "Delivery",
+        "tab": "Merge Queue",
+        "url_path": "/command-hub/delivery/merge-queue/",
+        "role": "DEVELOPER"
+      },
+      {
+        "screen_id": "DEV-PIPELINE_RUNS",
+        "module": "Delivery",
+        "tab": "Pipeline Runs",
+        "url_path": "/command-hub/delivery/pipeline-runs/",
+        "role": "DEVELOPER"
+      },
+      {
+        "screen_id": "DEV-RELEASES",
+        "module": "Delivery",
+        "tab": "Releases",
+        "url_path": "/command-hub/delivery/releases/",
         "role": "DEVELOPER"
       },
       {

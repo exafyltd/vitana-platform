@@ -1,0 +1,8 @@
+$ node scripts/ci/staging-verify/run.mjs check-pr --service gateway --repo-root /projects/sandbox/.rv/deploy --base 5381e3e1462fc0ed0cc12a1af620c158b49430a6 --head b3f5556bb2fd245d0c68632c7056571eade32fc1 --title "VTID-05546 (agentic-delivery/deploy-path): GitLab deploy path, runner classes and OIDC roles"
+[staging-verify] PR touches no gateway deploy path — nothing deploys, no staging suite needed.
+exit=0
+
+# round 2, 2026-11-05T22:43:45Z
+$ node scripts/ci/staging-verify/run.mjs check-pr --service gateway --repo-root /projects/sandbox/.rv/deploy --base 0e5a74a72a8fe26785df3133f4133b3e99b97efd --head 48e139b28b30fb0afe33e4c11d9dd6db9e27c9c8 --title "VTID-05546 (agentic-delivery/deploy-path): GitLab deploy path, runner classes and OIDC roles"
+[staging-verify] PR touches no gateway deploy path — nothing deploys, no staging suite needed.
+exit=0

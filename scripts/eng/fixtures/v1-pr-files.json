@@ -1,0 +1,3149 @@
+{
+ "schema": "vitana.delivery-pr-files/v1",
+ "repository": "exafyltd/vitana-v1",
+ "read_at": "2026-11-05T15:54:34.550Z",
+ "source": "gh api GET repos/exafyltd/vitana-v1/pulls?state=closed (merged, newest 60), pulls/<n>/files, actions/runs?head_sha=<head> (event pull_request|pull_request_target), actions/runs/<id>/jobs",
+ "job_durations": {
+  "CALENDAR-REGRESSION.yml#Calendar regression (app)": {
+   "runs": 1,
+   "median_minutes": 0.97,
+   "max_minutes": 0.97
+  },
+  "NATIVE-CI.yml#ESLint native override (apps/mobile, packages) + i18n rule tests": {
+   "runs": 12,
+   "median_minutes": 0.81,
+   "max_minutes": 1.58
+  },
+  "NATIVE-CI.yml#ORB parity — duplex gate, widget literals, protocol (vitana-platform main)": {
+   "runs": 12,
+   "median_minutes": 0.32,
+   "max_minutes": 2.73
+  },
+  "NATIVE-CI.yml#Parity ledger, core/tokens generators + native script tests": {
+   "runs": 12,
+   "median_minutes": 0.43,
+   "max_minutes": 0.65
+  },
+  "NATIVE-CI.yml#Which native jobs run": {
+   "runs": 12,
+   "median_minutes": 0.18,
+   "max_minutes": 0.27
+  },
+  "NATIVE-CI.yml#apps/mobile — typecheck, test, bundle (iOS + Android JS)": {
+   "runs": 11,
+   "median_minutes": 4.92,
+   "max_minutes": 6.75
+  },
+  "NATIVE-CI.yml#vitana-voice Android module — JVM + Robolectric unit tests": {
+   "runs": 12,
+   "median_minutes": 4.99,
+   "max_minutes": 6.47
+  },
+  "PR-GATE.yml#Lane scope": {
+   "runs": 10,
+   "median_minutes": 0.37,
+   "max_minutes": 1.55
+  },
+  "PR-GATE.yml#pr-gate": {
+   "runs": 12,
+   "median_minutes": 3.47,
+   "max_minutes": 5.63
+  },
+  "PR-GATE.yml#preview-e2e": {
+   "runs": 12,
+   "median_minutes": 1.29,
+   "max_minutes": 3.3
+  },
+  "UNIT-TESTS.yml#Edge data client (guard + Deno tests)": {
+   "runs": 12,
+   "median_minutes": 0.33,
+   "max_minutes": 1.05
+  },
+  "UNIT-TESTS.yml#Realtime helper (guard + Vitest)": {
+   "runs": 12,
+   "median_minutes": 0.72,
+   "max_minutes": 1.88
+  },
+  "UNIT-TESTS.yml#Vitest (jsdom)": {
+   "runs": 12,
+   "median_minutes": 5.53,
+   "max_minutes": 7.23
+  }
+ },
+ "prs": [
+  {
+   "number": 1565,
+   "title": "VTID-05461 (native-wave2-journey-autopilot-r2/journey): native My Journey port",
+   "merged_at": "2026-11-05T15:00:21Z",
+   "head_sha": "cb31d210cdfd3cb1039f2c32b4a79574a1f1a6ea",
+   "files": [
+    "apps/mobile/app/(app)/autopilot/index.tsx",
+    "apps/mobile/maestro/journey/README.md",
+    "apps/mobile/parity/ledger.json",
+    "apps/mobile/src/navigation/resolve.ts",
+    "apps/mobile/src/ports/journey.tsx",
+    "apps/mobile/src/screens/journey/AutopilotPopup.tsx",
+    "apps/mobile/src/screens/journey/DreamNorthStar.tsx",
+    "apps/mobile/src/screens/journey/EnrichmentStrip.tsx",
+    "apps/mobile/src/screens/journey/FeatureCards.tsx",
+    "apps/mobile/src/screens/journey/GoalSheets.tsx",
+    "apps/mobile/src/screens/journey/GuidedJourneyCatalog.tsx",
+    "apps/mobile/src/screens/journey/GuidedModeSwitch.tsx",
+    "apps/mobile/src/screens/journey/HowYoureDoing.tsx",
+    "apps/mobile/src/screens/journey/JourneyHowItWorks.tsx",
+    "apps/mobile/src/screens/journey/JourneyScreen.tsx",
+    "apps/mobile/src/screens/journey/MilestoneCelebration.tsx",
+    "apps/mobile/src/screens/journey/UtilityBar.tsx",
+    "apps/mobile/src/screens/journey/VoucherModal.tsx",
+    "apps/mobile/src/screens/journey/celebrate.ts",
+    "apps/mobile/src/screens/journey/components.tsx",
+    "apps/mobile/src/screens/journey/data/client.ts",
+    "apps/mobile/src/screens/journey/data/journey.ts",
+    "apps/mobile/src/screens/journey/data/supabase.ts",
+    "apps/mobile/src/screens/journey/hooks/useAIConsent.ts",
+    "apps/mobile/src/screens/journey/hooks/useAutopilot.ts",
+    "apps/mobile/src/screens/journey/hooks/useGuidedJourneyProgress.ts",
+    "apps/mobile/src/screens/journey/hooks/useVitanaStreaks.ts",
+    "apps/mobile/src/screens/journey/motion.tsx",
+    "apps/mobile/src/screens/journey/providers/GuidedModeProvider.tsx",
+    "apps/mobile/src/screens/journey/seams.ts",
+    "apps/mobile/src/screens/journey/text.ts",
+    "apps/mobile/src/screens/journey/tiles.tsx",
+    "apps/mobile/tests/journey/core-i18n-route.test.tsx",
+    "apps/mobile/tests/journey/fix1.test.tsx",
+    "apps/mobile/tests/journey/helpers.tsx",
+    "apps/mobile/tests/journey/journey.test.tsx",
+    "apps/mobile/tests/journey/mocks.ts",
+    "apps/mobile/tests/journey/voucher.test.tsx",
+    "docs/validation/VTID-05461/commands.log",
+    "docs/validation/VTID-05461/plan-sparring.md",
+    "docs/validation/VTID-05461/red-fix1.txt",
+    "docs/validation/VTID-05461/red-on-base.txt",
+    "docs/validation/VTID-05461/scope.json",
+    "docs/validation/VTID-05461/staging-tests.json",
+    "docs/validation/VTID-05461/verification.md",
+    "packages/core/closure.generated.json",
+    "packages/core/extract.json",
+    "packages/core/manifest.json",
+    "packages/core/src/audiobook-queue.ts",
+    "packages/core/src/extracted/journey.generated.ts",
+    "packages/core/src/goal-phases.ts",
+    "packages/core/src/horizon-buckets.ts",
+    "packages/core/src/journey.ts",
+    "packages/core/src/vitana-index-tiers.ts",
+    "packages/core/src/vitana-projection.ts",
+    "scripts/native/mobile-ci-paths.generated.json",
+    "src/i18n/ar/journeyAutopilotNative.json",
+    "src/i18n/de/journeyAutopilotNative.json",
+    "src/i18n/en/journeyAutopilotNative.json",
+    "src/i18n/es/journeyAutopilotNative.json",
+    "src/i18n/fr/journeyAutopilotNative.json",
+    "src/i18n/pl/journeyAutopilotNative.json",
+    "src/i18n/pt/journeyAutopilotNative.json",
+    "src/i18n/ru/journeyAutopilotNative.json",
+    "src/i18n/sr/journeyAutopilotNative.json",
+    "src/i18n/tr/journeyAutopilotNative.json",
+    "src/i18n/zh/journeyAutopilotNative.json"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "NATIVE-CI.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "I18N-PROPAGATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "i18n-check.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PREVIEW-DEPLOY-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 1561,
+   "title": "VTID-05458 (native-wave2-inbox-chat-calls-r2/conversation-chat): native conversation and chat port",
+   "merged_at": "2026-11-05T14:20:53Z",
+   "head_sha": "e58a29af2a9651a9da3faebad05fa12ce4cfe150",
+   "files": [
+    "apps/mobile/app.config.ts",
+    "apps/mobile/app/(app)/inbox/g/[groupId]/index.tsx",
+    "apps/mobile/app/(app)/inbox/g/[groupId]/msg/[messageId].tsx",
+    "apps/mobile/app/(app)/inbox/t/[threadId]/index.tsx",
+    "apps/mobile/app/(app)/inbox/t/[threadId]/msg/[messageId].tsx",
+    "apps/mobile/app/(app)/inbox/u/[recipientId]/index.tsx",
+    "apps/mobile/app/(app)/inbox/u/[recipientId]/msg/[messageId].tsx",
+    "apps/mobile/maestro/inbox-chat/conversation-chat/README.md",
+    "apps/mobile/package-lock.json",
+    "apps/mobile/package.json",
+    "apps/mobile/parity/ledger.json",
+    "apps/mobile/src/ports/chat-device.tsx",
+    "apps/mobile/src/ports/chat.tsx",
+    "apps/mobile/src/ports/orb-activate.ts",
+    "apps/mobile/src/ports/webrtc.ts",
+    "apps/mobile/src/screens/chat/AttachmentMenu.tsx",
+    "apps/mobile/src/screens/chat/ChatFrame.tsx",
+    "apps/mobile/src/screens/chat/ChatImageViewer.tsx",
+    "apps/mobile/src/screens/chat/ConversationScreen.tsx",
+    "apps/mobile/src/screens/chat/CreateGroupSheet.tsx",
+    "apps/mobile/src/screens/chat/EmojiPicker.tsx",
+    "apps/mobile/src/screens/chat/ForwardMessageSheet.tsx",
+    "apps/mobile/src/screens/chat/GroupChatScreen.tsx",
+    "apps/mobile/src/screens/chat/GroupMembersModal.tsx",
+    "apps/mobile/src/screens/chat/MessageBubble.tsx",
+    "apps/mobile/src/screens/chat/MessageInput.tsx",
+    "apps/mobile/src/screens/chat/MessageList.tsx",
+    "apps/mobile/src/screens/chat/MessageSearchPanel.tsx",
+    "apps/mobile/src/screens/chat/VoiceRecorder.tsx",
+    "apps/mobile/src/screens/chat/bubble/Cards.tsx",
+    "apps/mobile/src/screens/chat/bubble/PaymentCard.tsx",
+    "apps/mobile/src/screens/chat/bubble/VoicePlayer.tsx",
+    "apps/mobile/src/screens/chat/calls/CallProvider.tsx",
+    "apps/mobile/src/screens/chat/calls/callSounds.ts",
+    "apps/mobile/src/screens/chat/calls/useCallState.ts",
+    "apps/mobile/src/screens/chat/calls/useWebRTC.ts",
+    "apps/mobile/src/screens/chat/components.tsx",
+    "apps/mobile/src/screens/chat/data/api.ts",
+    "apps/mobile/src/screens/chat/data/calendar.ts",
+    "apps/mobile/src/screens/chat/data/createGroup.ts",
+    "apps/mobile/src/screens/chat/data/emojiRecents.ts",
+    "apps/mobile/src/screens/chat/data/forward.ts",
+    "apps/mobile/src/screens/chat/data/members.ts",
+    "apps/mobile/src/screens/chat/data/search.ts",
+    "apps/mobile/src/screens/chat/data/shared.ts",
+    "apps/mobile/src/screens/chat/data/thread.ts",
+    "apps/mobile/src/screens/chat/data/types.ts",
+    "apps/mobile/src/screens/chat/data/upload.ts",
+    "apps/mobile/src/screens/chat/data/useConversation.ts",
+    "apps/mobile/src/screens/chat/data/useGroupChat.ts",
+    "apps/mobile/src/screens/chat/data/useReactions.ts",
+    "apps/mobile/src/screens/chat/data/useTenantConversation.ts",
+    "apps/mobile/src/screens/chat/data/useTyping.ts",
+    "apps/mobile/src/screens/chat/data/viewing.ts",
+    "apps/mobile/src/screens/chat/data/wallet.ts",
+    "apps/mobile/src/screens/chat/inAppLinks.ts",
+    "apps/mobile/src/screens/chat/text.ts",
+    "apps/mobile/tests/app-config.test.ts",
+    "apps/mobile/tests/inbox-chat/conversation-chat/app-config-webrtc.test.ts",
+    "apps/mobile/tests/inbox-chat/conversation-chat/bubble-variants.test.tsx",
+    "apps/mobile/tests/inbox-chat/conversation-chat/bubble.test.tsx",
+    "apps/mobile/tests/inbox-chat/conversation-chat/calls.test.tsx",
+    "apps/mobile/tests/inbox-chat/conversation-chat/composer.test.tsx",
+    "apps/mobile/tests/inbox-chat/conversation-chat/conversation.test.tsx",
+    "apps/mobile/tests/inbox-chat/conversation-chat/group.test.tsx",
+    "apps/mobile/tests/inbox-chat/conversation-chat/helpers.tsx",
+    "apps/mobile/tests/inbox-chat/conversation-chat/i18n-rtl.test.tsx",
+    "apps/mobile/tests/inbox-chat/conversation-chat/members.test.tsx",
+    "apps/mobile/tests/inbox-chat/conversation-chat/mocks.ts",
+    "apps/mobile/tests/inbox-chat/conversation-chat/screen-features.test.tsx",
+    "apps/mobile/tests/inbox-chat/conversation-chat/webrtc-engine.test.ts",
+    "docs/validation/VTID-05458/commands.log",
+    "docs/validation/VTID-05458/plan-sparring.md",
+    "docs/validation/VTID-05458/red-fix1.txt",
+    "docs/validation/VTID-05458/red-on-base.txt",
+    "docs/validation/VTID-05458/scope.json",
+    "docs/validation/VTID-05458/staging-tests.json",
+    "docs/validation/VTID-05458/verification.md",
+    "packages/core/closure.generated.json",
+    "packages/core/manifest.json",
+    "packages/core/src/chat-markdown.ts",
+    "packages/core/src/group-management.ts",
+    "packages/core/src/group-notice.ts",
+    "packages/core/src/mentions.ts",
+    "packages/core/src/messaging-grouping.ts",
+    "scripts/native/mobile-ci-paths.generated.json",
+    "src/i18n/ar/callsNative.json",
+    "src/i18n/ar/chatNative.json",
+    "src/i18n/de/callsNative.json",
+    "src/i18n/de/chatNative.json",
+    "src/i18n/en/callsNative.json",
+    "src/i18n/en/chatNative.json",
+    "src/i18n/es/callsNative.json",
+    "src/i18n/es/chatNative.json",
+    "src/i18n/fr/callsNative.json",
+    "src/i18n/fr/chatNative.json",
+    "src/i18n/pl/callsNative.json",
+    "src/i18n/pl/chatNative.json",
+    "src/i18n/pt/callsNative.json",
+    "src/i18n/pt/chatNative.json",
+    "src/i18n/ru/callsNative.json",
+    "src/i18n/ru/chatNative.json",
+    "src/i18n/sr/callsNative.json",
+    "src/i18n/sr/chatNative.json",
+    "src/i18n/tr/callsNative.json",
+    "src/i18n/tr/chatNative.json",
+    "src/i18n/zh/callsNative.json",
+    "src/i18n/zh/chatNative.json"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "I18N-PROPAGATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "i18n-check.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PREVIEW-DEPLOY-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "NATIVE-CI.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "failure"
+    }
+   }
+  },
+  {
+   "number": 1564,
+   "title": "VTID-05459 (native-wave2-inbox-chat-calls-r2/inbox-list): native inbox list port",
+   "merged_at": "2026-11-05T13:38:35Z",
+   "head_sha": "ef31381ecb7d9fe0076951bfc3e27fb8b7d654d2",
+   "files": [
+    "apps/mobile/app.config.ts",
+    "apps/mobile/app/(app)/inbox/archived.tsx",
+    "apps/mobile/app/(app)/inbox/index.tsx",
+    "apps/mobile/app/(app)/inbox/inspiration.tsx",
+    "apps/mobile/maestro/inbox-chat/inbox-list/README.md",
+    "apps/mobile/package-lock.json",
+    "apps/mobile/package.json",
+    "apps/mobile/parity/ledger.json",
+    "apps/mobile/src/navigation/resolve.ts",
+    "apps/mobile/src/ports/badges.ts",
+    "apps/mobile/src/ports/inbox.tsx",
+    "apps/mobile/src/ports/links.ts",
+    "apps/mobile/src/screens/inbox/ArchivedScreen.tsx",
+    "apps/mobile/src/screens/inbox/ContactsTab.tsx",
+    "apps/mobile/src/screens/inbox/FindFriendsSheet.tsx",
+    "apps/mobile/src/screens/inbox/InboxScreen.tsx",
+    "apps/mobile/src/screens/inbox/InspirationScreen.tsx",
+    "apps/mobile/src/screens/inbox/MessageSearchSheet.tsx",
+    "apps/mobile/src/screens/inbox/NewConversationSheet.tsx",
+    "apps/mobile/src/screens/inbox/components.tsx",
+    "apps/mobile/src/screens/inbox/data/chat-api.ts",
+    "apps/mobile/src/screens/inbox/data/contact-sync.ts",
+    "apps/mobile/src/screens/inbox/data/contacts.ts",
+    "apps/mobile/src/screens/inbox/data/directory.ts",
+    "apps/mobile/src/screens/inbox/data/global-threads.ts",
+    "apps/mobile/src/screens/inbox/data/inbox.ts",
+    "apps/mobile/src/screens/inbox/data/message-search.ts",
+    "apps/mobile/src/screens/inbox/data/presence.ts",
+    "apps/mobile/src/screens/inbox/data/realtime.ts",
+    "apps/mobile/src/screens/inbox/data/tenant-threads.ts",
+    "apps/mobile/src/screens/inbox/data/threads-model.ts",
+    "apps/mobile/src/screens/inbox/data/unread.ts",
+    "apps/mobile/src/screens/inbox/data/vcard.ts",
+    "apps/mobile/src/screens/inbox/text.ts",
+    "apps/mobile/tests/app-config.test.ts",
+    "apps/mobile/tests/inbox-chat/inbox-list/app-config-contacts.test.ts",
+    "apps/mobile/tests/inbox-chat/inbox-list/archived-inspiration.test.tsx",
+    "apps/mobile/tests/inbox-chat/inbox-list/contacts.test.tsx",
+    "apps/mobile/tests/inbox-chat/inbox-list/find-friends.test.tsx",
+    "apps/mobile/tests/inbox-chat/inbox-list/helpers.tsx",
+    "apps/mobile/tests/inbox-chat/inbox-list/inbox.test.tsx",
+    "apps/mobile/tests/inbox-chat/inbox-list/message-search.test.tsx",
+    "apps/mobile/tests/inbox-chat/inbox-list/mocks.ts",
+    "apps/mobile/tests/inbox-chat/inbox-list/new-conversation.test.tsx",
+    "apps/mobile/tests/inbox-chat/inbox-list/presence.test.tsx",
+    "apps/mobile/tests/inbox-chat/inbox-list/routes-i18n.test.tsx",
+    "docs/validation/VTID-05459/commands.log",
+    "docs/validation/VTID-05459/lane-brief.md",
+    "docs/validation/VTID-05459/plan-sparring.md",
+    "docs/validation/VTID-05459/red-fix1.txt",
+    "docs/validation/VTID-05459/red-on-base.txt",
+    "docs/validation/VTID-05459/scope.json",
+    "docs/validation/VTID-05459/staging-tests.json",
+    "docs/validation/VTID-05459/verification.md",
+    "src/i18n/ar/inboxNative.json",
+    "src/i18n/de/inboxNative.json",
+    "src/i18n/en/inboxNative.json",
+    "src/i18n/es/inboxNative.json",
+    "src/i18n/fr/inboxNative.json",
+    "src/i18n/pl/inboxNative.json",
+    "src/i18n/pt/inboxNative.json",
+    "src/i18n/ru/inboxNative.json",
+    "src/i18n/sr/inboxNative.json",
+    "src/i18n/tr/inboxNative.json",
+    "src/i18n/zh/inboxNative.json"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "failure"
+    },
+    "I18N-PROPAGATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "i18n-check.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PREVIEW-DEPLOY-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "NATIVE-CI.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 1593,
+   "title": "VTID-05291 (desktop-spotlight-finish/public-profile): restore the guarded profile-lookup answer in the staging spec",
+   "merged_at": "2026-11-05T10:21:32Z",
+   "head_sha": "f9aad60da5b24528994238a8e8f2b02bbf14ada1",
+   "files": [
+    "tests/e2e/staging/vtid-05291-public-profile.staging.spec.ts"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 1554,
+   "title": "VTID-05449 (native-wave2-public-auth-onboarding-r3/auth-portals): native auth portals port",
+   "merged_at": "2026-11-05T09:05:28Z",
+   "head_sha": "67326190425965b4da0fe471e5d68bd6ea1a2747",
+   "files": [
+    "apps/mobile/app/(app)/oauth/consent.tsx",
+    "apps/mobile/app/(public)/[tenantSlug].tsx",
+    "apps/mobile/app/(public)/alkalma.tsx",
+    "apps/mobile/app/(public)/alkalma/confirmed.tsx",
+    "apps/mobile/app/(public)/auth/confirmed.tsx",
+    "apps/mobile/app/(public)/maxina.tsx",
+    "apps/mobile/app/(public)/maxina/confirmed.tsx",
+    "apps/mobile/maestro/auth/README.md",
+    "apps/mobile/parity/ledger.json",
+    "apps/mobile/src/auth/link-bridge.ts",
+    "apps/mobile/src/auth/oauth-consent.ts",
+    "apps/mobile/src/auth/post-confirm.ts",
+    "apps/mobile/src/auth/sign-in.ts",
+    "apps/mobile/src/navigation/resolve.ts",
+    "apps/mobile/src/ports/auth.tsx",
+    "apps/mobile/src/screens/auth/ConfirmedScreen.tsx",
+    "apps/mobile/src/screens/auth/LogoutScreen.tsx",
+    "apps/mobile/src/screens/auth/OAuthCompleteScreen.tsx",
+    "apps/mobile/src/screens/auth/OAuthConsentScreen.tsx",
+    "apps/mobile/src/screens/auth/PortalChrome.tsx",
+    "apps/mobile/src/screens/auth/PortalScreen.tsx",
+    "apps/mobile/src/screens/auth/ResetPasswordScreen.tsx",
+    "apps/mobile/src/screens/auth/TenantPortalScreen.tsx",
+    "apps/mobile/src/screens/auth/tenant-portal-data.ts",
+    "apps/mobile/tests/auth/confirm-links.test.tsx",
+    "apps/mobile/tests/auth/helpers.tsx",
+    "apps/mobile/tests/auth/i18n-rtl.test.tsx",
+    "apps/mobile/tests/auth/oauth-reset-logout.test.tsx",
+    "apps/mobile/tests/auth/portals.test.tsx",
+    "docs/validation/VTID-05449/commands.log",
+    "docs/validation/VTID-05449/plan-sparring.md",
+    "docs/validation/VTID-05449/red-on-base.txt",
+    "docs/validation/VTID-05449/scope.json",
+    "docs/validation/VTID-05449/staging-tests.json",
+    "docs/validation/VTID-05449/verification.md",
+    "packages/core/extract.json",
+    "packages/core/src/extracted/tenants.generated.ts",
+    "src/i18n/ar/authPortalsNative.json",
+    "src/i18n/de/authPortalsNative.json",
+    "src/i18n/en/authPortalsNative.json",
+    "src/i18n/es/authPortalsNative.json",
+    "src/i18n/fr/authPortalsNative.json",
+    "src/i18n/pl/authPortalsNative.json",
+    "src/i18n/pt/authPortalsNative.json",
+    "src/i18n/ru/authPortalsNative.json",
+    "src/i18n/sr/authPortalsNative.json",
+    "src/i18n/tr/authPortalsNative.json",
+    "src/i18n/zh/authPortalsNative.json"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "NATIVE-CI.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "I18N-PROPAGATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "i18n-check.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PREVIEW-DEPLOY-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 1553,
+   "title": "VTID-05451 (native-wave2-public-auth-onboarding-r3/public-legal): native public and legal screens port",
+   "merged_at": "2026-11-05T08:18:44Z",
+   "head_sha": "ad4b957efe682cdbe8e2a44f0b95443e1c78a80f",
+   "files": [
+    "apps/mobile/app/(public)/_intro/[tenantSlug].tsx",
+    "apps/mobile/app/(public)/apply.tsx",
+    "apps/mobile/app/(public)/i/[code].tsx",
+    "apps/mobile/app/(public)/maxina_support.tsx",
+    "apps/mobile/app/(public)/privacy.tsx",
+    "apps/mobile/app/(public)/terms.tsx",
+    "apps/mobile/maestro/public/README.md",
+    "apps/mobile/parity/ledger.json",
+    "apps/mobile/src/navigation/resolve.ts",
+    "apps/mobile/src/ports/public.tsx",
+    "apps/mobile/src/screens/public/ApplyScreen.tsx",
+    "apps/mobile/src/screens/public/IntroScreen.tsx",
+    "apps/mobile/src/screens/public/InviteLandingScreen.tsx",
+    "apps/mobile/src/screens/public/LegalScreens.tsx",
+    "apps/mobile/src/screens/public/MaxinaSupportScreen.tsx",
+    "apps/mobile/src/screens/public/PublicLandingScreen.tsx",
+    "apps/mobile/src/screens/public/apply-form.ts",
+    "apps/mobile/src/screens/public/invite.ts",
+    "apps/mobile/src/screens/public/legal-content.ts",
+    "apps/mobile/src/screens/public/legal.tsx",
+    "apps/mobile/tests/public/apply-intro.test.tsx",
+    "apps/mobile/tests/public/helpers.tsx",
+    "apps/mobile/tests/public/i18n-routes.test.tsx",
+    "apps/mobile/tests/public/landing-invite.test.tsx",
+    "apps/mobile/tests/public/legal.test.tsx",
+    "apps/mobile/tests/public/routing.test.tsx",
+    "docs/validation/VTID-05451/commands.log",
+    "docs/validation/VTID-05451/plan-sparring.md",
+    "docs/validation/VTID-05451/red-on-base.txt",
+    "docs/validation/VTID-05451/scope.json",
+    "docs/validation/VTID-05451/staging-tests.json",
+    "docs/validation/VTID-05451/verification.md",
+    "src/i18n/ar/publicLegalNative.json",
+    "src/i18n/de/publicLegalNative.json",
+    "src/i18n/en/publicLegalNative.json",
+    "src/i18n/es/publicLegalNative.json",
+    "src/i18n/fr/publicLegalNative.json",
+    "src/i18n/pl/publicLegalNative.json",
+    "src/i18n/pt/publicLegalNative.json",
+    "src/i18n/ru/publicLegalNative.json",
+    "src/i18n/sr/publicLegalNative.json",
+    "src/i18n/tr/publicLegalNative.json",
+    "src/i18n/zh/publicLegalNative.json"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "NATIVE-CI.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "i18n-check.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "I18N-PROPAGATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PREVIEW-DEPLOY-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 1558,
+   "title": "VTID-05423 (native-wave2-wallet-r2/wallet-redeem): native redeem port",
+   "merged_at": "2026-11-05T00:34:50Z",
+   "head_sha": "9dcd2a0758c97e461660b6e8d769a521af3ab55e",
+   "files": [
+    "apps/mobile/app/(public)/redeem.tsx",
+    "apps/mobile/maestro/wallet-redeem/README.md",
+    "apps/mobile/parity/ledger.json",
+    "apps/mobile/src/navigation/resolve.ts",
+    "apps/mobile/src/ports/wallet-redeem.tsx",
+    "apps/mobile/src/screens/wallet-redeem/RedeemScreen.tsx",
+    "apps/mobile/src/screens/wallet-redeem/Redemption.tsx",
+    "apps/mobile/src/screens/wallet-redeem/data/vouchers.ts",
+    "apps/mobile/src/screens/wallet-redeem/tiers.ts",
+    "apps/mobile/tests/wallet-redeem/helpers.tsx",
+    "apps/mobile/tests/wallet-redeem/mocks.ts",
+    "apps/mobile/tests/wallet-redeem/redeem.test.tsx",
+    "apps/mobile/tests/wallet-redeem/route-gate-i18n.test.tsx",
+    "docs/validation/VTID-05423/commands.log",
+    "docs/validation/VTID-05423/plan-sparring.md",
+    "docs/validation/VTID-05423/red-on-base.txt",
+    "docs/validation/VTID-05423/scope.json",
+    "docs/validation/VTID-05423/staging-tests.json",
+    "docs/validation/VTID-05423/verification.md",
+    "src/i18n/ar/walletRedeemNative.json",
+    "src/i18n/de/walletRedeemNative.json",
+    "src/i18n/en/walletRedeemNative.json",
+    "src/i18n/es/walletRedeemNative.json",
+    "src/i18n/fr/walletRedeemNative.json",
+    "src/i18n/pl/walletRedeemNative.json",
+    "src/i18n/pt/walletRedeemNative.json",
+    "src/i18n/ru/walletRedeemNative.json",
+    "src/i18n/sr/walletRedeemNative.json",
+    "src/i18n/tr/walletRedeemNative.json",
+    "src/i18n/zh/walletRedeemNative.json"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "I18N-PROPAGATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "NATIVE-CI.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PREVIEW-DEPLOY-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "i18n-check.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 1551,
+   "title": "VTID-05425 (native-wave2-wallet-r2/wallet-subscriptions): native wallet subscriptions port",
+   "merged_at": "2026-11-04T23:57:56Z",
+   "head_sha": "38b6798ed60eccf2782a0d084f619a4b7078b66a",
+   "files": [
+    "apps/mobile/app/(app)/profile/subscriptions.tsx",
+    "apps/mobile/app/(app)/wallet/subscriptions.tsx",
+    "apps/mobile/maestro/wallet-subscriptions/README.md",
+    "apps/mobile/parity/ledger.json",
+    "apps/mobile/src/navigation/resolve.ts",
+    "apps/mobile/src/ports/billing.tsx",
+    "apps/mobile/src/screens/wallet-subscriptions/ProfileSubscriptionsScreen.tsx",
+    "apps/mobile/src/screens/wallet-subscriptions/SubscriptionsScreen.tsx",
+    "apps/mobile/src/screens/wallet-subscriptions/components/Banners.tsx",
+    "apps/mobile/src/screens/wallet-subscriptions/components/Frame.tsx",
+    "apps/mobile/src/screens/wallet-subscriptions/components/IntervalToggle.tsx",
+    "apps/mobile/src/screens/wallet-subscriptions/components/PlanState.tsx",
+    "apps/mobile/src/screens/wallet-subscriptions/components/Plans.tsx",
+    "apps/mobile/src/screens/wallet-subscriptions/components/RedeemCodeCard.tsx",
+    "apps/mobile/src/screens/wallet-subscriptions/data/actions.ts",
+    "apps/mobile/src/screens/wallet-subscriptions/data/billing.ts",
+    "apps/mobile/src/screens/wallet-subscriptions/format.ts",
+    "apps/mobile/tests/wallet-subscriptions/billing-requests.test.tsx",
+    "apps/mobile/tests/wallet-subscriptions/fixtures.tsx",
+    "apps/mobile/tests/wallet-subscriptions/iap-parity.test.tsx",
+    "apps/mobile/tests/wallet-subscriptions/mocks.ts",
+    "apps/mobile/tests/wallet-subscriptions/return-leg.test.tsx",
+    "apps/mobile/tests/wallet-subscriptions/routing-i18n.test.tsx",
+    "apps/mobile/tests/wallet-subscriptions/subscriptions.test.tsx",
+    "docs/validation/VTID-05425/commands.log",
+    "docs/validation/VTID-05425/plan-sparring.md",
+    "docs/validation/VTID-05425/red-fix1.txt",
+    "docs/validation/VTID-05425/red-fix2.txt",
+    "docs/validation/VTID-05425/red-on-base.txt",
+    "docs/validation/VTID-05425/scope.json",
+    "docs/validation/VTID-05425/staging-tests.json",
+    "docs/validation/VTID-05425/verification.md",
+    "src/i18n/ar/walletSubscriptionsNative.json",
+    "src/i18n/de/walletSubscriptionsNative.json",
+    "src/i18n/en/walletSubscriptionsNative.json",
+    "src/i18n/es/walletSubscriptionsNative.json",
+    "src/i18n/fr/walletSubscriptionsNative.json",
+    "src/i18n/pl/walletSubscriptionsNative.json",
+    "src/i18n/pt/walletSubscriptionsNative.json",
+    "src/i18n/ru/walletSubscriptionsNative.json",
+    "src/i18n/sr/walletSubscriptionsNative.json",
+    "src/i18n/tr/walletSubscriptionsNative.json",
+    "src/i18n/zh/walletSubscriptionsNative.json"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "I18N-PROPAGATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PREVIEW-DEPLOY-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "NATIVE-CI.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "i18n-check.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 1550,
+   "title": "VTID-05424 (native-wave2-wallet-r2/wallet-rewards): native wallet rewards port",
+   "merged_at": "2026-11-04T23:04:04Z",
+   "head_sha": "d84ac255045a8c8cd0379d6f29be443f23ec067d",
+   "files": [
+    "apps/mobile/app/(app)/wallet/rewards.tsx",
+    "apps/mobile/maestro/wallet-rewards/README.md",
+    "apps/mobile/parity/ledger.json",
+    "apps/mobile/src/navigation/resolve.ts",
+    "apps/mobile/src/ports/wallet-rewards.ts",
+    "apps/mobile/src/screens/wallet-rewards/EarnMore.tsx",
+    "apps/mobile/src/screens/wallet-rewards/RewardRules.tsx",
+    "apps/mobile/src/screens/wallet-rewards/RewardShop.tsx",
+    "apps/mobile/src/screens/wallet-rewards/RewardsScreen.tsx",
+    "apps/mobile/src/screens/wallet-rewards/data/actions.ts",
+    "apps/mobile/src/screens/wallet-rewards/data/currency.ts",
+    "apps/mobile/src/screens/wallet-rewards/data/rewards.ts",
+    "apps/mobile/src/screens/wallet-rewards/format.ts",
+    "apps/mobile/src/screens/wallet-rewards/iap.ts",
+    "apps/mobile/tests/wallet-rewards/fixtures.tsx",
+    "apps/mobile/tests/wallet-rewards/iap-gate.test.tsx",
+    "apps/mobile/tests/wallet-rewards/mocks.ts",
+    "apps/mobile/tests/wallet-rewards/rewards.test.tsx",
+    "docs/validation/VTID-05424/commands.log",
+    "docs/validation/VTID-05424/plan-sparring.md",
+    "docs/validation/VTID-05424/red-fix1.txt",
+    "docs/validation/VTID-05424/red-on-base.txt",
+    "docs/validation/VTID-05424/scope.json",
+    "docs/validation/VTID-05424/staging-tests.json",
+    "docs/validation/VTID-05424/verification.md",
+    "src/i18n/ar/walletRewardsNative.json",
+    "src/i18n/de/walletRewardsNative.json",
+    "src/i18n/en/walletRewardsNative.json",
+    "src/i18n/es/walletRewardsNative.json",
+    "src/i18n/fr/walletRewardsNative.json",
+    "src/i18n/pl/walletRewardsNative.json",
+    "src/i18n/pt/walletRewardsNative.json",
+    "src/i18n/ru/walletRewardsNative.json",
+    "src/i18n/sr/walletRewardsNative.json",
+    "src/i18n/tr/walletRewardsNative.json",
+    "src/i18n/zh/walletRewardsNative.json"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "NATIVE-CI.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "i18n-check.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PREVIEW-DEPLOY-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "I18N-PROPAGATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 1549,
+   "title": "VTID-05422 (native-wave2-wallet-r2/wallet-home): native wallet home port",
+   "merged_at": "2026-11-04T21:57:29Z",
+   "head_sha": "63232828729c38f25f04c5ab7bc1b574d348e350",
+   "files": [
+    "apps/mobile/app/(app)/wallet/balance.tsx",
+    "apps/mobile/app/(app)/wallet/index.tsx",
+    "apps/mobile/maestro/wallet-home/README.md",
+    "apps/mobile/parity/ledger.json",
+    "apps/mobile/src/navigation/resolve.ts",
+    "apps/mobile/src/ports/ui.tsx",
+    "apps/mobile/src/ports/wallet.ts",
+    "apps/mobile/src/screens/wallet-home/BalanceScreen.tsx",
+    "apps/mobile/src/screens/wallet-home/WalletScreen.tsx",
+    "apps/mobile/src/screens/wallet-home/components/BalanceCard.tsx",
+    "apps/mobile/src/screens/wallet-home/components/CurrencyToggle.tsx",
+    "apps/mobile/src/screens/wallet-home/components/InsightCard.tsx",
+    "apps/mobile/src/screens/wallet-home/components/QuickActions.tsx",
+    "apps/mobile/src/screens/wallet-home/components/TransactionList.tsx",
+    "apps/mobile/src/screens/wallet-home/components/WalletFlowSheet.tsx",
+    "apps/mobile/src/screens/wallet-home/components/WalletMasterActionSheet.tsx",
+    "apps/mobile/src/screens/wallet-home/data/actions.ts",
+    "apps/mobile/src/screens/wallet-home/data/currency.ts",
+    "apps/mobile/src/screens/wallet-home/data/depositReturn.ts",
+    "apps/mobile/src/screens/wallet-home/data/flows.ts",
+    "apps/mobile/src/screens/wallet-home/data/wallet.ts",
+    "apps/mobile/src/screens/wallet-home/format.ts",
+    "apps/mobile/src/screens/wallet-home/iap.ts",
+    "apps/mobile/tests/wallet-home/exchange-rates.test.ts",
+    "apps/mobile/tests/wallet-home/fixtures.ts",
+    "apps/mobile/tests/wallet-home/iap-gate.test.tsx",
+    "apps/mobile/tests/wallet-home/mocks.ts",
+    "apps/mobile/tests/wallet-home/wallet-actions.test.tsx",
+    "apps/mobile/tests/wallet-home/wallet-home.test.tsx",
+    "apps/mobile/tests/wallet-home/wallet-steps.test.tsx",
+    "docs/validation/VTID-05422/commands.log",
+    "docs/validation/VTID-05422/plan-sparring.md",
+    "docs/validation/VTID-05422/red-fix1.txt",
+    "docs/validation/VTID-05422/red-fix2.txt",
+    "docs/validation/VTID-05422/red-on-base.txt",
+    "docs/validation/VTID-05422/scope.json",
+    "docs/validation/VTID-05422/staging-tests.json",
+    "docs/validation/VTID-05422/verification.md",
+    "packages/core/closure.generated.json",
+    "packages/core/manifest.json",
+    "packages/core/src/exchangeRates.ts",
+    "scripts/native/mobile-ci-paths.generated.json",
+    "src/i18n/ar/walletHomeNative.json",
+    "src/i18n/de/walletHomeNative.json",
+    "src/i18n/en/walletHomeNative.json",
+    "src/i18n/es/walletHomeNative.json",
+    "src/i18n/fr/walletHomeNative.json",
+    "src/i18n/pl/walletHomeNative.json",
+    "src/i18n/pt/walletHomeNative.json",
+    "src/i18n/ru/walletHomeNative.json",
+    "src/i18n/sr/walletHomeNative.json",
+    "src/i18n/tr/walletHomeNative.json",
+    "src/i18n/zh/walletHomeNative.json"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "I18N-PROPAGATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PREVIEW-DEPLOY-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "i18n-check.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "NATIVE-CI.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 1542,
+   "title": "VTID-05429 (native-wave2-profile-settings-r2/profile): native profile port",
+   "merged_at": "2026-11-03T20:25:01Z",
+   "head_sha": "fc4f3ec62236b4039de1b0a049c904908cbe4ac9",
+   "files": [
+    "apps/mobile/app/(app)/me/profile.tsx",
+    "apps/mobile/app/(app)/profile/me/privacy.tsx",
+    "apps/mobile/maestro/profile/README.md",
+    "apps/mobile/parity/ledger.json",
+    "apps/mobile/src/navigation/resolve.ts",
+    "apps/mobile/src/ports/profile-media.ts",
+    "apps/mobile/src/ports/profile-ui.ts",
+    "apps/mobile/src/ports/profile.ts",
+    "apps/mobile/src/screens/profile/MyProfileScreen.tsx",
+    "apps/mobile/src/screens/profile/PrivacyScreen.tsx",
+    "apps/mobile/src/screens/profile/ProfileCards.tsx",
+    "apps/mobile/src/screens/profile/ProfileMedia.tsx",
+    "apps/mobile/src/screens/profile/ProfileSheets.tsx",
+    "apps/mobile/src/screens/profile/ProfileTabs.tsx",
+    "apps/mobile/src/screens/profile/components.tsx",
+    "apps/mobile/src/screens/profile/data/profile.ts",
+    "apps/mobile/src/screens/profile/data/uploads.ts",
+    "apps/mobile/src/screens/profile/media.ts",
+    "apps/mobile/src/screens/profile/useVisibilityCycle.ts",
+    "apps/mobile/tests/profile/data.test.ts",
+    "apps/mobile/tests/profile/helpers.tsx",
+    "apps/mobile/tests/profile/i18n-rtl.test.tsx",
+    "apps/mobile/tests/profile/mocks.ts",
+    "apps/mobile/tests/profile/my-profile.test.tsx",
+    "apps/mobile/tests/profile/privacy.test.tsx",
+    "apps/mobile/tests/profile/uploads.test.tsx",
+    "docs/validation/VTID-05429/commands.log",
+    "docs/validation/VTID-05429/lane-brief.md",
+    "docs/validation/VTID-05429/plan-sparring.md",
+    "docs/validation/VTID-05429/red-fix1.txt",
+    "docs/validation/VTID-05429/red-on-base.txt",
+    "docs/validation/VTID-05429/scope.json",
+    "docs/validation/VTID-05429/staging-tests.json",
+    "docs/validation/VTID-05429/verification.md",
+    "src/i18n/ar/profileNative.json",
+    "src/i18n/de/profileNative.json",
+    "src/i18n/en/profileNative.json",
+    "src/i18n/es/profileNative.json",
+    "src/i18n/fr/profileNative.json",
+    "src/i18n/pl/profileNative.json",
+    "src/i18n/pt/profileNative.json",
+    "src/i18n/ru/profileNative.json",
+    "src/i18n/sr/profileNative.json",
+    "src/i18n/tr/profileNative.json",
+    "src/i18n/zh/profileNative.json"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PREVIEW-DEPLOY-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "i18n-check.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "I18N-PROPAGATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "NATIVE-CI.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 1578,
+   "title": "fix(mobile): make matches list scrollable",
+   "merged_at": "2026-11-03T16:19:24Z",
+   "head_sha": "fc4f5a62c955c985aecca308cddc49863e996c74",
+   "files": [
+    "apps/mobile/src/shell/components/MobileAppShell.tsx"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "NATIVE-CI.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 1574,
+   "title": "VTID-05519 (eng-platform-p01/stage-oidc-v1): staging and PR-preview workflows use OIDC when configured",
+   "merged_at": "2026-11-03T14:40:23Z",
+   "head_sha": "7a1a1451d377208117bef155f95309e38bf0cf0f",
+   "files": [
+    ".github/workflows/AWS-STAGE-DEPLOY-FRONTEND.yml",
+    ".github/workflows/PREVIEW-DEPLOY-FRONTEND.yml",
+    ".github/workflows/PREVIEW-TEARDOWN-FRONTEND.yml",
+    "docs/validation/VTID-05519/acceptance.md",
+    "docs/validation/VTID-05519/commands.log",
+    "docs/validation/VTID-05519/red-on-base.txt",
+    "docs/validation/VTID-05519/scope.json",
+    "docs/validation/VTID-05519/staging-tests.json",
+    "src/lib/eng-platform-stage-oidc.test.ts"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "NATIVE-CI.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PREVIEW-DEPLOY-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "i18n-check.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 1580,
+   "title": "docs(agents): run end to end to verified staging",
+   "merged_at": "2026-11-03T14:17:35Z",
+   "head_sha": "2d623b20d66f1bbf9d2a87036b2d8263278b2bf1",
+   "files": [
+    "AGENTS.md"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 1546,
+   "title": "VTID-05431 (native-wave2-profile-settings-r2/settings): native settings hub port",
+   "merged_at": "2026-11-02T22:32:06Z",
+   "head_sha": "f6848466a84dd3a2b8bb376f2facc241370be872",
+   "files": [
+    "apps/mobile/app/(app)/settings/index.tsx",
+    "apps/mobile/app/(app)/settings/limitations.tsx",
+    "apps/mobile/app/(app)/settings/preferences.tsx",
+    "apps/mobile/app/(app)/settings/tenant-role.tsx",
+    "apps/mobile/maestro/settings/README.md",
+    "apps/mobile/parity/ledger.json",
+    "apps/mobile/src/navigation/resolve.ts",
+    "apps/mobile/src/ports/settings-ui.tsx",
+    "apps/mobile/src/screens/settings/LimitationsScreen.tsx",
+    "apps/mobile/src/screens/settings/PreferencesRedirect.tsx",
+    "apps/mobile/src/screens/settings/SettingsScreen.tsx",
+    "apps/mobile/src/screens/settings/TenantRoleScreen.tsx",
+    "apps/mobile/src/screens/settings/components.tsx",
+    "apps/mobile/src/screens/settings/data/hooks.ts",
+    "apps/mobile/src/screens/settings/data/requests.ts",
+    "apps/mobile/src/screens/settings/format.ts",
+    "apps/mobile/src/screens/settings/sections.ts",
+    "apps/mobile/src/screens/settings/sections/BillingSection.tsx",
+    "apps/mobile/src/screens/settings/sections/NotificationsSection.tsx",
+    "apps/mobile/src/screens/settings/sections/PreferencesSections.tsx",
+    "apps/mobile/src/screens/settings/sections/PrivacySections.tsx",
+    "apps/mobile/tests/navigation.test.tsx",
+    "apps/mobile/tests/orb/nav-directive.test.ts",
+    "apps/mobile/tests/settings/helpers.tsx",
+    "apps/mobile/tests/settings/i18n-rtl.test.tsx",
+    "apps/mobile/tests/settings/mocks.ts",
+    "apps/mobile/tests/settings/settings-hub.test.tsx",
+    "apps/mobile/tests/settings/sub-screens.test.tsx",
+    "docs/validation/VTID-05431/commands.log",
+    "docs/validation/VTID-05431/plan-sparring.md",
+    "docs/validation/VTID-05431/red-on-base.txt",
+    "docs/validation/VTID-05431/scope.json",
+    "docs/validation/VTID-05431/staging-tests.json",
+    "docs/validation/VTID-05431/verification.md",
+    "src/i18n/ar/settingsNative.json",
+    "src/i18n/de/settingsNative.json",
+    "src/i18n/en/settingsNative.json",
+    "src/i18n/es/settingsNative.json",
+    "src/i18n/fr/settingsNative.json",
+    "src/i18n/pl/settingsNative.json",
+    "src/i18n/pt/settingsNative.json",
+    "src/i18n/ru/settingsNative.json",
+    "src/i18n/sr/settingsNative.json",
+    "src/i18n/tr/settingsNative.json",
+    "src/i18n/zh/settingsNative.json"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "I18N-PROPAGATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PREVIEW-DEPLOY-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "i18n-check.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "NATIVE-CI.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "failure"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 1572,
+   "title": "VTID-05418 (spotlight-card-proportion/find-a-match): staging spec, Spotlight <=45% and two-row fit (STAGING-VERIFY round 2)",
+   "merged_at": "2026-11-02T20:50:43Z",
+   "head_sha": "ed4538024f8cd4fceba08c655a827d141be7ba3f",
+   "files": [
+    "tests/e2e/staging/vtid-05418-find-match-spotlight-grid.staging.spec.ts"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 1571,
+   "title": "VTID-05417 (spotlight-card-proportion/events): staging spec, Spotlight <=45% and two-row fit (STAGING-VERIFY round 2)",
+   "merged_at": "2026-11-02T20:50:37Z",
+   "head_sha": "e222ace1896ca722504a64da2de81bd8aefb9eb9",
+   "files": [
+    "tests/e2e/staging/vtid-05417-events-spotlight-grid.staging.spec.ts"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 1570,
+   "title": "VTID-05416 (spotlight-card-proportion/discover): staging spec, Discover button never clips, Spotlight <=45% (STAGING-VERIFY round 2)",
+   "merged_at": "2026-11-02T20:50:32Z",
+   "head_sha": "78556474760e1694db59df585b6d7eb2e7700c17",
+   "files": [
+    "tests/e2e/staging/vtid-05416-discover-spotlight-grid.staging.spec.ts"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "failure"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 1569,
+   "title": "VTID-05419 (spotlight-card-proportion/health): Index ring shows the VCard Spotlight art, full pillar names (STAGING-VERIFY round 2)",
+   "merged_at": "2026-11-02T20:50:13Z",
+   "head_sha": "045bd38c9355db3504d1b6abf78f194bfe1c1e5c",
+   "files": [
+    "src/components/spotlight/tier-b/VitanaIndexHeroCard.tsx",
+    "src/pages/spotlight-tier-b.vtid-05111.test.tsx"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PREVIEW-DEPLOY-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "cancelled"
+    },
+    "i18n-check.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "NATIVE-CI.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 1543,
+   "title": "VTID-05432 (native-wave2-profile-settings-r2/support-connectors): native support and connectors port",
+   "merged_at": "2026-11-02T20:21:21Z",
+   "head_sha": "32515b30453ac5022a999e062aeda67953a871f9",
+   "files": [
+    "apps/mobile/app/(app)/connectors.tsx",
+    "apps/mobile/app/(app)/settings/connected-apps.tsx",
+    "apps/mobile/app/(app)/support.tsx",
+    "apps/mobile/maestro/support/README.md",
+    "apps/mobile/parity/ledger.json",
+    "apps/mobile/src/navigation/resolve.ts",
+    "apps/mobile/src/ports/support.ts",
+    "apps/mobile/src/ports/ui.tsx",
+    "apps/mobile/src/screens/support/AgentChannelsPanel.tsx",
+    "apps/mobile/src/screens/support/ConnectorsScreen.tsx",
+    "apps/mobile/src/screens/support/IntegrationSection.tsx",
+    "apps/mobile/src/screens/support/MailHubSection.tsx",
+    "apps/mobile/src/screens/support/MyTicketsList.tsx",
+    "apps/mobile/src/screens/support/SupportScreen.tsx",
+    "apps/mobile/src/screens/support/components.tsx",
+    "apps/mobile/src/screens/support/data/connectors.ts",
+    "apps/mobile/src/screens/support/data/tickets.ts",
+    "apps/mobile/src/screens/support/format.ts",
+    "apps/mobile/tests/support/connectors.test.tsx",
+    "apps/mobile/tests/support/helpers.tsx",
+    "apps/mobile/tests/support/i18n.test.tsx",
+    "apps/mobile/tests/support/mocks.ts",
+    "apps/mobile/tests/support/routes.test.ts",
+    "apps/mobile/tests/support/support.test.tsx",
+    "docs/validation/VTID-05432/commands.log",
+    "docs/validation/VTID-05432/plan-sparring.md",
+    "docs/validation/VTID-05432/red-on-base.txt",
+    "docs/validation/VTID-05432/scope.json",
+    "docs/validation/VTID-05432/staging-tests.json",
+    "docs/validation/VTID-05432/verification.md",
+    "src/i18n/ar/supportNative.json",
+    "src/i18n/de/supportNative.json",
+    "src/i18n/en/supportNative.json",
+    "src/i18n/es/supportNative.json",
+    "src/i18n/fr/supportNative.json",
+    "src/i18n/pl/supportNative.json",
+    "src/i18n/pt/supportNative.json",
+    "src/i18n/ru/supportNative.json",
+    "src/i18n/sr/supportNative.json",
+    "src/i18n/tr/supportNative.json",
+    "src/i18n/zh/supportNative.json"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "NATIVE-CI.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "I18N-PROPAGATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PREVIEW-DEPLOY-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "i18n-check.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 1541,
+   "title": "VTID-05430 (native-wave2-profile-settings-r2/public-profile): native public profile and legacy redirect port",
+   "merged_at": "2026-11-02T16:03:08Z",
+   "head_sha": "6efd9921dbf391301165e5fccbfaed1b86a484ed",
+   "files": [
+    "apps/mobile/app/(public)/profile/[id].tsx",
+    "apps/mobile/app/(public)/u/[identifier].tsx",
+    "apps/mobile/maestro/public-profile/README.md",
+    "apps/mobile/parity/ledger.json",
+    "apps/mobile/src/ports/ui.tsx",
+    "apps/mobile/src/ports/user-groups.ts",
+    "apps/mobile/src/screens/public-profile/LegacyProfileRedirectScreen.tsx",
+    "apps/mobile/src/screens/public-profile/PublicProfileLanding.tsx",
+    "apps/mobile/src/screens/public-profile/PublicProfileMemberView.tsx",
+    "apps/mobile/src/screens/public-profile/PublicProfileScreen.tsx",
+    "apps/mobile/src/screens/public-profile/data/profile.ts",
+    "apps/mobile/src/screens/public-profile/format.ts",
+    "apps/mobile/src/screens/public-profile/legacy-redirect.ts",
+    "apps/mobile/src/screens/public-profile/types.ts",
+    "apps/mobile/tests/public-profile/fake-client.ts",
+    "apps/mobile/tests/public-profile/fixtures.ts",
+    "apps/mobile/tests/public-profile/i18n.test.tsx",
+    "apps/mobile/tests/public-profile/mocks.ts",
+    "apps/mobile/tests/public-profile/public-profile.test.tsx",
+    "docs/validation/VTID-05430/commands.log",
+    "docs/validation/VTID-05430/plan-sparring.md",
+    "docs/validation/VTID-05430/red-on-base.txt",
+    "docs/validation/VTID-05430/scope.json",
+    "docs/validation/VTID-05430/staging-tests.json",
+    "docs/validation/VTID-05430/verification.md",
+    "src/i18n/ar/publicProfileNative.json",
+    "src/i18n/de/publicProfileNative.json",
+    "src/i18n/en/publicProfileNative.json",
+    "src/i18n/es/publicProfileNative.json",
+    "src/i18n/fr/publicProfileNative.json",
+    "src/i18n/pl/publicProfileNative.json",
+    "src/i18n/pt/publicProfileNative.json",
+    "src/i18n/ru/publicProfileNative.json",
+    "src/i18n/sr/publicProfileNative.json",
+    "src/i18n/tr/publicProfileNative.json",
+    "src/i18n/zh/publicProfileNative.json"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "i18n-check.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "NATIVE-CI.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "I18N-PROPAGATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PREVIEW-DEPLOY-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 1518,
+   "title": "VTID-05291 desktop-spotlight-finish/public-profile: ensure a live session before /u/:identifier",
+   "merged_at": "2026-11-02T14:12:17Z",
+   "head_sha": "92db9d3100e2a2ceaffe4ca3868482193aea2c6a",
+   "files": [
+    "tests/e2e/staging/vtid-05291-public-profile.staging.spec.ts"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 1517,
+   "title": "VTID-05289 desktop-spotlight-finish/colours-batch-5: wait for <main> in the staging mount check",
+   "merged_at": "2026-11-02T14:12:12Z",
+   "head_sha": "fde80641ccbf692cf614a02d28b94c408b8af845",
+   "files": [
+    "tests/e2e/staging/vtid-05289-colours-batch-5.staging.spec.ts"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 1516,
+   "title": "VTID-05288 desktop-spotlight-finish/colours-batch-4: wait for <main> in the mobile mount check",
+   "merged_at": "2026-11-02T14:12:05Z",
+   "head_sha": "6c47219c0f4462e74b5f5b57e24164badd918c4b",
+   "files": [
+    "tests/e2e/staging/vtid-05288-colours-batch-4.staging.spec.ts"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 1515,
+   "title": "VTID-05287 desktop-spotlight-finish/colours-batch-3: wait for <main> in the staging mount check",
+   "merged_at": "2026-11-02T14:11:59Z",
+   "head_sha": "5c684ede04865002107933bbae127eb64304960d",
+   "files": [
+    "tests/e2e/staging/vtid-05287-colours-batch-3.staging.spec.ts"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 1514,
+   "title": "VTID-05286 desktop-spotlight-finish/colours-batch-2: wait for <main> in the staging mount check",
+   "merged_at": "2026-11-02T14:11:53Z",
+   "head_sha": "806dc0b5082b92e8feff1e895b9922f05ddb8799",
+   "files": [
+    "tests/e2e/staging/vtid-05286-colours-batch-2.staging.spec.ts"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 1555,
+   "title": "VTID-05442 (mt-track-s-r2/s-j-route-inventory): remove dead linkedin-import, add edge-function auth gate",
+   "merged_at": "2026-11-02T13:25:56Z",
+   "head_sha": "d4dc411acbeba045ea3d2b42682c7d2928c8b7c8",
+   "files": [
+    "docs/validation/VTID-05442/acceptance.md",
+    "docs/validation/VTID-05442/commands.log",
+    "docs/validation/VTID-05442/plan-sparring.md",
+    "docs/validation/VTID-05442/scope.json",
+    "docs/validation/VTID-05442/staging-tests.json",
+    "package.json",
+    "scripts/check-edge-function-auth.mjs",
+    "src/lib/edge-functions-caller-identity.s4.test.ts",
+    "supabase/config.toml",
+    "supabase/functions/linkedin-import/index.ts"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "NATIVE-CI.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "i18n-check.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PREVIEW-DEPLOY-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "CALENDAR-REGRESSION.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 1556,
+   "title": "fix(VTID-05286): app chrome colour tokens, no raw palette on community routes",
+   "merged_at": "2026-11-02T09:43:14Z",
+   "head_sha": "0136936192033d657a18694f93db65dee7c040ff",
+   "files": [
+    "scripts/ci/pr-gate/baseline/design.json",
+    "scripts/ci/pr-gate/baseline/eslint.json",
+    "src/components/AppLayout.colours.test.ts",
+    "src/components/AppLayout.tsx",
+    "src/components/ui/notification-badge.colours.test.tsx",
+    "src/components/ui/notification-badge.tsx"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "i18n-check.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "NATIVE-CI.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PREVIEW-DEPLOY-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 1547,
+   "title": "VTID-05428 (native-wave2-profile-settings-r2/delete-account): native public delete-account port",
+   "merged_at": "2026-11-02T09:32:16Z",
+   "head_sha": "2c529e7780880660fc44500b32cde3d5b42ff176",
+   "files": [
+    "apps/mobile/app/(public)/delete-account.tsx",
+    "apps/mobile/maestro/delete-account/README.md",
+    "apps/mobile/parity/ledger.json",
+    "apps/mobile/src/navigation/resolve.ts",
+    "apps/mobile/src/ports/delete-account.tsx",
+    "apps/mobile/src/screens/delete-account/DeleteAccountScreen.tsx",
+    "apps/mobile/src/screens/delete-account/request.ts",
+    "apps/mobile/tests/delete-account/delete-account.test.tsx",
+    "docs/validation/VTID-05428/commands.log",
+    "docs/validation/VTID-05428/lane-brief.md",
+    "docs/validation/VTID-05428/plan-sparring.md",
+    "docs/validation/VTID-05428/red-on-base.txt",
+    "docs/validation/VTID-05428/scope.json",
+    "docs/validation/VTID-05428/staging-tests.json",
+    "docs/validation/VTID-05428/verification.md",
+    "src/i18n/ar/deleteAccountNative.json",
+    "src/i18n/de/deleteAccountNative.json",
+    "src/i18n/en/deleteAccountNative.json",
+    "src/i18n/es/deleteAccountNative.json",
+    "src/i18n/fr/deleteAccountNative.json",
+    "src/i18n/pl/deleteAccountNative.json",
+    "src/i18n/pt/deleteAccountNative.json",
+    "src/i18n/ru/deleteAccountNative.json",
+    "src/i18n/sr/deleteAccountNative.json",
+    "src/i18n/tr/deleteAccountNative.json",
+    "src/i18n/zh/deleteAccountNative.json"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "i18n-check.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PREVIEW-DEPLOY-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "I18N-PROPAGATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "NATIVE-CI.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 1548,
+   "title": "VTID-05426 (native-wave2-memory-diary-r2/diary): native diary port",
+   "merged_at": "2026-11-02T06:45:01Z",
+   "head_sha": "c002e0e8b858fb63ae94a5acd8560b6b4c7fcedb",
+   "files": [
+    "apps/mobile/app.config.ts",
+    "apps/mobile/app/(app)/daily-diary/index.tsx",
+    "apps/mobile/maestro/diary/README.md",
+    "apps/mobile/package-lock.json",
+    "apps/mobile/package.json",
+    "apps/mobile/parity/ledger.json",
+    "apps/mobile/src/navigation/resolve.ts",
+    "apps/mobile/src/ports/diary-capture.ts",
+    "apps/mobile/src/ports/diary.tsx",
+    "apps/mobile/src/screens/diary/CaptureCard.tsx",
+    "apps/mobile/src/screens/diary/DailyDiaryScreen.tsx",
+    "apps/mobile/src/screens/diary/DiaryEntryList.tsx",
+    "apps/mobile/src/screens/diary/FeedbackReportList.tsx",
+    "apps/mobile/src/screens/diary/PhotoDiaryUploader.tsx",
+    "apps/mobile/src/screens/diary/TextDiaryEditor.tsx",
+    "apps/mobile/src/screens/diary/components.tsx",
+    "apps/mobile/src/screens/diary/data/client.ts",
+    "apps/mobile/src/screens/diary/data/entries.ts",
+    "apps/mobile/src/screens/diary/data/storage.ts",
+    "apps/mobile/src/screens/diary/data/tickets.ts",
+    "apps/mobile/src/screens/diary/text.ts",
+    "apps/mobile/tests/app-config.test.ts",
+    "apps/mobile/tests/diary/app-config-plugins.test.ts",
+    "apps/mobile/tests/diary/diary.test.tsx",
+    "apps/mobile/tests/diary/gateway-i18n.test.tsx",
+    "apps/mobile/tests/diary/helpers.tsx",
+    "apps/mobile/tests/diary/mocks.ts",
+    "apps/mobile/tests/orb/nav-directive.test.ts",
+    "docs/validation/VTID-05426/commands.log",
+    "docs/validation/VTID-05426/plan-sparring.md",
+    "docs/validation/VTID-05426/red-on-base.txt",
+    "docs/validation/VTID-05426/scope.json",
+    "docs/validation/VTID-05426/staging-tests.json",
+    "docs/validation/VTID-05426/verification.md",
+    "src/i18n/ar/diaryNative.json",
+    "src/i18n/de/diaryNative.json",
+    "src/i18n/en/diaryNative.json",
+    "src/i18n/es/diaryNative.json",
+    "src/i18n/fr/diaryNative.json",
+    "src/i18n/pl/diaryNative.json",
+    "src/i18n/pt/diaryNative.json",
+    "src/i18n/ru/diaryNative.json",
+    "src/i18n/sr/diaryNative.json",
+    "src/i18n/tr/diaryNative.json",
+    "src/i18n/zh/diaryNative.json"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "I18N-PROPAGATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PREVIEW-DEPLOY-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "failure"
+    },
+    "i18n-check.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "NATIVE-CI.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 1552,
+   "title": "VTID-05420 (spotlight-card-proportion/layout-core): fix-forward, Spotlight ~40% at 1400 px (repo breakpoints)",
+   "merged_at": "2026-11-01T22:57:03Z",
+   "head_sha": "e54b455e8b7cadfbeb0460457cfa1fb6a049fa85",
+   "files": [
+    "docs/validation/VTID-05420/commands.log",
+    "src/components/layout/spotlight/SpotlightGrid.tsx",
+    "src/components/layout/spotlight/spotlight-grid.test.tsx"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PREVIEW-DEPLOY-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "NATIVE-CI.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "i18n-check.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 1544,
+   "title": "VTID-05427 (native-wave2-memory-diary-r2/memory): native memory garden port",
+   "merged_at": "2026-11-01T20:52:53Z",
+   "head_sha": "836b21d0b28659ea1b594af845d952286a245fec",
+   "files": [
+    "apps/mobile/app/(app)/memory/index.tsx",
+    "apps/mobile/app/(app)/memory/permissions.tsx",
+    "apps/mobile/app/(app)/memory/recall.tsx",
+    "apps/mobile/app/(app)/memory/timeline.tsx",
+    "apps/mobile/maestro/memory/README.md",
+    "apps/mobile/parity/ledger.json",
+    "apps/mobile/src/navigation/resolve.ts",
+    "apps/mobile/src/ports/memory.tsx",
+    "apps/mobile/src/screens/memory/MemoryOverview.tsx",
+    "apps/mobile/src/screens/memory/MemoryPermissions.tsx",
+    "apps/mobile/src/screens/memory/MemoryRecall.tsx",
+    "apps/mobile/src/screens/memory/MemoryTimeline.tsx",
+    "apps/mobile/src/screens/memory/components.tsx",
+    "apps/mobile/src/screens/memory/data/client.ts",
+    "apps/mobile/src/screens/memory/data/garden.ts",
+    "apps/mobile/src/screens/memory/data/learning.ts",
+    "apps/mobile/src/screens/memory/data/timeline.ts",
+    "apps/mobile/src/screens/memory/overview/AddMemorySheet.tsx",
+    "apps/mobile/src/screens/memory/overview/EducationTab.tsx",
+    "apps/mobile/src/screens/memory/overview/Garden.tsx",
+    "apps/mobile/src/screens/memory/overview/TimelineTab.tsx",
+    "apps/mobile/src/screens/memory/overview/cards.tsx",
+    "apps/mobile/src/screens/memory/text.ts",
+    "apps/mobile/src/screens/memory/timeline/DetailSheet.tsx",
+    "apps/mobile/src/screens/memory/timeline/parts.tsx",
+    "apps/mobile/tests/memory/gateway-i18n.test.tsx",
+    "apps/mobile/tests/memory/helpers.tsx",
+    "apps/mobile/tests/memory/mocks.ts",
+    "apps/mobile/tests/memory/overview.test.tsx",
+    "apps/mobile/tests/memory/recall-permissions.test.tsx",
+    "apps/mobile/tests/memory/timeline.test.tsx",
+    "docs/validation/VTID-05427/commands.log",
+    "docs/validation/VTID-05427/plan-sparring.md",
+    "docs/validation/VTID-05427/red-on-base.txt",
+    "docs/validation/VTID-05427/scope.json",
+    "docs/validation/VTID-05427/staging-tests.json",
+    "docs/validation/VTID-05427/verification.md",
+    "packages/core/src/extracted/feed-compose.generated.ts",
+    "packages/core/src/extracted/news-feed-ranker.generated.ts",
+    "src/i18n/ar/memoryNative.json",
+    "src/i18n/de/memoryNative.json",
+    "src/i18n/en/memoryNative.json",
+    "src/i18n/es/memoryNative.json",
+    "src/i18n/fr/memoryNative.json",
+    "src/i18n/pl/memoryNative.json",
+    "src/i18n/pt/memoryNative.json",
+    "src/i18n/ru/memoryNative.json",
+    "src/i18n/sr/memoryNative.json",
+    "src/i18n/tr/memoryNative.json",
+    "src/i18n/zh/memoryNative.json"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "i18n-check.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PREVIEW-DEPLOY-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "I18N-PROPAGATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "NATIVE-CI.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 1499,
+   "title": "VTID-05342 (session-title-stable/v1-title): session title is set once and never renamed",
+   "merged_at": "2026-11-01T16:41:33Z",
+   "head_sha": "818168cea8390285c268ff34ac517ebb5d4b0c05",
+   "files": [
+    ".kiro/steering/vitana-session-title.md",
+    "docs/validation/VTID-05342/commands.log",
+    "docs/validation/VTID-05342/plan-sparring.md",
+    "docs/validation/VTID-05342/red-on-base.txt",
+    "docs/validation/VTID-05342/scope.json",
+    "scripts/ci/kiro-steering/guard.test.cjs"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "failure"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 1539,
+   "title": "VTID-05419 (spotlight-card-proportion/health): /health onto SpotlightGrid (Vitana Index Spotlight + six health tiles + Up next row)",
+   "merged_at": "2026-11-01T16:23:22Z",
+   "head_sha": "ed2db05caf94f2db829966dff4b9ab3cc3e05844",
+   "files": [
+    "docs/validation/VTID-05419/acceptance.md",
+    "docs/validation/VTID-05419/commands.log",
+    "docs/validation/VTID-05419/plan-sparring.md",
+    "docs/validation/VTID-05419/red-on-base.txt",
+    "docs/validation/VTID-05419/scope.json",
+    "docs/validation/VTID-05419/staging-tests.json",
+    "src/components/spotlight/tier-b/HealthGridTiles.tsx",
+    "src/components/spotlight/tier-b/VitanaIndexHeroCard.tsx",
+    "src/components/spotlight/tier-b/health-grid.test.tsx",
+    "src/pages/Health.tsx",
+    "src/pages/spotlight-tier-b.vtid-05111.test.tsx",
+    "tests/e2e/staging/vtid-05419-health-spotlight-grid.staging.spec.ts"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "i18n-check.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PREVIEW-DEPLOY-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "NATIVE-CI.yml": {
+     "ran": true,
+     "conclusion": "failure"
+    }
+   }
+  },
+  {
+   "number": 1536,
+   "title": "VTID-05418 (spotlight-card-proportion/find-a-match): Find a Match on the Spotlight grid",
+   "merged_at": "2026-11-01T16:23:19Z",
+   "head_sha": "bb509401a0f788254a9f3dc751759dfdeae630ad",
+   "files": [
+    "docs/validation/VTID-05418/acceptance.md",
+    "docs/validation/VTID-05418/commands.log",
+    "docs/validation/VTID-05418/green-on-head.txt",
+    "docs/validation/VTID-05418/plan-sparring.md",
+    "docs/validation/VTID-05418/red-on-base.txt",
+    "docs/validation/VTID-05418/scope.json",
+    "docs/validation/VTID-05418/staging-tests.json",
+    "src/components/community/spotlight/FindMatchSpotlightBody.tsx",
+    "src/components/community/spotlight/find-match-spotlight.test.tsx",
+    "src/components/ui/vcard/adapters/index.ts",
+    "src/components/ui/vcard/adapters/match.ts",
+    "src/pages/community/FindPartner.tsx",
+    "src/pages/community/social-spotlight-pages.vtid-05110.test.tsx",
+    "tests/e2e/staging/vtid-05418-find-match-spotlight-grid.staging.spec.ts"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "NATIVE-CI.yml": {
+     "ran": true,
+     "conclusion": "failure"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PREVIEW-DEPLOY-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "i18n-check.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 1538,
+   "title": "VTID-05288 desktop-spotlight-finish/colours-batch-4: staging spec counts the logged PostgREST guard abort, isolates the sign-in page",
+   "merged_at": "2026-11-01T16:03:20Z",
+   "head_sha": "672d94b561f2d9a3eb4568853373694383a9242d",
+   "files": [
+    "tests/e2e/staging/vtid-05288-colours-batch-4.staging.spec.ts"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 1537,
+   "title": "VTID-05416 (spotlight-card-proportion/discover): Discover onto SpotlightGrid (top product Spotlight + six products + Browse categories row)",
+   "merged_at": "2026-11-01T13:38:53Z",
+   "head_sha": "3e91a9514585088a36c38c267fccf3f9ae3f1dfa",
+   "files": [
+    "docs/validation/VTID-05416/acceptance.md",
+    "docs/validation/VTID-05416/commands.log",
+    "docs/validation/VTID-05416/plan-sparring.md",
+    "docs/validation/VTID-05416/red-on-base.txt",
+    "docs/validation/VTID-05416/scope.json",
+    "docs/validation/VTID-05416/staging-tests.json",
+    "src/components/discover/spotlight/DiscoverCards.tsx",
+    "src/components/discover/spotlight/DiscoverStorefront.tsx",
+    "src/components/discover/spotlight/discover-storefront.vtid-05109.test.tsx",
+    "src/components/discover/spotlight/storefront-model.ts",
+    "src/pages/Discover.tsx",
+    "tests/e2e/staging/vtid-05109-discover-storefront.staging.spec.ts",
+    "tests/e2e/staging/vtid-05416-discover-spotlight-grid.staging.spec.ts"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PREVIEW-DEPLOY-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "i18n-check.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "failure"
+    },
+    "NATIVE-CI.yml": {
+     "ran": true,
+     "conclusion": "failure"
+    }
+   }
+  },
+  {
+   "number": 1535,
+   "title": "VTID-05417 (spotlight-card-proportion/events): Events & MeetUps on the SR-31 Spotlight grid",
+   "merged_at": "2026-11-01T13:38:34Z",
+   "head_sha": "8581372d210f1756f115582c62c3b30405ca6031",
+   "files": [
+    "docs/validation/VTID-05417/acceptance.md",
+    "docs/validation/VTID-05417/commands.log",
+    "docs/validation/VTID-05417/plan-sparring.md",
+    "docs/validation/VTID-05417/red-on-base.txt",
+    "docs/validation/VTID-05417/scope.json",
+    "docs/validation/VTID-05417/staging-tests.json",
+    "src/components/community/spotlight/EventsSpotlightBody.tsx",
+    "src/components/community/spotlight/social-spotlight.vtid-05110.test.tsx",
+    "src/pages/community/EventsAndMeetups.tsx",
+    "tests/e2e/staging/vtid-05110-social-spotlight.staging.spec.ts",
+    "tests/e2e/staging/vtid-05417-events-spotlight-grid.staging.spec.ts"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "NATIVE-CI.yml": {
+     "ran": true,
+     "conclusion": "failure"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "i18n-check.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PREVIEW-DEPLOY-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 1534,
+   "title": "VTID-05420 (spotlight-card-proportion/layout-core): SpotlightGrid, ScreenFrame layout opt-in, VCard Spotlight identity, grid skeletons",
+   "merged_at": "2026-11-01T11:02:47Z",
+   "head_sha": "3bf4a15f96e808af9b4f8d82f8b95e6b09821e4e",
+   "files": [
+    "docs/design-system/SPOTLIGHT_RULES.md",
+    "docs/validation/VTID-05420/acceptance.md",
+    "docs/validation/VTID-05420/commands.log",
+    "docs/validation/VTID-05420/green-on-head.txt",
+    "docs/validation/VTID-05420/plan-sparring.md",
+    "docs/validation/VTID-05420/red-on-base.txt",
+    "docs/validation/VTID-05420/scope.json",
+    "docs/validation/VTID-05420/staging-tests.json",
+    "i18n-source-stamps/ar.json",
+    "i18n-source-stamps/en.json",
+    "i18n-source-stamps/es.json",
+    "i18n-source-stamps/fr.json",
+    "i18n-source-stamps/pl.json",
+    "i18n-source-stamps/pt.json",
+    "i18n-source-stamps/ru.json",
+    "i18n-source-stamps/sr.json",
+    "i18n-source-stamps/tr.json",
+    "i18n-source-stamps/zh.json",
+    "src/components/layout/spotlight/ScreenFrame.tsx",
+    "src/components/layout/spotlight/SpotlightGrid.tsx",
+    "src/components/layout/spotlight/index.ts",
+    "src/components/layout/spotlight/skeletons/ArchetypeSkeleton.tsx",
+    "src/components/layout/spotlight/skeletons/SpotlightLoading.test.tsx",
+    "src/components/layout/spotlight/skeletons/SpotlightLoading.tsx",
+    "src/components/layout/spotlight/spotlight-grid.test.tsx",
+    "src/components/layout/spotlight/spotlight.vtid-05105.test.tsx",
+    "src/components/ui/vcard/VCard.test.tsx",
+    "src/components/ui/vcard/VCard.tsx",
+    "src/i18n/ar/spotlight.json",
+    "src/i18n/de/spotlight.json",
+    "src/i18n/en/spotlight.json",
+    "src/i18n/es/spotlight.json",
+    "src/i18n/fr/spotlight.json",
+    "src/i18n/pl/spotlight.json",
+    "src/i18n/pt/spotlight.json",
+    "src/i18n/ru/spotlight.json",
+    "src/i18n/sr/spotlight.json",
+    "src/i18n/tr/spotlight.json",
+    "src/i18n/zh/spotlight.json"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "NATIVE-CI.yml": {
+     "ran": true,
+     "conclusion": "failure"
+    },
+    "I18N-PROPAGATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "i18n-check.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PREVIEW-DEPLOY-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 1530,
+   "title": "VTID-05288 (desktop-spotlight-finish/colours-batch-4): staging spec skips the hidden toast viewport and counts guard-aborted fetches as harness noise",
+   "merged_at": "2026-11-01T06:56:02Z",
+   "head_sha": "d1d45c339b92b23b0d25f6d7327f78f16d5719bf",
+   "files": [
+    "tests/e2e/staging/vtid-05288-colours-batch-4.staging.spec.ts"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 1532,
+   "title": "VTID-05291 (desktop-spotlight-finish/public-profile): staging spec answers the guarded profile-lookup RPC from a read-only GET",
+   "merged_at": "2026-11-01T05:57:02Z",
+   "head_sha": "bc993b7467079a8eacdb8c0d1b83793c432a273f",
+   "files": [
+    "tests/e2e/staging/vtid-05291-public-profile.staging.spec.ts"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 1531,
+   "title": "VTID-05289 (desktop-spotlight-finish/colours-batch-5): staging spec waits for the first visible #root element, not the hidden toast viewport",
+   "merged_at": "2026-11-01T05:01:24Z",
+   "head_sha": "776b9b7bbe938f58ae80eaef3992d6698b722816",
+   "files": [
+    "tests/e2e/staging/vtid-05289-colours-batch-5.staging.spec.ts"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 1529,
+   "title": "VTID-05287 (desktop-spotlight-finish/colours-batch-3): staging spec waits for the first visible #root element, not the hidden toast viewport",
+   "merged_at": "2026-11-01T04:06:46Z",
+   "head_sha": "ce6de5e40fc0f716f33b2c7cfe94cf223b8520b0",
+   "files": [
+    "tests/e2e/staging/vtid-05287-colours-batch-3.staging.spec.ts"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 1528,
+   "title": "VTID-05286 (desktop-spotlight-finish/colours-batch-2): staging spec waits for the first visible #root element, not the hidden toast viewport",
+   "merged_at": "2026-11-01T03:08:17Z",
+   "head_sha": "802f2d6a585c66ef9d01b7fbb55f83eca7b86ffc",
+   "files": [
+    "tests/e2e/staging/vtid-05286-colours-batch-2.staging.spec.ts"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 1533,
+   "title": "VTID-05394 (fix-deeplink-scroll-test/fixture-dates): verify the outbox fixture fix on main",
+   "merged_at": "2026-11-01T00:57:22Z",
+   "head_sha": "4657522e4d678abdf13507c94530ffdae44d47c7",
+   "files": [
+    "docs/validation/VTID-05394/acceptance.md",
+    "docs/validation/VTID-05394/commands.log",
+    "docs/validation/VTID-05394/plan-sparring.md",
+    "docs/validation/VTID-05394/scope.json",
+    "docs/validation/VTID-05394/staging-tests.json"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 1522,
+   "title": "VTID-05415 (ci-dockerhub-mirror/v1-service-images): PR CI pulls postgres:16 from Docker Hub, not the capped ECR Public mirror",
+   "merged_at": "2026-11-01T00:00:13Z",
+   "head_sha": "8011266ce70b1577d25acdb9356fdacd9587abde",
+   "files": [
+    ".github/workflows/PR-GATE.yml",
+    ".github/workflows/SQL-CALENDAR-ENTRY-SHARE.yml",
+    ".github/workflows/SQL-EVENT-SHARE-POSTS.yml",
+    ".github/workflows/SQL-GROUP-PARTICIPANTS.yml",
+    ".github/workflows/SQL-THREAD-JOIN-HARDENING.yml",
+    "docs/validation/VTID-05415/commands.log",
+    "docs/validation/VTID-05415/green-on-head.txt",
+    "docs/validation/VTID-05415/red-on-base.txt",
+    "docs/validation/VTID-05415/staging-tests.json",
+    "src/lib/pr-ci-service-images.test.ts"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PREVIEW-DEPLOY-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "NATIVE-CI.yml": {
+     "ran": true,
+     "conclusion": "failure"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "SQL-GROUP-PARTICIPANTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "SQL-CALENDAR-ENTRY-SHARE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "SQL-THREAD-JOIN-HARDENING.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "SQL-EVENT-SHARE-POSTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "i18n-check.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 1494,
+   "title": "collab(§7c): Kiro publish in the pipeline rules — full or session-scoped",
+   "merged_at": "2026-10-31T13:51:13Z",
+   "head_sha": "bc57d4d39c116f95c8b75b945bd11063f33627d4",
+   "files": [
+    "CLAUDE.md"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 1439,
+   "title": "VTID-05193 (vitana-chat-markdown/render): render Markdown in Vitana chat replies",
+   "merged_at": "2026-10-31T12:40:36Z",
+   "head_sha": "2b51a16dacbc5826933b71cc451f728561f42f20",
+   "files": [
+    ".kiro/specs/vitana-chat-markdown/lanes/render.md",
+    "src/components/messages/MessageBubble.tsx",
+    "src/components/messages/MessageBubble.vitana-markdown.vtid-05193.test.tsx",
+    "src/lib/chatMarkdown.test.ts",
+    "src/lib/chatMarkdown.ts"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PREVIEW-DEPLOY-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "NATIVE-CI.yml": {
+     "ran": true,
+     "conclusion": "failure"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "i18n-check.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 1519,
+   "title": "VTID-05409 (kiro-lane-admin/rules): Claude-free protected-gate authority (CLAUDE.md mirror)",
+   "merged_at": "2026-10-29T16:49:54Z",
+   "head_sha": "cba5fe87736530b65542db426d852289bcc69360",
+   "files": [
+    "CLAUDE.md",
+    "docs/validation/VTID-05409/plan-sparring.md",
+    "docs/validation/VTID-05409/scope.json"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 1509,
+   "title": "VTID-05286 desktop-spotlight-finish/colours-batch-2: staging spec asserts the first non-script element",
+   "merged_at": "2026-10-29T13:21:02Z",
+   "head_sha": "4840703054aa6526b6af32c43ed6e66603cd24ec",
+   "files": [
+    "tests/e2e/staging/vtid-05286-colours-batch-2.staging.spec.ts"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 1511,
+   "title": "VTID-05288 desktop-spotlight-finish/colours-batch-4: ignore read-only guard network noise in the console-error check",
+   "merged_at": "2026-10-29T13:02:16Z",
+   "head_sha": "ae55afc4b11b695bf543af2dcc0b143d6b50b057",
+   "files": [
+    "tests/e2e/staging/vtid-05288-colours-batch-4.staging.spec.ts"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 1513,
+   "title": "VTID-05291 desktop-spotlight-finish/public-profile: hydrate the session before /u/:identifier",
+   "merged_at": "2026-10-29T12:59:50Z",
+   "head_sha": "8cafd3c0555e9dccbadd18c04a5262c6783aa526",
+   "files": [
+    "tests/e2e/staging/vtid-05291-public-profile.staging.spec.ts"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 1510,
+   "title": "VTID-05287 desktop-spotlight-finish/colours-batch-3: staging spec asserts the first non-script element",
+   "merged_at": "2026-10-29T12:59:39Z",
+   "head_sha": "79b1ac57322450eee3b4fcd80b395ff10b1ecaae",
+   "files": [
+    "tests/e2e/staging/vtid-05287-colours-batch-3.staging.spec.ts"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 1512,
+   "title": "VTID-05289 desktop-spotlight-finish/colours-batch-5: staging spec asserts the first non-script element",
+   "merged_at": "2026-10-29T12:39:34Z",
+   "head_sha": "c80018df48a2cf9c5d736f777e6f03473a6c7b0e",
+   "files": [
+    "tests/e2e/staging/vtid-05289-colours-batch-5.staging.spec.ts"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 1505,
+   "title": "VTID-05345 (spotlight-commit-coverage/coverage-manifests): commit coverage for the 10 desktop-spotlight merges",
+   "merged_at": "2026-10-28T14:40:57Z",
+   "head_sha": "42836c27852ae9b58265870a1e0efef9b38e998e",
+   "files": [
+    "docs/validation/VTID-05345/commands.log",
+    "docs/validation/VTID-05345/staging-tests.json",
+    "docs/validation/commit-coverage.json"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 1508,
+   "title": "VTID-05320 messenger-ux-v2/ui-send-status: de-time-bomb the send-status reload test",
+   "merged_at": "2026-10-28T14:32:52Z",
+   "head_sha": "c9d6461b85a8fcdc90138fb5e8c8c32d82b361e3",
+   "files": [
+    "docs/validation/VTID-05320/fixture-fix.md",
+    "src/hooks/useGlobalMessages.send-status.vtid-05320.test.tsx"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "i18n-check.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "NATIVE-CI.yml": {
+     "ran": true,
+     "conclusion": "failure"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "failure"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PREVIEW-DEPLOY-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 1461,
+   "title": "VTID-05229 (messenger-paste-enter/composer): record §7b merge and staging-deploy block",
+   "merged_at": "2026-10-28T10:43:41Z",
+   "head_sha": "4e1a955d4f5852ec43fd52f3bc618a6ba5c50172",
+   "files": [
+    ".kiro/specs/messenger-paste-enter/lanes/composer.md"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 1503,
+   "title": "VTID-05348 (quality-checks/v1-pr-template): PR template asks for the checks of each change type",
+   "merged_at": "2026-10-28T10:01:15Z",
+   "head_sha": "01538df45efd78684f0fde83dc406e1ce2ee0652",
+   "files": [
+    ".github/PULL_REQUEST_TEMPLATE.md",
+    "docs/validation/VTID-05348/acceptance.md",
+    "docs/validation/VTID-05348/commands.log",
+    "docs/validation/VTID-05348/plan-sparring.md",
+    "docs/validation/VTID-05348/scope.json"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 1504,
+   "title": "VTID-05321 messenger-ux-v2/ui-shared-cards: send posts, events, products and profiles in a message",
+   "merged_at": "2026-10-27T13:22:24Z",
+   "head_sha": "dbda0c12001979514f5d3448fcc08400a21ce474",
+   "files": [
+    "docs/validation/VTID-05321/commands.log",
+    "docs/validation/VTID-05321/red-on-base.txt",
+    "docs/validation/VTID-05321/staging-tests.json",
+    "src/components/discover/ProductDetailsDrawer.tsx",
+    "src/components/events/EventKebabMenu.tsx",
+    "src/components/home/CommunityPostCard.tsx",
+    "src/components/messages/ForwardMessageSheet.tsx",
+    "src/components/messages/MessageBubble.tsx",
+    "src/components/messages/SendInMessageSheet.tsx",
+    "src/components/messages/SendInMessageSheet.vtid-05321.test.tsx",
+    "src/components/messages/SharedContentCard.tsx",
+    "src/components/messages/SharedContentCard.vtid-05321.test.tsx",
+    "src/components/messages/forwardTargets.ts",
+    "src/components/profile/shared/ShareProfileSheet.tsx",
+    "src/i18n/ar/inbox.json",
+    "src/i18n/de/inbox.json",
+    "src/i18n/en/inbox.json",
+    "src/i18n/es/inbox.json",
+    "src/i18n/fr/inbox.json",
+    "src/i18n/pl/inbox.json",
+    "src/i18n/pt/inbox.json",
+    "src/i18n/ru/inbox.json",
+    "src/i18n/sr/inbox.json",
+    "src/i18n/tr/inbox.json",
+    "src/i18n/zh/inbox.json",
+    "src/pages/discover/ProductDetail.tsx"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "cancelled"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "NATIVE-CI.yml": {
+     "ran": true,
+     "conclusion": "failure"
+    },
+    "I18N-PROPAGATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "i18n-check.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PREVIEW-DEPLOY-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  },
+  {
+   "number": 1502,
+   "title": "VTID-05317 messenger-ux-v2/ui-message-search: search inside messages",
+   "merged_at": "2026-10-27T13:07:12Z",
+   "head_sha": "034165cf9502271572fb5d7bf7f4e3a9d070ff48",
+   "files": [
+    "docs/validation/VTID-05317/commands.log",
+    "docs/validation/VTID-05317/red-on-base.txt",
+    "docs/validation/VTID-05317/staging-tests.json",
+    "src/components/messages/ConversationView.tsx",
+    "src/components/messages/MessageSearchPanel.tsx",
+    "src/components/messages/MessageSearchPanel.vtid-05317.test.tsx",
+    "src/hooks/useMessageSearch.test.ts",
+    "src/hooks/useMessageSearch.ts",
+    "src/i18n/ar/inbox.json",
+    "src/i18n/de/inbox.json",
+    "src/i18n/en/inbox.json",
+    "src/i18n/es/inbox.json",
+    "src/i18n/fr/inbox.json",
+    "src/i18n/pl/inbox.json",
+    "src/i18n/pt/inbox.json",
+    "src/i18n/ru/inbox.json",
+    "src/i18n/sr/inbox.json",
+    "src/i18n/tr/inbox.json",
+    "src/i18n/zh/inbox.json",
+    "src/pages/Messages.message-search.vtid-05317.test.tsx",
+    "src/pages/Messages.tsx",
+    "src/pages/messages/GroupChat.tsx"
+   ],
+   "workflows": {
+    "PREVIEW-TEARDOWN-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PREVIEW-DEPLOY-FRONTEND.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "UNIT-TESTS.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "NATIVE-CI.yml": {
+     "ran": true,
+     "conclusion": "failure"
+    },
+    "i18n-check.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "PR-GATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "I18N-PROPAGATE.yml": {
+     "ran": true,
+     "conclusion": "success"
+    },
+    "STAGING-TESTS-REQUIRED.yml": {
+     "ran": true,
+     "conclusion": "success"
+    }
+   }
+  }
+ ],
+ "workflow_steps": {
+  "PR-GATE.yml": {
+   "source": "gh api GET repos/exafyltd/vitana-v1/contents/.github/workflows/PR-GATE.yml?ref=fcc1e451b4f2d5177f0c556eba433a38f92634a4 (vitana-v1 main, 2026-11-05)",
+   "sha256": "6910614ea81b92bdda45835b6fd8eb8563e28d7086c63a8288f0acfe641c3507",
+   "steps": [
+    "pr-gate/Install",
+    "pr-gate/Gate self-test",
+    "pr-gate/Live PR title",
+    "pr-gate/Kiro steering",
+    "pr-gate/Collab handoff",
+    "pr-gate/Scope guard",
+    "pr-gate/Sparring record",
+    "pr-gate/Test-weakening guard",
+    "pr-gate/Red→green proof (fixes)",
+    "pr-gate/Migrations (lint + Postgres parse + rollback dry run)",
+    "pr-gate/Typecheck ratchet",
+    "pr-gate/ESLint ratchet",
+    "pr-gate/Design ratchet",
+    "pr-gate/Regression scripts",
+    "pr-gate/Build",
+    "pr-gate/Verdict",
+    "preview-e2e/Does this PR touch the app?",
+    "preview-e2e/Staging gateway healthy?",
+    "preview-e2e/Build against the staging gateway",
+    "preview-e2e/Fetch the canonical staging guard",
+    "preview-e2e/Run smoke + this change's specs",
+    "preview-e2e/Verdict",
+    "lane-scope/Lane scope"
+   ]
+  }
+ }
+}

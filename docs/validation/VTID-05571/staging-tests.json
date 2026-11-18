@@ -1,0 +1,14 @@
+{
+  "vtid": "VTID-05571",
+  "service": "gateway",
+  "not_verified_on_staging": true,
+  "not_verified_on_staging_reason": "This lane adds migration files, pgTAP tests and read-only check SQL only. Nothing is applied from the PR: the files are applied later through RUN-MIGRATION.yml, one file per dispatch, after the owner approves the files and the target database (collaboration.md §7d), and staging shares the production database, so the staging deploy runs no code that reads anything new. Staging writes to the production Supabase project (rules 31/31b/48), so the repointed writers are never called there: they are proven by the pgTAP call-tests on the local stack. The staging check is read-only: docs/validation/VTID-05571/pre-check.sql before, post-check.sql and repollution-check.sql after, rollback-check.sql after a rollback, run by Kiro through RUN-MIGRATION's read-only check. No suite points at vitanaland.com.",
+  "tests": [
+    {
+      "kind": "existing",
+      "ref": "npx jest test/d50-positive-trajectory-reinforcement.test.ts",
+      "cwd": "services/gateway",
+      "reason": "Regression guard for the one gateway engine that calls a repointed writer (d50_store_reinforcement / d50_update_eligibility_cache through the repository's rpc calls). The lane changes no gateway code, so the suite stays green; it is not proof of the migrations."
+    }
+  ]
+}

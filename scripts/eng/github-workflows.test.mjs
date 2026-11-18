@@ -198,10 +198,10 @@ const namesOf = (doc, repo, action) => Object.entries(wfs(doc, repo)).filter(([,
 const countBy = (doc, repo, action, key) => Object.entries(wfs(doc, repo)).filter(([, e]) => e.action === action).reduce((a, [, e]) => ({ ...a, [e[key]]: (a[e[key]] ?? 0) + 1 }), {});
 
 // ═════════════════════════════════════════ the list against the tree and the rules ═════════════════════════════════════════════════
-test('list: 160 workflow files of both repositories (114 platform, 46 vitana-v1), each with exactly one action, disable or keep, and a recorded pin for vitana-v1', () => {
+test('list: 163 workflow files of both repositories (116 platform, 47 vitana-v1), each with exactly one action, disable or keep, and a recorded pin for vitana-v1', () => {
   const doc = readList();
-  assert.equal(Object.keys(wfs(doc, 'vitana-platform')).length, 114);
-  assert.equal(Object.keys(wfs(doc, 'vitana-v1')).length, 46);
+  assert.equal(Object.keys(wfs(doc, 'vitana-platform')).length, 116);
+  assert.equal(Object.keys(wfs(doc, 'vitana-v1')).length, 47);
   for (const repo of REPOS) for (const [f, e] of Object.entries(wfs(doc, repo))) assert.ok(e.action === 'disable' || e.action === 'keep', `${repo}/${f}: ${e.action}`);
   assert.match(doc.v1_pinned_commit, /^[0-9a-f]{40}$/);
   assert.equal(doc.repositories['vitana-platform'].github, 'exafyltd/vitana-platform');
@@ -210,7 +210,7 @@ test('list: 160 workflow files of both repositories (114 platform, 46 vitana-v1)
 
 test('list: the platform entries are exactly the files of .github/workflows on this tree, and the recorded triggers match the files (a new workflow or trigger cannot slip through unclassified)', () => {
   const files = realFiles();
-  assert.equal(Object.keys(files['vitana-platform']).length, 114, 'the tree has the 114 workflows (plan section 2.2 counted 113; SQL-LIVE-ROOM-COHOST.yml, VTID-05558, came after it)');
+  assert.equal(Object.keys(files['vitana-platform']).length, 116, 'the tree has the 116 workflows (plan section 2.2 counted 113; SQL-LIVE-ROOM-COHOST.yml (VTID-05558), MT-LOCAL-STACK.yml (VTID-05520) and VTID-ALLOCATE.yml came after it)');
   const problems = lint(readList(), { 'vitana-platform': files['vitana-platform'], 'vitana-v1': null }, protectedGlobs());
   assert.deepEqual(problems, []);
 });
@@ -224,11 +224,11 @@ test('list: the vitana-v1 entries are exactly the files of the vitana-v1 checkou
   } else {
     // CI of this repository has no vitana-v1 checkout: the recorded half is checked, `delivery-cutover.sh status` runs this file again with the files
     assert.deepEqual(lint(doc, { 'vitana-platform': files['vitana-platform'], 'vitana-v1': null }, protectedGlobs()), []);
-    assert.equal(Object.keys(wfs(doc, 'vitana-v1')).length, 46);
+    assert.equal(Object.keys(wfs(doc, 'vitana-v1')).length, 47);
   }
 });
 
-test('plan 2.2: the disabled workflows are the ones of the table, family by family (71 of 160), and nothing else is disabled', () => {
+test('plan 2.2: the disabled workflows are the ones of the table, family by family (72 of 163), and nothing else is disabled', () => {
   const doc = readList();
   const platformSql = Object.keys(wfs(doc, 'vitana-platform')).filter((f) => f.startsWith('SQL-'));
   assert.equal(platformSql.length, 22, 'SQL-* (22; SQL-LIVE-ROOM-COHOST.yml came after the plan)');
@@ -237,28 +237,28 @@ test('plan 2.2: the disabled workflows are the ones of the table, family by fami
     'AURORA-I18N-INTEGRATION', 'AURORA-PRIVILEGE-PARITY-UNIT', 'VOICE-PIPELINE-PARITY-SCANNER', 'VOICE-TOOLS-MANIFEST-RECONCILE', 'ORB-TOOLS-LIFT-SCANNER', 'CALENDAR-REGRESSION', 'DEV-AUTOPILOT-IMPACT',
     'VCAOP-GUARDRAILS-CI', 'STAGING-TESTS-REQUIRED', 'ENFORCE-FRONTEND-CANONICAL-SOURCE', 'PHASE-2B-NAMING-ENFORCEMENT', 'PHASE-2B-DOC-GATE',
     'AWS-STAGE-DEPLOY-ERP-BRIDGE', 'AWS-STAGE-DEPLOY-GATEWAY', 'AWS-STAGE-DEPLOY-KIRO-RUNNER', 'AWS-STAGE-DEPLOY-POSTGREST-AURORA-PROXY', 'STAGING-VERIFY', 'STAGING-VERIFY-NIGHTLY', 'VTID-AUTO-CLOSE', 'TEST-SUITE-RERUN',
-    'AUTO-DEPLOY', 'VTID-02409-BOOTSTRAP', 'VCAOP-CICD',
+    'AUTO-DEPLOY', 'VTID-02409-BOOTSTRAP', 'VCAOP-CICD', 'MT-LOCAL-STACK',
   ].map((n) => `${n}.yml`);
   assert.deepEqual(namesOf(doc, 'vitana-platform', 'disable'), [...platformDisabled, ...platformSql].sort());
-  assert.equal(namesOf(doc, 'vitana-platform', 'disable').length, 55);
+  assert.equal(namesOf(doc, 'vitana-platform', 'disable').length, 56);
   const v1Disabled = ['PR-GATE', 'UNIT-TESTS', 'STAGING-TESTS-REQUIRED', 'i18n-check', 'CALENDAR-REGRESSION', 'NATIVE-CI', 'SQL-CALENDAR-ENTRY-SHARE', 'SQL-EVENT-SHARE-POSTS', 'SQL-GROUP-PARTICIPANTS', 'SQL-THREAD-JOIN-HARDENING',
     'AWS-STAGE-DEPLOY-FRONTEND', 'PREVIEW-DEPLOY-FRONTEND', 'PREVIEW-TEARDOWN-FRONTEND', 'E2E-PREVIEW-ORB', 'I18N-PROPAGATE', 'STAGE-DEPLOY-FRONTEND'].map((n) => `${n}.yml`);
   assert.deepEqual(namesOf(doc, 'vitana-v1', 'disable'), v1Disabled.sort());
-  assert.deepEqual(countBy(doc, 'vitana-platform', 'disable', 'family'), { 'pr-checks': 44, 'staging-deploy-verify': 8, dead: 3 });
+  assert.deepEqual(countBy(doc, 'vitana-platform', 'disable', 'family'), { 'pr-checks': 45, 'staging-deploy-verify': 8, dead: 3 });
   assert.deepEqual(countBy(doc, 'vitana-v1', 'disable', 'family'), { 'pr-checks': 10, 'staging-deploy-verify': 1, preview: 3, 'i18n-propagate': 1, dead: 1 });
   for (const f of ['PLAN-SPAR.yml', 'PLAN-SPAR']) assert.ok(!namesOf(doc, 'vitana-platform', 'disable').includes(f), 'PLAN-SPAR stays on GitHub for plan PRs');
 });
 
-test('plan 2.2: the kept workflows are the families of the table (89 of 160): dispatch-only production and migration workflows, scheduled jobs, PLAN-SPAR, the Cloudflare Workers deploy', () => {
+test('plan 2.2: the kept workflows are the families of the table (91 of 163): dispatch-only production and migration workflows, scheduled jobs, PLAN-SPAR, the Cloudflare Workers deploy', () => {
   const doc = readList();
-  assert.deepEqual(countBy(doc, 'vitana-platform', 'keep', 'family'), { 'plan-sparring': 1, 'prod-publish': 10, 'ops-dispatch': 16, 'scheduled-ops': 31, 'cloudflare-workers': 1 });
-  assert.deepEqual(countBy(doc, 'vitana-v1', 'keep', 'family'), { 'i18n-dispatch': 5, 'prod-publish': 2, 'supabase-ops': 23 });
-  assert.equal(namesOf(doc, 'vitana-platform', 'keep').length + namesOf(doc, 'vitana-v1', 'keep').length, 89);
+  assert.deepEqual(countBy(doc, 'vitana-platform', 'keep', 'family'), { 'plan-sparring': 1, 'prod-publish': 10, 'ops-dispatch': 17, 'scheduled-ops': 31, 'cloudflare-workers': 1 });
+  assert.deepEqual(countBy(doc, 'vitana-v1', 'keep', 'family'), { 'i18n-dispatch': 5, 'prod-publish': 2, 'supabase-ops': 24 });
+  assert.equal(namesOf(doc, 'vitana-platform', 'keep').length + namesOf(doc, 'vitana-v1', 'keep').length, 91);
   const prod = Object.keys(wfs(doc, 'vitana-platform')).filter((f) => f.startsWith('AWS-PROD-DEPLOY-'));
   assert.equal(prod.length, 9, 'AWS-PROD-DEPLOY-* (9)');
   for (const f of [...prod, 'VISUAL-VERIFY-FRONTEND.yml']) assert.equal(wfs(doc, 'vitana-platform')[f].dispatch_only, true, `${f}: dispatch only (PUBLISH)`);
   assert.equal(wfs(doc, 'vitana-v1')['AWS-PROD-DEPLOY-FRONTEND.yml'].dispatch_only, true);
-  assert.equal(Object.keys(wfs(doc, 'vitana-v1')).filter((f) => f.startsWith('apply-')).length, 21, 'apply-*-migration (21)');
+  assert.equal(Object.keys(wfs(doc, 'vitana-v1')).filter((f) => f.startsWith('apply-')).length, 22, 'apply-*-migration (22)');
   for (const f of Object.keys(wfs(doc, 'vitana-v1')).filter((x) => x.startsWith('apply-'))) assert.equal(wfs(doc, 'vitana-v1')[f].action, 'keep', `${f}: owner-approved migration, stays`);
 });
 

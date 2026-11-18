@@ -1,0 +1,10 @@
+loaded base_schema.sql
+loaded pae05569.sql
+loaded orph.sql
+## pre-check.sql
+table_name | nullable | orphan_rows
+chat_messages | NO | 0
+product_analytics_events | NO | 0
+user_notifications | NO | 1
+
+ERROR in supabase/migrations/20261102043000_vtid_05569_hot_tables_tenant_not_null_assert.sql: VTID-05569: public.user_notifications holds 1 row(s) whose tenant_id is not an existing tenant; run the orphan quarantine (VTID-05571) first

@@ -1,0 +1,169 @@
+# VTID-05546 — the deploy path on GitLab: plan agentic-delivery §3.6 step 2, §3.7 and §3.8 (lane deploy-path).
+#
+# Hidden jobs only. The generated pipelines of lane pipelines (v1-delivery.gitlab-ci.yml, platform-delivery.gitlab-ci.yml)
+# extend them once per deployable service, set stage, tags, needs and rules, and pass DEPLOY_SERVICE,
+# DEPLOY_ECR_REPOSITORY, DEPLOY_IMAGE_CONTEXT, DEPLOY_DOCKERFILE, DEPLOY_ECS_CLUSTER, DEPLOY_ECS_SERVICE,
+# DEPLOY_RUNS_FILE and, in live mode only, DEPLOY_ENV_OVERRIDES; the preview jobs pass PREVIEW_SERVICE and PREVIEW_PREFIX.
+#   .build-image       build class (its own runner block; the only class whose services are unconfined). Rootless BuildKit (--oci-worker-no-process-sandbox), started as the job's service,
+#                      builds DEPLOY_DOCKERFILE into an OCI archive (job artifact). No push, no AWS, no ID token.
+#   .push-image        deploy class. Pushes the archive to the service's own ECR repository by digest (push-image.json):
+#                      tag <sha12>, or shadow-<sha12> in shadow mode.
+#   .deploy-staging    deploy class. Copies the live task definition and changes only the image digest, the commit
+#                      variables and (live mode) the env overrides; registers, updates the service, waits until stable,
+#                      checks the served build stamp. A newer descendant already served ends `superseded` with no write.
+#                      Shadow mode only renders the definition and its diff. Leaves deploy-runs.json (read by
+#                      .staging-verify, lane verify-on-gitlab) and deploy-state.json (read by .rollback-staging).
+#   .rollback-staging  deploy class, on failure. Re-points the service to the captured revision when the deploy job did
+#                      not (a killed or timed-out job); otherwise it confirms and changes nothing.
+#   .preview-upload    deploy class. dist/ of the preview build to s3://vitana-pr-previews/<prefix> (mr-<iid>/ or
+#                      gl-main/) and a CloudFront invalidation of that path only.
+#   .preview-stop      deploy class. The on_stop job of environment review/mr-<iid>: removes only mr-<iid>/.
+# Deploy-class jobs run only scripts of platform main (cloned by their before_script); they never run repository code.
+# AWS sign-in: a per-job ID token whose audience is fixed in this file (plan §7), exchanged by the AWS CLI for the
+# role of the project through AWS_ROLE_ARN and AWS_WEB_IDENTITY_TOKEN_FILE. There is no AWS key on the GitLab side.
+# Shadow mode is DELIVERY_MODE set to anything but "live", or unset.
+
+# The rootless BuildKit daemon runs as the job's service, the only container of the main class that runs without the
+# seccomp and AppArmor profiles (services_security_opt of the main runner block, host/fleet-manager-install.sh; plan
+# R5); never privileged. The job container is the same image with its entrypoint cleared: build-image.sh is only the
+# daemon's client (buildctl over BUILDKIT_HOST) and keeps both profiles.
+.build-image:
+  image:
+    name: docker.io/moby/buildkit:v0.34.2-rootless@sha256:c8252268760e1baba80780d63d738ef9f260fb7c7c0973c78494cb9ddd99eda1
+    entrypoint: [""]
+  services:
+    - name: docker.io/moby/buildkit:v0.34.2-rootless@sha256:c8252268760e1baba80780d63d738ef9f260fb7c7c0973c78494cb9ddd99eda1
+      alias: buildkitd
+      command: ["--addr", "tcp://0.0.0.0:1234", "--oci-worker-no-process-sandbox"]
+  tags: [vitana-eng-build]
+  interruptible: false
+  timeout: 45m
+  variables:
+    BUILDKITD_FLAGS: --oci-worker-no-process-sandbox
+    BUILDKIT_HOST: tcp://buildkitd:1234
+    CENTRAL_DIR: /tmp/vitana-central
+    PLATFORM_PROJECT_PATH: vitana/vitana-platform
+    BUILDKIT_CACHE_DIR: $CI_PROJECT_DIR/.buildkit-cache
+  cache:
+    key: buildkit-$DEPLOY_SERVICE
+    paths: [.buildkit-cache]
+  before_script:
+    - rm -rf "$CENTRAL_DIR"
+    - git clone --quiet --depth 1 --branch main --filter=blob:none --sparse "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${PLATFORM_PROJECT_PATH}.git" "$CENTRAL_DIR"
+    - git -C "$CENTRAL_DIR" sparse-checkout set --no-cone /scripts/eng/deploy/
+    - 'echo "central scripts: ${PLATFORM_PROJECT_PATH} main @ $(git -C "$CENTRAL_DIR" rev-parse HEAD)"'
+  script:
+    - 'VITE_ARGS=""; if [ "$DEPLOY_SERVICE" = "community-app" ]; then VITE_ARGS="--vite-staging-env $CI_COMMIT_SHA"; fi'
+    - sh "$CENTRAL_DIR/scripts/eng/deploy/build-image.sh" --context "$DEPLOY_IMAGE_CONTEXT" --dockerfile "$DEPLOY_DOCKERFILE" --out image.oci.tar --cache-dir "$BUILDKIT_CACHE_DIR" $VITE_ARGS
+  artifacts:
+    when: on_success
+    expire_in: 1 day
+    paths: [image.oci.tar]
+
+# The staging role of the project: gl-v1-staging (aud aws:v1:staging, sub vitana/vitana-v1 main) or
+# gl-platform-staging (aud aws:platform:staging, sub vitana/vitana-platform main). The token of the other project's
+# audience is useless here: that role's trust pins the other project's path.
+.deploy-staging-auth:
+  image: public.ecr.aws/docker/library/node:20-bookworm
+  interruptible: false
+  id_tokens:
+    V1_STAGING_ID_TOKEN:
+      aud: aws:v1:staging
+    PLATFORM_STAGING_ID_TOKEN:
+      aud: aws:platform:staging
+  variables:
+    CENTRAL_DIR: /tmp/vitana-central
+    PLATFORM_PROJECT_PATH: vitana/vitana-platform
+    AWS_REGION: eu-central-1
+    AWS_DEFAULT_REGION: eu-central-1
+    AWS_WEB_IDENTITY_TOKEN_FILE: /tmp/vitana-aws/id-token
+    AWS_ROLE_SESSION_NAME: gitlab-$CI_JOB_ID
+  before_script:
+    - apt-get -qq update >/dev/null && apt-get -qq install -y --no-install-recommends awscli skopeo >/dev/null
+    - rm -rf "$CENTRAL_DIR" && mkdir -p /tmp/vitana-aws && chmod 700 /tmp/vitana-aws
+    - git clone --quiet --depth 1 --branch main --filter=blob:none --sparse "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${PLATFORM_PROJECT_PATH}.git" "$CENTRAL_DIR"
+    - git -C "$CENTRAL_DIR" sparse-checkout set --no-cone /scripts/eng/deploy/
+    - 'echo "central scripts: ${PLATFORM_PROJECT_PATH} main @ $(git -C "$CENTRAL_DIR" rev-parse HEAD)"'
+    - 'case "$CI_PROJECT_PATH" in vitana/vitana-v1) DEPLOY_ROLE=gl-v1-staging; printf "%s" "$V1_STAGING_ID_TOKEN" > "$AWS_WEB_IDENTITY_TOKEN_FILE";; vitana/vitana-platform) DEPLOY_ROLE=gl-platform-staging; printf "%s" "$PLATFORM_STAGING_ID_TOKEN" > "$AWS_WEB_IDENTITY_TOKEN_FILE";; *) echo "no staging role for project $CI_PROJECT_PATH"; exit 1;; esac'
+    - export AWS_ROLE_ARN="arn:aws:iam::472838866351:role/$DEPLOY_ROLE"
+    - 'echo "AWS role: $AWS_ROLE_ARN"'
+
+.push-image:
+  extends: .deploy-staging-auth
+  tags: [vitana-eng-deploy]
+  timeout: 20m
+  variables:
+    GIT_STRATEGY: none
+  script:
+    - node "$CENTRAL_DIR/scripts/eng/deploy/push-image.mjs" --service "$DEPLOY_SERVICE" --repository "$DEPLOY_ECR_REPOSITORY" --archive image.oci.tar --sha "$CI_COMMIT_SHA" --mode "$DELIVERY_MODE" --out push-image.json
+  artifacts:
+    when: on_success
+    expire_in: 30 days
+    paths: [push-image.json]
+
+# The repository is fetched as data only (full history, for the ancestry check that ends a deploy as superseded).
+.deploy-staging:
+  extends: .deploy-staging-auth
+  tags: [vitana-eng-deploy]
+  timeout: 40m
+  variables:
+    GIT_STRATEGY: fetch
+    GIT_DEPTH: "0"
+  script:
+    - node "$CENTRAL_DIR/scripts/eng/deploy/deploy-ecs.mjs" deploy --service "$DEPLOY_SERVICE" --cluster "$DEPLOY_ECS_CLUSTER" --ecs-service "$DEPLOY_ECS_SERVICE" --push-file push-image.json --sha "$CI_COMMIT_SHA" --mode "$DELIVERY_MODE" --runs-file "$DEPLOY_RUNS_FILE" --state-file deploy-state.json --out-dir deploy-out --repo-root "$CI_PROJECT_DIR"
+  artifacts:
+    when: always
+    expire_in: 30 days
+    paths: [deploy-runs.json, deploy-state.json, deploy-out/]
+
+.rollback-staging:
+  extends: .deploy-staging-auth
+  tags: [vitana-eng-deploy]
+  timeout: 30m
+  variables:
+    GIT_STRATEGY: none
+  script:
+    - node "$CENTRAL_DIR/scripts/eng/deploy/deploy-ecs.mjs" rollback --state-file deploy-state.json --runs-file "$DEPLOY_RUNS_FILE"
+  artifacts:
+    when: always
+    expire_in: 30 days
+    paths: [deploy-runs.json, deploy-state.json]
+
+# Role gl-v1-preview (aud aws:v1:preview, sub any vitana/vitana-v1 branch): one bucket's mr-* and gl-main/ prefixes and
+# one CloudFront distribution (PREVIEW_CF_DISTRIBUTION_ID, a CI variable, not a secret).
+.preview-auth:
+  image: public.ecr.aws/docker/library/node:20-bookworm
+  interruptible: false
+  id_tokens:
+    PREVIEW_ID_TOKEN:
+      aud: aws:v1:preview
+  variables:
+    GIT_STRATEGY: none
+    CENTRAL_DIR: /tmp/vitana-central
+    PLATFORM_PROJECT_PATH: vitana/vitana-platform
+    AWS_REGION: eu-central-1
+    AWS_DEFAULT_REGION: eu-central-1
+    AWS_WEB_IDENTITY_TOKEN_FILE: /tmp/vitana-aws/id-token
+    AWS_ROLE_SESSION_NAME: gitlab-$CI_JOB_ID
+    AWS_ROLE_ARN: arn:aws:iam::472838866351:role/gl-v1-preview
+  before_script:
+    - 'if [ "$CI_PROJECT_PATH" != "vitana/vitana-v1" ]; then echo "previews exist only for vitana/vitana-v1"; exit 1; fi'
+    - apt-get -qq update >/dev/null && apt-get -qq install -y --no-install-recommends awscli >/dev/null
+    - rm -rf "$CENTRAL_DIR" && mkdir -p /tmp/vitana-aws && chmod 700 /tmp/vitana-aws
+    - git clone --quiet --depth 1 --branch main --filter=blob:none --sparse "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/${PLATFORM_PROJECT_PATH}.git" "$CENTRAL_DIR"
+    - git -C "$CENTRAL_DIR" sparse-checkout set --no-cone /scripts/eng/deploy/
+    - 'printf "%s" "$PREVIEW_ID_TOKEN" > "$AWS_WEB_IDENTITY_TOKEN_FILE"'
+
+.preview-upload:
+  extends: .preview-auth
+  tags: [vitana-eng-deploy]
+  timeout: 15m
+  script:
+    - node "$CENTRAL_DIR/scripts/eng/deploy/preview.mjs" upload --service "$PREVIEW_SERVICE" --prefix "$PREVIEW_PREFIX" --dist dist --mode "$DELIVERY_MODE"
+
+.preview-stop:
+  extends: .preview-auth
+  tags: [vitana-eng-deploy]
+  timeout: 10m
+  script:
+    - node "$CENTRAL_DIR/scripts/eng/deploy/preview.mjs" stop --service "$PREVIEW_SERVICE" --prefix "$PREVIEW_PREFIX" --mode "$DELIVERY_MODE"

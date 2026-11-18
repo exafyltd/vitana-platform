@@ -1,0 +1,8 @@
+# FILES=$(find scripts -path "*/node_modules" -prune -o \( -name "*.test.cjs" -o -name "*.test.mjs" \) -print | sort); node --test $FILES   (the UNIT.yml command, 48 files, Node v22.23.4, repo root; base origin/main 7fd4106862d)
+# tests 1088
+# suites 0
+# pass 1086
+# fail 0
+# cancelled 0
+# skipped 2
+# todo 0

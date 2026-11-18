@@ -1,0 +1,16 @@
+{
+  "vtid": "VTID-05576",
+  "kind": "feature",
+  "paths": [
+    "supabase/migrations/20261102050000_vtid_05576_chat_messages_scope.sql",
+    "supabase/migrations/20261102050100_vtid_05576_send_message_rpcs.sql",
+    "supabase/migrations/20261102050200_vtid_05576_chat_messages_lockdown.sql",
+    "docs/multitenancy/MIGRATION-QUEUE.md",
+    "scripts/ci/migration-drift-baseline.json",
+    "services/gateway/test/mt-network-messaging-send-db.pgtap.test.ts",
+    "docs/validation/VTID-05576/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05576/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

@@ -1,0 +1,126 @@
+## base_schema.sql (loaded)
+## vtid_05507_fixture.sql (loaded)
+## 20261014000600_vtid_05151_public_tenant_registry.sql (loaded)
+## live-before.sql
+tenant_domains | trigger_fn | two_arg
+NULL | NULL | NULL
+
+reserved_tenant_slugs | one_arg | registry
+reserved_tenant_slugs | resolve_tenant(text) | _tenant_public_registry()
+
+column_name
+tenant_id
+
+one_arg_body_md5 | one_arg_result
+1b6ea21435300bab029f7b65a6a8b1c1 | TABLE(tenant_id uuid, slug text, name text, display_name text, open_signup boolean, brand jsonb, landing jsonb, locales jsonb)
+
+result_md5 | tenants
+87a7f26fb17877da69637b91e28fe805 | 3
+
+## 20261102140000_vtid_05507_mt_tenant_domains.sql (loaded)
+## 20261102140100_vtid_05507_mt_resolve_tenant_host.sql (loaded)
+## post-apply-checks.sql
+rls_on
+true
+
+policyname | cmd | roles
+
+anon_select | auth_select | auth_insert | service_insert
+false | false | false | true
+
+conname | contype
+tenant_domains_created_at_not_null | n
+tenant_domains_host_format_check | c
+tenant_domains_host_normalized_check | c
+tenant_domains_host_not_null | n
+tenant_domains_host_unique | u
+tenant_domains_id_not_null | n
+tenant_domains_is_primary_not_null | n
+tenant_domains_pkey | p
+tenant_domains_tenant_fkey | f
+tenant_domains_tenant_id_not_null | n
+
+indexname
+idx_tenant_domains_tenant
+tenant_domains_host_unique
+tenant_domains_pkey
+uq_tenant_domains_one_primary
+
+tgname | tgenabled
+tenant_domains_reject_reserved | O
+
+rows
+0
+
+overload | defaults | result | anon_exec
+resolve_tenant(text) | 0 | TABLE(tenant_id uuid, slug text, name text, display_name text, open_signup boolean, brand jsonb, landing jsonb, locales jsonb) | true
+resolve_tenant(text,text) | 0 | TABLE(tenant_id uuid, slug text, name text, display_name text, open_signup boolean, brand jsonb, landing jsonb, locales jsonb) | true
+
+one_arg_body_md5 | one_arg_result
+1b6ea21435300bab029f7b65a6a8b1c1 | TABLE(tenant_id uuid, slug text, name text, display_name text, open_signup boolean, brand jsonb, landing jsonb, locales jsonb)
+
+result_md5 | tenants
+87a7f26fb17877da69637b91e28fe805 | 3
+
+same_as_slug_arm
+true
+
+## rollback-140100-resolve-tenant-host.sql (loaded)
+## rollback-140000-tenant-domains.sql (loaded)
+## rollback-check.sql
+tenant_domains | trigger_fn | two_arg | one_arg
+NULL | NULL | NULL | resolve_tenant(text)
+
+one_arg_body_md5
+1b6ea21435300bab029f7b65a6a8b1c1
+
+## rollback-140100-resolve-tenant-host.sql (loaded)
+## rollback-140000-tenant-domains.sql (loaded)
+## 20261102140000_vtid_05507_mt_tenant_domains.sql (loaded)
+## 20261102140100_vtid_05507_mt_resolve_tenant_host.sql (loaded)
+## post-apply-checks.sql
+rls_on
+true
+
+policyname | cmd | roles
+
+anon_select | auth_select | auth_insert | service_insert
+false | false | false | true
+
+conname | contype
+tenant_domains_created_at_not_null | n
+tenant_domains_host_format_check | c
+tenant_domains_host_normalized_check | c
+tenant_domains_host_not_null | n
+tenant_domains_host_unique | u
+tenant_domains_id_not_null | n
+tenant_domains_is_primary_not_null | n
+tenant_domains_pkey | p
+tenant_domains_tenant_fkey | f
+tenant_domains_tenant_id_not_null | n
+
+indexname
+idx_tenant_domains_tenant
+tenant_domains_host_unique
+tenant_domains_pkey
+uq_tenant_domains_one_primary
+
+tgname | tgenabled
+tenant_domains_reject_reserved | O
+
+rows
+0
+
+overload | defaults | result | anon_exec
+resolve_tenant(text) | 0 | TABLE(tenant_id uuid, slug text, name text, display_name text, open_signup boolean, brand jsonb, landing jsonb, locales jsonb) | true
+resolve_tenant(text,text) | 0 | TABLE(tenant_id uuid, slug text, name text, display_name text, open_signup boolean, brand jsonb, landing jsonb, locales jsonb) | true
+
+one_arg_body_md5 | one_arg_result
+1b6ea21435300bab029f7b65a6a8b1c1 | TABLE(tenant_id uuid, slug text, name text, display_name text, open_signup boolean, brand jsonb, landing jsonb, locales jsonb)
+
+result_md5 | tenants
+87a7f26fb17877da69637b91e28fe805 | 3
+
+same_as_slug_arm
+true
+

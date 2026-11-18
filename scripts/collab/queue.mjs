@@ -69,6 +69,11 @@ const PM_AGENT = 'pm-agent';
 /** The seat named in a seat-scoped Kiro session id, else ''. */
 export const seatOf = (s) => (/^kiro-([a-z]{1,12})-\d{12}-[0-9a-f]{4}$/.exec(s || '') || [])[1] || '';
 
+// VTID-05802 (plan lane-executor-transfer): a deliberate executor transfer is recorded in the lane log as
+// `transfer: <from>→<to>, by <session>, reason <text>, at <time>`. Only the claim holder may commit it (Lane scope checks that).
+export const transferEntries = (text) => [...String(text || '').matchAll(/transfer: (kiro|claude)→(kiro|claude), by (\S+?),/g)]
+  .map((m) => ({ from: m[1], to: m[2], by: m[3] }));
+
 // VTID-05276 (plan kiro-autonomy-fallback §4.1): reviewer agents — a `reviewer_seat` value that is not a Kiro seat. A
 // lane with `executor: kiro` and `reviewer_seat: agent:vitana-lane-reviewer` may change governance paths (never a
 // protected gate file); its review entries come from the agent's own session id.
@@ -900,11 +905,14 @@ export function validateRange(repo, { base, head, branch = '', allowInitial = []
     if (!seat) { errors.push(onePerLane(lane, sessions)); continue; } // a lane without a seat keeps the old rule
     const reviewerSeat = isReviewerAgent(baseFm.reviewer_seat) ? '' : (baseFm.reviewer_seat || '');
     const reviewedBy = new Set(commits.filter((k) => (k.review || '').split(',').map((x) => x.trim()).includes(lane)).map((k) => k.session));
+    // VTID-05802: a Claude Code session may build the lane only after a transfer to claude, recorded by a session of this range.
+    const transfersInRange = transferEntries(headText);
+    const claudeAfterTransfer = (s) => /^session_/.test(s) && transfersInRange.some((t) => t.to === 'claude' && sessions.has(t.by));
     for (const m of (headText || '').matchAll(/^### [^\n]*? · (\S+) · review\b/gm)) reviewedBy.add(m[1]);
     for (const s of sessions) {
       // (b) never a reviewer as builder; (a) every builder is a session of the lane's seat.
       if (agentOf(s) || (reviewerSeat && seatOf(s) === reviewerSeat) || reviewedBy.has(s)) errors.push(`lane ${lane}: ${s} reviews this lane and cannot also build it`);
-      else if (seatOf(s) !== seat) errors.push(`lane ${lane}: builder session ${s} is not a session of the lane's seat ${seat}`);
+      else if (seatOf(s) !== seat && !claudeAfterTransfer(s)) errors.push(`lane ${lane}: builder session ${s} is not a session of the lane's seat ${seat}`);
     }
     // (c) no overlap: in topological order each session's builder commits form one contiguous run.
     if (!order) order = new Map(git(repo, ['rev-list', '--topo-order', '--reverse', '--no-merges', `${base}..${head}`]).split('\n').filter(Boolean).map((sha, i) => [sha, i]));
@@ -1014,7 +1022,11 @@ export function scopeCheck(repo, { base, head, branch = '', fetchLane = null, fe
     const selfTrustedLaneAdmin = trustedFm.executor === 'kiro' && isReviewerAgent(trustedFm.reviewer_seat)
       && toBool(trustedFm.lane_admin) && !!trustedFrom;
     const targetOfAdmin = selfTrustedLaneAdmin && laneAdminCovers(repo, base, head, key, lanePath, fetchPlanLane, fetchLane);
-    const permAllowed = (trustedFm.executor === 'claude' && claudeOnly) || targetOfAdmin;
+    // VTID-05802: the builder's own executor transfer. Only `executor` changes, and the lane log holds a transfer entry from the
+    // trusted executor to the new one, recorded by a session that committed to this lane in the range (the claim holder).
+    const transferred = changed.length === 1 && changed[0] === 'executor' && transferEntries(text).some((t) =>
+      t.from === trustedFm.executor && t.to === fm.executor && sessions.has(t.by));
+    const permAllowed = (trustedFm.executor === 'claude' && claudeOnly) || targetOfAdmin || transferred;
     if (changed.length && !permAllowed) {
       errors.push(`lane ${key}: ${changed.join(', ')} changed in a lane PR — lane permissions come from the base revision (reassign a target lane through an executor: kiro, reviewer_seat: ${REVIEWER_AGENTS[0]} lane with lane_admin: true from a trusted source whose paths cover it, or change an executor: claude Claude Code lane)`);
     }

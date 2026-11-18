@@ -1,7 +1,7 @@
 {
   "vtid": "VTID-05265",
   "service": "gateway",
-  "note": "Read-only. Test-only change: services/gateway/test/vtid-05077-planner-fallback-and-thinking.test.ts:212 now pins the app.js cache key that index.html:32 actually ships (/command-hub/app.js?v=20261121-vtid-05082, bumped by #4182 / VTID-05082). No product code changes; staging proves the deployed index.html carries that same key and the gateway still serves.",
+  "note": "Read-only. Test-only change: services/gateway/test/vtid-05077-planner-fallback-and-thinking.test.ts:212 now pins the app.js cache key that index.html:32 actually ships (/command-hub/app.js?v=20261121-vtid-05082-vtid-05547, bumped by #4182 / VTID-05082). No product code changes; staging proves the deployed index.html carries that same key and the gateway still serves.",
   "tests": [
     {
       "kind": "http",
@@ -19,7 +19,7 @@
       "method": "GET",
       "path": "/command-hub/index.html",
       "expect_status": 200,
-      "expect_body_contains": "/command-hub/app.js?v=20261121-vtid-05082",
+      "expect_body_contains": "/command-hub/app.js?v=20261121-vtid-05082-vtid-05547",
       "reason": "read-only GET: the value the Jest pin now expects is the value staging serves (index.html:32 is the source of truth)"
     },
     {
