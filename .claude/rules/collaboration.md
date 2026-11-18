@@ -190,7 +190,7 @@ PUBLISH. **No per-PR owner approvals**: no question about git, push, PR, merge, 
   answers each round in `sparring/responses-<n>.md` and pushes. A converged plan is **approved by policy**
   (`converged-auto-v1`) — that replaces the owner's Gate 1 for it — and its lanes get their VTIDs from CI. Not
   converged after the re-plan session → `parked`, on the board, no message. Claude Code may still spar its own plans
-  with its local partner; the owner then answers Gate 1 as before.
+  with its local partner; the plan is approved by the machine on convergence (bridge period 2026-11-12).
 - **Building — the lane's seat** (Kiro). `executor: claude` lanes go to Claude Code when it is available, else to the
   exceptions seat.
 - **Accepting — the reviewer agent** `agent:vitana-lane-reviewer (<model>)`, `<model>` from its chain. Per lane, independently and in
@@ -206,10 +206,7 @@ PUBLISH. **No per-PR owner approvals**: no question about git, push, PR, merge, 
   rule (§7b); while the PM is not `live`, the plan driver (Kiro) applies the same rule. Gate 2 goes to the Command Hub
   Operator Chat with the evidence: STAGING-VERIFY link, test counts, verified commit, every commit between production
   and it, migrations, decisions taken and the plan's `timings.json` (§8b).
-- **The owner is asked only:** Gate 2 (and Gate 1 for a plan Claude Code sparred locally), an escalated sparring
-  verdict, and the stop cases — a security or data-loss risk, a failure surviving 3 fix-forward attempts, anything
-  touching production. Each stop is one message: what happened, evidence, what was tried, the recommended answer, what
-  waits on it (the five-part stop message). A migration needs the owner's approval of the file(s); Kiro then applies
+- **The owner is asked only:** Gate 2 (bridge period 2026-11-12). Escalated sparring verdicts and stop cases are parked with their evidence and go into Gate 2; they are not questions before it. A migration needs the owner's approval of the file(s); Kiro then applies
   it itself (§7d).
 - **Production after Gate 2:** the owner's PUBLISH in the Command Hub, or — on the owner's explicit command in the
   conversation — a publish run by the Kiro (or Claude Code) session itself, either the full staging build or only one

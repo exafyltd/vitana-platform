@@ -133,6 +133,11 @@ jobs:
           echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
 
       - name: Register task-definition revision + roll the service
+        # >>> VTID-05781 STAGING_DATA_PLANE (unset/shared = this step exactly as before)
+        env:
+          STAGING_DATA_PLANE: ${{ vars.STAGING_DATA_PLANE }}
+          STAGING_CUTOVER_APPROVED: ${{ vars.STAGING_CUTOVER_APPROVED }}
+        # <<< VTID-05781
         run: |
           set -e
           IMAGE="${{ steps.build.outputs.image }}"
@@ -149,6 +154,11 @@ jobs:
                       + [ {name:"PGRST_DB_URI", valueFrom:$SEC_DB}, {name:"PGRST_JWT_SECRET", valueFrom:$SEC_JWT} ] )
                 | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
                       .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)')
+          # >>> VTID-05781 STAGING_DATA_PLANE (unset/shared and an unmarked task definition = nothing runs here)
+          if [ "${STAGING_DATA_PLANE:-shared}" != shared ] || printf '%s' "$NEW_DEF" | grep -q '"STAGING_DATA_PLANE"'; then
+            NEW_DEF=$(printf '%s' "$NEW_DEF" | bash scripts/aws/staging-cutover-select.sh --service postgrest)
+          fi
+          # <<< VTID-05781
           NEW_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_DEF" \
             --query 'taskDefinition.taskDefinitionArn' --output text)
           echo "Registered $NEW_ARN"

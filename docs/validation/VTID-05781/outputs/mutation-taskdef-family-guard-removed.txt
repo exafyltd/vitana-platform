@@ -1,0 +1,6 @@
+# mutation taskdef-family-guard-removed: scripts/aws/staging-cutover-taskdef.mjs
+# replaced:   if (/awsdr|prod/i.test(fam))
+# with:       if (false)
+not ok 8 - refuses a production family
+# pass 20
+# fail 1

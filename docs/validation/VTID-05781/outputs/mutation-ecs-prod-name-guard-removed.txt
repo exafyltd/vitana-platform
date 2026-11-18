@@ -1,0 +1,6 @@
+# mutation ecs-prod-name-guard-removed: scripts/aws/staging-cutover-ecs.sh
+# replaced:   case "$1" in *awsdr*|*prod*|*Prod*|*PROD*) die
+# with:       case "$1" in __never__) die
+not ok 16 - ecs: name guard (guard subcommand) — production names refused, live and candidate scopes are disjoint
+# pass 15
+# fail 1

@@ -1,0 +1,5 @@
+# VTID-05762 — commands run and results (lane sparring-eu-guard)
+$ cd services/gateway && npx jest test/plan-sparring/sparring-eu-guard.test.ts test/providers/bedrock-region.test.ts   # on origin/main before the change: 7 failed, 3 passed (red)
+$ cd services/gateway && npx jest <the six suites above>                                                              # after the change: see outputs/jest-sparring-eu-guard.txt
+$ npx tsc --noEmit -p .   # no errors in bedrock.ts, dev-memory-embedding.ts, llm-defaults.ts
+$ node scripts/collab/queue.mjs validate --base origin/main --head HEAD --branch claude/sparring-eu-guard/sparring-eu-guard   # exit 0

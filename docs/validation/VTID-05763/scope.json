@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-05763",
+  "kind": "feature",
+  "paths": [
+    ".github/workflows/GATE-INVARIANTS.yml",
+    "scripts/ci/workflow-trigger-check.test.mjs",
+    "docs/validation/VTID-05763/**"
+  ],
+  "weakens_tests": [],
+  "red_green_exempt": [],
+  "sparring_record": ".kiro/specs/autonomous-to-staging/sparring/verdict.md"
+}
