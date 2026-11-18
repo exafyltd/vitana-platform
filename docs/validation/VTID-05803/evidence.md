@@ -45,18 +45,17 @@ A DDL-capable staging connection must be provisioned through the authorised Secr
 `vitana/aurora/staging/database-url`, which must resolve to `vitana-aurora-staging-writer` with a privileged role. Its
 current target is `vitana-postgres-staging` (stale). Until it is repointed, the restore cannot start.
 
-## Update 2026-11-17 (Kiro 4 session, no AWS credentials in this sandbox)
+## Update 2026-11-18: executor v2 (Kiro 4; no AWS access in this session, nothing run on AWS)
 
-- **Package integrity:** v1 archive and its Base64 copy both hash to `1833f0d3…ee7c`, matching MANIFEST.txt.
-- **Package defect (blocking, found by execution):** `schema-restore.sh` cannot succeed on the empty staging database.
-  Its eight files are delta scripts for a DMS-loaded target. On an empty Postgres the first file fails with
-  `relation "public.app_users" does not exist`. 640 of the 651 public tables the files reference are created by none of
-  them. Gate 2 (public must be empty) makes this certain on staging.
-- **Fix:** `stage-exec.sh` and package v2 (`package/RUNBOOK-v2.txt`, `package/MANIFEST-v2.txt`). The base schema
-  comes from a live schema-only `pg_dump` of Supabase public. Objects that cannot exist on Aurora are filtered from the
-  TOC using `source-exclusions.sql`. Grants come live from `source-grants.sql`, then the auth bridge and outbox are
-  applied. All of it runs in one transaction. Parity uses `inventory.sql` on both sides.
-- **Earlier exit code 2:** not established from logs (no AWS access). Candidates and how v2 tells them apart are in
-  RUNBOOK-v2.txt. v2 prints `STEP n ok|FAIL rc=` markers.
-- **Not run against AWS:** probe, restore, parity, and gateway. These need a session with AWS access to run RUNBOOK-v2
-  steps 0, 3 and 4.
+- v1 archive and its Base64 copy both hash to `1833f0d3…ee7c` (matches MANIFEST.txt), but v1 cannot bootstrap the
+  empty staging database: its eight files are delta scripts for a DMS-loaded target (first file needs
+  `public.app_users`; 640 of the 651 public tables it references are created by none of them).
+- v2 (`stage-exec.sh`, `package/RUNBOOK-v2.txt`, `package/MANIFEST-v2.txt`): live schema-only `pg_dump` of
+  Supabase public, TOC filtered by `source-exclusions.sql`, live API grants, auth shim, auth bridge, outbox, applied in
+  one transaction; parity by `inventory.sql`. Archive sha256 `47047edd…efa4`.
+- Defects found and fixed by testing on real PostgreSQL 17: missing `--no-owner/--no-privileges` at restore time;
+  grants on excluded views broke the apply; `GRANT anon TO authenticator` fails without ADMIN OPTION (PG16+ rule,
+  now a warning plus a STEP 9 check); `SET` tags polluted parsed output; session `search_path=''` from the dump leaked
+  into later files; matview indexes, policies over auth, and functions typed by excluded views were not excluded.
+- Local tests: `tests/run-local.sh` 77/77 (`outputs/run-local.txt`). Not an Aurora result.
+- Not run: probe, restore, parity and gateway on AWS. The executor and handover are in `package/RUNBOOK-v2.txt`.

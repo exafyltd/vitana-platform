@@ -1,0 +1,6 @@
+set -euo pipefail; W=/tmp/v5803; rm -rf $W; mkdir -p $W/r; cd $W
+if command -v aws >/dev/null 2>&1; then aws s3 cp --only-show-errors "$PKG_S3_URI" p.b64
+elif command -v python3 >/dev/null 2>&1 && python3 -c 'import boto3' 2>/dev/null; then python3 -c 'import sys,boto3;b,k=sys.argv[1][5:].split("/",1);boto3.client("s3").download_file(b,k,"p.b64")' "$PKG_S3_URI"
+elif [ -n "${PKG_HTTP_URL:-}" ]; then u=${PKG_HTTP_URL#http://}; h=${u%%/*}; exec 3<>/dev/tcp/$h/80; printf 'GET /%s HTTP/1.0\r\nHost: %s\r\n\r\n' "${u#*/}" "$h" >&3; IFS= read -r s <&3; case "$s" in *" 200 "*) ;; *) echo "BOOT FAIL http: $s"; exit 3;; esac; while IFS= read -r l <&3 && [ "$l" != $'\r' ]; do :; done; cat <&3 > p.b64
+else echo "BOOT FAIL: no aws, no python3+boto3, and PKG_HTTP_URL unset"; exit 3; fi
+base64 -d p.b64 > p.tgz; echo "$PKG_SHA256  p.tgz" | sha256sum -c -; tar -xzf p.tgz -C r; exec bash r/docs/validation/VTID-05803/stage-exec.sh
