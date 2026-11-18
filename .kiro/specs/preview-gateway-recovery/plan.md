@@ -166,6 +166,29 @@ Consequences recorded for the owner:
   forces it off. Optional immediate safeguard (owner, reversible, no VTID): set `PLAN_SPAR_ALLOCATE=false`.
 - With allocation off, #5117 can spar to convergence but gets no VTID; it then waits for D2.
 
+## 7b. Owner approval 2026-11-18 and execution pins
+- **Approved:** steps 1–7 of the staging-only recovery (Aurora staging only; the emoji migration to the shared VITANA
+  Supabase database stays pending). Every live step runs as an IAM identity, never the root user. IAM operator:
+  `j.tadic@vitanaland.com` (AdministratorAccess, MFA on). `d.stevanovic@vitanaland.com` also has AdministratorAccess
+  but no MFA device. Independent reviewer: `vitana-lane-reviewer` (installed, identical to `origin/main`; chain
+  claude-sonnet-5.5 → claude-opus-5.5 → claude-sonnet-4.5), run on each lane PR's current head.
+- **Pinned restore:** commit `9fa0d39093536a3775666d724485490f19ed0939`; `git archive --format=tar` of it has sha256
+  `1b1214da75d28f2ed190e4ef48bec7f4af1e1043f33b891bc752d923c6f80ad8` (= the owner's `recovery2.tar` in the transfer
+  bucket). Rehearsal from that exact archive: 60 passed, 0 failed. `--apply` and `--rollback` were also run end to end
+  from it with the psql 16.15 client on a live-like database: apply exit 0, rollback exit 0, catalog identical after.
+  The VPC CloudShell environment keeps no files after it times out, so the apply log and `restore-sparring-state.json`
+  go to the transfer bucket right after the apply; the bucket stays until the recovery is accepted.
+- **Rule 55 (owner decision, subject to confirmation by the rule owner):** a full preview sparring run with allocation
+  disabled satisfies the 24 h follow-up. **One run covers both break-glass VTIDs** (`runtime-profile`,
+  `plan-spar-token`): sparring is per plan and both are lanes of this one plan (`preview-gateway-recovery`); the
+  verdict and `final_plan_hash` of its session cover every lane, exactly as one CI convergence normally allocates
+  every lane of a plan. The covering run is PLAN-SPAR on the `plan(preview-gateway-recovery)` PR through the recovered
+  preview, after both lanes are on `main` (the preview needs `runtime-profile`; PLAN-SPAR needs `plan-spar-token`).
+  Its run link and `sparring/verdict.md` are attached to both ledger records by the owner (a canonical-ledger write).
+  The #5117 emoji run is a separate verification and covers neither VTID.
+- **Clock order:** steps 1–4 (roles, secrets, restore, proxy rev 21) need no VTID and run first. The owner allocates the
+  two VTIDs only when the operator and reviewer are available for steps 5–7 and the covering sparring in the same day.
+
 ## 8. Unchanged
 `vitana-gateway`, `vitana-gateway-awsdr`, rule 31 and every other listener rule, `PLAN_SPAR_GATEWAY_URL`, the staging
 frontend, STAGING-VERIFY targets, PUBLISH. The 2026-11-17 reason stays unconfirmed (`artifacts/2026-11-17-scale-down-record.md`).
