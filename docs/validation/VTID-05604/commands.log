@@ -1,0 +1,9 @@
+# VTID-05604 commands.log (pm-mode-probes)
+## baseline (old expectation vs live staging)
+VTID-05277 "PM reports claude_primary mode" (old expectation enabled false, claude_primary) against live staging with enabled true and kiro_fallback: RED (enabled=true; executor_mode="kiro_fallback").
+VTID-05281 same: RED.
+## after (new expectation vs live staging, read-only GET)
+VTID-05277 "PM reports kiro_fallback mode": green
+VTID-05281 "PM reports kiro_fallback mode": green
+## manifest diff
+12

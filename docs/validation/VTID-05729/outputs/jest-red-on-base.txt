@@ -1,0 +1,459 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/wt-crit-semantic-memory-auth/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+FAIL test/semantic-memory-auth.test.ts
+  semantic-memory: no token → 401 on every write route
+    ✕ POST /semantic/search without Authorization → 401, no service call (50 ms)
+    ✕ POST /semantic/write without Authorization → 401, no service call (4 ms)
+    ✕ POST /semantic/context without Authorization → 401, no service call (3 ms)
+    ✕ POST /admin/embeddings/generate without Authorization → 401, no service call (3 ms)
+    ✕ POST /admin/embeddings/reembed without Authorization → 401, no service call (3 ms)
+  semantic-memory: body lens naming another user/tenant → 403 LENS_MISMATCH
+    ✕ POST /semantic/search with lens.user_id = B → 403, no service call (3 ms)
+    ✕ POST /semantic/write with lens.user_id = B → 403, no service call (2 ms)
+    ✕ POST /semantic/context with lens.user_id = B → 403, no service call (3 ms)
+    ✕ POST /semantic/search with lens.tenant_id = another tenant → 403, no service call (4 ms)
+    ✕ POST /semantic/write with lens.tenant_id = another tenant → 403, no service call (2 ms)
+    ✕ POST /semantic/context with lens.tenant_id = another tenant → 403, no service call (2 ms)
+    ✕ POST /semantic/search as exafy_admin with lens.user_id = B → 403 (no admin override) (2 ms)
+    ✕ POST /semantic/write as exafy_admin with lens.user_id = B → 403 (no admin override) (2 ms)
+    ✕ POST /semantic/context as exafy_admin with lens.user_id = B → 403 (no admin override) (2 ms)
+  semantic-memory: lens ids come from the identity
+    ✕ POST /semantic/search with no body lens → service called with tenant T, user A, scope product (3 ms)
+    ✕ POST /semantic/write with no body lens → service called with tenant T, user A, scope product (2 ms)
+    ✕ POST /semantic/context with no body lens → service called with tenant T, user A, scope product (2 ms)
+    ✓ POST /semantic/search with own ids and extra lens fields → ids kept, extra fields forwarded (2 ms)
+    ✓ POST /semantic/write with own ids and extra lens fields → ids kept, extra fields forwarded (2 ms)
+    ✓ POST /semantic/context with own ids and extra lens fields → ids kept, extra fields forwarded (2 ms)
+    ✕ POST /semantic/search with a lens without ids → ids filled from the identity (2 ms)
+    ✕ POST /semantic/write with a lens without ids → ids filled from the identity (2 ms)
+    ✕ POST /semantic/context with a lens without ids → ids filled from the identity (2 ms)
+  semantic-memory: admin embedding routes require exafy_admin
+    ✕ POST /admin/embeddings/generate as a non-admin → 403, no service call (2 ms)
+    ✕ POST /admin/embeddings/reembed as a non-admin → 403, no service call (2 ms)
+    ✓ POST /admin/embeddings/generate as admin → handler runs (2 ms)
+    ✕ GET /admin/embeddings/status without Authorization → 401, no service call (2 ms)
+    ✕ GET /admin/embeddings/status as a non-admin → 403, no service call (2 ms)
+    ✓ GET /admin/embeddings/status as admin → handler runs (2 ms)
+    ✓ POST /admin/embeddings/reembed as admin → handler runs (2 ms)
+
+  ● semantic-memory: no token → 401 on every write route › POST /semantic/search without Authorization → 401, no service call
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 401
+    Received: 200
+
+      148 |       .post(BASE + route)
+      149 |       .send({ ...body, lens: { tenant_id: TENANT_T, user_id: USER_A, workspace_scope: 'product' } });
+    > 150 |     expect(res.status).toBe(401);
+          |                        ^
+      151 |     for (const m of allServiceMocks()) expect(m).not.toHaveBeenCalled();
+      152 |   });
+      153 | });
+
+      at test/semantic-memory-auth.test.ts:150:24
+
+  ● semantic-memory: no token → 401 on every write route › POST /semantic/write without Authorization → 401, no service call
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 401
+    Received: 201
+
+      148 |       .post(BASE + route)
+      149 |       .send({ ...body, lens: { tenant_id: TENANT_T, user_id: USER_A, workspace_scope: 'product' } });
+    > 150 |     expect(res.status).toBe(401);
+          |                        ^
+      151 |     for (const m of allServiceMocks()) expect(m).not.toHaveBeenCalled();
+      152 |   });
+      153 | });
+
+      at test/semantic-memory-auth.test.ts:150:24
+
+  ● semantic-memory: no token → 401 on every write route › POST /semantic/context without Authorization → 401, no service call
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 401
+    Received: 200
+
+      148 |       .post(BASE + route)
+      149 |       .send({ ...body, lens: { tenant_id: TENANT_T, user_id: USER_A, workspace_scope: 'product' } });
+    > 150 |     expect(res.status).toBe(401);
+          |                        ^
+      151 |     for (const m of allServiceMocks()) expect(m).not.toHaveBeenCalled();
+      152 |   });
+      153 | });
+
+      at test/semantic-memory-auth.test.ts:150:24
+
+  ● semantic-memory: no token → 401 on every write route › POST /admin/embeddings/generate without Authorization → 401, no service call
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 401
+    Received: 200
+
+      148 |       .post(BASE + route)
+      149 |       .send({ ...body, lens: { tenant_id: TENANT_T, user_id: USER_A, workspace_scope: 'product' } });
+    > 150 |     expect(res.status).toBe(401);
+          |                        ^
+      151 |     for (const m of allServiceMocks()) expect(m).not.toHaveBeenCalled();
+      152 |   });
+      153 | });
+
+      at test/semantic-memory-auth.test.ts:150:24
+
+  ● semantic-memory: no token → 401 on every write route › POST /admin/embeddings/reembed without Authorization → 401, no service call
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 401
+    Received: 200
+
+      148 |       .post(BASE + route)
+      149 |       .send({ ...body, lens: { tenant_id: TENANT_T, user_id: USER_A, workspace_scope: 'product' } });
+    > 150 |     expect(res.status).toBe(401);
+          |                        ^
+      151 |     for (const m of allServiceMocks()) expect(m).not.toHaveBeenCalled();
+      152 |   });
+      153 | });
+
+      at test/semantic-memory-auth.test.ts:150:24
+
+  ● semantic-memory: body lens naming another user/tenant → 403 LENS_MISMATCH › POST /semantic/search with lens.user_id = B → 403, no service call
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 403
+    Received: 200
+
+      159 |       .set('Authorization', 'Bearer user-a')
+      160 |       .send({ ...bodies[route], lens: { tenant_id: TENANT_T, user_id: USER_B, workspace_scope: 'product' } });
+    > 161 |     expect(res.status).toBe(403);
+          |                        ^
+      162 |     expect(res.body).toMatchObject({ ok: false, error: 'LENS_MISMATCH' });
+      163 |     expect(mockSemanticSearch).not.toHaveBeenCalled();
+      164 |     expect(mockWriteMemoryItem).not.toHaveBeenCalled();
+
+      at test/semantic-memory-auth.test.ts:161:24
+
+  ● semantic-memory: body lens naming another user/tenant → 403 LENS_MISMATCH › POST /semantic/write with lens.user_id = B → 403, no service call
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 403
+    Received: 201
+
+      159 |       .set('Authorization', 'Bearer user-a')
+      160 |       .send({ ...bodies[route], lens: { tenant_id: TENANT_T, user_id: USER_B, workspace_scope: 'product' } });
+    > 161 |     expect(res.status).toBe(403);
+          |                        ^
+      162 |     expect(res.body).toMatchObject({ ok: false, error: 'LENS_MISMATCH' });
+      163 |     expect(mockSemanticSearch).not.toHaveBeenCalled();
+      164 |     expect(mockWriteMemoryItem).not.toHaveBeenCalled();
+
+      at test/semantic-memory-auth.test.ts:161:24
+
+  ● semantic-memory: body lens naming another user/tenant → 403 LENS_MISMATCH › POST /semantic/context with lens.user_id = B → 403, no service call
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 403
+    Received: 200
+
+      159 |       .set('Authorization', 'Bearer user-a')
+      160 |       .send({ ...bodies[route], lens: { tenant_id: TENANT_T, user_id: USER_B, workspace_scope: 'product' } });
+    > 161 |     expect(res.status).toBe(403);
+          |                        ^
+      162 |     expect(res.body).toMatchObject({ ok: false, error: 'LENS_MISMATCH' });
+      163 |     expect(mockSemanticSearch).not.toHaveBeenCalled();
+      164 |     expect(mockWriteMemoryItem).not.toHaveBeenCalled();
+
+      at test/semantic-memory-auth.test.ts:161:24
+
+  ● semantic-memory: body lens naming another user/tenant → 403 LENS_MISMATCH › POST /semantic/search with lens.tenant_id = another tenant → 403, no service call
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 403
+    Received: 200
+
+      172 |       .set('Authorization', 'Bearer user-a')
+      173 |       .send({ ...bodies[route], lens: { tenant_id: TENANT_B, user_id: USER_A, workspace_scope: 'product' } });
+    > 174 |     expect(res.status).toBe(403);
+          |                        ^
+      175 |     expect(res.body).toMatchObject({ ok: false, error: 'LENS_MISMATCH' });
+      176 |     expect(serviceFor[route]).not.toHaveBeenCalled();
+      177 |   });
+
+      at test/semantic-memory-auth.test.ts:174:24
+
+  ● semantic-memory: body lens naming another user/tenant → 403 LENS_MISMATCH › POST /semantic/write with lens.tenant_id = another tenant → 403, no service call
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 403
+    Received: 201
+
+      172 |       .set('Authorization', 'Bearer user-a')
+      173 |       .send({ ...bodies[route], lens: { tenant_id: TENANT_B, user_id: USER_A, workspace_scope: 'product' } });
+    > 174 |     expect(res.status).toBe(403);
+          |                        ^
+      175 |     expect(res.body).toMatchObject({ ok: false, error: 'LENS_MISMATCH' });
+      176 |     expect(serviceFor[route]).not.toHaveBeenCalled();
+      177 |   });
+
+      at test/semantic-memory-auth.test.ts:174:24
+
+  ● semantic-memory: body lens naming another user/tenant → 403 LENS_MISMATCH › POST /semantic/context with lens.tenant_id = another tenant → 403, no service call
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 403
+    Received: 200
+
+      172 |       .set('Authorization', 'Bearer user-a')
+      173 |       .send({ ...bodies[route], lens: { tenant_id: TENANT_B, user_id: USER_A, workspace_scope: 'product' } });
+    > 174 |     expect(res.status).toBe(403);
+          |                        ^
+      175 |     expect(res.body).toMatchObject({ ok: false, error: 'LENS_MISMATCH' });
+      176 |     expect(serviceFor[route]).not.toHaveBeenCalled();
+      177 |   });
+
+      at test/semantic-memory-auth.test.ts:174:24
+
+  ● semantic-memory: body lens naming another user/tenant → 403 LENS_MISMATCH › POST /semantic/search as exafy_admin with lens.user_id = B → 403 (no admin override)
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 403
+    Received: 200
+
+      182 |       .set('Authorization', 'Bearer admin')
+      183 |       .send({ ...bodies[route], lens: { tenant_id: TENANT_T, user_id: USER_B, workspace_scope: 'product' } });
+    > 184 |     expect(res.status).toBe(403);
+          |                        ^
+      185 |     expect(res.body).toMatchObject({ ok: false, error: 'LENS_MISMATCH' });
+      186 |     expect(serviceFor[route]).not.toHaveBeenCalled();
+      187 |   });
+
+      at test/semantic-memory-auth.test.ts:184:24
+
+  ● semantic-memory: body lens naming another user/tenant → 403 LENS_MISMATCH › POST /semantic/write as exafy_admin with lens.user_id = B → 403 (no admin override)
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 403
+    Received: 201
+
+      182 |       .set('Authorization', 'Bearer admin')
+      183 |       .send({ ...bodies[route], lens: { tenant_id: TENANT_T, user_id: USER_B, workspace_scope: 'product' } });
+    > 184 |     expect(res.status).toBe(403);
+          |                        ^
+      185 |     expect(res.body).toMatchObject({ ok: false, error: 'LENS_MISMATCH' });
+      186 |     expect(serviceFor[route]).not.toHaveBeenCalled();
+      187 |   });
+
+      at test/semantic-memory-auth.test.ts:184:24
+
+  ● semantic-memory: body lens naming another user/tenant → 403 LENS_MISMATCH › POST /semantic/context as exafy_admin with lens.user_id = B → 403 (no admin override)
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 403
+    Received: 200
+
+      182 |       .set('Authorization', 'Bearer admin')
+      183 |       .send({ ...bodies[route], lens: { tenant_id: TENANT_T, user_id: USER_B, workspace_scope: 'product' } });
+    > 184 |     expect(res.status).toBe(403);
+          |                        ^
+      185 |     expect(res.body).toMatchObject({ ok: false, error: 'LENS_MISMATCH' });
+      186 |     expect(serviceFor[route]).not.toHaveBeenCalled();
+      187 |   });
+
+      at test/semantic-memory-auth.test.ts:184:24
+
+  ● semantic-memory: lens ids come from the identity › POST /semantic/search with no body lens → service called with tenant T, user A, scope product
+
+    expect(received).toBeLessThan(expected)
+
+    Expected: < 300
+    Received:   400
+
+      194 |       .set('Authorization', 'Bearer user-a')
+      195 |       .send(bodies[route]);
+    > 196 |     expect(res.status).toBeLessThan(300);
+          |                        ^
+      197 |     expect(serviceFor[route]).toHaveBeenCalledTimes(1);
+      198 |     expect(lensOf(route)).toMatchObject({ tenant_id: TENANT_T, user_id: USER_A, workspace_scope: 'product' });
+      199 |   });
+
+      at test/semantic-memory-auth.test.ts:196:24
+
+  ● semantic-memory: lens ids come from the identity › POST /semantic/write with no body lens → service called with tenant T, user A, scope product
+
+    expect(received).toBeLessThan(expected)
+
+    Expected: < 300
+    Received:   400
+
+      194 |       .set('Authorization', 'Bearer user-a')
+      195 |       .send(bodies[route]);
+    > 196 |     expect(res.status).toBeLessThan(300);
+          |                        ^
+      197 |     expect(serviceFor[route]).toHaveBeenCalledTimes(1);
+      198 |     expect(lensOf(route)).toMatchObject({ tenant_id: TENANT_T, user_id: USER_A, workspace_scope: 'product' });
+      199 |   });
+
+      at test/semantic-memory-auth.test.ts:196:24
+
+  ● semantic-memory: lens ids come from the identity › POST /semantic/context with no body lens → service called with tenant T, user A, scope product
+
+    expect(received).toBeLessThan(expected)
+
+    Expected: < 300
+    Received:   400
+
+      194 |       .set('Authorization', 'Bearer user-a')
+      195 |       .send(bodies[route]);
+    > 196 |     expect(res.status).toBeLessThan(300);
+          |                        ^
+      197 |     expect(serviceFor[route]).toHaveBeenCalledTimes(1);
+      198 |     expect(lensOf(route)).toMatchObject({ tenant_id: TENANT_T, user_id: USER_A, workspace_scope: 'product' });
+      199 |   });
+
+      at test/semantic-memory-auth.test.ts:196:24
+
+  ● semantic-memory: lens ids come from the identity › POST /semantic/search with a lens without ids → ids filled from the identity
+
+    expect(received).toBeLessThan(expected)
+
+    Expected: < 300
+    Received:   400
+
+      228 |       .set('Authorization', 'Bearer user-a')
+      229 |       .send({ ...bodies[route], lens: { active_role: 'patient' } });
+    > 230 |     expect(res.status).toBeLessThan(300);
+          |                        ^
+      231 |     expect(lensOf(route)).toMatchObject({
+      232 |       tenant_id: TENANT_T,
+      233 |       user_id: USER_A,
+
+      at test/semantic-memory-auth.test.ts:230:24
+
+  ● semantic-memory: lens ids come from the identity › POST /semantic/write with a lens without ids → ids filled from the identity
+
+    expect(received).toBeLessThan(expected)
+
+    Expected: < 300
+    Received:   400
+
+      228 |       .set('Authorization', 'Bearer user-a')
+      229 |       .send({ ...bodies[route], lens: { active_role: 'patient' } });
+    > 230 |     expect(res.status).toBeLessThan(300);
+          |                        ^
+      231 |     expect(lensOf(route)).toMatchObject({
+      232 |       tenant_id: TENANT_T,
+      233 |       user_id: USER_A,
+
+      at test/semantic-memory-auth.test.ts:230:24
+
+  ● semantic-memory: lens ids come from the identity › POST /semantic/context with a lens without ids → ids filled from the identity
+
+    expect(received).toBeLessThan(expected)
+
+    Expected: < 300
+    Received:   400
+
+      228 |       .set('Authorization', 'Bearer user-a')
+      229 |       .send({ ...bodies[route], lens: { active_role: 'patient' } });
+    > 230 |     expect(res.status).toBeLessThan(300);
+          |                        ^
+      231 |     expect(lensOf(route)).toMatchObject({
+      232 |       tenant_id: TENANT_T,
+      233 |       user_id: USER_A,
+
+      at test/semantic-memory-auth.test.ts:230:24
+
+  ● semantic-memory: admin embedding routes require exafy_admin › POST /admin/embeddings/generate as a non-admin → 403, no service call
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 403
+    Received: 200
+
+      244 |       .set('Authorization', 'Bearer user-a')
+      245 |       .send({});
+    > 246 |     expect(res.status).toBe(403);
+          |                        ^
+      247 |     expect(mockGetItemsNeedingEmbeddings).not.toHaveBeenCalled();
+      248 |     expect(mockMarkForReembed).not.toHaveBeenCalled();
+      249 |   });
+
+      at test/semantic-memory-auth.test.ts:246:24
+
+  ● semantic-memory: admin embedding routes require exafy_admin › POST /admin/embeddings/reembed as a non-admin → 403, no service call
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 403
+    Received: 200
+
+      244 |       .set('Authorization', 'Bearer user-a')
+      245 |       .send({});
+    > 246 |     expect(res.status).toBe(403);
+          |                        ^
+      247 |     expect(mockGetItemsNeedingEmbeddings).not.toHaveBeenCalled();
+      248 |     expect(mockMarkForReembed).not.toHaveBeenCalled();
+      249 |   });
+
+      at test/semantic-memory-auth.test.ts:246:24
+
+  ● semantic-memory: admin embedding routes require exafy_admin › GET /admin/embeddings/status without Authorization → 401, no service call
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 401
+    Received: 200
+
+      261 |   it('GET /admin/embeddings/status without Authorization → 401, no service call', async () => {
+      262 |     const res = await request(buildApp()).get(BASE + '/admin/embeddings/status');
+    > 263 |     expect(res.status).toBe(401);
+          |                        ^
+      264 |     expect(mockGetItemsNeedingEmbeddings).not.toHaveBeenCalled();
+      265 |   });
+      266 |
+
+      at Object.<anonymous> (test/semantic-memory-auth.test.ts:263:24)
+
+  ● semantic-memory: admin embedding routes require exafy_admin › GET /admin/embeddings/status as a non-admin → 403, no service call
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 403
+    Received: 200
+
+      269 |       .get(BASE + '/admin/embeddings/status')
+      270 |       .set('Authorization', 'Bearer user-a');
+    > 271 |     expect(res.status).toBe(403);
+          |                        ^
+      272 |     expect(mockGetItemsNeedingEmbeddings).not.toHaveBeenCalled();
+      273 |   });
+      274 |
+
+      at Object.<anonymous> (test/semantic-memory-auth.test.ts:271:24)
+
+Test Suites: 1 failed, 1 total
+Tests:       24 failed, 6 passed, 30 total
+Snapshots:   0 total
+Time:        0.847 s
+Ran all test suites matching /test\/semantic-memory-auth.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
+exit 1

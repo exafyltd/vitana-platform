@@ -42,6 +42,8 @@ class Q {
   eq(c: string, v: unknown) { this.f.push((r) => (c === 'data->>message_id' ? r.data?.message_id === v : r[c] === v)); return this; }
   in(c: string, vs: unknown[]) { inCalls.push([this.t, c, vs]); this.f.push((r) => vs.includes(c === 'data->>message_id' ? r.data?.message_id : r[c])); return this; }
   is(c: string, v: null) { this.f.push((r) => (r[c] ?? null) === v); return this; }
+  // VTID-05718: the NULL-safe push_outcome filter of the dispatch query; not evaluated by this fake.
+  or(_expr: string) { return this; }
   not(c: string, _op: string, _v: null) { this.f.push((r) => (r[c] ?? null) !== null); return this; }
   gt(c: string, v: string) { this.f.push((r) => r[c] > v); return this; }
   gte(c: string, v: string) { this.f.push((r) => r[c] >= v); return this; }

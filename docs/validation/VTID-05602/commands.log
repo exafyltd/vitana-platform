@@ -1,0 +1,5 @@
+# VTID-05602 commands.log (drift-guard)
+## node --test scripts/ci/staging-verify/manifest-drift.test.cjs on the current tree
+# pass 5
+# fail 1
+## red set (check 1): VTID-05504, 05506, 05507, 05609 are the plan staging-manifest-remainder

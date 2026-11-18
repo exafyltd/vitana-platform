@@ -1,0 +1,34 @@
+name: GATE-INVARIANTS
+# VTID-05763 (plan autonomous-to-staging, lane gate-invariants-ci).
+#
+# Runs the mechanical gate invariants (scripts/collab/gate-invariants.test.mjs, VTID-05765) against `main` itself on
+# every push to `main` and once a day, so a weakened gate on `main` fails loudly even when no PR touched it. The suite
+# loads its baseline copy from origin/main, so origin/main is fetched first. Read-only: no secrets, no writes.
+# Pull requests: its static test (scripts/ci/workflow-trigger-check.test.mjs) runs in the unit job of TEST-SUITE.
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: gate-invariants-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  invariants:
+    name: Gate invariants
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+      - name: Fetch main (baseline copy of the invariants)
+        run: git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
+      - name: Gate invariants
+        run: node --test scripts/collab/gate-invariants.test.mjs
+      - name: Workflow trigger check
+        run: node --test scripts/ci/workflow-trigger-check.test.mjs

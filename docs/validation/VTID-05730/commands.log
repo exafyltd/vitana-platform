@@ -1,0 +1,41 @@
+# lane stripe-dance-signature — worktree /projects/sandbox/wt-crit-stripe-dance-signature, base origin/main 6dc6e1ba0c
+# all commands run from services/gateway unless noted; outputs ANSI-stripped (sed 's/\x1b\[[0-9;]*m//g')
+
+# premises
+git -C /projects/sandbox/vitana-platform show origin/kiro/gateway-critical-route-auth/plan:.kiro/specs/gateway-critical-route-auth/plan.md
+git -C /projects/sandbox/vitana-platform show origin/kiro/gateway-critical-route-auth/plan:.kiro/specs/gateway-critical-route-auth/tasks.md
+grep '"version"' node_modules/stripe/package.json            # 20.3.1
+grep -n "static webhooks" node_modules/stripe/types/index.d.ts   # :321 static webhooks: Stripe.Webhooks
+node -e "<Stripe.webhooks.generateTestHeaderString + constructEvent round-trip without a secret key>"   # ok
+ls -la node_modules   # symlink -> /projects/sandbox/wt-gwra-route-auth/services/gateway/node_modules
+
+# pass 2: test/routes/payments-stripe-webhook.test.ts rewritten with signed events (STRIPE_WEBHOOK_SECRET set in the
+#   test, express.raw for the path before express.json, Stripe.webhooks.generateTestHeaderString); same 3 behaviours.
+#   All runs below are from pass 2 and supersede the earlier pass's results.
+
+# red on base: origin/main versions of the two source files put in place, run, restored (backup in /projects/sandbox/.agents/crit/sds)
+git show origin/main:services/gateway/src/routes/payments-stripe-webhook.ts > src/routes/payments-stripe-webhook.ts
+git show origin/main:services/gateway/src/index.ts > src/index.ts
+npx jest test/payments-stripe-dance-signature.test.ts   # -> outputs/jest-red-on-base.txt, exit=1, 8 failed / 1 passed
+npx jest test/routes/payments-stripe-webhook.test.ts    # -> outputs/jest-existing-webhook-on-base.txt, exit=1, 3 failed (400 BAD_PAYLOAD: base parses the raw Buffer as the event)
+# restore lane versions; git diff --stat shows index.ts +2, payments-stripe-webhook.ts +37/-9
+
+# green
+npx jest test/payments-stripe-dance-signature.test.ts   # -> outputs/jest-green.txt, exit=0, 9 passed
+
+# typecheck (node_modules is a symlink -> /projects/sandbox/wt-gwra-route-auth/services/gateway/node_modules;
+# without --preserveSymlinks: 59 x TS2742 in untouched files, identical on base)
+npx tsc --noEmit --preserveSymlinks                      # -> outputs/tsc-gateway.txt, exit=0
+
+# existing tests touching the files / raw parsers
+grep -rln "payments-stripe-webhook\|stripe-dance\|express.raw\|stripe/webhook'" test
+npx jest test/routes/payments-stripe-webhook.test.ts test/wallet-stripe-webhook.test.ts \
+  test/routes/billing-webhook-subscription-plan-price.test.ts test/vtid-05031-webhook-verification.test.ts \
+  test/routes/internal-gitlab-webhook.test.ts test/delivery/gitlab-delivery-webhook.test.ts \
+  test/delivery/gitlab-delivery-oasis-write.test.ts test/gitlab-events/oasis-write.test.ts
+  # -> outputs/jest-existing.txt, exit=0: 8 suites passed, 102 tests passed
+
+# staging manifest (repo root)
+node -e "require('./scripts/ci/staging-verify/lib.cjs').validateManifest(require('./docs/validation/VTID-05730/staging-tests.json'),{service:'gateway'})"   # {ok:true}
+
+# no git commit / push / network calls made
