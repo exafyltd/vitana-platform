@@ -71,10 +71,47 @@ echo "rewrite: CREATE SCHEMA public; -> IF NOT EXISTS ($RW line(s))"
 mv "$TMP" "$OUT"
 trap 'rm -f "$ERR"' EXIT
 
-# Record checksum (replace any previous line for this file).
-( cd "$PKG" && HASH_LINE="$(sha256sum "$OUT_REL")" && \
-  { [ -f SHA256SUMS ] && grep -vF "  $OUT_REL" SHA256SUMS || true; } > SHA256SUMS.new && \
-  echo "$HASH_LINE" >> SHA256SUMS.new && mv SHA256SUMS.new SHA256SUMS && echo "sha256: $HASH_LINE" )
+# auth.users stub from the source catalog: the source's column names and types, primary key on id only, no rows, no
+# defaults, no NOT NULL, no triggers. Views and policies over auth.users then restore unchanged. A column whose type is
+# not in pg_catalog becomes text. Read-only query; catalog only, never rows.
+STUB_REL="sql/auth-users-stub.sql"
+command -v psql >/dev/null || die "psql not on PATH (needed for the auth.users stub)"
+if ! psql -X -q -At -v ON_ERROR_STOP=1 -d "$SOURCE_URI" -c "SET default_transaction_read_only = on" -c "SELECT 'CREATE SCHEMA IF NOT EXISTS auth;'" -c "
+  SELECT 'CREATE TABLE IF NOT EXISTS auth.users (' || string_agg(format('%I %s%s', a.attname,
+           CASE WHEN tn.nspname = 'pg_catalog' THEN format_type(a.atttypid, a.atttypmod) ELSE 'text' END,
+           CASE WHEN a.attname = 'id' THEN ' PRIMARY KEY' ELSE '' END), ', ' ORDER BY a.attnum) || ');'
+  FROM pg_attribute a JOIN pg_type t ON t.oid = a.atttypid JOIN pg_namespace tn ON tn.oid = t.typnamespace
+  WHERE a.attrelid = 'auth.users'::regclass AND a.attnum > 0 AND NOT a.attisdropped" >"$PKG/$STUB_REL.tmp" 2>"$ERR"; then
+  redact <"$ERR" >&2; rm -f "$PKG/$STUB_REL.tmp"; die "auth.users column read failed"
+fi
+grep -q '"\?id"\? uuid PRIMARY KEY' "$PKG/$STUB_REL.tmp" || { rm -f "$PKG/$STUB_REL.tmp"; die "source auth.users has no uuid id column"; }
+mv "$PKG/$STUB_REL.tmp" "$PKG/$STUB_REL"
+echo "auth.users stub: $(grep -o ', ' "$PKG/$STUB_REL" | wc -l | awk '{print $1+1}') columns from the source catalog, 0 rows"
+
+# Extensions in the schema the source has them in (pg_dump -n public does not emit CREATE EXTENSION). Only the
+# extensions approved for Aurora staging are written; the others are listed as comments for the record.
+EXT_REL="sql/extensions.sql"
+APPROVED="vector pg_trgm unaccent fuzzystrmatch uuid-ossp pgcrypto pg_stat_statements"
+if ! psql -X -q -At -F '|' -v ON_ERROR_STOP=1 -d "$SOURCE_URI" -c "SET default_transaction_read_only = on" \
+     -c "SELECT x.extname, n.nspname FROM pg_extension x JOIN pg_namespace n ON n.oid = x.extnamespace WHERE x.extname <> 'plpgsql' ORDER BY 1" \
+     >"$PKG/$EXT_REL.raw" 2>"$ERR"; then redact <"$ERR" >&2; rm -f "$PKG/$EXT_REL.raw"; die "extension read failed"; fi
+awk -F'|' -v ok=" $APPROVED " 'index(ok, " " $1 " ") { printf "CREATE SCHEMA IF NOT EXISTS %s;\nCREATE EXTENSION IF NOT EXISTS \"%s\" WITH SCHEMA %s;\n", $2, $1, $2; next }
+  { printf "-- not on Aurora staging: %s (schema %s)\n", $1, $2 }' "$PKG/$EXT_REL.raw" > "$PKG/$EXT_REL"; rm -f "$PKG/$EXT_REL.raw"
+echo "extensions: $(grep -c '^CREATE EXTENSION' "$PKG/$EXT_REL") approved, $(grep -c '^-- not on' "$PKG/$EXT_REL") not carried"
+
+# Live source counts with the same probe the restore runs on the target (catalog only, read-only).
+SRC_REL="sql/source-counts.txt"
+psql -X -q -At -v ON_ERROR_STOP=1 -d "$SOURCE_URI" -c "SET default_transaction_read_only = on" -f "$PKG/sql/parity-probe.sql" \
+  >"$PKG/$SRC_REL" 2>"$ERR" || { redact <"$ERR" >&2; die "source parity probe failed"; }
+grep -q '^tables|[0-9]' "$PKG/$SRC_REL" || die "source parity probe produced no counts"
+echo "source counts: $(tr '\n' ' ' < "$PKG/$SRC_REL" | cut -c1-200)"
+
+# Record checksums (replace any previous lines for these files).
+for REL in "$OUT_REL" "$STUB_REL" "$EXT_REL" "$SRC_REL"; do
+  ( cd "$PKG" && HASH_LINE="$(sha256sum "$REL")" && \
+    { [ -f SHA256SUMS ] && grep -vF "  $REL" SHA256SUMS || true; } > SHA256SUMS.new && \
+    echo "$HASH_LINE" >> SHA256SUMS.new && mv SHA256SUMS.new SHA256SUMS && echo "sha256: $HASH_LINE" )
+done
 
 cnt() { grep -cE "$1" "$OUT" || true; }
 echo "objects: tables=$(cnt '^CREATE (UNLOGGED )?TABLE ')" \
