@@ -59,8 +59,8 @@ and the PLAN-SPAR patch forces `PLAN_SPAR_ALLOCATE=false` whenever the preview t
 `GET /api/v1/vtid/allocator/status` = `{ok:true, enabled:false, env_var_enabled:false, db_control:null}`, `verdict.md`
 "allocation is off", no `vtids` in `handoff.md`, `vtid_ledger` 0 rows. Canonical ledger: `canonical-ledger-acceptance.md`.
 
-## 4. Restore (D3) — rehearsed, ready for Dragan
-Manifest `artifacts/restore-sparring.manifest` (apply order, full sha256):
+## 4. Restore (D3) — rehearsed; read-only Aurora precheck is next
+Apply package (byte-identical since commit 3a3b9ec; `artifacts/restore-sparring.manifest`, apply order):
 | sha256 | file |
 |---|---|
 | 4c89a483aadda189f8c1901efbf7dba20579b3c2ae142aa01033308e80ac75f2 | `artifacts/00-sparring-roles.sql` |
@@ -70,72 +70,85 @@ Manifest `artifacts/restore-sparring.manifest` (apply order, full sha256):
 | 2eaec16934081fdf754eb831d95fdb806bd9c067cc03282077a005ba91cb3796 | `supabase/migrations/20261004120000_vtid_04868_plan_sparring_hardening.sql` |
 | a58bd37974235c7a3117c7f8bad7efbefdcfb0110c11e3b7d9863300805122f5 | `supabase/migrations/20261015180000_vtid_05214_plan_sparring_policy_approval.sql` |
 | 4062f101e2602cd69836657661c64359dfc5da5ceb3c9a8143580481f58db523 | `artifacts/restore-sparring-grants.sql` |
-Plus `precheck-sparring.sql` (read-only, runs first) and `rollback-sparring-schema.sql`.
-- **Rehearsal** (`rehearse-restore.sh`, PostgreSQL 17.11 + PostgREST 12.2.3, Aurora-like master `NOSUPERUSER CREATEDB
-  CREATEROLE NOBYPASSRLS` + `rds_superuser`, pre-existing `authenticator`): **40 passed, 0 failed**
-  (`artifacts/rehearsal-output.txt`). Run 1 with PR #5104's unmodified roles file failed: `permission denied to create
-  role` / "Only roles with the BYPASSRLS attribute may create roles with the BYPASSRLS attribute" → `00-sparring-roles.sql`
-  creates `service_role` without BYPASSRLS (every restored table has an explicit service_role policy; the rehearsal
-  proves insert, read, append_round and policy approval) and drops the unused auth/storage/extensions objects.
-- **Ledger objects required even with allocation disabled:** `vtid_ledger` and `global_vtid_seq` (the gate migration
-  creates its trigger, unique index, policy and grants on them, so it fails without them) and `plan_sparring_config`
-  (the trigger reads it). The allocator functions come with the same files and stay unused; nothing is allocated.
-- **Staging counter change:** not needed and removed (sequence stays at the migration default 1000).
-- **Not one transaction:** three migrations carry their own `BEGIN/COMMIT`. A failure is undone with `--rollback`
-  (rehearsal C: failure after 6 tables → rollback → 0 tables, roles and memberships removed → re-apply OK).
-- **Refusals proven:** non-empty database (D); request roles created earlier by someone else without ADMIN OPTION for
-  the master (B) — then the grant to `authenticator` could not succeed, so the precheck stops first.
-- **Target:** cluster `vitana-aurora-staging` (tags VTID-05803/staging), writer
-  `vitana-aurora-staging-writer.cfk228aiedf3.eu-central-1.rds.amazonaws.com`, database `vitana`, master
-  `vitana_staging_admin` via the RDS-managed secret `rds!cluster-4fde6530-…-1OLLCc` (no new DDL credential).
-- **Dragan's minimum permissions:** `rds:DescribeDBClusters` on the cluster; `secretsmanager:GetSecretValue` on that one
-  secret; `kms:Decrypt` on key `6a766210-8918-424c-8f1c-f62d349f2e8a` via Secrets Manager; a VPC CloudShell
-  (`vpc-05958f035e596fe64`, `subnet-0ff45a2051c5e5482`, `sg-0a8531c0ec2130457`) with psql 17 and jq.
+- **Rehearsal** (PostgreSQL 17.11 + PostgREST 12.2.3, Aurora-like master): **44 passed, 0 failed**
+  (`artifacts/rehearsal-output.txt`). Run 1 with PR #5104's roles file failed on `BYPASSRLS`; `00-sparring-roles.sql`
+  creates `service_role` without it (explicit service_role policies on every restored table).
+- **Required ledger objects with allocation disabled:** `vtid_ledger`, `global_vtid_seq`, `plan_sparring_config`
+  (the gate migration's trigger, index, policy and grants need them). No counter change (stays 1000).
+- **Precheck (read-only, `precheck-sparring.sql`, runs first in the dry run and in `--apply`).** Verifies: server
+  version >= 16; database `vitana`; connected user and its attributes (superuser, createrole, createdb, bypassrls);
+  its memberships (expect `rds_superuser`); database owner; CREATE on schema `public`; `public` empty (tables,
+  functions, sequences/views); `anon`/`authenticated`/`service_role`/`vitana_governance_owner` absent; `authenticator`
+  present, its attributes, and that it has no memberships yet; whether `auth`/`storage`/`extensions` exist. Refuses on
+  any mismatch. **Cannot verify before applying:** that Aurora lets the master create the four roles (attribute check
+  only; proven on the rehearsal's NOSUPERUSER master), that the master then holds ADMIN on them (PostgreSQL 16+ creator
+  rule; rehearsal), and that PostgREST reloads its schema cache after `NOTIFY pgrst` (checked after the apply).
+- **Exact rollback scope** (rehearsal section F, catalog snapshot before/after): the restore adds 54 catalog entries —
+  6 tables (`vtid_ledger`, `plan_sparring_sessions`, `plan_sparring_config`, `plan_sparring_shadow_log`, `pm_digests`,
+  `pm_lease`), 2 sequences (`global_vtid_seq`, `plan_sparring_shadow_log_id_seq`), 17 indexes, 8 functions
+  (`allocate_global_vtid`, `plan_sparring_append_round`, `plan_sparring_check`, `_plan_sparring_gate_eval`,
+  `_plan_sparring_mode`, `_plan_sparring_sessions_touch`, `plan_sparring_trigger_status`, `submit_plan_sparring_record`),
+  8 policies, 2 triggers, 4 roles + 1 role comment, 7 memberships (3 to `authenticator`, 4 creator-ADMIN to the master)
+  — and modifies exactly two pre-existing entries: the `public` schema ACL (USAGE for the 3 request roles) and the
+  shared role-comment count. `--rollback` removes all of them; after it the catalog snapshot is **identical** to the
+  one before the restore. What predates the restore is preserved because (a) the precheck refuses if any object or
+  role the restore would create already exists, so nothing pre-existing can be in scope; (b) the rollback refuses if
+  `public` holds any table outside the six; (c) it drops only the roles recorded in `restore-sparring-state.json` (the
+  ones the precheck saw absent); (d) `authenticator`, the master user and every other role are never dropped; (e) the
+  schema ACL is returned to its exact prior value (rehearsal diff = 0).
+- **Partial commit:** three migrations carry their own BEGIN/COMMIT; after any failure `--rollback` (rehearsal C).
 
-## 5. Listener change (D4) — blast radius checked
-The staging frontend bakes `https://preview-aws-gateway.vitanaland.com` into its bundle
-(vitana-v1 `AWS-STAGE-DEPLOY-FRONTEND.yml:64,102,132-133`); REST, the ORB widget and its WebSocket
-(`/api/v1/orb/live/ws`), and SSE all use it. STAGING-VERIFY's gateway smoke and change suites, the deploy smoke
-(`AWS-STAGE-DEPLOY-GATEWAY.yml:1416-1447`), EventBridge crons (`setup-eventbridge-cron-migration.sh:101,108`), several
-scheduled workflows, and **PUBLISH's staging source** (`services/gateway/src/services/aws-gateway-admin.ts:24-80` reads
-`preview-aws-gateway…/api/v1/admin/build-info` and promotes the commit it reports when `env='staging'`) all call it.
-A host-only rule before priority 10 would send all of them to the isolated preview; PUBLISH could then treat the
-preview's commit as the tested staging build. **So the rule is exact host AND sparring paths only**, priority 8:
-`host-header == preview-aws-gateway.vitanaland.com` AND `path-pattern ∈ {/api/v1/plans/spar, /api/v1/plans/spar/*,
-/api/v1/vtid/allocator/status}` → `vitana-tg-gateway-preview`. Rule 31 is not changed. Only PLAN-SPAR's calls
-(`plan-spar.mjs:157-182`) and the allocator status read move; two historical change suites (VTID-04868, VTID-05214)
-probe `/api/v1/plans/spar/<id>` expecting 401 and would get that 401 from the preview. Everything else is unaffected.
-Pre-existing (not changed here): `/alive` on the preview hostname already answers from the preview target group, so
-STAGING-VERIFY's `alive` smoke does not prove the staging gateway is up.
+## 5. Listener change (D4, owner-accepted 2026-11-18) — sparring paths only
+Rule at priority 8: `host-header == preview-aws-gateway.vitanaland.com` AND `path-pattern in {/api/v1/plans/spar,
+/api/v1/plans/spar/*, /api/v1/vtid/allocator/status}` → `vitana-tg-gateway-preview`. Rule 31 is untouched.
+Live routing evaluated read-only (`artifacts/routing-evaluation.txt`; `preview-gateway.sh plan` and `verify` repeat it
+and refuse otherwise): with the planned rule, `/api/v1/admin/build-info`, `/api/v1/admin/health`, `/api/v1/orb/live/ws`
+and `/api/v1/vtid/allocate` on the preview hostname stay on rule 10 → `vitana-tg-gateway-prod` (staging
+`vitana-gateway`), exactly as today; only the three sparring paths move. PUBLISH reads
+`preview-aws-gateway…/api/v1/admin/build-info` (`aws-gateway-admin.ts:24-80`), so its source stays the staging
+gateway. **Today that gateway is at 0 tasks (2026-11-17 scale-down), so PUBLISH currently has no staging build to
+resolve; this plan neither changes nor fixes that.** `verify` also fails if build-info ever reports the preview's commit.
 
-## 6. Push guard and the landing path (D4)
-The guard runs `scripts/collab/kiro-web-steering.test.mjs` case 6 against the workspace's real checkouts. It fails on
-unchanged `main` because vitana-v1's `.kiro/steering/vitana-standing-rules.md` still links `CLAUDE.md` and
-`.claude/CLAUDE.md`, which vitana-v1 #1691/#1692 removed on 2026-11-14. The fix already exists as commit `2af0822fb` in
-draft vitana-v1 PR #1696 (mixed with unrelated Expo changes, no VTID). Normal process: that commit as its own lane.
-Every lane needs a VTID, and VTIDs come from PLAN-SPAR, which this plan repairs: **the only path is owner break-glass
-(CLAUDE.md rule 55)**. Minimum VTIDs: (1) vitana-v1 steering-link fix, (2) `runtime-profile` (#5110), (3)
-`plan-spar-token`. The scripts and the record (`preview-ops`, `incident-record`) run from this branch and spar normally
-once the preview is back. Protected changes: only `.github/workflows/PLAN-SPAR.yml` (needs the owner's instruction
-naming this plan + a reviewer accept on the current head). The restore applies protected migration files unchanged
-(no protected edit) and is the migration stop (§7d): D3 approval, run by Dragan. Rule 55 asks for a full sparring
-within 24 h of a break-glass allocation; under D2 a preview sparring is evidence only, so the owner decides whether it
-satisfies that clause.
+## 6. Push guard, VTIDs and rule 55 (D4)
+- **Push guard resolved through the repo's supported layout.** `kiro-web-steering.test.mjs` case 6 says "The CI
+  checkout has only vitana-platform". In a clean single-repo clone every preflight check passes; the plan branch was
+  pushed from it (`kiro/preview-gateway-recovery/plan` @ ad81cc27, no PR, so PLAN-SPAR did not run; DRIVER-WAKE
+  answered "skip (not a plan event)"). The vitana-v1 steering fix (`2af0822fb`, #1696) proceeds on its own schedule.
+- **Break-glass VTIDs genuinely needed: 2.** (1) `runtime-profile` (#5110): without it, kiro-run timers, the autonomous
+  engine, the lifecycle worker, module-level timers, cache warms and the agents bootstrap start with no env switch
+  (the four Jev schedulers can be switched off by `JEV_*_MODE=off`, now in the overlay). (2) `plan-spar-token`: without
+  it PLAN-SPAR can only send the shared token, which is the production service-role key. Not needed: the vitana-v1
+  steering fix (push guard resolved); `preview-ops` and `incident-record` (operator scripts run from this branch; they
+  spar normally once the preview is back).
+- **Rule 55, exact text** (CLAUDE.md:360-361): "**Break-glass** (P1 incident with gateway or Bedrock down): only the
+  owner allocates through the exemption role, logged as `vtid.plan_sparring.break_glass`; a full sparring follows
+  within 24h." The skill says the same ("A full sparring follows within 24 hours", `.claude/skills/plan-sparring/SKILL.md:86`);
+  the reconciler only announces it ("post-hoc sparring due within 24h", `reconciler.ts:171`) and checks nothing after.
+  The rule does not say where the sparring must be recorded. Read with rule 52 (independent partner, every finding
+  answered, at least two passes) a complete preview run is a full sparring in substance; read with rule 54 ("The gate
+  is the database") and IF-THEN 9 (prefer the stricter rule) it is not, because its record lives in Aurora staging and
+  cannot be attached to the canonical ledger (D2, `canonical-ledger-acceptance.md`). It also leaves open whether this
+  outage is the "P1 incident with gateway … down" the rule names (the production gateway is up; the sparring gateway
+  is down). **Ambiguous. Only the owner can decide it** (rules 51–55 are owner decisions of 2026-10-03/04, and
+  CLAUDE.md is a protected file the owner controls). It must be decided before the first break-glass insert: the
+  reconciler starts the 24 h clock at that insert.
 
-## 7. Execution checklist (live changes, in order)
+## 7. Execution checklist (live changes, in order; nothing runs before the owner's approval)
 | # | Operator | Action | Rollback |
 |---|---|---|---|
-| 0 | Owner | Authorize: 3 break-glass VTIDs (§6); PLAN-SPAR.yml change (name this plan); D3 apply by Dragan | — |
-| 1 | Kiro | Land the vitana-v1 steering-link lane (`2af0822fb`), reviewer accept, §7b merge; push this plan branch (no `plan(` PR while sparring is paused) | revert commit |
-| 2 | IAM admin | Create the two roles in `iam-preview-roles.json` | delete both roles |
-| 3 | Owner/admin | `setup-preview-secrets.sh` (dry run) → `--apply --github` | delete the 2 secrets; `gh secret delete PLAN_SPAR_GATEWAY_TOKEN` |
-| 4 | Dragan | VPC CloudShell: `restore-sparring-schema.sh --repo <checkout>` (dry run, send output) → `--apply` | `--rollback` |
-| 5 | Owner/admin | `proxy-jwt-staging.sh plan` → `apply` → `verify` (VPC) | `proxy-jwt-staging.sh rollback` (rev 20) |
-| 6 | Kiro | Land `runtime-profile` (#5110); confirm image `vitana/gateway:<sha12>` in ECR | revert commit |
-| 7 | Owner/admin | `preview-gateway.sh plan --commit <sha>` → `apply --commit <sha>` | `preview-gateway.sh rollback` |
-| 8 | Kiro | Land `plan-spar-token` (owner instruction + reviewer accept) | revert, or delete `PLAN_SPAR_GATEWAY_TOKEN` |
-| 9 | Kiro + operator | `preview-gateway.sh verify --commit <sha>`; `proxy-jwt-staging.sh verify` (VPC) | — |
-| 10 | Owner → Kiro | Release sparring; Kiro opens/re-runs one `plan(` PR; report sparring result and allocation status separately | — |
+| 1 | Dragan | Read-only precheck (dry run) from the VPC CloudShell; send `restore-sparring-dryrun.txt` | none (read-only) |
+| 2 | Owner | Decide rule 55 (preview run satisfies the 24 h clause or not); allocate the 2 break-glass VTIDs | — |
+| 3 | IAM admin | Create the two roles in `iam-preview-roles.json` | delete both |
+| 4 | Owner/admin | `setup-preview-secrets.sh` (dry run) → `--apply --github` | delete the 2 secrets and `PLAN_SPAR_GATEWAY_TOKEN` |
+| 5 | Dragan | `restore-sparring-schema.sh --apply` (only after the dry-run result is reviewed) | `--rollback` |
+| 6 | Owner/admin | `proxy-jwt-staging.sh plan` → `apply` → `verify` (VPC) | `proxy-jwt-staging.sh rollback` (rev 20) |
+| 7 | Kiro | Land `runtime-profile` (#5110) with its VTID; image `vitana/gateway:<sha12>` in ECR | revert |
+| 8 | Owner/admin | `preview-gateway.sh plan --commit <sha>` → `apply --commit <sha>` | `preview-gateway.sh rollback` |
+| 9 | Kiro | Land `plan-spar-token` (prepared: `artifacts/plan-spar-token.patch`) after a reviewer accept on the PR head | revert, or delete `PLAN_SPAR_GATEWAY_TOKEN` |
+| 10 | Kiro + operator | `preview-gateway.sh verify`; `proxy-jwt-staging.sh verify` (VPC) | — |
+| 11 | Owner → Kiro | Release sparring; one full PLAN-SPAR run; report sparring and allocation separately | — |
+While the preview token is set, a converged plan gets no VTIDs and `plan-spar.mjs` hands it to `next_actor: claude`
+(stale wording; Claude Code is retired): every plan stops at convergence until D2 is settled.
 
 ## 8. Unchanged
 `vitana-gateway`, `vitana-gateway-awsdr`, rule 31 and every other listener rule, `PLAN_SPAR_GATEWAY_URL`, the staging
@@ -146,6 +159,4 @@ frontend, STAGING-VERIFY targets, PUBLISH. The 2026-11-17 reason stays unconfirm
 - `preview-ops` — `scripts/aws/preview-gateway/**` (the artifacts and the rehearsal), `docs/validation/<VTID>/**`.
 - `plan-spar-token` — `.github/workflows/PLAN-SPAR.yml` (protected), depends on `preview-ops`.
 - `incident-record` — `docs/ops/2026-11-17-preview-gateway-scale-down.md`.
-- vitana-v1 `steering-dead-links` — `.kiro/steering/vitana-standing-rules.md`, `.kiro/steering/vitana-execution-continuity.md`,
-  `.claude/rules/execution-continuity.md`, `scripts/ci/kiro-steering/guard.cjs` (commit `2af0822fb`).
 <!-- plan:end -->
