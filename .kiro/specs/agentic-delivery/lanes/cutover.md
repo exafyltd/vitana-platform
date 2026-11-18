@@ -1,6 +1,6 @@
 ---
 lane: cutover
-state: in-review
+state: executing
 next_actor: kiro
 depends_on: [pipelines, deploy-path, verify-on-gitlab, merge-queue, github-bridge, gateway-delivery]
 executor: kiro
@@ -95,3 +95,8 @@ non-blocking: inventory classifications verified from the list; counts not recou
 non-blocking: depends_on lanes must be done before merge; CI read by caller only.
 non-blocking: no protected gate file touched; all files within paths.
 Next: the lane's seat fixes the blocking finding (record the cutover-r2 red-on-base and green output in docs/validation/VTID-05545 and update acceptance.md)
+
+### 2026-11-18T17:40Z · kiro-exafy-202611181602-02f5 · in-review → executing
+Fixing the blocking finding of the review above. The cutover-r2 red, green and UNIT outputs go into docs/validation/VTID-05545/outputs/
+(cutover-r2-red-on-base.txt, cutover-r2-green.txt, cutover-r2-unit-all.txt). acceptance.md gets a cutover-r2 section, and the stale
+159/160 totals are marked superseded.
