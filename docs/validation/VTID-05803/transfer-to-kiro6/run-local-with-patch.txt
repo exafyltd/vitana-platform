@@ -1,0 +1,117 @@
+# tests/run-local.sh with kiro4-fixes.patch applied, 2026-11-18T10:44:58Z, PostgreSQL 17.12 + pgvector
+PASS prod-host-rejected
+PASS prod-host-exit-20
+PASS prod-substring-rejected
+PASS legacy-staging-instance-rejected
+PASS hostaddr-override-rejected
+PASS no-connection-before-guard
+PASS probe-exit-0
+PASS probe-steps-0-to-5-ok
+PASS probe-staging-empty-reported
+PASS probe-changes-nothing
+PASS probe-no-secret-in-log
+PASS non-admin-rejected
+PASS non-admin-nothing-applied
+PASS failure-reported-at-step-8
+PASS failure-error-shown
+PASS rollback-leaves-public-empty
+PASS rollback-leaves-auth-bridge-absent
+STEP 0 ok
+STEP 1 ok: vitana-aurora-staging.cluster-cfk228aiedf3.eu-central-1.rds.amazonaws.com
+STEP 2 ok: root=<tmp>/pkg
+STEP 3 ok: db=vitana user=stg_master ip=127.0.0.1 pg=17.12 public_objects=0 rds_superuser=t db_create=t
+STEP 4 ok: db=src pg=17.12 public_base_tables=18 pg_dump_major=17
+STEP 5 ok
+STEP 6 ok
+  toc entries: full=112 kept=86 vtid05803 dropped=26
+  exclusions by kind: fk=13 function=1 index=1 policy=2 trigger=1 view=3 
+STEP 7 ok
+STEP 8 ok
+  --- unexpected only_source (0, first 80) ---
+  --- unexpected only_staging (0, first 40) ---
+  rows_total_public=0 (excluding auth_user_fk_map)  auth_user_fk_map=12 of 12
+STEP 9 ok: parity: no unexpected differences, 0 rows, role switch ok, fk map 12
+RESULT: restore finished, failures=0 (next: MODE=accept)
+PASS restore-exit-0
+PASS restore-steps-0-to-9-ok
+PASS parity-no-unexpected
+PASS restore-no-secret-in-log
+PASS no-member-rows
+PASS matview-not-populated
+PASS sequence-not-advanced
+PASS restore-sql-has-no-copy
+PASS table-tenants
+PASS table-app_users
+PASS table-profiles
+PASS table-memberships
+PASS table-posts
+PASS table-events
+PASS table-events_2026
+PASS table-service_bot_accounts
+PASS table-user_discount_codes
+PASS table-storage_refs
+PASS views-carried
+PASS enum-and-domain
+PASS vector-column
+PASS hnsw-index
+PASS generated-column
+PASS identity-column
+PASS public-fks-kept
+PASS trigger-public-kept
+PASS rls-enabled-parity
+PASS policies-kept
+PASS rls-two-user-isolation
+PASS rls-test-left-no-rows
+PASS table-grants-parity
+PASS function-grant-revoked
+PASS function-grant-kept
+PASS authenticator-can-switch
+PASS auth-fk-excluded
+PASS webhook-trigger-excluded
+PASS auth-views-excluded
+PASS function-on-excluded-view-excluded
+PASS auth-policy-excluded
+PASS storage-not-created
+PASS outbox-replaced-pg-net
+PASS outbox-table-present
+PASS outbox-empty
+PASS no-pg-cron-or-pg-net
+PASS extensions-created
+PASS auth-bridge-present
+PASS default-auth-uid-works
+PASS fk-map-loaded
+PASS fk-map-actions
+PASS accept-as-master-refused
+STEP 10 start: acceptance (single transaction, rolled back)
+NOTICE:  ACC ok A1 structure: fk map 12, no cron/net, API roles subject to RLS
+NOTICE:  ACC ok A2 auth.uid() from request.jwt.claims
+NOTICE:  ACC ok A3 provisioning via provisioning_pre_request: 2 members
+NOTICE:  ACC info A4 member A reads its own app_users rows: -1 (-1 = no privilege; depends on the source policies)
+NOTICE:  ACC ok A4 two-member RLS: A cannot update or delete B
+NOTICE:  ACC ok A5 anon reads no app_users rows
+NOTICE:  ACC ok A6 service_role reads both members
+NOTICE:  ACC ok A7 auth bridge deletion cascaded for A, B untouched
+NOTICE:  ACC info A8 outbox rows queued in this transaction: 0 (rolled back)
+NOTICE:  ACC ok A8 no trigger calls pg_net or http directly
+NOTICE:  ACC ok A9 rollback left app_users, profiles and the outbox empty
+STEP 10 ok: acceptance: 9/9 checks passed, nothing persisted, PostgREST schema reload sent
+RESULT: acceptance passed
+PASS accept-exit-0
+PASS accept-all-checks
+PASS accept-no-secret-in-log
+PASS accept-left-no-rows
+PASS accept-prod-host-rejected
+PASS rerun-refused-non-empty
+PASS missing-role-switch-applies
+PASS missing-role-switch-reported
+PASS inventory-detects-missing-policy
+PASS inventory-detects-missing-grant
+PASS bootstrap-checksum-ok
+PASS bootstrap-probe-result
+PASS bootstrap-bad-checksum-stops
+PASS bootstrap-bad-checksum-no-exec
+PASS bootstrap-http-fallback-checksum-ok
+PASS bootstrap-http-fallback-probe
+PASS pooler-6543-rewritten
+PASS pooler-error-scrubbed
+TOTAL pass=85 fail=0
