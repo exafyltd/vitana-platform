@@ -80,7 +80,32 @@ M=(psql -h "$W" -p $PORT -U vitana_staging_admin -X)
 # first error. Not one transaction: three migrations carry their own BEGIN/COMMIT, so a failure is undone by the
 # rollback file (section C proves it).
 apply() { "${M[@]}" -d "$1" -q -v ON_ERROR_STOP=1 -f "$HERE/precheck-sparring.sql" $(printf -- '-f %q ' "${FILES[@]}") >"$W/apply-$1.log" 2>&1; }
-RB=(-v drop_roles=anon,authenticated,service_role,vitana_governance_owner -v drop_schemas= -f "$HERE/rollback-sparring-schema.sql")
+RB=(-v drop_roles=anon,authenticated,service_role,vitana_governance_owner -v revoke_memberships=anon,authenticated,service_role -v revoke_usage=anon,authenticated,service_role -v drop_schemas= -f "$HERE/rollback-sparring-schema.sql")
+# The same pre-state the live --apply records (prestate-sparring.sql), and the rollback the live --rollback replays.
+prestate() { "${M[@]}" -d vitana -XAt -f "$HERE/prestate-sparring.sql"; }
+rollback_from() { local c m u; IFS='|' read -r c m u <<<"$1"
+  "${M[@]}" -d vitana -q -v drop_roles="$c" -v revoke_memberships="$m" -v revoke_usage="$u" -v drop_schemas= -f "$HERE/rollback-sparring-schema.sql"; }
+live_like_case() { # live_like_case <label> <grant-usage yes|no>
+  echo; echo "== $1"
+  clean_roles; aurora_like vitana
+  "${SU[@]}" -d postgres -c "CREATE ROLE anon NOLOGIN NOINHERIT" -c "CREATE ROLE authenticated NOLOGIN NOINHERIT" \
+    -c "CREATE ROLE service_role NOLOGIN NOINHERIT BYPASSRLS" -c "GRANT anon, authenticated, service_role TO authenticator"
+  [ "$2" = yes ] && "${SU[@]}" -d vitana -c "GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role"
+  snapshot > "$W/l0"
+  local pre; pre=$(prestate); echo "  prestate (created|revoke_memberships|revoke_usage): $pre"
+  if apply vitana; then ok "precheck passed and all 7 files applied (request roles pre-existing, not created by the master)"; else bad "apply: $(grep -m1 -E 'ERROR|refused' "$W/apply-vitana.log")"; fi
+  expect "service_role (pre-existing) inserts and reads a session through authenticator" "1" \
+    "$(q authenticator vitana "SET ROLE service_role; insert into plan_sparring_sessions (plan_id, plan_hash, producer, change_class, trust_tier) values (gen_random_uuid(), repeat('c',64), 'rehearsal', 'standard', 'gateway'); select count(*) from plan_sparring_sessions")"
+  expect "anon (pre-existing) cannot read vtid_ledger" "ERROR:  permission denied for table vtid_ledger" "$(q authenticator vitana "SET ROLE anon; select count(*) from vtid_ledger")"
+  snapshot > "$W/l1"
+  echo "  catalog entries added: $(LC_ALL=C comm -13 "$W/l0" "$W/l1" | wc -l | tr -d ' '); pre-existing entries modified: $(LC_ALL=C comm -23 "$W/l0" "$W/l1" | awk '{print $1" "$2}' | tr '\n' ';')"
+  rollback_from "$pre" >"$W/rb-l.log" 2>&1 && ok "rollback replayed the recorded pre-state" || bad "rollback: $(grep -m1 ERROR "$W/rb-l.log")"
+  snapshot > "$W/l2"
+  expect "catalog after rollback identical to before (pre-existing roles, memberships and grants kept)" "0" "$(diff "$W/l0" "$W/l2" | grep -c '^[<>]' || true)"
+  expect "pre-existing request roles still exist" "3" "$(q postgres vitana "select count(*) from pg_roles where rolname in ('anon','authenticated','service_role')")"
+  expect "authenticator memberships unchanged" "anon,authenticated,service_role" "$(q postgres vitana "select string_agg(r.rolname, ',' order by r.rolname) from pg_auth_members m join pg_roles r on r.oid=m.roleid join pg_roles u on u.oid=m.member where u.rolname='authenticator'")"
+  expect "re-apply after rollback" "ok" "$(apply vitana && echo ok || grep -m1 ERROR "$W/apply-vitana.log")"
+}
 q() { psql -h "$W" -p $PORT -U "$1" -d "$2" -XAtq -c "$3" 2>&1 | tail -1; }
 
 echo; echo "== A. empty database, roles absent (expected Aurora staging state), master without BYPASSRLS"
@@ -134,20 +159,24 @@ expect "re-apply after rollback" "ok" "$(apply vitana && echo ok || grep -m1 ERR
 echo; echo "== D. a non-empty database is refused before anything runs"
 apply vitana && bad "second apply on a restored database ran" || expect "precheck refusal" "refused: public schema has tables; this restore only runs on the empty staging database" "$(grep -m1 -o 'refused: .*' "$W/apply-vitana.log")"
 
-echo; echo "== B. request roles that predate the restore stop it (rollback scope would not be exact)"
+live_like_case "L1. live state (2026-11-18 dry run): request roles pre-exist, authenticator already their member, USAGE on public granted" yes
+live_like_case "L2. same, without explicit USAGE grants on public" no
+
+echo; echo "== B. a pre-existing request role authenticator is NOT a member of, and no ADMIN OPTION for the master"
 clean_roles; aurora_like vitana anon authenticated service_role
-apply vitana && bad "restore ran although its roles already existed" \
-  || expect "precheck refusal" "refused: role(s) anon,authenticated,service_role already exist; stop and report (rollback scope would not be exact)" "$(grep -m1 -o 'refused: .*' "$W/apply-vitana.log")"
-expect "nothing created in vitana" "0" "$(q postgres vitana "select count(*) from pg_tables where schemaname='public'")"
+apply vitana && bad "restore ran although the grant to authenticator cannot succeed" \
+  || expect "precheck refusal" "refused: role anon exists, authenticator is not its member, and vitana_staging_admin has no ADMIN OPTION to grant it" "$(grep -m1 -o 'refused: .*' "$W/apply-vitana.log")"
+expect "nothing created" "0" "$(q postgres vitana "select count(*) from pg_tables where schemaname='public'")"
 
 echo; echo "== C. a failure in the last file, then the rollback file, returns to the empty state"
 clean_roles; aurora_like vitana
+PRE_C=$(prestate)
 cp "$HERE/restore-sparring-grants.sql" "$W/grants-broken.sql"; echo "SELECT 1/0;" >> "$W/grants-broken.sql"
 FILES_SAVE=("${FILES[@]}"); FILES[-1]="$W/grants-broken.sql"
 apply vitana && bad "broken restore succeeded" || ok "broken restore stopped at the injected error ($(grep -m1 -o 'division by zero' "$W/apply-vitana.log"))"
 FILES=("${FILES_SAVE[@]}")
 echo "  partial state after the failure: $(q postgres vitana "select count(*) from pg_tables where schemaname='public'") tables (migrations commit file by file)"
-"${M[@]}" -d vitana -q "${RB[@]}" >"$W/rb-c.log" 2>&1 && ok "rollback ran after the failure" || bad "rollback C: $(grep -m1 ERROR "$W/rb-c.log")"
+rollback_from "$PRE_C" >"$W/rb-c.log" 2>&1 && ok "rollback ran after the failure" || bad "rollback C: $(grep -m1 ERROR "$W/rb-c.log")"
 expect "public tables after rollback" "0" "$(q postgres vitana "select count(*) from pg_tables where schemaname='public'")"
 expect "restore roles after rollback" "0" "$(q postgres vitana "select count(*) from pg_roles where rolname in ('anon','authenticated','service_role','vitana_governance_owner')")"
 expect "authenticator memberships after rollback" "0" "$(q postgres vitana "select count(*) from pg_auth_members m join pg_roles u on u.oid=m.member where u.rolname='authenticator'")"

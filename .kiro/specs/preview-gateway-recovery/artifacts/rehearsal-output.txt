@@ -1,7 +1,8 @@
-# Rehearsal output (final run, 2026-11-18T10:39:03Z). Run 1 with PR #5104's unmodified roles file, same Aurora-like master:
+# Rehearsal output (run 10, 2026-11-18T12:25:59Z). Adds the live state seen by the 2026-11-18 dry run (L1/L2).
+# Run 1 with PR #5104's unmodified roles file, same Aurora-like master:
 #   psql:00-supabase-roles-and-auth.sql:10: ERROR:  permission denied to create role
 #   DETAIL:  Only roles with the BYPASSRLS attribute may create roles with the BYPASSRLS attribute.
-== rehearsal 2026-11-18T10:33:51Z on postgres (PostgreSQL) 17.11
+== rehearsal 2026-11-18T12:25:41Z on postgres (PostgreSQL) 17.11
 == manifest
   4c89a483aadda189f8c1901efbf7dba20579b3c2ae142aa01033308e80ac75f2  .kiro/specs/preview-gateway-recovery/artifacts/00-sparring-roles.sql
   9afe19d8a6fab3385adcb89ddfdce59c052c5c264b8f4447e2ddd2991316598d  supabase/migrations/20251217000000_vtid_ledger_and_allocator.sql
@@ -9,7 +10,7 @@
   80bc587894c2efdfea3fbc44a9c7488afa46dbbea8e96e9ef952516ed48c26ff  supabase/migrations/20261004110000_vtid_04868_plan_sparring_gate.sql
   2eaec16934081fdf754eb831d95fdb806bd9c067cc03282077a005ba91cb3796  supabase/migrations/20261004120000_vtid_04868_plan_sparring_hardening.sql
   a58bd37974235c7a3117c7f8bad7efbefdcfb0110c11e3b7d9863300805122f5  supabase/migrations/20261015180000_vtid_05214_plan_sparring_policy_approval.sql
-  4062f101e2602cd69836657661c64359dfc5da5ceb3c9a8143580481f58db523  .kiro/specs/preview-gateway-recovery/artifacts/restore-sparring-grants.sql
+  b7b32994257d82d907d16c8e2cc0df53d8f19396ecc58555f69d9f6f559f6fce  .kiro/specs/preview-gateway-recovery/artifacts/restore-sparring-grants.sql
 
 == A. empty database, roles absent (expected Aurora staging state), master without BYPASSRLS
 PASS  snapshot before apply is readable = yes
@@ -24,7 +25,7 @@ PASS  system_controls absent (allocator reads no row -> disabled) = t
 PASS  global_vtid_seq untouched (migration default) = 1000
 
 == A2. gateway path through PostgREST's role switch (authenticator -> service_role)
-PASS  service_role inserts a sparring session (34e8b684-0c47-4e8c-b200-630a72db8cd7)
+PASS  service_role inserts a sparring session (f1d57c79-e2a1-4839-a5db-57368669abe6)
 PASS  service_role reads it = 1
 PASS  plan_sparring_append_round round 1 = true
 PASS  converge + policy approval (UPDATE as service_role) = UPDATE 1
@@ -109,9 +110,33 @@ PASS  re-apply after rollback = ok
 == D. a non-empty database is refused before anything runs
 PASS  precheck refusal = refused: public schema has tables; this restore only runs on the empty staging database
 
-== B. request roles that predate the restore stop it (rollback scope would not be exact)
-PASS  precheck refusal = refused: role(s) anon,authenticated,service_role already exist; stop and report (rollback scope would not be exact)
-PASS  nothing created in vitana = 0
+== L1. live state (2026-11-18 dry run): request roles pre-exist, authenticator already their member, USAGE on public granted
+  prestate (created|revoke_memberships|revoke_usage): vitana_governance_owner||
+PASS  precheck passed and all 7 files applied (request roles pre-existing, not created by the master)
+PASS  service_role (pre-existing) inserts and reads a session through authenticator = 1
+PASS  anon (pre-existing) cannot read vtid_ledger = ERROR:  permission denied for table vtid_ledger
+  catalog entries added: 46; pre-existing entries modified: role_comment 0;
+PASS  rollback replayed the recorded pre-state
+PASS  catalog after rollback identical to before (pre-existing roles, memberships and grants kept) = 0
+PASS  pre-existing request roles still exist = 3
+PASS  authenticator memberships unchanged = anon,authenticated,service_role
+PASS  re-apply after rollback = ok
+
+== L2. same, without explicit USAGE grants on public
+  prestate (created|revoke_memberships|revoke_usage): vitana_governance_owner||anon,authenticated,service_role
+PASS  precheck passed and all 7 files applied (request roles pre-existing, not created by the master)
+PASS  service_role (pre-existing) inserts and reads a session through authenticator = 1
+PASS  anon (pre-existing) cannot read vtid_ledger = ERROR:  permission denied for table vtid_ledger
+  catalog entries added: 47; pre-existing entries modified: role_comment 0;schema public;
+PASS  rollback replayed the recorded pre-state
+PASS  catalog after rollback identical to before (pre-existing roles, memberships and grants kept) = 0
+PASS  pre-existing request roles still exist = 3
+PASS  authenticator memberships unchanged = anon,authenticated,service_role
+PASS  re-apply after rollback = ok
+
+== B. a pre-existing request role authenticator is NOT a member of, and no ADMIN OPTION for the master
+PASS  precheck refusal = refused: role anon exists, authenticator is not its member, and vitana_staging_admin has no ADMIN OPTION to grant it
+PASS  nothing created = 0
 
 == C. a failure in the last file, then the rollback file, returns to the empty state
 PASS  broken restore stopped at the injected error (division by zero)
@@ -132,4 +157,4 @@ PASS  no key (anon) cannot read sessions = 401
 PASS  authenticated-role key cannot read sessions = 403
 PASS  system_controls is not exposed (allocator reads no row -> disabled) = 404
 
-RESULT: 44 passed, 0 failed
+RESULT: 60 passed, 0 failed

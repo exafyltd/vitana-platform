@@ -5,9 +5,10 @@
 #
 #   (default)   dry run: identity, host guard, checksums, connection, precheck-sparring.sql (read-only). Writes nothing.
 #   --apply     precheck, then every manifest file in order (ON_ERROR_STOP). Records which roles it created in
-#               ./restore-sparring-state.json. Not one transaction: three migrations carry their own BEGIN/COMMIT;
+#               ./restore-sparring-state.json (prestate-sparring.sql, before anything is applied). Not one transaction: three migrations carry their own BEGIN/COMMIT;
 #               on any failure run --rollback (rehearsal section C).
-#   --rollback  rollback-sparring-schema.sql: drops everything the restore created, and only the roles it created.
+#   --rollback  rollback-sparring-schema.sql: drops every restore object, only the roles it created, and revokes only
+#               the memberships / schema grants it added (pre-existing request roles and their grants are kept).
 #
 # Where: a VPC-attached AWS CloudShell environment (vpc-05958f035e596fe64, subnet-0ff45a2051c5e5482,
 #        security group sg-0a8531c0ec2130457), with psql 17 and jq.
@@ -59,9 +60,13 @@ case "$MODE" in
     echo "dry run OK — nothing written. Send restore-sparring-dryrun.txt; do not run --apply yet.";;
   apply)
     [ ! -e "$STATE" ] || die "$STATE exists (an apply was already recorded)"
-    CREATED=$("${P[@]}" -At -c "select string_agg(n, ',') from unnest(array['anon','authenticated','service_role','vitana_governance_owner']) n where not exists (select 1 from pg_roles where rolname=n)")
-    jq -n --arg roles "$CREATED" --arg at "$(date -u +%FT%TZ)" --arg who "$(aws sts get-caller-identity --query Arn --output text)" \
-      '{created_roles:$roles, applied_at:$at, applied_by:$who}' > "$STATE"
+    "${P[@]}" -At -f "$HERE/precheck-sparring.sql" >/dev/null || die "precheck refused; run the dry run to see why"
+    PRE=$("${P[@]}" -At -f "$HERE/prestate-sparring.sql")
+    IFS='|' read -r CREATED REV_MEM REV_USAGE <<<"$PRE"
+    jq -n --arg roles "$CREATED" --arg mem "$REV_MEM" --arg usage "$REV_USAGE" --arg at "$(date -u +%FT%TZ)" \
+      --arg who "$(aws sts get-caller-identity --query Arn --output text)" \
+      '{created_roles:$roles, revoke_memberships:$mem, revoke_usage:$usage, recorded_before_apply_at:$at, applied_by:$who}' > "$STATE"
+    echo "pre-state recorded in $STATE: created_roles=[$CREATED] revoke_memberships=[$REV_MEM] revoke_usage=[$REV_USAGE]"
     ARGS=(-q -f "$HERE/precheck-sparring.sql"); for f in "${FILES[@]}"; do ARGS+=(-f "$f"); done
     if ! "${P[@]}" "${ARGS[@]}"; then echo "FAILED — undo with: $0 --repo $REPO --rollback" >&2; exit 1; fi
     echo "applied. Post-checks (read-only):"
@@ -77,7 +82,8 @@ SQL
     ;;
   rollback)
     [ -f "$STATE" ] || die "no $STATE: rollback drops only roles this restore created, and needs that record"
-    "${P[@]}" -At -v drop_roles="$(jq -r .created_roles "$STATE")" -v drop_schemas= -f "$HERE/rollback-sparring-schema.sql"
+    "${P[@]}" -At -v drop_roles="$(jq -r .created_roles "$STATE")" -v revoke_memberships="$(jq -r .revoke_memberships "$STATE")" \
+      -v revoke_usage="$(jq -r .revoke_usage "$STATE")" -v drop_schemas= -f "$HERE/rollback-sparring-schema.sql"
     mv "$STATE" "$STATE.rolled-back.$(date -u +%Y%m%dT%H%M%SZ)";;
 esac
 unset PGPASSWORD
