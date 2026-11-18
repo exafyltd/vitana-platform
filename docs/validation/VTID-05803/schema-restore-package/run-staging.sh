@@ -14,14 +14,28 @@ echo "STEP commit-verified $GOT"
 sha256sum -c SHA256SUMS >/dev/null 2>&1; RC=$?
 if [ "$RC" -ne 0 ]; then echo "WRAPPER_FAIL: checksum verification failed (rc=$RC)"; sha256sum -c SHA256SUMS; exit 11; fi
 echo "STEP checksums-verified $(grep -c . SHA256SUMS)-of-$(grep -c . SHA256SUMS)"
+build_uri() {
+  if [ -z "${STAGING_PGURI:-}" ]; then
+    STAGING_PGURI="$(python3 -c 'import os,urllib.parse as u; print("postgresql://%s:%s@%s:%s/vitana?sslmode=require" % (u.quote(os.environ["PGUSER"],safe=""), u.quote(os.environ["PGPASSWORD"],safe=""), os.environ["PGHOST"], os.environ.get("PGPORT","5432")))')" || { echo "WRAPPER_FAIL: cannot build staging URI"; exit 14; }
+    export STAGING_PGURI
+  fi
+}
+# STAGE (default restore): restore = the schema restore below; pre-load / post-load / report = the stages around the
+# DMS full load (load-stages.sh), on the same commit, checksums and staging writer.
+case "${STAGE:-restore}" in
+  restore) ;;
+  pre-load|post-load|report)
+    build_uri; export STAGE
+    bash ./load-stages.sh; RC=$?
+    [ -f load-report.out ] && { echo "----- load-report.out"; cat load-report.out; }
+    echo "WRAPPER: end stage=$STAGE rc=$RC $(date -u +%FT%TZ)"; exit "$RC" ;;
+  *) echo "WRAPPER_FAIL: unknown STAGE '${STAGE}'"; exit 15 ;;
+esac
 if [ ! -s sql/base-schema-public.sql ]; then
   [ -n "${SOURCE_URI:-}" ] || { echo "WRAPPER_FAIL: no base dump and no SOURCE_URI"; exit 12; }
   bash ./dump-schema.sh . || { echo "WRAPPER_FAIL: dump refused or failed"; exit 13; }
 fi
-if [ -z "${STAGING_PGURI:-}" ]; then
-  STAGING_PGURI="$(python3 -c 'import os,urllib.parse as u; print("postgresql://%s:%s@%s:%s/vitana?sslmode=require" % (u.quote(os.environ["PGUSER"],safe=""), u.quote(os.environ["PGPASSWORD"],safe=""), os.environ["PGHOST"], os.environ.get("PGPORT","5432")))')" || { echo "WRAPPER_FAIL: cannot build staging URI"; exit 14; }
-  export STAGING_PGURI
-fi
+build_uri
 bash ./schema-restore.sh; RC=$?
 echo "RESTORE_EXIT=$RC"
 for f in host-exclusion.out target-counts.out staging-fk-definitions.out; do

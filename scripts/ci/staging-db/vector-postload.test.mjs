@@ -370,3 +370,64 @@ test('pre-load and restore: all or nothing — a policy on a vector column stops
   await assert.rejects(applyFile(db2, RESTORE), /run the vector post-load first/);
   assert.equal((await one(db2, `SELECT count(*)::int AS n FROM pg_constraint WHERE contype = 'f'`))[0].n, 0, 'nothing restored early');
 });
+
+// ── VTID-05803 package path: load-stages.sh (psql from the package task) ─────────────────────────────────────────────
+const PKG = path.join(ROOT, 'docs/validation/VTID-05803/schema-restore-package');
+const STAGES = path.join(PKG, 'load-stages.sh');
+const WRITER = 'vitana-aurora-staging.cluster-cfk228aiedf3.eu-central-1.rds.amazonaws.com';
+function fakePsql({ failOn = null } = {}) {
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'psql-'));
+  const log = path.join(bin, 'calls.log');
+  fs.writeFileSync(path.join(bin, 'psql'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${log}"\necho "psql saw $3" >&2\n${failOn ? `case "$*" in *${failOn}*) exit 3;; esac\n` : ''}exit 0\n`, { mode: 0o755 });
+  return { bin, log, calls: () => (fs.existsSync(log) ? fs.readFileSync(log, 'utf8').trim().split('\n').filter(Boolean) : []) };
+}
+const runStages = (stage, uri, psql) => spawnSync('bash', [STAGES], { encoding: 'utf8', env: { ...process.env, PATH: `${psql.bin}:${process.env.PATH}`, STAGE: stage, STAGING_PGURI: uri } });
+const URI = `postgresql://vitana_staging_admin:s3cr3t-pw@${WRITER}:5432/vitana?sslmode=require`;
+
+test('package load-stages: refuses production, other hosts and unknown stages before psql runs', () => {
+  for (const [stage, uri] of [['pre-load', URI.replace(WRITER, 'vitana-aurora-prod.cluster-x.eu-central-1.rds.amazonaws.com')], ['post-load', URI.replace(WRITER, 'db.inmkhvwdcuyhnxkgfvsb.supabase.co')], ['post-load', URI.replace('/vitana?', '/postgres?')], ['post-load', URI.replace('sslmode=require', 'sslmode=disable')], ['load', URI], ['post-load', '']]) {
+    const p = fakePsql();
+    const r = runStages(stage, uri, p);
+    assert.equal(r.status, 1, `${stage} ${uri}: ${r.stderr}`);
+    assert.deepEqual(p.calls(), [], 'psql never ran');
+  }
+});
+
+test('package load-stages: pre-load, then post-load in order, each file one transaction; a failure stops and exits 2; secrets redacted', () => {
+  const pre = fakePsql();
+  let r = runStages('pre-load', URI, pre);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(pre.calls().length, 1);
+  assert.match(pre.calls()[0], /-v ON_ERROR_STOP=1 --single-transaction -f \S+\/scripts\/aws\/staging-db-vector-preload\.sql$/);
+  const post = fakePsql();
+  r = runStages('post-load', URI, post);
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(post.calls().map((c) => c.split('/').pop()), ['staging-db-vector-postload.sql', 'staging-db-restore-saved.sql']);
+  for (const c of post.calls()) assert.match(c, /--single-transaction/);
+  const bad = fakePsql({ failOn: 'staging-db-vector-postload.sql' });
+  r = runStages('post-load', URI, bad);
+  assert.equal(r.status, 2);
+  assert.equal(bad.calls().length, 1, 'restore-saved does not run after a failed post-load');
+  for (const out of [r.stdout, r.stderr]) { assert.doesNotMatch(out, /s3cr3t-pw/); assert.doesNotMatch(out, new RegExp(URI.replace(/[.?]/g, '\\$&'))); }
+  assert.match(r.stderr, /<STAGING_PGURI>/);
+});
+
+test('package load-stages: report runs each SELECT inside a read-only transaction that is rolled back', () => {
+  const p = fakePsql();
+  const r = runStages('report', URI, p);
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(p.calls().length, 5);
+  for (const c of p.calls()) assert.match(c, /-c BEGIN READ ONLY -f \S+q\d\.sql -c ROLLBACK$/);
+  fs.rmSync(path.join(PKG, 'load-report.out'), { force: true });
+});
+
+test('package: SHA256SUMS covers the stage runner and the four SQL files it runs, and every checksum matches', () => {
+  const sums = fs.readFileSync(path.join(PKG, 'SHA256SUMS'), 'utf8');
+  for (const f of ['load-stages.sh', 'run-staging.sh', '../../../../scripts/aws/staging-db-vector-preload.sql', '../../../../scripts/aws/staging-db-vector-postload.sql', '../../../../scripts/aws/staging-db-restore-saved.sql', '../../../../scripts/aws/staging-db-vector-report.sql'])
+    assert.match(sums, new RegExp(`  ${f.replace(/[.]/g, '\\.')}$`, 'm'), f);
+  const r = spawnSync('sha256sum', ['-c', 'SHA256SUMS'], { cwd: PKG, encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  const run = fs.readFileSync(path.join(PKG, 'run-staging.sh'), 'utf8');
+  assert.match(run, /pre-load\|post-load\|report\)/);
+  assert.ok(run.indexOf('checksums-verified') < run.indexOf('load-stages.sh'), 'stages run only after the commit and checksum checks');
+});

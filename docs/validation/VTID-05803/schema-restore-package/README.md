@@ -2,8 +2,8 @@
 
 The native PostgreSQL 17 dump of the source `public` schema is the base. It carries tables, constraints, indexes,
 functions, triggers, views, RLS policies and privileges. No data is copied. Kiro 1's and Kiro 4's verified fixes are
-integrated here, so there is one path: no delta schema-sync, FK-recreate, grants or RLS scripts, and no vector
-pre-load or post-load.
+integrated here, so there is one path: no delta schema-sync, FK-recreate, grants or RLS scripts. The restore
+builds the schema only; the stages around the DMS full load are below.
 
 ## Run order (`run-staging.sh`, bash)
 1. The commit and its checksums (`SHA256SUMS`) are verified.
@@ -61,3 +61,25 @@ stub. It has 535 tables, 314 FKs (104 into auth.users), 946 policies, 590 functi
   - Vector columns are 11/11 and vector indexes 4/4.
   - The stub has 35 columns and 0 rows. `public` holds 0 rows.
 - **Fail-closed:** a RESTRICTIVE policy for an absent role gives rc=2, and `public` keeps 0 relations.
+
+## Stages around the DMS full load (`run-staging.sh` with `STAGE`, `load-stages.sh`)
+The restore leaves `public` with native pgvector columns, foreign keys and views. The DMS task truncates and reloads
+each table (TRUNCATE_BEFORE_LOAD), which PostgreSQL refuses on a referenced table, and DMS cannot write pgvector. So
+the same task runs, on the same commit, checksums and staging writer:
+
+| `STAGE` | When | What (each file one transaction, all or nothing, idempotent) |
+|---|---|---|
+| `restore` (default) | first | the schema restore above |
+| `pre-load` | before the DMS full load | `scripts/aws/staging-db-vector-preload.sql`: the public foreign keys, the views on vector columns and the vector indexes are saved from the live catalog into `migration_audit` and dropped; the 13 vector columns become text |
+| `post-load` | after the DMS full load | 1. `scripts/aws/staging-db-vector-postload.sql`: text back to `vector(<dims>)`, every incomplete value kept in `migration_audit.vector_incomplete`; 2. `scripts/aws/staging-db-restore-saved.sql`: the saved indexes, foreign keys (NOT VALID) and views back, exactly as saved |
+| `report` | after the post-load, and again after the embedding backfill | `scripts/aws/staging-db-vector-report.sql`, read-only, written to `load-report.out` |
+
+Then run the embedding backfill: `python3 scripts/aws/aurora-cutover-embedding-backfill.py --cluster vitana-aurora-staging`.
+
+**R2 (public → auth.users foreign keys) holds through every stage.** The restore excludes them
+(`r2-exclude-auth-users-fks.sql`). The pre-load records any that exists with `references_auth = true` and never
+restores it. The post-load drops and records any that appears later, for example from a migration replay, and then
+asserts that 0 remain. The report shows `excluded_auth_r2` and `foreign_keys_to_auth_schema` (must be 0).
+
+The Data API path (`scripts/aws/staging-db-migration.sh pre-load|post-load --cluster vitana-aurora-staging`) applies the
+same SQL files.

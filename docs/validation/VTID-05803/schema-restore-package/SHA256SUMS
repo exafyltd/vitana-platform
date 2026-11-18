@@ -2,8 +2,8 @@
 5585be51408b300df1d669a78d1c74b4127b5bb777c441a6aea2837b02cd4940  filter-absent-roles.py
 d42a36d58f24a6b3fff711590c9fef41b3a9291a24aaa49ab0aefcd93737a463  parity-compare.py
 76822d932c2ea08379dd3a602dd4a28aae0e16d698693a0b1d81189463e946db  parity-definitions.py
-349de0a73c664e8e023e15ebbeb0915a302a93035439d22ad55cb0e901d3a690  README.md
-87089d3e9ccc80a4161560845cc4841b77e8a1f90d2ff221a5f933a34fb3adb0  run-staging.sh
+8d8d5481f98d18a4f83e8381121b8bbd9a1ed422a79202c43024793b12911ebb  README.md
+ecace2fdc716a6742af8b2a136c410f1f3f64c60be2c36f4080ef0133e8c1d5b  run-staging.sh
 cdfcd2254bda5d7846f2174041546bb68096b5fa6beeb9af71356848ac99e83e  schema-restore.sh
 09fffe0b5b3329b4635a1fe7a59a04cac420624e754604bd5460343037886cfb  source-auth-fk-inventory.tsv
 489e81ad43f6cd2387183132602db8e9ec72fd37df34b4c504ed8b8bde0f3678  source-baseline-2026-11-17.txt
@@ -15,3 +15,8 @@ d5f406ed178ab3974f89110620cecdd7c38d8e4c267e5eb318b2e81c6bbc964b  sql/outbox-rep
 4bd4b61177ece1fcccc2dfbb1a58a2b3b532ee68f6ea15a3c96cd61dda930da2  sql/parity-probe.sql
 ccd03e8845caaf2c405e7e91f2a50121ef78e59797849cbffe6011b7069cb68e  sql/r2-exclude-auth-users-fks.sql
 6300d871dcbf62efdbeb1d030deba95dfec730cb44a88f93d213325ddde279dc  sql/reset-session.sql
+2d781191228aa2358abbbcafcfb8420b57ccf046aefeb7602c8300587385eaaf  load-stages.sh
+0148ed4a54c55f4739b1bcf70a4684912bf9e83d2a7e5f6ba60fab989488b551  ../../../../scripts/aws/staging-db-vector-preload.sql
+1ecf9d1b182d7d7d43ada579ad38609ca0112babc6bc81b04c53657189bb498c  ../../../../scripts/aws/staging-db-vector-postload.sql
+bcca7c9e2d7057c036a647a59824b4aa8abcb3953632895ad77ec6187d2e2597  ../../../../scripts/aws/staging-db-restore-saved.sql
+d7295b8559141bf778d6ae1837949c909659d1e51075be0d463b081ae59dce02  ../../../../scripts/aws/staging-db-vector-report.sql
