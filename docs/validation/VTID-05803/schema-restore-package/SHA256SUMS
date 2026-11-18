@@ -3,6 +3,7 @@ f3f89facddb9855cbccce9e24d440dd270818673abfc4bf492772ff6b7e6e1fc  ./__pycache__/
 95448b6e58e6f61a2d744fcb8e3ab56999ec03eccf7be79e1c61da01f2730a6c  ./__pycache__/parity-definitions.cpython-313.pyc
 de3b950404a23e5af4ac281f4adc726662bcb3298f4dfe956593ea2799338750  ./parity-compare.py
 5b6a34216f372b41f4b5e7fa4a3df510f457db21dacbfabd68f4d6b04aa2caa5  ./parity-definitions.py
+ae1ec1487fdb6827d0cb13a44b92ef8ad99f5f5201430f142bf5b21acfa697d6  ./run-staging.sh
 5bdc66816e0cc80b4bd8958037b11817432c41dba3f1323c913d4aa16a38cd5e  ./schema-restore.sh
 09fffe0b5b3329b4635a1fe7a59a04cac420624e754604bd5460343037886cfb  ./source-auth-fk-inventory.tsv
 489e81ad43f6cd2387183132602db8e9ec72fd37df34b4c504ed8b8bde0f3678  ./source-baseline-2026-11-17.txt
