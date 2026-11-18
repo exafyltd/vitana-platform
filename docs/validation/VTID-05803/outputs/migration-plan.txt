@@ -1,0 +1,49 @@
+== pre-load 1/1 pre-load (staging-db-vector-preload.sql)
+Plan 1/1 /projects/sandbox/vitana-platform/scripts/aws/staging-db-vector-preload.sql: 10 statement(s), 0 non-transactional
+  1. line 24: DO $guard$ DECLARE s text; deps text; BEGIN SELECT n.nspname INTO s FROM pg_extension e JOIN pg_name
+  2. line 27: CREATE SCHEMA IF NOT EXISTS migration_audit
+  3. line 28: CREATE TABLE IF NOT EXISTS migration_audit.saved_foreign_keys (table_name text NOT NULL, constraint_
+  4. line 29: CREATE TABLE IF NOT EXISTS migration_audit.saved_views (view_name text PRIMARY KEY, relkind text NOT
+  5. line 30: CREATE TABLE IF NOT EXISTS migration_audit.saved_indexes (index_name text PRIMARY KEY, table_name te
+  6. line 33: DO $fk$ DECLARE r record; BEGIN FOR r IN SELECT quote_ident(tn.nspname) || '.' || quote_ident(t.reln
+  7. line 36: DO $views$ DECLARE r record; BEGIN CREATE TEMP TABLE vpl_views ON COMMIT DROP AS WITH RECURSIVE cols
+  8. line 39: DO $idx$ DECLARE r record; BEGIN FOR r IN SELECT DISTINCT quote_ident(n.nspname) || '.' || quote_ide
+  9. line 42: DO $text$ DECLARE r record; BEGIN FOR r IN SELECT x.tbl, x.col FROM (VALUES ('ai_memory','embedding'
+  10. line 45: DO $assert$ DECLARE bad text; BEGIN SELECT string_agg(x.tbl || '.' || x.col || ' is ' || coalesce(c.
+Mode: one Data API transaction for 10 statement(s) of 1 file(s) (all or nothing)
+Target: cluster vitana-aurora-staging, database vitana
+Dry run: no AWS call made
+ALL DONE: pre-load, 1 step(s) on vitana-aurora-staging (plan only, no AWS call)
+== post-load 1/2 vector post-load (staging-db-vector-postload.sql)
+Plan 1/1 /projects/sandbox/vitana-platform/scripts/aws/staging-db-vector-postload.sql: 16 statement(s), 0 non-transactional
+  1. line 26: DO $guard$ DECLARE s text; deps text; BEGIN SELECT n.nspname INTO s FROM pg_extension e JOIN pg_name
+  2. line 30: CREATE SCHEMA IF NOT EXISTS migration_audit
+  3. line 31: CREATE TABLE IF NOT EXISTS migration_audit.vector_incomplete (table_name text NOT NULL, column_name 
+  4. line 32: CREATE OR REPLACE FUNCTION migration_audit.try_vector(t text, dims integer) RETURNS vector LANGUAGE 
+  5. line 35: DO $cast$ DECLARE r record; dtype text; nn boolean; kept bigint; BEGIN FOR r IN SELECT * FROM (VALUE
+  6. line 41: DO $saved$ DECLARE r record; BEGIN IF to_regclass('migration_audit.saved_indexes') IS NULL THEN RETU
+  7. line 42: CREATE INDEX IF NOT EXISTS ai_memory_embedding_idx ON public.ai_memory USING ivfflat (embedding vect
+  8. line 43: CREATE INDEX IF NOT EXISTS dev_agent_memory_embedding_idx ON public.dev_agent_memory USING ivfflat (
+  9. line 44: CREATE INDEX IF NOT EXISTS mem_episodes_embedding_hnsw ON public.mem_episodes USING hnsw (embedding 
+  10. line 45: CREATE INDEX IF NOT EXISTS mem_facts_embedding_hnsw ON public.mem_facts USING hnsw (embedding vector
+  11. line 46: CREATE INDEX IF NOT EXISTS idx_mem_emb_vector ON public.memory_embeddings USING ivfflat (embedding v
+  12. line 47: CREATE INDEX IF NOT EXISTS idx_memory_facts_embedding_hnsw ON public.memory_facts USING hnsw (embedd
+  13. line 48: CREATE INDEX IF NOT EXISTS idx_memory_items_embedding_hnsw ON public.memory_items USING hnsw (embedd
+  14. line 49: CREATE INDEX IF NOT EXISTS user_intents_embedding_hnsw_idx ON public.user_intents USING hnsw (embedd
+  15. line 50: CREATE INDEX IF NOT EXISTS idx_vtid_ledger_embedding_hnsw ON public.vtid_ledger USING hnsw (embeddin
+  16. line 53: DO $assert$ DECLARE bad text; BEGIN SELECT string_agg(x.tbl || '.' || x.col || ' is ' || coalesce(fo
+Mode: one Data API transaction for 16 statement(s) of 1 file(s) (all or nothing)
+Target: cluster vitana-aurora-staging, database vitana
+Dry run: no AWS call made
+== post-load 2/2 restore saved objects (staging-db-restore-saved.sql)
+Plan 1/1 /projects/sandbox/vitana-platform/scripts/aws/staging-db-restore-saved.sql: 6 statement(s), 0 non-transactional
+  1. line 19: DO $guard$ DECLARE s text; bad text; BEGIN SELECT n.nspname INTO s FROM pg_extension e JOIN pg_names
+  2. line 22: DO $r2$ DECLARE r record; BEGIN FOR r IN SELECT quote_ident(tn.nspname) || '.' || quote_ident(t.reln
+  3. line 25: DO $idx$ DECLARE r record; BEGIN FOR r IN SELECT index_name, definition FROM migration_audit.saved_i
+  4. line 28: DO $fk$ DECLARE r record; BEGIN FOR r IN SELECT table_name, constraint_name, definition FROM migrati
+  5. line 31: DO $views$ DECLARE r record; g text; BEGIN FOR r IN SELECT * FROM migration_audit.saved_views ORDER 
+  6. line 34: DO $assert$ DECLARE bad text; BEGIN SELECT string_agg(table_name || '.' || constraint_name, ', ') IN
+Mode: one Data API transaction for 6 statement(s) of 1 file(s) (all or nothing)
+Target: cluster vitana-aurora-staging, database vitana
+Dry run: no AWS call made
+ALL DONE: post-load, 2 step(s) on vitana-aurora-staging (plan only, no AWS call)
