@@ -1,10 +1,10 @@
 ---
 lane: deploy-path
-state: in-review
+state: done
 claimed_by: kiro-exafy-202611181602-02f5
 branch: kiro/agentic-delivery/deploy-path
 pr: https://github.com/exafyltd/vitana-platform/pull/4714
-next_actor: kiro
+next_actor: owner
 depends_on: []
 executor: kiro
 seat: exafy
@@ -111,3 +111,14 @@ Findings: red to green 17 of 21 to 21 of 21, test 14 strict, no test weakened; a
 Findings: non-blocking, CI not re-read (gh GraphQL unsupported); relied on the earlier 11 of 11 green on e8a7eb0e4f and the merge
 Findings: non-blocking, D7 rootless build timings remain open until the owner's m2.sh rehearse run
 Next: the land step merges under §7b (already merged; the lane's closing record may proceed)
+
+### 2026-11-18T17:30Z · kiro-exafy-202611181602-02f5 · in-review → verified
+Reviewer-agent accept above (claude-sonnet-5.5) on the PR's final head f016c1da9b04cf65cb933fe324b16d7384e905df. Check runs on
+f016c1da9b: 12 of 12 success (GitHub check-runs API, 2026-11-18). Re-run today on GitLab main d8b8a8c5e0: fleet-classes-structure
+21/21, gitlab-oidc-structure 7/7.
+
+### 2026-11-18T17:31Z · kiro-exafy-202611181602-02f5 · verified → done
+merge: 6dc6e1ba0c18252ec2f3fbf5651d245e200f9835 (PR #4714, merged 2026-11-08T18:27:42Z, head f016c1da9b)
+authority: owner merge (merged_by DraganOffice on GitHub), not the §7b PM rule; the lane file said `executing` at the merge.
+Open items the review left non-blocking: the protected-runner item depends on lane cut-settings; D7 rootless build timings wait on
+the owner's `m2.sh rehearse` run (A4). `cutover` and `cut-settings` no longer wait on this lane.
