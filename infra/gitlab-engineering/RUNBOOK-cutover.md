@@ -189,7 +189,7 @@ printed first as `CHANGE: ...`. A step whose result is already in the world prin
 | 1 | Saves GitHub's current protection of `main` in Secrets Manager `vitana/engineering/gitlab/delivery-cutover/protection-<repo>` (engineering account) and reads it back; only a backup that reads back exactly lets the step go on. A GitHub answer other than 200 or 404 "Branch not protected" (a 502, a 403) stops the step: nothing is saved and nothing is locked. Then it restricts push and merge on `main` to `LOGIN`, removes required checks and reviews, admins included, no force push. Nothing lands on GitHub from here |
 | 2 | Runs the GitHub-to-GitLab copy once more, checks that both `main` are the same commit, then disables `vitana-mirror.timer`. It refuses to run the copy once the marker is set |
 | 3 | Writes `/etc/vitana/delivery-cutover` with mode `live`, fast-forwards the checkout and runs the settings sync. Both projects become `native`: landing, required jobs, push events, the push mirror of `main` to GitHub, protected `assist/*`, `DELIVERY_MODE=live`. If the sync does not converge it removes the marker again |
-| 4 | Disables the workflows marked `disable` in `github-workflows.json` (71 of 160, `PR-GATE.yml` included). It saves the list of those that were active in `vitana/engineering/gitlab/delivery-cutover/workflows-<repo>` and reads it back before the first one is disabled; the rollback enables exactly those |
+| 4 | Disables the workflows marked `disable` in `github-workflows.json` (72 of 163, `PR-GATE.yml` included). It saves the list of those that were active in `vitana/engineering/gitlab/delivery-cutover/workflows-<repo>` and reads it back before the first one is disabled; the rollback enables exactly those |
 | 5 | Starts the bridge (`vitana-github-bridge.timer`). Needs `/etc/vitana/gitlab-bridge-token` (the settings sync creates it as soon as a project is in `shadow`) and the A3 file |
 | 6 | **B1, yours.** The script reads the public kill-switch state of the production gateway (`GET /api/v1/ops/runtime/autopilot/kill-switch`) and never writes to production. If it is off it tells you to switch Dev Autopilot's kill switch ON in the Command Hub and waits up to 10 minutes. Not set in time: exit 3, nothing is half-done; set it and run the same command again (steps 1 to 5 are skipped) |
 | 7 | A read-only check that `DELIVERY_MODE` is `live` on both projects, then it prints that the system is armed. The first landing on vitana-platform `main` that changes the gateway deploys it to staging with the cut settings. A script cannot trigger that pipeline, so this step only checks |
@@ -323,7 +323,7 @@ on, required jobs) in the view of the marker. `gitlab-land.mjs` belongs to miles
 
 ## 10. The GitHub workflow list
 
-`scripts/eng/github-workflows.json` classifies all 160 workflows (114 in vitana-platform, 46 in vitana-v1): 71 `disable` (55 and 16) and 89 `keep`. A workflow added to either repository after this list fails `github-workflows.test.mjs` (and the checklist item `workflows`) until it is classified here.
+`scripts/eng/github-workflows.json` classifies all 163 workflows (116 in vitana-platform, 47 in vitana-v1): 72 `disable` (56 and 16) and 91 `keep`. A workflow added to either repository after this list fails `github-workflows.test.mjs` (and the checklist item `workflows`) until it is classified here.
 Each entry records its triggers and whether it runs on a push to `main`. A kept workflow says how it behaves after the cut: `main_push` is `none`,
 `reads`, `frozen` or `deploys-production`, `dispatch_only` marks the dispatch-only production and migration workflows that PUBLISH and the owner run,
 and `pull_request` marks the two that keep running on pull requests (`PLAN-SPAR.yml`, `MIGRATION-DRIFT-CHECK.yml`). `protected: true` marks the
@@ -334,7 +334,7 @@ Three kept vitana-v1 workflows commit to the branch they are dispatched on (`git
 `main`. After cut step 1 GitHub refuses those pushes, so they fail on `main`; dispatch them on another branch (a `kiro/*` branch the bridge carries)
 until they move to GitLab (T7). The workflow test counts a push to `github.ref_name` as a push to `main` unless the entry records it.
 `scripts/eng/github-workflows.test.mjs` reads the platform workflows from the checkout. For the vitana-v1 half, set `VITANA_V1_WORKFLOWS_DIR` to a
-folder with the 46 files (`status` item `workflows` fetches them from GitHub and sets it). A new workflow on GitHub makes `status` red until it is
+folder with the 47 files (`status` item `workflows` fetches them from GitHub and sets it). A new workflow on GitHub makes `status` red until it is
 added to the list.
 
 ## 11. What is not built, and what is not known
