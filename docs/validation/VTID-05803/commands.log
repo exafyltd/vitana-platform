@@ -1,6 +1,6 @@
 # Local verification for MR !69 (VTID-05803 staging stages). No AWS, database or production call.
 npm i @electric-sql/pglite@0.3            # scratch folder, linked as scripts/ci/staging-db/node_modules for the PGlite run only
-node --test scripts/ci/staging-db/vector-postload.test.mjs                  # 15/15 with PGlite; 6 pass, 9 skip without
+node --test scripts/ci/staging-db/vector-postload.test.mjs                  # 15/15 with PGlite; 7 pass, 8 skip without
 FILES=$(find scripts -path '*/node_modules' -prune -o \( -name '*.test.cjs' -o -name '*.test.mjs' \) -print | sort); node --test $FILES   # 1762 tests, 0 fail
 bash scripts/aws/staging-db-migration.sh pre-load  --cluster vitana-aurora-staging --plan    # 10 statements, no AWS call
 bash scripts/aws/staging-db-migration.sh post-load --cluster vitana-aurora-staging --plan    # 16 + 6 statements, no AWS call
