@@ -11,7 +11,8 @@
 
 <!-- lane: preview-ops -->
 ## Lane preview-ops
-- [ ] Move `artifacts/preview-gateway.sh`, `preview-taskdef-overlay.json`, `setup-preview-secrets.sh`, `proxy-jwt-staging.sh`, `restore-sparring-schema.sh`, `restore-sparring-grants.sql`, `iam-preview-roles.json` to `scripts/aws/preview-gateway/`.
+- [ ] Move every file of `artifacts/` except the record and the patch to `scripts/aws/preview-gateway/` (manifest paths updated, checksums re-pinned).
+- [ ] CI job runs `rehearse-restore.sh` (PostgreSQL 17 + PostgREST 12.2.3) and must report 0 failed.
 - [ ] Node test: the overlay applied to `vitana-gateway-preview:1` (fixture, names only) passes every refusal check; a production-shaped value or name is refused.
 **Acceptance**
 - Change types: Infrastructure/CI, Tooling/docs
