@@ -1,0 +1,15 @@
+# CI run 42126418998 (job 127591662176, unit, ubuntu runner) failed one case: 'preflight: the wrong AWS account, a missing tool ...' expected exit 2, got 1.
+# Cause: the case put /usr/bin on PATH, and a GitHub runner has gh and aws in /usr/bin, so no tool was missing there; this sandbox has no gh in /usr/bin, so it passed here.
+# Reproduction: /usr/bin is read-only here, so a scratch copy of the old case gets a directory holding gh put in front of /usr/bin, as on the runner.
+
+## the case as it was (HEAD 3f8bdae1132), runner-like PATH:
+2
+not ok 1 - preflight: the wrong AWS account, a missing tool, a GitHub token GitHub does not accept and one without admin rights each stop the command before anything is read or changed
+  expected: 2
+  actual: 1
+# pass 0
+# fail 1
+
+## the fixed case (a PATH of /bin and /usr/bin minus aws, git, jq, node, gh, curl, glab; the real jq linked back in):
+# pass 1
+# fail 0
