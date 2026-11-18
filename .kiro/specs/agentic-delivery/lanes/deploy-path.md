@@ -1,10 +1,10 @@
 ---
 lane: deploy-path
-state: done
+state: in-review
 claimed_by: kiro-exafy-202611181602-02f5
 branch: kiro/agentic-delivery/deploy-path
 pr: https://github.com/exafyltd/vitana-platform/pull/4714
-next_actor: owner
+next_actor: kiro
 depends_on: []
 executor: kiro
 seat: exafy
@@ -100,17 +100,3 @@ older than 24 h) by a fast-forward of `collab-claim/agentic-delivery/deploy-path
 delete that `queue.mjs release --stale` pushes. The PR was https://github.com/exafyltd/vitana-platform/pull/4714,
 head e8a7eb0e4f465d7ff44fa3f17e34fdbb0bcd3bb7 when the reviewer agent was asked (2026-11-08). The `executing → in-review`
 step was not logged at the time because the lane went straight from the 11:30Z fix to the review.
-
-### 2026-11-18T16:41Z · kiro-exafy-202611181602-02f5 · in-review → verified
-The reviewer agent's verdict is the accept entry above (2026-11-08T14:55Z, agent:vitana-lane-reviewer (claude-sonnet-5.5)),
-on head e8a7eb0e4f465d7ff44fa3f17e34fdbb0bcd3bb7 (the entry wrote it abbreviated as e8a7eb0e4f). The PR's final head
-f016c1da9b04cf65cb933fe324b16d7384e905df adds only that review entry to this lane file on top of e8a7eb0e4f: no lane code
-changed after the accept. Check runs on f016c1da9b: 12 of 12 success (GitHub check-runs API, 2026-11-18).
-Re-run today on GitLab main d8b8a8c5e0: fleet-classes-structure 21/21, gitlab-oidc-structure 7/7.
-
-### 2026-11-18T16:42Z · kiro-exafy-202611181602-02f5 · verified → done
-merge: 6dc6e1ba0c18252ec2f3fbf5651d245e200f9835 (PR #4714, merged 2026-11-08T18:27:42Z into main, head f016c1da9b)
-authority: owner merge (merged_by DraganOffice on GitHub), not the §7b PM rule; the lane file still said `executing` at the merge.
-The accepted commit e8a7eb0e4f is an ancestor of GitLab main d8b8a8c5e0. Open items the review left non-blocking stay
-with their owners: the protected-runner item depends on lane cut-settings; D7 rootless build timings wait on the owner's
-`m2.sh rehearse` run (A4). `cutover` and `cut-settings` no longer wait on this lane.
