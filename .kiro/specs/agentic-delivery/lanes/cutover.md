@@ -62,7 +62,7 @@ non-blocking: the base red run in red-on-base.txt used the earlier 14-item statu
 non-blocking: check 10 passes. apply is gated on the plan slug, a green checklist and the lock. status and the dry runs only read (tested). The rollback exists and is tested. Production is only read (GET of the kill switch) and AWS-PROD-* are never dispatched. No token is printed or stored. At run time step 4 disables PR-GATE.yml as plan §8.2 says.
 Next: the land step merges under §7b once the depends_on lanes are done
 
-### 2026-11-18T16:55Z · kiro-exafy-202611181602-02f5 · in-review → executing (recovery branch cutover-r2, takeover)
+### 2026-11-18T16:55Z · kiro-exafy-202611181602-02f5 · takeover: recovery branch cutover-r2 (lane stays in-review; new head needs a new review)
 Owner execution order 2026-11-18: seat exafy rebuilds the lane on a clean recovery branch. Takeover of the stale exafy claim
 (kiro-exafy-202611062222-c262, 2026-11-06) by a fast-forward of `collab-claim/agentic-delivery/cutover`; GitLab's `*` branch
 protection refuses the delete that `queue.mjs release --stale` pushes. Not used: Kiro 1's `ce304758f7`
@@ -79,7 +79,7 @@ protection refuses the delete that `queue.mjs release --stale` pushes. Not used:
   gitlab-settings-cutover 19/19, parity-report 14/14, delivery-metrics 9/9; UNIT 1747 tests, 1741 pass, 0 fail,
   6 skip (pglite, PyYAML, win32 only).
 
-### 2026-11-18T17:05Z · kiro-exafy-202611181602-02f5 · executing → in-review
+### 2026-11-18T17:05Z · kiro-exafy-202611181602-02f5 · update: MR !60 opened
 MR https://gitlab.vitanaland.com/vitana/vitana-platform/-/merge_requests/60 (short form vitana/vitana-platform#60; the earlier
 GitHub PR exafyltd/vitana-platform#4725 is superseded). Head before this entry 41a3a8ec98. Preflight: Collab tests, Collab
 handoff and Lane scope pass; PR-GATE scope (report-only) flags only this lane file. Next: reviewer agent on the MR head.
