@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-05803",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "existing",
+      "ref": "node --test scripts/ci/staging-db/stage-deploy-no-prod-secrets.test.mjs scripts/ci/staging-db/cutover-workflows.test.mjs",
+      "cwd": ".",
+      "reason": "VTID-05803 staging cutover: the staging gateway deploy resolves only staging auth secrets and refuses any task definition carrying production Supabase/Aurora credentials. The change is in the deploy workflow only; no gateway runtime code changes. The gate is exercised by its exact jq, and the shared-plane roll step stays byte-identical to the pinned one."
+    }
+  ]
+}
