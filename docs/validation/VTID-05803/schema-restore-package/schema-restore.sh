@@ -46,4 +46,7 @@ echo "production host exclusion: clean"
 # and the row estimate, which must be 0 on staging (no member data is copied).
 psql -X -q -At -f "$SQL/parity-probe.sql" > "$HERE/target-counts.out"
 python3 "$HERE/parity-compare.py" "$HERE/source-baseline-2026-11-17.txt" "$HERE/target-counts.out" || { echo "PARITY: unexplained mismatch"; exit 1; }
+# Definition-level parity: every public->auth.users foreign key matches the source inventory (definition, actions, validation).
+psql -X -q -At -F '|' -f "$SQL/parity-definitions.sql" > "$HERE/staging-fk-definitions.out"
+python3 "$HERE/parity-definitions.py" "$HERE/source-auth-fk-inventory.tsv" "$HERE/staging-fk-definitions.out" || { echo "PARITY: FK definition mismatch"; exit 1; }
 echo "schema-only restore finished; parity probes in target-counts.out"
