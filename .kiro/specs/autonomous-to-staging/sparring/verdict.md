@@ -1,0 +1,5 @@
+# Verdict — autonomous-to-staging
+
+CONVERGED and approved by policy `converged-auto-v1` at 2026-11-11T23:38:02.487+00:00.
+Session `0b4e3562-119e-4eb3-ba4b-7e56caa8118a` · final plan hash `cffbfaed050634151ef22858940b86d02c2c22d97068ec946652093e71b337dc`.
+VTIDs: VTID-05763, VTID-05764, VTID-05765, VTID-05766, VTID-05767, VTID-05768, VTID-05769, VTID-05770, VTID-05771, VTID-05772, VTID-05773

@@ -70,7 +70,7 @@ describe('VTID-04000: staging wires the Vertex Serbian bridge (WIF), uncondition
     expect(stagingYml).toMatch(/--arg GCP_CRED_CONFIG "\$GCP_CRED_CONFIG"/);
   });
 
-  it('wires all four vars UNCONDITIONALLY, in the same strip/add block as AURORA_CA_BUNDLE_PATH — no if-guard', () => {
+  it('wires all four vars UNCONDITIONALLY in the strip/add block, with no if-guard (AURORA_CA_BUNDLE_PATH is no longer added: VTID-05023)', () => {
     const jqBlock = stagingYml.slice(
       stagingYml.indexOf('.containerDefinitions[0].environment |='),
       stagingYml.indexOf('.containerDefinitions[0].secrets |='),
@@ -86,7 +86,7 @@ describe('VTID-04000: staging wires the Vertex Serbian bridge (WIF), uncondition
     // before being re-added (so a stale value can't survive a deploy), not
     // pinning where in the list that happens.
     expect(jqBlock).toContain('"GCP_SERVICE_ACCOUNT_JSON"');
-    expect(jqBlock).toContain('{name:"AURORA_CA_BUNDLE_PATH"');
+    expect(jqBlock).not.toContain('{name:"AURORA_CA_BUNDLE_PATH"'); // VTID-05023: production Aurora bindings are removed from staging
   });
 
   it('pins the exact project id and global location the platform owner gave', () => {

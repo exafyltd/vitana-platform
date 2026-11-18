@@ -508,7 +508,7 @@ test('config: the shipped file is schema version 1 with the accounts, roles, pro
   assert.deepEqual(c.runners.fleet, { description: 'vitana-eng-fleet', tags: ['vitana-eng'] });
   assert.deepEqual(c.accounts.find((a) => a.role === 'maintainer').projects, ['rehearsal'], 'bot-land is Maintainer where it lands');
   assert.deepEqual(c.projects.rehearsal.required_jobs, ['unit'], 'must name a job of ci/rehearsal.gitlab-ci.yml: the bot refuses a merge request whose required job is absent');
-  assert.deepEqual([c.projects['vitana-platform'].ci_file, c.projects['vitana-v1'].ci_file, c.projects.rehearsal.ci_file], ['platform.gitlab-ci.yml', 'v1.gitlab-ci.yml', 'rehearsal.gitlab-ci.yml']);
+  assert.deepEqual([c.projects['vitana-platform'].ci_file, c.projects['vitana-v1'].ci_file, c.projects.rehearsal.ci_file], ['platform.gitlab-ci.yml', 'v1-delivery.gitlab-ci.yml', 'rehearsal.gitlab-ci.yml']);
 });
 
 test('config: the shipped file satisfies what the merge bot reads (group, projects.<name>.landing and required_jobs)', () => {

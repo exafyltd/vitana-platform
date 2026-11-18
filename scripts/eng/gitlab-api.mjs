@@ -51,6 +51,9 @@ const DEFAULT_BODY_MAX = 16 * 1024 * 1024;
 const TIMER_MAX = 2_147_483_647; // setTimeout fires after 1 ms for anything larger
 const TOKEN_SHAPE = /\b(?:glpat|glrt|gldt|glptt|glft|glcbt|glimt|glagent|gloas|glsoat|glffct|glrtr)-[A-Za-z0-9_-]{10,}/g;
 const BEARER = /\bBearer\s+[A-Za-z0-9._~+/-]+=*/gi;
+// Non-global copies for the path check: a global regex's .test() is stateful (lastIndex), String.search is not.
+const PATH_TOKEN_SHAPE = new RegExp(TOKEN_SHAPE.source, 'i');
+const PATH_BEARER = new RegExp(BEARER.source, 'i');
 const NETWORK_CODE = /^(ECONN|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|EPIPE|EHOSTUNREACH|ENETUNREACH|UND_ERR|ERR_SSL|CERT_|DEPTH_ZERO|UNABLE_TO)/;
 const USER_AGENT = 'vitana-eng-gitlab-client/1';
 const EXPECTS = new Set(['json', 'text']);
@@ -222,6 +225,10 @@ export function createClient(options = {}) {
   if (typeof retryUnsafe !== 'boolean') throw bad('retryUnsafe must be true or false');
 
   const clean = (text) => redact(text, secret);
+  // A path that holds the configured token or any token shape is refused before anything is sent (plan 28-31).
+  const carriesCredential = (path) => typeof path === 'string'
+    && ((secret && path.includes(secret)) || path.search(PATH_TOKEN_SHAPE) !== -1 || path.search(PATH_BEARER) !== -1);
+  const refuseCredentialPath = (method) => new GitLabApiError("the path contains a credential; send credentials in the client's token option, never in a path", { code: 'bad_path', method });
   const excerptOf = (text) => clean(text).replace(/\s+/g, ' ').trim().slice(0, EXCERPT_MAX);
 
   function backoff(attempt) {
@@ -343,6 +350,7 @@ export function createClient(options = {}) {
   function prepare(methodIn, path, opts = {}) {
     const method = String(methodIn ?? '').toUpperCase();
     if (!METHODS.has(method)) throw new GitLabApiError(`unsupported method "${String(methodIn).slice(0, 20)}"`, { code: 'bad_request' });
+    if (carriesCredential(path)) throw refuseCredentialPath(method);
     checkPath(method, path);
     if (opts.body !== undefined && (method === 'GET' || method === 'HEAD')) throw badRequest(`${method} ${path} cannot have a body`, method, path);
     const okStatuses = opts.okStatuses ?? [];
@@ -373,6 +381,7 @@ export function createClient(options = {}) {
 
   /** The body of a 2xx answer. It has no okStatuses option: a status other than 2xx is an error here; use raw() to accept one. */
   async function request(method, path, opts = {}) {
+    if (carriesCredential(path)) throw refuseCredentialPath(String(method).toUpperCase());
     if (opts.okStatuses !== undefined) {
       throw badRequest('request() does not take okStatuses (a non-2xx answer is an error); use raw() to accept a status', String(method).toUpperCase(), path);
     }
@@ -381,6 +390,7 @@ export function createClient(options = {}) {
 
   async function paginate(path, opts = {}) {
     const { query = {}, perPage = 100, maxPages = 1000, method = 'GET', headers } = opts;
+    if (carriesCredential(path)) throw refuseCredentialPath(String(method).toUpperCase());
     checkNumber('perPage', perPage, { min: 1, max: 100, integer: true }, (m) => badRequest(m, method, path));
     checkNumber('maxPages', maxPages, { min: 1, integer: true }, (m) => badRequest(m, method, path));
     const common = { timeoutMs: opts.timeoutMs, retries: opts.retries, maxBodyBytes: opts.maxBodyBytes };

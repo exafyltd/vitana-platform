@@ -1,0 +1,20 @@
+{
+  "vtid": "VTID-05605",
+  "kind": "fix",
+  "paths": [
+    "package.json",
+    "docs/validation/VTID-05331/staging-tests.json",
+    "docs/validation/VTID-05605/**"
+  ],
+  "sparring_record": ".kiro/specs/staging-verify-manifest-repair/sparring/verdict.md",
+  "red_green_exempt": [
+    {
+      "file": "docs/validation/VTID-05331/staging-tests.json",
+      "reason": "manifest and package.json only: the red proof is the validateManifest baseline in outputs/baseline-red.txt (INVALID on origin/main, valid after)"
+    },
+    {
+      "file": "package.json",
+      "reason": "manifest and package.json only: the red proof is the validateManifest baseline in outputs/baseline-red.txt (INVALID on origin/main, valid after)"
+    }
+  ]
+}

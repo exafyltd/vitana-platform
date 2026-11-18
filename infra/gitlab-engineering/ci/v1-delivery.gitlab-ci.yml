@@ -1164,7 +1164,7 @@ android-module:
     - "mkdir -p \"$ANDROID_HOME/licenses\" && printf \"\\n24333f8a63b6825ea9c5514f83c2829b004d1fee\\nd56f5187479451eabf01fb78af6dfcb131a6481e\\n\" > \"$ANDROID_HOME/licenses/android-sdk-license\""
     - "java -version 2>&1 | head -n 1"
     - "npx expo prebuild --platform android --no-install"
-    - "CLASSES=$(find modules/vitana-voice/android/src/test -name \"*Test.kt\" -o -name \"*Test.java\" | sed \"s#.*/##; s#\\.[a-z]*$##\" | sort | awk -v n=\"$CI_NODE_TOTAL\" -v i=\"$CI_NODE_INDEX\" '(NR - 1) % n == i - 1')"
+    - "CLASSES=$(find modules/vitana-voice/android/src/test -name \"*Test.kt\" -o -name \"*Test.java\" | sed \"s#.*/##; s/\\.[a-z]*//\" | sort | awk -v n=\"$CI_NODE_TOTAL\" -v i=\"$CI_NODE_INDEX\" '(NR - 1) % n == i - 1')"
     - "if [ -z \"$CLASSES\" ]; then echo \"no test class in shard $CI_NODE_INDEX/$CI_NODE_TOTAL\"; exit 0; fi"
     - "cd android && ./gradlew :vitana-voice:testDebugUnitTest $(for c in $CLASSES; do printf -- \"--tests *.%s \" \"$c\"; done) --no-daemon --stacktrace"
   rules:
@@ -1934,7 +1934,7 @@ e2e-preview-orb:
     - "mkdir -p \"$ANDROID_HOME/licenses\" && printf \"\\n24333f8a63b6825ea9c5514f83c2829b004d1fee\\nd56f5187479451eabf01fb78af6dfcb131a6481e\\n\" > \"$ANDROID_HOME/licenses/android-sdk-license\""
     - "java -version 2>&1 | head -n 1"
     - "npx expo prebuild --platform android --no-install"
-    - "CLASSES=$(find modules/vitana-voice/android/src/test -name \"*Test.kt\" -o -name \"*Test.java\" | sed \"s#.*/##; s#\\.[a-z]*$##\" | sort | awk -v n=\"$CI_NODE_TOTAL\" -v i=\"$CI_NODE_INDEX\" '(NR - 1) % n == i - 1')"
+    - "CLASSES=$(find modules/vitana-voice/android/src/test -name \"*Test.kt\" -o -name \"*Test.java\" | sed \"s#.*/##; s/\\.[a-z]*//\" | sort | awk -v n=\"$CI_NODE_TOTAL\" -v i=\"$CI_NODE_INDEX\" '(NR - 1) % n == i - 1')"
     - "if [ -z \"$CLASSES\" ]; then echo \"no test class in shard $CI_NODE_INDEX/$CI_NODE_TOTAL\"; exit 0; fi"
     - "cd android && ./gradlew :vitana-voice:testDebugUnitTest $(for c in $CLASSES; do printf -- \"--tests *.%s \" \"$c\"; done) --no-daemon --stacktrace"
   rules:

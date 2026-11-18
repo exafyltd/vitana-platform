@@ -1,0 +1,53 @@
+{
+  "family": "vitana-postgrest-aurora-staging",
+  "taskRoleArn": "arn:aws:iam::472838866351:role/vitana-ecs-task-role",
+  "executionRoleArn": "arn:aws:iam::472838866351:role/vitana-ecs-task-execution-role",
+  "networkMode": "awsvpc",
+  "cpu": "512",
+  "memory": "1024",
+  "requiresCompatibilities": [
+    "FARGATE"
+  ],
+  "containerDefinitions": [
+    {
+      "name": "proxy",
+      "image": "472838866351.dkr.ecr.eu-central-1.amazonaws.com/vitana/postgrest-aurora-proxy:staging-abc",
+      "essential": true,
+      "environment": [
+        {
+          "name": "SUPABASE_AUTH_HOST",
+          "value": "inmkhvwdcuyhnxkgfvsb.supabase.co"
+        }
+      ]
+    },
+    {
+      "name": "postgrest",
+      "image": "postgrest/postgrest:v12.2.3",
+      "essential": true,
+      "environment": [
+        {
+          "name": "PGRST_DB_SCHEMA",
+          "value": "public"
+        },
+        {
+          "name": "PGRST_DB_HOST",
+          "value": "vitana-aurora-prod.cluster-cfk228aiedf3.eu-central-1.rds.amazonaws.com"
+        },
+        {
+          "name": "PGRST_DB_NAME",
+          "value": "vitana"
+        }
+      ],
+      "secrets": [
+        {
+          "name": "PGRST_DB_URI",
+          "valueFrom": "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/aurora/prod/postgrest-authenticator-uri-Uu55Ii"
+        },
+        {
+          "name": "PGRST_JWT_SECRET",
+          "valueFrom": "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/gateway/staging/supabase-jwt-secret-Jj88Kk"
+        }
+      ]
+    }
+  ]
+}

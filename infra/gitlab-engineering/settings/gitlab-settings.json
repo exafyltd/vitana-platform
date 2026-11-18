@@ -21,7 +21,7 @@
       "landing": false,
       "rehearsal": false,
       "required_jobs": [],
-      "ci_file": "v1.gitlab-ci.yml"
+      "ci_file": "v1-delivery.gitlab-ci.yml"
     },
     "rehearsal": {
       "profile": "native",
