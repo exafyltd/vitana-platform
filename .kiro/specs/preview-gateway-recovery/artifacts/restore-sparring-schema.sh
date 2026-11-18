@@ -51,8 +51,12 @@ P=(psql -X -v ON_ERROR_STOP=1)
 
 case "$MODE" in
   dry)
-    "${P[@]}" -At -f "$HERE/precheck-sparring.sql"
-    echo "dry run OK — nothing written. Next: --apply";;
+    # Sanitized by construction: hostnames, role names, attributes and counts only; no credential is printed.
+    { echo "dry run $(date -u +%FT%TZ) by $(aws sts get-caller-identity --query Arn --output text)"
+      echo "target $PGHOST / $PGDATABASE (cluster $CLUSTER, tag Environment=staging)"
+      "${P[@]}" -At -F ' = ' -f "$HERE/precheck-sparring.sql"; } 2>&1 | tee restore-sparring-dryrun.txt
+    [ "${PIPESTATUS[0]}" = 0 ] || die "precheck refused (see restore-sparring-dryrun.txt)"
+    echo "dry run OK — nothing written. Send restore-sparring-dryrun.txt; do not run --apply yet.";;
   apply)
     [ ! -e "$STATE" ] || die "$STATE exists (an apply was already recorded)"
     CREATED=$("${P[@]}" -At -c "select string_agg(n, ',') from unnest(array['anon','authenticated','service_role','vitana_governance_owner']) n where not exists (select 1 from pg_roles where rolname=n)")

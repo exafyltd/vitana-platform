@@ -59,6 +59,22 @@ SQL
 clean_roles() { # a fresh start: drop the rehearsal databases (and with them every privilege), then the roles
   local d; for d in vitana; do "${SU[@]}" -d postgres -c "DROP DATABASE IF EXISTS $d" >/dev/null 2>&1; done
   "${SU[@]}" -d postgres -c "DROP ROLE IF EXISTS anon, authenticated, service_role, vitana_governance_owner" >/dev/null; }
+# Catalog snapshot of everything the restore or the rollback could touch (database + cluster-wide objects).
+snapshot() { _snapshot | LC_ALL=C sort; }
+_snapshot() { psql -h "$W" -p $PORT -U postgres -d vitana -XAtq <<'SQL'
+select 'schema '||nspname||' acl='||coalesce(nspacl::text,'') from pg_namespace where nspname not like 'pg\_%' and nspname <> 'information_schema'
+union all select 'rel '||n.nspname||'.'||c.relname||' kind='||c.relkind::text from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname not like 'pg\_%' and n.nspname <> 'information_schema'
+union all select 'func '||p.oid::regprocedure::text||' acl='||coalesce(p.proacl::text,'') from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname not like 'pg\_%' and n.nspname <> 'information_schema'
+union all select 'policy '||polrelid::regclass::text||'.'||polname from pg_policy
+union all select 'trigger '||tgrelid::regclass::text||'.'||tgname from pg_trigger where not tgisinternal
+union all select 'role '||rolname||' login='||rolcanlogin::text||' bypassrls='||rolbypassrls::text from pg_roles where rolname not like 'pg\_%'
+union all select 'member '||pg_get_userbyid(roleid)||' -> '||pg_get_userbyid(member)||' admin='||admin_option::text from pg_auth_members where pg_get_userbyid(member) not like 'pg\_%'
+union all select 'default_acl '||defaclrole::regrole::text||' '||defaclobjtype::text from pg_default_acl
+union all select 'database_acl '||coalesce(datacl::text,'') from pg_database where datname='vitana'
+union all select 'role_comment '||count(*)::text from pg_shdescription where classoid='pg_authid'::regclass
+order by 1;
+SQL
+}
 M=(psql -h "$W" -p $PORT -U vitana_staging_admin -X)
 # The same invocation as restore-sparring-schema.sh --apply: precheck, then every manifest file in order, stop on the
 # first error. Not one transaction: three migrations carry their own BEGIN/COMMIT, so a failure is undone by the
@@ -69,6 +85,7 @@ q() { psql -h "$W" -p $PORT -U "$1" -d "$2" -XAtq -c "$3" 2>&1 | tail -1; }
 
 echo; echo "== A. empty database, roles absent (expected Aurora staging state), master without BYPASSRLS"
 clean_roles; aurora_like vitana
+snapshot > "$W/s0"; expect "snapshot before apply is readable" "yes" "$([ -s "$W/s0" ] && ! grep -q ERROR "$W/s0" && echo yes || echo no)"
 if apply vitana; then ok "precheck passed and all 7 files applied"; else bad "restore failed: $(grep -m1 ERROR "$W/apply-vitana.log")"; fi
 expect "public tables" "plan_sparring_config,plan_sparring_sessions,plan_sparring_shadow_log,pm_digests,pm_lease,vtid_ledger" \
   "$(q postgres vitana "select string_agg(tablename, ',' order by tablename) from pg_tables where schemaname='public'")"
@@ -98,20 +115,29 @@ expect "authenticated cannot read sparring sessions" "ERROR:  permission denied 
 expect "anon cannot call the allocator" "ERROR:  permission denied for function allocate_global_vtid" "$(q authenticator vitana "SET ROLE anon; select allocate_global_vtid('x','DEV','X')")"
 expect "authenticator itself (no role switch) reads nothing" "ERROR:  permission denied for table plan_sparring_sessions" "$(q authenticator vitana "select count(*) from plan_sparring_sessions")"
 
+snapshot > "$W/s1"; expect "snapshot after apply is readable" "yes" "$([ -s "$W/s1" ] && [ "$(wc -l < "$W/s1")" -gt "$(wc -l < "$W/s0")" ] && echo yes || echo no)"
+echo; echo "== F. exact rollback scope: every catalog entry the restore added (diff of snapshots before/after apply)"
+LC_ALL=C comm -13 "$W/s0" "$W/s1" | sed 's/^/  + /'
+echo "  pre-existing entries the restore modified (old value shown):"; LC_ALL=C comm -23 "$W/s0" "$W/s1" | sed 's/^/  ~ /'
+expect "pre-existing entries modified (only schema public ACL and the shared role-comment count)" "role_comment schema" \
+  "$(LC_ALL=C comm -23 "$W/s0" "$W/s1" | awk '{print $1}' | sort | tr '\n' ' ' | sed 's/ $//')"
+
 echo; echo "== A3. rollback"
 "${M[@]}" -d vitana -q "${RB[@]}" >"$W/rollback.log" 2>&1 && ok "rollback ran" || bad "rollback: $(grep -m1 ERROR "$W/rollback.log")"
 expect "public tables after rollback" "0" "$(q postgres vitana "select count(*) from pg_tables where schemaname='public'")"
 expect "restore roles after rollback" "0" "$(q postgres vitana "select count(*) from pg_roles where rolname in ('anon','authenticated','service_role','vitana_governance_owner')")"
 expect "authenticator kept" "1" "$(q postgres vitana "select count(*) from pg_roles where rolname='authenticator'")"
+snapshot > "$W/s2"
+expect "catalog after rollback identical to before the restore (lines differing)" "0" "$(diff "$W/s0" "$W/s2" | grep -c '^[<>]' || true)"
 expect "re-apply after rollback" "ok" "$(apply vitana && echo ok || grep -m1 ERROR "$W/apply-vitana.log")"
 
 echo; echo "== D. a non-empty database is refused before anything runs"
-apply vitana && bad "second apply on a restored database ran" || expect "precheck refusal" "refused: public schema is not empty; this restore only runs on the empty staging database" "$(grep -m1 -o 'refused: .*' "$W/apply-vitana.log")"
+apply vitana && bad "second apply on a restored database ran" || expect "precheck refusal" "refused: public schema has tables; this restore only runs on the empty staging database" "$(grep -m1 -o 'refused: .*' "$W/apply-vitana.log")"
 
-echo; echo "== B. request roles created earlier by someone else (master has no ADMIN OPTION on them)"
+echo; echo "== B. request roles that predate the restore stop it (rollback scope would not be exact)"
 clean_roles; aurora_like vitana anon authenticated service_role
-apply vitana && bad "restore ran although the grant to authenticator cannot succeed" \
-  || expect "precheck refusal" "refused: role anon already exists and vitana_staging_admin cannot grant it to authenticator (no ADMIN OPTION)" "$(grep -m1 -o 'refused: .*' "$W/apply-vitana.log")"
+apply vitana && bad "restore ran although its roles already existed" \
+  || expect "precheck refusal" "refused: role(s) anon,authenticated,service_role already exist; stop and report (rollback scope would not be exact)" "$(grep -m1 -o 'refused: .*' "$W/apply-vitana.log")"
 expect "nothing created in vitana" "0" "$(q postgres vitana "select count(*) from pg_tables where schemaname='public'")"
 
 echo; echo "== C. a failure in the last file, then the rollback file, returns to the empty state"

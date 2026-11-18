@@ -1,7 +1,7 @@
-# Rehearsal output (final run). Earlier run 1 with PR #5104's unmodified roles file, same Aurora-like master:
+# Rehearsal output (final run, 2026-11-18T10:39:03Z). Run 1 with PR #5104's unmodified roles file, same Aurora-like master:
 #   psql:00-supabase-roles-and-auth.sql:10: ERROR:  permission denied to create role
 #   DETAIL:  Only roles with the BYPASSRLS attribute may create roles with the BYPASSRLS attribute.
-== rehearsal 2026-11-18T10:03:12Z on postgres (PostgreSQL) 17.11
+== rehearsal 2026-11-18T10:33:51Z on postgres (PostgreSQL) 17.11
 == manifest
   4c89a483aadda189f8c1901efbf7dba20579b3c2ae142aa01033308e80ac75f2  .kiro/specs/preview-gateway-recovery/artifacts/00-sparring-roles.sql
   9afe19d8a6fab3385adcb89ddfdce59c052c5c264b8f4447e2ddd2991316598d  supabase/migrations/20251217000000_vtid_ledger_and_allocator.sql
@@ -12,6 +12,7 @@
   4062f101e2602cd69836657661c64359dfc5da5ceb3c9a8143580481f58db523  .kiro/specs/preview-gateway-recovery/artifacts/restore-sparring-grants.sql
 
 == A. empty database, roles absent (expected Aurora staging state), master without BYPASSRLS
+PASS  snapshot before apply is readable = yes
 PASS  precheck passed and all 7 files applied
 PASS  public tables = plan_sparring_config,plan_sparring_sessions,plan_sparring_shadow_log,pm_digests,pm_lease,vtid_ledger
 PASS  roles created (name:login:bypassrls) = anon:false:false,authenticated:false:false,service_role:false:false,vitana_governance_owner:false:false
@@ -23,7 +24,7 @@ PASS  system_controls absent (allocator reads no row -> disabled) = t
 PASS  global_vtid_seq untouched (migration default) = 1000
 
 == A2. gateway path through PostgREST's role switch (authenticator -> service_role)
-PASS  service_role inserts a sparring session (ccb4e6eb-0eb8-4958-8ca0-f2bdbfcaae62)
+PASS  service_role inserts a sparring session (34e8b684-0c47-4e8c-b200-630a72db8cd7)
 PASS  service_role reads it = 1
 PASS  plan_sparring_append_round round 1 = true
 PASS  converge + policy approval (UPDATE as service_role) = UPDATE 1
@@ -33,19 +34,83 @@ PASS  anon cannot read sparring sessions = ERROR:  permission denied for table p
 PASS  authenticated cannot read sparring sessions = ERROR:  permission denied for table plan_sparring_sessions
 PASS  anon cannot call the allocator = ERROR:  permission denied for function allocate_global_vtid
 PASS  authenticator itself (no role switch) reads nothing = ERROR:  permission denied for table plan_sparring_sessions
+PASS  snapshot after apply is readable = yes
+
+== F. exact rollback scope: every catalog entry the restore added (diff of snapshots before/after apply)
+  + func _plan_sparring_gate_eval(text,jsonb,text) acl={vitana_staging_admin=X/vitana_staging_admin,service_role=X/vitana_staging_admin,vitana_governance_owner=X/vitana_staging_admin}
+  + func _plan_sparring_mode() acl={vitana_staging_admin=X/vitana_staging_admin,service_role=X/vitana_staging_admin,vitana_governance_owner=X/vitana_staging_admin}
+  + func _plan_sparring_sessions_touch() acl=
+  + func allocate_global_vtid(text,text,text,uuid,text) acl={vitana_staging_admin=X/vitana_staging_admin,service_role=X/vitana_staging_admin}
+  + func plan_sparring_append_round(uuid,jsonb,integer) acl={vitana_staging_admin=X/vitana_staging_admin,service_role=X/vitana_staging_admin}
+  + func plan_sparring_check() acl={vitana_staging_admin=X/vitana_staging_admin}
+  + func plan_sparring_trigger_status() acl={vitana_staging_admin=X/vitana_staging_admin,service_role=X/vitana_staging_admin}
+  + func submit_plan_sparring_record(uuid,text,text,text,jsonb,text,text,jsonb,text[]) acl={vitana_staging_admin=X/vitana_staging_admin,service_role=X/vitana_staging_admin}
+  + member anon -> authenticator admin=false
+  + member anon -> vitana_staging_admin admin=true
+  + member authenticated -> authenticator admin=false
+  + member authenticated -> vitana_staging_admin admin=true
+  + member service_role -> authenticator admin=false
+  + member service_role -> vitana_staging_admin admin=true
+  + member vitana_governance_owner -> vitana_staging_admin admin=true
+  + policy plan_sparring_config.plan_sparring_config_governance_owner
+  + policy plan_sparring_config.plan_sparring_config_service_role_read
+  + policy plan_sparring_sessions.plan_sparring_sessions_service_role
+  + policy plan_sparring_shadow_log.plan_sparring_shadow_log_service_role_read
+  + policy pm_digests.pm_digests_service_role
+  + policy pm_lease.pm_lease_service_role
+  + policy vtid_ledger.vtid_ledger_governance_owner_insert
+  + policy vtid_ledger.vtid_ledger_service_role_all
+  + rel public.global_vtid_seq kind=S
+  + rel public.idx_plan_sparring_sessions_plan kind=i
+  + rel public.idx_plan_sparring_shadow_log_created kind=i
+  + rel public.idx_plan_sparring_shadow_log_outcome kind=i
+  + rel public.idx_pm_digests_kind_created kind=i
+  + rel public.idx_vtid_ledger_created_at kind=i
+  + rel public.idx_vtid_ledger_status kind=i
+  + rel public.idx_vtid_ledger_tenant kind=i
+  + rel public.idx_vtid_ledger_vtid kind=i
+  + rel public.plan_sparring_config kind=r
+  + rel public.plan_sparring_config_pkey kind=i
+  + rel public.plan_sparring_sessions kind=r
+  + rel public.plan_sparring_sessions_pkey kind=i
+  + rel public.plan_sparring_sessions_vtid_key kind=i
+  + rel public.plan_sparring_shadow_log kind=r
+  + rel public.plan_sparring_shadow_log_id_seq kind=S
+  + rel public.plan_sparring_shadow_log_pkey kind=i
+  + rel public.pm_digests kind=r
+  + rel public.pm_digests_pkey kind=i
+  + rel public.pm_lease kind=r
+  + rel public.pm_lease_pkey kind=i
+  + rel public.vtid_ledger kind=r
+  + rel public.vtid_ledger_pkey kind=i
+  + rel public.vtid_ledger_sparring_id_unique kind=i
+  + rel public.vtid_ledger_vtid_key kind=i
+  + role anon login=false bypassrls=false
+  + role authenticated login=false bypassrls=false
+  + role service_role login=false bypassrls=false
+  + role vitana_governance_owner login=false bypassrls=false
+  + role_comment 1
+  + schema public acl={pg_database_owner=UC/pg_database_owner,=U/pg_database_owner,anon=U/pg_database_owner,authenticated=U/pg_database_owner,service_role=U/pg_database_owner}
+  + trigger plan_sparring_sessions.trg_plan_sparring_sessions_touch
+  + trigger vtid_ledger.trg_plan_sparring_check
+  pre-existing entries the restore modified (old value shown):
+  ~ role_comment 0
+  ~ schema public acl={pg_database_owner=UC/pg_database_owner,=U/pg_database_owner}
+PASS  pre-existing entries modified (only schema public ACL and the shared role-comment count) = role_comment schema
 
 == A3. rollback
 PASS  rollback ran
 PASS  public tables after rollback = 0
 PASS  restore roles after rollback = 0
 PASS  authenticator kept = 1
+PASS  catalog after rollback identical to before the restore (lines differing) = 0
 PASS  re-apply after rollback = ok
 
 == D. a non-empty database is refused before anything runs
-PASS  precheck refusal = refused: public schema is not empty; this restore only runs on the empty staging database
+PASS  precheck refusal = refused: public schema has tables; this restore only runs on the empty staging database
 
-== B. request roles created earlier by someone else (master has no ADMIN OPTION on them)
-PASS  precheck refusal = refused: role anon already exists and vitana_staging_admin cannot grant it to authenticator (no ADMIN OPTION)
+== B. request roles that predate the restore stop it (rollback scope would not be exact)
+PASS  precheck refusal = refused: role(s) anon,authenticated,service_role already exist; stop and report (rollback scope would not be exact)
 PASS  nothing created in vitana = 0
 
 == C. a failure in the last file, then the rollback file, returns to the empty state
@@ -67,4 +132,4 @@ PASS  no key (anon) cannot read sessions = 401
 PASS  authenticated-role key cannot read sessions = 403
 PASS  system_controls is not exposed (allocator reads no row -> disabled) = 404
 
-RESULT: 40 passed, 0 failed
+RESULT: 44 passed, 0 failed

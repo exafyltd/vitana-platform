@@ -67,6 +67,35 @@ spar_rule() {  # prints "<ruleArn> <priority>" of the rule host == $HOST AND pat
         | select(any(.Conditions[]; .Field=="path-pattern" and (.PathPatternConfig.Values|sort)==($p|sort)))]
         | if length==1 then "\(.[0].RuleArn) \(.[0].Priority)" else "NONE" end'
 }
+# route_for <host> <path> [extra rule JSON]: which target group the listener sends this request to, by evaluating
+# the live rules in priority order (host-header and path-pattern globs, ALB semantics) plus an optional planned rule.
+route_for() {
+  local extra="${3:-null}"
+  aws elbv2 describe-rules --listener-arn "$(listener_arn)" --output json | jq -r --arg h "$1" --arg p "$2" --argjson x "$extra" '
+    def glob: gsub("(?<c>[.+^$(){}|\\[\\]\\\\])"; "\\\(.c)") | gsub("\\*"; ".*") | gsub("\\?"; ".") | "^" + . + "$";
+    def tg: (.Actions[0].TargetGroupArn // .Actions[0].ForwardConfig.TargetGroups[0].TargetGroupArn // .Actions[0].Type) | sub(".*:targetgroup/"; "") | sub("/.*"; "");
+    [ .Rules[] , ($x // empty) ] | map(select(.Priority != "default") | .prio = (.Priority|tonumber)) | sort_by(.prio)
+    | map(select(all(.Conditions[];
+        if .Field == "host-header" then (.HostHeaderConfig.Values // .Values) as $v | any($v[]; . as $g | $h | test($g | ascii_downcase | glob))
+        elif .Field == "path-pattern" then (.PathPatternConfig.Values // .Values) as $v | any($v[]; . as $g | $p | test($g | glob))
+        else false end)))
+    | if length > 0 then "\(.[0].prio) \(.[0] | tg)" else "default" end'
+}
+planned_rule() { jq -nc --arg h "$HOST" --argjson p "$SPAR_PATHS" --arg t "$(tg_arn)" \
+  '{Priority:"'"$NEW_PRIORITY"'", Conditions:[{Field:"host-header",HostHeaderConfig:{Values:[$h]}},{Field:"path-pattern",PathPatternConfig:{Values:$p}}], Actions:[{Type:"forward",TargetGroupArn:$t}]}'; }
+routing_report() {  # routing_report [extra rule] [check|info]: in check mode, sparring paths must reach the preview and
+  local x="${1:-null}" mode="${2:-check}" r   # build-info and every other /api path must not (PUBLISH's staging source)
+  for path in /api/v1/admin/build-info /api/v1/admin/health /api/v1/orb/live/ws /alive /api/v1/plans/spar /api/v1/plans/spar/00000000-0000-0000-0000-000000000000/rounds /api/v1/vtid/allocator/status /api/v1/vtid/allocate; do
+    r=$(route_for "$HOST" "$path" "$x"); echo "   $path -> rule $r"
+    [ "$mode" = check ] || continue
+    case "$path" in
+      /api/v1/plans/spar*|/api/v1/vtid/allocator/status) [[ "$r" == *" $TG_NAME" ]] || die "$path does not reach $TG_NAME";;
+      /alive) ;;   # rule 31 already sends non-/api paths to the preview today (unchanged)
+      *) if [[ "$r" == *" $TG_NAME" ]]; then die "$path would reach the preview (PUBLISH/staging routing changed)"; fi;;
+    esac
+  done
+  return 0
+}
 priority_taken() { [ -n "$(aws elbv2 describe-rules --listener-arn "$(listener_arn)" --query "Rules[?Priority=='$1'].RuleArn" --output text)" ]; }
 tg_arn() { aws elbv2 describe-target-groups --names "$TG_NAME" --query 'TargetGroups[0].TargetGroupArn' --output text; }
 
@@ -152,6 +181,8 @@ case "$CMD" in
     if [ "$RULE" = NONE ]; then
       priority_taken "$NEW_PRIORITY" && die "priority $NEW_PRIORITY is taken"
       say "will add rule priority $NEW_PRIORITY: host $HOST AND path in $SPAR_PATHS -> $TG_NAME (rule 31 unchanged)"
+      say "routing today:"; routing_report null info
+      say "routing with the planned rule:"; routing_report "$(planned_rule)"
     else say "sparring rule already present at priority $PRIO"; fi
     say "plan OK — nothing written";;
 
@@ -188,7 +219,10 @@ case "$CMD" in
     TGH=$(aws elbv2 describe-target-health --target-group-arn "$(tg_arn)" --query 'TargetHealthDescriptions[].TargetHealth.State' --output text)
     say "target health: $TGH"; [ "$TGH" = healthy ] || die "target not healthy"
     read -r RULE PRIO <<<"$(spar_rule)"; [ "$RULE" != NONE ] && [ "$PRIO" -lt 10 ] || die "sparring rule missing or not before priority 10"
-    say "sparring rule at priority $PRIO"
+    say "sparring rule at priority $PRIO; live routing:"; routing_report
+    BI=$(curl -sS -m 20 -w ' HTTP %{http_code}' "https://$HOST/api/v1/admin/build-info" | head -c 400)
+    say "PUBLISH's staging source (build-info via the staging rule): $BI"
+    case "$BI" in *"$COMMIT"*) [ -n "$COMMIT" ] && die "build-info reports the preview commit: PUBLISH would read the preview";; esac
     TD=$(aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" --query 'services[0].taskDefinition' --output text)
     LIVE_SHA=$(aws ecs describe-task-definition --task-definition "$TD" --query "taskDefinition.containerDefinitions[0].environment[?name=='GIT_COMMIT_SHA'].value | [0]" --output text)
     say "deployed commit (ECS): $LIVE_SHA"; [ -z "$COMMIT" ] || [ "$LIVE_SHA" = "$COMMIT" ] || die "running $LIVE_SHA, expected $COMMIT"
