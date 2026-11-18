@@ -1,6 +1,6 @@
 ---
 lane: gitlab-verify
-state: verified
+state: done
 next_actor: kiro
 depends_on: [gitlab-infra]
 executor: kiro
@@ -13,7 +13,7 @@ paths:
   - infra/gitlab-engineering/host/ci-platform.yml
   - infra/gitlab-engineering/host/ci-v1.yml
   - infra/gitlab-engineering/RUNBOOK.md
-updated: 2026-11-18T17:41Z
+updated: 2026-11-18T17:49Z
 vtid: VTID-05555
 claimed_by: kiro-exafy-202611181602-02f5
 branch: kiro/eng-gitlab-m1/gitlab-verify
@@ -101,3 +101,7 @@ Next: the land step merges under §7b
 
 ### 2026-11-18T17:41Z · kiro-exafy-202611181602-02f5 · in-review → verified
 Reviewer-agent accept above (claude-sonnet-5.5) on f9bd0a8270c70ebe49134c8aa3a615d6962a800f. Since then only the review entry and this entry are added. Next: merge MR !62 under §7b once the head pipeline is green.
+
+### 2026-11-18T17:49Z · kiro-exafy-202611181602-02f5 · verified → done
+merge: 272fdbca5d4f1533f38b4dc39a96bcf66b88dfea (GitLab MR !62 into main, pipeline green on the merged head, merged pinned to that head)
+authority: §7b PM rule under the owner's execution order of 2026-11-18. The accept is on the reviewed head; the only changes after it are the review and state entries, plus main's own changes merged in.
