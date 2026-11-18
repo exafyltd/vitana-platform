@@ -1,0 +1,274 @@
+TAP version 13
+# Subtest: deploy workflows: exactly the marked blocks were added to the roll step; without them the step is the pinned one
+ok 1 - deploy workflows: exactly the marked blocks were added to the roll step; without them the step is the pinned one
+  ---
+  duration_ms: 7.010111
+  type: 'test'
+  ...
+# Subtest: deploy workflows: the switch reads the repository variables and calls the select script only off the shared path
+ok 2 - deploy workflows: the switch reads the repository variables and calls the select script only off the shared path
+  ---
+  duration_ms: 0.867849
+  type: 'test'
+  ...
+# Subtest: AWS-STAGE-DEPLOY-GATEWAY.yml: with STAGING_DATA_PLANE unset, empty or shared the registered task definition is byte-identical to the pinned step's
+ok 3 - AWS-STAGE-DEPLOY-GATEWAY.yml: with STAGING_DATA_PLANE unset, empty or shared the registered task definition is byte-identical to the pinned step's
+  ---
+  duration_ms: 1649.381283
+  type: 'test'
+  ...
+# Subtest: AWS-STAGE-DEPLOY-GATEWAY.yml: STAGING_DATA_PLANE=isolated without STAGING_CUTOVER_APPROVED=yes fails the step and registers nothing
+ok 4 - AWS-STAGE-DEPLOY-GATEWAY.yml: STAGING_DATA_PLANE=isolated without STAGING_CUTOVER_APPROVED=yes fails the step and registers nothing
+  ---
+  duration_ms: 84.803233
+  type: 'test'
+  ...
+# Subtest: AWS-STAGE-DEPLOY-GATEWAY.yml: STAGING_DATA_PLANE=isolated with approval registers the staging-db references; shared afterwards restores the shared plane
+ok 5 - AWS-STAGE-DEPLOY-GATEWAY.yml: STAGING_DATA_PLANE=isolated with approval registers the staging-db references; shared afterwards restores the shared plane
+  ---
+  duration_ms: 484.809374
+  type: 'test'
+  ...
+# Subtest: AWS-STAGE-DEPLOY-GATEWAY.yml: an unknown STAGING_DATA_PLANE value fails closed
+ok 6 - AWS-STAGE-DEPLOY-GATEWAY.yml: an unknown STAGING_DATA_PLANE value fails closed
+  ---
+  duration_ms: 82.862184
+  type: 'test'
+  ...
+# Subtest: AWS-STAGE-DEPLOY-POSTGREST-AURORA-PROXY.yml: with STAGING_DATA_PLANE unset, empty or shared the registered task definition is byte-identical to the pinned step's
+ok 7 - AWS-STAGE-DEPLOY-POSTGREST-AURORA-PROXY.yml: with STAGING_DATA_PLANE unset, empty or shared the registered task definition is byte-identical to the pinned step's
+  ---
+  duration_ms: 1926.274435
+  type: 'test'
+  ...
+# Subtest: AWS-STAGE-DEPLOY-POSTGREST-AURORA-PROXY.yml: STAGING_DATA_PLANE=isolated without STAGING_CUTOVER_APPROVED=yes fails the step and registers nothing
+ok 8 - AWS-STAGE-DEPLOY-POSTGREST-AURORA-PROXY.yml: STAGING_DATA_PLANE=isolated without STAGING_CUTOVER_APPROVED=yes fails the step and registers nothing
+  ---
+  duration_ms: 119.155648
+  type: 'test'
+  ...
+# Subtest: AWS-STAGE-DEPLOY-POSTGREST-AURORA-PROXY.yml: STAGING_DATA_PLANE=isolated with approval registers the staging-db references; shared afterwards restores the shared plane
+ok 9 - AWS-STAGE-DEPLOY-POSTGREST-AURORA-PROXY.yml: STAGING_DATA_PLANE=isolated with approval registers the staging-db references; shared afterwards restores the shared plane
+  ---
+  duration_ms: 486.247331
+  type: 'test'
+  ...
+# Subtest: AWS-STAGE-DEPLOY-POSTGREST-AURORA-PROXY.yml: an unknown STAGING_DATA_PLANE value fails closed
+ok 10 - AWS-STAGE-DEPLOY-POSTGREST-AURORA-PROXY.yml: an unknown STAGING_DATA_PLANE value fails closed
+  ---
+  duration_ms: 114.295125
+  type: 'test'
+  ...
+# Subtest: gateway: isolated needs data_backend=keep
+ok 11 - gateway: isolated needs data_backend=keep
+  ---
+  duration_ms: 107.207105
+  type: 'test'
+  ...
+# Subtest: AWS-STAGE-CUTOVER-REHEARSAL.yml: dispatch only, owner gate, staging roles only, candidates only, always scaled to 0
+ok 12 - AWS-STAGE-CUTOVER-REHEARSAL.yml: dispatch only, owner gate, staging roles only, candidates only, always scaled to 0
+  ---
+  duration_ms: 2.200828
+  type: 'test'
+  ...
+# Subtest: AWS-STAGE-CUTOVER.yml: dispatch only, gate, record → flip → verify → smoke → automatic rollback, recover, manual rollback
+ok 13 - AWS-STAGE-CUTOVER.yml: dispatch only, gate, record → flip → verify → smoke → automatic rollback, recover, manual rollback
+  ---
+  duration_ms: 1.009499
+  type: 'test'
+  ...
+# Subtest: mutation fails: rehearsal: a schedule trigger
+ok 14 - mutation fails: rehearsal: a schedule trigger
+  ---
+  duration_ms: 0.536109
+  type: 'test'
+  ...
+# Subtest: mutation fails: rehearsal: a push trigger
+ok 15 - mutation fails: rehearsal: a push trigger
+  ---
+  duration_ms: 0.455278
+  type: 'test'
+  ...
+# Subtest: mutation fails: rehearsal: cost gate removed
+ok 16 - mutation fails: rehearsal: cost gate removed
+  ---
+  duration_ms: 0.380796
+  type: 'test'
+  ...
+# Subtest: mutation fails: rehearsal: main gate removed
+ok 17 - mutation fails: rehearsal: main gate removed
+  ---
+  duration_ms: 0.329423
+  type: 'test'
+  ...
+# Subtest: mutation fails: rehearsal: the production role
+ok 18 - mutation fails: rehearsal: the production role
+  ---
+  duration_ms: 0.832049
+  type: 'test'
+  ...
+# Subtest: mutation fails: rehearsal: static keys
+ok 19 - mutation fails: rehearsal: static keys
+  ---
+  duration_ms: 0.392565
+  type: 'test'
+  ...
+# Subtest: mutation fails: rehearsal: a live-service ECS call
+ok 20 - mutation fails: rehearsal: a live-service ECS call
+  ---
+  duration_ms: 0.300678
+  type: 'test'
+  ...
+# Subtest: mutation fails: rehearsal: scale-to-0 not always
+ok 21 - mutation fails: rehearsal: scale-to-0 not always
+  ---
+  duration_ms: 0.289105
+  type: 'test'
+  ...
+# Subtest: mutation fails: rehearsal: smoke on the live staging host
+ok 22 - mutation fails: rehearsal: smoke on the live staging host
+  ---
+  duration_ms: 0.281735
+  type: 'test'
+  ...
+# Subtest: mutation fails: rehearsal: run-name changed (gate would never match)
+ok 23 - mutation fails: rehearsal: run-name changed (gate would never match)
+  ---
+  duration_ms: 0.282439
+  type: 'test'
+  ...
+# Subtest: mutation fails: rehearsal: secrets job on the deploy role
+ok 24 - mutation fails: rehearsal: secrets job on the deploy role
+  ---
+  duration_ms: 0.256598
+  type: 'test'
+  ...
+# Subtest: mutation fails: rehearsal: wider top-level permissions
+ok 25 - mutation fails: rehearsal: wider top-level permissions
+  ---
+  duration_ms: 0.6193
+  type: 'test'
+  ...
+# Subtest: mutation fails: cutover: a push trigger
+ok 26 - mutation fails: cutover: a push trigger
+  ---
+  duration_ms: 0.55089
+  type: 'test'
+  ...
+# Subtest: mutation fails: cutover: gate script removed
+ok 27 - mutation fails: cutover: gate script removed
+  ---
+  duration_ms: 0.453531
+  type: 'test'
+  ...
+# Subtest: mutation fails: cutover: PLAN_SPAR_GATEWAY_URL not passed
+ok 28 - mutation fails: cutover: PLAN_SPAR_GATEWAY_URL not passed
+  ---
+  duration_ms: 0.442942
+  type: 'test'
+  ...
+# Subtest: mutation fails: cutover: approval not passed
+ok 29 - mutation fails: cutover: approval not passed
+  ---
+  duration_ms: 0.6974
+  type: 'test'
+  ...
+# Subtest: mutation fails: cutover: flip without the gate
+ok 30 - mutation fails: cutover: flip without the gate
+  ---
+  duration_ms: 0.96081
+  type: 'test'
+  ...
+# Subtest: mutation fails: cutover: automatic rollback removed
+ok 31 - mutation fails: cutover: automatic rollback removed
+  ---
+  duration_ms: 0.540519
+  type: 'test'
+  ...
+# Subtest: mutation fails: cutover: smoke after flip removed
+ok 32 - mutation fails: cutover: smoke after flip removed
+  ---
+  duration_ms: 0.464903
+  type: 'test'
+  ...
+# Subtest: mutation fails: cutover: flip before record
+ok 33 - mutation fails: cutover: flip before record
+  ---
+  duration_ms: 0.458792
+  type: 'test'
+  ...
+# Subtest: mutation fails: cutover: the production role
+ok 34 - mutation fails: cutover: the production role
+  ---
+  duration_ms: 0.512601
+  type: 'test'
+  ...
+# Subtest: mutation fails: cutover: recover dispatches a production deploy
+ok 35 - mutation fails: cutover: recover dispatches a production deploy
+  ---
+  duration_ms: 0.67948
+  type: 'test'
+  ...
+# Subtest: mutation fails: cutover: recover with id-token
+ok 36 - mutation fails: cutover: recover with id-token
+  ---
+  duration_ms: 0.552822
+  type: 'test'
+  ...
+# Subtest: mutation fails: cutover: smoke against production
+ok 37 - mutation fails: cutover: smoke against production
+  ---
+  duration_ms: 0.436835
+  type: 'test'
+  ...
+# Subtest: mutation fails: cutover: touches the candidates
+ok 38 - mutation fails: cutover: touches the candidates
+  ---
+  duration_ms: 0.451672
+  type: 'test'
+  ...
+# Subtest: mutation fails: cutover: flip runs main instead of the rehearsed commit
+ok 39 - mutation fails: cutover: flip runs main instead of the rehearsed commit
+  ---
+  duration_ms: 0.525565
+  type: 'test'
+  ...
+# Subtest: mutation fails: a deploy-workflow edit outside the marked blocks, or a switch without the marker-restore
+ok 40 - mutation fails: a deploy-workflow edit outside the marked blocks, or a switch without the marker-restore
+  ---
+  duration_ms: 448.878427
+  type: 'test'
+  ...
+# Subtest: AWS-STAGE-DEPLOY-GATEWAY.yml: the isolated gate exception is marked, isolated-only and uses isolatedAuroraLeaks
+ok 41 - AWS-STAGE-DEPLOY-GATEWAY.yml: the isolated gate exception is marked, isolated-only and uses isolatedAuroraLeaks
+  ---
+  duration_ms: 0.956832
+  type: 'test'
+  ...
+# Subtest: staging gateway deploy resolves no production Supabase or Aurora secret
+ok 42 - staging gateway deploy resolves no production Supabase or Aurora secret
+  ---
+  duration_ms: 2.873937
+  type: 'test'
+  ...
+# Subtest: the render step refuses a task definition carrying production credentials
+ok 43 - the render step refuses a task definition carrying production credentials
+  ---
+  duration_ms: 29.97391
+  type: 'test'
+  ...
+# Subtest: production gateway deploy keeps its production secrets (unchanged by this rule)
+ok 44 - production gateway deploy keeps its production secrets (unchanged by this rule)
+  ---
+  duration_ms: 0.782693
+  type: 'test'
+  ...
+1..44
+# tests 44
+# suites 0
+# pass 44
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 5605.043252

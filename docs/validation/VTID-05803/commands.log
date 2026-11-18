@@ -1,0 +1,6 @@
+# VTID-05803 staging deploy credential correction: commands run (local, no AWS, no network)
+node --test scripts/ci/staging-db/stage-deploy-no-prod-secrets.test.mjs scripts/ci/staging-db/cutover-workflows.test.mjs   # -> outputs/staging-db-node-tests.txt
+(cd services/gateway && npx jest test/vtid-05803-stage-deploy-no-prod-secrets.test.ts test/vtid-04225-no-dead-gcp-urls-in-workflows.test.ts test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts test/eng-platform-oidc-roles.test.ts)   # -> outputs/gateway-jest.txt
+for t in scripts/ci/staging-db/*.test.mjs; do node --test $t; done   # 10 suites, 0 failures
+# GitLab MR pipelines: 492 (gateway-jest 1/4, 4/4 red: 20,000-char run step; VTID-04225 token contract) -> fixed;
+# 503: every gateway-jest shard, typecheck, change-suite, lane-scope green.
