@@ -1,10 +1,6 @@
-Prepared protected change (not applied by this plan PR). Local commit c799b28328 on branch
-kiro/preview-gateway-recovery/plan-spar-token (parent origin/main 67897e6ce8). Owner instruction 2026-11-18:
-preview-gateway-recovery -> .github/workflows/PLAN-SPAR.yml. Merges only with that instruction plus a
-vitana-lane-reviewer accept on the PR's current head, after a VTID exists. Tests: 9/9 on the branch;
-plan-spar-preview-token.test.mjs is 1 pass / 2 fail against main's workflow (red first).
+PLAN-SPAR token change for independent review. Rebased onto origin/main d8b8a8c5e0. Commit cf021a2443 on branch kiro/preview-gateway-recovery/plan-spar-token (not published as a PR: lane branches need a VTID-titled PR to pass the push guard). Lane tests: plan-spar-preview-token.test.mjs 3/3 and slot.test.mjs on the branch; the new test is 1 pass / 2 fail against main's workflow.
 
-From c799b283286edbdc16f97b32145e4ccf68b642e7 Mon Sep 17 00:00:00 2001
+From cf021a244327c4acab68a923d80cf1c724873727 Mon Sep 17 00:00:00 2001
 From: "kiro-agent[bot]" <245459735+kiro-agent[bot]@users.noreply.github.com>
 Date: Wed, 18 Nov 2026 10:42:57 +0000
 Subject: [PATCH] ci(plan-spar): dedicated preview token, allocation forced off
