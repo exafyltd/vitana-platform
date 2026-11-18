@@ -1,0 +1,2 @@
+self-test ok: PGHOST=x.supabase.co exits 2 before anything runs
+exit 0

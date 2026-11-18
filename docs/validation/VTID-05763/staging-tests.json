@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-05763",
+  "service": "gateway",
+  "not_verified_on_staging": "This lane adds one read-only GitHub Actions workflow (GATE-INVARIANTS.yml) and its static test. No gateway, frontend or database code changes, so a staging deploy runs no new code path. The workflow runs in GitHub Actions on push to main and daily; it is proven by its first run on main (run URL in commands.log) and by scripts/ci/workflow-trigger-check.test.mjs.",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "gateway alive after the change",
+      "path": "/alive"
+    }
+  ]
+}

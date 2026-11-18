@@ -746,3 +746,14 @@ eu-central-1: https://www.doit.com/compute/compute/aws/eu-central-1/m6i.xlarge
 - `cut-settings` (2026-11-05, after `cutover`): the settings the cut needs that no lane builds: `bot-assist` and its token
   rotation, pipeline schedules, oldest-first resource groups, the job-token allowlist, the artifact size limit, and the
   `assist/*` and `train/*` rules. It changes the settings file and sync script after `cutover` lands.
+- `build-class-retag` (2026-11-08, late lane, `executor: kiro`, seat `exafy`): retags the five `build-image:*` jobs from
+  `vitana-eng-main` to `vitana-eng-build`, the build class that deploy-path adds in `fleet-classes.tf`. The class is the only one
+  whose BuildKit service runs unconfined (review 1ea5, finding 2). Reason: the five jobs run on `vitana-eng-main` today
+  (`build-image:gateway`, `build-image:erp-bridge`, `build-image:kiro-runner`, `build-image:postgrest-aurora-proxy` in
+  `platform-delivery.gitlab-ci.yml`; `build-image:community-app` in `v1-delivery.gitlab-ci.yml`). Deploy-path's test 14
+  (`scripts/eng/fleet-classes-structure.test.mjs`) fails on exactly this. The generator sets the tag at
+  `scripts/eng/pipeline-gen.mjs:193`. Lane file `lanes/build-class-retag.md`, tasks group `build-class-retag`. Merge gate: not
+  before the `vitana-eng-build` class runs (owner steps A2 and A3), or the image builds wait for a runner that does not exist.
+  The sparred text above is unchanged.
+- `build-class-retag` paths change (2026-11-08 12:10Z, planner decision): the lane gains `docs/validation/VTID-05643/**`. Its PR's validator needs the evidence dir of the lane's own VTID (`acceptance.md`, `commands.log`, `outputs/`). The paths of the late lane above are otherwise unchanged.
+- `build-class-retag-2` (2026-11-08 13:05Z, late lane, `executor: kiro`, seat `exafy`, planner decision): replaces `build-class-retag` (VTID-05643), which is closed without a build (PR #4873). Reason: the five `build-image:*` jobs tag `vitana-eng-main` (`build-image:gateway`, `build-image:erp-bridge`, `build-image:kiro-runner`, `build-image:postgrest-aurora-proxy` in `platform-delivery.gitlab-ci.yml`; `build-image:community-app` in `v1-delivery.gitlab-ci.yml`), and deploy-path test 14 (`scripts/eng/fleet-classes-structure.test.mjs`) requires the build class. Paths: `scripts/eng/pipeline-gen.mjs`, `scripts/eng/pipeline-gen.test.mjs`, `infra/gitlab-engineering/ci/platform-delivery.gitlab-ci.yml`, `infra/gitlab-engineering/ci/v1-delivery.gitlab-ci.yml`, `docs/validation/**`. Lane file `lanes/build-class-retag-2.md`, tasks group `build-class-retag-2`. Merge gate: not before the `vitana-eng-build` class runs (owner steps A2 and A3). The sparred text above is unchanged.

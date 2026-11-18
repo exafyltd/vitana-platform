@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-05785",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "existing",
+      "ref": "npx jest test/loop-catalog.test.ts test/vtid-04018-operator-bootstrap-pack.test.ts test/vtid-05041-definer-lockdown.test.ts test/vtid-04868-plan-sparring-session-layer.test.ts",
+      "cwd": "services/gateway",
+      "reason": "VTID-05785 change suite: four independent fixes for suites #5021 and #5027 broke on main (loop catalog ownership, CLAUDE.md Part 1 extract budget, session-layer wording regex, migration SECURITY DEFINER comment). Red on main (origin commit), green on this branch. The only gateway code path touched (operator-bootstrap-pack.ts) is covered entirely by these unit tests; nothing here is reachable at runtime beyond what they exercise."
+    }
+  ]
+}

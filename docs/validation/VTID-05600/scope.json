@@ -1,0 +1,31 @@
+{
+  "vtid": "VTID-05600",
+  "kind": "fix",
+  "paths": [
+    "docs/validation/VTID-04887/staging-tests.json",
+    "docs/validation/VTID-04975/staging-tests.json",
+    "docs/validation/VTID-04984/staging-tests.json",
+    "docs/validation/VTID-04999/staging-tests.json",
+    "docs/validation/VTID-05600/**"
+  ],
+  "sparring_record": ".kiro/specs/staging-verify-manifest-repair/sparring/verdict.md",
+  "weakens_tests": [],
+  "red_green_exempt": [
+    {
+      "file": "docs/validation/VTID-04887/staging-tests.json",
+      "reason": "manifest-only lane: the red proof is the string check in commands.log (8 strings red on origin/main, 30 of 30 green after)"
+    },
+    {
+      "file": "docs/validation/VTID-04975/staging-tests.json",
+      "reason": "manifest-only lane: the red proof is the string check in commands.log (8 strings red on origin/main, 30 of 30 green after)"
+    },
+    {
+      "file": "docs/validation/VTID-04984/staging-tests.json",
+      "reason": "manifest-only lane: the red proof is the string check in commands.log (8 strings red on origin/main, 30 of 30 green after)"
+    },
+    {
+      "file": "docs/validation/VTID-04999/staging-tests.json",
+      "reason": "manifest-only lane: the red proof is the string check in commands.log (8 strings red on origin/main, 30 of 30 green after)"
+    }
+  ]
+}

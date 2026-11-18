@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-05781",
+  "service": "gateway",
+  "note": "This lane changes AWS-STAGE-DEPLOY-GATEWAY.yml, so its merge redeploys staging on the SHARED plane (STAGING_DATA_PLANE unset). The staging gateway must serve exactly as before: these read-only checks prove it is alive, reports env=staging and still reads the shared VTID ledger. Nothing here writes; no suite points at vitanaland.com.",
+  "read_only": true,
+  "tests": [
+    { "kind": "http", "name": "gateway alive after the shared-plane redeploy (read-only)", "path": "/alive" },
+    { "kind": "http", "name": "admin health still reports staging", "path": "/api/v1/admin/health", "expect_json": { "env": "staging" } },
+    { "kind": "http", "name": "build-info still reports staging", "path": "/api/v1/admin/build-info", "expect_json": { "ok": true, "env": "staging" } },
+    { "kind": "http", "name": "VTID ledger health on the shared plane (unchanged data plane)", "path": "/api/v1/vtid/health" }
+  ]
+}

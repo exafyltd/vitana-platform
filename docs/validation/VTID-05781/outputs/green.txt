@@ -1,0 +1,652 @@
+TAP version 13
+# Subtest: select: unset / empty / shared + unmarked = the same bytes, no AWS call
+ok 1 - select: unset / empty / shared + unmarked = the same bytes, no AWS call
+  ---
+  duration_ms: 125.496746
+  type: 'test'
+  ...
+# Subtest: select: isolated refuses without STAGING_CUTOVER_APPROVED=yes; nothing on stdout, no AWS call
+ok 2 - select: isolated refuses without STAGING_CUTOVER_APPROVED=yes; nothing on stdout, no AWS call
+  ---
+  duration_ms: 8.524163
+  type: 'test'
+  ...
+# Subtest: select: an unknown plane value is refused (fail closed)
+ok 3 - select: an unknown plane value is refused (fail closed)
+  ---
+  duration_ms: 6.264485
+  type: 'test'
+  ...
+# Subtest: select: isolated with approval resolves only the staging-db secret ARNs (describe-secret, never get-secret-value)
+ok 4 - select: isolated with approval resolves only the staging-db secret ARNs (describe-secret, never get-secret-value)
+  ---
+  duration_ms: 92.060268
+  type: 'test'
+  ...
+# Subtest: select: a staging-db secret that cannot be described refuses; nothing on stdout
+ok 5 - select: a staging-db secret that cannot be described refuses; nothing on stdout
+  ---
+  duration_ms: 35.525259
+  type: 'test'
+  ...
+# Subtest: ecs: record writes both live PRIMARY revisions and network configurations, and changes nothing
+ok 6 - ecs: record writes both live PRIMARY revisions and network configurations, and changes nothing
+  ---
+  duration_ms: 158.987104
+  type: 'test'
+  ...
+# Subtest: ecs: flip rolls only the two live staging services to isolated revisions with the client SG added
+ok 7 - ecs: flip rolls only the two live staging services to isolated revisions with the client SG added
+  ---
+  duration_ms: 662.583292
+  type: 'test'
+  ...
+# Subtest: ecs: rollback after a forced post-flip failure restores both recorded revisions and network configurations
+ok 8 - ecs: rollback after a forced post-flip failure restores both recorded revisions and network configurations
+  ---
+  duration_ms: 964.435935
+  type: 'test'
+  ...
+# Subtest: ecs: a failed flip half-way (gateway rollout FAILED) is still rolled back to the record
+ok 9 - ecs: a failed flip half-way (gateway rollout FAILED) is still rolled back to the record
+  ---
+  duration_ms: 2237.279554
+  type: 'test'
+  ...
+# Subtest: ecs: verify fails when a service is not on the expected revision
+ok 10 - ecs: verify fails when a service is not on the expected revision
+  ---
+  duration_ms: 851.675689
+  type: 'test'
+  ...
+# Subtest: ecs: flip refuses without approval, with a bad SG, or when a service moved since the record (no update-service)
+ok 11 - ecs: flip refuses without approval, with a bad SG, or when a service moved since the record (no update-service)
+  ---
+  duration_ms: 580.640552
+  type: 'test'
+  ...
+# Subtest: ecs: wrong AWS account is refused before any ECS call
+ok 12 - ecs: wrong AWS account is refused before any ECS call
+  ---
+  duration_ms: 31.881392
+  type: 'test'
+  ...
+# Subtest: ecs: candidate-register registers -iso families only and changes no service
+ok 13 - ecs: candidate-register registers -iso families only and changes no service
+  ---
+  duration_ms: 417.700755
+  type: 'test'
+  ...
+# Subtest: ecs: candidate start/stop touch only the -iso services; stop leaves desired count 0
+ok 14 - ecs: candidate start/stop touch only the -iso services; stop leaves desired count 0
+  ---
+  duration_ms: 748.893004
+  type: 'test'
+  ...
+# Subtest: ecs: candidate-start refuses a registered revision of a live family
+ok 15 - ecs: candidate-start refuses a registered revision of a live family
+  ---
+  duration_ms: 38.090373
+  type: 'test'
+  ...
+# Subtest: ecs: name guard (guard subcommand) — production names refused, live and candidate scopes are disjoint
+ok 16 - ecs: name guard (guard subcommand) — production names refused, live and candidate scopes are disjoint
+  ---
+  duration_ms: 64.60217
+  type: 'test'
+  ...
+# Subtest: secrets: --plan makes no AWS call; a non-staging cluster and a missing cost approval are refused before any AWS call
+ok 17 - secrets: --plan makes no AWS call; a non-staging cluster and a missing cost approval are refused before any AWS call
+  ---
+  duration_ms: 21.256459
+  type: 'test'
+  ...
+# Subtest: secrets: fills both placeholders from the cluster endpoint with dedicated roles; never prints a password
+ok 18 - secrets: fills both placeholders from the cluster endpoint with dedicated roles; never prints a password
+  ---
+  duration_ms: 313.136881
+  type: 'test'
+  ...
+# Subtest: secrets: idempotent (already set = nothing changed); untagged or foreign-endpoint clusters are refused
+ok 19 - secrets: idempotent (already set = nothing changed); untagged or foreign-endpoint clusters are refused
+  ---
+  duration_ms: 565.461678
+  type: 'test'
+  ...
+# Subtest: gate: allowed when every precondition holds
+ok 20 - gate: allowed when every precondition holds
+  ---
+  duration_ms: 1.814439
+  type: 'test'
+  ...
+# Subtest: gate refuses: STAGING_CUTOVER_APPROVED unset
+ok 21 - gate refuses: STAGING_CUTOVER_APPROVED unset
+  ---
+  duration_ms: 0.308213
+  type: 'test'
+  ...
+# Subtest: gate refuses: STAGING_CUTOVER_APPROVED=true (only "yes" counts)
+ok 22 - gate refuses: STAGING_CUTOVER_APPROVED=true (only "yes" counts)
+  ---
+  duration_ms: 0.100215
+  type: 'test'
+  ...
+# Subtest: gate refuses: PLAN_SPAR_GATEWAY_URL unset (PLAN-SPAR/VTID-ALLOCATE default to staging)
+ok 23 - gate refuses: PLAN_SPAR_GATEWAY_URL unset (PLAN-SPAR/VTID-ALLOCATE default to staging)
+  ---
+  duration_ms: 0.103779
+  type: 'test'
+  ...
+# Subtest: gate refuses: PLAN_SPAR_GATEWAY_URL = the staging gateway
+ok 24 - gate refuses: PLAN_SPAR_GATEWAY_URL = the staging gateway
+  ---
+  duration_ms: 0.16442
+  type: 'test'
+  ...
+# Subtest: gate refuses: STAGING_DATA_PLANE already isolated
+ok 25 - gate refuses: STAGING_DATA_PLANE already isolated
+  ---
+  duration_ms: 0.12864
+  type: 'test'
+  ...
+# Subtest: gate refuses: no client SG
+ok 26 - gate refuses: no client SG
+  ---
+  duration_ms: 0.105629
+  type: 'test'
+  ...
+# Subtest: gate refuses: no rehearsal
+ok 27 - gate refuses: no rehearsal
+  ---
+  duration_ms: 0.120568
+  type: 'test'
+  ...
+# Subtest: gate refuses: rehearsal on another commit
+ok 28 - gate refuses: rehearsal on another commit
+  ---
+  duration_ms: 0.319246
+  type: 'test'
+  ...
+# Subtest: gate refuses: rehearsal in register mode only
+ok 29 - gate refuses: rehearsal in register mode only
+  ---
+  duration_ms: 0.377425
+  type: 'test'
+  ...
+# Subtest: gate refuses: failed rehearsal
+ok 30 - gate refuses: failed rehearsal
+  ---
+  duration_ms: 0.172416
+  type: 'test'
+  ...
+# Subtest: gate refuses: rehearsal off main
+ok 31 - gate refuses: rehearsal off main
+  ---
+  duration_ms: 0.085698
+  type: 'test'
+  ...
+# Subtest: gate refuses: rehearsal older than 7 days
+ok 32 - gate refuses: rehearsal older than 7 days
+  ---
+  duration_ms: 0.059187
+  type: 'test'
+  ...
+# Subtest: gate refuses: impact blockers
+ok 33 - gate refuses: impact blockers
+  ---
+  duration_ms: 0.057707
+  type: 'test'
+  ...
+# Subtest: gate refuses: impact report missing
+ok 34 - gate refuses: impact report missing
+  ---
+  duration_ms: 0.047218
+  type: 'test'
+  ...
+# Subtest: gate refuses: a staging deploy running
+ok 35 - gate refuses: a staging deploy running
+  ---
+  duration_ms: 0.055242
+  type: 'test'
+  ...
+# Subtest: gate refuses: busy list missing
+ok 36 - gate refuses: busy list missing
+  ---
+  duration_ms: 0.047259
+  type: 'test'
+  ...
+# Subtest: gate refuses: short SHA
+ok 37 - gate refuses: short SHA
+  ---
+  duration_ms: 0.055339
+  type: 'test'
+  ...
+# Subtest: gate: the newest qualifying rehearsal is chosen
+ok 38 - gate: the newest qualifying rehearsal is chosen
+  ---
+  duration_ms: 0.231493
+  type: 'test'
+  ...
+# Subtest: impact: every workflow naming the staging gateway is classified on this checkout, and no classification is stale
+ok 39 - impact: every workflow naming the staging gateway is classified on this checkout, and no classification is stale
+  ---
+  duration_ms: 38.682049
+  type: 'test'
+  ...
+# Subtest: impact: PLAN-SPAR and VTID-ALLOCATE block until PLAN_SPAR_GATEWAY_URL is the production gateway; owner acceptance cannot unblock them
+ok 40 - impact: PLAN-SPAR and VTID-ALLOCATE block until PLAN_SPAR_GATEWAY_URL is the production gateway; owner acceptance cannot unblock them
+  ---
+  duration_ms: 4.222161
+  type: 'test'
+  ...
+# Subtest: impact: an acceptable governance-signal writer blocks until the owner lists it
+ok 41 - impact: an acceptable governance-signal writer blocks until the owner lists it
+  ---
+  duration_ms: 3.808178
+  type: 'test'
+  ...
+# Subtest: impact: a new, unclassified workflow that names the staging gateway blocks the flip (temp repo)
+ok 42 - impact: a new, unclassified workflow that names the staging gateway blocks the flip (temp repo)
+  ---
+  duration_ms: 0.569152
+  type: 'test'
+  ...
+# Subtest: impact: suites are classified; an in-flight lane suite that reads data blocks, a done lane suite does not
+ok 43 - impact: suites are classified; an in-flight lane suite that reads data blocks, a done lane suite does not
+  ---
+  duration_ms: 0.760212
+  type: 'test'
+  ...
+# Subtest: smoke: the STAGING-VERIFY gateway suite passes against a healthy candidate
+ok 44 - smoke: the STAGING-VERIFY gateway suite passes against a healthy candidate
+  ---
+  duration_ms: 1.578134
+  type: 'test'
+  ...
+# Subtest: smoke: a failing check is retried, then fails the run (cold start vs. real failure)
+ok 45 - smoke: a failing check is retried, then fails the run (cold start vs. real failure)
+  ---
+  duration_ms: 0.945279
+  type: 'test'
+  ...
+# Subtest: smoke: a production host is refused before any request; a write is never sent
+ok 46 - smoke: a production host is refused before any request; a write is never sent
+  ---
+  duration_ms: 0.657498
+  type: 'test'
+  ...
+# Subtest: shared: an unmarked task definition passes through byte for byte (gateway, postgrest, compact and pretty)
+ok 47 - shared: an unmarked task definition passes through byte for byte (gateway, postgrest, compact and pretty)
+  ---
+  duration_ms: 1.355037
+  type: 'test'
+  ...
+# Subtest: isolated gateway: data-plane secrets move to the staging database, auth entries are unchanged, allocator off
+ok 48 - isolated gateway: data-plane secrets move to the staging database, auth entries are unchanged, allocator off
+  ---
+  duration_ms: 2.43536
+  type: 'test'
+  ...
+# Subtest: isolated names no production identifier outside the unchanged auth entries (guard scanText, --enforce semantics)
+ok 49 - isolated names no production identifier outside the unchanged auth entries (guard scanText, --enforce semantics)
+  ---
+  duration_ms: 1.971545
+  type: 'test'
+  ...
+# Subtest: isolated postgrest: PGRST_DB_URI to the staging authenticator, shared writer host removed, JWT and auth host unchanged
+ok 50 - isolated postgrest: PGRST_DB_URI to the staging authenticator, shared writer host removed, JWT and auth host unchanged
+  ---
+  duration_ms: 0.370871
+  type: 'test'
+  ...
+# Subtest: round trip: shared(isolated(x)) is x exactly (same JSON text), for both services
+ok 51 - round trip: shared(isolated(x)) is x exactly (same JSON text), for both services
+  ---
+  duration_ms: 0.91406
+  type: 'test'
+  ...
+# Subtest: re-deploy while isolated: a shared deploy refresh followed by isolated again stays isolated with one marker
+ok 52 - re-deploy while isolated: a shared deploy refresh followed by isolated again stays isolated with one marker
+  ---
+  duration_ms: 1.031495
+  type: 'test'
+  ...
+# Subtest: candidate (rehearsal): -iso family, candidate URLs, background loops off, merge token dropped, -iso proxy URL
+ok 53 - candidate (rehearsal): -iso family, candidate URLs, background loops off, merge token dropped, -iso proxy URL
+  ---
+  duration_ms: 0.699366
+  type: 'test'
+  ...
+# Subtest: refuses a production family
+ok 54 - refuses a production family
+  ---
+  duration_ms: 0.459762
+  type: 'test'
+  ...
+# Subtest: refuses an unknown family
+ok 55 - refuses an unknown family
+  ---
+  duration_ms: 0.332791
+  type: 'test'
+  ...
+# Subtest: refuses a production ARN passed as the staging one
+ok 56 - refuses a production ARN passed as the staging one
+  ---
+  duration_ms: 0.417835
+  type: 'test'
+  ...
+# Subtest: refuses a missing ARN
+ok 57 - refuses a missing ARN
+  ---
+  duration_ms: 0.275465
+  type: 'test'
+  ...
+# Subtest: refuses an unknown production-bound entry
+ok 58 - refuses an unknown production-bound entry
+  ---
+  duration_ms: 0.331606
+  type: 'test'
+  ...
+# Subtest: refuses SUPABASE_URL not the staging proxy
+ok 59 - refuses SUPABASE_URL not the staging proxy
+  ---
+  duration_ms: 0.160457
+  type: 'test'
+  ...
+# Subtest: refuses no SUPABASE_PUBLIC_URL (sign-in path)
+ok 60 - refuses no SUPABASE_PUBLIC_URL (sign-in path)
+  ---
+  duration_ms: 0.166783
+  type: 'test'
+  ...
+# Subtest: refuses the -iso proxy URL on the live flip
+ok 61 - refuses the -iso proxy URL on the live flip
+  ---
+  duration_ms: 0.094082
+  type: 'test'
+  ...
+# Subtest: refuses a candidate without the -iso proxy URL
+ok 62 - refuses a candidate without the -iso proxy URL
+  ---
+  duration_ms: 0.194989
+  type: 'test'
+  ...
+# Subtest: refuses a candidate URL that is the live staging host
+ok 63 - refuses a candidate URL that is the live staging host
+  ---
+  duration_ms: 0.104899
+  type: 'test'
+  ...
+# Subtest: refuses an unknown plane value
+ok 64 - refuses an unknown plane value
+  ---
+  duration_ms: 0.147854
+  type: 'test'
+  ...
+# Subtest: refuses an unknown service
+ok 65 - refuses an unknown service
+  ---
+  duration_ms: 0.079854
+  type: 'test'
+  ...
+# Subtest: refuses a marker without backup (shared restore)
+ok 66 - refuses a marker without backup (shared restore)
+  ---
+  duration_ms: 0.078419
+  type: 'test'
+  ...
+# Subtest: CLI: exit 2 and nothing on stdout when refused; exit 0 and the same bytes on shared
+ok 67 - CLI: exit 2 and nothing on stdout when refused; exit 0 and the same bytes on shared
+  ---
+  duration_ms: 73.346959
+  type: 'test'
+  ...
+# Subtest: deploy workflows: exactly the marked blocks were added to the roll step; without them the step is the pinned one
+ok 68 - deploy workflows: exactly the marked blocks were added to the roll step; without them the step is the pinned one
+  ---
+  duration_ms: 6.637944
+  type: 'test'
+  ...
+# Subtest: deploy workflows: the switch reads the repository variables and calls the select script only off the shared path
+ok 69 - deploy workflows: the switch reads the repository variables and calls the select script only off the shared path
+  ---
+  duration_ms: 1.478674
+  type: 'test'
+  ...
+# Subtest: AWS-STAGE-DEPLOY-GATEWAY.yml: with STAGING_DATA_PLANE unset, empty or shared the registered task definition is byte-identical to the pinned step's
+ok 70 - AWS-STAGE-DEPLOY-GATEWAY.yml: with STAGING_DATA_PLANE unset, empty or shared the registered task definition is byte-identical to the pinned step's
+  ---
+  duration_ms: 1508.538711
+  type: 'test'
+  ...
+# Subtest: AWS-STAGE-DEPLOY-GATEWAY.yml: STAGING_DATA_PLANE=isolated without STAGING_CUTOVER_APPROVED=yes fails the step and registers nothing
+ok 71 - AWS-STAGE-DEPLOY-GATEWAY.yml: STAGING_DATA_PLANE=isolated without STAGING_CUTOVER_APPROVED=yes fails the step and registers nothing
+  ---
+  duration_ms: 78.737461
+  type: 'test'
+  ...
+# Subtest: AWS-STAGE-DEPLOY-GATEWAY.yml: STAGING_DATA_PLANE=isolated with approval registers the staging-db references; shared afterwards restores the shared plane
+ok 72 - AWS-STAGE-DEPLOY-GATEWAY.yml: STAGING_DATA_PLANE=isolated with approval registers the staging-db references; shared afterwards restores the shared plane
+  ---
+  duration_ms: 418.227795
+  type: 'test'
+  ...
+# Subtest: AWS-STAGE-DEPLOY-GATEWAY.yml: an unknown STAGING_DATA_PLANE value fails closed
+ok 73 - AWS-STAGE-DEPLOY-GATEWAY.yml: an unknown STAGING_DATA_PLANE value fails closed
+  ---
+  duration_ms: 77.215226
+  type: 'test'
+  ...
+# Subtest: AWS-STAGE-DEPLOY-POSTGREST-AURORA-PROXY.yml: with STAGING_DATA_PLANE unset, empty or shared the registered task definition is byte-identical to the pinned step's
+ok 74 - AWS-STAGE-DEPLOY-POSTGREST-AURORA-PROXY.yml: with STAGING_DATA_PLANE unset, empty or shared the registered task definition is byte-identical to the pinned step's
+  ---
+  duration_ms: 1769.164646
+  type: 'test'
+  ...
+# Subtest: AWS-STAGE-DEPLOY-POSTGREST-AURORA-PROXY.yml: STAGING_DATA_PLANE=isolated without STAGING_CUTOVER_APPROVED=yes fails the step and registers nothing
+ok 75 - AWS-STAGE-DEPLOY-POSTGREST-AURORA-PROXY.yml: STAGING_DATA_PLANE=isolated without STAGING_CUTOVER_APPROVED=yes fails the step and registers nothing
+  ---
+  duration_ms: 108.192619
+  type: 'test'
+  ...
+# Subtest: AWS-STAGE-DEPLOY-POSTGREST-AURORA-PROXY.yml: STAGING_DATA_PLANE=isolated with approval registers the staging-db references; shared afterwards restores the shared plane
+ok 76 - AWS-STAGE-DEPLOY-POSTGREST-AURORA-PROXY.yml: STAGING_DATA_PLANE=isolated with approval registers the staging-db references; shared afterwards restores the shared plane
+  ---
+  duration_ms: 445.713563
+  type: 'test'
+  ...
+# Subtest: AWS-STAGE-DEPLOY-POSTGREST-AURORA-PROXY.yml: an unknown STAGING_DATA_PLANE value fails closed
+ok 77 - AWS-STAGE-DEPLOY-POSTGREST-AURORA-PROXY.yml: an unknown STAGING_DATA_PLANE value fails closed
+  ---
+  duration_ms: 109.026144
+  type: 'test'
+  ...
+# Subtest: gateway: isolated needs data_backend=keep
+ok 78 - gateway: isolated needs data_backend=keep
+  ---
+  duration_ms: 96.95255
+  type: 'test'
+  ...
+# Subtest: AWS-STAGE-CUTOVER-REHEARSAL.yml: dispatch only, owner gate, staging roles only, candidates only, always scaled to 0
+ok 79 - AWS-STAGE-CUTOVER-REHEARSAL.yml: dispatch only, owner gate, staging roles only, candidates only, always scaled to 0
+  ---
+  duration_ms: 2.135945
+  type: 'test'
+  ...
+# Subtest: AWS-STAGE-CUTOVER.yml: dispatch only, gate, record → flip → verify → smoke → automatic rollback, recover, manual rollback
+ok 80 - AWS-STAGE-CUTOVER.yml: dispatch only, gate, record → flip → verify → smoke → automatic rollback, recover, manual rollback
+  ---
+  duration_ms: 0.995387
+  type: 'test'
+  ...
+# Subtest: mutation fails: rehearsal: a schedule trigger
+ok 81 - mutation fails: rehearsal: a schedule trigger
+  ---
+  duration_ms: 0.490349
+  type: 'test'
+  ...
+# Subtest: mutation fails: rehearsal: a push trigger
+ok 82 - mutation fails: rehearsal: a push trigger
+  ---
+  duration_ms: 0.338407
+  type: 'test'
+  ...
+# Subtest: mutation fails: rehearsal: cost gate removed
+ok 83 - mutation fails: rehearsal: cost gate removed
+  ---
+  duration_ms: 0.295188
+  type: 'test'
+  ...
+# Subtest: mutation fails: rehearsal: main gate removed
+ok 84 - mutation fails: rehearsal: main gate removed
+  ---
+  duration_ms: 0.315572
+  type: 'test'
+  ...
+# Subtest: mutation fails: rehearsal: the production role
+ok 85 - mutation fails: rehearsal: the production role
+  ---
+  duration_ms: 0.378998
+  type: 'test'
+  ...
+# Subtest: mutation fails: rehearsal: static keys
+ok 86 - mutation fails: rehearsal: static keys
+  ---
+  duration_ms: 0.308686
+  type: 'test'
+  ...
+# Subtest: mutation fails: rehearsal: a live-service ECS call
+ok 87 - mutation fails: rehearsal: a live-service ECS call
+  ---
+  duration_ms: 0.806818
+  type: 'test'
+  ...
+# Subtest: mutation fails: rehearsal: scale-to-0 not always
+ok 88 - mutation fails: rehearsal: scale-to-0 not always
+  ---
+  duration_ms: 0.357829
+  type: 'test'
+  ...
+# Subtest: mutation fails: rehearsal: smoke on the live staging host
+ok 89 - mutation fails: rehearsal: smoke on the live staging host
+  ---
+  duration_ms: 0.292243
+  type: 'test'
+  ...
+# Subtest: mutation fails: rehearsal: run-name changed (gate would never match)
+ok 90 - mutation fails: rehearsal: run-name changed (gate would never match)
+  ---
+  duration_ms: 0.273882
+  type: 'test'
+  ...
+# Subtest: mutation fails: rehearsal: secrets job on the deploy role
+ok 91 - mutation fails: rehearsal: secrets job on the deploy role
+  ---
+  duration_ms: 0.262972
+  type: 'test'
+  ...
+# Subtest: mutation fails: rehearsal: wider top-level permissions
+ok 92 - mutation fails: rehearsal: wider top-level permissions
+  ---
+  duration_ms: 0.273363
+  type: 'test'
+  ...
+# Subtest: mutation fails: cutover: a push trigger
+ok 93 - mutation fails: cutover: a push trigger
+  ---
+  duration_ms: 0.435138
+  type: 'test'
+  ...
+# Subtest: mutation fails: cutover: gate script removed
+ok 94 - mutation fails: cutover: gate script removed
+  ---
+  duration_ms: 0.442375
+  type: 'test'
+  ...
+# Subtest: mutation fails: cutover: PLAN_SPAR_GATEWAY_URL not passed
+ok 95 - mutation fails: cutover: PLAN_SPAR_GATEWAY_URL not passed
+  ---
+  duration_ms: 0.42446
+  type: 'test'
+  ...
+# Subtest: mutation fails: cutover: approval not passed
+ok 96 - mutation fails: cutover: approval not passed
+  ---
+  duration_ms: 0.45523
+  type: 'test'
+  ...
+# Subtest: mutation fails: cutover: flip without the gate
+ok 97 - mutation fails: cutover: flip without the gate
+  ---
+  duration_ms: 0.514924
+  type: 'test'
+  ...
+# Subtest: mutation fails: cutover: automatic rollback removed
+ok 98 - mutation fails: cutover: automatic rollback removed
+  ---
+  duration_ms: 0.762501
+  type: 'test'
+  ...
+# Subtest: mutation fails: cutover: smoke after flip removed
+ok 99 - mutation fails: cutover: smoke after flip removed
+  ---
+  duration_ms: 0.453127
+  type: 'test'
+  ...
+# Subtest: mutation fails: cutover: flip before record
+ok 100 - mutation fails: cutover: flip before record
+  ---
+  duration_ms: 0.400998
+  type: 'test'
+  ...
+# Subtest: mutation fails: cutover: the production role
+ok 101 - mutation fails: cutover: the production role
+  ---
+  duration_ms: 0.408041
+  type: 'test'
+  ...
+# Subtest: mutation fails: cutover: recover dispatches a production deploy
+ok 102 - mutation fails: cutover: recover dispatches a production deploy
+  ---
+  duration_ms: 0.451917
+  type: 'test'
+  ...
+# Subtest: mutation fails: cutover: recover with id-token
+ok 103 - mutation fails: cutover: recover with id-token
+  ---
+  duration_ms: 0.461517
+  type: 'test'
+  ...
+# Subtest: mutation fails: cutover: smoke against production
+ok 104 - mutation fails: cutover: smoke against production
+  ---
+  duration_ms: 0.417299
+  type: 'test'
+  ...
+# Subtest: mutation fails: cutover: touches the candidates
+ok 105 - mutation fails: cutover: touches the candidates
+  ---
+  duration_ms: 0.405425
+  type: 'test'
+  ...
+# Subtest: mutation fails: cutover: flip runs main instead of the rehearsed commit
+ok 106 - mutation fails: cutover: flip runs main instead of the rehearsed commit
+  ---
+  duration_ms: 0.364709
+  type: 'test'
+  ...
+# Subtest: mutation fails: a deploy-workflow edit outside the marked blocks, or a switch without the marker-restore
+ok 107 - mutation fails: a deploy-workflow edit outside the marked blocks, or a switch without the marker-restore
+  ---
+  duration_ms: 417.290678
+  type: 'test'
+  ...
+1..107
+# tests 107
+# suites 0
+# pass 107
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 7992.400358

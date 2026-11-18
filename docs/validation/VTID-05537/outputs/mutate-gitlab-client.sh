@@ -170,7 +170,7 @@ run_mut "message detail not redacted"            $G 's/detail = clean\(detail\)\
 run_mut "excerpt not cut"                        $G 's/\.slice\(0, EXCERPT_MAX\)//'
 run_mut "detail not cut"                         $G 's/\.slice\(0, DETAIL_MAX\)//'
 run_mut "excerpt whitespace kept"                $G "s/const excerptOf = \(text\) => clean\(text\)\.replace\(\/\\\\s\+\/g, ' '\)\.trim\(\)/const excerptOf = (text) => clean(text).trim()/"
-run_mut "error path keeps the query"             $G 's/    const url = `\$\{apiRoot\}\$\{path\}\$\{qs \? `\?\$\{qs\}` : ..\}`;/    const url = `${apiRoot}${path}${qs ? `?${qs}` : ""}`; path = path + (qs ? `?${qs}` : "");/'
+run_mut "error path keeps the query"             $G 's/    const url = `\$\{apiRoot\}\$\{path\}\$\{qs \? `\?\$\{qs\}` : ..\}`;/    const url = `\${apiRoot}\${path}\${qs ? \`?\${qs}\` : ""}\`; path = path + (qs ? \`?\${qs}\` : "");/'
 run_mut "non-JSON success body returned as text" $G 's/    try \{\n      return JSON.parse\(text\);\n    \} catch \{\n      throw new GitLabApiError\(`GitLab API \$\{method\} \$\{path\} returned a body that is not JSON \(HTTP \$\{status\}\)`, \{\n        code: .invalid_json., status, method, path, bodyExcerpt: excerptOf\(text\),\n      \}\);\n    \}/    try { return JSON.parse(text); } catch { return text; }/'
 run_mut "empty body returns empty string"        $G "s/if \(text.trim\(\) === ''\) return null;/if (text.trim() === '') return text;/"
 run_mut "expect text ignored"                    $G "s/if \(expect === 'text'\) return text;//"

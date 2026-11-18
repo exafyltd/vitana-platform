@@ -1,0 +1,4 @@
+PASS staging-db bundle verify: 431 part(s), schema hash d9118a134c63324216109d16dc41975ccc292add01d8ab16676215ade945183f, 4 reviewed production reference(s)
+staging-prod-ref-guard: 3 file(s) scanned, 0 production reference(s) (enforce)
+Bundle <bundle dir>: 431 part(s), expected schema hash d9118a134c63324216109d16dc41975ccc292add01d8ab16676215ade945183f
+Dry run: 431 part(s) split into 6325 statement(s); no AWS call made

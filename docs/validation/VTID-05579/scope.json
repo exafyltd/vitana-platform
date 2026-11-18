@@ -1,0 +1,16 @@
+{
+  "vtid": "VTID-05579",
+  "kind": "feature",
+  "paths": [
+    "supabase/migrations/20261102054000_vtid_05579_chat_groups_scope.sql",
+    "supabase/migrations/20261102054100_vtid_05579_network_group_rpcs.sql",
+    "supabase/migrations/20261102054200_vtid_05579_chat_groups_rls.sql",
+    "docs/multitenancy/MIGRATION-QUEUE.md",
+    "scripts/ci/migration-drift-baseline.json",
+    "services/gateway/test/mt-network-groups-db.pgtap.test.ts",
+    "docs/validation/VTID-05579/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05579/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

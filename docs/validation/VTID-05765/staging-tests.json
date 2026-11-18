@@ -1,0 +1,8 @@
+{
+  "vtid": "VTID-05765",
+  "service": "gateway",
+  "tests": [
+    { "kind": "existing", "ref": "npx jest test/project-manager", "cwd": "services/gateway",
+      "reason": "the Project Manager merge guard: one accept or two same-model accepts on a protected gate file stay refused; two accepts from different chain models on the current head are allowed; stale-head and out-of-chain accepts do not count. The change is merge-decision logic only, proven in CI; it serves no new route" }
+  ]
+}

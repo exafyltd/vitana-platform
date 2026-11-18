@@ -1,0 +1,6 @@
+# mutation gate-rehearsal-sha-removed: scripts/aws/staging-cutover-gate.mjs
+# replaced: r.head_sha === sha && 
+# with:     
+not ok 9 - gate refuses: rehearsal on another commit
+# pass 26
+# fail 1

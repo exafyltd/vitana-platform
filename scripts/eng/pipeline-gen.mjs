@@ -190,7 +190,7 @@ export function buildPipeline(config, repoKey) {
       DEPLOY_ECS_SERVICE: s.staging.ecs_service,
       DEPLOY_RUNS_FILE: '$CI_PROJECT_DIR/deploy-runs.json',
     };
-    doc[`build-image:${svc}`] = { extends: '.build-image', stage: 'build', needs: [], tags: [config.runner_tags.main], interruptible: false, variables: { ...deployVars }, rules: [on] };
+    doc[`build-image:${svc}`] = { extends: '.build-image', stage: 'build', needs: [], tags: ['vitana-eng-build'], interruptible: false, variables: { ...deployVars }, rules: [on] };
     doc[`push-image:${svc}`] = { extends: '.push-image', stage: 'push', tags: [config.runner_tags.deploy], interruptible: false, needs: [{ job: `build-image:${svc}`, artifacts: true }], variables: { ...deployVars }, rules: [on] };
     const overrides = Object.keys(s.env_overrides || {}).length ? JSON.stringify(s.env_overrides) : null;
     doc[`deploy-staging:${svc}`] = {
