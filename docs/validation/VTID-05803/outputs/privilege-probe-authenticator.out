@@ -1,0 +1,2 @@
+td rev 4 | stop: EssentialContainerExited | exit: [('probe', 0)]
+LOG: authenticator|f|f|f|f|f|public

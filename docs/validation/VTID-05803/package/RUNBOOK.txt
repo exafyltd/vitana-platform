@@ -1,0 +1,20 @@
+VTID-05803 execution runbook (no credentials in this file)
+
+0. Transfer: vtid-05803-schema-restore.tar.gz.b64 (base64 of the archive). Verify with MANIFEST.txt archive_sha256.
+1. Stage in the executor container (ECS task, existing family vitana-staging-role-provision:3, command override):
+     mkdir -p /work && base64 -d <<<"$PKG_B64" | tar -xz -C /work
+     -> repo layout at /work/scripts/aws and /work/docs/validation/VTID-05803
+     (set REPO=/work so schema-restore.sh finds /work/scripts/aws)
+
+2. READ-ONLY STAGING PROBE (run first; the task env supplies PGHOST/PGUSER/PGPASSWORD for the staging writer):
+     cd /work && psql -X -A -t -f docs/validation/VTID-05803/probe-staging.sql
+
+3. READ-ONLY SOURCE PROBE (Supabase; SOURCE_DATABASE_URL injected from the existing Supabase secret, never printed):
+     cd /work && psql "$SOURCE_DATABASE_URL" -X -A -t -f docs/validation/VTID-05803/probe-source.sql
+
+4. Only after 2 and 3 succeed: SCHEMA-ONLY RESTORE
+     cd /work && REPO=/work PGHOST=vitana-aurora-staging-writer.cfk228aiedf3.eu-central-1.rds.amazonaws.com PGDATABASE=vitana PGSSLMODE=require bash docs/validation/VTID-05803/schema-restore.sh
+   The runner refuses any non-staging host, refuses a non-empty public schema, applies only DDL (tables, columns,
+   sequences, constraints, grants, RLS policies, outbox, views), and prints object counts at the end. No rows are copied.
+
+5. Parity: compare probe-source counts (step 3) with the staging counts printed by step 4 and probe-staging.

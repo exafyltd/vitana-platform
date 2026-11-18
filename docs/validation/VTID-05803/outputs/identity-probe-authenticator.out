@@ -1,0 +1,2 @@
+td rev 3 | stop: EssentialContainerExited | exit: [('probe', 0)]
+LOG: vitana|10.0.10.108|authenticator|0

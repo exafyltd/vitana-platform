@@ -1,0 +1,5 @@
+td rev 2 | stop: EssentialContainerExited Essential container in task exited | exit: [('probe', 0)]
+LOG: psql: error: connection to server at "vitana-postgres-staging.cfk228aiedf3.eu-central-1.rds.amazonaws.com" (10.0.31.161), port 5432 failed: Operation timed out
+LOG: 	Is the server running on that host and accepting TCP/IP connections?
+
+[exited with code 0]
