@@ -1,0 +1,8 @@
+{
+  "vtid": "VTID-05764",
+  "kind": "feature",
+  "paths": ["infra/kiro-access/**", ".github/workflows/AWS-KIRO-ACCESS.yml", "docs/KIRO-AWS-ACCESS.md", "docs/validation/VTID-05764/**"],
+  "weakens_tests": [],
+  "red_green_exempt": [],
+  "sparring_record": ".kiro/specs/autonomous-to-staging/sparring/verdict.md"
+}

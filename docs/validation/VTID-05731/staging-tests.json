@@ -1,0 +1,10 @@
+{
+  "vtid": "VTID-05731",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "worker orchestrator route requires the service token (rejected write probe)", "method": "POST", "path": "/api/v1/worker/orchestrator/route", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "http", "name": "worker orchestrator task claim requires the service token (rejected write probe)", "method": "POST", "path": "/api/v1/worker/orchestrator/tasks/VTID-00000/claim", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "existing", "ref": "npx jest test/worker-orchestrator-auth.test.ts", "cwd": "services/gateway",
+      "reason": "each of the 12 write routes: no token and wrong token 401, service token reaches the handler; event-loop dispatch, gatewayApiCall and the self-healing reconciler redispatch send the service bearer" }
+  ]
+}

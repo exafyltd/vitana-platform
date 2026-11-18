@@ -1,0 +1,10 @@
+# guard fixture: a staging workflow that assumes the production deploy role
+on: { workflow_dispatch: {} }
+jobs:
+  x:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_PROD_ROLE_ARN }}
+          aws-region: eu-central-1

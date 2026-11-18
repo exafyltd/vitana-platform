@@ -1,0 +1,18 @@
+# VTID-05718 — commands run for this change (honest log)
+
+## Run in this session
+- git fetch origin main && git checkout -B claude/chat-burst-VTID-05718 origin/main  -> ok (base 6dc6e1ba0c)
+- grep / sed reads of chat-push-coalescer.ts, notification-service.ts, push-routing.ts, scheduled-notifications-repository.ts, ops-health-checks.ts, index.ts  -> read only
+- python3 edits (chat-push-coalescer.ts, notification-service.ts, scheduled-notifications-repository.ts, ops-health-checks.ts, index.ts, test/vtid-05137-chat-push-coalescing.test.ts) -> applied, asserts on each anchor passed
+- node -v -> v22.22.0
+- services/gateway: npx jest test/vtid-05137-chat-push-coalescing.test.ts -> FAILED to start: npm registry unreachable (ENOTFOUND registry.npmjs.org)
+- services/gateway: node_modules/.bin/jest -> not present; node_modules has no .bin, so no local jest or tsc
+- git status / git diff --stat -> 6 modified files, 3 new files (chat-burst-sweep.ts, test/vtid-05718-chat-burst-sweep.test.ts, docs/validation/VTID-05718/*)
+
+## Not run (no toolchain in this session)
+- Gateway Jest suites (test/vtid-05718-chat-burst-sweep.test.ts, test/vtid-05137-chat-push-coalescing.test.ts): run by CI (Gateway Jest shards)
+- TypeScript type check: run by CI
+- Lint: run by CI
+
+## Result
+No local test or type-check output exists for this change. Evidence of correctness is the CI run on the PR head.

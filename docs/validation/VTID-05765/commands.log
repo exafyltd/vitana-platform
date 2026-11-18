@@ -1,0 +1,10 @@
+# VTID-05765 — base origin/main bf1cb134e6
+node --test scripts/collab/*.test.mjs            -> tests 269, pass 269, fail 0 (outputs/collab-green.txt)
+(origin/main worktree + new tests) node --test scripts/collab/gate-invariants.test.mjs scripts/collab/land-guard.test.mjs
+                                                 -> 3 fail on base (outputs/red-on-base.txt)
+cd services/gateway && npx jest test/project-manager  -> Test Suites 13 passed, Tests 230 passed
+cd services/gateway && npx tsc --noEmit -p .          -> exit 0 (outputs/tsc.txt)
+node scripts/collab/gate-invariants.test.mjs               -> see below
+gate-invariants: staging-prod-ref-guard: not yet present, invariant deferred
+gate-invariants: GATE-INVARIANTS.yml: not yet present, invariant deferred
+gate-invariants: all invariants hold

@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# VTID-05782 test stub for the AWS CLI (scripts/ci/staging-db/*.test.mjs). Never calls AWS. Every call is appended to
+# $STUB_LOG as one line. Behaviour by env: STUB_ACCOUNT (default 472838866351), STUB_CLUSTER_EXISTS=1,
+# STUB_HASH (stringValue returned for the schema-hash statement), STUB_PUBLIC_RELATIONS (default 0),
+# STUB_FAIL_SQL (a substring: an execute-statement whose sql contains it fails), STUB_TAG (default staging).
+set -euo pipefail
+echo "aws $*" >> "${STUB_LOG:?}"
+sub="${1:-} ${2:-}"
+arg() { local k="$1"; shift; while [ $# -gt 0 ]; do [ "$1" = "$k" ] && { echo "${2:-}"; return; }; shift; done; }
+case "$sub" in
+  "sts get-caller-identity") echo "${STUB_ACCOUNT:-472838866351}" ;;
+  "cloudformation describe-stacks")
+    cat <<JSON
+{"Stacks":[{"Outputs":[
+ {"OutputKey":"KmsKeyArn","OutputValue":"arn:aws:kms:eu-central-1:472838866351:key/11111111-2222-4333-8444-555555555555"},
+ {"OutputKey":"DbSubnetGroupName","OutputValue":"vitana-aurora-staging"},
+ {"OutputKey":"DbSecurityGroupId","OutputValue":"sg-0123456789abcdef0"},
+ {"OutputKey":"MinAcu","OutputValue":"${STUB_MIN_ACU:-0}"},
+ {"OutputKey":"MaxAcu","OutputValue":"2"},
+ {"OutputKey":"SecondsUntilAutoPause","OutputValue":"300"}]}]}
+JSON
+    ;;
+  "rds describe-db-clusters")
+    if [ "${STUB_CLUSTER_EXISTS:-0}" = 1 ]; then
+      c=$(arg --db-cluster-identifier "$@")
+      echo "{\"DBClusters\":[{\"DBClusterArn\":\"arn:aws:rds:eu-central-1:472838866351:cluster:$c\",\"TagList\":[{\"Key\":\"vitana-env\",\"Value\":\"${STUB_TAG:-staging}\"}],\"MasterUserSecret\":{\"SecretArn\":\"arn:aws:secretsmanager:eu-central-1:472838866351:secret:rds!cluster-abc-XyZ\"}}]}"
+    else echo "An error occurred (DBClusterNotFoundFault)" >&2; exit 254; fi ;;
+  "rds describe-db-instances") echo "An error occurred (DBInstanceNotFound)" >&2; exit 254 ;;
+  "rds-data begin-transaction") echo '{"transactionId":"tx-stub"}' ;;
+  "rds-data commit-transaction"|"rds-data rollback-transaction") echo '{}' ;;
+  "rds-data execute-statement")
+    f=$(arg --cli-input-json "$@"); f="${f#file://}"
+    sql=$(jq -r .sql "$f")
+    if [ -n "${STUB_FAIL_SQL:-}" ] && printf '%s' "$sql" | grep -qF "$STUB_FAIL_SQL"; then echo "An error occurred (BadRequestException): stub failure" >&2; exit 255; fi
+    if printf '%s' "$sql" | grep -q 'staging-db:schema-hash'; then echo "{\"records\":[[{\"stringValue\":\"${STUB_HASH:-}\"},{\"stringValue\":\"1\"}]]}"
+    elif printf '%s' "$sql" | grep -q "n.nspname = 'public'"; then echo "{\"records\":[[{\"longValue\":${STUB_PUBLIC_RELATIONS:-0}}]]}"
+    else echo '{"numberOfRecordsUpdated":0}'; fi ;;
+  *) echo '{}' ;;
+esac

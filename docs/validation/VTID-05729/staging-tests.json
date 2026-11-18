@@ -1,0 +1,13 @@
+{
+  "vtid": "VTID-05729",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "semantic search requires auth (rejected write probe)", "method": "POST", "path": "/api/v1/memory/semantic/search", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "http", "name": "semantic write requires auth (rejected write probe)", "method": "POST", "path": "/api/v1/memory/semantic/write", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "http", "name": "semantic context requires auth (rejected write probe)", "method": "POST", "path": "/api/v1/memory/semantic/context", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "http", "name": "admin embeddings generate requires auth (rejected write probe)", "method": "POST", "path": "/api/v1/memory/admin/embeddings/generate", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "http", "name": "admin embeddings status requires auth (rejected probe)", "method": "GET", "path": "/api/v1/memory/admin/embeddings/status", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "existing", "ref": "npx jest test/semantic-memory-auth.test.ts", "cwd": "services/gateway",
+      "reason": "pins the auth gates, the identity-derived lens and LENS_MISMATCH on the semantic memory routes" }
+  ]
+}

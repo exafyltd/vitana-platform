@@ -9,6 +9,15 @@
  * - POST /api/v1/memory/semantic/context   - Build semantic context for prompts
  * - GET  /api/v1/memory/semantic/health    - Service health check
  *
+ * Auth (VTID-05729, plan gateway-critical-route-auth):
+ * - search/write/context: requireAuthWithTenant. The lens tenant_id/user_id are
+ *   the caller's (req.identity); a body lens naming another tenant or user is
+ *   rejected 403 LENS_MISMATCH before any service call. exafy_admin gets no
+ *   override here — admins cannot read or write another user's memory through
+ *   these routes.
+ * - admin/embeddings/generate, /reembed and GET /admin/embeddings/status:
+ *   requireAdminAuth (exafy_admin).
+ *
  * Admin Endpoints (service-role only):
  * - POST /api/v1/memory/admin/embeddings/generate - Generate missing embeddings
  * - POST /api/v1/memory/admin/embeddings/reembed  - Trigger re-embedding
@@ -41,9 +50,13 @@ import {
 import {
   ContextLens,
   validateContextLens,
-  createDevSandboxLens,
 } from '../types/context-lens';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import {
+  requireAuthWithTenant,
+  requireAdminAuth,
+  AuthenticatedRequest,
+} from '../middleware/auth-supabase-jwt';
 
 const router = Router();
 
@@ -51,21 +64,27 @@ const router = Router();
 // Request Validation Schemas
 // =============================================================================
 
-const ContextLensSchema = z.object({
-  tenant_id: z.string().uuid(),
-  user_id: z.string().uuid(),
-  workspace_scope: z.enum(['product', 'dev']),
+/**
+ * Body lens for the authenticated routes: every field optional. tenant_id and
+ * user_id, when given, must equal the caller's (checked in resolveCallerLens);
+ * they are never taken from the body.
+ */
+const CallerLensSchema = z.object({
+  tenant_id: z.string().optional(),
+  user_id: z.string().optional(),
+  workspace_scope: z.enum(['product', 'dev']).default('product'),
   active_role: z.string().optional(),
   allowed_categories: z.array(z.string()).optional(),
   visibility_scope: z.enum(['private', 'shared', 'public']).optional(),
   max_age_hours: z.number().int().positive().optional(),
 });
+type CallerLensInput = z.infer<typeof CallerLensSchema>;
 
 const SemanticSearchRequestSchema = z.object({
   query: z.string().min(1, 'Query is required'),
   query_embedding: z.array(z.number()).length(EMBEDDING_DIMENSIONS).optional(),
   top_k: z.number().int().min(1).max(100).default(10),
-  lens: ContextLensSchema,
+  lens: CallerLensSchema.optional(),
   recency_boost: z.boolean().default(true),
 });
 
@@ -76,7 +95,7 @@ const SemanticWriteRequestSchema = z.object({
   category_key: z.string().optional(),
   importance: z.number().int().min(0).max(100).default(10),
   occurred_at: z.string().datetime().optional(),
-  lens: ContextLensSchema,
+  lens: CallerLensSchema.optional(),
   vtid: z.string().optional(),
   origin_service: z.string().optional(),
   conversation_id: z.string().uuid().optional(),
@@ -87,7 +106,7 @@ const SemanticWriteRequestSchema = z.object({
 const SemanticContextRequestSchema = z.object({
   query: z.string().min(1, 'Query is required'),
   top_k: z.number().int().min(1).max(50).default(10),
-  lens: ContextLensSchema,
+  lens: CallerLensSchema.optional(),
 });
 
 const ReembedRequestSchema = z.object({
@@ -110,32 +129,45 @@ const GenerateEmbeddingsRequestSchema = z.object({
 // =============================================================================
 
 /**
- * Check if request is from dev sandbox
+ * Build the Context Lens for an authenticated request. tenant_id and user_id
+ * come from req.identity (tenant resolved by requireAuthWithTenant); the other
+ * lens fields come from the body lens when given. A body lens whose tenant_id
+ * or user_id differs from the caller's yields 403 LENS_MISMATCH and null.
+ * No exafy_admin override.
  */
-function isDevSandbox(req: Request): boolean {
-  const env = (process.env.ENVIRONMENT || '').toLowerCase();
-  return env.includes('dev') || env.includes('sandbox');
-}
-
-/**
- * Get Context Lens from request, using dev sandbox defaults if appropriate
- */
-function getLensFromRequest(req: Request, body: { lens?: unknown }): ContextLens | null {
-  // If lens provided in body, validate it
-  if (body.lens) {
-    const parsed = ContextLensSchema.safeParse(body.lens);
-    if (parsed.success) {
-      return parsed.data as ContextLens;
-    }
+function resolveCallerLens(
+  req: AuthenticatedRequest,
+  res: Response,
+  bodyLens: CallerLensInput | undefined
+): ContextLens | null {
+  const userId = req.identity?.user_id;
+  const tenantId = req.identity?.tenant_id;
+  if (!userId || !tenantId) {
+    // requireAuthWithTenant guarantees both; defensive only.
+    res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
     return null;
   }
-
-  // In dev sandbox, use default dev lens
-  if (isDevSandbox(req)) {
-    return createDevSandboxLens();
+  if (
+    bodyLens &&
+    ((bodyLens.tenant_id !== undefined && bodyLens.tenant_id !== tenantId) ||
+      (bodyLens.user_id !== undefined && bodyLens.user_id !== userId))
+  ) {
+    res.status(403).json({
+      ok: false,
+      error: 'LENS_MISMATCH',
+      message: 'lens.tenant_id and lens.user_id must be the caller\'s own',
+    });
+    return null;
   }
-
-  return null;
+  return {
+    tenant_id: tenantId,
+    user_id: userId,
+    workspace_scope: bodyLens?.workspace_scope ?? 'product',
+    active_role: bodyLens?.active_role,
+    allowed_categories: bodyLens?.allowed_categories,
+    visibility_scope: bodyLens?.visibility_scope,
+    max_age_hours: bodyLens?.max_age_hours,
+  };
 }
 
 // =============================================================================
@@ -153,7 +185,7 @@ function getLensFromRequest(req: Request, body: { lens?: unknown }): ContextLens
  *   query: string,
  *   query_embedding?: number[],  // 1536 dimensions
  *   top_k?: number,
- *   lens: ContextLens,
+ *   lens?: Partial<ContextLens>,  // tenant_id/user_id = caller's; mismatch → 403
  *   recency_boost?: boolean
  * }
  *
@@ -166,7 +198,7 @@ function getLensFromRequest(req: Request, body: { lens?: unknown }): ContextLens
  *   search_time_ms: number
  * }
  */
-router.post('/semantic/search', async (req: Request, res: Response) => {
+router.post('/semantic/search', requireAuthWithTenant, async (req: AuthenticatedRequest, res: Response) => {
   const startTime = Date.now();
 
   try {
@@ -181,6 +213,8 @@ router.post('/semantic/search', async (req: Request, res: Response) => {
     }
 
     const request = parsed.data;
+    const lens = resolveCallerLens(req, res, request.lens);
+    if (!lens) return;
     let queryEmbedding = request.query_embedding;
 
     // Generate embedding if not provided
@@ -201,7 +235,7 @@ router.post('/semantic/search', async (req: Request, res: Response) => {
       query: request.query,
       query_embedding: queryEmbedding,
       top_k: request.top_k,
-      lens: request.lens as ContextLens,
+      lens,
       recency_boost: request.recency_boost
     });
 
@@ -244,11 +278,11 @@ router.post('/semantic/search', async (req: Request, res: Response) => {
  * {
  *   content: string,
  *   source: string,
- *   lens: ContextLens,
+ *   lens?: Partial<ContextLens>,  // tenant_id/user_id = caller's; mismatch → 403
  *   // ... other fields
  * }
  */
-router.post('/semantic/write', async (req: Request, res: Response) => {
+router.post('/semantic/write', requireAuthWithTenant, async (req: AuthenticatedRequest, res: Response) => {
   try {
     // Parse and validate request
     const parsed = SemanticWriteRequestSchema.safeParse(req.body);
@@ -261,6 +295,8 @@ router.post('/semantic/write', async (req: Request, res: Response) => {
     }
 
     const request = parsed.data;
+    const lens = resolveCallerLens(req, res, request.lens);
+    if (!lens) return;
 
     // Generate embedding if requested and not provided
     let embedding = request.embedding;
@@ -283,7 +319,7 @@ router.post('/semantic/write', async (req: Request, res: Response) => {
       category_key: request.category_key,
       importance: request.importance,
       occurred_at: request.occurred_at,
-      lens: request.lens as ContextLens,
+      lens,
       vtid: request.vtid,
       origin_service: request.origin_service,
       conversation_id: request.conversation_id,
@@ -320,7 +356,7 @@ router.post('/semantic/write', async (req: Request, res: Response) => {
  * {
  *   query: string,
  *   top_k?: number,
- *   lens: ContextLens
+ *   lens?: Partial<ContextLens>   // tenant_id/user_id = caller's; mismatch → 403
  * }
  *
  * Response:
@@ -331,7 +367,7 @@ router.post('/semantic/write', async (req: Request, res: Response) => {
  *   results_count: number
  * }
  */
-router.post('/semantic/context', async (req: Request, res: Response) => {
+router.post('/semantic/context', requireAuthWithTenant, async (req: AuthenticatedRequest, res: Response) => {
   try {
     // Parse and validate request
     const parsed = SemanticContextRequestSchema.safeParse(req.body);
@@ -344,6 +380,8 @@ router.post('/semantic/context', async (req: Request, res: Response) => {
     }
 
     const request = parsed.data;
+    const lens = resolveCallerLens(req, res, request.lens);
+    if (!lens) return;
 
     // Generate query embedding
     const embeddingResult = await generateEmbedding(request.query);
@@ -359,7 +397,7 @@ router.post('/semantic/context', async (req: Request, res: Response) => {
     const result = await buildSemanticContext(
       request.query,
       embeddingResult.embedding,
-      request.lens as ContextLens,
+      lens,
       request.top_k
     );
 
@@ -424,7 +462,7 @@ router.get('/semantic/health', async (req: Request, res: Response) => {
  *   since?: string
  * }
  */
-router.post('/admin/embeddings/generate', async (req: Request, res: Response) => {
+router.post('/admin/embeddings/generate', requireAdminAuth, async (req: Request, res: Response) => {
   const startTime = Date.now();
 
   try {
@@ -538,7 +576,7 @@ router.post('/admin/embeddings/generate', async (req: Request, res: Response) =>
  * Mark items for re-embedding (clears existing embeddings).
  * Service-role only operation.
  */
-router.post('/admin/embeddings/reembed', async (req: Request, res: Response) => {
+router.post('/admin/embeddings/reembed', requireAdminAuth, async (req: Request, res: Response) => {
   try {
     // Parse request
     const parsed = ReembedRequestSchema.safeParse(req.body);
@@ -582,7 +620,7 @@ router.post('/admin/embeddings/reembed', async (req: Request, res: Response) => 
  *
  * Get embedding pipeline status.
  */
-router.get('/admin/embeddings/status', async (req: Request, res: Response) => {
+router.get('/admin/embeddings/status', requireAdminAuth, async (req: Request, res: Response) => {
   try {
     // Get items needing embeddings (small sample)
     const itemsResult = await getItemsNeedingEmbeddings(1);
