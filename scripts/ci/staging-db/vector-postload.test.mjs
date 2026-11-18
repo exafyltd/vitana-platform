@@ -108,9 +108,9 @@ test('static: the post-load never truncates, deletes, reloads or references auth
   const text = fs.readFileSync(SQL, 'utf8').split('\n').filter((l) => !l.startsWith('--')).join('\n');
   for (const re of [/\bTRUNCATE\b/i, /\bDELETE\s+FROM\b/i, /\bDROP\s+TABLE\b/i, /\bDROP\s+COLUMN\b/i, /\bUPDATE\s+public\./i, /\bauth\./i, /\bREFERENCES\b/i, /\bCONCURRENTLY\b/i])
     assert.equal(re.test(text), false, `the post-load has no ${re}`);
-  assert.equal(statements().length, 15);
+  assert.equal(statements().length, 16);
   const blocks = fs.readFileSync(REPORT, 'utf8').split(/^-- ;;$/m).map((x) => x.split('\n').filter((l) => !l.startsWith('--')).join('\n').trim());
-  assert.equal(blocks.length, 3);
+  assert.equal(blocks.length, 5);
   for (const q of blocks) assert.match(q, /^SELECT\b/);
   const guard = spawnSync(process.execPath, [path.join(ROOT, 'scripts/ci/staging-prod-ref-guard.mjs'), '--enforce', '--files', SQL, REPORT, SH], { encoding: 'utf8' });
   assert.equal(guard.status, 0, guard.stdout + guard.stderr);
@@ -126,7 +126,7 @@ test('wrapper: refuses production and a missing cluster before any AWS call; pla
   }
   const r = spawnSync('bash', [SH, 'plan', '--cluster', 'vitana-aurora-staging'], { encoding: 'utf8', env });
   assert.equal(r.status, 0, r.stdout + r.stderr);
-  assert.match(r.stdout, /one Data API transaction for 15 statement/);
+  assert.match(r.stdout, /one Data API transaction for 16 statement/);
   assert.match(r.stdout, /Dry run: no AWS call made/);
 });
 
@@ -195,8 +195,9 @@ test('post-load: all or nothing — a missing column, a dependent view or a miss
 test('report: every SELECT runs after the post-load and shows types, counts, kept values and the 9 indexes', NEEDS, async () => {
   const db = await staged();
   await apply(db);
+  await db.exec(`CREATE SCHEMA IF NOT EXISTS migration_audit; CREATE TABLE IF NOT EXISTS migration_audit.saved_foreign_keys (references_auth boolean, restored_at timestamptz); CREATE TABLE IF NOT EXISTS migration_audit.saved_views (restored_at timestamptz); CREATE TABLE IF NOT EXISTS migration_audit.saved_indexes (restored_at timestamptz)`);
   const blocks = fs.readFileSync(REPORT, 'utf8').split(/^-- ;;$/m).map((b) => b.split('\n').filter((l) => !l.startsWith('--')).join('\n').trim());
-  assert.equal(blocks.length, 3);
+  assert.equal(blocks.length, 5);
   const cols = await one(db, blocks[0]);
   assert.equal(cols.length, 13);
   for (const r of cols) {
@@ -210,30 +211,162 @@ test('report: every SELECT runs after the post-load and shows types, counts, kep
   assert.equal(Number((await one(db, blocks[2]))[0].foreign_keys_to_auth_schema), 0);
 });
 
-const AFTER = path.join(ROOT, 'scripts/aws/staging-db-after-load.sh');
-test('after-load sequence: refuses production before any AWS call; --plan shows the three steps in order with their statement counts', () => {
+const MIG = path.join(ROOT, 'scripts/aws/staging-db-migration.sh');
+const PRE = path.join(ROOT, 'scripts/aws/staging-db-vector-preload.sql');
+const RESTORE = path.join(ROOT, 'scripts/aws/staging-db-restore-saved.sql');
+const split = (file) => {
+  const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'vpl-')), 'plan.json');
+  const r = spawnSync('python3', [path.join(ROOT, 'scripts/aws/aurora_sql_split.py'), file, '--out', out], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stderr);
+  const plan = JSON.parse(fs.readFileSync(out, 'utf8'));
+  assert.equal(plan.counts.non_transactional, 0);
+  return plan.statements.map((x) => x.sql);
+};
+async function applyFile(db, file) {
+  await db.exec('BEGIN');
+  try {
+    for (const st of (file === SQL ? statements({ scaled: true }) : split(file))) await db.exec(st);
+    await db.exec('COMMIT');
+  } catch (e) {
+    await db.exec('ROLLBACK');
+    throw e;
+  }
+}
+
+test('migration sequence: refuses production before any AWS call; --plan shows pre-load, then post-load in order', () => {
   const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'noaws-'));
   fs.writeFileSync(path.join(bin, 'aws'), '#!/bin/sh\necho "aws called" >&2; exit 99\n', { mode: 0o755 });
   const env = { ...process.env, PATH: `${bin}:${process.env.PATH}` };
-  for (const args of [['--cluster', 'vitana-aurora-prod'], [], ['--cluster', 'vitana-aurora-staging', '--apply-now']]) {
-    const r = spawnSync('bash', [AFTER, ...args], { encoding: 'utf8', env });
+  for (const args of [['pre-load', '--cluster', 'vitana-aurora-prod'], ['post-load', '--cluster', 'vitana-aurora-prod'], ['post-load'], ['load', '--cluster', 'vitana-aurora-staging']]) {
+    const r = spawnSync('bash', [MIG, ...args], { encoding: 'utf8', env });
     assert.notEqual(r.status, 0, args.join(' '));
     assert.doesNotMatch(r.stderr, /aws called/);
   }
-  const r = spawnSync('bash', [AFTER, '--cluster', 'vitana-aurora-staging', '--plan'], { encoding: 'utf8', env });
-  assert.equal(r.status, 0, r.stdout + r.stderr);
-  const steps = [...r.stdout.matchAll(/^== (\d)\/3 (.+) \((.+)\)$/gm)].map((m) => m[3]);
-  assert.deepEqual(steps, ['staging-db-vector-postload.sql', 'aurora-cutover-recreate-foreign-keys.sql', 'aurora-cutover-schema-sync-views.sql']);
-  assert.deepEqual([...r.stdout.matchAll(/one Data API transaction for (\d+) statement/g)].map((m) => Number(m[1])), [15, 360, 20]);
-  assert.match(r.stdout, /ALL DONE: 3 step\(s\) on vitana-aurora-staging \(plan only, no AWS call\)/);
-  assert.doesNotMatch(r.stderr, /aws called/);
+  const plan = (mode) => spawnSync('bash', [MIG, mode, '--cluster', 'vitana-aurora-staging', '--plan'], { encoding: 'utf8', env });
+  const pre = plan('pre-load');
+  assert.equal(pre.status, 0, pre.stdout + pre.stderr);
+  assert.deepEqual([...pre.stdout.matchAll(/^== pre-load \d\/1 .+ \((.+)\)$/gm)].map((m) => m[1]), ['staging-db-vector-preload.sql']);
+  const post = plan('post-load');
+  assert.equal(post.status, 0, post.stdout + post.stderr);
+  assert.deepEqual([...post.stdout.matchAll(/^== post-load \d\/2 .+ \((.+)\)$/gm)].map((m) => m[1]), ['staging-db-vector-postload.sql', 'staging-db-restore-saved.sql']);
+  assert.deepEqual([...(pre.stdout + post.stdout).matchAll(/one Data API transaction for (\d+) statement/g)].map((m) => Number(m[1])), [10, 16, 6]);
+  for (const r of [pre, post]) assert.doesNotMatch(r.stderr, /aws called/);
+  for (const f of [PRE, RESTORE, MIG]) {
+    const live = fs.readFileSync(f, 'utf8').split('\n').filter((l) => !l.startsWith('--') && !l.startsWith('#')).join('\n');
+    for (const re of [/\bTRUNCATE\b/i, /\bDELETE\s+FROM\b/i, /\bDROP\s+TABLE\b/i, /\bDROP\s+COLUMN\b/i, /\bUPDATE\s+public\./i, /\bCASCADE\b/i]) assert.equal(re.test(live), false, `${path.basename(f)}: no ${re}`);
+  }
+  const guard = spawnSync(process.execPath, [path.join(ROOT, 'scripts/ci/staging-prod-ref-guard.mjs'), '--enforce', '--files', MIG, PRE, RESTORE], { encoding: 'utf8' });
+  assert.equal(guard.status, 0, guard.stdout);
 });
 
-test('after-load sequence: the reused production SQL creates no foreign key to auth and changes no data', () => {
-  for (const f of ['aurora-cutover-recreate-foreign-keys.sql', 'aurora-cutover-schema-sync-views.sql']) {
-    const live = fs.readFileSync(path.join(ROOT, 'scripts/aws', f), 'utf8').split('\n').filter((l) => !l.startsWith('--')).join('\n');
-    for (const re of [/\bauth\./i, /\bTRUNCATE\b/i, /\bDELETE\s+FROM\b/i, /\bDROP\s+TABLE\b/i, /\bUPDATE\s+(public\.)?\w+\s+SET\b/i]) assert.equal(re.test(live), false, `${f}: no ${re}`);
+/** The schema the VTID-05803 path builds: native vector columns and indexes, public foreign keys, a public -> auth.users
+ *  foreign key on a stub, views (one on another) with options, grants and a comment, a materialized view. */
+async function restored() {
+  const db = new PGlite({ extensions: { vector } });
+  await db.exec('CREATE EXTENSION vector');
+  await db.exec('CREATE ROLE authenticated');
+  await db.exec('CREATE SCHEMA auth; CREATE TABLE auth.users (id uuid PRIMARY KEY)');
+  await db.exec('CREATE TABLE public.tenants (tenant_id uuid PRIMARY KEY, name text)');
+  const tables = new Map();
+  for (const [t, c, pk, pkt, dims] of COLS) {
+    if (!tables.has(t)) tables.set(t, { pk, pkt, cols: [] });
+    tables.get(t).cols.push([c, dims]);
   }
-  const guard = spawnSync(process.execPath, [path.join(ROOT, 'scripts/ci/staging-prod-ref-guard.mjs'), '--enforce', '--files', AFTER], { encoding: 'utf8' });
-  assert.equal(guard.status, 0, guard.stdout);
+  for (const [t, { pk, pkt, cols }] of tables) {
+    await db.exec(`CREATE TABLE public.${t} (${pk} ${pkt} PRIMARY KEY, note text, tenant_id uuid, ${cols.map(([c, d]) => `${c} vector(${d})`).join(', ')})`);
+    await db.exec(`ALTER TABLE public.${t} ADD CONSTRAINT ${t}_tenant_id_fkey FOREIGN KEY (tenant_id) REFERENCES public.tenants(tenant_id) ON DELETE CASCADE`);
+  }
+  await db.exec('ALTER TABLE public.memory_items ADD COLUMN user_id uuid, ADD CONSTRAINT memory_items_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)');
+  for (const i of INDEXES) {
+    const [t, c] = { ai_memory_embedding_idx: ['ai_memory', 'embedding'], dev_agent_memory_embedding_idx: ['dev_agent_memory', 'embedding'], mem_episodes_embedding_hnsw: ['mem_episodes', 'embedding'], mem_facts_embedding_hnsw: ['mem_facts', 'embedding'], idx_mem_emb_vector: ['memory_embeddings', 'embedding'], idx_memory_facts_embedding_hnsw: ['memory_facts', 'embedding'], idx_memory_items_embedding_hnsw: ['memory_items', 'embedding'], user_intents_embedding_hnsw_idx: ['user_intents', 'embedding'], idx_vtid_ledger_embedding_hnsw: ['vtid_ledger', 'embedding'] }[i];
+    await db.exec(`CREATE INDEX ${i} ON public.${t} USING ${/ivf|idx_mem_emb/.test(i) ? 'ivfflat' : 'hnsw'} (${c} vector_cosine_ops)`);
+  }
+  await db.exec(`CREATE VIEW public.v_facts WITH (security_invoker = true) AS SELECT id, note, embedding FROM public.mem_facts WHERE note IS NOT NULL`);
+  await db.exec(`CREATE VIEW public.v_facts_notes AS SELECT id, note FROM public.v_facts`);
+  await db.exec(`GRANT SELECT ON public.v_facts, public.v_facts_notes TO authenticated`);
+  await db.exec(`COMMENT ON VIEW public.v_facts IS 'facts with an embedding'`);
+  await db.exec(`CREATE MATERIALIZED VIEW public.mv_ledger AS SELECT id, embedding_v2 FROM public.vtid_ledger`);
+  await db.exec(`CREATE VIEW public.v_tenants AS SELECT tenant_id, name FROM public.tenants`);
+  await db.exec(`INSERT INTO public.tenants VALUES ('11111111-1111-1111-1111-111111111111', 'staging tenant')`);
+  return db;
+}
+const catalog = async (db) => ({
+  fks: await one(db, `SELECT conrelid::regclass::text AS t, conname, pg_get_constraintdef(oid) AS def FROM pg_constraint WHERE contype = 'f' ORDER BY 1, 2`),
+  views: await one(db, `SELECT c.relname, c.relkind::text AS kind, pg_get_viewdef(c.oid) AS def, c.reloptions, c.relacl::text AS acl, obj_description(c.oid, 'pg_class') AS cmt FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relkind IN ('v', 'm') ORDER BY 1`),
+  idx: await one(db, `SELECT indexrelid::regclass::text AS i, pg_get_indexdef(indexrelid) AS def FROM pg_index x JOIN pg_class c ON c.oid = x.indrelid JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND NOT x.indisprimary ORDER BY 1`),
+});
+/** What DMS does with TRUNCATE_BEFORE_LOAD: empty every table, then insert the source rows, vectors as (possibly truncated) text. */
+async function dmsLoad(db) {
+  for (const t of ['tenants', ...new Set(COLS.map((c) => c[0]))]) await db.exec(`TRUNCATE public.${t}`);
+  await db.exec(`INSERT INTO public.tenants VALUES ('11111111-1111-1111-1111-111111111111', 'staging tenant')`);
+  for (const [t, c, pk, pkt, dims] of COLS) {
+    for (const [k, v] of [[1, vec(dims)], [2, vec(dims).slice(0, -3)]]) {
+      const id = pkt === 'uuid' ? `00000000-0000-0000-0000-00000000000${k}` : `VTID-0000${k}`;
+      await db.query(`INSERT INTO public.${t} (${pk}, note, tenant_id, ${c}) VALUES ($1, 'loaded', '11111111-1111-1111-1111-111111111111', $2) ON CONFLICT (${pk}) DO UPDATE SET ${c} = EXCLUDED.${c}`, [id, v]);
+    }
+  }
+}
+
+test('full staging cycle: pre-load lets the DMS truncate-and-load run; post-load restores exactly what was there, without the public -> auth FK', NEEDS, async () => {
+  const db = await restored();
+  const before = await catalog(db);
+  assert.equal(before.fks.filter((f) => /auth\.users/.test(f.def)).length, 1, 'fixture has one public -> auth.users FK');
+  await assert.rejects(db.exec('TRUNCATE public.tenants'), /foreign key|referenced/i, 'without the pre-load the DMS truncate fails');
+  await applyFile(db, PRE);
+  const staged = await one(db, `SELECT count(*)::int AS n FROM information_schema.columns WHERE table_schema = 'public' AND column_name IN ('embedding', 'embedding_v2') AND data_type = 'text'`);
+  assert.equal(staged[0].n, 13);
+  assert.equal((await one(db, `SELECT count(*)::int AS n FROM pg_constraint WHERE contype = 'f'`))[0].n, 0);
+  assert.deepEqual((await one(db, `SELECT relname FROM pg_class WHERE relname IN ('v_facts', 'v_facts_notes', 'mv_ledger', 'v_tenants') ORDER BY 1`)).map((r) => r.relname), ['v_tenants'], 'only views on vector columns are dropped');
+  await applyFile(db, PRE); // re-runnable
+  await dmsLoad(db);
+  await applyFile(db, SQL);
+  await applyFile(db, RESTORE);
+  const after = await catalog(db);
+  assert.deepEqual(after.fks.map((f) => [f.t, f.conname]), before.fks.filter((f) => !/auth\.users/.test(f.def)).map((f) => [f.t, f.conname]), 'every FK back, except the public -> auth one');
+  for (const f of after.fks) assert.equal(f.def, before.fks.find((b) => b.conname === f.conname).def + ' NOT VALID', `${f.conname}: same definition, NOT VALID`);
+  assert.deepEqual(after.views, before.views, 'views, options, grants and comments identical');
+  assert.deepEqual(after.idx, before.idx, 'indexes identical');
+  const saved = await one(db, `SELECT constraint_name, references_auth, restored_at IS NOT NULL AS restored FROM migration_audit.saved_foreign_keys WHERE references_auth`);
+  assert.deepEqual(saved, [{ constraint_name: 'memory_items_user_id_fkey', references_auth: true, restored: false }], 'the R2 FK is recorded, never restored');
+  for (const [t, c, pk] of COLS) {
+    const rows = await one(db, `SELECT ${pk}::text AS k, ${c} IS NULL AS isnull FROM public.${t} ORDER BY 1`);
+    assert.deepEqual(rows.map((r) => r.isnull), [false, true], `${t}.${c}: complete vector cast, truncated one NULL`);
+  }
+  assert.equal((await one(db, `SELECT count(*)::int AS n FROM migration_audit.vector_incomplete`))[0].n, 13, 'each truncated value kept');
+  const again = await catalog(db);
+  await applyFile(db, SQL);
+  await applyFile(db, RESTORE);
+  assert.deepEqual(await catalog(db), again, 'post-load is re-runnable');
+  const blocks = fs.readFileSync(REPORT, 'utf8').split(/^-- ;;$/m).map((b) => b.split('\n').filter((l) => !l.startsWith('--')).join('\n').trim());
+  assert.equal(blocks.length, 5);
+  const saved2 = Object.fromEntries((await one(db, blocks[3])).map((r) => [r.object, r]));
+  assert.equal(Number(saved2.foreign_keys.excluded_auth_r2), 1);
+  assert.equal(Number(saved2.foreign_keys.pending), 0);
+  assert.equal(Number(saved2.views.saved), 3);
+  assert.equal(Number(saved2.views.pending), 0);
+  assert.equal(Number((await one(db, blocks[2]))[0].foreign_keys_to_auth_schema), 0);
+  assert.equal(Number((await one(db, blocks[4]))[0].public_fks_not_valid), before.fks.length - 1);
+});
+
+test('restore: a public -> auth FK the pre-load never saw (migration replay) is recorded and dropped', NEEDS, async () => {
+  const db = await restored();
+  await applyFile(db, PRE);
+  await db.exec('ALTER TABLE public.ai_memory ADD COLUMN owner_id uuid, ADD CONSTRAINT ai_memory_owner_fkey FOREIGN KEY (owner_id) REFERENCES auth.users(id)');
+  await applyFile(db, SQL);
+  await applyFile(db, RESTORE);
+  assert.equal((await one(db, `SELECT count(*)::int AS n FROM pg_constraint c JOIN pg_class r ON r.oid = c.confrelid JOIN pg_namespace n ON n.oid = r.relnamespace WHERE c.contype = 'f' AND n.nspname = 'auth'`))[0].n, 0);
+  assert.equal((await one(db, `SELECT count(*)::int AS n FROM migration_audit.saved_foreign_keys WHERE references_auth`))[0].n, 2);
+});
+
+test('pre-load and restore: all or nothing — a policy on a vector column stops the pre-load; restore refuses before the vector post-load', NEEDS, async () => {
+  const db = await restored();
+  await db.exec(`ALTER TABLE public.mem_facts ENABLE ROW LEVEL SECURITY; CREATE POLICY p_emb ON public.mem_facts USING (embedding IS NOT NULL)`);
+  const before = await catalog(db);
+  await assert.rejects(applyFile(db, PRE), /policy p_emb on mem_facts\.embedding/);
+  assert.deepEqual(await catalog(db), before, 'nothing changed');
+  assert.equal((await one(db, `SELECT count(*)::int AS n FROM pg_namespace WHERE nspname = 'migration_audit'`))[0].n, 0);
+  const db2 = await restored();
+  await applyFile(db2, PRE);
+  await assert.rejects(applyFile(db2, RESTORE), /run the vector post-load first/);
+  assert.equal((await one(db2, `SELECT count(*)::int AS n FROM pg_constraint WHERE contype = 'f'`))[0].n, 0, 'nothing restored early');
 });

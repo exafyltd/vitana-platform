@@ -1,5 +1,5 @@
 -- Staging vector post-load: read-only report for the operator and for independent validation (Kiro 3).
--- Run with: bash scripts/aws/staging-db-vector-postload.sh report --cluster vitana-aurora-staging
+-- Run with: bash scripts/aws/staging-db-vector-postload.sh report --cluster vitana-aurora-staging (after staging-db-migration.sh post-load)
 -- SELECT statements only. One statement per block, separated by a line that is exactly "-- ;;".
 -- After the post-load, every column_type is vector(<dims>). After the embedding backfill, null_count matches
 -- Supabase's NULLs for the column and stashed_still_null is 0.
@@ -21,3 +21,7 @@ UNION ALL SELECT 'vtid_ledger' AS table_name, 'embedding_v2' AS column_name, (SE
 SELECT c.relname AS index_name, t.relname AS table_name, am.amname AS method, ix.indisvalid AS valid, pg_get_indexdef(ix.indexrelid) AS definition FROM pg_index ix JOIN pg_class c ON c.oid = ix.indexrelid JOIN pg_class t ON t.oid = ix.indrelid JOIN pg_namespace n ON n.oid = t.relnamespace JOIN pg_am am ON am.oid = c.relam WHERE n.nspname = 'public' AND am.amname IN ('ivfflat', 'hnsw') ORDER BY 2, 1;
 -- ;;
 SELECT count(*) AS foreign_keys_to_auth_schema FROM pg_constraint k JOIN pg_class r ON r.oid = k.confrelid JOIN pg_namespace n ON n.oid = r.relnamespace WHERE k.contype = 'f' AND n.nspname = 'auth';
+-- ;;
+SELECT 'foreign_keys' AS object, count(*) AS saved, count(*) FILTER (WHERE references_auth) AS excluded_auth_r2, count(restored_at) FILTER (WHERE NOT references_auth) AS restored, count(*) FILTER (WHERE NOT references_auth AND restored_at IS NULL) AS pending FROM migration_audit.saved_foreign_keys UNION ALL SELECT 'views', count(*), 0, count(restored_at), count(*) - count(restored_at) FROM migration_audit.saved_views UNION ALL SELECT 'indexes', count(*), 0, count(restored_at), count(*) - count(restored_at) FROM migration_audit.saved_indexes;
+-- ;;
+SELECT count(*) FILTER (WHERE c.convalidated) AS public_fks_validated, count(*) FILTER (WHERE NOT c.convalidated) AS public_fks_not_valid FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace WHERE c.contype = 'f' AND n.nspname = 'public';
