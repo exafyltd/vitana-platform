@@ -209,3 +209,31 @@ test('report: every SELECT runs after the post-load and shows types, counts, kep
   assert.deepEqual((await one(db, blocks[1])).map((r) => r.index_name).sort(), [...INDEXES].sort());
   assert.equal(Number((await one(db, blocks[2]))[0].foreign_keys_to_auth_schema), 0);
 });
+
+const AFTER = path.join(ROOT, 'scripts/aws/staging-db-after-load.sh');
+test('after-load sequence: refuses production before any AWS call; --plan shows the three steps in order with their statement counts', () => {
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'noaws-'));
+  fs.writeFileSync(path.join(bin, 'aws'), '#!/bin/sh\necho "aws called" >&2; exit 99\n', { mode: 0o755 });
+  const env = { ...process.env, PATH: `${bin}:${process.env.PATH}` };
+  for (const args of [['--cluster', 'vitana-aurora-prod'], [], ['--cluster', 'vitana-aurora-staging', '--apply-now']]) {
+    const r = spawnSync('bash', [AFTER, ...args], { encoding: 'utf8', env });
+    assert.notEqual(r.status, 0, args.join(' '));
+    assert.doesNotMatch(r.stderr, /aws called/);
+  }
+  const r = spawnSync('bash', [AFTER, '--cluster', 'vitana-aurora-staging', '--plan'], { encoding: 'utf8', env });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  const steps = [...r.stdout.matchAll(/^== (\d)\/3 (.+) \((.+)\)$/gm)].map((m) => m[3]);
+  assert.deepEqual(steps, ['staging-db-vector-postload.sql', 'aurora-cutover-recreate-foreign-keys.sql', 'aurora-cutover-schema-sync-views.sql']);
+  assert.deepEqual([...r.stdout.matchAll(/one Data API transaction for (\d+) statement/g)].map((m) => Number(m[1])), [15, 360, 20]);
+  assert.match(r.stdout, /ALL DONE: 3 step\(s\) on vitana-aurora-staging \(plan only, no AWS call\)/);
+  assert.doesNotMatch(r.stderr, /aws called/);
+});
+
+test('after-load sequence: the reused production SQL creates no foreign key to auth and changes no data', () => {
+  for (const f of ['aurora-cutover-recreate-foreign-keys.sql', 'aurora-cutover-schema-sync-views.sql']) {
+    const live = fs.readFileSync(path.join(ROOT, 'scripts/aws', f), 'utf8').split('\n').filter((l) => !l.startsWith('--')).join('\n');
+    for (const re of [/\bauth\./i, /\bTRUNCATE\b/i, /\bDELETE\s+FROM\b/i, /\bDROP\s+TABLE\b/i, /\bUPDATE\s+(public\.)?\w+\s+SET\b/i]) assert.equal(re.test(live), false, `${f}: no ${re}`);
+  }
+  const guard = spawnSync(process.execPath, [path.join(ROOT, 'scripts/ci/staging-prod-ref-guard.mjs'), '--enforce', '--files', AFTER], { encoding: 'utf8' });
+  assert.equal(guard.status, 0, guard.stdout);
+});
