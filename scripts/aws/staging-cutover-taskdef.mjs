@@ -147,6 +147,21 @@ export function productionEntries(td) {
   return out;
 }
 
+/** VTID-05023 Aurora gate, isolated plane only: the AURORA_* names a task definition binds that are NOT a staging-db secret
+ * (any environment entry, a secret without a valueFrom, or a secret whose ARN is not ARN_PATTERNS.database_url or
+ * .authenticator_uri). Empty = the gate passes. The shared plane keeps the plain gate (every AURORA_* name refused). */
+export function isolatedAuroraLeaks(td) {
+  const ok = [ARN_PATTERNS.database_url, ARN_PATTERNS.authenticator_uri];
+  const out = new Set();
+  for (const c of td.containerDefinitions || []) {
+    for (const e of c.environment || []) if (String(e.name).startsWith('AURORA_')) out.add(e.name);
+    for (const e of c.secrets || []) {
+      if (String(e.name).startsWith('AURORA_') && !ok.some((re) => re.test(String(e.valueFrom || '')))) out.add(e.name);
+    }
+  }
+  return [...out].sort();
+}
+
 /** Switch a task definition to the isolated staging data plane. */
 export function toIsolated(input, { service, arns = {}, candidateUrl = null } = {}) {
   const svc = SERVICES[service];

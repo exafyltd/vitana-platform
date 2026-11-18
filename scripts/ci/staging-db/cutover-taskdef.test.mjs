@@ -9,7 +9,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import {
-  transformText, toIsolated, restoreShared, productionEntries, AUTH_UNCHANGED, MARKER, BACKUP, Refused,
+  transformText, toIsolated, restoreShared, productionEntries, AUTH_UNCHANGED, MARKER, BACKUP, Refused, isolatedAuroraLeaks,
 } from '../../aws/staging-cutover-taskdef.mjs';
 import { scanText } from '../staging-prod-ref-guard.mjs';
 
@@ -169,5 +169,25 @@ test('isolated gateway after the VTID-05023 strip: two containers carrying SUPAB
   second.name = 'second';
   second.secrets = [{ name: 'SUPABASE_URL', valueFrom: (input.containerDefinitions[0].secrets || []).find((e) => e.name === 'SUPABASE_URL').valueFrom }];
   input.containerDefinitions.push(second);
-  assert.throws(() => toIsolated(input, { service: 'gateway', arns: ARNS }), Refused);
+  assert.throws(() => toIsolated(input, { service: 'gateway', arns: ARNS }), (e) => e instanceof Refused && /no container carries AURORA_DATABASE_URL/.test(e.message));
+});
+
+test('isolatedAuroraLeaks: only AURORA_* secrets on the exact staging-db ARNs pass', () => {
+  const td = (c) => ({ containerDefinitions: [{ name: 'g', ...c }] });
+  const sec = (valueFrom) => td({ secrets: [{ name: 'AURORA_DATABASE_URL', ...(valueFrom === undefined ? {} : { valueFrom }) }] });
+  assert.deepEqual(isolatedAuroraLeaks(sec(ARNS.database_url)), []);
+  assert.deepEqual(isolatedAuroraLeaks(td({ secrets: [{ name: 'AURORA_RLS_DATABASE_URL', valueFrom: ARNS.authenticator_uri }] })), []);
+  for (const bad of [
+    `${SM}vitana/aurora/prod/database-url-AbCdEf`,
+    `${SM}vitana/aurora/rehearsal/database-url-AbCdEf`,
+    `${SM}vitana/aurora/staging-db-x/database-url-AbCdEf`,
+    'arn:aws:secretsmanager:us-east-1:472838866351:secret:vitana/aurora/staging-db/database-url-AbCdEf',
+    'arn:aws:secretsmanager:eu-central-1:111111111111:secret:vitana/aurora/staging-db/database-url-AbCdEf',
+    `arn:aws:secretsmanager:us-east-1:472838866351:secret:x/${ARNS.database_url}`,
+    `${ARNS.database_url}:password::`,
+    '',
+    undefined,
+  ]) assert.deepEqual(isolatedAuroraLeaks(sec(bad)), ['AURORA_DATABASE_URL'], String(bad));
+  assert.deepEqual(isolatedAuroraLeaks(td({ environment: [{ name: 'AURORA_CA_BUNDLE_PATH', value: '/x' }] })), ['AURORA_CA_BUNDLE_PATH']);
+  assert.deepEqual(isolatedAuroraLeaks(td({ secrets: [{ name: 'SUPABASE_URL', valueFrom: 'anything' }] })), []);
 });
