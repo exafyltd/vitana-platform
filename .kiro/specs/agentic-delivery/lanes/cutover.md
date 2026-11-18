@@ -1,6 +1,6 @@
 ---
 lane: cutover
-state: in-review
+state: verified
 next_actor: kiro
 depends_on: [pipelines, deploy-path, verify-on-gitlab, merge-queue, github-bridge, gateway-delivery]
 executor: kiro
@@ -25,7 +25,7 @@ paths:
   - .kiro/pipeline/driver.md
   - .kiro/pipeline/lane-land.md
   - docs/validation/**
-updated: 2026-11-18T17:31Z
+updated: 2026-11-18T17:36Z
 claimed_by: kiro-exafy-202611181602-02f5
 branch: cutover-r2
 pr: https://gitlab.vitanaland.com/vitana/vitana-platform/-/merge_requests/60
@@ -116,3 +116,8 @@ non-blocking: all six depends_on lanes are done on origin/main 1a38fc0619.
 non-blocking: head pipeline not read here; the caller confirms it before merging. No protected gate file touched; all files inside paths.
 non-blocking: AWS-KIRO-ACCESS is disabled only after its GitLab replacement and daily IAM drift check are verified; outside this merge.
 Next: the land step merges under §7b
+
+### 2026-11-18T17:36Z · kiro-exafy-202611181602-02f5 · in-review → verified
+Reviewer-agent accept above (claude-sonnet-5.5) on 3aee4367a92924291d2c906f315e3aa9bc514446. Since then only the review entry and this entry are added.
+Every depends_on lane is done on GitLab main 1a38fc0619. Next: merge MR !60 under §7b once the head pipeline is green.
+AWS-KIRO-ACCESS stays enabled until its GitLab replacement and the daily IAM drift check are verified.
