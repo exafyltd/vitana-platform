@@ -5,8 +5,9 @@ Lane `gitlab-verify` of plan `eng-gitlab-m1` (late lane), tasks V1-V4 of `.kiro/
 `kiro-exafy-202611071142-d7ed` (seat exafy). The lane records the owner's runs of plan §6 steps 0 to 3 against the live GitLab.
 No run is made from a session.
 
-**Status: waiting for the owner.** Lane state "the owner has not run a step yet (the lane waits)". The owner's steps are in
-`owner-steps.md`. Every `AC-` entry below that needs an owner output is `PENDING` until that output is in `outputs/`.
+**Status (2026-11-18): A01 to A05 and AC-6 PASS.** A03 and A04 come from the owner's runs of 2026-11-07. AC-6, and the re-reads of A01
+and A05, come from 2026-11-18 GET-only reads (no pipeline started, nothing written). The owner's steps stay in `owner-steps.md`.
+Structure test on the reviewed head: 26/26 (`outputs/structure-test-12b94e9e93-20261118.txt`).
 
 Outcome: the running GitLab does what plan §9 says (A01-A05), plus the first green pipelines of both mirrored projects next to
 GitHub's results.
@@ -25,8 +26,9 @@ side read with `gh api` (read only).
 Staging proof: not verified on staging: no product path changes. The evidence is the owner's runs against the live GitLab.
 
 AC-1 (A01) — GitLab answers over HTTPS with a valid certificate on `gitlab.vitanaland.com`
-  Status: observed 2026-11-04 (`/users/sign_in` 200, plan §6 "Done"). Confirmed again by step 1 (pipeline pages load over HTTPS).
-  TEST: outputs/step1-gitlab-platform.txt (PENDING)
+  Status: PASS. Observed 2026-11-04 (`/users/sign_in` 200). Re-read 2026-11-18: the TLS handshake verifies with the default trust store,
+  CN gitlab.vitanaland.com, issuer Amazon, valid until 2027-05-20, GET 200.
+  TEST: outputs/a01-https-20261118.txt
 
 AC-2 (A02) — the infrastructure is created by Terraform and can be rebuilt from git
   Status: files on main through lane gitlab-infra (VTID-05544, merge a8220f1059); structure test green (26/26, commands.log).
@@ -54,8 +56,8 @@ AC-6 (pipelines) — first green pipelines on both mirrored projects, each job n
   Status: PASS (read 2026-11-18 with GET requests only, no pipeline started; outputs/step1-gitlab-pipelines-20261118.txt).
   - Step 0: the running files in vitana/ci-config main fe15fa71fd have the same sha256 as git main d8b8a8c5e0 (outputs/step0-ci-config-20261118.txt).
   - vitana-platform d8b8a8c5e0: GitLab pipeline 451 typecheck and gateway-jest 1/4 to 4/4 success. The staging build is manual. GitHub TEST-SUITE 44319701415 success. No difference.
-  - vitana-v1 78455457b9: GitLab pipeline 366 unit-tests and build success, lint failed but is not blocking. GitHub UNIT-TESTS success. No difference for UNIT-TESTS.
-  - Recorded difference, vitana-v1 bbe90b7137: pipeline 441 has 23 of 24 jobs success. `full-suite:mobile-test` fails at `expo install --check` (expo 57.0.25, expected ~57.0.33, plus 7 more packages). GitHub NATIVE-CI 44318699186 skipped the same step by path filter. The cause is vitana-v1 `apps/mobile` dependencies, outside this lane's paths. A follow-up goes through `_plan` (V3).
+  - vitana-v1 78455457b9: GitLab pipeline 366 unit-tests and build success. `lint` failed; it is `allow_failure` in that central file, which is why the pipeline is `success`. GitHub UNIT-TESTS success. No difference for UNIT-TESTS.
+  - Recorded difference, vitana-v1 bbe90b7137: pipeline 441 has 23 of 24 jobs success. `full-suite:mobile-test` fails at `expo install --check` (expo 57.0.25, expected ~57.0.33, plus 7 more packages). GitHub NATIVE-CI 44318699186 skipped the same step by path filter. The cause is vitana-v1 `apps/mobile` dependencies, outside this lane's paths. Follow-up: a new lane `v1-expo-deps` (bring apps/mobile expo packages to the versions `expo install --check` expects) added through `_plan` of the vitana-v1 native plan; it is not built here (V3).
   - A01 and A05 re-read the same day: outputs/a01-https-20261118.txt, outputs/a05-runners-20261118.txt.
   TEST: outputs/step1-gitlab-platform.txt, outputs/step1-gitlab-v1.txt, outputs/github-main-runs.txt
 
