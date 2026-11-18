@@ -1,0 +1,13 @@
+# cutover-r2 full script UNIT suite (UNIT.yml command) on 663b5763cf, 2026-11-18
+# tests 1747
+# pass 1741
+# fail 0
+# cancelled 0
+# skipped 6
+## skips
+ok 137 - build-schema succeeds on this checkout: hash, bundle, smoke objects, seed, no live production reference # SKIP @electric-sql/pglite not installed (runs in STAGING-DB-SCHEMA.yml)
+ok 138 - build-schema fails when a required table is removed from the replay (fixture skip list) # SKIP @electric-sql/pglite not installed (runs in STAGING-DB-SCHEMA.yml)
+ok 139 - build-schema fails when the creator of the VTID ledger is skipped (smoke object missing) # SKIP @electric-sql/pglite not installed (runs in STAGING-DB-SCHEMA.yml)
+ok 140 - build-schema fails when a production call-out is not neutralized by the seed (live check) # SKIP @electric-sql/pglite not installed (runs in STAGING-DB-SCHEMA.yml)
+ok 739 - workspace match is case-insensitive with normalised separators on win32 # SKIP
+ok 1002 - central CI reader agrees with PyYAML on every file of the folder # SKIP PyYAML is not installed on this machine (set PYTHONPATH to a folder that has it)
