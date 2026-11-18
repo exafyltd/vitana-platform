@@ -1,0 +1,33 @@
+# Owner's CloudShell output of `bash ~/glv.sh restore` (glv.sh sha256 9a501533…, commit 077b004e10), pasted 2026-11-07. Unedited except this header and the progress dots.
+== glv.sh restore 2026-11-07T15:14:09Z
+account 841276716213  bucket vitana-engineering-gitlab-backups-841276716213  gitlab machine i-01de2ad2e970a5225
+
+== A: launch the scratch machine
+scratch machine: i-0c8e185a34fb7302b (m6i.xlarge)
+ssm: Online
+
+== B: restore on the scratch machine (20-40 minutes; keep this tab open and press a key now and then)
+(ssm status: Failed, command bc286250-6908-452f-ba1d-cd6212f1efb2)
+== restore test start 2026-11-07T15:14:51Z
+backup: backups/1794017725_2026_11_07_19.5.3-ee_gitlab_backup.tar   config: config/gitlab-config-2026-11-07.tgz
+doctor:secrets: I, [2026-11-07T15:25:42.134173 #31313]  INFO -- : - Ci::Build failures: 0 I, [2026-11-07T15:25:42.134221 #31313]  INFO -- : Total: 0 row(s) affected I, [2026-11-07T15:25:42.134232 #31313]  INFO -- : Done! 
+RESULT: FAIL result query: The file /root/result.rb could not be found, please check and try again. Run 'bin/rails runner -h' for help. 
+
+failed to run commands: exit status 1
+
+== nginx lines of the restored /etc/gitlab/gitlab.rb (gitlab-infra review note)
+(ssm status: Success, command 589a96b9-3bac-4ad0-ac1b-f7efff5bac5d)
+3:gitlab_rails['nginx']['listen_port'] = 80
+4:gitlab_rails['nginx']['listen_https'] = false
+5:gitlab_rails['nginx']['real_ip_trusted_addresses'] = ['10.20.0.0/16']
+6:gitlab_rails['nginx']['real_ip_header'] = 'X-Forwarded-For'
+7:gitlab_rails['nginx']['real_ip_recursive'] = 'on'
+
+== C: compare with the live GitLab (read only)
+(ssm status: Success, command 04e41c09-90aa-44d5-89fa-378ddc29ee09)
+LIVE-COUNTS: 4 1 10
+LIVE-HAS-TIP: no tip to check (step B gave no RESULT-MAIN-TIP)
+
+== D: remove the scratch machine i-0c8e185a34fb7302b
+shutting-down
+== done.

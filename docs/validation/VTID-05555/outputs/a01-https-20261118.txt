@@ -1,0 +1,4 @@
+# A01, read 2026-11-18 from this session (TLS handshake with the system trust store, then one GET)
+certificate verified by the default trust store: yes
+subject CN: gitlab.vitanaland.com | issuer O: Amazon | notBefore: Nov  4 00:00:00 2026 GMT | notAfter: May 20 23:59:59 2027 GMT
+GET https://gitlab.vitanaland.com/users/sign_in -> 200
