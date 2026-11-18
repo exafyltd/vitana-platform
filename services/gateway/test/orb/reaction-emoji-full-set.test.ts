@@ -49,7 +49,14 @@ describe('shared reaction emoji list', () => {
 });
 
 describe('react_to_message', () => {
+  // Expanded reactions are gated off by default (test/orb/reaction-expanded-gate.test.ts). These cases cover the on state.
+  const prevExpanded = process.env.REACTION_EXPANDED_ENABLED;
+  afterAll(() => {
+    if (prevExpanded === undefined) delete process.env.REACTION_EXPANDED_ENABLED;
+    else process.env.REACTION_EXPANDED_ENABLED = prevExpanded;
+  });
   beforeEach(() => {
+    process.env.REACTION_EXPANDED_ENABLED = 'true';
     jest.clearAllMocks();
     (repo.fetchChatMessageForReaction as jest.Mock).mockResolvedValue({
       data: { sender_id: OTHER, receiver_id: ME, group_id: null },

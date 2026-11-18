@@ -53,7 +53,7 @@
  *    other person to open the app — they do not connect a call.
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { normalizeReactionEmoji, REACTION_CAP_ERROR } from './reaction-emoji';
+import { allowedReactionEmoji, normalizeReactionEmoji, REACTION_CAP_ERROR, reactionExpandedEnabled } from './reaction-emoji';
 import type { OrbToolArgs, OrbToolIdentity, OrbToolResult } from '../orb-tools-shared';
 import { notifyUserAsync } from '../notification-service';
 import { coalesceChatPushes, chatConversationKey } from '../chat-push-coalescer';
@@ -446,11 +446,15 @@ export const tool_react_to_message: Handler = async (args, id, sb) => {
       return { ok: false, error: 'react_to_message needs a message_id (UUID) from a previous tool result.' };
     }
     const rawEmoji = argString(args, 'emoji', 'reaction');
-    const emoji = rawEmoji ? normalizeReactionEmoji(rawEmoji) : null;
+    // Adds are limited to the six quick reactions while expanded reactions are off; removals always work.
+    const removing = args.remove === true;
+    const emoji = rawEmoji ? (removing ? normalizeReactionEmoji(rawEmoji) : allowedReactionEmoji(rawEmoji)) : null;
     if (!emoji) {
       return {
         ok: false,
-        error: `Reactions must be an emoji from the supported set (for example 👍 ❤️ 😂 😮 🙏 🎉) — "${rawEmoji || 'none given'}" isn't supported.`,
+        error: reactionExpandedEnabled() || removing
+          ? `Reactions must be an emoji from the supported set (for example 👍 ❤ 😂 😮 🙏 🎉) — "${rawEmoji || 'none given'}" isn't supported.`
+          : `Reactions must be one of 👍 ❤ 😂 😮 🙏 🎉 — "${rawEmoji || 'none given'}" isn't supported.`,
       };
     }
 
@@ -472,7 +476,7 @@ export const tool_react_to_message: Handler = async (args, id, sb) => {
       return { ok: false, error: "You don't have access to that message." };
     }
 
-    if (args.remove === true) {
+    if (removing) {
       const { error: delErr } = await repo.deleteMessageReaction(sb, messageId, id.user_id, emoji);
       if (delErr) return { ok: false, error: "I couldn't remove that reaction just now — want me to try again?" };
       return { ok: true, result: { removed: true, message_id: messageId, emoji }, text: `Removed your ${emoji} reaction.` };

@@ -20,3 +20,24 @@ export function normalizeReactionEmoji(input: string): string | null {
 export function isSupportedReactionEmoji(input: string): boolean {
   return normalizeReactionEmoji(input) !== null;
 }
+
+/** The six quick reactions (canonical), the only ones writable while expanded reactions are off. */
+const QUICK_CANONICAL = new Set(list.quick.map((e) => normalizeReactionEmoji(e) ?? e));
+
+/**
+ * Expanded reactions (any emoji of the 181-emoji set) are off unless the gateway runs with
+ * REACTION_EXPANDED_ENABLED=true. Keep it in step with the web and mobile REACTION_PICKER_ENABLED flags.
+ */
+export function reactionExpandedEnabled(): boolean {
+  return process.env.REACTION_EXPANDED_ENABLED === 'true';
+}
+
+/**
+ * Canonical emoji a member may ADD, or null. With expanded reactions off only the six quick reactions pass.
+ * Removals do not use this: a member can always remove a reaction they already have.
+ */
+export function allowedReactionEmoji(input: string, expanded: boolean = reactionExpandedEnabled()): string | null {
+  const e = normalizeReactionEmoji(input);
+  if (!e) return null;
+  return expanded || QUICK_CANONICAL.has(e) ? e : null;
+}
