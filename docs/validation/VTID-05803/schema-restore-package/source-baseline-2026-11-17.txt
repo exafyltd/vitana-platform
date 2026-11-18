@@ -1,0 +1,18 @@
+# Source baseline, production Supabase project inmkhvwdcuyhnxkgfvsb, read-only catalogue query, 2026-11-17.
+# Counts only. No row content. public_rows_estimate is pg_stat n_live_tup and is informational.
+tables|687
+partitions|13
+views|21
+matviews|2
+sequences|25
+indexes|2290
+functions|898
+triggers|255
+policies|1131
+rls_enabled_tables|697
+fk_constraints|495
+fk_to_auth|146
+fk_public_to_auth|136
+enums|16
+acl_entries|21835
+public_rows_estimate|1547988
