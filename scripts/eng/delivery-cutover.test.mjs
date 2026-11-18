@@ -471,12 +471,12 @@ test('status: with every item true it prints the 15 items of plan §8.1 one by o
   assert.match(r.stdout, /status: all 15 items are green: the cut may start/);
   assert.match(it.m1.text, /M1 done/);
   assert.match(it['shadow-targets'].text, /first result 1\/3 min, required checks 5\/10 min/);
-  assert.match(it.workflows.text, /160 workflows classified/);
+  assert.match(it.workflows.text, /170 workflows classified/);
   assert.deepEqual(writes(r), [], 'status never changes anything');
   assert.deepEqual(ssmNames(r).filter((x) => !x.startsWith('read ')), [], 'every script it sends to the machine only reads');
   assert.ok(ssmNames(r).includes('read parity') && ssmNames(r).includes('read bridge-dry-run') && ssmNames(r).includes('read probe'));
   const node = r.calls.find((c) => c.tool === 'node');
-  assert.match(node.stdin, /files=46/, 'the workflow test ran with the 46 workflow files of vitana-v1 fetched from GitHub');
+  assert.match(node.stdin, /files=47/, 'the workflow test ran with the 47 workflow files of vitana-v1 fetched from GitHub');
   assert.deepEqual(node.argv.slice(0, 1), ['--test']);
   assert.match(node.argv[1], /scripts\/eng\/github-workflows\.test\.mjs$/);
   const names = r.calls.filter((c) => c.tool === 'aws' && c.ctx === 'mgmt').map((c) => c.argv.slice(0, 2).join(' '));
@@ -670,7 +670,7 @@ test('apply: without the plan slug, or with --dry-run, it is a dry run: it shows
     for (const f of DISABLE[repo]) assert.match(r.stdout, new RegExp(`WOULD: PUT repos/exafyltd/${repo}/actions/workflows/${f.replace(/\./g, '\\.')}/disable`), `${repo}/${f} would be disabled`);
     for (const f of KEEP[repo]) assert.equal(r.stdout.includes(`/actions/workflows/${f}/disable`), false, `${repo}/${f} is kept`);
   }
-  assert.equal((r.stdout.match(/WOULD: PUT repos\/exafyltd\/[a-z0-9-]+\/actions\/workflows\/\S+\/disable/g) ?? []).length, 71);
+  assert.equal((r.stdout.match(/WOULD: PUT repos\/exafyltd\/[a-z0-9-]+\/actions\/workflows\/\S+\/disable/g) ?? []).length, 72);
   assert.match(r.stdout, /WOULD: PUT repos\/exafyltd\/vitana-v1\/branches\/main\/protection: push and merge restricted to <mirror-account>|WOULD: PUT repos\/exafyltd\/vitana-v1\/branches\/main\/protection: push and merge restricted to vitana-gitlab-mirror/);
   assert.match(r.stdout, /WOULD: run the GitHub-to-GitLab copy once more/);
   assert.match(r.stdout, /WOULD: write \/etc\/vitana\/delivery-cutover \(mode live\)/);

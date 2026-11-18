@@ -1,8 +1,9 @@
 // Tests of scripts/eng/github-workflows.json (plan agentic-delivery section 2.2, lane cutover, VTID-05545): every GitHub workflow of
-// both repositories has exactly one action at the cut, `disable` or `keep`, and the list obeys the rules of the plan:
+// both repositories has exactly one action at the cut, `disable`, `keep` or `replace`, and the list obeys the rules of the plan:
 //   - the platform half is compared with .github/workflows on this tree, file by file (a new workflow cannot slip through unclassified);
 //   - the vitana-v1 half is compared with the vitana-v1 checkout when VITANA_V1_WORKFLOWS_DIR names one (`delivery-cutover.sh status`
-//     fetches the 46 files and sets it); without it the recorded pin and the recorded triggers are checked;
+//     fetches the 47 files and sets it); without it the recorded pin and the recorded triggers are checked;
+//   - a `replace` workflow is not disabled at the cut: it names its GitLab replacement and the condition that must hold before it is disabled;
 //   - a kept workflow has no pull_request trigger except PLAN-SPAR (plan PRs) and MIGRATION-DRIFT-CHECK (path-filtered), never pushes
 //     to main, and the only kept workflow that a push to main starts and that deploys production is DEPLOY-CLOUDFLARE-WORKERS.
 // Dependency-free Node (node:test), so UNIT.yml runs it with no install. The checks live in lint(), so the negative controls can feed
@@ -109,7 +110,9 @@ const PRODUCTION_DEPLOY = /ecs\s+update-service|deploy-task-definition|register-
 export const FAMILIES = {
   disable: ['pr-checks', 'staging-deploy-verify', 'preview', 'i18n-propagate', 'dead'],
   keep: ['plan-sparring', 'prod-publish', 'ops-dispatch', 'scheduled-ops', 'cloudflare-workers', 'i18n-dispatch', 'supabase-ops'],
+  replace: ['gitlab-replacement'],
 };
+export const ACTIONS = Object.keys(FAMILIES);
 const GITLAB_TARGETS = ['T1', 'T2', 'T3', 'T4', 'T7', 'none'];
 const MAIN_PUSH = ['none', 'reads', 'frozen', 'deploys-production'];
 const DISPATCH = new Set(['workflow_dispatch', 'repository_dispatch', 'workflow_call']);
@@ -134,14 +137,14 @@ export function lint(doc, files, protectedGlobs) {
     const names = Object.keys(R.workflows ?? {});
     const present = files[repo];
     if (present) {
-      for (const f of Object.keys(present)) if (!R.workflows[f]) bad.push(`${repo}/${f}: a workflow file with no action in the list (classify it as disable or keep)`);
+      for (const f of Object.keys(present)) if (!R.workflows[f]) bad.push(`${repo}/${f}: a workflow file with no action in the list (classify it as disable, keep or replace)`);
       for (const f of names) if (!(f in present)) bad.push(`${repo}/${f}: listed, but there is no such workflow file`);
     }
     let deploysProduction = 0;
     for (const f of names) {
       const e = R.workflows[f];
       const id = `${repo}/${f}`;
-      if (e.action !== 'disable' && e.action !== 'keep') { bad.push(`${id}: action must be disable or keep (got ${JSON.stringify(e.action)})`); continue; }
+      if (!ACTIONS.includes(e.action)) { bad.push(`${id}: action must be disable, keep or replace (got ${JSON.stringify(e.action)})`); continue; }
       if (!FAMILIES[e.action].includes(e.family)) bad.push(`${id}: family ${JSON.stringify(e.family)} is not a ${e.action} family of plan section 2.2`);
       if (!Array.isArray(e.triggers) || e.triggers.length === 0) bad.push(`${id}: no recorded triggers`);
       if (typeof e.push_main !== 'boolean') bad.push(`${id}: push_main must be true or false`);
@@ -149,6 +152,16 @@ export function lint(doc, files, protectedGlobs) {
       if (repo === 'vitana-platform' && isProtected !== (e.protected === true)) bad.push(`${id}: protected is ${e.protected === true}, but scripts/collab/protected-gate-files.json says ${isProtected}`);
       if (e.action === 'disable') {
         if (!GITLAB_TARGETS.includes(e.gitlab)) bad.push(`${id}: gitlab must be one of ${GITLAB_TARGETS.join(', ')}`);
+      } else if (e.action === 'replace') {
+        // stays enabled through the cut; disabled later, by hand, once its GitLab replacement is verified
+        if (typeof e.replacement !== 'string' || !e.replacement) bad.push(`${id}: a replace workflow must name its GitLab replacement`);
+        if (typeof e.disable_when !== 'string' || !e.disable_when) bad.push(`${id}: a replace workflow must say when it may be disabled (disable_when)`);
+        if (e.protected === true) bad.push(`${id}: a protected gate file cannot be replace; it is disable or keep on the owner command`);
+        const text = present?.[f];
+        if (text !== undefined) {
+          if (pushesToMain(text, e)) bad.push(`${id}: a replace workflow pushes to main`);
+          if (e.push_main && PRODUCTION_DEPLOY.test(text)) bad.push(`${id}: a push to main starts it and it looks like a production deploy; a replace workflow deploys nothing`);
+        }
       } else {
         if (!MAIN_PUSH.includes(e.main_push)) bad.push(`${id}: main_push must be one of ${MAIN_PUSH.join(', ')}`);
         if (typeof e.dispatch_only !== 'boolean') bad.push(`${id}: dispatch_only must be true or false`);
@@ -198,11 +211,11 @@ const namesOf = (doc, repo, action) => Object.entries(wfs(doc, repo)).filter(([,
 const countBy = (doc, repo, action, key) => Object.entries(wfs(doc, repo)).filter(([, e]) => e.action === action).reduce((a, [, e]) => ({ ...a, [e[key]]: (a[e[key]] ?? 0) + 1 }), {});
 
 // ═════════════════════════════════════════ the list against the tree and the rules ═════════════════════════════════════════════════
-test('list: 163 workflow files of both repositories (116 platform, 47 vitana-v1), each with exactly one action, disable or keep, and a recorded pin for vitana-v1', () => {
+test('list: 170 workflow files of both repositories (123 platform, 47 vitana-v1), each with exactly one action, disable, keep or replace, and a recorded pin for vitana-v1', () => {
   const doc = readList();
-  assert.equal(Object.keys(wfs(doc, 'vitana-platform')).length, 116);
+  assert.equal(Object.keys(wfs(doc, 'vitana-platform')).length, 123);
   assert.equal(Object.keys(wfs(doc, 'vitana-v1')).length, 47);
-  for (const repo of REPOS) for (const [f, e] of Object.entries(wfs(doc, repo))) assert.ok(e.action === 'disable' || e.action === 'keep', `${repo}/${f}: ${e.action}`);
+  for (const repo of REPOS) for (const [f, e] of Object.entries(wfs(doc, repo))) assert.ok(ACTIONS.includes(e.action), `${repo}/${f}: ${e.action}`);
   assert.match(doc.v1_pinned_commit, /^[0-9a-f]{40}$/);
   assert.equal(doc.repositories['vitana-platform'].github, 'exafyltd/vitana-platform');
   assert.equal(doc.repositories['vitana-v1'].github, 'exafyltd/vitana-v1');
@@ -210,7 +223,7 @@ test('list: 163 workflow files of both repositories (116 platform, 47 vitana-v1)
 
 test('list: the platform entries are exactly the files of .github/workflows on this tree, and the recorded triggers match the files (a new workflow or trigger cannot slip through unclassified)', () => {
   const files = realFiles();
-  assert.equal(Object.keys(files['vitana-platform']).length, 116, 'the tree has the 116 workflows (plan section 2.2 counted 113; SQL-LIVE-ROOM-COHOST.yml (VTID-05558), MT-LOCAL-STACK.yml (VTID-05520) and VTID-ALLOCATE.yml came after it)');
+  assert.equal(Object.keys(files['vitana-platform']).length, 123, 'the tree has the 123 workflows (plan section 2.2 counted 113; SQL-LIVE-ROOM-COHOST.yml (VTID-05558), MT-LOCAL-STACK.yml (VTID-05520), VTID-ALLOCATE.yml, AWS-KIRO-ACCESS.yml (VTID-05764), GATE-INVARIANTS.yml (VTID-05763), AWS-STAGE-PROVISION-DB.yml and STAGING-DB-SCHEMA.yml (VTID-05782), AWS-STAGE-CUTOVER.yml and AWS-STAGE-CUTOVER-REHEARSAL.yml (VTID-05781) and STAGING-MIGRATE.yml (VTID-05784) came after it)');
   const problems = lint(readList(), { 'vitana-platform': files['vitana-platform'], 'vitana-v1': null }, protectedGlobs());
   assert.deepEqual(problems, []);
 });
@@ -228,7 +241,7 @@ test('list: the vitana-v1 entries are exactly the files of the vitana-v1 checkou
   }
 });
 
-test('plan 2.2: the disabled workflows are the ones of the table, family by family (72 of 163), and nothing else is disabled', () => {
+test('plan 2.2: the disabled workflows are the ones of the table, family by family (72 of 170), and nothing else is disabled', () => {
   const doc = readList();
   const platformSql = Object.keys(wfs(doc, 'vitana-platform')).filter((f) => f.startsWith('SQL-'));
   assert.equal(platformSql.length, 22, 'SQL-* (22; SQL-LIVE-ROOM-COHOST.yml came after the plan)');
@@ -249,17 +262,38 @@ test('plan 2.2: the disabled workflows are the ones of the table, family by fami
   for (const f of ['PLAN-SPAR.yml', 'PLAN-SPAR']) assert.ok(!namesOf(doc, 'vitana-platform', 'disable').includes(f), 'PLAN-SPAR stays on GitHub for plan PRs');
 });
 
-test('plan 2.2: the kept workflows are the families of the table (91 of 163): dispatch-only production and migration workflows, scheduled jobs, PLAN-SPAR, the Cloudflare Workers deploy', () => {
+test('plan 2.2: the kept workflows are the families of the table (97 of 170): dispatch-only production and migration workflows, scheduled jobs, PLAN-SPAR, the Cloudflare Workers deploy', () => {
   const doc = readList();
-  assert.deepEqual(countBy(doc, 'vitana-platform', 'keep', 'family'), { 'plan-sparring': 1, 'prod-publish': 10, 'ops-dispatch': 17, 'scheduled-ops': 31, 'cloudflare-workers': 1 });
+  assert.deepEqual(countBy(doc, 'vitana-platform', 'keep', 'family'), { 'plan-sparring': 1, 'prod-publish': 10, 'ops-dispatch': 22, 'scheduled-ops': 32, 'cloudflare-workers': 1 });
   assert.deepEqual(countBy(doc, 'vitana-v1', 'keep', 'family'), { 'i18n-dispatch': 5, 'prod-publish': 2, 'supabase-ops': 24 });
-  assert.equal(namesOf(doc, 'vitana-platform', 'keep').length + namesOf(doc, 'vitana-v1', 'keep').length, 91);
+  assert.equal(namesOf(doc, 'vitana-platform', 'keep').length + namesOf(doc, 'vitana-v1', 'keep').length, 97);
+  // the staging data-plane workflows of plan autonomous-to-staging(-r2) stay on GitHub through the cut
+  for (const f of ['AWS-STAGE-PROVISION-DB.yml', 'AWS-STAGE-CUTOVER-REHEARSAL.yml', 'AWS-STAGE-CUTOVER.yml', 'STAGING-MIGRATE.yml', 'STAGING-DB-SCHEMA.yml', 'GATE-INVARIANTS.yml']) {
+    assert.equal(wfs(doc, 'vitana-platform')[f]?.action, 'keep', `${f} is kept`);
+  }
+  for (const f of ['AWS-STAGE-PROVISION-DB.yml', 'AWS-STAGE-CUTOVER-REHEARSAL.yml', 'AWS-STAGE-CUTOVER.yml']) assert.equal(wfs(doc, 'vitana-platform')[f].dispatch_only, true, `${f}: dispatch only`);
   const prod = Object.keys(wfs(doc, 'vitana-platform')).filter((f) => f.startsWith('AWS-PROD-DEPLOY-'));
   assert.equal(prod.length, 9, 'AWS-PROD-DEPLOY-* (9)');
   for (const f of [...prod, 'VISUAL-VERIFY-FRONTEND.yml']) assert.equal(wfs(doc, 'vitana-platform')[f].dispatch_only, true, `${f}: dispatch only (PUBLISH)`);
   assert.equal(wfs(doc, 'vitana-v1')['AWS-PROD-DEPLOY-FRONTEND.yml'].dispatch_only, true);
   assert.equal(Object.keys(wfs(doc, 'vitana-v1')).filter((f) => f.startsWith('apply-')).length, 22, 'apply-*-migration (22)');
   for (const f of Object.keys(wfs(doc, 'vitana-v1')).filter((x) => x.startsWith('apply-'))) assert.equal(wfs(doc, 'vitana-v1')[f].action, 'keep', `${f}: owner-approved migration, stays`);
+});
+
+test('plan 2.2: AWS-KIRO-ACCESS is the one replace workflow (1 of 170): the cut leaves it enabled until its GitLab replacement and the daily IAM drift check are verified', () => {
+  const doc = readList();
+  const replaced = REPOS.flatMap((repo) => namesOf(doc, repo, 'replace').map((f) => `${repo}/${f}`));
+  assert.deepEqual(replaced, ['vitana-platform/AWS-KIRO-ACCESS.yml']);
+  const e = wfs(doc, 'vitana-platform')['AWS-KIRO-ACCESS.yml'];
+  assert.equal(e.family, 'gitlab-replacement');
+  assert.match(e.replacement, /GitLab/);
+  assert.match(e.replacement, /drift/);
+  assert.match(e.disable_when, /drift check/);
+  assert.match(e.disable_when, /leaves this workflow enabled/);
+  assert.equal(namesOf(doc, 'vitana-platform', 'disable').includes('AWS-KIRO-ACCESS.yml'), false, 'not disabled at the cut');
+  const total = REPOS.reduce((n, repo) => n + Object.keys(wfs(doc, repo)).length, 0);
+  const by = (a) => REPOS.reduce((n, repo) => n + namesOf(doc, repo, a).length, 0);
+  assert.deepEqual([total, by('disable'), by('keep'), by('replace')], [170, 72, 97, 1]);
 });
 
 test('kept workflows: only PLAN-SPAR (plan PRs) and the path-filtered MIGRATION-DRIFT-CHECK run on a pull request; nothing else that runs on a pull request is kept', () => {
@@ -287,26 +321,28 @@ test('kept workflows: none pushes to main, and the only one that a push to main 
   }
   assert.deepEqual(startedByMain.sort(), [
     'vitana-platform/CODEINTEL-INDEX.yml:reads', 'vitana-platform/DEPLOY-CLOUDFLARE-WORKERS.yml:deploys-production', 'vitana-platform/REGEN-SCREENS-CATALOG.yml:reads', 'vitana-platform/TEST-CATALOG.yml:reads',
+    'vitana-platform/GATE-INVARIANTS.yml:reads', 'vitana-platform/STAGING-DB-SCHEMA.yml:reads', 'vitana-platform/STAGING-MIGRATE.yml:reads',
     'vitana-v1/DEPLOY.yml:frozen', 'vitana-v1/SCREENS-CATALOG-TRIGGER.yml:reads', 'vitana-v1/WHATS-NEW-DRAFT.yml:reads', 'vitana-v1/supabase-functions-deploy.yml:frozen',
   ].sort(), 'the kept workflows a push to main starts');
   const on = parseOn(files['vitana-platform']['DEPLOY-CLOUDFLARE-WORKERS.yml']);
   assert.deepEqual(on.push.branches, ['main']);
   assert.ok(on.push.paths.includes('cloudflare/**'));
   for (const [f, text] of Object.entries(files['vitana-platform'])) {
-    if (wfs(doc, 'vitana-platform')[f].action === 'keep') assert.equal(pushesToMain(text, wfs(doc, 'vitana-platform')[f]), false, `${f} does not push to main`);
+    if (wfs(doc, 'vitana-platform')[f].action !== 'disable') assert.equal(pushesToMain(text, wfs(doc, 'vitana-platform')[f]), false, `${f} does not push to main`);
   }
   assert.deepEqual(lint(doc, { 'vitana-platform': files['vitana-platform'], 'vitana-v1': files['vitana-v1'] }, protectedGlobs()).filter((p) => /pushes to main|deploys production|production deploy/.test(p)), []);
 });
 
-test('protected gate files: PR-GATE (both repositories), PLAN-SPAR and AWS-PROD-* are flagged, as scripts/collab/protected-gate-files.json says; PR-GATE is disabled on the owner command that names the plan', () => {
+test('protected gate files: PR-GATE (both repositories), PLAN-SPAR, VTID-ALLOCATE and AWS-PROD-* are flagged, as scripts/collab/protected-gate-files.json says; PR-GATE is disabled on the owner command that names the plan', () => {
   const doc = readList();
   const flagged = (repo) => Object.entries(wfs(doc, repo)).filter(([, e]) => e.protected === true).map(([f]) => f).sort();
   assert.deepEqual(flagged('vitana-platform'), ['AWS-PROD-DEPLOY-AUTOPILOT-EXECUTOR.yml', 'AWS-PROD-DEPLOY-GATEWAY.yml', 'AWS-PROD-DEPLOY-KIRO-RUNNER.yml', 'AWS-PROD-DEPLOY-OASIS-OPERATOR.yml', 'AWS-PROD-DEPLOY-OASIS-PROJECTOR.yml',
     'AWS-PROD-DEPLOY-ORB-AGENT.yml', 'AWS-PROD-DEPLOY-POSTGREST-AURORA-PROXY.yml', 'AWS-PROD-DEPLOY-REALTIME-AURORA.yml', 'AWS-PROD-DEPLOY-VERIFICATION-ENGINE.yml',
-    'AWS-PROD-SETUP-POSTGREST-AURORA-PROXY-EDGE.yml', 'AWS-PROD-SETUP-SCHEDULED-EDGE-CALLS.yml', 'PLAN-SPAR.yml', 'PR-GATE.yml']);
+    'AWS-PROD-SETUP-POSTGREST-AURORA-PROXY-EDGE.yml', 'AWS-PROD-SETUP-SCHEDULED-EDGE-CALLS.yml', 'PLAN-SPAR.yml', 'PR-GATE.yml', 'VTID-ALLOCATE.yml']);
   assert.deepEqual(flagged('vitana-v1'), ['AWS-PROD-DEPLOY-FRONTEND.yml', 'DEPLOY.yml', 'PR-GATE.yml']);
   for (const repo of REPOS) assert.equal(wfs(doc, repo)['PR-GATE.yml'].action, 'disable');
   assert.equal(wfs(doc, 'vitana-platform')['PLAN-SPAR.yml'].action, 'keep');
+  assert.equal(wfs(doc, 'vitana-platform')['VTID-ALLOCATE.yml'].action, 'keep', 'VTID-ALLOCATE stays, protected');
   for (const f of Object.keys(wfs(doc, 'vitana-platform')).filter((x) => x.startsWith('AWS-PROD-'))) assert.equal(wfs(doc, 'vitana-platform')[f].action, 'keep', `${f} stays`);
 });
 
@@ -316,7 +352,12 @@ const run = ({ doc, files, globs }) => lint(doc, { 'vitana-platform': files['vit
 const CONTROLS = [
   ['a new workflow file nobody classified', (b) => { b.files['vitana-platform']['NEW-THING.yml'] = 'name: x\non:\n  workflow_dispatch:\n'; }, /NEW-THING\.yml: a workflow file with no action/],
   ['a listed workflow whose file is gone', (b) => { delete b.files['vitana-platform']['UNIT.yml']; }, /UNIT\.yml: listed, but there is no such workflow file/],
-  ['an action that is neither disable nor keep', (b) => { b.doc.repositories['vitana-platform'].workflows['UNIT.yml'].action = 'maybe'; }, /UNIT\.yml: action must be disable or keep/],
+  ['an action that is neither disable, keep nor replace', (b) => { b.doc.repositories['vitana-platform'].workflows['UNIT.yml'].action = 'maybe'; }, /UNIT\.yml: action must be disable, keep or replace/],
+  ['a replace workflow without its disable condition', (b) => { delete b.doc.repositories['vitana-platform'].workflows['AWS-KIRO-ACCESS.yml'].disable_when; }, /AWS-KIRO-ACCESS\.yml: a replace workflow must say when it may be disabled/],
+  ['a replace workflow without its GitLab replacement', (b) => { delete b.doc.repositories['vitana-platform'].workflows['AWS-KIRO-ACCESS.yml'].replacement; }, /AWS-KIRO-ACCESS\.yml: a replace workflow must name its GitLab replacement/],
+  ['a replace workflow that pushes to main', (b) => { b.files['vitana-platform']['AWS-KIRO-ACCESS.yml'] += '\n      - run: git push origin HEAD:main\n'; }, /AWS-KIRO-ACCESS\.yml: a replace workflow pushes to main/],
+  ['a protected gate file marked replace', (b) => { Object.assign(b.doc.repositories['vitana-platform'].workflows['VTID-ALLOCATE.yml'], { action: 'replace', family: 'gitlab-replacement', replacement: 'x', disable_when: 'y' }); }, /VTID-ALLOCATE\.yml: a protected gate file cannot be replace/],
+  ['VTID-ALLOCATE loses its protected flag', (b) => { delete b.doc.repositories['vitana-platform'].workflows['VTID-ALLOCATE.yml'].protected; }, /VTID-ALLOCATE\.yml: protected is false, but scripts\/collab\/protected-gate-files\.json says true/],
   ['a kept workflow that gains a pull_request trigger', (b) => { b.files['vitana-platform']['CI-HEALTH.yml'] = b.files['vitana-platform']['CI-HEALTH.yml'].replace(/^on:/m, 'on:\n  pull_request:'); }, /CI-HEALTH\.yml: the file runs on .*pull_request/],
   ['a kept workflow recorded with a pull_request trigger', (b) => { b.doc.repositories['vitana-platform'].workflows['CI-HEALTH.yml'].triggers.push('pull_request'); }, /CI-HEALTH\.yml: a kept workflow runs on a pull request/],
   ['a kept workflow that pushes to main', (b) => { b.files['vitana-platform']['CI-HEALTH.yml'] += '\n      - run: git push origin HEAD:main\n'; }, /CI-HEALTH\.yml: a kept workflow pushes to main/],
