@@ -1,6 +1,6 @@
 ---
 lane: cutover
-state: executing
+state: in-review
 next_actor: kiro
 depends_on: [pipelines, deploy-path, verify-on-gitlab, merge-queue, github-bridge, gateway-delivery]
 executor: kiro
@@ -28,7 +28,7 @@ paths:
 updated: 2026-11-18T16:55Z
 claimed_by: kiro-exafy-202611181602-02f5
 branch: cutover-r2
-pr: https://github.com/exafyltd/vitana-platform/pull/4725
+pr: https://gitlab.vitanaland.com/vitana/vitana-platform/-/merge_requests/60
 vtid: VTID-05545
 ---
 # Lane: cutover (repo vitana-platform)
@@ -78,3 +78,8 @@ protection refuses the delete that `queue.mjs release --stale` pushes. Not used:
 - Green: github-workflows 12/12 (with the vitana-v1 checkout and without), delivery-cutover 50/50,
   gitlab-settings-cutover 19/19, parity-report 14/14, delivery-metrics 9/9; UNIT 1747 tests, 1741 pass, 0 fail,
   6 skip (pglite, PyYAML, win32 only).
+
+### 2026-11-18T17:05Z · kiro-exafy-202611181602-02f5 · executing → in-review
+MR https://gitlab.vitanaland.com/vitana/vitana-platform/-/merge_requests/60 (short form vitana/vitana-platform#60; the earlier
+GitHub PR exafyltd/vitana-platform#4725 is superseded). Head before this entry 41a3a8ec98. Preflight: Collab tests, Collab
+handoff and Lane scope pass; PR-GATE scope (report-only) flags only this lane file. Next: reviewer agent on the MR head.
