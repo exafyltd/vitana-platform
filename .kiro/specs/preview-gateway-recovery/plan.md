@@ -150,6 +150,22 @@ resolve; this plan neither changes nor fixes that.** `verify` also fails if buil
 While the preview token is set, a converged plan gets no VTIDs and `plan-spar.mjs` hands it to `next_actor: claude`
 (stale wording; Claude Code is retired): every plan stops at convergence until D2 is settled.
 
+## 7a. Failing case for the recovery (owner, 2026-11-18)
+PR #5117 `plan(chat-reactions-full-emoji)` (head fcb8a504fe), PLAN-SPAR run 44292773682: attempt 1 (11:13Z) and the
+owner's re-run, attempt 2 (11:16Z), both `plan-spar: create retry: HTTP 504` at session create against
+`https://preview-aws-gateway.vitanaland.com`. The run log shows **`PLAN_SPAR_ALLOCATE: true`** (repository variable) and
+the shared token. Cause unchanged: `/api/*` on the preview host still goes to rule 10 (staging `vitana-gateway`, 0 tasks);
+`vitana-gateway-preview` is 0/0 on `:1`. Recovery is accepted when a PLAN-SPAR run on #5117 creates its session
+through the isolated preview and completes a round with the preview token, with allocation off.
+Consequences recorded for the owner:
+- The re-run allowance for this head is used; a third run before the recovery would fail the same way.
+- A re-run reuses the workflow of the original event, so once `plan-spar-token` is on `main` #5117 needs a new event
+  (a push to its plan or responses file) to run with the preview token.
+- With the variable at `true`, a run through the preview would attempt allocation; the preview refuses it
+  (`allocator_disabled`, no `system_controls`) and the run stays green with `allocation_pending`. `plan-spar-token`
+  forces it off. Optional immediate safeguard (owner, reversible, no VTID): set `PLAN_SPAR_ALLOCATE=false`.
+- With allocation off, #5117 can spar to convergence but gets no VTID; it then waits for D2.
+
 ## 8. Unchanged
 `vitana-gateway`, `vitana-gateway-awsdr`, rule 31 and every other listener rule, `PLAN_SPAR_GATEWAY_URL`, the staging
 frontend, STAGING-VERIFY targets, PUBLISH. The 2026-11-17 reason stays unconfirmed (`artifacts/2026-11-17-scale-down-record.md`).
