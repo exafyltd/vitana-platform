@@ -1,28 +1,40 @@
-# VTID-05803 schema-restore package (schema only)
+# VTID-05803 staging schema restore (single implementation)
 
-Source inventory: `source-auth-fk-inventory.tsv`, read-only `pg_constraint` query against the production Supabase
-project (inmkhvwdcuyhnxkgfvsb), 2026-11-17. Schema only: no rows and no production data are copied.
+The native PostgreSQL 17 dump of the source `public` schema is authoritative. It carries tables, all foreign keys (VALID),
+indexes, functions, triggers, views, RLS policies and privileges. No data is copied. The earlier delta scripts (schema
+sync, FK recreate, grants, RLS parity, vector preload/postload, auth bridge, outbox) were removed from this package so that
+only one migration path exists.
 
-## Foreign keys referencing auth.users (live, 2026-11-17)
-- Total: 146
-- public -> auth.users (applicable, all recreated): 136
-- auth -> auth.users (10): these belong to Supabase Auth tables, which are not restored to Aurora. They are listed in the
-  inventory and are NOT created here. Aurora gets only the empty `auth.users` stub, so these constraints have no target
-  schema to live in.
+## Run order (`run-staging.sh`, bash)
+1. Commit and checksums verified (`SHA256SUMS`).
+2. `dump-schema.sh`: `pg_dump --schema-only --no-owner --schema=public --no-publications --no-subscriptions
+   --no-security-labels --lock-wait-timeout=30s` from `SOURCE_URI`, which must use the session pooler on 5432. The
+   script refuses data sections (TABLE DATA, SEQUENCE SET, COPY, setval), a missing dump-complete trailer, a pg_dump
+   major version other than 17, and replication or foreign-server objects. It rewrites `CREATE SCHEMA public;` to
+   `IF NOT EXISTS` (counted), then writes `sql/base-schema-public.sql` and its SHA256SUMS line. It is skipped if the
+   dump is already present.
+3. `schema-restore.sh`. Read-only gates run first: inputs, the exact staging writer `vitana`, dump integrity, no
+   production reference in the dump, PG 17 writer, and `public` empty. Then it creates the extensions in schema
+   `extensions`, applies the auth stub `aurora-auth-compat-stub.sql` (empty `auth.users`), and applies
+   `auth-helpers-production-definitions.sql` if `AUTH_HELPERS=approved` (the roles and `auth.uid/jwt/role/email`). It
+   checks the preconditions, then loads the dump in one transaction, compares counts with the dump, and runs the
+   post-checks: host exclusion, count parity (`parity-compare.py` against `source-baseline-2026-11-17.txt`) and FK
+   definition parity (`parity-definitions.py` against `source-auth-fk-inventory.tsv`, 136 public→auth.users).
 
-## Reconciling the counts
-- 146: total foreign keys referencing auth.users (136 + 10).
-- 136: public -> auth.users. This is the applicable scope and the parity probe's expected value.
-- 127: the count in the recreate script's 2026-10-09 header. It predates the current catalog. The live catalog now has 136,
-  so the difference is drift since then (inference from the timestamps, not a proven cause).
+Exit codes for `schema-restore.sh`:
+- 0: accepted.
+- 1: refused, nothing written.
+- 2: failed after writes began; the transaction rolled back.
+- 3: loaded, but a count or parity check failed.
 
-## Run order (schema-restore.sh)
-1. aurora-auth-compat-stub.sql: creates schema auth and an empty auth.users (id uuid primary key). No rows.
-2. aurora-cutover-recreate-foreign-keys.sql (public -> public, unchanged)
-3. aurora-cutover-recreate-auth-foreign-keys.sql: 136 public -> auth.users constraints, from the inventory's definitions.
+## Foreign keys referencing auth.users (live inventory, 2026-11-17)
+146 in total. 136 public → auth.users come from the dump and need the stub. 10 auth → auth.users are Supabase Auth's
+own tables and are not restored.
 
-## Local reproduction (PostgreSQL 16)
-- Created the auth stub and the 125 referencing public tables (136 columns, from the inventory's source columns and types).
-- Applied aurora-cutover-recreate-auth-foreign-keys.sql: 136 constraints created, 0 missing, 0 extra.
-- Attribute parity against the live inventory: definition (pg_get_constraintdef), table, confupdtype, confdeltype,
-  confmatchtype, convalidated, condeferrable and condeferred. 136 checked, 0 real mismatches.
+## Local proof (PostgreSQL 17.5, PGlite; not live acceptance)
+A real `pg_dump 17` (wasm build) of a Supabase-shaped fixture was run through `dump-schema.sh` and then
+`schema-restore.sh`:
+- **Dump checks:** the clean dump passed. Dumps with data, a truncated dump and port 6543 were refused.
+- **Restore:** 3 of 3 tables were restored. Grants were kept (REVOKE EXECUTE FROM PUBLIC was preserved), as were RLS
+  and the policy. No FK was NOT VALID, there were 0 rows, and the `extensions.uuid_generate_v4()` default resolved.
+- **Second run:** refused, because `public` was no longer empty.
