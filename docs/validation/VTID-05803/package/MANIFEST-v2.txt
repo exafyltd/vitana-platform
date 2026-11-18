@@ -1,21 +1,19 @@
-# VTID-05803 exec package v2 (CORRECTED) manifest
-baseline_commit: 427db902a7588e18cbf540bda8e267a2bd93eb54 (kiro/vtid-05803-exec)
-published_as: branch claude/vtid-05803-exec-v2 (the commit that adds this manifest; see git log)
-superseded_archive_sha256: dada5ea960341debebe8f0ed5e4a46fe5fa0711a7d2c033fd415bd2f41fb95b9
+# VTID-05803 exec package v2 — corrective commit on claude/vtid-05803-exec-v2
+base_commit: 7430a56a36 (previous: archive e2df61ab41071e2fa52a348a97f03f682568bd7b3428dfed331c57ebed1c3795)
+published_as: branch claude/vtid-05803-exec-v2, the commit that adds this manifest (see git log)
 archive: vtid-05803-exec-v2.tar.gz
-archive_sha256: e2df61ab41071e2fa52a348a97f03f682568bd7b3428dfed331c57ebed1c3795
-b64_sha256: 6579c6e2bbc8a009f264b370e47747aea980524aca74d14f86c4d30963f48178
+archive_sha256: 85ab2f8c4ffd0e0afffd06dc8319d52b9390e916825246464cd5f8b35ac7b84a
+b64_sha256: 44f09efee679e0def8d9726b8157fdf016e77a0ecaebc7408f549da3a542d5f4
 corrections:
-  1. scripts/aurora/migrations/0001_auth_shim.sql: adds empty auth.users (id uuid PRIMARY KEY); no records
-  2. docs/validation/VTID-05803/source-exclusions.sql: fk rule now excludes only non-public, non-auth targets (auth.users FKs kept)
-  3. stage-exec.sh: SET-echo filtering; parse last line; parity is object-by-object (missing/changed/unexplained), no hardcoded counts
-  4. source-authusers-fk.sql: read-only reconciliation of source public->auth.users FKs
+  1. source-exclusions.sql: fk keeps ONLY public->public and public->auth.users; all other public FKs excluded (auth-internal, storage-internal, other non-public)
+  2. stage-exec.sh parity: storage_relation lines excluded from the expected application-schema set
+  3. 0001_auth_shim.sql: empty auth.users (id uuid PRIMARY KEY) stub, unchanged from 7430a56a
 files:
   785899f2c57f205a2d6b726e2e7ee06f3fec12ee68bf9aeef61ffb2aacab67f2  scripts/aws/aurora-cutover-auth-bridge.sql
   f6f02a64adbc7dcaeb51f04bc9153dc329ec79143f5c6d2857865d50845764cd  scripts/aws/aurora-cutover-outbox.sql
   1463eb9ec5aa70da74b092b6d206f263d0f9b8c15d6112e9c2df212abe9f015b  scripts/aurora/migrations/0001_auth_shim.sql
-  24f7a1f5ef83a1d53ea8188a9bd94c2beb371f0dc1760a690f800bc577290a26  docs/validation/VTID-05803/stage-exec.sh
+  6379e3058240e237cf898149346fb4b5d6ea90c9f2043f052e623b9cf2d4a042  docs/validation/VTID-05803/stage-exec.sh
   31ae2e93ef58a91a1694e1505ce18368de341fed9e4c02bed18fb41a2d092f81  docs/validation/VTID-05803/inventory.sql
-  5a70991db115647177a7d1aeb2a5b214ff53c4a126f4c182340f94d6fbb9c699  docs/validation/VTID-05803/source-exclusions.sql
+  7dd79ca2060ea845933f315154512297666ac164e173f7f5b9f26e197d862991  docs/validation/VTID-05803/source-exclusions.sql
   79c660ba7bb7761a2a77a242f779c49c9757ecf1feac2615f92c59f34152d102  docs/validation/VTID-05803/source-grants.sql
   5dc4acc196521195066da1df4bda81277baac95f93d4d43587a72e7406165e60  docs/validation/VTID-05803/source-authusers-fk.sql

@@ -159,10 +159,11 @@ ok 8
 # ---------- 9: parity (definitions, object by object; no hardcoded counts) ----------
 step 9 "parity"
 stg -A -t -F '|' -f "$INV" | grep -v -x SET | LC_ALL=C sort > "$OUT/staging-after.inv" || fail 9 $? "staging inventory"
-# Expected = source inventory minus the objects source-exclusions.sql deliberately leaves out.
+# Expected = source inventory minus (a) the objects source-exclusions.sql leaves out and (b) storage_relation lines:
+# Supabase storage tables are deliberately not migrated, so they are never expected on Aurora.
 awk -F'|' 'FNR==NR { if ($1=="fk") ex["constraint|" $2 "." $3]=1; else if ($1=="trigger") ex["trigger|" $2 "." $3]=1;
                           else if ($1=="view") vw[$2]=1; next }
-  { k=$1"|"$2; if (k in ex) next; b=$2; sub(/[.>(].*$/, "", b); if (b in vw) next; print }' \
+  { if ($1=="storage_relation") next; k=$1"|"$2; if (k in ex) next; b=$2; sub(/[.>(].*$/, "", b); if (b in vw) next; print }' \
   "$OUT/exclusions.txt" "$OUT/source.inv" | LC_ALL=C sort > "$OUT/source-expected.inv"
 # Join on kind|identity: MISSING = on source only; CHANGED = both sides, different definition; EXTRA = staging only.
 awk -F'|' 'FNR==NR { src[$1"|"$2]=$0; next } { stg[$1"|"$2]=$0 }

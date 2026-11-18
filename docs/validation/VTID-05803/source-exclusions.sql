@@ -1,7 +1,9 @@
 -- VTID-05803: objects in Supabase `public` that cannot or must not be restored on Aurora staging. Read-only.
 -- Output: kind|table_or_view|name  (consumed by stage-exec.sh to drop entries from the pg_restore TOC list).
---   fk       public -> non-public, non-auth foreign keys. public -> auth.users foreign keys are KEPT: auth.users exists
---            on Aurora as an empty stub (0001_auth_shim.sql), so their definitions are restored unchanged.
+--   fk       every public foreign key EXCEPT public -> public and public -> auth.users. Excluded categories:
+--            auth-internal (public -> auth.<other than users>, e.g. auth.sessions) and storage-internal (public -> storage.*)
+--            plus any other non-public target. public -> auth.users is KEPT: auth.users exists on Aurora as an
+--            empty stub (0001_auth_shim.sql), so those definitions are restored unchanged.
 --   trigger  triggers whose function lives outside public (supabase_functions.http_request webhooks = outbound integrations)
 --   view     views and matviews that read non-public relations, plus every view built on top of one of them
 \set ON_ERROR_STOP 1
@@ -12,7 +14,8 @@ FROM pg_constraint k
 JOIN pg_class c ON c.oid = k.conrelid
 JOIN pg_class f ON f.oid = k.confrelid
 JOIN pg_namespace fn ON fn.oid = f.relnamespace
-WHERE k.contype = 'f' AND k.connamespace = 'public'::regnamespace AND fn.nspname NOT IN ('public', 'auth');
+WHERE k.contype = 'f' AND k.connamespace = 'public'::regnamespace
+  AND NOT (fn.nspname = 'public' OR (fn.nspname = 'auth' AND f.relname = 'users'));
 
 SELECT 'trigger', c.relname, t.tgname
 FROM pg_trigger t
