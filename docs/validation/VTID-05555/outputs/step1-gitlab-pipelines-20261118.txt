@@ -1,0 +1,55 @@
+# Read 2026-11-18 ~17:20Z with glab api (GET only) and gh api (GET only). No pipeline was started or re-run.
+
+## vitana-platform main d8b8a8c5e0 (GitLab main = GitHub main)
+GitLab pipeline 451 sha d8b8a8c5e0377266eb7ae1c1780c2a7edb8ca7cb ref main source push status manual created 2026-11-18T13:55:58.735Z https://gitlab.vitanaland.com/vitana/vitana-platform/-/pipelines/451
+  job 3051	gateway-jest 1/4	success	vitana-eng-fleet
+  job 3052	gateway-jest 2/4	success	vitana-eng-fleet
+  job 3053	gateway-jest 3/4	success	vitana-eng-fleet
+  job 3054	gateway-jest 4/4	success	vitana-eng-fleet
+  job 3055	gateway-staging-build	manual	None
+  job 3056	gateway-staging-deploy	created	None
+  job 3050	typecheck	success	vitana-eng-fleet
+  job totals: {'success': 5, 'manual': 1, 'created': 1}
+GitHub TEST-SUITE.yml run 44319701415 event push success https://github.com/exafyltd/vitana-platform/actions/runs/44319701415
+
+## vitana-v1 main bbe90b7137 (GitLab main = GitHub main)
+GitLab pipeline 441 sha bbe90b71373e76b18e3a93e22db17b6953c0a183 ref main source push status failed created 2026-11-18T11:06:09.106Z https://gitlab.vitanaland.com/vitana/vitana-v1/-/pipelines/441
+  job 3001	full-suite:android-module 1/2	success	vitana-eng-fleet-main
+  job 3002	full-suite:android-module 2/2	success	vitana-eng-fleet-main
+  job 2985	full-suite:build	success	vitana-eng-fleet-main
+  job 2995	full-suite:calendar-regression	success	vitana-eng-fleet-main
+  job 2991	full-suite:edge-data-client	success	vitana-eng-fleet-main
+  job 2984	full-suite:eslint	success	vitana-eng-fleet-main
+  job 2987	full-suite:gate-selftest	success	vitana-eng-fleet-main
+  job 2994	full-suite:i18n	success	vitana-eng-fleet-main
+  job 2988	full-suite:kiro-steering-selftest	success	vitana-eng-fleet-main
+  job 2992	full-suite:migration-lint	success	vitana-eng-fleet-main
+  job 2997	full-suite:mobile-bundle	success	vitana-eng-fleet-main
+  job 2996	full-suite:mobile-test	failed	vitana-eng-fleet-main
+  job 2999	full-suite:native-lint	success	vitana-eng-fleet-main
+  job 2998	full-suite:native-parity	success	vitana-eng-fleet-main
+  job 3000	full-suite:orb-parity	success	vitana-eng-fleet-main
+  job 2989	full-suite:preview-e2e	success	vitana-eng-fleet-main
+  job 2990	full-suite:realtime-helper	success	vitana-eng-fleet-main
+  job 2986	full-suite:regressions	success	vitana-eng-fleet-main
+  job 2993	full-suite:sql-tests	success	vitana-eng-fleet-main
+  job 2983	full-suite:typecheck	success	vitana-eng-fleet-main
+  job 2979	full-suite:vitest 1/3	success	vitana-eng-fleet-main
+  job 3013	full-suite:vitest 2/3	success	vitana-eng-fleet-main
+  job 2981	full-suite:vitest 3/3	success	vitana-eng-fleet-main
+  job 2982	full-suite:vitest-union	success	vitana-eng-fleet-main
+  job totals: {'success': 23, 'failed': 1}
+GitHub UNIT-TESTS.yml run 44302246462 event schedule success https://github.com/exafyltd/vitana-v1/actions/runs/44302246462
+GitHub UNIT-TESTS.yml run 44291073738 event push success https://github.com/exafyltd/vitana-v1/actions/runs/44291073738
+
+## vitana-v1, the last green GitLab main pipeline
+GitLab pipeline 366 sha 78455457b9c5672ca203234009c00fb985a4ae9a ref main source push status success created 2026-11-13T23:15:08.766Z https://gitlab.vitanaland.com/vitana/vitana-v1/-/pipelines/366
+  job 1861	build	success	vitana-eng-fleet
+  job 1862	lint	failed	vitana-eng-fleet
+  job 1860	unit-tests	success	vitana-eng-fleet
+  job totals: {'success': 2, 'failed': 1}
+GitHub UNIT-TESTS.yml run 44083463842 event schedule success https://github.com/exafyltd/vitana-v1/actions/runs/44083463842
+GitHub UNIT-TESTS.yml run 43863161724 event schedule success https://github.com/exafyltd/vitana-v1/actions/runs/43863161724
+GitHub UNIT-TESTS.yml run 43709237969 event schedule success https://github.com/exafyltd/vitana-v1/actions/runs/43709237969
+GitHub UNIT-TESTS.yml run 43587669717 event schedule success https://github.com/exafyltd/vitana-v1/actions/runs/43587669717
+GitHub UNIT-TESTS.yml run 43525447428 event push success https://github.com/exafyltd/vitana-v1/actions/runs/43525447428

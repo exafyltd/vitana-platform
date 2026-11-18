@@ -51,9 +51,12 @@ AC-5 (A05) — the runner is registered and runs jobs
   TEST: outputs/pipelines-20261107T1835Z.txt, outputs/read-1-findings.md
 
 AC-6 (pipelines) — first green pipelines on both mirrored projects, each job next to GitHub's result for the same main commit
-  Status: GitHub side recorded (outputs/github-main-runs.txt, both green). Step 0 done by the M2 settings sync (ci-config hashes equal
-  git main). GitLab side BLOCKED: since the M2 runner retag no runner serves tag vitana-eng, waiting for eng-gitlab-m2/settings-fix
-  (PR #4780); outputs/read-1-findings.md.
+  Status: PASS (read 2026-11-18 with GET requests only, no pipeline started; outputs/step1-gitlab-pipelines-20261118.txt).
+  - Step 0: the running files in vitana/ci-config main fe15fa71fd have the same sha256 as git main d8b8a8c5e0 (outputs/step0-ci-config-20261118.txt).
+  - vitana-platform d8b8a8c5e0: GitLab pipeline 451 typecheck and gateway-jest 1/4 to 4/4 success. The staging build is manual. GitHub TEST-SUITE 44319701415 success. No difference.
+  - vitana-v1 78455457b9: GitLab pipeline 366 unit-tests and build success, lint failed but is not blocking. GitHub UNIT-TESTS success. No difference for UNIT-TESTS.
+  - Recorded difference, vitana-v1 bbe90b7137: pipeline 441 has 23 of 24 jobs success. `full-suite:mobile-test` fails at `expo install --check` (expo 57.0.25, expected ~57.0.33, plus 7 more packages). GitHub NATIVE-CI 44318699186 skipped the same step by path filter. The cause is vitana-v1 `apps/mobile` dependencies, outside this lane's paths. A follow-up goes through `_plan` (V3).
+  - A01 and A05 re-read the same day: outputs/a01-https-20261118.txt, outputs/a05-runners-20261118.txt.
   TEST: outputs/step1-gitlab-platform.txt, outputs/step1-gitlab-v1.txt, outputs/github-main-runs.txt
 
 Red to green: this lane adds no test and changes no code (its paths have no test file). The existing tests that pin the files a

@@ -1,0 +1,6 @@
+# A05, runners, read 2026-11-18 ~17:20Z (glab api GET runners and job records)
+runner 8 vitana-eng-fleet-deploy status=online online=True
+runner 9 vitana-eng-fleet-build status=online online=True
+runner 12 vitana-eng-fleet-main status=online online=True
+runner 13 vitana-v1-frontend-deploy status=online online=True
+Jobs that ran on these runners: see step1-pipelines.txt (platform pipeline 451: 5 jobs succeeded on vitana-eng-fleet; vitana-v1 pipeline 441: 23 of 24 jobs succeeded on vitana-eng-fleet-main).

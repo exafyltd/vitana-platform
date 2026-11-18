@@ -1,6 +1,6 @@
 ---
 lane: gitlab-verify
-state: executing
+state: in-review
 next_actor: kiro
 depends_on: [gitlab-infra]
 executor: kiro
@@ -13,9 +13,9 @@ paths:
   - infra/gitlab-engineering/host/ci-platform.yml
   - infra/gitlab-engineering/host/ci-v1.yml
   - infra/gitlab-engineering/RUNBOOK.md
-updated: 2026-11-08T11:40Z
+updated: 2026-11-18T17:55Z
 vtid: VTID-05555
-claimed_by: kiro-exafy-202611081113-5a2e
+claimed_by: kiro-exafy-202611181602-02f5
 branch: kiro/eng-gitlab-m1/gitlab-verify
 ---
 # Lane: gitlab-verify (repo vitana-platform)
@@ -67,3 +67,12 @@ Next: the owner runs `bash ~/glv.sh read` once after a `main` push, with fresh 1
 Owner request: `bash ~/glv.sh read` after a `main` push, with fresh 1-hour credentials. The output is AC-6 (one green GitLab main pipeline per project, next to GitHub's result for the same commit). Record it as `outputs/step1-gitlab-platform.txt` and `outputs/step1-gitlab-v1.txt`. The lane moves to in-review only after that output is in, as the planner decided.
 
 Check diagnosis, head 6834fe67a6: five check runs were cancelled (PR-GATE, Validator Check, STAGING-TESTS-REQUIRED, and the Collab handoff and Lane scope jobs inside PR-GATE). Cause: the PR-GATE workflow has `cancel-in-progress: true` per PR number, so a newer `pull_request` event on #4783 at 11:16:00Z cancelled the first runs while they were fetching the repository ("The operation was canceled"). The replacement runs on the same head passed: PR-GATE 42474975115 (pr-gate, Collab handoff, Lane scope success), Validator Check 42474975070 success, STAGING-TESTS-REQUIRED success. No code change is needed, and none is in this lane's paths.
+
+### 2026-11-18T17:50Z · kiro-exafy-202611181602-02f5 · executing (takeover; AC-6 read)
+Owner execution order 2026-11-18. The stale exafy claim (kiro-exafy-202611081113-5a2e) was taken over by a fast-forward of the claim ref,
+because GitLab's `*` protection refuses the delete of `release --stale`. GitLab main d8b8a8c5e0 was merged into the branch. The missing
+AC-6 GitLab side was read with GET requests only and is green on both projects. One difference is recorded (v1 mobile-test, expo deps;
+follow-up via `_plan`). A01 to A05 now all PASS: A03 and A04 from the 2026-11-07 runs, AC-6 from today.
+
+### 2026-11-18T17:55Z · kiro-exafy-202611181602-02f5 · executing → in-review
+MR https://gitlab.vitanaland.com/vitana/vitana-platform/-/merge_requests/62 (short form vitana/vitana-platform#62). Next: reviewer agent.
