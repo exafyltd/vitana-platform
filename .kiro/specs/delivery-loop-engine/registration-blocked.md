@@ -45,7 +45,8 @@ This is the preview-gateway-recovery plan's D1, to be applied under the owner's 
 2. Give PLAN-SPAR that token without touching the shared secret: a new repository secret, set from the store without printing it,
    `aws secretsmanager get-secret-value --region eu-central-1 --secret-id vitana/gateway/staging/preview-sparring-token --query SecretString --output text | gh secret set PLAN_SPAR_GATEWAY_TOKEN --repo exafyltd/vitana-platform`,
    and in `.github/workflows/PLAN-SPAR.yml:93` `GATEWAY_SERVICE_TOKEN: ${{ secrets.PLAN_SPAR_GATEWAY_TOKEN || secrets.GATEWAY_SERVICE_TOKEN }}`.
-   PLAN-SPAR.yml is a protected gate file: the owner's instruction naming the plan and two reviewer-agent accepts from two chain models.
+   PLAN-SPAR.yml is a protected gate file (`collaboration.md` §3a): it needs the owner's instruction naming the plan plus a
+   reviewer-agent accept on the current head.
 3. Keep allocation off while the preview is the target (`PLAN_SPAR_ALLOCATE=false` for these runs), as the recovery plan's D2 says.
 4. For VTIDs: either restore a canonical allocator path (create `vitana/gateway/staging/service-token`, redeploy and scale the staging
    gateway, route `/api/v1/vtid/allocate` to it) or the owner allocates under rule 55. Which ledger is canonical during the Aurora cutover
