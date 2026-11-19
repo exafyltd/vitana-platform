@@ -1,0 +1,11 @@
+{
+  "vtid": "VTID_PLACEHOLDER",
+  "kind": "feature",
+  "change_class": "standard",
+  "paths": [
+    "services/gateway/src/services/orb-tools/messaging-depth-tools.ts", "services/gateway/src/services/orb-tools/reaction-emoji.ts",
+    "services/gateway/src/services/orb-tools/reaction-emojis.json", "services/gateway/test/orb/**", "DATABASE_SCHEMA.md",
+    "docs/validation/VTID_PLACEHOLDER/**"
+  ],
+  "weakens_tests": []
+}

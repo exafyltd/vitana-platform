@@ -1,0 +1,70 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/.wt/plat-lane/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+FAIL test/orb/reaction-expanded-gate.test.ts
+  allowedReactionEmoji
+    ✕ allows only the six quick reactions while expanded is off (5 ms)
+    ✕ allows the whole set when expanded is on (1 ms)
+  react_to_message with expanded reactions off (default)
+    ✕ refuses to add an emoji outside the six and never calls the insert (2 ms)
+    ✓ still adds a quick reaction
+    ✓ removes an emoji outside the six (removal is never gated)
+  react_to_message with REACTION_EXPANDED_ENABLED=true
+    ✓ adds an emoji outside the six (1 ms)
+
+  ● allowedReactionEmoji › allows only the six quick reactions while expanded is off
+
+    TypeError: (0 , reaction_emoji_1.allowedReactionEmoji) is not a function
+
+      40 | describe('allowedReactionEmoji', () => {
+      41 |   it('allows only the six quick reactions while expanded is off', () => {
+    > 42 |     expect(allowedReactionEmoji(HEART, false)).toBe(HEART);
+         |                                ^
+      43 |     expect(allowedReactionEmoji('\u2764', false)).toBe(HEART); // legacy bare heart
+      44 |     expect(allowedReactionEmoji(APPLE, false)).toBeNull();
+      45 |   });
+
+      at Object.<anonymous> (test/orb/reaction-expanded-gate.test.ts:42:32)
+
+  ● allowedReactionEmoji › allows the whole set when expanded is on
+
+    TypeError: (0 , reaction_emoji_1.allowedReactionEmoji) is not a function
+
+      45 |   });
+      46 |   it('allows the whole set when expanded is on', () => {
+    > 47 |     expect(allowedReactionEmoji(APPLE, true)).toBe(APPLE);
+         |                                ^
+      48 |     expect(allowedReactionEmoji('not-an-emoji', true)).toBeNull();
+      49 |   });
+      50 | });
+
+      at Object.<anonymous> (test/orb/reaction-expanded-gate.test.ts:47:32)
+
+  ● react_to_message with expanded reactions off (default) › refuses to add an emoji outside the six and never calls the insert
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: false
+    Received: true
+
+      53 |   it('refuses to add an emoji outside the six and never calls the insert', async () => {
+      54 |     const r = await tool_react_to_message({ message_id: MSG, emoji: APPLE }, id, sb);
+    > 55 |     expect(r.ok).toBe(false);
+         |                  ^
+      56 |     expect(r.error).toMatch(/must be one of/);
+      57 |     expect(repo.insertMessageReaction).not.toHaveBeenCalled();
+      58 |   });
+
+      at Object.<anonymous> (test/orb/reaction-expanded-gate.test.ts:55:18)
+
+Test Suites: 1 failed, 1 total
+Tests:       3 failed, 3 passed, 6 total
+Snapshots:   0 total
+Time:        1.497 s
+Ran all test suites matching /test\/orb\/reaction-expanded-gate.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

@@ -1,0 +1,8 @@
+{
+  "vtid": "VTID_PLACEHOLDER",
+  "service": "gateway",
+  "tests": [
+    { "kind": "existing", "ref": "npx jest test/orb/reaction-expanded-gate.test.ts test/orb/reaction-emoji-full-set.test.ts", "cwd": "services/gateway",
+      "reason": "ORB reaction tool: six-only while expanded reactions are off, full set when on, cap wording (read-only)" }
+  ]
+}
