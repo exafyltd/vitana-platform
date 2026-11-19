@@ -87,3 +87,14 @@ s3:GetObject) no longer hides the diff. `=apply` downloads a sha256-pinned corre
 DROP/TRUNCATE/DELETE/REVOKE/INSERT/UPDATE/MERGE/COPY, asserts the staging writer, applies it in one writable transaction
 (ON_ERROR_STOP, atomic), then re-runs k5.py. Exit 0 only when A07/A08/A09 all pass. Baseline: run 20261119T131742Z, exit 17.
 TEST: GitLab CI lint (project 2): valid, jobs vtid-05803-schema-acc-probe/apply resolve; `scripts/eng/pipeline-gen.test.mjs` (operation declared and included).
+
+AC-16. The probe (VTID05803_SCHEMA_ACC=probe) published the exact per-object diff: staging public=695 tables vs source
+700; 401 unexplained A07 differences (273 missing + 128 changed, zero extra), all of A08 (grants/policies/RLS/sequence
+grants) and A09's vtid_ledger — concentrated on 6 preserved-seed tables missing from public (plan_sparring_config,
+plan_sparring_sessions, plan_sparring_shadow_log, pm_digests, pm_lease, vtid_ledger) plus 8 helper functions, and 115
+off-set changed function bodies + 4 extensions (live-source drift). `missing fk`=0. The generate mode
+(VTID05803_SCHEMA_ACC=generate) runs `scripts/aws/staging-acceptance/gen-correction.py` in the migrate task: it reads
+the k5.py diff and reconstructs the additive correction.sql for exactly those objects from the live source catalog
+(server-side pg_get_functiondef / pg_get_constraintdef / pg_get_indexdef / format_type / pg_policy; never pg_dump),
+grants/policies filtered to staging-existing roles, and publishes it for review before =apply.
+TEST: GitLab CI lint (project 2): valid, jobs vtid-05803-schema-acc-probe/generate/apply resolve; `python3 -m py_compile scripts/aws/staging-acceptance/gen-correction.py`.
