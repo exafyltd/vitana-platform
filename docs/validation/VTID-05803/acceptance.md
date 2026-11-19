@@ -98,3 +98,12 @@ the k5.py diff and reconstructs the additive correction.sql for exactly those ob
 (server-side pg_get_functiondef / pg_get_constraintdef / pg_get_indexdef / format_type / pg_policy; never pg_dump),
 grants/policies filtered to staging-existing roles, and publishes it for review before =apply.
 TEST: GitLab CI lint (project 2): valid, jobs vtid-05803-schema-acc-probe/generate/apply resolve; `python3 -m py_compile scripts/aws/staging-acceptance/gen-correction.py`.
+
+AC-17. `gen-correction.py` (=generate) now resolves mixed-case objects and stored generated columns, so it completes on
+the live source instead of aborting on the view `VtidLedger`. Every `('public.'||name)::regclass` lookup wraps the name
+in `quote_ident` — regclass lowercases an unquoted identifier, so `VtidLedger` resolved to a non-existent `vtidledger`
+and exited the run (container exit 30) — and a column with `attgenerated='s'` is emitted as `GENERATED ALWAYS AS (expr)
+STORED` rather than a plain DEFAULT, so a stored generated column is reproduced faithfully and does not re-flag as
+changed. Read-only generation only; the guard and the atomic apply path are unchanged.
+TEST: `python3 -m py_compile scripts/aws/staging-acceptance/gen-correction.py`; GitLab CI lint (project 2): valid, jobs
+vtid-05803-schema-acc-probe/generate/apply resolve; the =generate run on main then publishes correction.sql.
