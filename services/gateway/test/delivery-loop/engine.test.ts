@@ -76,6 +76,105 @@ describe('the switch and the claim', () => {
   });
 });
 
+describe('silence after activity (found by the rehearsal on a real GitLab)', () => {
+  /** Runs cycles until one writes nothing; fails if that never happens, and returns how many it took. */
+  async function settle(w: World, max = 12): Promise<number> {
+    for (let i = 1; i <= max; i += 1) {
+      const before = w.ledger.rows.length;
+      await w.tick();
+      if (w.ledger.rows.length === before) return i;
+    }
+    throw new Error(`the loop never went quiet in ${max} cycles`);
+  }
+
+  it('the first quiet cycle after an active one writes nothing (it used to write a claim and an all-zero cycle row)', async () => {
+    const w = world();
+    w.gitlab.addIssue({ iid: 17 });
+    w.issueFact(17);
+    await w.tick(); // active: it advances the cursor and writes the cycle row that stores it
+    const before = w.ledger.rows.length;
+    const quiet = await w.tick();
+    expect(quiet.stats.facts).toBe(0);
+    expect(w.ledger.rows.slice(before).map((r) => r.topic)).toEqual([]);
+  });
+
+  it('after any kind of work (an issue, a repair, a review) the loop goes quiet in one cycle and stays quiet', async () => {
+    const w = world();
+    w.gitlab.addIssue({ iid: 17 });
+    w.issueFact(17);
+    w.gitlab.addMr({ iid: 12, source_branch: 'dev-autopilot/ab12cd34', sha: 'h1'.padEnd(40, '0') });
+    const bad = w.gitlab.addPipeline({ id: 31, status: 'failed', ref: 'refs/merge-requests/12/head', sha: 'h1'.padEnd(40, '0') });
+    w.pipelineFact('failed', bad, { merge_request_iid: 12, mr_source_branch: 'dev-autopilot/ab12cd34' });
+    for (let i = 0; i < 3; i += 1) await w.tick();
+    w.clock.advance(5 * 60 * 1000);
+    w.gitlab.mrs.get(12)!.sha = 'h2'.padEnd(40, '0');
+    const good = w.gitlab.addPipeline({ id: 32, status: 'success', ref: 'refs/merge-requests/12/head', sha: 'h2'.padEnd(40, '0') });
+    w.pipelineFact('succeeded', good, { merge_request_iid: 12, mr_source_branch: 'dev-autopilot/ab12cd34' });
+    const cycles = await settle(w);
+    expect(cycles).toBeLessThanOrEqual(8);
+    const rows = w.ledger.rows.length;
+    for (let i = 0; i < 6; i += 1) await w.tick();
+    expect(w.ledger.rows.length).toBe(rows);
+  });
+
+  /**
+   * The index of every claim row that has no other row after it in its window: a cycle that took the window and wrote nothing else.
+   * `settle` above cannot see these, it accepts the first quiet cycle, and the claims came in the cycles BEFORE it.
+   */
+  const orphanClaims = (w: World): number[] => {
+    const rows = w.ledger.rows;
+    return rows.flatMap((r, i) => (r.topic === 'delivery.loop.claim' && (i === rows.length - 1 || rows[i + 1].topic === 'delivery.loop.claim') ? [i] : []));
+  };
+
+  // Found by the rehearsal on a real GitLab (run r3x7y8z): the poller re-reads, on purpose, everything GitLab changed in the last two
+  // minutes, so that nothing falls between two polls. Each re-read recorded a fact the ledger already had, and recording takes the window's
+  // claim first, so every pipeline left about three claim rows behind: a quiet loop was never quiet.
+  it('re-reading what GitLab showed a moment ago writes nothing, not even a claim: no cycle takes a window to find a fact it already has', async () => {
+    const w = world();
+    w.gitlab.addMr({ iid: 12, source_branch: 'dev-autopilot/ab12cd34', sha: 'h1'.padEnd(40, '0') });
+    const bad = w.gitlab.addPipeline({ id: 31, status: 'failed', ref: 'refs/merge-requests/12/head', sha: 'h1'.padEnd(40, '0') });
+    w.pipelineFact('failed', bad, { merge_request_iid: 12, mr_source_branch: 'dev-autopilot/ab12cd34' }); // the webhook recorded it first
+    for (let i = 0; i < 8; i += 1) await w.tick();
+    expect(orphanClaims(w)).toEqual([]);
+  });
+
+  it('with the poller as the only intake, a settled loop is silent even while the poller still re-reads the last pipelines and issues', async () => {
+    const w = world();
+    w.gitlab.addIssue({ iid: 17, description: 'x' }); // too little to act on: rejected once, and not announced again
+    w.gitlab.addMr({ iid: 12, source_branch: 'dev-autopilot/ab12cd34', sha: 'h1'.padEnd(40, '0') });
+    w.gitlab.addPipeline({ id: 31, status: 'success', ref: 'refs/merge-requests/12/head', sha: 'h1'.padEnd(40, '0') });
+    for (let i = 0; i < 10; i += 1) await w.tick();
+    expect(topics(w, 'scm.gitlab.pipeline.succeeded')).toHaveLength(1); // the poller found it, once
+    expect(orphanClaims(w)).toEqual([]);
+    const rows = w.ledger.rows.length;
+    for (let i = 0; i < 6; i += 1) await w.tick();
+    expect(w.ledger.rows.length).toBe(rows);
+  });
+
+  it('a fact the poller finds is written without taking the window; the cycle that goes on to handle it does take the window', async () => {
+    const w = world();
+    w.gitlab.addIssue({ iid: 17 });
+    const r = await w.tick();
+    expect(r.stats.polled).toBe(1);
+    const order = w.ledger.rows.map((x) => x.topic);
+    expect(order.indexOf('scm.gitlab.issue.labeled')).toBe(0); // the first row of the window is the fact, not a claim
+    expect(topics(w, 'delivery.loop.claim')).toHaveLength(1); // the work that followed took the window
+    await w.tick();
+    expect(topics(w, 'delivery.intake.accepted')).toHaveLength(1);
+  });
+
+  it('a cycle that only moved the cursor (a fact the loop does not handle) writes one cycle row and then goes quiet', async () => {
+    const w = world();
+    // a fact of a kind the loop reads but which is not about a project it owns: it is passed, the cursor moves
+    w.ledger.insert({ type: 'scm.gitlab.merge_request.opened', payload: { project_path: PROJECT, merge_request_iid: 5, source_branch: 'x', target_branch: 'main' }, key: 'mr-open-5' });
+    await w.tick();
+    expect(topics(w, 'delivery.loop.cycle')).toHaveLength(1);
+    const before = w.ledger.rows.length;
+    for (let i = 0; i < 4; i += 1) await w.tick();
+    expect(w.ledger.rows.length).toBe(before);
+  });
+});
+
 describe('the cursor', () => {
   it('is written with each cycle that did something, and a fresh process resumes from it without redoing anything', async () => {
     const w = world();

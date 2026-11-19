@@ -1,0 +1,5 @@
+# Typechecks, slice 7 (2026-11-19T12:22:38Z), cwd services/gateway
+$ npx tsc --noEmit -p tsconfig.json
+exit: 0
+$ npx tsc --noEmit --strict --esModuleInterop --skipLibCheck --resolveJsonModule --moduleResolution node --target ES2022 --module commonjs --lib ES2022,DOM --types jest,node test/delivery-loop/*.test.ts test/delivery-loop/harness.ts test/delivery-loop/fixtures/*.ts ../../scripts/delivery-loop/*.ts
+exit: 0

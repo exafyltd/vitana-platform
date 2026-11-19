@@ -116,6 +116,20 @@ export function may(ctx: Ctx, action: LoopAction): boolean {
   return mayDo(ctx.controls, action);
 }
 
+/**
+ * A write that only states what GitLab shows (the poller's fact rows). It does not take the window's claim, for two reasons. It is
+ * idempotent by key, so two gateway tasks that write the same fact write one row and nothing needs guarding. And the poller reads again,
+ * on purpose, what GitLab changed in the last minutes (so that nothing falls between two polls): each of those repeats answers
+ * `duplicate` and writes no row, but if it took the claim first, every repeat would leave a claim row behind, and a loop with nothing to
+ * do would still write a row per cycle (found by the rehearsal on a real GitLab). Decisions and side effects take the claim (`record`,
+ * `spend`); a fact does not.
+ */
+export async function recordFact(ctx: Ctx, e: LoopEvent): Promise<Extract<RecordResult, { ok: true }>> {
+  const r = await ctx.deps.ledger.record(e);
+  if (!r.ok) throw new LoopError('ledger.record', r.error);
+  return r;
+}
+
 /** A ledger write that must succeed: a failure ends the step, the fact is handled again next cycle. */
 export async function record(ctx: Ctx, e: LoopEvent): Promise<Extract<RecordResult, { ok: true }>> {
   await ensureClaim(ctx);

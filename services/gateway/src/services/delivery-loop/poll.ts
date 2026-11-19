@@ -9,11 +9,14 @@
  * by both is one row (the ledger's idempotent insert); the issue facts have a key of their own and the intake handler, which is
  * idempotent by issue, makes a second fact for one issue harmless. The window is `since` (the poller's last successful poll, with an
  * overlap), so a quiet project costs one read per kind.
+ *
+ * The overlap means the poller reads again what it read a moment ago, so most of its writes are repeats. They are written with
+ * `recordFact`, which takes no claim, so a repeat is a no-op and a loop with nothing to do writes nothing.
  */
 import { intakeLabelOf } from '../gitlab-events/delivery-mapper';
 import { ownsBranch } from './controls';
 import { T } from './keys';
-import { find, may, must, record, type Ctx } from './context';
+import { find, may, must, recordFact, type Ctx } from './context';
 import { issueVersion } from './intake';
 import type { GitlabPipeline } from './types';
 
@@ -61,7 +64,7 @@ async function pollIssues(ctx: Ctx, state: PollState, project: string): Promise<
     const rejected = await find(ctx, T.intakeRejected, { project, issue_iid: i.iid }, { limit: 5 });
     if (rejected.some((r) => r.metadata.version === version)) continue; // answered, and nothing the answer was about has changed
 
-    const r = await record(ctx, {
+    const r = await recordFact(ctx, {
       type: T.issueLabeled,
       status: 'info',
       message: `Polled issue #${i.iid} in ${project} (intake label present)`,
@@ -89,7 +92,7 @@ async function pollPipelines(ctx: Ctx, state: PollState, project: string, status
             .slice(0, 20)
             .map((j) => ({ id: j.id, name: j.name, stage: j.stage, failure_reason: j.failure_reason, exit_code: null }))
         : undefined;
-    const r = await record(ctx, {
+    const r = await recordFact(ctx, {
       type: status === 'failed' ? ('scm.gitlab.pipeline.failed' as const) : ('scm.gitlab.pipeline.succeeded' as const),
       status: status === 'failed' ? 'warning' : 'success',
       message: `Polled pipeline ${p.id} ${status === 'failed' ? 'failed' : 'succeeded'} on ${where.branch} in ${project}`,

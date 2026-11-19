@@ -1,0 +1,35 @@
+{
+  "vtid": null,
+  "slice": "delivery-loop/slice-7-rehearsal",
+  "kind": "feature",
+  "paths": [
+    "services/gateway/src/services/delivery-loop/engine.ts",
+    "services/gateway/src/services/delivery-loop/fingerprint.ts",
+    "services/gateway/src/services/delivery-loop/drive.ts",
+    "services/gateway/src/services/delivery-loop/context.ts",
+    "services/gateway/src/services/delivery-loop/poll.ts",
+    "services/gateway/test/delivery-loop/engine.test.ts",
+    "services/gateway/test/delivery-loop/fingerprint.test.ts",
+    "services/gateway/test/delivery-loop/heal.test.ts",
+    "services/gateway/test/delivery-loop/rehearsal-guard.test.ts",
+    "services/gateway/test/delivery-loop/fixtures/gitlab-job-script-failure.ts",
+    "scripts/delivery-loop/rehearse.ts",
+    "scripts/delivery-loop/run-rehearsal.ts",
+    "scripts/delivery-loop/main.ts",
+    "docs/validation/delivery-loop/slice-7-rehearsal/**"
+  ],
+  "vtid_note": "No VTID: no approved lane covers this work, and VTIDs come only from CI PLAN-SPAR. WIP until plan(delivery-loop) is sparred.",
+  "weakens_tests": [],
+  "tests_changed_on_purpose": [
+    "services/gateway/test/delivery-loop/fingerprint.test.ts 'the error lines of a real-shaped log ...': the expected list no longer ends with 'ERROR: Job failed: exit code 1'. That line is the runner's own footer, printed for every failed script; counting it as evidence made a failure with no output of its own look repairable. The test is stricter (it now also names what must NOT be there).",
+    "services/gateway/test/delivery-loop/fingerprint.test.ts 'keeps the lines that say what went wrong ...': the assertion on 'ERROR: Job failed: exit code 1' flipped from true to false, for the same reason."
+  ],
+  "touches_shared_files": [],
+  "not_touched_on_purpose": [
+    "services/gateway/src/services/autopilot-executable-source-types.ts: still the locked list (four tests pin it)",
+    ".github/workflows/**: no deploy file; nothing here sets DELIVERY_LOOP_* in any task definition",
+    "project vitana/rehearsal: only objects this run created were written; merge requests !1 and !2 and the branches dind-check, main, pilot/mr-review-a4, rehearsal-check, shadow/platform-main were not touched (their updated_at is unchanged)",
+    "every other GitLab project, and every GitHub repository: the rehearsal guard refuses any project but vitana/rehearsal"
+  ],
+  "red_green_exempt": []
+}

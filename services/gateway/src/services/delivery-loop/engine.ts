@@ -208,7 +208,7 @@ export function createEngine(options: EngineOptions): Engine {
     if (!didSomething && !cursorMoved(cur)) return;
     if (!may(ctx, 'record')) return;
     await ensureClaim(ctx);
-    await record(ctx, {
+    const written = await record(ctx, {
       type: T.cycle,
       status: s.errors > 0 ? 'warning' : 'info',
       message: `Delivery loop cycle: ${s.facts} fact${s.facts === 1 ? '' : 's'}, ${s.dispatched + s.retried} action${s.dispatched + s.retried === 1 ? '' : 's'}, ${s.errors} error${s.errors === 1 ? '' : 's'}`,
@@ -218,13 +218,17 @@ export function createEngine(options: EngineOptions): Engine {
       },
       key: K.cycle(window),
     });
+    // The baseline is the cursor of the row that is now in the ledger, whichever way the cycle came to write it (it did something, or the
+    // cursor moved). A baseline set only on the quiet path would leave an active cycle's cursor looking "new" to the next, quiet, cycle,
+    // which would then write a claim and a cycle row for nothing (found by the rehearsal on a real GitLab).
+    if (written.ok) lastWritten = cursorId(cur);
   }
 
+  const cursorId = (cur: Cursor | null): string | null => (cur ? `${cur.created_at}|${cur.id}` : null);
+  /** Pure: has the cursor moved past what the ledger already holds? Never changes the baseline (only a written cycle row does). */
   function cursorMoved(cur: Cursor | null): boolean {
-    const id = cur ? `${cur.created_at}|${cur.id}` : null;
-    if (id === lastWritten) return false;
-    lastWritten = id;
-    return id !== null;
+    const id = cursorId(cur);
+    return id !== null && id !== lastWritten;
   }
 
   return { cycle, cursor: () => cursor };

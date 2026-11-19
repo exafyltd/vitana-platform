@@ -10,14 +10,17 @@ import {
   INFRA_FAILURE_REASONS,
   classifyFailure,
   errorLines,
+  failureRegion,
   fingerprintFailure,
   healKey,
   jobKey,
   normalizeLine,
+  scriptOutput,
   stripAnsi,
   stripRunnerPrefix,
 } from '../../src/services/delivery-loop/fingerprint';
 import type { FailedJobFact } from '../../src/services/delivery-loop/types';
+import { REAL_SCRIPT_FAILURE_LOG } from './fixtures/gitlab-job-script-failure';
 
 const PROJECT = 'vitana/vitana-platform';
 const job = (over: Partial<FailedJobFact> = {}): FailedJobFact => ({ id: 14, name: 'unit-tests', stage: 'test', failure_reason: 'script_failure', exit_code: 1, ...over });
@@ -78,13 +81,13 @@ describe('the runner prefix of a real job log', () => {
     expect(stripRunnerPrefix('2026-11-18T22:27:21.233715Z 1O too short a step id')).toBe('2026-11-18T22:27:21.233715Z 1O too short a step id');
   });
 
-  it('the error lines of a real-shaped log have no prefix, no step id and no cleanup noise', () => {
+  it('the error lines of a real-shaped log have no prefix, no step id and no cleanup noise, and not the runner\'s own failure footer', () => {
+    // The footer `ERROR: Job failed: exit code 1` is printed by the runner for every failed script: it says nothing about which failure this is.
     expect(errorLines(runnerLog({ day: '2026-11-18', step: '01', stepEnd: '00' }))).toEqual([
       'error: |-',
       'Expected values to be strictly equal:',
       'expected: 10',
       '# fail 1',
-      'ERROR: Job failed: exit code 1',
     ]);
   });
 
@@ -100,6 +103,183 @@ describe('the runner prefix of a real job log', () => {
     const a = fingerprintFailure({ project: 'vitana/rehearsal', failedJobs: [job({ id: 1, name: 'unit' })], traces: { '1': base } });
     const b = fingerprintFailure({ project: 'vitana/rehearsal', failedJobs: [job({ id: 1, name: 'unit' })], traces: { '1': base.replace('expected: 10', 'expected: 11') } });
     expect(a.fingerprint).not.toBe(b.fingerprint);
+  });
+});
+
+/**
+ * Found by the real-GitLab rehearsal (job 3941): the repair task was sent `expected: 6,` and the runner's footer, and not the
+ * assertion, the values or the place, because the keyword list had `assertion` but `AssertionError` has no word boundary inside it.
+ * These tests run on the log that job really printed (fixtures/gitlab-job-script-failure.ts).
+ */
+describe('a real failed job: node assertion failure on stderr (job 3941 of the rehearsal)', () => {
+  it('the error lines name the assertion, its code and the two values, in the order the job printed them', () => {
+    expect(errorLines(REAL_SCRIPT_FAILURE_LOG)).toEqual([
+      'AssertionError [ERR_ASSERTION]: total of 1,<n>,3 should be 6',
+      "code: 'ERR_ASSERTION',",
+      'actual: 7,',
+      'expected: 6,',
+    ]);
+  });
+
+  it('the job\'s own output is only what is between the step_script markers: no runner preparation, no cleanup, no footer, no codes, no prefixes', () => {
+    const out = scriptOutput(REAL_SCRIPT_FAILURE_LOG);
+    const text = out.join('\n');
+    expect(text).toContain('AssertionError [ERR_ASSERTION]: total of 1,2,3 should be 6');
+    expect(text).toContain('7 !== 6');
+    expect(text).toContain('at file:///builds/vitana/rehearsal/test.mjs:4:8');
+    expect(text).toContain('$ npm test');
+    for (const runnerOnly of ['Running with gitlab-runner', 'Preparing the', 'Dialing instance', 'Getting source from Git', 'Checking out', 'Cleaning up project directory', 'ERROR: Job failed']) {
+      expect(text).not.toContain(runnerOnly);
+    }
+    expect(text).not.toMatch(/section_(start|end)/);
+    expect(text).not.toContain('\u001b');
+    expect(text).not.toMatch(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/);
+    expect(out.every((l) => l === l.trimEnd())).toBe(true);
+  });
+
+  it('the output begins at the first command the script echoed: the runner\'s own lines at the top of the section (executor, pull policy, image digest) are not the job\'s', () => {
+    const out = scriptOutput(REAL_SCRIPT_FAILURE_LOG);
+    expect(out[0]).toBe('$ node --version');
+    const text = out.join('\n');
+    for (const runnerOnly of ['Executing "step_script"', 'pull policy', 'Using docker image', 'sha256:']) expect(text).not.toContain(runnerOnly);
+    expect(failureRegion(REAL_SCRIPT_FAILURE_LOG).startsWith('$ node --version')).toBe(true);
+  });
+
+  it('only when the start of the section is in view: a tail that begins inside the script keeps its first lines, a section with no echoed command keeps all of them', () => {
+    const midScript = [
+      '2026-11-19T11:16:05.000000Z 01O output of an earlier command',
+      '2026-11-19T11:16:05.100000Z 01O \u001b[32;1m$ npm test\u001b[0;m',
+      '2026-11-19T11:16:06.000000Z 01E Error: boom',
+      '2026-11-19T11:16:07.838506Z 00O section_end:1795086967:step_script\r\u001b[0K',
+    ].join('\n');
+    expect(scriptOutput(midScript)).toEqual(['output of an earlier command', '$ npm test', 'Error: boom']);
+    const noEcho = [
+      '2026-11-19T11:16:03.959937Z 00O+section_start:1795086963:step_script\r\u001b[0K',
+      '2026-11-19T11:16:03.960042Z 00O+\u001b[0K\u001b[36;1mExecuting "step_script" stage of the job script\u001b[0;m',
+      '2026-11-19T11:16:06.000000Z 01E Error: boom',
+      '2026-11-19T11:16:07.838506Z 00O section_end:1795086967:step_script\r\u001b[0K',
+    ].join('\n');
+    expect(scriptOutput(noEcho)).toEqual(['Executing "step_script" stage of the job script', 'Error: boom']);
+  });
+
+  it('the failure region is what the repair worker is told: the assertion, the values and the place, as printed (not normalized)', () => {
+    const region = failureRegion(REAL_SCRIPT_FAILURE_LOG);
+    expect(region).toContain('AssertionError [ERR_ASSERTION]: total of 1,2,3 should be 6'); // "2" is not "<n>": the worker needs the real text
+    expect(region).toContain('7 !== 6');
+    expect(region).toContain('at file:///builds/vitana/rehearsal/test.mjs:4:8'); // the path and the line are not "<path>" and "<n>"
+    expect(region).toContain('actual: 7,');
+    expect(region).toContain('expected: 6,');
+    expect(region).toContain("operator: 'strictEqual'");
+    expect(region).not.toContain('Cleaning up project directory');
+    expect(region).not.toContain('ERROR: Job failed');
+    expect(region).not.toContain('\u001b');
+    expect(region.endsWith('Node.js v20.20.2')).toBe(true);
+  });
+
+  it('it is evidence (so a repair is attempted) and it is one fingerprint however many times it fails', () => {
+    const a = fingerprintFailure({ project: 'vitana/rehearsal', failedJobs: [job({ id: 3941, name: 'unit' })], traces: { '3941': REAL_SCRIPT_FAILURE_LOG } });
+    expect(a.has_evidence).toBe(true);
+    expect(a.failure_class).toBe('code');
+    expect(a.excerpt).toHaveLength(4);
+    // The same failure again: another day, another runner step numbering.
+    const again = REAL_SCRIPT_FAILURE_LOG.replace(/2026-11-19T11:1\d/g, '2026-12-03T08:44').replace(/ 01([OE])/g, ' 03$1').replace(/ 00([O+])/g, ' 02$1');
+    const b = fingerprintFailure({ project: 'vitana/rehearsal', failedJobs: [job({ id: 4402, name: 'unit' })], traces: { '4402': again } });
+    expect(b.fingerprint).toBe(a.fingerprint);
+  });
+
+  it('a different assertion in that job is a different failure', () => {
+    const other = REAL_SCRIPT_FAILURE_LOG.replace('should be 6', 'should be 9').replace('expected: 6,', 'expected: 9,');
+    const a = fingerprintFailure({ project: 'vitana/rehearsal', failedJobs: [job({ id: 1, name: 'unit' })], traces: { '1': REAL_SCRIPT_FAILURE_LOG } });
+    const b = fingerprintFailure({ project: 'vitana/rehearsal', failedJobs: [job({ id: 1, name: 'unit' })], traces: { '1': other } });
+    expect(a.fingerprint).not.toBe(b.fingerprint);
+  });
+
+  it('a script that printed nothing leaves only the runner\'s footer, which is no evidence: nothing to repair from', () => {
+    const silent = REAL_SCRIPT_FAILURE_LOG.split('\n')
+      .filter((l) => !/ 01[OE]/.test(l)) // drop everything the script printed, keep the runner's sections and its footer
+      .join('\n');
+    expect(silent).toContain('ERROR: Job failed: exit code 1');
+    expect(errorLines(silent)).toEqual([]);
+    expect(failureRegion(silent).includes('ERROR: Job failed')).toBe(false);
+    expect(fingerprintFailure({ project: 'vitana/rehearsal', failedJobs: [job({ id: 1, name: 'unit' })], traces: { '1': silent } }).has_evidence).toBe(false);
+  });
+});
+
+describe('which lines say what went wrong', () => {
+  it.each([
+    ["AssertionError [ERR_ASSERTION]: boom", 'AssertionError [ERR_ASSERTION]: boom'],
+    ['TypeError: x is not a function', 'TypeError: x is not a function'],
+    ["ModuleNotFoundError: No module named 'yaml'", "ModuleNotFoundError: No module named 'yaml'"],
+    ['Caused by: java.lang.NullPointerException', 'Caused by: java.lang.NullPointerException'],
+    ["code: 'ERR_MODULE_NOT_FOUND',", "code: 'ERR_MODULE_NOT_FOUND',"],
+    ['  actual: 7,', 'actual: 7,'],
+    ['  ✕ rejects a negative total (3 ms)', '✕ rejects a negative total (<duration>)'],
+    ['  ✖ 2 problems', '✖ 2 problems'],
+  ])('%s is an error line', (input, normalized) => {
+    expect(errorLines(input)).toEqual([normalized]);
+  });
+
+  it.each([
+    'a terror of a horror, a mirror, an arrow',
+    'Starting the tests with the node runner',
+    'ERRATA for the release notes',
+    'the AssertionErrorful is not a class name here',
+  ])('%s is not', (line) => {
+    expect(errorLines(line)).toEqual([]);
+  });
+});
+
+describe('failureRegion limits', () => {
+  const plain = (n: number, prefix = 'line') => Array.from({ length: n }, (_, i) => `${prefix} ${i + 1}`).join('\n');
+
+  it('keeps the END of the output, which is where the failure is, at most maxLines', () => {
+    const region = failureRegion(plain(200), { maxLines: 10 });
+    expect(region.split('\n')).toHaveLength(10);
+    expect(region.startsWith('line 191')).toBe(true);
+    expect(region.endsWith('line 200')).toBe(true);
+  });
+
+  it('cuts at a line boundary when the text is over maxChars, and never starts in the middle of a line', () => {
+    const region = failureRegion(plain(500), { maxLines: 500, maxChars: 300 });
+    expect(region.length).toBeLessThanOrEqual(300);
+    expect(region.split('\n')[0]).toMatch(/^line \d+$/);
+    expect(region.endsWith('line 500')).toBe(true);
+  });
+
+  it('a single huge line keeps its end', () => {
+    const region = failureRegion(`${'x'.repeat(9000)}END`, { maxChars: 100, maxLineChars: 20_000 });
+    expect(region).toHaveLength(100);
+    expect(region.endsWith('xxxEND')).toBe(true);
+  });
+
+  it('a very long line is shortened before the budget is spent on it', () => {
+    const region = failureRegion(`short\n${'y'.repeat(5000)}\nlast`, { maxLineChars: 50 });
+    expect(region.split('\n')[1]).toHaveLength(51); // 50 characters and the ellipsis
+    expect(region.endsWith('last')).toBe(true);
+  });
+
+  it('has no blank line at the edges and never two blank lines in a row', () => {
+    expect(failureRegion('\n\nfirst\n\n\n\nsecond\n\n\n')).toBe('first\n\nsecond');
+  });
+
+  it('is empty for an empty log, for a log that is only the runner\'s, and for one that is only blank lines', () => {
+    expect(failureRegion('')).toBe('');
+    expect(failureRegion('\n\n  \n')).toBe('');
+    expect(failureRegion('2026-11-19T11:16:08.179750Z 00O \u001b[31;1mERROR: Job failed: exit code 1\u001b[0;m\n')).toBe('');
+  });
+
+  it('a log that GitLab cut mid-script (no start marker) is the script\'s from its first line; one that was killed (no end marker) from the start marker to the last line', () => {
+    const cut = ['2026-11-19T11:16:07.730214Z 01E AssertionError [ERR_ASSERTION]: late', '2026-11-19T11:16:07.838506Z 00O section_end:1795086967:step_script\r\u001b[0K', '2026-11-19T11:16:08.179750Z 00O ERROR: Job failed: exit code 1'].join('\n');
+    expect(scriptOutput(cut)).toEqual(['AssertionError [ERR_ASSERTION]: late']);
+    const killed = ['2026-11-19T11:16:03.959937Z 00O+section_start:1795086963:step_script\r\u001b[0K', '2026-11-19T11:16:05.000000Z 01O working', '2026-11-19T11:16:06.000000Z 01O still working'].join('\n');
+    expect(scriptOutput(killed)).toEqual(['working', 'still working']);
+  });
+});
+
+describe('stripAnsi on a log with CRLF line endings', () => {
+  it('a carriage return before the newline is the end of the line, not a redraw that erases it', () => {
+    expect(stripAnsi('first\r\nsecond\r\n')).toBe('first\nsecond\n');
+    expect(errorLines('Error: something broke\r\nnext\r\n')).toEqual(['Error: something broke']);
   });
 });
 
@@ -167,7 +347,7 @@ describe('errorLines', () => {
     const lines = errorLines(RUN_A);
     expect(lines.some((l) => l.includes('FAIL test/delivery/gitlab-delivery-mapping.test.ts'))).toBe(true);
     expect(lines.some((l) => l.includes('Expected: "scm.gitlab.issue.opened"'))).toBe(true);
-    expect(lines.some((l) => l.includes('ERROR: Job failed: exit code 1'))).toBe(true);
+    expect(lines.some((l) => l.includes('ERROR: Job failed'))).toBe(false); // the runner's footer, outside the job's own output
     expect(lines.some((l) => l.includes('Preparing'))).toBe(false);
     expect(lines.some((l) => l.includes('PASS'))).toBe(false);
     expect(lines.some((l) => l.includes('starting run'))).toBe(false);

@@ -1,0 +1,84 @@
+# Delivery loop rehearsal against the real GitLab (2026-11-19T12:18:40.422Z)
+run id: r7h3c9v   project: vitana/rehearsal   steps: 18/18 passed
+
+REAL: the GitLab REST client, the engine, the project, its issues and label events, its merge request pipelines, its runner and job logs.
+STAND-INS: the OASIS ledger (in memory), the executor (a labelled stub worker that pushes a fix), the reviewer (a fixed verdict), the memory (a recorder).
+
+PASS  preflight
+      vitana/rehearsal is private and reachable
+PASS  A1 intake accepts an issue labeled by a project member
+      accepted rows 1; requester level 50
+PASS  A2 the loop answered on the issue and labelled it
+      labels ["agent-task","delivery-accepted"]
+PASS  A3 the (stub) worker was asked for the task, with the issue text as data
+      1 request(s)
+PASS  B0 merge request opened on the loop-owned branch
+      !11 on loop-rehearsal/r7h3c9v
+PASS  B1 GitLab ran a real pipeline and it FAILED on the broken test
+      pipeline 578 failed
+PASS  B2 the loop saw the failure on GitLab (poller, no webhook) and classified it a code failure with evidence
+      class code, jobs ["unit:script_failure"], fingerprint b1373d7adb960955
+PASS  B3 the worker was asked to repair THE merge request branch, told the failure as the job printed it (assertion, values, place, log link), with none of the runner's own text
+      fix_branch loop-rehearsal/r7h3c9v; has {"assertion":true,"values":true,"place":true,"jobLog":true}; runner text present {"runnerBanner":false,"cleanup":false,"footer":false,"escape":false,"timestamp":false}
+PASS  B4 GitLab ran a NEW real pipeline on the pushed fix and it PASSED
+      pipeline 579 success
+PASS  B5 the loop verified the repair from GitLab's own state
+      verified by pipeline 579
+PASS  B6 the loop learned: a repair pattern and a memory outcome were recorded
+      1 pattern(s), 1 outcome(s)
+PASS  C1 the green merge request was reviewed once for its head, by the stub reviewer
+      1 review(s); head 2d96c4b3
+PASS  C2 the merge request is still open and was not merged by the loop
+      the loop has no merge call
+PASS  E1 an issue with too little to act on is rejected with the reason, not started
+      reason too_little_to_act_on
+PASS  Z1 once everything is settled the loop is silent: no new rows, no new GitLab writes
+      rows 52 -> 52; GitLab writes by the rehearsal 8
+PASS  D0 GitLab ran a real pipeline on the retry-check merge request and it FAILED
+      pipeline 580 failed
+PASS  D1 the loop's own retry call kept the pipeline id and put the pipeline back in progress
+      pipeline 580 -> id 580, status running
+PASS  D2 the retried pipeline moved (updated_at) and ended again under the SAME id; the merge request got no new pipeline
+      id 580 failed; updated_at 2026-11-19T12:18:11.365Z -> 2026-11-19T12:18:30.235Z; head pipeline of !12 is 580
+
+Left behind on GitLab after cleanup: nothing
+
+Ledger rows written by the loop (52), by topic:
+    1  delivery.dispatch.failed
+    2  delivery.dispatch.requested
+    1  delivery.dispatch.started
+    1  delivery.heal.attempt
+    1  delivery.heal.detected
+    1  delivery.heal.verified
+    1  delivery.intake.accepted
+    1  delivery.intake.rejected
+    1  delivery.learn.recorded
+    4  delivery.loop.claim
+    4  delivery.loop.cycle
+   12  delivery.note.posted
+    6  delivery.note.requested
+    1  delivery.review.requested
+    1  delivery.review.verdict
+    2  scm.gitlab.issue.labeled
+    6  scm.gitlab.pipeline.failed
+    6  scm.gitlab.pipeline.succeeded
+
+GitLab writes made by the rehearsal itself (18):
+  POST /issues -> 201
+  PUT /issues/14 -> 200
+  POST /repository/branches -> 201
+  POST /repository/commits -> 201
+  POST /merge_requests -> 201
+  POST /repository/commits -> 201
+  POST /issues -> 201
+  PUT /issues/15 -> 200
+  POST /repository/branches -> 201
+  POST /repository/commits -> 201
+  POST /merge_requests -> 201
+  POST /pipelines/580/retry -> ok (the loop's own client)
+  PUT /merge_requests/11 -> 200
+  PUT /merge_requests/12 -> 200
+  PUT /issues/14 -> 200
+  PUT /issues/15 -> 200
+  DELETE /repository/branches/loop-rehearsal%2Fr7h3c9v -> 204
+  DELETE /repository/branches/loop-rehearsal%2Fr7h3c9v-d -> 204

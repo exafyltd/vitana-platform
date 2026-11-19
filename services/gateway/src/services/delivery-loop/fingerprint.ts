@@ -56,14 +56,18 @@ const ANSI_RE = /\u001b\[[0-9;?]*[ -/]*[@-~]/g;
 const SECTION_RE = /section_(?:start|end):\d+:[^\r\n]*/g;
 /* eslint-enable no-control-regex */
 
-/** Colour codes and GitLab's collapsible-section markers removed; carriage-return progress redraws reduced to their last state. */
+/**
+ * Colour codes and GitLab's collapsible-section markers removed; carriage-return progress redraws reduced to their last state. A
+ * carriage return right before the newline is the line ending of a CRLF log, not a redraw: without that rule every line of such a
+ * log would read as the empty string after its last "redraw".
+ */
 export function stripAnsi(text: string): string {
   return text
     .replace(SECTION_RE, '')
     .replace(ANSI_RE, '')
     .split('\n')
     .map((line) => {
-      const redraws = line.split('\r');
+      const redraws = line.replace(/\r$/, '').split('\r');
       return redraws[redraws.length - 1];
     })
     .join('\n');
@@ -80,8 +84,103 @@ export function stripRunnerPrefix(line: string): string {
   return line.replace(RUNNER_PREFIX_RE, '');
 }
 
-/** Lines that say what went wrong. Everything else in a job log (the setup, the passing tests) is not part of the failure. */
-const ERROR_LINE_RE = /\b(error|errors|failed|failure|fail|exception|cannot|can't|could not|unable to|undefined|not found|denied|refused|timed out|timeout|exit code|exited with|assertion|expected|received|ts\d{4}|eslint|✕|✖)\b|npm ERR!|FAIL |Traceback|panic:|fatal:/i;
+/**
+ * Lines that say what went wrong. Everything else in a job log (the setup, the passing tests) is not part of the failure.
+ * `✕` and `✖` are outside the `\b(...)\b` group on purpose: a word boundary needs a word character on one side, and these are not.
+ */
+const ERROR_LINE_RE = /\b(error|errors|failed|failure|fail|exception|cannot|can't|could not|unable to|undefined|not found|denied|refused|timed out|timeout|exit code|exited with|assertion|expected|actual|received|ts\d{4}|eslint)\b|✕|✖|npm ERR!|FAIL |Traceback|panic:|fatal:/i;
+
+/**
+ * An error class (`AssertionError`, `TypeError`, `ModuleNotFoundError`, `java.lang.NullPointerException`) or a Node error code
+ * (`ERR_ASSERTION`). Found by the rehearsal on a real log: `AssertionError` is one word, so `\bassertion\b` never matched it. Case
+ * matters here (no `i` flag): `terror` is a word, `TerrorError` is a class.
+ */
+const ERROR_CLASS_RE = /\b[A-Z][A-Za-z0-9]*(?:Error|Exception)\b|\bERR_[A-Z0-9_]+\b/;
+
+function isErrorLine(line: string): boolean {
+  return ERROR_LINE_RE.test(line) || ERROR_CLASS_RE.test(line);
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// The job's own output
+// ---------------------------------------------------------------------------------------------------------
+
+/**
+ * GitLab's runner runs the job's script inside a `step_script` section, and prints its own preparation (the executor, the image, the
+ * checkout) before it and its cleanup after it. The markers are `section_start:<unix time>:step_script` and `section_end:...`.
+ */
+const STEP_SCRIPT_START_RE = /section_start:\d+:step_script/;
+const STEP_SCRIPT_END_RE = /section_end:\d+:step_script/;
+
+/**
+ * The last line of every failed job log: the runner says the job failed and why (`exit code 1`, a timeout). It is the runner's, it is
+ * there whatever the script did, and it names no failure, so it is not evidence and not part of what a repair is told.
+ */
+const RUNNER_FOOTER_RE = /^ERROR: Job failed\b/;
+
+/**
+ * The lines the job's own script printed, cleaned (no colour codes, no runner prefix, no section markers, no trailing blanks) and
+ * without the runner's own text: what is outside the `step_script` section, the runner's lines at the top of it, and the final
+ * `ERROR: Job failed` line.
+ *
+ * It works on a tail of the log, so both markers may be missing: no start marker means the tail began inside the script, so the output
+ * is read from its first line; no end marker means the job ended (was killed, timed out) before the section closed, so it is read to the
+ * last line. A log with no markers at all (another executor, a plain log) is the script's from the first line. The last end marker and the
+ * last start marker before it are used.
+ */
+export function scriptOutput(trace: string): string[] {
+  const raw = trace.split('\n');
+  let end = -1;
+  for (let i = raw.length - 1; i >= 0; i -= 1) {
+    if (STEP_SCRIPT_END_RE.test(raw[i])) {
+      end = i;
+      break;
+    }
+  }
+  const stop = end === -1 ? raw.length : end;
+  let start = -1;
+  for (let i = stop - 1; i >= 0; i -= 1) {
+    if (STEP_SCRIPT_START_RE.test(raw[i])) {
+      start = i;
+      break;
+    }
+  }
+  const lines = stripAnsi(raw.slice(start + 1, stop).join('\n'))
+    .split('\n')
+    .map((line) => stripRunnerPrefix(line).trimEnd());
+  // With the start of the section in view, its first lines are the runner's own (the stage, the pull policy, the image digest) and the
+  // script's output begins at the first command it echoed (`$ node --version`). With the start out of view the tail began inside the
+  // script, so nothing is cut; a section in which no command was echoed is kept whole.
+  const firstCommand = start === -1 ? -1 : lines.findIndex((line) => line.startsWith('$ '));
+  return lines.slice(Math.max(firstCommand, 0)).filter((line) => !RUNNER_FOOTER_RE.test(line));
+}
+
+/**
+ * What an executor is told of a failed job: the end of the job's own output, as the job printed it. Not normalized (the fingerprint's
+ * `<path>` and `<n>` are for comparing failures; a worker needs the real file and line), no blank line at the edges or twice in a row,
+ * a very long line shortened, and cut from the front to the last `maxLines` lines and `maxChars` characters, because the failure is at
+ * the end. Empty when the job printed nothing.
+ */
+export function failureRegion(trace: string, o: { maxLines?: number; maxChars?: number; maxLineChars?: number } = {}): string {
+  const maxLines = o.maxLines ?? 60;
+  const maxChars = o.maxChars ?? 5000;
+  const maxLineChars = o.maxLineChars ?? 500;
+  const lines: string[] = [];
+  for (const line of scriptOutput(trace)) {
+    const kept = line.length > maxLineChars ? `${line.slice(0, maxLineChars)}…` : line;
+    if (kept === '' && (lines.length === 0 || lines[lines.length - 1] === '')) continue;
+    lines.push(kept);
+  }
+  while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
+  let text = lines.slice(-maxLines).join('\n');
+  if (text.length > maxChars) {
+    text = text.slice(-maxChars);
+    const firstBreak = text.indexOf('\n');
+    // The cut can land inside a line: drop that partial first line (a single huge line keeps its end).
+    if (firstBreak !== -1) text = text.slice(firstBreak + 1);
+  }
+  return text;
+}
 
 /** A line with the parts that change from run to run replaced by a marker, so two runs of one failure give one line. */
 export function normalizeLine(line: string): string {
@@ -100,13 +199,15 @@ export function normalizeLine(line: string): string {
     .trim();
 }
 
-/** At most `max` distinct normalized error lines of a job log, in order. */
+/**
+ * At most `max` distinct normalized error lines of what the job's own script printed, in order. The runner's preparation, its cleanup
+ * and its `ERROR: Job failed` footer are not the job's and are not read.
+ */
 export function errorLines(trace: string, max = 12): string[] {
   const out: string[] = [];
   const seen = new Set<string>();
-  for (const withPrefix of stripAnsi(trace).split('\n')) {
-    const raw = stripRunnerPrefix(withPrefix);
-    if (!ERROR_LINE_RE.test(raw)) continue;
+  for (const raw of scriptOutput(trace)) {
+    if (!isErrorLine(raw)) continue;
     const line = normalizeLine(raw).slice(0, 240);
     // A bare keyword ("Error", "FAIL") says nothing about which failure it is; it is noise that one run has and another may not.
     if (line.length < 6 || !line.includes(' ') || seen.has(line)) continue;
@@ -134,7 +235,10 @@ export interface FailureFingerprint {
   jobs: string[];
   /** The normalized error lines the fingerprint was built from; empty when no log was read. */
   excerpt: string[];
-  /** True when at least one error line was read from a log. A `code` failure without one has no evidence to repair from. */
+  /**
+   * True when at least one error line was read from what a job's own script printed (the runner's footer is not that). A `code`
+   * failure without one has no evidence to repair from.
+   */
   has_evidence: boolean;
 }
 
