@@ -59,8 +59,9 @@ The comparator fingerprints each function as explicit attributes plus `src = md5
 - **119 / 121** — staging's `src = md5(prosrc)` equals md5 of the body text extracted from the exact definition the
   correction applied (the body portion of `pg_get_functiondef(source)`). So staging stores the source function's own
   canonical body.
-- Both body hashes differ for all 121 — `src` (raw `prosrc`) **and** `def` (`md5(pg_get_functiondef)`), the two body
-  hashes the comparator records. Both trace to one cause: source stores a **raw** `prosrc`, while the migration and any
+- Both body-derived hashes differ for all 121 — `src` (raw `prosrc`) **and** `def` (`md5(pg_get_functiondef)`, which
+  embeds the body), the two body-derived hashes the comparator records. Both trace to one cause: source stores a **raw**
+  `prosrc`, while the migration and any
   `pg_get_functiondef`-based re-apply store the **normalized** body. Staging therefore holds the normalized form, so
   both its raw-body hash (`src`) and its re-rendered `pg_get_functiondef` hash (`def`) differ from source's. On the
   worked example the delta is a leading newline; the general mechanism is `pg_get_functiondef` normalization —
@@ -123,7 +124,8 @@ prevents the recurrence on any future regen.
 
 ## Owner decisions
 
-1. **Allowlist the 121 normalization artifacts** (§2) — semantically identical, flagged only on raw-prosrc byte hash.
+1. **Allowlist the 121 normalization artifacts** (§2) — identical non-body attributes; flagged only on the body-text
+   hashes (raw `prosrc` and its `pg_get_functiondef` rendering), not on any attribute, signature, or logic.
 2. **Accept platform exceptions 1–10** (§3) — not correctable on Aurora, or staging is equal/stricter.
 3. **Decide on view `VtidLedger`** (§3 item 11) — reconcile with `CREATE OR REPLACE VIEW`, or accept.
 4. **`REVOKE EXECUTE … FROM PUBLIC`** on the seven functions (§1) to restore least privilege (non-additive).
