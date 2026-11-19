@@ -1111,14 +1111,14 @@ jobs:
             --query 'services[0].taskDefinition' --output text)
           echo "Current task definition: $TD_ARN"
           for pair in \
-            "SEC_JWT:vitana/supabase/prod/jwt-secret" \
-            "SEC_ANON:vitana/supabase/prod/anon-key" \
+            "SEC_JWT:vitana/supabase/staging/jwt-secret" \
+            "SEC_ANON:vitana/supabase/staging/anon-key" \
             "SEC_GEMINI:vitana/gateway/staging/google-gemini-api-key" \
             "SEC_OPENAI:vitana/gateway/staging/openai-api-key" \
             "SEC_DEEPSEEK:vitana/gateway/staging/deepseek-api-key" \
             "SEC_FISH:vitana/gateway/staging/fish-api-key" \
             "SEC_GITHUB_TOKEN:vitana/github/pat" \
-            "SEC_SERVICE_TOKEN:vitana/supabase/prod/service-role-key" ; do
+            "SEC_SERVICE_TOKEN:vitana/gateway/staging/service-token" ; do
             VAR="${pair%%:*}"; NAME="${pair#*:}"
             ARN=$(aws secretsmanager describe-secret --secret-id "$NAME" --query ARN --output text 2>/dev/null || true)
             if [ -z "$ARN" ] || [ "$ARN" = "None" ]; then
@@ -1352,6 +1352,20 @@ jobs:
                 | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
                       .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)')
           printf '%s' "$NEW_DEF" > "$RUNNER_TEMP/new-task-def.json"
+      # VTID-05803: own step (the render step is at the VTID-03788 20,000-char limit).
+      - name: Refuse production credentials on the staging task definition (VTID-05803)
+        run: |
+          set -e
+          # Staging never carries production credentials (owner instruction 2026-11-18): refuse to register a revision whose
+          # secrets or environment name a production Supabase/Aurora secret, the production cluster or its master secret.
+          # Supabase Auth keeps working through the staging-named secrets above, whose values the operator sets.
+          PROD_LEAK=$(cat "$RUNNER_TEMP/new-task-def.json" | jq -r '[ .containerDefinitions[] | ((.secrets // [])[] | {n:.name, v:(.valueFrom // "")}),
+              ((.environment // [])[] | {n:.name, v:(.value // "")})
+            | select(.v | test("secret:vitana/(supabase|aurora)/prod/|vitana-aurora-prod|secret:rds!cluster-4dab93b8")) | .n ] | unique | join(" ")')
+          if [ -n "$PROD_LEAK" ]; then
+            echo "::error::refusing to register: production credentials on a staging task definition: $PROD_LEAK"; exit 1
+          fi
+          echo "Production-credential gate: none bound"
       # VTID-05023 part 9: register + roll split out of the step above (which is
       # at the VTID-03788 20,000-char limit) so the data_backend switch fits.
       # keep (every push) passes the task definition through byte for byte.

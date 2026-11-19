@@ -131,8 +131,11 @@ describe('VTID-04225: the staging gateway task def carries the credentials those
     expect(staging).toContain('"DEV_AUTOPILOT_SCAN_TOKEN",');
   });
 
-  it('wires GATEWAY_SERVICE_TOKEN to the same secret the prod task def maps it to (require-service-or-admin.ts fails closed without it)', () => {
-    expect(staging).toContain('"SEC_SERVICE_TOKEN:vitana/supabase/prod/service-role-key"');
+  // VTID-05803 (contract changed on purpose, owner instruction 2026-11-18): staging no longer receives the production
+  // service-role key as its service token; it gets its own staging secret. It is still required (fails closed if absent).
+  it('wires GATEWAY_SERVICE_TOKEN to the staging service-token secret, never the production service-role key (require-service-or-admin.ts fails closed without it)', () => {
+    expect(staging).toContain('"SEC_SERVICE_TOKEN:vitana/gateway/staging/service-token"');
+    expect(staging).not.toContain('vitana/supabase/prod/service-role-key"');
     expect(staging).toMatch(/\{name:"GATEWAY_SERVICE_TOKEN", valueFrom:\$SEC_SERVICE_TOKEN\}/);
   });
 

@@ -12,6 +12,7 @@ include:
       - "tpl-assist.yml"
       - "tpl-deploy.yml"
       - "tpl-verify.yml"
+      - "vtid-05803-acceptance.gitlab-ci.yml"
 
 workflow:
   auto_cancel:
@@ -22,6 +23,7 @@ workflow:
     - if: "$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == \"push\""
     - if: "$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == \"schedule\""
     - if: "$CI_COMMIT_BRANCH =~ /^assist\\//"
+    - if: "$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE =~ /^(api|web|schedule)$/ && $VTID05803_ACCEPTANCE =~ /^(discover|run|auto)$/"
     - when: "never"
 
 stages:

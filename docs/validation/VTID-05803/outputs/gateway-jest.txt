@@ -1,0 +1,98 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in <repo>/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in <repo>/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in <repo>/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in <repo>/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-05803-stage-deploy-no-prod-secrets.test.ts
+  VTID-05803 staging gateway deploy: no production credentials
+    ✓ resolves only staging-named auth secrets (6 ms)
+    ✓ refuses production credentials before the task definition is written (2 ms)
+    ✓ leaves the production deploy unchanged (2 ms)
+
+PASS test/vtid-04225-no-dead-gcp-urls-in-workflows.test.ts
+  VTID-04225: no .github/workflows/*.yml references the decommissioned GCP estate
+    ✓ scans a non-trivial number of workflow files (guard against a wrong path) (30 ms)
+    ✓ no workflow references a Cloud Run host (*.run.app) (10 ms)
+    ✓ no workflow references a decommissioned GCP project id (16 ms)
+  VTID-04225: the loop-feeding workflows target the AWS STAGING gateway (staging-first, §16)
+    ✓ DEV-AUTOPILOT.yml POSTs the scan to staging by default, prod only via an explicit gateway_url dispatch input (1 ms)
+    ✓ DEV-AUTOPILOT-IMPACT.yml ingests impact findings into the staging gateway
+    ✓ E2E-ORB-MONITOR.yml tests the staging Command Hub and reports failures to the staging self-healing endpoint (1 ms)
+    ✓ E2E-TEST-RUN.yml uses the staging gateway for the hub and the self-healing report (1 ms)
+    ✓ SCREEN-LOAD-TIMING.yml reports timings to the staging gateway
+    ✓ VISUAL-VERIFY-FRONTEND.yml defaults to the staging frontend (1 ms)
+    ✓ the retired GCP-only workflows are gone, not merely disabled (1 ms)
+    ✓ SMOKE-WELCOME-GREETING.yml no longer waits on the retired EXEC-DEPLOY workflow_run
+  VTID-04225: the e2e harness defaults match the workflows
+    ✓ playwright.config.ts and fixtures/test-users.ts default HUB_URL to the staging gateway (1 ms)
+  VTID-04225: the staging gateway task def carries the credentials those workflows present
+    ✓ pins DEV_AUTOPILOT_SCAN_TOKEN from the repo secret (requireScanToken rejects everything when it is unset) (1 ms)
+    ✓ wires GATEWAY_SERVICE_TOKEN to the staging service-token secret, never the production service-role key (require-service-or-admin.ts fails closed without it)
+    ✓ wires GATEWAY_INTERNAL_TOKEN only when its secret exists (ERP-bridge pattern — never fails a deploy)
+    ✓ adds none of the three to the prod gateway workflow (prod promotion is a separate decision)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/eng-platform-oidc-roles.test.ts
+  OIDC trust policies
+    ✓ eng-platform-oidc-staging-deploy-trust.json trusts exactly the plan §3 subjects with StringEquals (5 ms)
+    ✓ eng-platform-oidc-v1-preview-trust.json trusts exactly the plan §3 subjects with StringEquals (1 ms)
+    ✓ eng-platform-oidc-drift-readonly-trust.json trusts exactly the plan §3 subjects with StringEquals (1 ms)
+    ✓ eng-platform-oidc-prod-deploy-trust.json trusts exactly the plan §3 subjects with StringEquals (1 ms)
+  scoped permission policies
+    ✓ eng-platform-oidc-v1-preview-policy.json has no wildcard action or resource (1 ms)
+    ✓ eng-platform-oidc-drift-readonly-policy.json has no wildcard action or resource (4 ms)
+    ✓ the drift role can read only the claude-readonly secret, never the master secret
+  setup-github-oidc-roles.sh
+    ✓ runs in strict mode, guards the account and defaults to dry-run
+    ✓ reaches every IAM write only behind --apply (1 ms)
+    ✓ gives the staging role an explicit policy and never copies the static-key user
+    ✓ fills PassRole from the five staging services and refuses a prod-named role (1 ms)
+    ✓ never creates access keys, deletes users or keys, or uses a wildcard trust
+  staging deploy policy
+    ✓ uses Resource "*" only for actions AWS cannot scope
+    ✓ deploys only the five staging ECS services, never a prod (-awsdr) service
+    ✓ has no IAM action except PassRole to ECS tasks, and cannot read secret values
+    ✓ covers every secret name the staging workflows describe, create or write (2 ms)
+
+PASS test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts
+  VTID-03788: every run: step in the gateway deploy workflows is valid bash
+    ✓ AWS-STAGE-DEPLOY-GATEWAY.yml: YAML parses and has at least one bash run: step (27 ms)
+    ✓ AWS-STAGE-DEPLOY-GATEWAY.yml: every run: step passes bash -n (102 ms)
+    ✓ AWS-STAGE-DEPLOY-GATEWAY.yml: no single run: step exceeds 20,000 characters (GitHub Actions workflow-file size limit) (3 ms)
+    ✓ AWS-PROD-DEPLOY-GATEWAY.yml: YAML parses and has at least one bash run: step (3 ms)
+    ✓ AWS-PROD-DEPLOY-GATEWAY.yml: every run: step passes bash -n (115 ms)
+    ✓ AWS-PROD-DEPLOY-GATEWAY.yml: no single run: step exceeds 20,000 characters (GitHub Actions workflow-file size limit) (2 ms)
+    ✓ AWS-STAGE-DEPLOY-GATEWAY.yml: the task-definition update step has no apostrophe inside its jq program (VTID-03787/VTID-03788 regression) (2 ms)
+
+Test Suites: 4 passed, 4 total
+Tests:       42 passed, 42 total
+Snapshots:   0 total
+Time:        1.288 s
+Ran all test suites matching /test\/vtid-05803-stage-deploy-no-prod-secrets.test.ts|test\/vtid-04225-no-dead-gcp-urls-in-workflows.test.ts|test\/orb\/live\/upstream\/staging-deploy-workflow-bash-syntax.test.ts|test\/eng-platform-oidc-roles.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
