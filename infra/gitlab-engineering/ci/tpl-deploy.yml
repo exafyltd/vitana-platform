@@ -54,6 +54,9 @@
     - 'echo "central scripts: ${PLATFORM_PROJECT_PATH} main @ $(git -C "$CENTRAL_DIR" rev-parse HEAD)"'
   script:
     - 'VITE_ARGS=""; if [ "$DEPLOY_SERVICE" = "community-app" ]; then VITE_ARGS="--vite-staging-env $CI_COMMIT_SHA"; fi'
+    # The gateway image copies codeintel-src/platform and codeintel-src/vitana-v1 (services/gateway/Dockerfile:59-60), which the
+    # build context does not hold: stage them as staging-gateway-deploy.gitlab-ci.yml does (job 5002 failed with "not found").
+    - 'if [ "$DEPLOY_SERVICE" = "gateway" ]; then rm -rf services/gateway/codeintel-src && mkdir -p services/gateway/codeintel-src/platform services/gateway/codeintel-src/vitana-v1 && tar --exclude=node_modules --exclude=services/gateway/codeintel-src --exclude=.buildkit-cache --exclude=.buildkit-cache.new -cf - . | tar -xf - -C services/gateway/codeintel-src/platform && git clone --quiet --depth 1 "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/vitana/vitana-v1.git" services/gateway/codeintel-src/vitana-v1 && rm -rf services/gateway/codeintel-src/vitana-v1/.git; fi'
     - sh "$CENTRAL_DIR/scripts/eng/deploy/build-image.sh" --context "$DEPLOY_IMAGE_CONTEXT" --dockerfile "$DEPLOY_DOCKERFILE" --out image.oci.tar --cache-dir "$BUILDKIT_CACHE_DIR" $VITE_ARGS
   artifacts:
     when: on_success
