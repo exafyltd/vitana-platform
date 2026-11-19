@@ -78,10 +78,11 @@ vtid-05803-gateway-preview-preflight:
           echo "task definition $TD: $(jq -c . "$P/td.json")"
           TASK_ROLE=$(jq -r '.task // empty' "$P/td.json"); EXEC_ROLE=$(jq -r '.exec // empty' "$P/td.json")
           # Production-credential check (names/ARNs only, never values).
+          # Every container, secret names + ARNs and SUPABASE/AURORA env NAMES only (never env values).
           aws ecs describe-task-definition --task-definition "$TD" \
-            --query 'taskDefinition.containerDefinitions[0].{secrets:secrets[].[name,valueFrom],env:environment[?contains(name,`SUPABASE`)||contains(name,`AURORA`)].[name,value]}' \
+            --query 'taskDefinition.containerDefinitions[].{c:name,secrets:secrets[].[name,valueFrom],env:environment[?contains(name,`SUPABASE`)||contains(name,`AURORA`)].name}' \
             --output json > "$P/td-secrets.json" 2>/dev/null || true
-          PRODREF=$(jq -r '[.secrets[]?|select(.[1]|test("secret:vitana/(supabase|aurora)/prod/|vitana-aurora-prod|secret:rds!cluster-4dab93b8"))|.[0]]|join(" ")' "$P/td-secrets.json" 2>/dev/null || true)
+          PRODREF=$(jq -r '[.[]?|.secrets[]?|select(.[1]|test("secret:vitana/(supabase|aurora)/prod/|vitana-aurora-prod|secret:rds!cluster-4dab93b8"))|.[0]]|join(" ")' "$P/td-secrets.json" 2>/dev/null || true)
           echo "production-credential secrets bound to $ECS_SERVICE: ${PRODREF:-none}"
         else
           echo "describe-task-definition DENIED/FAILED: $(tr '\n' ' ' < "$P/td.err" | cut -c1-300)"
@@ -207,11 +208,15 @@ vtid-05803-gateway-preview-deploy:
     expire_in: 30 days
     paths: [deploy-runs.json, deploy-state.json, deploy-out/]
   before_script:
-    - apt-get -qq update >/dev/null && apt-get -qq install -y --no-install-recommends awscli ca-certificates >/dev/null
+    - apt-get -qq update >/dev/null && apt-get -qq install -y --no-install-recommends awscli ca-certificates jq curl >/dev/null
     - printf '%s' "$GITLAB_OIDC_TOKEN" > "$AWS_WEB_IDENTITY_TOKEN_FILE"
     - aws sts get-caller-identity
   script:
     - node scripts/eng/deploy/deploy-ecs.mjs deploy --service gateway-preview --cluster "$ECS_CLUSTER" --ecs-service "$ECS_SERVICE" --push-file push-image.json --sha "$CI_COMMIT_SHA" --mode live --runs-file "$DEPLOY_RUNS_FILE" --state-file deploy-state.json --out-dir deploy-out --repo-root "$CI_PROJECT_DIR"
+    # STAGING-VERIFY reads deploy-runs.json keyed by the run.mjs service name; the preview is served through the `gateway`
+    # target (STAGING_TARGETS.gateway = preview-aws-gateway), so the verify job runs with VERIFY_SERVICE=gateway. Re-key the
+    # entry deploy-ecs.mjs wrote (service "gateway-preview") to "gateway" so the verify job actually consumes it.
+    - jq 'map(if .service == "gateway-preview" then .service = "gateway" else . end)' "$DEPLOY_RUNS_FILE" > "$DEPLOY_RUNS_FILE.tmp" && mv "$DEPLOY_RUNS_FILE.tmp" "$DEPLOY_RUNS_FILE" && cat "$DEPLOY_RUNS_FILE"
     - |
       set -euo pipefail
       # Verify the running image digest matches the digest we pushed (deploy-ecs.mjs already verified the served commit).
@@ -275,5 +280,11 @@ vtid-05803-gateway-preview-verify:
   variables:
     VERIFY_SERVICE: gateway
     DEPLOY_RUNS_FILE: $CI_PROJECT_DIR/deploy-runs.json
+    # Job-scoped only: the deploy job already confirmed the served commit, so run STAGING-VERIFY immediately instead of
+    # shadow-wait's up-to-60-minute poll, and fail closed if staging does not serve the commit (shadow mode would exit 0
+    # "not_comparable" on a stamp miss — a green no-op). This does NOT re-enable the production-write jobs: .record /
+    # .vtid-close / .notify-platform read the PIPELINE-level DELIVERY_MODE (which stays "shadow") and are push-only, so
+    # they never run in this api/web operation pipeline.
+    DELIVERY_MODE: "live"
   rules:
     - if: $CI_COMMIT_BRANCH == "main" && $CI_PIPELINE_SOURCE =~ /^(api|web)$/ && $VTID05803_GATEWAY_DEPLOY == "preview"
