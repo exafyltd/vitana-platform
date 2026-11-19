@@ -20,6 +20,9 @@ const GIT_ENV = {
   GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0',
 };
 delete GIT_ENV.GITHUB_REPOSITORY; // queue.mjs would otherwise ask gh for plan PRs
+// Inside a GitLab job the runner's own CI_* variables (CI_PROJECT_NAME=vitana-platform, CI_SERVER_URL, CI_JOB_TOKEN, ...)
+// would reach the CLI under test and override the fixture worlds; each test passes the CI variables it means explicitly.
+for (const k of Object.keys(GIT_ENV)) if (k.startsWith('CI_') || k === 'GITLAB_CI') delete GIT_ENV[k];
 const g = (cwd, ...args) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8', env: GIT_ENV, stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 const write = (dir, file, text) => { fs.mkdirSync(path.dirname(path.join(dir, file)), { recursive: true }); fs.writeFileSync(path.join(dir, file), text); };
 const tmpDirs = [];

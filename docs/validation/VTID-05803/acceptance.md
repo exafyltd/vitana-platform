@@ -15,9 +15,15 @@ the jest test checks the pattern and the step order.
 AC-3. `data_backend=aurora` and the VTID-05781/VTID-05023 roll step are unchanged (shared path byte-identical to the pinned step).
 TEST: `scripts/ci/staging-db/cutover-workflows.test.mjs` 41/41.
 
-AC-4. Production deploy unchanged. TEST: both new tests, "production deploy keeps its production secrets".
+AC-4. Production deploy unchanged.
+TEST: both new tests, "production deploy keeps its production secrets".
 
-AC-5. The run-step size limit holds. TEST: `test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts`.
+AC-5. The run-step size limit holds.
+TEST: `test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts`.
+
+AC-6. The CI checks this change needs pass in the GitLab runner image (Debian bookworm: mawk, GitLab `CI_*` variables).
+TEST: `scripts/ci/staging-db/aws-scripts.test.mjs` with mawk as `awk` (the bundle splitter used `{n}` intervals, which mawk
+1.3.4 does not support); `scripts/eng/gitlab-gates.test.mjs` with the runner's `CI_*` variables set.
 
 Contract change on purpose: `test/vtid-04225-no-dead-gcp-urls-in-workflows.test.ts` asserted the staging service token is the
 production service-role key; it now asserts the staging secret and the absence of the production one.
