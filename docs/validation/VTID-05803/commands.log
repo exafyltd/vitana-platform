@@ -43,3 +43,10 @@ node --test scripts/eng/free-tier-guard.test.mjs scripts/eng/fleet-classes-struc
 # scoped to vitana-gateway / -erp-bridge / -kiro-runner / -postgrest-aurora-proxy; vitana-gateway-preview is NOT listed,
 # and the a11 ledger recorded the same UpdateService denial for vitana-gitlab-deploy-role on preview. The =preflight run
 # confirms this first-hand; if BLOCKED the owner adds the preview service ARN to the role's UpdateService resources.
+# VTID-05803 schema-acceptance correction (Kiro 5), owner steering 2026-11-19: Kiro 6 done, comparator confirmed correct,
+# A07/A08/A09 differences are genuine missing objects. New operation vtid-05803-schema-acc.gitlab-ci.yml (operations.json
+# trigger VTID05803_SCHEMA_ACC=probe|apply), on the existing vitana-aurora-staging-migrate task; no new infra/IAM/restore.
+# Baseline (acceptance run pipeline 589 job 4095, task 51d43a9b, commit 327a9da1): container exit 17, A07/A08/A09 differ.
+# probe republishes k5.py evidence to the generic package registry (deploy role cannot read S3); apply = sha256-pinned
+# additive correction.sql, destructive+DML guard, single writable transaction, then k5.py re-verify. Token kept out of artifacts.
+# pipeline-gen 30/30; GitLab CI lint valid (both jobs resolve).

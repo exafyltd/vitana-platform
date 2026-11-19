@@ -1,0 +1,144 @@
+# VTID-05803 Aurora staging schema-acceptance correction (operation file of vitana/vitana-platform; declared in
+# infra/gitlab-engineering/operations.json). The settings sync copies this file to vitana/ci-config; edit it here.
+#
+# Owner instruction 2026-11-19: Kiro 6's work is done and the A07/A08/A09 comparator (scripts/aws/staging-acceptance/k5.py)
+# is confirmed correct — the differences are genuine missing schema objects, not expected migration transformations. This
+# operation lets the acceptance owner (Kiro 5) read the per-object diff and apply the smallest non-destructive, additive
+# correction, through the EXISTING authorized path only: GitLab OIDC -> $AWS_STAGING_ROLE_ARN (vitana-gitlab-deploy-role)
+# -> ecs run-task on the existing vitana-aurora-staging-migrate task (network of vitana-postgrest-aurora-proxy). No new AWS
+# resource, role, secret, task family, IAM policy, or restore mechanism. Never touches production; never starts DMS.
+#
+# Why this exists: the comparator writes its per-object evidence (report.json, a07-diff.txt, a08/a09 outputs) to
+# s3://vitana-code-index/... under the TASK role, but vitana-gitlab-deploy-role cannot read S3 or CloudWatch (confirmed:
+# 403 / AccessDenied), so neither this CI lane nor the sandbox can see the diff. The task here therefore also re-publishes
+# the evidence to this project's generic package registry (which the job token can read), so the acceptance owner can read
+# the exact differences and craft the minimal fix.
+#
+# Two trigger values of VTID05803_SCHEMA_ACC:
+#   probe  READ-ONLY. Runs the pinned k5.py comparator (both DB sessions default_transaction_read_only=on) and publishes
+#          its evidence to the package registry. Shows the exact missing objects. allow_failure on exit 1 (REJECTED is the
+#          expected pre-correction state; the evidence is what matters).
+#   apply  Downloads a correction SQL bundle (vtid-05803-schema-acc/fix/correction.sql, sha256-pinned via K5_FIX_SHA256)
+#          that the acceptance owner uploaded after reading the diff, REFUSES it if it contains any destructive or
+#          data-modifying statement (DROP / TRUNCATE / DELETE / REVOKE / INSERT / UPDATE / MERGE / COPY / ALTER ... DROP),
+#          asserts the target is the staging writer, applies it to staging in ONE
+#          writable transaction (ON_ERROR_STOP, so a failure rolls back and nothing partial is left), then re-runs the
+#          pinned k5.py comparator and publishes the evidence. Exit 0 only when A07/A08/A09 all pass.
+
+.vtid-05803-schema-acc-base:
+  stage: verify
+  needs: []
+  tags: [vitana-eng-v1]
+  image: public.ecr.aws/docker/library/alpine:3.20
+  interruptible: false
+  retry: 0
+  timeout: 60m
+  id_tokens:
+    GITLAB_OIDC_TOKEN:
+      aud: https://sts.amazonaws.com
+  variables:
+    AWS_REGION: eu-central-1
+    AWS_DEFAULT_REGION: eu-central-1
+    AWS_ROLE_ARN: $AWS_STAGING_ROLE_ARN
+    AWS_WEB_IDENTITY_TOKEN_FILE: /tmp/oidc-token
+    CLUSTER: Vitana-ECS-Cluster
+    NET_FROM_SERVICE: vitana-postgrest-aurora-proxy
+    K5_TD: vitana-aurora-staging-migrate:2
+    K5_DATA: schema-only
+  artifacts:
+    when: always
+    expire_in: 30 days
+    paths: [schema-acc/]
+  script:
+    - |
+      set -uo pipefail
+      apk add --no-cache aws-cli jq curl coreutils >/dev/null
+      mkdir -p schema-acc; S=schema-acc
+      printf '%s' "$GITLAB_OIDC_TOKEN" > "$AWS_WEB_IDENTITY_TOKEN_FILE"
+      ACCT=$(aws sts get-caller-identity --query Account --output text) || { echo "sts failed"; exit 2; }
+      [ "$ACCT" = 472838866351 ] || { echo "not account 472838866351 (got $ACCT)"; exit 2; }
+      MODE="${VTID05803_SCHEMA_ACC:?set VTID05803_SCHEMA_ACC=probe|apply}"
+      case "$MODE" in probe|apply) ;; *) echo "VTID05803_SCHEMA_ACC must be probe or apply"; exit 2;; esac
+      case "$K5_TD" in vitana-aurora-staging-migrate:[0-9]*) ;; *) echo "K5_TD must be a vitana-aurora-staging-migrate revision"; exit 2;; esac
+      PKG="$CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/generic/vtid-05803-schema-acc"
+      AUTH="JOB-TOKEN: $CI_JOB_TOKEN"
+      # Stage the canonical committed comparator into the package registry; the task downloads it (keeps the ECS override
+      # small and always equal to scripts/aws/staging-acceptance/k5.py).
+      K5PY=scripts/aws/staging-acceptance/k5.py
+      test -f "$K5PY" || { echo "missing $K5PY"; exit 2; }
+      K5SHA=$(sha256sum "$K5PY" | cut -d' ' -f1)
+      curl -fsS -H "$AUTH" --upload-file "$K5PY" "$PKG/runner/k5.py" >/dev/null || { echo "could not stage k5.py"; exit 2; }
+      echo "staged k5.py sha256=$K5SHA"
+      RUN="$(date -u +%Y%m%dT%H%M%SZ)-k5-schema-acc-$MODE"
+      OUT="s3://vitana-code-index/vtid-05803/staging/runs/$RUN"
+      # Container name + staging host from the task definition; network from the proxy service (same as the acceptance job).
+      aws ecs describe-task-definition --task-definition "$K5_TD" --query taskDefinition > "$S/td.json" 2>"$S/td.err" || { echo "describe $K5_TD failed"; exit 2; }
+      CNAME=$(jq -r '.containerDefinitions[0].name' "$S/td.json")
+      PGH=$(jq -r '.containerDefinitions[0].environment[]? | select(.name=="PGHOST") | .value' "$S/td.json")
+      case "$PGH" in *prod*) echo "task PGHOST names production: refused"; exit 2;; vitana-aurora-staging.*|vitana-aurora-staging-*) ;; *) echo "task PGHOST is not the staging writer: refused"; exit 2;; esac
+      NET=$(aws ecs describe-services --cluster "$CLUSTER" --services "$NET_FROM_SERVICE" --query 'services[0].networkConfiguration.awsvpcConfiguration' --output json | jq -c '{awsvpcConfiguration: (.assignPublicIp="DISABLED")}')
+      # Build the container command for the chosen mode.
+      COMMON='set -u; export DEBIAN_FRONTEND=noninteractive; apt-get update -qq && apt-get install -y -qq --no-install-recommends python3 awscli ca-certificates xz-utils curl postgresql-client >/dev/null || exit 20; mkdir -p /w/out; cd /w; A="JOB-TOKEN: $K5_TOKEN"; curl -fsS -H "$A" "$K5_PKG/runner/k5.py" -o /w/k5.py || exit 21; echo "$K5_PY_SHA256  /w/k5.py" | sha256sum -c - >/dev/null || exit 22;'
+      PUBLISH='for f in report.json a07-diff.txt a07-allowlist-used.txt a07-source.txt a07-staging.txt a08-source.txt a08-staging.txt a09-staging.txt probe-source.txt probe-staging.txt run.log; do [ -f /w/out/$f ] && curl -fsS -H "$A" --upload-file /w/out/$f "$K5_PKG/$K5_RUN/$f" >/dev/null 2>&1 || true; done;'
+      if [ "$MODE" = probe ]; then
+        CMD="$COMMON python3 /w/k5.py; rc=\$?; $PUBLISH exit \$rc"
+      else
+        : "${K5_FIX_SHA256:?apply needs K5_FIX_SHA256 (sha256 of the uploaded correction.sql)}"
+        # Additive, non-destructive, atomic apply, then re-verify with the same comparator.
+        APPLY='curl -fsS -H "$A" "$K5_PKG/fix/correction.sql" -o /w/correction.sql || exit 23; echo "$K5_FIX_SHA256  /w/correction.sql" | sha256sum -c - >/dev/null || exit 24; if grep -iEn "(^|;)[[:space:]]*(drop|truncate|delete|revoke|insert|update|merge|copy)[[:space:]]|[[:space:]]drop[[:space:]]+(table|schema|index|function|constraint|policy|type|sequence|view|trigger|column|role|owned|database|materialized)" /w/correction.sql; then echo "REFUSED: correction.sql contains a destructive or data-modifying statement (DROP/TRUNCATE/DELETE/REVOKE/INSERT/UPDATE/MERGE/COPY); schema-additive only"; exit 25; fi; case "$PGHOST" in *prod*) echo "PGHOST names production"; exit 26;; vitana-aurora-staging.*|vitana-aurora-staging-*) ;; *) echo "PGHOST not staging"; exit 26;; esac; echo "applying correction.sql ($(wc -l </w/correction.sql) lines) to $PGHOST"; PGSSLMODE=${PGSSLMODE:-require} PGDATABASE=${K5_DB:-vitana} PGOPTIONS="-c statement_timeout=900000" psql -X -v ON_ERROR_STOP=1 --single-transaction -f /w/correction.sql || exit 27; echo "correction applied";'
+        CMD="$COMMON $APPLY python3 /w/k5.py; rc=\$?; $PUBLISH exit \$rc"
+      fi
+      OV=$(jq -cn --arg c "$CNAME" --arg cmd "$CMD" --arg tok "$CI_JOB_TOKEN" --arg pkg "$PKG" --arg sha "$K5SHA" \
+        --arg run "$RUN" --arg out "$OUT" --arg data "$K5_DATA" --arg fsha "${K5_FIX_SHA256:-}" \
+        '{containerOverrides:[{name:$c,command:["bash","-c",$cmd],environment:[
+           {name:"K5_TOKEN",value:$tok},{name:"K5_PKG",value:$pkg},{name:"K5_PY_SHA256",value:$sha},
+           {name:"K5_RUN",value:$run},{name:"K5_OUT",value:$out},{name:"K5_DATA",value:$data},
+           {name:"K5_FIX_SHA256",value:$fsha}]}]}')
+      # The override carries the short-lived CI_JOB_TOKEN, so it is written outside the artifact path and never captured.
+      echo "$OV" > /tmp/overrides.json; OVB=$(wc -c < /tmp/overrides.json); echo "override bytes: $OVB (ECS limit 8192)"; [ "$OVB" -lt 8192 ] || { echo "override too large"; exit 2; }
+      echo "run $RUN: mode=$MODE td=$K5_TD container=$CNAME evidence=$OUT and package $PKG/$RUN/"
+      # --query extracts only the task ARN and any failures, so the token-bearing override is never written to an artifact.
+      aws ecs run-task --cluster "$CLUSTER" --task-definition "$K5_TD" --launch-type FARGATE --count 1 \
+        --network-configuration "$NET" --overrides "file:///tmp/overrides.json" --started-by "k5-schema-acc-$CI_JOB_ID" \
+        --query '{taskArn:tasks[0].taskArn,failures:failures}' --output json > "$S/run-task.json" 2>"$S/run-task.err" \
+        || { echo "run-task refused: $(tr '\n' ' ' <"$S/run-task.err" | cut -c1-400)"; exit 2; }
+      TASK=$(jq -r '.taskArn // empty' "$S/run-task.json")
+      [ -n "$TASK" ] || { echo "no task started: $(jq -c .failures "$S/run-task.json")"; exit 2; }
+      echo "task $TASK"
+      for i in $(seq 1 110); do
+        ST=$(aws ecs describe-tasks --cluster "$CLUSTER" --tasks "$TASK" --query 'tasks[0].lastStatus' --output text 2>/dev/null || echo UNKNOWN)
+        [ "$ST" = STOPPED ] && break
+        [ $((i % 4)) -eq 0 ] && echo "  $(date -u +%H:%M:%S) $ST"
+        sleep 30
+      done
+      # Only the status fields (no overrides/env), so the token never reaches an artifact.
+      aws ecs describe-tasks --cluster "$CLUSTER" --tasks "$TASK" \
+        --query '{lastStatus:tasks[0].lastStatus,exitCode:tasks[0].containers[0].exitCode,stopCode:tasks[0].stopCode,stoppedReason:tasks[0].stoppedReason,containerReason:tasks[0].containers[0].reason}' \
+        --output json > "$S/describe-task.json" 2>/dev/null || { echo "describe-tasks failed"; exit 2; }
+      EXIT=$(jq -r '.exitCode // ""' "$S/describe-task.json")
+      SR=$(jq -r '.stoppedReason // ""' "$S/describe-task.json")
+      echo "container exit=${EXIT:-none} stoppedReason=$SR"
+      # Pull the evidence the task published to the package registry so it lands in the job artifacts and the log.
+      for f in report.json a07-diff.txt a07-allowlist-used.txt a08-source.txt a08-staging.txt a09-staging.txt run.log; do
+        curl -fsS -H "$AUTH" "$PKG/$RUN/$f" -o "$S/$f" 2>/dev/null && echo "fetched $f ($(wc -c <"$S/$f") bytes)" || true
+      done
+      if [ -f "$S/report.json" ]; then echo "===== report.json ====="; jq '{result,exit_code,diag,reason,staging:.staging,source:.source,a07:{differences:.a07.differences,unexplained:.a07.unexplained,absent_roles:.a07.absent_roles,sample:.a07.sample},a08:.a08,a09:.a09,verdict}' "$S/report.json" 2>/dev/null || cat "$S/report.json"; fi
+      if [ -f "$S/a07-diff.txt" ]; then echo "===== a07-diff.txt (first 120) ====="; head -120 "$S/a07-diff.txt"; fi
+      case "$EXIT" in
+        0) echo "SCHEMA ACCEPTANCE: PASS (A07/A08/A09)"; exit 0 ;;
+        1|1[0-7]) echo "SCHEMA ACCEPTANCE: still REJECTED (container $EXIT) — see report.json above"; [ "$MODE" = probe ] && exit 1 || exit 1 ;;
+        "") echo "no container exit code (stoppedReason=$SR)"; exit 2 ;;
+        *) echo "container diagnostic/setup code $EXIT (20-27 = apply/setup guardrails; 4x/5x/6x/70/90 = k5.py codes)"; exit 2 ;;
+      esac
+
+vtid-05803-schema-acc-probe:
+  extends: .vtid-05803-schema-acc-base
+  allow_failure:
+    exit_codes: [1]
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main" && $CI_PIPELINE_SOURCE =~ /^(api|web)$/ && $VTID05803_SCHEMA_ACC == "probe"
+
+vtid-05803-schema-acc-apply:
+  extends: .vtid-05803-schema-acc-base
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main" && $CI_PIPELINE_SOURCE =~ /^(api|web)$/ && $VTID05803_SCHEMA_ACC == "apply"
