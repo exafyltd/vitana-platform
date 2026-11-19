@@ -50,3 +50,26 @@ node --test scripts/eng/free-tier-guard.test.mjs scripts/eng/fleet-classes-struc
 # probe republishes k5.py evidence to the generic package registry (deploy role cannot read S3); apply = sha256-pinned
 # additive correction.sql, destructive+DML guard, single writable transaction, then k5.py re-verify. Token kept out of artifacts.
 # pipeline-gen 30/30; GitLab CI lint valid (both jobs resolve).
+
+# 2026-11-19 — final acceptance evidence (analysis of already-published runs; no new tooling, no DB/production access)
+# Deliverable 1 — security of the 7 PUBLIC-EXECUTE functions (read applied defs = source pg_get_functiondef):
+#   -> 6/7 SECURITY DEFINER; all pin search_path (public,pg_temp | public,pg_catalog); none reference
+#      auth|vault|pgsodium|extensions|storage|net|pgmq|cron. PUBLIC is the Postgres-default extra; role grants
+#      (service_role, +vitana_governance_owner x2) already applied. Recommend REVOKE EXECUTE ... FROM PUBLIC.
+# Deliverable 2 — 121 "changed function" = prosrc-normalization artifacts. From ev-a07-source.txt / ev-a07-staging.txt
+#   (full fingerprints, run 20261119T190330Z) vs the applied bodies in the generated correction:
+#     non-body attributes byte-identical source==staging : 121/121
+#     staging src=md5(prosrc) == md5(applied pg_get_functiondef body) : 119/121
+#       (match_memories_v2, memory_facts_semantic_search not re-applied — public.vector identity-sig mismatch —
+#        retain the original migration's already-normalized body; attributes identical like the other 119)
+#     worked example agents_registry_set_updated_at(): applied body md5 = staging src = 44a734d202e32e7782c215138dc4c54e;
+#       source src (raw prosrc) = ff228cc831ee96ed74b31e275acb646e  -> the pg_get_functiondef normalization delta.
+#   full per-function table: outputs/function-fingerprint-evidence.tsv
+# Deliverable 3 — 11 platform exceptions (ev-a07-diff.txt): pg_cron/pg_net/pgmq/supabase_vault (Supabase-only), vector
+#   0.8.0->0.8.1 (staging newer), owner schema:public (pg_database_owner vs vitana_staging_admin), matview
+#   ai_usage_month_by_user_provider (identical def hash; only populated=true vs false), 2 wallet_transactions FKs +
+#   partner_terms_acceptances check (NOT VALID vs validated — staging stricter), VtidLedger view (deferred, reconcilable).
+# Deliverable 4 — duplicate identity sequence plan_sparring_shadow_log_id_seq1 (identity double-provision in the tables
+#   pass); 3 A07 lines (extra sequence + extra owner + changed sequence); harmless/unused; removal is a DROP.
+# Deliverable 5 — docs/validation/VTID-05803/final-acceptance-package.md (owner package; reconciles 142 = 121+11+7+3).
+# Residual reconciliation verified: wc -l ev-a07-diff.txt = 142.
