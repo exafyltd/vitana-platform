@@ -15,9 +15,23 @@
 # not installable on Aurora; vector is a newer version on staging), the `public` schema owner, materialized views, and
 # "changed" constraints on already-present tables (would need a destructive drop+recreate). K5_SCOPE=tables emits only the
 # 6 tables (+deps); default/all also emits the function CREATE OR REPLACE set.
-import os, re, subprocess as S, sys, urllib.parse as U
+import os, re, socket, subprocess as S, sys, urllib.parse as U
 W = os.environ.get("K5_W", "/w"); O = W + "/out"; DIFF = O + "/a07-diff.txt"; OUT = O + "/correction.sql"
 SCOPE = os.environ.get("K5_SCOPE", "all")
+REF = "inmkhvwdcuyhnxkgfvsb"  # the Supabase source project (same constant k5.py uses)
+
+def tcp(h, p):
+    # Reachability probe used for the source-host fallback below (same shape as k5.py's).
+    for fam in (socket.AF_INET, socket.AF_INET6):
+        try:
+            for a in {x[4][0] for x in socket.getaddrinfo(h, p, fam)}:
+                try:
+                    socket.create_connection((a, p), 5).close(); return True
+                except OSError:
+                    pass
+        except OSError:
+            pass
+    return False
 
 def ql(s):
     return "'" + str(s).replace("'", "''") + "'"
@@ -34,7 +48,14 @@ def src_env():
     cr, _, hp = r.rpartition("@"); su, _, sw = cr.partition(":"); hp, _, pq = hp.partition("/")
     sd = pq.split("?")[0] or "postgres"
     sh, _, sp = hp.rpartition(":") if hp.count(":") == 1 else (hp, "", "")
-    return conn_env(sh, int(sp or 5432), U.unquote(su), U.unquote(sw), sd)
+    sp = int(sp or 5432); su = U.unquote(su); sw = U.unquote(sw)
+    # k5.py (the comparator this reads the diff from) connects to the source through the session pooler because the direct
+    # db.<ref>.supabase.co host is IPv6-only and unreachable from the task network. Mirror that fallback exactly so the
+    # generator reads the SAME source k5.py compared against (probe evidence: source_fallback=1, pooler, PG 17.4).
+    if sh == "db.%s.supabase.co" % REF and not tcp(sh, sp):
+        sh, sp, su = os.environ.get("POOLER_HOST", "aws-1-eu-north-1.pooler.supabase.com"), 5432, "postgres." + REF
+        sys.stderr.write("source fallback: session pooler %s as %s\n" % (sh, su))
+    return conn_env(sh, sp, su, sw, sd)
 
 def q(env, sql):
     p = S.run(["psql", "-X", "-q", "-At", "-F", "\x1f", "-R", "\x1e", "-v", "ON_ERROR_STOP=1",
