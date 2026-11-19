@@ -14,6 +14,7 @@ import { projectsFrom, isLoopEnabled, autonomyFrom } from './controls';
 import { createOasisLedger } from './ledger';
 import { createEngine, DEFAULT_CYCLE_MS, type CycleResult, type Engine } from './engine';
 import { createExecutorTaskPort, createLearnPort, createReviewerPort, executorFromEnv, type ExecutorGateway, type Llm, type DevMemoryWriter, type PatternStore } from './adapters';
+import { createDevAutopilotGitlabGateway } from './dev-autopilot-gateway';
 import type { LoopDeps } from './context';
 import type { ReviewerPort } from './ports';
 
@@ -182,9 +183,9 @@ export function gatewayBindings(): RuntimeBindings {
       const r = await callViaRouter('validator', user, { service: 'delivery-loop', systemPrompt: system, maxTokens: 2000, allowFallback: true });
       return r.ok && typeof r.text === 'string' && !r.truncated ? { ok: true, text: r.text, model: r.model ?? null } : { ok: false, error: r.truncated ? 'reviewer_answer_truncated' : r.error ?? 'llm_failed' };
     },
-    // No executor gateway is bound here: Dev Autopilot has no GitLab host, and which path may start work is the owner's decision
-    // (see ExecutorTaskPort). Until one is bound the loop refuses every dispatch and says so on the issue.
-    executors: {},
+    // The GitLab-native Dev Autopilot executor (repairs of failed merge-request pipelines, on the merge request's own branch). Bound is
+    // not on: the port refuses every dispatch until the owner sets DELIVERY_LOOP_EXECUTOR=dev-autopilot (executorFromEnv).
+    executors: { 'dev-autopilot': createDevAutopilotGitlabGateway() },
     isArmed: () => isAutopilotExecutionArmed(),
   };
   /* eslint-enable @typescript-eslint/no-var-requires */

@@ -1,0 +1,60 @@
+# Red on base, slice 8 (2026-11-19T19:28:34Z). base = 340f5f084c. Each block: one part taken out, its tests run, everything restored.
+
+## 1. Bridge guards: dev-autopilot-bridge.ts at base (gitlab-target.ts present, so only the guards are missing)
+      1 Tests:       18 failed, 7 passed, 25 total
+      1     ✕ spawnChildExecution refuses a GitLab-hosted parent: no child row is written
+      1     ✕ self_healed is refused before the first write, with no triage and no GitHub call
+      1     ✕ revertExecutionPR refuses it on its own: no PR close and no branch delete
+      1     ✕ reverted is refused before the first write, with no triage and no GitHub call
+      1     ✕ queued is refused before the first write, with no triage and no GitHub call
+      1     ✕ is refused even when the row only claims to be GitLab-hosted (a malformed gitlab block)
+      1     ✕ isFixModeEligible is false for it, whatever PR fields it carries
+      1     ✕ in status running is refused with no triage, no GitHub call and no write
+      1     ✕ in status failed is refused with no triage, no GitHub call and no write
+      1     ✕ in status ci is refused with no triage, no GitHub call and no write
+      1     ✕ held_overlap is refused before the first write, with no triage and no GitHub call
+      1     ✕ failed_escalated is refused before the first write, with no triage and no GitHub call
+      1     ✕ cooling is refused before the first write, with no triage and no GitHub call
+      1     ✕ completed is refused before the first write, with no triage and no GitHub call
+      1     ✕ cancelled is refused before the first write, with no triage and no GitHub call
+      1     ✕ BRIDGEABLE_STATUSES is exactly those states
+      1     ✕ awaiting_approval is refused before the first write, with no triage and no GitHub call
+      1     ✕ auto_archived is refused before the first write, with no triage and no GitHub call
+
+## 2. Workspace: agent-workspace.ts at base (no remote override, no head check, no lease, no merge-base read)
+      3     TypeError: (0 , agent_workspace_1.mergeBaseWithTarget) is not a function
+      1 Tests:       7 failed, 2 passed, 9 total
+      1     ✕ refuses a target branch that would be read as an option
+      1     ✕ refuses a lease that is not a full sha before anything is committed or pushed
+      1     ✕ refuses a branch that moved since the failure, before anything else runs, and the error carries no token
+      1     ✕ pushes with --force-with-lease on that exact head and never with a bare --force
+      1     ✕ falls back to a plain fetch on a complete clone
+      1     ✕ deepens, fetches the target branch and answers the merge base; it never merges, resets, checks out or pushes
+      1     ✕ clones the branch itself from the GitLab remote it is given, stays on it, and reports the head
+
+## 3. The GitLab execution: run-agent-execution.ts and dev-autopilot-execute.ts at base (the operator pipeline suite, GitLab scenarios)
+      1     ✕ without the executor's GitLab token it fails closed: nothing is cloned or pushed
+      1 Tests:       4 failed, 71 skipped, 75 total
+      1     ✕ queue → claim → clone the MR branch at the failing head → fix → lease push → archived; no PR, no GitHub call, no bridge
+      1     ✕ a repair that changes nothing ends failed and is never bridged: no triage, no child, the MR branch untouched
+      1     ✕ a branch that moved since the failure is left alone: the run stops at the clone, before the model is asked
+
+## 4. The enqueue and the target: dev-autopilot-gitlab-repair.ts and gitlab-target.ts hidden (new modules)
+      1 Tests:       0 total
+      1     Cannot find module '../src/services/dev-autopilot-gitlab-repair'
+      1 Tests:       0 total
+      1     Cannot find module '../src/services/autopilot-agent/gitlab-target'
+
+## 5. The loop side: drive.ts and ports.ts at base, then dev-autopilot-gateway.ts hidden, then runtime.ts at base
+      1 Tests:       1 failed, 35 passed, 36 total
+      1     ✕ hands the executor one dispatch key per attempt (the intent) and the failing pipeline, head and merge request
+      1 Tests:       0 total
+      1     Cannot find module '../../src/services/delivery-loop/dev-autopilot-gateway'
+      1 Tests:       1 failed, 12 passed, 13 total
+      1     ✕ load none of the heavy modules until something is used, and expose the executors the owner must bind
+
+## restored: the same suites on the change
+Test Suites: 7 passed, 7 total
+Tests:       142 passed, 142 total
+Test Suites: 1 passed, 1 total
+Tests:       75 passed, 75 total

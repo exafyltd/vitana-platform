@@ -893,6 +893,8 @@ export type CicdEventType =
   | 'dev_autopilot.execution.completed'
   | 'dev_autopilot.execution.failed'
   | 'dev_autopilot.execution.auto_archived'
+  // GitLab-native repair (delivery loop, 2026-11-19): the fix was pushed to the GitLab merge request's own branch; GitLab's pipeline judges it.
+  | 'dev_autopilot.execution.gitlab_pushed'
   | 'dev_autopilot.execution.pr_closed_reconciled' // VTID-04280
   | 'dev_autopilot.batch.first_failure'
   | 'dev_autopilot.kill_switch.activated'

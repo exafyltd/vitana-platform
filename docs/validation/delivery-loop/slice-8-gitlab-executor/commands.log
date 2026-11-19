@@ -1,0 +1,16 @@
+# Slice 8: commands run (Kiro 3, session kiro-exafyltd-202611181014-b8e5). cwd services/gateway unless stated.
+# Branch kiro/delivery-loop-engine/gitlab-executor = kiro/delivery-loop (c941677039) + merge of origin/main 79a84a31b5 (340f5f084c, no conflict) + this slice.
+# Tests first: the new suites were written before the code and run on the base: outputs are in /projects/sandbox/.kiro/artifacts/cutover-k3/loop/s8-red-*.txt
+npx jest <7 new/changed suites>                                  -> base: 7 suites failed, 27 tests failed (missing modules and behaviour); the 4465 suite could not load
+npx jest <7 new/changed suites>                                  -> change: 7 suites, 142 tests passed
+npx jest test/vtid-04465-operator-pipeline-regression.test.ts    -> 75 passed (71 existing + 4 GitLab-native repair scenarios)
+npx jest <12 Dev Autopilot suites around the change>             -> 266 passed (bridge, fix mode, merge conflicts, executor pins, flood guard, injector, route, source-type locks, exploration budget)
+npx tsc --noEmit -p tsconfig.json --preserveSymlinks            -> exit 0 (outputs/tsc.txt: without --preserveSymlinks only TS2742 on 4 unchanged files, from this worktree's linked node_modules)
+npx tsc --noEmit --strict ... <the new tests, delivery-loop tests> -> exit 0
+npx jest --silent --maxWorkers=4 --json   (first run)           -> 30558 tests, 4 failed: the 2 pre-existing + 2 in vtid-04466 (source-string pins of `!fixMode`, renamed `!continuing`); pins updated on purpose (scope.json)
+npx jest --silent --maxWorkers=4 --json   (final run)           -> 1811 suites, 30559 tests, 30497 passed, 2 failed (pre-existing: storage-provider, vtid-04226) -> outputs/full-gateway-suite.txt
+# red on base: /projects/sandbox/.kiro/artifacts/cutover-k3/loop/red-on-base-s8.sh (restoring trap; base pinned to 340f5f084c) -> outputs/red-on-base.txt
+#   1 bridge at base: 18 of 25 guard tests fail | 2 workspace at base: 7 of 9 fail | 3 runner + execute at base: 4 of 4 GitLab scenarios fail
+#   4 enqueue / target hidden: the suites cannot load | 5 loop: drive+ports at base 1 fails, gateway hidden cannot load, runtime at base 1 fails
+#   restored: 142 of 142 and 75 of 75
+git checkout -- specs/command-hub-symbol-index.json            # the full suite regenerates it; not part of the change

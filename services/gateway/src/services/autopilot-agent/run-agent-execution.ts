@@ -36,7 +36,8 @@ import { checkChangedFilesScope, hasTestCoverage } from './agent-scope';
 import { makeCheckRunner, runJest, runTsc, selectRunnerJestTargets } from './agent-validate';
 import { collectTestSelectionInput, isTestSelectionOn, runTestSelectionCheck } from '../jev/gates/test-selection-gate';
 import { changeRiskInput, isChangeRiskOn, runChangeRiskCheck } from '../jev/gates/change-risk-gate';
-import { cleanupWorkspace, commitAndPush, findFilesWithConflictMarkers, gitDiffAgainstBase, linkNodeModules, listChangedFiles, listChangedFilesSince, mergeBaseIntoBranch, prepareWorkspace, pullCodeIndex, scrubSecret, type MergeBaseResult, type Workspace } from './agent-workspace';
+import { cleanupWorkspace, commitAndPush, findFilesWithConflictMarkers, gitDiffAgainstBase, linkNodeModules, listChangedFiles, listChangedFilesSince, mergeBaseIntoBranch, mergeBaseWithTarget, prepareWorkspace, pullCodeIndex, scrubToken, type MergeBaseResult, type Workspace } from './agent-workspace';
+import { gitlabExecutorConfig, gitlabRemoteUrl, isGitlabExecution, parseGitlabTarget, type GitlabTarget } from './gitlab-target';
 import { approvalRequired } from '../dev-autopilot-approval';
 import { startExecutionHeartbeat } from './agent-heartbeat';
 import { RepeatedCheckGuard } from './agent-check-guard';
@@ -77,6 +78,8 @@ export type AgentExecutionResult = {
   /** VTID-04032: the operator cancelled the execution while it ran; never bridged to self-heal. */
   cancelled?: boolean;
   ok: boolean; pr_url?: string; branch?: string; pr_number?: number; session_id?: string; error?: string;
+  /** A GitLab-native repair: the commit went to the GitLab merge request's own branch (head_sha); there is no PR. */
+  host?: 'gitlab';
   // VTID-04029: the branch is pushed, the PR is NOT opened — a human decides
   // on the diff first (dev-autopilot-approval.ts).
   awaiting_approval?: boolean; base_sha?: string; head_sha?: string; pr_title?: string; pr_body?: string;
@@ -139,12 +142,24 @@ export async function runAgentExecutionSession(
   exec: ExecutionRow & { finding_id: string; plan_version: number },
 ): Promise<AgentExecutionResult> {
   const executionId = exec.id;
-  // VTID-04017: fix mode — continue on the parent execution's PR branch.
-  const fixMode = parseFixMode(exec.metadata);
-  const branch = fixMode ? fixMode.branch : `dev-autopilot/${executionId.slice(0, 8)}`;
+  // GitLab-native repair (owner instruction 2026-11-19): the GitLab merge request's own branch, cloned from and pushed to GitLab.
+  // Nothing on GitHub is cloned, pushed, opened or merged for it. A row that claims GitLab but carries no valid target fails closed.
+  const gitlabMode = isGitlabExecution(exec);
+  const glParsed = gitlabMode ? parseGitlabTarget(exec.metadata) : null;
+  const gitlab: GitlabTarget | null = glParsed && glParsed.ok ? glParsed.target : null;
+  // VTID-04017: fix mode — continue on the parent execution's PR branch. Never for a GitLab-hosted row.
+  const fixMode = gitlabMode ? null : parseFixMode(exec.metadata);
+  const branch = gitlab ? gitlab.source_branch : fixMode ? fixMode.branch : `dev-autopilot/${executionId.slice(0, 8)}`;
   const sessionId = `agent_${randomUUID().slice(0, 12)}`;
   const short = executionId.slice(0, 8);
   const startedAt = Date.now();
+  if (gitlabMode && !gitlab) {
+    return { ok: false, error: `gitlab_target_invalid: ${glParsed && !glParsed.ok ? glParsed.error : 'no target'}`, session_id: sessionId };
+  }
+  const repoLabel = gitlab ? gitlab.project_path : `${GITHUB_OWNER}/${GITHUB_REPO}`;
+  const baseBranchName = gitlab ? gitlab.target_branch : GITHUB_BASE_BRANCH;
+  /** Fix mode on GitHub, or a GitLab repair: both continue on an existing branch and are judged on its whole diff. */
+  const continuing = !!fixMode || !!gitlab;
 
   const planR = await supa<Array<{ plan_markdown: string; files_referenced: string[] | null }>>(
     s, `/rest/v1/dev_autopilot_plan_versions?finding_id=eq.${exec.finding_id}&version=eq.${exec.plan_version}&limit=1`,
@@ -165,9 +180,14 @@ export async function runAgentExecutionSession(
     : typeof exec.metadata?.failure_reason === 'string' ? (exec.metadata.failure_reason as string) : null;
 
   if (DRY_RUN) {
+    // A GitLab repair has no stand-in result: a pretended push would let the loop wait for a pipeline that never comes.
+    if (gitlab) return { ok: false, error: 'dry_run: a GitLab-native repair pushes nothing while DEV_AUTOPILOT_DRY_RUN is on', session_id: `dry_${short}`, branch };
     return { ok: true, pr_url: `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/pull/DRY-RUN-${short}`, pr_number: 0, branch, session_id: `dry_${short}` };
   }
-  const token = process.env.GITHUB_SAFE_MERGE_TOKEN;
+  // The executor's own GitLab token for a GitLab repair (never the GitHub token, never the loop's read token); fails closed without it.
+  const glConfig = gitlab ? gitlabExecutorConfig(process.env) : null;
+  if (glConfig && !glConfig.ok) return { ok: false, error: `gitlab_not_configured: ${glConfig.error}`, session_id: sessionId, branch };
+  const token = glConfig && glConfig.ok ? glConfig.token : process.env.GITHUB_SAFE_MERGE_TOKEN;
   if (!token) return { ok: false, error: 'GITHUB_SAFE_MERGE_TOKEN not set — the agent executor cannot clone or push', session_id: sessionId, branch };
 
   const onStep = stepEmitter(executionId, telemetryVtid);
@@ -183,10 +203,10 @@ export async function runAgentExecutionSession(
   // in `finally` whatever happens (best-effort, never throws).
   const run: AgentRunUsage = {
     execution_id: executionId, vtid: activatedVtid, provider: null, model: null, input_tokens: 0, output_tokens: 0, cost_usd: 0,
-    turns: 0, fix_rounds: 0, checks_refused: 0, fallback_used: false, fix_mode: !!fixMode, outcome: 'failed', error: null, elapsed_ms: 0, recorded_at: '',
+    turns: 0, fix_rounds: 0, checks_refused: 0, fallback_used: false, fix_mode: continuing, outcome: 'failed', error: null, elapsed_ms: 0, recorded_at: '',
   };
   const finish = (r: AgentExecutionResult): AgentExecutionResult => {
-    run.outcome = !r.ok ? (r.cancelled ? 'cancelled' : 'failed') : r.awaiting_approval ? 'awaiting_approval' : fixMode ? 'fix_pushed' : 'pr_opened';
+    run.outcome = !r.ok ? (r.cancelled ? 'cancelled' : 'failed') : r.awaiting_approval ? 'awaiting_approval' : continuing ? 'fix_pushed' : 'pr_opened';
     run.error = r.ok ? null : (r.error || 'unknown').slice(0, 500);
     return r;
   };
@@ -213,10 +233,18 @@ export async function runAgentExecutionSession(
   let memFinished: FinishArgs | null = null;
   try {
     const scope = await loadScope(s);
-    onStep({ turn: 0, kind: 'llm', detail: fixMode
-      ? `fix mode: continuing PR #${fixMode.pr_number} on ${GITHUB_OWNER}/${GITHUB_REPO}@${branch} (parent ${fixMode.parent_execution_id.slice(0, 8)})`
-      : `preparing workspace ${GITHUB_OWNER}/${GITHUB_REPO}@${GITHUB_BASE_BRANCH} → ${branch}` });
-    ws = await prepareWorkspace({ owner: GITHUB_OWNER, repo: GITHUB_REPO, baseBranch: GITHUB_BASE_BRANCH, branch, token, existingBranch: !!fixMode });
+    onStep({ turn: 0, kind: 'llm', detail: gitlab
+      ? `gitlab repair: merge request !${gitlab.mr_iid} of ${gitlab.project_path}, branch ${branch} at ${gitlab.sha.slice(0, 8)} (pipeline ${gitlab.pipeline_id})`
+      : fixMode
+        ? `fix mode: continuing PR #${fixMode.pr_number} on ${GITHUB_OWNER}/${GITHUB_REPO}@${branch} (parent ${fixMode.parent_execution_id.slice(0, 8)})`
+        : `preparing workspace ${GITHUB_OWNER}/${GITHUB_REPO}@${GITHUB_BASE_BRANCH} → ${branch}` });
+    ws = gitlab && glConfig && glConfig.ok
+      // The merge request's branch, from GitLab, at the head that failed: a branch that moved since is refused before the model runs.
+      ? await prepareWorkspace({
+        owner: gitlab.project_path.split('/')[0], repo: gitlab.project_path.split('/').pop() as string, baseBranch: gitlab.target_branch, branch, token,
+        existingBranch: true, remoteUrl: gitlabRemoteUrl(glConfig.origin, gitlab.project_path, token), expectHeadSha: gitlab.sha,
+      })
+      : await prepareWorkspace({ owner: GITHUB_OWNER, repo: GITHUB_REPO, baseBranch: GITHUB_BASE_BRANCH, branch, token, existingBranch: !!fixMode });
     // In fix mode the diff that matters is the whole PR (parent's committed
     // work + this run's edits) versus the base branch.
     // VTID-04217: fix mode first merges the latest base branch into the PR
@@ -224,16 +252,21 @@ export async function runAgentExecutionSession(
     // failure; a conflicted one leaves markers the agent is told to resolve,
     // and the runner refuses to push while any remain (below).
     let mergeBase: MergeBaseResult | null = null;
-    if (fixMode) {
+    let gitlabBase: string | null = null;
+    if (gitlab) {
+      // The merge request's base, read only: nothing is merged into the branch, which gets exactly one commit (the repair).
+      gitlabBase = await mergeBaseWithTarget(ws.repoDir, gitlab.target_branch);
+      onStep({ turn: 0, kind: 'tool', name: 'runner:merge_base', detail: `merge request base ${gitlab.target_branch}@${gitlabBase.slice(0, 8)} (read only, nothing merged)` });
+    } else if (fixMode) {
       mergeBase = await mergeBaseIntoBranch(ws.repoDir, GITHUB_BASE_BRANCH);
       onStep({
         turn: 0, kind: 'tool', name: 'runner:merge_base', isError: mergeBase.status === 'conflict',
         detail: `merge origin/${GITHUB_BASE_BRANCH}@${mergeBase.baseSha.slice(0, 8)} → ${mergeBase.status}${mergeBase.conflicts.length ? `: ${mergeBase.conflicts.join(', ')}` : ''}`,
       });
     }
-    const baseSha = mergeBase ? mergeBase.baseSha : ws.baseSha;
+    const baseSha = gitlabBase || (mergeBase ? mergeBase.baseSha : ws.baseSha);
     const linked = await linkNodeModules(ws.repoDir, 'services/gateway', AGENT_NODE_MODULES_SOURCE);
-    console.log(`${LOG_PREFIX} [${short}] workspace ${ws.repoDir} base=${baseSha.slice(0, 8)} node_modules=${linked}${fixMode ? ' fix_mode' : ''}`);
+    console.log(`${LOG_PREFIX} [${short}] workspace ${ws.repoDir} base=${baseSha.slice(0, 8)} node_modules=${linked}${fixMode ? ' fix_mode' : ''}${gitlab ? ' gitlab' : ''}`);
 
     // VTID-04223: engineering memory IN — the W4a bootstrap pack (service map,
     // schema index, open PRs, recent deploy/autopilot events), top-10
@@ -254,7 +287,7 @@ export async function runAgentExecutionSession(
     // VTID-04229: the S3-published codebase index (Graphify graph + RepoWise
     // facts, rebuilt on every merge to main). Loaded once per run; when it is
     // absent the three index tools are simply not declared.
-    const codeIndex = await pullCodeIndex(`${GITHUB_OWNER}/${GITHUB_REPO}`);
+    const codeIndex = await pullCodeIndex(repoLabel);
     onStep({
       turn: 0, kind: 'tool', name: 'runner:code_index', isError: codeIndex.stats.enabled && !codeIndex.bundle,
       detail: codeIndex.bundle
@@ -263,7 +296,7 @@ export async function runAgentExecutionSession(
       data: { code_index: codeIndex.stats },
     });
     const systemPrompt = buildAgentSystemPrompt({
-      repo: `${GITHUB_OWNER}/${GITHUB_REPO}`, baseBranch: GITHUB_BASE_BRANCH, branch, vtid: telemetryVtid,
+      repo: repoLabel, baseBranch: baseBranchName, branch, vtid: telemetryVtid,
       allowScope: scope.allow_scope, denyScope: scope.deny_scope,
       conventions: loadAutopilotContext(), claudeMdExcerpt: await readClaudeMdExcerpt(ws.repoDir),
       memoryContext: memory.text,
@@ -282,22 +315,24 @@ export async function runAgentExecutionSession(
         providerOverride: override.provider, modelOverride: override.model,
       });
 
-    const repoDirChanged = async () => (fixMode ? listChangedFilesSince(repoDir, baseSha) : listChangedFiles(repoDir));
+    const repoDirChanged = async () => (continuing ? listChangedFilesSince(repoDir, baseSha) : listChangedFiles(repoDir));
     let changed = await repoDirChanged();
     // VTID-04224 Phase 2: flag-gated file-scoped dev_agent_memory recall,
     // fail-open — a recall failure must never stall or fail an execution.
     let devMemoryBlock = '';
     if (isWorkerMemoryRecallEnabled()) {
       try {
-        const memFiles = fixMode ? changed.map((c) => c.path) : (plan.files_referenced || []);
+        const memFiles = continuing ? changed.map((c) => c.path) : (plan.files_referenced || []);
         devMemoryBlock = await buildFileScopedMemoryBlock(memFiles, 'vitana-platform');
       } catch {
         devMemoryBlock = '';
       }
     }
-    let prompt = fixMode
+    let prompt = continuing
       ? buildFixModeTaskPrompt({
-        vtid: telemetryVtid, planMarkdown: plan.plan_markdown, prUrl: fixMode.pr_url, branch, prFiles: changed.map((c) => c.path),
+        vtid: telemetryVtid, planMarkdown: plan.plan_markdown,
+        prUrl: gitlab ? (gitlab.mr_url || `${gitlab.project_path}!${gitlab.mr_iid}`) : fixMode ? fixMode.pr_url : '',
+        branch, prFiles: changed.map((c) => c.path),
         ciEvidence: priorFailure || '', attempt: (exec.auto_fix_depth || 0) + 1, maxAttempts: (exec.auto_fix_depth || 0) + 1 + AGENT_MAX_FIX_ROUNDS,
         devMemoryBlock,
         mergeBase: mergeBase ? { status: mergeBase.status, conflicts: mergeBase.conflicts, baseBranch: GITHUB_BASE_BRANCH } : undefined,
@@ -306,14 +341,14 @@ export async function runAgentExecutionSession(
     // VTID-04466: the index's answer for this task, before turn 1. Live, the
     // agent made ~95 navigation calls per capped run and queried the index
     // ~once per six runs; starting from the map replaces the blind search.
-    if (!fixMode) {
+    if (!continuing) {
       const startingMap = buildStartingMap(codeIndex.bundle, plan.plan_markdown, plan.files_referenced || []);
       if (startingMap) {
         prompt = `${prompt}\n\n${startingMap}`;
         onStep({ turn: 0, kind: 'tool', name: 'runner:starting_map', detail: `${startingMap.length} chars from the code index`, data: { starting_map_chars: startingMap.length } });
       }
     }
-    const explorationEnabled = !fixMode && process.env.AGENT_EXPLORATION_BUDGET_ENABLED !== 'false';
+    const explorationEnabled = !continuing && process.env.AGENT_EXPLORATION_BUDGET_ENABLED !== 'false';
     let history: LLMRouterMessage[] = [];
     let finished: { summary: string; pr_title: string; pr_body: string } | null = null;
     let provider: string | undefined; let model: string | undefined; let fallbackUsed = false;
@@ -358,6 +393,10 @@ export async function runAgentExecutionSession(
         // clean base merge IS the change when the failure was the conflict,
         // so that case is exempt — the merge commit is already on HEAD.)
         return finish({ ok: false, error: 'fix mode: agent finished without changing anything on the PR branch', session_id: sessionId, branch });
+      }
+      if (gitlab && (await listChangedFiles(repoDir)).length === 0) {
+        // The merge request's diff is non-empty (its own work) but this run changed nothing: pushing would re-run the same red pipeline.
+        return finish({ ok: false, error: 'gitlab repair: the agent finished without changing anything on the merge request branch', session_id: sessionId, branch });
       }
       if (mergeBase) {
         // VTID-04217: never push a conflict marker. Scan the files git
@@ -417,6 +456,18 @@ export async function runAgentExecutionSession(
       }
     }
 
+    // --- GitLab-native repair: one commit on the failing head, pushed with a lease on it. No PR contract, no evidence files written
+    //     into the merge request's tree, no PR, no approval hold (the merge request is the lane's own and keeps its own review); the
+    //     merge request's pipeline judges the push and the delivery loop reads it. ---
+    if (gitlab) {
+      const commitMessage = `fix(ci): ${finished.pr_title.slice(0, 120)} (repair of pipeline ${gitlab.pipeline_id})\n\n${finished.summary}\n\n`
+        + `Delivery-Work: ${gitlab.work_key}\nDev-Autopilot-Execution: ${executionId}`;
+      if (cancelRequested) return cancelledResult();
+      const { sha } = await commitAndPush(repoDir, { message: commitMessage, branch, token, force: false, leaseSha: gitlab.sha });
+      onStep({ turn: totalTurns, kind: 'finish', detail: `pushed ${sha.slice(0, 8)} on ${branch} → merge request !${gitlab.mr_iid} of ${gitlab.project_path} (leased on ${gitlab.sha.slice(0, 8)})` });
+      return finish({ ok: true, host: 'gitlab', branch, head_sha: sha, base_sha: gitlab.sha, session_id: sessionId });
+    }
+
     // --- PR contract + evidence pack (VTID-04002), written into the tree ---
     // VTID-04333: a feedback-ticket finding carries its FB-… number on the PR.
     const ticketRef = await resolveFeedbackTicketRef(s, findR.ok && findR.data ? findR.data[0] : null);
@@ -473,10 +524,10 @@ export async function runAgentExecutionSession(
       });
     }
     const pr = await openPullRequest(token, branch, contract.title, contract.body);
-    if (!pr.ok) return finish({ ok: false, error: `open PR: ${scrubSecret(pr.error || '?', token)}`, session_id: sessionId, branch });
+    if (!pr.ok) return finish({ ok: false, error: `open PR: ${scrubToken(pr.error || '?', token)}`, session_id: sessionId, branch });
     return finish({ ok: true, pr_url: pr.url, pr_number: pr.number, branch, session_id: sessionId });
   } catch (err) {
-    const msg = scrubSecret(err instanceof Error ? err.message : String(err), token);
+    const msg = scrubToken(err instanceof Error ? err.message : String(err), token);
     run.outcome = 'failed'; run.error = msg.slice(0, 500);
     console.error(`${LOG_PREFIX} [${short}] failed: ${msg}`);
     await emitOasisEvent({

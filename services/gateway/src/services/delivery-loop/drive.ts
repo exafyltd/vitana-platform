@@ -51,7 +51,7 @@ async function carryOut(ctx: Ctx, intent: Intent): Promise<void> {
   if ('dead' in premise) return end(ctx, intent, premise.dead);
 
   await spend(ctx);
-  const outcome = m.action === 'retry_pipeline' ? await retry(ctx, project, m) : await dispatch(ctx, project, m, premise);
+  const outcome = m.action === 'retry_pipeline' ? await retry(ctx, project, m) : await dispatch(ctx, project, m, premise, intent.key);
   if (!outcome.ok) return failed(ctx, intent, outcome.error, outcome.retryable);
 
   if (m.kind === 'repair' || m.kind === 'retry') {
@@ -130,14 +130,14 @@ async function retry(ctx: Ctx, project: string, m: Record<string, unknown>): Pro
   return { ok: false, error: r.error, retryable: r.status === undefined || r.status >= 500 };
 }
 
-async function dispatch(ctx: Ctx, project: string, m: Record<string, unknown>, premise: TaskPremise): Promise<Effect> {
-  const request = await buildTask(ctx, project, m, premise);
+async function dispatch(ctx: Ctx, project: string, m: Record<string, unknown>, premise: TaskPremise, dispatchKey: string): Promise<Effect> {
+  const request = await buildTask(ctx, project, m, premise, dispatchKey);
   const r = await ctx.deps.tasks.dispatch(request);
   return r.ok ? { ok: true, task_id: r.task_id, vtid: r.vtid, execution_id: r.execution_id } : { ok: false, error: r.error, retryable: r.retryable };
 }
 
 /** What the executor is asked to do. Text from GitLab is quoted as data and the rules around it are the loop's. */
-export async function buildTask(ctx: Ctx, project: string, m: Record<string, unknown>, premise: TaskPremise): Promise<TaskRequest> {
+export async function buildTask(ctx: Ctx, project: string, m: Record<string, unknown>, premise: TaskPremise, dispatchKey?: string): Promise<TaskRequest> {
   const kind = m.kind === 'repair' ? 'repair' : m.kind === 'rework' ? 'rework' : 'intake';
   const workKey = String(m.work_key);
   const base = String(m.base_branch ?? 'main');
@@ -191,6 +191,10 @@ export async function buildTask(ctx: Ctx, project: string, m: Record<string, unk
     mr_iid: typeof m.mr_iid === 'number' ? m.mr_iid : null,
     issue_iid: typeof m.issue_iid === 'number' ? m.issue_iid : null,
     hints,
+    ...(dispatchKey ? { dispatch_key: dispatchKey } : {}),
+    repair: kind === 'repair'
+      ? { pipeline_id: Number(m.pipeline_id), sha: typeof m.sha === 'string' ? m.sha : null, mr_url: typeof m.mr_url === 'string' ? m.mr_url : null }
+      : null,
   };
 }
 

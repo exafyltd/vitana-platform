@@ -49,7 +49,8 @@ jest.mock('../src/services/dev-agent-memory', () => require('./operator-pipeline
 
 import { MACHINE_TOKEN, JWT_SECRET } from './operator-pipeline/env-setup';
 import { OperatorPlatform, FakeGitHub, INFLIGHT_UNIQUE_STATUSES, type Row } from './operator-pipeline/fake-operator-platform';
-import { current, envState, model, checks, triage, workspaceLog, tools, text, type ModelCallCtx } from './operator-pipeline/harness';
+import { current, envState, model, checks, triage, workspaceLog, tools, text, gitlabFake, type ModelCallCtx } from './operator-pipeline/harness';
+import { enqueueGitlabRepair } from '../src/services/dev-autopilot-gitlab-repair';
 
 import operatorRouter from '../src/routes/operator';
 import {
@@ -2577,5 +2578,151 @@ describe('Kiro runs survive a gateway deploy (VTID-05068)', () => {
     expect(run(id2)).toMatchObject({ status: 'interrupted', error: 'gateway_task_lost', gateway_task: 'crashed-task' });
     expect(platform.events('operator.kiro.run_reattached').filter((e) => e.metadata?.run_id === id2)).toHaveLength(0);
     gate2.resolve();
+  });
+});
+
+// ===========================================================================
+// GitLab-native repair (delivery loop → Dev Autopilot), owner instruction 2026-11-19:
+// "Implement the GitLab failure adapter against the existing self-healing architecture, but make it GitLab-native. Do not route
+// GitLab failures through GitHub PRs." A new hand-off (CLAUDE.md NEVER 42e/42f): queued by the delivery loop, claimed by the same
+// executor tick, run by the same agent runner, but cloned from and pushed to the GitLab merge request's own branch. GitLab's pipeline
+// judges the result (the delivery loop reads it), so the execution ends at the push, outside every GitHub watcher.
+// ===========================================================================
+
+describe('GitLab-native repair: a failed merge-request pipeline is fixed on the merge request branch, never through GitHub', () => {
+  const MR_BRANCH = 'delivery-loop/fix-greeting';
+  const BROKEN = 'export function greet(name: string): string {\n  return `Hello ${name}`;\n}\n';
+  const MR_TEST = "import { greet } from '../src/services/greeting';\n\ntest('greets by name', () => {\n  expect(greet('Ada')).toBe('Hello, Ada');\n});\n";
+  const MR_URL = 'https://gitlab.test/vitana/vitana-platform/-/merge_requests/12';
+  let failingSha: string;
+
+  beforeEach(() => {
+    gitlabFake.reset();
+    gitlabFake.setBranch('main', MAIN_FILES);
+    failingSha = gitlabFake.setBranch(MR_BRANCH, { ...MAIN_FILES, [GREETING]: BROKEN, [GREETING_TEST]: MR_TEST });
+    Object.assign(process.env, { GITLAB_API_URL: 'https://gitlab.test/api/v4', DEV_AUTOPILOT_GITLAB_TOKEN: 'glpat-fake-executor-token' });
+  });
+  afterEach(() => {
+    delete process.env.GITLAB_API_URL;
+    delete process.env.DEV_AUTOPILOT_GITLAB_TOKEN;
+  });
+
+  function repairRequest() {
+    return {
+      dispatch_key: `intent:repair:vitana/vitana-platform|${MR_BRANCH}|0123456789abcdef:1`,
+      work_key: `repair:vitana/vitana-platform|${MR_BRANCH}|0123456789abcdef`,
+      project_path: 'vitana/vitana-platform',
+      mr_iid: 12,
+      mr_url: MR_URL,
+      source_branch: MR_BRANCH,
+      target_branch: 'main',
+      pipeline_id: 31,
+      sha: failingSha,
+      title: `Repair ${MR_BRANCH}: unit:script_failure`,
+      instructions: 'Pipeline 31 failed in unit.\n--- log ---\n    expected "Hello, Ada" received "Hello Ada"\n--- end of log ---',
+      hints: [],
+    };
+  }
+
+  async function queued(): Promise<string> {
+    const q = await enqueueGitlabRepair(repairRequest(), { s: getSupabase() });
+    if (!q.ok) throw new Error(`enqueue refused: ${q.error}`);
+    return q.execution_id;
+  }
+
+  it('queue → claim → clone the MR branch at the failing head → fix → lease push → archived; no PR, no GitHub call, no bridge', async () => {
+    const execId = await queued();
+    // The same attempt sent again (a crash between the effect and the loop's record) starts nothing new.
+    expect(await enqueueGitlabRepair(repairRequest(), { s: getSupabase() })).toEqual({ ok: true, execution_id: execId, created: false });
+
+    let fixPrompt = '';
+    model.workerRuns.push([
+      (ctx: ModelCallCtx) => { fixPrompt = ctx.prompt; return tools(['read_file', { path: GREETING }]); },
+      tools(['edit_file', { path: GREETING, old_string: 'return `Hello ${name}`;', new_string: 'return `Hello, ${name}`;' }]),
+      tools(['run_check', { kind: 'jest', target: GREETING_TEST }]),
+      tools(['finish', { summary: 'Add the missing comma.', pr_title: 'fix(greeting): comma', pr_body: 'The pipeline expected "Hello, Ada".' }]),
+    ]);
+    await executorTick();
+
+    const ex = platform.execution(execId);
+    expect(ex.status).toBe('auto_archived');
+    for (const githubField of ['pr_url', 'pr_number', 'branch']) expect(ex[githubField] ?? null).toBeNull();
+    expect(ex.metadata.gitlab_result).toEqual(expect.objectContaining({ outcome: 'pushed', branch: MR_BRANCH, head_sha: gitlabFake.branches.get(MR_BRANCH) }));
+
+    // Fix mode on the merge request, with the failing job's own log.
+    expect(fixPrompt).toContain(`You are on branch ${MR_BRANCH}`);
+    expect(fixPrompt).toContain(MR_URL);
+    expect(fixPrompt).toContain('expected "Hello, Ada" received "Hello Ada"');
+
+    // One clone (the MR branch, from GitLab) and one push: a lease on the failing head, onto that same branch.
+    expect(workspaceLog).toEqual([
+      { op: 'clone', branch: MR_BRANCH, existingBranch: true, remote: 'gitlab' },
+      { op: 'push', branch: MR_BRANCH, remote: 'gitlab' },
+    ]);
+    expect(gitlabFake.remotes).toEqual(['https://oauth2:glpat-fake-executor-token@gitlab.test/vitana/vitana-platform.git']);
+    expect(gitlabFake.pushes).toEqual([{ branch: MR_BRANCH, lease: failingSha, sha: gitlabFake.branches.get(MR_BRANCH), files: [GREETING] }]);
+    expect(gitlabFake.filesAt(MR_BRANCH)[GREETING]).toContain('Hello, ${name}');
+
+    // Nothing reached GitHub, nothing was bridged, no VTID row was opened or closed.
+    expect(platform.github.pushes).toEqual([]);
+    expect(platform.github.prs.size).toBe(0);
+    expect(platform.github.calls).toEqual([]);
+    expect(triage.calls).toEqual([]);
+    expect(platform.rows('vtid_ledger')).toEqual([]);
+    expect(platform.events('dev_autopilot.execution.gitlab_pushed')).toHaveLength(1);
+    expect(platform.events('dev_autopilot.execution.pr_opened')).toHaveLength(0);
+
+    // The carrier finding stays inert: never auto-approvable, never reaped into a GitHub execution, no VTID to close.
+    const finding = platform.rows('autopilot_recommendations').find((f) => f.id === ex.finding_id)!;
+    expect(finding).toEqual(expect.objectContaining({ status: 'auto_archived', activated_vtid: null }));
+
+    // No GitHub watcher has anything to take.
+    await ciTick();
+    expect(platform.execution(execId).status).toBe('auto_archived');
+    expect(platform.github.calls).toEqual([]);
+    expect(model.refused).toEqual([]);
+  });
+
+  it('a repair that changes nothing ends failed and is never bridged: no triage, no child, the MR branch untouched', async () => {
+    const execId = await queued();
+    model.workerRuns.push([
+      tools(['read_file', { path: GREETING }]),
+      tools(['finish', { summary: 'Nothing to change.', pr_title: 'noop', pr_body: 'noop' }]),
+    ]);
+    await executorTick();
+    const ex = platform.execution(execId);
+    expect(ex.status).toBe('failed');
+    expect(String(ex.metadata.error)).toMatch(/without changing anything/);
+    expect(triage.calls).toEqual([]);
+    expect(platform.rows('dev_autopilot_executions')).toHaveLength(1);
+    expect(gitlabFake.pushes).toEqual([]);
+    expect(gitlabFake.branches.get(MR_BRANCH)).toBe(failingSha);
+    expect(platform.github.calls).toEqual([]);
+  });
+
+  it('a branch that moved since the failure is left alone: the run stops at the clone, before the model is asked', async () => {
+    const execId = await queued();
+    const someoneElses = gitlabFake.setBranch(MR_BRANCH, { ...MAIN_FILES, [GREETING]: BROKEN, [GREETING_TEST]: MR_TEST, 'docs/note.md': 'a person pushed\n' });
+    await executorTick();
+    const ex = platform.execution(execId);
+    expect(ex.status).toBe('failed');
+    expect(String(ex.metadata.error)).toMatch(/branch moved/);
+    expect(model.workerCalls()).toBe(0);
+    expect(gitlabFake.pushes).toEqual([]);
+    expect(gitlabFake.branches.get(MR_BRANCH)).toBe(someoneElses);
+    expect(triage.calls).toEqual([]);
+    expect(platform.github.calls).toEqual([]);
+  });
+
+  it('without the executor\'s GitLab token it fails closed: nothing is cloned or pushed', async () => {
+    delete process.env.DEV_AUTOPILOT_GITLAB_TOKEN;
+    const execId = await queued();
+    await executorTick();
+    const ex = platform.execution(execId);
+    expect(ex.status).toBe('failed');
+    expect(String(ex.metadata.error)).toMatch(/gitlab_not_configured/);
+    expect(workspaceLog).toEqual([]);
+    expect(gitlabFake.pushes).toEqual([]);
+    expect(triage.calls).toEqual([]);
   });
 });

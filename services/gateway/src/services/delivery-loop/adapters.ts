@@ -145,9 +145,10 @@ export function createReviewerPort(deps: { llm: Llm }): ReviewerPort {
 // ---------------------------------------------------------------------------------------------------------
 
 /**
- * What the executor adapter needs from Dev Autopilot, as a small interface so the adapter is tested without it:
- * `enqueue` creates the finding, plan and execution through the governed path (`approveAutoExecute`, with its kill switch, scope, budget,
- * concurrency and PR-flood gates unchanged) and answers the execution it made, or why it refused.
+ * What the executor adapter needs from Dev Autopilot, as a small interface so the adapter is tested without it: `enqueue` hands the task
+ * to Dev Autopilot's executor and answers the execution it made, or why it refused. The bound implementation is GitLab-native
+ * (dev-autopilot-gateway.ts): a repair of a failed GitLab merge-request pipeline becomes an execution on that merge request's own
+ * branch, run by the existing executor and agent runner, never a GitHub PR.
  */
 export interface ExecutorGateway {
   enqueue(request: TaskRequest): Promise<{ ok: true; execution_id: string; vtid: string | null } | { ok: false; error: string; retryable: boolean }>;
@@ -156,17 +157,13 @@ export interface ExecutorGateway {
 /**
  * Hands a task to Dev Autopilot.
  *
- * FAILS CLOSED, and this is a decision for the owner, not a missing feature. Dev Autopilot today has no GitLab host (it clones from
- * github.com, opens its pull request through api.github.com and hands the result to GitHub-keyed watchers), and every way of reaching
- * it from the loop crosses a governance line that is not this change's to cross:
+ * FAILS CLOSED unless the owner names the executor: `executorFromEnv` answers the bound gateway only with DELIVERY_LOOP_EXECUTOR=
+ * dev-autopilot, and without one every dispatch is refused as NOT retryable, which ends the intent and says so on the issue. The loop
+ * never silently drops work and never starts work through a path nobody switched on.
  *
- *   - the operator on-ramp mints a VTID under an operator's authority (OPERATOR_VTID_SELF_ALLOCATE_ENABLED), and the loop has none;
- *   - a new `source_type` for the loop belongs on the LOCKED, Command-Hub-mirrored list in autopilot-executable-source-types.ts
- *     (four tests pin it), and a VTID for new work is allocated after a sparred plan (CLAUDE.md rules 51 to 55).
- *
- * So the gateway is supplied by the caller, and `executorFromEnv` answers null unless the owner has switched this on explicitly with
- * DELIVERY_LOOP_EXECUTOR=dev-autopilot. Without it every dispatch is refused as NOT retryable, which ends the intent and says so on the
- * issue: the loop never silently drops work and never starts work through a path nobody approved.
+ * What the GitLab-native gateway does not do (each is a decision outside this change): open NEW merge requests for intake (no VTID path
+ * for loop-created work exists; CLAUDE.md rules 51 to 55), answer review rework, or put a new source type on the LOCKED,
+ * Command-Hub-mirrored list in autopilot-executable-source-types.ts. It refuses those, not retryable.
  */
 export function createExecutorTaskPort(gateway: ExecutorGateway | null): TaskPort {
   return {

@@ -29,6 +29,13 @@ export interface TaskRequest {
   issue_iid: number | null;
   /** What is known that may help: the pattern of an earlier verified repair of the same failure. */
   hints: string[];
+  /**
+   * The attempt (the intent's key): an executor starts at most one execution per dispatch key. `key` is the work, shared by every
+   * attempt at one failure, so deduplicating on `key` would turn attempt 2 into a no-op. Optional only for callers that predate it.
+   */
+  dispatch_key?: string;
+  /** A repair: the pipeline that failed, its head and the merge request's address, as GitLab reported them when the attempt was decided. */
+  repair?: { pipeline_id: number; sha: string | null; mr_url: string | null } | null;
 }
 
 export type DispatchResult =

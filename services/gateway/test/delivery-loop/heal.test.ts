@@ -63,6 +63,18 @@ describe('a failed pipeline of a branch the loop owns', () => {
     expect(w.gitlab.notes.some((n) => n.target === 'mr' && n.iid === 12 && n.body.includes('prepares a repair'))).toBe(true);
   });
 
+  it('hands the executor one dispatch key per attempt (the intent) and the failing pipeline, head and merge request', async () => {
+    const w = world();
+    const p = failedMr(w);
+    await w.tick();
+    const intent = topics(w, 'delivery.dispatch.requested')[0];
+    const t = w.tasks.requests[0];
+    expect(t.key).toBe(intent.metadata.work_key); // the work: the same across attempts
+    expect(t.dispatch_key).toBe(intent.metadata.dedupe_key); // the attempt: one execution each
+    expect(t.dispatch_key).not.toBe(t.key);
+    expect(t.repair).toEqual({ pipeline_id: 31, sha: p.sha, mr_url: 'https://gitlab.test/mr/12' });
+  });
+
   it('never writes the text of a log to OASIS', async () => {
     const w = world();
     failedMr(w, 31, { log: '2026-11-19T10:00:01.000000Z 01O Error: SECRET-LOG-MARKER leaked a token\n' });

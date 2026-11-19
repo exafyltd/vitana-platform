@@ -196,7 +196,9 @@ describe('the gateway bindings', () => {
     expect(typeof b.patterns.find).toBe('function');
     expect(typeof b.llm).toBe('function');
     expect(typeof b.isArmed).toBe('function');
-    // Dev Autopilot has no GitLab host, so nothing is bound: the loop refuses dispatches until the owner decides.
-    expect(b.executors).toEqual({});
+    // The GitLab-native Dev Autopilot executor is bound (repairs only). Binding is not switching on: the port still refuses every
+    // dispatch until the owner sets DELIVERY_LOOP_EXECUTOR=dev-autopilot (test/delivery-loop/dev-autopilot-gateway.test.ts).
+    expect(Object.keys(b.executors)).toEqual(['dev-autopilot']);
+    expect(typeof b.executors['dev-autopilot']?.enqueue).toBe('function');
   });
 });
