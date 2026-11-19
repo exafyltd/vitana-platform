@@ -423,11 +423,75 @@ test('package load-stages: report runs each SELECT inside a read-only transactio
 
 test('package: SHA256SUMS covers the stage runner and the four SQL files it runs, and every checksum matches', () => {
   const sums = fs.readFileSync(path.join(PKG, 'SHA256SUMS'), 'utf8');
-  for (const f of ['load-stages.sh', 'run-staging.sh', '../../../../scripts/aws/staging-db-vector-preload.sql', '../../../../scripts/aws/staging-db-vector-postload.sql', '../../../../scripts/aws/staging-db-restore-saved.sql', '../../../../scripts/aws/staging-db-vector-report.sql'])
+  for (const f of ['load-stages.sh', 'run-staging.sh', '../../../../scripts/aws/staging-db-load-probe.sql', '../../../../scripts/aws/staging-db-vector-preload.sql', '../../../../scripts/aws/staging-db-vector-postload.sql', '../../../../scripts/aws/staging-db-restore-saved.sql', '../../../../scripts/aws/staging-db-vector-report.sql'])
     assert.match(sums, new RegExp(`  ${f.replace(/[.]/g, '\\.')}$`, 'm'), f);
   const r = spawnSync('sha256sum', ['-c', 'SHA256SUMS'], { cwd: PKG, encoding: 'utf8' });
   assert.equal(r.status, 0, r.stdout + r.stderr);
   const run = fs.readFileSync(path.join(PKG, 'run-staging.sh'), 'utf8');
   assert.match(run, /pre-load\|post-load\|report\)/);
   assert.ok(run.indexOf('checksums-verified') < run.indexOf('load-stages.sh'), 'stages run only after the commit and checksum checks');
+});
+
+// ── CI runner on the authorized staging execution path (vtid-05803-load-stages.gitlab-ci.yml) ───────────────────────
+const GEN = path.join(ROOT, 'scripts/aws/staging-db-load-stage-ci.mjs');
+const { STAGES: LS_STAGES, payload: lsPayload, strip: lsStrip, CONTAINER_CMD, OVERRIDE_LIMIT, OUT_FILE: LS_YAML } = await import(GEN);
+
+test('CI runner: the committed job is generated from this commit (--check), refuses non-main/non-api runs, and every override fits ECS', () => {
+  const r = spawnSync(process.execPath, [GEN, '--check'], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  const y = fs.readFileSync(LS_YAML, 'utf8');
+  assert.match(y, /- if: \$CI_COMMIT_BRANCH == "main" && \$CI_PIPELINE_SOURCE =~ \/\^\(api\|web\)\$\/ && \$VTID05803_LOAD_STAGE =~ \/\^\(probe\|pre-load\|post-load-1\|post-load-2\|report\)\$\//);
+  assert.match(y, /LS_TD: vitana-aurora-staging-migrate:2\n/);
+  assert.match(y, /\*prod\*\) fin 3 "task definition PGHOST names production"/);
+  assert.doesNotMatch(y, /vitana-aurora-prod|inmkhvwdcuyhnxkgfvsb|AWS_PROD_ROLE_ARN/);
+  for (const s of Object.keys(LS_STAGES)) {
+    const p = lsPayload(s);
+    const env = [{ name: 'LP', value: p.b64 }, { name: 'LPS', value: p.sha256 }, { name: 'STAGE', value: s }, { name: 'OUT', value: 's3://vitana-code-index/vtid-05803/staging/runs/20261119T000000Z-k2-load-post-load-1' }];
+    const bytes = JSON.stringify({ containerOverrides: [{ name: 'migrate', command: ['bash', '-c', CONTAINER_CMD], environment: env }] }).length;
+    assert.ok(bytes < OVERRIDE_LIMIT - 200, `${s}: override ${bytes} bytes`);
+    assert.ok(y.includes(`LPS_${s.replace(/-/g, '_')}: "${p.sha256}"`), `${s}: pinned sha256 in the job`);
+  }
+});
+
+function runContainer(stage, { psqlLine = null, failOn = null } = {}) {
+  const w = fs.mkdtempSync(path.join(os.tmpdir(), 'ctr-'));
+  const bin = path.join(w, 'bin'); fs.mkdirSync(bin);
+  const log = path.join(w, 'calls.log');
+  fs.writeFileSync(path.join(bin, 'apt-get'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
+  fs.writeFileSync(path.join(bin, 'aws'), `#!/bin/sh\necho "aws $*" >> "${log}"\nexit 0\n`, { mode: 0o755 });
+  fs.writeFileSync(path.join(bin, 'psql'), `#!/bin/bash\nprintf 'psql %s\\n' "$*" >> "${log}"\n${failOn ? `case "$*" in *${failOn}*) exit 3;; esac\n` : ''}${psqlLine ? `echo '${psqlLine}'\n` : ''}exit 0\n`, { mode: 0o755 });
+  const p = lsPayload(stage);
+  const cmd = CONTAINER_CMD.replace('mkdir -p /w && cd /w', `mkdir -p ${w}/w && cd ${w}/w`);
+  const r = spawnSync('bash', ['-c', cmd], { encoding: 'utf8', env: { PATH: `${bin}:${process.env.PATH}`, LP: p.b64, LPS: p.sha256, STAGE: stage, OUT: 's3://b/runs/x', PGUSER: 'vitana_staging_admin', PGPASSWORD: 'p@ss:w0rd', PGHOST: WRITER } });
+  return { ...r, calls: fs.existsSync(log) ? fs.readFileSync(log, 'utf8').trim().split('\n') : [], dir: path.join(w, 'w') };
+}
+
+test('CI runner container: payload decodes to the repository files (comments stripped only), runs the stage through load-stages.sh, uploads the output', () => {
+  for (const s of Object.keys(LS_STAGES)) {
+    const r = runContainer(s, { psqlLine: s === 'probe' ? 'PROBE|701|13|0|359|0|f|1|0' : null });
+    assert.equal(r.status, 0, `${s}: ${r.stdout}${r.stderr}`);
+    for (const f of ['docs/validation/VTID-05803/schema-restore-package/load-stages.sh', ...LS_STAGES[s]]) assert.equal(fs.readFileSync(path.join(r.dir, f), 'utf8'), lsStrip(f), `${s}: ${f}`);
+    const psql = r.calls.filter((c) => c.startsWith('psql'));
+    if (['pre-load', 'post-load-1', 'post-load-2'].includes(s)) {
+      assert.equal(psql.length, 1);
+      assert.match(psql[0], new RegExp(`--single-transaction -f \\S+/${LS_STAGES[s][0].split('/').pop().replace(/\./g, '\\.')}$`));
+    }
+    assert.ok(r.calls.some((c) => c === `aws s3 cp out.txt s3://b/runs/x/${s}.txt --only-show-errors`), `${s}: output uploaded`);
+    assert.doesNotMatch(r.stdout + r.stderr, /p@ss:w0rd|p%40ss%3Aw0rd/, 'password never printed');
+  }
+  assert.match(runContainer('probe', { psqlLine: 'PROBE|701|13|0|359|0|f|1|0' }).stdout, /PROBE ready_for=pre-load/);
+});
+
+test('CI runner container: probe says restore (exit 10) on the 6-table seed; a failed SQL stage exits 2; a tampered payload is refused (22)', () => {
+  const seed = runContainer('probe', { psqlLine: 'PROBE|6|0|0|0|0|f|0|2' });
+  assert.equal(seed.status, 10);
+  assert.match(seed.stdout, /PROBE ready_for=restore/);
+  assert.equal(runContainer('probe', { psqlLine: 'PROBE|701|0|13|0|0|t|1|0' }).stdout.match(/ready_for=(\w[\w-]*)/)[1], 'dms');
+  assert.equal(runContainer('probe', { psqlLine: 'PROBE|701|0|13|0|0|t|1|5000' }).stdout.match(/ready_for=(\w[\w-]*)/)[1], 'post-load');
+  assert.equal(runContainer('probe', { psqlLine: 'PROBE|701|13|0|359|0|t|1|5000' }).stdout.match(/ready_for=(\w[\w-]*)/)[1], 'done');
+  assert.equal(runContainer('post-load-1', { failOn: 'staging-db-vector-postload.sql' }).status, 2);
+  const p = lsPayload('pre-load');
+  const w = fs.mkdtempSync(path.join(os.tmpdir(), 'ctr-'));
+  const r = spawnSync('bash', ['-c', CONTAINER_CMD.replace('mkdir -p /w && cd /w', `mkdir -p ${w}/w && cd ${w}/w`).replace(/apt-get update[^;]*;/, 'true;')], { encoding: 'utf8', env: { PATH: process.env.PATH, LP: p.b64, LPS: '0'.repeat(64), STAGE: 'pre-load', OUT: 's3://b/x', PGUSER: 'u', PGPASSWORD: 'p', PGHOST: WRITER } });
+  assert.equal(r.status, 22);
 });

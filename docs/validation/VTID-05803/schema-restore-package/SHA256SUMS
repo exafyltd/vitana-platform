@@ -15,8 +15,9 @@ d5f406ed178ab3974f89110620cecdd7c38d8e4c267e5eb318b2e81c6bbc964b  sql/outbox-rep
 4bd4b61177ece1fcccc2dfbb1a58a2b3b532ee68f6ea15a3c96cd61dda930da2  sql/parity-probe.sql
 ccd03e8845caaf2c405e7e91f2a50121ef78e59797849cbffe6011b7069cb68e  sql/r2-exclude-auth-users-fks.sql
 6300d871dcbf62efdbeb1d030deba95dfec730cb44a88f93d213325ddde279dc  sql/reset-session.sql
-2d781191228aa2358abbbcafcfb8420b57ccf046aefeb7602c8300587385eaaf  load-stages.sh
+42f0e3900cd104a34a40be6e7d5706455f73b6240bfbb509b0bd6ba38c588fe9  load-stages.sh
 0148ed4a54c55f4739b1bcf70a4684912bf9e83d2a7e5f6ba60fab989488b551  ../../../../scripts/aws/staging-db-vector-preload.sql
 1ecf9d1b182d7d7d43ada579ad38609ca0112babc6bc81b04c53657189bb498c  ../../../../scripts/aws/staging-db-vector-postload.sql
 bcca7c9e2d7057c036a647a59824b4aa8abcb3953632895ad77ec6187d2e2597  ../../../../scripts/aws/staging-db-restore-saved.sql
 d7295b8559141bf778d6ae1837949c909659d1e51075be0d463b081ae59dce02  ../../../../scripts/aws/staging-db-vector-report.sql
+de5be461dc644f83f96f7f8fd62882b083ff085a0d2756d21295e78928737da9  ../../../../scripts/aws/staging-db-load-probe.sql

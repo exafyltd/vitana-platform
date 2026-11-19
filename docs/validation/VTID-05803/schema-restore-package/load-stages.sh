@@ -10,7 +10,11 @@
 #                       1. scripts/aws/staging-db-vector-postload.sql  text back to vector, incomplete values kept
 #                       2. scripts/aws/staging-db-restore-saved.sql    indexes, FKs (NOT VALID) and views back; R2 asserted
 #                     then the embedding backfill (aurora-cutover-embedding-backfill.py --cluster vitana-aurora-staging)
+#                     (post-load-1 / post-load-2 run file 1 / file 2 alone, for the one-file-per-task CI runner)
 #   STAGE=report      read-only: scripts/aws/staging-db-vector-report.sql, written to load-report.out
+#   STAGE=probe       read-only: scripts/aws/staging-db-load-probe.sql. Prints the PROBE line and the stage the database
+#                     is ready for (restore | pre-load | dms | post-load | done). Exit 0, or 10 when the restored schema is
+#                     not there yet (Path A first).
 # Each SQL file runs in ONE transaction (psql --single-transaction, ON_ERROR_STOP): all or nothing, idempotent.
 # The SQL is the same file the Data API path (scripts/aws/staging-db-migration.sh) applies.
 # Exit: 0 ok; 1 refused (nothing written); 2 a file failed and was rolled back.
@@ -28,8 +32,10 @@ STAGE="${STAGE:-}"
 case "$STAGE" in
   pre-load)  FILES=(staging-db-vector-preload.sql) ;;
   post-load) FILES=(staging-db-vector-postload.sql staging-db-restore-saved.sql) ;;
-  report)    FILES=() ;;
-  *) die "STAGE must be pre-load, post-load or report (got '${STAGE}')" ;;
+  post-load-1) FILES=(staging-db-vector-postload.sql) ;;
+  post-load-2) FILES=(staging-db-restore-saved.sql) ;;
+  report|probe) FILES=() ;;
+  *) die "STAGE must be pre-load, post-load, post-load-1, post-load-2, report or probe (got '${STAGE}')" ;;
 esac
 
 # Inputs and target: the gate of schema-restore.sh (host from the URI only, the exact staging writer, database vitana).
@@ -61,6 +67,20 @@ for f in "${FILES[@]}"; do
   echo "OK $f"
 done
 
+if [ "$STAGE" = probe ]; then
+  LINE="$(pq -q -At -F '|' -v ON_ERROR_STOP=1 -c "BEGIN READ ONLY" -f "$REPO/scripts/aws/staging-db-load-probe.sql" -c "ROLLBACK" | grep '^PROBE|')" \
+    || { echo "FAILED: probe query" >&2; exit 2; }
+  IFS='|' read -r _ TB VC TC FK AF AU PX ER <<< "$LINE"
+  if [ "$VC" = 13 ] && [ "$AU" = f ]; then READY=pre-load
+  elif [ "$VC" = 13 ] && [ "$AU" = t ]; then READY=done
+  elif [ "$TC" = 13 ] && [ "$ER" = 0 ]; then READY=dms
+  elif [ "$TC" = 13 ]; then READY=post-load
+  else READY=restore; fi
+  echo "PROBE public_tables=$TB vector_cols=$VC text_cols=$TC public_fks=$FK public_to_auth_fks=$AF audit=$AU preexisting_schema=$PX est_rows=$ER"
+  echo "PROBE ready_for=$READY"
+  [ "$READY" = restore ] && exit 10
+  exit 0
+fi
 if [ "$STAGE" != report ]; then echo "LOAD_STAGES: $STAGE done"; exit 0; fi
 OUT="$HERE/load-report.out"; : > "$OUT"
 awk -v dir="$(mktemp -d)" 'BEGIN{n=1} /^-- ;;$/{n++; next} /^--/{next} {f=dir "/q" n ".sql"; print > f} END{print dir}' \
