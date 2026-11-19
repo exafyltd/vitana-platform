@@ -107,3 +107,13 @@ STORED` rather than a plain DEFAULT, so a stored generated column is reproduced 
 changed. Read-only generation only; the guard and the atomic apply path are unchanged.
 TEST: `python3 -m py_compile scripts/aws/staging-acceptance/gen-correction.py`; GitLab CI lint (project 2): valid, jobs
 vtid-05803-schema-acc-probe/generate/apply resolve; the =generate run on main then publishes correction.sql.
+
+AC-18. `gen-correction.py` (=generate) now reaches the live source the same way the comparator does. The direct
+`db.<ref>.supabase.co` host is IPv6-only and unreachable from the task network, so when a TCP probe of it fails the
+generator falls back to the session pooler (`POOLER_HOST`, default `aws-1-eu-north-1.pooler.supabase.com:5432`, user
+`postgres.<ref>`) with the same password — identical to k5.py, whose probe evidence recorded `source_fallback=1`,
+PG 17.4, 700 source tables. Without it, =generate connected to staging (29 roles) but aborted on the source with
+"Network is unreachable" (container exit 30). Read-only generation only; the apply path is unchanged.
+TEST: `python3 -m py_compile scripts/aws/staging-acceptance/gen-correction.py`; a resolution test exec's the real
+conn_env/tcp/src_env and asserts unreachable->pooler, reachable->direct, already-pooler->unchanged; the =generate run
+on main then connects via the pooler and publishes correction.sql.
