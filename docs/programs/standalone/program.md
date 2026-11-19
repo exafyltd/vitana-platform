@@ -18,6 +18,7 @@ specs:
   - vitana-platform:plan-spar-stale-session
   - vitana-platform:fix-4182-test-fallout
   - vitana-platform:collab-queue-perf
+  - vitana-platform:news-feed-post-action-row
   - vitana-v1:chat-ux
   - vitana-v1:vitana-chat-markdown
   - vitana-platform:collab-multi-builder-handoff
@@ -149,3 +150,4 @@ belong to none of the named programmes are listed here until the owner assigns t
 - `vitana-platform:kiro-fleet-register` — record the owner's Kiro account fleet in areas.yaml as seats, no email
 - `vitana-platform:bridge-drift-fix` — four independent fixes for the main breakage left by #5021 and #5027 (loop catalog, CLAUDE.md Part 1 extract budget, session-layer wording regex, migration SECURITY DEFINER comment)
 - `vitana-platform:architecture-mt-alignment` — verify the 41-module Vitanaland architecture map against the code and record Multi-Tenant alignment for the 18 workstreams (docs only)
+- `vitana-platform:news-feed-post-action-row` — News Feed post card: author row on top, like / comment / send on their own row below (vitana-v1)
