@@ -59,3 +59,10 @@ AC-12. Real run evidence before this change (ci-config job, same runner): pipeli
 exit 17 (A07, A08, A09 differ: staging holds only the 6-table seed), evidence
 `s3://vitana-code-index/vtid-05803/staging/runs/20261118T235135Z-k5-acceptance-schema-only/`.
 CURL: GitLab API `projects/2/jobs/3548/artifacts` -> `acceptance/result.json` (exit_code 1, container_exit_code 17).
+
+AC-13. The GitLab staging deploy path (`scripts/eng/deploy/deploy-ecs.mjs`, jobs `deploy-staging:*`) refuses, in shadow and
+live mode and before any ECS write, a task definition that binds a production Supabase/Aurora secret, the production
+cluster or its master secret (same patterns as the GitHub gate of AC-2). Found live: `vitana-gateway:1025` binds
+`SUPABASE_JWT_SECRET`, `SUPABASE_ANON_KEY`, `GATEWAY_SERVICE_TOKEN` from `vitana/supabase/prod/*` (discovery pipeline 524),
+and the GitLab deploy renders from the live definition, so it would have carried them forward.
+TEST: `scripts/eng/deploy/deploy-ecs.test.mjs` "VTID-05803: a staging definition that binds production credentials is refused ...".
