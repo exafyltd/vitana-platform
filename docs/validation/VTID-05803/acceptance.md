@@ -127,3 +127,19 @@ fresh database carrying the source roles. Read-only generation only; the apply p
 TEST: `python3 -m py_compile scripts/aws/staging-acceptance/gen-correction.py`; a real-psql reproduction (PGlite wire
 server) shows the owned-sequence query output ending in "\n", the pre-fix generator aborting on it, and the post-fix
 generator producing a correction.sql that applies with rc=0.
+
+AC-20. The additive correction was APPLIED to `vitana-aurora-staging` `public` through the authorized apply path
+(guard + one atomic `psql --single-transaction` transaction + k5.py re-verify) and VERIFIED. Applied in passes, each
+sha256-pinned: (1) tables pass — the 6 missing preserved-seed tables (plan_sparring_config, plan_sparring_sessions,
+plan_sparring_shadow_log, pm_digests, pm_lease, vtid_ledger) with columns/PK/check, 2 sequences + ownership, 19 indexes,
+RLS on 6, 8 policies, table/column grants; (2) functions pass — 127 CREATE OR REPLACE (check_function_bodies=false), 4
+triggers, function grants; (3) grants pass — the standalone `global_vtid_seq` grants. Result: A07 unexplained
+**401 -> 142**; A08 now passes 6/7 sub-checks (extension, policy, rls, table_grant, column_grant, sequence_grant), only
+function_grant differs; A09 still FAIL on holding-schema `vtid05803_preexisting` rows (data, for DMS). The 6 tables are
+no longer flagged. Remaining 142 are non-additive: 121 "changed function" are a cosmetic prosrc-whitespace artifact
+(k5.py hashes raw prosrc; pg_get_functiondef normalizes it, so bodies are semantically identical but hash differently),
+4 Supabase-only extensions + vector version + public owner + matview + view + 2 changed FK + 1 changed check (NOT VALID
+vs validated) are platform-expected, 7 extra PUBLIC function grants need a REVOKE, and 1 extra sequence
+(plan_sparring_shadow_log_id_seq1) is an identity double-provisioning artifact. None are additively fixable; the data
+(A09) is the DMS step. Staging `public` now carries the correct six-table schema, ready for the DMS data load.
+CURL: GitLab package `vtid-05803-schema-acc/20261119T190330Z-k5-schema-acc-apply/report.json` (a07.unexplained=142, a08 6/7, a09 FAIL) and `.../apply.stdout` (CREATE/ALTER/GRANT, no error); tables-pass run `20261119T184602Z` (401->178).
