@@ -19,3 +19,8 @@ node --test scripts/ci/staging-db/staging-acceptance.test.mjs   # 7/7 (fake psql
 python3 scripts/aws/staging-acceptance/embed.py --check   # ok: embedded runner equals k5.py (sha256 7f330051af7f), ECS override 7411 bytes
 # Real runs (ci-config job, before this MR): pipelines 508 (exit 2), 509/511 (41: rev 3 AWSPREVIOUS source secret fails auth),
 # 512 (46: source session read_only=off via the pooler), 513 (1), 514 (container 17, job 1). See acceptance.md AC-12.
+# 01:15Z the settings sync copied !73's job file; allow_failure: exit_codes inside rules: is invalid in GitLab, so every
+# vitana-platform pipeline config failed lint (pipeline create HTTP 400). ci-config !28 fixed it at 01:2xZ; this commit
+# fixes the source so the next sync keeps it. GitLab lint (project 2, combined config): valid. staging-acceptance.test.mjs 7/7.
+# Pipeline 529 (01:35Z): first api run on the permanent include (nothing re-added): task 0f9ba06e, container 41: the platform
+# job file still defaulted to vitana-aurora-staging-migrate:3 (SOURCE_URI pinned to AWSPREVIOUS). Default set to :2.
