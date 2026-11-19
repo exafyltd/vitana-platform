@@ -128,15 +128,18 @@ TEST: `python3 -m py_compile scripts/aws/staging-acceptance/gen-correction.py`; 
 server) shows the owned-sequence query output ending in "\n", the pre-fix generator aborting on it, and the post-fix
 generator producing a correction.sql that applies with rc=0.
 
-AC-20. The additive correction was APPLIED to `vitana-aurora-staging` `public` through the authorized apply path
-(guard-correction.py + one atomic `psql --single-transaction -v ON_ERROR_STOP=1` + k5.py re-run) in three sha256-pinned
-passes: (1) tables (run 20261119T184602Z) — the 6 missing preserved-seed tables (plan_sparring_config,
+AC-20. The additive correction was APPLIED to `vitana-aurora-staging` `public` and VERIFIED — k5.py was re-run after
+each apply and A07/A08/A09 re-measured (the apply job itself still exits non-zero, container 17, because per AC-15 it
+returns 0 only when A07/A08/A09 ALL pass, which they do not).
+CURL: GitLab package `vtid-05803-schema-acc/20261119T190330Z-k5-schema-acc-apply/report.json` (a07.unexplained=142; a08
+6/7; a09 FAIL) and `.../apply.stdout` (CREATE/ALTER/GRANT, no error).
+Applied through the authorized apply path (guard-correction.py + one atomic `psql --single-transaction -v
+ON_ERROR_STOP=1`) in three sha256-pinned passes: (1) tables (run 20261119T184602Z) — the 6 missing preserved-seed tables
+(plan_sparring_config,
 plan_sparring_sessions, plan_sparring_shadow_log, pm_digests, pm_lease, vtid_ledger) with columns/PK/check, 2 sequences +
 ownership, 19 indexes, RLS on 6, 8 policies, table/column grants [A07 401 -> 178]; (2) functions (run 20261119T185300Z) —
 127 CREATE OR REPLACE (check_function_bodies=false), 4 triggers, function grants [178 -> 152]; (3) grants (run
-20261119T190330Z) — the standalone `global_vtid_seq` grants [152 -> 142]. "VERIFIED" means k5.py was re-run after each
-apply and A07/A08/A09 re-measured; the apply job itself still exits non-zero (container 17) because per AC-15 it returns
-0 only when A07/A08/A09 ALL pass, which they do not. A08 now passes 6/7 sub-checks (extension, policy, rls, table_grant,
+20261119T190330Z) — the standalone `global_vtid_seq` grants [152 -> 142]. A08 now passes 6/7 sub-checks (extension, policy, rls, table_grant,
 column_grant, sequence_grant); only function_grant differs. A09 still FAILs on 3 holding-schema `vtid05803_preexisting`
 objects (rows + a sequence value — data, for DMS). The 6 target tables are no longer flagged.
 The 142 remaining A07 differences (exact: 121 changed function; 7 extra function_grant; 4 missing extension; 2 changed
@@ -156,5 +159,3 @@ extension, changed check) are all non-additive and are left for the owner's allo
   bug: for an identity-owned sequence the IDENTITY clause already creates it). All are harmless and non-additive to undo.
 Staging `public` now carries the six-table schema for the DMS data load (Kiro 2); the duplicate identity sequence above
 is an unused extra on plan_sparring_shadow_log and does not block the load.
-CURL: GitLab package `vtid-05803-schema-acc/20261119T190330Z-k5-schema-acc-apply/report.json` (a07.unexplained=142; a08
-6/7; a09 FAIL) and `.../apply.stdout` (CREATE/ALTER/GRANT, no error).
