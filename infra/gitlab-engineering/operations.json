@@ -18,7 +18,7 @@
       {
         "file": "vtid-05803-schema-acc.gitlab-ci.yml",
         "trigger_variable": "VTID05803_SCHEMA_ACC",
-        "values": ["probe", "apply"],
+        "values": ["probe", "generate", "apply"],
         "$comment": "VTID-05803 Aurora staging schema-acceptance correction: probe (read-only, publishes the per-object diff) or apply (additive, non-destructive, guarded) + re-accept, on the existing migrate task."
       }
     ]
