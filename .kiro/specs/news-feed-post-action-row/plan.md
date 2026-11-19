@@ -57,8 +57,17 @@ implemented and continue the end to end implementation."*
 - Targeted visual check (CLAUDE.md): Playwright screenshots at 390×844 and 1400×900 of the card (image post, long name
   with large counts, post with 0 likes) and with the ⋮ menu opened, from a local harness with mocked hooks, before
   and after; inspected; described in the PR.
-- Staging: `docs/validation/<VTID>/staging-tests.json` = the vitest ref above plus a GET of the staging frontend `/`
-  expecting `id="root"` (the same read-only pattern VTID-05795 used). No write, no sign-in, no production.
+- Staging: `docs/validation/<VTID>/staging-tests.json` = the vitest ref above plus the read-only Playwright spec
+  `tests/e2e/staging/vtid-<VTID>-news-feed-post-action-row.staging.spec.ts`: signed in as the documented test user
+  (token call only; the staging guard aborts every other write), `/home` at 390×844 and `/home?spotlight=0` at
+  1400×900; on the first post card the action row sits below the author row, holds like and comment and not the
+  author name, every control is at least 44 px high, no horizontal overflow; comments, send sheet, likers dialog and
+  ⋮ menu are opened and closed (Escape) without submitting or choosing anything. Skipped, not failed, when the feed
+  has no post card. Heart toggling and sending are proven only by the Vitest suite and the local harness, never on
+  staging. No production.
+- Classes: `change_class: light` above is the sparring class; the lane's `scope.json` declares the PR-gate class
+  `frontend-simple` (3 files outside `docs/validation/**`, all in its allow list).
+- The comment composer's own send button is not changed (only the action-row send gets the 20 px icon).
 
 ## Risks
 - The card gets one hairline more; height stays about the same because the likes line merges into the action row.
