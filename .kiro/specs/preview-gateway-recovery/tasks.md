@@ -23,8 +23,11 @@
 - [ ] Apply `artifacts/plan-spar-token.patch` to `.github/workflows/PLAN-SPAR.yml` (protected gate file).
 **Acceptance**
 - Change types: Infrastructure/CI
-- With `PLAN_SPAR_GATEWAY_TOKEN` set, PLAN-SPAR sends it and allocation is forced off; without it, behaviour is byte-identical to today.
-- Merges only on the owner's instruction naming this plan plus a reviewer-agent accept on the current head.
+- With `PLAN_SPAR_GATEWAY_TOKEN` set, PLAN-SPAR sends it and allocation is forced off; without it, behaviour is identical to today (the env value `''` becomes `'false'` when the variable is unset;
+  `plan-spar.mjs` allocates only on the exact string `'true'`).
+- Protected gate file (`protected_gate: two-model`, VTID-05765): merges only with two reviewer-agent accepts from two
+  different chain models on the current head, the lane marker from a trusted revision, and the owner's instruction
+  naming this plan for `PLAN-SPAR.yml` quoted or linked in the PR body.
 
 <!-- lane: incident-record -->
 ## Lane incident-record

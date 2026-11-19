@@ -144,7 +144,7 @@ resolve; this plan neither changes nor fixes that.** `verify` also fails if buil
 | 6 | Owner/admin | `proxy-jwt-staging.sh plan` → `apply` → `verify` (VPC) | `proxy-jwt-staging.sh rollback` (rev 20) |
 | 7 | Kiro | Land `runtime-profile` (#5110) with its VTID; image `vitana/gateway:<sha12>` in ECR | revert |
 | 8 | Owner/admin | `preview-gateway.sh plan --commit <sha>` → `apply --commit <sha>` | `preview-gateway.sh rollback` |
-| 9 | Kiro | Land `plan-spar-token` (prepared: `artifacts/plan-spar-token.patch`) after a reviewer accept on the PR head | revert, or delete `PLAN_SPAR_GATEWAY_TOKEN` |
+| 9 | Kiro | Land `plan-spar-token` (prepared: `artifacts/plan-spar-token.patch`) after two reviewer-agent accepts from different chain models on the PR head (two-model) | revert, or delete `PLAN_SPAR_GATEWAY_TOKEN` |
 | 10 | Kiro + operator | `preview-gateway.sh verify`; `proxy-jwt-staging.sh verify` (VPC) | — |
 | 11 | Owner → Kiro | Release sparring; one full PLAN-SPAR run; report sparring and allocation separately | — |
 While the preview token is set, a converged plan gets no VTIDs and `plan-spar.mjs` hands it to `next_actor: claude`
