@@ -35,3 +35,18 @@ Go/no-go A: reviewer availability now confirmed. Still open for the owner: rule 
 procedure, the #5110 deploy consequence (C1), the overnight deployment (C3), and the written go for the inserts.
 PLAN-SPAR: no run since 44292773682 (failure); not re-run (the re-run allowance on #5117's head is used).
 Next: owner decisions above; on a go, Kiro opens the runtime-profile and plan-spar-token lane PRs with their VTIDs.
+
+### 2026-11-19T16:20Z · kiro-jtadic-202611191115-a88f · drafted (owner decisions 2026-11-19, tracker)
+Proposal PR #5122 (draft, untrusted, non-executable; title not `plan(`, PLAN-SPAR skipped) until the Rule 55 owner's
+written trusted-plan promotion sequence. `.github/workflows/PLAN-SPAR.yml` is not modified until the 2026-11-18
+authorization is retrieved or reissued by its authorized owner. #5110 stays unmerged.
+| Item | Owner | State |
+|---|---|---|
+| Written trusted-plan promotion sequence | Rule 55 owner | open |
+| Issuance evidence requirements; two separate VTIDs (runtime-profile, plan-spar-token) | registry operator | open; issued-at and 24 h deadlines: none yet |
+| Protected-workflow authorization (2026-11-18), retrieved or reissued | its authorized owner | open |
+| Second eligible reviewer model; both token accepts on the same final published head | owner | open (this session: claude-opus-5.5 only) |
+| Ordinary staging restoration: community staging app + `vitana-gateway`; staging JWT and gateway service-token secrets through the authorized process; evidence ready for STAGING-VERIFY | **Kiro 5** | open; 16:14Z both services 0/0, both secrets missing |
+| #5110 merge authorization | Dragan | open |
+Prepared heads (non-binding pre-review accept): runtime-profile 27a878bd63, plan-spar-token 3c4d6662af. One
+allocation-disabled preview run may cover both if it exercises both; evidence links to each VTID record.
