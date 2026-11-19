@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { deploy, rollback, diffTaskDefinitions } from './deploy-ecs.mjs';
+import { deploy, rollback, diffTaskDefinitions, productionCredentialNames } from './deploy-ecs.mjs';
 
 const CLI = join(dirname(fileURLToPath(import.meta.url)), 'deploy-ecs.mjs');
 
@@ -285,4 +285,27 @@ test('the CLI refuses a service outside the allowlist (exit 2) and its rollback 
   const none = spawnSync(process.execPath, [CLI, 'rollback', '--state-file', join(f.dir, 'absent.json'), '--runs-file', f.runsFile], { encoding: 'utf8', env, cwd: f.dir });
   assert.equal(none.status, 0, none.stderr);
   assert.match(none.stdout, /nothing to roll back/);
+});
+
+test('VTID-05803: a staging definition that binds production credentials is refused before any ECS write, in both modes', async () => {
+  const SM = 'arn:aws:secretsmanager:eu-central-1:472838866351:secret:';
+  for (const [name, valueFrom] of [['SUPABASE_JWT_SECRET', `${SM}vitana/supabase/prod/jwt-secret-k2UAbI`], ['GATEWAY_SERVICE_TOKEN', `${SM}vitana/supabase/prod/service-role-key-GfBpSP`],
+    ['DB_PASSWORD', `${SM}vitana/aurora/prod/master-xyz`], ['PGPASSWORD', `${SM}rds!cluster-4dab93b8-aaaa:password::`]]) {
+    for (const mode of ['shadow', 'live']) {
+      const td = gatewayTd();
+      td.containerDefinitions[0].secrets.push({ name, valueFrom });
+      const f = setup();
+      const a = fakeAws({ td });
+      await assert.rejects(deploy(opts(f, { mode }), { run: a.run, fetchText: stamps(OLD), isAncestor: () => false, log: quiet }),
+        (e) => e.exitCode === 2 && new RegExp(`binds production credentials \\(${name}\\)`).test(e.message), `${mode} ${name}`);
+      assert.deepEqual(writes(a.calls), [], `${mode} ${name}: no register-task-definition, no update-service`);
+    }
+  }
+  const envLeak = gatewayTd();
+  envLeak.containerDefinitions[0].environment.push({ name: 'AURORA_HOST', value: 'vitana-aurora-prod.cluster-x.eu-central-1.rds.amazonaws.com' });
+  assert.deepEqual(productionCredentialNames(envLeak), ['AURORA_HOST']);
+  const staging = gatewayTd();
+  staging.containerDefinitions[0].secrets.push({ name: 'SUPABASE_JWT_SECRET', valueFrom: `${SM}vitana/supabase/staging/jwt-secret-abc` },
+    { name: 'SUPABASE_ANON_KEY', valueFrom: `${SM}vitana/gateway/staging/supabase-anon-key` });
+  assert.deepEqual(productionCredentialNames(staging), [], 'staging-named secrets pass');
 });

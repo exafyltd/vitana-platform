@@ -102,6 +102,26 @@ export function renderTaskDefinition(live, t, { image, sha, envOverrides = null 
   return td;
 }
 
+// VTID-05803 (owner instruction 2026-11-18): a staging task definition never binds production credentials. The same
+// patterns as the GitHub staging gateway deploy (AWS-STAGE-DEPLOY-GATEWAY.yml, production-credential gate): a production
+// Supabase or Aurora secret, the production cluster, or its RDS-managed master secret, in any secret or environment
+// value of any container. Fail closed in both modes, before anything is registered.
+export const PROD_CREDENTIAL_RE = /secret:vitana\/(supabase|aurora)\/prod\/|vitana-aurora-prod|secret:rds!cluster-4dab93b8/;
+export function productionCredentialNames(td) {
+  const names = [];
+  for (const c of Array.isArray(td.containerDefinitions) ? td.containerDefinitions : []) {
+    for (const s of Array.isArray(c.secrets) ? c.secrets : []) if (PROD_CREDENTIAL_RE.test(String(s.valueFrom || ''))) names.push(s.name);
+    for (const e of Array.isArray(c.environment) ? c.environment : []) if (PROD_CREDENTIAL_RE.test(String(e.value || ''))) names.push(e.name);
+  }
+  return [...new Set(names)].sort();
+}
+export function assertNoProductionCredentials(td, t) {
+  const leak = productionCredentialNames(td);
+  if (leak.length) {
+    throw new DeployError(`refusing to deploy ${t.ecsService}: its task definition binds production credentials (${leak.join(' ')}); rebind them to staging secrets first`, 2);
+  }
+}
+
 // What changed between the live definition and the rendered one, as readable lines (the shadow artifact and the log).
 export function diffTaskDefinitions(live, rendered) {
   const lines = [];
@@ -260,6 +280,8 @@ export async function deploy(o, rawDeps) {
   }
 
   const rendered = renderTaskDefinition(live, t, { image, sha: o.sha, envOverrides });
+  assertNoProductionCredentials(rendered, t);
+  deps.log('production-credential gate: none bound');
   const diff = diffTaskDefinitions(live, rendered);
   writeJson(join(o.outDir, 'task-definition.json'), rendered);
   writeJson(join(o.outDir, 'task-definition.diff.json'), { service: o.service, from: svc.taskDefinition, mode, changes: diff });
