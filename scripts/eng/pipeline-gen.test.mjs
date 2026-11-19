@@ -2,7 +2,7 @@
 // Dependency-free node:test (UNIT.yml runs scripts/**/*.test.mjs with no install).
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, cpSync } from 'node:fs';
+import { readFileSync, mkdtempSync, mkdirSync, writeFileSync, cpSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -569,4 +569,32 @@ test('build-image jobs run on the build class vitana-eng-build, in every reposit
     }
     assert.ok(seen.size > 0, `${repo}: has build-image jobs in some context`);
   }
+});
+
+test('an operation file is included from ci-config and its trigger variable admits only main api, web or schedule pipelines', () => {
+  const cfg = config();
+  for (const repo of REPOS) {
+    const r = cfg.repositories[repo];
+    const { generated } = docsFor(repo);
+    const files = [].concat(generated.include).flatMap((i) => [].concat(i.file));
+    for (const op of r.operations || []) {
+      assert.ok(files.includes(op.file), `${repo}: include ${op.file}`);
+      assert.ok(existsSync(path.join(CI, op.file)), `${repo}: ${op.file} is in infra/gitlab-engineering/ci, so the settings sync owns it`);
+      const rule = gen.operationRule(op);
+      assert.ok(generated.workflow.rules.some((w) => w.if === rule.if), `${repo}: workflow admits ${op.trigger_variable}`);
+      const hit = (variables) => generated.workflow.rules.find((w) => (w.if ? gen.evalIf(w.if, { CI_DEFAULT_BRANCH: 'main', ...variables }) : true));
+      for (const v of op.values) {
+        for (const src of ['api', 'web', 'schedule']) assert.notEqual(hit({ CI_PIPELINE_SOURCE: src, CI_COMMIT_BRANCH: 'main', [op.trigger_variable]: v }).when, 'never', `${repo}: ${src} ${v}`);
+        assert.equal(hit({ CI_PIPELINE_SOURCE: 'api', CI_COMMIT_BRANCH: 'kiro/x/y', [op.trigger_variable]: v }).when, 'never', `${repo}: ${v} on a branch`);
+      }
+      assert.equal(hit({ CI_PIPELINE_SOURCE: 'api', CI_COMMIT_BRANCH: 'main', [op.trigger_variable]: 'other' }).when, 'never', `${repo}: unknown value`);
+      assert.equal(hit({ CI_PIPELINE_SOURCE: 'api', CI_COMMIT_BRANCH: 'main' }).when, 'never', `${repo}: api pipeline without the variable`);
+    }
+  }
+  assert.ok((cfg.repositories['vitana-platform'].operations || []).some((o) => o.file === 'vtid-05803-acceptance.gitlab-ci.yml'), 'the VTID-05803 acceptance operation is declared');
+  const bad = structuredClone(cfg);
+  bad.repositories['vitana-platform'].operations = [{ file: '../x.yml', trigger_variable: 'X_RUN', values: ['run'] }];
+  assert.throws(() => gen.validateServices(bad), /operation file/);
+  bad.repositories['vitana-platform'].operations = [{ file: 'x.gitlab-ci.yml', trigger_variable: 'lower', values: ['run'] }];
+  assert.throws(() => gen.validateServices(bad), /trigger_variable/);
 });

@@ -812,6 +812,14 @@
       "gitlab_project": "vitana/vitana-platform",
       "github_repository": "exafyltd/vitana-platform",
       "output": "infra/gitlab-engineering/ci/platform-delivery.gitlab-ci.yml",
+      "operations": [
+        {
+          "file": "vtid-05803-acceptance.gitlab-ci.yml",
+          "trigger_variable": "VTID05803_ACCEPTANCE",
+          "values": ["discover", "run", "auto"],
+          "$comment": "VTID-05803 post-restore Aurora staging acceptance (read-only). Its jobs run only on main, only in an api, web or schedule pipeline that sets the trigger variable; every other pipeline is unchanged."
+        }
+      ],
       "fixture": "scripts/eng/fixtures/platform-pr-files.json",
       "collab_handoff": "required",
       "pr_gate_install": "gateway-npm",

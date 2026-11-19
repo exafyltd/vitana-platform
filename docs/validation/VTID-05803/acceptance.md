@@ -28,3 +28,34 @@ TEST: `scripts/ci/staging-db/aws-scripts.test.mjs` with mawk as `awk` (the bundl
 Contract change on purpose: `test/vtid-04225-no-dead-gcp-urls-in-workflows.test.ts` asserted the staging service token is the
 production service-role key; it now asserts the staging secret and the absence of the production one.
 Effect: callers of the staging gateway must present the staging service token.
+
+## Aurora staging acceptance step in GitLab CI (Kiro 5, kiro-exafy-202611190018-058b)
+
+AC-7. The acceptance job is a permanent part of the generated vitana-platform pipeline. `config/delivery/services.json`
+declares it as an `operations` entry; `pipeline-gen.mjs` includes the file from vitana/ci-config (no `include: local`) and
+admits only main api/web/schedule pipelines that set `VTID05803_ACCEPTANCE`. The job file lives in
+`infra/gitlab-engineering/ci/`, so the settings sync writes it instead of dropping it.
+TEST: `scripts/eng/pipeline-gen.test.mjs` "an operation file is included from ci-config ..."; `node scripts/eng/pipeline-gen.mjs --check`.
+
+AC-8. The runner is read-only on both sides and never exposes a credential: every psql session starts with
+`SET SESSION default_transaction_read_only = on` and the runner refuses (46/56) unless the session reports read_only=on;
+no URI or password reaches argv, logs or evidence; a password holding `@ : # /` parses.
+TEST: `scripts/ci/staging-db/staging-acceptance.test.mjs` tests 1 and 3.
+
+AC-9. Exit contract: 0 acceptance passed; 1 unexplained differences (container 11-17 name the suites); 2 configuration or
+infrastructure error (container 20-99, no exit code, task not STOPPED, upload failure on a pass = 80). Only container exit
+0 maps to a pass.
+TEST: `scripts/ci/staging-db/staging-acceptance.test.mjs` tests 2, 4, 5 and 7.
+
+AC-10. The job file embeds exactly `scripts/aws/staging-acceptance/k5.py` and the ECS override stays under 8192 bytes.
+TEST: `python3 scripts/aws/staging-acceptance/embed.py --check`; `staging-acceptance.test.mjs` test 6.
+
+AC-11. `VTID05803_ACCEPTANCE=auto` (the schedule) runs the acceptance once per staging load that its owner reports with the
+generic package file `vtid-05803-staging-load/latest/marker.json`; without a new marker it exits 3 (allowed to fail, never
+a pass) and starts no task.
+TEST: `scripts/ci/staging-db/staging-acceptance.test.mjs` test 7; first live run recorded in commands.log.
+
+AC-12. Real run evidence before this change (ci-config job, same runner): pipeline 514, job 3548, task 5865052a, container
+exit 17 (A07, A08, A09 differ: staging holds only the 6-table seed), evidence
+`s3://vitana-code-index/vtid-05803/staging/runs/20261118T235135Z-k5-acceptance-schema-only/`.
+CURL: GitLab API `projects/2/jobs/3548/artifacts` -> `acceptance/result.json` (exit_code 1, container_exit_code 17).
