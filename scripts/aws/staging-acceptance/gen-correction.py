@@ -87,7 +87,7 @@ if miss_tables:
         if r and r[0]:
             seq_names.add(r[0])
 for sname in sorted(seq_names):
-    r = q(SRC, "select pg_catalog.format_type(seqtypid,null), seqstart, seqincrement, seqmin, seqmax, seqcache, seqcycle from pg_sequence where seqrelid=('public.'||%s)::regclass" % ql(sname))
+    r = q(SRC, "select pg_catalog.format_type(seqtypid,null), seqstart, seqincrement, seqmin, seqmax, seqcache, seqcycle from pg_sequence where seqrelid=('public.'||quote_ident(%s))::regclass" % ql(sname))
     if r and r[0] and len(r[0]) >= 7:
         typ, start, inc, mn, mx, cache, cyc = r[0][:7]
         seqs.append('CREATE SEQUENCE IF NOT EXISTS public."%s" AS %s INCREMENT BY %s MINVALUE %s MAXVALUE %s START WITH %s CACHE %s %s;'
@@ -101,14 +101,16 @@ for sname in sorted(seq_names):
 
 # ---- the 6 tables: columns, PK/unique/check (FKs deferred), indexes, RLS, grants, policies, triggers ----
 for t in miss_tables:
-    cols = q(SRC, "select a.attname, pg_catalog.format_type(a.atttypid,a.atttypmod), a.attnotnull, pg_get_expr(ad.adbin,ad.adrelid), a.attidentity "
+    cols = q(SRC, "select a.attname, pg_catalog.format_type(a.atttypid,a.atttypmod), a.attnotnull, pg_get_expr(ad.adbin,ad.adrelid), a.attidentity, a.attgenerated "
                   "from pg_attribute a left join pg_attrdef ad on ad.adrelid=a.attrelid and ad.adnum=a.attnum "
-                  "where a.attrelid=('public.'||%s)::regclass and a.attnum>0 and not a.attisdropped order by a.attnum" % ql(t))
+                  "where a.attrelid=('public.'||quote_ident(%s))::regclass and a.attnum>0 and not a.attisdropped order by a.attnum" % ql(t))
     defs = []
     for c in cols:
-        nm, typ, notnull, dflt, idn = (c + ["", "", "", "", ""])[:5]
+        nm, typ, notnull, dflt, idn, gen = (c + ["", "", "", "", "", ""])[:6]
         d = '  "%s" %s' % (nm, typ)
-        if idn in ("a", "d"):
+        if gen == "s" and dflt:
+            d += " GENERATED ALWAYS AS (%s) STORED" % dflt
+        elif idn in ("a", "d"):
             d += " GENERATED %s AS IDENTITY" % ("ALWAYS" if idn == "a" else "BY DEFAULT")
         elif dflt:
             d += " DEFAULT %s" % dflt
@@ -116,15 +118,15 @@ for t in miss_tables:
             d += " NOT NULL"
         defs.append(d)
     tbl_lines.append("CREATE TABLE IF NOT EXISTS %s (\n%s\n);" % (ident(t), ",\n".join(defs)))
-    for cn in q(SRC, "select conname, contype, pg_get_constraintdef(oid) from pg_constraint where conrelid=('public.'||%s)::regclass order by (contype='f'), conname" % ql(t)):
+    for cn in q(SRC, "select conname, contype, pg_get_constraintdef(oid) from pg_constraint where conrelid=('public.'||quote_ident(%s))::regclass order by (contype='f'), conname" % ql(t)):
         if len(cn) < 3:
             continue
         name, ctype, cdef = cn[0], cn[1], cn[2]
         (fk_lines if ctype == "f" else tbl_lines).append('ALTER TABLE %s ADD CONSTRAINT "%s" %s;' % (ident(t), name, cdef))
-    for ix in q(SRC, "select indexdef from pg_indexes where schemaname='public' and tablename=%s and indexname not in (select conname from pg_constraint where conrelid=('public.'||%s)::regclass)" % (ql(t), ql(t))):
+    for ix in q(SRC, "select indexdef from pg_indexes where schemaname='public' and tablename=%s and indexname not in (select conname from pg_constraint where conrelid=('public.'||quote_ident(%s))::regclass)" % (ql(t), ql(t))):
         if ix and ix[0]:
             idx_lines.append(re.sub(r"^CREATE (UNIQUE )?INDEX ", lambda mm: "CREATE %sINDEX IF NOT EXISTS " % (mm.group(1) or ""), ix[0]) + ";")
-    rls = q(SRC, "select relrowsecurity from pg_class where oid=('public.'||%s)::regclass" % ql(t))
+    rls = q(SRC, "select relrowsecurity from pg_class where oid=('public.'||quote_ident(%s))::regclass" % ql(t))
     if rls and rls[0] and rls[0][0] == "t":
         rls_lines.append("ALTER TABLE %s ENABLE ROW LEVEL SECURITY;" % ident(t))
     for g in q(SRC, "select c.relname,(select rolname from pg_roles where oid=aa.grantee),aa.privilege_type,c.relkind "
@@ -137,12 +139,12 @@ for t in miss_tables:
             grant_lines.append('GRANT %s ON %s public."%s" TO "%s";' % (priv, "SEQUENCE" if kind == "S" else "TABLE", rel, role))
     # column-level grants on the table (diff category column_grant)
     for cg in q(SRC, "select a.attname,(select rolname from pg_roles where oid=aa.grantee),aa.privilege_type "
-                     "from pg_attribute a, lateral aclexplode(a.attacl) aa where a.attrelid=('public.'||%s)::regclass and a.attacl is not null order by 1,2,3" % ql(t)):
+                     "from pg_attribute a, lateral aclexplode(a.attacl) aa where a.attrelid=('public.'||quote_ident(%s))::regclass and a.attacl is not null order by 1,2,3" % ql(t)):
         col, role, priv = (cg + ["", "", ""])[:3]
         if role and role in roles:
             grant_lines.append('GRANT %s ("%s") ON TABLE %s TO "%s";' % (priv, col, ident(t), role))
     cmap = {"r": "SELECT", "a": "INSERT", "w": "UPDATE", "d": "DELETE", "*": "ALL"}
-    for pr in q(SRC, "select polname, case when polpermissive then 'PERMISSIVE' else 'RESTRICTIVE' end, polcmd, pg_get_expr(polqual,polrelid), pg_get_expr(polwithcheck,polrelid), (select string_agg(rolname,',') from pg_roles where oid=any(polroles)) from pg_policy where polrelid=('public.'||%s)::regclass" % ql(t)):
+    for pr in q(SRC, "select polname, case when polpermissive then 'PERMISSIVE' else 'RESTRICTIVE' end, polcmd, pg_get_expr(polqual,polrelid), pg_get_expr(polwithcheck,polrelid), (select string_agg(rolname,',') from pg_roles where oid=any(polroles)) from pg_policy where polrelid=('public.'||quote_ident(%s))::regclass" % ql(t)):
         if len(pr) < 6:
             continue
         pn, perm, cmd, qual, wc, prs = pr[:6]
@@ -156,7 +158,7 @@ for t in miss_tables:
         if wc:
             s += " WITH CHECK (%s)" % wc
         pol_lines.append(s + ";")
-    for tr in q(SRC, "select pg_get_triggerdef(oid) from pg_trigger where tgrelid=('public.'||%s)::regclass and not tgisinternal" % ql(t)):
+    for tr in q(SRC, "select pg_get_triggerdef(oid) from pg_trigger where tgrelid=('public.'||quote_ident(%s))::regclass and not tgisinternal" % ql(t)):
         if tr and tr[0]:
             trg_lines.append(tr[0].rstrip(";") + ";")
 
@@ -181,7 +183,7 @@ if funcs and SCOPE != "tables":
 
 # ---- views (missing + changed): CREATE OR REPLACE VIEW from source ----
 for v in sorted(set(views)):
-    r = q(SRC, "select pg_get_viewdef(('public.'||%s)::regclass, true), (select array_to_string(reloptions,',') from pg_class where oid=('public.'||%s)::regclass) from pg_class where oid=('public.'||%s)::regclass" % (ql(v), ql(v), ql(v)))
+    r = q(SRC, "select pg_get_viewdef(('public.'||quote_ident(%s))::regclass, true), (select array_to_string(reloptions,',') from pg_class where oid=('public.'||quote_ident(%s))::regclass) from pg_class where oid=('public.'||quote_ident(%s))::regclass" % (ql(v), ql(v), ql(v)))
     if r and r[0] and r[0][0]:
         vdef, opts = (r[0] + ["", ""])[:2]
         with_opts = " WITH (%s)" % opts if opts else ""
