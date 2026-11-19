@@ -127,3 +127,35 @@ fresh database carrying the source roles. Read-only generation only; the apply p
 TEST: `python3 -m py_compile scripts/aws/staging-acceptance/gen-correction.py`; a real-psql reproduction (PGlite wire
 server) shows the owned-sequence query output ending in "\n", the pre-fix generator aborting on it, and the post-fix
 generator producing a correction.sql that applies with rc=0.
+
+AC-20. The additive correction was APPLIED to `vitana-aurora-staging` `public` and VERIFIED — k5.py was re-run after
+each apply and A07/A08/A09 re-measured (the apply job itself still exits non-zero, container 17, because per AC-15 it
+returns 0 only when A07/A08/A09 ALL pass, which they do not).
+CURL: GitLab package `vtid-05803-schema-acc/20261119T190330Z-k5-schema-acc-apply/report.json` (a07.unexplained=142; a08
+6/7; a09 FAIL) and `.../apply.stdout` (CREATE/ALTER/GRANT, no error).
+Applied through the authorized apply path (guard-correction.py + one atomic `psql --single-transaction -v
+ON_ERROR_STOP=1`) in three sha256-pinned passes: (1) tables (run 20261119T184602Z) — the 6 missing preserved-seed tables
+(plan_sparring_config,
+plan_sparring_sessions, plan_sparring_shadow_log, pm_digests, pm_lease, vtid_ledger) with columns/PK/check, 2 sequences +
+ownership, 19 indexes, RLS on 6, 8 policies, table/column grants [A07 401 -> 178]; (2) functions (run 20261119T185300Z) —
+127 CREATE OR REPLACE (check_function_bodies=false), 4 triggers, function grants [178 -> 152]; (3) grants (run
+20261119T190330Z) — the standalone `global_vtid_seq` grants [152 -> 142]. A08 now passes 6/7 sub-checks (extension, policy, rls, table_grant,
+column_grant, sequence_grant); only function_grant differs. A09 still FAILs on 3 holding-schema `vtid05803_preexisting`
+objects (rows + a sequence value — data, for DMS). The 6 target tables are no longer flagged.
+The 142 remaining A07 differences (exact: 121 changed function; 7 extra function_grant; 4 missing extension; 2 changed
+fk; 1 each extra sequence, extra owner, changed sequence, changed owner, changed view, changed matview, changed
+extension, changed check) are all non-additive and are left for the owner's allowlist/accept decision, not forced:
+- 121 changed function: the comparator hashes `md5(prosrc)`, but `pg_get_functiondef` (what the generator applies)
+  normalizes the body with a leading newline, so a CREATE OR REPLACE from source cannot make the raw-prosrc hash match;
+  the function LOGIC is the same (the normalized bodies match) but the hashes cannot converge this way.
+- platform-expected (11): 4 Supabase-only extensions (pg_cron/pg_net/pgmq/supabase_vault, not installable on Aurora) + 1
+  changed extension (vector version) + 1 changed owner (schema public) + 1 changed matview + 1 changed view + 2 changed
+  fk + 1 changed check (the last three are NOT VALID vs validated).
+- introduced by the apply (10, so 142 is a NET count, not a subset of AC-16's baseline): 7 extra function_grant are the
+  default PUBLIC EXECUTE that Postgres puts on the 7 newly-created functions — matching source needs a REVOKE, which the
+  additive guard forbids; these are also exactly what A08 function_grant now reports as only_staging. The other 3 (extra
+  sequence + extra owner + changed sequence) are the `plan_sparring_shadow_log_id_seq1` duplicate the tables pass left
+  because the identity column auto-created a sequence alongside the explicitly-emitted one (a generator double-provision
+  bug: for an identity-owned sequence the IDENTITY clause already creates it). All are harmless and non-additive to undo.
+Staging `public` now carries the six-table schema for the DMS data load (Kiro 2); the duplicate identity sequence above
+is an unused extra on plan_sparring_shadow_log and does not block the load.
