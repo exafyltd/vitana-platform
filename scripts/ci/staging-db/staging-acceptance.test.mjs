@@ -150,6 +150,8 @@ test('the job maps only container exit 0 to a pass, and auto runs only on a repo
   assert.match(run, /^ {2}allow_failure:\n {4}exit_codes: \[3\]$/m);
   assert.ok(!/^ {6}allow_failure:/m.test(run), 'no rule-level allow_failure');
   assert.match(run, /vtid-05803-staging-load\/latest\/marker\.json/);
+  // :3 pins SOURCE_URI to the AWSPREVIOUS secret version, which fails source auth (runs 509, 511, 529: container 41).
+  assert.match(run, /^ {4}K5_TD: vitana-aurora-staging-migrate:2$/m);
   assert.match(run, /assignPublicIp = "DISABLED"/);
   for (const m of job.matchAll(/^ {4}- if: (.*)$/gm)) assert.match(m[1], /^\$CI_COMMIT_BRANCH == "main" && /, `every job rule is main-only: ${m[1]}`);
 });
