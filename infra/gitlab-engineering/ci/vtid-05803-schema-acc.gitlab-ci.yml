@@ -69,7 +69,14 @@
       K5SHA=$(sha256sum "$K5PY" | cut -d' ' -f1)
       curl -fsS -H "$AUTH" --upload-file "$K5PY" "$PKG/runner/k5.py" >/dev/null || { echo "could not stage k5.py"; exit 2; }
       echo "staged k5.py sha256=$K5SHA"
-      GENSHA=""
+      GENSHA=""; GUARDSHA=""
+      if [ "$MODE" = generate ] || [ "$MODE" = apply ]; then
+        GUARDPY=scripts/aws/staging-acceptance/guard-correction.py
+        test -f "$GUARDPY" || { echo "missing $GUARDPY"; exit 2; }
+        GUARDSHA=$(sha256sum "$GUARDPY" | cut -d' ' -f1)
+        curl -fsS -H "$AUTH" --upload-file "$GUARDPY" "$PKG/gen/guard-correction.py" >/dev/null || { echo "could not stage guard-correction.py"; exit 2; }
+        echo "staged guard-correction.py sha256=$GUARDSHA"
+      fi
       if [ "$MODE" = generate ]; then
         GENPY=scripts/aws/staging-acceptance/gen-correction.py
         test -f "$GENPY" || { echo "missing $GENPY"; exit 2; }
@@ -93,18 +100,18 @@
       elif [ "$MODE" = generate ]; then
         # Read-only: k5.py writes the diff, then gen-correction.py reconstructs the additive correction.sql from the
         # live source catalog (no DB write). Publish correction.sql for the acceptance owner to review before apply.
-        GEN='curl -fsS -H "$A" "$K5_PKG/gen/gen-correction.py" -o /w/gen.py || exit 28; echo "$K5_GEN_SHA256  /w/gen.py" | sha256sum -c - >/dev/null || exit 29; python3 /w/k5.py; echo "k5 diff rc=$?"; python3 /w/gen.py 1>/w/out/gen.stdout 2>/w/out/gen.stderr; gr=$?; cat /w/out/gen.stderr; [ $gr -eq 0 ] || exit 30; curl -fsS -H "$A" --upload-file /w/out/correction.sql "$K5_PKG/fix/correction.sql" >/dev/null || exit 31; S256=$(sha256sum /w/out/correction.sql | cut -d" " -f1); echo "correction.sql published sha256=$S256";'
+        GEN='curl -fsS -H "$A" "$K5_PKG/gen/gen-correction.py" -o /w/gen.py || exit 28; echo "$K5_GEN_SHA256  /w/gen.py" | sha256sum -c - >/dev/null || exit 29; curl -fsS -H "$A" "$K5_PKG/gen/guard-correction.py" -o /w/guard.py || exit 28; echo "$K5_GUARD_SHA256  /w/guard.py" | sha256sum -c - >/dev/null || exit 29; python3 /w/k5.py; echo "k5 diff rc=$?"; python3 /w/gen.py 1>/w/out/gen.stdout 2>/w/out/gen.stderr; gr=$?; cat /w/out/gen.stderr; [ $gr -eq 0 ] || exit 30; python3 /w/guard.py /w/out/correction.sql || exit 32; curl -fsS -H "$A" --upload-file /w/out/correction.sql "$K5_PKG/fix/correction.sql" >/dev/null || exit 31; S256=$(sha256sum /w/out/correction.sql | cut -d" " -f1); echo "correction.sql published sha256=$S256";'
         CMD="$COMMON $GEN $PUBLISH exit 0"
       else
         : "${K5_FIX_SHA256:?apply needs K5_FIX_SHA256 (sha256 of the uploaded correction.sql)}"
         # Additive, non-destructive, atomic apply, then re-verify with the same comparator.
-        APPLY='curl -fsS -H "$A" "$K5_PKG/fix/correction.sql" -o /w/correction.sql || exit 23; echo "$K5_FIX_SHA256  /w/correction.sql" | sha256sum -c - >/dev/null || exit 24; if grep -iEn "(^|;)[[:space:]]*(drop|truncate|delete|revoke|insert|update|merge|copy)[[:space:]]|[[:space:]]drop[[:space:]]+(table|schema|index|function|constraint|policy|type|sequence|view|trigger|column|role|owned|database|materialized)" /w/correction.sql; then echo "REFUSED: correction.sql contains a destructive or data-modifying statement (DROP/TRUNCATE/DELETE/REVOKE/INSERT/UPDATE/MERGE/COPY); schema-additive only"; exit 25; fi; case "$PGHOST" in *prod*) echo "PGHOST names production"; exit 26;; vitana-aurora-staging.*|vitana-aurora-staging-*) ;; *) echo "PGHOST not staging"; exit 26;; esac; echo "applying correction.sql ($(wc -l </w/correction.sql) lines) to $PGHOST"; PGSSLMODE=${PGSSLMODE:-require} PGDATABASE=${K5_DB:-vitana} PGOPTIONS="-c statement_timeout=900000" psql -X -v ON_ERROR_STOP=1 --single-transaction -f /w/correction.sql || exit 27; echo "correction applied";'
+        APPLY='curl -fsS -H "$A" "$K5_PKG/fix/correction.sql" -o /w/correction.sql || exit 23; echo "$K5_FIX_SHA256  /w/correction.sql" | sha256sum -c - >/dev/null || exit 24; curl -fsS -H "$A" "$K5_PKG/gen/guard-correction.py" -o /w/guard.py || exit 24; echo "$K5_GUARD_SHA256  /w/guard.py" | sha256sum -c - >/dev/null || exit 24; python3 /w/guard.py /w/correction.sql || exit 25; case "$PGHOST" in *prod*) echo "PGHOST names production"; exit 26;; vitana-aurora-staging.*|vitana-aurora-staging-*) ;; *) echo "PGHOST not staging"; exit 26;; esac; echo "applying correction.sql ($(wc -l </w/correction.sql) lines) to $PGHOST"; PGSSLMODE=${PGSSLMODE:-require} PGDATABASE=${K5_DB:-vitana} PGOPTIONS="-c statement_timeout=900000" psql -X -v ON_ERROR_STOP=1 --single-transaction -f /w/correction.sql || exit 27; echo "correction applied";'
         CMD="$COMMON $APPLY python3 /w/k5.py; rc=\$?; $PUBLISH exit \$rc"
       fi
       OV=$(jq -cn --arg c "$CNAME" --arg cmd "$CMD" --arg tok "$CI_JOB_TOKEN" --arg pkg "$PKG" --arg sha "$K5SHA" \
-        --arg run "$RUN" --arg out "$OUT" --arg data "$K5_DATA" --arg fsha "${K5_FIX_SHA256:-}" --arg gsha "${GENSHA:-}" \
+        --arg run "$RUN" --arg out "$OUT" --arg data "$K5_DATA" --arg fsha "${K5_FIX_SHA256:-}" --arg gsha "${GENSHA:-}" --arg qsha "${GUARDSHA:-}" \
         '{containerOverrides:[{name:$c,command:["bash","-c",$cmd],environment:[
-           {name:"K5_GEN_SHA256",value:$gsha},
+           {name:"K5_GEN_SHA256",value:$gsha},{name:"K5_GUARD_SHA256",value:$qsha},
            {name:"K5_TOKEN",value:$tok},{name:"K5_PKG",value:$pkg},{name:"K5_PY_SHA256",value:$sha},
            {name:"K5_RUN",value:$run},{name:"K5_OUT",value:$out},{name:"K5_DATA",value:$data},
            {name:"K5_FIX_SHA256",value:$fsha}]}]}')
@@ -138,8 +145,13 @@
       done
       # generate mode: also fetch the published correction.sql (fix/ path) into the artifacts for review.
       if [ "$MODE" = generate ]; then
-        curl -fsS -H "$AUTH" "$PKG/fix/correction.sql" -o "$S/correction.sql" 2>/dev/null && echo "fetched correction.sql ($(wc -l <"$S/correction.sql") lines, sha256 $(sha256sum "$S/correction.sql" | cut -d' ' -f1))" || echo "no correction.sql published"
-        if [ -f "$S/correction.sql" ]; then echo "===== correction.sql (first 160 lines) ====="; head -160 "$S/correction.sql"; fi
+        curl -fsS -H "$AUTH" "$PKG/fix/correction.sql" -o "$S/correction.sql" 2>/dev/null || true
+        if [ "$EXIT" != "0" ] || [ ! -s "$S/correction.sql" ]; then
+          echo "GENERATE FAILED: container exit=${EXIT:-none}, correction.sql $( [ -s "$S/correction.sql" ] && echo present || echo missing/empty). See the task log; nothing to apply."
+          exit 2
+        fi
+        echo "correction.sql: $(wc -l <"$S/correction.sql") lines, sha256 $(sha256sum "$S/correction.sql" | cut -d' ' -f1)"
+        echo "===== correction.sql (first 200 lines) ====="; head -200 "$S/correction.sql"
         echo "SCHEMA ACCEPTANCE GENERATE: correction.sql is in the job artifacts and at $PKG/fix/correction.sql — review, then run =apply with K5_FIX_SHA256 set to its sha256."
         exit 0
       fi
