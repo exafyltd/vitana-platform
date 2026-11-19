@@ -1294,6 +1294,10 @@ export interface CicdOasisEvent {
   // defaults to the running process's VITANA_ENV. Embedded in metadata.env
   // (no oasis_events schema change required).
   env?: 'production' | 'staging';
+  // The delivery loop: when set, emitOasisEvent derives the row id from (env, type, this key) and inserts with
+  // `Prefer: resolution=ignore-duplicates`, so the same fact written twice (by two gateway tasks, a webhook retry,
+  // a re-run) is one row and the second write answers `duplicate: true`. Unset: unchanged (a random row id).
+  idempotency_key?: string;
 }
 
 // ==================== Allowed Services for Deploy ====================

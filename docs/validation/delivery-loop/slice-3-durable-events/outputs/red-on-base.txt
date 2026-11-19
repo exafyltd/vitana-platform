@@ -1,0 +1,48 @@
+# Slice 3 tests run against the code BEFORE the slice (the four source files stashed), 2026-11-19T00:52:58Z
+# base = e094e26718 (tests from the working tree, source from base)
+FAIL test/oasis-event-idempotency.test.ts
+    ✕ is a version 5 layout UUID that Postgres uuid accepts (5 ms)
+    ✕ is the same for the same (env, topic, key) and different when any of the three differs
+    ✕ does not let one field run into the next: ("ab","c") and ("a","bc") are different
+    ✕ is pinned: changing the derivation would make a rolling deploy write the same fact twice
+    ✕ writes the deterministic id and asks for ignore-duplicates, keeping return=representation (1 ms)
+    ✕ the second write of the same fact adds no row, answers ok with duplicate, and does not project to the timeline again (2 ms)
+    ✕ twenty concurrent writes of one fact leave one row (1 ms)
+FAIL test/delivery/gitlab-delivery-mapping.test.ts
+    ✕ every event has a VTID or BOOTSTRAP-DELIVERY, metadata.dedupe_key, plane delivery, host gitlab and a mode (13 ms)
+    ✕ never carries the description, the user, labels other than the queue label, the changes, pipeline variables or raw builds (7 ms)
+    ✕ none of the events of the corpus, with the status given, matches a rule in any state (20 ms)
+    ✕ an issue opened with the intake label gives scm.gitlab.issue.opened: ids, state, url and the agent labels only
+    ✕ a reopened issue is opened again, under a key of its own
+    ✕ a webhook retry of the same delivery has the same key, so the same fact is one row
+    ✕ an update that adds the intake label gives scm.gitlab.issue.labeled (1 ms)
+    ✕ an update of a task already labeled, or one that only edits the text, is not intake (unmapped_action) (3 ms)
+    ✕ closing a task gives scm.gitlab.issue.closed
+    ✕ an issue without the intake label is not a task: opened, closed, or an update that removes the label are all not_intake (1 ms)
+    ✕ the intake label is DELIVERY_INTAKE_LABEL when it is a plain label name, otherwise agent-task (1 ms)
+    ✕ keeps at most ten labels, each once, and only the intake label and the agent-, delivery- and priority- ones
+    ✕ a title that names a VTID keeps it; a task without one is recorded under BOOTSTRAP-DELIVERY
+    ✕ labels come from the top-level list, or from the issue attributes when the payload has none (1 ms)
+    ✕ only an Issue is a task: other work item types and work_item events are ignored
+    ✕ an unknown action, a missing iid and hostile attributes are ignored and never throw (1 ms)
+    ✕ is marked live for a delivered repository and shadow for the rehearsal project
+    ✕ carries failed_jobs: the jobs that failed and were not allowed to, lowest id first, with the reason and exit code (2 ms)
+    ✕ names the merge request branches and URL, which is where a repair starts (1 ms)
+    ✕ a pipeline with no merge request has null branches and URL, and still lists its failed jobs (1 ms)
+    ✕ only a failed pipeline carries failed_jobs; success, running and canceled do not (2 ms)
+    ✕ a failed pipeline whose jobs all may fail, or has no builds, carries an empty failed_jobs
+    ✕ keeps at most MAX_FAILED_JOBS and never throws on hostile builds
+    ✕ never carries the job user or runner, and a long job name is cut to 512 characters
+FAIL test/delivery/gitlab-delivery-webhook.test.ts
+    ✕ an event that OASIS already held (duplicate: true from another gateway task) is recorded here but not counted as new (5 ms)
+    ✕ the default writer gives each event its dedupe_key as the idempotency key (3 ms)
+FAIL test/delivery/gitlab-delivery-oasis-write.test.ts
+      ✕ every delivery row is written with a deterministic id and Prefer ignore-duplicates (5 ms)
+      ✕ the same fact reaching two gateway tasks is one row, and the second task answers duplicate (8 ms)
+      ✕ a different delivery of the same fact (a new webhook id) is also one row (6 ms)
+      ✕ a partly recorded delivery completes on its retry: the rows already there are skipped, the rest are written (8 ms)
+      ✕ an issue with the intake label is recorded as scm.gitlab.issue.opened under BOOTSTRAP-DELIVERY, with the issue and no text (2 ms)
+      ✕ an issue without the intake label is answered 202 not_intake and writes nothing (3 ms)
+      ✕ a failed pipeline row carries the failed jobs, and its status is warning, never error (4 ms)
+Test Suites: 4 failed, 4 total
+Tests:       40 failed, 96 passed, 136 total
