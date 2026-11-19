@@ -5,7 +5,7 @@ executor: kiro
 next_actor: kiro
 state: drafted
 author_seat: jtadic
-updated: 2026-11-19T13:20Z
+updated: 2026-11-19T14:05Z
 depends_on_plans: [preview-gateway-recovery]
 spar_refs:
   - exafyltd/vitana-v1: main
@@ -50,3 +50,14 @@ session kiro-jtadic-202611191115-a88f): preview sparring token (§2, checklist s
 CI. The owner instructed (2026-11-19): obtain the News Feed VTID under rule 55 through the authorized registry
 operator (rule 55: the owner allocates through the exemption role). Then: push the lane, open the vitana-v1 PR,
 reviewer agent, §7b merge, ordinary staging deploy (AWS-STAGE-DEPLOY-FRONTEND), STAGING-VERIFY community-app.
+
+### 2026-11-19T14:05Z · kiro-jtadic-202611191143-e223 · drafted (blocked: recovery, VTID, staging path)
+Fresh-clone recovery verified: `artifacts/fresh-checkout-recovery.md` (base bbe90b7137, patch sha256 8b5a3464…, `git am`
+exit 0, identical tree and commit cad441c174, 22/22 + 42/42, red on base, build exit 0). Staging readiness, read-only:
+`artifacts/staging-readiness-2026-11-19T1358Z.md` — not ready (staging frontend service 0/0 since 2026-11-16, no
+targets on `preview-aws.vitanaland.com`; staging app `/api/v1` served by `vitana-gateway-preview:2` via rule 9;
+`vitana-gateway` 0/0). Recovery: KIRO 12 has published no evidence yet that authenticated, allocation-disabled
+PLAN-SPAR works (its lanes wait on the Rule 55 ruling and two VTIDs, #5110 / #5122); PLAN-SPAR is not re-run here.
+Dragan's instructions: none from him directly on GitHub or in git; the ones KIRO 12 records (#5110, #5116: no scale or
+redeploy of `vitana-gateway` without his decision; #5110 unmerged until the ordinary staging path is ready and he
+authorizes it) are followed. This plan does not touch #5110, PLAN-SPAR.yml or any AWS resource.
