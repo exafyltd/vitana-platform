@@ -1,4 +1,4 @@
-# VTID-05803 Aurora staging acceptance (operation file of vitana/vitana-platform; config/delivery/services.json `operations`).
+# VTID-05803 Aurora staging acceptance (operation file of vitana/vitana-platform; declared in infra/gitlab-engineering/operations.json).
 # The settings sync (scripts/eng/gitlab-settings.mjs) copies this file to vitana/ci-config; edit it here, never in GitLab.
 # Runner source: scripts/aws/staging-acceptance/k5.py (embedded below as xz+base64; scripts/ci/staging-db/staging-acceptance.test.mjs
 # proves the payload equals the source and its sha256). Regenerate the payload with python3 scripts/aws/staging-acceptance/embed.py (--check: exit 3 on drift).
@@ -138,6 +138,9 @@ vtid-05803-acceptance-discover:
 vtid-05803-acceptance-run:
   stage: verify
   needs: []
+  # Exit 3 = auto mode with no new staging load reported: nothing ran. Only auto can exit 3; it is never a pass.
+  allow_failure:
+    exit_codes: [3]
   tags: [vitana-eng-v1]
   image: public.ecr.aws/docker/library/alpine:3.20
   interruptible: false
@@ -160,8 +163,6 @@ vtid-05803-acceptance-run:
   rules:
     - if: $CI_COMMIT_BRANCH == "main" && $CI_PIPELINE_SOURCE =~ /^(api|web)$/ && $VTID05803_ACCEPTANCE == "run"
     - if: $CI_COMMIT_BRANCH == "main" && $CI_PIPELINE_SOURCE =~ /^(api|web|schedule)$/ && $VTID05803_ACCEPTANCE == "auto"
-      allow_failure:
-        exit_codes: [3]
   artifacts:
     when: always
     expire_in: 90 days

@@ -145,7 +145,10 @@ test('the job maps only container exit 0 to a pass, and auto runs only on a repo
   assert.match(run, /\n {8}""\) fin 2 "no container exit code/);
   assert.match(run, /\n {8}\*\) fin 2 /);
   assert.match(run, /\[ "\$ST" = STOPPED \] \|\| fin 2/);
-  assert.match(run, /allow_failure:\n {8}exit_codes: \[3\]/);
+  // GitLab accepts allow_failure: exit_codes only at job level (inside rules: only a boolean); a rule-level map made every
+  // vitana-platform pipeline config invalid after the 01:15Z sync.
+  assert.match(run, /^ {2}allow_failure:\n {4}exit_codes: \[3\]$/m);
+  assert.ok(!/^ {6}allow_failure:/m.test(run), 'no rule-level allow_failure');
   assert.match(run, /vtid-05803-staging-load\/latest\/marker\.json/);
   assert.match(run, /assignPublicIp = "DISABLED"/);
   for (const m of job.matchAll(/^ {4}- if: (.*)$/gm)) assert.match(m[1], /^\$CI_COMMIT_BRANCH == "main" && /, `every job rule is main-only: ${m[1]}`);
