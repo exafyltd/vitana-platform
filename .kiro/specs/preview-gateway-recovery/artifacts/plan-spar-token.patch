@@ -1,0 +1,110 @@
+PLAN-SPAR token change for independent review. Rebased onto origin/main d8b8a8c5e0. Commit cf021a2443 on branch kiro/preview-gateway-recovery/plan-spar-token (not published as a PR: lane branches need a VTID-titled PR to pass the push guard). Lane tests: plan-spar-preview-token.test.mjs 3/3 and slot.test.mjs on the branch; the new test is 1 pass / 2 fail against main's workflow.
+
+From cf021a244327c4acab68a923d80cf1c724873727 Mon Sep 17 00:00:00 2001
+From: "kiro-agent[bot]" <245459735+kiro-agent[bot]@users.noreply.github.com>
+Date: Wed, 18 Nov 2026 10:42:57 +0000
+Subject: [PATCH] ci(plan-spar): dedicated preview token, allocation forced off
+ while it is set [VTID pending]
+
+Protected gate file; owner instruction 2026-11-18 names it:
+preview-gateway-recovery -> .github/workflows/PLAN-SPAR.yml.
+Without the repo secret PLAN_SPAR_GATEWAY_TOKEN both values behave as today
+(PLAN_SPAR_ALLOCATE may now read 'false' instead of '', and plan-spar.mjs allocates only on 'true').
+
+Collab-Session: kiro-jtadic-202611180939-a2df
+Collab-Lane: preview-gateway-recovery/plan-spar-token
+---
+ .github/workflows/PLAN-SPAR.yml               |  7 ++-
+ .../collab/plan-spar-preview-token.test.mjs   | 62 +++++++++++++++++++
+ 2 files changed, 67 insertions(+), 2 deletions(-)
+ create mode 100644 scripts/collab/plan-spar-preview-token.test.mjs
+
+diff --git a/.github/workflows/PLAN-SPAR.yml b/.github/workflows/PLAN-SPAR.yml
+index 2a502c84e3..75432f8a6e 100644
+--- a/.github/workflows/PLAN-SPAR.yml
++++ b/.github/workflows/PLAN-SPAR.yml
+@@ -90,8 +90,11 @@ jobs:
+         if: steps.guard.outputs.skip != 'true'
+         env:
+           GATEWAY_URL: ${{ vars.PLAN_SPAR_GATEWAY_URL || 'https://preview-aws-gateway.vitanaland.com' }}
+-          GATEWAY_SERVICE_TOKEN: ${{ secrets.GATEWAY_SERVICE_TOKEN }}
+-          PLAN_SPAR_ALLOCATE: ${{ vars.PLAN_SPAR_ALLOCATE }}
++          # preview-gateway-recovery: the isolated staging preview accepts only its own token (repo secret
++          # PLAN_SPAR_GATEWAY_TOKEN = Secrets Manager vitana/gateway/staging/preview-sparring-token); unset = today.
++          GATEWAY_SERVICE_TOKEN: ${{ secrets.PLAN_SPAR_GATEWAY_TOKEN || secrets.GATEWAY_SERVICE_TOKEN }}
++          # Isolated staging never allocates official VTIDs: allocation is forced off while the preview token is set.
++          PLAN_SPAR_ALLOCATE: ${{ secrets.PLAN_SPAR_GATEWAY_TOKEN == '' && vars.PLAN_SPAR_ALLOCATE || 'false' }}
+           BASE_SHA: ${{ github.event.pull_request.base.sha }}
+           GITHUB_TOKEN: ${{ secrets.PLAN_SPAR_PUSH_TOKEN || github.token }}   # resolveRef reads a declared spar_refs companion (e.g. vitana-v1); unused when none is declared
+         run: |
+diff --git a/scripts/collab/plan-spar-preview-token.test.mjs b/scripts/collab/plan-spar-preview-token.test.mjs
+new file mode 100644
+index 0000000000..e498fc1966
+--- /dev/null
++++ b/scripts/collab/plan-spar-preview-token.test.mjs
+@@ -0,0 +1,62 @@
++// preview-gateway-recovery / plan-spar-token: PLAN-SPAR sends the dedicated preview token when the repo secret
++// PLAN_SPAR_GATEWAY_TOKEN exists, and forces VTID allocation off while it does. Without that secret the two env
++// values evaluate exactly as before (GATEWAY_SERVICE_TOKEN, vars.PLAN_SPAR_ALLOCATE).
++import test from 'node:test';
++import assert from 'node:assert/strict';
++import { readFileSync } from 'node:fs';
++import path from 'node:path';
++import { fileURLToPath } from 'node:url';
++
++const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
++const y = readFileSync(path.join(ROOT, '.github/workflows/PLAN-SPAR.yml'), 'utf8');
++const sparAt = y.indexOf('      - name: Spar\n');
++assert.ok(sparAt > 0, 'PLAN-SPAR.yml has a Spar step');
++const spar = y.slice(sparAt, y.indexOf('      - name: ', sparAt + 10));
++const envLine = (name) => (spar.match(new RegExp(`^\\s+${name}: (.*)$`, 'm')) || [])[1];
++
++// A minimal evaluator for the GitHub Actions expression grammar these two lines use: `secrets.X` / `vars.X`
++// (unset = ''), string literals, `==`, `&&`, `||` with Actions semantics (&& / || return an operand; '' is falsy).
++// The truth tables below evaluate the expression text parsed from the workflow, not a copy of it.
++function evaluate(expr, ctx) {
++  const body = expr.match(/^\$\{\{\s*(.*?)\s*\}\}$/)[1];
++  const val = (t) => {
++    t = t.trim();
++    const lit = t.match(/^'(.*)'$/);
++    if (lit) return lit[1];
++    const ref = t.match(/^(secrets|vars)\.([A-Z_]+)$/);
++    assert.ok(ref, `unsupported operand ${t}`);
++    return ctx[ref[1]][ref[2]] ?? '';
++  };
++  const cmp = (t) => { const m = t.split(/\s*==\s*/); return m.length === 2 ? val(m[0]) === val(m[1]) : val(t); };
++  const and = (t) => t.split(/\s*&&\s*/).map(cmp).reduce((a, b) => (a ? b : a));
++  return body.split(/\s*\|\|\s*/).map(and).reduce((a, b) => (a ? a : b));
++}
++const ctx = (preview, allocate) => ({
++  secrets: { PLAN_SPAR_GATEWAY_TOKEN: preview, GATEWAY_SERVICE_TOKEN: 'shared' },
++  vars: { PLAN_SPAR_ALLOCATE: allocate },
++});
++
++test('the Spar step sends the preview token when it exists, else the shared token', () => {
++  assert.equal(envLine('GATEWAY_SERVICE_TOKEN'), '${{ secrets.PLAN_SPAR_GATEWAY_TOKEN || secrets.GATEWAY_SERVICE_TOKEN }}');
++  const e = envLine('GATEWAY_SERVICE_TOKEN');
++  assert.equal(evaluate(e, ctx('preview', '')), 'preview');
++  assert.equal(evaluate(e, ctx('', '')), 'shared');
++});
++
++test('allocation is forced off while the preview token is set; unchanged otherwise', () => {
++  assert.equal(envLine('PLAN_SPAR_ALLOCATE'), "${{ secrets.PLAN_SPAR_GATEWAY_TOKEN == '' && vars.PLAN_SPAR_ALLOCATE || 'false' }}");
++  const e = envLine('PLAN_SPAR_ALLOCATE');
++  // preview token set: never allocates, whatever the variable says
++  assert.equal(evaluate(e, ctx('preview', 'true')), 'false');
++  assert.equal(evaluate(e, ctx('preview', '')), 'false');
++  // no preview token: today's behaviour (plan-spar.mjs allocates only on the exact string 'true')
++  assert.equal(evaluate(e, ctx('', 'true')), 'true');
++  assert.notEqual(evaluate(e, ctx('', '')), 'true');
++  assert.notEqual(evaluate(e, ctx('', 'false')), 'true');
++});
++
++test('the gateway URL, the trigger and the job condition are unchanged', () => {
++  assert.equal(envLine('GATEWAY_URL'), "${{ vars.PLAN_SPAR_GATEWAY_URL || 'https://preview-aws-gateway.vitanaland.com' }}");
++  assert.match(y, /pull_request_target:/);
++  assert.doesNotMatch(y, /^\s+if:.*secrets\./m, 'no if: reads the secrets context');
++});
+-- 
+2.50.1
+

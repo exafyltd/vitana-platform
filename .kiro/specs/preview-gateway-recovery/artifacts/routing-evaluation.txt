@@ -1,0 +1,22 @@
+# Listener routing evaluated read-only against the live vitana-alb-prod HTTPS listener (2026-11-18T10:39:03Z),
+# today and with the planned priority-8 rule (host preview-aws-gateway.vitanaland.com AND sparring paths).
+== today
+   /api/v1/admin/build-info -> rule 10 vitana-tg-gateway-prod
+   /api/v1/admin/health -> rule 10 vitana-tg-gateway-prod
+   /api/v1/orb/live/ws -> rule 10 vitana-tg-gateway-prod
+   /alive -> rule 31 vitana-tg-gateway-preview
+   /api/v1/plans/spar -> rule 10 vitana-tg-gateway-prod
+   /api/v1/plans/spar/00000000-0000-0000-0000-000000000000/rounds -> rule 10 vitana-tg-gateway-prod
+   /api/v1/vtid/allocator/status -> rule 10 vitana-tg-gateway-prod
+   /api/v1/vtid/allocate -> rule 10 vitana-tg-gateway-prod
+== planned
+   /api/v1/admin/build-info -> rule 10 vitana-tg-gateway-prod
+   /api/v1/admin/health -> rule 10 vitana-tg-gateway-prod
+   /api/v1/orb/live/ws -> rule 10 vitana-tg-gateway-prod
+   /alive -> rule 31 vitana-tg-gateway-preview
+   /api/v1/plans/spar -> rule 8 vitana-tg-gateway-preview
+   /api/v1/plans/spar/00000000-0000-0000-0000-000000000000/rounds -> rule 8 vitana-tg-gateway-preview
+   /api/v1/vtid/allocator/status -> rule 8 vitana-tg-gateway-preview
+   /api/v1/vtid/allocate -> rule 10 vitana-tg-gateway-prod
+== gateway.vitanaland.com /api/v1/admin/build-info: 3 vitana-tg-gateway-awsdr
+== preview-aws.vitanaland.com /api/v1/x: 10 vitana-tg-gateway-prod

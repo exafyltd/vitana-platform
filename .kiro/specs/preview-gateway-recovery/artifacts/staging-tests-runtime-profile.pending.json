@@ -1,0 +1,5 @@
+{"vtid": "VTID-PENDING", "service": "gateway", "note": "Moves to docs/validation/<VTID>/staging-tests.json after allocation. Runtime-profile (#5110) change suite.", "tests": [
+  {"kind": "existing", "name": "runtime profile: HTTP-only boot and fail-closed unknown profile", "ref": "npx jest test/runtime/preview-sparring-profile.test.ts test/runtime/preview-sparring-boot.test.ts", "cwd": "services/gateway", "reason": "Boot-time guard is the only code path the profile changes; proven in CI with the real index.ts listen callback (structural and mutation tests). Staging cannot start a preview profile until the preview deploys (rule 48: staging tests are read-only)."},
+  {"kind": "http", "name": "gateway alive after the change", "path": "/alive", "expect_status": 200},
+  {"kind": "http", "name": "plan sparring route mounted and auth-gated", "path": "/api/v1/plans/spar/00000000-0000-0000-0000-000000000000", "expect_status": 401, "expect_content_type": "application/json"}
+]}
