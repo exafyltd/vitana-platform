@@ -63,7 +63,9 @@ def q(env, sql):
               env=env, capture_output=True, text=True)
     if p.returncode:
         sys.stderr.write("psql error: %s\nSQL: %s\n" % (p.stderr[-600:], sql[:300])); sys.exit(2)
-    return [r.split("\x1f") for r in p.stdout.split("\x1e") if r != ""]
+    # psql ends unaligned output with a trailing newline even under -R; strip it so the last record's last field (e.g. a
+    # sequence/relation name used in a regclass lookup, a role name used in a membership test) is not left with a "\n".
+    return [r.split("\x1f") for r in p.stdout.rstrip("\n").split("\x1e") if r != ""]
 
 SRC = src_env()
 STG = conn_env(os.environ["PGHOST"], os.environ.get("PGPORT", "5432"), os.environ["PGUSER"],
