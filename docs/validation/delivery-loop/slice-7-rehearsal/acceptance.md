@@ -5,8 +5,12 @@ No approved lane or VTID covers this slice (VTIDs come only from CI PLAN-SPAR; n
 needs `plan(delivery-loop)` before it can merge. Nothing here deploys or enables anything: `DELIVERY_LOOP_ENABLED` is still unset everywhere.
 
 Slices 1 to 6 were proven with an in-memory GitLab. This slice runs the same engine against **GitLab itself** (project `vitana/rehearsal`, id 4, private,
-GitLab 19.5.3, its real runners) and records what happened. It found five defects the fakes could not show. They are fixed and each has a test that fails
-without the fix (outputs/red-on-base.txt).
+GitLab 19.5.3, its real runners) and records what happened. What it found, measured and sorted by how it was found:
+- three defects in the loop that the in-memory tests did not show, found by the live runs: the worker was not told the failing assertion (AC-1 to AC-4), the first quiet cycle after work still wrote rows (AC-5), and the poller's re-reads wrote
+  claim rows (AC-6);
+- three more found by reading the same code while fixing those: CRLF logs read as empty, check-mark alternatives in a regex that could never match, and a log able to forge the end of the block it is quoted in (AC-1, AC-4);
+- three mistakes in the rehearsal itself: a branch prefix the loop refuses, a loose check for what the worker was told, and a silence check that ran its cycles in one window (AC-7).
+Each fix has tests that fail without it, run against the pinned slice 6 base (outputs/red-on-base.txt: 29, 3, 2 and 16 tests).
 
 ## What was real and what was not
 
@@ -67,7 +71,7 @@ live, any later change to what a fingerprint is built from would orphan the atte
 ## The other defects the live runs found
 
 AC-5 **A quiet loop writes nothing, after any activity.** The first quiet cycle after an active one wrote a claim and an all-zero cycle row (the cursor baseline was set only on the quiet path). Run r2d4e5f.
-TEST: engine.test.ts "silence after activity" (3 tests; they fail on the old code: 13 rows against 3).
+TEST: engine.test.ts "silence after activity": of its three older tests, two fail on the slice 6 engine (outputs/red-on-base.txt block 2b); the third ("after any kind of work ...") passes either way, because `settle` accepts the first quiet cycle.
 
 AC-6 **Re-reading what GitLab showed a moment ago writes no claim.** The poller reads again, on purpose, everything GitLab changed in the last two minutes. Each repeat recorded a fact the ledger already had, and recording takes the
 window's claim first, so every pipeline left about three claim rows behind. Run r3x7y8z (rows 47 to 48 in a settled loop). `recordFact` is the poller's write: idempotent by key, so it needs no claim; decisions and side effects still take it.

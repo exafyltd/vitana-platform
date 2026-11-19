@@ -1,4 +1,4 @@
-# Red on base, slice 7 (2026-11-19T12:22:16Z). base = edaff12f2c (slice 6). Each block: the fix taken out, the tests that prove it run, then restored.
+# Red on base, slice 7 (2026-11-19T12:29:18Z). base = edaff12f2c (slice 6). Each block: the fix taken out, the tests that prove it run, then restored.
 
 ## 1. B3: the repair instructions (fingerprint.ts and drive.ts back to slice 6)
       7     TypeError: (0 , fingerprint_1.failureRegion) is not a function
@@ -41,6 +41,11 @@
       1 Tests:       3 failed, 22 passed, 25 total
       1     ✕ re-reading what GitLab showed a moment ago writes nothing, not even a claim: no cycle takes a window to find a fact it already has
       1     ✕ a fact the poller finds is written without taking the window; the cycle that goes on to handle it does take the window
+
+## 2b. Z1: the first quiet cycle after an active one (engine.ts back to slice 6; the poller fix stays)
+      1     ✕ the first quiet cycle after an active one writes nothing (it used to write a claim and an all-zero cycle row)
+      1 Tests:       2 failed, 19 skipped, 4 passed, 25 total
+      1     ✕ a cycle that only moved the cursor (a fact the loop does not handle) writes one cycle row and then goes quiet
 
 ## 3. D: the guarded retry (retryOwnPipeline cut out of rehearse.ts)
       9     TypeError: r.retryOwnPipeline is not a function

@@ -5,9 +5,10 @@ npx tsc --noEmit --strict ... test/delivery-loop/*.test.ts test/delivery-loop/ha
 npx jest --silent --maxWorkers=5 --json   -> full gateway suite, outputs/full-gateway-suite.txt: 1805 suites, 30455 tests, 30393 passed, 2 failed (both pre-existing: storage-provider S3 region default, vtid-04226 needs openssl), 54 skipped, 6 todo
 # regression suites that must stay green, from the same run: operator pipeline 71, role separation 105 (atlas drift guard), customer support 25, loop catalog 25, route guard 14,
 #   project-manager 15 suites 286, delivery 6 suites 198, gitlab-events 4 suites 73, oasis-event-idempotency 15, locked source-type list (04108, 04667, 04671) 7 suites 78. 0 failed in all.
-# red on base: /projects/sandbox/.kiro/artifacts/cutover-k3/loop/red-on-base-s7.sh (restoring trap) -> outputs/red-on-base.txt
+# red on base: /projects/sandbox/.kiro/artifacts/cutover-k3/loop/red-on-base-s7.sh (restoring trap; the base is PINNED to edaff12f2c: a first version read HEAD, which moves on commit, and reported green) -> outputs/red-on-base.txt
 #   1. B3 fix out (fingerprint.ts, drive.ts at slice 6):  29 of 104 tests fail
 #   2. claim fix out (poll.ts, context.ts at slice 6):     3 of 25 engine tests fail
+#   2b. cursor fix out (engine.ts at slice 6):            2 of the 3 older silence tests fail (the third passes either way: `settle` accepts the first quiet cycle)
 #   3. guarded retry out (retryOwnPipeline cut):          16 of 38 guard tests fail
 #   restored: 332 of 332 pass
 # mutation check: poll.ts back on record() (the claim-taking write) -> the same 3 engine tests fail; restored by a trap.
