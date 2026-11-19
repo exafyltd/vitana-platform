@@ -42,6 +42,7 @@
 
 import { SafeMergeRequest } from '../../types/cicd';
 import type { SafeMergeOutcome } from '../../routes/cicd';
+import type { CicdOasisEvent } from '../../types/cicd';
 import { pmMode } from './config';
 import { LeaseManager, defaultLeaseManager, recordLease } from './lease';
 import { latestReview, repoFromPrUrl } from './decide';
@@ -60,6 +61,7 @@ import {
   ParkDecision,
   PmDecision,
   ReassignDecision,
+  RetryDecision,
   ReviewEntry,
   UpdateBranchDecision,
   VerifyDecision,
@@ -159,6 +161,11 @@ export interface ActDeps {
   updateBranch?: UpdateBranchFn;
   /** VTID-05274: ledger writer (absent → `ledger_failed`). */
   ledgerWriter?: LedgerWriter;
+  /**
+   * VTID-05736: records `delivery.retry.scheduled` and `delivery.blocked` (OASIS). Absent → the lane file still changes and the
+   * result says so. It is a record, never a deploy, a dispatch or a VTID allocation.
+   */
+  emitEvent?: (event: CicdOasisEvent) => Promise<unknown>;
 }
 
 /** The result of acting on a whole tick's decisions. */
@@ -186,7 +193,7 @@ function findLane(state: ObservedState, slug: string, lane: string): ObservedLan
 }
 
 type Bound = Required<Pick<ActDeps, 'safeMerge' | 'laneWriter' | 'gate2Poster' | 'gate2Evidence'>> &
-  Pick<ActDeps, 'updateBranch' | 'ledgerWriter'> & { repo: PmRepo };
+  Pick<ActDeps, 'updateBranch' | 'ledgerWriter' | 'emitEvent'> & { repo: PmRepo };
 
 /**
  * Act on ONE decision. Pure control flow over the injected seams. Returns the
@@ -212,6 +219,8 @@ async function actOne(decision: PmDecision, state: ObservedState, deps: Bound): 
       return actMergeSpecPr(decision, deps);
     case 'ledger':
       return actLedger(decision, deps);
+    case 'retry':
+      return actRetry(decision, state, deps);
   }
 }
 
@@ -306,6 +315,51 @@ async function actPark(decision: ParkDecision, state: ObservedState, deps: Bound
     log: `park (${decision.reason})${decision.release_claim ? '; claim released' : ''}${decision.fallback ? `; Claude unavailable → ${to}` : ''}`,
   });
   return { decision, status: 'parked', detail: decision.reason };
+}
+
+/**
+ * VTID-05736 (dispatcher-pm): unpark a parked lane to `parked_from` (attempt N of 6) or, when the sixth attempt is spent, leave it
+ * parked with `next_actor: owner`. The write goes through the pm-agent lane writer (`applyLaneChange`, `writers.ts`), so only the
+ * PM_AGENT_KEYS of the lane file change and the log gets one `retry attempt N …` / `retry blocked …` entry, which the observer
+ * reads back as the retry history. The OASIS record is written after the lane file, and its failure never undoes the unpark.
+ */
+async function actRetry(decision: RetryDecision, state: ObservedState, deps: Bound): Promise<ActResult> {
+  const repo = findLane(state, decision.slug, decision.lane)?.repo;
+  const key = `${decision.slug}/${decision.lane}`;
+  const emit = async (type: 'delivery.retry.scheduled' | 'delivery.blocked', message: string, payload: Record<string, unknown>): Promise<string> => {
+    if (!deps.emitEvent) return 'no_event_writer';
+    try {
+      await deps.emitEvent({ vtid: 'VTID-05736', type, source: 'project-manager', status: type === 'delivery.blocked' ? 'warning' : 'info', message, payload: { lane: key, ...payload } });
+      return 'recorded';
+    } catch {
+      return 'event_failed';
+    }
+  };
+  if (decision.outcome === 'blocked') {
+    const written = await deps.laneWriter.write({
+      slug: decision.slug,
+      lane: decision.lane,
+      repo,
+      next_actor: 'owner',
+      log: `retry blocked after ${decision.attempt} attempts in 24 h (${decision.reason}); next_actor: owner`,
+    });
+    const rec = await emit('delivery.blocked', `Lane ${key} is blocked: ${decision.attempt} retries spent (${decision.reason})`, {
+      attempts: decision.attempt, reason: decision.reason, next_actor: 'owner',
+    });
+    return { decision, status: written === 'noop' ? 'unchanged' : 'retry_blocked', detail: `${decision.attempt} attempts, ${rec}` };
+  }
+  await deps.laneWriter.write({
+    slug: decision.slug,
+    lane: decision.lane,
+    repo,
+    state: decision.parked_from,
+    next_actor: decision.next_actor,
+    log: `retry attempt ${decision.attempt} of 6 (${decision.reason}; backoff ${decision.backoff_minutes} min); unparked to ${decision.parked_from}`,
+  });
+  const rec = await emit('delivery.retry.scheduled', `Lane ${key} retried: attempt ${decision.attempt} of 6 (${decision.reason})`, {
+    attempt: decision.attempt, reason: decision.reason, due_at: decision.at, unparked_to: decision.parked_from, backoff_minutes: decision.backoff_minutes,
+  });
+  return { decision, status: 'retried', detail: `attempt ${decision.attempt}, ${rec}` };
 }
 
 async function actGate2(decision: Gate2Decision, state: ObservedState, deps: Bound): Promise<ActResult> {
@@ -413,6 +467,7 @@ export async function actOnDecisions(
     gate2Evidence: deps.gate2Evidence,
     updateBranch: deps.updateBranch,
     ledgerWriter: deps.ledgerWriter,
+    emitEvent: deps.emitEvent,
     repo: deps.repo ?? DEFAULT_REPO,
   };
 

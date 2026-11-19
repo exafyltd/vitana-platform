@@ -28,6 +28,7 @@ import {
   EXCEPTIONS_SEAT,
   GATE2_BATCH_AFTER_MS,
   Gate2Decision,
+  LaneState,
   LedgerDecision,
   MAX_BUILD_LANES_PER_PLAN,
   MergeBookkeepingDecision,
@@ -44,6 +45,7 @@ import {
   REASSIGN_NO_DRIVER_AFTER_MS,
   REQUIRED_MERGE_CHECKS,
   ReassignDecision,
+  RetryDecision,
   ReviewEntry,
   STALE_CLAIM_AFTER_MS,
   STALE_CLAIM_NO_DRIVER_AFTER_MS,
@@ -51,6 +53,7 @@ import {
   VerifyDecision,
 } from './types';
 import { governanceMergeAllowed, isAgentReview, reviewOnCurrentHead, reviewSatisfiesLane } from './governance';
+import { nextRetry, retryDue, RETRY_BACKOFF_MINUTES } from './retry';
 
 /** Parse an ISO timestamp to epoch ms; NaN-safe (returns null on bad input). */
 function toMs(iso: string | null | undefined): number | null {
@@ -416,6 +419,36 @@ export function gate2Decisions(state: ObservedState, nowMs: number): Gate2Decisi
 }
 
 /**
+ * VTID-05736 (dispatcher-pm): a lane that is parked for a retryable reason is retried with backoff (`retry.ts`). Pure.
+ *
+ *  - `unpark`  : the next attempt is due; the lane goes back to `parked_from` (default `ready`) and to its executor.
+ *  - `blocked` : the sixth attempt of the window is spent; recorded once (`retry_blocked`), the lane stays parked for the owner.
+ *  - null      : not parked, nothing due yet, a reason that is never retried (security, data loss, a production write, a
+ *                protected file without its reviews, an escalated sparring verdict, anything unknown), or already recorded.
+ */
+export function retryDecision(lane: ObservedLane, nowMs: number): RetryDecision | null {
+  if (lane.state !== 'parked') return null;
+  // Blocked means the owner decides: once the sixth attempt is recorded, or the lane is the owner's, the 24 h window sliding on
+  // must not unpark it again. A new park entry resets `retry_blocked` (parkInfoOf reads the entries after the newest park).
+  if (lane.retry_blocked === true || lane.next_actor === 'owner') return null;
+  const parkedAt = toMs(lane.parked_at ?? lane.state_since);
+  if (parkedAt === null) return null;
+  const history = (lane.retry_attempts ?? [])
+    .map((a) => ({ attempt: a.attempt, at_ms: toMs(a.at) }))
+    .filter((a): a is { attempt: number; at_ms: number } => a.at_ms !== null);
+  const reason = lane.park_reason ?? null;
+  const next = nextRetry({ slug: lane.slug, lane: lane.lane, parked_at_ms: parkedAt, reason }, history, nowMs);
+  const parked_from: LaneState = lane.parked_from && lane.parked_from !== 'parked' && lane.parked_from !== 'done' ? lane.parked_from : 'ready';
+  const next_actor: 'kiro' | 'claude' = lane.executor === 'claude' ? 'claude' : 'kiro';
+  if (next.blocked) {
+    if (next.reason !== 'attempts_exhausted' || lane.retry_blocked === true) return null;
+    return { kind: 'retry', slug: lane.slug, lane: lane.lane, outcome: 'blocked', attempt: next.attempts, at: new Date(nowMs).toISOString(), parked_from, next_actor: 'kiro', reason: reason ?? 'unknown', backoff_minutes: 0 };
+  }
+  if (!retryDue(next, nowMs)) return null;
+  return { kind: 'retry', slug: lane.slug, lane: lane.lane, outcome: 'unpark', attempt: next.attempt, at: next.at, parked_from, next_actor, reason: reason ?? 'unknown', backoff_minutes: RETRY_BACKOFF_MINUTES[next.attempt - 1] };
+}
+
+/**
  * Run the whole deterministic decide step over the observed state. Pure.
  * Returns every decision the PM would act on (in `live`); in `dry_run` these
  * are only reported / emitted, never acted on.
@@ -431,6 +464,12 @@ export function decide(state: ObservedState, nowMs: number): PmDecision[] {
     const park = parkDecision(lane, nowMs, claude);
     if (park) {
       decisions.push(park);
+      continue;
+    }
+    // VTID-05736: a parked lane with a retryable reason comes back by backoff (no other rule handles a parked lane).
+    const retry = retryDecision(lane, nowMs);
+    if (retry) {
+      decisions.push(retry);
       continue;
     }
     const merge = mergeDecision(lane, state.lanes);

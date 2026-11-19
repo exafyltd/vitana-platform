@@ -1242,6 +1242,33 @@ export type CicdEventType =
   | 'delivery.lane.updated'
   | 'delivery.landed'
   | 'delivery.merge.refused'
+  // VTID-05736 / VTID-05737 (dispatcher): the PM retries a parked lane with backoff, and records when the sixth attempt is spent.
+  | 'delivery.retry.scheduled'
+  | 'delivery.blocked'
+  // The delivery loop (services/delivery-loop): GitLab issues, the intake of a task, its dispatch to a worker, the repair of a
+  // failed pipeline, the review of a merge request, what was learned and what is proposed. Written by the loop engine with
+  // metadata.dedupe_key and a deterministic row id. None is ever written with status 'error', so the *.failed catch-all of
+  // autopilot-event-mapper.ts never matches and no delivery event moves a VTID's state.
+  | 'scm.gitlab.issue.opened'
+  | 'scm.gitlab.issue.labeled'
+  | 'scm.gitlab.issue.closed'
+  | 'delivery.intake.accepted'
+  | 'delivery.intake.rejected'
+  | 'delivery.dispatch.requested'
+  | 'delivery.dispatch.started'
+  | 'delivery.dispatch.failed'
+  | 'delivery.execution.finished'
+  | 'delivery.heal.detected'
+  | 'delivery.heal.attempt'
+  | 'delivery.heal.verified'
+  | 'delivery.heal.exhausted'
+  | 'delivery.review.requested'
+  | 'delivery.review.verdict'
+  | 'delivery.review.rework'
+  | 'delivery.learn.recorded'
+  | 'delivery.improve.proposed'
+  | 'delivery.loop.cycle'
+  | 'delivery.loop.claim'
   | 'staging.deploy.rolled_back';
 
 export interface CicdOasisEvent {

@@ -165,6 +165,21 @@ export interface ObservedLane {
   ledger_status?: string | null;
   /** VTID-05274: "Decisions taken" lines from the lane log (quoted in Gate 2). */
   decisions_taken?: string[];
+  // VTID-05736 (dispatcher-pm): what the retry rule needs of a parked lane. All optional: a lane that is not parked has none.
+  /** The state the lane was parked from (`parked_from` front matter); the retry unparks to it. */
+  parked_from?: LaneState | null;
+  /** `next_actor` of the lane file. */
+  next_actor?: string | null;
+  /** Who builds the lane (`executor` front matter); a retry hands the lane back to it. Absent = kiro. */
+  executor?: string | null;
+  /** ISO time of the newest `… → parked` log entry. */
+  parked_at?: string | null;
+  /** The reason the lane was parked (`park (<reason>)` in that entry, or a `park_reason` front-matter key). */
+  park_reason?: string | null;
+  /** Every `retry attempt N` entry the PM wrote in the lane log (the retry rule counts those inside its 24 h window). */
+  retry_attempts?: Array<{ attempt: number; at: string }>;
+  /** True once a `retry blocked` entry follows the newest park entry: the owner has been told, nothing more to record. */
+  retry_blocked?: boolean;
 }
 
 /**
@@ -266,7 +281,9 @@ export type PmDecisionKind =
   | 'update_branch'
   | 'merge_plan'
   | 'merge_bookkeeping'
-  | 'ledger';
+  | 'ledger'
+  // VTID-05736 (plan agentic-delivery-scope §5): a parked lane with a retryable reason is retried with backoff.
+  | 'retry';
 
 export interface MergeDecision {
   kind: 'merge';
@@ -368,6 +385,29 @@ export interface LedgerDecision {
   set: { status: 'in_progress'; spec_status: 'approved' };
 }
 
+/**
+ * VTID-05736: retry a parked lane. `unpark` returns it to `parked_from` (attempt N of 6, `at` is when it was due);
+ * `blocked` records that the sixth attempt is spent: the lane stays parked with `next_actor: owner`.
+ */
+export interface RetryDecision {
+  kind: 'retry';
+  slug: string;
+  lane: string;
+  outcome: 'unpark' | 'blocked';
+  /** The attempt number (`unpark`), or the attempts spent in the window (`blocked`). */
+  attempt: number;
+  /** ISO time the attempt was due (`unpark`); the decision time is the caller's `nowMs`. */
+  at: string;
+  /** The state to unpark to. */
+  parked_from: LaneState;
+  /** The actor the unparked lane goes back to (the lane's executor, kiro by default). */
+  next_actor: 'kiro' | 'claude';
+  /** The park reason the rule judged. */
+  reason: string;
+  /** The delay of this attempt in minutes (`unpark`). */
+  backoff_minutes: number;
+}
+
 export type PmDecision =
   | MergeDecision
   | ReassignDecision
@@ -377,7 +417,8 @@ export type PmDecision =
   | UpdateBranchDecision
   | MergePlanDecision
   | MergeBookkeepingDecision
-  | LedgerDecision;
+  | LedgerDecision
+  | RetryDecision;
 
 /** Timing thresholds (plan §6.2), in milliseconds. Exported so tests pin them. */
 export const REASSIGN_AFTER_MS = 24 * 60 * 60 * 1000; // 24h
@@ -441,6 +482,9 @@ export type ActStatus =
   | 'plan_merged'
   | 'ledger_updated'
   | 'ledger_failed'
+  // VTID-05736
+  | 'retried'
+  | 'retry_blocked'
   | 'act_error';
 
 /** The result of acting on one decision. */

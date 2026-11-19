@@ -55,6 +55,11 @@ export function summarizeDecision(decision: PmDecision): string {
       return `merge_bookkeeping ${decision.slug} (${decision.vtid}) @ ${decision.head_sha}`;
     case 'ledger':
       return `ledger ${decision.vtid} → ${decision.set.status}/${decision.set.spec_status}`;
+    // VTID-05736
+    case 'retry':
+      return decision.outcome === 'unpark'
+        ? `retry ${decision.slug}/${decision.lane} attempt ${decision.attempt} of 6 → ${decision.parked_from} (${decision.reason}, after ${decision.backoff_minutes} min)`
+        : `retry ${decision.slug}/${decision.lane} blocked after ${decision.attempt} attempts (${decision.reason}) → owner`;
   }
 }
 
