@@ -9,7 +9,7 @@ Nothing was changed. No secret value was read.
 | Ordinary staging gateway deploy | last 3 `AWS-STAGE-DEPLOY-GATEWAY` runs failed (44507564289: `vitana/supabase/staging/jwt-secret` not found); handled by VTID-05803 / #5116 | KIRO 12 on #5116 |
 | Staging frontend (`preview-aws.vitanaland.com`) | ALB rule 30 → `vitana-tg-community-prod`, **no registered targets**; service `vitana-community-app-staging` 0/0 on `vitana-community-app:533` since 2026-11-16T13:48:49Z (`UpdateService desiredCount=0`, `j.tadic@vitanaland.com`) | `describe-services`, CloudTrail |
 | Would the ordinary frontend deploy bring it back | No: the update branch of the deploy step registers a new task definition but sets no desired count, so the service stays at 0 | `AWS-STAGE-DEPLOY-FRONTEND.yml` (`--desired-count 1` only on create, line 237) |
-| Last frontend staging deploys | 2026-11-13 and 2026-11-14 failed only at "Trigger STAGING-VERIFY" (GitHub API rate limit) | runs 43483466398-ish (447e46a82), 43569823868 |
+| Last frontend staging deploys | 2026-11-13 and 2026-11-14 both failed only at the step "Trigger STAGING-VERIFY" (43569823868: GitHub API rate limit; the image and task definition were deployed) | runs 43440823094 (447e46a82), 43569823868 (78455457b) |
 | STAGING-VERIFY community-app | last runs 2026-11-14 failure, 11-14 / 11-15 / 11-16 cancelled; with no frontend target it cannot pass today | STAGING-VERIFY run list |
 
 **Verdict: not ready.** A frontend merge now would deploy a task definition to a service at 0 tasks, and STAGING-VERIFY
