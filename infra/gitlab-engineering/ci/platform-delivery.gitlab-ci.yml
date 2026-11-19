@@ -13,6 +13,7 @@ include:
       - "tpl-deploy.yml"
       - "tpl-verify.yml"
       - "vtid-05803-acceptance.gitlab-ci.yml"
+      - "vtid-05803-gateway-preview-deploy.gitlab-ci.yml"
 
 workflow:
   auto_cancel:
@@ -24,6 +25,7 @@ workflow:
     - if: "$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == \"schedule\""
     - if: "$CI_COMMIT_BRANCH =~ /^assist\\//"
     - if: "$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE =~ /^(api|web|schedule)$/ && $VTID05803_ACCEPTANCE =~ /^(discover|run|auto)$/"
+    - if: "$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE =~ /^(api|web|schedule)$/ && $VTID05803_GATEWAY_DEPLOY =~ /^(preflight|preview)$/"
     - when: "never"
 
 stages:

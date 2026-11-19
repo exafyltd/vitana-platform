@@ -8,6 +8,12 @@
         "trigger_variable": "VTID05803_ACCEPTANCE",
         "values": ["discover", "run", "auto"],
         "$comment": "VTID-05803 post-restore Aurora staging acceptance (read-only on source and staging)."
+      },
+      {
+        "file": "vtid-05803-gateway-preview-deploy.gitlab-ci.yml",
+        "trigger_variable": "VTID05803_GATEWAY_DEPLOY",
+        "values": ["preflight", "preview"],
+        "$comment": "VTID-05803 build+deploy of main to vitana-gateway-preview (preview), or a read-only IAM preflight (preflight). Never on push/schedule."
       }
     ]
   }

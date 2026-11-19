@@ -27,6 +27,17 @@ export const STAGING_TARGETS = Object.freeze({
     ecsService: 'vitana-gateway', family: null, stamp: 'gateway',
     commitVars: ['GIT_COMMIT_SHA', 'COMMIT_SHA', 'BUILD_INFO_MARKER'], commitVarsIfPresent: [],
   }),
+  // VTID-05803 (owner instruction 2026-11-18): the Aurora-wired preview gateway, the service that actually serves
+  // preview-aws-gateway.vitanaland.com today (desired 1, staging-only secrets, SUPABASE_URL = the internal Aurora
+  // PostgREST proxy). Same image repository as `gateway`; its own ECS service. Driven only by the explicit VTID-05803
+  // gateway-preview deploy operation (infra/gitlab-engineering/ci/vtid-05803-gateway-preview-deploy.gitlab-ci.yml) with
+  // the vitana-gitlab-deploy-role ID token, never by the generated delivery pipeline. The production-credential gate
+  // (assertNoProductionCredentials) applies exactly as for every other target.
+  'gateway-preview': Object.freeze({
+    project: 'vitana/vitana-platform', role: 'vitana-gitlab-deploy-role', ecrRepository: 'vitana/gateway',
+    ecsService: 'vitana-gateway-preview', family: null, stamp: 'gateway',
+    commitVars: ['GIT_COMMIT_SHA', 'COMMIT_SHA', 'BUILD_INFO_MARKER'], commitVarsIfPresent: [],
+  }),
   'erp-bridge': Object.freeze({
     project: 'vitana/vitana-platform', role: 'gl-platform-staging', ecrRepository: 'vitana/erp-bridge',
     ecsService: 'vitana-erp-bridge', family: null, stamp: null,

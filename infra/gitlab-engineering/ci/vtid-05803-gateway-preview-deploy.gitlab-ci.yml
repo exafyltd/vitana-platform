@@ -1,0 +1,279 @@
+# VTID-05803 gateway-preview deploy (operation file of vitana/vitana-platform; declared in infra/gitlab-engineering/operations.json).
+# The settings sync (scripts/eng/gitlab-settings.mjs) copies this file to vitana/ci-config; edit it here, never in GitLab.
+#
+# Purpose (owner instruction 2026-11-18): build the CURRENT vitana-platform main and deploy it to vitana-gateway-preview
+# (the Aurora-wired preview gateway that serves preview-aws-gateway.vitanaland.com), then verify commit, image digest,
+# health and application routes. NOT production: the target is vitana-gateway-preview only, which binds staging-only
+# secrets and whose SUPABASE_URL is the internal Aurora PostgREST proxy. The production-credential gate in deploy-ecs.mjs
+# refuses any task definition that carries a production Supabase/Aurora secret, so this path can never bind production
+# credentials. The generated delivery pipeline is unchanged: these jobs run ONLY on main, ONLY in an api/web pipeline
+# that sets VTID05803_GATEWAY_DEPLOY, and never on push or schedule.
+#
+# AWS: GitLab OIDC -> $AWS_STAGING_ROLE_ARN (vitana-gitlab-deploy-role), the same existing role the acceptance and manual
+# staging gateway jobs use. deploy-ecs.mjs (platform main, unit-tested) does the register/update/wait/stamp-check and
+# rolls back on failure; nothing here re-implements it.
+#
+# Two trigger values:
+#   VTID05803_GATEWAY_DEPLOY=preflight  read-only. Proves what the role may do with vitana-gateway-preview: it describes
+#                                       the service and its task definition and runs SAFE permission probes of
+#                                       ecs:UpdateService (a non-existent revision :999999, which ECS rejects before any
+#                                       change) and ecs:RegisterTaskDefinition (an empty container list, rejected by
+#                                       validation before anything is registered). Exit 0 = the deploy path is authorized;
+#                                       exit 2 = an IAM grant is missing (the job prints the exact resource to add).
+#   VTID05803_GATEWAY_DEPLOY=preview    build + deploy + verify. Builds services/gateway from main on the dind runner,
+#                                       pushes to ECR by digest, deploys vitana-gateway-preview via deploy-ecs.mjs
+#                                       (--mode live so the preview service is actually rolled; the pipeline-level
+#                                       DELIVERY_MODE stays shadow, so .record / .vtid-close never run), checks the served
+#                                       commit and the running image digest, then runs STAGING-VERIFY against it.
+
+# ── preflight: is the deploy to vitana-gateway-preview authorized? (read-only) ──────────────────────────────────────
+vtid-05803-gateway-preview-preflight:
+  stage: verify
+  needs: []
+  tags: [vitana-eng-v1]
+  image: public.ecr.aws/docker/library/alpine:3.20
+  interruptible: false
+  retry: 0
+  timeout: 15m
+  id_tokens:
+    GITLAB_OIDC_TOKEN:
+      aud: https://sts.amazonaws.com
+  variables:
+    AWS_REGION: eu-central-1
+    AWS_DEFAULT_REGION: eu-central-1
+    AWS_ROLE_ARN: $AWS_STAGING_ROLE_ARN
+    AWS_WEB_IDENTITY_TOKEN_FILE: /tmp/oidc-token
+    CLUSTER: Vitana-ECS-Cluster
+    ECS_SERVICE: vitana-gateway-preview
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main" && $CI_PIPELINE_SOURCE =~ /^(api|web)$/ && $VTID05803_GATEWAY_DEPLOY == "preflight"
+  artifacts:
+    when: always
+    expire_in: 30 days
+    paths: [preflight/]
+  script:
+    - |
+      set -uo pipefail
+      apk add --no-cache aws-cli jq >/dev/null
+      printf '%s' "$GITLAB_OIDC_TOKEN" > "$AWS_WEB_IDENTITY_TOKEN_FILE"
+      mkdir -p preflight; P=preflight
+      ARN=$(aws sts get-caller-identity --query Arn --output text) || { echo "STOP: sts failed"; exit 1; }
+      ACCT=$(aws sts get-caller-identity --query Account --output text)
+      echo "identity: $ARN"
+      [ "$ACCT" = 472838866351 ] || { echo "STOP: not account 472838866351 (got $ACCT)"; exit 1; }
+      # Service state (read-only).
+      if aws ecs describe-services --cluster "$CLUSTER" --services "$ECS_SERVICE" \
+           --query 'services[0].{status:status,desired:desiredCount,running:runningCount,td:taskDefinition,tg:loadBalancers[0].targetGroupArn}' \
+           --output json > "$P/service.json" 2> "$P/service.err"; then
+        echo "service $ECS_SERVICE: $(jq -c . "$P/service.json")"
+      else
+        echo "describe-services DENIED/FAILED: $(tr '\n' ' ' < "$P/service.err" | cut -c1-300)"
+      fi
+      TD=$(jq -r '.td // empty' "$P/service.json" 2>/dev/null || true)
+      TASK_ROLE=""; EXEC_ROLE=""
+      if [ -n "$TD" ]; then
+        if aws ecs describe-task-definition --task-definition "$TD" \
+             --query 'taskDefinition.{family:family,task:taskRoleArn,exec:executionRoleArn,containers:containerDefinitions[].{name:name,image:image}}' \
+             --output json > "$P/td.json" 2> "$P/td.err"; then
+          echo "task definition $TD: $(jq -c . "$P/td.json")"
+          TASK_ROLE=$(jq -r '.task // empty' "$P/td.json"); EXEC_ROLE=$(jq -r '.exec // empty' "$P/td.json")
+          # Production-credential check (names/ARNs only, never values).
+          aws ecs describe-task-definition --task-definition "$TD" \
+            --query 'taskDefinition.containerDefinitions[0].{secrets:secrets[].[name,valueFrom],env:environment[?contains(name,`SUPABASE`)||contains(name,`AURORA`)].[name,value]}' \
+            --output json > "$P/td-secrets.json" 2>/dev/null || true
+          PRODREF=$(jq -r '[.secrets[]?|select(.[1]|test("secret:vitana/(supabase|aurora)/prod/|vitana-aurora-prod|secret:rds!cluster-4dab93b8"))|.[0]]|join(" ")' "$P/td-secrets.json" 2>/dev/null || true)
+          echo "production-credential secrets bound to $ECS_SERVICE: ${PRODREF:-none}"
+        else
+          echo "describe-task-definition DENIED/FAILED: $(tr '\n' ' ' < "$P/td.err" | cut -c1-300)"
+        fi
+      fi
+      # SAFE permission probe 1 — ecs:UpdateService. Revision :999999 does not exist, so ECS rejects the call before any
+      # change to the service. AccessDenied => the role may NOT roll this service; anything else (the revision is not
+      # found / invalid parameter) => UpdateService is authorized and nothing was changed.
+      UPD=allowed
+      if aws ecs update-service --cluster "$CLUSTER" --service "$ECS_SERVICE" --task-definition "$ECS_SERVICE:999999" > "$P/update-probe.out" 2>&1; then
+        echo "UNEXPECTED: update-service with a non-existent revision returned success"; cat "$P/update-probe.out"
+      else
+        if grep -qiE 'AccessDenied|not authorized to perform' "$P/update-probe.out"; then UPD=denied; fi
+        echo "update-service probe ($UPD): $(tr '\n' ' ' < "$P/update-probe.out" | cut -c1-400)"
+      fi
+      # SAFE permission probe 2 — ecs:RegisterTaskDefinition. An empty container list is rejected by validation before
+      # anything is registered. AccessDenied => register is not allowed; ClientException => register is allowed.
+      REG=allowed
+      if aws ecs register-task-definition --family vtid-05803-preflight-probe --container-definitions '[]' > "$P/register-probe.out" 2>&1; then
+        echo "UNEXPECTED: register-task-definition with an empty container list returned success"; cat "$P/register-probe.out"
+      else
+        if grep -qiE 'AccessDenied|not authorized to perform' "$P/register-probe.out"; then REG=denied; fi
+        echo "register-task-definition probe ($REG): $(tr '\n' ' ' < "$P/register-probe.out" | cut -c1-400)"
+      fi
+      jq -n --arg arn "$ARN" --arg td "${TD:-}" --arg task "$TASK_ROLE" --arg exec "$EXEC_ROLE" \
+        --arg upd "$UPD" --arg reg "$REG" \
+        '{identity:$arn,service:"vitana-gateway-preview",task_definition:$td,task_role:$task,execution_role:$exec,update_service:$upd,register_task_definition:$reg}' \
+        | tee "$P/verdict.json"
+      if [ "$UPD" = denied ]; then
+        echo "PREFLIGHT: BLOCKED — the deploy role is not authorized for ecs:UpdateService on $ECS_SERVICE."
+        echo "Owner action (account 472838866351): add this resource to the ecs:UpdateService statement of vitana-gitlab-deploy-role:"
+        echo "  arn:aws:ecs:eu-central-1:472838866351:service/Vitana-ECS-Cluster/vitana-gateway-preview"
+        [ -n "$TASK_ROLE" ] && echo "  and, if they differ from the roles already allowed, iam:PassRole for: $TASK_ROLE $EXEC_ROLE"
+        exit 2
+      fi
+      if [ "$REG" = denied ]; then
+        echo "PREFLIGHT: BLOCKED — ecs:RegisterTaskDefinition is denied to the deploy role."
+        exit 2
+      fi
+      echo "PREFLIGHT: READY — the deploy role may register a task definition and roll $ECS_SERVICE."
+
+# ── preview build: services/gateway from main, pushed to ECR by digest ──────────────────────────────────────────────
+vtid-05803-gateway-preview-build:
+  stage: build
+  needs: []
+  tags: [vitana-eng-v1]
+  image: docker:27
+  services:
+    - name: docker:27-dind
+  interruptible: false
+  retry: 0
+  timeout: 40m
+  id_tokens:
+    GITLAB_OIDC_TOKEN:
+      aud: https://sts.amazonaws.com
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+    AWS_REGION: eu-central-1
+    AWS_DEFAULT_REGION: eu-central-1
+    AWS_ROLE_ARN: $AWS_STAGING_ROLE_ARN
+    AWS_WEB_IDENTITY_TOKEN_FILE: /tmp/oidc-token
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main" && $CI_PIPELINE_SOURCE =~ /^(api|web)$/ && $VTID05803_GATEWAY_DEPLOY == "preview"
+  artifacts:
+    when: always
+    expire_in: 7 days
+    paths: [push-image.json, build-info.txt]
+  script:
+    - |
+      set -eo pipefail
+      apk add --no-cache aws-cli git jq >/dev/null
+      printf '%s' "$GITLAB_OIDC_TOKEN" > "$AWS_WEB_IDENTITY_TOKEN_FILE"
+      ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+      [ "$ACCOUNT" = 472838866351 ] || { echo "STOP: not account 472838866351 (got $ACCOUNT)"; exit 1; }
+      REGISTRY="$ACCOUNT.dkr.ecr.eu-central-1.amazonaws.com"
+      SHORT=$(echo "$CI_COMMIT_SHA" | cut -c1-12)
+      IMAGE="$REGISTRY/vitana/gateway:$SHORT"
+      # Stage the codeintel sources inside the build context, as the canonical gateway build does.
+      rm -rf services/gateway/codeintel-src && mkdir -p services/gateway/codeintel-src/platform services/gateway/codeintel-src/vitana-v1
+      tar --exclude=node_modules --exclude=services/gateway/codeintel-src -cf - . | tar -xf - -C services/gateway/codeintel-src/platform
+      git clone --depth 1 "https://gitlab-ci-token:${CI_JOB_TOKEN}@${CI_SERVER_HOST}/vitana/vitana-v1.git" services/gateway/codeintel-src/vitana-v1
+      rm -rf services/gateway/codeintel-src/vitana-v1/.git
+      sed -i '/RUN npm run build/i ENV NODE_OPTIONS=--max-old-space-size=4096' services/gateway/Dockerfile
+      aws ecr get-login-password | docker login --username AWS --password-stdin "$REGISTRY"
+      docker build -t "$IMAGE" -t "$REGISTRY/vitana/gateway:preview-latest" services/gateway
+      docker push "$IMAGE"
+      docker push "$REGISTRY/vitana/gateway:preview-latest"
+      DIGEST=$(aws ecr describe-images --repository-name vitana/gateway --image-ids imageTag="$SHORT" --query 'imageDetails[0].imageDigest' --output text)
+      case "$DIGEST" in sha256:*) : ;; *) echo "STOP: no image digest for $SHORT (got '$DIGEST')"; exit 1 ;; esac
+      jq -n --arg reg "$REGISTRY" --arg sha "$SHORT" --arg dig "$DIGEST" \
+        '{service:"gateway-preview",registry:$reg,repository:"vitana/gateway",tag:$sha,digest:$dig,image:($reg+"/vitana/gateway@"+$dig),mode:"live"}' > push-image.json
+      printf 'commit=%s\nimage=%s\ndigest=%s\n' "$CI_COMMIT_SHA" "$IMAGE" "$DIGEST" | tee build-info.txt
+      echo "built and pushed $IMAGE @ $DIGEST"
+
+# ── preview deploy: deploy-ecs.mjs rolls vitana-gateway-preview to the pushed digest, then verify commit + digest ─────
+vtid-05803-gateway-preview-deploy:
+  stage: deploy
+  tags: [vitana-eng-v1]
+  image: public.ecr.aws/docker/library/node:20-bookworm
+  interruptible: false
+  retry: 0
+  timeout: 40m
+  needs:
+    - job: vtid-05803-gateway-preview-build
+      artifacts: true
+  id_tokens:
+    GITLAB_OIDC_TOKEN:
+      aud: https://sts.amazonaws.com
+  variables:
+    GIT_DEPTH: "0"
+    AWS_REGION: eu-central-1
+    AWS_DEFAULT_REGION: eu-central-1
+    AWS_ROLE_ARN: $AWS_STAGING_ROLE_ARN
+    AWS_WEB_IDENTITY_TOKEN_FILE: /tmp/oidc-token
+    ECS_CLUSTER: Vitana-ECS-Cluster
+    ECS_SERVICE: vitana-gateway-preview
+    DEPLOY_RUNS_FILE: $CI_PROJECT_DIR/deploy-runs.json
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main" && $CI_PIPELINE_SOURCE =~ /^(api|web)$/ && $VTID05803_GATEWAY_DEPLOY == "preview"
+  artifacts:
+    when: always
+    expire_in: 30 days
+    paths: [deploy-runs.json, deploy-state.json, deploy-out/]
+  before_script:
+    - apt-get -qq update >/dev/null && apt-get -qq install -y --no-install-recommends awscli ca-certificates >/dev/null
+    - printf '%s' "$GITLAB_OIDC_TOKEN" > "$AWS_WEB_IDENTITY_TOKEN_FILE"
+    - aws sts get-caller-identity
+  script:
+    - node scripts/eng/deploy/deploy-ecs.mjs deploy --service gateway-preview --cluster "$ECS_CLUSTER" --ecs-service "$ECS_SERVICE" --push-file push-image.json --sha "$CI_COMMIT_SHA" --mode live --runs-file "$DEPLOY_RUNS_FILE" --state-file deploy-state.json --out-dir deploy-out --repo-root "$CI_PROJECT_DIR"
+    - |
+      set -euo pipefail
+      # Verify the running image digest matches the digest we pushed (deploy-ecs.mjs already verified the served commit).
+      PUSHED=$(jq -r .digest push-image.json)
+      TDA=$(aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE" --query 'services[0].taskDefinition' --output text)
+      echo "serving task definition: $TDA ; pushed digest: $PUSHED"
+      RUNDIG=""
+      for t in $(aws ecs list-tasks --cluster "$ECS_CLUSTER" --service-name "$ECS_SERVICE" --desired-status RUNNING --query 'taskArns' --output text); do
+        d=$(aws ecs describe-tasks --cluster "$ECS_CLUSTER" --tasks "$t" --query 'tasks[0].containers[?contains(image, `vitana/gateway`)].imageDigest | [0]' --output text 2>/dev/null || true)
+        echo "running task ${t##*/} gateway imageDigest=$d"
+        [ -n "$d" ] && [ "$d" != "None" ] && RUNDIG="$d"
+      done
+      if [ -n "$RUNDIG" ] && [ "$RUNDIG" != "$PUSHED" ]; then echo "DIGEST MISMATCH: running $RUNDIG != pushed $PUSHED"; exit 1; fi
+      echo "running image digest check: ${RUNDIG:-not-yet-reported} (want $PUSHED)"
+      B=$(curl -fsS "https://preview-aws-gateway.vitanaland.com/api/v1/admin/build-info" || true)
+      echo "preview build-info: $B"
+
+# ── on failure of the deploy job (e.g. a killed job), re-point vitana-gateway-preview to the captured revision ────────
+vtid-05803-gateway-preview-rollback:
+  stage: deploy
+  tags: [vitana-eng-v1]
+  image: public.ecr.aws/docker/library/node:20-bookworm
+  interruptible: false
+  retry: 0
+  timeout: 30m
+  needs:
+    - job: vtid-05803-gateway-preview-deploy
+      artifacts: true
+  id_tokens:
+    GITLAB_OIDC_TOKEN:
+      aud: https://sts.amazonaws.com
+  variables:
+    GIT_STRATEGY: none
+    AWS_REGION: eu-central-1
+    AWS_DEFAULT_REGION: eu-central-1
+    AWS_ROLE_ARN: $AWS_STAGING_ROLE_ARN
+    AWS_WEB_IDENTITY_TOKEN_FILE: /tmp/oidc-token
+    DEPLOY_RUNS_FILE: $CI_PROJECT_DIR/deploy-runs.json
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main" && $CI_PIPELINE_SOURCE =~ /^(api|web)$/ && $VTID05803_GATEWAY_DEPLOY == "preview"
+      when: on_failure
+  artifacts:
+    when: always
+    expire_in: 30 days
+    paths: [deploy-runs.json, deploy-state.json]
+  before_script:
+    - apt-get -qq update >/dev/null && apt-get -qq install -y --no-install-recommends awscli ca-certificates >/dev/null
+    - printf '%s' "$GITLAB_OIDC_TOKEN" > "$AWS_WEB_IDENTITY_TOKEN_FILE"
+  script:
+    - node scripts/eng/deploy/deploy-ecs.mjs rollback --state-file deploy-state.json --runs-file "$DEPLOY_RUNS_FILE"
+
+# ── STAGING-VERIFY against the preview gateway (test-user login, protected routes, smoke, deploy identity) ────────────
+vtid-05803-gateway-preview-verify:
+  extends: .staging-verify
+  stage: verify
+  tags: [vitana-eng-main]
+  interruptible: false
+  needs:
+    - job: vtid-05803-gateway-preview-deploy
+      artifacts: true
+  variables:
+    VERIFY_SERVICE: gateway
+    DEPLOY_RUNS_FILE: $CI_PROJECT_DIR/deploy-runs.json
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main" && $CI_PIPELINE_SOURCE =~ /^(api|web)$/ && $VTID05803_GATEWAY_DEPLOY == "preview"
