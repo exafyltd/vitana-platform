@@ -41,6 +41,7 @@ test('--check exits 0 when the files are current and 3 on drift, and writes noth
   cpSync(path.join(ROOT, 'config/delivery'), path.join(dir, 'config/delivery'), { recursive: true });
   mkdirSync(path.join(dir, 'infra/gitlab-engineering'), { recursive: true });
   cpSync(CI, path.join(dir, 'infra/gitlab-engineering/ci'), { recursive: true });
+  cpSync(path.join(ROOT, gen.OPERATIONS_FILE), path.join(dir, gen.OPERATIONS_FILE));
   const out = [];
   assert.equal(await gen.main(['--check', '--root', dir], { log: (l) => out.push(l) }), 0);
   const f = path.join(dir, 'infra/gitlab-engineering/ci/v1-delivery.gitlab-ci.yml');
@@ -591,7 +592,8 @@ test('an operation file is included from ci-config and its trigger variable admi
       assert.equal(hit({ CI_PIPELINE_SOURCE: 'api', CI_COMMIT_BRANCH: 'main' }).when, 'never', `${repo}: api pipeline without the variable`);
     }
   }
-  assert.ok((cfg.repositories['vitana-platform'].operations || []).some((o) => o.file === 'vtid-05803-acceptance.gitlab-ci.yml'), 'the VTID-05803 acceptance operation is declared');
+  assert.ok((cfg.repositories['vitana-platform'].operations || []).some((o) => o.file === 'vtid-05803-acceptance.gitlab-ci.yml'), 'the VTID-05803 acceptance operation is declared in infra/gitlab-engineering/operations.json');
+  assert.ok(!JSON.parse(readFileSync(path.join(ROOT, gen.SERVICES_FILE), 'utf8')).repositories['vitana-platform'].operations, 'operations stay out of config/ (a config/ change selects every check)');
   const bad = structuredClone(cfg);
   bad.repositories['vitana-platform'].operations = [{ file: '../x.yml', trigger_variable: 'X_RUN', values: ['run'] }];
   assert.throws(() => gen.validateServices(bad), /operation file/);

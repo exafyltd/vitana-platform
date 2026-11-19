@@ -31,8 +31,8 @@ Effect: callers of the staging gateway must present the staging service token.
 
 ## Aurora staging acceptance step in GitLab CI (Kiro 5, kiro-exafy-202611190018-058b)
 
-AC-7. The acceptance job is a permanent part of the generated vitana-platform pipeline. `config/delivery/services.json`
-declares it as an `operations` entry; `pipeline-gen.mjs` includes the file from vitana/ci-config (no `include: local`) and
+AC-7. The acceptance job is a permanent part of the generated vitana-platform pipeline. `infra/gitlab-engineering/operations.json`
+declares it (kept out of `config/`, whose change selects every check); `pipeline-gen.mjs` includes the file from vitana/ci-config (no `include: local`) and
 admits only main api/web/schedule pipelines that set `VTID05803_ACCEPTANCE`. The job file lives in
 `infra/gitlab-engineering/ci/`, so the settings sync writes it instead of dropping it.
 TEST: `scripts/eng/pipeline-gen.test.mjs` "an operation file is included from ci-config ..."; `node scripts/eng/pipeline-gen.mjs --check`.

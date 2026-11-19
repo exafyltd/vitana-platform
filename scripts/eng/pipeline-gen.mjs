@@ -15,6 +15,8 @@ import { fileURLToPath } from 'node:url';
 
 export const SCHEMA = 'vitana.delivery-services/v1';
 export const SERVICES_FILE = 'config/delivery/services.json';
+export const OPERATIONS_FILE = 'infra/gitlab-engineering/operations.json';
+export const OPERATIONS_SCHEMA = 'vitana.ci-operations/v1';
 export const GOVERNANCE = ['lane-scope', 'change-suite', 'pr-gate-report', 'collab-handoff'];
 export const TEMPLATE_FILES = ['tpl-checks.yml', 'tpl-main.yml', 'tpl-nightly.yml', 'tpl-assist.yml', 'tpl-deploy.yml', 'tpl-verify.yml'];
 const DEFAULT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -22,6 +24,17 @@ const DEFAULT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 
 // ---------- service list ----------
 export function loadServices(root = DEFAULT_ROOT) {
   const config = JSON.parse(readFileSync(path.join(root, SERVICES_FILE), 'utf8'));
+  // Operation files (one-off jobs gated on a trigger variable) are declared next to the CI files they name, not in the
+  // service list, so declaring one does not select every check of the shared config/ paths.
+  const opsPath = path.join(root, OPERATIONS_FILE);
+  if (existsSync(opsPath)) {
+    const ops = JSON.parse(readFileSync(opsPath, 'utf8'));
+    if (ops.schema !== OPERATIONS_SCHEMA) throw new Error(`${OPERATIONS_FILE}: schema must be ${OPERATIONS_SCHEMA}`);
+    for (const [key, list] of Object.entries(ops.repositories || {})) {
+      if (!config.repositories?.[key]) throw new Error(`${OPERATIONS_FILE}: unknown repository ${key}`);
+      config.repositories[key].operations = list;
+    }
+  }
   validateServices(config);
   return config;
 }
