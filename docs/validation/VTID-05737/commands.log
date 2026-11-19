@@ -1,0 +1,8 @@
+# VTID-05737 commands (2026-11-19, Linux, node v22, jest 29.7, tsc 5.9; seat exafyltd, session kiro-exafyltd-202611181014-b8e5)
+base: e1844355ae (GitLab main). Branch kiro/delivery-loop. Nothing was written to a live system.
+# 1. Test first, red on base (retry.ts absent): outputs/red-on-base.txt
+$ cd services/gateway && npx jest test/project-manager/retry.test.ts      -> Test Suites: 1 failed ("Cannot find module '../../src/services/project-manager/retry'")
+# 2. retry.ts written; the same suite: outputs/green.txt
+$ npx jest test/project-manager/retry.test.ts                              -> Tests: 31 passed
+# 3. Typecheck of the whole gateway
+$ npx tsc --noEmit -p tsconfig.json                                        -> exit 0, no output

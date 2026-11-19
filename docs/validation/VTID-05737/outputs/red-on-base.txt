@@ -1,0 +1,30 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+FAIL test/project-manager/retry.test.ts
+  ● Test suite failed to run
+
+    Cannot find module '../../src/services/project-manager/retry' from 'test/project-manager/retry.test.ts'
+
+       5 |  * are never retried.
+       6 |  */
+    >  7 | import {
+         | ^
+       8 |   RETRY_BACKOFF_MINUTES,
+       9 |   RETRY_MAX_ATTEMPTS,
+      10 |   RETRY_WINDOW_MS,
+
+      at Resolver._throwModNotFoundError (node_modules/jest-resolve/build/resolver.js:427:11)
+      at Object.<anonymous> (test/project-manager/retry.test.ts:7:1)
+
+Test Suites: 1 failed, 1 total
+Tests:       0 total
+Snapshots:   0 total
+Time:        0.563 s
+Ran all test suites matching /test\/project-manager\/retry.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
