@@ -21,7 +21,7 @@ PLAN-SPAR cannot run for any plan: the gateway it calls answers 401 since 2026-1
 minimal admin fix are in `registration-blocked.md`; they match the preview-gateway-recovery plan (#5122, KIRO 12), which already
 holds the fix and waits on the owner's Rule 55 ruling. Nothing here duplicates it.
 
-All lane code and tests exist on `kiro/delivery-loop-engine/gitlab-executor` (draft PR, no VTID). Once VTIDs exist, each lane is cut
+All lane code and tests exist on `kiro/delivery-loop-engine/gitlab-executor` (draft PR #5124, no VTID). Once VTIDs exist, each lane is cut
 from it into its own branch from `origin/main`.
 
 Coordination: Kiro 5's autopilot GitLab port plan (GitLab MR !1, closed draft, items P2, P3, P16, P23) covers a full GitHub-to-GitLab
