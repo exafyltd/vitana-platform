@@ -41,7 +41,8 @@ correct); the only extra is the default `PUBLIC` grant. Properties read from the
 
 **Finding.** Six of seven are SECURITY DEFINER, but every one pins `search_path` (no search-path-injection vector) and
 **none** reference any sensitive schema (`auth`, `vault`, `pgsodium`, `extensions`, `storage`, `net`, `pgmq`, `cron`) —
-scanned with the same pattern the comparator uses. They operate only on the public `plan_sparring_*` / `vtid_ledger`
+scanned with a superset of the comparator's sensitive-schema pattern (its six — `net|vault|pgsodium|extensions|auth|storage`
+— plus `pgmq`/`cron`). They operate only on the public `plan_sparring_*` / `vtid_ledger`
 tables. The risk from the default PUBLIC grant is therefore bounded, but it is broader than source (any role may call a
 definer-rights function). **Recommended owner action:** `REVOKE EXECUTE ON FUNCTION … FROM PUBLIC` on these seven to
 match source's least-privilege posture. This is a REVOKE, so the additive correction did not perform it.
@@ -55,11 +56,17 @@ The comparator fingerprints each function as explicit attributes plus `src = md5
 - **121 / 121** — every non-body attribute is byte-identical source↔staging: `kind`, `lang`, `returns`, `volatility`,
   `secdef`, `strict`, `leakproof`, `parallel`, and `config` (search_path). No signature, return type, security, or
   volatility differs.
-- **119 / 121** — staging's `src` hash equals md5 of the exact body the correction applied, i.e.
-  `pg_get_functiondef(source_function)`. So staging holds the source function's own canonical definition.
-- The residual difference is solely that `k5.py` also hashes source's **raw** `prosrc`, which `pg_get_functiondef`
-  normalizes (a leading newline and formatting). Raw-vs-canonical of the same function cannot converge through a
-  `CREATE OR REPLACE` that uses the canonical form.
+- **119 / 121** — staging's `src = md5(prosrc)` equals md5 of the body text extracted from the exact definition the
+  correction applied (the body portion of `pg_get_functiondef(source)`). So staging stores the source function's own
+  canonical body.
+- Both body hashes differ for all 121 — `src` (raw `prosrc`) **and** `def` (`md5(pg_get_functiondef)`), the two body
+  hashes the comparator records. Both trace to one cause: source stores a **raw** `prosrc`, while the migration and any
+  `pg_get_functiondef`-based re-apply store the **normalized** body. Staging therefore holds the normalized form, so
+  both its raw-body hash (`src`) and its re-rendered `pg_get_functiondef` hash (`def`) differ from source's. On the
+  worked example the delta is a leading newline; the general mechanism is `pg_get_functiondef` normalization —
+  demonstrated for `src` by the 119/121 md5 match above, and characterized (not independently hash-proven) for `def`.
+  No non-body attribute differs, so this is a representation difference, not logic; a `CREATE OR REPLACE` that uses the
+  canonical form cannot converge the raw-`prosrc` hash the comparator correctly compares.
 
 Worked example — `agents_registry_set_updated_at()` (trigger, plpgsql, `config=-`):
 - applied body (from source) = `"\nBEGIN NEW.updated_at := NOW(); RETURN NEW; END; "`, `md5 = 44a734d202e32e7782c215138dc4c54e`
@@ -68,8 +75,9 @@ Worked example — `agents_registry_set_updated_at()` (trigger, plpgsql, `config
 
 The two functions `match_memories_v2` and `memory_facts_semantic_search` are the 119↔121 gap: the generator did not
 re-apply them (their `public.vector` argument renders differently in the identity-signature match), so they retain the
-original migration's already-normalized body. Their attributes are identical like the other 119 — same artifact class,
-simply not re-touched.
+original migration's already-normalized body. Their attributes are identical like the other 119 — same artifact class;
+their equivalence here rests on identical non-body attributes plus provenance (untouched since the original migration),
+not on a body-hash check in this package.
 
 **Conclusion.** The 121 are representation (prosrc-normalization) differences, not logic or signature differences. They
 are safe to allowlist; the comparator is correct to flag a raw-byte difference and must not be weakened to hide it.
