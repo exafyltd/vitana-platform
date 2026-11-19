@@ -1,0 +1,111 @@
+# READ-ONLY run of the delivery-loop GitLab client against the live GitLab 19.5.3-ee (GET methods only), 2026-11-19T01:15:22Z
+# Reached through the sandbox's GitLab gateway (basic auth + environmentId header); the client's own PRIVATE-TOKEN header is a placeholder here.
+# Allowlist: vitana/vitana-platform only. Note: the list endpoint has no head_pipeline, so the client reads the single MR for it.
+
+{
+ "listMergeRequests": {
+  "count": 73,
+  "first": {
+   "iid": 73,
+   "state": "merged",
+   "draft": false,
+   "source_branch": "vtid-05803-acceptance-ci",
+   "head_pipeline_id": null,
+   "labels": []
+  }
+ },
+ "getMergeRequest": {
+  "iid": 73,
+  "state": "merged",
+  "sha": "c841d69c4509a1fb767e05ad9b77be66a7aebbc8",
+  "head_pipeline_id": 525
+ },
+ "getPipeline": {
+  "id": 525,
+  "status": "success",
+  "ref": "refs/merge-requests/73/head",
+  "source": "merge_request_event"
+ },
+ "listPipelineJobs": {
+  "count": 8,
+  "sample": [
+   {
+    "id": 3719,
+    "name": "gate",
+    "stage": "gate",
+    "status": "success",
+    "failure_reason": null,
+    "allow_failure": false
+   },
+   {
+    "id": 3718,
+    "name": "dev-autopilot-impact",
+    "stage": "checks",
+    "status": "success",
+    "failure_reason": null,
+    "allow_failure": false
+   },
+   {
+    "id": 3717,
+    "name": "validator-check",
+    "stage": "checks",
+    "status": "success",
+    "failure_reason": null,
+    "allow_failure": false
+   }
+  ]
+ },
+ "getMergeRequestDiffs": {
+  "files": 10,
+  "first": {
+   "new_path": "docs/validation/VTID-05803/acceptance.md",
+   "diffBytes": 2893
+  }
+ },
+ "getJobTrace": {
+  "bytes": 400,
+  "tail": "82975Z 00O section_end:1795050846:cleanup_file_variables\r<ESC>[0K\n2026-11-19T01:14:06.315062Z 00O <ESC>[32;1mJob succeeded<ESC>[0;m\n"
+ },
+ "listIssues": {
+  "count": 3,
+  "first": {
+   "iid": 1,
+   "state": "opened",
+   "labels": [
+    "collab"
+   ],
+   "confidential": false
+  }
+ },
+ "notAllowed": {
+  "ok": false,
+  "error": "project_not_allowed"
+ }
+}
+
+# Fingerprint of a REAL failed job: pipeline 497 of vitana/rehearsal (the red pipeline of the SRT2 test, 2026-11-18)
+pipeline 497: {"ok":true,"data":{"id":497,"status":"failed","ref":"refs/merge-requests/4/head","sha":"3b8fdfc3dbbebb0a17a1d19ac128caf5148c6f00","web_url":"https://gitlab.vitanaland.com/vitana/rehearsal/-/pipelines/497","source":"merge_request_event"}}
+failed jobs: {"ok":true,"data":[{"id":3477,"name":"unit","stage":"check","status":"failed","failure_reason":"script_failure","allow_failure":false,"web_url":"https://gitlab.vitanaland.com/vitana/rehearsal/-/jobs/3477"}]}
+--- raw tail of job 3477 (escapes shown):
+uites 0
+2026-11-18T22:27:21.233715Z 01O # pass 4
+2026-11-18T22:27:21.233721Z 01O # fail 1
+2026-11-18T22:27:21.233960Z 01O # cancelled 0
+2026-11-18T22:27:21.233967Z 01O # skipped 0
+2026-11-18T22:27:21.233973Z 01O # todo 0
+2026-11-18T22:27:21.234946Z 01O # duration_ms 63.255881
+2026-11-18T22:27:21.335134Z 00O section_end:1795040841:step_script<ESC>[0K
+2026-11-18T22:27:21.336770Z 00O+section_start:1795040841:cleanup_file_variables<ESC>[0K
+2026-11-18T22:27:21.336780Z 00O+<ESC>[0K<ESC>[36;1mCleaning up project directory and file based variables<ESC>[0;m<ESC>[0;m
+2026-11-18T22:27:21.612045Z 00O section_end:1795040841:cleanup_file_variables<ESC>[0K
+2026-11-18T22:27:21.639156Z 00O <ESC>[31;1mERROR: Job failed: exit code 1<ESC>[0;m
+
+--- error lines after stripAnsi/normalize:
+[
+ "error: |-",
+ "Expected values to be strictly equal:",
+ "expected: 10",
+ "# fail 1",
+ "ERROR: Job failed: exit code 1"
+]
+fingerprint: {"fingerprint":"3391acca33347c3d","failure_class":"code","jobs":["unit:script_failure"],"excerpt":["error: |-","Expected values to be strictly equal:","expected: 10","# fail 1","ERROR: Job failed: exit code 1"],"has_evidence":true}
