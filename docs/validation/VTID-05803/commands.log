@@ -30,3 +30,16 @@ node --test scripts/eng/deploy/*.test.mjs   # 24/24 (new: refuses 4 production b
 # vitana-gateway-preview:2 (desired 1, serves preview-aws-gateway) binds staging secrets only, SUPABASE_URL = Aurora PostgREST proxy.
 # Acceptance on the permanent include: pipeline 537 (10:33Z) container 17; auto trigger: 538 exit 3 (no marker), 540 (self-test
 # marker) container 17 + consumed, 542 exit 3 (already accepted); schedule 2 (*/30, VTID05803_ACCEPTANCE=auto) created.
+# VTID-05803 gateway-preview deploy operation (Kiro 5, application/staging scope)
+# New operation file infra/gitlab-engineering/ci/vtid-05803-gateway-preview-deploy.gitlab-ci.yml + operations.json entry
+# (trigger VTID05803_GATEWAY_DEPLOY, values preflight|preview). gateway-preview added to deploy-ecs STAGING_TARGETS
+# (role vitana-gitlab-deploy-role, ecsService vitana-gateway-preview, image repo vitana/gateway, stamp gateway).
+node --test scripts/eng/deploy/deploy-ecs.test.mjs   # 16/16 (new: gateway-preview is an allowlisted target)
+node scripts/eng/pipeline-gen.mjs                    # regenerated platform-delivery (include + workflow rule); --check clean
+node --test scripts/eng/pipeline-gen.test.mjs        # 30/30
+node --test scripts/eng/free-tier-guard.test.mjs scripts/eng/fleet-classes-structure.test.mjs scripts/eng/verify/tpl-verify-structure.test.mjs  # green
+# GitLab CI lint (project 2, operation file + .staging-verify stub + stages): valid, 5 jobs resolve (build, deploy, rollback, preflight, verify).
+# IAM expectation (authoritative, from scripts/aws/iam/gitlab-oidc-platform-staging-policy.json): ecs:UpdateService is
+# scoped to vitana-gateway / -erp-bridge / -kiro-runner / -postgrest-aurora-proxy; vitana-gateway-preview is NOT listed,
+# and the a11 ledger recorded the same UpdateService denial for vitana-gitlab-deploy-role on preview. The =preflight run
+# confirms this first-hand; if BLOCKED the owner adds the preview service ARN to the role's UpdateService resources.

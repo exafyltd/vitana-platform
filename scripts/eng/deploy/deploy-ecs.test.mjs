@@ -156,6 +156,32 @@ test('a service outside the plan §3.10 allowlist is refused before any AWS call
   }
 });
 
+test('VTID-05803: gateway-preview is an allowlisted target that deploys vitana-gateway-preview from the vitana/gateway image', async () => {
+  const f = setup();
+  const a = fakeAws();
+  const r = await deploy(
+    opts(f, {
+      service: 'gateway-preview',
+      ecsService: 'vitana-gateway-preview',
+      push: { service: 'gateway-preview', registry: REG, repository: 'vitana/gateway', tag: SHA.slice(0, 12), digest: DIGEST },
+      envOverrides: undefined,
+    }),
+    { run: a.run, fetchText: stamps(OLD, SHA), isAncestor: () => false, log: quiet },
+  );
+  assert.equal(r.outcome, 'success');
+  const upd = a.calls.find((c) => c[2] === 'update-service');
+  assert.ok(upd && upd.includes('vitana-gateway-preview'), 'updates the preview service, not vitana-gateway');
+  const reg = a.registered();
+  assert.equal(reg.containerDefinitions[0].image, `${REG}/vitana/gateway@${DIGEST}`, 'the gateway container image is pinned to the pushed digest');
+  // No env overrides for the preview target: only the image and the three commit variables change.
+  assert.deepEqual(diffTaskDefinitions(gatewayTd(), reg).sort(), [
+    `container gateway env BUILD_INFO_MARKER: ${OLD.slice(0, 12)} -> ${SHA.slice(0, 12)}`,
+    `container gateway env COMMIT_SHA: ${OLD} -> ${SHA}`,
+    `container gateway env GIT_COMMIT_SHA: ${OLD} -> ${SHA}`,
+    `container gateway image: ${REG}/vitana/gateway:${OLD.slice(0, 12)} -> ${REG}/vitana/gateway@${DIGEST}`,
+  ].sort());
+});
+
 test('an image outside the service ECR repository is refused before any AWS call', async () => {
   const f = setup();
   const a = fakeAws();

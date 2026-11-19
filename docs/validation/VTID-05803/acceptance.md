@@ -66,3 +66,14 @@ cluster or its master secret (same patterns as the GitHub gate of AC-2). Found l
 `SUPABASE_JWT_SECRET`, `SUPABASE_ANON_KEY`, `GATEWAY_SERVICE_TOKEN` from `vitana/supabase/prod/*` (discovery pipeline 524),
 and the GitLab deploy renders from the live definition, so it would have carried them forward.
 TEST: `scripts/eng/deploy/deploy-ecs.test.mjs` "VTID-05803: a staging definition that binds production credentials is refused ...".
+
+AC-14. The current vitana-platform main is deployable to `vitana-gateway-preview` (the Aurora-wired preview gateway
+serving preview-aws-gateway.vitanaland.com) through a declared operation, not a manual include:
+`infra/gitlab-engineering/ci/vtid-05803-gateway-preview-deploy.gitlab-ci.yml` (declared in operations.json, trigger
+`VTID05803_GATEWAY_DEPLOY`), main + api/web only. `=preflight` is read-only (safe `UpdateService :999999` and
+`RegisterTaskDefinition []` probes report whether the deploy role may roll the service). `=preview` builds
+services/gateway (dind), pushes by digest, deploys via `deploy-ecs.mjs` (target gateway-preview, `--mode live`; pipeline
+DELIVERY_MODE stays shadow so `.record`/`.vtid-close` never run), verifies the served commit and running image digest,
+then runs STAGING-VERIFY against the preview URL. The production-credential gate (AC-13) applies: the preview task
+definition binds staging-only secrets, any production secret is refused before any ECS write.
+TEST: `scripts/eng/deploy/deploy-ecs.test.mjs` "VTID-05803: gateway-preview is an allowlisted target ..."; `scripts/eng/pipeline-gen.test.mjs`; GitLab CI lint (project 2): valid, 5 jobs resolve.
