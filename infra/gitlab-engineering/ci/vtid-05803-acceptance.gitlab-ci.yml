@@ -102,6 +102,20 @@ vtid-05803-acceptance-discover:
         try "head-${k//\//-}" aws s3api head-object --bucket "$BUCKET" --key "$PFX/$k" --query '[ContentLength,LastModified]'
         [ -s "$D/head-${k//\//-}.json" ] && echo "  $PFX/$k $(jq -c . "$D/head-${k//\//-}.json")"
       done
+      # Live staging services: which secrets their task definitions bind (names and ARNs only, never values).
+      for SV in ${K5_SERVICES:-vitana-gateway vitana-postgrest-aurora-proxy}; do
+        TDA=$(aws ecs describe-services --cluster "$CLUSTER" --services "$SV" --query 'services[0].taskDefinition' --output text 2>/dev/null || echo "")
+        DC=$(aws ecs describe-services --cluster "$CLUSTER" --services "$SV" --query 'services[0].[desiredCount,runningCount,loadBalancers[0].targetGroupArn]' --output text 2>/dev/null || echo "?")
+        echo "service $SV: ${TDA:-unreadable} desired/running=$DC"
+        [ -n "$TDA" ] || continue
+        aws ecs describe-task-definition --task-definition "$TDA" --query 'taskDefinition.containerDefinitions[0].{secrets:secrets[].[name,valueFrom],env:environment[?contains(name,`SUPABASE`)||contains(name,`AURORA`)||contains(name,`DATA_`)||contains(name,`PGRST`)].[name,value]}' --output json > "$D/svc-$SV.json" 2>&1 || true
+        jq -r '(.secrets[]? | "  secret \(.[0]) <- \(.[1] | sub("arn:aws:secretsmanager:eu-central-1:472838866351:secret:";""))"), (.env[]? | "  env    \(.[0]) = \(.[1])")' "$D/svc-$SV.json" 2>/dev/null | sed -E 's#(://[^:/@]+:)[^@]+@#\1***@#' || true
+        PRODREF=$(jq -r '[.secrets[]?|select(.[1]|test("secret:vitana/(supabase|aurora)/prod/|vitana-aurora-prod"))|.[0]]|join(" ")' "$D/svc-$SV.json" 2>/dev/null || true)
+        echo "  production-credential secrets bound: ${PRODREF:-none}"
+      done
+      for S in vitana/supabase/staging/jwt-secret vitana/supabase/staging/anon-key vitana/gateway/staging/service-token vitana/supabase/staging/url-aurora-proxy vitana/aurora/staging-db/database-url vitana/aurora/staging-db/postgrest-authenticator-uri; do
+        if aws secretsmanager describe-secret --secret-id "$S" --query '[Name,LastChangedDate]' --output text > "$D/sec.out" 2>&1; then echo "secret exists: $(cat "$D/sec.out")"; else echo "secret $S: $(tr '\n' ' ' < "$D/sec.out" | grep -oE 'ResourceNotFoundException|AccessDeniedException' | head -1 || echo unreadable)"; fi
+      done
       echo "DISCOVERY DONE (read-only)"
 
 # VTID-05803 post-restore Aurora staging acceptance (Kiro 5): the Agentic Delivery staging-verification step.
