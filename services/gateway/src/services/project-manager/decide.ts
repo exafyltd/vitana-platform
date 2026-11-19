@@ -441,7 +441,8 @@ export function retryDecision(lane: ObservedLane, nowMs: number): RetryDecision 
   const parked_from: LaneState = lane.parked_from && lane.parked_from !== 'parked' && lane.parked_from !== 'done' ? lane.parked_from : 'ready';
   const next_actor: 'kiro' | 'claude' = lane.executor === 'claude' ? 'claude' : 'kiro';
   if (next.blocked) {
-    if (next.reason !== 'attempts_exhausted' || lane.retry_blocked === true) return null;
+    // (`retry_blocked` is already false here: the guard at the top returned for a lane whose blocked decision was recorded.)
+    if (next.reason !== 'attempts_exhausted') return null;
     return { kind: 'retry', slug: lane.slug, lane: lane.lane, outcome: 'blocked', attempt: next.attempts, at: new Date(nowMs).toISOString(), parked_from, next_actor: 'kiro', reason: reason ?? 'unknown', backoff_minutes: 0 };
   }
   if (!retryDue(next, nowMs)) return null;
