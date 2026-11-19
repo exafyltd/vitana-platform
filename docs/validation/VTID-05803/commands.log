@@ -10,3 +10,12 @@ for t in scripts/ci/staging-db/*.test.mjs; do node --test $t; done   # 10 suites
 PATH=<mawk 1.3.4>:$PATH node --test scripts/ci/staging-db/aws-scripts.test.mjs   # 22/22 (was 16/22)   -> outputs/ci-env-fixes.txt
 GITLAB_CI=true CI_PROJECT_NAME=vitana-platform CI_SERVER_URL=... node --test scripts/eng/gitlab-gates.test.mjs   # 8/8 (was 7/8)
 PATH=<mawk>:$PATH GITLAB_CI=true CI_*=... node --test $(find scripts -name '*.test.[cm]js')   # 1750 tests, 1743 pass, 6 skipped, 1 fail (aws-scripts 127 under full parallel load; 6/6 isolated runs pass)
+# Aurora staging acceptance step in CI (kiro-exafy-202611190018-058b)
+node scripts/eng/pipeline-gen.mjs && node scripts/eng/pipeline-gen.mjs --check   # operations from infra/gitlab-engineering/operations.json; platform-delivery: + include, + workflow rule; rc 0
+# !73 pipeline 521 (operations in config/delivery/services.json) selected every check; voice-tools-manifest and openapi-enforce
+# are red on main 4ec9f912 too (2 manifest drifts; no spectral ruleset). Declaration moved out of config/.
+node --test scripts/eng/pipeline-gen.test.mjs   # 30/30
+node --test scripts/ci/staging-db/staging-acceptance.test.mjs   # 7/7 (fake psql/aws, no network)
+python3 scripts/aws/staging-acceptance/embed.py --check   # ok: embedded runner equals k5.py (sha256 7f330051af7f), ECS override 7411 bytes
+# Real runs (ci-config job, before this MR): pipelines 508 (exit 2), 509/511 (41: rev 3 AWSPREVIOUS source secret fails auth),
+# 512 (46: source session read_only=off via the pooler), 513 (1), 514 (container 17, job 1). See acceptance.md AC-12.

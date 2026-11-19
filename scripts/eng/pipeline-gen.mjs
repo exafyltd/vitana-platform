@@ -15,6 +15,8 @@ import { fileURLToPath } from 'node:url';
 
 export const SCHEMA = 'vitana.delivery-services/v1';
 export const SERVICES_FILE = 'config/delivery/services.json';
+export const OPERATIONS_FILE = 'infra/gitlab-engineering/operations.json';
+export const OPERATIONS_SCHEMA = 'vitana.ci-operations/v1';
 export const GOVERNANCE = ['lane-scope', 'change-suite', 'pr-gate-report', 'collab-handoff'];
 export const TEMPLATE_FILES = ['tpl-checks.yml', 'tpl-main.yml', 'tpl-nightly.yml', 'tpl-assist.yml', 'tpl-deploy.yml', 'tpl-verify.yml'];
 const DEFAULT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -22,6 +24,17 @@ const DEFAULT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 
 // ---------- service list ----------
 export function loadServices(root = DEFAULT_ROOT) {
   const config = JSON.parse(readFileSync(path.join(root, SERVICES_FILE), 'utf8'));
+  // Operation files (one-off jobs gated on a trigger variable) are declared next to the CI files they name, not in the
+  // service list, so declaring one does not select every check of the shared config/ paths.
+  const opsPath = path.join(root, OPERATIONS_FILE);
+  if (existsSync(opsPath)) {
+    const ops = JSON.parse(readFileSync(opsPath, 'utf8'));
+    if (ops.schema !== OPERATIONS_SCHEMA) throw new Error(`${OPERATIONS_FILE}: schema must be ${OPERATIONS_SCHEMA}`);
+    for (const [key, list] of Object.entries(ops.repositories || {})) {
+      if (!config.repositories?.[key]) throw new Error(`${OPERATIONS_FILE}: unknown repository ${key}`);
+      config.repositories[key].operations = list;
+    }
+  }
   validateServices(config);
   return config;
 }
@@ -39,8 +52,20 @@ export function validateServices(config) {
       for (const p of c.apt || []) if (!config.apt_tools?.[p]) throw new Error(`${key}: check ${name} installs ${p}, which apt_tools does not list`);
     }
     if (r.pr_gate_install && !r.install[r.pr_gate_install]) throw new Error(`${key}: pr_gate_install names unknown install ${r.pr_gate_install}`);
+    for (const op of r.operations || []) {
+      if (!/^[a-z0-9][a-z0-9.-]{0,90}\.gitlab-ci\.yml$/.test(op.file || '')) throw new Error(`${key}: operation file ${op.file} must be a ci-config file name ending in .gitlab-ci.yml`);
+      if (TEMPLATE_FILES.includes(op.file)) throw new Error(`${key}: operation file ${op.file} is a template`);
+      if (!/^[A-Z][A-Z0-9_]{2,60}$/.test(op.trigger_variable || '')) throw new Error(`${key}: operation ${op.file} needs an upper-case trigger_variable`);
+      if (!Array.isArray(op.values) || !op.values.length || !op.values.every((v) => /^[a-z][a-z0-9-]{0,30}$/.test(v))) throw new Error(`${key}: operation ${op.file} needs lower-case trigger values`);
+    }
   }
 }
+
+// An operation (repository `operations`): a ci-config file of one-off jobs that run only on the default branch, only in an
+// api, web or schedule pipeline that sets its trigger variable. The workflow rule admits exactly those pipelines.
+export const operationRule = (op) => ({
+  if: `$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE =~ /^(api|web|schedule)$/ && $${op.trigger_variable} =~ /^(${op.values.join('|')})$/`,
+});
 
 // The first script line of a check that needs Debian packages its image lacks (apt_tools of the service list).
 export const aptLine = (pkgs) => `apt-get update -qq && apt-get install -y -qq --no-install-recommends ${pkgs.join(' ')} >/dev/null`;
@@ -134,7 +159,8 @@ export function buildPipeline(config, repoKey) {
   const v1 = repoKey === 'vitana-v1';
   const checks = Object.keys(r.checks);
   const doc = {};
-  doc.include = [{ project: config.ci_config.project, ref: config.ci_config.ref, file: [...TEMPLATE_FILES] }];
+  const ops = r.operations || [];
+  doc.include = [{ project: config.ci_config.project, ref: config.ci_config.ref, file: [...TEMPLATE_FILES, ...ops.map((op) => op.file)] }];
   doc.workflow = {
     auto_cancel: { on_new_commit: 'interruptible' },
     rules: [
@@ -143,6 +169,7 @@ export function buildPipeline(config, repoKey) {
       { if: IF.main },
       { if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == "schedule"' },
       { if: '$CI_COMMIT_BRANCH =~ /^assist\\//' },
+      ...ops.map(operationRule),
       { when: 'never' },
     ],
   };
@@ -328,7 +355,7 @@ export function parseYaml(text) {
 }
 
 // ---------- GitLab rules evaluation (the subset the generated files use) ----------
-function evalIf(expr, vars) {
+export function evalIf(expr, vars) {
   return expr.split('||').some((alt) => alt.split('&&').every((term) => evalTerm(term.trim(), vars)));
 }
 function operand(s, vars) {
