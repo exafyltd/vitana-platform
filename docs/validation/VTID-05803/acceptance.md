@@ -159,3 +159,17 @@ extension, changed check) are all non-additive and are left for the owner's allo
   bug: for an identity-owned sequence the IDENTITY clause already creates it). All are harmless and non-additive to undo.
 Staging `public` now carries the six-table schema for the DMS data load (Kiro 2); the duplicate identity sequence above
 is an unused extra on plan_sparring_shadow_log and does not block the load.
+
+AC-21. Final acceptance package for the owner: `docs/validation/VTID-05803/final-acceptance-package.md` + per-function
+audit `outputs/function-fingerprint-evidence.tsv`. It does not weaken k5.py and does not claim exit 0.
+CURL: package run `vtid-05803-schema-acc/20261119T190330Z-k5-schema-acc-apply/report.json` (a07.unexplained=142, a08
+6/7, a09 FAIL). TEST: `outputs/function-fingerprint-evidence.tsv` shows staging prosrc md5 == md5(applied body) for
+119/121 (agents_registry_set_updated_at = 44a734d202e32e7782c215138dc4c54e) and attributes byte-identical 121/121.
+The package: (1) verifies the 7 PUBLIC-EXECUTE functions — 6/7 SECURITY DEFINER, all pin search_path, none touch
+auth/vault/pgsodium/extensions/storage/net/pgmq/cron; PUBLIC is the Postgres-default extra (recommend REVOKE to match
+source's least privilege). (2) proves the 121 "changed function" diffs are prosrc-normalization artifacts (non-body
+attributes byte-identical source↔staging 121/121; staging prosrc hash == md5 of the applied pg_get_functiondef body
+119/121; the 2 others were not re-applied and keep the original normalized body). (3) documents the 11 platform
+exceptions (4 Supabase-only extensions, vector version, public schema owner, matview populated-state, 2 NOT-VALID FKs +
+1 NOT-VALID check, deferred VtidLedger view). (4) records the duplicate identity sequence plan_sparring_shadow_log_id_seq1
+(identity double-provision; harmless, unused). Owner decisions and the Kiro 2 / DMS hand-off are in the package.
