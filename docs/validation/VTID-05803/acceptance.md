@@ -1,5 +1,5 @@
 # VTID-05803 acceptance: staging data migration around the DMS full load (MR !69)
-Status: implemented and tested locally. Not yet executed on vitana-aurora-staging (no execution evidence yet). Production is not touched.
+Status: implemented and tested; the execution path is proven on vitana-aurora-staging (probe, read-only). The data stages wait for the Path A schema restore. Production is not touched.
 Scope: scripts/aws/staging-db-{vector-preload,vector-postload,restore-saved,vector-report}.sql, staging-db-migration.sh,
 staging-db-vector-postload.sh, aurora-cutover-embedding-backfill.py (--cluster), schema-restore-package/{run-staging.sh,load-stages.sh,README.md,SHA256SUMS},
 scripts/ci/staging-db/vector-postload.test.mjs.
@@ -36,3 +36,13 @@ TEST: "package: SHA256SUMS covers the stage runner and the four SQL files it run
 
 PROOF: outputs/vector-postload-tests-pglite.txt (15/15), outputs/vector-postload-tests-unit.txt, outputs/unit-all.txt, outputs/migration-plan.txt, outputs/package-sha256sums.txt.
 Not verified on staging: the live run on vitana-aurora-staging is pending. Its evidence goes to outputs/ as load-report.out.
+
+AC-7 The stages run on the existing authorized staging execution path. That path is GitLab main api pipeline job
+vtid-05803-load-stage (ci-config MR !23, merge b83caaf758) -> one Fargate task of vitana-aurora-staging-migrate:2.
+It uses no new AWS resource, revision, role or secret. First real run, read-only: pipeline 517, job 3560, task
+e186b2c98e494acdac4416d397c8e230, 2026-11-19T00:09Z. The container installed its tools, verified the payload sha256,
+passed the exact-staging-writer gate, connected with psql and ran the probe. Exit 10 = ready_for=restore: the
+restored schema (13 vector columns) is not on staging yet, which agrees with Kiro 5's run 514 (exit 17). Nothing was
+written. Full probe line: s3://vitana-code-index/vtid-05803/staging/runs/20261119T000933Z-k2-load-probe/probe.txt.
+TEST: "CI runner: the committed job is generated from this commit (--check), refuses non-main/non-api runs, and every override fits ECS"; "CI runner container: payload decodes to the repository files (comments stripped only), runs the stage through load-stages.sh, uploads the output"; "CI runner container: probe says restore (exit 10) on the 6-table seed; a failed SQL stage exits 2; a tampered payload is refused (22)"
+PROOF: outputs/load-stage-probe-20261119T000933Z.json, outputs/load-stage-probe-20261119T000933Z.log

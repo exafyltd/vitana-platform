@@ -1,0 +1,21 @@
+1O override bytes: 4870 (ECS limit 8192)
+1O run 20261119T000933Z-k2-load-probe: stage probe on vitana-aurora-staging-migrate:2 (PGHOST vitana-aurora-staging.cluster-cfk228aiedf3.eu-central-1.rds.amazonaws.com), evidence s3://vitana-code-index/vtid-05803/staging/runs/20261119T000933Z-k2-load-probe/
+1O task arn:aws:ecs:eu-central-1:472838866351:task/Vitana-ECS-Cluster/e186b2c98e494acdac4416d397c8e230, log /vitana/schema-parity staging-migrate/migrate/e186b2c98e494acdac4416d397c8e230
+1O lastStatus=STOPPED exitCode=10 stoppedReason=Essential container in task exited
+1O {
+1O   "vtid": "VTID-05803",
+1O   "step": "aurora-staging-load-stage",
+1O   "stage": "probe",
+1O   "exit_code": 10,
+1O   "reason": "probe: the restored schema is not on staging yet (run Path A first); output s3://vitana-code-index/vtid-05803/staging/runs/20261119T000933Z-k2-load-probe/probe.txt",
+1O   "run": "20261119T000933Z-k2-load-probe",
+1O   "task_definition": "vitana-aurora-staging-migrate:2",
+1O   "task": "arn:aws:ecs:eu-central-1:472838866351:task/Vitana-ECS-Cluster/e186b2c98e494acdac4416d397c8e230",
+1O   "container_exit_code": "10",
+1O   "stopped_reason": "Essential container in task exited",
+1O   "evidence_s3": "s3://vitana-code-index/vtid-05803/staging/runs/20261119T000933Z-k2-load-probe",
+1O   "log_group": "/vitana/schema-parity",
+1O   "log_stream": "staging-migrate/migrate/e186b2c98e494acdac4416d397c8e230",
+1O   "platform_commit": "e1844355ae169d0c1f740eb57c220273122574c2"
+1O }
+1O LOAD STAGE RESULT stage=probe exit=10 probe: the restored schema is not on staging yet (run Path A first); output s3://vitana-code-index/vtid-05803/staging/runs/20261119T000933Z-k2-load-probe/probe.txt

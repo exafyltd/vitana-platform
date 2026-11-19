@@ -1,0 +1,16 @@
+{
+  "vtid": "VTID-05803",
+  "step": "aurora-staging-load-stage",
+  "stage": "probe",
+  "exit_code": 10,
+  "reason": "probe: the restored schema is not on staging yet (run Path A first); output s3://vitana-code-index/vtid-05803/staging/runs/20261119T000933Z-k2-load-probe/probe.txt",
+  "run": "20261119T000933Z-k2-load-probe",
+  "task_definition": "vitana-aurora-staging-migrate:2",
+  "task": "arn:aws:ecs:eu-central-1:472838866351:task/Vitana-ECS-Cluster/e186b2c98e494acdac4416d397c8e230",
+  "container_exit_code": "10",
+  "stopped_reason": "Essential container in task exited",
+  "evidence_s3": "s3://vitana-code-index/vtid-05803/staging/runs/20261119T000933Z-k2-load-probe",
+  "log_group": "/vitana/schema-parity",
+  "log_stream": "staging-migrate/migrate/e186b2c98e494acdac4416d397c8e230",
+  "platform_commit": "e1844355ae169d0c1f740eb57c220273122574c2"
+}
