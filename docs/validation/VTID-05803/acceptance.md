@@ -77,3 +77,13 @@ DELIVERY_MODE stays shadow so `.record`/`.vtid-close` never run), verifies the s
 then runs STAGING-VERIFY against the preview URL. The production-credential gate (AC-13) applies: the preview task
 definition binds staging-only secrets, any production secret is refused before any ECS write.
 TEST: `scripts/eng/deploy/deploy-ecs.test.mjs` "VTID-05803: gateway-preview is an allowlisted target ..."; `scripts/eng/pipeline-gen.test.mjs`; GitLab CI lint (project 2): valid, 5 jobs resolve.
+
+AC-15. The acceptance owner can read the per-object A07/A08/A09 diff and apply the smallest additive correction through
+the existing authorized path (no new infra/IAM/restore): operation `vtid-05803-schema-acc.gitlab-ci.yml` (operations.json
+trigger `VTID05803_SCHEMA_ACC`), main + api/web only, on the existing `vitana-aurora-staging-migrate` task. `=probe` runs
+the pinned `scripts/aws/staging-acceptance/k5.py` read-only and republishes its evidence (report.json, a07-diff.txt,
+a08/a09) to this project's generic package registry, so the cross-account S3 block (vitana-gitlab-deploy-role has no
+s3:GetObject) no longer hides the diff. `=apply` downloads a sha256-pinned correction.sql, REFUSES any
+DROP/TRUNCATE/DELETE/REVOKE/INSERT/UPDATE/MERGE/COPY, asserts the staging writer, applies it in one writable transaction
+(ON_ERROR_STOP, atomic), then re-runs k5.py. Exit 0 only when A07/A08/A09 all pass. Baseline: run 20261119T131742Z, exit 17.
+TEST: GitLab CI lint (project 2): valid, jobs vtid-05803-schema-acc-probe/apply resolve; `scripts/eng/pipeline-gen.test.mjs` (operation declared and included).

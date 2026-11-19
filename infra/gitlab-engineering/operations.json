@@ -14,6 +14,12 @@
         "trigger_variable": "VTID05803_GATEWAY_DEPLOY",
         "values": ["preflight", "preview"],
         "$comment": "VTID-05803 build+deploy of main to vitana-gateway-preview (preview), or a read-only IAM preflight (preflight). Never on push/schedule."
+      },
+      {
+        "file": "vtid-05803-schema-acc.gitlab-ci.yml",
+        "trigger_variable": "VTID05803_SCHEMA_ACC",
+        "values": ["probe", "apply"],
+        "$comment": "VTID-05803 Aurora staging schema-acceptance correction: probe (read-only, publishes the per-object diff) or apply (additive, non-destructive, guarded) + re-accept, on the existing migrate task."
       }
     ]
   }
