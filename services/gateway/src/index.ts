@@ -72,6 +72,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const { plansSparRouter } = require('./routes/plans-spar');
   // VTID-05216: Project Manager read route (/api/v1/project-manager) — observe + decide (dry_run).
   const { projectManagerRouter } = require('./routes/project-manager');
+  // Delivery loop status route (/api/v1/delivery-loop): read-only, behind requireServiceOrAdmin.
+  const { deliveryLoopRouter } = require('./routes/delivery-loop');
   // VTID-03177 (PROFILE): RUM beacon receiver from vitana-v1 frontend
   const { rumBeaconRouter } = require('./routes/rum-beacon');
   // VTID-SCREEN-LOAD-01: synthetic screen-load-time basic test — ingest +
@@ -1546,6 +1548,7 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   mountRouterSync(app, '/api/v1/ops/runtime', opsRuntimeHealthRouter, { owner: 'ops-runtime-health' });
   // VTID-05547: GET /api/v1/delivery/summary and /metrics — the Command Hub Delivery module (service token or exafy_admin)
   mountRouterSync(app, '/api/v1/delivery', deliveryRouter, { owner: 'delivery' });
+  mountRouterSync(app, '/api/v1/delivery-loop', deliveryLoopRouter, { owner: 'delivery-loop' });
 
   // VTID-01097: Diary Templates - guided diary templates for memory quality
   mountRouterSync(app, '/api/v1/diary', diaryRouter, { owner: 'diary' });
@@ -1921,6 +1924,23 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         }
       } catch (error) {
         console.warn('⚠️ Project Manager loop initialization failed (non-fatal):', error);
+      }
+
+      // The delivery loop (observe -> reason -> plan -> execute -> verify -> learn -> improve over the GitLab delivery). A no-op unless
+      // DELIVERY_LOOP_ENABLED=true; it also needs DELIVERY_LOOP_PROJECTS, GITLAB_API_URL and GITLAB_API_TOKEN, and says plainly in its
+      // status when it is not running. The level defaults to L1 (it records and learns, it writes nothing to GitLab and starts
+      // nothing); raising it, and arming execution, are the owner's. It never merges, deploys or allocates a VTID.
+      try {
+        if (process.env.DELIVERY_LOOP_ENABLED === 'true') {
+          const dl = require('./services/delivery-loop/runtime');
+          const loop = dl.startDeliveryLoop({ bindings: dl.gatewayBindings() });
+          require('./routes/delivery-loop').setDeliveryLoopStatusSource(() => loop.status());
+          console.log(`Delivery loop started (level ${loop.status().autonomy}, every ${loop.status().cycle_ms}ms; see GET /api/v1/delivery-loop/status)`);
+        } else {
+          console.log('Delivery loop disabled: set DELIVERY_LOOP_ENABLED=true (with DELIVERY_LOOP_PROJECTS, GITLAB_API_URL, GITLAB_API_TOKEN) to enable');
+        }
+      } catch (error) {
+        console.warn('Delivery loop initialization failed (non-fatal):', error);
       }
 
       // VTID-04320: in-process reminder dispatch (tick every 30s, sweeper every
