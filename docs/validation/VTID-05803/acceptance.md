@@ -117,3 +117,13 @@ PG 17.4, 700 source tables. Without it, =generate connected to staging (29 roles
 TEST: `python3 -m py_compile scripts/aws/staging-acceptance/gen-correction.py`; a resolution test exec's the real
 conn_env/tcp/src_env and asserts unreachable->pooler, reachable->direct, already-pooler->unchanged; the =generate run
 on main then connects via the pooler and publishes correction.sql.
+
+AC-19. `gen-correction.py`'s psql reader (`q()`) now strips the trailing newline psql appends to unaligned (`-At -R`)
+output before splitting on the record separator. Without it the last record's last field kept a "\n": the owned
+sequence `plan_sparring_shadow_log_id_seq\n` was used in a regclass lookup and aborted =generate (container exit 30),
+and role/column fields on a last record were likewise corrupted. Reproduced and fixed against real psql driving a
+PostgreSQL 17.5 engine — the generated correction.sql then applies atomically (one transaction, ON_ERROR_STOP) to a
+fresh database carrying the source roles. Read-only generation only; the apply path is unchanged.
+TEST: `python3 -m py_compile scripts/aws/staging-acceptance/gen-correction.py`; a real-psql reproduction (PGlite wire
+server) shows the owned-sequence query output ending in "\n", the pre-fix generator aborting on it, and the post-fix
+generator producing a correction.sql that applies with rc=0.
