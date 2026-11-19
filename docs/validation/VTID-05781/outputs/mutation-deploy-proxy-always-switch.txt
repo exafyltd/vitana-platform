@@ -1,0 +1,7 @@
+# mutation deploy-proxy-always-switch: .github/workflows/AWS-STAGE-DEPLOY-POSTGREST-AURORA-PROXY.yml
+# replaced:           if [ "${STAGING_DATA_PLANE:-shared}" != shared ] || printf
+# with:               if true || printf
+not ok 2 - deploy workflows: the switch reads the repository variables and calls the select script only off the shared path
+not ok 40 - mutation fails: a deploy-workflow edit outside the marked blocks, or a switch without the marker-restore
+# pass 38
+# fail 2

@@ -1,0 +1,5 @@
+# VTID-05764 — base origin/main f0f88de2b5
+(origin/main + new tests only) node --test infra/kiro-access/*.test.mjs -> fail, modules absent (outputs/red-on-base.txt)
+node --test infra/kiro-access/*.test.mjs                               -> 22 pass, 0 fail (outputs/green.txt)
+(mutation: DenyProdData removed) node --test infra/kiro-access/*.test.mjs -> 2 fail (outputs/mutation-deny-removed.txt)
+cfn-lint 1.x --regions eu-central-1 -- infra/kiro-access/{staging-operator,engineering-admin,source-principal}.json -> exit 0

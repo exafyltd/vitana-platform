@@ -1111,14 +1111,14 @@ jobs:
             --query 'services[0].taskDefinition' --output text)
           echo "Current task definition: $TD_ARN"
           for pair in \
-            "SEC_JWT:vitana/supabase/prod/jwt-secret" \
-            "SEC_ANON:vitana/supabase/prod/anon-key" \
+            "SEC_JWT:vitana/supabase/staging/jwt-secret" \
+            "SEC_ANON:vitana/supabase/staging/anon-key" \
             "SEC_GEMINI:vitana/gateway/staging/google-gemini-api-key" \
             "SEC_OPENAI:vitana/gateway/staging/openai-api-key" \
             "SEC_DEEPSEEK:vitana/gateway/staging/deepseek-api-key" \
             "SEC_FISH:vitana/gateway/staging/fish-api-key" \
             "SEC_GITHUB_TOKEN:vitana/github/pat" \
-            "SEC_SERVICE_TOKEN:vitana/supabase/prod/service-role-key" ; do
+            "SEC_SERVICE_TOKEN:vitana/gateway/staging/service-token" ; do
             VAR="${pair%%:*}"; NAME="${pair#*:}"
             ARN=$(aws secretsmanager describe-secret --secret-id "$NAME" --query ARN --output text 2>/dev/null || true)
             if [ -z "$ARN" ] || [ "$ARN" = "None" ]; then
@@ -1352,6 +1352,20 @@ jobs:
                 | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
                       .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)')
           printf '%s' "$NEW_DEF" > "$RUNNER_TEMP/new-task-def.json"
+      # VTID-05803: own step (the render step is at the VTID-03788 20,000-char limit).
+      - name: Refuse production credentials on the staging task definition (VTID-05803)
+        run: |
+          set -e
+          # Staging never carries production credentials (owner instruction 2026-11-18): refuse to register a revision whose
+          # secrets or environment name a production Supabase/Aurora secret, the production cluster or its master secret.
+          # Supabase Auth keeps working through the staging-named secrets above, whose values the operator sets.
+          PROD_LEAK=$(cat "$RUNNER_TEMP/new-task-def.json" | jq -r '[ .containerDefinitions[] | ((.secrets // [])[] | {n:.name, v:(.valueFrom // "")}),
+              ((.environment // [])[] | {n:.name, v:(.value // "")})
+            | select(.v | test("secret:vitana/(supabase|aurora)/prod/|vitana-aurora-prod|secret:rds!cluster-4dab93b8")) | .n ] | unique | join(" ")')
+          if [ -n "$PROD_LEAK" ]; then
+            echo "::error::refusing to register: production credentials on a staging task definition: $PROD_LEAK"; exit 1
+          fi
+          echo "Production-credential gate: none bound"
       # VTID-05023 part 9: register + roll split out of the step above (which is
       # at the VTID-03788 20,000-char limit) so the data_backend switch fits.
       # keep (every push) passes the task definition through byte for byte.
@@ -1360,6 +1374,10 @@ jobs:
         env:
           DATA_BACKEND: ${{ inputs.data_backend || 'keep' }}
           DATA_BACKEND_AURORA_URL_SECRET_ARN: ${{ vars.SUPABASE_URL_AURORA_PROXY_STAGING_ARN }}
+          # >>> VTID-05781 STAGING_DATA_PLANE (unset/shared = this step exactly as before)
+          STAGING_DATA_PLANE: ${{ vars.STAGING_DATA_PLANE }}
+          STAGING_CUTOVER_APPROVED: ${{ vars.STAGING_CUTOVER_APPROVED }}
+          # <<< VTID-05781
         run: |
           set -e
           NEW_DEF="$(cat "$RUNNER_TEMP/new-task-def.json")"
@@ -1369,9 +1387,20 @@ jobs:
           elif [ "$DATA_BACKEND" != keep ]; then
             echo "::error::data_backend=$DATA_BACKEND needs $DB_SCRIPT, which this commit predates"; exit 1
           fi
+          # >>> VTID-05781 STAGING_DATA_PLANE (unset/shared and an unmarked task definition = nothing runs here)
+          if [ "${STAGING_DATA_PLANE:-shared}" != shared ] || printf '%s' "$NEW_DEF" | grep -q '"STAGING_DATA_PLANE"'; then
+            [ "${STAGING_DATA_PLANE:-shared}" = shared ] || [ "$DATA_BACKEND" = keep ] || { echo "::error::STAGING_DATA_PLANE=isolated needs data_backend=keep"; exit 1; }
+            NEW_DEF=$(printf '%s' "$NEW_DEF" | bash scripts/aws/staging-cutover-select.sh --service gateway)
+          fi
+          # <<< VTID-05781
           # VTID-05023 gate: refuse to register a revision that still binds an Aurora name in ANY container, env or secrets.
           AURORA_LEAK_JQ='[ .containerDefinitions[] | ((.environment // [])[], (.secrets // [])[]) | .name | select(startswith("AURORA_")) ] | unique | join(" ")'
           LEAK=$(printf '%s' "$NEW_DEF" | jq -r "$AURORA_LEAK_JQ")
+          # >>> VTID-05781 STAGING_DATA_PLANE (isolated only: AURORA_* secrets on staging-db ARNs pass the gate; isolatedAuroraLeaks)
+          if [ "${STAGING_DATA_PLANE:-shared}" = isolated ]; then
+            LEAK=$(printf '%s' "$NEW_DEF" | node --input-type=module -e "import fs from 'node:fs'; import { isolatedAuroraLeaks } from './scripts/aws/staging-cutover-taskdef.mjs'; process.stdout.write(isolatedAuroraLeaks(JSON.parse(fs.readFileSync(0, 'utf8'))).join(' '))")
+          fi
+          # <<< VTID-05781
           if [ -n "$LEAK" ]; then
             echo "::error::refusing to register: Aurora names still bound on the task definition: $LEAK"; exit 1
           fi

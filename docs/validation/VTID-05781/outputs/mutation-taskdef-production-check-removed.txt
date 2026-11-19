@@ -1,0 +1,6 @@
+# mutation taskdef-production-check-removed: scripts/aws/staging-cutover-taskdef.mjs
+# replaced:   if (left.length) {
+# with:       if (false && left.length) {
+not ok 12 - refuses an unknown production-bound entry
+# pass 20
+# fail 1

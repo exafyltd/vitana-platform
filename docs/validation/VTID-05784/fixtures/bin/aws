@@ -1,0 +1,124 @@
+#!/usr/bin/env node
+// VTID-05784 test stub of the AWS CLI for docs/validation/VTID-05784/tests/staging-migrate.test.mjs. Never calls AWS.
+// The RDS Data API is backed by a LOCAL Postgres (PGlite, data dir $STUB_STATE/pg), with real transaction semantics:
+// statements of an open transaction are replayed inside BEGIN … ROLLBACK on every execute (so a failing statement
+// fails where Aurora would fail), and committed in one BEGIN … COMMIT on commit-transaction; rollback-transaction
+// discards them. Every call is appended to $STUB_LOG.
+// Env: STUB_LOG, STUB_STATE (required); STUB_ACCOUNT (472838866351); STUB_CALLER_ARN (assumed staging role);
+// STUB_TAG (staging); STUB_CLUSTER_ARN (derived); STUB_NO_SECRET=1; STUB_SNAPSHOT_FAIL=1; STUB_HASH (schema-hash
+// stringValue); STUB_RESUMING=<n> (the first n rds-data calls fail with DatabaseResumingException);
+// STUB_PGLITE (module specifier of @electric-sql/pglite).
+import fs from 'node:fs';
+import path from 'node:path';
+
+const argv = process.argv.slice(2);
+const log = process.env.STUB_LOG;
+const state = process.env.STUB_STATE;
+if (!log || !state) { process.stderr.write('stub aws: STUB_LOG and STUB_STATE are required\n'); process.exit(99); }
+fs.appendFileSync(log, `aws ${argv.join(' ')}\n`);
+const arg = (k) => { const i = argv.indexOf(k); return i >= 0 ? argv[i + 1] : undefined; };
+const sub = `${argv[0] || ''} ${argv[1] || ''}`;
+const ACCOUNT = process.env.STUB_ACCOUNT || '472838866351';
+const out = (o) => process.stdout.write(typeof o === 'string' ? `${o}\n` : `${JSON.stringify(o)}\n`);
+const fail = (msg, code = 255) => { process.stderr.write(`An error occurred (${msg})\n`); process.exit(code); };
+
+async function db() {
+  const mod = await import(process.env.STUB_PGLITE || '@electric-sql/pglite');
+  const p = new mod.PGlite(path.join(state, 'pg'));
+  await p.waitReady;
+  return p;
+}
+const txFile = (id) => path.join(state, `${id}.json`);
+async function run(stmts, end) {
+  const p = await db();
+  try {
+    await p.exec('BEGIN');
+    let last = null;
+    for (const s of stmts) last = await p.query(s);
+    await p.exec(end);
+    return last;
+  } catch (e) {
+    try { await p.exec('ROLLBACK'); } catch { /* already aborted */ }
+    throw e;
+  } finally {
+    await p.close();
+  }
+}
+function resuming() {
+  const n = Number(process.env.STUB_RESUMING || 0);
+  if (!n) return false;
+  const f = path.join(state, 'resuming.count');
+  const c = fs.existsSync(f) ? Number(fs.readFileSync(f, 'utf8')) : 0;
+  if (c >= n) return false;
+  fs.writeFileSync(f, String(c + 1));
+  return true;
+}
+
+switch (sub) {
+  case 'sts get-caller-identity':
+    if (arg('--query') === 'Account') out(ACCOUNT);
+    else out({ Account: ACCOUNT, Arn: process.env.STUB_CALLER_ARN || `arn:aws:sts::${ACCOUNT}:assumed-role/vitana-gha-staging-db/GitHubActions` });
+    break;
+  case 'rds describe-db-clusters': {
+    const c = arg('--db-cluster-identifier');
+    const cl = { DBClusterArn: process.env.STUB_CLUSTER_ARN || `arn:aws:rds:eu-central-1:${ACCOUNT}:cluster:${c}`,
+      TagList: [{ Key: 'vitana-env', Value: process.env.STUB_TAG ?? 'staging' }] };
+    if (!process.env.STUB_NO_SECRET) cl.MasterUserSecret = { SecretArn: `arn:aws:secretsmanager:eu-central-1:${ACCOUNT}:secret:rds!cluster-abc-XyZ` };
+    out({ DBClusters: [cl] });
+    break;
+  }
+  case 'rds create-db-cluster-snapshot':
+    if (process.env.STUB_SNAPSHOT_FAIL) fail('InvalidDBClusterStateFault');
+    out({ DBClusterSnapshot: { DBClusterSnapshotIdentifier: arg('--db-cluster-snapshot-identifier'), Status: 'creating' } });
+    break;
+  case 'rds wait':
+    break;
+  case 'rds-data begin-transaction': {
+    if (resuming()) fail('DatabaseResumingException) when calling the BeginTransaction operation: resuming');
+    const id = `tx-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    fs.writeFileSync(txFile(id), '[]');
+    out({ transactionId: id });
+    break;
+  }
+  case 'rds-data execute-statement': {
+    if (resuming()) fail('DatabaseResumingException) when calling the ExecuteStatement operation: resuming');
+    const req = JSON.parse(fs.readFileSync(arg('--cli-input-json').replace(/^file:\/\//, ''), 'utf8'));
+    if (/staging-db:schema-hash/.test(req.sql) && process.env.STUB_HASH !== undefined) {
+      out({ records: [[{ stringValue: process.env.STUB_HASH }, { stringValue: '1' }]] });
+      break;
+    }
+    try {
+      if (req.transactionId) {
+        if (!fs.existsSync(txFile(req.transactionId))) fail('BadRequestException: transaction not found');
+        const stmts = [...JSON.parse(fs.readFileSync(txFile(req.transactionId), 'utf8')), req.sql];
+        await run(stmts, 'ROLLBACK');
+        fs.writeFileSync(txFile(req.transactionId), JSON.stringify(stmts));
+        out({ numberOfRecordsUpdated: 0 });
+      } else {
+        const r = await run([req.sql], 'COMMIT');
+        const rec = (r && r.rows ? r.rows : []).map((row) => Object.values(row).map((v) => (typeof v === 'number' ? { longValue: v } : { stringValue: String(v) })));
+        out({ numberOfRecordsUpdated: 0, records: rec });
+      }
+    } catch (e) {
+      fail(`BadRequestException) when calling the ExecuteStatement operation: ${String(e.message).split('\n')[0]}`);
+    }
+    break;
+  }
+  case 'rds-data commit-transaction': {
+    const id = arg('--transaction-id');
+    if (!fs.existsSync(txFile(id))) fail('BadRequestException: transaction not found');
+    const stmts = JSON.parse(fs.readFileSync(txFile(id), 'utf8'));
+    fs.rmSync(txFile(id));
+    try { await run(stmts, 'COMMIT'); } catch (e) { fail(`BadRequestException) on commit: ${e.message}`); }
+    out({ transactionStatus: 'Transaction Committed' });
+    break;
+  }
+  case 'rds-data rollback-transaction': {
+    const id = arg('--transaction-id');
+    if (fs.existsSync(txFile(id))) fs.rmSync(txFile(id));
+    out({ transactionStatus: 'Rollback Complete' });
+    break;
+  }
+  default:
+    out({});
+}

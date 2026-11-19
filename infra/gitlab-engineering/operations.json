@@ -1,0 +1,14 @@
+{
+  "schema": "vitana.ci-operations/v1",
+  "$comment": "Operation files of the generated GitLab pipelines (scripts/eng/pipeline-gen.mjs). Each file lives in infra/gitlab-engineering/ci/, so the settings sync copies it to vitana/ci-config, and the generated pipeline includes it from there. Its jobs run only on main, only in an api, web or schedule pipeline that sets the trigger variable to one of the values; every other pipeline is unchanged.",
+  "repositories": {
+    "vitana-platform": [
+      {
+        "file": "vtid-05803-acceptance.gitlab-ci.yml",
+        "trigger_variable": "VTID05803_ACCEPTANCE",
+        "values": ["discover", "run", "auto"],
+        "$comment": "VTID-05803 post-restore Aurora staging acceptance (read-only on source and staging)."
+      }
+    ]
+  }
+}

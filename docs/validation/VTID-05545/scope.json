@@ -1,0 +1,25 @@
+{
+  "vtid": "VTID-05545",
+  "kind": "infra",
+  "paths": [
+    "infra/gitlab-engineering/settings/gitlab-settings.json",
+    "scripts/eng/gitlab-settings.mjs",
+    "scripts/eng/gitlab-settings-cutover.test.mjs",
+    "scripts/eng/delivery-cutover.sh",
+    "scripts/eng/delivery-cutover.test.mjs",
+    "scripts/eng/delivery-rollback.sh",
+    "scripts/eng/parity-report.mjs",
+    "scripts/eng/parity-report.test.mjs",
+    "scripts/eng/delivery-metrics.mjs",
+    "scripts/eng/delivery-metrics.test.mjs",
+    "scripts/eng/github-workflows.json",
+    "scripts/eng/github-workflows.test.mjs",
+    "infra/gitlab-engineering/RUNBOOK-cutover.md",
+    ".kiro/pipeline/driver.md",
+    ".kiro/pipeline/lane-land.md",
+    "docs/validation/VTID-05545/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05545/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

@@ -1,0 +1,61 @@
+# VTID-05803: staging gateway deploy carries no production credentials
+
+Owner instruction 2026-11-18: staging services receive staging credentials, never production service-role credentials.
+
+AC-1. Staging resolves only staging-named auth secrets: `vitana/supabase/staging/jwt-secret`, `vitana/supabase/staging/anon-key`,
+`vitana/gateway/staging/service-token` (was `vitana/supabase/prod/*`). A missing secret stops the deploy before registration.
+TEST: `services/gateway/test/vtid-05803-stage-deploy-no-prod-secrets.test.ts` (resolves only staging-named auth secrets);
+`scripts/ci/staging-db/stage-deploy-no-prod-secrets.test.mjs` test 1.
+
+AC-2. A task definition that names `vitana/(supabase|aurora)/prod/*`, `vitana-aurora-prod` or the production master secret in
+any secret or environment value is refused before register + roll (own step, after render).
+TEST: `scripts/ci/staging-db/stage-deploy-no-prod-secrets.test.mjs` test 2 runs the exact jq on staging and production cases;
+the jest test checks the pattern and the step order.
+
+AC-3. `data_backend=aurora` and the VTID-05781/VTID-05023 roll step are unchanged (shared path byte-identical to the pinned step).
+TEST: `scripts/ci/staging-db/cutover-workflows.test.mjs` 41/41.
+
+AC-4. Production deploy unchanged.
+TEST: both new tests, "production deploy keeps its production secrets".
+
+AC-5. The run-step size limit holds.
+TEST: `test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts`.
+
+AC-6. The CI checks this change needs pass in the GitLab runner image (Debian bookworm: mawk, GitLab `CI_*` variables).
+TEST: `scripts/ci/staging-db/aws-scripts.test.mjs` with mawk as `awk` (the bundle splitter used `{n}` intervals, which mawk
+1.3.4 does not support); `scripts/eng/gitlab-gates.test.mjs` with the runner's `CI_*` variables set.
+
+Contract change on purpose: `test/vtid-04225-no-dead-gcp-urls-in-workflows.test.ts` asserted the staging service token is the
+production service-role key; it now asserts the staging secret and the absence of the production one.
+Effect: callers of the staging gateway must present the staging service token.
+
+## Aurora staging acceptance step in GitLab CI (Kiro 5, kiro-exafy-202611190018-058b)
+
+AC-7. The acceptance job is a permanent part of the generated vitana-platform pipeline. `infra/gitlab-engineering/operations.json`
+declares it (kept out of `config/`, whose change selects every check); `pipeline-gen.mjs` includes the file from vitana/ci-config (no `include: local`) and
+admits only main api/web/schedule pipelines that set `VTID05803_ACCEPTANCE`. The job file lives in
+`infra/gitlab-engineering/ci/`, so the settings sync writes it instead of dropping it.
+TEST: `scripts/eng/pipeline-gen.test.mjs` "an operation file is included from ci-config ..."; `node scripts/eng/pipeline-gen.mjs --check`.
+
+AC-8. The runner is read-only on both sides and never exposes a credential: every psql session starts with
+`SET SESSION default_transaction_read_only = on` and the runner refuses (46/56) unless the session reports read_only=on;
+no URI or password reaches argv, logs or evidence; a password holding `@ : # /` parses.
+TEST: `scripts/ci/staging-db/staging-acceptance.test.mjs` tests 1 and 3.
+
+AC-9. Exit contract: 0 acceptance passed; 1 unexplained differences (container 11-17 name the suites); 2 configuration or
+infrastructure error (container 20-99, no exit code, task not STOPPED, upload failure on a pass = 80). Only container exit
+0 maps to a pass.
+TEST: `scripts/ci/staging-db/staging-acceptance.test.mjs` tests 2, 4, 5 and 7.
+
+AC-10. The job file embeds exactly `scripts/aws/staging-acceptance/k5.py` and the ECS override stays under 8192 bytes.
+TEST: `python3 scripts/aws/staging-acceptance/embed.py --check`; `staging-acceptance.test.mjs` test 6.
+
+AC-11. `VTID05803_ACCEPTANCE=auto` (the schedule) runs the acceptance once per staging load that its owner reports with the
+generic package file `vtid-05803-staging-load/latest/marker.json`; without a new marker it exits 3 (allowed to fail, never
+a pass) and starts no task.
+TEST: `scripts/ci/staging-db/staging-acceptance.test.mjs` test 7; first live run recorded in commands.log.
+
+AC-12. Real run evidence before this change (ci-config job, same runner): pipeline 514, job 3548, task 5865052a, container
+exit 17 (A07, A08, A09 differ: staging holds only the 6-table seed), evidence
+`s3://vitana-code-index/vtid-05803/staging/runs/20261118T235135Z-k5-acceptance-schema-only/`.
+CURL: GitLab API `projects/2/jobs/3548/artifacts` -> `acceptance/result.json` (exit_code 1, container_exit_code 17).

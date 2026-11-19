@@ -149,6 +149,17 @@ resource "aws_launch_template" "fleet_class" {
   image_id               = one(aws_imagebuilder_image.fleet.output_resources[0].amis).image
   update_default_version = true
 
+  # Build class only: rootless BuildKit (.build-image's service) needs unprivileged user namespaces, which Ubuntu 24.04
+  # restricts by default (kernel.apparmor_restrict_unprivileged_userns=1). Without this, rootlesskit fails with
+  # "fork/exec /proc/self/exe: permission denied" (GitLab jobs 3338, 3641), even with the build class's unconfined service
+  # profiles. Single-use instances of this class only; the other classes keep the default.
+  user_data = each.key == "build" ? base64encode(<<-EOT
+    #!/bin/bash
+    echo 'kernel.apparmor_restrict_unprivileged_userns = 0' > /etc/sysctl.d/60-vitana-build-userns.conf
+    sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+  EOT
+  ) : null
+
   metadata_options {
     http_endpoint               = "enabled"
     http_tokens                 = "required"

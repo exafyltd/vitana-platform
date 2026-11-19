@@ -1,0 +1,26 @@
+{
+  "vtid": "VTID-05207",
+  "kind": "feature",
+  "lane": "new-member-welcome/say-hello-composer",
+  "repo": "exafyltd/vitana-platform",
+  "sparring_record": "docs/validation/VTID-05207/plan-sparring.md",
+  "plan_hash": "f7cdefc3043249c5",
+  "summary": "Gateway side of the Say Hello composer: suggestion endpoint (C1) and server-side greeting guard in POST /chat/send (C2), with CI-simulation tests. The vitana-v1 composer ships in the sibling vitana-v1 PR of the same lane.",
+  "paths": [
+    "services/gateway/src/services/new-member-greeting-guard.ts",
+    "services/gateway/src/services/new-member-greeting-suggestion.ts",
+    "services/gateway/src/routes/new-member-greeting.ts",
+    "services/gateway/src/routes/new-member-greeting-repository.ts",
+    "services/gateway/src/routes/chat.ts",
+    "services/gateway/src/index.ts",
+    "services/gateway/src/orb/developer/domain-atlas.ts",
+    "services/gateway/test/vtid-05207-greeting-guard.test.ts",
+    "services/gateway/test/vtid-05207-greeting-guard-send-route.test.ts",
+    "services/gateway/test/vtid-05207-greeting-suggestion.test.ts",
+    "services/gateway/test/vtid-05207-greeting-suggestion-route.test.ts",
+    "services/gateway/test/vtid-05208-greeting-send-route.test.ts",
+    "docs/validation/VTID-05207/**"
+  ],
+  "no_migration": true,
+  "migration_note": "No migration. The guard reads global_community_profiles.community_intro_opt_in (VTID-05206 column) and existing tables; applying that column is owner-gated and outside this lane."
+}

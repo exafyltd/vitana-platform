@@ -1,0 +1,25 @@
+# GitHub side of the step 1 comparison (read only, gh api, 2026-11-07 ~11:50Z). Re-read for the exact main commit GitLab runs.
+
+vitana-platform TEST-SUITE.yml on main 1abd637af3ab16c7be5b1375ec1a585c35e462f3: success
+https://github.com/exafyltd/vitana-platform/actions/runs/42362988091
+  openclaw-bridge (vitest)      success  10:12:49Z -> 10:13:13Z
+  vcaop (jest)                  success  10:12:49Z -> 10:13:29Z
+  Gateway (Jest, shard 1/4)     success  10:12:50Z -> 10:15:27Z
+  Gateway (Jest, shard 2/4)     success  10:12:49Z -> 10:14:10Z
+  Gateway (Jest, shard 3/4)     success  10:12:50Z -> 10:15:06Z
+  Gateway (Jest, shard 4/4)     success  10:12:50Z -> 10:14:23Z
+  oasis-projector (jest)        success  10:12:50Z -> 10:13:15Z
+  gateway-shard-union           success  10:15:29Z -> 10:15:45Z
+  Test Suite Summary            success  10:15:47Z -> 10:15:50Z
+
+vitana-v1 UNIT-TESTS.yml on main 9fe36a8713f152dc84d00f8027556a6d0711f7cc: success
+https://github.com/exafyltd/vitana-v1/actions/runs/42364988759
+  Edge data client (guard + Deno tests)  success  10:41:08Z -> 10:41:23Z
+  Vitest (jsdom)                         success  10:41:08Z -> 10:46:27Z
+  Realtime helper (guard + Vitest)       success  10:41:08Z -> 10:41:49Z
+
+GitLab jobs to compare (host/ci-platform.yml: typecheck, gateway-jest; host/ci-v1.yml: unit-tests, build, lint).
+Mapping for the comparison: gateway-jest <-> Gateway (Jest, shard 1-4); typecheck <-> CICDL-GATEWAY-CI typecheck;
+unit-tests <-> Vitest (jsdom); build, lint <-> vitana-v1 PR-GATE build/lint (UNIT-TESTS has no build or lint job).
+platform.gitlab-ci.yml sha256 on main: 598d3ea1d3db9b9bcb8f645863bbe9b313cc3d72e6b9b293a83742bb0bb6ee0c
+v1.gitlab-ci.yml sha256 on main: 504907d2a6afcf2aab252fc8a5dcadf0049717de4d25494f72da918d17ed508e

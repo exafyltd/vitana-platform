@@ -161,6 +161,11 @@ import {
 } from '../src/services/plan-sparring/reconciler';
 import { callViaRouter, _resetPolicyCacheForTests, type LLMRouterOpts, type LLMRouterResult } from '../src/services/llm-router';
 import { parseSparringId } from '../src/routes/vtid';
+// plan sparring-eu-guard C2: tests set the region explicitly (there is no default region)
+process.env.AWS_REGION = process.env.AWS_REGION || 'eu-central-1';
+// plan sparring-eu-guard C1: the DeepSeek last-resort tier is off by default; this file tests the chain with it on.
+beforeEach(() => { process.env.PLAN_SPARRING_DEEPSEEK_FALLBACK_ENABLED = 'true'; });
+afterEach(() => { delete process.env.PLAN_SPARRING_DEEPSEEK_FALLBACK_ENABLED; });
 
 const SHA = 'a'.repeat(40);
 const ADMIN = '11111111-2222-4333-8444-555555555555';

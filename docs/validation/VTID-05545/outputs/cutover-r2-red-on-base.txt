@@ -1,0 +1,71 @@
+# cutover-r2 red on base 4d507e28c8 (4ffe7bd26b + GitLab main d8b8a8c5e0), before the 170 re-application, 2026-11-18
+# VITANA_V1_WORKFLOWS_DIR = vitana-v1 main bbe90b7137 (47 files)
+## node --test scripts/eng/github-workflows.test.mjs
+ok 1 - list: 163 workflow files of both repositories (116 platform, 47 vitana-v1), each with exactly one action, disable or keep, and a recorded pin for vitana-v1
+not ok 2 - list: the platform entries are exactly the files of .github/workflows on this tree, and the recorded triggers match the files (a new workflow or trigger cannot slip through unclassified)
+not ok 3 - list: the vitana-v1 entries are exactly the files of the vitana-v1 checkout when VITANA_V1_WORKFLOWS_DIR names one; the full rules pass on both halves
+ok 4 - plan 2.2: the disabled workflows are the ones of the table, family by family (72 of 163), and nothing else is disabled
+ok 5 - plan 2.2: the kept workflows are the families of the table (91 of 163): dispatch-only production and migration workflows, scheduled jobs, PLAN-SPAR, the Cloudflare Workers deploy
+ok 6 - kept workflows: only PLAN-SPAR (plan PRs) and the path-filtered MIGRATION-DRIFT-CHECK run on a pull request; nothing else that runs on a pull request is kept
+not ok 7 - kept workflows: none pushes to main, and the only one that a push to main starts and that deploys production is DEPLOY-CLOUDFLARE-WORKERS with its cloudflare/** filter
+ok 8 - protected gate files: PR-GATE (both repositories), PLAN-SPAR and AWS-PROD-* are flagged, as scripts/collab/protected-gate-files.json says; PR-GATE is disabled on the owner command that names the plan
+not ok 9 - negative controls: each rule of the list fails with its own message when it is the only thing broken, and the untouched list has no problem
+ok 10 - on: reader: block, inline list, inline map, quoted key, branch and path lists in both YAML list styles
+ok 11 - kept workflows: a push to the dispatched ref (github.ref_name) counts as a push to main unless the entry records it; the three i18n workflows record it with a note
+# tests 11
+# pass 7
+# fail 4
+## node --test scripts/eng/delivery-cutover.test.mjs
+ok 1 - structure: both scripts are strict bash, have no xtrace, name the management account, and reach the world only through the x_ wrappers and W
+ok 2 - usage: no command, an unknown command and extra words are exit 2 with the usage; --help is exit 0; nothing is called
+not ok 3 - status: with every item true it prints the 15 items of plan §8.1 one by one, green, says the cut may start, exits 0, and only reads
+ok 4 - status --item: each red condition turns exactly its own item red, names the reason, makes the exit code 1; the other items of the same group stay as they were
+ok 5 - status --item: a green item is green and exits 0, an unknown item is a usage mistake, and the full status marks exactly the broken item when two items are broken
+ok 6 - status: when git cannot fetch origin/main, the four lane items fail by name and the others still run
+ok 7 - preflight: the wrong AWS account, a missing tool, a GitHub token GitHub does not accept and one without admin rights each stop the command before anything is read or changed
+ok 8 - the GitHub token is typed hidden when GH_TOKEN is not set, and it appears in no output, no argument and no file
+not ok 9 - apply: without the plan slug, or with --dry-run, it is a dry run: it shows every change as WOULD, makes none, and still reads the checklist
+ok 10 - apply: a wrong plan slug, an unknown option, a real run without --mirror-account and a mirror account that cannot push are refused before anything is changed
+ok 11 - apply: with a red checklist it refuses, names the red item, and changes nothing
+ok 12 - apply: the cut, step by step in the order of plan §8.2, each change printed before it is made, and every effect in place at the end
+ok 13 - apply: step 7 stops when DELIVERY_MODE of a project is not live after the sync, and no tag is made
+ok 14 - apply: step 2 does not run the GitHub-to-GitLab copy when the cutover marker is already set (it would overwrite GitLab main with GitHub main)
+ok 15 - apply: run again after the cut it does nothing: every step says already done, no state-changing call is made, exit 0
+ok 16 - apply: waits for the owner at step 6 (exit 3), is resumed from step 6 when the switch is on, and a switch that is flipped during the wait lets one run finish
+ok 17 - failure at step 1: the protection of the first repository is put back, the cut stops, and the next run (after the fix) finishes with the original protection still saved
+ok 18 - failure at step 2: a final copy that fails leaves the copy running and changes nothing else; at step 3: a sync that does not converge removes the marker again
+ok 19 - failure at step 4: the workflows disabled in that step are enabled again, the cut stops, and the next run disables exactly the list
+ok 20 - failure at step 8: the tags made in that step are deleted again on both hosts
+ok 21 - rollback: it reverses the cut in the order of plan §8.4, restores exactly what the cut changed, loses no commit, and prints every change first
+ok 22 - rollback: it enables again only the workflows the cut disabled; one that was already disabled before the cut stays disabled
+ok 23 - rollback: a staging gateway that still carries the cut settings is redeployed through the GitHub path; without the slug or with --dry-run nothing is changed
+ok 24 - rollback: it refuses while GitHub main is not GitLab main, and while branches exist only on GitLab, and restores nothing then
+ok 25 - rollback: from a cut that stopped half way (the settings sync failed at step 3) it undoes what exists and skips the rest; a second rollback is harmless
+ok 26 - rehearse: it needs --merges-paused, opens with the marker "rehearsal", waits (exit 3) until a live pipeline on main deployed and verified each repository, then closes and sends staging back to the GitHub path
+ok 27 - rehearse --dry-run: opening, closing and aborting print every change as WOULD, make none, and claim no result
+ok 28 - rehearse: a red checklist blocks it, --abort closes an open rehearsal without a pass, and an aborted rehearsal is not a pass
+ok 29 - machine scripts: every script sent to the GitLab machine starts with its read or write line, parses in plain sh, and names a token file only to test it or to feed it to curl through stdin
+ok 30 - machine scripts, run for real in sh on stand-ins: the converge script writes and removes the marker and runs the two syncs; the unit script touches only the named units; the tag script feeds its token to curl through stdin
+not ok 31 - runbook: every bash block parses, it explains every checklist item, shows the commands of the scripts and states the counts of the workflow list
+ok 32 - pipeline runbooks: after the cut tag of a repository the merge bot lands and the driver waits for delivery.landed instead of merging; before the tag the merge flow is unchanged
+ok 33 - B1: a backup write that Secrets Manager refuses, or one that reads back different, stops step 1 before that GitHub main is changed
+ok 34 - B1: the record of a started cut, and the list of step 4, are read back too: a write that fails stops apply before the change they protect
+ok 35 - B1: a 502 on the protection GET stops step 1 and saves nothing; only GitHub's 404 "Branch not protected" counts as no protection, and it is restored by a DELETE
+ok 36 - B1: a rollback whose protection backup is deleted or cannot be read exits 1 with the manual instruction, never says done, and leaves GitHub main locked
+ok 37 - B1: when step 1 cannot put a protection back it says NOT undone, never "undone"
+ok 38 - B1: rollback step 4 without its saved list exits 1 with the manual instruction while workflows of the disable list are disabled; an unreadable list stops it too
+ok 39 - B2: a second rollback after a good one restores no protection and enables no workflow, even when the team changed both since; only disabled_manually workflows of the list are enabled
+ok 40 - B2: the rollback records rolling-back before its first change; apply refuses to resume such a cut; the next rollback continues and finishes it
+ok 41 - B2: apply resumes a started cut only within 24 hours; an older record needs the checklist green again; the saved protection is kept; another mirror account is refused
+ok 42 - B2: a lock keeps runs apart: apply, rehearse and the rollback refuse while it exists; --break-lock clears only a lock older than 6 hours; a run releases its lock
+ok 43 - B3: the restore body carries bypass allowances and dismissal restrictions, sends a null app_id as -1, and gives checks or contexts, never both
+ok 44 - B3: a cut and its rollback restore a protection with bypass allowances and an any-app check through the documented schema, exactly
+ok 45 - B3: rehearse first runs the round trip of the protection (PUT the restore body back, GET, compare) before the marker; the checklist item is green only on the protection of today
+ok 46 - B4: the rollback refuses while a branch on both hosts has GitLab commits that GitHub lacks, lists it and restores nothing; a GitLab head that GitHub contains is fine
+ok 47 - B4: the bot refs train/* and assist/* are left out of the GitLab-only check; a full 30th page of GitLab branches stops the rollback instead of being cut short
+ok 48 - B4: on the machine the GitLab branch listing prints every head, stops at a short page, and says truncated when page 30 is still full
+ok 49 - B5: the rollback waits for the redeploy, reads the staging task definition again, and stops with the owner command while DELIVERY_HOST_* is still gitlab
+ok 50 - B5: closing the rehearsal waits for both staging redeploys and checks the gateway; with DELIVERY_HOST_* still gitlab the rehearsal stays open and the owner command is printed
+# tests 50
+# pass 47
+# fail 3

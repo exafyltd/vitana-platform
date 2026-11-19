@@ -12,6 +12,7 @@ include:
       - "tpl-assist.yml"
       - "tpl-deploy.yml"
       - "tpl-verify.yml"
+      - "vtid-05803-acceptance.gitlab-ci.yml"
 
 workflow:
   auto_cancel:
@@ -22,6 +23,7 @@ workflow:
     - if: "$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == \"push\""
     - if: "$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == \"schedule\""
     - if: "$CI_COMMIT_BRANCH =~ /^assist\\//"
+    - if: "$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE =~ /^(api|web|schedule)$/ && $VTID05803_ACCEPTANCE =~ /^(discover|run|auto)$/"
     - when: "never"
 
 stages:
@@ -94,6 +96,7 @@ gateway-typecheck:
   variables:
     DELIVERY_CHECK: "gateway-typecheck"
     NODE_OPTIONS: "--max-old-space-size=6144"
+    DATABASE_URL: "postgresql://ci:ci@localhost:5432/ci?schema=public"
   cache:
     key:
       files:
@@ -105,8 +108,8 @@ gateway-typecheck:
   script:
     - "cd services/gateway"
     - "npm ci --no-audit --no-fund --prefer-offline"
-    - "npx --yes pnpm@9.0.0 exec prisma generate || npx prisma generate"
-    - "npx prisma validate"
+    - "(cd \"$CI_PROJECT_DIR\" && npx --yes prisma@6.18.0 generate --schema prisma/schema.prisma)"
+    - "(cd \"$CI_PROJECT_DIR\" && npx --yes prisma@6.18.0 validate --schema prisma/schema.prisma)"
     - "npm run validate:dev-frontend-spec"
     - "npm run typecheck"
   rules:
@@ -163,6 +166,7 @@ gateway-jest:
       - ".pnpm-store"
     policy: "pull-push"
   script:
+    - "apt-get update -qq && apt-get install -y -qq --no-install-recommends jq >/dev/null"
     - "npm install -g pnpm@9.0.0 >/dev/null"
     - "pnpm config set store-dir \"$CI_PROJECT_DIR/.pnpm-store\""
     - "cd services/gateway"
@@ -275,6 +279,7 @@ gateway-build:
   stage: "checks"
   variables:
     DELIVERY_CHECK: "gateway-build"
+    NODE_OPTIONS: "--max-old-space-size=6144"
   cache:
     key:
       files:
@@ -649,6 +654,7 @@ unit-scripts:
   variables:
     DELIVERY_CHECK: "unit-scripts"
   script:
+    - "apt-get update -qq && apt-get install -y -qq --no-install-recommends jq >/dev/null"
     - "FILES=$(find scripts -path \"*/node_modules\" -prune -o \\( -name \"*.test.cjs\" -o -name \"*.test.mjs\" \\) -print | sort)"
     - "node --test $FILES"
   rules:
@@ -738,6 +744,7 @@ validator-check:
   variables:
     DELIVERY_CHECK: "validator-check"
     GIT_DEPTH: "0"
+    NODE_OPTIONS: "--max-old-space-size=6144"
   cache:
     key:
       files:
@@ -805,6 +812,7 @@ command-hub-guardrails:
   stage: "checks"
   variables:
     DELIVERY_CHECK: "command-hub-guardrails"
+    NODE_OPTIONS: "--max-old-space-size=6144"
   cache:
     key:
       files:
@@ -857,6 +865,7 @@ frontend-canonical-source:
   stage: "checks"
   variables:
     DELIVERY_CHECK: "frontend-canonical-source"
+    NODE_OPTIONS: "--max-old-space-size=6144"
   cache:
     key:
       files:
@@ -1436,6 +1445,7 @@ gateway-calendar-regression:
       - ".pnpm-store"
     policy: "pull-push"
   script:
+    - "apt-get update -qq && apt-get install -y -qq --no-install-recommends jq >/dev/null"
     - "npm install -g pnpm@9.0.0 >/dev/null"
     - "pnpm config set store-dir \"$CI_PROJECT_DIR/.pnpm-store\""
     - "cd services/gateway"
@@ -2295,6 +2305,7 @@ sql-record-migration-row:
     PGUSER: "postgres"
     PGPASSWORD: "postgres"
   script:
+    - "apt-get update -qq && apt-get install -y -qq --no-install-recommends jq >/dev/null"
     - "set -o pipefail\nscripts/ci/sql-tests/run-record-migration-row-test.sh 2>&1 | tee /tmp/record-migration-row.log"
     - "grep -q '^PASS vtid-05123 record migration row' /tmp/record-migration-row.log"
   rules:
@@ -2504,6 +2515,7 @@ sql-tenant-foundation:
     PGUSER: "postgres"
     PGPASSWORD: "postgres"
   script:
+    - "apt-get update -qq && apt-get install -y -qq --no-install-recommends jq >/dev/null"
     - "set -o pipefail\nbash scripts/ci/sql-tests/run-tenant-foundation-test.sh 2>&1 | tee /tmp/tenant-foundation.log"
     - "grep -q '^PASS vtid-05149 tenant foundation' /tmp/tenant-foundation.log"
   rules:
@@ -2655,9 +2667,6 @@ gate:
     - job: "gateway-typecheck"
       optional: true
       artifacts: true
-    - job: "gateway-jest"
-      optional: true
-      artifacts: true
     - job: "gateway-shard-union"
       optional: true
       artifacts: true
@@ -2805,6 +2814,7 @@ gate:
   variables:
     DELIVERY_CHECK: "gateway-typecheck"
     NODE_OPTIONS: "--max-old-space-size=6144"
+    DATABASE_URL: "postgresql://ci:ci@localhost:5432/ci?schema=public"
   cache:
     key:
       files:
@@ -2816,8 +2826,8 @@ gate:
   script:
     - "cd services/gateway"
     - "npm ci --no-audit --no-fund --prefer-offline"
-    - "npx --yes pnpm@9.0.0 exec prisma generate || npx prisma generate"
-    - "npx prisma validate"
+    - "(cd \"$CI_PROJECT_DIR\" && npx --yes prisma@6.18.0 generate --schema prisma/schema.prisma)"
+    - "(cd \"$CI_PROJECT_DIR\" && npx --yes prisma@6.18.0 validate --schema prisma/schema.prisma)"
     - "npm run validate:dev-frontend-spec"
     - "npm run typecheck"
   rules:
@@ -2839,6 +2849,7 @@ gate:
       - ".pnpm-store"
     policy: "pull-push"
   script:
+    - "apt-get update -qq && apt-get install -y -qq --no-install-recommends jq >/dev/null"
     - "npm install -g pnpm@9.0.0 >/dev/null"
     - "pnpm config set store-dir \"$CI_PROJECT_DIR/.pnpm-store\""
     - "cd services/gateway"
@@ -2875,6 +2886,7 @@ gate:
   stage: "full-suite"
   variables:
     DELIVERY_CHECK: "gateway-build"
+    NODE_OPTIONS: "--max-old-space-size=6144"
   cache:
     key:
       files:
@@ -3022,6 +3034,7 @@ gate:
   variables:
     DELIVERY_CHECK: "unit-scripts"
   script:
+    - "apt-get update -qq && apt-get install -y -qq --no-install-recommends jq >/dev/null"
     - "FILES=$(find scripts -path \"*/node_modules\" -prune -o \\( -name \"*.test.cjs\" -o -name \"*.test.mjs\" \\) -print | sort)"
     - "node --test $FILES"
   rules:
@@ -3044,6 +3057,7 @@ gate:
   variables:
     DELIVERY_CHECK: "validator-check"
     GIT_DEPTH: "0"
+    NODE_OPTIONS: "--max-old-space-size=6144"
   cache:
     key:
       files:
@@ -3078,6 +3092,7 @@ gate:
   stage: "full-suite"
   variables:
     DELIVERY_CHECK: "command-hub-guardrails"
+    NODE_OPTIONS: "--max-old-space-size=6144"
   cache:
     key:
       files:
@@ -3100,6 +3115,7 @@ gate:
   stage: "full-suite"
   variables:
     DELIVERY_CHECK: "frontend-canonical-source"
+    NODE_OPTIONS: "--max-old-space-size=6144"
   cache:
     key:
       files:
@@ -3276,6 +3292,7 @@ gate:
       - ".pnpm-store"
     policy: "pull-push"
   script:
+    - "apt-get update -qq && apt-get install -y -qq --no-install-recommends jq >/dev/null"
     - "npm install -g pnpm@9.0.0 >/dev/null"
     - "pnpm config set store-dir \"$CI_PROJECT_DIR/.pnpm-store\""
     - "cd services/gateway"
@@ -3617,6 +3634,7 @@ gate:
     PGUSER: "postgres"
     PGPASSWORD: "postgres"
   script:
+    - "apt-get update -qq && apt-get install -y -qq --no-install-recommends jq >/dev/null"
     - "set -o pipefail\nscripts/ci/sql-tests/run-record-migration-row-test.sh 2>&1 | tee /tmp/record-migration-row.log"
     - "grep -q '^PASS vtid-05123 record migration row' /tmp/record-migration-row.log"
   rules:
@@ -3701,6 +3719,7 @@ gate:
     PGUSER: "postgres"
     PGPASSWORD: "postgres"
   script:
+    - "apt-get update -qq && apt-get install -y -qq --no-install-recommends jq >/dev/null"
     - "set -o pipefail\nbash scripts/ci/sql-tests/run-tenant-foundation-test.sh 2>&1 | tee /tmp/tenant-foundation.log"
     - "grep -q '^PASS vtid-05149 tenant foundation' /tmp/tenant-foundation.log"
   rules:
