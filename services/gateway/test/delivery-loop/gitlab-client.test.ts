@@ -143,10 +143,10 @@ describe('what is sent', () => {
   });
 
   it('getIssue: GET projects/<encoded path>/issues/<iid>', async () => {
-    handler = () => json({ iid: 17, id: 301, title: 'T', description: 'D', state: 'opened', labels: ['agent-task'], web_url: 'u', confidential: true, updated_at: 'x' });
+    handler = () => json({ iid: 17, id: 301, title: 'T', description: 'D', state: 'opened', labels: ['agent-task'], web_url: 'u', confidential: true, updated_at: 'x', author: { id: 5, username: 'a' } });
     const r = await client().getIssue(PROJECT, 17);
     expect([calls[0].method, calls[0].url.pathname]).toEqual(['GET', `/api/v4/projects/${ENC}/issues/17`]);
-    expect(r).toEqual({ ok: true, data: { id: 301, iid: 17, title: 'T', description: 'D', state: 'opened', labels: ['agent-task'], web_url: 'u', confidential: true, updated_at: 'x' } });
+    expect(r).toEqual({ ok: true, data: { id: 301, iid: 17, title: 'T', description: 'D', state: 'opened', labels: ['agent-task'], web_url: 'u', confidential: true, updated_at: 'x', author_id: 5 } });
   });
 
   it('listIssues: state, labels and updated_after as query parameters, oldest update first', async () => {
@@ -202,7 +202,7 @@ describe('what is sent', () => {
 describe('what comes back is untrusted', () => {
   it('a field of the wrong type becomes its empty value, never an exception', () => {
     expect(toIssue({ iid: 1, id: 'x', title: 5, description: null, state: {}, labels: 'nope', web_url: [], confidential: 'yes', updated_at: 1 })).toEqual({
-      id: 0, iid: 1, title: '', description: '', state: '', labels: [], web_url: '', confidential: false, updated_at: '',
+      id: 0, iid: 1, title: '', description: '', state: '', labels: [], web_url: '', confidential: false, updated_at: '', author_id: null,
     });
     expect(toIssue({ id: 1 })).toBeNull();
     expect(toIssue(null)).toBeNull();
@@ -224,7 +224,7 @@ describe('what comes back is untrusted', () => {
   });
 
   it('a pipeline, a job and a diff file need their key field; the rest degrades', () => {
-    expect(toPipeline({ id: 31, status: 'failed', ref: 'r', sha: 's', web_url: 'u', source: 'push' })).toEqual({ id: 31, status: 'failed', ref: 'r', sha: 's', web_url: 'u', source: 'push' });
+    expect(toPipeline({ id: 31, status: 'failed', ref: 'r', sha: 's', web_url: 'u', source: 'push', created_at: 'c', updated_at: 'u2' })).toEqual({ id: 31, status: 'failed', ref: 'r', sha: 's', web_url: 'u', source: 'push', created_at: 'c', updated_at: 'u2' });
     expect(toPipeline({ status: 'x' })).toBeNull();
     expect(toJob({ id: 5, name: 'unit', stage: 'test', status: 'failed', failure_reason: 'script_failure', allow_failure: true, web_url: 'u' })).toEqual({ id: 5, name: 'unit', stage: 'test', status: 'failed', failure_reason: 'script_failure', allow_failure: true, web_url: 'u' });
     expect(toJob({ id: 5, failure_reason: 3, allow_failure: 'yes' })).toMatchObject({ failure_reason: null, allow_failure: false });

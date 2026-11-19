@@ -30,6 +30,8 @@ export interface GitlabIssue {
   web_url: string;
   confidential: boolean;
   updated_at: string;
+  /** The user who wrote the issue; the fallback proof of who asked when no label event names who added the label. */
+  author_id: number | null;
 }
 
 export interface GitlabMergeRequest {
@@ -54,6 +56,9 @@ export interface GitlabPipeline {
   sha: string;
   web_url: string;
   source: string | null;
+  /** ISO times; empty when GitLab does not say. A retry of a pipeline moves `updated_at`, not `created_at`. */
+  created_at: string;
+  updated_at: string;
 }
 
 export interface GitlabJob {
@@ -73,6 +78,16 @@ export interface GitlabDiffFile {
   deleted_file: boolean;
   /** The unified diff of the file; GitLab leaves it empty for a diff it considers too large. */
   diff: string;
+}
+
+/** One change of a label on an issue (GitLab's resource_label_events): who added or removed which label, and when. */
+export interface GitlabLabelEvent {
+  id: number;
+  label: string;
+  action: 'add' | 'remove' | string;
+  user_id: number | null;
+  username: string | null;
+  created_at: string;
 }
 
 /** How a failed pipeline's jobs are classified: a retry fixes `infra`; only a change fixes `code`; `unknown` is not repaired. */

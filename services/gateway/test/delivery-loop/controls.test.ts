@@ -5,16 +5,22 @@
  * the switch is the exact string 'true', and `act` needs both L3 and an armed execution plane.
  */
 import {
+  DEFAULT_BRANCH_PREFIXES,
   DEFAULT_HEAL_MAX_ATTEMPTS,
   DEFAULT_MAX_ACTIONS,
+  DEFAULT_REWORK_MAX_ROUNDS,
   allows,
   autonomyFrom,
+  branchPrefixesFrom,
+  healMainFrom,
   healMaxAttemptsFrom,
   isLoopEnabled,
   maxActionsFrom,
   mayDo,
+  ownsBranch,
   projectsFrom,
   readControls,
+  reworkMaxRoundsFrom,
   type Controls,
 } from '../../src/services/delivery-loop/controls';
 import type { Autonomy, LoopAction } from '../../src/services/delivery-loop/types';
@@ -111,12 +117,12 @@ describe('readControls', () => {
 
   it('carries the other controls through', async () => {
     const c = await readControls(env({ DELIVERY_LOOP_ENABLED: 'true', DELIVERY_LOOP_AUTONOMY: 'L2', DELIVERY_LOOP_PROJECTS: 'a/b', DELIVERY_LOOP_MAX_ACTIONS: '7', DELIVERY_LOOP_HEAL_MAX_ATTEMPTS: '2' }), async () => true);
-    expect(c).toEqual({ enabled: true, autonomy: 'L2', armed: true, projects: ['a/b'], maxActions: 7, healMaxAttempts: 2 });
+    expect(c).toEqual({ enabled: true, autonomy: 'L2', armed: true, projects: ['a/b'], maxActions: 7, healMaxAttempts: 2, branchPrefixes: ['dev-autopilot/', 'delivery-loop/'], healMain: false, reworkMaxRounds: 2 });
   });
 });
 
 describe('mayDo', () => {
-  const c = (over: Partial<Controls>): Controls => ({ enabled: true, autonomy: 'L1', armed: true, projects: [], maxActions: 5, healMaxAttempts: 3, ...over });
+  const c = (over: Partial<Controls>): Controls => ({ enabled: true, autonomy: 'L1', armed: true, projects: [], maxActions: 5, healMaxAttempts: 3, branchPrefixes: ['dev-autopilot/'], healMain: false, reworkMaxRounds: 2, ...over });
 
   it('nothing is allowed when the loop is off, at any level, armed or not', () => {
     for (const autonomy of ['L0', 'L1', 'L2', 'L3'] as Autonomy[]) {
@@ -137,5 +143,44 @@ describe('mayDo', () => {
   it('the default level records and learns, and prepares and acts on nothing', () => {
     const d = c({ autonomy: autonomyFrom(env({})) });
     expect(['record', 'learn', 'prepare', 'act'].map((a) => mayDo(d, a as LoopAction))).toEqual([true, true, false, false]);
+  });
+});
+
+describe('the branches the loop owns', () => {
+  it('default to dev-autopilot/ and delivery-loop/; a set value replaces them and an empty one means none', () => {
+    expect(branchPrefixesFrom(env({}))).toEqual([...DEFAULT_BRANCH_PREFIXES]);
+    expect(branchPrefixesFrom(env({ DELIVERY_LOOP_BRANCH_PREFIXES: 'bot/, fixes/auto/' }))).toEqual(['bot/', 'fixes/auto/']);
+    expect(branchPrefixesFrom(env({ DELIVERY_LOOP_BRANCH_PREFIXES: '' }))).toEqual([]);
+  });
+
+  it('a value that is not a plain prefix is dropped: no pattern, no empty prefix, no traversal, so it cannot widen to "every branch"', () => {
+    const bad = ['', '/', '*', '*/', '.*', 'a', 'a/..//', '../', 'a/../b/', 'a//', ' ', 'a b/', 'kiro'];
+    expect(branchPrefixesFrom(env({ DELIVERY_LOOP_BRANCH_PREFIXES: bad.join(',') }))).toEqual([]);
+    expect(branchPrefixesFrom(env({ DELIVERY_LOOP_BRANCH_PREFIXES: '*,ok/,.*' }))).toEqual(['ok/']);
+  });
+
+  it('ownsBranch: the prefixes for heal and review; main only for heal and only when the owner asked', () => {
+    const c = { branchPrefixes: ['dev-autopilot/'], healMain: false };
+    expect(ownsBranch(c, 'dev-autopilot/ab12', 'heal')).toBe(true);
+    expect(ownsBranch(c, 'dev-autopilot/ab12', 'review')).toBe(true);
+    expect(ownsBranch(c, 'kiro/plan/lane', 'heal')).toBe(false);
+    expect(ownsBranch(c, 'dev-autopilot', 'heal')).toBe(false);
+    expect(ownsBranch(c, 'main', 'heal')).toBe(false);
+    expect(ownsBranch(c, null, 'heal')).toBe(false);
+    const main = { branchPrefixes: [], healMain: true };
+    expect(ownsBranch(main, 'main', 'heal')).toBe(true);
+    expect(ownsBranch(main, 'main', 'review')).toBe(false);
+    expect(ownsBranch(main, 'mainline', 'heal')).toBe(false);
+  });
+
+  it('healing main is on only for the exact string "true"', () => {
+    expect(healMainFrom(env({ DELIVERY_LOOP_HEAL_MAIN: 'true' }))).toBe(true);
+    for (const v of [undefined, '', 'TRUE', '1', 'yes', ' true']) expect(healMainFrom(env({ DELIVERY_LOOP_HEAL_MAIN: v }))).toBe(false);
+  });
+
+  it('rework rounds: default 2, between 1 and 3, anything else is the default', () => {
+    expect(reworkMaxRoundsFrom(env({}))).toBe(DEFAULT_REWORK_MAX_ROUNDS);
+    expect(reworkMaxRoundsFrom(env({ DELIVERY_LOOP_REWORK_MAX_ROUNDS: '3' }))).toBe(3);
+    for (const v of ['0', '4', '-1', '1.5', 'x']) expect(reworkMaxRoundsFrom(env({ DELIVERY_LOOP_REWORK_MAX_ROUNDS: v }))).toBe(DEFAULT_REWORK_MAX_ROUNDS);
   });
 });

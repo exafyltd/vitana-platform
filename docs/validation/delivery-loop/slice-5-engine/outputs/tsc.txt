@@ -1,0 +1,5 @@
+# npx tsc --noEmit -p tsconfig.json (2026-11-19T02:09:41Z)
+src tsc exit: 0
+
+# one-off compile of the delivery-loop test files and harness (tsc excludes test/):
+test tsc exit: 0

@@ -19,6 +19,7 @@ import type {
   GitlabDiffFile,
   GitlabIssue,
   GitlabJob,
+  GitlabLabelEvent,
   GitlabMergeRequest,
   GitlabPipeline,
   GitlabResult,
@@ -50,9 +51,14 @@ export interface GitlabClient {
   getIssue(project: ProjectPath, iid: number): Promise<GitlabResult<GitlabIssue>>;
   listIssues(project: ProjectPath, q?: { labels?: string[]; state?: 'opened' | 'closed' | 'all'; updatedAfter?: string }): Promise<GitlabResult<GitlabIssue[]>>;
   commentIssue(project: ProjectPath, iid: number, body: string): Promise<GitlabResult<{ id: number }>>;
+  createIssue(project: ProjectPath, input: { title: string; description: string; labels?: string[] }): Promise<GitlabResult<GitlabIssue>>;
+  /** Who added or removed which label of an issue, newest last as GitLab returns them (the loop sorts by time). */
+  listIssueLabelEvents(project: ProjectPath, iid: number): Promise<GitlabResult<GitlabLabelEvent[]>>;
+  /** The access level (10 guest, 20 reporter, 30 developer, 40 maintainer, 50 owner) of a user in a project, inherited levels included; null when not a member. */
+  getMemberAccessLevel(project: ProjectPath, userId: number): Promise<GitlabResult<number | null>>;
   updateIssueLabels(project: ProjectPath, iid: number, change: { add?: string[]; remove?: string[] }): Promise<GitlabResult<GitlabIssue>>;
   getMergeRequest(project: ProjectPath, iid: number): Promise<GitlabResult<GitlabMergeRequest>>;
-  listMergeRequests(project: ProjectPath, q?: { state?: 'opened' | 'merged' | 'closed' | 'all'; sourceBranch?: string; targetBranch?: string }): Promise<GitlabResult<GitlabMergeRequest[]>>;
+  listMergeRequests(project: ProjectPath, q?: { state?: 'opened' | 'merged' | 'closed' | 'all'; sourceBranch?: string; targetBranch?: string; updatedAfter?: string }): Promise<GitlabResult<GitlabMergeRequest[]>>;
   createMergeRequest(
     project: ProjectPath,
     input: { sourceBranch: string; targetBranch: string; title: string; description: string; draft?: boolean; labels?: string[] },
@@ -60,6 +66,10 @@ export interface GitlabClient {
   commentMergeRequest(project: ProjectPath, iid: number, body: string): Promise<GitlabResult<{ id: number }>>;
   getMergeRequestDiffs(project: ProjectPath, iid: number): Promise<GitlabResult<GitlabDiffFile[]>>;
   getPipeline(project: ProjectPath, id: number): Promise<GitlabResult<GitlabPipeline>>;
+  /** Pipelines that moved after a time, oldest first (the poller's view of what the webhook would have said). */
+  listPipelines(project: ProjectPath, q: { status: 'failed' | 'success'; updatedAfter: string }): Promise<GitlabResult<GitlabPipeline[]>>;
+  /** The newest pipeline of a ref (a branch name); null when the ref has none. */
+  latestPipeline(project: ProjectPath, ref: string): Promise<GitlabResult<GitlabPipeline | null>>;
   listPipelineJobs(project: ProjectPath, pipelineId: number, q?: { failedOnly?: boolean }): Promise<GitlabResult<GitlabJob[]>>;
   /** The last `tailBytes` of a job's log, as GitLab holds it (escape codes and all). */
   getJobTrace(project: ProjectPath, jobId: number, opts?: { tailBytes?: number }): Promise<GitlabResult<string>>;
@@ -95,6 +105,7 @@ export function toIssue(o: unknown): GitlabIssue | null {
     web_url: s(o.web_url),
     confidential: o.confidential === true,
     updated_at: s(o.updated_at, 64),
+    author_id: isObj(o.author) ? nOrNull(o.author.id) : nOrNull(o.author_id),
   };
 }
 
@@ -116,9 +127,32 @@ export function toMergeRequest(o: unknown): GitlabMergeRequest | null {
   };
 }
 
+export function toLabelEvent(o: unknown): GitlabLabelEvent | null {
+  if (!isObj(o) || typeof o.id !== 'number' || !isObj(o.label)) return null;
+  const label = s(o.label.name, 200);
+  if (!label) return null;
+  return {
+    id: o.id,
+    label,
+    action: s(o.action, 16),
+    user_id: isObj(o.user) ? nOrNull(o.user.id) : null,
+    username: isObj(o.user) ? sOrNull(o.user.username, 100) : null,
+    created_at: s(o.created_at, 64),
+  };
+}
+
 export function toPipeline(o: unknown): GitlabPipeline | null {
   if (!isObj(o) || typeof o.id !== 'number') return null;
-  return { id: o.id, status: s(o.status, 32), ref: s(o.ref, 255), sha: s(o.sha, 64), web_url: s(o.web_url), source: sOrNull(o.source, 64) };
+  return {
+    id: o.id,
+    status: s(o.status, 32),
+    ref: s(o.ref, 255),
+    sha: s(o.sha, 64),
+    web_url: s(o.web_url),
+    source: sOrNull(o.source, 64),
+    created_at: s(o.created_at, 64),
+    updated_at: s(o.updated_at, 64),
+  };
 }
 
 export function toJob(o: unknown): GitlabJob | null {
@@ -319,6 +353,21 @@ export function createGitlabClient(options: GitlabClientOptions): GitlabClient {
 
     commentIssue: (project, iid, text) => (posInt(iid) ? one(project, 'POST', `/issues/${iid}/notes`, note, { json: { body: body(text) } }) : Promise.resolve({ ok: false, error: 'bad_argument' })),
 
+    createIssue: (project, input) =>
+      one(project, 'POST', '/issues', toIssue, {
+        json: { title: input.title.slice(0, 255), description: body(input.description), ...(input.labels?.length ? { labels: input.labels.join(',') } : {}) },
+      }),
+
+    listIssueLabelEvents: (project, iid) => (posInt(iid) ? many(project, `/issues/${iid}/resource_label_events`, toLabelEvent, {}) : Promise.resolve({ ok: false, error: 'bad_argument' })),
+
+    getMemberAccessLevel: async (project, userId) => {
+      if (!posInt(userId)) return { ok: false, error: 'bad_argument' };
+      // `members/all` includes access inherited from the group; a user who is not a member is a 404, which is "no level", not an error.
+      const r = await one(project, 'GET', `/members/all/${userId}`, (o) => (isObj(o) && typeof o.access_level === 'number' ? { level: o.access_level } : null));
+      if (r.ok) return { ok: true, data: r.data.level };
+      return r.status === 404 ? { ok: true, data: null } : r;
+    },
+
     updateIssueLabels: (project, iid, change) =>
       posInt(iid)
         ? one(project, 'PUT', `/issues/${iid}`, toIssue, {
@@ -329,7 +378,7 @@ export function createGitlabClient(options: GitlabClientOptions): GitlabClient {
     getMergeRequest: (project, iid) => (posInt(iid) ? one(project, 'GET', `/merge_requests/${iid}`, toMergeRequest) : Promise.resolve({ ok: false, error: 'bad_argument' })),
 
     listMergeRequests: (project, q = {}) =>
-      many(project, '/merge_requests', toMergeRequest, { state: q.state ?? 'opened', source_branch: q.sourceBranch, target_branch: q.targetBranch, order_by: 'updated_at', sort: 'desc' }),
+      many(project, '/merge_requests', toMergeRequest, { state: q.state ?? 'opened', source_branch: q.sourceBranch, target_branch: q.targetBranch, updated_after: q.updatedAfter, order_by: 'updated_at', sort: 'desc' }),
 
     createMergeRequest: (project, input) =>
       one(project, 'POST', '/merge_requests', toMergeRequest, {
@@ -348,6 +397,22 @@ export function createGitlabClient(options: GitlabClientOptions): GitlabClient {
     getMergeRequestDiffs: (project, iid) => (posInt(iid) ? many(project, `/merge_requests/${iid}/diffs`, toDiffFile, {}, MAX_DIFF_FILES) : Promise.resolve({ ok: false, error: 'bad_argument' })),
 
     getPipeline: (project, id) => (posInt(id) ? one(project, 'GET', `/pipelines/${id}`, toPipeline) : Promise.resolve({ ok: false, error: 'bad_argument' })),
+
+    listPipelines: (project, q) => many(project, '/pipelines', toPipeline, { status: q.status, updated_after: q.updatedAfter, order_by: 'updated_at', sort: 'asc' }),
+
+    latestPipeline: async (project, ref) => {
+      if (typeof ref !== 'string' || ref.length === 0 || ref.length > 255) return { ok: false, error: 'bad_argument' };
+      const p = projectPath(project);
+      if (!p.ok) return p;
+      const r = await request('GET', `${p.data}/pipelines`, { query: { ref, order_by: 'id', sort: 'desc', per_page: '1' } });
+      if (!r.ok) return r;
+      const rows = parseJson(r.body);
+      if (!Array.isArray(rows)) return { ok: false, error: 'bad_response' };
+      // The list gives id, status, ref, sha and web_url; the single pipeline has the times the loop needs.
+      const first = toPipeline(rows[0]);
+      if (first === null) return { ok: true, data: null };
+      return one(project, 'GET', `/pipelines/${first.id}`, toPipeline);
+    },
 
     listPipelineJobs: (project, pipelineId, q = {}) =>
       posInt(pipelineId) ? many(project, `/pipelines/${pipelineId}/jobs`, toJob, { 'scope[]': q.failedOnly ? 'failed' : undefined }) : Promise.resolve({ ok: false, error: 'bad_argument' }),

@@ -1269,6 +1269,8 @@ export type CicdEventType =
   | 'delivery.improve.proposed'
   | 'delivery.loop.cycle'
   | 'delivery.loop.claim'
+  | 'delivery.note.requested'
+  | 'delivery.note.posted'
   | 'staging.deploy.rolled_back';
 
 export interface CicdOasisEvent {

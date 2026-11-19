@@ -1,0 +1,17 @@
+{
+  "vtid": null,
+  "slice": "delivery-loop/slice-5-engine",
+  "kind": "feature",
+  "paths": [
+    "services/gateway/src/services/delivery-loop/**",
+    "services/gateway/src/types/cicd.ts",
+    "services/gateway/test/delivery-loop/**",
+    "docs/validation/delivery-loop/slice-5-engine/**"
+  ],
+  "vtid_note": "No VTID: no approved lane covers this work, and VTIDs come only from CI PLAN-SPAR. WIP until plan(delivery-loop) is sparred.",
+  "weakens_tests": [],
+  "tests_changed_on_purpose": [
+    "services/gateway/test/delivery-loop/controls.test.ts and gitlab-client.test.ts (slice 4): exact-match expectations updated for the fields this slice adds on purpose (controls: branchPrefixes, healMain, reworkMaxRounds; issue: author_id; pipeline: created_at, updated_at)"
+  ],
+  "red_green_exempt": []
+}

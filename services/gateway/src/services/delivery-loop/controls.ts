@@ -9,6 +9,11 @@
  *   DELIVERY_LOOP_PROJECTS         comma separated GitLab project paths the loop may read and write; unset is none
  *   DELIVERY_LOOP_MAX_ACTIONS      most side effects (GitLab writes, task dispatches) of one cycle; default 5, bounded 0..50
  *   DELIVERY_LOOP_HEAL_MAX_ATTEMPTS  repair attempts per failure fingerprint before the loop stops and escalates; default 3, bounded 1..5
+ *   DELIVERY_LOOP_BRANCH_PREFIXES  the branches the loop owns, comma separated prefixes; default `dev-autopilot/,delivery-loop/`. It repairs
+ *                                  and reviews only these: the lane branches of the Kiro and Claude sessions have their own builders and
+ *                                  reviewer, and a second writer on the same branch is worse than a red pipeline.
+ *   DELIVERY_LOOP_HEAL_MAIN        exactly 'true' also repairs a failed pipeline of `main`; default off (the fix-forward drivers own it)
+ *   DELIVERY_LOOP_REWORK_MAX_ROUNDS  review-and-rework rounds on one merge request before a human is asked; default 2, bounded 1..3
  *
  * The execution plane's own kill switch (system_controls autopilot_execution_enabled, read through `isArmed`) gates `act`:
  * disarmed means the loop observes, records and prepares, and does not execute.
@@ -21,6 +26,9 @@ export const DEFAULT_MAX_ACTIONS = 5;
 export const MAX_ACTIONS_CEILING = 50;
 export const DEFAULT_HEAL_MAX_ATTEMPTS = 3;
 export const HEAL_MAX_ATTEMPTS_CEILING = 5;
+export const DEFAULT_REWORK_MAX_ROUNDS = 2;
+export const REWORK_MAX_ROUNDS_CEILING = 3;
+export const DEFAULT_BRANCH_PREFIXES: readonly string[] = ['dev-autopilot/', 'delivery-loop/'];
 
 /** The lowest level that allows each action. */
 const LEVEL_FOR: Record<LoopAction, Autonomy> = { record: 'L1', learn: 'L1', prepare: 'L2', act: 'L3' };
@@ -63,6 +71,24 @@ export function healMaxAttemptsFrom(env: NodeJS.ProcessEnv = process.env): numbe
   return boundedInt(env.DELIVERY_LOOP_HEAL_MAX_ATTEMPTS, DEFAULT_HEAL_MAX_ATTEMPTS, 1, HEAL_MAX_ATTEMPTS_CEILING);
 }
 
+/** Plain branch prefixes only (`dev-autopilot/`): no pattern, no `..`, so an env value can never widen into "every branch". */
+export function branchPrefixesFrom(env: NodeJS.ProcessEnv = process.env): string[] {
+  if (env.DELIVERY_LOOP_BRANCH_PREFIXES === undefined) return [...DEFAULT_BRANCH_PREFIXES];
+  return env.DELIVERY_LOOP_BRANCH_PREFIXES
+    .split(',')
+    .map((p) => p.trim())
+    .filter((p) => /^[A-Za-z0-9][A-Za-z0-9._-]*\/$/.test(p) || /^[A-Za-z0-9][A-Za-z0-9._-]*\/[A-Za-z0-9._/-]*\/$/.test(p))
+    .filter((p) => !p.includes('..') && !p.includes('//'));
+}
+
+export function healMainFrom(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.DELIVERY_LOOP_HEAL_MAIN === 'true';
+}
+
+export function reworkMaxRoundsFrom(env: NodeJS.ProcessEnv = process.env): number {
+  return boundedInt(env.DELIVERY_LOOP_REWORK_MAX_ROUNDS, DEFAULT_REWORK_MAX_ROUNDS, 1, REWORK_MAX_ROUNDS_CEILING);
+}
+
 export interface Controls {
   enabled: boolean;
   autonomy: Autonomy;
@@ -71,6 +97,17 @@ export interface Controls {
   projects: string[];
   maxActions: number;
   healMaxAttempts: number;
+  /** The branches the loop owns: it repairs and reviews only these (and `main` when healMain). */
+  branchPrefixes: string[];
+  healMain: boolean;
+  reworkMaxRounds: number;
+}
+
+/** Is this branch one the loop may repair and review? `main` only when the owner asked for it, and only for repair. */
+export function ownsBranch(c: Pick<Controls, 'branchPrefixes' | 'healMain'>, branch: string | null, purpose: 'heal' | 'review'): boolean {
+  if (!branch) return false;
+  if (c.branchPrefixes.some((p) => branch.startsWith(p))) return true;
+  return purpose === 'heal' && c.healMain && branch === 'main';
 }
 
 /**
@@ -91,6 +128,9 @@ export async function readControls(env: NodeJS.ProcessEnv, isArmed: () => Promis
     projects: projectsFrom(env),
     maxActions: maxActionsFrom(env),
     healMaxAttempts: healMaxAttemptsFrom(env),
+    branchPrefixes: branchPrefixesFrom(env),
+    healMain: healMainFrom(env),
+    reworkMaxRounds: reworkMaxRoundsFrom(env),
   };
 }
 
