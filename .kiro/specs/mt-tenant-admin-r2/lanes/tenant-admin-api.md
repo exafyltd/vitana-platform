@@ -4,7 +4,7 @@ state: ready
 next_actor: kiro
 depends_on: [tenant-admin-moderation-db, tenant-lifecycle-db]
 executor: kiro
-seat: jtadic
+seat: exafyltd
 reviewer_seat: agent:vitana-lane-reviewer
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 paths:
@@ -20,7 +20,7 @@ paths:
   - services/gateway/src/routes/admin-autopilot.ts
   - services/gateway/src/services/community-marketplace/community-marketplace-repository.ts
   - services/gateway/test/mt-tenant-admin-*.test.ts
-updated: 2026-11-02T16:20Z
+updated: 2026-11-12T20:17Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05490
 ---
@@ -72,3 +72,5 @@ The lane path is corrected to `services/gateway/src/index.ts`.
 
 ### 2026-11-02T16:20Z · ci-plan-spar · ready (VTID allocated)
 VTID-05490 allocated after policy approval (converged-auto-v1).
+### 2026-11-12T20:17Z · pm-agent · update
+reassign lane jtadic→exafyltd (stale_ready, Claude unavailable)
