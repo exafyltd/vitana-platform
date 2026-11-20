@@ -71,8 +71,14 @@ jobs:
         run: npx jest --listTests > "list-${{ matrix.shard }}.txt"
         env:
           NODE_ENV: test
+      # Duration-balanced split (scripts/ci/test-suite/shard-plan.mjs): `jest --shard` hashes file paths, so the
+      # shards had equal file counts but unequal time (main run 43244803673: shard 1 153 s, shard 4 64 s).
+      - name: Plan shard (duration-balanced)
+        run: node ../../scripts/ci/test-suite/shard-plan.mjs --list "list-${{ matrix.shard }}.txt" --shards 4 --shard ${{ matrix.shard }} --root . > "shard-files-${{ matrix.shard }}.txt"
       - name: Run Jest suite
-        run: npx jest --silent --maxWorkers=100% --shard=${{ matrix.shard }}/4 --json --outputFile="shard-${{ matrix.shard }}.json"
+        run: |
+          mapfile -t FILES < "shard-files-${{ matrix.shard }}.txt"
+          npx jest --silent --maxWorkers=100% --json --outputFile="shard-${{ matrix.shard }}.json" --runTestsByPath "${FILES[@]}"
         env:
           NODE_ENV: test
       - name: Upload shard result
@@ -104,6 +110,8 @@ jobs:
           merge-multiple: true
       - name: Check shard union
         run: node scripts/ci/test-suite/shard-union.mjs --dir shards --shards 4 --summary "$GITHUB_STEP_SUMMARY"
+      - name: Check the shard plan covers the list
+        run: node scripts/ci/test-suite/shard-plan.mjs --list shards/list-1.txt --shards 4 --verify --root services/gateway
 
   services:
     name: ${{ matrix.service }} (${{ matrix.runner }})
