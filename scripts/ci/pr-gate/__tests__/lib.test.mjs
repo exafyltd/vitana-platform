@@ -133,3 +133,9 @@ test('dry run classification: missing objects are unverifiable, real errors fail
   assert.equal(L.classifyDryRun('ERROR:  42804: column "a" is of type integer but expression is of type text').verdict, 'failed');
   assert.equal(L.classifyDryRun('psql: connection refused').verdict, 'failed');
 });
+
+test('bridge period: a negated verdict is never machine approval', () => {
+  assert.ok(L.evaluateSparringRecord('Verdict: NOT CONVERGED\nPlan hash: abc').some((x) => /^no approval/.test(x)));
+  assert.ok(L.evaluateSparringRecord('Verdict: NOT CONVERGED and approved by policy `converged-auto-v1`\nPlan hash: abc').some((x) => /^no approval/.test(x)));
+  assert.deepEqual(L.evaluateSparringRecord('Verdict: CONVERGED\nPlan hash: abc'), []);
+});
