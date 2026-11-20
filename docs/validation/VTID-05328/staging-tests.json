@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-05328",
+  "service": "gateway",
+  "note": "Read-only, staging only. The change is a fail-soft ECR Public login step before the gateway/kiro-runner/autopilot image builds. Proof on staging: the AWS-STAGE-DEPLOY-GATEWAY.yml run for the merge commit built and rolled the image (STAGING-VERIFY runs only after it and checks the deployed commit), and the build log shows 'ecr-public-login: authenticated' or the ::warning fallback (recorded in iam-status.md). Nothing targets production; the prod workflows are proven by the jest guard and the next owner PUBLISH.",
+  "tests": [
+    { "kind": "http", "name": "gateway alive on the build that the new step produced", "path": "/alive", "expect_status": 200 },
+    { "kind": "http", "name": "build-info reports the staging build", "path": "/api/v1/admin/build-info",
+      "expect_status": 200, "expect_content_type": "application/json", "expect_json": { "ok": true, "env": "staging" } },
+    { "kind": "existing", "ref": "npx jest test/ci-ecr-public-auth-workflows.test.ts test/vtid-05017-base-images-ecr-public.test.ts", "cwd": "services/gateway",
+      "reason": "pins that every AWS-*-DEPLOY-*.yml job building a public.ecr.aws Dockerfile has the fail-soft ECR Public login after credentials and before the build, incl. the prod workflows that never run on staging" }
+  ]
+}
