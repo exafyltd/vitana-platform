@@ -1,13 +1,13 @@
 ---
 lane: team-welcome-backend
-state: executing
-next_actor: claude
+state: in-review
+next_actor: kiro
 vtid: VTID-05205
 depends_on: []
-claimed_by: kiro-202610150924-9ecd
+claimed_by: kiro-jtadic-202610291040-a0e6
 branch: kiro/new-member-welcome/team-welcome-backend
 pr: https://github.com/exafyltd/vitana-platform/pull/4133
-updated: 2026-10-15T14:35Z
+updated: 2026-10-30T15:50Z
 ---
 # Three team welcome DMs (gateway + migration)
 
@@ -56,3 +56,33 @@ Other decisions are listed in `docs/validation/VTID-05205/acceptance.md` → "De
 After merge (not mine): apply the migration (`RUN-MIGRATION.yml`), deploy, STAGING-VERIFY, then the go-live steps in the
 acceptance file (sender display names confirmed → set `WELCOME_SENDER_NAMES_CONFIRMED`, pilot allowlist, flags, EventBridge job).
 next_actor: claude (review + merge).
+
+### 2026-10-30T15:50Z · kiro-jtadic-202610291040-a0e6 · executing → in-review
+Closing record for the merged lane (plan `say-hello-lane-reassign` §4); no code changes in this PR. The previous claimant
+(`kiro-202610150924-9ecd`, a Kiro session of 2026-10-15) has been inactive for over 24 h and no
+`collab-claim/new-member-welcome/team-welcome-backend` ref existed; this session claimed the lane (§5) and took over `claimed_by`.
+- code: exafyltd/vitana-platform#4133, merge `995e27a236731f95d6e1af6b266e3cc7aecaa765` (`docs/validation/VTID-05205/outputs/gh-merge-shas.txt`);
+- migration `20261015150000_vtid_05205_welcome_team_claims.sql` is present in the shared database (read-only check:
+  `welcome_team_claims` table and `claim_welcome_message` / `finish_welcome_message` exist);
+- sender mapping verified against the approved spec and the owner's 2026-10-30 confirmation: Mariia Maksina = @mariia04 =
+  `67c971fc-48f3-49ce-aaa8-cddb6fa9e63a` (vitana_id `mariia11` is the same account), Jovana Tadić = @jovana4, Alex BLUE = @dragan1
+  (`docs/validation/VTID-05205/outputs/sender-mapping.txt`);
+- nothing is sent from staging (`disabled-on-staging`); sending, timing, retries, send-once and reply routing are covered by
+  `test/vtid-05205-welcome-team.test.ts` (36 tests). Go-live (`WELCOME_TEAM_MODE=live` etc. in production) is a separate owner/release step and is NOT done.
+next_actor: kiro (independent review by vitana-lane-reviewer, then verified).
+
+### 2026-11-02T12:41Z · agent-vitana-lane-reviewer-202611021241-3a7d · review
+review: accept
+head: 7df1f09600f3dd888f02abcde395948fb243410a
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4515
+Findings: (non-blocking) CI not readable by the reviewer, so the land step must confirm all checks green on the current head; (non-blocking) DB facts in sender-mapping.txt rest on the orchestrator's read-only query, and the ids match config.ts:60-64 (Mariia @mariia04 67c971fc-48f3-49ce-aaa8-cddb6fa9e63a, Jovana @jovana4 c7d3260d-8311-4a0b-ab1c-53928a37caec, Alex @dragan1 0adc6ff6-acb0-4dca-99d0-295211a40e3e); (non-blocking) lane service code read partly (config, header, mode gate, cohort filter: configurable schedule config.ts:87-98, recipient-language fallback, send-once via welcome_team_claims RPCs, no retroactive sends via created_at >= rolloutAt welcome-team-service.ts:160, replies to the sender's own inbox, disabled-on-staging config.ts:102-103), tests not run, next hop should rely on green CI; (non-blocking) claim ref collab-claim/new-member-welcome/team-welcome-backend (0ee9d1da46) is this session's takeover claim, release only after closing records are on main
+Next: the land step merges under §7b after all checks are green on the current head; the next hop records in-review → verified citing this review
+
+### 2026-11-04T16:30Z · agent-vitana-lane-reviewer-202611041630-f3ce · review
+review: accept
+head: b72d69bd3ab69db7e7ff5f4829a9b307eb08dbc0
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+PR: 4515
+Findings: non-blocking: the own diff is the lane file and its validation evidence only (governance files from the merged main are not in the PR diff); CI on this head is not readable by the reviewer, so the land step confirms required checks are green before merge.
+Next: the land step merges under §7b
