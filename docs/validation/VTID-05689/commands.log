@@ -1,0 +1,159 @@
+# VTID-05689 commands.log (strategy-execution-wave1/destination-identity)
+# Run 2026-11-11T00:44Z in /projects/sandbox/wt-sew1-destination-identity (branch kiro/strategy-execution-wave1/destination-identity, uncommitted).
+# Built by docs/validation/VTID-05689/build-commands-log.sh. Only local git, grep and node commands.
+# No network, no database, no gateway, no GitHub call. grep -c exits 1 when it counts 0; that is the expected result.
+# Preflight (scripts/collab/preflight.mjs) is not run here: the lane is not committed (owner instruction for this
+# build), and preflight reads the plan( PR lane file through the GitHub API. Run it after the commit.
+
+## 1. Pins
+$ git -C ../vitana-platform rev-parse origin/main HEAD
+6dc6e1ba0c18252ec2f3fbf5651d245e200f9835
+6dc6e1ba0c18252ec2f3fbf5651d245e200f9835
+[exit 0]
+
+$ git -C ../vitana-v1 rev-parse origin/main HEAD
+e31bf4627ff3c705c20f8e6b718ce4dd03353b7f
+e31bf4627ff3c705c20f8e6b718ce4dd03353b7f
+[exit 0]
+
+$ git -C ../vitanaland-strategy rev-parse HEAD
+fb77090e1ffc7d1ef3c250b0aa721768c3df9425
+[exit 0]
+
+$ git rev-parse HEAD; git branch --show-current
+6dc6e1ba0c18252ec2f3fbf5651d245e200f9835
+kiro/strategy-execution-wave1/destination-identity
+[exit 0]
+
+## 2. Facts quoted in the doc
+$ git -C ../vitana-v1 show e31bf4627:src/config/domain-tenant-mapping.ts | sed -n '5,8p'
+export const DOMAIN_TENANT_MAP: Record<string, string> = {
+  'vitanaland.com': 'maxina',
+  'www.vitanaland.com': 'maxina',
+  'e.vitanaland.com': 'maxina',
+[exit 0]
+
+$ git -C ../vitana-v1 show e31bf4627:src/App.tsx | sed -n '818p;831p'
+          <Route path="/" element={isCommerceHost() ? <Navigate to="/commerce" replace /> : <ShareEntry fallback={<Index />} />} />
+          <Route path="/auth" element={<Navigate to="/maxina" replace />} />
+[exit 0]
+
+$ git -C ../vitana-v1 show e31bf4627:src/lib/guest-auth.ts | sed -n '24,26p'
+  const slug = readStoredTenantSlug("tenant_slug")
+    || DOMAIN_TENANT_MAP[window.location.hostname] || "maxina";
+  return tenantLoginRoute(slug, currentRegistrySync(), "/maxina");
+[exit 0]
+
+$ git -C ../vitana-v1 show e31bf4627:apps/mobile/app.config.ts | sed -n '27,30p;217p'
+export const IDENTIFIERS = {
+  ios: 'com.exafy.maxina.dev',
+  android: 'com.vitanaland.app.dev',
+} as const;
+    scheme: 'maxina',
+[exit 0]
+
+$ git -C ../vitana-v1 show e31bf4627:src/lib/tenant-registry.maxina-golden.test.tsx | sed -n '114p'
+  appLayout: { displayName: 'Maxina', displayNameOffPortal: 'Maxina', logoClick: '/maxina' },
+[exit 0]
+
+$ for f in .kiro/specs/mt-frontend-brand-r3/plan.md .kiro/specs/mt-packs-r2/plan.md; do echo "$f: $(git -C ../vitana-platform show 6dc6e1ba0c:$f | grep -c -E 'DOMAIN_TENANT_MAP|guest-auth|displayNameOffPortal|/auth')"; done
+.kiro/specs/mt-frontend-brand-r3/plan.md: 0
+.kiro/specs/mt-packs-r2/plan.md: 0
+[exit 0]
+
+$ git -C ../vitana-platform grep -c 'Mariia Maksina' 6dc6e1ba0c -- services/gateway/src/routes/orb-live.ts
+6dc6e1ba0c:services/gateway/src/routes/orb-live.ts:1
+[exit 0]
+
+$ git -C ../vitana-platform grep -n -i 'maria maxina' 6dc6e1ba0c -- services/gateway/src/services/voice-tools/community-member-ranker.ts services/gateway/src/services/orb-tools-shared.ts
+6dc6e1ba0c:services/gateway/src/services/orb-tools-shared.ts:2099:    // (e.g. "Mariia Maksina" for spoken "Maria Maxina") got listed alongside
+6dc6e1ba0c:services/gateway/src/services/orb-tools-shared.ts:2117:    // she's the only real match for 'Maria Maxina'") — skip the confirmation
+6dc6e1ba0c:services/gateway/src/services/voice-tools/community-member-ranker.ts:369:// to match, which separates "maria maxina" → "Mariia Maksina" (~0.72) from
+[exit 0]
+
+$ git -C ../vitana-platform show 6dc6e1ba0c:.kiro/specs/mt-frontend-brand-r3/lanes/brand-surface-r3.md | grep -n -E '^(state|vtid):|src/App.tsx'
+3:state: ready
+22:  - src/App.tsx
+37:vtid: VTID-05483
+[exit 0]
+
+## 3. Doc structure (AC-1, AC-2, AC-4, AC-5, AC-6, AC-11)
+$ grep -c -E '^- \*\*(Status|Owner|Pinned HEADs|VTID|Plan):\*\*' docs/programs/strategy-execution/destination-identity-strategy.md
+5
+[exit 0]
+
+$ for p in 'domain-tenant-mapping.ts:5-8' 'App.tsx:818' 'App.tsx:831' 'guest-auth.ts:24-26' 'tenant-registry.ts:75-88' 'maxina-golden.test.tsx:114' 'app.config.ts:27-30' 'app.config.ts:217' 'MULTI-TENANT-PLAN.md:60'; do echo "$p: $(grep -c -F "$p" docs/programs/strategy-execution/destination-identity-strategy.md)"; done
+domain-tenant-mapping.ts:5-8: 1
+App.tsx:818: 1
+App.tsx:831: 1
+guest-auth.ts:24-26: 1
+tenant-registry.ts:75-88: 1
+maxina-golden.test.tsx:114: 1
+app.config.ts:27-30: 2
+app.config.ts:217: 1
+MULTI-TENANT-PLAN.md:60: 4
+[exit 0]
+
+$ for p in 'vitanaland.com is the ecosystem' 'Maxina is an independent destination' 'Vitana is the universal companion' 'Mariia Maksina'; do echo "$p: $(grep -c "$p" docs/programs/strategy-execution/destination-identity-strategy.md)"; done
+vitanaland.com is the ecosystem: 1
+Maxina is an independent destination: 1
+Vitana is the universal companion: 1
+Mariia Maksina: 3
+[exit 0]
+
+$ for p in 'Store identifiers are immutable once published' 'ships dark' '.kiro/specs/mt-frontend-brand-r3/plan.md' '.kiro/specs/mt-packs-r2/plan.md' 'lanes/brand-surface-r3.md' 'lanes/persona-pack.md'; do echo "$p: $(grep -c -F "$p" docs/programs/strategy-execution/destination-identity-strategy.md)"; done
+Store identifiers are immutable once published: 1
+ships dark: 1
+.kiro/specs/mt-frontend-brand-r3/plan.md: 7
+.kiro/specs/mt-packs-r2/plan.md: 6
+lanes/brand-surface-r3.md: 2
+lanes/persona-pack.md: 1
+[exit 0]
+
+$ node -e "const C=['Verified operational','Verified implemented, not operational','Implemented but incomplete','Designed but not implemented','Deprecated/superseded','Unknown'];const L=require('fs').readFileSync('docs/programs/strategy-execution/destination-identity-strategy.md','utf8').split('\n').filter(l=>/Status( for the whole set)?:/.test(l)&&!/\*\*Status:\*\*/.test(l)&&!/^Status classes/.test(l));const bad=L.filter(l=>!C.some(c=>l.includes(c)));console.log('status lines',L.length,'without a class',bad.length);process.exit(bad.length?1:0)"
+status lines 2 without a class 0
+[exit 0]
+
+$ grep -c '| ID | Title | Files | Risk | Owner | Gate |' docs/programs/strategy-execution/destination-identity-strategy.md
+1
+[exit 0]
+
+$ grep -c '—' docs/programs/strategy-execution/destination-identity-strategy.md
+0
+[exit 1]
+
+## 5. Citation check (AC-3)
+$ node docs/validation/VTID-05689/check-citations.mjs docs/programs/strategy-execution/destination-identity-strategy.md
+citations: 94, failures: 0
+[exit 0]
+
+## 6. Scope (AC-7, AC-8)
+$ node --input-type=module -e "import {validateScope} from './scripts/ci/pr-gate/lib.mjs';import fs from 'fs';const e=validateScope(JSON.parse(fs.readFileSync('docs/validation/VTID-05689/scope.json','utf8')),'VTID-05689');console.log(JSON.stringify(e));process.exit(e.length?1:0)"
+[]
+[exit 0]
+
+$ git status --porcelain --untracked-files=all
+?? docs/programs/strategy-execution/destination-identity-strategy.md
+?? docs/validation/VTID-05689/acceptance.md
+?? docs/validation/VTID-05689/build-commands-log.sh
+?? docs/validation/VTID-05689/check-citations.mjs
+?? docs/validation/VTID-05689/scope.json
+[exit 0]
+
+## 7. Collab tests (AC-10)
+$ node --test scripts/collab/*.test.mjs 2>&1 | tail -9
+1..257
+# tests 257
+# suites 0
+# pass 256
+# fail 0
+# cancelled 0
+# skipped 1
+# todo 0
+# duration_ms 11077.474656
+[exit 0]
+
+## 8. No live call (AC-9)
+$ grep -E '^\$ ' docs/validation/VTID-05689/commands.log | grep -v '#AC-9' | grep -c -E '(curl|psql|supabase |aws |gh |wget)'   #AC-9
+0
+[exit 0]
