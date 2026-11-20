@@ -8,6 +8,7 @@
       "kind": "existing",
       "cwd": "services/gateway",
       "ref": "npx jest test/eng-platform-stage-oidc-workflows.test.ts test/vtid-05009-provision-pack-token-workflow.test.ts",
+      "cwd": "services/gateway",
       "reason": "Workflow credential steps only; with the role variables unset they run on the unchanged key path, which the next staging deploy exercises."
     },
     {

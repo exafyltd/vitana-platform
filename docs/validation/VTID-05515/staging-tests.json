@@ -8,6 +8,7 @@
       "kind": "existing",
       "cwd": "services/gateway",
       "ref": "npx jest test/eng-platform-inventory-readonly.test.ts",
+      "cwd": "services/gateway",
       "reason": "Owner-run read-only script; nothing deploys."
     },
     {
