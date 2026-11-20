@@ -1,6 +1,6 @@
 ---
 lane: support-connectors
-state: ready
+state: done
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -19,8 +19,11 @@ paths:
   - apps/mobile/parity/ledger.json
   - src/i18n/*/supportNative.json
   - docs/validation/**
-updated: 2026-11-01T03:04Z
+updated: 2026-11-03T16:13Z
 vtid: VTID-05432
+claimed_by: kiro-exafyltd-202611011658-9f52
+branch: kiro/native-wave2-profile-settings-r2/support-connectors
+pr: https://github.com/exafyltd/vitana-v1/pull/1543
 ---
 # Support + connectors port — member `/support` (+ `?tab=`), `/connectors` (+ `?tab=` + SETTINGS.SOCIAL), `/settings/connected-apps`
 Plan: `.kiro/specs/native-wave2-profile-settings-r2/` — `plan.md` (plan block) and the `tasks.md` section marked
@@ -79,3 +82,20 @@ Lane created with the plan (re-plan of `native-wave2-profile-settings/support-co
 
 ### 2026-11-01T03:04Z · ci-plan-spar · ready (VTID allocated)
 VTID-05432 allocated after policy approval (converged-auto-v1).
+### 2026-11-01T17:08Z · kiro-exafyltd-202611011658-9f52 · ready → executing
+Claimed by kiro-exafyltd-202611011658-9f52 (Kiro Web driver, seat exafyltd); built by a delegated builder under this session on vitana-v1 branch `kiro/native-wave2-profile-settings-r2/support-connectors`.
+### 2026-11-01T17:48Z · kiro-exafyltd-202611011658-9f52 · executing → in-review
+PR https://github.com/exafyltd/vitana-v1/pull/1543. Evidence: vitana-v1 `docs/validation/VTID-05432/` (commands.log, red-on-base, verification.md, staging-tests.json).
+
+### 2026-11-02T16:08:00Z · agent-vitana-lane-reviewer-202611021608-ab1b · review
+review: accept
+head: 32515b30453ac5022a999e062aeda67953a871f9
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+PR: https://github.com/exafyltd/vitana-v1/pull/1543
+Findings: non-blocking: CI on this head is all queued (none completed); lane diff vs main verified unchanged in substance from 6f3e3bd (41 files, only +4 lines delta from main-merge); resolve.ts keeps '/connectors', '/delete-account' (on main), '/support', '/settings/connected-apps' with no duplicate or conflict marker; ui.tsx change only removes the lane's duplicate GlobeIcon/Music2Icon imports and map entries, Globe and Music2 stay mapped via main's entries, no duplicate keys in ICONS.
+Next: the land step merges under §7b once CI completes green (or red only for the known main-side causes)
+Stored by the landing session kiro-exafyltd-202611011658-9f52 on the agent's behalf (lane-land.md step 2).
+### 2026-11-03T16:13Z · kiro-exafyltd-202611011658-9f52 · in-review → verified
+Accepted by agent:vitana-lane-reviewer on head `32515b30453ac5022a999e062aeda67953a871f9` (review entry above); every required check green, up to date with main.
+### 2026-11-03T16:13Z · kiro-exafyltd-202611011658-9f52 · verified → done
+merge: b74d3bab2a2b85c5348dae5f6b158d306e2cd15f · authority: §7b PM rule (applied by the plan driver while the PM is not live), squash. Staging: AWS Stage Deploy Community App rolled b74d3ba (https://github.com/exafyltd/vitana-v1/actions/runs/41518459597); STAGING-VERIFY passed: https://github.com/exafyltd/vitana-platform/actions/runs/41525408839.
