@@ -4429,3 +4429,18 @@ Functions (SECURITY DEFINER, `service_role` only): `claim_welcome_message(user, 
 The DM itself is an ordinary `chat_messages` row authored by the sender's own account (`metadata.source = 'welcome_team'`, `sender_slug`, `automated = true`, `done_by_vitana = false`, `locale`), so a reply is an ordinary DM in that sender's inbox. Texts are `tt()` catalog keys `welcome_team.<sender>.body` / `.body_noname`. OASIS (`CicdEventType`): `welcome_team.message.sent`, `welcome_team.message.failed` (per real DM), `welcome_team.tick.completed` (one per tick that decided something).
 
 Gateway switches (all off by default): `FEATURE_WELCOME_TEAM_ENV`, `WELCOME_ROLLOUT_AT` (cohort = joined at/after it), `WELCOME_TEAM_MODE` (`shadow` | `live`), `WELCOME_TEAM_SEND_ENABLED=true` and `WELCOME_SENDER_NAMES_CONFIRMED=true` (both needed for `live`), `WELCOME_TEAM_AUDIENCE` (`pilot` default, `all`), `WELCOME_TEAM_PILOT_USER_IDS`, `WELCOME_SENDER_{MARIIA,JOVANA,ALEX}_ID`, `WELCOME_STAGGER_DAYS_{MARIIA,JOVANA,ALEX}`, `WELCOME_TEAM_MIN_GAP_HOURS`, `WELCOME_TEAM_MAX_SENDS_PER_TICK`, `WELCOME_TEAM_READY_LOCALES`. Read-only status: `GET /api/v1/welcome-team/status`.
+
+## Native-app adoption — `client_identity_daily_seen` (VTID-05658, 2026-11-08) — committed, NOT applied — owner approves file and database first (`collaboration.md` §7d)
+
+Migration: `supabase/migrations/20261108150000_client_identity_daily_seen.sql` (additive, idempotent). Plan: `.kiro/specs/native-wave3-release-r2/` (lane `client-identity-store`). The gateway middleware `services/gateway/src/middleware/client-identity.ts` echoes `X-Vitana-Client-Class` (`native` | `web`, from the `X-Vitana-Client` header) and, when the response finishes with `req.identity` set and both `user_id` and `tenant_id` non-null, records one row per member/class/day, best effort (a missing table or failed write never affects the request).
+
+### client_identity_daily_seen (service role only)
+
+| Column | Meaning |
+|---|---|
+| `day`, `tenant_id`, `user_id`, `client_class` | PK — UTC day, tenant, member, `native` \| `web` (CHECK) |
+| `first_seen_at` | when the first row of the day was written |
+
+RLS on, zero policies; `anon`/`authenticated` have no grants. Retention 35 days: `purge_client_identity_daily_seen()` (SECURITY DEFINER, `service_role` only), scheduled daily by pg_cron when that extension exists.
+
+Read side: `services/gateway/src/services/client-adoption/adoption.sql` (read-only SELECT) and `adoption.ts` — per member `native` wins; `appilix` = an un-revoked `user_device_tokens` row with `device_label LIKE 'Appilix %'` and no `native` row in the window; else `web`. Only aggregate counts leave.

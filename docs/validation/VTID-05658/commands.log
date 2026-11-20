@@ -1,0 +1,7 @@
+# base (classify module from #4917 absent): cd services/gateway && npx jest test/client-adoption
+FAIL both suites — Cannot find module '../services/client-identity/classify'
+# with the #4917 classify.ts present temporarily (not committed): cd services/gateway && npx jest test/client-adoption
+Tests: 15 passed, 15 total (outputs/jest-client-adoption.txt)
+# cd services/gateway && npx tsc --noEmit (same temporary classify.ts)
+see outputs/tsc-gateway.txt
+# Writes in tests go to in-memory doubles; no database or live system touched. No existing tests edited.

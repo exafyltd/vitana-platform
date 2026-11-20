@@ -1,0 +1,43 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/wt/b-client-identity-store/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/wt/b-client-identity-store/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/client-adoption-query.test.ts
+  client-adoption query
+    ✓ classifies each member kind (15 ms)
+    ✓ counts native-only, Appilix-only, both and plain-web members (1 ms)
+    ✓ empty window → zero share (1 ms)
+    ✓ runs the embedded SQL with the window and returns aggregates only (1 ms)
+    ✓ the SQL is a single read-only SELECT with the Appilix rule, and adoption.sql matches the embedded text (1 ms)
+    ✓ migration: PK on all four, tenant_id, RLS on with no policy, 35-day purge (1 ms)
+
+PASS test/client-adoption-middleware.test.ts
+  client-identity middleware
+    ✓ echoes native and web before next() (7 ms)
+    ✓ no write without identity (1 ms)
+    ✓ no write when user_id or tenant_id is null (R2-F1) (3 ms)
+    ✓ reads req.identity at finish (set after mount) and records class (2 ms)
+    ✓ one upsert per member/class/day, a second class is a second row (1 ms)
+    ✓ writes again on a new UTC day (1 ms)
+    ✓ a failing (rejecting) writer never fails the request (1 ms)
+    ✓ a synchronously throwing writer never throws, and backs off (1 ms)
+    ✓ a throwing recorder never breaks finish (1 ms)
+
+Test Suites: 2 passed, 2 total
+Tests:       15 passed, 15 total
+Snapshots:   0 total
+Time:        1.043 s
+Ran all test suites matching /test\/client-adoption/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

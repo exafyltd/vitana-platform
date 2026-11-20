@@ -643,6 +643,11 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const { delegatedTokenGuard } = require('./services/delegation-guard');
   app.use(delegatedTokenGuard());
 
+  // VTID-05658: echo the request class (native|web) and record a best-effort daily-seen row for
+  // authenticated members (native-app adoption measurement). Never fails or delays a request.
+  const { clientIdentity } = require('./middleware/client-identity');
+  app.use(clientIdentity());
+
   // Health check
   app.get('/health', (req, res) => {
     res.json({ status: 'healthy', timestamp: new Date().toISOString() });

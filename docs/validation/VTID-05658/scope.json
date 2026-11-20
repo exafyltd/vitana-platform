@@ -1,0 +1,18 @@
+{
+  "vtid": "VTID-05658",
+  "kind": "feature",
+  "paths": [
+    "services/gateway/src/middleware/client-identity.ts",
+    "services/gateway/src/index.ts",
+    "services/gateway/src/services/client-adoption/**",
+    "supabase/migrations/*_client_identity_daily_seen.sql",
+    "DATABASE_SCHEMA.md",
+    "services/gateway/test/client-adoption*",
+    "docs/validation/VTID-*/scope.json",
+    "docs/validation/VTID-*/staging-tests.json",
+    "docs/validation/VTID-*/plan-sparring.md"
+  ],
+  "sparring_record": ".kiro/specs/native-wave3-release-r2/sparring/verdict.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}
