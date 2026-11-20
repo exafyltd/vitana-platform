@@ -1,0 +1,163 @@
+# VTID-05690 commands.log (strategy-execution-wave1/hm-readiness)
+# Run 2026-11-11T00:43Z in /projects/sandbox/wt-sew1-hm-readiness (branch kiro/strategy-execution-wave1/hm-readiness, uncommitted).
+# Built by docs/validation/VTID-05690/build-commands-log.sh. Only local git, grep and node commands.
+# No network, no database, no gateway, no GitHub call. grep -c exits 1 when it counts 0; that is the expected result.
+# Preflight (scripts/collab/preflight.mjs) is not run here: the lane is not committed (owner instruction for this
+# build), and preflight reads the plan( PR lane file through the GitHub API. Run it after the commit.
+
+## 1. Pins
+$ git -C ../vitana-platform rev-parse origin/main HEAD
+6dc6e1ba0c18252ec2f3fbf5651d245e200f9835
+6dc6e1ba0c18252ec2f3fbf5651d245e200f9835
+[exit 0]
+
+$ git -C ../vitana-v1 rev-parse origin/main HEAD
+e31bf4627ff3c705c20f8e6b718ce4dd03353b7f
+e31bf4627ff3c705c20f8e6b718ce4dd03353b7f
+[exit 0]
+
+$ git -C ../vitanaland-strategy rev-parse HEAD
+fb77090e1ffc7d1ef3c250b0aa721768c3df9425
+[exit 0]
+
+$ git rev-parse HEAD; git branch --show-current
+6dc6e1ba0c18252ec2f3fbf5651d245e200f9835
+kiro/strategy-execution-wave1/hm-readiness
+[exit 0]
+
+## 2. Counts quoted in the doc (criteria 3, 13)
+$ git -C ../vitana-v1 grep -il maxina e31bf4627 -- 'src/*.ts' 'src/*.tsx' ':!*.test.*' | wc -l
+128
+[exit 0]
+
+$ git -C ../vitana-v1 grep -il maxina e31bf4627 -- 'apps/mobile/src/*' ':!*.test.*' | wc -l
+53
+[exit 0]
+
+$ git -C ../vitana-platform grep -il -E 'mariia|maksina|maria maxina' 6dc6e1ba0c -- 'services/gateway/src/*' ':!*.test.*' | wc -l
+30
+[exit 0]
+
+$ git -C ../vitana-v1 grep -il -E 'mariia|maksina|maria maxina' e31bf4627 -- 'src/*.ts' 'src/*.tsx' ':!*.test.*' | wc -l
+6
+[exit 0]
+
+## 3. Absences quoted in the doc
+$ git -C ../vitana-platform grep -il -E 'healthy[ _-]?million' 6dc6e1ba0c | wc -l
+0
+[exit 0]
+
+$ git -C ../vitana-v1 grep -il -E 'healthy[ _-]?million' e31bf4627 | wc -l
+0
+[exit 0]
+
+$ git -C ../vitana-platform grep -il -E 'website.?factory|vitanaland-skeleton' 6dc6e1ba0c | wc -l
+0
+[exit 0]
+
+$ git -C ../vitana-v1 grep -il -E 'website.?factory|vitanaland-skeleton' e31bf4627 | wc -l
+0
+[exit 0]
+
+$ git -C ../vitana-platform show 6dc6e1ba0c:services/gateway/src/routes/onboarding-coach.ts | grep -c -i tenant
+0
+[exit 1]
+
+$ for f in discover-search-repository intent-matches-repository discover-recommendations-repository product-analytics-repository; do echo "$f: $(git -C ../vitana-platform show 6dc6e1ba0c:services/gateway/src/routes/$f.ts | grep -c -i tenant)"; done
+discover-search-repository: 0
+intent-matches-repository: 0
+discover-recommendations-repository: 0
+product-analytics-repository: 0
+[exit 0]
+
+$ git -C ../vitana-platform show 6dc6e1ba0c:services/gateway/src/routes/orb-live.ts | grep -c persona_facts
+0
+[exit 1]
+
+$ git -C ../vitana-platform grep -n -i -E 'k_anon|min_cohort|minimum.?cohort' 6dc6e1ba0c -- 'services/gateway/src/routes/tenant-admin/*' | wc -l
+0
+[exit 0]
+
+$ git -C ../vitana-platform grep -l 'run-mt-isolation-test' 6dc6e1ba0c -- .github/ | wc -l
+0
+[exit 0]
+
+$ git -C ../vitana-platform ls-tree -r --name-only 6dc6e1ba0c .kiro/specs | grep -c 'mt-community-isolation'
+0
+[exit 1]
+
+$ git -C ../vitana-platform branch -r | grep 'mt-community-isolation-r2'
+  origin/collab-claim/mt-community-isolation-r2/_plan
+  origin/kiro/mt-community-isolation-r2/plan
+[exit 0]
+
+$ git -C ../vitana-platform show origin/kiro/mt-community-isolation-r2/plan:.kiro/specs/mt-community-isolation-r2/sparring/state.json | grep -E '"verdict"|policy_approved_at'
+      "verdict": "escalated",
+      "policy_approved_at": null
+[exit 0]
+
+## 4. Doc structure (AC-1, AC-2, AC-4, AC-5, AC-6, AC-11)
+$ grep -c -E '^- \*\*(Status|Owner|Pinned HEADs|VTID|Plan):\*\*' docs/programs/strategy-execution/healthy-million-readiness.md
+5
+[exit 0]
+
+$ node -e "const s=require('fs').readFileSync('docs/programs/strategy-execution/healthy-million-readiness.md','utf8');const h=[...s.matchAll(/^\*\*(\d+)\. /gm)].map(m=>+m[1]);const r=(s.match(/^- Readiness:/gm)||[]).length;console.log('criteria',h.join(','),'count',h.length,'readiness lines',r);process.exit(h.length===19&&h.every((v,i)=>v===i+1)&&r===19?0:1)"
+criteria 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19 count 19 readiness lines 19
+[exit 0]
+
+$ node -e "const C=['Verified operational','Verified implemented, not operational','Implemented but incomplete','Designed but not implemented','Deprecated/superseded','Unknown'];const L=require('fs').readFileSync('docs/programs/strategy-execution/healthy-million-readiness.md','utf8').split('\n').filter(l=>/Status:/.test(l)&&!/\*\*Status:\*\*/.test(l));const bad=L.filter(l=>!C.some(c=>l.includes(c)));const op=L.filter(l=>/Status:[^.]*Verified operational/.test(l));console.log('status lines',L.length,'without a class',bad.length,'claiming Verified operational',op.length);process.exit(bad.length||op.length?1:0)"
+status lines 19 without a class 0 claiming Verified operational 0
+[exit 0]
+
+$ for p in 'No tenant, pack or content is created' 'multi-tenant foundation' 'mobile foundation' 'website foundation' 'Tenant creation by the owner'; do echo "$p: $(grep -c "$p" docs/programs/strategy-execution/healthy-million-readiness.md)"; done
+No tenant, pack or content is created: 1
+multi-tenant foundation: 1
+mobile foundation: 4
+website foundation: 4
+Tenant creation by the owner: 1
+[exit 0]
+
+$ grep -c '| ID | Title | Files | Risk | Owner | Gate |' docs/programs/strategy-execution/healthy-million-readiness.md
+1
+[exit 0]
+
+$ grep -c '—' docs/programs/strategy-execution/healthy-million-readiness.md
+0
+[exit 1]
+
+## 5. Citation check (AC-3)
+$ node docs/validation/VTID-05690/check-citations.mjs docs/programs/strategy-execution/healthy-million-readiness.md
+citations: 174, failures: 0
+[exit 0]
+
+## 6. Scope (AC-7, AC-8)
+$ node --input-type=module -e "import {validateScope} from './scripts/ci/pr-gate/lib.mjs';import fs from 'fs';const e=validateScope(JSON.parse(fs.readFileSync('docs/validation/VTID-05690/scope.json','utf8')),'VTID-05690');console.log(JSON.stringify(e));process.exit(e.length?1:0)"
+[]
+[exit 0]
+
+$ git status --porcelain --untracked-files=all
+?? docs/programs/strategy-execution/healthy-million-readiness.md
+?? docs/validation/VTID-05690/acceptance.md
+?? docs/validation/VTID-05690/build-commands-log.sh
+?? docs/validation/VTID-05690/check-citations.mjs
+?? docs/validation/VTID-05690/commands.log
+?? docs/validation/VTID-05690/scope.json
+[exit 0]
+
+## 7. Collab tests (AC-10)
+$ node --test scripts/collab/*.test.mjs 2>&1 | tail -9
+1..257
+# tests 257
+# suites 0
+# pass 256
+# fail 0
+# cancelled 0
+# skipped 1
+# todo 0
+# duration_ms 11279.592078
+[exit 0]
+
+## 8. No live call (AC-9)
+$ grep -E '^\$ ' docs/validation/VTID-05690/commands.log | grep -v '#AC-9' | grep -c -E '(curl|psql|supabase |aws |gh |wget)'   #AC-9
+0
+[exit 0]
