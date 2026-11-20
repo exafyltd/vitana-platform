@@ -1,11 +1,11 @@
 ---
 lane: gateway-test-card
-state: in-review
+state: parked
 next_actor: kiro
 branch: kiro/companion-test-card/gateway-test-card
 depends_on: []
 executor: kiro
-seat: exafy
+seat: exafyltd
 area: platform
 repos: [exafyltd/vitana-platform]
 reviewer_seat: agent:vitana-lane-reviewer
@@ -16,10 +16,10 @@ paths:
   - services/gateway/src/types/cicd.ts
   - services/gateway/test/companion-test-card.test.ts
   - docs/validation/VTID-*/**
-updated: 2026-11-06T17:55Z
+updated: 2026-11-12T20:15Z
 vtid: VTID-05588
-claimed_by: kiro-exafy-202611061658-9ca9
 pr: https://github.com/exafyltd/vitana-platform/pull/4751
+parked_from: in-review
 ---
 
 # Lane: gateway-test-card (repo exafyltd/vitana-platform)
@@ -74,3 +74,5 @@ Findings: [non-blocking] routes/companion.ts uses getSupabase() where plan.md na
 Findings: [non-blocking] routes/companion.ts: the new console.error in the catch block draws an "Unexpected console statement" lint annotation. The runs still concluded success (42270102908, 42270102906).
 Findings: Item 3 passes: all 13 workflow runs on a5dab40 are completed/success. Item 4 passes: red 13 failed on base 2b9356e0, green 13/13 on head. Item 5 passes: the only test change since d40cefc2 adds assertions. Items 1, 2, 6, 7, 8 (no UI), 9 (no protected gate file), 10a-10e pass.
 Next: the land step merges under §7b
+### 2026-11-12T20:15Z · pm-agent · in-review → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
