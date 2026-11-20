@@ -1,0 +1,108 @@
+TAP version 13
+# Subtest: quality-checks.md exists
+ok 1 - quality-checks.md exists
+  ---
+  duration_ms: 1.141905
+  type: 'test'
+  ...
+# Subtest: quality-checks.md has one section per change type
+ok 2 - quality-checks.md has one section per change type
+  ---
+  duration_ms: 0.530496
+  type: 'test'
+  ...
+# Subtest: quality-checks.md defines the Change types line, the seven Acceptance fields and what "verified" means
+ok 3 - quality-checks.md defines the Change types line, the seven Acceptance fields and what "verified" means
+  ---
+  duration_ms: 0.465652
+  type: 'test'
+  ...
+# Subtest: planning, coding and review steps link quality-checks.md
+ok 4 - planning, coding and review steps link quality-checks.md
+  ---
+  duration_ms: 0.456863
+  type: 'test'
+  ...
+# Subtest: the review step reads the lane's change types from tasks.md
+ok 5 - the review step reads the lane's change types from tasks.md
+  ---
+  duration_ms: 0.277153
+  type: 'test'
+  ...
+# Subtest: the land step merges with squash so the subject keeps the VTID
+ok 6 - the land step merges with squash so the subject keeps the VTID
+  ---
+  duration_ms: 0.239383
+  type: 'test'
+  ...
+# Subtest: the PR template has a Verification section and no extra VALIDATOR-CHECK marker
+ok 7 - the PR template has a Verification section and no extra VALIDATOR-CHECK marker
+  ---
+  duration_ms: 0.35288
+  type: 'test'
+  ...
+# Subtest: the Merge section cites the PM squash strategy, and the PM really merges with squash
+not ok 8 - the Merge section cites the PM squash strategy, and the PM really merges with squash
+  ---
+  duration_ms: 13.958591
+  type: 'test'
+  location: '/projects/sandbox/vitana-platform/.worktrees/qcf-merge-policy-text/scripts/collab/quality-checks.test.mjs:58:1'
+  failureType: 'testCodeFailure'
+  error: 'Merge section must cite the PM act.ts'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: |-
+    
+    ## Merge
+    Squash merge, so the subject carries the PR title's VTID: STAGING-VERIFY reads VTIDs from commit subjects
+    (`scripts/ci/staging-verify/run.mjs`, `lib.extractVtids(c.subject)`), and a `Merge pull request #n from …` subject has
+    none, which fails rule 47 for the whole release [v1 #1447/#1450/#1451/#1452; STAGING-VERIFY 39952660840].
+    
+  operator: 'match'
+  stack: |-
+    TestContext.<anonymous> (file:///projects/sandbox/vitana-platform/.worktrees/qcf-merge-policy-text/scripts/collab/quality-checks.test.mjs:61:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: DEPLOYMENT-PIPELINE.md does not present a default merge commit as carrying the VTID
+not ok 9 - DEPLOYMENT-PIPELINE.md does not present a default merge commit as carrying the VTID
+  ---
+  duration_ms: 0.559683
+  type: 'test'
+  location: '/projects/sandbox/vitana-platform/.worktrees/qcf-merge-policy-text/scripts/collab/quality-checks.test.mjs:69:1'
+  failureType: 'testCodeFailure'
+  error: "the range paragraph must name GitHub's default merge subject"
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: |-
+    **How the range is read (VTID-05076):** one entry per change that landed on main — the first-parent chain (`git log --first-parent`). A squash merge or a direct push is its own entry; a PR merged with a merge commit is judged by the merge commit, whose subject carries the PR title and VTID, and its files are everything the merge brought into main. The ready message marks such an entry "(N branch commits)". A direct push without a VTID still fails rule 47.
+    
+    **One exception (VTID-05075):** a commit whose only build-relevant change is a service's `pnpm-lock.yaml` (files outside the service's build, such as evidence docs, are ignored) needs no change suite of its own. STAGING-VERIFY lists it under "Lockfile-only changes (no change suite; smoke tests only)" and records it as `lockfile_only`, so the "Staging verified — ready for deployment to production?" message names every one that ships. Any other build file in the same commit, a VTID without a manifest, or another service's lockfile (`package-lock.json`, `bun.lock`) keeps the rule as written.
+    
+    **Which suites run.** Every commit between the commit production serves and
+    the verified commit that touches the service's deploy paths contri
+  operator: 'match'
+  stack: |-
+    TestContext.<anonymous> (file:///projects/sandbox/vitana-platform/.worktrees/qcf-merge-policy-text/scripts/collab/quality-checks.test.mjs:72:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+1..9
+# tests 9
+# suites 0
+# pass 7
+# fail 2
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 143.611578
