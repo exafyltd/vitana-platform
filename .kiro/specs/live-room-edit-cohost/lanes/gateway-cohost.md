@@ -5,7 +5,7 @@ next_actor: kiro
 branch: kiro/live-room-edit-cohost/gateway-cohost
 depends_on: [db-cohost-authz]
 executor: kiro
-seat: exafy
+seat: exafyltd
 area: platform
 repos: [exafyltd/vitana-platform]
 reviewer_seat: agent:vitana-lane-reviewer
@@ -16,7 +16,7 @@ paths:
   - services/gateway/src/services/live-cohosts.ts
   - services/gateway/src/types/live-room.ts
   - services/gateway/test/live-room-cohost*.test.ts
-updated: 2026-11-05T16:35Z
+updated: 2026-11-12T20:16Z
 vtid: VTID-05559
 ---
 
@@ -31,3 +31,5 @@ Lane created with the plan.
 
 ### 2026-11-05T16:35Z · ci-plan-spar · ready (VTID allocated)
 VTID-05559 allocated after policy approval (converged-auto-v1).
+### 2026-11-12T20:16Z · pm-agent · update
+reassign lane exafy→exafyltd (stale_ready, Claude unavailable)

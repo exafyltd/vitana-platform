@@ -1,11 +1,11 @@
 ---
 lane: db-cohost-authz
-state: in-review
+state: parked
 next_actor: kiro
 branch: kiro/live-room-edit-cohost/db-cohost-authz
 depends_on: []
 executor: kiro
-seat: exafy
+seat: exafyltd
 area: platform
 repos: [exafyltd/vitana-platform]
 reviewer_seat: agent:vitana-lane-reviewer
@@ -16,10 +16,10 @@ paths:
   - scripts/ci/sql-tests/live-room-cohost.sql
   - .github/workflows/SQL-LIVE-ROOM-COHOST.yml
   - DATABASE_SCHEMA.md
-updated: 2026-11-05T17:50Z
+updated: 2026-11-12T20:16Z
 vtid: VTID-05558
-claimed_by: kiro-exafy-202611051713-eefe
 pr: https://github.com/exafyltd/vitana-platform/pull/4713
+parked_from: in-review
 ---
 
 # Lane: db-cohost-authz (repo exafyltd/vitana-platform)
@@ -41,3 +41,5 @@ Decisions inside the plan: (1) `kick`/`ban` refuse a host target only when the c
 
 ### 2026-11-05T17:50Z · kiro-exafy-202611051713-eefe · executing → in-review
 PR https://github.com/exafyltd/vitana-platform/pull/4713. All 20 checks green on the previous head, including CI's own run of the SQL test on PostgreSQL 16.15 (`PASS vtid-05558 live room cohost`), Validator Check and Migration Drift Check. Next: the reviewer agent `vitana-lane-reviewer` on the final head, then merge under §7b. The migration is not applied by merging (owner decision, §7d).
+### 2026-11-12T20:16Z · pm-agent · in-review → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
