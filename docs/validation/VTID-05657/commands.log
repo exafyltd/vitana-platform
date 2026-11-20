@@ -1,0 +1,7 @@
+# base (classify.ts absent): cd services/gateway && npx jest test/client-identity
+FAIL test/client-identity-classify.test.ts — Cannot find module '../src/services/client-identity/classify'  (Tests: 0 total)
+# with implementation: cd services/gateway && npx jest test/client-identity
+Tests: 9 passed, 9 total
+# cd services/gateway && npx tsc --noEmit
+exit 0
+# node scripts/collab/preflight.mjs ... -> preflight: every check passed
