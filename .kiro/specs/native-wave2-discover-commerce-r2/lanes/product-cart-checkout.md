@@ -85,3 +85,12 @@ Lane created with the plan (re-plan of `native-wave2-discover-commerce/product-c
 
 ### 2026-11-02T16:30Z · ci-plan-spar · ready (VTID allocated)
 VTID-05512 allocated after policy approval (converged-auto-v1).
+
+### 2026-11-07T21:55Z · kiro-exafyltd-202611072144-1c88 · executing (takeover)
+Takeover of the stale claim of `kiro-exafyltd-202611011658-9f52` (120 h, broken under §5 with `queue.mjs release --stale`).
+PR #1577 (head 333f2720b7) failed Lane scope only because its branch carried the `discover` lane's pre-squash
+commits. Rebuilt without force-push as vitana-v1 #1619 (`kiro/vtid-05512-product-cart-checkout-r2`, head bbe7f74aa0):
+this lane's 10 commits cherry-picked with `-x` onto `origin/main` (additive conflicts only; generated files
+regenerated with `core-closure.mjs --write`), plus one commit by this session that re-applies the import change of
+the old merge commit 333f2720b (the lane tests import `discover-mocks` / `discover-helpers`, landed by #1573).
+#1577 stays open until #1619 merges, then closes as superseded. Not yet reviewed on bbe7f74aa0.
