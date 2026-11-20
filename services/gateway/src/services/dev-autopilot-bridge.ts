@@ -41,8 +41,21 @@ import { emitOasisEvent } from './oasis-event-service';
 import { isEnvironmentalBlocker } from './dev-autopilot-self-heal-log';
 import { createRevertPullRequest, mergePullRequest } from './github-service';
 import { isRealCiClose, isRevertMergedOnMain, PR_CLOSED_UNMERGED_KEY, PR_REVERTED_KEY } from './dev-autopilot-pipeline-guards';
+import { isGitlabExecution } from './autopilot-agent/gitlab-target';
 
 const LOG_PREFIX = '[dev-autopilot-bridge]';
+
+/**
+ * Owner instruction 2026-11-19: "Add guards so the bridge cannot close PRs, delete branches, or alter an MR-owned branch. It must
+ * fail safely for unsupported execution states."
+ *
+ * The states a failed execution is in when one of today's callers bridges it: the watchers and reconcilers move it to `failed` first
+ * (and leave it in its last state when that conditional write matched nothing: ci, merging, deploying, verifying), the watchdog and
+ * applyExecutionResult write `failed` over `running`. Any other state is not a failure the bridge handles and is refused before the
+ * first write, so a manual or future caller can never triage, revert or retry a queued, held, approved-waiting, cancelled, completed
+ * or archived execution.
+ */
+export const BRIDGEABLE_STATUSES: ReadonlySet<string> = new Set(['failed', 'running', 'ci', 'merging', 'deploying', 'verifying']);
 const BRIDGE_VTID = 'VTID-DEV-AUTOPILOT';
 
 // Default 'false' — match the executor's default. See header doc.
@@ -285,7 +298,11 @@ export type BridgeOutcome =
   | 'revert_failed'
   | 'triage_failed'
   | 'no_execution'
-  | 'no_supabase';
+  | 'no_supabase'
+  /** A GitLab-native repair execution (its branch is a GitLab merge request's): never handled here, nothing written. */
+  | 'unsupported_execution'
+  /** The execution is not in a failed state the bridge handles (BRIDGEABLE_STATUSES): refused before the first write. */
+  | 'unsupported_state';
 
 export interface BridgeResult {
   ok: boolean;
@@ -396,6 +413,10 @@ export async function revertExecutionPR(
   exec: ExecutionRow,
   stage: FailureStage,
 ): Promise<{ ok: boolean; revert_pr_url?: string; error?: string; reverted_on_main?: boolean }> {
+  // Before anything else, whatever PR fields the row carries: a GitLab merge request's branch is never closed, deleted or reverted here.
+  if (isGitlabExecution(exec)) {
+    return { ok: false, error: 'refused: a GitLab-hosted execution is never reverted, closed or deleted by the bridge' };
+  }
   if (!exec.pr_url) {
     return { ok: true }; // Nothing to revert — session never produced a PR
   }
@@ -535,6 +556,7 @@ export function isFixModeEligible(
   dryRun: boolean = DRY_RUN,
 ): boolean {
   if (stage !== 'ci' || dryRun) return false;
+  if (isGitlabExecution(exec)) return false; // GitHub fix mode is for GitHub PR branches only
   if (!exec.metadata || exec.metadata.executor !== 'agent') return false;
   return typeof exec.pr_number === 'number' && exec.pr_number > 0
     && typeof exec.branch === 'string' && exec.branch.length > 0
@@ -571,6 +593,8 @@ export async function spawnChildExecution(
   /** VTID-04017: continue on the parent's PR branch instead of starting over. */
   fixMode?: FixModeInfo | null,
 ): Promise<{ ok: boolean; execution_id?: string; error?: string }> {
+  // A GitLab-hosted parent gets no child: the child would run as a GitHub execution and open a GitHub PR for a GitLab merge request.
+  if (isGitlabExecution(parent)) return { ok: false, error: 'refused: a GitLab-hosted execution gets no self-heal child' };
   const childId = randomUUID();
   const now = new Date();
   const executeAfter = new Date(now.getTime() + cooldownMinutes * 60 * 1000);
@@ -654,6 +678,19 @@ export async function bridgeFailureToSelfHealing(input: BridgeInput): Promise<Br
     return { ok: false, outcome: 'no_execution', execution_id: input.execution_id, error: 'execution not found' };
   }
 
+  // G1: a GitLab-native repair execution. Its branch belongs to a GitLab merge request; the bridge never triages it, never closes,
+  // deletes or reverts anything for it, never spawns a (GitHub) child for it and writes nothing. The delivery loop decides the next
+  // attempt from GitLab's own pipeline. Checked first, before idempotency: such a row was never bridged and never will be.
+  if (isGitlabExecution(exec)) {
+    console.warn(`${LOG_PREFIX} refused ${exec.id.slice(0, 8)}: GitLab-hosted execution (the delivery loop owns its retries)`);
+    return {
+      ok: false,
+      outcome: 'unsupported_execution',
+      execution_id: exec.id,
+      error: 'gitlab_hosted: a GitLab merge-request execution is never handled by the bridge; the delivery loop owns its next attempt',
+    };
+  }
+
   // Idempotency: if we've already written a triage_report for this execution,
   // bail rather than spawning another triage session on top.
   if (exec.triage_report && Object.keys(exec.triage_report).length > 0) {
@@ -662,6 +699,18 @@ export async function bridgeFailureToSelfHealing(input: BridgeInput): Promise<Br
       outcome: 'already_bridged',
       execution_id: exec.id,
       self_healing_vtid: exec.self_healing_vtid || undefined,
+    };
+  }
+
+  // G2: an execution that is not in a failed state the bridge handles is refused before the first write (after idempotency, so a
+  // row that was bridged already still answers `already_bridged` and its caller's ledger handling is unchanged).
+  if (!BRIDGEABLE_STATUSES.has(String(exec.status))) {
+    console.warn(`${LOG_PREFIX} refused ${exec.id.slice(0, 8)}: status ${exec.status} is not a failure the bridge handles`);
+    return {
+      ok: false,
+      outcome: 'unsupported_state',
+      execution_id: exec.id,
+      error: `unsupported_state: status ${exec.status} is not a failure the bridge handles (${[...BRIDGEABLE_STATUSES].join(', ')})`,
     };
   }
 

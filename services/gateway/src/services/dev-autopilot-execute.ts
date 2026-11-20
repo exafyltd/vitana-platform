@@ -109,6 +109,7 @@ import {
   type LeaseRest,
 } from './orchestrator/run-lease';
 import { isAwaitingApprovalResult, stageExecutionForApproval } from './dev-autopilot-approval';
+import { isGitlabExecution, parseGitlabTarget } from './autopilot-agent/gitlab-target';
 import {
   STRANDED_PR_FILTER,
   INFLIGHT_EXECUTION_FILTER,
@@ -1711,7 +1712,7 @@ export function priorPrBlocksExecution(
 export async function runExecutionSession(
   s: SupaConfig,
   executionId: string,
-): Promise<{ ok: boolean; pr_url?: string; branch?: string; pr_number?: number; session_id?: string; error?: string }> {
+): Promise<ExecutionSessionResult> {
   // Load execution + finding + plan
   const execR = await supa<Array<ExecutionRow & { finding_id: string; plan_version: number }>>(
     s,
@@ -1721,6 +1722,13 @@ export async function runExecutionSession(
     return { ok: false, error: 'execution row not found' };
   }
   const exec = execR.data[0];
+
+  // GitLab-native repair (owner instruction 2026-11-19): the branch is a GitLab merge request's. The GitHub PR-flood guard and the
+  // GitHub single-shot path below do not apply to it; it always runs on the agent runner, which never touches GitHub for it.
+  if (isGitlabExecution(exec)) {
+    const { runAgentExecutionSession } = await import('./autopilot-agent/run-agent-execution');
+    return runAgentExecutionSession(s, exec);
+  }
 
   // VTID-AUTOPILOT-PR-FLOOD: final defense — refuse to start an execution
   // session if the same finding already has an OPEN GitHub PR from a prior
@@ -3356,10 +3364,78 @@ async function getGcpAccessToken(): Promise<string | null> {
  * gateway's in-process executor tick and the Cloud Run Job entry point so
  * both runtimes converge on identical post-execution state.
  */
+/** What one execution session answers (single-shot, agent, or the agent on a GitLab merge request). */
+export interface ExecutionSessionResult {
+  ok: boolean; pr_url?: string; branch?: string; pr_number?: number; session_id?: string; error?: string;
+  /** Set by the agent runner on a GitLab-native repair: the commit went to the merge request's branch on GitLab, no PR exists. */
+  host?: 'gitlab';
+  head_sha?: string;
+  base_sha?: string;
+}
+
+/**
+ * GitLab-native repair: the end of the execution. The commit is on the GitLab merge request's own branch and GitLab's pipeline judges
+ * it (the delivery loop reads that pipeline), so nothing here touches GitHub, no PR field is written, and the self-healing bridge is
+ * never asked: the delivery loop owns the next attempt.
+ *
+ *   pushed   -> `auto_archived`: the one status no watcher, reconciler, ledger helper or self-healing tick acts on (the
+ *               "handled elsewhere" status reconcileCi already uses), with `metadata.gitlab_result`.
+ *   anything else -> `failed`, with the error, unbridged.
+ *
+ * Conditional on `running`: a row cancelled or reclaimed meanwhile keeps that decision. No ledger side effect either way: the carrier
+ * finding has no VTID (dev-autopilot-gitlab-repair.ts).
+ */
+async function applyGitlabResult(s: SupaConfig, execId: string, result: ExecutionSessionResult): Promise<void> {
+  const curR = await supa<Array<{ status: string; metadata?: Record<string, unknown> | null }>>(
+    s, `/rest/v1/dev_autopilot_executions?id=eq.${execId}&select=status,metadata&limit=1`,
+  );
+  const row = curR.ok && curR.data && curR.data[0] ? curR.data[0] : null;
+  if (!row) {
+    console.error(`${LOG_PREFIX} ${execId.slice(0, 8)}: GitLab repair result for a row that cannot be read`);
+    return;
+  }
+  if (row.status !== 'running') {
+    console.log(`${LOG_PREFIX} ${execId.slice(0, 8)}: GitLab repair result ignored — the row is ${row.status}`);
+    return;
+  }
+  const now = new Date();
+  const pushed = result.ok === true && result.host === 'gitlab' && typeof result.head_sha === 'string' && result.head_sha.length > 0;
+  const error = pushed ? null : (result.error || 'the GitLab repair produced no push');
+  const patch = pushed
+    ? {
+      status: 'auto_archived',
+      completed_at: now.toISOString(),
+      execution_session_id: result.session_id || null,
+      metadata: { ...(row.metadata || {}), gitlab_result: { outcome: 'pushed', branch: result.branch ?? null, head_sha: result.head_sha, base_sha: result.base_sha ?? null, at: now.toISOString() } },
+    }
+    : { execution_session_id: result.session_id || null, ...buildExecutionFailurePatch(row.metadata, error || undefined, now) };
+  const w = await supa<Array<{ id: string }>>(s, `/rest/v1/dev_autopilot_executions?id=eq.${execId}&status=eq.running`, {
+    method: 'PATCH',
+    headers: { Prefer: 'return=representation' },
+    body: JSON.stringify(patch),
+  });
+  if (!w.ok || !Array.isArray(w.data) || w.data.length === 0) {
+    console.warn(`${LOG_PREFIX} ${execId.slice(0, 8)}: GitLab repair result not applied — the row left running meanwhile (${w.error || 'no row matched'})`);
+    return;
+  }
+  const t = parseGitlabTarget(row.metadata);
+  const where = t.ok ? { project_path: t.target.project_path, mr_iid: t.target.mr_iid, pipeline_id: t.target.pipeline_id } : {};
+  await emitOasisEvent({
+    vtid: EXEC_VTID,
+    type: pushed ? 'dev_autopilot.execution.gitlab_pushed' : 'dev_autopilot.execution.failed',
+    source: 'dev-autopilot',
+    status: pushed ? 'success' : 'error',
+    message: pushed
+      ? `Execution ${execId.slice(0, 8)} pushed a repair to GitLab branch ${result.branch} (${String(result.head_sha).slice(0, 8)})`
+      : `Execution ${execId.slice(0, 8)} (GitLab repair) failed: ${error}`,
+    payload: { execution_id: execId, host: 'gitlab', branch: result.branch ?? null, head_sha: result.head_sha ?? null, error, ...where },
+  });
+}
+
 export async function applyExecutionResult(
   s: SupaConfig,
   execId: string,
-  result: { ok: boolean; pr_url?: string; branch?: string; pr_number?: number; session_id?: string; error?: string; awaiting_approval?: boolean; cancelled?: boolean },
+  result: ExecutionSessionResult & { awaiting_approval?: boolean; cancelled?: boolean },
 ): Promise<void> {
   // VTID-04774: the A2 feasibility row (if any) learns how the run ended.
   // Fire-and-forget; no row when the gate was off.
@@ -3401,6 +3477,8 @@ export async function applyExecutionResult(
     applyExecTerminalSideEffects(s, execId, 'cancelled');
     return;
   }
+  // GitLab-native repair: the runner pushed to the GitLab merge request's branch (or failed to). Never a PR field, never the bridge.
+  if (result.host === 'gitlab') return applyGitlabResult(s, execId, result);
   // VTID-04029: the agent pushed its branch and stopped before opening a PR
   // — record the hold + diff preview; approve/reject come back through
   // dev-autopilot-approval.ts (approve re-enters this function with pr_url).
@@ -3454,6 +3532,11 @@ export async function applyExecutionResult(
   if (curR.ok && curR.data && curR.data[0]?.status === 'cancelled') {
     console.log(`${LOG_PREFIX} ${execId.slice(0, 8)}: result ignored — the execution was cancelled by an operator`);
     return;
+  }
+  // A GitLab-hosted row that failed before the runner could say so (the target was invalid, the token missing, the clone refused):
+  // it ends failed here, and it is never handed to the self-healing bridge, which would try a GitHub revert and a GitHub child.
+  if (curR.ok && curR.data && curR.data[0] && isGitlabExecution(curR.data[0])) {
+    return applyGitlabResult(s, execId, { ...result, ok: false, host: 'gitlab', error: result.error || 'the GitLab repair produced no push' });
   }
   await supa(s, `/rest/v1/dev_autopilot_executions?id=eq.${execId}`, {
     method: 'PATCH',
