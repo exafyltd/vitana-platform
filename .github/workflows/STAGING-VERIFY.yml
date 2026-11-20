@@ -184,6 +184,10 @@ jobs:
           # service role: nothing in this step may write (rule 48).
           TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
           TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
+          # Read-only staging group-admin sign-in for the VTID-05622/05670 group-chat check (the shared test user is in
+          # no group). Used only by the Playwright env run.mjs builds; run.mjs deletes them from process.env first.
+          STAGING_GROUP_TEST_EMAIL: ${{ secrets.STAGING_GROUP_TEST_EMAIL }}
+          STAGING_GROUP_TEST_PASSWORD: ${{ secrets.STAGING_GROUP_TEST_PASSWORD }}
           # VTID-05144: read-only listing of the service's staging deploy runs
           # (the attribution cutoff after a mid-run redeploy). Never passed to
           # the test processes — run.mjs builds their env explicitly.

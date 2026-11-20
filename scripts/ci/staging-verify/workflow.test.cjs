@@ -76,3 +76,48 @@ test('the deploy-run lookup tokens reach run.mjs, never the test processes', () 
     assert.doesNotMatch(body, /GITHUB_TOKEN|VITANA_V1_READ_TOKEN|\.\.\.process\.env\b/, fn);
   }
 });
+
+// VTID-05797: the staging group-admin pair reaches only the Playwright env, and is scrubbed from process.env first.
+const RUN_JS = path.join(__dirname, 'run.mjs');
+const runSrc = () => fs.readFileSync(RUN_JS, 'utf8');
+function fnBody(src, sig) {
+  const i = src.indexOf(sig);
+  assert.ok(i >= 0, `missing: ${sig}`);
+  return src.slice(i, src.indexOf('\n}\n', i));
+}
+
+test('(a) the group pair is passed only in the runPlaywright env builder', () => {
+  const src = runSrc();
+  assert.match(fnBody(src, 'function runPlaywright'), /\.\.\.groupAccountEnv\(\)/);
+  for (const fn of ['function runExisting', 'function ensureDeps', 'function passthrough']) {
+    assert.doesNotMatch(fnBody(src, fn), /groupAccountEnv|STAGING_GROUP_TEST/, fn);
+  }
+});
+
+test('(b) the group pair is deleted from process.env at the start of the verify path', () => {
+  const src = runSrc();
+  assert.match(src, /const GROUP_ACCOUNT_VARS = \['STAGING_GROUP_TEST_EMAIL', 'STAGING_GROUP_TEST_PASSWORD'\]/);
+  assert.match(fnBody(src, 'function captureGroupAccount'), /for \(const n of GROUP_ACCOUNT_VARS\) delete process\.env\[n\]/);
+  // Called inside verify(), before any git, gh, npm or playwright command.
+  const verifyBody = fnBody(src, 'async function verify(args)');
+  const capture = verifyBody.indexOf('captureGroupAccount()');
+  assert.ok(capture > 0, 'verify() calls captureGroupAccount()');
+  for (const spawn of ['confirmLive(', 'productionStamp(', 'git(repoRoot']) {
+    const at = verifyBody.indexOf(spawn);
+    if (at >= 0) assert.ok(capture < at, `capture runs before ${spawn}`);
+  }
+  assert.doesNotMatch(src.slice(0, src.indexOf('async function verify')), /captureGroupAccount\(\);/, 'not at import time');
+});
+
+test('(c) the TEST_USER_* pair in the Playwright env is unchanged', () => {
+  const body = fnBody(runSrc(), 'function runPlaywright');
+  assert.match(body, /TEST_USER_EMAIL: process\.env\.TEST_USER_EMAIL \|\| '',/);
+  assert.match(body, /TEST_USER_PASSWORD: process\.env\.TEST_USER_PASSWORD \|\| '',/);
+});
+
+test('(d) the workflow passes the group secrets to the verify step only', () => {
+  const run = block('- name: Run STAGING-VERIFY', '- name: Record result in OASIS');
+  assert.match(run, /STAGING_GROUP_TEST_EMAIL: \$\{\{ secrets\.STAGING_GROUP_TEST_EMAIL \}\}/);
+  assert.match(run, /STAGING_GROUP_TEST_PASSWORD: \$\{\{ secrets\.STAGING_GROUP_TEST_PASSWORD \}\}/);
+  assert.doesNotMatch(wf.replace(run, ''), /STAGING_GROUP_TEST_/, 'no other step or job receives the group pair');
+});

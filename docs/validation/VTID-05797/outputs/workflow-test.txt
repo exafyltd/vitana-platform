@@ -1,0 +1,76 @@
+TAP version 13
+# Subtest: full runs get their own -full concurrency group; nothing running is ever cancelled
+ok 1 - full runs get their own -full concurrency group; nothing running is ever cancelled
+  ---
+  duration_ms: 1.448125
+  type: 'test'
+  ...
+# Subtest: workflow_dispatch has a numeric `chain` input defaulting to 0, passed through to run.mjs
+ok 2 - workflow_dispatch has a numeric `chain` input defaulting to 0, passed through to run.mjs
+  ---
+  duration_ms: 0.352671
+  type: 'test'
+  ...
+# Subtest: the verify job exposes superseded_by from the runner
+ok 3 - the verify job exposes superseded_by from the runner
+  ---
+  duration_ms: 0.138396
+  type: 'test'
+  ...
+# Subtest: superseded is reported as commit status error with "not verified", never success
+ok 4 - superseded is reported as commit status error with "not verified", never success
+  ---
+  duration_ms: 0.251696
+  type: 'test'
+  ...
+# Subtest: a superseded full run re-dispatches a full run on the newer commit, guarded by FULL and chain < 3
+ok 5 - a superseded full run re-dispatches a full run on the newer commit, guarded by FULL and chain < 3
+  ---
+  duration_ms: 1.376868
+  type: 'test'
+  ...
+# Subtest: the report job grants itself actions: write next to its status/comment permissions
+ok 6 - the report job grants itself actions: write next to its status/comment permissions
+  ---
+  duration_ms: 0.227829
+  type: 'test'
+  ...
+# Subtest: the deploy-run lookup tokens reach run.mjs, never the test processes
+ok 7 - the deploy-run lookup tokens reach run.mjs, never the test processes
+  ---
+  duration_ms: 0.495553
+  type: 'test'
+  ...
+# Subtest: (a) the group pair is passed only in the runPlaywright env builder
+ok 8 - (a) the group pair is passed only in the runPlaywright env builder
+  ---
+  duration_ms: 0.596621
+  type: 'test'
+  ...
+# Subtest: (b) the group pair is deleted from process.env at the start of the verify path
+ok 9 - (b) the group pair is deleted from process.env at the start of the verify path
+  ---
+  duration_ms: 0.617221
+  type: 'test'
+  ...
+# Subtest: (c) the TEST_USER_* pair in the Playwright env is unchanged
+ok 10 - (c) the TEST_USER_* pair in the Playwright env is unchanged
+  ---
+  duration_ms: 0.648569
+  type: 'test'
+  ...
+# Subtest: (d) the workflow passes the group secrets to the verify step only
+ok 11 - (d) the workflow passes the group secrets to the verify step only
+  ---
+  duration_ms: 0.405757
+  type: 'test'
+  ...
+1..11
+# tests 11
+# suites 0
+# pass 11
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 92.588453
