@@ -6,6 +6,7 @@ priority: 3
 repos: [vitana-v1, vitana-platform]
 specs:
   - vitana-platform:native-eas-builds-r2
+  - vitana-platform:native-lane-paths-owner-20261108
   - vitana-platform:native-shell-fixes-r2
   - vitana-platform:native-wave2-ai-pages
   - vitana-platform:native-wave2-ai-pages-r2
