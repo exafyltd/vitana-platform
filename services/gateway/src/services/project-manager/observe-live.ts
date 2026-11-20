@@ -624,7 +624,7 @@ function toReview(x: ParsedLaneLog['reviews'][number], reviewerSeat: string): Re
 }
 
 /** Review commits' §4.1 trailers win over the lane-log body (verdict, reviewer, reviewed head). */
-function mergeTrailerReviews(fromLog: ReviewEntry[], commits: GhCommit[], laneKey: string, reviewerSeat: string): ReviewEntry[] {
+export function mergeTrailerReviews(fromLog: ReviewEntry[], commits: GhCommit[], laneKey: string, reviewerSeat: string): ReviewEntry[] {
   const out = [...fromLog];
   for (const c of commits) {
     const t = parseTrailers(c.message);
@@ -639,6 +639,8 @@ function mergeTrailerReviews(fromLog: ReviewEntry[], commits: GhCommit[], laneKe
       head_sha: t['Collab-Reviewed-Head'] ?? (idx >= 0 ? out[idx].head_sha : ''),
       at: idx >= 0 ? out[idx].at : c.date,
       reviewer: t['Collab-Reviewer'] ?? (idx >= 0 ? out[idx].reviewer ?? null : null),
+      // VTID-05356: carried verbatim; no decision reads it in this lane.
+      fallback_reason: t['Collab-Fallback-Reason'] ?? (idx >= 0 ? out[idx].fallback_reason ?? null : null),
     };
     if (idx >= 0) out[idx] = merged;
     else out.push(merged);

@@ -70,6 +70,11 @@ export interface ReviewEntry {
    * `agent:vitana-lane-reviewer (claude-sonnet-5.5)`; null/absent for a legacy seat review.
    */
   reviewer?: string | null;
+  /**
+   * VTID-05356: the `Collab-Fallback-Reason` trailer of the review commit (e.g. `chain_unavailable`), verbatim;
+   * null when the commit has none. Read only by the reviewer-fallback governance (plan pipeline-agent-wake-and-review).
+   */
+  fallback_reason?: string | null;
 }
 
 /** One entry in a lane's executing log (used for the self-review residual guard). */

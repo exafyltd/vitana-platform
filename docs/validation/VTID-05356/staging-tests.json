@@ -1,0 +1,10 @@
+{
+  "vtid": "VTID-05356",
+  "service": "gateway",
+  "note": "Read-only. review-fallback-trailer adds ReviewEntry.fallback_reason (parsed from a review commit's Collab-Fallback-Reason trailer); no PM decision reads it yet, so the deployed PM must behave exactly as before. The parse itself is proven by the jest suite; the HTTP probes prove the PM module (which imports observe-live.ts) loads and serves on the deployed commit. Nothing targets production.",
+  "tests": [
+    { "kind": "http", "name": "gateway alive after deploy", "target": "gateway", "method": "GET", "path": "/alive", "expect_status": 200, "reason": "read-only GET: the build carrying the observe-live.ts / types.ts change boots and serves" },
+    { "kind": "http", "name": "project-manager mode endpoint serves", "target": "gateway", "method": "GET", "path": "/api/v1/project-manager/mode", "expect_status": 200, "reason": "read-only GET of the public PM mode route: the project-manager module that imports observe-live.ts loaded on the deployed commit" },
+    { "kind": "existing", "ref": "npx jest test/project-manager", "cwd": "services/gateway", "reason": "Pins the Collab-Fallback-Reason parse (present / absent → null / other verbatim / merged log entry) and that every existing PM suite is unchanged." }
+  ]
+}
