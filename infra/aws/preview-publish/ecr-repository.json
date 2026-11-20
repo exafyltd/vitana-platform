@@ -1,0 +1,12 @@
+{
+  "_status": "PROPOSED, NOT APPLIED. Requires governance approval of the exact change.",
+  "repositoryName": "vitana/gateway-preview",
+  "imageTagMutability": "IMMUTABLE",
+  "imageScanningConfiguration": { "scanOnPush": true },
+  "encryptionConfiguration": { "encryptionType": "KMS" },
+  "_notes": [
+    "No imageTagMutabilityExclusionFilters: every tag in this repository is immutable.",
+    "encryptionType KMS without a keyId uses the AWS-managed aws/ecr key. No new KMS key is created. An approved customer key can replace it only if governance names one (the key was not verified here).",
+    "No repository policy: access is granted only through the publish role's identity policy."
+  ]
+}

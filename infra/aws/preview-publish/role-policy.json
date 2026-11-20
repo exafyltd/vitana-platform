@@ -1,0 +1,26 @@
+{
+  "_status": "PROPOSED, NOT APPLIED. Role name gl-platform-preview-publish (separate from gl-platform-staging and gl-v1-staging).",
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "EcrLoginToken",
+      "Effect": "Allow",
+      "Action": ["ecr:GetAuthorizationToken"],
+      "Resource": "*"
+    },
+    {
+      "Sid": "PreviewRepositoryPublishOnly",
+      "Effect": "Allow",
+      "Action": [
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:InitiateLayerUpload",
+        "ecr:UploadLayerPart",
+        "ecr:CompleteLayerUpload",
+        "ecr:PutImage",
+        "ecr:DescribeImages",
+        "ecr:BatchGetImage"
+      ],
+      "Resource": "arn:aws:ecr:eu-central-1:472838866351:repository/vitana/gateway-preview"
+    }
+  ]
+}

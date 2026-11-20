@@ -1,0 +1,20 @@
+{
+  "_status": "PROPOSED, NOT APPLIED. ci_config_ref_uri is a PLACEHOLDER until one real token confirms its exact value.",
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "GitLabPreviewBuildOnly",
+      "Effect": "Allow",
+      "Principal": { "Federated": "arn:aws:iam::472838866351:oidc-provider/gitlab.vitanaland.com" },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "gitlab.vitanaland.com:aud": "https://sts.amazonaws.com",
+          "gitlab.vitanaland.com:project_path": "vitana/vitana-platform",
+          "gitlab.vitanaland.com:ref_path": "refs/heads/claude/gateway-preview-safe-mode",
+          "gitlab.vitanaland.com:ci_config_ref_uri": "PENDING_VERIFIED_CLAIM"
+        }
+      }
+    }
+  ]
+}
