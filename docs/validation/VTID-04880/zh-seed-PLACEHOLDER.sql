@@ -1,0 +1,5 @@
+-- PLACEHOLDER, NOT A MIGRATION. Lives outside supabase/migrations, so no apply path picks it up.
+-- VTID-04880 locale-zh-gap: one missing zh row in journey_checklist_translations (zh 259 of 260).
+-- Blocked until the owner's read-only query names the topic_id and the empty field.
+-- When filled: a reviewed migration file in supabase/migrations with one INSERT, the German source row's structure.
+-- Do not apply. Do not merge this draft.
