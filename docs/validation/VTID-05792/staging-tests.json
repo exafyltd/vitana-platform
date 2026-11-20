@@ -1,0 +1,8 @@
+{
+  "vtid": "VTID-05792",
+  "service": "gateway",
+  "tests": [
+    { "kind": "existing", "ref": "npx jest test/vtid-04018-operator-bootstrap-pack.test.ts", "cwd": "services/gateway",
+      "reason": "pure extractor and pack wiring covered by Jest; run locally after npm ci, output in outputs/jest-vtid-04018.txt" }
+  ]
+}

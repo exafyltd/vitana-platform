@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-05792",
+  "kind": "fix",
+  "paths": [
+    "services/gateway/src/services/operator-bootstrap-pack.ts",
+    "services/gateway/test/vtid-04018-operator-bootstrap-pack.test.ts",
+    "docs/validation/VTID-05792/**"
+  ],
+  "sparring_record": null,
+  "weakens_tests": [],
+  "red_green_exempt": []
+}
