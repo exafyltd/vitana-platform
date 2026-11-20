@@ -33,7 +33,13 @@ case "$svc $op" in
   "sts get-caller-identity") echo "${FAKE_ACCOUNT:-472838866351}" ;;
   "rds describe-db-clusters")
     id=$(arg --db-cluster-identifier "$@")
-    if [ "$id" = vitana-aurora-prod ]; then
+    if [ -n "${FAKE_DESCRIBE_DENIED:-}" ]; then
+      echo "An error occurred (AccessDeniedException) when calling the DescribeDBClusters operation: not authorized to perform: rds:DescribeDBClusters" >&2; exit 254
+    elif [ -n "${FAKE_DESCRIBE_THROTTLED:-}" ]; then
+      echo "An error occurred (Throttling) when calling the DescribeDBClusters operation: Rate exceeded" >&2; exit 254
+    elif [ "$id" = vitana-aurora-prod ] && [ -n "${FAKE_SOURCE_ABSENT:-}" ]; then
+      echo "An error occurred (DBClusterNotFoundFault)" >&2; exit 254
+    elif [ "$id" = vitana-aurora-prod ]; then
       cat <<'J'
 {"DBClusters":[{"DBClusterIdentifier":"vitana-aurora-prod","Status":"available","Engine":"aurora-postgresql","EngineVersion":"17.4","Endpoint":"vitana-aurora-prod.cluster-x.eu-central-1.rds.amazonaws.com","DBClusterParameterGroup":"vitana-aurora-pg17-prod","DBSubnetGroup":"vitana-aurora-subnet-group","VpcSecurityGroups":[{"VpcSecurityGroupId":"sg-0838b2f2dabe87971"}],"KmsKeyId":"arn:aws:kms:eu-central-1:472838866351:key/1cd1f8d1","HttpEndpointEnabled":true,"MasterUserSecret":{"SecretArn":"arn:aws:secretsmanager:eu-central-1:472838866351:secret:rds!cluster-PROD"},"DBClusterMembers":[{"DBInstanceIdentifier":"vitana-aurora-prod-writer","IsClusterWriter":true}],"TagList":[]}]}
 J
@@ -75,7 +81,7 @@ export PATH="$WORK/bin:$PATH"
 PASS=0; FAIL=0
 ok() { PASS=$((PASS+1)); echo "  ok   $1"; }
 bad() { FAIL=$((FAIL+1)); echo "  FAIL $1"; }
-reset() { : > "$FAKE_LOG"; rm -f "$FAKE_STATE"/*; unset FAKE_ACCOUNT FAKE_UNTAGGED FAKE_CLONE_SECRET FAKE_EXTRA_MEMBER; }
+reset() { : > "$FAKE_LOG"; rm -f "$FAKE_STATE"/*; unset FAKE_ACCOUNT FAKE_UNTAGGED FAKE_CLONE_SECRET FAKE_EXTRA_MEMBER FAKE_DESCRIBE_DENIED FAKE_DESCRIBE_THROTTLED FAKE_SOURCE_ABSENT; }
 MUTATING='(restore-db-cluster|create-db-instance|enable-http-endpoint|modify-db-|copy-db-cluster|delete-db-|reboot-db|execute-statement|failover|stop-db|start-db|add-tags|remove-tags)'
 mutations() { grep -E "^(rds|rds-data) [a-z-]*$MUTATING" "$FAKE_LOG" || true; }
 run() { set +e; OUT=$(bash "$SCRIPT" "$@" 2>&1); RC=$?; set -e; }
@@ -131,6 +137,18 @@ for id in vitana-aurora-prod vitana-aurora-prod-writer vitana-aurora-rehearsal-2
 done
 reset; run create --identifier vitana-aurora-prod
 [ "$RC" = 3 ] && [ ! -s "$FAKE_LOG" ] && ok "create --identifier vitana-aurora-prod refused" || bad "create --identifier prod: rc=$RC"
+
+echo "== VTID-05734: the source pre-check says why it cannot read the cluster"
+reset; export FAKE_DESCRIBE_DENIED=1; run status
+if [ "$RC" = 2 ] && grep -q "access denied" <<<"$OUT" && ! grep -q "not found" <<<"$OUT"; then ok "describe AccessDenied -> 'access denied', exit 2"; else bad "describe AccessDenied: rc=$RC out=$OUT"; fi
+[ -z "$(mutations)" ] && ok "access denied: no mutating call" || bad "access denied: mutating call: $(mutations)"
+reset; export FAKE_DESCRIBE_THROTTLED=1; run status
+if [ "$RC" = 2 ] && grep -q "describe failed (Throttling)" <<<"$OUT"; then ok "describe Throttling -> 'describe failed (Throttling)', exit 2"; else bad "describe Throttling: rc=$RC out=$OUT"; fi
+reset; export FAKE_SOURCE_ABSENT=1; run status
+if [ "$RC" = 2 ] && grep -q "source cluster vitana-aurora-prod not found" <<<"$OUT"; then ok "absent source -> 'not found', exit 2"; else bad "absent source: rc=$RC out=$OUT"; fi
+reset; run status
+if [ "$RC" = 0 ] && grep -q "clone vitana-aurora-rehearsal: absent" <<<"$OUT"; then ok "readable source, no clone -> status says absent, exit 0"; else bad "status no clone: rc=$RC out=$OUT"; fi
+reset
 
 echo "== create --dry-run: no mutating call"
 reset; run create --dry-run --logical-replication

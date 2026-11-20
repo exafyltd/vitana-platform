@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-05734",
+  "kind": "infra",
+  "paths": [
+    "scripts/aws/rehearsal-clone.sh",
+    "scripts/aws/test/rehearsal-clone.sh",
+    "docs/validation/VTID-05734/**"
+  ],
+  "sparring_record": ".kiro/specs/agentic-delivery-scope/sparring/verdict.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}
