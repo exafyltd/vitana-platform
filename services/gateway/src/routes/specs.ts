@@ -742,7 +742,8 @@ router.post('/:vtid/generate', async (req: Request, res: Response) => {
 // PATCH /:vtid - Save (update) spec markdown content
 // ===========================================================================
 
-router.patch('/:vtid', async (req: Request, res: Response) => {
+// VTID-05697: gated like /:vtid/approve; an anonymous caller could rewrite a pending spec.
+router.patch('/:vtid', requireServiceOrAdmin, async (req: Request, res: Response) => {
   const { vtid } = req.params;
   const { spec_markdown } = req.body || {};
 
