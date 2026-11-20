@@ -14,8 +14,9 @@ paths:
   - .github/workflows/PLAN-SPAR.yml
   - scripts/ci/plan-spar-slot/**
   - services/gateway/test/vtid-04868-plan-sparring-*.test.ts
-updated: 2026-11-11T11:27Z
+updated: 2026-11-12T21:26Z
 vtid: VTID-05713
+seat: exafyltd
 ---
 
 # Lane: spar-responder (repo exafyltd/vitana-platform)
@@ -30,3 +31,5 @@ Lane created with the plan.
 
 ### 2026-11-11T11:27Z · ci-plan-spar · ready (VTID allocated)
 VTID-05713 allocated after policy approval (converged-auto-v1).
+### 2026-11-12T21:26Z · pm-agent · update
+reassign lane →exafyltd (stale_ready, Claude unavailable)

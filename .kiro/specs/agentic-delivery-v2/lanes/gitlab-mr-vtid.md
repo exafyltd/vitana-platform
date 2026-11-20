@@ -5,7 +5,7 @@ next_actor: kiro
 branch: kiro/agentic-delivery-v2/gitlab-mr-vtid
 depends_on: [change-classes, gitlab-accounts]
 executor: kiro
-seat: exafy
+seat: exafyltd
 area: platform
 repos: [exafyltd/vitana-platform]
 reviewer_seat: agent:vitana-lane-reviewer
@@ -14,7 +14,7 @@ paths:
   - services/gateway/src/services/delivery/mr-vtid/**
   - services/gateway/src/routes/internal-gitlab-webhook.ts
   - services/gateway/test/delivery/mr-vtid.test.ts
-updated: 2026-11-11T11:27Z
+updated: 2026-11-12T21:26Z
 vtid: VTID-05704
 ---
 
@@ -28,3 +28,5 @@ Lane created with the plan.
 
 ### 2026-11-11T11:27Z · ci-plan-spar · ready (VTID allocated)
 VTID-05704 allocated after policy approval (converged-auto-v1).
+### 2026-11-12T21:26Z · pm-agent · update
+reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
