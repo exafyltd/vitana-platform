@@ -1,0 +1,8 @@
+{
+  "vtid": "VTID-05559",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "gateway is alive", "path": "/alive", "expect_status": 200 },
+    { "kind": "http", "name": "co-host session PATCH is mounted and requires auth (read-only probe, nil room id)", "method": "PATCH", "path": "/api/v1/live/rooms/00000000-0000-0000-0000-000000000000/sessions/current", "rejected_probe": true, "expect_status": 401 }
+  ]
+}

@@ -19,6 +19,7 @@
 import { evaluateTransition } from './room-state-machine';
 import { DailyClient, computeDailyRoomExpiry } from './daily-client';
 import { emitOasisEvent } from './oasis-event-service';
+import { isRoomHostNow } from './live-cohosts';
 import type {
   RoomStatus,
   RoomMachineContext,
@@ -274,7 +275,7 @@ export class RoomSessionManager {
     // Host authorization check (Gateway-layer, NOT in XState machine)
     // TIMEOUT and RESET events don't have userId — they're system-initiated
     if ('userId' in event) {
-      if (event.userId !== room.host_user_id) {
+      if (!(await isRoomHostNow(roomId, event.userId, room.host_user_id))) {
         return { ok: false, error: 'NOT_HOST', message: 'Only the room owner can perform this action' };
       }
     }
