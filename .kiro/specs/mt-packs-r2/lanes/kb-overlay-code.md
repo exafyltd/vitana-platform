@@ -4,7 +4,7 @@ state: ready
 next_actor: kiro
 depends_on: [kb-overlay-db]
 executor: kiro
-seat: jtadic
+seat: exafyltd
 reviewer_seat: agent:vitana-lane-reviewer
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 paths:
@@ -13,7 +13,7 @@ paths:
   - services/gateway/src/services/guided-journey/checklist-regenerate.ts
   - services/gateway/src/orb/live/instruction/live-system-instruction.ts
   - services/gateway/test/mt-packs-kb-overlay-*.test.ts
-updated: 2026-11-02T16:24Z
+updated: 2026-11-12T20:17Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05497
 ---
@@ -46,3 +46,5 @@ Re-plan of `mt-packs/kb-overlay-code`. No scope change; lane follows today's §3
 
 ### 2026-11-02T16:24Z · ci-plan-spar · ready (VTID allocated)
 VTID-05497 allocated after policy approval (converged-auto-v1).
+### 2026-11-12T20:17Z · pm-agent · update
+reassign lane jtadic→exafyltd (stale_ready, Claude unavailable)
