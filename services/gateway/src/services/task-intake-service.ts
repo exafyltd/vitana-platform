@@ -15,6 +15,7 @@
  */
 
 import { randomUUID } from 'crypto';
+import { scheduleBackground } from '../runtime/runtime-profile';
 import { emitOasisEvent } from './oasis-event-service';
 import { allocateVtid } from './operator-service';
 import { validateTaskTitle, normalizeTaskTitle, SYSTEM_AREAS } from '../utils/task-title';
@@ -135,7 +136,7 @@ function cleanupExpiredIntakes(): void {
 }
 
 // Run cleanup every 5 minutes
-setInterval(cleanupExpiredIntakes, 5 * 60 * 1000);
+scheduleBackground(cleanupExpiredIntakes, 5 * 60 * 1000);
 
 // =============================================================================
 // VTID-01149: Task Creation Intent Detection

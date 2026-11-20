@@ -39,7 +39,7 @@ describe('VTID-05282 staging task definition carries CLAUDE_AVAILABLE', () => {
   });
 
   test('the strip list removes the old entry next to PM_MODE', () => {
-    expect(step).toContain('"PM_AGENT_ENABLED","PM_MODE","CLAUDE_AVAILABLE") | not) ]');
+    expect(step).toContain('"PM_AGENT_ENABLED","PM_MODE","CLAUDE_AVAILABLE","GATEWAY_RUNTIME_PROFILE") | not) ]');
   });
 
   test('the upsert appears exactly once, right after PM_MODE', () => {

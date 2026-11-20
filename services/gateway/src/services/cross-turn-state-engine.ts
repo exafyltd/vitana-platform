@@ -28,6 +28,7 @@
  */
 
 import { randomUUID } from 'crypto';
+import { scheduleBackground } from '../runtime/runtime-profile';
 import { emitOasisEvent } from './oasis-event-service';
 import { isTaskStateQuery } from './task-state-query-service';
 
@@ -1109,7 +1110,7 @@ export function cleanupExpiredStateEngines(maxAgeTurns: number = 50): void {
 }
 
 // Cleanup interval (every 10 minutes)
-setInterval(() => cleanupExpiredStateEngines(), 10 * 60 * 1000);
+scheduleBackground(() => cleanupExpiredStateEngines(), 10 * 60 * 1000);
 
 // =============================================================================
 // Intent Detection Helper
