@@ -12,6 +12,7 @@ specs:
   - vitana-platform:agentic-delivery-v2
   - vitana-platform:claude-migration-lanes
   - vitana-platform:agentic-delivery-scope
+  - vitana-platform:delivery-loop-engine
   - vitana-platform:sparring-eu-guard
 docs:
   - vitana-platform:docs/ENGINEERING-PLATFORM-PLAN.md
@@ -33,3 +34,4 @@ Programme registry entry. Links only; the plan is the source of truth.
 - Spec: `vitana-platform:.kiro/specs/gitlab-client-hardening/` (follow-up to eng-gitlab-m2 gitlab-client: refuse token-bearing paths in the GitLab API client)
 - Spec: `vitana-platform:.kiro/specs/agentic-delivery-v2/` (one delivery flow for 13 parallel executors on autopilot to STAGING-VERIFY: VTIDs from CI, Bedrock review and sparring responder, seats, Phase 0)
 - Spec: `vitana-platform:.kiro/specs/agentic-delivery-scope/` (owner spec v5: machine gates, traceability, retries, vision and staging checks, address cleanup; reuses the agentic-delivery-v2 lanes)
+- Spec: `vitana-platform:.kiro/specs/delivery-loop-engine/` (the GitLab delivery loop: intake, failure detection, repair, review, learning; and a GitLab-native self-healing executor with bridge guards)
