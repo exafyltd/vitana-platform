@@ -279,6 +279,12 @@ interface SpecLane {
 }
 
 export class GithubObserver implements PmObserver {
+  /**
+   * Bookkeeping PR reads that only change when the PR head moves, keyed by `repo#number`.
+   * In memory on the observer (one per process); entries for PRs no longer open are dropped each tick.
+   */
+  private readonly bookkeepingByHead = new Map<string, { head_sha: string; files: string[]; commits: GhCommit[] }>();
+
   constructor(private readonly deps: GithubObserverDeps) {}
 
   private log(msg: string): void {
@@ -470,6 +476,8 @@ export class GithubObserver implements PmObserver {
     // 7. plan( PRs and bookkeeping PRs.
     const plan_prs: ObservedPlanPr[] = [];
     const bookkeeping_prs: ObservedBookkeepingPr[] = [];
+    const openKeys = new Set([...pulls].flatMap(([repo, ps]) => ps.map((p) => `${repo}#${p.number}`)));
+    for (const k of [...this.bookkeepingByHead.keys()]) if (!openKeys.has(k)) this.bookkeepingByHead.delete(k);
     for (const [repo, ps] of pulls) {
       for (const p of ps) {
         const pm = /^plan\(([a-z0-9][a-z0-9-]*)\)/.exec(p.title);
@@ -544,13 +552,19 @@ export class GithubObserver implements PmObserver {
 
   private async observeBookkeeping(repo: string, p: GhPull): Promise<ObservedBookkeepingPr> {
     const r = this.deps.gh;
+    // The changed files and the commit list follow the head commit, so they are reused while head_sha is unchanged.
+    // Checks, mergeability and behind_by can change with the head fixed (CI, main moving): always read.
+    const key = `${repo}#${p.number}`;
+    const cached = this.bookkeepingByHead.get(key);
+    const hit = cached?.head_sha === p.head_sha ? cached : null;
     const [files, commits, checks, mergeable, behind] = await Promise.all([
-      r.pullFiles(repo, p.number),
-      r.pullCommits(repo, p.number),
+      hit ? hit.files : r.pullFiles(repo, p.number),
+      hit ? hit.commits : r.pullCommits(repo, p.number),
       r.checkRuns(repo, p.head_sha),
       r.pullMergeable(repo, p.number),
       r.behindBy(repo, 'main', p.head_sha),
     ]);
+    if (!hit) this.bookkeepingByHead.set(key, { head_sha: p.head_sha, files, commits });
     return {
       slug: p.head_ref.slice('pm-agent/'.length),
       url: p.html_url,
