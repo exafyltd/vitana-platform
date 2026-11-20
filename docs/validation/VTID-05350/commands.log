@@ -1,0 +1,12 @@
+# VTID-05350 (plan-spar-stuck-session/stuck-recovery), builder session kiro-exafyltd-202610280842-889c (exceptions seat exafyltd), base origin/main 3d3b4e6f17
+git apply .kiro/specs/plan-spar-stuck-session/proposed.patch                 -> applied (5 files)
+# red: tests applied, the three source files restored to base (git stash)
+node --test scripts/collab/plan-spar.test.mjs                                -> tests 31, pass 27, fail 4   (outputs/red-plan-spar.txt)
+npx jest test/plan-sparring-stuck-session.test.ts --testTimeout=15000        -> 4 failed; (1) and (1b) hang to the 15 s timeout (outputs/red-gateway.txt)
+# green
+node --test scripts/collab/plan-spar.test.mjs                                -> tests 31, pass 31, fail 0   (outputs/green-plan-spar.txt)
+node --test scripts/collab/*.test.mjs                                        -> tests 181, fail 0          (outputs/green-collab-all.txt)
+npx jest test/plan-sparring-stuck-session.test.ts test/plan-sparring-stale-session.test.ts -> 21 passed (outputs/green-gateway-stuck-stale.txt)
+npx jest test/vtid-04868 test/plan-sparring                                  -> 7 suites, 128 passed, 1 skipped (outputs/green-gateway-sparring-all.txt)
+npx tsc --noEmit (services/gateway, own node_modules)                        -> rc 0, 0 errors (outputs/tsc.txt)
+staging-tests.json validated (lib.validateManifest ok; run.mjs check-pr)

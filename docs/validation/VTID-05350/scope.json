@@ -1,0 +1,16 @@
+{
+  "vtid": "VTID-05350",
+  "kind": "infra",
+  "paths": [
+    "scripts/collab/plan-spar.mjs",
+    "scripts/collab/plan-spar.test.mjs",
+    "services/gateway/src/services/plan-sparring/partner.ts",
+    "services/gateway/src/services/plan-sparring/plan-sparring-service.ts",
+    "services/gateway/test/plan-sparring-stuck-session.test.ts",
+    ".kiro/specs/plan-spar-stuck-session/lanes/stuck-recovery.md",
+    "docs/validation/VTID-05350/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05350/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

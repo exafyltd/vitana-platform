@@ -43,7 +43,10 @@ export const PLAN_SPARRING_REPOS = ['exafyltd/vitana-platform', 'exafyltd/vitana
 const INFRA_REASONS = ['model_unavailable', 'code_access_unavailable', 'deadline_exceeded', 'partner_output_invalid'];
 const RETRYABLE_REASONS = ['model_unavailable', 'code_access_unavailable', 'deadline_exceeded'];
 const POLL_MS = 20_000;
-const WAIT_MS = 25 * 60_000;
+// plan-spar-stuck-session: must stay greater than STALE_AFTER_MS in
+// services/gateway/src/services/plan-sparring/plan-sparring-service.ts (20 min): the one re-post after a stuck wait only
+// gets a fresh session when the stuck row is already older than that window (test: plan-spar.test.mjs).
+export const WAIT_MS = 25 * 60_000;
 
 class Usage extends Error {}
 
@@ -162,13 +165,28 @@ export function gatewayClient({ baseUrl, token, fetchImpl = fetch, sleep = (ms) 
   };
   return {
     async create(body) {
+      const done = (s) => s.rounds.length >= 1 || s.verdict !== 'in_progress';
+      // plan-spar-stuck-session: a session with no round after WAIT_MS (25 min) is older than the gateway's
+      // STALE_AFTER_MS (20 min), so one re-post of the same plan makes the gateway escalate the dead row
+      // (deadline_exceeded) and open a fresh session. Once only; a session still stuck fails loudly.
+      const recover = async (id) => {
+        try { return await waitFor(id, 1); } catch (err) {
+          if (!/no round 1 after/.test(String(err?.message))) throw err;
+          const again = await call('POST', '/api/v1/plans/spar', body);
+          const s = again.json?.session;
+          if (!s) throw new Error(`create re-post after a stuck session ${id}: HTTP ${again.status}`);
+          if (done(s)) return s;
+          if (s.id === id) throw new Error(`session ${id}: stuck (no round 1 after ${WAIT_MS / 60000} min, and the re-post returned the same session)`);
+          return waitFor(s.id, 1);
+        }
+      };
       const r = await call('POST', '/api/v1/plans/spar', body);
-      if (r.json?.session) return r.json.session.rounds.length >= 1 || r.json.session.verdict !== 'in_progress' ? r.json.session : waitFor(r.json.session.id, 1);
+      if (r.json?.session) return done(r.json.session) ? r.json.session : recover(r.json.session.id);
       if (!lost(r)) throw new Error(`create: HTTP ${r.status} ${JSON.stringify(r.json)}`);
       // The pass is still running server-side; re-posting the same plan returns that session (dedup by plan hash).
       const again = await call('POST', '/api/v1/plans/spar', body);
       if (!again.json?.session) throw new Error(`create retry: HTTP ${again.status}`);
-      return waitFor(again.json.session.id, 1);
+      return done(again.json.session) ? again.json.session : recover(again.json.session.id);
     },
     async round(id, n, body) {
       const r = await call('POST', `/api/v1/plans/spar/${id}/rounds`, body);

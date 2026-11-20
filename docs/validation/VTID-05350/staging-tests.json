@@ -1,0 +1,31 @@
+{
+  "vtid": "VTID-05350",
+  "service": "gateway",
+  "note": "Read-only. The change bounds every partner model/tool call of a sparring pass by its deadline and shortens STALE_AFTER_MS to 20 min (services/gateway/src/services/plan-sparring/). Inducing a hung model call or creating a sparring session on staging would be a write (rule 48), so the behaviour proof is the gateway jest suites below; the HTTP probes prove the deployed build boots with the changed plan-sparring module mounted and its auth gate unchanged. Nothing targets production.",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "gateway alive after deploy",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/alive",
+      "expect_status": 200,
+      "reason": "read-only GET: the build carrying the plan-sparring change boots and serves"
+    },
+    {
+      "kind": "http",
+      "name": "plans-spar session read is mounted behind its auth gate",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/api/v1/plans/spar/00000000-0000-4000-8000-000000000000",
+      "expect_status": 401,
+      "reason": "read-only GET without a bearer: proves the plans-spar router (which imports plan-sparring-service.ts and partner.ts) is mounted on the deployed commit and requireServiceOrAdmin still rejects before any handler runs"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/plan-sparring-stuck-session.test.ts test/plan-sparring-stale-session.test.ts",
+      "cwd": "services/gateway",
+      "reason": "The behaviour proof that cannot run read-only on staging: a model call and a tool call that never resolve end the pass deadline_exceeded at the deadline; STALE_AFTER_MS is between the 15-min pass deadline and the 25-min CI wait; dead/alive boundaries of the 0-round session."
+    }
+  ]
+}

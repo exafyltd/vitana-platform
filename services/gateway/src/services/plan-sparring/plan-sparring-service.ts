@@ -46,9 +46,13 @@ const PASS_DEADLINE_MS: Record<ChangeClass, number> = { light: 10 * 60_000, stan
 const RETRYABLE_REASONS: string[] = ['model_unavailable', 'code_access_unavailable', 'deadline_exceeded'];
 /**
  * VTID-05254: age after which an in_progress session with no round is treated as dead. A dead pass and a
- * slow live one look the same on the row, so this is flat and well past the longest pass deadline (15 min).
+ * slow live one look the same on the row, so this is flat and past the longest pass deadline (15 min).
+ * plan-spar-stuck-session: 20 min (was 60). Every partner model call is now bounded by the pass deadline
+ * (partner.ts), so a live pass ends by 15 min; 20 min stays below the CI client's 25-min wait, so the client's
+ * one re-post gets a fresh session instead of the stuck one. A late write to the escalated row is refused
+ * (appendRound, round_conflict).
  */
-export const STALE_AFTER_MS = 60 * 60_000;
+export const STALE_AFTER_MS = 20 * 60_000;
 
 /**
  * VTID-05254: true when the session's round-1 partner pass died before writing anything — in_progress,
