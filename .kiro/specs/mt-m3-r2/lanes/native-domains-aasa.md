@@ -4,7 +4,7 @@ state: ready
 next_actor: kiro
 depends_on: []
 executor: kiro
-seat: exafy
+seat: exafyltd
 reviewer_seat: agent:vitana-lane-reviewer
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 paths:
@@ -14,7 +14,7 @@ paths:
   - scripts/native/**
   - src/lib/universal-links/**
   - docs/validation/VTID-*/**
-updated: 2026-11-02T16:28Z
+updated: 2026-11-12T20:16Z
 repos: [exafyltd/vitana-v1]
 vtid: VTID-05505
 ---
@@ -39,3 +39,5 @@ Re-plan of `mt-m3/native-domains-aasa`. Versions day-shifted to `20261102140*`. 
 
 ### 2026-11-02T16:28Z · ci-plan-spar · ready (VTID allocated)
 VTID-05505 allocated after policy approval (converged-auto-v1).
+### 2026-11-12T20:16Z · pm-agent · update
+reassign lane exafy→exafyltd (stale_ready, Claude unavailable)

@@ -4,14 +4,14 @@ state: ready
 next_actor: kiro
 depends_on: [tenant-domains-db]
 executor: kiro
-seat: jtadic
+seat: exafyltd
 reviewer_seat: agent:vitana-lane-reviewer
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 paths:
   - services/gateway/src/services/tenancy/tenant-context.ts
   - services/gateway/src/middleware/auth-supabase-jwt.ts
   - services/gateway/test/mt-m3-host-resolution*.test.ts
-updated: 2026-11-02T16:28Z
+updated: 2026-11-12T20:16Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05502
 ---
@@ -39,3 +39,5 @@ Re-plan of `mt-m3/host-resolution-gw`. Answers R3-F1: on the host arm, `not_memb
 
 ### 2026-11-02T16:28Z · ci-plan-spar · ready (VTID allocated)
 VTID-05502 allocated after policy approval (converged-auto-v1).
+### 2026-11-12T20:16Z · pm-agent · update
+reassign lane jtadic→exafyltd (stale_ready, Claude unavailable)
