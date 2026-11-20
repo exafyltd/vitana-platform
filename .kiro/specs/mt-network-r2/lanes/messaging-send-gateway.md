@@ -4,7 +4,7 @@ state: ready
 next_actor: kiro
 depends_on: [messaging-send-db, network-visibility-db]
 executor: kiro
-seat: jtadic
+seat: exafyltd
 reviewer_seat: agent:vitana-lane-reviewer
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 paths:
@@ -20,7 +20,7 @@ paths:
   - services/gateway/src/services/chat-writer-inventory.ts
   - services/gateway/test/mt-network-messaging-send-gateway.test.ts
   - services/gateway/test/mt-network-chat-writer-lint.test.ts
-updated: 2026-11-06T10:10Z
+updated: 2026-11-12T20:16Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05577
 ---
@@ -39,3 +39,5 @@ Re-plan of `mt-network/messaging-send-gateway`. Paths corrected to the real file
 
 ### 2026-11-06T10:10Z · ci-plan-spar · ready (VTID allocated)
 VTID-05577 allocated after policy approval (converged-auto-v1).
+### 2026-11-12T20:16Z · pm-agent · update
+reassign lane jtadic→exafyltd (stale_ready, Claude unavailable)

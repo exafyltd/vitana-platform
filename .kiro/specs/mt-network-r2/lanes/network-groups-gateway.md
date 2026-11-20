@@ -4,14 +4,14 @@ state: ready
 next_actor: kiro
 depends_on: [network-groups-db, messaging-send-gateway]
 executor: kiro
-seat: jtadic
+seat: exafyltd
 reviewer_seat: agent:vitana-lane-reviewer
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 paths:
   - services/gateway/src/routes/chat-groups-repository.ts
   - services/gateway/src/routes/chat-groups.ts
   - services/gateway/test/mt-network-groups-gateway.test.ts
-updated: 2026-11-06T10:10Z
+updated: 2026-11-12T20:16Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05580
 ---
@@ -30,3 +30,5 @@ Re-plan of `mt-network/network-groups-gateway`. Paths corrected to the real file
 
 ### 2026-11-06T10:10Z · ci-plan-spar · ready (VTID allocated)
 VTID-05580 allocated after policy approval (converged-auto-v1).
+### 2026-11-12T20:16Z · pm-agent · update
+reassign lane jtadic→exafyltd (stale_ready, Claude unavailable)
