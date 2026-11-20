@@ -256,6 +256,37 @@ it. Cross-spec O3: mt-packs P4 depends on `maxina-golden-suite`'s `v1-golden-edg
 None new. D11 (local stack), D13 (no synthetic/production tenant — WS0 runs on the local stack only),
 rule 41 (golden never compares spoken output), rules 31/31b/48 (no production write/probe) all stand as
 decided. pgTAP is not a new owner decision — it is the parent plan's existing §4.2/§4.9 mandate.
+## Amendment 4 (2026-11-10, owner directive decision 1): three M0 lanes move to seat `hotmail`
+**Owner instruction, quoted.** Branch `claude/youthful-cannon-vzsnio`, file `docs/multitenancy/KIRO-HOTMAIL-DIRECTIVE-M0.md`,
+decision 1: "Lanes `maxina-golden-suite` (VTID-05448), `gateway-scope-lint-contract` (VTID-05444) and
+`tenant-db-and-slug-cleanup` (VTID-05468) move from seat jtadic to seat hotmail through a plan amendment. Each keeps its own
+VTID and `paths:`. The amendment is a plan change: Kiro writes it as a `plan(` PR, sparred by PLAN-SPAR, and it merges under
+§7b. Parallel build agents start only after that plan is approved."
+
+**Why a lane.** The lane files are `ready` and belong to seat `jtadic`. A `_plan` commit may create a lane file, never edit one
+(`scripts/collab/queue.mjs` validateRange, "The coordinator declares the lanes"), and a lane's `seat` is a permission field read
+from the base revision (scopeCheck). The one reviewed route is `collaboration.md` §7a lane administration: an `executor: kiro`
+lane with `lane_admin: true` and `reviewer_seat: agent:vitana-lane-reviewer`, whose `paths` cover the target lane files
+(`laneAdminCovers`). `laneAdminCovers` matches the target file against the admin lane's `paths` globs only, so one lane covers
+targets of two plans; precedent: `claude-migration-lanes/reassign-migration` administers `agentic-delivery` lanes.
+
+**Decision.** Add one late lane, `seat-move` (`lane_admin: true`, `executor: kiro`, seat `hotmail`, reviewer agent). Its `paths`
+are exactly:
+- `.kiro/specs/mt-guardrails-r2/lanes/maxina-golden-suite.md` (VTID-05448)
+- `.kiro/specs/mt-guardrails-r2/lanes/gateway-scope-lint-contract.md` (VTID-05444)
+- `.kiro/specs/mt-identity-r2/lanes/tenant-db-and-slug-cleanup.md` (VTID-05468)
+
+It changes only `seat: jtadic` to `seat: hotmail` in each target and appends one log entry to each target. `vtid`, `paths`,
+`state`, `depends_on`, `executor`, `reviewer_seat` and every earlier log line stay byte-identical. Its own file is not in its
+`paths`, so it can never change its own permissions. The three build lanes are then built by separate hotmail builder sessions
+(not the driver), one lane, one VTID, one branch each, inside their existing `paths`.
+
+**Architecture.** No code, no migration, no new product surface. Each moved lane stays within its existing module: the Maxina
+golden suite and the gateway scope lint test the multi-tenant resolution and the Vitana assistant contract at the gateway; the
+tenant-db lane keeps `tenantDb` the single place that scopes a query by tenant. Nothing here widens a lane's `paths`.
+
+**Out of scope.** `approvals-auth` (VTID-05452) and `work-surface-permission` (VTID-05453) (directive decision 2) are not in
+this amendment. `ci-wiring` (VTID-05443) is unchanged and still starts after the golden suite and the lint contract are merged.
 <!-- plan:end -->
 ## Open questions for sparring
 - Confirm `v1-golden-edge` fixture ownership stays with `maxina-golden-suite` in platform (same repo as

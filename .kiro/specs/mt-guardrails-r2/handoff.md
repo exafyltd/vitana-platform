@@ -5,9 +5,9 @@ author_seat: hotmail
 executor: kiro
 next_actor: kiro
 state: approved
-updated: 2026-11-06T09:42Z
+updated: 2026-11-10T10:36Z
 sparring_record: .kiro/specs/mt-guardrails-r2/sparring/verdict.md
-vtids: [VTID-05443, VTID-05444, VTID-05445, VTID-05446, VTID-05447, VTID-05448, VTID-05469, VTID-05520]
+vtids: [VTID-05443, VTID-05444, VTID-05445, VTID-05446, VTID-05447, VTID-05448, VTID-05469, VTID-05520, VTID-05678]
 ---
 # Handoff — mt-guardrails-r2
 Re-plan of `mt-guardrails` (PR #4162, closed 2026-10-28; session `496d49e4` escalated at the round cap). WS0 guard
@@ -61,3 +61,18 @@ Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are ha
 Amendment 3 replaces amendment 2, decision 3: a required table that is listed in `not-replayable.txt` with its reason is a SKIP,
 not a stop. It answers decision D1 of lane `local-test-stack-pglite` (VTID-05520, `docs/validation/VTID-05520/acceptance.md`).
 Sparred through this `plan(` PR (CI PLAN-SPAR). No lane file changes in this amendment.
+
+### 2026-11-10T12:00Z · kiro-hotmail-202611061752-cc1f · amendment 4 proposed (late lane `seat-move`)
+Owner directive decision 1 (`docs/multitenancy/KIRO-HOTMAIL-DIRECTIVE-M0.md`, branch `claude/youthful-cannon-vzsnio`) moves
+`maxina-golden-suite` (VTID-05448), `gateway-scope-lint-contract` (VTID-05444) and `mt-identity-r2/tenant-db-and-slug-cleanup`
+(VTID-05468) from seat jtadic to seat hotmail. A `_plan` commit cannot edit a lane file, so late lane `seat-move`
+(`lane_admin: true`) does it through the reviewed route. Sparred through this `plan(` PR; PLAN-SPAR allocates its VTID.
+
+### 2026-11-10T10:36Z · ci-plan-spar · approved (late lane VTID)
+Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.
+
+### 2026-11-10T10:40Z · kiro-hotmail-202611061752-cc1f · approved (driver: late lane seat-move, ready to merge)
+PLAN-SPAR converged Amendment 4 with no findings and allocated VTID-05678 to lane `seat-move` (policy `converged-auto-v1`). This
+entry starts the PR checks that PLAN-SPAR's own push does not start. The PR waits for GitHub merges to work again (every
+PR on main has been unmergeable since #4714); then a hotmail builder that is not the driver builds `seat-move`, and the
+driver requests its review. The three build lanes start only after `seat-move` is merged.

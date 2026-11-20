@@ -231,3 +231,29 @@ Each finding is answered in `plan.md` "Re-plan answers"; the tasks carry the acc
         `vulnerable_postgres_version` (`docs/SUPABASE-SECURITY-ADVISOR-AUDIT-2026-08-28.md:58`), pinned only for
         parity of a throwaway local stack with no real data; the digest does not cover upstream vulnerabilities;
         the upgrade path is a change to the pin table. Acceptance: the note is present.
+
+<!-- lane: seat-move -->
+## Lane `seat-move` (vitana-platform; late lane, `lane_admin`)
+- [ ] M1 Claim `mt-guardrails-r2/seat-move` with a seat `hotmail` session that is not the plan driver; branch
+      `kiro/mt-guardrails-r2/seat-move` from `origin/main`. List the open PRs that touch the three target lane files
+      (REST `gh api`) and record them.
+- [ ] M2 In `.kiro/specs/mt-guardrails-r2/lanes/maxina-golden-suite.md` (VTID-05448),
+      `.kiro/specs/mt-guardrails-r2/lanes/gateway-scope-lint-contract.md` (VTID-05444) and
+      `.kiro/specs/mt-identity-r2/lanes/tenant-db-and-slug-cleanup.md` (VTID-05468) change only `seat: jtadic` to
+      `seat: hotmail`, and append one log entry to each. `state`, `next_actor`, `depends_on`, `executor`, `reviewer_seat`,
+      `paths`, `vtid`, `updated` and every earlier log line stay byte-identical.
+- [ ] M3 Evidence `docs/validation/<VTID>/`: `scope.json`, `plan-sparring.md`, `acceptance.md` (AC- entries each followed by a
+      TEST: line within 12 lines), `commands.log`, `outputs/`: `queue.mjs validate` and `scope-check` for this lane against
+      `origin/main`; `node --test scripts/collab/queue.test.mjs`; a byte check of the three diffs; preflight.
+
+**Acceptance**
+- Change types: Tooling/docs.
+- Outcome: the three lanes belong to seat `hotmail`, each with its own VTID and `paths`, so hotmail builders can start them
+  (owner directive decision 1).
+- States: each target `ready` and unclaimed (only the seat line and one log entry change).
+- Surfaces: PR-GATE Collab handoff and Lane scope (`queue.mjs validate`, `scope-check`) for this PR, for a cross-plan target
+  (`mt-identity-r2`), and for the later build PRs of the three lanes.
+- Locales: n/a. Accessibility: n/a.
+- Contract: the diff of each target is exactly one `seat:` line plus the appended log entry; no governance path, protected gate
+  file, code or migration in the PR; `lane_admin` is not edited and this lane's own file is not in its `paths`.
+- Staging proof: not verified on staging: deploys nothing. Proven by `queue.mjs validate`/`scope-check` on the PR.
