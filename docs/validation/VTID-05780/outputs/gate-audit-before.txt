@@ -1,0 +1,12 @@
+  gate-audit: 0 authorised, 0 bootstrap, 11 violation(s)
+    VIOLATION a206af8ab9 PR #4495 (reviewer-session-id-permission/reviewer-perm): 1 valid accept model(s) on the merged head (1 review entry); needs 2 from different chain models and sessions, no builder [.kiro/agents/vitana-lane-reviewer.md]
+    VIOLATION f9e38effff PR #4416 (pipeline-lane-state-efficiency/chain-transitions): 0 valid accept model(s) on the merged head (4 review entries); needs 2 from different chain models and sessions, no builder [scripts/collab/queue.mjs]
+    VIOLATION e4bdc45f26 PR #4369: title names no <slug>/<lane> [CLAUDE.md]
+    VIOLATION ba709c6248 PR #4530: the merge commit's tree differs from the PR's final head 40709dec (not the reviewed content) [scripts/collab/queue.mjs]
+    VIOLATION abe2d7a59f PR #4377: the merge commit's tree differs from the PR's final head e9e7f67b (not the reviewed content) [scripts/collab/queue.mjs]
+    VIOLATION 9e6fed60a4 PR #4866: title names no <slug>/<lane> [CLAUDE.md]
+    VIOLATION d7c1d9668a PR #4867: the merge commit's tree differs from the PR's final head 6c3c5d4e (not the reviewed content) [.github/workflows/VTID-ALLOCATE.yml]
+    VIOLATION e7077f27c3 PR #5002 (autonomous-to-staging/machine-gate-protected): 1 valid accept model(s) on the merged head (2 review entries); needs 2 from different chain models and sessions, no builder [scripts/collab/gate-invariants.test.mjs, scripts/collab/protected-gate-files.json, scripts/collab/queue.mjs, services/gateway/src/services/project-manager/governance.ts]
+    VIOLATION e4b4b48511 PR #5003 (autonomous-to-staging/gate-invariants-ci): 0 valid accept model(s) on the merged head (1 review entry); needs 2 from different chain models and sessions, no builder [.github/workflows/GATE-INVARIANTS.yml, scripts/ci/workflow-trigger-check.test.mjs]
+    VIOLATION 53c087911b PR #5013: title names no <slug>/<lane> [scripts/collab/queue.mjs]
+    VIOLATION a199f9ac9a PR #5021: title names no <slug>/<lane> [CLAUDE.md]

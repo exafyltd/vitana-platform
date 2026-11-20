@@ -1,9 +1,16 @@
 name: GATE-INVARIANTS
-# VTID-05763 (plan autonomous-to-staging, lane gate-invariants-ci).
+# VTID-05763 (plan autonomous-to-staging, lane gate-invariants-ci); VTID-05780 (plan autonomous-to-staging-r2, lane
+# protect-gate-workflow). PROTECTED GATE FILE.
 #
 # Runs the mechanical gate invariants (scripts/collab/gate-invariants.test.mjs, VTID-05765) against `main` itself on
 # every push to `main` and once a day, so a weakened gate on `main` fails loudly even when no PR touched it. The suite
-# loads its baseline copy from origin/main, so origin/main is fetched first. Read-only: no secrets, no writes.
+# loads its baseline copy from origin/main, so origin/main is fetched first.
+# VTID-05780: it also audits every merge on `main` in the last 14 days that touched a protected gate file
+# (scripts/collab/gate-audit.mjs): each needs two reviewer-agent accepts from two chain models and two sessions on the
+# merged head, or a bootstrap entry. The audit needs the full history (fetch-depth: 0) and reads the merged PRs
+# (pull-requests: read).
+# Job `invariants` is read-only and uses no secret. Job `report` runs only when `invariants` failed and is the only
+# place a secret is used: it emits OASIS `collab.gate.bypass_detected` through the gateway's /api/v1/events/ingest.
 # Pull requests: its static test (scripts/ci/workflow-trigger-check.test.mjs) runs in the unit job of TEST-SUITE.
 on:
   push:
@@ -20,15 +27,65 @@ jobs:
   invariants:
     name: Gate invariants
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '20.x'
       - name: Fetch main (baseline copy of the invariants)
-        run: git fetch --no-tags --depth=1 origin main:refs/remotes/origin/main
+        run: git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
       - name: Gate invariants
         run: node --test scripts/collab/gate-invariants.test.mjs
       - name: Workflow trigger check
         run: node --test scripts/ci/workflow-trigger-check.test.mjs
+      - name: Post-merge audit of protected gate merges (last 14 days)
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/collab/gate-audit.mjs --since '14 days ago' --repo . --gh "${{ github.repository }}" --summary "$GITHUB_STEP_SUMMARY"
+  report:
+    name: Report a gate bypass to OASIS
+    needs: [invariants]
+    if: failure()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Emit OASIS collab.gate.bypass_detected
+        env:
+          GATEWAY_URL: ${{ vars.GATE_AUDIT_GATEWAY_URL || vars.PLAN_SPAR_GATEWAY_URL }}
+          GATEWAY_SERVICE_TOKEN: ${{ secrets.GATEWAY_SERVICE_TOKEN }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SHA: ${{ github.sha }}
+          TRIGGER: ${{ github.event_name }}
+        run: |
+          if [ -z "$GATEWAY_URL" ]; then
+            echo "::error::neither GATE_AUDIT_GATEWAY_URL nor PLAN_SPAR_GATEWAY_URL is set: the bypass is reported only by this failed run ($RUN_URL)"
+            exit 1
+          fi
+          if [ -z "$GATEWAY_SERVICE_TOKEN" ]; then
+            echo "::error::GATEWAY_SERVICE_TOKEN is not set: the bypass is reported only by this failed run ($RUN_URL)"
+            exit 1
+          fi
+          body=$(jq -n --arg run "$RUN_URL" --arg sha "$SHA" --arg trigger "$TRIGGER" '{
+            vtid: "VTID-05780",
+            type: "collab.gate.bypass_detected",
+            source: "gate-invariants",
+            status: "error",
+            message: "GATE-INVARIANTS failed on main: a protected gate merge without two valid accepts on its merged head, or a weakened gate invariant",
+            actor_role: "system",
+            surface: "cicd",
+            payload: { run_url: $run, sha: $sha, trigger: $trigger }
+          }')
+          curl -fsS --max-time 30 -X POST "$GATEWAY_URL/api/v1/events/ingest" \
+            -H "Authorization: Bearer $GATEWAY_SERVICE_TOKEN" \
+            -H 'Content-Type: application/json' \
+            -d "$body" > /dev/null
+          echo "emitted collab.gate.bypass_detected for $SHA ($RUN_URL)"

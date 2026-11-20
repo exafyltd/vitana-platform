@@ -14,7 +14,8 @@
  *     head; a governance lane additionally needs `reviewer_seat: claude`);
  *   - a PR that changes a protected gate file merges only with TWO agent
  *     accepts from two different chain models on the current head (VTID-05765,
- *     plan autonomous-to-staging); otherwise it is refused (`protected_gate_file`).
+ *     plan autonomous-to-staging); VTID-05780: on the EXACT head, from two distinct
+ *     reviewer sessions, neither a builder session; otherwise it is refused (`protected_gate_file`).
  *     Defense-in-depth with queue.mjs scope-check and land-guard.mjs
  *     mergeDecision, which apply the same rule independently.
  *
@@ -60,19 +61,38 @@ export const PROTECTED_GATE_GLOBS: readonly string[] = Object.freeze([
   'supabase/migrations/*plan_sparring*.sql',
   '.github/workflows/VTID-ALLOCATE.yml',
   'scripts/collab/gate-invariants.test.mjs',
+  // VTID-05780 (plan autonomous-to-staging-r2): the post-merge workflow, its static test and the post-merge audit.
+  '.github/workflows/GATE-INVARIANTS.yml',
+  'scripts/ci/workflow-trigger-check.test.mjs',
+  'scripts/collab/gate-audit.mjs',
 ]);
 
-/** VTID-05765: distinct chain models whose agent accept is on the PR's current head. */
+/**
+ * VTID-05765, VTID-05780: distinct chain models whose agent accept counts for a protected-file merge.
+ * An accept counts only on the EXACT head (`r.head_sha === pr.head_sha`; `review_only_since` is not used for protected
+ * files, so a review-entry commit after the accepts leaves the merge to the land step, which applies land-guard.mjs
+ * protectedReviewCurrent), only with a session id that is not one of `builders` (the lane's executing-log sessions).
+ * Two or more models are returned only when two counted accepts have different models AND different sessions
+ * (= scripts/collab/land-guard.mjs protectedAcceptModels; shared fixtures scripts/collab/fixtures/protected-review-cases.json).
+ */
 export const PROTECTED_ACCEPTS_REQUIRED = 2;
-export function protectedAcceptModels(reviews: readonly ReviewEntry[], pr: ObservedPr | null): string[] {
+export function protectedAcceptModels(
+  reviews: readonly ReviewEntry[],
+  pr: ObservedPr | null,
+  builders: readonly string[] = [],
+): string[] {
   if (!pr) return [];
-  const models = new Set<string>();
+  const counted: { model: string; session: string }[] = [];
   for (const r of reviews) {
-    if (!isAgentReview(r) || !reviewOnCurrentHead(r, pr)) continue;
+    if (!isAgentReview(r) || r.head_sha !== pr.head_sha) continue;
+    const session = String(r.session_id ?? '').trim();
+    if (!session || builders.includes(session)) continue;
     const m = /\(([^)]+)\)\s*$/.exec(String(r.reviewer ?? '').trim());
-    if (m && REVIEWER_AGENT_MODELS.includes(m[1])) models.add(m[1]);
+    if (m && REVIEWER_AGENT_MODELS.includes(m[1])) counted.push({ model: m[1], session });
   }
-  return [...models];
+  const pair = counted.some((a, i) => counted.some((b, j) => j > i && a.model !== b.model && a.session !== b.session));
+  if (!pair) return counted.length ? [counted[0].model] : [];
+  return [...new Set(counted.map((c) => c.model))];
 }
 
 /**
@@ -211,8 +231,10 @@ export function governanceMergeAllowed(
   // AND this guard) keep refusing protected gate files, so a `--admin` override of Lane scope is still caught here —
   // defense-in-depth preserved, nothing less protected than before (R1-F3).
   // VTID-05765: a protected gate file merges only on two agent accepts from different chain models on the current head.
+  // VTID-05780: exact head, two distinct models and two distinct sessions, no builder session (lane.executing_log).
   if (touchesProtectedGate(files)) {
-    if (protectedAcceptModels(reviews, pr).length < PROTECTED_ACCEPTS_REQUIRED) return { ok: false, reason: 'protected_gate_file' };
+    const builders = (lane.executing_log ?? []).map((e) => e.session_id).filter(Boolean);
+    if (protectedAcceptModels(reviews, pr, builders).length < PROTECTED_ACCEPTS_REQUIRED) return { ok: false, reason: 'protected_gate_file' };
     return { ok: true };
   }
   if (!laneTouchesGovernance(lane)) return { ok: true };

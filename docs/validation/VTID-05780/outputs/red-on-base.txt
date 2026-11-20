@@ -1,0 +1,33 @@
+== scripts/collab/land-guard.test.mjs
+not ok 23 - merge: a protected gate file needs two accepts from different chain models on the current head
+not ok 25 - VTID-05780 shared fixtures: each protected-review case gives its expected verdict in land-guard
+not ok 26 - VTID-05780 protectedReviewCurrent: only lane-file-only commits may follow; merges, other files, pm handoff and changed protected bytes void
+not ok 27 - VTID-05780 protectedAcceptModels: two models need two sessions; a builder session or a missing session never counts
+not ok 28 - VTID-05780 builderSessions: lane-log build entries and Collab-Lane commits that are not review entries
+not ok 29 - VTID-05780 local walk (k): a clean merge of main after two accepts voids them for a protected file
+not ok 30 - VTID-05780 CLI: merge refuses a protected-file PR without --repo (local walk required)
+# tests 30
+# pass 23
+# fail 7
+== scripts/collab/gate-invariants.test.mjs
+not ok 2 - working-tree invariants hold on this checkout
+not ok 7 - mutation: dropping GATE-INVARIANTS.yml from any of the four protected lists fails
+not ok 8 - mutation: the exact-head rule weakened (merge of main, one session, builder) fails
+# tests 8
+# pass 5
+# fail 3
+== scripts/collab/queue.test.mjs
+not ok 53 - VTID-05276 T16: protected-gate-files.json parses, equals plan §4.3 and the loaded list; every entry is governance or gate code
+# tests 90
+# pass 89
+# fail 1
+== scripts/collab/gate-audit.test.mjs
+not ok 1 - scripts/collab/gate-audit.test.mjs
+# tests 1
+# pass 0
+# fail 1
+== scripts/ci/workflow-trigger-check.test.mjs
+not ok 2 - GATE-INVARIANTS.yml runs the invariants and the audit on every push to main and daily, with exact permissions
+# tests 3
+# pass 2
+# fail 1

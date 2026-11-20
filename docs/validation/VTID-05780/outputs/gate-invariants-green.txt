@@ -1,0 +1,59 @@
+TAP version 13
+# Subtest: merge-base copy of gate-invariants.mjs holds on this checkout (bootstrap when absent)
+ok 1 - merge-base copy of gate-invariants.mjs holds on this checkout (bootstrap when absent)
+  ---
+  duration_ms: 20.072147
+  type: 'test'
+  ...
+# staging-prod-ref-guard: not yet present, invariant deferred
+# Subtest: working-tree invariants hold on this checkout
+ok 2 - working-tree invariants hold on this checkout
+  ---
+  duration_ms: 1.375524
+  type: 'test'
+  ...
+# Subtest: mutation: dropping a glob from the protected list fails
+ok 3 - mutation: dropping a glob from the protected list fails
+  ---
+  duration_ms: 8.904337
+  type: 'test'
+  ...
+# Subtest: mutation: one accept unlocking a protected gate file fails
+ok 4 - mutation: one accept unlocking a protected gate file fails
+  ---
+  duration_ms: 9.566006
+  type: 'test'
+  ...
+# Subtest: mutation: governance.ts losing a protected glob fails
+ok 5 - mutation: governance.ts losing a protected glob fails
+  ---
+  duration_ms: 8.230852
+  type: 'test'
+  ...
+# Subtest: prod-reference guard and GATE-INVARIANTS.yml are deferred until present, then enforced
+ok 6 - prod-reference guard and GATE-INVARIANTS.yml are deferred until present, then enforced
+  ---
+  duration_ms: 8.687222
+  type: 'test'
+  ...
+# Subtest: mutation: dropping GATE-INVARIANTS.yml from any of the four protected lists fails
+ok 7 - mutation: dropping GATE-INVARIANTS.yml from any of the four protected lists fails
+  ---
+  duration_ms: 34.376522
+  type: 'test'
+  ...
+# Subtest: mutation: the exact-head rule weakened (merge of main, one session, builder) fails
+ok 8 - mutation: the exact-head rule weakened (merge of main, one session, builder) fails
+  ---
+  duration_ms: 25.523622
+  type: 'test'
+  ...
+1..8
+# tests 8
+# suites 0
+# pass 8
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 182.703638

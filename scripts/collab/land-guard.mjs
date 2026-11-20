@@ -21,12 +21,18 @@
  * local clone of <owner/repo> (its `origin` must name it), first-parent, so a clean merge of `main` keeps the review
  * when Git's automatic merge equals the merge commit, no governance or protected gate file comes in, and the PR's own
  * diff is byte-identical. Without `--repo` the GitHub-API walk is unchanged (a merge commit needs a new review).
+ *
+ * VTID-05780 (plan autonomous-to-staging-r2, lane protect-gate-workflow): a PR that changes a protected gate file merges
+ * only with `--repo` (local walk), and each of its accepts counts only under protectedReviewCurrent (every commit after
+ * the reviewed head changes only the lane's own file; no merge commit, not even a clean merge of main; the protected
+ * paths' bytes at the reviewed head equal those at the merged head). Two counted accepts need two distinct chain models
+ * and two distinct reviewer sessions, neither a builder session of the lane (builderSessions).
  */
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { globToRegex, PROTECTED_GATE_PATHS, GOVERNANCE_PATHS, REVIEWER_AGENTS } from './queue.mjs';
+import { globToRegex, PROTECTED_GATE_PATHS, GOVERNANCE_PATHS, REVIEWER_AGENTS, logSection, logEntries } from './queue.mjs';
 
 export const EVIDENCE_FILES = ['acceptance.md', 'commands.log', 'scope.json'];
 export const OK_CONCLUSIONS = new Set(['success', 'skipped', 'neutral']);
@@ -85,6 +91,44 @@ export function reviewCurrent(reviewed, head, after, laneKey, prDiffSame) {
   return { ok: true, reason: merges ? 'only lane-file entries and clean merges of main after the reviewed head' : 'only lane-file entries after the reviewed head' };
 }
 
+/**
+ * VTID-05780: does a protected-file accept of `reviewed` still count at `head`? Stricter than reviewCurrent: every commit
+ * in `after` must change only the lane's own lane file (`laneKey` required; a merge commit, a Project Manager handoff
+ * edit or any other path voids the accept), and the protected paths' diff at the reviewed head must equal the one at the
+ * merged head (`protectedSame === true`, local walk only). `facts` = { prDiffSame, protectedSame } from localAfter.
+ */
+export function protectedReviewCurrent(reviewed, head, after, laneKey, facts = {}) {
+  if (reviewed === head) return { ok: true, reason: 'reviewed head is the merged head' };
+  const [slug, lane] = (laneKey || '').split('/');
+  if (!slug || !lane) return { ok: false, reason: 'no lane key: a protected-file accept counts only on the exact head' };
+  const laneFile = `.kiro/specs/${slug}/lanes/${lane}.md`;
+  if (!after.length) return { ok: false, reason: `reviewed head ${reviewed.slice(0, 8)} is not an ancestor of head ${head.slice(0, 8)}` };
+  for (const c of after) {
+    if (c.merge) return { ok: false, reason: `merge ${c.sha.slice(0, 8)} after the reviewed head: a protected-file accept needs a new review on the new head` };
+    const bad = c.files.filter((f) => f !== laneFile);
+    if (!c.files.length || bad.length) return { ok: false, reason: `${c.sha.slice(0, 8)} after the reviewed head changes ${bad.join(', ') || 'nothing'}: a protected-file accept needs a new review` };
+  }
+  if (facts.protectedSame !== true) return { ok: false, reason: 'the protected paths at the reviewed head were not compared with the merged head (local walk required) or they differ' };
+  const r = reviewCurrent(reviewed, head, after, laneKey, facts.prDiffSame);
+  return r.ok ? { ok: true, reason: 'only lane-file entries after the reviewed head; protected paths byte-identical' } : r;
+}
+
+const BUILD_ENTRY_RE = /^(?:ready|in-review) → executing\b|^executing → in-review\b/;
+/**
+ * VTID-05780: the lane's builder sessions — sessions of its lane-log build entries (`ready → executing`,
+ * `executing → in-review`, `in-review → executing`) and the Collab-Session of every commit with `Collab-Lane: <laneKey>`
+ * that is not a review entry. An accept from one of them never counts for a protected gate file.
+ */
+export function builderSessions(laneText, messages, laneKey) {
+  const out = new Set();
+  for (const e of logEntries(logSection(laneText))) if (BUILD_ENTRY_RE.test(e.change) && e.session) out.add(e.session);
+  const trailer = (m, k) => (new RegExp(`^${k}:\\s*(\\S+)`, 'm').exec(m || '') || [])[1];
+  for (const m of messages || []) {
+    if (trailer(m, 'Collab-Lane') === laneKey && !trailer(m, 'Collab-Review') && trailer(m, 'Collab-Session')) out.add(trailer(m, 'Collab-Session'));
+  }
+  return [...out];
+}
+
 /** Latest attempt per check name → {state: 'pass'|'fail'|'pending', detail}. */
 export function checksVerdict(runs) {
   if (!runs.length) return { state: 'pending', detail: 'no check runs yet' };
@@ -108,27 +152,38 @@ export function protectedTouched(files, globs) {
   return files.filter((f) => globs.some((g) => globToRegex(g).test(f)));
 }
 
-/** Merge decision from the gates. */
+/** VTID-05780: two counted accepts must come from two distinct sessions; builder sessions never count (both checked by
+ * gate-invariants.test.mjs). */
+const PAIR_NEEDS_DISTINCT_SESSIONS = true;
+const EXCLUDE_BUILDERS = true;
 /**
- * VTID-05765 (plan autonomous-to-staging): review entries in commit messages → the distinct chain models that
- * accepted. `entries` = [{ verdict, reviewer, current }] where `current` says the entry counts for the PR's current
- * head (reviewCurrent). Only `agent:vitana-lane-reviewer (<model>)` with <model> in REVIEWER_MODELS counts.
+ * VTID-05765 (plan autonomous-to-staging), VTID-05780 (plan autonomous-to-staging-r2): review entries in commit
+ * messages → the distinct chain models that accepted. `entries` = [{ verdict, reviewer, current, session }] where
+ * `current` says the entry counts for the PR's current head (protectedReviewCurrent). Only
+ * `agent:vitana-lane-reviewer (<model>)` with <model> in REVIEWER_MODELS counts, only with a Collab-Session that is not
+ * one of `builders`. Two or more models are returned only when two counted accepts have different models AND different
+ * sessions; otherwise at most one model, so mergeDecision refuses.
  */
-export function protectedAcceptModels(entries) {
-  const models = new Set();
+export function protectedAcceptModels(entries, { builders = [] } = {}) {
+  const re = new RegExp(`^${REVIEWER_AGENTS[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\(([^)]+)\\)$`);
+  const counted = [];
   for (const e of entries || []) {
     if (!e || e.verdict !== 'accept' || !e.current) continue;
-    const m = new RegExp(`^${REVIEWER_AGENTS[0].replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\(([^)]+)\\)$`).exec(String(e.reviewer || '').trim());
-    if (m && REVIEWER_MODELS.includes(m[1])) models.add(m[1]);
+    if (!e.session || (EXCLUDE_BUILDERS && builders.includes(e.session))) continue;
+    const m = re.exec(String(e.reviewer || '').trim());
+    if (m && REVIEWER_MODELS.includes(m[1])) counted.push({ model: m[1], session: e.session });
   }
-  return [...models];
+  const pair = counted.some((a, i) => counted.some((b, j) => j > i && a.model !== b.model
+    && (!PAIR_NEEDS_DISTINCT_SESSIONS || a.session !== b.session)));
+  if (!pair) return counted.length ? [counted[0].model] : [];
+  return [...new Set(counted.map((c) => c.model))];
 }
 /** Review-entry trailers of one commit message, or null when it is not a review entry. */
 export function parseReviewEntry(message) {
   const get = (k) => (new RegExp(`^${k}:\\s*(.+)$`, 'm').exec(message || '') || [])[1]?.trim();
   const review = get('Collab-Review');
   if (!review) return null;
-  return { review, verdict: get('Collab-Verdict'), reviewer: get('Collab-Reviewer'), reviewedHead: get('Collab-Reviewed-Head') };
+  return { review, verdict: get('Collab-Verdict'), reviewer: get('Collab-Reviewer'), reviewedHead: get('Collab-Reviewed-Head'), session: get('Collab-Session') };
 }
 
 export function mergeDecision({ review, checks, behindBy, protectedFiles = [], protectedModels = [] }) {
@@ -193,8 +248,8 @@ const prPaths = (repo, tip) => run('git', ['-C', repo, 'diff', '--name-only', '-
 /** reviewed..head in a local checkout (objects and origin/main already fetched): first-parent, so main's own commits
  * that a merge brings in are not listed. → { after: [{sha, session, files, merge?}], prDiffSame }. */
 export function localAfter(repo, reviewed, head, laneKey) {
-  if (reviewed === head) return { after: [], prDiffSame: true };
-  if (!isAncestor(repo, reviewed, head)) return { after: [], prDiffSame: false };
+  if (reviewed === head) return { after: [], prDiffSame: true, protectedSame: true };
+  if (!isAncestor(repo, reviewed, head)) return { after: [], prDiffSame: false, protectedSame: false };
   const gates = [...PROTECTED_GATE_PATHS, ...GOVERNANCE_PATHS];
   const after = run('git', ['-C', repo, 'rev-list', '--reverse', '--first-parent', '--parents', `${reviewed}..${head}`]).split('\n').filter(Boolean).map((line) => {
     const [sha, ...parents] = line.split(' ');
@@ -217,7 +272,11 @@ export function localAfter(repo, reviewed, head, laneKey) {
   const own = slug && lane ? new Set([`.kiro/specs/${slug}/lanes/${lane}.md`, `.kiro/specs/${slug}/handoff.md`]) : new Set();
   const paths = [...new Set([...prPaths(repo, reviewed), ...prPaths(repo, head)])].filter((p) => !own.has(p));
   const prDiffSame = paths.length === 0 || prDiff(repo, reviewed, paths).equals(prDiff(repo, head, paths));
-  return { after, prDiffSame };
+  // VTID-05780: the protected gate paths of the PR, byte-compared at the reviewed head and at head (each from its own
+  // merge-base with origin/main).
+  const prot = protectedTouched(paths, PROTECTED_GATE_PATHS);
+  const protectedSame = prot.length === 0 || prDiff(repo, reviewed, prot).equals(prDiff(repo, head, prot));
+  return { after, prDiffSame, protectedSame };
 }
 /** `--repo`: the checkout's origin must name <owner/repo>; fetch main and the PR head so the walk is local. */
 function prepareLocal(repo, gh, pr, head) {
@@ -300,10 +359,6 @@ export async function main(argv) {
       if (pr.merged) return say(0, `already merged (${pr.merge_commit_sha})`);
       const head = pr.head.sha;
       const key = o.lane || laneKeyOf(pr.title);
-      const { after, prDiffSame } = reviewWalk(o, o['reviewed-head'], head, key);
-      const review = reviewCurrent(o['reviewed-head'], head, after, key, prDiffSame);
-      const checks = review.ok ? await waitChecks(o.gh, head, Number(o.wait || 0)) : { state: 'pending', detail: 'not read' };
-      const cmp = ghJson(`repos/${o.gh}/compare/${pr.base.ref}...${head}`);
       const files = [];
       for (let page = 1; page < 31; page++) {
         const f = ghJson(`repos/${o.gh}/pulls/${o.pr}/files?per_page=100&page=${page}`) || [];
@@ -311,6 +366,12 @@ export async function main(argv) {
         if (f.length < 100) break;
       }
       const protectedFiles = protectedTouched(files, PROTECTED_GATE_PATHS);
+      // VTID-05780: a protected-file PR is judged only on the local walk (the protected paths' bytes are compared).
+      if (protectedFiles.length && (!o.repo || o.repo === true)) return say(1, `protected gate file(s) changed (${protectedFiles.join(', ')}): --repo <checkout> is required (local walk, protected paths byte-compared); not merged by the guard`);
+      const { after, prDiffSame } = reviewWalk(o, o['reviewed-head'], head, key);
+      const review = reviewCurrent(o['reviewed-head'], head, after, key, prDiffSame);
+      const checks = review.ok ? await waitChecks(o.gh, head, Number(o.wait || 0)) : { state: 'pending', detail: 'not read' };
+      const cmp = ghJson(`repos/${o.gh}/compare/${pr.base.ref}...${head}`);
       let protectedModels = [];
       if (protectedFiles.length && review.ok) {
         const commits = [];
@@ -319,6 +380,10 @@ export async function main(argv) {
           commits.push(...c);
           if (c.length < 100) break;
         }
+        const [slug, lane] = (key || '').split('/');
+        let laneText = '';
+        if (slug && lane) { try { laneText = run('git', ['-C', o.repo, 'show', `${head}:.kiro/specs/${slug}/lanes/${lane}.md`]); } catch { /* no lane file at head */ } }
+        const builders = builderSessions(laneText, commits.map((c) => c.commit?.message || ''), key);
         const entries = [];
         const memo = new Map();
         for (const c of commits) {
@@ -326,11 +391,11 @@ export async function main(argv) {
           if (!e || e.review !== key || !/^[0-9a-f]{40}$/.test(e.reviewedHead || '')) continue;
           if (!memo.has(e.reviewedHead)) {
             const w = reviewWalk(o, e.reviewedHead, head, key);
-            memo.set(e.reviewedHead, reviewCurrent(e.reviewedHead, head, w.after, key, w.prDiffSame).ok);
+            memo.set(e.reviewedHead, protectedReviewCurrent(e.reviewedHead, head, w.after, key, w).ok);
           }
           entries.push({ ...e, current: memo.get(e.reviewedHead) });
         }
-        protectedModels = protectedAcceptModels(entries);
+        protectedModels = protectedAcceptModels(entries, { builders });
       }
       const d = mergeDecision({ review, checks, behindBy: cmp.behind_by, protectedFiles, protectedModels });
       if (!d.ok) return say(d.code, d.reason);

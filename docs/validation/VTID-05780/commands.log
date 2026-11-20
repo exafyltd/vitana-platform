@@ -1,0 +1,32 @@
+# VTID-05780 — base origin/main 1d6126bff4 (lane protect-gate-workflow, session kiro-exafy-202611110920-270b)
+## Red on base: new tests copied into an origin/main worktree, run against origin/main code
+(origin/main worktree + new tests) node --test scripts/collab/land-guard.test.mjs        -> tests 30, fail 7 (outputs/red-on-base.txt)
+(origin/main worktree + new tests) node --test scripts/collab/gate-invariants.test.mjs   -> tests 8, fail 3
+(origin/main worktree + new tests) node --test scripts/collab/queue.test.mjs             -> tests 90, fail 1 (SECTION_43 / T16)
+(origin/main worktree + new tests) node --test scripts/collab/gate-audit.test.mjs        -> fail (gate-audit.mjs absent)
+(origin/main worktree + new tests) node --test scripts/ci/workflow-trigger-check.test.mjs -> tests 3, fail 1
+(origin/main worktree + new tests) cd services/gateway && npx jest test/project-manager/governance --runInBand
+                                                 -> Tests 5 failed, 55 passed (outputs/red-on-base-governance.txt)
+## Green on the lane head
+node --test scripts/collab/*.test.mjs            -> tests 283, pass 282, fail 0, skipped 1 (win32-only) (outputs/collab-green.txt)
+node --test scripts/ci/workflow-trigger-check.test.mjs -> tests 3, pass 3 (outputs/trigger-check-green.txt)
+node --test scripts/collab/gate-invariants.test.mjs    -> tests 8, pass 8 (outputs/gate-invariants-green.txt)
+node --test scripts/eng/gitlab-land.test.mjs scripts/eng/rehearse.test.mjs -> tests 204, pass 204 (land-guard/queue importers)
+node --test scripts/ci/kiro-steering/*.test.cjs  -> tests 67, pass 67
+cd services/gateway && npx jest test/project-manager --runInBand -> Test Suites 14 passed, Tests 244 passed (outputs/jest-project-manager.txt)
+cd services/gateway && npx jest test/project-manager/governance-protected-review.test.ts -> Tests 11 passed (outputs/jest-protected-review.txt)
+cd services/gateway && npx tsc --noEmit -p .     -> exit 0 (outputs/tsc.txt)
+## Post-merge audit against origin/main (read-only: git + gh api GETs)
+node scripts/collab/gate-audit.mjs --repo . --gh exafyltd/vitana-platform --since '14 days ago'
+  without the bootstrap list -> 11 violation(s) (outputs/gate-audit-before.txt)
+  with BOOTSTRAP             -> 0 authorised, 11 bootstrap, 0 violation(s), exit 0 (outputs/gate-audit-origin-main.txt)
+## Evidence
+node scripts/collab/land-guard.mjs evidence --repo . --vtid VTID-05780 -> ok (before the code commit)
+## After merge (closing record)
+GATE-INVARIANTS run on the merge commit: <appended by the closing record>
+
+# 2026-11-13T08:28:45Z fix forward 2: report job URL follows PLAN_SPAR_GATEWAY_URL (impact guard of #5059)
+# tests 474
+# pass 469
+# fail 0
+# skipped 5

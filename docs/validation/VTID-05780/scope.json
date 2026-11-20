@@ -1,0 +1,20 @@
+{
+  "vtid": "VTID-05780",
+  "kind": "feature",
+  "paths": [
+    "scripts/collab/protected-gate-files.json",
+    "scripts/collab/queue.mjs",
+    "scripts/collab/land-guard.mjs",
+    "scripts/collab/gate-audit.mjs",
+    "scripts/collab/*.test.mjs",
+    "scripts/collab/fixtures/**",
+    "services/gateway/src/services/project-manager/governance.ts",
+    "services/gateway/test/**",
+    ".github/workflows/GATE-INVARIANTS.yml",
+    "scripts/ci/workflow-trigger-check.test.mjs",
+    "docs/validation/VTID-05780/**"
+  ],
+  "weakens_tests": [],
+  "red_green_exempt": [],
+  "sparring_record": ".kiro/specs/autonomous-to-staging-r2/sparring/verdict.md"
+}

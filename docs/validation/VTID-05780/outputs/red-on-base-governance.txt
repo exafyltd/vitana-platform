@@ -1,0 +1,61 @@
+    ✓ T9 governance lane + agent accept on the current head + checks green → merge decision and act merges (25 ms)
+    ✓ T10 non-governance lane, reviewer_seat differs from the review seat, agent accept → merge
+    ✓ T11 agent accept on H, review-only commits after it (review_only_since [H]) → merge (1 ms)
+    ✓ T12 guard: a legacy claude review on a governance lane still merges (1 ms)
+    ✓ CLAUDE.md (1 ms)
+    ✓ scripts/collab/plan-spar.mjs (1 ms)
+    ✓ scripts/collab/queue.mjs (1 ms)
+    ✓ scripts/collab/protected-gate-files.json (1 ms)
+    ✓ services/gateway/src/services/plan-sparring/** (1 ms)
+    ✓ services/gateway/src/services/project-manager/governance.ts (3 ms)
+    ✓ .github/workflows/PLAN-SPAR.yml (1 ms)
+    ✓ .github/workflows/PR-GATE.yml
+    ✓ .github/workflows/AWS-PROD-*.yml (1 ms)
+    ✓ .kiro/agents/vitana-lane-reviewer.md
+    ✓ supabase/migrations/*vtid_ledger*.sql (1 ms)
+    ✓ supabase/migrations/*plan_sparring*.sql
+    ✓ .github/workflows/VTID-ALLOCATE.yml (1 ms)
+    ✓ scripts/collab/gate-invariants.test.mjs
+    ✓ VTID-05408: a legacy claude review no longer unlocks a protected file (the unlock is retired, not transferred)
+    ✓ VTID-05408: a protected file is refused with NO review supplied too (defense-in-depth, always refuse)
+    ✓ the compiled-in list is never empty
+    ✓ M2 stale head: accept on an old head with no review-only commits → no merge
+    ✓ M2 review_only_since does not match a different earlier head
+    ✓ M3 reviewer "agent:someone-else" → no merge on a governance lane (1 ms)
+    ✓ M3 reviewer null → no merge on a governance lane
+    ✓ M3 reviewer "agent:vitana-lane-reviewer-fake" → no merge on a governance lane
+    ✓ M3 reviewer "agent:vitana-lane-reviewer (gpt-5)" → no merge on a governance lane
+    ✓ the reviewer model chain is sonnet-5.5 → opus-5.5 → sonnet-4.5 (Claude only) (1 ms)
+    ✓ fallback: reviewer "agent:vitana-lane-reviewer" on the current head → merge on a governance lane
+    ✓ fallback: reviewer "agent:vitana-lane-reviewer (claude-sonnet-5.5)" on the current head → merge on a governance lane
+    ✓ fallback: reviewer "agent:vitana-lane-reviewer (claude-opus-5.5)" on the current head → merge on a governance lane
+    ✓ fallback: reviewer "agent:vitana-lane-reviewer (claude-sonnet-4.5)" on the current head → merge on a governance lane (1 ms)
+    ✓ fallback: reviewer "agent:vitana-lane-reviewer (claude-opus-4.8)" (model outside the chain) → no merge
+    ✓ fallback: reviewer "agent:vitana-lane-reviewer (claude-sonnet-5)" (model outside the chain) → no merge
+    ✓ fallback: reviewer "agent:vitana-lane-reviewer (claude-opus-5)" (model outside the chain) → no merge
+    ✓ fallback: reviewer "agent:vitana-lane-reviewer (claude-haiku-4.5)" (model outside the chain) → no merge
+    ✓ fallback: reviewer "agent:vitana-lane-reviewer (auto)" (model outside the chain) → no merge
+    ✓ fallback: reviewer "agent:vitana-lane-reviewer (unstated)" (model outside the chain) → no merge
+    ✓ fallback: reviewer "agent:vitana-lane-reviewer (gemini-2.5-pro)" (model outside the chain) → no merge
+    ✓ fallback: reviewer "agent:vitana-lane-reviewer (claude-opus-5.5" (model outside the chain) → no merge
+    ✓ fallback: reviewer "agent:vitana-lane-reviewer (claude-opus-5.5) x" (model outside the chain) → no merge
+    ✓ M4 agent changes on the current head → no merge (1 ms)
+    ✓ M5 agent review from a session in the executing log → no merge
+    ✓ decide() emits no merge for a protected-file PR with an agent accept (1 ms)
+    ✓ PROTECTED_GATE_GLOBS equals the JSON globs (absent file fails)
+    ✓ one accept, or two of the same model, is refused (1 ms)
+    ✕ two models on the current head are allowed (2 ms)
+    ✓ an accept on an older head does not count
+    ✓ a model outside the chain does not count (1 ms)
+    ✓ has the seven cases
+    ✓ allow: valid: two accepts from two models and two sessions on the exact head
+    ✓ refuse: stale: one accept on an older head (a code commit came after it)
+    ✓ refuse: code after review: both accepts precede a code commit (1 ms)
+    ✓ refuse: merge of main after review: a clean merge of main voids both accepts
+    ✓ refuse: same model twice: two sessions, one chain model
+    ✕ refuse: same session twice: one session, two chain models (1 ms)
+    ✕ refuse: builder self-review: one of the two accepts comes from a builder session
+    ✓ two models in two sessions count
+    ✕ review_only_since is not used for protected files (exact head only) (1 ms)
+    ✕ one session with two models, a builder session or an empty session never makes a pair
+Tests:       5 failed, 55 passed, 60 total

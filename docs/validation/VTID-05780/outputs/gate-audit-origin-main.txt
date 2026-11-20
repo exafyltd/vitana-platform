@@ -1,0 +1,12 @@
+gate-audit: 0 authorised, 11 bootstrap, 0 violation(s)
+  bootstrap a206af8ab9 before the two-model rule (VTID-05765) landed; merged by jtadic-netizen under the rule of its time (collaboration.md §3a) [.kiro/agents/vitana-lane-reviewer.md]
+  bootstrap f9e38effff before the two-model rule (VTID-05765) landed; merged by the owner account exafyltd under the rule of its time (collaboration.md §3a) [scripts/collab/queue.mjs]
+  bootstrap e4bdc45f26 before the two-model rule (VTID-05765): rules PR merged by the owner account exafyltd [CLAUDE.md]
+  bootstrap ba709c6248 before the two-model rule (VTID-05765) landed; merged by the owner account exafyltd from a head behind main (rule of its time, collaboration.md §3a) [scripts/collab/queue.mjs]
+  bootstrap abe2d7a59f before the two-model rule (VTID-05765) landed; merged by jtadic-netizen from a head behind main (rule of its time, collaboration.md §3a) [scripts/collab/queue.mjs]
+  bootstrap 9e6fed60a4 before the two-model rule (VTID-05765): rules PR merged by the owner account exafyltd [CLAUDE.md]
+  bootstrap d7c1d9668a before the two-model rule (VTID-05765): CI PR merged by the owner account exafyltd [.github/workflows/VTID-ALLOCATE.yml]
+  bootstrap e7077f27c3 bootstrap of the two-model rule itself (VTID-05765): owner directive 2026-11-11 naming plan autonomous-to-staging [scripts/collab/gate-invariants.test.mjs, scripts/collab/protected-gate-files.json, scripts/collab/queue.mjs, services/gateway/src/services/project-manager/governance.ts]
+  bootstrap e4b4b48511 GATE-INVARIANTS.yml and its test were not yet protected when it merged (VTID-05763); protected by VTID-05780 [.github/workflows/GATE-INVARIANTS.yml, scripts/ci/workflow-trigger-check.test.mjs]
+  bootstrap 53c087911b after VTID-05765, before this audit: merged by the owner account exafyltd without two recorded accepts (owner authority, collaboration.md §3a); flagged in VTID-05780 evidence [scripts/collab/queue.mjs]
+  bootstrap a199f9ac9a after VTID-05765, before this audit: merged by the owner account exafyltd without two recorded accepts (owner authority, collaboration.md §3a); flagged in VTID-05780 evidence [CLAUDE.md]
