@@ -1,0 +1,9 @@
+# VTID-05737 commands (2026-11-19, Linux, node v22, jest 29.7, tsc 5.9; seat exafyltd, session kiro-exafyltd-202611181014-b8e5)
+Lane branch kiro/agentic-delivery-scope/dispatcher from GitHub origin/main 707127a079. The code is commit 8633cb4691 of the delivery
+loop branch (written test first against GitLab main e1844355ae), cut here as its own lane. Nothing was written to a live system.
+# 1. Red on the lane's base (origin/main 707127a079, retry.ts absent): outputs/red-on-base.txt
+$ cd services/gateway && npx jest test/project-manager/retry.test.ts      -> Test Suites: 1 failed ("Cannot find module '../../src/services/project-manager/retry'")
+# 2. With retry.ts, the same suite: outputs/green.txt
+$ npx jest test/project-manager/retry.test.ts                              -> Tests: 31 passed
+# 3. Typecheck of the whole gateway (this worktree links node_modules from the main checkout, hence --preserveSymlinks)
+$ npx tsc --noEmit -p tsconfig.json --preserveSymlinks                     -> exit 0, no output

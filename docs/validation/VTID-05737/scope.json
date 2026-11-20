@@ -1,0 +1,11 @@
+{
+  "vtid": "VTID-05737",
+  "kind": "feature",
+  "paths": [
+    "services/gateway/src/services/project-manager/retry.ts",
+    "services/gateway/test/project-manager/retry.test.ts",
+    "docs/validation/VTID-05737/**"
+  ],
+  "weakens_tests": [],
+  "red_green_exempt": []
+}
