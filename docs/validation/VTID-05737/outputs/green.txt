@@ -1,0 +1,52 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/project-manager/retry.test.ts
+  retry constants
+    ✓ pins the schedule, the attempt cap and the window from the plan (20 ms)
+  isRetryable
+    ✓ ci_failed_3_consecutive is retryable (1 ms)
+    ✓ failed_check is retryable
+    ✓ model_tier_unavailable is retryable (1 ms)
+    ✓ missing_prerequisite is retryable
+    ✓ infra_failure is retryable
+    ✓ security_risk is never retried (fail closed) (1 ms)
+    ✓ data_loss_risk is never retried (fail closed)
+    ✓ production_write is never retried (fail closed)
+    ✓ protected_file_unreviewed is never retried (fail closed)
+    ✓ sparring_escalated is never retried (fail closed)
+    ✓ reviewer_flagged_risk is never retried (fail closed)
+    ✓ stale_claim is never retried (fail closed) (1 ms)
+    ✓ something_new is never retried (fail closed)
+    ✓  is never retried (fail closed)
+    ✓ null is never retried (fail closed)
+    ✓ undefined is never retried (fail closed)
+  nextRetry: the schedule
+    ✓ the first attempt is due 15 min after the lane was parked (1 ms)
+    ✓ each next attempt is due its backoff after the previous attempt (1 ms)
+    ✓ the 7th attempt inside 24 h is blocked with next_actor owner
+    ✓ attempts older than 24 h no longer count, so a lane parked again a day later starts over
+    ✓ counts only the attempts inside the window and backs off from the newest of them
+    ✓ does not depend on the order of the history (1 ms)
+  nextRetry: never retried
+    ✓ security_risk is blocked at once
+    ✓ data_loss_risk is blocked at once
+    ✓ production_write is blocked at once
+    ✓ protected_file_unreviewed is blocked at once (1 ms)
+    ✓ sparring_escalated is blocked at once
+    ✓ a lane with no recorded reason is not retried
+    ✓ unusable times block instead of throwing (1 ms)
+  nextRetry: purity
+    ✓ does not change its inputs and returns the same answer twice
+
+Test Suites: 1 passed, 1 total
+Tests:       31 passed, 31 total
+Snapshots:   0 total
+Time:        0.487 s
+Ran all test suites matching /test\/project-manager\/retry.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

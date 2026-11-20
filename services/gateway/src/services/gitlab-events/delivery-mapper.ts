@@ -19,6 +19,16 @@
  *                        a commit with a Collab-Verdict trailer            delivery.review.recorded
  *                        a commit that changes .kiro/specs/<s>/lanes/<l>.md  delivery.lane.updated
  *   tag_push             refs/tags/delivery/cutover-<repo>                 scm.migration.cutover
+ *   issue                open | reopen of an issue with the intake label   scm.gitlab.issue.opened
+ *                        update that adds the intake label                 scm.gitlab.issue.labeled
+ *                        close of an issue with the intake label           scm.gitlab.issue.closed
+ *
+ * The issue events are the intake of the delivery loop: DELIVERY_INTAKE_LABEL (default agent-task) marks an issue as a task
+ * for the agents. An issue without it is ignored (not_intake). The event names the issue (project, iid, url, state, the
+ * intake label and the agent-, delivery- and priority- labels); the title and the description stay in GitLab, and the loop
+ * reads them through the GitLab API with its own token. A pipeline names the branches and URL of its merge request
+ * (mr_source_branch, mr_target_branch, mr_url), and one that failed also its failed jobs (failed_jobs: id, name, stage,
+ * failure_reason, exit_code), which is what the repair of a failure starts from. The log of a job is never in the webhook.
  *
  * Every event carries payload.dedupe_key (host, project, object, id, state), plane 'delivery', host
  * 'gitlab', mode 'shadow' | 'live' and repo (the project's last path segment). Readers keep the first row
@@ -39,8 +49,9 @@
  * that file lists any of these topics.
  *
  * The OASIS payload carries ids, refs, shas, statuses, durations, job names and URLs, and the values of
- * named trailers. Never a description, a user, labels other than the queue label, the changes, pipeline
- * variables or the raw builds of the GitLab payload.
+ * named trailers. Never a description, a title (other than as the VTID and lane key read from it), a user,
+ * labels other than the queue label (an issue event also names the intake label and the agent-, delivery- and
+ * priority- labels), the changes, pipeline variables or the raw builds of the GitLab payload.
  */
 import type { CicdEventType, CicdOasisEvent } from '../../types/cicd';
 import { DELIVERY_VTID, deliveryHostFor, repoShortName } from '../delivery-host';
@@ -61,6 +72,9 @@ export const DELIVERY_TOPICS = {
   stagingDeployCompleted: 'staging.deploy.completed',
   stagingDeployFailed: 'staging.deploy.failed',
   stagingDeployRolledBack: 'staging.deploy.rolled_back',
+  issueOpened: 'scm.gitlab.issue.opened',
+  issueLabeled: 'scm.gitlab.issue.labeled',
+  issueClosed: 'scm.gitlab.issue.closed',
 } as const satisfies Record<string, CicdEventType>;
 
 export type DeliveryMode = 'shadow' | 'live';
@@ -74,7 +88,7 @@ export interface DeliveryEventPayload extends Record<string, unknown> {
 }
 export type DeliveryEvent = Omit<CicdOasisEvent, 'payload'> & { payload: DeliveryEventPayload };
 
-export type DeliveryIgnoreReason = GitlabIgnoreReason | 'unmapped_ref';
+export type DeliveryIgnoreReason = GitlabIgnoreReason | 'unmapped_ref' | 'not_intake';
 export type DeliveryMapping =
   | { kind: 'emit'; events: DeliveryEvent[] }
   | { kind: 'ignore'; reason: DeliveryIgnoreReason };
@@ -89,6 +103,14 @@ export const AGENT_BRANCH_RE = /^(kiro|claude|assist|pm-agent)\//;
 export const MAX_COMMITS = 20;
 export const MAX_JOBS = 100;
 export const MAX_EVENTS = 100;
+export const MAX_FAILED_JOBS = 20;
+export const MAX_LABELS = 10;
+
+/** The label that marks a GitLab issue as a task for the agents. DELIVERY_INTAKE_LABEL overrides it (a plain label name). */
+export const DEFAULT_INTAKE_LABEL = 'agent-task';
+const INTAKE_LABEL_OK = /^[A-Za-z0-9][A-Za-z0-9 ._:/-]{0,63}$/;
+/** Besides the intake label, only labels with one of these prefixes reach an event. */
+const KEPT_LABEL_RE = /^(agent|delivery|priority)-/;
 
 export const LANDING_TRAILER_KEYS = ['Merge-Request', 'Source-Branch', 'Reviewed-Head', 'Review-Verdict', 'Reviewer', 'Accepted-At'] as const;
 export const REVIEW_TRAILER_KEYS = ['Collab-Session', 'Collab-Lane', 'Collab-Review', 'Collab-Verdict', 'Collab-Reviewer', 'Collab-Reviewed-Head'] as const;
@@ -167,6 +189,27 @@ export function queueLabel(labels: unknown): string | null {
     if (title && QUEUE_LABEL_RE.test(title)) return title;
   }
   return null;
+}
+
+/** The titles of a GitLab labels array ([{title}] or [string]). */
+export function labelTitles(labels: unknown): string[] {
+  const out: string[] = [];
+  for (const l of arr(labels)) {
+    const title = typeof l === 'string' ? l : str(obj(l).title);
+    if (title) out.push(title);
+  }
+  return out;
+}
+
+/** The intake label of this gateway: DELIVERY_INTAKE_LABEL when it is a plain label name, otherwise agent-task. */
+export function intakeLabelOf(env: NodeJS.ProcessEnv): string {
+  const v = typeof env.DELIVERY_INTAKE_LABEL === 'string' ? env.DELIVERY_INTAKE_LABEL.trim() : '';
+  return INTAKE_LABEL_OK.test(v) ? v : DEFAULT_INTAKE_LABEL;
+}
+
+/** The labels an event may carry: the intake label and the agent-, delivery- and priority- labels; each once, at most MAX_LABELS. */
+export function keptLabels(titles: readonly string[], intake: string): string[] {
+  return [...new Set(titles.filter((t) => t === intake || KEPT_LABEL_RE.test(t)))].slice(0, MAX_LABELS);
 }
 
 const LANE_KEY_RE = /\bVTID-\d{5}\s*\(([a-z0-9][a-z0-9-]*\/_?[a-z0-9][a-z0-9-]*)\)/i;
@@ -390,6 +433,27 @@ export function jobsOf(builds: unknown): JobSummary[] {
     .map((b) => ({ name: str(b.name), stage: str(b.stage), status: str(b.status), wait_s: num(b.queued_duration), run_s: num(b.duration) }));
 }
 
+/** A job that failed its pipeline: what the repair of the failure starts from. Never the job's log. */
+export interface FailedJob {
+  id: number | null;
+  name: string | null;
+  stage: string | null;
+  /** GitLab's failure_reason (script_failure, runner_system_failure, stuck_or_timeout_failure, ...). */
+  failure_reason: string | null;
+  exit_code: number | null;
+}
+
+/** The jobs with status failed that were not allowed to fail, lowest id first, at most MAX_FAILED_JOBS. */
+export function failedJobsOf(builds: unknown): FailedJob[] {
+  return arr(builds)
+    .filter(isObj)
+    .slice(0, MAX_JOBS)
+    .filter((b) => b.status === 'failed' && b.allow_failure !== true)
+    .map((b) => ({ id: num(b.id), name: str(b.name), stage: str(b.stage), failure_reason: str(b.failure_reason, 64), exit_code: num(b.exit_code) }))
+    .sort((a, b) => (a.id ?? Number.MAX_SAFE_INTEGER) - (b.id ?? Number.MAX_SAFE_INTEGER))
+    .slice(0, MAX_FAILED_JOBS);
+}
+
 function mapPipeline(payload: Obj, ctx: Ctx): DeliveryMapping {
   const attrs = obj(payload.object_attributes);
   const mapped = own(PIPELINE_STATUSES, attrs.status);
@@ -411,6 +475,12 @@ function mapPipeline(payload: Obj, ctx: Ctx): DeliveryMapping {
     queued_s: num(attrs.queued_duration),
     tag: attrs.tag === true,
     lane_key: laneKeyOf(mr.title) ?? laneKeyOf(commit.title),
+    // Where the pipeline ran (its merge request, when it has one), and for a failure which jobs failed and why. The mr_ prefix
+    // keeps these apart from the source_branch and target_branch of a merge request event (mapper.ts), which they are not.
+    mr_source_branch: str(mr.source_branch),
+    mr_target_branch: str(mr.target_branch),
+    mr_url: str(mr.url),
+    ...(status === 'failed' ? { failed_jobs: failedJobsOf(payload.builds) } : {}),
   };
   const key = `gitlab:${ctx.scope}:pipeline:${pipelineId ?? '?'}:${status}`;
 
@@ -560,6 +630,70 @@ function deployEvents(
     );
   }
   return out;
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// issue (the intake of the delivery loop)
+// ---------------------------------------------------------------------------------------------------------
+
+const ISSUE_ACTIONS: Record<string, { topic: CicdEventType; state: string; verb: string }> = {
+  open: { topic: DELIVERY_TOPICS.issueOpened, state: 'opened', verb: 'opened' },
+  reopen: { topic: DELIVERY_TOPICS.issueOpened, state: 'opened', verb: 'reopened' },
+  close: { topic: DELIVERY_TOPICS.issueClosed, state: 'closed', verb: 'closed' },
+};
+
+function mapIssue(payload: Obj, ctx: Ctx): DeliveryMapping {
+  const attrs = obj(payload.object_attributes);
+  // Issues and Service Desk issues have type Issue. Any other work item type is not a task for the agents.
+  if (typeof attrs.type === 'string' && attrs.type !== 'Issue') return { kind: 'ignore', reason: 'unknown_event' };
+  const action = typeof attrs.action === 'string' ? attrs.action : '';
+  const iid = num(attrs.iid);
+  if (iid === null || !(action === 'open' || action === 'reopen' || action === 'close' || action === 'update')) {
+    return { kind: 'ignore', reason: 'unmapped_action' };
+  }
+
+  const intake = intakeLabelOf(ctx.env);
+  const current = labelTitles(payload.labels ?? attrs.labels);
+  if (!current.includes(intake)) return { kind: 'ignore', reason: 'not_intake' };
+
+  let mapped = own(ISSUE_ACTIONS, action);
+  if (action === 'update') {
+    // Only the update that adds the intake label is a new task; any other edit of a task already known is not intake.
+    const change = obj(payload.changes).labels;
+    if (isObj(change) && !labelTitles(change.previous).includes(intake) && labelTitles(change.current).includes(intake)) {
+      mapped = { topic: DELIVERY_TOPICS.issueLabeled, state: 'labeled', verb: 'labeled for the agents' };
+    }
+  }
+  if (!mapped) return { kind: 'ignore', reason: 'unmapped_action' };
+
+  const stamp = str(attrs.updated_at) ?? str(attrs.created_at) ?? '';
+  return {
+    kind: 'emit',
+    events: [
+      build(ctx, modeFor(ctx), {
+        // A task has no VTID yet (VTIDs come from the plan's sparring); a title that already names one keeps it.
+        vtid: firstVtid(attrs.title) ?? DELIVERY_VTID,
+        type: mapped.topic,
+        status: 'info',
+        message: `GitLab issue #${iid} ${mapped.verb} ${ctx.where}`,
+        key: `gitlab:${ctx.scope}:issue:${iid}:${mapped.state}:${stamp}`,
+        payload: {
+          gitlab_event: 'issue',
+          webhook_id: ctx.id,
+          action,
+          project_id: ctx.projectId,
+          project_path: ctx.projectPath,
+          issue_iid: iid,
+          issue_id: num(attrs.id),
+          state: str(attrs.state),
+          url: str(attrs.url),
+          confidential: attrs.confidential === true,
+          intake_label: intake,
+          labels: keptLabels(current, intake),
+        },
+      }),
+    ],
+  };
 }
 
 // ---------------------------------------------------------------------------------------------------------
@@ -724,6 +858,8 @@ export async function mapGitlabDelivery(payload: unknown, webhookId: string, opt
       return mapPush(payload, ctx, branches, options.lookupBranchVtid);
     case 'tag_push':
       return mapTagPush(payload, ctx);
+    case 'issue':
+      return mapIssue(payload, ctx);
     default:
       return { kind: 'ignore', reason: 'unknown_event' };
   }

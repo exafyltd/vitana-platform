@@ -204,6 +204,41 @@ export function parseLaneLog(text: string): ParsedLaneLog {
   return { entries, reviews, decisions };
 }
 
+/**
+ * VTID-05736: the park facts of a lane file, for the retry rule. Pure. A lane that is not parked still reports the retry
+ * attempts of the last window (the rule counts attempts across parks); the park fields are null then.
+ */
+export function parkInfoOf(
+  log: ParsedLaneLog,
+  fm: Record<string, string | string[]>,
+  toIso: (ts: string) => string,
+): Pick<ObservedLane, 'parked_from' | 'next_actor' | 'executor' | 'parked_at' | 'park_reason' | 'retry_attempts' | 'retry_blocked'> {
+  const one = (v: string | string[] | undefined): string => (Array.isArray(v) ? v[0] ?? '' : v ?? '').trim();
+  const parkedFrom = one(fm.parked_from);
+  let parkIdx = -1;
+  log.entries.forEach((e, i) => { if (/→\s*parked\s*$/.test(e.desc)) parkIdx = i; });
+  const parkEntry = parkIdx >= 0 ? log.entries[parkIdx] : null;
+  const firstLine = (e: LaneLogEntry) => (e.body.find((b) => b.trim() !== '') ?? '').trim();
+  const fromLog = parkEntry ? /^park \(([a-z0-9_]+)\)/.exec(firstLine(parkEntry))?.[1] ?? null : null;
+  const attempts: Array<{ attempt: number; at: string }> = [];
+  for (const e of log.entries) {
+    if (e.session !== 'pm-agent') continue;
+    const m = /^retry attempt (\d+) of \d+/.exec(firstLine(e));
+    if (m) attempts.push({ attempt: Number(m[1]), at: toIso(e.at) });
+  }
+  const blocked = parkIdx >= 0 && log.entries.slice(parkIdx + 1).some((e) => e.session === 'pm-agent' && /^retry blocked/.test(firstLine(e)));
+  const states: LaneState[] = ['ready', 'executing', 'in-review', 'verified'];
+  return {
+    parked_from: (states as string[]).includes(parkedFrom) ? (parkedFrom as LaneState) : null,
+    next_actor: one(fm.next_actor) || null,
+    executor: one(fm.executor) || null,
+    parked_at: parkEntry ? toIso(parkEntry.at) : null,
+    park_reason: one(fm.park_reason) || fromLog,
+    retry_attempts: attempts,
+    retry_blocked: blocked,
+  };
+}
+
 /** Lane-log timestamp (`2026-10-20T19:20Z`) → ISO. */
 function isoOf(ts: string): string {
   const n = Date.parse(ts);
@@ -430,6 +465,9 @@ export class GithubObserver implements PmObserver {
         executing.push({ session_id: e.session, seat: str(sl.fm.seat), at: isoOf(e.at) });
       }
 
+      // VTID-05736 (dispatcher-pm): what the retry rule reads of a parked lane. The PM itself wrote these log lines
+      // (`park (<reason>)` on the `… → parked` entry, `retry attempt N of 6 …`, `retry blocked …`), so the history is the file.
+      const parkInfo = parkInfoOf(log, sl.fm, isoOf);
       lanes.push({
         slug: sl.slug,
         lane: sl.lane,
@@ -456,6 +494,7 @@ export class GithubObserver implements PmObserver {
         driver_heartbeat_at: hb,
         ledger_status: vtid != null ? ledger[vtid] ?? null : null,
         decisions_taken: log.decisions,
+        ...parkInfo,
       });
     }
 

@@ -68,22 +68,60 @@ export async function prepareWorkspace(opts: {
   /** VTID-04017 fix mode: `branch` already exists on the remote (the parent
    *  execution's PR branch) — clone it directly and stay on it. */
   existingBranch?: boolean;
+  /** GitLab-native repair: clone from this remote (the merge request's project on GitLab, gitlab-target.ts) instead of github.com.
+   *  It embeds the token; it is never logged and errors are scrubbed of the token in both its raw and its URL-encoded form. */
+  remoteUrl?: string;
+  /** GitLab-native repair: the head the branch must be at (the head whose pipeline failed). A branch that moved since is refused
+   *  before anything else runs, so a repair never lands on top of somebody else's newer push. */
+  expectHeadSha?: string;
 }): Promise<Workspace> {
   const exec = opts.exec ?? defaultExec;
   const root = await fs.mkdtemp(path.join(opts.workRoot || os.tmpdir(), 'autopilot-agent-'));
   const repoDir = path.join(root, opts.repo);
   try {
     const cloneBranch = opts.existingBranch ? opts.branch : opts.baseBranch;
-    await exec('git', ['clone', '--depth', String(opts.depth ?? 1), '--branch', cloneBranch, '--single-branch', remoteUrl(opts.owner, opts.repo, opts.token), repoDir], { timeoutMs: 600_000 });
+    const url = opts.remoteUrl || remoteUrl(opts.owner, opts.repo, opts.token);
+    await exec('git', ['clone', '--depth', String(opts.depth ?? 1), '--branch', cloneBranch, '--single-branch', url, repoDir], { timeoutMs: 600_000 });
     await exec('git', ['config', 'user.name', 'vitana-dev-autopilot'], { cwd: repoDir });
     await exec('git', ['config', 'user.email', 'dev-autopilot@vitanaland.com'], { cwd: repoDir });
     if (!opts.existingBranch) await exec('git', ['checkout', '-b', opts.branch], { cwd: repoDir });
     const { stdout } = await exec('git', ['rev-parse', 'HEAD'], { cwd: repoDir });
-    return { root, repoDir, branch: opts.branch, baseSha: stdout.trim() };
+    const head = stdout.trim();
+    if (opts.expectHeadSha && head !== opts.expectHeadSha) {
+      throw new Error(`branch moved: ${opts.branch} is at ${head.slice(0, 12)}, not the expected ${opts.expectHeadSha.slice(0, 12)}; nothing was changed`);
+    }
+    return { root, repoDir, branch: opts.branch, baseSha: head };
   } catch (err) {
     await fs.rm(root, { recursive: true, force: true }).catch(() => undefined);
-    throw new Error(`workspace clone failed: ${scrubSecret(err instanceof Error ? err.message : String(err), opts.token)}`);
+    throw new Error(`workspace clone failed: ${scrubToken(err instanceof Error ? err.message : String(err), opts.token)}`);
   }
+}
+
+/** The token removed in its raw and its URL-encoded form (a GitLab remote URL carries the encoded one). */
+export function scrubToken(text: string, token?: string): string {
+  if (!token) return text;
+  return scrubSecret(scrubSecret(text, token), encodeURIComponent(token));
+}
+
+/**
+ * GitLab-native repair: the merge base of the cloned merge-request branch and its target branch, so the runner's checks (scope, test
+ * coverage, the PR's own files) see the whole merge request, as fix mode does on GitHub. It reads history only: it never merges,
+ * resets, checks out or pushes, so the branch gets nothing but the repair's own commit.
+ */
+export async function mergeBaseWithTarget(repoDir: string, targetBranch: string, exec: ExecFn = defaultExec): Promise<string> {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(targetBranch) || targetBranch.includes('..')) {
+    throw new Error(`refused: ${targetBranch.slice(0, 80)} is not a target branch name`);
+  }
+  try {
+    await exec('git', ['fetch', '--unshallow', 'origin'], { cwd: repoDir, timeoutMs: 600_000 });
+  } catch {
+    await exec('git', ['fetch', 'origin'], { cwd: repoDir, timeoutMs: 600_000 });
+  }
+  await exec('git', ['fetch', 'origin', targetBranch], { cwd: repoDir, timeoutMs: 600_000 });
+  const { stdout } = await exec('git', ['merge-base', 'HEAD', 'FETCH_HEAD'], { cwd: repoDir });
+  const sha = stdout.trim();
+  if (!/^[0-9a-f]{40}$/.test(sha)) throw new Error(`no merge base between the branch and ${targetBranch}`);
+  return sha;
 }
 
 /**
@@ -175,9 +213,18 @@ export async function gitDiffAgainstBase(
 
 export async function commitAndPush(
   repoDir: string,
-  opts: { message: string; branch: string; token: string; exec?: ExecFn; force?: boolean },
+  opts: {
+    message: string; branch: string; token: string; exec?: ExecFn; force?: boolean;
+    /** GitLab-native repair: push only while the remote branch still points at this head (`--force-with-lease=<ref>:<sha>`). The new
+     *  commit descends from it, so every accepted push is a fast-forward and a branch somebody moved is refused. It replaces `force`:
+     *  with a lease there is never a bare `--force`. */
+    leaseSha?: string;
+  },
 ): Promise<{ sha: string }> {
   const exec = opts.exec ?? defaultExec;
+  if (opts.leaseSha !== undefined && !/^[0-9a-f]{40}$/.test(opts.leaseSha)) {
+    throw new Error('commit/push refused: the lease must be the full sha of the head the branch is expected at');
+  }
   try {
     await exec('git', ['add', '-A'], { cwd: repoDir });
     // VTID-04217: in fix mode a clean `mergeBaseIntoBranch` already produced
@@ -192,10 +239,13 @@ export async function commitAndPush(
     // replaced, never a branch anyone else owns. VTID-04017 fix mode pushes
     // a plain fast-forward onto the parent's PR branch (force=false).
     const force = opts.force !== false;
-    await exec('git', ['push', ...(force ? ['--force'] : []), '-u', 'origin', opts.branch], { cwd: repoDir, timeoutMs: 300_000 });
+    const pushArgs = opts.leaseSha
+      ? ['push', `--force-with-lease=refs/heads/${opts.branch}:${opts.leaseSha}`, '-u', 'origin', opts.branch]
+      : ['push', ...(force ? ['--force'] : []), '-u', 'origin', opts.branch];
+    await exec('git', pushArgs, { cwd: repoDir, timeoutMs: 300_000 });
     return { sha: stdout.trim() };
   } catch (err) {
-    throw new Error(`commit/push failed: ${scrubSecret(err instanceof Error ? err.message : String(err), opts.token)}`);
+    throw new Error(`commit/push failed: ${scrubToken(err instanceof Error ? err.message : String(err), opts.token)}`);
   }
 }
 

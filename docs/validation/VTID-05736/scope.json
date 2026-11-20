@@ -1,0 +1,18 @@
+{
+  "vtid": "VTID-05736",
+  "kind": "feature",
+  "paths": [
+    "services/gateway/src/services/project-manager/types.ts",
+    "services/gateway/src/services/project-manager/decide.ts",
+    "services/gateway/src/services/project-manager/act.ts",
+    "services/gateway/src/services/project-manager/emit.ts",
+    "services/gateway/src/services/project-manager/observe-live.ts",
+    "services/gateway/src/services/project-manager/loop.ts",
+    "services/gateway/src/types/cicd.ts",
+    "services/gateway/test/project-manager/retry-act.test.ts",
+    "docs/validation/VTID-05736/**"
+  ],
+  "lane_paths_note": "emit.ts, observe-live.ts, loop.ts and types/cicd.ts are outside the paths of lane dispatcher-pm: the new decision kind does not compile without emit.ts (exhaustive switch), the retry rule has no input without the observer, the OASIS record needs the loop wiring and the two topics. The lane paths need a _plan amendment before this merges under Lane scope.",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

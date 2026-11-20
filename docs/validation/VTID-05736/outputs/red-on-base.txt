@@ -1,0 +1,24 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+FAIL test/project-manager/retry-act.test.ts
+  retryDecision (decide)
+    ✕ a parked lane with a retryable reason is not retried before its backoff is due (8 ms)
+    ✕ is retried when due: unpark to parked_from, back to the executor, attempt 1 of 6 after 15 min (1 ms)
+    ✕ hands the lane back to claude when claude is its executor, and to ready when parked_from is unknown
+    ✕ never retries a lane parked for security_risk
+    ✕ never retries a lane parked for data_loss_risk (1 ms)
+    ✕ never retries a lane parked for production_write
+    ✕ never retries a lane parked for protected_file_unreviewed
+    ✕ never retries a lane parked for sparring_escalated
+    ✕ never retries a lane parked for reviewer_flagged_risk
+    ✕ never retries a lane parked for stale_claim
+    ✕ never retries a lane parked for null
+    ✕ does nothing for a lane that is not parked
+    ✕ the second attempt waits 30 min after the first
+    ✕ after the 6th attempt the end is a single `blocked` decision, then nothing
+    ✕ decide() carries it: dry_run decides, off decides nothing, a parked lane is not also parked again (3 ms)
+    ✕ summarizes both outcomes in one line
+  act: dry_run writes nothing, live unparks through the pm-agent writer

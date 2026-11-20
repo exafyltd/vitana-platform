@@ -1,0 +1,50 @@
+{
+  "vtid": null,
+  "slice": "delivery-loop/slice-8-gitlab-executor",
+  "plan_lane": "delivery-loop-engine/gitlab-executor",
+  "kind": "feature",
+  "paths": [
+    "services/gateway/src/services/autopilot-agent/gitlab-target.ts",
+    "services/gateway/src/services/autopilot-agent/agent-workspace.ts",
+    "services/gateway/src/services/autopilot-agent/run-agent-execution.ts",
+    "services/gateway/src/services/dev-autopilot-execute.ts",
+    "services/gateway/src/services/dev-autopilot-bridge.ts",
+    "services/gateway/src/services/dev-autopilot-gitlab-repair.ts",
+    "services/gateway/src/types/cicd.ts",
+    "services/gateway/src/services/delivery-loop/dev-autopilot-gateway.ts",
+    "services/gateway/src/services/delivery-loop/ports.ts",
+    "services/gateway/src/services/delivery-loop/drive.ts",
+    "services/gateway/src/services/delivery-loop/runtime.ts",
+    "services/gateway/src/services/delivery-loop/adapters.ts",
+    "services/gateway/.env.example",
+    "services/gateway/test/autopilot-agent-gitlab-target.test.ts",
+    "services/gateway/test/autopilot-agent-workspace-gitlab.test.ts",
+    "services/gateway/test/dev-autopilot-bridge-gitlab-guards.test.ts",
+    "services/gateway/test/dev-autopilot-gitlab-repair.test.ts",
+    "services/gateway/test/delivery-loop/dev-autopilot-gateway.test.ts",
+    "services/gateway/test/delivery-loop/heal.test.ts",
+    "services/gateway/test/delivery-loop/runtime.test.ts",
+    "services/gateway/test/operator-pipeline/harness.ts",
+    "services/gateway/test/vtid-04465-operator-pipeline-regression.test.ts",
+    "services/gateway/test/vtid-04466-exploration-budget.test.ts",
+    "docs/validation/delivery-loop/slice-8-gitlab-executor/**"
+  ],
+  "vtid_note": "No VTID: plan(delivery-loop-engine) cannot be sparred while PLAN-SPAR answers HTTP 401, and VTIDs come only from CI PLAN-SPAR.",
+  "weakens_tests": [],
+  "tests_changed_on_purpose": [
+    "services/gateway/test/delivery-loop/runtime.test.ts 'the gateway bindings': expected executors {} (nothing bound); now expects the GitLab-native 'dev-autopilot' gateway bound. Being bound does not switch it on: the port still refuses every dispatch without DELIVERY_LOOP_EXECUTOR=dev-autopilot, pinned in dev-autopilot-gateway.test.ts.",
+    "services/gateway/test/vtid-04466-exploration-budget.test.ts 'runner wiring (AC-6)': two source-string pins of `!fixMode` became `!continuing` (fix mode OR a GitLab repair, both of which continue on an existing branch). The rule they pin is unchanged and one pin was added for what `continuing` means."
+  ],
+  "touches_shared_files": [
+    "services/gateway/test/vtid-04465-operator-pipeline-regression.test.ts: 4 scenarios appended (CLAUDE.md NEVER 42e/42f: a new hand-off is a scenario in the same PR); the 71 existing scenarios unchanged and green",
+    "services/gateway/test/operator-pipeline/harness.ts: a git-only GitLab fake and the workspace overrides for a GitLab remote; the GitHub fakes unchanged",
+    "services/gateway/src/types/cicd.ts: one event type, dev_autopilot.execution.gitlab_pushed"
+  ],
+  "not_touched_on_purpose": [
+    "services/gateway/src/services/dev-autopilot-watcher.ts: GitLab rows never get a PR field or the status ci, so no watcher can take one",
+    "services/gateway/src/services/autopilot-executable-source-types.ts: the locked list (the carrier finding uses source_type dev_autopilot, already on it, and is never auto-approved)",
+    "supabase/migrations/**: no new status, no new column (the end status is auto_archived, the target lives in metadata)",
+    ".github/workflows/** and every task definition: no token or switch is wired"
+  ],
+  "red_green_exempt": []
+}

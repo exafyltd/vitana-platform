@@ -1,0 +1,7 @@
+# Slice 5: commands run (Kiro 3, session kiro-exafyltd-202611181014-b8e5). cwd services/gateway.
+npx jest test/delivery-loop        -> 8 suites, 211 tests passed (fingerprint 41, controls 22, gitlab-client 34, review 20, engine 19, learn 14, intake 30, heal 31)
+npx tsc --noEmit -p tsconfig.json  -> exit 0
+npx tsc --noEmit --strict ... test/delivery-loop/*.test.ts test/delivery-loop/harness.ts -> exit 0   (outputs/tsc.txt)
+npx jest --silent --maxWorkers=5   -> full gateway suite, outputs/full-gateway-suite.txt (30270 of 30332 passed; the 2 failures are pre-existing)
+# red on base: loop/red-on-base.sh hides the engine modules (restored by a trap), runs test/delivery-loop -> outputs/red-on-base.txt
+#   5 engine suites cannot load; the 3 slice-4 suites pass

@@ -1,0 +1,16 @@
+# test/delivery-loop run with these modules absent: facts ledger ports keys context intents intake heal drive review learn labels poll engine index   (2026-11-19T02:09:25Z)
+# base = 8f95b0e6cc
+      1 Test Suites: 5 failed, 3 passed, 8 total
+      1 Tests:       97 passed, 97 total
+      1 PASS test/delivery-loop/gitlab-client.test.ts
+      1 PASS test/delivery-loop/fingerprint.test.ts
+      1 PASS test/delivery-loop/controls.test.ts
+      1 FAIL test/delivery-loop/review.test.ts
+      1 FAIL test/delivery-loop/learn.test.ts
+      1 FAIL test/delivery-loop/intake.test.ts
+      1 FAIL test/delivery-loop/heal.test.ts
+      1 FAIL test/delivery-loop/engine.test.ts
+      1     Cannot find module '../../src/services/delivery-loop/review'
+      1     Cannot find module '../../src/services/delivery-loop/learn'
+      1     Cannot find module '../../src/services/delivery-loop/intake'
+      1     Cannot find module '../../src/services/delivery-loop/heal'

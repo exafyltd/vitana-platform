@@ -1,0 +1,9 @@
+# Full gateway suite: npx jest --silent --maxWorkers=5   (head e094e26718 + slice 3 working tree)
+suites: 1793 total, 1788 passed, 2 failed, 3 skipped
+tests: 30120 total, 30058 passed, 2 failed, 54 skipped, 6 todo
+
+Failed (2). Both fail the same way on the base commit with every slice 3 change stashed:
+ - test/providers/storage-provider.test.ts :: builds a plain, unsigned public URL — same shape as Supabase getPublicUrl()
+ - test/vtid-04226-eventbridge-test-contract-schedules.test.ts :: the token provisioning script is dry-run by default and never defaults to prod
+   storage-provider: the S3 region defaults to us-east-1 here (expected eu-central-1).
+   vtid-04226: scripts/aws/setup-gateway-internal-token.sh needs openssl, which this sandbox lacks.

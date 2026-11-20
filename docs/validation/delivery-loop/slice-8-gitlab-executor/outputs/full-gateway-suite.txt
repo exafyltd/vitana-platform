@@ -1,0 +1,30 @@
+# Full gateway suite, slice 8 (cwd services/gateway: npx jest --silent --maxWorkers=4 --json)
+# head = the uncommitted slice 8 change on kiro/delivery-loop-engine/gitlab-executor, base 340f5f084c (the delivery loop merged with origin/main 79a84a31b5)
+suites: 1811 total, 1806 passed, 2 failed, 3 skipped
+tests:  30559 total, 30497 passed, 2 failed, 54 skipped, 6 todo
+
+Failing tests (both pre-existing, the same in every slice-3..7 baseline, unrelated to this change):
+  FAIL test/providers/storage-provider.test.ts
+       VTID-03765 s3BucketName / s3PublicUrl builds a plain, unsigned public URL — same shape as Supabase getPublicUrl()
+  FAIL test/vtid-04226-eventbridge-test-contract-schedules.test.ts
+       VTID-04226: scripts parse and dry-run the token provisioning script is dry-run by default and never defaults to prod
+
+The first full run of this change (before the fix noted in commands.log) had 2 more failures, both in
+test/vtid-04466-exploration-budget.test.ts: two source-string pins of `!fixMode` that the change renamed to `!continuing`.
+They were updated on purpose (scope.json, tests_changed_on_purpose) and this run is after that.
+
+Suites that guard this area, from this run:
+  operator pipeline regression (VTID-04465, CLAUDE.md 42e)    1 suites    75 tests    75 passed
+  bridge guards (new)                                         1 suites    25 tests    25 passed
+  GitLab repair enqueue (new)                                 1 suites    15 tests    15 passed
+  GitLab target (new)                                         1 suites    31 tests    31 passed
+  workspace on GitLab (new)                                   1 suites     9 tests     9 passed
+  dev-autopilot bridge (existing)                             1 suites    22 tests    22 passed
+  fix mode + merge conflicts (04017, 04217)                   2 suites    27 tests    27 passed
+  executor pins (04006, 04247, flood guard)                   4 suites    14 tests    14 passed
+  exploration budget (04466)                                  1 suites    20 tests    20 passed
+  locked source-type list (04108, 04667, 04671)               7 suites    78 tests    78 passed
+  role separation regression (VTID-04560)                     1 suites   105 tests   105 passed
+  customer support regression (VTID-04456)                    1 suites    25 tests    25 passed
+  delivery-loop/*                                            13 suites   346 tests   346 passed
+  delivery/* and gitlab-events/*                             10 suites   271 tests   271 passed

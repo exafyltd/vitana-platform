@@ -15,9 +15,16 @@ import * as fs from 'fs';
 import * as path from 'path';
 import {
   AGENT_BRANCH_RE,
+  DEFAULT_INTAKE_LABEL,
   DELIVERY_TOPICS,
+  MAX_FAILED_JOBS,
+  MAX_LABELS,
   MemoryBranchVtidIndex,
+  failedJobsOf,
+  intakeLabelOf,
   jobsOf,
+  keptLabels,
+  labelTitles,
   laneKeyOf,
   mapGitlabDelivery,
   modeFor,
@@ -31,6 +38,7 @@ import { EVENT_MAPPING_RULES, mapEventToTransition } from '../../src/services/au
 import type { AutopilotState } from '../../src/services/autopilot-controller';
 import {
   HEAD,
+  ISSUE_TITLE,
   LANDING_MESSAGE,
   LANE_TITLE,
   LIVE_ENV,
@@ -40,6 +48,7 @@ import {
   REVIEW_COMMIT,
   UNSET_ENV,
   V1,
+  issue,
   mergeRequest,
   pipeline,
   push,
@@ -483,6 +492,10 @@ describe('VTID-05547 every event — shape, privacy, bounds', () => {
     ['pipeline nightly', pipeline('failed', { attrs: { source: 'schedule' }, commit: { id: 'x', title: 'chore', message: 'chore' } })],
     ['push review', push({ commits: [REVIEW_COMMIT, ...(push().commits as unknown[])] })],
     ['tag', tagPush('refs/tags/delivery/cutover-vitana-platform')],
+    ['issue open', issue('open', ['agent-task', 'priority-high', 'secret-label'])],
+    ['issue labeled', issue('update', ['agent-task'], {}, { changes: { labels: { previous: [], current: [{ title: 'agent-task' }] } } })],
+    ['issue close', issue('close')],
+    ['pipeline failed with failed jobs', pipeline('failed', { attrs: { ref: 'kiro/x/y' }, merge_request: { iid: 12, title: LANE_TITLE, source_branch: 'kiro/x/y', target_branch: 'main' }, builds: [{ id: 5, name: 'unit', status: 'failed', failure_reason: 'script_failure', exit_code: 1, user: { name: 'secret-user' } }] })],
   ];
 
   it('every event has a VTID or BOOTSTRAP-DELIVERY, metadata.dedupe_key, plane delivery, host gitlab and a mode', async () => {
@@ -522,7 +535,7 @@ describe('VTID-05547 every event — shape, privacy, bounds', () => {
   it('never carries the description, the user, labels other than the queue label, the changes, pipeline variables or raw builds', async () => {
     for (const [name, payload] of corpus()) {
       const text = JSON.stringify(await events(payload));
-      for (const leak of ['secret-description-text', 'agent@example.invalid', 'Agent Kiro', 'agent-kiro-exafy', 'secret-label', 'SECRET_VARIABLE', 'secret-variable-value', 'secret-user', 'user_name']) {
+      for (const leak of ['secret-description-text', 'agent@example.invalid', 'Agent Kiro', 'agent-kiro-exafy', 'secret-label', 'SECRET_VARIABLE', 'secret-variable-value', 'secret-user', 'user_name', ISSUE_TITLE, 'secret-issue-title', 'author_id']) {
         expect({ name, leak, found: text.includes(leak) }).toEqual({ name, leak, found: false });
       }
     }
@@ -573,6 +586,8 @@ describe('VTID-05547 no delivery event can move a VTID', () => {
       pipeline('running'), pipeline('success', { builds: DEPLOY_BUILDS('success', 'success') }), pipeline('failed', { builds: DEPLOY_BUILDS('failed') }), pipeline('canceled'),
       push({ commits: [REVIEW_COMMIT] }), tagPush('refs/tags/delivery/cutover-vitana-v1'),
       mergeRequest('open', { description: 'Moved from https://github.com/exafyltd/vitana-v1/pull/7' }),
+      issue('open'), issue('close'),
+      issue('update', ['agent-task'], {}, { changes: { labels: { previous: [], current: [{ title: 'agent-task' }] } } }),
     ];
     const seen = new Set<string>();
     for (const p of payloads) {
@@ -633,7 +648,7 @@ describe('VTID-05547 topics — members of CicdEventType, and mapper.ts kept as 
       const m2 = mapGitlabEvent(payload, 'wh_1');
       if (m2.kind !== 'emit') throw new Error('expected the base mapper to emit');
       const mine = (await events(payload))[at];
-      const { repo, plane, host, mode, dedupe_key, lane_key, queue_label, jobs, queued_s, tag, ...rest } = mine.payload as Record<string, unknown>;
+      const { repo, plane, host, mode, dedupe_key, lane_key, queue_label, jobs, queued_s, tag, mr_source_branch, mr_target_branch, mr_url, failed_jobs, ...rest } = mine.payload as Record<string, unknown>;
       expect([repo, plane, host, mode, typeof dedupe_key]).toEqual(['vitana-platform', 'delivery', 'gitlab', 'live', 'string']);
       expect({ ...mine, payload: rest }).toEqual(m2.event);
     }
@@ -646,7 +661,7 @@ describe('VTID-05547 topics — members of CicdEventType, and mapper.ts kept as 
     if (m2.kind !== 'emit') throw new Error('expected emit');
     const built = (await events(without))[0];
     expect(built.vtid).toBe('BOOTSTRAP-DELIVERY');
-    const { repo, plane, host, mode, dedupe_key, lane_key, queue_label, jobs, queued_s, tag, ...rest } = built.payload as Record<string, unknown>;
+    const { repo, plane, host, mode, dedupe_key, lane_key, queue_label, jobs, queued_s, tag, mr_source_branch, mr_target_branch, mr_url, failed_jobs, ...rest } = built.payload as Record<string, unknown>;
     expect({ ...built, vtid: m2.event.vtid, payload: rest }).toEqual(m2.event);
   });
 });
@@ -691,5 +706,231 @@ describe('VTID-05547 helpers', () => {
     const idx2 = new MemoryBranchVtidIndex();
     await mapGitlabDelivery(mergeRequest('open', { title: 'no ticket' }), 'w', { env: LIVE_ENV, branches: idx2 });
     expect(idx2.size()).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------------------
+// The delivery loop: intake (a GitLab issue with the intake label) and failure detection (a failed pipeline)
+// ---------------------------------------------------------------------------------------------------------
+
+const ADDED = (...titles: string[]) => ({ changes: { labels: { previous: [], current: titles.map((title) => ({ title })) } } });
+
+describe('delivery loop intake — a GitLab issue with the intake label', () => {
+  it('an issue opened with the intake label gives scm.gitlab.issue.opened: ids, state, url and the agent labels only', async () => {
+    const evs = await events(issue('open', ['agent-task', 'priority-high', 'bug', 'delivery-lane']));
+    expect(evs).toHaveLength(1);
+    expect(evs[0]).toMatchObject({
+      vtid: 'BOOTSTRAP-DELIVERY',
+      type: 'scm.gitlab.issue.opened',
+      source: 'gitlab-webhook',
+      status: 'info',
+      message: 'GitLab issue #17 opened in vitana/vitana-platform',
+      payload: {
+        gitlab_event: 'issue',
+        action: 'open',
+        project_id: 42,
+        project_path: 'vitana/vitana-platform',
+        issue_iid: 17,
+        issue_id: 301,
+        state: 'opened',
+        url: 'https://gitlab.example.invalid/vitana/vitana-platform/-/issues/17',
+        confidential: false,
+        intake_label: 'agent-task',
+        labels: ['agent-task', 'priority-high', 'delivery-lane'],
+        plane: 'delivery',
+        host: 'gitlab',
+        mode: 'live',
+        repo: 'vitana-platform',
+        dedupe_key: 'gitlab:vitana/vitana-platform:issue:17:opened:2026-11-18 10:00:00 UTC',
+      },
+    });
+    expect(evs[0].payload).not.toHaveProperty('title');
+    expect(evs[0].payload).not.toHaveProperty('description');
+  });
+
+  it('a reopened issue is opened again, under a key of its own', async () => {
+    const opened = (await events(issue('open')))[0];
+    const reopened = (await events(issue('reopen', ['agent-task'], { updated_at: '2026-11-18 12:30:00 UTC' })))[0];
+    expect(reopened.type).toBe('scm.gitlab.issue.opened');
+    expect(reopened.message).toBe('GitLab issue #17 reopened in vitana/vitana-platform');
+    expect(reopened.payload.dedupe_key).not.toBe(opened.payload.dedupe_key);
+  });
+
+  it('a webhook retry of the same delivery has the same key, so the same fact is one row', async () => {
+    const a = (await events(issue('open')))[0].payload.dedupe_key;
+    const b = (await mapGitlabDelivery(issue('open'), 'a-different-webhook-id', { env: LIVE_ENV, branches: new MemoryBranchVtidIndex() }).then((m) => (m.kind === 'emit' ? m.events[0].payload.dedupe_key : null)));
+    expect(b).toBe(a);
+  });
+
+  it('an update that adds the intake label gives scm.gitlab.issue.labeled', async () => {
+    const evs = await events(issue('update', ['agent-task', 'bug'], { updated_at: '2026-11-18 11:00:00 UTC' }, ADDED('agent-task', 'bug')));
+    expect(evs).toHaveLength(1);
+    expect(evs[0]).toMatchObject({
+      type: 'scm.gitlab.issue.labeled',
+      message: 'GitLab issue #17 labeled for the agents in vitana/vitana-platform',
+      payload: { action: 'update', issue_iid: 17, labels: ['agent-task'], dedupe_key: 'gitlab:vitana/vitana-platform:issue:17:labeled:2026-11-18 11:00:00 UTC' },
+    });
+  });
+
+  it('an update of a task already labeled, or one that only edits the text, is not intake (unmapped_action)', async () => {
+    const already = { changes: { labels: { previous: [{ title: 'agent-task' }], current: [{ title: 'agent-task' }, { title: 'bug' }] } } };
+    expect(await map(issue('update', ['agent-task', 'bug'], {}, already))).toEqual({ kind: 'ignore', reason: 'unmapped_action' });
+    expect(await map(issue('update', ['agent-task'], {}, { changes: { title: { previous: 'a', current: 'b' } } }))).toEqual({ kind: 'ignore', reason: 'unmapped_action' });
+    expect(await map(issue('update', ['agent-task']))).toEqual({ kind: 'ignore', reason: 'unmapped_action' });
+  });
+
+  it('closing a task gives scm.gitlab.issue.closed', async () => {
+    const evs = await events(issue('close', ['agent-task'], { updated_at: '2026-11-18 13:00:00 UTC' }));
+    expect(evs).toHaveLength(1);
+    expect(evs[0]).toMatchObject({ type: 'scm.gitlab.issue.closed', status: 'info', payload: { state: 'closed', dedupe_key: 'gitlab:vitana/vitana-platform:issue:17:closed:2026-11-18 13:00:00 UTC' } });
+  });
+
+  it('an issue without the intake label is not a task: opened, closed, or an update that removes the label are all not_intake', async () => {
+    expect(await map(issue('open', ['bug']))).toEqual({ kind: 'ignore', reason: 'not_intake' });
+    expect(await map(issue('open', []))).toEqual({ kind: 'ignore', reason: 'not_intake' });
+    expect(await map(issue('close', ['bug']))).toEqual({ kind: 'ignore', reason: 'not_intake' });
+    const removed = { changes: { labels: { previous: [{ title: 'agent-task' }], current: [] } } };
+    expect(await map(issue('update', [], {}, removed))).toEqual({ kind: 'ignore', reason: 'not_intake' });
+    expect(await map(issue('open', ['agent-tasks', 'Agent-Task', 'x-agent-task']))).toEqual({ kind: 'ignore', reason: 'not_intake' });
+  });
+
+  it('the intake label is DELIVERY_INTAKE_LABEL when it is a plain label name, otherwise agent-task', async () => {
+    const robot = { ...LIVE_ENV, DELIVERY_INTAKE_LABEL: 'robot-task' } as NodeJS.ProcessEnv;
+    expect(await map(issue('open', ['agent-task']), robot)).toEqual({ kind: 'ignore', reason: 'not_intake' });
+    const evs = await events(issue('open', ['robot-task', 'agent-x']), robot);
+    expect(evs[0].payload).toMatchObject({ intake_label: 'robot-task', labels: ['robot-task', 'agent-x'] });
+    for (const bad of ['', '  ', '-x', 'a'.repeat(65), 'a\nb', '<script>', undefined]) {
+      expect(intakeLabelOf({ ...LIVE_ENV, DELIVERY_INTAKE_LABEL: bad } as NodeJS.ProcessEnv)).toBe(DEFAULT_INTAKE_LABEL);
+    }
+    expect(intakeLabelOf({ DELIVERY_INTAKE_LABEL: ' needs agent ' } as NodeJS.ProcessEnv)).toBe('needs agent');
+  });
+
+  it('keeps at most ten labels, each once, and only the intake label and the agent-, delivery- and priority- ones', () => {
+    const many = Array.from({ length: 15 }, (_, i) => `agent-${i}`);
+    expect(keptLabels(['agent-task', ...many, 'agent-task'], 'agent-task')).toHaveLength(MAX_LABELS);
+    expect(keptLabels(['bug', 'priority-1', 'delivery-x', 'Priority-2', 'agent-task', 'agent-task', 'my-agent-x', 'queue-ready'], 'agent-task')).toEqual(['priority-1', 'delivery-x', 'agent-task']);
+    expect(labelTitles([{ title: 'a' }, 'b', { title: 3 }, null, {}, { title: '' }])).toEqual(['a', 'b']);
+    expect(labelTitles('nope')).toEqual([]);
+  });
+
+  it('a title that names a VTID keeps it; a task without one is recorded under BOOTSTRAP-DELIVERY', async () => {
+    expect((await events(issue('open', ['agent-task'], { title: 'VTID-05736 retry the parked lane' })))[0].vtid).toBe('VTID-05736');
+    expect((await events(issue('open')))[0].vtid).toBe('BOOTSTRAP-DELIVERY');
+  });
+
+  it('labels come from the top-level list, or from the issue attributes when the payload has none', async () => {
+    const noTop = issue('open', []) as Record<string, any>;
+    delete noTop.labels;
+    noTop.object_attributes.labels = [{ title: 'agent-task' }];
+    expect((await events(noTop))[0].payload.labels).toEqual(['agent-task']);
+  });
+
+  it('only an Issue is a task: other work item types and work_item events are ignored', async () => {
+    expect(await map(issue('open', ['agent-task'], { type: 'Epic' }))).toEqual({ kind: 'ignore', reason: 'unknown_event' });
+    expect(await map(issue('open', ['agent-task'], { type: 'Task' }))).toEqual({ kind: 'ignore', reason: 'unknown_event' });
+    expect(await map({ ...issue('open'), object_kind: 'work_item' })).toEqual({ kind: 'ignore', reason: 'unknown_event' });
+    expect((await events(issue('open', ['agent-task'], { type: undefined }))).length).toBe(1); // an older GitLab sends no type
+  });
+
+  it('an unknown action, a missing iid and hostile attributes are ignored and never throw', async () => {
+    expect(await map(issue('merge'))).toEqual({ kind: 'ignore', reason: 'unmapped_action' });
+    expect(await map(issue('open', ['agent-task'], { iid: undefined }))).toEqual({ kind: 'ignore', reason: 'unmapped_action' });
+    expect(await map(issue('open', ['agent-task'], { iid: '17' }))).toEqual({ kind: 'ignore', reason: 'unmapped_action' });
+    for (const payload of [{ object_kind: 'issue' }, { object_kind: 'issue', object_attributes: 'x' }, { object_kind: 'issue', object_attributes: { action: 'open', iid: 1 }, labels: 'x' }, { object_kind: 'issue', object_attributes: { action: 'update', iid: 1 }, labels: [{ title: 'agent-task' }], changes: { labels: 'x' } }]) {
+      expect((await map(payload)).kind).toBe('ignore');
+    }
+  });
+
+  it('is marked live for a delivered repository and shadow for the rehearsal project', async () => {
+    expect((await events(issue('open', ['agent-task'], {}, {}, V1)))[0].payload).toMatchObject({ repo: 'vitana-v1', mode: 'live' });
+    expect((await events(issue('open', ['agent-task'], {}, {}, REHEARSAL)))[0].payload).toMatchObject({ repo: 'rehearsal', mode: 'shadow' });
+    expect((await events(issue('open'), UNSET_ENV))[0].payload.mode).toBe('shadow');
+  });
+});
+
+describe('delivery loop failure detection — a failed pipeline names what failed', () => {
+  const BUILDS = [
+    { id: 12, name: 'lint', stage: 'test', status: 'success', duration: 20, queued_duration: 1, failure_reason: null },
+    { id: 14, name: 'unit-tests', stage: 'test', status: 'failed', duration: 61, queued_duration: 2, failure_reason: 'script_failure', exit_code: 1, allow_failure: false, user: { name: 'secret-user' }, runner: { description: 'secret-runner' } },
+    { id: 13, name: 'integration', stage: 'test', status: 'failed', duration: 5, queued_duration: 9, failure_reason: 'runner_system_failure', exit_code: null, allow_failure: false },
+    { id: 15, name: 'optional-scan', stage: 'test', status: 'failed', duration: 3, failure_reason: 'script_failure', exit_code: 2, allow_failure: true },
+    { id: 16, name: 'deploy', stage: 'deploy', status: 'skipped' },
+  ];
+  const MR = { iid: 12, title: LANE_TITLE, source_branch: 'kiro/agentic-delivery/gateway-delivery', target_branch: 'main', url: 'https://gitlab.example.invalid/vitana/vitana-platform/-/merge_requests/12' };
+  const failed = (builds: unknown = BUILDS, mr: unknown = MR) => pipeline('failed', { attrs: { ref: 'kiro/agentic-delivery/gateway-delivery' }, merge_request: mr, builds });
+
+  it('carries failed_jobs: the jobs that failed and were not allowed to, lowest id first, with the reason and exit code', async () => {
+    const [e] = await events(failed());
+    expect(e.type).toBe('scm.gitlab.pipeline.failed');
+    expect(e.status).toBe('warning');
+    expect(e.payload.failed_jobs).toEqual([
+      { id: 13, name: 'integration', stage: 'test', failure_reason: 'runner_system_failure', exit_code: null },
+      { id: 14, name: 'unit-tests', stage: 'test', failure_reason: 'script_failure', exit_code: 1 },
+    ]);
+  });
+
+  it('names the merge request branches and URL, which is where a repair starts', async () => {
+    const [e] = await events(failed());
+    expect(e.payload).toMatchObject({
+      mr_source_branch: 'kiro/agentic-delivery/gateway-delivery',
+      mr_target_branch: 'main',
+      mr_url: 'https://gitlab.example.invalid/vitana/vitana-platform/-/merge_requests/12',
+      merge_request_iid: 12,
+      lane_key: 'agentic-delivery/gateway-delivery',
+    });
+  });
+
+  it('a pipeline with no merge request has null branches and URL, and still lists its failed jobs', async () => {
+    const [e] = await events(pipeline('failed', { attrs: { source: 'schedule' }, merge_request: null, commit: { id: 'x', title: 'chore', message: 'chore' }, builds: BUILDS }));
+    expect(e.vtid).toBe('BOOTSTRAP-DELIVERY');
+    expect(e.payload).toMatchObject({ mr_source_branch: null, mr_target_branch: null, mr_url: null });
+    expect((e.payload.failed_jobs as unknown[]).length).toBe(2);
+  });
+
+  it('only a failed pipeline carries failed_jobs; success, running and canceled do not', async () => {
+    for (const status of ['success', 'running', 'canceled']) {
+      const [e] = await events(pipeline(status, { attrs: { ref: 'b' }, merge_request: MR, builds: BUILDS }));
+      expect({ status, has: 'failed_jobs' in e.payload }).toEqual({ status, has: false });
+      expect(e.payload).toMatchObject({ mr_source_branch: MR.source_branch, mr_url: MR.url });
+    }
+  });
+
+  it('a failed pipeline whose jobs all may fail, or has no builds, carries an empty failed_jobs', async () => {
+    expect((await events(failed([{ id: 1, name: 'x', status: 'failed', allow_failure: true }])))[0].payload.failed_jobs).toEqual([]);
+    expect((await events(failed([])))[0].payload.failed_jobs).toEqual([]);
+    // No builds key at all (the fixture keeps an explicit undefined as "absent"); the helper's default would fill it in.
+    const noBuilds = pipeline('failed', { attrs: { ref: 'kiro/x/y' }, merge_request: MR, builds: undefined });
+    expect('builds' in noBuilds && noBuilds.builds === undefined).toBe(true);
+    expect((await events(noBuilds))[0].payload.failed_jobs).toEqual([]);
+  });
+
+  it('the jobs summary is unchanged: no failure_reason, exit_code or allow_failure in it', async () => {
+    const [e] = await events(failed());
+    expect((e.payload.jobs as Array<Record<string, unknown>>)[1]).toEqual({ name: 'unit-tests', stage: 'test', status: 'failed', wait_s: 2, run_s: 61 });
+    expect(jobsOf(BUILDS)[1]).toEqual({ name: 'unit-tests', stage: 'test', status: 'failed', wait_s: 2, run_s: 61 });
+  });
+
+  it('keeps at most MAX_FAILED_JOBS and never throws on hostile builds', () => {
+    const many = Array.from({ length: 60 }, (_, i) => ({ id: 1000 - i, name: `job-${i}`, status: 'failed' }));
+    const out = failedJobsOf(many);
+    expect(out).toHaveLength(MAX_FAILED_JOBS);
+    expect(out[0].id).toBeLessThan(out[1].id as number);
+    expect(failedJobsOf([null, 'x', 5, { status: 'failed' }, { id: 'x', name: {}, status: 'failed', exit_code: 'x', failure_reason: 7 }])).toEqual([
+      { id: null, name: null, stage: null, failure_reason: null, exit_code: null },
+      { id: null, name: null, stage: null, failure_reason: null, exit_code: null },
+    ]);
+    expect(failedJobsOf('nope')).toEqual([]);
+    expect(failedJobsOf([{ id: 1, name: 'n', status: 'failed', failure_reason: 'x'.repeat(200) }])[0].failure_reason).toHaveLength(64);
+  });
+
+  it('never carries the job user or runner, and a long job name is cut to 512 characters', async () => {
+    const text = JSON.stringify(await events(failed([{ id: 1, name: 'n'.repeat(900), status: 'failed', user: { name: 'secret-user' }, runner: { description: 'secret-runner' }, log: 'secret-log-line' }])));
+    for (const leak of ['secret-user', 'secret-runner', 'secret-log-line']) expect(text).not.toContain(leak);
+    expect(((await events(failed([{ id: 1, name: 'n'.repeat(900), status: 'failed' }])))[0].payload.failed_jobs as Array<{ name: string }>)[0].name).toHaveLength(512);
+  });
+
+  it('keeps the dedupe key of the failed pipeline: one fact whichever gateway task sees it', async () => {
+    const [e] = await events(failed());
+    expect(e.payload.dedupe_key).toBe('gitlab:vitana/vitana-platform:pipeline:31:failed');
   });
 });

@@ -1,0 +1,6 @@
+# Typechecks, slice 8 (2026-11-19T19:32:52Z), cwd services/gateway
+$ npx tsc --noEmit -p tsconfig.json --preserveSymlinks   (this worktree links node_modules from the main checkout; without --preserveSymlinks tsc reports TS2742 'not portable' on 4 unchanged repository files, and no other error)
+exit: 0
+$ npx tsc --noEmit -p tsconfig.json 2>&1 | grep -v TS2742   (nothing else)
+$ npx tsc --noEmit --strict ... test/autopilot-agent-gitlab-target.test.ts test/autopilot-agent-workspace-gitlab.test.ts test/dev-autopilot-bridge-gitlab-guards.test.ts test/dev-autopilot-gitlab-repair.test.ts test/delivery-loop/*.test.ts test/delivery-loop/harness.ts test/delivery-loop/fixtures/*.ts
+exit: 0

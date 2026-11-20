@@ -1,0 +1,24 @@
+{
+  "vtid": null,
+  "slice": "delivery-loop/slice-3-durable-events",
+  "kind": "feature",
+  "paths": [
+    "services/gateway/src/types/cicd.ts",
+    "services/gateway/src/services/oasis-event-service.ts",
+    "services/gateway/src/services/gitlab-events/delivery-mapper.ts",
+    "services/gateway/src/services/gitlab-events/delivery-stage.ts",
+    "services/gateway/test/oasis-event-idempotency.test.ts",
+    "services/gateway/test/delivery/fixtures.ts",
+    "services/gateway/test/delivery/gitlab-delivery-mapping.test.ts",
+    "services/gateway/test/delivery/gitlab-delivery-oasis-write.test.ts",
+    "services/gateway/test/delivery/gitlab-delivery-webhook.test.ts",
+    "docs/validation/delivery-loop/slice-3-durable-events/**"
+  ],
+  "vtid_note": "No VTID: this work has no approved lane. VTIDs come only from CI PLAN-SPAR, so none was allocated or invented. The merge request is WIP until plan(delivery-loop) is sparred.",
+  "weakens_tests": [],
+  "tests_changed_on_purpose": [
+    "services/gateway/test/delivery/gitlab-delivery-oasis-write.test.ts: the OASIS fake models PostgREST on the primary key (a known id under ignore-duplicates answers an empty array); the old fake answered an empty array to every insert, which now means duplicate",
+    "services/gateway/test/delivery/gitlab-delivery-mapping.test.ts: the two 'events of mapper.ts are kept as they are' tests list the new additive pipeline fields (mr_source_branch, mr_target_branch, mr_url, failed_jobs) beside the delivery fields they already set aside; the corpora gained issue and failed-pipeline cases"
+  ],
+  "red_green_exempt": []
+}

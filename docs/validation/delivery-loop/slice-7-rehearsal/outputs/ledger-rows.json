@@ -1,0 +1,1169 @@
+[
+ {
+  "topic": "scm.gitlab.issue.labeled",
+  "status": "info",
+  "message": "Polled issue #14 in vitana/rehearsal (intake label present)",
+  "metadata": {
+   "plane": "delivery",
+   "host": "gitlab",
+   "gitlab_event": "issue",
+   "source": "poll",
+   "project_path": "vitana/rehearsal",
+   "issue_iid": 14,
+   "issue_id": 17,
+   "state": "opened",
+   "url": "https://gitlab.vitanaland.com/vitana/rehearsal/-/work_items/14",
+   "confidential": false,
+   "intake_label": "agent-task",
+   "labels": [
+    "agent-task"
+   ],
+   "version": "6fd879cc86a2",
+   "dedupe_key": "gitlab:vitana/rehearsal:issue:14:poll:6fd879cc86a2",
+   "env": "staging"
+  }
+ },
+ {
+  "topic": "scm.gitlab.pipeline.failed",
+  "status": "warning",
+  "message": "Polled pipeline 559 failed on loop-rehearsal/r2d4e5f in vitana/rehearsal",
+  "metadata": {
+   "plane": "delivery",
+   "host": "gitlab",
+   "gitlab_event": "pipeline",
+   "source": "poll",
+   "project_path": "vitana/rehearsal",
+   "pipeline_id": 559,
+   "status": "failed",
+   "ref": "refs/merge-requests/6/head",
+   "sha": "a4b7fb38dcbd6a1a4d3c5a80fa6d617b5ae738b1",
+   "url": "https://gitlab.vitanaland.com/vitana/rehearsal/-/pipelines/559",
+   "tag": false,
+   "merge_request_iid": 6,
+   "mr_source_branch": "loop-rehearsal/r2d4e5f",
+   "mr_target_branch": "main",
+   "mr_url": "https://gitlab.vitanaland.com/vitana/rehearsal/-/merge_requests/6",
+   "failed_jobs": [
+    {
+     "id": 3941,
+     "name": "unit",
+     "stage": "check",
+     "failure_reason": "script_failure",
+     "exit_code": null
+    }
+   ],
+   "dedupe_key": "gitlab:vitana/rehearsal:pipeline:559:failed",
+   "env": "staging"
+  }
+ },
+ {
+  "topic": "scm.gitlab.pipeline.failed",
+  "status": "warning",
+  "message": "Polled pipeline 567 failed on loop-rehearsal/r3x7y8z in vitana/rehearsal",
+  "metadata": {
+   "plane": "delivery",
+   "host": "gitlab",
+   "gitlab_event": "pipeline",
+   "source": "poll",
+   "project_path": "vitana/rehearsal",
+   "pipeline_id": 567,
+   "status": "failed",
+   "ref": "refs/merge-requests/7/head",
+   "sha": "4edfe179196886b8142f01f3cd718f9b1738ddda",
+   "url": "https://gitlab.vitanaland.com/vitana/rehearsal/-/pipelines/567",
+   "tag": false,
+   "merge_request_iid": 7,
+   "mr_source_branch": "loop-rehearsal/r3x7y8z",
+   "mr_target_branch": "main",
+   "mr_url": "https://gitlab.vitanaland.com/vitana/rehearsal/-/merge_requests/7",
+   "failed_jobs": [
+    {
+     "id": 3964,
+     "name": "unit",
+     "stage": "check",
+     "failure_reason": "script_failure",
+     "exit_code": null
+    }
+   ],
+   "dedupe_key": "gitlab:vitana/rehearsal:pipeline:567:failed",
+   "env": "staging"
+  }
+ },
+ {
+  "topic": "scm.gitlab.pipeline.failed",
+  "status": "warning",
+  "message": "Polled pipeline 569 failed on loop-rehearsal/r4m8n2p in vitana/rehearsal",
+  "metadata": {
+   "plane": "delivery",
+   "host": "gitlab",
+   "gitlab_event": "pipeline",
+   "source": "poll",
+   "project_path": "vitana/rehearsal",
+   "pipeline_id": 569,
+   "status": "failed",
+   "ref": "refs/merge-requests/8/head",
+   "sha": "01371ac9224d4351ff3547655e8f5b4329e7e217",
+   "url": "https://gitlab.vitanaland.com/vitana/rehearsal/-/pipelines/569",
+   "tag": false,
+   "merge_request_iid": 8,
+   "mr_source_branch": "loop-rehearsal/r4m8n2p",
+   "mr_target_branch": "main",
+   "mr_url": "https://gitlab.vitanaland.com/vitana/rehearsal/-/merge_requests/8",
+   "failed_jobs": [
+    {
+     "id": 3966,
+     "name": "unit",
+     "stage": "check",
+     "failure_reason": "script_failure",
+     "exit_code": null
+    }
+   ],
+   "dedupe_key": "gitlab:vitana/rehearsal:pipeline:569:failed",
+   "env": "staging"
+  }
+ },
+ {
+  "topic": "scm.gitlab.pipeline.failed",
+  "status": "warning",
+  "message": "Polled pipeline 572 failed on loop-rehearsal/r5q9w3t in vitana/rehearsal",
+  "metadata": {
+   "plane": "delivery",
+   "host": "gitlab",
+   "gitlab_event": "pipeline",
+   "source": "poll",
+   "project_path": "vitana/rehearsal",
+   "pipeline_id": 572,
+   "status": "failed",
+   "ref": "refs/merge-requests/9/head",
+   "sha": "d2ead5dd3d6d6f46a2a962eb66e1ecb0bf537010",
+   "url": "https://gitlab.vitanaland.com/vitana/rehearsal/-/pipelines/572",
+   "tag": false,
+   "merge_request_iid": 9,
+   "mr_source_branch": "loop-rehearsal/r5q9w3t",
+   "mr_target_branch": "main",
+   "mr_url": "https://gitlab.vitanaland.com/vitana/rehearsal/-/merge_requests/9",
+   "failed_jobs": [
+    {
+     "id": 3976,
+     "name": "unit",
+     "stage": "check",
+     "failure_reason": "script_failure",
+     "exit_code": null
+    }
+   ],
+   "dedupe_key": "gitlab:vitana/rehearsal:pipeline:572:failed",
+   "env": "staging"
+  }
+ },
+ {
+  "topic": "scm.gitlab.pipeline.failed",
+  "status": "warning",
+  "message": "Polled pipeline 575 failed on loop-rehearsal/r6k2d7f in vitana/rehearsal",
+  "metadata": {
+   "plane": "delivery",
+   "host": "gitlab",
+   "gitlab_event": "pipeline",
+   "source": "poll",
+   "project_path": "vitana/rehearsal",
+   "pipeline_id": 575,
+   "status": "failed",
+   "ref": "refs/merge-requests/10/head",
+   "sha": "00e46fbb9e0d6eb621f5ad665680bc89897c1f28",
+   "url": "https://gitlab.vitanaland.com/vitana/rehearsal/-/pipelines/575",
+   "tag": false,
+   "merge_request_iid": 10,
+   "mr_source_branch": "loop-rehearsal/r6k2d7f",
+   "mr_target_branch": "main",
+   "mr_url": "https://gitlab.vitanaland.com/vitana/rehearsal/-/merge_requests/10",
+   "failed_jobs": [
+    {
+     "id": 3979,
+     "name": "unit",
+     "stage": "check",
+     "failure_reason": "script_failure",
+     "exit_code": null
+    }
+   ],
+   "dedupe_key": "gitlab:vitana/rehearsal:pipeline:575:failed",
+   "env": "staging"
+  }
+ },
+ {
+  "topic": "scm.gitlab.pipeline.succeeded",
+  "status": "success",
+  "message": "Polled pipeline 560 succeeded on loop-rehearsal/r2d4e5f in vitana/rehearsal",
+  "metadata": {
+   "plane": "delivery",
+   "host": "gitlab",
+   "gitlab_event": "pipeline",
+   "source": "poll",
+   "project_path": "vitana/rehearsal",
+   "pipeline_id": 560,
+   "status": "success",
+   "ref": "refs/merge-requests/6/head",
+   "sha": "1eec8fa78514e9a34c52ac9c82e07f47e3ac20d1",
+   "url": "https://gitlab.vitanaland.com/vitana/rehearsal/-/pipelines/560",
+   "tag": false,
+   "merge_request_iid": 6,
+   "mr_source_branch": "loop-rehearsal/r2d4e5f",
+   "mr_target_branch": "main",
+   "mr_url": "https://gitlab.vitanaland.com/vitana/rehearsal/-/merge_requests/6",
+   "dedupe_key": "gitlab:vitana/rehearsal:pipeline:560:success",
+   "env": "staging"
+  }
+ },
+ {
+  "topic": "scm.gitlab.pipeline.succeeded",
+  "status": "success",
+  "message": "Polled pipeline 568 succeeded on loop-rehearsal/r3x7y8z in vitana/rehearsal",
+  "metadata": {
+   "plane": "delivery",
+   "host": "gitlab",
+   "gitlab_event": "pipeline",
+   "source": "poll",
+   "project_path": "vitana/rehearsal",
+   "pipeline_id": 568,
+   "status": "success",
+   "ref": "refs/merge-requests/7/head",
+   "sha": "d89ef15c2495d3e2dde233e446d4801273a6f568",
+   "url": "https://gitlab.vitanaland.com/vitana/rehearsal/-/pipelines/568",
+   "tag": false,
+   "merge_request_iid": 7,
+   "mr_source_branch": "loop-rehearsal/r3x7y8z",
+   "mr_target_branch": "main",
+   "mr_url": "https://gitlab.vitanaland.com/vitana/rehearsal/-/merge_requests/7",
+   "dedupe_key": "gitlab:vitana/rehearsal:pipeline:568:success",
+   "env": "staging"
+  }
+ },
+ {
+  "topic": "scm.gitlab.pipeline.succeeded",
+  "status": "success",
+  "message": "Polled pipeline 570 succeeded on loop-rehearsal/r4m8n2p in vitana/rehearsal",
+  "metadata": {
+   "plane": "delivery",
+   "host": "gitlab",
+   "gitlab_event": "pipeline",
+   "source": "poll",
+   "project_path": "vitana/rehearsal",
+   "pipeline_id": 570,
+   "status": "success",
+   "ref": "refs/merge-requests/8/head",
+   "sha": "ff8ba87d3a263fa58c11486519b5a7099cb3c09d",
+   "url": "https://gitlab.vitanaland.com/vitana/rehearsal/-/pipelines/570",
+   "tag": false,
+   "merge_request_iid": 8,
+   "mr_source_branch": "loop-rehearsal/r4m8n2p",
+   "mr_target_branch": "main",
+   "mr_url": "https://gitlab.vitanaland.com/vitana/rehearsal/-/merge_requests/8",
+   "dedupe_key": "gitlab:vitana/rehearsal:pipeline:570:success",
+   "env": "staging"
+  }
+ },
+ {
+  "topic": "scm.gitlab.pipeline.succeeded",
+  "status": "success",
+  "message": "Polled pipeline 573 succeeded on loop-rehearsal/r5q9w3t in vitana/rehearsal",
+  "metadata": {
+   "plane": "delivery",
+   "host": "gitlab",
+   "gitlab_event": "pipeline",
+   "source": "poll",
+   "project_path": "vitana/rehearsal",
+   "pipeline_id": 573,
+   "status": "success",
+   "ref": "refs/merge-requests/9/head",
+   "sha": "59185ebb6311fea20605210c0a496307ab168dd9",
+   "url": "https://gitlab.vitanaland.com/vitana/rehearsal/-/pipelines/573",
+   "tag": false,
+   "merge_request_iid": 9,
+   "mr_source_branch": "loop-rehearsal/r5q9w3t",
+   "mr_target_branch": "main",
+   "mr_url": "https://gitlab.vitanaland.com/vitana/rehearsal/-/merge_requests/9",
+   "dedupe_key": "gitlab:vitana/rehearsal:pipeline:573:success",
+   "env": "staging"
+  }
+ },
+ {
+  "topic": "scm.gitlab.pipeline.succeeded",
+  "status": "success",
+  "message": "Polled pipeline 576 succeeded on loop-rehearsal/r6k2d7f in vitana/rehearsal",
+  "metadata": {
+   "plane": "delivery",
+   "host": "gitlab",
+   "gitlab_event": "pipeline",
+   "source": "poll",
+   "project_path": "vitana/rehearsal",
+   "pipeline_id": 576,
+   "status": "success",
+   "ref": "refs/merge-requests/10/head",
+   "sha": "a6682d2e4947704e1883d6ac984dbdfecc838153",
+   "url": "https://gitlab.vitanaland.com/vitana/rehearsal/-/pipelines/576",
+   "tag": false,
+   "merge_request_iid": 10,
+   "mr_source_branch": "loop-rehearsal/r6k2d7f",
+   "mr_target_branch": "main",
+   "mr_url": "https://gitlab.vitanaland.com/vitana/rehearsal/-/merge_requests/10",
+   "dedupe_key": "gitlab:vitana/rehearsal:pipeline:576:success",
+   "env": "staging"
+  }
+ },
+ {
+  "topic": "delivery.loop.claim",
+  "status": "info",
+  "message": "Delivery loop claimed window 119672692",
+  "metadata": {
+   "plane": "delivery",
+   "host": "loop",
+   "window": 119672692,
+   "cycle_ms": 15000,
+   "autonomy": "L3",
+   "dedupe_key": "claim:119672692",
+   "env": "staging"
+  }
+ },
+ {
+  "topic": "delivery.intake.accepted",
+  "status": "info",
+  "message": "Issue #14 in vitana/rehearsal accepted as a task",
+  "metadata": {
+   "plane": "delivery",
+   "host": "loop",
+   "project": "vitana/rehearsal",
+   "issue_iid": 14,
+   "url": "https://gitlab.vitanaland.com/vitana/rehearsal/-/work_items/14",
+   "work_key": "intake:vitana/rehearsal:14",
+   "requester_level": 50,
+   "fact": "0e966e43-c4a4-5437-82e2-afc0699de198",
+   "dedupe_key": "intake:accepted:vitana/rehearsal:14",
+   "env": "staging"
+  }
+ },
+ {
+  "topic": "delivery.dispatch.requested",
+  "status": "info",
+  "message": "Work requested for issue #14 in vitana/rehearsal",
+  "metadata": {
+   "plane": "delivery",
+   "host": "loop",
+   "action": "run_task",
+   "kind": "intake",
+   "project": "vitana/rehearsal",
+   "issue_iid": 14,
+   "base_branch": "main",
+   "intent_key": "intent:intake:vitana/rehearsal:14:1",
+   "work_key": "intake:vitana/rehearsal:14",
+   "attempt": 1,
+   "dedupe_key": "intent:intake:vitana/rehearsal:14:1",
+   "env": "staging"
+  }
+ },
+ {
+  "topic": "delivery.note.requested",
+  "status": "info",
+  "message": "Note requested on issue #14 in vitana/rehearsal",
+  "metadata": {
+   "plane": "delivery",
+   "host": "loop",
+   "note_key": "note:intake:accepted:vitana/rehearsal:14",
+   "scope": "intake:accepted:vitana/rehearsal:14",
+   "project": "vitana/rehearsal",
+   "target": "issue",
+   "iid": 14,
+   "body": "The delivery loop accepted this issue as a task. A change is prepared on a branch of its own and opened as a merge request that closes this issue; review and merge stay with the project.",
+   "add_labels": [
+    "delivery-accepted"
+   ],
+   "remove_labels": [],
+   "dedupe_key": "note:requested:intake:accepted:vitana/rehearsal:14",
+   "env": "staging"
+  }
+ },
+ {
+  "topic": "delivery.note.posted",
+  "status": "info",
+  "message": "Commented on issue #14 in vitana/rehearsal",
+  "metadata": {
+   "plane": "delivery",
+   "host": "loop",
+   "note_key": "note:intake:accepted:vitana/rehearsal:14:comment",
+   "scope": "intake:accepted:vitana/rehearsal:14",
+   "project": "vitana/rehearsal",
+   "target": "issue",
+   "iid": 14,
+   "step": "comment",
+   "dedupe_key": "note:intake:accepted:vitana/rehearsal:14:comment",
+   "env": "staging"
+  }
+ },
+ {
+  "topic": "delivery.note.posted",
+  "status": "info",
+  "message": "Posted a note on issue #14 in vitana/rehearsal",
+  "metadata": {
+   "plane": "delivery",
+   "host": "loop",
+   "note_key": "note:intake:accepted:vitana/rehearsal:14",
+   "scope": "intake:accepted:vitana/rehearsal:14",
+   "project": "vitana/rehearsal",
+   "target": "issue",
+   "iid": 14,
+   "step": "done",
+   "dedupe_key": "note:intake:accepted:vitana/rehearsal:14",
+   "env": "staging"
+  }
+ },
+ {
+  "topic": "delivery.dispatch.failed",
+  "status": "warning",
+  "message": "Could not start intake:vitana/rehearsal:14: the rehearsal stub only repairs",
+  "metadata": {
+   "plane": "delivery",
+   "host": "loop",
+   "intent_key": "intent:intake:vitana/rehearsal:14:1",
+   "work_key": "intake:vitana/rehearsal:14",
+   "error": "the rehearsal stub only repairs",
+   "retryable": false,
+   "permanent": true,
+   "tries": 1,
+   "project": "vitana/rehearsal",
+   "branch_key": null,
+   "dedupe_key": "intent:intake:vitana/rehearsal:14:1:failed:1",
+   "env": "staging"
+  }
+ },
+ {
+  "topic": "delivery.note.requested",
+  "status": "info",
+  "message": "Note requested on issue #14 in vitana/rehearsal",
+  "metadata": {
+   "plane": "delivery",
+   "host": "loop",
+   "note_key": "note:dispatch:failed:intent:intake:vitana/rehearsal:14:1",
+   "scope": "dispatch:failed:intent:intake:vitana/rehearsal:14:1",
+   "project": "vitana/rehearsal",
+   "target": "issue",
+   "iid": 14,
+   "body": "The delivery loop could not start this work: the rehearsal stub only repairs. It will not try again by itself; a person needs to look at it.",
+   "add_labels": [],
+   "remove_labels": [],
+   "dedupe_key": "note:requested:dispatch:failed:intent:intake:vitana/rehearsal:14:1",
+   "env": "staging"
+  }
+ },
+ {
+  "topic": "delivery.note.posted",
+  "status": "info",
+  "message": "Commented on issue #14 in vitana/rehearsal",
+  "metadata": {
+   "plane": "delivery",
+   "host": "loop",
+   "note_key": "note:dispatch:failed:intent:intake:vitana/rehearsal:14:1:comment",
+   "scope": "dispatch:failed:intent:intake:vitana/rehearsal:14:1",
+   "project": "vitana/rehearsal",
+   "target": "issue",
+   "iid": 14,
+   "step": "comment",
+   "dedupe_key": "note:dispatch:failed:intent:intake:vitana/rehearsal:14:1:comment",
+   "env": "staging"
+  }
+ },
+ {
+  "topic": "delivery.note.posted",
+  "status": "info",
+  "message": "Posted a note on issue #14 in vitana/rehearsal",
+  "metadata": {
+   "plane": "delivery",
+   "host": "loop",
+   "note_key": "note:dispatch:failed:intent:intake:vitana/rehearsal:14:1",
+   "scope": "dispatch:failed:intent:intake:vitana/rehearsal:14:1",
+   "project": "vitana/rehearsal",
+   "target": "issue",
+   "iid": 14,
+   "step": "done",
+   "dedupe_key": "note:dispatch:failed:intent:intake:vitana/rehearsal:14:1",
+   "env": "staging"
+  }
+ },
+ {
+  "topic": "delivery.loop.cycle",
+  "status": "info",
+  "message": "Delivery loop cycle: 11 facts, 0 actions, 0 errors",
+  "metadata": {
+   "plane": "delivery",
+   "host": "loop",
+   "window": 119672692,
+   "autonomy": "L3",
+   "armed": true,
+   "stopped_early": false,
+   "stats": {
+    "facts": 11,
+    "skipped": {
+     "mr_not_open": 10
+    },
+    "decisions": 1,
+    "intents": 1,
+    "dispatched": 0,
+    "retried": 0,
+    "notes": 2,
+    "reviews": 0,
+    "verified": 0,
+    "exhausted": 0,
+    "learned": 0,
+    "proposals": 0,
+    "polled": 11,
+    "errors": 0
+   },
+   "cursor_created_at": "2026-11-19T12:13:40.327Z",
+   "cursor_id": "c04d6d62-9ba6-54d9-967c-1849fa2e7b8e",
+   "dedupe_key": "cycle:119672692",
+   "env": "staging"
+  }
+ },
+ {
+  "topic": "scm.gitlab.pipeline.failed",
+  "status": "warning",
+  "message": "Polled pipeline 578 failed on loop-rehearsal/r7h3c9v in vitana/rehearsal",
+  "metadata": {
+   "plane": "delivery",
+   "host": "gitlab",
+   "gitlab_event": "pipeline",
+   "source": "poll",
+   "project_path": "vitana/rehearsal",
+   "pipeline_id": 578,
+   "status": "failed",
+   "ref": "refs/merge-requests/11/head",
+   "sha": "85fcd8b45573027067aca503acacae1470a795cd",
+   "url": "https://gitlab.vitanaland.com/vitana/rehearsal/-/pipelines/578",
+   "tag": false,
+   "merge_request_iid": 11,
+   "mr_source_branch": "loop-rehearsal/r7h3c9v",
+   "mr_target_branch": "main",
+   "mr_url": "https://gitlab.vitanaland.com/vitana/rehearsal/-/merge_requests/11",
+   "failed_jobs": [
+    {
+     "id": 3989,
+     "name": "unit",
+     "stage": "check",
+     "failure_reason": "script_failure",
+     "exit_code": null
+    }
+   ],
+   "dedupe_key": "gitlab:vitana/rehearsal:pipeline:578:failed",
+   "env": "staging"
+  }
+ },
+ {
+  "topic": "delivery.loop.claim",
+  "status": "info",
+  "message": "Delivery loop claimed window 119672697",
+  "metadata": {
+   "plane": "delivery",
+   "host": "loop",
+   "window": 119672697,
+   "cycle_ms": 15000,
+   "autonomy": "L3",
+   "dedupe_key": "claim:119672697",
+   "env": "staging"
+  }
+ },
+ {
+  "topic": "delivery.heal.detected",
+  "status": "info",
+  "message": "Pipeline 578 of loop-rehearsal/r7h3c9v failed in vitana/rehearsal: code failure",
+  "metadata": {
+   "plane": "delivery",
+   "host": "loop",
+   "project": "vitana/rehearsal",
+   "branch": "loop-rehearsal/r7h3c9v",
+   "branch_key": "vitana/rehearsal|loop-rehearsal/r7h3c9v",
+   "ref": "refs/merge-requests/11/head",
+   "pipeline_id": 578,
+   "sha": "85fcd8b45573027067aca503acacae1470a795cd",
+   "url": "https://gitlab.vitanaland.com/vitana/rehearsal/-/pipelines/578",
+   "mr_iid": 11,
+   "mr_url": "https://gitlab.vitanaland.com/vitana/rehearsal/-/merge_requests/11",
+   "fingerprint": "b1373d7adb960955",
+   "heal_key": "vitana/rehearsal|loop-rehearsal/r7h3c9v|b1373d7adb960955",
+   "failure_class": "code",
+   "jobs": [
+    "unit:script_failure"
+   ],
+   "has_evidence": true,
+   "source": "fact",
+   "dedupe_key": "heal:detected:vitana/rehearsal:578",
+   "env": "staging"
+  }
+ },
+ {
+  "topic": "delivery.dispatch.requested",
+  "status": "info",
+  "message": "Repair requested for pipeline 578 of loop-rehearsal/r7h3c9v in vitana/rehearsal",
+  "metadata": {
+   "plane": "delivery",
+   "host": "loop",
+   "action": "run_task",
+   "kind": "repair",
+   "project": "vitana/rehearsal",
+   "branch": "loop-rehearsal/r7h3c9v",
+   "branch_key": "vitana/rehearsal|loop-rehearsal/r7h3c9v",
+   "ref": "refs/merge-requests/11/head",
+   "pipeline_id": 578,
+   "sha": "85fcd8b45573027067aca503acacae1470a795cd",
+   "mr_iid": 11,
+   "mr_url": "https://gitlab.vitanaland.com/vitana/rehearsal/-/merge_requests/11",
+   "base_branch": "main",
+   "fix_branch": "loop-rehearsal/r7h3c9v",
+   "fingerprint": "b1373d7adb960955",
+   "heal_key": "vitana/rehearsal|loop-rehearsal/r7h3c9v|b1373d7adb960955",
+   "failure_class": "code",
+   "jobs": [
+    "unit:script_failure"
+   ],
+   "intent_key": "intent:repair:vitana/rehearsal|loop-rehearsal/r7h3c9v|b1373d7adb960955:1",
+   "work_key": "repair:vitana/rehearsal|loop-rehearsal/r7h3c9v|b1373d7adb960955",
+   "attempt": 1,
+   "dedupe_key": "intent:repair:vitana/rehearsal|loop-rehearsal/r7h3c9v|b1373d7adb960955:1",
+   "env": "staging"
+  }
+ },
+ {
+  "topic": "delivery.note.requested",
+  "status": "info",
+  "message": "Note requested on merge request !11 in vitana/rehearsal",
+  "metadata": {
+   "plane": "delivery",
+   "host": "loop",
+   "note_key": "note:heal:vitana/rehearsal:578:attempt-1",
+   "scope": "heal:vitana/rehearsal:578:attempt-1",
+   "project": "vitana/rehearsal",
+   "target": "mr",
+   "iid": 11,
+   "body": "Pipeline 578 failed in unit:script_failure. The delivery loop prepares a repair on this branch (attempt 1 of 2).",
+   "add_labels": [],
+   "remove_labels": [],
+   "dedupe_key": "note:requested:heal:vitana/rehearsal:578:attempt-1",
+   "env": "staging"
+  }
+ },
+ {
+  "topic": "delivery.note.posted",
+  "status": "info",
+  "message": "Commented on merge request !11 in vitana/rehearsal",
+  "metadata": {
+   "plane": "delivery",
+   "host": "loop",
+   "note_key": "note:heal:vitana/rehearsal:578:attempt-1:comment",
+   "scope": "heal:vitana/rehearsal:578:attempt-1",
+   "project": "vitana/rehearsal",
+   "target": "mr",
+   "iid": 11,
+   "step": "comment",
+   "dedupe_key": "note:heal:vitana/rehearsal:578:attempt-1:comment",
+   "env": "staging"
+  }
+ },
+ {
+  "topic": "delivery.note.posted",
+  "status": "info",
+  "message": "Posted a note on merge request !11 in vitana/rehearsal",
+  "metadata": {
+   "plane": "delivery",
+   "host": "loop",
+   "note_key": "note:heal:vitana/rehearsal:578:attempt-1",
+   "scope": "heal:vitana/rehearsal:578:attempt-1",
+   "project": "vitana/rehearsal",
+   "target": "mr",
+   "iid": 11,
+   "step": "done",
+   "dedupe_key": "note:heal:vitana/rehearsal:578:attempt-1",
+   "env": "staging"
+  }
+ },
+ {
+  "topic": "delivery.heal.attempt",
+  "status": "info",
+  "message": "Repair started for loop-rehearsal/r7h3c9v in vitana/rehearsal (attempt 1)",
+  "metadata": {
+   "plane": "delivery",
+   "host": "loop",
+   "project": "vitana/rehearsal",
+   "branch": "loop-rehearsal/r7h3c9v",
+   "branch_key": "vitana/rehearsal|loop-rehearsal/r7h3c9v",
+   "ref": "refs/merge-requests/11/head",
+   "heal_key": "vitana/rehearsal|loop-rehearsal/r7h3c9v|b1373d7adb960955",
+   "work_key": "repair:vitana/rehearsal|loop-rehearsal/r7h3c9v|b1373d7adb960955",
+   "intent_key": "intent:repair:vitana/rehearsal|loop-rehearsal/r7h3c9v|b1373d7adb960955:1",
+   "action": "run_task",
+   "kind": "repair",
+   "pipeline_id": 578,
+   "sha": "85fcd8b45573027067aca503acacae1470a795cd",
+   "mr_iid": 11,
+   "mr_url": "https://gitlab.vitanaland.com/vitana/rehearsal/-/merge_requests/11",
+   "base_branch": "main",
+   "fingerprint": "b1373d7adb960955",
+   "failure_class": "code",
+   "jobs": [
+    "unit:script_failure"
+   ],
+   "attempt": 1,
+   "task_id": "stub-repair:vitan",
+   "dedupe_key": "heal:attempt:intent:repair:vitana/rehearsal|loop-rehearsal/r7h3c9v|b1373d7adb960955:1",
+   "env": "staging"
+  }
+ },
+ {
+  "topic": "delivery.dispatch.started",
+  "status": "success",
+  "message": "Task started for repair:vitana/rehearsal|loop-rehearsal/r7h3c9v|b1373d7adb960955",
+  "metadata": {
+   "plane": "delivery",
+   "host": "loop",
+   "project": "vitana/rehearsal",
+   "branch": "loop-rehearsal/r7h3c9v",
+   "branch_key": "vitana/rehearsal|loop-rehearsal/r7h3c9v",
+   "work_key": "repair:vitana/rehearsal|loop-rehearsal/r7h3c9v|b1373d7adb960955",
+   "intent_key": "intent:repair:vitana/rehearsal|loop-rehearsal/r7h3c9v|b1373d7adb960955:1",
+   "action": "run_task",
+   "kind": "repair",
+   "attempt": 1,
+   "mr_iid": 11,
+   "pipeline_id": 578,
+   "task_id": "stub-repair:vitan",
+   "vtid": null,
+   "execution_id": null,
+   "dedupe_key": "intent:repair:vitana/rehearsal|loop-rehearsal/r7h3c9v|b1373d7adb960955:1:started",
+   "env": "staging"
+  }
+ },
+ {
+  "topic": "delivery.loop.cycle",
+  "status": "info",
+  "message": "Delivery loop cycle: 1 fact, 1 action, 0 errors",
+  "metadata": {
+   "plane": "delivery",
+   "host": "loop",
+   "window": 119672697,
+   "autonomy": "L3",
+   "armed": true,
+   "stopped_early": false,
+   "stats": {
+    "facts": 1,
+    "skipped": {},
+    "decisions": 1,
+    "intents": 1,
+    "dispatched": 1,
+    "retried": 0,
+    "notes": 1,
+    "reviews": 0,
+    "verified": 0,
+    "exhausted": 0,
+    "learned": 0,
+    "proposals": 0,
+    "polled": 1,
+    "errors": 0
+   },
+   "cursor_created_at": "2026-11-19T12:14:34.430Z",
+   "cursor_id": "9a1850d4-0d7a-5c91-a7cc-37a2478e8bfa",
+   "dedupe_key": "cycle:119672697",
+   "env": "staging"
+  }
+ },
+ {
+  "topic": "scm.gitlab.pipeline.succeeded",
+  "status": "success",
+  "message": "Polled pipeline 579 succeeded on loop-rehearsal/r7h3c9v in vitana/rehearsal",
+  "metadata": {
+   "plane": "delivery",
+   "host": "gitlab",
+   "gitlab_event": "pipeline",
+   "source": "poll",
+   "project_path": "vitana/rehearsal",
+   "pipeline_id": 579,
+   "status": "success",
+   "ref": "refs/merge-requests/11/head",
+   "sha": "2d96c4b392d3585423596d37f76080923cfbe895",
+   "url": "https://gitlab.vitanaland.com/vitana/rehearsal/-/pipelines/579",
+   "tag": false,
+   "merge_request_iid": 11,
+   "mr_source_branch": "loop-rehearsal/r7h3c9v",
+   "mr_target_branch": "main",
+   "mr_url": "https://gitlab.vitanaland.com/vitana/rehearsal/-/merge_requests/11",
+   "dedupe_key": "gitlab:vitana/rehearsal:pipeline:579:success",
+   "env": "staging"
+  }
+ },
+ {
+  "topic": "delivery.loop.claim",
+  "status": "info",
+  "message": "Delivery loop claimed window 119672701",
+  "metadata": {
+   "plane": "delivery",
+   "host": "loop",
+   "window": 119672701,
+   "cycle_ms": 15000,
+   "autonomy": "L3",
+   "dedupe_key": "claim:119672701",
+   "env": "staging"
+  }
+ },
+ {
+  "topic": "delivery.review.requested",
+  "status": "info",
+  "message": "Review of !11 at 2d96c4b3 requested in vitana/rehearsal",
+  "metadata": {
+   "plane": "delivery",
+   "host": "loop",
+   "project": "vitana/rehearsal",
+   "mr_iid": 11,
+   "head": "2d96c4b392d3585423596d37f76080923cfbe895",
+   "branch": "loop-rehearsal/r7h3c9v",
+   "pipeline_id": 579,
+   "dedupe_key": "review:requested:vitana/rehearsal:11:2d96c4b392d3585423596d37f76080923cfbe895",
+   "env": "staging"
+  }
+ },
+ {
+  "topic": "delivery.review.verdict",
+  "status": "success",
+  "message": "Review of !11 at 2d96c4b3: accept",
+  "metadata": {
+   "plane": "delivery",
+   "host": "loop",
+   "project": "vitana/rehearsal",
+   "mr_iid": 11,
+   "head": "2d96c4b392d3585423596d37f76080923cfbe895",
+   "verdict": "accept",
+   "model": "rehearsal-stub",
+   "findings": 0,
+   "summary": "REHEARSAL STUB: a fixed verdict, not a model.",
+   "dedupe_key": "review:verdict:vitana/rehearsal:11:2d96c4b392d3585423596d37f76080923cfbe895",
+   "env": "staging"
+  }
+ },
+ {
+  "topic": "delivery.note.requested",
+  "status": "info",
+  "message": "Note requested on merge request !11 in vitana/rehearsal",
+  "metadata": {
+   "plane": "delivery",
+   "host": "loop",
+   "note_key": "note:review:accepted:vitana/rehearsal:11:2d96c4b392d3585423596d37f76080923cfbe895",
+   "scope": "review:accepted:vitana/rehearsal:11:2d96c4b392d3585423596d37f76080923cfbe895",
+   "project": "vitana/rehearsal",
+   "target": "mr",
+   "iid": 11,
+   "body": "Review of 2d96c4b3: accepted. REHEARSAL STUB: a fixed verdict, not a model. Merging stays with the project.",
+   "add_labels": [],
+   "remove_labels": [],
+   "dedupe_key": "note:requested:review:accepted:vitana/rehearsal:11:2d96c4b392d3585423596d37f76080923cfbe895",
+   "env": "staging"
+  }
+ },
+ {
+  "topic": "delivery.note.posted",
+  "status": "info",
+  "message": "Commented on merge request !11 in vitana/rehearsal",
+  "metadata": {
+   "plane": "delivery",
+   "host": "loop",
+   "note_key": "note:review:accepted:vitana/rehearsal:11:2d96c4b392d3585423596d37f76080923cfbe895:comment",
+   "scope": "review:accepted:vitana/rehearsal:11:2d96c4b392d3585423596d37f76080923cfbe895",
+   "project": "vitana/rehearsal",
+   "target": "mr",
+   "iid": 11,
+   "step": "comment",
+   "dedupe_key": "note:review:accepted:vitana/rehearsal:11:2d96c4b392d3585423596d37f76080923cfbe895:comment",
+   "env": "staging"
+  }
+ },
+ {
+  "topic": "delivery.note.posted",
+  "status": "info",
+  "message": "Posted a note on merge request !11 in vitana/rehearsal",
+  "metadata": {
+   "plane": "delivery",
+   "host": "loop",
+   "note_key": "note:review:accepted:vitana/rehearsal:11:2d96c4b392d3585423596d37f76080923cfbe895",
+   "scope": "review:accepted:vitana/rehearsal:11:2d96c4b392d3585423596d37f76080923cfbe895",
+   "project": "vitana/rehearsal",
+   "target": "mr",
+   "iid": 11,
+   "step": "done",
+   "dedupe_key": "note:review:accepted:vitana/rehearsal:11:2d96c4b392d3585423596d37f76080923cfbe895",
+   "env": "staging"
+  }
+ },
+ {
+  "topic": "delivery.heal.verified",
+  "status": "success",
+  "message": "Pipeline 579 of loop-rehearsal/r7h3c9v is green after the repair in vitana/rehearsal",
+  "metadata": {
+   "plane": "delivery",
+   "host": "loop",
+   "project": "vitana/rehearsal",
+   "branch": "loop-rehearsal/r7h3c9v",
+   "branch_key": "vitana/rehearsal|loop-rehearsal/r7h3c9v",
+   "heal_key": "vitana/rehearsal|loop-rehearsal/r7h3c9v|b1373d7adb960955",
+   "fingerprint": "b1373d7adb960955",
+   "work_key": "repair:vitana/rehearsal|loop-rehearsal/r7h3c9v|b1373d7adb960955",
+   "attempts": 1,
+   "pipeline_id": 579,
+   "sha": "2d96c4b392d3585423596d37f76080923cfbe895",
+   "failed_sha": "85fcd8b45573027067aca503acacae1470a795cd",
+   "changed": true,
+   "mr_iid": 11,
+   "mr_url": "https://gitlab.vitanaland.com/vitana/rehearsal/-/merge_requests/11",
+   "action": "run_task",
+   "failure_class": "code",
+   "jobs": [
+    "unit:script_failure"
+   ],
+   "dedupe_key": "heal:verified:vitana/rehearsal|loop-rehearsal/r7h3c9v|b1373d7adb960955:intent:repair:vitana/rehearsal|loop-rehearsal/r7h3c9v|b1373d7adb960955:1",
+   "env": "staging"
+  }
+ },
+ {
+  "topic": "delivery.note.requested",
+  "status": "info",
+  "message": "Note requested on merge request !11 in vitana/rehearsal",
+  "metadata": {
+   "plane": "delivery",
+   "host": "loop",
+   "note_key": "note:heal:verified:vitana/rehearsal|loop-rehearsal/r7h3c9v|b1373d7adb960955:intent:repair:vitana/rehearsal|loop-rehearsal/r7h3c9v|b1373d7adb960955:1",
+   "scope": "heal:verified:vitana/rehearsal|loop-rehearsal/r7h3c9v|b1373d7adb960955:intent:repair:vitana/rehearsal|loop-rehearsal/r7h3c9v|b1373d7adb960955:1",
+   "project": "vitana/rehearsal",
+   "target": "mr",
+   "iid": 11,
+   "body": "Pipeline 579 is green again. The delivery loop records what it learned from it.",
+   "add_labels": [],
+   "remove_labels": [],
+   "dedupe_key": "note:requested:heal:verified:vitana/rehearsal|loop-rehearsal/r7h3c9v|b1373d7adb960955:intent:repair:vitana/rehearsal|loop-rehearsal/r7h3c9v|b1373d7adb960955:1",
+   "env": "staging"
+  }
+ },
+ {
+  "topic": "delivery.note.posted",
+  "status": "info",
+  "message": "Commented on merge request !11 in vitana/rehearsal",
+  "metadata": {
+   "plane": "delivery",
+   "host": "loop",
+   "note_key": "note:heal:verified:vitana/rehearsal|loop-rehearsal/r7h3c9v|b1373d7adb960955:intent:repair:vitana/rehearsal|loop-rehearsal/r7h3c9v|b1373d7adb960955:1:comment",
+   "scope": "heal:verified:vitana/rehearsal|loop-rehearsal/r7h3c9v|b1373d7adb960955:intent:repair:vitana/rehearsal|loop-rehearsal/r7h3c9v|b1373d7adb960955:1",
+   "project": "vitana/rehearsal",
+   "target": "mr",
+   "iid": 11,
+   "step": "comment",
+   "dedupe_key": "note:heal:verified:vitana/rehearsal|loop-rehearsal/r7h3c9v|b1373d7adb960955:intent:repair:vitana/rehearsal|loop-rehearsal/r7h3c9v|b1373d7adb960955:1:comment",
+   "env": "staging"
+  }
+ },
+ {
+  "topic": "delivery.note.posted",
+  "status": "info",
+  "message": "Posted a note on merge request !11 in vitana/rehearsal",
+  "metadata": {
+   "plane": "delivery",
+   "host": "loop",
+   "note_key": "note:heal:verified:vitana/rehearsal|loop-rehearsal/r7h3c9v|b1373d7adb960955:intent:repair:vitana/rehearsal|loop-rehearsal/r7h3c9v|b1373d7adb960955:1",
+   "scope": "heal:verified:vitana/rehearsal|loop-rehearsal/r7h3c9v|b1373d7adb960955:intent:repair:vitana/rehearsal|loop-rehearsal/r7h3c9v|b1373d7adb960955:1",
+   "project": "vitana/rehearsal",
+   "target": "mr",
+   "iid": 11,
+   "step": "done",
+   "dedupe_key": "note:heal:verified:vitana/rehearsal|loop-rehearsal/r7h3c9v|b1373d7adb960955:intent:repair:vitana/rehearsal|loop-rehearsal/r7h3c9v|b1373d7adb960955:1",
+   "env": "staging"
+  }
+ },
+ {
+  "topic": "delivery.learn.recorded",
+  "status": "success",
+  "message": "Lesson recorded: repair_verified",
+  "metadata": {
+   "plane": "delivery",
+   "host": "loop",
+   "lesson_key": "learn:repair_verified:bcd8c0fe-2276-5b64-a752-37fc08ac49e4",
+   "kind": "repair_verified",
+   "project": "vitana/rehearsal",
+   "source_event": "bcd8c0fe-2276-5b64-a752-37fc08ac49e4",
+   "dedupe_key": "learn:repair_verified:bcd8c0fe-2276-5b64-a752-37fc08ac49e4",
+   "env": "staging"
+  }
+ },
+ {
+  "topic": "delivery.loop.cycle",
+  "status": "info",
+  "message": "Delivery loop cycle: 1 fact, 0 actions, 0 errors",
+  "metadata": {
+   "plane": "delivery",
+   "host": "loop",
+   "window": 119672701,
+   "autonomy": "L3",
+   "armed": true,
+   "stopped_early": false,
+   "stats": {
+    "facts": 1,
+    "skipped": {},
+    "decisions": 1,
+    "intents": 0,
+    "dispatched": 0,
+    "retried": 0,
+    "notes": 2,
+    "reviews": 1,
+    "verified": 1,
+    "exhausted": 0,
+    "learned": 1,
+    "proposals": 0,
+    "polled": 1,
+    "errors": 0
+   },
+   "cursor_created_at": "2026-11-19T12:15:29.015Z",
+   "cursor_id": "681b5375-ed09-59a8-8953-b99fec38dea5",
+   "dedupe_key": "cycle:119672701",
+   "env": "staging"
+  }
+ },
+ {
+  "topic": "scm.gitlab.issue.labeled",
+  "status": "info",
+  "message": "Polled issue #15 in vitana/rehearsal (intake label present)",
+  "metadata": {
+   "plane": "delivery",
+   "host": "gitlab",
+   "gitlab_event": "issue",
+   "source": "poll",
+   "project_path": "vitana/rehearsal",
+   "issue_iid": 15,
+   "issue_id": 18,
+   "state": "opened",
+   "url": "https://gitlab.vitanaland.com/vitana/rehearsal/-/work_items/15",
+   "confidential": false,
+   "intake_label": "agent-task",
+   "labels": [
+    "agent-task"
+   ],
+   "version": "f43e4e14741a",
+   "dedupe_key": "gitlab:vitana/rehearsal:issue:15:poll:f43e4e14741a",
+   "env": "staging"
+  }
+ },
+ {
+  "topic": "delivery.loop.claim",
+  "status": "info",
+  "message": "Delivery loop claimed window 119672704",
+  "metadata": {
+   "plane": "delivery",
+   "host": "loop",
+   "window": 119672704,
+   "cycle_ms": 15000,
+   "autonomy": "L3",
+   "dedupe_key": "claim:119672704",
+   "env": "staging"
+  }
+ },
+ {
+  "topic": "delivery.intake.rejected",
+  "status": "info",
+  "message": "Issue #15 in vitana/rehearsal was not accepted: too_little_to_act_on",
+  "metadata": {
+   "plane": "delivery",
+   "host": "loop",
+   "project": "vitana/rehearsal",
+   "issue_iid": 15,
+   "url": "https://gitlab.vitanaland.com/vitana/rehearsal/-/work_items/15",
+   "reason": "too_little_to_act_on",
+   "version": "f43e4e14741a",
+   "dedupe_key": "intake:rejected:vitana/rehearsal:15:too_little_to_act_on:f43e4e14741a",
+   "env": "staging"
+  }
+ },
+ {
+  "topic": "delivery.note.requested",
+  "status": "info",
+  "message": "Note requested on issue #15 in vitana/rehearsal",
+  "metadata": {
+   "plane": "delivery",
+   "host": "loop",
+   "note_key": "note:intake:rejected:vitana/rehearsal:15:too_little_to_act_on:f43e4e14741a",
+   "scope": "intake:rejected:vitana/rehearsal:15:too_little_to_act_on:f43e4e14741a",
+   "project": "vitana/rehearsal",
+   "target": "issue",
+   "iid": 15,
+   "body": "The delivery loop did not accept this issue as a task: the description is too short to act on (at least 20 characters of what should change). Change that and apply the label again to ask once more.",
+   "add_labels": [
+    "delivery-rejected"
+   ],
+   "remove_labels": [],
+   "dedupe_key": "note:requested:intake:rejected:vitana/rehearsal:15:too_little_to_act_on:f43e4e14741a",
+   "env": "staging"
+  }
+ },
+ {
+  "topic": "delivery.note.posted",
+  "status": "info",
+  "message": "Commented on issue #15 in vitana/rehearsal",
+  "metadata": {
+   "plane": "delivery",
+   "host": "loop",
+   "note_key": "note:intake:rejected:vitana/rehearsal:15:too_little_to_act_on:f43e4e14741a:comment",
+   "scope": "intake:rejected:vitana/rehearsal:15:too_little_to_act_on:f43e4e14741a",
+   "project": "vitana/rehearsal",
+   "target": "issue",
+   "iid": 15,
+   "step": "comment",
+   "dedupe_key": "note:intake:rejected:vitana/rehearsal:15:too_little_to_act_on:f43e4e14741a:comment",
+   "env": "staging"
+  }
+ },
+ {
+  "topic": "delivery.note.posted",
+  "status": "info",
+  "message": "Posted a note on issue #15 in vitana/rehearsal",
+  "metadata": {
+   "plane": "delivery",
+   "host": "loop",
+   "note_key": "note:intake:rejected:vitana/rehearsal:15:too_little_to_act_on:f43e4e14741a",
+   "scope": "intake:rejected:vitana/rehearsal:15:too_little_to_act_on:f43e4e14741a",
+   "project": "vitana/rehearsal",
+   "target": "issue",
+   "iid": 15,
+   "step": "done",
+   "dedupe_key": "note:intake:rejected:vitana/rehearsal:15:too_little_to_act_on:f43e4e14741a",
+   "env": "staging"
+  }
+ },
+ {
+  "topic": "delivery.loop.cycle",
+  "status": "info",
+  "message": "Delivery loop cycle: 1 fact, 0 actions, 0 errors",
+  "metadata": {
+   "plane": "delivery",
+   "host": "loop",
+   "window": 119672704,
+   "autonomy": "L3",
+   "armed": true,
+   "stopped_early": false,
+   "stats": {
+    "facts": 1,
+    "skipped": {},
+    "decisions": 1,
+    "intents": 0,
+    "dispatched": 0,
+    "retried": 0,
+    "notes": 1,
+    "reviews": 0,
+    "verified": 0,
+    "exhausted": 0,
+    "learned": 0,
+    "proposals": 0,
+    "polled": 1,
+    "errors": 0
+   },
+   "cursor_created_at": "2026-11-19T12:16:09.295Z",
+   "cursor_id": "7398eec6-536e-5c2b-a292-8d050a033ed2",
+   "dedupe_key": "cycle:119672704",
+   "env": "staging"
+  }
+ }
+]
