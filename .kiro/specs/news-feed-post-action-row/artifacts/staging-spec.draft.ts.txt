@@ -1,0 +1,94 @@
+// __VTID__ (news-feed-post-action-row) — News Feed post card on a phone: who
+// posted on one row (avatar, name, ⋮), like / comment / send on their own row
+// below it, so the actions no longer crowd the author (owner 2026-11-19).
+//
+// Read-only: './staging-guard' (copied in by the runner) aborts every write.
+// Signs in as the documented test user (the token call is the only write
+// allowed), opens /home and only measures the first post card. Nothing is
+// clicked: no like, comment, send or report. Skipped (not failed) when the
+// feed shows the test account no post card.
+import type { APIRequestContext, Page } from '@playwright/test';
+import { test, expect } from './staging-guard';
+
+test.use({
+  // Same read-only POSTs as the VTID-05330 spec (RPC lookups, telemetry, ORB
+  // prewarm) — still aborted, never reach the database.
+  allowAbortedWrites:
+    / https:\/\/(preview-aws-gateway\.vitanaland\.com\/api\/v1\/(rum\/beacon|diag\/notif-tap|analytics\/events\/batch|presence\/did-you-know\/.*)|inmkhvwdcuyhnxkgfvsb\.supabase\.co\/rest\/v1\/(thread_presence|user_activity_log)|inmkhvwdcuyhnxkgfvsb\.supabase\.co\/(rest\/v1\/rpc\/[a-z_]+|functions\/v1\/[a-z_-]+)|preview-aws-gateway\.vitanaland\.com\/api\/v1\/orb\/(live\/(session\/prewarm|client-latency)|session\/(continuity|live-[^/]+\/audio-blocked)))/,
+});
+
+const SUPABASE = 'https://inmkhvwdcuyhnxkgfvsb.supabase.co';
+
+async function signIn(page: Page, request: APIRequestContext) {
+  const email = process.env.TEST_USER_EMAIL ?? '';
+  const password = process.env.TEST_USER_PASSWORD ?? '';
+  test.skip(!email || !password, 'TEST_USER_EMAIL / TEST_USER_PASSWORD not provided');
+
+  await page.goto('/maxina', { waitUntil: 'domcontentloaded' });
+  const entry = await page.evaluate(() => [...document.scripts].map((x) => x.src).find((x) => x.includes('/assets/index-')) ?? '');
+  const bundle = await (await request.get(entry)).text();
+  const key = [...bundle.matchAll(/eyJ[A-Za-z0-9_-]+\.(eyJ[A-Za-z0-9_-]+)\.[A-Za-z0-9_-]+/g)].find((m) => {
+    try {
+      const p = JSON.parse(Buffer.from(m[1], 'base64url').toString('utf8'));
+      return p.role === 'anon' && p.ref === 'inmkhvwdcuyhnxkgfvsb';
+    } catch {
+      return false;
+    }
+  })?.[0];
+  expect(key, 'no Supabase publishable key in the bundle').toBeTruthy();
+  const session = await (
+    await request.post(`${SUPABASE}/auth/v1/token?grant_type=password`, { headers: { apikey: key!, 'Content-Type': 'application/json' }, data: { email, password } })
+  ).json();
+  expect(session.access_token, 'sign-in failed').toBeTruthy();
+  await page.evaluate((s) => {
+    localStorage.setItem('sb-inmkhvwdcuyhnxkgfvsb-auth-token', JSON.stringify(s));
+    localStorage.setItem('vitana.authToken', s.access_token);
+    localStorage.setItem('vitana.viewRole', 'community');
+  }, session);
+}
+
+// The feed re-renders while profile lookups settle, so every measurement is one
+// in-page evaluate on the live card, polled until it returns a reading.
+const measure = () => {
+  const author = document.querySelector('[data-testid="post-author-row"]');
+  if (!author || !author.isConnected) return null;
+  const actions = author.parentElement?.querySelector('[data-testid="post-action-row"]');
+  if (!actions) return null;
+  const a = author.getBoundingClientRect();
+  const r = actions.getBoundingClientRect();
+  if (!a.height || !r.height) return null;
+  const heights = [...actions.querySelectorAll('button')].map((b) => Math.round(b.getBoundingClientRect().height));
+  const name = author.querySelector('[data-testid="post-author-name"]')?.textContent ?? '';
+  return {
+    authorBottom: Math.round(a.bottom),
+    actionsTop: Math.round(r.top),
+    actionsOnAuthorRow: author.querySelectorAll('button[aria-pressed], button[aria-expanded], [data-testid="post-send-in-message"]').length,
+    hasLike: !!actions.querySelector('button[aria-pressed]'),
+    hasComment: !!actions.querySelector('button[aria-expanded]'),
+    nameOnActionRow: !!name && (actions.textContent ?? '').includes(name),
+    minButtonHeight: heights.length ? Math.min(...heights) : 0,
+    overflow: document.documentElement.scrollWidth - window.innerWidth,
+  };
+};
+
+test('__VTID__: News Feed post actions sit on their own row below the author (390x844)', async ({ page, request }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await signIn(page, request);
+  await page.route(/orb-widget\.js/, (r) => r.fulfill({ status: 200, contentType: 'application/javascript', body: '' }));
+  await page.goto('/home', { waitUntil: 'domcontentloaded' });
+
+  let m = null as ReturnType<typeof measure>;
+  try {
+    await expect.poll(async () => (m = await page.evaluate(measure)) !== null, { timeout: 45_000, intervals: [500, 1000] }).toBe(true);
+  } catch {
+    test.skip(true, 'no post card in the News Feed for this account');
+  }
+
+  expect(m!.hasLike, 'like button not on the action row').toBe(true);
+  expect(m!.hasComment, 'comment button not on the action row').toBe(true);
+  expect(m!.actionsOnAuthorRow, 'an action control is still on the author row').toBe(0);
+  expect(m!.nameOnActionRow, 'the author name is on the action row').toBe(false);
+  expect(m!.actionsTop, 'the action row is not below the author row').toBeGreaterThanOrEqual(m!.authorBottom);
+  expect(m!.minButtonHeight, 'an action tap target is under 44 px high').toBeGreaterThanOrEqual(44);
+  expect(m!.overflow, 'the feed scrolls sideways').toBeLessThanOrEqual(0);
+});

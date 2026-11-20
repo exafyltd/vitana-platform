@@ -1,0 +1,23 @@
+# Local harness interaction check (lane commit cad441c1747cd1c6208045ef226b396fa976a30b)
+# Vite harness rendering the real CommunityPostCard with mocked hooks (auth, feed interactions, send sheet, likers
+# dialog, moderation menu built on the real KebabMenu). All non-localhost requests aborted: no live data, no writes.
+mobile heart: 7 -> 8, aria-pressed=true
+mobile comment: aria-expanded=true, comment box shown=true
+mobile send: sheet shown=true
+mobile likes link: dialog shown=true
+mobile menu: open=true
+mobile page errors: none
+desktop heart: 7 -> 8, aria-pressed=true
+desktop comment: aria-expanded=true, comment box shown=true
+desktop send: sheet shown=true
+desktop likes link: dialog shown=true
+desktop menu: open=true
+desktop page errors: none
+mobile-rtl heart: 7 -> 8, aria-pressed=true
+mobile-rtl comment: aria-expanded=true, comment box shown=true
+mobile-rtl send: sheet shown=true
+mobile-rtl likes link: dialog shown=true
+mobile-rtl menu: open=true
+mobile-rtl page errors: none
+# Cards in the harness: image post (7 likes / 3 comments), 50-character author name with 128 likes / 42 comments,
+# text post with 0 likes / 0 comments (no Likes link).
