@@ -1,0 +1,46 @@
+# VTID-05569 owner-packet dry-run. PGlite in process; nothing applied anywhere.
+# node v22.23.4
+
+## A. replayed local stack (supabase/migrations/*.sql replayed, replay-skip.json honoured)
+replay: 425 applied, 308 skipped, 0 failed
+tenant_id column on the three tables after the replay: [{"table_name":"chat_messages","is_nullable":null},{"table_name":"product_analytics_events","is_nullable":null},{"table_name":"user_notifications","is_nullable":"NO"}]
+PASS apply 20261102043000_vtid_05569_hot_tables_tenant_not_null_assert.sql (on the replay, 20260225200000_chat_messages.sql is a recorded skip, so chat_messages has no tenant_id here): refused as expected: VTID-05569: public.chat_messages.tenant_id does not exist
+
+## B. lane stand-in schema (tenants, user_tenants, chat_messages, user_notifications, real product_analytics_events DDL)
+--- PRE: pre-check.sql
+  {"table_name":"chat_messages","nullable":"NO","orphan_rows":0}
+  {"table_name":"product_analytics_events","nullable":"NO","orphan_rows":0}
+  {"table_name":"user_notifications","nullable":"NO","orphan_rows":0}
+PASS apply 20261102043000_vtid_05569_hot_tables_tenant_not_null_assert.sql
+--- POST: post-check.sql
+  {"all_not_null":true,"no_orphans":true,"no_object_added":true}
+PASS re-apply 20261102043000_vtid_05569_hot_tables_tenant_not_null_assert.sql (read-only, repeatable)
+PASS apply rollback 20261102043100_vtid_05569_hot_tables_tenant_not_null_assert_rollback.sql (no-op)
+--- ROLLBACK-CHECK: rollback-check.sql
+  {"still_not_null":true,"nothing_left_behind":true}
+--- PRE with one orphan row in the stand-in: pre-check.sql
+  {"table_name":"chat_messages","nullable":"NO","orphan_rows":0}
+  {"table_name":"product_analytics_events","nullable":"NO","orphan_rows":0}
+  {"table_name":"user_notifications","nullable":"NO","orphan_rows":1}
+PASS apply 20261102043000_vtid_05569_hot_tables_tenant_not_null_assert.sql with one orphan row: refused as expected: VTID-05569: public.user_notifications holds 1 row(s) whose tenant_id is not an existing tenant; run the orphan quarantine (VTID-05571) first
+--- PRE with chat_messages.tenant_id made nullable in the stand-in: pre-check.sql
+  {"table_name":"chat_messages","nullable":"YES","orphan_rows":0}
+  {"table_name":"product_analytics_events","nullable":"NO","orphan_rows":0}
+  {"table_name":"user_notifications","nullable":"NO","orphan_rows":0}
+PASS apply 20261102043000_vtid_05569_hot_tables_tenant_not_null_assert.sql with a nullable column: refused as expected: VTID-05569: public.chat_messages.tenant_id is nullable; re-plan the expand/contract (spec section 4.7), do not improvise
+
+## C. pgTAP file vtid_mt_data_cleanup_notnull_assert.test.sql (11 cases) on the lane shim
+  ok 1 - assertion passes on the real schema
+  ok 2 - chat_messages.tenant_id is NOT NULL
+  ok 3 - user_notifications.tenant_id is NOT NULL
+  ok 4 - product_analytics_events.tenant_id is NOT NULL
+  ok 5 - nullable chat_messages.tenant_id raises
+  ok 6 - nullable user_notifications.tenant_id raises
+  ok 7 - nullable product_analytics_events.tenant_id raises
+  ok 8 - chat_messages row on a non-existent tenant raises
+  ok 9 - user_notifications row on a non-existent tenant raises
+  ok 10 - product_analytics_events row on a non-existent tenant raises
+  ok 11 - assertion passes again after the fixtures are removed
+PASS pgTAP: 11 ok of 11 (plan 11)
+
+RESULT: ALL PASS
