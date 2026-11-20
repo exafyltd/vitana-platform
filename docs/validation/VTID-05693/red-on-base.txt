@@ -1,0 +1,77 @@
+# VTID-05693 red on base: vitana-platform origin/main 6dc6e1ba0c18252ec2f3fbf5651d245e200f9835
+# The test is written first; scripts/sql/readonly/strategy-memory-grants-check.sql does not exist yet.
+# The four checker self-tests pass; the two tests on the real file fail with ENOENT.
+$ node --test scripts/sql/readonly/strategy-memory-grants-check.test.mjs
+TAP version 13
+# Subtest: checker accepts plain SELECT and WITH statements
+ok 1 - checker accepts plain SELECT and WITH statements
+  ---
+  duration_ms: 3.923208
+  type: 'test'
+  ...
+# Subtest: checker refuses every forbidden statement start
+ok 2 - checker refuses every forbidden statement start
+  ---
+  duration_ms: 1.442774
+  type: 'test'
+  ...
+# Subtest: checker refuses data-modifying CTEs, SELECT INTO, row locks, side-effect functions, DO bodies
+ok 3 - checker refuses data-modifying CTEs, SELECT INTO, row locks, side-effect functions, DO bodies
+  ---
+  duration_ms: 1.348614
+  type: 'test'
+  ...
+# Subtest: checker reports a missing function, role or table
+ok 4 - checker reports a missing function, role or table
+  ---
+  duration_ms: 1.179785
+  type: 'test'
+  ...
+# Subtest: strategy-memory-grants-check.sql exists and is read-only (SELECT/WITH only)
+not ok 5 - strategy-memory-grants-check.sql exists and is read-only (SELECT/WITH only)
+  ---
+  duration_ms: 0.200472
+  type: 'test'
+  location: 'scripts/sql/readonly/strategy-memory-grants-check.test.mjs:149:1'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open 'scripts/sql/readonly/strategy-memory-grants-check.sql'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    TestContext.<anonymous> (file://scripts/sql/readonly/strategy-memory-grants-check.test.mjs:150:15)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: strategy-memory-grants-check.sql covers the four functions, four roles, nine tables and catalog checks
+not ok 6 - strategy-memory-grants-check.sql covers the four functions, four roles, nine tables and catalog checks
+  ---
+  duration_ms: 0.109229
+  type: 'test'
+  location: 'scripts/sql/readonly/strategy-memory-grants-check.test.mjs:154:1'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open 'scripts/sql/readonly/strategy-memory-grants-check.sql'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    TestContext.<anonymous> (file://scripts/sql/readonly/strategy-memory-grants-check.test.mjs:155:15)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+1..6
+# tests 6
+# suites 0
+# pass 4
+# fail 2
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 90.779385
+exit=1

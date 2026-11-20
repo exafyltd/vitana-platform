@@ -1,0 +1,161 @@
+# VTID-05693 commands (strategy-execution-wave1/security-evidence). Local worktree, nothing committed or pushed.
+# No database connected, no live system contacted. The SQL file is only read as text.
+
+## 1. Pins
+$ git rev-parse HEAD
+6dc6e1ba0c18252ec2f3fbf5651d245e200f9835
+exit=0
+
+$ git rev-parse origin/main
+6dc6e1ba0c18252ec2f3fbf5651d245e200f9835
+exit=0
+
+## 2. Order: test first, red on base (SQL file absent), recorded in red-on-base.txt
+$ grep -E '^(ok|not ok)|^# (pass|fail)|^exit=|ENOENT' docs/validation/VTID-05693/red-on-base.txt
+# The four checker self-tests pass; the two tests on the real file fail with ENOENT.
+ok 1 - checker accepts plain SELECT and WITH statements
+ok 2 - checker refuses every forbidden statement start
+ok 3 - checker refuses data-modifying CTEs, SELECT INTO, row locks, side-effect functions, DO bodies
+ok 4 - checker reports a missing function, role or table
+not ok 5 - strategy-memory-grants-check.sql exists and is read-only (SELECT/WITH only)
+  error: "ENOENT: no such file or directory, open 'scripts/sql/readonly/strategy-memory-grants-check.sql'"
+  code: 'ENOENT'
+not ok 6 - strategy-memory-grants-check.sql covers the four functions, four roles, nine tables and catalog checks
+  error: "ENOENT: no such file or directory, open 'scripts/sql/readonly/strategy-memory-grants-check.sql'"
+  code: 'ENOENT'
+# pass 4
+# fail 2
+exit=1
+exit=0
+
+## 3. Green with the SQL file
+$ node --test scripts/sql/readonly/strategy-memory-grants-check.test.mjs 2>&1 | grep -E '^(ok|not ok)|^# (tests|pass|fail)'
+ok 1 - checker accepts plain SELECT and WITH statements
+ok 2 - checker refuses every forbidden statement start
+ok 3 - checker refuses data-modifying CTEs, SELECT INTO, row locks, side-effect functions, DO bodies
+ok 4 - checker reports a missing function, role or table
+ok 5 - strategy-memory-grants-check.sql exists and is read-only (SELECT/WITH only)
+ok 6 - strategy-memory-grants-check.sql covers the four functions, four roles, nine tables and catalog checks
+# tests 6
+# pass 6
+# fail 0
+exit=0
+
+## 4. Mutations: a copy of the SQL next to a copy of the test, each must go red
+$ D=$(mktemp -d); t(){ cp scripts/sql/readonly/strategy-memory-grants-check.test.mjs $D/; node --test $D/strategy-memory-grants-check.test.mjs 2>&1 | grep -E '^not ok|^# fail' | tr '\n' ' '; echo; };
+echo -n 'mut1 append DELETE: '; { cat scripts/sql/readonly/strategy-memory-grants-check.sql; echo 'DELETE FROM memory_facts;'; } > $D/strategy-memory-grants-check.sql; t;
+echo -n 'mut2 data-modifying CTE: '; { cat scripts/sql/readonly/strategy-memory-grants-check.sql; echo "WITH d AS (UPDATE tenants SET name = 'x' RETURNING 1) SELECT * FROM d;"; } > $D/strategy-memory-grants-check.sql; t;
+echo -n 'mut3 migrate role removed: '; sed "s/'migrate'/'other'/g; s/migrate_role_exists/x_exists/; s/--.*//" scripts/sql/readonly/strategy-memory-grants-check.sql > $D/strategy-memory-grants-check.sql; t;
+echo -n 'mut4 write_fact removed: '; sed 's/write_fact/w_f/g' scripts/sql/readonly/strategy-memory-grants-check.sql > $D/strategy-memory-grants-check.sql; t;
+echo -n 'mut5 GRANT: '; { cat scripts/sql/readonly/strategy-memory-grants-check.sql; echo 'GRANT EXECUTE ON FUNCTION write_fact TO anon;'; } > $D/strategy-memory-grants-check.sql; t;
+echo -n 'mut6 SELECT INTO: '; { cat scripts/sql/readonly/strategy-memory-grants-check.sql; echo 'SELECT * INTO t2 FROM tenants;'; } > $D/strategy-memory-grants-check.sql; t;
+echo -n "mut7 set_config: "; { cat scripts/sql/readonly/strategy-memory-grants-check.sql; echo "SELECT set_config('role','service_role',false);"; } > $D/strategy-memory-grants-check.sql; t;
+echo -n 'mut8 SET statement: '; { echo 'SET ROLE service_role;'; cat scripts/sql/readonly/strategy-memory-grants-check.sql; } > $D/strategy-memory-grants-check.sql; t;
+echo -n 'unchanged copy: '; cp scripts/sql/readonly/strategy-memory-grants-check.sql $D/; t; rm -rf $D
+mut1 append DELETE: not ok 5 - strategy-memory-grants-check.sql exists and is read-only (SELECT/WITH only) # fail 1 
+mut2 data-modifying CTE: not ok 5 - strategy-memory-grants-check.sql exists and is read-only (SELECT/WITH only) # fail 1 
+mut3 migrate role removed: not ok 6 - strategy-memory-grants-check.sql covers the four functions, four roles, nine tables and catalog checks # fail 1 
+mut4 write_fact removed: not ok 6 - strategy-memory-grants-check.sql covers the four functions, four roles, nine tables and catalog checks # fail 1 
+mut5 GRANT: not ok 5 - strategy-memory-grants-check.sql exists and is read-only (SELECT/WITH only) # fail 1 
+mut6 SELECT INTO: not ok 5 - strategy-memory-grants-check.sql exists and is read-only (SELECT/WITH only) # fail 1 
+mut7 set_config: not ok 5 - strategy-memory-grants-check.sql exists and is read-only (SELECT/WITH only) # fail 1 
+mut8 SET statement: not ok 5 - strategy-memory-grants-check.sql exists and is read-only (SELECT/WITH only) # fail 1 
+unchanged copy: # fail 0 
+exit=0
+
+## 5. Statement starts in the SQL (comments stripped), for the reader
+$ node <run dir>/stmt-starts.mjs scripts/sql/readonly/strategy-memory-grants-check.sql
+statement 1: SELECT
+statement 2: WITH
+statement 3: WITH
+statement 4: WITH
+statement 5: WITH
+statement 6: SELECT
+statement 7: WITH
+exit=0
+
+## 6. Citation check (every path:line exists with enough lines)
+$ node docs/validation/VTID-05693/citation-check.mjs . docs/programs/strategy-execution/security-live-evidence.md
+ok   docs/programs/strategy-execution/security-live-evidence.md:16 docs/validation/VTID-05125/live-before.sql:18-23
+ok   docs/programs/strategy-execution/security-live-evidence.md:20 supabase/migrations/20261010164100_vtid_05041_definer_functions_lockdown.sql:37-47
+ok   docs/programs/strategy-execution/security-live-evidence.md:22 supabase/migrations/20261010164100_vtid_05041_definer_functions_lockdown.sql:145-161
+ok   docs/programs/strategy-execution/security-live-evidence.md:25 supabase/migrations/20261013090000_vtid_05125_memory_functions_revoke_migrate.sql:52-54
+ok   docs/programs/strategy-execution/security-live-evidence.md:37 docs/validation/VTID-05041/commands.log:36-37
+ok   docs/programs/strategy-execution/security-live-evidence.md:38 docs/validation/VTID-05125/commands.log:29-32
+ok   docs/programs/strategy-execution/security-live-evidence.md:39 docs/validation/VTID-05125/live-before.sql:18-23
+ok   docs/programs/strategy-execution/security-live-evidence.md:40 docs/validation/VTID-05125/live-before.sql:31-33
+ok   docs/programs/strategy-execution/security-live-evidence.md:43 docs/validation/VTID-05041/post-apply-checks.sql:7-47
+ok   docs/programs/strategy-execution/security-live-evidence.md:44 docs/validation/VTID-05125/post-apply-checks.sql:7-23
+ok   docs/programs/strategy-execution/security-live-evidence.md:66 docs/validation/VTID-05125/live-before.sql:31-33
+ok   docs/programs/strategy-execution/security-live-evidence.md:84 docs/validation/VTID-05125/commands.log:3-5
+ok   docs/programs/strategy-execution/security-live-evidence.md:88 .github/workflows/SQL-MEMORY-FUNCTIONS-MIGRATE-REVOKE.yml:4-9
+ok   docs/programs/strategy-execution/security-live-evidence.md:91 docs/validation/VTID-05041/commands.log:36-37
+ok   docs/programs/strategy-execution/security-live-evidence.md:92 docs/validation/VTID-05125/commands.log:29-32
+ok   docs/programs/strategy-execution/security-live-evidence.md:113 docs/validation/VTID-05041/post-apply-checks.sql:2-4,16-17
+citations: 16, failures: 0
+exit=0
+
+## 7. Wording check: each required item is in the document
+ok   [scripts/sql/readonly/strategy-memory-grants-check.sql]
+ok   [authorised operator]
+ok   [read-only]
+ok   [docs/validation/VTID-05041/post-apply-checks.sql]
+ok   [docs/validation/VTID-05693/live-output.md]
+ok   [38059078694]
+ok   [38360259959]
+ok   [docs/validation/VTID-05041/commands.log:36-37]
+ok   [sensitive memory]
+ok   [tenant implementation]
+ok   [permission changes]
+ok   [financial implementation]
+ok   [stays blocked\|stay blocked]
+ok   [never connected to a database]
+$ grep -c '—' docs/programs/strategy-execution/security-live-evidence.md
+0
+exit=1
+
+
+## 8. Evidence validity, scope and collab tests
+$ node -e "import('./scripts/ci/pr-gate/lib.mjs').then(m=>{const e=m.validateScope(JSON.parse(require('fs').readFileSync('docs/validation/VTID-05693/scope.json','utf8')),'VTID-05693');console.log(e.length?e:'validateScope: ok');process.exit(e.length?1:0)})"
+validateScope: ok
+exit=0
+
+$ node -e "const {checkAcceptanceMapping}=require('./scripts/ci/validate-pr-locally.cjs');const r=checkAcceptanceMapping('docs/validation/VTID-05693/acceptance.md');console.log(r.messages.join('\n'));process.exit(r.code)"
+Acceptance mapping OK
+exit=0
+
+$ git status --porcelain --untracked-files=all
+?? docs/programs/strategy-execution/security-live-evidence.md
+?? docs/validation/VTID-05693/acceptance.md
+?? docs/validation/VTID-05693/citation-check.mjs
+?? docs/validation/VTID-05693/commands.log
+?? docs/validation/VTID-05693/red-on-base.txt
+?? docs/validation/VTID-05693/scope.json
+?? scripts/sql/readonly/strategy-memory-grants-check.sql
+?? scripts/sql/readonly/strategy-memory-grants-check.test.mjs
+exit=0
+
+$ node -e "import('./scripts/ci/pr-gate/lib.mjs').then(m=>{const cp=require('child_process');const changed=cp.execSync('git status --porcelain --untracked-files=all').toString().split('\n').filter(Boolean).map(l=>l.slice(3));const scopes={'VTID-05693':JSON.parse(require('fs').readFileSync('docs/validation/VTID-05693/scope.json','utf8'))};const r=m.evaluateScope({vtids:['VTID-05693'],scopes,changed});console.log(JSON.stringify({changed,...r}));process.exit(r.ok?0:1)})"
+{"changed":["docs/programs/strategy-execution/security-live-evidence.md","docs/validation/VTID-05693/acceptance.md","docs/validation/VTID-05693/citation-check.mjs","docs/validation/VTID-05693/commands.log","docs/validation/VTID-05693/red-on-base.txt","docs/validation/VTID-05693/scope.json","scripts/sql/readonly/strategy-memory-grants-check.sql","scripts/sql/readonly/strategy-memory-grants-check.test.mjs"],"ok":true,"outside":[],"missing":[]}
+exit=0
+
+$ node --test scripts/collab/*.test.mjs 2>&1 | grep -E '^# (tests|pass|fail|skipped)'
+# tests 257
+# pass 256
+# fail 0
+# skipped 1
+exit=0
+
+$ node --test scripts/ci/kiro-steering/guard.test.cjs 2>&1 | grep -E '^# (tests|pass|fail)'
+# tests 67
+# pass 67
+# fail 0
+exit=0
+
+$ node scripts/ci/kiro-steering/guard.cjs .
+kiro-steering: OK
+exit=0
+
+# Note: scripts/collab/preflight.mjs was not run. It diffs --base..--head commits (this lane is uncommitted by
+# instruction) and calls gh for plan( PR lane files (a live GitHub read, excluded by instruction). Its offline
+# parts are run above: Collab tests, PR-GATE scope, Kiro steering guard.

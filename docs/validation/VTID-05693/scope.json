@@ -1,0 +1,14 @@
+{
+  "vtid": "VTID-05693",
+  "kind": "infra",
+  "paths": [
+    "docs/programs/strategy-execution/security-live-evidence.md",
+    "scripts/sql/readonly/strategy-memory-grants-check.sql",
+    "scripts/sql/readonly/strategy-memory-grants-check.test.mjs",
+    "docs/validation/VTID-05693/**",
+    ".kiro/specs/strategy-execution-wave1/lanes/security-evidence.md"
+  ],
+  "sparring_record": ".kiro/specs/strategy-execution-wave1/sparring/verdict.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}
