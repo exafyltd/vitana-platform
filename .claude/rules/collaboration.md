@@ -114,6 +114,13 @@ A new plan starts at `drafted`, a new lane at `ready`.
   session id. **Match a PR to its lane only by these keys — never by recency or "the last thing Kiro did".**
 - One VTID per lane (or per lane group the plan declares).
 
+**Owner exception — two closed specs (plan `collab-lane-close-exception`, owner decision 2026-11-11).** The lanes of
+`profile-posts-full-width` and `staging-verify-runner-fix` were merged and verified on staging without a reviewer-agent
+accept. They may close `in-review → verified → done` only with the four flat head front-matter fields
+`reviewer_exception: true`, `reviewer_exception_approval`, `reviewer_exception_pr` and `reviewer_exception_merge_sha`.
+The allowlist is `CLOSED_BY_OWNER_EXCEPTION` in `scripts/collab/queue.mjs`. It covers only these two specs, not new
+lanes, and it does not waive the reviewer accept for any protected gate file (§3a).
+
 ## 3a. Seats, areas and Kiro Web automations (VTID-05145 A1)
 Owner decisions 2026-10-14: Kiro accounts are the development capacity (separate credits); each Kiro Web account
 specialises in one area. All Kiro accounts share one GitHub identity (`exafyltd`), so GitHub labels or `/kiro`
