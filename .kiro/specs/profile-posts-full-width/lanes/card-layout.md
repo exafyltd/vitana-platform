@@ -1,6 +1,6 @@
 ---
 lane: card-layout
-state: parked
+state: done
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -13,7 +13,7 @@ paths:
   - src/components/profile/shared/tabs/ProfilePostsTab.*.test.tsx
   - tests/e2e/staging/vtid-*-profile-posts-full-width.staging.spec.ts
   - docs/validation/VTID-*/**
-updated: 2026-10-27T13:43Z
+updated: 2026-11-11T12:09Z
 branch: kiro/profile-posts-full-width/card-layout
 pr: https://github.com/exafyltd/vitana-v1/pull/1489
 vtid: VTID-05330
@@ -2179,3 +2179,7 @@ park (stale_claim); claim released; Claude unavailable → exafyltd
 park (stale_claim); claim released; Claude unavailable → exafyltd
 ### 2026-10-27T13:43Z · pm-agent · update
 park (stale_claim); claim released; Claude unavailable → exafyltd
+### 2026-11-11T12:09Z · session_01Cp885JNj3BnQzQqwppFc9t · parked → done
+Merged: exafyltd/vitana-v1#1489 (squash, merged 2026-10-22T09:30:34Z, head `14a1bdc47`), Playwright staging spec unchanged. Owner-confirmed scope; no further product change in this lane.
+### 2026-11-11T12:09Z · session_01Cp885JNj3BnQzQqwppFc9t · stale release (logged)
+Stale-claim release: `queue.mjs release profile-posts-full-width/card-layout --session session_01Cp885JNj3BnQzQqwppFc9t --stale` ran; the ref delete was refused by the session's git proxy (HTTP 403, policy denial), so `collab-claim/profile-posts-full-width/card-layout` (held by kiro-exafyltd-202610220818-5273, ~480 h old) is still on origin. Not retried. Needs a delete by someone with ref-delete rights.

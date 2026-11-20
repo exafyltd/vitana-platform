@@ -1,6 +1,6 @@
 ---
 lane: runner
-state: parked
+state: done
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -15,7 +15,7 @@ paths:
   - scripts/ci/staging-verify/lib.test.cjs
   - scripts/ci/staging-verify/run.mjs
   - docs/validation/VTID-*/**
-updated: 2026-10-22T16:04Z
+updated: 2026-11-11T12:09Z
 branch: kiro/staging-verify-runner-fix/runner
 vtid: VTID-05334
 parked_from: executing
@@ -48,3 +48,7 @@ park (stale_claim); claim released; Claude unavailable → exafyltd
 park (stale_claim); claim released; Claude unavailable → exafyltd
 ### 2026-10-22T16:04Z · pm-agent · update
 park (stale_claim); claim released; Claude unavailable → exafyltd
+### 2026-11-11T12:09Z · session_01Cp885JNj3BnQzQqwppFc9t · parked → done
+Merged: exafyltd/vitana-platform#4311 (VTID-05334, squash, merged 2026-10-22T11:41:33Z, head `9bf54f4e`). The STAGING-VERIFY result for the merge commit is not checked in this record.
+### 2026-11-11T12:09Z · session_01Cp885JNj3BnQzQqwppFc9t · stale release (logged)
+Stale-claim release: `queue.mjs release staging-verify-runner-fix/runner --session session_01Cp885JNj3BnQzQqwppFc9t --stale` ran; the ref delete was refused by the session's git proxy (HTTP 403, policy denial), so `collab-claim/staging-verify-runner-fix/runner` (held by kiro-exafyltd-202610220818-5273, ~480 h old) is still on origin. Not retried. Needs a delete by someone with ref-delete rights.
