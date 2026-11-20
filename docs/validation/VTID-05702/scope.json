@@ -1,0 +1,13 @@
+{
+  "vtid": "VTID-05702",
+  "kind": "infra",
+  "paths": [
+    "scripts/aws/setup-delivery-bedrock.sh",
+    "services/gateway/src/providers/bedrock.ts",
+    "services/gateway/test/delivery/bedrock-role.test.ts",
+    "docs/validation/VTID-05702/**"
+  ],
+  "sparring_record": ".kiro/specs/agentic-delivery-v2/sparring/verdict.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

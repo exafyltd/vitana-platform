@@ -1,0 +1,19 @@
+{
+  "vtid": "VTID-05702",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "staging gateway still boots and answers healthy after this change (bedrock.ts is loaded at process start by ai-bridge.ts, claude-text-client.ts and llm-router.ts; a module-scope bug here would break the whole process, not just the new delivery-role path)",
+      "path": "/alive",
+      "expect_status": 200
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/delivery/bedrock-role.test.ts test/providers/bedrock-vision-tools.test.ts test/providers/bedrock-region.test.ts test/ai-bridge.test.ts test/llm-router-agentic.test.ts test/llm-provider-verify.test.ts test/vtid-04233-spec-generator-planner-stage.test.ts test/vtid-05077-planner-fallback-and-thinking.test.ts",
+      "cwd": "services/gateway",
+      "reason": "pins invokeBedrock()'s new useDeliveryRole path (sts:AssumeRole signing, credential cache, STS error surfacing) and proves every existing Bedrock call site (ai-bridge, claude-text-client via llm-router, the planner/fallback paths) is byte-for-byte unaffected"
+    }
+  ],
+  "not_verified_on_staging": "The useDeliveryRole capability itself is not independently observable on staging by this lane: no caller sets it yet (review-service/spar-responder, the lanes that will, both depends_on: [delivery-bedrock] and are not built yet), and DELIVERY_BEDROCK_ROLE_ARN is not wired into any task definition (the owner applies scripts/aws/setup-delivery-bedrock.sh and wires the env var as a separate, later step — Phase 0 P3 of plan.md). The logic is proven by the unit tests above (quality-checks.md: 'the PR body and the lane log say not verified on staging: <reason> and name the test that covers it')."
+}
