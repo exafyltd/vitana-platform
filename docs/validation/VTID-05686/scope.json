@@ -1,0 +1,14 @@
+{
+  "vtid": "VTID-05686",
+  "kind": "docs",
+  "paths": [
+    "docs/programs/strategy-execution/autonomy-risk-register.md",
+    "docs/validation/VTID-05686/**",
+    ".kiro/specs/strategy-execution-wave1/lanes/autonomy-risks.md"
+  ],
+  "sparring_record": ".kiro/specs/strategy-execution-wave1/sparring/verdict.md",
+  "weakens_tests": [],
+  "red_green_exempt": [
+    { "file": "docs/programs/strategy-execution/autonomy-risk-register.md", "reason": "docs-only lane: no behaviour, no test" }
+  ]
+}
