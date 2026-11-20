@@ -25,6 +25,10 @@ jobs:
 
       - name: Build gateway
         working-directory: services/gateway
+        # The gateway tsc build runs out of the default ~2 GB heap on the runner (JavaScript heap
+        # out of memory, exit 134). Raise the heap for this step only.
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
         run: npm run build
 
       - name: Validate frontend canonical source
