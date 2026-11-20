@@ -1,6 +1,6 @@
 ---
 lane: settings
-state: ready
+state: done
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -21,8 +21,11 @@ paths:
   - apps/mobile/parity/ledger.json
   - src/i18n/*/settingsNative.json
   - docs/validation/**
-updated: 2026-11-01T03:04Z
+updated: 2026-11-03T16:13Z
 vtid: VTID-05431
+claimed_by: kiro-exafyltd-202611011658-9f52
+branch: kiro/native-wave2-profile-settings-r2/settings
+pr: https://github.com/exafyltd/vitana-v1/pull/1546
 ---
 # Settings port — the `MobileSettings` `?mode=` hub + `/settings/preferences`, `/settings/limitations`, `/settings/tenant-role`, `/delete-account`
 Plan: `.kiro/specs/native-wave2-profile-settings-r2/` — `plan.md` (plan block) and the `tasks.md` section marked
@@ -81,3 +84,20 @@ Lane created with the plan (re-plan of `native-wave2-profile-settings/settings`,
 
 ### 2026-11-01T03:04Z · ci-plan-spar · ready (VTID allocated)
 VTID-05431 allocated after policy approval (converged-auto-v1).
+### 2026-11-01T17:08Z · kiro-exafyltd-202611011658-9f52 · ready → executing
+Claimed by kiro-exafyltd-202611011658-9f52 (Kiro Web driver, seat exafyltd); built by a delegated builder under this session on vitana-v1 branch `kiro/native-wave2-profile-settings-r2/settings`.
+### 2026-11-01T18:03Z · kiro-exafyltd-202611011658-9f52 · executing → in-review
+PR https://github.com/exafyltd/vitana-v1/pull/1546. Evidence: vitana-v1 `docs/validation/VTID-05431/` (commands.log, red-on-base, verification.md, staging-tests.json).
+
+### 2026-11-02T21:37Z · agent-vitana-lane-reviewer-202611022137-2c55 · review
+review: accept
+head: f6848466a84dd3a2b8bb376f2facc241370be872
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+PR: https://github.com/exafyltd/vitana-v1/pull/1546
+Findings: non-blocking: CI checks on this head are all queued, so still running; non-blocking: preflight Lane scope red is the known shared-path false positive (Option C). Prior blocker fixed: helpers.tsx calls configure({asyncUtilTimeout:5000}) and jest.setTimeout(30000), and all three settings test files (i18n-rtl, settings-hub, sub-screens) import ./helpers; i18n-rtl.test.tsx also sets jest.setTimeout(30000). The a3c8967..f684846 diff touches only those timing lines, three sync getBy calls in sub-screens.test.tsx wrapped in waitFor (same assertions, more tolerant of async timing, none removed, skipped or loosened), and commands.log. jest.config.js and jest.setup.ts are untouched. commands.log records three sequential default-worker runs of tests/settings (168/168 each), a full suite run (2661/2661), typecheck, and 6 concurrent runs green.
+Next: the land step merges under §7b
+Stored by the landing session kiro-exafyltd-202611011658-9f52 on the agent's behalf (lane-land.md step 2).
+### 2026-11-03T16:13Z · kiro-exafyltd-202611011658-9f52 · in-review → verified
+Accepted by agent:vitana-lane-reviewer on head `f6848466a84dd3a2b8bb376f2facc241370be872` (review entry above); every required check green, up to date with main.
+### 2026-11-03T16:13Z · kiro-exafyltd-202611011658-9f52 · verified → done
+merge: 6b9137ac575735edf1efbc16cddb9ad52d6b4b50 · authority: §7b PM rule (applied by the plan driver while the PM is not live), squash. Staging: AWS Stage Deploy Community App rolled 6b9137a (https://github.com/exafyltd/vitana-v1/actions/runs/41538083885); its STAGING-VERIFY trigger step failed. Dispatched run https://github.com/exafyltd/vitana-platform/actions/runs/41618321698 was cancelled after 75 min; re-dispatch https://github.com/exafyltd/vitana-platform/actions/runs/41671456173 was superseded in the community-app concurrency queue by the deploy-triggered run https://github.com/exafyltd/vitana-platform/actions/runs/41671877025 on main aac65bf, which contains 6b9137a (pending).
