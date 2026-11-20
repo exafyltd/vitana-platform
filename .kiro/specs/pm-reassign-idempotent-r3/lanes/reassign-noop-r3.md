@@ -1,8 +1,7 @@
 ---
 lane: reassign-noop-r3
-state: executing
+state: parked
 next_actor: kiro
-claimed_by: kiro-exafyltd-202611051700-c1a1
 branch: kiro/pm-reassign-idempotent-r3/reassign-noop-r3
 pr: https://github.com/exafyltd/vitana-platform/pull/4556
 depends_on: []
@@ -21,8 +20,9 @@ paths:
   - .github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml
   - services/gateway/src/services/conversation/conversation-flag-pins.generated.ts
   - docs/validation/VTID-*/**
-updated: 2026-11-01T04:30Z
+updated: 2026-11-12T20:17Z
 vtid: VTID-05421
+parked_from: executing
 ---
 # reassign-noop-r3 — idempotent PM stale-review reassignment (re-plan, generated pins file in paths)
 Plan: `.kiro/specs/pm-reassign-idempotent-r3/plan.md`, `tasks.md` section `reassign-noop-r3`. Supersedes
@@ -114,3 +114,5 @@ recompute with git diff. (3) red evidence is outputs/red-on-base.txt, recorded f
 `npm run test:operator` fails one path-separator assertion on a Windows checkout; the same failure is on base and the
 Linux CI result is the merge gate.
 Next: the land step merges under §7b once every required check is green on this head and the PR is 0 behind main.
+### 2026-11-12T20:17Z · pm-agent · executing → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
