@@ -1,0 +1,4 @@
+$ node --test scripts/collab/session-handover-rule.test.mjs   # on origin/main (before CLAUDE.md change)
+# tests 2
+# pass 0
+# fail 2
