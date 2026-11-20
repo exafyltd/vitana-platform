@@ -1,0 +1,297 @@
+# VTID-05692 commands.log (strategy-execution-wave1/oasis-traceability)
+# worktree /projects/sandbox/wt-sew1-oasis-traceability, run 2026-11-11T00:57:02Z
+# vitana-platform pin 6dc6e1ba0c18252ec2f3fbf5651d245e200f9835 (origin/main at lane start; no newer origin/main used)
+
+$ git rev-parse HEAD origin/main
+6dc6e1ba0c18252ec2f3fbf5651d245e200f9835
+6dc6e1ba0c18252ec2f3fbf5651d245e200f9835
+exit=0
+
+$ git status --porcelain --untracked-files=all
+?? docs/programs/strategy-execution/oasis-vtid-traceability.md
+?? docs/validation/VTID-05692/acceptance.md
+?? docs/validation/VTID-05692/citation-check.mjs
+?? docs/validation/VTID-05692/commands.log
+?? docs/validation/VTID-05692/run-checks.sh
+?? docs/validation/VTID-05692/scope.json
+exit=0
+
+## AC-2 citation check (full output)
+$ node docs/validation/VTID-05692/citation-check.mjs --repo . --pin 6dc6e1ba0c18252ec2f3fbf5651d245e200f9835 --doc docs/programs/strategy-execution/oasis-vtid-traceability.md --no-emdash
+ok   supabase/migrations/20251217000000_vtid_ledger_and_allocator.sql:65 (164 lines)
+ok   supabase/migrations/20251217000000_vtid_ledger_and_allocator.sql:82-126 (164 lines)
+ok   supabase/migrations/20251217000000_vtid_ledger_and_allocator.sql:106 (164 lines)
+ok   supabase/migrations/20251217000000_vtid_ledger_and_allocator.sql:129-149 (164 lines)
+ok   services/gateway/src/routes/vtid.ts:144-146 (1285 lines)
+ok   scripts/collab/plan-spar.mjs:231-265 (458 lines)
+ok   scripts/collab/plan-spar.mjs:251-252 (458 lines)
+ok   supabase/migrations/20251209000000_add_task_stage.sql:10-36 (140 lines)
+ok   supabase/migrations/20251209000000_add_task_stage.sql:14 (140 lines)
+ok   services/gateway/src/services/project-manager/writers.ts:240 (252 lines)
+ok   services/gateway/src/services/dev-memory/resume-pack.ts:22 (273 lines)
+ok   services/gateway/src/services/autopilot-validator.ts:201 (571 lines)
+ok   services/gateway/src/services/gitlab-events/mapper.ts:68 (179 lines)
+ok   services/gateway/src/routes/vtid.ts:1180 (1285 lines)
+ok   services/gateway/src/routes/execute.ts:143 (1919 lines)
+ok   services/gateway/src/routes/worker-orchestrator.ts:161 (1734 lines)
+ok   services/gateway/src/routes/ops-attention.ts:61 (108 lines)
+ok   scripts/ci/staging-verify/lib.cjs:108-114 (796 lines)
+ok   services/gateway/src/services/self-healing-diagnosis-service.ts:246-247 (1178 lines)
+ok   services/gateway/src/routes/operator.ts:2179 (3288 lines)
+ok   services/gateway/src/routes/operator.ts:2209 (3288 lines)
+ok   services/gateway/src/routes/operator.ts:2441 (3288 lines)
+ok   scripts/ci/command-hub-ownership-guard.js:305 (1205 lines)
+ok   scripts/ci/command-hub-ownership-guard.js:1052 (1205 lines)
+ok   services/gateway/src/services/delivery-host.ts:33 (149 lines)
+ok   services/gateway/src/services/delivery-host.ts:124 (149 lines)
+ok   services/gateway/src/services/gitlab-events/delivery-mapper.ts:342 (730 lines)
+ok   scripts/ci/staging-verify/record-oasis.sh:35 (68 lines)
+ok   scripts/ci/staging-verify/record-oasis.sh:56 (68 lines)
+ok   .github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml:1494 (1531 lines)
+ok   services/gateway/src/services/kiro/kiro-mcp-writes.ts:201-203 (216 lines)
+ok   .github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml:1779 (1801 lines)
+ok   scripts/ci/staging-verify/record-oasis.sh:44 (68 lines)
+ok   services/gateway/src/services/project-manager/gate2.ts:213 (262 lines)
+ok   services/gateway/src/services/project-manager/observe-live.ts:732 (758 lines)
+ok   services/gateway/src/services/oasis-event-service.ts:59 (2331 lines)
+ok   services/gateway/src/services/oasis-event-service.ts:101-124 (2331 lines)
+ok   services/gateway/src/services/oasis-event-service.ts:47-53 (2331 lines)
+ok   services/gateway/src/services/oasis-event-service.ts:92-99 (2331 lines)
+ok   services/gateway/src/routes/events.ts:21 (2140 lines)
+ok   services/gateway/src/routes/events.ts:42 (2140 lines)
+ok   services/gateway/src/routes/events.ts:197 (2140 lines)
+ok   services/gateway/src/routes/events.ts:480 (2140 lines)
+ok   .github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml:1490-1502 (1531 lines)
+ok   .github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml:1775-1787 (1801 lines)
+ok   scripts/ci/staging-verify/record-oasis.sh:63-66 (68 lines)
+ok   supabase/migrations/20260806160000_vtid_03516_ledger_integrity_check.sql:49-90 (104 lines)
+ok   services/gateway/src/routes/ops-health-checks.ts:313-320 (480 lines)
+ok   .github/workflows/ALERT-OASIS-LEDGER-INTEGRITY.yml:38-56 (90 lines)
+ok   .claude/rules/collaboration.md:78-87 (390 lines)
+ok   docs/programs/areas.yaml:14-18 (52 lines)
+ok   supabase/migrations/20260214000000_oasis_actor_surface_tracking.sql:26-90 (129 lines)
+ok   .claude/rules/collaboration.md:119-120 (390 lines)
+ok   .claude/rules/collaboration.md:111-114 (390 lines)
+ok   services/gateway/src/routes/vtid.ts:145-146 (1285 lines)
+ok   .claude/rules/collaboration.md:86-87 (390 lines)
+ok   .github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml:1501 (1531 lines)
+ok   scripts/ci/staging-verify/record-oasis.sh:43 (68 lines)
+ok   services/gateway/src/services/gitlab-events/delivery-mapper.ts:462-505 (730 lines)
+ok   .claude/rules/collaboration.md:158-167 (390 lines)
+ok   scripts/collab/queue.mjs:56 (1424 lines)
+ok   services/gateway/src/services/project-manager/writers.ts:239-249 (252 lines)
+ok   services/gateway/src/services/conversation/conversation-flag-pins.generated.ts:161 (176 lines)
+ok   .claude/rules/collaboration.md:169-172 (390 lines)
+ok   .claude/rules/collaboration.md:333-337 (390 lines)
+ok   services/gateway/src/routes/vtid-terminalize.ts:357 (922 lines)
+ok   services/gateway/src/types/cicd.ts:234-236 (1699 lines)
+ok   services/gateway/src/routes/vtid-terminalize.ts:604 (922 lines)
+ok   services/gateway/src/services/autopilot-event-mapper.ts:488-497 (683 lines)
+ok   services/gateway/src/services/gitlab-events/delivery-mapper.ts:37-39 (730 lines)
+ok   services/gateway/src/services/project-manager/emit.ts:30-33 (63 lines)
+ok   services/gateway/src/types/cicd.ts:146-147 (1699 lines)
+ok   scripts/ci/staging-verify/run.mjs:258-259 (585 lines)
+ok   .claude/rules/collaboration.md:89-105 (390 lines)
+ok   scripts/ci/staging-verify/run.mjs:498-499 (585 lines)
+ok   scripts/ci/staging-verify/record-oasis.sh:33-52 (68 lines)
+ok   .github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml:1483-1502 (1531 lines)
+ok   .github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml:1767-1787 (1801 lines)
+ok   services/gateway/src/routes/operator.ts:2179 (3288 lines)
+ok   services/gateway/src/services/project-manager/gate2.ts:240 (262 lines)
+ok   services/gateway/src/routes/vtid-terminalize.ts:357 (922 lines)
+ok   scripts/collab/plan-spar.mjs:233-252 (458 lines)
+ok   services/gateway/src/services/oasis-event-service.ts:92-99 (2331 lines)
+ok   services/gateway/src/routes/events.ts:42 (2140 lines)
+ok   .claude/rules/collaboration.md:139-145 (390 lines)
+ok   services/gateway/src/routes/ops-health-checks.ts:313-320 (480 lines)
+ok   .github/workflows/ALERT-OASIS-LEDGER-INTEGRITY.yml:38-56 (90 lines)
+ok   supabase/migrations/20261004110000_vtid_04868_plan_sparring_gate.sql:117-123 (641 lines)
+ok   supabase/migrations/20261004110000_vtid_04868_plan_sparring_gate.sql:567-600 (641 lines)
+ok   services/gateway/src/services/gitlab-events/delivery-mapper.ts:86 (730 lines)
+ok   services/gateway/src/services/gitlab-events/delivery-mapper.ts:595-610 (730 lines)
+ok   services/gateway/src/services/gitlab-events/delivery-mapper.ts:615-642 (730 lines)
+ok   services/gateway/src/services/gitlab-events/delivery-mapper.ts:645-668 (730 lines)
+ok   services/gateway/src/services/gitlab-events/delivery-mapper.ts:231-237 (730 lines)
+ok   services/gateway/src/services/delivery-host.ts:52-54 (149 lines)
+ok   services/gateway/src/services/project-manager/observe-live.ts:13-14 (758 lines)
+ok   services/gateway/src/services/project-manager/observe-live.ts:353-357 (758 lines)
+ok   services/gateway/src/services/project-manager/observe-live.ts:418 (758 lines)
+ok   services/gateway/src/types/cicd.ts:1242 (1699 lines)
+ok   services/gateway/src/services/gitlab-events/delivery-mapper.ts:23-25 (730 lines)
+ok   services/gateway/src/services/autopilot-event-mapper.ts:488-497 (683 lines)
+ok   services/gateway/src/services/project-manager/emit.ts:22-34 (63 lines)
+ok   services/gateway/src/services/project-manager/emit.ts:61-63 (63 lines)
+ok   services/gateway/src/services/project-manager/emit.ts:7-16 (63 lines)
+ok   services/gateway/src/types/cicd.ts:139 (1699 lines)
+ok   services/gateway/src/services/project-manager/types.ts:272-364 (514 lines)
+ok   services/gateway/src/services/project-manager/gate2.ts:240 (262 lines)
+ok   services/gateway/src/services/project-manager/writers.ts:4 (252 lines)
+ok   services/gateway/src/services/project-manager/observe-live.ts:732 (758 lines)
+ok   services/gateway/src/services/project-manager/gate2.ts:213 (262 lines)
+ok   services/gateway/src/services/gitlab-events/mapper.ts:114-120 (179 lines)
+ok   services/gateway/src/services/gitlab-events/delivery-mapper.ts:270-330 (730 lines)
+ok   services/gateway/src/services/gitlab-events/delivery-mapper.ts:49-55 (730 lines)
+ok   services/gateway/src/services/gitlab-events/delivery-mapper.ts:595-668 (730 lines)
+ok   services/gateway/src/services/gitlab-events/delivery-mapper.ts:93 (730 lines)
+ok   services/gateway/src/services/gitlab-events/delivery-mapper.ts:462-505 (730 lines)
+ok   services/gateway/src/services/gitlab-events/delivery-mapper.ts:529-531 (730 lines)
+ok   services/gateway/src/services/gitlab-events/mapper.ts:115 (179 lines)
+ok   services/gateway/src/services/gitlab-events/delivery-mapper.ts:400 (730 lines)
+ok   services/gateway/src/types/cicd.ts:213 (1699 lines)
+ok   docs/programs/strategy-execution/oasis-vtid-traceability.md: no em dash
+citations=120 failures=0
+exit=0
+
+## AC-3 negative self-test (scratch file, removed after; expect exit 1, failures=5)
+$ printf 'a `services/gateway/src/routes/vtid.ts:99999` b `no/such/file.ts:1` c `CLAUDE.md:5-3` d \342\200\224 x@y.com\n' > /tmp/neg-05692.md; node docs/validation/VTID-05692/citation-check.mjs --repo . --pin 6dc6e1ba0c18252ec2f3fbf5651d245e200f9835 --doc /tmp/neg-05692.md --no-emdash --no-email; rc=$?; rm -f /tmp/neg-05692.md; exit $rc
+FAIL /tmp/neg-05692.md: services/gateway/src/routes/vtid.ts:99999 (line 99999 > 1285 lines)
+FAIL /tmp/neg-05692.md: no/such/file.ts:1 (file not found at 6dc6e1ba0c)
+FAIL /tmp/neg-05692.md: CLAUDE.md:5-3 (range 5-3 descends)
+FAIL /tmp/neg-05692.md: 1 em dash(es)
+FAIL /tmp/neg-05692.md: 1 e-mail address(es)
+citations=3 failures=5
+exit=1
+
+## AC-4 section 4 row labels (expect 11)
+$ awk '/^## 4\./{f=1;next} /^### 4\.1/{f=0} f && /^\| [A-Z]/{split($0,a,"|"); gsub(/^ +| +$/,"",a[2]); print a[2]}' docs/programs/strategy-execution/oasis-vtid-traceability.md | grep -v '^Item$'
+Account and session
+VTID
+Repository and commit
+Execution start
+Execution end
+Lifecycle events
+Decisions
+Evidence
+Verification
+Deployment
+Outcome
+exit=0
+
+## AC-5 pseudo-VTID counts at the pin
+$ for p in SH-FALLBACK BOOTSTRAP-PUBLISH BOOTSTRAP-DELIVERY BOOTSTRAP-STAGING-VERIFY BOOTSTRAP-AWS-STAGE-DEPLOY; do echo "== $p"; git grep -c "$p" 6dc6e1ba0c18252ec2f3fbf5651d245e200f9835 -- . | sed "s/^6dc6e1ba0c18252ec2f3fbf5651d245e200f9835://"; done
+== SH-FALLBACK
+services/gateway/src/services/self-healing-diagnosis-service.ts:1
+services/gateway/test/ops-action-required.test.ts:2
+== BOOTSTRAP-PUBLISH
+scripts/ci/command-hub-ownership-guard.js:2
+services/gateway/src/routes/operator.ts:3
+== BOOTSTRAP-DELIVERY
+.kiro/specs/agentic-delivery/plan.md:1
+.kiro/specs/agentic-delivery/tasks.md:1
+docs/validation/VTID-05547/acceptance.md:11
+docs/validation/VTID-05547/outputs/green.txt:5
+services/gateway/src/services/delivery-host.ts:2
+services/gateway/src/services/gitlab-events/delivery-mapper.ts:1
+services/gateway/test/delivery/delivery-host-guard.test.ts:2
+services/gateway/test/delivery/gitlab-delivery-mapping.test.ts:13
+services/gateway/test/delivery/gitlab-delivery-webhook.test.ts:1
+== BOOTSTRAP-STAGING-VERIFY
+.kiro/specs/agentic-delivery/plan.md:1
+docs/validation/VTID-05551/acceptance.md:1
+docs/validation/VTID-05551/outputs/golden-bodies.txt:2
+docs/validation/VTID-05551/outputs/red-on-base-record-oasis.txt:8
+docs/validation/VTID-05552/acceptance.md:1
+scripts/ci/staging-verify/record-oasis-workflow.test.mjs:2
+scripts/ci/staging-verify/record-oasis.sh:2
+scripts/ci/staging-verify/record-oasis.test.cjs:1
+== BOOTSTRAP-AWS-STAGE-DEPLOY
+.github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml:1
+services/gateway/test/delivery/delivery-route.test.ts:2
+services/gateway/test/vtid-04465-operator-pipeline-regression.test.ts:1
+exit=0
+
+$ git grep -n 'SH-FALLBACK\|BOOTSTRAP-PUBLISH' 6dc6e1ba0c18252ec2f3fbf5651d245e200f9835 -- services scripts .github ':!*test*' | sed "s/^6dc6e1ba0c18252ec2f3fbf5651d245e200f9835://" | cut -c1-160
+scripts/ci/command-hub-ownership-guard.js:305:// BOOTSTRAP-PUBLISH-STALENESS-FIX: PUBLISH popover/legacy modal reported
+scripts/ci/command-hub-ownership-guard.js:1052:const ALLOWED_VTID_PATTERN = /VTID-05547|VTID-05073|VTID-05153|VTID-05148|VTID-05146|VTID-05141|VTID-05122|VTID-0
+services/gateway/src/routes/operator.ts:2179:      vtid: 'BOOTSTRAP-PUBLISH',
+services/gateway/src/routes/operator.ts:2209:      vtid: 'BOOTSTRAP-PUBLISH',
+services/gateway/src/routes/operator.ts:2441:        vtid: 'BOOTSTRAP-PUBLISH',
+services/gateway/src/services/self-healing-diagnosis-service.ts:247:  const vtid = vtidResult.vtid ?? `SH-FALLBACK-${Date.now()}`;
+exit=0
+
+$ P="vtid: *['\"\`][^'\"\`]+['\"\`]"; A=$(git grep -ohE "$P" 6dc6e1ba0c18252ec2f3fbf5651d245e200f9835 -- 'services/*.ts' ':!*test*' ':!*__tests__*' | wc -l); C=$(git grep -ohE "$P" 6dc6e1ba0c18252ec2f3fbf5651d245e200f9835 -- 'services/*.ts' ':!*test*' ':!*__tests__*' | grep -cE "VTID-[0-9]{5}['\"\`]"); F=$(git grep -lE "$P" 6dc6e1ba0c18252ec2f3fbf5651d245e200f9835 -- 'services/*.ts' ':!*test*' ':!*__tests__*' | wc -l); echo literal_vtid_values=$A files=$F canonical=$C non_canonical=$((A-C))
+literal_vtid_values=698 files=188 canonical=479 non_canonical=219
+exit=0
+
+$ P="vtid: *['\"\`][^'\"\`]+['\"\`]"; git grep -ohE "$P" 6dc6e1ba0c18252ec2f3fbf5651d245e200f9835 -- 'services/*.ts' ':!*test*' ':!*__tests__*' | grep -vE "VTID-[0-9]{5}['\"\`]" | sed -E 's/vtid: *//; s/[0-9]+/N/g' | awk '{ if ($0 ~ /BOOTSTRAP-/) print "BOOTSTRAP-*"; else if ($0 ~ /^.VTID-N.$/) print "VTID-<4 digits or fewer>"; else if ($0 ~ /VTID-/) print "VTID-<suffix>"; else if ($0 ~ /SYSTEM/) print "SYSTEM"; else print "other"}' | sort | uniq -c | sort -rn
+     67 VTID-<suffix>
+     64 VTID-<4 digits or fewer>
+     42 BOOTSTRAP-*
+     26 other
+     20 SYSTEM
+exit=0
+
+$ echo distinct_bootstrap=$(git grep -ohE "vtid: *['\"\`]BOOTSTRAP-[A-Z0-9-]+" 6dc6e1ba0c18252ec2f3fbf5651d245e200f9835 -- 'services/*.ts' ':!*test*' ':!*__tests__*' | sort -u | wc -l) files=$(git grep -lE "vtid: *['\"\`]BOOTSTRAP-" 6dc6e1ba0c18252ec2f3fbf5651d245e200f9835 -- 'services/*.ts' ':!*test*' ':!*__tests__*' | wc -l)
+distinct_bootstrap=22 files=15
+exit=0
+
+$ echo files_referencing_oasis_events_rest=$(git grep -l 'rest/v1/oasis_events' 6dc6e1ba0c18252ec2f3fbf5651d245e200f9835 -- 'services/*.ts' ':!*test*' | wc -l)
+files_referencing_oasis_events_rest=74
+exit=0
+
+$ echo fk_to_vtid_ledger=$(git grep -niE 'references +(public\.)?vtid_ledger' 6dc6e1ba0c18252ec2f3fbf5651d245e200f9835 -- supabase/migrations | wc -l)
+fk_to_vtid_ledger=0
+exit=0
+
+## AC-6 non-canonical VTID text in the doc, and the gate-mode sentence
+$ grep -noE 'VTID-[0-9]{1,4}\b|VTID-[0-9]{6,}' docs/programs/strategy-execution/oasis-vtid-traceability.md; grep -n plan_sparring_config docs/programs/strategy-execution/oasis-vtid-traceability.md
+58:VTID-0541
+130:VTID-0541
+21:- The plan-sparring gate stays in its current mode. This document proposes no change to `plan_sparring_config`.
+exit=0
+
+## Evidence reads (GitHub REST GET only)
+$ gh api repos/exafyltd/vitana-platform/actions/runs/42929814848 --jq '{name, conclusion, head_branch, head_sha, created_at}'
+{"conclusion":"success","created_at":"2026-11-11T00:14:45Z","head_branch":"kiro/strategy-execution-wave1/plan","head_sha":"c5c79a05aba7b84fe740587734141eb7beb86fdd","name":"PLAN-SPAR"}
+exit=0
+
+$ gh api 'repos/exafyltd/vitana-platform/pulls/4942/commits?per_page=50' --jq '.[] | select(.sha|startswith("37a52d5ec0")) | .sha[0:10] + " " + .commit.author.name + " " + .commit.committer.date'
+37a52d5ec0 plan-spar[bot] 2026-11-11T00:19:20Z
+exit=0
+
+$ gh api repos/exafyltd/vitana-platform/actions/runs/42847789182 --jq '{name, conclusion, head_sha, created_at}'
+{"conclusion":"success","created_at":"2026-11-10T15:46:05Z","head_sha":"6dc6e1ba0c18252ec2f3fbf5651d245e200f9835","name":"Alert — OASIS Ledger Integrity"}
+exit=0
+
+## AC-8 collab tests and preflight
+$ node --test scripts/collab/*.test.mjs 2>&1 | tail -8
+# tests 257
+# suites 0
+# pass 256
+# fail 0
+# cancelled 0
+# skipped 1
+# todo 0
+# duration_ms 10661.770975
+exit=0
+
+$ node scripts/collab/preflight.mjs --repo . --base origin/main --head HEAD --branch kiro/strategy-execution-wave1/oasis-traceability --title 'VTID-05692 (strategy-execution-wave1/oasis-traceability): OASIS and VTID traceability design' --no-tests
+preflight vitana-platform /projects/sandbox/wt-sew1-oasis-traceability
+  base 6dc6e1ba0c18252ec2f3fbf5651d245e200f9835  head 6dc6e1ba0c18252ec2f3fbf5651d245e200f9835  branch kiro/strategy-execution-wave1/oasis-traceability
+
+SKIP  Collab tests [required]
+      --no-tests
+PASS  Collab handoff [required]
+FAIL  Lane scope [required]
+      ➖ **lane scope** — not a lane PR
+PASS  PR-GATE scope [report-only in CI (until config.enforce=true)]
+FAIL  PR-GATE sparring [report-only in CI (until config.enforce=true)]
+      ❌ **sparring record**:
+      - VTID-05692: no sparring record at `.kiro/specs/strategy-execution-wave1/sparring/verdict.md` (set "sparring_record" in scope.json when the plan's record lives under another VTID)
+PASS  PR-GATE weakening [report-only in CI (until config.enforce=true)]
+PASS  PR-GATE red-green [report-only in CI (until config.enforce=true)]
+PASS  Kiro steering [report-only in CI (until config.enforce=true)]
+
+preflight: 2 check(s) failed: Lane scope, PR-GATE sparring — fix every error above, then push
+exit=1
+
+## Notes (written by the lane builder, session kiro-exafy-202611110004-e38b)
+- Citation check: 120 citations, 0 failures (AC-2). Negative self-test exits 1 with failures=5, as intended (AC-3).
+- Expected non-zero exits: the negative self-test (AC-3) and preflight. Preflight's two FAILs are not lane defects:
+  "Lane scope: not a lane PR" and "PR-GATE sparring: no sparring record at .kiro/specs/strategy-execution-wave1/sparring/verdict.md"
+  both come from the plan PR #4942 not yet being merged to main (the spec files are absent at the pin) and from the
+  lane being uncommitted by instruction (HEAD = base, no diff). Re-run preflight on the lane commit after #4942 merges.
+- scope.json: `red_green_exempt` uses the object form `[{file, reason}]` because `scripts/ci/pr-gate/lib.mjs`
+  validateScope rejects a plain string array ("red_green_exempt must be [{file, reason (>=10 chars)}]", first preflight
+  run). The reason text is the one requested: "docs-only lane: no behaviour, no test".
+- No database, gateway or GitLab call was made. GitHub reads were REST GET only.
