@@ -36,3 +36,11 @@ Lane created with the plan (owner spec 2026-10-21, `requirements.md`).
 
 ### 2026-10-21T13:16Z · ci-plan-spar · ready (VTID allocated)
 VTID-05320 allocated after policy approval (converged-auto-v1).
+
+### 2026-10-28T11:00Z · kiro-exafyltd-202610281029-e076 · fix-forward (time-bomb fixtures)
+vitana-v1 `main` 5bc8d10cd red in Vitest run 40668786443: two reload tests in
+`src/hooks/useGlobalMessages.send-status.vtid-05320.test.tsx` seeded outbox items dated 2026-10-21T10:00Z, which
+`loadOutbox` prunes since 2026-10-28T10:00Z (`OUTBOX_MAX_AGE_MS` = 7 days). Fix: fixtures relative to `Date.now()`;
+no assertion and no `OUTBOX_MAX_AGE_MS` change. PR https://github.com/exafyltd/vitana-v1/pull/1506
+(branch `kiro/messenger-ux-v2/ui-send-status-fixfwd`, head 3e324cec2d26068c557dc45cdcb78d6092986bd9). Target file
+17/17 locally; other absolute dates in the lane's tests are not age-compared and pass.
