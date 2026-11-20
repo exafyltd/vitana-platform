@@ -1,0 +1,13 @@
+{
+  "vtid": "VTID-05700",
+  "kind": "feature",
+  "paths": [
+    ".github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml",
+    "services/gateway/test/vtid-04727-ledger-write-auth.test.ts",
+    "services/gateway/src/services/conversation/conversation-flag-pins.generated.ts",
+    "docs/validation/VTID-05700/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05700/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

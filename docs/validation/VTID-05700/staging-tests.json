@@ -1,0 +1,13 @@
+{
+  "vtid": "VTID-05700",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "ledger completion route rejects the probe on staging (enforce; VTID-PROBE is not a VTID, so a gateway without the pin answers 400 before any database call)", "method": "POST", "path": "/api/v1/oasis/tasks/VTID-PROBE/complete", "rejected_probe": true, "expect_status": 401 },
+    {
+      "kind": "existing",
+      "cwd": "services/gateway",
+      "ref": "npx jest test/vtid-04727-ledger-write-auth.test.ts",
+      "reason": "The change is the production deploy step that sets LEDGER_WRITE_AUTH_MODE; this suite runs that step's shell on a fixture task definition (unset gives log, enforce gives enforce), proves an anonymous allocate gets 401 with nothing allocated, and proves the VTID-PROBE probe is rejected before any I/O in every mode. Production is never probed."
+    }
+  ]
+}
