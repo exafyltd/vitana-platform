@@ -1,0 +1,288 @@
+# VTID-05688 commands.log (strategy-execution-wave1/delivery-capacity)
+# worktree /projects/sandbox/wt-sew1-delivery-capacity, run 2026-11-11T00:53:50Z
+# vitana-platform pin 6dc6e1ba0c18252ec2f3fbf5651d245e200f9835, vitana-v1 pin e31bf4627ff3c705c20f8e6b718ce4dd03353b7f, strategy commit fb77090e1ffc7d1ef3c250b0aa721768c3df9425 (no newer origin/main used)
+
+$ git rev-parse HEAD origin/main; git -C /projects/sandbox/vitana-v1 rev-parse origin/main; git -C /projects/sandbox/vitanaland-strategy rev-parse HEAD
+6dc6e1ba0c18252ec2f3fbf5651d245e200f9835
+6dc6e1ba0c18252ec2f3fbf5651d245e200f9835
+e31bf4627ff3c705c20f8e6b718ce4dd03353b7f
+fb77090e1ffc7d1ef3c250b0aa721768c3df9425
+exit=0
+
+$ git status --porcelain --untracked-files=all; git diff --quiet HEAD -- CLAUDE.md docs/programs/areas.yaml .kiro/automations && echo protected-and-governance-files-unchanged
+?? docs/programs/strategy-execution/delivery-capacity.md
+?? docs/validation/VTID-05688/acceptance.md
+?? docs/validation/VTID-05688/citation-check.mjs
+?? docs/validation/VTID-05688/commands.log
+?? docs/validation/VTID-05688/run-checks.sh
+?? docs/validation/VTID-05688/scope.json
+protected-and-governance-files-unchanged
+exit=0
+
+## AC-2 / AC-3 citation check, em dash and e-mail checks (full output)
+$ node docs/validation/VTID-05688/citation-check.mjs --repo . --pin 6dc6e1ba0c18252ec2f3fbf5651d245e200f9835 --doc docs/programs/strategy-execution/delivery-capacity.md --alias vitana-v1/=/projects/sandbox/vitana-v1@e31bf4627ff3c705c20f8e6b718ce4dd03353b7f --alias vitanaland-strategy/=/projects/sandbox/vitanaland-strategy@fb77090e1ffc7d1ef3c250b0aa721768c3df9425 --no-emdash --no-email
+ok   vitanaland-strategy/11-EVIDENCE/evidence-register.md:93 (117 lines)
+ok   docs/programs/areas.yaml:14-18 (52 lines)
+ok   docs/programs/areas.yaml:20-52 (52 lines)
+ok   docs/programs/areas.yaml:12 (52 lines)
+ok   .claude/rules/collaboration.md:219-228 (390 lines)
+ok   docs/programs/areas.yaml:17 (52 lines)
+ok   docs/programs/areas.yaml:39-47 (52 lines)
+ok   docs/programs/areas.yaml:9 (52 lines)
+ok   .claude/rules/collaboration.md:121-124 (390 lines)
+ok   .claude/rules/collaboration.md:118-120 (390 lines)
+ok   vitanaland-strategy/11-EVIDENCE/evidence-register.md:92 (117 lines)
+ok   .claude/rules/collaboration.md:333-337 (390 lines)
+ok   .claude/rules/collaboration.md:119 (390 lines)
+ok   .kiro/pipeline/common-rules.md:49-51 (85 lines)
+ok   vitanaland-strategy/11-EVIDENCE/evidence-register.md:93 (117 lines)
+ok   CLAUDE.md:83 (644 lines)
+ok   vitana-v1/CLAUDE.md:108 (461 lines)
+ok   .kiro/steering/vitana-owner-autonomy.md:42 (74 lines)
+ok   .kiro/pipeline/common-rules.md:25 (85 lines)
+ok   .claude/rules/collaboration.md:174-176 (390 lines)
+ok   .claude/rules/collaboration.md:217-218 (390 lines)
+ok   .claude/rules/collaboration.md:219-228 (390 lines)
+ok   CLAUDE.md:76-84 (644 lines)
+ok   vitanaland-strategy/09-DECISIONS/unresolved-decisions.md:61 (97 lines)
+ok   docs/programs/areas.yaml:14-18 (52 lines)
+ok   .claude/rules/collaboration.md:139-144 (390 lines)
+ok   .claude/rules/collaboration.md:136 (390 lines)
+ok   CLAUDE.md:83 (644 lines)
+ok   vitana-v1/CLAUDE.md:108 (461 lines)
+ok   CLAUDE.md:83 (644 lines)
+ok   docs/programs/strategy-execution/delivery-capacity.md: no em dash
+ok   docs/programs/strategy-execution/delivery-capacity.md: no e-mail address
+citations=30 failures=0
+exit=0
+
+## AC-4 seats (names only)
+$ sed -n '12p;14,18p' docs/programs/areas.yaml | sed -E 's/account: [^,]+,/account: <not reproduced>,/'
+exceptions_seat: exafyltd
+seats:
+  jtadic:   { account: <not reproduced>,        surface: kiro-web, automation: .kiro/automations/jtadic.md }
+  exafyltd: { account: <not reproduced>,      surface: kiro-web, automation: .kiro/automations/exafyltd.md }
+  hotmail:  { account: <not reproduced>, surface: kiro-ide }   # also the key on the server-side Kiro runner
+  exafy:    { account: <not reproduced>,   surface: kiro-web, automation: .kiro/automations/exafy.md }
+exit=0
+
+$ ls .kiro/automations/
+exafyltd.md
+exafy.md
+jtadic.md
+exit=0
+
+## AC-4 sessions in commit trailers, last 30 days (task command, then grouped)
+$ git log --since=2026-10-12 --format=%B origin/main | grep Collab-Session | wc -l
+3352
+exit=0
+
+$ git log --since=2026-10-12 --format=%B origin/main | grep -oE 'Collab-Session: *[^ ]+' | sed 's/Collab-Session: *//' | sort -u | wc -l
+361
+exit=0
+
+$ git log --since=2026-10-12 --format=%B origin/main | grep -oE 'Collab-Session: *[^ ]+' | sed 's/Collab-Session: *//' | sort -u | sed -E "$PREFIX" | sort | uniq -c | sort -rn
+    212 agent-vitana-lane-reviewer
+     50 kiro-exafyltd
+     37 kiro-exafy
+     22 kiro-<no seat>
+     13 kiro-hotmail
+     12 claude session_
+     10 kiro-jtadic
+      2 kiro-ide-*
+      1 pm-agent
+      1 kiro-dstev
+      1 ci-plan-spar
+exit=0
+
+$ git -C /projects/sandbox/vitana-v1 log --since=2026-10-12 --format=%B origin/main | grep -oE 'Collab-Session: *[^ ]+' | sed 's/Collab-Session: *//' | sort -u | sed -E "$PREFIX" | sort | uniq -c | sort -rn
+     16 kiro-exafyltd
+      7 kiro-<no seat>
+      7 claude session_
+      4 kiro-hotmail
+      2 kiro-jtadic
+      2 kiro-ide-*
+      2 kiro-exafy
+      1 agent-vitana-lane-reviewer
+exit=0
+
+$ for p in kiro-exafyltd- kiro-exafy- kiro-hotmail- kiro-jtadic- kiro-dstev- 'kiro-[0-9]{12}-' kiro-ide session_ agent-vitana-lane-reviewer- pm-agent ci-plan-spar; do echo "$p latest=$(git log --since=2026-10-12 --format='%h %cI' -E --grep="Collab-Session: *(https://claude.ai/code/)?$p" origin/main | head -1) earliest=$(git log --since=2026-10-12 --format='%h %cI' -E --grep="Collab-Session: *(https://claude.ai/code/)?$p" origin/main | tail -1)"; done
+kiro-exafyltd- latest=c43ddcf1d4 2026-11-08T13:57:15+01:00 earliest=5fc3268411 2026-10-16T14:17:06+02:00
+kiro-exafy- latest=e8a7eb0e4f 2026-11-08T18:16:15Z earliest=229b38b211 2026-10-18T20:01:35+02:00
+kiro-hotmail- latest=3e45c479bc 2026-11-08T17:52:06+01:00 earliest=975a1bdb82 2026-10-20T13:54:47+02:00
+kiro-jtadic- latest=cd1e8e306b 2026-11-05T17:59:32+01:00 earliest=e6ed415a9b 2026-10-20T17:12:46+02:00
+kiro-dstev- latest=62990ce285 2026-11-01T13:11:46+01:00 earliest=07b91c64d9 2026-10-28T14:37:18+01:00
+kiro-[0-9]{12}- latest=ed43ba6362 2026-11-02T11:50:37+01:00 earliest=995e27a236 2026-10-16T14:17:24+02:00
+kiro-ide latest=02b45df866 2026-10-28T12:29:29+01:00 earliest=7265ee5b7e 2026-10-24T18:32:43+02:00
+session_ latest=2daf4efef2 2026-11-08T10:51:57+01:00 earliest=ba328fc4a7 2026-10-13T17:29:42+02:00
+agent-vitana-lane-reviewer- latest=f016c1da9b 2026-11-08T18:22:34Z earliest=8f74d68caf 2026-10-21T10:16:00+02:00
+pm-agent latest=945755f084 2026-11-05T05:02:51+01:00 earliest=2ca278872a 2026-10-20T23:30:51+02:00
+ci-plan-spar latest=690214d259 2026-11-08T16:19:40+01:00 earliest=229b38b211 2026-10-18T20:01:35+02:00
+exit=0
+
+$ git log -1 --format='%h %cI' origin/main
+6dc6e1ba0c 2026-11-08T19:27:41+01:00
+exit=0
+
+## AC-4 sessions in lane and handoff logs since 2026-10-12
+$ grep -h -E '^### 20[0-9-]+T[^ ]* · [^ ]+ · ' .kiro/specs/*/lanes/*.md .kiro/specs/*/handoff.md | awk -F' · ' '{d=substr($1,5,10); if (d>="2026-10-12") print $2}' | sort -u | sed -E "$PREFIX" | sort | uniq -c | sort -rn
+    218 agent-vitana-lane-reviewer
+     48 kiro-exafyltd
+     36 kiro-exafy
+     15 kiro-hotmail
+     13 kiro-<no seat>
+     11 kiro-jtadic
+      7 claude session_
+      1 pm-agent
+      1 <kiro-session-id>
+      1 kiro-planner
+      1 kiro-ide-*
+      1 kiro-dstev
+      1 ci-plan-spar
+      1 agent:vitana-lane-reviewer
+exit=0
+
+$ grep -h '^author_seat:' .kiro/specs/*/handoff.md | sort | uniq -c | sort -rn
+     48 author_seat: exafyltd
+     27 author_seat: hotmail
+     15 author_seat: exafy
+     12 author_seat: jtadic
+      1 author_seat: dstev
+exit=0
+
+## AC-4 open lanes by state and seat (lane front matter at the pin)
+$ for f in .kiro/specs/*/lanes/*.md; do awk 'NR==1&&/^---$/{f=1;next} f&&/^---$/{exit} f' $f | awk '/^state:/{s=$2} /^next_actor:/{n=$2} /^seat:/{t=$2} END{print s"|"n"|"t}'; done > /tmp/lanes-05688.tmp; echo lanes=$(wc -l < /tmp/lanes-05688.tmp) done=$(grep -c '^done|' /tmp/lanes-05688.tmp); awk -F'|' '$1=="ready"||$1=="executing"||$1=="in-review"{print ($3==""?"(none)":$3)}' /tmp/lanes-05688.tmp | sort | uniq -c; echo next_actor_claude_not_done:; awk -F'|' '$1!="done" && $2=="claude"{print $1}' /tmp/lanes-05688.tmp | sort | uniq -c; rm -f /tmp/lanes-05688.tmp
+lanes=393 done=87
+      1 claude
+     54 exafy
+    148 exafyltd
+      4 hotmail
+     57 jtadic
+     17 (none)
+next_actor_claude_not_done:
+      5 executing
+      1 in-review
+      2 parked
+      4 ready
+exit=0
+
+## AC-4 GitHub commit authors, last 30 days (addresses masked)
+$ git log --since=2026-10-12 --format='%an <%ae>' origin/main | sort | uniq -c | sort -rn
+    305 exafyltd <<address>>
+    221 kiro-agent[bot] <<address>>
+    115 vitanaland-code <<address>>
+     18 Claude <<address>>
+      8 vitanaland-code <<address>>
+      8 plan-spar[bot] <<address>>
+      6 DraganAlex99 <<address>>
+      5 DraganOffice <<address>>
+      4 dstevanovic-jpg <<address>>
+      3 exafyltd <<address>>
+      2 Kiro Agent <<address>>
+      1 kiro-agent[bot] <<address>>
+      1 github-actions[bot] <<address>>
+exit=0
+
+## AC-4 claim refs, driver heartbeats (GitHub REST GET)
+$ for r in vitana-platform vitana-v1; do for p in collab-claim collab-driver; do echo "$r $p $(gh api --paginate repos/exafyltd/$r/git/matching-refs/heads/$p/ --jq '.[].ref' | wc -l)"; done; done
+vitana-platform collab-claim 271
+vitana-platform collab-driver 49
+vitana-v1 collab-claim 27
+vitana-v1 collab-driver 4
+exit=0
+
+$ for r in vitana-platform vitana-v1; do gh api --paginate repos/exafyltd/$r/git/matching-refs/heads/collab-driver/ --jq '.[].object.sha' | while read s; do gh api repos/exafyltd/$r/commits/$s --jq '.commit.committer.date + " " + ((.commit.message | capture("Collab-Session: *(?<s>[^\\s]+)").s) // "none")'; done; done | sort > /tmp/hb-05688.tmp; echo tips=$(wc -l < /tmp/hb-05688.tmp) newest=$(tail -1 /tmp/hb-05688.tmp); awk '{s=$2; if (s ~ /^kiro-[0-9]/) s="kiro-<no seat>"; else sub(/-[0-9]{12}-.*/,"",s); print s}' /tmp/hb-05688.tmp | sort | uniq -c | sort -rn; rm -f /tmp/hb-05688.tmp; date -u +now=%FT%TZ
+tips=53 newest=2026-11-08T16:26:10Z kiro-hotmail-202611061752-cc1f
+     19 kiro-exafyltd
+     17 kiro-hotmail
+     12 kiro-exafy
+      4 kiro-jtadic
+      1 none
+now=2026-11-11T00:55:09Z
+exit=0
+
+## AC-4 sessions on PR heads updated since 2026-11-09 (GitHub REST GET)
+$ for r in vitana-platform vitana-v1; do gh api "repos/exafyltd/$r/pulls?state=all&sort=updated&direction=desc&per_page=40" --jq '.[] | select(.updated_at >= "2026-11-09") | "\(.number) \(.head.sha)"' | while read n s; do echo "$r #$n $(gh api repos/exafyltd/$r/commits/$s --jq '.commit.committer.date + " " + ((.commit.message | capture("Collab-Session: *(?<s>[^\\s]+)").s) // "none")')"; done; done | awk '{print $1, $4}' | sed -E 's/ (kiro-[a-z]+-[0-9]{12}-[0-9a-f]{4})$/ \1/' | sort | uniq -c | sort -rn
+     22 vitana-v1 none
+     14 vitana-platform kiro-hotmail-202611061752-cc1f
+     13 vitana-v1 kiro-exafyltd-202611072144-1c88
+      9 vitana-platform none
+      7 vitana-platform kiro-exafyltd-202611072144-1c88
+      1 vitana-platform kiro-exafy-202611110004-e38b
+      1 vitana-platform agent-vitana-lane-reviewer-202611081821-ef12
+      1 vitana-platform agent-vitana-lane-reviewer-202611062231-d229
+exit=0
+
+## AC-4 Claude Code status
+$ grep -n 'Claude Code is retired' CLAUDE.md .kiro/steering/vitana-owner-autonomy.md .kiro/pipeline/common-rules.md .claude/rules/collaboration.md; git -C /projects/sandbox/vitana-v1 grep -n 'Claude Code is retired' e31bf4627ff3c705c20f8e6b718ce4dd03353b7f -- CLAUDE.md
+CLAUDE.md:83:the owner's instruction naming the plan plus a reviewer-agent accept on the current head (Claude Code is retired). Kiro deploys to production only on the owner's
+.kiro/steering/vitana-owner-autonomy.md:42:| 3 | Merging a change to a protected gate file (`scripts/collab/protected-gate-files.json`, e.g. `CLAUDE.md`). It needs the owner's instruction naming the plan plus a reviewer-agent accept on the current head (Claude Code is retired). | `collaboration.md` §3a, §7b | Yes, for changes to those files only |
+.kiro/pipeline/common-rules.md:25:   on the current head (Claude Code is retired); log each such file in `decisions.md`. `gh pr merge --admin` only when the one red check is a
+e31bf4627ff3c705c20f8e6b718ce4dd03353b7f:CLAUDE.md:108:(§3a, e.g. `CLAUDE.md`) never merges on a reviewer-agent accept alone: it needs the owner's instruction naming the plan plus a reviewer-agent accept on the current head (Claude Code is retired). Kiro merges to `main`/staging only under §7b, deploys to production only on the owner's explicit command
+exit=0
+
+$ git log -1 --format='%h %cI %s' 7fd4106862
+7fd4106862 2026-11-06T15:55:28+01:00 VTID-05566 (claude-migration-lanes/reinstate-rules): Claude Code may build lanes again (#4747)
+exit=0
+
+$ gh api repos/exafyltd/vitana-platform/actions/variables/CLAUDE_AVAILABLE
+{"message":"Github returned a client error."}gh: Github returned a client error. (HTTP 403)
+exit=1
+
+## AC-4 GitLab identities (strategy evidence EV-089, GitLab not called)
+$ git -C /projects/sandbox/vitanaland-strategy show fb77090e1ffc7d1ef3c250b0aa721768c3df9425:11-EVIDENCE/evidence-register.md | sed -n 93p | cut -c1-420
+| EV-089 | Delivery seats: 4 Kiro seats are named (jtadic, exafyltd, hotmail, exafy) and the exceptions seat is exafyltd; GitLab group members include agent-kiro-exafy, agent-kiro-exafyltd, agent-kiro-jtadic, agent-kiro-hotmail, claude-agent, DraganExafy (Maintainer) and root; agent-kiro-new and dstev appear in specs; no evidence of 12 Kiro seats; CLAUDE.md says "Claude Code is retired" while the owner counts 1 Claud
+exit=0
+
+## AC-6 proposed wording blocks
+$ grep -n '^\*\*P[1-4]\.' docs/programs/strategy-execution/delivery-capacity.md
+160:**P1. vitana-platform `CLAUDE.md:83`** (and the same sentence in `vitana-v1/CLAUDE.md:108`). Current:
+170:**P2. vitana-platform `CLAUDE.md`, collaboration paragraph** (after the sentence ending "Full rules:
+177:**P3. `docs/programs/areas.yaml`**, header comment after line 9, add (comment only, so no parser change):
+183:**P4. `docs/programs/areas.yaml`, seat `dstev`** (only if the owner confirms it is a separate Kiro account): one line
+exit=0
+
+## AC-8 collab tests and preflight
+$ node --test scripts/collab/*.test.mjs 2>&1 | tail -8
+# tests 257
+# suites 0
+# pass 256
+# fail 0
+# cancelled 0
+# skipped 1
+# todo 0
+# duration_ms 10684.640384
+exit=0
+
+$ node scripts/collab/preflight.mjs --repo . --base origin/main --head HEAD --branch kiro/strategy-execution-wave1/delivery-capacity --title 'VTID-05688 (strategy-execution-wave1/delivery-capacity): delivery capacity inventory' --no-tests
+preflight vitana-platform /projects/sandbox/wt-sew1-delivery-capacity
+  base 6dc6e1ba0c18252ec2f3fbf5651d245e200f9835  head 6dc6e1ba0c18252ec2f3fbf5651d245e200f9835  branch kiro/strategy-execution-wave1/delivery-capacity
+
+SKIP  Collab tests [required]
+      --no-tests
+PASS  Collab handoff [required]
+FAIL  Lane scope [required]
+      ➖ **lane scope** — not a lane PR
+PASS  PR-GATE scope [report-only in CI (until config.enforce=true)]
+FAIL  PR-GATE sparring [report-only in CI (until config.enforce=true)]
+      ❌ **sparring record**:
+      - VTID-05688: no sparring record at `.kiro/specs/strategy-execution-wave1/sparring/verdict.md` (set "sparring_record" in scope.json when the plan's record lives under another VTID)
+PASS  PR-GATE weakening [report-only in CI (until config.enforce=true)]
+PASS  PR-GATE red-green [report-only in CI (until config.enforce=true)]
+PASS  Kiro steering [report-only in CI (until config.enforce=true)]
+
+preflight: 2 check(s) failed: Lane scope, PR-GATE sparring — fix every error above, then push
+exit=1
+
+## Notes (written by the lane builder, session kiro-exafy-202611110004-e38b)
+- Citation check: 30 citations, 0 failures; no em dash; no e-mail address in the doc (AC-2, AC-3). The checker is the
+  same script as VTID-05692's, whose negative self-test is in docs/validation/VTID-05692/commands.log.
+- Expected non-zero exits: `gh api .../actions/variables/CLAUDE_AVAILABLE` answers HTTP 403 (recorded as Unknown in
+  the doc) and preflight. Preflight's two FAILs are not lane defects: "Lane scope: not a lane PR" and "PR-GATE sparring:
+  no sparring record at .kiro/specs/strategy-execution-wave1/sparring/verdict.md" come from plan PR #4942 not yet being
+  merged (the spec is absent at the pin) and from the lane being uncommitted by instruction (HEAD = base). Re-run
+  preflight on the lane commit after #4942 merges.
+- scope.json: `red_green_exempt` uses the object form `[{file, reason}]` because `scripts/ci/pr-gate/lib.mjs`
+  validateScope rejects a plain string array. Reason text as requested.
+- E-mail addresses in command output are masked to `<address>`. `areas.yaml` account values are not reproduced.
+- No database, gateway or GitLab call was made. GitHub reads were REST GET only.
