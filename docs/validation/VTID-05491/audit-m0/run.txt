@@ -1,0 +1,343 @@
+# audit-m0 VTID-05491 on 6dc6e1ba0c18252ec2f3fbf5651d245e200f9835 (2026-11-10T09:38:26Z); node v22.23.4
+
+$ /projects/sandbox/wt-audit-m0/docs/validation/VTID-05491/pglite-harness/lane.sh /projects/sandbox/wt-audit-m0/docs/validation/VTID-05491/pgtap/vtid_05491_tenant_moderation.test.sql
+# loaded /projects/sandbox/wt-audit-m0/docs/validation/VTID-05491/pglite-harness/base_schema.sql
+# loaded /projects/sandbox/wt-audit-m0/docs/validation/VTID-05491/pgtap/vtid_05491_fixture.sql
+# loaded /projects/sandbox/wt-audit-m0/supabase/migrations/20261102070100_vtid_05491_mt_tenant_admin_p2_moderation.sql
+# loaded /projects/sandbox/wt-audit-m0/supabase/migrations/20261102070150_vtid_05491_mt_tenant_admin_p3_moderation.sql
+# loaded /projects/sandbox/wt-audit-m0/supabase/migrations/20261102070600_vtid_05491_mt_moderator_tenant_scope.sql
+1..73
+ok 1 - P2: is_tenant_moderator() exists
+ok 2 - P2: content_reports and moderation_actions both gain tenant_id
+ok 3 - P2 backfill: a reporter with exactly one membership gets that tenant
+ok 4 - P2 backfill: a reporter with several memberships gets the primary one
+ok 5 - P2 backfill: several memberships and no primary stays NULL (never oldest-tenant)
+ok 6 - P2 backfill: a reporter without a membership stays NULL
+ok 7 - P2 backfill: a profile_post action takes the post tenant
+ok 8 - P2 backfill: a user action takes the target user's sole tenant
+ok 9 - P2 backfill: an ambiguous target user stays NULL
+ok 10 - P2: the pre-change content_reports rows are snapshotted
+ok 11 - P2: the pre-change moderation_actions rows are snapshotted
+ok 12 - P2: a staff member of T_A moderates T_A
+ok 13 - P2: a staff member of T_A does not moderate T_B
+ok 14 - P2: an admin of T_B does not moderate T_A
+ok 15 - P2: the exafy_admin claim moderates every tenant
+ok 16 - P2: a NULL tenant is nobody's but exafy's
+ok 17 - P2: a plain member moderates nothing
+ok 18 - P2: the internal home-tenant helper is not executable by anon
+ok 19 - P2: the internal home-tenant helper is not executable by authenticated
+ok 20 - P2 trigger: (setup) uR1 inserts a report
+ok 21 - P2 trigger: a report by a T_A member is stamped T_A
+ok 22 - P2 trigger: (setup) uR2 inserts a report
+ok 23 - P2 trigger: a report by a T_B member is stamped T_B
+ok 24 - P2 trigger: a reporter cannot stamp a tenant they are not a member of
+ok 25 - P2 trigger: (setup) uR3 names T_B
+ok 26 - P2 trigger: a member of two tenants may name either
+ok 27 - P2 trigger: (setup) uR4 inserts without a tenant
+ok 28 - P2 trigger: an ambiguous reporter is stored with a NULL tenant (fail closed)
+ok 29 - P3: moderation_list_reports() exists
+ok 30 - P3: moderation_resolve_report() exists
+ok 31 - P3: listing T_A as its moderator returns exactly the T_A reports
+ok 32 - P3: the T_A listing contains no other tenant's report
+ok 33 - P3: a T_B moderator cannot list T_A
+ok 34 - P3: the all-tenants listing is exafy_admin only
+ok 35 - P3: exafy_admin lists every tenant (and NULL-tenant rows)
+ok 36 - P3: the status filter applies
+ok 37 - P3: the limit applies
+ok 38 - P3: an oversized limit is clamped, not an error
+ok 39 - P3: a T_A moderator resolves a T_A report
+ok 40 - P3: reviewed_by is the caller
+ok 41 - P3: reviewed_at is stamped
+ok 42 - P3: one tenant-stamped audit row is written
+ok 43 - P3: resolving with the same values again succeeds
+ok 44 - P3: ... and is idempotent: no second audit row
+ok 45 - P3: a T_B moderator cannot resolve a T_A report
+ok 46 - P3: an unknown status is refused
+ok 47 - P3: an unknown report id is refused
+ok 48 - P3: a tenant moderator cannot resolve a NULL-tenant report
+ok 49 - P3: exafy_admin resolves a NULL-tenant report
+ok 50 - P3: anon cannot execute the resolve RPC
+ok 51 - P3 guard: a tenant-bearing report keeps its tenant on UPDATE (assign-once)
+ok 52 - P3 guard: a NULL tenant can be assigned once
+ok 53 - P3 guard: ... and cannot be cleared again
+ok 54 - M3: moderator_tenant_scope_enabled() exists
+ok 55 - M3 flag off: a T_B moderator still reads every report (today's behaviour)
+ok 56 - M3 flag off: a T_A moderator still reads every audit row (today's behaviour)
+ok 57 - M3 flag off: a plain member reads no report
+ok 58 - M3 flag on: a moderator of T_B sees 0 T_A reports
+ok 59 - M3 flag on: ... and sees all of T_B
+ok 60 - M3 flag on: a moderator of T_A sees 0 T_B reports
+ok 61 - M3 flag on: a tenant moderator sees no NULL-tenant report (fail closed)
+ok 62 - M3 flag on: exafy_admin still reads every report
+ok 63 - M3 flag on: a plain member reads no report
+ok 64 - M3 flag on: a T_B moderator updates 0 T_A reports
+ok 65 - M3 flag on: a T_A moderator updates its own tenant's reports
+ok 66 - M3 flag on: a moderator of T_B sees 0 T_A audit rows
+ok 67 - M3 flag on: ... and no NULL-tenant audit row
+ok 68 - M3 flag on: a T_A moderator sees its tenant's audit rows
+ok 69 - M3 flag on: exafy_admin still reads every audit row
+ok 70 - M3: a tenant whose flag is off is still readable by any moderator (per-tenant rollout)
+ok 71 - M3: moderator_tenant_scope_enabled() is SECURITY DEFINER
+ok 72 - M3: no moderation policy uses a bare current_tenant_id()
+ok 73 - M3: the three content_reports policies keep their names
+[exit 0]
+
+$ /projects/sandbox/wt-audit-m0/docs/validation/VTID-05491/pglite-harness/lane.sh --twice /projects/sandbox/wt-audit-m0/docs/validation/VTID-05491/pgtap/vtid_05491_tenant_moderation.test.sql
+# loaded /projects/sandbox/wt-audit-m0/docs/validation/VTID-05491/pglite-harness/base_schema.sql
+# loaded /projects/sandbox/wt-audit-m0/docs/validation/VTID-05491/pgtap/vtid_05491_fixture.sql
+# loaded /projects/sandbox/wt-audit-m0/supabase/migrations/20261102070100_vtid_05491_mt_tenant_admin_p2_moderation.sql
+# loaded /projects/sandbox/wt-audit-m0/supabase/migrations/20261102070150_vtid_05491_mt_tenant_admin_p3_moderation.sql
+# loaded /projects/sandbox/wt-audit-m0/supabase/migrations/20261102070600_vtid_05491_mt_moderator_tenant_scope.sql
+# loaded /projects/sandbox/wt-audit-m0/supabase/migrations/20261102070100_vtid_05491_mt_tenant_admin_p2_moderation.sql
+# loaded /projects/sandbox/wt-audit-m0/supabase/migrations/20261102070150_vtid_05491_mt_tenant_admin_p3_moderation.sql
+# loaded /projects/sandbox/wt-audit-m0/supabase/migrations/20261102070600_vtid_05491_mt_moderator_tenant_scope.sql
+1..73
+ok 1 - P2: is_tenant_moderator() exists
+ok 2 - P2: content_reports and moderation_actions both gain tenant_id
+ok 3 - P2 backfill: a reporter with exactly one membership gets that tenant
+ok 4 - P2 backfill: a reporter with several memberships gets the primary one
+ok 5 - P2 backfill: several memberships and no primary stays NULL (never oldest-tenant)
+ok 6 - P2 backfill: a reporter without a membership stays NULL
+ok 7 - P2 backfill: a profile_post action takes the post tenant
+ok 8 - P2 backfill: a user action takes the target user's sole tenant
+ok 9 - P2 backfill: an ambiguous target user stays NULL
+ok 10 - P2: the pre-change content_reports rows are snapshotted
+ok 11 - P2: the pre-change moderation_actions rows are snapshotted
+ok 12 - P2: a staff member of T_A moderates T_A
+ok 13 - P2: a staff member of T_A does not moderate T_B
+ok 14 - P2: an admin of T_B does not moderate T_A
+ok 15 - P2: the exafy_admin claim moderates every tenant
+ok 16 - P2: a NULL tenant is nobody's but exafy's
+ok 17 - P2: a plain member moderates nothing
+ok 18 - P2: the internal home-tenant helper is not executable by anon
+ok 19 - P2: the internal home-tenant helper is not executable by authenticated
+ok 20 - P2 trigger: (setup) uR1 inserts a report
+ok 21 - P2 trigger: a report by a T_A member is stamped T_A
+ok 22 - P2 trigger: (setup) uR2 inserts a report
+ok 23 - P2 trigger: a report by a T_B member is stamped T_B
+ok 24 - P2 trigger: a reporter cannot stamp a tenant they are not a member of
+ok 25 - P2 trigger: (setup) uR3 names T_B
+ok 26 - P2 trigger: a member of two tenants may name either
+ok 27 - P2 trigger: (setup) uR4 inserts without a tenant
+ok 28 - P2 trigger: an ambiguous reporter is stored with a NULL tenant (fail closed)
+ok 29 - P3: moderation_list_reports() exists
+ok 30 - P3: moderation_resolve_report() exists
+ok 31 - P3: listing T_A as its moderator returns exactly the T_A reports
+ok 32 - P3: the T_A listing contains no other tenant's report
+ok 33 - P3: a T_B moderator cannot list T_A
+ok 34 - P3: the all-tenants listing is exafy_admin only
+ok 35 - P3: exafy_admin lists every tenant (and NULL-tenant rows)
+ok 36 - P3: the status filter applies
+ok 37 - P3: the limit applies
+ok 38 - P3: an oversized limit is clamped, not an error
+ok 39 - P3: a T_A moderator resolves a T_A report
+ok 40 - P3: reviewed_by is the caller
+ok 41 - P3: reviewed_at is stamped
+ok 42 - P3: one tenant-stamped audit row is written
+ok 43 - P3: resolving with the same values again succeeds
+ok 44 - P3: ... and is idempotent: no second audit row
+ok 45 - P3: a T_B moderator cannot resolve a T_A report
+ok 46 - P3: an unknown status is refused
+ok 47 - P3: an unknown report id is refused
+ok 48 - P3: a tenant moderator cannot resolve a NULL-tenant report
+ok 49 - P3: exafy_admin resolves a NULL-tenant report
+ok 50 - P3: anon cannot execute the resolve RPC
+ok 51 - P3 guard: a tenant-bearing report keeps its tenant on UPDATE (assign-once)
+ok 52 - P3 guard: a NULL tenant can be assigned once
+ok 53 - P3 guard: ... and cannot be cleared again
+ok 54 - M3: moderator_tenant_scope_enabled() exists
+ok 55 - M3 flag off: a T_B moderator still reads every report (today's behaviour)
+ok 56 - M3 flag off: a T_A moderator still reads every audit row (today's behaviour)
+ok 57 - M3 flag off: a plain member reads no report
+ok 58 - M3 flag on: a moderator of T_B sees 0 T_A reports
+ok 59 - M3 flag on: ... and sees all of T_B
+ok 60 - M3 flag on: a moderator of T_A sees 0 T_B reports
+ok 61 - M3 flag on: a tenant moderator sees no NULL-tenant report (fail closed)
+ok 62 - M3 flag on: exafy_admin still reads every report
+ok 63 - M3 flag on: a plain member reads no report
+ok 64 - M3 flag on: a T_B moderator updates 0 T_A reports
+ok 65 - M3 flag on: a T_A moderator updates its own tenant's reports
+ok 66 - M3 flag on: a moderator of T_B sees 0 T_A audit rows
+ok 67 - M3 flag on: ... and no NULL-tenant audit row
+ok 68 - M3 flag on: a T_A moderator sees its tenant's audit rows
+ok 69 - M3 flag on: exafy_admin still reads every audit row
+ok 70 - M3: a tenant whose flag is off is still readable by any moderator (per-tenant rollout)
+ok 71 - M3: moderator_tenant_scope_enabled() is SECURITY DEFINER
+ok 72 - M3: no moderation policy uses a bare current_tenant_id()
+ok 73 - M3: the three content_reports policies keep their names
+[exit 0]
+
+$ /projects/sandbox/wt-audit-m0/docs/validation/VTID-05491/pglite-harness/checks.sh
+## base_schema.sql (loaded)
+## vtid_05491_fixture.sql (loaded)
+## live-before.sql
+content_reports | moderation_actions | memberships | user_tenants
+content_reports | moderation_actions | memberships | user_tenants
+
+table_name | has_tenant_id
+content_reports | 0
+moderation_actions | 0
+
+reports | actions
+4 | 3
+
+tablename | policyname | cmd
+content_reports | Staff and admins can update reports | UPDATE
+content_reports | Staff and admins can view all reports | SELECT
+content_reports | Users can create content reports | INSERT
+moderation_actions | Admins view moderation actions | SELECT
+
+proname
+
+## 20261102070100_vtid_05491_mt_tenant_admin_p2_moderation.sql (loaded)
+## 20261102070150_vtid_05491_mt_tenant_admin_p3_moderation.sql (loaded)
+## 20261102070600_vtid_05491_mt_moderator_tenant_scope.sql (loaded)
+## post-apply-checks.sql
+table_name | has_tenant_id
+content_reports | 1
+moderation_actions | 1
+
+proname | security_definer
+content_reports_review_guard | true
+content_reports_stamp_tenant | true
+is_tenant_moderator | true
+moderation_home_tenant | true
+moderation_list_reports | true
+moderation_resolve_report | true
+moderator_tenant_scope_enabled | true
+
+tgname | on_table
+trg_content_reports_review_guard | content_reports
+trg_content_reports_stamp_tenant | content_reports
+
+tablename | policyname | cmd | scope_aware
+content_reports | Staff and admins can update reports | UPDATE | true
+content_reports | Staff and admins can view all reports | SELECT | true
+content_reports | Users can create content reports | INSERT | false
+moderation_actions | Admins view moderation actions | SELECT | true
+
+snapshot_reports | reports | snapshot_actions | actions
+4 | 4 | 3 | 3
+
+reports_null_tenant | actions_null_tenant
+2 | 1
+
+tenants_with_flag_on
+0
+
+## rollback-070600-moderator-tenant-scope.sql (loaded)
+## rollback-070150-p3-moderation.sql (loaded)
+## rollback-070100-p2-moderation.sql (loaded)
+## rollback-check.sql
+table_name | has_tenant_id
+content_reports | 0
+moderation_actions | 0
+
+leftover_functions
+0
+
+leftover_triggers
+0
+
+tablename | policyname | cmd | scope_aware
+content_reports | Staff and admins can update reports | UPDATE | false
+content_reports | Staff and admins can view all reports | SELECT | false
+content_reports | Users can create content reports | INSERT | false
+moderation_actions | Admins view moderation actions | SELECT | false
+
+## 20261102070100_vtid_05491_mt_tenant_admin_p2_moderation.sql (loaded)
+## 20261102070150_vtid_05491_mt_tenant_admin_p3_moderation.sql (loaded)
+## 20261102070600_vtid_05491_mt_moderator_tenant_scope.sql (loaded)
+## post-apply-checks.sql
+table_name | has_tenant_id
+content_reports | 1
+moderation_actions | 1
+
+proname | security_definer
+content_reports_review_guard | true
+content_reports_stamp_tenant | true
+is_tenant_moderator | true
+moderation_home_tenant | true
+moderation_list_reports | true
+moderation_resolve_report | true
+moderator_tenant_scope_enabled | true
+
+tgname | on_table
+trg_content_reports_review_guard | content_reports
+trg_content_reports_stamp_tenant | content_reports
+
+tablename | policyname | cmd | scope_aware
+content_reports | Staff and admins can update reports | UPDATE | true
+content_reports | Staff and admins can view all reports | SELECT | true
+content_reports | Users can create content reports | INSERT | false
+moderation_actions | Admins view moderation actions | SELECT | true
+
+snapshot_reports | reports | snapshot_actions | actions
+4 | 4 | 3 | 3
+
+reports_null_tenant | actions_null_tenant
+2 | 1
+
+tenants_with_flag_on
+0
+
+## rollback-070600-moderator-tenant-scope.sql (loaded)
+## rollback-070150-p3-moderation.sql (loaded)
+## rollback-070100-p2-moderation.sql (loaded)
+## rollback-check.sql
+table_name | has_tenant_id
+content_reports | 0
+moderation_actions | 0
+
+leftover_functions
+0
+
+leftover_triggers
+0
+
+tablename | policyname | cmd | scope_aware
+content_reports | Staff and admins can update reports | UPDATE | false
+content_reports | Staff and admins can view all reports | SELECT | false
+content_reports | Users can create content reports | INSERT | false
+moderation_actions | Admins view moderation actions | SELECT | false
+
+## guard: P2 rollback must refuse while P3 exists
+## rollback-070600-moderator-tenant-scope.sql (loaded)
+ERROR in rollback-070100-p2-moderation.sql: VTID-05491: roll back 20261102070150 first (the P3 RPCs still exist)
+[exit 0]
+
+$ node /projects/sandbox/.tools/jest/node_modules/jest/bin/jest.js --config /projects/sandbox/.tools/jest/jest.audit-m0.config.js --runInBand
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true", see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+PASS docs/validation/VTID-05491/static/vtid-05491-tenant-moderation.test.ts
+  VTID-05491: migration files
+    ✓ exist, are the only VTID-05491 migrations, and sort around the reserved C3 slot 20261102070160 (3 ms)
+    ✓ p2: lock_timeout, retry on lock_not_available, one transaction (2 ms)
+    ✓ p3: lock_timeout, retry on lock_not_available, one transaction
+    ✓ scope: lock_timeout, retry on lock_not_available, one transaction (1 ms)
+    ✓ none of them destroys data: no DROP TABLE, DROP COLUMN, TRUNCATE or DELETE (1 ms)
+    ✓ none of them uses a bare current_tenant_id() or the non-existent is_member()/tenant_id_for_policies()
+    ✓ every SECURITY DEFINER function pins its search_path (1 ms)
+    ✓ P2 snapshots before it moves data, and only backfills rows still NULL (1 ms)
+    ✓ P2 never grants the internal helper to anon/authenticated (1 ms)
+    ✓ P3 RPCs are not executable by anon and check the caller before reading
+    ✓ scope migration keeps the policy names and has a legacy branch (flag off = today) (1 ms)
+  VTID-05491: rollbacks and read-only checks
+    ✓ rollback-070100-p2-moderation.sql exists, is transactional and lock-timed
+    ✓ rollback-070150-p3-moderation.sql exists, is transactional and lock-timed (1 ms)
+    ✓ rollback-070600-moderator-tenant-scope.sql exists, is transactional and lock-timed
+    ✓ the P2 and P3 rollbacks refuse while a later file is still applied; no rollback drops a snapshot (1 ms)
+    ✓ the scope rollback restores the three original policies (1 ms)
+    ✓ live-before.sql is SELECT-only
+    ✓ post-apply-checks.sql is SELECT-only (1 ms)
+    ✓ rollback-check.sql is SELECT-only
+  VTID-05491: queue rows
+    ✓ MIGRATION-QUEUE lists the three files in order P2 -> P3 -> scope, queued pending owner approval (1 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       20 passed, 20 total
+Snapshots:   0 total
+Time:        0.404 s
+Ran all test suites.
+[exit 0]
