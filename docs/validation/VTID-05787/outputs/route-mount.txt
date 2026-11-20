@@ -1,0 +1,3 @@
+812:  mountRouterSync(app, '/api/v1/lane-review', laneReviewRouter, { owner: 'lane-review' });
+
+source: services/gateway/src/index.ts, line above (mountRouterSync for /api/v1/lane-review)

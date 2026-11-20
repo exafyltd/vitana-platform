@@ -1,0 +1,7 @@
+{
+  "vtid": "VTID-05787",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "lane-review route is mounted and requires auth", "method": "POST", "path": "/api/v1/lane-review", "rejected_probe": true, "expect_status": 401 }
+  ]
+}
