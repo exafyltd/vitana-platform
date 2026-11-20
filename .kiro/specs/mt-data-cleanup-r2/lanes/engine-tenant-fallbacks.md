@@ -4,7 +4,7 @@ state: ready
 next_actor: kiro
 depends_on: []
 executor: kiro
-seat: jtadic
+seat: exafyltd
 reviewer_seat: agent:vitana-lane-reviewer
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 paths:
@@ -13,7 +13,7 @@ paths:
   - services/gateway/src/services/d49-risk-mitigation-engine.ts
   - services/gateway/src/routes/opportunity-surfacing.ts
   - services/gateway/test/mt-data-cleanup-engine-tenant.test.ts
-updated: 2026-11-06T10:09Z
+updated: 2026-11-12T20:16Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05568
 ---
@@ -37,3 +37,5 @@ New lane in the re-plan (answers R3-F2). Gateway code, seat `jtadic`.
 
 ### 2026-11-06T10:09Z · ci-plan-spar · ready (VTID allocated)
 VTID-05568 allocated after policy approval (converged-auto-v1).
+### 2026-11-12T20:16Z · pm-agent · update
+reassign lane jtadic→exafyltd (stale_ready, Claude unavailable)
