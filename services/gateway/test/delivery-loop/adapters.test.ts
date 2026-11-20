@@ -15,6 +15,7 @@ import {
   type Llm,
   type PatternStore,
 } from '../../src/services/delivery-loop/adapters';
+import { createDevAutopilotGitlabGateway } from '../../src/services/delivery-loop/dev-autopilot-gateway';
 import type { TaskRequest } from '../../src/services/delivery-loop/ports';
 import type { GitlabMergeRequest } from '../../src/services/delivery-loop/types';
 import { PROJECT, topics, world } from './harness';
@@ -214,6 +215,26 @@ describe('the executor port', () => {
     expect(executorFromEnv(e('dev-autopilot'), { 'dev-autopilot': gw })).toBe(gw);
     expect(executorFromEnv(e('dev-autopilot'), {})).toBeNull();
     for (const v of [undefined, '', 'Dev-Autopilot', 'dev_autopilot', 'github', 'true']) expect(executorFromEnv(e(v), { 'dev-autopilot': gw })).toBeNull();
+  });
+
+  // Moved from dev-autopilot-gateway.test.ts (lane separation): the switch is the runtime's, the gateway is the real GitLab-native one.
+  it('without DELIVERY_LOOP_EXECUTOR=dev-autopilot the port refuses every dispatch, bound GitLab gateway or not', async () => {
+    const SHA = '0123456789abcdef0123456789abcdef01234567';
+    const repair: TaskRequest = {
+      key: 'repair:vitana/vitana-platform|delivery-loop/fix-greeting|0123456789abcdef',
+      dispatch_key: 'intent:repair:vitana/vitana-platform|delivery-loop/fix-greeting|0123456789abcdef:2',
+      kind: 'repair', project: 'vitana/vitana-platform', title: 'Repair delivery-loop/fix-greeting: unit:script_failure',
+      instructions: 'Pipeline 31 failed.', base_branch: 'main', fix_branch: 'delivery-loop/fix-greeting', mr_iid: 12, issue_iid: null,
+      hints: ['known fix'], repair: { pipeline_id: 31, sha: SHA, mr_url: 'https://gitlab.vitanaland.com/vitana/vitana-platform/-/merge_requests/12' },
+    };
+    const enqueue = jest.fn();
+    const ENV = { DELIVERY_LOOP_BRANCH_PREFIXES: 'dev-autopilot/,delivery-loop/' } as NodeJS.ProcessEnv;
+    const gateways = { 'dev-autopilot': createDevAutopilotGitlabGateway({ enqueue, env: ENV }) };
+    expect(executorFromEnv({} as NodeJS.ProcessEnv, gateways)).toBeNull();
+    const port = createExecutorTaskPort(executorFromEnv({} as NodeJS.ProcessEnv, gateways));
+    expect(await port.dispatch(repair)).toEqual({ ok: false, error: expect.stringContaining('executor_not_configured'), retryable: false });
+    expect(enqueue).not.toHaveBeenCalled();
+    expect(executorFromEnv({ DELIVERY_LOOP_EXECUTOR: 'dev-autopilot' } as NodeJS.ProcessEnv, gateways)).toBe(gateways['dev-autopilot']);
   });
 });
 

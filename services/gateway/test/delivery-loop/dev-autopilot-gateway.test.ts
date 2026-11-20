@@ -6,8 +6,8 @@
  * nothing over for a branch the loop does not own or for `main`. Switched on only by DELIVERY_LOOP_EXECUTOR=dev-autopilot.
  */
 import { createDevAutopilotGitlabGateway } from '../../src/services/delivery-loop/dev-autopilot-gateway';
-import { createExecutorTaskPort, executorFromEnv } from '../../src/services/delivery-loop/adapters';
 import type { TaskRequest } from '../../src/services/delivery-loop/ports';
+// The owner switch (DELIVERY_LOOP_EXECUTOR) is the runtime's: its test with this gateway bound is in adapters.test.ts.
 
 const SHA = '0123456789abcdef0123456789abcdef01234567';
 const ENV = { DELIVERY_LOOP_BRANCH_PREFIXES: 'dev-autopilot/,delivery-loop/' } as NodeJS.ProcessEnv;
@@ -81,14 +81,3 @@ describe('what it refuses without calling Dev Autopilot (not retryable)', () => 
   });
 });
 
-describe('switched on only by the owner', () => {
-  it('without DELIVERY_LOOP_EXECUTOR=dev-autopilot the port refuses every dispatch, bound gateway or not', async () => {
-    const enqueue = jest.fn();
-    const gateways = { 'dev-autopilot': createDevAutopilotGitlabGateway({ enqueue, env: ENV }) };
-    expect(executorFromEnv({} as NodeJS.ProcessEnv, gateways)).toBeNull();
-    const port = createExecutorTaskPort(executorFromEnv({} as NodeJS.ProcessEnv, gateways));
-    expect(await port.dispatch(repair())).toEqual({ ok: false, error: expect.stringContaining('executor_not_configured'), retryable: false });
-    expect(enqueue).not.toHaveBeenCalled();
-    expect(executorFromEnv({ DELIVERY_LOOP_EXECUTOR: 'dev-autopilot' } as NodeJS.ProcessEnv, gateways)).toBe(gateways['dev-autopilot']);
-  });
-});
