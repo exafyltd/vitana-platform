@@ -4,7 +4,7 @@ state: ready
 next_actor: kiro
 depends_on: [health-tenant-accessor]
 executor: kiro
-seat: jtadic
+seat: exafyltd
 reviewer_seat: agent:vitana-lane-reviewer
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 paths:
@@ -13,7 +13,7 @@ paths:
   - services/gateway/test/mt-native-health/health-lineage-guard.pgtap.sql
   - services/gateway/src/constants/health-lineage-exempt.ts
   - services/gateway/test/mt-native-health/health-lineage-inventory.json
-updated: 2026-11-07T14:17Z
+updated: 2026-11-12T20:16Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05594
 ---
@@ -48,3 +48,5 @@ Re-plan of `mt-native-health/health-analytics-lineage-guard`. Versions day-shift
 
 ### 2026-11-07T14:17Z · ci-plan-spar · ready (VTID allocated)
 VTID-05594 allocated after policy approval (converged-auto-v1).
+### 2026-11-12T20:16Z · pm-agent · update
+reassign lane jtadic→exafyltd (stale_ready, Claude unavailable)

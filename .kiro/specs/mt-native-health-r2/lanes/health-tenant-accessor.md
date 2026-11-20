@@ -4,7 +4,7 @@ state: ready
 next_actor: kiro
 depends_on: [health-home-tenant-db]
 executor: kiro
-seat: jtadic
+seat: exafyltd
 reviewer_seat: agent:vitana-lane-reviewer
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 paths:
@@ -18,7 +18,7 @@ paths:
   - services/gateway/scripts/gen-health-reader-inventory.mjs
   - services/gateway/test/mt-native-health/health-reader-inventory.test.ts
   - services/gateway/test/mt-native-health/health-db.test.ts
-updated: 2026-11-07T14:17Z
+updated: 2026-11-12T20:16Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05596
 ---
@@ -45,3 +45,5 @@ Re-plan of `mt-native-health/health-tenant-accessor`. Answers R3-F1 (`.maybeSing
 
 ### 2026-11-07T14:17Z · ci-plan-spar · ready (VTID allocated)
 VTID-05596 allocated after policy approval (converged-auto-v1).
+### 2026-11-12T20:16Z · pm-agent · update
+reassign lane jtadic→exafyltd (stale_ready, Claude unavailable)
