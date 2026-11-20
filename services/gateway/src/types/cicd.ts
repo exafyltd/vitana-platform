@@ -893,6 +893,8 @@ export type CicdEventType =
   | 'dev_autopilot.execution.completed'
   | 'dev_autopilot.execution.failed'
   | 'dev_autopilot.execution.auto_archived'
+  // GitLab-native repair (delivery loop, 2026-11-19): the fix was pushed to the GitLab merge request's own branch; GitLab's pipeline judges it.
+  | 'dev_autopilot.execution.gitlab_pushed'
   | 'dev_autopilot.execution.pr_closed_reconciled' // VTID-04280
   | 'dev_autopilot.batch.first_failure'
   | 'dev_autopilot.kill_switch.activated'
@@ -1242,6 +1244,34 @@ export type CicdEventType =
   | 'delivery.lane.updated'
   | 'delivery.landed'
   | 'delivery.merge.refused'
+  // Blocked for the owner: recorded by the delivery loop (delivery-loop/keys.ts) and by the PM retry rule (VTID-05736).
+  | 'delivery.blocked'
+  // The delivery loop (services/delivery-loop): GitLab issues, the intake of a task, its dispatch to a worker, the repair of a
+  // failed pipeline, the review of a merge request, what was learned and what is proposed. Written by the loop engine with
+  // metadata.dedupe_key and a deterministic row id. None is ever written with status 'error', so the *.failed catch-all of
+  // autopilot-event-mapper.ts never matches and no delivery event moves a VTID's state.
+  | 'scm.gitlab.issue.opened'
+  | 'scm.gitlab.issue.labeled'
+  | 'scm.gitlab.issue.closed'
+  | 'delivery.intake.accepted'
+  | 'delivery.intake.rejected'
+  | 'delivery.dispatch.requested'
+  | 'delivery.dispatch.started'
+  | 'delivery.dispatch.failed'
+  | 'delivery.execution.finished'
+  | 'delivery.heal.detected'
+  | 'delivery.heal.attempt'
+  | 'delivery.heal.verified'
+  | 'delivery.heal.exhausted'
+  | 'delivery.review.requested'
+  | 'delivery.review.verdict'
+  | 'delivery.review.rework'
+  | 'delivery.learn.recorded'
+  | 'delivery.improve.proposed'
+  | 'delivery.loop.cycle'
+  | 'delivery.loop.claim'
+  | 'delivery.note.requested'
+  | 'delivery.note.posted'
   | 'staging.deploy.rolled_back';
 
 export interface CicdOasisEvent {
@@ -1267,6 +1297,10 @@ export interface CicdOasisEvent {
   // defaults to the running process's VITANA_ENV. Embedded in metadata.env
   // (no oasis_events schema change required).
   env?: 'production' | 'staging';
+  // The delivery loop: when set, emitOasisEvent derives the row id from (env, type, this key) and inserts with
+  // `Prefer: resolution=ignore-duplicates`, so the same fact written twice (by two gateway tasks, a webhook retry,
+  // a re-run) is one row and the second write answers `duplicate: true`. Unset: unchanged (a random row id).
+  idempotency_key?: string;
 }
 
 // ==================== Allowed Services for Deploy ====================

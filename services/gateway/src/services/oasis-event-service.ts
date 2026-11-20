@@ -3,7 +3,7 @@
  * Handles emitting events to OASIS for audit and observability
  */
 
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { CicdEventType, CicdOasisEvent } from '../types/cicd';
 import { projectOasisEventToTimeline } from './timeline-projector';
 import { resolveVitanaId } from '../middleware/auth-supabase-jwt';
@@ -54,9 +54,47 @@ export function missingOasisRequiredFields(event: CicdOasisEvent): string[] {
 }
 
 /**
+ * The row id of an idempotent event: a name-based UUID (SHA-256 of a fixed prefix and the scope, laid out as a version 5
+ * UUID so Postgres `uuid` accepts it). `oasis_events.id` is the table's primary key, so inserting the same id twice with
+ * `Prefer: resolution=ignore-duplicates` (ON CONFLICT DO NOTHING) leaves exactly one row, with no new table and no migration.
+ *
+ * The scope is (env, topic, key), not the key alone: staging and production gateways write to one table, and each keeps its
+ * own row for a fact it recorded, tagged with its own metadata.env, as before.
+ */
+export function idempotentEventId(env: string, topic: string, key: string): string {
+  const digest = createHash('sha256').update(`vitana.oasis-event.v1\u0000${env}\u0000${topic}\u0000${key}`).digest();
+  const bytes = Buffer.from(digest.subarray(0, 16));
+  bytes[6] = (bytes[6] & 0x0f) | 0x50; // version 5 layout
+  bytes[8] = (bytes[8] & 0x3f) | 0x80; // RFC 4122 variant
+  const hex = bytes.toString('hex');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+export interface EmitOasisEventResult {
+  ok: boolean;
+  event_id?: string;
+  error?: string;
+  /**
+   * Only for an event with an `idempotency_key`: true when a row with the same (env, topic, key) already existed, so this
+   * write added nothing. `ok` is true then (the fact is recorded), `event_id` is the id of the row that is there.
+   */
+  duplicate?: boolean;
+}
+
+/** True when a successful insert response is a JSON array with no row in it. Never throws. */
+async function insertedNothing(response: { json?: () => Promise<unknown> }): Promise<boolean> {
+  try {
+    const body = typeof response.json === 'function' ? await response.json() : null;
+    return Array.isArray(body) && body.length === 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Emit an event to OASIS via Supabase
  */
-export async function emitOasisEvent(event: CicdOasisEvent): Promise<{ ok: boolean; event_id?: string; error?: string }> {
+export async function emitOasisEvent(event: CicdOasisEvent): Promise<EmitOasisEventResult> {
   const supabaseUrl = process.env.SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
 
@@ -65,7 +103,8 @@ export async function emitOasisEvent(event: CicdOasisEvent): Promise<{ ok: boole
     return { ok: false, error: 'Gateway misconfigured: missing Supabase credentials' };
   }
 
-  const eventId = randomUUID();
+  const idempotencyKey = typeof event.idempotency_key === 'string' && event.idempotency_key.length > 0 ? event.idempotency_key : null;
+  const eventId = idempotencyKey ? idempotentEventId(event.env ?? VITANA_ENV, event.type, idempotencyKey) : randomUUID();
   const timestamp = new Date().toISOString();
 
   // VTID-01967: Auto-resolve vitana_id from actor_id when caller didn't pass it.
@@ -130,7 +169,8 @@ export async function emitOasisEvent(event: CicdOasisEvent): Promise<{ ok: boole
         'Content-Type': 'application/json',
         'apikey': supabaseKey,
         'Authorization': `Bearer ${supabaseKey}`,
-        'Prefer': 'return=representation',
+        // An idempotent event asks PostgREST for ON CONFLICT DO NOTHING on the primary key (the body carries `id`).
+        'Prefer': idempotencyKey ? 'return=representation,resolution=ignore-duplicates' : 'return=representation',
       },
       body: JSON.stringify(payload),
     });
@@ -139,6 +179,13 @@ export async function emitOasisEvent(event: CicdOasisEvent): Promise<{ ok: boole
       const errorText = await response.text();
       console.error(`[OASIS Event] Failed to emit event: ${response.status} - ${errorText}`);
       return { ok: false, error: `Failed to emit event: ${response.status}` };
+    }
+
+    // With ignore-duplicates, PostgREST returns only the rows it inserted: an empty array means the row was already there.
+    // Anything else (a row, a body that is not a JSON array) is treated as a new row, the behaviour before this key existed.
+    if (idempotencyKey && (await insertedNothing(response))) {
+      console.log(`[OASIS Event] Duplicate ignored: ${event.type} for ${event.vtid} (${eventId})`);
+      return { ok: true, event_id: eventId, duplicate: true };
     }
 
     console.log(`[OASIS Event] Emitted: ${event.type} for ${event.vtid} (${eventId})`);
