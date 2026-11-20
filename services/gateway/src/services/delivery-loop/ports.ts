@@ -46,6 +46,17 @@ export interface TaskPort {
   dispatch(request: TaskRequest): Promise<DispatchResult>;
 }
 
+/**
+ * What the executor adapter needs from Dev Autopilot, as a small interface so the adapter is tested without it: `enqueue` hands the task
+ * to Dev Autopilot's executor and answers the execution it made, or why it refused. The bound implementation is GitLab-native
+ * (dev-autopilot-gateway.ts): a repair of a failed GitLab merge-request pipeline becomes an execution on that merge request's own
+ * branch, run by the existing executor and agent runner, never a GitHub PR. Defined here, with the other ports, so the executor and
+ * the runtime that binds it both depend on the engine and not on each other (plan delivery-loop-engine §5).
+ */
+export interface ExecutorGateway {
+  enqueue(request: TaskRequest): Promise<{ ok: true; execution_id: string; vtid: string | null } | { ok: false; error: string; retryable: boolean }>;
+}
+
 // ---------------------------------------------------------------------------------------------------------
 // The reviewer
 // ---------------------------------------------------------------------------------------------------------

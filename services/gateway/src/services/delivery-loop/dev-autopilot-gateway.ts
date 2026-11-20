@@ -17,9 +17,8 @@
  * and the executor needs its own GitLab token (DEV_AUTOPILOT_GITLAB_TOKEN). The loop acts only at L3 with execution armed.
  */
 import type { GitlabRepairEnqueueResult, GitlabRepairRequest } from '../dev-autopilot-gitlab-repair';
-import type { ExecutorGateway } from './adapters';
 import { branchPrefixesFrom, ownsBranch } from './controls';
-import type { TaskRequest } from './ports';
+import type { ExecutorGateway, TaskRequest } from './ports';
 
 type Enqueue = (req: GitlabRepairRequest) => Promise<GitlabRepairEnqueueResult>;
 

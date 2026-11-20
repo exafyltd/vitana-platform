@@ -7,7 +7,7 @@
  *
  * Every adapter takes its dependencies as arguments, so it is tested with fakes and nothing here imports a network client at load.
  */
-import type { DispatchResult, KnownFix, LearnPort, OutcomeLesson, RepairLesson, ReviewVerdict, ReviewerPort, TaskPort, TaskRequest } from './ports';
+import type { DispatchResult, ExecutorGateway, KnownFix, LearnPort, OutcomeLesson, RepairLesson, ReviewVerdict, ReviewerPort, TaskPort, TaskRequest } from './ports';
 import type { GitlabDiffFile, GitlabMergeRequest } from './types';
 
 // ---------------------------------------------------------------------------------------------------------
@@ -144,15 +144,8 @@ export function createReviewerPort(deps: { llm: Llm }): ReviewerPort {
 // The executor
 // ---------------------------------------------------------------------------------------------------------
 
-/**
- * What the executor adapter needs from Dev Autopilot, as a small interface so the adapter is tested without it: `enqueue` hands the task
- * to Dev Autopilot's executor and answers the execution it made, or why it refused. The bound implementation is GitLab-native
- * (dev-autopilot-gateway.ts): a repair of a failed GitLab merge-request pipeline becomes an execution on that merge request's own
- * branch, run by the existing executor and agent runner, never a GitHub PR.
- */
-export interface ExecutorGateway {
-  enqueue(request: TaskRequest): Promise<{ ok: true; execution_id: string; vtid: string | null } | { ok: false; error: string; retryable: boolean }>;
-}
+/** The executor's interface lives with the other ports (ports.ts); re-exported here for the runtime and the tests. */
+export type { ExecutorGateway } from './ports';
 
 /**
  * Hands a task to Dev Autopilot.
