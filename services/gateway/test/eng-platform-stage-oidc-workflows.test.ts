@@ -34,13 +34,12 @@ function topPermissions(text: string): string {
 }
 
 describe('staging static keys sit behind the OIDC role variable', () => {
-  it('covers the eight known static-key workflows', () => {
+  it('covers the seven known static-key workflows', () => {
     const expected = [
       'ALERT-APP-USERS-IDENTITY-DRIFT.yml',
       'AWS-PROVISION-APPILIX-SECRETS.yml',
       'AWS-PROVISION-DEV-MEMORY-PACK-TOKEN.yml',
       'AWS-STAGE-DEPLOY-ERP-BRIDGE.yml',
-      'AWS-STAGE-DEPLOY-GATEWAY.yml',
       'AWS-STAGE-DEPLOY-KIRO-RUNNER.yml',
       'AWS-STAGE-DEPLOY-POSTGREST-AURORA-PROXY.yml',
       'I18N-DB-SEED.yml',
@@ -74,6 +73,16 @@ describe('staging static keys sit behind the OIDC role variable', () => {
       });
     });
   }
+
+  it('AWS-STAGE-DEPLOY-GATEWAY.yml fails closed: OIDC role only, guard step before credentials', () => {
+    const text = read('AWS-STAGE-DEPLOY-GATEWAY.yml');
+    expect(text).not.toMatch(/secrets\.AWS_STAGING_(ACCESS_KEY_ID|SECRET_ACCESS_KEY)/);
+    const steps = credentialSteps(text);
+    expect(steps).toHaveLength(1);
+    expect(steps[0]).toContain('role-to-assume: ${{ vars.AWS_STAGING_ROLE_ARN }}');
+    expect(steps[0]).not.toMatch(/aws-access-key-id|aws-secret-access-key/);
+    expect(text).toMatch(/name: Require the staging OIDC role[\s\S]*?if \[ -z "\$STAGING_ROLE_ARN" \][\s\S]*?name: Configure AWS credentials/);
+  });
 
   it('AWS-PROVISION-APPILIX-SECRETS keeps its production leg on AWS_PROD_ROLE_ARN', () => {
     const steps = credentialSteps(read('AWS-PROVISION-APPILIX-SECRETS.yml'));
