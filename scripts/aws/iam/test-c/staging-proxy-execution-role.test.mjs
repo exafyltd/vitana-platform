@@ -1,5 +1,6 @@
-// Static checks for the staging proxy's replacement execution role: the template line, the iam:PassRole policy for
-// vitana-gha-staging-deploy, the relayed inline policy fixture, and the owner verification commands.
+// Static checks for the staging proxy's replacement execution role: the template lines, the iam:PassRole policy for
+// vitana-gha-staging-deploy, the relayed inline policy fixture and its grant coverage of the template, and the owner
+// verification commands.
 // Run: node --test scripts/aws/iam/test-c/staging-proxy-execution-role.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -28,6 +29,14 @@ const GRANTED = [`${STAGING_PREFIX}postgrest-authenticator-uri-*`, `${STAGING_PR
 const GET_SECRET_VALUE = 'secretsmanager:GetSecretValue';
 const PASS_CONDITION_KEY = 'iam:PassedToService';
 const PASS_SERVICE = 'ecs-tasks.amazonaws.com';
+const JWT_ARN = `${SECRET_ARN_PREFIX}vitana/gateway/staging/postgrest-jwt-secret`;
+const BASE_JWT_ARN = `${SECRET_ARN_PREFIX}vitana/gateway/staging/supabase-jwt-secret`;
+const AUTH_URI_ARN = `${STAGING_PREFIX}postgrest-authenticator-uri`;
+// The only two lines that may differ from the base commit, as [base, changed] pairs of trimmed text, in file order.
+const EXPECTED_CHANGES = [
+  ['"executionRoleArn": "REPLACE_WITH_ECS_EXECUTION_ROLE_ARN",', `"executionRoleArn": "${NEW_ROLE_ARN}",`],
+  [`{ "name": "PGRST_JWT_SECRET", "valueFrom": "${BASE_JWT_ARN}" }`, `{ "name": "PGRST_JWT_SECRET", "valueFrom": "${JWT_ARN}" }`],
+];
 
 const asList = (value) => (value === undefined ? [] : Array.isArray(value) ? value : [value]);
 const readJson = (file) => JSON.parse(fs.readFileSync(file, 'utf8'));
@@ -104,15 +113,58 @@ function ownerRunViolations(text) {
   return violations;
 }
 
-test('(a) template executionRoleArn is the new role, and only that line differs from the base commit', () => {
-  assert.equal(readJson(TEMPLATE_PATH).executionRoleArn, NEW_ROLE_ARN);
+// Every entry of every container's secrets list in the template. The entries are the parsed objects, so a caller can
+// change one in place.
+const secretEntries = (template) => (template.containerDefinitions ?? []).flatMap((c) => asList(c.secrets));
+const secretRef = (template, name) => secretEntries(template).find((s) => s.name === name);
+
+const escapeRegex = (text) => text.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
+// IAM resource matching: '*' matches any run of characters. Secrets Manager appends a random suffix to a secret ARN, so
+// a bare reference (the form the template uses) also matches a "name-*" grant.
+function resourceMatches(pattern, arn) {
+  const regex = new RegExp(`^${pattern.split('*').map(escapeRegex).join('.*')}$`);
+  return regex.test(arn) || (pattern.endsWith('-*') && pattern.slice(0, -2) === arn);
+}
+
+// The resources of the Allow statements that grant GetSecretValue. This is what the relayed role may read.
+function grantedSecretResources(fixture) {
+  return asList(fixture.Statement)
+    .filter((s) => s.Effect === 'Allow' && asList(s.Action).includes(GET_SECRET_VALUE))
+    .flatMap((s) => asList(s.Resource));
+}
+
+// Returns the violations of the template's secret references against the fixture. A value that is an ARN must match a
+// granted resource. A value still set to a REPLACE_WITH_ placeholder is pending, and only PGRST_DB_URI may stay pending,
+// because the owner renders it (procedure step 1.7). An empty list passes.
+function secretCoverageViolations(template, fixture) {
+  const granted = grantedSecretResources(fixture);
+  const violations = [];
+  for (const { name, valueFrom } of secretEntries(template)) {
+    const value = String(valueFrom);
+    if (value.startsWith('REPLACE_WITH_')) {
+      if (name !== 'PGRST_DB_URI') violations.push(`${name} is an unrendered placeholder`);
+    } else if (!value.startsWith('arn:aws:secretsmanager:')) {
+      violations.push(`${name} is not a Secrets Manager ARN`);
+    } else if (!granted.some((pattern) => resourceMatches(pattern, value))) {
+      violations.push(`${name} is not granted by the role's policy: ${value}`);
+    }
+  }
+  return violations;
+}
+
+test('(a) template: executionRoleArn and PGRST_JWT_SECRET are the only lines that differ from the base commit, with exact values', () => {
+  const template = readJson(TEMPLATE_PATH);
+  assert.equal(template.executionRoleArn, NEW_ROLE_ARN);
+  assert.equal(secretRef(template, 'PGRST_JWT_SECRET').valueFrom, JWT_ARN);
   const before = baseTemplate().split('\n');
   const after = readTemplate().split('\n');
   assert.equal(after.length, before.length, 'the template has the same number of lines as the base');
   const changed = before.map((line, i) => (line === after[i] ? -1 : i)).filter((i) => i >= 0);
-  assert.equal(changed.length, 1, `lines that differ from ${BASE_COMMIT.slice(0, 12)}: ${changed.map((i) => i + 1).join(', ')}`);
-  assert.equal(before[changed[0]].trim(), '"executionRoleArn": "REPLACE_WITH_ECS_EXECUTION_ROLE_ARN",');
-  assert.equal(after[changed[0]].trim(), `"executionRoleArn": "${NEW_ROLE_ARN}",`);
+  assert.deepEqual(
+    changed.map((i) => [before[i].trim(), after[i].trim()]),
+    EXPECTED_CHANGES,
+    `lines that differ from ${BASE_COMMIT.slice(0, 12)}: ${changed.map((i) => i + 1).join(', ')}`,
+  );
 });
 
 test('(b) the iam:PassRole policy names only the new role, for ecs-tasks.amazonaws.com', () => {
@@ -197,4 +249,30 @@ test('(e) negative: an unmarked block or a bare aws line fails the owner-run che
   const text = fs.readFileSync(VERIFY_PATH, 'utf8');
   assert.notDeepEqual(ownerRunViolations(text.replace('# Owner-run\n', '')), []);
   assert.notDeepEqual(ownerRunViolations(`${text}\naws iam list-roles\n`), []);
+});
+
+test('(f) grant coverage: every secret the template references is granted by the relayed policy', () => {
+  assert.deepEqual(secretCoverageViolations(readJson(TEMPLATE_PATH), readJson(FIXTURE_PATH)), []);
+});
+
+test('(f) control: a rendered PGRST_DB_URI for the staging authenticator passes the coverage check', () => {
+  const rendered = readJson(TEMPLATE_PATH);
+  secretRef(rendered, 'PGRST_DB_URI').valueFrom = AUTH_URI_ARN;
+  assert.deepEqual(secretCoverageViolations(rendered, readJson(FIXTURE_PATH)), []);
+});
+
+test('(f) negative: an old JWT name, a production or rehearsal reference, another placeholder, or an SSM reference fails the coverage check', () => {
+  const cases = {
+    'old JWT name supabase-jwt-secret': (t) => { secretRef(t, 'PGRST_JWT_SECRET').valueFrom = BASE_JWT_ARN; },
+    'production JWT secret': (t) => { secretRef(t, 'PGRST_JWT_SECRET').valueFrom = `${SECRET_ARN_PREFIX}vitana/supabase/prod/jwt-secret`; },
+    'rehearsal authenticator as DB URI': (t) => { secretRef(t, 'PGRST_DB_URI').valueFrom = `${SECRET_ARN_PREFIX}vitana/aurora/rehearsal/postgrest-authenticator-uri-AbCdEf`; },
+    'production authenticator as DB URI': (t) => { secretRef(t, 'PGRST_DB_URI').valueFrom = `${SECRET_ARN_PREFIX}vitana/aurora/prod/postgrest-authenticator-uri`; },
+    'another unrendered placeholder': (t) => { secretRef(t, 'PGRST_JWT_SECRET').valueFrom = 'REPLACE_WITH_JWT_SECRET_ARN'; },
+    'SSM parameter reference': (t) => { secretRef(t, 'PGRST_JWT_SECRET').valueFrom = 'arn:aws:ssm:eu-central-1:472838866351:parameter/vitana/jwt'; },
+  };
+  for (const [name, mutate] of Object.entries(cases)) {
+    const template = readJson(TEMPLATE_PATH);
+    mutate(template);
+    assert.notDeepEqual(secretCoverageViolations(template, readJson(FIXTURE_PATH)), [], name);
+  }
 });
