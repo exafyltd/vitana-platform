@@ -1377,6 +1377,14 @@ jobs:
             echo "::error::refusing to register: production credentials on a staging task definition: $PROD_LEAK"; exit 1
           fi
           echo "Production-credential gate: none bound"
+      - name: Require STAGING_CUTOVER_APPROVED for the aurora cutover
+        env:
+          DATA_BACKEND: ${{ inputs.data_backend || 'keep' }}
+          STAGING_CUTOVER_APPROVED: ${{ vars.STAGING_CUTOVER_APPROVED }}
+        run: |
+          if [ "$DATA_BACKEND" = aurora ] && [ "${STAGING_CUTOVER_APPROVED:-}" != yes ]; then
+            echo "::error::the aurora cutover needs the repository variable STAGING_CUTOVER_APPROVED set to yes"; exit 1
+          fi
       # VTID-05023 part 9: register + roll split out of the step above (which is
       # at the VTID-03788 20,000-char limit) so the data_backend switch fits.
       # keep (every push) passes the task definition through byte for byte.
