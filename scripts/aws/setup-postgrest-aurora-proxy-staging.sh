@@ -77,9 +77,17 @@
 #
 # USAGE
 #
-#   scripts/aws/setup-postgrest-aurora-proxy-staging.sh provision            # dry run
-#   scripts/aws/setup-postgrest-aurora-proxy-staging.sh provision --apply
+#   PROXY_STAGING_DB_SECRET=<staging secret name> PROXY_STAGING_DB_HOST=<staging writer host> \
+#     scripts/aws/setup-postgrest-aurora-proxy-staging.sh provision            # dry run
+#   PROXY_STAGING_DB_SECRET=<staging secret name> PROXY_STAGING_DB_HOST=<staging writer host> \
+#     scripts/aws/setup-postgrest-aurora-proxy-staging.sh provision --apply
 #   scripts/aws/setup-postgrest-aurora-proxy-staging.sh status
+#
+# Both PROXY_STAGING_* variables are required and have no default. Production values are refused
+# before any AWS call: secret names under vitana/aurora/prod/ or vitana/supabase/prod/, a host
+# containing vitana-aurora-prod, and the production cluster's RDS master secret. The task definition
+# is checked again just before registration. --apply registers a revision only when the ECS service
+# does not exist yet, so re-running it on a live service registers nothing.
 #
 # Requires: aws CLI v2 (admin on 472838866351), jq.
 set -euo pipefail
@@ -94,7 +102,8 @@ PROXY_CONTAINER="proxy"
 POSTGREST_CONTAINER="postgrest"
 ECR_REPO="vitana/postgrest-aurora-proxy"
 LOG_GROUP="/ecs/vitana-postgrest-aurora-staging"
-SECRET_DB_URI="vitana/aurora/prod/postgrest-authenticator-uri"
+SECRET_DB_URI="${PROXY_STAGING_DB_SECRET:-}"   # no default: production values are refused (see refuse_prod)
+PROD_PATTERN='vitana/(aurora|supabase)/prod/|vitana-aurora-prod|rds!cluster-4dab93b8'
 SECRET_JWT="vitana/gateway/staging/supabase-jwt-secret"   # sha256-identical to vitana/supabase/prod/jwt-secret (verified 2026-08-06)
 NAMESPACE="vitana.internal"
 DNS_SERVICE="postgrest-aurora"
@@ -104,7 +113,7 @@ EXEC_ROLE="arn:aws:iam::${ACCOUNT_ID}:role/vitana-ecs-task-execution-role"
 TASK_ROLE="arn:aws:iam::${ACCOUNT_ID}:role/vitana-ecs-task-role"
 PLACEHOLDER_PROXY_IMAGE="public.ecr.aws/docker/library/nginx:1.27-alpine"
 POSTGREST_IMAGE="postgrest/postgrest:v12.2.3"
-AURORA_HOST="vitana-aurora-prod.cluster-cfk228aiedf3.eu-central-1.rds.amazonaws.com"
+AURORA_HOST="${PROXY_STAGING_DB_HOST:-}"       # no default: the operator supplies the verified staging writer host
 SUPABASE_AUTH_HOST="inmkhvwdcuyhnxkgfvsb.supabase.co"
 CPU="512"; MEMORY="1024"
 PROXY_PORT="8080"
@@ -118,6 +127,8 @@ run()  { if [ "$APPLY" = 1 ]; then printf '  [apply] %s\n' "$*"; "$@"; else plan
 die()  { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 need() { type -P "$1" >/dev/null 2>&1 || die "missing tool: $1"; }
 aws()  { command aws --region "$REGION" "$@"; }
+# refuse_prod <value>...: stop before any change when a value names production.
+refuse_prod() { if grep -Eq "$PROD_PATTERN" <<<"$*"; then die "refusing a production secret name or database host"; fi; }
 
 case "$CMD" in provision|status) ;; *) sed -n '2,90p' "$0" | sed 's/^# \{0,1\}//'; exit 2;; esac
 need aws; need jq
@@ -128,6 +139,9 @@ ACCT=$(aws sts get-caller-identity --query Account --output text)
 # ----------------------------------------------------------------------------
 provision() {
   say "== postgrest-aurora-proxy STAGING provision (apply=$APPLY) =="
+  [ -n "$SECRET_DB_URI" ] && [ -n "$AURORA_HOST" ] \
+    || die "set PROXY_STAGING_DB_SECRET and PROXY_STAGING_DB_HOST to the verified staging values"
+  refuse_prod "$SECRET_DB_URI" "$SECRET_JWT" "$AURORA_HOST"
 
   say "-- 1. ECR repository $ECR_REPO"
   if aws ecr describe-repositories --repository-names "$ECR_REPO" >/dev/null 2>&1; then say "   exists"
@@ -161,6 +175,7 @@ provision() {
     say "   [apply] dns service $REG_ARN"
   else plan "create-service $DNS_SERVICE (A, TTL 10) in $NAMESPACE"; fi
 
+  ST=$(aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" --query 'services[0].status' --output text 2>/dev/null || echo MISSING)
   say "-- 5. Task definition $FAMILY"
   DB_URI_ARN=$(aws secretsmanager describe-secret --secret-id "$SECRET_DB_URI" --query ARN --output text)
   JWT_ARN=$(aws secretsmanager describe-secret --secret-id "$SECRET_JWT" --query ARN --output text)
@@ -203,12 +218,13 @@ provision() {
       }
     ],
     tags:[{key:"vtid", value:"VTID-04101"}, {key:"env", value:"staging"}]}')
-  if [ "$APPLY" = 1 ]; then
+  refuse_prod "$TD"
+  if [ "$ST" = "ACTIVE" ]; then say "   service exists (ACTIVE): no new revision registered"
+  elif [ "$APPLY" = 1 ]; then
     aws ecs register-task-definition --cli-input-json "$TD" --query taskDefinition.taskDefinitionArn --output text
   else plan "register-task-definition $FAMILY (placeholder nginx image for '$PROXY_CONTAINER'; the real image lands via CI)"; fi
 
   say "-- 6. ECS service $SERVICE (desiredCount 1 — Aurora's data/RLS are already correct, no bootstrap gate needed)"
-  ST=$(aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" --query 'services[0].status' --output text 2>/dev/null || echo MISSING)
   if [ "$ST" = "ACTIVE" ]; then say "   exists (ACTIVE)"
   elif [ "$APPLY" = 1 ]; then
     [ -n "$REG_ARN" ] && [ "$REG_ARN" != "None" ] || die "Cloud Map service ARN unknown; re-run provision --apply"
