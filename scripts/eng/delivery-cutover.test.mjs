@@ -1736,9 +1736,12 @@ test('B4: the rollback refuses while a branch on both hosts has another commit o
     assert.equal(w.get('host/unit/vitana-mirror.timer'), 'disabled/inactive', 'the copy is not restarted');
     r = w.run([...ROLLBACK, '--confirm-prune-gitlab-only-branches']);
     assert.equal(r.status, 1, 'the confirm flag does not let a branch that differs from GitHub pass');
+    assert.match(r.stdout, /branches of vitana-v1 whose head differs from GitHub's \(GitHub is ahead, or the two diverged\): kiro\/a\(GitLab:444444444444,GitHub:[0-9a-f]{12}\)/);
     w.put('gh/vitana-v1/contains', `${sha1('kiro/a')} ${glHead}\n`);
     r = w.run(ROLLBACK);
     assert.equal(r.status, 1, 'a head GitHub is ahead of is refused too: the copy has to bring GitLab up to GitHub first');
+    assert.equal(writeKinds(r).some((k) => k.includes('/protection') || k.includes('/enable')), false, 'nothing is restored');
+    assert.equal(w.get('host/unit/vitana-mirror.timer'), 'disabled/inactive', 'the copy is not restarted');
     w.put('gitlab/vitana-v1.branches', `main\nkiro/a ${sha1('kiro/a')}\nkiro/b\n`);
     r = w.run(ROLLBACK);
     assert.equal(r.status, 0, r.all);
