@@ -230,8 +230,8 @@ t_second_at_before_host_is_refused() {
 }
 
 t_slash_before_at_is_refused() {
-  # A / comes before the @, so libpq reads no userinfo and connects to other-writer. The endpoint is the host after the @.
-  # The check must refuse it. Reading the host after the last @ would accept it.
+  # A / comes before the @, so libpq reads no userinfo and connects to other-writer, the host before the /. The grammar reads
+  # the same host, and the mismatch refuses it. A userinfo that allowed the / would read the host after the @ and pass.
   new_sandbox
   db_host_check "$STAGING_HOST" "STUB_DB_URI=postgresql://other-writer.test.invalid/x@${STAGING_HOST}/vitana" \
     || { fail_expect "verify step is missing"; return 0; }
