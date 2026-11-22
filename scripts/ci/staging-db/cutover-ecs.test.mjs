@@ -160,12 +160,42 @@ test('ecs: a failed flip half-way (gateway rollout FAILED) is still rolled back 
 });
 
 test('ecs: verify fails when a service is not on the expected revision', () => {
+  // OD-1 (Kiro 1 decision on pass 2, C3). The body now asserts the OD-1 refusal: a rollback target that binds a production
+  // or a rehearsal secret or host is refused before any update-service. The name is kept at the parent's request, so it no
+  // longer describes the body.
+  // Previous expectation: recordAndFlip exits 0 and moves the gateway to revision 42, then verify exits 1 with
+  //   "PRIMARY is .*vitana-gateway:42, expected .*vitana-gateway:41". The body was red in CI, because the flip now refuses
+  //   the production-bound revision 41 and the gateway never moves.
+  // New expectation: the flip exits 2. The rollback to the record exits 2 and names the recorded gateway revision 41
+  //   (production). With a clean gateway on revision 42 and a proxy on revision 8 that binds the rehearsal secret, the
+  //   rollback exits 2 and names the recorded proxy revision and vitana/aurora/rehearsal/. No update-service runs in either.
   const dir = stage();
-  const { rec } = recordAndFlip(dir);
-  const v = run(dir, ECS, ['verify', '--record', rec]);
-  assert.equal(v.status, 1);
-  assert.match(v.stderr, /PRIMARY is .*vitana-gateway:42, expected .*vitana-gateway:41/);
-  assert.equal(run(dir, ECS, ['verify', '--record', rec, '--flipped', path.join(dir, 'flipped.json')]).status, 0);
+  const { rec, r } = recordAndFlip(dir);
+  assert.equal(r.status, 2, r.stderr);
+  const rb = run(dir, ECS, ['rollback', '--record', rec]);
+  assert.equal(rb.status, 2, rb.stderr);
+  assert.match(rb.stderr, /refusing the recorded revision of vitana-gateway .*vitana-gateway:41: it names a production or production-derived secret or host/);
+  assert.deepEqual(updatedServices(dir), [], 'no update-service');
+
+  // Rehearsal target. The gateway moves to a clean revision 42 (its production names moved to staging names), and the proxy
+  // moves to revision 8, which binds the rehearsal clone secret. Both are the live revisions and the recorded targets.
+  const cleanGw = gwText.replace(/vitana\/(supabase|aurora)\/prod\//g, 'vitana/gateway/staging/');
+  fs.writeFileSync(path.join(dir, 'td', 'vitana-gateway:42.json'), JSON.stringify({ ...JSON.parse(cleanGw), family: 'vitana-gateway', taskDefinitionArn: arnOf('vitana-gateway', 42), revision: 42, status: 'ACTIVE' }));
+  const pgText = fs.readFileSync(path.join(FX, 'taskdef-postgrest.json'), 'utf8').replace(/vitana\/aurora\/prod\//g, 'vitana/aurora/rehearsal/');
+  fs.writeFileSync(path.join(dir, 'td', 'vitana-postgrest-aurora-staging:8.json'), JSON.stringify({ ...JSON.parse(pgText), family: 'vitana-postgrest-aurora-staging', taskDefinitionArn: arnOf('vitana-postgrest-aurora-staging', 8), revision: 8, status: 'ACTIVE' }));
+  for (const [name, td] of [['vitana-gateway', arnOf('vitana-gateway', 42)], ['vitana-postgrest-aurora-proxy', arnOf('vitana-postgrest-aurora-staging', 8)]]) {
+    const s = service(dir, name);
+    s.deployments[0].taskDefinition = td;
+    fs.writeFileSync(path.join(dir, 'services', `${name}.json`), JSON.stringify(s));
+  }
+  const rec2 = path.join(dir, 'rec2.json');
+  const rj = JSON.parse(fs.readFileSync(rec, 'utf8'));
+  for (const s of rj.services) s.taskDefinition = s.service === 'vitana-gateway' ? arnOf('vitana-gateway', 42) : arnOf('vitana-postgrest-aurora-staging', 8);
+  fs.writeFileSync(rec2, JSON.stringify(rj));
+  const rb2 = run(dir, ECS, ['rollback', '--record', rec2]);
+  assert.equal(rb2.status, 2, rb2.stderr);
+  assert.match(rb2.stderr, /refusing the recorded revision of vitana-postgrest-aurora-proxy .*vitana-postgrest-aurora-staging:8: it names a production or production-derived secret or host .*vitana\/aurora\/rehearsal\//);
+  assert.deepEqual(updatedServices(dir), [], 'no update-service');
 });
 
 test('ecs: flip refuses without approval, with a bad SG, or when a service moved since the record (no update-service)', () => {
