@@ -7,8 +7,8 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 verify_staging() {
   step_run "Verify staging credentials before any AWS change" "$SANDBOX/verify.sh" || return 1
   run_env "STAGING_ROLE_ARN=$STAGING_ROLE_ARN" "STAGING_ACCOUNT_ID=$STAGING_ACCOUNT" \
-    "PGRST_DB_SECRET_ID=$FIXTURE_DB_SECRET" "PGRST_JWT_SECRET_ID=$STAGING_JWT_SECRET" \
-    "TARGET_AWS_REGION=eu-central-1" "$@" -- bash "$SANDBOX/verify.sh"
+    "PGRST_DB_SECRET_ID=$STAGING_DB_SECRET" "PGRST_JWT_SECRET_ID=$STAGING_JWT_SECRET" \
+    "TARGET_AWS_REGION=eu-central-1" "STAGING_WRITER_ENDPOINT=$STAGING_HOST" "$@" -- bash "$SANDBOX/verify.sh"
 }
 
 t_verify_passes_for_the_configured_staging_role() {
@@ -16,8 +16,10 @@ t_verify_passes_for_the_configured_staging_role() {
   verify_staging || { fail_expect "verify step is missing"; return 0; }
   expect_ok
   expect_out 'Staging credentials checked'
+  expect_out 'matched the confirmed writer endpoint'
   expect_calls '^sts get-caller-identity' 2
   expect_calls '^secretsmanager describe-secret' 2
+  expect_calls '^secretsmanager get-secret-value' 1
 }
 
 t_verify_stops_when_sts_cannot_run() {
