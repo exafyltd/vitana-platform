@@ -21,7 +21,8 @@
 # protects; a backup that is missing or cannot be read is never taken as "nothing to restore". apply, rehearse and the rollback hold a lock
 # ($SECRET_PREFIX/lock, created only when it does not exist) while they change things, so two of them never run at once.
 # Exit: 0 done / all green, 1 a refusal, a failure or a red checklist, 2 a usage mistake, 3 waiting for the owner (the kill switch, the rehearsal).
-# The CUTOVER_* variables exist so that scripts/eng/delivery-cutover.test.mjs can run this file against stand-ins; the owner sets none.
+# The CUTOVER_* variables exist so that scripts/eng/delivery-cutover.test.mjs can run this file against stand-ins; the owner sets none, except
+# CUTOVER_BRANCH_ALLOWLIST: the branch names (space-separated) the owner has approved to skip in the branch check of step 2 (empty by default).
 set -uo pipefail
 export AWS_PAGER="" AWS_REGION=eu-central-1 AWS_DEFAULT_REGION=eu-central-1
 
@@ -40,6 +41,7 @@ WORKFLOWS_JSON="$ROOT/scripts/eng/github-workflows.json"
 STATE_FILE="${CUTOVER_STATE:-}"
 KILL_WAIT_SECONDS="${CUTOVER_KILL_WAIT_SECONDS:-600}"
 DEPLOY_WAIT_SECONDS="${CUTOVER_DEPLOY_WAIT_SECONDS:-2700}"   # how long the wait for a staging redeploy of GitHub Actions may take
+BRANCH_ALLOWLIST="${CUTOVER_BRANCH_ALLOWLIST:-}"             # branches the owner approved to skip in step 2's branch check (space-separated)
 LOCK_NAME="$SECRET_PREFIX/lock"
 LOCK_STALE_SECONDS=21600     # --break-lock clears only a lock older than 6 hours
 RESUME_MAX_SECONDS=86400     # apply resumes a recorded cut without the checklist only within 24 hours
@@ -684,7 +686,14 @@ s1_undo() {   # repos changed in this run
   done
 }
 step1() {
-  local r rc target changed=()
+  local r rc target changed=() gh gl
+  for r in "${REPOS[@]}"; do   # the first thing step1 does: refuse while the two mains differ. Reads only; GitHub main is not restricted yet
+    gh="$(main_sha "$r")"; gl="$(gitlab_main_of "$r")"
+    if [ -z "$gh" ] || [ "$gh" != "$gl" ]; then
+      say "  GitHub main of $r is ${gh:-unknown}, GitLab main is ${gl:-unknown}: not the same commit, so GitHub main is not restricted. Wait for the GitHub-to-GitLab copy to bring them together (look at the mirror of vitana/$r if it does not), then run this again"
+      return 1
+    fi
+  done
   for r in "${REPOS[@]}"; do
     gh_protection "$r"; rc=$?
     if [ "$rc" = 1 ]; then
@@ -715,10 +724,39 @@ s1_backup() {   # repo rc-of-gh_protection (0 protected: PROT_JSON is saved, 2 n
 
 # step 2 ------------------------------------------------------------------------------------------------------------------------
 gitlab_main_of() { ssm_run "$(r_gitlab_main "$1")" 30; kv main_sha; }
+# The copy below force-pushes every branch from GitHub to GitLab and deletes the GitLab branches that GitHub does not have. So before it runs, no
+# branch may exist only on GitLab, and no GitLab head may be missing from GitHub's history. This is the check of rb_branch_check in
+# delivery-rollback.sh (keep the two in step). The bot refs train/* and assist/* are GitLab-only by design and are left out. A branch named in
+# CUTOVER_BRANCH_ALLOWLIST is skipped.
+copy_branch_check() {   # repo -> 0 when the copy loses no branch of it; otherwise it prints the branches and returns 1
+  local r="$1" gh gl name sha ghsha why bad=""
+  if ! ssm_run "$(r_gitlab_main "$r")" 30 || [ -z "$(kv main_sha)" ] || [ "$(kv main_sha)" = none ]; then
+    say "  the branches of GitLab $r cannot be read (Systems Manager status ${SSM_STATUS:-unknown}): nothing is copied"; return 1
+  fi
+  if [ "$(kv truncated)" = 1 ]; then
+    say "  GitLab lists more than 3000 branches of $r, so the check cannot see them all: nothing is copied. Delete stale branches on GitLab, then run this again"; return 1
+  fi
+  gh="$(x_gh api "repos/$GH_OWNER/$r/branches" --paginate --jq '.[] | [.name, .commit.sha] | @tsv' 2>/dev/null)" && [ -n "$gh" ] \
+    || { say "  GitHub did not list the branches of $r: nothing is copied"; return 1; }
+  gl="$(sed -n 's/^branch=//p' <<<"$SSM_OUT" | awk '{ print $1 "\t" $2 }')"
+  while IFS=$'\t' read -r name sha; do
+    [ -n "$name" ] || continue
+    [[ "$name" =~ ^(train|assist)/ ]] && continue
+    ghsha="$(awk -F'\t' -v n="$name" '$1 == n { print $2; exit }' <<<"$gh")"
+    if [ -z "$ghsha" ]; then why="exists only on GitLab"
+    elif [ "$ghsha" = "$sha" ]; then continue
+    elif [ "$(x_gh api "repos/$GH_OWNER/$r/compare/$sha...$ghsha" --jq .status 2>/dev/null)" = ahead ]; then continue
+    else why="GitLab head ${sha:0:12} is not in GitHub's history (GitHub has ${ghsha:0:12})"; fi
+    case " $BRANCH_ALLOWLIST " in *" $name "*) say "  $r $name $why: skipped, it is on CUTOVER_BRANCH_ALLOWLIST"; continue ;; esac
+    say "  $r $name $why"; bad=1
+  done <<<"$gl"
+  [ -z "$bad" ] || { say "  nothing is copied. Push these branches to GitHub (or merge GitHub's head into them on GitLab and push), or list the ones you approve to skip in CUTOVER_BRANCH_ALLOWLIST, then run this again"; return 1; }
+}
 step2() {
   local r gh gl
   ssm_run "$(r_probe)" 30
   if kv marker | grep -q '"mode":"live"'; then say "  the cutover marker is set: the GitHub-to-GitLab copy must never run after the cut (it would overwrite GitLab main with GitHub's)"; return 1; fi
+  for r in "${REPOS[@]}"; do copy_branch_check "$r" || return 1; done   # before the copy: a branch the copy would delete or rewind stops it here
   W "run the GitHub-to-GitLab copy once more (systemctl start vitana-mirror.service on the GitLab machine)" ssm_w "$(r_mirror_final)" || return 1
   for r in "${REPOS[@]}"; do
     gh="$(main_sha "$r")"; gl="$(gitlab_main_of "$r")"
