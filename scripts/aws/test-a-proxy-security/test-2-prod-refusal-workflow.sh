@@ -9,7 +9,7 @@ register_run() {
   local td="$1"; shift
   step_run "Register task-definition revision + roll the service" "$SANDBOX/register.sh" || return 1
   run_env "STUB_TD_FILE=$td" "STAGING_DATA_PLANE=" "STAGING_CUTOVER_APPROVED=" \
-    "PGRST_DB_SECRET_ID=$REHEARSAL_DB_SECRET" "PGRST_JWT_SECRET_ID=$STAGING_JWT_SECRET" \
+    "PGRST_DB_SECRET_ID=$FIXTURE_DB_SECRET" "PGRST_JWT_SECRET_ID=$STAGING_JWT_SECRET" \
     "STAGING_ACCOUNT_ID=$STAGING_ACCOUNT" "TARGET_AWS_REGION=eu-central-1" "$@" \
     -- bash "$SANDBOX/register.sh"
 }
@@ -18,7 +18,7 @@ register_run() {
 verify_run() {
   step_run "Verify staging credentials before any AWS change" "$SANDBOX/verify.sh" || return 1
   run_env "STAGING_ROLE_ARN=$STAGING_ROLE_ARN" "STAGING_ACCOUNT_ID=$STAGING_ACCOUNT" \
-    "PGRST_DB_SECRET_ID=$REHEARSAL_DB_SECRET" "PGRST_JWT_SECRET_ID=$STAGING_JWT_SECRET" \
+    "PGRST_DB_SECRET_ID=$FIXTURE_DB_SECRET" "PGRST_JWT_SECRET_ID=$STAGING_JWT_SECRET" \
     "TARGET_AWS_REGION=eu-central-1" "$@" -- bash "$SANDBOX/verify.sh"
 }
 
@@ -89,6 +89,61 @@ t_verify_refuses_production_database_secret_name() {
 t_verify_refuses_production_supabase_secret_name() {
   new_sandbox
   verify_run "PGRST_JWT_SECRET_ID=vitana/supabase/prod/jwt-secret" || { fail_expect "verify step is missing"; return 0; }
+  expect_refused
+  expect_out 'production secret name'
+  expect_calls '^sts ' 0
+}
+
+t_register_refuses_rehearsal_database_secret_path() {
+  # The candidate revision names the rehearsal clone's secret ARN in the proxy container.
+  new_sandbox
+  write_td_fixture "$SANDBOX/td.json" \
+    '(.containerDefinitions[] | select(.name == "proxy") | .secrets) = [{"name":"PGRST_DB_URI","valueFrom":"arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/aurora/rehearsal/postgrest-authenticator-uri-AbCdEf"}]'
+  register_run "$SANDBOX/td.json" || { fail_expect "step is missing"; return 0; }
+  expect_register_refused
+}
+
+t_register_refuses_when_the_db_secret_name_is_rehearsal() {
+  new_sandbox
+  write_td_fixture "$SANDBOX/td.json"
+  register_run "$SANDBOX/td.json" "PGRST_DB_SECRET_ID=$REHEARSAL_DB_SECRET" \
+    || { fail_expect "step is missing"; return 0; }
+  expect_register_refused
+}
+
+t_verify_refuses_rehearsal_database_secret_name() {
+  new_sandbox
+  verify_run "PGRST_DB_SECRET_ID=$REHEARSAL_DB_SECRET" || { fail_expect "verify step is missing"; return 0; }
+  expect_refused
+  expect_out 'production secret name'
+  expect_calls '^sts ' 0
+}
+
+t_verify_refuses_the_placeholder_bound_in_the_workflow() {
+  # Reads the value the job env binds. The gate stays closed while that value is the placeholder.
+  new_sandbox
+  local bound
+  bound=$(ruby "$STEPS_RB" "$WORKFLOW" job-env | jq -r '.PGRST_DB_SECRET_ID') \
+    || { fail_expect "cannot read the job env"; return 0; }
+  [[ "$bound" == *REPLACE_WITH_* ]] || { fail_expect "the job env binds '$bound', not the placeholder"; return 0; }
+  verify_run "PGRST_DB_SECRET_ID=$bound" || { fail_expect "verify step is missing"; return 0; }
+  expect_refused
+  expect_out 'unconfirmed placeholder'
+  expect_calls '^sts ' 0
+  expect_calls '^secretsmanager ' 0
+}
+
+t_verify_refuses_a_secret_name_that_names_the_production_host() {
+  new_sandbox
+  verify_run "PGRST_DB_SECRET_ID=vitana-aurora-prod/postgrest-authenticator-uri" || { fail_expect "verify step is missing"; return 0; }
+  expect_refused
+  expect_out 'production secret name'
+  expect_calls '^sts ' 0
+}
+
+t_verify_refuses_the_production_cluster_master_secret_name() {
+  new_sandbox
+  verify_run "PGRST_DB_SECRET_ID=rds!cluster-4dab93b8-AbCdEf" || { fail_expect "verify step is missing"; return 0; }
   expect_refused
   expect_out 'production secret name'
   expect_calls '^sts ' 0

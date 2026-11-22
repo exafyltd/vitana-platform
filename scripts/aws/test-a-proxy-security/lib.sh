@@ -19,7 +19,8 @@ TESTS_TMP="${TESTS_TMP:-$(mktemp -d "${TMPDIR:-/tmp}/proxy-security-tests.XXXXXX
 STAGING_ACCOUNT="472838866351"
 STAGING_ROLE_ARN="arn:aws:iam::472838866351:role/vitana-gha-staging-deploy"
 REHEARSAL_DB_SECRET="vitana/aurora/rehearsal/postgrest-authenticator-uri"
-STAGING_DB_SECRET="vitana/aurora/staging/postgrest-authenticator-uri"
+FIXTURE_DB_SECRET="vitana/aurora/fixture-staging/postgrest-authenticator-uri"
+PLACEHOLDER_DB_SECRET="REPLACE_WITH_OWNER_CONFIRMED_STAGING_SECRET"
 STAGING_JWT_SECRET="vitana/gateway/staging/supabase-jwt-secret"
 STAGING_HOST="aurora-staging.test.invalid"
 PROD_HOST="vitana-aurora-prod.test.invalid"
@@ -74,6 +75,7 @@ case "$svc $sub" in
     fi ;;
   "ecr describe-repositories") echo "472838866351.dkr.ecr.eu-central-1.amazonaws.com/vitana/postgrest-aurora-proxy" ;;
   "ecs describe-services")
+    [ "${STUB_ECS_DESCRIBE_RC:-0}" = 0 ] || { echo "stub: describe-services failed" >&2; exit "$STUB_ECS_DESCRIBE_RC"; }
     case "$line" in
       *"services[0].status"*) echo "${STUB_ECS_STATUS:-None}" ;;
       *"services[0].taskDefinition"*) echo "${STUB_TD_ARN:-arn:aws:ecs:eu-central-1:472838866351:task-definition/vitana-postgrest-aurora-proxy:7}" ;;
@@ -171,7 +173,7 @@ write_td_fixture() {
         {"name": "PGRST_DB_NAME", "value": "vitana"}
       ],
       "secrets": [
-        {"name": "PGRST_DB_URI", "valueFrom": "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/aurora/rehearsal/postgrest-authenticator-uri-AbCdEf"},
+        {"name": "PGRST_DB_URI", "valueFrom": "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/aurora/fixture-staging/postgrest-authenticator-uri-AbCdEf"},
         {"name": "PGRST_JWT_SECRET", "valueFrom": "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/gateway/staging/supabase-jwt-secret-AbCdEf"}
       ]
     }

@@ -7,7 +7,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 verify_staging() {
   step_run "Verify staging credentials before any AWS change" "$SANDBOX/verify.sh" || return 1
   run_env "STAGING_ROLE_ARN=$STAGING_ROLE_ARN" "STAGING_ACCOUNT_ID=$STAGING_ACCOUNT" \
-    "PGRST_DB_SECRET_ID=$REHEARSAL_DB_SECRET" "PGRST_JWT_SECRET_ID=$STAGING_JWT_SECRET" \
+    "PGRST_DB_SECRET_ID=$FIXTURE_DB_SECRET" "PGRST_JWT_SECRET_ID=$STAGING_JWT_SECRET" \
     "TARGET_AWS_REGION=eu-central-1" "$@" -- bash "$SANDBOX/verify.sh"
 }
 
@@ -24,6 +24,7 @@ t_verify_stops_when_sts_cannot_run() {
   new_sandbox
   verify_staging "STUB_STS_RC=255" || { fail_expect "verify step is missing"; return 0; }
   expect_refused
+  expect_out 'Cannot read the AWS caller identity'
   expect_calls '^secretsmanager describe-secret' 0
 }
 
@@ -61,7 +62,7 @@ t_verify_stops_when_the_role_variable_is_empty() {
   new_sandbox
   step_run "Verify staging credentials before any AWS change" "$SANDBOX/verify.sh" || { fail_expect "verify step is missing"; return 0; }
   run_env "STAGING_ROLE_ARN=" "STAGING_ACCOUNT_ID=$STAGING_ACCOUNT" \
-    "PGRST_DB_SECRET_ID=$REHEARSAL_DB_SECRET" "PGRST_JWT_SECRET_ID=$STAGING_JWT_SECRET" \
+    "PGRST_DB_SECRET_ID=$FIXTURE_DB_SECRET" "PGRST_JWT_SECRET_ID=$STAGING_JWT_SECRET" \
     "TARGET_AWS_REGION=eu-central-1" -- bash "$SANDBOX/verify.sh"
   expect_refused
   expect_out 'configured staging role'

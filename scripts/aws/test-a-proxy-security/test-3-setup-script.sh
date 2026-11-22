@@ -44,7 +44,7 @@ t_setup_refuses_production_cluster_master_secret_before_any_change() {
 
 t_setup_refuses_production_database_host_before_any_change() {
   new_sandbox
-  setup_apply "$STAGING_DB_SECRET" "$PROD_HOST"
+  setup_apply "$FIXTURE_DB_SECRET" "$PROD_HOST"
   expect_refused
   expect_out 'refusing a production'
   expect_no_change
@@ -54,8 +54,8 @@ t_setup_refuses_a_production_revision_even_when_inputs_look_staging() {
   # The secret name is staging, but the secret it resolves to is production-named. Only the check on
   # the candidate revision can catch this.
   new_sandbox
-  setup_apply "$STAGING_DB_SECRET" "$STAGING_HOST" \
-    "STUB_ARN_OVERRIDE_FROM=$STAGING_DB_SECRET" \
+  setup_apply "$FIXTURE_DB_SECRET" "$STAGING_HOST" \
+    "STUB_ARN_OVERRIDE_FROM=$FIXTURE_DB_SECRET" \
     "STUB_ARN_OVERRIDE_TO=vitana/aurora/prod/postgrest-authenticator-uri"
   expect_refused
   expect_out 'refusing a production'
@@ -64,18 +64,31 @@ t_setup_refuses_a_production_revision_even_when_inputs_look_staging() {
 
 t_setup_registers_a_staging_revision_when_the_service_is_missing() {
   new_sandbox
-  setup_apply "$STAGING_DB_SECRET" "$STAGING_HOST"
+  setup_apply "$FIXTURE_DB_SECRET" "$STAGING_HOST"
   expect_ok
   expect_calls '^ecs register-task-definition' 1
   expect_calls '^ecs create-service' 1
   expect_payload_has "$STAGING_HOST"
-  expect_payload_has "$STAGING_DB_SECRET"
-  expect_payload_lacks 'vitana/(aurora|supabase)/prod/|vitana-aurora-prod|rds!cluster'
+  expect_payload_has "$FIXTURE_DB_SECRET"
+  expect_payload_lacks 'vitana/(aurora|supabase)/prod/|vitana/aurora/rehearsal/|vitana-aurora-prod|rds!cluster'
+}
+
+t_setup_stops_when_the_service_state_cannot_be_read() {
+  # The log group and the Cloud Map service exist in the stubs, so nothing changes before the service
+  # state is read. The read then fails, and the script must not register a revision on that guess.
+  new_sandbox
+  setup_apply "$FIXTURE_DB_SECRET" "$STAGING_HOST" "STUB_ECS_DESCRIBE_RC=255" \
+    "STUB_LOG_GROUP=/ecs/vitana-postgrest-aurora-staging" \
+    "STUB_DNS_ARN=arn:aws:servicediscovery:eu-central-1:472838866351:service/srv-existing"
+  expect_refused
+  expect_out 'cannot read the ECS service state'
+  expect_no_change
+  expect_calls '^ecs register-task-definition' 0
 }
 
 t_setup_dry_run_changes_nothing() {
   new_sandbox
-  run_env "PROXY_STAGING_DB_SECRET=$STAGING_DB_SECRET" "PROXY_STAGING_DB_HOST=$STAGING_HOST" \
+  run_env "PROXY_STAGING_DB_SECRET=$FIXTURE_DB_SECRET" "PROXY_STAGING_DB_HOST=$STAGING_HOST" \
     -- bash "$SETUP" provision
   expect_ok
   expect_out 'register-task-definition'
@@ -84,12 +97,28 @@ t_setup_dry_run_changes_nothing() {
 
 t_setup_does_not_register_a_revision_when_the_service_exists() {
   new_sandbox
-  setup_apply "$STAGING_DB_SECRET" "$STAGING_HOST" \
+  setup_apply "$FIXTURE_DB_SECRET" "$STAGING_HOST" \
     "STUB_ECS_STATUS=ACTIVE" "STUB_LOG_GROUP=/ecs/vitana-postgrest-aurora-staging" \
     "STUB_DNS_ARN=arn:aws:servicediscovery:eu-central-1:472838866351:service/srv-existing"
   expect_ok
   expect_out 'no new revision registered'
   expect_calls '^ecs register-task-definition' 0
+  expect_no_change
+}
+
+t_setup_refuses_rehearsal_database_secret_before_any_change() {
+  new_sandbox
+  setup_apply "$REHEARSAL_DB_SECRET" "$STAGING_HOST"
+  expect_refused
+  expect_out 'refusing a production'
+  expect_no_change
+}
+
+t_setup_refuses_the_unconfirmed_placeholder_before_any_change() {
+  new_sandbox
+  setup_apply "$PLACEHOLDER_DB_SECRET" "$STAGING_HOST"
+  expect_refused
+  expect_out 'placeholder'
   expect_no_change
 }
 

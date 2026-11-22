@@ -84,10 +84,15 @@
 #   scripts/aws/setup-postgrest-aurora-proxy-staging.sh status
 #
 # Both PROXY_STAGING_* variables are required and have no default. Production values are refused
-# before any AWS call: secret names under vitana/aurora/prod/ or vitana/supabase/prod/, a host
-# containing vitana-aurora-prod, and the production cluster's RDS master secret. The task definition
-# is checked again just before registration. --apply registers a revision only when the ECS service
-# does not exist yet, so re-running it on a live service registers nothing.
+# before any state-changing AWS call (one read-only caller-identity check runs first): secret names
+# under vitana/aurora/prod/ or vitana/supabase/prod/, the production-derived rehearsal clone secret
+# under vitana/aurora/rehearsal/, a host containing vitana-aurora-prod, and the production cluster's
+# RDS master secret. The placeholder REPLACE_WITH_OWNER_CONFIRMED_STAGING_SECRET is refused until the
+# owner confirms the staging writer secret name. The host is the operator's input. The script never reads a
+# secret value, so a host inside a secret value is not checked (open point 2). The task definition is
+# checked again just before registration. --apply registers a revision only when the ECS service does
+# not exist yet, so re-running it on a live service registers nothing. If the service state cannot be
+# read, --apply stops before any registration.
 #
 # Requires: aws CLI v2 (admin on 472838866351), jq.
 set -euo pipefail
@@ -103,7 +108,7 @@ POSTGREST_CONTAINER="postgrest"
 ECR_REPO="vitana/postgrest-aurora-proxy"
 LOG_GROUP="/ecs/vitana-postgrest-aurora-staging"
 SECRET_DB_URI="${PROXY_STAGING_DB_SECRET:-}"   # no default: production values are refused (see refuse_prod)
-PROD_PATTERN='vitana/(aurora|supabase)/prod/|vitana-aurora-prod|rds!cluster-4dab93b8'
+PROD_PATTERN='vitana/(aurora|supabase)/prod/|vitana/aurora/rehearsal/|vitana-aurora-prod|rds!cluster-4dab93b8'   # rehearsal: production-derived clone
 SECRET_JWT="vitana/gateway/staging/supabase-jwt-secret"   # sha256-identical to vitana/supabase/prod/jwt-secret (verified 2026-08-06)
 NAMESPACE="vitana.internal"
 DNS_SERVICE="postgrest-aurora"
@@ -128,7 +133,7 @@ die()  { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 need() { type -P "$1" >/dev/null 2>&1 || die "missing tool: $1"; }
 aws()  { command aws --region "$REGION" "$@"; }
 # refuse_prod <value>...: stop before any change when a value names production.
-refuse_prod() { if grep -Eq "$PROD_PATTERN" <<<"$*"; then die "refusing a production secret name or database host"; fi; }
+refuse_prod() { if grep -Eq "$PROD_PATTERN" <<<"$*"; then die "refusing a production or production-derived secret name or database host"; fi; }
 
 case "$CMD" in provision|status) ;; *) sed -n '2,90p' "$0" | sed 's/^# \{0,1\}//'; exit 2;; esac
 need aws; need jq
@@ -141,6 +146,9 @@ provision() {
   say "== postgrest-aurora-proxy STAGING provision (apply=$APPLY) =="
   [ -n "$SECRET_DB_URI" ] && [ -n "$AURORA_HOST" ] \
     || die "set PROXY_STAGING_DB_SECRET and PROXY_STAGING_DB_HOST to the verified staging values"
+  case "$SECRET_DB_URI" in
+    *REPLACE_WITH_*) die "refusing an unconfirmed placeholder secret name: the owner must confirm the staging writer secret first" ;;
+  esac
   refuse_prod "$SECRET_DB_URI" "$SECRET_JWT" "$AURORA_HOST"
 
   say "-- 1. ECR repository $ECR_REPO"
@@ -175,7 +183,8 @@ provision() {
     say "   [apply] dns service $REG_ARN"
   else plan "create-service $DNS_SERVICE (A, TTL 10) in $NAMESPACE"; fi
 
-  ST=$(aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" --query 'services[0].status' --output text 2>/dev/null || echo MISSING)
+  ST=$(aws ecs describe-services --cluster "$CLUSTER" --services "$SERVICE" --query 'services[0].status' --output text 2>/dev/null) \
+    || die "cannot read the ECS service state; stopping before any registration"
   say "-- 5. Task definition $FAMILY"
   DB_URI_ARN=$(aws secretsmanager describe-secret --secret-id "$SECRET_DB_URI" --query ARN --output text)
   JWT_ARN=$(aws secretsmanager describe-secret --secret-id "$SECRET_JWT" --query ARN --output text)

@@ -25,13 +25,20 @@
 #
 # AWS access is OIDC only. The repository variable AWS_STAGING_ROLE_ARN names
 # the staging role this workflow assumes. The workflow reads no static AWS keys.
-# Required Secrets Manager entries (eu-central-1), both pre-existing:
-#   vitana/aurora/rehearsal/postgrest-authenticator-uri  -> PGRST_DB_URI
-#   vitana/gateway/staging/supabase-jwt-secret      -> PGRST_JWT_SECRET
-# Production targets are refused on every path: secret names under
-# vitana/aurora/prod/ or vitana/supabase/prod/, the host vitana-aurora-prod, and
-# the production cluster's RDS master secret. The deploy also stops unless the
-# checks in "Verify staging credentials" pass. That step lists what it does not check.
+# Required Secrets Manager entries (eu-central-1):
+#   REPLACE_WITH_OWNER_CONFIRMED_STAGING_SECRET  -> PGRST_DB_URI (placeholder)
+#   vitana/gateway/staging/supabase-jwt-secret   -> PGRST_JWT_SECRET (pre-existing)
+# The database secret name is a placeholder. The owner has not confirmed the staging writer's
+# secret, and no candidate name is bound. The placeholder cannot resolve, and the verify step stops
+# the job on it before any AWS call, so this workflow deploys nothing until the owner sets the name.
+# Production targets are refused on every path: secret names under vitana/aurora/prod/ or
+# vitana/supabase/prod/, the production-derived rehearsal clone vitana/aurora/rehearsal/, and the
+# production cluster's RDS master secret. The host vitana-aurora-prod is refused only in the candidate
+# task definition text (PGRST_DB_HOST, which PostgREST does not read). PostgREST
+# reads its host from the PGRST_DB_URI secret value, and this workflow never reads
+# that value, so the host inside it is unchecked (open point). The deploy also
+# stops unless the checks in "Verify staging credentials" pass. That step lists
+# what it does not check.
 
 name: AWS Stage Deploy PostgREST-Aurora Proxy (ECS)
 
@@ -82,8 +89,9 @@ jobs:
       PROXY_CONTAINER: 'proxy'
       DEPLOY_REASON: ${{ inputs.reason || 'auto-deploy on push to main' }}
       # The staging account and the two secret names this proxy binds. Every step reads these names from here.
+      # PGRST_DB_SECRET_ID is a placeholder until the owner confirms the staging writer's secret name. The verify step refuses it.
       STAGING_ACCOUNT_ID: '472838866351'
-      PGRST_DB_SECRET_ID: 'vitana/aurora/rehearsal/postgrest-authenticator-uri'
+      PGRST_DB_SECRET_ID: 'REPLACE_WITH_OWNER_CONFIRMED_STAGING_SECRET'
       PGRST_JWT_SECRET_ID: 'vitana/gateway/staging/supabase-jwt-secret'
     steps:
       - uses: actions/checkout@v4
@@ -125,10 +133,14 @@ jobs:
           STAGING_ROLE_ARN: ${{ vars.AWS_STAGING_ROLE_ARN }}
         run: |
           set -euo pipefail
-          PROD_NAME='vitana/(aurora|supabase)/prod/|vitana-aurora-prod|rds!cluster-4dab93b8'
+          # The owner has not confirmed the staging writer secret, so the placeholder must stop the job here.
+          case "$PGRST_DB_SECRET_ID" in
+            *REPLACE_WITH_*) echo "::error::PGRST_DB_SECRET_ID is an unconfirmed placeholder. The owner must confirm the staging writer secret name first. Stopping before any AWS call."; exit 1 ;;
+          esac
+          PROD_NAME='vitana/(aurora|supabase)/prod/|vitana/aurora/rehearsal/|vitana-aurora-prod|rds!cluster-4dab93b8'
           for NAME in "$PGRST_DB_SECRET_ID" "$PGRST_JWT_SECRET_ID"; do
             if grep -Eq "$PROD_NAME" <<<"$NAME"; then
-              echo "::error::Refusing: '$NAME' is a production secret name."; exit 1
+              echo "::error::Refusing: '$NAME' is a production secret name or the production-derived rehearsal clone."; exit 1
             fi
           done
           IDENTITY_ARN=$(aws sts get-caller-identity --query Arn --output text) \
@@ -217,10 +229,12 @@ jobs:
           fi
           # <<< VTID-05781
           # Refuse production targets on the exact revision about to be registered (same rule as the gateway gate):
-          # secret names under vitana/aurora/prod/ or vitana/supabase/prod/, host vitana-aurora-prod, and the
-          # production cluster's RDS master secret. Nothing is registered when this matches.
-          if grep -Eq 'vitana/(aurora|supabase)/prod/|vitana-aurora-prod|rds!cluster-4dab93b8' <<<"$NEW_DEF"; then
-            echo "::error::Refusing to register: the candidate task definition names a production secret or database host. Nothing was registered."; exit 1
+          # secret names under vitana/aurora/prod/ or vitana/supabase/prod/, the production-derived rehearsal clone
+          # vitana/aurora/rehearsal/ (its secret ARN carries the name), the host vitana-aurora-prod in the candidate
+          # revision text (PGRST_DB_HOST), and the production cluster's RDS master secret. Nothing is registered when
+          # this matches. The host inside the PGRST_DB_URI secret value is not read here (open point 2).
+          if grep -Eq 'vitana/(aurora|supabase)/prod/|vitana/aurora/rehearsal/|vitana-aurora-prod|rds!cluster-4dab93b8' <<<"$NEW_DEF"; then
+            echo "::error::Refusing to register: the candidate task definition names a production or production-derived secret or database host. Nothing was registered."; exit 1
           fi
           NEW_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_DEF" \
             --query 'taskDefinition.taskDefinitionArn' --output text)
