@@ -41,6 +41,7 @@ gh_contains() {   # repo github-sha gitlab-sha: 0 when GitHub's head contains th
 rb_branch_check() {   # repo: sets RB_ONLY (names only on GitLab) and RB_RISK (names on both hosts whose GitLab commits GitHub lacks); 1 when it cannot tell
   local r="$1" gh gl name sha ghsha
   RB_ONLY=""; RB_RISK=""
+  if [ "$(kv listing)" != complete ]; then say "  the branches of GitLab $r cannot be read in full (Systems Manager status ${SSM_STATUS:-unknown}): nothing is restored. Systems Manager returns at most 24,000 characters of output"; return 1; fi
   if [ "$(kv truncated)" = 1 ]; then say "  GitLab lists more than 3000 branches of $r (page 30 of 100 is full): the check cannot see them all. Nothing is restored; delete stale branches on GitLab, then run this again"; return 1; fi
   gh="$(gh_branch_heads "$r")" || gh=""
   [ -n "$gh" ] || { say "  GitHub did not list the branches of $r: nothing is restored"; return 1; }

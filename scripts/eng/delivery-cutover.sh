@@ -21,8 +21,7 @@
 # protects; a backup that is missing or cannot be read is never taken as "nothing to restore". apply, rehearse and the rollback hold a lock
 # ($SECRET_PREFIX/lock, created only when it does not exist) while they change things, so two of them never run at once.
 # Exit: 0 done / all green, 1 a refusal, a failure or a red checklist, 2 a usage mistake, 3 waiting for the owner (the kill switch, the rehearsal).
-# The CUTOVER_* variables exist so that scripts/eng/delivery-cutover.test.mjs can run this file against stand-ins; the owner sets none, except
-# CUTOVER_BRANCH_ALLOWLIST: the branch names (space-separated) the owner has approved to skip in the branch check of step 2 (empty by default).
+# The CUTOVER_* variables exist so that scripts/eng/delivery-cutover.test.mjs can run this file against stand-ins; the owner sets none.
 set -uo pipefail
 export AWS_PAGER="" AWS_REGION=eu-central-1 AWS_DEFAULT_REGION=eu-central-1
 
@@ -41,7 +40,6 @@ WORKFLOWS_JSON="$ROOT/scripts/eng/github-workflows.json"
 STATE_FILE="${CUTOVER_STATE:-}"
 KILL_WAIT_SECONDS="${CUTOVER_KILL_WAIT_SECONDS:-600}"
 DEPLOY_WAIT_SECONDS="${CUTOVER_DEPLOY_WAIT_SECONDS:-2700}"   # how long the wait for a staging redeploy of GitHub Actions may take
-BRANCH_ALLOWLIST="${CUTOVER_BRANCH_ALLOWLIST:-}"             # branches the owner approved to skip in step 2's branch check (space-separated)
 LOCK_NAME="$SECRET_PREFIX/lock"
 LOCK_STALE_SECONDS=21600     # --break-lock clears only a lock older than 6 hours
 RESUME_MAX_SECONDS=86400     # apply resumes a recorded cut without the checklist only within 24 hours
@@ -206,22 +204,27 @@ echo "bridge_tick_done=$(printf '%s\n' "$out" | grep -c '"event":"tick_done"')"
 REMOTE
 }
 r_gitlab_main() {   # repo: the sha of main and every branch with its head (branch=<name> <sha>) of the GitLab project (read only, bot-metrics token through stdin)
+  # Systems Manager returns only the first 24,000 characters of a result, so a longer listing loses its end. listing=complete is the last line and
+  # is printed only after every page was read; a page that is not a JSON list fails the script. The callers refuse a result without that line.
   rhead read gitlab-main; printf 'REPO=%q\n' "$1"
   cat <<'REMOTE'
 api() { printf 'header = "PRIVATE-TOKEN: %s"\n' "$(cat /etc/vitana/bot-metrics-token)" | curl -sS --config - "http://127.0.0.1/api/v4/projects/vitana%2F$REPO/$1"; }
 echo "main_sha=$(api 'repository/branches/main' | jq -r '.commit.id // "none"')"
 page=1; names=""; truncated=0
 while [ "$page" -le 30 ]; do
-  chunk="$(api "repository/branches?per_page=100&page=$page" | jq -r '.[] | "\(.name) \(.commit.id)"' 2>/dev/null)"
+  body="$(api "repository/branches?per_page=100&page=$page")"
+  jq -e 'type == "array"' <<<"$body" >/dev/null 2>&1 || { echo "page $page of the GitLab branches is not a list" >&2; exit 1; }
+  chunk="$(jq -r '.[] | "\(.name) \(.commit.id)"' <<<"$body")"
   [ -n "$chunk" ] || break
   names="$names$chunk
 "
-  [ "$(printf '%s\n' "$chunk" | wc -l)" -ge 100 ] || break
+  [ "$(jq 'length' <<<"$body")" -ge 100 ] || break
   [ "$page" -lt 30 ] || truncated=1
   page=$((page + 1))
 done
 echo "truncated=$truncated"
 printf '%s' "$names" | sed 's/^/branch=/'
+echo "listing=complete"
 REMOTE
 }
 r_variable() {   # repo: the project variable DELIVERY_MODE (read only; the admin token of the sync is read from its root-only file through stdin)
@@ -291,10 +294,10 @@ r_tag_delete() {
 printf 'header = "PRIVATE-TOKEN: %s"\n' "$(cat /etc/vitana/bot-land-token)" | curl -sS --config - -X DELETE -o /dev/null -w 'tag_delete_http=%{http_code}\n' "http://127.0.0.1/api/v4/projects/vitana%2F$REPO/repository/tags/delivery%2Fcutover-$REPO"
 REMOTE
 }
-r_mirror_final() {   # run the GitHub-to-GitLab copy once more
+r_mirror_final() {   # run the GitHub-to-GitLab copy once more; the script exits with the unit's result, so a failed copy fails step 2
   rhead write mirror-final
   cat <<'REMOTE'
-systemctl start vitana-mirror.service; echo "mirror_exit=$?"
+systemctl start vitana-mirror.service; rc=$?; echo "mirror_exit=$rc"; exit $rc
 REMOTE
 }
 
@@ -727,12 +730,11 @@ gitlab_main_of() { ssm_run "$(r_gitlab_main "$1")" 30; kv main_sha; }
 # The copy below only adds the branches GitHub has: mirror.sh pushes without force and without prune, so it moves no GitLab ref that differs and
 # deletes none. The cut still refuses any difference before the copy runs: every GitLab branch must have the same head on GitHub (GitLab-only,
 # behind, ahead or diverged). The rollback's check (rb_branch_check in delivery-rollback.sh) refuses only what a copy would lose, so it allows a
-# head that GitHub is ahead of. The bot refs train/* and assist/* are GitLab-only by design and are left out. A branch named in
-# CUTOVER_BRANCH_ALLOWLIST is skipped.
+# head that GitHub is ahead of. The bot refs train/* and assist/* are GitLab-only by design and are left out.
 copy_branch_check() {   # repo -> 0 when every GitLab branch of it has the same head on GitHub; otherwise it prints them and returns 1
   local r="$1" gh gl name sha ghsha why bad=""
-  if ! ssm_run "$(r_gitlab_main "$r")" 30 || [ -z "$(kv main_sha)" ] || [ "$(kv main_sha)" = none ]; then
-    say "  the branches of GitLab $r cannot be read (Systems Manager status ${SSM_STATUS:-unknown}): nothing is copied"; return 1
+  if ! ssm_run "$(r_gitlab_main "$r")" 30 || [ -z "$(kv main_sha)" ] || [ "$(kv main_sha)" = none ] || [ "$(kv listing)" != complete ]; then
+    say "  the branches of GitLab $r cannot be read in full (Systems Manager status ${SSM_STATUS:-unknown}): nothing is copied. Systems Manager returns at most 24,000 characters of output"; return 1
   fi
   if [ "$(kv truncated)" = 1 ]; then
     say "  GitLab lists more than 3000 branches of $r, so the check cannot see them all: nothing is copied. Delete stale branches on GitLab, then run this again"; return 1
@@ -746,10 +748,9 @@ copy_branch_check() {   # repo -> 0 when every GitLab branch of it has the same 
     ghsha="$(awk -F'\t' -v n="$name" '$1 == n { print $2; exit }' <<<"$gh")"
     if [ -n "$ghsha" ] && [ "$ghsha" = "$sha" ]; then continue; fi
     if [ -z "$ghsha" ]; then why="exists only on GitLab"; else why="GitLab head ${sha:0:12} differs from GitHub's ${ghsha:0:12}"; fi
-    case " $BRANCH_ALLOWLIST " in *" $name "*) say "  $r $name $why: skipped, it is on CUTOVER_BRANCH_ALLOWLIST"; continue ;; esac
     say "  $r $name $why"; bad=1
   done <<<"$gl"
-  [ -z "$bad" ] || { say "  nothing is copied. Make each head equal on both sides: push GitLab-only commits to GitHub; for a diverged head, merge GitHub's head into the GitLab branch and push that to GitHub; when GitHub is ahead, run the copy (systemctl start vitana-mirror.service on the GitLab machine). Or list the branches you approve to skip in CUTOVER_BRANCH_ALLOWLIST. Then run this again"; return 1; }
+  [ -z "$bad" ] || { say "  nothing is copied. Make each head equal on both sides: push GitLab-only commits to GitHub; for a diverged head, merge GitHub's head into the GitLab branch and push that to GitHub; when GitHub is ahead, run the copy (systemctl start vitana-mirror.service on the GitLab machine). Then run this again"; return 1; }
 }
 step2() {
   local r gh gl
@@ -865,10 +866,14 @@ step8() {
 }
 
 step_done() {   # n -> 0 when the world already shows step n
-  local r f out state
+  local r f out state gh gl
   case "$1" in
     1) for r in "${REPOS[@]}"; do gh_protection "$r" && is_cut_lock "$PROT_JSON" "$MIRROR" || return 1; done ;;
-    2) ssm_run "$(r_probe)" 30; case "$(kv mirror_timer)" in disabled|masked) ;; *) return 1 ;; esac ;;
+    2) ssm_run "$(r_probe)" 30
+       kv marker | grep -q '"mode":"live"' && return 0   # the cut is past step 2: the branches are not checked again
+       case "$(kv mirror_timer)" in disabled|masked) ;; *) return 1 ;; esac   # a running copy timer means step 2 still has to stop it
+       for r in "${REPOS[@]}"; do copy_branch_check "$r" >/dev/null || return 1; done
+       for r in "${REPOS[@]}"; do gh="$(main_sha "$r")"; gl="$(gitlab_main_of "$r")"; { [ -n "$gh" ] && [ "$gh" = "$gl" ]; } || return 1; done ;;
     3) ssm_run "$(r_probe)" 30; kv marker | grep -q '"mode":"live"' && [ "$(kv settings_check)" = 0 ] || return 1 ;;
     4) for r in "${REPOS[@]}"; do out="$(gh_workflows "$r")"; for f in $(wf_names "$r" disable); do [ "$(wf_state "$out" "$f")" = active ] && return 1; done; done ;;
     5) ssm_run "$(r_probe)" 30; [ "$(kv bridge_active)" = active ] || return 1 ;;

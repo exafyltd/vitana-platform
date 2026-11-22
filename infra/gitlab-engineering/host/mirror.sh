@@ -3,13 +3,15 @@
 # systemd timer). GitHub stays the source of truth. Idle until the GitHub read-only token is stored in
 # Secrets Manager (vitana/engineering/gitlab/github-mirror-token).
 set -uo pipefail
+scrub() { sed -e "s/$GH/***/g" -e "s/$GL/***/g"; }   # git can echo URLs with credentials in error messages; GH and GL are set below, before any push
 
 # push_repo cache-dir gitlab-url repo: main first (it becomes the default branch of an empty GitLab project), then every other head and tag.
 # Neither push forces or prunes. A branch or tag that exists only on GitLab stays. git moves a GitLab ref only when GitHub's value descends from
 # it; a diverged head, a tag that differs, or a GitLab head that GitHub does not contain is refused and kept, and the push reports it.
 push_repo() {
-  git -C "$1" push -q "$2" refs/heads/main:refs/heads/main || { echo "push main failed: $3"; return 1; }
-  git -C "$1" push -q "$2" 'refs/heads/*:refs/heads/*' 'refs/tags/*:refs/tags/*' || { echo "push all failed: $3"; return 1; }
+  local d="$1"
+  git -C "$d" push -q "$2" refs/heads/main:refs/heads/main 2>&1 | scrub || { echo "push main failed: $3"; return 1; }
+  git -C "$d" push -q "$2" 'refs/heads/*:refs/heads/*' 'refs/tags/*:refs/tags/*' 2>&1 | scrub || { echo "push all failed: $3"; return 1; }
 }
 # The tests in scripts/eng/test-d-delivery source this file to call push_repo. They stop here: nothing below runs on that path.
 if [ "${BASH_SOURCE[0]}" != "$0" ]; then return 0; fi
@@ -25,7 +27,6 @@ GL="$(cat /etc/vitana/mirror-token 2>/dev/null || true)"
 
 mkdir -p /var/lib/vitana-mirror
 rc=0
-scrub() { sed -e "s/$GH/***/g" -e "s/$GL/***/g"; }   # git can echo URLs with credentials in error messages
 for repo in vitana-platform vitana-v1; do
   d="/var/lib/vitana-mirror/$repo.git"
   [ -d "$d" ] || git init --bare -q "$d"

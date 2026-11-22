@@ -3,9 +3,10 @@
 # copy on the GitLab machine (infra/gitlab-engineering/host/mirror.sh).   bash scripts/eng/test-d-delivery/run.sh
 # Nothing here reaches AWS, GitHub or GitLab. Every repository is a local bare repository under a temporary folder. Each network-facing command
 # (aws, gh, curl, ssh, wget, ssm) is a stub first on PATH: it writes its call to a log and fails, and the log must stay empty. The cut and the
-# rollback read GitHub and the GitLab machine through in-process fakes that answer from those local repositories. The GitHub fake refuses and logs
-# any write. The machine fake logs every script, and the runner fails a case whose log shows a state-changing one. Exit: 0 when every case passes
-# and no stub was called, 1 otherwise.
+# rollback read GitHub through in-process fakes that answer from those repositories; the GitHub fake refuses and logs any write. The GitLab machine
+# is faked as well: its branch listing and its final copy run the real script text under sh, with a curl and a systemctl that answer from the local
+# repositories, and the listing output is cut to 24,000 characters as Systems Manager cuts it. The runner fails a case whose log shows a state-changing script the case did not
+# expect. Exit: 0 when every case passes and no stub was called, 1 otherwise.
 # This file never runs scripts/eng/delivery-cutover.test.mjs.
 set -uo pipefail
 
@@ -16,8 +17,8 @@ RB="$REPO/scripts/eng/delivery-rollback.sh"
 MIRROR="$REPO/infra/gitlab-engineering/host/mirror.sh"
 
 T="$(mktemp -d "${TMPDIR:-/tmp}/test-d-delivery.XXXXXX")" || { echo "cannot make a temporary folder" >&2; exit 1; }
-STUBS="$T/stubs"; STUB_LOG="$T/stub-calls.log"
-mkdir -p "$STUBS" "$T/home"; : > "$STUB_LOG"
+STUBS="$T/stubs"; STUB_LOG="$T/stub-calls.log"; MACHINE_BIN="$T/machine/bin"
+mkdir -p "$STUBS" "$T/home" "$MACHINE_BIN"; : > "$STUB_LOG"
 for c in aws gh curl ssh wget ssm; do
   cat > "$STUBS/$c" <<STUB
 #!/bin/bash
@@ -27,11 +28,39 @@ exit 99
 STUB
   chmod +x "$STUBS/$c"
 done
+# The GitLab machine's own curl. It is first on the PATH of the fake machine's sh only (fake_ssm), never on the PATH of the cut.
+cat > "$MACHINE_BIN/curl" <<'MACHINE'
+#!/bin/bash
+# FAKE_GITLAB_DIR: the GitLab repositories. FAKE_PAGE_FAIL=N: page N answers with an error body, as GitLab does on a server error.
+cat >/dev/null   # the token header comes on stdin; this fake does not use it
+url="${*: -1}"
+repo="$(sed -n 's#.*/projects/vitana%2F\([^/]*\)/.*#\1#p' <<<"$url")"
+case "$url" in
+  *"/repository/branches/main")
+    sha="$(git -C "$FAKE_GITLAB_DIR/$repo.git" rev-parse -q --verify refs/heads/main 2>/dev/null)" || { printf '%s' '{"message":"404 Branch Not Found"}'; exit 0; }
+    printf '{"name":"main","commit":{"id":"%s"}}' "$sha" ;;
+  *"/repository/branches?per_page=100&page="*)
+    page="${url##*page=}"
+    [ "$page" != "${FAKE_PAGE_FAIL:-0}" ] || { printf '%s' '{"message":"500 Internal Server Error"}'; exit 0; }
+    git -C "$FAKE_GITLAB_DIR/$repo.git" for-each-ref --format='%(refname:strip=2) %(objectname)' refs/heads/ \
+      | sed -n "$(( (page - 1) * 100 + 1 )),$(( page * 100 ))p" \
+      | jq -R -s 'split("\n") | map(select(length > 0) | split(" ") | {name: .[0], commit: {id: .[1]}})' ;;
+  *) echo "test-d-delivery: the fake GitLab API has no answer for $url" >&2; exit 99 ;;
+esac
+MACHINE
+chmod +x "$MACHINE_BIN/curl"
+# The copy's unit on the fake machine: it fails when FAKE_MIRROR_FINAL=fail (git refused a push), as systemctl start does for a failed unit.
+cat > "$MACHINE_BIN/systemctl" <<'MACHINE'
+#!/bin/bash
+[ "${FAKE_MIRROR_FINAL:-}" = fail ] || exit 0
+echo "vitana-mirror.service: push all failed: vitana-platform" >&2; exit 1
+MACHINE
+chmod +x "$MACHINE_BIN/systemctl"
 export PATH="$STUBS:$PATH" HOME="$T/home"
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_TERMINAL_PROMPT=0
 export GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@example.invalid GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@example.invalid
 unset AWS_PROFILE AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN GH_TOKEN GITHUB_TOKEN
-unset CUTOVER_BRANCH_ALLOWLIST CUTOVER_ROOT CUTOVER_STATE CUTOVER_MIRROR_WAIT_SECONDS
+unset CUTOVER_ROOT CUTOVER_STATE CUTOVER_MIRROR_WAIT_SECONDS
 
 # ---- fixtures: a GitHub and a GitLab bare repository for each repo, main at the same commit on both; src holds the commits -----------------------
 src_sha() { git -C "$FX/src/$1" rev-parse "$2"; }
@@ -41,6 +70,11 @@ put() {   # gh|gl repo ref sha: sets a branch (or a refs/ name) of the local Git
   if [ "$side" = gh ]; then dir="$FX_GH"; else dir="$FX_GL"; fi
   case "$ref" in refs/*) ;; *) ref="refs/heads/$ref" ;; esac
   git -C "$FX/src/$r" push -q -f "$dir/$r.git" "$sha:$ref"
+}
+bulk() {   # gh|gl repo prefix first last sha: creates the branches prefix001 .. prefix<last> at sha (fixture setup; many branches in one call)
+  local side="$1" r="$2" prefix="$3" first="$4" last="$5" sha="$6" dir i
+  if [ "$side" = gh ]; then dir="$FX_GH"; else dir="$FX_GL"; fi
+  for ((i = first; i <= last; i++)); do printf 'create refs/heads/%s%03d %s\n' "$prefix" "$i" "$sha"; done | git -C "$dir/$r.git" update-ref --stdin
 }
 fx_new() {   # a folder for the current case: GitHub and GitLab bare repositories with main at the same commit
   local r
@@ -56,6 +90,11 @@ fx_new() {   # a folder for the current case: GitHub and GitLab bare repositorie
     put gh "$r" main "$(src_sha "$r" main)"
     put gl "$r" main "$(src_sha "$r" main)"
   done
+}
+branch_fixture() {   # 100 branches equal on both sides (GitLab page 1), then three GitLab-only branches that sort after them (GitLab page 2)
+  local sha; sha="$(src_sha vitana-platform main)"
+  bulk gh vitana-platform feature/b 1 100 "$sha"
+  bulk gl vitana-platform feature/b 1 103 "$sha"
 }
 mk_cache() { rm -rf "$FX/cache"; mkdir -p "$FX/cache"; git clone -q --mirror "$FX_GH/$1.git" "$FX/cache/$1.git"; }   # repo: the copy's cache, from GitHub
 gl_ref() { git -C "$FX_GL/$1.git" rev-parse -q --verify "refs/heads/$2" 2>/dev/null || echo none; }   # repo branch -> GitLab head or none
@@ -91,23 +130,25 @@ fake_gh() {   # the GitHub API calls of the cut and the rollback: reads only, fr
     *) echo "UNEXPECTED gh api $path" >> "$FX_GH_LOG"; return 1 ;;
   esac
 }
-fake_ssm() {   # the Systems Manager call of the cut: nothing runs on a machine. Reads come from the local GitLab repositories. The first line of
-  # every script is logged, so a state-changing script shows up in the log ("vitana-cutover: write ...")
-  local hdr repo main
+fake_ssm() {   # the Systems Manager call of the cut: nothing runs on a machine except the GitLab branch listing and the final copy, which run their real
+  # script text under sh on the fake machine (its curl and systemctl answer from the local repositories). Every other read and write is answered here. The first line of
+  # each script is logged, so a state-changing script shows up in the log ("vitana-cutover: write ...").
+  local hdr full rc=0
   hdr="$(head -n 1 <<<"$1")"
   printf '%s\n' "$hdr" >> "$FX_SSM_LOG"
-  repo="$(sed -n 's/^REPO=//p' <<<"$1" | head -n 1)"
   SSM_CID=fake-command; SSM_ERR=""; SSM_STATUS=Success; SSM_OUT=""
   case "$hdr" in
     *"read gitlab-main"*)
       if [ "${FAKE_SSM_FAIL:-}" = gitlab-main ]; then SSM_STATUS=Failed; SSM_ERR="fake failure"; return 1; fi
-      main="$(git -C "$FX_GL/$repo.git" rev-parse -q --verify refs/heads/main 2>/dev/null)" || main=none
-      SSM_OUT="$( printf 'main_sha=%s\ntruncated=%s\n' "${main:-none}" "${FAKE_TRUNCATED:-0}"
-        git -C "$FX_GL/$repo.git" for-each-ref --format='branch=%(refname:strip=2) %(objectname)' refs/heads/ )" ;;
-    *"read probe"*) SSM_OUT="marker=${FAKE_MARKER:-none}" ;;
-    *"write mirror-final"*) SSM_OUT="mirror_exit=0" ;;
+      full="$(PATH="$MACHINE_BIN:$PATH" FAKE_GITLAB_DIR="$FX_GL" FAKE_PAGE_FAIL="${FAKE_PAGE_FAIL:-0}" sh -c "$1" 2>>"$FX/tmp/machine.err")"; rc=$?
+      SSM_OUT="$(head -c 24000 <<<"$full")"   # Systems Manager keeps only the first 24,000 characters of the output
+      [ "$rc" = 0 ] || { SSM_STATUS=Failed; SSM_ERR="the script exited $rc"; } ;;
+    *"read probe"*) SSM_OUT="$(printf 'marker=%s\nmirror_timer=%s' "${FAKE_MARKER:-none}" "${FAKE_MIRROR_TIMER:-enabled}")" ;;
+    *"write mirror-final"*)   # the script's own exit status decides, as it does in Systems Manager
+      full="$(PATH="$MACHINE_BIN:$PATH" FAKE_MIRROR_FINAL="${FAKE_MIRROR_FINAL:-}" sh -c "$1" 2>>"$FX/tmp/machine.err")"; rc=$?
+      SSM_OUT="$full"; [ "$rc" = 0 ] || { SSM_STATUS=Failed; SSM_ERR="the script exited $rc"; } ;;
   esac
-  return 0
+  [ "$SSM_STATUS" = Success ]
 }
 install_fakes() { ssm_run() { fake_ssm "$@"; }; x_gh() { fake_gh "$@"; }; }
 
@@ -122,12 +163,15 @@ invoke() {   # script dry-run snippet: in a subshell, sources the script, instal
   ) 2>&1 )"
   RC=$?
 }
-mirror_push() { invoke "$MIRROR" 0 "push_repo '$FX/cache/$1.git' '$FX_GL/$1.git' $1"; }
+mirror_push() {   # the copy of the GitHub cache into the GitLab repository, through mirror.sh push_repo; GH and GL are stand-in tokens for scrub
+  local GH=test-github-token GL=test-gitlab-token
+  invoke "$MIRROR" 0 "push_repo '$FX/cache/$1.git' '$FX_GL/$1.git' $1"
+}
 rb_run() { CUTOVER_MIRROR_WAIT_SECONDS=0 invoke "$RB" 0 "$1"; }
 
 # ---- assertions and the report -----------------------------------------------------------------------------------------------------------------
-BAD=""; ID=""; CASE=""; WHAT=""; WANT=""; PASS=0; FAIL=0
-begin() { ID="$1"; CASE="$2"; WHAT="$3"; WANT="$4"; BAD=""; }
+BAD=""; ID=""; CASE=""; WHAT=""; WANT=""; PASS=0; FAIL=0; WRITES_OK=0
+begin() { ID="$1"; CASE="$2"; WHAT="$3"; WANT="$4"; BAD=""; WRITES_OK=0; }
 need_rc() { [ "$RC" = "$WANT" ] || BAD="$BAD exit $RC, want $WANT;"; }
 need_text() { grep -qF -- "$1" <<<"$OUT" || BAD="$BAD output lacks '$1';"; }
 no_text() { grep -qF -- "$1" <<<"$OUT" && BAD="$BAD output has '$1';"; return 0; }
@@ -135,7 +179,7 @@ no_copy() { grep -q 'mirror-final' "$FX_SSM_LOG" && BAD="$BAD the copy was start
 no_protection_read() { grep -q 'protection' "$FX_GH_LOG" && BAD="$BAD GitHub protection was read;"; return 0; }
 end() {
   grep -q UNEXPECTED "${FX_GH_LOG:-/dev/null}" && BAD="$BAD an unexpected GitHub call;"
-  grep -q 'vitana-cutover: write' "${FX_SSM_LOG:-/dev/null}" && BAD="$BAD a state-changing script reached the fake;"
+  [ "${WRITES_OK:-0}" = 1 ] || { grep -q 'vitana-cutover: write' "${FX_SSM_LOG:-/dev/null}" && BAD="$BAD a state-changing script reached the fake;"; }
   local status
   if [ -z "$BAD" ]; then PASS=$((PASS + 1)); status=ok; else FAIL=$((FAIL + 1)); status="FAIL:$BAD"; fi
   printf '%-4s %-4s %-44s %s | %s\n' "$ID" "$RC" "$CASE" "$WHAT" "$status"
@@ -174,6 +218,12 @@ t_b3_github_main_missing_refused() {
   invoke "$CUT" 1 'MIRROR=mirror-test; step1'
   need_rc; need_text "GitHub main of vitana-platform is unknown"; end
 }
+t_b4_gitlab_main_unreadable_refused() {
+  begin b4 t_b4_gitlab_main_unreadable_refused "GitLab main cannot be read: step 1 refuses before it reads any GitHub protection" 1
+  fx_new
+  FAKE_SSM_FAIL=gitlab-main invoke "$CUT" 1 'MIRROR=mirror-test; step1'
+  need_rc; need_text "GitLab main is unknown"; no_protection_read; end
+}
 t_c_gitlab_only_branch_refused() {
   begin c t_c_gitlab_only_branch_refused "a branch exists only on GitLab: step 2 refuses before the copy" 1
   fx_new
@@ -208,14 +258,17 @@ t_c4_gitlab_ahead_branch_refused() {
   invoke "$CUT" 0 'step2'
   need_rc; need_text "differs from GitHub's"; no_copy; end
 }
-t_c5_truncated_listing_refused() {
-  begin c5 t_c5_truncated_listing_refused "GitLab lists more than 3000 branches: step 2 refuses" 1
+t_c5_listing_over_24000_refused() {
+  begin c5 t_c5_listing_over_24000_refused "GitLab-only branch sorted after the first 24,000 characters: step 2 refuses, the cut cannot see it" 1
   fx_new
-  FAKE_TRUNCATED=1 invoke "$CUT" 0 'step2'
-  need_rc; need_text "more than 3000"; no_copy; end
+  local sha; sha="$(src_sha vitana-platform main)"
+  bulk gh vitana-platform feature/a 1 420 "$sha"; bulk gl vitana-platform feature/a 1 420 "$sha"
+  put gl vitana-platform zz/gitlab-only "$(cm vitana-platform "$sha" "gitlab only")"
+  invoke "$CUT" 0 'step2'
+  need_rc; need_text "cannot be read in full"; no_text "zz/gitlab-only"; no_copy; end
 }
 t_c6_gitlab_unreadable_refused() {
-  begin c6 t_c6_gitlab_unreadable_refused "the GitLab branches cannot be read: step 2 refuses" 1
+  begin c6 t_c6_gitlab_unreadable_refused "the GitLab branch list cannot be read: step 2 refuses" 1
   fx_new
   FAKE_SSM_FAIL=gitlab-main invoke "$CUT" 0 'step2'
   need_rc; need_text "cannot be read"; no_copy; end
@@ -226,21 +279,33 @@ t_c7_github_listing_failed_refused() {
   FAKE_GH_FAIL=list invoke "$CUT" 0 'step2'
   need_rc; need_text "GitHub did not list the branches"; no_copy; end
 }
-t_d_allowlisted_gitlab_only_passes() {
-  begin d t_d_allowlisted_gitlab_only_passes "a GitLab-only branch named in CUTOVER_BRANCH_ALLOWLIST is skipped (dry run)" 0
+t_c8_gitlab_page1_failed_refused() {
+  begin c8 t_c8_gitlab_page1_failed_refused "GitLab page 1 of the branches fails: step 2 refuses, nothing is copied" 1
   fx_new
-  put gl vitana-platform feature/gl-only "$(cm vitana-platform "$(src_sha vitana-platform main)" "gitlab only")"
-  CUTOVER_BRANCH_ALLOWLIST="feature/gl-only" invoke "$CUT" 1 'step2'
-  need_rc; need_text "skipped, it is on CUTOVER_BRANCH_ALLOWLIST"; end
+  branch_fixture
+  FAKE_PAGE_FAIL=1 invoke "$CUT" 0 'step2'
+  need_rc; need_text "cannot be read in full"; no_copy; end
 }
-t_d2_allowlisted_diverged_passes() {
-  begin d2 t_d2_allowlisted_diverged_passes "a diverged branch named in CUTOVER_BRANCH_ALLOWLIST is skipped (dry run)" 0
+t_c9_gitlab_page2_failed_refused() {
+  begin c9 t_c9_gitlab_page2_failed_refused "GitLab page 2 fails (its branches are GitLab-only): step 2 refuses, the copy is not started" 1
   fx_new
-  local base; base="$(src_sha vitana-platform main)"
-  put gh vitana-platform feature/y "$(cm vitana-platform "$base" "github side")"
-  put gl vitana-platform feature/y "$(cm vitana-platform "$base" "gitlab side")"
-  CUTOVER_BRANCH_ALLOWLIST="feature/y" invoke "$CUT" 1 'step2'
-  need_rc; need_text "skipped, it is on CUTOVER_BRANCH_ALLOWLIST"; end
+  branch_fixture
+  FAKE_PAGE_FAIL=2 invoke "$CUT" 0 'step2'
+  need_rc; need_text "cannot be read in full"; no_text "exists only on GitLab"; no_copy; end
+}
+t_c10_gitlab_page2_read_when_complete() {
+  begin c10 t_c10_gitlab_page2_read_when_complete "control: with no failure page 2 is read, and its GitLab-only branch is refused" 1
+  fx_new
+  branch_fixture
+  invoke "$CUT" 0 'step2'
+  need_rc; need_text "vitana-platform feature/b103 exists only on GitLab"; no_copy; end
+}
+t_c11_gitlab_main_missing_refused() {
+  begin c11 t_c11_gitlab_main_missing_refused "GitLab has no main: step 2 refuses before the copy" 1
+  fx_new
+  git -C "$FX_GL/vitana-platform.git" update-ref -d refs/heads/main
+  invoke "$CUT" 0 'step2'
+  need_rc; need_text "cannot be read in full"; no_copy; end
 }
 t_e_bot_refs_not_checked() {
   begin e t_e_bot_refs_not_checked "GitLab-only train/* and assist/* branches are left out of the check (dry run)" 0
@@ -262,6 +327,42 @@ t_g_github_only_branch_passes() {
   put gh vitana-platform feature/gh-only "$(src_sha vitana-platform main)"
   invoke "$CUT" 1 'step2'
   need_rc; end
+}
+t_h1_timer_disabled_not_done() {
+  begin h1 t_h1_timer_disabled_not_done "copy timer stopped by hand, a GitLab-only branch: step 2 is not skipped and refuses" 1
+  fx_new
+  put gl vitana-platform feature/gl-only "$(cm vitana-platform "$(src_sha vitana-platform main)" "gitlab only")"
+  FAKE_MIRROR_TIMER=disabled invoke "$CUT" 0 'step_done 2 || step2'
+  need_rc; need_text "exists only on GitLab"; no_copy; end
+}
+t_h2_timer_disabled_equal_done() {
+  begin h2 t_h2_timer_disabled_equal_done "copy timer stopped and every branch equal: step 2 counts as done" 0
+  fx_new
+  FAKE_MIRROR_TIMER=disabled invoke "$CUT" 0 'step_done 2'
+  need_rc; end
+}
+t_h3_timer_enabled_not_done() {
+  begin h3 t_h3_timer_enabled_not_done "copy timer still enabled: step 2 is not done (it must stop the timer)" 1
+  fx_new
+  invoke "$CUT" 0 'step_done 2'
+  need_rc; end
+}
+t_h4_marker_live_done() {
+  begin h4 t_h4_marker_live_done "cutover marker live: step 2 counts as done, the GitLab-only branch is not checked again" 0
+  fx_new
+  put gl vitana-platform feature/gl-only "$(cm vitana-platform "$(src_sha vitana-platform main)" "gitlab only")"
+  FAKE_MARKER='{"mode":"live"}' invoke "$CUT" 0 'step_done 2'
+  need_rc; end
+}
+t_n1_failed_copy_stops_cut() {
+  begin n1 t_n1_failed_copy_stops_cut "the final copy fails (mirror_exit=1): step 2 stops and does not stop the copy timer" 1
+  fx_new
+  WRITES_OK=1
+  FAKE_MIRROR_FINAL=fail invoke "$CUT" 0 'step2'
+  need_rc; need_text "Systems Manager status Failed"
+  grep -q 'write mirror-final' "$FX_SSM_LOG" || BAD="$BAD the copy was not started;"
+  grep -q 'write unit' "$FX_SSM_LOG" && BAD="$BAD a later step ran (the copy timer was stopped);"
+  end
 }
 
 t_m1_gitlab_only_branch_kept() {
@@ -335,6 +436,17 @@ t_m6_control_forced_prune_destroys_refs() {
   [ "$(gl_ref vitana-platform feature/d)" = "$q" ] || BAD="$BAD the old command did not rewind the diverged head;"
   end
 }
+t_m7_gitlab_head_ahead_refused() {
+  begin m7 t_m7_gitlab_head_ahead_refused "mirror: a GitLab head ahead of GitHub's (not main) is refused by git and kept" 1
+  fx_new
+  local base p; base="$(src_sha vitana-platform main)"; p="$(cm vitana-platform "$base" "gitlab child")"
+  put gh vitana-platform feature/ahead "$base"; put gl vitana-platform feature/ahead "$p"
+  mk_cache vitana-platform
+  mirror_push vitana-platform
+  need_rc; need_text "push all failed: vitana-platform"
+  [ "$(gl_ref vitana-platform feature/ahead)" = "$p" ] || BAD="$BAD the GitLab head was moved;"
+  end
+}
 
 t_r1_gitlab_only_branch_refused_without_confirm() {
   begin r1 t_r1_gitlab_only_branch_refused_without_confirm "rollback: a GitLab-only branch without --confirm-prune-gitlab-only-branches: refused, nothing restarted" 1
@@ -368,15 +480,26 @@ t_r4_main_not_equal_refused() {
   rb_run 'CONFIRM_PRUNE=0; rb2'
   need_rc; need_text "is not GitLab main"; end
 }
+t_r5_gitlab_page2_failed_refused() {
+  begin r5 t_r5_gitlab_page2_failed_refused "rollback: GitLab page 2 of the branches fails: refused, nothing restored" 1
+  fx_new
+  branch_fixture
+  FAKE_PAGE_FAIL=2 rb_run 'CONFIRM_PRUNE=0; rb2'
+  need_rc; need_text "cannot be read in full"; end
+}
 
 TESTS=(
   t_syntax t_a_equal_mains_dry_run t_b_gitlab_main_ahead_refused t_b2_github_main_ahead_refused t_b3_github_main_missing_refused
-  t_c_gitlab_only_branch_refused t_c2_diverged_branch_refused t_c3_github_ahead_branch_refused t_c4_gitlab_ahead_branch_refused
-  t_c5_truncated_listing_refused t_c6_gitlab_unreadable_refused t_c7_github_listing_failed_refused t_d_allowlisted_gitlab_only_passes
-  t_d2_allowlisted_diverged_passes t_e_bot_refs_not_checked t_f_live_marker_refused t_g_github_only_branch_passes
+  t_b4_gitlab_main_unreadable_refused t_c_gitlab_only_branch_refused t_c2_diverged_branch_refused t_c3_github_ahead_branch_refused
+  t_c4_gitlab_ahead_branch_refused t_c5_listing_over_24000_refused t_c6_gitlab_unreadable_refused t_c7_github_listing_failed_refused
+  t_c8_gitlab_page1_failed_refused t_c9_gitlab_page2_failed_refused t_c10_gitlab_page2_read_when_complete t_c11_gitlab_main_missing_refused
+  t_e_bot_refs_not_checked t_f_live_marker_refused t_g_github_only_branch_passes
+  t_h1_timer_disabled_not_done t_h2_timer_disabled_equal_done t_h3_timer_enabled_not_done t_h4_marker_live_done
   t_m1_gitlab_only_branch_kept t_m2_diverged_head_refused t_m3_differing_tag_refused t_m4_github_ahead_head_moves
-  t_m5_gitlab_main_ahead_stops_push t_m6_control_forced_prune_destroys_refs
-  t_r1_gitlab_only_branch_refused_without_confirm t_r2_gitlab_commits_not_on_github_refused t_r3_github_ahead_allowed t_r4_main_not_equal_refused
+  t_m5_gitlab_main_ahead_stops_push t_m6_control_forced_prune_destroys_refs t_m7_gitlab_head_ahead_refused
+  t_n1_failed_copy_stops_cut
+  t_r1_gitlab_only_branch_refused_without_confirm t_r2_gitlab_commits_not_on_github_refused t_r3_github_ahead_allowed
+  t_r4_main_not_equal_refused t_r5_gitlab_page2_failed_refused
 )
 printf '%-4s %-4s %-44s %s\n' "id" "exit" "test" "what | result"
 for t in "${TESTS[@]}"; do "$t"; done
