@@ -2,15 +2,19 @@
 # Behavior checks for the PostgREST-Aurora proxy route profiles (route isolation, cases B1 to B6).
 #
 # Builds the production profile (default build) and the staging profile (PROXY_TEMPLATE=nginx.staging.conf.template),
-# starts a mock Supabase on a private Docker network under the production auth host name, and sends real HTTP requests
+# starts a mock Supabase on a Docker network under the reserved name mock-supabase.invalid, and sends real HTTP requests
 # to the proxy images. Output: one line per check, "CASE <B-id> PASS <detail>" or "CASE <B-id> FAIL <detail>".
 # Exit status 1 when any check fails. Needs a reachable Docker daemon and openssl. Nothing is skipped: a case that
-# cannot run is reported as FAIL with the reason.
+# cannot run is reported as FAIL with the reason. The mock is the only upstream. The run stops when the mock is not
+# running, and a SUPABASE_AUTH_HOST value other than the mock (or 127.0.0.1) is refused.
 #   bash services/postgrest-aurora-proxy/test-route-isolation/route-isolation.sh
 set -uo pipefail
 
 PROXY_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-AUTH_HOST=inmkhvwdcuyhnxkgfvsb.supabase.co
+# The local mock is the only Supabase auth host this harness uses. The name ends in .invalid, a name RFC 2606 reserves,
+# so no public resolver answers it. Keep production Supabase project refs out of this file.
+MOCK_AUTH_HOST=mock-supabase.invalid
+AUTH_HOST=$MOCK_AUTH_HOST
 PUBLIC_HOST=data.vitanaland.com
 STAGING_TEMPLATE=nginx.staging.conf.template
 RUN_ID="$$"
@@ -40,18 +44,41 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Setup failure: every case reports the same reason, so no case can pass by accident.
+# Stops the run. Every case reports the same reason, so no case can pass by accident.
 abort() {
   local id
-  for id in B1 B2 B3 B4 B5 B6; do fail "$id" "setup failed: $1"; done
+  for id in B1 B2 B3 B4 B5 B6; do fail "$id" "run stopped: $1"; done
   exit 1
+}
+
+# Fails closed when the mock Supabase is not running. It is the only upstream the production profile may reach, so no
+# proxy starts and no request is sent while it is down.
+require_mock() {
+  if [ "$(docker inspect -f '{{.State.Running}}' "$MOCK" 2>/dev/null)" != true ]; then
+    abort "the local mock Supabase is not running"
+  fi
+}
+
+# Refuses a SUPABASE_AUTH_HOST value other than the local mock. The loopback value is the one other value a case uses
+# (B4). Nothing listens there inside the proxy container, so it cannot reach a Supabase host.
+check_auth_host() {
+  case "$1" in
+    "$MOCK_AUTH_HOST" | 127.0.0.1) ;;
+    *) abort "refusing a SUPABASE_AUTH_HOST value that is not the local mock" ;;
+  esac
 }
 
 # Starts a proxy container from IMAGE with optional docker run options, and waits until /alive answers.
 # Sets PORT to the host port. Returns 1 when the container does not come up.
 start_proxy() {
-  local name=$1 image=$2
+  local name=$1 image=$2 arg
   shift 2
+  require_mock
+  for arg in "$@"; do
+    case "$arg" in
+      SUPABASE_AUTH_HOST=*) check_auth_host "${arg#SUPABASE_AUTH_HOST=}" ;;
+    esac
+  done
   CONTAINERS+=("$name")
   docker run -d --name "$name" --network "$NET" -p 127.0.0.1::8080 "$@" "$image" >/dev/null 2>&1 || return 1
   PORT=$(docker port "$name" 8080 2>/dev/null | head -n 1)
@@ -71,6 +98,7 @@ stop_proxy() { docker rm -f "$1" >/dev/null 2>&1 || true; }
 req() {
   local port=$1 path=$2
   shift 2
+  require_mock
   local out="$WORK/resp.$RANDOM$RANDOM" meta
   meta=$(curl -s -m 30 --path-as-is -o "$out" -w '%{http_code} %{content_type}' "$@" "http://127.0.0.1:${port}${path}" 2>/dev/null) || meta="000 "
   R_STATUS=${meta%% *}
@@ -243,6 +271,7 @@ b5() {
 # B6: pairing. The production image with SUPABASE_AUTH_HOST unset renders an upstream without a host and exits.
 b6() {
   local name="b6-$RUN_ID" i state="" code=""
+  require_mock
   CONTAINERS+=("$name")
   if ! docker run -d --name "$name" --network "$NET" "$IMG_PROD" >/dev/null 2>&1; then
     fail B6 "production image could not be started"
@@ -263,6 +292,10 @@ b6() {
 }
 
 # ---- setup
+case "$MOCK_AUTH_HOST" in
+  *.invalid) ;;
+  *) abort "the mock auth host must be a reserved .invalid name" ;;
+esac
 command -v docker >/dev/null 2>&1 || abort "docker is not installed"
 docker info >/dev/null 2>&1 || abort "the Docker daemon is not reachable"
 command -v curl >/dev/null 2>&1 || abort "curl is not installed"
@@ -297,6 +330,7 @@ docker run -d --name "$MOCK" --network "$NET" --network-alias "$AUTH_HOST" \
   -v "$WORK/k.pem:/etc/nginx/mock/k.pem:ro" \
   nginx:1.27-alpine >/dev/null 2>&1 || abort "the mock Supabase container did not start"
 sleep 1
+require_mock
 
 start_proxy "cand-unset-$RUN_ID" "$IMG_STAGING" && CAND_PORT=$PORT
 start_proxy "cand-set-$RUN_ID" "$IMG_STAGING" -e "SUPABASE_AUTH_HOST=$AUTH_HOST" && CAND_SET_PORT=$PORT

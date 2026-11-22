@@ -251,3 +251,37 @@ test('S9 Dockerfile: PROXY_TEMPLATE defaults to the production profile and selec
   assert.deepEqual(cmdNames, IMAGE_FX.allowlist);
   assert.deepEqual([...ALLOWLIST], IMAGE_FX.allowlist);
 });
+
+// ---- S10: F1 guard. Only this file names the production Supabase project (PROD_HOST is the tripwire). The Docker
+// harness uses the reserved .invalid mock name, and its fail-closed guards are wired into the functions that start
+// containers and send requests. The harness runs only under Docker (behavior.test.mjs).
+const PROD_REF = PROD_HOST.split('.')[0];
+
+// Body of a shell function in the harness: the lines from "name() {" through the first later line that is exactly "}".
+function shellFn(src, name) {
+  const lines = src.split('\n');
+  const i = lines.findIndex((l) => l.startsWith(`${name}() {`));
+  assert.notEqual(i, -1, `function ${name} is defined`);
+  const j = lines.indexOf('}', i);
+  assert.notEqual(j, -1, `function ${name} closes`);
+  return lines.slice(i, j + 1).join('\n');
+}
+
+test('S10 route-isolation harness: production project ref only in this file; mock alias is .invalid; guards are wired', () => {
+  const files = [
+    ...fs.readdirSync(HERE).filter((f) => fs.statSync(path.join(HERE, f)).isFile()),
+    ...fs.readdirSync(FX).map((f) => path.join('fixtures', f)),
+  ];
+  const named = files.filter((f) => path.basename(f) !== 'config-contract.test.mjs' && read(path.join(HERE, f)).includes(PROD_REF));
+  assert.deepEqual(named, []);
+  const harness = read(path.join(HERE, 'route-isolation.sh'));
+  assert.match(harness, /^MOCK_AUTH_HOST=mock-supabase\.invalid$/m);
+  assert.match(harness, /^AUTH_HOST=\$MOCK_AUTH_HOST$/m);
+  assert.doesNotMatch(harness, /\.supabase\.(co|com)\b/);
+  assert.match(shellFn(harness, 'require_mock'), /docker inspect/);
+  assert.match(shellFn(harness, 'check_auth_host'), /"\$MOCK_AUTH_HOST" \| 127\.0\.0\.1\)/);
+  assert.match(shellFn(harness, 'start_proxy'), /\brequire_mock\b/);
+  assert.match(shellFn(harness, 'start_proxy'), /check_auth_host "\$\{arg#SUPABASE_AUTH_HOST=\}"/);
+  assert.match(shellFn(harness, 'req'), /\brequire_mock\b/);
+  assert.match(shellFn(harness, 'b6'), /\brequire_mock\b/);
+});
