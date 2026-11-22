@@ -105,7 +105,6 @@ TASK_ROLE="arn:aws:iam::${ACCOUNT_ID}:role/vitana-ecs-task-role"
 PLACEHOLDER_PROXY_IMAGE="public.ecr.aws/docker/library/nginx:1.27-alpine"
 POSTGREST_IMAGE="postgrest/postgrest:v12.2.3"
 AURORA_HOST="vitana-aurora-prod.cluster-cfk228aiedf3.eu-central-1.rds.amazonaws.com"
-SUPABASE_AUTH_HOST="inmkhvwdcuyhnxkgfvsb.supabase.co"
 CPU="512"; MEMORY="1024"
 PROXY_PORT="8080"
 
@@ -169,7 +168,7 @@ provision() {
     --arg proxy_name "$PROXY_CONTAINER" --arg proxy_img "$PLACEHOLDER_PROXY_IMAGE" \
     --arg pg_name "$POSTGREST_CONTAINER" --arg pg_img "$POSTGREST_IMAGE" \
     --arg lg "$LOG_GROUP" --arg region "$REGION" \
-    --arg auth_host "$SUPABASE_AUTH_HOST" --arg db_host "$AURORA_HOST" \
+    --arg db_host "$AURORA_HOST" \
     --arg db_uri_arn "$DB_URI_ARN" --arg jwt_arn "$JWT_ARN" \
     --argjson proxy_port "$PROXY_PORT" '{
     family:$fam, networkMode:"awsvpc", requiresCompatibilities:["FARGATE"], cpu:$cpu, memory:$mem,
@@ -179,7 +178,7 @@ provision() {
       {
         name:$proxy_name, image:$proxy_img, essential:true,
         portMappings:[{containerPort:$proxy_port, protocol:"tcp"}],
-        environment:[{name:"SUPABASE_AUTH_HOST", value:$auth_host}],
+        environment:[],
         healthCheck:{command:["CMD-SHELL","wget -q -O- http://localhost:8080/alive || exit 1"], interval:15, timeout:5, retries:3, startPeriod:10},
         logConfiguration:{logDriver:"awslogs", options:{"awslogs-group":$lg, "awslogs-region":$region, "awslogs-stream-prefix":"proxy"}}
       },

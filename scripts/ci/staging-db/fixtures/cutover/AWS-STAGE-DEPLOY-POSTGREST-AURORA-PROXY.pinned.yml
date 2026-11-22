@@ -141,14 +141,19 @@ jobs:
           TD_ARN=$(aws ecs describe-services --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}" \
             --query 'services[0].taskDefinition' --output text)
           echo "Current task definition: $TD_ARN"
+          # The staging proxy image does not read SUPABASE_AUTH_HOST, so the staging definition drops it (route isolation).
           NEW_DEF=$(aws ecs describe-task-definition --task-definition "$TD_ARN" --query taskDefinition \
             | jq --arg IMG "$IMAGE" --arg NAME "${{ env.PROXY_CONTAINER }}" --arg SEC_DB "$SEC_DB_URI" --arg SEC_JWT "$SEC_JWT" '
                 (.containerDefinitions[] | select(.name == $NAME) | .image) = $IMG
+                | (.containerDefinitions[] | select(.name == $NAME) | .environment) |= [ .[]? | select(.name != "SUPABASE_AUTH_HOST") ]
                 | (.containerDefinitions[] | select(.name != $NAME) | .secrets) =
                     ( [ .secrets[]? | select(.name | IN("PGRST_DB_URI","PGRST_JWT_SECRET") | not) ]
                       + [ {name:"PGRST_DB_URI", valueFrom:$SEC_DB}, {name:"PGRST_JWT_SECRET", valueFrom:$SEC_JWT} ] )
                 | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
                       .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)')
+          # The staging proxy has exactly two containers (proxy and postgrest) and no port 443. Refuse anything else.
+          printf '%s' "$NEW_DEF" | jq -e '([.containerDefinitions[].name] | sort) == ["postgrest","proxy"] and ([.containerDefinitions[].portMappings[]?.containerPort | select(. == 443)] | length == 0)' >/dev/null \
+            || { echo "::error::Refusing to register: the task definition must have exactly the containers proxy and postgrest, and no containerPort 443."; exit 1; }
           NEW_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_DEF" \
             --query 'taskDefinition.taskDefinitionArn' --output text)
           echo "Registered $NEW_ARN"

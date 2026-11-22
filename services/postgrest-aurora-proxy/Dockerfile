@@ -4,14 +4,18 @@
 FROM nginx:1.27-alpine
 
 RUN rm /etc/nginx/conf.d/default.conf 2>/dev/null || true
+# PROXY_TEMPLATE selects the route profile. The default is the production profile (nginx.conf.template). The staging
+# deploy passes nginx.staging.conf.template, which has no Supabase upstream. See "Route profiles" in the README.
+ARG PROXY_TEMPLATE=nginx.conf.template
 # Deliberately NOT under /etc/nginx/templates/ — that path triggers the base
 # image's own docker-entrypoint.d envsubst-on-templates script, which writes
 # into conf.d/ and would double-process (and nest) this file since it's a
 # full nginx.conf, not a conf.d fragment. Substituting and writing it
 # ourselves below sidesteps that entirely.
-COPY nginx.conf.template /etc/nginx/nginx.conf.template
+COPY ${PROXY_TEMPLATE} /etc/nginx/nginx.conf.template
 
 # SUPABASE_AUTH_HOST is injected at container start (e.g. inmkhvwdcuyhnxkgfvsb.supabase.co).
+# Only the production profile reads it. The staging profile ignores it.
 ENV SUPABASE_AUTH_HOST=""
 # Host name of the public server block (/rest/v1 only), VTID-05023.
 ENV PUBLIC_HOST="data.vitanaland.com"

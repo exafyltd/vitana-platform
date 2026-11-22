@@ -1,0 +1,9 @@
+{
+  "allowlist": ["SUPABASE_AUTH_HOST", "PUBLIC_HOST"],
+  "dockerfileLines": [
+    "ENV SUPABASE_AUTH_HOST=\"\"",
+    "ENV PUBLIC_HOST=\"data.vitanaland.com\"",
+    "EXPOSE 8080",
+    "CMD [\"/bin/sh\", \"-c\", \"envsubst '$${SUPABASE_AUTH_HOST} $${PUBLIC_HOST}' < /etc/nginx/nginx.conf.template > /etc/nginx/nginx.conf && exec nginx -g 'daemon off;'\"]"
+  ]
+}
