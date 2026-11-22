@@ -4,7 +4,6 @@
 // Run: node --test scripts/aws/iam/test-c/staging-proxy-execution-role.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -18,8 +17,10 @@ const PASSROLE_PATH = path.join(IAM_DIR, 'staging-proxy-passrole-policy.json');
 const FIXTURE_PATH = path.join(IAM_DIR, 'staging-proxy-execution-role-policy.json');
 const VERIFY_PATH = path.join(IAM_DIR, 'staging-proxy-owner-verify.md');
 
-// The commit this change builds on. The template may differ from it only on the executionRoleArn line.
+// The commit this change builds on. The template may differ from it only on the lines in EXPECTED_CHANGES.
 const BASE_COMMIT = '5560746ba9755ab57a4b5fc22b813c273e87c1b0';
+// The base template as committed at BASE_COMMIT (git show), so the check reads no git history and runs on a depth-1 checkout.
+const BASE_SNAPSHOT_PATH = path.join(HERE, 'base-task-definition.snapshot.json');
 const ACCOUNT = '472838866351';
 const REGION = 'eu-central-1';
 const NEW_ROLE_ARN = `arn:aws:iam::${ACCOUNT}:role/vitana-postgrest-staging-execution-role`;
@@ -41,7 +42,7 @@ const EXPECTED_CHANGES = [
 const asList = (value) => (value === undefined ? [] : Array.isArray(value) ? value : [value]);
 const readJson = (file) => JSON.parse(fs.readFileSync(file, 'utf8'));
 const readTemplate = () => fs.readFileSync(TEMPLATE_PATH, 'utf8');
-const baseTemplate = () => execFileSync('git', ['-C', REPO, 'show', `${BASE_COMMIT}:${TEMPLATE_REL}`], { encoding: 'utf8' });
+const baseTemplate = () => fs.readFileSync(BASE_SNAPSHOT_PATH, 'utf8');
 
 // Returns the violations of the iam:PassRole document. An empty list passes.
 function passRoleViolations(doc) {
