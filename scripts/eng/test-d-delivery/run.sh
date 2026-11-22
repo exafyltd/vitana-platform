@@ -2,7 +2,7 @@
 # Isolated tests for the delivery safety checks (PR #5130, VTID-05545): the cut (delivery-cutover.sh), the rollback (delivery-rollback.sh) and the
 # copy on the GitLab machine (infra/gitlab-engineering/host/mirror.sh).   bash scripts/eng/test-d-delivery/run.sh
 # Nothing here reaches AWS, GitHub or GitLab. Every repository is a local bare repository under a temporary folder. Each network-facing command
-# (aws, gh, curl, ssh, wget, ssm) is a stub first on PATH: it writes its call to a log and fails, and the log must stay empty. The cut and the
+# (aws, gh, curl, ssh, wget, ssm) is a stub first on PATH: it writes its call to a log and fails, and a case during which the log grows fails. The cut and the
 # rollback read GitHub through in-process fakes that answer from those repositories; the GitHub fake refuses and logs any write. The GitLab machine
 # is faked as well: each page of the branch listing and the final copy run the real script text under sh, with a curl and a systemctl that answer
 # from the local repositories. The listing page carries an X-Total header, as GitLab's branches API does. Systems Manager output is cut to 24,000
@@ -33,8 +33,8 @@ done
 cat > "$MACHINE_BIN/curl" <<'MACHINE'
 #!/bin/bash
 # FAKE_GITLAB_DIR: the GitLab repositories. Every branches answer carries an X-Total header, as the API does. FAKE_NO_XTOTAL=1: no X-Total.
-# FAKE_XTOTAL_EXTRA=N: X-Total is N higher than the branches. FAKE_PAGE_FAIL=N: page N answers with an error body. FAKE_REPEAT_PAGE=N: page N
-# repeats page N-1.
+# FAKE_XTOTAL_EXTRA=N: X-Total is N higher than the branches, from page FAKE_XTOTAL_FROM on (default 1). FAKE_PAGE_FAIL=N: page N answers with an
+# error body. FAKE_REPEAT_PAGE=N: page N repeats page N-1.
 cat >/dev/null   # the token header comes on stdin; this fake does not use it
 url="${*: -1}"
 repo="$(sed -n 's#.*/projects/vitana%2F\([^/]*\)/.*#\1#p' <<<"$url")"
@@ -47,7 +47,8 @@ case "$url" in
   *"/repository/branches?per_page=100&page="*)
     page="${url##*page=}"; src="$page"
     [ "$page" != "${FAKE_REPEAT_PAGE:-0}" ] || src=$((page - 1))
-    total=$(( $(listing | wc -l) + ${FAKE_XTOTAL_EXTRA:-0} ))
+    extra=${FAKE_XTOTAL_EXTRA:-0}; [ "$page" -ge "${FAKE_XTOTAL_FROM:-1}" ] || extra=0
+    total=$(( $(listing | wc -l) + extra ))
     printf 'HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n'
     [ "${FAKE_NO_XTOTAL:-0}" = 1 ] || printf 'X-Total: %s\r\n' "$total"
     printf '\r\n'
@@ -130,6 +131,7 @@ fake_gh() {   # the GitHub API calls of the cut and the rollback: reads only, fr
     repos/$GH_OWNER/*/branches)
       [ "${FAKE_GH_FAIL:-}" != list ] || return 1
       git -C "$FX_GH/$r.git" for-each-ref --format="%(refname:strip=2)${tab}%(objectname)" refs/heads/ ;;
+    repos/$GH_OWNER/*/tags) git -C "$FX_GH/$r.git" for-each-ref --format='%(refname:strip=2)' refs/tags/ ;;
     repos/$GH_OWNER/*/compare/*)
       spec="${path##*/compare/}"; base="${spec%...*}"; head="${spec##*...}"
       git -C "$FX_GH/$r.git" cat-file -e "$base^{commit}" 2>/dev/null && git -C "$FX_GH/$r.git" cat-file -e "$head^{commit}" 2>/dev/null || return 1
@@ -151,7 +153,7 @@ fake_ssm() {   # the Systems Manager call of the cut: nothing runs on a machine 
     *"read gitlab-main"*)
       if [ "${FAKE_SSM_FAIL:-}" = gitlab-main ]; then SSM_STATUS=Failed; SSM_ERR="fake failure"; return 1; fi
       full="$(PATH="$MACHINE_BIN:$PATH" FAKE_GITLAB_DIR="$FX_GL" FAKE_NO_XTOTAL="${FAKE_NO_XTOTAL:-0}" FAKE_XTOTAL_EXTRA="${FAKE_XTOTAL_EXTRA:-0}" \
-        FAKE_PAGE_FAIL="${FAKE_PAGE_FAIL:-0}" FAKE_REPEAT_PAGE="${FAKE_REPEAT_PAGE:-0}" sh -c "$1" 2>"$FX/tmp/machine.err")"; rc=$?
+        FAKE_PAGE_FAIL="${FAKE_PAGE_FAIL:-0}" FAKE_REPEAT_PAGE="${FAKE_REPEAT_PAGE:-0}" FAKE_XTOTAL_FROM="${FAKE_XTOTAL_FROM:-1}" sh -c "$1" 2>"$FX/tmp/machine.err")"; rc=$?
       printf '%s\n' "$(printf '%s' "$full" | wc -c)" >> "$FX/ssm-bytes.txt"   # the script's whole output, before Systems Manager's cut
       if [ "${FAKE_NO_COMPLETE:-0}" = 1 ]; then full="$(sed '/^listing=complete$/d' <<<"$full")"; fi
       SSM_OUT="$(head -c 24000 <<<"$full")"   # Systems Manager keeps only the first 24,000 characters of the output
@@ -184,7 +186,7 @@ rb_run() { CUTOVER_MIRROR_WAIT_SECONDS=0 invoke "$RB" 0 "$1"; }
 
 # ---- assertions and the report -----------------------------------------------------------------------------------------------------------------
 BAD=""; ID=""; CASE=""; WHAT=""; WANT=""; PASS=0; FAIL=0; WRITES_OK=0
-begin() { ID="$1"; CASE="$2"; WHAT="$3"; WANT="$4"; BAD=""; WRITES_OK=0; }
+begin() { ID="$1"; CASE="$2"; WHAT="$3"; WANT="$4"; BAD=""; WRITES_OK=0; STUB_BEFORE="$(wc -l < "$STUB_LOG" | tr -d ' ')"; }
 need_rc() { [ "$RC" = "$WANT" ] || BAD="$BAD exit $RC, want $WANT;"; }
 need_text() { grep -qF -- "$1" <<<"$OUT" || BAD="$BAD output lacks '$1';"; }
 no_text() { grep -qF -- "$1" <<<"$OUT" && BAD="$BAD output has '$1';"; return 0; }
@@ -192,6 +194,7 @@ no_copy() { grep -q 'mirror-final' "$FX_SSM_LOG" && BAD="$BAD the copy was start
 no_protection_read() { grep -q 'protection' "$FX_GH_LOG" && BAD="$BAD GitHub protection was read;"; return 0; }
 end() {
   grep -q UNEXPECTED "${FX_GH_LOG:-/dev/null}" && BAD="$BAD an unexpected GitHub call;"
+  [ "$(wc -l < "$STUB_LOG" | tr -d ' ')" = "${STUB_BEFORE:-0}" ] || BAD="$BAD a network-facing stub was called;"
   [ "${WRITES_OK:-0}" = 1 ] || { grep -q 'vitana-cutover: write' "${FX_SSM_LOG:-/dev/null}" && BAD="$BAD a state-changing script reached the fake;"; }
   local status
   if [ -z "$BAD" ]; then PASS=$((PASS + 1)); status=ok; else FAIL=$((FAIL + 1)); status="FAIL:$BAD"; fi
@@ -236,6 +239,13 @@ t_b4_gitlab_main_unreadable_refused() {
   fx_new
   FAKE_SSM_FAIL=gitlab-main invoke "$CUT" 1 'MIRROR=mirror-test; step1'
   need_rc; need_text "GitLab main is unknown"; no_protection_read; end
+}
+t_b5_gitlab_main_none_refused() {
+  begin b5 t_b5_gitlab_main_none_refused "GitLab has no main (none): step 1 refuses before it reads any GitHub protection" 1
+  fx_new
+  git -C "$FX_GL/vitana-platform.git" update-ref -d refs/heads/main
+  invoke "$CUT" 1 'MIRROR=mirror-test; step1'
+  need_rc; need_text "GitLab main is none"; no_protection_read; end
 }
 t_c_gitlab_only_branch_refused() {
   begin c t_c_gitlab_only_branch_refused "a branch exists only on GitLab: step 2 refuses before the copy" 1
@@ -373,6 +383,31 @@ t_h5_marker_live_timer_running_refused() {
   FAKE_MARKER='{"mode":"live"}' invoke "$CUT" 0 'step_done 2 || step2'
   need_rc; need_text "the cutover marker is set"; no_copy; end
 }
+t_h6_timer_stopped_github_only_branch_copied() {
+  begin h6 t_h6_timer_stopped_github_only_branch_copied "copy timer stopped, a branch only on GitHub: step 2 is not done and the copy runs" 0
+  fx_new
+  WRITES_OK=1
+  put gh vitana-platform feature/gh-only "$(src_sha vitana-platform main)"
+  FAKE_MIRROR_TIMER=disabled invoke "$CUT" 0 'step_done 2; echo "step_done_exit=$?"; step2'
+  need_rc; need_text "step_done_exit=1"; grep -q 'write mirror-final' "$FX_SSM_LOG" || BAD="$BAD the copy was not started;"; end
+}
+t_h7_timer_stopped_github_tag_copied() {
+  begin h7 t_h7_timer_stopped_github_tag_copied "copy timer stopped, a tag on GitHub: step 2 is not done and the copy runs" 0
+  fx_new
+  WRITES_OK=1
+  put gh vitana-platform refs/tags/v1 "$(src_sha vitana-platform main)"
+  FAKE_MIRROR_TIMER=disabled invoke "$CUT" 0 'step_done 2; echo "step_done_exit=$?"; step2'
+  need_rc; need_text "step_done_exit=1"; grep -q 'write mirror-final' "$FX_SSM_LOG" || BAD="$BAD the copy was not started;"; end
+}
+t_h8_timer_stopped_github_ahead_refused() {
+  begin h8 t_h8_timer_stopped_github_ahead_refused "copy timer stopped, GitHub ahead of a GitLab branch: step 2 is not done and refuses (open point)" 1
+  fx_new
+  local base x y; base="$(src_sha vitana-platform main)"
+  x="$(cm vitana-platform "$base" "shared")"; y="$(cm vitana-platform "$x" "github ahead")"
+  put gl vitana-platform feature/ff "$x"; put gh vitana-platform feature/ff "$y"
+  FAKE_MIRROR_TIMER=disabled invoke "$CUT" 0 'step_done 2 || step2'
+  need_rc; need_text "differs from GitHub's"; no_copy; end
+}
 t_k1_three_pages_read_in_full() {
   begin k1 t_k1_three_pages_read_in_full "251 branches on GitLab: all three pages are read (one call each), GitLab-only branch on page 3 refused" 1
   fx_new
@@ -430,6 +465,13 @@ t_k7_completion_line_missing_refused() {
   branch_fixture
   FAKE_NO_COMPLETE=1 invoke "$CUT" 0 'step2'
   need_rc; need_text "goes on past the 104 branches"; no_copy; end
+}
+t_k8_count_changes_between_pages_refused() {
+  begin k8 t_k8_count_changes_between_pages_refused "X-Total rises by one from page 2 on: the count changed while it was read, step 2 refuses, nothing is copied" 1
+  fx_new
+  branch_fixture
+  FAKE_XTOTAL_EXTRA=1 FAKE_XTOTAL_FROM=2 invoke "$CUT" 0 'step2'
+  need_rc; need_text "the branch count changed while it was read (104, then 105)"; no_copy; end
 }
 t_m1_gitlab_only_branch_kept() {
   begin m1 t_m1_gitlab_only_branch_kept "mirror: a branch that exists only on GitLab is kept, and a GitHub branch is added" 0
@@ -572,14 +614,15 @@ t_r6_rollback_count_differs_refused() {
 
 TESTS=(
   t_syntax t_a_equal_mains_dry_run t_b_gitlab_main_ahead_refused t_b2_github_main_ahead_refused t_b3_github_main_missing_refused
-  t_b4_gitlab_main_unreadable_refused t_c_gitlab_only_branch_refused t_c2_diverged_branch_refused t_c3_github_ahead_branch_refused
+  t_b4_gitlab_main_unreadable_refused t_b5_gitlab_main_none_refused t_c_gitlab_only_branch_refused t_c2_diverged_branch_refused t_c3_github_ahead_branch_refused
   t_c4_gitlab_ahead_branch_refused t_c5_gitlab_only_on_page5_refused t_c6_gitlab_unreadable_refused t_c7_github_listing_failed_refused
   t_c8_gitlab_page1_failed_refused t_c9_gitlab_page2_failed_refused t_c10_gitlab_page2_read_when_complete t_c11_gitlab_main_missing_refused
   t_e_bot_refs_not_checked t_f_live_marker_refused t_g_github_only_branch_passes
   t_h1_timer_disabled_not_done t_h2_timer_disabled_equal_done t_h3_timer_enabled_not_done t_h4_marker_live_done
-  t_h5_marker_live_timer_running_refused
+  t_h5_marker_live_timer_running_refused t_h6_timer_stopped_github_only_branch_copied t_h7_timer_stopped_github_tag_copied
+  t_h8_timer_stopped_github_ahead_refused
   t_k1_three_pages_read_in_full t_k2_largest_page_under_24000_bytes t_k3_page_of_24000_bytes_refused t_k4_x_total_missing_refused
-  t_k5_count_differs_from_x_total_refused t_k6_repeated_page_refused t_k7_completion_line_missing_refused
+  t_k5_count_differs_from_x_total_refused t_k6_repeated_page_refused t_k7_completion_line_missing_refused t_k8_count_changes_between_pages_refused
   t_m1_gitlab_only_branch_kept t_m2_diverged_head_refused t_m3_differing_tag_refused t_m4_github_ahead_head_moves
   t_m5_gitlab_main_ahead_stops_push t_m6_control_forced_prune_destroys_refs t_m7_gitlab_head_ahead_refused
   t_n1_failed_copy_stops_cut

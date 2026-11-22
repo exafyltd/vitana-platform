@@ -771,6 +771,17 @@ copy_branch_check() {   # repo -> 0 when every GitLab branch of it has the same 
   done <<<"$GL_BRANCHES"
   [ -z "$bad" ] || { say "  nothing is copied. Make each head equal on both sides: push GitLab-only commits to GitHub; for a diverged head, merge GitHub's head into the GitLab branch and push that to GitHub; when GitHub is ahead, run the copy (systemctl start vitana-mirror.service on the GitLab machine). Then run this again"; return 1; }
 }
+copy_adds_nothing() {   # repo -> 0 when the copy would change nothing: GitHub has no branch that GitLab lacks, and GitHub has no tag. Run after copy_branch_check
+  # step 2 is not skipped on these: the copy adds a GitHub-only branch to GitLab, and it pushes every tag (git refuses a tag that differs)
+  local r="$1" gh name tags
+  gh="$(x_gh api "repos/$GH_OWNER/$r/branches" --paginate --jq '.[] | [.name, .commit.sha] | @tsv' 2>/dev/null)" && [ -n "$gh" ] || return 1
+  while IFS=$'\t' read -r name _; do
+    [ -n "$name" ] || continue
+    awk -F'\t' -v n="$name" '$1 == n { f = 1 } END { exit !f }' <<<"$GL_BRANCHES" || return 1
+  done <<<"$gh"
+  tags="$(x_gh api "repos/$GH_OWNER/$r/tags" --paginate --jq '.[].name' 2>/dev/null)" || return 1
+  [ -z "$tags" ]
+}
 step2() {
   local r gh gl
   ssm_run "$(r_probe)" 30
@@ -891,7 +902,7 @@ step_done() {   # n -> 0 when the world already shows step n
     2) ssm_run "$(r_probe)" 30
        case "$(kv mirror_timer)" in disabled|masked) ;; *) return 1 ;; esac   # a running copy timer: step 2 must stop it, and after the cut it refuses
        kv marker | grep -q '"mode":"live"' && return 0   # the timer is stopped and the cut is past step 2: the branches are not checked again
-       for r in "${REPOS[@]}"; do copy_branch_check "$r" >/dev/null || return 1; done
+       for r in "${REPOS[@]}"; do copy_branch_check "$r" >/dev/null && copy_adds_nothing "$r" || return 1; done   # a GitHub-only branch or a GitHub tag: not done, step 2 runs the copy
        for r in "${REPOS[@]}"; do gh="$(main_sha "$r")"; gl="$(gitlab_main_of "$r")"; { [ -n "$gh" ] && [ "$gh" = "$gl" ]; } || return 1; done ;;
     3) ssm_run "$(r_probe)" 30; kv marker | grep -q '"mode":"live"' && [ "$(kv settings_check)" = 0 ] || return 1 ;;
     4) for r in "${REPOS[@]}"; do out="$(gh_workflows "$r")"; for f in $(wf_names "$r" disable); do [ "$(wf_state "$out" "$f")" = active ] && return 1; done; done ;;
