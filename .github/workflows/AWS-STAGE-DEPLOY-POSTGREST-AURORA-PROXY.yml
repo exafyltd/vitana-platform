@@ -95,6 +95,12 @@ jobs:
       PGRST_DB_SECRET_ID: 'vitana/gateway/staging/postgrest-authenticator-uri'
       PGRST_JWT_SECRET_ID: 'vitana/gateway/staging/postgrest-jwt-secret'
     steps:
+      - name: Refuse a run that is not from main
+        # The first step, before checkout and any AWS call. A workflow_dispatch from another branch or a tag
+        # fails here. A step is used rather than a job-level if, because a skipped job reads as green.
+        run: |
+          [ "${GITHUB_REF:-}" = refs/heads/main ] || { echo "::error::Refused: this workflow deploys from refs/heads/main only, not ${GITHUB_REF:-unset}. Nothing was built, pushed or registered."; exit 1; }
+
       - uses: actions/checkout@v4
 
       - name: Resolve commit metadata

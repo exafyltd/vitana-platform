@@ -53,7 +53,8 @@ t_oidc_guard_accepts_the_staging_role() {
 
 t_guard_steps_cannot_be_skipped_or_ignored() {
   local name json
-  for name in "Require the staging OIDC role" "Configure AWS credentials" "Verify staging credentials before any AWS change"; do
+  for name in "Refuse a run that is not from main" "Require the staging OIDC role" "Configure AWS credentials" \
+              "Verify staging credentials before any AWS change"; do
     json=$(step_json "$name") || { fail_expect "step '$name' is missing"; continue; }
     jq -e '(has("continue-on-error") or has("if")) | not' <<<"$json" >/dev/null \
       || fail_expect "step '$name' can be skipped or ignored (continue-on-error or if)"
@@ -64,7 +65,7 @@ t_guard_steps_run_before_any_aws_change() {
   local names order name idx
   names=$(ruby "$STEPS_RB" "$WORKFLOW" steps) || { fail_expect "cannot read the step list"; return 0; }
   order=""
-  for name in "Require the staging OIDC role" "Configure AWS credentials" \
+  for name in "Refuse a run that is not from main" "Require the staging OIDC role" "Configure AWS credentials" \
               "Verify staging credentials before any AWS change" "Login to Amazon ECR" \
               "Preflight" "Build and push proxy image" "Register task-definition revision"; do
     idx=$(jq -r --arg n "$name" 'to_entries | map(select(.value | startswith($n))) | .[0].key // empty' <<<"$names")
