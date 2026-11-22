@@ -194,7 +194,7 @@ jobs:
           # % or @ in the query. A password that holds one of ? / @ % must be percent-encoded.
           URI_RE='^postgres(ql)?://([^/?@]*@)?([^/?@:,]+)(:[0-9]+)?(/[^?]*)?(\?[^%@]*)?$'
           if ! [[ "$DB_URI" =~ $URI_RE ]]; then
-            echo "::error::The PGRST_DB_URI value does not name exactly one host in the form postgresql://user:password@host:port/database?query. Stopping. Nothing was printed."; exit 1
+            echo "::error::The PGRST_DB_URI value does not name exactly one host in the form postgresql://user:password@host:port/database?query. Stopping. Nothing was printed. Percent-encode any ?, /, @ or % in the password (a question mark becomes %3F)."; exit 1
           fi
           QUERY="${BASH_REMATCH[6],,}"
           DB_HOST="${BASH_REMATCH[3],,}"
