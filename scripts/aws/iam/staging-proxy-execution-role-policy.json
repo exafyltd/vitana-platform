@@ -1,0 +1,15 @@
+{
+  "description": "Fixture relayed from a live check by ChatGPT and not yet verified by the parent. This is the inline policy staging-proxy-two-secrets-only on role arn:aws:iam::472838866351:role/vitana-postgrest-staging-execution-role. The -* suffix on each Resource stands in for the random Secrets Manager ARN suffix, because the relayed facts give secret names only. Remove this description key before using the file as a policy document.",
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "StagingProxyTwoSecretsOnly",
+      "Effect": "Allow",
+      "Action": "secretsmanager:GetSecretValue",
+      "Resource": [
+        "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/gateway/staging/postgrest-authenticator-uri-*",
+        "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/gateway/staging/postgrest-jwt-secret-*"
+      ]
+    }
+  ]
+}

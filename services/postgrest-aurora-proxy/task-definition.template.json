@@ -4,7 +4,7 @@
   "requiresCompatibilities": ["FARGATE"],
   "cpu": "512",
   "memory": "1024",
-  "executionRoleArn": "REPLACE_WITH_ECS_EXECUTION_ROLE_ARN",
+  "executionRoleArn": "arn:aws:iam::472838866351:role/vitana-postgrest-staging-execution-role",
   "taskRoleArn": "REPLACE_WITH_ECS_TASK_ROLE_ARN",
   "containerDefinitions": [
     {
