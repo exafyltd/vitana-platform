@@ -119,14 +119,23 @@ t_verify_refuses_rehearsal_database_secret_name() {
   expect_calls '^sts ' 0
 }
 
-t_verify_refuses_the_placeholder_bound_in_the_workflow() {
-  # Reads the value the job env binds. The gate stays closed while that value is the placeholder.
+t_job_env_binds_verified_staging_secret_names() {
+  # Every step reads these names from the job env. They must be the two verified names, and the
+  # workflow must not name the old JWT secret anywhere.
   new_sandbox
-  local bound
-  bound=$(ruby "$STEPS_RB" "$WORKFLOW" job-env | jq -r '.PGRST_DB_SECRET_ID') \
-    || { fail_expect "cannot read the job env"; return 0; }
-  [[ "$bound" == *REPLACE_WITH_* ]] || { fail_expect "the job env binds '$bound', not the placeholder"; return 0; }
-  verify_run "PGRST_DB_SECRET_ID=$bound" || { fail_expect "verify step is missing"; return 0; }
+  local env_json
+  env_json=$(ruby "$STEPS_RB" "$WORKFLOW" job-env) || { fail_expect "cannot read the job env"; return 0; }
+  jq -e --arg db "$STAGING_DB_SECRET" --arg jwt "$STAGING_JWT_SECRET" \
+    '.PGRST_DB_SECRET_ID == $db and .PGRST_JWT_SECRET_ID == $jwt' <<<"$env_json" >/dev/null \
+    || fail_expect "job env does not bind the two verified staging secret names: $(jq -c '{PGRST_DB_SECRET_ID, PGRST_JWT_SECRET_ID}' <<<"$env_json")"
+  grep -q 'supabase-jwt-secret' "$WORKFLOW" && fail_expect "the workflow still names supabase-jwt-secret"
+  return 0
+}
+
+t_verify_refuses_placeholder_value() {
+  # A placeholder value stops the verify step before any AWS call, even when every other input is set.
+  new_sandbox
+  verify_run "PGRST_DB_SECRET_ID=$PLACEHOLDER_DB_SECRET" || { fail_expect "verify step is missing"; return 0; }
   expect_refused
   expect_out 'unconfirmed placeholder'
   expect_calls '^sts ' 0

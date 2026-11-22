@@ -14,8 +14,26 @@ t_setup_refuses_when_staging_inputs_are_unset() {
   new_sandbox
   run_env -- bash "$SETUP" provision --apply
   expect_refused
-  expect_out 'set PROXY_STAGING_DB_SECRET and PROXY_STAGING_DB_HOST'
+  expect_out 'set PROXY_STAGING_DB_HOST to the verified staging writer host'
   expect_no_change
+}
+
+t_setup_defaults_to_verified_db_secret() {
+  # With only the host set, the dry run resolves the verified staging database secret name.
+  new_sandbox
+  run_env "PROXY_STAGING_DB_HOST=$STAGING_HOST" -- bash "$SETUP" provision
+  expect_ok
+  expect_out 'vitana/gateway/staging/postgrest-authenticator-uri exists'
+  expect_no_change
+}
+
+t_setup_registers_postgrest_jwt_secret() {
+  # The registered revision references the verified JWT secret, and never the old supabase-named one.
+  new_sandbox
+  setup_apply "$STAGING_DB_SECRET" "$STAGING_HOST"
+  expect_ok
+  expect_payload_has "$STAGING_JWT_SECRET"
+  expect_payload_lacks 'supabase-jwt-secret'
 }
 
 t_setup_refuses_production_database_secret_before_any_change() {

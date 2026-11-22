@@ -77,18 +77,19 @@
 #
 # USAGE
 #
-#   PROXY_STAGING_DB_SECRET=<staging secret name> PROXY_STAGING_DB_HOST=<staging writer host> \
+#   PROXY_STAGING_DB_HOST=<verified staging writer host> \
 #     scripts/aws/setup-postgrest-aurora-proxy-staging.sh provision            # dry run
-#   PROXY_STAGING_DB_SECRET=<staging secret name> PROXY_STAGING_DB_HOST=<staging writer host> \
+#   PROXY_STAGING_DB_HOST=<verified staging writer host> \
 #     scripts/aws/setup-postgrest-aurora-proxy-staging.sh provision --apply
 #   scripts/aws/setup-postgrest-aurora-proxy-staging.sh status
 #
-# Both PROXY_STAGING_* variables are required and have no default. Production values are refused
-# before any state-changing AWS call (one read-only caller-identity check runs first): secret names
-# under vitana/aurora/prod/ or vitana/supabase/prod/, the production-derived rehearsal clone secret
-# under vitana/aurora/rehearsal/, a host containing vitana-aurora-prod, and the production cluster's
-# RDS master secret. The placeholder REPLACE_WITH_OWNER_CONFIRMED_STAGING_SECRET is refused until the
-# owner confirms the staging writer secret name. The host is the operator's input. The script never reads a
+# PROXY_STAGING_DB_HOST is required and has no default. PROXY_STAGING_DB_SECRET defaults to
+# vitana/gateway/staging/postgrest-authenticator-uri, the verified staging name from the owner's
+# directive. Production values are refused before any state-changing AWS call (one read-only
+# caller-identity check runs first): secret names under vitana/aurora/prod/ or vitana/supabase/prod/,
+# the production-derived rehearsal clone secret under vitana/aurora/rehearsal/, a host containing
+# vitana-aurora-prod, and the production cluster's RDS master secret. A placeholder value is refused.
+# The host is the operator's input. The script never reads a
 # secret value, so a host inside a secret value is not checked (open point 2). The task definition is
 # checked again just before registration. --apply registers a revision only when the ECS service does
 # not exist yet, so re-running it on a live service registers nothing. If the service state cannot be
@@ -107,9 +108,9 @@ PROXY_CONTAINER="proxy"
 POSTGREST_CONTAINER="postgrest"
 ECR_REPO="vitana/postgrest-aurora-proxy"
 LOG_GROUP="/ecs/vitana-postgrest-aurora-staging"
-SECRET_DB_URI="${PROXY_STAGING_DB_SECRET:-}"   # no default: production values are refused (see refuse_prod)
+SECRET_DB_URI="${PROXY_STAGING_DB_SECRET:-vitana/gateway/staging/postgrest-authenticator-uri}"   # verified name (owner directive); production values are refused (see refuse_prod)
 PROD_PATTERN='vitana/(aurora|supabase)/prod/|vitana/aurora/rehearsal/|vitana-aurora-prod|rds!cluster-4dab93b8'   # rehearsal: production-derived clone
-SECRET_JWT="vitana/gateway/staging/supabase-jwt-secret"   # sha256-identical to vitana/supabase/prod/jwt-secret (verified 2026-08-06)
+SECRET_JWT="vitana/gateway/staging/postgrest-jwt-secret"   # verified name (owner directive). Equality with production is not verified; nothing here claims it.
 NAMESPACE="vitana.internal"
 DNS_SERVICE="postgrest-aurora"
 SUBNETS="subnet-0ff45a2051c5e5482,subnet-0c786864a28a5a821"   # same as vitana-gateway (staging)
@@ -144,10 +145,9 @@ ACCT=$(aws sts get-caller-identity --query Account --output text)
 # ----------------------------------------------------------------------------
 provision() {
   say "== postgrest-aurora-proxy STAGING provision (apply=$APPLY) =="
-  [ -n "$SECRET_DB_URI" ] && [ -n "$AURORA_HOST" ] \
-    || die "set PROXY_STAGING_DB_SECRET and PROXY_STAGING_DB_HOST to the verified staging values"
+  [ -n "$AURORA_HOST" ] || die "set PROXY_STAGING_DB_HOST to the verified staging writer host"
   case "$SECRET_DB_URI" in
-    *REPLACE_WITH_*) die "refusing an unconfirmed placeholder secret name: the owner must confirm the staging writer secret first" ;;
+    *REPLACE_WITH_*) die "refusing an unconfirmed placeholder secret name" ;;
   esac
   refuse_prod "$SECRET_DB_URI" "$SECRET_JWT" "$AURORA_HOST"
 

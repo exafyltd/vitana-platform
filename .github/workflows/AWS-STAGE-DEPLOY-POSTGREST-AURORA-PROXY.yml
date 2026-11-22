@@ -25,12 +25,13 @@
 #
 # AWS access is OIDC only. The repository variable AWS_STAGING_ROLE_ARN names
 # the staging role this workflow assumes. The workflow reads no static AWS keys.
-# Required Secrets Manager entries (eu-central-1):
-#   REPLACE_WITH_OWNER_CONFIRMED_STAGING_SECRET  -> PGRST_DB_URI (placeholder)
-#   vitana/gateway/staging/supabase-jwt-secret   -> PGRST_JWT_SECRET (pre-existing)
-# The database secret name is a placeholder. The owner has not confirmed the staging writer's
-# secret, and no candidate name is bound. The placeholder cannot resolve, and the verify step stops
-# the job on it before any AWS call, so this workflow deploys nothing until the owner sets the name.
+# Required Secrets Manager entries (eu-central-1), named by the owner's directive. The parent has not
+# verified them, and this repository cannot check them:
+#   vitana/gateway/staging/postgrest-authenticator-uri  -> PGRST_DB_URI
+#   vitana/gateway/staging/postgrest-jwt-secret         -> PGRST_JWT_SECRET
+# Whether the JWT secret equals the production JWT secret is not verified. Nothing here claims it.
+# The verify step describes both secrets before any AWS change. It also refuses a placeholder value,
+# so an unset name cannot reach a registration.
 # Production targets are refused on every path: secret names under vitana/aurora/prod/ or
 # vitana/supabase/prod/, the production-derived rehearsal clone vitana/aurora/rehearsal/, and the
 # production cluster's RDS master secret. The host vitana-aurora-prod is refused only in the candidate
@@ -89,10 +90,10 @@ jobs:
       PROXY_CONTAINER: 'proxy'
       DEPLOY_REASON: ${{ inputs.reason || 'auto-deploy on push to main' }}
       # The staging account and the two secret names this proxy binds. Every step reads these names from here.
-      # PGRST_DB_SECRET_ID is a placeholder until the owner confirms the staging writer's secret name. The verify step refuses it.
+      # The names come from the owner's directive and are not verified by this repository.
       STAGING_ACCOUNT_ID: '472838866351'
-      PGRST_DB_SECRET_ID: 'REPLACE_WITH_OWNER_CONFIRMED_STAGING_SECRET'
-      PGRST_JWT_SECRET_ID: 'vitana/gateway/staging/supabase-jwt-secret'
+      PGRST_DB_SECRET_ID: 'vitana/gateway/staging/postgrest-authenticator-uri'
+      PGRST_JWT_SECRET_ID: 'vitana/gateway/staging/postgrest-jwt-secret'
     steps:
       - uses: actions/checkout@v4
 
@@ -133,9 +134,9 @@ jobs:
           STAGING_ROLE_ARN: ${{ vars.AWS_STAGING_ROLE_ARN }}
         run: |
           set -euo pipefail
-          # The owner has not confirmed the staging writer secret, so the placeholder must stop the job here.
+          # A placeholder value must stop the job here, before any AWS call.
           case "$PGRST_DB_SECRET_ID" in
-            *REPLACE_WITH_*) echo "::error::PGRST_DB_SECRET_ID is an unconfirmed placeholder. The owner must confirm the staging writer secret name first. Stopping before any AWS call."; exit 1 ;;
+            *REPLACE_WITH_*) echo "::error::PGRST_DB_SECRET_ID is an unconfirmed placeholder. Stopping before any AWS call."; exit 1 ;;
           esac
           PROD_NAME='vitana/(aurora|supabase)/prod/|vitana/aurora/rehearsal/|vitana-aurora-prod|rds!cluster-4dab93b8'
           for NAME in "$PGRST_DB_SECRET_ID" "$PGRST_JWT_SECRET_ID"; do
