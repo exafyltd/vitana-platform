@@ -91,6 +91,13 @@ x_total=$((glcount + glextra))
 page_entries=$glcount
 $glrows
 listing=complete" ;;
+    gitlab-tags) repo="$(setvar REPO "$f")"; trows=""
+      [ -e "$F/gitlab/$repo.tags" ] && trows="$(heads "$F/gitlab/$repo.tags" "" | sed 's/^/tag=/; s/\t/ /')"
+      tcount=$(printf '%s\n' "$trows" | grep -c '^tag=')
+      out="x_total=$tcount
+page_entries=$tcount
+$trows
+listing=complete" ;;
     variable) repo="$(setvar REPO "$f")"; out="delivery_mode=$(cat "$F/gitlab/$repo.mode")" ;;
     pipelines) repo="$(setvar REPO "$f")"; out="$(cat "$F/pipelines/$repo")" ;;
     converge)
@@ -244,6 +251,7 @@ case "$method $path" in
   "PUT repos/exafyltd/$repo/actions/workflows/"*)
     f="$_{path#*/workflows/}"; act="$_{f#*/}"; f="$_{f%/*}"; fail "workflow.$f"
     tmp="$F/gh/$repo/workflows.tsv.new"; awk -F'\t' -v f="$f" -v act="$act" 'BEGIN{OFS="\t"} { n=split($1,a,"/"); if (a[n]==f) $2=(act=="disable"?"disabled_manually":"active"); print }' "$F/gh/$repo/workflows.tsv" > "$tmp"; mv "$tmp" "$F/gh/$repo/workflows.tsv"; echo "$method $f $act" >> "$F/gh/$repo/workflow.log" ;;
+  "GET repos/exafyltd/$repo/tags") [ -e "$F/gh/$repo/tags" ] && heads "$F/gh/$repo/tags" ""; exit 0 ;;
   "GET repos/exafyltd/$repo/branches/main") cat "$F/gh/$repo/main" ;;
   "GET repos/exafyltd/$repo/branches") exists "fail/branches.$repo" && { echo "gh: Server Error (HTTP 500)" >&2; exit 1; }; heads "$F/gh/$repo/branches" "$(cat "$F/gh/$repo/main")" ;;
   "GET repos/exafyltd/$repo/contents/.github/workflows/"*) printf 'name: x\non:\n  workflow_dispatch:\n' ;;
@@ -1067,9 +1075,14 @@ test('rollback: it refuses while GitHub main is not GitLab main, and while branc
     r = w.run(ROLLBACK);
     assert.equal(r.status, 1);
     assert.match(r.stdout, /branches that exist only on GitLab \(vitana-v1\): kiro\/only-on-gitlab/);
-    assert.match(r.stdout, /run again with --confirm-prune-gitlab-only-branches to accept that they stay GitLab-only/);
+    assert.match(r.stdout, /GitHub does not have them\. Push them to GitHub, or delete them on GitLab, then run this again/);
     assert.equal(writeKinds(r).some((k) => k.includes('/protection')), false);
     r = w.run([...ROLLBACK, '--confirm-prune-gitlab-only-branches']);
+    assert.equal(r.status, 1, 'the confirm flag does not let a GitLab-only branch pass');
+    assert.match(r.stdout, /does not let them pass/);
+    assert.equal(writeKinds(r).some((k) => k.includes('/protection')), false);
+    w.put('gitlab/vitana-v1.branches', 'main\nkiro/a\nkiro/b\n');
+    r = w.run(ROLLBACK);
     assert.equal(r.status, 0, r.all);
     assert.equal(protection(w, 'vitana-v1').restrictions, null);
   } finally {
@@ -1709,22 +1722,24 @@ test('B3: rehearse first runs the round trip of the protection (PUT the restore 
   }
 });
 
-test('B4: the rollback refuses while a branch on both hosts has GitLab commits that GitHub lacks, lists it and restores nothing; a GitLab head that GitHub contains is fine', () => {
+test('B4: the rollback refuses while a branch on both hosts has another commit on GitLab than on GitHub (GitHub ahead included), lists it and restores nothing; equal heads pass', () => {
   const w = postCutWorld();
   try {
     const glHead = '4444444444444444444444444444444444444444';
     w.put('gitlab/vitana-v1.branches', `main\nkiro/a ${glHead}\nkiro/b\n`);
     let r = w.run(ROLLBACK);
     assert.equal(r.status, 1, r.all);
-    assert.match(r.stdout, /branches of vitana-v1 whose GitLab commits GitHub does not have: kiro\/a\(GitLab:444444444444,GitHub:[0-9a-f]{12}\)/);
-    assert.match(r.stdout, /mirror\.sh does not rewind them, but GitHub does not have these commits/);
+    assert.match(r.stdout, /branches of vitana-v1 whose head differs from GitHub's \(GitHub is ahead, or the two diverged\): kiro\/a\(GitLab:444444444444,GitHub:[0-9a-f]{12}\)/);
+    assert.match(r.stdout, /Make each one equal first/);
     assert.match(r.stdout, /rollback: STOPPED at step 2/);
     assert.equal(writeKinds(r).some((k) => k.includes('/protection') || k.includes('/enable')), false, 'nothing is restored');
     assert.equal(w.get('host/unit/vitana-mirror.timer'), 'disabled/inactive', 'the copy is not restarted');
-    assert.ok(r.calls.some((c) => c.tool === 'gh' && c.argv.includes(`repos/exafyltd/vitana-v1/compare/${glHead}...${sha1('kiro/a')}`)), 'GitHub is asked whether its head contains the GitLab head');
     r = w.run([...ROLLBACK, '--confirm-prune-gitlab-only-branches']);
-    assert.equal(r.status, 1, 'the flag for GitLab-only branches does not let commits go');
+    assert.equal(r.status, 1, 'the confirm flag does not let a branch that differs from GitHub pass');
     w.put('gh/vitana-v1/contains', `${sha1('kiro/a')} ${glHead}\n`);
+    r = w.run(ROLLBACK);
+    assert.equal(r.status, 1, 'a head GitHub is ahead of is refused too: the copy has to bring GitLab up to GitHub first');
+    w.put('gitlab/vitana-v1.branches', `main\nkiro/a ${sha1('kiro/a')}\nkiro/b\n`);
     r = w.run(ROLLBACK);
     assert.equal(r.status, 0, r.all);
   } finally {

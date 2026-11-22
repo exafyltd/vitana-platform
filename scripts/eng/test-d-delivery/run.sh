@@ -38,34 +38,48 @@ cat > "$MACHINE_BIN/curl" <<'MACHINE'
 cat >/dev/null   # the token header comes on stdin; this fake does not use it
 url="${*: -1}"
 repo="$(sed -n 's#.*/projects/vitana%2F\([^/]*\)/.*#\1#p' <<<"$url")"
-listing() { git -C "$FAKE_GITLAB_DIR/$repo.git" for-each-ref --format='%(refname:strip=2) %(objectname)' refs/heads/; }
+listing() { git -C "$FAKE_GITLAB_DIR/$repo.git" for-each-ref --format='%(refname:strip=2) %(objectname)' "refs/$1/"; }   # heads|tags
+page_answer() {   # heads|tags: one page of the fake GitLab listing, with X-Total
+  local kind="$1" page src extra total
+  page="${url##*page=}"; src="$page"
+  [ "$page" != "${FAKE_REPEAT_PAGE:-0}" ] || src=$((page - 1))
+  extra=${FAKE_XTOTAL_EXTRA:-0}; [ "$page" -ge "${FAKE_XTOTAL_FROM:-1}" ] || extra=0
+  total=$(( $(listing "$kind" | wc -l) + extra ))
+  printf 'HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n'
+  [ "${FAKE_NO_XTOTAL:-0}" = 1 ] || printf 'X-Total: %s\r\n' "$total"
+  printf '\r\n'
+  if [ "$page" = "${FAKE_PAGE_FAIL:-0}" ]; then printf '%s' '{"message":"500 Internal Server Error"}'; exit 0; fi
+  listing "$kind" | sed -n "$(( (src - 1) * 100 + 1 )),$(( src * 100 ))p" \
+    | jq -R -s 'split("\n") | map(select(length > 0) | split(" ") | {name: .[0], commit: {id: .[1]}})'
+}
 case "$url" in
   *"/repository/branches/main")
     printf 'HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n'
     sha="$(git -C "$FAKE_GITLAB_DIR/$repo.git" rev-parse -q --verify refs/heads/main 2>/dev/null)" \
       && printf '{"name":"main","commit":{"id":"%s"}}' "$sha" || printf '{"message":"404 Branch Not Found"}' ;;
-  *"/repository/branches?per_page=100&page="*)
-    page="${url##*page=}"; src="$page"
-    [ "$page" != "${FAKE_REPEAT_PAGE:-0}" ] || src=$((page - 1))
-    extra=${FAKE_XTOTAL_EXTRA:-0}; [ "$page" -ge "${FAKE_XTOTAL_FROM:-1}" ] || extra=0
-    total=$(( $(listing | wc -l) + extra ))
-    printf 'HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n'
-    [ "${FAKE_NO_XTOTAL:-0}" = 1 ] || printf 'X-Total: %s\r\n' "$total"
-    printf '\r\n'
-    if [ "$page" = "${FAKE_PAGE_FAIL:-0}" ]; then printf '%s' '{"message":"500 Internal Server Error"}'; exit 0; fi
-    listing | sed -n "$(( (src - 1) * 100 + 1 )),$(( src * 100 ))p" \
-      | jq -R -s 'split("\n") | map(select(length > 0) | split(" ") | {name: .[0], commit: {id: .[1]}})' ;;
+  *"/repository/branches?per_page=100&page="*) page_answer heads ;;
+  *"/repository/tags?per_page=100&page="*) page_answer tags ;;
   *) echo "test-d-delivery: the fake GitLab API has no answer for $url" >&2; exit 99 ;;
 esac
 MACHINE
 chmod +x "$MACHINE_BIN/curl"
-# The copy's unit on the fake machine: it fails when FAKE_MIRROR_FINAL=fail (git refused a push), as systemctl start does for a failed unit.
+# The copy's unit on the fake machine. FAKE_MIRROR_FINAL=fail: the unit fails, as git refusing a push does. FAKE_MIRROR_NOCOPY=1: the unit exits 0 and pushes
+# nothing. Otherwise the copy is mirror.sh's own push_repo (FAKE_MIRROR_SH), from a fresh mirror of each GitHub repository; only the fetch from GitHub is left out.
 cat > "$MACHINE_BIN/systemctl" <<'MACHINE'
 #!/bin/bash
-[ "${FAKE_MIRROR_FINAL:-}" = fail ] || exit 0
-echo "vitana-mirror.service: push all failed: vitana-platform" >&2; exit 1
+[ "$1 $2" = "start vitana-mirror.service" ] || exit 0
+[ "${FAKE_MIRROR_FINAL:-}" != fail ] || { echo "vitana-mirror.service: push all failed: vitana-platform" >&2; exit 1; }
+[ "${FAKE_MIRROR_NOCOPY:-0}" != 1 ] || exit 0
+GH=test-github-token GL=test-gitlab-token
+. "$FAKE_MIRROR_SH" || exit 1
+for r in vitana-platform vitana-v1; do
+  rm -rf "$FX/cache/$r.git"; mkdir -p "$FX/cache"
+  git clone -q --mirror "$FX_GH/$r.git" "$FX/cache/$r.git" || exit 1
+  push_repo "$FX/cache/$r.git" "$FX_GL/$r.git" "$r" || exit 1
+done
 MACHINE
 chmod +x "$MACHINE_BIN/systemctl"
+export FAKE_MIRROR_SH="$MIRROR"
 export PATH="$STUBS:$PATH" HOME="$T/home"
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_TERMINAL_PROMPT=0
 export GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@example.invalid GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@example.invalid
@@ -131,7 +145,8 @@ fake_gh() {   # the GitHub API calls of the cut and the rollback: reads only, fr
     repos/$GH_OWNER/*/branches)
       [ "${FAKE_GH_FAIL:-}" != list ] || return 1
       git -C "$FX_GH/$r.git" for-each-ref --format="%(refname:strip=2)${tab}%(objectname)" refs/heads/ ;;
-    repos/$GH_OWNER/*/tags) git -C "$FX_GH/$r.git" for-each-ref --format='%(refname:strip=2)' refs/tags/ ;;
+    repos/$GH_OWNER/*/tags) [ "${FAKE_GH_FAIL:-}" != tags ] || return 1
+      git -C "$FX_GH/$r.git" for-each-ref --format="%(refname:strip=2)${tab}%(objectname)" refs/tags/ ;;
     repos/$GH_OWNER/*/compare/*)
       spec="${path##*/compare/}"; base="${spec%...*}"; head="${spec##*...}"
       git -C "$FX_GH/$r.git" cat-file -e "$base^{commit}" 2>/dev/null && git -C "$FX_GH/$r.git" cat-file -e "$head^{commit}" 2>/dev/null || return 1
@@ -150,8 +165,9 @@ fake_ssm() {   # the Systems Manager call of the cut: nothing runs on a machine 
   printf '%s\n' "$hdr" >> "$FX_SSM_LOG"
   SSM_CID=fake-command; SSM_ERR=""; SSM_STATUS=Success; SSM_OUT=""
   case "$hdr" in
-    *"read gitlab-main"*)
-      if [ "${FAKE_SSM_FAIL:-}" = gitlab-main ]; then SSM_STATUS=Failed; SSM_ERR="fake failure"; return 1; fi
+    *"read gitlab-main"*|*"read gitlab-tags"*)
+      local want=gitlab-main; case "$hdr" in *gitlab-tags*) want=gitlab-tags ;; esac
+      if [ "${FAKE_SSM_FAIL:-}" = "$want" ]; then SSM_STATUS=Failed; SSM_ERR="fake failure"; return 1; fi
       full="$(PATH="$MACHINE_BIN:$PATH" FAKE_GITLAB_DIR="$FX_GL" FAKE_NO_XTOTAL="${FAKE_NO_XTOTAL:-0}" FAKE_XTOTAL_EXTRA="${FAKE_XTOTAL_EXTRA:-0}" \
         FAKE_PAGE_FAIL="${FAKE_PAGE_FAIL:-0}" FAKE_REPEAT_PAGE="${FAKE_REPEAT_PAGE:-0}" FAKE_XTOTAL_FROM="${FAKE_XTOTAL_FROM:-1}" sh -c "$1" 2>"$FX/tmp/machine.err")"; rc=$?
       printf '%s\n' "$(printf '%s' "$full" | wc -c)" >> "$FX/ssm-bytes.txt"   # the script's whole output, before Systems Manager's cut
@@ -160,7 +176,7 @@ fake_ssm() {   # the Systems Manager call of the cut: nothing runs on a machine 
       if [ "$rc" != 0 ]; then SSM_STATUS=Failed; SSM_ERR="$(tail -n 8 "$FX/tmp/machine.err")"; fi ;;
     *"read probe"*) SSM_OUT="$(printf 'marker=%s\nmirror_timer=%s' "${FAKE_MARKER:-none}" "${FAKE_MIRROR_TIMER:-enabled}")" ;;
     *"write mirror-final"*)   # the script's own exit status decides, as it does in Systems Manager
-      full="$(PATH="$MACHINE_BIN:$PATH" FAKE_MIRROR_FINAL="${FAKE_MIRROR_FINAL:-}" sh -c "$1" 2>"$FX/tmp/machine.err")"; rc=$?
+      full="$(PATH="$MACHINE_BIN:$PATH" FAKE_MIRROR_FINAL="${FAKE_MIRROR_FINAL:-}" FAKE_MIRROR_NOCOPY="${FAKE_MIRROR_NOCOPY:-0}" sh -c "$1" 2>"$FX/tmp/machine.err")"; rc=$?
       SSM_OUT="$full"; [ "$rc" = 0 ] || { SSM_STATUS=Failed; SSM_ERR="the script exited $rc"; } ;;
   esac
   [ "$SSM_STATUS" = Success ]
@@ -566,6 +582,55 @@ t_n1_failed_copy_stops_cut() {
   end
 }
 
+t_c12_gitlab_only_tag_refused() {
+  begin c12 t_c12_gitlab_only_tag_refused "a tag exists only on GitLab: step 2 refuses before the copy" 1
+  fx_new
+  put gl vitana-platform refs/tags/v-gl-only "$(src_sha vitana-platform main)"
+  invoke "$CUT" 0 'step2'
+  need_rc; need_text "vitana-platform tag v-gl-only exists only on GitLab"; need_text "nothing is copied"; no_copy; end
+}
+t_c13_differing_tag_refused() {
+  begin c13 t_c13_differing_tag_refused "a tag with another commit on GitLab than on GitHub: step 2 refuses before the copy" 1
+  fx_new
+  local base c; base="$(src_sha vitana-platform main)"; c="$(cm vitana-platform "$base" "gitlab tag target")"
+  put gh vitana-platform refs/tags/v1 "$base"; put gl vitana-platform refs/tags/v1 "$c"
+  invoke "$CUT" 0 'step2'
+  need_rc; need_text "vitana-platform tag v1 differs from GitHub's"; no_copy; end
+}
+t_c14_gitlab_tags_unreadable_refused() {
+  begin c14 t_c14_gitlab_tags_unreadable_refused "the GitLab tag list cannot be read: step 2 refuses before the copy" 1
+  fx_new
+  FAKE_SSM_FAIL=gitlab-tags invoke "$CUT" 0 'step2'
+  need_rc; need_text "the tags of GitLab vitana-platform are not read in full"; no_copy; end
+}
+t_c15_github_tags_unlisted_refused() {
+  begin c15 t_c15_github_tags_unlisted_refused "GitHub does not list its tags: step 2 refuses before the copy" 1
+  fx_new
+  FAKE_GH_FAIL=tags invoke "$CUT" 0 'step2'
+  need_rc; need_text "GitHub did not list the tags of vitana-platform"; no_copy; end
+}
+t_n2_copy_leaves_branch_refused() {
+  begin n2 t_n2_copy_leaves_branch_refused "the copy exits 0 but leaves a branch only GitHub has off GitLab: step 2 refuses after it, the copy timer keeps running" 1
+  fx_new
+  WRITES_OK=1
+  put gh vitana-platform feature/left-behind "$(src_sha vitana-platform main)"
+  FAKE_MIRROR_NOCOPY=1 invoke "$CUT" 0 'step2'
+  need_rc; need_text "after the copy, vitana-platform still differs"; need_text "vitana-platform feature/left-behind exists only on GitHub"
+  grep -q 'write mirror-final' "$FX_SSM_LOG" || BAD="$BAD the copy was not started;"
+  grep -q 'write unit' "$FX_SSM_LOG" && BAD="$BAD the copy timer was stopped;"
+  end
+}
+t_n3_copy_leaves_tag_refused() {
+  begin n3 t_n3_copy_leaves_tag_refused "the copy exits 0 but leaves a GitHub tag off GitLab: step 2 refuses after it, the copy timer keeps running" 1
+  fx_new
+  WRITES_OK=1
+  put gh vitana-platform refs/tags/v2 "$(src_sha vitana-platform main)"
+  FAKE_MIRROR_NOCOPY=1 invoke "$CUT" 0 'step2'
+  need_rc; need_text "after the copy, vitana-platform still differs"; need_text "vitana-platform tag v2 exists only on GitHub"
+  grep -q 'write unit' "$FX_SSM_LOG" && BAD="$BAD the copy timer was stopped;"
+  end
+}
+
 t_r1_gitlab_only_branch_refused_without_confirm() {
   begin r1 t_r1_gitlab_only_branch_refused_without_confirm "rollback: a GitLab-only branch without --confirm-prune-gitlab-only-branches: refused, nothing restarted" 1
   fx_new
@@ -580,16 +645,16 @@ t_r2_gitlab_commits_not_on_github_refused() {
   x="$(cm vitana-platform "$base" "shared")"; y="$(cm vitana-platform "$x" "gitlab ahead")"
   put gh vitana-platform feature/rw "$x"; put gl vitana-platform feature/rw "$y"
   rb_run 'CONFIRM_PRUNE=0; rb2'
-  need_rc; need_text "whose GitLab commits GitHub does not have"; end
+  need_rc; need_text "whose head differs from GitHub's"; end
 }
-t_r3_github_ahead_allowed() {
-  begin r3 t_r3_github_ahead_allowed "rollback: a head that GitHub is ahead of loses no commit, so the rollback goes on" 0
+t_r3_github_ahead_refused() {
+  begin r3 t_r3_github_ahead_refused "rollback: a head that GitHub is ahead of is refused, as in the cut: the copy has to bring GitLab up to GitHub first" 1
   fx_new
   local base x y; base="$(src_sha vitana-platform main)"
   x="$(cm vitana-platform "$base" "shared")"; y="$(cm vitana-platform "$x" "github ahead")"
   put gl vitana-platform feature/ff "$x"; put gh vitana-platform feature/ff "$y"
   rb_run 'CONFIRM_PRUNE=0; rb2'
-  need_rc; need_text "no branch would lose a commit"; end
+  need_rc; need_text "branches of vitana-platform whose head differs from GitHub's"; need_text "feature/ff(GitLab:"; need_text "Nothing is restored"; end
 }
 t_r4_main_not_equal_refused() {
   begin r4 t_r4_main_not_equal_refused "rollback: GitLab main is not GitHub main after the wait: refused, nothing restored" 1
@@ -612,6 +677,45 @@ t_r6_rollback_count_differs_refused() {
   need_rc; need_text "1 branches were read, GitLab counts 2"; end
 }
 
+t_r7_gitlab_only_tag_refused() {
+  begin r7 t_r7_gitlab_only_tag_refused "rollback: a tag that exists only on GitLab: refused, nothing restored" 1
+  fx_new
+  put gl vitana-platform refs/tags/v9 "$(src_sha vitana-platform main)"
+  rb_run 'CONFIRM_PRUNE=0; rb2'
+  need_rc; need_text "tags that exist only on GitLab (vitana-platform): v9"; end
+}
+t_r8_differing_tag_refused() {
+  begin r8 t_r8_differing_tag_refused "rollback: a tag with another commit on GitLab than on GitHub: refused, the output names it" 1
+  fx_new
+  local base c; base="$(src_sha vitana-platform main)"; c="$(cm vitana-platform "$base" "gitlab tag target")"
+  put gh vitana-platform refs/tags/v1 "$base"; put gl vitana-platform refs/tags/v1 "$c"
+  rb_run 'CONFIRM_PRUNE=0; rb2'
+  need_rc; need_text "tags of vitana-platform whose commit differs from GitHub's"; need_text "v1(GitLab:"; end
+}
+t_r9_confirm_does_not_pass_gitlab_only_branch() {
+  begin r9 t_r9_confirm_does_not_pass_gitlab_only_branch "rollback: --confirm-prune-gitlab-only-branches does not pass a GitLab-only branch: refused, nothing restored" 1
+  fx_new
+  put gl vitana-platform feature/gl-only "$(cm vitana-platform "$(src_sha vitana-platform main)" "gitlab only")"
+  rb_run 'CONFIRM_PRUNE=1; rb2'
+  need_rc; need_text "branches that exist only on GitLab (vitana-platform): feature/gl-only"; need_text "does not let them pass"; end
+}
+t_r10_confirm_does_not_pass_github_ahead() {
+  begin r10 t_r10_confirm_does_not_pass_github_ahead "rollback: the flag does not pass a head GitHub is ahead of: refused" 1
+  fx_new
+  local base x y; base="$(src_sha vitana-platform main)"
+  x="$(cm vitana-platform "$base" "shared")"; y="$(cm vitana-platform "$x" "github ahead")"
+  put gl vitana-platform feature/ff "$x"; put gh vitana-platform feature/ff "$y"
+  rb_run 'CONFIRM_PRUNE=1; rb2'
+  need_rc; need_text "feature/ff(GitLab:"; end
+}
+t_r11_github_only_tag_passes() {
+  begin r11 t_r11_github_only_tag_passes "rollback: a tag that exists only on GitHub is copied at step 6, so it is not refused" 0
+  fx_new
+  put gh vitana-platform refs/tags/v3 "$(src_sha vitana-platform main)"
+  rb_run 'CONFIRM_PRUNE=0; rb2'
+  need_rc; need_text "no branch or tag differs"; end
+}
+
 TESTS=(
   t_syntax t_a_equal_mains_dry_run t_b_gitlab_main_ahead_refused t_b2_github_main_ahead_refused t_b3_github_main_missing_refused
   t_b4_gitlab_main_unreadable_refused t_b5_gitlab_main_none_refused t_c_gitlab_only_branch_refused t_c2_diverged_branch_refused t_c3_github_ahead_branch_refused
@@ -625,9 +729,12 @@ TESTS=(
   t_k5_count_differs_from_x_total_refused t_k6_repeated_page_refused t_k7_completion_line_missing_refused t_k8_count_changes_between_pages_refused
   t_m1_gitlab_only_branch_kept t_m2_diverged_head_refused t_m3_differing_tag_refused t_m4_github_ahead_head_moves
   t_m5_gitlab_main_ahead_stops_push t_m6_control_forced_prune_destroys_refs t_m7_gitlab_head_ahead_refused
-  t_n1_failed_copy_stops_cut
-  t_r1_gitlab_only_branch_refused_without_confirm t_r2_gitlab_commits_not_on_github_refused t_r3_github_ahead_allowed
+  t_c12_gitlab_only_tag_refused t_c13_differing_tag_refused t_c14_gitlab_tags_unreadable_refused t_c15_github_tags_unlisted_refused
+  t_n1_failed_copy_stops_cut t_n2_copy_leaves_branch_refused t_n3_copy_leaves_tag_refused
+  t_r1_gitlab_only_branch_refused_without_confirm t_r2_gitlab_commits_not_on_github_refused t_r3_github_ahead_refused
   t_r4_main_not_equal_refused t_r5_gitlab_page2_failed_refused t_r6_rollback_count_differs_refused
+  t_r7_gitlab_only_tag_refused t_r8_differing_tag_refused t_r9_confirm_does_not_pass_gitlab_only_branch
+  t_r10_confirm_does_not_pass_github_ahead t_r11_github_only_tag_passes
 )
 printf '%-4s %-4s %-44s %s\n' "id" "exit" "test" "what | result"
 for t in "${TESTS[@]}"; do "$t"; done
