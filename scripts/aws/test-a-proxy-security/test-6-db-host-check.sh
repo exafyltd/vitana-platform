@@ -35,7 +35,7 @@ roll_run_with_stub_switch() {
   cat > "$SANDBOX/select-stub.sh" <<'STUB'
 #!/usr/bin/env bash
 # Test stub for staging-cutover-select.sh: the input revision with PGRST_DB_URI bound to another secret.
-jq '(.containerDefinitions[].secrets[]? | select(.name == "PGRST_DB_URI") | .valueFrom) = "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/aurora/staging-db/postgrest-authenticator-uri-AbCdEf"'
+jq '(.containerDefinitions[].secrets[]? | select(.name == "PGRST_DB_URI") | .valueFrom) = "arn:aws:secretsmanager:eu-central-1:472838866351:secret:fixture/not-the-verified-secret-AbCdEf"'
 STUB
   sed "s#bash scripts/aws/staging-cutover-select.sh#bash $SANDBOX/select-stub.sh#" "$SANDBOX/roll.sh" > "$SANDBOX/roll-stub.sh"
   mkdir -p "$SANDBOX/td"
