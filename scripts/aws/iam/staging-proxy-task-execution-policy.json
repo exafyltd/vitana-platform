@@ -9,6 +9,17 @@
         "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/gateway/staging/supabase-jwt-secret*",
         "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/aurora/staging-db/postgrest-authenticator-uri*"
       ]
+    },
+    {
+      "Sid": "StagingDbKeyForAuthenticatorSecret",
+      "Effect": "Allow",
+      "Action": "kms:Decrypt",
+      "Resource": "arn:aws:kms:eu-central-1:472838866351:key/REPLACE-WITH-STAGINGDBKEY-KEY-ID",
+      "Condition": {
+        "StringEquals": {
+          "kms:ViaService": "secretsmanager.eu-central-1.amazonaws.com"
+        }
+      }
     }
   ]
 }

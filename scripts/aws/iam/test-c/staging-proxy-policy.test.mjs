@@ -10,6 +10,10 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const POLICY_PATH = path.resolve(HERE, '..', 'staging-proxy-task-execution-policy.json');
 const POLICY_TEXT = fs.readFileSync(POLICY_PATH, 'utf8');
 
+const GET_SECRET_VALUE = 'secretsmanager:GetSecretValue';
+// A non-staging secret path. The negative tests add grants on it in memory.
+const DEV_ARN = 'arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/gateway/dev/supabase-jwt-secret*';
+
 // Production and rehearsal secret paths that the shared execution policy grants GetSecretValue on.
 const NAMED_PROD_OR_REHEARSAL = [
   'vitana/aurora/prod',
@@ -23,7 +27,19 @@ const PROD_OR_REHEARSAL_TOKEN = /(^|[/:.-])(prod|production|awsdr|rehearsal)($|[
 const STAGING_SECRET_NAME = /^vitana\/[a-z0-9-]+\/staging(-db)?\//;
 
 const asList = (value) => (value === undefined ? [] : Array.isArray(value) ? value : [value]);
-const grantsGetSecretValue = (action) => action === '*' || /^secretsmanager:(\*|get\*|getsecretvalue)$/i.test(action);
+
+// IAM action patterns: '*' matches any run of characters and '?' matches one character. IAM action names
+// are case-insensitive, so the match is too.
+const patternMatches = (pattern, text) => {
+  const source = String(pattern).replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.');
+  return new RegExp(`^${source}$`, 'i').test(text);
+};
+const listCoversGetSecretValue = (actions) => asList(actions).some((action) => patternMatches(action, GET_SECRET_VALUE));
+// A statement grants GetSecretValue when Action lists it, or when NotAction does not list it.
+const grantsGetSecretValue = (statement) =>
+  listCoversGetSecretValue(statement.Action) ||
+  (statement.NotAction !== undefined && !listCoversGetSecretValue(statement.NotAction));
+
 const secretNameOf = (arn) => {
   const at = arn.indexOf(':secret:');
   return at < 0 ? '' : arn.slice(at + ':secret:'.length);
@@ -44,10 +60,11 @@ function prodOrRehearsalResources(doc) {
 }
 
 // Every resource of a statement that grants GetSecretValue (any effect) and is not a staging secret path.
+// A NotResource on such a statement is reported too, because it covers every secret outside its list.
 function nonStagingGetSecretValueResources(doc) {
   const found = [];
   for (const statement of asList(doc.Statement)) {
-    if (!asList(statement.Action).some(grantsGetSecretValue)) continue;
+    if (!grantsGetSecretValue(statement)) continue;
     if (statement.NotResource !== undefined) found.push('NotResource');
     for (const resource of asList(statement.Resource)) {
       const text = String(resource);
@@ -77,8 +94,7 @@ test('(b) no Resource names a production or rehearsal secret path', () => {
 
 test('(c) every GetSecretValue statement names only staging paths', () => {
   const doc = JSON.parse(POLICY_TEXT);
-  const grants = asList(doc.Statement).filter((statement) => asList(statement.Action).some(grantsGetSecretValue));
-  assert.ok(grants.length > 0, 'the draft grants GetSecretValue somewhere, so the check is not vacuous');
+  assert.ok(asList(doc.Statement).some(grantsGetSecretValue), 'the draft grants GetSecretValue somewhere, so the check is not vacuous');
   assertStagingOnlyGetSecretValue(doc);
 });
 
@@ -91,9 +107,31 @@ test('(d) negative: a production or rehearsal ARN added in memory fails checks (
   ];
   for (const arn of added) {
     const mutated = JSON.parse(POLICY_TEXT); // an in-memory copy; the file on disk is not changed
-    const statement = mutated.Statement[0];
+    const statement = mutated.Statement.find(grantsGetSecretValue);
     statement.Resource = [...asList(statement.Resource), arn];
     assert.throws(() => assertNoProdOrRehearsal(mutated), /production or rehearsal/, `check (b) missed ${arn}`);
     assert.throws(() => assertStagingOnlyGetSecretValue(mutated), /non-staging/, `check (c) missed ${arn}`);
+  }
+});
+
+test('(e) negative: GetSecret*, *Value and NotAction grants on a non-staging ARN fail check (c)', () => {
+  const forms = [
+    { Action: 'secretsmanager:GetSecret*' },
+    { Action: 'secretsmanager:*Value' },
+    { NotAction: 'secretsmanager:DeleteSecret' },
+  ];
+  for (const form of forms) {
+    const mutated = JSON.parse(POLICY_TEXT); // an in-memory copy with one extra statement
+    mutated.Statement.push({ Effect: 'Allow', ...form, Resource: DEV_ARN });
+    assert.throws(() => assertStagingOnlyGetSecretValue(mutated), /non-staging/, `check (c) missed ${JSON.stringify(form)}`);
+  }
+});
+
+test('(f) control: statements that do not grant GetSecretValue pass check (c) on a non-staging ARN', () => {
+  const forms = [{ Action: 'secretsmanager:DescribeSecret' }, { NotAction: GET_SECRET_VALUE }];
+  for (const form of forms) {
+    const mutated = JSON.parse(POLICY_TEXT);
+    mutated.Statement.push({ Effect: 'Allow', ...form, Resource: DEV_ARN });
+    assert.doesNotThrow(() => assertStagingOnlyGetSecretValue(mutated), JSON.stringify(form));
   }
 });

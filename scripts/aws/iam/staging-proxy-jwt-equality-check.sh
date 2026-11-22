@@ -5,9 +5,10 @@
 #   scripts/aws/iam/staging-proxy-jwt-equality-check.sh <staging-secret-id> <production-secret-id>
 #
 # Prints EQUAL or NOT EQUAL to stdout and nothing else there. Both values are read into shell variables and
-# compared. No value, no hash and no trace is printed, logged or written, and set -x is not used. A failed read,
-# or a secret with no SecretString, stops the script with a fixed message on stderr and no result. A SecretString
-# whose text is the literal word None is refused the same way.
+# compared. No value, no hash and no trace is printed, logged or written, and set -x is not used. A failed read
+# stops the script with the AWS CLI's own error on stderr. That error can include a secret id, never a value. A
+# secret with no SecretString, or a SecretString whose text is the literal word None, stops the script with a
+# fixed message on stderr and no result.
 #
 # Needs credentials allowed secretsmanager:GetSecretValue on both secrets (eu-central-1). Run by the owner only.
 set -euo pipefail
