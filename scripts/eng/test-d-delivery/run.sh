@@ -3,8 +3,9 @@
 # copy on the GitLab machine (infra/gitlab-engineering/host/mirror.sh).   bash scripts/eng/test-d-delivery/run.sh
 # Nothing here reaches AWS, GitHub or GitLab. Every repository is a local bare repository under a temporary folder. Each network-facing command
 # (aws, gh, curl, ssh, wget, ssm) is a stub first on PATH: it writes its call to a log and fails, and the log must stay empty. The cut and the
-# rollback read GitHub and the GitLab machine through in-process fakes that answer from those local repositories. The fakes also refuse any write
-# to GitHub and any state-changing script on the machine. Exit: 0 when every case passes and no stub was called, 1 otherwise.
+# rollback read GitHub and the GitLab machine through in-process fakes that answer from those local repositories. The GitHub fake refuses and logs
+# any write. The machine fake logs every script, and the runner fails a case whose log shows a state-changing one. Exit: 0 when every case passes
+# and no stub was called, 1 otherwise.
 # This file never runs scripts/eng/delivery-cutover.test.mjs.
 set -uo pipefail
 
