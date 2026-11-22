@@ -1739,7 +1739,8 @@ test('B4: the bot refs train/* and assist/* are left out of the GitLab-only chec
     w.flag('fail/gitlab-truncated.vitana-v1');
     let r = w.run(ROLLBACK);
     assert.equal(r.status, 1, r.all);
-    assert.match(r.stdout, /GitLab lists more than 3000 branches of vitana-v1 \(page 30 of 100 is full\)/);
+    assert.match(r.stdout, /the branches of GitLab vitana-v1 are not read in full \(3 branches were read, GitLab counts 4\): nothing is restored/);
+    assert.match(r.stdout, /rollback: STOPPED at step 2/);
     assert.equal(/branches that exist only on GitLab/.test(r.stdout), false, 'train/* and assist/* are not listed');
     w.rm('fail/gitlab-truncated.vitana-v1');
     r = w.run(ROLLBACK);
@@ -1754,7 +1755,7 @@ test('B4: the bot refs train/* and assist/* are left out of the GitLab-only chec
   }
 });
 
-test('B4: on the machine the GitLab branch listing prints every head, stops at a short page, and says truncated when page 30 is still full', () => {
+test('B4: on the machine each page of the GitLab branch list carries X-Total; the last page prints listing=complete; a page of 24,000 bytes or more, and a page without X-Total, are refused', () => {
   const w = postCutWorld();
   let script;
   try {
@@ -1764,20 +1765,41 @@ test('B4: on the machine the GitLab branch listing prints every head, stops at a
     w.cleanup();
   }
   assert.ok(script, 'the rollback sends the listing script');
-  const curl = (perPage) => `cat >/dev/null; case "$*" in *branches/main) echo '{"commit":{"id":"aaaa"}}' ;; *page=1|*page=2) jq -n '[range(${perPage}) | {name: "b\\(.)", commit: {id: "s\\(.)"}}]' ;; *) jq -n '[range(${perPage}) | {name: "c\\(.)", commit: {id: "t\\(.)"}}]' ;; esac`;
-  const short = sandboxRun(script, { files: { 'bot-metrics-token': `${BOT_TOKEN}\n` }, bins: { curl: `cat >/dev/null; case "$*" in *branches/main) echo '{"commit":{"id":"aaaa"}}' ;; *page=1) jq -n '[{name: "main", commit: {id: "aaaa"}}, {name: "kiro/x", commit: {id: "bbbb"}}]' ;; *) echo '[]' ;; esac` } });
+  // The machine's curl answers the main branch, then the page it is asked for with its X-Total header (curl -i sends the headers, a blank line, then the body).
+  const pageCurl = (xTotal, jqList) => {
+    const head = xTotal === null ? 'HTTP/1.1 200 OK\\r\\n\\r\\n' : `HTTP/1.1 200 OK\\r\\nX-Total: ${xTotal}\\r\\n\\r\\n`;
+    return `cat >/dev/null; case "$*" in *branches/main) printf 'HTTP/1.1 200 OK\\r\\n\\r\\n'; echo '{"commit":{"id":"aaaa"}}' ;; *page=*) printf '${head}'; jq -n '${jqList}' ;; esac`;
+  };
+  const runPage = (s, curl) => sandboxRun(s, { files: { 'bot-metrics-token': `${BOT_TOKEN}\n` }, bins: { curl } });
+  // A short list is one page, and the last one: its counts, its branches, and listing=complete as the last line.
+  const short = runPage(script, pageCurl(2, '[{name: "main", commit: {id: "aaaa"}}, {name: "kiro/x", commit: {id: "bbbb"}}]'));
   assert.equal(short.status, 0, short.stderr);
   assert.match(short.stdout, /^main_sha=aaaa$/m);
-  assert.match(short.stdout, /^truncated=0$/m);
+  assert.match(short.stdout, /^x_total=2$/m);
+  assert.match(short.stdout, /^page_entries=2$/m);
   assert.match(short.stdout, /^branch=main aaaa$/m);
   assert.match(short.stdout, /^branch=kiro\/x bbbb$/m);
-  assert.equal(short.calls.filter((l) => l.includes('repository/branches?')).length, 1, 'a short first page ends the listing');
-  const full = sandboxRun(script, { files: { 'bot-metrics-token': `${BOT_TOKEN}\n` }, bins: { curl: curl(100) } });
-  assert.equal(full.status, 0, full.stderr);
-  assert.match(full.stdout, /^truncated=1$/m);
-  assert.equal(full.calls.filter((l) => l.includes('repository/branches?')).length, 30, 'it stops at page 30');
-  const exact = sandboxRun(script, { files: { 'bot-metrics-token': `${BOT_TOKEN}\n` }, bins: { curl: `cat >/dev/null; case "$*" in *branches/main) echo '{"commit":{"id":"aaaa"}}' ;; *page=1) jq -n '[range(100) | {name: "b\\(.)", commit: {id: "s"}}]' ;; *) echo '[]' ;; esac` } });
-  assert.match(exact.stdout, /^truncated=0$/m, 'a full page followed by an empty one is complete');
+  assert.equal(short.stdout.trimEnd().split('\n').pop(), 'listing=complete', 'the last page prints listing=complete last');
+  assert.equal(short.calls.filter((l) => l.includes('repository/branches?')).length, 1, 'a short list is one page');
+  // A list of 150 is two pages: page 1 is not the last one, page 2 is, and both carry the same X-Total.
+  const p1 = runPage(script, pageCurl(150, '[range(100) | {name: ("b" + (. | tostring)), commit: {id: "s"}}]'));
+  assert.equal(p1.status, 0, p1.stderr);
+  assert.match(p1.stdout, /^x_total=150$/m);
+  assert.match(p1.stdout, /^page_entries=100$/m);
+  assert.equal(/^listing=complete$/m.test(p1.stdout), false, 'page 1 of 150 is not the last page');
+  const p2 = runPage(script.replace(/^PAGE=1$/m, 'PAGE=2'), pageCurl(150, '[range(50) | {name: ("c" + (. | tostring)), commit: {id: "t"}}]'));
+  assert.equal(p2.status, 0, p2.stderr);
+  assert.match(p2.stdout, /^x_total=150$/m);
+  assert.match(p2.stdout, /^page_entries=50$/m);
+  assert.match(p2.stdout, /^listing=complete$/m);
+  // A page of 24,000 bytes or more is refused: Systems Manager would keep only the first 24,000 characters of it.
+  const big = runPage(script, pageCurl(100, `[range(100) | {name: ("${'x'.repeat(250)}" + (. | tostring)), commit: {id: "s"}}]`));
+  assert.equal(big.status, 1, big.stderr);
+  assert.match(big.stderr, /is 24,000 bytes or more/);
+  // A page without X-Total is refused: the listing cannot be checked against GitLab's count.
+  const noTotal = runPage(script, pageCurl(null, '[range(100) | {name: ("b" + (. | tostring)), commit: {id: "s"}}]'));
+  assert.equal(noTotal.status, 1, noTotal.stderr);
+  assert.match(noTotal.stderr, /has no X-Total header/);
 });
 
 test('B5: the rollback waits for the redeploy, reads the staging task definition again, and stops with the owner command while DELIVERY_HOST_* is still gitlab', () => {
