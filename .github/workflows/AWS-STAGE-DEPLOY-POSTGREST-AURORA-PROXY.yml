@@ -38,8 +38,8 @@
 # host vitana-aurora-prod (PGRST_DB_HOST). PostgREST connects to the host inside the PGRST_DB_URI secret value,
 # so the verify step reads that value once and checks its host against the owner-confirmed staging writer
 # endpoint (repository variable STAGING_AURORA_WRITER_ENDPOINT). The step reads only the verified secret
-# vitana/gateway/staging/postgrest-authenticator-uri. It refuses any STAGING_DATA_PLANE other than unset or shared,
-# because the isolated plane binds a database secret that this check does not read (owner decision). The step never
+# vitana/gateway/staging/postgrest-authenticator-uri. The register step refuses any candidate whose PGRST_DB_URI is
+# another secret. That covers the isolated plane (owner decision), because its secret is not read here. The step never
 # prints the value. It prints the host only when the host equals the endpoint, and it stops when the read fails. The
 # read needs secretsmanager:GetSecretValue for the deploy role on that secret. That grant is owner-only and is not in
 # this repository. The deploy also stops unless every check in "Verify staging credentials" passes.
@@ -143,7 +143,6 @@ jobs:
         env:
           STAGING_ROLE_ARN: ${{ vars.AWS_STAGING_ROLE_ARN }}
           STAGING_WRITER_ENDPOINT: ${{ vars.STAGING_AURORA_WRITER_ENDPOINT }}
-          STAGING_DATA_PLANE: ${{ vars.STAGING_DATA_PLANE }}
         run: |
           set -euo pipefail
           # A placeholder value must stop the job here, before any AWS call.
@@ -156,13 +155,6 @@ jobs:
               echo "::error::Refusing: '$NAME' is a production secret name or the production-derived rehearsal clone."; exit 1
             fi
           done
-          # The host check reads PGRST_DB_SECRET_ID, the verified secret that the shared plane binds as PGRST_DB_URI. The
-          # isolated plane binds a database secret that this check does not read, so any value other than unset or shared
-          # stops the job before any AWS call (review C2; owner decision).
-          case "${STAGING_DATA_PLANE:-shared}" in
-            shared) ;;
-            *) echo "::error::STAGING_DATA_PLANE must be unset or shared. The host check does not cover the isolated plane. Stopping before any AWS call."; exit 1 ;;
-          esac
           IDENTITY_ARN=$(aws sts get-caller-identity --query Arn --output text) \
             || { echo "::error::Cannot read the AWS caller identity. Stopping before any AWS change."; exit 1; }
           ACCOUNT=$(aws sts get-caller-identity --query Account --output text) \
@@ -277,6 +269,11 @@ jobs:
           # >>> VTID-05781 STAGING_DATA_PLANE (unset/shared and an unmarked task definition = nothing runs here)
           if [ "${STAGING_DATA_PLANE:-shared}" != shared ] || printf '%s' "$NEW_DEF" | grep -q '"STAGING_DATA_PLANE"'; then
             NEW_DEF=$(printf '%s' "$NEW_DEF" | bash scripts/aws/staging-cutover-select.sh --service postgrest)
+          fi
+          # The verify step read PGRST_DB_SECRET_ID only. The candidate must bind PGRST_DB_URI to that same secret, or the host
+          # check did not cover what the task runs with. The isolated plane binds another secret, so it stops here (review C2).
+          if [ "$(jq -r '[.containerDefinitions[].secrets[]? | select(.name == "PGRST_DB_URI") | .valueFrom] | join(",")' <<<"$NEW_DEF")" != "$SEC_DB_URI" ]; then
+            echo "::error::The candidate binds PGRST_DB_URI to a secret other than the verified one that the host check read. Nothing was registered."; exit 1
           fi
           # <<< VTID-05781
           # Refuse production targets on the exact revision about to be registered (same rule as the gateway gate):

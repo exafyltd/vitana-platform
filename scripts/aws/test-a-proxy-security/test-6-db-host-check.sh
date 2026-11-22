@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Brief item 6 (B6): the verify step reads the PGRST_DB_URI secret value once, compares the host inside it
-# with the owner-confirmed staging writer endpoint, prints only that host, and fails closed on any read or
-# parse failure. The stub answers that one read with a fake URI (FAKE-NOT-A-SECRET is test data).
-# The step reads only the verified secret, and it refuses every data plane except unset or shared (review C2).
+# Brief item 6 (B6): the verify step reads the PGRST_DB_URI secret value once, compares the host inside it with the
+# owner-confirmed staging writer endpoint, prints only that host, and fails closed on any read or parse failure. The stub
+# answers that one read with a fake URI (FAKE-NOT-A-SECRET is test data). The register step must bind PGRST_DB_URI to that
+# same verified secret, so a candidate bound to any other secret is refused before any register (review C2).
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 # db_host_check <endpoint> [NAME=value ...]: run the real verify step. An endpoint of UNSET leaves the
@@ -15,6 +15,17 @@ db_host_check() {
   run_env "STAGING_ROLE_ARN=$STAGING_ROLE_ARN" "STAGING_ACCOUNT_ID=$STAGING_ACCOUNT" \
     "PGRST_DB_SECRET_ID=$STAGING_DB_SECRET" "PGRST_JWT_SECRET_ID=$STAGING_JWT_SECRET" \
     "TARGET_AWS_REGION=eu-central-1" "${extra[@]}" "$@" -- bash "$SANDBOX/verify.sh"
+}
+
+# roll_run [NAME=value ...]: run the real register-and-roll step against the stub. The live proxy revision is a
+# staging-named fixture that binds the verified secrets. It is the revision the candidate is built from.
+roll_run() {
+  step_run "Register task-definition revision + roll the service" "$SANDBOX/roll.sh" || return 1
+  mkdir -p "$SANDBOX/td"
+  write_td_fixture "$SANDBOX/td/vitana-postgrest-aurora-staging-7.json" '.family = "vitana-postgrest-aurora-staging"'
+  run_env "PGRST_DB_SECRET_ID=$STAGING_DB_SECRET" "PGRST_JWT_SECRET_ID=$STAGING_JWT_SECRET" \
+    "STUB_TD_DIR=$SANDBOX/td" "STUB_TD_ARN=arn:aws:ecs:eu-central-1:472838866351:task-definition/vitana-postgrest-aurora-staging:7" \
+    "$@" -- bash "$SANDBOX/roll.sh"
 }
 
 # expect_no_secret_value: the output of the last run contains neither the fake password nor the URI.
@@ -127,22 +138,23 @@ t_other_scheme_is_refused() {
 }
 
 t_production_host_is_refused() {
-  # The endpoint is staging and the URI names production, so the production-name check on the host must refuse.
+  # The endpoint is staging and the URI names production. The whole-value production check refuses it.
   new_sandbox
   db_host_check "$STAGING_HOST" "STUB_DB_URI=$(uri_for "${PROD_HOST}:5432/vitana?sslmode=require")" \
     || { fail_expect "verify step is missing"; return 0; }
   expect_refused
-  expect_out 'names a production'
+  expect_out 'names a production or rehearsal resource'
+  expect_no_host_line
   expect_no_secret_value
 }
 
 t_production_endpoint_is_refused() {
-  # The endpoint and the URI both name production. The host is production-named, so it is refused.
+  # The endpoint and the URI both name production. The whole-value production check refuses it.
   new_sandbox
   db_host_check "$PROD_HOST" "STUB_DB_URI=$(uri_for "${PROD_HOST}:5432/vitana?sslmode=require")" \
     || { fail_expect "verify step is missing"; return 0; }
   expect_refused
-  expect_out 'names a production'
+  expect_out 'names a production or rehearsal resource'
   expect_no_secret_value
 }
 
@@ -179,14 +191,6 @@ t_step_binds_the_owner_endpoint_variable() {
   json=$(step_json "Verify staging credentials before any AWS change") || { fail_expect "verify step is missing"; return 0; }
   jq -e '.env.STAGING_WRITER_ENDPOINT == "${{ vars.STAGING_AURORA_WRITER_ENDPOINT }}"' <<<"$json" >/dev/null \
     || fail_expect "the verify step does not bind vars.STAGING_AURORA_WRITER_ENDPOINT"
-}
-
-t_step_binds_the_data_plane_variable() {
-  new_sandbox
-  local json
-  json=$(step_json "Verify staging credentials before any AWS change") || { fail_expect "verify step is missing"; return 0; }
-  jq -e '.env.STAGING_DATA_PLANE == "${{ vars.STAGING_DATA_PLANE }}"' <<<"$json" >/dev/null \
-    || fail_expect "the verify step does not bind vars.STAGING_DATA_PLANE"
 }
 
 # Parser forms from review C1. Each one is refused, and the refusal prints no host.
@@ -267,34 +271,27 @@ t_percent_encoded_password_passes() {
   if grep -q 'pa%3Fss' <<<"$OUT"; then fail_expect "the password was printed"; fi
 }
 
-# Data plane (review C2): the check reads only the verified secret, so every plane except unset or shared is refused.
+# Register path (review C2): the candidate binds PGRST_DB_URI to the verified secret, or it is refused before any register.
 
-t_isolated_plane_is_refused_before_any_read() {
-  # The isolated plane binds a database secret this check does not read. The refusal comes before any AWS call.
+t_register_refuses_a_candidate_bound_to_another_db_secret() {
+  # The isolated switch binds vitana/aurora/staging-db/postgrest-authenticator-uri. Verify never read that secret, so the
+  # register step refuses it before register-task-definition and update-service.
   new_sandbox
-  db_host_check "$STAGING_HOST" STAGING_DATA_PLANE=isolated || { fail_expect "verify step is missing"; return 0; }
+  roll_run STAGING_DATA_PLANE=isolated STAGING_CUTOVER_APPROVED=yes || { fail_expect "roll step is missing"; return 0; }
   expect_refused
-  expect_out 'must be unset or shared'
-  expect_calls '^sts get-caller-identity' 0
-  expect_calls '^secretsmanager' 0
+  expect_out 'binds PGRST_DB_URI to a secret other than the verified one'
+  expect_calls '^ecs register-task-definition' 0
+  expect_calls '^ecs update-service' 0
 }
 
-t_unknown_data_plane_is_refused() {
+t_register_accepts_the_verified_binding() {
+  # Control: on the shared plane the candidate binds PGRST_DB_URI to the verified secret, so it registers and rolls.
   new_sandbox
-  db_host_check "$STAGING_HOST" STAGING_DATA_PLANE=Isolated || { fail_expect "verify step is missing"; return 0; }
-  expect_refused
-  expect_out 'must be unset or shared'
-  expect_calls '^secretsmanager' 0
-}
-
-t_shared_plane_reads_the_verified_name() {
-  # Control: an explicit shared plane reads the verified secret once and passes.
-  new_sandbox
-  db_host_check "$STAGING_HOST" STAGING_DATA_PLANE=shared || { fail_expect "verify step is missing"; return 0; }
+  roll_run STAGING_DATA_PLANE=shared || { fail_expect "roll step is missing"; return 0; }
   expect_ok
-  expect_out 'PGRST_DB_URI host: aurora-staging.test.invalid'
-  expect_calls "^secretsmanager get-secret-value --secret-id $STAGING_DB_SECRET " 1
-  expect_no_secret_value
+  expect_calls '^ecs register-task-definition' 1
+  expect_calls '^ecs update-service' 1
+  expect_out 'Service stable on'
 }
 
 t_verify_step_reads_only_verified_secret_names() {
