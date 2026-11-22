@@ -690,7 +690,7 @@ step1() {
   for r in "${REPOS[@]}"; do   # the first thing step1 does: refuse while the two mains differ. Reads only; GitHub main is not restricted yet
     gh="$(main_sha "$r")"; gl="$(gitlab_main_of "$r")"
     if [ -z "$gh" ] || [ "$gh" != "$gl" ]; then
-      say "  GitHub main of $r is ${gh:-unknown}, GitLab main is ${gl:-unknown}: not the same commit, so GitHub main is not restricted. Wait for the GitHub-to-GitLab copy to bring them together (look at the mirror of vitana/$r if it does not), then run this again"
+      say "  GitHub main of $r is ${gh:-unknown}, GitLab main is ${gl:-unknown}: not the same commit, so GitHub main is not restricted. If GitHub is ahead, wait for the GitHub-to-GitLab copy to bring GitLab up to it (look at the mirror of vitana/$r if it does not), then run this again. If GitLab has commits that GitHub lacks, the copy does not move GitLab main back: push those commits to GitHub first"
       return 1
     fi
   done
@@ -724,11 +724,12 @@ s1_backup() {   # repo rc-of-gh_protection (0 protected: PROT_JSON is saved, 2 n
 
 # step 2 ------------------------------------------------------------------------------------------------------------------------
 gitlab_main_of() { ssm_run "$(r_gitlab_main "$1")" 30; kv main_sha; }
-# The copy below force-pushes every branch from GitHub to GitLab and deletes the GitLab branches that GitHub does not have. So before it runs, no
-# branch may exist only on GitLab, and no GitLab head may be missing from GitHub's history. This is the check of rb_branch_check in
-# delivery-rollback.sh (keep the two in step). The bot refs train/* and assist/* are GitLab-only by design and are left out. A branch named in
+# The copy below only adds the branches GitHub has: mirror.sh pushes without force and without prune, so it moves no GitLab ref that differs and
+# deletes none. The cut still refuses any difference before the copy runs: every GitLab branch must have the same head on GitHub (GitLab-only,
+# behind, ahead or diverged). The rollback's check (rb_branch_check in delivery-rollback.sh) refuses only what a copy would lose, so it allows a
+# head that GitHub is ahead of. The bot refs train/* and assist/* are GitLab-only by design and are left out. A branch named in
 # CUTOVER_BRANCH_ALLOWLIST is skipped.
-copy_branch_check() {   # repo -> 0 when the copy loses no branch of it; otherwise it prints the branches and returns 1
+copy_branch_check() {   # repo -> 0 when every GitLab branch of it has the same head on GitHub; otherwise it prints them and returns 1
   local r="$1" gh gl name sha ghsha why bad=""
   if ! ssm_run "$(r_gitlab_main "$r")" 30 || [ -z "$(kv main_sha)" ] || [ "$(kv main_sha)" = none ]; then
     say "  the branches of GitLab $r cannot be read (Systems Manager status ${SSM_STATUS:-unknown}): nothing is copied"; return 1
@@ -743,14 +744,12 @@ copy_branch_check() {   # repo -> 0 when the copy loses no branch of it; otherwi
     [ -n "$name" ] || continue
     [[ "$name" =~ ^(train|assist)/ ]] && continue
     ghsha="$(awk -F'\t' -v n="$name" '$1 == n { print $2; exit }' <<<"$gh")"
-    if [ -z "$ghsha" ]; then why="exists only on GitLab"
-    elif [ "$ghsha" = "$sha" ]; then continue
-    elif [ "$(x_gh api "repos/$GH_OWNER/$r/compare/$sha...$ghsha" --jq .status 2>/dev/null)" = ahead ]; then continue
-    else why="GitLab head ${sha:0:12} is not in GitHub's history (GitHub has ${ghsha:0:12})"; fi
+    if [ -n "$ghsha" ] && [ "$ghsha" = "$sha" ]; then continue; fi
+    if [ -z "$ghsha" ]; then why="exists only on GitLab"; else why="GitLab head ${sha:0:12} differs from GitHub's ${ghsha:0:12}"; fi
     case " $BRANCH_ALLOWLIST " in *" $name "*) say "  $r $name $why: skipped, it is on CUTOVER_BRANCH_ALLOWLIST"; continue ;; esac
     say "  $r $name $why"; bad=1
   done <<<"$gl"
-  [ -z "$bad" ] || { say "  nothing is copied. Push these branches to GitHub (or merge GitHub's head into them on GitLab and push), or list the ones you approve to skip in CUTOVER_BRANCH_ALLOWLIST, then run this again"; return 1; }
+  [ -z "$bad" ] || { say "  nothing is copied. Make each head equal on both sides: push GitLab-only commits to GitHub; for a diverged head, merge GitHub's head into the GitLab branch and push that to GitHub; when GitHub is ahead, run the copy (systemctl start vitana-mirror.service on the GitLab machine). Or list the branches you approve to skip in CUTOVER_BRANCH_ALLOWLIST. Then run this again"; return 1; }
 }
 step2() {
   local r gh gl

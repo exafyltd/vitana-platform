@@ -3,8 +3,8 @@
 # the same place and with the same rules as scripts/eng/delivery-cutover.sh, whose functions it uses (it sources that file; nothing runs on
 # sourcing). It reverses §8.2 in the order of §8.4 and loses no commit:
 #   1 stop landing on GitLab (the merge bot's timer)          2 check that GitHub main equals GitLab main (the push mirror copied it), that no
-#   branch exists only on GitLab (the GitHub-to-GitLab copy prunes those; the bot refs train/* and assist/* are left out), and that no branch on
-#   both hosts has a GitLab head that GitHub's head does not contain (the copy force-pushes every branch)
+#   branch exists only on GitLab (the bot refs train/* and assist/* are left out), and that no branch on both hosts has a GitLab head that GitHub's
+#   head does not contain (mirror.sh never rewinds a GitLab ref, so those commits would stay on GitLab only)
 #   3 restore the GitHub protection of main from the copy saved by the cut, only while main is still the cut's lock
 #   4 enable again the workflows the cut disabled (exactly those, and only those still disabled_manually)   5 stop the bridge   6 start the GitHub-to-GitLab copy again
 #   7 remove the cutover marker and run the settings sync (both projects are mirror projects again, the push mirror is gone)   8 start the merge bot again
@@ -26,12 +26,12 @@ rb_usage() {
   cat <<'USAGE'
 usage: bash scripts/eng/delivery-rollback.sh [agentic-delivery] [--dry-run] [--confirm-prune-gitlab-only-branches] [--break-lock]
   Reverses the cut (plan section 8.4). Give the plan slug to make the changes; without it (or with --dry-run) nothing is changed.
-  --confirm-prune-gitlab-only-branches   go on although some branches exist only on GitLab: the restarted GitHub-to-GitLab copy deletes them.
+  --confirm-prune-gitlab-only-branches   go on although some branches exist only on GitLab: they stay on GitLab, and GitHub does not have them.
   --break-lock                           clear a lock left by a run that died, when it is older than 6 hours.
 USAGE
 }
 
-BOT_REFS='^(train|assist)/'   # GitLab-only by design (the merge bot's train/<k> and the assist/<iid>-<rule> branches): the copy may prune them
+BOT_REFS='^(train|assist)/'   # GitLab-only by design (the merge bot's train/<k> and the assist/<iid>-<rule> branches): left out of the branch check
 gh_branch_heads() { x_gh api "repos/$GH_OWNER/$1/branches" --paginate --jq '.[] | [.name, .commit.sha] | @tsv' 2>/dev/null; }   # name<TAB>sha
 kv_branches() { sed -n 's/^branch=//p' <<<"$SSM_OUT" | awk '{ print $1 "\t" $2 }'; }   # the GitLab listing of r_gitlab_main: name<TAB>sha
 gh_contains() {   # repo github-sha gitlab-sha: 0 when GitHub's head contains the GitLab head (compare base...head is ahead or identical)
@@ -85,12 +85,12 @@ rb2() {
     rb_branch_check "$r" || return 1
     if [ -n "$RB_RISK" ]; then
       say "  branches of $r whose GitLab commits GitHub does not have:${RB_RISK}"
-      say "  the restarted GitHub-to-GitLab copy force-pushes every branch and would rewind them. Push them from GitLab to GitHub (or merge GitHub's head into them on GitLab and push), then run this again. Nothing is restored"
+      say "  mirror.sh does not rewind them, but GitHub does not have these commits. Push them from GitLab to GitHub (or merge GitHub's head into them on GitLab and push), then run this again. Nothing is restored"
       [ "$DRY" = 1 ] || return 1
     fi
     if [ -n "$RB_ONLY" ]; then
       say "  branches that exist only on GitLab ($r):${RB_ONLY}"
-      if [ "$CONFIRM_PRUNE" != 1 ]; then say "  the restarted GitHub-to-GitLab copy deletes branches that GitHub does not have. Push them to GitHub, or run again with --confirm-prune-gitlab-only-branches to let them go"; [ "$DRY" = 1 ] || return 1; fi
+      if [ "$CONFIRM_PRUNE" != 1 ]; then say "  they stay on GitLab, and GitHub does not have them. Push them to GitHub, or run again with --confirm-prune-gitlab-only-branches to accept that they stay GitLab-only"; [ "$DRY" = 1 ] || return 1; fi
     fi
   done
   say "  GitHub main equals GitLab main in both repositories, and no branch would lose a commit"

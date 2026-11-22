@@ -3,6 +3,16 @@
 # systemd timer). GitHub stays the source of truth. Idle until the GitHub read-only token is stored in
 # Secrets Manager (vitana/engineering/gitlab/github-mirror-token).
 set -uo pipefail
+
+# push_repo cache-dir gitlab-url repo: main first (it becomes the default branch of an empty GitLab project), then every other head and tag.
+# Neither push forces or prunes. A branch or tag that exists only on GitLab stays. git moves a GitLab ref only when GitHub's value descends from
+# it; a diverged head, a tag that differs, or a GitLab head that GitHub does not contain is refused and kept, and the push reports it.
+push_repo() {
+  git -C "$1" push -q "$2" refs/heads/main:refs/heads/main || { echo "push main failed: $3"; return 1; }
+  git -C "$1" push -q "$2" 'refs/heads/*:refs/heads/*' 'refs/tags/*:refs/tags/*' || { echo "push all failed: $3"; return 1; }
+}
+# The tests in scripts/eng/test-d-delivery source this file to call push_repo. They stop here: nothing below runs on that path.
+if [ "${BASH_SOURCE[0]}" != "$0" ]; then return 0; fi
 . /etc/vitana/env
 export AWS_DEFAULT_REGION="$REGION" HOME=/root
 exec 9>/run/vitana-mirror.lock
@@ -25,9 +35,7 @@ for repo in vitana-platform vitana-v1; do
   fi
   url="http://oauth2:$GL@127.0.0.1/vitana/$repo.git"
   echo "== $repo: push to GitLab"
-  # main first, so it becomes the default branch of the empty GitLab project
-  git -C "$d" push -q "$url" refs/heads/main:refs/heads/main 2>&1 | scrub || { echo "push main failed: $repo"; rc=1; continue; }
-  git -C "$d" push -q --prune "$url" '+refs/heads/*:refs/heads/*' '+refs/tags/*:refs/tags/*' 2>&1 | scrub || { echo "push all failed: $repo"; rc=1; continue; }
+  push_repo "$d" "$url" "$repo" 2>&1 | scrub || { rc=1; continue; }
   # The first full push creates hundreds of branches at once, and GitLab skips pipelines for such pushes.
   # Start the first pipeline on main explicitly.
   mark="/var/lib/vitana-mirror/$repo.first-pipeline"
