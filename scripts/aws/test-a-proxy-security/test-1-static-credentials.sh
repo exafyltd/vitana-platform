@@ -61,6 +61,12 @@ t_guard_steps_cannot_be_skipped_or_ignored() {
   done
 }
 
+t_cutover_workflow_reads_no_static_aws_keys() {
+  local hits
+  hits=$(grep -nE 'aws-access-key-id|aws-secret-access-key|secrets\.AWS_STAGING_|AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY' "$CUTOVER_WORKFLOW" || true)
+  [ -z "$hits" ] || fail_expect "static AWS key reference in the cutover workflow: $(tr '\n' ' ' <<<"$hits")"
+}
+
 t_guard_steps_run_before_any_aws_change() {
   local names order name idx
   names=$(ruby "$STEPS_RB" "$WORKFLOW" steps) || { fail_expect "cannot read the step list"; return 0; }

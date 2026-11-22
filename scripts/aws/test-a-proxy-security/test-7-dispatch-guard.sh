@@ -49,4 +49,43 @@ t_proxy_guard_accepts_main() {
   expect_ok
 }
 
+# cutover_gate_run <ref> <action> <record run id>: the cutover workflow's gate step with these inputs.
+cutover_gate_run() {
+  cutover_step_run "Inputs, main, role" "$SANDBOX/cutover-gate.sh" || return 1
+  run_env "REF=$1" "ACTION=$2" "RUN_ID=$3" "STAGING_ROLE_ARN=$STAGING_ROLE_ARN" -- bash "$SANDBOX/cutover-gate.sh"
+}
+
+# The cutover workflow has no ref check of its own in flip or rollback. Both jobs need the gate, and the gate refuses
+# any ref other than refs/heads/main. Each refusal below is a negative test of that gate.
+t_cutover_gate_refuses_kiro_test_ref() {
+  new_sandbox
+  cutover_gate_run refs/heads/kiro-test/proxy-security-containment rollback 123 \
+    || { fail_expect "gate step 'Inputs, main, role' is missing"; return 0; }
+  expect_refused
+  expect_out 'run from main only'
+  expect_calls '^sts ' 0
+}
+
+t_cutover_gate_refuses_tag_ref() {
+  new_sandbox
+  cutover_gate_run refs/tags/v1 rollback 123 || { fail_expect "gate step is missing"; return 0; }
+  expect_refused
+  expect_out 'run from main only'
+}
+
+t_cutover_gate_accepts_main_for_rollback() {
+  new_sandbox
+  cutover_gate_run refs/heads/main rollback 123 || { fail_expect "gate step is missing"; return 0; }
+  expect_ok
+}
+
+t_flip_and_rollback_need_the_gate() {
+  new_sandbox
+  local job needs
+  for job in flip rollback; do
+    needs=$(ruby "$STEPS_RB" "$CUTOVER_WORKFLOW" job-needs "$job") || { fail_expect "cannot read the needs of $job"; continue; }
+    jq -e 'index("gate") != null' <<<"$needs" >/dev/null || fail_expect "job $job does not need the gate: $needs"
+  done
+}
+
 run_all_tests
