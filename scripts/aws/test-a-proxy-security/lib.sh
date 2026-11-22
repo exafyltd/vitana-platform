@@ -12,7 +12,9 @@
 TEST_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$TEST_LIB_DIR/../../.." && pwd)"
 WORKFLOW="$REPO_ROOT/.github/workflows/AWS-STAGE-DEPLOY-POSTGREST-AURORA-PROXY.yml"
+CUTOVER_WORKFLOW="$REPO_ROOT/.github/workflows/AWS-STAGE-CUTOVER.yml"
 SETUP="$REPO_ROOT/scripts/aws/setup-postgrest-aurora-proxy-staging.sh"
+CUTOVER_ECS="$REPO_ROOT/scripts/aws/staging-cutover-ecs.sh"
 STEPS_RB="$TEST_LIB_DIR/workflow_steps.rb"
 TESTS_TMP="${TESTS_TMP:-$(mktemp -d "${TMPDIR:-/tmp}/proxy-security-tests.XXXXXX")}"
 
@@ -21,9 +23,12 @@ STAGING_ROLE_ARN="arn:aws:iam::472838866351:role/vitana-gha-staging-deploy"
 REHEARSAL_DB_SECRET="vitana/aurora/rehearsal/postgrest-authenticator-uri"
 FIXTURE_DB_SECRET="vitana/aurora/fixture-staging/postgrest-authenticator-uri"
 PLACEHOLDER_DB_SECRET="REPLACE_WITH_OWNER_CONFIRMED_STAGING_SECRET"
-STAGING_JWT_SECRET="vitana/gateway/staging/supabase-jwt-secret"
+STAGING_JWT_SECRET="vitana/gateway/staging/postgrest-jwt-secret"
+STAGING_DB_SECRET="vitana/gateway/staging/postgrest-authenticator-uri"
 STAGING_HOST="aurora-staging.test.invalid"
 PROD_HOST="vitana-aurora-prod.test.invalid"
+# A fake database URI for the host check. The password is test data, not a secret.
+FAKE_DB_URI="postgresql://authenticator:FAKE-NOT-A-SECRET@${STAGING_HOST}:5432/vitana?sslmode=require"
 # State-changing calls. A match in the stub log means a change was attempted.
 MUTATION_RE='^(ecr create-|logs create-|logs put-|servicediscovery create-|ecs register-|ecs create-|ecs update-)'
 
@@ -50,9 +55,6 @@ svc="${1:-}"; sub="${2:-}"
 shift $(( $# < 2 ? $# : 2 ))
 line="$svc $sub $*"
 printf '%s\n' "$line" >> "$STUB_LOG"
-case "$line" in
-  *get-secret-value*) printf 'VIOLATION secret value read: %s\n' "$line" >> "$STUB_LOG"; exit 97 ;;
-esac
 secret_arn() { # secret_arn <name>
   printf 'arn:aws:secretsmanager:eu-central-1:%s:secret:%s-AbCdEf' \
     "${STUB_SECRET_ACCOUNT:-${STUB_ACCOUNT:-472838866351}}" "$1"
@@ -65,6 +67,17 @@ case "$svc $sub" in
       *"--query Arn"*) echo "${STUB_IDENTITY_ARN:-arn:aws:sts::472838866351:assumed-role/vitana-gha-staging-deploy/GitHubActions}" ;;
       *) echo "UNEXPECTED sts query: $line" >> "$STUB_LOG"; exit 98 ;;
     esac ;;
+  "secretsmanager get-secret-value")
+    # Only the staging database secret may be read, and only by the host check. Any other read is a violation.
+    name=$(arg_value --secret-id "$@")
+    if [ -z "${STUB_READABLE_SECRET:-}" ] || [ "$name" != "$STUB_READABLE_SECRET" ]; then
+      printf 'VIOLATION secret value read: %s\n' "$line" >> "$STUB_LOG"; exit 97
+    fi
+    if [ "${STUB_GET_SECRET_DENIED:-0}" = 1 ]; then
+      echo "An error occurred (AccessDeniedException) when calling the GetSecretValue operation: not authorized" >&2
+      exit 254
+    fi
+    printf '%s' "${STUB_DB_URI:?stub: STUB_DB_URI is not set}" ;;
   "secretsmanager describe-secret")
     name=$(arg_value --secret-id "$@")
     case " ${STUB_MISSING_SECRETS:-} " in *" $name "*) echo "stub: secret not found" >&2; exit 254 ;; esac
@@ -76,12 +89,23 @@ case "$svc $sub" in
   "ecr describe-repositories") echo "472838866351.dkr.ecr.eu-central-1.amazonaws.com/vitana/postgrest-aurora-proxy" ;;
   "ecs describe-services")
     [ "${STUB_ECS_DESCRIBE_RC:-0}" = 0 ] || { echo "stub: describe-services failed" >&2; exit "$STUB_ECS_DESCRIBE_RC"; }
+    if [ -n "${STUB_SERVICES_DIR:-}" ] && [[ "$line" != *"--query"* ]]; then
+      cat "$STUB_SERVICES_DIR/$(arg_value --services "$@").json"; exit $?
+    fi
     case "$line" in
       *"services[0].status"*) echo "${STUB_ECS_STATUS:-None}" ;;
       *"services[0].taskDefinition"*) echo "${STUB_TD_ARN:-arn:aws:ecs:eu-central-1:472838866351:task-definition/vitana-postgrest-aurora-proxy:7}" ;;
       *) echo "None" ;;
     esac ;;
-  "ecs describe-task-definition") cat "${STUB_TD_FILE:?stub: STUB_TD_FILE is not set}" ;;
+  "ecs describe-task-definition")
+    if [ -n "${STUB_TD_DIR:-}" ]; then # one fixture per revision: <family>-<revision>.json
+      arn=$(arg_value --task-definition "$@")
+      base="${arn##*/}"; f="$STUB_TD_DIR/${base/:/-}.json"
+      [ -f "$f" ] || { echo "stub: no task definition fixture for $arn" >&2; exit 254; }
+      cat "$f"
+    else
+      cat "${STUB_TD_FILE:?stub: STUB_TD_FILE is not set}"
+    fi ;;
   "ecs register-task-definition")
     payload=$(arg_value --cli-input-json "$@")
     n=$(( $(ls -1 "$STUB_PAYLOADS" | wc -l) + 1 ))
@@ -100,6 +124,8 @@ esac
 STUB
   chmod +x "$bin/aws"
   local tool
+  # staging-cutover-select.sh runs node. Link the host node in; it is not on the harness PATH.
+  [ -n "$(type -P node)" ] && ln -sf "$(type -P node)" "$bin/node"
   for tool in curl wget ssh scp nc psql docker; do
     cat > "$bin/$tool" <<EOF
 #!/usr/bin/env bash
@@ -122,7 +148,8 @@ new_sandbox() {
 # run_env [NAME=value ...] -- <command...>: run in the repo with the stub PATH and an empty environment.
 # Sets RC (exit status) and OUT (combined output). A recorded VIOLATION or UNEXPECTED call fails the test.
 run_env() {
-  local -a vars=()
+  # Defaults first: a later NAME=value in the arguments overrides them.
+  local -a vars=("STUB_DB_URI=$FAKE_DB_URI" "STUB_READABLE_SECRET=$STAGING_DB_SECRET")
   while [ $# -gt 0 ] && [ "$1" != -- ]; do vars+=("$1"); shift; done
   [ "${1:-}" = -- ] && shift
   OUT=$(cd "$REPO_ROOT" && env -i PATH="$STUB_BIN:/usr/bin:/bin" LANG=C \
@@ -139,6 +166,9 @@ step_run() { ruby "$STEPS_RB" "$WORKFLOW" run "$1" "$2"; }
 
 # step_json <step name>: one step as JSON. Fails if the step is missing.
 step_json() { ruby "$STEPS_RB" "$WORKFLOW" step "$1"; }
+
+# cutover_step_run <step name> <file>: one step's run block from the cutover workflow's gate job.
+cutover_step_run() { WF_JOB=gate ruby "$STEPS_RB" "$CUTOVER_WORKFLOW" run "$1" "$2"; }
 
 # write_td_fixture <file> [jq filter]: the clean task definition returned by describe-task-definition,
 # optionally changed by a jq filter.
@@ -174,7 +204,7 @@ write_td_fixture() {
       ],
       "secrets": [
         {"name": "PGRST_DB_URI", "valueFrom": "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/aurora/fixture-staging/postgrest-authenticator-uri-AbCdEf"},
-        {"name": "PGRST_JWT_SECRET", "valueFrom": "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/gateway/staging/supabase-jwt-secret-AbCdEf"}
+        {"name": "PGRST_JWT_SECRET", "valueFrom": "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/gateway/staging/postgrest-jwt-secret-AbCdEf"}
       ]
     }
   ]

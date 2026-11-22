@@ -1,11 +1,14 @@
-# Read-only queries over the proxy deploy workflow, used by the offline tests.
+# Read-only queries over a workflow file, used by the offline tests.
 #
 # Usage:
-#   ruby workflow_steps.rb <workflow.yml> steps              # step names, in order (JSON)
+#   ruby workflow_steps.rb <workflow.yml> steps              # step names of the job, in order (JSON)
 #   ruby workflow_steps.rb <workflow.yml> job-env            # job env (JSON)
 #   ruby workflow_steps.rb <workflow.yml> step <name>        # one step (JSON); exits 1 if missing
 #   ruby workflow_steps.rb <workflow.yml> run <name> <file>  # write one step's run block to <file>
+#   ruby workflow_steps.rb <workflow.yml> job-if <job>       # the job's if (JSON, null when absent)
+#   ruby workflow_steps.rb <workflow.yml> job-needs <job>    # the job's needs as a list (JSON)
 #
+# The job for steps, step, run and job-env is named by the env var WF_JOB, and defaults to JOB.
 # A run block is written with ${{ ... }} expressions replaced by fixed test values. An expression
 # that has no test value stops the extraction, so a new expression cannot be skipped silently.
 require 'yaml'
@@ -26,18 +29,27 @@ SUBSTITUTIONS = {
 }.freeze
 
 wf_path, cmd, *rest = ARGV.map { |arg| arg.dup.force_encoding('UTF-8') }
-job = YAML.load_file(wf_path).fetch('jobs').fetch(JOB)
-steps = job.fetch('steps')
+jobs = YAML.load_file(wf_path).fetch('jobs')
+
+named_job = lambda do |name|
+  jobs.fetch(name) { abort("no job named #{name.inspect}") }
+end
+current_job = -> { named_job.call(ENV.fetch('WF_JOB', JOB)) }
+steps = -> { current_job.call.fetch('steps', []) }
 
 find_step = lambda do |name|
-  steps.find { |step| step['name'] == name } || abort("no step named #{name.inspect}")
+  steps.call.find { |step| step['name'] == name } || abort("no step named #{name.inspect}")
 end
 
 case cmd
 when 'steps'
-  puts steps.map { |step| step['name'] || step['uses'] }.to_json
+  puts steps.call.map { |step| step['name'] || step['uses'] }.to_json
 when 'job-env'
-  puts job.fetch('env').to_json
+  puts current_job.call.fetch('env').to_json
+when 'job-if'
+  puts named_job.call(rest[0]).fetch('if', nil).to_json
+when 'job-needs'
+  puts Array(named_job.call(rest[0]).fetch('needs', nil)).to_json
 when 'step'
   puts find_step.call(rest[0]).to_json
 when 'run'
