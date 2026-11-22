@@ -28,6 +28,23 @@ roll_run() {
     "$@" -- bash "$SANDBOX/roll.sh"
 }
 
+# roll_run_with_stub_switch: the roll step with the isolated switch replaced by a stub. The stub binds PGRST_DB_URI to the
+# staging-db authenticator name, which is not the verified secret. The isolated switch is requested, as in roll_run.
+roll_run_with_stub_switch() {
+  step_run "Register task-definition revision + roll the service" "$SANDBOX/roll.sh" || return 1
+  cat > "$SANDBOX/select-stub.sh" <<'STUB'
+#!/usr/bin/env bash
+# Test stub for staging-cutover-select.sh: the input revision with PGRST_DB_URI bound to another secret.
+jq '(.containerDefinitions[].secrets[]? | select(.name == "PGRST_DB_URI") | .valueFrom) = "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/aurora/staging-db/postgrest-authenticator-uri-AbCdEf"'
+STUB
+  sed "s#bash scripts/aws/staging-cutover-select.sh#bash $SANDBOX/select-stub.sh#" "$SANDBOX/roll.sh" > "$SANDBOX/roll-stub.sh"
+  mkdir -p "$SANDBOX/td"
+  write_td_fixture "$SANDBOX/td/vitana-postgrest-aurora-staging-7.json" '.family = "vitana-postgrest-aurora-staging"'
+  run_env "PGRST_DB_SECRET_ID=$STAGING_DB_SECRET" "PGRST_JWT_SECRET_ID=$STAGING_JWT_SECRET" \
+    "STUB_TD_DIR=$SANDBOX/td" "STUB_TD_ARN=arn:aws:ecs:eu-central-1:472838866351:task-definition/vitana-postgrest-aurora-staging:7" \
+    STAGING_DATA_PLANE=isolated STAGING_CUTOVER_APPROVED=yes -- bash "$SANDBOX/roll-stub.sh"
+}
+
 # expect_no_secret_value: the output of the last run contains neither the fake password nor the URI.
 expect_no_secret_value() {
   if grep -q 'FAKE-NOT-A-SECRET' <<<"$OUT"; then fail_expect "the secret value was printed"; fi
@@ -274,10 +291,11 @@ t_percent_encoded_password_passes() {
 # Register path (review C2): the candidate binds PGRST_DB_URI to the verified secret, or it is refused before any register.
 
 t_register_refuses_a_candidate_bound_to_another_db_secret() {
-  # The isolated switch binds vitana/aurora/staging-db/postgrest-authenticator-uri. Verify never read that secret, so the
-  # register step refuses it before register-task-definition and update-service.
+  # The register step refuses a candidate whose PGRST_DB_URI is any other secret, before register-task-definition and
+  # update-service. The switch is replaced by a stub that binds the staging-db authenticator name, so the result does not
+  # depend on which name the isolated switch binds (owner decision 4). Verify never read that secret.
   new_sandbox
-  roll_run STAGING_DATA_PLANE=isolated STAGING_CUTOVER_APPROVED=yes || { fail_expect "roll step is missing"; return 0; }
+  roll_run_with_stub_switch || { fail_expect "roll step is missing"; return 0; }
   expect_refused
   expect_out 'binds PGRST_DB_URI to a secret other than the verified one'
   expect_calls '^ecs register-task-definition' 0

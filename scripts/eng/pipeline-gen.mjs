@@ -115,8 +115,13 @@ const IF = {
   mainOrNightly: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == "push" || $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == "schedule" && $DELIVERY_SCHEDULE == "nightly"',
   nightly: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == "schedule" && $DELIVERY_SCHEDULE == "nightly"',
   notLive: '$DELIVERY_MODE != "live"',
+  live: '$DELIVERY_MODE == "live"',
 };
 const NEVER_IN_SHADOW = { if: IF.notLive, when: 'never' };
+const NEVER_IN_LIVE = { if: IF.live, when: 'never' };
+// Owner decision 2026-11-22, item 6: the GitLab deploy and rollback of these services never run in live mode. The
+// project's DELIVERY_MODE stays shadow for them, so no GitLab path writes the proxy's ECS service.
+export const SHADOW_ONLY_DEPLOY = new Set(['postgrest-aurora-proxy']);
 
 const checkPatterns = (r, check) => {
   const out = [...r.shared_paths, ...r.other_paths];
@@ -229,12 +234,13 @@ export function buildPipeline(config, repoKey) {
     doc[`build-image:${svc}`] = { extends: '.build-image', stage: 'build', needs: [], tags: ['vitana-eng-build'], interruptible: false, variables: { ...deployVars }, rules: [on] };
     doc[`push-image:${svc}`] = { extends: '.push-image', stage: 'push', tags: [config.runner_tags.deploy], interruptible: false, needs: [{ job: `build-image:${svc}`, artifacts: true }], variables: { ...deployVars }, rules: [on] };
     const overrides = Object.keys(s.env_overrides || {}).length ? JSON.stringify(s.env_overrides) : null;
+    const liveStop = SHADOW_ONLY_DEPLOY.has(svc) ? [NEVER_IN_LIVE] : [];
     doc[`deploy-staging:${svc}`] = {
       extends: '.deploy-staging', stage: 'deploy', tags: [config.runner_tags.deploy], interruptible: false, resource_group: `staging-deploy-${svc}`,
       needs: [{ job: `push-image:${svc}`, artifacts: true }], variables: { ...deployVars },
-      rules: overrides ? [{ if: `$DELIVERY_MODE == "live" && ${IF.main}`, changes: on.changes, variables: { DEPLOY_ENV_OVERRIDES: overrides } }, on] : [on],
+      rules: [...liveStop, ...(overrides ? [{ if: `$DELIVERY_MODE == "live" && ${IF.main}`, changes: on.changes, variables: { DEPLOY_ENV_OVERRIDES: overrides } }, on] : [on])],
     };
-    doc[`rollback-staging:${svc}`] = { extends: '.rollback-staging', stage: 'deploy', tags: [config.runner_tags.deploy], interruptible: false, needs: [{ job: `deploy-staging:${svc}`, artifacts: true }], variables: { ...deployVars }, rules: [{ ...on, when: 'on_failure' }] };
+    doc[`rollback-staging:${svc}`] = { extends: '.rollback-staging', stage: 'deploy', tags: [config.runner_tags.deploy], interruptible: false, needs: [{ job: `deploy-staging:${svc}`, artifacts: true }], variables: { ...deployVars }, rules: [...liveStop, { ...on, when: 'on_failure' }] };
     if (s.staging_verify) {
       doc[`staging-verify:${svc}`] = { extends: '.staging-verify', stage: 'verify', tags: [config.runner_tags.main], interruptible: false, needs: [{ job: `deploy-staging:${svc}`, artifacts: true }], variables: { VERIFY_SERVICE: s.staging_verify }, rules: [on] };
       doc[`record:${svc}`] = { extends: '.record', stage: 'record', tags: [config.runner_tags.deploy], interruptible: false, needs: [{ job: `staging-verify:${svc}`, artifacts: true }], variables: { VERIFY_SERVICE: s.staging_verify }, rules: [NEVER_IN_SHADOW, { ...on, when: 'always' }] };

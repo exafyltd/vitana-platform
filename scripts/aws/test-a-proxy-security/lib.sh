@@ -84,7 +84,8 @@ case "$svc $sub" in
   "secretsmanager describe-secret")
     name=$(arg_value --secret-id "$@")
     case " ${STUB_MISSING_SECRETS:-} " in *" $name "*) echo "stub: secret not found" >&2; exit 254 ;; esac
-    if [ -n "${STUB_ARN_OVERRIDE_FROM:-}" ] && [ "$name" = "$STUB_ARN_OVERRIDE_FROM" ]; then
+    # STUB_ARN_OVERRIDE_FROM is a shell pattern, so one override can cover both names the proxy authenticator may resolve to.
+    if [ -n "${STUB_ARN_OVERRIDE_FROM:-}" ] && [[ "$name" == $STUB_ARN_OVERRIDE_FROM ]]; then
       secret_arn "$STUB_ARN_OVERRIDE_TO"
     else
       secret_arn "$name"

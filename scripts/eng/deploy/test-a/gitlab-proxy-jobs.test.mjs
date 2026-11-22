@@ -1,5 +1,6 @@
 // Brief item 5 (B1, F3): the GitLab proxy deploy and rollback jobs still extend the gated templates, and they run only for
-// a push to the default branch. This is a structure test over the two files as text. It runs no job and makes no AWS call.
+// a push to the default branch. Owner decision 2026-11-22, item 6: they never run in live mode. This is a structure test
+// over the two files as text. It runs no job and makes no AWS call.
 // platform-delivery.gitlab-ci.yml is generated (scripts/eng/pipeline-gen.mjs), so this test does not edit it. The env
 // variables PLATFORM_DELIVERY_FILE and TPL_DEPLOY_FILE let a mutation copy stand in for either file.
 import { test } from 'node:test';
@@ -16,6 +17,7 @@ const TPL = process.env.TPL_DEPLOY_FILE || join(CI, 'tpl-deploy.yml');
 const DEPLOY_JOB = '"deploy-staging:postgrest-aurora-proxy":';
 const ROLLBACK_JOB = '"rollback-staging:postgrest-aurora-proxy":';
 const DEFAULT_PUSH = '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == "push"';
+const LIVE_STOP = '$DELIVERY_MODE == "live"';
 const FORBIDDEN_RULE = /merge_request_event|"web"|"api"|"schedule"|when:\s*"always"/;
 
 // The lines of one column-0 block: from its header line to the next line that starts at column 0.
@@ -75,8 +77,13 @@ test('proxy_jobs_run_only_for_default_branch_push', () => {
     assert.ok(rules && rules.length > 0, `${header} has no rules`);
     const clauses = ifClauses(rules);
     assert.ok(clauses.length > 0, `${header} has no if clause`);
-    assert.ok(clauses.includes(DEFAULT_PUSH), `${header} does not run only for a push to the default branch`);
-    for (const c of clauses) assert.equal(c, DEFAULT_PUSH, `${header} has another run condition: ${c}`);
+    // The first rule stops the job in live mode (owner decision 2026-11-22, item 6). The rules after it admit the job only
+    // for a push to the default branch.
+    assert.equal(clauses[0], LIVE_STOP, `${header} does not stop in live mode first`);
+    assert.match(rules[1] ?? '', /^\s*when: "never"$/, `${header}: the live-mode rule is not when: never`);
+    const runs = clauses.slice(1);
+    assert.ok(runs.includes(DEFAULT_PUSH), `${header} does not run only for a push to the default branch`);
+    for (const c of runs) assert.equal(c, DEFAULT_PUSH, `${header} has another run condition: ${c}`);
     assert.doesNotMatch(rules.join('\n').replace(/\\"/g, '"'), FORBIDDEN_RULE, `${header} runs for a merge request, the web, the API or a schedule`);
   }
 });

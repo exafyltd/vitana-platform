@@ -4267,6 +4267,8 @@ gate:
     DEPLOY_ECS_SERVICE: "vitana-postgrest-aurora-proxy"
     DEPLOY_RUNS_FILE: "$CI_PROJECT_DIR/deploy-runs.json"
   rules:
+    - if: "$DELIVERY_MODE == \"live\""
+      when: "never"
     - if: "$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == \"push\""
       changes:
         paths:
@@ -4295,6 +4297,8 @@ gate:
     DEPLOY_ECS_SERVICE: "vitana-postgrest-aurora-proxy"
     DEPLOY_RUNS_FILE: "$CI_PROJECT_DIR/deploy-runs.json"
   rules:
+    - if: "$DELIVERY_MODE == \"live\""
+      when: "never"
     - if: "$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $CI_PIPELINE_SOURCE == \"push\""
       changes:
         paths:

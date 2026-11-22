@@ -233,9 +233,15 @@ test('main pipelines run every check once, are not interruptible, and use the ma
     const live = jobsIn(repo, MAIN({ DELIVERY_MODE: 'live' }));
     for (const [svc, s] of Object.entries(config().repositories[repo].services)) {
       if (!s.image || !s.staging) continue;
-      for (const j of ['build-image', 'push-image', 'deploy-staging', 'rollback-staging']) assert.ok(live[`${j}:${svc}`], `${repo}: ${j}:${svc}`);
+      for (const j of ['build-image', 'push-image']) assert.ok(live[`${j}:${svc}`], `${repo}: ${j}:${svc}`);
+      // Owner decision 2026-11-22, item 6: a shadow-only service has no GitLab deploy or rollback in live mode.
+      if (gen.SHADOW_ONLY_DEPLOY.has(svc)) {
+        for (const j of ['deploy-staging', 'rollback-staging']) assert.equal(live[`${j}:${svc}`], undefined, `${repo}: ${j}:${svc} runs in live mode`);
+      } else {
+        for (const j of ['deploy-staging', 'rollback-staging']) assert.ok(live[`${j}:${svc}`], `${repo}: ${j}:${svc}`);
+        assert.equal(live[`rollback-staging:${svc}`].when, 'on_failure');
+      }
       assert.deepEqual(live[`push-image:${svc}`].needs.map((n) => n.job), [`build-image:${svc}`]);
-      assert.equal(live[`rollback-staging:${svc}`].when, 'on_failure');
       if (s.staging_verify) {
         assert.ok(live[`staging-verify:${svc}`] && live[`record:${svc}`], `${repo}: verify chain of ${svc}`);
         assert.equal(live[`staging-verify:${svc}`].variables.VERIFY_SERVICE, s.staging_verify);

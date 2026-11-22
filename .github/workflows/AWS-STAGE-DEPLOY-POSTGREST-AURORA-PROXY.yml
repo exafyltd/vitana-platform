@@ -271,9 +271,11 @@ jobs:
             NEW_DEF=$(printf '%s' "$NEW_DEF" | bash scripts/aws/staging-cutover-select.sh --service postgrest)
           fi
           # The verify step read PGRST_DB_SECRET_ID only. The candidate must bind PGRST_DB_URI to that same secret, or the host
-          # check did not cover what the task runs with. The isolated plane binds another secret, so it stops here (review C2).
+          # check did not cover what the task runs with (review C2). The isolated switch binds the confirmed secret once the switch
+          # rebind lands (owner decision 4, 2026-11-22). Until then it binds staging-db, and this check refuses it. The refusal
+          # names the only accepted secret.
           if [ "$(jq -r '[.containerDefinitions[].secrets[]? | select(.name == "PGRST_DB_URI") | .valueFrom] | join(",")' <<<"$NEW_DEF")" != "$SEC_DB_URI" ]; then
-            echo "::error::The candidate binds PGRST_DB_URI to a secret other than the verified one that the host check read. Nothing was registered."; exit 1
+            echo "::error::The candidate binds PGRST_DB_URI to a secret other than the verified one that the host check read. The only PGRST_DB_URI secret this workflow accepts is $PGRST_DB_SECRET_ID. Nothing was registered."; exit 1
           fi
           # <<< VTID-05781
           # Refuse production targets on the exact revision about to be registered (same rule as the gateway gate):

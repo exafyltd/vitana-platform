@@ -173,11 +173,12 @@ t_flip_refuses_live_production_revision() {
 
 t_flip_refuses_isolated_target_refused_by_transform() {
   # Both recorded and live revisions are clean. The isolated secret the flip resolves for the proxy is the production one.
-  # The staging-cutover-taskdef.mjs transform refuses that ARN, because it accepts only the staging-db ARN. This test
-  # proves that transform refusal. The check on the rendered target in flip is tested by
-  # flip_refuses_isolated_target_that_names_production.
+  # The pattern covers both names the proxy authenticator can resolve to (the staging-db name before the switch rebind, the
+  # confirmed secret after it), so the test does not depend on which one the switch binds. The staging-cutover-taskdef.mjs
+  # transform refuses the production ARN, because it accepts only a staging ARN. This test proves that transform refusal.
+  # The check on the rendered target in flip is tested by flip_refuses_isolated_target_that_names_production.
   new_sandbox; cutover_setup; clean_pair
-  ecs_run STAGING_CUTOVER_APPROVED=yes STUB_ARN_OVERRIDE_FROM=vitana/aurora/staging-db/postgrest-authenticator-uri \
+  ecs_run STAGING_CUTOVER_APPROVED=yes 'STUB_ARN_OVERRIDE_FROM=vitana/*postgrest-authenticator-uri' \
     STUB_ARN_OVERRIDE_TO=vitana/aurora/prod/postgrest-authenticator-uri -- flip --record "$SANDBOX/record.json" --client-sg "$CLIENT_SG"
   expect_exit 2
   expect_out 'is not a staging secret ARN'
