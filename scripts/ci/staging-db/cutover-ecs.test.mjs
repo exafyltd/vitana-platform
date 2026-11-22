@@ -118,40 +118,45 @@ function recordAndFlip(dir, extra = {}) {
 }
 
 test('ecs: flip rolls only the two live staging services to isolated revisions with the client SG added', () => {
+  // OD-1 (parent decision). The recorded gateway revision 41 binds production secrets, so the flip is refused with exit 2
+  // before any register-task-definition or update-service, and the reason is printed.
+  // Previous expectation: exit 0; update-service for the proxy then the gateway; gateway on revision 42 with the client SG.
   const dir = stage();
   const { r } = recordAndFlip(dir);
-  assert.equal(r.status, 0, r.stderr);
-  assert.deepEqual(updatedServices(dir), ['vitana-postgrest-aurora-proxy', 'vitana-gateway']);
-  assert.equal(primary(dir, 'vitana-gateway'), arnOf('vitana-gateway', 42));
-  assert.deepEqual(service(dir, 'vitana-gateway').networkConfiguration.awsvpcConfiguration.securityGroups, [APP_SG, CLIENT_SG].sort());
-  const reg = JSON.parse(fs.readFileSync(path.join(dir, 'registered-vitana-gateway.json'), 'utf8'));
-  assert.equal(reg.containerDefinitions[0].environment.find((e) => e.name === 'VTID_ALLOCATOR_ENABLED').value, 'false');
+  assert.equal(r.status, 2, r.stderr);
+  assert.match(r.stderr, /refusing the recorded revision of vitana-gateway .*vitana-gateway:41: it names a production or production-derived secret or host/);
+  assert.deepEqual(updatedServices(dir), [], 'no update-service');
+  assert.deepEqual(log(dir).filter((l) => l.startsWith('aws ecs register-task-definition')), [], 'no register-task-definition');
+  assert.equal(primary(dir, 'vitana-gateway'), arnOf('vitana-gateway', 41));
   assert.equal(primary(dir, 'vitana-gateway-awsdr'), 'arn:aws:ecs:eu-central-1:472838866351:task-definition/vitana-gateway-awsdr:9', 'production untouched');
 });
 
 test('ecs: rollback after a forced post-flip failure restores both recorded revisions and network configurations', () => {
+  // OD-1 (parent decision). The flip of production-bound revision 41 is refused, so no post-flip failure happens. The
+  // rollback to the same record is refused as well: exit 2, the recorded revision named, and no update-service.
+  // Previous expectation: the flip exits 0; the rollback exits 0 and restores revision 41 with the recorded network.
   const dir = stage();
   const { rec, r } = recordAndFlip(dir);
-  assert.equal(r.status, 0, r.stderr);
-  // forced failure: the workflow's smoke step fails here; the rollback step runs because the record step succeeded
+  assert.equal(r.status, 2, r.stderr);
   const rb = run(dir, ECS, ['rollback', '--record', rec]);
-  assert.equal(rb.status, 0, rb.stderr);
+  assert.equal(rb.status, 2, rb.stderr);
+  assert.match(rb.stderr, /refusing the recorded revision of vitana-gateway .*vitana-gateway:41: it names a production or production-derived secret or host/);
+  assert.deepEqual(updatedServices(dir), [], 'no update-service');
   assert.equal(primary(dir, 'vitana-gateway'), arnOf('vitana-gateway', 41));
   assert.equal(primary(dir, 'vitana-postgrest-aurora-proxy'), arnOf('vitana-postgrest-aurora-staging', 7));
-  for (const s of ['vitana-gateway', 'vitana-postgrest-aurora-proxy']) assert.deepEqual(service(dir, s).networkConfiguration, NET([APP_SG]));
-  assert.match(rb.stderr, /verified vitana-gateway on .*vitana-gateway:41/);
-  assert.ok(updatedServices(dir).every((s) => ['vitana-gateway', 'vitana-postgrest-aurora-proxy'].includes(s)));
 });
 
 test('ecs: a failed flip half-way (gateway rollout FAILED) is still rolled back to the record', () => {
+  // OD-1 (parent decision). The refusal happens before the first write, so the proxy is never flipped and there is no
+  // half-way state to roll back. Exit 2, the recorded gateway revision named, and no update-service.
+  // Previous expectation: the flip exits 1 with the proxy already on revision 8; the rollback exits 0 and restores 41 and 7.
   const dir = stage();
-  const { rec, r } = recordAndFlip(dir, { STUB_ROLL_FAIL: 'vitana-gateway' });
-  assert.equal(r.status, 1, 'flip fails when the gateway does not stabilize');
-  assert.equal(primary(dir, 'vitana-postgrest-aurora-proxy'), arnOf('vitana-postgrest-aurora-staging', 8), 'the proxy was already flipped');
-  const rb = run(dir, ECS, ['rollback', '--record', rec]);
-  assert.equal(rb.status, 0, rb.stderr);
+  const { r } = recordAndFlip(dir, { STUB_ROLL_FAIL: 'vitana-gateway' });
+  assert.equal(r.status, 2, r.stderr);
+  assert.match(r.stderr, /refusing the recorded revision of vitana-gateway .*vitana-gateway:41: it names a production or production-derived secret or host/);
+  assert.deepEqual(updatedServices(dir), [], 'no update-service');
+  assert.equal(primary(dir, 'vitana-postgrest-aurora-proxy'), arnOf('vitana-postgrest-aurora-staging', 7), 'the proxy was not flipped');
   assert.equal(primary(dir, 'vitana-gateway'), arnOf('vitana-gateway', 41));
-  assert.equal(primary(dir, 'vitana-postgrest-aurora-proxy'), arnOf('vitana-postgrest-aurora-staging', 7));
 });
 
 test('ecs: verify fails when a service is not on the expected revision', () => {
