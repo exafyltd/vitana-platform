@@ -37,10 +37,12 @@
 # production cluster's RDS master secret. The candidate task definition is refused when it names the production
 # host vitana-aurora-prod (PGRST_DB_HOST). PostgREST connects to the host inside the PGRST_DB_URI secret value,
 # so the verify step reads that value once and checks its host against the owner-confirmed staging writer
-# endpoint (repository variable STAGING_AURORA_WRITER_ENDPOINT). It prints only the host, never the value, and
-# stops when the read fails. The read needs secretsmanager:GetSecretValue for the deploy role. That grant is
-# owner-only and is not in this repository. The deploy also stops unless every check in "Verify staging
-# credentials" passes.
+# endpoint (repository variable STAGING_AURORA_WRITER_ENDPOINT). The step reads only the verified secret
+# vitana/gateway/staging/postgrest-authenticator-uri. It refuses any STAGING_DATA_PLANE other than unset or shared,
+# because the isolated plane binds a database secret that this check does not read (owner decision). The step never
+# prints the value. It prints the host only when the host equals the endpoint, and it stops when the read fails. The
+# read needs secretsmanager:GetSecretValue for the deploy role on that secret. That grant is owner-only and is not in
+# this repository. The deploy also stops unless every check in "Verify staging credentials" passes.
 
 name: AWS Stage Deploy PostgREST-Aurora Proxy (ECS)
 
@@ -134,13 +136,14 @@ jobs:
           aws-region: ${{ env.TARGET_AWS_REGION }}
 
       - name: Verify staging credentials before any AWS change
-        # Each check stops the job on failure. It describes both secrets. It reads one value, the PGRST_DB_URI
-        # secret, for the host check only: the value is masked and never printed, only its host is printed, and a
-        # failed read or parse stops the job (fail closed). Not checked here: whether the DB password belongs to
-        # the staging writer. That needs a database connection.
+        # Each check stops the job on failure. It describes both secrets. It reads one value, the verified PGRST_DB_URI
+        # secret (PGRST_DB_SECRET_ID), for the host check only. The value is never printed. Only the host is printed, and
+        # only when it equals the endpoint. A failed read or parse stops the job (fail closed). Not checked here: whether
+        # the DB password belongs to the staging writer. That needs a database connection.
         env:
           STAGING_ROLE_ARN: ${{ vars.AWS_STAGING_ROLE_ARN }}
           STAGING_WRITER_ENDPOINT: ${{ vars.STAGING_AURORA_WRITER_ENDPOINT }}
+          STAGING_DATA_PLANE: ${{ vars.STAGING_DATA_PLANE }}
         run: |
           set -euo pipefail
           # A placeholder value must stop the job here, before any AWS call.
@@ -153,6 +156,13 @@ jobs:
               echo "::error::Refusing: '$NAME' is a production secret name or the production-derived rehearsal clone."; exit 1
             fi
           done
+          # The host check reads PGRST_DB_SECRET_ID, the verified secret that the shared plane binds as PGRST_DB_URI. The
+          # isolated plane binds a database secret that this check does not read, so any value other than unset or shared
+          # stops the job before any AWS call (review C2; owner decision).
+          case "${STAGING_DATA_PLANE:-shared}" in
+            shared) ;;
+            *) echo "::error::STAGING_DATA_PLANE must be unset or shared. The host check does not cover the isolated plane. Stopping before any AWS call."; exit 1 ;;
+          esac
           IDENTITY_ARN=$(aws sts get-caller-identity --query Arn --output text) \
             || { echo "::error::Cannot read the AWS caller identity. Stopping before any AWS change."; exit 1; }
           ACCOUNT=$(aws sts get-caller-identity --query Account --output text) \
@@ -177,33 +187,33 @@ jobs:
           # that host is what this step compares. The endpoint must be set before the secret is read.
           WANT_HOST=$(printf '%s' "${STAGING_WRITER_ENDPOINT:-}" | tr 'A-Z' 'a-z')
           [ -n "$WANT_HOST" ] || { echo "::error::The staging writer endpoint is not set. The owner must confirm it in the repository variable STAGING_AURORA_WRITER_ENDPOINT. Stopping before any secret read."; exit 1; }
-          # The value is held in a shell variable only. It is never echoed, so no log mask is needed.
+          # The value is held in a shell variable only and is never echoed.
           DB_URI=$(aws secretsmanager get-secret-value --secret-id "$PGRST_DB_SECRET_ID" --query SecretString --output text) \
             || { echo "::error::Cannot read the PGRST_DB_URI secret for the host check. The deploy role needs secretsmanager:GetSecretValue on it. That grant is owner-only and is not in this repository. Nothing was changed."; exit 1; }
           case "$DB_URI" in
             postgres://*|postgresql://*) ;;
             *) echo "::error::The PGRST_DB_URI secret value is not a postgres URI. Stopping."; exit 1 ;;
           esac
-          # libpq takes the host from the URI authority. A host or hostaddr query parameter, a second host, or an
-          # encoded or bracketed host would change the host PostgREST connects to, so each one stops the job.
-          REST="${DB_URI#*://}"
-          QUERY=""
-          case "$REST" in *\?*) QUERY="${REST#*\?}"; REST="${REST%%\?*}" ;; esac
+          # A production or rehearsal name anywhere in the value stops the job, whichever part of the URI it sits in.
+          if grep -Eiq "$PROD_NAME" <<<"$DB_URI"; then echo "::error::The PGRST_DB_URI value names a production or rehearsal resource. Stopping. Nothing was printed."; exit 1; fi
+          # The grammar follows libpq's URI reading (src/interfaces/libpq/fe-connect.c). libpq takes the userinfo only when
+          # the first @ comes before any /, and it ends the host at :, /, ? or a comma (a comma starts another host). Anything
+          # else stops the job: a ? before the @, a second @, a / before the @, a comma, an encoded or bracketed host, and a
+          # % or @ in the query. A password that holds one of ? / @ % must be percent-encoded.
+          URI_RE='^postgres(ql)?://([^/?@]*@)?([^/?@:,]+)(:[0-9]+)?(/[^?]*)?(\?[^%@]*)?$'
+          if ! [[ "$DB_URI" =~ $URI_RE ]]; then
+            echo "::error::The PGRST_DB_URI value does not name exactly one host in the form postgresql://user:password@host:port/database?query. Stopping. Nothing was printed."; exit 1
+          fi
+          QUERY="${BASH_REMATCH[6],,}"
+          DB_HOST="${BASH_REMATCH[3],,}"
+          unset BASH_REMATCH DB_URI
           case "$QUERY" in
             *host=*|*hostaddr=*) echo "::error::The PGRST_DB_URI value sets host or hostaddr in its query string. Stopping."; exit 1 ;;
           esac
-          AUTHORITY="${REST%%/*}"
-          case "$AUTHORITY" in *@*@*) echo "::error::The PGRST_DB_URI value has more than one @ before its host. Stopping."; exit 1 ;; esac
-          HOSTPORT="${AUTHORITY##*@}"
-          case "$HOSTPORT" in
-            *,*|*%*|*\[*|*\]*) echo "::error::The PGRST_DB_URI value lists more than one host, or an encoded or bracketed host. Stopping."; exit 1 ;;
-          esac
-          DB_HOST=$(printf '%s' "${HOSTPORT%%:*}" | tr 'A-Z' 'a-z')
-          unset DB_URI
-          [ -n "$DB_HOST" ] || { echo "::error::The PGRST_DB_URI value has no host. Stopping."; exit 1; }
-          if grep -Eq "$PROD_NAME" <<<"$DB_HOST"; then echo "::error::The PGRST_DB_URI host names a production resource. Stopping."; exit 1; fi
+          [[ "$DB_HOST" =~ ^[a-z0-9][a-z0-9.-]*$ ]] || { echo "::error::The PGRST_DB_URI host is not a plain host name (it is encoded, bracketed or malformed). Stopping. The host is not printed."; exit 1; }
+          # Only a host that equals the endpoint is printed. Any other host comes from the secret value, so it may be part of a password.
+          if [ "$DB_HOST" != "$WANT_HOST" ]; then echo "::error::The PGRST_DB_URI host does not equal the confirmed staging writer endpoint. Stopping. Nothing was changed. The host is not printed."; exit 1; fi
           echo "PGRST_DB_URI host: $DB_HOST"
-          if [ "$DB_HOST" != "$WANT_HOST" ]; then echo "::error::The PGRST_DB_URI host does not equal the confirmed staging writer endpoint. Stopping. Nothing was changed."; exit 1; fi
           echo "Staging credentials checked: role ${ROLE_NAME}, account ${ACCOUNT}, both secrets described, database host matched the confirmed writer endpoint. No secret value was printed."
 
       - name: Login to Amazon ECR
