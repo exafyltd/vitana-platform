@@ -33,19 +33,16 @@ USAGE
 
 BOT_REFS='^(train|assist)/'   # GitLab-only by design (the merge bot's train/<k> and the assist/<iid>-<rule> branches): left out of the branch check
 gh_branch_heads() { x_gh api "repos/$GH_OWNER/$1/branches" --paginate --jq '.[] | [.name, .commit.sha] | @tsv' 2>/dev/null; }   # name<TAB>sha
-kv_branches() { sed -n 's/^branch=//p' <<<"$SSM_OUT" | awk '{ print $1 "\t" $2 }'; }   # the GitLab listing of r_gitlab_main: name<TAB>sha
 gh_contains() {   # repo github-sha gitlab-sha: 0 when GitHub's head contains the GitLab head (compare base...head is ahead or identical)
   local st; st="$(x_gh api "repos/$GH_OWNER/$1/compare/$3...$2" --jq .status 2>/dev/null)"
   [ "$st" = ahead ] || [ "$st" = identical ]
 }
 rb_branch_check() {   # repo: sets RB_ONLY (names only on GitLab) and RB_RISK (names on both hosts whose GitLab commits GitHub lacks); 1 when it cannot tell
-  local r="$1" gh gl name sha ghsha
+  local r="$1" gh name sha ghsha
   RB_ONLY=""; RB_RISK=""
-  if [ "$(kv listing)" != complete ]; then say "  the branches of GitLab $r cannot be read in full (Systems Manager status ${SSM_STATUS:-unknown}): nothing is restored. Systems Manager returns at most 24,000 characters of output"; return 1; fi
-  if [ "$(kv truncated)" = 1 ]; then say "  GitLab lists more than 3000 branches of $r (page 30 of 100 is full): the check cannot see them all. Nothing is restored; delete stale branches on GitLab, then run this again"; return 1; fi
+  gitlab_listing "$r" || { say "  the branches of GitLab $r are not read in full ($GL_ERR): nothing is restored"; return 1; }
   gh="$(gh_branch_heads "$r")" || gh=""
   [ -n "$gh" ] || { say "  GitHub did not list the branches of $r: nothing is restored"; return 1; }
-  gl="$(kv_branches)"
   while IFS=$'\t' read -r name sha; do
     [ -n "$name" ] || continue
     [[ "$name" =~ $BOT_REFS ]] && continue
@@ -53,7 +50,7 @@ rb_branch_check() {   # repo: sets RB_ONLY (names only on GitLab) and RB_RISK (n
     if [ -z "$ghsha" ]; then RB_ONLY="$RB_ONLY $name"; continue; fi
     [ "$ghsha" = "$sha" ] && continue
     gh_contains "$r" "$ghsha" "$sha" || RB_RISK="$RB_RISK $name(GitLab:${sha:0:12},GitHub:${ghsha:0:12})"
-  done <<<"$gl"
+  done <<<"$GL_BRANCHES"
   return 0
 }
 

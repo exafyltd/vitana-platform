@@ -203,28 +203,30 @@ echo "bridge_problems=$(printf '%s\n' "$out" | grep -c -E '"level":"error"|"even
 echo "bridge_tick_done=$(printf '%s\n' "$out" | grep -c '"event":"tick_done"')"
 REMOTE
 }
-r_gitlab_main() {   # repo: the sha of main and every branch with its head (branch=<name> <sha>) of the GitLab project (read only, bot-metrics token through stdin)
-  # Systems Manager returns only the first 24,000 characters of a result, so a longer listing loses its end. listing=complete is the last line and
-  # is printed only after every page was read; a page that is not a JSON list fails the script. The callers refuse a result without that line.
-  rhead read gitlab-main; printf 'REPO=%q\n' "$1"
+r_gitlab_main() {   # repo [page]: the sha of main, then one page of 100 GitLab branches (branch=<name> <sha>) with its X-Total and entry count (read only, bot-metrics token through stdin)
+  # The branch list is read one page per Systems Manager call, because Systems Manager returns only the first 24,000 characters of a result. X-Total is
+  # GitLab's count of all branches. The last page prints listing=complete. A page is refused (exit 1) when it has no X-Total, is not a JSON list, or would
+  # reach 24,000 bytes. main_sha is printed before any of that, so a caller that needs only main still gets it. gitlab_listing checks the counts.
+  rhead read gitlab-main; printf 'REPO=%q\nPAGE=%q\n' "$1" "${2:-1}"
   cat <<'REMOTE'
-api() { printf 'header = "PRIVATE-TOKEN: %s"\n' "$(cat /etc/vitana/bot-metrics-token)" | curl -sS --config - "http://127.0.0.1/api/v4/projects/vitana%2F$REPO/$1"; }
-echo "main_sha=$(api 'repository/branches/main' | jq -r '.commit.id // "none"')"
-page=1; names=""; truncated=0
-while [ "$page" -le 30 ]; do
-  body="$(api "repository/branches?per_page=100&page=$page")"
-  jq -e 'type == "array"' <<<"$body" >/dev/null 2>&1 || { echo "page $page of the GitLab branches is not a list" >&2; exit 1; }
-  chunk="$(jq -r '.[] | "\(.name) \(.commit.id)"' <<<"$body")"
-  [ -n "$chunk" ] || break
-  names="$names$chunk
-"
-  [ "$(jq 'length' <<<"$body")" -ge 100 ] || break
-  [ "$page" -lt 30 ] || truncated=1
-  page=$((page + 1))
-done
-echo "truncated=$truncated"
-printf '%s' "$names" | sed 's/^/branch=/'
-echo "listing=complete"
+api() { printf 'header = "PRIVATE-TOKEN: %s"\n' "$(cat /etc/vitana/bot-metrics-token)" | curl -sS -i --config - "http://127.0.0.1/api/v4/projects/vitana%2F$REPO/$1" | tr -d '\r'; }
+main="$(api 'repository/branches/main' | sed '1,/^$/d' | jq -r '.commit.id // "none"' 2>/dev/null)"
+echo "main_sha=$main"
+resp="$(api "repository/branches?per_page=100&page=$PAGE")"
+total="$(printf '%s\n' "$resp" | sed -n 's/^[Xx]-[Tt]otal: *//p' | head -n 1)"
+body="$(printf '%s\n' "$resp" | sed '1,/^$/d')"
+case "$total" in ''|*[!0-9]*) echo "page $PAGE: the response has no X-Total header" >&2; exit 1 ;; esac
+printf '%s\n' "$body" | jq -e 'type == "array"' >/dev/null 2>&1 || { echo "page $PAGE of the GitLab branches is not a list" >&2; exit 1; }
+rows="$(printf '%s\n' "$body" | jq -r '.[] | "\(.name) \(.commit.id)"')"
+count="$(printf '%s\n' "$body" | jq 'length')"
+out="x_total=$total
+page_entries=$count"
+[ -z "$rows" ] || out="$out
+$(printf '%s\n' "$rows" | sed 's/^/branch=/')"
+if [ "$count" -lt 100 ] || [ $((PAGE * 100)) -ge "$total" ]; then out="$out
+listing=complete"; fi
+[ "$(printf '%s\n' "$out" | wc -c)" -lt 24000 ] || { echo "page $PAGE is 24,000 bytes or more: Systems Manager would cut it" >&2; exit 1; }
+printf '%s\n' "$out"
 REMOTE
 }
 r_variable() {   # repo: the project variable DELIVERY_MODE (read only; the admin token of the sync is read from its root-only file through stdin)
@@ -731,17 +733,34 @@ gitlab_main_of() { ssm_run "$(r_gitlab_main "$1")" 30; kv main_sha; }
 # deletes none. The cut still refuses any difference before the copy runs: every GitLab branch must have the same head on GitHub (GitLab-only,
 # behind, ahead or diverged). The rollback's check (rb_branch_check in delivery-rollback.sh) refuses only what a copy would lose, so it allows a
 # head that GitHub is ahead of. The bot refs train/* and assist/* are GitLab-only by design and are left out.
+# GitLab's branch list, read page by page: one Systems Manager call per page of 100 (r_gitlab_main). The listing counts as read only when the branches
+# received equal X-Total, the last page printed listing=complete, GitLab has a main, and no branch is listed twice. Sets GL_MAIN (the sha of main) and
+# GL_BRANCHES (name<TAB>sha lines); GL_ERR says why it failed. The rollback's check uses it too.
+gitlab_listing() {   # repo -> 0 when the whole listing was read and checked; 1 otherwise
+  local r="$1" page=1 total="" listed=0 t k dup
+  GL_MAIN=""; GL_BRANCHES=""; GL_ERR=""
+  while :; do
+    ssm_run "$(r_gitlab_main "$r" "$page")" 30 || { GL_ERR="page $page: Systems Manager status ${SSM_STATUS:-unknown}${SSM_ERR:+, ${SSM_ERR//$'\n'/ }}"; return 1; }
+    t="$(kv x_total)"; k="$(kv page_entries)"
+    [[ "$t" =~ ^[0-9]+$ && "$k" =~ ^[0-9]+$ ]] || { GL_ERR="page $page has no X-Total or entry count"; return 1; }
+    if [ "$page" = 1 ]; then total="$t"; GL_MAIN="$(kv main_sha)"
+    elif [ "$t" != "$total" ]; then GL_ERR="the branch count changed while it was read ($total, then $t)"; return 1; fi
+    GL_BRANCHES="$GL_BRANCHES$(sed -n 's/^branch=//p' <<<"$SSM_OUT" | awk '{ print $1 "\t" $2 }')"$'\n'
+    listed=$((listed + k))
+    [ "$(kv listing)" = complete ] && break
+    page=$((page + 1))
+    [ "$page" -le $(( (total + 99) / 100 )) ] || { GL_ERR="the listing goes on past the $total branches GitLab counts"; return 1; }
+  done
+  [ "$listed" = "$total" ] || { GL_ERR="$listed branches were read, GitLab counts $total"; return 1; }
+  dup="$(cut -f1 <<<"$GL_BRANCHES" | sed '/^$/d' | sort | uniq -d | head -n 1)"
+  [ -z "$dup" ] || { GL_ERR="branch $dup is listed twice"; return 1; }
+  { [ -n "$GL_MAIN" ] && [ "$GL_MAIN" != none ]; } || { GL_ERR="GitLab has no main"; return 1; }
+}
 copy_branch_check() {   # repo -> 0 when every GitLab branch of it has the same head on GitHub; otherwise it prints them and returns 1
-  local r="$1" gh gl name sha ghsha why bad=""
-  if ! ssm_run "$(r_gitlab_main "$r")" 30 || [ -z "$(kv main_sha)" ] || [ "$(kv main_sha)" = none ] || [ "$(kv listing)" != complete ]; then
-    say "  the branches of GitLab $r cannot be read in full (Systems Manager status ${SSM_STATUS:-unknown}): nothing is copied. Systems Manager returns at most 24,000 characters of output"; return 1
-  fi
-  if [ "$(kv truncated)" = 1 ]; then
-    say "  GitLab lists more than 3000 branches of $r, so the check cannot see them all: nothing is copied. Delete stale branches on GitLab, then run this again"; return 1
-  fi
+  local r="$1" gh name sha ghsha why bad=""
+  gitlab_listing "$r" || { say "  the branches of GitLab $r are not read in full ($GL_ERR): nothing is copied"; return 1; }
   gh="$(x_gh api "repos/$GH_OWNER/$r/branches" --paginate --jq '.[] | [.name, .commit.sha] | @tsv' 2>/dev/null)" && [ -n "$gh" ] \
     || { say "  GitHub did not list the branches of $r: nothing is copied"; return 1; }
-  gl="$(sed -n 's/^branch=//p' <<<"$SSM_OUT" | awk '{ print $1 "\t" $2 }')"
   while IFS=$'\t' read -r name sha; do
     [ -n "$name" ] || continue
     [[ "$name" =~ ^(train|assist)/ ]] && continue
@@ -749,7 +768,7 @@ copy_branch_check() {   # repo -> 0 when every GitLab branch of it has the same 
     if [ -n "$ghsha" ] && [ "$ghsha" = "$sha" ]; then continue; fi
     if [ -z "$ghsha" ]; then why="exists only on GitLab"; else why="GitLab head ${sha:0:12} differs from GitHub's ${ghsha:0:12}"; fi
     say "  $r $name $why"; bad=1
-  done <<<"$gl"
+  done <<<"$GL_BRANCHES"
   [ -z "$bad" ] || { say "  nothing is copied. Make each head equal on both sides: push GitLab-only commits to GitHub; for a diverged head, merge GitHub's head into the GitLab branch and push that to GitHub; when GitHub is ahead, run the copy (systemctl start vitana-mirror.service on the GitLab machine). Then run this again"; return 1; }
 }
 step2() {
@@ -870,8 +889,8 @@ step_done() {   # n -> 0 when the world already shows step n
   case "$1" in
     1) for r in "${REPOS[@]}"; do gh_protection "$r" && is_cut_lock "$PROT_JSON" "$MIRROR" || return 1; done ;;
     2) ssm_run "$(r_probe)" 30
-       kv marker | grep -q '"mode":"live"' && return 0   # the cut is past step 2: the branches are not checked again
-       case "$(kv mirror_timer)" in disabled|masked) ;; *) return 1 ;; esac   # a running copy timer means step 2 still has to stop it
+       case "$(kv mirror_timer)" in disabled|masked) ;; *) return 1 ;; esac   # a running copy timer: step 2 must stop it, and after the cut it refuses
+       kv marker | grep -q '"mode":"live"' && return 0   # the timer is stopped and the cut is past step 2: the branches are not checked again
        for r in "${REPOS[@]}"; do copy_branch_check "$r" >/dev/null || return 1; done
        for r in "${REPOS[@]}"; do gh="$(main_sha "$r")"; gl="$(gitlab_main_of "$r")"; { [ -n "$gh" ] && [ "$gh" = "$gl" ]; } || return 1; done ;;
     3) ssm_run "$(r_probe)" 30; kv marker | grep -q '"mode":"live"' && [ "$(kv settings_check)" = 0 ] || return 1 ;;

@@ -84,9 +84,13 @@ settings_check=$(cat "$F/host/settings_check")
 runner_tags=$(cat "$F/host/runner_tags")" ;;
     parity) repo="$(setvar REPO "$f")"; out="$(cat "$F/parity/$repo")" ;;
     bridge-dry-run) out="$(cat "$F/bridge")" ;;
-    gitlab-main) repo="$(setvar REPO "$f")"; out="main_sha=$(cat "$F/gitlab/$repo.main")
-truncated=$(exists "fail/gitlab-truncated.$repo" && echo 1 || echo 0)
-$(heads "$F/gitlab/$repo.branches" "$(cat "$F/gitlab/$repo.main")" | sed 's/^/branch=/; s/\t/ /')" ;;
+    gitlab-main) repo="$(setvar REPO "$f")"; glrows="$(heads "$F/gitlab/$repo.branches" "$(cat "$F/gitlab/$repo.main")" | sed 's/^/branch=/; s/\t/ /')"
+      glcount=$(printf '%s\n' "$glrows" | grep -c '^branch='); glextra=$(exists "fail/gitlab-truncated.$repo" && echo 1 || echo 0)
+      out="main_sha=$(cat "$F/gitlab/$repo.main")
+x_total=$((glcount + glextra))
+page_entries=$glcount
+$glrows
+listing=complete" ;;
     variable) repo="$(setvar REPO "$f")"; out="delivery_mode=$(cat "$F/gitlab/$repo.mode")" ;;
     pipelines) repo="$(setvar REPO "$f")"; out="$(cat "$F/pipelines/$repo")" ;;
     converge)
@@ -1063,7 +1067,7 @@ test('rollback: it refuses while GitHub main is not GitLab main, and while branc
     r = w.run(ROLLBACK);
     assert.equal(r.status, 1);
     assert.match(r.stdout, /branches that exist only on GitLab \(vitana-v1\): kiro\/only-on-gitlab/);
-    assert.match(r.stdout, /run again with --confirm-prune-gitlab-only-branches to let them go/);
+    assert.match(r.stdout, /run again with --confirm-prune-gitlab-only-branches to accept that they stay GitLab-only/);
     assert.equal(writeKinds(r).some((k) => k.includes('/protection')), false);
     r = w.run([...ROLLBACK, '--confirm-prune-gitlab-only-branches']);
     assert.equal(r.status, 0, r.all);
@@ -1713,7 +1717,7 @@ test('B4: the rollback refuses while a branch on both hosts has GitLab commits t
     let r = w.run(ROLLBACK);
     assert.equal(r.status, 1, r.all);
     assert.match(r.stdout, /branches of vitana-v1 whose GitLab commits GitHub does not have: kiro\/a\(GitLab:444444444444,GitHub:[0-9a-f]{12}\)/);
-    assert.match(r.stdout, /force-pushes every branch and would rewind them/);
+    assert.match(r.stdout, /mirror\.sh does not rewind them, but GitHub does not have these commits/);
     assert.match(r.stdout, /rollback: STOPPED at step 2/);
     assert.equal(writeKinds(r).some((k) => k.includes('/protection') || k.includes('/enable')), false, 'nothing is restored');
     assert.equal(w.get('host/unit/vitana-mirror.timer'), 'disabled/inactive', 'the copy is not restarted');
