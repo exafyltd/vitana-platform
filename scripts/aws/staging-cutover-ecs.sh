@@ -34,6 +34,13 @@ fail() { echo "::error::staging-cutover-ecs: $*" >&2; exit 1; }
 say() { echo "staging-cutover-ecs: $*" >&2; }
 aws() { command aws --region "$REGION" "$@"; }
 
+# The refused names live in their own list, read at run time: one extended regular expression per line, joined with |.
+# That file is not in the flip's enforce-guard file list (AWS-STAGE-CUTOVER.yml), so the production literals appear there
+# and in no deployable script. A missing or empty list stops the script before any AWS call.
+REFUSED_NAMES_FILE="$here/staging-cutover-refused-names.txt"
+REFUSED_NAME_RE=$(sed -e '/^#/d' -e '/^[[:space:]]*$/d' "$REFUSED_NAMES_FILE" 2>/dev/null | paste -sd'|' -) || true
+[ -n "$REFUSED_NAME_RE" ] || die "the refused-names list $REFUSED_NAMES_FILE is missing or empty; nothing was changed"
+
 # Name guard: $1 = service, $2 = allowed list (space separated). Production-looking names are refused first.
 guard_service() {
   case "$1" in *awsdr*|*prod*|*Prod*|*PROD*) die "refusing production-looking service '$1'" ;; esac
@@ -91,15 +98,57 @@ wait_stable() { # service... ; bounded wait for one COMPLETED deployment with ru
   done
 }
 
-register_from() { # $1 td arn, $2 service key (gateway|postgrest), then extra select args -> new ARN
+# render_from <td> <service key> [select args]: the isolated task-definition JSON for one live revision. Reads only.
+render_from() {
   local td="$1" svc="$2"; shift 2
-  local def new
+  local def
   def=$(aws ecs describe-task-definition --task-definition "$td" --query taskDefinition --output json \
         | jq -c 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)') \
         || fail "describe-task-definition $td failed"
-  new=$(printf '%s' "$def" | STAGING_DATA_PLANE=isolated bash "$here/staging-cutover-select.sh" --service "$svc" "$@") || die "isolated switch refused for $td"
-  ecs_write "" register-task-definition --cli-input-json "$new" --query taskDefinition.taskDefinitionArn --output text \
-    || fail "register-task-definition failed for $svc"
+  printf '%s' "$def" | STAGING_DATA_PLANE=isolated bash "$here/staging-cutover-select.sh" --service "$svc" "$@" || die "isolated switch refused for $td"
+}
+
+# register_json <json>: the one register call for a rendered revision. Prints the new ARN.
+register_json() {
+  ecs_write "" register-task-definition --cli-input-json "$1" --query taskDefinition.taskDefinitionArn --output text \
+    || fail "register-task-definition failed"
+}
+
+register_from() { # $1 td arn, $2 service key (gateway|postgrest), then extra select args -> new ARN (candidate-register)
+  local new
+  new=$(render_from "$@") || exit $?
+  register_json "$new"
+}
+
+# refuse_names <json> <what>: refuse (exit 2) when the JSON text names a refused secret or host. It prints the matched
+# names, never the JSON. Reads only.
+refuse_names() {
+  local hit
+  hit=$(grep -Eo "$REFUSED_NAME_RE" <<<"$1" | sort -u | paste -sd' ' -) || true
+  [ -z "$hit" ] || die "refusing $2: it names a production or production-derived secret or host ($hit); nothing was changed"
+}
+
+# refuse_unsafe_revision <task definition ARN> <what>: read one revision and refuse it when it names a refused name.
+refuse_unsafe_revision() {
+  local json
+  json=$(aws ecs describe-task-definition --task-definition "$1" --query taskDefinition --output json) \
+    || fail "cannot read the task definition of $2 ($1); nothing was changed"
+  refuse_names "$json" "$2 $1"
+}
+
+# check_revisions <record file>: reads only. Refuses (exit 2) before any register or update-service when a recorded or a
+# live revision of either live staging service names a refused secret or host (review B2; the owner rule that no staging
+# revision binds production or rehearsal credentials).
+check_revisions() {
+  local s td live
+  for s in "$LIVE_GATEWAY" "$LIVE_PROXY"; do
+    guard_service "$s" "$LIVE_GATEWAY $LIVE_PROXY"
+    td=$(recorded "$1" "$s" taskDefinition)
+    [ -n "$td" ] || die "no recorded revision for $s"
+    refuse_unsafe_revision "$td" "the recorded revision of $s"
+    live=$(primary_td "$s")
+    refuse_unsafe_revision "$live" "the live revision of $s"
+  done
 }
 
 cmd="${1:-}"; shift || true
@@ -151,13 +200,31 @@ case "$cmd" in
     check_account
     [ -n "$out" ] || out="$record.flipped.json"
     echo '{"services":[]}' > "$out"
+    target_proxy=""; target_gateway=""
+    # Phase 1, reads only: a service that moved since the record is refused first. Then every recorded and live revision,
+    # and each isolated target, must pass before the first write. A refusal on the second service then cannot leave the
+    # first one flipped (review B2; parent decision OD-1).
     for s in "$LIVE_PROXY" "$LIVE_GATEWAY"; do
-      guard_service "$s" "$LIVE_GATEWAY $LIVE_PROXY"
       td=$(recorded "$record" "$s" taskDefinition)
       [ -n "$td" ] || die "no recorded revision for $s"
       [ "$(primary_td "$s")" = "$td" ] || fail "$s moved since it was recorded; record again"
+    done
+    check_revisions "$record"
+    for s in "$LIVE_PROXY" "$LIVE_GATEWAY"; do
+      guard_service "$s" "$LIVE_GATEWAY $LIVE_PROXY"
+      td=$(recorded "$record" "$s" taskDefinition)
       key=gateway; [ "$s" = "$LIVE_PROXY" ] && key=postgrest
-      new=$(register_from "$td" "$key")
+      new=$(render_from "$td" "$key")
+      refuse_names "$new" "the isolated target of $s"
+      if [ "$s" = "$LIVE_PROXY" ]; then target_proxy="$new"; else target_gateway="$new"; fi
+    done
+    # Phase 2, writes: register and roll each service, proxy first.
+    for s in "$LIVE_PROXY" "$LIVE_GATEWAY"; do
+      guard_service "$s" "$LIVE_GATEWAY $LIVE_PROXY"
+      td=$(recorded "$record" "$s" taskDefinition)
+      [ "$(primary_td "$s")" = "$td" ] || fail "$s moved since it was recorded; record again"
+      if [ "$s" = "$LIVE_PROXY" ]; then def="$target_proxy"; else def="$target_gateway"; fi
+      new=$(register_json "$def")
       net=$(jq -c --arg s "$s" --arg sg "$client_sg" '.services[] | select(.service == $s) | .networkConfiguration
             | .awsvpcConfiguration.securityGroups = ((.awsvpcConfiguration.securityGroups + [$sg]) | unique)' "$record")
       ecs_write "$LIVE_GATEWAY $LIVE_PROXY" update-service --cluster "$CLUSTER" --service "$s" --task-definition "$new" --network-configuration "$net"
@@ -169,6 +236,7 @@ case "$cmd" in
   rollback)
     read_record
     check_account
+    check_revisions "$record"
     for s in "$LIVE_GATEWAY" "$LIVE_PROXY"; do
       guard_service "$s" "$LIVE_GATEWAY $LIVE_PROXY"
       td=$(recorded "$record" "$s" taskDefinition)

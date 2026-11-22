@@ -15,6 +15,9 @@ WORKFLOW="$REPO_ROOT/.github/workflows/AWS-STAGE-DEPLOY-POSTGREST-AURORA-PROXY.y
 CUTOVER_WORKFLOW="$REPO_ROOT/.github/workflows/AWS-STAGE-CUTOVER.yml"
 SETUP="$REPO_ROOT/scripts/aws/setup-postgrest-aurora-proxy-staging.sh"
 CUTOVER_ECS="$REPO_ROOT/scripts/aws/staging-cutover-ecs.sh"
+REFUSED_NAMES_FILE="$REPO_ROOT/scripts/aws/staging-cutover-refused-names.txt"
+# The refused names as one extended regular expression, built the same way the script builds it.
+REFUSED_NAME_RE=$(sed -e '/^#/d' -e '/^[[:space:]]*$/d' "$REFUSED_NAMES_FILE" | paste -sd'|' -)
 STEPS_RB="$TEST_LIB_DIR/workflow_steps.rb"
 TESTS_TMP="${TESTS_TMP:-$(mktemp -d "${TMPDIR:-/tmp}/proxy-security-tests.XXXXXX")}"
 
