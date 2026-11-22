@@ -171,17 +171,39 @@ t_flip_refuses_live_production_revision() {
   expect_calls '^ecs update-service' 0
 }
 
-t_flip_refuses_isolated_target_that_names_production() {
+t_flip_refuses_isolated_target_refused_by_transform() {
   # Both recorded and live revisions are clean. The isolated secret the flip resolves for the proxy is the production one.
-  # The staging-cutover-taskdef.mjs transform refuses that ARN first, because it accepts only the staging-db ARN. The
-  # check on the rendered target in the script is a second layer. No fixture reaches it, because the transform emits only
-  # staging-named secret ARNs. Either way the flip refuses before any register or update.
+  # The staging-cutover-taskdef.mjs transform refuses that ARN, because it accepts only the staging-db ARN. This test
+  # proves that transform refusal. The check on the rendered target in flip is tested by
+  # flip_refuses_isolated_target_that_names_production.
   new_sandbox; cutover_setup; clean_pair
   ecs_run STAGING_CUTOVER_APPROVED=yes STUB_ARN_OVERRIDE_FROM=vitana/aurora/staging-db/postgrest-authenticator-uri \
     STUB_ARN_OVERRIDE_TO=vitana/aurora/prod/postgrest-authenticator-uri -- flip --record "$SANDBOX/record.json" --client-sg "$CLIENT_SG"
   expect_exit 2
   expect_out 'is not a staging secret ARN'
   expect_out 'isolated switch refused for'
+  expect_calls '^ecs register-task-definition' 0
+  expect_calls '^ecs update-service' 0
+}
+
+t_flip_refuses_isolated_target_that_names_production() {
+  # Guard test (review C4). The isolated switch is replaced by a copy of the script's refusal path: a stub select returns a
+  # target that names production, so the transform never runs. Only the check on the rendered target in flip (refuse_names)
+  # can refuse it. Without that check, flip registers and updates the proxy, and this test fails.
+  new_sandbox; cutover_setup; clean_pair
+  local copy="$SANDBOX/copy"
+  mkdir -p "$copy"
+  cp "$CUTOVER_ECS" "$REFUSED_NAMES_FILE" "$copy/"
+  cat > "$copy/staging-cutover-select.sh" <<'STUB'
+#!/usr/bin/env bash
+# Test stub for staging-cutover-select.sh: the input revision with one production secret added.
+jq '.containerDefinitions[0].secrets += [{"name":"TEST_PRODUCTION_SECRET","valueFrom":"arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/aurora/prod/postgrest-authenticator-uri-AbCdEf"}]'
+STUB
+  run_env "STUB_TD_DIR=$SANDBOX/td" "STUB_SERVICES_DIR=$SANDBOX/services" STAGING_CUTOVER_APPROVED=yes \
+    CUTOVER_WAIT_TIMEOUT_S=5 CUTOVER_POLL_S=1 -- bash "$copy/staging-cutover-ecs.sh" flip --record "$SANDBOX/record.json" --client-sg "$CLIENT_SG"
+  expect_exit 2
+  expect_out 'refusing the isolated target of vitana-postgrest-aurora-proxy'
+  expect_out 'nothing was changed'
   expect_calls '^ecs register-task-definition' 0
   expect_calls '^ecs update-service' 0
 }
