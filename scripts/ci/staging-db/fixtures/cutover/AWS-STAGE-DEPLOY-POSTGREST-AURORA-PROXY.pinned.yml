@@ -136,8 +136,8 @@ jobs:
         run: |
           set -e
           IMAGE="${{ steps.build.outputs.image }}"
-          SEC_DB_URI=$(aws secretsmanager describe-secret --secret-id vitana/aurora/rehearsal/postgrest-authenticator-uri --query ARN --output text)
-          SEC_JWT=$(aws secretsmanager describe-secret --secret-id vitana/gateway/staging/supabase-jwt-secret --query ARN --output text)
+          SEC_DB_URI=$(aws secretsmanager describe-secret --secret-id "$PGRST_DB_SECRET_ID" --query ARN --output text)
+          SEC_JWT=$(aws secretsmanager describe-secret --secret-id "$PGRST_JWT_SECRET_ID" --query ARN --output text)
           TD_ARN=$(aws ecs describe-services --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}" \
             --query 'services[0].taskDefinition' --output text)
           echo "Current task definition: $TD_ARN"
@@ -149,6 +149,14 @@ jobs:
                       + [ {name:"PGRST_DB_URI", valueFrom:$SEC_DB}, {name:"PGRST_JWT_SECRET", valueFrom:$SEC_JWT} ] )
                 | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
                       .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)')
+          # Refuse production targets on the exact revision about to be registered (same rule as the gateway gate):
+          # secret names under vitana/aurora/prod/ or vitana/supabase/prod/, the production-derived rehearsal clone
+          # vitana/aurora/rehearsal/ (its secret ARN carries the name), the host vitana-aurora-prod in the candidate
+          # revision text (PGRST_DB_HOST), and the production cluster's RDS master secret. Nothing is registered when
+          # this matches. The host inside the PGRST_DB_URI secret value is checked by the verify step, not here.
+          if grep -Eq 'vitana/(aurora|supabase)/prod/|vitana/aurora/rehearsal/|vitana-aurora-prod|rds!cluster-4dab93b8' <<<"$NEW_DEF"; then
+            echo "::error::Refusing to register: the candidate task definition names a production or production-derived secret or database host. Nothing was registered."; exit 1
+          fi
           NEW_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_DEF" \
             --query 'taskDefinition.taskDefinitionArn' --output text)
           echo "Registered $NEW_ARN"

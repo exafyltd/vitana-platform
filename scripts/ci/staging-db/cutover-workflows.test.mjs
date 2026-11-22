@@ -20,6 +20,9 @@ const pinned = (f) => fs.readFileSync(path.join(FX, f.replace(/\.yml$/, '.pinned
 const GW = 'AWS-STAGE-DEPLOY-GATEWAY.yml';
 const PX = 'AWS-STAGE-DEPLOY-POSTGREST-AURORA-PROXY.yml';
 const ROLL = 'Register task-definition revision + roll the service';
+// The two staging secret names the proxy binds (owner directive; the parent has not verified them).
+const VERIFIED_DB_SECRET = 'vitana/gateway/staging/postgrest-authenticator-uri';
+const VERIFIED_JWT_SECRET = 'vitana/gateway/staging/postgrest-jwt-secret';
 
 /** The text of the step `- name: <name>` (indent 6) up to the next step or the end of the job. */
 export function stepText(y, name) {
@@ -90,7 +93,12 @@ const TDGW = JSON.stringify((() => {
     if (Array.isArray(c[k])) c[k] = c[k].filter((e) => !VTID05023_STRIPPED.includes(e.name));
   return td;
 })(), null, 2);
-const TDPG = fs.readFileSync(path.join(FX, 'taskdef-postgrest.json'), 'utf8');
+// The proxy revision the roll step receives, with the two verified staging names and a staging host. The shared fixture
+// (taskdef-postgrest.json) still names the production writer and the old JWT secret, and other tests read it. It is unchanged.
+const TDPG = fs.readFileSync(path.join(FX, 'taskdef-postgrest.json'), 'utf8')
+  .replaceAll('vitana/aurora/prod/postgrest-authenticator-uri', VERIFIED_DB_SECRET)
+  .replaceAll('vitana/gateway/staging/supabase-jwt-secret', VERIFIED_JWT_SECRET)
+  .replaceAll('vitana-aurora-prod.cluster-cfk228aiedf3.eu-central-1.rds.amazonaws.com', 'aurora-staging.test.invalid');
 const arnOf = (fam, rev) => `arn:aws:ecs:eu-central-1:472838866351:task-definition/${fam}:${rev}`;
 
 /** Run the roll step of `file` (text `y`) against a stubbed AWS. Returns { status, registered (raw JSON text or null) }. */
@@ -112,7 +120,9 @@ function runRoll(y, file, envExtra = {}, liveTd = null) {
   const r = spawnSync('bash', ['-e', '-c', script], {
     cwd: ROOT, encoding: 'utf8',
     env: { PATH: `${path.join(FX, 'bin')}:${process.env.PATH}`, HOME: process.env.HOME, STUB_STATE: dir, RUNNER_TEMP: path.join(dir, 'runner'),
-      GITHUB_STEP_SUMMARY: path.join(dir, 'summary.md'), DATA_BACKEND: 'keep', ...envExtra },
+      GITHUB_STEP_SUMMARY: path.join(dir, 'summary.md'), DATA_BACKEND: 'keep',
+      // The job env of the proxy workflow binds these two names; the roll step reads them from there.
+      PGRST_DB_SECRET_ID: VERIFIED_DB_SECRET, PGRST_JWT_SECRET_ID: VERIFIED_JWT_SECRET, ...envExtra },
   });
   const reg = path.join(dir, `registered-${fam}.json`);
   return { status: r.status, stderr: r.stderr, registered: fs.existsSync(reg) ? fs.readFileSync(reg, 'utf8') : null };
@@ -123,6 +133,11 @@ for (const f of [GW, PX]) {
     const base = runRoll(pinned(f), f);
     assert.equal(base.status, 0, base.stderr);
     assert.ok(base.registered);
+    if (f === PX) { // the proxy binds the two verified staging names (owner directive)
+      assert.match(base.registered, new RegExp(`${VERIFIED_DB_SECRET}-AbCdEf`));
+      assert.match(base.registered, new RegExp(`${VERIFIED_JWT_SECRET}-AbCdEf`));
+      assert.doesNotMatch(base.registered, /supabase-jwt-secret|vitana\/aurora\/rehearsal\//);
+    }
     for (const plane of [undefined, '', 'shared']) {
       const extra = plane === undefined ? {} : { STAGING_DATA_PLANE: plane };
       for (const appr of [undefined, '', 'yes']) {
