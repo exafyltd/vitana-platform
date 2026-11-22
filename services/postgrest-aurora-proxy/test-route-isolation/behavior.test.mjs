@@ -46,6 +46,7 @@ function checkCase(id) {
   const r = runHarness();
   if (r.error) assert.fail(r.error);
   const mine = r.lines.filter((l) => l.startsWith(`CASE ${id} `));
+  for (const line of mine) console.log(line);
   assert.ok(mine.length > 0, `${id}: no result line from route-isolation.sh (exit ${r.status}). stderr tail:\n${r.stderr}`);
   const failed = mine.filter((l) => l.startsWith(`CASE ${id} FAIL `));
   assert.deepEqual(failed, [], `${id} failed (harness exit ${r.status}):\n${failed.join('\n')}`);
