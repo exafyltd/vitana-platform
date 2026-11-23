@@ -655,12 +655,13 @@ kiro-runner-test:
 unit-scripts:
   extends: ".check"
   stage: "checks"
-  parallel: 2
+  parallel: 4
   variables:
     DELIVERY_CHECK: "unit-scripts"
   script:
     - "apt-get update -qq && apt-get install -y -qq --no-install-recommends jq >/dev/null"
-    - "FILES=$(find scripts -path \"*/node_modules\" -prune -o \\( -name \"*.test.cjs\" -o -name \"*.test.mjs\" \\) -print | grep -v \"^scripts/eng/delivery-cutover[.]test[.]mjs$\" | sort | awk -v n=\"$CI_NODE_TOTAL\" -v i=\"$CI_NODE_INDEX\" 'NR % n == i - 1')"
+    - "ALL=$(find scripts -path \"*/node_modules\" -prune -o \\( -name \"*.test.cjs\" -o -name \"*.test.mjs\" \\) -print | grep -v \"^scripts/eng/delivery-cutover[.]test[.]mjs$\" | sort)"
+    - "FILES=\"\"; for f in $ALL; do k=$(awk -v f=\"$f\" '$1==f {print $2}' scripts/eng/unit-scripts.shards.txt); [ -n \"$k\" ] || { echo \"no shard for $f in scripts/eng/unit-scripts.shards.txt\"; exit 1; }; [ \"$k\" = \"$CI_NODE_INDEX\" ] && FILES=\"$FILES $f\"; done"
     - "echo \"unit-scripts shard $CI_NODE_INDEX/$CI_NODE_TOTAL: $(echo $FILES | wc -w) file(s)\""
     - "node --test $FILES"
   artifacts:
@@ -3139,12 +3140,13 @@ gate:
 "full-suite:unit-scripts":
   extends: ".full-suite"
   stage: "full-suite"
-  parallel: 2
+  parallel: 4
   variables:
     DELIVERY_CHECK: "unit-scripts"
   script:
     - "apt-get update -qq && apt-get install -y -qq --no-install-recommends jq >/dev/null"
-    - "FILES=$(find scripts -path \"*/node_modules\" -prune -o \\( -name \"*.test.cjs\" -o -name \"*.test.mjs\" \\) -print | grep -v \"^scripts/eng/delivery-cutover[.]test[.]mjs$\" | sort | awk -v n=\"$CI_NODE_TOTAL\" -v i=\"$CI_NODE_INDEX\" 'NR % n == i - 1')"
+    - "ALL=$(find scripts -path \"*/node_modules\" -prune -o \\( -name \"*.test.cjs\" -o -name \"*.test.mjs\" \\) -print | grep -v \"^scripts/eng/delivery-cutover[.]test[.]mjs$\" | sort)"
+    - "FILES=\"\"; for f in $ALL; do k=$(awk -v f=\"$f\" '$1==f {print $2}' scripts/eng/unit-scripts.shards.txt); [ -n \"$k\" ] || { echo \"no shard for $f in scripts/eng/unit-scripts.shards.txt\"; exit 1; }; [ \"$k\" = \"$CI_NODE_INDEX\" ] && FILES=\"$FILES $f\"; done"
     - "echo \"unit-scripts shard $CI_NODE_INDEX/$CI_NODE_TOTAL: $(echo $FILES | wc -w) file(s)\""
     - "node --test $FILES"
   artifacts:

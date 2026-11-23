@@ -1900,16 +1900,17 @@
           "apt": [
             "jq"
           ],
-          "parallel": 2,
+          "parallel": 4,
           "script": [
-            "FILES=$(find scripts -path \"*/node_modules\" -prune -o \\( -name \"*.test.cjs\" -o -name \"*.test.mjs\" \\) -print | grep -v \"^scripts/eng/delivery-cutover[.]test[.]mjs$\" | sort | awk -v n=\"$CI_NODE_TOTAL\" -v i=\"$CI_NODE_INDEX\" 'NR % n == i - 1')",
+            "ALL=$(find scripts -path \"*/node_modules\" -prune -o \\( -name \"*.test.cjs\" -o -name \"*.test.mjs\" \\) -print | grep -v \"^scripts/eng/delivery-cutover[.]test[.]mjs$\" | sort)",
+            "FILES=\"\"; for f in $ALL; do k=$(awk -v f=\"$f\" '$1==f {print $2}' scripts/eng/unit-scripts.shards.txt); [ -n \"$k\" ] || { echo \"no shard for $f in scripts/eng/unit-scripts.shards.txt\"; exit 1; }; [ \"$k\" = \"$CI_NODE_INDEX\" ] && FILES=\"$FILES $f\"; done",
             "echo \"unit-scripts shard $CI_NODE_INDEX/$CI_NODE_TOTAL: $(echo $FILES | wc -w) file(s)\"",
             "node --test $FILES"
           ],
           "duration": {
             "fixture": null,
-            "minutes": 1.8,
-            "note": "measured: the 82 files besides delivery-cutover.test.mjs; with parallel 2 each shard runs half"
+            "minutes": 1.3,
+            "note": "measured per file (sum 270 s); LPT over 4 shards by scripts/eng/unit-scripts.shards.txt, 68 s each"
           },
           "artifacts": []
         },
