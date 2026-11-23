@@ -4,7 +4,7 @@
 // Systems Manager, the lane files in git, the kill switch), record every call, and can be told to fail. Nothing here touches a network, an
 // account or a repository. Dependency-free Node (node:test), so UNIT.yml runs it with no install; it needs bash and jq, which CloudShell and the
 // runners have.
-import { test } from 'node:test';
+import { test as nodeTest } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -17,6 +17,20 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..', '..');
 const CUT = path.join(HERE, 'delivery-cutover.sh');
 const ROLL = path.join(HERE, 'delivery-rollback.sh');
+// CI runs this file as parallel shards (scripts/eng/delivery-cutover.shards.json, keyed by test name; see services.json
+// unit-scripts-cutover). Without CUTOVER_SHARD_TOTAL every test runs, as before. In a shard, a test that the map does not
+// name is an error, so a new or renamed test cannot silently fall out of CI.
+const SHARD_INDEX = Number(process.env.CUTOVER_SHARD_INDEX || 1);
+const SHARD_TOTAL = Number(process.env.CUTOVER_SHARD_TOTAL || 1);
+const SHARD_FILE = JSON.parse(fs.readFileSync(path.join(HERE, 'delivery-cutover.shards.json'), 'utf8'));
+const SHARD_MAP = SHARD_FILE.assignment;
+const test = (name, fn) => {
+  if (SHARD_TOTAL <= 1) return nodeTest(name, fn);
+  if (SHARD_TOTAL !== SHARD_FILE.shards) throw new Error(`CUTOVER_SHARD_TOTAL=${SHARD_TOTAL} but delivery-cutover.shards.json is cut into ${SHARD_FILE.shards}`);
+  const shard = SHARD_MAP[name];
+  if (shard === undefined) throw new Error(`delivery-cutover.shards.json has no shard for test "${name}"`);
+  return nodeTest(name, { skip: shard !== SHARD_INDEX }, fn);
+};
 const WORKFLOWS = JSON.parse(fs.readFileSync(path.join(HERE, 'github-workflows.json'), 'utf8'));
 const GH_FIXTURE_TOKEN = ['github', 'pat', '11CUTOVERAAAAAAAAAAAAAA'].join('_');
 const BOT_TOKEN = ['glp', 'at-secret-token-value'].join('');   // a fixture, assembled at run time like the others

@@ -1213,6 +1213,8 @@
           ],
           "checks": [
             "unit-scripts",
+            "unit-scripts-cutover",
+            "unit-scripts-union",
             "dev-autopilot-impact"
           ]
         },
@@ -1898,14 +1900,45 @@
           "apt": [
             "jq"
           ],
+          "parallel": 2,
           "script": [
-            "FILES=$(find scripts -path \"*/node_modules\" -prune -o \\( -name \"*.test.cjs\" -o -name \"*.test.mjs\" \\) -print | sort)",
+            "FILES=$(find scripts -path \"*/node_modules\" -prune -o \\( -name \"*.test.cjs\" -o -name \"*.test.mjs\" \\) -print | grep -v \"^scripts/eng/delivery-cutover[.]test[.]mjs$\" | sort | awk -v n=\"$CI_NODE_TOTAL\" -v i=\"$CI_NODE_INDEX\" 'NR % n == i - 1')",
+            "echo \"unit-scripts shard $CI_NODE_INDEX/$CI_NODE_TOTAL: $(echo $FILES | wc -w) file(s)\"",
             "node --test $FILES"
           ],
           "duration": {
-            "fixture": "UNIT.yml#unit",
-            "github_shards": 1
-          }
+            "fixture": null,
+            "minutes": 1.8,
+            "note": "measured: the 82 files besides delivery-cutover.test.mjs; with parallel 2 each shard runs half"
+          },
+          "artifacts": []
+        },
+        "unit-scripts-cutover": {
+          "kind": "test",
+          "apt": [
+            "jq"
+          ],
+          "parallel": 4,
+          "script": [
+            "CUTOVER_SHARD_INDEX=\"$CI_NODE_INDEX\" CUTOVER_SHARD_TOTAL=\"$CI_NODE_TOTAL\" node --test scripts/eng/delivery-cutover.test.mjs"
+          ],
+          "duration": {
+            "fixture": null,
+            "minutes": 5.3,
+            "note": "measured 315 s serially; split over 4 shards by scripts/eng/delivery-cutover.shards.json (LPT: 78-79 s each)"
+          },
+          "artifacts": []
+        },
+        "unit-scripts-union": {
+          "kind": "check",
+          "needs": [
+            "unit-scripts",
+            "unit-scripts-cutover"
+          ],
+          "artifacts": [],
+          "script": [
+            "echo \"unit-scripts: every shard passed (unit-scripts x2 and unit-scripts-cutover x4 leave .delivery-ran markers)\""
+          ]
         },
         "ci-scripts-test": {
           "kind": "test",
