@@ -3,21 +3,24 @@
 <!-- lane: partner-data -->
 ## Partner data and access
 
-Build the gateway and persistence for event publishing, invited partner reads, contribution submission and team review.
+Build the migration and gateway API for the native event calendar: drafts, editor preview, publish and withdraw with the approved-field snapshot, invited-partner reads, proposal submission with idempotency, and team review with status updates.
 
 ### Acceptance
 
-- Exercise invited, removed, unrelated and editor identities, including direct requests for unpublished events and other partners' proposals.
-- A replay of a successfully submitted proposal produces only one record. Reject malformed and closed-event submissions.
-- Stage verification uses isolated fixtures and documents the migration and configuration requirements.
+- Editors can create drafts, preview, publish and withdraw. Partner reads return only published snapshots.
+- Invited, revoked, unrelated and editor identities are exercised, including direct requests for drafts, withdrawn events and other partners' proposals.
+- A replayed proposal with the same idempotency key produces exactly one record. Malformed input and submissions to closed events are rejected.
+- No Google Calendar identifiers, credentials or sync code are present.
+- Staging verification uses isolated fixtures. The migration is listed for human approval before application.
 
 <!-- lane: partner-web -->
 ## Partner web page and team tools
 
-Build the branded route, Commerce link, list/month views, details, contribution form and team management views against the approved API.
+Build the branded `/maxina/events` route, the Commerce entry link, list and month views, filters, event details, the proposal form, and the editor views for preview, publish, withdraw and proposal review, all against the approved API.
 
 ### Acceptance
 
-- The official logo and event photos appear in responsive layouts. Date browsing, filters, deep links and keyboard access work.
-- The route preserves a deep link after sign-in. Missing and revoked access are handled. The editor can publish/withdraw an event and review received proposals.
-- Proposal validation, error recovery, successful submission and unavailable events are covered. Staging evidence uses the exact landed frontend.
+- The official logo and cleared event photos appear in responsive layouts on desktop and phone. Date browsing, filters, deep links and keyboard access work.
+- A forwarded link preserves the target through sign-in. Missing and revoked access are handled with a clear state.
+- The proposal form validates input, shows confirmation only after server success, and keeps the draft on recoverable errors.
+- Staging evidence uses the exact landed frontend commit.
