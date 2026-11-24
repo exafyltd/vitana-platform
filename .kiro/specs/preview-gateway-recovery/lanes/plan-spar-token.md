@@ -1,7 +1,7 @@
 ---
 lane: plan-spar-token
 vtid: VTID-05833
-state: executing
+state: in-review
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -11,11 +11,12 @@ reviewer_seat: agent:vitana-lane-reviewer
 protected_gate: two-model
 paths: [.github/workflows/PLAN-SPAR.yml, scripts/collab/plan-spar-preview-token.test.mjs]
 repos: [exafyltd/vitana-platform]
-updated: 2026-11-24T17:05Z
+updated: 2026-11-24T17:12Z
 ---
 # Lane: plan-spar-token
 Paths and tasks: plan.md "Lanes" and tasks.md. VTID from CI PLAN-SPAR (or owner break-glass); never by hand.
 
+## Log
 ### 2026-11-18T10:30Z · kiro-jtadic-202611180939-a2df · created
 
 ### 2026-11-19T12:35Z · kiro-jtadic-202611191115-a88f · ready (scope and marker, plan commit)
@@ -35,5 +36,8 @@ independent reviews, then land it on main." This is the owner's instruction nami
 provisioned the secret. Covering sparring (Rule 55, plan.md §7b): the next full PLAN-SPAR run through the preview with
 allocation off, after this lane is on main.
 
-### 2026-11-24T17:05Z · kiro-jtadic-202611241634-913f · executing
+### 2026-11-24T17:05Z · kiro-jtadic-202611241634-913f · ready → executing
 Claimed. Branch kiro/preview-gateway-recovery/plan-spar-token from main f8b0d187ba; the prepared patch applied unchanged; evidence docs/validation/VTID-05833/.
+
+### 2026-11-24T17:12Z · kiro-jtadic-202611241634-913f · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/5138 (exafyltd/vitana-platform#5138). Needs two reviewer-agent accepts from two different chain models on the current head (two-model).
