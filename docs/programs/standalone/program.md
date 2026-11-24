@@ -24,6 +24,7 @@ specs:
   - vitana-platform:collab-kiro-governance
   - vitana-platform:kiro-primary-executor
   - vitana-platform:bridge-drift-fix
+  - vitana-platform:preview-gateway-recovery
   - vitana-platform:kiro-autonomy-fallback
   - vitana-platform:kaf-fallback-env
   - vitana-platform:claude-md-cleanup
@@ -149,3 +150,4 @@ belong to none of the named programmes are listed here until the owner assigns t
 - `vitana-platform:kiro-fleet-register` — record the owner's Kiro account fleet in areas.yaml as seats, no email
 - `vitana-platform:bridge-drift-fix` — four independent fixes for the main breakage left by #5021 and #5027 (loop catalog, CLAUDE.md Part 1 extract budget, session-layer wording regex, migration SECURITY DEFINER comment)
 - `vitana-platform:architecture-mt-alignment` — verify the 41-module Vitanaland architecture map against the code and record Multi-Tenant alignment for the 18 workstreams (docs only)
+- `vitana-platform:preview-gateway-recovery` — staging-only recovery of the isolated preview gateway that plan sparring uses (runtime profile, dedicated sparring token, allocation off)

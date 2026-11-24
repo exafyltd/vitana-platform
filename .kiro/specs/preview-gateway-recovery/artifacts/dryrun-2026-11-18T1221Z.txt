@@ -1,0 +1,22 @@
+# Live read-only dry run on vitana-aurora-staging / vitana, run by the owner 2026-11-18T12:21:14Z with the pinned
+# commit ad81cc27 (archive sha256 d9803ef036d67a0baaec794e5073f074a5eb81c132ddc3a5f1b6b7acf1c8cb24; all 10 file
+# checksums OK). psql 16.15 client. Sanitized as printed (no credentials). Result: precheck v1 refused, exit 3.
+target vitana-aurora-staging-writer.cfk228aiedf3.eu-central-1.rds.amazonaws.com / vitana (cluster vitana-aurora-staging, tag Environment=staging)
+server_version = 17.9
+database = vitana
+connected_as = vitana_staging_admin
+master_attributes = superuser=f createrole=t createdb=t bypassrls=f
+master_member_of = rds_superuser
+database_owner = vitana_staging_admin
+can_create_in_schema_public = t
+public_tables = 0
+public_functions = 0
+public_sequences = 0
+role_anon = PRESENT
+role_authenticated = PRESENT
+role_service_role = PRESENT
+role_vitana_governance_owner = absent
+authenticator = login=t inherit=f superuser=f bypassrls=f
+authenticator_member_of = anon,authenticated,service_role
+schemas_auth_storage_extensions = (none)
+ERROR:  refused: role(s) anon,authenticated,service_role already exist; stop and report (rollback scope would not be exact)
