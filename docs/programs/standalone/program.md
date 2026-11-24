@@ -82,6 +82,7 @@ specs:
   - vitana-platform:operator-chat-service-token
   - vitana-platform:memory-legacy-read-retire-r2
   - vitana-platform:privacy-ledger-auth
+  - vitana-platform:maxina-events-partnerships
 docs:
   - vitana-platform:.kiro/specs/pm-agent/plan-sparring.md
   - vitana-platform:.kiro/specs/claude-sessions-handover/handoff.md
