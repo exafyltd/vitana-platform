@@ -1,0 +1,11 @@
+{
+  "vtid": "VTID-05833",
+  "kind": "infra",
+  "paths": [
+    ".github/workflows/PLAN-SPAR.yml",
+    "scripts/collab/plan-spar-preview-token.test.mjs",
+    "docs/validation/VTID-05833/**"
+  ],
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

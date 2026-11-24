@@ -1,0 +1,7 @@
+{
+ "GATEWAY_URL": "${{ vars.PLAN_SPAR_GATEWAY_URL || 'https://preview-aws-gateway.vitanaland.com' }}",
+ "GATEWAY_SERVICE_TOKEN": "${{ secrets.PLAN_SPAR_GATEWAY_TOKEN || secrets.GATEWAY_SERVICE_TOKEN }}",
+ "PLAN_SPAR_ALLOCATE": "${{ secrets.PLAN_SPAR_GATEWAY_TOKEN == '' && vars.PLAN_SPAR_ALLOCATE || 'false' }}",
+ "BASE_SHA": "${{ github.event.pull_request.base.sha }}",
+ "GITHUB_TOKEN": "${{ secrets.PLAN_SPAR_PUSH_TOKEN || github.token }}"
+}

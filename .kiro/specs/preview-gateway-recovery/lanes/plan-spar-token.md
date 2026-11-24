@@ -1,7 +1,7 @@
 ---
 lane: plan-spar-token
 vtid: VTID-05833
-state: ready
+state: executing
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -11,7 +11,7 @@ reviewer_seat: agent:vitana-lane-reviewer
 protected_gate: two-model
 paths: [.github/workflows/PLAN-SPAR.yml, scripts/collab/plan-spar-preview-token.test.mjs]
 repos: [exafyltd/vitana-platform]
-updated: 2026-11-24T16:45Z
+updated: 2026-11-24T17:05Z
 ---
 # Lane: plan-spar-token
 Paths and tasks: plan.md "Lanes" and tasks.md. VTID from CI PLAN-SPAR (or owner break-glass); never by hand.
@@ -34,3 +34,6 @@ independent reviews, then land it on main." This is the owner's instruction nami
 `preview-ops`: that dependency only ordered the secret after the preview deploy (go-no-go.md C2), and the owner has
 provisioned the secret. Covering sparring (Rule 55, plan.md §7b): the next full PLAN-SPAR run through the preview with
 allocation off, after this lane is on main.
+
+### 2026-11-24T17:05Z · kiro-jtadic-202611241634-913f · executing
+Claimed. Branch kiro/preview-gateway-recovery/plan-spar-token from main f8b0d187ba; the prepared patch applied unchanged; evidence docs/validation/VTID-05833/.

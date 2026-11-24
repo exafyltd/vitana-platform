@@ -90,8 +90,11 @@ jobs:
         if: steps.guard.outputs.skip != 'true'
         env:
           GATEWAY_URL: ${{ vars.PLAN_SPAR_GATEWAY_URL || 'https://preview-aws-gateway.vitanaland.com' }}
-          GATEWAY_SERVICE_TOKEN: ${{ secrets.GATEWAY_SERVICE_TOKEN }}
-          PLAN_SPAR_ALLOCATE: ${{ vars.PLAN_SPAR_ALLOCATE }}
+          # preview-gateway-recovery: the isolated staging preview accepts only its own token (repo secret
+          # PLAN_SPAR_GATEWAY_TOKEN = Secrets Manager vitana/gateway/staging/preview-sparring-token); unset = today.
+          GATEWAY_SERVICE_TOKEN: ${{ secrets.PLAN_SPAR_GATEWAY_TOKEN || secrets.GATEWAY_SERVICE_TOKEN }}
+          # Isolated staging never allocates official VTIDs: allocation is forced off while the preview token is set.
+          PLAN_SPAR_ALLOCATE: ${{ secrets.PLAN_SPAR_GATEWAY_TOKEN == '' && vars.PLAN_SPAR_ALLOCATE || 'false' }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           GITHUB_TOKEN: ${{ secrets.PLAN_SPAR_PUSH_TOKEN || github.token }}   # resolveRef reads a declared spar_refs companion (e.g. vitana-v1); unused when none is declared
         run: |

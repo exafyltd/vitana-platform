@@ -1,0 +1,7 @@
+# VTID-05833 commands (Kiro Web, session kiro-jtadic-202611241634-913f, 2026-11-24)
+git apply .kiro/specs/preview-gateway-recovery/artifacts/plan-spar-token.patch   # from origin/main f8b0d187ba
+node --test scripts/collab/plan-spar-preview-token.test.mjs                       # outputs/green.txt: 3 pass, 0 fail
+# origin/main's PLAN-SPAR.yml put back, same test                                  # outputs/red-on-base.txt: 1 pass, 2 fail
+node --test scripts/collab/*.test.mjs                                             # outputs/collab-green.txt: 278 tests, 277 pass, 0 fail, 1 skipped
+node -e "<yaml parse of .github/workflows/PLAN-SPAR.yml, Spar step env>"         # outputs/yaml-parse.txt
+node scripts/ci/pr-gate/vtid-scope.mjs init VTID-05833 --kind infra --paths ...   # scope.json
