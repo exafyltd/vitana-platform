@@ -1,0 +1,12 @@
+# Live read-only dry run as IAM user arn:aws:iam::472838866351:user/j.tadic@vitanaland.com, 2026-11-18T12:49:28Z,
+# pinned commit 9fa0d390: archive sha256 1b1214da…80ad8 OK, 12/12 file checksums OK, psql 16.15, port 5432 reachable.
+# Result: precheck ok, exit=0. Identical to the 12:33Z run (root) in every database fact.
+server_version = 17.9 | database = vitana | connected_as = vitana_staging_admin
+master_attributes = superuser=f createrole=t createdb=t bypassrls=f | master_member_of = rds_superuser
+database_owner = vitana_staging_admin | can_create_in_schema_public = t
+public_schema_acl = {pg_database_owner=UC/pg_database_owner,=U/pg_database_owner,anon=U/pg_database_owner,authenticated=U/pg_database_owner,service_role=U/pg_database_owner}
+public_tables = 0 | public_functions = 0 | public_sequences = 0
+role_anon / role_authenticated = PRESENT (kept) login=f inherit=f bypassrls=f master_admin=f public_usage_grant=t owns_objects=f
+role_service_role = PRESENT (kept) login=f inherit=f bypassrls=t master_admin=f public_usage_grant=t owns_objects=f
+role_vitana_governance_owner = absent | authenticator member of anon,authenticated,service_role
+prestate = vitana_governance_owner||

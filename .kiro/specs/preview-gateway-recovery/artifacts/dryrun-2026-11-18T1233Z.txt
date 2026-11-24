@@ -1,0 +1,28 @@
+# Live read-only dry run on vitana-aurora-staging / vitana, run by the owner 2026-11-18T12:33:23Z with pinned commit
+# 9fa0d390 (archive built with git archive in the eu-central-1 tab, 12/12 file checksums OK there; transferred via the
+# temporary private bucket vitana-recovery-transfer-472838866351). psql 16.15 client. Transcribed from the owner's
+# screenshot (no credentials are printed by the script). Result: precheck ok, exit=0. Identity: account root user.
+target vitana-aurora-staging-writer.cfk228aiedf3.eu-central-1.rds.amazonaws.com / vitana (cluster vitana-aurora-staging, tag Environment=staging)
+server_version = 17.9
+database = vitana
+connected_as = vitana_staging_admin
+master_attributes = superuser=f createrole=t createdb=t bypassrls=f
+master_member_of = rds_superuser
+database_owner = vitana_staging_admin
+can_create_in_schema_public = t
+public_schema_acl = {pg_database_owner=UC/pg_database_owner,=U/pg_database_owner,anon=U/pg_database_owner,authenticated=U/pg_database_owner,service_role=U/pg_database_owner}
+public_tables = 0
+public_functions = 0
+public_sequences = 0
+role_anon = PRESENT (kept) login=f inherit=f bypassrls=f master_admin=f public_usage_grant=t owns_objects=f
+role_authenticated = PRESENT (kept) login=f inherit=f bypassrls=f master_admin=f public_usage_grant=t owns_objects=f
+role_service_role = PRESENT (kept) login=f inherit=f bypassrls=t master_admin=f public_usage_grant=t owns_objects=f
+role_vitana_governance_owner = absent (restore creates it; rollback drops it)
+authenticator = login=t inherit=f superuser=f bypassrls=f
+authenticator_member_of = anon,authenticated,service_role
+schemas_auth_storage_extensions = (none)
+prestate (created_roles|revoke_memberships|revoke_usage):
+vitana_governance_owner||
+precheck = ok (no restore object exists; pre-existing request roles are kept and recorded)
+# Matches rehearsal case L1 (rehearsal-output.txt): apply adds 46 catalog entries and modifies only the shared
+# role-comment count; --rollback drops vitana_governance_owner and the restore's objects, and revokes nothing else.
