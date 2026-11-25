@@ -1,0 +1,134 @@
+# cutover-r2 green on 663b5763cf (inventory 170), 2026-11-18; VITANA_V1_WORKFLOWS_DIR = vitana-v1 main bbe90b7137
+## node --test scripts/eng/github-workflows.test.mjs
+ok 1 - list: 170 workflow files of both repositories (123 platform, 47 vitana-v1), each with exactly one action, disable, keep or replace, and a recorded pin for vitana-v1
+ok 2 - list: the platform entries are exactly the files of .github/workflows on this tree, and the recorded triggers match the files (a new workflow or trigger cannot slip through unclassified)
+ok 3 - list: the vitana-v1 entries are exactly the files of the vitana-v1 checkout when VITANA_V1_WORKFLOWS_DIR names one; the full rules pass on both halves
+ok 4 - plan 2.2: the disabled workflows are the ones of the table, family by family (72 of 170), and nothing else is disabled
+ok 5 - plan 2.2: the kept workflows are the families of the table (97 of 170): dispatch-only production and migration workflows, scheduled jobs, PLAN-SPAR, the Cloudflare Workers deploy
+ok 6 - plan 2.2: AWS-KIRO-ACCESS is the one replace workflow (1 of 170): the cut leaves it enabled until its GitLab replacement and the daily IAM drift check are verified
+ok 7 - kept workflows: only PLAN-SPAR (plan PRs) and the path-filtered MIGRATION-DRIFT-CHECK run on a pull request; nothing else that runs on a pull request is kept
+ok 8 - kept workflows: none pushes to main, and the only one that a push to main starts and that deploys production is DEPLOY-CLOUDFLARE-WORKERS with its cloudflare/** filter
+ok 9 - protected gate files: PR-GATE (both repositories), PLAN-SPAR, VTID-ALLOCATE and AWS-PROD-* are flagged, as scripts/collab/protected-gate-files.json says; PR-GATE is disabled on the owner command that names the plan
+ok 10 - negative controls: each rule of the list fails with its own message when it is the only thing broken, and the untouched list has no problem
+ok 11 - on: reader: block, inline list, inline map, quoted key, branch and path lists in both YAML list styles
+ok 12 - kept workflows: a push to the dispatched ref (github.ref_name) counts as a push to main unless the entry records it; the three i18n workflows record it with a note
+# tests 12
+# pass 12
+# fail 0
+# skipped 0
+## node --test scripts/eng/delivery-cutover.test.mjs
+ok 1 - structure: both scripts are strict bash, have no xtrace, name the management account, and reach the world only through the x_ wrappers and W
+ok 2 - usage: no command, an unknown command and extra words are exit 2 with the usage; --help is exit 0; nothing is called
+ok 3 - status: with every item true it prints the 15 items of plan §8.1 one by one, green, says the cut may start, exits 0, and only reads
+ok 4 - status --item: each red condition turns exactly its own item red, names the reason, makes the exit code 1; the other items of the same group stay as they were
+ok 5 - status --item: a green item is green and exits 0, an unknown item is a usage mistake, and the full status marks exactly the broken item when two items are broken
+ok 6 - status: when git cannot fetch origin/main, the four lane items fail by name and the others still run
+ok 7 - preflight: the wrong AWS account, a missing tool, a GitHub token GitHub does not accept and one without admin rights each stop the command before anything is read or changed
+ok 8 - the GitHub token is typed hidden when GH_TOKEN is not set, and it appears in no output, no argument and no file
+ok 9 - apply: without the plan slug, or with --dry-run, it is a dry run: it shows every change as WOULD, makes none, and still reads the checklist
+ok 10 - apply: a wrong plan slug, an unknown option, a real run without --mirror-account and a mirror account that cannot push are refused before anything is changed
+ok 11 - apply: with a red checklist it refuses, names the red item, and changes nothing
+ok 12 - apply: the cut, step by step in the order of plan §8.2, each change printed before it is made, and every effect in place at the end
+ok 13 - apply: step 7 stops when DELIVERY_MODE of a project is not live after the sync, and no tag is made
+ok 14 - apply: step 2 does not run the GitHub-to-GitLab copy when the cutover marker is already set (it would overwrite GitLab main with GitHub main)
+ok 15 - apply: run again after the cut it does nothing: every step says already done, no state-changing call is made, exit 0
+ok 16 - apply: waits for the owner at step 6 (exit 3), is resumed from step 6 when the switch is on, and a switch that is flipped during the wait lets one run finish
+ok 17 - failure at step 1: the protection of the first repository is put back, the cut stops, and the next run (after the fix) finishes with the original protection still saved
+ok 18 - failure at step 2: a final copy that fails leaves the copy running and changes nothing else; at step 3: a sync that does not converge removes the marker again
+ok 19 - failure at step 4: the workflows disabled in that step are enabled again, the cut stops, and the next run disables exactly the list
+ok 20 - failure at step 8: the tags made in that step are deleted again on both hosts
+ok 21 - rollback: it reverses the cut in the order of plan §8.4, restores exactly what the cut changed, loses no commit, and prints every change first
+ok 22 - rollback: it enables again only the workflows the cut disabled; one that was already disabled before the cut stays disabled
+ok 23 - rollback: a staging gateway that still carries the cut settings is redeployed through the GitHub path; without the slug or with --dry-run nothing is changed
+ok 24 - rollback: it refuses while GitHub main is not GitLab main, and while branches exist only on GitLab, and restores nothing then
+ok 25 - rollback: from a cut that stopped half way (the settings sync failed at step 3) it undoes what exists and skips the rest; a second rollback is harmless
+ok 26 - rehearse: it needs --merges-paused, opens with the marker "rehearsal", waits (exit 3) until a live pipeline on main deployed and verified each repository, then closes and sends staging back to the GitHub path
+ok 27 - rehearse --dry-run: opening, closing and aborting print every change as WOULD, make none, and claim no result
+ok 28 - rehearse: a red checklist blocks it, --abort closes an open rehearsal without a pass, and an aborted rehearsal is not a pass
+ok 29 - machine scripts: every script sent to the GitLab machine starts with its read or write line, parses in plain sh, and names a token file only to test it or to feed it to curl through stdin
+ok 30 - machine scripts, run for real in sh on stand-ins: the converge script writes and removes the marker and runs the two syncs; the unit script touches only the named units; the tag script feeds its token to curl through stdin
+ok 31 - runbook: every bash block parses, it explains every checklist item, shows the commands of the scripts and states the counts of the workflow list
+ok 32 - pipeline runbooks: after the cut tag of a repository the merge bot lands and the driver waits for delivery.landed instead of merging; before the tag the merge flow is unchanged
+ok 33 - B1: a backup write that Secrets Manager refuses, or one that reads back different, stops step 1 before that GitHub main is changed
+ok 34 - B1: the record of a started cut, and the list of step 4, are read back too: a write that fails stops apply before the change they protect
+ok 35 - B1: a 502 on the protection GET stops step 1 and saves nothing; only GitHub's 404 "Branch not protected" counts as no protection, and it is restored by a DELETE
+ok 36 - B1: a rollback whose protection backup is deleted or cannot be read exits 1 with the manual instruction, never says done, and leaves GitHub main locked
+ok 37 - B1: when step 1 cannot put a protection back it says NOT undone, never "undone"
+ok 38 - B1: rollback step 4 without its saved list exits 1 with the manual instruction while workflows of the disable list are disabled; an unreadable list stops it too
+ok 39 - B2: a second rollback after a good one restores no protection and enables no workflow, even when the team changed both since; only disabled_manually workflows of the list are enabled
+ok 40 - B2: the rollback records rolling-back before its first change; apply refuses to resume such a cut; the next rollback continues and finishes it
+ok 41 - B2: apply resumes a started cut only within 24 hours; an older record needs the checklist green again; the saved protection is kept; another mirror account is refused
+ok 42 - B2: a lock keeps runs apart: apply, rehearse and the rollback refuse while it exists; --break-lock clears only a lock older than 6 hours; a run releases its lock
+ok 43 - B3: the restore body carries bypass allowances and dismissal restrictions, sends a null app_id as -1, and gives checks or contexts, never both
+ok 44 - B3: a cut and its rollback restore a protection with bypass allowances and an any-app check through the documented schema, exactly
+ok 45 - B3: rehearse first runs the round trip of the protection (PUT the restore body back, GET, compare) before the marker; the checklist item is green only on the protection of today
+ok 46 - B4: the rollback refuses while a branch on both hosts has GitLab commits that GitHub lacks, lists it and restores nothing; a GitLab head that GitHub contains is fine
+ok 47 - B4: the bot refs train/* and assist/* are left out of the GitLab-only check; a full 30th page of GitLab branches stops the rollback instead of being cut short
+ok 48 - B4: on the machine the GitLab branch listing prints every head, stops at a short page, and says truncated when page 30 is still full
+ok 49 - B5: the rollback waits for the redeploy, reads the staging task definition again, and stops with the owner command while DELIVERY_HOST_* is still gitlab
+ok 50 - B5: closing the rehearsal waits for both staging redeploys and checks the gateway; with DELIVERY_HOST_* still gitlab the rehearsal stays open and the owner command is printed
+# tests 50
+# pass 50
+# fail 0
+# skipped 0
+## node --test scripts/eng/gitlab-settings-cutover.test.mjs
+ok 1 - config: the shipped file has a cutover block on both mirror projects and the bridge account, with the values of plan §8.2 step 3
+ok 2 - config: every invalid cutover input is refused with an error that names the key; the plain webhook of milestone 2 still refuses push events
+ok 3 - the milestone-2 view is untouched: the shipped base keys, the exported key tables and the script text keep what gitlab-settings.test.mjs pins
+ok 4 - config: the runbook documents every key of the cutover block, the four states, the marker file and the token files (the settings README belongs to milestone 2)
+ok 5 - free tier: the script and the settings file name none of the Premium-only APIs or settings the cutover could be mistaken to need
+ok 6 - inactive: without the generated pipeline files in the CI folder the sync is exactly what milestone 2 made it (no variable, no mirror, no bridge account, no cutover log line)
+ok 7 - shadow: the pipeline files and no marker keep the mirror profile, point at the generated files, send merge-request and pipeline events, set DELIVERY_MODE=shadow, and add the bridge account as Reporter
+ok 8 - live: the marker turns both projects native in one run: landing and the three required jobs for the bot, push and tag-push events, the push mirror of protected branches with divergent refs kept, a protected assist/*, skipped pipelines count, DELIVERY_MODE=live; a second run writes nothing
+ok 9 - removing the marker converges back to shadow: mirror profile, the push mirror and assist/* removed, skipped pipelines off, DELIVERY_MODE=shadow, the bridge a Reporter, the mirror user a Maintainer; a second run writes nothing
+ok 10 - rehearsal: the marker "rehearsal" is shadow with DELIVERY_MODE=live and nothing else: still the mirror profile, no landing, no push mirror, no assist/*
+ok 11 - merge bot: before the marker the bot reads what it reads today; with the marker it lands on both projects with the three required jobs (contract with gitlab-land.mjs loadProjects)
+ok 12 - live without the GitHub token file: the push mirror is not created and the run reports it as drift (check exits 3); everything else converges; the next run creates it
+ok 13 - live: a token file that is not mode 600 is warned about, a malformed one counts as missing
+ok 14 - live: a mirror that was changed by hand is corrected (disabled, every branch, divergent refs overwritten), a second one is removed, a mirror to another host is left alone, and its error is reported
+ok 15 - live: a protected branch rule for assist/* changed by hand is repaired (removed and protected again), and its removal at rollback touches no other rule
+ok 16 - failures: a push mirror that GitLab refuses does not hold back the rest of the cut; the next run creates it; a failed mirror user change leaves the Maintainer finding out of the run
+ok 17 - a marker that is not valid is ignored and reported (the projects stay in shadow); the CLI accepts --marker-file and prints it in the usage
+ok 18 - no secret appears in any output, finding or argument list: not the GitHub token of the push mirror, not the bridge token, not the admin token
+ok 19 - free tier: every call of the shadow, rehearsal, live and back runs is on the documented endpoint list with the documented method
+# tests 19
+# pass 19
+# fail 0
+# skipped 0
+## node --test scripts/eng/parity-report.test.mjs
+ok 1 - map: reads the shape of config/delivery/services.json, a plain object, and refuses a document that has no map for the repository
+ok 2 - pairing: a GitHub workflow is compared with the jobs of its map entry in the GitLab pipeline of the same SHA; a full-suite: prefix and a :service suffix belong to the job
+ok 3 - report: commits on which both hosts agree are compared, match, and make the checklist items true (10 commits, no unexplained difference)
+ok 4 - report: every unexplained difference is listed with its SHA, workflow, jobs, both results and a reason
+ok 5 - report: a difference with a reason is explained: GitHub cancelled or skipped the workflow, or both hosts are red; none of them counts against the cut
+ok 6 - report: a commit staging never served is not comparable for the deploy and verification workflows (counted on its own), and its other workflows still count
+ok 7 - report: the staging fates are t2 and t3: a commit staging never served is not comparable for the deploy workflows of both
+ok 8 - report: the default minimum is ten shadow commits
+ok 9 - report: a commit older than the first GitLab pipeline is before the shadow period; a newer commit with no pipeline is an unexplained gap; a running pipeline is in progress
+ok 10 - report: the latest run of a workflow counts when GitHub re-ran it
+ok 11 - report: the checklist verdict needs enough shadow commits, no unexplained difference and the §5 targets for first result and required checks
+ok 12 - cli: reads GitHub and GitLab with GET only, pairs the three commits by SHA, treats the commit staging did not serve as not comparable, and prints the report
+ok 13 - cli: --gate exits 3 when the report is not ready and 0 when it is; --out writes the report to a file and prints nothing
+ok 14 - cli: a GitHub or GitLab that refuses a token, a missing file and a map without the repository are exit 1 and the tokens are not printed; usage mistakes are exit 2
+# tests 14
+# pass 14
+# fail 0
+# skipped 0
+## node --test scripts/eng/delivery-metrics.test.mjs
+ok 1 - targets: the typical and slowest 5 % columns of plan §5 and the GitHub baseline of §2.1, in seconds
+ok 2 - percentile: nearest rank, the median and the 95th percentile of small and large samples, null for no sample
+ok 3 - pipeline timings: first result at the first finished job, required checks at the last of lane-scope, change-suite and gate; a main pipeline is measured on its full-suite jobs; unfinished means null
+ok 4 - compute: every field of vitana.delivery-metrics/v1 from fixture rows, with samples, target, met and the GitHub baseline
+ok 5 - a field without a source is null, never 0: an empty input, a window without landings, no verify results, no cost rows
+ok 6 - compute: the baseline of the input overrides the plan values field by field; a cost above the budget per day is outside the budget
+ok 7 - cli: compute reads the input file and prints or writes the document; a wrong schema, a missing file or bad JSON is exit 1 with nothing written; usage mistakes are exit 2
+ok 8 - pipelines: reads the latest pipelines of a ref with their jobs using GET only, newest first, and the token appears nowhere in the output
+ok 9 - pipelines: a GitLab that refuses the token is exit 1 with the status, and the token is not printed
+# tests 9
+# pass 9
+# fail 0
+# skipped 0
+## github-workflows without VITANA_V1_WORKFLOWS_DIR
+# tests 12
+# pass 12
+# fail 0

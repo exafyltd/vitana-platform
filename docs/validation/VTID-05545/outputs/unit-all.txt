@@ -1,0 +1,10 @@
+# whole script suite as .github/workflows/UNIT.yml runs it, Node v22.23.4, 45 test files (after the review fixes B1 to B5)
+# FILES=$(find scripts -path '*/node_modules' -prune -o \( -name '*.test.cjs' -o -name '*.test.mjs' \) -print | sort); node --test $FILES
+# tests 1056
+# suites 0
+# pass 1054
+# fail 0
+# cancelled 0
+# skipped 2
+# todo 0
+# duration_ms 236374.354353

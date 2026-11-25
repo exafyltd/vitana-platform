@@ -55,9 +55,11 @@ cleanup() {
 trap cleanup EXIT
 
 # Split bundle.sql at its `-- @@file NNNN <name> sha256=<hex>` markers into $WORK/parts/NNNN.sql (+ .name).
+# POSIX awk only: mawk 1.3.4 (Debian bookworm, the GitLab runner image) has no {n} intervals, so the 4 digits are spelled
+# out and the 64-hex digest is checked by length ("sha256=" + 64 = 71).
 mkdir -p "$WORK/parts"
 awk -v d="$WORK/parts" '
-  /^-- @@file [0-9]{4} [^ ]+ sha256=[0-9a-f]{64}$/ { if (out) close(out); out = d "/" $3 ".sql"; print $4 > (d "/" $3 ".name"); next }
+  /^-- @@file [0-9][0-9][0-9][0-9] [^ ]+ sha256=[0-9a-f]+$/ && length($5) == 71 { if (out) close(out); out = d "/" $3 ".sql"; print $4 > (d "/" $3 ".name"); next }
   out { print > out }
 ' "$BUNDLE/bundle.sql"
 N_PARTS=$(find "$WORK/parts" -name '*.sql' | wc -l | tr -d ' ')
