@@ -1,0 +1,17 @@
+{
+  "vtid": "VTID-05382",
+  "kind": "infra",
+  "paths": [
+    ".kiro/specs/quality-checks-followup/lanes/reviewer-requester-rule.md",
+    ".kiro/specs/quality-checks-followup/reviewer-requester-rule-proposal.md",
+    "docs/validation/VTID-05382/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05382/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": [
+    {
+      "file": ".kiro/specs/quality-checks-followup/reviewer-requester-rule-proposal.md",
+      "reason": "hand-off document only; the lane's code and its red-on-base test are built by the claude/exceptions-seat builder"
+    }
+  ]
+}
