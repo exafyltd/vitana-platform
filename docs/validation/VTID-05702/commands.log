@@ -1,0 +1,81 @@
+VTID-05702 (agentic-delivery-v2/delivery-bedrock) — commands run, in order, from services/gateway unless noted.
+
+1. RED on origin/main (4c4694b7977bbbff1610f1558ac91baeaf7a472b), before implementing bedrock.ts:
+   $ npx jest test/delivery/bedrock-role.test.ts
+   Test Suites: 1 failed, 1 total / Tests: 15 failed, 15 total
+   (full output: red-on-base.txt)
+
+2. GREEN after implementing bedrock.ts:
+   $ npx jest test/delivery/bedrock-role.test.ts
+   Test Suites: 1 passed, 1 total / Tests: 15 passed, 15 total
+
+3. Typecheck (this file only needs to be clean; the repo has 2 pre-existing, unrelated failures):
+   $ npx tsc --noEmit
+   src/middleware/server-timing.ts(36,16): error TS2664 ... (pre-existing, unrelated — module augmentation of
+     'express-serve-static-core', a file this change never touches)
+   src/orb/live/latency-tracker.ts(236,16): error TS2664 ... (same, pre-existing, unrelated)
+   No error anywhere in providers/bedrock.ts or test/delivery/bedrock-role.test.ts.
+
+4. Full regression sweep of every real invokeBedrock()/bedrock.ts consumer in this repo:
+   $ npx jest test/delivery/bedrock-role.test.ts test/providers/bedrock-vision-tools.test.ts \
+       test/providers/bedrock-region.test.ts test/ai-bridge.test.ts test/llm-router-agentic.test.ts \
+       test/llm-provider-verify.test.ts test/vtid-04233-spec-generator-planner-stage.test.ts \
+       test/vtid-05077-planner-fallback-and-thinking.test.ts
+   Test Suites: 8 passed, 8 total / Tests: 100 passed, 100 total
+
+5. Full build (tsc with declaration emit, not --noEmit):
+   $ npm run build
+   FAILS — 365 pre-existing `error TS2742` ("inferred type ... cannot be named without a reference to
+   .pnpm/...") across ~40 files this change never touches (src/routes/watcher.ts, wearables*.ts,
+   services/health-sources/*, services/notification-controls/*, services/rewards/*, etc.) — a repo-wide,
+   pre-existing TypeScript declaration-emit/pnpm-hoisting issue in this sandbox, confirmed unrelated: zero of
+   the 365 errors name providers/bedrock.ts or test/delivery/bedrock-role.test.ts (`grep -c "providers/bedrock"`
+   / `grep -c "test/delivery"` on the full build output: 0 both). `tsc --noEmit` (step 3), the real check this
+   file needs to pass, is clean for it.
+
+6. ESLint: not run — this checkout has no resolvable `.eslintrc*` at any level (`npx eslint ...` reports "ESLint
+   couldn't find a configuration file"), confirmed pre-existing/environment-wide, not something this change
+   caused or could fix.
+
+7. scripts/aws/setup-delivery-bedrock.sh — NOT run against any real AWS account (no credentials into
+   vitana-engineering; this session's own credentials are for 472838866351, the wrong account for this script).
+   Verified instead, from the repo root, none of which make a mutating AWS call:
+   $ bash -n scripts/aws/setup-delivery-bedrock.sh                                    → syntax OK
+   $ scripts/aws/setup-delivery-bedrock.sh                                            → usage, exit 2
+   $ scripts/aws/setup-delivery-bedrock.sh --help                                     → usage, exit 0
+   $ scripts/aws/setup-delivery-bedrock.sh provision --task-role-arn <arn> --region us-east-1
+        → "refusing to run: region is 'us-east-1', expected eu-central-1", exit 4 (before any AWS call)
+   $ scripts/aws/setup-delivery-bedrock.sh discover --region eu-west-1
+        → "refusing to run: region is 'eu-west-1', expected eu-central-1", exit 4 (before any AWS call)
+   $ AWS_ACCESS_KEY_ID=x AWS_SECRET_ACCESS_KEY=x scripts/aws/setup-delivery-bedrock.sh provision --region eu-central-1
+        → one read-only `aws sts get-caller-identity` attempt with obviously-fake credentials (fails to resolve
+          an identity), then "refusing to run: no caller identity" — confirms the script never reaches a write
+          call without first resolving a real caller account.
+
+8. SigV4 signer correctness (signAwsRequestV4): cross-checked, during development, against the independent,
+   widely-used `aws4` npm package (installed into a throwaway /tmp scratch directory, never a repository
+   dependency, never committed) for a fixed worked example — method POST, host
+   sts.eu-central-1.amazonaws.com, a realistic AssumeRole body, both with and without a caller session token.
+   Result: byte-for-byte identical Authorization headers from both implementations in both cases. The exact
+   fixture and expected Authorization/SignedHeaders values are pinned as regression tests in
+   services/gateway/test/delivery/bedrock-role.test.ts ("VTID-05702 signAwsRequestV4" describe block).
+
+9. Governance preflight (repo root, after the lane-file fixes it surfaced — see the lane log):
+   $ node scripts/collab/preflight.mjs --repo <repo> --base origin/main --head HEAD \
+       --branch kiro/agentic-delivery-v2/delivery-bedrock --title "VTID-05702 (agentic-delivery-v2/delivery-bedrock): ..."
+   PASS  Collab tests [required]
+   FAIL  Collab handoff [required] — 1 problem, pre-existing and unrelated: lane file
+     .kiro/specs/agentic-delivery-v2/lanes/retire-vtid-allocate.md (not touched by this change) has a
+     protected-gate-file path without executor: claude / a protected_gate: two-model setup. Not this lane's
+     file; not fixed here (collaboration.md §7a: an executor never edits another lane's file).
+   PASS  Lane scope [required]
+   FAIL  PR-GATE scope / FAIL PR-GATE sparring — both explicitly "[report-only in CI (until config.enforce=true)]"
+     (plan.md premise 2: config.json has enforce: false since 2026-10-07, so these never block a merge today).
+     Addressed anyway: docs/validation/VTID-05702/scope.json created via
+     `node scripts/ci/pr-gate/vtid-scope.mjs init VTID-05702 --kind infra --paths "..." --sparring-record
+     ".kiro/specs/agentic-delivery-v2/sparring/verdict.md"` (the plan's real, converged sparring record — this
+     VTID is one of its 14 lane VTIDs, confirmed in that file).
+   PASS  PR-GATE weakening / PR-GATE red-green / Kiro steering
+
+10. Lane claim: $ node scripts/collab/queue.mjs claim agentic-delivery-v2/delivery-bedrock \
+      --session kiro-exafy-202611131759-6b38 --repo <repo>   → {"ok":true, ...}
