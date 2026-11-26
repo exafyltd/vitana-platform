@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-05737",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "existing",
+      "ref": "npx jest test/project-manager/retry.test.ts",
+      "cwd": "services/gateway",
+      "reason": "VTID-05737 change suite: the Project Manager retry schedule and eligibility as pure functions (nextRetry, isRetryable, retryDue) with no I/O and no caller yet; lane dispatcher-pm (VTID-05736) wires them. Nothing in the deployed gateway reaches this code, so the unit suite is the whole proof. Red on origin/main (module absent), green on this branch."
+    }
+  ]
+}
