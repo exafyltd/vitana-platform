@@ -35,3 +35,19 @@
 **Acceptance**
 - Change types: Tooling/docs
 - Records the two UpdateService calls (09:34:51Z, 09:34:52Z) from d.stevanovic@vitanaland.com; the reason stays "unconfirmed".
+
+<!-- lane: overlay-paths -->
+## Lane overlay-paths (late lane, `lane_admin`)
+- [ ] O1 Claim `preview-gateway-recovery/overlay-paths` with a seat `jtadic` session; branch
+      `kiro/preview-gateway-recovery/overlay-paths` from `origin/main`.
+- [ ] O2 In `.kiro/specs/preview-gateway-recovery/lanes/runtime-profile.md` add exactly one entry to `paths`:
+      `scripts/aws/preview-sparring/task-overlay.json`, as the last list element. Nothing else in the target changes
+      (`state`, `next_actor`, `seat`, `executor`, `reviewer_seat`, `updated`, every log line).
+- [ ] O3 Evidence `docs/validation/<VTID>/`: `acceptance.md`, `commands.log`, `scope.json`, `outputs/` with `queue.mjs
+      validate` and `scope-check` for this lane, a byte check of the target, and the #5110 scope-check before and after.
+- [ ] O4 `rule55-coverage.md` in the evidence dir (plan.md §7c): holder approval, T0, covering run, verdict, allocation off.
+**Acceptance**
+- Change types: Tooling/docs
+- The target lane file differs from `main` only by the one inserted path; its parsed front matter differs only in `paths`.
+- Lane scope and Collab handoff pass on the lane head; the admin lane's own fields are unchanged from the trusted revision.
+- With the target on `main`, Lane scope for a runtime-profile commit carrying #5110's diff reports no out-of-paths file.
