@@ -45,6 +45,7 @@
       (`state`, `next_actor`, `seat`, `executor`, `reviewer_seat`, `updated`, every log line).
 - [ ] O3 Evidence `docs/validation/<VTID>/`: `acceptance.md`, `commands.log`, `scope.json`, `outputs/` with `queue.mjs
       validate` and `scope-check` for this lane, a byte check of the target, and the #5110 scope-check before and after.
+- [ ] O4 `rule55-coverage.md` in the evidence dir (plan.md §7c): holder approval, T0, covering run, verdict, allocation off.
 **Acceptance**
 - Change types: Tooling/docs
 - The target lane file differs from `main` only by the one inserted path; its parsed front matter differs only in `paths`.

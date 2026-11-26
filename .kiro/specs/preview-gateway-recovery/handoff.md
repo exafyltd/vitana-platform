@@ -64,3 +64,11 @@ held for the owner (next_actor owner, no VTID). #5122 is superseded by this plan
 Owner scope correction for #5110: `scripts/aws/preview-sparring/task-overlay.json` stays in #5110, and lane
 `runtime-profile` is widened by exactly that path through a `lane_admin` lane (`overlay-paths`, VTID-05408). The lane
 needs a VTID and this amendment needs the Rule 55 authority #5137 used; both are owner items.
+
+### 2026-11-26T13:10Z · kiro-jtadic-202611261230-51b4 · drafted (driver; Rule 55 coverage for three lanes)
+Driver: took the `_plan` claim of kiro-jtadic-202611241634-913f (44 h old, no driver heartbeat; `queue.mjs release
+--stale`) and started heartbeat `collab-driver/preview-gateway-recovery`. plan.md §7c: one Rule 55 approval covers
+overlay-paths, runtime-profile and plan-spar-token (VTID-05833 to be recorded as break-glass), one covering run, an
+execution order with the amendment landed before T0, and per-VTID follow-up evidence. Read-only state:
+artifacts/observed-2026-11-26T1300Z.md (preview `:16` lacks GATEWAY_RUNTIME_PROFILE, shared roles, rule 9 still broad).
+Waiting for the Rule 55 holder's written approval at the amendment SHA; no allocation before it.

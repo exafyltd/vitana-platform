@@ -114,10 +114,11 @@ resolve; this plan neither changes nor fixes that.** `verify` also fails if buil
   checkout has only vitana-platform". In a clean single-repo clone every preflight check passes; the plan branch was
   pushed from it (`kiro/preview-gateway-recovery/plan` @ ad81cc27, no PR, so PLAN-SPAR did not run; DRIVER-WAKE
   answered "skip (not a plan event)"). The vitana-v1 steering fix (`2af0822fb`, #1696) proceeds on its own schedule.
-- **Break-glass VTIDs genuinely needed: 2.** (1) `runtime-profile` (#5110): without it, kiro-run timers, the autonomous
+- **Break-glass VTIDs genuinely needed: 3 (amended 2026-11-26, §7c).** (1) `runtime-profile` (#5110): without it, kiro-run timers, the autonomous
   engine, the lifecycle worker, module-level timers, cache warms and the agents bootstrap start with no env switch
   (the four Jev schedulers can be switched off by `JEV_*_MODE=off`, now in the overlay). (2) `plan-spar-token`: without
-  it PLAN-SPAR can only send the shared token, which is the production service-role key. Not needed: the vitana-v1
+  it PLAN-SPAR can only send the shared token, which is the production service-role key. (3) `overlay-paths`: the `lane_admin` lane that adds
+  `scripts/aws/preview-sparring/task-overlay.json` to `runtime-profile` (§7c). Not needed: the vitana-v1
   steering fix (push guard resolved); `preview-ops` and `incident-record` (operator scripts run from this branch; they
   spar normally once the preview is back).
 - **Rule 55, exact text** (CLAUDE.md:360-361): "**Break-glass** (P1 incident with gateway or Bedrock down): only the
@@ -137,7 +138,7 @@ resolve; this plan neither changes nor fixes that.** `verify` also fails if buil
 | # | Operator | Action | Rollback |
 |---|---|---|---|
 | 1 | Dragan | Read-only precheck (dry run) from the VPC CloudShell; send `restore-sparring-dryrun.txt` | none (read-only) |
-| 2 | Owner | Decide rule 55 (preview run satisfies the 24 h clause or not); allocate the 2 break-glass VTIDs | — |
+| 2 | Owner | Decide rule 55 (preview run satisfies the 24 h clause or not); allocate the break-glass VTIDs (three lanes since 2026-11-26: §7c) | — |
 | 3 | IAM admin | Create the two roles in `iam-preview-roles.json` | delete both |
 | 4 | Owner/admin | `setup-preview-secrets.sh` (dry run) → `--apply --github` | delete the 2 secrets and `PLAN_SPAR_GATEWAY_TOKEN` |
 | 5 | Dragan | `restore-sparring-schema.sh --apply` (only after the dry-run result is reviewed) | `--rollback` |
@@ -179,7 +180,7 @@ Consequences recorded for the owner:
   The VPC CloudShell environment keeps no files after it times out, so the apply log and `restore-sparring-state.json`
   go to the transfer bucket right after the apply; the bucket stays until the recovery is accepted.
 - **Rule 55 (owner decision, subject to confirmation by the rule owner):** a full preview sparring run with allocation
-  disabled satisfies the 24 h follow-up. **One run covers both break-glass VTIDs** (`runtime-profile`,
+  disabled satisfies the 24 h follow-up. **Superseded for coverage by §7c (three lanes).** **One run covers both break-glass VTIDs** (`runtime-profile`,
   `plan-spar-token`): sparring is per plan and both are lanes of this one plan (`preview-gateway-recovery`); the
   verdict and `final_plan_hash` of its session cover every lane, exactly as one CI convergence normally allocates
   every lane of a plan. The covering run is PLAN-SPAR on the `plan(preview-gateway-recovery)` PR through the recovered
@@ -188,6 +189,53 @@ Consequences recorded for the owner:
   The #5117 emoji run is a separate verification and covers neither VTID.
 - **Clock order:** steps 1–4 (roles, secrets, restore, proxy rev 21) need no VTID and run first. The owner allocates the
   two VTIDs only when the operator and reviewer are available for steps 5–7 and the covering sparring in the same day.
+
+## 7c. Rule 55 coverage for three lanes (amendment 2026-11-26; replaces the two-lane coverage of §7b)
+Owner scope correction 2026-11-26: `scripts/aws/preview-sparring/task-overlay.json` stays in #5110, and lane
+`runtime-profile` is widened by exactly that path through the `lane_admin` lane `overlay-paths` (VTID-05408 route,
+precedent `agentic-delivery/nav-paths`, #4722). Neither this amendment nor `overlay-paths` can converge in PLAN-SPAR
+while the preview rejects the shared token (runs 45378800297, 45416113680, 45440283396: HTTP 401), so both go through
+Rule 55 like #5137.
+
+**Rule 55 decision requested (one written approval by the Rule 55 holder, before any allocation).** The Rule 55
+holder is "the owner" (CLAUDE.md rule 55); the approval names its author and confirms they hold that role.
+| Lane | VTID | What the holder approves |
+|---|---|---|
+| `overlay-paths` | none yet | allocate one break-glass VTID through the exemption role, logged `vtid.plan_sparring.break_glass`, `spec_status=approved` |
+| `runtime-profile` | none yet | the same, for #5110 |
+| `plan-spar-token` | VTID-05833 (GitLab `vtid-allocate`, pipeline 1452, 2026-11-24 16:39Z) | record it as a Rule 55 break-glass allocation (`vtid.plan_sparring.break_glass`, `spec_status=approved`); the 2026-11-26 check found neither (#5138) |
+| all three | — | land this amendment on `main` under Rule 55 without PLAN-SPAR convergence; one covering run (below) satisfies the 24 h follow-up for all three |
+Not covered: `preview-ops`, `incident-record` (no VTID; they spar normally once the preview is back).
+
+**Covering run.** One PLAN-SPAR run on a `plan(preview-gateway-recovery)` PR (the closing-record plan PR, a new event
+after the three lanes are on `main`) that creates its session through `preview-aws-gateway.vitanaland.com` with
+`PLAN_SPAR_GATEWAY_TOKEN`, allocation off, and completes to a verdict. Sparring is per plan, so its verdict and
+`final_plan_hash` cover every lane of this plan, as one CI convergence normally allocates every lane. Preconditions: the
+preview runs an image built from the `runtime-profile` merge commit with `GATEWAY_RUNTIME_PROFILE=preview-sparring`
+(§7 step 8, operator), and `plan-spar-token` is on `main`. The #5117 emoji run stays a separate verification.
+
+**Execution order.**
+| # | When | Who | Action | Gate |
+|---|---|---|---|---|
+| 0 | before the clock, parallel | operator (VPC CloudShell) + Kiro (read-only) | VPC checks: `proxy-jwt-staging.sh verify` against the live proxy revision (staging key 200, production key 401); restore precheck re-run; Kiro re-reads preview service, task definition, roles and listener rules (`artifacts/observed-2026-11-26T1300Z.md`) | results recorded; drift decided by the owner (C3) |
+| 1 | before the clock | Rule 55 holder | written approval of this §7c at the amendment SHA | names all three lanes and the covering run |
+| 2 | before the clock | Kiro (driver) | land this amendment on `main` (needs no VTID); `overlay-paths` becomes trusted from the merge-base | step 1 |
+| 3 | **T0** (clock starts) | Rule 55 holder | allocate `overlay-paths` and `runtime-profile`; record VTID-05833 as break-glass. T0 = the first insert | step 1, operator and reviewer available the same day |
+| 4 | T0 + ~1 h | Kiro (builder) | `overlay-paths` lane PR: adds the one path to `lanes/runtime-profile.md`; independent reviewer session on the exact PR head; land under §7b | accept on current head, checks green |
+| 5 | after 4 | Kiro | Lane scope for #5110 against the trusted `main`; post the merge commit and the result on #5110; hand back to Claude | ✅ lane scope |
+| 6 | after 5 | Claude | `runtime-profile` (#5110) with its VTID: review, land; staging deploy consequence per go-no-go C1 | as the lane requires |
+| 7 | parallel to 6 | Kiro | `plan-spar-token` (#5138, VTID-05833) lands with its two accepts on the current head | protected gate rules, step 3 record |
+| 8 | after 6 | operator | preview redeploy from the `runtime-profile` merge commit (§7 step 8), then `preview-gateway.sh verify` and the VPC proxy verify (§7 step 10) | — |
+| 9 | before T0 + 24 h | Kiro | covering run (above) | verdict exists |
+
+**Follow-up evidence (per VTID, before T0 + 24 h).** `docs/validation/<VTID>/rule55-coverage.md` for each of the three
+VTIDs: the holder's approval (link, author, time) and the amendment SHA it names; T0 and the deadline; the covering run
+link, `sparring/verdict.md` and `final_plan_hash`; allocation-off proof (`PLAN_SPAR_ALLOCATE=false` in the run log,
+"allocation is off" in the verdict, `/api/v1/vtid/allocator/status` `enabled:false`). Per lane, "exercised" means:
+`overlay-paths`: Lane scope on #5110 passes against the trusted `main`; `runtime-profile`: a `preview-sparring` task
+serves the covering run; `plan-spar-token`: the run log shows the preview token in use. Attaching the run link and
+verdict to the three ledger records is the holder's canonical-ledger write. A missed deadline is recorded on all three,
+never hidden.
 
 ## 8. Unchanged
 `vitana-gateway`, `vitana-gateway-awsdr`, rule 31 and every other listener rule, `PLAN_SPAR_GATEWAY_URL`, the staging
