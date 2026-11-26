@@ -59,3 +59,8 @@ lands on main so the lane file is trusted from the merge-base; PLAN-SPAR cannot 
 (the preview rejects the shared token, runs 45378800297 and 45416113680 on #5135). The covering sparring follows on the
 first full PLAN-SPAR run through the preview with allocation off. runtime-profile, preview-ops and incident-record are
 held for the owner (next_actor owner, no VTID). #5122 is superseded by this plan PR for the spec.
+
+### 2026-11-26T12:40Z · kiro-jtadic-202611261230-51b4 · drafted (late lane overlay-paths proposed)
+Owner scope correction for #5110: `scripts/aws/preview-sparring/task-overlay.json` stays in #5110, and lane
+`runtime-profile` is widened by exactly that path through a `lane_admin` lane (`overlay-paths`, VTID-05408). The lane
+needs a VTID and this amendment needs the Rule 55 authority #5137 used; both are owner items.

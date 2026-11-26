@@ -196,7 +196,10 @@ frontend, STAGING-VERIFY targets, PUBLISH. The 2026-11-17 reason stays unconfirm
 ## Lanes (path-free in this plan PR; authoritative paths here)
 - `runtime-profile` — adopt #5110: `services/gateway/src/**`, `services/gateway/test/runtime/**`,
   `services/gateway/test/kaf-staging-claude-available-wiring.test.ts`, and its workflow lines
-  (`AWS-STAGE-DEPLOY-GATEWAY.yml`, `CICDL-GATEWAY-CI.yml`, `ENFORCE-FRONTEND-CANONICAL-SOURCE.yml`, `OASIS-PERSISTENCE.yml`).
+  (`AWS-STAGE-DEPLOY-GATEWAY.yml`, `CICDL-GATEWAY-CI.yml`, `ENFORCE-FRONTEND-CANONICAL-SOURCE.yml`, `OASIS-PERSISTENCE.yml`), and `scripts/aws/preview-sparring/task-overlay.json` (owner scope correction 2026-11-26; added
+  to the lane file by lane `overlay-paths`).
+- `overlay-paths` — late `lane_admin` lane: `.kiro/specs/preview-gateway-recovery/lanes/runtime-profile.md` only; adds the
+  one overlay path to `runtime-profile` (VTID-05408 route, precedent `agentic-delivery/nav-paths`, #4722).
 - `preview-ops` — `scripts/aws/preview-gateway/**` (the artifacts and the rehearsal), `docs/validation/<VTID>/**`.
 - `plan-spar-token` — `.github/workflows/PLAN-SPAR.yml` (protected, `protected_gate: two-model`) and its test
   `scripts/collab/plan-spar-preview-token.test.mjs`, depends on `preview-ops`.
