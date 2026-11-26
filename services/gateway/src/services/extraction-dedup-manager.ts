@@ -21,6 +21,7 @@
  */
 
 import { createHash } from 'crypto';
+import { scheduleBackground } from '../runtime/runtime-profile';
 import { extractAndPersistFacts, isInlineExtractionAvailable } from './inline-fact-extractor';
 import { shadowWorthRemembering } from './jev/gates/community-class-a-gates';
 import { addSessionFact } from './session-memory-buffer';
@@ -77,7 +78,7 @@ interface SessionExtractionState {
 const sessionStates = new Map<string, SessionExtractionState>();
 
 // Periodic cleanup
-const cleanupInterval = setInterval(() => {
+const cleanupInterval = scheduleBackground(() => {
   const now = Date.now();
   let cleaned = 0;
   for (const [id, state] of sessionStates) {
@@ -92,7 +93,7 @@ const cleanupInterval = setInterval(() => {
   }
 }, DEDUP_CONFIG.CLEANUP_INTERVAL_MS);
 
-if (cleanupInterval.unref) {
+if (cleanupInterval?.unref) {
   cleanupInterval.unref();
 }
 

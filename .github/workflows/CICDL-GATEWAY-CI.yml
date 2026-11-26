@@ -111,6 +111,10 @@ jobs:
       - name: Gateway Type Check
         working-directory: services/gateway
         # VTID-04950: tsc --noEmit reports 0 errors on main, so it gates for real.
+        # tsc ran out of the default Node heap (exit 134, "Ineffective mark-compacts")
+        # on PR #5110; give it the same 6 GB ceiling as OASIS-PERSISTENCE.yml.
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
         run: pnpm run typecheck
 
       # VTID-04950: the "Gateway Lint" step was removed. services/gateway has no

@@ -1,0 +1,34 @@
+{
+  "purpose": "Environment for the isolated staging preview gateway that runs plan sparring. Applied as one task-definition revision of the staging gateway, in a DEDICATED ECS service and target group. Never applied to vitana-gateway or to any production target group.",
+  "enforcement": "GATEWAY_RUNTIME_PROFILE=preview-sparring makes the process start the HTTP API only (services/gateway/src/runtime/runtime-profile.ts, guard in index.ts). The flags below are defence in depth for workers that might be enabled by an external switch.",
+  "environment": {
+    "GATEWAY_RUNTIME_PROFILE": "preview-sparring",
+    "RECOMMENDATION_SCHEDULER_ENABLED": "false",
+    "LONGEVITY_NEWS_FETCHER_ENABLED": "false",
+    "DEV_AUTOPILOT_WATCHERS_ENABLED": "false",
+    "WATCHER_OBSERVER_ENABLED": "false"
+  },
+  "must_not_set": [
+    "SUPABASE_SERVICE_ROLE (production)",
+    "any production Aurora writer endpoint or production secret ARN",
+    "AWS_STAGE_NOVA_SONIC_* enablement",
+    "EVENTBRIDGE schedule targets pointing at this service"
+  ],
+  "database": {
+    "allowed": "the staging Aurora cluster vitana-aurora-staging, only after its schema, authenticator and PostgREST dependency pass acceptance",
+    "status": "NOT READY: migration acceptance has not been established (see the gateway preview PR)"
+  },
+  "service": {
+    "cluster": "Vitana-ECS-Cluster",
+    "service_name": "vitana-gateway-preview-sparring",
+    "must_not_reuse": "vitana-gateway (production-attached; desired=0 at 2026-11-17 09:34:51Z)",
+    "target_group": "a NEW target group for this service; not vitana-tg-gateway-prod",
+    "routing": "preview-aws-gateway.vitanaland.com must route to this target group only, through an isolated listener rule or ingress; production listener rules are not modified by this change"
+  },
+  "health_gates_before_sparring": [
+    "/alive 200",
+    "/api/v1/admin/build-info reports the verified commit",
+    "target group healthy",
+    "authenticated sparring endpoint responds"
+  ]
+}
