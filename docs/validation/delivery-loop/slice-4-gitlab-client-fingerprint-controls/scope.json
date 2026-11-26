@@ -1,0 +1,18 @@
+{
+  "vtid": null,
+  "slice": "delivery-loop/slice-4-gitlab-client-fingerprint-controls",
+  "kind": "feature",
+  "paths": [
+    "services/gateway/src/services/delivery-loop/types.ts",
+    "services/gateway/src/services/delivery-loop/controls.ts",
+    "services/gateway/src/services/delivery-loop/gitlab-client.ts",
+    "services/gateway/src/services/delivery-loop/fingerprint.ts",
+    "services/gateway/test/delivery-loop/controls.test.ts",
+    "services/gateway/test/delivery-loop/gitlab-client.test.ts",
+    "services/gateway/test/delivery-loop/fingerprint.test.ts",
+    "docs/validation/delivery-loop/slice-4-gitlab-client-fingerprint-controls/**"
+  ],
+  "vtid_note": "No VTID: no approved lane covers this work, and VTIDs come only from CI PLAN-SPAR. WIP until plan(delivery-loop) is sparred.",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

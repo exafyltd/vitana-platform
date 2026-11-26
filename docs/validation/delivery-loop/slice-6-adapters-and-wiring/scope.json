@@ -1,0 +1,30 @@
+{
+  "vtid": null,
+  "slice": "delivery-loop/slice-6-adapters-and-wiring",
+  "kind": "feature",
+  "paths": [
+    "services/gateway/src/services/delivery-loop/adapters.ts",
+    "services/gateway/src/services/delivery-loop/runtime.ts",
+    "services/gateway/src/routes/delivery-loop.ts",
+    "services/gateway/src/index.ts",
+    "services/gateway/src/orb/developer/domain-atlas.ts",
+    "services/gateway/.env.example",
+    "services/gateway/test/delivery-loop/adapters.test.ts",
+    "services/gateway/test/delivery-loop/runtime.test.ts",
+    "services/gateway/test/delivery-loop/route.test.ts",
+    "docs/validation/delivery-loop/slice-6-adapters-and-wiring/**"
+  ],
+  "vtid_note": "No VTID: no approved lane covers this work, and VTIDs come only from CI PLAN-SPAR. WIP until plan(delivery-loop) is sparred.",
+  "weakens_tests": [],
+  "tests_changed_on_purpose": [],
+  "touches_shared_files": [
+    "services/gateway/src/index.ts: 20 added lines (a require, a mount, and a start behind DELIVERY_LOOP_ENABLED=true in a non-fatal try/catch), mirroring the Project Manager's",
+    "services/gateway/src/orb/developer/domain-atlas.ts: one regex (/^delivery-loop$/) added to the deploy domain's routes, as the drift guard requires for a new route file"
+  ],
+  "not_touched_on_purpose": [
+    "services/gateway/src/services/autopilot-executable-source-types.ts: an edit was tried and reverted (it broke 4 tests that lock the list and its Command Hub mirror)",
+    ".github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml: a live-deploy file; the loop's variables are not wired into any task definition",
+    "services/gateway/specs/loop-catalog-v1.json: the catalog says every sensor has exactly one owner and lists 14 loops; adding one is a decision for the plan review"
+  ],
+  "red_green_exempt": []
+}

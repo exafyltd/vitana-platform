@@ -1,0 +1,2 @@
+# npx tsc --noEmit -p tsconfig.json  (2026-11-19T00:58:42Z, head e094e26718 + slice 3 working tree)
+tsc exit: 0

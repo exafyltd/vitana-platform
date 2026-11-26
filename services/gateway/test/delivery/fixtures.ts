@@ -126,6 +126,41 @@ export const REVIEW_COMMIT = {
   removed: [],
 };
 
+export const ISSUE_TITLE = 'secret-issue-title that must never reach OASIS';
+
+/** A GitLab issue event (object_kind issue). `labels` are the labels the issue carries after the event. */
+export function issue(
+  action: string,
+  labels: string[] = ['agent-task'],
+  over: Record<string, unknown> = {},
+  top: Record<string, unknown> = {},
+  project: { id: number; path_with_namespace: string; web_url?: string } = PLATFORM,
+) {
+  return {
+    object_kind: 'issue',
+    event_type: 'issue',
+    user: { id: 7, name: 'Agent Kiro', username: 'agent-kiro-exafy', email: 'agent@example.invalid' },
+    project,
+    object_attributes: {
+      id: 301,
+      iid: 17,
+      title: ISSUE_TITLE,
+      description: 'secret-description-text that must never reach OASIS',
+      type: 'Issue',
+      state: action === 'close' ? 'closed' : 'opened',
+      action,
+      author_id: 7,
+      confidential: false,
+      created_at: '2026-11-18 10:00:00 UTC',
+      updated_at: '2026-11-18 10:00:00 UTC',
+      url: `${project.web_url ?? 'https://gitlab.example.invalid/x'}/-/issues/17`,
+      ...over,
+    },
+    labels: labels.map((title, i) => ({ id: 100 + i, title, color: '#428BCA', description: 'secret-label-description' })),
+    ...top,
+  };
+}
+
 export function tagPush(ref: string, over: Record<string, unknown> = {}, project = PLATFORM) {
   return { object_kind: 'tag_push', ref, checkout_sha: MERGE_SHA, after: MERGE_SHA, project, ...over };
 }

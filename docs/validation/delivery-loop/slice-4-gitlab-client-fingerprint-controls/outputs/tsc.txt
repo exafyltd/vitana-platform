@@ -1,0 +1,5 @@
+# npx tsc --noEmit -p tsconfig.json (2026-11-19T01:16:00Z)
+src tsc exit: 0
+
+# one-off compile of the test files (tsc excludes test/):
+test tsc exit: 0

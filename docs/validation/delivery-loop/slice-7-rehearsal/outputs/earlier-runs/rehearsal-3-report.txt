@@ -1,0 +1,72 @@
+# Delivery loop rehearsal against the real GitLab (2026-11-19T11:46:53.543Z)
+run id: r3x7y8z   project: vitana/rehearsal   steps: 14/15 passed
+
+REAL: the GitLab REST client, the engine, the project, its issues and label events, its merge request pipelines, its runner and job logs.
+STAND-INS: the OASIS ledger (in memory), the executor (a labelled stub worker that pushes a fix), the reviewer (a fixed verdict), the memory (a recorder).
+
+PASS  preflight
+      vitana/rehearsal is private and reachable
+PASS  A1 intake accepts an issue labeled by a project member
+      accepted rows 1; requester level 50
+PASS  A2 the loop answered on the issue and labelled it
+      labels ["agent-task","delivery-accepted"]
+PASS  A3 the (stub) worker was asked for the task, with the issue text as data
+      1 request(s)
+PASS  B0 merge request opened on the loop-owned branch
+      !7 on loop-rehearsal/r3x7y8z
+PASS  B1 GitLab ran a real pipeline and it FAILED on the broken test
+      pipeline 567 failed
+PASS  B2 the loop saw the failure on GitLab (poller, no webhook) and classified it a code failure with evidence
+      class code, jobs ["unit:script_failure"], fingerprint b1373d7adb960955
+PASS  B3 the worker was asked to repair THE merge request branch, with the real log excerpt as data
+      fix_branch loop-rehearsal/r3x7y8z; instructions mention the failing assertion: true
+PASS  B4 GitLab ran a NEW real pipeline on the pushed fix and it PASSED
+      pipeline 568 success
+PASS  B5 the loop verified the repair from GitLab's own state
+      verified by pipeline 568
+PASS  B6 the loop learned: a repair pattern and a memory outcome were recorded
+      1 pattern(s), 1 outcome(s)
+PASS  C1 the green merge request was reviewed once for its head, by the stub reviewer
+      1 review(s); head d89ef15c
+PASS  C2 the merge request is still open and was not merged by the loop
+      the loop has no merge call
+PASS  E1 an issue with too little to act on is rejected with the reason, not started
+      reason too_little_to_act_on
+FAIL  Z1 once everything is settled the loop is silent: no new rows, no new GitLab writes
+      rows 47 -> 48; GitLab writes by the rehearsal 8
+
+Left behind on GitLab after cleanup: nothing
+
+Ledger rows written by the loop (48), by topic:
+    1  delivery.dispatch.failed
+    2  delivery.dispatch.requested
+    1  delivery.dispatch.started
+    1  delivery.heal.attempt
+    1  delivery.heal.detected
+    1  delivery.heal.verified
+    1  delivery.intake.accepted
+    1  delivery.intake.rejected
+    1  delivery.learn.recorded
+    8  delivery.loop.claim
+    4  delivery.loop.cycle
+   12  delivery.note.posted
+    6  delivery.note.requested
+    1  delivery.review.requested
+    1  delivery.review.verdict
+    2  scm.gitlab.issue.labeled
+    2  scm.gitlab.pipeline.failed
+    2  scm.gitlab.pipeline.succeeded
+
+GitLab writes made by the rehearsal itself (12):
+  POST /issues -> 201
+  PUT /issues/6 -> 200
+  POST /repository/branches -> 201
+  POST /repository/commits -> 201
+  POST /merge_requests -> 201
+  POST /repository/commits -> 201
+  POST /issues -> 201
+  PUT /issues/7 -> 200
+  PUT /merge_requests/7 -> 200
+  PUT /issues/6 -> 200
+  PUT /issues/7 -> 200
+  DELETE /repository/branches/loop-rehearsal%2Fr3x7y8z -> 204

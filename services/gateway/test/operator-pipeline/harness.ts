@@ -29,6 +29,7 @@
  * below are the same objects the mocked modules read.
  */
 
+import { createHash, randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -199,7 +200,42 @@ export const triage = {
 // ---------------------------------------------------------------------------
 
 const snapshots = new Map<string, Record<string, string>>();
-export const workspaceLog: Array<{ op: string; branch?: string; existingBranch?: boolean }> = [];
+/** Which clones were made from the GitLab remote (a GitLab-native repair); every other clone is the fake GitHub's. */
+const gitlabClones = new Set<string>();
+export const workspaceLog: Array<{ op: string; branch?: string; existingBranch?: boolean; remote?: 'gitlab' }> = [];
+
+/**
+ * The GitLab project a GitLab-native repair clones from and pushes to. The repair talks to GitLab through git only (no HTTP), so this
+ * fake is commits and branch heads; the suite's fetch still refuses every real host. The push honours the lease like a real remote: it
+ * is refused unless the branch still points at the leased head.
+ */
+export const gitlabFake = {
+  commits: new Map<string, Record<string, string>>(),
+  branches: new Map<string, string>(),
+  pushes: [] as Array<{ branch: string; lease: string | undefined; sha: string; files: string[] }>,
+  remotes: [] as string[],
+  reset(): void {
+    this.commits.clear();
+    this.branches.clear();
+    this.pushes.length = 0;
+    this.remotes.length = 0;
+  },
+  commit(files: Record<string, string>): string {
+    const sha = createHash('sha1').update(JSON.stringify(files) + randomUUID()).digest('hex');
+    this.commits.set(sha, { ...files });
+    return sha;
+  },
+  setBranch(branch: string, files: Record<string, string>): string {
+    const sha = this.commit(files);
+    this.branches.set(branch, sha);
+    return sha;
+  },
+  filesAt(shaOrBranch: string): Record<string, string> {
+    const f = this.commits.get(this.branches.get(shaOrBranch) ?? shaOrBranch);
+    if (!f) throw new Error(`fake-gitlab: no commit ${shaOrBranch}`);
+    return f;
+  },
+};
 
 function readTree(root: string): Record<string, string> {
   const out: Record<string, string> = {};
@@ -229,7 +265,28 @@ export function workspaceModule(): Record<string, unknown> {
   const actual = jest.requireActual('../../src/services/autopilot-agent/agent-workspace');
   return {
     ...actual,
-    prepareWorkspace: async (opts: { baseBranch: string; branch: string; existingBranch?: boolean }) => {
+    prepareWorkspace: async (opts: { baseBranch: string; branch: string; existingBranch?: boolean; remoteUrl?: string; expectHeadSha?: string }) => {
+      if (opts.remoteUrl) {
+        // A GitLab-native repair: the merge request's branch, from the GitLab remote, at the head that failed.
+        gitlabFake.remotes.push(opts.remoteUrl);
+        const head = gitlabFake.branches.get(opts.branch);
+        if (!head) throw new Error(`workspace clone failed: fake-gitlab: no branch ${opts.branch}`);
+        if (opts.expectHeadSha && head !== opts.expectHeadSha) {
+          throw new Error(`workspace clone failed: branch moved: ${opts.branch} is at ${head.slice(0, 8)}, not the failing head ${opts.expectHeadSha.slice(0, 8)}`);
+        }
+        const glRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'vtid-04465-gl-'));
+        const glDir = path.join(glRoot, 'repo');
+        const glFiles = gitlabFake.filesAt(head);
+        for (const [rel, content] of Object.entries(glFiles)) {
+          fs.mkdirSync(path.dirname(path.join(glDir, rel)), { recursive: true });
+          fs.writeFileSync(path.join(glDir, rel), content, 'utf8');
+        }
+        fs.mkdirSync(glDir, { recursive: true });
+        snapshots.set(glDir, { ...glFiles });
+        gitlabClones.add(glDir);
+        workspaceLog.push({ op: 'clone', branch: opts.branch, existingBranch: !!opts.existingBranch, remote: 'gitlab' });
+        return { root: glRoot, repoDir: glDir, branch: opts.branch, baseSha: head };
+      }
       const gh = platform().github;
       const root = fs.mkdtempSync(path.join(os.tmpdir(), 'vtid-04465-ws-'));
       const repoDir = path.join(root, 'repo');
@@ -244,16 +301,37 @@ export function workspaceModule(): Record<string, unknown> {
       return { root, repoDir, branch: opts.branch, baseSha: gh.headOf(opts.baseBranch) };
     },
     listChangedFiles: async (repoDir: string) => diffFiles(readTree(repoDir), snapshots.get(repoDir) || {}),
-    listChangedFilesSince: async (repoDir: string, baseSha: string) => diffFiles(readTree(repoDir), platform().github.filesAt(baseSha)),
+    listChangedFilesSince: async (repoDir: string, baseSha: string) =>
+      diffFiles(readTree(repoDir), gitlabFake.commits.has(baseSha) ? gitlabFake.filesAt(baseSha) : platform().github.filesAt(baseSha)),
     mergeBaseIntoBranch: async () => ({ status: 'up_to_date', conflicts: [], baseSha: platform().github.headOf('main') }),
+    // The merge request's base on GitLab: the target branch's head (the fake has no history to walk). Reads only.
+    mergeBaseWithTarget: async (_repoDir: string, targetBranch: string) => {
+      const sha = gitlabFake.branches.get(targetBranch);
+      if (!sha) throw new Error(`fake-gitlab: no branch ${targetBranch}`);
+      return sha;
+    },
     linkNodeModules: async () => 'present',
     pullCodeIndex: async () => ({
       bundle: null,
       describe: null,
       stats: { enabled: false, source: null, sha: null, built_at: null, nodes: 0, edges: 0, risk_files: 0, from_cache: false, ms: 0, error: null },
     }),
-    commitAndPush: async (repoDir: string, opts: { branch: string; force?: boolean }) => {
+    commitAndPush: async (repoDir: string, opts: { branch: string; force?: boolean; leaseSha?: string }) => {
       const tree = readTree(repoDir);
+      if (gitlabClones.has(repoDir)) {
+        // A real GitLab remote refuses a lease on a head the branch no longer has; a GitLab push without a lease is a test failure.
+        if (!opts.leaseSha) throw new Error('commit/push failed: a GitLab push without a lease on the failing head');
+        const head = gitlabFake.branches.get(opts.branch);
+        if (head !== opts.leaseSha) throw new Error(`commit/push failed: ! [rejected] ${opts.branch} (stale info)`);
+        const prev = gitlabFake.filesAt(head);
+        const glSha = gitlabFake.commit(tree);
+        gitlabFake.branches.set(opts.branch, glSha);
+        const changed = Object.keys({ ...prev, ...tree }).filter((p) => prev[p] !== tree[p]).sort();
+        gitlabFake.pushes.push({ branch: opts.branch, lease: opts.leaseSha, sha: glSha, files: changed });
+        snapshots.set(repoDir, { ...tree });
+        workspaceLog.push({ op: 'push', branch: opts.branch, remote: 'gitlab' });
+        return { sha: glSha };
+      }
       const sha = platform().github.push(opts.branch, tree, opts.force !== false);
       snapshots.set(repoDir, { ...tree });
       workspaceLog.push({ op: 'push', branch: opts.branch });

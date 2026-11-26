@@ -1,0 +1,9 @@
+# Slice 6: commands run (Kiro 3, session kiro-exafyltd-202611181014-b8e5). cwd services/gateway.
+npx jest test/delivery-loop        -> 11 suites, 256 tests passed, 0 failed (adapters 23, controls 22, engine 19, fingerprint 41, gitlab-client 34, heal 31, intake 30, learn 14, review 20, route 9, runtime 13)
+npx tsc --noEmit -p tsconfig.json  -> exit 0
+npx tsc --noEmit --strict ... test/delivery-loop/*.test.ts test/delivery-loop/harness.ts -> exit 0   (outputs/tsc.txt)
+npx jest --silent --maxWorkers=5   -> full gateway suite, outputs/full-gateway-suite.txt (30316 of 30378 passed; the 2 failures are pre-existing)
+npx jest test/vtid-04108-manual-activation-source-types.test.ts test/vtid-04667-executable-source-types-drift.test.ts test/vtid-04671-recommendation-card.test.ts
+   -> 27 tests: failed (4) after the allowlist edit that was tried, passed (27) after it was reverted
+# mutation check: removing the 4000-character cut of the review's description makes "shows the model the merge request and the diff as data" fail (Expected 4000, Received 9000)
+# red on base: loop/red-on-base-s6.sh hides adapters.ts, runtime.ts and routes/delivery-loop.ts (restored by a trap) -> outputs/red-on-base.txt: 3 suites cannot load

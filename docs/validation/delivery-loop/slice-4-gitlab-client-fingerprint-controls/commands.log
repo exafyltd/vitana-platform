@@ -1,0 +1,8 @@
+# Slice 4: commands run (Kiro 3, session kiro-exafyltd-202611181014-b8e5). cwd services/gateway.
+npx jest test/delivery-loop                       -> Test Suites: 3 passed; Tests: 92 passed (controls 17, gitlab-client 34, fingerprint 41)
+npx tsc --noEmit -p tsconfig.json                 -> exit 0
+npx tsc --noEmit --strict ... --types jest,node test/delivery-loop/*.test.ts -> exit 0   (outputs/tsc.txt)
+# red on base: the module hidden (mv services/delivery-loop aside), tests run, module restored -> outputs/red-on-base.txt
+# live, read only: npx tsx loop/live-probe.ts and loop/live-probe-fp.ts (GET methods only, allowlist vitana/vitana-platform and vitana/rehearsal)
+#   -> outputs/live-gitlab-readonly.txt. Two defects found by it and fixed: list MR rows have no head_pipeline; runner log prefix "<time> 01O ".
+# independent vectors for the two pinned fingerprints: node -e 'sha256 of the lines joined by \n, first 16 hex'

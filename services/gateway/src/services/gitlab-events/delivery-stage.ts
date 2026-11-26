@@ -15,7 +15,10 @@
  *   - Dedupe: by webhook-id (a GitLab retry keeps it) after every event of the delivery was recorded, and by
  *     each event's dedupe_key, so a delivery whose second event failed can be retried without writing the
  *     first again, and the same fact from two deliveries (or a re-run) is written once per gateway task.
- *     A duplicate across gateway tasks adds one informational row; readers keep the first row per key.
+ *     Across gateway tasks the default writer makes the dedupe_key the event's idempotency key
+ *     (emitOasisEvent: a deterministic row id and ON CONFLICT DO NOTHING), so a duplicate is one OASIS row and the
+ *     reply says duplicate. The rows live as long as the table's retention (14 days); a key older than that is written again.
+ *     A custom `emit` (tests) is called as it was and decides for itself.
  *
  * Replies (always JSON), as the route's, plus `events` when a delivery recorded events:
  *   200 { ok, duplicate: true }                         nothing new was recorded
@@ -30,7 +33,13 @@ import type { CicdOasisEvent } from '../../types/cicd';
 import { DeliveryDedupe } from './dedupe';
 import { mapGitlabDelivery, type BranchVtidLookup, type DeliveryMapOptions } from './delivery-mapper';
 
-export type OasisEmit = (event: CicdOasisEvent) => Promise<{ ok: boolean; event_id?: string; error?: string }>;
+export type OasisEmit = (event: CicdOasisEvent) => Promise<{ ok: boolean; event_id?: string; error?: string; duplicate?: boolean }>;
+
+/**
+ * The default writer: emitOasisEvent with the fact's dedupe_key as the idempotency key, so a duplicate across gateway tasks
+ * (a retry that lands on another task, a second delivery of the same fact) is one OASIS row, not one per task.
+ */
+const emitDurably: OasisEmit = (event) => emitOasisEvent({ ...event, idempotency_key: String((event.payload ?? {}).dedupe_key ?? '') });
 
 export interface GitlabDeliveryStageOptions {
   /** One entry per webhook-id (a retry keeps its id). */
@@ -48,7 +57,7 @@ function reply(res: Response, status: number, body: Record<string, unknown>): vo
 export function createGitlabDeliveryStage(options: GitlabDeliveryStageOptions = {}): RequestHandler {
   const deliveries = options.deliveries ?? new DeliveryDedupe();
   const facts = options.facts ?? new DeliveryDedupe();
-  const emit: OasisEmit = options.emit ?? emitOasisEvent;
+  const emit: OasisEmit = options.emit ?? emitDurably;
 
   async function handle(res: Response): Promise<void> {
     try {
@@ -68,16 +77,19 @@ export function createGitlabDeliveryStage(options: GitlabDeliveryStageOptions = 
       const recorded: Array<{ topic: string; vtid: string; event_id?: string }> = [];
       for (const event of mapping.events) {
         let eventId: string | undefined;
+        let alreadyInOasis = false;
         const outcome = await facts.once(event.payload.dedupe_key, async () => {
           const r = await emit(event);
           eventId = r.event_id;
+          alreadyInOasis = r.duplicate === true;
           return r.ok;
         });
         if (outcome === 'failed') {
           console.error(`[gitlab-delivery] OASIS write failed: ${event.type} ${event.vtid} (webhook-id ${id.slice(0, 64)})`);
           return reply(res, 502, { ok: false, error: 'oasis_emit_failed' });
         }
-        if (outcome === 'recorded') recorded.push({ topic: event.type, vtid: event.vtid, event_id: eventId });
+        // A row that OASIS already held (written by another gateway task) is recorded, but this delivery added nothing.
+        if (outcome === 'recorded' && !alreadyInOasis) recorded.push({ topic: event.type, vtid: event.vtid, event_id: eventId });
       }
 
       await deliveries.once(id, async () => true);

@@ -1,0 +1,19 @@
+# Slice 3: commands run (Kiro 3, session kiro-exafyltd-202611181014-b8e5). cwd services/gateway unless noted.
+# 1. Independent computation of the pinned row-id vector (not the function under test):
+node -e 'sha256("vitana.oasis-event.v1\0staging\0scm.gitlab.pipeline.failed\0gitlab:vitana/vitana-platform:pipeline:31:failed"), first 16 bytes, version nibble 5, variant 10xx'
+  -> 5add029a-0711-5bd3-a33a-358dbfc766f6   (the value pinned in test/oasis-event-idempotency.test.ts)
+# 2. New and changed tests, green:
+npx jest test/delivery test/gitlab-events test/routes/internal-gitlab-webhook.test.ts test/atlas-gitlab-route-claims.test.ts test/oasis-event-idempotency.test.ts
+  -> Test Suites: 13 passed, 13 total; Tests: 325 passed, 325 total
+# 3. Red on base (git stash push -- <the four src files>; run; git stash pop): outputs/red-on-base.txt
+  -> 40 failed, 96 passed of 136 in the four test files
+# 4. Typecheck of the source and of the changed test files (tsc excludes test/, so the second is a one-off compile):
+npx tsc --noEmit -p tsconfig.json                                  -> exit 0   (outputs/tsc.txt)
+npx tsc --noEmit --strict ... --types jest,node <the 5 test files> -> exit 0
+# 5. Full gateway suite: outputs/full-gateway-suite.txt
+npx jest --silent --maxWorkers=5  -> 1793 suites (1788 passed, 2 failed, 3 skipped), 30120 tests (30058 passed, 2 failed)
+# 6. The 2 failures on the base commit (git stash push -u, everything stashed):
+npx jest test/providers/storage-provider.test.ts test/vtid-04226-eventbridge-test-contract-schedules.test.ts
+  -> the same 2 fail: S3 region default us-east-1; openssl: command not found. Unrelated to this slice.
+# 7. Named regression suites inside that run: operator pipeline 71, role separation 105, customer support 25, loop catalog 25,
+#    project-manager 15 suites / 286 tests: all passed.

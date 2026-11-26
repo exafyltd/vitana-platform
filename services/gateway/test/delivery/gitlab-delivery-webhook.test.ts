@@ -204,6 +204,31 @@ describe('VTID-05547 the stage — exactly once', () => {
     expect(emit.calls.filter((c) => c.type === 'delivery.landed')).toHaveLength(1);
   });
 
+  it('an event that OASIS already held (duplicate: true from another gateway task) is recorded here but not counted as new', async () => {
+    const seen: string[] = [];
+    const heldElsewhere: OasisEmit = async (event) => {
+      seen.push(event.type);
+      // The landing was written by another task; the other two rows of the delivery are new.
+      return event.type === 'delivery.landed' ? { ok: true, event_id: 'evt-held', duplicate: true } : { ok: true, event_id: `evt-${seen.length}` };
+    };
+    const res = await post(app({ emit: heldElsewhere }), LANDED_PIPELINE());
+    expect(res.status).toBe(200);
+    expect(seen).toEqual(['scm.gitlab.pipeline.succeeded', 'delivery.landed', 'staging.deploy.completed']);
+    expect(res.body.events.map((e: { topic: string }) => e.topic)).toEqual(['scm.gitlab.pipeline.succeeded', 'staging.deploy.completed']);
+    // And when every row of the delivery was already there, the delivery added nothing.
+    const allHeld: OasisEmit = async () => ({ ok: true, event_id: 'evt-held', duplicate: true });
+    expect((await post(app({ emit: allHeld }), LANDED_PIPELINE())).body).toEqual({ ok: true, duplicate: true });
+  });
+
+  it('the default writer gives each event its dedupe_key as the idempotency key', async () => {
+    await post(app(), LANDED_PIPELINE());
+    expect(defaultEmit).toHaveBeenCalledTimes(3);
+    for (const [event] of defaultEmit.mock.calls) {
+      expect(event.idempotency_key).toBe((event.payload as { dedupe_key: string }).dedupe_key);
+      expect(event.idempotency_key).toMatch(/^gitlab:vitana\/vitana-platform:/);
+    }
+  });
+
   it('the second event failing answers 502, and the retry of the same delivery writes only what is missing', async () => {
     const emit = new FakeEmit();
     emit.failOn.add(2); // the landing fails

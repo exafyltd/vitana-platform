@@ -190,11 +190,16 @@ describe('starting map (AC-5)', () => {
 describe('runner wiring (AC-6)', () => {
   const src = fs.readFileSync(path.join(__dirname, '../src/services/autopilot-agent/run-agent-execution.ts'), 'utf8');
 
+  // A "continuing" run starts from a diff that already exists: GitHub fix mode, or (2026-11-19) a GitLab-native repair on a merge
+  // request's own branch. Neither gets the starting map or the exploration budget, exactly as fix mode did before.
+  test('a continuing run is fix mode or a GitLab repair', () => {
+    expect(src).toContain('const continuing = !!fixMode || !!gitlab;');
+  });
   test('starting map only on non-fix runs', () => {
-    expect(src).toMatch(/if \(!fixMode\) \{\s*const startingMap = buildStartingMap\(codeIndex\.bundle/);
+    expect(src).toMatch(/if \(!continuing\) \{\s*const startingMap = buildStartingMap\(codeIndex\.bundle/);
   });
   test('budget only on round 0 of a non-fix run, with a kill switch', () => {
-    expect(src).toContain("const explorationEnabled = !fixMode && process.env.AGENT_EXPLORATION_BUDGET_ENABLED !== 'false';");
+    expect(src).toContain("const explorationEnabled = !continuing && process.env.AGENT_EXPLORATION_BUDGET_ENABLED !== 'false';");
     expect(src).toContain('exploration: explorationEnabled && round === 0 ? explorationThresholds(AGENT_MAX_TURNS) : null');
   });
   test('an empty-diff finish keeps the agent findings on the error', () => {

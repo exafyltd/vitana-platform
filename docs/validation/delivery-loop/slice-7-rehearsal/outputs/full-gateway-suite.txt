@@ -1,0 +1,27 @@
+# Full gateway suite, slice 7  (cwd services/gateway: npx jest --silent --maxWorkers=5 --json)
+# base = edaff12f2c (slice 6) + the uncommitted slice 7 changes
+suites: 1805 total, 1800 passed, 2 failed, 3 skipped
+tests:  30455 total, 30393 passed, 2 failed, 54 skipped, 6 todo
+
+Failing tests (both pre-existing; identical to the slice 3, 4, 5 and 6 baselines and unrelated to the delivery loop):
+  FAIL test/providers/storage-provider.test.ts
+       VTID-03765 s3BucketName / s3PublicUrl builds a plain, unsigned public URL — same shape as Supabase getPublicUrl()
+       Error: expect(received).toBe(expected) // Object.is equality
+  FAIL test/vtid-04226-eventbridge-test-contract-schedules.test.ts
+       VTID-04226: scripts parse and dry-run the token provisioning script is dry-run by default and never defaults to prod
+       Error: Command failed: bash /projects/sandbox/vitana-platform/scripts/aws/setup-gateway-internal-token.sh
+
+The delivery-loop suites inside that run:
+  adapters.test.ts            23 tests,  23 passed
+  controls.test.ts            22 tests,  22 passed
+  engine.test.ts              25 tests,  25 passed
+  fingerprint.test.ts         69 tests,  69 passed
+  gitlab-client.test.ts       34 tests,  34 passed
+  heal.test.ts                35 tests,  35 passed
+  intake.test.ts              30 tests,  30 passed
+  learn.test.ts               14 tests,  14 passed
+  rehearsal-guard.test.ts     38 tests,  38 passed
+  review.test.ts              20 tests,  20 passed
+  route.test.ts                9 tests,   9 passed
+  runtime.test.ts             13 tests,  13 passed
+  TOTAL                      332 tests, 332 passed

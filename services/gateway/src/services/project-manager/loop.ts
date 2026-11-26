@@ -84,6 +84,7 @@ export function liveLoopDeps(): PmLoopDeps {
   const { OperatorChatGate2Poster, RunViewGate2EvidenceResolver, SupabaseGate2Store, liveGate2SourceDeps } = require('./gate2') as typeof import('./gate2');
   const { PgLeaseManager, PostgrestLeaseClient } = require('./lease') as typeof import('./lease');
   const { safeMerge } = require('../../routes/cicd') as typeof import('../../routes/cicd');
+  const { emitOasisEvent } = require('../oasis-event-service') as typeof import('../oasis-event-service');
   /* eslint-enable @typescript-eslint/no-var-requires */
   return {
     observer: new GithubObserver({ gh: new GithubRestReader(), data: new SupabasePmDataReader() }),
@@ -96,6 +97,8 @@ export function liveLoopDeps(): PmLoopDeps {
       holder: `pm-${process.env.ECS_TASK_ID || process.env.HOSTNAME || process.pid}`,
       updateBranch: githubUpdateBranch,
       ledgerWriter: new SupabaseLedgerWriter(),
+      // VTID-05736: the retry of a parked lane is recorded as delivery.retry.scheduled / delivery.blocked.
+      emitEvent: emitOasisEvent,
     },
   };
 }

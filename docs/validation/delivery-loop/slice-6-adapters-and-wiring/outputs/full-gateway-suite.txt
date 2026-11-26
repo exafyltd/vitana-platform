@@ -1,0 +1,22 @@
+# Full gateway suite: npx jest --silent --maxWorkers=5   (slice 6 working tree on b9ea03d9d8)
+suites: 1804 total, 1799 passed, 2 failed, 3 skipped
+tests: 30378 total, 30316 passed, 2 failed, 54 skipped, 6 todo
+
+Failed:
+ - test/providers/storage-provider.test.ts :: builds a plain, unsigned public URL — same shape as Supabase getPublicUrl()
+ - test/vtid-04226-eventbridge-test-contract-schedules.test.ts :: the token provisioning script is dry-run by default and never defaults to prod
+The two failures are the same as on the base commit (shown in slice 3 with every change stashed): S3 region default us-east-1 here; scripts/aws/setup-gateway-internal-token.sh needs openssl, absent in this sandbox.
+
+vtid-04465-operator-pipeline-regression           1 suites, 71 tests, all passed: true
+vtid-04560-role-separation-regression             1 suites, 105 tests, all passed: true
+vtid-04456-customer-support-pipeline-regression   1 suites, 25 tests, all passed: true
+loop-catalog                                      1 suites, 25 tests, all passed: true
+route-guard                                       1 suites, 14 tests, all passed: true
+/delivery-loop/                                   11 suites, 256 tests, all passed: true
+/delivery/                                        6 suites, 198 tests, all passed: true
+/gitlab-events/                                   4 suites, 73 tests, all passed: true
+oasis-event-idempotency                           1 suites, 15 tests, all passed: true
+/project-manager/                                 15 suites, 286 tests, all passed: true
+vtid-04108-manual-activation                      2 suites, 17 tests, all passed: true
+vtid-04667                                        4 suites, 48 tests, all passed: true
+vtid-04671                                        1 suites, 13 tests, all passed: true
