@@ -42,7 +42,7 @@ describe('VTID-04868 Plan Sparring Gate — session layer', () => {
     // as the base test pinned "owner approval": a future rewording updates this literal again
     // (that is the fix this VTID exists to make, and it is a one-line change when it recurs),
     // never an alternation.
-    expect(md).toMatch(/[Pp]lan → sparring → machine approval[\s\S]*?→ VTID → code\./);
+    expect(md).toMatch(/[Pp]lan → sparring → machine approval on convergence[\s\S]*?→ VTID → code\./);
     expect(md).toContain('Claude Opus 4.6 on AWS Bedrock');
     // Owner decision 2026-10-19: Opus 4.6 → Sonnet 4.6 → DeepSeek, never Google.
     expect(md).toContain('**Fallback chain');
