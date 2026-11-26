@@ -72,3 +72,9 @@ overlay-paths, runtime-profile and plan-spar-token (VTID-05833 to be recorded as
 execution order with the amendment landed before T0, and per-VTID follow-up evidence. Read-only state:
 artifacts/observed-2026-11-26T1300Z.md (preview `:16` lacks GATEWAY_RUNTIME_PROFILE, shared roles, rule 9 still broad).
 Waiting for the Rule 55 holder's written approval at the amendment SHA; no allocation before it.
+
+### 2026-11-26T13:45Z · kiro-jtadic-202611261230-51b4 · drafted (driver; §7c: plan-spar-token replacement VTID, preview replacement, clock gate)
+plan-spar-token needs an authorized replacement VTID unless the Rule 55 holder names a documented correction process
+for VTID-05833. #5138's two accepts hold on head e25d57e377 today (land-guard review ok); a VTID change re-reviews both
+on the final head. The approval now also decides replacing preview `:16` with the runtime-profile build (C3). T0 waits
+until every allocation is authorized and the whole sequence (amendment on main, VPC results, operator, reviewers) is ready.

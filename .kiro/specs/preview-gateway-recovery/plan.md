@@ -203,8 +203,12 @@ holder is "the owner" (CLAUDE.md rule 55); the approval names its author and con
 |---|---|---|
 | `overlay-paths` | none yet | allocate one break-glass VTID through the exemption role, logged `vtid.plan_sparring.break_glass`, `spec_status=approved` |
 | `runtime-profile` | none yet | the same, for #5110 |
-| `plan-spar-token` | VTID-05833 (GitLab `vtid-allocate`, pipeline 1452, 2026-11-24 16:39Z) | record it as a Rule 55 break-glass allocation (`vtid.plan_sparring.break_glass`, `spec_status=approved`); the 2026-11-26 check found neither (#5138) |
+| `plan-spar-token` | VTID-05833 (GitLab `vtid-allocate`, pipeline 1452, 2026-11-24 16:39Z; ledger 2026-11-26: `spec_status` missing, `vtid.plan_sparring.missing`, no `break_glass` event) | **an authorized replacement VTID**, allocated through the exemption role, logged `vtid.plan_sparring.break_glass`, `spec_status=approved`, **unless the holder names a documented correction process for VTID-05833** (the document and section). Kiro found none in the repo: only the insert mechanism (`docs/validation/VTID-04868/plan-B-sparring.md:143`). What happens to the VTID-05833 row is the holder's ledger decision |
 | all three | — | land this amendment on `main` under Rule 55 without PLAN-SPAR convergence; one covering run (below) satisfies the 24 h follow-up for all three |
+| preview (go-no-go C3) | — | **replace `vitana-gateway-preview:16` with the runtime-profile build** (§7 step 8): a task definition from the `runtime-profile` merge commit with `GATEWAY_RUNTIME_PROFILE=preview-sparring`, the two preview roles (`vitana-gateway-preview-task-role`, `-execution-role`), the narrow sparring rule at priority 8, and rule 9 (`/api/v1/*`) deleted. Rollback: `preview-gateway.sh rollback` to `:16`, rule 9 restored. Recommended: yes. Without it `runtime-profile` is not exercised by the covering run |
+**#5138 accepts today (2026-11-26 13:40Z).** Head `e25d57e377` = reviewed head `bd01a72e8c` + two review-entry
+commits; `land-guard.mjs review --repo . --pr 5138 --reviewed-head bd01a72e8c`: ok. Both accepts hold only while the
+head stays there; a replacement VTID changes it, so step 7 rechecks and refreshes them.
 Not covered: `preview-ops`, `incident-record` (no VTID; they spar normally once the preview is back).
 
 **Covering run.** One PLAN-SPAR run on a `plan(preview-gateway-recovery)` PR (the closing-record plan PR, a new event
@@ -217,15 +221,15 @@ preview runs an image built from the `runtime-profile` merge commit with `GATEWA
 **Execution order.**
 | # | When | Who | Action | Gate |
 |---|---|---|---|---|
-| 0 | before the clock, parallel | operator (VPC CloudShell) + Kiro (read-only) | VPC checks: `proxy-jwt-staging.sh verify` against the live proxy revision (staging key 200, production key 401); restore precheck re-run; Kiro re-reads preview service, task definition, roles and listener rules (`artifacts/observed-2026-11-26T1300Z.md`) | results recorded; drift decided by the owner (C3) |
-| 1 | before the clock | Rule 55 holder | written approval of this §7c at the amendment SHA | names all three lanes and the covering run |
+| 0 | before the clock, parallel | operator (VPC CloudShell) + Kiro (read-only) | VPC checks: `proxy-jwt-staging.sh verify` against the live proxy revision (staging key 200, production key 401); restore precheck re-run; Kiro re-reads preview service, task definition, roles and listener rules (`artifacts/observed-2026-11-26T1300Z.md`) | results recorded in `artifacts/` |
+| 1 | before the clock | Rule 55 holder | written approval of this §7c at the amendment SHA | names all three lanes, the plan-spar-token VTID route, the preview replacement and the covering run |
 | 2 | before the clock | Kiro (driver) | land this amendment on `main` (needs no VTID); `overlay-paths` becomes trusted from the merge-base | step 1 |
-| 3 | **T0** (clock starts) | Rule 55 holder | allocate `overlay-paths` and `runtime-profile`; record VTID-05833 as break-glass. T0 = the first insert | step 1, operator and reviewer available the same day |
+| 3 | **T0** (clock starts) | Rule 55 holder | allocate `overlay-paths`, `runtime-profile` and the `plan-spar-token` replacement (or apply the documented VTID-05833 correction). T0 = the first insert | **only when all are true:** step 1 approval covers every allocation; step 2 landed; step 0 VPC results recorded green; the operator (step 8) and the reviewer sessions are booked for the same day; the `overlay-paths` change is prepared locally |
 | 4 | T0 + ~1 h | Kiro (builder) | `overlay-paths` lane PR: adds the one path to `lanes/runtime-profile.md`; independent reviewer session on the exact PR head; land under §7b | accept on current head, checks green |
 | 5 | after 4 | Kiro | Lane scope for #5110 against the trusted `main`; post the merge commit and the result on #5110; hand back to Claude | ✅ lane scope |
 | 6 | after 5 | Claude | `runtime-profile` (#5110) with its VTID: review, land; staging deploy consequence per go-no-go C1 | as the lane requires |
-| 7 | parallel to 6 | Kiro | `plan-spar-token` (#5138, VTID-05833) lands with its two accepts on the current head | protected gate rules, step 3 record |
-| 8 | after 6 | operator | preview redeploy from the `runtime-profile` merge commit (§7 step 8), then `preview-gateway.sh verify` and the VPC proxy verify (§7 step 10) | — |
+| 7 | parallel to 6 | Kiro | `plan-spar-token` (#5138) carries its authorized VTID (title, lane `vtid`, `docs/validation/<VTID>/`); both two-model accepts (`claude-sonnet-5.5`, `claude-opus-5.5`) are rechecked against the final head with `land-guard.mjs review` and refreshed by new independent review sessions if anything but lane-file entries follows the reviewed head (a VTID change does); then it lands | protected gate rules, two accepts on the final head |
+| 8 | after 6 | operator | replace the preview with the runtime-profile build (decision row above, §7 step 8), then `preview-gateway.sh verify` and the VPC proxy verify (§7 step 10) | holder's preview decision |
 | 9 | before T0 + 24 h | Kiro | covering run (above) | verdict exists |
 
 **Follow-up evidence (per VTID, before T0 + 24 h).** `docs/validation/<VTID>/rule55-coverage.md` for each of the three
