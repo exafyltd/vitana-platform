@@ -23,9 +23,8 @@
 #   Supabase REST when SUPABASE_URL / SUPABASE_SERVICE_ROLE repo secrets
 #   exist, so the Command Hub CLOCK history sees AWS staging deploys.
 #
-# Required repository secrets:
-#   AWS_STAGING_ACCESS_KEY_ID / AWS_STAGING_SECRET_ACCESS_KEY
-#   (IAM user claude-staging-validation — ECR push + ECS update)
+# Required repository variable:
+#   AWS_STAGING_ROLE_ARN (OIDC role for ECR push and ECS update). No static AWS keys are read.
 # Optional repository secrets (for OASIS/CLOCK visibility):
 #   SUPABASE_URL / SUPABASE_SERVICE_ROLE
 
@@ -200,13 +199,25 @@ jobs:
             echo "Build: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
           } > services/gateway/BUILD_INFO
 
+      - name: Require the staging OIDC role
+        env:
+          STAGING_ROLE_ARN: ${{ vars.AWS_STAGING_ROLE_ARN }}
+        run: |
+          # Fail closed. This workflow reads no static AWS keys.
+          if [ -z "$STAGING_ROLE_ARN" ]; then
+            echo "::error::vars.AWS_STAGING_ROLE_ARN is not set. Refusing to deploy without the OIDC staging role."
+            exit 1
+          fi
+          case "$STAGING_ROLE_ARN" in
+            arn:aws:iam::472838866351:role/*) ;;
+            *) echo "::error::AWS_STAGING_ROLE_ARN must be a role in account 472838866351."; exit 1 ;;
+          esac
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          # eng-platform-p01: OIDC when vars.AWS_STAGING_ROLE_ARN is set; the static keys only while it is unset.
+          # OIDC only. The static AWS_STAGING_* keys are no longer read by this workflow.
           role-to-assume: ${{ vars.AWS_STAGING_ROLE_ARN }}
-          aws-access-key-id: ${{ !vars.AWS_STAGING_ROLE_ARN && secrets.AWS_STAGING_ACCESS_KEY_ID || '' }}
-          aws-secret-access-key: ${{ !vars.AWS_STAGING_ROLE_ARN && secrets.AWS_STAGING_SECRET_ACCESS_KEY || '' }}
           aws-region: ${{ env.TARGET_AWS_REGION }}
 
       - name: Login to Amazon ECR
@@ -1366,6 +1377,14 @@ jobs:
             echo "::error::refusing to register: production credentials on a staging task definition: $PROD_LEAK"; exit 1
           fi
           echo "Production-credential gate: none bound"
+      - name: Require STAGING_CUTOVER_APPROVED for the aurora cutover
+        env:
+          DATA_BACKEND: ${{ inputs.data_backend || 'keep' }}
+          STAGING_CUTOVER_APPROVED: ${{ vars.STAGING_CUTOVER_APPROVED }}
+        run: |
+          if [ "$DATA_BACKEND" = aurora ] && [ "${STAGING_CUTOVER_APPROVED:-}" != yes ]; then
+            echo "::error::the aurora cutover needs the repository variable STAGING_CUTOVER_APPROVED set to yes"; exit 1
+          fi
       # VTID-05023 part 9: register + roll split out of the step above (which is
       # at the VTID-03788 20,000-char limit) so the data_backend switch fits.
       # keep (every push) passes the task definition through byte for byte.
