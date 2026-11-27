@@ -483,6 +483,23 @@ jobs:
       # (id: roll) applies data_backend and registers + rolls. Push deploys have
       # no inputs -> keep, so a dispatched aurora/supabase switch is carried
       # forward by every later push (the live task def is the base).
+      # VTID-05845: Kiro persistent-dispatch launcher settings. Inert on their
+      # own: the adapter stays off unless KIRO_CLOUD_ADAPTER_ENABLED=true is
+      # set (runbook section 0.5 / 3). Subnets and security groups are the
+      # live vitana-gateway-preview network configuration (read-only, 2026-11-27).
+      - name: Resolve Kiro dispatch launcher config
+        run: |
+          set -euo pipefail
+          F="$RUNNER_TEMP/connected-apps.json"
+          jq -c '.env += [
+            {name:"KIRO_WORKER_TASK_DEFINITION", value:"vitana-kiro-dispatch-worker"},
+            {name:"KIRO_WORKER_CONTAINER_NAME", value:"kiro-dispatch-worker"},
+            {name:"AWS_ECS_CLUSTER", value:"Vitana-ECS-Cluster"},
+            {name:"AWS_ECS_SUBNETS", value:"subnet-0ff45a2051c5e5482,subnet-0c786864a28a5a821"},
+            {name:"AWS_ECS_SECURITY_GROUPS", value:"sg-0a8531c0ec2130457"}
+          ]' "$F" > "$F.tmp" && mv "$F.tmp" "$F"
+          jq -c '{env: [.env[].name | select(startswith("KIRO_") or startswith("AWS_ECS_"))]}' "$F"
+
       - name: Register task-definition revision + roll the service (1/2 — build the task definition)
         id: taskdef
         env:
