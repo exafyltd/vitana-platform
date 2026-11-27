@@ -4,8 +4,10 @@ author: kiro
 author_seat: exafyltd
 executor: kiro
 next_actor: kiro
-state: drafted
-updated: 2026-11-27T10:15Z
+state: approved
+updated: 2026-11-27T10:53Z
+sparring_record: .kiro/specs/kiro-session-monitor/sparring/verdict.md
+vtids: [VTID-0542]
 ---
 # Handoff — kiro-session-monitor
 
@@ -18,3 +20,6 @@ Lanes: `monitor-core`, `dispatch-acceptance` (depends on `monitor-core`).
 
 ### 2026-11-27T10:15Z · kiro-exafyltd-202611270941-776e · drafted
 Owner task 2026-11-27 (Kiro Web). Pushed as a `plan(` PR. No VTID, no code.
+
+### 2026-11-27T10:53Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 2 lane(s) got a VTID and are handed to Kiro.
