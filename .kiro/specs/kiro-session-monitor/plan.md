@@ -41,7 +41,10 @@ Implement missing independent components."*
 ## 4. Change — two lanes
 ### Lane `monitor-core` (new independent component, read-only)
 New `services/gateway/src/services/kiro/session-monitor.ts`, route `services/gateway/src/routes/operator-kiro-monitor.ts`
-mounted at `GET /api/v1/operator/kiro/monitor` (admin auth, one line in `index.ts`).
+mounted at `GET /api/v1/operator/kiro/monitor` (admin auth). It is registered with
+`mountRouterSync(app, '/api/v1/operator/kiro/monitor', router, { owner: 'operator-kiro-monitor' })` beside the
+`operator-kiro-runs` mount (`index.ts:896`), so the route guard (VTID-01063, `index.ts:64`) covers it with its
+duplicate-route check and startup summary; never a bare `app.use()` (R1-F2).
 - **Pure core** `classifySession(snapshot, now, limits)` returning
   `{ state, reason, recommended_action }`:
   - states: `queued`, `healthy`, `no_progress` (heartbeat fresh, newest event older than `noProgressMs`),
@@ -55,8 +58,9 @@ mounted at `GET /api/v1/operator/kiro/monitor` (admin auth, one line in `index.t
 - **Pure** `findViolations(snapshots)`: two running runs on one thread; more than 6 `executing|in-review` lanes in one
   plan; two live drivers for one slug; two active sessions for one VTID.
 - **Readers (injected, read-only):** operator runs from `kiro_runs` plus the newest `kiro_run_events.created_at` per run
-  (one query, `order=created_at.desc`, limited); driver and claim ages through the existing `GithubReader.refDate`
-  (`observe-live.ts:62`). No new table, no migration, no write, no new OASIS event type: heartbeats are never OASIS
+  (one query, `order=created_at.desc`, limited); driver and claim ages through the existing `refDate` method of `GithubReader`
+  (declared at `observe-live.ts:81`, implemented by `GithubRestReader` at `:716`). The monitor types its reader as
+  `Pick<GithubReader, 'refDate'>`, so tests inject a one-method fake and `observe-live.ts` stays unchanged (R1-F1). No new table, no migration, no write, no new OASIS event type: heartbeats are never OASIS
   events (CLAUDE.md NEVER 10), and every transition that matters already emits its event in `kiro-runs.ts`.
 - **Response** `{ generated_at, counts_by_state, sessions[], violations[] }`; ids and states only, never the run
   message, reply or any token. A source that fails to read is reported as `sources[].ok=false`, never as healthy.
