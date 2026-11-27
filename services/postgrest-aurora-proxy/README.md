@@ -80,12 +80,37 @@ standing "Supabase is auth-only" rule, and repoint the gateway's
 to a PostgREST-shaped API — just one backed by Aurora instead of Supabase's
 managed Postgres.
 
+## Route profiles
+
+The Dockerfile argument `PROXY_TEMPLATE` selects one of two nginx profiles. The default is the production profile.
+
+- **`nginx.conf.template`** (default, production profile). `/auth/v1`, `/storage/v1`, `/functions/v1` and
+  `/realtime/v1` pass through to the Supabase host in `SUPABASE_AUTH_HOST`. `/rest/v1` and `/alive` go to PostgREST.
+  The public server block serves only `/rest/v1` and `/alive`.
+- **`nginx.staging.conf.template`** (staging profile, `--build-arg PROXY_TEMPLATE=nginx.staging.conf.template`). It has
+  no Supabase upstream. The internal server answers `/auth/v1`, `/storage/v1`, `/functions/v1` and `/realtime/v1` with
+  HTTP 403 (`forbidden_route`) before any `proxy_pass`, so nothing reaches Supabase. `/rest/v1` and `/alive` work as in
+  the production profile. The public server block is the production one.
+
+Pairing rule: the staging image never reads `SUPABASE_AUTH_HOST`, and the production image needs it. Run each image
+only with its matching task definition. The staging deploy workflow builds the staging profile, checks the rendered
+configuration before it pushes, and removes `SUPABASE_AUTH_HOST` from the staging definition. The production image
+started without `SUPABASE_AUTH_HOST` exits at startup.
+
+Rollback target: the staging task definition revision that was live before the staging profile was deployed (revision
+25 when this section was written), with its proxy image digest recorded in the deploy record. Do not use
+`staging-latest` as a rollback target, because each staging deploy overwrites that tag.
+
+Tests: `npm run test:proxy-route-isolation` (static contract tests and the Docker behavior suite) and
+`npm run test:proxy-routing` (the production profile, Docker).
+
 ## How it works
 
 Two containers in one ECS task:
 
 - **`proxy`** (nginx, this directory) — the only thing exposed to the ALB.
-  Routes `/auth/v1/*` straight through to real Supabase (unchanged auth),
+  In the production profile, routes `/auth/v1/*` straight through to real Supabase (unchanged auth); the staging profile
+  refuses them (see Route profiles).
   and rewrites `/rest/v1/<table>` → PostgREST's `/<table>`,
   `/rest/v1/rpc/<fn>` → PostgREST's `/rpc/<fn>`.
 - **`postgrest`** (official `postgrest/postgrest` image) — connects to
@@ -315,7 +340,8 @@ reintroduce them):
 
 ## Explicitly out of scope for this build
 
-Realtime and Storage are not implemented — anything hitting those paths
-gets a clear `501` from the proxy rather than a silent failure. Per the
-migration plan, those are their own workstreams (B5/B6) independent of
-this data-path swap.
+Realtime and Storage are not implemented on Aurora. The production profile
+passes `/realtime/v1` and `/storage/v1` through to Supabase. The staging profile
+answers them with `403` and forwards nothing (see "Route profiles"). Per the
+migration plan, those are their own workstreams (B5/B6) independent of this
+data-path swap.

@@ -1,0 +1,90 @@
+# PostgREST-Aurora proxy, STAGING route profile (route isolation).
+#
+# Built with PROXY_TEMPLATE=nginx.staging.conf.template (see the Dockerfile). The default build uses
+# nginx.conf.template, the production profile, which this change does not modify.
+#
+# This profile has no Supabase upstream. The internal server answers /auth/v1, /storage/v1, /functions/v1 and
+# /realtime/v1 with HTTP 403 before any proxy_pass, so those requests are never forwarded. /rest/v1 (PostgREST on
+# Aurora) and /alive are the only routes that proxy or answer. The public server block is the production one.
+#
+# This image does not read SUPABASE_AUTH_HOST. Pair it only with a task definition that has no SUPABASE_AUTH_HOST.
+# The production profile needs that variable, and the staging deploy workflow removes it from the staging definition.
+worker_processes auto;
+events { worker_connections 4096; }
+
+http {
+    # PostgREST sidecar in the same ECS task, loopback only.
+    upstream postgrest_local {
+        server 127.0.0.1:3000;
+        keepalive 32;
+    }
+
+    # ---------------- INTERNAL: gateway over Cloud Map ----------------
+    server {
+        listen 8080 default_server;
+
+        # Production Supabase routes. Refused with 403 before any proxy_pass; this profile has no Supabase upstream.
+        location ~* ^/(auth|storage|functions|realtime)/v1(/|$) {
+            default_type application/json;
+            return 403 '{"error":"forbidden_route","message":"Auth, storage, functions and realtime are not served by this staging proxy."}';
+        }
+
+        # --- RPC calls: /rest/v1/rpc/<fn> -> PostgREST's /rpc/<fn> ---
+        location /rest/v1/rpc/ {
+            rewrite ^/rest/v1/rpc/(.*)$ /rpc/$1 break;
+            proxy_pass http://postgrest_local;
+            proxy_set_header Connection "";
+            proxy_http_version 1.1;
+        }
+
+        # --- Table calls: /rest/v1/<table> -> PostgREST's /<table> ---
+        location /rest/v1/ {
+            rewrite ^/rest/v1/(.*)$ /$1 break;
+            proxy_pass http://postgrest_local;
+            proxy_set_header Connection "";
+            proxy_http_version 1.1;
+        }
+
+        location /alive {
+            return 200 "ok\n";
+            add_header Content-Type text/plain;
+        }
+
+        location / {
+            default_type application/json;
+            return 501 '{"error":"not_implemented","message":"This proxy serves /rest/v1 (PostgREST-on-Aurora) and /alive only."}';
+        }
+    }
+
+    # ---------------- PUBLIC: browsers via the ALB ----------------
+    server {
+        listen 8080;
+        server_name ${PUBLIC_HOST};
+
+        # --- RPC calls: /rest/v1/rpc/<fn> -> PostgREST's /rpc/<fn> ---
+        location /rest/v1/rpc/ {
+            rewrite ^/rest/v1/rpc/(.*)$ /rpc/$1 break;
+            proxy_pass http://postgrest_local;
+            proxy_set_header Connection "";
+            proxy_http_version 1.1;
+        }
+
+        # --- Table calls: /rest/v1/<table> -> PostgREST's /<table> ---
+        location /rest/v1/ {
+            rewrite ^/rest/v1/(.*)$ /$1 break;
+            proxy_pass http://postgrest_local;
+            proxy_set_header Connection "";
+            proxy_http_version 1.1;
+        }
+
+        location /alive {
+            return 200 "ok\n";
+            add_header Content-Type text/plain;
+        }
+
+        location / {
+            return 404 '{"error":"not_found","message":"This host serves /rest/v1 only. Auth, storage, functions and realtime are on Supabase."}';
+            add_header Content-Type application/json;
+        }
+    }
+}
