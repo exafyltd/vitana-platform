@@ -23,12 +23,26 @@
 # then the preflight step below fails loudly by design; it never silently
 # deploys somewhere else.
 #
-# Required repository secrets (same static staging keys the gateway staging
-# and erp-bridge staging workflows use):
-#   AWS_STAGING_ACCESS_KEY_ID / AWS_STAGING_SECRET_ACCESS_KEY
-# Required Secrets Manager entries (eu-central-1), both pre-existing:
-#   vitana/aurora/rehearsal/postgrest-authenticator-uri  -> PGRST_DB_URI
-#   vitana/gateway/staging/supabase-jwt-secret      -> PGRST_JWT_SECRET
+# AWS access is OIDC only. The repository variable AWS_STAGING_ROLE_ARN names
+# the staging role this workflow assumes. The workflow reads no static AWS keys.
+# Required Secrets Manager entries (eu-central-1), named by the owner's directive. The parent has not
+# verified them, and this repository cannot check them:
+#   vitana/gateway/staging/postgrest-authenticator-uri  -> PGRST_DB_URI
+#   vitana/gateway/staging/postgrest-jwt-secret         -> PGRST_JWT_SECRET
+# Whether the JWT secret equals the production JWT secret is not verified. Nothing here claims it.
+# The verify step describes both secrets before any AWS change. It also refuses a placeholder value,
+# so an unset name cannot reach a registration.
+# Production targets are refused on every path: secret names under vitana/aurora/prod/ or
+# vitana/supabase/prod/, the production-derived rehearsal clone vitana/aurora/rehearsal/, and the
+# production cluster's RDS master secret. The candidate task definition is refused when it names the production
+# host vitana-aurora-prod (PGRST_DB_HOST). PostgREST connects to the host inside the PGRST_DB_URI secret value,
+# so the verify step reads that value once and checks its host against the owner-confirmed staging writer
+# endpoint (repository variable STAGING_AURORA_WRITER_ENDPOINT). The step reads only the verified secret
+# vitana/gateway/staging/postgrest-authenticator-uri. The register step refuses any candidate whose PGRST_DB_URI is
+# another secret. That covers the isolated plane (owner decision), because its secret is not read here. The step never
+# prints the value. It prints the host only when the host equals the endpoint, and it stops when the read fails. The
+# read needs secretsmanager:GetSecretValue for the deploy role on that secret. That grant is owner-only and is not in
+# this repository. The deploy also stops unless every check in "Verify staging credentials" passes.
 
 name: AWS Stage Deploy PostgREST-Aurora Proxy (ECS)
 
@@ -78,7 +92,18 @@ jobs:
       ECS_SERVICE: ${{ inputs.ecs_service || 'vitana-postgrest-aurora-proxy' }}
       PROXY_CONTAINER: 'proxy'
       DEPLOY_REASON: ${{ inputs.reason || 'auto-deploy on push to main' }}
+      # The staging account and the two secret names this proxy binds. Every step reads these names from here.
+      # The names come from the owner's directive and are not verified by this repository.
+      STAGING_ACCOUNT_ID: '472838866351'
+      PGRST_DB_SECRET_ID: 'vitana/gateway/staging/postgrest-authenticator-uri'
+      PGRST_JWT_SECRET_ID: 'vitana/gateway/staging/postgrest-jwt-secret'
     steps:
+      - name: Refuse a run that is not from main
+        # The first step, before checkout and any AWS call. A workflow_dispatch from another branch or a tag
+        # fails here. A step is used rather than a job-level if, because a skipped job reads as green.
+        run: |
+          [ "${GITHUB_REF:-}" = refs/heads/main ] || { echo "::error::Refused: this workflow deploys from refs/heads/main only, not ${GITHUB_REF:-unset}. Nothing was built, pushed or registered."; exit 1; }
+
       - uses: actions/checkout@v4
 
       - name: Resolve commit metadata
@@ -87,14 +112,101 @@ jobs:
           echo "sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
           echo "short=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
 
+      - name: Require the staging OIDC role
+        env:
+          STAGING_ROLE_ARN: ${{ vars.AWS_STAGING_ROLE_ARN }}
+        run: |
+          set -euo pipefail
+          if [ -z "$STAGING_ROLE_ARN" ]; then
+            echo "::error::vars.AWS_STAGING_ROLE_ARN is not set. This workflow uses OIDC only and has no static-key fallback."; exit 1
+          fi
+          case "$STAGING_ROLE_ARN" in
+            "arn:aws:iam::${STAGING_ACCOUNT_ID}:role/"*) ;;
+            *) echo "::error::vars.AWS_STAGING_ROLE_ARN is not a role in the staging account. Stopping."; exit 1 ;;
+          esac
+          case "${STAGING_ROLE_ARN##*/}" in
+            *prod*|*awsdr*) echo "::error::vars.AWS_STAGING_ROLE_ARN names a production-looking role. Stopping."; exit 1 ;;
+          esac
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          # eng-platform-p01: OIDC when vars.AWS_STAGING_ROLE_ARN is set; the static keys only while it is unset.
+          # OIDC only: the static AWS key fallback was removed.
           role-to-assume: ${{ vars.AWS_STAGING_ROLE_ARN }}
-          aws-access-key-id: ${{ !vars.AWS_STAGING_ROLE_ARN && secrets.AWS_STAGING_ACCESS_KEY_ID || '' }}
-          aws-secret-access-key: ${{ !vars.AWS_STAGING_ROLE_ARN && secrets.AWS_STAGING_SECRET_ACCESS_KEY || '' }}
           aws-region: ${{ env.TARGET_AWS_REGION }}
+
+      - name: Verify staging credentials before any AWS change
+        # Each check stops the job on failure. It describes both secrets. It reads one value, the verified PGRST_DB_URI
+        # secret (PGRST_DB_SECRET_ID), for the host check only. The value is never printed. Only the host is printed, and
+        # only when it equals the endpoint. A failed read or parse stops the job (fail closed). Not checked here: whether
+        # the DB password belongs to the staging writer. That needs a database connection.
+        env:
+          STAGING_ROLE_ARN: ${{ vars.AWS_STAGING_ROLE_ARN }}
+          STAGING_WRITER_ENDPOINT: ${{ vars.STAGING_AURORA_WRITER_ENDPOINT }}
+        run: |
+          set -euo pipefail
+          # A placeholder value must stop the job here, before any AWS call.
+          case "$PGRST_DB_SECRET_ID" in
+            *REPLACE_WITH_*) echo "::error::PGRST_DB_SECRET_ID is an unconfirmed placeholder. Stopping before any AWS call."; exit 1 ;;
+          esac
+          PROD_NAME='vitana/(aurora|supabase)/prod/|vitana/aurora/rehearsal/|vitana-aurora-prod|rds!cluster-4dab93b8'
+          for NAME in "$PGRST_DB_SECRET_ID" "$PGRST_JWT_SECRET_ID"; do
+            if grep -Eq "$PROD_NAME" <<<"$NAME"; then
+              echo "::error::Refusing: '$NAME' is a production secret name or the production-derived rehearsal clone."; exit 1
+            fi
+          done
+          IDENTITY_ARN=$(aws sts get-caller-identity --query Arn --output text) \
+            || { echo "::error::Cannot read the AWS caller identity. Stopping before any AWS change."; exit 1; }
+          ACCOUNT=$(aws sts get-caller-identity --query Account --output text) \
+            || { echo "::error::Cannot read the AWS account. Stopping before any AWS change."; exit 1; }
+          if [ "$ACCOUNT" != "$STAGING_ACCOUNT_ID" ]; then
+            echo "::error::Caller account is not the staging account. Stopping."; exit 1
+          fi
+          ROLE_NAME="${STAGING_ROLE_ARN##*/}"
+          case "$IDENTITY_ARN" in
+            *":assumed-role/${ROLE_NAME}/"*) ;;
+            *) echo "::error::Credentials do not come from the configured staging role. Stopping."; exit 1 ;;
+          esac
+          for NAME in "$PGRST_DB_SECRET_ID" "$PGRST_JWT_SECRET_ID"; do
+            SECRET_ARN=$(aws secretsmanager describe-secret --secret-id "$NAME" --query ARN --output text) \
+              || { echo "::error::Secret '$NAME' cannot be described. Stopping."; exit 1; }
+            case "$SECRET_ARN" in
+              "arn:aws:secretsmanager:${TARGET_AWS_REGION}:${STAGING_ACCOUNT_ID}:secret:"*) ;;
+              *) echo "::error::Secret '$NAME' is not in the staging account and region. Stopping."; exit 1 ;;
+            esac
+          done
+          # Host check (B6). PostgREST connects to the host inside the PGRST_DB_URI value, not to PGRST_DB_HOST, so
+          # that host is what this step compares. The endpoint must be set before the secret is read.
+          WANT_HOST=$(printf '%s' "${STAGING_WRITER_ENDPOINT:-}" | tr 'A-Z' 'a-z')
+          [ -n "$WANT_HOST" ] || { echo "::error::The staging writer endpoint is not set. The owner must confirm it in the repository variable STAGING_AURORA_WRITER_ENDPOINT. Stopping before any secret read."; exit 1; }
+          # The value is held in a shell variable only and is never echoed.
+          DB_URI=$(aws secretsmanager get-secret-value --secret-id "$PGRST_DB_SECRET_ID" --query SecretString --output text) \
+            || { echo "::error::Cannot read the PGRST_DB_URI secret for the host check. The deploy role needs secretsmanager:GetSecretValue on it. That grant is owner-only and is not in this repository. Nothing was changed."; exit 1; }
+          case "$DB_URI" in
+            postgres://*|postgresql://*) ;;
+            *) echo "::error::The PGRST_DB_URI secret value is not a postgres URI. Stopping."; exit 1 ;;
+          esac
+          # A production or rehearsal name anywhere in the value stops the job, whichever part of the URI it sits in.
+          if grep -Eiq "$PROD_NAME" <<<"$DB_URI"; then echo "::error::The PGRST_DB_URI value names a production or rehearsal resource. Stopping. Nothing was printed."; exit 1; fi
+          # The grammar follows libpq's URI reading (src/interfaces/libpq/fe-connect.c). libpq takes the userinfo only when
+          # the first @ comes before any /, and it ends the host at :, /, ? or a comma (a comma starts another host). Anything
+          # else stops the job: a ? before the @, a second @, a / before the @, a comma, an encoded or bracketed host, and a
+          # % or @ in the query. A password that holds one of ? / @ % must be percent-encoded.
+          URI_RE='^postgres(ql)?://([^/?@]*@)?([^/?@:,]+)(:[0-9]+)?(/[^?]*)?(\?[^%@]*)?$'
+          if ! [[ "$DB_URI" =~ $URI_RE ]]; then
+            echo "::error::The PGRST_DB_URI value does not name exactly one host in the form postgresql://user:password@host:port/database?query. Stopping. Nothing was printed. Percent-encode any ?, /, @ or % in the password (a question mark becomes %3F)."; exit 1
+          fi
+          QUERY="${BASH_REMATCH[6],,}"
+          DB_HOST="${BASH_REMATCH[3],,}"
+          unset BASH_REMATCH DB_URI
+          case "$QUERY" in
+            *host=*|*hostaddr=*) echo "::error::The PGRST_DB_URI value sets host or hostaddr in its query string. Stopping."; exit 1 ;;
+          esac
+          [[ "$DB_HOST" =~ ^[a-z0-9][a-z0-9.-]*$ ]] || { echo "::error::The PGRST_DB_URI host is not a plain host name (it is encoded, bracketed or malformed). Stopping. The host is not printed."; exit 1; }
+          # Only a host that equals the endpoint is printed. Any other host comes from the secret value, so it may be part of a password.
+          if [ "$DB_HOST" != "$WANT_HOST" ]; then echo "::error::The PGRST_DB_URI host does not equal the confirmed staging writer endpoint. Stopping. Nothing was changed. The host is not printed."; exit 1; fi
+          echo "PGRST_DB_URI host: $DB_HOST"
+          echo "Staging credentials checked: role ${ROLE_NAME}, account ${ACCOUNT}, both secrets described, database host matched the confirmed writer endpoint. No secret value was printed."
 
       - name: Login to Amazon ECR
         id: ecr
@@ -113,7 +225,7 @@ jobs:
                --query 'services[0].status' --output text 2>/dev/null | grep -q ACTIVE; then
             echo "::error::ECS service '${{ env.ECS_SERVICE }}' not ACTIVE in '${{ env.ECS_CLUSTER }}' — provision it first."; exit 1
           fi
-          for NAME in vitana/aurora/rehearsal/postgrest-authenticator-uri vitana/gateway/staging/supabase-jwt-secret; do
+          for NAME in "$PGRST_DB_SECRET_ID" "$PGRST_JWT_SECRET_ID"; do
             ARN=$(aws secretsmanager describe-secret --secret-id "$NAME" --query ARN --output text 2>/dev/null || true)
             if [ -z "$ARN" ] || [ "$ARN" = "None" ]; then
               echo "::error::Secret '$NAME' missing in Secrets Manager. Refusing to register a task definition that cannot start."; exit 1
@@ -141,8 +253,8 @@ jobs:
         run: |
           set -e
           IMAGE="${{ steps.build.outputs.image }}"
-          SEC_DB_URI=$(aws secretsmanager describe-secret --secret-id vitana/aurora/rehearsal/postgrest-authenticator-uri --query ARN --output text)
-          SEC_JWT=$(aws secretsmanager describe-secret --secret-id vitana/gateway/staging/supabase-jwt-secret --query ARN --output text)
+          SEC_DB_URI=$(aws secretsmanager describe-secret --secret-id "$PGRST_DB_SECRET_ID" --query ARN --output text)
+          SEC_JWT=$(aws secretsmanager describe-secret --secret-id "$PGRST_JWT_SECRET_ID" --query ARN --output text)
           TD_ARN=$(aws ecs describe-services --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}" \
             --query 'services[0].taskDefinition' --output text)
           echo "Current task definition: $TD_ARN"
@@ -158,7 +270,22 @@ jobs:
           if [ "${STAGING_DATA_PLANE:-shared}" != shared ] || printf '%s' "$NEW_DEF" | grep -q '"STAGING_DATA_PLANE"'; then
             NEW_DEF=$(printf '%s' "$NEW_DEF" | bash scripts/aws/staging-cutover-select.sh --service postgrest)
           fi
+          # The verify step read PGRST_DB_SECRET_ID only. The candidate must bind PGRST_DB_URI to that same secret, or the host
+          # check did not cover what the task runs with (review C2). The isolated switch binds the confirmed secret once the switch
+          # rebind lands (owner decision 4, 2026-11-22). Until then it binds staging-db, and this check refuses it. The refusal
+          # names the only accepted secret.
+          if [ "$(jq -r '[.containerDefinitions[].secrets[]? | select(.name == "PGRST_DB_URI") | .valueFrom] | join(",")' <<<"$NEW_DEF")" != "$SEC_DB_URI" ]; then
+            echo "::error::The candidate binds PGRST_DB_URI to a secret other than the verified one that the host check read. The only PGRST_DB_URI secret this workflow accepts is $PGRST_DB_SECRET_ID. Nothing was registered."; exit 1
+          fi
           # <<< VTID-05781
+          # Refuse production targets on the exact revision about to be registered (same rule as the gateway gate):
+          # secret names under vitana/aurora/prod/ or vitana/supabase/prod/, the production-derived rehearsal clone
+          # vitana/aurora/rehearsal/ (its secret ARN carries the name), the host vitana-aurora-prod in the candidate
+          # revision text (PGRST_DB_HOST), and the production cluster's RDS master secret. Nothing is registered when
+          # this matches. The host inside the PGRST_DB_URI secret value is checked by the verify step, not here.
+          if grep -Eq 'vitana/(aurora|supabase)/prod/|vitana/aurora/rehearsal/|vitana-aurora-prod|rds!cluster-4dab93b8' <<<"$NEW_DEF"; then
+            echo "::error::Refusing to register: the candidate task definition names a production or production-derived secret or database host. Nothing was registered."; exit 1
+          fi
           NEW_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_DEF" \
             --query 'taskDefinition.taskDefinitionArn' --output text)
           echo "Registered $NEW_ARN"

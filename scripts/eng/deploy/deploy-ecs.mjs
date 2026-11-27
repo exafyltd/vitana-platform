@@ -105,8 +105,10 @@ export function renderTaskDefinition(live, t, { image, sha, envOverrides = null 
 // VTID-05803 (owner instruction 2026-11-18): a staging task definition never binds production credentials. The same
 // patterns as the GitHub staging gateway deploy (AWS-STAGE-DEPLOY-GATEWAY.yml, production-credential gate): a production
 // Supabase or Aurora secret, the production cluster, or its RDS-managed master secret, in any secret or environment
-// value of any container. Fail closed in both modes, before anything is registered.
-export const PROD_CREDENTIAL_RE = /secret:vitana\/(supabase|aurora)\/prod\/|vitana-aurora-prod|secret:rds!cluster-4dab93b8/;
+// value of any container. The rehearsal clone vitana/aurora/rehearsal/ is production-derived and is refused as well.
+// No `secret:` anchor: a bare name in an environment value matches as well as an ARN. Fail closed in both modes,
+// before anything is registered, and before rollback re-points a service.
+export const PROD_CREDENTIAL_RE = /vitana\/(supabase|aurora)\/prod\/|vitana\/aurora\/rehearsal\/|vitana-aurora-prod|rds!cluster-4dab93b8/;
 export function productionCredentialNames(td) {
   const names = [];
   for (const c of Array.isArray(td.containerDefinitions) ? td.containerDefinitions : []) {
@@ -115,10 +117,10 @@ export function productionCredentialNames(td) {
   }
   return [...new Set(names)].sort();
 }
-export function assertNoProductionCredentials(td, t) {
+export function assertNoProductionCredentials(td, t, verb = 'deploy') {
   const leak = productionCredentialNames(td);
   if (leak.length) {
-    throw new DeployError(`refusing to deploy ${t.ecsService}: its task definition binds production credentials (${leak.join(' ')}); rebind them to staging secrets first`, 2);
+    throw new DeployError(`refusing to ${verb} ${t.ecsService}: its task definition binds production credentials (${leak.join(' ')}); rebind them to staging secrets first`, 2);
   }
 }
 
@@ -354,6 +356,10 @@ export async function rollback(o, rawDeps) {
   if (svc.taskDefinition === state.captured_task_definition && (state.phase === 'rolled_back' || state.phase === 'registered')) {
     return nothing(`${t.ecsService} already runs the captured revision ${state.captured_task_definition}`);
   }
+  // B1: the revision that rollback restores, and the live revision it replaces, must not bind production or
+  // rehearsal credentials. Both are read and checked before any update-service.
+  assertNoProductionCredentials(describeTaskDefinition(deps.run, state.captured_task_definition), t, 'rollback');
+  assertNoProductionCredentials(describeTaskDefinition(deps.run, svc.taskDefinition), t, 'rollback');
   await repoint(t, deps, state, opts, `deploy job ended at phase ${state.phase}`);
   writeJson(o.stateFile, state);
   if (o.runsFile) {

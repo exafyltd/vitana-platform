@@ -1,0 +1,8 @@
+# Refused names for scripts/aws/staging-cutover-ecs.sh. One extended regular expression per line; the script joins the lines
+# with | and refuses any recorded, live or isolated-target revision whose JSON matches. Lines starting with # are ignored.
+# This file is not one of the flip's enforce-guard files (AWS-STAGE-CUTOVER.yml). The literal production names therefore
+# belong here and nowhere in a deployable script. Changing this list changes what rollback and flip refuse.
+vitana/(aurora|supabase)/prod/
+vitana/aurora/rehearsal/
+vitana-aurora-prod
+rds!cluster-4dab93b8
