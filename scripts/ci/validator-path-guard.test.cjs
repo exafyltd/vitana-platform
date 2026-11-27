@@ -168,3 +168,80 @@ test('the shipped PR template passes prBodyRequirements (every marker present)',
   assert.equal(r.code, 0);
   assert.deepEqual(r.missing, []);
 });
+
+// VTID-05821 / MR !226 — ci_infrastructure profile. Strict: every changed file
+// must be one of the three exact CI files, or the gate fails closed (exit 22).
+const CI_FILES = [
+  'scripts/eng/pipeline-gen.mjs',
+  'config/delivery/services.json',
+  'infra/gitlab-engineering/ci/v1-delivery.gitlab-ci.yml',
+];
+
+test('ci_infrastructure accepts exactly the three intended CI files', () => {
+  const r = guard.evaluate({ profile: 'ci_infrastructure', changedFiles: CI_FILES, dependencyChangeDeclared: false });
+  assert.equal(r.code, 0);
+  assert.ok(r.messages.some((m) => m.startsWith('APPROVED')));
+});
+
+test('ci_infrastructure rejects any unrelated CI file (fail closed, exit 22)', () => {
+  const r = guard.evaluate({
+    profile: 'ci_infrastructure',
+    changedFiles: [...CI_FILES, 'infra/gitlab-engineering/ci/platform-delivery.gitlab-ci.yml'],
+    dependencyChangeDeclared: false,
+  });
+  assert.equal(r.code, 22);
+  assert.ok(r.messages.some((m) => m.includes('platform-delivery.gitlab-ci.yml')));
+});
+
+test('ci_infrastructure rejects gateway code, even alongside an intended file', () => {
+  const r = guard.evaluate({
+    profile: 'ci_infrastructure',
+    changedFiles: [CI_FILES[0], 'services/gateway/src/routes/auth.ts'],
+    dependencyChangeDeclared: false,
+  });
+  assert.equal(r.code, 22);
+});
+
+test('ci_infrastructure rejects a .env committed anywhere (exit 20, before the profile check)', () => {
+  const r = guard.evaluate({
+    profile: 'ci_infrastructure',
+    changedFiles: [CI_FILES[1], 'config/delivery/.env'],
+    dependencyChangeDeclared: false,
+  });
+  assert.equal(r.code, 20);
+});
+
+test('ci_infrastructure exact match: a suffixed sibling path is not covered', () => {
+  const r = guard.evaluate({
+    profile: 'ci_infrastructure',
+    changedFiles: ['scripts/eng/pipeline-gen.mjs.bak'],
+    dependencyChangeDeclared: false,
+  });
+  assert.equal(r.code, 22);
+});
+
+test('ci_infrastructure rejects a lockfile, which is never one of the intended files', () => {
+  const r = guard.evaluate({
+    profile: 'ci_infrastructure',
+    changedFiles: ['package-lock.json'],
+    dependencyChangeDeclared: true,
+  });
+  assert.equal(r.code, 22);
+});
+
+test('existing profiles are unchanged: gateway_backend still judges only REMIT files', () => {
+  const r = guard.evaluate({
+    profile: 'gateway_backend',
+    changedFiles: ['services/gateway/src/routes/auth.ts', 'scripts/eng/pipeline-gen.mjs'],
+    dependencyChangeDeclared: false,
+  });
+  assert.equal(r.code, 0);
+  assert.ok(r.messages.some((m) => m.startsWith('NOT JUDGED') && m.includes('outside this gate')));
+});
+
+test('gov/validator-rules.yaml ci_infrastructure allow list matches the code allowlist', () => {
+  const yaml = readFileSync(join(__dirname, '..', '..', 'gov', 'validator-rules.yaml'), 'utf8');
+  const block = yaml.split('ci_infrastructure:')[1].split(/\n {6}\S|\n {4}\S|\n\S/)[0];
+  const allow = [...block.split('deny:')[0].matchAll(/^\s+- "([^"]+)"/gm)].map((m) => m[1]);
+  assert.deepEqual(allow, guard.PROFILES.ci_infrastructure);
+});

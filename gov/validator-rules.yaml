@@ -53,6 +53,19 @@ guards:
         deny:
           - "**/*.env"
           - "**/package-lock.json"
+      # VTID-05821 / MR !226. STRICT: every changed file in the MR must be one of these
+      # exact paths (no globs, no prefixes), or the gate rejects with exit 22. Mirrors
+      # CI_INFRASTRUCTURE_FILES in scripts/ci/validator-path-guard.cjs; the test
+      # suite checks the two agree on the intended files.
+      ci_infrastructure:
+        strict: true
+        allow:
+          - "scripts/eng/pipeline-gen.mjs"
+          - "config/delivery/services.json"
+          - "infra/gitlab-engineering/ci/v1-delivery.gitlab-ci.yml"
+        deny:
+          - "**/*.env"
+          - "**/package-lock.json"
 
 build_gate:
   enabled: true

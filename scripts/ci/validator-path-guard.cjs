@@ -82,6 +82,23 @@ const REMIT = [
  * so a `services/gateway/src/routes/` change under that profile is a real
  * violation and must still be exit 22.
  */
+/**
+ * `ci_infrastructure` covers exactly the three CI files that the pipeline
+ * generator produces and that MR !226 touches. It is STRICT: every changed
+ * file in the MR must be one of these exact paths, or the gate rejects (exit
+ * 22). It does not use REMIT, so `.github/**` (the workflow trigger that the
+ * REMIT drift test pins) is not touched by this profile.
+ *
+ * Entries that end in `/` match as a prefix. Entries without a trailing `/`
+ * match the exact path only, so `scripts/eng/pipeline-gen.mjs.bak` is not
+ * covered by `scripts/eng/pipeline-gen.mjs`.
+ */
+const CI_INFRASTRUCTURE_FILES = [
+  'scripts/eng/pipeline-gen.mjs',
+  'config/delivery/services.json',
+  'infra/gitlab-engineering/ci/v1-delivery.gitlab-ci.yml',
+];
+
 const PROFILES = {
   command_hub_frontend: [
     'services/gateway/src/frontend/command-hub/',
@@ -95,7 +112,11 @@ const PROFILES = {
     'services/gateway/openapi/',
     'docs/validation/',
   ],
+  ci_infrastructure: CI_INFRASTRUCTURE_FILES,
 };
+
+/** Profiles where every changed file must match the allowlist (no REMIT scoping). */
+const STRICT_PROFILES = new Set(['ci_infrastructure']);
 
 const LOCKFILE = /(^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock)$/;
 
@@ -109,7 +130,7 @@ const LOCKFILE = /(^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock)$/;
 const DOTENV = /(^|\/)[^/]*\.env$/;
 
 function isUnder(file, prefixes) {
-  return prefixes.some((p) => file.startsWith(p));
+  return prefixes.some((p) => (p.endsWith('/') ? file.startsWith(p) : file === p));
 }
 
 /**
@@ -140,6 +161,22 @@ function evaluate({ profile, changedFiles, dependencyChangeDeclared }) {
     messages.push(`REJECTED: unknown VALIDATION_PROFILE=${profile}`);
     messages.push(`  known profiles: ${Object.keys(PROFILES).join(', ')}`);
     return { code: 21, messages };
+  }
+
+  // 2b. Strict profiles fail closed: every changed file must be on the allowlist.
+  //     Nothing is "not judged" under a strict profile.
+  if (STRICT_PROFILES.has(profile)) {
+    const strayFiles = files.filter((f) => !isUnder(f, allowlist));
+    if (strayFiles.length > 0) {
+      messages.push(`REJECTED: files outside the ${profile} allowlist (showing first 25)`);
+      strayFiles.slice(0, 25).forEach((f) => messages.push(`  ${f}`));
+      messages.push(`  ${profile} covers only: ${allowlist.join(', ')}`);
+      return { code: 22, messages };
+    }
+    if (files.length > 0) {
+      messages.push(`APPROVED: ${files.length} file(s) match the ${profile} allowlist exactly`);
+      return { code: 0, messages, violations: [], notJudged: [], inRemit: 0 };
+    }
   }
 
   const inRemit = files.filter((f) => isUnder(f, REMIT));
