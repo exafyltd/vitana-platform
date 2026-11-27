@@ -20,7 +20,7 @@ Implement missing independent components."*
 | Persistence and recovery of a run | `kiro_runs` + `kiro_run_events` (migration `20261010210000`), reattach identity (`20261010220000`, `kiro-reattach-token.ts`, `reattachOrphanedKiroRuns` called at `kiro-runs.ts:795`), SSE replay by `seq` (`followKiroRun` :702) | session persistence, recovery |
 | Autonomous task claims | `routes/worker-orchestrator.ts`: claim/release/heartbeat/expire (`:1250`, `:1335`, `:1450`, `:1717`); eligibility = autonomous plane only (CLAUDE.md §4 criterion 5) | VTID claims for workers |
 | Agent catalogue | `routes/agents-registry.ts` | agent registry (read) |
-| Plan driver and lane liveness | git refs `collab-driver/<slug>` (alive < 45 min, `plan-driver.mjs`, `project-manager/types.ts:393`) and `collab-claim/<slug>/<lane>`; PM reader `GithubRestReader.refDate` (`observe-live.ts:716`); PM reassign/stale-claim windows (`types.ts:383-390`) | cloud/Web session liveness |
+| Plan driver and lane liveness | git refs `collab-driver/<slug>` (alive < 45 min, `plan-driver.mjs`, `project-manager/types.ts:394`) and `collab-claim/<slug>/<lane>`; PM reader `GithubRestReader.refDate` (`observe-live.ts:716`); PM reassign/stale-claim windows (`types.ts:383-390`) | cloud/Web session liveness |
 | Retry with backoff | lanes `dispatcher` (VTID-05737, in review, PR #5125) and `dispatcher-pm` (VTID-05736) of plan `agentic-delivery-scope` | recovery scheduling for parked lanes |
 | Heartbeat cadence of drivers | lane `heartbeat-30` (VTID-05739) of the same plan | driver heartbeat interval |
 
