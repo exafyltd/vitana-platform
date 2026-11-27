@@ -70,7 +70,7 @@ the tests assume (the evaluator is not the IAM engine).
 ```bash
 aws sts assume-role --role-arn arn:aws:iam::472838866351:role/kiro-staging-operator \
   --role-session-name "$KIRO_SESSION_ID" --external-id "$KIRO_AWS_EXTERNAL_ID" \
-  --tags Key=kiro-session,Value="$KIRO_SESSION_ID" --duration-seconds 3600
+  --tags Key=kiro-session,Value="kiro-$KIRO_SESSION_ID" --duration-seconds 3600
 ```
 Until lane `rules-platform` lands, `collaboration.md` §7a still forbids a session tool from writing a live system: the
 roles are then used read-only from sessions, and staging writes go through the staging workflows.
