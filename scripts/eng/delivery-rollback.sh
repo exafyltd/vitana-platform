@@ -3,8 +3,8 @@
 # the same place and with the same rules as scripts/eng/delivery-cutover.sh, whose functions it uses (it sources that file; nothing runs on
 # sourcing). It reverses §8.2 in the order of §8.4 and loses no commit:
 #   1 stop landing on GitLab (the merge bot's timer)          2 check that GitHub main equals GitLab main (the push mirror copied it), that no
-#   branch exists only on GitLab (the GitHub-to-GitLab copy prunes those; the bot refs train/* and assist/* are left out), and that no branch on
-#   both hosts has a GitLab head that GitHub's head does not contain (the copy force-pushes every branch)
+#   every branch and tag is the same on both hosts: none exists only on GitLab, and none on both hosts has another commit, GitHub ahead included (the
+#   bot refs train/* and assist/* on GitLab are left out). A ref that exists only on GitHub is copied at step 6
 #   3 restore the GitHub protection of main from the copy saved by the cut, only while main is still the cut's lock
 #   4 enable again the workflows the cut disabled (exactly those, and only those still disabled_manually)   5 stop the bridge   6 start the GitHub-to-GitLab copy again
 #   7 remove the cutover marker and run the settings sync (both projects are mirror projects again, the push mirror is gone)   8 start the merge bot again
@@ -26,33 +26,28 @@ rb_usage() {
   cat <<'USAGE'
 usage: bash scripts/eng/delivery-rollback.sh [agentic-delivery] [--dry-run] [--confirm-prune-gitlab-only-branches] [--break-lock]
   Reverses the cut (plan section 8.4). Give the plan slug to make the changes; without it (or with --dry-run) nothing is changed.
-  --confirm-prune-gitlab-only-branches   go on although some branches exist only on GitLab: the restarted GitHub-to-GitLab copy deletes them.
+  --confirm-prune-gitlab-only-branches   accepted for old command lines and changes nothing: a branch or tag that exists only on GitLab, or differs from GitHub's, is refused.
   --break-lock                           clear a lock left by a run that died, when it is older than 6 hours.
 USAGE
 }
 
-BOT_REFS='^(train|assist)/'   # GitLab-only by design (the merge bot's train/<k> and the assist/<iid>-<rule> branches): the copy may prune them
-gh_branch_heads() { x_gh api "repos/$GH_OWNER/$1/branches" --paginate --jq '.[] | [.name, .commit.sha] | @tsv' 2>/dev/null; }   # name<TAB>sha
-kv_branches() { sed -n 's/^branch=//p' <<<"$SSM_OUT" | awk '{ print $1 "\t" $2 }'; }   # the GitLab listing of r_gitlab_main: name<TAB>sha
-gh_contains() {   # repo github-sha gitlab-sha: 0 when GitHub's head contains the GitLab head (compare base...head is ahead or identical)
-  local st; st="$(x_gh api "repos/$GH_OWNER/$1/compare/$3...$2" --jq .status 2>/dev/null)"
-  [ "$st" = ahead ] || [ "$st" = identical ]
-}
-rb_branch_check() {   # repo: sets RB_ONLY (names only on GitLab) and RB_RISK (names on both hosts whose GitLab commits GitHub lacks); 1 when it cannot tell
-  local r="$1" gh gl name sha ghsha
-  RB_ONLY=""; RB_RISK=""
-  if [ "$(kv truncated)" = 1 ]; then say "  GitLab lists more than 3000 branches of $r (page 30 of 100 is full): the check cannot see them all. Nothing is restored; delete stale branches on GitLab, then run this again"; return 1; fi
-  gh="$(gh_branch_heads "$r")" || gh=""
-  [ -n "$gh" ] || { say "  GitHub did not list the branches of $r: nothing is restored"; return 1; }
-  gl="$(kv_branches)"
-  while IFS=$'\t' read -r name sha; do
-    [ -n "$name" ] || continue
-    [[ "$name" =~ $BOT_REFS ]] && continue
-    ghsha="$(awk -F'\t' -v n="$name" '$1 == n { print $2; exit }' <<<"$gh")"
-    if [ -z "$ghsha" ]; then RB_ONLY="$RB_ONLY $name"; continue; fi
-    [ "$ghsha" = "$sha" ] && continue
-    gh_contains "$r" "$ghsha" "$sha" || RB_RISK="$RB_RISK $name(GitLab:${sha:0:12},GitHub:${ghsha:0:12})"
-  done <<<"$gl"
+# rb_branch_check and rb2 use the comparison of the cut (refs_read and ref_diffs in delivery-cutover.sh). A branch or tag on both hosts whose commit
+# differs is refused, GitHub ahead included, and so is a branch or tag that exists only on GitLab. A ref that exists only on GitHub is copied at
+# step 6, so it is not refused. The bot refs train/* and assist/* on GitLab are left out, as in the cut.
+rb_branch_check() {   # repo: sets RB_ONLY_B and RB_ONLY_T (branch and tag names that exist only on GitLab), RB_RISK_B and RB_RISK_T (names on both hosts
+  # whose commit differs, as name(GitLab:<head>,GitHub:<head>)); 1 when a listing is not read in full (REF_ERR says why)
+  local r="$1" kind name detail
+  RB_ONLY_B=""; RB_ONLY_T=""; RB_RISK_B=""; RB_RISK_T=""
+  refs_read "$r" || { say "  $REF_ERR: nothing is restored"; return 1; }
+  ref_diffs
+  while IFS=$'\t' read -r kind name detail; do
+    [ -n "$kind" ] || continue
+    case "$detail" in
+      "exists only on GitHub") ;;
+      "exists only on GitLab") if [ "$kind" = branch ]; then RB_ONLY_B="$RB_ONLY_B $name"; else RB_ONLY_T="$RB_ONLY_T $name"; fi ;;
+      *) if [ "$kind" = branch ]; then RB_RISK_B="$RB_RISK_B $name($detail)"; else RB_RISK_T="$RB_RISK_T $name($detail)"; fi ;;
+    esac
+  done <<<"$REF_DIFFS"
   return 0
 }
 
@@ -72,7 +67,7 @@ esac; }
 
 rb1() { W "stop the merge bot (systemctl stop vitana-land.timer vitana-land.service on the GitLab machine)" ssm_w "$(r_unit stop vitana-land.timer vitana-land.service)"; }
 rb2() {
-  local r gh gl waited only
+  local r gh gl waited only refused=0
   for r in "${REPOS[@]}"; do
     waited=0
     while :; do
@@ -83,17 +78,21 @@ rb2() {
       x_sleep 30; waited=$((waited + 30))
     done
     rb_branch_check "$r" || return 1
-    if [ -n "$RB_RISK" ]; then
-      say "  branches of $r whose GitLab commits GitHub does not have:${RB_RISK}"
-      say "  the restarted GitHub-to-GitLab copy force-pushes every branch and would rewind them. Push them from GitLab to GitHub (or merge GitHub's head into them on GitLab and push), then run this again. Nothing is restored"
-      [ "$DRY" = 1 ] || return 1
+    if [ -n "$RB_RISK_B$RB_RISK_T" ]; then
+      [ -z "$RB_RISK_B" ] || say "  branches of $r whose head differs from GitHub's (GitHub is ahead, or the two diverged):${RB_RISK_B}"
+      [ -z "$RB_RISK_T" ] || say "  tags of $r whose commit differs from GitHub's:${RB_RISK_T}"
+      say "  Make each one equal first. When GitHub is ahead, run the GitHub-to-GitLab copy (systemctl start vitana-mirror.service on the GitLab machine, after the mirror.sh install); otherwise push the GitLab commits to GitHub, or merge GitHub's head into the GitLab branch and push it. Then run this again. Nothing is restored"
+      refused=1; [ "$DRY" = 1 ] || return 1
     fi
-    if [ -n "$RB_ONLY" ]; then
-      say "  branches that exist only on GitLab ($r):${RB_ONLY}"
-      if [ "$CONFIRM_PRUNE" != 1 ]; then say "  the restarted GitHub-to-GitLab copy deletes branches that GitHub does not have. Push them to GitHub, or run again with --confirm-prune-gitlab-only-branches to let them go"; [ "$DRY" = 1 ] || return 1; fi
+    if [ -n "$RB_ONLY_B$RB_ONLY_T" ]; then
+      [ -z "$RB_ONLY_B" ] || say "  branches that exist only on GitLab ($r):${RB_ONLY_B}"
+      [ -z "$RB_ONLY_T" ] || say "  tags that exist only on GitLab ($r):${RB_ONLY_T}"
+      say "  GitHub does not have them. Push them to GitHub, or delete them on GitLab, then run this again. Nothing is restored"
+      [ "$CONFIRM_PRUNE" != 1 ] || say "  --confirm-prune-gitlab-only-branches does not let them pass: it changes nothing"
+      refused=1; [ "$DRY" = 1 ] || return 1
     fi
   done
-  say "  GitHub main equals GitLab main in both repositories, and no branch would lose a commit"
+  [ "$refused" = 1 ] || say "  GitHub main equals GitLab main in both repositories, and no branch or tag differs between the hosts (a ref only on GitHub is copied at step 6)"
 }
 rb3() {   # only while main is still the cut's lock (restricted to the recorded mirror account): a second rollback, or a protection changed since, is left alone
   local r rc
@@ -166,7 +165,7 @@ rb11() {
 }
 rb11_redeploy() { dispatch_and_wait vitana-platform AWS-STAGE-DEPLOY-GATEWAY.yml && staging_gateway_check; }
 
-RB_START_PHASE=none; RB_ONLY=""; RB_RISK=""
+RB_START_PHASE=none; RB_ONLY_B=""; RB_ONLY_T=""; RB_RISK_B=""; RB_RISK_T=""
 rb_main() {
   local slug="" n rc
   DRY=1; CONFIRM_PRUNE=0; local forced=0

@@ -203,23 +203,33 @@ echo "bridge_problems=$(printf '%s\n' "$out" | grep -c -E '"level":"error"|"even
 echo "bridge_tick_done=$(printf '%s\n' "$out" | grep -c '"event":"tick_done"')"
 REMOTE
 }
-r_gitlab_main() {   # repo: the sha of main and every branch with its head (branch=<name> <sha>) of the GitLab project (read only, bot-metrics token through stdin)
-  rhead read gitlab-main; printf 'REPO=%q\n' "$1"
+r_gitlab_main() {   # repo [page] [kind]: kind is branches (the default) or tags. One page of 100 GitLab branches (branch=<name> <sha>) or tags (tag=<name> <sha>)
+  # with its X-Total and entry count; for branches the sha of main comes first (main_sha=...). Read only: the bot-metrics token goes through stdin.
+  # The list is read one page per Systems Manager call, because Systems Manager returns only the first 24,000 characters of a result. X-Total is
+  # GitLab's count of all of them. The last page prints listing=complete. A page is refused (exit 1) when it has no X-Total, is not a JSON list, or would
+  # reach 24,000 bytes. main_sha is printed before any of that, so a caller that needs only main still gets it. gitlab_listing checks the counts.
+  local kind="${3:-branches}"
+  if [ "$kind" = tags ]; then rhead read gitlab-tags; else rhead read gitlab-main; fi
+  printf 'REPO=%q\nPAGE=%q\nKIND=%q\n' "$1" "${2:-1}" "$kind"
   cat <<'REMOTE'
-api() { printf 'header = "PRIVATE-TOKEN: %s"\n' "$(cat /etc/vitana/bot-metrics-token)" | curl -sS --config - "http://127.0.0.1/api/v4/projects/vitana%2F$REPO/$1"; }
-echo "main_sha=$(api 'repository/branches/main' | jq -r '.commit.id // "none"')"
-page=1; names=""; truncated=0
-while [ "$page" -le 30 ]; do
-  chunk="$(api "repository/branches?per_page=100&page=$page" | jq -r '.[] | "\(.name) \(.commit.id)"' 2>/dev/null)"
-  [ -n "$chunk" ] || break
-  names="$names$chunk
-"
-  [ "$(printf '%s\n' "$chunk" | wc -l)" -ge 100 ] || break
-  [ "$page" -lt 30 ] || truncated=1
-  page=$((page + 1))
-done
-echo "truncated=$truncated"
-printf '%s' "$names" | sed 's/^/branch=/'
+api() { printf 'header = "PRIVATE-TOKEN: %s"\n' "$(cat /etc/vitana/bot-metrics-token)" | curl -sS -i --config - "http://127.0.0.1/api/v4/projects/vitana%2F$REPO/$1" | tr -d '\r'; }
+ROW=branch; [ "$KIND" = tags ] && ROW=tag
+if [ "$KIND" = branches ]; then echo "main_sha=$(api 'repository/branches/main' | sed '1,/^$/d' | jq -r '.commit.id // "none"' 2>/dev/null)"; fi
+resp="$(api "repository/$KIND?per_page=100&page=$PAGE")"
+total="$(printf '%s\n' "$resp" | sed -n 's/^[Xx]-[Tt]otal: *//p' | head -n 1)"
+body="$(printf '%s\n' "$resp" | sed '1,/^$/d')"
+case "$total" in ''|*[!0-9]*) echo "page $PAGE: the response has no X-Total header" >&2; exit 1 ;; esac
+printf '%s\n' "$body" | jq -e 'type == "array"' >/dev/null 2>&1 || { echo "page $PAGE of the GitLab $KIND is not a list" >&2; exit 1; }
+rows="$(printf '%s\n' "$body" | jq -r '.[] | "\(.name) \(.commit.id)"')"
+count="$(printf '%s\n' "$body" | jq 'length')"
+out="x_total=$total
+page_entries=$count"
+[ -z "$rows" ] || out="$out
+$(printf '%s\n' "$rows" | sed "s/^/$ROW=/")"
+if [ "$count" -lt 100 ] || [ $((PAGE * 100)) -ge "$total" ]; then out="$out
+listing=complete"; fi
+[ "$(printf '%s\n' "$out" | wc -c)" -lt 24000 ] || { echo "page $PAGE is 24,000 bytes or more: Systems Manager would cut it" >&2; exit 1; }
+printf '%s\n' "$out"
 REMOTE
 }
 r_variable() {   # repo: the project variable DELIVERY_MODE (read only; the admin token of the sync is read from its root-only file through stdin)
@@ -289,10 +299,10 @@ r_tag_delete() {
 printf 'header = "PRIVATE-TOKEN: %s"\n' "$(cat /etc/vitana/bot-land-token)" | curl -sS --config - -X DELETE -o /dev/null -w 'tag_delete_http=%{http_code}\n' "http://127.0.0.1/api/v4/projects/vitana%2F$REPO/repository/tags/delivery%2Fcutover-$REPO"
 REMOTE
 }
-r_mirror_final() {   # run the GitHub-to-GitLab copy once more
+r_mirror_final() {   # run the GitHub-to-GitLab copy once more; the script exits with the unit's result, so a failed copy fails step 2
   rhead write mirror-final
   cat <<'REMOTE'
-systemctl start vitana-mirror.service; echo "mirror_exit=$?"
+systemctl start vitana-mirror.service; rc=$?; echo "mirror_exit=$rc"; exit $rc
 REMOTE
 }
 
@@ -684,7 +694,14 @@ s1_undo() {   # repos changed in this run
   done
 }
 step1() {
-  local r rc target changed=()
+  local r rc target changed=() gh gl
+  for r in "${REPOS[@]}"; do   # the first thing step1 does: refuse while the two mains differ. Reads only; GitHub main is not restricted yet
+    gh="$(main_sha "$r")"; gl="$(gitlab_main_of "$r")"
+    if [ -z "$gh" ] || [ "$gh" != "$gl" ]; then
+      say "  GitHub main of $r is ${gh:-unknown}, GitLab main is ${gl:-unknown}: not the same commit, so GitHub main is not restricted. If GitHub is ahead, wait for the GitHub-to-GitLab copy to bring GitLab up to it (look at the mirror of vitana/$r if it does not), then run this again. If GitLab has commits that GitHub lacks, the copy does not move GitLab main back: push those commits to GitHub first"
+      return 1
+    fi
+  done
   for r in "${REPOS[@]}"; do
     gh_protection "$r"; rc=$?
     if [ "$rc" = 1 ]; then
@@ -715,15 +732,116 @@ s1_backup() {   # repo rc-of-gh_protection (0 protected: PROT_JSON is saved, 2 n
 
 # step 2 ------------------------------------------------------------------------------------------------------------------------
 gitlab_main_of() { ssm_run "$(r_gitlab_main "$1")" 30; kv main_sha; }
+# GitLab's refs are read page by page: one Systems Manager call per page of 100 (r_gitlab_main). A listing counts as read only when its entries received
+# equal X-Total, the last page printed listing=complete, no entry is listed twice, and (for branches) GitLab has a main. refs_read reads the branches
+# and tags of both hosts; ref_diffs compares them. The cut refuses, before the copy, a branch or tag that GitLab has only and a branch or tag whose commit
+# differs from GitHub's (GitHub ahead included). A ref only on GitHub is copied, and after the copy the cut checks that the hosts are equal. The rollback
+# refuses the same differences (delivery-rollback.sh). GitLab's train/* and assist/* branches are GitLab-only by design and are not compared.
+GL_LIST=""; GL_MAIN=""; GL_BRANCHES=""; GL_TAGS=""; GH_BRANCHES=""; GH_TAGS=""; REF_ERR=""; REF_DIFFS=""
+gitlab_listing() {   # repo branches|tags -> 0 when the whole listing was read and checked; 1 otherwise. Sets GL_LIST (name<TAB>commit lines) and, for
+  # branches, GL_MAIN (the sha of main). GL_ERR says why it failed.
+  local r="$1" kind="$2" page=1 total="" listed=0 t k dup noun plural row
+  if [ "$kind" = tags ]; then noun=tag; plural=tags; row=tag; else noun=branch; plural=branches; row=branch; fi
+  GL_LIST=""; GL_MAIN=""; GL_ERR=""
+  while :; do
+    ssm_run "$(r_gitlab_main "$r" "$page" "$kind")" 30 || { GL_ERR="page $page: Systems Manager status ${SSM_STATUS:-unknown}${SSM_ERR:+, ${SSM_ERR//$'\n'/ }}"; return 1; }
+    t="$(kv x_total)"; k="$(kv page_entries)"
+    [[ "$t" =~ ^[0-9]+$ && "$k" =~ ^[0-9]+$ ]] || { GL_ERR="page $page has no X-Total or entry count"; return 1; }
+    if [ "$page" = 1 ]; then total="$t"; if [ "$kind" = branches ]; then GL_MAIN="$(kv main_sha)"; fi
+    elif [ "$t" != "$total" ]; then GL_ERR="the $noun count changed while it was read ($total, then $t)"; return 1; fi
+    GL_LIST="$GL_LIST$(sed -n "s/^$row=//p" <<<"$SSM_OUT" | awk '{ print $1 "\t" $2 }')"$'\n'
+    listed=$((listed + k))
+    [ "$(kv listing)" = complete ] && break
+    page=$((page + 1))
+    [ "$page" -le $(( (total + 99) / 100 )) ] || { GL_ERR="the listing goes on past the $total $plural GitLab counts"; return 1; }
+  done
+  [ "$listed" = "$total" ] || { GL_ERR="$listed $plural were read, GitLab counts $total"; return 1; }
+  dup="$(cut -f1 <<<"$GL_LIST" | sed '/^$/d' | sort | uniq -d | head -n 1)"
+  [ -z "$dup" ] || { GL_ERR="$noun $dup is listed twice"; return 1; }
+  if [ "$kind" = branches ]; then { [ -n "$GL_MAIN" ] && [ "$GL_MAIN" != none ]; } || { GL_ERR="GitLab has no main"; return 1; }; fi
+}
+refs_read() {   # repo -> 0 when the branches and tags of GitLab and of GitHub are all read (GL_BRANCHES, GL_TAGS, GH_BRANCHES, GH_TAGS); otherwise 1, REF_ERR says why
+  local r="$1"
+  REF_ERR=""
+  gitlab_listing "$r" branches || { REF_ERR="the branches of GitLab $r are not read in full ($GL_ERR)"; return 1; }
+  GL_BRANCHES="$GL_LIST"
+  gitlab_listing "$r" tags || { REF_ERR="the tags of GitLab $r are not read in full ($GL_ERR)"; return 1; }
+  GL_TAGS="$GL_LIST"
+  GH_BRANCHES="$(x_gh api "repos/$GH_OWNER/$r/branches" --paginate --jq '.[] | [.name, .commit.sha] | @tsv' 2>/dev/null)" && [ -n "$GH_BRANCHES" ] \
+    || { REF_ERR="GitHub did not list the branches of $r"; return 1; }
+  GH_TAGS="$(x_gh api "repos/$GH_OWNER/$r/tags" --paginate --jq '.[] | [.name, .commit.sha] | @tsv' 2>/dev/null)" \
+    || { REF_ERR="GitHub did not list the tags of $r"; return 1; }
+}
+# One line per difference between the two hosts: kind<TAB>name<TAB>detail. kind is branch or tag. detail is "exists only on GitLab", "exists only on
+# GitHub", or "GitLab:<head>,GitHub:<head>" (12 characters of each). A GitLab branch that is train/* or assist/* is not compared.
+ref_cmp() {   # kind gitlab-lines github-lines
+  local bot='^$'
+  [ "$1" = branch ] && bot='^(train|assist)/'
+  awk -F'\t' -v kind="$1" -v bot="$bot" '
+    NR == FNR { if ($1 != "") { all[$1] = 1; if ($1 !~ bot) gl[$1] = $2 }; next }
+    $1 != "" { gh[$1] = $2 }
+    END {
+      for (n in gl) {
+        if (!(n in gh)) print kind "\t" n "\texists only on GitLab"
+        else if (gh[n] != gl[n]) print kind "\t" n "\tGitLab:" substr(gl[n], 1, 12) ",GitHub:" substr(gh[n], 1, 12)
+      }
+      for (n in gh) if (!(n in all)) print kind "\t" n "\texists only on GitHub"
+    }' <(printf '%s\n' "$2") <(printf '%s\n' "$3") | sort
+}
+ref_diffs() {   # sets REF_DIFFS from the lists that refs_read read
+  REF_DIFFS="$(ref_cmp branch "$GL_BRANCHES" "$GH_BRANCHES"; ref_cmp tag "$GL_TAGS" "$GH_TAGS")"
+}
+refs_say() {   # repo lines: one line per difference, in words
+  local r="$1" kind name detail text
+  while IFS=$'\t' read -r kind name detail; do
+    [ -n "$kind" ] || continue
+    case "$detail" in
+      GitLab:*) text="differs from GitHub's ($detail)" ;;
+      *) text="$detail" ;;
+    esac
+    if [ "$kind" = tag ]; then say "  $r tag $name $text"; else say "  $r $name $text"; fi
+  done <<<"$2"
+}
+copy_branch_check() {   # repo -> 0 when no GitLab branch or tag is missing on GitHub or has another commit there. A ref only on GitHub is copied, so it is not
+  # refused here. Otherwise it prints each refused ref, says what to do, and returns 1
+  local r="$1" bad
+  refs_read "$r" || { say "  $REF_ERR: nothing is copied"; return 1; }
+  ref_diffs
+  bad="$(awk -F'\t' '$3 != "exists only on GitHub"' <<<"$REF_DIFFS")"
+  [ -z "$bad" ] && return 0
+  refs_say "$r" "$bad"
+  say "  nothing is copied. Make each ref equal on both sides: push a GitLab-only commit to GitHub; for a diverged head, merge GitHub's head into the GitLab branch and push that to GitHub; when GitHub is ahead, run the copy (systemctl start vitana-mirror.service on the GitLab machine). For a tag, delete the GitLab tag when GitHub's commit is the right one (the copy then creates it), or create a GitLab-only tag on GitHub at the same commit. Then run this again"
+  return 1
+}
+# After the copy the two hosts must show the same branches and tags. A ref that is still different (a copy that exited 0 without bringing it over, or a push
+# made to GitHub during the copy) stops the cut here.
+copy_refs_equal() {   # repo -> 0 when the branches and tags of both hosts are the same; otherwise it prints them and returns 1
+  local r="$1"
+  refs_read "$r" || { say "  $REF_ERR: the result of the copy cannot be checked, so the cut stops here"; return 1; }
+  ref_diffs
+  [ -z "$REF_DIFFS" ] && return 0
+  say "  after the copy, $r still differs between GitHub and GitLab:"
+  refs_say "$r" "$REF_DIFFS"
+  say "  The cut stops here and the copy timer keeps running. Look at the mirror on the GitLab machine (journalctl -u vitana-mirror.service -n 100 --no-pager), then run this command again"
+  return 1
+}
+# The copy changes nothing when the branches and tags of both hosts are the same and GitHub has no tag. Step 2 counts as done only then (step_done 2).
+copy_refs_done() {   # repo -> 0 when the copy would change nothing; otherwise 1
+  refs_read "$1" || return 1
+  ref_diffs
+  [ -z "$REF_DIFFS" ] && [ -z "$GH_TAGS" ]
+}
 step2() {
   local r gh gl
   ssm_run "$(r_probe)" 30
   if kv marker | grep -q '"mode":"live"'; then say "  the cutover marker is set: the GitHub-to-GitLab copy must never run after the cut (it would overwrite GitLab main with GitHub's)"; return 1; fi
+  for r in "${REPOS[@]}"; do copy_branch_check "$r" || return 1; done   # before the copy: a GitLab-only or differing ref stops it here
   W "run the GitHub-to-GitLab copy once more (systemctl start vitana-mirror.service on the GitLab machine)" ssm_w "$(r_mirror_final)" || return 1
   for r in "${REPOS[@]}"; do
     gh="$(main_sha "$r")"; gl="$(gitlab_main_of "$r")"
     if [ "$DRY" != 1 ] && { [ -z "$gh" ] || [ "$gh" != "$gl" ]; }; then say "  GitHub main of $r is ${gh:0:12}, GitLab main is ${gl:0:12}: the final copy did not bring them together; the copy keeps running"; return 1; fi
   done
+  if [ "$DRY" != 1 ]; then for r in "${REPOS[@]}"; do copy_refs_equal "$r" || return 1; done; fi   # the cut waits for the copy and checks that it made the hosts equal
   W "stop the GitHub-to-GitLab copy (systemctl disable --now vitana-mirror.timer)" ssm_w "$(r_unit disable-now vitana-mirror.timer)"
 }
 ssm_w() { ssm_run "$1" "${2:-60}"; local rc=$?; [ -z "$SSM_OUT" ] || printf '%s\n' "$SSM_OUT" | sed 's/^/    | /'; [ "$rc" = 0 ] || say "  Systems Manager status $SSM_STATUS ${SSM_ERR:+($SSM_ERR)}"; return $rc; }
@@ -828,10 +946,14 @@ step8() {
 }
 
 step_done() {   # n -> 0 when the world already shows step n
-  local r f out state
+  local r f out state gh gl
   case "$1" in
     1) for r in "${REPOS[@]}"; do gh_protection "$r" && is_cut_lock "$PROT_JSON" "$MIRROR" || return 1; done ;;
-    2) ssm_run "$(r_probe)" 30; case "$(kv mirror_timer)" in disabled|masked) ;; *) return 1 ;; esac ;;
+    2) ssm_run "$(r_probe)" 30
+       case "$(kv mirror_timer)" in disabled|masked) ;; *) return 1 ;; esac   # a running copy timer: step 2 must stop it, and after the cut it refuses
+       kv marker | grep -q '"mode":"live"' && return 0   # the timer is stopped and the cut is past step 2: the branches are not checked again
+       for r in "${REPOS[@]}"; do copy_refs_done "$r" || return 1; done   # a ref that differs, a GitHub-only ref or a GitHub tag: not done, step 2 runs the copy (and refuses what it must)
+       for r in "${REPOS[@]}"; do gh="$(main_sha "$r")"; gl="$(gitlab_main_of "$r")"; { [ -n "$gh" ] && [ "$gh" = "$gl" ]; } || return 1; done ;;
     3) ssm_run "$(r_probe)" 30; kv marker | grep -q '"mode":"live"' && [ "$(kv settings_check)" = 0 ] || return 1 ;;
     4) for r in "${REPOS[@]}"; do out="$(gh_workflows "$r")"; for f in $(wf_names "$r" disable); do [ "$(wf_state "$out" "$f")" = active ] && return 1; done; done ;;
     5) ssm_run "$(r_probe)" 30; [ "$(kv bridge_active)" = active ] || return 1 ;;

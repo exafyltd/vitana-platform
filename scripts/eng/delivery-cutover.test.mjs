@@ -84,9 +84,20 @@ settings_check=$(cat "$F/host/settings_check")
 runner_tags=$(cat "$F/host/runner_tags")" ;;
     parity) repo="$(setvar REPO "$f")"; out="$(cat "$F/parity/$repo")" ;;
     bridge-dry-run) out="$(cat "$F/bridge")" ;;
-    gitlab-main) repo="$(setvar REPO "$f")"; out="main_sha=$(cat "$F/gitlab/$repo.main")
-truncated=$(exists "fail/gitlab-truncated.$repo" && echo 1 || echo 0)
-$(heads "$F/gitlab/$repo.branches" "$(cat "$F/gitlab/$repo.main")" | sed 's/^/branch=/; s/\t/ /')" ;;
+    gitlab-main) repo="$(setvar REPO "$f")"; glrows="$(heads "$F/gitlab/$repo.branches" "$(cat "$F/gitlab/$repo.main")" | sed 's/^/branch=/; s/\t/ /')"
+      glcount=$(printf '%s\n' "$glrows" | grep -c '^branch='); glextra=$(exists "fail/gitlab-truncated.$repo" && echo 1 || echo 0)
+      out="main_sha=$(cat "$F/gitlab/$repo.main")
+x_total=$((glcount + glextra))
+page_entries=$glcount
+$glrows
+listing=complete" ;;
+    gitlab-tags) repo="$(setvar REPO "$f")"; trows=""
+      [ -e "$F/gitlab/$repo.tags" ] && trows="$(heads "$F/gitlab/$repo.tags" "" | sed 's/^/tag=/; s/\t/ /')"
+      tcount=$(printf '%s\n' "$trows" | grep -c '^tag=')
+      out="x_total=$tcount
+page_entries=$tcount
+$trows
+listing=complete" ;;
     variable) repo="$(setvar REPO "$f")"; out="delivery_mode=$(cat "$F/gitlab/$repo.mode")" ;;
     pipelines) repo="$(setvar REPO "$f")"; out="$(cat "$F/pipelines/$repo")" ;;
     converge)
@@ -240,6 +251,7 @@ case "$method $path" in
   "PUT repos/exafyltd/$repo/actions/workflows/"*)
     f="$_{path#*/workflows/}"; act="$_{f#*/}"; f="$_{f%/*}"; fail "workflow.$f"
     tmp="$F/gh/$repo/workflows.tsv.new"; awk -F'\t' -v f="$f" -v act="$act" 'BEGIN{OFS="\t"} { n=split($1,a,"/"); if (a[n]==f) $2=(act=="disable"?"disabled_manually":"active"); print }' "$F/gh/$repo/workflows.tsv" > "$tmp"; mv "$tmp" "$F/gh/$repo/workflows.tsv"; echo "$method $f $act" >> "$F/gh/$repo/workflow.log" ;;
+  "GET repos/exafyltd/$repo/tags") [ -e "$F/gh/$repo/tags" ] && heads "$F/gh/$repo/tags" ""; exit 0 ;;
   "GET repos/exafyltd/$repo/branches/main") cat "$F/gh/$repo/main" ;;
   "GET repos/exafyltd/$repo/branches") exists "fail/branches.$repo" && { echo "gh: Server Error (HTTP 500)" >&2; exit 1; }; heads "$F/gh/$repo/branches" "$(cat "$F/gh/$repo/main")" ;;
   "GET repos/exafyltd/$repo/contents/.github/workflows/"*) printf 'name: x\non:\n  workflow_dispatch:\n' ;;
@@ -1063,9 +1075,14 @@ test('rollback: it refuses while GitHub main is not GitLab main, and while branc
     r = w.run(ROLLBACK);
     assert.equal(r.status, 1);
     assert.match(r.stdout, /branches that exist only on GitLab \(vitana-v1\): kiro\/only-on-gitlab/);
-    assert.match(r.stdout, /run again with --confirm-prune-gitlab-only-branches to let them go/);
+    assert.match(r.stdout, /GitHub does not have them\. Push them to GitHub, or delete them on GitLab, then run this again/);
     assert.equal(writeKinds(r).some((k) => k.includes('/protection')), false);
     r = w.run([...ROLLBACK, '--confirm-prune-gitlab-only-branches']);
+    assert.equal(r.status, 1, 'the confirm flag does not let a GitLab-only branch pass');
+    assert.match(r.stdout, /does not let them pass/);
+    assert.equal(writeKinds(r).some((k) => k.includes('/protection')), false);
+    w.put('gitlab/vitana-v1.branches', 'main\nkiro/a\nkiro/b\n');
+    r = w.run(ROLLBACK);
     assert.equal(r.status, 0, r.all);
     assert.equal(protection(w, 'vitana-v1').restrictions, null);
   } finally {
@@ -1705,22 +1722,27 @@ test('B3: rehearse first runs the round trip of the protection (PUT the restore 
   }
 });
 
-test('B4: the rollback refuses while a branch on both hosts has GitLab commits that GitHub lacks, lists it and restores nothing; a GitLab head that GitHub contains is fine', () => {
+test('B4: the rollback refuses while a branch on both hosts has another commit on GitLab than on GitHub (GitHub ahead included), lists it and restores nothing; equal heads pass', () => {
   const w = postCutWorld();
   try {
     const glHead = '4444444444444444444444444444444444444444';
     w.put('gitlab/vitana-v1.branches', `main\nkiro/a ${glHead}\nkiro/b\n`);
     let r = w.run(ROLLBACK);
     assert.equal(r.status, 1, r.all);
-    assert.match(r.stdout, /branches of vitana-v1 whose GitLab commits GitHub does not have: kiro\/a\(GitLab:444444444444,GitHub:[0-9a-f]{12}\)/);
-    assert.match(r.stdout, /force-pushes every branch and would rewind them/);
+    assert.match(r.stdout, /branches of vitana-v1 whose head differs from GitHub's \(GitHub is ahead, or the two diverged\): kiro\/a\(GitLab:444444444444,GitHub:[0-9a-f]{12}\)/);
+    assert.match(r.stdout, /Make each one equal first/);
     assert.match(r.stdout, /rollback: STOPPED at step 2/);
     assert.equal(writeKinds(r).some((k) => k.includes('/protection') || k.includes('/enable')), false, 'nothing is restored');
     assert.equal(w.get('host/unit/vitana-mirror.timer'), 'disabled/inactive', 'the copy is not restarted');
-    assert.ok(r.calls.some((c) => c.tool === 'gh' && c.argv.includes(`repos/exafyltd/vitana-v1/compare/${glHead}...${sha1('kiro/a')}`)), 'GitHub is asked whether its head contains the GitLab head');
     r = w.run([...ROLLBACK, '--confirm-prune-gitlab-only-branches']);
-    assert.equal(r.status, 1, 'the flag for GitLab-only branches does not let commits go');
+    assert.equal(r.status, 1, 'the confirm flag does not let a branch that differs from GitHub pass');
+    assert.match(r.stdout, /branches of vitana-v1 whose head differs from GitHub's \(GitHub is ahead, or the two diverged\): kiro\/a\(GitLab:444444444444,GitHub:[0-9a-f]{12}\)/);
     w.put('gh/vitana-v1/contains', `${sha1('kiro/a')} ${glHead}\n`);
+    r = w.run(ROLLBACK);
+    assert.equal(r.status, 1, 'a head GitHub is ahead of is refused too: the copy has to bring GitLab up to GitHub first');
+    assert.equal(writeKinds(r).some((k) => k.includes('/protection') || k.includes('/enable')), false, 'nothing is restored');
+    assert.equal(w.get('host/unit/vitana-mirror.timer'), 'disabled/inactive', 'the copy is not restarted');
+    w.put('gitlab/vitana-v1.branches', `main\nkiro/a ${sha1('kiro/a')}\nkiro/b\n`);
     r = w.run(ROLLBACK);
     assert.equal(r.status, 0, r.all);
   } finally {
@@ -1735,7 +1757,8 @@ test('B4: the bot refs train/* and assist/* are left out of the GitLab-only chec
     w.flag('fail/gitlab-truncated.vitana-v1');
     let r = w.run(ROLLBACK);
     assert.equal(r.status, 1, r.all);
-    assert.match(r.stdout, /GitLab lists more than 3000 branches of vitana-v1 \(page 30 of 100 is full\)/);
+    assert.match(r.stdout, /the branches of GitLab vitana-v1 are not read in full \(3 branches were read, GitLab counts 4\): nothing is restored/);
+    assert.match(r.stdout, /rollback: STOPPED at step 2/);
     assert.equal(/branches that exist only on GitLab/.test(r.stdout), false, 'train/* and assist/* are not listed');
     w.rm('fail/gitlab-truncated.vitana-v1');
     r = w.run(ROLLBACK);
@@ -1750,7 +1773,7 @@ test('B4: the bot refs train/* and assist/* are left out of the GitLab-only chec
   }
 });
 
-test('B4: on the machine the GitLab branch listing prints every head, stops at a short page, and says truncated when page 30 is still full', () => {
+test('B4: on the machine each page of the GitLab branch list carries X-Total; the last page prints listing=complete; a page of 24,000 bytes or more, and a page without X-Total, are refused', () => {
   const w = postCutWorld();
   let script;
   try {
@@ -1760,20 +1783,41 @@ test('B4: on the machine the GitLab branch listing prints every head, stops at a
     w.cleanup();
   }
   assert.ok(script, 'the rollback sends the listing script');
-  const curl = (perPage) => `cat >/dev/null; case "$*" in *branches/main) echo '{"commit":{"id":"aaaa"}}' ;; *page=1|*page=2) jq -n '[range(${perPage}) | {name: "b\\(.)", commit: {id: "s\\(.)"}}]' ;; *) jq -n '[range(${perPage}) | {name: "c\\(.)", commit: {id: "t\\(.)"}}]' ;; esac`;
-  const short = sandboxRun(script, { files: { 'bot-metrics-token': `${BOT_TOKEN}\n` }, bins: { curl: `cat >/dev/null; case "$*" in *branches/main) echo '{"commit":{"id":"aaaa"}}' ;; *page=1) jq -n '[{name: "main", commit: {id: "aaaa"}}, {name: "kiro/x", commit: {id: "bbbb"}}]' ;; *) echo '[]' ;; esac` } });
+  // The machine's curl answers the main branch, then the page it is asked for with its X-Total header (curl -i sends the headers, a blank line, then the body).
+  const pageCurl = (xTotal, jqList) => {
+    const head = xTotal === null ? 'HTTP/1.1 200 OK\\r\\n\\r\\n' : `HTTP/1.1 200 OK\\r\\nX-Total: ${xTotal}\\r\\n\\r\\n`;
+    return `cat >/dev/null; case "$*" in *branches/main) printf 'HTTP/1.1 200 OK\\r\\n\\r\\n'; echo '{"commit":{"id":"aaaa"}}' ;; *page=*) printf '${head}'; jq -n '${jqList}' ;; esac`;
+  };
+  const runPage = (s, curl) => sandboxRun(s, { files: { 'bot-metrics-token': `${BOT_TOKEN}\n` }, bins: { curl } });
+  // A short list is one page, and the last one: its counts, its branches, and listing=complete as the last line.
+  const short = runPage(script, pageCurl(2, '[{name: "main", commit: {id: "aaaa"}}, {name: "kiro/x", commit: {id: "bbbb"}}]'));
   assert.equal(short.status, 0, short.stderr);
   assert.match(short.stdout, /^main_sha=aaaa$/m);
-  assert.match(short.stdout, /^truncated=0$/m);
+  assert.match(short.stdout, /^x_total=2$/m);
+  assert.match(short.stdout, /^page_entries=2$/m);
   assert.match(short.stdout, /^branch=main aaaa$/m);
   assert.match(short.stdout, /^branch=kiro\/x bbbb$/m);
-  assert.equal(short.calls.filter((l) => l.includes('repository/branches?')).length, 1, 'a short first page ends the listing');
-  const full = sandboxRun(script, { files: { 'bot-metrics-token': `${BOT_TOKEN}\n` }, bins: { curl: curl(100) } });
-  assert.equal(full.status, 0, full.stderr);
-  assert.match(full.stdout, /^truncated=1$/m);
-  assert.equal(full.calls.filter((l) => l.includes('repository/branches?')).length, 30, 'it stops at page 30');
-  const exact = sandboxRun(script, { files: { 'bot-metrics-token': `${BOT_TOKEN}\n` }, bins: { curl: `cat >/dev/null; case "$*" in *branches/main) echo '{"commit":{"id":"aaaa"}}' ;; *page=1) jq -n '[range(100) | {name: "b\\(.)", commit: {id: "s"}}]' ;; *) echo '[]' ;; esac` } });
-  assert.match(exact.stdout, /^truncated=0$/m, 'a full page followed by an empty one is complete');
+  assert.equal(short.stdout.trimEnd().split('\n').pop(), 'listing=complete', 'the last page prints listing=complete last');
+  assert.equal(short.calls.filter((l) => l.includes('repository/branches?')).length, 1, 'a short list is one page');
+  // A list of 150 is two pages: page 1 is not the last one, page 2 is, and both carry the same X-Total.
+  const p1 = runPage(script, pageCurl(150, '[range(100) | {name: ("b" + (. | tostring)), commit: {id: "s"}}]'));
+  assert.equal(p1.status, 0, p1.stderr);
+  assert.match(p1.stdout, /^x_total=150$/m);
+  assert.match(p1.stdout, /^page_entries=100$/m);
+  assert.equal(/^listing=complete$/m.test(p1.stdout), false, 'page 1 of 150 is not the last page');
+  const p2 = runPage(script.replace(/^PAGE=1$/m, 'PAGE=2'), pageCurl(150, '[range(50) | {name: ("c" + (. | tostring)), commit: {id: "t"}}]'));
+  assert.equal(p2.status, 0, p2.stderr);
+  assert.match(p2.stdout, /^x_total=150$/m);
+  assert.match(p2.stdout, /^page_entries=50$/m);
+  assert.match(p2.stdout, /^listing=complete$/m);
+  // A page of 24,000 bytes or more is refused: Systems Manager would keep only the first 24,000 characters of it.
+  const big = runPage(script, pageCurl(100, `[range(100) | {name: ("${'x'.repeat(250)}" + (. | tostring)), commit: {id: "s"}}]`));
+  assert.equal(big.status, 1, big.stderr);
+  assert.match(big.stderr, /is 24,000 bytes or more/);
+  // A page without X-Total is refused: the listing cannot be checked against GitLab's count.
+  const noTotal = runPage(script, pageCurl(null, '[range(100) | {name: ("b" + (. | tostring)), commit: {id: "s"}}]'));
+  assert.equal(noTotal.status, 1, noTotal.stderr);
+  assert.match(noTotal.stderr, /has no X-Total header/);
 });
 
 test('B5: the rollback waits for the redeploy, reads the staging task definition again, and stops with the owner command while DELIVERY_HOST_* is still gitlab', () => {
