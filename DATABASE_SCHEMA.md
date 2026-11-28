@@ -4429,3 +4429,16 @@ Functions (SECURITY DEFINER, `service_role` only): `claim_welcome_message(user, 
 The DM itself is an ordinary `chat_messages` row authored by the sender's own account (`metadata.source = 'welcome_team'`, `sender_slug`, `automated = true`, `done_by_vitana = false`, `locale`), so a reply is an ordinary DM in that sender's inbox. Texts are `tt()` catalog keys `welcome_team.<sender>.body` / `.body_noname`. OASIS (`CicdEventType`): `welcome_team.message.sent`, `welcome_team.message.failed` (per real DM), `welcome_team.tick.completed` (one per tick that decided something).
 
 Gateway switches (all off by default): `FEATURE_WELCOME_TEAM_ENV`, `WELCOME_ROLLOUT_AT` (cohort = joined at/after it), `WELCOME_TEAM_MODE` (`shadow` | `live`), `WELCOME_TEAM_SEND_ENABLED=true` and `WELCOME_SENDER_NAMES_CONFIRMED=true` (both needed for `live`), `WELCOME_TEAM_AUDIENCE` (`pilot` default, `all`), `WELCOME_TEAM_PILOT_USER_IDS`, `WELCOME_SENDER_{MARIIA,JOVANA,ALEX}_ID`, `WELCOME_STAGGER_DAYS_{MARIIA,JOVANA,ALEX}`, `WELCOME_TEAM_MIN_GAP_HOURS`, `WELCOME_TEAM_MAX_SENDS_PER_TICK`, `WELCOME_TEAM_READY_LOCALES`. Read-only status: `GET /api/v1/welcome-team/status`.
+
+## message_reactions / message_reaction_emojis (full emoji reactions)
+
+- `message_reaction_emojis (emoji text PK, sort_order int)`: the supported reaction set. Seeded from
+  `reaction-emojis.json` (identical copies in vitana-v1 `src/lib/reactions` and `apps/mobile`). Authenticated members can
+  read it; no client writes (RLS: select only).
+- `message_reactions.emoji` references `message_reaction_emojis(emoji)` (FK `message_reactions_emoji_fk`). The earlier
+  six-value CHECK `message_reactions_emoji_check` is dropped by migration `20261117120000_message_reactions_full_emoji`
+  (in vitana-v1 `supabase/migrations`, beside the table's original migration).
+- Trigger `message_reactions_cap` (BEFORE INSERT): at most six distinct emojis per user per message, serialised by a
+  transaction advisory lock. A refused insert raises `reaction_cap_reached` (SQLSTATE P0001). Re-adding an emoji already on
+  the message is a duplicate (primary key), not a new distinct emoji. Deletes are never capped.
+- Canonical form is fully-qualified (U+FE0F where applicable), e.g. the heart is U+2764 U+FE0F. Clients normalize before write.

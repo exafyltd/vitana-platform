@@ -5521,7 +5521,7 @@ CALL WHEN the user says: "reply to that message", "antworte auf die Nachricht"."
         },
       },
       {
-        "description": "Add (or remove) an emoji reaction on a chat message — one of 👍 ❤️ 😂 😮 🙏 🎉 only.
+        "description": "Add (or remove) an emoji reaction on a chat message. Any emoji from the supported reaction set works (the quick ones are 👍 ❤️ 😂 😮 🙏 🎉). A member can have at most six different emojis on one message.
 Requires message_id from a previous tool result (e.g. from list_conversations or a
 group message read-back).
 CALL WHEN the user says: "react with a heart to that", "give that a thumbs up",
@@ -5531,7 +5531,7 @@ Set remove:true to take the reaction back off.",
         "parameters": {
           "properties": {
             "emoji": {
-              "description": "One of: 👍 ❤️ 😂 😮 🙏 🎉",
+              "description": "A supported reaction emoji, e.g. 👍 ❤️ 😂 😮 🙏 🎉 or any other emoji from the picker set.",
               "type": "string",
             },
             "message_id": {
@@ -18675,7 +18675,7 @@ CALL WHEN the user says: "reply to that message", "antworte auf die Nachricht"."
         },
       },
       {
-        "description": "Add (or remove) an emoji reaction on a chat message — one of 👍 ❤️ 😂 😮 🙏 🎉 only.
+        "description": "Add (or remove) an emoji reaction on a chat message. Any emoji from the supported reaction set works (the quick ones are 👍 ❤️ 😂 😮 🙏 🎉). A member can have at most six different emojis on one message.
 Requires message_id from a previous tool result (e.g. from list_conversations or a
 group message read-back).
 CALL WHEN the user says: "react with a heart to that", "give that a thumbs up",
@@ -18685,7 +18685,7 @@ Set remove:true to take the reaction back off.",
         "parameters": {
           "properties": {
             "emoji": {
-              "description": "One of: 👍 ❤️ 😂 😮 🙏 🎉",
+              "description": "A supported reaction emoji, e.g. 👍 ❤️ 😂 😮 🙏 🎉 or any other emoji from the picker set.",
               "type": "string",
             },
             "message_id": {
