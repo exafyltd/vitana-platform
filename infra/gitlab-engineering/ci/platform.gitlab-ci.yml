@@ -7,6 +7,7 @@
 # No deploy job, no secret, no variable that holds a credential, nothing that needs a licence.
 include:
   - local: staging-gateway-deploy.gitlab-ci.yml
+  - local: preview-build.gitlab-ci.yml
 
 workflow:
   rules:
