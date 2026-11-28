@@ -17,6 +17,7 @@ specs:
   - vitana-platform:retire-claude-code
   - vitana-platform:plan-spar-stale-session
   - vitana-platform:fix-4182-test-fallout
+  - vitana-platform:gateway-write-auth
   - vitana-platform:collab-queue-perf
   - vitana-v1:chat-ux
   - vitana-v1:vitana-chat-markdown
@@ -101,6 +102,7 @@ belong to none of the named programmes are listed here until the owner assigns t
 - `vitana-platform:claude-sessions-handover` — handover of ongoing Claude Code sessions to Kiro
 - `vitana-platform:plan-spar-stale-session` — PLAN-SPAR re-runs dead in_progress sparring sessions
 - `vitana-platform:fix-4182-test-fallout` — staging suite + Jest pin left stale by #4182 (VTID-05082)
+- `vitana-platform:gateway-write-auth` — governance write-route auth (SB-CON-22) and the VTID lane lifecycle fix
 - `vitana-platform:collab-queue-perf` — collab queue reads git in a constant number of processes
 - `vitana-v1:chat-ux` — chat UX
 - `vitana-v1:vitana-chat-markdown` — Vitana chat replies render Markdown
